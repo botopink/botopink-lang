@@ -46,7 +46,9 @@ compiler-web/
 - Measured 2026-09-25 (zig 0.16.0): Debug 15.8 MB / 16 s; ReleaseSmall
   **2.64 MB, 813 KB gzip** / 48 s — under the README's ≤ 8 MB / ≤ 2.5 MB gzip
   budget. The native Debug CLI is 80 MB. With the wat comptime runtime compiled
-  in (the Erlang reader, the lowering, the linker and the 60 KB term library):
+  in (the Erlang reader, the lowering, the linker and the 60 KB term library — since decision 450
+  std-wasm's, decoded from the embedded `std_wasm.wasm` at the first comptime evaluation;
+  `bp_wat_rt.wasm` is gone):
   ReleaseSmall **2.91 MB, 908 KB gzip**.
 
 ## Not here

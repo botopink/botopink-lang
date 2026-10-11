@@ -15,22 +15,23 @@
 //! terms live on its own arena. A call reaches a function of this module
 //! (`call`, `call_last`, `call_only`: by its entry label), a function another
 //! module of the set exports (`call_ext*` naming it), an operator
-//! (`runtime.operators`) or a BIF the caller's table binds (`Bif`); a tail
+//! (`runtime.operators`) or an OTP function std-wasm serves (`Bif`); a tail
 //! call is a call and a return. Anything else — an opcode, a call none of
 //! those serves, an operand or a literal of another kind — refuses the
 //! function that holds it, named (decision 438); the rest of the module
 //! translates.
 const std = @import("std");
+const stdWasm = @import("std_wasm");
 const chunks = @import("chunks.zig");
 const code = @import("code.zig");
 const ir = @import("ir.zig");
 
-/// A BIF or OTP function the caller's runtime answers: `module:name/arity`
-/// → its export.
-pub const Bif = struct { module: []const u8, name: []const u8, arity: u32, rt: []const u8 };
+/// A BIF or OTP function std-wasm answers: `module:name/arity` → its export
+/// (`std_wasm.otp.table`, decision 450 (2)).
+pub const Bif = stdWasm.otp.Bif;
 
-/// The runtime's term ABI a translation calls (compiler-core's comptime
-/// runtime, `runtime/wat/rt.zig`, is the one there is).
+/// The term ABI a translation calls: std-wasm's runtime exports over its
+/// Erlang terms (`modules/std-wasm/src/term.zig`, decision 450).
 pub const runtime = struct {
     pub const nil = "rt_nil";
     pub const atom = "rt_atom";
@@ -60,8 +61,7 @@ pub const runtime = struct {
     pub const case_clause = "rt_case_clause";
     pub const if_clause = "rt_if_clause";
 
-    /// `rt_is`'s kinds (`rt.zig` `Kind`; compiler-core holds each to it at
-    /// its compile time).
+    /// `rt_is`'s kinds (std-wasm's `term.Kind`, held to it below).
     pub const Kind = enum(i32) {
         atom = 0,
         binary = 1,
@@ -101,6 +101,21 @@ pub const runtime = struct {
     };
 };
 
+comptime {
+    // This view of the term ABI is std-wasm's: every name an export of its
+    // term library, every kind its number there.
+    @setEvalBranchQuota(100_000);
+    for (@typeInfo(runtime).@"struct".decls) |d| {
+        const v = @field(runtime, d.name);
+        if (@typeInfo(@TypeOf(v)) != .pointer) continue;
+        if (!stdWasm.otp.isRuntimeExport(v)) @compileError("beam-to-wasm calls " ++ v ++ ", which std-wasm does not export");
+    }
+    for (runtime.operators) |o| if (!stdWasm.otp.isRuntimeExport(o.rt)) @compileError("beam-to-wasm calls " ++ o.rt ++ ", which std-wasm does not export");
+    for (@typeInfo(runtime.Kind).@"enum".fields) |f| {
+        if (@intFromEnum(@field(stdWasm.term.Kind, f.name)) != f.value) @compileError("rt_is kind " ++ f.name ++ " differs from std-wasm's");
+    }
+}
+
 pub const Error = error{ OutOfMemory, Refused };
 
 /// What a call names: a runtime export, or a function of a translated
@@ -117,7 +132,6 @@ pub const Lowerer = struct {
     /// Every module of the set, this one included: a call to one of them
     /// reaches the function it exports.
     modules: []const chunks.Beam,
-    bifs: []const Bif,
     /// What was not converted, when `error.Refused`.
     refusal: []const u8 = "",
     blocks: u32 = 0,
@@ -146,8 +160,8 @@ pub const Lowerer = struct {
     }
 
     /// What import `imp` reaches, or null when nothing serves it: a module of
-    /// the set (only what it exports), an operator, a BIF of the caller's
-    /// table.
+    /// the set (only what it exports), an operator, an OTP function of
+    /// std-wasm's table.
     fn target(l: *Lowerer, imp: chunks.Import) Error!?Target {
         for (l.modules) |m| {
             if (!std.mem.eql(u8, m.moduleName(), imp.module)) continue;
@@ -158,7 +172,7 @@ pub const Lowerer = struct {
             return null;
         }
         if (findBif(&runtime.operators, imp)) |rt| return .{ .rt = rt };
-        if (findBif(l.bifs, imp)) |rt| return .{ .rt = rt };
+        if (findBif(&stdWasm.otp.table, imp)) |rt| return .{ .rt = rt };
         return null;
     }
 

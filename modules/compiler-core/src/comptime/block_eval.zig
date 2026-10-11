@@ -20,7 +20,7 @@
 /// nothing the block declares is built by a maker of its own — one code site,
 /// no environment — so every evaluation of it is `=:=` to the maker's answer
 /// on both runtimes (the BEAM compares a fun's module, index and environment;
-/// `rt.zig` its table index and environment). `'__bp_lift'/2` matches a fun
+/// std-wasm's `term.zig` its table index and environment). `'__bp_lift'/2` matches a fun
 /// against the makers and replies its index; the lift writes the function as
 /// it was written. A lambda that captures the block's state matches none and
 /// is refused (`comptime-value-not-liftable`), as is a resource (a pid, a

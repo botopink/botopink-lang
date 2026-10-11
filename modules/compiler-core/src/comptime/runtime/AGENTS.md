@@ -6,7 +6,7 @@
 The comptime runtime and the one entry the evaluators call. **Comptime runs on wasm only**
 (decision 434): a decorator, template or `comptime` body is lowered to an Erlang module
 (`../../codegen/erlang.zig` `emitComptimeModule`), which this runtime parses, lowers to wasm,
-links into an embedded term library and runs in-process on wasm3 (`persistent_wat.zig`, `wat/`) —
+links into std-wasm's term library (`modules/std-wasm`, decoded from `std_wasm.wasm` once per process, decision 450) and runs in-process on wasm3 (`persistent_wat.zig`, `wat/`) —
 for every target (`erlang`, `beam`, `commonJS`, `wasm`) and for a compilation that names none. A
 compile spawns no `erl`; building the compiler runs no `erlc`. A host function the body reaches
 answers by std-wasm (`modules/std-wasm`), else its `@External.Wasm("fn:…")` cell
@@ -28,7 +28,7 @@ runtime/
 ├── persistent_wat.zig   ← the executor: a linked module on wasm3, in-process, its instance kept per module
 ├── stages.zig           ← observation-only stage clock (`BOTOPINK_COMPTIME_STAGES=<file>`), read by `scripts/comptime_bench.sh`
 ├── reply_order.zig      ← a reply's JSON objects read with sorted keys (a map's atom order is not part of the answer)
-├── wat/                 ← Erlang → wasm: parse, lower, link, the term library, and host functions' Erlang cells (`wat/AGENTS.md`)
+├── wat/                 ← Erlang → wasm: parse, lower, link into std-wasm's term library (`wat/AGENTS.md`)
 ├── prelude.zig          ← the host glue: two Erlang modules, rendered from erl_ast forms
 └── etf.zig              ← `Term` → Erlang external term format, for the `main/1` argument
 ```
@@ -72,7 +72,7 @@ timer) holds too: comptime asks no I/O of the host.
 ## Notes
 
 - **The browser build carries the same runtime.** `modules/compiler-web/` builds compiler-core for
-  `wasm32-wasi`: the lowering, the linker and the embedded term library are compiled in, and the
+  `wasm32-wasi`: the lowering, the linker and `std_wasm.wasm` (the term library) are compiled in, and the
   linked module runs on the page's engine through `bp_host` (`persistent_wat.zig`) — every
   target's comptime answers there as it does natively.
 - **A body's output** (`io:format`) goes to a buffer in the module's own memory, never to the

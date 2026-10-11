@@ -1,9 +1,13 @@
-//! std-wasm's program face: `zig build std-wasm` → `zig-out/lib/std_wasm.wasm`,
-//! a position-independent side module (wasm32-freestanding, MVP + bulk
-//! memory, `dylink.0`) whose functions the wasm codegen decodes into a
-//! `--target wasm` program (`compiler-core/src/codegen/wat/std_wasm_link.zig`,
-//! decision 440 (2)). The comptime runtime does not link this file — it
-//! compiles the package into its own term library (`root.zig`).
+//! std-wasm's program face, and the root of `std_wasm.wasm`: `zig build
+//! std-wasm` → `zig-out/lib/std_wasm.wasm`, a position-independent side
+//! module (wasm32-freestanding, MVP + bulk memory, `dylink.0`) whose
+//! functions the wasm codegen decodes into a `--target wasm` program
+//! (`compiler-core/src/codegen/wat/std_wasm_link.zig`, decision 440 (2)).
+//! The same module exports the Erlang terms' runtime ABI (every `rt_*`
+//! function of `term.zig`, `term_faces.zig` and `otp/*.zig`, decision 450),
+//! which the comptime runtime links
+//! (`compiler-core/src/comptime/runtime/wat/runtime_module.zig`); a program
+//! reaches none of it.
 //!
 //! Each entry of `root.exports` is exported under its cell's text,
 //! `std:<module>.<function>` (`std:hash.contentHash`) — never the bare
@@ -21,13 +25,9 @@
 const std = @import("std");
 const root = @import("root.zig");
 
-/// The program's allocator: `n` fresh bytes, 4-aligned; it grows the memory
-/// or traps.
-extern "env" fn bp_alloc(n: u32) u32;
-
-/// The host's entropy (decision 451 (2)): a uniform `f64` in `[0.0, 1.0)`,
-/// the program's `$__wasi_random_f64` — what an unseeded draw answers.
-extern "env" fn bp_random_f64() f64;
+const env = @import("env.zig");
+const bp_alloc = env.bp_alloc;
+const bp_random_f64 = env.bp_random_f64;
 
 /// The bytes of the program string at `s`.
 fn arg(s: u32) []const u8 {
@@ -761,5 +761,14 @@ comptime {
     for (faces ++ program_faces) |face| {
         const f = face[1];
         @export(&f, .{ .name = "std:" ++ face[0] });
+    }
+    // The Erlang terms' runtime ABI (decision 450): every `rt_*` function of
+    // `term.zig`, `term_faces.zig` and `otp/*.zig`, under its own name — what
+    // the comptime runtime links (`runtime_module.zig`), never a program.
+    for (root.otp.files) |file| {
+        for (@typeInfo(file).@"struct".decls) |d| {
+            if (!std.mem.startsWith(u8, d.name, "rt_")) continue;
+            @export(&@field(file, d.name), .{ .name = d.name });
+        }
     }
 }

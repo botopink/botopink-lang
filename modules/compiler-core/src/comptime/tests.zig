@@ -54,5 +54,5 @@ test {
     _ = @import("./runtime/reply_order.zig");
     _ = @import("./runtime/wat/erl_parse.zig");
     _ = @import("./runtime/wat/program.zig");
-    _ = @import("./runtime/wat/rt.zig");
+    _ = @import("./runtime/wat/runtime_module.zig");
 }

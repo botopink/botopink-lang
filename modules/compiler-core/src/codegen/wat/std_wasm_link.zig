@@ -65,11 +65,42 @@ pub const stack_global = "__std_sp";
 /// links a function calling it holds that helper (`Linked.random`).
 pub const random_import = "__wasi_random_f64";
 
-/// Each function std-wasm imports from `env`, and the program function it is
-/// bound to.
-const func_bindings = [_][2][]const u8{
-    .{ "bp_alloc", "__alloc" },
-    .{ "bp_random_f64", random_import },
+/// Each function std-wasm imports from `env`, and the caller's function it
+/// is bound to — an empty name where the caller binds none (a decoded call
+/// to it is refused, naming it).
+pub const Binding = struct { import: []const u8, to: []const u8 };
+
+/// A program's bindings. The term library's fun calls (`bp_call<N>`) are the
+/// comptime runtime's; a program reaches no function that makes one.
+pub const program_bindings = [_]Binding{
+    .{ .import = "bp_alloc", .to = "__alloc" },
+    .{ .import = "bp_random_f64", .to = random_import },
+    .{ .import = "bp_call0", .to = "" },
+    .{ .import = "bp_call1", .to = "" },
+    .{ .import = "bp_call2", .to = "" },
+    .{ .import = "bp_call3", .to = "" },
+    .{ .import = "bp_call4", .to = "" },
+};
+
+/// The runtime ABI's export prefix: the Erlang terms and the OTP functions
+/// (decision 450), exported under their own names (`rt_cons`), which the
+/// comptime runtime links (`linkWith`, `Options.runtime`).
+pub const runtime_prefix = "rt_";
+
+/// The name an import no binding serves takes, so that a call to it is
+/// refused where it is decoded (no program symbol starts with a NUL).
+const unbound_prefix = "\x00unbound:";
+
+/// How `linkWith` binds and lays out what it decodes.
+pub const Options = struct {
+    bindings: []const Binding = &program_bindings,
+    /// A stack of this many bytes, recursion allowed (the term library
+    /// recurses over terms; each frame is still checked against the
+    /// stack's floor, decision 447 (3)). Null: sized from the deepest call
+    /// chain, a recursive call refused (a program's).
+    fixed_stack: ?u32 = null,
+    /// Each wanted function also exported under its own name.
+    export_wanted: bool = false,
 };
 
 /// The function every frame's new stack pointer passes through (decision 447
@@ -205,7 +236,7 @@ fn valType(b: u8) Error!ast.ValType {
     };
 }
 
-fn read(ar: std.mem.Allocator, bytes: []const u8, diag: *Diag) Error!Module {
+fn read(ar: std.mem.Allocator, bytes: []const u8, bindings: []const Binding, diag: *Diag) Error!Module {
     if (bytes.len < 8 or !std.mem.eql(u8, bytes[0..8], &.{ 0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00 })) return error.Malformed;
     var r: Reader = .{ .b = bytes, .i = 8 };
     var types: std.ArrayListUnmanaged(ast.FuncType) = .empty;
@@ -261,9 +292,9 @@ fn read(ar: std.mem.Allocator, bytes: []const u8, diag: *Diag) Error!Module {
                     switch (kind) {
                         0 => {
                             const ti = try s.u32_();
-                            const bound = for (func_bindings) |fb| {
-                                if (std.mem.eql(u8, field, fb[0])) break fb[1];
-                            } else return unsupported(diag, "a function import other than `env.bp_alloc` and `env.bp_random_f64`");
+                            const bound = for (bindings) |fb| {
+                                if (std.mem.eql(u8, field, fb.import)) break if (fb.to.len > 0) fb.to else try std.fmt.allocPrint(ar, "{s}{s}", .{ unbound_prefix, field });
+                            } else return unsupported(diag, "a function import other than `env.bp_alloc`, `env.bp_random_f64` and `env.bp_call0` … `bp_call4`");
                             try func_imports.append(ar, bound);
                             try func_import_types.append(ar, ti);
                         },
@@ -513,6 +544,10 @@ const Body = struct {
                 0x10 => blk: {
                     const idx = try b.r.u32_();
                     if (idx >= b.names.len) return error.Malformed;
+                    if (std.mem.startsWith(u8, b.names[idx], unbound_prefix)) {
+                        b.diag.message = try std.fmt.allocPrint(b.ar, "a call of `env.{s}`, which this caller does not bind", .{b.names[idx][unbound_prefix.len..]});
+                        return error.Unsupported;
+                    }
                     if (idx >= b.m.func_imports.len) try b.callees.append(b.ar, idx);
                     if (idx < b.m.func_imports.len and std.mem.eql(u8, b.names[idx], random_import)) b.calls_random = true;
                     break :blk .{ .call = b.names[idx] };
@@ -717,13 +752,37 @@ pub fn link(ar: std.mem.Allocator, wanted: []const []const u8, floor: u32, diag:
 }
 
 pub fn linkModule(ar: std.mem.Allocator, bytes: []const u8, wanted: []const []const u8, floor: u32, diag: *Diag) Error!Linked {
-    const m = try read(ar, bytes, diag);
+    return linkWith(ar, bytes, wanted, floor, .{}, diag);
+}
+
+/// Every runtime export (`rt_*`) of `bytes`: what the comptime runtime links.
+pub fn runtimeExports(ar: std.mem.Allocator, bytes: []const u8, diag: *Diag) Error![]const []const u8 {
+    const m = try read(ar, bytes, &program_bindings, diag);
+    var out: std.ArrayListUnmanaged([]const u8) = .empty;
+    for (m.exports) |e| if (std.mem.startsWith(u8, e.name, runtime_prefix)) try out.append(ar, e.name);
+    return out.items;
+}
+
+/// `wanted` names an export either as `<module>.<function>` (a `std:`
+/// export) or by its runtime name (`rt_cons`).
+fn exportMatches(name: []const u8, w: []const u8) bool {
+    if (std.mem.startsWith(u8, w, runtime_prefix)) return std.mem.eql(u8, name, w);
+    return std.mem.startsWith(u8, name, export_prefix) and std.mem.eql(u8, name[export_prefix.len..], w);
+}
+
+pub fn linkWith(ar: std.mem.Allocator, bytes: []const u8, wanted: []const []const u8, floor: u32, opts: Options, diag: *Diag) Error!Linked {
+    const m = try read(ar, bytes, opts.bindings, diag);
     const nimp = m.func_imports.len;
     const total = nimp + m.bodies.len;
     const names = try ar.alloc([]const u8, total);
     for (names, 0..) |*n, i| n.* = if (i < nimp) m.func_imports[i] else try std.fmt.allocPrint(ar, "__std_f{d}", .{i - nimp});
     for (m.exports) |e| {
-        if (!std.mem.startsWith(u8, e.name, export_prefix)) return unsupported(diag, "an export not named `std:<module>.<function>`");
+        if (std.mem.startsWith(u8, e.name, runtime_prefix)) {
+            // Folded functions share an index: the first name names it.
+            if (e.func < nimp or !std.mem.startsWith(u8, names[e.func], runtime_prefix)) names[e.func] = e.name;
+            continue;
+        }
+        if (!std.mem.startsWith(u8, e.name, export_prefix)) return unsupported(diag, "an export not named `std:<module>.<function>` or `rt_<…>`");
         names[e.func] = try entryName(ar, e.name[export_prefix.len..]);
     }
 
@@ -735,7 +794,7 @@ pub fn linkModule(ar: std.mem.Allocator, bytes: []const u8, wanted: []const []co
     var queue: std.ArrayListUnmanaged(u32) = .empty;
     for (wanted) |w| {
         const e = for (m.exports) |e| {
-            if (std.mem.startsWith(u8, e.name, export_prefix) and std.mem.eql(u8, e.name[export_prefix.len..], w)) break e;
+            if (exportMatches(e.name, w)) break e;
         } else {
             diag.message = try std.fmt.allocPrint(ar, "std-wasm's program face exports no `{s}`", .{w});
             return error.Unsupported;
@@ -761,7 +820,9 @@ pub fn linkModule(ar: std.mem.Allocator, bytes: []const u8, wanted: []const []co
     var depth: std.AutoHashMapUnmanaged(u32, u32) = .empty;
     var on_path: std.AutoHashMapUnmanaged(u32, void) = .empty;
     var stack_bytes: u32 = 0;
-    for (decoded.keys()) |idx| stack_bytes = @max(stack_bytes, try chain(ar, &decoded, &depth, &on_path, idx, diag));
+    if (opts.fixed_stack) |n| {
+        stack_bytes = n;
+    } else for (decoded.keys()) |idx| stack_bytes = @max(stack_bytes, try chain(ar, &decoded, &depth, &on_path, idx, diag));
 
     var items: std.ArrayListUnmanaged(ast.Item) = .empty;
     var size: u32 = 0;
@@ -789,7 +850,18 @@ pub fn linkModule(ar: std.mem.Allocator, bytes: []const u8, wanted: []const []co
     };
     var funcs: std.ArrayListUnmanaged(Fn) = .empty;
     for (decoded.keys(), decoded.values()) |idx, d| {
-        try items.append(ar, .{ .func = d.func });
+        var func = d.func;
+        if (opts.export_wanted) {
+            // Every wanted name of this function: identical functions are
+            // folded into one, which then carries several exports.
+            var names_of: std.ArrayListUnmanaged([]const u8) = .empty;
+            for (m.exports) |e| if (e.func == idx) for (wanted) |w| if (exportMatches(e.name, w)) {
+                try names_of.append(ar, e.name);
+                break;
+            };
+            func.exports = names_of.items;
+        }
+        try items.append(ar, .{ .func = func });
         const label = for (m.exports) |e| {
             if (e.func == idx) break e.name;
         } else d.func.name;
@@ -865,7 +937,7 @@ test "Fn.hash ---- a change in one function's bytes changes that function's hash
     const base = try link(ar, &wanted, 301, &diag);
     try std.testing.expect(base.funcs.len > 1);
 
-    const m = try read(ar, module_bytes, &diag);
+    const m = try read(ar, module_bytes, &program_bindings, &diag);
     const copy = try ar.dupe(u8, module_bytes);
     // Flip one bit of the first byte, counting from the end of an exported
     // function's body, whose module still links to the same set of functions.

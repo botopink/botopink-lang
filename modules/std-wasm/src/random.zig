@@ -5,7 +5,7 @@
 //! The stream holds no entropy of its own: a draw before any `seed` answers
 //! null, and the caller decides what an unseeded draw is — the program's face
 //! (`wasm.zig`) asks the host (`env.bp_random_f64`, the program's
-//! `$__wasi_random_f64`), the comptime face (`rt.zig`) refuses it, because a
+//! `$__wasi_random_f64`), the comptime face (`term_faces.zig`) refuses it, because a
 //! build has no entropy (451 (3)).
 const std = @import("std");
 

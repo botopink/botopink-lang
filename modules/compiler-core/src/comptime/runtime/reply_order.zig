@@ -3,7 +3,7 @@
 //!
 //! A reply is `json:encode` of an Erlang map, and a map's iteration order is
 //! an atom-table order for atom keys — which atoms were created first, an
-//! accident the wasm runtime approximates (`rt.zig` `atomRank`) and nothing
+//! accident the wasm runtime approximates (std-wasm's `term.zig` `atomRank`) and nothing
 //! should depend on: the `COMPTIME REPLY` snapshot section (`trace.zig`) and a
 //! map lifted by `@expr` (`template_eval.zig` `typedValue` — a labeled tuple,
 //! whose field order is its type) read the reply in this order.

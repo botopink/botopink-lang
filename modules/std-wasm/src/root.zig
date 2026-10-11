@@ -1,24 +1,32 @@
-//! std-wasm — std's host functions in Zig, compiled to wasm (decisions 434
-//! (2), 440).
+//! std-wasm — botopink's wasm runtime in Zig (decisions 434 (2), 440, 449,
+//! 450, 454): std's host functions, and the Erlang terms with the OTP
+//! functions over them.
 //!
-//! One implementation for two consumers (decision 440 (1)):
+//! Two value representations, each in its own file (decision 450 (4)):
 //!
+//! - **the wasm codegen's typed layout** — a string is the address of its
+//!   `u32` length with the bytes behind it, an array its slot words:
+//!   `wasm.zig`, the program face, over the pure algorithms (`text`,
+//!   `number`, `array`, `bigint`, `hash`, `random`);
+//! - **the Erlang terms** — `term.zig` (atoms, tuples, lists, maps,
+//!   binaries, funs, the exceptions), the OTP functions and BIFs over them
+//!   (`otp.zig`: `otp/*.zig` and the `module:name/arity` table), and each
+//!   `exports` entry's comptime face (`term_faces.zig`).
+//!
+//! Both are compiled into one module, `std_wasm.wasm` (a position-independent
+//! side module, `zig build std-wasm`), whose functions are decoded into their
+//! caller (`compiler-core/src/codegen/wat/std_wasm_link.zig`):
+//!
+//! - **a `--target wasm` program** links the `std:` exports it calls;
 //! - **the comptime runtime** (wasm3 in-process,
-//!   `compiler-core/src/comptime/runtime/wat/`) is compiled with this
-//!   package — `rt.zig`, the term library a lowered comptime module links
-//!   against, imports it — and serves each entry of `exports` as the runtime
-//!   export `rt_std_<symbol>`, plus the text and number algorithms behind the
-//!   OTP calls a comptime module's primitive methods make
-//!   (`string:uppercase/1`, `string:trim/1,2`, `float_to_binary/2` …);
-//! - **a `--target wasm` program**: `wasm.zig` is the package's program
-//!   face, compiled to `std_wasm.wasm` (a position-independent side module,
-//!   `zig build std-wasm`), whose functions the wasm codegen decodes into the
-//!   program's own module (`compiler-core/src/codegen/wat/std_wasm_link.zig`).
+//!   `compiler-core/src/comptime/runtime/wat/runtime_module.zig`) links every
+//!   `rt_*` export — the terms, the OTP functions, the comptime faces — once
+//!   per process; a comptime module's calls resolve to them.
 //!
 //! A std function is served by std-wasm only where its
 //! `#[@External.Wasm("std:<module>.<function>")]` cell names one of `exports`
-//! (decision 440 (3)); there is no match by name. Everything here is pure —
-//! no term layout, no allocation of its own. Each function has a Zig unit
+//! (decision 440 (3)); there is no match by name. Allocation is always the
+//! caller's (`env.bp_alloc`, decision 450 (5)). Each function has a Zig unit
 //! test.
 const std = @import("std");
 
@@ -28,6 +36,9 @@ pub const number = @import("number.zig");
 pub const array = @import("array.zig");
 pub const bigint = @import("bigint.zig");
 pub const case_tables = @import("case_tables.zig");
+pub const term = @import("term.zig");
+pub const term_faces = @import("term_faces.zig");
+pub const otp = @import("otp.zig");
 pub const random = @import("random.zig");
 
 /// A botopink type an export takes or answers. A `string` crosses as the
@@ -100,7 +111,8 @@ pub const erlang_module = "bp_std_wasm";
 
 /// Every function std-wasm implements, by the name a `std:` cell gives it.
 /// `wasm.zig` exports each under that name with the matching wasm signature,
-/// and `rt.zig` serves each at comptime — both checked at compile time.
+/// and `term_faces.zig` serves each at comptime (`rt_std_<symbol>`) — both
+/// checked at compile time.
 pub const exports = [_]Export{
     .{ .name = "hash.contentHash", .params = &.{.string}, .result = .string, .api = "hash.contentHash" },
     .{ .name = "text.trim", .params = &.{.string}, .result = .string, .api = "String.trim" },
@@ -232,6 +244,9 @@ pub const names = blk: {
 };
 
 test {
+    _ = term;
+    _ = term_faces;
+    _ = otp;
     _ = hash;
     _ = text;
     _ = number;

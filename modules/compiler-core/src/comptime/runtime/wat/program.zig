@@ -1,7 +1,8 @@
 //! A generated comptime module, made runnable on the wat runtime: its `.erl`
 //! text and the resident prelude it imports are parsed (`erl_parse.zig`),
-//! lowered to one wat module (`lower.zig`) and linked into the embedded
-//! runtime bytes (`link.zig`, `rt.zig`). The result is cached by module atom —
+//! lowered to one wat module (`lower.zig`) and linked into the runtime's
+//! bytes (`link.zig`) — std-wasm's term library, linked from `std_wasm.wasm`
+//! once per process (`runtime_module.zig`, decision 450 (3)). The result is cached by module atom —
 //! the atom is the content hash of the text, so a hit is the same program.
 //!
 //! A construct the lowering cannot take is a **refusal** naming it
@@ -12,10 +13,7 @@ const lower = @import("lower.zig");
 const link = @import("link.zig");
 const preludeMod = @import("../prelude.zig");
 const watEmitter = @import("../../../codegen/wat/wat_emitter.zig");
-
-/// The runtime's bytes, compiled from `rt.zig` for `wasm32-freestanding` by
-/// the root `build.zig` (`bp_wat_rt.wasm`).
-pub const runtime_bytes = @embedFile("bp_wat_rt.wasm");
+const runtimeModule = @import("runtime_module.zig");
 
 pub const Built = union(enum) {
     ok: struct {
@@ -38,6 +36,21 @@ const cache_alloc = std.heap.page_allocator;
 var cache_lock: std.atomic.Value(u8) = .init(0);
 var cache: std.StringHashMapUnmanaged(Built) = .empty;
 var preludes: ?[]const ep.Module = null;
+var runtime: ?[]const u8 = null;
+
+/// The runtime's bytes (`runtime_module.zig`), linked once per process.
+/// Called with the lock held; null when std-wasm does not link (a defect
+/// of this tree, reported for every evaluation).
+fn runtimeBytes() Error!?[]const u8 {
+    if (runtime) |r| return r;
+    var arena_state = std.heap.ArenaAllocator.init(cache_alloc);
+    const bytes = runtimeModule.build(arena_state.allocator()) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        else => return null,
+    };
+    runtime = bytes;
+    return bytes;
+}
 
 fn lock() void {
     while (cache_lock.cmpxchgWeak(0, 1, .acquire, .monotonic)) |_| std.atomic.spinLoopHint();
@@ -115,6 +128,7 @@ fn buildUncached(ar: std.mem.Allocator, code: []const u8) Error!Built {
     watEmitter.renderModule(&aw.writer, lowered.module) catch |err| return .{
         .refused = try std.fmt.allocPrint(ar, "the lowered wat module is invalid ({s})", .{@errorName(err)}),
     };
+    const runtime_bytes = (try runtimeBytes()) orelse return .{ .refused = try std.fmt.allocPrint(ar, "the wat runtime could not link std-wasm's term library ({s})", .{runtimeModule.failure}) };
     const wasm = link.link(ar, runtime_bytes, lowered.module, lowered.data) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         else => return .{ .refused = try std.fmt.allocPrint(ar, "the wat runtime could not link the module ({s})", .{@errorName(err)}) },

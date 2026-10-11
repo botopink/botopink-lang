@@ -7,11 +7,11 @@
 //! the set to a function another exports followed. It reads the chunks
 //! (`chunks.zig`) and the instruction stream (`code.zig`) and lowers each
 //! function (`lower.zig`) to wasm over a runtime's term ABI (`ir.zig`,
-//! `lower.runtime`); a BIF or OTP call binds to the export the caller's
-//! table names (`Bif`) — the comptime runtime's, whose OTP functions are
-//! std-wasm's implementations, never OTP's own `.beam`. It knows nothing of
-//! botopink the language: it imports Zig's `std` alone (and may import
-//! std-wasm, nothing else — root `build.zig` checks the module graph).
+//! `lower.runtime`); a BIF or OTP call binds to the export std-wasm's OTP
+//! table names (`std_wasm.otp.table`, decision 450 (2)) — std-wasm's
+//! implementations over its Erlang terms, never OTP's own `.beam`. It knows
+//! nothing of botopink the language: it imports Zig's `std` and std-wasm,
+//! nothing else (root `build.zig` checks the module graph, decision 438).
 //!
 //! Anything it does not convert — an opcode, a call nothing serves, an
 //! operand or a literal of another kind — refuses the function that holds
@@ -25,7 +25,6 @@ pub const code = @import("code.zig");
 pub const ir = @import("ir.zig");
 pub const lower = @import("lower.zig");
 
-pub const Bif = lower.Bif;
 pub const runtime = lower.runtime;
 
 /// What is not converted, and where: `what` names it (`opcode 4 (call)`,
@@ -56,10 +55,10 @@ pub const SetResult = union(enum) {
 
 /// Translate the `.beam` files `files` as one set: a call from one to a
 /// function another exports is a `call` of it; any other call binds through
-/// `bifs`. Refused as a whole only for a file that does not read as BEAM,
+/// std-wasm's OTP table. Refused as a whole only for a file that does not read as BEAM,
 /// or two files of one module; a function that does not convert carries its
 /// refusal. Everything answered lives in `arena`.
-pub fn translateSet(arena: std.mem.Allocator, files: []const []const u8, bifs: []const Bif) error{OutOfMemory}!SetResult {
+pub fn translateSet(arena: std.mem.Allocator, files: []const []const u8) error{OutOfMemory}!SetResult {
     const beams = try arena.alloc(chunks.Beam, files.len);
     for (files, beams) |bytes, *b| b.* = chunks.read(arena, bytes) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
@@ -79,7 +78,7 @@ pub fn translateSet(arena: std.mem.Allocator, files: []const []const u8, bifs: [
             .what = try std.fmt.allocPrint(arena, "opcode {d}, which genop.tab (OTP 28) does not number", .{op}),
             .module = b.moduleName(),
         } };
-        var l: lower.Lowerer = .{ .ar = arena, .beam = b, .modules = beams, .bifs = bifs };
+        var l: lower.Lowerer = .{ .ar = arena, .beam = b, .modules = beams };
         const functions = l.lowerAll(decoded.instrs) catch |err| switch (err) {
             error.OutOfMemory => return error.OutOfMemory,
             error.Refused => return .{ .refused = .{ .what = l.refusal, .module = b.moduleName() } },
@@ -90,8 +89,8 @@ pub fn translateSet(arena: std.mem.Allocator, files: []const []const u8, bifs: [
 }
 
 /// Translate one `.beam` file (a set of one).
-pub fn translate(arena: std.mem.Allocator, bytes: []const u8, bifs: []const Bif) error{OutOfMemory}!Result {
-    return switch (try translateSet(arena, &.{bytes}, bifs)) {
+pub fn translate(arena: std.mem.Allocator, bytes: []const u8) error{OutOfMemory}!Result {
+    return switch (try translateSet(arena, &.{bytes})) {
         .ok => |ms| .{ .ok = ms[0] },
         .refused => |r| .{ .refused = r },
     };
@@ -140,14 +139,6 @@ pub const testdata = struct {
     pub const greeting_text = @embedFile("testdata/erlc/greeting_text.beam");
 };
 
-const test_bifs = [_]Bif{
-    .{ .module = "erlang", .name = "iolist_to_binary", .arity = 1, .rt = "rt_erlang_iolist_to_binary" },
-    .{ .module = "erlang", .name = "error", .arity = 1, .rt = "rt_error" },
-    .{ .module = "lists", .name = "reverse", .arity = 1, .rt = "rt_lists_reverse" },
-    .{ .module = "string", .name = "uppercase", .arity = 1, .rt = "rt_string_uppercase" },
-    .{ .module = "string", .name = "titlecase", .arity = 1, .rt = "rt_string_titlecase" },
-};
-
 test {
     _ = chunks;
     _ = code;
@@ -156,7 +147,7 @@ test {
 test "translate: a cell the compiler assembled, one function over the measured subset" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
-    const r = try translate(arena_state.allocator(), @embedFile("testdata/bp_cell_bang.beam"), &test_bifs);
+    const r = try translate(arena_state.allocator(), @embedFile("testdata/bp_cell_bang.beam"));
     const m = r.ok;
     try std.testing.expectEqualStrings("bp_cell_bang", m.name);
     try std.testing.expectEqual(@as(usize, 1), m.functions.len);
@@ -196,7 +187,7 @@ test "translate: call_ext binds the BIF, put_list conses, is_binary tests, liter
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
     const ar = arena_state.allocator();
-    const r = try translate(ar, @embedFile("testdata/bp_cell_wrap.beam"), &test_bifs);
+    const r = try translate(ar, @embedFile("testdata/bp_cell_wrap.beam"));
     try expectCalls(ar, r.ok.functions[0], &.{
         "rt_function_clause", // label 1: func_info
         "rt_is", // label 2: is_binary
@@ -206,17 +197,6 @@ test "translate: call_ext binds the BIF, put_list conses, is_binary tests, liter
         "rt_erlang_iolist_to_binary", // call_ext
         "rt_atom", "rt_error", // label 5: error(badarg)
     });
-}
-
-test "translate: a call the runtime has no BIF for refuses the function, named" {
-    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena_state.deinit();
-    const ar = arena_state.allocator();
-    const only_error = [_]Bif{test_bifs[1]};
-    const m = (try translate(ar, @embedFile("testdata/bp_cell_bang.beam"), &only_error)).ok;
-    try std.testing.expectEqualStrings("`erlang:iolist_to_binary/1`", m.functions[0].refused.?);
-    const r = (try refusalReaching(ar, &.{m}, "bp_cell_bang", "t/1")).?;
-    try std.testing.expectEqualStrings("`erlang:iolist_to_binary/1` in `bp_cell_bang:t/1`", try std.fmt.allocPrint(ar, "{f}", .{r}));
 }
 
 test "translate: an opcode outside the converted ones refuses the function, named" {
@@ -233,14 +213,14 @@ test "translate: an opcode outside the converted ones refuses the function, name
     bytes[at] = 20;
     bytes[at + 1] = 21;
     bytes[at + 2] = 21;
-    const m = (try translate(ar, bytes, &test_bifs)).ok;
+    const m = (try translate(ar, bytes)).ok;
     try std.testing.expectEqualStrings("opcode 20 (send)", m.functions[0].refused.?);
 }
 
 test "translate: not a BEAM file" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
-    const r = try translate(arena_state.allocator(), "not beam", &test_bifs);
+    const r = try translate(arena_state.allocator(), "not beam");
     try std.testing.expectEqualStrings("a file that does not read as BEAM", r.refused.what);
 }
 
@@ -248,7 +228,7 @@ test "translateSet: erlc's modules, whole — a call between them followed, loca
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
     const ar = arena_state.allocator();
-    const set = (try translateSet(ar, &.{ testdata.greeting, testdata.greeting_text }, &test_bifs)).ok;
+    const set = (try translateSet(ar, &.{ testdata.greeting, testdata.greeting_text })).ok;
     try std.testing.expectEqualStrings("greeting", set[0].name);
     try std.testing.expectEqualStrings("greeting_text", set[1].name);
 
@@ -302,7 +282,7 @@ test "translateSet: a module not given is a call nothing serves, refused where i
     defer arena_state.deinit();
     const ar = arena_state.allocator();
     // greeting alone: greeting_text:title/1 is no BIF and no module of the set.
-    const set = (try translateSet(ar, &.{testdata.greeting}, &test_bifs)).ok;
+    const set = (try translateSet(ar, &.{testdata.greeting})).ok;
     try std.testing.expectEqualStrings("`greeting_text:title/1`", set[0].find("hello/1").?.refused.?);
     // shout_all/1 does not reach it.
     try std.testing.expectEqual(@as(?Refusal, null), try refusalReaching(ar, set, "greeting", "shout_all/1"));
@@ -310,18 +290,18 @@ test "translateSet: a module not given is a call nothing serves, refused where i
     try std.testing.expectEqualStrings("`greeting_text:title/1` in `greeting:hello/1`", try std.fmt.allocPrint(ar, "{f}", .{r}));
 }
 
-test "translateSet: an OTP function the caller's runtime does not serve is refused, named" {
+test "translateSet: an OTP function std-wasm does not serve is refused, named, where it is reached" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
     const ar = arena_state.allocator();
-    const set = (try translateSet(ar, &.{ testdata.greeting, testdata.greeting_text }, test_bifs[0..4])).ok;
-    const r = (try refusalReaching(ar, set, "greeting", "hello/1")).?;
-    try std.testing.expectEqualStrings("`string:titlecase/1` in `greeting_text:title/1`", try std.fmt.allocPrint(ar, "{f}", .{r}));
+    const set = (try translateSet(ar, &.{ testdata.greeting, testdata.greeting_text })).ok;
+    const r = (try refusalReaching(ar, set, "greeting", "module_info/0")).?;
+    try std.testing.expectEqualStrings("`erlang:get_module_info/1` in `greeting:module_info/0`", try std.fmt.allocPrint(ar, "{f}", .{r}));
 }
 
 test "translateSet: two files of one module" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
-    const r = try translateSet(arena_state.allocator(), &.{ testdata.greeting, testdata.greeting }, &test_bifs);
+    const r = try translateSet(arena_state.allocator(), &.{ testdata.greeting, testdata.greeting });
     try std.testing.expectEqualStrings("two files of module `greeting`", r.refused.what);
 }

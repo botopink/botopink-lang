@@ -635,11 +635,11 @@ fn main() {
     )
     local.get $sp
   )
-  ;; __std_f3 — from std_wasm.wasm (sha256 b4b6f06748d6)
-  ;; __std_f44 — from std_wasm.wasm (sha256 c9ad15c4086e)
-  ;; __std_f45 — from std_wasm.wasm (sha256 432c7dfb021a)
-  ;; __std_f46 — from std_wasm.wasm (sha256 dd7a963bffe6)
-  ;; std:number.i32ToString — from std_wasm.wasm (sha256 31a2b7190fa4)
+  ;; __std_f4 — from std_wasm.wasm (sha256 b4b6f06748d6)
+  ;; __std_f55 — from std_wasm.wasm (sha256 bb2e80829d8e)
+  ;; __std_f56 — from std_wasm.wasm (sha256 432c7dfb021a)
+  ;; __std_f388 — from std_wasm.wasm (sha256 f0b92bbf4191)
+  ;; std:number.i32ToString — from std_wasm.wasm (sha256 7b2719aa12dc)
 )
 ```
 

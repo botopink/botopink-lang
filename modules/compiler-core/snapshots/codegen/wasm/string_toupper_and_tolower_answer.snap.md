@@ -12,7 +12,7 @@ fn main() {
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
   (data (i32.const 256) "\02\00\00\00aB")
-  (global $__heap_ptr (mut i32) (i32.const 336))
+  (global $__heap_ptr (mut i32) (i32.const 320))
   (func $main
     i32.const 256
     call $__std_text_toUpper
@@ -275,7 +275,7 @@ fn main() {
     local.get $p
   )
   ;; std-wasm (decision 440): its functions, transpiled from std_wasm.wasm
-  (global $__std_sp (mut i32) (i32.const 336))
+  (global $__std_sp (mut i32) (i32.const 320))
   (func $__std_sp_check (param $sp i32) (result i32)
     local.get $sp
     i32.const 264
@@ -285,14 +285,16 @@ fn main() {
     )
     local.get $sp
   )
-  ;; __std_f7 — from std_wasm.wasm (sha256 91fc3314249d)
-  ;; std:text.toLower — from std_wasm.wasm (sha256 9c7029295b3b)
-  ;; __std_f66 — from std_wasm.wasm (sha256 78d8b4024bc3)
-  ;; std:text.toUpper — from std_wasm.wasm (sha256 7583443f4594)
-  ;; __std_f68 — from std_wasm.wasm (sha256 2f81dc7302bb)
-  ;; __std_f69 — from std_wasm.wasm (sha256 38e98c1edeed)
-  ;; __std_f70 — from std_wasm.wasm (sha256 96b721b5358a)
-  ;; __std_f71 — from std_wasm.wasm (sha256 30c514d3cfe8)
+  ;; __std_f126 — from std_wasm.wasm (sha256 20c65a894026)
+  ;; __std_f127 — from std_wasm.wasm (sha256 0d4ddb046119)
+  ;; __std_f128 — from std_wasm.wasm (sha256 2f81dc7302bb)
+  ;; __std_f129 — from std_wasm.wasm (sha256 38e98c1edeed)
+  ;; __std_f130 — from std_wasm.wasm (sha256 16c99e1a095a)
+  ;; __std_f131 — from std_wasm.wasm (sha256 30c514d3cfe8)
+  ;; __std_f352 — from std_wasm.wasm (sha256 91fc3314249d)
+  ;; std:text.toLower — from std_wasm.wasm (sha256 d706f50d8c81)
+  ;; __std_f406 — from std_wasm.wasm (sha256 0de21fb6b179)
+  ;; std:text.toUpper — from std_wasm.wasm (sha256 079156d810b0)
 )
 ```
 

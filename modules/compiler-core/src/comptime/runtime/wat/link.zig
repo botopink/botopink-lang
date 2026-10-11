@@ -1,5 +1,5 @@
-//! One wasm module out of two: the runtime's prebuilt bytes (`rt.zig`,
-//! compiled at `zig build`) and a lowered comptime program (`lower.zig`'s
+//! One wasm module out of two: the runtime's bytes (`runtime_module.zig`,
+//! std-wasm's term library linked once per process) and a lowered comptime program (`lower.zig`'s
 //! `wat_ast.Module`, which imports its runtime calls from `"rt"`).
 //!
 //! The runtime's sections are kept as they are — its code bodies are copied

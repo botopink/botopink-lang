@@ -7,9 +7,9 @@ A standalone utility, `.beam` in, wasm out (decisions 434 (3), 438; front 144 B-
 `.beam` files — erlc's output of a botopink cell or sidecar, the compiler's own assembler's, a
 module any BEAM compiler produced (Erlang, Elixir, Gleam …) — and translates them whole, module by
 module, a call from one module of the set to a function another exports followed. It reads
-bytecode, never the language it came from. A BIF or OTP function is bound to the export the
-caller's runtime table names — the comptime runtime's, whose OTP functions are std-wasm's
-implementations, never translated from OTP's own `.beam`. What it does not convert — an opcode, a
+bytecode, never the language it came from. A BIF or OTP function is bound to the export std-wasm's
+OTP table names (`std_wasm.otp.table`, decision 450 (2)) — std-wasm's implementations over its
+Erlang terms, never translated from OTP's own `.beam`; no caller passes a table. What it does not convert — an opcode, a
 call nothing serves, an operand or a literal of another kind — refuses the function that holds it,
 named; the refusal reaches a caller only when a call reaches that function, located
 (`` `re:run/3` in `mymod:f/1` ``). **It has no role in botopink for now (decision 452):** the
@@ -26,9 +26,13 @@ else: no compiler-core, `manifest`, `bpmp`, AST, library resolution or diagnosti
 `build.zig` checks it once the module graph is wired (`requireStandalone`, the last thing `build`
 does): any other entry of the module's import table — or of its test module's — fails the build,
 named, before a step runs. A file outside `src/` cannot be imported at all (Zig refuses a path
-outside a module's root), so the import table is the whole check. Today it imports `std` alone:
-the BIF table is the caller's (`Bif`), since the term library that answers those calls lives in
-the caller's runtime.
+outside a module's root), so the import table is the whole check.
+std-wasm is the one module it imports besides `std` (decision 450 (2)): its OTP table binds every
+BIF and OTP call (`Bif` is std-wasm's `otp.Bif`), and its term library (`term.zig`, `otp/*.zig`)
+is the runtime the translated code calls. A comptime check in `lower.zig` holds this module's view
+of the term ABI to std-wasm's: every name `runtime` lists and every operator's export is one of
+std-wasm's runtime exports (`otp.isRuntimeExport`), every `runtime.Kind` its number in
+`term.Kind`.
 
 ## Tree
 
@@ -36,7 +40,7 @@ the caller's runtime.
 beam-to-wasm/
 ├── AGENTS.md          ← you are here
 └── src/
-    ├── root.zig       ← `translateSet(arena, files, bifs) → SetResult{ ok: []ir.Module, refused: Refusal }`, `translate` (a set of one), `find`, `refusalReaching`, `testdata`
+    ├── root.zig       ← `translateSet(arena, files) → SetResult{ ok: []ir.Module, refused: Refusal }`, `translate` (a set of one), `find`, `refusalReaching`, `testdata`
     ├── chunks.zig     ← the IFF container: `AtU8` (both forms), `Code`, `StrT`, `ImpT`, `ExpT`, `LitT` (zlib or stored, `std.compress.flate`)
     ├── code.zig       ← the instruction stream: every opcode of `genop.tab` (`genop`, OTP 28: 1–184) and the compact-term operands
     ├── lower.zig      ← BEAM instructions → `ir.Function`s; the runtime ABI it calls (`runtime`)
@@ -70,8 +74,8 @@ beam-to-wasm/
   refusals: a file that does not read as BEAM, two files of one module.
 - **Calls**: `call` / `call_last` / `call_only` reach this module's function by its entry label;
   `call_ext*` naming a module of the set reach the function it exports (an unexported one is a call
-  nothing serves); an `erlang` operator (`+`, `-`, `div`, `band` …, `runtime.operators`) or a BIF of
-  the caller's table (`Bif`) is a runtime export. A tail call is a call and a return (the stack, not
+  nothing serves); an `erlang` operator (`+`, `-`, `div`, `band` …, `runtime.operators`) or an OTP
+  function of std-wasm's table (`Bif`) is a runtime export; anything else is a call nothing serves. A tail call is a call and a return (the stack, not
   a jump: an Erlang loop's depth is its iteration count, as on the comptime runtime). `bif*` /
   `gc_bif*` with a fail label clear the exception and jump there (a guard); with `{f,0}` it raises.
 - **Control flow**: a BEAM function is a graph of labels, wasm's control is structured. A function
@@ -89,7 +93,7 @@ beam-to-wasm/
   with `runtime.Kind`, `rt_eq`, `rt_eqx`, `rt_cmp`), the binary builder (`rt_bb_new`, `rt_bb_bin`,
   `rt_bb_int`, `rt_bb_utf8`, `rt_bb_end`), exceptions (`rt_pending`, `rt_clear`,
   `rt_function_clause`, `rt_badmatch`, `rt_case_clause`, `rt_if_clause`) and the operators.
-  The caller's runtime holds every name and kind (`runtime.Kind`) to its own term library.
+  Each is std-wasm's (`modules/std-wasm/src/term.zig`), checked at compile time.
 - **Output**: `ir.Module{ name, functions }` per file, for the caller to emit.
 
 ## The opcodes converted
@@ -157,11 +161,10 @@ comptime modules):**
 `zig build test` runs `src/root.zig`'s tests: the chunk reader on a measured cell, each compact-term
 tag and value width, the extended `literal` / `list` / `tr` / `fr` / `alloc` terms, every `genop`
 opcode decoding (and its table matching OTP's numbering), the two cells translated (one function,
-its BIF calls, `put_list` conses, `is_binary`, literals materialised), a call outside the BIF table
-and an opcode outside the converted ones refusing the function, by name and located, a file that is
-not BEAM; and `erlc`'s two modules translated as a set (`translateSet`: compact atoms, a stored
+its BIF calls, `put_list` conses, `is_binary`, literals materialised), an opcode outside the
+converted ones refusing the function, by name and located, a file that is not BEAM; and `erlc`'s two modules translated as a set (`translateSet`: compact atoms, a stored
 `LitT`, `StrT`, the call from `greeting` into `greeting_text`, local and tail calls, `get_list`,
 `gc_bif` `+`, `is_eq_exact`, `bs_create_bin`), the `module_info` functions refused only where
-reached, a module left out of the set and an OTP function the table lacks refused where the call
-is made, two files of one module. Nothing else runs it: compiler-core no longer holds a consumer
+reached, a module left out of the set refused where the call is made, an OTP function std-wasm's
+table lacks (`erlang:get_module_info/1`) refused where it is reached, two files of one module. Nothing else runs it: compiler-core no longer holds a consumer
 of this module (decision 452). Regenerate the fixture with `erlc +deterministic greeting.erl greeting_text.erl` in `src/testdata/erlc/`.

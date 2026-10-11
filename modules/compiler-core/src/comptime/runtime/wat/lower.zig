@@ -1,6 +1,6 @@
 //! Erlang (the generated comptime module and its resident prelude, as
 //! `erl_parse.zig` reads them) → a `codegen/wat/wat_ast.zig` module whose
-//! every value is a term of `rt.zig`.
+//! every value is a term of std-wasm's `term.zig` (decision 450).
 //!
 //! The output is a self-describing wasm module: it imports the runtime
 //! functions it calls from module `"rt"` (`(import "rt" "rt_add" …)`), declares
@@ -124,9 +124,10 @@ const rt_sigs = std.StaticStringMap(RtSig).initComptime(.{
 });
 
 /// A BIF the runtime answers: `module:name/arity` → the export that does it.
-const Bif = struct { module: []const u8, name: []const u8, arity: usize, rt: []const u8 };
+const Bif = stdWasm.otp.Bif;
 
-const bifs = otp_bifs ++ std_wasm_bifs;
+/// std-wasm's OTP table (decision 450), then the `bp_std_wasm` family.
+const bifs = stdWasm.otp.table ++ std_wasm_bifs;
 
 /// The functions std-wasm implements (`stdWasm.exports`): a call
 /// `bp_std_wasm:<symbol>(…)` — what `host_cells.forRuntime` makes of a host
@@ -136,153 +137,6 @@ const std_wasm_bifs = blk: {
     var out: [stdWasm.exports.len]Bif = undefined;
     for (stdWasm.exports, 0..) |e, i| out[i] = .{ .module = stdWasm.erlang_module, .name = e.symbol(), .arity = e.params.len, .rt = "rt_std_" ++ e.symbol() };
     break :blk out;
-};
-
-const otp_bifs = [_]Bif{
-    // erlang
-    .{ .module = "erlang", .name = "element", .arity = 2, .rt = "rt_erlang_element" },
-    .{ .module = "erlang", .name = "setelement", .arity = 3, .rt = "rt_erlang_setelement" },
-    .{ .module = "erlang", .name = "tuple_size", .arity = 1, .rt = "rt_erlang_tuple_size" },
-    .{ .module = "erlang", .name = "size", .arity = 1, .rt = "rt_erlang_tuple_size" },
-    .{ .module = "erlang", .name = "tuple_to_list", .arity = 1, .rt = "rt_erlang_tuple_to_list" },
-    .{ .module = "erlang", .name = "list_to_tuple", .arity = 1, .rt = "rt_erlang_list_to_tuple" },
-    .{ .module = "erlang", .name = "length", .arity = 1, .rt = "rt_erlang_length" },
-    .{ .module = "erlang", .name = "hd", .arity = 1, .rt = "rt_erlang_hd" },
-    .{ .module = "erlang", .name = "tl", .arity = 1, .rt = "rt_erlang_tl" },
-    .{ .module = "erlang", .name = "byte_size", .arity = 1, .rt = "rt_erlang_byte_size" },
-    .{ .module = "erlang", .name = "map_size", .arity = 1, .rt = "rt_erlang_map_size" },
-    .{ .module = "erlang", .name = "abs", .arity = 1, .rt = "rt_erlang_abs" },
-    .{ .module = "erlang", .name = "max", .arity = 2, .rt = "rt_erlang_max" },
-    .{ .module = "erlang", .name = "min", .arity = 2, .rt = "rt_erlang_min" },
-    .{ .module = "erlang", .name = "round", .arity = 1, .rt = "rt_erlang_round" },
-    .{ .module = "erlang", .name = "trunc", .arity = 1, .rt = "rt_erlang_trunc" },
-    .{ .module = "erlang", .name = "floor", .arity = 1, .rt = "rt_erlang_floor" },
-    .{ .module = "erlang", .name = "ceil", .arity = 1, .rt = "rt_erlang_ceil" },
-    .{ .module = "erlang", .name = "float", .arity = 1, .rt = "rt_erlang_float" },
-    .{ .module = "erlang", .name = "integer_to_binary", .arity = 1, .rt = "rt_erlang_integer_to_binary" },
-    .{ .module = "erlang", .name = "integer_to_list", .arity = 1, .rt = "rt_erlang_integer_to_list" },
-    .{ .module = "erlang", .name = "binary_to_integer", .arity = 1, .rt = "rt_erlang_binary_to_integer" },
-    .{ .module = "erlang", .name = "list_to_integer", .arity = 1, .rt = "rt_erlang_list_to_integer" },
-    .{ .module = "erlang", .name = "atom_to_binary", .arity = 1, .rt = "rt_erlang_atom_to_binary" },
-    .{ .module = "erlang", .name = "atom_to_binary", .arity = 2, .rt = "rt_erlang_atom_to_binary2" },
-    .{ .module = "erlang", .name = "atom_to_list", .arity = 1, .rt = "rt_erlang_atom_to_list" },
-    .{ .module = "erlang", .name = "binary_to_atom", .arity = 1, .rt = "rt_erlang_binary_to_atom" },
-    .{ .module = "erlang", .name = "binary_to_atom", .arity = 2, .rt = "rt_erlang_binary_to_atom2" },
-    .{ .module = "erlang", .name = "binary_to_existing_atom", .arity = 1, .rt = "rt_erlang_binary_to_atom" },
-    .{ .module = "erlang", .name = "binary_to_existing_atom", .arity = 2, .rt = "rt_erlang_binary_to_atom2" },
-    .{ .module = "erlang", .name = "list_to_atom", .arity = 1, .rt = "rt_erlang_list_to_atom" },
-    .{ .module = "erlang", .name = "binary_to_list", .arity = 1, .rt = "rt_erlang_binary_to_list" },
-    .{ .module = "erlang", .name = "iolist_to_binary", .arity = 1, .rt = "rt_erlang_iolist_to_binary" },
-    .{ .module = "erlang", .name = "list_to_binary", .arity = 1, .rt = "rt_erlang_list_to_binary" },
-    .{ .module = "erlang", .name = "iolist_size", .arity = 1, .rt = "rt_erlang_iolist_size" },
-    .{ .module = "erlang", .name = "float_to_binary", .arity = 1, .rt = "rt_erlang_float_to_binary" },
-    .{ .module = "erlang", .name = "float_to_binary", .arity = 2, .rt = "rt_erlang_float_to_binary2" },
-    .{ .module = "erlang", .name = "float_to_list", .arity = 2, .rt = "rt_erlang_float_to_list2" },
-    .{ .module = "erlang", .name = "is_atom", .arity = 1, .rt = "rt_erlang_is_atom" },
-    .{ .module = "erlang", .name = "is_binary", .arity = 1, .rt = "rt_erlang_is_binary" },
-    .{ .module = "erlang", .name = "is_bitstring", .arity = 1, .rt = "rt_erlang_is_binary" },
-    .{ .module = "erlang", .name = "is_integer", .arity = 1, .rt = "rt_erlang_is_integer" },
-    .{ .module = "erlang", .name = "is_float", .arity = 1, .rt = "rt_erlang_is_float" },
-    .{ .module = "erlang", .name = "is_number", .arity = 1, .rt = "rt_erlang_is_number" },
-    .{ .module = "erlang", .name = "is_list", .arity = 1, .rt = "rt_erlang_is_list" },
-    .{ .module = "erlang", .name = "is_tuple", .arity = 1, .rt = "rt_erlang_is_tuple" },
-    .{ .module = "erlang", .name = "is_map", .arity = 1, .rt = "rt_erlang_is_map" },
-    .{ .module = "erlang", .name = "is_map_key", .arity = 2, .rt = "rt_maps_is_key" },
-    .{ .module = "erlang", .name = "is_function", .arity = 1, .rt = "rt_erlang_is_function" },
-    .{ .module = "erlang", .name = "is_boolean", .arity = 1, .rt = "rt_erlang_is_boolean" },
-    .{ .module = "erlang", .name = "put", .arity = 2, .rt = "rt_erlang_put" },
-    .{ .module = "erlang", .name = "get", .arity = 1, .rt = "rt_erlang_get" },
-    .{ .module = "erlang", .name = "erase", .arity = 1, .rt = "rt_erlang_erase" },
-    .{ .module = "erlang", .name = "apply", .arity = 2, .rt = "rt_erlang_apply" },
-    .{ .module = "erlang", .name = "throw", .arity = 1, .rt = "rt_throw" },
-    .{ .module = "erlang", .name = "error", .arity = 1, .rt = "rt_error" },
-    .{ .module = "erlang", .name = "exit", .arity = 1, .rt = "rt_exit" },
-    .{ .module = "erlang", .name = "not", .arity = 1, .rt = "rt_not" },
-    // lists
-    .{ .module = "lists", .name = "map", .arity = 2, .rt = "rt_lists_map" },
-    .{ .module = "lists", .name = "foreach", .arity = 2, .rt = "rt_lists_foreach" },
-    .{ .module = "lists", .name = "filter", .arity = 2, .rt = "rt_lists_filter" },
-    .{ .module = "lists", .name = "foldl", .arity = 3, .rt = "rt_lists_foldl" },
-    .{ .module = "lists", .name = "foldr", .arity = 3, .rt = "rt_lists_foldr" },
-    .{ .module = "lists", .name = "any", .arity = 2, .rt = "rt_lists_any" },
-    .{ .module = "lists", .name = "all", .arity = 2, .rt = "rt_lists_all" },
-    .{ .module = "lists", .name = "reverse", .arity = 1, .rt = "rt_lists_reverse" },
-    .{ .module = "lists", .name = "reverse", .arity = 2, .rt = "rt_lists_reverse2" },
-    .{ .module = "lists", .name = "append", .arity = 1, .rt = "rt_lists_append1" },
-    .{ .module = "lists", .name = "append", .arity = 2, .rt = "rt_lists_append2" },
-    .{ .module = "lists", .name = "join", .arity = 2, .rt = "rt_lists_join" },
-    .{ .module = "lists", .name = "member", .arity = 2, .rt = "rt_lists_member" },
-    .{ .module = "lists", .name = "nth", .arity = 2, .rt = "rt_lists_nth" },
-    .{ .module = "lists", .name = "nthtail", .arity = 2, .rt = "rt_lists_nthtail" },
-    .{ .module = "lists", .name = "sublist", .arity = 2, .rt = "rt_lists_sublist2" },
-    .{ .module = "lists", .name = "sublist", .arity = 3, .rt = "rt_lists_sublist3" },
-    .{ .module = "lists", .name = "duplicate", .arity = 2, .rt = "rt_lists_duplicate" },
-    .{ .module = "lists", .name = "seq", .arity = 2, .rt = "rt_lists_seq" },
-    .{ .module = "lists", .name = "zipwith", .arity = 3, .rt = "rt_lists_zipwith" },
-    .{ .module = "lists", .name = "last", .arity = 1, .rt = "rt_lists_last" },
-    .{ .module = "lists", .name = "enumerate", .arity = 1, .rt = "rt_lists_enumerate1" },
-    .{ .module = "lists", .name = "enumerate", .arity = 2, .rt = "rt_lists_enumerate2" },
-    .{ .module = "lists", .name = "flatten", .arity = 1, .rt = "rt_lists_flatten" },
-    .{ .module = "lists", .name = "sort", .arity = 1, .rt = "rt_lists_sort" },
-    .{ .module = "lists", .name = "usort", .arity = 1, .rt = "rt_lists_usort" },
-    .{ .module = "lists", .name = "keyfind", .arity = 3, .rt = "rt_lists_keyfind" },
-    .{ .module = "lists", .name = "concat", .arity = 1, .rt = "rt_lists_concat" },
-    // maps
-    .{ .module = "maps", .name = "get", .arity = 2, .rt = "rt_maps_get" },
-    .{ .module = "maps", .name = "get", .arity = 3, .rt = "rt_maps_get3" },
-    .{ .module = "maps", .name = "find", .arity = 2, .rt = "rt_maps_find" },
-    .{ .module = "maps", .name = "is_key", .arity = 2, .rt = "rt_maps_is_key" },
-    .{ .module = "maps", .name = "put", .arity = 3, .rt = "rt_maps_put" },
-    .{ .module = "maps", .name = "remove", .arity = 2, .rt = "rt_maps_remove" },
-    .{ .module = "maps", .name = "keys", .arity = 1, .rt = "rt_maps_keys" },
-    .{ .module = "maps", .name = "values", .arity = 1, .rt = "rt_maps_values" },
-    .{ .module = "maps", .name = "size", .arity = 1, .rt = "rt_maps_size" },
-    .{ .module = "maps", .name = "to_list", .arity = 1, .rt = "rt_maps_to_list" },
-    .{ .module = "maps", .name = "from_list", .arity = 1, .rt = "rt_maps_from_list" },
-    .{ .module = "maps", .name = "merge", .arity = 2, .rt = "rt_maps_merge" },
-    .{ .module = "maps", .name = "map", .arity = 2, .rt = "rt_maps_map" },
-    .{ .module = "maps", .name = "fold", .arity = 3, .rt = "rt_maps_fold" },
-    // string
-    .{ .module = "string", .name = "length", .arity = 1, .rt = "rt_string_length" },
-    .{ .module = "string", .name = "is_empty", .arity = 1, .rt = "rt_string_is_empty" },
-    .{ .module = "string", .name = "uppercase", .arity = 1, .rt = "rt_string_uppercase" },
-    .{ .module = "string", .name = "lowercase", .arity = 1, .rt = "rt_string_lowercase" },
-    .{ .module = "string", .name = "titlecase", .arity = 1, .rt = "rt_string_titlecase" },
-    .{ .module = "string", .name = "trim", .arity = 1, .rt = "rt_string_trim" },
-    .{ .module = "string", .name = "trim", .arity = 2, .rt = "rt_string_trim2" },
-    .{ .module = "string", .name = "find", .arity = 2, .rt = "rt_string_find" },
-    .{ .module = "string", .name = "prefix", .arity = 2, .rt = "rt_string_prefix" },
-    .{ .module = "string", .name = "equal", .arity = 2, .rt = "rt_string_equal" },
-    .{ .module = "string", .name = "slice", .arity = 2, .rt = "rt_string_slice2" },
-    .{ .module = "string", .name = "slice", .arity = 3, .rt = "rt_string_slice3" },
-    .{ .module = "string", .name = "split", .arity = 2, .rt = "rt_string_split" },
-    .{ .module = "string", .name = "split", .arity = 3, .rt = "rt_string_split3" },
-    .{ .module = "string", .name = "replace", .arity = 3, .rt = "rt_string_replace" },
-    .{ .module = "string", .name = "reverse", .arity = 1, .rt = "rt_string_reverse" },
-    .{ .module = "string", .name = "to_integer", .arity = 1, .rt = "rt_string_to_integer" },
-    // binary, unicode, math
-    .{ .module = "binary", .name = "part", .arity = 3, .rt = "rt_binary_part" },
-    .{ .module = "binary", .name = "first", .arity = 1, .rt = "rt_binary_first" },
-    .{ .module = "binary", .name = "last", .arity = 1, .rt = "rt_binary_last" },
-    .{ .module = "binary", .name = "at", .arity = 2, .rt = "rt_binary_at" },
-    .{ .module = "binary", .name = "copy", .arity = 2, .rt = "rt_binary_copy" },
-    .{ .module = "binary", .name = "match", .arity = 2, .rt = "rt_binary_match" },
-    .{ .module = "binary", .name = "replace", .arity = 3, .rt = "rt_binary_replace3" },
-    .{ .module = "binary", .name = "replace", .arity = 4, .rt = "rt_binary_replace4" },
-    .{ .module = "binary", .name = "split", .arity = 2, .rt = "rt_binary_split2" },
-    .{ .module = "binary", .name = "split", .arity = 3, .rt = "rt_binary_split3" },
-    .{ .module = "unicode", .name = "characters_to_list", .arity = 1, .rt = "rt_unicode_characters_to_list" },
-    .{ .module = "unicode", .name = "characters_to_list", .arity = 2, .rt = "rt_unicode_characters_to_list2" },
-    .{ .module = "unicode", .name = "characters_to_binary", .arity = 1, .rt = "rt_unicode_characters_to_binary" },
-    .{ .module = "unicode", .name = "characters_to_binary", .arity = 2, .rt = "rt_unicode_characters_to_binary2" },
-    .{ .module = "math", .name = "floor", .arity = 1, .rt = "rt_math_floor" },
-    .{ .module = "math", .name = "ceil", .arity = 1, .rt = "rt_math_ceil" },
-    .{ .module = "math", .name = "sqrt", .arity = 1, .rt = "rt_math_sqrt" },
-    .{ .module = "math", .name = "pow", .arity = 2, .rt = "rt_math_pow" },
-    .{ .module = "io_lib", .name = "format", .arity = 2, .rt = "rt_io_lib_format" },
-    .{ .module = "io", .name = "format", .arity = 2, .rt = "rt_io_format" },
-    .{ .module = "io", .name = "format", .arity = 1, .rt = "rt_io_format1" },
-    .{ .module = "json", .name = "encode", .arity = 1, .rt = "rt_json_encode" },
 };
 
 fn findBif(module: []const u8, name: []const u8, arity: usize) ?Bif {

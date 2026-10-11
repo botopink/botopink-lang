@@ -149,15 +149,18 @@ pub fn build(b: *std.Build) void {
     // Fixtures under modules/manifest/tests/fixtures are read relative to cwd.
     run_manifest_tests.setCwd(b.path("modules/manifest"));
 
-    // ── std-wasm (decisions 434 (2), 440) ──────────────────────────────────────
-    // std's host functions in Zig (`modules/std-wasm`): compiled into the wat
-    // comptime runtime's term library below (`bp_wat_rt.wasm`), read by
-    // compiler-core for the table of the functions it implements, and
-    // compiled alone — its program face, `wasm.zig` — to `std_wasm.wasm`, a
-    // position-independent side module (`dylink.0`: `__memory_base`,
-    // `__table_base`, `__stack_pointer` imported) that compiler-core embeds and
-    // the wasm codegen decodes into a `--target wasm` program
-    // (`codegen/wat/std_wasm_link.zig`, decision 440 (2)). MVP plus bulk
+    // ── std-wasm (decisions 434 (2), 440, 450) ─────────────────────────────────
+    // botopink's wasm runtime in Zig (`modules/std-wasm`): std's host
+    // functions, and the Erlang terms with the OTP functions over them. Read
+    // by compiler-core for its tables (`exports`, the OTP table), and
+    // compiled — `wasm.zig` — to `std_wasm.wasm`, a position-independent side
+    // module (`dylink.0`: `__memory_base`, `__table_base`, `__stack_pointer`
+    // imported) that compiler-core embeds: the wasm codegen decodes the
+    // `std:` exports a `--target wasm` program calls into it
+    // (`codegen/wat/std_wasm_link.zig`, decision 440 (2)), and the comptime
+    // runtime decodes every `rt_*` export into its term library once per
+    // process (`comptime/runtime/wat/runtime_module.zig`, decision 450 (3) —
+    // there is no other wasm runtime). MVP plus bulk
     // memory: the codegen emits `memory.copy` already. wasm-ld warns that a
     // shared library is "not yet stable" when it links it; the module is read
     // by our own decoder, never by a dynamic loader.
@@ -183,7 +186,13 @@ pub fn build(b: *std.Build) void {
     });
     std_wasm_build.addPrefixedFileArg("-Mroot=", b.path("modules/std-wasm/src/wasm.zig"));
     const std_wasm_bin = std_wasm_build.addPrefixedOutputFileArg("-femit-bin=", "std_wasm.wasm");
-    for ([_][]const u8{ "root.zig", "hash.zig", "text.zig", "number.zig", "array.zig", "bigint.zig", "case_tables.zig", "wasm.zig" }) |f|
+    for ([_][]const u8{
+        "root.zig",       "hash.zig",        "text.zig",       "number.zig",      "array.zig",
+        "bigint.zig",     "case_tables.zig", "random.zig",     "wasm.zig",        "env.zig",
+        "term.zig",       "term_faces.zig",  "otp.zig",        "otp/erlang.zig",  "otp/lists.zig",
+        "otp/maps.zig",   "otp/string.zig",  "otp/binary.zig", "otp/unicode.zig", "otp/math.zig",
+        "otp/io_lib.zig", "otp/json.zig",    "otp/etf.zig",
+    }) |f|
         std_wasm_build.addFileInput(b.path(b.fmt("modules/std-wasm/src/{s}", .{f})));
     // The warning goes to a captured file, not the build's output.
     _ = std_wasm_build.captureStdErr(.{});
@@ -197,11 +206,15 @@ pub fn build(b: *std.Build) void {
     // included) imports it (decision 452).
     // Zig's `std` and std-wasm only: `requireStandalone`, at the end of
     // `build`, fails the build on any other import.
-    const beam_to_wasm_mod = b.createModule(.{ .root_source_file = b.path("modules/beam-to-wasm/src/root.zig") });
+    const beam_to_wasm_mod = b.createModule(.{
+        .root_source_file = b.path("modules/beam-to-wasm/src/root.zig"),
+        .imports = &.{.{ .name = "std_wasm", .module = std_wasm_mod }},
+    });
     const beam_to_wasm_tests = b.addTest(.{
         .root_module = b.createModule(.{
             .root_source_file = b.path("modules/beam-to-wasm/src/root.zig"),
             .target = target,
+            .imports = &.{.{ .name = "std_wasm", .module = std_wasm_mod }},
         }),
         .filters = test_filters,
     });
@@ -247,32 +260,9 @@ pub fn build(b: *std.Build) void {
         },
     });
 
-    // ── the wat comptime runtime: `rt.zig` → `bp_wat_rt.wasm`, embedded ──────
-    // Front 18 step 2. The term library a lowered comptime body links against
-    // (`comptime/runtime/wat/link.zig`) is compiled here for `wasm32-freestanding`
-    // at the MVP feature set wasm3 and every browser run, and reaches
-    // `wat/program.zig` as an `@embedFile` — in the native compiler and in the
-    // browser build alike. `__heap_base` is exported so the linker knows where
-    // the runtime's static memory (`.bss` included) ends.
-    const wat_rt = b.addExecutable(.{
-        .name = "bp_wat_rt",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("modules/compiler-core/src/comptime/runtime/wat/rt.zig"),
-            .target = b.resolveTargetQuery(.{
-                .cpu_arch = .wasm32,
-                .os_tag = .freestanding,
-                .cpu_model = .{ .explicit = &std.Target.wasm.cpu.mvp },
-            }),
-            .optimize = .ReleaseSmall,
-            .imports = &.{.{ .name = "std_wasm", .module = std_wasm_mod }},
-        }),
-    });
-    wat_rt.entry = .disabled;
-    wat_rt.rdynamic = true;
-    wat_rt.root_module.export_symbol_names = &.{"__heap_base"};
     for ([_]*std.Build.Module{ core_mod, core_test_mod }) |mod| {
-        mod.addAnonymousImport("bp_wat_rt.wasm", .{ .root_source_file = wat_rt.getEmittedBin() });
-        // Decision 440 (2): std-wasm's program face, decoded into a `--target wasm` program.
+        // Decisions 440 (2), 450 (3): std-wasm, decoded into a `--target wasm`
+        // program and into the comptime runtime.
         mod.addAnonymousImport("std_wasm.wasm", .{ .root_source_file = std_wasm_bin });
     }
     // wasm3 runs it in-process on every native build (`persistent_wat.zig`).
@@ -663,7 +653,6 @@ pub fn build(b: *std.Build) void {
             .{ .name = "std_wasm", .module = std_wasm_mod },
         },
     });
-    web_core_mod.addAnonymousImport("bp_wat_rt.wasm", .{ .root_source_file = wat_rt.getEmittedBin() });
     web_core_mod.addAnonymousImport("std_wasm.wasm", .{ .root_source_file = std_wasm_bin });
     const web_exe = b.addExecutable(.{
         .name = "botopink",

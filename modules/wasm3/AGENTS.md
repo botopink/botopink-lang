@@ -8,7 +8,7 @@
 Vendored [wasm3](https://github.com/wasm3/wasm3) — a pure-C WebAssembly
 interpreter — packaged as a self-contained Zig module. `compiler-core` runs the
 **wat comptime runtime** on it: a template or decorator body lowered to wasm and
-linked into the embedded term library is instantiated and run in-process (see
+linked into std-wasm's term library is instantiated and run in-process (see
 `modules/compiler-core/src/comptime/runtime/persistent_wat.zig`, front 18 step
 2). Every native executable and test binary that links `compiler-core` also
 links wasm3; the browser build (`modules/compiler-web/`) does not — there the

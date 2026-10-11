@@ -3,8 +3,9 @@
 > Path: `modules/std-wasm/`
 > Parent: [`../AGENTS.md`](../AGENTS.md)
 
-std's host functions implemented in Zig and compiled to wasm (decisions 434 (2), 440, 441,
-442; front 144 B-00a, B-00e, B-00g). One implementation for two consumers: the comptime
+botopink's wasm runtime in Zig (decisions 434 (2), 440, 441, 442, 450, 454; front 144 B-00a,
+B-00e, B-00g, B-00i): std's host functions, and the Erlang terms with the OTP functions over them.
+One implementation for two consumers: the comptime
 runtime, on every target (434 (5): a comptime result is std-wasm's answer whatever `--target`
 says), and a `--target wasm` program, into which the codegen transpiles the functions it calls
 (440 (2)). A std function is served by std-wasm only where its
@@ -13,13 +14,31 @@ there is no match by name. Everything a `--target wasm` program computes over va
 a number's text, arrays, `bigint` — is here, not in the codegen's `wat_prelude` (442 (2));
 `root.program` lists the functions only the wasm codegen calls.
 
+## Two value representations (decision 450 (4))
+
+Each in its own file, both compiled into the one `std_wasm.wasm`:
+
+| Representation | File | What a value is | Who computes over it |
+|---|---|---|---|
+| The wasm codegen's typed layout | `wasm.zig` | a string the address of its `u32` length with the bytes behind it; an array `[n][slot…]`; a `bigint` a limb block; an `f64` / `i32` / `i64` by its wasm type | a `--target wasm` program (the `std:` exports) |
+| The Erlang terms | `term.zig` (+ `otp/*.zig`, `term_faces.zig`) | an `i32` pointer to a `Hdr`-prefixed cell: integers (i64), floats, interned atoms, binaries, cons cells and `[]`, tuples, maps, funs, a binary builder | the comptime runtime (the `rt_*` exports), and BEAM code beam-to-wasm translates |
+
+The pure algorithms (`text`, `number`, `array`, `bigint`, `hash`, `random`) know neither layout:
+each face turns its values into slices and back. Allocation is the caller's in both (decision
+450 (5)): every fresh value comes from `env.bp_alloc` — a program's `$__alloc`, the comptime's
+arena (`compiler-core/src/comptime/runtime/wat/runtime_module.zig`), later a process's heap in
+translated code (449, B-30). A term fun is called back through the caller's table
+(`env.bp_call0` … `bp_call4`), so the module holds no function table; and no `var` starts as a
+pointer, no `switch` answers a string and no table holds slices — any of those is a relocation in
+the module's data (`__wasm_apply_data_relocs`), which `std_wasm_link.zig` refuses.
+
 ## Tree
 
 ```text
 std-wasm/
 ├── AGENTS.md      ← you are here
 └── src/
-    ├── root.zig   ← the package: `exports` (each function by its `std:` name, its botopink types), `program` (the wasm codegen's own calls, by wasm types), `find`, `matches`, `signatureText`, `names`, `erlang_module`; re-exports the five below
+    ├── root.zig   ← the package: `exports` (each function by its `std:` name, its botopink types), `program` (the wasm codegen's own calls, by wasm types), `find`, `matches`, `signatureText`, `names`, `erlang_module`; re-exports the files below
     ├── hash.zig   ← `hash.contentHash`
     ├── case_tables.zig ← GENERATED (`zig build gen-unicode`): the case mappings as `switch`es (decision 443)
     ├── text.zig   ← the text algorithms behind std's string primitives (case over all of Unicode, titlecase, trim, graphemes, slice, reverse, find, split, replace; and a program's: code point length / offset / slice / `at`, `indexOf` / `lastIndexOf`, `charCodeAt`, `fromCodepoint`, `Split` / `Lines` / `Words`, pad, repeat, replace)
@@ -27,7 +46,12 @@ std-wasm/
     ├── array.zig  ← an array's algorithms over its slot words: `sliceRange`, `chunkCount`, `slidingCount`, `uniqueInto`, `search`
     ├── random.zig ← `io/random`'s seeded stream (decision 451): `Stream`, Mulberry32 as the commonJS sidecar draws it; no draw before a seed
     ├── bigint.zig ← `bigint`'s arithmetic over `u32` limbs (add, sub, mul, divmod, compare, decimal text both ways, `toI64`, `toF64`), tested against `std.math.big.int`
-    └── wasm.zig   ← the program face (`zig build std-wasm`): each export over a program's own strings, arrays and `bigint` blocks, allocating through `env.bp_alloc`; the seeded stream's state a `.bss` `Stream`, an unseeded draw `env.bp_random_f64`
+    ├── wasm.zig   ← the program face (`zig build std-wasm`): each export over a program's own strings, arrays and `bigint` blocks, allocating through `env.bp_alloc`; the seeded stream's state a `.bss` `Stream`, an unseeded draw `env.bp_random_f64`; it also exports every `rt_*` function of the term files under its own name
+    ├── env.zig    ← what std-wasm imports from its caller: `bp_alloc`, `bp_random_f64`, `bp_call0` … `bp_call4`
+    ├── term.zig   ← the Erlang terms (decision 450): cells, atoms (`atomRank`), numbers, binaries, lists, tuples, funs (`applyFun` through `env.bp_call<N>`), exceptions (`pending`, class, reason), type tests (`Kind`), term order and equality, maps, the operators, the binary builder; `rt_reset`
+    ├── term_faces.zig ← each `exports` entry's comptime face over terms, `rt_std_<symbol>` (a comptime `@compileError` refuses an entry without one)
+    ├── otp.zig    ← the OTP table (`table`: `module:name/arity` → its `rt_*` export, `Bif`), the term files (`files`), `isRuntimeExport`
+    └── otp/       ← the OTP functions and BIFs over terms: `erlang.zig` (BIFs, the process dictionary, `apply/2`), `lists.zig`, `maps.zig`, `string.zig`, `binary.zig`, `unicode.zig`, `math.zig`, `io_lib.zig` (`io_lib:format`, `io:format`, `rt_printed`, `rt_describe`), `json.zig` (`json:encode`), `etf.zig` (the ETF argument, `rt_etf_decode`)
 ```
 
 ## The functions (`root.exports`)
@@ -55,7 +79,7 @@ std-wasm/
 | `random.seededFloat` | `() -> f64` | `io.random.seededFloat` — the next draw in `[0.0, 1.0)`; before any seed the host's entropy in a program, refused at comptime (below) |
 
 The types a `std:` cell can spell (`Type`): `string`, `f64`, `i32`, `i64`, `bool`, `void`,
-`string[]`, `?string`. Each export has its comptime face, `rt.zig`'s `rt_std_<symbol>` (a
+`string[]`, `?string`. Each export has its comptime face, `term_faces.zig`'s `rt_std_<symbol>` (a
 `string[]` a list of binaries, a `bool` its atom, a `?string` the binary or `undefined`).
 
 A `std:` cell is std's alone (decision 445): outside std's own modules (`Module.std_member` —
@@ -107,7 +131,7 @@ the commonJS sidecar's (`libs/std/src/sidecars/random.mjs`) draw for draw — bo
 seed `next` answers null, and each face decides what that draw is. A program's
 (`wasm.zig`) calls `env.bp_random_f64`, which `std_wasm_link.zig` binds to the program's
 `$__wasi_random_f64` — the host's entropy, which stays in `wat_prelude` (it talks to the
-host). The comptime's (`rt.zig`'s `rt_std_random__seededFloat`) raises
+host). The comptime's (`term_faces.zig`'s `rt_std_random__seededFloat`) raises
 `{bp_wat_runtime, <<"an unseeded draw: …">>}`, which the build reports at the `comptime`
 that reached it: a build has no entropy and never pretends to (cells
 `run/comptime_random_seeded`, `reject/comptime_random_unseeded`). Each comptime evaluation
@@ -116,21 +140,27 @@ seed answers the same draws on every build and every target.
 
 ## How it is built and served
 
-- **Into the comptime runtime.** Root `build.zig` creates one `std_wasm` module (no target:
-  each importer compiles it for its own) and gives it to the wat comptime runtime's term library
-  (`compiler-core/src/comptime/runtime/wat/rt.zig`, compiled to `bp_wat_rt.wasm` for
-  `wasm32-freestanding`, MVP). `rt.zig` serves it two ways:
-  - each entry of `exports` is a runtime export `rt_std_<symbol>` (`rt_std_hash__contentHash`,
+- **Into the comptime runtime** (decision 450 (3)) — the one wasm runtime: `std_wasm.wasm`'s
+  runtime exports (`rt_*`: `term.zig`, `term_faces.zig`, `otp/*.zig`) are decoded by
+  `std_wasm_link.zig` once per process and emitted into one standalone module
+  (`compiler-core/src/comptime/runtime/wat/runtime_module.zig`: `env.bp_alloc` bound to the
+  comptime's arena, `env.bp_call<N>` to a `call_indirect` through the module's table, a 1 MiB
+  stack, recursion allowed — each frame still checked against the stack's floor), into which each
+  lowered comptime program is spliced (`link.zig`). There is no other build of the terms:
+  `bp_wat_rt.wasm` is gone. It serves std-wasm three ways:
+  - each entry of `exports` is the runtime export `rt_std_<symbol>` (`rt_std_hash__contentHash`,
     the name's dot written `__`); a comptime module calls it as `bp_std_wasm:<symbol>(…)` —
     `host_cells.forRuntime` rewrites a host function whose `std:` cell names the entry to that one
     cell (`stdCell`, `servedByStdWasm`), and `runtime/wat/lower.zig`'s BIF table maps the
-    `bp_std_wasm` family (`std_wasm_bifs`) to the exports. A comptime `@compileError` in `rt.zig`
-    refuses an entry without its export;
-  - the OTP BIFs the comptime module's primitive methods call — `string:uppercase/1`,
-    `lowercase/1`, `titlecase/1` (reached by beam-to-wasm's `erlc`
-    fixture, decision 438 (2) — a standalone utility, decision 452), `trim/1,2`, `find/2`, `prefix/2`, `split/2,3`, `slice/2,3`, `reverse/1`,
-    `length/1` (graphemes), `binary:replace/3,4`, `float_to_binary/2` (`[short]`), and the `~p` /
-    `json:encode` float text — answer through `text` and `number`.
+    `bp_std_wasm` family (`std_wasm_bifs`) to the exports;
+  - every OTP function of `otp.table` — the one table the lowering (`lower.zig` `bifs`) and
+    beam-to-wasm (decision 450 (2)) bind a `module:name/arity` call by;
+  - the text BIFs (`string:uppercase/1`, `lowercase/1`, `titlecase/1`, `trim/1,2`, `find/2`,
+    `prefix/2`, `split/2,3`, `slice/2,3`, `reverse/1`, `length/1` (graphemes),
+    `binary:replace/3,4`, `binary:split/2,3`, `float_to_binary/2` (`[short]`), and the `~p` /
+    `json:encode` float text) answer through the same `text` / `number` functions a program's
+    faces do — one face per algorithm (`text.Split` cuts every `sep` or the first, `Split.once`;
+    `text.replacedLength` / `replaceInto` replace; `number.signedText` writes an integer).
 - **Read by compiler-core** (`core_mod`, `core_test_mod`, the browser build's `web_core_mod`):
   `host_cells.zig`, `infer.zig` and `codegen/wat/host_binding.zig` read `exports`.
 - **Into a `--target wasm` program** (decision 440 (2)): `wasm.zig` is compiled to
@@ -155,8 +185,10 @@ seed answers the same draws on every build and every target.
 - **Built by a `Run` of `zig build-lib`**, not `addLibrary`: wasm-ld warns that a shared library
   is "not yet stable" for every side module, and the build runner fails a compile step on any
   linker stderr. The warning goes to a captured file; a failed compile still fails the step.
-- **Tests**: `zig build test` runs `src/root.zig`'s tests (one per function and algorithm);
-  `codegen/tests/wat.zig` decodes every export (`wat: std-wasm ---- …`).
+- **Tests**: `zig build test` runs `src/root.zig`'s tests (one per function and algorithm; the
+  term files natively — a fun runs only on wasm — with the OTP table's own checks);
+  `codegen/tests/wat.zig` decodes every `std:` export (`wat: std-wasm ---- …`) and
+  `comptime/runtime/wat/runtime_module.zig` links every `rt_*` one.
 
 ## Measured — what a comptime evaluation reaches (144 B-00a, 2026-10-11)
 
@@ -179,7 +211,7 @@ clauses are the methods' `@External.Erlang` templates, the same text on both run
 `trim`, `toUpper`, `slice`, `replaceAll`, `length`, `endsWith`, `contains`, `chars`, `charCodeAt`,
 `floor`, `toLower`, `all`, `any`, `trimEnd`, `trimStart`, `zip`, `reverse`. Their text BIFs answer
 through `text` / `number` (above); the term-level ones (`lists:*`, `maps:*`, `erlang:element/2` …)
-are the term library's, `rt.zig`.
+are the term library's, `term.zig` and `otp/*.zig`.
 
 **Limits it keeps**: none of its own since decision 443 (case mapping answers over all of
 Unicode); the comptime runtime's are `compiler-core/src/comptime/runtime/AGENTS.md` § Limits.

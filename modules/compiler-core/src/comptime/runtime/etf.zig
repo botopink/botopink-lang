@@ -4,7 +4,7 @@
 //! baked into the generated module as a literal map: 230 of the 295 lines of the
 //! smallest realistic module, and the only part of it that differs between two
 //! call sites of the same template. Encoded here instead, it travels beside the
-//! call as bytes the runtime decodes (`rt.zig`'s ETF reader, `binary_to_term/1`'s
+//! call as bytes the runtime decodes (std-wasm's `otp/etf.zig`, `binary_to_term/1`'s
 //! format), and the module is left
 //! with nothing that depends on the call site — so one module serves every call
 //! site of a declaration.

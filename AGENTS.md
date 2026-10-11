@@ -30,7 +30,7 @@ botopink-lang/                 ← language core (this project)
 │   ├── lib-test-runner/       ← `botopink-lib-test` (test-libs gate)
 │   ├── manifest/              ← the shared `botopink.json` model (std only; imported by the four above)
 │   ├── source-stamp/          ← `source_stamp` — a library run refuses a binary older than its checkout's sources
-│   ├── std-wasm/              ← std's host functions in Zig, compiled to wasm: the comptime runtime's and a `--target wasm` program's, bound by `std:` cells (decisions 434, 440)
+│   ├── std-wasm/              ← botopink's wasm runtime in Zig: std's host functions (bound by `std:` cells) and the Erlang terms with the OTP functions, compiled to `std_wasm.wasm` — a `--target wasm` program's and the comptime runtime's (decisions 434, 440, 450)
 │   ├── beam-to-wasm/          ← a standalone utility: any `.beam` set translated to wasm whole, module by module (std + std-wasm only); no part of the compiler or any botopink build (decisions 434, 438, 452)
 │   ├── test-scratch/          ← `test_scratch` — per-process scratch paths; the test modules only
 │   ├── test-shard/            ← the compiler-core test runner: the suite split across processes (`-Dtest-shards`)
@@ -64,7 +64,7 @@ zig build test-language # botopink language tests (tests/language/run.sh; `-- --
 zig build test-docs     # every `botopink` fence of docs.md/README.md compiles (scripts/check-docs.sh)
 zig build clean-tmp     # reap scratch dirs older than 1 day (also runs before `zig build test`)
 zig build gen-unicode   # regenerate libs/std/src/unicode_tables.bp from the pinned Unicode data (libs/std/AGENTS.md § unicode)
-zig build std-wasm      # modules/std-wasm's program face → zig-out/lib/std_wasm.wasm, the side module a wasm program transpiles (decision 440)
+zig build std-wasm      # modules/std-wasm → zig-out/lib/std_wasm.wasm, the side module a wasm program and the comptime runtime decode (decisions 440, 450)
 zig build compiler-web  # compiler-core for the browser → zig-out/web/ (wasm32-wasi; `-Doptimize=ReleaseSmall` is the shipped size)
 zig build test-web      # the browser build's smoke test under node (modules/compiler-web/tests/smoke.js)
 ```
@@ -312,7 +312,8 @@ Do not use `--no-verify`.
 
 - **One runtime, wasm, in-process** (decision 434): a comptime module is the
   Erlang text `codegen/erlang.zig`'s untyped mode writes, parsed, lowered to
-  wasm and linked into the term library (`comptime/runtime/wat/`), run on
+  wasm and linked into std-wasm's term library (`comptime/runtime/wat/`,
+  `modules/std-wasm`, decoded from `std_wasm.wasm` once per process), run on
   wasm3 (`persistent_wat.zig`). No child process, no pipe, no file; a runaway
   body is a runaway wasm3 call on the compiler's thread (limit 1 of
   `comptime/runtime/AGENTS.md` § Limits) — wrap manual runs in `timeout`.
