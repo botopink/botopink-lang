@@ -1,2 +1,0 @@
-import-name-collision: this module would hold two types declared `Dict` — this module's and `std/collections`'s
-6:9

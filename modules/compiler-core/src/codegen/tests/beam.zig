@@ -78,7 +78,7 @@ test "beam: a lambda literal that ends a case arm is the arm's value" {
     // `_ { { x -> x * n }; }` — the arm block's last statement is a lambda,
     // so it is the value the `case` answers (a statement-position block does
     // not parse). It ran as a statement, the arm answered `ok`, and applying
-    // it was `{badfun, ok}` (`run/case_arm_lambda_value`).
+    // it was `{badfun, ok}` (`modules/case_arm_lambda_value`).
     try h.assertBeamRunLog(std.testing.allocator,
         \\fn scaleBy(n: i32) -> fn(x: i32) -> i32 {
         \\    val f = case n {
@@ -220,7 +220,7 @@ test "beam: a bare break in a for's body ends the loop" {
     // A loop's body is a fun (`lists:foldl` when it reassigns the frame's
     // names, `lists:foreach` otherwise), and `break` returned from it: the
     // next element ran, so `visited` reached 3 and the search answered the
-    // last match (`tests/language/test/loop_collection.bp`). The fun now
+    // last match (`conformance/test/loop_collection.bp`). The fun now
     // throws `{'__bp_break', V}` and the call site answers `V`
     // (`guardLoopBreak`).
     try h.assertBeamRunLog(std.testing.allocator,
@@ -262,7 +262,7 @@ test "beam: the keyword form's method is a template compiled at build time" {
     // `#[@External.Erlang(module = "erlang", method = "max($args)")]` carries
     // a template, which erlang renders as written (`max(1, 2)`); beam refused
     // every call — "has no `#[@External.<Target>(…)]` for the beam backend"
-    // (`tests/language/test/external_markers.bp`). It is compiled like any
+    // (`conformance/test/external_markers.bp`). It is compiled like any
     // template now (`evalTemplate`), and so is the `pub` wrapper.
     try h.assertBeamRunLog(std.testing.allocator,
         \\#[@External.Erlang(module = "erlang", method = "max($args)")]
@@ -281,7 +281,7 @@ test "beam: a refused template's reason outlives the emitter that refused it" {
     // reason lived in the emitter's `atom_arena`, which `em.deinit` freed
     // before the caller rendered the diagnostic: the message read freed memory
     // — the right text on glibc, garbage on macos-14
-    // (`tests/language/run/external_template_refused_on_beam`). Under
+    // (`conformance/modules/external_template_refused_on_beam`). Under
     // `std.testing.allocator` freed memory is poisoned, so this reads it.
     try h.assertBeamRefusedAt(std.testing.allocator,
         \\#[@External.Erlang("""length(atom_to_list(?MODULE)) > 0""")]

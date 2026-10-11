@@ -1,2 +1,0 @@
-check=check srv=web
-check=check local.serverOnly=other

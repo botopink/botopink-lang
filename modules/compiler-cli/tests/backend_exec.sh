@@ -71,7 +71,7 @@ run_beam() {
 # `(core module $main …)`. `--invoke main` reaches that module: print it on its
 # own (`(module …)`, its `__bp_init` the start a component drops) so wasmtime
 # runs it as the core module it is. The component itself runs in
-# `tests/language` (`botopink run --target wasm`).
+# `conformance` (`botopink run --target wasm`).
 core_module() {
   # The module's last line is the `  )` just before the shim's module.
   awk '
@@ -146,7 +146,7 @@ if have erlc && have erl; then run_beam "$RECORDS" 3; else echo "==> records bea
 # `13-module-identity` half 1 fixed `cli/run.zig` at the shape front 10
 # measured — `erlc -o <out>/erl` over every emitted `.erl`, then
 # `erl -noshell -pa <out>/erl`, which is what the beam arm of
-# `tests/language/run.sh` already uses — so the cell is restored here exactly as
+# `conformance/run.sh` already uses — so the cell is restored here exactly as
 # that analysis asked.
 if have node; then run_package "$MODULES" commonJS 12 circle 7; else echo "==> modules commonJS: SKIPPED (no node)"; fi
 if have erlc && have erl; then run_package "$MODULES" erlang 12 circle 7; else echo "==> modules erlang: SKIPPED (no erlc/erl)"; fi

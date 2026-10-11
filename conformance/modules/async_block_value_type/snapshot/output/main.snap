@@ -1,0 +1,7 @@
+botopink-cell 1
+out 4
+out ok 30
+out ok 3
+out -1
+out error negative
+out error below zero

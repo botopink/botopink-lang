@@ -1599,7 +1599,7 @@ fn blockBodyReturns(body: []const ast.Stmt) bool {
 /// the block's own scope, while one inside a loop reads the loop's binder,
 /// which no classifier knows outside the loop — `return s` from a `for` over
 /// strings made the block's `"[" + hit + "]"` print an address
-/// (`run/block_for_return_is_block_value`).
+/// (`modules/block_for_return_is_block_value`).
 fn blockReturnValue(body: []const ast.Stmt) ?ast.Expr {
     for (body) |st| if (st.expr == .jump and st.expr.jump.kind == .@"return") if (st.expr.jump.kind.@"return") |v| return v.*;
     for (body) |st| if (blockReturnValueOf(st.expr)) |v| return v;
@@ -1912,7 +1912,7 @@ const Emitter = struct {
     /// type parameters it substituted. `fieldTypeIn` / `fieldTypeRefIn`
     /// answer a field of the owner declared as one of them by its
     /// substitution — `self.left == self.right` over `Pair<string>`
-    /// compared WORDS while the fields read as `A` (`run/generic_string_equality`).
+    /// compared WORDS while the fields read as `A` (`modules/generic_string_equality`).
     field_subs_owner: []const u8 = "",
     /// The names a `val` / `var` of the function being emitted has bound so
     /// far (`bindTarget`), and the aliases a re-binding of one installed,
@@ -10059,7 +10059,7 @@ const Emitter = struct {
             if (self.elemTypeRefOf(recv)) |et| if (et == .generic and self.record_generics.contains(et.generic.name)) try self.local_typerefs.put(p, et);
             // An element of an `unknown[]` is an `unknown` (its own header):
             // `v is i32` reads the box, not a guess at a static type
-            // (`run/is_truth_table`).
+            // (`modules/is_truth_table`).
             if (self.elemTypeRefOf(recv)) |et| if (isUnknownTypeRef(et)) try self.local_typerefs.put(p, et);
             // The parameter is one ELEMENT, so it has the element's record
             // type. Without it a field read off it had no receiver type and
@@ -13177,7 +13177,7 @@ const Emitter = struct {
                     };
                     // `xs.map({ n -> Y(…) })` holds what its lambda answers:
                     // unregistered, `built.at(1)?.id` read the field off the
-                    // element as an address (`run/optional_member_default`).
+                    // element as an address (`modules/optional_member_default`).
                     if (std.mem.eql(u8, cc.callee, "map") and cc.receiver != null and cc.args.len == 1) {
                         if (lambdaArg(cc.args[0].value)) |lam| {
                             const body = lam.function.kind.body;

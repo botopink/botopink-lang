@@ -4059,7 +4059,7 @@ const Emitter = struct {
     /// gets its own back: sharing the cache, a helper a METHOD reached first
     /// was reserved in the type's unit, and the file's next call site asked its
     /// own table for it — `UnknownFunction`, no location
-    /// (`run/narrowing_null_guard_clause.bp`: an optional reader in a record
+    /// (`modules/narrowing_null_guard_clause`: an optional reader in a record
     /// method and one in a top-level `fn`).
     const HelperNames = struct {
         at: ?[]const u8,
@@ -9859,7 +9859,7 @@ const Emitter = struct {
     /// spread's value when the literal has one. The spread arrives in one of
     /// two fields: `spreadExpr` for an expression, `spread` for a bare name
     /// (`[1, 2, ..rest]`) — which used to be dropped, so the literal was its
-    /// own elements and `list[3]` read past the end (`run/array_spread_literal`).
+    /// own elements and `list[3]` read past the end (`modules/array_spread_literal`).
     fn lowerArrayLit(self: *Emitter, al: anytype) anyerror!void {
         if (al.spreadExpr) |se| return self.lowerListOf(al.elems, se.*);
         if (al.spread) |name| if (name.len > 0) {
@@ -11279,7 +11279,7 @@ const Emitter = struct {
     /// `@block` it sits in, or of the function. `firstUnder(12, 10)` answered
     /// `12` where commonJS and wasm answer `8`; a `for` inside an `@block`
     /// answered the function where it means the block
-    /// (`run/block_for_return_is_block_value`).
+    /// (`modules/block_for_return_is_block_value`).
     fn emitLoopReturn(self: *Emitter, value: ?ast.Expr) anyerror!void {
         if (value) |v| try self.lowerExprIntoX0(v) else try beamEmitter.writeMoveOp(self.out, Op.atom("undefined"), Dst.xr(0));
         try beamEmitter.writeTestHeap(self.out, 3, 1);

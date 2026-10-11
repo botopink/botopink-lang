@@ -290,7 +290,7 @@ pub behavior Annotation {
 // with the declaration below by a drift test): `inline` written on `Node`,
 // `Wasm` or `Typescript`, written anywhere but last, or given a value that is
 // not a bool is refused at the annotation
-// (`tests/language/reject/external_inline_unread`). A backend that grows a
+// (`conformance/modules/external_inline_unread`). A backend that grows a
 // hand-coded shape worth opting out of adds the parameter here, the table row
 // and the `hasExternalInline` that honours it, in one change.
 //

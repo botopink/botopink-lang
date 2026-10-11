@@ -173,7 +173,7 @@ to remove on this backend. Two reasons, both checkable:
   (`ast.exprReturns`) goes through `lowerBlockWithReturn`: each `return` moves
   its value into `x0` and jumps to the block's exit label (`emitBlockReturn`,
   `Emitter.block_exit`), so it is the block's value and never the enclosing
-  function's `return.` (decision 2; `run/block_return_is_block_value`). commonJS
+  function's `return.` (decision 2; `modules/block_return_is_block_value`). commonJS
   wraps the same form in an IIFE, which is
   the one block-as-value site front 04 found in its twin sweep (11 text hits / 10
   build sites / 1 block-as-value).

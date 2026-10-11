@@ -6,8 +6,9 @@
 # A scratch `botopink build --target commonJS --typescript` of the library
 # the compiler ships (`libs/std/` — decision 326: std alone; its `.d.ts` is
 # what a host TypeScript consumer of a botopink build reads), of
-# every project under `examples/` and of every `tests/language/modules/<cell>/`,
-# then
+# every project under `examples/`, of every conformance cell
+# (`conformance/modules/<cell>/`, decision 475: each a project with its own
+# manifest) and of every project suite under `conformance/test/`, then
 # `tsc --noEmit --strict --lib es2022 --module commonjs` over each build's
 # non-empty `.d.ts` files, one `tsc` per project (two projects' modules would
 # otherwise share one program), and `node --check` over each build's `.js` files.
@@ -17,10 +18,11 @@
 # node; this check reaches the modules nothing runs — the libraries' and the
 # examples' — and reads them all the way through.
 #
-# What the walk leaves out is structural, the same reading `tests/language/run.sh`
-# makes of a cell: a cell whose `commonJS.expect` says the program is refused on
-# commonJS, and a project (a library included) whose `botopink.json`
-# `"targets"` list does not name commonJS. A project that should build and does not is red, as is one whose
+# What the walk leaves out is structural, the same reading `botopink cell check`
+# makes of a cell: a cell whose commonJS answer refuses a module (a `refused`
+# record in `snapshot/targets/commonJS/`, or in `snapshot/output/` where
+# commonJS has no departure of its own), and a project (a library included)
+# whose `botopink.json` `"targets"` list does not name commonJS. A project that should build and does not is red, as is one whose
 # build emits no `.d.ts` or no `.js` at all. There is no skip list (decision 67).
 #
 # `tsc` comes from `npx -p typescript@<TS_VERSION>` — pinned, so the verdict is
@@ -64,14 +66,29 @@ excludes_commonjs() { # <manifest>
     [ -n "$targets" ] && ! printf '%s' "$targets" | grep -q '"commonJS"'
 }
 
+# Does the cell refuse a module on commonJS? Its departure says so, or the
+# answer every target gives does and commonJS does not depart from it.
+refused_on_commonjs() { # <cell dir>
+    local snap rel
+    [ -d "$1/snapshot" ] || return 1
+    if [ -d "$1/snapshot/targets/commonJS" ] && grep -rqs '^refused ' "$1/snapshot/targets/commonJS"; then return 0; fi
+    [ -d "$1/snapshot/output" ] || return 1
+    while IFS= read -r snap; do
+        rel="${snap#"$1/snapshot/output/"}"
+        [ -f "$1/snapshot/targets/commonJS/$rel" ] && continue
+        grep -qs '^refused ' "$snap" && return 0
+    done < <(find "$1/snapshot/output" -name '*.snap')
+    return 1
+}
+
 projects=()
 if [ "$#" -gt 0 ]; then
     projects=("$@")
 else
-    for p in libs/std/ examples/*/ tests/language/modules/*/; do
+    for p in libs/std/ examples/*/ conformance/modules/*/ conformance/test/*/; do
         p="${p%/}"
         [ -f "$p/botopink.json" ] || continue
-        [ -f "$p/commonJS.expect" ] && continue
+        refused_on_commonjs "$p" && continue
         excludes_commonjs "$p/botopink.json" && continue
         projects+=("$p")
     done

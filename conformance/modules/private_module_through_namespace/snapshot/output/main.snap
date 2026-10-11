@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: private-module: `plane` is a private module of `geo` — declared `mod plane;`, it is reached only from inside `geo`
+at src/main.bp:8:16

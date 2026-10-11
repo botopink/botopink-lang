@@ -1,2 +1,0 @@
-type mismatch: expected i64, got bigint
-4:18

@@ -1,2 +1,0 @@
-type mismatch: `#[page]`'s `paths` expects `?fn() -> BlogParams[]`, got `fn() -> User[]`
-25:31

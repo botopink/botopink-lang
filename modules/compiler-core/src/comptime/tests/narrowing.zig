@@ -213,7 +213,7 @@ test "infer: narrow ---- case guard variant field" {
 // <expr>;` is the form that binds a pattern's names into the enclosing scope,
 // and `docs.md` already lists `assert x is Some(n)` as deliberately absent. The
 // refusal it must keep giving — `error[is-variant-binding]` — is pinned at the
-// language level by `tests/language/reject/assert_is_pattern.bp`, which is where
+// language level by `conformance/modules/assert_is_pattern`, which is where
 // a deliberate refusal belongs.
 
 // ── early return narrowing ─────────────────────────────────────────────────────

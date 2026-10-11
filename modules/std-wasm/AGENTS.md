@@ -85,7 +85,7 @@ The types a `std:` cell can spell (`Type`): `string`, `f64`, `i32`, `i64`, `bool
 A `std:` cell is std's alone (decision 445): outside std's own modules (`Module.std_member` —
 the embedded `std/…` modules, the prelude, and `libs/std` built, checked or tested as itself)
 it is refused at the annotation on every target, naming the std function to call instead
-(`Export.api`; cell `reject/external_wasm_std_outside_std`). Inside std, a `std:` cell naming
+(`Export.api`; cell `modules/external_wasm_std_outside_std`). Inside std, a `std:` cell naming
 no entry, or on a declaration of other types (`matches`: the parameter and return types as
 botopink spells them; a primitive behavior's `Self` is `string` on `String`, `f64` on
 `Float`), is refused at the annotation (`comptime/infer.zig` `refuseStdBinding`;
@@ -134,7 +134,7 @@ seed `next` answers null, and each face decides what that draw is. A program's
 host). The comptime's (`term_faces.zig`'s `rt_std_random__seededFloat`) raises
 `{bp_wat_runtime, <<"an unseeded draw: …">>}`, which the build reports at the `comptime`
 that reached it: a build has no entropy and never pretends to (cells
-`run/comptime_random_seeded`, `reject/comptime_random_unseeded`). Each comptime evaluation
+`modules/comptime_random_seeded`, `modules/comptime_random_unseeded`). Each comptime evaluation
 starts from a fresh instance, so its stream is unseeded until its body seeds it, and one
 seed answers the same draws on every build and every target.
 
@@ -192,7 +192,7 @@ seed answers the same draws on every build and every target.
 
 ## Measured — what a comptime evaluation reaches (144 B-00a, 2026-10-11)
 
-Measured over `tests/language` (four targets, `--cold`), `zig build test` and `zig build test-libs`
+Measured over `conformance` (four targets, `--cold`), `zig build test` and `zig build test-libs`
 (every library repository) on botopink-lang `239f789f`: every comptime module's Erlang text and
 every host function `host_cells.forRuntime` carried were recorded (686 modules).
 

@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: context-not-declared: the context is named by the module-level `val` that declares it (`Context<T>()`), not by a local, a parameter or an expression (decision 354)
+at src/main.bp:14:24

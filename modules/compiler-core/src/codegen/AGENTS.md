@@ -75,17 +75,17 @@ codegen/
 | `config.zig` | `Config` (`targetSource`, `typeDefLanguage`, `build_root`, `test_mode`, `packages` — decision 109's package owner of each module), `TargetSource` (`commonJS` \| `erlang` \| `beam` \| `wasm`), `TypeDefLang`. The comptime pass runs on the wasm runtime whatever the target (decision 434): nothing to configure. |
 | `moduleOutput.zig` | `AmbiguousVariant` (a bare variant name more than one enum of the program declares, written where nothing says which — `variant`, and two of the enums; `diagnostic(alloc)` renders the refusal with both qualified spellings, and the erlang emitter raises it through the same errdefer slot pattern `MissingExternal` uses). `MissingExternal` (06 C13 — the host-backed fn a backend has no `#[@External.<Target>(…)]` for: name, target and call site; `diagnostic(alloc)` renders it as a `Diagnostic.type`, so the failure reaches the driver LOCATED and only that module fails, instead of `error.MissingExternalTarget` aborting the build with its own name). `GenerateResult` (`js`, `typedef`, `units`, `std_funcs`, `comptime_script`, `comptime_err`, `diagnostic`, `warnings`, `run_output`; `failed()`; `warnings` are the module's `OkData.warnings` (decision 57), rendered and owned — `codegen.zig`'s `attachWarnings` copies them by module name before the comptime session is freed, so `build` and `test` print them as `check` does, front 26 step 4) and `ModuleOutput` — shared between targets. `Unit` is one EXTRA module a source file produced on a BEAM target — policy 3 of `13-module-identity`: a `type` declared in the file is a module of its own, `atom` (`crossModule.typeAtom`, `app@models@@Person` — decision 109) being both the `-module` and the artifact's basename, `code` its text. commonJS and wasm produce none — a class already is the type's identity there (decision 5) and wasm is single-module. Everywhere the file's own module goes, its units go with it: `cli/build.zig` writes them, `runtime.zig` compiles and loads them as `AuxFile`s, `snapshot.zig` renders one section each. A module whose comptime outcome is `.parseError`/`.typeError` is not skipped: every backend's `codegenEmit` appends `ModuleOutput.failedModule`, whose owned `Diagnostic` (`syntax`: the `SyntaxError` with its slices copied; `type`: the rendered message and location) outlives the comptime session. `Module` lives in `../module.zig` |
 | `hostFnBinding.zig` | **`fn:<name>` on every backend** (decisions 238, 259, 263). `resolve(ar, f, name, prog, module, label)` is the one check of a `fn:` binding — the declaring module has a bodied, non-`pub` `fn <name>` of the same written parameter types in order and the same return (`sameSignature` over `TypeRef.format`, a linked module's own qualification dropped by `typeText`) — and answers the private fn or the refusal text (`` `#[@External.<Label>("fn:<name>")]` on `<f>`: … ``); `annotationLoc(f, label)` is the annotation's location. wasm calls it from `wat.zig` `checkHostBindings`. commonJS, erlang and beam call `Lowering.apply(alloc, outputs, .node / .erlang / .beam)` first thing in their `codegenEmit`: every `.ok` module's `declare fn` whose binding for the target is `fn:<name>` (`beam`: `External.Erlang`, the one BEAM annotation, decision 437) is replaced, in a copy of the program's declarations, by an ordinary `fn` of the same signature whose body is `return <name>(<parameters>);`, its `External.*` annotations dropped — so the cross-module index, the exports, a local call and a consumer's call see a plain function, and no backend reads a fourth binding shape. A refused binding fails its module with a located diagnostic at the annotation (`refusal(name)` → `Refusal.failed`), the module is not emitted. `Lowering.deinit` restores the original declarations before the arena goes. Pinned by `tests/externals.zig`'s `fn: binds a declare fn to a private body` (js, erlang, beam) and the four refusals on each host backend, and by `tests/wat.zig`'s host-binding fixtures |
-| `hostMethods.zig` | **Host-backed methods** — a bodyless `declare fn` written inside a `type` body, with its `#[@External.<Target>(…)]` bindings (`isHostMethod`; one with no binding at all binds no backend, so every call to it is refused). Every backend lowers one as a REAL method of the type whose body is the binding applied to the method's own parameters — the method twin of the wrapper a `pub` module-level `declare fn` gets — so a call site (`sock.recv(n)`, local or on an imported type) is an ordinary method call and knows nothing of the host: commonJS `hostMethodMember` (a class member; `$0` is `this`, or the `self` parameter of an enum's static; a `(module, symbol)` binding is called with the receiver first; `-> @Task<@Result<…>>` goes through `__bp_host_task`), erlang `hostMethodForms` (a function of the type's module, exported, rendered by `templateNode` with the receiver as `Self`; a record return is adopted as `adoptRecord`; `collectLocalFnArities` indexes it as a method owner like a bodied method, so an untyped receiver whose `name/arity` a module function shares still reaches the type's module), beam `withHostMethodBodies` (the method gets the body `return <Type>.<m>(self, …)` and a hidden non-`pub` `declare fn <Type>.<m>` carries the annotations, so `lowerExternalCall` renders it and the ordinary method machinery reserves, emits and exports it; an arity-branched binding is resolved to its branch first) and `typescript.zig` (`declaresHostMember`: declared when `node` binds it). The markers were translated by `parser/template_markers.zig` — on a `self`-first method `$0` is the receiver on every target. `binds(m, target)` says which backend reads a binding (`beam`: `External.Erlang`; `wasm`: nothing — no host). A method a backend has no binding for is not emitted, and `missingAt` refuses a CALL to it where it is written — the receiver's type is inference's `.type_` lowering, the method `CrossModule.host_methods["<Type>.<m>"]` — with the `MissingExternal` diagnostic naming `Type.method`; commonJS, erlang, beam and wat each ask it on their receiver-call path. `inline = true` is accepted on a method's `External.Erlang` and changes nothing (there is no hand-coded shape to keep). Pinned by `tests/externals.zig`'s four `a host-backed method …` fixtures and `tests/language/run/external_method_*`, `modules/external_method_imported` |
+| `hostMethods.zig` | **Host-backed methods** — a bodyless `declare fn` written inside a `type` body, with its `#[@External.<Target>(…)]` bindings (`isHostMethod`; one with no binding at all binds no backend, so every call to it is refused). Every backend lowers one as a REAL method of the type whose body is the binding applied to the method's own parameters — the method twin of the wrapper a `pub` module-level `declare fn` gets — so a call site (`sock.recv(n)`, local or on an imported type) is an ordinary method call and knows nothing of the host: commonJS `hostMethodMember` (a class member; `$0` is `this`, or the `self` parameter of an enum's static; a `(module, symbol)` binding is called with the receiver first; `-> @Task<@Result<…>>` goes through `__bp_host_task`), erlang `hostMethodForms` (a function of the type's module, exported, rendered by `templateNode` with the receiver as `Self`; a record return is adopted as `adoptRecord`; `collectLocalFnArities` indexes it as a method owner like a bodied method, so an untyped receiver whose `name/arity` a module function shares still reaches the type's module), beam `withHostMethodBodies` (the method gets the body `return <Type>.<m>(self, …)` and a hidden non-`pub` `declare fn <Type>.<m>` carries the annotations, so `lowerExternalCall` renders it and the ordinary method machinery reserves, emits and exports it; an arity-branched binding is resolved to its branch first) and `typescript.zig` (`declaresHostMember`: declared when `node` binds it). The markers were translated by `parser/template_markers.zig` — on a `self`-first method `$0` is the receiver on every target. `binds(m, target)` says which backend reads a binding (`beam`: `External.Erlang`; `wasm`: nothing — no host). A method a backend has no binding for is not emitted, and `missingAt` refuses a CALL to it where it is written — the receiver's type is inference's `.type_` lowering, the method `CrossModule.host_methods["<Type>.<m>"]` — with the `MissingExternal` diagnostic naming `Type.method`; commonJS, erlang, beam and wat each ask it on their receiver-call path. `inline = true` is accepted on a method's `External.Erlang` and changes nothing (there is no hand-coded shape to keep). Pinned by `tests/externals.zig`'s four `a host-backed method …` fixtures and `conformance/modules/external_method_*`, `modules/external_method_imported` |
 | `crossModule.zig` | **Cross-module link index** built once over every module's transformed program (`build(alloc, outputs)`). `exports` maps a `pub` symbol → `ExportInfo{module, kind, is_class, fields, methods, is_external, erlang_backed, arity}` (emitting module path, decl kind, whether construction needs `new`/the owner's map shape, and a record's declared field order, its methods as `MethodSig{name, arity}` — the arity is half a method's identity, so a consumer can ask whether two types of the program claim one `name/arity`, whether a `fn` export is host-backed, and whether that host-backed one carries an `erlang` target usable at its declared arity — the erlang backend routes such an import to the owner's wrapper, see [erlang](#erlang)); host-backed `#[@External.<Target>(…)]` fns are indexed too, so a consumer importing one `from "<lib>"` links to the owner like any other export. `imported` is the set of names some module imports. `host_methods` maps `"<Type>.<method>"` to every host-backed method a `type` body declares, over every module (`hostMethods.missingAt` reads it; two modules declaring one key keep the first walked). **`exports` is keyed by the bare symbol NAME, and a name is unique inside a module and never over a program** — `libs/std` declares `parse` in `json`, in `querystring` and in `url` today — so a plain `get` answered with whichever module the walk reached last, no dissent check and no diagnostic. `owners` is the population that collapse threw away: EVERY `pub` declaration of a name, in walk order. `pick(name, source, arity)` asks the question properly — the module the import's own `from "<mod>"` NAMES answers first (`ast.ImportSource.namesModule`: the full path or its last segment; an item with no `from` names one module of the importing package by its registry key, `ImportSource.key` — `emilia/theme`, never `styled/theme`: a module is its package plus its path, decisions 170 and 337, and a `.key` admits that module alone in every pass), then — when it names no module — the one module of the PACKAGE it names that declares the name (`ast.ImportSource.inPackage`: `from "web"` covers `web/…`; two libraries of one build may each declare a name), then the arity the CALL takes (`ExportInfo.arity`, the `MethodSig` widening on the plain-`fn` axis), and when neither separates the candidates the answer is `.contested`, never the first one (decision 67). `picked` is the same for a caller with a dynamic fallback: a contest reads as absent. `export_faults` keys a `Contested` by the CONSUMER module path — a name several modules export is not itself the defect (refusing the declaration would refuse `libs/std`, thirteen of whose names collide), what cannot be answered is a consumer reaching for the bare name with nothing saying which — and every backend's `codegenEmit` turns it into a located diagnostic exactly as `atomFault` is turned, because the collapse is in this index and not in any one emitter. Consumed by commonJS, erlang and beam_asm; wat only uses it to flag unlinkable imports and to pick which module it links in. **It also owns the Erlang/BEAM module atom** (option A, amended by decision 109): `erlAtom(alloc, ModuleId)` renders the owning PACKAGE and the module path as one legal UNQUOTED atom — `package ++ "@" ++ path`, lowercase · `/` → `@` · anything outside `[a-z0-9_@]` → `_` · a run of `_` collapsed to one so `__` stays free for the comptime qualifier — so `main` of package `myapp` is `myapp@main`, `std/math` is `std@math` and `web/api/http` is `myapp@web@api@http`. `ModuleId` is `{path, package, package_in_path}`; `Packages{root, deps}` (`Config.packages`, set by the CLI from `botopink.json` — `libs.packagesOf`) answers `idOf(path)`: a path whose first segment names a dependency (the embedded `std` always does, `EMBEDDED_PACKAGE`) is that dependency's, with the package already in the path, and every other path is the root package's. A module of no package (`Packages.root` empty: compiled outside any `botopink.json`) renders no atom — `error.MissingPackage`, which `build` turns into the located `no_package` fault, so an erlang/BEAM compilation without a manifest is refused and never given a fallback name. The compiler's own tests compile under the implicit manifest `test` (`TEST_PACKAGE`, `test_packages`, set on every `tests/helpers.configs` entry and used by the runtime harness) — `test@main`, `test@main@@Person`. The comptime evaluators' modules live in `COMPILER_PACKAGE`, `bp` (`bp@comptime__tpl__…`), which `manifest` refuses as a `name`. A package that does not start with a lowercase letter is `error.InvalidPackageName`, never quoted (`manifest.nameRefusal` refuses it first). Every atom holds an `@`, so none is an OTP module's name: option A's `RESERVED` list and its `bp@` prefix are gone. It was the path's BASENAME, which made `models/user` and `services/user` the same module and let eleven `libs/std` modules shadow the OTP module of the same name node-wide. `declAtom(alloc, id, decl)` names the module a DECLARATION becomes (decision 109): `erlAtom(id) ++ "@@" ++ <Decl>`, the declaration KEEPING ITS CASE (only a character outside `[A-Za-z0-9_]` folds to `_`), so `type SourceLocation` in `main.bp` of `myapp` is `myapp@main@@SourceLocation` and `type File` in std's `io/fs.bp` is `std@io@fs@@File` — still an unquoted atom, and `DECL_SEP` (`@@`) can occur in no module atom (a path segment is never empty) and be produced by no source name. `<Decl>` is a `type`'s own name or the `val` an `implement` block is bound to (`pond_pkg@pond@@PatoNada`; nothing emits an `implement` module yet), and an inline `type Pato(…) implement Swimmer { … }` clause's methods are `pond_pkg@pond@@Pato`'s. `erlDeclAtom(alloc, id, Kind, decl, ?hash)` is left to the COMPTIME producers only (`bp@comptime__<tpl|dec>__<decl>__<16 hex>`) — `Kind` has no `t`/`b`/`im` any more. `typeAtom(alloc, id, decl)` is the identity of a `type` — `declAtom(id, decl)`, so `type Person` in `app/models.bp` of `myapp` is `myapp@app@models@@Person`: the module policy 3 puts its methods in AND the tag half 3 puts inside every value it builds, one renderer because the tag has to name the module that formats it — and `variantAtom(alloc, id, decl, variant)` appends `__v__<variant>` (the variant lowercased, its `_` runs collapsed) so the five `Circle`s of the ecosystem stay five atoms: `myapp@main@@Shape__v__circle`. `decodeAtom` is `split("@@")` for a declaration or a variant tag (the last `__v__` of the declaration half splits off the variant), the `__` qualifier for a comptime module, and the module half's first `@` for the package (`Decoded.package`; an atom with no `@` is `UndecodableAtom`). The atom is the identity on the two BEAM targets only: a commonJS value's identity is its class prototype (decision 5) and a wasm value's is its descriptor's ADDRESS (decision 22), whose bytes hold the bare declaration name `@print` shows — neither carries a module-qualified string, so nothing there spells the atom, `outputStem(target, alloc, id)` gives the artifact's basename (the atom for erlang/beam, the module path for commonJS/wasm), and `ATOM_MAX_BYTES` is 250 (the `<atom>.bea#` filename limit, not the atom limit). `CrossModule.atomFor(path)` reads the atom `build` rendered once per module and `ownerModuleAtom(name)` the owning module's; `atomFault(path)` is the **collision check** — two paths rendering one atom (`duplicate`), a module of no package (`no_package`), a package name that cannot start an atom (`invalid_package`) or an over-long atom (`too_long`), each which the erlang and BEAM `codegenEmit`s turn into a located diagnostic instead of letting one module silently overwrite the other. The same check runs over each module's **type** atoms (`duplicate_decl`, `too_long`), and it is **case-insensitive** (decision 109): `Person`/`person` are two atoms (`main@@Person`, `main@@person`) but one `.erl` on a case-insensitive file system, so the pair is refused and the message names both atoms; `Foo-Bar`/`Foo_Bar` fold to one atom outright and the message says so (`FooBar`/`Foo_Bar` do not collide); pinned by a `build` test on each — across modules the path already tells them apart, so this half is per module and fails the module as a whole. `moduleBasename(path)` survives for the places that compare a SOURCE-level name (an `import { order } from "std"` namespace, a `wat.zig` import segment) and is no longer a module atom |
 | `patterns.zig` | **Backend-agnostic pattern facts.** `bindsNames(pattern, ctx, isVariant)` answers whether a pattern binds at least one name — the question every backend asks before lowering a `val assert P = e [catch h];` (decision 8 § 9), which binds `P`'s names in the ENCLOSING scope. A pattern that binds nothing (`val assert 42 = answer catch 0;`) is a pure check and keeps the single-expression lowering it always had. `isVariant` is the backend's own variant table (a bare identifier is a binding only when it names no variant) |
 | `js/` | JS/TS code model + emitters shared by `commonJS.zig` and `typescript.zig`: `js_ast.zig` (`Expr`/`Stmt`/`Pattern`/`Block`/`Class`/`Item` + the `.d.ts` `TsDecl`/`TsType` + `Builder`), `js_emitter.zig` (the only writer of JavaScript: reserved-word renaming, string escaping, parenthesisation, indentation, semicolons), `ts_emitter.zig` (the only writer of `.d.ts`). The backends build nodes and write no target text. The remaining `js_ast` bridges pin the shapes the current lowering still emits illegally. See [`js/AGENTS.md`](js/AGENTS.md) |
 | `beam/` | BEAM term model + emitters shared by `erlang.zig`, `beam_asm.zig` and the comptime evaluators: `term.zig` (`Term`), `erl_emitter.zig` (Erlang source: atom quoting incl. reserved words, variables, module names, binaries), `beam_emitter.zig` (`.S` operands and `move`s). One quoting rule for `.erl` and `.S`. See [`beam/AGENTS.md`](beam/AGENTS.md) |
 | `commonJS.zig` | CommonJS backend — builds `js/js_ast.zig` nodes, rendered by `js/js_emitter.zig`. See [commonJS](#commonjs) below A `case` used as a statement whose arms `return` runs its arrow with `case_return_box`: an arm's `return` answers `{ __bp_return, value }` and the statement after the call returns it (`caseStmtWithReturns`). A pattern written `Result.Ok`/`Result.Error` (the transform's qualification) is the `@Result` test even beside a user enum's `Error`. An enum that implements a behavior gets an instance method per receiver-first method, forwarding `this` to the static, so a behavior-typed call finds it. A multi-subject arm binds each pattern from its own element of `_s`. A host template's literal text resolves `\"` to `"` (`HostTemplate.flush`), as erlang's `unescapeTemplate` does. A float arithmetic operand and a float `if` arm give a print its `"f"` shape. |
 | `erlang.zig` | Erlang source emitter. See [erlang](#erlang) below A `.by_value` method call — and an `.unplaced_type` one on a record or enum of the program, unless it names a function-typed field — goes through `'__bp_method'/3` (the value's tag — element 1 of a record or a payload variant, the atom of a unit variant — with any `__v__` variant segment cut off, since an enum's methods are its module's; or a host-built map's function). A method whose receiver continues a `?.` chain runs under the chain's guard (`chainedCallNode`: `undefined` short-circuits it). A record's constructor pattern places a written label by the record's declared fields (`variantPayloadSlots`). An imported `pub fn` named as a value is `fun Owner:name/Arity` (`nameRefNode`, `imported_fn_arities`; `FnRef.module`). A `return` nested in a statement whose value is discarded (an `if` inside an `if` block, a `case` arm) throws to the function's guard (`in_nested_return`, `ast.exprReturns`). The array `length` is `erlang:length/1`, so a type's own `length/1` method never answers it. The test runner's loader starts at the run's output root, so a test file in a folder loads the whole tree. |
-| `beam_asm.zig` | BEAM Assembly `.S` emitter, assembled with `erlc +from_asm`. See [beam_asm](#beam_asm) below A top-level fn of the file named as a value inside a type's method is the file module's exported fun (`fileCallTarget`, policy 3 — `run/member_reads_own_meta`; it was `{unresolved_identifier, f}`). A `.by_value` method call (and an `.unplaced_type` one on a program type) goes through the per-module `'-bp_method-'/3` helper (`ensureMethodHelper`: a map applies its own function, anything else its tag's module — the tag with any `__v__` variant segment cut off, so an enum that implements a behavior answers from its own module, a unit variant's atom included). A multi-subject `case` matches the tuple of its subjects, each `.multi` arm the tuple pattern of its patterns (`emitPatternArm`). A method whose receiver continues a `?.` chain runs only on a present receiver, parked in a slot of its own (`lowerCall`). An imported `pub fn` named as a value is the literal `{literal, fun Owner:name/Arity}` (`Operand.ext_fun` — a literal clobbers no staged register, as `erlang:make_fun/3` would). |
+| `beam_asm.zig` | BEAM Assembly `.S` emitter, assembled with `erlc +from_asm`. See [beam_asm](#beam_asm) below A top-level fn of the file named as a value inside a type's method is the file module's exported fun (`fileCallTarget`, policy 3 — `modules/member_reads_own_meta`; it was `{unresolved_identifier, f}`). A `.by_value` method call (and an `.unplaced_type` one on a program type) goes through the per-module `'-bp_method-'/3` helper (`ensureMethodHelper`: a map applies its own function, anything else its tag's module — the tag with any `__v__` variant segment cut off, so an enum that implements a behavior answers from its own module, a unit variant's atom included). A multi-subject `case` matches the tuple of its subjects, each `.multi` arm the tuple pattern of its patterns (`emitPatternArm`). A method whose receiver continues a `?.` chain runs only on a present receiver, parked in a slot of its own (`lowerCall`). An imported `pub fn` named as a value is the literal `{literal, fun Owner:name/Arity}` (`Operand.ext_fun` — a literal clobbers no staged register, as `erlang:make_fun/3` would). |
 | `wat/` | WebAssembly-text code model and the only writer of `.wat`: `wat_ast.zig` (`Module`/`Item`/`Func`/`Seq`/`Instr` + `Builder` + the invariants), `wat_emitter.zig` (s-expression layout, `$` names, data escaping), `wat_prelude.zig` (the runtime helpers as built nodes), `host_binding.zig` (decisions 238 and 440: the `@External.Wasm` vocabulary, WASI adapters, `std:`), `std_wasm_link.zig` (decision 440: std-wasm decoded into the program). See [`wat/AGENTS.md`](wat/AGENTS.md) |
 | `wat.zig` | WAT backend: builds `wat/wat_ast.zig` nodes and hands them to the emitter. See [wat](#wat) below A linked module's aliased import of a function no other module declares (a hygiene alias, `__bp_tpl_<module>__<name>`, decisions 112 and 384) is renamed to the declared name in that module's code (`linkRenames`, `linked_module`): a linked module's `use` items never reach `registerSymbols` (`modules/decorator_member_type_travels`). A `Result.<name>` pattern is the `@Result` variant even where a user enum declares that name (`variantRef`); a method answering `@Result<string, …>` is in `result_str_fns`, so a `try` of it binds a string. An all-unit enum prints by name, a `case` reads a bare arm in its subject's enum, a multi-subject `case` tests every pattern, a record's constructor pattern tests and binds, a generic call answers its argument's shape, a value `if` has its own type, a module-level `val` two linked modules declare is mangled per module — and so are a `type`, a `behavior`, an `implement` and an `extend` block, with every reference renamed (`renameLinkedTypes`), a call binding a type parameter to a string, bool or float calls a specialisation of the generic function or method, and a function named as an array method's argument is inlined — see [`wat/AGENTS.md`](wat/AGENTS.md). A lowering this backend cannot complete is refused where it is written (`Emitter.refuse` → `error.WasmLoweringRefused`, a located `Diagnostic` the driver reports like `MissingExternal`'s); no site writes `i32.const 0` for a value it could not produce any more (`00 · 110-gate-wasm`). An array literal's trailing spread is lowered through `$__arr_concat`. **Decision 388**: a module `context_lower.zig` reached (it imports the scope lowering's `bpScope…__` functions) is refused at its first component (`refuseScopeLowering`, or at the first call of the lowering's functions when it declares none), and a call of one of them anywhere else at the call — a `@Component` is a lambda over a `RenderScope` whose values cross `unknown` slots written after inference, and the backend boxes and unboxes only by a static type inference gave (`language-gaps.md` row 354-wasm). |
-| `typescript.zig` | `.d.ts` typedef backend (optional secondary output, `Config.typeDefLanguage`) — builds `js/js_ast.zig` `TsDecl` nodes, rendered by `js/ts_emitter.zig`. Type declarations only — no call lowering. A package import in the `.d.ts` keeps only names the owner emits (`CrossModule.exports`): a template fn or a lib namespace handle has no declaration there, so `import { html } from "view"` is dropped instead of dangling. Parameter types come from `Param.typeRef` (the parser leaves the legacy `typeName` empty; an unannotated position is `any`, a zero-argument generic such as `@Decl` is the bare name). Skips template fns (`TypeRef.isTemplateReturnType()`), maps `@Component<R>` to `Promise<R>` (decisions 104, 354), renders an anonymous `TypeRef.record_type` as `{ f: T; … }`. **A botopink primitive takes its TypeScript spelling** (`primitiveTsName`: every integer and float width plus `int`/`uint`/`float`/`isize`/`usize` → `number`, `bool` → `boolean`, `char` → `string`; `string`, `void` and `unknown` are spelled the same) — a `.d.ts` naming `i32` is not TypeScript. **An enum declares the class the JavaScript builds** (decision 5): `readonly tag` as the union of the variant names, a `static` factory per payload variant returning the enum type, a `static readonly` singleton per payload-less one, and each enum method as a `static` whose `self` is typed as the enum. It was a TypeScript `enum` of strings or a discriminated union of plain objects before, and the `.js` beside it built neither. **Decision 8 §3's union `A | B`** rides on `TypeRef.generic` under the reserved name `ast.union_type_name` (`"|"`), and takes TypeScript's own union (`TsType.union_`) rather than the generic path's `|<A, B>`, which is not TypeScript. **Every import is spelled as the `.js` beside it spells its `require`** (`use`, 1.0.10-beta `00 · 04-js` step 6): relative to the module's own path (`./geometry`, `../tree/leaf` — `emitProgram` takes the module name), one `import` per owning file resolved through `CrossModule.picked`, `import * as dict from "./std/dict"` for a whole std module and `import { empty as newDict } from "./std/dict"` for a std symbol, each `ImportDecl` written once and each name bound once (the checker hands one binding per imported name, and each wrote the whole `import` again — `Duplicate identifier`), an activated `implement` (`PatoNada*`) left out. **Type parameters are declared** (`Dict<K, V>`, `empty<K, V>()`, `fold<A>(…)`; an enum static declares the enum's and its own), **`Self` is the declaring type** (`self_type`), **a function type names its parameters** (`(acc: A, key: K) => A` from `paramNames`, else `p0…`), **`@Result<T, E>` is `{ ok: T } \| { error: E }`** — what `buildResult` builds —, and **a decorator (`comptime _: @Decl`) has no declaration**, since the program drops it. **A type-only `pub` declaration is imported from its owner's `.d.ts`** — a `behavior` (an `interface`) or a type alias has no value, so `CrossModule` does not index it; `commonJS.codegenEmit` collects every one as a `TypeExport` and `ownerOf` resolves an import name against the value index first, then against them, narrowed by the import's source as `CrossModule.pick` narrows (a contest answers nothing). **An inferred type takes the written type's spelling** (`applied`, one table for both): the checker's `array<T>` / `optional<T>` / `tuple<…>` are `T[]` / `T \| null` / `[…]`, `noreturn` is `never`. **An enum's sections are a namespace merged with its class**: each top-level section is a `static Sec(_inner: Enum.Sec): Enum` and a tag, and `export declare namespace Enum { interface Sec { readonly tag: …; } namespace Sec { … } }` declares the section types a signature writes (`Token.Layout.Break`) — interfaces, because no module exports a section's runtime class; an enum with no variant and no section has `tag: never`. **A private type a public signature names is declared, not exported** (`localTypes`): a `type` written without `pub`, a private `behavior`, type alias or delegate, and a prelude record the comptime pass splices into the transformed program (`SourceLocation` in std's `testing/snapshots` — `emitProgram` takes the transformed program's declarations, whose `type`s are candidates beside the bindings) is written `declare class` / `declare interface` / `declare type` after the module's own declarations, to a fixpoint over what those name in turn, and the file then ends in `export {};` (`TsDecl.export_none`), which turns off TypeScript's implicit export of every top-level declaration of a declaration file — the `.js` exports none of them. A comptime reflection record a signature names (`__Decl__Annotation` in std's `Type.Field<T>`, `annotations: DeclAnnotation[]`) is a candidate too, read from `comptime.zig` `decl_reflection_src` only when a `__Decl__` name is named (`reflectionCandidates`) — the module never declares it; that source's behaviors join as private candidates with it (`Decorator`, the type of `__Decl__Annotation.decorator`, decision 277 — `declare interface Decorator {}` when named). The primitive behaviors the comptime pass prepends (`Array<T>`, `Pair`, `String`) are not candidates: `Array<K>` in a signature is TypeScript's own `Array`. **A type of another module a signature names, which the source never imports, is imported from the transformed program's `import`** (`programImports`): a `comptime` whose answer is a package's record is lifted as that record's constructor and imported where it is written, under its template alias (`Env.templateImports`, 01-compiler/14 step 8); the `.js` requires it from that `import`, which is no binding, so each name a declaration reads that nothing binds and such an `import` brings is written `import { Badge } from "./badges/badges"` at the top of the file, by its declared name (decision 110: the alias is a checker name only) — `tests/language/modules/comptime_reaches_package_template`. `scripts/tsc-check.sh` (gate stage 11) holds every typedef of a commonJS build of `libs/` (std and the bundled packages), `examples/` and `tests/language/modules` to `tsc --noEmit --strict` (TypeScript 7.0.2): 6 of 62 projects were rejected before these three rows, 0 after; std was rejected (`Cannot find name 'SourceLocation'`) before the private-type row |
+| `typescript.zig` | `.d.ts` typedef backend (optional secondary output, `Config.typeDefLanguage`) — builds `js/js_ast.zig` `TsDecl` nodes, rendered by `js/ts_emitter.zig`. Type declarations only — no call lowering. A package import in the `.d.ts` keeps only names the owner emits (`CrossModule.exports`): a template fn or a lib namespace handle has no declaration there, so `import { html } from "view"` is dropped instead of dangling. Parameter types come from `Param.typeRef` (the parser leaves the legacy `typeName` empty; an unannotated position is `any`, a zero-argument generic such as `@Decl` is the bare name). Skips template fns (`TypeRef.isTemplateReturnType()`), maps `@Component<R>` to `Promise<R>` (decisions 104, 354), renders an anonymous `TypeRef.record_type` as `{ f: T; … }`. **A botopink primitive takes its TypeScript spelling** (`primitiveTsName`: every integer and float width plus `int`/`uint`/`float`/`isize`/`usize` → `number`, `bool` → `boolean`, `char` → `string`; `string`, `void` and `unknown` are spelled the same) — a `.d.ts` naming `i32` is not TypeScript. **An enum declares the class the JavaScript builds** (decision 5): `readonly tag` as the union of the variant names, a `static` factory per payload variant returning the enum type, a `static readonly` singleton per payload-less one, and each enum method as a `static` whose `self` is typed as the enum. It was a TypeScript `enum` of strings or a discriminated union of plain objects before, and the `.js` beside it built neither. **Decision 8 §3's union `A | B`** rides on `TypeRef.generic` under the reserved name `ast.union_type_name` (`"|"`), and takes TypeScript's own union (`TsType.union_`) rather than the generic path's `|<A, B>`, which is not TypeScript. **Every import is spelled as the `.js` beside it spells its `require`** (`use`, 1.0.10-beta `00 · 04-js` step 6): relative to the module's own path (`./geometry`, `../tree/leaf` — `emitProgram` takes the module name), one `import` per owning file resolved through `CrossModule.picked`, `import * as dict from "./std/dict"` for a whole std module and `import { empty as newDict } from "./std/dict"` for a std symbol, each `ImportDecl` written once and each name bound once (the checker hands one binding per imported name, and each wrote the whole `import` again — `Duplicate identifier`), an activated `implement` (`PatoNada*`) left out. **Type parameters are declared** (`Dict<K, V>`, `empty<K, V>()`, `fold<A>(…)`; an enum static declares the enum's and its own), **`Self` is the declaring type** (`self_type`), **a function type names its parameters** (`(acc: A, key: K) => A` from `paramNames`, else `p0…`), **`@Result<T, E>` is `{ ok: T } \| { error: E }`** — what `buildResult` builds —, and **a decorator (`comptime _: @Decl`) has no declaration**, since the program drops it. **A type-only `pub` declaration is imported from its owner's `.d.ts`** — a `behavior` (an `interface`) or a type alias has no value, so `CrossModule` does not index it; `commonJS.codegenEmit` collects every one as a `TypeExport` and `ownerOf` resolves an import name against the value index first, then against them, narrowed by the import's source as `CrossModule.pick` narrows (a contest answers nothing). **An inferred type takes the written type's spelling** (`applied`, one table for both): the checker's `array<T>` / `optional<T>` / `tuple<…>` are `T[]` / `T \| null` / `[…]`, `noreturn` is `never`. **An enum's sections are a namespace merged with its class**: each top-level section is a `static Sec(_inner: Enum.Sec): Enum` and a tag, and `export declare namespace Enum { interface Sec { readonly tag: …; } namespace Sec { … } }` declares the section types a signature writes (`Token.Layout.Break`) — interfaces, because no module exports a section's runtime class; an enum with no variant and no section has `tag: never`. **A private type a public signature names is declared, not exported** (`localTypes`): a `type` written without `pub`, a private `behavior`, type alias or delegate, and a prelude record the comptime pass splices into the transformed program (`SourceLocation` in std's `testing/snapshots` — `emitProgram` takes the transformed program's declarations, whose `type`s are candidates beside the bindings) is written `declare class` / `declare interface` / `declare type` after the module's own declarations, to a fixpoint over what those name in turn, and the file then ends in `export {};` (`TsDecl.export_none`), which turns off TypeScript's implicit export of every top-level declaration of a declaration file — the `.js` exports none of them. A comptime reflection record a signature names (`__Decl__Annotation` in std's `Type.Field<T>`, `annotations: DeclAnnotation[]`) is a candidate too, read from `comptime.zig` `decl_reflection_src` only when a `__Decl__` name is named (`reflectionCandidates`) — the module never declares it; that source's behaviors join as private candidates with it (`Decorator`, the type of `__Decl__Annotation.decorator`, decision 277 — `declare interface Decorator {}` when named). The primitive behaviors the comptime pass prepends (`Array<T>`, `Pair`, `String`) are not candidates: `Array<K>` in a signature is TypeScript's own `Array`. **A type of another module a signature names, which the source never imports, is imported from the transformed program's `import`** (`programImports`): a `comptime` whose answer is a package's record is lifted as that record's constructor and imported where it is written, under its template alias (`Env.templateImports`, 01-compiler/14 step 8); the `.js` requires it from that `import`, which is no binding, so each name a declaration reads that nothing binds and such an `import` brings is written `import { Badge } from "./badges/badges"` at the top of the file, by its declared name (decision 110: the alias is a checker name only) — `conformance/modules/comptime_reaches_package_template`. `scripts/tsc-check.sh` (gate stage 11) holds every typedef of a commonJS build of `libs/` (std and the bundled packages), `examples/` and `conformance/modules` to `tsc --noEmit --strict` (TypeScript 7.0.2): 6 of 62 projects were rejected before these three rows, 0 after; std was rejected (`Cannot find name 'SourceLocation'`) before the private-type row |
 | `runtime.zig` | Test-side execution for the snapshot `----- RUN LOG -----` block. See [runtime](#runtime) below. `executeTestModule` runs a **test-mode** module the way `botopink test` does (`node main.js` / `escript main.erl`) and answers its output whatever the exit status — the decision-74 FAIL line is a non-zero exit, which the snapshot path records as an empty RUN LOG, and `executeErlang` never runs a test module (no `_botopink_main`) |
 | `snapshot.zig` | `buildSnapshot` / `buildSnapshotMulti` / `assertCodegen` / `assertCodegenError` — paths `codegen/<target>/<slug>` and `codegen/errors/<target>/<slug>` (one tree: the comptime runtime is wasm for every target, decision 434 — front 18's doubled `codegen/{beam,wat}/` tree collapsed); `writeComptimeSections` writes `GenerateResult.comptime_trace` (`COMPTIME WAT`, then `COMPTIME REPLY`, rendered by `comptime/trace.zig`) then `COMPTIME VALUES` for every backend. A `SnapInput` with `result == null` (the module never reached the backend) or with `comptime_err` set writes a `COMPILE DIAGNOSTIC` section instead of the code section — spec 06 H3, which used to leave such snapshots empty. `writeUnitSections` adds one `----- ERLANG -- <atom>.erl` / `----- BEAM ASSEMBLY -- <atom>.S` section per `GenerateResult.units` entry, so a cell shows every module its program loads and `beam_export_audit.sh` — which keys on the `{module, …}` form, not on the fixture — assembles each of them. `writeRunLog` is the one writer of the `----- RUN LOG -----` section on every backend, and it normalises the `botopink test` envelope's `  duration <digits>ms` line to `  duration <ms>ms` (`isDurationLine`: the two-space indent, the word, digits, `ms` — nothing a program prints by accident): that line is the runner's wall clock around each test body, the ONE nondeterministic line of the envelope, and a snapshot pinning its digits (`src_in_a_test` recorded `0ms`) failed on any machine slower than the one that wrote it — `1ms` under load, the only line that differed. `tests/helpers.zig`'s `stripDurationLines` is the same rule for `assertTestModeRunLog`, which writes no snapshot. `writeWatModule` (wasm) writes the module text with every function in `GenerateResult.std_funcs` (`moduleOutput.StdFunc`: transpiled from `std_wasm.wasm`, decision 440) as the one line `;; <label> — from std_wasm.wasm (sha256 <12 hex>)`, its body omitted (decision 446): the snapshot's rendering alone, `GenerateResult.js` and the binary the RUN LOG runs keep every body |
 | `tests.zig` | Barrel aggregating `tests/<feature>.zig` plus the `beam/*.zig` and `wat/wat_emitter.zig` unit tests; harness in `tests/helpers.zig` (`assertJs`, `assertJsSingle`, `assertJsError`, `assertJsTestMode`, `assertJsContains`, `assertJsNotContains`, `assertJsRunLog`, `assertDtsContains`, `assertConsumerJs`, `configs` — one config per target). The snapshot-free helpers are what a **single backend's** row uses: a snapshot carries the same program through all four, so a commonJS-only fixture would write into the erlang, beam and wasm snapshot directories other fronts own |
@@ -211,21 +211,21 @@ codegen/
   module and package boundary, and it is what `variantTest`, the payload arms
   and `@Result` already used. `unit_variant_names` therefore records only the
   NAMES, to tell a variant from a binding. Pinned by
-  `tests/language/modules/package_variant_identity/`, which one package cannot
+  `conformance/modules/package_variant_identity/`, which one package cannot
   express. `is`/`val assert` still test `instanceof` (below) and inherit the
   same limit wherever a class is re-emitted.
 - **`null` / `true` / `false` as a field's pattern are tests**
   (`isKeywordLiteralPattern`, read by `patternTest` and `isBindingName`):
   `Box(label: null, n: k)` is `_s.label == null` (the loose `==` an absence is
   everywhere), never `const null = …` — a `SyntaxError` before `main` ran
-  (`tests/language/run/case_record_field_null`).
+  (`conformance/modules/case_record_field_null`).
 - **A record's constructor pattern is the record's class test** (`variantTest`):
   `Dog(name: n, breed: b)` — labelled, swapped, with `..`, positional or
   nested — over a name `record_fields` holds and no variant of the module
   declares is `_s instanceof Dog`, its payload read off the record's declared
   fields (`payloadSlots(…, true)`), as the bare `Dog` arm already was. It was
   the variant's `_s.tag === "Dog"`, which no record carries: every arm failed
-  and the `case` printed `null` (`tests/language/run/case_record_labelled_fields`).
+  and the `case` printed `null` (`conformance/modules/case_record_labelled_fields`).
 - **One spelling can name both a `type` and a variant, and the arm tests
   BOTH** (`patternTest`'s `.ident`, `isDeclaredVariantName`). Decision 8 §5.3b
   says which one a `case` arm means — the SUBJECT's type does, and a section's
@@ -240,13 +240,13 @@ codegen/
   `tokenDeclarations(.Layout.Block)` answered the empty string at exit 0 while
   erlang and wasm answered `display:block` (223 passed / 2 failed against
   225 / 0, from one source). Pinned by
-  `tests/language/run/case_arm_name_is_also_a_type.bp`, which runs on all four.
+  `conformance/modules/case_arm_name_is_also_a_type`, which runs on all four.
   erlang, beam and wasm test both the same way — the variant's identity
-  `orelse` the record's type (`tests/language/run/case_arm_record_named_like_a_variant.bp`,
+  `orelse` the record's type (`conformance/modules/case_arm_record_named_like_a_variant`,
   the mirror case: a `case` over `Block | Vec` naming the record). A
   `val assert` over a variant (`buildPatternCheck`) tests the `tag` as a `case`
   arm does; `instanceof Circle` named no class and died `ReferenceError`
-  (`tests/language/run/val_assert_variant_pattern.bp`).
+  (`conformance/modules/val_assert_variant_pattern`).
 - **Self tail calls are a LOOP, not a frame** (`selfTailLoop`, D6 of
   1.0.10-beta `00 · 04-js`). V8 has no tail-call elimination, so `return f(…)`
   inside `f` cost a stack frame per round and a few thousand rounds ended the
@@ -282,7 +282,7 @@ codegen/
   its own name locally; and anything but a plain `function` — a generator's
   `return f(…)` resumes an iterator rather than ending one, and an `async`
   one's answer is a promise. Pinned by
-  `tests/language/run/self_tail_recursion.bp` (every target) and five
+  `conformance/modules/self_tail_recursion` (every target) and five
   `control_flow.zig` cells that RUN.
 - **`.len`**: `s.len` / `arr.len` on a typed string/array (inference records
   `.prim` in `instance_lowerings`, threaded in as `Emitter.lowerings`) emits
@@ -323,7 +323,7 @@ codegen/
   `fs.globSync` — and CI installs 22) since `fix/js-instanceof-boundary`, and the rename is
   type-naive, so it reaches every `.reverse()` call site and not only the ones
   inference typed. Pinned by
-  `tests/language/run/array_reverse_answers_a_new_array.bp`, which reads the
+  `conformance/modules/array_reverse_answers_a_new_array`, which reads the
   receiver AFTER the call — no commonJS snapshot exercises `reverse` at all.
 - **The only external spelling is `#[@External.<Target>(…)]`.** `FnDecl.isExternal`
   (`ast.zig`) matches on the `External.` prefix, so the retired lowercase
@@ -359,7 +359,7 @@ codegen/
   class and `null` pass through. `@Task` is not looked through, and a
   `(module, symbol)` alias another module imports bypasses it (the consumer
   calls the host symbol directly). The erlang twin is `adoptHostResult`.
-  Pinned by `tests/language/run/external_method_on_host_record`.
+  Pinned by `conformance/modules/external_method_on_host_record`.
 - **A template on a BEHAVIOR method is a prototype patch, not a call-site
   render** (`buildInterface`): it becomes `<Owner>.prototype.<m> =
   function(…){ return <template with $0 = this[.valueOf()]> }` and every call
@@ -373,7 +373,7 @@ codegen/
   the original; the rule is instead **gated** by
   `codegen/tests/externals.zig`'s `no prelude template calls the method it
   patches`, which walks the embedded prelude. Pinned end to end by
-  `tests/language/run/string_char_code_after_slice.bp`.
+  `conformance/modules/string_char_code_after_slice`.
 - **`assert`** (semantics decision 4): outside test mode it is always fatal —
   `__bp_assert_fatal(cond, msg, "<file>:<line>")`, a prelude helper that
   throws `Error("<msg> at <file>:<line>")` (`"assertion failed"` without a
@@ -533,7 +533,7 @@ codegen/
   The arms are sibling `if`s over `_s`, not an `else if` chain, so a block
   whose last statement answers nothing (a `for`, an assignment, an `if`
   without `else`) ends in a bare `return;` — it fell into the next arm, and a
-  `_` arm ran after it (`run/case_arm_ending_in_for`).
+  `_` arm ran after it (`modules/case_arm_ending_in_for`).
 - **A one-parameter arm block binds the subject** (`_ { v -> … }`): the arm
   lambda's single parameter is `const v = _s;` at the top of the arm — the only
   scope where the subject is in hand. The checker types it as the subject
@@ -609,7 +609,7 @@ codegen/
   the checker typed the call through (`ast.optional_synthetic_col`), since the
   written `?.` call's own loc records no instance lowering; written as a member
   call it failed with `…?.str is not a function` on std's `Json`
-  (`run/optional_enum_method_call`).
+  (`modules/optional_enum_method_call`).
 - **User interface `default fn`s**: an interface that is not a JS global owns
   no constructor, so its instance defaults are copied as class methods into
   every local record that implements it and does not define the method
@@ -698,7 +698,7 @@ codegen/
   argument fills the slot of the field it names (`variant_fields`, the declared
   fields a `case` pattern's labels already read), as a record constructor's
   does — built positionally it was `{…rect, 2, 5}` and
-  `run/labelled_arguments.bp` printed `205` for `502`. The beam twin is
+  `modules/labelled_arguments` printed `205` for `502`. The beam twin is
   `lowerTaggedTuple`'s `variantDeclOf`.
 - **A string literal is its UTF-8 bytes**: `erl_emitter.writeStringFromLexeme`
   writes `\u{…}` as the code point's UTF-8 bytes and a raw byte ≥ 0x80 as
@@ -724,7 +724,7 @@ codegen/
   `return` answers the `@block` of the call site's frame (`inBlockExit`,
   decision 2) when there is one — `val found = @block { for (xs) { x -> if
   (x > limit) return x; } return -1; }` answered `7` from the function where
-  it means `700` (`run/block_for_return_is_block_value`).
+  it means `700` (`modules/block_for_return_is_block_value`).
 - **A `@Result`/`@Option` op's fun names nothing a program writes**
   (`resultOptionNode`): `(fun(__BpR) -> case __BpR of {ok, __BpV<n>} -> …)`,
   the payload numbered per function (`opt_seq`, reset with `try_seq`) because a
@@ -756,7 +756,7 @@ codegen/
   generator (`genStopThrow`): `throw({'__bp_gen_stop', Key})`, which
   `genEndCatch` answers with `ok` — a second catch clause written only when
   the body has one (`gen_stop_used`). It threw the loop's `'__bp_break'`,
-  which nothing caught (`run/generator_break_value.bp`).
+  which nothing caught (`modules/generator_break_value`).
 - **Calling the result of a call** (`adder(3)(4)`, `cc.calleeExpr` with
   `callee == ""`): `(adder(3))(4)` — `applyParen` over the callee expression's
   node, first thing in `plainCallNode`. Read as a name it was `''(4)`, which
@@ -807,7 +807,7 @@ codegen/
   declaration sends the call to `'__bp_method'/3` (`dynamicMethodNode`,
   `method_helper_form`), which applies `element(1, V)`'s module, keeping the
   `maps:get` dispatch for a map receiver exactly as `'__bp_field'/2` does.
-  Pinned by `tests/language/modules/method_name_collision`, and measured on the
+  Pinned by `conformance/modules/method_name_collision`, and measured on the
   consumer library that found it: 1 passed / 8 failed → 9 / 0 on erlang.
   **A `type` with no bodied method emits no module**: an artifact holding one
   `-module` line is not written and no snapshot section shows one. Half 3 gives
@@ -925,7 +925,7 @@ codegen/
   file, `erl -pa out/erl`) called the sidecar `undef`. Under `botopink run`
   every module is compiled already, so the loader costs one
   `code:ensure_loaded/1` per file. Measured by hand on
-  `tests/language/modules/erlang_host_sidecar_shipped` until the CLI half
+  `conformance/modules/erlang_host_sidecar_shipped` until the CLI half
   (26) runs a built program that way.
 - **Test mode loads its siblings.** `escript <module>.erl` compiles and loads
   that module only, so a cross-module call would be `undef` at run time: in test
@@ -937,11 +937,11 @@ codegen/
   run, not one per sibling per test module) and compiles the source itself
   otherwise, which is also the arm every module that does not compile takes. "Reaches another one" is `imported_fns`, `imported_vals`
   (a sibling's `pub val`, decision 140 — missing until onze F1, so a test that
-  read one died `{error,undef}`; `tests/language/modules/pub_val_in_a_test`),
+  read one died `{error,undef}`; `conformance/test/pub_val_in_a_test`),
   `imported_types`, **`std_imports`**, a build that binds a BEAM host of its own
   (`binds_erlang_host` — a test module declaring its sidecar's function imports
   nothing, and its call died `{error,undef}`;
-  `tests/language/modules/erlang_host_sidecar_in_a_test`) and a type module of its own — the std route was missing, so
+  `conformance/test/erlang_host_sidecar_in_a_test`) and a type module of its own — the std route was missing, so
   `import {querystring} from "std"` emitted the remote `std@querystring:parse/1`
   in a module whose runner never loaded `std@querystring` and the test died
   `{error,undef}`.
@@ -956,7 +956,7 @@ codegen/
   bound in the function gets a fresh variable on every later binding — `=`, `+=`
   or a shadowing `val i = i - 1` lowers to `Count@1 = Count + 1` and later reads
   resolve to the current version — a call of a fn-typed local too (`v()` after a
-  second `val v` applies `V@1`; `run/fn_local_rebound_call`) (`emitBind`/`varRef`, `var_current`/`var_next`
+  second `val v` applies `V@1`; `modules/fn_local_rebound_call`) (`emitBind`/`varRef`, `var_current`/`var_next`
   reset per fn; versions are never reused so separate `case` arms can't
   collide). **Pattern bindings version too** (`patternBindVar`): erlang patterns
   do not shadow, so `case sh { Square(s) -> … }` with `s` already a parameter
@@ -1091,7 +1091,7 @@ codegen/
   `no_auto_import` names `length`, its bare `length(…)` is written
   `erlang:length(…)` (`qualifyShadowedBifs`, over the template's text segments —
   strings, quoted atoms, `$c` and comments skipped); elsewhere it is unchanged.
-  `run/module_fn_named_like_bif` pins it on four targets.
+  `modules/module_fn_named_like_bif` pins it on four targets.
 - **A `default fn` body's locals have the kind its declared types give them**
   (`defaultValueKind`, `default_kinds`). Inference records no lowering inside
   an interface `default fn` body, so a method on one of its locals was the bare
@@ -1115,7 +1115,7 @@ codegen/
   `..` tuple's element guard in `tuplePatternNode`): `#(true, n)` was
   `{True, N}`, a binder, and the first arm took every tuple. `null` is the
   atom `undefined`: `Box(label: null, n: k)` was `{…, Null, K}` and took every
-  box (`tests/language/run/case_record_field_null`).
+  box (`conformance/modules/case_record_field_null`).
 - **A record's constructor pattern carries the record's tag**: `Point(x: 0, ..)`
   and `Point(x: 0, y: y)` in a `case` are `{'<pkg>@<path>@@Point', 0, _}`
   (`recordTagAtom`, decision 109), what the constructor builds — the bare
@@ -1136,7 +1136,7 @@ codegen/
   enclosing function's locals, versions and kinds come back unchanged after the
   fun — `val k = "l"` inside a `forEach` body made the outer `k` read `K@1`
   (unbound), and a parameter `e` over an outer `e` left the outer one `E@1`.
-  `var_next` keeps counting. `run/lambda_binds_name_of_enclosing_fn`.
+  `var_next` keeps counting. `modules/lambda_binds_name_of_enclosing_fn`.
 - **Every adopter of a `default fn` emits it** (`collectAdoptedIfaceDefaults`):
   under policy 3 each type has a module of its own, so a default two types
   adopt, or one a type adopts while another declares a method of that name, is
@@ -1145,7 +1145,7 @@ codegen/
   The old rule — skip a default whose `<name>/<arity>` is taken or claimed
   twice — was the flat namespace's and left `twice/1` undefined; only a
   comptime module (`untyped`, methods inline) keeps it.
-  `run/behavior_default_adopted_by_two_types`.
+  `modules/behavior_default_adopted_by_two_types`.
 - **Modules are `erl_ast` forms**: `emitErlangModule` builds every form in one
   arena and renders them with `erl_emitter.writeForms`: `-module`
   (`crossModule.erlAtom(module_path)` — the path joined with `@`),
@@ -1164,7 +1164,7 @@ codegen/
   `standard_io` in the encoding of the host's locale, so under `LANG=C`
   `@print("é")` wrote the latin1 byte `0xE9` and `"\u{1F600}"` the text
   `\x{1F600}`; the program fixes it rather than the runner pinning a locale,
-  which would hide it (decision 67). `run/string_literal_unicode_escape` run
+  which would hide it (decision 67). `modules/string_literal_unicode_escape` run
   under `LANG=C` is the measurement.
 - **Bodies are `erl_ast` nodes**: `emitBodyFrom` builds an `Ast.Body` with
   `bodyNode(b, body, start, indent)` and renders it with `erl_emitter.writeBody`.
@@ -1233,16 +1233,16 @@ codegen/
   and sets `block_guard`, so a `return` the fun cannot answer as its last expression (in a loop or
   a discarded statement of the body) throws `{'__bp_block', V}` to the block's own guard
   (`guardBlockReturn`), never `'__bp_try'` to the function's — `@block { if (x == 2) { return
-  100; } return x; }` inside a `for` answered from the enclosing function (`run/block_return_is_block_value`).
+  100; } return x; }` inside a `for` answered from the enclosing function (`modules/block_return_is_block_value`).
   A lambda resets `block_guard`. A statement `@block` with no `return` of its own that reassigns
   an enclosing `var` (`acc = acc + 5;`) answers the reassigned variables and the statement rebinds
   them (`mutatingBlockExpr`: `Acc@2 = (fun() -> Acc@1 = …, Acc@1 end)()`;
-  `run/block_reassigns_enclosing_var`). The same block with a `return` in it, or in value
+  `modules/block_reassigns_enclosing_var`). The same block with a `return` in it, or in value
   position, sets `block_group` while its body is lowered: every `return` answers `{V, Group}` (the
   value, the names at their versions there — thrown to the block's guard or the fun's last
   expression alike) and the call site rebinds the group (`valueBlockExpr`:
   `element(1, {_, Acc@2} = (fun() -> …, {V, Acc@1} end)())`;
-  `run/block_value_reassigns_enclosing_var`, a `for`'s `return` in `tests/erlang.zig`). A lambda
+  `modules/block_value_reassigns_enclosing_var`, a `for`'s `return` in `tests/erlang.zig`). A lambda
   resets `block_group`.
 - **Mutation through branches and loops** (`mutatingExpr`): a statement-level
   `if` / `for (xs) { x -> … }` / `xs.forEach({ x -> … })` that reassigns variables
@@ -1265,7 +1265,7 @@ codegen/
   { Cell(kids) -> kids; … }`) or a write in one arm is not current in the next
   arm nor after the `case` — and so does `earlyReturnIfExpr` after its
   returning then-arm, whose writes never reach the rest it nests in the false
-  arm (`run/var_written_in_branch_read_after`). Arms ending in `return`,
+  arm (`modules/var_written_in_branch_read_after`). Arms ending in `return`,
   indexed/`await`/yielding loops keep the plain lowering; the older
   `var acc = …; xs.forEach(…)` fold fusion still takes precedence.
   A receiver mutation counts as a reassignment (`receiverMutation`): a
@@ -1279,7 +1279,7 @@ codegen/
   var's memory, as `names = …` is (`bindExpr` → `memoryWrite`), and the name is
   not threaded through a loop; the push used to compute the list and drop it,
   so load-time self-registration registered nothing
-  (`tests/language/modules/module_var_self_registration`).
+  (`conformance/modules/module_var_self_registration`).
   `xs.pop()` answers the last element and SHRINKS the list (`popLocal`,
   `popStep`, `popNode`): it rides `seq.next()`'s machinery — `collectSeqNexts`
   finds it wherever the statement evaluates it unconditionally (now a branch's
@@ -1290,7 +1290,7 @@ codegen/
   `var` the rest is written back through its memory. The template alone
   (`lists:last/1`) read the element and left the list, so a
   `while (xs.length() > 0)` over it never ended
-  (`tests/language/run/array_pop_removes.bp`).
+  (`conformance/modules/array_pop_removes`).
   A local closure whose body reassigns variables of the enclosing function
   (`val emit = { t -> toks = toks.append([t]); }`) cannot rebind what it
   captured, so it is lowered with those variables as an extra last parameter and
@@ -1310,7 +1310,7 @@ codegen/
   `#{selector := S}`), and `typeTestNode` tests a record as `is_map(V)
   andalso is_map_key(<field>, V)` per declared field (`untypedRecordTest`),
   which `is` and an arm naming a record that is also a variant use
-  (`run/comptime_record_pattern`).
+  (`modules/comptime_record_pattern`).
 - **Comptime modules:** `emitComptimeModule(alloc, name, program, .{ host_enums,
   host_records, exports, forms, resident, listing, unsupported_method })` lowers an untyped decorator/template body with
   the same emitter — `host_enums` join `enum_names` (`DeclKind.Type` →
@@ -1358,7 +1358,7 @@ codegen/
   — which a `libs/std` module compiled as a DEPENDENCY (`from "std"`) does not.
   Five std modules emitted a bare local `slice/3` nothing defines and were
   refused by `erlc`: `path`, `querystring`, `queue`, `snapshots`, `url`
-  (`tests/language/run/std_default_fn_in_a_std_module.bp`). So BIF-named
+  (`conformance/modules/std_default_fn_in_a_std_module`). So BIF-named
   methods (`length`, `abs`, `floor`) dispatch on the receiver too. A call nothing
   answers is recorded in `unsupported_method` (when set, compilable emit only)
   and the emit fails with `error.UnsupportedComptimeMethod`; the evaluators turn
@@ -1401,7 +1401,7 @@ codegen/
   badarg}` when it is not. Every `pub` record of `CrossModule.owners` votes now
   (`exports` keeps ONE entry per name and could not see the second declaration),
   and one dissenting declaration sends the read to `'__bp_field'/2`. Pinned by
-  `tests/language/modules/field_name_collision`, where the guess answered `1` on
+  `conformance/modules/field_name_collision`, where the guess answered `1` on
   erlang and `2` on commonJS.
   **The TYPE NAME is counted the same way** (`typeNameContested`): inference
   records a receiver's type as a NAME (`InstanceLowering.field_of` / `.type_`)
@@ -1413,7 +1413,7 @@ codegen/
   method call ran `language_tests@parser@@Outcome:describe/1` over a `net` tuple. A
   contested name sends the read to `'__bp_field'/2` and the call to
   `'__bp_method'/3`, which ask the value's own tag. Pinned by
-  `tests/language/modules/type_name_collision`. Tuple index `t._N` and the
+  `conformance/modules/type_name_collision`. Tuple index `t._N` and the
   bare `t.N` → `element(N+1, T)`. No `-record` declarations are emitted. Optional
   chaining `?.` guards on `undefined` via an immediate fun. A record
   destructuring (`val { x, y } = p`, a `{ name, .. }` parameter, a `try` head) is
@@ -1443,7 +1443,7 @@ codegen/
   and an empty RUN LOG — measured on the largest library outside this repository
   — and `libs/std`'s own `fs.stat` and `http.fetch` still built maps after half 3
   swept `os.userInfo` / `regex.match` / `regex.matchAll` by hand. Pinned by
-  `tests/language/run/external_host_record.bp`.
+  `conformance/modules/external_host_record`.
 - **`x is T` and a `case` arm naming a type** (decision 8 §4.2 and §3.3):
   `typeTestNode` writes ONE boolean expression that is also a legal erlang
   guard, so the two share a lowering — `is_binary` / `is_boolean`, `is_number`
@@ -1490,8 +1490,8 @@ codegen/
   raises as `error.AmbiguousVariant` and the driver renders through
   `moduleOutput.AmbiguousVariant` — a diagnostic naming both enums and both
   qualified spellings. Decision 67: refuse rather than guess. Pinned by
-  `tests/language/run/variant_name_collision.bp` (the qualified spelling, on
-  every target) and `run/variant_name_ambiguous.bp` (the refusal, erlang only —
+  `conformance/modules/variant_name_collision` (the qualified spelling, on
+  every target) and `modules/variant_name_ambiguous` (the refusal, erlang only —
   see its header for why the other three rows are not this cell's shape). `Ok`/`Err` keep the `@Result` runtime tags.
   A bare `.ident` case pattern is the atom when it names a
   known variant (`enum_variants`), else a variable. `enum_variants` also holds
@@ -1533,7 +1533,7 @@ codegen/
     tested). The fun's name carries the backend's own `__Bp` prefix because a
     host template is spliced into the same clause: a template binding `__Loop`
     re-matched the bound fun (language-gaps T14,
-    `run/host_template_binding_inside_while`). Inside it (`cond_loop`, cleared behind a fun boundary) a bare
+    `modules/host_template_binding_inside_while`). Inside it (`cond_loop`, cleared behind a fun boundary) a bare
     `break` throws `{'__bp_cond_break', Group}` caught around the call, and a
     `continue` throws `{'__bp_cond_continue', Group}` caught around the body, so
     the recursion carries the variables at the jump; each loop's `catch` binds
@@ -1608,7 +1608,7 @@ codegen/
   plain row, byte for byte). The reader `name/0` of a keyed var is the guard
   (`'_botopink_init'/0` calls it, so the table exists from load); nothing else
   reads it whole. Two processes writing their own key 20 000 times each keep
-  both (`run/beam_memory_ets_keyed`); stored whole, one write put the other's
+  both (`modules/beam_memory_ets_keyed`); stored whole, one write put the other's
   stale row back — 19 996 of 20 000 measured on beam. `beam_asm.zig` carries
   the same modes in assembly (step 5).
 - **The module body** (`'_botopink_init'/0`, `initForms`): a module-level `val` is
@@ -1826,7 +1826,7 @@ codegen/
   `<atom>.S` in the run's directory, assembles them all once
   (`erlc +from_asm`) and runs each test module with `erl -noshell -pa <dir>
   -eval "'<atom>':main(init:get_plain_arguments()), halt()." -extra
-  [filter]`; all 68 test-kind cells of `tests/language` pass there.
+  [filter]`; all 68 test-kind cells of `conformance` pass there.
 - **An entry point sets its own `standard_io` to unicode** (`emitUnicodeStdio`,
   the twin of `erlang.zig`'s `unicodeStdio`): `io:setopts(standard_io,
   [{encoding, unicode}])` is the first call of `'_botopink_main'/0` and of the
@@ -1834,7 +1834,7 @@ codegen/
   (`{allocate, 0, 0}`) even when only `main/0` follows. Under `LANG=C` beam
   wrote `@print("é")` as the latin1 byte `0xE9` and `"\u{1F600}"` as the text
   `\x{1F600}`; pinned by `codegen/tests/beam.zig`'s fixture of the same name,
-  measured by `run/string_literal_unicode_escape` under `LANG=C`.
+  measured by `modules/string_literal_unicode_escape` under `LANG=C`.
 - **Host `.erl` modules beside the program — `'__bp_load_siblings'/0`**
   (`emitLoadSiblings`; 1.0.11-beta `00-gate` front 111). `botopink build
   --target beam` copies the `<host>.erl` of every `#[@External.Erlang("<host>",
@@ -1886,14 +1886,14 @@ codegen/
   (`withHostMethodBodies`), is covered by the same site. Before it a template
   that builds `#{x => 7, y => 9}` was read positionally: `badarg` from
   `element/2`, `badarith` from `+` over two maps
-  (`run/external_host_record`, `run/external_method_on_host_record`, which now
+  (`modules/external_host_record`, `modules/external_method_on_host_record`, which now
   run on beam).
 
 - **A trailing spread written as a bare name** (`lowerArrayLit`): an array
   literal's spread arrives in `spreadExpr` for an expression and in `spread`
   for a name (`[1, 2, ..rest]`). Only the first was read, so the literal was
   its own elements and `list[3]` read past the end — at exit 0
-  (`run/array_spread_literal`). Both are the tail `lowerListOf` conses onto.
+  (`modules/array_spread_literal`). Both are the tail `lowerListOf` conses onto.
 
 - **A method on an untyped receiver that one type of the file declares**
   (`soleOwnTypeOfMethod`, `programMethodDeclarers`; `lowerCall`): inference
@@ -1902,7 +1902,7 @@ codegen/
   used to take the call as `at(P, 0)`. The call now goes into the one type of
   the file whose module holds `at/2` — the erlang backend's `method_owners`
   rule — and to the value when a second type of the PROGRAM declares the
-  method (`lowerDynamicMethodCall`). `run/external_method_on_host_record`.
+  method (`lowerDynamicMethodCall`). `modules/external_method_on_host_record`.
 
 - **Module-level `var`s — `@BeamMemory`** (front 17 step 5): the erlang
   lowering in assembly. The reader `name/0` (`emitMemoryReader`) and every
@@ -1929,7 +1929,7 @@ codegen/
   `undefined`; `etsPut` of the row). The owner tests the seed with
   `is_tagged_tuple` only in a module with a keyed var (`anyKeyedVar`), so no
   other module's `.S` moved. The rows come from `erlang.zig`'s
-  `keyedSeedRows`. The language cells `run/beam_memory_*` and `run/module_var`
+  `keyedSeedRows`. The language cells `run/beam_memory_*` and `modules/module_var`
   print the erlang backend's values on beam.
 
 - **One module per `type` — policy 3, the same split `erlang.zig` made.** A
@@ -1990,7 +1990,7 @@ codegen/
   the `ok`/`error` tags — `variantTag`; with no arm that takes every subject
   (`armCatchesAll`: `_` or a plain binder, unguarded), the fall-through is
   `{case_end, {x,0}}` — `{case_clause, V}`, as erlang raises; it answered the
-  subject as the `case`'s value — `run/case_no_arm_matches_raises`),
+  subject as the `case`'s value — `modules/case_no_arm_matches_raises`),
   `if` as value (`emitValueIf`) and as
   statement (`emitIf` — the false branch falls through, never an early
   `return`; the binding form `if (x) { v -> … }` runs when `x` is not
@@ -2121,7 +2121,7 @@ codegen/
   and C-07 D4's beam halves): every shape the `.fields`/`.binding` arms never
   read — a range, a tuple, `..`, labels, a literal or nested payload, a
   primitive type name, `true`/`false`, `null` (the atom `undefined`,
-  `is_eq_exact`; it was bound and took every field — `run/case_record_field_null`)
+  `is_eq_exact`; it was bound and took every field — `modules/case_record_field_null`)
   — is tested from `{x, 0}` element by element. Tests fall through on a match and jump to the next arm; nothing is
   written below the scratch base, so the subject is intact on the fail edge; each
   binder takes a y-slot (`patternYSlots` counts nested ones). `A...B` is two
@@ -2200,7 +2200,7 @@ codegen/
   label table reserved it — a type's unit starts with none and the file module
   gets its own back. Shared, a helper a record METHOD reached first was reserved
   in the type's unit and the file's next call site failed `UnknownFunction`
-  with no location (`run/narrowing_null_guard_clause.bp`).
+  with no location (`modules/narrowing_null_guard_clause`).
 - **Lambda bodies** (`emitLambdaBody`): the last statement is the lambda's
   value when it is a value tail — `armValueTail`'s set, shared with a `case`
   arm's block, so an `if`, a `case` and a `try … catch` answer their value
@@ -2265,7 +2265,7 @@ codegen/
   Scope matters because a `case` binder's y-register is written only on the
   arm that binds it: capturing an enclosing `v` a lambda's own `Ok(v)` shadows
   made `make_fun3` read an unassigned `{y, N}`, which `erlc +from_asm` refuses
-  (`run/lambda_rebinds_case_binders`).
+  (`modules/lambda_rebinds_case_binders`).
 - **Mutation threading** (`lowerMutatingFold`, `emitGroupFun`): a statement
   `for (xs) { x -> … }` or `xs.forEach({ x -> … })` whose body reassigns names of the enclosing frame
   (`=`, `+=`, `out.push(v)`, a mutating closure call, nested
@@ -2390,7 +2390,7 @@ codegen/
   `self`-first declaration, a `module:template` target and a template the lowering
   refuses (each call site is then the located build error). Every
   `@External.Erlang`-bodied `pub declare fn` of std gets one;
-  `tests/language/run/std_template_host_fns_across_modules.bp` calls several
+  `conformance/modules/std_template_host_fns_across_modules` calls several
   on beam.
   No beam or erlang target raises `MissingExternalTarget`. A call to an
   external another module declares lowers the same way.
@@ -2605,9 +2605,9 @@ first three are now enforced by the model, not by discipline:
     literal, a name bound to an array, an `Array<T>`/`T[]`/`@Iterator<T>`
     parameter or fn result, a record field (or tuple element) declared as one of
     those — a `stream loop` stored in `Ticker(s: …)` and walked by `for await
-    (t.s)`, `run/stream_loop_no_failure` — an array-returning primitive method,
+    (t.s)`, `modules/stream_loop_no_failure` — an array-returning primitive method,
     an annotated `loop` and `try f()` over a `-> @Result<T[], E>`
-    (`tryPayloadTypeRef`, `run/try_start_positions`), and nothing else (an optional `?T[]` field is not
+    (`tryPayloadTypeRef`, `modules/try_start_positions`), and nothing else (an optional `?T[]` field is not
     an array until unwrapped), because walking the layout of a non-array
     would read its first word as an element count and trap;
   - an array of tuples/records prints as the element addresses (no printer);
@@ -2628,7 +2628,7 @@ first three are now enforced by the model, not by discipline:
     can lower it;
   - an `i64` in an array, a tuple, a variant's payload or a `@Result`: a
     4-byte slot holds no `i64`, and nothing reading such a slot knows its
-    width, so the value is refused where it enters (`run/i64_in_array_slot`).
+    width, so the value is refused where it enters (`modules/i64_in_array_slot`).
     A record's `i64` field and a `?i64` hold an 8-byte cell (`$__box_i64`),
     as every float slot holds its `f64` cell (§ wat/AGENTS.md "Numbers");
 - **Non-constant top-level `val`s** (`emitGlobalVal` → `deferred_globals`): a
@@ -2679,7 +2679,7 @@ first three are now enforced by the model, not by discipline:
   string it used to read a length out of the WASI iovec at address 0 and
   answer garbage with exit 0 — since `00 · 05-wasm` `$__print_str_raw` traps
   on any pointer below the data floor (256) instead, see
-  [`wat/AGENTS.md`](wat/AGENTS.md). `tests/language/run/string_at.bp` pins it
+  [`wat/AGENTS.md`](wat/AGENTS.md). `conformance/modules/string_at` pins it
   on all four targets.
 - **A `?f64` / `?i64`** (`fs.at(0)` on a float array, whose slot already holds
   the cell; a declared `?f64`) is the address of its 8-byte cell (`OptInfo.cell`)
@@ -2712,7 +2712,7 @@ first three are now enforced by the model, not by discipline:
   from any loop depth (`emitGenBreak`: `br $__gen{n}`, or the fn's
   `return` of what it collected); a bare `break` at a generator fn's own level
   ends it the same way without appending (`emitGenEnd`, decision 103 —
-  `run/generator_break_value.bp`). The loop is the array. Every other loop is a
+  `modules/generator_break_value`). The loop is the array. Every other loop is a
   statement: decision 8 §10's search (`$__found{n}`), decision 52's
   `$__got{n}` flag and `$__print_loop_i32` / `$__print_null`, and the
   valueless-loop `null` all left with the loop's value.
@@ -2850,7 +2850,7 @@ first three are now enforced by the model, not by discipline:
   string, array, record type, a nested `@Result`), and so does a `for` element
   over a declared array / `@Iterator` / `@Stream` (`elemTypeRefOf`). Without
   it a string payload printed its heap address (`error 256`) —
-  `run/result_string_payloads.bp` pins the shapes.
+  `modules/result_string_payloads` pins the shapes.
 - **`@print` of an array of strings, a tuple or an array of tuples** (semantics
   decision 1a) goes through `$__print_shaped_raw(v, shape, 1)`: the emitter
   interns a shape string (`i` i32, `f` a float's cell, `l` a record's `i64` cell, `b` bool, `s` string, `[X` array
@@ -3138,7 +3138,7 @@ best of three): 995 → 687 ms — the number fast path is cheaper than the
 range check it replaced. No flag turns it off (decision 67). Not checked: a
 module `var` under `#[@BeamMemory.Ets]` whose `+=` is the host's atomic
 counter (`ets:update_counter`). Division by zero keeps erlang's and beam's
-`badarith`. Cells: `tests/language/AGENTS.md` § The sidecars of a `run/` cell.
+`badarith`. Cells: `conformance/AGENTS.md` § The sidecars of a `run/` cell.
 
 ## Primitive methods
 
@@ -3182,7 +3182,7 @@ and on beam and prints the same 84 lines on both. `Array.unique` (every
 duplicate dropped, first occurrence kept — decision 217) answers on erlang since
 std's body stopped calling a method on an optional and the erlang emitter types a
 `default fn` body's locals (§ erlang, "A `default fn` body's locals"); wasm's
-std-wasm's `array.unique` answers the same (`run/array_unique`).
+std-wasm's `array.unique` answers the same (`modules/array_unique`).
 
 ## Quick-reference rules
 
@@ -3234,7 +3234,7 @@ std-wasm's `array.unique` answers the same (`run/array_unique`).
   `f64.const` (`numLitType`; it was an `f32.const`, where `5e-324` is `0`) and
   a radix integer as its decimal value (`numLitConst` / `numeralText`: wat has
   no `0b` / `0o`, and the token used to be interned as a string, so `0xFF`
-  printed an address) — `run/number_literal_erlang_spellings` runs on all four.
+  printed an address) — `modules/number_literal_erlang_spellings` runs on all four.
   A method's float parameter and result are the float it declares
   (`memberValType`); every other method word stays an `i32`.
 - A record CONSTRUCTOR in binding position (`val Pt(y, _) = p;`, decision 67's
@@ -3255,7 +3255,7 @@ std-wasm's `array.unique` answers the same (`run/array_unique`).
   its tail variable — the whole list — in every position: it wrote `[Rest]`, a
   one-element list, so a `[..all]` `case` arm died `case_clause` and
   `val assert [..all]` panicked on any other length
-  (`run/list_pattern_spread_alone`, `codegen/tests/erlang.zig`).
+  (`modules/list_pattern_spread_alone`, `codegen/tests/erlang.zig`).
 
 ## Effects (the return is the effect — decisions 118–128)
 
@@ -3280,8 +3280,8 @@ generator (`in_generator`) as `yield _tryN; return;`, and `yield try x` /
 `yield __bp_ok(try x)` at statement position through `buildTryStmt`
 (`TryHead.yield_ok_value` / `.yield_result`). A generator-scope `break <v>` is
 decision 105's (22-loops): commonJS's `function*` and beam run
-`run/generator_break_value.bp`; the eager erlang and wasm scopes were expected
-failures of `tests/language` when it landed.
+`modules/generator_break_value`; the eager erlang and wasm scopes were expected
+failures of `conformance` when it landed.
 
 **A negative index counts from the end** (decision 139), in the one reader
 each backend has for `Array.at` / `String.at` (and so `xs[i]` / `s[i]`, which
@@ -3291,7 +3291,7 @@ the checker rewrites to them): commonJS's `__bp_array_at` /
 `I < 0`), which beam evaluates for `String.at`; beam's `'-bp_at-'/2` adds a
 `J = I + length(L)` branch; wasm's `$__arr_at`, `$__arr_at_box` and std-wasm's `text.at`
 add the length to a negative `i` before their bounds test. Past either end is
-the absent `?T` everywhere (`tests/language/run/index_negative_from_end`).
+the absent `?T` everywhere (`conformance/modules/index_negative_from_end`).
 
 A `try` with no rest of the function to nest in — a call argument or a literal's
 element (`f(try r)`; decision 137 leaves no operand form), a loop's body, an `if`
@@ -3353,7 +3353,7 @@ the receiver's register (`is_nonempty_list` + `get_list`). wasm
 (`lowerSequenceNext`) builds `Yield(e0)` from the blob's first slot when
 `len > 0` (else `Done`) and rebinds the local to `array.slice(seq, 1, len)`, a
 copy. A receiver that is not a local answers its first step and advances
-nothing. `run/yield_step_next.bp` runs the four; `features.zig`'s two
+nothing. `modules/yield_step_next` runs the four; `features.zig`'s two
 `next by hand` rows snapshot them.
 
 Decision 375 (amending 104): `effectShape` answers `async function` for a
@@ -3366,7 +3366,7 @@ checker's spliced one and `use` alike) emits no `await` (`useHookExpr`, the
 maps `@Task<T>` and `@Component<T>` to `Promise<T>` — a synchronous
 top-level `@Component<R>` function to `R` (`fnReturnType`) — `@Iterator<T>` to `IterableIterator<T>` and
 `@Stream<T>` to `AsyncGenerator<T>` (decisions 120, 122, 128).
-`tests/language/run/effect_context_await.bp` and `run/effect_chain.bp` print
+`conformance/modules/effect_context_await` and `modules/effect_chain` print
 every value from inside the `@Component` body, since a caller reads a promise on
 commonJS and the value elsewhere.
 

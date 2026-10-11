@@ -1,0 +1,7 @@
+botopink-cell 1
+out start
+out 0
+out t(signup.mismatch)
+out the passwords differ
+out t(signup.mismatch)
+out 1

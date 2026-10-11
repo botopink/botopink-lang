@@ -1,2 +1,0 @@
-std-unsupported-on-target: std/erlang.nodes has no `#[@External.Wasm]` for target 'wasm' on host 'wasi'
-11:19

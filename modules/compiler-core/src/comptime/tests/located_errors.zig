@@ -1,28 +1,50 @@
 //! C-21 — every `TypeError` the checker raises carries a location.
 //!
-//! Walks every refusal the language tests pin (`tests/language/reject/*.bp`,
-//! one program each, refused by `botopink check`) through the same
-//! `comptime.compile` the CLI runs, and requires each type error to carry a
-//! `loc`. An unlocated error renders as a message with no ` --> file:L:C`
+//! Walks every single-file conformance cell every target refuses
+//! (`conformance/modules/<cell>/src/main.bp` alone, its
+//! `snapshot/output/main.snap` holding a `refused` record — the former
+//! `tests/language/reject/` cells) through the same `comptime.compile` the CLI
+//! runs, and requires each type error to carry a `loc`. An unlocated error renders as a message with no ` --> file:L:C`
 //! line and no source excerpt: the reader is told what is wrong and not
 //! where. The checker's own unit tests hold the same line from the other side
 //! — `assertTypeErrorSnap` and `typeErrorMessage` refuse an unlocated error.
 //!
 //! A cell that does not reach the checker (a parse error, a CLI refusal such
 //! as an unresolved import) is not a type error and is not counted here; the
-//! runner requires its `.expect` to name a location.
+//! cell's snapshot names its location (`at <file>:<line>:<col>`).
 
 const std = @import("std");
 const test_scratch = @import("test_scratch");
 const comptimeMod = @import("../../comptime.zig");
 
-const reject_dir = "../../tests/language/reject";
+const cells_dir = "../../conformance/modules";
+
+/// The cell's one source when it is a single-file cell every target refuses:
+/// `src/` holds `main.bp` alone and `snapshot/output/main.snap` a `refused`
+/// record. Null otherwise.
+fn refusedSingleFile(gpa: std.mem.Allocator, io: std.Io, cells: std.Io.Dir, name: []const u8) !?[]u8 {
+    var cell = cells.openDir(io, name, .{}) catch return null;
+    defer cell.close(io);
+    const snap = cell.readFileAlloc(io, "snapshot/output/main.snap", gpa, .limited(1024 * 1024)) catch return null;
+    defer gpa.free(snap);
+    if (std.mem.indexOf(u8, snap, "\nrefused ") == null) return null;
+    var src = cell.openDir(io, "src", .{ .iterate = true }) catch return null;
+    defer src.close(io);
+    var it = src.iterate();
+    var count: usize = 0;
+    while (try it.next(io)) |e| {
+        count += 1;
+        if (e.kind != .file or !std.mem.eql(u8, e.name, "main.bp")) return null;
+    }
+    if (count != 1) return null;
+    return try src.readFileAlloc(io, "main.bp", gpa, .unlimited);
+}
 
 test "C-21: every type error a reject cell raises carries a location" {
     const gpa = std.testing.allocator;
     const io = std.testing.io;
 
-    var dir = try std.Io.Dir.cwd().openDir(io, reject_dir, .{ .iterate = true });
+    var dir = try std.Io.Dir.cwd().openDir(io, cells_dir, .{ .iterate = true });
     defer dir.close(io);
 
     var names: std.ArrayList([]u8) = .empty;
@@ -32,7 +54,7 @@ test "C-21: every type error a reject cell raises carries a location" {
     }
     var it = dir.iterate();
     while (try it.next(io)) |entry| {
-        if (entry.kind != .file or !std.mem.endsWith(u8, entry.name, ".bp")) continue;
+        if (entry.kind != .directory) continue;
         try names.append(gpa, try gpa.dupe(u8, entry.name));
     }
     std.mem.sort([]u8, names.items, {}, struct {
@@ -40,17 +62,17 @@ test "C-21: every type error a reject cell raises carries a location" {
             return std.mem.lessThan(u8, a, b);
         }
     }.lt);
-    // The corpus is the language tests' refusals; an empty walk measures nothing.
-    try std.testing.expect(names.items.len > 100);
 
     const build_root = test_scratch.path(io, "comptime/located_errors");
 
     var type_errors: usize = 0;
     var unlocated: std.ArrayList(u8) = .empty;
     defer unlocated.deinit(gpa);
+    var walked: usize = 0;
     for (names.items) |name| {
-        const src = try dir.readFileAlloc(io, name, gpa, .unlimited);
+        const src = (try refusedSingleFile(gpa, io, dir, name)) orelse continue;
         defer gpa.free(src);
+        walked += 1;
         var session = try comptimeMod.compile(gpa, &.{.{ .path = "", .source = src }}, io, build_root, null);
         defer session.deinit(gpa);
         for (session.outputs.items) |output| switch (output.outcome) {
@@ -65,6 +87,8 @@ test "C-21: every type error a reject cell raises carries a location" {
             else => {},
         };
     }
+    // The corpus is the conformance suite's refusals; an empty walk measures nothing.
+    try std.testing.expect(walked > 100);
     if (unlocated.items.len > 0) {
         std.debug.print("\nC-21: unlocated type errors ({d} type errors walked):\n{s}", .{ type_errors, unlocated.items });
         return error.UnlocatedTypeError;

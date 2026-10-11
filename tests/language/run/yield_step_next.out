@@ -1,8 +1,0 @@
-yield 1
-yield 2
-done
-done
-yield 1;yield 2;done;
-yield 2
-yield 1
-done

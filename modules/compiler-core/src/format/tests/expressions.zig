@@ -1252,7 +1252,7 @@ test "format: C-13 ---- a brace-less if, a braced value and `??` keep their `;`"
 }
 
 // Front 112 (1.0.11-beta 00-gate): two arms that printed text the parser
-// refuses, found by formatting `tests/language/{run,test}` and a sibling
+// refuses, found by formatting `conformance/{run,test}` and a sibling
 // library's `Props(..p, k: v)` update. Each source below is canonical, so
 // `assertFormatLossless` (output == source, no token lost) is also the proof
 // that the output re-parses to the node it came from; `assertIdempotent`

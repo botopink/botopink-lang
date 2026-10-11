@@ -15,12 +15,12 @@ scripts/
 ├── install.sh         ← POSIX one-liner installer
 ├── install.ps1        ← Windows one-liner installer
 ├── release-pack.sh    ← per-target archive + sha256 packer (used by release.yml)
-├── gate.sh            ← the ordered local gate (staged checks + `zig fmt --check modules`, build, format-check, test, test-bpmp, beam export audit, test-cli, test-libs, test-language, test-docs)
+├── gate.sh            ← the ordered local gate (staged checks + `zig fmt --check modules`, build, format-check, test, test-bpmp, beam export audit, test-cli, test-libs, test-conformance, test-docs)
 ├── format-check.sh    ← `botopink format --check` over the compiler's canonical `.bp` trees (`TREES`) — decision 66's caller
 ├── test-libs.sh       ← runtime pre-flight + `botopink-lib-test` wrapper: one line per cell and per audited exclusion, one summary line (`zig build test-libs`)
 ├── test-vscode.sh     ← locate the sibling vscode-extension, `npm ci` once, `npm test` (`zig build test-vscode`)
 ├── check-docs.sh      ← compiles every `botopink` fence of docs.md/README.md (`zig build test-docs`)
-├── tsc-check.sh       ← `tsc --noEmit --strict` over every `.d.ts`, and `node --check` over every `.js`, a commonJS build of libs/std (the one package the compiler ships), the example projects and tests/language/modules emits (gate stage 11)
+├── tsc-check.sh       ← `tsc --noEmit --strict` over every `.d.ts`, and `node --check` over every `.js`, a commonJS build of libs/std (the one package the compiler ships), the example projects and conformance/modules emits (gate stage 11)
 ├── check-test-scratch.sh ← refuses a cwd-anchored `.botopinkbuild` path inside a `test` block or a `tests/` file (part of `zig build test`)
 ├── snap_audit.sh      ← read-only audit of every *.snap.md (7 modes)
 ├── beam_export_audit.sh ← assemble every beam snapshot module with every function exported
@@ -29,9 +29,10 @@ scripts/
 ├── codemod-import-without-from.py ← decision 206's one-shot migration: `from "<a module of this package>"` → the brace form; `--shorthand`, decision 337's: `import {x};` → `import {<module>.x};` (§ below)
 ├── codemod-optional-operators.py ← decision 330's migration: `.unwrapOr(d)` on a `?T` → `?? d`, `result.<op>(r, …)` → `r.<op>(…)` (§ below)
 ├── codemod-component-contexts.py ← decision 354's migration: `@Component<C, R>` → `@Component<R>`, `@Context<C>` → `@Renderable`, `use @getContext(T)` reported (§ below)
+├── codemod-conformance-cells.py ← 144 B-29 step H: `tests/language/` → `conformance/` cells (`migrate`, `accept`, `audit` — § below)
 ├── lib/
 │   ├── gate-mode.sh   ← which gate a checkout runs (`front/*` → step, anything else → full) and what a changed-file list reaches, from the backend partition (sourced by gate.sh; run directly it explains a branch and a file list)
-│   ├── pool.sh        ← the bounded worker pool the shell runners share (sourced by ../tests/language/run.sh and check-docs.sh)
+│   ├── pool.sh        ← the bounded worker pool the shell runners share (sourced by ../conformance/run.sh and check-docs.sh)
 │   └── result-store.js ← the cell-result store of run.sh and check-docs.sh: keys, lookup, save (decision 229)
 └── git-hooks/
     ├── pre-commit                 ← tracked hook, enabled by `git config core.hooksPath scripts/git-hooks` (see ../AGENTS.md §Local gate)
@@ -118,7 +119,7 @@ See [`../AGENTS.md`](../AGENTS.md) §Release pipeline and
 is written braced (`${lib}·${target}`) — bash 3.2 reads the first byte of `·` as part of the name
 under `set -u` (`lib\xc2: unbound variable`, `test-libs.sh` on macos-14). macOS's `xargs` is BSD's:
 it drops an empty argument even under `-0`, so a NUL-separated record fed to `xargs -0 -n <k>`
-never holds an empty field — `tests/language/run.sh` pads `run_one`'s unused 4th field with `-`
+never holds an empty field — `conformance/run.sh` pads `run_one`'s unused 4th field with `-`
 (an empty one shifted every later group: `commonJS: command not found` on macos-14). A stock macOS has no GNU `timeout`: the runners call `with_timeout` (`scripts/lib/pool.sh` — `timeout`, else `gtimeout`, else perl's alarm), never `timeout` directly.
 macOS's `awk` is BWK awk: a comparison inside an unparenthesized `print`/`printf` argument list is a
 syntax error there (`printf "%s", n == 1 ? "" : "s"` — gawk accepts it), so the ternary is
@@ -153,7 +154,7 @@ store, decision 225 — printing `gate: --cold deleted <dir>` for each, and pass
 `--cold` to stages 8–10, § Warm and cold),
 `zig build test-bpmp`, `scripts/beam_export_audit.sh`, `zig build test-cli`, `zig build
 test-libs` (every cell the manifests declare, and an audit of every target a
-manifest excludes — § test-libs.sh), `zig build test-language` (`tests/language/`, a red cell fails
+manifest excludes — § test-libs.sh), `zig build test-conformance` (`conformance/`, a red cell fails
 it), `zig build test-docs`
 (`check-docs.sh`), `scripts/tsc-check.sh` (§ tsc-check.sh), `zig build test-web` (compiler-core for wasm32 and `modules/compiler-web/tests/smoke.js` under node, default build mode — CI's step, in the gate by decision 231). CI (`.github/workflows/test.yml`) runs the same stages, in the same build mode (decision 226), minus the
 staged checks. The pre-commit hook runs `--staged`; the run
@@ -166,15 +167,17 @@ install tests) would otherwise act on the committing repository.
 
 `scripts/tsc-check.sh [<project>…]` builds the library the compiler ships
 (`libs/std/` — decision 326: the shared libraries are repositories of their
-own, checked by their own gates), every project under `examples/` and every
-`tests/language/modules/<cell>/` with `botopink build --target commonJS
+own, checked by their own gates), every project under `examples/`, every
+conformance cell (`conformance/modules/<cell>/`, each a project with its own
+manifest, decision 475) and every `conformance/test/<project>/` with `botopink build --target commonJS
 --typescript` into a scratch directory and runs `tsc --noEmit --strict --lib
 es2022 --module commonjs` over each build's non-empty `.d.ts` files, one `tsc`
 per project, and `node --check` over each build's `.js` files (in parallel, one
 `node` per file) — the run cells execute their module under node, this reaches
 the modules nothing runs: the libraries' and the examples'. A cell is left out
-only structurally — a `commonJS.expect` (the program is refused there) or a
-manifest `"targets"` list without `commonJS` — and a project that does not
+only structurally — its commonJS answer refuses a module (a `refused` record in
+`snapshot/targets/commonJS/`, or in `snapshot/output/` with no commonJS departure
+of its own) or its manifest's `"targets"` list has no `commonJS` — and a project that does not
 build, or emits no `.d.ts` or no `.js`, is red; no `node` on `PATH` is a
 refusal. `tsc` is
 `npx -p typescript@<TS_VERSION>` (pinned in the script, so the verdict is a
@@ -185,7 +188,8 @@ added after std's `testing/snapshots.d.ts` named the undeclared prelude record
 `SourceLocation` (6 × `TS2304`) with no stage to see it — the six libraries
 cost ~1.5 s of the stage's ~12 s. A planted host template that is not
 JavaScript (`#[@External.Node("($0 +* 1")]`) reds its project with node's
-`SyntaxError` and the file; on the tree it reads 79 projects and 364 modules.
+`SyntaxError` and the file. Since every cell has its own manifest (144 B-29 step H) the walk
+reaches the former single-file cells too: 474 projects and 854 modules, every one accepted.
 
 ### Build mode
 
@@ -208,7 +212,7 @@ Every stage's `✓` line ends with its wall clock and CPU-seconds —
 `✓ zig build test-libs — 3m41s wall, 2210 CPU-s` — measured with bash's
 `time` keyword around the stage (the CPU of every child it waited for
 included). Before stages 4b–12 start, `scripts/test-libs.sh --list`,
-`tests/language/run.sh --list` and `scripts/check-docs.sh --list` print the
+`conformance/run.sh --list` and `scripts/check-docs.sh --list` print the
 plan of stages 8, 9 and 10, and after each of the three its own tally is held
 to its plan: `P + F + N` cells and `A + X` audits of `test-libs:` against the
 `cell:*` and `audit` lines, `cells: <J> jobs — …, <A> audits` of the language
@@ -289,7 +293,7 @@ narrows a run is `--no-conformance` (decision 470, below). The first line
 of the run names the mode and why:
 
 ```text
-gate: step gate (branch front/x): reaches wasm only; test-language on wasm, test-libs skipped, no library cell reached
+gate: step gate (branch front/x): reaches wasm only; test-conformance on wasm, test-libs skipped, no library cell reached
 gate: step gate (branch front/x): reaches every backend (shared file: modules/compiler-core/src/comptime/infer.zig)
 gate: full gate (branch feat): every stage, every cell, every library
 gate: full gate (detached HEAD): every stage, every cell, every library
@@ -297,7 +301,7 @@ gate: full gate (detached HEAD): every stage, every cell, every library
 
 | Branch | Mode | What runs |
 |---|---|---|
-| `front/*` | step gate | every stage of the full gate; only the cells of stage 8 (`test-libs`) and stage 9 (`test-language`) are the step's reach |
+| `front/*` | step gate | every stage of the full gate; only the cells of stage 8 (`test-libs`) and stage 9 (`test-conformance`) are the step's reach |
 | `feat`, `main`, a detached HEAD, any other branch | full gate | every stage, every cell, every library |
 
 **The reach** is computed by `scripts/lib/gate-mode.sh` from the step's change: the
@@ -308,7 +312,7 @@ not its last commit. Each file is mapped by
 
 - listed under `commonJS`, `wasm` or `beam` → that target alone. A change that lists
   several files reaches the union of their targets (`--target wasm,beam` for
-  `tests/language/run.sh`).
+  `conformance/run.sh`).
 - a `*.md` outside `tests/` and `libs/` → nothing: `modules/source-stamp` leaves every
   `*.md` out of every cell key. A change of only such files runs no cell (stages 8 and 9
   print `skipped by the step gate`); `test-docs` and every other stage still run.
@@ -324,8 +328,8 @@ not its last commit. Each file is mapped by
 in the full gate too), so a reach of `wasm`/`beam` alone skips stage 8 and a reach of
 `commonJS` runs `--target commonJS`. The two `--list` plans that hold stages 8 and 9 to
 their counts (§ Stage times, the plan, the budget) are read with the same `--target`, so
-a narrowed stage is held to its narrowed plan; `reject/` cells (target `*`) and the
-restriction audits stay in every plan. Every stage that is not a cell set — formatting,
+a narrowed stage is held to its narrowed plan; the conformance cells (target `*`: `botopink
+cell check` runs each on every target it declares) and the restriction audits stay in every plan. Every stage that is not a cell set — formatting,
 the OTP release, the build, `botopink format --check`, `zig build test`, `test-bpmp`,
 the beam export audit, `test-cli`, `test-docs`, `tsc-check`, `test-web` — runs in both
 modes. Only the full gate writes the green-tree record (§ Green-tree record): a step
@@ -335,7 +339,7 @@ skip stages because of it.
 **`--no-conformance` is the hook's gate** (decision 470). The commit hook
 (`git-hooks/lib/runner-standalone.sh`, for `pre-commit` and `pre-merge-commit`) runs
 `gate.sh --staged --no-conformance`: the mode is still the branch's (a `front/*` branch
-is the step gate), but the conformance stage — today stage 9, `test-language` — does not
+is the step gate), but the conformance stage — stage 9, `test-conformance` — does not
 run, and the run prints `gate: conformance not run (--no-conformance)` after the mode
 line. Every other stage runs as without the flag (`test-docs` is not conformance until
 144 B-29 step I moves the reference). A `--no-conformance` run never writes the
@@ -357,26 +361,27 @@ scripts/gate.sh --cold          # "gate: full gate (detached HEAD): …"
 and lands it on `feat` (a `feat` commit or merge runs the full gate again through the
 hook). A front lands whole: the step gates of its steps are not evidence for the landing.
 
-**Measured** (2026-10-11, one clone of this tree with its own empty cell-result store, a
+**Measured** (before 144 B-29 step H, when stage 9 ran `tests/language/` one job per cell and
+target; 2026-10-11, one clone of this tree with its own empty cell-result store, a
 `wat.zig` first-line comment as the only change; the library repositories' stores were
 shared and warm, so `test-libs` numbers understate the cold cost; a second gate from
 another thread began mid-way in the full run, load 7–14):
 
 | Run | Stages 8 / 9 | Wall |
 |---|---|---|
-| step gate, branch `front/measure` — `reaches wasm only` | `test-libs` skipped (no commonJS/erlang cell); `test-language` 927 of 2715 jobs (523 wasm + 404 `reject/` `*` jobs; 19 audits) | 4m32s (load < 2 at start) |
-| full gate, detached HEAD, same change | `test-libs` 164 jobs (5m40s), `test-language` 2715 jobs (7m21s) | 10m20s |
+| step gate, branch `front/measure` — `reaches wasm only` | `test-libs` skipped (no commonJS/erlang cell); `test-conformance` 927 of 2715 jobs (523 wasm + 404 `reject/` `*` jobs; 19 audits) | 4m32s (load < 2 at start) |
+| full gate, detached HEAD, same change | `test-libs` 164 jobs (5m40s), `test-conformance` 2715 jobs (7m21s) | 10m20s |
 | step gate reaching every backend (this commit: `scripts/gate.sh` is shared) | the full cell sets | 10m00s |
 
-**Measured, the hook's gate** (2026-10-11, `gate.sh --staged --no-conformance` on a
+**Measured, the hook's gate** (before 144 B-29 step H; 2026-10-11, `gate.sh --staged --no-conformance` on a
 `front/*` branch; one fresh clone with its own empty cell-result store and a cold
 `zig build`, load 5–16 from other threads' gates, the wait for their lock not counted;
 `test-libs` ran against the shared, warm library stores):
 
 | Change | Reach | Stages 8 / 9 | Wall |
 |---|---|---|---|
-| a comment in `codegen/wat.zig` | `wasm` only | `test-libs` skipped; `test-language` not run (`--no-conformance`) | 4m20s (`zig build` 3m12s, `zig build test` 34s, `test-cli` 1m07s) |
-| a comment in `codegen.zig` (the dispatcher) | every backend | `test-libs` 164 jobs, 5m04s; `test-language` not run | 7m59s (`zig build` 2m53s, `test-cli` 3m20s under load) |
+| a comment in `codegen/wat.zig` | `wasm` only | `test-libs` skipped; `test-conformance` not run (`--no-conformance`) | 4m20s (`zig build` 3m12s, `zig build test` 34s, `test-cli` 1m07s) |
+| a comment in `codegen.zig` (the dispatcher) | every backend | `test-libs` 164 jobs, 5m04s; `test-conformance` not run | 7m59s (`zig build` 2m53s, `test-cli` 3m20s under load) |
 
 No stage, cell or check of the full gate is dropped and no verdict changed: the full
 gate's plans and counts are the ones `--list` printed before.
@@ -417,7 +422,7 @@ and on every CPU, never by running less:
 | `test-libs` (erlang cells) | `botopink test --target erlang` compiles each `.erl` of a run once (`precompileErlang`), not once per test module that loads it; the host-sidecar shipper resolves each library and probes each qualifier once per run | [`../modules/compiler-cli/src/cli/AGENTS.md`](../modules/compiler-cli/src/cli/AGENTS.md) (`test_cmd.zig`, `libs.zig`) |
 | every stage that runs `botopink` | the binaries are ReleaseSafe (§ Build mode): ~12× less CPU per compile than Debug, the same output | § Build mode |
 | `test-libs` (tests that build fixtures) | a test's scratch directory (`BOTOPINK_TEST_TMPDIR`) is the run directory's sibling, so no erlang runner compiles and loads the fixture projects a build test wrote (rakun-scheduling: ~6 500 `.erl` per test module); `botopink build --target erlang` answers a source the same OTP compiler already accepted from its verdict cache (rakun's build tests: 22 builds of one closure per cell) | [`../modules/compiler-cli/src/cli/AGENTS.md`](../modules/compiler-cli/src/cli/AGENTS.md) (`test_cmd.zig`, `build.zig`) |
-| `test-language` | cells run on `lib/pool.sh` — the `test-libs` rule (one per CPU, bounded by `MemAvailable / 768 MiB`, each cell admitted only while `procs_running` ≤ CPUs); verdicts are written one file per cell and sorted before the report, so the output is byte for byte what `--jobs 1` prints. It used to be `--jobs 4` with no admission; measured under the usual shared load, 28.8 s → 18.3 s at +12 % CPU-seconds | [`../tests/language/run.sh`](../tests/language/run.sh) § parallel cells |
+| `test-conformance` | jobs (a cell: one `botopink cell check`; a test suite: one target) run on `lib/pool.sh` — the `test-libs` rule (one per CPU, bounded by `MemAvailable / 768 MiB`, each job admitted only while `procs_running` ≤ CPUs); verdicts are written one file per job and sorted before the report, so the output is byte for byte what `--jobs 1` prints. It used to be `--jobs 4` with no admission; measured under the usual shared load, 28.8 s → 18.3 s at +12 % CPU-seconds | [`../conformance/run.sh`](../conformance/run.sh) § parallel jobs |
 | `test-docs` | the `botopink check` of every fence runs on `lib/pool.sh`; the report is written in fence order with a placeholder per check and printed once the pool drains, so the output is byte for byte the serial run's. 8.5 s → 1.5 s | § check-docs.sh below |
 
 ### One job budget (gate.sh § job budget)
@@ -426,7 +431,7 @@ The side-by-side stages used to size one pool each to the whole machine: three
 pools of about 16 jobs on 16 CPUs, load 4.7 rising to 26 in a cold gate. Now
 `gate.sh` reads `pool_default_jobs` once, after the build (CPUs bounded by
 `MemAvailable / 768 MiB`), and passes each stage its share through the flag it
-already had: `test-libs` 50 % and `test-language` 30 % (`-- --jobs N`),
+already had: `test-libs` 50 % and `test-conformance` 30 % (`-- --jobs N`),
 `test-docs` 5 % (`-- --jobs N`), `tsc-check.sh` 10 % (`--jobs N`, new, default
 unchanged) and `test-web` `-j` 10 %, at least 1 each — 8 / 4 / 1 / 1 on 16
 CPUs. The shares follow the stages' measured CPU-seconds. Each runner keeps its
@@ -444,7 +449,7 @@ Measured on the 16-core / 30 GB machine, one cold gate alone, fresh
 | `zig build test` (beside the build) | 1m52 after it, cold | 1m53, 331 (hidden by the build) |
 | `test-cli` | 4m42, 273 | 3m47, 261 |
 | `test-libs` | 8m21, 2540 | 5m34, 1938 |
-| `test-language` | 9m02, 1468 | 7m12, 1019 |
+| `test-conformance` | 9m02, 1468 | 7m12, 1019 |
 | `test-docs` | 23s | 32.6s, 28 |
 | `tsc-check` | 55s | 55s, 47 |
 | `test-web` | 1m10 | 1m11, 66 |
@@ -452,7 +457,7 @@ Measured on the 16-core / 30 GB machine, one cold gate alone, fresh
 
 Warm (`gate.sh` right after, result store full, load 3 at start): 1m35 wall,
 419 CPU-s — `zig build test` 26s, `test-cli` 1m07 (the pole, not stored),
-`test-libs` 2.8s and `test-language` 4.9s answered from the store, `test-docs`
+`test-libs` 2.8s and `test-conformance` 4.9s answered from the store, `test-docs`
 16s, `tsc-check` 24s, `test-web` 4s. Before: 9m37 for a warm `--staged` gate.
 
 Finding: load still peaks near 28 (`procs_running` up to 60) with only 14 jobs,
@@ -461,12 +466,12 @@ spinning `erl`/`node`), not one. Halving the budget to 8 jobs (4 / 3 / 1 / 1)
 ran green but slower, 10m46, `test-libs` 7m30 being the pole; a 6 / 6 split
 turned two rakun timing tests red (`rakun·erlang` over max-connections 503,
 `rakun-messaging·erlang` dlq) under the load. The wall is still over the 7m30
-cold budget: `test-language` with 4 jobs is the pole and the remaining gain is
+cold budget: `test-conformance` with 4 jobs is the pole and the remaining gain is
 a work-conserving share (a token directory every runner reads), not a better
 split.
 
 `zig build` in stage 2 builds every binary the later stages run; `zig build
-test-libs`, `test-language` and `test-docs` re-enter the build graph, find it
+test-libs`, `test-conformance` and `test-docs` re-enter the build graph, find it
 up to date and run the installed `zig-out/bin/*`, so no stage rebuilds one.
 Measured numbers, before and after, are in the meta workspace's
 `specs/1.0.10-beta/00-compiler-carry-over/11-tooling/README.md` § The gate's speed
@@ -489,7 +494,7 @@ file per job, printed in its own order afterwards — which is what lets
 
 ## lib/result-store.js
 
-Run by `node`, never sourced. The cell-result store of `../tests/language/run.sh`
+Run by `node`, never sourced. The cell-result store of `../conformance/run.sh`
 and `check-docs.sh` (decision 229; `botopink-lib-test` keeps the same store in
 Zig, `../modules/lib-test-runner/src/result_store.zig`, with the same probes and
 the same environment list). Four subcommands:
@@ -588,13 +593,15 @@ python3 scripts/codemod-component-contexts.py [--write] [--format <botopink>] [-
 `zig-out/bin/botopink format --check <tree>` for every tree in its `TREES`
 array, which names the trees the gate holds canonical: `examples` (every
 example project and `hello.bp`), `libs/std`, `modules/compiler-cli/tests`, `modules/manifest/tests` and
-`tests/language` — every tracked `.bp` of the checkout is under one of them.
+`conformance` — every tracked `.bp` of the checkout is under one of them.
 `format --check` on a directory reaches every `.bp` and `.d.bp` under it
 (nested projects included) and structurally leaves out hidden directories,
-`node_modules`, a `reject/<n>.bp` beside its `<n>.expect` and a
-`modules/<cell>/` file the cell's `<target>.expect` names that does not lex or
-parse (`modules/compiler-cli/src/cli/format_cmd.zig`) — under `tests/language`,
-every `reject/` cell and `modules/lexer_error_in_imported_module/src/pattern.bp`;
+`node_modules`, and a conformance cell's module whose `snapshot/output/<module>.snap`
+holds a `refused` record — every target refuses it, it is written to be refused
+(`modules/compiler-cli/src/cli/format_cmd.zig`) — under `conformance`, every former
+`reject/` cell and `modules/lexer_error_in_imported_module/src/pattern.bp` (178 files,
+each of which `format --check` would otherwise rewrite or fail to parse); a module only
+some targets refuse (a departure) is reached;
 the list is not a skip list and there is no other way to exempt a file
 (decision 67). A tree that is red is a red gate, fixed by `botopink format
 <tree>` in a reformat-only commit; a tree the printer cannot round-trip is a
@@ -602,8 +609,7 @@ formatter defect (`01-compiler/16-formatter`), fixed in the printer. A reformat
 carries what quotes the text it moves, in the same commit: `libs/std`'s source
 is quoted verbatim by the `std_package_*` codegen snapshots and by two LSP
 snapshots (`definition_std_module_member`, `completion_array_methods`), and a
-`modules/<cell>/<target>.expect` pins a `<file>:<L>:<C>` the reformat of that
-file can move. Exit `0` when every listed tree is canonical;
+cell's `.snap` pins an `at <file>:<L>:<C>` the reformat of that file can move. Exit `0` when every listed tree is canonical;
 `1` naming the tree and the files, with the `Unchanged` lines filtered out.
 
 ## git-hooks/
@@ -885,4 +891,35 @@ python3 scripts/codemod-optional-operators.py [--write] [--once] [--compiler <bo
 - The formatter (`<botopink> format`) is run over every file it changed that `format --check` left
   alone before the first rewrite; a file that was not canonical keeps its layout, so the diff is the
   rewrite.
+
+## codemod-conformance-cells.py
+
+144 B-29 step H's migration of the old `tests/language/` suite into `conformance/` (decisions 457,
+466, 475), rerunnable over a copy of the old tree (`git archive <rev> tests/language | tar -x -C
+<dir>` from a revision that still holds it):
+
+```sh
+scripts/codemod-conformance-cells.py migrate --from <dir>/tests/language --to conformance
+botopink cell check conformance/modules           # writes a candidate for every refusal placeholder
+scripts/codemod-conformance-cells.py accept  --from <dir>/tests/language --to conformance
+scripts/codemod-conformance-cells.py audit   --from <dir>/tests/language --to conformance [--cells <ledger.tsv>]
+```
+
+`migrate` writes each `run/`, `reject/` and `modules/` cell as `conformance/modules/<cell>/` (its
+`botopink.json` — the old manifest, or `{ "name": "<cell>", … }` with `"targets"` from a
+`.targets` —, `src/`, an empty `docs.md`, and `snapshot/`), and each `test/` suite under
+`conformance/test/`. Everything a sidecar states exactly is written exactly (`.out` /
+`expected.out` → `out` and `no-final-newline`, `.exit` → `abort`, `.<t>.stderr` → `stderr`); a
+refusal claim named only a part of the message, so it is written as a placeholder (`refused
+<the claimed text>`, `at <the claimed place>`) that `botopink cell check` answers with a candidate.
+`accept` renames a candidate over its snapshot only when every old claim of every target that reads
+it still holds (a `refused` line containing the claimed text at the claimed place, the target
+printing nothing); a candidate that changes an output is never accepted, it is a red for a person.
+It then folds departures every target shares into `output/`. `audit` counts every old claim by kind
+and checks each one against the new snapshots — the answer a target reads — exiting 1 on a claim no
+record states. Measured on the migration: 381 `.out`, 23 `.exit`, 76 `run` `<t>.expect`, 50
+`<t>.stderr`, 19 `.targets`, 405 `reject` `.expect`, 106 `expected.out`, 166 `modules` `<t>.expect`
+and 1 manifest `"targets"` — every claim stated (1825 `out`, 86 `abort`, 242 per-target refusals,
+1620 `reject` refusals over four targets, 50 `stderr`, 20 narrowings, 73 test suites byte for
+byte).
 

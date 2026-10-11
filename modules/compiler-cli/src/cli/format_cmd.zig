@@ -12,17 +12,16 @@
 /// ([decision 67](../../../../../specs/1.0.5-beta/decisions-taken.md)): a hidden
 /// directory (`.git`, `.botopinkbuild`, `.zig-cache` — tool state, not sources),
 /// `node_modules` (another package manager's store — files this project does not
-/// own), and the language suite's rejected programs: a `.bp` in a directory named
-/// `reject` beside its `<name>.expect`, a program whose purpose is to be refused
-/// (`tests/language/reject/`, the one place where a red is the fixture working).
-/// A `reject/` `.bp` without its `.expect` is not that fixture and is reached.
-/// The same rule one step further (gate-c of `specs/1.0.11-beta/00-gate`): a
-/// `.bp` under a `modules/<cell>/` directory that one of the cell's
-/// `<target>.expect` files names and that does not lex or parse is a project
-/// cell's refused module — `tests/language/modules/lexer_error_in_imported_module/
-/// src/pattern.bp`, a bad string escape on purpose — and is left out the same
-/// way, decided by the cell's own evidence. There is no skip list, no pragma and
-/// no environment variable, and this file must not grow one.
+/// own), and a conformance cell's refused module: a `.bp` under a cell (a
+/// directory holding `snapshot/output/`, decisions 457 and 475) whose
+/// `snapshot/output/<module>.snap` holds a `refused` record — a module every
+/// target refuses, written to be refused, which `format` may not be able to
+/// parse by design (`conformance/modules/case_bare_name_arm/src/main.bp`,
+/// `conformance/modules/lexer_error_in_imported_module/src/pattern.bp`).
+/// Decided by the cell's own evidence: a module only some targets refuse
+/// (a `snapshot/targets/<t>/` departure) is reached like any other file. There
+/// is no skip list, no pragma and no environment variable, and this file must
+/// not grow one.
 const std = @import("std");
 const bp = @import("botopink");
 /// Test-only: the one way a test spells a path it writes to (per process, so a
@@ -125,109 +124,55 @@ fn entersDirectory(name: []const u8) bool {
     return true;
 }
 
-/// The language suite's rejected program: `reject/<name>.bp` beside its
-/// `<name>.expect` (`tests/language/run.sh` runs `botopink check` on the first
-/// and matches the second). It is exempt because of what it *is* — a program
-/// written to be refused, which `format` cannot parse by design — recognised by
-/// the directory's name and the pair, at any depth. A lone `.bp` in a `reject/`
-/// is not that fixture (the runner fails it too, "missing .expect") and is
-/// reached like any other file.
-fn isRejectedProgram(gpa: std.mem.Allocator, io: std.Io, dir: std.Io.Dir, dir_path: []const u8, name: []const u8) !bool {
-    if (!std.mem.eql(u8, std.fs.path.basename(dir_path), "reject")) return false;
-    const expect = try std.mem.concat(gpa, u8, &.{ stripExt(name), ".expect" });
-    defer gpa.free(expect);
-    dir.access(io, expect, .{}) catch return false;
-    return true;
-}
-
-/// A project cell's refused module (gate-c: decision 67's `reject/` rule
-/// generalised to a `modules/<cell>/` directory). The file is the fixture
-/// working when both halves of the cell's own evidence hold:
-///   - one of the cell's `<target>.expect` files (a file directly in the cell,
-///     `tests/language/run.sh`'s shape: line 1 the message, line 2
-///     `<path from the cell>:<L>:<C>`) names *this* file on its second line;
-///   - the file does not lex or parse — the refusal the cell pins is the one
-///     `format` would print.
-/// An `.expect` naming another file leaves this one in the walk; so does a named
-/// file that parses (its refusal is the checker's, and the formatter prints it
-/// like any other file). The cell is the child of the innermost `modules`
-/// component of the path; a file outside a `modules/<cell>/` is never this
-/// fixture, whatever sits beside it. The line and column are the runner's to
-/// compare, not the formatter's.
-fn isRefusedProjectModule(gpa: std.mem.Allocator, io: std.Io, prefix: []const u8, name: []const u8) !bool {
-    // Find `modules/<cell>` — the innermost `modules` component that has a child.
+/// A conformance cell's refused module (decision 67's structural exemption,
+/// read off the cell's own snapshots): the innermost directory above the file
+/// that holds `snapshot/output/` is the cell, and the module is the file's
+/// path from the cell — `src/` dropped, `.bp` dropped, as `botopink cell check`
+/// names a module's snapshot (`src/shapes/circle.bp` → `shapes/circle`,
+/// `deps/lib/src/x.bp` → `deps/lib/src/x`). The file is exempt when
+/// `snapshot/output/<module>.snap` holds a `refused` record: every target
+/// refuses it. A file outside any cell, a module with no `output/` snapshot,
+/// and one whose `output/` answer is not a refusal are reached.
+fn isRefusedCellModule(gpa: std.mem.Allocator, io: std.Io, prefix: []const u8, name: []const u8) !bool {
     var comps: std.ArrayListUnmanaged([]const u8) = .empty;
     defer comps.deinit(gpa);
     var it = std.mem.splitAny(u8, prefix, "/\\");
     while (it.next()) |c| {
         if (c.len > 0) try comps.append(gpa, c);
     }
-    var cell_end: ?usize = null;
+    const absolute = prefix.len > 0 and (prefix[0] == '/' or prefix[0] == '\\');
     var i = comps.items.len;
-    while (i > 1) : (i -= 1) {
-        if (std.mem.eql(u8, comps.items[i - 2], "modules")) {
-            cell_end = i;
-            break;
+    while (i > 0) : (i -= 1) {
+        const joined = try std.mem.join(gpa, std.fs.path.sep_str, comps.items[0..i]);
+        defer gpa.free(joined);
+        const cell = if (absolute) try std.mem.concat(gpa, u8, &.{ std.fs.path.sep_str, joined }) else try gpa.dupe(u8, joined);
+        defer gpa.free(cell);
+        const output = try std.fs.path.join(gpa, &.{ cell, "snapshot", "output" });
+        defer gpa.free(output);
+        if (!isDirectory(io, output)) continue;
+
+        // The module: the path from the cell, `/`-separated, `src/` and `.bp` dropped.
+        var rel: std.ArrayListUnmanaged(u8) = .empty;
+        defer rel.deinit(gpa);
+        for (comps.items[i..]) |c| {
+            try rel.appendSlice(gpa, c);
+            try rel.append(gpa, '/');
         }
-    }
-    const end = cell_end orelse return false;
-    const cell_path = try std.mem.join(gpa, std.fs.path.sep_str, comps.items[0..end]);
-    defer gpa.free(cell_path);
-    // Absolute roots keep their leading separator (`join` drops it).
-    const cell_abs = if (prefix.len > 0 and (prefix[0] == '/' or prefix[0] == '\\'))
-        try std.mem.concat(gpa, u8, &.{ std.fs.path.sep_str, cell_path })
-    else
-        try gpa.dupe(u8, cell_path);
-    defer gpa.free(cell_abs);
-    // The file's path from the cell, with `/` — the shape the `.expect` writes.
-    var rel: std.ArrayListUnmanaged(u8) = .empty;
-    defer rel.deinit(gpa);
-    for (comps.items[end..]) |c| {
-        try rel.appendSlice(gpa, c);
-        try rel.append(gpa, '/');
-    }
-    try rel.appendSlice(gpa, name);
-
-    if (!try expectNamesFile(gpa, io, cell_abs, rel.items)) return false;
-
-    // Named by the cell: exempt only if it really does not lex or parse.
-    var arena_instance = std.heap.ArenaAllocator.init(gpa);
-    defer arena_instance.deinit();
-    const arena = arena_instance.allocator();
-    const path = try childPath(gpa, prefix, name);
-    defer gpa.free(path);
-    const source = try std.Io.Dir.cwd().readFileAlloc(io, path, arena, .unlimited);
-    var lexer = bp.Lexer.init(source);
-    const tokens = lexer.scanAll(arena) catch return true;
-    var parser = bp.Parser.init(tokens);
-    _ = parser.parse(arena) catch return true;
-    return false;
-}
-
-/// Does a `<target>.expect` directly in `cell_path` name `rel` (its second line,
-/// up to the first `:`) as the refused file? Separators are compared as `/`.
-fn expectNamesFile(gpa: std.mem.Allocator, io: std.Io, cell_path: []const u8, rel: []const u8) !bool {
-    var cell = std.Io.Dir.cwd().openDir(io, cell_path, .{ .iterate = true }) catch return false;
-    defer cell.close(io);
-    var it = cell.iterate();
-    while (try it.next(io)) |entry| {
-        if (entry.kind != .file or !std.mem.endsWith(u8, entry.name, ".expect")) continue;
-        const text = cell.readFileAlloc(io, entry.name, gpa, .limited(64 * 1024)) catch continue;
+        try rel.appendSlice(gpa, name);
+        var module: []const u8 = rel.items;
+        if (std.mem.startsWith(u8, module, "src/")) module = module["src/".len..];
+        if (std.mem.endsWith(u8, module, ".bp")) module = module[0 .. module.len - ".bp".len];
+        const snap_name = try std.mem.concat(gpa, u8, &.{ module, ".snap" });
+        defer gpa.free(snap_name);
+        const snap_path = try std.fs.path.join(gpa, &.{ output, snap_name });
+        defer gpa.free(snap_path);
+        const text = std.Io.Dir.cwd().readFileAlloc(io, snap_path, gpa, .limited(1024 * 1024)) catch return false;
         defer gpa.free(text);
         var lines = std.mem.splitScalar(u8, text, '\n');
-        _ = lines.next() orelse continue;
-        const second = std.mem.trimEnd(u8, lines.next() orelse continue, "\r");
-        const named = second[0 .. std.mem.indexOfScalar(u8, second, ':') orelse second.len];
-        if (named.len != rel.len) continue;
-        var same = true;
-        for (named, rel) |a, b| {
-            const na: u8 = if (a == '\\') '/' else a;
-            if (na != b) {
-                same = false;
-                break;
-            }
+        while (lines.next()) |line| {
+            if (std.mem.startsWith(u8, line, "refused ")) return true;
         }
-        if (same) return true;
+        return false;
     }
     return false;
 }
@@ -283,8 +228,7 @@ fn collectDir(
             },
             .file => {
                 if (!hasSourceExt(entry.name)) continue;
-                if (try isRejectedProgram(gpa, io, dir, prefix, entry.name)) continue;
-                if (try isRefusedProjectModule(gpa, io, prefix, entry.name)) continue;
+                if (try isRefusedCellModule(gpa, io, prefix, entry.name)) continue;
                 try out.append(gpa, try childPath(gpa, prefix, entry.name));
             },
             else => {},
@@ -402,7 +346,7 @@ test "decision 66: the walk reaches src/, test/, examples/, a nested project and
     for (want, paths) |w, got| try std.testing.expectEqualStrings(w, got);
 }
 
-test "decision 66/67: hidden directories and node_modules are not entered; reject/<n>.bp beside <n>.expect is not reached, a lone reject/ .bp is" {
+test "decision 66/67: hidden directories and node_modules are not entered" {
     const gpa = std.testing.allocator;
     const io = std.testing.io;
 
@@ -410,16 +354,10 @@ test "decision 66/67: hidden directories and node_modules are not entered; rejec
     test_scratch.remove(io, "format-walk");
     defer test_scratch.remove(io, "format-walk");
     try writeFileP(io, test_scratch.path(io, "format-walk/exempt/src/main.bp"), "");
-    // The language suite's shape, at the depth the suite has it and at the root.
-    try writeFileP(io, test_scratch.path(io, "format-walk/exempt/tests/language/reject/case_bare_name_arm.bp"), "");
-    try writeFileP(io, test_scratch.path(io, "format-walk/exempt/tests/language/reject/case_bare_name_arm.expect"), "");
+    // The old language suite's `reject/<n>.bp` beside `<n>.expect` is no
+    // fixture any more: reached.
     try writeFileP(io, test_scratch.path(io, "format-walk/exempt/reject/bad.bp"), "");
     try writeFileP(io, test_scratch.path(io, "format-walk/exempt/reject/bad.expect"), "");
-    // Not the fixture: no `.expect`, so the runner would fail it too — reached.
-    try writeFileP(io, test_scratch.path(io, "format-walk/exempt/reject/lone.bp"), "");
-    // A directory merely *containing* the word is not the directory.
-    try writeFileP(io, test_scratch.path(io, "format-walk/exempt/rejected/ok.bp"), "");
-    try writeFileP(io, test_scratch.path(io, "format-walk/exempt/rejected/ok.expect"), "");
     // Tool state and another package manager's store. The build directory is
     // fixture CONTENT here — a hidden directory the walk must not enter — so it
     // is named relative to the scratch root, never at the cwd.
@@ -431,65 +369,52 @@ test "decision 66/67: hidden directories and node_modules are not entered; rejec
     defer freePaths(gpa, paths);
 
     const want = [_][]const u8{
-        test_scratch.path(io, "format-walk/exempt/reject/lone.bp"),
-        test_scratch.path(io, "format-walk/exempt/rejected/ok.bp"),
+        test_scratch.path(io, "format-walk/exempt/reject/bad.bp"),
         test_scratch.path(io, "format-walk/exempt/src/main.bp"),
     };
     try std.testing.expectEqual(want.len, paths.len);
     for (want, paths) |w, got| try std.testing.expectEqualStrings(w, got);
 }
 
-test "gate-c: a modules/<cell>/ file named by the cell's .expect and unlexable is not reached; named-but-parsing, unnamed, or outside modules/ is" {
+test "decision 67: a cell's module every target refuses (output/<module>.snap holds `refused`) is not reached; a departure's refusal, an answer, no snapshot or no cell is" {
     const gpa = std.testing.allocator;
     const io = std.testing.io;
 
-    // `tests/language/modules/lexer_error_in_imported_module/src/pattern.bp`'s
-    // bytes: a bad string escape on line 3, what the cell exists to refuse.
-    const unlexable =
-        \\pub fn dotted() -> string {
-        \\    return """
-        \\a\.b
-        \\""";
-        \\}
-        \\
-    ;
-    const parses =
-        \\pub fn main() {
-        \\}
-        \\
-    ;
-
-    const root = test_scratch.path(io, "format-walk/refused");
+    const refused = "botopink-cell 1\nrefused error: bad string escape\nat src/pattern.bp:3:2\n";
+    const prints = "botopink-cell 1\nout ok\n";
+    const root = test_scratch.path(io, "format-walk/cells");
     test_scratch.remove(io, "format-walk");
     defer test_scratch.remove(io, "format-walk");
-    // The fixture: every `.expect` of the cell names the file, and it does not lex.
-    try writeFileP(io, test_scratch.path(io, "format-walk/refused/modules/lexer_error/commonJS.expect"), "bad string escape\nsrc/pattern.bp:3:2\n");
-    try writeFileP(io, test_scratch.path(io, "format-walk/refused/modules/lexer_error/erlang.expect"), "bad string escape\nsrc/pattern.bp:3:2\n");
-    try writeFileP(io, test_scratch.path(io, "format-walk/refused/modules/lexer_error/botopink.json"), "{}");
-    try writeFileP(io, test_scratch.path(io, "format-walk/refused/modules/lexer_error/src/pattern.bp"), unlexable);
-    // Its sibling module is not named — reached.
-    try writeFileP(io, test_scratch.path(io, "format-walk/refused/modules/lexer_error/src/main.bp"), parses);
-    // The `.expect` names another file — this one is reached (and fails there).
-    try writeFileP(io, test_scratch.path(io, "format-walk/refused/modules/other_file/wasm.expect"), "bad string escape\nsrc/other.bp:3:2\n");
-    try writeFileP(io, test_scratch.path(io, "format-walk/refused/modules/other_file/src/pattern.bp"), unlexable);
-    // Named, but it parses: the refusal is the checker's — reached.
-    try writeFileP(io, test_scratch.path(io, "format-walk/refused/modules/checker_error/commonJS.expect"), "unbound variable\nsrc/main.bp:1:1\n");
-    try writeFileP(io, test_scratch.path(io, "format-walk/refused/modules/checker_error/src/main.bp"), parses);
-    // A nested project inside a cell (`deps/<dep>/src`) is named from the cell.
-    try writeFileP(io, test_scratch.path(io, "format-walk/refused/modules/dep_error/beam.expect"), "bad string escape\ndeps/lib/src/pattern.bp:3:2\n");
-    try writeFileP(io, test_scratch.path(io, "format-walk/refused/modules/dep_error/deps/lib/src/pattern.bp"), unlexable);
-    // The same pair outside a `modules/` directory is not this fixture — reached.
-    try writeFileP(io, test_scratch.path(io, "format-walk/refused/cells/lexer_error/commonJS.expect"), "bad string escape\nsrc/pattern.bp:3:2\n");
-    try writeFileP(io, test_scratch.path(io, "format-walk/refused/cells/lexer_error/src/pattern.bp"), unlexable);
+    // The fixture: `output/pattern.snap` refuses the module — not reached; its
+    // sibling `main` prints — reached.
+    try writeFileP(io, test_scratch.path(io, "format-walk/cells/modules/lexer_error/botopink.json"), "{}");
+    try writeFileP(io, test_scratch.path(io, "format-walk/cells/modules/lexer_error/snapshot/output/pattern.snap"), refused);
+    try writeFileP(io, test_scratch.path(io, "format-walk/cells/modules/lexer_error/snapshot/output/main.snap"), prints);
+    try writeFileP(io, test_scratch.path(io, "format-walk/cells/modules/lexer_error/src/pattern.bp"), "");
+    try writeFileP(io, test_scratch.path(io, "format-walk/cells/modules/lexer_error/src/main.bp"), "");
+    // A folder module and a dependency's module are named from the cell.
+    try writeFileP(io, test_scratch.path(io, "format-walk/cells/modules/nested/snapshot/output/shapes/circle.snap"), refused);
+    try writeFileP(io, test_scratch.path(io, "format-walk/cells/modules/nested/snapshot/output/deps/lib/src/x.snap"), refused);
+    try writeFileP(io, test_scratch.path(io, "format-walk/cells/modules/nested/src/shapes/circle.bp"), "");
+    try writeFileP(io, test_scratch.path(io, "format-walk/cells/modules/nested/deps/lib/src/x.bp"), "");
+    // Refused on one target only (a departure): reached.
+    try writeFileP(io, test_scratch.path(io, "format-walk/cells/modules/departs/snapshot/output/main.snap"), prints);
+    try writeFileP(io, test_scratch.path(io, "format-walk/cells/modules/departs/snapshot/targets/wasm/main.snap"), refused);
+    try writeFileP(io, test_scratch.path(io, "format-walk/cells/modules/departs/src/main.bp"), "");
+    // A module with no output/ snapshot, and a refusal outside any cell: reached.
+    try writeFileP(io, test_scratch.path(io, "format-walk/cells/modules/unanswered/snapshot/output/main.snap"), prints);
+    try writeFileP(io, test_scratch.path(io, "format-walk/cells/modules/unanswered/src/other.bp"), "");
+    try writeFileP(io, test_scratch.path(io, "format-walk/cells/elsewhere/output/main.snap"), refused);
+    try writeFileP(io, test_scratch.path(io, "format-walk/cells/elsewhere/src/main.bp"), "");
 
     const paths = try collectSorted(gpa, io, root);
     defer freePaths(gpa, paths);
 
     const want = [_][]const u8{
-        test_scratch.path(io, "format-walk/refused/cells/lexer_error/src/pattern.bp"),
-        test_scratch.path(io, "format-walk/refused/modules/checker_error/src/main.bp"),
-        test_scratch.path(io, "format-walk/refused/modules/lexer_error/src/main.bp"),
-        test_scratch.path(io, "format-walk/refused/modules/other_file/src/pattern.bp"),
+        test_scratch.path(io, "format-walk/cells/elsewhere/src/main.bp"),
+        test_scratch.path(io, "format-walk/cells/modules/departs/src/main.bp"),
+        test_scratch.path(io, "format-walk/cells/modules/lexer_error/src/main.bp"),
+        test_scratch.path(io, "format-walk/cells/modules/unanswered/src/other.bp"),
     };
     try std.testing.expectEqual(want.len, paths.len);
     for (want, paths) |w, got| try std.testing.expectEqualStrings(w, got);

@@ -566,21 +566,22 @@ pub fn build(b: *std.Build) void {
     const test_vscode_step = b.step("test-vscode", "Run the VS Code extension unit tests");
     test_vscode_step.dependOn(&test_vscode_run.step);
 
-    // `zig build test-language` — the language tests of decision 8 (front 15):
-    // `case` and patterns, tuples and labels, `loop`, written in botopink under
-    // `tests/language/` and run by `tests/language/run.sh` on commonJS and
-    // erlang against the installed `botopink`; a red cell fails the step.
-    // Forwards `--` args, e.g.
-    //   zig build test-language -- --target erlang --compiler <botopink>
-    // NOT wired into `zig build test` (spawns node/erl per file).
-    const test_language_run = b.addSystemCommand(&.{ "bash", "tests/language/run.sh" });
-    test_language_run.step.dependOn(b.getInstallStep());
-    test_language_run.setCwd(b.path("."));
-    test_language_run.has_side_effects = true; // spawns child compilers — never cache
-    if (b.args) |args| test_language_run.addArgs(args);
+    // `zig build test-conformance` — the language's conformance suite
+    // (decisions 457, 464, 466): every cell of `conformance/modules/` checked by
+    // `botopink cell check` on every target its manifest declares, and every
+    // `conformance/test/` suite run by `botopink test --json`, through
+    // `conformance/run.sh` against the installed `botopink`; a red cell fails
+    // the step. Forwards `--` args, e.g.
+    //   zig build test-conformance -- --only modules/case_range_value
+    // NOT wired into `zig build test` (spawns node/erl/wasmtime per cell).
+    const test_conformance_run = b.addSystemCommand(&.{ "bash", "conformance/run.sh" });
+    test_conformance_run.step.dependOn(b.getInstallStep());
+    test_conformance_run.setCwd(b.path("."));
+    test_conformance_run.has_side_effects = true; // spawns child compilers — never cache
+    if (b.args) |args| test_conformance_run.addArgs(args);
 
-    const test_language_step = b.step("test-language", "Run the botopink language tests (tests/language)");
-    test_language_step.dependOn(&test_language_run.step);
+    const test_conformance_step = b.step("test-conformance", "Run the conformance suite (conformance/)");
+    test_conformance_step.dependOn(&test_conformance_run.step);
 
     // `zig build test-docs` — every `botopink` fence of the user docs compiles
     // (front 14 step 3). `scripts/check-docs.sh` extracts each fence into a

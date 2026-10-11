@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: the wasm backend has no lowering for the int method `toF64/0`
+at src/main.bp:10:40

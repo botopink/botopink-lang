@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: the wasm backend does not lower `?.()` over a function answering a plain value yet (decision 330)
+at src/main.bp:12:12

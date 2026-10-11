@@ -94,12 +94,25 @@ pub const Located = struct {
         var buf: [4096]u8 = undefined;
         var fba = std.heap.FixedBufferAllocator.init(&buf);
         const text = self.renderAlloc(fba.allocator()) catch {
-            std.debug.print("error: {s}\n --> {s}:{d}:{d}\n", .{ self.message, self.file, self.line, self.col });
+            emit("error: {s}\n --> {s}:{d}:{d}\n", .{ self.message, self.file, self.line, self.col });
             return;
         };
-        std.debug.print("{s}", .{text});
+        emit("{s}", .{text});
     }
 };
+
+/// Where `Located.print` writes: stderr, unless a caller pointed it at a
+/// buffer — `botopink cell check` (`compiler-cli/src/cli/cell.zig`) reads a
+/// cell's refusals back from exactly the text `botopink build` prints, a
+/// manifest's, a dependency's and a sidecar's included, beside the CLI's own
+/// `reporter.sink`. The CLI is one thread; nothing sets it concurrently.
+pub var sink: ?*std.Io.Writer = null;
+
+fn emit(comptime fmt: []const u8, args: anytype) void {
+    if (sink) |w| {
+        w.print(fmt, args) catch {};
+    } else std.debug.print(fmt, args);
+}
 
 fn digitWidth(n: usize) usize {
     var w: usize = 1;

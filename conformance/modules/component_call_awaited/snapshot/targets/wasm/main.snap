@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: the wasm backend does not lower a component yet: a `@Component` is a lambda over a `RenderScope` (decision 388), lowered on erlang, beam and commonJS
+at src/main.bp:14:8

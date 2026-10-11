@@ -481,7 +481,7 @@ test "context: Element[] coerces into Children" {
 // is the order as the CHECKER applies it — one cell per granted capability and
 // one per refusal, since a rule that only a table believes is not a rule.
 //
-// `tests/language` carries the half of this that RUNS (`await` inside a
+// `conformance` carries the half of this that RUNS (`await` inside a
 // `#[@use]` body included: commonJS emits every `#[@use]` body as an
 // `async function`, decision 104).
 
@@ -711,7 +711,7 @@ test "chain error: `for` over @Iterator<@Result<…>> hands over the @Result —
 // Front 24 E3.9 — one hint per source of a `@Result` used as its `U`: an
 // `await` suggests `try await t`, a `for` item `try r`, and a value inferred
 // as `@Result` (an `async { }` block, an `iter` item) also points at the
-// `try` / `throw` that made it one. `tests/language/reject/result_hint_*.bp`.
+// `try` / `throw` that made it one. `conformance/modules/result_hint_*`.
 test "chain error: E3.9 — a @Result from `await` used as its value hints `try await`" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\fn fetchCount(n: i32) -> @Task<@Result<i32, string>> {

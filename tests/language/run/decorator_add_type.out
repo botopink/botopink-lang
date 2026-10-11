@@ -1,6 +1,0 @@
-nome|gente
-name|people
-true
-false
-City.Columns(name: "nome", people: "gente")
-City.Size.Small

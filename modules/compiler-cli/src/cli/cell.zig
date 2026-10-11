@@ -6,10 +6,10 @@
 ///     <cell>/src/<module>.bp                     the program; `main.bp` holds `pub fn main`
 ///     <cell>/snapshot/output/<module>.snap       the answer on every target
 ///     <cell>/snapshot/targets/<t>/<module>.snap  target <t>'s departure, where it departs
-///     <cell>/targets                             the targets it is narrowed to (when narrowed)
+///     <cell>/botopink.json                       the cell's own manifest (decision 475): its
+///                                                package name, `"targets"` when narrowed,
+///                                                a path dependency, a named wasm host
 ///     <cell>/docs.md                             the reference text — `check` ignores it
-///     <cell>/botopink.json                       optional: the cell's own manifest (a path
-///                                                dependency, a wasm host); else `MANIFEST`
 ///
 /// `check` builds each cell **in this process** — `build.zig`'s pipeline with
 /// `reporter.sink` pointed at a buffer, so a refusal is read off exactly the
@@ -27,6 +27,7 @@ const run_cmd = @import("./run.zig");
 const otp = @import("./otp.zig");
 const libs = @import("./libs.zig");
 const snap = @import("./cell_snap.zig");
+const manifest = @import("manifest");
 
 const Target = config.Target;
 const Snap = snap.Snap;
@@ -38,14 +39,8 @@ pub const Options = union(enum) {
     check: []const u8,
 };
 
-/// Every target a cell runs on unless its `targets` file narrows it.
+/// Every target a cell runs on unless its manifest's `"targets"` narrows it.
 pub const ALL_TARGETS = [_]Target{ .commonJS, .erlang, .beam, .wasm };
-
-/// The manifest a cell without a `botopink.json` builds under. The package is
-/// `language_tests` — the name every cell of `tests/language` is built under
-/// (an erlang / BEAM atom starts with it, decision 109, and a host template
-/// may spell one).
-pub const MANIFEST = "{ \"name\": \"language_tests\", \"version\": \"0.0.1\", \"src\": \"src/\" }\n";
 
 /// Where the scratch projects go, under the directory the command started in:
 /// the root every scratch directory of the CLI and the compiler shares, which
@@ -55,7 +50,7 @@ const TMP_ROOT = ".botopinkbuild/tmp";
 /// A program that runs longer is a failed cell, never a skipped one.
 const RUN_TIMEOUT_S = 300;
 
-/// The texts a narrowing stands on (`tests/language/AGENTS.md` § Narrowing a
+/// The texts a narrowing stands on (`conformance/AGENTS.md` § Narrowing a
 /// cell): the build of an excluded target refuses the cell on a host binding.
 const HOST_BINDING_REFUSALS = [_][]const u8{ "has no `#[@External.<Target>(", "std-unsupported-on-target:" };
 
@@ -86,12 +81,21 @@ fn newCell(arena: std.mem.Allocator, io: std.Io, path: []const u8) !u8 {
         reporter.errMsg(try std.fmt.allocPrint(arena, "{s} already exists — a cell is scaffolded into a new directory", .{path}));
         return 1;
     } else |_| {}
+    // The cell is a project like any other (decision 475): its manifest names
+    // the package after the cell's directory.
+    const name = std.fs.path.basename(std.mem.trimEnd(u8, path, "/"));
+    if (manifest.nameRefusal(name)) |why| {
+        reporter.errMsg(try std.fmt.allocPrint(arena, "`{s}` cannot name the cell's package: {s}", .{ name, why }));
+        return 1;
+    }
     const main_bp = try std.fs.path.join(arena, &.{ path, "src", "main.bp" });
     const docs = try std.fs.path.join(arena, &.{ path, "docs.md" });
+    const manifest_path = try std.fs.path.join(arena, &.{ path, "botopink.json" });
     try cwd.createDirPath(io, try std.fs.path.join(arena, &.{ path, "src" }));
+    try cwd.writeFile(io, .{ .sub_path = manifest_path, .data = try std.fmt.allocPrint(arena, "{{ \"name\": \"{s}\", \"version\": \"0.0.1\", \"src\": \"src/\" }}\n", .{name}) });
     try cwd.writeFile(io, .{ .sub_path = main_bp, .data = MAIN_BP });
-    const name = std.fs.path.basename(std.mem.trimEnd(u8, path, "/"));
     try cwd.writeFile(io, .{ .sub_path = docs, .data = try std.fmt.allocPrint(arena, "# {s}\n\nWhat this cell shows.\n", .{name}) });
+    reporter.created(manifest_path);
     reporter.created(main_bp);
     reporter.created(docs);
     reporter.hintMsg(try std.fmt.allocPrint(arena, "write the program, then `botopink cell check {s}` writes its candidate snapshots", .{path}));
@@ -254,10 +258,18 @@ fn checkCell(ctx: *Ctx, cell: []const u8) !bool {
         ctx.say("FAIL {s}\n  a cell holds src/main.bp — its entry, `pub fn main`\n", .{rel});
         return false;
     }
+    if (!exists(io, try std.fs.path.join(a, &.{ cell, "botopink.json" }))) {
+        ctx.say("FAIL {s}\n  a cell holds botopink.json — its own manifest, a project like any other (decision 475)\n", .{rel});
+        return false;
+    }
+    if (exists(io, try std.fs.path.join(a, &.{ cell, "targets" }))) {
+        ctx.say("FAIL {s}\n  {s}/targets: a cell is narrowed by its manifest's \"targets\" (decision 475), never by a `targets` file\n", .{ rel, rel });
+        return false;
+    }
     var why: []const u8 = "";
     const declared = readTargets(a, io, cell, &why) catch |err| switch (err) {
         error.Malformed => {
-            ctx.say("FAIL {s}\n  {s}/targets: {s}\n", .{ rel, rel, why });
+            ctx.say("FAIL {s}\n  {s}/botopink.json \"targets\": {s}\n", .{ rel, rel, why });
             return false;
         },
         else => return err,
@@ -273,22 +285,25 @@ fn checkCell(ctx: *Ctx, cell: []const u8) !bool {
         else => return err,
     };
 
-    // Build and run in a scratch copy of the cell, one per cell.
+    // Build and run in a scratch copy of the cell, one per target: a program
+    // that writes into its working directory (`conformance/modules/std_fs_walk_root_spellings`
+    // makes a tree and a dangling link) finds on every target the directory it
+    // would find alone.
     var observed: [ALL_TARGETS.len]?Answer = @splat(null);
     var audits: std.ArrayListUnmanaged([]const u8) = .empty;
     var tool_errors: std.ArrayListUnmanaged([]const u8) = .empty;
-    {
+    for (ALL_TARGETS, 0..) |t, i| {
+        const runs = contains(declared, t);
+        if (!runs and declared.len == ALL_TARGETS.len) continue;
         var scratch = try Scratch.open(ctx, cell);
         defer scratch.close(ctx);
-        for (ALL_TARGETS, 0..) |t, i| {
-            if (contains(declared, t)) {
-                switch (try scratch.observe(ctx, t)) {
-                    .answer => |ans| observed[i] = ans,
-                    .tool_error => |e| try tool_errors.append(a, try std.fmt.allocPrint(a, "{s}: {s}{s}", .{ t.toString(), e.message, try indentDetail(a, e.detail) })),
-                }
-            } else if (declared.len < ALL_TARGETS.len) {
-                if (try scratch.audit(ctx, t)) |problem| try audits.append(a, try std.fmt.allocPrint(a, "{s}: {s}", .{ t.toString(), problem }));
+        if (runs) {
+            switch (try scratch.observe(ctx, t)) {
+                .answer => |ans| observed[i] = ans,
+                .tool_error => |e| try tool_errors.append(a, try std.fmt.allocPrint(a, "{s}: {s}{s}", .{ t.toString(), e.message, try indentDetail(a, e.detail) })),
             }
+        } else {
+            if (try scratch.audit(ctx, t)) |problem| try audits.append(a, try std.fmt.allocPrint(a, "{s}: {s}", .{ t.toString(), problem }));
         }
     }
     if (tool_errors.items.len > 0 or audits.items.len > 0) {
@@ -314,18 +329,27 @@ fn indentDetail(a: std.mem.Allocator, detail: []const u8) ![]const u8 {
     return out.items;
 }
 
-/// The cell's `targets` file — target names separated by blanks — or every
-/// target when there is none. A narrowing that names an unknown target, one
-/// twice, none, or all of them is malformed.
+/// The cell's manifest's `"targets"` — an array of target names — or every
+/// target when it has none. A narrowing that is not an array of strings, names
+/// an unknown target, one twice, none, or all of them is malformed. (A
+/// manifest that is not JSON is the build's to refuse, located.)
 fn readTargets(a: std.mem.Allocator, io: std.Io, cell: []const u8, why: *[]const u8) ![]const Target {
-    const path = try std.fs.path.join(a, &.{ cell, "targets" });
-    const text = std.Io.Dir.cwd().readFileAlloc(io, path, a, .limited(4096)) catch |err| switch (err) {
-        error.FileNotFound => return &ALL_TARGETS,
-        else => return err,
-    };
+    const path = try std.fs.path.join(a, &.{ cell, "botopink.json" });
+    const text = try std.Io.Dir.cwd().readFileAlloc(io, path, a, .limited(64 * 1024));
+    const parsed = std.json.parseFromSliceLeaky(std.json.Value, a, text, .{}) catch return &ALL_TARGETS;
+    if (parsed != .object) return &ALL_TARGETS;
+    const field = parsed.object.get("targets") orelse return &ALL_TARGETS;
+    if (field != .array) {
+        why.* = "is not an array of target names";
+        return error.Malformed;
+    }
     var list: std.ArrayListUnmanaged(Target) = .empty;
-    var it = std.mem.tokenizeAny(u8, text, " \t\r\n");
-    while (it.next()) |name| {
+    for (field.array.items) |item| {
+        if (item != .string) {
+            why.* = "is not an array of target names";
+            return error.Malformed;
+        }
+        const name = item.string;
         const t = Target.fromString(name) orelse {
             why.* = try std.fmt.allocPrint(a, "unknown target `{s}` (commonJS, erlang, beam, wasm)", .{name});
             return error.Malformed;
@@ -341,7 +365,7 @@ fn readTargets(a: std.mem.Allocator, io: std.Io, cell: []const u8, why: *[]const
         return error.Malformed;
     }
     if (list.items.len == ALL_TARGETS.len) {
-        why.* = "names every target, so it narrows nothing — delete it";
+        why.* = "names every target, so it narrows nothing — delete the field";
         return error.Malformed;
     }
     // In `ALL_TARGETS` order, whatever order the file wrote.
@@ -425,9 +449,9 @@ fn readSnaps(ctx: *Ctx, dir: []const u8, prefix: []const u8, into: *Files, count
 
 // ── the scratch project ───────────────────────────────────────────────────────
 
-/// A copy of the cell — everything but `snapshot/`, `docs.md`, `targets` and
-/// hidden entries — under `<home>/.botopinkbuild/tmp/cell-<64 random bits>/`,
-/// with `MANIFEST` when the cell has no manifest of its own. The process works
+/// A copy of the cell, one per target — everything but `snapshot/`, `docs.md`
+/// and hidden entries — under `<home>/.botopinkbuild/tmp/cell-<64 random bits>/`, its
+/// manifest the cell's own (`checkCell` refused a cell without one). The process works
 /// in it while it is open (every CLI path is relative to the current
 /// directory) and returns home when it closes.
 const Scratch = struct {
@@ -442,15 +466,9 @@ const Scratch = struct {
         try std.Io.Dir.cwd().createDirPath(ctx.io, dir);
         try copyTree(a, ctx.io, cell, dir, true);
         const manifest_path = try std.fs.path.join(a, &.{ dir, "botopink.json" });
-        const manifest = std.Io.Dir.cwd().readFileAlloc(ctx.io, manifest_path, a, .limited(64 * 1024)) catch |err| switch (err) {
-            error.FileNotFound => blk: {
-                try std.Io.Dir.cwd().writeFile(ctx.io, .{ .sub_path = manifest_path, .data = MANIFEST });
-                break :blk MANIFEST;
-            },
-            else => return err,
-        };
+        const manifest_text = try std.Io.Dir.cwd().readFileAlloc(ctx.io, manifest_path, a, .limited(64 * 1024));
         try std.process.setCurrentPath(ctx.io, dir);
-        return .{ .dir = dir, .manifest = manifest };
+        return .{ .dir = dir, .manifest = manifest_text };
     }
 
     fn close(self: *Scratch, ctx: *Ctx) void {
@@ -470,8 +488,11 @@ const Scratch = struct {
         if (t != .wasm or std.mem.indexOf(u8, self.manifest, "\"wasm\"") != null) return first;
         if (first == .tool_error) return first;
 
-        const brace = std.mem.indexOfScalar(u8, self.manifest, '{') orelse return first;
-        const browser_manifest = try std.fmt.allocPrint(ctx.arena, "{s} \"wasm\": {{ \"host\": \"browser\" }},{s}", .{ self.manifest[0 .. brace + 1], self.manifest[brace + 1 ..] });
+        // The host goes in last, before the closing brace, so every line and
+        // column of the cell's own manifest — where a refusal of it is located —
+        // is the same in the two builds.
+        const brace = std.mem.lastIndexOfScalar(u8, self.manifest, '}') orelse return first;
+        const browser_manifest = try std.fmt.allocPrint(ctx.arena, "{s}, \"wasm\": {{ \"host\": \"browser\" }} {s}", .{ std.mem.trimEnd(u8, self.manifest[0..brace], " \t\r\n"), self.manifest[brace..] });
         try std.Io.Dir.cwd().writeFile(ctx.io, .{ .sub_path = "botopink.json", .data = browser_manifest });
         const second = try buildAndRun(ctx, t, "out-wasm-browser");
         try std.Io.Dir.cwd().writeFile(ctx.io, .{ .sub_path = "botopink.json", .data = self.manifest });
@@ -487,7 +508,7 @@ const Scratch = struct {
         return first;
     }
 
-    /// A target the `targets` file leaves out: its build must refuse the cell
+    /// A target the manifest's `"targets"` leaves out: its build must refuse the cell
     /// on a host binding — the one reason a program structurally has no row
     /// on a target. Null when it does; else what is wrong.
     fn audit(self: *Scratch, ctx: *Ctx, t: Target) !?[]const u8 {
@@ -498,23 +519,23 @@ const Scratch = struct {
         const out_dir = try std.fmt.allocPrint(a, "out-{s}", .{t.toString()});
         var captured: std.Io.Writer.Allocating = .init(a);
         const code = try buildCaptured(ctx, t, out_dir, &captured.writer);
-        if (code == 0) return try std.fmt.allocPrint(a, "excluded by `targets`, but `botopink build --target {s}` accepts the cell — a narrowing stands on a host-binding refusal: let it run on {s}", .{ t.toString(), t.toString() });
+        if (code == 0) return try std.fmt.allocPrint(a, "excluded by \"targets\", but `botopink build --target {s}` accepts the cell — a narrowing stands on a host-binding refusal: let it run on {s}", .{ t.toString(), t.toString() });
         const text = try stripAnsi(a, captured.written());
         for (HOST_BINDING_REFUSALS) |phrase| if (std.mem.indexOf(u8, text, phrase) != null) return null;
         const beam_memory = try std.fmt.allocPrint(a, "`#[@BeamMemory]` has no meaning on the {s} backend", .{t.toString()});
         if (std.mem.indexOf(u8, text, beam_memory) != null) return null;
         const first = firstErrorLine(text) orelse "no error line";
-        return try std.fmt.allocPrint(a, "excluded by `targets`, and {s} refuses it for another reason than a host binding ({s}) — let it run there, its refusal answered in snapshot/targets/{s}/", .{ t.toString(), first, t.toString() });
+        return try std.fmt.allocPrint(a, "excluded by \"targets\", and {s} refuses it for another reason than a host binding ({s}) — let it run there, its refusal answered in snapshot/targets/{s}/", .{ t.toString(), first, t.toString() });
     }
 };
 
-/// Copy `from` into `to`. At the top level `snapshot/`, `docs.md` and
-/// `targets` stay behind; hidden entries stay behind at every level.
+/// Copy `from` into `to`. At the top level `snapshot/` and `docs.md` stay
+/// behind; hidden entries stay behind at every level.
 fn copyTree(a: std.mem.Allocator, io: std.Io, from: []const u8, to: []const u8, top: bool) !void {
     const cwd = std.Io.Dir.cwd();
     for (try childNames(a, io, from, .all)) |name| {
         if (name[0] == '.') continue;
-        if (top and (std.mem.eql(u8, name, "snapshot") or std.mem.eql(u8, name, "docs.md") or std.mem.eql(u8, name, "targets"))) continue;
+        if (top and (std.mem.eql(u8, name, "snapshot") or std.mem.eql(u8, name, "docs.md"))) continue;
         const src = try std.fs.path.join(a, &.{ from, name });
         const dst = try std.fs.path.join(a, &.{ to, name });
         if (isDir(io, src)) {
@@ -531,7 +552,9 @@ fn copyTree(a: std.mem.Allocator, io: std.Io, from: []const u8, to: []const u8, 
 /// would print to stderr written to `w` instead.
 fn buildCaptured(ctx: *Ctx, t: Target, out_dir: []const u8, w: *std.Io.Writer) !u8 {
     reporter.sink = w;
+    manifest.sink = w;
     defer reporter.sink = null;
+    defer manifest.sink = null;
     return build_cmd.run(ctx.gpa, ctx.io, .{ .target = t, .out_dir = out_dir }, ctx.env_map);
 }
 
@@ -545,7 +568,9 @@ fn buildAndRun(ctx: *Ctx, t: Target, out_dir: []const u8) !Observed {
     const code = try buildCaptured(ctx, t, out_dir, &captured.writer);
     if (code == 0) {
         reporter.sink = &captured.writer;
+        manifest.sink = &captured.writer;
         defer reporter.sink = null;
+        defer manifest.sink = null;
         const proj = config.load(a, ctx.io) catch return .{ .tool_error = .{ .message = "botopink.json does not load", .detail = captured.written() } };
         argv = try run_cmd.programArgv(a, ctx.io, proj, t, out_dir, "main");
     }
@@ -574,8 +599,31 @@ fn buildAndRun(ctx: *Ctx, t: Target, out_dir: []const u8) !Observed {
     return .{ .answer = ans };
 }
 
+/// Whether the two wasm hosts answered alike: the same text — or, when both
+/// refuse the program, the same modules refused at the same places. A refusal
+/// may name the host it was built for (`std-unsupported-on-target: … on host
+/// 'wasi'` / `'browser'`); the cell's answer is the `wasi` build's, and the
+/// `browser` build must refuse it where `wasi` does (the rule of
+/// `conformance/run.sh` before the cells moved here was weaker: both
+/// refused, nothing printed).
 fn sameAnswer(a: std.mem.Allocator, x: Answer, y: Answer) !bool {
-    return std.mem.eql(u8, try describe(a, x), try describe(a, y));
+    if (std.mem.eql(u8, try describe(a, x), try describe(a, y))) return true;
+    if (!refusesOnly(x) or !refusesOnly(y) or x.modules.count() != y.modules.count()) return false;
+    for (x.modules.keys(), x.modules.values()) |k, xs| {
+        const ys = y.modules.get(k) orelse return false;
+        if (xs.refusals.len != ys.refusals.len) return false;
+        for (xs.refusals, ys.refusals) |xr, yr| {
+            if ((xr.at == null) != (yr.at == null)) return false;
+            if (xr.at) |at| if (!std.mem.eql(u8, at, yr.at.?)) return false;
+        }
+    }
+    return true;
+}
+
+fn refusesOnly(ans: Answer) bool {
+    if (ans.modules.count() == 0) return false;
+    for (ans.modules.values()) |m| if (m.refusals.len == 0) return false;
+    return true;
 }
 
 /// Every module's `.snap` text of an answer, one after the other.

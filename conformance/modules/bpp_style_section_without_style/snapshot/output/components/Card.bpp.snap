@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: a style section needs a #[bpp.style] function, and "markup" (the package "bpp" names) marks none
+at src/components/Card.bpp:2:1

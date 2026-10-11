@@ -1,0 +1,4 @@
+botopink-cell 1
+out RecipePatch true (title: ?string #label, description: ?string, servings: ?i32)
+out RecipeTitle true (title: string #label)
+out Feijoada

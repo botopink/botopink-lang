@@ -1,2 +1,0 @@
-decorator-member-captures: the member reads `field`, a local of the decorator's body, which exists only while the program compiles
-12:34

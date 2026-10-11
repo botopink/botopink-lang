@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: typeinfo-meta-missing: `City` has no meta `entity.tabel`; it has `entity.table`
+at src/main.bp:12:40

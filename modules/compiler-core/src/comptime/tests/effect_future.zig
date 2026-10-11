@@ -90,4 +90,4 @@ test "@Task — await under a @Result return reds effect-await-without-task" {
 }
 
 // `effect-wrapper-behind-alias` (decision 118 rule 1) is pinned by the
-// `tests/language` cells once type aliases parse (`front/24-type-alias`).
+// `conformance` cells once type aliases parse (`front/24-type-alias`).

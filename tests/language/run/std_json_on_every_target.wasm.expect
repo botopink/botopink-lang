@@ -1,2 +1,0 @@
-std-unsupported-on-target: std/json.parse has no `#[@External.Wasm]` for target 'wasm' on host 'wasi'
-8:9

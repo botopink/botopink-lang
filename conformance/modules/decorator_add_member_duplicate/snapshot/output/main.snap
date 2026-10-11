@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: decorator-member-duplicate: `#[sized]` adds `size` to `Box`, which already has a member called `size`
+at src/main.bp:8:3

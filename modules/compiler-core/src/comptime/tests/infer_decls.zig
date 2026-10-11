@@ -993,7 +993,7 @@ test "infer: a @Result's methods typecheck (decision 330: no `result` namespace)
 }
 
 // Decision 330 — `?T` has no methods; `??` is its default and answers the
-// payload. `tests/language/reject/optional_has_no_methods.bp` carries the
+// payload. `conformance/modules/optional_has_no_methods` carries the
 // refusal of `.unwrapOr` on a `?T`.
 test "infer: the nullish default answers the inner type" {
     try h.assertInfersOk(std.testing.allocator,

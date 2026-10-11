@@ -1,0 +1,3 @@
+botopink-cell 1
+out write @TypeInfo.all(with: d) in the entry point
+out hints usage

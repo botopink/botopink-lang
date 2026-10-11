@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: context-provide-outside-component: `use provide(…)` is a statement of a component's body of its own — it yields nothing to bind or pass
+at src/main.bp:13:19

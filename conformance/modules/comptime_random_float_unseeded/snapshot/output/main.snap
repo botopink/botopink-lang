@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: the comptime block raised: {error,{bp_wat_runtime,<<"an unseeded draw: a build has no entropy, call `random.seed` first (decision 451)">>}}
+at src/main.bp:9:19

@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error[context-marker-removed]: `@Context` was removed — a component's `R` implements `@Renderable`, and a context is a `Context<T>` object (decision 354)
+at src/main.bp:5:36

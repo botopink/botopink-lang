@@ -1,2 +1,0 @@
-comptime-default-outside-decorator: the `comptime` parameter `n` takes a default only in a decorator
-6:43

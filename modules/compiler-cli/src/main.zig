@@ -97,9 +97,10 @@ const HELP =
     \\Options for `migrate`:
     \\  --dry-run                    Report the index files without writing them
     \\
-    \\`cell new <path>` scaffolds a cell: <path>/src/main.bp and <path>/docs.md.
+    \\`cell new <path>` scaffolds a cell: <path>/botopink.json (its package named
+    \\after the directory), <path>/src/main.bp and <path>/docs.md.
     \\`cell check <cell|directory>` builds and runs each cell on every target it
-    \\declares (all four, or those of its `targets` file) and compares each module's
+    \\declares (all four, or those of its botopink.json "targets") and compares each module's
     \\answer with snapshot/output/<module>.snap and snapshot/targets/<t>/<module>.snap.
     \\A difference writes a <file>.snap.new candidate beside it and exits 1; a new
     \\cell gets candidates. An accepted snapshot is never overwritten, and no flag

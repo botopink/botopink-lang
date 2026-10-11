@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: "bpp" names "markup", and #[bpp.html] marks 2 of its declarations — `markup` (deps/markup/src/markup.bp:6), `other` (deps/markup/src/markup.bp:18); the template function a .bpp file's markup unfolds onto is exactly one
+at botopink.json:1:121

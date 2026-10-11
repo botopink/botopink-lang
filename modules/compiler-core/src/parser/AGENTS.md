@@ -150,7 +150,7 @@ brace, not the keyword: `if (c) return x;` keeps its `;`, and so does a binding 
 a `return` whose value is braced, since the statement there is the binding.
 `format.zig` prints no `;` after exactly these statements. The `;` stays accepted
 until every tree has migrated — rejecting it (`blockStatementSemicolon`, front
-15's parked patch) would refuse the sibling libraries and `tests/language`, which
+15's parked patch) would refuse the sibling libraries and `conformance`, which
 still write it.
 
 ## The `if` condition and its binder (C-08)
@@ -441,7 +441,7 @@ enclosing scope is `val assert <Pattern> = <expr>;` (decision 8 §9), and a
 second spelling for one meaning is what decision 67 refuses. Three DOCUMENTED
 SKIPs used to pin the parse error and promise the form —
 `comptime/tests/narrowing.zig` ×2 and `codegen/tests/narrowing.zig` ×1; they are
-gone, and `tests/language/reject/assert_is_pattern.bp` pins the refusal instead.
+gone, and `conformance/modules/assert_is_pattern` pins the refusal instead.
 
 ## `case` arms and patterns (decision 8 §5, 06 N22)
 
@@ -470,7 +470,7 @@ keeps the `fields` shape every existing consumer knows, anything else becomes
 (`isPlainBinder`): `Box(label: null, n: k)` is `literals`, and every backend
 tests the field (`commonJS` `isKeywordLiteralPattern`, erlang's `undefined`
 atom, beam's `is_eq_exact`, wasm's `eqz`) — kept as `fields` it was bound as a
-name `null` (`tests/language/run/case_record_field_null`). `ast.zig` documents the node each shape lands on and what inference
+name `null` (`conformance/modules/case_record_field_null`). `ast.zig` documents the node each shape lands on and what inference
 owes it.
 
 Five located refusals, all in `print.zig`: `pattern-range-exclusive` (`1..9` —
@@ -614,7 +614,7 @@ fix-it "bind it first: `val x = try …;`"). A group `(…)` refuses it too, rig
 after its `(`: a group exists to become an operand, so `(try r).length` and
 `(try r catch 0) == 1` are the operand form. Pinned by
 `tests/effect_rejections.zig` ("decision 137: …") and the
-`tests/language/reject/{try_operand_of_operator,try_in_parentheses,await_operand_of_unary}`
+`conformance/modules/{try_operand_of_operator,try_in_parentheses,await_operand_of_unary}`
 cells.
 
 `try e catch h` and the tail form `e catch h` (`wrapCatch`, legal where a `try` is not — inside
@@ -630,7 +630,7 @@ rule: it stands where an expression begins and is never an operand. `parsePrimar
 — `1 + if (c) { 2 } else { 3 }` was the catch-all "this token cannot appear here". A brace-less
 branch is a start position, so `if (a) x else if (b) y else z` and a nested `if` as a branch stay
 legal. Pinned by `tests/effect_rejections.zig` ("an `if` expression as an operand …") and
-`tests/language/reject/{if_operand_of_operator,if_in_parentheses,if_operand_of_unary}`;
+`conformance/modules/{if_operand_of_operator,if_in_parentheses,if_operand_of_unary}`;
 decisions-pending `rc3-a` holds the reading for the maintainer.
 
 ## `${…}` interpolation holes

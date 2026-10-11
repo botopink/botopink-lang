@@ -35,14 +35,17 @@
 #                           manifests decide the cells — one that exists is
 #                           green or the stage fails — and every target a
 #                           member's "targets" list excludes is audited
-#   9. zig build test-language  tests/language — decision 8's `case`, tuples and
-#                           `loop` in botopink, on commonJS and erlang; a red
-#                           cell fails the stage
+#   9. zig build test-conformance  conformance/ — the conformance suite
+#                           (decisions 457, 464, 466): every cell of
+#                           conformance/modules/ by `botopink cell check` on
+#                           every target it declares, every conformance/test/
+#                           suite by `botopink test --json`; a red cell fails
+#                           the stage
 #  10. zig build test-docs  every `botopink` fence of docs.md and README.md is
 #                           compiled (scripts/check-docs.sh)
 #  11. tsc-check.sh         every `.d.ts` the commonJS backend emits for the
-#                           example projects, tests/language/modules and every
-#                           package under libs/ (std included) passes
+#                           conformance cells and every package under libs/
+#                           (std included) passes
 #                           `tsc --noEmit --strict`, and every emitted `.js`
 #                           passes `node --check` (needs `npx` and `node`)
 #  12. zig build test-web   compiler-core built for wasm32-wasi (the browser
@@ -74,7 +77,7 @@
 #             pre-merge-commit hooks).
 #
 #   --no-conformance
-#             skip the conformance stage(s) — today stage 9, `test-language` —
+#             skip the conformance stage — stage 9, `test-conformance` —
 #             and print `gate: conformance not run (--no-conformance)`; every
 #             other stage runs as without the flag. The commit hook runs it
 #             (decision 470); a front's Conformance step and its landing run the
@@ -195,7 +198,7 @@ tdir="$par"
 # Decision 460: the branch decides the mode, structurally — a flag, a variable
 # or a file a commit sets cannot (decision 67). On a `front/*` branch the gate is
 # the STEP gate: every stage runs, and the cells of stages 8 (test-libs) and 9
-# (test-language) are the ones the step's change reaches, by the backend
+# (test-conformance) are the ones the step's change reaches, by the backend
 # partition of decision 249 (scripts/lib/gate-mode.sh). On `feat`, `main`, a
 # detached HEAD or any other branch it is the FULL gate: every stage, every cell,
 # every library. The step's change is the working tree against the merge-base
@@ -207,7 +210,7 @@ tdir="$par"
 . scripts/lib/gate-mode.sh
 gate_branch="$(git symbolic-ref --short -q HEAD || true)"
 gate_kind="$(gate_mode "$gate_branch")"
-lang_args=()   # test-language's target subset (empty: every target)
+lang_args=()   # test-conformance's target subset (empty: every target)
 libs_args=()   # test-libs' target subset (empty: its default targets)
 run_lang=1
 run_libs=1
@@ -230,7 +233,7 @@ if [ "$gate_kind" = step ]; then
         done
         if [ -n "$reach_targets" ]; then lang_args=(--target "$reach_targets"); else run_lang=0; fi
         if [ -n "$lib_targets" ]; then libs_args=(--target "$lib_targets"); else run_libs=0; fi
-        printf 'gate: step gate (branch %s): %s; test-language %s, test-libs %s\n' "$gate_branch" "$reach_why" \
+        printf 'gate: step gate (branch %s): %s; test-conformance %s, test-libs %s\n' "$gate_branch" "$reach_why" \
             "$([ "$no_conformance" -eq 1 ] && echo 'not run (--no-conformance)' || { [ "$run_lang" -eq 1 ] && echo "on $reach_targets" || echo 'skipped, no cell reached'; })" \
             "$([ "$run_libs" -eq 1 ] && echo "on $lib_targets" || echo 'skipped, no library cell reached')"
     fi
@@ -239,7 +242,7 @@ else
     printf 'gate: full gate (%s): every stage, every cell, every library\n' "$gate_where"
 fi
 
-# Decision 470: the conformance cells (today test-language) are what a front's
+# Decision 470: the conformance cells (test-conformance) are what a front's
 # Conformance step runs; the commit hook runs the gate without them.
 if [ "$no_conformance" -eq 1 ]; then
     run_lang=0
@@ -438,8 +441,8 @@ if [ "$run_libs" -eq 1 ]; then
         { cat "$par/plan.libs.err"; fail "scripts/test-libs.sh --list"; }
 fi
 if [ "$run_lang" -eq 1 ]; then
-    bash tests/language/run.sh --list ${lang_args[@]+"${lang_args[@]}"} >"$par/plan.language" 2>"$par/plan.language.err" ||
-        { cat "$par/plan.language.err"; fail "tests/language/run.sh --list"; }
+    bash conformance/run.sh --list ${lang_args[@]+"${lang_args[@]}"} >"$par/plan.conformance" 2>"$par/plan.conformance.err" ||
+        { cat "$par/plan.conformance.err"; fail "conformance/run.sh --list"; }
 fi
 bash scripts/check-docs.sh --list >"$par/plan.docs" 2>"$par/plan.docs.err" ||
     { cat "$par/plan.docs.err"; fail "scripts/check-docs.sh --list"; }
@@ -450,7 +453,7 @@ bash scripts/check-docs.sh --list >"$par/plan.docs" 2>"$par/plan.docs.err" ||
 # directories, per-run `test-out/<target>/<id>/`, per-process test-scratch
 # roots); `test-cli`'s four scripts, which share `zig-out/` and fixture `out/`
 # directories, stay one stage and run in order inside it. The pools inside
-# `test-libs`, `test-language` and `test-docs` admit a job only while the
+# `test-libs`, `test-conformance` and `test-docs` admit a job only while the
 # machine's runnable threads are at most its CPUs, so running them together
 # shares the CPUs rather than multiplying the load.
 #
@@ -478,7 +481,7 @@ cold_arg=()
 # another pool is about to start. The total is `pool_default_jobs` — one per
 # CPU, bounded by `MemAvailable / 768 MiB`, read now that the build is done —
 # and each stage that runs a pool gets its share of it, in proportion to the
-# CPU-seconds it measured (test-libs 2540, test-language 1468, the rest under
+# CPU-seconds it measured (test-libs 2540, test-conformance 1468, the rest under
 # 300): 40 % / 40 % / 5 % / 10 %, at least 1 each. The stages keep their own
 # `--jobs` flag and admission; only the number they are given changes, so a
 # report is the bytes it was. test-cli runs its scripts one after another and
@@ -491,7 +494,7 @@ share() { # <percent> — that part of the total, at least 1
     [ "$n" -ge 1 ] || n=1
     echo "$n"
 }
-echo "gate: job budget $budget_total — test-libs $(share 50), test-language $(share 30), test-docs $(share 5), tsc-check $(share 10)"
+echo "gate: job budget $budget_total — test-libs $(share 50), test-conformance $(share 30), test-docs $(share 5), tsc-check $(share 10)"
 launch 4 zig build test-cli "$opt"
 # A stage the step gate skips because the step reaches none of its cells is not
 # launched; its report line says so (§ step gate and full gate).
@@ -499,7 +502,7 @@ if [ "$run_libs" -eq 1 ]; then
     launch 5 zig build test-libs "$opt" -- --jobs "$(share 50)" ${libs_args[@]+"${libs_args[@]}"} ${cold_arg[@]+"${cold_arg[@]}"}
 fi
 if [ "$run_lang" -eq 1 ]; then
-    launch 6 zig build test-language "$opt" -- --jobs "$(share 30)" ${lang_args[@]+"${lang_args[@]}"} ${cold_arg[@]+"${cold_arg[@]}"}
+    launch 6 zig build test-conformance "$opt" -- --jobs "$(share 30)" ${lang_args[@]+"${lang_args[@]}"} ${cold_arg[@]+"${cold_arg[@]}"}
 fi
 launch 7 zig build test-docs "$opt" -- --jobs "$(share 5)" ${cold_arg[@]+"${cold_arg[@]}"}
 launch 8 bash scripts/tsc-check.sh --jobs "$(share 10)"
@@ -543,12 +546,12 @@ check_counts() { # <n>
             # The pairs that spawn: cells that test or compile, and audits.
             stored 5 "stage 8 (test-libs)" jobs "$(cut -f3 "$par/plan.libs" | grep -cxE 'cell:test|cell:compile|audit')"
             ;;
-        6)  # test-language: `cells: <J> jobs — <R> run, <A> audits` (tests/language/run.sh)
+        6)  # test-conformance: `cells: <J> jobs — <R> run, <A> audits` (conformance/run.sh)
             line="$(plain "$out" | grep -E '^cells: [0-9]+ jobs' | tail -1)"
-            counted 6 "stage 9 (test-language) jobs" "$(sed -nE 's/^cells: ([0-9]+) jobs.*/\1/p' <<<"$line")" "$(grep -c . "$par/plan.language")"
-            counted 6 "stage 9 (test-language) audits" "$(sed -nE 's/.* ([0-9]+) audits$/\1/p' <<<"$line")" "$(cut -f3 "$par/plan.language" | grep -cx 'audit')"
-            echo "plan: $(grep -c . "$par/plan.language") jobs on $(cut -f2 "$par/plan.language" | sort -u | tr '\n' ' ')as --list declares"
-            stored 6 "stage 9 (test-language)" jobs "$(grep -c . "$par/plan.language")"
+            counted 6 "stage 9 (test-conformance) jobs" "$(sed -nE 's/^cells: ([0-9]+) jobs.*/\1/p' <<<"$line")" "$(grep -c . "$par/plan.conformance")"
+            counted 6 "stage 9 (test-conformance) audits" "$(sed -nE 's/.* ([0-9]+) audits$/\1/p' <<<"$line")" "$(cut -f3 "$par/plan.conformance" | grep -cx 'audit')"
+            echo "plan: $(grep -c . "$par/plan.conformance") jobs on $(cut -f2 "$par/plan.conformance" | sort -u | tr '\n' ' ')as --list declares"
+            stored 6 "stage 9 (test-conformance)" jobs "$(grep -c . "$par/plan.conformance")"
             ;;
         7)  # test-docs: `docs: <N> fences — …` (scripts/check-docs.sh)
             line="$(plain "$out" | grep -E '^docs: [0-9]+ fences' | tail -1)"
@@ -580,8 +583,8 @@ report 3 "beam export audit" "beam export audit" \
     "scripts/beam_export_audit.sh (a REJECTED block above names the module, function and reason)"
 report 4 "zig build test-cli" "zig build test-cli" "zig build test-cli"
 report 5 "zig build test-libs" "zig build test-libs" "zig build test-libs"
-report 6 "zig build test-language" "zig build test-language" \
-    "zig build test-language (a FAIL line above names the file, the test and the rule)"
+report 6 "zig build test-conformance" "zig build test-conformance" \
+    "zig build test-conformance (a FAIL line above names the cell or the suite; a red cell's candidates and their differences follow it)"
 report 7 "zig build test-docs" "zig build test-docs" \
     "zig build test-docs (a ✗ line above names the doc, the fence line and the error)"
 report 8 "tsc --noEmit over the emitted .d.ts, node --check over the emitted .js (scripts/tsc-check.sh)" "tsc-check" \

@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error[removed-loop-parenthesised]: `loop (…)` does not exist — `for` iterates, `while` repeats
+at src/main.bp:8:5

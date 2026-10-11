@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error[effect-annotation-removed]: effect annotations were removed — a loop takes the `iter` / `stream` prefix (decision 125)
+at src/main.bp:9:15

@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: `#[@External.Wasm("wasi:delay")]`: the adapter `delay` is `(i32, T) -> @Task<T>` over one type parameter `T`; the declaration's signature differs (on `later`)
+at src/main.bp:8:3

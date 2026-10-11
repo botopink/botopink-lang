@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: binding-redeclared: `s` is already bound in this function, as a parameter
+at src/main.bp:13:9

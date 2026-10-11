@@ -1,2 +1,0 @@
-comptime-param-not-expr: `route`'s parameter `path` is `comptime path: string` — a `comptime` parameter is `comptime path: @Expr<string>`
-6:32

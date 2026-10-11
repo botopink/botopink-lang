@@ -243,8 +243,8 @@ pub fn name() -> string {
 The shorthand is refused at the item, and the refusal writes the import as it
 is spelled instead: the path of the one module of the package that declares the
 name `pub`, every candidate when several do, `unresolved import` when none does
-(pinned by `tests/language/modules/shorthand_import_one_candidate`,
-`shorthand_import_several_candidates` and `reject/shorthand_import`):
+(pinned by `conformance/modules/shorthand_import_one_candidate`,
+`shorthand_import_several_candidates` and `modules/shorthand_import`):
 
 ```text
 // src/main.bp — `pub mod geometry;` declares `pub fn perimeter`
@@ -297,7 +297,7 @@ what an existing import means — an import that could have meant the module is
 already the brace form. `from` naming a module of the package is refused at the
 source string, and the refusal writes the import as it is spelled instead
 (over the `imports` project above; pinned by
-`tests/language/modules/import_own_module_with_from`):
+`conformance/modules/import_own_module_with_from`):
 
 ```text
 // src/main.bp
@@ -313,7 +313,7 @@ they are two modules: inside the first, `import {theme.Ns};` names its own `them
 the second its own, and a project's `theme` is a third. Neither import is ambiguous, and
 neither `Ns` is ever read as the other's — in the checker, in every backend's module names
 and calls, in the `.d.ts` and at compile time. Pinned by
-`tests/language/modules/two_packages_one_module_name`.
+`conformance/modules/two_packages_one_module_name`.
 
 **A path and a group are one tree, and only the leaf enters scope.** An item
 may walk into a module (`shapes.circle.name`), and several items under one
@@ -3643,7 +3643,7 @@ binary with the imports a browser offers — `fd_write` on the console
 under node), `random_get` on `crypto.getRandomValues` — then calls the
 module's start and `main`. A page imports the loader; `botopink run` runs it
 with `node <module>.mjs`. Every wasm program prints the same on both hosts:
-`tests/language` runs its wasm column under both and fails a cell whose
+`conformance` runs its wasm column under both and fails a cell whose
 answers differ.
 
 **`fn:<name>` binds a declaration on every target** (decisions 238, 263). On
@@ -4065,7 +4065,7 @@ closes it, or says that it has none yet. Every row below was re-derived by
 | Rule | Today | Closes with |
 |---|---|---|
 | A decorator's output goes to one of the four places of § Decorators; **module-level `@emit` is gone** (decision 216), refused by name with the four places in its message | `@emit(source)` still compiles, splicing loose declarations into the module: the libraries' sites move to the four places first | `01-compiler/130-decorator-outputs` steps 5–6 |
-| A block-shaped statement ends itself: **no** `;` after the closing brace of an `if`, a loop or a `case` in statement position | the `;` is **optional** there: the parser accepts both, `botopink format` prints none, and the compiler's own trees are migrated — a library or a `tests/language` cell that still writes it compiles | 1.0.10-beta C-13, in decision 132's order: each library drops the `;` (`botopink format`), then `tests/language`, then the parser refuses it (`blockStatementSemicolon`) |
+| A block-shaped statement ends itself: **no** `;` after the closing brace of an `if`, a loop or a `case` in statement position | the `;` is **optional** there: the parser accepts both, `botopink format` prints none, and the compiler's own trees are migrated — a library or a `conformance` cell that still writes it compiles | 1.0.10-beta C-13, in decision 132's order: each library drops the `;` (`botopink format`), then `conformance`, then the parser refuses it (`blockStatementSemicolon`) |
 
 A row leaves this table when the compiler accepts the form, and the form is then
 taught in the section that owns it: union types, the `unknown` type and its

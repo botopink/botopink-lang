@@ -714,21 +714,22 @@ printf 'pub fn main() {\n    print("unterminated);\n}\n' >"$P/src/main.bp"
 run "$P" format --check
 expect_code 1 "format --check on a lex error"
 
-# ── decision 66 — format --check reaches the whole project; reject/ is exempt by shape ──
+# ── decision 66 — format --check reaches the whole project; a refused cell module is exempt by shape ──
 # No argument: every `.bp` and `.d.bp` under the project — src/, test/, examples/
 # and the projects nested inside — is checked. Not entered: hidden directories and
-# node_modules. Not reached: `reject/<n>.bp` beside its `<n>.expect`, the language
-# suite's rejected program (decision 67: the exemption is the directory's shape,
-# never a skip list, a pragma or an environment variable).
-echo "==> format --check walks src/, test/, examples/ and nested projects; reject/<n>.bp beside <n>.expect is exempt"
+# node_modules. Not reached: a conformance cell's module whose
+# `snapshot/output/<module>.snap` holds a `refused` record — every target
+# refuses it, it is written to be refused (decision 67: the exemption is the
+# cell's own evidence, never a skip list, a pragma or an environment variable).
+echo "==> format --check walks src/, test/, examples/ and nested projects; a refused cell module is exempt"
 P="$(project fmt66)"
 printf '%s' "$MAIN_OK" >"$P/src/main.bp"
-mkdir -p "$P/test" "$P/examples/nested/src" "$P/reject" "$P/.botopinkbuild" "$P/node_modules/dep"
+mkdir -p "$P/test" "$P/examples/nested/src" "$P/cells/bad/src" "$P/cells/bad/snapshot/output" "$P/.botopinkbuild" "$P/node_modules/dep"
 printf 'test "t" {\n    assert 1 == 1;\n}\n' >"$P/test/main_test.bp"
 printf '{ "name": "nested", "version": "0.1.0", "target": "commonJS" }\n' >"$P/examples/nested/botopink.json"
 printf 'pub fn f() {\n  print("x");\n}\n' >"$P/examples/nested/src/main.bp"   # two-space indent: not canonical
-printf 'pub fn g( {\n' >"$P/reject/bad.bp"                                     # refused on purpose …
-printf 'this token cannot appear here\n' >"$P/reject/bad.expect"               # … and paired: the fixture
+printf 'pub fn g( {\n' >"$P/cells/bad/src/main.bp"                              # refused on purpose …
+printf 'botopink-cell 1\nrefused error: this token cannot appear here\nat src/main.bp:1:10\n' >"$P/cells/bad/snapshot/output/main.snap"   # … every target: the fixture
 printf 'pub fn h() {\n  print("y");\n}\n' >"$P/.botopinkbuild/scratch.bp"
 printf 'pub fn h() {\n  print("y");\n}\n' >"$P/node_modules/dep/dep.bp"
 before="$(cd "$P" && find . -type f | sort | xargs cat | cksum)"
@@ -737,7 +738,7 @@ expect_code 1 "format --check with one non-canonical file in a nested project"
 expect_out "examples/nested/src/main.bp" "the nested project's file is named"
 expect_out "1 file(s) would be reformatted" "exactly one file is counted"
 expect_out "test/main_test.bp" "test/ is reached"
-expect_no_out "reject/bad.bp" "reject/<n>.bp beside its .expect is not reached"
+expect_no_out "cells/bad/src/main.bp" "a cell module every target refuses is not reached"
 expect_no_out ".botopinkbuild" "a hidden directory is not entered"
 expect_no_out "node_modules" "node_modules is not entered"
 after="$(cd "$P" && find . -type f | sort | xargs cat | cksum)"
@@ -746,10 +747,13 @@ run "$P" format
 expect_code 0 "format rewrites the whole project"
 run "$P" format --check
 expect_code 0 "format --check is green after format"
-printf 'pub fn g( {\n' >"$P/reject/lone.bp"                                    # no .expect: not the fixture
+mkdir -p "$P/cells/departs/src" "$P/cells/departs/snapshot/output" "$P/cells/departs/snapshot/targets/wasm"
+printf 'pub fn g( {\n' >"$P/cells/departs/src/main.bp"                          # refused on one target only: not the fixture
+printf 'botopink-cell 1\nout ok\n' >"$P/cells/departs/snapshot/output/main.snap"
+printf 'botopink-cell 1\nrefused error: this token cannot appear here\nat src/main.bp:1:10\n' >"$P/cells/departs/snapshot/targets/wasm/main.snap"
 run "$P" format --check
-expect_code 1 "a reject/ .bp without its .expect is not the fixture and is reached"
-expect_out "--> reject/lone.bp:" "and its parse error is located"
+expect_code 1 "a module only one target refuses is not the fixture and is reached"
+expect_out "--> cells/departs/src/main.bp:" "and its parse error is located"
 run "$P" format --check examples/nested
 expect_code 0 "a directory argument is walked the same way"
 expect_out "examples/nested/src/main.bp" "the walked path keeps the argument as its prefix"
@@ -1222,12 +1226,13 @@ fi
 # `'__bp_load_siblings'/0` compiles that `.erl` itself, so only the `.S` files
 # are assembled here; on erlang every `.erl` of `out/erl/` is compiled, because
 # a plain erlang build carries no sibling loader yet (02-erlang step 9).
-# The program is `tests/language/modules/erlang_host_sidecar_shipped`.
+# The program is the conformance cell `conformance/modules/erlang_host_sidecar_shipped`;
+# what it prints is its `snapshot/output/main.snap`'s `out` lines.
 echo "==> a built erlang / beam program loads its .erl sidecar under erl -pa"
 if have erl && have erlc; then
   for T in erlang beam; do
     P="$WORK/built-sidecar-$T"; rm -rf "$P"
-    cp -R "$REPO_ROOT/tests/language/modules/erlang_host_sidecar_shipped" "$P"
+    cp -R "$REPO_ROOT/conformance/modules/erlang_host_sidecar_shipped" "$P"
     run "$P" build --target "$T"
     expect_code 0 "build --target $T"
     D="$P/out/$([[ "$T" == erlang ]] && echo erl || echo beam)"
@@ -1244,7 +1249,8 @@ if have erl && have erlc; then
     set -e
     [[ "$CC" -eq 0 ]] && ok "$T: the emitted modules compile with the OTP tools" || { fail "$T: erlc refused the build"; echo "$COMPILE" | sed 's/^/      /' >&2; }
     expect_code 0 "$T: erl -pa out runs the built program"
-    if [[ "$OUT" == "$(cat "$P/expected.out")" ]]; then ok "$T: prints expected.out"; else fail "$T: printed '$OUT'"; fi
+    WANT="$(awk '/^out /{ print substr($0, 5) } /^out$/{ print "" }' "$P/snapshot/output/main.snap")"
+    if [[ "$OUT" == "$WANT" ]]; then ok "$T: prints the cell's accepted output"; else fail "$T: printed '$OUT'"; fi
   done
 else
   skip "built erlang / beam program (erl / erlc not on PATH)"
@@ -1325,6 +1331,7 @@ if have node && have erl && have erlc && have wasmtime; then
   run "$CELLS" cell new fresh
   expect_code 0 "cell new"
   [[ -f "$CELLS/fresh/src/main.bp" && -f "$CELLS/fresh/docs.md" ]] && ok "cell new writes src/main.bp and docs.md" || fail "cell new: missing src/main.bp or docs.md"
+  expect_file_out "$CELLS/fresh/botopink.json" '"name": "fresh"' "cell new writes the cell's manifest, its package named after the directory (decision 475)"
   [[ ! -e "$CELLS/fresh/snapshot" ]] && ok "cell new writes no snapshot" || fail "cell new wrote a snapshot"
   run "$CELLS" cell new fresh
   expect_code 1 "cell new over an existing path"
@@ -1347,6 +1354,7 @@ if have node && have erl && have erlc && have wasmtime; then
   # No clear majority (erlang and beam print, commonJS and wasm each refuse in
   # their own words): one candidate per target, and a person chooses.
   mkdir -p "$CELLS/split"; cp -R "$CELLS/narrowed/src" "$CELLS/split/src"
+  printf '{ "name": "split", "version": "0.0.1", "src": "src/" }\n' >"$CELLS/split/botopink.json"
   run "$CELLS" cell check split
   expect_code 1 "cell check on a new cell with no majority"
   expect_out "no majority — a person chooses" "leaves the choice to a person"
@@ -1363,16 +1371,62 @@ if have node && have erl && have erlc && have wasmtime; then
   expect_out "- stderr no such text" "the claim that no longer holds is shown"
   [[ ! -e "$CELLS/aborts/snapshot/output/main.snap.new" ]] && ok "output/ holds on the other targets: no output/ candidate" || fail "an output/ candidate for a one-target difference"
 
-  # A narrowing the compiler does not back is refused, and a malformed one.
-  printf 'commonJS erlang beam\n' >"$CELLS/prints/targets"
+  # A narrowing is the manifest's "targets" (decision 475), audited on every
+  # check: each target it leaves out must refuse the cell on a host binding.
+  # These are the cases `conformance/run.sh --self-test` proved on its own
+  # synthetic suite before the cells moved to `botopink cell check`.
+  PRINTS_MANIFEST="$(cat "$CELLS/prints/botopink.json")"
+  narrow_prints() { printf '{ "name": "prints", "version": "0.0.1", "src": "src/", "targets": %s }\n' "$1" >"$CELLS/prints/botopink.json"; }
+  narrow_prints '["commonJS", "erlang", "beam"]'
   run "$CELLS" cell check prints
   expect_code 1 "a narrowing whose excluded target builds"
-  expect_out "wasm: excluded by \`targets\`, but \`botopink build --target wasm\` accepts the cell" "names the excluded target that builds"
-  printf 'wasm wasm\n' >"$CELLS/prints/targets"
+  expect_out 'wasm: excluded by "targets", but `botopink build --target wasm` accepts the cell' "names the excluded target that builds"
+  narrow_prints '["wasm", "wasm"]'
   run "$CELLS" cell check prints
   expect_code 1 "a narrowing naming a target twice"
   expect_out "\`wasm\` is named twice" "names the malformed narrowing"
+  narrow_prints '["commonJS", "jvm"]'
+  run "$CELLS" cell check prints
+  expect_code 1 "a narrowing naming no target"
+  expect_out "unknown target \`jvm\`" "names the unknown target"
+  narrow_prints '["commonJS", "erlang", "beam", "wasm"]'
+  run "$CELLS" cell check prints
+  expect_code 1 "a narrowing naming every target"
+  expect_out "names every target, so it narrows nothing" "says it narrows nothing"
+  narrow_prints '"commonJS"'
+  run "$CELLS" cell check prints
+  expect_code 1 "a narrowing that is not an array"
+  expect_out '"targets": is not an array of target names' "says what the field must be"
+  printf '%s\n' "$PRINTS_MANIFEST" >"$CELLS/prints/botopink.json"
+  printf 'commonJS erlang beam\n' >"$CELLS/prints/targets"
+  run "$CELLS" cell check prints
+  expect_code 1 "a targets file"
+  expect_out "a cell is narrowed by its manifest's \"targets\" (decision 475), never by a \`targets\` file" "a targets file is not a narrowing"
   rm "$CELLS/prints/targets"
+  # Refused, but not on a host binding: no target compiles an unbound name.
+  mkdir -p "$CELLS/another_reason/src"
+  printf 'pub fn main() {\n    @print(nowhere);\n}\n' >"$CELLS/another_reason/src/main.bp"
+  printf '{ "name": "another_reason", "version": "0.0.1", "src": "src/", "targets": ["commonJS", "erlang", "beam"] }\n' >"$CELLS/another_reason/botopink.json"
+  run "$CELLS" cell check another_reason
+  expect_code 1 "a narrowing whose excluded target refuses for another reason"
+  expect_out 'wasm: excluded by "targets", and wasm refuses it for another reason than a host binding' "names the refusal that is not a host binding"
+  # Decision 167: BEAM storage stands a narrowing on commonJS and wasm, and
+  # never excuses beam, which binds it.
+  mkdir -p "$CELLS/beam_memory/src"
+  printf '#[@BeamMemory.ProcessDict]\nvar seen: i32 = 0;\n\npub fn main() {\n    seen = 1;\n    @print("ok");\n}\n' >"$CELLS/beam_memory/src/main.bp"
+  printf '{ "name": "beam_memory", "version": "0.0.1", "src": "src/", "targets": ["erlang"] }\n' >"$CELLS/beam_memory/botopink.json"
+  run "$CELLS" cell check beam_memory
+  expect_code 1 "a #[@BeamMemory] narrowing that leaves beam out"
+  expect_out 'beam: excluded by "targets", but `botopink build --target beam` accepts the cell' "beam binds BEAM storage: the narrowing is refused"
+  expect_no_out 'commonJS: excluded' "commonJS's #[@BeamMemory] refusal stands the narrowing"
+  expect_no_out 'wasm: excluded' "wasm's refusal stands the narrowing"
+  # A cell is a project like any other: no manifest, no cell (decision 475).
+  mkdir -p "$CELLS/no_manifest/src"
+  printf 'pub fn main() {\n    @print("x");\n}\n' >"$CELLS/no_manifest/src/main.bp"
+  run "$CELLS" cell check no_manifest
+  expect_code 1 "a cell without botopink.json"
+  expect_out "a cell holds botopink.json — its own manifest" "names the missing manifest"
+  rm -rf "$CELLS/another_reason" "$CELLS/beam_memory" "$CELLS/no_manifest"
 
   # A malformed .snap is located; so is a departure for a target not run.
   printf 'botopink-cell 1\nexit 0\n' >"$CELLS/prints/snapshot/output/main.snap"

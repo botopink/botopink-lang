@@ -7,13 +7,12 @@
 # each (nested projects included) — `examples` (every example project and
 # `hello.bp`), `libs/std` (the one library the compiler ships — decision 326:
 # every other library is a repository of its own, formatted by its own gate), the CLI's and the
-# manifest module's fixtures and `tests/language` — every tracked `.bp` of this
-# checkout is under one of them. What
-# the walk leaves out is structural — hidden directories, `node_modules`,
-# `reject/<n>.bp` beside its `<n>.expect`, and a `modules/<cell>/` file the
-# cell's `<target>.expect` files name that does not lex or parse
-# (cli/format_cmd.zig, gate-c of specs/1.0.11-beta/00-gate: under
-# `tests/language` that is every `reject/` cell and
+# manifest module's fixtures and `conformance` — every tracked `.bp` of this
+# checkout is under one of them. What the walk leaves out is structural —
+# hidden directories, `node_modules`, and a conformance cell's module whose
+# `snapshot/output/<module>.snap` holds a `refused` record: a module every
+# target refuses, written to be refused (cli/format_cmd.zig; under
+# `conformance` that is every cell that was a `reject/` cell, and
 # `modules/lexer_error_in_imported_module/src/pattern.bp`). A red tree is a red
 # gate: `botopink format <tree>` in a reformat-only commit fixes it. It is not
 # a skip list, and there is no other way to exempt a file (decision 67). A tree
@@ -24,7 +23,7 @@
 # the same commit: `libs/std`'s source is quoted verbatim by the
 # `compiler-core/snapshots/codegen/*/std_package_*` snapshots and two
 # of `language-server/snapshots/lsp/` (re-recorded, differing by the quoted
-# text alone), and a `modules/<cell>/<target>.expect` pins a `<file>:<L>:<C>`
+# text alone), and a cell's `snapshot/**.snap` pins an `at <file>:<L>:<C>`
 # the reformat of that file can move.
 #
 # Usage: scripts/format-check.sh        (from anywhere in the checkout; needs `zig build`)
@@ -42,7 +41,7 @@ TREES=(
     libs/std
     modules/compiler-cli/tests
     modules/manifest/tests
-    tests/language
+    conformance
 )
 
 status=0

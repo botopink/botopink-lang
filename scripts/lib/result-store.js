@@ -1,5 +1,5 @@
 // result-store.js — the cell-result store of the gate's shell runners
-// (tests/language/run.sh, scripts/check-docs.sh); decisions 229 and 249 of
+// (conformance/run.sh, scripts/check-docs.sh); decisions 229 and 249 of
 // 1.0.11-beta, front 00-gate/133-gate-speed. `botopink-lib-test` keeps the same
 // store (modules/lib-test-runner/src/result_store.zig) and takes the compiler and
 // toolchain part of its keys from `compiler` below, so the two cannot disagree.

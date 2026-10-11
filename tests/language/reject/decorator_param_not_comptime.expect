@@ -1,2 +1,0 @@
-decorator-param-not-comptime: the decorator `route`'s parameter `path` is not `comptime`
-6:32

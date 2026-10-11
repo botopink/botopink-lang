@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: derived-type-fields: `Type.omit` leaves `Recipe` with no field
+at src/main.bp:10:22

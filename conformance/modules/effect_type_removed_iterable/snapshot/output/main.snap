@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error[effect-type-removed]: this sequence type left the language (decisions 103, 122)
+at src/main.bp:9:14

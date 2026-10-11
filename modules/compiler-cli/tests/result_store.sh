@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The cell-result store of the gate's three big stages (decisions 229 and 249 of
 # 1.0.11-beta, front 00-gate/133-gate-speed), end to end against the installed
-# binaries: `tests/language/run.sh` (stage 9), `botopink-lib-test` (stage 8,
+# binaries: `conformance/run.sh` (stage 9), `botopink-lib-test` (stage 8,
 # through its JSON) and `scripts/check-docs.sh` (stage 10), each over a
 # synthetic suite in a scratch directory with its own `--store-root`.
 #
@@ -123,72 +123,79 @@ expect() {
     { echo "$2" >&2; fail "$1: expected $3 — $4 run, $5 from store; got: ${line:-no result store line}"; }
 }
 
-# ── tests/language/run.sh ────────────────────────────────────────────────────
-echo "==> [language] tests/language/run.sh answers a pass from the store only on an equal key"
+# ── conformance/run.sh ───────────────────────────────────────────────────────
+echo "==> [conformance] conformance/run.sh answers a pass from the store only on an equal key"
 SUITE="$WORK/suite"
-mkdir -p "$SUITE/run"
-for c in alpha beta; do
-  printf '// v1\npub fn main() {\n    @print("%s");\n}\n' "$c" >"$SUITE/run/$c.bp"
-  printf '%s\n' "$c" >"$SUITE/run/$c.out"
-done
-printf 'pub fn main() {\n    @print("red");\n}\n' >"$SUITE/run/red.bp"
-printf 'not what it prints\n' >"$SUITE/run/red.out"
+mkdir -p "$SUITE/modules" "$SUITE/test"
+cell() { # <name> <the line main prints> <the line its snapshot says>
+  mkdir -p "$SUITE/modules/$1/src" "$SUITE/modules/$1/snapshot/output"
+  printf '// v1\npub fn main() {\n    @print("%s");\n}\n' "$2" >"$SUITE/modules/$1/src/main.bp"
+  printf '{ "name": "%s", "version": "0.0.1", "src": "src/" }\n' "$1" >"$SUITE/modules/$1/botopink.json"
+  printf 'botopink-cell 1\nout %s\n' "$3" >"$SUITE/modules/$1/snapshot/output/main.snap"
+}
+cell alpha alpha alpha
+cell beta beta beta
+cell red red "not what it prints"
+printf 'test "one" {\n    assert 1 == 1;\n}\n' >"$SUITE/test/one.bp"
 lang() { # lang [<run.sh args>…] — every target over the synthetic suite; output in $out
   set +e
-  out="$(bash "$REPO_ROOT/tests/language/run.sh" --suite "$SUITE" --target all --compiler "$SHIM" \
-    --lib-root "$WORK/lang/libs" --store-root "$WORK/store-language" "$@" 2>&1)"
+  out="$(bash "$REPO_ROOT/conformance/run.sh" --suite "$SUITE" --target all --compiler "$SHIM" \
+    --lib-root "$WORK/lang/libs" --store-root "$WORK/store-conformance" "$@" 2>&1)"
   code=$?
   set -e
 }
-# 3 cells × 4 targets; run/red is red on every one.
-lang; expect "first run" "$out" 12 12 0
-[[ $code -eq 1 ]] || fail "run/red is red: the run must fail (exit $code)"
-lang; expect "no change" "$out" 12 4 8
+# 3 cells (one job each: `botopink cell check` runs every target) + test/one on
+# commonJS, erlang and beam; modules/red is red.
+lang; expect "first run" "$out" 6 6 0
+[[ $code -eq 1 ]] || fail "modules/red is red: the run must fail (exit $code)"
+lang; expect "no change" "$out" 6 1 5
 [[ $code -eq 1 ]] || fail "a failure is never answered from the store: the run must still fail (exit $code)"
-grep -q 'FAIL.*run/red.bp' <<<"$out" || fail "run/red ran again and is reported red"
-sed -i.bak 's#// v1#// v2#' "$SUITE/run/alpha.bp" && rm -f "$SUITE/run/alpha.bp.bak"
-lang; expect "one byte of run/alpha.bp" "$out" 12 8 4
+grep -q 'FAIL.*modules/red' <<<"$out" || fail "modules/red ran again and is reported red"
+sed -i.bak 's#// v1#// v2#' "$SUITE/modules/alpha/src/main.bp" && rm -f "$SUITE/modules/alpha/src/main.bp.bak"
+lang; expect "one byte of modules/alpha/src/main.bp" "$out" 6 2 4
 printf '// one byte more\n' >>"$WORK/lang/libs/std/src/collections.bp"
-lang; expect "one byte of the library root's collections.bp" "$out" 12 12 0
+lang; expect "one byte of the library root's collections.bp" "$out" 6 6 0
 edit modules/compiler-core/src/codegen/wat.zig
-lang; expect "one line of the wasm emitter: the wasm cells and the reds" "$out" 12 6 6
+lang; expect "one line of the wasm emitter: the cells (every target), not the test suite" "$out" 6 3 3
 ! grep -q 'never stored' <<<"$out" || fail "nothing should be unstorable"
+edit modules/compiler-core/src/codegen/beam_asm.zig
+lang; expect "one line of the beam emitter: the cells and test/one on beam" "$out" 6 4 2
 edit modules/compiler-core/src/comptime/infer.zig
-lang; expect "one line of the checker (shared)" "$out" 12 12 0
+lang; expect "one line of the checker (shared)" "$out" 6 6 0
 printf 'pub const fresh = 1;\n' >"$SRC/modules/compiler-core/src/codegen/js/fresh_unlisted.zig"; shim
-lang; expect "a file under codegen/js/ the partition does not list (shared)" "$out" 12 12 0
+lang; expect "a file under codegen/js/ the partition does not list (shared)" "$out" 6 6 0
 for t in node erl wasmtime; do
-  PATH="$WORK/shim-$t:$PATH" lang; expect "another $t version" "$out" 12 12 0
+  PATH="$WORK/shim-$t:$PATH" lang; expect "another $t version" "$out" 6 6 0
 done
-rm -rf "$WORK/store-language"
-lang --cold; expect "--cold" "$out" 12 12 0
+rm -rf "$WORK/store-conformance"
+lang --cold; expect "--cold" "$out" 6 6 0
 grep -q -- '--cold: nothing read from the store' <<<"$out" || fail "--cold should say nothing was read"
-lang; expect "a warm run after --cold answers what --cold wrote" "$out" 12 4 8
-rm -rf "$WORK/store-language"
-lang; expect "a deleted store" "$out" 12 12 0
+lang; expect "a warm run after --cold answers what --cold wrote" "$out" 6 1 5
+rm -rf "$WORK/store-conformance"
+lang; expect "a deleted store" "$out" 6 6 0
 # The compiler part of the key cannot be trusted: nothing is read or written.
 shim 0000000000000000000000000000000000000000000000000000000000000000
-lang; lang; expect "a binary not built from the checkout's sources" "$out" 12 12 0
+lang; lang; expect "a binary not built from the checkout's sources" "$out" 6 6 0
 grep -q 'never stored — .*was not built from the sources' <<<"$out" || fail "the stale binary should be named as the reason"
 printf 'const leak = @import("codegen/wat.zig");\npub fn leakUse() void {\n    _ = leak.codegenEmit;\n}\n' >>"$SRC/modules/compiler-core/src/parser.zig"; shim
-lang; lang; expect "a shared file using the wasm emitter" "$out" 12 12 0
+lang; lang; expect "a shared file using the wasm emitter" "$out" 6 6 0
 grep -q 'never stored — modules/compiler-core/src/parser.zig uses modules/compiler-core/src/codegen/wat.zig, which .* gives to wasm alone' <<<"$out" ||
   fail "the partition's audit should name the shared file that uses a listed one"
 cp "$REPO_ROOT/modules/compiler-core/src/parser.zig" "$SRC/modules/compiler-core/src/parser.zig"; shim
 # Inputs that cannot be enumerated: a symbolic link, a dependency path that
 # leaves the cell. Each is run every time and named.
-mkdir -p "$SUITE/modules/linked/src" "$SUITE/modules/escapes/src"
-for c in linked escapes; do printf 'pub fn main() {\n    @print("%s");\n}\n' "$c" >"$SUITE/modules/$c/src/main.bp"; printf '%s\n' "$c" >"$SUITE/modules/$c/expected.out"; done
-printf '{ "name": "language_tests", "version": "0.0.1", "src": "src/" }\n' >"$SUITE/modules/linked/botopink.json"
+rm -rf "$SUITE/modules/red"
+cell linked linked linked
+cell escapes escapes escapes
 ln -s main.bp "$SUITE/modules/linked/src/alias.bp.txt"
-printf '{ "name": "language_tests", "version": "0.0.1", "src": "src/", "dependencies": { "up": { "path": "../../run" } } }\n' >"$SUITE/modules/escapes/botopink.json"
-lang --only modules/linked --target commonJS; lang --only modules/linked --target commonJS
+printf '{ "name": "escapes", "version": "0.0.1", "src": "src/", "dependencies": { "up": { "path": "../../test" } } }\n' >"$SUITE/modules/escapes/botopink.json"
+lang --only modules/linked; lang --only modules/linked
 expect "a cell holding a symbolic link" "$out" 1 1 0
 grep -q 'never stored — modules/linked/src/alias.bp.txt is a symbolic link' <<<"$out" || fail "the symbolic link should be named as the reason"
-lang --only modules/escapes --target commonJS; lang --only modules/escapes --target commonJS
+lang --only modules/escapes; lang --only modules/escapes
 expect "a cell whose dependency leaves it" "$out" 1 1 0
 grep -q 'never stored — modules/escapes: dependency `up` has a path outside the cell' <<<"$out" || fail "the escaping dependency should be named as the reason"
-rm -rf "$SUITE/modules"
+rm -rf "$SUITE"
 
 # ── botopink-lib-test ────────────────────────────────────────────────────────
 echo "==> [libs] botopink-lib-test answers a pass from the store only on an equal key"

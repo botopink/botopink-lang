@@ -1,0 +1,16 @@
+botopink-cell 1
+out "a\"b\\c\n\u0001é🎉/"
+out xé🎉
+out
+out true
+out [1,"two",null]
+out {"k":1,"é":[]}
+out an object
+out bp
+out a string,a boolean,null,a number
+out name,tags,n
+out true
+out true
+out [1,"a",true,null]
+out true
+out "é"

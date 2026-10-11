@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: the wasm backend cannot hold an `f64` in field `value`: its declared type is not one, and its readers take a word
+at src/main.bp:11:24

@@ -84,7 +84,7 @@ fi
 # `(core module $main …)`. `--invoke main` reaches that module: print it on its
 # own (`(module …)`, its `__bp_init` the start a component drops) so wasmtime
 # runs it as the core module it is. The component itself runs in
-# `tests/language` (`botopink run --target wasm`).
+# `conformance` (`botopink run --target wasm`).
 core_module() {
   # The module's last line is the `  )` just before the shim's module.
   awk '

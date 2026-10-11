@@ -93,7 +93,7 @@ test "erlang: an entry point sets standard_io to unicode before anything prints"
     // `erl` opens `standard_io` in the host locale's encoding: under `LANG=C`
     // `@print("é")` wrote the latin1 byte `0xE9` and `"\u{1F600}"` the text
     // `\x{1F600}`. The program sets it itself, first, so its output is the
-    // same bytes under any locale (`run/string_literal_unicode_escape` run
+    // same bytes under any locale (`modules/string_literal_unicode_escape` run
     // with `LANG=C` is the measurement; this harness has the host's locale).
     try h.assertErlangRunLog(std.testing.allocator,
         \\pub fn main() {
@@ -230,7 +230,7 @@ test "erlang: an `@block` reassigning an enclosing `var` answers it with every `
     // `return` of the block answers `{V, Group}` — here the one thrown out of
     // the `for` to the block's guard, and the one at the body's end — and the
     // call site rebinds the group (`valueBlockExpr`). The loop's `return` is
-    // pinned here rather than in `run/block_value_reassigns_enclosing_var`: beam
+    // pinned here rather than in `modules/block_value_reassigns_enclosing_var`: beam
     // answers it from the function (an open 03-beam row).
     try h.assertErlangRunLog(std.testing.allocator,
         \\fn firstOver(xs: i32[], limit: i32) -> i32 {

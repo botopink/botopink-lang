@@ -1058,7 +1058,7 @@ test "erlang: case ---- a one-parameter arm on a variant pattern aliases it" {
 // Each one made an arm match NOTHING, or the wrong arm match everything, so each
 // is asserted by running the emitted module and pinning the clause head it now
 // writes. commonJS had all three right, which is why only erlang's cells were
-// red in `tests/language`.
+// red in `conformance`.
 //
 // The §5.1 cells these rows are written for (`test/case_tuples.bp`,
 // `test/case_variants.bp`, `test/case_guards.bp`, `test/case_exhaustive.bp`) are
@@ -1192,7 +1192,7 @@ test "beam: case ---- a primitive type or a bool literal is a test, not a binder
 }
 
 test "beam: an enum variant's labelled payload claims its declared slot" {
-    // `run/labelled_arguments.bp`'s beam twin of the erlang row. The record
+    // `modules/labelled_arguments`'s beam twin of the erlang row. The record
     // constructor placed a labelled argument by field index; the variant
     // constructor zipped by position, so `Shape.Rect(height: 2, width: 5)`
     // was built `{Rect, 2, 5}` and the cell printed `205`.
@@ -1367,7 +1367,7 @@ test "beam: a top-level fn named as a value is its fun" {
 
 // Decision 103 — a bare `break` at the level of a generator fn's body ends
 // it: erlang threw the loop's `'__bp_break'`, which no scope catches
-// (`{nocatch,'__bp_break'}`, `run/generator_break_value.bp`).
+// (`{nocatch,'__bp_break'}`, `modules/generator_break_value`).
 test "erlang: a bare break at a generator's own level ends it" {
     try h.assertErlangRunLog(std.testing.allocator,
         \\fn ends() -> @Iterator<i32> { yield 1; break; yield 2; }
@@ -1447,7 +1447,7 @@ test "beam: calling the result of a call applies it (`calleeExpr`)" {
 }
 
 test "erlang: an enum variant's labelled payload claims its declared slot" {
-    // `run/labelled_arguments.bp`'s erlang row: the variant constructor zipped
+    // `modules/labelled_arguments`'s erlang row: the variant constructor zipped
     // by position, so `Shape.Rect(height: 2, width: 5)` was built
     // `{…rect, 2, 5}` and the cell printed `205` (02-erlang, no step).
     try h.assertErlangRunLog(std.testing.allocator,
@@ -1462,7 +1462,7 @@ test "erlang: an enum variant's labelled payload claims its declared slot" {
 }
 
 test "beam: a lambda whose body is an if, a case or a try answers its value" {
-    // 03 handover 01, `run/lambda_expression_body.bp`. `emitLambdaBody`
+    // 03 handover 01, `modules/lambda_expression_body`. `emitLambdaBody`
     // treated only a literal/name/operator/call tail as the lambda's value;
     // an `if`, a `case` and a `try … catch` fell to `emitBody`, which answers
     // the atom `ok` — `ok,ok,ok` on each line. The value tails are now
@@ -1481,7 +1481,7 @@ test "beam: a lambda whose body is an if, a case or a try answers its value" {
 }
 
 test "beam: a synth helper a type's module reached first is the file module's too" {
-    // `run/narrowing_null_guard_clause.bp`. `'-bp_at-'/2` (and every other
+    // `modules/narrowing_null_guard_clause`. `'-bp_at-'/2` (and every other
     // once-per-module helper) was cached by name across the whole emit: a
     // record METHOD reached it first, inside the type's own module, and the
     // file's `fn` then asked its own label table for a name that module never
@@ -1496,7 +1496,7 @@ test "beam: a synth helper a type's module reached first is the file module's to
 }
 
 test "beam: the module body runs once, in declaration order, before main" {
-    // `run/module_init_order.bp`. A named module-level `val` was a 0-arity
+    // `modules/module_init_order`. A named module-level `val` was a 0-arity
     // function evaluated on every READ (`first` printed twice, after `main`),
     // and the `'_botopink_main'/0` wrapper ran only the `_` statements. An
     // effectful `val` now caches under `persistent_term` (erlang's
@@ -1516,7 +1516,7 @@ test "beam: is and == read numbers by value only where decision 8 says so" {
     // `3.0` prints `number 3`. `==` / `!=` are exact between two typed
     // operands and by value when one is `unknown`; `2.0 == 2` is refused at
     // the literal (decision 215,
-    // `tests/language/reject/f64_equals_integer_literal`). D2 (§11): beam
+    // `conformance/modules/f64_equals_integer_literal`). D2 (§11): beam
     // stores nothing extra for `unknown` or a union, so no instruction is
     // pinned for it.
     try h.assertBeamRunLog(std.testing.allocator,
@@ -1712,7 +1712,7 @@ test "erlang: generator ---- a bare-yield body still lowers to an eager list" {
 //
 // A RUN LOG plus the shapes, not a snapshot: the erlang, beam and wasm baselines
 // of this program are not this front's to record. The language cell
-// `tests/language/run/lambda_expression_body.bp` pins the same values on the
+// `conformance/modules/lambda_expression_body` pins the same values on the
 // other backends.
 test "js: lambda ---- an expression body is the lambda's value" {
     const src =
@@ -1760,7 +1760,7 @@ test "js: lambda ---- a tail if whose branches return stays a statement" {
 // frame and a few thousand rounds killed the program — while erlang and beam,
 // whose VMs drop the frame, ran the same source to the end. `std`'s
 // `random.intInRange` is what found it. The whole-program behaviour is pinned
-// by `tests/language/run/self_tail_recursion.bp` on every target; these three
+// by `conformance/modules/self_tail_recursion` on every target; these three
 // cells pin the JS SHAPE, which only this backend has, and each one RUNS.
 
 // A `return <self>(…)` becomes "give the parameters their next values and go

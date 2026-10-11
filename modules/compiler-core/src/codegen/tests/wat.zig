@@ -678,7 +678,7 @@ test "wat: index ---- a float array element is reinterpreted, not read as bits" 
     );
 }
 
-// The shapes `tests/language/run/index_expression.bp` asks for that the three
+// The shapes `conformance/modules/index_expression` asks for that the three
 // fixtures above do not reach: an index whose element is itself an array
 // (`rows[1][0]`, which is `rows.at(1).at(0)` — a method call on a `?T`
 // receiver, which the checker lets flow), a slice's length, and a tuple
@@ -844,7 +844,7 @@ test "wat: tuple ---- an element prints by its shape, positional and labelled" {
 // (`toUpperCase`, JavaScript's own, which `primitives.bp` gives `toUpper`
 // through `#[@External.Node("toUpperCase")]`) used to be lowered here too; the
 // checker refuses them now (pending 0203-a, answered (b):
-// `tests/language/reject/primitive_method_undeclared.bp`).
+// `conformance/modules/primitive_method_undeclared`).
 test "wat: string ---- toUpper and toLower answer" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
@@ -859,7 +859,7 @@ test "wat: string ---- toUpper and toLower answer" {
 // §7's F2 (`Point(x: 1, y: 2)`) and F3 (`Shape.Square(side: 4)`) need a value
 // that knows which named type it is at run time. Before it did, the wasm
 // numeric printer answered the value's **heap address** with exit 0 and no
-// diagnostic: `run/print_formatter.bp` printed `328`, `336`, `344` where §7
+// diagnostic: `modules/print_formatter` printed `328`, `336`, `344` where §7
 // wants three names, and `@print([Point(x: 1, y: 2)])` wrote `[256]`; the
 // interim was a trap.
 //
@@ -991,7 +991,7 @@ test "wat: function value ---- a lambda in a tuple slot or a record field is app
 // and what `s[i]` rewrites to. It had no wasm lowering at all: the call fell
 // through `primCallRes` and emitted
 // `unreachable ;; prim method not lowered on wasm: string.at/1`, so
-// `tests/language/run/index_at_optional.bp` died at exit 134 on this backend
+// `conformance/modules/index_at_optional` died at exit 134 on this backend
 // while commonJS, erlang and beam all answered. std-wasm's `text.at` is
 // `$__str_slice(s, i, i + 1)` behind one `i32.ge_u` bounds test, after a
 // negative index has been counted from the end (`i + len`, decision 139) — one
@@ -1006,7 +1006,7 @@ test "wat: function value ---- a lambda in a tuple slot or a record field is app
 // A RUN LOG and not a snapshot: `String.at` already answers on the other three
 // backends, so an all-backend fixture would move
 // `snapshots/codegen/{commonJS,erlang,beam}/`, which this front does not own.
-// `tests/language/run/string_at.bp` is the cross-backend half.
+// `conformance/modules/string_at` is the cross-backend half.
 test "wat: prim method ---- String.at answers a one-character string, and null out of range" {
     try h.assertWasmRunLog(std.testing.allocator,
         \\fn main() {
@@ -1032,7 +1032,7 @@ test "wat: prim method ---- String.at answers a one-character string, and null o
 // OLD `n` — the arguments are on the stack before any parameter is re-bound.
 //
 // A RUN LOG and not a snapshot: the depth is the point, and the other three
-// backends already answer it. `tests/language/run/tail_self_call.bp` is the
+// backends already answer it. `conformance/modules/tail_self_call` is the
 // cross-backend half.
 test "wat: tail call ---- a self-call in return position runs in one frame" {
     try h.assertWasmRunLog(std.testing.allocator,
@@ -1103,7 +1103,7 @@ test "wat: prim method ---- the String and Float members step 6's audit lowered"
 // array helpers std-wasm's `array.unique`, `array.flatten` (`flatMap` is `map` then
 // it, as `primitives.bp`'s body is), `array.chunked`, `array.sliding`,
 // `array.fill`. The answers are commonJS's, erlang's and beam's for the same
-// program (`tests/language/run/string_lines_words.bp`, `array_unique.bp`,
+// program (`conformance/modules/string_lines_words`, `array_unique.bp`,
 // `array_flat_forms.bp`, `array_windows.bp`, `array_fill.bp`).
 test "wat: prim method ---- the methods that trapped lower: lines, words, unique, the flat forms, the windows, fill" {
     try h.assertWasmRunLog(std.testing.allocator,
@@ -1186,7 +1186,7 @@ test "wat: prim method ---- pop shrinks a local array and lastIndexOf searches f
 
 // Decision 8 §11's box on wasm (`00 · 05-wasm` step 2): a value entering an
 // `unknown` slot carries a header naming what it holds, and `is`, a type arm,
-// `==` and `@print` read it — `tests/language/run/unknown_by_value.bp` pins the
+// `==` and `@print` read it — `conformance/modules/unknown_by_value` pins the
 // answers on four targets. What this pins is the one refusal: a value whose
 // type nothing proves — here a type parameter's slot, which this backend does
 // not monomorphise — is not boxed by a guess. Boxed as the `i32` it is at run
@@ -1470,8 +1470,8 @@ test "wat: case ---- a list pattern tests its length and literals and binds the 
 // Decision 152 refuses a second binding of one name in one body, and decision
 // 205 makes the body the whole function: an inner block's `val`, a loop's
 // binder and a `case` arm's binder over a name visible there are refused by the
-// checker (`reject/binding_shadows_in_inner_block`,
-// `reject/case_arm_binder_reuses_name`). What stays legal is a lambda — a
+// checker (`modules/binding_shadows_in_inner_block`,
+// `modules/case_arm_binder_reuses_name`). What stays legal is a lambda — a
 // function of its own — binding a name its enclosing function holds, as a
 // parameter or a `val` of its body, and two sibling blocks each binding one
 // name. One wasm function is one local namespace and a HOF's lambda is inlined
@@ -1508,7 +1508,7 @@ test "wat: scope ---- a lambda's binding shadows the outer one only inside it" {
 }
 
 // Decision 214 — the NaN half of `f64`'s total-order `==`, which the
-// four-target cell `run/f64_equality_total_order.bp` cannot carry (erlang and
+// four-target cell `modules/f64_equality_total_order` cannot carry (erlang and
 // beam never produce a NaN): `NaN == NaN` is `true` bare and inside a record,
 // a tuple, an array and a variant, `NaN != NaN` is `false`, and NaN against a
 // number is unequal. `<` stays IEEE (`NaN < 1.0` is `false`).
@@ -2160,7 +2160,7 @@ test "wat: std-wasm ---- toUpper and toLower answer OTP's over all of Unicode" {
 
 // Decision 445 — a `std:` cell is std's alone: outside std it is refused at
 // the annotation, naming the std function to call instead (also
-// `tests/language/reject/external_wasm_std_outside_std`); inside std, a name
+// `conformance/modules/external_wasm_std_outside_std`); inside std, a name
 // std-wasm lacks and a declaration of other types are refused there (decision
 // 440 (3)) — what only std can now write.
 test "wat: std-wasm ---- a std: cell is std's alone, and inside std it names an export of its types" {

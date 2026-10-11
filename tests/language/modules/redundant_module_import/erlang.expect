@@ -1,2 +1,0 @@
-redundant-module-import: `config` is already bound by `mod config;` in this module — delete this item
-src/main.bp:6:9

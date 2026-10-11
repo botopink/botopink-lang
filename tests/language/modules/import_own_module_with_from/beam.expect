@@ -1,2 +1,0 @@
-error[module-import-with-from]: "geometry" is a module of this package — write import {geometry.area, geometry.perimeter as around};
-src/main.bp:7:41

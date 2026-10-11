@@ -1,0 +1,4 @@
+botopink-cell 1
+out <TICK> runs every minute
+out <TOCK>
+out 3

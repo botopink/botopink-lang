@@ -1,0 +1,1 @@
+{ "name": "host_array_slice_without_start", "version": "0.0.1", "src": "src/", "targets": ["commonJS"] }

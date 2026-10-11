@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: builtin-arguments: `@panic` takes 1 argument, 2 given — `@panic(message: string = "panic") -> noreturn` is declared in `builtins.d.bp`
+at src/main.bp:6:5

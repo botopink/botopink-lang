@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: `#[@external]` binds no host — an external target is written `External.<Target>`
+at src/main.bp:4:3

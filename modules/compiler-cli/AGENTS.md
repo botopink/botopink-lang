@@ -22,8 +22,10 @@ compiler-cli/
 │   │                          and `build` / `test` printing the checker warning
 │   │                          `check` prints — decision 57, and `botopink cell`:
 │   │                          a passing cell, a mismatch's `.snap.new` and
-│   │                          exit 1, a new cell's candidates, a departing
-│   │                          target, no majority, narrowing, malformed input)
+│   │                          exit 1, a new cell's candidates and manifest, a
+│   │                          departing target, no majority, every way a
+│   │                          `"targets"` narrowing is refused, a cell without
+│   │                          `botopink.json`, malformed input)
 │   │                          against the real binary
 │   ├── mutual_recursion.sh  ← forward-ref + mutual recursion runs on every backend
 │   ├── mutual_recursion/    ← fixture project for the script above
@@ -42,7 +44,8 @@ compiler-cli/
 │   │                          a dependency's erlang host `.erl` is shipped and reached
 │   ├── test_tooling/        ← pass + fail fixture projects
 │   ├── cell/                ← fixture cells of `botopink cell` (§ Cells): prints,
-│   │                          aborts, departs, narrowed, refused — each green
+│   │                          aborts, departs, narrowed, refused — each with its
+│   │                          own `botopink.json`, each green
 │   │                          under `botopink cell check`; cli_contract.sh copies
 │   │                          them before it edits one
 │   └── result_store.sh      ← the cell-result store of gate stages 8–10 (decisions
@@ -175,7 +178,7 @@ loader compiles the shipped `.erl`. `out/erl/` runs the same way once **every**
 `.erl` in it is compiled (`erlc -o out/erl out/erl/*.erl`): a plain erlang build
 emits no sibling loader (the emitter's half, 02-erlang step 9), so compiling the
 entry alone leaves the sidecar `undef`. Pinned by `tests/cli_contract.sh` on
-`tests/language/modules/erlang_host_sidecar_shipped`.
+`conformance/modules/erlang_host_sidecar_shipped`.
 
 ### The erlang runner reaches one module
 
@@ -188,12 +191,12 @@ code path:
 
 | project | escript today | emitted call |
 |---|---|---|
-| `tests/language/modules/two_modules` | `undefined function geometry:norm/1` | `geometry:norm/1` — qualified, correct |
-| `tests/language/modules/mod_tree` | `undefined function shapes:describe/0` | `shapes:describe/0` |
-| `tests/language/modules/std_import` | `undefined function dict:empty/0` | `dict:empty/0` |
+| `conformance/modules/two_modules` | `undefined function geometry:norm/1` | `geometry:norm/1` — qualified, correct |
+| `conformance/modules/mod_tree` | `undefined function shapes:describe/0` | `shapes:describe/0` |
+| `conformance/modules/std_import` | `undefined function dict:empty/0` | `dict:empty/0` |
 | `examples/modules` | `undefined function geometry:area/2` | `geometry:area/2`, `shapes:describe/0`, `shapes:lucky/0` |
 
-The shape that works is the one the beam arm of `tests/language/run.sh` already
+The shape that works is the one the beam arm of `conformance/run.sh` already
 uses: `erlc -o <out_dir>` over every emitted `.erl` **found recursively** — the
 file layout nests (`out/shapes/circle.erl`, `out/std/dict.erl`) while the module
 atom is flat, so `-o <out_dir>` is what puts each `.beam` where a single
@@ -261,7 +264,7 @@ What each command promises. A row the code does not meet yet is marked
 | `run [--target T] [--module M] [--out D] [-- args…]` | what `build` reads | what `build` writes, into `D` | `node` / `wasmtime` on `D/M.<ext>`; on **erlang** what `erlc -o D/erl` over every emitted `.erl` does — a job of the command's `erl` session (`cli/otp.zig`), the VM that answered the release and ran `build`'s check, reading the files from a list file, so no command line grows with the program (`cli/arglist.zig`) — and then `erl -noshell -pa D/erl -eval "M:main([]), halt()."` (with `+sbwt none +sbwtdcpu none +sbwtdio none` first: no scheduler busy wait, the default scheduler count); on **beam** the same for `erlc +from_asm -o D/beam` over every emitted `.S`, and then `erl -noshell -pa D/beam -eval "'M':main([]), halt()."` — the entry's `'__bp_load_siblings'/0` compiles and loads the host `.erl` files the build shipped beside them | the program's own 0 | `build`'s code, or the program's — on erlang a **crash is `1`**, `erl`'s status, where `escript` used to exit `127` (see "the erlang runner reaches one module") |
 | `check [<path>]` | `botopink.json`, `src/` **and** `test/`, dependencies — in `<path>` when given | nothing | `erl` (comptime) | every module type-checks | at least one diagnostic, each with file, line and excerpt; failing modules named |
 | `test [--target T] [--filter S] [--json]` | `botopink.json`, `src/`, `test/`, dependencies | `.botopinkbuild/test-out/<target>/<id>/**` — one directory per RUN and per TARGET (`id` is 64 random bits), removed again when the run ends; its `<id>.tmp` sibling is the tests' scratch directory, named in `BOTOPINK_TEST_TMPDIR` and removed with it. Never the shared `test-out/` root: `botopink-lib-test` runs every cell with `cwd = <lib dir>`, so two gates over one library checkout used to empty each other's output mid-run and red a library nobody owned | the target runner per module with tests (`node` / `escript` / `erl`, after one `erlc +from_asm` over the run's `.S` on beam) | every module compiled **and** every test passed; the last stdout line is the run's total, `total: <P> passed, <F> failed in <N> module(s)` | a module failed to compile, a test failed, a module's runner printed no summary line (it stopped before its tests finished — named), or the binary is **stale**: its checkout's sources changed since it was built (`source_stamp`, refused before anything runs); the modules that compiled still ran their tests and are reported |
-| `format [paths…]` | the files and directories named, else the current directory — every `.bp` **and** `.d.bp` under it (`src/**`, `test/**`, `examples/**`, the projects nested inside), not entering hidden directories or `node_modules`, and not reaching a `reject/<n>.bp` that has its `<n>.expect` beside it (the language suite's rejected program — decision 66) nor a `.bp` under a `modules/<cell>/` that one of the cell's `<target>.expect` files names on its second line (`<path from the cell>:<L>:<C>`) **and** that does not lex or parse (the suite's refused project module, `tests/language/modules/lexer_error_in_imported_module/src/pattern.bp` — gate-c of `specs/1.0.11-beta/00-gate`; an `.expect` naming another file, or a named file that parses, leaves the file in the walk). Both exemptions are the directory's shape, decision 67: no skip list, pragma or environment variable | the files, in place | nothing | every file parsed and is now canonical (ending with one newline) | a file could not be read, lexed or parsed (rendered with its location) |
+| `format [paths…]` | the files and directories named, else the current directory — every `.bp` **and** `.d.bp` under it (`src/**`, `test/**`, `examples/**`, the projects nested inside), not entering hidden directories or `node_modules`, and not reaching a `reject/<n>.bp` that has its `<n>.expect` beside it (the language suite's rejected program — decision 66) nor a `.bp` under a `modules/<cell>/` that one of the cell's `<target>.expect` files names on its second line (`<path from the cell>:<L>:<C>`) **and** that does not lex or parse (the suite's refused project module, `conformance/modules/lexer_error_in_imported_module/src/pattern.bp` — gate-c of `specs/1.0.11-beta/00-gate`; an `.expect` naming another file, or a named file that parses, leaves the file in the walk). Both exemptions are the directory's shape, decision 67: no skip list, pragma or environment variable | the files, in place | nothing | every file parsed and is now canonical (ending with one newline) | a file could not be read, lexed or parsed (rendered with its location) |
 | `format --check [paths…]` | as above | nothing | nothing | every file parsed **and** already canonical | a file would change (one `Formatted <path>` line each, then `N file(s) would be reformatted`), or could not be read, lexed or parsed. `scripts/format-check.sh` (gate stage 3, CI) calls it over the compiler's canonical trees |
 | `new <name> [--target T]` | nothing | `<name>/{botopink.json,src/main.bp,.gitignore}` — the scaffolded `main.bp` **prints** (see "the scaffold runs" below) | nothing | scaffolded with a supported target | bad name, or a target outside `commonJS\|erlang\|beam\|wasm` |
 | `clean` | nothing | deletes `out/` and `.botopinkbuild/` whole (with `.botopinkbuild/deps/`, the `bpmp install` links, and `.botopinkbuild/cache/`, every build cache), and in a workspace member the workspace root's `.botopinkbuild/cache/` | nothing | both are gone (`Removed <dir>/` printed per success) | a delete failed |
@@ -311,7 +314,7 @@ Cross-command rules:
   `"."` → the project root. They used to read a hard-coded `src/`, so a package
   whose `src` is `"."` compiled nothing: `check` answered "no source files found
   in src/ or test/" and a test could not import a nested module (onze F5,
-  `tests/language/modules/src_at_package_root`).
+  `conformance/test/src_at_package_root`).
 - **`from` names a package; an import names something.** `import … from
   "<name>"` must resolve to a package — `std` or a declared
   dependency (`<dep>` or `<dep>.<module>`) — and a package wins its name over a
@@ -321,22 +324,22 @@ Cross-command rules:
   located at the source string with an excerpt, writing the brace form as the
   fix (`"geometry" is a module of this package — write import
   {geometry.area};`, `resolver.braceForm`; pinned by
-  `tests/language/modules/import_own_module_with_from`). A `from` naming the
+  `conformance/modules/import_own_module_with_from`). A `from` naming the
   package ITSELF is the same refusal, std included,
   in `src/`, `test/` and a dependency's own sources alike (decision 309:
   `"shapes" is this package — write import {geometry.area};`;
-  `tests/language/modules/import_own_package_with_from`,
+  `conformance/modules/import_own_package_with_from`,
   `dependency_imports_itself_with_from`, `tests/cli_contract.sh`); anything else is
   `unresolved import source "<name>" — declare it in botopink.json
   "dependencies"`, located at the source string with an excerpt. Only a
   **direct** dependency is importable (decision 242): a package another
   dependency brings into the build (`core` under a declared `starter`) is
   refused the same way until this package declares it
-  (`tests/language/modules/transitive_package_import`, four targets). A
+  (`conformance/modules/transitive_package_import`, four targets). A
   dependency's own modules answer the same rule against THEIR manifest when a
   consumer loads them (`libs.loadOne` → `resolver.checkSources`), located at
   the dependency's file relative to the working directory
-  (`tests/language/modules/dependency_imports_undeclared_package`). A module of the package is
+  (`conformance/modules/dependency_imports_undeclared_package`). A module of the package is
   imported by its path inside the braces (`import {shapes.circle.name};`), and
   a path that names a module which *does* exist but does not export the leaf
   is the other error (`imported symbol is not exported by the named module`),
@@ -344,7 +347,7 @@ Cross-command rules:
   It is not raised against a module that does not lex or parse
   (`Analysis.broken`): its export list is unknown, not empty, and the compile
   reports the module's own located error instead (onze F8,
-  `tests/language/modules/lexer_error_in_imported_module`).
+  `conformance/modules/lexer_error_in_imported_module`).
   Before this, an import naming nothing bound nothing and said nothing: exit 0,
   with code emitted.
 - **Two loaders, one import rule.** `src/` is a package and loads through
@@ -572,19 +575,25 @@ A **cell** states one piece of behaviour any implementation of botopink must
 give (decision 457) — its source and its answers, no generated code:
 
 ```text
+<cell>/botopink.json                       its own manifest (decision 475 (1)): its package
+                                           name, `"targets"` when narrowed, a path dependency,
+                                           a named wasm host
 <cell>/src/<module>.bp                     the program; src/main.bp holds `pub fn main`
 <cell>/snapshot/output/<module>.snap       the answer on every target
 <cell>/snapshot/targets/<t>/<module>.snap  target <t>'s departure, only where it departs
-<cell>/targets                             the targets it is narrowed to, only when narrowed
 <cell>/docs.md                             the reference text beside it (decision 462) — never read
-<cell>/botopink.json                       optional (see choice 2 below)
 ```
 
-`botopink cell new <path>` scaffolds `src/main.bp` and `docs.md`.
+`botopink cell new <path>` scaffolds `botopink.json` (`{ "name": "<the directory's name>",
+"version": "0.0.1", "src": "src/" }` — a name the manifest refuses is refused here), `src/main.bp`
+and `docs.md`. The suite these commands serve is `../../conformance/` (`conformance/AGENTS.md`).
 `botopink cell check <cell|directory>` (`src/cli/cell.zig`) builds each cell
-**in this process** — `build.zig`'s pipeline over a scratch copy, with
-`reporter.sink` pointed at a buffer, so a refusal is read off exactly the text
-`botopink build` prints — and runs the built program (`run.programArgv`: `node`,
+**in this process** — `build.zig`'s pipeline over a scratch copy of the cell
+made afresh for each target (a program that writes into its working directory
+finds it as it would alone), with `reporter.sink` and the manifest module's
+`manifest.sink` (where `Located.print` writes: a manifest's, a dependency's and
+a sidecar's refusals) pointed at a buffer, so a refusal is read off exactly the
+text `botopink build` prints — and runs the built program (`run.programArgv`: `node`,
 `erl` after the in-session compile of every `.erl` / `.S`, `wasmtime`), its
 stdout, stderr and exit status captured, on every declared target. Then, per
 module and target, the accepted answer is `snapshot/targets/<t>/<m>.snap` when
@@ -609,19 +618,24 @@ candidate by renaming it, as `snap`'s `.new` flow (decision 67: there is no
 update flag, and `check` refuses any flag). The candidates are the run's
 output: `check` deletes a cell's old `*.snap.new` before it runs it.
 
-A target that gives no answer fails the cell by name and writes nothing — a
-runtime that cannot be run (never skipped), a program past 300 s, a build that
-fails naming no refusal, `erl` on another OTP release, or the two wasm hosts
-disagreeing (decision 334: on wasm the cell runs as the `wasi` build under
-`wasmtime` **and** the `browser` build under `node` unless its manifest names
-its host, and both must answer alike — `tests/language/run.sh`'s rule). A
-`targets` file narrows the cell to the targets it names (blank-separated, in
-any order; an unknown target, one named twice, none or all four is malformed),
-and each target it leaves out is **audited**: `botopink build --target <t>` must
-refuse the cell on a host binding (`has no #[@External.<Target>(…)]`,
+A cell without `botopink.json` fails (decision 475 (1): no implicit package),
+and so does a leftover `targets` file. A target that gives no answer fails the
+cell by name and writes nothing — a runtime that cannot be run (never skipped),
+a program past 300 s, a build that fails naming no refusal, `erl` on another OTP
+release, or the two wasm hosts disagreeing (decision 334: on wasm the cell runs
+as the `wasi` build under `wasmtime` **and** the `browser` build under `node`
+unless its manifest names its host — the `browser` manifest is the cell's with
+`"wasm": { "host": "browser" }` added last, so every location in the cell's own
+manifest is the same in both builds —, and both must answer alike: the same
+text, or, when both refuse, the same modules refused at the same places, since
+a refusal may name the host it was built for). The manifest's `"targets"`
+narrows the cell to the targets it names (an array of target names, in any
+order; an unknown target, one named twice, none, all four or a value that is
+not an array is malformed), and each target it leaves out is **audited**:
+`botopink build --target <t>` must refuse the cell on a host binding (`has no #[@External.<Target>(…)]`,
 `std-unsupported-on-target:`, `` `#[@BeamMemory]` has no meaning on the <t>
 backend``) — a build that accepts it, or refuses it otherwise, fails the cell
-(`tests/language/AGENTS.md` § Narrowing a cell). A `snapshot/` holding anything
+(`conformance/AGENTS.md` § Narrowing a cell). A `snapshot/` holding anything
 but `output/` and `targets/<t>/`, a departure for a target the cell does not
 run, and a malformed `.snap` (named `<file>:<line>: <reason>`) fail the cell.
 
@@ -670,20 +684,18 @@ importer's answer too; a build that succeeds gives `main.snap`: stdout, and
 
 1. **The format** above: line-oriented records, `botopink-cell 1` as its first
    line; an abort is `abort` with no status (decision 457 "that it aborts";
-   `tests/language/AGENTS.md` § Never pin an erlang exit status); `stderr` is
+   `conformance/AGENTS.md` § Never pin an erlang exit status); `stderr` is
    containment, not equality, and lives wherever the abort's words are
    claimed — `targets/<t>/` per decision 457, `output/` allowed when every
    target names the same text.
 2. **A departure replaces `output/` for its module on its target, whole** — it
    is that target's full answer, not a patch over `output/` (an abort's stderr
    claim on commonJS repeats the `out` lines).
-3. **The cell's package and manifest.** A cell without `botopink.json` is built
-   under `{ "name": "language_tests", "version": "0.0.1", "src": "src/" }`
-   (`cell.MANIFEST`) — the name every `tests/language` cell is built under
-   today, which erlang / BEAM atoms and one host template spell, so step H2's
-   migration changes no claim. A cell **may** carry its own `botopink.json`
-   (a `modules/` cell's `path` dependency, a named wasm host): decision 457's
-   shape names none.
+3. **The cell's package and manifest** — decided by 475 (1): every cell has its
+   own `botopink.json`, and `check` refuses a cell without one. The migration of
+   `tests/language` named each single-file cell's package after the cell (two keep
+   `language_tests`, the package their host templates spell — `conformance/AGENTS.md`
+   § Layout); the `targets` file became the manifest's `"targets"`.
 4. **The entry** is `src/main.bp`, required in every cell, its `main` the
    program; the other modules are what its `mod` tree reaches. Snapshots are
    named after the module's file under `src/` (`x/mod.bp` → `x/mod.snap`).
@@ -711,7 +723,7 @@ release tags). Bump it in the same change you want tagged.
 `botopink run --target erlang` ran `escript out/main.erl`, and `escript` compiles
 **only the file it is handed**. Every cross-module call in a multi-module program
 was therefore `undefined function <mod>:<fn>` at run time, with correct and
-correctly qualified emitted code — three `tests/language/modules/*` cells and
+correctly qualified emitted code — three `conformance/modules/*` cells and
 `examples/modules` failed on erlang for that reason alone.
 
 Two shapes that look like the fix and are not:
@@ -723,7 +735,7 @@ $ ERL_FLAGS="-pa out" escript out/main.erl      # unchanged: no .beam exists yet
 ```
 
 The compile step is the missing half, not the code path. `cli/run.zig`
-(`erlangArgv`) does what the beam arm of `tests/language/run.sh` already did:
+(`erlangArgv`) does what the beam arm of `conformance/run.sh` already did:
 
 1. what `erlc -o <out_dir>/erl` over **every** emitted `.erl`, found recursively,
    does — one `erl` reading the files from a list file (`compileAll`), since

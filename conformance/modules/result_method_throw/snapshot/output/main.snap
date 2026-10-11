@@ -1,0 +1,10 @@
+botopink-cell 1
+out ok abc
+out error empty
+out error long
+out ok ab!
+out error empty
+out ok ab
+out error too long
+out true
+out false

@@ -1,2 +1,0 @@
-comptime-host-cell-unavailable: `tag` is reached at comptime and has no `@External.Wasm("std:…")` cell (std-wasm) and no `@External.Wasm("fn:…")` cell — the two cells the comptime runtime answers by; an `@External.Erlang` cell never runs at build (decisions 434, 452)
-15:12

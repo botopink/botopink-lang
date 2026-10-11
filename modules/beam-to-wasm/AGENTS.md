@@ -117,13 +117,13 @@ named, in the function that holds it: the set grows by a measured need (decision
 Two measurements, each recording every comptime module's Erlang text
 (`runtime.evalWithArg`) and every host function `host_cells.forRuntime` carried with its cells.
 
-**Over `tests/language` (four targets, `--cold`), `zig build test` and `zig build test-libs`
+**Over `conformance` (four targets, `--cold`), `zig build test` and `zig build test-libs`
 (botopink-lang before decision 434, 686 comptime modules)** — the cells:
 
 | Cell | Where | Erlang template | Served by |
 |---|---|---|---|
-| `hash.contentHash` (std) | `run/decorator_host_cells`, `run/comptime_std_host_function`, `modules/decorator_imported_host_function`, `modules/hole_imported_val_known_at_build` | djb2 template | std-wasm (`std:hash.contentHash`, decision 440) — never translated |
-| `bang` (test cell) | `run/decorator_host_cells`, `modules/decorator_imported_host_function`, `comptime/tests/decorator_invocation.zig` | `<<($0)/binary, "!">>` | beam-to-wasm |
+| `hash.contentHash` (std) | `modules/decorator_host_cells`, `modules/comptime_std_host_function`, `modules/decorator_imported_host_function`, `modules/hole_imported_val_known_at_build` | djb2 template | std-wasm (`std:hash.contentHash`, decision 440) — never translated |
+| `bang` (test cell) | `modules/decorator_host_cells`, `modules/decorator_imported_host_function`, `comptime/tests/decorator_invocation.zig` | `<<($0)/binary, "!">>` | beam-to-wasm |
 | `wrap` (test cell) | `modules/decorator_imported_host_function` | `<<"<", ($0)/binary, ">">>` | beam-to-wasm |
 
 Their `.beam` (the compiler's assembler): `label`, `func_info`, `int_code_end`, `call_ext`,

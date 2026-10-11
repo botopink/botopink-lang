@@ -40,7 +40,8 @@ botopink-lang/                 ← language core (this project)
 ├── libs/                      ← the bundled .bp library — see libs/AGENTS.md
 │   └── std/                   ← standard library, the one package the compiler ships (decision 326)
 ├── examples/                  ← non-framework .bp example programs
-├── tests/language/            ← botopink language tests of decision 8 (case, tuples, loop) — see tests/language/AGENTS.md
+├── conformance/               ← the conformance suite (decisions 457, 466, 475): modules/<cell>/ checked by
+│                                `botopink cell check`, test/ suites by `botopink test --json` — see conformance/AGENTS.md
 └── scripts/                   ← installers, release packing, snapshot audit, git hooks
 ```
 
@@ -62,7 +63,7 @@ zig build test-libs     # every visible .bp library's tests per backend (libs/ +
 zig build test-backends # beam/wasm/erlang execution parity (modules/compiler-cli/tests/backend_exec.sh)
 zig build test-bpmp     # bpmp unit tests
 zig build test-vscode   # VS Code extension unit tests — scripts/test-vscode.sh finds the sibling checkout
-zig build test-language # botopink language tests (tests/language/run.sh; `-- --compiler <botopink>` to run another binary)
+zig build test-conformance # the conformance suite (conformance/run.sh: every cell by `botopink cell check`, every test/ suite; `-- --compiler <botopink>` to run another binary)
 zig build test-docs     # every `botopink` fence of docs.md/README.md compiles (scripts/check-docs.sh)
 zig build clean-tmp     # reap scratch dirs older than 1 day (also runs before `zig build test`)
 zig build gen-unicode   # regenerate libs/std/src/unicode_tables.bp from the pinned Unicode data (libs/std/AGENTS.md § unicode)
@@ -92,7 +93,7 @@ compiling spawns no `erl` and building the compiler runs no `erlc`. `erl` / `erl
 (OTP 28+) are needed for the erlang and beam **targets' own** tests: the codegen
 snapshot RUN LOGs and the beam export audit under `zig build test` and the gate,
 and `botopink build/run/test --target erlang|beam` (and so `test-cli`,
-`test-libs`, `test-language`, `test-docs`), which needs exactly the release the
+`test-libs`, `test-conformance`, `test-docs`), which needs exactly the release the
 compiler emits for — `OTP_RELEASE` in `modules/manifest/src/root.zig`, printed by
 `botopink --version` — and refuses any other `erl` on `PATH` (decision 228,
 `modules/compiler-cli/src/cli/otp.zig`); codegen snapshot RUN LOGs also use
@@ -172,7 +173,7 @@ does not mirror them. Entry points:
 
 | Workflow | Trigger | What |
 | --- | --- | --- |
-| `.github/workflows/test.yml` | push / PR to `main`, `feat` | job `test`, on ubuntu-22.04 + macos-14, every step of both rows hard: `zig fmt --check modules`, `zig build test` from a cold runtime cache, `zig build test-bpmp`, the beam export audit, `zig build test-cli`, `scripts/format-check.sh`, `zig build test-language`, `zig build test-docs`, `scripts/tsc-check.sh` and `zig build test-web` — the local gate's stages minus the staged-file checks. Build mode as the gate's (decision 226): `zig build test` stays Debug; `test-bpmp`, `test-cli`, `test-language`, `test-docs` (and `test-libs` in job `libs`) pass `-Doptimize=ReleaseSafe`, exactly the `zig build` calls `scripts/gate.sh` passes `$opt` to; `test-web`, not a gate stage, keeps the default. The compiler's OTP release on both rows (decisions 227, 228): a step reads `OTP_RELEASE` from `modules/manifest/src/root.zig` (the compiler is not built yet), then `erlef/setup-beam` on linux, `brew install erlang@<release> && brew link --force erlang@<release>` plus its `bin` on `$GITHUB_PATH` on macos, then a step that fails the job unless `erl` reports that release; job `libs` reads, installs and asserts the same way. There is no windows row (1.0.11-beta gate-f: a row that cannot fail measures nothing; it returns hard or not at all). Job `libs` (ubuntu, after `test`): checks out emilia/erika/jhonstart/onze/rakun at `feat` into `repository/<name>/` and runs `zig build test-libs -Doptimize=ReleaseSafe` — every cell the manifests declare, every excluded target audited. |
+| `.github/workflows/test.yml` | push / PR to `main`, `feat` | job `test`, on ubuntu-22.04 + macos-14, every step of both rows hard: `zig fmt --check modules`, `zig build test` from a cold runtime cache, `zig build test-bpmp`, the beam export audit, `zig build test-cli`, `scripts/format-check.sh`, `zig build test-conformance`, `zig build test-docs`, `scripts/tsc-check.sh` and `zig build test-web` — the local gate's stages minus the staged-file checks. Build mode as the gate's (decision 226): `zig build test` stays Debug; `test-bpmp`, `test-cli`, `test-conformance`, `test-docs` (and `test-libs` in job `libs`) pass `-Doptimize=ReleaseSafe`, exactly the `zig build` calls `scripts/gate.sh` passes `$opt` to; `test-web`, not a gate stage, keeps the default. The compiler's OTP release on both rows (decisions 227, 228): a step reads `OTP_RELEASE` from `modules/manifest/src/root.zig` (the compiler is not built yet), then `erlef/setup-beam` on linux, `brew install erlang@<release> && brew link --force erlang@<release>` plus its `bin` on `$GITHUB_PATH` on macos, then a step that fails the job unless `erl` reports that release; job `libs` reads, installs and asserts the same way. There is no windows row (1.0.11-beta gate-f: a row that cannot fail measures nothing; it returns hard or not at all). Job `libs` (ubuntu, after `test`): checks out emilia/erika/jhonstart/onze/rakun at `feat` into `repository/<name>/` and runs `zig build test-libs -Doptimize=ReleaseSafe` — every cell the manifests declare, every excluded target audited. |
 | `.github/workflows/release.yml` | tag push `v*` | No Erlang/OTP: building runs no `erlc` (decision 434). 5-target matrix (`linux-{x86_64,aarch64}`, `macos-{x86_64,aarch64}`, `windows-x86_64`) → `scripts/release-pack.sh` writes `dist/<binary>-<tag>-<target>.<ext>` + `.sha256` → `softprops/action-gh-release@v2` uploads to one Release. Prerelease iff the tag contains `-`. |
 
 Asset naming (the contract bpmp and the install scripts rely on):
@@ -231,6 +232,12 @@ and the comptime runtimes (decisions 170, 337 — `compiler-core/src/comptime/AG
   A doc claim that the compiler does not yet honour belongs in the reference's
   "Decided, not yet implemented" table, with the front that closes it — never
   as an uncompiled example.
+- **A behaviour change carries its cells** (decision 458): a step that adds,
+  changes or refuses observable behaviour writes the cells that prove it under
+  `conformance/modules/<cell>/` (`botopink cell new`, then `botopink cell
+  check`; a person renames each candidate it writes, never a flag), red on the
+  parent and green on the step. A cell's answer is never edited to match the
+  compiler (`conformance/AGENTS.md`).
 - **English only** for source, comments, commits and compiler docs.
 - **One fact, one source.** Each fact lives in a single file; others link to it.
 - `Parser.init(tokens)` and `Lexer.init(source)` do **not** store an
@@ -275,19 +282,19 @@ run is [`scripts/gate.sh`](scripts/gate.sh) — stages 1–4 one after the other
 6. `scripts/beam_export_audit.sh` (every beam snapshot module assembles with every function exported);
 7. `zig build test-cli` (the CLI contract, test tooling, recursion and backend execution scripts);
 8. `zig build test-libs` (every visible library on the targets its manifest declares — a cell that exists is green or the stage fails; a library without tests is still compiled; every target a `"targets"` list excludes is audited, and an exclusion that is not structural fails the stage);
-9. `zig build test-language` (tests/language on commonJS, erlang, wasm and beam — decision 8's `case`, tuples and `loop`; every `.targets` / manifest `"targets"` narrowing audited against the compiler's host-binding refusal, after the runner's own `--self-test`);
+9. `zig build test-conformance` (the conformance suite, `conformance/`: every cell of `conformance/modules/` by `botopink cell check` on every target its manifest declares — its answers against `snapshot/output/` and `snapshot/targets/<t>/`, every `"targets"` narrowing audited against the compiler's host-binding refusal — and every `conformance/test/` suite by `botopink test --json` on commonJS, erlang and beam, after the runner's own `--self-test`);
 10. `zig build test-docs` (every `botopink` fence of `docs.md` and `README.md` compiles);
-11. `scripts/tsc-check.sh` (every `.d.ts` a commonJS build of `libs/std` — the one package the compiler ships —, the example projects and `tests/language/modules` emits passes `tsc --noEmit --strict`, typescript pinned, through `npx`, and every `.js` it emits passes `node --check`).
+11. `scripts/tsc-check.sh` (every `.d.ts` a commonJS build of `libs/std` — the one package the compiler ships —, the example projects, every conformance cell whose commonJS answer compiles and every `conformance/test/` project emits passes `tsc --noEmit --strict`, typescript pinned, through `npx`, and every `.js` it emits passes `node --check`).
 
 **Step gate and full gate** (decision 460). The branch decides, never a flag or a
 variable (decision 67): on a `front/*` branch `gate.sh` runs the STEP gate — every
-stage, but the cells of `test-libs` and `test-language` are only those the step's
+stage, but the cells of `test-libs` and `test-conformance` are only those the step's
 change reaches by the backend partition (a change in one backend's files runs that
 target's cells; a change in any shared file, std included, runs every cell); on
 `feat`, `main`, a detached HEAD or any other branch it runs the FULL gate. The first
 line printed says which and why. **The hook's gate is without conformance**
 (decision 470): `scripts/git-hooks/lib/runner-standalone.sh` runs `scripts/gate.sh
---staged --no-conformance`, which skips the conformance cells (today `test-language`)
+--staged --no-conformance`, which skips the conformance stage (`test-conformance`)
 and prints `gate: conformance not run (--no-conformance)`; every other stage runs as
 the branch's mode says, and such a run never writes the green-tree record. A front's
 Conformance step and its landing run `scripts/gate.sh` WITH conformance (the default,
@@ -297,7 +304,7 @@ conformance after (`scripts/AGENTS.md` § Step gate and full gate).
 
 The side-by-side stages share one job budget: `gate.sh` computes it once
 (CPUs bounded by memory) and hands each stage its share through its `--jobs`
-flag — `test-libs` 50 %, `test-language` 30 %, `test-docs` 5 %, `tsc-check` 10 %,
+flag — `test-libs` 50 %, `test-conformance` 30 %, `test-docs` 5 %, `tsc-check` 10 %,
 `test-web` `-j` 10 % (`scripts/AGENTS.md` § One job budget).
 
 Stages 8–10 keep a cell-result store (decision 229): a warm run answers a cell

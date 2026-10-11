@@ -1,0 +1,29 @@
+botopink-cell 1
+out [1.1, 2.2]
+out 1.1
+out 2.2
+out 1.1
+out [3.3000000000000003, 6.6000000000000005]
+out 3.3000000000000003
+out 1.1
+out 2.2
+out 1
+out 0
+out true
+out 1.1,2.2
+out [1.1, 2.2]
+out [0.3, 0.3]
+out [2.2]
+out [0.1]
+out #(1.1, "a")
+out 1.1
+out 1.1 a
+out Shape.Circle(r: 1.1)
+out 2.2
+out P(x: 1.1, n: 2)
+out true
+out 1.1
+out 2.1
+out true
+out 2.2
+out [2.2, 2.2]

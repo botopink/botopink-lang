@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: is-type-outside-value-or-type: `is type` tests a `comptime` parameter that takes a value or a type (`comptime x: V | type T`)
+at src/main.bp:7:14

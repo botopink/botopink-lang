@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: the wasm backend resumes an `await` by entering its statement again, and a call evaluated before it in that statement would run twice — bind the call's result to a `val` before the statement (decision 392)
+at src/main.bp:21:29

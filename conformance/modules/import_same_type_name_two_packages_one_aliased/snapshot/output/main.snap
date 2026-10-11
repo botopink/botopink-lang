@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: import-name-collision: this module would hold two types declared `App` — `srv`'s and `site`'s; a type is told apart by its declared name, so one module holds one type of a name, aliased or not
+at src/main.bp:9:9
