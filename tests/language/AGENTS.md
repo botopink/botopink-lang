@@ -444,9 +444,11 @@ function with none of the three comptime sources, refused at the call naming the
 Erlang cell calling `re:replace/4`, which beam-to-wasm does not convert: refused at the call naming
 the call), `reject/comptime_beam_call_not_converted_fn_after` (decision 439: the same cell with an
 `@External.Wasm("fn:…")` cell after it — still refused, the `fn:` cell not tried),
-`reject/external_wasm_std_unknown` and `reject/external_wasm_std_types` (decision 440 (3): a `std:`
-cell naming a function std-wasm does not implement, or on a declaration of other types, refused at
-the annotation on every target),
+`reject/external_wasm_std_outside_std` (decision 445: a `std:` cell is std's alone — outside
+`libs/std` it is refused at the annotation on every target, naming the std function to call
+instead; it replaced `external_wasm_std_unknown` and `external_wasm_std_types`, whose refusals —
+a name std-wasm lacks, other types — only std can now meet, pinned in `codegen/tests/wat.zig`
+over a module of std's own),
 `reject/decorator_writes_module_var` (`decorator-writes-module-var` at the write, through a function
 of the module; the parent binary said `unbound variable`) and `reject/typeinfo_all_duplicate_at_entry`
 (two commands of one name refused at the entry point's `@TypeInfo.all`, naming both). Step 8 adds

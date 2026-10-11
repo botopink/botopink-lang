@@ -57,7 +57,10 @@ pub fn load(
             // No explicit root yet — fall back to the legacy blind walk so
             // unmigrated packages keep building (deprecated for one release).
             const mods = try scanner.scanSources(gpa, io, src_dir);
-            for (mods) |*m| m.targets = bp.Targets.of(proj.manifest.targets);
+            for (mods) |*m| {
+                m.targets = bp.Targets.of(proj.manifest.targets);
+                m.std_member = isStd(proj);
+            }
             if (mods.len > 0) {
                 reporter.warnMsg("no module-tree root (src/main.bp or src/root.bp) — using the deprecated implicit src/ scan");
                 reporter.hintMsg("declare a root with `mod` declarations; the implicit scan will be removed in a future release");
@@ -75,8 +78,19 @@ pub fn load(
     }
     // Decision 341 — the package's declared targets decide which host cells
     // its decorators need (`Module.targets`).
-    for (res.modules) |*m| m.targets = bp.Targets.of(proj.manifest.targets);
+    for (res.modules) |*m| {
+        m.targets = bp.Targets.of(proj.manifest.targets);
+        m.std_member = isStd(proj);
+    }
     return .{ .modules = res.modules, .orphans = res.orphans };
+}
+
+/// Whether the project is std built, checked or tested as itself — its
+/// manifest's `name` is `std` (`libs/std/botopink.json`): its modules are
+/// std's own, the only ones a `std:` cell may be written in (decision 445,
+/// `Module.std_member`).
+fn isStd(proj: config.ProjectConfig) bool {
+    return std.mem.eql(u8, proj.name, "std");
 }
 
 /// Apply `load`'s import-source rule to a flat, non-package source directory —

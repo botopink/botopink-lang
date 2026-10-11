@@ -42,6 +42,7 @@ pub const LspCompiler = struct {
             mods[i] = .{
                 .path = lsp_types.uriToPath(entry.uri),
                 .source = entry.source,
+                .std_member = entry.std_member,
             };
         }
 
@@ -58,6 +59,9 @@ pub const LspCompiler = struct {
 pub const ModuleEntry = struct {
     uri: []const u8,
     source: []const u8,
+    /// One of std's own modules — its package's manifest is named `std`
+    /// (decision 445: only std writes a `std:` cell; `Module.std_member`).
+    std_member: bool = false,
 };
 
 /// Re-export: one `@ExprCustom` reference-AST entry (`{ loc, callee, root, file,

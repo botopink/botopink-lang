@@ -1046,6 +1046,7 @@ fn analyzeMerged(
 ) anyerror!AnalysisResult {
     var env = try infer.freshEnv(arena, std.heap.page_allocator);
     env.modulePath = mod.path;
+    env.inStd = mod.std_member;
     env.reflection = reflection;
     if (typeinfo_plan) |pl| env.typeinfoAll = pl.rewrites;
     env.srcPath = try displaySrcPath(arena, mod);
@@ -1166,6 +1167,7 @@ fn analyzeSource(
     env.reflection = reflection;
     // Capture provenance for `expr` templates: which file is being inferred.
     env.modulePath = mod.path;
+    env.inStd = mod.std_member;
     // `@src().file` (decision 73): the package-relative display path.
     env.srcPath = try displaySrcPath(arena, mod);
     // The prelude registration may have named `SourceLocation`; only the
@@ -1777,6 +1779,8 @@ fn expandStdImports(arena: std.mem.Allocator, modules: []const Module, target_na
             .path = spm.path,
             .source = spm.source,
             .srcPath = try std.fmt.allocPrint(arena, "src/{s}.bp", .{spm.path["std/".len..]}),
+            // std's own (decision 445): its `std:` cells are std's to write.
+            .std_member = true,
         });
     }
     try out.appendSlice(arena, modules);
@@ -2846,6 +2850,8 @@ pub fn registerStdlib(env: *Env, gpa: std.mem.Allocator) anyerror!void {
     const sources = [_][]const u8{
         prelude.primitives,
     };
+    // The prelude is std's (decision 445): its `std:` cells are std's to write.
+    env.inStd = true;
     for (sources) |src| {
         // Parse into `env.arena` (not a scratch arena): the interface decls for
         // primitive associated fns (`Pair`, `Function`, …) are retained in
@@ -2859,6 +2865,7 @@ pub fn registerStdlib(env: *Env, gpa: std.mem.Allocator) anyerror!void {
         const program = try stripTestDecls(try p.parse(alloc), alloc);
         _ = try infer.inferProgram(env, program);
     }
+    env.inStd = false;
 
     // The `@Decl` reflection cluster (annotation processors): register these
     // types into the global env so a decorator body type-checks — `decl.kind` /
@@ -2946,6 +2953,8 @@ pub fn registerStdlib(env: *Env, gpa: std.mem.Allocator) anyerror!void {
         // flatten into — or collide across — the global env), sharing `env`'s
         // arena so the resulting types outlive the scratch maps.
         var env2 = Env.init(env.arena);
+        // An embedded std module is std's (decision 445).
+        env2.inStd = true;
         defer env2.deinit();
         try env2.registerBuiltins();
         // `true`/`false` are bound by `freshEnv` for project envs — the scratch

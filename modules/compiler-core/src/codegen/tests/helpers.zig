@@ -730,9 +730,20 @@ pub fn assertErlangRefusedAt(allocator: Allocator, src: []const u8, needle: []co
     return assertRefusedAt(allocator, configs[1], src, needle, line, col);
 }
 
+/// `assertJsRefusedAt` over a module of std's own (`Module.std_member`,
+/// decision 445): what only std may write — a `std:` cell — refused for
+/// what else it gets wrong (an export std-wasm lacks, other types).
+pub fn assertStdModuleRefusedAt(allocator: Allocator, src: []const u8, needle: []const u8, line: usize, col: usize) !void {
+    return assertRefusedAtIn(allocator, configs[0], src, true, needle, line, col);
+}
+
 fn assertRefusedAt(allocator: Allocator, cfg: config.Config, src: []const u8, needle: []const u8, line: usize, col: usize) !void {
+    return assertRefusedAtIn(allocator, cfg, src, false, needle, line, col);
+}
+
+fn assertRefusedAtIn(allocator: Allocator, cfg: config.Config, src: []const u8, std_member: bool, needle: []const u8, line: usize, col: usize) !void {
     const io = std.testing.io;
-    var outputs = try codegen.generateWith(allocator, &.{.{ .path = "", .source = src }}, io, cfg, .{ .execute = false });
+    var outputs = try codegen.generateWith(allocator, &.{.{ .path = "", .source = src, .std_member = std_member }}, io, cfg, .{ .execute = false });
     defer {
         for (outputs.items) |*o| o.result.deinit(allocator);
         outputs.deinit(allocator);

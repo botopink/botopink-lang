@@ -3933,7 +3933,9 @@ fn selfSpelling(behavior: []const u8) ?[]const u8 {
 
 /// Decision 440 (3) — `#[@External.Wasm("std:<module>.<function>")]` names a
 /// function std-wasm implements (`std_wasm.exports`), with the declaration's
-/// parameter and return types exactly. A name std-wasm lacks, or other
+/// parameter and return types exactly — and only in one of std's own modules
+/// (decision 445, `Env.inStd`): anywhere else the cell is refused, naming the
+/// std function to call instead. A name std-wasm lacks, or other
 /// types, is refused at the annotation, on every target: the one cell serves
 /// the wasm codegen and the comptime runtime alike.
 fn refuseStdBinding(env: *Env, a: ast.Annotation, name: []const u8, params: []const ast.Param, ret: ?ast.TypeRef, self_ty: ?[]const u8) InferError!void {
@@ -3943,6 +3945,22 @@ fn refuseStdBinding(env: *Env, a: ast.Annotation, name: []const u8, params: []co
     if (ref.module.len > 0 or !std.mem.startsWith(u8, ref.symbol, hostCells.std_cell_prefix)) return;
     const fname = ref.symbol[hostCells.std_cell_prefix.len..];
     var e: TypeError = undefined;
+    if (!env.inStd) {
+        // Decision 445 — std-wasm's export names are internal to std: the
+        // public contract is std's botopink API, named here.
+        const instead = if (stdWasm.find(fname)) |ex|
+            try std.fmt.allocPrint(env.arena, " — call std's `{s}` instead", .{ex.api})
+        else
+            "";
+        e = TypeError.custom(try std.fmt.allocPrint(
+            env.arena,
+            "`#[@External.Wasm(\"{s}\")]` on `{s}`: a `std:` binding is std's alone (decision 445){s}",
+            .{ ref.symbol, name, instead },
+        ), "std-wasm's functions are std's implementation, reached through std's API; a module of another package binds a host function of its own (`fn:<private fn>`, `op:`, `wasi:`).");
+        if (a.loc) |l| e = e.withLoc(l);
+        env.lastError = e;
+        return error.TypeError;
+    }
     if (stdWasm.find(fname)) |ex| {
         const spelled = try env.arena.alloc([]const u8, params.len);
         for (params, spelled) |p, *out| out.* = spelledType(p.typeRef, self_ty);

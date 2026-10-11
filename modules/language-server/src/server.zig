@@ -110,9 +110,12 @@ pub const Server = struct {
         source: []const u8,
     ) ![]compiler_mod.ModuleEntry {
         const active_path = lsp_types.uriToPath(uri);
+        // Decision 445 — std's own modules (its manifest is named `std`) may
+        // write a `std:` cell; `botopink check` in `libs/std` reads them so.
+        const active_std = std.mem.eql(u8, try self.packageName(arena, uri), "std");
         const resolved = (self.graph.resolve(uri) catch null) orelse {
             const one = try arena.alloc(compiler_mod.ModuleEntry, 1);
-            one[0] = .{ .uri = uri, .source = source };
+            one[0] = .{ .uri = uri, .source = source, .std_member = active_std };
             return one;
         };
 
@@ -122,9 +125,10 @@ pub const Server = struct {
             if (samePath(lsp_types.uriToPath(dep.uri), active_path)) continue; // the active doc
             // Overlay an open buffer so unsaved edits to a dependency are seen.
             const src = self.files.get(dep.uri) orelse dep.source;
-            try list.append(arena, .{ .uri = dep.uri, .source = src });
+            const dep_std = std.mem.eql(u8, try self.packageName(arena, dep.uri), "std");
+            try list.append(arena, .{ .uri = dep.uri, .source = src, .std_member = dep_std });
         }
-        try list.append(arena, .{ .uri = uri, .source = source }); // active doc LAST
+        try list.append(arena, .{ .uri = uri, .source = source, .std_member = active_std }); // active doc LAST
         return list.toOwnedSlice(arena);
     }
 

@@ -54,6 +54,15 @@ The types a `std:` cell can spell (`Type`): `string`, `f64`, `i32`, `i64`, `bool
 `string[]`, `?string`. Each export has its comptime face, `rt.zig`'s `rt_std_<symbol>` (a
 `string[]` a list of binaries, a `bool` its atom, a `?string` the binary or `undefined`).
 
+A `std:` cell is std's alone (decision 445): outside std's own modules (`Module.std_member` —
+the embedded `std/…` modules, the prelude, and `libs/std` built, checked or tested as itself)
+it is refused at the annotation on every target, naming the std function to call instead
+(`Export.api`; cell `reject/external_wasm_std_outside_std`). Inside std, a `std:` cell naming
+no entry, or on a declaration of other types (`matches`: the parameter and return types as
+botopink spells them; a primitive behavior's `Self` is `string` on `String`, `f64` on
+`Float`), is refused at the annotation (`comptime/infer.zig` `refuseStdBinding`;
+`codegen/tests/wat.zig` pins both over a module of std's own).
+
 ## The program's own functions (`root.program`, decision 442 (2))
 
 What the wasm codegen calls by itself — its arguments are the codegen's, not a declaration's:
@@ -73,11 +82,6 @@ methods through their `@External.Erlang` cells).
 | `array.unique(xs, mode)` | `unique` — `0` the slot's word, `1` a float cell's bits, `2` a string's content |
 | `bigint.add(x, y, flip)`, `negate`, `multiply`, `divmod(x, y, rem)`, `compare`, `equalOptional` | decision 332's operators over block addresses (a zero divisor traps) |
 | `bigint.ofI64`, `toI64`, `toF64`, `toString`, `parse` | `BigInt.of`, `toI64()` / `toF64()` (trap past the range / unless exact), the digits, `BigInt.parse`'s numeral (`0` for none) |
-A `std:` cell naming no entry, or on a declaration of other types (`matches`: the parameter
-and return types as botopink spells them; a primitive behavior's `Self` is `string` on
-`String`, `f64` on `Float`), is refused at the annotation on every target
-(`comptime/infer.zig` `refuseStdBinding`; cells `reject/external_wasm_std_unknown`,
-`reject/external_wasm_std_types`).
 
 `text.toUpper` / `text.toLower` (`(string) -> string`, bound by `String.toUpper` / `toLower`)
 map case over all of Unicode (decision 443): the simple mappings of `UnicodeData.txt` and the

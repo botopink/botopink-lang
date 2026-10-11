@@ -3497,7 +3497,7 @@ written. The arguments are always the declared parameters, in order.
 | `op:<opcode>` | one numeric wasm instruction (`op:f64.floor`, `op:i32.add`, `op:f64.lt`, `op:f64.convert_i32_s`); the declared parameter and return types must be exactly the instruction's — a comparison or `eqz` answers `bool` |
 | `fn:<name>` | a private (not `pub`) `fn` of the same module, with a body, taking the same parameter types in the same order and answering the same type — the algorithm stays in the library, in botopink |
 | `wasi:<adapter>` | a compiler adapter over the host, one of the list below — each has an implementation per host (WASI preview 2 through the `wasi` component, JavaScript in the `browser` loader), so one list serves both (decision 394) |
-| `std:<module>.<function>` | a function std-wasm implements — std's host functions written in Zig (`modules/std-wasm`) —, which the compiler transpiles into the program; the declared parameter and return types must be exactly the function's. The same cell is what the comptime answers by, on every target (decision 440) |
+| `std:<module>.<function>` | a function std-wasm implements — std's host functions written in Zig (`modules/std-wasm`) —, which the compiler transpiles into the program; the declared parameter and return types must be exactly the function's. The same cell is what the comptime answers by, on every target (decision 440). std's alone: a `std:` cell outside `libs/std` is refused (decision 445, below) |
 
 ```botopink
 #[@External.Node("Math", "floor"),
@@ -3516,22 +3516,42 @@ fn roundHalfUp(x: f64) -> f64 {
 }
 ```
 
-The functions a `std:` binding names, and the std declarations that bind them:
+The functions a `std:` binding names, and the std declarations that bind them
+— what a program calls:
 
 | Function | Signature | Bound by |
 |---|---|---|
 | `hash.contentHash` | `(string) -> string` | `hash.contentHash` |
-| `text.trim` | `(string) -> string` | `String.trim` |
-| `text.trimStart` | `(string) -> string` | `String.trimStart` |
-| `text.trimEnd` | `(string) -> string` | `String.trimEnd` |
+| `text.trim`, `text.trimStart`, `text.trimEnd` | `(string) -> string` | `String.trim`, `trimStart`, `trimEnd` |
 | `number.floatToString` | `(f64) -> string` | `Float.toString` — and every float a wasm program turns into text: `@print`, `"${x}"`, `"x" + x` |
+| `text.length` | `(string) -> i32` | `String.length` (code points) |
+| `text.split`, `text.chars`, `text.lines`, `text.words` | `(string, string) -> string[]`, `(string) -> string[]` | `String.split`, `chars`, `lines`, `words` |
+| `text.contains`, `text.startsWith`, `text.endsWith` | `(string, string) -> bool` | the `String` methods of those names |
+| `text.indexOf`, `text.lastIndexOf` | `(string, string) -> i32` | `String.indexOf`, `lastIndexOf` |
+| `text.at`, `text.charCodeAt` | `(string, i32) -> ?string`, `(string, i32) -> i32` | `String.at`, `charCodeAt` |
+| `text.padStart`, `text.padEnd`, `text.repeat` | `(string, i32, string) -> string`, `(string, i32) -> string` | `String.padStart`, `padEnd`, `repeat` |
+| `text.replace`, `text.replaceAll` | `(string, string, string) -> string` | `String.replace`, `replaceAll` |
+| `text.fromCodepoint` | `(i32) -> string` | `String.fromCodepoint` |
+| `text.toUpper`, `text.toLower` | `(string) -> string` | `String.toUpper`, `toLower` — over all of Unicode (decision 443) |
 
+**A `std:` cell is std's alone** (decision 445). std-wasm's export names are
+internal to std, and std's botopink API is the public contract: a `std:` cell
+written anywhere outside `libs/std` is refused at the annotation, on every
+target, naming the std function to call instead. std's own `hash.contentHash`
+carries one; the same declaration in a program is refused:
+
+<!-- docs-check: reject a `std:` binding is std's alone (decision 445) — call std's `hash.contentHash` instead -->
 ```botopink
 #[@External.Node("""(function(__S){ var __H = 5381; for (const __C of Array.from(__S)) { __H = (Math.imul(__H, 33) + __C.codePointAt(0)) >>> 0; } return __H.toString(16); })($0)""")]
 #[@External.Erlang("""(fun(__S) -> __H = lists:foldl(fun(__C, __A) -> (__A * 33 + __C) band 16#FFFFFFFF end, 5381, unicode:characters_to_list(__S)), list_to_binary(string:lowercase(integer_to_list(__H, 16))) end)($0)""")]
 #[@External.Wasm("std:hash.contentHash")]
 pub declare fn contentHash(value: string) -> string;
 ```
+
+**Case mapping covers all of Unicode** (decision 443) on the four targets —
+`"straße".toUpper()` is `"STRASSE"`, `"É".toLower()` is `"é"`. A wasm program
+answers OTP's where a JS engine's differs: no final sigma (`"ΟΔΟΣ".toLower()`
+is `"οδοσ"` on wasm, erlang and beam, `"οδος"` on commonJS).
 
 **A wasm program writes std-wasm's text** (decision 441). Where std-wasm's
 answer differs from a JS engine's, a `--target wasm` program answers

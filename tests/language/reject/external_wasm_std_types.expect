@@ -1,2 +1,0 @@
-std-wasm's `hash.contentHash` is `(string) -> string`, and `digestOf` is declared `(i32) -> string`
-6:3

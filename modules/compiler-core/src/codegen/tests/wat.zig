@@ -2040,15 +2040,14 @@ test "wat: std-wasm ---- primitives.bp's std: cells agree with the codegen's tab
     try std.testing.expectEqual(watCodegen.std_method_exports.len, n);
 }
 
-// Decisions 440, 441 — a `std:` binding, `trim` (space, tab, LF, CR, VT, FF;
-// a no-break space stays) and a float's text in a string answer std-wasm's,
-// transpiled into the module.
+// Decisions 440, 441 — std's `hash.contentHash` (a `std:` binding of std's),
+// `trim` (space, tab, LF, CR, VT, FF; a no-break space stays) and a float's
+// text in a string answer std-wasm's, transpiled into the module.
 test "wat: std-wasm ---- a std: binding, trim and a float's text answer std-wasm's" {
     try h.assertWasmRunLog(std.testing.allocator,
-        \\#[@External.Wasm("std:hash.contentHash")]
-        \\declare fn digest(s: string) -> string;
+        \\import {hash} from "std";
         \\fn main() {
-        \\    @print(digest("Point"));
+        \\    @print(hash.contentHash("Point"));
         \\    @print("[" + " \t\na b\r ".trim() + "]");
         \\    @print("[" + " a ".trimStart() + "]");
         \\    @print("[" + " a ".trimEnd() + "]");
@@ -2078,6 +2077,52 @@ test "wat: std-wasm ---- toUpper and toLower answer OTP's over all of Unicode" {
         \\οδοσ école
         \\
     );
+}
+
+// Decision 445 — a `std:` cell is std's alone: outside std it is refused at
+// the annotation, naming the std function to call instead (also
+// `tests/language/reject/external_wasm_std_outside_std`); inside std, a name
+// std-wasm lacks and a declaration of other types are refused there (decision
+// 440 (3)) — what only std can now write.
+test "wat: std-wasm ---- a std: cell is std's alone, and inside std it names an export of its types" {
+    const a = std.testing.allocator;
+    try h.assertJsRefusedAt(a,
+        \\#[@External.Node("String")]
+        \\#[@External.Wasm("std:hash.contentHash")]
+        \\declare fn digest(x: string) -> string;
+        \\fn main() {
+        \\    @print(digest("Point"));
+        \\}
+    , "a `std:` binding is std's alone (decision 445) — call std's `hash.contentHash` instead", 2, 3);
+    try h.assertStdModuleRefusedAt(a,
+        \\#[@External.Node("Math", "floor")]
+        \\#[@External.Wasm("std:math.floorOf")]
+        \\declare fn floorOf(x: f64) -> f64;
+        \\fn main() {
+        \\    @print(floorOf(2.5));
+        \\}
+    , "std-wasm implements no `math.floorOf`", 2, 3);
+    try h.assertStdModuleRefusedAt(a,
+        \\#[@External.Node("String")]
+        \\#[@External.Wasm("std:hash.contentHash")]
+        \\declare fn digestOf(x: i32) -> string;
+        \\fn main() {
+        \\    @print(digestOf(7));
+        \\}
+    , "std-wasm's `hash.contentHash` is `(string) -> string`, and `digestOf` is declared `(i32) -> string`", 2, 3);
+}
+
+// Decision 445 — each std-wasm export names the std function that binds it,
+// what the refusal outside std tells a program to call: a primitive method's
+// row of `std_method_exports` is its `Behavior.method`.
+test "wat: std-wasm ---- every export names the std function a program calls instead" {
+    const stdWasm = @import("std_wasm");
+    for (watCodegen.std_method_exports) |row| {
+        const e = stdWasm.find(row.export_name) orelse return error.ExportMissing;
+        var buf: [96]u8 = undefined;
+        try std.testing.expectEqualStrings(try std.fmt.bufPrint(&buf, "{s}.{s}", .{ row.behavior, row.method }), e.api);
+    }
+    try std.testing.expectEqualStrings("hash.contentHash", stdWasm.find("hash.contentHash").?.api);
 }
 
 // Decision 441: a wasm program prints std-wasm's text — the text of erlang,

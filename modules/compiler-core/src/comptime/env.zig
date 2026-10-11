@@ -764,6 +764,11 @@ pub const Env = struct {
     scopeSnapshot: ?*template.ScopeSnapshot = null,
     /// Module path of the file being inferred ("" for main) — capture provenance.
     modulePath: []const u8 = "",
+    /// Whether the module being inferred is one of std's (decision 445): the
+    /// prelude and the embedded std modules (`registerStdlib`), a `std/…`
+    /// module, or one the driver marks `Module.std_member`. Only std's modules
+    /// may write a `std:` cell (`infer.refuseStdBinding`).
+    inStd: bool = false,
     /// `@src().file` (1.0.10-beta decision 73): the display path of the file being
     /// inferred, relative to its package root, extension included
     /// (`src/emilia.bp`). Set by `comptime.zig` from `Module.srcPath`, or from

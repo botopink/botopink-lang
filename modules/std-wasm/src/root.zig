@@ -63,6 +63,10 @@ pub const Export = struct {
     name: []const u8,
     params: []const Type,
     result: Type,
+    /// The std function that binds it — what a program calls instead
+    /// (decision 445: a `std:` cell is std's alone, its export names internal
+    /// to std): `hash.contentHash`, `String.trim`.
+    api: []const u8,
 
     /// The symbol a comptime module calls it by, in the Erlang module
     /// `erlang_module`: the name with `.` written `__`
@@ -97,31 +101,31 @@ pub const erlang_module = "bp_std_wasm";
 /// `wasm.zig` exports each under that name with the matching wasm signature,
 /// and `rt.zig` serves each at comptime — both checked at compile time.
 pub const exports = [_]Export{
-    .{ .name = "hash.contentHash", .params = &.{.string}, .result = .string },
-    .{ .name = "text.trim", .params = &.{.string}, .result = .string },
-    .{ .name = "text.trimStart", .params = &.{.string}, .result = .string },
-    .{ .name = "text.trimEnd", .params = &.{.string}, .result = .string },
-    .{ .name = "number.floatToString", .params = &.{.f64}, .result = .string },
-    .{ .name = "text.length", .params = &.{.string}, .result = .i32 },
-    .{ .name = "text.split", .params = &.{ .string, .string }, .result = .string_array },
-    .{ .name = "text.chars", .params = &.{.string}, .result = .string_array },
-    .{ .name = "text.lines", .params = &.{.string}, .result = .string_array },
-    .{ .name = "text.words", .params = &.{.string}, .result = .string_array },
-    .{ .name = "text.contains", .params = &.{ .string, .string }, .result = .bool },
-    .{ .name = "text.startsWith", .params = &.{ .string, .string }, .result = .bool },
-    .{ .name = "text.endsWith", .params = &.{ .string, .string }, .result = .bool },
-    .{ .name = "text.indexOf", .params = &.{ .string, .string }, .result = .i32 },
-    .{ .name = "text.lastIndexOf", .params = &.{ .string, .string }, .result = .i32 },
-    .{ .name = "text.at", .params = &.{ .string, .i32 }, .result = .opt_string },
-    .{ .name = "text.charCodeAt", .params = &.{ .string, .i32 }, .result = .i32 },
-    .{ .name = "text.padStart", .params = &.{ .string, .i32, .string }, .result = .string },
-    .{ .name = "text.padEnd", .params = &.{ .string, .i32, .string }, .result = .string },
-    .{ .name = "text.repeat", .params = &.{ .string, .i32 }, .result = .string },
-    .{ .name = "text.replace", .params = &.{ .string, .string, .string }, .result = .string },
-    .{ .name = "text.replaceAll", .params = &.{ .string, .string, .string }, .result = .string },
-    .{ .name = "text.fromCodepoint", .params = &.{.i32}, .result = .string },
-    .{ .name = "text.toUpper", .params = &.{.string}, .result = .string },
-    .{ .name = "text.toLower", .params = &.{.string}, .result = .string },
+    .{ .name = "hash.contentHash", .params = &.{.string}, .result = .string, .api = "hash.contentHash" },
+    .{ .name = "text.trim", .params = &.{.string}, .result = .string, .api = "String.trim" },
+    .{ .name = "text.trimStart", .params = &.{.string}, .result = .string, .api = "String.trimStart" },
+    .{ .name = "text.trimEnd", .params = &.{.string}, .result = .string, .api = "String.trimEnd" },
+    .{ .name = "number.floatToString", .params = &.{.f64}, .result = .string, .api = "Float.toString" },
+    .{ .name = "text.length", .params = &.{.string}, .result = .i32, .api = "String.length" },
+    .{ .name = "text.split", .params = &.{ .string, .string }, .result = .string_array, .api = "String.split" },
+    .{ .name = "text.chars", .params = &.{.string}, .result = .string_array, .api = "String.chars" },
+    .{ .name = "text.lines", .params = &.{.string}, .result = .string_array, .api = "String.lines" },
+    .{ .name = "text.words", .params = &.{.string}, .result = .string_array, .api = "String.words" },
+    .{ .name = "text.contains", .params = &.{ .string, .string }, .result = .bool, .api = "String.contains" },
+    .{ .name = "text.startsWith", .params = &.{ .string, .string }, .result = .bool, .api = "String.startsWith" },
+    .{ .name = "text.endsWith", .params = &.{ .string, .string }, .result = .bool, .api = "String.endsWith" },
+    .{ .name = "text.indexOf", .params = &.{ .string, .string }, .result = .i32, .api = "String.indexOf" },
+    .{ .name = "text.lastIndexOf", .params = &.{ .string, .string }, .result = .i32, .api = "String.lastIndexOf" },
+    .{ .name = "text.at", .params = &.{ .string, .i32 }, .result = .opt_string, .api = "String.at" },
+    .{ .name = "text.charCodeAt", .params = &.{ .string, .i32 }, .result = .i32, .api = "String.charCodeAt" },
+    .{ .name = "text.padStart", .params = &.{ .string, .i32, .string }, .result = .string, .api = "String.padStart" },
+    .{ .name = "text.padEnd", .params = &.{ .string, .i32, .string }, .result = .string, .api = "String.padEnd" },
+    .{ .name = "text.repeat", .params = &.{ .string, .i32 }, .result = .string, .api = "String.repeat" },
+    .{ .name = "text.replace", .params = &.{ .string, .string, .string }, .result = .string, .api = "String.replace" },
+    .{ .name = "text.replaceAll", .params = &.{ .string, .string, .string }, .result = .string, .api = "String.replaceAll" },
+    .{ .name = "text.fromCodepoint", .params = &.{.i32}, .result = .string, .api = "String.fromCodepoint" },
+    .{ .name = "text.toUpper", .params = &.{.string}, .result = .string, .api = "String.toUpper" },
+    .{ .name = "text.toLower", .params = &.{.string}, .result = .string, .api = "String.toLower" },
 };
 
 /// A wasm value type a program function takes or answers.

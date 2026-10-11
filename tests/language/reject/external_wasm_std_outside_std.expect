@@ -1,0 +1,2 @@
+a `std:` binding is std's alone (decision 445) — call std's `hash.contentHash` instead
+7:3
