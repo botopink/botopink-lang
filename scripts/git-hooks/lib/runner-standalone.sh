@@ -7,5 +7,5 @@ set -euo pipefail
 runStandaloneGate() {
     local root
     root=$(git rev-parse --show-toplevel)
-    bash "$root/scripts/gate.sh" --staged
+    bash "$root/scripts/gate.sh" --staged --no-conformance
 }

@@ -275,9 +275,15 @@ stage, but the cells of `test-libs` and `test-language` are only those the step'
 change reaches by the backend partition (a change in one backend's files runs that
 target's cells; a change in any shared file, std included, runs every cell); on
 `feat`, `main`, a detached HEAD or any other branch it runs the FULL gate. The first
-line printed says which and why. A front's Conformance step and its landing run the
-full gate on the main checkout at a detached HEAD of the commit (`scripts/gate.sh
---cold` there); a front lands whole (`scripts/AGENTS.md` § Step gate and full gate).
+line printed says which and why. **The hook's gate is without conformance**
+(decision 470): `scripts/git-hooks/lib/runner-standalone.sh` runs `scripts/gate.sh
+--staged --no-conformance`, which skips the conformance cells (today `test-language`)
+and prints `gate: conformance not run (--no-conformance)`; every other stage runs as
+the branch's mode says, and such a run never writes the green-tree record. A front's
+Conformance step and its landing run `scripts/gate.sh` WITH conformance (the default,
+no flag) on the main checkout at a detached HEAD of the commit (`scripts/gate.sh
+--cold` there); a front lands whole, and the GitHub pipeline re-checks with
+conformance after (`scripts/AGENTS.md` § Step gate and full gate).
 
 The side-by-side stages share one job budget: `gate.sh` computes it once
 (CPUs bounded by memory) and hands each stage its share through its `--jobs`
@@ -302,7 +308,7 @@ stage 1 only (`scripts/AGENTS.md` § Gate lock, § Green-tree record).
 `scripts/git-hooks/pre-commit` is the tracked pre-commit hook, self-contained in
 every checkout (standalone clone or meta submodule): it sources
 `scripts/git-hooks/lib/runner-standalone.sh`, which runs `scripts/gate.sh
---staged`. `scripts/git-hooks/pre-merge-commit` runs the same for a merge that
+--staged --no-conformance`. `scripts/git-hooks/pre-merge-commit` runs the same for a merge that
 commits by itself — git runs that hook there, not `pre-commit`, so an
 auto-merge used to be ungated. Enable both once per clone:
 

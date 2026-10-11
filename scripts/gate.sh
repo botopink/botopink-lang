@@ -51,7 +51,7 @@
 #                           (decision 231); default build mode, as CI runs it
 #
 # Usage:
-#   scripts/gate.sh [--cold] [--staged]
+#   scripts/gate.sh [--cold] [--staged] [--no-conformance]
 #
 # Two modes, decided by the current branch alone (§ step gate and full gate;
 # decision 460) — there is no flag or variable for it. On a `front/*` branch the
@@ -73,6 +73,14 @@
 #   --staged  also run stage 1 over `git diff --cached` (the pre-commit and
 #             pre-merge-commit hooks).
 #
+#   --no-conformance
+#             skip the conformance stage(s) — today stage 9, `test-language` —
+#             and print `gate: conformance not run (--no-conformance)`; every
+#             other stage runs as without the flag. The commit hook runs it
+#             (decision 470); a front's Conformance step and its landing run the
+#             gate WITH conformance. Such a run never writes the green-tree
+#             record and is never a full gate.
+#
 # One gate at a time per machine (§ gate lock): a second `gate.sh` waits for
 # the first, naming its pid, checkout and start time. The stages already use
 # every CPU; two gates side by side took far more than twice as long and
@@ -91,10 +99,12 @@ set -euo pipefail
 
 cold=0
 staged=0
+no_conformance=0
 for a in "$@"; do
     case "$a" in
         --cold) cold=1 ;;
         --staged) staged=1 ;;
+        --no-conformance) no_conformance=1 ;;
         -h|--help) sed -n '2,78p' "$0"; exit 0 ;;
         *) echo "gate: unknown argument '$a'" >&2; exit 1 ;;
     esac
@@ -221,12 +231,19 @@ if [ "$gate_kind" = step ]; then
         if [ -n "$reach_targets" ]; then lang_args=(--target "$reach_targets"); else run_lang=0; fi
         if [ -n "$lib_targets" ]; then libs_args=(--target "$lib_targets"); else run_libs=0; fi
         printf 'gate: step gate (branch %s): %s; test-language %s, test-libs %s\n' "$gate_branch" "$reach_why" \
-            "$([ "$run_lang" -eq 1 ] && echo "on $reach_targets" || echo 'skipped, no cell reached')" \
+            "$([ "$no_conformance" -eq 1 ] && echo 'not run (--no-conformance)' || { [ "$run_lang" -eq 1 ] && echo "on $reach_targets" || echo 'skipped, no cell reached'; })" \
             "$([ "$run_libs" -eq 1 ] && echo "on $lib_targets" || echo 'skipped, no library cell reached')"
     fi
 else
     if [ -n "$gate_branch" ]; then gate_where="branch $gate_branch"; else gate_where="detached HEAD"; fi
     printf 'gate: full gate (%s): every stage, every cell, every library\n' "$gate_where"
+fi
+
+# Decision 470: the conformance cells (today test-language) are what a front's
+# Conformance step runs; the commit hook runs the gate without them.
+if [ "$no_conformance" -eq 1 ]; then
+    run_lang=0
+    echo "gate: conformance not run (--no-conformance)"
 fi
 
 if [ "$staged" -eq 1 ]; then
@@ -546,7 +563,11 @@ report() { # <n> <stage title> <pass text> <fail text>
     stage "$2"
     if { [ "$1" = 5 ] && [ "$run_libs" -eq 0 ]; } || { [ "$1" = 6 ] && [ "$run_lang" -eq 0 ]; }; then
         echo "0 0 0" >"$par/$1.time"
-        pass "$3 — skipped by the step gate: the step reaches no cell of it ($reach_why)"
+        if [ "$1" = 6 ] && [ "$no_conformance" -eq 1 ]; then
+            pass "$3 — not run: --no-conformance (decision 470)"
+        else
+            pass "$3 — skipped by the step gate: the step reaches no cell of it ($reach_why)"
+        fi
         return 0
     fi
     cat "$par/$1.out"
@@ -571,7 +592,7 @@ report 9 "zig build test-web (the compiler built for wasm32, smoke.js under node
 # Record the trees as green — only when nothing moved while the gate ran.
 # Only the FULL gate records it: a step gate ran a subset of the cells, and the
 # record lets a later `--staged` run on the same bytes — on `feat` — skip stages 2–11.
-if [ "$gate_kind" = full ] && [ "$(tree_key)" = "$start_key" ]; then
+if [ "$gate_kind" = full ] && [ "$no_conformance" -eq 0 ] && [ "$(tree_key)" = "$start_key" ]; then
     echo "$start_key" >"$green_record"
 fi
 

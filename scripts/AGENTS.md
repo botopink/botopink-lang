@@ -36,7 +36,7 @@ scripts/
 └── git-hooks/
     ├── pre-commit                 ← tracked hook, enabled by `git config core.hooksPath scripts/git-hooks` (see ../AGENTS.md §Local gate)
     ├── pre-merge-commit           ← the same gate for a merge that commits by itself (git runs this hook there, not pre-commit)
-    └── lib/runner-standalone.sh   ← the hook's runner → `gate.sh --staged`
+    └── lib/runner-standalone.sh   ← the hook's runner → `gate.sh --staged --no-conformance`
 ```
 
 ## Installers — contract
@@ -284,7 +284,8 @@ longer alive (a killed gate) is taken over. No flag or variable skips the wait.
 
 Decision 460 (front 144 B-29 step G). **The branch decides the mode, structurally**
 (decision 67): `gate.sh` reads the current branch and nothing else. There is no flag,
-variable or file a commit sets that turns a check off, and no `--full`. The first line
+variable or file a commit sets that turns a check off, and no `--full`. The one flag that
+narrows a run is `--no-conformance` (decision 470, below). The first line
 of the run names the mode and why:
 
 ```text
@@ -331,8 +332,20 @@ modes. Only the full gate writes the green-tree record (§ Green-tree record): a
 gate ran a subset, and a later `--staged` run on `feat` over the same bytes must not
 skip stages because of it.
 
-**A front's Conformance step and its landing run the FULL gate** — and on a `front/*`
-branch there is no way to ask for it, by design. The coordinator runs it on the main
+**`--no-conformance` is the hook's gate** (decision 470). The commit hook
+(`git-hooks/lib/runner-standalone.sh`, for `pre-commit` and `pre-merge-commit`) runs
+`gate.sh --staged --no-conformance`: the mode is still the branch's (a `front/*` branch
+is the step gate), but the conformance stage — today stage 9, `test-language` — does not
+run, and the run prints `gate: conformance not run (--no-conformance)` after the mode
+line. Every other stage runs as without the flag (`test-docs` is not conformance until
+144 B-29 step I moves the reference). A `--no-conformance` run never writes the
+green-tree record and is never a full gate; a run without the flag behaves exactly as
+before. The conformance cells run in a front's Conformance step and at its landing
+(below), and the GitHub pipeline re-checks with conformance after the push.
+
+**A front's Conformance step and its landing run `gate.sh` WITH conformance** (no flag,
+the default) — the FULL gate, and on a `front/*` branch there is no way to ask for
+that, by design. The coordinator runs it on the main
 checkout at a detached HEAD of the commit (the same script, a different checkout):
 
 ```sh
@@ -354,6 +367,16 @@ another thread began mid-way in the full run, load 7–14):
 | step gate, branch `front/measure` — `reaches wasm only` | `test-libs` skipped (no commonJS/erlang cell); `test-language` 927 of 2715 jobs (523 wasm + 404 `reject/` `*` jobs; 19 audits) | 4m32s (load < 2 at start) |
 | full gate, detached HEAD, same change | `test-libs` 164 jobs (5m40s), `test-language` 2715 jobs (7m21s) | 10m20s |
 | step gate reaching every backend (this commit: `scripts/gate.sh` is shared) | the full cell sets | 10m00s |
+
+**Measured, the hook's gate** (2026-10-11, `gate.sh --staged --no-conformance` on a
+`front/*` branch; one fresh clone with its own empty cell-result store and a cold
+`zig build`, load 5–16 from other threads' gates, the wait for their lock not counted;
+`test-libs` ran against the shared, warm library stores):
+
+| Change | Reach | Stages 8 / 9 | Wall |
+|---|---|---|---|
+| a comment in `codegen/wat.zig` | `wasm` only | `test-libs` skipped; `test-language` not run (`--no-conformance`) | 4m20s (`zig build` 3m12s, `zig build test` 34s, `test-cli` 1m07s) |
+| a comment in `codegen.zig` (the dispatcher) | every backend | `test-libs` 164 jobs, 5m04s; `test-language` not run | 7m59s (`zig build` 2m53s, `test-cli` 3m20s under load) |
 
 No stage, cell or check of the full gate is dropped and no verdict changed: the full
 gate's plans and counts are the ones `--list` printed before.
@@ -586,7 +609,7 @@ file can move. Exit `0` when every listed tree is canonical;
 ## git-hooks/
 
 `git-hooks/pre-commit` is self-contained: it sources
-`git-hooks/lib/runner-standalone.sh`, which runs `gate.sh --staged` of the
+`git-hooks/lib/runner-standalone.sh`, which runs `gate.sh --staged --no-conformance` of the
 committing checkout. `git-hooks/pre-merge-commit` runs the same: `git merge`
 runs `pre-merge-commit`, **not** `pre-commit`, when a merge needs no conflict
 resolution and records its commit itself, so without it an auto-merge was
