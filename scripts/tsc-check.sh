@@ -29,9 +29,18 @@
 #
 # Usage: scripts/tsc-check.sh             (from anywhere in the checkout; needs `zig build`)
 #        scripts/tsc-check.sh <dir>…      (check those projects only)
+#        scripts/tsc-check.sh --jobs <n> […]   (`node --check` processes at once;
+#                                         default one per CPU — the gate passes its share, gate.sh § job budget)
 set -euo pipefail
 
 TS_VERSION=7.0.2
+
+jobs=""
+if [ "${1:-}" = "--jobs" ]; then
+    jobs="${2:-}"
+    case "$jobs" in ''|*[!0-9]*|0) echo "tsc-check: --jobs must be a positive count (got '$jobs')" >&2; exit 2 ;; esac
+    shift 2
+fi
 
 root="$(git rev-parse --show-toplevel)"
 cd "$root"
@@ -77,7 +86,7 @@ node_check() { # <out dir> <file>…
     ' sh)
 }
 
-jobs="$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)"
+[ -n "$jobs" ] || jobs="$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)"
 status=0
 checked=0
 modules=0

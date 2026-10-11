@@ -269,6 +269,11 @@ run is [`scripts/gate.sh`](scripts/gate.sh) — stages 1–4 one after the other
 10. `zig build test-docs` (every `botopink` fence of `docs.md` and `README.md` compiles);
 11. `scripts/tsc-check.sh` (every `.d.ts` a commonJS build of `libs/std` — the one package the compiler ships —, the example projects and `tests/language/modules` emits passes `tsc --noEmit --strict`, typescript pinned, through `npx`, and every `.js` it emits passes `node --check`).
 
+The side-by-side stages share one job budget: `gate.sh` computes it once
+(CPUs bounded by memory) and hands each stage its share through its `--jobs`
+flag — `test-libs` 50 %, `test-language` 30 %, `test-docs` 5 %, `tsc-check` 10 %,
+`test-web` `-j` 10 % (`scripts/AGENTS.md` § One job budget).
+
 Stages 8–10 keep a cell-result store (decision 229): a warm run answers a cell
 from a stored pass only when its key — the compiler's build and its sources
 partitioned by backend (decision 249,

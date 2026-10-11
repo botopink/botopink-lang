@@ -317,6 +317,51 @@ and on every CPU, never by running less:
 | `test-language` | cells run on `lib/pool.sh` — the `test-libs` rule (one per CPU, bounded by `MemAvailable / 768 MiB`, each cell admitted only while `procs_running` ≤ CPUs); verdicts are written one file per cell and sorted before the report, so the output is byte for byte what `--jobs 1` prints. It used to be `--jobs 4` with no admission; measured under the usual shared load, 28.8 s → 18.3 s at +12 % CPU-seconds | [`../tests/language/run.sh`](../tests/language/run.sh) § parallel cells |
 | `test-docs` | the `botopink check` of every fence runs on `lib/pool.sh`; the report is written in fence order with a placeholder per check and printed once the pool drains, so the output is byte for byte the serial run's. 8.5 s → 1.5 s | § check-docs.sh below |
 
+### One job budget (gate.sh § job budget)
+
+The side-by-side stages used to size one pool each to the whole machine: three
+pools of about 16 jobs on 16 CPUs, load 4.7 rising to 26 in a cold gate. Now
+`gate.sh` reads `pool_default_jobs` once, after the build (CPUs bounded by
+`MemAvailable / 768 MiB`), and passes each stage its share through the flag it
+already had: `test-libs` 50 % and `test-language` 30 % (`-- --jobs N`),
+`test-docs` 5 % (`-- --jobs N`), `tsc-check.sh` 10 % (`--jobs N`, new, default
+unchanged) and `test-web` `-j` 10 %, at least 1 each — 8 / 4 / 1 / 1 on 16
+CPUs. The shares follow the stages' measured CPU-seconds. Each runner keeps its
+own `procs_running` admission; no report changes. `zig build test` already runs
+beside the ReleaseSafe build (§ ahead of the build): it finishes in 1m55 inside
+the build's 3m10, with `MemAvailable` never below 10 GB of 30 GB, so it adds
+nothing to the head.
+
+Measured on the 16-core / 30 GB machine, one cold gate alone, fresh
+`.zig-cache`, load below 3 at start:
+
+| Stage | Before: wall, CPU-s | After (8 / 4 / 1 / 1): wall, CPU-s |
+|---|---|---|
+| `zig build` ReleaseSafe | 3m17, 820 | 3m09, 819 |
+| `zig build test` (beside the build) | 1m52 after it, cold | 1m53, 331 (hidden by the build) |
+| `test-cli` | 4m42, 273 | 3m47, 261 |
+| `test-libs` | 8m21, 2540 | 5m34, 1938 |
+| `test-language` | 9m02, 1468 | 7m12, 1019 |
+| `test-docs` | 23s | 32.6s, 28 |
+| `tsc-check` | 55s | 55s, 47 |
+| `test-web` | 1m10 | 1m11, 66 |
+| whole gate | 12m27, 5680 | 10m24, 4616 (a second cold run: 10m36, 4665, every stage within 3 %) |
+
+Warm (`gate.sh` right after, result store full, load 3 at start): 1m35 wall,
+419 CPU-s — `zig build test` 26s, `test-cli` 1m07 (the pole, not stored),
+`test-libs` 2.8s and `test-language` 4.9s answered from the store, `test-docs`
+16s, `tsc-check` 24s, `test-web` 4s. Before: 9m37 for a warm `--staged` gate.
+
+Finding: load still peaks near 28 (`procs_running` up to 60) with only 14 jobs,
+because a job is about two runnable threads (a `botopink test` child plus its
+spinning `erl`/`node`), not one. Halving the budget to 8 jobs (4 / 3 / 1 / 1)
+ran green but slower, 10m46, `test-libs` 7m30 being the pole; a 6 / 6 split
+turned two rakun timing tests red (`rakun·erlang` over max-connections 503,
+`rakun-messaging·erlang` dlq) under the load. The wall is still over the 7m30
+cold budget: `test-language` with 4 jobs is the pole and the remaining gain is
+a work-conserving share (a token directory every runner reads), not a better
+split.
+
 `zig build` in stage 2 builds every binary the later stages run; `zig build
 test-libs`, `test-language` and `test-docs` re-enter the build graph, find it
 up to date and run the installed `zig-out/bin/*`, so no stage rebuilds one.

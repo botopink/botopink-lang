@@ -393,14 +393,35 @@ bash scripts/check-docs.sh --list >"$par/plan.docs" 2>"$par/plan.docs.err" ||
 # store` (`fences` for stage 10), and § counts holds R + S to the plan. `--cold`
 # passes `--cold` to the three: the store is not read, every cell runs, and the
 # passes are written for the warm runs after it.
-store_args=()
-[ "$cold" -eq 0 ] || store_args=(-- --cold)
+cold_arg=()
+[ "$cold" -eq 0 ] || cold_arg=(--cold)
+# ── § job budget ─────────────────────────────────────────────────────────────
+# One budget for the whole side-by-side set, not a pool each: three pools sized
+# to the whole machine put ~16 jobs apiece on 16 CPUs (load 4.7 → 26 in a cold
+# gate), and the admission each pool does on `procs_running` cannot see a job
+# another pool is about to start. The total is `pool_default_jobs` — one per
+# CPU, bounded by `MemAvailable / 768 MiB`, read now that the build is done —
+# and each stage that runs a pool gets its share of it, in proportion to the
+# CPU-seconds it measured (test-libs 2540, test-language 1468, the rest under
+# 300): 40 % / 40 % / 5 % / 10 %, at least 1 each. The stages keep their own
+# `--jobs` flag and admission; only the number they are given changes, so a
+# report is the bytes it was. test-cli runs its scripts one after another and
+# test-web is one wasm compile, so zig gets `-j` of its share.
+# shellcheck source=lib/pool.sh
+. scripts/lib/pool.sh
+budget_total="$(pool_default_jobs)"
+share() { # <percent> — that part of the total, at least 1
+    local n=$(( budget_total * $1 / 100 ))
+    [ "$n" -ge 1 ] || n=1
+    echo "$n"
+}
+echo "gate: job budget $budget_total — test-libs $(share 50), test-language $(share 30), test-docs $(share 5), tsc-check $(share 10)"
 launch 4 zig build test-cli "$opt"
-launch 5 zig build test-libs "$opt" ${store_args[@]+"${store_args[@]}"}
-launch 6 zig build test-language "$opt" ${store_args[@]+"${store_args[@]}"}
-launch 7 zig build test-docs "$opt" ${store_args[@]+"${store_args[@]}"}
-launch 8 bash scripts/tsc-check.sh
-launch 9 zig build test-web
+launch 5 zig build test-libs "$opt" -- --jobs "$(share 50)" ${cold_arg[@]+"${cold_arg[@]}"}
+launch 6 zig build test-language "$opt" -- --jobs "$(share 30)" ${cold_arg[@]+"${cold_arg[@]}"}
+launch 7 zig build test-docs "$opt" -- --jobs "$(share 5)" ${cold_arg[@]+"${cold_arg[@]}"}
+launch 8 bash scripts/tsc-check.sh --jobs "$(share 10)"
+launch 9 zig build test-web -j"$(share 10)"
 wait
 
 # ── § counts ─────────────────────────────────────────────────────────────────
