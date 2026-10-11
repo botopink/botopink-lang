@@ -1,0 +1,29 @@
+//// The language half of `modules/compiler-cli/tests/test_tooling.sh` (144 B-29
+//// step H): in a `test` block, `assert cond, "msg"` passes when its condition
+//// holds, whatever the message, and `try` on an `@Result` that holds a value
+//// answers the value. A failing assertion's message and a failing `try`'s error
+//// string, as the runner reports them, are the CLI's contract and stay in the
+//// script; `modules/assert_message_aborts` is the failing `assert` outside a test.
+
+fn double(n: i32) -> i32 {
+    return n * 2;
+}
+
+fn parsed(ok: bool) -> @Result<i32, string> {
+    if (ok) return 4;
+    throw "went wrong";
+}
+
+test "assert with a message passes when its condition holds" {
+    assert double(2) == 4, "double(2) should be four";
+}
+
+test "try in a test block answers the value an ok result holds" {
+    val v = try parsed(true);
+    assert v == 4;
+}
+
+test "a test that catches the error never fails on it" {
+    val v = try parsed(false) catch 0;
+    assert v == 0;
+}

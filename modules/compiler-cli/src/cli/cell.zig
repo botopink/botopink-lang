@@ -604,7 +604,7 @@ fn buildAndRun(ctx: *Ctx, t: Target, out_dir: []const u8) !Observed {
 /// may name the host it was built for (`std-unsupported-on-target: … on host
 /// 'wasi'` / `'browser'`); the cell's answer is the `wasi` build's, and the
 /// `browser` build must refuse it where `wasi` does (the rule of
-/// `conformance/run.sh` before the cells moved here was weaker: both
+/// `tests/language/run.sh` before the cells moved here was weaker: both
 /// refused, nothing printed).
 fn sameAnswer(a: std.mem.Allocator, x: Answer, y: Answer) !bool {
     if (std.mem.eql(u8, try describe(a, x), try describe(a, y))) return true;

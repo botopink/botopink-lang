@@ -1373,7 +1373,7 @@ if have node && have erl && have erlc && have wasmtime; then
 
   # A narrowing is the manifest's "targets" (decision 475), audited on every
   # check: each target it leaves out must refuse the cell on a host binding.
-  # These are the cases `conformance/run.sh --self-test` proved on its own
+  # These are the cases `tests/language/run.sh --self-test` proved on its own
   # synthetic suite before the cells moved to `botopink cell check`.
   PRINTS_MANIFEST="$(cat "$CELLS/prints/botopink.json")"
   narrow_prints() { printf '{ "name": "prints", "version": "0.0.1", "src": "src/", "targets": %s }\n' "$1" >"$CELLS/prints/botopink.json"; }

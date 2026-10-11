@@ -4,8 +4,8 @@
 #   test  `zig fmt --check modules` (the gate's stage 1, whole tree), `zig
 #         build test` from a cold runtime cache, `zig build test-bpmp`,
 #         `scripts/beam_export_audit.sh`, then `zig build test-cli` (the CLI
-#         command contract, test tooling, mutual recursion and backend
-#         execution parity scripts), `scripts/format-check.sh` (decision 66:
+#         command contract, test tooling, the result store and the wasm core
+#         module's --invoke main scripts), `scripts/format-check.sh` (decision 66:
 #         `botopink format --check` over the compiler's canonical `.bp` trees),
 #         then `zig build test-conformance` (conformance/) and `zig build
 #         test-docs` (every `botopink` fence of the user docs compiles, every
@@ -235,9 +235,9 @@ jobs:
         run: zig build test-docs -Doptimize=ReleaseSafe
 
       # Every `.d.ts` the commonJS backend emits for libs/std (the one
-      # package the compiler ships), the example projects (erika, checked out above, is
-      # generic-loader-binding's dependency) and the conformance/modules
-      # cells passes `tsc --noEmit --strict`
+      # package the compiler ships), examples/generic-loader-binding (erika,
+      # checked out above, is its dependency) and the conformance cells and
+      # project suites passes `tsc --noEmit --strict`
       # (scripts/tsc-check.sh; typescript pinned, through npx).
       - name: tsc --noEmit over the emitted .d.ts, node --check over the emitted .js
         shell: bash

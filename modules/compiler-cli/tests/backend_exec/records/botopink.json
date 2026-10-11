@@ -1,7 +1,0 @@
-{
-  "name": "records",
-  "version": "0.0.1",
-  "description": "Backend-execution fixture: records + enum + case + lambda, run on commonJS/erlang/beam. Front-C C2.",
-  "target": "commonJS",
-  "src": "src/"
-}

@@ -3,70 +3,23 @@
 > Path: `examples/`
 > Parent: [`../AGENTS.md`](../AGENTS.md)
 
-Standalone `.bp` example programs showing **language-core** code — stdlib usage,
-the generic library loader, expr-templates, the module tree. They are
-documentation, **not** part of any snapshot harness, and do not affect
-`zig build` / `zig build test`.
+One project waiting to leave: `generic-loader-binding/` — the three ways `from "erika"` reaches a
+library off disk (a bare value `of(xs)`, the bare template fn `erika "…"`, the namespace member
+`erika.of(…)`), with `test {}` blocks. It shows a library, not the language, so it belongs in
+`repository/erika/examples/` as a member of erika's workspace (144 B-29 step H, rule 10's consumer
+commit). It cannot move yet: erika's gate runs every member on erlang too, and on erlang the
+namespace-member form emits an unbound `Erika` variable (`erlc`: `variable 'Erika' is unbound`) —
+a botopink-lang defect no gate saw while the example was only built on commonJS here. It moves
+with the front that fixes that lowering.
 
-> Library examples live with each library (`repository/<lib>/examples/`).
+The rest of what lived here is the conformance suite's since 144 B-29 step H (decisions 457, 461):
+`hello.bp` → `conformance/modules/hello`, `modules/` → `conformance/modules/modules`,
+`yamlconf/` → `conformance/modules/yamlconf` and `conformance/modules/yamlconf_unknown_label`,
+`stdlib-tour/` → the project suite `conformance/test/stdlib-tour`.
 
-## Tree
+## What checks it
 
-```text
-examples/
-├── AGENTS.md               ← you are here
-├── hello.bp                ← smallest runnable program (prints a line)
-├── stdlib-tour/            ← `import {collections: {Dict, Queue, Set, Order, …}} from "std"` + type-scoped constructors,
-│   ├── botopink.json          Array combinators, an Order-driven sort, a Queue BFS — with `test {}` blocks
-│   └── src/main.bp
-├── generic-loader-binding/ ← the three `from "<lib>"` forms against `erika` — with `test {}` blocks
-│   ├── botopink.json          (object-form `dependencies` on erika)
-│   └── src/main.bp            bare value (`of`), bare template fn (`erika "…"`), namespace (`erika.of(…)`)
-├── modules/                ← `mod` / `pub mod` module tree + cross-module calls (see its README.md)
-│   ├── botopink.json
-│   ├── README.md
-│   └── src/
-│       ├── main.bp            entry: declares `geometry` + `shapes`
-│       ├── geometry.bp        leaf module
-│       └── shapes/
-│           ├── mod.bp         folder index
-│           ├── circle.bp      public submodule
-│           └── helpers.bp     private submodule
-└── yamlconf/               ← expr-template config (no botopink.json)
-    ├── yamlconf.bp            `conf<T>` lifts a computed labeled tuple `#(server, debug)`
-    └── main.bp                caller gets the structural type (`cfg.server.port`)
-```
-
-`yamlconf` lifts a tuple through `@expr(#(server, debug))`: the tuple crosses the comptime bridge
-(`'__bp_json'/1` → `{"$tuple": [...]}`) and takes the labels its template body gives it
-(`liftShapeOf`), so `cfg.server.port` resolves and `cfg.server.prot` is a located compile error.
-
-`generic-loader-binding` resolves `from "erika"` through the multi-root lib
-resolver to the sibling `repository/erika/` project, so it needs that submodule
-checked out.
-
-## Running an example
-
-Projects with a `botopink.json` run from their own directory:
-
-```bash
-cd examples/modules && botopink run
-cd examples/stdlib-tour && botopink test
-```
-
-For a single file (`hello.bp`, `yamlconf/`), drop it into a throwaway project:
-
-```bash
-botopink new demo            # scaffolds botopink.json + src/main.bp
-cp examples/hello.bp demo/src/main.bp
-cd demo && botopink run      # → hello, botopink
-```
-
-`botopink check` (type-check only) and `botopink build` (emit target code) work
-the same way from inside a project.
-
-## Conventions
-
-- Keep each example minimal and self-contained — it must compile with the
-  current compiler.
-- Do not wire examples into snapshot tests; they are illustrative, not fixtures.
+`scripts/tsc-check.sh` builds it on commonJS with `--typescript` (its `.d.ts` through `tsc`, its
+`.js` through `node --check`) and `scripts/format-check.sh` holds it canonical; its
+`{ "git": … }` dependency on erika resolves by name to the sibling `repository/erika/`, so the
+checkout needs that submodule.

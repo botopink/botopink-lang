@@ -4,8 +4,8 @@
 # this is the caller, stage 3 of scripts/gate.sh and a step of CI's `test` job.
 #
 # TREES names the trees the gate holds canonical: every `.bp` and `.d.bp` under
-# each (nested projects included) — `examples` (every example project and
-# `hello.bp`), `libs/std` (the one library the compiler ships — decision 326:
+# each (nested projects included) — `examples` (the project waiting to move to
+# erika, `generic-loader-binding`), `libs/std` (the one library the compiler ships — decision 326:
 # every other library is a repository of its own, formatted by its own gate), the CLI's and the
 # manifest module's fixtures and `conformance` — every tracked `.bp` of this
 # checkout is under one of them. What the walk leaves out is structural —

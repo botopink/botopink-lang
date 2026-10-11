@@ -1469,6 +1469,42 @@ target refuses (`refused` / `at`). The exit status is never pinned: node 1, erl 
 the runtimes' (§ Never pin an erlang exit status). A narrowing (`"targets"`) is the one claim that a
 target has no answer at all, audited on every check — § Narrowing a cell.
 
+**The per-target answers B-00k left waiting** (144 B-29 step H; decisions 441, 443, 444 — each a pin:
+the behaviour landed with B-00e / B-00g and no cell held it, because one `.out` could not hold two
+answers): `modules/float_text_at_run_time` (`"${5.0}"`, `1.0e21`, `1.0e-7` print `5.0`, `1.0e21`,
+`1.0e-7` on erlang, beam and wasm; commonJS departs with the JS engine's `5`, `1e+21`, `1e-7`),
+`modules/string_trim_keeps_nbsp` (`trim` keeps a NBSP; commonJS's engine trims it),
+`modules/string_lower_final_sigma` (`ΟΔΟΣ` lowers to `οδοσ`; commonJS's engine to `οδος`) and
+`modules/float_nan_infinity_words` (`Infinity`, `-Infinity`, `NaN` on commonJS and wasm; erlang and
+beam abort, `stderr badarith`). The fifth row, an unseeded `random.float()` reached from a decorator
+body, has no cell: a decorator body cannot reach `io.random` today (`unbound variable
+'__bp_ns_io_random'` on every target, a leaf import `unbound variable`), so the answer decision 451
+gives it cannot be read off the compiler — a row for the front that makes a decorator body reach a
+nested std namespace.
+
+**The language half of `test-cli`** (144 B-29 step H): `modules/tail_recursive_sum` (the numeric
+program of `backend_exec.sh`, `0 1 55`, beam included), `modules/record_enum_case_lambda` (its
+records / enum / `case` / lambda program, wasm included), `modules/mutual_recursion_forward_reference`
+(`mutual_recursion.sh`'s forward reference and `isEven` ↔ `isOdd`), `modules/assert_message_aborts`
+(a failing `assert cond, "msg"` aborts naming its message on every target) and
+`test/assert_and_try.bp` (`assert` with a message and `try` in a `test` block). How the runner
+reports a failed test stays `modules/compiler-cli/tests/test_tooling.sh`'s.
+
+**botopink-lang's `examples/`** (144 B-29 step H, decisions 457, 461): `modules/hello`,
+`modules/modules` (the `mod` / `pub mod` tree; its `docs.md` is the example's README),
+`modules/yamlconf` (a config template lifting the labelled tuple `#(server, debug)`: `8038`,
+`true`) and `modules/yamlconf_unknown_label` (the example's commented-out `cfg.server.prot`,
+refused at the label, `this tuple has no element labeled \`prot\``), and the suite
+`test/stdlib-tour/` (its `test {}` blocks). No gate ran them before: `yamlconf`'s
+`import {conf} from "yamlconf"` is `import {yamlconf.conf}` since decision 337, and
+`stdlib-tour`'s two record tests asserted the identity `==` decision 210 replaced, so they now
+assert structural keys and dedup. Two are red, each a defect the move found: `modules/yamlconf`
+on wasm prints `1` for the lifted tuple's `bool` (`@print(cfg.debug)`; through `val d: bool =
+cfg.debug` it prints `true`), and `test/stdlib-tour`'s `Set.fromList` of structurally-equal
+records keeps three members on commonJS (and wasm, which no suite reaches) where erlang and beam
+keep two. `generic-loader-binding` (three `from "erika"` forms — a library, not the language) stays
+in botopink-lang's `examples/` until it can move to erika (`../examples/AGENTS.md`).
+
 `front/gate-wasm-wrong-answers` (`compiler-core/src/codegen/wat/AGENTS.md` § Numbers) adds three
 four-target cells for numbers wasm answered wrongly at exit 0 — `modules/float_shortest_text` (a
 float's shortest round-trip text, where erlang and beam agree with commonJS), `modules/float_slot_keeps_f64`
@@ -1829,20 +1865,22 @@ parent.
 `--no-conformance` (decision 470), run by a front's Conformance step, its landing and the GitHub
 pipeline — and a step of the CI `test` job (ubuntu + macos). A red cell fails the gate.
 
-Recounted on disk after 144 B-29 step H's migration:
+Recounted on disk after 144 B-29 step H:
 
 ```
-$ ls -d modules/*/ | wc -l      # 931 cells: 382 former run/, 405 former reject/, 144 former modules/
-$ ls test/*.bp | wc -l          # 68 test suites
-$ ls -d test/*/ | wc -l         # 5 project suites
+$ ls -d modules/*/ | wc -l      # 943 cells: 382 former run/, 405 former reject/, 144 former modules/,
+                                #   4 from test-cli, 4 per-target answers, 4 from examples/
+$ ls test/*.bp | wc -l          # 69 test suites
+$ ls -d test/*/ | wc -l         # 6 project suites
 ```
 
-Every cell green on every target it declares but four former `reject/` cells —
-`case_bare_name_arm`, `case_constant_pattern`, `reserved_word_field_name` and
-`reserved_word_param_name` — whose `.expect` named the text under the diagnostic's caret (`use _ {
-n -> … }`, `reserved word \`from\``), which no `.snap` record states: their snapshots hold the old
-claim as written (`refused use _ {`, located) and stay red until the maintainer decides how a
-cell states a diagnostic's label.
+Every cell and suite green on every target it declares but these, each named for the maintainer:
+four former `reject/` cells — `case_bare_name_arm`, `case_constant_pattern`,
+`reserved_word_field_name` and `reserved_word_param_name` — whose `.expect` named the text under
+the diagnostic's caret (`use _ { n -> … }`, `reserved word \`from\``), which no `.snap` record
+states: their snapshots hold the old claim as written (`refused use _ {`, located) and stay red
+until the maintainer decides how a cell states a diagnostic's label; `modules/yamlconf` on wasm
+and `test/stdlib-tour` on commonJS (§ The claims a cell makes about a target, the examples).
 
 Decision 146 on wasm (a function whose body calls a host function with no binding for the target is
 refused called or not, on every target): `modules/external_wrapper_keeps_refusal` passes on wasm by its

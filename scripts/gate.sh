@@ -29,7 +29,7 @@
 #   6. beam_export_audit.sh every beam snapshot module assembles with every
 #                           function exported (needs erlc)
 #   7. zig build test-cli   modules/compiler-cli/tests/*.sh — the command
-#                           contract, test tooling, recursion, backend parity
+#                           contract, test tooling, result store, wasm --invoke main
 #   8. zig build test-libs  every `.bp` library the checkout can see, per target
 #                           (a library without tests is still compiled); the
 #                           manifests decide the cells — one that exists is

@@ -51,8 +51,9 @@ botopink-lang/
 │   ├── lib-test-runner/   cross-backend lib test runner
 │   └── manifest/          the shared botopink.json model (std only)
 ├── libs/std/              standard library
+├── conformance/           the conformance suite — one cell per behaviour, checked by `botopink cell check`
+├── examples/              generic-loader-binding, the erika consumer (moving to erika's examples/)
 ├── docs/                  botopink-json.md — the manifest schema (packages, workspaces, dependencies)
-├── examples/              example .bp programs
 ├── scripts/               installers, release packing, test wrappers
 ├── build.zig              workspace build graph
 └── AGENTS.md              contributor guide

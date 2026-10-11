@@ -1236,7 +1236,7 @@ pub fn shipMjsSidecars(
 // test runner's `__bp_load_siblings/0` looks: it compiles and loads every
 // `**/*.erl` beside the script before running (`codegen/erlang.zig`). Plain
 // `escript` does not do that — a `build`/`run` output needs the same loader, and
-// that emitter is another front's (`examples/modules` is red on erlang for the
+// that emitter is another front's (`examples/modules` — now `conformance/modules/modules` — was red on erlang for the
 // same reason).
 //
 // Generic and lib-agnostic, like the `.mjs` half: the scan yields every

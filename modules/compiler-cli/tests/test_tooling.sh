@@ -22,6 +22,12 @@
 #   • a test reads the compiler that runs it from `BOTOPINK_BIN`, unless the
 #     caller set the variable
 #
+# What `assert cond, "msg"` and `try` mean in the language — an assertion that
+# holds does nothing, one that fails aborts naming its message, a `try` on a
+# value answers it — is the conformance suite's since 144 B-29 step H
+# (`conformance/modules/assert_message_aborts`, `conformance/test/assert_and_try.bp`);
+# this script keeps how the runner reports them.
+#
 # Exit 0 = every behaviour held. Recorded (not asserted here): an arbitrary
 # *uncaught* (non-assert) throw → FAIL — pure botopink has no portable
 # runtime-throwing construct (`arr[index]` is a compile error, no `@panic`); the

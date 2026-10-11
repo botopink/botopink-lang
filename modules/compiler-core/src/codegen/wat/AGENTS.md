@@ -88,8 +88,9 @@ beside the `.wat` with the loader `browser_loader.zig` renders as
 `<module>.mjs` — the same two preview 1 imports in JavaScript (`fd_write` on
 the console, `fs.writeSync` under node; `random_get` on
 `crypto.getRandomValues`), then `__bp_init` and `_start`. `botopink run` is
-`node <module>.mjs`. `conformance/run.sh` runs every wasm cell on both hosts
-and fails one whose exit status or stdout differ (`exec_run`).
+`node <module>.mjs`. `botopink cell check` runs every conformance cell's wasm
+target on both hosts and fails one whose answers differ (`cell.zig`'s
+`Scratch.observe`).
 
 `wasi:clocks/monotonic-clock` and `wasi:io/poll` join the frame when the
 module has host tasks (it imports `bp_host`, § below): `component_host_*` add

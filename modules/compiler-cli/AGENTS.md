@@ -27,11 +27,10 @@ compiler-cli/
 │   │                          `"targets"` narrowing is refused, a cell without
 │   │                          `botopink.json`, malformed input)
 │   │                          against the real binary
-│   ├── mutual_recursion.sh  ← forward-ref + mutual recursion runs on every backend
-│   ├── mutual_recursion/    ← fixture project for the script above
-│   ├── backend_exec.sh      ← backend execution parity (numeric / records /
-│   │                          examples/modules); `zig build test-backends`
-│   ├── backend_exec/        ← numeric + records fixture projects
+│   ├── backend_exec.sh      ← the wasm core module's `--invoke main` (a `wasi`
+│   │                          build's core module run on its own); `zig build
+│   │                          test-backends`
+│   ├── backend_exec/        ← the numeric fixture (`main() -> i32` answering 55)
 │   ├── test_tooling.sh      ← `botopink test` behaviours: empty test, --filter
 │   │                          (multi / none), assert message, a failing `try`, the
 │   │                          FAIL line's `src/main.bp:<line>` (commonJS + erlang),
@@ -82,7 +81,7 @@ zig build test          # includes the CLI unit tests (main.zig parsers / config
 
 # End-to-end scripts under tests/ spawn the CLI and runtimes, so they are NOT
 # part of `zig build test`. From the workspace root:
-zig build test-cli      # all five scripts, in order, against the installed CLI
+zig build test-cli      # all four scripts, in order, against the installed CLI
 zig build test-backends # backend_exec.sh alone
 
 # Or directly (each builds the CLI unless BOTOPINK_SKIP_BUILD=1 is set;
@@ -90,18 +89,24 @@ zig build test-backends # backend_exec.sh alone
 bash modules/compiler-cli/tests/cli_contract.sh      # command contract C1–C13
 bash modules/compiler-cli/tests/test_tooling.sh      # `botopink test` behaviours
 bash modules/compiler-cli/tests/result_store.sh      # the result store of stages 8–10
-bash modules/compiler-cli/tests/mutual_recursion.sh  # mutual recursion on every backend
-bash modules/compiler-cli/tests/backend_exec.sh      # numeric/records/modules per backend
+bash modules/compiler-cli/tests/backend_exec.sh      # the wasm core module's --invoke main
 ```
 
-> **Every cell is a hard assert** — there are no pinned reds. A missing runtime
-> skips its cells by name. **Cells not run**, each restored by the front that
-> fixes it: `examples/modules` on erlang (**not** a backend defect — the emitted
-> code is correct; `cli/run.zig` runs `escript out/main.erl`, which compiles only
-> the file it is handed, so the sibling module is `undef` at run time. See "the
-> erlang runner reaches one module" below; front `13-module-identity` owns the
-> file) and the `numeric` fixture on BEAM (call-result arithmetic fails
-> `beam_validator`; the beam front).
+> **Every assertion is hard** — there are no pinned reds, and a missing runtime
+> fails the script. **What a program answers is not here**: the language half
+> these scripts held moved to conformance cells in 144 B-29 step H, each run on
+> the four targets by `botopink cell check` — `backend_exec.sh`'s numeric
+> program (`conformance/modules/tail_recursive_sum`: `55` everywhere, beam
+> included, which the script had left out), its records / enum / `case` /
+> lambda program (`record_enum_case_lambda`, wasm included) and the `mod` /
+> `pub mod` package (`modules`, the former `examples/modules`, on all four);
+> `mutual_recursion.sh`'s forward reference and `isEven` ↔ `isOdd`
+> (`mutual_recursion_forward_reference`; the script and its fixture are gone);
+> `test_tooling.sh`'s `assert cond, "msg"` and `try` (`assert_message_aborts`,
+> `conformance/test/assert_and_try.bp`). The scripts keep the CLI's contract:
+> `cli_contract.sh`, `test_tooling.sh`'s report (`--filter`, the totals, the FAIL
+> line's message and `src/main.bp:<line>`, the `*.snap.new` list),
+> `result_store.sh`, and `backend_exec.sh`'s `wasm --invoke main`.
 > The `std` suite on erlang is covered by `zig build test-libs`, not a script.
 
 ## External libs (generic loader)
@@ -194,15 +199,15 @@ code path:
 | `conformance/modules/two_modules` | `undefined function geometry:norm/1` | `geometry:norm/1` — qualified, correct |
 | `conformance/modules/mod_tree` | `undefined function shapes:describe/0` | `shapes:describe/0` |
 | `conformance/modules/std_import` | `undefined function dict:empty/0` | `dict:empty/0` |
-| `examples/modules` | `undefined function geometry:area/2` | `geometry:area/2`, `shapes:describe/0`, `shapes:lucky/0` |
+| `conformance/modules/modules` | `undefined function geometry:area/2` | `geometry:area/2`, `shapes:describe/0`, `shapes:lucky/0` |
 
-The shape that works is the one the beam arm of `conformance/run.sh` already
+The shape that works is the one the beam arm of the language runner (`tests/language/run.sh`, before 144 B-29 step H) already
 uses: `erlc -o <out_dir>` over every emitted `.erl` **found recursively** — the
 file layout nests (`out/shapes/circle.erl`, `out/std/dict.erl`) while the module
 atom is flat, so `-o <out_dir>` is what puts each `.beam` where a single
 `-pa <out_dir>` looks — then `erl -noshell -pa <out_dir> -eval "<module>:main([]), halt()."`.
 `main([])` and not `main()`: `main/1` is always exported, while `main/0` is
-emitted only when `main` is `pub` (`examples/modules` declares `fn main()` and
+emitted only when `main` is `pub` (`conformance/modules/modules` declares `fn main()` and
 exports just `'_botopink_main'/0, main/1`). A crash's exit status moves from
 escript's `127` to `erl`'s `1`.
 
@@ -724,7 +729,7 @@ release tags). Bump it in the same change you want tagged.
 **only the file it is handed**. Every cross-module call in a multi-module program
 was therefore `undefined function <mod>:<fn>` at run time, with correct and
 correctly qualified emitted code — three `conformance/modules/*` cells and
-`examples/modules` failed on erlang for that reason alone.
+`conformance/modules/modules` failed on erlang for that reason alone.
 
 Two shapes that look like the fix and are not:
 
@@ -735,7 +740,7 @@ $ ERL_FLAGS="-pa out" escript out/main.erl      # unchanged: no .beam exists yet
 ```
 
 The compile step is the missing half, not the code path. `cli/run.zig`
-(`erlangArgv`) does what the beam arm of `conformance/run.sh` already did:
+(`erlangArgv`) does what the beam arm of the language runner (`tests/language/run.sh`, before 144 B-29 step H) already did:
 
 1. what `erlc -o <out_dir>/erl` over **every** emitted `.erl`, found recursively,
    does — one `erl` reading the files from a list file (`compileAll`), since
@@ -748,7 +753,7 @@ Two details that are load-bearing:
 - **`main([])`, not `main()`.** `main/1` is always exported — it is the escript
   entry point — while `main/0` is emitted only when `main` is `pub`. A runner
   calling `main:main()` fails with `undef` on any project whose entry is a plain
-  `fn main()`, `examples/modules` included. The asymmetry itself lives in
+  `fn main()`, `conformance/modules/modules` included. The asymmetry itself lives in
   `codegen/erlang.zig` and is not changed here.
 - **A crashing program now exits `1`.** `erl` returns 1 where `escript` returned
   127 (measured on a `1 / 0` program). The 127 was escript's artefact, nothing

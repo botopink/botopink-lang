@@ -39,7 +39,7 @@ botopink-lang/                 ← language core (this project)
 │   └── wasm3/                 ← vendored wasm3 (C): the wat comptime runtime runs on it, in-process
 ├── libs/                      ← the bundled .bp library — see libs/AGENTS.md
 │   └── std/                   ← standard library, the one package the compiler ships (decision 326)
-├── examples/                  ← non-framework .bp example programs
+├── examples/                  ← generic-loader-binding alone, waiting to move to erika — see examples/AGENTS.md
 ├── conformance/               ← the conformance suite (decisions 457, 466, 475): modules/<cell>/ checked by
 │                                `botopink cell check`, test/ suites by `botopink test --json` — see conformance/AGENTS.md
 └── scripts/                   ← installers, release packing, snapshot audit, git hooks
@@ -58,9 +58,9 @@ zig build test          # compiler-core + language-server + compiler-cli + lib-t
 zig build test -Dtest-filter=<name>   # only tests whose name matches
 zig build test -Dtest-shards=<n>      # compiler-core as n processes side by side (default: CPUs, at most 8) — modules/test-shard
 zig build run           # build and run the CLI
-zig build test-cli      # every modules/compiler-cli/tests/*.sh (command contract, test tooling, recursion, backend parity)
+zig build test-cli      # every modules/compiler-cli/tests/*.sh (command contract, test tooling, result store, the wasm core module's --invoke main)
 zig build test-libs     # every visible .bp library's tests per backend (libs/ + sibling repository/*)
-zig build test-backends # beam/wasm/erlang execution parity (modules/compiler-cli/tests/backend_exec.sh)
+zig build test-backends # the wasm core module's --invoke main (modules/compiler-cli/tests/backend_exec.sh)
 zig build test-bpmp     # bpmp unit tests
 zig build test-vscode   # VS Code extension unit tests — scripts/test-vscode.sh finds the sibling checkout
 zig build test-conformance # the conformance suite (conformance/run.sh: every cell by `botopink cell check`, every test/ suite; `-- --compiler <botopink>` to run another binary)
@@ -164,7 +164,8 @@ does not mirror them. Entry points:
 | bpmp | [`modules/bpmp/AGENTS.md`](modules/bpmp/AGENTS.md) |
 | Per-process scratch paths for tests | [`modules/test-scratch/AGENTS.md`](modules/test-scratch/AGENTS.md) |
 | `.bp` libraries | [`libs/AGENTS.md`](libs/AGENTS.md) · [`libs/std/AGENTS.md`](libs/std/AGENTS.md) |
-| Examples | [`examples/AGENTS.md`](examples/AGENTS.md) |
+| Conformance suite (the language's cells; the former `tests/language` and `examples/`) | [`conformance/AGENTS.md`](conformance/AGENTS.md) |
+| Examples (one left, waiting to move to erika) | [`examples/AGENTS.md`](examples/AGENTS.md) |
 | Scripts | [`scripts/AGENTS.md`](scripts/AGENTS.md) |
 | `.bp` language reference (user-facing) | [`docs.md`](docs.md) |
 | `botopink.json` schema (user-facing) | [`docs/botopink-json.md`](docs/botopink-json.md) · model: [`modules/manifest/AGENTS.md`](modules/manifest/AGENTS.md) |
@@ -280,7 +281,7 @@ run is [`scripts/gate.sh`](scripts/gate.sh) — stages 1–4 one after the other
 4. `zig build test` (compiler-core, language-server, CLI and lib-test-runner unit suites; `--cold` deletes `modules/compiler-core/.botopinkbuild/runtime-cache` and every `.botopinkbuild/cache/` of this checkout and each sibling library repository first, naming each — required for the run that decides a merge);
 5. `zig build test-bpmp` (the package manager's unit suite);
 6. `scripts/beam_export_audit.sh` (every beam snapshot module assembles with every function exported);
-7. `zig build test-cli` (the CLI contract, test tooling, recursion and backend execution scripts);
+7. `zig build test-cli` (the CLI contract, test tooling, the result store and the wasm core module's `--invoke main`);
 8. `zig build test-libs` (every visible library on the targets its manifest declares — a cell that exists is green or the stage fails; a library without tests is still compiled; every target a `"targets"` list excludes is audited, and an exclusion that is not structural fails the stage);
 9. `zig build test-conformance` (the conformance suite, `conformance/`: every cell of `conformance/modules/` by `botopink cell check` on every target its manifest declares — its answers against `snapshot/output/` and `snapshot/targets/<t>/`, every `"targets"` narrowing audited against the compiler's host-binding refusal — and every `conformance/test/` suite by `botopink test --json` on commonJS, erlang and beam, after the runner's own `--self-test`);
 10. `zig build test-docs` (every `botopink` fence of `docs.md` and `README.md` compiles);

@@ -5,8 +5,9 @@
 #
 # A scratch `botopink build --target commonJS --typescript` of the library
 # the compiler ships (`libs/std/` — decision 326: std alone; its `.d.ts` is
-# what a host TypeScript consumer of a botopink build reads), of
-# every project under `examples/`, of every conformance cell
+# what a host TypeScript consumer of a botopink build reads), of the project
+# left under `examples/` (`generic-loader-binding`, erika's consumer), of every
+# conformance cell
 # (`conformance/modules/<cell>/`, decision 475: each a project with its own
 # manifest) and of every project suite under `conformance/test/`, then
 # `tsc --noEmit --strict --lib es2022 --module commonjs` over each build's
@@ -16,7 +17,7 @@
 # a module `node` cannot parse one of `commonJS.zig` (or of the host template a
 # library wrote); each is fixed there. The run cells execute their module under
 # node; this check reaches the modules nothing runs — the libraries' and the
-# examples' — and reads them all the way through.
+# example's — and reads them all the way through.
 #
 # What the walk leaves out is structural, the same reading `botopink cell check`
 # makes of a cell: a cell whose commonJS answer refuses a module (a `refused`

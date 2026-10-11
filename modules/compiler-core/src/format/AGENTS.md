@@ -216,10 +216,10 @@ form has always done that); whether it should is a question, recorded in
 
 `botopink format --check` at a project root reaches **every** `.bp` and `.d.bp` the project owns —
 `src/**`, `test/**`, `examples/**` and the projects nested inside — and structurally leaves out hidden
-directories, `node_modules`, a `reject/<n>.bp` beside its `<n>.expect` and a `modules/<cell>/` file
-the cell's `<target>.expect` names that does not lex or parse (decisions 66 and 67;
+directories, `node_modules` and a conformance cell's module every target refuses — its
+`snapshot/output/<module>.snap` holds a `refused` record (decisions 66 and 67;
 `modules/compiler-cli/src/cli/format_cmd.zig`). `scripts/format-check.sh`, stage 3 of the gate, calls
-it over every `.bp` tree of this checkout — `examples`, `libs/std`, the bundled libraries (`TREES` names each),
+it over every `.bp` tree of this checkout — `libs/std`, the bundled libraries (`TREES` names each),
 `modules/compiler-cli/tests`, `modules/manifest/tests` and `conformance` — and all of them are
 canonical: a red tree is a red gate. Measured with that walk on 2026-10-01 (1.0.11-beta front 112), each tree formatted as a
 scratch copy and checked again: every file re-parses and a second pass moves **0** files, in this
