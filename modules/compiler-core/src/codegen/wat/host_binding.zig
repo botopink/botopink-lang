@@ -94,14 +94,10 @@ pub const Adapter = struct {
 
 /// The adapters a `wasi:` binding may name — the list `docs.md` § Host
 /// bindings documents. Each is a prelude helper (`wat_prelude.zig`, the group
-/// of its name) named `__wasi_<name>`. `seed_u32` / `seeded_f64` make no WASI
-/// call of their own: they hold the state of `std/io/random`'s seeded stream,
-/// which no botopink module can hold on every target, and draw it as the
-/// commonJS host's sidecar does (Mulberry32).
+/// of its name) named `__wasi_<name>`. `std/io/random`'s seeded stream is
+/// std-wasm's (decision 451), bound by `std:` cells, not an adapter.
 pub const adapters = [_]Adapter{
     .{ .name = "random_f64", .params = &.{}, .result = .f64, .what = "a uniform `f64` in `[0.0, 1.0)` from 53 bits of `random_get`" },
-    .{ .name = "seed_u32", .params = &.{.i32}, .result = null, .what = "seeds the module's Mulberry32 stream with the word's bits" },
-    .{ .name = "seeded_f64", .params = &.{}, .result = .f64, .what = "the next Mulberry32 draw in `[0.0, 1.0)`, or `random_f64`'s before any seed" },
     .{ .name = "delay", .task = .{ .params = &.{ .i32, .t }, .result = .task_t }, .what = "a task that settles with the value once the milliseconds have passed on the host's monotonic clock (`wasi:clocks/monotonic-clock` and `wasi:io/poll` on `wasi`, `setTimeout` on `browser`)" },
     .{ .name = "race", .task = .{ .params = &.{.array_task_t}, .result = .task_t }, .what = "the first of the started tasks to settle (the first settled one in input order when some already are); an empty list traps" },
     .{ .name = "race_of", .task = .{ .params = &.{.array_thunk_task_t}, .result = .task_t }, .what = "each thunk called in order — its task runs to its first `await` — then raced; an empty list traps" },
@@ -407,13 +403,15 @@ test "host binding: the three forms and their refusals" {
         try std.testing.expectEqualStrings("random_f64", r.ok.wasi.name);
     }
     {
-        const r = try parse(a, "wasi:seed_u32", .{ .params = &.{.i32}, .result = null });
-        try std.testing.expectEqualStrings("seed_u32", r.ok.wasi.name);
+        const r = try parse(a, "wasi:random_f64", .{ .params = &.{.f64}, .result = .f64 });
+        defer a.free(r.refused.message);
+        try std.testing.expect(std.mem.indexOf(u8, r.refused.message, "takes no parameter and answers f64") != null);
     }
     {
-        const r = try parse(a, "wasi:seed_u32", .{ .params = &.{.f64}, .result = null });
+        // Decision 451: the seeded stream left the adapters for std-wasm.
+        const r = try parse(a, "wasi:seed_u32", .{ .params = &.{.i32}, .result = null });
         defer a.free(r.refused.message);
-        try std.testing.expect(std.mem.indexOf(u8, r.refused.message, "takes (i32) and answers nothing") != null);
+        try std.testing.expect(std.mem.indexOf(u8, r.refused.message, "is not a WASI adapter") != null);
     }
     {
         const r = try parse(a, "wasi:clock_time_get", .{ .params = &.{}, .result = .f64 });

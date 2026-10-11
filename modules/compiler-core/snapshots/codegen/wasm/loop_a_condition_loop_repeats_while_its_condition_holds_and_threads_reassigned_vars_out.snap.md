@@ -567,11 +567,20 @@ fn main() {
   )
   ;; std-wasm (decision 440): its functions, transpiled from std_wasm.wasm
   (global $__std_sp (mut i32) (i32.const 336))
+  (func $__std_sp_check (param $sp i32) (result i32)
+    local.get $sp
+    i32.const 264
+    i32.lt_s
+    (if
+      (then unreachable)
+    )
+    local.get $sp
+  )
   ;; __std_f3 — from std_wasm.wasm (sha256 b4b6f06748d6)
-  ;; __std_f44 — from std_wasm.wasm (sha256 754afbaaff1c)
+  ;; __std_f44 — from std_wasm.wasm (sha256 c9ad15c4086e)
   ;; __std_f45 — from std_wasm.wasm (sha256 432c7dfb021a)
-  ;; __std_f46 — from std_wasm.wasm (sha256 6b108dbbfcd0)
-  ;; std:number.i32ToString — from std_wasm.wasm (sha256 9c0a9db10050)
+  ;; __std_f46 — from std_wasm.wasm (sha256 dd7a963bffe6)
+  ;; std:number.i32ToString — from std_wasm.wasm (sha256 31a2b7190fa4)
 )
 ```
 

@@ -28,6 +28,7 @@ pub const number = @import("number.zig");
 pub const array = @import("array.zig");
 pub const bigint = @import("bigint.zig");
 pub const case_tables = @import("case_tables.zig");
+pub const random = @import("random.zig");
 
 /// A botopink type an export takes or answers. A `string` crosses as the
 /// program's string (the address of its `u32` length, the bytes behind it) in
@@ -126,6 +127,8 @@ pub const exports = [_]Export{
     .{ .name = "text.fromCodepoint", .params = &.{.i32}, .result = .string, .api = "String.fromCodepoint" },
     .{ .name = "text.toUpper", .params = &.{.string}, .result = .string, .api = "String.toUpper" },
     .{ .name = "text.toLower", .params = &.{.string}, .result = .string, .api = "String.toLower" },
+    .{ .name = "random.seed", .params = &.{.i32}, .result = .void, .api = "io.random.seed" },
+    .{ .name = "random.seededFloat", .params = &.{}, .result = .f64, .api = "io.random.seededFloat" },
 };
 
 /// A wasm value type a program function takes or answers.
@@ -233,6 +236,7 @@ test {
     _ = number;
     _ = array;
     _ = bigint;
+    _ = random;
 }
 
 test "find: an export by the name a std: cell gives it" {

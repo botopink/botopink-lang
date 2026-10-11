@@ -287,8 +287,17 @@ fn main() {
   )
   ;; std-wasm (decision 440): its functions, transpiled from std_wasm.wasm
   (global $__std_sp (mut i32) (i32.const 304))
+  (func $__std_sp_check (param $sp i32) (result i32)
+    local.get $sp
+    i32.const 280
+    i32.lt_s
+    (if
+      (then unreachable)
+    )
+    local.get $sp
+  )
   ;; __std_f29 — from std_wasm.wasm (sha256 61b86fc4b3a0)
-  ;; std:text.endsWith — from std_wasm.wasm (sha256 c761de1b0028)
+  ;; std:text.endsWith — from std_wasm.wasm (sha256 b48db299c546)
 )
 ```
 

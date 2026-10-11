@@ -15,10 +15,14 @@
 //! | `env.__memory_base` | the constant address the program places std-wasm's data at (`global.get` → `i32.const`) |
 //! | `env.__stack_pointer` | the program's global `$__std_sp`, the top of a stack region placed after the data |
 //! | `env.bp_alloc` | `$__alloc`, the program's bump allocator |
+//! | `env.bp_random_f64` | `$__wasi_random_f64`, the host's entropy (decision 451 (2)) |
 //!
 //! The stack is sized from the code: each function's frame (its prologue
 //! `global.get $sp; i32.const N; i32.sub`) summed along the deepest call
-//! chain of the functions the program reaches. The start function wasm-ld
+//! chain of the functions the program reaches. Each prologue's new pointer
+//! passes through `$__std_sp_check`, which traps below the stack's floor, so
+//! an overflow never writes over the data beneath it (decision 447); a read
+//! of the stack pointer that is no prologue is refused. The start function wasm-ld
 //! writes to zero `.bss` (a Zig `var`) is dropped: a fresh instance's memory
 //! is zero. Anything else — a function table (`call_indirect`,
 //! `__table_base`), another start function, a global of its own, another
@@ -56,6 +60,23 @@ pub const export_prefix = "std:";
 /// The global the program holds std-wasm's stack pointer in.
 pub const stack_global = "__std_sp";
 
+/// The program function `env.bp_random_f64` is bound to: the host's entropy,
+/// `wat_prelude`'s `$__wasi_random_f64` (decision 451 (2)). A program that
+/// links a function calling it holds that helper (`Linked.random`).
+pub const random_import = "__wasi_random_f64";
+
+/// Each function std-wasm imports from `env`, and the program function it is
+/// bound to.
+const func_bindings = [_][2][]const u8{
+    .{ "bp_alloc", "__alloc" },
+    .{ "bp_random_f64", random_import },
+};
+
+/// The function every frame's new stack pointer passes through (decision 447
+/// (3)): it answers the pointer, or traps when it lies below the stack's
+/// floor — an overflow never writes over the data below the stack.
+pub const stack_check = "__std_sp_check";
+
 /// The program function an export of std-wasm is emitted as:
 /// `number.floatToString` → `__std_number_floatToString`.
 pub fn entryName(ar: std.mem.Allocator, export_name: []const u8) ![]const u8 {
@@ -75,6 +96,9 @@ pub const Linked = struct {
     /// The functions among `items`, in the same order: what a snapshot shows
     /// in place of each body (decision 446).
     funcs: []const Fn,
+    /// Whether a linked function calls `random_import` — the program must
+    /// hold `$__wasi_random_f64`.
+    random: bool = false,
 };
 
 /// One function transpiled from std-wasm, identified for a snapshot.
@@ -237,8 +261,10 @@ fn read(ar: std.mem.Allocator, bytes: []const u8, diag: *Diag) Error!Module {
                     switch (kind) {
                         0 => {
                             const ti = try s.u32_();
-                            if (!std.mem.eql(u8, field, "bp_alloc")) return unsupported(diag, "a function import other than `env.bp_alloc`");
-                            try func_imports.append(ar, "__alloc");
+                            const bound = for (func_bindings) |fb| {
+                                if (std.mem.eql(u8, field, fb[0])) break fb[1];
+                            } else return unsupported(diag, "a function import other than `env.bp_alloc` and `env.bp_random_f64`");
+                            try func_imports.append(ar, bound);
                             try func_import_types.append(ar, ti);
                         },
                         1 => {
@@ -367,6 +393,8 @@ const Decoded = struct {
     callees: []const u32,
     /// Whether it reads `__memory_base` — addresses std-wasm's data.
     uses_base: bool,
+    /// Whether it calls the host's entropy (`random_import`).
+    calls_random: bool,
 };
 
 const Body = struct {
@@ -385,6 +413,9 @@ const Body = struct {
     callees: std.ArrayListUnmanaged(u32) = .empty,
     /// The two instructions before the current one, for the prologue.
     last: [2]?ast.Instr = .{ null, null },
+    calls_random: bool = false,
+    /// How far a read of the stack pointer is into its prologue.
+    sp_read: enum { none, got, got_const } = .none,
 
     const fn_label = "fn";
 
@@ -425,6 +456,8 @@ const Body = struct {
     fn seq(b: *Body, indent: u8, lines: *std.ArrayListUnmanaged(ast.Line)) Error!End {
         while (true) {
             const op = try b.r.byte();
+            if (b.sp_read != .none and (op == 0x0B or op == 0x05 or (op >= 0x02 and op <= 0x04)))
+                return b.refuse("a read of `__stack_pointer` that is no frame's prologue (`global.get; i32.const N; i32.sub`)");
             const instr: ast.Instr = switch (op) {
                 0x0B => return .end,
                 0x05 => return .@"else",
@@ -481,6 +514,7 @@ const Body = struct {
                     const idx = try b.r.u32_();
                     if (idx >= b.names.len) return error.Malformed;
                     if (idx >= b.m.func_imports.len) try b.callees.append(b.ar, idx);
+                    if (idx < b.m.func_imports.len and std.mem.eql(u8, b.names[idx], random_import)) b.calls_random = true;
                     break :blk .{ .call = b.names[idx] };
                 },
                 0x11 => return b.refuse("`call_indirect` (a function table)"),
@@ -536,15 +570,29 @@ const Body = struct {
                 },
                 else => try numeric(&.{op}, b.diag),
             };
-            // The prologue `global.get $sp; i32.const N; i32.sub` opens a frame of N bytes.
-            if (instr == .op and instr.op.ty == .i32 and std.mem.eql(u8, instr.op.name, "sub")) {
-                if (b.last[1]) |k| if (k == .@"const" and k.@"const".ty == .i32) if (b.last[0]) |g| if (g == .global_get and std.mem.eql(u8, g.global_get, stack_global)) {
-                    const n = std.fmt.parseInt(u32, k.@"const".text, 10) catch return error.Malformed;
-                    b.frame = @max(b.frame, n);
-                };
+            // Decision 447 (3) — the prologue `global.get $sp; i32.const N;
+            // i32.sub` opens a frame of N bytes, and it is the only way the
+            // stack pointer is read: anything else after the read is refused.
+            // The new pointer goes through `$__std_sp_check`, which traps
+            // when it falls below the stack's floor.
+            const frame_opened = switch (b.sp_read) {
+                .none => false,
+                .got => if (instr == .@"const" and instr.@"const".ty == .i32) false else return b.refuse("a read of `__stack_pointer` that is no frame's prologue (`global.get; i32.const N; i32.sub`)"),
+                .got_const => if (instr == .op and instr.op.ty == .i32 and std.mem.eql(u8, instr.op.name, "sub")) true else return b.refuse("a read of `__stack_pointer` that is no frame's prologue (`global.get; i32.const N; i32.sub`)"),
+            };
+            b.sp_read = switch (b.sp_read) {
+                .none => if (instr == .global_get and std.mem.eql(u8, instr.global_get, stack_global)) .got else .none,
+                .got => .got_const,
+                .got_const => .none,
+            };
+            if (frame_opened) {
+                const k = b.last[1].?;
+                const n = std.fmt.parseInt(u32, k.@"const".text, 10) catch return error.Malformed;
+                b.frame = @max(b.frame, n);
             }
             b.last = .{ b.last[1], instr };
             try lines.append(b.ar, .{ .indent = indent, .instr = instr });
+            if (frame_opened) try lines.append(b.ar, .{ .indent = indent, .instr = .{ .call = stack_check } });
         }
     }
 };
@@ -641,6 +689,7 @@ fn decode(ar: std.mem.Allocator, m: *const Module, names: []const []const u8, id
         .frame = b.frame,
         .callees = b.callees.items,
         .uses_base = b.uses_base,
+        .calls_random = b.calls_random,
     };
 }
 
@@ -729,7 +778,10 @@ pub fn linkModule(ar: std.mem.Allocator, bytes: []const u8, wanted: []const []co
     for (decoded.values()) |d| if (usesGlobal(d.func.body, stack_global)) {
         uses_sp = true;
     };
-    if (uses_sp) try items.append(ar, .{ .global = .{ .name = stack_global, .ty = .i32, .mutable = true, .init = try std.fmt.allocPrint(ar, "{d}", .{top}) } });
+    if (uses_sp) {
+        try items.append(ar, .{ .global = .{ .name = stack_global, .ty = .i32, .mutable = true, .init = try std.fmt.allocPrint(ar, "{d}", .{top}) } });
+        try items.append(ar, .{ .func = try stackCheck(ar, base + mem_size) });
+    }
     var off = base;
     if (uses_data) for (m.data) |seg| {
         try items.append(ar, .{ .data = .{ .offset = off, .len_prefix = null, .bytes = seg } });
@@ -743,7 +795,26 @@ pub fn linkModule(ar: std.mem.Allocator, bytes: []const u8, wanted: []const []co
         } else d.func.name;
         try funcs.append(ar, .{ .symbol = d.func.name, .label = label, .hash = hashOf(m.bodies[idx - nimp]) });
     }
-    return .{ .items = items.items, .end = top, .funcs = funcs.items };
+    var random = false;
+    for (decoded.values()) |d| random = random or d.calls_random;
+    return .{ .items = items.items, .end = top, .funcs = funcs.items, .random = random };
+}
+
+/// `$__std_sp_check(sp)` — `sp`, or a trap when it lies below `floor`, the
+/// stack's lowest byte (decision 447 (3)). Signed, so a frame larger than
+/// the pointer (a wrap past zero) traps too.
+fn stackCheck(ar: std.mem.Allocator, floor: u32) !ast.Func {
+    const params = try ar.alloc(ast.Param, 1);
+    params[0] = .{ .name = "sp", .ty = .i32 };
+    const trap = try ar.alloc(ast.Line, 1);
+    trap[0] = .{ .instr = .@"unreachable" };
+    const lines = try ar.alloc(ast.Line, 5);
+    lines[0] = .{ .instr = .{ .local_get = "sp" } };
+    lines[1] = .{ .instr = .{ .@"const" = .{ .ty = .i32, .text = try std.fmt.allocPrint(ar, "{d}", .{floor}) } } };
+    lines[2] = .{ .instr = .{ .op = .{ .ty = .i32, .name = "lt_s" } } };
+    lines[3] = .{ .instr = .{ .@"if" = .{ .then = .{ .seq = .{ .lines = trap, .stack = .terminated }, .layout = .inline_ } } } };
+    lines[4] = .{ .instr = .{ .local_get = "sp" } };
+    return .{ .name = stack_check, .params = params, .result = .i32, .body = .{ .lines = lines, .stack = .{ .value = .i32 } } };
 }
 
 fn chain(

@@ -89,9 +89,18 @@ val list2 = [1, 2, ..[3]];
   )
   ;; std-wasm (decision 440): its functions, transpiled from std_wasm.wasm
   (global $__std_sp (mut i32) (i32.const 288))
+  (func $__std_sp_check (param $sp i32) (result i32)
+    local.get $sp
+    i32.const 256
+    i32.lt_s
+    (if
+      (then unreachable)
+    )
+    local.get $sp
+  )
   ;; __std_f23 — from std_wasm.wasm (sha256 d13a98c08300)
-  ;; __std_f25 — from std_wasm.wasm (sha256 6a251c47e9bb)
-  ;; std:array.concat — from std_wasm.wasm (sha256 76bea810e576)
+  ;; __std_f25 — from std_wasm.wasm (sha256 1a7420b46b4a)
+  ;; std:array.concat — from std_wasm.wasm (sha256 c7d4138a01c6)
 )
 ```
 

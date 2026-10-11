@@ -1357,7 +1357,7 @@ fn emitWat(
         }
     }
 
-    const memory_at = items.items.len;
+    var memory_at = items.items.len;
     try items.append(ar, .{ .memory = .{ .@"export" = "memory", .min_pages = 1 } });
 
     // The function table a lambda value indexes into.
@@ -1380,7 +1380,7 @@ fn emitWat(
         } });
     }
 
-    const heap_ptr_at = items.items.len;
+    var heap_ptr_at = items.items.len;
     try items.append(ar, .{ .global = .{
         .name = "__heap_ptr",
         .ty = .i32,
@@ -1451,6 +1451,16 @@ fn emitWat(
             error.OutOfMemory => return error.OutOfMemory,
             error.Malformed, error.Unsupported => return em.refuse(null, "std-wasm's program face cannot be transpiled into the module ({s}): {s}", .{ @errorName(err), diag.message }),
         };
+        // Decision 451 (2) — a linked function that draws the host's entropy
+        // calls the module's `$__wasi_random_f64`, which brings its WASI
+        // import (placed where the import list puts it, after `fd_write`).
+        if (linked_std.random and !em.b.helpers.has(.wasi_random_f64)) {
+            em.b.helpers.require(.wasi_random_f64);
+            try items.insert(ar, @intFromBool(em.b.helpers.has(.print)), .{ .import = prelude.random_get_import });
+            memory_at += 1;
+            heap_ptr_at += 1;
+            try items.appendSlice(ar, prelude.items(.wasi_random_f64));
+        }
         try items.append(ar, .{ .comment = "std-wasm (decision 440): its functions, transpiled from std_wasm.wasm" });
         try items.appendSlice(ar, linked_std.items);
         items.items[heap_ptr_at].global.init = try std.fmt.allocPrint(ar, "{d}", .{linked_std.end});
@@ -4447,8 +4457,6 @@ const Emitter = struct {
             .std_ => |e| try self.stdCall(e.name),
             .wasi => |ad| blk: {
                 if (std.mem.eql(u8, ad.name, "random_f64")) break :blk self.builder().helper(.wasi_random_f64);
-                if (std.mem.eql(u8, ad.name, "seed_u32")) break :blk self.builder().helper(.wasi_seed_u32);
-                if (std.mem.eql(u8, ad.name, "seeded_f64")) break :blk self.builder().helper(.wasi_seeded_f64);
                 if (std.mem.eql(u8, ad.name, "delay")) break :blk self.builder().helper(.task_delay);
                 if (std.mem.eql(u8, ad.name, "race")) break :blk self.builder().helper(.task_race);
                 if (std.mem.eql(u8, ad.name, "race_of")) {
@@ -4465,11 +4473,12 @@ const Emitter = struct {
         try lines.append(ar, .{ .indent = 4, .instr = call });
         const result: ?ValType = if (sig.result) |r| vt(r) else null;
         // A written `-> void` registers an `i32` result like every function
-        // declaring one (`fnHasResult`); an adapter answering nothing
-        // (`seed_u32`) leaves the stack empty, so the wrapper answers the 0
-        // the caller drops.
+        // declaring one (`fnHasResult`); a function answering nothing (std's
+        // `random.seed`) leaves the stack empty, so the wrapper answers the
+        // 0 the caller drops.
         const yields = switch (hb.binding) {
             .wasi => |ad| ad.result != null or ad.task != null,
+            .std_ => |e| e.result != .void,
             else => true,
         };
         if (result != null and !yields) try lines.append(ar, .{ .indent = 4, .instr = constOf(@tagName(result.?), "0") });
@@ -7025,8 +7034,8 @@ const Emitter = struct {
     /// |---|---|
     /// | `xs[i]` | `$__arr_at` — the element itself, `0` out of range |
     /// | `xs[a..b]` | std-wasm's `array.slice` — a fresh array, bounds clamped |
-    /// | `s[i]` | `$__str_slice(s, i, i+1)` — the one-byte string |
-    /// | `s[a..b]` | `$__str_slice` |
+    /// | `s[i]` | std-wasm's `text.slice(s, i, i+1)` — the code point at `i` |
+    /// | `s[a..b]` | std-wasm's `text.slice` |
     ///
     /// **`xs[i]` answers `T`, not `?T`** — the reading every other language
     /// gives it, and the one `$__arr_at` already implements for the `.at()`

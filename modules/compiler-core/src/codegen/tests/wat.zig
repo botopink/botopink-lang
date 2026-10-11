@@ -1813,25 +1813,23 @@ test "wat: host binding ---- op:, fn: and wasi: bind a declare fn" {
     );
 }
 
-// `wasi:seed_u32` / `wasi:seeded_f64` hold the seeded stream `std/io/random`
-// binds: Mulberry32 as the commonJS sidecar draws it — 39393, 29379 after
-// `seed(42)` and 28381 after `seed(-7)` are `Math.floor(draw * 65536)` of
-// `sidecars/random.mjs`'s draws. A `-> void` binding answers the 0 its
-// caller drops.
-test "wat: host binding ---- wasi:seed_u32 and wasi:seeded_f64 draw the sidecar's Mulberry32 stream" {
+// Decision 451 — `std/io/random`'s seeded stream is std-wasm's, bound by the
+// `std:` cells on `seed` / `seededFloat`: Mulberry32 as the commonJS sidecar
+// draws it — 39393, 29379 after `seed(42)` and 28381 after `seed(-7)` are
+// `Math.floor(draw * 65536)` of `sidecars/random.mjs`'s draws. A draw before
+// any seed is the host's entropy (`env.bp_random_f64`, linked to
+// `$__wasi_random_f64`), and `seed`'s `-> void` answers the 0 its caller drops.
+test "wat: std-wasm ---- seed and seededFloat draw the sidecar's Mulberry32 stream" {
     try h.assertWasmRunLog(std.testing.allocator,
-        \\#[@External.Wasm("wasi:seed_u32")]
-        \\declare fn seed(s: i32) -> void;
-        \\#[@External.Wasm("wasi:seeded_f64")]
-        \\declare fn draw() -> f64;
+        \\import {io} from "std";
         \\fn main() {
-        \\    val before = draw();
+        \\    val before = io.random.seededFloat();
         \\    @print(before >= 0.0 && before < 1.0);
-        \\    seed(42);
-        \\    @print((draw() * 65536.0).floor());
-        \\    @print((draw() * 65536.0).floor());
-        \\    seed(0 - 7);
-        \\    @print((draw() * 65536.0).floor());
+        \\    io.random.seed(42);
+        \\    @print((io.random.seededFloat() * 65536.0).floor());
+        \\    @print((io.random.seededFloat() * 65536.0).floor());
+        \\    io.random.seed(0 - 7);
+        \\    @print((io.random.seededFloat() * 65536.0).floor());
         \\}
     ,
         \\true
@@ -1975,6 +1973,14 @@ test "wat: std-wasm ---- every function std-wasm implements decodes, validates a
         .result = .i32,
         .body = .{ .lines = &.{.{ .instr = .{ .local_get = "n" } }}, .stack = .{ .value = .i32 } },
     } });
+    // The host's entropy, which `random.seededFloat` draws before any seed
+    // (decision 451 (2)).
+    try std.testing.expect(l.random);
+    try items.append(ar, .{ .func = .{
+        .name = link.random_import,
+        .result = .f64,
+        .body = .{ .lines = &.{.{ .instr = .{ .@"const" = .{ .ty = .f64, .text = "0.5" } } }}, .stack = .{ .value = .f64 } },
+    } });
     try items.appendSlice(ar, l.items);
     const m: ast.Module = .{ .items = items.items };
     try ast.validateModule(m);
@@ -1999,6 +2005,76 @@ test "wat: std-wasm ---- every function std-wasm implements decodes, validates a
     diag = .{};
     try std.testing.expectError(error.Unsupported, link.linkModule(ar, &.{ 0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00 }, &.{}, 0, &diag));
     try std.testing.expect(std.mem.indexOf(u8, diag.message, "dylink.0") != null);
+}
+
+// Decision 447 (3) — `$__std_sp` is std-wasm's one stack, and a frame that
+// would reach below its floor traps instead of writing over the data beneath
+// it. The stack is sized for the deepest frame path the program links, so no
+// program reaches its end; the test drives one past it by starting the stack
+// pointer eight bytes above the floor (a 16-byte frame then needs eight more)
+// and expects the trap, then the same module from its real top to run clean.
+// Every prologue the decoder reads goes through `$__std_sp_check`.
+test "wat: std-wasm ---- a frame past the stack's end traps, never writes below it" {
+    const link = @import("../wat/std_wasm_link.zig");
+    const ast = @import("../wat/wat_ast.zig");
+    const binary = @import("../wat/wasm_binary_emitter.zig");
+    const runtime = @import("../runtime.zig");
+    const a = std.testing.allocator;
+    var arena = std.heap.ArenaAllocator.init(a);
+    defer arena.deinit();
+    const ar = arena.allocator();
+    var diag: link.Diag = .{};
+    const l = try link.link(ar, &.{"text.indexOf"}, 256, &diag);
+    // The stack's floor, as the check reads it, and the frame-taking prologue.
+    var floor: ?[]const u8 = null;
+    var top: ?usize = null;
+    for (l.items, 0..) |it, i| switch (it) {
+        .global => |g| if (std.mem.eql(u8, g.name, link.stack_global)) {
+            top = i;
+        },
+        .func => |f| if (std.mem.eql(u8, f.name, link.stack_check)) {
+            floor = f.body.lines[1].instr.@"const".text;
+        } else if (std.mem.eql(u8, f.name, "__std_text_indexOf")) {
+            try std.testing.expect(f.body.lines[0].instr == .global_get);
+            try std.testing.expectEqualStrings(link.stack_check, f.body.lines[3].instr.call);
+        },
+        else => {},
+    };
+    const floor_at = try std.fmt.parseInt(u32, floor.?, 10);
+    try std.testing.expect(floor_at >= 256);
+
+    for ([_]bool{ true, false }) |past_end| {
+        var items: std.ArrayListUnmanaged(ast.Item) = .empty;
+        try items.append(ar, .{ .memory = .{ .@"export" = "memory", .min_pages = 1 } });
+        try items.append(ar, .{ .func = .{
+            .name = "__alloc",
+            .params = &.{.{ .name = "n", .ty = .i32 }},
+            .result = .i32,
+            .body = .{ .lines = &.{.{ .instr = .{ .@"const" = .{ .ty = .i32, .text = "4096" } } }}, .stack = .{ .value = .i32 } },
+        } });
+        const linked = try ar.dupe(ast.Item, l.items);
+        if (past_end) linked[top.?].global.init = try std.fmt.allocPrint(ar, "{d}", .{floor_at + 8});
+        try items.appendSlice(ar, linked);
+        // `"".indexOf("")`: the empty string at address 0.
+        try items.append(ar, .{ .func = .{
+            .name = "_start",
+            .exports = &.{"_start"},
+            .body = .{ .lines = &.{
+                .{ .instr = .{ .@"const" = .{ .ty = .i32, .text = "0" } } },
+                .{ .instr = .{ .@"const" = .{ .ty = .i32, .text = "0" } } },
+                .{ .instr = .{ .call = "__std_text_indexOf" } },
+                .{ .instr = .drop },
+            } },
+        } });
+        const bytes = try binary.encodeModule(ar, .{ .items = items.items });
+        const out = try runtime.executeWat(a, "", bytes, "main", std.testing.io);
+        defer a.free(out);
+        if (past_end) {
+            try std.testing.expect(std.mem.indexOf(u8, out, "unreachable") != null);
+        } else {
+            try std.testing.expectEqualStrings("", out);
+        }
+    }
 }
 
 // Decision 440 (3) — the `std:` cells `primitives.bp` writes are the ones the

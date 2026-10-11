@@ -2678,20 +2678,29 @@ test "order case over Order" {
   )
   ;; std-wasm (decision 440): its functions, transpiled from std_wasm.wasm
   (global $__std_sp (mut i32) (i32.const 432))
+  (func $__std_sp_check (param $sp i32) (result i32)
+    local.get $sp
+    i32.const 368
+    i32.lt_s
+    (if
+      (then unreachable)
+    )
+    local.get $sp
+  )
   ;; __std_f3 — from std_wasm.wasm (sha256 b4b6f06748d6)
   ;; __std_f7 — from std_wasm.wasm (sha256 91fc3314249d)
   ;; __std_f23 — from std_wasm.wasm (sha256 d13a98c08300)
-  ;; __std_f24 — from std_wasm.wasm (sha256 fe0ded32f29d)
-  ;; __std_f25 — from std_wasm.wasm (sha256 6a251c47e9bb)
+  ;; __std_f24 — from std_wasm.wasm (sha256 c94fc6496639)
+  ;; __std_f25 — from std_wasm.wasm (sha256 1a7420b46b4a)
   ;; __std_f36 — from std_wasm.wasm (sha256 8bdb3d0c8b2b)
-  ;; std:array.indexOfWord — from std_wasm.wasm (sha256 b25002ff266e)
-  ;; std:array.joinStrings — from std_wasm.wasm (sha256 be5521bc82e7)
-  ;; __std_f44 — from std_wasm.wasm (sha256 754afbaaff1c)
+  ;; std:array.indexOfWord — from std_wasm.wasm (sha256 ca1c55994fed)
+  ;; std:array.joinStrings — from std_wasm.wasm (sha256 2f8e3839b2db)
+  ;; __std_f44 — from std_wasm.wasm (sha256 c9ad15c4086e)
   ;; __std_f45 — from std_wasm.wasm (sha256 432c7dfb021a)
-  ;; __std_f46 — from std_wasm.wasm (sha256 6b108dbbfcd0)
-  ;; std:array.concat — from std_wasm.wasm (sha256 76bea810e576)
-  ;; std:array.slice — from std_wasm.wasm (sha256 b240b9529b77)
-  ;; std:number.i32ToString — from std_wasm.wasm (sha256 9c0a9db10050)
+  ;; __std_f46 — from std_wasm.wasm (sha256 dd7a963bffe6)
+  ;; std:array.concat — from std_wasm.wasm (sha256 c7d4138a01c6)
+  ;; std:array.slice — from std_wasm.wasm (sha256 0f619fc13aa1)
+  ;; std:number.i32ToString — from std_wasm.wasm (sha256 31a2b7190fa4)
 )
 ```
 
@@ -5015,20 +5024,29 @@ fn main() {
   )
   ;; std-wasm (decision 440): its functions, transpiled from std_wasm.wasm
   (global $__std_sp (mut i32) (i32.const 464))
+  (func $__std_sp_check (param $sp i32) (result i32)
+    local.get $sp
+    i32.const 400
+    i32.lt_s
+    (if
+      (then unreachable)
+    )
+    local.get $sp
+  )
   ;; __std_f3 — from std_wasm.wasm (sha256 b4b6f06748d6)
   ;; __std_f7 — from std_wasm.wasm (sha256 91fc3314249d)
   ;; __std_f23 — from std_wasm.wasm (sha256 d13a98c08300)
-  ;; __std_f24 — from std_wasm.wasm (sha256 fe0ded32f29d)
-  ;; __std_f25 — from std_wasm.wasm (sha256 6a251c47e9bb)
+  ;; __std_f24 — from std_wasm.wasm (sha256 c94fc6496639)
+  ;; __std_f25 — from std_wasm.wasm (sha256 1a7420b46b4a)
   ;; __std_f36 — from std_wasm.wasm (sha256 8bdb3d0c8b2b)
-  ;; std:array.indexOfWord — from std_wasm.wasm (sha256 b25002ff266e)
-  ;; std:array.joinStrings — from std_wasm.wasm (sha256 be5521bc82e7)
-  ;; __std_f44 — from std_wasm.wasm (sha256 754afbaaff1c)
+  ;; std:array.indexOfWord — from std_wasm.wasm (sha256 ca1c55994fed)
+  ;; std:array.joinStrings — from std_wasm.wasm (sha256 2f8e3839b2db)
+  ;; __std_f44 — from std_wasm.wasm (sha256 c9ad15c4086e)
   ;; __std_f45 — from std_wasm.wasm (sha256 432c7dfb021a)
-  ;; __std_f46 — from std_wasm.wasm (sha256 6b108dbbfcd0)
-  ;; std:array.concat — from std_wasm.wasm (sha256 76bea810e576)
-  ;; std:array.slice — from std_wasm.wasm (sha256 b240b9529b77)
-  ;; std:number.i32ToString — from std_wasm.wasm (sha256 9c0a9db10050)
+  ;; __std_f46 — from std_wasm.wasm (sha256 dd7a963bffe6)
+  ;; std:array.concat — from std_wasm.wasm (sha256 c7d4138a01c6)
+  ;; std:array.slice — from std_wasm.wasm (sha256 0f619fc13aa1)
+  ;; std:number.i32ToString — from std_wasm.wasm (sha256 31a2b7190fa4)
 )
 ```
 

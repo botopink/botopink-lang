@@ -449,6 +449,10 @@ the call), `reject/comptime_beam_call_not_converted_fn_after` (decision 439: the
 instead; it replaced `external_wasm_std_unknown` and `external_wasm_std_types`, whose refusals —
 a name std-wasm lacks, other types — only std can now meet, pinned in `codegen/tests/wat.zig`
 over a module of std's own),
+`reject/comptime_random_unseeded` (decision 451 (3): at comptime a draw of `io/random`'s seeded
+stream before any `seed` is refused at the `comptime` that reached it — a build has no entropy)
+beside `run/comptime_random_seeded` (the seeded draws at comptime, std-wasm's Mulberry32, the
+same text on all four targets),
 `reject/decorator_writes_module_var` (`decorator-writes-module-var` at the write, through a function
 of the module; the parent binary said `unbound variable`) and `reject/typeinfo_all_duplicate_at_entry`
 (two commands of one name refused at the entry point's `@TypeInfo.all`, naming both). Step 8 adds

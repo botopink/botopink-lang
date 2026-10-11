@@ -2335,6 +2335,26 @@ export fn rt_std_text__toLower(t: T) T {
     return binCopy(caseBytes(s, .lower, false));
 }
 
+// `io/random`'s seeded stream (decision 451 (3)): a comptime evaluation
+// starts from a fresh instance (`persistent_wat.zig`), so the stream is
+// unseeded until the body seeds it, and one seed answers the same draws on
+// every build. A draw before any seed is refused: a build has no entropy.
+var random_stream: stdWasm.random.Stream = .{};
+
+export fn rt_std_random__seed(s: T) T {
+    const v = intArgI32(s) orelse return &nil_cell;
+    random_stream.seed(v);
+    return a_ok;
+}
+
+export fn rt_std_random__seededFloat() T {
+    const v = random_stream.next() orelse {
+        raiseWat("an unseeded draw: a build has no entropy, call `random.seed` first (decision 451)");
+        return &nil_cell;
+    };
+    return mkFloat(v);
+}
+
 export fn rt_std_text__fromCodepoint(c: T) T {
     const cp = intArgI32(c) orelse return &nil_cell;
     var buf: [4]u8 = undefined;

@@ -3576,12 +3576,17 @@ fn main() {
 | Adapter | Signature | Answers |
 |---|---|---|
 | `random_f64` | `() -> f64` | a uniform `f64` in `[0.0, 1.0)` from 53 bits of `random_get` (an errno from the host traps) |
-| `seed_u32` | `(i32) -> void` | nothing; seeds the module's one Mulberry32 stream with the word's bits — no WASI call: the state a seeded stream needs, which no botopink module holds on every target |
-| `seeded_f64` | `() -> f64` | the stream's next draw in `[0.0, 1.0)` — Mulberry32 as the commonJS sidecar of `std/io/random` draws it, so a seed gives the same draws there and here —, or `random_f64`'s draw before any seed |
 | `delay` | `(i32, T) -> @Task<T>` | a task that settles with the value once the milliseconds have passed on the host's monotonic clock (`wasi:clocks/monotonic-clock` and `wasi:io/poll` on `wasi`, `setTimeout` on `browser`); a negative duration is `0` |
 | `race` | `(Array<@Task<T>>) -> @Task<T>` | the first of the started tasks to settle — the first settled one in input order when some already are; an empty list traps |
 | `race_of` | `(Array<fn() -> @Task<T>>) -> @Task<T>` | each thunk called in order (its task runs to its first `await`), then raced; an empty list traps |
 | `spawn_all` | `(Array<fn() -> @Task<T>>) -> @Task<Array<T>>` | each thunk called in order; the answers in input order once the last has settled |
+
+`std/io/random`'s seeded stream is std-wasm's (decision 451), bound by the
+`std:` cells on `seed` and `seededFloat`: Mulberry32 as the commonJS sidecar
+draws it, so a seed gives the same draws there, in a wasm program and at
+comptime on every target. Before any seed a wasm program's `seededFloat()`
+draws the host's entropy (`random_f64`'s); at comptime that draw is refused,
+located — a build has no entropy and never pretends to.
 
 An adapter answering `@Task<T>` (decision 393) is declared over one type
 parameter and checked by **shape** at the annotation — the signature in the

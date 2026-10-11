@@ -290,7 +290,7 @@ fn main() {
   )
   ;; std-wasm (decision 440): its functions, transpiled from std_wasm.wasm
   ;; __std_f36 — from std_wasm.wasm (sha256 8bdb3d0c8b2b)
-  ;; std:array.indexOfWord — from std_wasm.wasm (sha256 b25002ff266e)
+  ;; std:array.indexOfWord — from std_wasm.wasm (sha256 ca1c55994fed)
 )
 ```
 

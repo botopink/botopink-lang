@@ -498,13 +498,6 @@ pub const HelperGroup = enum {
     /// `$__wasi_random_f64()` — decision 238's `wasi:random_f64`, plus the
     /// `random_get` import.
     wasi_random_f64,
-    /// The two globals of the seeded stream (`$__seed_state`, `$__seeded`),
-    /// which `wasi:seed_u32` writes and `wasi:seeded_f64` reads.
-    wasi_seed_state,
-    /// `$__wasi_seed_u32(s)` — `wasi:seed_u32`.
-    wasi_seed_u32,
-    /// `$__wasi_seeded_f64()` — `wasi:seeded_f64`.
-    wasi_seeded_f64,
     /// `$__box_f64(x)` — a float's 8-byte cell, the word a float slot holds.
     box_f64,
     /// `$__print_i64` (+`_raw`) — an `i64` in all its digits (std-wasm's
@@ -592,8 +585,6 @@ pub const HelperGroup = enum {
             .arr_push => &.{.arr_new},
             .unknown => &.{.str_eq},
             .print_unknown => &.{ .print, .print_bool, .print_f64, .print_str, .print_opt, .print_shaped, .unknown },
-            .wasi_seed_u32 => &.{.wasi_seed_state},
-            .wasi_seeded_f64 => &.{ .wasi_seed_state, .wasi_random_f64 },
             .print_u64 => &.{.print},
             .print_opt_u64 => &.{ .print, .print_opt, .print_u64 },
             .task => &.{ .alloc, .task_resume, .task_poll },
@@ -679,8 +670,6 @@ pub const Helper = enum {
     print_unknown,
     print_unknown_raw,
     wasi_random_f64,
-    wasi_seed_u32,
-    wasi_seeded_f64,
     box_f64,
     print_i64,
     print_i64_raw,

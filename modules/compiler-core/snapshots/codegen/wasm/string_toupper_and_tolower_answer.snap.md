@@ -276,14 +276,23 @@ fn main() {
   )
   ;; std-wasm (decision 440): its functions, transpiled from std_wasm.wasm
   (global $__std_sp (mut i32) (i32.const 336))
+  (func $__std_sp_check (param $sp i32) (result i32)
+    local.get $sp
+    i32.const 264
+    i32.lt_s
+    (if
+      (then unreachable)
+    )
+    local.get $sp
+  )
   ;; __std_f7 — from std_wasm.wasm (sha256 91fc3314249d)
-  ;; std:text.toLower — from std_wasm.wasm (sha256 e1bd0c8ad486)
-  ;; __std_f63 — from std_wasm.wasm (sha256 fca14a252eac)
-  ;; __std_f64 — from std_wasm.wasm (sha256 2f81dc7302bb)
-  ;; __std_f65 — from std_wasm.wasm (sha256 38e98c1edeed)
-  ;; __std_f66 — from std_wasm.wasm (sha256 96b721b5358a)
-  ;; __std_f67 — from std_wasm.wasm (sha256 30c514d3cfe8)
-  ;; std:text.toUpper — from std_wasm.wasm (sha256 29eab3752faf)
+  ;; std:text.toLower — from std_wasm.wasm (sha256 05ef9046f597)
+  ;; __std_f65 — from std_wasm.wasm (sha256 1896639eef1b)
+  ;; __std_f66 — from std_wasm.wasm (sha256 2f81dc7302bb)
+  ;; __std_f67 — from std_wasm.wasm (sha256 38e98c1edeed)
+  ;; __std_f68 — from std_wasm.wasm (sha256 96b721b5358a)
+  ;; __std_f69 — from std_wasm.wasm (sha256 30c514d3cfe8)
+  ;; std:text.toUpper — from std_wasm.wasm (sha256 f46d52c95c6c)
 )
 ```
 

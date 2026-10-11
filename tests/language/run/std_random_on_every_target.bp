@@ -1,8 +1,8 @@
 //// `std/io/random` on all four targets (decision 238, `01-compiler/05-wasm`
 //// step 5): on wasm `float` is `wasi:random_f64`, `seed` / `seededFloat`
-//// the `wasi:seed_u32` / `wasi:seeded_f64` adapters (the commonJS sidecar's
-//// Mulberry32 — the same draws after the same `seed`; erlang's `exsplus`
-//// draws others), and `shuffle`, `secureToken`, `uuidV4` and `randomBytes`
+//// std-wasm's seeded stream, bound by `std:` cells (decision 451: the
+//// commonJS sidecar's Mulberry32 — the same draws after the same `seed`;
+//// erlang's `exsplus` draws others), and `shuffle`, `secureToken`, `uuidV4` and `randomBytes`
 //// private `fn:` bodies — a selection shuffle over one-element slices, bytes
 //// drawn from `random_get`. Each line prints what every target agrees on.
 

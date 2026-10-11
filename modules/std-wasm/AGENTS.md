@@ -25,8 +25,9 @@ std-wasm/
     ├── text.zig   ← the text algorithms behind std's string primitives (case over all of Unicode, titlecase, trim, graphemes, slice, reverse, find, split, replace; and a program's: code point length / offset / slice / `at`, `indexOf` / `lastIndexOf`, `charCodeAt`, `fromCodepoint`, `Split` / `Lines` / `Words`, pad, repeat, replace)
     ├── number.zig ← `shortFloat`: `float_to_binary(F, [short])`, std's `Float.toString` (`NaN`, `Infinity`, `-Infinity` for the values OTP has no float for); `signedText` / `unsignedText`, an integer's digits
     ├── array.zig  ← an array's algorithms over its slot words: `sliceRange`, `chunkCount`, `slidingCount`, `uniqueInto`, `search`
+    ├── random.zig ← `io/random`'s seeded stream (decision 451): `Stream`, Mulberry32 as the commonJS sidecar draws it; no draw before a seed
     ├── bigint.zig ← `bigint`'s arithmetic over `u32` limbs (add, sub, mul, divmod, compare, decimal text both ways, `toI64`, `toF64`), tested against `std.math.big.int`
-    └── wasm.zig   ← the program face (`zig build std-wasm`): each export over a program's own strings, arrays and `bigint` blocks, allocating through `env.bp_alloc`
+    └── wasm.zig   ← the program face (`zig build std-wasm`): each export over a program's own strings, arrays and `bigint` blocks, allocating through `env.bp_alloc`; the seeded stream's state a `.bss` `Stream`, an unseeded draw `env.bp_random_f64`
 ```
 
 ## The functions (`root.exports`)
@@ -49,6 +50,8 @@ std-wasm/
 | `text.replace`, `text.replaceAll` | `(string, string, string) -> string` | an empty pattern matches before every byte |
 | `text.fromCodepoint` | `(i32) -> string` | `String.fromCodepoint` — no scalar value traps |
 | `text.toUpper`, `text.toLower` | `(string) -> string` | `String.toUpper` / `toLower` — over all of Unicode, OTP's answer (below) |
+| `random.seed` | `(i32) -> void` | `io.random.seed` — the stream restarts from the word's bits |
+| `random.seededFloat` | `() -> f64` | `io.random.seededFloat` — the next draw in `[0.0, 1.0)`; before any seed the host's entropy in a program, refused at comptime (below) |
 
 The types a `std:` cell can spell (`Type`): `string`, `f64`, `i32`, `i64`, `bool`, `void`,
 `string[]`, `?string`. Each export has its comptime face, `rt.zig`'s `rt_std_<symbol>` (a
@@ -97,9 +100,18 @@ OTP 28's Unicode 16 tables lack (U+A7CE … U+A7D5, U+16EA0 … U+16ED3), which 
 Unicode 17 and node does. The comptime runtime's `string:uppercase` / `lowercase` /
 `titlecase` answer through the same functions (`text.caseInto`; its old limit 3 is gone).
 
-The seeded random (`io/random`'s `seed` / `seededFloat`, `wasi:seed_u32` / `wasi:seeded_f64`)
-is still the prelude's: its draw before any seed is the host's (`$__wasi_random_f64`), and
-what the comptime answers for a `std:` cell over it is open (144 B-00g's report).
+The seeded random (decision 451) is `random.zig`'s `Stream` — Mulberry32 over one word,
+the commonJS sidecar's (`libs/std/src/sidecars/random.mjs`) draw for draw — bound by the
+`std:` cells on `io/random.bp`'s `seed` / `seededFloat`. It holds no entropy: before any
+seed `next` answers null, and each face decides what that draw is. A program's
+(`wasm.zig`) calls `env.bp_random_f64`, which `std_wasm_link.zig` binds to the program's
+`$__wasi_random_f64` — the host's entropy, which stays in `wat_prelude` (it talks to the
+host). The comptime's (`rt.zig`'s `rt_std_random__seededFloat`) raises
+`{bp_wat_runtime, <<"an unseeded draw: …">>}`, which the build reports at the `comptime`
+that reached it: a build has no entropy and never pretends to (cells
+`run/comptime_random_seeded`, `reject/comptime_random_unseeded`). Each comptime evaluation
+starts from a fresh instance, so its stream is unseeded until its body seeds it, and one
+seed answers the same draws on every build and every target.
 
 ## How it is built and served
 
@@ -130,7 +142,9 @@ what the comptime answers for a `std:` cell over it is open (144 B-00g's report)
   `wat.zig` emits them as ordinary functions of the program — one module, its `.wat` the whole
   program, no host change. The side module imports `env.memory`, `env.__memory_base` (the program
   places the data after its own), `env.__stack_pointer` (a program global, a stack after the
-  data sized from the code's frames) and `env.bp_alloc` (the program's `$__alloc`). It holds no
+  data sized from the code's frames, each frame checked against its floor — decision 447),
+  `env.bp_alloc` (the program's `$__alloc`) and `env.bp_random_f64` (the program's
+  `$__wasi_random_f64`, decision 451). It holds no
   function table, no start function and no pointer in its data — which is why `shortFloat` takes
   Ryu's digits from `std.fmt.float.render` and writes the exponent by hand rather than through
   `std.Io.Writer`, whose vtable is a function table: the decoder refuses all three.

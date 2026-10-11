@@ -33,7 +33,7 @@ pub declare fn float() -> f64;
 // triple. `S` is folded to an integer via the i64 input.
 #[@External.Node("""require('./sidecars/random.mjs').seed($0)""")]
 #[@External.Erlang("""(fun(__S) -> rand:seed(exsplus, {__S, __S, __S}) end)($0)""")]
-#[@External.Wasm("wasi:seed_u32")]
+#[@External.Wasm("std:random.seed")]
 pub declare fn seed(s: i32) -> void;
 
 // Draw from the seeded PRNG when a `seed` call has been made; otherwise
@@ -43,7 +43,7 @@ pub declare fn seed(s: i32) -> void;
 // stream automatically.
 #[@External.Node("""require('./sidecars/random.mjs').seededFloat()""")]
 #[@External.Erlang("rand", "uniform")]
-#[@External.Wasm("wasi:seeded_f64")]
+#[@External.Wasm("std:random.seededFloat")]
 pub declare fn seededFloat() -> f64;
 
 // 50/50 boolean draw. `float() >= 0.5` picks the upper half of the
@@ -289,10 +289,12 @@ test "random.randomBytes(0) is empty" {
 // host. On wasm `float()` is `wasi:random_f64` — 53 bits of WASI's
 // `random_get`, the host's cryptographic source — so the token, UUID and
 // byte bodies draw from it a byte at a time (`randomByte`: ⌊u · 256⌋ of a
-// 53-bit uniform `u` is exactly uniform). `seed` / `seededFloat` are the
-// `wasi:seed_u32` / `wasi:seeded_f64` adapters, which hold the stream's state
-// and draw it as the commonJS sidecar does (Mulberry32): the same draws after
-// the same `seed`.
+// 53-bit uniform `u` is exactly uniform). `seed` / `seededFloat` are
+// std-wasm's seeded stream (decision 451, `std:random.*`), drawn as the
+// commonJS sidecar does (Mulberry32): the same draws after the same `seed`; a
+// draw before any seed is the host's (`float()`'s source). At comptime the
+// same cells answer, and a draw before any seed is refused — a build has no
+// entropy.
 
 // Selection shuffle: each step moves a uniformly drawn element of what is
 // left to the output — a uniform permutation, as the Node cell's

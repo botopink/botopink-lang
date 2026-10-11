@@ -14,7 +14,8 @@
 //! address of its `u32` length with the bytes behind it — the layout every
 //! string of a wasm program has — and an answer is a fresh string allocated
 //! through the program's bump allocator, imported as `env.bp_alloc` (the
-//! decoder binds it to `$__alloc`). The module's data, its function table and
+//! decoder binds it to `$__alloc`); the host's entropy is `env.bp_random_f64`
+//! (bound to `$__wasi_random_f64`, decision 451 (2)). The module's data, its function table and
 //! its stack are placed by the program (`__memory_base`, `__table_base`,
 //! `__stack_pointer`).
 const std = @import("std");
@@ -23,6 +24,10 @@ const root = @import("root.zig");
 /// The program's allocator: `n` fresh bytes, 4-aligned; it grows the memory
 /// or traps.
 extern "env" fn bp_alloc(n: u32) u32;
+
+/// The host's entropy (decision 451 (2)): a uniform `f64` in `[0.0, 1.0)`,
+/// the program's `$__wasi_random_f64` — what an unseeded draw answers.
+extern "env" fn bp_random_f64() f64;
 
 /// The bytes of the program string at `s`.
 fn arg(s: u32) []const u8 {
@@ -612,6 +617,20 @@ fn bigParse(s: u32) callconv(.c) u32 {
 /// Each export by its `std:` name — the table the check below reads, and the
 /// `@export`s it makes: `root.exports` (bound by `std:` cells) and
 /// `root.program` (the wasm codegen's own calls).
+/// `io/random`'s seeded stream (decision 451 (1)): one per program, `.bss`.
+var stream: root.random.Stream = .{};
+
+/// `random.seed`.
+fn seed(s: i32) callconv(.c) void {
+    stream.seed(s);
+}
+
+/// `random.seededFloat` — the stream's next draw, or the host's before any
+/// `seed`.
+fn seededFloat() callconv(.c) f64 {
+    return stream.next() orelse bp_random_f64();
+}
+
 const faces = .{
     .{ "hash.contentHash", contentHash },
     .{ "text.trim", trim },
@@ -638,6 +657,8 @@ const faces = .{
     .{ "text.fromCodepoint", fromCodepoint },
     .{ "text.toUpper", toUpper },
     .{ "text.toLower", toLower },
+    .{ "random.seed", seed },
+    .{ "random.seededFloat", seededFloat },
 };
 
 const program_faces = .{
