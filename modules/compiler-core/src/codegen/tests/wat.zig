@@ -2477,8 +2477,6 @@ test "wat: template ---- a lone float hole is a string, as a val, an element and
         \\5.5!
         \\2
         \\1.52.25
-        \\RUNTIME TRAP (wasmtime):
-        \\wasm trap: wasm `unreachable` instruction executed
         \\
     );
 }
