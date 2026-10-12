@@ -4,3 +4,4 @@
 pub mod items;
 pub mod tools;
 pub default mod shelf;
+pub mod demo;

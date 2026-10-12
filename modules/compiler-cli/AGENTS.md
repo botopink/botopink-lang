@@ -36,9 +36,12 @@ compiler-cli/
 │   │                          (a second dependency, its own module and std
 │   │                          declaring `shelf`'s names again), every file of
 │   │                          `shelf` — `.js`, `.d.ts`, `.erl`, `.S`, `.wat` —
-│   │                          compared byte for byte; in `test-cli`, and
-│   │                          alone as `zig build test-closure-invariant`
-│   ├── closure_invariant/   ← its fixture: `shelf`, `rival`, `plain`, `crowded`
+│   │                          compared byte for byte; and under `hosted`
+│   │                          (erlang, beam: a consumer binding a BEAM host
+│   │                          — `shelf/demo`'s entry point loads no sidecar
+│   │                          for it); in `test-cli`, and alone as
+│   │                          `zig build test-closure-invariant`
+│   ├── closure_invariant/   ← its fixture: `shelf`, `rival`, `plain`, `crowded`, `hosted`
 │   ├── test_tooling.sh      ← `botopink test` behaviours: empty test, --filter
 │   │                          (multi / none), assert message, a failing `try`, the
 │   │                          FAIL line's `src/main.bp:<line>` (commonJS + erlang),

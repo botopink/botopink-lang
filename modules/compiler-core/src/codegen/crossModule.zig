@@ -133,11 +133,12 @@ pub const Contested = struct {
 /// for symbols actually consumed elsewhere — single-module programs stay
 /// unchanged).
 pub const CrossModule = struct {
-    /// Some module of the build binds a BEAM host of its own — a `declare fn`
+    /// Some module of the index binds a BEAM host of its own — a `declare fn`
     /// or a `type` (or one of its methods) carrying `#[@External.Erlang(…)]` — so an emitted call can name an `.erl` sidecar
-    /// the build ships, and an entry point loads its siblings first. Set by
-    /// the erlang driver (`erlang.zig`, `buildBindsErlangHost`); false for the
-    /// other backends, which do not read it.
+    /// the build ships, and an entry point loads its siblings first
+    /// (`bindsErlangHost`). The erlang driver sets the whole program's; a
+    /// `Scope` holds its closure's. False for the other backends, which do
+    /// not read it.
     binds_erlang_host: bool = false,
     /// This index is a library's closure view (`Scopes`): the module being
     /// emitted belongs to a package other than the root — a dependency or std
@@ -1215,6 +1216,43 @@ pub const Scope = struct {
     }
 };
 
+/// Whether some module of `outputs` binds a BEAM host of its own: a
+/// `declare fn`, or a `type` (or one of its methods), carrying
+/// `#[@External.Erlang(…)]` — the beam backend's
+/// `buildBindsBeamHost`, the same rule. Only then can an emitted call name an
+/// `.erl` sidecar the build ships, so only then does an entry point load its
+/// siblings — `outputs` is a module's closure (`Scopes`), so a library's
+/// entry point never depends on whether its consumer binds one (decision
+/// 509 (2)). A `behavior`'s bindings are the prelude's vocabulary, which names
+/// OTP alone, and are not read.
+pub fn bindsErlangHost(outputs: []const ComptimeOutput) bool {
+    const Binds = struct {
+        fn any(annotations: []const ast.Annotation) bool {
+            for (annotations) |a| {
+                if (!std.mem.startsWith(u8, a.name, "External.")) continue;
+                const target = a.name["External.".len..];
+                if (std.ascii.eqlIgnoreCase(target, "erlang") or std.ascii.eqlIgnoreCase(target, "beam")) return true;
+            }
+            return false;
+        }
+    };
+    for (outputs) |*o| {
+        const program = switch (o.outcome) {
+            .ok => |*ok| ok.transformed,
+            else => continue,
+        };
+        for (program.decls) |decl| switch (decl) {
+            .@"fn" => |f| if (Binds.any(f.annotations)) return true,
+            .type_ => |t| {
+                if (Binds.any(t.annotations)) return true;
+                for (t.methods) |m| if (Binds.any(m.annotations)) return true;
+            },
+            else => {},
+        };
+    }
+    return false;
+}
+
 /// Every emitter's index restricted to its own package's dependency closure —
 /// decision 509 (2)'s invariant, one place for every backend. A package's code
 /// depends on its closure alone, never on its consumer: what the consumer, a
@@ -1334,7 +1372,7 @@ pub const Scopes = struct {
         errdefer self.alloc.free(outs);
         var cross = try buildIn(self.alloc, outs, self.whole.packages);
         errdefer cross.deinit();
-        cross.binds_erlang_host = self.whole.binds_erlang_host;
+        cross.binds_erlang_host = bindsErlangHost(outs);
         cross.exports_every_pub = !std.mem.eql(u8, self.packageOf(path), self.packages.root);
         const sc = try self.alloc.create(Scope);
         sc.* = .{ .outputs = outs, .cross = cross };

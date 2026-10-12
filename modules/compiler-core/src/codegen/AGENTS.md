@@ -922,10 +922,12 @@ codegen/
   `value(H, <<"b">>)` `erlc` refused; it is `(erlang:element(2, H))(<<"b">>)`.
   A method of that name still wins (`method_owners` answers first).
 - **A built entry point loads its siblings too** (`siblingLoaderForm`,
-  language-gaps T1). When some module of the build binds a BEAM host of its own
-  (`buildBindsErlangHost` — a `declare fn` or a `type` carrying
-  `#[@External.Erlang(…)]`, the beam backend's rule,
-  kept in `CrossModule.binds_erlang_host`), `'_botopink_main'/0` calls
+  language-gaps T1). When some module of the entry point's closure binds a BEAM
+  host of its own (`crossModule.bindsErlangHost` — a `declare fn` or a `type`
+  carrying `#[@External.Erlang(…)]`, the beam backend's rule — over the
+  module's `Scope`, kept in its `CrossModule.binds_erlang_host`: a library's
+  entry point never loads siblings because its consumer binds a host, decision
+  509 (2), `test-closure-invariant`'s `hosted` consumer), `'_botopink_main'/0` calls
   `'__bp_load_siblings'/0` right after setting `standard_io`: every `.erl`
   beside the running module's `.beam` (`code:which(?MODULE)`) whose module is
   not loadable is compiled and loaded, and one that does not compile refuses
@@ -947,7 +949,7 @@ codegen/
   otherwise, which is also the arm every module that does not compile takes. "Reaches another one" is `imported_fns`, `imported_vals`
   (a sibling's `pub val`, decision 140 — missing until onze F1, so a test that
   read one died `{error,undef}`; `conformance/test/pub_val_in_a_test`),
-  `imported_types`, **`std_imports`**, a build that binds a BEAM host of its own
+  `imported_types`, **`std_imports`**, a closure that binds a BEAM host of its own
   (`binds_erlang_host` — a test module declaring its sidecar's function imports
   nothing, and its call died `{error,undef}`;
   `conformance/test/erlang_host_sidecar_in_a_test`) and a type module of its own — the std route was missing, so

@@ -645,7 +645,7 @@ pub fn codegenEmit(
     // associated fn to a remote call into the owning module (`http:ok(...)`)
     // and an owner export only the assoc fns another module consumes.
     var cross = try crossModule.buildIn(alloc, outputs, config.packages);
-    cross.binds_erlang_host = buildBindsErlangHost(outputs);
+    cross.binds_erlang_host = crossModule.bindsErlangHost(outputs);
     defer cross.deinit();
     // Each module is lowered against its own package's closure, never the
     // whole program (decision 509 (2)): `cross` answers only the program's
@@ -2497,41 +2497,6 @@ const Forms = std.ArrayListUnmanaged(Ast.Form);
 /// incomplete without the wrapper whether or not anything is compiled beside it.
 fn externalWrapperNeeded(f: ast.FnDecl) bool {
     return f.isPub and f.isExternal() and f.body.len == 0;
-}
-
-/// Whether some module of the build binds a BEAM host of its own: a
-/// `declare fn`, or a `type` (or one of its methods), carrying
-/// `#[@External.Erlang(…)]` — the beam backend's
-/// `buildBindsBeamHost`, the same rule. Only then can an emitted call name an
-/// `.erl` sidecar the build ships, so only then does an entry point load its
-/// siblings. A `behavior`'s bindings are the prelude's vocabulary, which names
-/// OTP alone, and are not read.
-fn buildBindsErlangHost(outputs: []const ComptimeOutput) bool {
-    const Binds = struct {
-        fn any(annotations: []const ast.Annotation) bool {
-            for (annotations) |a| {
-                if (!std.mem.startsWith(u8, a.name, "External.")) continue;
-                const target = a.name["External.".len..];
-                if (std.ascii.eqlIgnoreCase(target, "erlang") or std.ascii.eqlIgnoreCase(target, "beam")) return true;
-            }
-            return false;
-        }
-    };
-    for (outputs) |*o| {
-        const program = switch (o.outcome) {
-            .ok => |*ok| ok.transformed,
-            else => continue,
-        };
-        for (program.decls) |decl| switch (decl) {
-            .@"fn" => |f| if (Binds.any(f.annotations)) return true,
-            .type_ => |t| {
-                if (Binds.any(t.annotations)) return true;
-                for (t.methods) |m| if (Binds.any(m.annotations)) return true;
-            },
-            else => {},
-        };
-    }
-    return false;
 }
 
 /// `'__bp_load_siblings'/0` of a built entry point (language-gaps T1): every
