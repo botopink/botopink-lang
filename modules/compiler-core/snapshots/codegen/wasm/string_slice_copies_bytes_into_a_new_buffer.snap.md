@@ -72,9 +72,9 @@ fn first3() -> string {
   )
   ;; std-wasm (decision 440): its functions, transpiled from std_wasm.wasm
   ;; __std_f4 — from std_wasm.wasm (sha256 b4b6f06748d6)
-  ;; __std_f262 — from std_wasm.wasm (sha256 5ac39cdc3016)
-  ;; __std_f263 — from std_wasm.wasm (sha256 cda2fb2bf3e4)
-  ;; std:text.slice — from std_wasm.wasm (sha256 d899e13e8247)
+  ;; __std_f263 — from std_wasm.wasm (sha256 5ac39cdc3016)
+  ;; __std_f264 — from std_wasm.wasm (sha256 cda2fb2bf3e4)
+  ;; std:text.slice — from std_wasm.wasm (sha256 e7f2bbc02fae)
 )
 ```
 

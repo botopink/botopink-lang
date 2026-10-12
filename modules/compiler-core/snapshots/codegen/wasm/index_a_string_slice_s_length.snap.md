@@ -257,10 +257,10 @@ fn main() {
   )
   ;; std-wasm (decision 440): its functions, transpiled from std_wasm.wasm
   ;; __std_f4 — from std_wasm.wasm (sha256 b4b6f06748d6)
-  ;; __std_f262 — from std_wasm.wasm (sha256 5ac39cdc3016)
-  ;; __std_f263 — from std_wasm.wasm (sha256 cda2fb2bf3e4)
-  ;; std:text.slice — from std_wasm.wasm (sha256 d899e13e8247)
-  ;; std:text.length — from std_wasm.wasm (sha256 60d6f49d46d9)
+  ;; __std_f263 — from std_wasm.wasm (sha256 5ac39cdc3016)
+  ;; __std_f264 — from std_wasm.wasm (sha256 cda2fb2bf3e4)
+  ;; std:text.slice — from std_wasm.wasm (sha256 e7f2bbc02fae)
+  ;; std:text.length — from std_wasm.wasm (sha256 1a6139720f71)
 )
 ```
 

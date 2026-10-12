@@ -236,6 +236,10 @@ pub const bigint_type_test: []const u8 = "bigint-type-test";
 /// never runs at build). Fires from `comptime/host_cells.zig`, naming the
 /// function and both cells.
 pub const comptime_host_cell_unavailable: []const u8 = "comptime-host-cell-unavailable";
+/// Decision 472 — an arithmetic error while a `comptime` runs: Erlang's
+/// `badarith`, in Erlang's words, located at the expression and naming it. Fires
+/// from `comptime/block_eval.zig`'s `badarithRefusal`.
+pub const comptime_badarith: []const u8 = "comptime-badarith";
 /// Decision 343 — a decorator body writes a module-level `var`: each
 /// invocation is independent. Fires from `comptime/decorator_eval.zig`
 /// `moduleVarWrite`, located at the write.
@@ -719,6 +723,7 @@ pub const all_codes = [_][]const u8{
     bigint_widened,
     bigint_type_test,
     comptime_host_cell_unavailable,
+    comptime_badarith,
     decorator_writes_module_var,
     is_type_outside_value_or_type,
     type_arg_read,

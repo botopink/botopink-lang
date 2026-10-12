@@ -1473,6 +1473,32 @@ pub fn evaluate(
     };
 }
 
+/// What a block raises on an arithmetic error: `evaluate`'s `err` text for the
+/// runtime's `{error,badarith}`.
+const badarith_raised = "the comptime block raised: {error,badarith}";
+
+/// Decision 472 — the refusal for an arithmetic error at build, when `msg` is
+/// `evaluate`'s text for one: `comptime-badarith: an error occurred when
+/// evaluating an arithmetic expression — \`<e>\`` (and `(division by zero)`
+/// when `e` is a division), located at `e`. Null when `msg` is anything else.
+pub fn badarithRefusal(env: *Env, msg: []const u8, e: ast.Expr) Error!?struct { message: []const u8, loc: ast.Loc } {
+    if (!std.mem.eql(u8, msg, badarith_raised)) return null;
+    var f = formatMod.Formatter.init(env.arena);
+    const doc = f.fmtExpr(e) catch return null;
+    const text = formatMod.render(env.arena, doc, std.math.maxInt(u16)) catch return null;
+    const cause: []const u8 = if (e == .binaryOp and e.binaryOp.op == .div) " (division by zero)" else "";
+    var at = e;
+    while (at == .binaryOp) at = at.binaryOp.lhs.*;
+    return .{
+        .message = try std.fmt.allocPrint(
+            env.arena,
+            "{s}: an error occurred when evaluating an arithmetic expression — `{s}`{s}",
+            .{ diagnostics.comptime_badarith, text, cause },
+        ),
+        .loc = at.getLoc(),
+    };
+}
+
 fn clip(text: []const u8) []const u8 {
     return text[0..@min(text.len, 4096)];
 }
@@ -1948,7 +1974,10 @@ pub fn holeValue(env: *Env, io: std.Io, hole: *const ast.Expr) Error!HoleValue {
     };
     return switch (outcome) {
         .value => |v| if (try valueTerm(env.arena, v)) |t| .{ .build = t } else .render,
-        .err => |msg| .{ .refused = .{ .message = msg, .loc = loc } },
+        .err => |msg| if (try badarithRefusal(env, msg, hole.*)) |r|
+            .{ .refused = .{ .message = r.message, .loc = r.loc } }
+        else
+            .{ .refused = .{ .message = msg, .loc = loc } },
     };
 }
 

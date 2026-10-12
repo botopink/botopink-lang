@@ -571,10 +571,10 @@ fn main() {
     )
     local.get $sp
   )
-  ;; __std_f368 — from std_wasm.wasm (sha256 d13a98c08300)
-  ;; __std_f369 — from std_wasm.wasm (sha256 f05a709b5162)
-  ;; __std_f370 — from std_wasm.wasm (sha256 ad32ed47ff25)
-  ;; std:array.slice — from std_wasm.wasm (sha256 adf5415fa730)
+  ;; __std_f369 — from std_wasm.wasm (sha256 d13a98c08300)
+  ;; __std_f370 — from std_wasm.wasm (sha256 320b3dad2775)
+  ;; __std_f371 — from std_wasm.wasm (sha256 1bf32e441984)
+  ;; std:array.slice — from std_wasm.wasm (sha256 abf56f29f0e4)
 )
 ```
 

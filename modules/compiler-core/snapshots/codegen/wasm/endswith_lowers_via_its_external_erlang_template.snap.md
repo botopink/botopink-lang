@@ -297,8 +297,8 @@ fn main() {
     local.get $sp
   )
   ;; __std_f21 — from std_wasm.wasm (sha256 61b86fc4b3a0)
-  ;; __std_f269 — from std_wasm.wasm (sha256 86e5dceaa20b)
-  ;; std:text.endsWith — from std_wasm.wasm (sha256 e81c38cbc1bb)
+  ;; __std_f270 — from std_wasm.wasm (sha256 86e5dceaa20b)
+  ;; std:text.endsWith — from std_wasm.wasm (sha256 457b371bd58b)
 )
 ```
 

@@ -1,0 +1,33 @@
+//// Decision 471 — structural equality at build answers whatever the depth: it
+//// walks the two values with an explicit work list, never the runtime's stack.
+//// `comptime same(2000000)` compares two 2,000,000-deep chains and answers
+//// `true` on every target, never wasm3's `[trap] stack overflow`.
+
+type Chain {
+    End,
+    Link(next: Chain),
+}
+
+// Two nested loops of 1000 steps build the chain: no one call stack is deep.
+fn build(n: i32) -> Chain {
+    var chain = Chain.End;
+    var outer = 0;
+    while (outer < n / 1000) {
+        var inner = 0;
+        while (inner < 1000) {
+            chain = Chain.Link(next: chain);
+            inner = inner + 1;
+        }
+        outer = outer + 1;
+    }
+    return chain;
+}
+
+fn same(n: i32) -> bool {
+    return build(n) == build(n);
+}
+
+pub fn main() {
+    val atBuild = comptime same(2000000);
+    @print(atBuild);
+}

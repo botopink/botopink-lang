@@ -1249,6 +1249,13 @@ and a `comptime` whose value holds one is refused at the `comptime` (`foldBodyCo
 `modules/bigint_arithmetic`, `modules/bigint_in_containers`, `modules/bigint_to_i64_aborts`,
 `modules/bigint_division_by_zero`, `modules/bigint_across_modules`, `reject/bigint_*`.
 
+Decision 472 — an arithmetic error while a `comptime` runs (the runtime's `{error,badarith}`) is
+`comptime-badarith: an error occurred when evaluating an arithmetic expression — \`<expression>\``
+(`(division by zero)` when the expression is a `/`), located at the expression, built by
+`block_eval.badarithRefusal` at the two places that run a block (`foldBodyComptime`, `holeValue`).
+Cell: `modules/comptime_float_division_by_zero`; the deep-equality cell is
+`modules/comptime_deep_structure_equality` (decision 471, std-wasm's `compare`).
+
 ## One variant table, four symptoms (01 step 12)
 
 Every enum variant's constructor is bound under its bare name in `Env.bindings`, where the last

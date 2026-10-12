@@ -823,6 +823,12 @@ an integer of the operands' type, on every target (`7 / 2` is `3`, `-7 / 2` is
 `-3`). With a float operand it is float division (`7.0 / 2.0` is `3.5`). A number
 literal with a `.` or an exponent is a float (`2.5`, `1e3`, `5e-324`).
 
+At build, in a `comptime`, `==` compares two values of any depth (it walks an explicit work list, never the
+runtime's stack, so two 2,000,000-deep chains answer `true`), and an arithmetic error reads as Erlang's
+`badarith`, located at the expression: ``error: comptime-badarith: an error occurred when evaluating an
+arithmetic expression — `1.0 / 0.0` (division by zero)``, the same on every target. At run time each target
+keeps its own answer (commonJS and wasm `Infinity`, erlang and beam `badarith`).
+
 ### Optionals
 
 `?T` is a `T` or `null`, and it has no methods (decision 330): it is read with

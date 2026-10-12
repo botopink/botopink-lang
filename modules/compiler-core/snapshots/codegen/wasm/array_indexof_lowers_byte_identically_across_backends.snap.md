@@ -289,8 +289,8 @@ fn main() {
     local.get $p
   )
   ;; std-wasm (decision 440): its functions, transpiled from std_wasm.wasm
-  ;; __std_f379 — from std_wasm.wasm (sha256 8bdb3d0c8b2b)
-  ;; std:array.indexOfWord — from std_wasm.wasm (sha256 e7c905c91eef)
+  ;; __std_f380 — from std_wasm.wasm (sha256 8bdb3d0c8b2b)
+  ;; std:array.indexOfWord — from std_wasm.wasm (sha256 5493ee999781)
 )
 ```
 

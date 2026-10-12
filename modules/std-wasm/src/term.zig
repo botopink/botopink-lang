@@ -639,10 +639,60 @@ fn orderBytes(a: []const u8, b: []const u8) i32 {
     };
 }
 
+/// One pending comparison of the work list `compare` walks.
+const Pair = struct { a: T, b: T, exact: bool };
+
+/// The pending comparisons of one `compare`: a fixed array first, then the
+/// heap — comparison never recurses, so a value's depth is bounded by memory
+/// and never by the runtime's stack (decision 471).
+const Work = struct {
+    items: [*]Pair,
+    len: usize,
+    cap: usize,
+    inline_items: [32]Pair,
+
+    fn init(self: *Work) void {
+        self.items = &self.inline_items;
+        self.len = 0;
+        self.cap = self.inline_items.len;
+    }
+
+    fn push(self: *Work, a: T, b: T, exact: bool) void {
+        if (self.len == self.cap) {
+            const cap = self.cap * 2;
+            const bytes = alloc(cap * @sizeOf(Pair));
+            const grown: [*]Pair = @ptrCast(@alignCast(bytes));
+            @memcpy(grown[0..self.len], self.items[0..self.len]);
+            self.items = grown;
+            self.cap = cap;
+        }
+        self.items[self.len] = .{ .a = a, .b = b, .exact = exact };
+        self.len += 1;
+    }
+};
+
 /// Erlang term order (`<`, `==`): numbers compare by value across int and
 /// float. `exact` makes `1` and `1.0` differ (`=:=`), ordering the int first
-/// — the order map keys are kept in.
+/// — the order map keys are kept in. Iterative (decision 471): the parts of a
+/// compound value wait on an explicit work list, the first part in order on
+/// top, and the first part that differs answers.
 pub fn compare(a: T, b: T, exact: bool) i32 {
+    var work: Work = undefined;
+    work.init();
+    work.push(a, b, exact);
+    while (work.len > 0) {
+        work.len -= 1;
+        const p = work.items[work.len];
+        const c = compareStep(&work, p.a, p.b, p.exact);
+        if (c != 0) return c;
+    }
+    return 0;
+}
+
+/// Compare `a` and `b` one level: a leaf answers, a compound value answers on
+/// its own header (arity, count, function index) or pushes its parts onto
+/// `work` — last part first, so they pop in order — and answers 0.
+fn compareStep(work: *Work, a: T, b: T, exact: bool) i32 {
     if (a == b) return 0;
     const ta = tagOf(a);
     const tb = tagOf(b);
@@ -663,23 +713,18 @@ pub fn compare(a: T, b: T, exact: bool) i32 {
         .binary => return orderBytes(binBytes(a), binBytes(b)),
         .nil => return 0,
         .cons => {
-            var x = a;
-            var y = b;
-            while (true) {
-                const c = compare(as(Cons, x).head, as(Cons, y).head, exact);
-                if (c != 0) return c;
-                x = as(Cons, x).tail;
-                y = as(Cons, y).tail;
-                if (tagOf(x) != .cons or tagOf(y) != .cons) return compare(x, y, exact);
-            }
+            work.push(as(Cons, a).tail, as(Cons, b).tail, exact);
+            work.push(as(Cons, a).head, as(Cons, b).head, exact);
+            return 0;
         },
         .tuple => {
             const x = as(Tuple, a);
             const y = as(Tuple, b);
             if (x.arity != y.arity) return if (x.arity < y.arity) -1 else 1;
-            for (0..x.arity) |i| {
-                const c = compare(x.items[i], y.items[i], exact);
-                if (c != 0) return c;
+            var i: usize = x.arity;
+            while (i > 0) {
+                i -= 1;
+                work.push(x.items[i], y.items[i], exact);
             }
             return 0;
         },
@@ -690,13 +735,15 @@ pub fn compare(a: T, b: T, exact: bool) i32 {
             // Keys in term order, then values in key order.
             const kx = sortedKeys(x);
             const ky = sortedKeys(y);
-            for (0..x.count) |i| {
-                const c = compare(x.keys[kx[i]], y.keys[ky[i]], true);
-                if (c != 0) return c;
+            var i: usize = x.count;
+            while (i > 0) {
+                i -= 1;
+                work.push(x.vals[kx[i]], y.vals[ky[i]], exact);
             }
-            for (0..x.count) |i| {
-                const c = compare(x.vals[kx[i]], y.vals[ky[i]], exact);
-                if (c != 0) return c;
+            i = x.count;
+            while (i > 0) {
+                i -= 1;
+                work.push(x.keys[kx[i]], y.keys[ky[i]], true);
             }
             return 0;
         },
@@ -704,7 +751,8 @@ pub fn compare(a: T, b: T, exact: bool) i32 {
             const x = as(Fun, a);
             const y = as(Fun, b);
             if (x.index != y.index) return if (x.index < y.index) -1 else 1;
-            return compare(x.env, y.env, exact);
+            work.push(x.env, y.env, exact);
+            return 0;
         },
         .builder => return 0,
     }
@@ -1118,4 +1166,30 @@ pub fn listArg(l: T) ?[]T {
         _ = badarg();
         return null;
     };
+}
+
+fn nested(depth: usize, leaf: i64) T {
+    var t = mkInt(leaf);
+    var i: usize = 0;
+    while (i < depth) : (i += 1) t = tuple(&.{ mkInt(1), t });
+    return t;
+}
+
+test "decision 471: term order and equality walk a work list, whatever the depth" {
+    const depth = 2_000_000;
+    // Two equal chains are equal; the one value that differs sits at the bottom.
+    try std.testing.expectEqual(@as(i32, 0), compare(nested(depth, 7), nested(depth, 7), true));
+    try std.testing.expectEqual(@as(i32, -1), compare(nested(depth, 7), nested(depth, 8), false));
+    try std.testing.expectEqual(@as(i32, 1), compare(nested(depth, 9), nested(depth, 8), true));
+    // A deep head of a list, then the order of its elements after it.
+    const a = alloc(@sizeOf(Cons));
+    const b = alloc(@sizeOf(Cons));
+    const ca: *Cons = @ptrCast(@alignCast(a));
+    const cb: *Cons = @ptrCast(@alignCast(b));
+    ca.* = .{ .hdr = .{ .tag = .cons }, .head = nested(depth, 1), .tail = &nil_cell };
+    cb.* = .{ .hdr = .{ .tag = .cons }, .head = nested(depth, 1), .tail = &nil_cell };
+    try std.testing.expectEqual(@as(i32, 0), compare(@ptrCast(ca), @ptrCast(cb), true));
+    // The first part in order decides: the head differs, so the tail is not read.
+    cb.head = nested(depth, 2);
+    try std.testing.expectEqual(@as(i32, -1), compare(@ptrCast(ca), @ptrCast(cb), true));
 }

@@ -19957,6 +19957,10 @@ fn foldBodyComptime(env: *Env, ct: ast.ComptimeExprOf(.untyped), typed: TypedExp
     const value = switch (outcome) {
         .value => |v| v,
         .err => |msg| {
+            if (try blockEval.badarithRefusal(env, msg, ct.kind.comptimeExpr.*)) |r| {
+                env.lastError = TypeError.custom(r.message, "Raised while the `comptime` ran at build time (decisions 331, 472): an arithmetic error reads as Erlang's `badarith`, whatever the target.").withLoc(r.loc);
+                return error.TypeError;
+            }
             env.lastError = TypeError.custom(msg, "Raised while the `comptime` ran at build time (decision 331).").withLoc(loc);
             return error.TypeError;
         },

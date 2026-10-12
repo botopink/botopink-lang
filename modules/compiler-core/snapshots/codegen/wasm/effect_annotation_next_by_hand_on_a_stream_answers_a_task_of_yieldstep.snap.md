@@ -1090,14 +1090,14 @@ pub fn main() {
     local.get $sp
   )
   ;; __std_f4 — from std_wasm.wasm (sha256 b4b6f06748d6)
-  ;; __std_f55 — from std_wasm.wasm (sha256 bb2e80829d8e)
-  ;; __std_f56 — from std_wasm.wasm (sha256 432c7dfb021a)
-  ;; __std_f368 — from std_wasm.wasm (sha256 d13a98c08300)
-  ;; __std_f369 — from std_wasm.wasm (sha256 f05a709b5162)
-  ;; __std_f370 — from std_wasm.wasm (sha256 ad32ed47ff25)
-  ;; __std_f388 — from std_wasm.wasm (sha256 f0b92bbf4191)
-  ;; std:array.slice — from std_wasm.wasm (sha256 adf5415fa730)
-  ;; std:number.i32ToString — from std_wasm.wasm (sha256 7b2719aa12dc)
+  ;; __std_f56 — from std_wasm.wasm (sha256 263f1eaf2104)
+  ;; __std_f57 — from std_wasm.wasm (sha256 432c7dfb021a)
+  ;; __std_f369 — from std_wasm.wasm (sha256 d13a98c08300)
+  ;; __std_f370 — from std_wasm.wasm (sha256 320b3dad2775)
+  ;; __std_f371 — from std_wasm.wasm (sha256 1bf32e441984)
+  ;; __std_f389 — from std_wasm.wasm (sha256 14eb645fe2e6)
+  ;; std:array.slice — from std_wasm.wasm (sha256 abf56f29f0e4)
+  ;; std:number.i32ToString — from std_wasm.wasm (sha256 cf62a5d5e059)
 )
 ```
 
