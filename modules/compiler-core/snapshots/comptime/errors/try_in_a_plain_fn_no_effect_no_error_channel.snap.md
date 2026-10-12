@@ -15,7 +15,7 @@ fn plain(n: i32) -> i32 {
 }
 
 ----- ERROR
-error: effect-try-without-fallible-channel: `try` needs a `@Result` in some layer of the return — this fn's return has no `@Result` in it
+error: effect-try-without-fallible-channel: `try` needs a `@Result` in some layer of the return — this fn's return has no `@Result` in it; `try … catch` handles the failure on the spot, and a host binding answers a `@Result` with `result: true`
   ┌─ main.bp:12:13
   │
 12 │     val v = try parse(n);

@@ -1567,6 +1567,14 @@ a `.` chain; `total + try r`, `-try x` and `(try r).length` are
 
 <!-- example: modules/result_try_each_operand -->
 
+A `throw` or a propagating `try` needs a `@Result` in some layer of the
+enclosing function's return (`@Result<T, E>`, `@Task<@Result<T, E>>`,
+`@Iterator<@Result<T, E>>`, …); in a function with none, and in a lambda whose
+expected return has none, both are `effect-try-without-fallible-channel`. The
+message names the two ways out: `try … catch` handles the failure on the spot,
+in any function, and needs no channel; a host binding answers a `@Result` with
+`result: true` (§ Host bindings).
+
 ### Tasks
 
 `@Task<T>` is a value that has not arrived yet, and `await` unwraps it. A Task
@@ -2158,6 +2166,13 @@ read `External.Erlang`, alone read it. Written on `Node`, `Wasm` or
 be a switch nothing reads, so it is refused at the annotation (`` `External.Node`
 declares no `inline` — the flag is read by the erlang and beam emitters from
 `External.Erlang` only ``).
+
+A host call that can fail answers a `@Result` only when its binding writes
+`result: true`: the return is then `@Result<T, HostError>` (or a `@Task` of
+one), and every way the host fails becomes `Error(HostError(…))`. Without the
+flag the binding promises no failure. `effect-try-without-fallible-channel`
+names this flag and `try … catch` as the ways out of a `throw` or `try` that
+has no `@Result` channel.
 
 One annotation binds the BEAM: `External.Erlang` serves the erlang and the beam
 targets, the same VM and the same OTP calls (decision 437). `@External.Beam` is

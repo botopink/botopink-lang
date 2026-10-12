@@ -428,7 +428,7 @@ pub const TypeError = struct {
                 else
                     try std.fmt.allocPrint(gpa, "use-tuple-arity: `val #(…)` binds {d} name(s) but the hook yields '{s}', which is not a tuple", .{ u.patternLen, source });
             },
-            .throwWithoutResult => std.fmt.allocPrint(gpa, "effect-try-without-fallible-channel: `throw` needs a `@Result` in some layer of the return", .{}),
+            .throwWithoutResult => std.fmt.allocPrint(gpa, "effect-try-without-fallible-channel: `throw` needs a `@Result` in some layer of the return; `try … catch` handles the failure on the spot, and a host binding answers a `@Result` with `result: true`", .{}),
             .methodNotActive => |m| std.fmt.allocPrint(gpa, "'{s}' has no active method '{s}' — activate the extension with `{s}*`", .{ m.typeName, m.method, m.hintSym }),
             .ambiguousExtension => |a| std.fmt.allocPrint(gpa, "'{s}.{s}' is provided by both '{s}' and '{s}' — qualify the call, e.g. `{s}.{s}(obj)`", .{ a.typeName, a.method, a.symA, a.symB, a.symA, a.method }),
             .notAnExtension => |name| std.fmt.allocPrint(gpa, "'{s}' does not name an implement/extend symbol", .{name}),

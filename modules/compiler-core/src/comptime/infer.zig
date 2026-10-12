@@ -13890,13 +13890,18 @@ fn generatorScopeRefusal(env: *Env, code: []const u8, what: []const u8) ![]const
     );
 }
 
+/// Decision 431 (1) — the ways out `effect-try-without-fallible-channel` names:
+/// `try … catch` handles the failure on the spot, and a host binding answers a
+/// `@Result` only under `result: true` (490).
+const fallible_channel_ways_out = "; `try … catch` handles the failure on the spot, and a host binding answers a `@Result` with `result: true`";
+
 /// Decision 121 — the refusal for `throw` / `try` in a body whose return
 /// carries no `@Result` layer, naming the return.
 fn fallibleChannelRefusal(env: *Env, what: []const u8) ![]const u8 {
     if (env.inLambdaBody) return std.fmt.allocPrint(
         env.arena,
-        "{s}: `{s}` in a lambda needs a `@Result` in the lambda's expected return — a lambda's return is the type its position expects, and this one has none",
-        .{ diagnostics.effect_try_without_fallible_channel, what },
+        "{s}: `{s}` in a lambda needs a `@Result` in the lambda's expected return — a lambda's return is the type its position expects, and this one has none{s}",
+        .{ diagnostics.effect_try_without_fallible_channel, what, fallible_channel_ways_out },
     );
     const shape: []const u8 = if (env.fnEffect) |e| switch (e) {
         .iterator, .stream => try std.fmt.allocPrint(env.arena, "the item of `@{s}<T>` has to be `@Result<T, E>` to use `throw` / `try`", .{e.returnWrapper()}),
@@ -13904,8 +13909,8 @@ fn fallibleChannelRefusal(env: *Env, what: []const u8) ![]const u8 {
     } else "this fn's return has no `@Result` in it";
     return std.fmt.allocPrint(
         env.arena,
-        "{s}: `{s}` needs a `@Result` in some layer of the return — {s}",
-        .{ diagnostics.effect_try_without_fallible_channel, what, shape },
+        "{s}: `{s}` needs a `@Result` in some layer of the return — {s}{s}",
+        .{ diagnostics.effect_try_without_fallible_channel, what, shape, fallible_channel_ways_out },
     );
 }
 

@@ -5,7 +5,7 @@ fn nums() -> @Iterator<i32> {
 }
 
 ----- ERROR
-error: effect-try-without-fallible-channel: `throw` needs a `@Result` in some layer of the return — the item of `@Iterator<T>` has to be `@Result<T, E>` to use `throw` / `try`
+error: effect-try-without-fallible-channel: `throw` needs a `@Result` in some layer of the return — the item of `@Iterator<T>` has to be `@Result<T, E>` to use `throw` / `try`; `try … catch` handles the failure on the spot, and a host binding answers a `@Result` with `result: true`
   ┌─ main.bp:3:5
   │
 3 │     throw "no";
