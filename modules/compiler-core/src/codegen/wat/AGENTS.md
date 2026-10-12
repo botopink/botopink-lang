@@ -405,7 +405,7 @@ a field or bound with no written type, a parameter type `bindParam` does not
 read (it reads a bare `T`, `T[]` / `Array<T>` and a generic record's direct
 type arguments) — and there `==` between two
 type-parameter values compares words (a composite bound where the body
-compares with `==` IS specialised, § Structural equality) and `elemKindOfTypeRef` reads a type
+compares with `==` IS specialised, § Structural equality); so is a method of a generic `type` whose receiver binds a record and whose body compares with `==` or calls a method on `self` or a parameter — `Set<Point>.contains` / `union` — and a type-qualified call such as `Set.fromList(xs)` takes the same path (`specializeMethod`) and `elemKindOfTypeRef` reads a type
 parameter as `.i32`. A string carries no header (it is a bare
 `[len][bytes]` blob), so a body cannot ask the value what it is: the copy is
 the only cure, and `modules/generic_body_specialized` pins the shapes that

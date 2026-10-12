@@ -255,7 +255,8 @@ test "dict empty boundary: size 0, at misses" {
 // ── Set<T> ──────────────────────────────────────────────────────────────────
 // `Set` (was `sets`) — Gleam-inspired — a `type Set<T>` wrapping a deduplicated
 // `Array<T>` (`items`). Pure botopink — no host backing. O(n) contains;
-// uniqueness via `Array.indexOf` (structural equality — string/numeric elems).
+// membership by `==` over `any` (decision 210: records by value on every
+// target; `indexOf` is the host's identity on commonJS and wasm).
 //
 // Instance operations are `self`-methods on the record; `empty`/`fromList`
 // are type-scoped constructors (`Set.empty()`, `Set.fromList(xs)`). API
@@ -265,7 +266,7 @@ pub type Set<T>(
     items: Array<T>,
 ) {
     pub fn contains(self: Self<T>, x: T) -> bool {
-        return self.items.indexOf(x) != -1;
+        return self.items.any({ y -> y == x });
     }
 
     pub fn size(self: Self<T>) -> i32 {
@@ -281,7 +282,7 @@ pub type Set<T>(
     }
 
     pub fn insert(self: Self<T>, x: T) -> Set<T> {
-        return if (self.items.indexOf(x) != -1)
+        return if (self.items.any({ y -> y == x }))
             self
         else
             Set(items: self.items.append([x]));
@@ -292,22 +293,18 @@ pub type Set<T>(
     }
 
     pub fn union(self: Self<T>, other: Set<T>) -> Set<T> {
-        var out = self;
-        other.items.forEach({ x ->
-            out = out.insert(x);
-        });
-        return out;
+        return Set(items: self.items.append(other.difference(self).items));
     }
 
     pub fn intersection(self: Self<T>, other: Set<T>) -> Set<T> {
         return Set(
-            items: self.items.filter({ x -> other.items.indexOf(x) != -1 }),
+            items: self.items.filter({ x -> other.contains(x) }),
         );
     }
 
     pub fn difference(self: Self<T>, other: Set<T>) -> Set<T> {
         return Set(
-            items: self.items.filter({ x -> other.items.indexOf(x) == -1 }),
+            items: self.items.filter({ x -> !other.contains(x) }),
         );
     }
 
@@ -1446,20 +1443,58 @@ test "order case over Order" {
   ;; ── Set<T> ──────────────────────────────────────────────────────────────────
   ;; `Set` (was `sets`) — Gleam-inspired — a `type Set<T>` wrapping a deduplicated
   ;; `Array<T>` (`items`). Pure botopink — no host backing. O(n) contains;
-  ;; uniqueness via `Array.indexOf` (structural equality — string/numeric elems).
+  ;; membership by `==` over `any` (decision 210: records by value on every
+  ;; target; `indexOf` is the host's identity on commonJS and wasm).
   ;; 
   ;; Instance operations are `self`-methods on the record; `empty`/`fromList`
   ;; are type-scoped constructors (`Set.empty()`, `Set.fromList(xs)`). API
   ;; naming note: `new`/`set` are keyword tokens — the constructor is `empty`.
   (func $Set_contains (param $self i32) (param $x i32) (result i32)
+    (local $__iter0 i32)
+    (local $__idx0 i32)
+    (local $__len0 i32)
+    (local $__acc0 i32)
+    (local $y i32)
     local.get $self
     i32.load ;; .items
-    local.get $x
-    call $__std_array_indexOfWord
+    local.set $__iter0
+    local.get $__iter0
+    i32.load ;; element count
+    local.set $__len0
     i32.const 0
+    local.set $__idx0
+    i32.const 0
+    local.set $__acc0
+    (block $__break
+      (loop $__continue
+        local.get $__idx0
+        local.get $__len0
+        i32.ge_s
+        br_if $__break
+        local.get $__iter0
+        local.get $__idx0
+        i32.const 4
+        i32.mul
+        i32.add
+        i32.load offset=4
+        local.set $y
+    local.get $y
+    local.get $x
+    i32.eq
+    (if
+      (then
     i32.const 1
-    call $__i32_sub_chk
-    i32.ne
+    local.set $__acc0
+      )
+    )
+        local.get $__idx0
+        i32.const 1
+        i32.add
+        local.set $__idx0
+        br $__continue
+      )
+    )
+    local.get $__acc0
     return
   )
   (func $Set_size (param $self i32) (result i32)
@@ -1484,14 +1519,51 @@ test "order case over Order" {
   (func $Set_insert (param $self i32) (param $x i32) (result i32)
     (local $__mem0 i32)
     (local $__mem1 i32)
+    (local $__iter0 i32)
+    (local $__idx0 i32)
+    (local $__len0 i32)
+    (local $__acc0 i32)
+    (local $y i32)
     local.get $self
     i32.load ;; .items
-    local.get $x
-    call $__std_array_indexOfWord
+    local.set $__iter0
+    local.get $__iter0
+    i32.load ;; element count
+    local.set $__len0
     i32.const 0
+    local.set $__idx0
+    i32.const 0
+    local.set $__acc0
+    (block $__break
+      (loop $__continue
+        local.get $__idx0
+        local.get $__len0
+        i32.ge_s
+        br_if $__break
+        local.get $__iter0
+        local.get $__idx0
+        i32.const 4
+        i32.mul
+        i32.add
+        i32.load offset=4
+        local.set $y
+    local.get $y
+    local.get $x
+    i32.eq
+    (if
+      (then
     i32.const 1
-    call $__i32_sub_chk
-    i32.ne
+    local.set $__acc0
+      )
+    )
+        local.get $__idx0
+        i32.const 1
+        i32.add
+        local.set $__idx0
+        br $__continue
+      )
+    )
+    local.get $__acc0
     (if (result i32)
       (then
     local.get $self
@@ -1613,49 +1685,28 @@ test "order case over Order" {
     return
   )
   (func $Set_union (param $self i32) (param $other i32) (result i32)
-    (local $out i32)
-    (local $__iter0 i32)
-    (local $__idx0 i32)
-    (local $__len0 i32)
-    (local $__acc0 i32)
-    (local $x i32)
+    (local $__mem0 i32)
+    i32.const 12
+    call $__alloc
+    local.set $__mem0
+    local.get $__mem0
+    i32.const 328
+    i32.store
+    local.get $__mem0
+    i32.const 0
+    i32.store offset=8
+    local.get $__mem0
     local.get $self
-    local.set $out
-    local.get $other
     i32.load ;; .items
-    local.set $__iter0
-    local.get $__iter0
-    i32.load ;; element count
-    local.set $__len0
-    i32.const 0
-    local.set $__idx0
-    i32.const 0
-    local.set $__acc0
-    (block $__break
-      (loop $__continue
-        local.get $__idx0
-        local.get $__len0
-        i32.ge_s
-        br_if $__break
-        local.get $__iter0
-        local.get $__idx0
-        i32.const 4
-        i32.mul
-        i32.add
-        i32.load offset=4
-        local.set $x
-    local.get $out
-    local.get $x
-    call $Set_insert
-    local.set $out
-        local.get $__idx0
-        i32.const 1
-        i32.add
-        local.set $__idx0
-        br $__continue
-      )
-    )
-    local.get $out
+    local.get $other
+    local.get $self
+    call $Set_difference
+    i32.load ;; .items
+    call $__std_array_concat
+    i32.store offset=4
+    local.get $__mem0
+    i32.const 4
+    i32.add
     return
   )
   (func $Set_intersection (param $self i32) (param $other i32) (result i32)
@@ -1703,13 +1754,8 @@ test "order case over Order" {
         i32.load offset=4
         local.set $x
     local.get $other
-    i32.load ;; .items
     local.get $x
-    call $__std_array_indexOfWord
-    i32.const 0
-    i32.const 1
-    call $__i32_sub_chk
-    i32.ne
+    call $Set_contains
     (if
       (then
     local.get $__out0
@@ -1792,13 +1838,9 @@ test "order case over Order" {
         i32.load offset=4
         local.set $x
     local.get $other
-    i32.load ;; .items
     local.get $x
-    call $__std_array_indexOfWord
-    i32.const 0
-    i32.const 1
-    call $__i32_sub_chk
-    i32.eq
+    call $Set_contains
+    i32.eqz
     (if
       (then
     local.get $__out0
@@ -2739,8 +2781,6 @@ test "order case over Order" {
   ;; __std_f372 — from std_wasm.wasm (sha256 d13a98c08300)
   ;; __std_f373 — from std_wasm.wasm (sha256 bc86b40f7ebe)
   ;; __std_f374 — from std_wasm.wasm (sha256 964928f3a255)
-  ;; __std_f383 — from std_wasm.wasm (sha256 8bdb3d0c8b2b)
-  ;; std:array.indexOfWord — from std_wasm.wasm (sha256 4caa678291be)
   ;; std:array.joinStrings — from std_wasm.wasm (sha256 1bf15bd4e79f)
   ;; __std_f392 — from std_wasm.wasm (sha256 0a401b24534c)
   ;; std:array.concat — from std_wasm.wasm (sha256 47da71077055)
@@ -3607,14 +3647,51 @@ fn main() {
     return
   )
   (func $Set_contains (param $self i32) (param $x i32) (result i32)
+    (local $__iter0 i32)
+    (local $__idx0 i32)
+    (local $__len0 i32)
+    (local $__acc0 i32)
+    (local $y i32)
     local.get $self
     i32.load ;; .items
-    local.get $x
-    call $__std_array_indexOfWord
+    local.set $__iter0
+    local.get $__iter0
+    i32.load ;; element count
+    local.set $__len0
     i32.const 0
+    local.set $__idx0
+    i32.const 0
+    local.set $__acc0
+    (block $__break
+      (loop $__continue
+        local.get $__idx0
+        local.get $__len0
+        i32.ge_s
+        br_if $__break
+        local.get $__iter0
+        local.get $__idx0
+        i32.const 4
+        i32.mul
+        i32.add
+        i32.load offset=4
+        local.set $y
+    local.get $y
+    local.get $x
+    i32.eq
+    (if
+      (then
     i32.const 1
-    call $__i32_sub_chk
-    i32.ne
+    local.set $__acc0
+      )
+    )
+        local.get $__idx0
+        i32.const 1
+        i32.add
+        local.set $__idx0
+        br $__continue
+      )
+    )
+    local.get $__acc0
     return
   )
   (func $Set_size (param $self i32) (result i32)
@@ -3639,14 +3716,51 @@ fn main() {
   (func $Set_insert (param $self i32) (param $x i32) (result i32)
     (local $__mem0 i32)
     (local $__mem1 i32)
+    (local $__iter0 i32)
+    (local $__idx0 i32)
+    (local $__len0 i32)
+    (local $__acc0 i32)
+    (local $y i32)
     local.get $self
     i32.load ;; .items
-    local.get $x
-    call $__std_array_indexOfWord
+    local.set $__iter0
+    local.get $__iter0
+    i32.load ;; element count
+    local.set $__len0
     i32.const 0
+    local.set $__idx0
+    i32.const 0
+    local.set $__acc0
+    (block $__break
+      (loop $__continue
+        local.get $__idx0
+        local.get $__len0
+        i32.ge_s
+        br_if $__break
+        local.get $__iter0
+        local.get $__idx0
+        i32.const 4
+        i32.mul
+        i32.add
+        i32.load offset=4
+        local.set $y
+    local.get $y
+    local.get $x
+    i32.eq
+    (if
+      (then
     i32.const 1
-    call $__i32_sub_chk
-    i32.ne
+    local.set $__acc0
+      )
+    )
+        local.get $__idx0
+        i32.const 1
+        i32.add
+        local.set $__idx0
+        br $__continue
+      )
+    )
+    local.get $__acc0
     (if (result i32)
       (then
     local.get $self
@@ -3768,49 +3882,28 @@ fn main() {
     return
   )
   (func $Set_union (param $self i32) (param $other i32) (result i32)
-    (local $out i32)
-    (local $__iter0 i32)
-    (local $__idx0 i32)
-    (local $__len0 i32)
-    (local $__acc0 i32)
-    (local $x i32)
+    (local $__mem0 i32)
+    i32.const 12
+    call $__alloc
+    local.set $__mem0
+    local.get $__mem0
+    i32.const 328
+    i32.store
+    local.get $__mem0
+    i32.const 0
+    i32.store offset=8
+    local.get $__mem0
     local.get $self
-    local.set $out
-    local.get $other
     i32.load ;; .items
-    local.set $__iter0
-    local.get $__iter0
-    i32.load ;; element count
-    local.set $__len0
-    i32.const 0
-    local.set $__idx0
-    i32.const 0
-    local.set $__acc0
-    (block $__break
-      (loop $__continue
-        local.get $__idx0
-        local.get $__len0
-        i32.ge_s
-        br_if $__break
-        local.get $__iter0
-        local.get $__idx0
-        i32.const 4
-        i32.mul
-        i32.add
-        i32.load offset=4
-        local.set $x
-    local.get $out
-    local.get $x
-    call $Set_insert
-    local.set $out
-        local.get $__idx0
-        i32.const 1
-        i32.add
-        local.set $__idx0
-        br $__continue
-      )
-    )
-    local.get $out
+    local.get $other
+    local.get $self
+    call $Set_difference
+    i32.load ;; .items
+    call $__std_array_concat
+    i32.store offset=4
+    local.get $__mem0
+    i32.const 4
+    i32.add
     return
   )
   (func $Set_intersection (param $self i32) (param $other i32) (result i32)
@@ -3858,13 +3951,8 @@ fn main() {
         i32.load offset=4
         local.set $x
     local.get $other
-    i32.load ;; .items
     local.get $x
-    call $__std_array_indexOfWord
-    i32.const 0
-    i32.const 1
-    call $__i32_sub_chk
-    i32.ne
+    call $Set_contains
     (if
       (then
     local.get $__out0
@@ -3947,13 +4035,9 @@ fn main() {
         i32.load offset=4
         local.set $x
     local.get $other
-    i32.load ;; .items
     local.get $x
-    call $__std_array_indexOfWord
-    i32.const 0
-    i32.const 1
-    call $__i32_sub_chk
-    i32.eq
+    call $Set_contains
+    i32.eqz
     (if
       (then
     local.get $__out0
@@ -5327,8 +5411,6 @@ fn main() {
   ;; __std_f372 — from std_wasm.wasm (sha256 d13a98c08300)
   ;; __std_f373 — from std_wasm.wasm (sha256 bc86b40f7ebe)
   ;; __std_f374 — from std_wasm.wasm (sha256 964928f3a255)
-  ;; __std_f383 — from std_wasm.wasm (sha256 8bdb3d0c8b2b)
-  ;; std:array.indexOfWord — from std_wasm.wasm (sha256 4caa678291be)
   ;; std:array.joinStrings — from std_wasm.wasm (sha256 1bf15bd4e79f)
   ;; __std_f392 — from std_wasm.wasm (sha256 0a401b24534c)
   ;; std:array.concat — from std_wasm.wasm (sha256 47da71077055)

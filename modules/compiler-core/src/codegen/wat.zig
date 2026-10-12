@@ -6482,7 +6482,8 @@ const Emitter = struct {
                         if (self.bigintAssoc(cc)) |which| return self.lowerBigintAssoc(which, cc);
                         if (self.assocSym(cc)) |sym_tmp| {
                             const generic = try self.arena().dupe(u8, sym_tmp);
-                            const spec = try self.specializeFor(generic, cc.args);
+                            const spec = (try self.specializeFor(generic, cc.args)) orelse
+                                (if (self.generic_methods.contains(generic)) try self.specializeMethod(generic, cc) else null);
                             const sym = spec orelse generic;
                             try self.lowerCallArgs(cc.args, self.fn_sigs.get(sym).?, 0);
                             if (spec == null and self.generic_fns.contains(sym)) try self.noteTemplateCall(sym, c.loc);
@@ -8950,7 +8951,8 @@ const Emitter = struct {
             }
             if (self.assocSym(cc)) |m| {
                 const generic = self.arena().dupe(u8, m) catch return m;
-                return (self.specializeFor(generic, cc.args) catch null) orelse generic;
+                return (self.specializeFor(generic, cc.args) catch null) orelse
+                    (if (self.generic_methods.contains(generic)) (self.specializeMethod(generic, cc) catch null) else null) orelse generic;
             }
         }
         if (self.specializedCallee(cc) catch null) |sym| return sym;
@@ -13569,6 +13571,15 @@ const Emitter = struct {
     /// (`Dict_at__K_string__V_string`). One body compared two `K` keys as
     /// WORDS — a key `split` built at run time never equalled the literal
     /// (C-18) — and read a `?V` as a box whatever `V` was.
+    /// `self` and every parameter of `m`: the names a method on which can
+    /// reach an `==` over a record bound to the owner's type parameter.
+    fn methodParamNames(ar: std.mem.Allocator, m: ast.BehaviorMethod) ![]const []const u8 {
+        const names = try ar.alloc([]const u8, m.params.len + 1);
+        names[0] = "self";
+        for (m.params, names[1..]) |p, *out| out.* = p.name;
+        return names;
+    }
+
     fn specializeMethod(self: *Emitter, sym: []const u8, cc: anytype) !?[]const u8 {
         const gm = self.generic_methods.get(sym) orelse return null;
         const m = gm.method;
@@ -13587,6 +13598,9 @@ const Emitter = struct {
                 .named => |n| if (primKindOfName(n) != null or self.records.contains(n)) {
                     try subs.append(ar, .{ .name = gp.name, .to = arg });
                     if (std.mem.eql(u8, n, "string") or std.mem.eql(u8, n, "bool") or n[0] == 'f') needed = true;
+                    // Decision 210: a record bound where the body compares with
+                    // `==` — the one body would compare two pointers.
+                    if (self.records.contains(n) and (comparesValues(ast.BehaviorMethod, m) or callsMethodOn(ast.BehaviorMethod, m, try methodParamNames(ar, m)))) needed = true;
                 },
                 else => {},
             },
@@ -13604,6 +13618,7 @@ const Emitter = struct {
             if (Local.has(subs.items, bnd.name)) continue;
             try subs.append(ar, .{ .name = bnd.name, .to = .{ .named = bnd.ty } });
             if (std.mem.eql(u8, bnd.ty, "string") or std.mem.eql(u8, bnd.ty, "bool") or bnd.ty[0] == 'f') needed = true;
+            if (self.records.contains(bnd.ty) and comparesValues(ast.BehaviorMethod, m)) needed = true;
         }
         if (subs.items.len == 0) return null;
         if (!needed and !callsMethodOn(ast.BehaviorMethod, m, params_of.items)) return null;

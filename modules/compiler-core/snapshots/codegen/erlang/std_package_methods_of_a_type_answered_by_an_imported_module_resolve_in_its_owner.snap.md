@@ -255,7 +255,8 @@ test "dict empty boundary: size 0, at misses" {
 // ── Set<T> ──────────────────────────────────────────────────────────────────
 // `Set` (was `sets`) — Gleam-inspired — a `type Set<T>` wrapping a deduplicated
 // `Array<T>` (`items`). Pure botopink — no host backing. O(n) contains;
-// uniqueness via `Array.indexOf` (structural equality — string/numeric elems).
+// membership by `==` over `any` (decision 210: records by value on every
+// target; `indexOf` is the host's identity on commonJS and wasm).
 //
 // Instance operations are `self`-methods on the record; `empty`/`fromList`
 // are type-scoped constructors (`Set.empty()`, `Set.fromList(xs)`). API
@@ -265,7 +266,7 @@ pub type Set<T>(
     items: Array<T>,
 ) {
     pub fn contains(self: Self<T>, x: T) -> bool {
-        return self.items.indexOf(x) != -1;
+        return self.items.any({ y -> y == x });
     }
 
     pub fn size(self: Self<T>) -> i32 {
@@ -281,7 +282,7 @@ pub type Set<T>(
     }
 
     pub fn insert(self: Self<T>, x: T) -> Set<T> {
-        return if (self.items.indexOf(x) != -1)
+        return if (self.items.any({ y -> y == x }))
             self
         else
             Set(items: self.items.append([x]));
@@ -292,22 +293,18 @@ pub type Set<T>(
     }
 
     pub fn union(self: Self<T>, other: Set<T>) -> Set<T> {
-        var out = self;
-        other.items.forEach({ x ->
-            out = out.insert(x);
-        });
-        return out;
+        return Set(items: self.items.append(other.difference(self).items));
     }
 
     pub fn intersection(self: Self<T>, other: Set<T>) -> Set<T> {
         return Set(
-            items: self.items.filter({ x -> other.items.indexOf(x) != -1 }),
+            items: self.items.filter({ x -> other.contains(x) }),
         );
     }
 
     pub fn difference(self: Self<T>, other: Set<T>) -> Set<T> {
         return Set(
-            items: self.items.filter({ x -> other.items.indexOf(x) == -1 }),
+            items: self.items.filter({ x -> !other.contains(x) }),
         );
     }
 
@@ -692,7 +689,9 @@ shown(X) ->
 
 % `Array<T>` (`items`). Pure botopink — no host backing. O(n) contains;
 
-% uniqueness via `Array.indexOf` (structural equality — string/numeric elems).
+% membership by `==` over `any` (decision 210: records by value on every
+
+% target; `indexOf` is the host's identity on commonJS and wasm).
 
 % 
 
@@ -900,7 +899,9 @@ ofEntries(Entries) ->
 -export([contains/2, size/1, isEmpty/1, toList/1, insert/2, delete/2, union/2, intersection/2, difference/2, empty/0, fromList/1, '__bp_get'/2, '__bp_format'/1]).
 
 contains(Self, X) ->
-    ((fun(__L, __X) -> __Find = fun __F(__I, [__H | __T]) -> case (__H =:= __X) of true -> __I; false -> __F(__I + 1, __T) end; __F(_, []) -> -1 end, __Find(0, __L) end)(erlang:element(2, Self), X) =/= (-1)).
+    array_any(erlang:element(2, Self), fun(Y) ->
+        (Y =:= X)
+    end).
 
 size(Self) ->
     erlang:length(erlang:element(2, Self)).
@@ -912,7 +913,9 @@ toList(Self) ->
     erlang:element(2, Self).
 
 insert(Self, X) ->
-    case ((fun(__L, __X) -> __Find = fun __F(__I, [__H | __T]) -> case (__H =:= __X) of true -> __I; false -> __F(__I + 1, __T) end; __F(_, []) -> -1 end, __Find(0, __L) end)(erlang:element(2, Self), X) =/= (-1)) of
+    case array_any(erlang:element(2, Self), fun(Y) ->
+        (Y =:= X)
+    end) of
         true ->
             Self;
         false ->
@@ -925,19 +928,16 @@ delete(Self, X) ->
     end, erlang:element(2, Self))}.
 
 union(Self, Other) ->
-    Out = lists:foldl(fun(X, Out) ->
-        insert(Out, X)
-    end, Self, erlang:element(2, Other)),
-    Out.
+    {std@collections@@Set, (erlang:element(2, Self) ++ erlang:element(2, difference(Other, Self)))}.
 
 intersection(Self, Other) ->
     {std@collections@@Set, lists:filter(fun(X) ->
-        ((fun(__L, __X) -> __Find = fun __F(__I, [__H | __T]) -> case (__H =:= __X) of true -> __I; false -> __F(__I + 1, __T) end; __F(_, []) -> -1 end, __Find(0, __L) end)(erlang:element(2, Other), X) =/= (-1))
+        contains(Other, X)
     end, erlang:element(2, Self))}.
 
 difference(Self, Other) ->
     {std@collections@@Set, lists:filter(fun(X) ->
-        ((fun(__L, __X) -> __Find = fun __F(__I, [__H | __T]) -> case (__H =:= __X) of true -> __I; false -> __F(__I + 1, __T) end; __F(_, []) -> -1 end, __Find(0, __L) end)(erlang:element(2, Other), X) =:= (-1))
+        (not contains(Other, X))
     end, erlang:element(2, Self))}.
 
 empty() ->
@@ -952,6 +952,9 @@ fromList(Xs) ->
 '__bp_get'(V, items) -> erlang:element(2, V).
 
 '__bp_format'(V) -> {record, "Set", [{"items", erlang:element(2, V)}]}.
+
+array_any(Self, Pred) ->
+    (erlang:length(lists:filter(Pred, Self)) =/= 0).
 ```
 
 ----- ERLANG -- std@collections@@Queue.erl

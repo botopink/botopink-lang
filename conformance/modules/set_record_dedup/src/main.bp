@@ -1,0 +1,22 @@
+//// A `Set` of records keeps one member for two records that are structurally
+//// equal (decision 210): membership is `==`, which compares records by value,
+//// not the host's identity. commonJS and wasm kept both copies.
+
+import {collections.Set} from "std";
+
+type Point(x: i32, y: i32)
+
+pub fn main() {
+    val s = Set.fromList([Point(x: 1, y: 1), Point(x: 1, y: 1), Point(x: 2, y: 2)]);
+    @print(s.size());
+    @print(s.contains(Point(x: 1, y: 1)));
+    @print(s.contains(Point(x: 3, y: 3)));
+    @print(s.toList().map({ p -> p.x }));
+    @print(s.insert(Point(x: 2, y: 2)).size());
+    @print(s.insert(Point(x: 4, y: 4)).size());
+    @print(s.delete(Point(x: 1, y: 1)).size());
+    val t = Set.fromList([Point(x: 2, y: 2), Point(x: 5, y: 5)]);
+    @print(s.union(t).size());
+    @print(s.intersection(t).size());
+    @print(s.difference(t).size());
+}

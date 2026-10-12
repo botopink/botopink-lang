@@ -255,7 +255,8 @@ test "dict empty boundary: size 0, at misses" {
 // ── Set<T> ──────────────────────────────────────────────────────────────────
 // `Set` (was `sets`) — Gleam-inspired — a `type Set<T>` wrapping a deduplicated
 // `Array<T>` (`items`). Pure botopink — no host backing. O(n) contains;
-// uniqueness via `Array.indexOf` (structural equality — string/numeric elems).
+// membership by `==` over `any` (decision 210: records by value on every
+// target; `indexOf` is the host's identity on commonJS and wasm).
 //
 // Instance operations are `self`-methods on the record; `empty`/`fromList`
 // are type-scoped constructors (`Set.empty()`, `Set.fromList(xs)`). API
@@ -265,7 +266,7 @@ pub type Set<T>(
     items: Array<T>,
 ) {
     pub fn contains(self: Self<T>, x: T) -> bool {
-        return self.items.indexOf(x) != -1;
+        return self.items.any({ y -> y == x });
     }
 
     pub fn size(self: Self<T>) -> i32 {
@@ -281,7 +282,7 @@ pub type Set<T>(
     }
 
     pub fn insert(self: Self<T>, x: T) -> Set<T> {
-        return if (self.items.indexOf(x) != -1)
+        return if (self.items.any({ y -> y == x }))
             self
         else
             Set(items: self.items.append([x]));
@@ -292,22 +293,18 @@ pub type Set<T>(
     }
 
     pub fn union(self: Self<T>, other: Set<T>) -> Set<T> {
-        var out = self;
-        other.items.forEach({ x ->
-            out = out.insert(x);
-        });
-        return out;
+        return Set(items: self.items.append(other.difference(self).items));
     }
 
     pub fn intersection(self: Self<T>, other: Set<T>) -> Set<T> {
         return Set(
-            items: self.items.filter({ x -> other.items.indexOf(x) != -1 }),
+            items: self.items.filter({ x -> other.contains(x) }),
         );
     }
 
     pub fn difference(self: Self<T>, other: Set<T>) -> Set<T> {
         return Set(
-            items: self.items.filter({ x -> other.items.indexOf(x) == -1 }),
+            items: self.items.filter({ x -> !other.contains(x) }),
         );
     }
 
@@ -916,7 +913,9 @@ function shown(x) {
 
 // `Array<T>` (`items`). Pure botopink — no host backing. O(n) contains;
 
-// uniqueness via `Array.indexOf` (structural equality — string/numeric elems).
+// membership by `==` over `any` (decision 210: records by value on every
+
+// target; `indexOf` is the host's identity on commonJS and wasm).
 
 // 
 
@@ -932,7 +931,9 @@ class Set {
     }
 
     contains(x) {
-        return (this.items.indexOf(x) !== (-1));
+        return this.items.any((y) => {
+    return __bp_eq(y, x, 0);
+});
     }
 
     size() {
@@ -948,7 +949,9 @@ class Set {
     }
 
     insert(x) {
-        return (() => { if ((this.items.indexOf(x) !== (-1))) { return this; } else { return new Set(this.items.concat([x])); } })();
+        return (() => { if (this.items.any((y) => {
+    return __bp_eq(y, x, 0);
+})) { return this; } else { return new Set(this.items.concat([x])); } })();
     }
 
     delete(x) {
@@ -958,22 +961,18 @@ class Set {
     }
 
     union(other) {
-        let out = this;
-        other.items.forEach((x) => {
-    out = out.insert(x);
-});
-        return out;
+        return new Set(this.items.concat(other.difference(this).items));
     }
 
     intersection(other) {
         return new Set(this.items.filter((x) => {
-    return (other.items.indexOf(x) !== (-1));
+    return other.contains(x);
 }));
     }
 
     difference(other) {
         return new Set(this.items.filter((x) => {
-    return (other.items.indexOf(x) === (-1));
+    return (!other.contains(x));
 }));
     }
 
