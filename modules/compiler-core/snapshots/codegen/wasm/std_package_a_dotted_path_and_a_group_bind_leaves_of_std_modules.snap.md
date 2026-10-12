@@ -588,12 +588,13 @@ test "order case over Order" {
   (data (i32.const 264) "\05\00\00\00Dict(")
   (data (i32.const 276) "\02\00\00\00, ")
   (data (i32.const 284) "\01\00\00\00)")
-  (data (i32.const 292) "\0e\00\00\00R\04Dict\01\05pairsi")
-  (data (i32.const 312) "\01\00\00\00\"")
-  (data (i32.const 320) "\00\00\00\00")
-  (data (i32.const 324) "\0d\00\00\00R\03Set\01\05itemsi")
-  (data (i32.const 344) "\0f\00\00\00R\05Queue\01\05itemsi")
-  (global $__heap_ptr (mut i32) (i32.const 432))
+  (data (i32.const 292) "\0e\00\00\00R\04Dict\01\05pairsG")
+  (data (i32.const 312) "\02\00\00\00[i")
+  (data (i32.const 320) "\01\00\00\00\"")
+  (data (i32.const 328) "\00\00\00\00")
+  (data (i32.const 332) "\0d\00\00\00R\03Set\01\05itemsG")
+  (data (i32.const 352) "\0f\00\00\00R\05Queue\01\05itemsG")
+  (global $__heap_ptr (mut i32) (i32.const 448))
   ;; std/collections — the four collection types, one namespace each (decision
   ;; 106): `Dict<K, V>`, `Set<T>`, `Queue<T>` and `Order`. Was the four modules
   ;; `dict`, `sets`, `queue` and `order`; the type is the namespace now, so a
@@ -1015,7 +1016,7 @@ test "order case over Order" {
     i32.const 296
     i32.store
     local.get $__mem0
-    i32.const 0
+    i32.const 316
     i32.store offset=8
     local.get $__mem0
     local.get $filtered
@@ -1085,7 +1086,7 @@ test "order case over Order" {
     i32.const 296
     i32.store
     local.get $__mem0
-    i32.const 0
+    i32.const 316
     i32.store offset=8
     local.get $__mem0
     local.get $self
@@ -1336,7 +1337,7 @@ test "order case over Order" {
     i32.const 296
     i32.store
     local.get $__mem2
-    i32.const 0
+    i32.const 316
     i32.store offset=8
     local.get $__mem2
     local.get $out
@@ -1356,7 +1357,7 @@ test "order case over Order" {
     i32.const 296
     i32.store
     local.get $__mem0
-    i32.const 0
+    i32.const 316
     i32.store offset=8
     local.get $__mem0
     i32.const 4
@@ -1388,7 +1389,7 @@ test "order case over Order" {
     i32.const 296
     i32.store
     local.get $__mem0
-    i32.const 0
+    i32.const 316
     i32.store offset=8
     local.get $__mem0
     i32.const 4
@@ -1451,11 +1452,11 @@ test "order case over Order" {
     i32.eq
     (if (result i32)
       (then
-    i32.const 312
+    i32.const 320
     local.get $x
     call $__std_number_i32ToString
     call $__str_concat
-    i32.const 312
+    i32.const 320
     call $__str_concat
     return
       )
@@ -1464,7 +1465,7 @@ test "order case over Order" {
       )
     )
     drop
-    i32.const 320
+    i32.const 328
     local.get $x
     call $__std_number_i32ToString
     call $__str_concat
@@ -1605,10 +1606,10 @@ test "order case over Order" {
     call $__alloc
     local.set $__mem0
     local.get $__mem0
-    i32.const 328
+    i32.const 336
     i32.store
     local.get $__mem0
-    i32.const 0
+    i32.const 316
     i32.store offset=8
     local.get $__mem0
     local.get $self
@@ -1644,10 +1645,10 @@ test "order case over Order" {
     call $__alloc
     local.set $__mem0
     local.get $__mem0
-    i32.const 328
+    i32.const 336
     i32.store
     local.get $__mem0
-    i32.const 0
+    i32.const 316
     i32.store offset=8
     local.get $__mem0
     local.get $self
@@ -1722,10 +1723,10 @@ test "order case over Order" {
     call $__alloc
     local.set $__mem0
     local.get $__mem0
-    i32.const 328
+    i32.const 336
     i32.store
     local.get $__mem0
-    i32.const 0
+    i32.const 316
     i32.store offset=8
     local.get $__mem0
     local.get $self
@@ -1753,10 +1754,10 @@ test "order case over Order" {
     call $__alloc
     local.set $__mem0
     local.get $__mem0
-    i32.const 328
+    i32.const 336
     i32.store
     local.get $__mem0
-    i32.const 0
+    i32.const 316
     i32.store offset=8
     local.get $__mem0
     local.get $self
@@ -1837,10 +1838,10 @@ test "order case over Order" {
     call $__alloc
     local.set $__mem0
     local.get $__mem0
-    i32.const 328
+    i32.const 336
     i32.store
     local.get $__mem0
-    i32.const 0
+    i32.const 316
     i32.store offset=8
     local.get $__mem0
     local.get $self
@@ -1917,10 +1918,10 @@ test "order case over Order" {
     call $__alloc
     local.set $__mem0
     local.get $__mem0
-    i32.const 328
+    i32.const 336
     i32.store
     local.get $__mem0
-    i32.const 0
+    i32.const 316
     i32.store offset=8
     local.get $__mem0
     i32.const 4
@@ -1949,10 +1950,10 @@ test "order case over Order" {
     call $__alloc
     local.set $__mem0
     local.get $__mem0
-    i32.const 328
+    i32.const 336
     i32.store
     local.get $__mem0
-    i32.const 0
+    i32.const 316
     i32.store offset=8
     local.get $__mem0
     i32.const 4
@@ -2035,10 +2036,10 @@ test "order case over Order" {
     call $__alloc
     local.set $__mem0
     local.get $__mem0
-    i32.const 348
+    i32.const 356
     i32.store
     local.get $__mem0
-    i32.const 0
+    i32.const 316
     i32.store offset=8
     local.get $__mem0
     local.get $self
@@ -2086,10 +2087,10 @@ test "order case over Order" {
     call $__alloc
     local.set $__mem1
     local.get $__mem1
-    i32.const 348
+    i32.const 356
     i32.store
     local.get $__mem1
-    i32.const 0
+    i32.const 316
     i32.store offset=8
     local.get $__mem1
     local.get $rest
@@ -2123,10 +2124,10 @@ test "order case over Order" {
     call $__alloc
     local.set $__mem0
     local.get $__mem0
-    i32.const 348
+    i32.const 356
     i32.store
     local.get $__mem0
-    i32.const 0
+    i32.const 316
     i32.store offset=8
     local.get $__mem0
     i32.const 4
@@ -2148,10 +2149,10 @@ test "order case over Order" {
     call $__alloc
     local.set $__mem0
     local.get $__mem0
-    i32.const 348
+    i32.const 356
     i32.store
     local.get $__mem0
-    i32.const 0
+    i32.const 316
     i32.store offset=8
     local.get $__mem0
     local.get $xs
@@ -2796,10 +2797,10 @@ test "order case over Order" {
     local.get $r
   )
   ;; std-wasm (decision 440): its functions, transpiled from std_wasm.wasm
-  (global $__std_sp (mut i32) (i32.const 432))
+  (global $__std_sp (mut i32) (i32.const 448))
   (func $__std_sp_check (param $sp i32) (result i32)
     local.get $sp
-    i32.const 368
+    i32.const 376
     i32.lt_s
     (if
       (then unreachable)
@@ -2846,12 +2847,13 @@ fn main() {
   (data (i32.const 264) "\05\00\00\00Dict(")
   (data (i32.const 276) "\02\00\00\00, ")
   (data (i32.const 284) "\01\00\00\00)")
-  (data (i32.const 292) "\0e\00\00\00R\04Dict\01\05pairsi")
-  (data (i32.const 312) "\01\00\00\00\"")
-  (data (i32.const 320) "\00\00\00\00")
-  (data (i32.const 324) "\0d\00\00\00R\03Set\01\05itemsi")
-  (data (i32.const 344) "\0f\00\00\00R\05Queue\01\05itemsi")
-  (data (i32.const 364) "\01\00\00\00a")
+  (data (i32.const 292) "\0e\00\00\00R\04Dict\01\05pairsG")
+  (data (i32.const 312) "\02\00\00\00[i")
+  (data (i32.const 320) "\01\00\00\00\"")
+  (data (i32.const 328) "\00\00\00\00")
+  (data (i32.const 332) "\0d\00\00\00R\03Set\01\05itemsG")
+  (data (i32.const 352) "\0f\00\00\00R\05Queue\01\05itemsG")
+  (data (i32.const 372) "\01\00\00\00a")
   (global $__heap_ptr (mut i32) (i32.const 448))
   (func $Dict_display (param $self i32) (result i32)
     (local $__mem0 i32)
@@ -3249,7 +3251,7 @@ fn main() {
     i32.const 296
     i32.store
     local.get $__mem0
-    i32.const 0
+    i32.const 316
     i32.store offset=8
     local.get $__mem0
     local.get $filtered
@@ -3319,7 +3321,7 @@ fn main() {
     i32.const 296
     i32.store
     local.get $__mem0
-    i32.const 0
+    i32.const 316
     i32.store offset=8
     local.get $__mem0
     local.get $self
@@ -3570,7 +3572,7 @@ fn main() {
     i32.const 296
     i32.store
     local.get $__mem2
-    i32.const 0
+    i32.const 316
     i32.store offset=8
     local.get $__mem2
     local.get $out
@@ -3590,7 +3592,7 @@ fn main() {
     i32.const 296
     i32.store
     local.get $__mem0
-    i32.const 0
+    i32.const 316
     i32.store offset=8
     local.get $__mem0
     i32.const 4
@@ -3622,7 +3624,7 @@ fn main() {
     i32.const 296
     i32.store
     local.get $__mem0
-    i32.const 0
+    i32.const 316
     i32.store offset=8
     local.get $__mem0
     i32.const 4
@@ -3683,11 +3685,11 @@ fn main() {
     i32.eq
     (if (result i32)
       (then
-    i32.const 312
+    i32.const 320
     local.get $x
     call $__std_number_i32ToString
     call $__str_concat
-    i32.const 312
+    i32.const 320
     call $__str_concat
     return
       )
@@ -3696,7 +3698,7 @@ fn main() {
       )
     )
     drop
-    i32.const 320
+    i32.const 328
     local.get $x
     call $__std_number_i32ToString
     call $__str_concat
@@ -3826,10 +3828,10 @@ fn main() {
     call $__alloc
     local.set $__mem0
     local.get $__mem0
-    i32.const 328
+    i32.const 336
     i32.store
     local.get $__mem0
-    i32.const 0
+    i32.const 316
     i32.store offset=8
     local.get $__mem0
     local.get $self
@@ -3865,10 +3867,10 @@ fn main() {
     call $__alloc
     local.set $__mem0
     local.get $__mem0
-    i32.const 328
+    i32.const 336
     i32.store
     local.get $__mem0
-    i32.const 0
+    i32.const 316
     i32.store offset=8
     local.get $__mem0
     local.get $self
@@ -3943,10 +3945,10 @@ fn main() {
     call $__alloc
     local.set $__mem0
     local.get $__mem0
-    i32.const 328
+    i32.const 336
     i32.store
     local.get $__mem0
-    i32.const 0
+    i32.const 316
     i32.store offset=8
     local.get $__mem0
     local.get $self
@@ -3974,10 +3976,10 @@ fn main() {
     call $__alloc
     local.set $__mem0
     local.get $__mem0
-    i32.const 328
+    i32.const 336
     i32.store
     local.get $__mem0
-    i32.const 0
+    i32.const 316
     i32.store offset=8
     local.get $__mem0
     local.get $self
@@ -4058,10 +4060,10 @@ fn main() {
     call $__alloc
     local.set $__mem0
     local.get $__mem0
-    i32.const 328
+    i32.const 336
     i32.store
     local.get $__mem0
-    i32.const 0
+    i32.const 316
     i32.store offset=8
     local.get $__mem0
     local.get $self
@@ -4138,10 +4140,10 @@ fn main() {
     call $__alloc
     local.set $__mem0
     local.get $__mem0
-    i32.const 328
+    i32.const 336
     i32.store
     local.get $__mem0
-    i32.const 0
+    i32.const 316
     i32.store offset=8
     local.get $__mem0
     i32.const 4
@@ -4170,10 +4172,10 @@ fn main() {
     call $__alloc
     local.set $__mem0
     local.get $__mem0
-    i32.const 328
+    i32.const 336
     i32.store
     local.get $__mem0
-    i32.const 0
+    i32.const 316
     i32.store offset=8
     local.get $__mem0
     i32.const 4
@@ -4245,10 +4247,10 @@ fn main() {
     call $__alloc
     local.set $__mem0
     local.get $__mem0
-    i32.const 348
+    i32.const 356
     i32.store
     local.get $__mem0
-    i32.const 0
+    i32.const 316
     i32.store offset=8
     local.get $__mem0
     local.get $self
@@ -4296,10 +4298,10 @@ fn main() {
     call $__alloc
     local.set $__mem1
     local.get $__mem1
-    i32.const 348
+    i32.const 356
     i32.store
     local.get $__mem1
-    i32.const 0
+    i32.const 316
     i32.store offset=8
     local.get $__mem1
     local.get $rest
@@ -4333,10 +4335,10 @@ fn main() {
     call $__alloc
     local.set $__mem0
     local.get $__mem0
-    i32.const 348
+    i32.const 356
     i32.store
     local.get $__mem0
-    i32.const 0
+    i32.const 316
     i32.store offset=8
     local.get $__mem0
     i32.const 4
@@ -4358,10 +4360,10 @@ fn main() {
     call $__alloc
     local.set $__mem0
     local.get $__mem0
-    i32.const 348
+    i32.const 356
     i32.store
     local.get $__mem0
-    i32.const 0
+    i32.const 316
     i32.store offset=8
     local.get $__mem0
     local.get $xs
@@ -4450,7 +4452,7 @@ fn main() {
     call $Dict_empty
     local.set $d
     local.get $d
-    i32.const 364
+    i32.const 372
     i32.const 1
     call $Dict_insert__K_string__V_i32
     call $Dict_size__K_string__V_i32
@@ -4541,7 +4543,7 @@ fn main() {
     i32.const 296
     i32.store
     local.get $__mem0
-    i32.const 0
+    i32.const 316
     i32.store offset=8
     local.get $__mem0
     local.get $filtered
@@ -5318,7 +5320,7 @@ fn main() {
   (global $__std_sp (mut i32) (i32.const 448))
   (func $__std_sp_check (param $sp i32) (result i32)
     local.get $sp
-    i32.const 376
+    i32.const 384
     i32.lt_s
     (if
       (then unreachable)

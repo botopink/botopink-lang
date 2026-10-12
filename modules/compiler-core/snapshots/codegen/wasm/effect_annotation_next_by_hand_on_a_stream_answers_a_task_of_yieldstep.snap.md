@@ -31,7 +31,7 @@ pub fn main() {
   (memory (export "memory") 1)
   (data (i32.const 256) "\06\00\00\00yield ")
   (data (i32.const 268) "\04\00\00\00done")
-  (data (i32.const 276) "\1b\00\00\00V\0fYieldStep.Yield\01\05valueGsi")
+  (data (i32.const 276) "\19\00\00\00V\0fYieldStep.Yield\01\05valueG")
   (data (i32.const 308) "\11\00\00\00V\0eYieldStep.Done\00")
   (global $__heap_ptr (mut i32) (i32.const 400))
   ;; @Stream — eager lowering

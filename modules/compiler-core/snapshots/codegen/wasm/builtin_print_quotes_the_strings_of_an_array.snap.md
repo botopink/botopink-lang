@@ -465,7 +465,7 @@ fn main() {
     call $__write_bytes
   )
   (func $__print_tagged_raw (param $v i32)
-    (local $d i32) (local $p i32) (local $k i32) (local $i i32) (local $n i32) (local $b i32) (local $s i32)
+    (local $d i32) (local $p i32) (local $k i32) (local $i i32) (local $n i32) (local $b i32) (local $s i32) (local $q i32)
     local.get $v
     call $__display_of
     local.set $s
@@ -596,26 +596,26 @@ fn main() {
         i32.eq
         (if
           (then
+            local.get $q
+            i32.eqz
+            (if
+              (then
+                local.get $b
+                local.get $k
+                i32.const 4
+                i32.mul
+                i32.add
+                i32.load
+                local.set $q
+              )
+            )
             local.get $s
-            local.get $p
-            i32.const 2
-            i32.add
-            local.get $b
-            local.get $k
-            i32.const 4
-            i32.mul
-            i32.add
-            i32.load
-            local.get $i
-            i32.shr_u
-            i32.const 1
-            i32.and
-            i32.sub
+            local.get $q
             i32.const 1
             call $__print_shaped_raw
-            drop
+            local.set $q
             local.get $p
-            i32.const 3
+            i32.const 1
             i32.add
             local.set $p
           )

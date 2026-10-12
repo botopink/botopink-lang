@@ -117,7 +117,7 @@ fn putPair(comptime a: comptime_int, comptime b: comptime_int) [8]Instr {
 /// descriptor needs no length for it. A record's fields start at the pointer;
 /// a variant's start one slot in, because slot 0 holds the variant ordinal the
 /// `case` arms test.
-const print_tagged_raw = func("__print_tagged_raw", &.{"v"}, null, i32s(&.{ "d", "p", "k", "i", "n", "b", "s" }), &.{
+const print_tagged_raw = func("__print_tagged_raw", &.{"v"}, null, i32s(&.{ "d", "p", "k", "i", "n", "b", "s", "q" }), &.{
     // Decision 8 §7's `Display` half: a type whose `display(self) -> string`
     // the module declares answers its own text. `$__display_of` is written by
     // `wat.zig` per module (a descriptor compare per such type, `0` for none).
@@ -149,18 +149,19 @@ const print_tagged_raw = func("__print_tagged_raw", &.{"v"}, null, i32s(&.{ "d",
     } ++ slot("b", "i") ++ [_]Instr{
         c32(4),   op("sub"), load(0),
         set("s"),
-        // `G s i` — a field written as the declaration's type parameter. Its
-        // construction site stored, after the fields, a mask whose bit `i` says
-        // the argument was a string: the `s` shape then, the `i` one if not.
+        // `G` — a field written as the declaration's type parameter, or an
+        // array or tuple of one. Its construction site stored, after the
+        // fields, the address of its arguments' shapes, one after another:
+        // `q` walks them, read at the first `G`.
         get("p"),  load8(0),
         c32('G'), op("eq"),
         whenElse(&.{
-            get("s"),                   get("p"),  c32(2),    op("add"),
-            get("b"),                   get("k"),  c32(4),    op("mul"),
-            op("add"),                  load(0),   get("i"),  op("shr_u"),
-            c32(1),                     op("and"), op("sub"), c32(1),
-            call("__print_shaped_raw"), .drop,     get("p"),  c32(3),
-            op("add"),                  set("p"),
+            get("q"),                                                                        op("eqz"),
+            when(&.{ get("b"), get("k"), c32(4), op("mul"), op("add"), load(0), set("q") }), get("s"),
+            get("q"),                                                                        c32(1),
+            call("__print_shaped_raw"),                                                      set("q"),
+            get("p"),                                                                        c32(1),
+            op("add"),                                                                       set("p"),
         }, &.{
             get("s"), get("p"), c32(1), call("__print_shaped_raw"), set("p"),
         }),

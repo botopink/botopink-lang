@@ -10,8 +10,9 @@ fn apply(s: State<i32>) -> i32 { s.set(s.value); return s.value; }
 (module
   (memory (export "memory") 1)
   (table funcref (elem $__lambda0))
-  (data (i32.const 256) "\16\00\00\00R\05State\02\05valueGsi\03seti")
-  (global $__heap_ptr (mut i32) (i32.const 284))
+  (data (i32.const 256) "\14\00\00\00R\05State\02\05valueG\03seti")
+  (data (i32.const 280) "\01\00\00\00i")
+  (global $__heap_ptr (mut i32) (i32.const 288))
   (func $make (result i32)
     (local $__mem0 i32)
     (local $__mem1 i32)
@@ -22,7 +23,7 @@ fn apply(s: State<i32>) -> i32 { s.set(s.value); return s.value; }
     i32.const 260
     i32.store
     local.get $__mem0
-    i32.const 0
+    i32.const 284
     i32.store offset=12
     local.get $__mem0
     i32.const 0

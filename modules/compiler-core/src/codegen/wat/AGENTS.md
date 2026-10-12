@@ -1090,13 +1090,19 @@ descriptor per variant, not per enum**: a variant IS a declaration for the
 purpose of identity, and that is what lets the printer name `Shape.Circle`
 without walking past the variants before it.
 
-A field written as one of the declaration's type parameters (`value: T`) has the
-shape `Gsi`, and a value of a generic declaration carries one more slot after its
-fields: a mask whose bit `i` says the argument of field `i` was a string, stored
-by the construction site (`genericMask`). The descriptor stays one per
-declaration, so identity tests are untouched; `$__print_tagged_raw` reads the
-mask and prints the field by `s` or by `i`. A value built where the argument's
-type is unknown (a parameter typed `T` of a generic body) keeps the `i` reading.
+A field written as one of the declaration's type parameters (`value: T`), or as
+an array or a tuple of one (`items: Array<T>`, `kids: T[]`), has the shape `G`
+(`isGenericField`), and a value of a generic declaration carries one more slot
+after its fields: the address of its `G` fields' argument shapes, one after
+another in field order, interned by the construction site (`genericShapes`,
+each `valueShapeOf` its argument). The descriptor stays one per declaration, so
+identity tests are untouched; `$__print_tagged_raw` walks those shapes (`q`) at
+each `G`. `Q(items: [7])` over `Q<T>(items: Array<T>)` printed `Q(items: 308)`,
+and `B(v: o)` over a `?i32` the box's address
+(`conformance/modules/generic_record_prints_its_arguments`). A `?T` field keeps
+its declared box shape, a record or enum argument its header. A value built where
+the argument's shape is unknown (a parameter typed `T` of a generic body) reads
+as a word, `i`.
 
 * `$__print_tagged_raw` (in the `print_shaped` group, because the two call each
   other) writes decision 8 §7's text: `Point(x: 1, y: 2)`, `Shape.Dot`,

@@ -13860,7 +13860,7 @@ const Emitter = struct {
         const base = try self.allocTagged(desc orelse 0, @intCast((fields.len + @intFromBool(rgens.len > 0)) * 4));
         if (rgens.len > 0) {
             const refs = self.record_field_typerefs.get(cc.callee) orelse &.{};
-            try self.storeSlotConst(base, @intCast(tag_header_bytes + fields.len * 4), self.genericMask(cc, fields, refs, rgens));
+            try self.storeSlotConst(base, @intCast(tag_header_bytes + fields.len * 4), try self.genericShapes(cc, fields, refs, rgens));
         }
         for (fields, 0..) |fname, i| {
             const off: u32 = @intCast(tag_header_bytes + i * 4);
@@ -13946,7 +13946,7 @@ const Emitter = struct {
                 try names.append(self.arena(), vf.name);
                 try refs.append(self.arena(), vf.typeRef);
             }
-            try self.storeSlotConst(base, @intCast(tag_header_bytes + nslots * 4), self.genericMask(cc, names.items, refs.items, egens));
+            try self.storeSlotConst(base, @intCast(tag_header_bytes + nslots * 4), try self.genericShapes(cc, names.items, refs.items, egens));
         }
         try self.storeSlotConst(base, tag_header_bytes, tag);
         for (variant.fields, 0..) |vf, i| {
@@ -14285,8 +14285,9 @@ const Emitter = struct {
         /// variant's payload holds only an `i32` word, the one an `i64` slot
         /// is ever given.
         record: bool,
-        /// The type parameters of the declaration: a field written as one is
-        /// shaped `G s i` (its construction site says which), see `genericMask`.
+        /// The type parameters of the declaration: a field written as one (or
+        /// as an array or tuple of one) is shaped `G`, its construction site
+        /// recording the shape, see `genericShapes`.
         generics: []const ast.GenericParam,
     ) anyerror!void {
         const a = self.arena();
@@ -14308,30 +14309,71 @@ const Emitter = struct {
                 try out.append(a, c);
                 continue;
             };
-            if (tref) |t| if (t == .named and isGenericParamName(t.named, generics, &.{})) {
-                try out.appendSlice(a, "Gsi");
+            if (tref) |t| if (isGenericField(t, generics)) {
+                try out.append(a, 'G');
                 continue;
             };
             try out.appendSlice(a, try self.fieldShape(tref));
         }
     }
 
-    /// Whether a declaration's field is written as one of its type parameters.
+    /// Whether a declaration's field is printed by the shape its construction
+    /// site records (`G`, `genericShapes`): written as one of its type
+    /// parameters, or as an array or a tuple holding one (`items: Array<T>`,
+    /// `pairs: #(T, i32)[]`). The declaration alone has one descriptor for
+    /// every instantiation, so `Q(items: [7])` and `Q(items: ["a"])` differ
+    /// only in what each value says. A `?T`, a function and a record or enum
+    /// argument (`Box<T>`) keep the declared shape: a `?T` is always a box, a
+    /// record names itself in its header.
     fn isGenericField(t: ast.TypeRef, generics: []const ast.GenericParam) bool {
-        return t == .named and isGenericParamName(t.named, generics, &.{});
+        return switch (t) {
+            .named => |n| isGenericParamName(n, generics, &.{}),
+            .array => |inner| mentionsGeneric(inner.*, generics),
+            .tuple_, .labeledTuple => mentionsGeneric(t, generics),
+            .generic => |g| g.args.len == 1 and std.mem.eql(u8, g.name, "Array") and mentionsGeneric(g.args[0], generics),
+            else => false,
+        };
     }
 
-    /// Bit `i` set when the argument of the type-parameter field `i` is a
-    /// string — the one the printer cannot tell from a word by itself. Stored
-    /// after the fields of a value of a generic declaration.
-    fn genericMask(self: *Emitter, cc: anytype, names: []const []const u8, refs: []const ast.TypeRef, generics: []const ast.GenericParam) u32 {
-        var mask: u32 = 0;
+    /// Whether `t` names one of `generics` anywhere inside it.
+    fn mentionsGeneric(t: ast.TypeRef, generics: []const ast.GenericParam) bool {
+        return switch (t) {
+            .named => |n| isGenericParamName(n, generics, &.{}),
+            .array, .optional => |inner| mentionsGeneric(inner.*, generics),
+            .tuple_ => |elems| for (elems) |el| {
+                if (mentionsGeneric(el, generics)) break true;
+            } else false,
+            .labeledTuple => |lt| for (lt.elems) |el| {
+                if (mentionsGeneric(el, generics)) break true;
+            } else false,
+            .generic => |g| for (g.args) |el| {
+                if (mentionsGeneric(el, generics)) break true;
+            } else false,
+            .function => |f| mentionsGeneric(f.returnType.*, generics) or for (f.params) |el| {
+                if (mentionsGeneric(el, generics)) break true;
+            } else false,
+            else => false,
+        };
+    }
+
+    /// The shapes of the arguments of a generic declaration's `G` fields
+    /// (`isGenericField`), one after another in field order — each the code
+    /// `$__print_shaped_raw` walks, self-delimiting — interned, and its
+    /// address stored after the fields of the value: `$__print_tagged_raw`
+    /// reads the next one at each `G`. A field with no argument here (a
+    /// default) is a word, `i`.
+    fn genericShapes(self: *Emitter, cc: anytype, names: []const []const u8, refs: []const ast.TypeRef, generics: []const ast.GenericParam) anyerror!u32 {
+        var out: std.ArrayListUnmanaged(u8) = .empty;
         for (names, 0..) |fname, i| {
-            if (i >= refs.len or i >= 32 or !isGenericField(refs[i], generics)) continue;
-            const arg = self.argForField(cc.args, fname, i) orelse continue;
-            if (self.isStringExpr(arg.value.*)) mask |= @as(u32, 1) << @intCast(i);
+            if (i >= refs.len or !isGenericField(refs[i], generics)) continue;
+            const arg = self.argForField(cc.args, fname, i) orelse {
+                try out.append(self.arena(), 'i');
+                continue;
+            };
+            try out.appendSlice(self.arena(), try self.valueShapeOf(arg.value.*));
         }
-        return mask;
+        const seg = try self.internString(out.items);
+        return seg.offset + 4;
     }
 
     /// The `$__print_shaped_raw` code a field's declared type takes. An

@@ -34,8 +34,9 @@ fn main() {
 (module
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
-  (data (i32.const 256) "\0d\00\00\00R\03Bag\01\05itemsi")
-  (global $__heap_ptr (mut i32) (i32.const 276))
+  (data (i32.const 256) "\0d\00\00\00R\03Bag\01\05itemsG")
+  (data (i32.const 276) "\02\00\00\00[i")
+  (global $__heap_ptr (mut i32) (i32.const 284))
   (func $Bag_size (param $self i32) (result i32)
     local.get $self
     i32.load ;; .items
@@ -70,7 +71,7 @@ fn main() {
     i32.const 260
     i32.store
     local.get $__mem0
-    i32.const 0
+    i32.const 280
     i32.store offset=8
     local.get $__mem0
     i32.const 4
@@ -93,7 +94,7 @@ fn main() {
     i32.const 260
     i32.store
     local.get $__mem2
-    i32.const 0
+    i32.const 280
     i32.store offset=8
     local.get $__mem2
     i32.const 8
@@ -119,7 +120,7 @@ fn main() {
     i32.const 260
     i32.store
     local.get $__mem4
-    i32.const 0
+    i32.const 280
     i32.store offset=8
     local.get $__mem4
     i32.const 12
