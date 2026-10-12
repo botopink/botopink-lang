@@ -711,6 +711,11 @@ record, generic-result, `Pair<T>`, array and fn-value rows.
 `00 · 03-beam`'s split row adds `modules/string_split_empty_separator` — `split("")` cuts into UTF-8
 codepoints (`"%0Aéz"` → 5 pieces, `""` → none) beside a non-empty separator and an empty separator
 held in a `val`, on all four targets (beam lowered it to `string:split/3`, wasm cut between bytes).
+144 B-22 step 13 adds `modules/val_spread_only_list_pattern` — `val [..rest] = xs;` binds the whole list,
+over a literal, a parameter and the empty list (the checker admitted it and bound nothing: `unbound
+variable 'rest'`) — and `modules/val_nested_ctor_pattern` — `val Pair(Circle(r), n) = p;`, three levels
+deep, beside a `_` and inside a record's own constructor (refused `refutable-val-pattern`, and on wasm
+"no lowering for this constructor pattern in a binding"), both on all four targets.
 `01 · 03-beam` step 1 adds `modules/ctor_pattern_in_val_binding` — `val Label(t, w) = Tag.Label(…)`, a
 one-variant type's constructor in binding position, prints `7` on all four targets (beam bound
 nothing: `{unresolved_identifier, t}`), and `modules/import_capitalised_fn` — an imported `pub fn Make`

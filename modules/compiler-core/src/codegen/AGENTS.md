@@ -577,6 +577,12 @@ codegen/
   it used to write the empty name and emit `(4)`.
 - **A pattern in binding position** (`val Circle(r) = s;`, JS-4): a plain
   destructure — `buildPattern`, `js/AGENTS.md` § Bridges.
+  On wasm (`wat.zig`, `.localBindDestruct`'s `.ctor` arm) a record's flat
+  constructor reads each field off its slot, a variant's flat one takes
+  `ctorAsFieldsPattern`, and a nested constructor (`val Pair(Circle(r), n) =
+  p;`, 144 B-22 step 13) takes the `case` arm's walk, `bindPattern`, one slot at
+  a time — it was refused "no lowering for this constructor pattern in a
+  binding" (`modules/val_nested_ctor_pattern`).
 - **A behavior literal's `self` method** (`@Greeter(greet: { self, who -> … })`,
   `buildBehaviorLiteral`): a method of the object — `greet(who) { const self =
   this; … }` — because it is called on the literal, `g.greet(who)`. An arrow

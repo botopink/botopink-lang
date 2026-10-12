@@ -6203,6 +6203,11 @@ const Emitter = struct {
                                 }
                             } else if (try self.ctorAsFieldsPattern(pat)) |fp| {
                                 try self.bindPattern(fp, mem);
+                            } else if (pat == .variant and (self.variantRef(pat.variant.name) != null or self.recordPatternType(pat.variant) != null)) {
+                                // A nested constructor (`val Pair(Circle(r), n) = p;`,
+                                // 144 B-22 step 13): the `case` arm's walk binds each
+                                // name off its field's slot, one level at a time.
+                                try self.bindPattern(pat, mem);
                             } else return self.refuse(stmt.expr.getLoc(), "the wasm backend has no lowering for this constructor pattern in a binding", .{});
                         },
                         // A spread-only list is the one list the checker lets
@@ -8266,7 +8271,7 @@ const Emitter = struct {
     /// A record constructor in binding position (`val Circle(r) = s;`): the
     /// record's declared field names and, per position, the name each binds
     /// (`""` for `_`). Null when the pattern names no record of this module or
-    /// nests a pattern (the checker refuses a nested one as refutable).
+    /// nests a pattern (the binding then takes `bindPattern`'s walk).
     fn ctorRecordFields(self: *Emitter, pat: ast.Pattern) ?struct { record: []const u8, fields: []const []const u8, binds: []const []const u8 } {
         if (pat != .variant) return null;
         const v = pat.variant;

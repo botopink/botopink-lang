@@ -331,6 +331,18 @@ is emitted.
 
 <!-- example: modules/val_cannot_be_assigned -->
 
+A `val` may bind a pattern instead of a name when the pattern matches every
+value of the initialiser's type, so the binding has no failure path: a list
+pattern that is only a spread (`val [..rest] = xs;` binds the whole list), and
+the constructor of a one-variant `type` or a record's own constructor whose
+every argument is a name, a `_` or such a constructor in turn — so constructors
+nest (`val Pair(Circle(r), n) = p;`). Any other pattern is
+`refutable-val-pattern`; `val assert` and `case` say what a mismatch does.
+
+<!-- example: modules/val_spread_only_list_pattern -->
+
+<!-- example: modules/val_nested_ctor_pattern -->
+
 A `val` at module level is part of the **module body**: it is evaluated **once**,
 in declaration order, when the module loads — before `main` runs and before the
 first `test {}` block. Reading the name afterwards does not evaluate it again,

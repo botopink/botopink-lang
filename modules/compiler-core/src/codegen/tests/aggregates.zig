@@ -518,6 +518,34 @@ test "js: destructure ---- a constructor in binding position is a plain destruct
     try h.assertBeamRunLog(std.testing.allocator, src, log, &.{});
 }
 
+test "wasm: destructure ---- a nested constructor in binding position binds off each slot (144 B-22 step 13)" {
+    // `val Pair(Circle(r), n) = p;` — the checker admits a constructor nested in
+    // a binding when every constructor is its type's only variant; wasm refused
+    // it ("no lowering for this constructor pattern in a binding") and now takes
+    // the `case` arm's walk, one slot at a time, a record's own constructor
+    // included.
+    const src =
+        \\type Shape { Circle(r: i32) }
+        \\type Pair { Pair(s: Shape, n: i32) }
+        \\type Boxed(s: Shape, k: string)
+        \\fn main() {
+        \\    val Pair(Circle(r), n) = Pair.Pair(s: Shape.Circle(r: 3), n: 4);
+        \\    @print(r);
+        \\    @print(n);
+        \\    val Boxed(Circle(q), k) = Boxed(s: Shape.Circle(r: 5), k: "x");
+        \\    @print(q);
+        \\    @print(k + "!");
+        \\}
+    ;
+    try h.assertWasmRunLog(std.testing.allocator, src,
+        \\3
+        \\4
+        \\5
+        \\x!
+        \\
+    );
+}
+
 test "js: call ---- the result of a call is called (curried)" {
     // `adder(3)(4)` — 01 types it through `calleeExpr` (01 handover 15), with
     // `callee == ""`. commonJS wrote the empty callee and emitted `(4)`; wasm

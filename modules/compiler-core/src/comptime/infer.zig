@@ -14807,39 +14807,22 @@ fn inferBindingExpr(env: *Env, b: ast.BindingExprOf(.untyped), loc: ast.Loc) Inf
 fn bindDestructPattern(env: *Env, pattern: ast.Pattern, subjectType: *T.Type, mutable: bool, loc: ast.Loc) InferError!void {
     var snapshots: std.ArrayListUnmanaged(PatternBindingSnapshot) = .empty;
     defer snapshots.deinit(env.arena);
-    const st = subjectType.deref();
-    const covers: bool = switch (pattern) {
-        .list => |lst| lst.elems.len == 0 and lst.spread != null and
-            st.* == .named and std.mem.eql(u8, st.named.name, "array"),
-        .variant => |v| blk: {
-            if (v.shape != .variant or st.* != .named) break :blk false;
-            const bare = bareVariantName(v.name);
-            const td = env.lookupTypeDef(st.named.name) orelse break :blk false;
-            switch (td) {
-                .enum_ => |en| {
-                    if (en.variants.len != 1 or !std.mem.eql(u8, en.variants[0].name, bare)) break :blk false;
-                    if (!try variantPayloadIrrefutable(env, subjectType, v.name, v.payload)) break :blk false;
-                    bindPatternNamesForSubject(env, pattern, subjectType, &snapshots) catch |err| return locateLast(env, err, loc);
-                    break :blk true;
-                },
-                .record => |rec| {
-                    if (!std.mem.eql(u8, rec.name, bare) or v.payload != .literals) break :blk false;
-                    const args = v.payload.literals;
-                    if (args.len > rec.fields.len or (args.len < rec.fields.len and !v.rest)) break :blk false;
-                    for (args, 0..) |a, i| {
-                        // A generic record's field types are its declaration's
-                        // cells; the subject's instantiation is not read here.
-                        const fieldTy = if (rec.genericParams.len == 0) rec.fields[i].type_ else try env.freshVar();
-                        if (!try patternIsIrrefutable(env, a, fieldTy)) break :blk false;
-                        bindPatternNamesForSubject(env, a, fieldTy, &snapshots) catch |err| return locateLast(env, err, loc);
-                    }
-                    break :blk true;
-                },
-                .struct_ => break :blk false,
+    const covers = try destructCovers(env, pattern, subjectType);
+    if (covers) {
+        const st = subjectType.deref();
+        const record: ?envMod.TypeDef = if (pattern == .variant and st.* == .named) env.lookupTypeDef(st.named.name) else null;
+        if (record != null and record.? == .record) {
+            const rec = record.?.record;
+            for (pattern.variant.payload.literals, 0..) |a, i| {
+                // A generic record's field types are its declaration's
+                // cells; the subject's instantiation is not read here.
+                const fieldTy = if (rec.genericParams.len == 0) rec.fields[i].type_ else try env.freshVar();
+                bindPatternNamesForSubject(env, a, fieldTy, &snapshots) catch |err| return locateLast(env, err, loc);
             }
-        },
-        else => false,
-    };
+        } else {
+            bindPatternNamesForSubject(env, pattern, subjectType, &snapshots) catch |err| return locateLast(env, err, loc);
+        }
+    }
     if (!covers) {
         const msg = try std.fmt.allocPrint(
             env.arena,
@@ -14856,6 +14839,54 @@ fn bindDestructPattern(env: *Env, pattern: ast.Pattern, subjectType: *T.Type, mu
         for (snapshots.items) |sn| {
             if (env.lookup(sn.name)) |ty| try env.bindVal(sn.name, ty);
         }
+    }
+}
+
+/// 144 B-22 step 13 — does a binding pattern match **every** value of
+/// `subjectType`? A list pattern that is only a spread over an array; the
+/// constructor of a one-variant `type`, or a record's own constructor, whose
+/// every argument covers its field's type in turn — so a constructor nests
+/// (`val Pair(Circle(r), n) = p;`); anything else as `patternIsIrrefutable`
+/// answers.
+fn destructCovers(env: *Env, pattern: ast.Pattern, subjectType: *T.Type) InferError!bool {
+    const st = subjectType.deref();
+    switch (pattern) {
+        .list => |lst| return lst.elems.len == 0 and lst.spread != null and
+            st.* == .named and std.mem.eql(u8, st.named.name, "array"),
+        .variant => |v| {
+            if (v.shape != .variant) return patternIsIrrefutable(env, pattern, subjectType);
+            if (st.* != .named) return false;
+            const bare = bareVariantName(v.name);
+            const td = env.lookupTypeDef(st.named.name) orelse return false;
+            switch (td) {
+                .enum_ => |en| {
+                    if (en.variants.len != 1 or !std.mem.eql(u8, en.variants[0].name, bare)) return false;
+                    if (v.payload != .literals) return variantPayloadIrrefutable(env, subjectType, v.name, v.payload);
+                    const payloadTypes = try variantPayloadTypes(env, subjectType, v.name);
+                    for (v.payload.literals, 0..) |a, i| {
+                        const at: ?*T.Type = if (payloadTypes) |p| (if (i < p.len) p[i] else null) else null;
+                        const ok = if (at) |t| try destructCovers(env, a, t) else try patternIsIrrefutable(env, a, null);
+                        if (!ok) return false;
+                    }
+                    return true;
+                },
+                .record => |rec| {
+                    if (!std.mem.eql(u8, rec.name, bare) or v.payload != .literals) return false;
+                    const args = v.payload.literals;
+                    if (args.len > rec.fields.len or (args.len < rec.fields.len and !v.rest)) return false;
+                    for (args, 0..) |a, i| {
+                        const ok = if (rec.genericParams.len == 0)
+                            try destructCovers(env, a, rec.fields[i].type_)
+                        else
+                            try patternIsIrrefutable(env, a, null);
+                        if (!ok) return false;
+                    }
+                    return true;
+                },
+                .struct_ => return false,
+            }
+        },
+        else => return patternIsIrrefutable(env, pattern, subjectType),
     }
 }
 

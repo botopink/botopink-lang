@@ -2040,4 +2040,3 @@ test "beam: a throw in a case arm bound, passed and in statement position" {
         \\}
     , "3\ntrue\n6\ntrue\nnum\n0\ntrue\n", &.{});
 }
-

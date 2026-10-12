@@ -1,0 +1,17 @@
+//// 1.0.12-beta `144-botopink-lang` B-22 step 13 (was `01-checker` s13, JS-4): a
+//// `val` binding whose list pattern is a spread alone, `val [..rest] = xs;`,
+//// cannot fail — it binds the whole list to `rest`, over a literal, over a
+//// parameter and over the empty list.
+
+fn count(xs: i32[]) -> i32 {
+    val [..rest] = xs;
+    return rest.length();
+}
+
+pub fn main() {
+    val [..rest] = [1, 2, 3];
+    @print(rest.length());
+    @print(rest);
+    @print(count([7, 8]));
+    @print(count([]));
+}

@@ -1328,6 +1328,49 @@ test "val destructure: a record's constructor binds its fields typed" {
     );
 }
 
+test "val destructure: a constructor nests when each covers its field (144 B-22 step 13)" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\val Shape = type { Circle(r: i32) };
+        \\val Pair = type { Pair(s: Shape, n: i32) };
+        \\val Boxed = type(s: Shape, k: string);
+        \\fn main() {
+        \\    val p = Pair.Pair(s: Shape.Circle(r: 3), n: 4);
+        \\    val Pair(Circle(r), n) = p;
+        \\    val a: i32 = r + n;
+        \\    val Boxed(Circle(q), k) = Boxed(s: Shape.Circle(r: 5), k: "x");
+        \\    val b: i32 = q;
+        \\    val c: string = k;
+        \\    @print(a + b);
+        \\    @print(c);
+        \\}
+    );
+}
+
+test "val destructure: a nested constructor that can fail is refused (144 B-22 step 13)" {
+    const msg = try typeErrorMessage(std.testing.allocator,
+        \\val Shape = type { Circle(r: i32), Square(side: i32) };
+        \\val Pair = type { Pair(s: Shape, n: i32) };
+        \\fn main() {
+        \\    val Pair(Circle(r), n) = Pair.Pair(s: Shape.Circle(r: 3), n: 4);
+        \\    @print(r + n);
+        \\}
+    );
+    defer std.testing.allocator.free(msg);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "refutable-val-pattern") != null);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "`Pair`") != null);
+}
+
+test "val destructure: a spread-only list binds the whole array (144 B-22 step 13)" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\fn count(xs: i32[]) -> i32 {
+        \\    val [..rest] = xs;
+        \\    val all: i32[] = rest;
+        \\    return all.length();
+        \\}
+        \\fn main() { @print(count([1, 2])); }
+    );
+}
+
 test "val destructure: the bound name carries the payload's type" {
     const msg = try typeErrorMessage(std.testing.allocator,
         \\val Round = type { Circle(radius: i32) };
