@@ -46,7 +46,7 @@ val m = describeMode();
   local.get $a1
   local.set $s1
   global.get $__lit
-  i32.const 112
+  i32.const 120
   i32.add
   i32.const 4
   call $rt_atom
@@ -55,7 +55,7 @@ val m = describeMode();
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 120
+  i32.const 128
   i32.add
   i32.const 1
   call $rt_bin
@@ -67,7 +67,7 @@ val m = describeMode();
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 128
+  i32.const 136
   i32.add
   i32.const 1
   call $rt_bin
@@ -98,7 +98,7 @@ val m = describeMode();
   call $rt_make_fun
   local.get $s2
   global.get $__lit
-  i32.const 176
+  i32.const 184
   i32.add
   i32.const 11
   call $rt_atom
@@ -133,7 +133,7 @@ val m = describeMode();
   call $rt_make_fun
   local.get $s2
   global.get $__lit
-  i32.const 216
+  i32.const 224
   i32.add
   i32.const 6
   call $rt_atom
@@ -168,7 +168,7 @@ val m = describeMode();
   call $rt_make_fun
   local.get $s2
   global.get $__lit
-  i32.const 240
+  i32.const 248
   i32.add
   i32.const 8
   call $rt_atom
@@ -203,7 +203,7 @@ val m = describeMode();
   call $rt_make_fun
   local.get $s2
   global.get $__lit
-  i32.const 296
+  i32.const 304
   i32.add
   i32.const 7
   call $rt_atom
@@ -228,46 +228,55 @@ val m = describeMode();
   )
   local.get $s1
   drop
+  (block $L13 (result i32)
+  (block $L14
   global.get $__lit
-  i32.const 304
+  i32.const 312
   i32.add
   i32.const 15
   call $rt_bin
   global.get $__lit
-  i32.const 112
+  i32.const 120
   i32.add
   i32.const 4
   call $rt_atom
   local.get $V_Decl
   call $rt_maps_get
   call $rt_pending
-  br_if $raise
+  br_if $L14
   call $bp_comptime_decorator:__bp_add/2
   call $rt_pending
-  br_if $raise
+  br_if $L14
   global.get $__lit
-  i32.const 320
+  i32.const 328
   i32.add
   i32.const 25
   call $rt_bin
   call $bp_comptime_decorator:__bp_add/2
   call $rt_pending
-  br_if $raise
+  br_if $L14
   local.get $s2
   call $bp_comptime_decorator:__bp_add/2
   call $rt_pending
-  br_if $raise
+  br_if $L14
   global.get $__lit
-  i32.const 352
+  i32.const 360
   i32.add
   i32.const 6
   call $rt_bin
   call $bp_comptime_decorator:__bp_add/2
   call $rt_pending
-  br_if $raise
+  br_if $L14
   call $bp_comptime_decorator:emit/1
   call $rt_pending
-  br_if $raise
+  br_if $L14
+  br $L13
+  )
+  i32.const 15
+  i32.const 5
+  call $rt_raised_at
+  br $raise
+  )
   br $L1
   )
   call $rt_function_clause
@@ -290,7 +299,7 @@ val m = describeMode();
   local.set $s1
   local.get $s1
   global.get $__lit
-  i32.const 136
+  i32.const 144
   i32.add
   i32.const 2
   call $rt_bin
@@ -298,7 +307,7 @@ val m = describeMode();
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 112
+  i32.const 120
   i32.add
   i32.const 4
   call $rt_atom
@@ -306,39 +315,48 @@ val m = describeMode();
   call $rt_maps_get
   call $rt_pending
   br_if $raise
-  call $bp_comptime_decorator:__bp_add/2
-  call $rt_pending
-  br_if $raise
-  global.get $__lit
-  i32.const 144
-  i32.add
-  i32.const 1
-  call $rt_bin
   call $bp_comptime_decorator:__bp_add/2
   call $rt_pending
   br_if $raise
   global.get $__lit
   i32.const 152
   i32.add
+  i32.const 1
+  call $rt_bin
+  call $bp_comptime_decorator:__bp_add/2
+  call $rt_pending
+  br_if $raise
+  (block $L3 (result i32)
+  (block $L4
+  global.get $__lit
+  i32.const 160
+  i32.add
   i32.const 4
   call $rt_atom
   local.get $s0
   call $rt_maps_get
   call $rt_pending
-  br_if $raise
+  br_if $L4
   global.get $__lit
-  i32.const 160
+  i32.const 168
   i32.add
   i32.const 1
   call $rt_bin
   call $__bp_prim_join/2
   call $rt_pending
-  br_if $raise
+  br_if $L4
+  br $L3
+  )
+  i32.const 4
+  i32.const 69
+  call $rt_raised_at
+  br $raise
+  )
   call $bp_comptime_decorator:__bp_add/2
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 168
+  i32.const 176
   i32.add
   i32.const 1
   call $rt_bin
@@ -346,11 +364,11 @@ val m = describeMode();
   call $rt_pending
   br_if $raise
   local.set $s0
-  (block $L4
-  (block $L3
+  (block $L6
+  (block $L5
   local.get $s0
   local.set $s1
-  br $L4
+  br $L6
   )
   local.get $s0
   call $rt_badmatch
@@ -382,7 +400,7 @@ val m = describeMode();
   local.set $s1
   local.get $s1
   global.get $__lit
-  i32.const 192
+  i32.const 200
   i32.add
   i32.const 7
   call $rt_bin
@@ -390,7 +408,7 @@ val m = describeMode();
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 112
+  i32.const 120
   i32.add
   i32.const 4
   call $rt_atom
@@ -402,7 +420,7 @@ val m = describeMode();
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 200
+  i32.const 208
   i32.add
   i32.const 1
   call $rt_bin
@@ -410,7 +428,7 @@ val m = describeMode();
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 208
+  i32.const 216
   i32.add
   i32.const 8
   call $rt_atom
@@ -445,7 +463,7 @@ val m = describeMode();
   call $rt_make_fun
   local.get $V_Out@5
   global.get $__lit
-  i32.const 176
+  i32.const 184
   i32.add
   i32.const 11
   call $rt_atom
@@ -493,7 +511,7 @@ val m = describeMode();
   local.set $s1
   local.get $s1
   global.get $__lit
-  i32.const 136
+  i32.const 144
   i32.add
   i32.const 2
   call $rt_bin
@@ -501,7 +519,7 @@ val m = describeMode();
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 112
+  i32.const 120
   i32.add
   i32.const 4
   call $rt_atom
@@ -509,39 +527,48 @@ val m = describeMode();
   call $rt_maps_get
   call $rt_pending
   br_if $raise
-  call $bp_comptime_decorator:__bp_add/2
-  call $rt_pending
-  br_if $raise
-  global.get $__lit
-  i32.const 144
-  i32.add
-  i32.const 1
-  call $rt_bin
   call $bp_comptime_decorator:__bp_add/2
   call $rt_pending
   br_if $raise
   global.get $__lit
   i32.const 152
   i32.add
+  i32.const 1
+  call $rt_bin
+  call $bp_comptime_decorator:__bp_add/2
+  call $rt_pending
+  br_if $raise
+  (block $L3 (result i32)
+  (block $L4
+  global.get $__lit
+  i32.const 160
+  i32.add
   i32.const 4
   call $rt_atom
   local.get $s0
   call $rt_maps_get
   call $rt_pending
-  br_if $raise
+  br_if $L4
   global.get $__lit
-  i32.const 160
+  i32.const 168
   i32.add
   i32.const 1
   call $rt_bin
   call $__bp_prim_join/2
   call $rt_pending
-  br_if $raise
+  br_if $L4
+  br $L3
+  )
+  i32.const 7
+  i32.const 70
+  call $rt_raised_at
+  br $raise
+  )
   call $bp_comptime_decorator:__bp_add/2
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 168
+  i32.const 176
   i32.add
   i32.const 1
   call $rt_bin
@@ -549,11 +576,11 @@ val m = describeMode();
   call $rt_pending
   br_if $raise
   local.set $s0
-  (block $L4
-  (block $L3
+  (block $L6
+  (block $L5
   local.get $s0
   local.set $s1
-  br $L4
+  br $L6
   )
   local.get $s0
   call $rt_badmatch
@@ -585,7 +612,7 @@ val m = describeMode();
   local.set $s1
   local.get $s1
   global.get $__lit
-  i32.const 224
+  i32.const 232
   i32.add
   i32.const 9
   call $rt_bin
@@ -632,7 +659,7 @@ val m = describeMode();
   local.get $a1
   local.set $s1
   global.get $__lit
-  i32.const 248
+  i32.const 256
   i32.add
   i32.const 0
   call $rt_bin
@@ -660,7 +687,7 @@ val m = describeMode();
   call $rt_make_fun
   local.get $s3
   global.get $__lit
-  i32.const 256
+  i32.const 264
   i32.add
   i32.const 6
   call $rt_atom
@@ -687,7 +714,7 @@ val m = describeMode();
   drop
   local.get $s1
   global.get $__lit
-  i32.const 264
+  i32.const 272
   i32.add
   i32.const 8
   call $rt_bin
@@ -695,7 +722,7 @@ val m = describeMode();
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 112
+  i32.const 120
   i32.add
   i32.const 4
   call $rt_atom
@@ -707,7 +734,7 @@ val m = describeMode();
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 144
+  i32.const 152
   i32.add
   i32.const 1
   call $rt_bin
@@ -719,7 +746,7 @@ val m = describeMode();
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 272
+  i32.const 280
   i32.add
   i32.const 3
   call $rt_bin
@@ -727,7 +754,7 @@ val m = describeMode();
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 280
+  i32.const 288
   i32.add
   i32.const 10
   call $rt_atom
@@ -775,7 +802,7 @@ val m = describeMode();
   local.set $s1
   local.get $s1
   global.get $__lit
-  i32.const 112
+  i32.const 120
   i32.add
   i32.const 4
   call $rt_atom
@@ -787,7 +814,7 @@ val m = describeMode();
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 200
+  i32.const 208
   i32.add
   i32.const 1
   call $rt_bin
@@ -795,7 +822,7 @@ val m = describeMode();
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 208
+  i32.const 216
   i32.add
   i32.const 8
   call $rt_atom
@@ -807,7 +834,7 @@ val m = describeMode();
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 248
+  i32.const 256
   i32.add
   i32.const 1
   call $rt_bin
@@ -896,7 +923,7 @@ val m = describeMode();
   local.get $s1
   i32.const 0
   global.get $__lit
-  i32.const 392
+  i32.const 400
   i32.add
   i32.const 21
   call $rt_atom
@@ -905,7 +932,7 @@ val m = describeMode();
   local.get $s1
   i32.const 1
   global.get $__lit
-  i32.const 416
+  i32.const 424
   i32.add
   i32.const 4
   call $rt_bin
@@ -1016,7 +1043,7 @@ val m = describeMode();
   (block $L18
   (block $L19
   global.get $__lit
-  i32.const 384
+  i32.const 392
   i32.add
   i32.const 4
   call $rt_atom
@@ -1137,7 +1164,7 @@ val m = describeMode();
   local.get $a1
   local.set $s1
   global.get $__lit
-  i32.const 112
+  i32.const 120
   i32.add
   i32.const 4
   call $rt_atom
@@ -1146,7 +1173,7 @@ val m = describeMode();
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 120
+  i32.const 128
   i32.add
   i32.const 1
   call $rt_bin
@@ -1158,7 +1185,7 @@ val m = describeMode();
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 128
+  i32.const 136
   i32.add
   i32.const 1
   call $rt_bin
@@ -1189,7 +1216,7 @@ val m = describeMode();
   call $rt_make_fun
   local.get $s2
   global.get $__lit
-  i32.const 176
+  i32.const 184
   i32.add
   i32.const 11
   call $rt_atom
@@ -1224,7 +1251,7 @@ val m = describeMode();
   call $rt_make_fun
   local.get $s2
   global.get $__lit
-  i32.const 216
+  i32.const 224
   i32.add
   i32.const 6
   call $rt_atom
@@ -1259,7 +1286,7 @@ val m = describeMode();
   call $rt_make_fun
   local.get $s2
   global.get $__lit
-  i32.const 240
+  i32.const 248
   i32.add
   i32.const 8
   call $rt_atom
@@ -1294,7 +1321,7 @@ val m = describeMode();
   call $rt_make_fun
   local.get $s2
   global.get $__lit
-  i32.const 296
+  i32.const 304
   i32.add
   i32.const 7
   call $rt_atom
@@ -1319,46 +1346,55 @@ val m = describeMode();
   )
   local.get $s1
   drop
+  (block $L13 (result i32)
+  (block $L14
   global.get $__lit
-  i32.const 304
+  i32.const 312
   i32.add
   i32.const 15
   call $rt_bin
   global.get $__lit
-  i32.const 112
+  i32.const 120
   i32.add
   i32.const 4
   call $rt_atom
   local.get $V_Decl
   call $rt_maps_get
   call $rt_pending
-  br_if $raise
+  br_if $L14
   call $bp_comptime_decorator:__bp_add/2
   call $rt_pending
-  br_if $raise
+  br_if $L14
   global.get $__lit
-  i32.const 320
+  i32.const 328
   i32.add
   i32.const 25
   call $rt_bin
   call $bp_comptime_decorator:__bp_add/2
   call $rt_pending
-  br_if $raise
+  br_if $L14
   local.get $s2
   call $bp_comptime_decorator:__bp_add/2
   call $rt_pending
-  br_if $raise
+  br_if $L14
   global.get $__lit
-  i32.const 352
+  i32.const 360
   i32.add
   i32.const 6
   call $rt_bin
   call $bp_comptime_decorator:__bp_add/2
   call $rt_pending
-  br_if $raise
+  br_if $L14
   call $bp_comptime_decorator:emit/1
   call $rt_pending
-  br_if $raise
+  br_if $L14
+  br $L13
+  )
+  i32.const 15
+  i32.const 5
+  call $rt_raised_at
+  br $raise
+  )
   br $L1
   )
   call $rt_function_clause
@@ -1381,7 +1417,7 @@ val m = describeMode();
   local.set $s1
   local.get $s1
   global.get $__lit
-  i32.const 136
+  i32.const 144
   i32.add
   i32.const 2
   call $rt_bin
@@ -1389,7 +1425,7 @@ val m = describeMode();
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 112
+  i32.const 120
   i32.add
   i32.const 4
   call $rt_atom
@@ -1397,39 +1433,48 @@ val m = describeMode();
   call $rt_maps_get
   call $rt_pending
   br_if $raise
-  call $bp_comptime_decorator:__bp_add/2
-  call $rt_pending
-  br_if $raise
-  global.get $__lit
-  i32.const 144
-  i32.add
-  i32.const 1
-  call $rt_bin
   call $bp_comptime_decorator:__bp_add/2
   call $rt_pending
   br_if $raise
   global.get $__lit
   i32.const 152
   i32.add
+  i32.const 1
+  call $rt_bin
+  call $bp_comptime_decorator:__bp_add/2
+  call $rt_pending
+  br_if $raise
+  (block $L3 (result i32)
+  (block $L4
+  global.get $__lit
+  i32.const 160
+  i32.add
   i32.const 4
   call $rt_atom
   local.get $s0
   call $rt_maps_get
   call $rt_pending
-  br_if $raise
+  br_if $L4
   global.get $__lit
-  i32.const 160
+  i32.const 168
   i32.add
   i32.const 1
   call $rt_bin
   call $__bp_prim_join/2
   call $rt_pending
-  br_if $raise
+  br_if $L4
+  br $L3
+  )
+  i32.const 4
+  i32.const 69
+  call $rt_raised_at
+  br $raise
+  )
   call $bp_comptime_decorator:__bp_add/2
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 168
+  i32.const 176
   i32.add
   i32.const 1
   call $rt_bin
@@ -1437,11 +1482,11 @@ val m = describeMode();
   call $rt_pending
   br_if $raise
   local.set $s0
-  (block $L4
-  (block $L3
+  (block $L6
+  (block $L5
   local.get $s0
   local.set $s1
-  br $L4
+  br $L6
   )
   local.get $s0
   call $rt_badmatch
@@ -1473,7 +1518,7 @@ val m = describeMode();
   local.set $s1
   local.get $s1
   global.get $__lit
-  i32.const 192
+  i32.const 200
   i32.add
   i32.const 7
   call $rt_bin
@@ -1481,7 +1526,7 @@ val m = describeMode();
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 112
+  i32.const 120
   i32.add
   i32.const 4
   call $rt_atom
@@ -1493,7 +1538,7 @@ val m = describeMode();
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 200
+  i32.const 208
   i32.add
   i32.const 1
   call $rt_bin
@@ -1501,7 +1546,7 @@ val m = describeMode();
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 208
+  i32.const 216
   i32.add
   i32.const 8
   call $rt_atom
@@ -1536,7 +1581,7 @@ val m = describeMode();
   call $rt_make_fun
   local.get $V_Out@5
   global.get $__lit
-  i32.const 176
+  i32.const 184
   i32.add
   i32.const 11
   call $rt_atom
@@ -1584,7 +1629,7 @@ val m = describeMode();
   local.set $s1
   local.get $s1
   global.get $__lit
-  i32.const 136
+  i32.const 144
   i32.add
   i32.const 2
   call $rt_bin
@@ -1592,7 +1637,7 @@ val m = describeMode();
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 112
+  i32.const 120
   i32.add
   i32.const 4
   call $rt_atom
@@ -1600,39 +1645,48 @@ val m = describeMode();
   call $rt_maps_get
   call $rt_pending
   br_if $raise
-  call $bp_comptime_decorator:__bp_add/2
-  call $rt_pending
-  br_if $raise
-  global.get $__lit
-  i32.const 144
-  i32.add
-  i32.const 1
-  call $rt_bin
   call $bp_comptime_decorator:__bp_add/2
   call $rt_pending
   br_if $raise
   global.get $__lit
   i32.const 152
   i32.add
+  i32.const 1
+  call $rt_bin
+  call $bp_comptime_decorator:__bp_add/2
+  call $rt_pending
+  br_if $raise
+  (block $L3 (result i32)
+  (block $L4
+  global.get $__lit
+  i32.const 160
+  i32.add
   i32.const 4
   call $rt_atom
   local.get $s0
   call $rt_maps_get
   call $rt_pending
-  br_if $raise
+  br_if $L4
   global.get $__lit
-  i32.const 160
+  i32.const 168
   i32.add
   i32.const 1
   call $rt_bin
   call $__bp_prim_join/2
   call $rt_pending
-  br_if $raise
+  br_if $L4
+  br $L3
+  )
+  i32.const 7
+  i32.const 70
+  call $rt_raised_at
+  br $raise
+  )
   call $bp_comptime_decorator:__bp_add/2
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 168
+  i32.const 176
   i32.add
   i32.const 1
   call $rt_bin
@@ -1640,11 +1694,11 @@ val m = describeMode();
   call $rt_pending
   br_if $raise
   local.set $s0
-  (block $L4
-  (block $L3
+  (block $L6
+  (block $L5
   local.get $s0
   local.set $s1
-  br $L4
+  br $L6
   )
   local.get $s0
   call $rt_badmatch
@@ -1676,7 +1730,7 @@ val m = describeMode();
   local.set $s1
   local.get $s1
   global.get $__lit
-  i32.const 224
+  i32.const 232
   i32.add
   i32.const 9
   call $rt_bin
@@ -1723,7 +1777,7 @@ val m = describeMode();
   local.get $a1
   local.set $s1
   global.get $__lit
-  i32.const 248
+  i32.const 256
   i32.add
   i32.const 0
   call $rt_bin
@@ -1751,7 +1805,7 @@ val m = describeMode();
   call $rt_make_fun
   local.get $s3
   global.get $__lit
-  i32.const 256
+  i32.const 264
   i32.add
   i32.const 6
   call $rt_atom
@@ -1778,7 +1832,7 @@ val m = describeMode();
   drop
   local.get $s1
   global.get $__lit
-  i32.const 264
+  i32.const 272
   i32.add
   i32.const 8
   call $rt_bin
@@ -1786,7 +1840,7 @@ val m = describeMode();
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 112
+  i32.const 120
   i32.add
   i32.const 4
   call $rt_atom
@@ -1798,7 +1852,7 @@ val m = describeMode();
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 144
+  i32.const 152
   i32.add
   i32.const 1
   call $rt_bin
@@ -1810,7 +1864,7 @@ val m = describeMode();
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 272
+  i32.const 280
   i32.add
   i32.const 3
   call $rt_bin
@@ -1818,7 +1872,7 @@ val m = describeMode();
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 280
+  i32.const 288
   i32.add
   i32.const 10
   call $rt_atom
@@ -1866,7 +1920,7 @@ val m = describeMode();
   local.set $s1
   local.get $s1
   global.get $__lit
-  i32.const 112
+  i32.const 120
   i32.add
   i32.const 4
   call $rt_atom
@@ -1878,7 +1932,7 @@ val m = describeMode();
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 200
+  i32.const 208
   i32.add
   i32.const 1
   call $rt_bin
@@ -1886,7 +1940,7 @@ val m = describeMode();
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 208
+  i32.const 216
   i32.add
   i32.const 8
   call $rt_atom
@@ -1898,7 +1952,7 @@ val m = describeMode();
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 248
+  i32.const 256
   i32.add
   i32.const 1
   call $rt_bin
@@ -1987,7 +2041,7 @@ val m = describeMode();
   local.get $s1
   i32.const 0
   global.get $__lit
-  i32.const 392
+  i32.const 400
   i32.add
   i32.const 21
   call $rt_atom
@@ -1996,7 +2050,7 @@ val m = describeMode();
   local.get $s1
   i32.const 1
   global.get $__lit
-  i32.const 416
+  i32.const 424
   i32.add
   i32.const 4
   call $rt_bin
@@ -2107,7 +2161,7 @@ val m = describeMode();
   (block $L18
   (block $L19
   global.get $__lit
-  i32.const 384
+  i32.const 392
   i32.add
   i32.const 4
   call $rt_atom

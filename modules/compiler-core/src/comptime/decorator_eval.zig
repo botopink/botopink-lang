@@ -121,6 +121,10 @@ pub const Outcome = union(enum) {
     fail: struct { message: []const u8, span: ?template.Span, arg: ?usize = null },
     /// The evaluator itself failed (module did not compile, body raised, …).
     err: []const u8,
+    /// The body raised, and the raise left a call of one of the `located`
+    /// functions (decision 451 (3), `erlang.ComptimeModule.located`): the
+    /// text, and where that call starts — the innermost such call.
+    raised: struct { message: []const u8, at: ast.Loc },
 };
 
 pub const EvalError = error{ OutOfMemory, EvalFailed } || std.Io.Writer.Error;
@@ -138,6 +142,10 @@ pub fn evaluate(
     /// The functions of `dfn`'s module its body reaches
     /// (`infer.decoratorSupport`), compiled into the module beside it.
     support: []const ast.FnDecl,
+    /// Decision 451 (3) — `dfn` and the `support` functions whose calls are
+    /// located (the module being compiled's own), by name: a raise that
+    /// leaves one of their calls is `Outcome.raised` at it.
+    located: []const []const u8,
     /// The record and enum types `dfn` and `support` name, with the methods
     /// they call (`block_eval.typesReached`): a package record an imported
     /// helper constructs travels into the module beside the helper.
@@ -155,7 +163,7 @@ pub fn evaluate(
     var unsupported: erlang.UnsupportedMethod = .{};
     var refused: []const u8 = "";
     const t_module = stages.start();
-    const source = buildModule(arena, owner, dfn, support, types, handle, plainArgs, capture, &unsupported, &refused) catch |err| switch (err) {
+    const source = buildModule(arena, owner, dfn, support, located, types, handle, plainArgs, capture, &unsupported, &refused) catch |err| switch (err) {
         error.UnsupportedMethod => return .{ .err = try unsupportedText(arena, "decorator", dfn.name, unsupported) },
         error.HostCell => return .{ .err = refused },
         else => |e| return e,
@@ -272,6 +280,7 @@ fn mainForms(b: Ast.Builder, dfn: ast.FnDecl, plans: []const templateEval.ArgPla
             .body = try b.body(&.{try encode(b, &.{
                 Ast.field("kind", Ast.str("error")),
                 Ast.field("message", try b.call("__bp_text", &.{try b.tuple(&.{ V("Class"), V("Reason") })})),
+                Ast.field("at", try b.call("__bp_raised_at", &.{})),
             })}),
         },
     };
@@ -308,6 +317,7 @@ fn buildModule(
     owner: []const u8,
     dfn: ast.FnDecl,
     support: []const ast.FnDecl,
+    located: []const []const u8,
     types: []const ast.DeclKind,
     handle: DeclHandle,
     plainArgs: []const template.PlainArg,
@@ -361,11 +371,19 @@ fn buildModule(
             .refs = try preludeMod.exportRefs(arena, resident),
         },
         .unsupported_method = unsupported,
+        .located = located,
     };
     const argument = try templateEval.argumentTerm(arena, plans);
     // Emitted once per decorator and plan, not once per annotated declaration
     // (`template_eval` § one emit per declaration).
-    const key = try templateEval.emitKey(arena, if (capture != null) "ann" else "dec", owner, decls, plans);
+    // The located functions change the code, so they are part of the key.
+    var kind: std.ArrayListUnmanaged(u8) = .empty;
+    try kind.appendSlice(arena, if (capture != null) "ann" else "dec");
+    for (located) |n| {
+        try kind.append(arena, 1);
+        try kind.appendSlice(arena, n);
+    }
+    const key = try templateEval.emitKey(arena, kind.items, owner, decls, plans);
     const emitted: templateEval.Emitted = (if (key) |k| templateEval.cachedEmit(k) else null) orelse blk: {
         const code = erlang.emitComptimeModule(arena, placeholder_module, .{ .decls = decls }, config) catch |err|
             return if (err == error.UnsupportedComptimeMethod) error.UnsupportedMethod else error.EvalFailed;
@@ -601,6 +619,8 @@ const Reply = struct {
     contributions: []const ReplyItem = &.{},
     message: []const u8 = "",
     span: ?ReplySpan = null,
+    /// `[Line, Col]` of the innermost located call an error left, `[]` when none.
+    at: ?std.json.Value = null,
 };
 
 /// A `fail`'s span: `decl.failAt`'s `Span(start, end, line)`, or `x.fail`'s
@@ -632,7 +652,9 @@ fn parseOutcome(arena: std.mem.Allocator, stdout: []const u8) EvalError!Outcome 
         .span = if (reply.span) |sp| (if (sp.arg == null) template.Span{ .start = sp.start, .end = sp.end, .line = sp.line } else null) else null,
         .arg = if (reply.span) |sp| sp.arg else null,
     } };
-    return .{ .err = if (reply.message.len > 0) reply.message else "decorator evaluation failed" };
+    const message = if (reply.message.len > 0) reply.message else "decorator evaluation failed";
+    if (blockEval.raisedAt(reply.at)) |at| return .{ .raised = .{ .message = message, .at = at } };
+    return .{ .err = message };
 }
 
 // ── tests ─────────────────────────────────────────────────────────────────────
@@ -664,7 +686,7 @@ test "decorator module: lowered body, handle term and host glue" {
     const args = [_]template.PlainArg{.{ .paramName = "path", .source = "\"/x\"" }};
     var unsupported: erlang.UnsupportedMethod = .{};
     var refused: []const u8 = "";
-    const m = try buildModule(arena, "", dfn, &.{}, &.{}, handle, &args, null, &unsupported, &refused);
+    const m = try buildModule(arena, "", dfn, &.{}, &.{}, &.{}, handle, &args, null, &unsupported, &refused);
 
     // A2: the atom names the declaration, not just a hash of the body, and it
     // decodes back to `{gen, package "bp", "comptime", "dec", "route", <16 hex>}`.
@@ -734,7 +756,7 @@ test "decorator module: one module per decorator, whatever it annotates" {
 
     var unsupported: erlang.UnsupportedMethod = .{};
     var refused: []const u8 = "";
-    const first = try buildModule(arena, "", dfn, &.{}, &.{}, .{
+    const first = try buildModule(arena, "", dfn, &.{}, &.{}, &.{}, .{
         .kind = "Type",
         .name = "Alpha",
         .fields = &.{},
@@ -742,7 +764,7 @@ test "decorator module: one module per decorator, whatever it annotates" {
         .returnType = "",
         .annotations = &.{},
     }, &.{}, null, &unsupported, &refused);
-    const second = try buildModule(arena, "", dfn, &.{}, &.{}, .{
+    const second = try buildModule(arena, "", dfn, &.{}, &.{}, &.{}, .{
         .kind = "Type",
         .name = "Omega",
         .fields = &.{.{ .name = "x", .typeName = "i32", .annotations = &.{} }},

@@ -5216,7 +5216,14 @@ fn runDeclDecorators(
             erasedSupport[k] = try exprParam.eraseForRun(env.arena, if (own) try hosts.rewrite(try sameLoweredFn(env, program, sf)) else sf, isDecoratorParams(sf.params));
         }
         const runSupport = if (local) try std.mem.concat(env.arena, ast.FnDecl, &.{ erasedSupport, try hostCells.hostSupport(env, &env.fnDecls, try std.mem.concat(env.arena, ast.FnDecl, &.{ &.{runDfn}, erasedSupport })) }) else erasedSupport;
-        const outcome = decoratorEval.evaluate(env.arena, ctx.io, ctx.build_root, owner, try exprParam.eraseForRun(env.arena, runDfn, true), runSupport, reached.types, try completeHandle(env, try withMethodMeta(env, handle, memberOwner)), plain, capture, &env.comptimeTraces) catch {
+        // Decision 451 (3) — the calls of this module's decorator and of the
+        // functions of this module it reaches are located.
+        var located: std.ArrayListUnmanaged([]const u8) = .empty;
+        if (local) {
+            try located.append(env.arena, dfn.name);
+            for (support[0..found.fns.len]) |sf| if (std.mem.eql(u8, env.comptimeOwnerOf(sf), env.modulePath)) try located.append(env.arena, sf.name);
+        }
+        const outcome = decoratorEval.evaluate(env.arena, ctx.io, ctx.build_root, owner, try exprParam.eraseForRun(env.arena, runDfn, true), runSupport, located.items, reached.types, try completeHandle(env, try withMethodMeta(env, handle, memberOwner)), plain, capture, &env.comptimeTraces) catch {
             return decoratorError(env, a, "the decorator evaluator failed to run", "Decorator bodies run on the wasm comptime runtime inside the compiler (decision 434); this failure is the compiler's, not the body's — report it.");
         };
         switch (outcome) {
@@ -5307,7 +5314,7 @@ fn runDeclDecorators(
                 };
                 return decoratorError(env, a, fl.message, "raised by the decorator via `fail`/`failAt`");
             },
-            .err => |m| {
+            inline .err, .raised => |failed, tag| {
                 // Decorators run before any body of the module is inferred
                 // (a `.hooks` reader after them, decision 372), so
                 // a type error in the module's own decorator body (`decl.nope`)
@@ -5331,19 +5338,16 @@ fn runDeclDecorators(
                         _ = try inferFnDecl(env, sf);
                     };
                 }
-                // Decision 451 (3) — a raise inside the body is located at
-                // the call that raised; the annotation is the frame that ran it.
-                if (local) {
-                    var bodies: std.ArrayListUnmanaged([]const ast.Stmt) = .empty;
-                    try bodies.append(env.arena, dfn.body);
-                    for (support) |sf| if (std.mem.eql(u8, env.comptimeOwnerOf(sf), env.modulePath)) try bodies.append(env.arena, sf.body);
-                    if (blockEval.raisingCall(m, bodies.items, null)) |at| {
-                        const frame = try std.fmt.allocPrint(env.arena, "raised by this call while `#[{s}]` (at {d}:{d}) ran the decorator's body", .{ a.name, if (a.loc) |l| l.line else 0, if (a.loc) |l| l.col else 0 });
-                        env.lastError = TypeError.custom(m, frame).withLoc(at);
-                        return error.TypeError;
-                    }
+                if (tag == .err) {
+                    return decoratorError(env, a, failed, "the decorator could not be evaluated");
+                } else {
+                    // Decision 451 (3) — located at the call that raised (a
+                    // call of this module's decorator or of a function of this
+                    // module it reaches); the annotation is the frame that ran it.
+                    const frame = try std.fmt.allocPrint(env.arena, "raised by this call while `#[{s}]` (at {d}:{d}) ran the decorator's body", .{ a.name, if (a.loc) |l| l.line else 0, if (a.loc) |l| l.col else 0 });
+                    env.lastError = TypeError.custom(failed.message, frame).withLoc(failed.at);
+                    return error.TypeError;
                 }
-                return decoratorError(env, a, m, "the decorator could not be evaluated");
             },
         }
     }
@@ -19969,16 +19973,22 @@ fn foldBodyComptime(env: *Env, ct: ast.ComptimeExprOf(.untyped), typed: TypedExp
     const value = switch (outcome) {
         .value => |v| v,
         .err => |msg| {
-            if (try blockEval.badarithRefusal(env, msg, ct.kind.comptimeExpr.*)) |r| {
+            if (try blockEval.badarithRefusal(env, msg, ct.kind.comptimeExpr.*, null)) |r| {
                 env.lastError = TypeError.custom(r.message, "Raised while the `comptime` ran at build time (decisions 331, 472): an arithmetic error reads as Erlang's `badarith`, whatever the target.").withLoc(r.loc);
                 return error.TypeError;
             }
-            if (blockEval.raisingCall(msg, &.{}, ct.kind.comptimeExpr)) |at| {
-                const frame = try std.fmt.allocPrint(env.arena, "raised by this call while the `comptime` expression at {d}:{d} ran at build time (decisions 331, 451)", .{ loc.line, loc.col });
-                env.lastError = TypeError.custom(msg, frame).withLoc(at);
+            env.lastError = TypeError.custom(msg, "Raised while the `comptime` ran at build time (decision 331).").withLoc(loc);
+            return error.TypeError;
+        },
+        // Decision 451 (3) — located at the call that raised; the `comptime`
+        // expression is the frame that ran it.
+        .raised => |r| {
+            if (try blockEval.badarithRefusal(env, r.message, ct.kind.comptimeExpr.*, r.at)) |br| {
+                env.lastError = TypeError.custom(br.message, "Raised while the `comptime` ran at build time (decisions 331, 472): an arithmetic error reads as Erlang's `badarith`, whatever the target.").withLoc(br.loc);
                 return error.TypeError;
             }
-            env.lastError = TypeError.custom(msg, "Raised while the `comptime` ran at build time (decision 331).").withLoc(loc);
+            const frame = try std.fmt.allocPrint(env.arena, "raised by this call while the `comptime` expression at {d}:{d} ran at build time (decisions 331, 451)", .{ loc.line, loc.col });
+            env.lastError = TypeError.custom(r.message, frame).withLoc(r.at);
             return error.TypeError;
         },
     };

@@ -236,6 +236,21 @@ test "term: atoms are interned, term order and equality are Erlang's" {
     try std.testing.expectEqual(@as(i32, 0), term.rt_eqx(int(1), one_float));
 }
 
+test "term: a raise keeps the innermost located call, a catch keeps it, a new raise forgets it" {
+    term.rt_reset();
+    try std.testing.expect(term.rt_raised_at_term() == term.rt_nil());
+    term.rt_raised_at(3, 4); // nothing pending: nothing recorded
+    try std.testing.expect(term.rt_raised_at_term() == term.rt_nil());
+    _ = term.rt_add(int(std.math.maxInt(i64)), int(1));
+    term.rt_raised_at(5, 9); // the inner call
+    term.rt_raised_at(2, 1); // the call that called it
+    term.rt_clear();
+    try std.testing.expect(term.rt_eq(term.rt_raised_at_term(), term.listFrom(&.{ int(5), int(9) })) == 1);
+    _ = term.rt_error(term.atomOf("again"));
+    try std.testing.expect(term.rt_raised_at_term() == term.rt_nil());
+    term.rt_clear();
+}
+
 test "term: an integer beyond 64 bits raises, and the exception reads as the BEAM's" {
     term.rt_reset();
     _ = term.rt_add(int(std.math.maxInt(i64)), int(1));

@@ -21,7 +21,7 @@ val f = comptime RecordField(name: "x", typeName: "i32");
   (block $L4
   local.get $t1
   global.get $__lit
-  i32.const 32
+  i32.const 40
   i32.add
   i32.const 9
   call $rt_atom
@@ -29,7 +29,7 @@ val f = comptime RecordField(name: "x", typeName: "i32");
   i32.eqz
   br_if $L4
   global.get $__lit
-  i32.const 48
+  i32.const 56
   i32.add
   i32.const 4
   call $rt_atom
@@ -38,7 +38,7 @@ val f = comptime RecordField(name: "x", typeName: "i32");
   (block $L5
   local.get $t1
   global.get $__lit
-  i32.const 56
+  i32.const 64
   i32.add
   i32.const 4
   call $rt_atom
@@ -46,7 +46,7 @@ val f = comptime RecordField(name: "x", typeName: "i32");
   i32.eqz
   br_if $L5
   global.get $__lit
-  i32.const 56
+  i32.const 64
   i32.add
   i32.const 4
   call $rt_atom
@@ -55,7 +55,7 @@ val f = comptime RecordField(name: "x", typeName: "i32");
   (block $L6
   local.get $t1
   global.get $__lit
-  i32.const 64
+  i32.const 72
   i32.add
   i32.const 5
   call $rt_atom
@@ -63,7 +63,7 @@ val f = comptime RecordField(name: "x", typeName: "i32");
   i32.eqz
   br_if $L6
   global.get $__lit
-  i32.const 64
+  i32.const 72
   i32.add
   i32.const 5
   call $rt_atom
@@ -112,7 +112,7 @@ val f = comptime RecordField(name: "x", typeName: "i32");
   local.set $s3
   local.get $s3
   global.get $__lit
-  i32.const 72
+  i32.const 80
   i32.add
   i32.const 5
   call $rt_bin
@@ -163,7 +163,7 @@ val f = comptime RecordField(name: "x", typeName: "i32");
   local.set $s3
   local.get $s3
   global.get $__lit
-  i32.const 80
+  i32.const 88
   i32.add
   i32.const 4
   call $rt_bin
@@ -250,7 +250,7 @@ val f = comptime RecordField(name: "x", typeName: "i32");
   local.set $s3
   local.get $s3
   global.get $__lit
-  i32.const 88
+  i32.const 96
   i32.add
   i32.const 5
   call $rt_bin
@@ -316,7 +316,7 @@ val f = comptime RecordField(name: "x", typeName: "i32");
   local.set $s3
   local.get $s3
   global.get $__lit
-  i32.const 96
+  i32.const 104
   i32.add
   i32.const 6
   call $rt_bin
@@ -365,7 +365,7 @@ val f = comptime RecordField(name: "x", typeName: "i32");
   local.set $s3
   local.get $s3
   global.get $__lit
-  i32.const 104
+  i32.const 112
   i32.add
   i32.const 2
   call $rt_bin
@@ -382,7 +382,7 @@ val f = comptime RecordField(name: "x", typeName: "i32");
   local.set $s1
   local.get $s1
   global.get $__lit
-  i32.const 112
+  i32.const 120
   i32.add
   i32.const 8
   call $rt_bin
@@ -442,16 +442,18 @@ val f = comptime RecordField(name: "x", typeName: "i32");
   (block $raise
   (block $L1 (result i32)
   (block $L2
+  (block $L3 (result i32)
+  (block $L4
   call $rt_map_empty
   local.set $s0
   local.get $s0
   global.get $__lit
-  i32.const 120
+  i32.const 128
   i32.add
   i32.const 4
   call $rt_atom
   global.get $__lit
-  i32.const 128
+  i32.const 136
   i32.add
   i32.const 1
   call $rt_bin
@@ -459,16 +461,23 @@ val f = comptime RecordField(name: "x", typeName: "i32");
   local.set $s0
   local.get $s0
   global.get $__lit
-  i32.const 136
+  i32.const 144
   i32.add
   i32.const 8
   call $rt_atom
   global.get $__lit
-  i32.const 144
+  i32.const 152
   i32.add
   i32.const 3
   call $rt_bin
   call $rt_map_put
+  br $L3
+  )
+  i32.const 2
+  i32.const 18
+  call $rt_raised_at
+  br $raise
+  )
   br $L1
   )
   call $rt_function_clause
@@ -515,7 +524,7 @@ val f = comptime RecordField(name: "x", typeName: "i32");
   i32.eqz
   br_if $L4
   global.get $__lit
-  i32.const 48
+  i32.const 56
   i32.add
   i32.const 4
   call $rt_atom

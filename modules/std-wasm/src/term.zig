@@ -111,6 +111,8 @@ pub fn rt_reset() callconv(.c) void {
     pending = false;
     p_class = nil_cell_ptr();
     p_reason = nil_cell_ptr();
+    raised_line = 0;
+    raised_col = 0;
     nil_cell = .{ .tag = .nil };
     io_lib.printed = null;
     initCommonAtoms();
@@ -457,6 +459,33 @@ fn raise(class: T, reason: T) void {
     pending = true;
     p_class = class;
     p_reason = reason;
+    raised_line = 0;
+    raised_col = 0;
+}
+
+// Decision 451 (3) — where the pending (or the last caught) exception was
+// raised: the source location of the innermost located call it left. The
+// comptime lowering wraps each call of the module being compiled in
+// `'__bp_at'(Line, Col, Call)` (`compiler-core/src/comptime/runtime/wat/
+// lower.zig`), which calls `rt_raised_at` when the call raised; 0 is "none".
+// A new raise forgets the previous location; catching keeps it, so the
+// evaluator's `catch` reads it back (`rt_raised_at_term`).
+var raised_line: i32 = 0;
+var raised_col: i32 = 0;
+
+/// Record `line:col` as where the pending exception was raised, unless a
+/// call it left earlier — an inner one — already did.
+pub fn rt_raised_at(line: i32, col: i32) callconv(.c) void {
+    if (!pending or raised_line != 0) return;
+    raised_line = line;
+    raised_col = col;
+}
+
+/// `[Line, Col]` of the last raise's innermost located call, `[]` when no
+/// located call recorded one.
+pub fn rt_raised_at_term() callconv(.c) T {
+    if (raised_line == 0) return nil_cell_ptr();
+    return cons(mkInt(raised_line), cons(mkInt(raised_col), nil_cell_ptr()));
 }
 
 pub fn raiseError(reason: T) void {

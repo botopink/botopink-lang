@@ -1325,7 +1325,7 @@ codegen/
   which `is` and an arm naming a record that is also a variant use
   (`modules/comptime_record_pattern`).
 - **Comptime modules:** `emitComptimeModule(alloc, name, program, .{ host_enums,
-  host_records, exports, forms, resident, listing, unsupported_method })` lowers an untyped decorator/template body with
+  host_records, exports, forms, resident, listing, unsupported_method, located })` lowers an untyped decorator/template body with
   the same emitter — `host_enums` join `enum_names` (`DeclKind.Type` →
   `'Record'`), `host_records` (`HostRecord{name, fields}`) join `record_fields`
   so host record constructors build maps, `exports` (`[]erl_ast.FnRef`) are prepended to `-export`,
@@ -1375,7 +1375,10 @@ codegen/
   methods (`length`, `abs`, `floor`) dispatch on the receiver too. A call nothing
   answers is recorded in `unsupported_method` (when set, compilable emit only)
   and the emit fails with `error.UnsupportedComptimeMethod`; the evaluators turn
-  it into a located diagnostic. `primErlangDispatchCount` exposes the size of the
+  it into a located diagnostic. `located` (decision 451 (3)) names the functions whose
+  calls are wrapped in `'__bp_at'(Line, Col, Call)` — `Line:Col` where the call starts
+  (`callStart`: the receiver chain's root of a method call); the comptime runtime records
+  the innermost one a raise leaves (`comptime/runtime/wat/lower.zig`). `primErlangDispatchCount` exposes the size of the
   prelude's dispatch table for a regression test.
   **A typed module uses the same shims** where inference recorded no lowering
   for a value-receiver call (a method on `Array.range(0, 5)`'s result, a local

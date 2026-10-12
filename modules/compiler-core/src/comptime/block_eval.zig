@@ -91,6 +91,10 @@ pub const Outcome = union(enum) {
     /// The module did not compile, the block raised, or the runtime is
     /// missing — the text of the located diagnostic.
     err: []const u8,
+    /// The block raised, and the raise left a call of this module the
+    /// runtime located (decision 451 (3), `erlang.ComptimeModule.located`):
+    /// the text, and where that call starts — the innermost such call.
+    raised: struct { message: []const u8, at: ast.Loc },
 };
 
 // ── preparing the block ──────────────────────────────────────────────────────
@@ -784,6 +788,9 @@ fn withStdCalls(env: *Env, prepared: Prepared) Error!Prepared {
 pub const Support = struct {
     fns: []const ast.FnDecl,
     types: []const ast.DeclKind,
+    /// The names of `fns` this module declares: their calls are located
+    /// (`erlang.ComptimeModule.located`, decision 451 (3)).
+    located: []const []const u8 = &.{},
 };
 
 /// The functions and types the value function and its makers reach, to a
@@ -798,6 +805,7 @@ pub fn collectSupport(env: *Env, prepared: Prepared) Error!Support {
     var names: std.StringHashMapUnmanaged(void) = .empty;
     var methods: std.StringHashMapUnmanaged(void) = .empty;
     var fns: std.ArrayListUnmanaged(ast.FnDecl) = .empty;
+    var located: std.ArrayListUnmanaged([]const u8) = .empty;
     var fn_seen: std.StringHashMapUnmanaged(void) = .empty;
     try fn_seen.put(arena, value_fn, {});
     for (prepared.makers) |m| try fn_seen.put(arena, m.decl.name, {});
@@ -827,6 +835,7 @@ pub fn collectSupport(env: *Env, prepared: Prepared) Error!Support {
                 if ((f.body.len == 0 and !f.isExternal()) or isComptimeOnly(f)) continue;
                 const g = try writer.rewrite(try expandedFn(env, f));
                 try fns.append(arena, g);
+                if (std.mem.eql(u8, env.comptimeOwnerOf(f), env.modulePath)) try located.append(arena, g.name);
                 try readFn(arena, &names, &methods, g);
                 changed = true;
                 continue;
@@ -890,7 +899,7 @@ pub fn collectSupport(env: *Env, prepared: Prepared) Error!Support {
         break :makerDecls ms;
     }, fns.items });
     try fns.appendSlice(arena, try hostCells.hostSupport(env, &env.fnDecls, reached));
-    return .{ .fns = fns.items, .types = out_types.items };
+    return .{ .fns = fns.items, .types = out_types.items, .located = located.items };
 }
 
 /// `f` with every template call of its body replaced by its expansion
@@ -1343,7 +1352,7 @@ fn hostForms(b: Ast.Builder, makers: usize) Error![]const Ast.Form {
         \\try
         \\        json:encode(#{kind => <<"value">>, value => '__bp_lift'('__bp_ct_value'(), '__bp_fns'())})
         \\    catch
-        \\        Class:Reason -> json:encode(#{kind => <<"error">>, message => '__bp_text'({Class, Reason})})
+        \\        Class:Reason -> json:encode(#{kind => <<"error">>, message => '__bp_text'({Class, Reason}), at => '__bp_raised_at'()})
         \\    end
     ;
     const lift_body =
@@ -1406,6 +1415,15 @@ fn buildModule(arena: std.mem.Allocator, owner: []const u8, prepared: Prepared, 
             .refs = try preludeMod.exportRefs(arena, resident),
         },
         .unsupported_method = unsupported,
+        .located = located: {
+            // The block's own functions, then the functions of this module
+            // it reaches (decision 451 (3)).
+            var names: std.ArrayListUnmanaged([]const u8) = .empty;
+            try names.append(arena, prepared.value.name);
+            for (prepared.makers) |m| try names.append(arena, m.decl.name);
+            try names.appendSlice(arena, support.located);
+            break :located names.items;
+        },
     };
     const code = erlang.emitComptimeModule(arena, placeholder_module, .{ .decls = decls.items }, config) catch |err| switch (err) {
         error.UnsupportedComptimeMethod => return error.UnsupportedMethod,
@@ -1480,8 +1498,10 @@ const badarith_raised = "the comptime block raised: {error,badarith}";
 /// Decision 472 — the refusal for an arithmetic error at build, when `msg` is
 /// `evaluate`'s text for one: `comptime-badarith: an error occurred when
 /// evaluating an arithmetic expression — \`<e>\`` (and `(division by zero)`
-/// when `e` is a division), located at `e`. Null when `msg` is anything else.
-pub fn badarithRefusal(env: *Env, msg: []const u8, e: ast.Expr) Error!?struct { message: []const u8, loc: ast.Loc } {
+/// when `e` is a division), located where the raise was (`at`, the innermost
+/// call of this module it left, decision 451 (3)), else at `e`. Null when
+/// `msg` is anything else.
+pub fn badarithRefusal(env: *Env, msg: []const u8, e: ast.Expr, raised_at: ?ast.Loc) Error!?struct { message: []const u8, loc: ast.Loc } {
     if (!std.mem.eql(u8, msg, badarith_raised)) return null;
     var f = formatMod.Formatter.init(env.arena);
     const doc = f.fmtExpr(e) catch return null;
@@ -1495,96 +1515,9 @@ pub fn badarithRefusal(env: *Env, msg: []const u8, e: ast.Expr) Error!?struct { 
             "{s}: an error occurred when evaluating an arithmetic expression — `{s}`{s}",
             .{ diagnostics.comptime_badarith, text, cause },
         ),
-        .loc = at.getLoc(),
+        .loc = raised_at orelse at.getLoc(),
     };
 }
-
-/// Decision 451 (3) — where a raise inside a decorator or `comptime` body
-/// happened: the start of the call that raised (`io.random.float()`), when
-/// `msg` is the refusal of an unseeded draw (a `random.float()` or a
-/// `seededFloat()` before a `seed`, 456) and one of `bodies` writes that call.
-/// Null for any other raise, or when no body writes the call (it is then
-/// located at the annotation or the `comptime` expression that ran it).
-pub fn raisingCall(msg: []const u8, bodies: []const []const ast.Stmt, expr: ?*const ast.Expr) ?ast.Loc {
-    if (std.mem.indexOf(u8, msg, "an unseeded draw:") == null) return null;
-    var w = DrawWalk{};
-    if (expr) |e| w.walk(ast.Expr, e);
-    for (bodies) |body| {
-        for (body) |*st| w.walk(ast.Expr, &st.expr);
-        if (w.found != null) break;
-    }
-    return w.found;
-}
-
-/// Whether `e` names std's `random` namespace: `io.random`, or the local
-/// `__bp_ns_io_random` the std-import pass binds it to.
-fn namesRandom(e: ast.Expr) bool {
-    if (e != .identifier) return false;
-    return switch (e.identifier.kind) {
-        .identAccess => |a| std.mem.eql(u8, a.member, "random"),
-        .ident => |n| std.mem.eql(u8, n, "random") or std.mem.endsWith(u8, n, "_random"),
-        else => false,
-    };
-}
-
-/// Where a call written `ns.random.float()` starts: its receiver chain's root.
-/// The std-import pass has folded `io.random` into the local `__bp_ns_io_random`
-/// at the member's token, so the root is the module path's length back.
-fn callStart(receiver: ast.Expr) ast.Loc {
-    var at = receiver;
-    while (at == .identifier and at.identifier.kind == .identAccess) at = at.identifier.kind.identAccess.receiver.*;
-    var loc = at.getLoc();
-    if (at == .identifier and at.identifier.kind == .ident) {
-        const n = at.identifier.kind.ident;
-        const prefix = "__bp_ns_";
-        if (std.mem.startsWith(u8, n, prefix)) if (std.mem.lastIndexOfScalar(u8, n, '_')) |last| if (last > prefix.len) {
-            const back: u32 = @intCast(last - prefix.len + 1);
-            if (loc.col > back) loc.col -= back;
-        };
-    }
-    return loc;
-}
-
-/// The first call of an unseeded draw a body writes: `<ns>.random.float()` or
-/// `seededFloat()`; `found` is where the call starts.
-const DrawWalk = struct {
-    found: ?ast.Loc = null,
-
-    fn walk(self: *DrawWalk, comptime U: type, ptr: *const U) void {
-        if (self.found != null) return;
-        if (U == ast.Expr) switch (ptr.*) {
-            .call => |c| if (c.kind == .call and !c.kind.call.is_builtin) {
-                const k = c.kind.call;
-                const draws = std.mem.eql(u8, k.callee, "seededFloat") or
-                    (std.mem.eql(u8, k.callee, "float") and k.receiver != null and namesRandom(k.receiver.?.*));
-                if (draws) {
-                    self.found = if (k.receiver) |r| callStart(r.*) else c.loc;
-                    return;
-                }
-            },
-            else => {},
-        };
-        if (U == ast.TypeRef or U == ast.Pattern) return;
-        switch (@typeInfo(U)) {
-            .@"struct" => |st| inline for (st.fields) |fl| {
-                if (fl.is_comptime) continue;
-                if (comptime mayHoldNames(fl.type)) self.walk(fl.type, &@field(ptr.*, fl.name));
-            },
-            .@"union" => |u| if (u.tag_type != null) switch (ptr.*) {
-                inline else => |*payload| if (comptime mayHoldNames(@TypeOf(payload.*))) self.walk(@TypeOf(payload.*), payload),
-            },
-            .optional => |o| if (ptr.*) |*inner| self.walk(o.child, inner),
-            .pointer => |pt| switch (pt.size) {
-                .one => if (comptime mayHoldNames(pt.child)) self.walk(pt.child, ptr.*),
-                .slice => if (comptime mayHoldNames(pt.child)) {
-                    for (ptr.*) |*e| self.walk(pt.child, e);
-                },
-                else => {},
-            },
-            else => {},
-        }
-    }
-};
 
 fn clip(text: []const u8) []const u8 {
     return text[0..@min(text.len, 4096)];
@@ -1601,7 +1534,21 @@ fn parseReply(arena: std.mem.Allocator, stdout: []const u8) Error!Outcome {
     }
     const msg = parsed.object.get("message");
     const text = if (msg) |m| (if (m == .string) m.string else "") else "";
-    return .{ .err = try std.fmt.allocPrint(arena, "the comptime block raised: {s}", .{text}) };
+    const message = try std.fmt.allocPrint(arena, "the comptime block raised: {s}", .{text});
+    if (raisedAt(parsed.object.get("at"))) |at| return .{ .raised = .{ .message = message, .at = at } };
+    return .{ .err = message };
+}
+
+/// The `at` of an error reply — `[Line, Col]` of the innermost located call
+/// the raise left (`'__bp_raised_at'/0`, decision 451 (3)) — or null when it
+/// is `[]` or absent.
+pub fn raisedAt(at: ?std.json.Value) ?ast.Loc {
+    const v = at orelse return null;
+    if (v != .array or v.array.items.len != 2) return null;
+    const line = v.array.items[0];
+    const col = v.array.items[1];
+    if (line != .integer or col != .integer or line.integer <= 0 or col.integer <= 0) return null;
+    return .{ .line = @intCast(line.integer), .col = @intCast(col.integer) };
 }
 
 fn readValue(arena: std.mem.Allocator, v: std.json.Value) Error!Value {
@@ -2061,10 +2008,14 @@ pub fn holeValue(env: *Env, io: std.Io, hole: *const ast.Expr) Error!HoleValue {
     };
     return switch (outcome) {
         .value => |v| if (try valueTerm(env.arena, v)) |t| .{ .build = t } else .render,
-        .err => |msg| if (try badarithRefusal(env, msg, hole.*)) |r|
+        .err => |msg| if (try badarithRefusal(env, msg, hole.*, null)) |r|
             .{ .refused = .{ .message = r.message, .loc = r.loc } }
         else
             .{ .refused = .{ .message = msg, .loc = loc } },
+        .raised => |r| if (try badarithRefusal(env, r.message, hole.*, r.at)) |br|
+            .{ .refused = .{ .message = br.message, .loc = br.loc } }
+        else
+            .{ .refused = .{ .message = r.message, .loc = r.at } },
     };
 }
 

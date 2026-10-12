@@ -126,9 +126,10 @@ test "an embedded std module that does not parse is located at its libs/std/src 
 }
 
 // Decision 451 (3) — a raise inside a decorator body or a `comptime` body is
-// located at the call that raised (`io.random.float()`), not at the annotation
-// or the `comptime` expression that ran it; the frame is named in the hint.
-test "an unseeded draw inside a decorator or a comptime is located at the call" {
+// located at the call that raised (`io.random.float()`, a `@panic` in a
+// function the body calls), not at the annotation or the `comptime`
+// expression that ran it; the frame is named in the hint.
+test "a raise inside a decorator or a comptime is located at the call that raised" {
     const gpa = std.testing.allocator;
     const io = std.testing.io;
     const build_root = test_scratch.path(io, "comptime/raise_location");
@@ -167,6 +168,54 @@ test "an unseeded draw inside a decorator or a comptime is located at the call" 
             .line = 4,
             .col = 28,
             .frame = "while the `comptime` expression at 4:19 ran at build time",
+        },
+        // Any raise, not only a std refusal: a `@panic` in a function of this
+        // module the body calls is located at the `@panic`, not at the call
+        // of the function, the annotation or the `comptime`.
+        .{
+            .src =
+            \\fn checked(n: i32) -> i32 {
+            \\    if (n > 1) {
+            \\        @panic("too big");
+            \\    }
+            \\    return n;
+            \\}
+            \\
+            \\fn sized(comptime decl: @Decl) {
+            \\    val n = checked(2);
+            \\    @emit("pub fn label() -> string { return \"" + decl.name + " ${n}\"; }");
+            \\}
+            \\
+            \\#[sized]
+            \\type Point(x: i32, y: i32)
+            \\
+            \\pub fn main() {
+            \\    @print(label());
+            \\}
+            \\
+            ,
+            .line = 3,
+            .col = 9,
+            .frame = "while `#[sized]` (at 13:3) ran the decorator's body",
+        },
+        .{
+            .src =
+            \\fn checked(n: i32) -> i32 {
+            \\    if (n > 1) {
+            \\        @panic("too big");
+            \\    }
+            \\    return n;
+            \\}
+            \\
+            \\pub fn main() {
+            \\    val atBuild = comptime checked(3);
+            \\    @print(atBuild);
+            \\}
+            \\
+            ,
+            .line = 3,
+            .col = 9,
+            .frame = "while the `comptime` expression at 9:19 ran at build time",
         },
     };
     for (cases) |c| {

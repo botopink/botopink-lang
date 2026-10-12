@@ -139,6 +139,13 @@ const Ctx = struct {
         }
     }
 
+    /// Where the chain `e` is written: its root identifier's loc.
+    fn writtenStart(e: *const ast.Expr) ast.Loc {
+        var cur = e;
+        while (cur.* == .identifier and cur.identifier.kind == .identAccess) cur = cur.identifier.kind.identAccess.receiver;
+        return cur.getLoc();
+    }
+
     /// The first loc recorded for the namespace an expression is rooted at.
     fn rootLoc(self: *Ctx, e: *const ast.Expr) ast.Loc {
         var cur = e;
@@ -181,7 +188,10 @@ const Ctx = struct {
                 .alias = name,
                 .loc = self.rootLoc(a.receiver),
             });
-            e.* = .{ .identifier = .{ .loc = loc, .kind = .{ .ident = name } } };
+            // The local spells `<folder>.<module>`: it starts where its
+            // root is written (a call on it, `io.random.float()`, starts
+            // there too — decision 451 (3)).
+            e.* = .{ .identifier = .{ .loc = writtenStart(a.receiver), .kind = .{ .ident = name } } };
             return true;
         }
         if (a.receiver.* != .identifier) return false;

@@ -155,6 +155,10 @@ const Renamer = struct {
                 try self.note(name);
                 self.changed = true;
                 var out = c;
+                // The call still starts where its receiver is written
+                // (`io.random.float()` at `io`): where a raise inside it is
+                // located (decision 451 (3), `erlang.ComptimeModule.located`).
+                if (cc.receiver) |r| out.loc = r.getLoc();
                 out.kind.call.receiver = null;
                 out.kind.call.callee = name;
                 out.kind.call.args = try self.clone([]ast.CallArg, cc.args);

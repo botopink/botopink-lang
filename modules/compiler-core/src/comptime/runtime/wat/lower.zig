@@ -54,6 +54,8 @@ const rt_sigs = std.StaticStringMap(RtSig).initComptime(.{
     .{ "rt_init", RtSig{ .params = i32s(1), .result = null } },
     .{ "rt_clear", RtSig{ .params = i32s(0), .result = null } },
     .{ "rt_pending", RtSig{ .params = i32s(0) } },
+    .{ "rt_raised_at", RtSig{ .params = i32s(2), .result = null } },
+    .{ "rt_raised_at_term", RtSig{ .params = i32s(0) } },
     .{ "rt_class", RtSig{ .params = i32s(0) } },
     .{ "rt_reason", RtSig{ .params = i32s(0) } },
     .{ "rt_nil", RtSig{ .params = i32s(0) } },
@@ -719,6 +721,10 @@ fn lowerNamedCall(x: Ctx, module_name: ?[]const u8, name: []const u8, args: []co
                 return;
             }
         }
+    } else if (std.mem.eql(u8, name, located_call) and args.len == 3) {
+        return lowerLocatedCall(x, args);
+    } else if (std.mem.eql(u8, name, raised_at) and args.len == 0) {
+        return x.rt("rt_raised_at_term");
     } else if (try l.resolveLocal(here, name, args.len)) |sym| {
         try lowerArgs(x, args);
         try x.e(.{ .call = sym });
@@ -753,6 +759,45 @@ fn lowerNamedCall(x: Ctx, module_name: ?[]const u8, name: []const u8, args: []co
     const bif = findBif(mod, name, args.len) orelse return l.refuse("{s}:{s}/{d} is not in the wat runtime", .{ mod, name, args.len });
     try lowerArgs(x, args);
     try x.rtChecked(bif.rt);
+}
+
+/// Decision 451 (3) — `'__bp_at'(Line, Col, Call)`: the comptime emitter
+/// (`codegen/erlang.zig`, `ComptimeModule.located`) wraps each call of the
+/// module being compiled in it. It answers `Call`; when `Call` raises, the
+/// runtime records `Line:Col` as where (`rt_raised_at`: the innermost wrapped
+/// call the raise leaves keeps it) and the raise goes on to the handler.
+const located_call = "__bp_at";
+/// `'__bp_raised_at'()` — `[Line, Col]` of the last raise's innermost located
+/// call, `[]` when none recorded one: what the evaluator's `catch` replies.
+const raised_at = "__bp_raised_at";
+
+fn lowerLocatedCall(x: Ctx, args: []const ep.Expr) Error!void {
+    const line = switch (args[0]) {
+        .int => |n| n,
+        else => return x.f.l.refuse("`'{s}'/3` with a line that is not an integer", .{located_call}),
+    };
+    const col = switch (args[1]) {
+        .int => |n| n,
+        else => return x.f.l.refuse("`'{s}'/3` with a column that is not an integer", .{located_call}),
+    };
+    const ar = x.ar();
+    const done = try x.f.label();
+    const raised = try x.f.label();
+    var outer: Code = .empty;
+    var inner: Code = .empty;
+    const saved = x.f.raise;
+    x.f.raise = raised;
+    const xi = x.sub(&inner);
+    try lowerExpr(xi, args[2]);
+    x.f.raise = saved;
+    try xi.e(.{ .br = done });
+    try block(&outer, ar, .block, raised, null, inner);
+    const xo = x.sub(&outer);
+    try xo.cnst(line);
+    try xo.cnst(col);
+    try xo.rt("rt_raised_at");
+    try xo.leave();
+    try block(x.c, ar, .block, done, .i32, outer);
 }
 
 fn lowerFunRef(x: Ctx, r: ep.Expr.FunRef) Error!void {

@@ -823,6 +823,15 @@ pub const ComptimeModule = struct {
     /// Only honoured on the compilable (non-`listing`) emit, where `forms`
     /// carries every host function.
     unsupported_method: ?*UnsupportedMethod = null,
+    /// Decision 451 (3) — the functions whose calls are located: each call
+    /// their bodies write lowers to `'__bp_at'(Line, Col, Call)`, where
+    /// `Line:Col` is where the call starts in the source (its receiver
+    /// chain's root for a method call). The comptime runtime records the
+    /// innermost such call a raise leaves (`comptime/runtime/wat/lower.zig`),
+    /// and the evaluator reports the raise there. The evaluators name the
+    /// functions of the module being compiled: a call in another module's
+    /// function is located at the call of this module that reached it.
+    located: []const []const u8 = &.{},
 
     /// A module the generated one imports its host glue from, with the forms
     /// that module defines. `refs` is derived from `forms`, so nothing can be
@@ -1861,6 +1870,7 @@ fn emitErlangModule(
         em.host_forms = cm.forms;
         if (cm.resident) |r| em.resident_forms = r.forms;
         if (!cm.listing) em.unsupported_method = cm.unsupported_method;
+        em.located = cm.located;
     }
     defer {
         for (em.prim_shims.keys()) |k| alloc.free(k);
@@ -2270,6 +2280,10 @@ fn emitErlangModule(
                 !v.isStatement()) try em.topValForms(b, &forms, v),
             .@"fn" => |f| {
                 if (!f.isExternal()) {
+                    em.locating = for (em.located) |n| {
+                        if (std.mem.eql(u8, n, f.name)) break true;
+                    } else false;
+                    defer em.locating = false;
                     try em.fnForms(b, &forms, f);
                     continue;
                 }
@@ -3363,6 +3377,10 @@ const Emitter = struct {
     resident_forms: []const Ast.Form = &.{},
     /// Comptime modules only: `ComptimeModule.unsupported_method`.
     unsupported_method: ?*UnsupportedMethod = null,
+    /// `ComptimeModule.located`, and whether the function being lowered is
+    /// one of them: its calls are wrapped in `'__bp_at'/3`.
+    located: []const []const u8 = &.{},
+    locating: bool = false,
     /// Locals that may hold `undefined` (null): a parameter declared `?T` or
     /// defaulted to `null`. `if (x)` on one is a null test, not a boolean test.
     /// Reset per function alongside `locals`.
@@ -8148,7 +8166,14 @@ const Emitter = struct {
                 return this.loopBreakCatch(b, try b.remote("lists", "foreach", &.{ fun, try this.exprNode(b, lp.iter.*) }), lp.body);
             },
 
-            .call => |c| return this.callNode(b, c),
+            .call => |c| {
+                const node = try this.callNode(b, c);
+                if (!this.locating) return node;
+                const at = callStart(e);
+                // A call a template expansion wrote has no place in the file.
+                if (at.expansion != 0) return node;
+                return b.call("__bp_at", &.{ Ast.Expr.t(Term.int(@intCast(at.line))), Ast.Expr.t(Term.int(@intCast(at.col))), node });
+            },
             .binding => |bind| return this.bindingNode(b, bind),
             // `use` is a transparent prefix: lower the wrapped call (any binding
             // belongs to the enclosing `val`).
@@ -8198,6 +8223,24 @@ const Emitter = struct {
                 this.chainedCallNode(b, c.loc, cc)
             else
                 this.plainCallNode(b, c.loc, cc),
+        };
+    }
+
+    /// Where the call `e` starts in the source: its callee for a plain call,
+    /// the root of its receiver chain for a method call (`io.random.float()`
+    /// starts at `io`, not at `float`, the token a method call is keyed by).
+    fn callStart(e: ast.Expr) ast.Loc {
+        var at = e;
+        while (true) switch (at) {
+            .call => |c| switch (c.kind) {
+                .call => |cc| at = (cc.receiver orelse return c.loc).*,
+                .pipeline => |p| at = p.lhs.*,
+            },
+            .identifier => |id| switch (id.kind) {
+                .identAccess => |a| at = a.receiver.*,
+                else => return id.loc,
+            },
+            else => return at.getLoc(),
         };
     }
 
