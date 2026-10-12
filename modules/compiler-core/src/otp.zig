@@ -20,6 +20,22 @@ pub const RELEASE = @import("manifest").OTP_RELEASE;
 /// What the probe evaluates: the release, alone on stdout, no newline.
 pub const PROBE_EVAL = "io:format(\"~s\",[erlang:system_info(otp_release)]),halt().";
 
+/// The `-eval` text of a VM that runs a program, around the erlang expression
+/// `call` that starts it, then `halt()`. An abort by `@panic` is the term
+/// `{panic, Msg}` (`Msg` a UTF-8 binary), which `erl` would print as a boot
+/// failure with `Msg`'s bytes as numbers once one is outside ASCII; the eval
+/// catches it and writes `Msg` itself to stderr, unchanged, one line, status 1
+/// — the text the program raised, on erlang and beam as on commonJS and wasm
+/// (decision 430, 144 B-41). Any other failure stays `erl`'s own report.
+/// `botopink run` (`compiler-cli/src/cli/otp.zig` `mainEval`) and the
+/// compiler-core tests that run an abort (`codegen/runtime.zig`
+/// `executeAborting`) both use it.
+pub fn guardedEval(arena: std.mem.Allocator, call: []const u8) ![]const u8 {
+    return std.fmt.allocPrint(arena,
+        \\try {s} catch error:{{panic, Msg}} when is_binary(Msg) -> io:setopts(standard_error, [{{encoding, unicode}}]), io:format(standard_error, "~ts~n", [Msg]), halt(1) end, halt().
+    , .{call});
+}
+
 /// Every `erl` the compiler starts gets these emulator flags: an idle
 /// scheduler (normal, dirty CPU, dirty IO) does not busy-wait before it
 /// sleeps. A short-lived VM spent ~0.21 of its ~0.34 CPU-s start spinning
@@ -133,4 +149,17 @@ test "otp: the release the compiler emits for passes, another one and a silent e
         "botopink emits Erlang for OTP 28, and `erl` on PATH did not name its release (killed) — install OTP 28 and put it on PATH",
         message(&buf, null, RELEASE),
     );
+}
+
+test "otp: an abort by @panic writes its message to stderr unchanged, outside ASCII too" {
+    const io = std.testing.io;
+    var arena_inst = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_inst.deinit();
+    const arena = arena_inst.allocator();
+    const eval = try guardedEval(arena, "erlang:error({panic, <<\"lib: '--gutter' is in no known namespace \\x{2014} a prefix\"/utf8>>})");
+    const res = std.process.run(arena, io, .{
+        .argv = &([_][]const u8{"erl"} ++ QUIET_FLAGS ++ [_][]const u8{ "-noshell", "-eval", eval }),
+    }) catch return;
+    try std.testing.expectEqualStrings("lib: '--gutter' is in no known namespace \xe2\x80\x94 a prefix\n", res.stderr);
+    try std.testing.expectEqual(@as(u8, 1), res.term.exited);
 }

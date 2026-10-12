@@ -46,7 +46,7 @@ codegen/
 ├── wat.zig           ← WAT backend: lowers to the wat code model, writes no text
 ├── wat/              ← WAT code model + emitter + runtime helpers — see [`wat/AGENTS.md`](wat/AGENTS.md)
 ├── typescript.zig    ← `.d.ts` backend: builds the TypeScript declaration model (a `pub` type alias → `export declare type Name<T> = …;`; every other backend skips `DeclKind.typeAlias` — `comptime/alias_erase.zig` already substituted it)
-├── runtime.zig       ← executes generated code in tests (RUN LOG capture)
+├── runtime.zig       ← executes generated code in tests (RUN LOG capture); `executeAborting` runs a program that aborts as `botopink run` does and returns what it wrote (B-41)
 ├── snapshot.zig      ← codegen snapshot builder / assertions
 ├── tests.zig         ← barrel: aggregates tests/<feature>.zig + js/*.zig + beam/*.zig for test_root.zig
 └── tests/            ← codegen tests, split by feature
@@ -760,7 +760,7 @@ codegen/
 - **beam `@todo` / `@panic`** raise `erlang:error({todo, Msg})` /
   `{panic, Msg}`, the erlang backend's reason, with `builtins_fns.d.bp`'s
   default message; `@todo()` raised the bare atom `undef`, which read as a
-  missing function (`{undef, main:notReady/0}`, reported by C-16).
+  missing function (`{undef, main:notReady/0}`, reported by C-16). `botopink run` catches `{panic, Msg}` in the program's `-eval` (`otp.zig` `guardedEval`, through `cli/otp.zig` `mainEval`) and writes `Msg` to stderr unchanged: `erl` printed the term as a boot failure, `Msg`'s bytes as numbers once one left ASCII.
 - **A bare `break` at a generator fn's own level** (decision 103) ends the
   generator (`genStopThrow`): `throw({'__bp_gen_stop', Key})`, which
   `genEndCatch` answers with `ok` — a second catch clause written only when

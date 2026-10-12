@@ -308,6 +308,13 @@ fn appendBinary(arena: std.mem.Allocator, out: *std.ArrayListUnmanaged(u8), byte
     try out.appendSlice(arena, ">>");
 }
 
+/// The `-eval` text of the VM that runs the user's program: `<atom>:main([])`
+/// inside `bp.otp.guardedEval`, which writes an `@panic`'s message to stderr
+/// unchanged (decision 430, B-41).
+pub fn mainEval(arena: std.mem.Allocator, atom: []const u8) ![]const u8 {
+    return bp.otp.guardedEval(arena, try std.fmt.allocPrint(arena, "{s}:main([])", .{atom}));
+}
+
 /// `erl`, `bp.otp.QUIET_FLAGS`, then `rest`: the argv of a VM that runs the
 /// user's program — the default scheduler count, no busy wait.
 pub fn erlArgv(arena: std.mem.Allocator, rest: []const []const u8) ![]const []const u8 {

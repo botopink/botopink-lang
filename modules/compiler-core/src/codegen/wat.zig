@@ -6980,6 +6980,11 @@ const Emitter = struct {
 
     fn lowerBuiltin(self: *Emitter, cc: anytype, loc: ast.Loc) anyerror!void {
         if (std.mem.eql(u8, cc.callee, "todo") or std.mem.eql(u8, cc.callee, "panic")) {
+            // `@panic(msg)` writes `msg` to stderr before it traps (B-41).
+            if (cc.args.len == 1 and std.mem.eql(u8, cc.callee, "panic") and self.isStringExpr(cc.args[0].value.*)) {
+                try self.lowerCoerced(cc.args[0].value.*, "i32");
+                try self.emit(self.builder().helper(.panic_fail));
+            }
             try self.emit(.@"unreachable");
             return;
         }

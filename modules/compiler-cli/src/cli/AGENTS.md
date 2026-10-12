@@ -27,7 +27,7 @@ cli/
 ├── libs.zig           ← generic external-lib loader (`manifest.resolveDependency` over the root list → `<name>/` modules)
 ├── bpp.zig            ← the `.bpp` roles (decision 361): the package `"bpp"` names, its declarations std's `bpp` annotations mark
 ├── arglist.zig        ← a per-module list handed to a child through a file, never its argv; the E2BIG message
-├── otp.zig            ← the OTP release check of every erlang / beam run (decision 228); the command's one compile `erl` (the session)
+├── otp.zig            ← the OTP release check of every erlang / beam run (decision 228); the command's one compile `erl` (the session); `mainEval`, the `-eval` of the VM that runs the program (`bp.otp.guardedEval`), which writes an `@panic`'s message to stderr unchanged and exits 1 on erlang and beam (144 B-41)
 ├── diagnostics.zig    ← shared compile diagnostics: located lex/parse/type rendering, named-set guard
 └── reporter.zig       ← stdout/stderr helpers (status, errors, hints, warnings)
 ```

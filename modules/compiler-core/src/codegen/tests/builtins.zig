@@ -149,6 +149,44 @@ test "js: builtin ---- @panic with message" {
     );
 }
 
+// Decision 430 (B-41): a library's abort reads the same on every target — the
+// message a `@panic` was given reaches stderr unchanged (concatenated, with
+// quotes and a non-ASCII dash), then the trap. The wasm backend dropped it.
+test "wat: builtin ---- @panic message reaches stderr before the trap" {
+    try h.assertWasmRunLog(std.testing.allocator,
+        \\fn refuse(name: string) {
+        \\    @panic("lib: '" + name + "' is in no known namespace — a prefix");
+        \\}
+        \\fn main() {
+        \\    @print("before");
+        \\    refuse("--gutter");
+        \\    @print("after");
+        \\}
+    ,
+        \\before
+        \\lib: '--gutter' is in no known namespace — a prefix
+        \\RUNTIME TRAP (wasmtime):
+        \\wasm trap: wasm `unreachable` instruction executed
+        \\
+    );
+}
+
+// Decision 430 (B-41): the same message, run on every backend the way
+// `botopink run` runs it — erlang and beam printed the term with the message's
+// bytes as numbers once one left ASCII, wasm trapped with no text.
+test "every backend: builtin ---- @panic message reaches stderr unchanged" {
+    try h.assertAbortWritesEveryBackend(std.testing.allocator,
+        \\fn refuse(name: string) {
+        \\    @panic("lib: '" + name + "' is in no known namespace — a prefix");
+        \\}
+        \\fn main() {
+        \\    @print("before");
+        \\    refuse("--gutter");
+        \\    @print("after");
+        \\}
+    , "lib: '--gutter' is in no known namespace — a prefix\n");
+}
+
 test "js: builtin ---- @print single argument" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {

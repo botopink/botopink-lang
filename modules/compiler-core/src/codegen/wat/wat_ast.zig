@@ -467,6 +467,8 @@ pub const HelperGroup = enum {
     print_opt_f64,
     /// `$__write_err` `$__assert_fail`.
     assert_fail,
+    /// `$__panic_fail`: a `@panic`'s message on stderr (needs `assert_fail`'s `$__write_err`).
+    panic_fail,
     /// `$__print_quoted_raw` `$__print_shaped_raw` `$__print_tagged_raw`
     /// `$__print_tagged` — arrays of strings, tuples and arrays of tuples
     /// (semantics decision 1a), and the value that carries its own declaration
@@ -577,6 +579,7 @@ pub const HelperGroup = enum {
             .print_opt_f64 => &.{ .print, .print_f64, .print_opt },
             .print_opt_tagged => &.{ .print, .print_opt, .print_shaped },
             .assert_fail => &.{.print},
+            .panic_fail => &.{.assert_fail},
             .print_shaped => &.{ .print, .print_bool, .print_f64, .print_i64, .print_u64, .display_of },
             .arr_new => &.{.alloc},
             .arr_push => &.{.arr_new},
@@ -650,6 +653,7 @@ pub const Helper = enum {
     print_opt_f64_raw,
     write_err,
     assert_fail,
+    panic_fail,
     print_quoted_raw,
     print_shaped_raw,
     print_tagged_raw,
@@ -723,6 +727,7 @@ pub const Helper = enum {
             .print_arr_i32, .print_arr_i32_raw => .print_arr_i32,
             .print_arr_f64, .print_arr_f64_raw => .print_arr_f64,
             .write_err, .assert_fail => .assert_fail,
+            .panic_fail => .panic_fail,
             .print_quoted_raw, .print_shaped_raw => .print_shaped,
             .print_null, .print_opt_i32, .print_opt_i32_raw, .print_opt_bool, .print_opt_bool_raw, .print_opt_str, .print_opt_str_raw => .print_opt,
             .print_opt_f64, .print_opt_f64_raw => .print_opt_f64,

@@ -15,7 +15,8 @@ through `hostFnBinding.resolve`, the check the backends apply), `erlang.zig` for
 the erlang backend's own rows of 1.0.11-beta `01-compiler/02-erlang` — fixtures
 that run the module, one file per backend). Aggregated by the
 sibling barrel `../tests.zig` for `test_root.zig`; shared harness
-(`assertJs`/`assertJsError`/`configs`) lives in `helpers.zig`.
+(`assertJs`/`assertJsError`/`configs`) lives in `helpers.zig`; `assertAbortWritesEveryBackend` runs a program that aborts on
+every backend (`runtime.executeAborting`, wasm's RUN LOG) and checks what it wrote contains the message (B-41).
 Snapshots are one tree (decision 434: comptime runs on wasm for every target):
 `snapshot_configs` (every target) and `test_mode_configs` (commonJS + erlang) are
 `configs`, and a fixture lands at `snapshots/codegen/<target>/<slug>.snap.md`

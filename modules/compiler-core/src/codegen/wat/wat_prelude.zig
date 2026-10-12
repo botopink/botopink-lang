@@ -50,6 +50,7 @@ pub fn items(g: ast.HelperGroup) []const ast.Item {
         .print_arr_i32 => &.{ .{ .func = print_arr_i32_raw }, .{ .func = print_arr_i32 } },
         .print_arr_f64 => &.{ .{ .func = print_arr_f64_raw }, .{ .func = print_arr_f64 } },
         .assert_fail => &.{ .{ .func = write_err }, .{ .func = assert_fail } },
+        .panic_fail => &.{.{ .func = panic_fail }},
         .print_shaped => &.{ .{ .func = print_quoted_raw }, .{ .func = print_tagged_raw }, .{ .func = print_tagged }, .{ .func = print_shaped_raw } },
         .print_opt_f64 => &.{ .{ .func = print_opt_f64_raw }, .{ .func = print_opt_f64 } },
         .print_i64 => &.{ .{ .func = print_i64_raw }, .{ .func = print_i64 } },
@@ -1473,6 +1474,14 @@ const assert_fail = func("__assert_fail", &.{ "where", "msg" }, null, &.{}, &.{
         get("msg"), c32(4),    op("add"),         get("msg"), load(0), call("__write_err"),
     }),
     c32(188),     c32(10),                                                         store8(0),                     c32(188),     c32(1),                                                          call("__write_err"),
+});
+
+/// `@panic(msg)`: the message, unchanged, and a newline on stderr (decision 430,
+/// B-41) — the text the program raised, as on every other target. `msg` is a
+/// length-prefixed string.
+const panic_fail = func("__panic_fail", &.{"msg"}, null, &.{}, &.{
+    get("msg"), c32(4),  op("add"), get("msg"), load(0), call("__write_err"),
+    c32(188),   c32(10), store8(0), c32(188),   c32(1),  call("__write_err"),
 });
 
 // ── decision 392's scheduler (`@Task<T>`, front `01-compiler/140` step 4) ──────

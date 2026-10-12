@@ -804,6 +804,48 @@ pub fn assertWasmRunLog(allocator: Allocator, src: []const u8, expected: []const
     return error.ModuleDidNotCompile;
 }
 
+/// `src` (a program whose `main` aborts) compiled for every backend and run
+/// the way `botopink run` runs it (`runtime.executeAborting`; wasm under
+/// wasmtime, its RUN LOG): each run aborts and what it writes contains
+/// `needle` — the message the program raised, unchanged, whatever the
+/// runtime's own frame around it (decision 430, 144 B-41). A target whose tool
+/// is missing is skipped.
+pub fn assertAbortWritesEveryBackend(allocator: Allocator, src: []const u8, needle: []const u8) !void {
+    const io = std.testing.io;
+    for (configs) |cfg| {
+        const wasm = cfg.targetSource == .wasm;
+        var outputs = if (wasm)
+            try generate(allocator, &.{.{ .path = "", .source = src }}, io, cfg)
+        else
+            try codegen.generateWith(allocator, &.{.{ .path = "", .source = src }}, io, cfg, .{ .execute = false });
+        defer {
+            for (outputs.items) |*o| o.result.deinit(allocator);
+            outputs.deinit(allocator);
+        }
+        const o = for (outputs.items) |o| {
+            if (std.mem.eql(u8, o.name, "") or std.mem.eql(u8, o.name, "main")) break o;
+        } else return error.ModuleDidNotCompile;
+        if (o.result.failed()) return error.ModuleDidNotCompile;
+        const got: []u8 = if (wasm)
+            try allocator.dupe(u8, o.result.run_output orelse "")
+        else
+            (try @import("../runtime.zig").executeAborting(allocator, switch (cfg.targetSource) {
+                .commonJS => .commonJS,
+                .erlang => .erlang,
+                else => .beam,
+            }, o.result.js, "main", io)) orelse {
+                std.debug.print("\n=== {t}: the program did not abort (or its tool is missing) ===\n", .{cfg.targetSource});
+                return error.DidNotAbort;
+            };
+        defer allocator.free(got);
+        if (wasm and got.len == 0) continue; // wasmtime missing
+        if (std.mem.indexOf(u8, got, needle) == null) {
+            std.debug.print("\n=== {t}: what the abort wrote ===\n{s}\n=== expected it to contain ===\n{s}\n", .{ cfg.targetSource, got, needle });
+            return error.AbortTextMismatch;
+        }
+    }
+}
+
 /// The erlang twin of `assertJsRunLog` (front `02-erlang`): compiles `src` for
 /// the erlang target, runs the emitted module and asserts its RUN LOG equals
 /// `expected`, then that every needle of `needles` is in the emitted erlang.

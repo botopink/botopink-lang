@@ -2312,6 +2312,11 @@ bottom type, so a call to one stands wherever a value of any type is expected �
 branch has the value. `@module()` is declared but no target lowers it, so it is
 `error[builtin-not-lowered]`.
 
+A `@panic(message)` aborts the program with a non-zero status, and its message —
+the text it was given, quotes and non-ASCII characters included — reaches stderr
+unchanged on every target; what the runtime writes around it (a stack trace, a
+trap notice) is the runtime's own (`modules/panic_library_message`).
+
 ### What `@print` writes
 
 A value prints the way the source writes it. A record names its type and its

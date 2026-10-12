@@ -190,7 +190,7 @@ The method-level ones read the call's location from `Emitter.call_loc`, which
 (`assertWasmRefusedAt`: the message and `line:col`).
 
 **What keeps an `unreachable`** is the program's own semantics and nothing
-else: `assert` (after `$__assert_fail`), `@panic` / `@todo`, a `throw` with
+else: `assert` (after `$__assert_fail`), `@panic` / `@todo` (a `@panic` with a string message writes it to stderr first, `$__panic_fail`, as the other targets do), a `throw` with
 nothing to unwind to, a rejected `#[@future]`, and the end of
 `$__bdispatch_<m>_<n>`'s chain, which `lowerBehaviorDispatch`'s refusal makes
 unreachable — plus the generic bodies below.
@@ -771,7 +771,7 @@ The `HelperGroup` list, checked against 442 (1) after the seeded stream left:
 `print`, `print_str`, `print_bool`, `print_f64`, `arr_at`, `str_concat`,
 `str_eq`, `alloc`, `i32_abs`, `i32_min`, `i32_max`,
 `arr_new`, `arr_push`, `print_arr_i32`, `print_arr_f64`, `box_i32`,
-`arr_at_box`, `print_opt`, `print_opt_f64`, `assert_fail`, `print_shaped`
+`arr_at_box`, `print_opt`, `print_opt_f64`, `assert_fail`, `panic_fail`, `print_shaped`
 (with `$__print_tagged_raw`), `print_opt_tagged`, `display_of`, `unknown`,
 `print_unknown`, `wasi_random_f64`, `box_f64`, `print_i64`, `box_i64`,
 `print_opt_i64`, `int_chk`, `i32_range_chk`, `i64_range_chk`, `print_u64`,

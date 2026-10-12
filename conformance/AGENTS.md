@@ -648,7 +648,7 @@ the narrowing (decision 254): `modules/is_fn_narrows_unknown` narrows an `unknow
 -> T` and calls through it — a stored factory, a lambda, a top-level fn, a value of another arity,
 a string and a number — on all four targets; `modules/is_fn_wrong_arity_fails` (`.exit nonzero`) is a
 resolver narrowing a stored `fn(i32) -> i32` with `is fn() -> Clock` and panicking with the entry's
-name and the expected type (the message is on stderr; wasm's `@panic` is a trap with no text); and
+name and the expected type (the message is on stderr on every target, wasm's included, which writes it before the trap); and
 `modules/call_unknown_without_narrowing` refuses calling an `unknown` that no test narrowed.
 `modules/fn_local_rebound_call` calls a fn-typed local at its current binding — a `val v` narrowed
 by `is fn() -> i32` in two sibling `for` bodies, a reassigned `var f`, a second `val f` lambda —
@@ -1472,7 +1472,8 @@ three targets (decision 178).
 Every claim is a snapshot record (§ Layout): what a target prints and whether it aborts (`out`,
 `no-final-newline`, `abort`), what an abort names on a target whose runtime writes its cause
 (`stderr`, a containment claim: the rest of a runtime's stderr — a stack trace, a crash-dump notice —
-is not the language's answer; wasm traps with no text, so its answer is `abort` alone), and what a
+is not the language's answer; wasm writes a `@panic`'s message before its trap and otherwise traps with
+no text, so its answer there is `abort` alone), and what a
 target refuses (`refused` / `at`). The exit status is never pinned: node 1, erl 1, wasmtime 134 are
 the runtimes' (§ Never pin an erlang exit status). A narrowing (`"targets"`) is the one claim that a
 target has no answer at all, audited on every check — § Narrowing a cell.
@@ -2040,6 +2041,10 @@ in the body and the caret is the annotation that ran it.
 (`modules/panic_aborts`, `modules/todo_aborts`, `.exit` = `nonzero`). On beam a function whose whole
 body is `@todo()` is emitted and raises the builtin's own `{todo, <<"not implemented">>}` —
 re-measured by front 12 of 1.0.11-beta (it used to be dropped, and the abort was `undef`).
+A `@panic`'s message reaches stderr unchanged on all four (`modules/panic_library_message`, a
+library-built message with quotes and a non-ASCII dash, `stderr` in `output/`, decision 430, 144 B-41):
+erlang and beam write the message itself, not the term with its bytes as numbers; wasm writes it
+before the trap.
 
 What cannot be tested from botopink at all, and why: `@typeInfo` / `@makeRecord` / `partial` / `omit`
 / `pick` (they produce types, and asserting on emitted text is the snapshots' job). Struck from this

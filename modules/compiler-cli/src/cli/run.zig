@@ -157,7 +157,7 @@ fn erlangArgv(arena: std.mem.Allocator, io: std.Io, out_dir: []const u8, entry_a
     }
     if (try compileAll(arena, io, dir, .erlang, erls.items, cache) != 0) return null;
 
-    const eval = try std.fmt.allocPrint(arena, "{s}:main([]), halt().", .{entry_atom});
+    const eval = try otp.mainEval(arena, entry_atom);
     return try otp.erlArgv(arena, &.{ "-noshell", "-pa", dir, "-eval", eval });
 }
 
@@ -189,7 +189,7 @@ fn beamArgv(arena: std.mem.Allocator, io: std.Io, out_dir: []const u8, entry_ato
     }
     if (try compileAll(arena, io, dir, .beam, asms.items, cache) != 0) return null;
 
-    const eval = try std.fmt.allocPrint(arena, "'{s}':main([]), halt().", .{entry_atom});
+    const eval = try otp.mainEval(arena, try std.fmt.allocPrint(arena, "'{s}'", .{entry_atom}));
     return try otp.erlArgv(arena, &.{ "-noshell", "-pa", dir, "-eval", eval });
 }
 

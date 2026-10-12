@@ -861,6 +861,65 @@ pub fn executeBeamAsm(allocator: std.mem.Allocator, asm_code: []const u8, module
     return ran.output;
 }
 
+/// The backends `executeAborting` runs.
+pub const AbortBackend = enum { commonJS, erlang, beam };
+
+/// Run a one-module program that aborts the way `botopink run` runs it — node
+/// on the file; `erl` with `otp.guardedEval` around the entry — and return
+/// what it wrote, stdout then stderr. Null when it did not abort (exit 0), the
+/// module did not compile, or the tool is missing. For the tests that claim
+/// what an abort names (an `@panic`'s message on stderr, decision 430, 144
+/// B-41), which the RUN LOG cannot: a crashing run records an empty one.
+/// Nothing is cached.
+pub fn executeAborting(allocator: std.mem.Allocator, backend: AbortBackend, code: []const u8, module_name: []const u8, io: anytype) !?[]u8 {
+    var dir_buf: [96]u8 = undefined;
+    const tmp_dir = try makeScratchDir(io, &dir_buf);
+    defer std.Io.Dir.cwd().deleteTree(io, tmp_dir) catch {};
+
+    const atom = try erlModuleAtom(allocator, module_name);
+    defer allocator.free(atom);
+    const ext = switch (backend) {
+        .commonJS => "js",
+        .erlang => "erl",
+        .beam => "S",
+    };
+    const basename = try std.fmt.allocPrint(allocator, "{s}.{s}", .{ atom, ext });
+    defer allocator.free(basename);
+    const path = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ tmp_dir, basename });
+    defer allocator.free(path);
+    try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = path, .data = code });
+
+    if (backend != .commonJS) {
+        const erlc: []const []const u8 = if (backend == .beam)
+            &.{ "erlc", "+from_asm", "-o", ".", basename }
+        else
+            &.{ "erlc", "-o", ".", basename };
+        const compiled = try runCaptured(allocator, io, erlc, tmp_dir, RUNTIME_TIMEOUT_NS);
+        allocator.free(compiled.output);
+        if (compiled.status != .ok) return null;
+    }
+
+    var arena_inst = std.heap.ArenaAllocator.init(allocator);
+    defer arena_inst.deinit();
+    const arena = arena_inst.allocator();
+    const argv: []const []const u8 = switch (backend) {
+        .commonJS => &.{ "node", basename },
+        .erlang, .beam => &([_][]const u8{"erl"} ++ otp.QUIET_FLAGS ++ [_][]const u8{
+            "-noshell",
+            "-pa",
+            ".",
+            "-eval",
+            try otp.guardedEval(arena, try std.fmt.allocPrint(arena, "'{s}':'_botopink_main'()", .{atom})),
+        }),
+    };
+    const ran = try runCaptured(allocator, io, argv, tmp_dir, RUNTIME_TIMEOUT_NS);
+    if (ran.status != .failed) {
+        allocator.free(ran.output);
+        return null;
+    }
+    return ran.output;
+}
+
 /// Execute WebAssembly text: write `<module>.wat` and `wasmtime run` it, which
 /// invokes the `_start` export the wasm backend emits for a module with
 /// `fn main` (a module without one instantiates, runs its start function if
