@@ -1,0 +1,15 @@
+//// Decision 359 (4) — every field without a default is supplied by a spread or
+//// a label: `Contato` holds no `nome`, and nothing labels it. Refused at the
+//// call, naming the field.
+
+import {types.Type} from "std";
+
+type Pessoa(nome: string, email: string, idade: i32 = 30)
+
+val Contato = Type.pick(Pessoa, .email);
+
+pub fn main() {
+    val c = Contato(email: "c@a");
+    val p = Pessoa(...c, idade: 3);
+    @print(p.email);
+}

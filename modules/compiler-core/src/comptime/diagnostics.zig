@@ -204,6 +204,20 @@ pub const builtin_arguments: []const u8 = "builtin-arguments";
 pub const variadic_spread: []const u8 = "variadic-spread";
 /// Decision 267 — a label on a variadic argument, or a trailing lambda.
 pub const variadic_label: []const u8 = "variadic-label";
+/// Decision 359 — a record spread (`...src`) at a call that is no record's
+/// constructor: a plain function call takes no spread (267).
+pub const call_spread: []const u8 = "call-spread";
+/// Decision 359 (2) — a record spread whose source is neither the record's
+/// own type nor a type derived from it by `Type.pick` / `omit` / `merge`.
+pub const record_spread_type: []const u8 = "record-spread-type";
+/// Decision 359 (2) — a record spread of a `Type.partial` value.
+pub const record_spread_partial: []const u8 = "record-spread-partial";
+/// Decision 359 (4) — a field without a default that no spread and no label
+/// supplies.
+pub const record_spread_missing_field: []const u8 = "record-spread-missing-field";
+/// Decision 359 — a field labelled twice, or an unlabelled argument, beside a
+/// record spread.
+pub const record_spread_arguments: []const u8 = "record-spread-arguments";
 /// Decision 2 — an `@block { … }` in value position whose body has no valued
 /// `return` (`val a = @block { 1 + 2 };`): a tail expression is never the
 /// block's value. A statement `@block { … };` stays legal.
@@ -668,6 +682,11 @@ pub const all_codes = [_][]const u8{
     context_provide_after_render,
     context_hook_without_use,
     variadic_spread,
+    call_spread,
+    record_spread_type,
+    record_spread_partial,
+    record_spread_missing_field,
+    record_spread_arguments,
     variadic_label,
     use_of_non_context_fn,
     use_without_context_effect,

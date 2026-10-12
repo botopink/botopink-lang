@@ -679,6 +679,12 @@ pub const StdTargetGate = struct {
     loc: ast.Loc,
 };
 
+/// Decision 359 — a derived type's lineage (`Env.derivedTypes`).
+pub const DerivedLineage = struct {
+    from: []const []const u8,
+    partial: bool,
+};
+
 pub const Env = struct {
     /// Arena allocator ---- all Type and TypeCell nodes are allocated here.
     arena: std.mem.Allocator,
@@ -1473,6 +1479,10 @@ pub const Env = struct {
     /// Decision 329 — the namespace types in scope (`type Type { fn … }`), by
     /// declared name: a call of the name constructs nothing and is refused.
     namespaceTypes: std.StringHashMap(void),
+    /// Decision 359 — each derived type's (307) lineage, by declared name
+    /// (`ast.TypeDecl.derivedFrom` / `derivedPartial`): the records a value of
+    /// it may be spread into, and whether it is `Type.partial`'s answer.
+    derivedTypes: std.StringHashMap(DerivedLineage),
     /// Decision 330 — set while `recv?.m(args)` is typed the way it was
     /// before the optional lost its methods (`infer.inferOptionalOperator`):
     /// the method is the payload's, read through `?.`.
@@ -1571,6 +1581,7 @@ pub const Env = struct {
             .builtinDecls = std.StringHashMap(BuiltinDecl).init(arena),
             .ctorParams = std.StringHashMap([]const ast.Param).init(arena),
             .namespaceTypes = std.StringHashMap(void).init(arena),
+            .derivedTypes = std.StringHashMap(DerivedLineage).init(arena),
             .defaultInjections = std.AutoHashMap(ast.Loc, DefaultFill).init(arena),
             .fnParams = std.StringHashMap([]const ast.Param).init(arena),
             .inherentMethodParams = std.StringHashMap([]const ast.Param).init(arena),
@@ -1668,6 +1679,7 @@ pub const Env = struct {
             .builtinDecls = try tmpl.builtinDecls.cloneWithAllocator(arena),
             .ctorParams = try tmpl.ctorParams.cloneWithAllocator(arena),
             .namespaceTypes = try tmpl.namespaceTypes.cloneWithAllocator(arena),
+            .derivedTypes = try tmpl.derivedTypes.cloneWithAllocator(arena),
             .defaultInjections = std.AutoHashMap(ast.Loc, DefaultFill).init(arena),
             .fnParams = try tmpl.fnParams.cloneWithAllocator(arena),
             .inherentMethodParams = try tmpl.inherentMethodParams.cloneWithAllocator(arena),
@@ -1734,6 +1746,7 @@ pub const Env = struct {
         self.builtinDecls.deinit();
         self.ctorParams.deinit();
         self.namespaceTypes.deinit();
+        self.derivedTypes.deinit();
         self.defaultInjections.deinit();
         self.fnParams.deinit();
         self.inherentMethodParams.deinit();

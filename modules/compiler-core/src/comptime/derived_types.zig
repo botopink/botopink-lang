@@ -43,6 +43,12 @@
 //! - the wrong number of arguments or a labelled one — `derived-type-arguments`;
 //! - the call anywhere but as the whole initializer of a module-level `val`
 //!   without a type annotation — `derived-type-outside-val`, at the call.
+//!
+//! Each answer also carries its lineage for decision 359's spread
+//! (`TypeDecl.derivedFrom`): the records it was made from by `pick`, `omit`
+//! and `merge`, through derived sources; `Type.partial`'s answer is marked
+//! (`TypeDecl.derivedPartial`), and neither it nor `Type.required`'s has a
+//! lineage.
 const std = @import("std");
 const ast = @import("../ast.zig");
 const diagnostics = @import("diagnostics.zig");
@@ -77,6 +83,17 @@ pub const ImportLookup = struct {
 const Record = struct {
     name: []const u8,
     fields: []const ast.Field,
+    /// Decision 359 — the records a value of this source may be spread into:
+    /// the record itself, and a derived type's lineage (`TypeDecl.derivedFrom`).
+    from: []const []const u8 = &.{},
+};
+
+/// What one `Type.<fn>(…)` call answers: its fields, and its lineage for
+/// decision 359 (`TypeDecl.derivedFrom`, `TypeDecl.derivedPartial`).
+const Derived = struct {
+    fields: []const ast.Field,
+    from: []const []const u8 = &.{},
+    partial: bool = false,
 };
 
 /// An imported source's fields as they travel: a default naming a binding of
@@ -106,7 +123,7 @@ const Ctx = struct {
     /// The module's derived `val`s, by name (index into `program.decls`).
     derived: std.StringHashMapUnmanaged(usize) = .empty,
     /// Each derived `val`'s answer, once computed.
-    done: std.StringHashMapUnmanaged([]const ast.Field) = .empty,
+    done: std.StringHashMapUnmanaged(Derived) = .empty,
     /// The derived `val`s being computed (a cycle is refused).
     active: std.StringHashMapUnmanaged(void) = .empty,
     refusal: ?TypeError = null,
@@ -153,7 +170,8 @@ const Ctx = struct {
     /// The record a source argument names.
     fn source(self: *Ctx, fn_name: []const u8, arg: *const ast.Expr, depth: usize) (Error || Refusal)!Record {
         if (self.deriveCall(arg)) |c| {
-            return .{ .name = try std.fmt.allocPrint(self.arena, "Type.{s}(…)", .{c.callee}), .fields = try self.derive(c, arg.getLoc()) };
+            const d = try self.derive(c, arg.getLoc());
+            return .{ .name = try std.fmt.allocPrint(self.arena, "Type.{s}(…)", .{c.callee}), .fields = d.fields, .from = d.from };
         }
         if (arg.* == .identifier and arg.identifier.kind == .ident) {
             return self.named(fn_name, arg.identifier.kind.ident, arg.getLoc(), depth);
@@ -164,7 +182,11 @@ const Ctx = struct {
     fn named(self: *Ctx, fn_name: []const u8, name: []const u8, loc: ast.Loc, depth: usize) (Error || Refusal)!Record {
         if (depth > 64) return self.refuse(loc, "{s}: `{s}` aliases itself", .{ diagnostics.derived_type_source_not_record, name }, null);
         if (self.derived.get(name)) |idx| {
-            return .{ .name = name, .fields = try self.answer(idx) };
+            const d = try self.answer(idx);
+            const from = try self.arena.alloc([]const u8, d.from.len + 1);
+            from[0] = name;
+            @memcpy(from[1..], d.from);
+            return .{ .name = name, .fields = d.fields, .from = from };
         }
         for (infer.scalar_type_names) |n| if (std.mem.eql(u8, n, name)) {
             return self.refuse(loc, "{s}: `Type.{s}` takes a record type; `{s}` is a primitive type", .{ diagnostics.derived_type_source_not_record, fn_name, name }, null);
@@ -182,7 +204,10 @@ const Ctx = struct {
             } else return self.refuse(loc, "{s}: `Type.{s}` takes a record type; `{s}` is an imported type alias — import the record it names", .{ diagnostics.derived_type_source_not_record, fn_name, name }, null),
             .type_ => |t| {
                 if (t.isRecord() and !t.isNamespace and t.genericParams.len == 0) {
-                    return .{ .name = name, .fields = if (local != null) t.recordFields() else try travelled(self.arena, t.recordFields()) };
+                    const from = try self.arena.alloc([]const u8, t.derivedFrom.len + 1);
+                    from[0] = name;
+                    @memcpy(from[1..], t.derivedFrom);
+                    return .{ .name = name, .fields = if (local != null) t.recordFields() else try travelled(self.arena, t.recordFields()), .from = from };
                 }
                 const what: []const u8 = if (t.isNamespace) "a namespace type" else if (!t.isRecord()) "an enum" else "a record with type parameters";
                 return self.refuse(loc, "{s}: `Type.{s}` takes a record type; `{s}` is {s}", .{ diagnostics.derived_type_source_not_record, fn_name, name, what }, null);
@@ -193,17 +218,17 @@ const Ctx = struct {
     }
 
     /// The fields of the derived `val` at `idx`, computed once.
-    fn answer(self: *Ctx, idx: usize) (Error || Refusal)![]const ast.Field {
+    fn answer(self: *Ctx, idx: usize) (Error || Refusal)!Derived {
         const v = self.program.decls[idx].val;
         if (self.done.get(v.name)) |f| return f;
         if (self.active.contains(v.name)) {
             return self.refuse(v.value.getLoc(), "{s}: `{s}` is derived from itself", .{ diagnostics.derived_type_source_not_record, v.name }, null);
         }
         try self.active.put(self.arena, v.name, {});
-        const fields = try self.derive(self.deriveCall(v.value).?, v.value.getLoc());
+        const d = try self.derive(self.deriveCall(v.value).?, v.value.getLoc());
         _ = self.active.remove(v.name);
-        try self.done.put(self.arena, v.name, fields);
-        return fields;
+        try self.done.put(self.arena, v.name, d);
+        return d;
     }
 
     /// The `.name` a `pick` / `omit` field argument names.
@@ -224,7 +249,7 @@ const Ctx = struct {
     }
 
     /// The fields one `Type.<fn>(…)` call answers.
-    fn derive(self: *Ctx, c: CallNode, loc: ast.Loc) (Error || Refusal)![]const ast.Field {
+    fn derive(self: *Ctx, c: CallNode, loc: ast.Loc) (Error || Refusal)!Derived {
         const name = c.callee;
         for (c.args) |a| if (a.label) |l| {
             return self.refuse(a.value.getLoc(), "{s}: `Type.{s}` takes no labelled argument (`{s}:`)", .{ diagnostics.derived_type_arguments, name, l }, null);
@@ -250,7 +275,8 @@ const Ctx = struct {
             };
             try out.appendSlice(self.arena, src.fields);
             try out.appendSlice(self.arena, second.fields);
-            return out.toOwnedSlice(self.arena);
+            const from = try std.mem.concat(self.arena, []const u8, &.{ src.from, second.from });
+            return .{ .fields = try out.toOwnedSlice(self.arena), .from = from };
         }
 
         if (fieldwise) {
@@ -271,7 +297,7 @@ const Ctx = struct {
             if (out.items.len == 0) {
                 return self.refuse(loc, "{s}: `Type.omit` leaves `{s}` with no field", .{ diagnostics.derived_type_fields, src.name }, null);
             }
-            return out.toOwnedSlice(self.arena);
+            return .{ .fields = try out.toOwnedSlice(self.arena), .from = src.from };
         }
 
         // partial / required
@@ -294,7 +320,9 @@ const Ctx = struct {
             }
             try out.append(self.arena, nf);
         }
-        return out.toOwnedSlice(self.arena);
+        // Neither is a pick, an omit or a merge (decision 359): the answer is
+        // spread into no source, and a partial one is never spread.
+        return .{ .fields = try out.toOwnedSlice(self.arena), .partial = partial };
     }
 
     /// A derivation left anywhere but as a module-level `val`'s initializer.
@@ -383,7 +411,7 @@ pub fn expand(arena: std.mem.Allocator, program: ast.Program, lookup: ?ImportLoo
         out[i] = d;
         if (d != .val or !ctx.derived.contains(d.val.name)) continue;
         const v = d.val;
-        const fields = ctx.answer(i) catch |err| switch (err) {
+        const ans = ctx.answer(i) catch |err| switch (err) {
             error.Refused => return .{ .refused = ctx.refusal.? },
             else => |e| return e,
         };
@@ -394,8 +422,10 @@ pub fn expand(arena: std.mem.Allocator, program: ast.Program, lookup: ?ImportLoo
             .comment = v.comment,
             .moduleComment = v.moduleComment,
             .annotations = v.annotations,
-            .shape = .{ .record = try arena.dupe(ast.Field, fields) },
+            .shape = .{ .record = try arena.dupe(ast.Field, ans.fields) },
             .loc = v.nameLoc,
+            .derivedFrom = ans.from,
+            .derivedPartial = ans.partial,
         } };
     }
     const rewritten: ast.Program = .{ .decls = out };
@@ -440,6 +470,39 @@ test "derived types: a `val` over `Type.pick` / `Type.partial` / `Type.merge` be
     try std.testing.expect(!both.isPub);
     try std.testing.expectEqualStrings("title", both.recordFields()[0].name);
     try std.testing.expectEqualStrings("note", both.recordFields()[1].name);
+}
+
+test "derived types: the lineage a spread reads (decision 359)" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const program = try parseProgram(arena,
+        \\import {types.Type} from "std";
+        \\type Recipe(title: string, servings: i32 = 2)
+        \\type Extra(note: string)
+        \\val Brief = Type.omit(Recipe, .servings);
+        \\val Both = Type.merge(Brief, Extra);
+        \\val Patch = Type.partial(Recipe);
+        \\val Title = Type.pick(Patch, .title);
+    );
+    const out = (try expand(arena, program, null)).ok;
+    const brief = out.decls[3].type_;
+    try std.testing.expectEqual(@as(usize, 1), brief.derivedFrom.len);
+    try std.testing.expectEqualStrings("Recipe", brief.derivedFrom[0]);
+    try std.testing.expect(!brief.derivedPartial);
+    const both = out.decls[4].type_;
+    try std.testing.expectEqual(@as(usize, 3), both.derivedFrom.len);
+    try std.testing.expectEqualStrings("Brief", both.derivedFrom[0]);
+    try std.testing.expectEqualStrings("Recipe", both.derivedFrom[1]);
+    try std.testing.expectEqualStrings("Extra", both.derivedFrom[2]);
+    const patch = out.decls[5].type_;
+    try std.testing.expect(patch.derivedPartial);
+    try std.testing.expectEqual(@as(usize, 0), patch.derivedFrom.len);
+    // A pick of a partial is derived from the partial alone, not its source.
+    const title = out.decls[6].type_;
+    try std.testing.expect(!title.derivedPartial);
+    try std.testing.expectEqual(@as(usize, 1), title.derivedFrom.len);
+    try std.testing.expectEqualStrings("Patch", title.derivedFrom[0]);
 }
 
 test "derived types: a `Type` that is not std's is left alone" {

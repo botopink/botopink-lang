@@ -1849,3 +1849,51 @@ test "union: a refused use names the branch that widened it (decision 8 §3.2)" 
     defer std.testing.allocator.free(msg);
     try std.testing.expect(std.mem.indexOf(u8, msg, "(the `if` at 1:32 made it one: its branches disagree)") != null);
 }
+
+/// Decision 359 — the refusal a record spread's arguments meet: its message
+/// carries `code`, located at `line:col`.
+fn expectSpreadRefusal(src: []const u8, code: []const u8, line: usize, col: usize) !void {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lx = Lexer.init(src);
+    const tokens = try lx.scanAll(alloc);
+    defer lx.deinit(alloc);
+    var p = Parser.init(tokens);
+    var program = try p.parse(alloc);
+    defer program.deinit(alloc);
+    var env = try inferMod.freshEnv(alloc, std.testing.allocator);
+    defer env.deinit();
+    try std.testing.expectError(error.TypeError, inferMod.inferProgram(&env, program));
+    const err = env.lastError orelse return error.TestExpectedEqual;
+    try std.testing.expect(err.kind == .custom);
+    try std.testing.expect(std.mem.startsWith(u8, err.kind.custom.message, code));
+    try std.testing.expectEqual(line, err.loc.?.line);
+    try std.testing.expectEqual(col, err.loc.?.col);
+}
+
+test "infer error: record spread ---- a label written twice, an argument without one (decision 359)" {
+    try expectSpreadRefusal(
+        \\type P(a: i32, b: i32)
+        \\fn f(old: P) -> P {
+        \\    return P(...old, a: 1, a: 2);
+        \\}
+    , "record-spread-arguments", 3, 28);
+    try expectSpreadRefusal(
+        \\type P(a: i32, b: i32)
+        \\fn f(old: P) -> P {
+        \\    return P(...old, 1);
+        \\}
+    , "record-spread-arguments", 3, 22);
+}
+
+test "infer error: record spread ---- at a method call and on an enum variant, `call-spread` (decision 359)" {
+    try expectSpreadRefusal(
+        \\type P(a: i32, b: i32) {
+        \\    fn sum(self: Self, x: i32) -> i32 { return self.a + x; }
+        \\}
+        \\fn f(old: P) -> i32 {
+        \\    return old.sum(...old);
+        \\}
+    , "call-spread", 5, 20);
+}

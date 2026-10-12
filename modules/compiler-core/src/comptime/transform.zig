@@ -988,12 +988,17 @@ fn rewriteExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
     // positional callee under the call's loc; only the name moves, the
     // arguments stay where they are — unless the rewrite carries its own:
     // a record update (`Name(..base, f: v)`) is recorded as the complete
-    // positional constructor call (`infer.rewriteRecordUpdate`).
+    // positional constructor call (`infer.rewriteRecordUpdate`). A record
+    // spread whose source is bound first (decision 359,
+    // `infer.inferRecordSpread`) is recorded as the `if (true) { … }` block
+    // that binds it, spliced whole; its construction sits at a loc of its own.
     if (expr_ptr.* == .call and expr_ptr.call.kind == .call) {
         if (agg.enum_section_rewrites.get(expr_ptr.call.loc)) |rewrite| {
             if (rewrite.* == .call and rewrite.call.kind == .call) {
                 expr_ptr.call.kind.call.callee = rewrite.call.kind.call.callee;
                 if (rewrite.call.kind.call.args.len > 0) expr_ptr.call.kind.call.args = rewrite.call.kind.call.args;
+            } else if (rewrite.* == .branch) {
+                expr_ptr.* = rewrite.*;
             }
         }
     }

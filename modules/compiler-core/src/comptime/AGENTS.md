@@ -1561,6 +1561,28 @@ path of names, anything else would run once per copied field), so
 `refuseRecordFieldAssign` (the `.fieldAccess` target of the `.assign` walk) reds at the assignment
 and spells that form out, naming the receiver when it is a plain name it can spread.
 
+## a spread copies a record's fields (decision 359)
+
+`Pessoa(...old, nome: "Ana")` — the parser reads `...src` at the start of a call argument as the
+argument labelled `ast.record_spread_label`, the `...` token on `CallArg.spreadLoc`; the formatter
+prints it back. `inferRecordSpread` (intercepted in `inferCallExpr` before the arguments are
+inferred) judges it: the callee is a record's constructor (an import alias of one included) or the
+call is `call-spread` at the `...` (267: a function call takes no spread); each source is a value of
+the record's own type or of a type whose lineage names it (`Env.derivedTypes`, filled from
+`TypeDecl.derivedFrom` / `derivedPartial`, which `derived_types.zig` computes: `pick`, `omit` and
+`merge` carry their sources', `partial` and `required` carry none), else `record-spread-type`, and
+a `Type.partial` value is `record-spread-partial`, both at the `...`; the arguments apply left to
+right, the later winning; a field no spread and no label supplies takes its default or is
+`record-spread-missing-field` at the call; a label written twice or an unlabelled argument is
+`record-spread-arguments`. It records the complete positional call in `enumSectionRewrites` — each
+field the last supplier's value, `src.<field>` read under a loc of its own as above, or the
+default. A source that is not a name or a path of names is bound once, by a `val
+__bp_spread_<line>_<col>_<exp>` in an `if (true) { …; Name(…) } else { @panic(…) }` block (the
+construction at `ast.spread_synthetic_col` past the call's column), which `transform.zig` splices
+whole in the call's place (`modules/record_spread`, `record_spread_other_type`,
+`record_spread_partial`, `record_spread_missing_field`, `call_spread`). Decision 37's `..base` above
+is untouched.
+
 Only a receiver whose type is a record **this module registered** is refused. Everything else keeps
 assigning, for the reasons 06 C9 left its own fresh var: a receiver still an unresolved type
 variable is an inference gap, and a named type the env cannot open — an imported record, a wrapper,

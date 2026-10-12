@@ -147,6 +147,14 @@ from an imported derived type), with eleven `reject/derived_type_*` cells — a 
 unknown field, a field named twice, no field, an `omit` leaving none, an enum and a primitive
 source, a field on both sides of a `merge`, the call in a body, a `var`, and the bare `partial(…)`
 (an unbound name); every one red on the parent binary.
+Decision 359 (a spread copies a record's fields, 144 B-14) adds `modules/record_spread` (`...src` beside
+labels, several spreads left to right with the later winning, a `Type.pick` / `omit` / `merge` source, a
+field left to its default, a call as the source evaluated once, a trailing comma, a generic record — four
+targets, the source printed unchanged) and four refusals: `record_spread_other_type` (a record of the
+same fields, `record-spread-type` at the `...`), `record_spread_partial` (a `Type.partial` value,
+`record-spread-partial` at the `...`), `record_spread_missing_field` (a field nothing supplies,
+`record-spread-missing-field` at the call) and `call_spread` (a function call, `call-spread` at the
+`...`); every one red on the parent binary, where `...` at an argument's start did not parse.
 `modules/derived_type_two_packages` derives over two packages' same-named modules: dependencies `a`
 and `b` each hold `shape` with a record `Box` of different fields, each package's `user` derives
 from its own `Box` (`Type.pick` in `a`, `Type.omit` in `b`) and the project has a `shape` of its

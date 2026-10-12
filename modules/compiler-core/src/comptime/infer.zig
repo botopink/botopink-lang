@@ -2219,6 +2219,7 @@ fn registerRecord(env: *Env, r: ast.TypeDecl) InferError!void {
     // `Config(...)` call site. Same rule as fn-decl call defaults.
     try env.ctorParams.put(r.name, try recordFieldsAsParams(env, r.recordFields()));
     if (r.isNamespace) try env.namespaceTypes.put(r.name, {});
+    if (r.derivedFrom.len > 0 or r.derivedPartial) try env.derivedTypes.put(r.name, .{ .from = r.derivedFrom, .partial = r.derivedPartial });
 
     // Inherent method signatures (self = the record instance type).
     try registerInherentMethodTypes(env, r.name, retType, &genericMap, r.methods);
@@ -15249,6 +15250,226 @@ fn rewriteRecordUpdate(env: *Env, c: anytype, fields: anytype, loc: ast.Loc) Inf
     try env.enumSectionRewrites.put(loc, rewrite);
 }
 
+/// Decision 359 — `Name(...src, f: v, ...other)`: a record's construction
+/// whose fields come from spreads and labels, applied left to right, the later
+/// winning. Each `src` is a value of the record's own type or of a type
+/// derived from it by `Type.pick` / `omit` / `merge` (307, `Env.derivedTypes`);
+/// any other type is `record-spread-type` and a `Type.partial` value
+/// `record-spread-partial`, both at the `...`. A field without a default that
+/// nothing supplies is `record-spread-missing-field` at the call; a label
+/// written twice, or an argument without one, `record-spread-arguments`. A
+/// spread at any other call is `call-spread` (267: a function call takes no
+/// spread).
+///
+/// The call reaches the backends as the complete constructor call it means —
+/// one positional argument per field, in declaration order: the last label or
+/// spread that supplies it (`src.<field>`), else the field's default. A source
+/// that is a name or a path of names is read where it stands; any other is
+/// bound once, ahead of the construction, by a `val` in an `if (true) { … }`
+/// block — the expression form every backend lowers — so it is evaluated once
+/// (359 (6)). The rewrite is recorded under the call's loc
+/// (`enumSectionRewrites`, spliced by the transform) and typed here.
+fn inferRecordSpread(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferError!TypedExpr {
+    const call = c.kind.call;
+    const firstSpread = for (call.args) |a| {
+        if (a.label) |l| if (std.mem.eql(u8, l, ast.record_spread_label)) break a;
+    } else unreachable;
+    const spreadAt = firstSpread.spreadLoc orelse firstSpread.value.getLoc();
+    // The record the call constructs: a plain call of a record type's name (an
+    // import alias of one included, decision 110).
+    const typeName: ?[]const u8 = blk: {
+        if (call.receiver != null or call.calleeExpr != null or call.is_builtin) break :blk null;
+        const name = env.importedTypeAliases.get(call.callee) orelse call.callee;
+        if (env.namespaceTypes.contains(name)) break :blk null;
+        const td = env.lookupTypeDef(name) orelse break :blk null;
+        break :blk switch (td) {
+            .record, .struct_ => name,
+            .enum_ => null,
+        };
+    };
+    const recName = typeName orelse {
+        const what: []const u8 = if (call.receiver != null or call.calleeExpr != null) "this call" else call.callee;
+        const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` constructs no record — a spread copies a record's fields into its constructor, and a function call takes none", .{ diagnostics.call_spread, what });
+        env.lastError = TypeError.custom(msg, "Pass the arguments one by one; a function that takes an existing array declares `values: T[]` (decision 267).").withLoc(spreadAt);
+        return error.TypeError;
+    };
+    const fields: []const envMod.FieldDef = switch (env.lookupTypeDef(recName).?) {
+        .record => |r| r.fields,
+        .struct_ => |st| st.fields,
+        .enum_ => unreachable,
+    };
+    const ctorRaw = env.lookup(call.callee) orelse env.lookup(recName) orelse return error.TypeError;
+    const ctor = (try instantiateGenericType(env, try instantiateCtorType(env, recName, ctorRaw))).deref();
+    if (ctor.* != .func or ctor.func.params.len != fields.len) return error.TypeError;
+    const params = ctor.func.params;
+    const ret = ctor.func.ret;
+
+    // Who supplies each field: the index of the last argument that does.
+    const supplier = try env.arena.alloc(?usize, fields.len);
+    @memset(supplier, null);
+    const labelled = try env.arena.alloc(bool, fields.len);
+    @memset(labelled, false);
+    const saved = env.expectedType;
+    defer env.expectedType = saved;
+    for (call.args, 0..) |a, ai| {
+        const lbl = a.label orelse {
+            const msg = try std.fmt.allocPrint(env.arena, "{s}: beside a spread, every argument of `{s}` names its field", .{ diagnostics.record_spread_arguments, recName });
+            env.lastError = TypeError.custom(msg, "Write `Name(...src, field: value)`.").withLoc(a.value.getLoc());
+            return error.TypeError;
+        };
+        if (std.mem.eql(u8, lbl, ast.record_spread_label)) {
+            env.expectedType = null;
+            const srcTy = try inferExpr(env, a.value.*);
+            const at = a.spreadLoc orelse a.value.getLoc();
+            const srcName = nominalName(srcTy);
+            const own = if (srcName) |n| std.mem.eql(u8, n, recName) else false;
+            if (own) {
+                try unifyAt(env, ret, srcTy, a.value.getLoc());
+                for (supplier) |*sp| sp.* = ai;
+                continue;
+            }
+            const lineage: ?envMod.DerivedLineage = if (srcName) |n| env.derivedTypes.get(n) else null;
+            if (lineage) |lin| if (lin.partial) {
+                const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` is `Type.partial(…)`'s answer — a field of it may be null, so it is not spread into `{s}`", .{ diagnostics.record_spread_partial, srcName.?, recName });
+                env.lastError = TypeError.custom(msg, "Read the fields it holds and label them (`field: p.field ?? fallback`).").withLoc(at);
+                return error.TypeError;
+            };
+            const derived = if (lineage) |lin| for (lin.from) |f| {
+                if (std.mem.eql(u8, f, recName)) break true;
+            } else false else false;
+            if (!derived) {
+                const shown = srcName orelse try snapshotMod.typeNameOf(env.arena, srcTy.deref());
+                const msg = try std.fmt.allocPrint(env.arena, "{s}: a spread into `{s}` copies a `{s}` or a type derived from it by `Type.pick`, `Type.omit` or `Type.merge` — `{s}` is neither", .{ diagnostics.record_spread_type, recName, recName, shown });
+                env.lastError = TypeError.custom(msg, "Label the fields to copy, or derive the source's type from the record (decision 307).").withLoc(at);
+                return error.TypeError;
+            }
+            const srcFields: []const envMod.FieldDef = switch (env.lookupTypeDef(srcName.?) orelse return error.TypeError) {
+                .record => |r| r.fields,
+                .struct_ => |st| st.fields,
+                .enum_ => &.{},
+            };
+            for (fields, 0..) |fd, fi| for (srcFields) |sf| {
+                if (std.mem.eql(u8, sf.name, fd.name)) {
+                    try unifyArgument(env, params[fi], sf.type_, a.value.getLoc());
+                    supplier[fi] = ai;
+                }
+            };
+            continue;
+        }
+        const idx = for (fields, 0..) |fd, fi| {
+            if (std.mem.eql(u8, fd.name, lbl)) break fi;
+        } else {
+            const vloc = a.value.getLoc();
+            const labelCol = if (vloc.col > lbl.len + 2) vloc.col - lbl.len - 2 else vloc.col;
+            env.lastError = TypeError.unknownField(recName, lbl).withLoc(.{ .line = vloc.line, .col = labelCol, .expansion = vloc.expansion });
+            return error.TypeError;
+        };
+        if (labelled[idx]) {
+            const vloc = a.value.getLoc();
+            const labelCol = if (vloc.col > lbl.len + 2) vloc.col - lbl.len - 2 else vloc.col;
+            const msg = try std.fmt.allocPrint(env.arena, "{s}: field `{s}` of `{s}` is labelled twice", .{ diagnostics.record_spread_arguments, lbl, recName });
+            env.lastError = TypeError.custom(msg, "A spread may be overridden by a label; a label is written once.").withLoc(.{ .line = vloc.line, .col = labelCol, .expansion = vloc.expansion });
+            return error.TypeError;
+        }
+        labelled[idx] = true;
+        supplier[idx] = ai;
+    }
+    const declared = env.ctorParams.get(recName);
+    for (fields, 0..) |fd, fi| {
+        if (supplier[fi] != null) continue;
+        const hasDefault = if (declared) |ps| fi < ps.len and ps[fi].default != null else false;
+        if (hasDefault) continue;
+        const msg = try std.fmt.allocPrint(env.arena, "{s}: field `{s}` of `{s}` has no default, and no spread or label supplies it", .{ diagnostics.record_spread_missing_field, fd.name, recName });
+        env.lastError = TypeError.custom(msg, "Label it (`field: value`), or spread a value that holds it.").withLoc(loc);
+        return error.TypeError;
+    }
+
+    // The construction: each spread source bound once when it is not a name.
+    var binds: std.ArrayListUnmanaged(ast.Stmt) = .empty;
+    const sources = try env.arena.alloc(*ast.Expr, call.args.len);
+    for (call.args, 0..) |a, ai| {
+        sources[ai] = a.value;
+        const l = a.label orelse continue;
+        if (!std.mem.eql(u8, l, ast.record_spread_label) or isNamePath(a.value.*)) continue;
+        const at = a.spreadLoc orelse a.value.getLoc();
+        const binder = try std.fmt.allocPrint(env.arena, "__bp_spread_{d}_{d}_{d}", .{ at.line, at.col, at.expansion });
+        const synth: ast.Loc = .{ .line = at.line, .col = at.col + ast.spread_synthetic_col, .expansion = at.expansion };
+        const bound = try env.arena.create(ast.Expr);
+        bound.* = .{ .identifier = .{ .loc = synth, .kind = .{ .ident = binder } } };
+        sources[ai] = bound;
+        const value = try env.arena.create(ast.Expr);
+        value.* = a.value.*;
+        try binds.append(env.arena, .{ .expr = .{ .binding = .{
+            .loc = .{ .line = synth.line, .col = synth.col + 1, .expansion = synth.expansion },
+            .kind = .{ .localBind = .{ .name = binder, .value = value, .mutable = false } },
+        } } });
+    }
+    const args = try env.arena.alloc(ast.CallArg, fields.len);
+    for (fields, 0..) |fd, fi| {
+        const ai = supplier[fi] orelse {
+            const dv = try env.arena.create(ast.Expr);
+            dv.* = declared.?[fi].default.?;
+            args[fi] = .{ .label = null, .value = dv };
+            continue;
+        };
+        const a = call.args[ai];
+        if (a.label) |l| if (!std.mem.eql(u8, l, ast.record_spread_label)) {
+            args[fi] = .{ .label = null, .value = a.value };
+            continue;
+        };
+        // `src.<field>`, each read at a loc of its own — the source's, the
+        // field index in the upper half of `col` (`rewriteRecordUpdate`).
+        const src = sources[ai];
+        const sl = src.getLoc();
+        const read = try env.arena.create(ast.Expr);
+        read.* = .{ .identifier = .{
+            .loc = .{ .line = sl.line, .col = sl.col | (@as(usize, fi + 1) << (@bitSizeOf(usize) / 2)), .expansion = sl.expansion },
+            .kind = .{ .identAccess = .{ .receiver = src, .member = fd.name } },
+        } };
+        args[fi] = .{ .label = null, .value = read };
+    }
+    var ctorCall = c;
+    ctorCall.kind.call.callee = recName;
+    ctorCall.kind.call.args = args;
+    const rewrite = try env.arena.create(ast.Expr);
+    if (binds.items.len == 0) {
+        rewrite.* = .{ .call = ctorCall };
+    } else {
+        // `if (true) { val __bp_spread_… = src; …; Name(…) } else { @panic(…) }`
+        // — the construction at a loc of its own, so the transform splices
+        // the `if` at the call's and never meets the call again.
+        const inner: ast.Loc = .{ .line = loc.line, .col = loc.col + ast.spread_synthetic_col, .expansion = loc.expansion };
+        ctorCall.loc = inner;
+        try binds.append(env.arena, .{ .expr = .{ .call = ctorCall } });
+        const cond = try env.arena.create(ast.Expr);
+        cond.* = .{ .identifier = .{ .loc = .{ .line = inner.line, .col = inner.col + 1, .expansion = inner.expansion }, .kind = .{ .ident = "true" } } };
+        const panicLoc: ast.Loc = .{ .line = inner.line, .col = inner.col + 2, .expansion = inner.expansion };
+        const msgLit = try env.arena.create(ast.Expr);
+        msgLit.* = .{ .literal = .{ .loc = .{ .line = inner.line, .col = inner.col + 3, .expansion = inner.expansion }, .kind = .{ .stringLit = "unreachable: a record spread's construction" } } };
+        const panicArgs = try env.arena.alloc(ast.CallArg, 1);
+        panicArgs[0] = .{ .label = null, .value = msgLit };
+        var else_ = try env.arena.alloc(ast.Stmt, 1);
+        else_[0] = .{ .expr = .{ .call = .{ .loc = panicLoc, .kind = .{ .call = .{
+            .receiver = null,
+            .callee = "panic",
+            .is_builtin = true,
+            .args = panicArgs,
+            .trailing = &.{},
+        } } } } };
+        rewrite.* = .{ .branch = .{ .loc = loc, .kind = .{ .if_ = .{
+            .cond = cond,
+            .binding = null,
+            .then_ = try binds.toOwnedSlice(env.arena),
+            .else_ = else_,
+        } } } };
+    }
+    env.expectedType = saved;
+    const typed = try inferExprTyped(env, rewrite.*);
+    try unifyAt(env, ret, typed.getType(), loc);
+    try env.enumSectionRewrites.put(loc, rewrite);
+    return typed;
+}
+
 /// `a` or `a.b.c` — an expression that reads a binding and nothing else.
 fn isNamePath(e: ast.Expr) bool {
     return switch (e) {
@@ -17936,6 +18157,12 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                 env.lastError = TypeError.custom(msg, hint).withLoc(loc);
                 return error.TypeError;
             }
+            // Decision 359 — a record spread (`Pessoa(...old, nome: n)`):
+            // the complete constructor call it means, or `call-spread` at a
+            // call that constructs no record.
+            for (call.args) |a| if (a.label) |l| if (std.mem.eql(u8, l, ast.record_spread_label)) {
+                return inferRecordSpread(env, c, loc);
+            };
             // Decision 110 — `D.empty()` for `import {Dict as D}` is
             // `Dict.empty()`: the receiver is renamed before anything reads
             // it, so every path below resolves the declared type and no

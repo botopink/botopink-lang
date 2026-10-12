@@ -3126,7 +3126,13 @@ const Emitter = struct {
             // because nothing knew the field was declared `string`.
             .branch => |b| switch (b.kind) {
                 .if_ => |i| blk: {
-                    if (i.binding == null) break :blk null;
+                    // An `if` without a binder answers what its arms do — a
+                    // record spread's `if (true) { val s = src; Name(…) }`
+                    // (decision 359) names the record its construction is.
+                    if (i.binding == null) {
+                        if (i.then_.len == 0) break :blk null;
+                        break :blk self.recordTypeOfExpr(i.then_[i.then_.len - 1].expr);
+                    }
                     const els = i.else_ orelse break :blk null;
                     if (els.len == 0) break :blk null;
                     break :blk self.recordTypeOfExpr(els[els.len - 1].expr);
