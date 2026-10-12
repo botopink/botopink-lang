@@ -10,7 +10,7 @@
 # removed from `scripts/gate.sh`, and CI runs it. A front's Conformance step
 # reads this run (decision 477).
 #
-#   test  one job per runner, every row hard: ubuntu + macos. There is no
+#   test  one job, hard: ubuntu-22.04 (no macos row). There is no
 #         windows row (1.0.11-beta 00-gate, gate-f): the snapshot capture
 #         carries CRLF / path-separator drift there, and a row that cannot
 #         fail measures nothing. The steps before the gate install what it
@@ -37,7 +37,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runner: [ubuntu-22.04, macos-14]
+        runner: [ubuntu-22.04]
     runs-on: ${{ matrix.runner }}
     steps:
       - name: Checkout
@@ -53,9 +53,7 @@ jobs:
       # The erlang and beam targets' tests run `erl` / `erlc` (the RUN LOGs, the
       # beam export audit, `botopink run|test --target erlang|beam`); compiling
       # needs neither — comptime runs on wasm (decision 434). `erlef/setup-beam`
-      # pins the version on linux; macos installs Homebrew's `erlang@<release>`
-      # (decision 227 — the plain `erlang` bottle is the latest OTP, 29 at the
-      # time), and the step after both asserts it. The release is the
+      # pins the version (decision 227), and the step after asserts it. The release is the
       # compiler's (decision 228, the step before).
       # Decision 228: the release is the compiler's `OTP_RELEASE`
       # (modules/manifest/src/root.zig, printed by `botopink --version`), read
@@ -69,8 +67,7 @@ jobs:
           [ -n "$release" ] || { echo "modules/manifest/src/root.zig declares no OTP_RELEASE (decision 228)"; exit 1; }
           echo "release=$release" >> "$GITHUB_OUTPUT"
 
-      - name: Install Erlang/OTP (linux)
-        if: matrix.runner == 'ubuntu-22.04'
+      - name: Install Erlang/OTP
         uses: erlef/setup-beam@v1
         with:
           # OTP 28 (BEAM 16.x) today. OTP 27 (BEAM 15.x) treats the
@@ -80,17 +77,8 @@ jobs:
           # 0 for the test framework's snapshot RUN LOG capture to fire).
           otp-version: ${{ steps.otp.outputs.release }}
 
-      - name: Install Erlang/OTP (macos)
-        if: matrix.runner == 'macos-14'
-        env:
-          OTP: ${{ steps.otp.outputs.release }}
-        run: |
-          brew install "erlang@$OTP" && brew link --force "erlang@$OTP"
-          echo "$(brew --prefix "erlang@$OTP")/bin" >> "$GITHUB_PATH"
-
-      # Decisions 227 and 228: the compiler's release on every row, linux and
-      # macos alike — `erlang@<release>` is keg-only, so its `bin` goes on PATH
-      # above; any other release here fails the job rather than testing against it.
+      # Decisions 227 and 228: the compiler's release; any other release here
+      # fails the job rather than testing against it.
       - name: Assert Erlang/OTP
         shell: bash
         env:
@@ -106,11 +94,10 @@ jobs:
       #
       # We pin a specific release tarball instead of running the
       # `wasmtime.dev/install.sh` shell installer — that script's
-      # version lookup is flaky on the GH runners (resolves to literal
-      # `{` on macOS, to `<!DOCTYPE html>` on linux when the upstream
-      # release feed 404s under rate-limiting).
-      - name: Install wasmtime (linux)
-        if: matrix.runner == 'ubuntu-22.04'
+      # version lookup is flaky on the GH runners (resolves to
+      # `<!DOCTYPE html>` when the upstream release feed 404s under
+      # rate-limiting).
+      - name: Install wasmtime
         shell: bash
         env:
           WASMTIME_VERSION: v45.0.1
@@ -124,10 +111,6 @@ jobs:
           chmod +x "$HOME/.wasmtime/bin/wasmtime"
           echo "$HOME/.wasmtime/bin" >> "$GITHUB_PATH"
           "$HOME/.wasmtime/bin/wasmtime" --version
-
-      - name: Install wasmtime (macos)
-        if: matrix.runner == 'macos-14'
-        run: brew install wasmtime
 
       # First step prints the resolved Zig version + SHA so a CI red can be
       # bisected against a Zig point release without re-running the job.
@@ -151,6 +134,8 @@ jobs:
       # under `<root>/repository/`, and `botopink` resolves a library's own
       # dependencies through the same roots. Decision 326: the shared
       # libraries are repositories of their own, not bundled with the compiler.
+      # Every library of the meta repository's `repository/` is checked out: a
+      # library missing here fails the cells that depend on it (`styled`, `snap`).
       - name: Checkout emilia
         uses: actions/checkout@v5
         with: { repository: botopink/emilia, ref: feat, path: repository/emilia }
@@ -181,6 +166,27 @@ jobs:
       - name: Checkout validation
         uses: actions/checkout@v5
         with: { repository: botopink/validation, ref: feat, path: repository/validation }
+      - name: Checkout css
+        uses: actions/checkout@v5
+        with: { repository: botopink/css, ref: feat, path: repository/css }
+      - name: Checkout styled
+        uses: actions/checkout@v5
+        with: { repository: botopink/styled, ref: feat, path: repository/styled }
+      - name: Checkout snap
+        uses: actions/checkout@v5
+        with: { repository: botopink/snap, ref: feat, path: repository/snap }
+      - name: Checkout json
+        uses: actions/checkout@v5
+        with: { repository: botopink/json, ref: feat, path: repository/json }
+      - name: Checkout yaml
+        uses: actions/checkout@v5
+        with: { repository: botopink/yaml, ref: feat, path: repository/yaml }
+      - name: Checkout markdown
+        uses: actions/checkout@v5
+        with: { repository: botopink/markdown, ref: feat, path: repository/markdown }
+      - name: Checkout dbcontext
+        uses: actions/checkout@v5
+        with: { repository: botopink/dbcontext, ref: feat, path: repository/dbcontext }
 
       - name: Print library identity
         shell: bash
