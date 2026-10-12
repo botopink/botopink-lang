@@ -6,8 +6,10 @@
 //! an imported record with the owner's declared field order, and the owner can
 //! `export` only the symbols another module actually consumes.
 //!
-//! commonJS, erlang, and beam_asm all share this one analysis. wasm stays
-//! single-module today (see `wat.zig`), so it ignores the index.
+//! commonJS, erlang, beam_asm and wat all share this one analysis. Each
+//! module is emitted against the index of its own package's dependency
+//! closure (`Scopes`, decision 509 (2)), never the whole program's: a
+//! library's code depends on its closure alone, never on its consumer.
 
 const std = @import("std");
 const ast = @import("../ast.zig");
@@ -134,6 +136,12 @@ pub const CrossModule = struct {
     /// the erlang driver (`erlang.zig`, `buildBindsErlangHost`); false for the
     /// other backends, which do not read it.
     binds_erlang_host: bool = false,
+    /// This index is a library's closure view (`Scopes`): the module being
+    /// emitted belongs to a package other than the root — a dependency or std
+    /// — whose consumers are not in its closure, so `imported` cannot say what
+    /// they reach for. Every `pub` name is exported (`exportsName`): `pub` is
+    /// the promise, and the library's code may not depend on who consumes it.
+    exports_every_pub: bool = false,
     exports: std.StringHashMap(ExportInfo),
     /// EVERY `pub` declaration of a name, in walk order — the population
     /// `exports` collapses to one entry. `pick` counts dissent over this, the
@@ -213,6 +221,15 @@ pub const CrossModule = struct {
         self.atom_faults.deinit();
         self.exports.deinit();
         self.imported.deinit();
+    }
+
+    /// Whether the module being emitted exports its `pub` declaration `name`
+    /// to other modules: always in a library's closure view
+    /// (`exports_every_pub`), else when some module of the index imports it —
+    /// the root package's own modules, so a single-module program exports
+    /// nothing.
+    pub fn exportsName(self: *const CrossModule, name: []const u8) bool {
+        return self.exports_every_pub or self.imported.contains(name);
     }
 
     /// Erlang/BEAM module atom of a module PATH (`"web/api/http"` →
@@ -1175,6 +1192,176 @@ fn sameNames(a: []const []const u8, b: []const []const u8) bool {
     for (a, b) |x, y| if (!std.mem.eql(u8, x, y)) return false;
     return true;
 }
+
+// ── the closure view (decision 509 (2), 144 B-65, B-66) ──────────────────────
+
+/// One emitter's view of the program: the outputs of the module's package
+/// closure and the index built over them alone.
+pub const Scope = struct {
+    /// The closure's modules, in the program's order (shallow copies).
+    outputs: []ComptimeOutput,
+    /// The cross-module index of `outputs` alone.
+    cross: CrossModule,
+
+    /// Whether module `path` is in the closure.
+    pub fn holds(self: *const Scope, path: []const u8) bool {
+        for (self.outputs) |*o| if (std.mem.eql(u8, o.name, path)) return true;
+        return false;
+    }
+};
+
+/// Every emitter's index restricted to its own package's dependency closure —
+/// decision 509 (2)'s invariant, one place for every backend. A package's code
+/// depends on its closure alone, never on its consumer: what the consumer, a
+/// sibling dependency or a std module the consumer imports declares (a record
+/// of the same name, a field, a variant with other fields) is not in a
+/// library's closure, so it cannot move the library's field read to the
+/// dynamic form, its variant reads to positions, or its exports.
+///
+/// The closure of a module:
+/// - of std (the embedded library, cached per module): the module and the std
+///   modules it imports, transitively;
+/// - of any other package — the root (the consumer) or a dependency: every
+///   module of the package, and every module it reaches by import — a
+///   dependency package whole, a std module with its own closure.
+///
+/// The whole program's index stays the drivers' for what is the program's
+/// question (an atom or an import fault); every lowering reads a `Scope`.
+pub const Scopes = struct {
+    alloc: std.mem.Allocator,
+    outputs: []ComptimeOutput,
+    whole: *const CrossModule,
+    /// Which package owns each module path.
+    packages: Packages,
+    /// Scope key (a package name, or a std module path) → its scope.
+    by_key: std.StringHashMapUnmanaged(*Scope) = .empty,
+
+    pub fn init(alloc: std.mem.Allocator, outputs: []ComptimeOutput, whole: *const CrossModule, packages: Packages) Scopes {
+        return .{ .alloc = alloc, .outputs = outputs, .whole = whole, .packages = packages };
+    }
+
+    pub fn deinit(self: *Scopes) void {
+        var it = self.by_key.valueIterator();
+        while (it.next()) |sc| {
+            sc.*.cross.deinit();
+            self.alloc.free(sc.*.outputs);
+            self.alloc.destroy(sc.*);
+        }
+        self.by_key.deinit(self.alloc);
+    }
+
+    /// The package of module `path`: the one `packages` gives it, or the head
+    /// of a `<pkg>/…` path an import names that `packages` does not list.
+    fn packageOf(self: *const Scopes, path: []const u8) []const u8 {
+        return self.packages.idOf(path).package;
+    }
+
+    fn isStd(self: *const Scopes, path: []const u8) bool {
+        return std.mem.eql(u8, self.packageOf(path), EMBEDDED_PACKAGE);
+    }
+
+    /// The scope module `path` is emitted against.
+    pub fn forModule(self: *Scopes, path: []const u8) !*const Scope {
+        const key = if (self.isStd(path)) path else self.packageOf(path);
+        if (self.by_key.get(key)) |sc| return sc;
+
+        var members: std.StringHashMapUnmanaged(void) = .empty;
+        defer members.deinit(self.alloc);
+        var work: std.ArrayListUnmanaged([]const u8) = .empty;
+        defer work.deinit(self.alloc);
+        if (self.isStd(path)) {
+            try members.put(self.alloc, path, {});
+            try work.append(self.alloc, path);
+        } else try self.addPackage(key, &members, &work);
+
+        var scratch = std.heap.ArenaAllocator.init(self.alloc);
+        defer scratch.deinit();
+        const sa = scratch.allocator();
+        while (work.pop()) |m| {
+            const o = self.find(m) orelse continue;
+            const ok = switch (o.outcome) {
+                .ok => |*ok| ok,
+                else => continue,
+            };
+            const own = self.packageOf(m);
+            for (ok.transformed.decls) |decl| {
+                const u = switch (decl) {
+                    .use => |u| u,
+                    else => continue,
+                };
+                // The package the import reaches: the one its `from` names,
+                // the one owning the module a resolved import keys (the
+                // checker rewrites `from "ui"` to the module it found,
+                // `ui/stream`), else the importer's own.
+                const pkg = switch (u.source) {
+                    .module => u.source.packageName() orelse own,
+                    .key => |k| self.packageOf(k),
+                    .root => own,
+                };
+                if (!std.mem.eql(u8, pkg, EMBEDDED_PACKAGE)) {
+                    try self.addPackage(pkg, &members, &work);
+                    continue;
+                }
+                // A std module, by the rule `importClosure` resolves it with,
+                // among std's modules alone.
+                for (u.imports) |imp| {
+                    const leaf_src = try u.leafSource(imp, sa, false);
+                    const whole_src = try u.leafSource(imp, sa, true);
+                    const picked_info = self.whole.picked(imp.leaf(), leaf_src, null);
+                    for (self.outputs) |*t| {
+                        if (!self.isStd(t.name) or members.contains(t.name)) continue;
+                        const owns = if (picked_info) |info|
+                            std.mem.eql(u8, info.module, t.name)
+                        else
+                            whole_src.namesModule(t.name) or (whole_src != .key and std.mem.eql(u8, moduleBasename(t.name), imp.leaf()));
+                        if (!owns) continue;
+                        try members.put(self.alloc, t.name, {});
+                        try work.append(self.alloc, t.name);
+                    }
+                }
+            }
+        }
+
+        var subset: std.ArrayListUnmanaged(ComptimeOutput) = .empty;
+        errdefer subset.deinit(self.alloc);
+        for (self.outputs) |o| if (members.contains(o.name)) try subset.append(self.alloc, o);
+        const outs = try subset.toOwnedSlice(self.alloc);
+        errdefer self.alloc.free(outs);
+        var cross = try buildIn(self.alloc, outs, self.whole.packages);
+        errdefer cross.deinit();
+        cross.binds_erlang_host = self.whole.binds_erlang_host;
+        cross.exports_every_pub = !std.mem.eql(u8, self.packageOf(path), self.packages.root);
+        const sc = try self.alloc.create(Scope);
+        sc.* = .{ .outputs = outs, .cross = cross };
+        // The key outlives the scope: a module path, or a package name read
+        // from a path — both owned by `outputs`.
+        try self.by_key.put(self.alloc, key, sc);
+        return sc;
+    }
+
+    fn find(self: *const Scopes, path: []const u8) ?*ComptimeOutput {
+        for (self.outputs) |*o| if (std.mem.eql(u8, o.name, path)) return o;
+        return null;
+    }
+
+    /// Every module of package `pkg` joins the closure: the ones `packages`
+    /// assigns it, and a `<pkg>/…` path it does not list.
+    fn addPackage(
+        self: *const Scopes,
+        pkg: []const u8,
+        members: *std.StringHashMapUnmanaged(void),
+        work: *std.ArrayListUnmanaged([]const u8),
+    ) !void {
+        for (self.outputs) |*o| {
+            if (members.contains(o.name)) continue;
+            if (self.isStd(o.name)) continue;
+            const mine = std.mem.eql(u8, self.packageOf(o.name), pkg) or ast.ImportSource.ofPackage(pkg, o.name);
+            if (!mine) continue;
+            try members.put(self.alloc, o.name, {});
+            try work.append(self.alloc, o.name);
+        }
+    }
+};
 
 // ── tests: the atom, its qualifier, its decoder and the collision check ───────
 

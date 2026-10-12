@@ -253,3 +253,12 @@ test "erlang: an `@block` reassigning an enclosing `var` answers it with every `
         \\}
     , "702\n-98\n", &.{"erlang:element(1, {_, Seen@"});
 }
+
+test "erlang: a library's field read is its closure's alone, whatever its consumer declares" {
+    // Decision 509 (2), 144 B-65: `q.label` in `shelf` is `erlang:element(2,
+    // Q)` — `shelf`'s closure declares one `Queue`. The consumer's own
+    // `Queue` and `rival`'s, with other field orders, are not in it; the read
+    // used to vote over the whole program and became `'__bp_field'(Q, label)`
+    // under `crowded` alone.
+    try h.assertLibrarySameUnder(std.testing.allocator, .erlang, &.{ "shelf", "rival" }, "shelf", &h.closure_plain, &h.closure_crowded);
+}

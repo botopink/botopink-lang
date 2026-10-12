@@ -47,6 +47,7 @@ spawned process. A `keyed = true` `Dict` (decision 168) runs on both BEAM
 targets (`assertErlangRunLog`, `assertBeamRunLog`): two processes writing their
 own key 2 000 times each keep both, the seed's repeated key keeps its last value
 and a key with no row reads `null`.
+`assertLibrarySameUnder(alloc, target, deps, lib, plain, crowded)` compiles a library under two consumers (as package `app` over `deps`) and fails when any file of the library — its code, its type units, its `.d.ts` — differs: decision 509 (2)'s invariant, one test per backend (`erlang.zig`, `beam.zig`, `commonjs.zig`) over the fixture `closure_shelf` / `closure_rival` / `closure_plain` / `closure_crowded`.
 For multi-module assertions without a snapshot, `assertConsumerJs(modules, present, absent)`
 generates every module (last = consumer `main`) and checks the consumer's JS
 contains/omits given substrings — used by the disk-lib namespace test in

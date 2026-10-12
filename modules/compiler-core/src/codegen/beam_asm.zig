@@ -662,13 +662,6 @@ fn tupleIndexMember(member: []const u8) ?u32 {
     return n;
 }
 
-/// True when another module imports `name` (so the owner must export its
-/// associated fns for the consumer's remote `call_ext` to resolve).
-fn isCrossImported(cross: ?*const CrossModule, name: []const u8) bool {
-    const xc = cross orelse return false;
-    return xc.imported.contains(name);
-}
-
 /// Marker kinds emitted by `transform.zig::tryLowerFutureJump`.
 const FutureWrapKindBeam = enum { resolved, rejected };
 
@@ -1579,6 +1572,11 @@ pub fn codegenEmit(
     // to the owner's map shape.
     var cross = try crossModule.buildIn(alloc, outputs, config.packages);
     defer cross.deinit();
+    // Each module is lowered against its own package's closure, never the
+    // whole program (decision 509 (2)): `cross` answers only the program's
+    // questions — an atom fault, an ambiguous import.
+    var scopes = crossModule.Scopes.init(alloc, outputs, &cross, config.packages);
+    defer scopes.deinit();
 
     for (outputs) |*ct| {
         switch (ct.outcome) {
@@ -1639,7 +1637,8 @@ pub fn codegenEmit(
                 // blocks and their runner; std's own tests are not the
                 // project's.
                 const module_test_mode = config.test_mode and !std.mem.startsWith(u8, ct.name, "std/");
-                const emitted = emitBeamAsm(alloc, ct.name, ct.srcPath, ok.transformed, ok.comptime_vals, ok.dispatch_rewrites, ok.instance_lowerings, &cross, outputs, module_test_mode, &missing) catch |err| {
+                const scope = try scopes.forModule(ct.name);
+                const emitted = emitBeamAsm(alloc, ct.name, ct.srcPath, ok.transformed, ok.comptime_vals, ok.dispatch_rewrites, ok.instance_lowerings, &scope.cross, scope.outputs, module_test_mode, &missing) catch |err| {
                     const me = missing orelse return err;
                     // `evalTemplate`'s refusal is the one field the emitter
                     // allocates for its caller (`alloc`, not its own arena).

@@ -516,3 +516,9 @@ test "beam: a member call through a library's default handle is a call into the 
         },
     }, &.{"{extfunc, test@qlib@qlib, make, 1}"}, &.{"unresolved_method"});
 }
+
+test "beam: a library's field read is its closure's alone, whatever its consumer declares" {
+    // Decision 509 (2), 144 B-65 — `erlang.zig`'s row on beam: the read of
+    // `q.size` in `shelf` is a `get_tuple_element` under both consumers.
+    try h.assertLibrarySameUnder(std.testing.allocator, .beam, &.{ "shelf", "rival" }, "shelf", &h.closure_plain, &h.closure_crowded);
+}

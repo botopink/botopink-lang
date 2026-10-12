@@ -336,6 +336,10 @@ pub fn codegenEmit(
     // the module that defines it.
     var cross = try crossModule.build(alloc, outputs);
     defer cross.deinit();
+    // Each module is linked and lowered against its own package's closure,
+    // never the whole program (decision 509 (2)).
+    var scopes = crossModule.Scopes.init(alloc, outputs, &cross, config.packages);
+    defer scopes.deinit();
 
     // What `relocateLinkedRefusals` reads once every module is emitted: the
     // message each refused module carries, and the modules each one links.
@@ -365,13 +369,14 @@ pub fn codegenEmit(
                 var visited = std.StringHashMap(void).init(alloc);
                 defer visited.deinit();
                 try visited.put(ct.name, {});
-                try collectLinks(alloc, outputs, &cross, ok.transformed, &visited, &linked, null);
+                const scope = try scopes.forModule(ct.name);
+                try collectLinks(alloc, scope.outputs, &scope.cross, ok.transformed, &visited, &linked, null);
                 // 06 C13 — a host-backed fn with no `wasm` target reaches the
                 // driver as a located diagnostic naming the function, not as
                 // the bare error name that would abort the whole build.
                 var missing: ?moduleOutput.MissingExternal = null;
                 var refused: ?Emitter.Refusal = null;
-                const emitted = emitWat(alloc, ct.name, ok.transformed, ok.comptime_vals, ok.dispatch_rewrites, ok.instance_lowerings, linked.items, &cross, external_lookup, artifact, &missing, &refused) catch |err| {
+                const emitted = emitWat(alloc, ct.name, ok.transformed, ok.comptime_vals, ok.dispatch_rewrites, ok.instance_lowerings, linked.items, &scope.cross, external_lookup, artifact, &missing, &refused) catch |err| {
                     // A construct this backend cannot lower reaches the
                     // driver the same way: located, naming the construct,
                     // failing only this module.

@@ -647,6 +647,11 @@ pub fn codegenEmit(
     var cross = try crossModule.buildIn(alloc, outputs, config.packages);
     cross.binds_erlang_host = buildBindsErlangHost(outputs);
     defer cross.deinit();
+    // Each module is lowered against its own package's closure, never the
+    // whole program (decision 509 (2)): `cross` answers only the program's
+    // questions — an atom fault, an ambiguous import.
+    var scopes = crossModule.Scopes.init(alloc, outputs, &cross, config.packages);
+    defer scopes.deinit();
 
     // Every module's `pub enum`s with their variants, so a consumer can quote
     // an imported variant in a case pattern (`collectImportedTypes`). The
@@ -734,17 +739,21 @@ pub fn codegenEmit(
                 var seen: std.StringHashMapUnmanaged(void) = .empty;
                 defer seen.deinit(alloc);
                 try seen.put(alloc, ct.name, {});
-                try crossModule.importClosure(alloc, outputs, &cross, ok.transformed, &seen, &closure);
+                const scope = try scopes.forModule(ct.name);
+                try crossModule.importClosure(alloc, scope.outputs, &scope.cross, ok.transformed, &seen, &closure);
                 var import_inits: std.ArrayListUnmanaged([]const u8) = .empty;
                 defer import_inits.deinit(alloc);
-                for (closure.items) |dep| for (outputs) |*o| {
+                for (closure.items) |dep| for (scope.outputs) |*o| {
                     if (!std.mem.eql(u8, o.name, dep)) continue;
                     switch (o.outcome) {
                         .ok => |*dok| if (moduleHasInit(dok.transformed)) try import_inits.append(alloc, cross.atomFor(dep)),
                         else => {},
                     }
                 };
-                const emitted = emitErlang(alloc, ct.name, ct.srcPath, ok.transformed, ok.comptime_vals, ok.dispatch_rewrites, ok.instance_lowerings, module_test_mode, &cross, enum_exports.items, import_inits.items, &missing, &ambiguous) catch |err| {
+                var scope_enums: std.ArrayListUnmanaged(EnumExport) = .empty;
+                defer scope_enums.deinit(alloc);
+                for (enum_exports.items) |ee| if (scope.holds(ee.module)) try scope_enums.append(alloc, ee);
+                const emitted = emitErlang(alloc, ct.name, ct.srcPath, ok.transformed, ok.comptime_vals, ok.dispatch_rewrites, ok.instance_lowerings, module_test_mode, &scope.cross, scope_enums.items, import_inits.items, &missing, &ambiguous) catch |err| {
                     const diag: moduleOutput.Diagnostic = if (missing) |me|
                         try me.diagnostic(alloc)
                     else if (ambiguous) |av|
@@ -2195,7 +2204,7 @@ fn emitErlangModule(
                 .extend => |ex| .{ .name = ex.name, .is_pub = ex.isPub, .methods = ex.methods },
                 else => continue,
             };
-            if (!ext.is_pub or !xc.imported.contains(ext.name)) continue;
+            if (!ext.is_pub or !xc.exportsName(ext.name)) continue;
             for (ext.methods) |m| try exports.append(b.arena, .{ .name = m.name, .arity = m.params.len });
         }
     }

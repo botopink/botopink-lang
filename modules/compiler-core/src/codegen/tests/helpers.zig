@@ -1138,3 +1138,126 @@ pub fn assertConsumerBeam(
         }
     }
 }
+
+/// Decision 509 (2)'s invariant for one target: the library `lib` compiled
+/// under two consumers — `plain` and `crowded`, each a full module list, the
+/// libraries first — emits the same files with the same bytes (its modules'
+/// code, their type units and, on commonJS, their `.d.ts`). The two programs
+/// compile as package `app` over the dependencies `deps`. A difference prints
+/// both texts and fails.
+pub fn assertLibrarySameUnder(
+    allocator: Allocator,
+    target: config.TargetSource,
+    deps: []const []const u8,
+    lib: []const u8,
+    plain: []const Module,
+    crowded: []const Module,
+) !void {
+    const io = std.testing.io;
+    var cfg: config.Config = for (configs) |c| {
+        if (c.targetSource == target) break c;
+    } else unreachable;
+    cfg.packages = .{ .root = "app", .deps = deps };
+    var a = try generate(allocator, plain, io, cfg);
+    defer {
+        for (a.items) |*o| o.result.deinit(allocator);
+        a.deinit(allocator);
+    }
+    var b = try generate(allocator, crowded, io, cfg);
+    defer {
+        for (b.items) |*o| o.result.deinit(allocator);
+        b.deinit(allocator);
+    }
+    var compared: usize = 0;
+    for (a.items) |oa| {
+        const in_lib = oa.name.len > lib.len and oa.name[lib.len] == '/' and std.mem.startsWith(u8, oa.name, lib);
+        if (!in_lib) continue;
+        const ob = for (b.items) |o| {
+            if (std.mem.eql(u8, o.name, oa.name)) break o;
+        } else return error.ModuleMissingUnderCrowded;
+        compared += 1;
+        try expectSameText(oa.name, oa.result.js, ob.result.js);
+        try expectSameText(oa.name, oa.result.typedef orelse "", ob.result.typedef orelse "");
+        try std.testing.expectEqual(oa.result.units.len, ob.result.units.len);
+        for (oa.result.units, ob.result.units) |ua, ub| {
+            try std.testing.expectEqualStrings(ua.atom, ub.atom);
+            try expectSameText(ua.atom, ua.code, ub.code);
+        }
+    }
+    try std.testing.expect(compared > 0);
+}
+
+fn expectSameText(name: []const u8, plain: []const u8, crowded: []const u8) !void {
+    if (std.mem.eql(u8, plain, crowded)) return;
+    std.debug.print("\n=== {s} under plain ===\n{s}\n=== {s} under crowded ===\n{s}\n", .{ name, plain, name, crowded });
+    return error.LibraryDependsOnConsumer;
+}
+
+/// The fixture of `assertLibrarySameUnder` (decision 509 (2), 144 B-65,
+/// B-66): the library `shelf` — a record read field by field, an enum whose
+/// payload variants a `case` destructures — and `rival`, a second dependency
+/// of `crowded` alone declaring the same names with other fields and field
+/// orders. `plain` uses `shelf` alone; `crowded` uses both, and declares
+/// `Queue` again in its own module.
+pub const closure_shelf = Module{ .path = "shelf/items", .package = "shelf", .source =
+    \\pub type Queue(label: string, size: i32)
+    \\
+    \\pub type Shape {
+    \\    Circle(radius: i32),
+    \\    Square(side: i32),
+    \\    Dot,
+    \\}
+    \\
+    \\pub fn describe(q: Queue) -> string {
+    \\    return q.label + ":" + q.size.toString();
+    \\}
+    \\
+    \\pub fn area(s: Shape) -> i32 {
+    \\    val out = case s {
+    \\        Circle(radius) -> radius * radius * 3;
+    \\        Square(side) -> side * side;
+    \\        Dot -> 0;
+    \\    };
+    \\    return out;
+    \\}
+};
+pub const closure_rival = Module{ .path = "rival/items", .package = "rival", .source =
+    \\pub type Queue(size: i32, label: string, extra: bool)
+    \\
+    \\pub type Shape {
+    \\    Square(side: i32, color: string),
+    \\    Circle(radius: i32),
+    \\    Dot,
+    \\}
+    \\
+    \\pub fn rivalLabel(q: Queue) -> string {
+    \\    return q.label;
+    \\}
+};
+pub const closure_plain = [_]Module{
+    closure_shelf,
+    .{ .path = "main", .source =
+    \\import {items.Queue, items.describe} from "shelf";
+    \\
+    \\pub fn main() {
+    \\    @print(describe(Queue(label: "plain", size: 1)));
+    \\}
+    },
+};
+pub const closure_crowded = [_]Module{
+    closure_shelf,
+    closure_rival,
+    .{ .path = "local", .source =
+    \\pub type Queue(size: i32, label: string)
+    },
+    .{ .path = "main", .source =
+    \\import {items.Queue, items.Shape, items.describe, items.area} from "shelf";
+    \\import {items.rivalLabel} from "rival";
+    \\import {local};
+    \\
+    \\pub fn main() {
+    \\    @print(describe(Queue(label: "crowded", size: 2)));
+    \\    @print(area(Shape.Square(side: 2)).toString());
+    \\}
+    },
+};
