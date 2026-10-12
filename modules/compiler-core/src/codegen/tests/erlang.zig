@@ -263,6 +263,39 @@ test "erlang: a library's field read is its closure's alone, whatever its consum
     try h.assertLibrarySameUnder(std.testing.allocator, .erlang, &.{ "shelf", "rival" }, "shelf", &h.closure_plain, &h.closure_crowded);
 }
 
+test "erlang: a record imported by name beside a std module declaring the same name is the imported one" {
+    // 144 B-67: `import {collections} from "std"` registered `std/collections`'
+    // `Queue` before `import {items.Queue}` named `items`' own, so `Queue(…)`
+    // built `{std@collections@@Queue, …}` and `describe`'s head refused it
+    // with `function_clause`. The construction names the imported type's
+    // owner, whichever import is written first.
+    const items =
+        \\pub type Queue(label: string, size: i32)
+        \\
+        \\pub fn describe(q: Queue) -> string {
+        \\    return q.label + ":" + q.size.toString();
+        \\}
+    ;
+    try h.assertErlangRunLogModules(std.testing.allocator, &.{ .{ .path = "items", .source = items }, .{ .path = "main", .source =
+        \\import {collections} from "std";
+        \\import {items.Queue, items.describe};
+        \\
+        \\pub fn main() {
+        \\    @print(describe(Queue(label: "crowded", size: 2)));
+        \\    @print(collections.toInt(collections.lt()));
+        \\}
+    } }, "main", "crowded:2\n-1\n", &.{"{test@items@@Queue, <<\"crowded\">>, 2}"});
+    try h.assertErlangRunLogModules(std.testing.allocator, &.{ .{ .path = "items", .source = items }, .{ .path = "main", .source =
+        \\import {items.Queue, items.describe};
+        \\import {collections} from "std";
+        \\
+        \\pub fn main() {
+        \\    @print(describe(Queue(label: "after", size: 3)));
+        \\    @print(collections.toInt(collections.gt()));
+        \\}
+    } }, "main", "after:3\n1\n", &.{"{test@items@@Queue, <<\"after\">>, 3}"});
+}
+
 test "erlang: a `_`-prefixed module-level val is a binding its readers see, not a discarded statement" {
     // Only `_`, `_loop` and `_main…` are statements. `val _c = …` was inlined
     // into `'_botopink_init'/0` with no 0-arity function, so `_d`'s initialiser

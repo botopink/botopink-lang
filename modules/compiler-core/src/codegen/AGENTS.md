@@ -1750,7 +1750,12 @@ codegen/
   over `owners`). An imported record joins `record_fields` + `imported_types` +
   `type_owner_path` (`collectImportedTypes`), so construction inlines the owner's
   tuple shape carrying the OWNER's atom (there is no constructor function to call
-  remotely) and
+  remotely). A type imported **by name** wins over a namespace item's type of the
+  same name, whichever import is written first: the namespace items' types are
+  registered after every by-name item and never over one (an imported enum by
+  name before a namespace's in the variant pass too) — `import {collections} from
+  "std"` before `import {items.Queue} from "shelf"` built `{std@collections@@Queue,
+  …}` (144 B-67, cell `import_record_beside_std_record_of_same_name`). And
   `Response.ok(…)` calls into the owner module atom (`http:ok(…)`); the owner
   exports a `pub` type's associated fns when another module imports it, and a
   `pub implement`/`extend` another module activates (`import {PatoNada*} …`) is

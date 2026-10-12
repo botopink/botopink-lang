@@ -4894,7 +4894,11 @@ const Emitter = struct {
         // naming one is the atom (`'Gt'`), not a fresh variable that matches
         // anything. The enum arrives by name (`import {Order}`) or with its
         // module (`import {order} from "std"` brings `std/order`'s enums).
-        for (program.decls) |decl| switch (decl) {
+        // Two passes: an enum imported BY NAME first, then a namespace item's
+        // enums, so the by-name one owns its name in every first-wins map —
+        // `import {collections} from "std"` written before
+        // `import {items.Order} from "shelf"` must not hand `Order` to std.
+        for ([_]bool{ true, false }) |by_name_pass| for (program.decls) |decl| switch (decl) {
             .use => |u| for (u.imports) |imp| {
                 const name = imp.leaf();
                 // The enum the item names is the one its source picks — a
@@ -4909,7 +4913,7 @@ const Emitter = struct {
                     if (std.mem.eql(u8, ee.module, self.module_name)) continue;
                     const by_name = std.mem.eql(u8, ee.name, name) and (if (named) |m| std.mem.eql(u8, m, ee.module) else self.cross == null);
                     const by_module = if (whole == .key) whole.namesModule(ee.module) else std.mem.eql(u8, crossModule.moduleBasename(ee.module), name);
-                    if (!by_name and !by_module) continue;
+                    if (if (by_name_pass) !by_name else (by_name or !by_module)) continue;
                     try self.enum_variants_known.put(ee.name, {});
                     _ = try self.type_owner_path.getOrPutValue(ee.name, ee.module);
                     try self.rememberVariantOrder(ee.name, ee.variants);
@@ -4924,6 +4928,14 @@ const Emitter = struct {
             else => {},
         };
         const xc = self.cross orelse return;
+        // A namespace item's types (`import {collections} from "std"`) are
+        // registered after every item imported by name, and never over one:
+        // `Queue` imported from "shelf" beside `std/collections`' `Queue` is
+        // shelf's whichever import is written first (144 B-67). Registered in
+        // program order, std's came first and `Queue(…)` built
+        // `{std@collections@@Queue, …}`, which shelf's own functions refused.
+        var namespace_items: std.ArrayListUnmanaged(struct { name: []const u8, whole: ast.ImportSource }) = .empty;
+        defer namespace_items.deinit(self.alloc);
         for (program.decls) |decl| switch (decl) {
             .use => |u| for (u.imports) |imp| {
                 // The LEAF is what the owner exports; the local binding may be
@@ -4955,7 +4967,7 @@ const Emitter = struct {
                             try self.lib_handles.put(self.alloc, name, u.source),
                         .root, .key => {},
                     }
-                    try self.collectNamespaceModuleTypes(xc, name, try u.leafSource(imp, self.atom_arena.allocator(), true));
+                    try namespace_items.append(self.alloc, .{ .name = name, .whole = try u.leafSource(imp, self.atom_arena.allocator(), true) });
                     continue;
                 };
                 switch (info.kind) {
@@ -5036,6 +5048,7 @@ const Emitter = struct {
             },
             else => {},
         };
+        for (namespace_items.items) |item| try self.collectNamespaceModuleTypes(xc, item.name, item.whole);
     }
 
     /// A `use` name that is not a `pub` symbol but the basename of a module some
@@ -5086,7 +5099,7 @@ const Emitter = struct {
             // methods alike.
             const owner = try crossModule.typeAtom(self.atom_arena.allocator(), self.idOf(info.module), e.key_ptr.*);
             _ = try self.type_owner_path.getOrPutValue(e.key_ptr.*, info.module);
-            if (info.kind == .record) try self.imported_types.put(e.key_ptr.*, owner);
+            if (info.kind == .record) _ = try self.imported_types.getOrPutValue(e.key_ptr.*, owner);
             for (info.methods) |m| {
                 const gop = try self.imported_fns.getOrPut(m.name);
                 if (!gop.found_existing) gop.value_ptr.* = owner;

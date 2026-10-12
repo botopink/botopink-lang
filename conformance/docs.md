@@ -216,6 +216,8 @@ constructors are type-scoped).
 
 <!-- example: modules/import_tree_group -->
 
+<!-- example: modules/import_record_beside_std_record_of_same_name -->
+
 **The root of std is pure.** One criterion sorts the standard library:
 `io/` is everything that talks to the world outside the process — disk,
 network, clock, entropy, the environment — and a module at the root of std
