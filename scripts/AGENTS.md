@@ -255,17 +255,16 @@ file that is neither listed under the same target nor the list's `dispatcher`
 (`codegen.zig`) fails the gate. The full gate runs everything at every landing, so a
 wrong line can delay a red to the landing, never land one.
 
-### Gate lock
+### No gate lock, one total of jobs
 
-**One gate with conformance per machine.** A `--no-conformance` run (the
-commit hook's) takes no lock and never waits (decision 508), so the hooks of
-parallel tasks run side by side. A run with conformance takes `${XDG_RUNTIME_DIR:-$HOME/.cache}/botopink/gate.lock`
-before its first stage — a directory made with `mkdir` (atomic, and the macOS
-runner's bash 3.2 has no `flock`) holding the holder's `pid`, `checkout` and
-`since` — and removes it on exit. A second gate, from any checkout or worktree,
-prints `gate: another gate holds the lock — pid <n>, <checkout>, since <time>;
-waiting for it to finish` once and polls every 5 s; a lock whose pid is no
-longer alive (a killed gate) is taken over. No flag or variable skips the wait.
+Decisions 468, 469, 508 (front 144 B-29 step J). **This gate keeps no lock and no
+pool**: any number of runs, from any checkout or worktree, start at once and never
+wait. Scheduling a machine's gates is the meta repository's `scripts/gate.sh` (its
+pool of tokens, `gate.sh run`); the commit hook's `--no-conformance` run goes free,
+outside it. What the gate offers that scheduler is `--jobs <N>` (a positive count,
+the libraries' gate flag; default the machine's, `pool_default_jobs`), the run's
+one total, split among the side-by-side stages by § One job budget, and
+`--no-conformance`, the commit hook's gate — never a verdict.
 
 ### Step gate and full gate
 
@@ -412,7 +411,7 @@ and on every CPU, never by running less:
 
 The side-by-side stages used to size one pool each to the whole machine: three
 pools of about 16 jobs on 16 CPUs, load 4.7 rising to 26 in a cold gate. Now
-`gate.sh` reads `pool_default_jobs` once, after the build (CPUs bounded by
+`gate.sh` takes its total from `--jobs <N>` or else reads `pool_default_jobs` once, after the build (CPUs bounded by
 `MemAvailable / 768 MiB`), and passes each stage its share through the flag it
 already had: `test-libs` 50 % and `test-conformance` 30 % (`-- --jobs N`),
 `tsc-check.sh` 10 % (`--jobs N`, new, default unchanged) and `test-web` `-j`

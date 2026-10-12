@@ -326,7 +326,7 @@ One gate with conformance runs at a time per machine: a second one waits for
 the lock, naming the holder's pid, checkout and start time; a `--no-conformance`
 run (the commit hook's) takes no lock (decision 508). A `--staged` run whose
 working tree, sibling libraries and toolchain were already gated green runs
-stage 1 only (`scripts/AGENTS.md` § Gate lock, § Green-tree record).
+stage 1 only (`scripts/AGENTS.md` § Green-tree record).
 
 `scripts/git-hooks/pre-commit` is the tracked pre-commit hook, self-contained in
 every checkout (standalone clone or meta submodule): it sources

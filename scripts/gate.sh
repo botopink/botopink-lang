@@ -59,7 +59,7 @@
 #                           (decision 231); default build mode, as CI runs it
 #
 # Usage:
-#   scripts/gate.sh [--cold] [--staged] [--no-conformance]
+#   scripts/gate.sh [--cold] [--staged] [--no-conformance] [--jobs <N>]
 #
 # Two modes, decided by the current branch alone (§ step gate and full gate;
 # decision 460) — there is no flag or variable for it. On a `front/*` branch the
@@ -81,6 +81,13 @@
 #   --staged  also run stage 1 over `git diff --cached` (the pre-commit and
 #             pre-merge-commit hooks).
 #
+#   --jobs <N>
+#             the run's total of jobs (a positive count; the libraries' gate flag),
+#             split among the side-by-side stages as § job budget says. Default:
+#             the machine's, `pool_default_jobs`. The gate keeps no pool and no
+#             lock — the pool is the meta repository's scheduler's (decisions
+#             468, 469).
+#
 #   --no-conformance
 #             skip the conformance stage — stage 9, `test-conformance` —
 #             and print `gate: conformance not run (--no-conformance)`; every
@@ -89,10 +96,9 @@
 #             gate WITH conformance. Such a run never writes the green-tree
 #             record and is never a full gate.
 #
-# One gate with conformance at a time per machine (§ gate lock): a second one
-# waits for the first, naming its pid, checkout and start time. A
-# `--no-conformance` run (the commit hook's) takes no lock and never waits
-# (decision 508).
+# The gate keeps no lock and no pool (decisions 468, 469, 508): runs started
+# together share the machine through the meta repository's scheduler, and the
+# commit hook's `--no-conformance` run goes free.
 #
 # A `--staged` run whose trees were already gated green (§ green-tree record)
 # runs stage 1 and stops: what the commit's diff can affect is nothing that
@@ -108,15 +114,27 @@ set -euo pipefail
 cold=0
 staged=0
 no_conformance=0
-for a in "$@"; do
+jobs_total=""
+while [ "$#" -gt 0 ]; do
+    a="$1"; shift
     case "$a" in
+        --jobs)
+            [ "$#" -gt 0 ] || { echo "gate: --jobs needs a value" >&2; exit 2; }
+            jobs_total="$1"; shift ;;
+        --jobs=*) jobs_total="${a#--jobs=}" ;;
         --cold) cold=1 ;;
         --staged) staged=1 ;;
         --no-conformance) no_conformance=1 ;;
-        -h|--help) sed -n '2,78p' "$0"; exit 0 ;;
+        -h|--help) sed -n '2,105p' "$0"; exit 0 ;;
         *) echo "gate: unknown argument '$a'" >&2; exit 1 ;;
     esac
 done
+
+if [ -n "$jobs_total" ]; then
+    case "$jobs_total" in
+        ''|*[!0-9]*|0) echo "gate: --jobs must be a positive count (got '$jobs_total')" >&2; exit 2 ;;
+    esac
+fi
 
 # The wall-clock budget of a run on the reference machine (16 idle cores), in
 # seconds — § budget at the end. Decision 265 sets 7m30s for this milestone —
@@ -149,17 +167,10 @@ stage_time() {
 pass() { printf "${GREEN}✓ %s${NC}\n" "$1"; }
 fail() { printf "${RED}✗ %s${NC}\n" "$1" >&2; exit 1; }
 
-# ── § gate lock ──────────────────────────────────────────────────────────────
-# One gate with conformance per machine: every checkout and worktree takes the
-# same lock, a directory created with `mkdir` (atomic everywhere, including the
-# macOS runner's bash 3.2, which has no `flock`). The holder writes its pid,
-# checkout and start time into it and removes it on exit. A second gate waits,
-# printing who holds it; a lock whose pid is no longer alive was left by a
-# killed gate and is taken over. A `--no-conformance` run takes no lock and
-# never waits (decision 508): the commit hooks of parallel tasks run side by
-# side. There is no flag or variable that skips the wait of a conformance run.
-lock_dir="${XDG_RUNTIME_DIR:-$HOME/.cache}/botopink/gate.lock"
-mkdir -p "$(dirname "$lock_dir")"
+# ── § cleanup ────────────────────────────────────────────────────────────────
+# There is no gate lock (decisions 469, 508): any number of gates, from any
+# checkout or worktree, run side by side; the machine's pool is the meta
+# repository's.
 cleanup_dirs=()
 # A stage started ahead of its report (stage 4, § stage 4 beside 2 and 3) is
 # waited for before its scratch goes: a red stage 2 does not leave it running.
@@ -170,29 +181,6 @@ cleanup() {
     rm -rf ${cleanup_dirs[@]+"${cleanup_dirs[@]}"}
 }
 trap cleanup EXIT
-waited=0
-while [ "$no_conformance" -eq 0 ] && ! mkdir "$lock_dir" 2>/dev/null; do
-    holder="$(cat "$lock_dir/pid" 2>/dev/null || true)"
-    if [ -n "$holder" ] && ! kill -0 "$holder" 2>/dev/null; then
-        # The holder is gone without removing its lock — take it over.
-        rm -rf "$lock_dir"
-        continue
-    fi
-    if [ "$waited" -eq 0 ]; then
-        printf 'gate: another gate holds the lock — pid %s, %s, since %s; waiting for it to finish\n' \
-            "${holder:-?}" "$(cat "$lock_dir/checkout" 2>/dev/null || echo '?')" \
-            "$(cat "$lock_dir/since" 2>/dev/null || echo '?')" >&2
-    fi
-    waited=1
-    sleep 5
-done
-if [ "$no_conformance" -eq 0 ]; then
-    cleanup_dirs+=("$lock_dir")
-    echo "$$" >"$lock_dir/pid"
-    echo "$root" >"$lock_dir/checkout"
-    date '+%Y-%m-%d %H:%M:%S' >"$lock_dir/since"
-    [ "$waited" -eq 0 ] || echo "gate: lock taken" >&2
-fi
 gate_start="$(date +%s)"
 # One scratch directory per run: the stage times, and each side-by-side stage's
 # capture and exit status (§ side by side).
@@ -487,7 +475,12 @@ bash scripts/check-docs.sh --list >"$par/plan.docs" 2>"$par/plan.docs.err" ||
 # test-web is one wasm compile, so zig gets `-j` of its share.
 # shellcheck source=lib/pool.sh
 . scripts/lib/pool.sh
-budget_total="$(pool_default_jobs)"
+if [ -n "$jobs_total" ]; then
+    pool_check_jobs "$jobs_total" "gate"
+    budget_total="$jobs_total"
+else
+    budget_total="$(pool_default_jobs)"
+fi
 share() { # <percent> — that part of the total, at least 1
     local n=$(( budget_total * $1 / 100 ))
     [ "$n" -ge 1 ] || n=1
@@ -581,8 +574,7 @@ if [ "$gate_kind" = full ] && [ "$no_conformance" -eq 0 ] && [ "$(tree_key)" = "
 fi
 
 # ── § budget ─────────────────────────────────────────────────────────────────
-# The whole run's wall clock (from the lock, so a wait for another gate is not
-# counted) and the CPU-seconds of every stage, against the budget
+# The whole run's wall clock (from the start) and the CPU-seconds of every stage, against the budget
 # set on 16 idle cores (decision 265). Over budget is printed, never a red: a
 # slow or shared machine is not a broken tree.
 YELLOW='\033[0;33m'
