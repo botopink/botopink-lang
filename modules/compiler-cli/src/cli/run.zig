@@ -120,18 +120,18 @@ pub fn programArgv(
 
 // ── no `fn main` ──────────────────────────────────────────────────────────────
 
-/// True when `source` declares a top-level `fn main` (`pub` or not).
-pub fn declaresMain(source: []const u8) bool {
-    var lines = std.mem.splitScalar(u8, source, '\n');
-    while (lines.next()) |raw| {
-        var l = std.mem.trimStart(u8, raw, " \t");
-        if (std.mem.startsWith(u8, l, "pub ")) l = std.mem.trimStart(u8, l["pub ".len..], " \t");
-        if (!std.mem.startsWith(u8, l, "fn ")) continue;
-        l = std.mem.trimStart(u8, l["fn ".len..], " \t");
-        if (!std.mem.startsWith(u8, l, "main")) continue;
-        const rest = std.mem.trimStart(u8, l["main".len..], " \t");
-        if (rest.len > 0 and (rest[0] == '(' or rest[0] == '<')) return true;
-    }
+/// False when `source` parses and declares no top-level `fn main` (pub or
+/// not). A source that does not parse is not refused here: the build reports
+/// it, located.
+pub fn declaresMain(arena: std.mem.Allocator, source: []const u8) bool {
+    var lx = bp.Lexer.init(source);
+    const tokens = lx.scanAll(arena) catch return true;
+    var p = bp.Parser.init(tokens);
+    const program = p.parse(arena) catch return true;
+    for (program.decls) |decl| switch (decl) {
+        .@"fn" => |f| if (std.mem.eql(u8, f.name, "main")) return true,
+        else => {},
+    };
     return false;
 }
 
@@ -142,7 +142,7 @@ pub fn declaresMain(source: []const u8) bool {
 fn refuseWithoutMain(arena: std.mem.Allocator, io: std.Io, proj: config.ProjectConfig, module: []const u8) !bool {
     const path = try std.fmt.allocPrint(arena, "{s}/{s}.bp", .{ proj.srcDir(), module });
     const source = std.Io.Dir.cwd().readFileAlloc(io, path, arena, .limited(16 * 1024 * 1024)) catch return false;
-    if (declaresMain(source)) return false;
+    if (declaresMain(arena, source)) return false;
     reporter.print("{s}\n", .{try refusalText(arena, path)});
     return true;
 }
@@ -151,11 +151,19 @@ fn refusalText(arena: std.mem.Allocator, path: []const u8) ![]const u8 {
     return std.fmt.allocPrint(arena, "error: the package's entry module declares no `fn main`, so there is nothing to run\n  --> {s}:1:1", .{path});
 }
 
-test "declaresMain: a top-level fn main, pub or not" {
-    try std.testing.expect(declaresMain("fn main() {\n}\n"));
-    try std.testing.expect(declaresMain("import x;\npub fn main() -> i32 {\n  return 0;\n}\n"));
-    try std.testing.expect(!declaresMain("test \"t\" {\n}\npub mod registry;\n"));
-    try std.testing.expect(!declaresMain("fn mainly() {\n}\n"));
+test "declaresMain: read by the parser, not by lines" {
+    var ar = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer ar.deinit();
+    const a = ar.allocator();
+    try std.testing.expect(declaresMain(a, "fn main() {\n}\n"));
+    try std.testing.expect(declaresMain(a, "import x;\npub fn main() -> i32 {\n  return 0;\n}\n"));
+    try std.testing.expect(declaresMain(a, "#[@External.Erlang(\"m\", \"f\")] pub fn main() {\n}\n"));
+    try std.testing.expect(!declaresMain(a, "test \"t\" {\n}\npub mod registry;\n"));
+    try std.testing.expect(!declaresMain(a, "fn mainly() {\n}\n"));
+    try std.testing.expect(!declaresMain(a, "val s = \"\"\"\nfn main() {\n}\n\"\"\";\n"));
+    try std.testing.expect(!declaresMain(a, "// a comment\n// fn main() {}\nfn other() {\n}\n"));
+    // A source that does not parse is the build's to report.
+    try std.testing.expect(declaresMain(a, "fn ( {{{"));
 }
 
 test "refusalText: located at the entry module, one message for every target" {
