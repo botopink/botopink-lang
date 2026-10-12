@@ -1329,6 +1329,22 @@ if have node && have erl && have erlc && have wasmtime; then
   expect_out "cells: 5 checked — 4 passed, 1 failed" "the totals of a parallel run count the failing cell"
   run "$CELLS" cell check --jobs 0 .
   expect_code 1 "cell check --jobs 0 is refused"
+  # B-38: every cell found is reported, in the cells' order, and the summary's
+  # count equals the cells found — also when one cannot run (a cell whose
+  # program does not parse is a FAIL line naming it, never absent).
+  COUNT="$WORK/count-cells"
+  rm -rf "$COUNT"; mkdir -p "$COUNT"
+  for c in narrowed prints; do cp -R "$CELLS/$c" "$COUNT/$c"; done
+  rm -rf "$COUNT"/*/.botopinkbuild "$COUNT"/prints/snapshot/output/*.snap.new
+  mkdir -p "$COUNT/broken/src" "$COUNT/zbroken/src"
+  printf 'pub fn main( {{{\n' >"$COUNT/broken/src/main.bp"
+  printf 'pub fn main( {{{\n' >"$COUNT/zbroken/src/main.bp"
+  for J in 1 3 8; do
+    run "$COUNT" cell check --jobs "$J" .
+    VERDICTS="$(printf '%s\n' "$OUT" | grep -E '^(ok   |FAIL )' | awk '{print $2}' | tr '\n' ' ')"
+    [[ "$VERDICTS" == "broken narrowed prints zbroken " ]] && ok "cell check --jobs $J reports every cell once, in the cells' order" || fail "cell check --jobs $J: verdicts '$VERDICTS'"
+    expect_out "cells: 4 checked" "cell check --jobs $J counts every cell found, the ones that cannot run included"
+  done
   mv "$CELLS/prints/snapshot/output/main.snap.new" "$CELLS/prints/snapshot/output/main.snap"
   run "$CELLS" cell check prints
   expect_code 0 "a candidate accepted by renaming it passes"

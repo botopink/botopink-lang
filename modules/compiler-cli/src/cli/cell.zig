@@ -246,6 +246,8 @@ const Pool = struct {
         // run with `--jobs 1`, so it prints what it prints today.
         slot.out = pool.runChild(pool.cells[i], slot) catch |err|
             std.fmt.allocPrint(std.heap.page_allocator, "FAIL {s}\n  {s}\n", .{ pool.ctx.rel(pool.cells[i]), @errorName(err) }) catch "";
+        // A slot is never left without a line naming its cell: the parent
+        // adds one (`hasVerdict`) when this is empty or names no verdict.
         slot.done.set(pool.ctx.io);
         return true;
     }
@@ -276,6 +278,18 @@ const Pool = struct {
     }
 };
 
+/// Whether `out` holds the verdict line of `cell`: `ok   <cell>` for a pass,
+/// a `FAIL <cell>` line for anything else.
+fn hasVerdict(ctx: *Ctx, out: []const u8, cell: []const u8, ok: bool) bool {
+    const want = ctx.rel(cell);
+    const prefix = if (ok) "ok   " else "FAIL ";
+    var lines = std.mem.splitScalar(u8, out, '\n');
+    while (lines.next()) |l| {
+        if (std.mem.startsWith(u8, l, prefix) and std.mem.eql(u8, l[prefix.len..], want)) return true;
+    }
+    return false;
+}
+
 /// Check `cells` on `jobs` workers; the report is printed in the cells' order.
 /// Returns how many passed.
 fn checkParallel(ctx: *Ctx, cells: []const []const u8, jobs: usize) !usize {
@@ -292,13 +306,27 @@ fn checkParallel(ctx: *Ctx, cells: []const []const u8, jobs: usize) !usize {
     }
     defer for (workers) |*w| if (w.*) |*f| f.cancel(ctx.io);
     var passed: usize = 0;
+    var slot_index: usize = 0;
     for (slots) |*slot| {
         if (started == 0) while (!slot.done.isSet() and pool.runNext()) {};
         slot.done.waitUncancelable(ctx.io);
+        const cell = cells[slot_index];
+        slot_index += 1;
         if (slot.ok) passed += 1;
         ctx.flush();
         if (slot.err.len > 0) std.Io.File.stderr().writeStreamingAll(ctx.io, slot.err) catch {};
         ctx.say("{s}", .{slot.out});
+        // Every cell found is in the report: a verdict line (`ok` or `FAIL`)
+        // naming it, whatever the worker did (an allocation that failed, a
+        // child that printed nothing, a pass with no `ok` line).
+        if (!hasVerdict(ctx, slot.out, cell, slot.ok)) {
+            if (slot.ok) {
+                passed -= 1;
+                ctx.say("FAIL {s}\n  the check process reported success without a verdict line\n", .{ctx.rel(cell)});
+            } else {
+                ctx.say("FAIL {s}\n  the check process left no report\n", .{ctx.rel(cell)});
+            }
+        }
         ctx.flush();
     }
     return passed;
