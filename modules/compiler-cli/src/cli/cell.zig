@@ -333,7 +333,9 @@ fn checkParallel(ctx: *Ctx, cells: []const []const u8, jobs: usize) !usize {
 }
 
 /// `root` itself when it is a cell (it holds `src/`), else every cell under
-/// it, sorted — never inside a cell, a hidden directory or `node_modules`.
+/// it, sorted — never inside a cell, a hidden directory, `node_modules` or a
+/// `deps` directory (a cell's own dependency packages live there, and a
+/// `deps/<pkg>` holding `src/` is a package, never a cell).
 fn discover(arena: std.mem.Allocator, io: std.Io, root: []const u8, out: *std.ArrayListUnmanaged([]const u8)) !void {
     if (isDir(io, try std.fs.path.join(arena, &.{ root, "src" }))) {
         try out.append(arena, root);
@@ -341,7 +343,7 @@ fn discover(arena: std.mem.Allocator, io: std.Io, root: []const u8, out: *std.Ar
     }
     const names = try childNames(arena, io, root, .dirs);
     for (names) |name| {
-        if (name[0] == '.' or std.mem.eql(u8, name, "node_modules")) continue;
+        if (name[0] == '.' or std.mem.eql(u8, name, "node_modules") or std.mem.eql(u8, name, "deps")) continue;
         try discover(arena, io, try std.fs.path.join(arena, &.{ root, name }), out);
     }
 }
@@ -1269,4 +1271,25 @@ test "absolutizePathDeps keeps a path inside the cell as written, so columns and
     const a = arena.allocator();
     const text = "{ \"dependencies\": { \"m\": { \"path\": \"deps/m\" } }, \"bpp\": \"m\" }";
     try std.testing.expectEqualStrings(text, try absolutizePathDeps(a, text, "/w/cells/modules/c"));
+}
+
+test "discover finds the cells of a directory and never a nested package under deps/" {
+    const io = std.testing.io;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const test_scratch = @import("test_scratch");
+    test_scratch.remove(io, "cell-discover");
+    defer test_scratch.remove(io, "cell-discover");
+    const root = test_scratch.path(io, "cell-discover/modules");
+    const cwd = std.Io.Dir.cwd();
+    try cwd.createDirPath(io, try std.fs.path.join(a, &.{ root, "one", "src" }));
+    try cwd.createDirPath(io, try std.fs.path.join(a, &.{ root, "one", "deps", "pkg", "src" }));
+    try cwd.writeFile(io, .{ .sub_path = try std.fs.path.join(a, &.{ root, "one", "deps", "pkg", "botopink.json" }), .data = "{ \"name\": \"pkg\" }" });
+    // A leftover tree outside any cell: `modules/<cell>/deps/<pkg>/src`.
+    try cwd.createDirPath(io, try std.fs.path.join(a, &.{ root, "modules", "one", "deps", "pkg", "src" }));
+    var cells: std.ArrayListUnmanaged([]const u8) = .empty;
+    try discover(a, io, root, &cells);
+    try std.testing.expectEqual(@as(usize, 1), cells.items.len);
+    try std.testing.expectEqualStrings(try std.fs.path.join(a, &.{ root, "one" }), cells.items[0]);
 }
