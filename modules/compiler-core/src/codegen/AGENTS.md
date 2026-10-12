@@ -762,7 +762,7 @@ codegen/
 - **beam `@todo` / `@panic`** raise `erlang:error({todo, Msg})` /
   `{panic, Msg}`, the erlang backend's reason, with `builtins_fns.d.bp`'s
   default message; `@todo()` raised the bare atom `undef`, which read as a
-  missing function (`{undef, main:notReady/0}`, reported by C-16). `botopink run` catches `{panic, Msg}` in the program's `-eval` (`otp.zig` `guardedEval`, through `cli/otp.zig` `mainEval`) and writes `Msg` to stderr unchanged: `erl` printed the term as a boot failure, `Msg`'s bytes as numbers once one left ASCII.
+  missing function (`{undef, main:notReady/0}`, reported by C-16). `botopink run` catches `{panic, Msg}` and `{integer_overflow, Msg}` in the program's `-eval` (`otp.zig` `guardedEval`, through `cli/otp.zig` `mainEval`) and writes `Msg` to stderr unchanged: `erl` printed the term as a boot failure, `Msg`'s bytes as numbers once one left ASCII.
 - **A bare `break` at a generator fn's own level** (decision 103) ends the
   generator (`genStopThrow`): `throw({'__bp_gen_stop', Key})`, which
   `genEndCatch` answers with `ok` — a second catch clause written only when

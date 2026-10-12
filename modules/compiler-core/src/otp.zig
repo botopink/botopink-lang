@@ -22,17 +22,18 @@ pub const PROBE_EVAL = "io:format(\"~s\",[erlang:system_info(otp_release)]),halt
 
 /// The `-eval` text of a VM that runs a program, around the erlang expression
 /// `call` that starts it, then `halt()`. An abort by `@panic` is the term
-/// `{panic, Msg}` (`Msg` a UTF-8 binary), which `erl` would print as a boot
+/// `{panic, Msg}`, one by a checked integer operator `{integer_overflow, Msg}`
+/// (`Msg` a UTF-8 binary in both), which `erl` would print as a boot
 /// failure with `Msg`'s bytes as numbers once one is outside ASCII; the eval
 /// catches it and writes `Msg` itself to stderr, unchanged, one line, status 1
 /// — the text the program raised, on erlang and beam as on commonJS and wasm
-/// (decision 430, 144 B-41). Any other failure stays `erl`'s own report.
+/// (decision 430, 144 B-41). Any other failure (`badarith`, a failed match, an exit) is written to stderr as `Class:Reason`, one line, status 1: `erl`'s own report goes to stdout, where it leaks into the program's output and races the halt.
 /// `botopink run` (`compiler-cli/src/cli/otp.zig` `mainEval`) and the
 /// compiler-core tests that run an abort (`codegen/runtime.zig`
 /// `executeAborting`) both use it.
 pub fn guardedEval(arena: std.mem.Allocator, call: []const u8) ![]const u8 {
     return std.fmt.allocPrint(arena,
-        \\try {s} catch error:{{panic, Msg}} when is_binary(Msg) -> io:setopts(standard_error, [{{encoding, unicode}}]), io:format(standard_error, "~ts~n", [Msg]), halt(1) end, halt().
+        \\try {s} catch error:{{Tag, Msg}} when (Tag =:= panic orelse Tag =:= integer_overflow) andalso is_binary(Msg) -> io:setopts(standard_error, [{{encoding, unicode}}]), io:format(standard_error, "~ts~n", [Msg]), halt(1); Class:Reason -> io:setopts(standard_error, [{{encoding, unicode}}]), io:format(standard_error, "~ts~n", [io_lib:format("~p:~tp", [Class, Reason])]), halt(1) end, halt().
     , .{call});
 }
 
@@ -161,5 +162,33 @@ test "otp: an abort by @panic writes its message to stderr unchanged, outside AS
         .argv = &([_][]const u8{"erl"} ++ QUIET_FLAGS ++ [_][]const u8{ "-noshell", "-eval", eval }),
     }) catch return;
     try std.testing.expectEqualStrings("lib: '--gutter' is in no known namespace \xe2\x80\x94 a prefix\n", res.stderr);
+    try std.testing.expectEqual(@as(u8, 1), res.term.exited);
+}
+
+test "otp: an integer overflow abort writes its message to stderr, no error report" {
+    const io = std.testing.io;
+    var arena_inst = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_inst.deinit();
+    const arena = arena_inst.allocator();
+    const eval = try guardedEval(arena, "erlang:error({integer_overflow, <<\"integer overflow: + on i32 at src/main.bp:6:14\">>})");
+    const res = std.process.run(arena, io, .{
+        .argv = &([_][]const u8{"erl"} ++ QUIET_FLAGS ++ [_][]const u8{ "-noshell", "-eval", eval }),
+    }) catch return;
+    try std.testing.expectEqualStrings("integer overflow: + on i32 at src/main.bp:6:14\n", res.stderr);
+    try std.testing.expectEqualStrings("", res.stdout);
+    try std.testing.expectEqual(@as(u8, 1), res.term.exited);
+}
+
+test "otp: any other abort writes one stderr line and nothing to stdout" {
+    const io = std.testing.io;
+    var arena_inst = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_inst.deinit();
+    const arena = arena_inst.allocator();
+    const eval = try guardedEval(arena, "erlang:error(badarith)");
+    const res = std.process.run(arena, io, .{
+        .argv = &([_][]const u8{"erl"} ++ QUIET_FLAGS ++ [_][]const u8{ "-noshell", "-eval", eval }),
+    }) catch return;
+    try std.testing.expectEqualStrings("error:badarith\n", res.stderr);
+    try std.testing.expectEqualStrings("", res.stdout);
     try std.testing.expectEqual(@as(u8, 1), res.term.exited);
 }
