@@ -698,6 +698,14 @@ codegen/
     e` is `return __bp_error(e)` inside it) lowers the `case` to statements in
     a block (`buildReturnCaseStmt`): value arms `return ({ ok: v })`, the jump
     arm keeps its own `return`;
+  - any other `case` used as a value is the IIFE (`buildCaseValue`), and a
+    `return` in its arms — `val r = case v { Num(n) -> n; _ -> throw "x"; }`,
+    a `case` passed as an argument, whose `throw` is the transform's `return
+    __bp_error(e)` (144 B-22 step 6) — throws `{ __bp_try: v }` to the
+    function's guard (`case_return_throws`, `guardExprTry`), which returns
+    `v`; outside a generator and a `test` body. A statement `case` whose arm
+    returns (`_ -> return x` or a block arm) answers the box
+    (`caseStmtWithReturns`, `case_return_box`);
   - `throw` in value position is a one-statement IIFE; a binding in value
     position is `error.BindingInValuePosition`. `try x catch return y` in value
     position still returns from the value IIFE (the `try`'s value becomes `y`);
@@ -1141,7 +1149,10 @@ codegen/
   block arm's (unrewritten) `throw` escaped as an erlang throw. When a tail
   of the returned `case` (or `if`) leaves the function, the `{ok, …}` goes
   into each tail that does not; a `return v` tail is `v`, a `throw e` tail
-  `{error, E}`.
+  `{error, E}`. A `return` nested in a `return`'s operand where it is not the
+  operand's own tail — `return g(case v { _ -> throw "x"; })` — throws
+  `{'__bp_try', V}` to the function's guard (`returnOperandNode`): emitted as
+  a value it became `g`'s argument (`badarith`).
 - **A lambda's bindings are its own** (decision 205; `saveLocalScope` /
   `restoreLocalScope` around a `.function` node). An erlang fun sees the
   enclosing clause's variables, so a parameter or `val` of the lambda that
@@ -2840,8 +2851,9 @@ first three are now enforced by the model, not by discipline:
   both as the `RUNTIME TRAP (wasmtime):` block. It used to lower to nothing.
 - **`throw` inside a fn returning `@Result`** returns an Error Result
   (`lowerThrow`) — the transform rewrites the common forms into
-  `return __bp_error(…)`, but a `throw` inside a `case` arm reaches the
-  backend as a `throw`. Anywhere else a `throw` traps.
+  `return __bp_error(…)`, a `case` arm's in every position (a statement
+  `case`'s arms included, 144 B-22 step 6); one it leaves reaches the backend
+  as a `throw`. Anywhere else a `throw` traps.
 - **`Ok(v)` / `Err(e)` / `new Error(msg)` the transform left as calls** build
   the same `[tag, payload]` pair as `__bp_ok` / `__bp_error` (`lowerPlainCall`),
   the lowering beam and erlang give them (`{error, Msg}`); a user enum variant

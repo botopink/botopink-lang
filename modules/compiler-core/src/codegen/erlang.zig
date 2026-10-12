@@ -6822,6 +6822,25 @@ const Emitter = struct {
         return b.remote("erlang", "throw", &.{try b.tuple(&.{ Ast.Expr.a(try_throw_signal), value })});
     }
 
+    /// The operand of a `return`. A `return` nested in it where it is not the
+    /// operand's own value — a `case` whose arm returns, passed as an argument
+    /// (`return g(case v { _ -> throw "x"; })`, the transform's
+    /// `return __bp_error("x")` there) — cannot be the function's last
+    /// expression: it throws to the function's guard (`returnNode`), as one in
+    /// a discarded statement does. A `case` or an `if` that IS the operand keeps
+    /// its arms in tail position.
+    fn returnOperandNode(this: *Emitter, b: Ast.Builder, val: ast.Expr) anyerror!Ast.Expr {
+        const tail = switch (val) {
+            .collection => |c| c.kind == .case,
+            .branch => |br| br.kind == .if_,
+            else => false,
+        };
+        if (tail or this.in_nested_return or !ast.exprReturns(val)) return this.exprNode(b, val);
+        this.in_nested_return = true;
+        defer this.in_nested_return = false;
+        return this.exprNode(b, val);
+    }
+
     /// Whether a `return` here throws to the function's guard (`returnNode`).
     fn returnThrows(this: *const Emitter) bool {
         if (!this.in_loop_body and !this.in_nested_return) return false;
@@ -7481,7 +7500,7 @@ const Emitter = struct {
                     // A `@Task` is eager here (decision 120): `return v` is
                     // `v`, and a failure is the `{error, E}` value the
                     // transform built — it never throws.
-                    return this.returnNode(b, try this.exprNode(b, val.*));
+                    return this.returnNode(b, try this.returnOperandNode(b, val.*));
                 },
                 else => return this.exprNode(b, e),
             },
@@ -8004,7 +8023,7 @@ const Emitter = struct {
                 // already was, and a bare `throw;` throws `undefined` rather
                 // than rendering as nothing — a hole `erlc` rejected, or worse,
                 // accepted as the next expression.
-                .@"return" => |r| this.returnNode(b, if (r) |val| try this.exprNode(b, val.*) else A("undefined")),
+                .@"return" => |r| this.returnNode(b, if (r) |val| try this.returnOperandNode(b, val.*) else A("undefined")),
                 .throw_ => |r| b.remote("erlang", "throw", &.{if (r) |val| try this.exprNode(b, val.*) else A("undefined")}),
                 .try_ => |t| if (t) |val| this.tryThrowCase(b, val.*) else A("undefined"),
                 .await_ => |av| this.exprNode(b, av.*),

@@ -1927,3 +1927,117 @@ test "erlang: case ---- `A...B` matches both bounds, through guards" {
         "{_Rng1, S} when (_Rng1 >= 4), (_Rng1 =< 6) ->",
     });
 }
+
+// 144 B-22 step 6 — a `throw` in a `case` arm of a `-> @Result` fn is the
+// fn's `return __bp_error(e)` wherever the `case` stands. A `case` value is an
+// IIFE on commonJS: the arm's `return` used to be `JumpInValuePosition` (an
+// expression arm) or to return from the IIFE alone (a block arm) — it now
+// throws `{ __bp_try: v }` to the fn's guard. erlang answered the argument's
+// `{error, E}` as the argument's value (`g({error, …})`, `badarith`), and a
+// statement `case`'s arms were never walked by the transform, so its block
+// arm's `throw` stayed a raw throw on erlang, beam and commonJS.
+test "js: throw ---- in a case arm bound, passed and in statement position" {
+    try h.assertJsRunLog(std.testing.allocator,
+        \\type Value { Num(n: i32), Text(s: string) }
+        \\fn g(n: i32) -> i32 { return n * 2; }
+        \\fn bound(v: Value) -> @Result<i32, string> {
+        \\    val r = case v {
+        \\        Num(n) -> g(n);
+        \\        Text(s) { throw "b" + s; }
+        \\    };
+        \\    return r + 1;
+        \\}
+        \\fn argument(v: Value) -> @Result<i32, string> {
+        \\    return g(case v {
+        \\        Num(n) -> n;
+        \\        _ -> throw "c";
+        \\    });
+        \\}
+        \\fn statement(v: Value) -> @Result<i32, string> {
+        \\    case v {
+        \\        Num(_) -> @print("num");
+        \\        _ { throw "d"; }
+        \\    }
+        \\    return 0;
+        \\}
+        \\fn main() {
+        \\    @print(bound(Value.Num(1)).unwrapOr(-1));
+        \\    @print(bound(Value.Text("z")).isError());
+        \\    @print(argument(Value.Num(3)).unwrapOr(-1));
+        \\    @print(argument(Value.Text("z")).isError());
+        \\    @print(statement(Value.Num(1)).unwrapOr(-1));
+        \\    @print(statement(Value.Text("z")).isError());
+        \\}
+    , "3\ntrue\n6\ntrue\nnum\n0\ntrue\n");
+}
+
+test "erlang: a throw in a case arm bound, passed and in statement position" {
+    try h.assertErlangRunLog(std.testing.allocator,
+        \\type Value { Num(n: i32), Text(s: string) }
+        \\fn g(n: i32) -> i32 { return n * 2; }
+        \\fn bound(v: Value) -> @Result<i32, string> {
+        \\    val r = case v {
+        \\        Num(n) -> g(n);
+        \\        Text(s) { throw "b" + s; }
+        \\    };
+        \\    return r + 1;
+        \\}
+        \\fn argument(v: Value) -> @Result<i32, string> {
+        \\    return g(case v {
+        \\        Num(n) -> n;
+        \\        _ -> throw "c";
+        \\    });
+        \\}
+        \\fn statement(v: Value) -> @Result<i32, string> {
+        \\    case v {
+        \\        Num(_) -> @print("num");
+        \\        _ { throw "d"; }
+        \\    }
+        \\    return 0;
+        \\}
+        \\fn main() {
+        \\    @print(bound(Value.Num(1)).unwrapOr(-1));
+        \\    @print(bound(Value.Text("z")).isError());
+        \\    @print(argument(Value.Num(3)).unwrapOr(-1));
+        \\    @print(argument(Value.Text("z")).isError());
+        \\    @print(statement(Value.Num(1)).unwrapOr(-1));
+        \\    @print(statement(Value.Text("z")).isError());
+        \\}
+    , "3\ntrue\n6\ntrue\nnum\n0\ntrue\n", &.{"'__bp_try'"});
+}
+
+test "beam: a throw in a case arm bound, passed and in statement position" {
+    try h.assertBeamRunLog(std.testing.allocator,
+        \\type Value { Num(n: i32), Text(s: string) }
+        \\fn g(n: i32) -> i32 { return n * 2; }
+        \\fn bound(v: Value) -> @Result<i32, string> {
+        \\    val r = case v {
+        \\        Num(n) -> g(n);
+        \\        Text(s) { throw "b" + s; }
+        \\    };
+        \\    return r + 1;
+        \\}
+        \\fn argument(v: Value) -> @Result<i32, string> {
+        \\    return g(case v {
+        \\        Num(n) -> n;
+        \\        _ -> throw "c";
+        \\    });
+        \\}
+        \\fn statement(v: Value) -> @Result<i32, string> {
+        \\    case v {
+        \\        Num(_) -> @print("num");
+        \\        _ { throw "d"; }
+        \\    }
+        \\    return 0;
+        \\}
+        \\fn main() {
+        \\    @print(bound(Value.Num(1)).unwrapOr(-1));
+        \\    @print(bound(Value.Text("z")).isError());
+        \\    @print(argument(Value.Num(3)).unwrapOr(-1));
+        \\    @print(argument(Value.Text("z")).isError());
+        \\    @print(statement(Value.Num(1)).unwrapOr(-1));
+        \\    @print(statement(Value.Text("z")).isError());
+        \\}
+    , "3\ntrue\n6\ntrue\nnum\n0\ntrue\n", &.{});
+}
+

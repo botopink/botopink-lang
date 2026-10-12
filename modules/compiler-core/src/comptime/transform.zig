@@ -774,22 +774,24 @@ fn rewriteStmt(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
             for (lp.body) |*s| rewriteStmt(agg, fn_decls, comptime_arrays, s) catch return ScanError.OutOfMemory;
         },
         .comptime_ => rewriteExpr(agg, fn_decls, comptime_arrays, &stmt.expr) catch return ScanError.OutOfMemory,
-        // Decision 54's `?T` pattern form at statement position. Only that one
-        // swap: `rewriteStmt` has never walked into a `case`'s arms, and giving
-        // it a general `.collection` arm would start lowering things inside
-        // them that no snapshot has ever recorded. The `if` it becomes is
-        // re-dispatched through this same function, so its branches are walked
-        // exactly as a written `if`'s are.
+        // A `case` at statement position. Decision 54's `?T` pattern form is
+        // swapped for the `if` it becomes, re-dispatched through this same
+        // function, so its branches are walked exactly as a written `if`'s are.
+        // Any other `case` is walked like the same `case` in value position:
+        // its arms are the function's (144 B-22 step 6) — a `throw` in a block
+        // arm of a `-> @Result` fn is that fn's `return __bp_error(e)`; left
+        // unwalked it stayed a raw throw on erlang, beam and commonJS.
         .collection => |*col| if (col.kind == .case) {
-            // Only the arms' patterns: this walk never lowers inside them.
-            for (col.kind.case.arms) |*arm| {
-                boolLiteralArm(agg, arm) catch return ScanError.OutOfMemory;
-                try qualifyResultPattern(agg, &arm.pattern, arm.patternLoc);
-                try stripPatternSuffixes(agg, &arm.pattern);
-            }
             if (agg.optional_null_cases.get(col.loc)) |binder| {
+                for (col.kind.case.arms) |*arm| {
+                    boolLiteralArm(agg, arm) catch return ScanError.OutOfMemory;
+                    try qualifyResultPattern(agg, &arm.pattern, arm.patternLoc);
+                    try stripPatternSuffixes(agg, &arm.pattern);
+                }
                 try rewriteOptionalNullCase(agg, &stmt.expr, binder);
                 rewriteStmt(agg, fn_decls, comptime_arrays, stmt) catch return ScanError.OutOfMemory;
+            } else {
+                rewriteExpr(agg, fn_decls, comptime_arrays, &stmt.expr) catch return ScanError.OutOfMemory;
             }
         },
         // Any other expression statement — the value of an `if` branch

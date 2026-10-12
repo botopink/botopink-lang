@@ -1389,6 +1389,15 @@ const Emitter = struct {
     /// `{ __bp_return: true, value }`, which the statement after the call
     /// returns. Reset by every nested function, like `case_ok_wrap`.
     case_return_box: bool = false,
+    /// Set while the arms of a `case` used as a VALUE are lowered inside the
+    /// IIFE it becomes (`buildCaseValue`): a `return` there is the enclosing
+    /// function's — a `throw` in a `-> @Result` fn's arm is the transform's
+    /// `return __bp_error(e)` (144 B-22 step 6) — and cannot cross the IIFE,
+    /// so it throws `{ __bp_try: v }` to the function's guard
+    /// (`guardExprTry`), which returns `v`. Never set in a generator or a
+    /// `test` body, whose guards answer otherwise. Reset by every nested
+    /// function, like `case_return_box`.
+    case_return_throws: bool = false,
     /// `botopink test` compilation: `assert` lowers to the throwing
     /// `__bp_assert` helper instead of `console.assert`.
     test_mode: bool = false,
@@ -3580,6 +3589,7 @@ const Emitter = struct {
         switch (e) {
             .jump => |j| switch (j.kind) {
                 .@"return" => |r| {
+                    if (self.case_return_throws) return .{ .throw_ = try self.returnThrow(if (r) |rp| try self.buildExpr(rp.*) else .{ .name = "undefined" }) };
                     const rp = r orelse return .{ .return_ = if (self.case_return_box) try self.returnBox(.{ .name = "undefined" }) else null };
                     if (classifyTry(rp.*)) |form| return self.buildTryStmt(form, .ret);
                     // `return case … { A -> v; B -> return x; }` — an arm that
@@ -3675,6 +3685,14 @@ const Emitter = struct {
         return self.buildStmt(st);
     }
 
+    /// `{ __bp_try: <value> }`, thrown — a function's `return` from inside
+    /// the IIFE a `case` value lowers to (`case_return_throws`); the
+    /// function's guard (`guardExprTry`) answers `<value>`.
+    fn returnThrow(self: *Emitter, value: js.Expr) !js.Expr {
+        self.expr_try_used = true;
+        return self.b.paren(try self.b.object(&.{.{ .kv = .{ .key = "__bp_try", .value = value } }}));
+    }
+
     /// `{ __bp_return: true, value: <value> }` — a function's `return` from
     /// inside the arrow a statement `case` lowers to (`case_return_box`).
     fn returnBox(self: *Emitter, value: js.Expr) !js.Expr {
@@ -3704,9 +3722,12 @@ const Emitter = struct {
         self.try_seq += 1;
         const name = try std.fmt.allocPrint(self.arena(), "_case{d}", .{n});
         const prev_box = self.case_return_box;
+        const prev_throws = self.case_return_throws;
         self.case_return_box = true;
+        self.case_return_throws = false;
         const call = try self.buildCase(c.subjects, c.arms);
         self.case_return_box = prev_box;
+        self.case_return_throws = prev_throws;
         const temp: js.Expr = .{ .name = name };
         const cond = try self.b.binaryBare("&&", temp, try self.b.member(temp, "__bp_return"));
         const ret: js.Stmt = .{ .return_ = if (self.case_return_box) try self.returnBox(try self.b.member(temp, "value")) else try self.b.member(temp, "value") };
@@ -3725,17 +3746,20 @@ const Emitter = struct {
         const prev_wrap = self.case_ok_wrap;
         const prev_in_test = self.in_test_body;
         const prev_box = self.case_return_box;
+        const prev_throws = self.case_return_throws;
         self.in_generator = false;
         self.loop_ctx = .none;
         self.case_ok_wrap = false;
         self.in_test_body = false;
         self.case_return_box = false;
+        self.case_return_throws = false;
         defer {
             self.in_generator = prev_in_generator;
             self.loop_ctx = prev_ctx;
             self.case_ok_wrap = prev_wrap;
             self.in_test_body = prev_in_test;
             self.case_return_box = prev_box;
+            self.case_return_throws = prev_throws;
         }
         const ps = try self.arena().alloc(js.Param, params.len);
         for (params, 0..) |p, i| ps[i] = .{ .pattern = .{ .ident = p } };
@@ -4113,7 +4137,13 @@ const Emitter = struct {
                 // return position) is lowered by `buildStmt`; in a value
                 // position the jump would have to cross the IIFE the value is
                 // wrapped in, which JavaScript cannot express.
-                .@"return", .@"break", .@"continue" => return error.JumpInValuePosition,
+                // A `return` inside a `case` value's arms throws to the
+                // function's guard instead (`case_return_throws`).
+                .@"return" => |r| {
+                    if (!self.case_return_throws) return error.JumpInValuePosition;
+                    return self.iife(&.{.{ .throw_ = try self.returnThrow(if (r) |rp| try self.buildExpr(rp.*) else .{ .name = "undefined" }) }});
+                },
+                .@"break", .@"continue" => return error.JumpInValuePosition,
                 // `throw` leaves by unwinding, which crosses a function
                 // boundary: in value position it is a one-statement IIFE.
                 // The parser gives `throw` an operand (`throw;` is a parse
@@ -4279,7 +4309,7 @@ const Emitter = struct {
                     return .{ .array = .{ .elems = elems } };
                 },
                 .grouped => |expr| return self.b.paren(try self.buildExpr(expr.*)),
-                .case => |c| return self.buildCase(c.subjects, c.arms),
+                .case => |c| return self.buildCaseValue(c.subjects, c.arms),
                 .range => |r| {
                     // `a..b` is the half-open `[a, b)` integer range. JS has no
                     // range literal, so materialize a real array (parity with the
@@ -4632,6 +4662,9 @@ const Emitter = struct {
         const prev_box_g = self.case_return_box;
         self.case_return_box = false;
         defer self.case_return_box = prev_box_g;
+        const prev_throws_g = self.case_return_throws;
+        self.case_return_throws = false;
+        defer self.case_return_throws = prev_throws_g;
         self.current_indent = base + 2;
         defer {
             self.loop_ctx = prev_ctx;
@@ -4691,6 +4724,9 @@ const Emitter = struct {
         const prev_box_f = self.case_return_box;
         self.case_return_box = false;
         defer self.case_return_box = prev_box_f;
+        const prev_throws_f = self.case_return_throws;
+        self.case_return_throws = false;
+        defer self.case_return_throws = prev_throws_f;
         self.current_indent = base + 1;
         defer {
             self.loop_ctx = prev_ctx;
@@ -6667,6 +6703,17 @@ const Emitter = struct {
         return stmts.toOwnedSlice(self.arena());
     }
 
+    /// A `case` used as a value, outside the statement forms
+    /// (`caseStmtWithReturns`, `buildReturnCaseStmt`): `buildCase`, with a
+    /// `return` in an arm thrown to the function's guard
+    /// (`case_return_throws`) — outside a generator and a `test` body.
+    fn buildCaseValue(self: *Emitter, subjects: []ast.Expr, arms: []ast.CaseArm) anyerror!js.Expr {
+        const prev_throws = self.case_return_throws;
+        defer self.case_return_throws = prev_throws;
+        self.case_return_throws = !self.in_generator and !self.in_test_body;
+        return self.buildCase(subjects, arms);
+    }
+
     /// A `case` used as a value: its arms inside an IIFE, each returning the
     /// arm's value.
     fn buildCase(self: *Emitter, subjects: []ast.Expr, arms: []ast.CaseArm) anyerror!js.Expr {
@@ -6739,6 +6786,9 @@ const Emitter = struct {
     /// the value is returned as `({ ok: v })`.
     fn armReturn(self: *Emitter, body: ast.Expr) anyerror!js.Stmt {
         if (body == .jump and body.jump.kind == .@"return") {
+            // In a `case` value's IIFE the `return` throws to the function's
+            // guard; in a statement `case`'s arrow it answers the box.
+            if (self.case_return_throws or self.case_return_box) return self.buildStmt(.{ .expr = body });
             if (!self.case_ok_wrap) return error.JumpInValuePosition;
             const prev_wrap = self.case_ok_wrap;
             self.case_ok_wrap = false;

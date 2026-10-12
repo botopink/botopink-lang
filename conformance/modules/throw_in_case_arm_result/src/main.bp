@@ -1,0 +1,120 @@
+//// 1.0.12-beta `1-botopink-lang/144-botopink-lang` B-22 step 6 (was `01-checker` s6 and
+//// `04-js` s6): a `throw` in a `case` arm under `-> @Result` is the enclosing
+//// function's — in an expression arm (`_ -> throw …`) and in a block arm
+//// (`_ { … throw … }`), with the `case` returned, bound by a `val`, passed as an
+//// argument or in statement position. The throw path answers `Error`, the other
+//// the value.
+
+type Value { Num(n: i32), Text(s: string) }
+
+fn g(n: i32) -> i32 {
+    return n * 2;
+}
+
+fn returnedExpression(v: Value) -> @Result<i32, string> {
+    return case v {
+        Num(n) -> g(n);
+        _ -> throw "x";
+    };
+}
+
+fn returnedBlock(v: Value) -> @Result<i32, string> {
+    return case v {
+        Num(n) {
+            val k = g(n);
+            k + 1;
+        }
+        Text(s) {
+            val m = "y" + s;
+            throw m;
+        }
+    };
+}
+
+fn boundExpression(v: Value) -> @Result<i32, string> {
+    val r = case v {
+        Num(n) -> g(n);
+        _ -> throw "x";
+    };
+    return r + 1;
+}
+
+fn boundBlock(v: Value) -> @Result<i32, string> {
+    val r = case v {
+        Num(n) -> g(n);
+        Text(s) {
+            val m = "y" + s;
+            throw m;
+        }
+    };
+    return r + 1;
+}
+
+fn argumentExpression(v: Value) -> @Result<i32, string> {
+    return g(case v {
+        Num(n) -> n;
+        _ -> throw "x";
+    });
+}
+
+fn argumentBlock(v: Value) -> @Result<i32, string> {
+    return g(case v {
+        Num(n) -> n;
+        _ {
+            throw "y";
+        }
+    });
+}
+
+fn statementBlock(v: Value) -> @Result<i32, string> {
+    case v {
+        Num(n) {
+            @print("num " + n.toString());
+        }
+        _ {
+            throw "y";
+        }
+    }
+    return 0;
+}
+
+fn statementExpression(v: Value) -> @Result<i32, string> {
+    case v {
+        Num(n) -> @print("num " + n.toString());
+        _ -> throw "x";
+    }
+    return 0;
+}
+
+fn show(r: @Result<i32, string>) -> string {
+    return case r {
+        Ok(n) -> "ok " + n.toString();
+        Error(e) -> "error " + e;
+    };
+}
+
+pub fn main() {
+    @print(returnedExpression(Value.Num(4)).isError()); // false
+    @print(returnedExpression(Value.Text("a")).isError()); // true
+    @print(show(returnedExpression(Value.Num(4)))); // ok 8
+    @print(show(returnedExpression(Value.Text("a")))); // error x
+    @print(returnedBlock(Value.Num(4)).isError()); // false
+    @print(returnedBlock(Value.Text("a")).isError()); // true
+    @print(show(returnedBlock(Value.Num(4)))); // ok 9
+    @print(show(returnedBlock(Value.Text("a")))); // error ya
+    @print(show(boundExpression(Value.Num(4)))); // ok 9
+    @print(boundExpression(Value.Text("a")).isError()); // true
+    @print(show(boundExpression(Value.Text("a")))); // error x
+    @print(show(boundBlock(Value.Num(4)))); // ok 9
+    @print(boundBlock(Value.Text("a")).isError()); // true
+    @print(show(boundBlock(Value.Text("a")))); // error ya
+    @print(show(argumentExpression(Value.Num(4)))); // ok 8
+    @print(show(argumentExpression(Value.Text("a")))); // error x
+    @print(show(argumentBlock(Value.Num(4)))); // ok 8
+    @print(argumentBlock(Value.Text("a")).isError()); // true
+    @print(show(argumentBlock(Value.Text("a")))); // error y
+    @print(show(statementBlock(Value.Num(4)))); // num 4, then ok 0
+    @print(show(statementBlock(Value.Text("a")))); // error y
+    @print(show(statementExpression(Value.Num(4)))); // num 4, then ok 0
+    @print(show(statementExpression(Value.Text("a")))); // error x
+}

@@ -294,6 +294,37 @@ pub fn assertInfersOk(
     };
 }
 
+/// How many `return` / `throw` sites inference recorded with the lowering
+/// `kind` (`Env.result_jump_lowerings`) — `src` must type-check. A checker
+/// test reads off it which jumps it made the enclosing function's.
+pub fn resultJumpLoweringCount(
+    allocator: std.mem.Allocator,
+    src: []const u8,
+    kind: envMod.ResultJumpLowering,
+) !usize {
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var lx = Lexer.init(src);
+    const tokens = try lx.scanAll(alloc);
+    defer lx.deinit(alloc);
+    var p = Parser.init(tokens);
+    var program = try p.parse(alloc);
+    defer program.deinit(alloc);
+
+    var env = try inferMod.freshEnv(alloc, allocator);
+    defer env.deinit();
+    _ = try inferMod.inferProgram(&env, program);
+
+    var n: usize = 0;
+    var it = env.result_jump_lowerings.valueIterator();
+    while (it.next()) |v| {
+        if (v.* == kind) n += 1;
+    }
+    return n;
+}
+
 /// Front 14 step 3 — the term round trip, read off the replies: `modules` is
 /// compiled (the capture or the `@Decl` handle reaches the wasm comptime
 /// runtime as external-term bytes in its linear memory, `runtime/etf.zig`),

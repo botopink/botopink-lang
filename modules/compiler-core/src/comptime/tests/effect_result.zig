@@ -100,3 +100,64 @@ test "§1 happy path — nested `@Result` call propagates Error via `try`" {
         \\}
     );
 }
+
+// ── a `throw` in a `case` arm is the enclosing function's (144 B-22 step 6) ──
+
+test "a throw in a case arm of a @Result fn is the fn's error in every arm form and position" {
+    // An expression arm and a block arm, with the `case` returned, bound by a
+    // `val`, passed as an argument and written as a statement: each of the
+    // six `throw`s keeps the fn's fallible channel and is recorded as the
+    // fn's `return __bp_error(e)` — a block arm is not a lambda of its own.
+    const n = try h.resultJumpLoweringCount(std.testing.allocator,
+        \\type Value { Num(n: i32), Text(s: string) }
+        \\fn g(n: i32) -> i32 { return n; }
+        \\fn returned(v: Value) -> @Result<i32, string> {
+        \\    return case v {
+        \\        Num(n) -> g(n);
+        \\        _ -> throw "a";
+        \\    };
+        \\}
+        \\fn bound(v: Value) -> @Result<i32, string> {
+        \\    val r = case v {
+        \\        Num(n) -> g(n);
+        \\        Text(s) {
+        \\            throw "b" + s;
+        \\        }
+        \\    };
+        \\    return r;
+        \\}
+        \\fn argument(v: Value) -> @Result<i32, string> {
+        \\    return g(case v {
+        \\        Num(n) -> n;
+        \\        _ -> throw "c";
+        \\    });
+        \\}
+        \\fn argumentBlock(v: Value) -> @Result<i32, string> {
+        \\    return g(case v {
+        \\        Num(n) -> n;
+        \\        _ {
+        \\            throw "d";
+        \\        }
+        \\    });
+        \\}
+        \\fn statement(v: Value) -> @Result<i32, string> {
+        \\    case v {
+        \\        Num(_) {
+        \\            @print("num");
+        \\        }
+        \\        _ {
+        \\            throw "e";
+        \\        }
+        \\    }
+        \\    return 0;
+        \\}
+        \\fn statementExpression(v: Value) -> @Result<i32, string> {
+        \\    case v {
+        \\        Num(_) -> @print("num");
+        \\        _ -> throw "f";
+        \\    }
+        \\    return 0;
+        \\}
+    , .wrap_error);
+    try std.testing.expectEqual(@as(usize, 6), n);
+}

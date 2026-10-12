@@ -1463,6 +1463,13 @@ A function that can fail returns `@Result<T, E>`; `throw` produces the error,
 
 <!-- example: modules/result_throw_try -->
 
+A `throw` in a `case` arm is the enclosing function's: in an expression arm
+(`_ -> throw e;`) and in a block arm (`_ { …; throw e; }`), whether the `case` is
+returned, bound by a `val`, passed as an argument or written as a statement, the
+function answers `Error(e)` on that path and the other arms' value on the rest.
+
+<!-- example: modules/throw_in_case_arm_result -->
+
 Three ways to consume a `@Result`, and a fourth for when a failure is a bug:
 
 <!-- example: modules/result_four_ways -->
