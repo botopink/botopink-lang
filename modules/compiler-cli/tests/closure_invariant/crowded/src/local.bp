@@ -1,0 +1,5 @@
+//// The consumer's own module declaring `shelf`'s record name again.
+
+pub type Pair(size: i32, label: string)
+
+pub type Queue(size: i32, label: string)

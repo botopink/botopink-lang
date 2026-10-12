@@ -1,0 +1,34 @@
+//// Records, an enum with payload variants and a type with a method — each name
+//// also declared somewhere else in `crowded`'s program (by `rival`, by
+//// `crowded`'s own `local`, by `std/collections`), never in this closure.
+
+pub type Queue(label: string, size: i32)
+
+pub type Shape {
+    Circle(radius: i32),
+    Square(side: i32),
+    Dot,
+}
+
+pub type Meter(n: i32) {
+    fn reading(self: Self) -> i32 {
+        return self.n * 10;
+    }
+}
+
+pub fn describe(q: Queue) -> string {
+    return q.label + ":" + q.size.toString();
+}
+
+pub fn area(s: Shape) -> i32 {
+    val out = case s {
+        Circle(radius) -> radius * radius * 3;
+        Square(side) -> side * side;
+        Dot -> 0;
+    };
+    return out;
+}
+
+pub fn readMeter(m: Meter) -> i32 {
+    return m.reading();
+}

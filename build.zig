@@ -4,6 +4,7 @@
 ///   zig build test     → runs every compiler-core, language-server, CLI, lib-test-runner and manifest unit test
 ///   zig build test -Dtest-filter=<substr> → runs only matching tests
 ///   zig build test-cli → runs every modules/compiler-cli/tests/*.sh end to end
+///   zig build test-closure-invariant → one library under two consumers, its output compared (decision 509 (2))
 ///   zig build test-libs → compiles and tests every visible `.bp` library per target
 ///   zig build run      → builds and runs the botopink CLI
 const std = @import("std");
@@ -646,6 +647,14 @@ pub fn build(b: *std.Build) void {
         prev_cli_script = &run_script.step;
         test_cli_step.dependOn(&run_script.step);
     }
+
+    // `zig build test-closure-invariant` — decision 509 (2)'s invariant (144
+    // B-60): one library built under two consumers emits the same files, byte
+    // for byte, on every target (`closure_invariant.sh`). Its own step, not a
+    // `test-cli` script, while the defects it reports are open 144 rows.
+    const closure_invariant_run = cliScript(b, "closure_invariant.sh");
+    const closure_invariant_step = b.step("test-closure-invariant", "Build one library under two consumers and compare its output on every target");
+    closure_invariant_step.dependOn(&closure_invariant_run.step);
 
     // ── compiler-web: compiler-core for the browser (front 18 step 5) ─────────
     // `zig build compiler-web` → zig-out/web/{botopink.wasm, glue.js, index.html}.

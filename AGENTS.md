@@ -61,6 +61,7 @@ zig build run           # build and run the CLI
 zig build test-cli      # every modules/compiler-cli/tests/*.sh (command contract, test tooling, result store, the wasm core module's --invoke main)
 zig build test-libs     # every visible .bp library's tests per backend (libs/ + sibling repository/*)
 zig build test-backends # the wasm core module's --invoke main (modules/compiler-cli/tests/backend_exec.sh)
+zig build test-closure-invariant # one library built under two consumers, its files compared byte for byte on every target (modules/compiler-cli/tests/closure_invariant.sh, decision 509 (2)); not in the gate while the defects it reports are open
 zig build test-bpmp     # bpmp unit tests
 zig build test-vscode   # VS Code extension unit tests — scripts/test-vscode.sh finds the sibling checkout
 zig build test-conformance # the conformance suite (conformance/run.sh: every cell by `botopink cell check`, every test/ suite; `-- --compiler <botopink>` to run another binary)

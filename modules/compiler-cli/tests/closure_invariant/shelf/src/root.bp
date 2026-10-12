@@ -1,0 +1,6 @@
+//// The library both consumers depend on. Its generated code and its interface
+//// are compared between the two builds, byte for byte (decision 509 (2)).
+
+pub mod items;
+pub mod tools;
+pub default mod shelf;

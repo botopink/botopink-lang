@@ -1,0 +1,23 @@
+//// A generic function each consumer instantiates differently, a decorator a
+//// consumer applies to its own declaration, and a function over the sibling
+//// module's types.
+
+import {items.Queue, items.Shape, items.area};
+
+pub fn pick<T>(a: T, b: T, first: bool) -> T {
+    return if (first) a else b;
+}
+
+pub fn tagged(comptime decl: @Decl) {
+    @emit(
+        "pub fn "
+            + decl.name
+            + "Tag() -> string { return \""
+            + decl.name
+            + "\"; }",
+    );
+}
+
+pub fn total(q: Queue, s: Shape) -> i32 {
+    return q.size + area(s);
+}
