@@ -58,7 +58,7 @@ zig build test          # compiler-core + language-server + compiler-cli + lib-t
 zig build test -Dtest-filter=<name>   # only tests whose name matches
 zig build test -Dtest-shards=<n>      # compiler-core as n processes side by side (default: CPUs, at most 8) — modules/test-shard
 zig build run           # build and run the CLI
-zig build test-cli      # every modules/compiler-cli/tests/*.sh (command contract, test tooling, result store, the wasm core module's --invoke main)
+zig build test-cli      # every modules/compiler-cli/tests/*.sh (command contract, test tooling, the wasm core module's --invoke main)
 zig build test-libs     # every visible .bp library's tests per backend (libs/ + sibling repository/*)
 zig build test-backends # the wasm core module's --invoke main (modules/compiler-cli/tests/backend_exec.sh)
 zig build test-closure-invariant # one library built under two consumers, its files compared byte for byte on every target (modules/compiler-cli/tests/closure_invariant.sh, decision 509 (2)); not in the gate while the defects it reports are open
@@ -287,7 +287,7 @@ gate's time goes):
 4. `zig build test` (compiler-core, language-server, CLI and lib-test-runner unit suites; `--cold` deletes `modules/compiler-core/.botopinkbuild/runtime-cache` and every `.botopinkbuild/cache/` of this checkout and each sibling library repository first, naming each — required for the run that decides a merge);
 5. `zig build test-bpmp` (the package manager's unit suite);
 6. `scripts/beam_export_audit.sh` (every beam snapshot module assembles with every function exported);
-7. `zig build test-cli` (the CLI contract, test tooling, the result store and the wasm core module's `--invoke main`);
+7. `zig build test-cli` (the CLI contract, test tooling and the wasm core module's `--invoke main`);
 8. `zig build test-libs` (every visible library on the targets its manifest declares — a cell that exists is green or the stage fails; a library without tests is still compiled; every target a `"targets"` list excludes is audited, and an exclusion that is not structural fails the stage);
 9. `zig build test-conformance` (the conformance suite, `conformance/`: every cell of `conformance/modules/` by `botopink cell check` on every target its manifest declares — its answers against `snapshot/output/` and `snapshot/targets/<t>/`, every `"targets"` narrowing audited against the compiler's host-binding refusal — and every `conformance/test/` suite by `botopink test --json` on commonJS, erlang and beam, after the runner's own `--self-test`);
 10. `zig build test-docs` (every `<!-- example: … -->` of `conformance/docs.md`, of each cell's `docs.md` and of `README.md` names a conformance cell or suite, and no ```` ```botopink ```` fence is left inline — `scripts/check-docs.sh`);
@@ -314,15 +314,13 @@ The side-by-side stages share one job budget: `gate.sh` computes it once
 flag — `test-libs` 50 %, `test-conformance` 30 %, `tsc-check` 10 %,
 `test-web` `-j` 10 % (`scripts/AGENTS.md` § One job budget).
 
-Stages 8 and 9 keep a cell-result store (decision 229): a warm run answers a cell
-from a stored pass only when its key — the compiler's build and its sources
-partitioned by backend (decision 249,
-`modules/compiler-core/src/codegen/backend-partition.txt`), the toolchain and
-every byte the cell reads — is equal, a failure always runs, and each stage
-prints `result store: <N> jobs — <R> run, <S> from store`; `--cold` never reads
-it and writes its passes (`scripts/AGENTS.md` § Warm and cold). The budget is
-7m30s cold (decision 265 — the 5-minute cold target is deferred to the next
-milestone), 1 minute warm.
+No test result is cached (decision 510): every cell of stages 8 and 9 runs on every
+run; `--cold` only deletes the caches the compiler builds from (`scripts/AGENTS.md`
+§ Warm and cold). The backend partition (decision 249,
+`modules/compiler-core/src/codegen/backend-partition.txt`) decides what a step gate
+runs, and `scripts/lib/backend-partition-audit.js` audits it on every gate run. The
+budget is 7m30s (decision 265 — the 5-minute target is deferred to the next
+milestone).
 
 One gate runs at a time per machine: a second `gate.sh` waits for the lock,
 naming the holder's pid, checkout and start time. A `--staged` run whose
@@ -399,8 +397,7 @@ Do not use `--no-verify`.
   time. `--cold` reads nothing and writes what it compiled; `rm -rf
   .botopinkbuild`, `botopink clean` and `gate.sh --cold` delete it, and each job
   reaps one random shard (entries unused for 7 days). The cell durations of `test-libs`
-  (`cache/lib-test/`) and the cell-result store of the gate's stages 8–10
-  (`cache/results/`, decision 229) live beside it; no build cache is outside a
+  (`cache/lib-test/`) live beside it; no build cache is outside a
   `.botopinkbuild/`.
 
 ### General

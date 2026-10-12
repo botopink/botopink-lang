@@ -33,7 +33,7 @@ scripts/
 ├── lib/
 │   ├── gate-mode.sh   ← which gate a checkout runs (`front/*` → step, anything else → full) and what a changed-file list reaches, from the backend partition (sourced by gate.sh; run directly it explains a branch and a file list)
 │   ├── pool.sh        ← the bounded worker pool the shell runners share (sourced by ../conformance/run.sh)
-│   └── result-store.js ← the cell-result store of ../conformance/run.sh: keys, lookup, save (decision 229)
+│   └── backend-partition-audit.js ← audits codegen/backend-partition.txt (decision 249): a listed file used by a file of another target fails the gate (stage 3b of gate.sh)
 └── git-hooks/
     ├── pre-commit                 ← tracked hook, enabled by `git config core.hooksPath scripts/git-hooks` (see ../AGENTS.md §Local gate)
     ├── pre-merge-commit           ← the same gate for a merge that commits by itself (git runs this hook there, not pre-commit)
@@ -123,8 +123,7 @@ never holds an empty field — `conformance/run.sh` pads `run_one`'s unused 4th 
 (an empty one shifted every later group: `commonJS: command not found` on macos-14). A stock macOS has no GNU `timeout`: the runners call `with_timeout` (`scripts/lib/pool.sh` — `timeout`, else `gtimeout`, else perl's alarm), never `timeout` directly.
 macOS's `awk` is BWK awk: a comparison inside an unparenthesized `print`/`printf` argument list is a
 syntax error there (`printf "%s", n == 1 ? "" : "s"` — gawk accepts it), so the ternary is
-parenthesized; the error message quotes the program, and run.sh's never-stored report printed it —
-`✗ nothing should be unstorable` in `result_store.sh` on macos-14. Its `sed` and `grep` know no
+parenthesized. Its `sed` and `grep` know no
 `\x1b`-style escape (an ESC is `$(printf '\033')`), and `sed` takes `-E`, never GNU's `-r`; `sed -i`
 always carries a suffix (`-i.bak`). `scripts/macos-sim.sh <command>` runs a command on Linux with
 bash 3.2.57, BWK awk (`nawk`), BSD xargs' empty-argument drop, no GNU-only tool on PATH, the GNU-only
@@ -149,8 +148,8 @@ format --check` over the compiler's canonical `.bp` trees — decision 66's
 caller), `zig build test` (`--cold` deletes
 `modules/compiler-core/.botopinkbuild/runtime-cache` first, and every
 `.botopinkbuild/cache/` under this checkout and each sibling library repository
-— the code cache of the dependencies' compiled modules, the cell durations, the cell-result
-store, decision 225 — printing `gate: --cold deleted <dir>` for each, and passes
+— the code cache of the dependencies' compiled modules, the cell durations,
+decision 225 — printing `gate: --cold deleted <dir>` for each, and passes
 `--cold` to stages 8 and 9, § Warm and cold),
 `zig build test-bpmp`, `scripts/beam_export_audit.sh`, `zig build test-cli`, `zig build
 test-libs` (every cell the manifests declare, and an audit of every target a
@@ -219,58 +218,41 @@ to its plan: `P + F + N` cells and `A + X` audits of `test-libs:` against the
 tests against the job lines, `docs: <N> references` against the reference lines. A
 stage that ran fewer than its plan fails the gate, green or not — a stage
 cannot be narrowed to win time. The last line is the total,
-`gate: every stage passed — 4m52s wall, 2120 CPU-s (budget 7m30s cold)`,
+`gate: every stage passed — 4m52s wall, 2120 CPU-s (budget 7m30s)`,
 timed from the lock (a wait for another gate is not counted), against
-`budget_cold=450` / `budget_warm=60` at the top of the script — decision 229 of
-1.0.11-beta, for 16 idle cores, with the cold budget set to 7m30s for this
-milestone by decision 265 (the 5-minute cold target is deferred to the next
+`budget=450` at the top of the script — for 16 idle cores, 7m30s for this
+milestone by decision 265 (the 5-minute target is deferred to the next
 milestone). A run over it prints `gate: over budget`
 in yellow with the load, and is not a red: a slow or shared machine is not a
 broken tree.
 
 ### Warm and cold
 
-Decisions 229 and 249 (front `00-gate/133-gate-speed`): stages 8 and 9 keep a
-**cell-result store** under `.botopinkbuild/cache/results/` — `lib-test/` of
-each library's cache root (`botopink-lib-test`,
-[`../modules/lib-test-runner/AGENTS.md`](../modules/lib-test-runner/AGENTS.md)
-§ The result store), `language/` of this checkout (`lib/result-store.js`,
-below). A warm run (no `--cold`) answers a job from a stored **pass** only when
-the job's key is equal — the compiler's build configuration and its sources
-partitioned by backend (below), the toolchain (`node`, the OTP release,
-`wasmtime`, the environment a compiler or runtime reads) and the SHA-256 of
-every byte the job reads; nothing decides what a change can affect.
-A failure is never stored and always runs. Each stage prints `result store: <N>
-jobs — <R> run, <S> from store`, and § counts holds `N`
-and `R + S` to the stage's plan — the pairs of `test-libs --list` that spawn
-(`cell:test`, `cell:compile`, `audit`), the job lines of `run.sh --list`.
-`--cold` deletes every store with the
-other caches and passes `--cold` to the two stages, which then never read it
-and write the passes they ran (decision 249): the run that decides a landing
-executes everything, and the warm run after it answers from what it ran.
+Decision 510: no test result is cached. Every cell of stages 8 and 9 runs on every run — no
+verdict is stored, none is answered from a store, and neither `botopink-lib-test` nor
+`conformance/run.sh` takes `--cold` or `--store-root`. `gate.sh --cold` deletes the runtime
+cache and every `.botopinkbuild/cache/` (the erlang verdicts, the `.beam` cache, the cell
+durations), naming each, so the run that decides a landing builds from nothing; it passes
+nothing to the stages. A gate is made fast by the code cache of its dependencies (decision 509)
+and by running only what a change reaches (below), never by skipping a run.
 
-**The compiler's part of a key** (decision 249). Not the binary's bytes — a
-binary moves with any source — but the files it is built from (the set
+**The backend partition** (decision 249). The files the compiler is built from (the set
 `modules/source-stamp/src/root.zig` hashes) partitioned by backend in ONE list,
 [`../modules/compiler-core/src/codegen/backend-partition.txt`](../modules/compiler-core/src/codegen/backend-partition.txt):
-a file listed under a target is in that target's keys only, every other file
+a file listed under a target belongs to that target alone, every other file
 (lexer, parser, checker, comptime and its runtimes, the preludes, the embedded
 std and bundled packages, the CLI, the runners, `build.zig`, the list itself) is
-shared and in every key, and so are the Zig version, optimize mode and target
-triple. A file the list does not name is shared, so a new emitter file re-runs
+shared. A file the list does not name is shared, so a new emitter file reaches
 everything until it is listed. A job that compiles for no target (`reject/`, a
-doc fence: `botopink check`) holds every target's files. Editing `codegen/wat.zig`
-re-runs the wasm cells and the `check` jobs; editing `comptime/infer.zig` re-runs
+doc fence: `botopink check`) reaches every target's files. Editing `codegen/wat.zig`
+reaches the wasm cells and the `check` jobs; editing `comptime/infer.zig` reaches
 everything. The erlang target owns no file: `codegen/erlang.zig` lowers every
 comptime body on every target, so it is shared (the list says why for each
-emitter file it leaves shared). Two guards make the partition safe to trust,
-each stopping the whole run from reading or writing the store and naming why:
-the binary must carry, on `botopink --version`'s `build:` line, the hash of
-exactly the sources the key reads (a binary not rebuilt after an edit is
-refused), and the list is audited — a listed file imported and used by a file
-that is neither listed under the same target nor the list's `dispatcher`
-(`codegen.zig`) fails the audit. `--cold` still runs everything at every
-landing, so a wrong line can delay a red to the landing, never land one.
+emitter file it leaves shared). The list is audited on every gate run
+(`lib/backend-partition-audit.js`, stage 3b) — a listed file imported and used by a
+file that is neither listed under the same target nor the list's `dispatcher`
+(`codegen.zig`) fails the gate. The full gate runs everything at every landing, so a
+wrong line can delay a red to the landing, never land one.
 
 ### Gate lock
 
@@ -362,7 +344,7 @@ and lands it on `feat` (a `feat` commit or merge runs the full gate again throug
 hook). A front lands whole: the step gates of its steps are not evidence for the landing.
 
 **Measured** (before 144 B-29 step H, when stage 9 ran `tests/language/` one job per cell and
-target; 2026-10-11, one clone of this tree with its own empty cell-result store, a
+target; 2026-10-11, one clone of this tree, a
 `wat.zig` first-line comment as the only change; the library repositories' stores were
 shared and warm, so `test-libs` numbers understate the cold cost; a second gate from
 another thread began mid-way in the full run, load 7–14):
@@ -374,7 +356,7 @@ another thread began mid-way in the full run, load 7–14):
 | step gate reaching every backend (this commit: `scripts/gate.sh` is shared) | the full cell sets | 10m00s |
 
 **Measured, the hook's gate** (before 144 B-29 step H; 2026-10-11, `gate.sh --staged --no-conformance` on a
-`front/*` branch; one fresh clone with its own empty cell-result store and a cold
+`front/*` branch; one fresh clone with a cold
 `zig build`, load 5–16 from other threads' gates, the wait for their lock not counted;
 `test-libs` ran against the shared, warm library stores):
 
@@ -455,11 +437,6 @@ Measured on the 16-core / 30 GB machine, one cold gate alone, fresh
 | `test-web` | 1m10 | 1m11, 66 |
 | whole gate | 12m27, 5680 | 10m24, 4616 (a second cold run: 10m36, 4665, every stage within 3 %) |
 
-Warm (`gate.sh` right after, result store full, load 3 at start): 1m35 wall,
-419 CPU-s — `zig build test` 26s, `test-cli` 1m07 (the pole, not stored),
-`test-libs` 2.8s and `test-conformance` 4.9s answered from the store, `test-docs`
-16s, `tsc-check` 24s, `test-web` 4s. Before: 9m37 for a warm `--staged` gate.
-
 Finding: load still peaks near 28 (`procs_running` up to 60) with only 14 jobs,
 because a job is about two runnable threads (a `botopink test` child plus its
 spinning `erl`/`node`), not one. Halving the budget to 8 jobs (4 / 3 / 1 / 1)
@@ -492,24 +469,16 @@ what they call, and makes its output independent of completion order — one
 file per job, printed in its own order afterwards — which is what lets
 `--jobs 1` and the default print the same bytes. bash 3.2 clean.
 
-## lib/result-store.js
+## lib/backend-partition-audit.js
 
-Run by `node`, never sourced. The cell-result store of `../conformance/run.sh`
-(decision 229; `botopink-lib-test` keeps the same store in
-Zig, `../modules/lib-test-runner/src/result_store.zig`, with the same probes and
-the same environment list). Four subcommands:
-
-| Command | What |
-|---|---|
-| `keys --spec <f> --out <f> --base <dir> --compiler <botopink> [--global-file <name>=<path>]… [--global-tree <name>=<dir>]… [--global-text <t>] [--scratch <dir>]` | one key per spec line `<id>\t<label>\t<input>…` — SHA-256 over the version tag, the toolchain, the compiler's build and shared sources and the sources of the target the label's first word names (every target's for `*`), every global file and tree, the label and every input (`<path>` or `<name>=<path>`, relative to `--base`; a file by content and executable bit, a directory as every path, directory and file in it). Writes `<id>\t<key>` or `<id>\t-\t<why>` for an input it cannot enumerate: a symbolic link, a manifest dependency that is `git` or a `path` leaving the input, a library root above `--scratch` |
-| `lookup --store <dir> --keys <f> --work <dir> --out <f>` | every keyed entry present is copied to `<work>/<id>` (its time refreshed) and its id listed |
-| `save --store <dir> --before <f> --after <f> --work <dir> --hits <f> --pass lines-ok\|exists` | every job that ran, whose key is the same in `--after` (computed again after the run), and whose verdict is a pass (`lines-ok`: every line's third tab field `ok` or `audit`; `exists`: the file exists) is written, staged and renamed; prints `<written> <moved>`; deletes entries unused for 7 days |
-| `toolchain` | the toolchain part of every key |
-| `compiler --bin <botopink>` | the compiler and toolchain part of every key — `why <reason>` when nothing may be stored, else `build …`, `shared <hex>`, `target <t> <hex>` per target, then the toolchain; `botopink-lib-test` takes its keys' compiler part from here |
-| `source-hash --root <checkout>` | the hash `source_stamp` computes over a checkout — what a binary built from it prints on its `build:` line (the tests' shim compilers use it) |
-
-The id names the verdict file and is not part of the key: two jobs with one label
-and the same inputs are one job. The store is `<dir>/<kk>/<key>`.
+Run by `node`, never sourced: `node scripts/lib/backend-partition-audit.js [--root <checkout>]`.
+Reads the compiler's source set from `modules/source-stamp/src/root.zig` (`ROOTS`, `SKIP_DIRS`)
+and `modules/compiler-core/src/codegen/backend-partition.txt`, and exits 1 naming the first
+fault: a line that is not `<target> <path>`, a path listed twice, a name that is no target, a
+listed file or `dispatcher` that is not a compiler source, or a listed file imported **and used**
+by a `.zig` that is neither listed under the same target nor the dispatcher (`_ = @import(…)` is
+not a use). `gate.sh` runs it as stage 3b; the step gate's reach (`lib/gate-mode.sh`) and the code
+cache's fingerprint trust the list because of it.
 
 ## codemod-import-without-from.py
 
@@ -681,12 +650,6 @@ tool); otherwise the runner's own exit (`0`, or its error exit for bad arguments
 or no library root). An explicit `--json` or `--list` argument execs the runner
 raw: its output, not a verdict.
 
-The summary is preceded by the runner's result-store line, `result store: <J>
-jobs — <R> run, <S> from store` (with the runner's note in parentheses when it
-read or wrote nothing: `--cold`, a universe it cannot hash, inputs that moved),
-and a pair answered from a stored pass ends its own line with `(from store)`
-(§ Warm and cold; the store is the runner's).
-
 The audit costs one `botopink build` per excluded (member, target) pair — the
 dependency-closure compile the cell would have cost, and no test run. The pairs
 run on the same worker pool as the cells.
@@ -715,8 +678,7 @@ missing, <F> refused lines`, and § Stage times holds `N` to the lines `--list` 
 synthetic suite and doc whose six lines get known verdicts (a reference to a cell that exists ✓, to
 one that does not ✗, to a suite ✓, a ```` ```botopink ```` fence ✗, a `docs-check` line ✗, an
 `example:` line with no path ✗); a verdict that differs fails the run before the docs are judged, and
-`--self-test` runs only it. The script reads files and runs no compiler, so it keeps no result store
-and takes no `--jobs`. bash 3.2 clean.
+`--self-test` runs only it. The script reads files and runs no compiler, so it takes no `--jobs`. bash 3.2 clean.
 
 ## check-test-scratch.sh
 

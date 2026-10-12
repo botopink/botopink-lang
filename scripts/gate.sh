@@ -21,6 +21,8 @@
 #                           `.bp` trees (decision 66 — the scan has a caller);
 #                           the trees, every one canonical, are named in
 #                           scripts/format-check.sh
+#   3b. backend partition   codegen/backend-partition.txt audited
+#                           (scripts/lib/backend-partition-audit.js, decision 249)
 #   4. zig build test       compiler-core + language-server + CLI +
 #                           lib-test-runner unit suites
 #                           (--cold deletes the runtime cache and every
@@ -29,7 +31,7 @@
 #   6. beam_export_audit.sh every beam snapshot module assembles with every
 #                           function exported (needs erlc)
 #   7. zig build test-cli   modules/compiler-cli/tests/*.sh — the command
-#                           contract, test tooling, result store, wasm --invoke main
+#                           contract, test tooling, wasm --invoke main
 #   8. zig build test-libs  every `.bp` library the checkout can see, per target
 #                           (a library without tests is still compiled); the
 #                           manifests decide the cells — one that exists is
@@ -68,11 +70,11 @@
 #
 #   --cold    delete modules/compiler-core/.botopinkbuild/runtime-cache before
 #             `zig build test`, and every `.botopinkbuild/cache/` (decision 225:
-#             the code cache of the dependencies' modules, the cell durations, the
-#             cell-result store) under this checkout and each sibling library
-#             repository, naming each, and pass `--cold` to stages 8 and 9, which
-#             then never read the result store and write the passes they ran
-#             (§ warm and cold).
+#             the code cache of the dependencies' modules, the cell durations)
+#             under this checkout and each sibling library repository, naming
+#             each, and pass `--cold` to stages 8 and 9 (the code cache is not read
+#             there). Every test and every cell runs on every run (decision 510);
+#             `--cold` only drops the caches the compiler builds from.
 #             Required for the run that decides a merge: a stale cache entry can
 #             hide a backend that never ran. Never answered from the green-tree
 #             record below.
@@ -116,13 +118,10 @@ for a in "$@"; do
     esac
 done
 
-# The wall-clock budget of a run on the reference machine (16 idle cores),
-# cold and warm, in seconds — § budget at the end. Decision 229 of 1.0.11-beta
-# (front 00-gate/133-gate-speed) set 5 minutes cold, 1 minute warm; decision 265
-# sets 7m30s cold for this milestone — the 5-minute cold target is deferred to
-# the next milestone.
-budget_cold=450
-budget_warm=60
+# The wall-clock budget of a run on the reference machine (16 idle cores), in
+# seconds — § budget at the end. Decision 265 sets 7m30s for this milestone —
+# the 5-minute target is deferred to the next milestone.
+budget=450
 
 root="$(git rev-parse --show-toplevel)"
 cd "$root"
@@ -427,6 +426,9 @@ stage "botopink format --check (scripts/format-check.sh)"
 timed "$tdir/format.time" bash scripts/format-check.sh || fail "scripts/format-check.sh (the tree and its files are named above; run: zig-out/bin/botopink format <tree>, in a reformat-only commit)"
 pass "botopink format --check — $(stage_time "$tdir/format.time")"
 
+stage "backend partition audit (scripts/lib/backend-partition-audit.js)"
+node scripts/lib/backend-partition-audit.js || fail "scripts/lib/backend-partition-audit.js (the list modules/compiler-core/src/codegen/backend-partition.txt is wrong where it names)"
+
 stage "zig build test$([ "$cold" -eq 1 ] && echo ' (cold runtime cache)')"
 wait "$test_pid" || true
 cat "$par/0.out"
@@ -466,17 +468,6 @@ bash scripts/check-docs.sh --list >"$par/plan.docs" 2>"$par/plan.docs.err" ||
 # whose failure line ends the run with exit 1; the stages after it are not
 # printed, as the serial gate never ran them. A stage's stdout and stderr share
 # one capture file, so both reach this script's stdout in the order written.
-# ── § warm and cold ─────────────────────────────────────────────────────────
-# Decisions 229 and 249: stages 8 and 9 keep a cell-result store under
-# `.botopinkbuild/cache/results/` — a cell whose key (the compiler's build and
-# its sources partitioned by backend, the toolchain, every byte the cell reads)
-# equals a stored PASS is answered from it, every other cell runs, a failure
-# always runs. Each stage prints `result store: <N> jobs — <R> run, <S> from
-# store`, and § counts holds R + S to the plan. `--cold` passes `--cold` to
-# the two: the store is not read, every cell runs, and the
-# passes are written for the warm runs after it.
-cold_arg=()
-[ "$cold" -eq 0 ] || cold_arg=(--cold)
 # ── § job budget ─────────────────────────────────────────────────────────────
 # One budget for the whole side-by-side set, not a pool each: three pools sized
 # to the whole machine put ~16 jobs apiece on 16 CPUs (load 4.7 → 26 in a cold
@@ -503,10 +494,10 @@ launch 4 zig build test-cli "$opt"
 # A stage the step gate skips because the step reaches none of its cells is not
 # launched; its report line says so (§ step gate and full gate).
 if [ "$run_libs" -eq 1 ]; then
-    launch 5 zig build test-libs "$opt" -- --jobs "$(share 50)" ${libs_args[@]+"${libs_args[@]}"} ${cold_arg[@]+"${cold_arg[@]}"}
+    launch 5 zig build test-libs "$opt" -- --jobs "$(share 50)" ${libs_args[@]+"${libs_args[@]}"}
 fi
 if [ "$run_lang" -eq 1 ]; then
-    launch 6 zig build test-conformance "$opt" -- --jobs "$(share 30)" ${lang_args[@]+"${lang_args[@]}"} ${cold_arg[@]+"${cold_arg[@]}"}
+    launch 6 zig build test-conformance "$opt" -- --jobs "$(share 30)" ${lang_args[@]+"${lang_args[@]}"}
 fi
 launch 7 zig build test-docs "$opt"
 launch 8 bash scripts/tsc-check.sh --jobs "$(share 10)"
@@ -519,20 +510,6 @@ wait
 plain() { sed -E "s/$(printf '\033')\[[0-9;]*m//g" "$1"; }
 counted() {
     [ "$3" = "$4" ] || fail "$2 ran $3, and its plan (--list) declares $4 — a stage may not run fewer than its plan"
-}
-# stored <n> <stage> <unit> <planned> — the stage's `result store: <N> <unit> —
-# <R> run, <S> from store` line: N and R + S are its plan, so a job is either
-# executed or answered from a stored pass, never neither.
-stored() {
-    local line total ran from
-    line="$(plain "$par/$1.out" | grep -E "^result store: [0-9]+ $3 — " | tail -1)"
-    [ -n "$line" ] || fail "$2 printed no \`result store: <N> $3 — <R> run, <S> from store\` line"
-    total="$(sed -nE "s/^result store: ([0-9]+) $3 — .*/\1/p" <<<"$line")"
-    ran="$(sed -nE 's/.* — ([0-9]+) run, .*/\1/p' <<<"$line")"
-    from="$(sed -nE 's/.* run, ([0-9]+) from store.*/\1/p' <<<"$line")"
-    counted "$1" "$2 $3 (result store)" "$total" "$4"
-    counted "$1" "$2 $3 run or answered from the store" "$(( ${ran:-0} + ${from:-0} ))" "$4"
-    echo "result store: ${ran:-0} run, ${from:-0} answered from a stored pass"
 }
 check_counts() { # <n>
     local out="$par/$1.out" line p f n a x
@@ -547,15 +524,12 @@ check_counts() { # <n>
             counted 5 "stage 8 (test-libs) cells" "$(( ${p:-0} + ${f:-0} + ${n:-0} ))" "$(cut -f3 "$par/plan.libs" | grep -c '^cell:')"
             counted 5 "stage 8 (test-libs) restriction audits" "$(( ${a:-0} + ${x:-0} ))" "$(cut -f3 "$par/plan.libs" | grep -cx 'audit')"
             echo "plan: $(( ${p:-0} + ${f:-0} + ${n:-0} )) cells and $(( ${a:-0} + ${x:-0} )) audits, as --list declares"
-            # The pairs that spawn: cells that test or compile, and audits.
-            stored 5 "stage 8 (test-libs)" jobs "$(cut -f3 "$par/plan.libs" | grep -cxE 'cell:test|cell:compile|audit')"
             ;;
         6)  # test-conformance: `cells: <J> jobs — <R> run, <A> audits` (conformance/run.sh)
             line="$(plain "$out" | grep -E '^cells: [0-9]+ jobs' | tail -1)"
             counted 6 "stage 9 (test-conformance) jobs" "$(sed -nE 's/^cells: ([0-9]+) jobs.*/\1/p' <<<"$line")" "$(grep -c . "$par/plan.conformance")"
             counted 6 "stage 9 (test-conformance) audits" "$(sed -nE 's/.* ([0-9]+) audits$/\1/p' <<<"$line")" "$(cut -f3 "$par/plan.conformance" | grep -cx 'audit')"
             echo "plan: $(grep -c . "$par/plan.conformance") jobs on $(cut -f2 "$par/plan.conformance" | sort -u | tr '\n' ' ')as --list declares"
-            stored 6 "stage 9 (test-conformance)" jobs "$(grep -c . "$par/plan.conformance")"
             ;;
         7)  # test-docs: `docs: <N> references — …` (scripts/check-docs.sh)
             line="$(plain "$out" | grep -E '^docs: [0-9]+ references' | tail -1)"
@@ -604,15 +578,14 @@ fi
 
 # ── § budget ─────────────────────────────────────────────────────────────────
 # The whole run's wall clock (from the lock, so a wait for another gate is not
-# counted) and the CPU-seconds of every stage, against the budget decision 229
-# of 1.0.11-beta set on 16 idle cores (7m30s cold under decision 265, 1 minute warm). Over budget is printed, never a red: a
+# counted) and the CPU-seconds of every stage, against the budget
+# set on 16 idle cores (decision 265). Over budget is printed, never a red: a
 # slow or shared machine is not a broken tree.
 YELLOW='\033[0;33m'
-budget=$([ "$cold" -eq 1 ] && echo "$budget_cold" || echo "$budget_warm")
 wall=$(( $(date +%s) - gate_start ))
 cpu="$(cat "$par"/*.time | tr ',' '.' | awk '{ c += $2 + $3 } END { printf "%.0f", c }')"
-printf "\n${GREEN}gate: every stage passed — %s wall, %s CPU-s (budget %s %s)${NC}\n" \
-    "$(fmt_time "$wall")" "$cpu" "$(fmt_time "$budget")" "$([ "$cold" -eq 1 ] && echo cold || echo warm)"
+printf "\n${GREEN}gate: every stage passed — %s wall, %s CPU-s (budget %s)${NC}\n" \
+    "$(fmt_time "$wall")" "$cpu" "$(fmt_time "$budget")"
 if [ "$wall" -gt "$budget" ]; then
     printf "${YELLOW}gate: over budget — %s wall against %s; load %s${NC}\n" \
         "$(fmt_time "$wall")" "$(fmt_time "$budget")" "$(cut -d' ' -f1-3 /proc/loadavg 2>/dev/null || echo '?')"

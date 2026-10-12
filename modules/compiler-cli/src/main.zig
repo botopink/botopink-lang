@@ -34,10 +34,7 @@ const VERSION = "0.1.0";
 
 /// `build: zig <version> <optimize mode> <arch>-<os>-<abi> <source hash> <source root>` —
 /// how this binary was built and from which sources (`build_stamp`, the hash
-/// `source_stamp` computes over the checkout). The gate's cell-result store
-/// (decision 249) reads it: a key holds the build configuration and the
-/// compiler's sources partitioned by backend, and a binary whose source hash is
-/// not the checkout's is never read from or written to the store.
+/// `source_stamp` computes over the checkout).
 const BUILD_LINE = "build: zig " ++ builtin.zig_version_string ++ " " ++ @tagName(builtin.mode) ++ " " ++
     @tagName(builtin.cpu.arch) ++ "-" ++ @tagName(builtin.os.tag) ++ "-" ++ @tagName(builtin.abi) ++ " " ++
     build_stamp.source_hash ++ " " ++ build_stamp.source_root ++ "\n";

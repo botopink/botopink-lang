@@ -110,9 +110,6 @@ pub fn captureTest(
 /// Write a captured `botopink test` cell out — exactly what the serial runner
 /// wrote around the spawn: the text-mode header, the child's stdout (spliced
 /// JSONL under `--json`), its stderr, and the `cell_summary` record.
-/// `from_store`: the capture is a stored pass (`result_store.zig`) and the
-/// cell did not run — the header and the record say so, the rest is the
-/// stored bytes.
 pub fn emitTest(
     arena: std.mem.Allocator,
     io: std.Io,
@@ -121,12 +118,11 @@ pub fn emitTest(
     target: Target,
     json: bool,
     cap: Captured,
-    from_store: bool,
 ) !Status {
     // Header to stderr (the status channel) so the cell's output is
     // attributable in text mode. JSON mode keeps stderr quiet so a tooling
     // consumer can pipe stderr without ANSI noise interleaving spawn errors.
-    if (!json) std.debug.print("\n\x1b[36m── {s} · {s}{s} ──\x1b[0m\n", .{ lib_name, target.toString(), storeMark(from_store) });
+    if (!json) std.debug.print("\n\x1b[36m── {s} · {s} ──\x1b[0m\n", .{ lib_name, target.toString() });
     if (cap.spawn_err) |err| return reportSpawnError(bin, err);
 
     // Re-emit the child's output inline.
@@ -142,13 +138,9 @@ pub fn emitTest(
         // tally; a cell that never compiled has none, which is `ran = false`
         // and NOT "zero failures" (a cell that does not build must never read
         // as green).
-        try emitCellSummary(arena, io, lib_name, target.toString(), cap.status, cap.counts, from_store);
+        try emitCellSummary(arena, io, lib_name, target.toString(), cap.status, cap.counts);
     }
     return cap.status;
-}
-
-fn storeMark(from_store: bool) []const u8 {
-    return if (from_store) " (from store)" else "";
 }
 
 /// Spawn `argv` in `cwd`, capture both streams, and classify the exit:
@@ -341,9 +333,8 @@ pub fn emitCompile(
     target: Target,
     json: bool,
     cap: Captured,
-    from_store: bool,
 ) !Status {
-    if (!json) std.debug.print("\n\x1b[36m── {s} · {s} (no tests: compile only){s} ──\x1b[0m\n", .{ lib_name, target.toString(), storeMark(from_store) });
+    if (!json) std.debug.print("\n\x1b[36m── {s} · {s} (no tests: compile only) ──\x1b[0m\n", .{ lib_name, target.toString() });
     if (cap.spawn_err) |err| return reportSpawnError(bin, err);
 
     if (cap.stdout.len > 0) std.Io.File.stderr().writeStreamingAll(io, cap.stdout) catch {};
@@ -351,7 +342,7 @@ pub fn emitCompile(
 
     // No test ran: `ran = false`, so a compile red is never reported as
     // "0 failures".
-    if (json) try emitCellSummary(arena, io, lib_name, target.toString(), cap.status, .{}, from_store);
+    if (json) try emitCellSummary(arena, io, lib_name, target.toString(), cap.status, .{});
     return cap.status;
 }
 
@@ -516,10 +507,9 @@ pub fn emitAudit(
     target: Target,
     json: bool,
     cap: Captured,
-    from_store: bool,
 ) !Status {
     const tname = target.toString();
-    if (!json) std.debug.print("\n\x1b[36m── {s} · {s} (excluded by \"targets\": restriction audit){s} ──\x1b[0m\n", .{ lib_name, tname, storeMark(from_store) });
+    if (!json) std.debug.print("\n\x1b[36m── {s} · {s} (excluded by \"targets\": restriction audit) ──\x1b[0m\n", .{ lib_name, tname });
     if (cap.spawn_err) |err| return reportSpawnError(bin, err);
 
     const audit = cap.audit;
@@ -559,11 +549,11 @@ pub fn emitAudit(
         std.debug.print("\x1b[1m\x1b[31merror\x1b[0m: the restriction is not structural — `{s}` excludes `{s}` in its \"targets\", and {s}\n", .{ lib_name, tname, found });
         std.debug.print("  → delete the \"targets\" line, or file the compiler row that makes the build refuse it\n", .{});
     }
-    if (json) try emitAuditRecord(arena, io, lib_name, tname, audit.status(), line, audit.at, from_store);
+    if (json) try emitAuditRecord(arena, io, lib_name, tname, audit.status(), line, audit.at);
     return audit.status();
 }
 
-/// `{"event":"restriction_audit","lib":…,"target":…,"status":"ok|not_structural","from_store":…,"line":…,"at":…}`
+/// `{"event":"restriction_audit","lib":…,"target":…,"status":"ok|not_structural","line":…,"at":…}`
 /// — one per (lib, excluded target) pair the run audited. `line` is the
 /// refusal that proves the exclusion structural, or what the audit found
 /// instead; `at` its `<file>:<line>:<col>`, empty when there is none.
@@ -575,11 +565,10 @@ fn emitAuditRecord(
     status: Status,
     line: []const u8,
     at: []const u8,
-    from_store: bool,
 ) !void {
     var buf: std.ArrayListUnmanaged(u8) = .empty;
     defer buf.deinit(arena);
-    try appendAuditRecord(arena, &buf, lib_name, target_str, status, line, at, from_store);
+    try appendAuditRecord(arena, &buf, lib_name, target_str, status, line, at);
     std.Io.File.stdout().writeStreamingAll(io, buf.items) catch {};
 }
 
@@ -591,7 +580,6 @@ fn appendAuditRecord(
     status: Status,
     line: []const u8,
     at: []const u8,
-    from_store: bool,
 ) !void {
     try buf.appendSlice(arena, "{\"event\":\"restriction_audit\",\"lib\":\"");
     try buf.appendSlice(arena, lib_name);
@@ -599,9 +587,7 @@ fn appendAuditRecord(
     try buf.appendSlice(arena, target_str);
     try buf.appendSlice(arena, "\",\"status\":\"");
     try buf.appendSlice(arena, if (status == .excluded) "ok" else "not_structural");
-    try buf.appendSlice(arena, "\",\"from_store\":");
-    try buf.appendSlice(arena, if (from_store) "true" else "false");
-    try buf.appendSlice(arena, ",\"line\":\"");
+    try buf.appendSlice(arena, "\",\"line\":\"");
     try appendJsonEscaped(arena, buf, line);
     try buf.appendSlice(arena, "\",\"at\":\"");
     try appendJsonEscaped(arena, buf, at);
@@ -695,7 +681,6 @@ fn emitCellSummary(
     target_str: []const u8,
     status: Status,
     counts: CellCounts,
-    from_store: bool,
 ) !void {
     var buf: std.ArrayListUnmanaged(u8) = .empty;
     defer buf.deinit(arena);
@@ -710,8 +695,6 @@ fn emitCellSummary(
     try appendDecimal(arena, &buf, counts.failed);
     try buf.appendSlice(arena, ",\"ran\":");
     try buf.appendSlice(arena, if (counts.ran) "true" else "false");
-    try buf.appendSlice(arena, ",\"from_store\":");
-    try buf.appendSlice(arena, if (from_store) "true" else "false");
     try buf.appendSlice(arena, "}\n");
 
     std.Io.File.stdout().writeStreamingAll(io, buf.items) catch {};
@@ -754,30 +737,7 @@ pub fn emitCellSummaryFor(
     target_str: []const u8,
     status: Status,
 ) !void {
-    try emitCellSummary(arena, io, lib_name, target_str, status, .{}, false);
-}
-
-/// `{"event":"result_store","jobs":N,"ran":R,"from_store":S,"written":W,"note":…}`
-/// — one per `--json` run, before `run_summary`: how many spawning cells the
-/// run had, how many ran, how many were answered from a stored pass
-/// (`result_store.zig`), how many passes it wrote, and why it read or wrote
-/// nothing when it did not (`--cold`, a universe it cannot hash, inputs that
-/// moved during the run).
-pub fn emitStoreRecord(arena: std.mem.Allocator, io: std.Io, jobs: usize, ran: usize, from_store: usize, written: usize, note: []const u8) !void {
-    var buf: std.ArrayListUnmanaged(u8) = .empty;
-    defer buf.deinit(arena);
-    try buf.appendSlice(arena, "{\"event\":\"result_store\",\"jobs\":");
-    try appendDecimal(arena, &buf, jobs);
-    try buf.appendSlice(arena, ",\"ran\":");
-    try appendDecimal(arena, &buf, ran);
-    try buf.appendSlice(arena, ",\"from_store\":");
-    try appendDecimal(arena, &buf, from_store);
-    try buf.appendSlice(arena, ",\"written\":");
-    try appendDecimal(arena, &buf, written);
-    try buf.appendSlice(arena, ",\"note\":\"");
-    try appendJsonEscaped(arena, &buf, note);
-    try buf.appendSlice(arena, "\"}\n");
-    std.Io.File.stdout().writeStreamingAll(io, buf.items) catch {};
+    try emitCellSummary(arena, io, lib_name, target_str, status, .{});
 }
 
 /// Final `{"event":"run_summary",…}` record — one per `botopink-lib-test`
@@ -1026,15 +986,15 @@ test "appendAuditRecord: one JSON line, the refusal escaped" {
     defer arena_inst.deinit();
     const arena = arena_inst.allocator();
     var buf: std.ArrayListUnmanaged(u8) = .empty;
-    try appendAuditRecord(arena, &buf, "acme", "commonJS", .excluded, "error: `f` has no `#[@External.<Target>(…)]` for the node backend", "src/a.bp:1:2", false);
+    try appendAuditRecord(arena, &buf, "acme", "commonJS", .excluded, "error: `f` has no `#[@External.<Target>(…)]` for the node backend", "src/a.bp:1:2");
     try testing.expectEqualStrings(
-        "{\"event\":\"restriction_audit\",\"lib\":\"acme\",\"target\":\"commonJS\",\"status\":\"ok\",\"from_store\":false,\"line\":\"error: `f` has no `#[@External.<Target>(…)]` for the node backend\",\"at\":\"src/a.bp:1:2\"}\n",
+        "{\"event\":\"restriction_audit\",\"lib\":\"acme\",\"target\":\"commonJS\",\"status\":\"ok\",\"line\":\"error: `f` has no `#[@External.<Target>(…)]` for the node backend\",\"at\":\"src/a.bp:1:2\"}\n",
         buf.items,
     );
     buf.clearRetainingCapacity();
-    try appendAuditRecord(arena, &buf, "acme", "erlang", .not_structural, "error: expected \"x\"\ty \\ z", "", true);
+    try appendAuditRecord(arena, &buf, "acme", "erlang", .not_structural, "error: expected \"x\"\ty \\ z", "");
     try testing.expectEqualStrings(
-        "{\"event\":\"restriction_audit\",\"lib\":\"acme\",\"target\":\"erlang\",\"status\":\"not_structural\",\"from_store\":true,\"line\":\"error: expected \\\"x\\\"\\u0009y \\\\ z\",\"at\":\"\"}\n",
+        "{\"event\":\"restriction_audit\",\"lib\":\"acme\",\"target\":\"erlang\",\"status\":\"not_structural\",\"line\":\"error: expected \\\"x\\\"\\u0009y \\\\ z\",\"at\":\"\"}\n",
         buf.items,
     );
 }

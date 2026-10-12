@@ -49,14 +49,9 @@
 # The last line is
 #   test-libs: <P> passed, <F> failed, <N> without tests, <A> restrictions audited
 # with `, <X> restrictions not structural` and `, <S> not runnable by botopink
-# test` appended when they are not zero — each of the two fails the run. It is
-# preceded by the result store's line (decision 229, the runner's
-# `result_store.zig`):
-#   result store: <J> jobs — <R> run, <S> from store
-# — of the <J> pairs that spawn (cells that test or compile, audits), how many
-# ran and how many were answered from a stored pass; a pair answered from the
-# store says `(from store)` on its own line. `--cold` (passed to the runner)
-# never reads the store, and writes the passes it ran.
+# test` appended when they are not zero — each of the two fails the run. Every
+# pair that spawns (cells that test or compile, audits) runs on every run:
+# no result is cached (decision 510).
 #
 # Exit codes:
 #   0  every cell passed (or has no tests and compiled) and every exclusion
@@ -113,14 +108,14 @@ done
 field() { # field <json-line> <key> — a string value with no escaped quote in it
     sed -n "s/.*\"$2\":\"\([^\"]*\)\".*/\1/p" <<<"$1"
 }
-# audit_text <json-line> <key> — a string value of a `restriction_audit` (or
-# `result_store`) record, which may carry JSON escapes (`\"`, `\\`): everything
-# up to the next key.
+# audit_text <json-line> <key> — a string value of a `restriction_audit`
+# record, which may carry JSON escapes (`\"`, `\\`): everything up to the next
+# key.
 audit_text() {
     local next
     case "$2" in
         line) next='","at":"' ;;
-        at|note) next='"}' ;;
+        at) next='"}' ;;
     esac
     printf '%s\n' "$1" | awk -v key="\"$2\":\"" -v next_key="$next" '{
         i = index($0, key); if (!i) exit
@@ -134,7 +129,6 @@ audit_text() {
 }
 
 passed=0; failed=0; not_runnable=0; no_tests=0; audited=0; not_structural=0
-store_line=""
 doc_quotes_bad=0
 runner_exit=0
 unexpected=""; refused=""; unran=""
@@ -162,12 +156,11 @@ while IFS= read -r line; do
             lib="$(field "$line" lib)"; target="$(field "$line" target)"
             status="$(field "$line" status)"
             found="$(audit_text "$line" line)"; at="$(audit_text "$line" at)"
-            from=""; case "$line" in *'"from_store":true'*) from=" (from store)" ;; esac
             case "$status" in
                 ok)
                     audited=$((audited + 1))
-                    printf '\033[2m── %s · %s: excluded by "targets" — structural: %s%s%s\033[0m\n' \
-                        "$lib" "$target" "$found" "${at:+ ($at)}" "$from"
+                    printf '\033[2m── %s · %s: excluded by "targets" — structural: %s%s\033[0m\n' \
+                        "$lib" "$target" "$found" "${at:+ ($at)}"
                     ;;
                 *)
                     not_structural=$((not_structural + 1)); refused="$refused ${lib}·${target}"
@@ -179,11 +172,10 @@ while IFS= read -r line; do
         '{"event":"cell_summary"'*)
             lib="$(field "$line" lib)"; target="$(field "$line" target)"
             status="$(field "$line" status)"
-            from=""; case "$line" in *'"from_store":true'*) from=" (from store)" ;; esac
             case "$status" in
                 pass)
                     passed=$((passed + 1))
-                    printf '\033[32m── %s · %s: pass%s\033[0m\n' "$lib" "$target" "$from"
+                    printf '\033[32m── %s · %s: pass\033[0m\n' "$lib" "$target"
                     ;;
                 fail)
                     failed=$((failed + 1)); unexpected="$unexpected ${lib}·${target}"
@@ -195,7 +187,7 @@ while IFS= read -r line; do
                     ;;
                 no_tests)
                     no_tests=$((no_tests + 1))
-                    printf '── %s · %s: no tests — the library has no test {} block; its .bp sources, if any, compiled%s\n' "$lib" "$target" "$from"
+                    printf '── %s · %s: no tests — the library has no test {} block; its .bp sources, if any, compiled\n' "$lib" "$target"
                     ;;
                 *)
                     # A status this script does not know is never a pass.
@@ -203,11 +195,6 @@ while IFS= read -r line; do
                     printf '\033[1;31m── %s · %s: FAIL — unknown cell status `%s`\033[0m\n' "$lib" "$target" "$status"
                     ;;
             esac
-            ;;
-        '{"event":"result_store"'*)
-            store_line="result store: $(sed -n 's/.*"jobs":\([0-9]*\).*/\1/p' <<<"$line") jobs — $(sed -n 's/.*"ran":\([0-9]*\).*/\1/p' <<<"$line") run, $(sed -n 's/.*"from_store":\([0-9]*\).*/\1/p' <<<"$line") from store"
-            note="$(audit_text "$line" note)"
-            [ -z "$note" ] || store_line="$store_line ($note)"
             ;;
         '{"event":"run_summary"'*) ;;
         __runner_exit=*) runner_exit="${line#__runner_exit=}" ;;
@@ -217,7 +204,6 @@ done < <("$runner" --json "$@" 2>&1; echo "__runner_exit=$?")
 set -e
 
 echo
-[ -z "$store_line" ] || printf '%s\n' "$store_line"
 printf 'test-libs: %d passed, %d failed, %d without tests, %d restrictions audited' \
     "$passed" "$failed" "$no_tests" "$audited"
 [ "$not_structural" -gt 0 ] && printf ', %d restrictions not structural' "$not_structural"

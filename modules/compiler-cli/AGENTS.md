@@ -51,12 +51,12 @@ compiler-cli/
 │   │                          `scripts/test-libs.sh`); `BOTOPINK_BIN` in a test;
 │   │                          a dependency's erlang host `.erl` is shipped and reached
 │   ├── test_tooling/        ← pass + fail fixture projects
-│   ├── cell/                ← fixture cells of `botopink cell` (§ Cells): prints,
+│   └── cell/                ← fixture cells of `botopink cell` (§ Cells): prints,
 │   │                          aborts, departs, narrowed, refused — each with its
 │   │                          own `botopink.json`, each green
 │   │                          under `botopink cell check`; cli_contract.sh copies
 │   │                          them before it edits one
-│   ├── code_cache.sh        ← the code cache (decision 509) and the workspace a cell
+│   └── code_cache.sh        ← the code cache (decision 509) and the workspace a cell
 │   │                          inherits from (512): a member that writes its name alone
 │   │                          builds against its workspace's dependency; two members
 │   │                          over one dependency compile it once (the entries' inodes
@@ -65,17 +65,6 @@ compiler-cli/
 │   │                          live; the member's own module never stored; a changed
 │   │                          byte misses; `--cold` rewrites every entry; two
 │   │                          concurrent writers leave whole entries, nothing staged
-│   └── result_store.sh      ← the cell-result store of gate stages 8 and 9 (decisions
-│                              229, 249): run.sh and botopink-lib-test
-│                              over synthetic suites and a shim compiler naming an
-│                              edited copy of the sources — a pass answered from
-│                              the store, a failure run again, one byte of a cell,
-│                              of the library root, a wasm emitter line (wasm cells
-│                              only), a checker line (all), an unlisted emitter
-│                              file (shared), a stale binary, a failed partition
-│                              audit, another node / OTP / wasmtime version,
-│                              `--cold` (writes), a deleted store, a cell that is
-│                              never stored
 └── src/
     ├── AGENTS.md
     ├── main.zig         ← argv parser, subcommand dispatcher
@@ -107,7 +96,6 @@ zig build test-closure-invariant # closure_invariant.sh alone (not in test-cli)
 # cli_contract.sh also takes BOTOPINK_BIN=<binary> and BPMP_BIN=<bpmp> to test another build):
 bash modules/compiler-cli/tests/cli_contract.sh      # command contract C1–C13
 bash modules/compiler-cli/tests/test_tooling.sh      # `botopink test` behaviours
-bash modules/compiler-cli/tests/result_store.sh      # the result store of stages 8 and 9
 bash modules/compiler-cli/tests/code_cache.sh        # the code cache and workspace inheritance
 bash modules/compiler-cli/tests/backend_exec.sh      # the wasm core module's --invoke main
 bash modules/compiler-cli/tests/closure_invariant.sh # a library's output under two consumers (509 (2))
@@ -127,7 +115,7 @@ bash modules/compiler-cli/tests/closure_invariant.sh # a library's output under 
 > `conformance/test/assert_and_try.bp`). The scripts keep the CLI's contract:
 > `cli_contract.sh`, `test_tooling.sh`'s report (`--filter`, the totals, the FAIL
 > line's message and `src/main.bp:<line>`, the `*.snap.new` list),
-> `result_store.sh`, and `backend_exec.sh`'s `wasm --invoke main`.
+> and `backend_exec.sh`'s `wasm --invoke main`.
 > The `std` suite on erlang is covered by `zig build test-libs`, not a script.
 
 ## External libs (generic loader)
@@ -461,9 +449,7 @@ Cross-command rules:
 - **The build line.** `botopink --version` ends with `build: zig <version>
   <optimize mode> <arch>-<os>-<abi> <source hash> <source root>` (`main.zig`
   `BUILD_LINE`, from `builtin` and `build_stamp`): how the binary was built and
-  from which sources. The gate's cell-result store reads it (decision 249,
-  `scripts/AGENTS.md` § Warm and cold) and refuses a binary whose hash is not
-  the checkout's.
+  from which sources.
 - **One OTP release** (decision 228 of 1.0.11-beta). `botopink --version` prints
   `otp: 28` (`manifest.OTP_RELEASE`); `build`/`run`/`test` on erlang or beam ask
   the `erl` on PATH for its release first — the first line of the command's one

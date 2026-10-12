@@ -1,24 +1,25 @@
 # backend-partition.txt — which compiler sources belong to ONE backend (decision 249 of
 # 1.0.11-beta, front 00-gate/133-gate-speed).
 #
-# The gate's cell-result store keys a cell by the compiler's sources (the file set of
-# `modules/source-stamp/src/root.zig`), partitioned by backend: a file listed here
-# under a target is in the key of that target's cells only; every other source file —
-# lexer, parser, checker, comptime and its two runtimes, the preludes, the embedded
-# std and bundled packages, the CLI, the runners, build.zig, this list — is SHARED and
-# in every key. Editing a listed file re-runs that target's cells; editing a shared
-# one re-runs every cell. `--cold` runs everything at every landing, so a wrong line
-# here can delay a red to the landing, never land one.
+# The step gate's reach (`scripts/lib/gate-mode.sh`) and the code cache's fingerprint read
+# this list over the compiler's sources (the file set of
+# `modules/source-stamp/src/root.zig`): a file listed here under a target belongs to that
+# target alone; every other source file — lexer, parser, checker, comptime and its two
+# runtimes, the preludes, the embedded std and bundled packages, the CLI, the runners,
+# build.zig, this list — is SHARED. A step that edits a listed file reaches that target's
+# cells; one that edits a shared file reaches every cell. The full gate runs everything at
+# every landing, so a wrong line here can delay a red to the landing, never land one. No
+# test result is cached (decision 510): the list only decides what a step runs.
 #
 # One line per file: `<target> <path from the checkout root>`, the target one of
 # commonJS, erlang, beam, wasm. Exact paths, no wildcard: a file added beside these
 # is shared until it is listed here. `dispatcher <path>` names the one shared file
 # that may import a listed file — it calls each emitter for its own target only.
 #
-# The list is audited on every keyed run (`scripts/lib/result-store.js`): a listed
-# file imported AND used by a file that is neither listed under the same target nor
-# the dispatcher makes every key of the run unstorable, and the run says why. A test
-# reference (`_ = @import(...)`) is not a use.
+# The list is audited on every gate run (`scripts/lib/backend-partition-audit.js`): a listed
+# file imported AND used by a file that is neither listed under the same target nor the
+# dispatcher fails the gate, and the audit says why. A test reference (`_ = @import(...)`)
+# is not a use.
 #
 # Not listed, and why (each is reached by shared code on every target):
 #   codegen/erlang.zig, codegen/beam/erl_ast.zig, codegen/beam/erl_emitter.zig —
