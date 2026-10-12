@@ -1,1 +1,1 @@
-{ "name": "import_type_closure_across_modules", "version": "0.0.1", "src": "src/", "dependencies": { "shapes": { "path": "deps/shapes" } } }
+{ "name": "import_type_closure_across_modules", "dependencies": { "shapes": { "path": "deps/shapes" } } }

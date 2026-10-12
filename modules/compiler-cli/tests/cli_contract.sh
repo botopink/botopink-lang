@@ -291,35 +291,43 @@ expect_code 1 "build --target erlang of a module erlc rejects"
 expect_out "erlcrefused@main.erl:" "names the refused module"
 expect_out "the OTP compiler refused emitted erlang" "says the build is not a program"
 
-# ── the erlang check remembers acceptances, never refusals ───────────────────
-# `checkErlang` keeps an empty marker per accepted source, keyed by its bytes
-# and the OTP compiler, under the cache root's `.botopinkbuild/cache/erlcheck/`
-# (`build.zig`, `libs.cacheDir`, decision 225). A refusal is compiled and
-# printed every time, and a source that changed is a new key: the cache
-# answers only for bytes it has already seen accepted. HOME and XDG_CACHE_HOME
+# ── the code cache: a dependency's compiled module, never the project's ──────
+# `checkErlang` compiles every emitted `.erl`; a DEPENDENCY's `.beam` is kept
+# by the hash of its bytes and the OTP compiler under the cache root's
+# `.botopinkbuild/cache/code/` (decisions 225, 509, `code_cache.zig`), and
+# the same bytes are not compiled again. The project's own modules are
+# compiled every time and never stored; a refusal is compiled and printed
+# every time, and a source that changed is a new key. HOME and XDG_CACHE_HOME
 # point at a scratch directory where `botopink` may write nothing (other tools
 # on PATH — a version manager's `erl` shim — keep their own caches there): no
 # cache of the compiler lives outside the project.
-echo "==> the erlang check's verdict cache: acceptances only, keyed by the bytes, inside .botopinkbuild"
+echo "==> the code cache: a dependency's modules only, keyed by the bytes, inside .botopinkbuild"
 USER_CACHE="$WORK/user-home"
 mkdir -p "$USER_CACHE"
 bp_isolated() { HOME="$USER_CACHE" XDG_CACHE_HOME="$USER_CACHE/.cache" "$BP" "$@"; }
 # `botopink-lsp` too (decision 233): its old home was `~/.cache/botopink-lsp`.
 user_cache_files() { { find "$USER_CACHE/.cache/botopink" "$USER_CACHE/.cache/botopink-lsp" -type f 2>/dev/null || true; } | wc -l | tr -d " "; }
+mkdir -p "$WORK/erlcache-lib/src"
+printf '{ "name": "erlcachelib", "entry": "root.bp", "files": ["root.bp"] }\n' >"$WORK/erlcache-lib/botopink.json"
+printf 'pub fn word() -> string {\n    return "one";\n}\n' >"$WORK/erlcache-lib/src/root.bp"
 P="$(project erlcache erlang)"
-printf 'pub fn main() {\n    @print("one");\n}\n' >"$P/src/main.bp"
-markers() { { find "$1/.botopinkbuild/cache/erlcheck" -name "*.ok" 2>/dev/null || true; } | wc -l | tr -d " "; }
-( cd "$P" && bp_isolated build >/dev/null 2>&1 ) && ok "an accepted build" || fail "the erlang build of a plain program failed"
+printf '{ "name": "erlcache", "target": "erlang", "dependencies": { "erlcachelib": { "path": "../erlcache-lib" } } }\n' >"$P/botopink.json"
+printf 'import {word} from "erlcachelib";\n\npub fn main() {\n    @print(word());\n}\n' >"$P/src/main.bp"
+markers() { { find "$1/.botopinkbuild/cache/code" -name "*.beam" 2>/dev/null || true; } | wc -l | tr -d " "; }
+( cd "$P" && bp_isolated build >/dev/null 2>&1 ) && ok "an accepted build" || fail "the erlang build of a program over a dependency failed"
 m1="$(markers "$P")"
-[[ "$m1" -gt 0 ]] && ok "accepted sources are remembered under .botopinkbuild/cache/erlcheck/ ($m1 marker(s))" || fail "no verdict marker was written under $P/.botopinkbuild/cache/erlcheck"
+[[ "$m1" -gt 0 ]] && ok "the dependency's modules are kept under .botopinkbuild/cache/code/ ($m1 entr(ies))" || fail "no entry was written under $P/.botopinkbuild/cache/code"
 ( cd "$P" && bp_isolated build >/dev/null 2>&1 ) && ok "the same build again" || fail "the cached build failed"
-[[ "$(markers "$P")" == "$m1" ]] && ok "the same bytes are the same keys" || fail "a rebuild of the same bytes wrote new markers ($(markers "$P") vs $m1)"
+[[ "$(markers "$P")" == "$m1" ]] && ok "the same bytes are the same keys" || fail "a rebuild of the same bytes wrote new entries ($(markers "$P") vs $m1)"
+printf 'import {word} from "erlcachelib";\n\npub fn main() {\n    @print(word() + "!");\n}\n' >"$P/src/main.bp"
+( cd "$P" && bp_isolated build >/dev/null 2>&1 ) && ok "a changed project source builds" || fail "the changed project build failed"
+[[ "$(markers "$P")" == "$m1" ]] && ok "the project's own module is never stored" || fail "the project's own module was stored ($(markers "$P") vs $m1)"
 rm -rf "$P/.botopinkbuild"
 ( cd "$P" && bp_isolated build >/dev/null 2>&1 ) && ok "a build after rm -rf .botopinkbuild" || fail "the build after deleting .botopinkbuild failed"
-[[ "$(markers "$P")" == "$m1" ]] && ok "deleting .botopinkbuild deleted every verdict: each module was compiled again ($m1 marker(s) rewritten)" || fail "after rm -rf .botopinkbuild the build wrote $(markers "$P") marker(s), not $m1 — a verdict was answered from elsewhere"
-printf 'pub fn main() {\n    @print("two");\n}\n' >"$P/src/main.bp"
-( cd "$P" && bp_isolated build >/dev/null 2>&1 ) && ok "a changed source builds" || fail "the changed build failed"
-[[ "$(markers "$P")" -gt "$m1" ]] && ok "a changed source is a new key, checked again" || fail "a changed source was answered from the cache"
+[[ "$(markers "$P")" == "$m1" ]] && ok "deleting .botopinkbuild deleted every entry: each was compiled again ($m1 rewritten)" || fail "after rm -rf .botopinkbuild the build wrote $(markers "$P") entr(ies), not $m1 — one was answered from elsewhere"
+printf 'pub fn word() -> string {\n    return "two";\n}\n' >"$WORK/erlcache-lib/src/root.bp"
+( cd "$P" && bp_isolated build >/dev/null 2>&1 ) && ok "a changed dependency builds" || fail "the build over a changed dependency failed"
+[[ "$(markers "$P")" -gt "$m1" ]] && ok "a changed dependency source is a new key, compiled again" || fail "a changed dependency source was answered from the cache"
 [[ "$(user_cache_files)" -eq 0 ]] && ok "nothing was written under HOME/.cache/botopink" || fail "a build wrote under HOME/.cache/botopink: $(find "$USER_CACHE/.cache/botopink" -type f | head -3 | tr '\n' ' ')"
 run "$P" clean
 expect_code 0 "clean"
@@ -343,11 +351,11 @@ done
 echo "==> a workspace member caches under the workspace root; clean deletes it"
 WS="$WORK/wscache"
 rm -rf "$WS"; mkdir -p "$WS/modules/wsapp/src"
-printf '{ "name": "wscache", "version": "0.1.0", "workspaces": ["modules/*"] }\n' >"$WS/botopink.json"
-printf '{ "name": "wsapp", "version": "0.1.0", "target": "erlang" }\n' >"$WS/modules/wsapp/botopink.json"
-printf 'pub fn main() {\n    @print("ws");\n}\n' >"$WS/modules/wsapp/src/main.bp"
+printf '{ "name": "wscache", "version": "0.1.0", "workspaces": ["modules/*"], "dependencies": { "erlcachelib": { "path": "../erlcache-lib" } } }\n' >"$WS/botopink.json"
+printf '{ "name": "wsapp", "target": "erlang" }\n' >"$WS/modules/wsapp/botopink.json"
+printf 'import {word} from "erlcachelib";\n\npub fn main() {\n    @print(word());\n}\n' >"$WS/modules/wsapp/src/main.bp"
 ( cd "$WS/modules/wsapp" && bp_isolated build >/dev/null 2>&1 ) && ok "a member builds" || fail "the workspace member's erlang build failed"
-[[ "$(markers "$WS")" -gt 0 ]] && ok "its verdicts are under the workspace root's .botopinkbuild/cache/erlcheck/" || fail "no verdict marker under $WS/.botopinkbuild/cache/erlcheck"
+[[ "$(markers "$WS")" -gt 0 ]] && ok "its dependency's modules are under the workspace root's .botopinkbuild/cache/code/" || fail "no entry under $WS/.botopinkbuild/cache/code"
 [[ ! -e "$WS/modules/wsapp/.botopinkbuild/cache" ]] && ok "none under the member's own .botopinkbuild/" || fail "the member kept a cache of its own"
 run "$WS/modules/wsapp" clean
 expect_code 0 "clean in a member"

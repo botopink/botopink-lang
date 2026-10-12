@@ -1,1 +1,1 @@
-{ "name": "import_same_name_from_two_packages", "version": "0.0.1", "src": "src/", "dependencies": { "webapp": { "path": "deps/webapp" }, "ui": { "path": "deps/ui" } } }
+{ "name": "import_same_name_from_two_packages", "dependencies": { "webapp": { "path": "deps/webapp" }, "ui": { "path": "deps/ui" } } }

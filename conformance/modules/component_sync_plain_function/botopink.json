@@ -1,1 +1,1 @@
-{ "name": "component_sync_plain_function", "version": "0.0.1", "src": "src/", "targets": ["commonJS", "wasm"] }
+{ "name": "component_sync_plain_function", "targets": ["commonJS", "wasm"] }

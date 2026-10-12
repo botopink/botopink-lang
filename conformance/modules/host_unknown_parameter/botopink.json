@@ -1,1 +1,1 @@
-{ "name": "host_unknown_parameter", "version": "0.0.1", "src": "src/", "targets": ["erlang", "beam"] }
+{ "name": "host_unknown_parameter", "targets": ["erlang", "beam"] }

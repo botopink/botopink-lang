@@ -1,1 +1,1 @@
-{ "name": "wasm_host_browser_runs", "version": "0.0.1", "src": "src/", "wasm": { "host": "browser" } }
+{ "name": "wasm_host_browser_runs", "wasm": { "host": "browser" } }

@@ -1,1 +1,1 @@
-{ "name": "import_same_type_name_two_packages_one_aliased", "version": "0.0.1", "src": "src/", "dependencies": { "srv": { "path": "deps/srv" }, "site": { "path": "deps/site" } } }
+{ "name": "import_same_type_name_two_packages_one_aliased", "dependencies": { "srv": { "path": "deps/srv" }, "site": { "path": "deps/site" } } }

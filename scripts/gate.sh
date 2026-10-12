@@ -68,7 +68,7 @@
 #
 #   --cold    delete modules/compiler-core/.botopinkbuild/runtime-cache before
 #             `zig build test`, and every `.botopinkbuild/cache/` (decision 225:
-#             the erlang verdicts, the `.beam` cache, the cell durations, the
+#             the code cache of the dependencies' modules, the cell durations, the
 #             cell-result store) under this checkout and each sibling library
 #             repository, naming each, and pass `--cold` to stages 8 and 9, which
 #             then never read the result store and write the passes they ran

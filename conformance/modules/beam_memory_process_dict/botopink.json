@@ -1,1 +1,1 @@
-{ "name": "beam_memory_process_dict", "version": "0.0.1", "src": "src/", "targets": ["erlang", "beam"] }
+{ "name": "beam_memory_process_dict", "targets": ["erlang", "beam"] }

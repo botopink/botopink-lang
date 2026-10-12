@@ -2440,8 +2440,8 @@ botopink build --target erlang
 `botopink clean` deletes `out/` and `.botopinkbuild/` whole: the comptime
 scratch (`.botopinkbuild/tmp/`), the run directories of `botopink test` and the
 `bpmp install` / `bpmp link` links under `.botopinkbuild/deps/` — run either
-again after it — and every build cache (`.botopinkbuild/cache/`: the erlang verdicts
-of `botopink build`, the `.beam` files of `botopink test --target erlang`). In
+again after it — and every build cache (`.botopinkbuild/cache/`: the code cache of
+the dependencies' compiled modules, `code/`). In
 a workspace member, the workspace root's `.botopinkbuild/cache/` goes too: the
 members of a workspace share one cache there.
 
@@ -2526,14 +2526,14 @@ of 1.0.5-beta). Two kinds of manifest exist: a **package** and a **workspace**
 | Field | Type | Default | Read by | Meaning |
 |---|---|---|---|---|
 | `name` | string, **required** | — | every reader | The package's **import name**: `from "acme-web"` resolves to the package named so. A workspace member is reached by this name, never by its directory. It also starts every erlang/BEAM module atom of the package (`acme_web@main`, `std@math@@PI` — decision 109 of 1.0.10-beta), so it must start with a lowercase letter, and `bp` (the compiler's own namespace) is refused. |
-| `version` | string | `"0.1.0"` | compiler, `bpmp` (`pack`, the auto-tag) | The package version. |
+| `version` | string | `"0.1.0"`; a workspace member's: the workspace's | compiler, `bpmp` (`pack`, the auto-tag) | The package version. A member writes it only when it differs from its workspace's (decision 512). |
 | `description` | string | — | — (documentation) | One line. |
 | `src` | string | `"src/"` | compiler, LSP, loader | The source directory, relative to the manifest. `"."` roots the module tree at the manifest's own directory; `test/`, hidden directories and nested packages there are not modules of the tree. |
-| `entry` | string | detected | compiler's resolver (`compiler-cli/src/cli/resolver.zig`) | The module-tree root under `src`: `main.bp` for an application, `root.bp` for a library. When absent, `main.bp` is used if present, else `root.bp`. `entry` is followed when **this** package is built or tested; a consumer never follows it. |
+| `entry` | string | detected; a workspace member's: `main.bp` | compiler's resolver (`compiler-cli/src/cli/resolver.zig`) | The module-tree root under `src`: `main.bp` for an application, `root.bp` for a library. When absent, `main.bp` is used if present, else `root.bp` — a workspace member without one is `main.bp` (decision 512), so a library member writes `"entry": "root.bp"`. `entry` is followed when **this** package is built or tested; a consumer never follows it. |
 | `target` | string | `"commonJS"` | `botopink build/run/test` | The default target of `botopink build`, `run` and `test`. One of `commonJS`, `erlang`, `beam`, `wasm`; another value is refused (never degraded). |
 | `targets` | array of strings | every target | `botopink-lib-test` | The targets the runner may run this package on. Absent: every requested target. A target the list leaves out is not a cell — nothing runs it — and the exclusion is audited on every run: `botopink build --target <excluded>` must be refused for a missing host binding (`has no #[@External.<Target>(…)]`), so a package may exclude only a target it structurally cannot run on; one that builds there, or fails for another reason, fails the run. A member of a workspace inherits the workspace's `targets` when it declares none, and may only **restrict** them (below). |
 | `files` | array of strings | `[]` | the loader (`compiler-cli/src/cli/libs.zig`, `language-server/src/project_graph.zig`), `bpmp pack` | The modules a **consumer** may import, each relative to `src`; shipped as `<name>/<stem>` (`acme-web/router` → `import { … } from "acme-web.router"` / the root `root.bp` → `from "acme-web"`). The only thing a dependency's consumer sees — a library that lists no `files` ships nothing. `libs/std` uses it for the modules the compiler build embeds. |
-| `dependencies` | **object** | `{}` | compiler, LSP, runner, `bpmp` | The object form only — below. |
+| `dependencies` | **object** | `{}`; a workspace member's: its workspace's | compiler, LSP, runner, `bpmp` | The object form only — below. A workspace member inherits every dependency its workspace declares and adds its own; it may not declare one the workspace declares (decision 512, § A workspace). |
 | `otp` | string | the compiler's | `botopink build/check/run/test` (`compiler-cli/src/cli/config.zig`, `libs.zig`) | The Erlang/OTP release the package is built for (decision 228 of 1.0.11-beta). The compiler emits for one release (`botopink --version` prints it: `otp: 28`), and `otp` may only name that one — another value is refused, located at the value. Every package of a build's closure that declares it must declare the same release; a mismatch is refused at the later value, naming the first manifest. A member of a workspace inherits the workspace's `otp` when it declares none, and may not name another. Absent everywhere: the compiler's release applies. Whatever the manifests say, `botopink build/run/test --target erlang\|beam` refuses an `erl` on `PATH` of another release before writing anything: `` botopink emits Erlang for OTP 28, and `erl` on PATH is OTP 29 — install OTP 28 and put it on PATH ``. |
 | `wasm` | object | `{ "host": "wasi" }` | `botopink build/run --target wasm` (`compiler-cli/src/cli/config.zig`) | The runtime a wasm build binds to (decision 334 of 1.0.12-beta), its one field `host`: `"wasi"` — wasmtime and the runtimes that follow WASI preview 2 (`wasi:http`, `wasi:clocks`, `wasi:io/poll`), the default — or `"browser"` — JS imports (`fetch`, `setTimeout`, `Promise` through JSPI), which node runs too. Absent means `"wasi"`; an object without `host`, another field, or a host that is neither is refused. Read on the package being built, never on a dependency; a workspace manifest may not carry it. |
 | `bpp` | string | — | `botopink build/check/run/test` (`compiler-cli/src/cli/bpp.zig`, through `libs.zig`) | The package that unfolds the application's `.bpp` files (decision 361 of 1.0.12-beta): `"bpp": "jhonstart"`, one name, an entry of `dependencies` (refused at the value otherwise). The toolchain finds its roles in that package by std's `bpp` annotations — `#[bpp.html]` exactly once, `#[bpp.style]`, `#[bpp.htmlPrelude]`, `#[bpp.stylePrelude]` at most once each, each on a `pub` declaration, a prelude module holding its imports and its marker `val` only; a count that breaks the rule is refused at this key, naming the declarations. The object form `{ "default": …, "style": … }` is refused at the key: `"bpp" is a package name — write "bpp": "jhonstart"`. A project with `.bpp` files under `src` and no key is refused at the first file; with the key and no `#[bpp.style]` in the package, a `.bpp` style section is refused at its `--- style ---` line. The key on a project with no `.bpp` file is accepted. Read on the package being built, never on a dependency; a workspace manifest may not carry it. |
@@ -2722,15 +2722,40 @@ run instead.
 A manifest with `"workspaces"` is a workspace: it declares **members** and is
 never a package. `npm`'s field name, `npm`'s meaning.
 
+A workspace declares what its members share, and a member declares only its own
+(decision 512 of 1.0.12-beta). Every `conformance/modules/` is one — its members
+are the cells, each named after its directory (decision 511), so a library's cells
+share one dependency closure and one code cache (`conformance/modules/.botopinkbuild/cache/`,
+decision 509):
+
+```json
+{
+  "name": "conformance",
+  "version": "0.0.1",
+  "targets": ["commonJS", "erlang", "beam"],
+  "workspaces": ["*"],
+  "dependencies": {
+    "emilia": { "path": "../../modules/emilia" }
+  }
+}
+```
+
+and a cell that adds nothing is `{ "name": "alpha" }`.
+
 | Field | Meaning |
 |---|---|
-| `name`, `version`, `description` | As for a package. The name is what a lookup answers with when something imports the umbrella by mistake. |
+| `name`, `description` | As for a package. The name is what a lookup answers with when something imports the umbrella by mistake. |
+| `version` | As for a package; a member that writes none has it. |
 | `targets` | The default every member inherits when it declares none; a member may only **restrict** it. |
 | `otp` | The release every member inherits when it declares none; a member may only repeat it. |
-| `workspaces` | The member globs. Two forms: `"<dir>/*"` — every child directory of `<dir>` that holds a `botopink.json` (a child without one is not a member); `"<dir>"` — one directory, which **must** hold a `botopink.json`. Paths are inside the workspace (no `..`, no absolute path, no other `*`). |
-| `src`, `files`, `entry`, `dependencies`, `wasm` | **Refused** — a workspace compiles nothing and ships nothing. |
+| `dependencies` | Every member's: a member inherits each entry, a `path` resolved from the workspace's manifest (not the member's), and adds its own beside them; declaring one the workspace declares is refused — one source per dependency in a workspace. `{ "workspace": true }` names a sibling of the member that writes it and is refused here. |
+| `workspaces` | The member globs. Three forms: `"<dir>/*"` — every child directory of `<dir>` that holds a `botopink.json` (a child without one is not a member); `"*"` — every child directory of the workspace's own that holds one; `"<dir>"` — one directory, which **must** hold a `botopink.json`. Paths are inside the workspace (no `..`, no absolute path, no other `*`). |
+| `src`, `files`, `entry`, `wasm`, `bpp` | **Refused** — a workspace compiles nothing and ships nothing. |
 
-Each member is a package whose `name` is its import name (`from "rakun-web"`).
+Each member is a package whose `name` — **required**, and unique in the workspace —
+is its import name (`from "rakun-web"`); `src`, `entry` and `version` default to
+`src/`, `main.bp` and the workspace's version, so a member writes them only when they
+differ.
 The runner runs every member — examples included — one row per member, and the
 umbrella has no row. A member depends on a sibling with `{ "workspace": true }`
 only. Workspaces do not nest.
@@ -2751,8 +2776,10 @@ application; nothing is shipped from it by design.
 
 | Manifest | Message |
 |---|---|
-| a workspace with `files` (or `src`, `entry`, `dependencies`, `wasm`) | `a workspace manifest cannot carry "files" — a workspace declares members, it is not a package; move "files" to the member's own botopink.json` |
-| `"workspaces": ["modules/**"]` (or `"*/src"`, `"../x"`, `"/abs"`, `""`) | `workspaces entry "modules/**" is not a supported form — use "<dir>/*" (every child of <dir> holding a botopink.json) or a literal "<dir>" inside the workspace` |
+| a workspace with `files` (or `src`, `entry`, `wasm`, `bpp`) | `a workspace manifest cannot carry "files" — a workspace declares members, it is not a package; move "files" to the member's own botopink.json` |
+| a workspace's `dependencies` naming `{ "workspace": true }` | `"lib": { "workspace": true } names a sibling member, and a workspace's dependencies are every member's — declare it in the members that use it` (on the entry) |
+| a member declaring a dependency its workspace declares | `"lib" is a dependency of the workspace (<ws>/botopink.json), which every member inherits — delete this entry: a workspace has one source per dependency` (on the member's entry) |
+| `"workspaces": ["modules/**"]` (or `"*/src"`, `"../x"`, `"/abs"`, `""`) | `workspaces entry "modules/**" is not a supported form — use "<dir>/*" (every child of <dir> holding a botopink.json), "*" (every child of the workspace's directory) or a literal "<dir>" inside the workspace` |
 | `"modules/*"` when `modules/` does not exist | `workspaces entry "modules/*": <ws>/modules is not a directory that can be read` |
 | `"modules/ghost"` with no manifest there | `workspaces entry "modules/ghost": <ws>/modules/ghost/botopink.json does not exist — a literal entry names a directory holding a botopink.json` |
 | a member that is itself a workspace | `"inner" is a member of <ws>/botopink.json and cannot itself be a workspace — workspaces do not nest` (on the member's `workspaces`) |

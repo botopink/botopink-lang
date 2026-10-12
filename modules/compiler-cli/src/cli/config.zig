@@ -136,11 +136,13 @@ pub fn load(arena: std.mem.Allocator, io: std.Io) LoadError!ProjectConfig {
     var err: ?manifest.Located = null;
     // Decision 453: `std` names the bundled `libs/std` alone; the directory
     // decides, never the `name` the manifest writes.
-    const parsed = if (manifest.isBundledStd(io, "."))
-        manifest.parseBundledStd(arena, data, manifest.FILENAME, &err)
-    else
-        manifest.parse(arena, data, manifest.FILENAME, &err);
-    const m = parsed catch |e| switch (e) {
+    // A member's `"bpp"` may name a dependency it inherits (decision 512):
+    // checked once the workspace's are in.
+    const parsed = manifest.parseWith(arena, data, manifest.FILENAME, &err, .{
+        .bundled_std = manifest.isBundledStd(io, "."),
+        .defer_bpp = true,
+    });
+    var m = parsed catch |e| switch (e) {
         error.Invalid => {
             err.?.print();
             return error.ConfigInvalid;
@@ -152,11 +154,24 @@ pub fn load(arena: std.mem.Allocator, io: std.Io) LoadError!ProjectConfig {
         (try workspaceRefusal(arena, io, m)).print();
         return error.ConfigInvalid;
     }
-    var cfg = fromManifest(m);
-
     var cwd_buf: [std.fs.max_path_bytes]u8 = undefined;
-    const n = std.process.currentPath(io, &cwd_buf) catch return cfg;
-    cfg.dir = try arena.dupe(u8, cwd_buf[0..n]);
+    const n = std.process.currentPath(io, &cwd_buf) catch return fromManifest(m);
+    const dir = try arena.dupe(u8, cwd_buf[0..n]);
+
+    // Decision 512: a member takes what its workspace declares for every
+    // member — the dependencies above all. Applied here, on the project's own
+    // manifest, before the workspace is expanded: a refusal of this member
+    // (an inherited dependency it redeclares) is located at `botopink.json`,
+    // the file the command reads.
+    manifest.inheritInPlace(arena, io, &m, dir, &err) catch |e| switch (e) {
+        error.Invalid => {
+            err.?.print();
+            return error.ConfigInvalid;
+        },
+        error.OutOfMemory => return error.OutOfMemory,
+    };
+    var cfg = fromManifest(m);
+    cfg.dir = dir;
 
     cfg.workspace = manifest.enclosingWorkspace(arena, io, cfg.dir, &err) catch |e| switch (e) {
         error.Invalid => {

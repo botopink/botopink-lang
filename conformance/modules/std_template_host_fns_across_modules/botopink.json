@@ -1,1 +1,1 @@
-{ "name": "std_template_host_fns_across_modules", "version": "0.0.1", "src": "src/", "targets": ["commonJS", "erlang", "beam"] }
+{ "name": "std_template_host_fns_across_modules", "targets": ["commonJS", "erlang", "beam"] }

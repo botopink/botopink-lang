@@ -1,1 +1,1 @@
-{ "name": "namespace_import_module", "version": "0.0.1", "src": "src/", "dependencies": { "sec": { "path": "deps/sec" } } }
+{ "name": "namespace_import_module", "dependencies": { "sec": { "path": "deps/sec" } } }

@@ -1,1 +1,1 @@
-{ "name": "derived_type_two_packages", "version": "0.0.1", "src": "src/", "dependencies": { "a": { "path": "deps/a" }, "b": { "path": "deps/b" } } }
+{ "name": "derived_type_two_packages", "dependencies": { "a": { "path": "deps/a" }, "b": { "path": "deps/b" } } }

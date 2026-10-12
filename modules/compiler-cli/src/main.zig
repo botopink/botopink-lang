@@ -69,17 +69,20 @@ const HELP =
     \\  --target <commonJS|erlang|beam|wasm>   Override the codegen target
     \\  --out <dir>                  Output directory (default: out)
     \\  --typescript                 Emit TypeScript .d.ts definitions
+    \\  --cold                       Read nothing from the code cache; write what is compiled
     \\
     \\Options for `run`:
     \\  --target <commonJS|erlang|beam|wasm>   Override the codegen target
     \\  --module <name>              Entry-point module (default: main)
     \\  --out <dir>                  Output directory (default: out)
+    \\  --cold                       Read nothing from the code cache; write what is compiled
     \\  --                           Pass remaining args to the program
     \\
     \\Options for `test`:
     \\  --target <commonJS|erlang>   Override the codegen target
     \\  --filter <substr>            Only run tests whose name contains the substring
     \\  --json                       Emit one JSON object per test (JSONL)
+    \\  --cold                       Read nothing from the code cache; write what is compiled
     \\
     \\Options for `check`:
     \\  [<path>]                     Project directory to check (default: .)
@@ -101,12 +104,18 @@ const HELP =
     \\cell gets candidates. An accepted snapshot is never overwritten, and no flag
     \\accepts a candidate: rename it. `--jobs <N>` checks N cells at once (default: the machine's
     \\jobs, as the gate counts them, halved); the report is in the cells' order whatever N is.
+    \\`cell check --cold` reads nothing from the code cache and writes what it compiled.
+    \\
+    \\The code cache (.botopinkbuild/cache/code/ under the workspace root, else the
+    \\project): the compiled modules of a project's dependencies — std and the
+    \\libraries — by the bytes compiled and the tool's version; the project's own
+    \\modules are compiled every time.
     \\
     \\`clean` takes no option. It deletes out/ and .botopinkbuild/ whole: the
     \\comptime scratch (.botopinkbuild/tmp/), the run directories of `test` and
     \\the `bpmp install` / `bpmp link` links under .botopinkbuild/deps/ (run
-    \\either again after it) and every build cache (.botopinkbuild/cache/: the erlang
-    \\verdicts of `build`, the .beam files of `test --target erlang`). In a
+    \\either again after it) and every build cache (.botopinkbuild/cache/: the code
+    \\cache of the dependencies' compiled modules). In a
     \\workspace member, the workspace root's .botopinkbuild/cache/ goes too.
     \\
     \\`botopink <command> --help` (or -h) prints this message.
@@ -339,6 +348,9 @@ fn parseBuildOpts(args: []const [:0]const u8, diag: *ArgDiag) ArgError!build_cmd
         } else if (std.mem.eql(u8, flag.name, "--typescript")) {
             try noValue(flag, diag);
             opts.typescript = true;
+        } else if (std.mem.eql(u8, flag.name, "--cold")) {
+            try noValue(flag, diag);
+            opts.cold = true;
         } else return reject(args[i], diag);
     }
     return opts;
@@ -370,6 +382,9 @@ fn parseRunOpts(arena: std.mem.Allocator, args: []const [:0]const u8, diag: *Arg
             opts.module = try flagValue(args, &i, flag, diag);
         } else if (std.mem.eql(u8, flag.name, "--out")) {
             opts.out_dir = try flagValue(args, &i, flag, diag);
+        } else if (std.mem.eql(u8, flag.name, "--cold")) {
+            try noValue(flag, diag);
+            opts.cold = true;
         } else return reject(a, diag);
     }
     opts.extra_args = try extra.toOwnedSlice(arena);
@@ -388,6 +403,9 @@ fn parseTestOpts(args: []const [:0]const u8, diag: *ArgDiag) ArgError!test_cmd.O
         } else if (std.mem.eql(u8, flag.name, "--json")) {
             try noValue(flag, diag);
             opts.json = true;
+        } else if (std.mem.eql(u8, flag.name, "--cold")) {
+            try noValue(flag, diag);
+            opts.cold = true;
         } else return reject(args[i], diag);
     }
     return opts;
@@ -428,7 +446,9 @@ fn parseNewOpts(args: []const [:0]const u8, diag: *ArgDiag) ArgError!new_cmd.Opt
     return opts;
 }
 
-/// `cell new <path>` / `cell check <path>`: a subcommand and one path, no flag.
+/// `cell new <path>` / `cell check [--cold] <path>`: a subcommand and one
+/// path; `check` takes `--cold` alone (decision 509 (5)) — no flag accepts a
+/// candidate.
 fn parseCellOpts(args: []const [:0]const u8, diag: *ArgDiag) ArgError!cell_cmd.Options {
     if (args.len == 0) return error.MissingCellCommand;
     const sub = args[0];
@@ -436,10 +456,15 @@ fn parseCellOpts(args: []const [:0]const u8, diag: *ArgDiag) ArgError!cell_cmd.O
     if (!is_new and !std.mem.eql(u8, sub, "check")) return reject(sub, diag);
     var path: ?[]const u8 = null;
     var jobs: ?usize = null;
+    var cold = false;
     var i: usize = 1;
     while (i < args.len) : (i += 1) {
         const a = args[i];
         const flag = splitFlag(a);
+        if (!is_new and std.mem.eql(u8, a, "--cold")) {
+            cold = true;
+            continue;
+        }
         if (!is_new and std.mem.eql(u8, flag.name, "--jobs")) {
             const v = try flagValue(args, &i, flag, diag);
             jobs = std.fmt.parseUnsigned(usize, v, 10) catch 0;
@@ -453,7 +478,7 @@ fn parseCellOpts(args: []const [:0]const u8, diag: *ArgDiag) ArgError!cell_cmd.O
         path = a;
     }
     const p = path orelse return error.MissingCellCommand;
-    return if (is_new) .{ .new = p } else .{ .check = .{ .path = p, .jobs = jobs } };
+    return if (is_new) .{ .new = p } else .{ .check = .{ .path = p, .jobs = jobs, .cold = cold } };
 }
 
 fn parseNoOpts(args: []const [:0]const u8, diag: *ArgDiag) ArgError!void {
@@ -475,6 +500,7 @@ test {
     _ = @import("./cli/cell.zig");
     _ = @import("./cli/cell_snap.zig");
     _ = @import("./cli/check.zig");
+    _ = @import("./cli/code_cache.zig");
     _ = @import("./cli/clean.zig");
     _ = @import("./cli/config.zig");
     _ = @import("./cli/diagnostics.zig");
@@ -538,6 +564,17 @@ test "C11: test parses --json and --filter=value" {
     try std.testing.expectEqual(cfg.Target.commonJS, o.target.?);
 }
 
+test "build, run and test take --cold, which carries no value (decision 509 (5))" {
+    var d: ArgDiag = .{};
+    try std.testing.expect((try parseBuildOpts(argv(&.{"--cold"}), &d)).cold);
+    try std.testing.expect(!(try parseBuildOpts(argv(&.{}), &d)).cold);
+    try std.testing.expect((try parseTestOpts(argv(&.{ "--cold", "--target", "erlang" }), &d)).cold);
+    var arena_inst = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_inst.deinit();
+    try std.testing.expect((try parseRunOpts(arena_inst.allocator(), argv(&.{"--cold"}), &d)).cold);
+    try std.testing.expectError(error.UnexpectedArgument, parseBuildOpts(argv(&.{"--cold=yes"}), &d));
+}
+
 test "C11: format rejects an unknown flag and keeps files" {
     var arena_inst = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_inst.deinit();
@@ -569,6 +606,11 @@ test "cell takes `new` or `check` and one path, no flag (decision 464: no update
     try std.testing.expectEqual(@as(?usize, 3), j.check.jobs);
     try std.testing.expectError(error.InvalidJobs, parseCellOpts(argv(&.{ "check", "--jobs=0", "cells" }), &d));
     try std.testing.expectError(error.UnknownFlag, parseCellOpts(argv(&.{ "new", "--jobs", "2", "x" }), &d));
+    try std.testing.expect(!c.check.cold);
+    // `--cold` (decision 509 (5)): the code cache is not read.
+    const cold = try parseCellOpts(argv(&.{ "check", "--cold", "cells" }), &d);
+    try std.testing.expect(cold.check.cold);
+    try std.testing.expectError(error.UnknownFlag, parseCellOpts(argv(&.{ "new", "--cold", "cells/x" }), &d));
     try std.testing.expectError(error.MissingCellCommand, parseCellOpts(argv(&.{}), &d));
     try std.testing.expectError(error.MissingCellCommand, parseCellOpts(argv(&.{"check"}), &d));
     try std.testing.expectError(error.UnexpectedArgument, parseCellOpts(argv(&.{ "accept", "cells" }), &d));

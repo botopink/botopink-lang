@@ -53,9 +53,10 @@ pub fn remove(io: std.Io, path: []const u8) void {
 /// `PathExpr` (a string), each as a character list — `READ_LIST("Files",
 /// "ListFile")`. The file is read as UTF-8, empty lines dropped.
 pub fn READ_LIST(comptime var_name: []const u8, comptime path_expr: []const u8) []const u8 {
+    // The helper variables carry `var_name`, so one `-eval` reads two lists.
     return var_name ++ " = case file:read_file(" ++ path_expr ++ ") of " ++
-        "{ok, ListBin__} -> [unicode:characters_to_list(L__) || L__ <- binary:split(ListBin__, <<\"\\n\">>, [global, trim_all])]; " ++
-        "{error, ListErr__} -> io:format(standard_error, \"cannot read the list file ~ts: ~p~n\", [" ++ path_expr ++ ", ListErr__]), halt(1) end,\n";
+        "{ok, ListBin__" ++ var_name ++ "} -> [unicode:characters_to_list(L__) || L__ <- binary:split(ListBin__" ++ var_name ++ ", <<\"\\n\">>, [global, trim_all])]; " ++
+        "{error, ListErr__" ++ var_name ++ "} -> io:format(standard_error, \"cannot read the list file ~ts: ~p~n\", [" ++ path_expr ++ ", ListErr__" ++ var_name ++ "]), halt(1) end,\n";
 }
 
 /// The message for a spawn of `tool` that failed with `err`. Zig reports

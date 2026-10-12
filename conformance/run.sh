@@ -36,7 +36,9 @@
 #               modules/compiler-cli/tests/cli_contract.sh.)
 #   --cold      run every job; the result store is not read, and the passes are
 #               written to it (§ the result store); `scripts/gate.sh --cold`
-#               passes it
+#               passes it; each `botopink` the run spawns gets `--cold` too —
+#               the code cache of the cells' dependencies is not read (decision
+#               509 (5))
 #   --store-root  the result store's directory; default
 #               <repo>/.botopinkbuild/cache/results/conformance
 #
@@ -95,10 +97,13 @@ while [ $# -gt 0 ]; do
         --cold) cold=1; shift ;;
         --store-root) store_dir="$2"; shift 2 ;;
         --store-root=*) store_dir="${1#*=}"; shift ;;
-        -h|--help) sed -n '2,62p' "$0"; exit 0 ;;
+        -h|--help) sed -n '2,65p' "$0"; exit 0 ;;
         *) echo "run.sh: unknown argument '$1'" >&2; exit 2 ;;
     esac
 done
+# `--cold` handed on to every `botopink build` / `test` / `cell check` (decision 509 (5)).
+cold_flag=()
+[ "$cold" -eq 0 ] || cold_flag=(--cold)
 runner="$here/$(basename "${BASH_SOURCE[0]}")"
 # The cells are read from `$here`; `--suite` points it at another tree.
 whole_suite=0
@@ -324,7 +329,7 @@ project() { # <dir>
 # or one `fail` line for <path> when nothing ran.
 test_project() { # <dir> <path> <target> <out>
     local dir="$1" path="$2" t="$3" out="$4"
-    (cd "$dir" && with_timeout 300 "$compiler" test --target "$t" --json >"$dir/o.json" 2>"$dir/e.txt")
+    (cd "$dir" && with_timeout 300 "$compiler" test --target "$t" --json ${cold_flag[@]+"${cold_flag[@]}"} >"$dir/o.json" 2>"$dir/e.txt")
     json_tests <"$dir/o.json" >"$dir/tests.tsv"
     if [ ! -s "$dir/tests.tsv" ]; then
         local why; why="$(strip <"$dir/e.txt" | grep -m1 -E 'error' | tr '\t' ' ')"
@@ -344,7 +349,7 @@ test_project() { # <dir> <path> <target> <out>
 check_cell() { # <dir> <path> <out>
     local dir="$1" path="$2" out="$3"
     mkdir -p "$dir"
-    (cd "$dir" && with_timeout 3600 "$compiler" cell check "$here/$path" >"$dir/cell.txt" 2>&1)
+    (cd "$dir" && with_timeout 3600 "$compiler" cell check ${cold_flag[@]+"${cold_flag[@]}"} "$here/$path" >"$dir/cell.txt" 2>&1)
     local code=$?
     if [ $code -eq 0 ]; then
         printf '*\t%s\t%s\t\n' "$path" ok >"$out"
@@ -383,7 +388,7 @@ audit_one() { # <path> <excluded target> <the file that narrows>
     rm -rf "$dir"
     cp -R "$here/$path" "$dir"
     export BOTOPINK_LIB_ROOTS="$lib_root"
-    (cd "$dir" && with_timeout 300 "$compiler" build --target "$t" >"$dir/o.txt" 2>"$dir/e.txt")
+    (cd "$dir" && with_timeout 300 "$compiler" build --target "$t" ${cold_flag[@]+"${cold_flag[@]}"} >"$dir/o.txt" 2>"$dir/e.txt")
     local code=$?
     quiet <"$dir/o.txt" >"$dir/all.txt"; quiet <"$dir/e.txt" >>"$dir/all.txt"
     if [ $code -eq 0 ]; then

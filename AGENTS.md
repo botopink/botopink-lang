@@ -389,15 +389,16 @@ Do not use `--no-verify`.
 - **Output cache.** Executions are content-keyed and cached under
   `.botopinkbuild/runtime-cache/`. Keys ignore toolchain versions — delete the dir
   after upgrading node/erl.
-- **`.beam` cache of `botopink test --target erlang`.** `precompileErlang`
-  (`modules/compiler-cli/src/cli/test_cmd.zig`) keeps every compiled `.beam` in
-  `<cache root>/.botopinkbuild/cache/beam/` — the workspace root (else the
-  project), so the members of one library repository share it (decision 225).
-  Its key does include the OTP / compiler versions, and a hit is relocated to
-  the run's own path, byte for byte what the compile writes there; `rm -rf
-  .botopinkbuild`, `botopink clean` and `gate.sh --cold` delete it, and each run
-  reaps one random shard (entries unused for 7 days). The erlang verdict cache of
-  `botopink build` (`cache/erlcheck/`), the cell durations of `test-libs`
+- **The code cache** (decision 509, `modules/compiler-cli/src/cli/code_cache.zig`).
+  `build`, `run`, `test` and `cell check` keep a DEPENDENCY's compiled module —
+  the `.beam` of std's or a library's `.erl` (erlang) or `.S` (beam) — in
+  `<cache root>/.botopinkbuild/cache/code/`, the workspace root (else the
+  project; a cell's, its `conformance/modules/` workspace), by the hash of the
+  bytes compiled and the OTP compiler's version, and link it (hard link, else
+  copy) into the run's own output; the package under test is compiled every
+  time. `--cold` reads nothing and writes what it compiled; `rm -rf
+  .botopinkbuild`, `botopink clean` and `gate.sh --cold` delete it, and each job
+  reaps one random shard (entries unused for 7 days). The cell durations of `test-libs`
   (`cache/lib-test/`) and the cell-result store of the gate's stages 8–10
   (`cache/results/`, decision 229) live beside it; no build cache is outside a
   `.botopinkbuild/`.

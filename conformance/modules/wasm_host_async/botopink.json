@@ -1,1 +1,1 @@
-{ "name": "wasm_host_async", "version": "0.0.1", "src": "src/" }
+{ "name": "wasm_host_async" }

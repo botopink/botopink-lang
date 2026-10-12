@@ -7,6 +7,7 @@ const build_cmd = @import("./build.zig");
 const libs = @import("./libs.zig");
 const arglist = @import("./arglist.zig");
 const otp = @import("./otp.zig");
+const code_cache = @import("./code_cache.zig");
 
 // ── Options ───────────────────────────────────────────────────────────────────
 
@@ -16,6 +17,9 @@ pub const Options = struct {
     /// Output directory `build` writes and `run` executes from.
     out_dir: []const u8 = "out",
     extra_args: []const []const u8 = &.{},
+    /// `--cold`: the code cache is not read, and what ran is written
+    /// (decision 509 (5)).
+    cold: bool = false,
 };
 
 // ── Entry point ───────────────────────────────────────────────────────────────
@@ -46,7 +50,7 @@ pub fn run(
     };
 
     // Build first, into the same directory the entry point is read from.
-    const build_exit = try build_cmd.run(gpa, io, .{ .target = target, .out_dir = opts.out_dir }, env_map);
+    const build_exit = try build_cmd.run(gpa, io, .{ .target = target, .out_dir = opts.out_dir, .cold = opts.cold }, env_map);
     if (build_exit != 0) return build_exit;
 
     const argv = try programArgv(arena, io, proj, target, opts.out_dir, opts.module) orelse return 1;
@@ -89,8 +93,12 @@ pub fn programArgv(
     // Compile the whole output directory and run it on a code path that can
     // see all of it.
     const entry_atom = try bp.codegen.crossModule.erlAtom(arena, packages.idOf(module));
-    if (target == .erlang) return erlangArgv(arena, io, out_dir, entry_atom);
-    if (target == .beam) return beamArgv(arena, io, out_dir, entry_atom);
+    if (target == .erlang or target == .beam) {
+        // A dependency's module is linked from the code cache when it is there
+        // (decision 509); the project's own are compiled every time.
+        const cache: Cache = .{ .dir = try code_cache.dir(arena, proj), .own_prefix = try code_cache.ownAtomPrefix(arena, proj.name) };
+        return if (target == .erlang) erlangArgv(arena, io, out_dir, entry_atom, cache) else beamArgv(arena, io, out_dir, entry_atom, cache);
+    }
 
     var argv = std.ArrayListUnmanaged([]const u8).empty;
     // A `wasi` build is a WASI preview 2 component (decision 334): `wasmtime
@@ -127,7 +135,15 @@ pub fn programArgv(
 /// **Exit status.** A crashing program now exits `1` (`erl`'s status) where
 /// `escript` exited `127`. The number was escript's artefact; it is not mapped
 /// back, and the command contract in `modules/compiler-cli/AGENTS.md` says so.
-fn erlangArgv(arena: std.mem.Allocator, io: std.Io, out_dir: []const u8, entry_atom: []const u8) !?[]const []const u8 {
+/// The code cache a compile of the output directory reads (`code_cache.zig`):
+/// its directory, and the atom prefix of the project's own modules — every
+/// other emitted module is a dependency's (`code_cache.isDependencyArtifact`).
+pub const Cache = struct {
+    dir: []const u8,
+    own_prefix: []const u8,
+};
+
+fn erlangArgv(arena: std.mem.Allocator, io: std.Io, out_dir: []const u8, entry_atom: []const u8, cache: Cache) !?[]const []const u8 {
     const dir = try std.fmt.allocPrint(arena, "{s}/{s}", .{ out_dir, std.mem.trimEnd(u8, build_cmd.targetSubdir(.erlang), "/") });
 
     // Compile every emitted module, not just the entry: one left uncompiled is
@@ -139,7 +155,7 @@ fn erlangArgv(arena: std.mem.Allocator, io: std.Io, out_dir: []const u8, entry_a
         reporter.errMsg(try std.fmt.allocPrint(arena, "no .erl artifact under {s}/ — nothing to run", .{dir}));
         return null;
     }
-    if (try compileAll(arena, io, dir, .erlang, erls.items) != 0) return null;
+    if (try compileAll(arena, io, dir, .erlang, erls.items, cache) != 0) return null;
 
     const eval = try std.fmt.allocPrint(arena, "{s}:main([]), halt().", .{entry_atom});
     return try otp.erlArgv(arena, &.{ "-noshell", "-pa", dir, "-eval", eval });
@@ -160,7 +176,7 @@ fn erlangArgv(arena: std.mem.Allocator, io: std.Io, out_dir: []const u8, entry_a
 ///
 /// `main([])` for the reason `erlangArgv` gives; on BEAM `main/1` is
 /// `'_botopink_main'/0`, which runs the module body and then `main/0`.
-fn beamArgv(arena: std.mem.Allocator, io: std.Io, out_dir: []const u8, entry_atom: []const u8) !?[]const []const u8 {
+fn beamArgv(arena: std.mem.Allocator, io: std.Io, out_dir: []const u8, entry_atom: []const u8, cache: Cache) !?[]const []const u8 {
     const dir = try std.fmt.allocPrint(arena, "{s}/{s}", .{ out_dir, std.mem.trimEnd(u8, build_cmd.targetSubdir(.beam), "/") });
 
     // Every module, not just the entry: one left unassembled is an `undef` at
@@ -171,14 +187,14 @@ fn beamArgv(arena: std.mem.Allocator, io: std.Io, out_dir: []const u8, entry_ato
         reporter.errMsg(try std.fmt.allocPrint(arena, "no .S artifact under {s}/ — nothing to run", .{dir}));
         return null;
     }
-    if (try compileAll(arena, io, dir, .beam, asms.items) != 0) return null;
+    if (try compileAll(arena, io, dir, .beam, asms.items, cache) != 0) return null;
 
     const eval = try std.fmt.allocPrint(arena, "'{s}':main([]), halt().", .{entry_atom});
     return try otp.erlArgv(arena, &.{ "-noshell", "-pa", dir, "-eval", eval });
 }
 
 /// `erlc -o <dir> <files…>` (`+from_asm` for BEAM assembly), without a command
-/// line that grows with the program: the files go through a list file
+/// line that grows with the program: the files go through list files
 /// (`arglist.write`) and one `erl` compiles each with the options `erlc` gives
 /// it — `report` prints every error and warning as `erlc` does, on stderr
 /// (the group leader is `standard_error`), so the program's stdout stays its
@@ -186,30 +202,67 @@ fn beamArgv(arena: std.mem.Allocator, io: std.Io, out_dir: []const u8, entry_ato
 /// `erlc` itself takes its files on the command line only, and one argument
 /// per module passed macOS's 1 MiB `ARG_MAX` at ~200 modules with a deep
 /// `--out`. Exit 1 when any file does not compile.
-fn compileAll(arena: std.mem.Allocator, io: std.Io, dir: []const u8, kind: enum { erlang, beam }, files: []const []const u8) !u8 {
-    const list = try arglist.write(arena, io, files);
-    defer arglist.remove(io, list);
+///
+/// **The code cache** (decision 509, `code_cache.zig`): a dependency's module
+/// — every emitted file whose atom is not the project's
+/// (`code_cache.isDependencyArtifact`) — is linked into `dir` from the store
+/// when its `.beam` is there, else compiled `deterministic` (its `.beam` is
+/// then the same bytes wherever it is compiled) and stored, side by side on
+/// the job's schedulers; one that is refused, or cannot be keyed, is compiled
+/// as the project's own are, so its refusal reads as before. The project's
+/// own modules are compiled every time.
+fn compileAll(arena: std.mem.Allocator, io: std.Io, dir: []const u8, kind: Kind, files: []const []const u8, cache: Cache) !u8 {
+    const code = try compileInto(arena, io, dir, kind, files, cache);
+    if (code != 0) reporter.errMsg("the OTP compiler refused the emitted program — nothing to run");
+    return code;
+}
+
+pub const Kind = enum { erlang, beam };
+
+/// `compileAll` without its closing line: `botopink test` on beam assembles
+/// its run's `.S` files with it (`test_cmd.zig`), a refusal printed as `erlc`
+/// prints it.
+pub fn compileInto(arena: std.mem.Allocator, io: std.Io, dir: []const u8, kind: Kind, files: []const []const u8, cache: Cache) !u8 {
+    var own: std.ArrayListUnmanaged([]const u8) = .empty;
+    var deps: std.ArrayListUnmanaged([]const u8) = .empty;
+    for (files) |f| try (if (code_cache.isDependencyArtifact(f, cache.own_prefix)) &deps else &own).append(arena, f);
+    const own_list = try arglist.write(arena, io, own.items);
+    defer arglist.remove(io, own_list);
+    const dep_list = try arglist.write(arena, io, deps.items);
+    defer arglist.remove(io, dep_list);
     const mode: []const u8 = switch (kind) {
         .erlang => "erl",
         .beam => "asm",
     };
     // A job of the command's `erl` session (`otp.zig`), after `build`'s check.
-    const argv: []const []const u8 = &.{ "erl", "-noshell", "-eval", COMPILE_EVAL, "-extra", dir, mode, list };
-    const result = otp.job(arena, io, COMPILE_EVAL, argv[5..], 1) catch |err| {
+    const argv: []const []const u8 = &.{ "erl", "-noshell", "-eval", COMPILE_EVAL, "-extra", dir, mode, own_list, dep_list, cache.dir, code_cache.mode() };
+    const result = otp.job(arena, io, COMPILE_EVAL, argv[5..], otp.onlineFor(deps.items.len)) catch |err| {
         reporter.errMsg(arglist.spawnError(arena, "erl", argv, err));
         return 1;
     };
     if (result.stdout.len > 0) std.Io.File.stdout().writeStreamingAll(io, result.stdout) catch {};
-    if (result.code != 0) reporter.errMsg("the OTP compiler refused the emitted program — nothing to run");
     return result.code;
 }
 
 const COMPILE_EVAL =
-    \\[OutDir, Mode, ListFile] = init:get_plain_arguments(),
-++ arglist.READ_LIST("Files", "ListFile") ++
+    \\[OutDir, Mode, OwnListFile, DepListFile, CacheDir, CacheMode] = init:get_plain_arguments(),
+++ arglist.READ_LIST("Own", "OwnListFile") ++ arglist.READ_LIST("Deps", "DepListFile") ++ code_cache.ERL_FUNS ++
     \\group_leader(whereis(standard_error), self()),
     \\Opts = case Mode of "asm" -> [from_asm, report, {outdir, OutDir}]; _ -> [report, {outdir, OutDir}] end,
-    \\Bad = [F || F <- Files, case compile:file(F, Opts) of {ok, _} -> false; {ok, _, _} -> false; _ -> true end],
+    \\Kind = case Mode of "asm" -> asm; _ -> erl end,
+    \\Beam = fun(F) -> filename:join(OutDir, filename:rootname(filename:basename(F)) ++ ".beam") end,
+    \\N = erlang:max(1, erlang:system_info(schedulers_online)),
+    \\Indexed = lists:zip(lists:seq(0, length(Deps) - 1), Deps),
+    \\Parts = [[F || {I, F} <- Indexed, I rem N =:= K] || K <- lists:seq(0, N - 1)],
+    \\Self = self(),
+    \\Refs = [begin
+    \\            R = make_ref(),
+    \\            spawn(fun() -> Self ! {R, [F || F <- Part, (catch CodeDep(F, Kind, Beam(F))) =/= ok]} end),
+    \\            R
+    \\        end || Part <- Parts],
+    \\Left = lists:append([receive {R, Missed} -> Missed end || R <- Refs]),
+    \\Bad = [F || F <- Own ++ Left, case compile:file(F, Opts) of {ok, _} -> false; {ok, _, _} -> false; _ -> true end],
+    \\CodeReap(),
     \\halt(case Bad of [] -> 0; _ -> 1 end).
 ;
 

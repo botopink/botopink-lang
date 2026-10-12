@@ -8,6 +8,7 @@ const libs = @import("./libs.zig");
 const diagnostics = @import("./diagnostics.zig");
 const arglist = @import("./arglist.zig");
 const otp = @import("./otp.zig");
+const code_cache = @import("./code_cache.zig");
 
 const Module = bp.Module;
 
@@ -17,6 +18,9 @@ pub const Options = struct {
     target: ?config.Target = null, // null → use project config
     out_dir: []const u8 = "out",
     typescript: bool = false,
+    /// `--cold`: the code cache is not read, and what ran is written
+    /// (decision 509 (5), `code_cache.zig`).
+    cold: bool = false,
 };
 
 // ── Entry point ───────────────────────────────────────────────────────────────
@@ -30,6 +34,7 @@ pub fn run(
     var arena_instance = std.heap.ArenaAllocator.init(gpa);
     defer arena_instance.deinit();
     const arena = arena_instance.allocator();
+    if (opts.cold) code_cache.cold = true;
 
     // Load project config.
     const proj = config.load(arena, io) catch |err| {
@@ -129,7 +134,7 @@ pub fn run(
     // written) and one it refuses fails the build, so "it builds on erlang"
     // means what it says.
     const erl_ok = if (target == .erlang)
-        try checkErlang(arena, io, outputs.items, opts.out_dir, cfg.packages, try libs.cacheDir(arena, proj, "erlcheck"))
+        try checkErlang(arena, io, outputs.items, opts.out_dir, cfg.packages, try code_cache.dir(arena, proj))
     else
         true;
 
@@ -157,52 +162,48 @@ pub fn run(
 /// then failed on it — and "it builds on that target" was read as evidence.
 /// The warnings of generated code are not reported (`return_errors` alone).
 ///
-/// **The verdict cache** (`cache_dir`, `libs.cacheDir(…, "erlcheck")`:
-/// `<cache root>/.botopinkbuild/cache/erlcheck`, decision 225; null = none).
-/// Every build of a project compiles its dependencies' `.erl` again —
-/// rakun's build tests spawn `botopink build` 22 times in one cell, each over
-/// the same rakun closure. A source the OTP compiler accepted is
-/// therefore remembered as an empty `<cache_dir>/<k[0..2]>/<k>.ok`, `k` the
-/// SHA-256 of the source bytes and of everything else the verdict depends on:
-/// the options, the OTP release, the erts / `compiler` / `stdlib` versions and
-/// `ERL_COMPILER_OPTIONS` — the key of `test_cmd.zig`'s `.beam` cache with
-/// its own label. A source whose key is there is not compiled again: the same
-/// bytes under the same compiler get the same verdict. Only an acceptance is
-/// stored — a refusal is compiled, and printed, every time — and a source that
-/// names `-include` or `parse_transform` (its verdict depends on other files)
-/// is never looked up. The lookup is inside the same `erl`, so a build with no
-/// working `erl` fails exactly as before. Markers are written by staging and
-/// renaming; a hit refreshes the marker's mtime, and each check reaps one of
-/// the 256 shards at random (markers unused for 7 days, staging files older
-/// than a day).
+/// **The code cache** (decision 509, `code_cache.zig`, `cache_dir`). The
+/// project's own modules are compiled every time. A DEPENDENCY's module (std,
+/// a library — `Packages.idOf`) is answered from the store when its `.beam` is
+/// there under the key of its bytes and the OTP compiler's version: the same
+/// bytes under the same compiler compile the same — rakun's build tests spawn
+/// 22 builds of one closure in a cell. One it compiles is stored (its `.beam`,
+/// which `run` and `test` then link into their output instead of compiling
+/// it); a refusal is compiled, and printed, every time. `--cold` reads
+/// nothing and stores what it compiled. The lookup is inside the same `erl`,
+/// so a build with no working `erl` fails exactly as before.
 fn checkErlang(
     arena: std.mem.Allocator,
     io: std.Io,
     outputs: []const bp.codegen.ModuleOutput,
     out_dir: []const u8,
     packages: bp.codegen.crossModule.Packages,
-    cache_dir: ?[]const u8,
+    cache_dir: []const u8,
 ) !bool {
-    // The files go through a list file, never the command line: one path per
+    // The files go through list files, never the command line: one path per
     // module made `erl`'s argv grow with the program, and a 203-module build
     // with a deep `--out` passed macOS's 1 MiB `ARG_MAX` (`arglist.zig`).
-    var files = std.ArrayListUnmanaged([]const u8).empty;
+    var own = std.ArrayListUnmanaged([]const u8).empty;
+    var deps = std.ArrayListUnmanaged([]const u8).empty;
     for (outputs) |o| {
         if (o.result.failed()) continue;
-        try files.append(arena, try artifactPath(arena, out_dir, .erlang, packages, o.name, ".erl"));
+        const list = if (packages.idOf(o.name).package_in_path) &deps else &own;
+        try list.append(arena, try artifactPath(arena, out_dir, .erlang, packages, o.name, ".erl"));
         for (o.result.units) |u| {
-            try files.append(arena, try std.fmt.allocPrint(arena, "{s}/{s}{s}.erl", .{ out_dir, targetSubdir(.erlang), u.atom }));
+            try list.append(arena, try std.fmt.allocPrint(arena, "{s}/{s}{s}.erl", .{ out_dir, targetSubdir(.erlang), u.atom }));
         }
     }
-    if (files.items.len == 0) return true;
-    const list = try arglist.write(arena, io, files.items);
-    defer arglist.remove(io, list);
+    const total = own.items.len + deps.items.len;
+    if (total == 0) return true;
+    const own_list = try arglist.write(arena, io, own.items);
+    defer arglist.remove(io, own_list);
+    const dep_list = try arglist.write(arena, io, deps.items);
+    defer arglist.remove(io, dep_list);
 
-    // The plain arguments are the verdict cache directory (`-` for none) and the list file.
     // One job of the command's `erl` session (`otp.zig`): the VM that answered
     // the release, and that `run` compiles the output directory in next.
-    const argv: []const []const u8 = &.{ "erl", "-noshell", "-eval", ERLANG_CHECK_EVAL, "-extra", cache_dir orelse "-", list };
-    const result = otp.job(arena, io, ERLANG_CHECK_EVAL, argv[5..], otp.onlineFor(files.items.len)) catch |err| {
+    const argv: []const []const u8 = &.{ "erl", "-noshell", "-eval", ERLANG_CHECK_EVAL, "-extra", cache_dir, code_cache.mode(), own_list, dep_list };
+    const result = otp.job(arena, io, ERLANG_CHECK_EVAL, argv[5..], otp.onlineFor(total)) catch |err| {
         const msg = try std.fmt.allocPrint(arena, "`botopink build --target erlang` compiles what it emits with the OTP compiler, and {s}", .{arglist.spawnError(arena, "erl", argv, err)});
         reporter.errMsg(msg);
         if (err == error.FileNotFound) reporter.hintMsg("install Erlang/OTP 28+ and put `erl` on PATH");
@@ -215,74 +216,35 @@ fn checkErlang(
     return false;
 }
 
-/// The check `checkErlang` runs in one `erl`: the plain arguments are the
-/// verdict cache directory (`-` for none) and the list file naming the files
-/// (`arglist.write`); the files are dealt
-/// round-robin to one process per online scheduler, each compiling its share
-/// in memory unless its verdict is cached; every refusal is printed as
+/// The check `checkErlang` runs in one `erl`: the plain arguments are the code
+/// cache's directory and mode (`code_cache.ERL_FUNS`) and the list files of
+/// the project's own `.erl` and of its dependencies' (`arglist.write`); the
+/// files are dealt round-robin to one process per online scheduler, each
+/// compiling its share in memory — a dependency's through `CodeDep`, answered
+/// from the store when it is there; every refusal is printed as
 /// `<file>:<line>: <message>`; exit 1 when there is any.
 const ERLANG_CHECK_EVAL =
-    \\[CacheArg, ListFile] = init:get_plain_arguments(),
-++ arglist.READ_LIST("Files", "ListFile") ++
-    \\Tag = case CacheArg of
-    \\    "-" -> none;
-    \\    _ ->
-    \\        try
-    \\            _ = crypto:hash(sha256, <<>>),
-    \\            term_to_binary({<<"botopink-erl-check-1">>, [binary, return_errors],
-    \\                            erlang:system_info(otp_release), erlang:system_info(version),
-    \\                            filename:basename(code:lib_dir(compiler)),
-    \\                            filename:basename(code:lib_dir(stdlib)),
-    \\                            os:getenv("ERL_COMPILER_OPTIONS")})
-    \\        catch _:_ -> none
-    \\        end
-    \\end,
-    \\Marker = fun(F) ->
-    \\    case Tag =/= none andalso file:read_file(F) of
-    \\        {ok, Text} ->
-    \\            case lists:all(fun(W) -> binary:match(Text, W) =:= nomatch end,
-    \\                           [<<"-include">>, <<"parse_transform">>]) of
-    \\                true ->
-    \\                    Key = binary:encode_hex(crypto:hash(sha256, [Tag, Text]), lowercase),
-    \\                    <<Shard:2/binary, _/binary>> = Key,
-    \\                    filename:join([CacheArg, Shard, <<Key/binary, ".ok">>]);
-    \\                false -> none
-    \\            end;
-    \\        _ -> none
-    \\    end
-    \\end,
-    \\Accepted = fun(none) -> ok;
-    \\              (Mk) ->
-    \\                  Tmp = iolist_to_binary([Mk, ".", integer_to_list(erlang:unique_integer([positive])),
-    \\                                          "-", os:getpid(), ".tmp"]),
-    \\                  catch begin
-    \\                      ok = filelib:ensure_dir(Mk),
-    \\                      ok = file:write_file(Tmp, <<>>),
-    \\                      case file:rename(Tmp, Mk) of ok -> ok; _ -> file:delete(Tmp) end
-    \\                  end
-    \\           end,
+    \\[CacheDir, CacheMode, OwnListFile, DepListFile] = init:get_plain_arguments(),
+++ arglist.READ_LIST("Own", "OwnListFile") ++ arglist.READ_LIST("Deps", "DepListFile") ++ code_cache.ERL_FUNS ++
     \\N = erlang:max(1, erlang:system_info(schedulers_online)),
+    \\Files = [{own, F} || F <- Own] ++ [{dep, F} || F <- Deps],
     \\Indexed = lists:zip(lists:seq(0, length(Files) - 1), Files),
     \\Parts = [[F || {I, F} <- Indexed, I rem N =:= K] || K <- lists:seq(0, N - 1)],
     \\Self = self(),
     \\Loc = fun({L, C}) -> io_lib:format("~p:~p", [L, C]); (none) -> "0"; (L) -> io_lib:format("~p", [L]) end,
-    \\Compile = fun(F, Mk) ->
+    \\Compile = fun(F) ->
     \\    case catch compile:file(F, [binary, return_errors]) of
-    \\        {ok, _, _} -> Accepted(Mk), [];
-    \\        {ok, _, _, _} -> Accepted(Mk), [];
+    \\        {ok, _, _} -> [];
+    \\        {ok, _, _, _} -> [];
     \\        {error, Errors, _} ->
     \\            [io_lib:format("~ts:~ts: ~ts~n", [File, Loc(L), M:format_error(D)])
     \\             || {File, Items} <- Errors, {L, M, D} <- Items];
     \\        Other -> [io_lib:format("~ts: ~p~n", [F, Other])]
     \\    end
     \\end,
-    \\Check = fun(F) ->
-    \\    Mk = Marker(F),
-    \\    case Mk =/= none andalso filelib:is_regular(Mk) of
-    \\        true -> file:change_time(Mk, erlang:localtime()), [];
-    \\        false -> Compile(F, Mk)
-    \\    end
-    \\end,
+    \\Check = fun({own, F}) -> Compile(F);
+    \\           ({dep, F}) -> case catch CodeDep(F, erl, none) of ok -> []; _ -> Compile(F) end
+    \\        end,
     \\Refs = [begin
     \\            R = make_ref(),
     \\            spawn(fun() -> Self ! {R, lists:append([Check(F) || F <- Part])} end),
@@ -290,26 +252,7 @@ const ERLANG_CHECK_EVAL =
     \\        end || Part <- Parts],
     \\Out = lists:append([receive {R, Lines} -> Lines end || R <- Refs]),
     \\io:put_chars(Out),
-    \\case Tag of
-    \\    none -> ok;
-    \\    _ ->
-    \\        catch begin
-    \\            Pick = binary_to_list(binary:encode_hex(<<(rand:uniform(256) - 1)>>, lowercase)),
-    \\            Now = calendar:datetime_to_gregorian_seconds(calendar:local_time()),
-    \\            Reap = fun(Pattern, MaxAge) ->
-    \\                [case filelib:last_modified(F) of
-    \\                     0 -> ok;
-    \\                     T ->
-    \\                         case Now - calendar:datetime_to_gregorian_seconds(T) > MaxAge of
-    \\                             true -> file:delete(F);
-    \\                             false -> ok
-    \\                         end
-    \\                 end || F <- filelib:wildcard(filename:join([CacheArg, Pick, Pattern]))]
-    \\            end,
-    \\            Reap("*.ok", 7 * 86400),
-    \\            Reap("*.tmp", 86400)
-    \\        end
-    \\end,
+    \\CodeReap(),
     \\halt(case Out of [] -> 0; _ -> 1 end).
 ;
 

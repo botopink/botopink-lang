@@ -1,1 +1,1 @@
-{ "name": "dsl_hygiene_consumer_alias", "version": "0.0.1", "src": "src/", "dependencies": { "shapesdsl": { "path": "deps/shapesdsl" } } }
+{ "name": "dsl_hygiene_consumer_alias", "dependencies": { "shapesdsl": { "path": "deps/shapesdsl" } } }

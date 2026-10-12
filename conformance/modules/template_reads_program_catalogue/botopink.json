@@ -1,1 +1,1 @@
-{ "name": "template_reads_program_catalogue", "version": "0.0.1", "src": "src/", "dependencies": { "looks": { "path": "deps/looks" } } }
+{ "name": "template_reads_program_catalogue", "dependencies": { "looks": { "path": "deps/looks" } } }

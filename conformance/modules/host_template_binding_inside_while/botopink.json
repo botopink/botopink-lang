@@ -1,1 +1,1 @@
-{ "name": "host_template_binding_inside_while", "version": "0.0.1", "src": "src/", "targets": ["erlang", "beam"] }
+{ "name": "host_template_binding_inside_while", "targets": ["erlang", "beam"] }

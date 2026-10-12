@@ -1,1 +1,1 @@
-{ "name": "imported_type_field_closure", "version": "0.0.1", "src": "src/", "dependencies": { "a": { "path": "deps/a" }, "b": { "path": "deps/b" } } }
+{ "name": "imported_type_field_closure", "dependencies": { "a": { "path": "deps/a" }, "b": { "path": "deps/b" } } }

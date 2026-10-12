@@ -11,7 +11,7 @@ The `source_stamp` module — **a library run refuses a stale compiler binary.**
 ```text
 source-stamp/
 ├── AGENTS.md         ← you are here
-└── src/root.zig      ← hash / checkFresh / render + its own tests
+└── src/root.zig      ← hash / partitionHashes / checkFresh / render + its own tests
 ```
 
 ## Why it exists
@@ -44,6 +44,15 @@ tell from a real one.
   hidden directories and `tests`, `test`, `snapshots`, `out`, `zig-out`,
   `node_modules`. Sorted, each hashed as `<path> NUL <bytes> NUL`.
 
+- **By backend** (`partitionHashes`, `partitionHash`, `PARTITION`, `TARGETS`):
+  the same file set hashed once per target, each file read once — the shared
+  sources and the ones `modules/compiler-core/src/codegen/backend-partition.txt`
+  lists under that target (decision 249 of 1.0.11-beta), a listed file of
+  another backend left out. `build.zig` embeds them as
+  `build_stamp.partition_hash_<target>`: the compiler's part of the code
+  cache's closure key (decision 509 (3), `compiler-cli/src/cli/code_cache.zig`
+  `compilerKey`).
+
 There is no flag or environment variable that skips the check (decision 67).
 
 ## Tests
@@ -51,4 +60,5 @@ There is no flag or environment variable that skips the check (decision 67).
 `zig build test` runs `src/root.zig`'s tests: the hash moves with a source's
 bytes and not with a skipped tree, a document or a hidden directory;
 `checkFresh` answers null for agreeing hashes and for a missing checkout, and a
-`Stale` once a source moved.
+`Stale` once a source moved; a backend's file moves its target's partition hash
+alone, a shared file every one.

@@ -149,7 +149,7 @@ format --check` over the compiler's canonical `.bp` trees — decision 66's
 caller), `zig build test` (`--cold` deletes
 `modules/compiler-core/.botopinkbuild/runtime-cache` first, and every
 `.botopinkbuild/cache/` under this checkout and each sibling library repository
-— the erlang verdicts, the `.beam` cache, the cell durations, the cell-result
+— the code cache of the dependencies' compiled modules, the cell durations, the cell-result
 store, decision 225 — printing `gate: --cold deleted <dir>` for each, and passes
 `--cold` to stages 8 and 9, § Warm and cold),
 `zig build test-bpmp`, `scripts/beam_export_audit.sh`, `zig build test-cli`, `zig build

@@ -1,1 +1,1 @@
-{ "name": "decorator_same", "version": "0.0.1", "src": "src/", "dependencies": { "web": { "path": "deps/web" } } }
+{ "name": "decorator_same", "dependencies": { "web": { "path": "deps/web" } } }

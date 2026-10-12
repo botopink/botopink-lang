@@ -1,1 +1,1 @@
-{ "name": "task_throw_resolves_error", "version": "0.0.1", "src": "src/", "targets": ["commonJS"] }
+{ "name": "task_throw_resolves_error", "targets": ["commonJS"] }

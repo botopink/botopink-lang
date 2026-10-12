@@ -84,8 +84,8 @@ pub fn cacheRoot(proj: config.ProjectConfig) []const u8 {
 }
 
 /// `<cacheRoot(proj)>/.botopinkbuild/cache/<store>` — the home of one
-/// content-keyed store (`test_cmd.zig`'s `.beam` cache, `build.zig`'s erlang
-/// verdict cache). Nothing here reads the environment: a cache in the user's
+/// content-keyed store (the code cache, `code_cache.zig`, keeps its own `dir`
+/// for the cell override). Nothing here reads the environment: a cache in the user's
 /// home is one `rm -rf .botopinkbuild` and `botopink clean` cannot reach, and
 /// one a `--cold` gate still answers from.
 pub fn cacheDir(arena: std.mem.Allocator, proj: config.ProjectConfig, store: []const u8) ![]const u8 {
@@ -873,7 +873,11 @@ const ProjectManifest = struct {
         // refusal reads `--> botopink.json:L:C` like the rest.
         const text = std.Io.Dir.cwd().readFileAlloc(io, manifest.FILENAME, arena, .unlimited) catch return null;
         var err: ?manifest.Located = null;
-        self.value = manifest.parse(arena, text, manifest.FILENAME, &err) catch null;
+        var m = manifest.parseWith(arena, text, manifest.FILENAME, &err, .{ .defer_bpp = true }) catch return null;
+        // A workspace member resolves the dependencies it inherits too
+        // (decision 512), as `config.load` gave them to the build.
+        manifest.inheritInPlace(arena, io, &m, ".", &err) catch return null;
+        self.value = m;
         return self.value;
     }
 };

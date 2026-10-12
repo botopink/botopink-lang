@@ -1,1 +1,1 @@
-{ "name": "host_node_task_result", "version": "0.0.1", "src": "src/", "targets": ["commonJS"] }
+{ "name": "host_node_task_result", "targets": ["commonJS"] }

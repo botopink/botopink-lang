@@ -1,1 +1,1 @@
-{ "name": "dependency_module_level_print", "version": "0.0.1", "src": "src/", "dependencies": { "boot": { "path": "deps/boot" } } }
+{ "name": "dependency_module_level_print", "dependencies": { "boot": { "path": "deps/boot" } } }

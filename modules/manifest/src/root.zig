@@ -229,6 +229,19 @@ pub const DepSpec = struct {
 pub const DepEntry = struct {
     name: []const u8,
     spec: DepSpec,
+    /// Decision 512 (2): the entry is the enclosing workspace's, inherited by
+    /// this member (`inheritFrom`) — its `path`, written relative to the
+    /// workspace's manifest, is rewritten relative to the member, and a
+    /// refusal about it is located in the workspace's manifest
+    /// (`Manifest.locateEntryAt`).
+    inherited: bool = false,
+};
+
+/// Decision 512: the workspace manifest a member inherited from — where an
+/// inherited dependency is written, so a refusal about it is located there.
+pub const Origin = struct {
+    path: []const u8,
+    text: []const u8,
 };
 
 pub const Kind = enum { package, workspace };
@@ -316,6 +329,12 @@ pub const Manifest = struct {
     kind: Kind,
     name: []const u8,
     version: []const u8 = "0.1.0",
+    /// Whether the manifest writes `"version"` — a member that does not takes
+    /// its workspace's (decision 512 (4)).
+    version_declared: bool = false,
+    /// The workspace manifest this member inherited from (`inheritFrom`),
+    /// null for a package outside any workspace or a workspace itself.
+    inherited_from: ?Origin = null,
     description: ?[]const u8 = null,
     /// Source directory, relative to the manifest's directory (default `src/`).
     src: []const u8 = "src/",
@@ -366,8 +385,25 @@ pub const Manifest = struct {
     /// The same, located at the `"<entry>"` of this manifest's `"<key>"` object
     /// (`locateEntryAt("dependencies", "rakun", …)` points at the dependency
     /// entry), falling back to the key and then to the first byte.
+    ///
+    /// A dependency the member inherited from its workspace (decision 512) is
+    /// written in the workspace's manifest: `locateEntryAt("dependencies", …)`
+    /// on it points at the workspace's entry.
     pub fn locateEntryAt(self: Manifest, key: []const u8, entry: []const u8, message: []const u8) Located {
+        if (self.inheritedDependency(key, entry)) |origin|
+            return located(origin.text, origin.path, locateEntry(origin.text, key, entry), message);
         return located(self.text, self.path, locateEntry(self.text, key, entry), message);
+    }
+
+    /// The workspace manifest that writes dependency `entry`, when `key` is
+    /// `"dependencies"` and the entry is one this member inherited.
+    fn inheritedDependency(self: Manifest, key: []const u8, entry: []const u8) ?Origin {
+        if (!std.mem.eql(u8, key, "dependencies")) return null;
+        const origin = self.inherited_from orelse return null;
+        for (self.dependencies) |d| {
+            if (d.inherited and std.mem.eql(u8, d.name, entry)) return origin;
+        }
+        return null;
     }
 
     /// True when the whitelist is absent or contains `target`.
@@ -391,13 +427,29 @@ pub const ReadError = Error || error{NotFound};
 /// library, bears the name — `read` and `parseBundledStd` are the readers that
 /// know it is that one.
 pub fn parse(arena: std.mem.Allocator, text: []const u8, path: []const u8, out_err: *?Located) Error!Manifest {
-    return parseAs(arena, text, path, out_err, false);
+    return parseWith(arena, text, path, out_err, .{});
+}
+
+/// How `parseWith` reads a manifest.
+pub const ParseOptions = struct {
+    /// The manifest is the bundled `libs/std`'s (decision 453).
+    bundled_std: bool = false,
+    /// Leave `"bpp"`'s "names a dependency" check to `checkBpp`: a workspace
+    /// member's `"bpp"` may name a dependency it inherits (decision 512), which
+    /// is known only once `inheritFrom` ran.
+    defer_bpp: bool = false,
+};
+
+/// `parse` with options — the reader of a manifest that may be a workspace
+/// member (`config.load` in the CLI, `expand`).
+pub fn parseWith(arena: std.mem.Allocator, text: []const u8, path: []const u8, out_err: *?Located, opts: ParseOptions) Error!Manifest {
+    return parseAs(arena, text, path, out_err, opts);
 }
 
 /// `parse` of the manifest of the bundled `libs/std` itself (`isBundledStd`
 /// said so): the one manifest that may be named `std` (decision 453).
 pub fn parseBundledStd(arena: std.mem.Allocator, text: []const u8, path: []const u8, out_err: *?Located) Error!Manifest {
-    return parseAs(arena, text, path, out_err, true);
+    return parseAs(arena, text, path, out_err, .{ .bundled_std = true });
 }
 
 /// Decision 453 — the name of the bundled standard library, reserved.
@@ -425,7 +477,8 @@ pub fn isBundledStd(io: std.Io, dir: []const u8) bool {
     return true;
 }
 
-fn parseAs(arena: std.mem.Allocator, text: []const u8, path: []const u8, out_err: *?Located, bundled_std: bool) Error!Manifest {
+fn parseAs(arena: std.mem.Allocator, text: []const u8, path: []const u8, out_err: *?Located, opts: ParseOptions) Error!Manifest {
+    const bundled_std = opts.bundled_std;
     var parsed = std.json.parseFromSlice(std.json.Value, arena, text, .{}) catch {
         out_err.* = located(text, path, .{ .offset = 0, .len = 1 }, "botopink.json is not valid JSON");
         return error.Invalid;
@@ -450,7 +503,10 @@ fn parseAs(arena: std.mem.Allocator, text: []const u8, path: []const u8, out_err
         out_err.* = located(text, path, locateKey(text, "name"), std_name_refusal);
         return error.Invalid;
     }
-    if (try optionalString(arena, obj, "version", text, path, out_err)) |v| m.version = v;
+    if (try optionalString(arena, obj, "version", text, path, out_err)) |v| {
+        m.version = v;
+        m.version_declared = true;
+    }
     m.description = try optionalString(arena, obj, "description", text, path, out_err);
     if (try optionalString(arena, obj, "src", text, path, out_err)) |v| m.src = v;
     m.entry = try optionalString(arena, obj, "entry", text, path, out_err);
@@ -465,7 +521,7 @@ fn parseAs(arena: std.mem.Allocator, text: []const u8, path: []const u8, out_err
         m.workspaces = globs;
         // A workspace is not a package: nothing compiles from it and nothing
         // imports it, so the package fields have no meaning here.
-        for ([_][]const u8{ "src", "files", "entry", "dependencies", "wasm", "bpp" }) |field| {
+        for ([_][]const u8{ "src", "files", "entry", "wasm", "bpp" }) |field| {
             if (obj.get(field) != null) {
                 out_err.* = located(text, path, locateKey(text, field), try std.fmt.allocPrint(
                     arena,
@@ -476,6 +532,21 @@ fn parseAs(arena: std.mem.Allocator, text: []const u8, path: []const u8, out_err
             }
         }
         for (globs) |g| try checkGlobForm(arena, g, text, path, out_err);
+        // Decision 512 (2): the dependencies every member inherits. A
+        // `{ "workspace": true }` names a sibling of the member that writes it;
+        // the workspace has none, so it is refused here.
+        if (obj.get("dependencies")) |deps_val| {
+            m.dependencies = try parseDependencies(arena, deps_val, text, path, out_err);
+            for (m.dependencies) |d| {
+                if (!d.spec.workspace) continue;
+                out_err.* = located(text, path, locateEntry(text, "dependencies", d.name), try std.fmt.allocPrint(
+                    arena,
+                    "\"{s}\": {{ \"workspace\": true }} names a sibling member, and a workspace's dependencies are every member's — declare it in the members that use it",
+                    .{d.name},
+                ));
+                return error.Invalid;
+            }
+        }
         return m;
     }
 
@@ -483,7 +554,10 @@ fn parseAs(arena: std.mem.Allocator, text: []const u8, path: []const u8, out_err
     if (obj.get("dependencies")) |deps_val| {
         m.dependencies = try parseDependencies(arena, deps_val, text, path, out_err);
     }
-    if (obj.get("bpp")) |v| m.bpp = try parseBpp(arena, v, m.dependencies, text, path, out_err);
+    if (obj.get("bpp")) |v| {
+        m.bpp = try parseBppShape(arena, v, text, path, out_err);
+        if (!opts.defer_bpp) try checkBpp(arena, m, out_err);
+    }
     return m;
 }
 
@@ -492,24 +566,64 @@ fn parseAs(arena: std.mem.Allocator, text: []const u8, path: []const u8, out_err
 /// annotations mark. The object form `{"default", "style"}` is gone, refused
 /// at the key naming the string form; any other non-string too; a name that
 /// is not an entry of `"dependencies"` is refused at the value.
-fn parseBpp(arena: std.mem.Allocator, v: std.json.Value, deps: []const DepEntry, text: []const u8, path: []const u8, out_err: *?Located) Error![]const u8 {
+fn parseBppShape(arena: std.mem.Allocator, v: std.json.Value, text: []const u8, path: []const u8, out_err: *?Located) Error![]const u8 {
     if (v != .string) {
         out_err.* = located(text, path, locateKey(text, "bpp"), "\"bpp\" is a package name — write \"bpp\": \"jhonstart\"");
         return error.Invalid;
     }
-    for (deps) |d| {
-        if (std.mem.eql(u8, d.name, v.string)) return v.string;
+    return try arena.dupe(u8, v.string);
+}
+
+/// `"bpp"` names one of the manifest's dependencies — its own or, for a
+/// workspace member, one it inherits (decision 512) — else it is refused at
+/// the value. `parse` calls it; a reader that parsed with `defer_bpp` calls it
+/// once `inheritFrom` ran (`expand`, the CLI's `config.load`).
+pub fn checkBpp(arena: std.mem.Allocator, m: Manifest, out_err: *?Located) Error!void {
+    const name = m.bpp orelse return;
+    for (m.dependencies) |d| {
+        if (std.mem.eql(u8, d.name, name)) return;
     }
-    out_err.* = located(text, path, locateEntry(text, "bpp", v.string), try std.fmt.allocPrint(arena, "\"bpp\" names \"{s}\", which is not a dependency — the package that unfolds .bpp files is an entry of \"dependencies\"", .{v.string}));
+    out_err.* = located(m.text, m.path, locateEntry(m.text, "bpp", name), try std.fmt.allocPrint(arena, "\"bpp\" names \"{s}\", which is not a dependency — the package that unfolds .bpp files is an entry of \"dependencies\"", .{name}));
     return error.Invalid;
 }
 
 /// Read `<dir>/botopink.json` and `parse` it; the manifest's `path` is the
 /// joined path. `error.NotFound` when the file cannot be read.
+///
+/// A package that is a member of a workspace comes back with what it inherits
+/// from it (decision 512, `inheritInPlace`): every reader — the CLI, the
+/// language server, the runner, `bpmp` — sees one member the same way.
 pub fn read(arena: std.mem.Allocator, io: std.Io, dir: []const u8, out_err: *?Located) ReadError!Manifest {
+    var m = try readWith(arena, io, dir, out_err, true);
+    if (!m.isWorkspace()) try inheritInPlace(arena, io, &m, dir, out_err);
+    return m;
+}
+
+/// Decision 512 for a package read on its own (not through `expand`): when the
+/// nearest ancestor workspace lists `dir` (`workspaceOf`), `inheritFrom` it;
+/// else check its `"bpp"` against its own dependencies. A manifest parsed with
+/// `defer_bpp` goes through here (or through `expand`) before it is used.
+pub fn inheritInPlace(arena: std.mem.Allocator, io: std.Io, m: *Manifest, dir: []const u8, out_err: *?Located) Error!void {
+    const abs = try absolute(arena, io, dir);
+    if (try workspaceOf(arena, io, abs, out_err)) |wsm| {
+        // Both directories absolute (`workspaceOf` reads the workspace at an
+        // absolute path): the member's depth below it is what they say.
+        try inheritFrom(arena, wsm, m, abs, out_err);
+    } else try checkBpp(arena, m.*, out_err);
+}
+
+/// `dir` as an absolute, normalised path (against the process's directory).
+fn absolute(arena: std.mem.Allocator, io: std.Io, dir: []const u8) Error![]const u8 {
+    if (std.fs.path.isAbsolute(dir)) return std.fs.path.resolve(arena, &.{dir});
+    var buf: [std.fs.max_path_bytes]u8 = undefined;
+    const n = std.process.currentPath(io, &buf) catch return std.fs.path.resolve(arena, &.{dir});
+    return std.fs.path.resolve(arena, &.{ buf[0..n], dir });
+}
+
+fn readWith(arena: std.mem.Allocator, io: std.Io, dir: []const u8, out_err: *?Located, defer_bpp: bool) ReadError!Manifest {
     const path = try std.fs.path.join(arena, &.{ dir, FILENAME });
     const text = std.Io.Dir.cwd().readFileAlloc(io, path, arena, .limited(1024 * 1024)) catch return error.NotFound;
-    return parseAs(arena, text, path, out_err, isBundledStd(io, dir));
+    return parseAs(arena, text, path, out_err, .{ .bundled_std = isBundledStd(io, dir), .defer_bpp = defer_bpp });
 }
 
 /// True when `<dir>` is the root of the checkout the walk-up started in: it
@@ -626,17 +740,19 @@ fn parseWasm(arena: std.mem.Allocator, v: std.json.Value, text: []const u8, path
     };
 }
 
-/// Only two glob forms are required by decision 75: `<dir>/*` (every child of
-/// `<dir>` that holds a manifest) and a literal `<dir>`.
+/// The glob forms: `<dir>/*` (every child of `<dir>` that holds a manifest)
+/// and a literal `<dir>` (decision 75), and `*` — every child of the
+/// workspace's own directory, the form of a `conformance/modules/` workspace
+/// whose members are its cells (decision 512 (5)).
 fn checkGlobForm(arena: std.mem.Allocator, g: []const u8, text: []const u8, path: []const u8, out_err: *?Located) Error!void {
     const bad = g.len == 0 or
         std.fs.path.isAbsolute(g) or
         std.mem.startsWith(u8, g, "..") or
-        (std.mem.indexOfScalar(u8, g, '*') != null and !(std.mem.endsWith(u8, g, "/*") and std.mem.count(u8, g, "*") == 1));
+        (std.mem.indexOfScalar(u8, g, '*') != null and !std.mem.eql(u8, g, "*") and !(std.mem.endsWith(u8, g, "/*") and std.mem.count(u8, g, "*") == 1));
     if (bad) {
         out_err.* = located(text, path, locateEntry(text, "workspaces", g), try std.fmt.allocPrint(
             arena,
-            "workspaces entry \"{s}\" is not a supported form — use \"<dir>/*\" (every child of <dir> holding a botopink.json) or a literal \"<dir>\" inside the workspace",
+            "workspaces entry \"{s}\" is not a supported form — use \"<dir>/*\" (every child of <dir> holding a botopink.json), \"*\" (every child of the workspace's directory) or a literal \"<dir>\" inside the workspace",
             .{g},
         ));
         return error.Invalid;
@@ -888,8 +1004,8 @@ pub fn expand(arena: std.mem.Allocator, io: std.Io, m: Manifest, out_err: *?Loca
     var members: std.ArrayListUnmanaged(Member) = .empty;
 
     for (m.workspaces) |g| {
-        if (std.mem.endsWith(u8, g, "/*")) {
-            const base = try std.fs.path.join(arena, &.{ ws_dir, g[0 .. g.len - 2] });
+        if (globChildrenOf(g)) |sub| {
+            const base = if (sub.len == 0) ws_dir else try std.fs.path.join(arena, &.{ ws_dir, sub });
             var d = std.Io.Dir.cwd().openDir(io, base, .{ .iterate = true }) catch {
                 out_err.* = located(m.text, m.path, locateEntry(m.text, "workspaces", g), try std.fmt.allocPrint(
                     arena,
@@ -934,18 +1050,20 @@ pub fn expand(arena: std.mem.Allocator, io: std.Io, m: Manifest, out_err: *?Loca
 
     var ws: Workspace = .{ .dir = ws_dir, .manifest = m, .members = members.items };
 
-    // Second pass — rules that need the whole member set.
+    // Second pass — rules that need the whole member set. Each member first
+    // takes what its workspace declares for every member (decision 512).
+    for (members.items) |*mem| try inheritFrom(arena, m, &mem.manifest, mem.dir, out_err);
     for (members.items) |*mem| {
         const mm = &mem.manifest;
         for (mm.dependencies) |dep| {
-            const at = locateEntry(mm.text, "dependencies", dep.name);
+            const at_loc = mm.locateEntryAt("dependencies", dep.name, "");
             if (dep.spec.workspace) {
                 if (std.mem.eql(u8, dep.name, mem.name)) {
-                    out_err.* = located(mm.text, mm.path, at, try std.fmt.allocPrint(arena, "\"{s}\" cannot depend on itself", .{dep.name}));
+                    out_err.* = withMessage(at_loc, try std.fmt.allocPrint(arena, "\"{s}\" cannot depend on itself", .{dep.name}));
                     return error.Invalid;
                 }
                 if (ws.member(dep.name) == null) {
-                    out_err.* = located(mm.text, mm.path, at, try std.fmt.allocPrint(
+                    out_err.* = withMessage(at_loc, try std.fmt.allocPrint(
                         arena,
                         "\"{s}\": {{ \"workspace\": true }} names no member of {s} (members: {s})",
                         .{ dep.name, m.path, try ws.memberList(arena) },
@@ -956,7 +1074,7 @@ pub fn expand(arena: std.mem.Allocator, io: std.Io, m: Manifest, out_err: *?Loca
                 const target = try std.fs.path.resolve(arena, &.{ mem.dir, p });
                 const ws_abs = try std.fs.path.resolve(arena, &.{ws_dir});
                 if (samePath(target, ws_abs)) {
-                    out_err.* = located(mm.text, mm.path, at, try std.fmt.allocPrint(
+                    out_err.* = withMessage(at_loc, try std.fmt.allocPrint(
                         arena,
                         "\"{s}\": path \"{s}\" points at the workspace itself — a workspace is not a package; depend on one of its members with {{ \"workspace\": true }} (members: {s})",
                         .{ dep.name, p, try ws.memberList(arena) },
@@ -966,7 +1084,7 @@ pub fn expand(arena: std.mem.Allocator, io: std.Io, m: Manifest, out_err: *?Loca
                 for (members.items) |other| {
                     const other_abs = try std.fs.path.resolve(arena, &.{other.dir});
                     if (samePath(target, other_abs)) {
-                        out_err.* = located(mm.text, mm.path, at, try std.fmt.allocPrint(
+                        out_err.* = withMessage(at_loc, try std.fmt.allocPrint(
                             arena,
                             "\"{s}\": path \"{s}\" points at the sibling member \"{s}\" — use {{ \"workspace\": true }}",
                             .{ dep.name, p, other.name },
@@ -976,33 +1094,161 @@ pub fn expand(arena: std.mem.Allocator, io: std.Io, m: Manifest, out_err: *?Loca
                 }
             }
         }
-        // `targets`: inherit, or restrict.
-        if (m.targets) |ws_targets| {
-            if (mm.targets) |own| {
-                for (own) |t| {
-                    if (!m.supportsTarget(t)) {
-                        out_err.* = located(mm.text, mm.path, locateEntry(mm.text, "targets", t), try std.fmt.allocPrint(
-                            arena,
-                            "\"{s}\" is not one of the workspace's targets [{s}] ({s}) — a member may only restrict the workspace's targets",
-                            .{ t, try joinQuoted(arena, ws_targets), m.path },
-                        ));
-                        return error.Invalid;
-                    }
-                }
-            } else mm.targets = ws_targets;
-        }
-        // `otp`: inherit, or say the same release.
-        if (m.otp) |ws_otp| {
-            if (mm.otp) |own| {
-                if (try otpDisagreement(arena, ws_otp, own)) |refusal| {
-                    out_err.* = refusal;
-                    return error.Invalid;
-                }
-            } else mm.otp = ws_otp;
-        }
     }
     ws.members = try members.toOwnedSlice(arena);
     return ws;
+}
+
+/// The directory a children glob lists, relative to the workspace: `<dir>`
+/// for `<dir>/*`, `""` for `*` (the workspace's own); null for a literal entry.
+fn globChildrenOf(g: []const u8) ?[]const u8 {
+    if (std.mem.eql(u8, g, "*")) return "";
+    if (std.mem.endsWith(u8, g, "/*")) return g[0 .. g.len - 2];
+    return null;
+}
+
+/// `l` with another message — a location computed once, reused.
+fn withMessage(l: Located, message: []const u8) Located {
+    var out = l;
+    out.message = message;
+    return out;
+}
+
+/// Decision 512 — what a member of the workspace `ws` takes from it, applied
+/// to `member` (whose directory is `member_dir`, built from `ws`'s directory
+/// as `expand` builds it, or both absolute):
+///
+///   * `dependencies`: every entry of the workspace's, its `path` (written
+///     relative to the workspace's manifest) rewritten relative to the member;
+///     the member's own are added to them, and an entry the member writes for
+///     a name the workspace declares is refused, located at the member's entry
+///     — one source per dependency in a workspace;
+///   * `version`: the workspace's, when the member writes none and the
+///     workspace does; `entry`: `main.bp` when the member writes none (`src`
+///     already defaults to `src/`);
+///   * `targets`: the workspace's when the member writes none, else a subset
+///     of them (a member may only restrict); `otp`: the workspace's when the
+///     member writes none, else the same release;
+///   * `"bpp"` then names one of the member's dependencies, its own or an
+///     inherited one (`checkBpp`).
+///
+/// Applied once: a manifest that already inherited is left as it is.
+pub fn inheritFrom(arena: std.mem.Allocator, ws: Manifest, member: *Manifest, member_dir: []const u8, out_err: *?Located) Error!void {
+    if (member.inherited_from != null) return;
+    const mm = member;
+    if (ws.dependencies.len > 0) {
+        const up = try upToWorkspace(arena, ws.dir(), member_dir);
+        var deps: std.ArrayListUnmanaged(DepEntry) = .empty;
+        for (ws.dependencies) |wd| {
+            for (mm.dependencies) |own| {
+                if (!std.mem.eql(u8, own.name, wd.name)) continue;
+                out_err.* = located(mm.text, mm.path, locateEntry(mm.text, "dependencies", own.name), try std.fmt.allocPrint(
+                    arena,
+                    "\"{s}\" is a dependency of the workspace ({s}), which every member inherits — delete this entry: a workspace has one source per dependency",
+                    .{ own.name, ws.path },
+                ));
+                return error.Invalid;
+            }
+            var spec = wd.spec;
+            if (spec.path) |p| {
+                if (!std.fs.path.isAbsolute(p)) spec.path = try std.fs.path.join(arena, &.{ up, p });
+            }
+            try deps.append(arena, .{ .name = wd.name, .spec = spec, .inherited = true });
+        }
+        try deps.appendSlice(arena, mm.dependencies);
+        mm.dependencies = deps.items;
+    }
+    if (!mm.version_declared and ws.version_declared) mm.version = ws.version;
+    if (mm.entry == null) mm.entry = "main.bp";
+    // `targets`: inherit, or restrict.
+    if (ws.targets) |ws_targets| {
+        if (mm.targets) |own| {
+            for (own) |t| {
+                if (!ws.supportsTarget(t)) {
+                    out_err.* = located(mm.text, mm.path, locateEntry(mm.text, "targets", t), try std.fmt.allocPrint(
+                        arena,
+                        "\"{s}\" is not one of the workspace's targets [{s}] ({s}) — a member may only restrict the workspace's targets",
+                        .{ t, try joinQuoted(arena, ws_targets), ws.path },
+                    ));
+                    return error.Invalid;
+                }
+            }
+        } else mm.targets = ws_targets;
+    }
+    // `otp`: inherit, or say the same release.
+    if (ws.otp) |ws_otp| {
+        if (mm.otp) |own| {
+            if (try otpDisagreement(arena, ws_otp, own)) |refusal| {
+                out_err.* = refusal;
+                return error.Invalid;
+            }
+        } else mm.otp = ws_otp;
+    }
+    mm.inherited_from = .{ .path = ws.path, .text = ws.text };
+    try checkBpp(arena, mm.*, out_err);
+}
+
+/// `..` once per segment of `member_dir` below `ws_dir` (`../..` for
+/// `<ws>/modules/x`): what makes a path written relative to the workspace's
+/// manifest relative to the member's.
+fn upToWorkspace(arena: std.mem.Allocator, ws_dir: []const u8, member_dir: []const u8) Error![]const u8 {
+    const base = std.mem.trimEnd(u8, ws_dir, "/");
+    var rest = member_dir;
+    if (!std.mem.eql(u8, base, ".") and base.len > 0) {
+        if (std.mem.startsWith(u8, member_dir, base) and member_dir.len > base.len and member_dir[base.len] == '/')
+            rest = member_dir[base.len + 1 ..]
+        else if (std.mem.eql(u8, std.mem.trimEnd(u8, member_dir, "/"), base))
+            rest = "";
+    }
+    var out: std.ArrayListUnmanaged(u8) = .empty;
+    var it = std.mem.tokenizeScalar(u8, rest, '/');
+    while (it.next()) |seg| {
+        if (std.mem.eql(u8, seg, ".")) continue;
+        if (out.items.len > 0) try out.append(arena, '/');
+        try out.appendSlice(arena, "..");
+    }
+    if (out.items.len == 0) try out.append(arena, '.');
+    return out.items;
+}
+
+/// Whether the workspace `ws` (its manifest's directory, as given) lists the
+/// directory `dir` under `"workspaces"` — by its globs alone, without reading
+/// any member: `<d>/*` lists every child of `<d>`, a literal entry the one
+/// directory it names. Both paths are compared after `resolve`, so callers may
+/// pass them absolute or from one base.
+pub fn listsMember(arena: std.mem.Allocator, ws: Manifest, dir: []const u8) Error!bool {
+    const target = try std.fs.path.resolve(arena, &.{dir});
+    for (ws.workspaces) |g| {
+        if (globChildrenOf(g)) |sub| {
+            const base = try std.fs.path.resolve(arena, &.{ ws.dir(), sub });
+            const parent = std.fs.path.dirname(target) orelse continue;
+            if (samePath(parent, base)) return true;
+        } else {
+            if (samePath(try std.fs.path.resolve(arena, &.{ ws.dir(), g }), target)) return true;
+        }
+    }
+    return false;
+}
+
+/// The manifest of the workspace `dir` is a member of, by the nearest
+/// ancestor workspace's globs (`listsMember`) — its members unread, so a
+/// sibling's refused manifest does not refuse this one (the CLI's `config.load`
+/// inherits through it before it expands the workspace). Null when the nearest
+/// ancestor workspace does not list `dir`, or there is none. `dir` absolute.
+pub fn workspaceOf(arena: std.mem.Allocator, io: std.Io, dir: []const u8, out_err: *?Located) Error!?Manifest {
+    var d: []const u8 = std.fs.path.dirname(dir) orelse return null;
+    while (true) {
+        if (isWorkspaceDir(io, d)) {
+            const m = read(arena, io, d, out_err) catch |err| switch (err) {
+                error.NotFound => return null,
+                else => |e| return e,
+            };
+            return if (try listsMember(arena, m, dir)) m else null;
+        }
+        const parent = std.fs.path.dirname(d) orelse return null;
+        if (std.mem.eql(u8, parent, d)) return null;
+        d = parent;
+    }
 }
 
 fn joinQuoted(arena: std.mem.Allocator, items: []const []const u8) ![]const u8 {
@@ -1025,7 +1271,7 @@ fn addMember(
     member_dir: []const u8,
     out_err: *?Located,
 ) Error!void {
-    const mm = read(arena, io, member_dir, out_err) catch |err| switch (err) {
+    const mm = readWith(arena, io, member_dir, out_err, true) catch |err| switch (err) {
         error.NotFound => {
             out_err.* = located(ws.text, ws.path, locateEntry(ws.text, "workspaces", glob), try std.fmt.allocPrint(
                 arena,
@@ -1071,6 +1317,11 @@ pub fn enclosingWorkspace(arena: std.mem.Allocator, io: std.Io, project_dir: []c
                 error.NotFound => return null,
                 else => |e| return e,
             };
+            // A directory the workspace's globs do not list is no member: the
+            // workspace is not expanded for it (a sibling's refused manifest is
+            // not this directory's error — a cell's `deps/<lib>` under a
+            // `conformance/modules/` workspace).
+            if (!try listsMember(arena, m, project_dir)) return null;
             const ws = try expand(arena, io, m, out_err);
             const abs_target = try std.fs.path.resolve(arena, &.{project_dir});
             for (ws.members) |mem| {
@@ -1385,10 +1636,10 @@ pub fn resolveDependency(
     tiers: []const []const Entry,
     out_err: *?Located,
 ) Error!?ResolvedDep {
-    const at = locateEntry(project.text, "dependencies", dep.name);
+    const at = project.locateEntryAt("dependencies", dep.name, "");
     if (dep.spec.workspace) {
         const ws = (try enclosingWorkspace(arena, io, project_dir, out_err)) orelse {
-            out_err.* = located(project.text, project.path, at, try std.fmt.allocPrint(
+            out_err.* = withMessage(at, try std.fmt.allocPrint(
                 arena,
                 "\"{s}\": {{ \"workspace\": true }} but {s} is not a member of any workspace — no ancestor botopink.json lists this directory under \"workspaces\"",
                 .{ dep.name, project.path },
@@ -1396,7 +1647,7 @@ pub fn resolveDependency(
             return error.Invalid;
         };
         const mem = ws.member(dep.name) orelse {
-            out_err.* = located(project.text, project.path, at, try std.fmt.allocPrint(
+            out_err.* = withMessage(at, try std.fmt.allocPrint(
                 arena,
                 "\"{s}\": {{ \"workspace\": true }} names no member of {s} (members: {s})",
                 .{ dep.name, ws.manifest.path, try ws.memberList(arena) },
@@ -1410,7 +1661,7 @@ pub fn resolveDependency(
         var terr: ?Located = null;
         const tm = read(arena, io, target, &terr) catch |e| switch (e) {
             error.NotFound => {
-                out_err.* = located(project.text, project.path, at, try std.fmt.allocPrint(
+                out_err.* = withMessage(at, try std.fmt.allocPrint(
                     arena,
                     "\"{s}\": path \"{s}\" holds no botopink.json (looked at {s}/botopink.json)",
                     .{ dep.name, p, target },
@@ -1432,7 +1683,7 @@ pub fn resolveDependency(
                 },
                 error.OutOfMemory => return error.OutOfMemory,
             };
-            out_err.* = located(project.text, project.path, at, try std.fmt.allocPrint(
+            out_err.* = withMessage(at, try std.fmt.allocPrint(
                 arena,
                 "\"{s}\": path \"{s}\" is a workspace, not a package — depend on one of its members: {s}",
                 .{ dep.name, p, try ws.memberList(arena) },
@@ -1442,7 +1693,7 @@ pub fn resolveDependency(
         if (try enclosingWorkspace(arena, io, project_dir, out_err)) |ws| {
             for (ws.members) |mem| {
                 if (samePath(try std.fs.path.resolve(arena, &.{mem.dir}), target)) {
-                    out_err.* = located(project.text, project.path, at, try std.fmt.allocPrint(
+                    out_err.* = withMessage(at, try std.fmt.allocPrint(
                         arena,
                         "\"{s}\": path \"{s}\" points at the sibling member \"{s}\" — use {{ \"workspace\": true }}",
                         .{ dep.name, p, mem.name },
@@ -1452,7 +1703,7 @@ pub fn resolveDependency(
             }
         }
         if (!std.mem.eql(u8, tm.name, dep.name)) {
-            out_err.* = located(project.text, project.path, at, try std.fmt.allocPrint(
+            out_err.* = withMessage(at, try std.fmt.allocPrint(
                 arena,
                 "\"{s}\": path \"{s}\" holds a package named \"{s}\" — the dependency key is the import name and must match",
                 .{ dep.name, p, tm.name },
@@ -1471,7 +1722,7 @@ pub fn resolveDependency(
     }
     if (found.is_workspace) {
         const list = if (found.workspace) |ws| try ws.memberList(arena) else "none";
-        out_err.* = located(project.text, project.path, at, try std.fmt.allocPrint(
+        out_err.* = withMessage(at, try std.fmt.allocPrint(
             arena,
             "\"{s}\" is a workspace, not a package — import one of its members: {s}",
             .{ dep.name, list },
@@ -1817,8 +2068,8 @@ test "parse: a workspace manifest — kind, globs, and no package field" {
         \\
         \\
     , with_files);
-    for ([_][]const u8{ "src", "entry", "dependencies", "wasm" }) |field| {
-        const text = try std.fmt.allocPrint(a, "{{ \"name\": \"w\", \"workspaces\": [\"m/*\"], \"{s}\": {s} }}", .{ field, if (std.mem.eql(u8, field, "dependencies")) "{}" else if (std.mem.eql(u8, field, "wasm")) "{ \"host\": \"wasi\" }" else "\"x\"" });
+    for ([_][]const u8{ "src", "entry", "wasm" }) |field| {
+        const text = try std.fmt.allocPrint(a, "{{ \"name\": \"w\", \"workspaces\": [\"m/*\"], \"{s}\": {s} }}", .{ field, if (std.mem.eql(u8, field, "wasm")) "{ \"host\": \"wasi\" }" else "\"x\"" });
         const out = try refuse(a, text);
         const want = try std.fmt.allocPrint(a, "error: a workspace manifest cannot carry \"{s}\"", .{field});
         try testing.expect(std.mem.indexOf(u8, out, want) != null);
@@ -1923,6 +2174,116 @@ test "expand: a member that is a workspace, a duplicate member name, a missing l
     );
     const missing_dir = try refuseWorkspace(a, FIX ++ "/bad/missing-dir");
     try testing.expect(std.mem.indexOf(u8, missing_dir, "error: workspaces entry \"nope/*\": tests/fixtures/bad/missing-dir/nope is not a directory that can be read") != null);
+}
+
+test "parse: a workspace declares the dependencies its members share; { \"workspace\": true } there is refused (decision 512)" {
+    var arena_inst = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_inst.deinit();
+    const a = arena_inst.allocator();
+    const m = try parseText(a,
+        \\{ "name": "cells", "workspaces": ["*"], "dependencies": { "lib": { "path": "../lib" } } }
+    );
+    try testing.expect(m.isWorkspace());
+    try testing.expectEqual(@as(usize, 1), m.dependencies.len);
+    try testing.expectEqualStrings("../lib", m.dependencies[0].spec.path.?);
+    try testing.expectEqualStrings(
+        \\error: "lib": { "workspace": true } names a sibling member, and a workspace's dependencies are every member's — declare it in the members that use it
+        \\ --> botopink.json:1:59
+        \\  |
+        \\1 | { "name": "cells", "workspaces": ["*"], "dependencies": { "lib": { "workspace": true } } }
+        \\  |                                                           ^^^^^
+        \\
+        \\
+    , try refuse(a,
+        \\{ "name": "cells", "workspaces": ["*"], "dependencies": { "lib": { "workspace": true } } }
+    ));
+}
+
+test "expand: a member inherits the workspace's dependencies, version and targets, and defaults its entry (decision 512)" {
+    var arena_inst = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_inst.deinit();
+    const a = arena_inst.allocator();
+    const io = testing.io;
+    var err: ?Located = null;
+    const ws = try expand(a, io, try read(a, io, FIX ++ "/inherit", &err), &err);
+    try testing.expectEqualStrings("a, b", try ws.memberList(a));
+
+    // `a` writes its name alone: every dependency, the version and the
+    // targets are the workspace's, the entry `main.bp`.
+    const ma = ws.member("a").?.manifest;
+    try testing.expectEqual(@as(usize, 2), ma.dependencies.len);
+    try testing.expectEqualStrings("lib", ma.dependencies[0].name);
+    try testing.expect(ma.dependencies[0].inherited);
+    // The path is the workspace's, rewritten relative to the member.
+    try testing.expectEqualStrings("../vendor/lib", ma.dependencies[0].spec.path.?);
+    try testing.expectEqualStrings("https://e/remote.git", ma.dependencies[1].spec.git.?);
+    try testing.expectEqualStrings("2.0.0", ma.version);
+    try testing.expectEqualStrings("main.bp", ma.entry.?);
+    try testing.expectEqual(@as(usize, 2), ma.targets.?.len);
+    // A refusal about an inherited entry is located in the workspace's manifest.
+    const loc = ma.locateEntryAt("dependencies", "lib", "m");
+    try testing.expectEqualStrings(FIX ++ "/inherit/botopink.json", loc.file);
+    try testing.expectEqual(@as(usize, 7), loc.line);
+
+    // `b` adds its own dependency, keeps its version, restricts the targets,
+    // and its "bpp" names a dependency it inherits.
+    const mb = ws.member("b").?.manifest;
+    try testing.expectEqual(@as(usize, 3), mb.dependencies.len);
+    try testing.expectEqualStrings("extra", mb.dependencies[2].name);
+    try testing.expect(!mb.dependencies[2].inherited);
+    try testing.expectEqualStrings("1.0.0", mb.version);
+    try testing.expectEqual(@as(usize, 1), mb.targets.?.len);
+    try testing.expectEqualStrings("lib", mb.bpp.?);
+
+    // An inherited `path` resolves where the workspace's manifest says.
+    var cwd_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const cwd = cwd_buf[0..try std.process.currentPath(io, &cwd_buf)];
+    const a_dir = try std.fs.path.join(a, &.{ cwd, FIX ++ "/inherit/a" });
+    const lib = (try resolveDependency(a, io, ma, a_dir, ma.dependencies[0], &.{}, &err)).?;
+    try testing.expectEqualStrings("lib", lib.manifest.name);
+    try testing.expect(std.mem.endsWith(u8, lib.dir, "/inherit/vendor/lib"));
+}
+
+test "expand: a member redeclaring an inherited dependency is refused, located at its entry (decision 512)" {
+    var arena_inst = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_inst.deinit();
+    try testing.expectEqualStrings(
+        \\error: "lib" is a dependency of the workspace (tests/fixtures/bad/inherit-redeclare/botopink.json), which every member inherits — delete this entry: a workspace has one source per dependency
+        \\ --> tests/fixtures/bad/inherit-redeclare/x/botopink.json:3:21
+        \\  |
+        \\3 |   "dependencies": { "lib": { "path": "../vendor/lib" } }
+        \\  |                     ^^^^^
+        \\
+        \\
+    , try refuseWorkspace(arena_inst.allocator(), FIX ++ "/bad/inherit-redeclare"));
+}
+
+test "workspaceOf: the workspace whose globs list a directory, its members unread; a path dependency on a member inherits" {
+    var arena_inst = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_inst.deinit();
+    const a = arena_inst.allocator();
+    const io = testing.io;
+    var cwd_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const cwd = cwd_buf[0..try std.process.currentPath(io, &cwd_buf)];
+    var err: ?Located = null;
+    const member = try std.fs.path.join(a, &.{ cwd, FIX ++ "/inherit/b" });
+    try testing.expectEqualStrings("cells", (try workspaceOf(a, io, member, &err)).?.name);
+    // `vendor/lib` sits under the workspace, but `*` lists the children only.
+    const vendored = try std.fs.path.join(a, &.{ cwd, FIX ++ "/inherit/vendor/lib" });
+    try testing.expect((try workspaceOf(a, io, vendored, &err)) == null);
+    // Nor is it expanded for it: a workspace whose members refuse to expand
+    // (a member redeclares an inherited dependency) is no error of a package
+    // it does not list.
+    const unlisted = try std.fs.path.join(a, &.{ cwd, FIX ++ "/bad/inherit-redeclare/vendor/lib" });
+    try testing.expect((try enclosingWorkspace(a, io, unlisted, &err)) == null);
+
+    // A package outside the workspace that depends on `a` by path reads `a`
+    // with what it inherits.
+    const outside = try std.fs.path.join(a, &.{ cwd, FIX ++ "/roots/local" });
+    const project = try parse(a, "{ \"name\": \"local\" }", "botopink.json", &err);
+    const got = (try resolveDependency(a, io, project, outside, .{ .name = "a", .spec = .{ .path = "../../inherit/a" } }, &.{}, &err)).?;
+    try testing.expectEqual(@as(usize, 2), got.manifest.dependencies.len);
+    try testing.expectEqualStrings("2.0.0", got.manifest.version);
 }
 
 test "expand: a member may only restrict the workspace's targets" {

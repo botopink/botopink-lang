@@ -1,1 +1,1 @@
-{ "name": "two_packages_one_module_name", "version": "0.0.1", "src": "src/", "dependencies": { "a": { "path": "deps/a" }, "b": { "path": "deps/b" } } }
+{ "name": "two_packages_one_module_name", "dependencies": { "a": { "path": "deps/a" }, "b": { "path": "deps/b" } } }

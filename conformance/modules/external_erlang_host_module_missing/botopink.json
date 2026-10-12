@@ -1,1 +1,1 @@
-{ "name": "external_erlang_host_module_missing", "version": "0.0.1", "src": "src/", "targets": ["erlang", "beam"] }
+{ "name": "external_erlang_host_module_missing", "targets": ["erlang", "beam"] }

@@ -22,6 +22,8 @@ const otp = @import("./otp.zig");
 const libs = @import("./libs.zig");
 const build_cmd = @import("./build.zig");
 const diagnostics = @import("./diagnostics.zig");
+const code_cache = @import("./code_cache.zig");
+const run_cmd = @import("./run.zig");
 
 // ── Options ───────────────────────────────────────────────────────────────────
 
@@ -37,6 +39,9 @@ pub const Options = struct {
     /// error_line?}` per test plus a final `{event:"summary", passed, failed}`.
     /// Schema documented in `modules/compiler-cli/AGENTS.md` "§T".
     json: bool = false,
+    /// `--cold`: the code cache is not read, and what ran is written
+    /// (decision 509 (5)).
+    cold: bool = false,
 };
 
 /// Root of the test output tree. One run NEVER writes here directly: it writes
@@ -61,31 +66,22 @@ fn artifactIn(arena: std.mem.Allocator, test_out: []const u8, target: config.Tar
     return std.fmt.allocPrint(arena, "{s}/{s}{s}", .{ test_out, stem, ext });
 }
 
-/// `erlc +from_asm -o <dir>` over every `.S` in `dir`; its exit status.
-/// `env`: the runners' environment; `erlc`'s VM gets the quiet flags and one
-/// scheduler on top (`otp.quietEnv`) — it assembles, and runs nothing.
-fn assembleBeam(arena: std.mem.Allocator, io: std.Io, dir: []const u8, env: *const std.process.Environ.Map) !u8 {
-    var argv: std.ArrayListUnmanaged([]const u8) = .empty;
-    try argv.appendSlice(arena, &.{ "erlc", "+from_asm", "-o", dir });
+/// `erlc +from_asm -o <dir>` over every `.S` in `dir` — a job of the command's
+/// `erl` session (`run.compileInto`, a refusal printed as `erlc` prints it);
+/// its exit status. A dependency's module is linked from the code cache when
+/// it is there (decision 509, `cache`), the project's own are assembled every
+/// time.
+fn assembleBeam(arena: std.mem.Allocator, io: std.Io, dir: []const u8, cache: run_cmd.Cache) !u8 {
+    var files: std.ArrayListUnmanaged([]const u8) = .empty;
     var d = std.Io.Dir.cwd().openDir(io, dir, .{ .iterate = true }) catch return 1;
     defer d.close(io);
     var it = d.iterate();
-    var any = false;
     while (try it.next(io)) |entry| {
         if (entry.kind != .file or !std.mem.endsWith(u8, entry.name, ".S")) continue;
-        try argv.append(arena, try std.fmt.allocPrint(arena, "{s}/{s}", .{ dir, entry.name }));
-        any = true;
+        try files.append(arena, try std.fmt.allocPrint(arena, "{s}/{s}", .{ dir, entry.name }));
     }
-    if (!any) return 0;
-    var child = std.process.spawn(io, .{ .argv = argv.items, .environ_map = try otp.quietEnv(arena, env, "+S 1:1") }) catch |err| {
-        reporter.errMsg(try std.fmt.allocPrint(arena, "failed to spawn 'erlc': {s}", .{@errorName(err)}));
-        return 1;
-    };
-    defer child.kill(io);
-    return switch (try child.wait(io)) {
-        .exited => |c| c,
-        .signal, .stopped, .unknown => 1,
-    };
+    if (files.items.len == 0) return 0;
+    return run_cmd.compileInto(arena, io, dir, .beam, files.items, cache);
 }
 
 /// The output directory of THIS run: `<root>/<target>/<id>`, where `id` is 64
@@ -201,197 +197,70 @@ fn testTmpEnv(
 /// or no `.beam` behind, which is the old path for the rest; its output is
 /// discarded.
 ///
-/// **The `.beam` cache** (`cache_dir`, see `beamCacheDir`; null = none). Every
-/// member of a workspace compiles the same dependency `.erl` text again — the
-/// fifteen `emilia-*` examples each compile `emilia` and `std`, every gate. A
-/// compiled `.beam` is therefore also kept at `<cache_dir>/<k[0..2]>/<k>.beam`,
-/// `k` the SHA-256 of the source bytes and of everything else the compile
-/// reads: the options, the OTP release, the erts / `compiler` / `stdlib`
-/// versions and `ERL_COMPILER_OPTIONS` (which `compile:file/2` appends). A
-/// source whose key is there is not compiled: the stored `.beam` is written
-/// beside it.
-///
-/// A `.beam` also records WHERE it was compiled — the `Line` table names the
-/// source path (every stack trace prints it), `CInf` the include dir and the
-/// absolute source, `Dbgi` the options — and each run's directory is new. An
-/// entry therefore stores the path and include dir it was compiled with, and a
-/// hit is **relocated**: those three chunks are rewritten to this run's source
-/// and include dir (`Relocate`), which gives byte for byte the `.beam` the
-/// compile would have written here — measured on the 4 093 modules of an
-/// `emilia-*` cell. An entry is stored only when relocating the fresh `.beam`
-/// to its own path answers the same bytes, so a layout `Relocate` does not
-/// understand is compiled every time instead of guessed at. Not cached
-/// either: a source that does not compile (nothing is written, so its refusal
-/// is the loader's, every time), and a source that names `parse_transform`
-/// (its output depends on the transform's code, which the key does not see),
-/// `?FILE` (the path is a literal in the code) or `-file` (more names in the
-/// `Line` table). Entries are written by staging under a unique name and
-/// renaming, so a reader sees a whole entry or none — two cells, or two gates,
-/// over one cache race to write the same bytes; an entry that does not decode
-/// or relocate is a miss. A hit refreshes the entry's mtime, and every run
-/// reaps one of the 256 shards at random: entries unused for 7 days, staging
-/// files older than a day (a writer that died between write and rename).
-///
-/// It is a job of the command's `erl` session (`otp.zig`), `files` (the
-/// emitted modules) setting how many schedulers it brings online.
-fn precompileErlang(arena: std.mem.Allocator, io: std.Io, dir: []const u8, cache_dir: ?[]const u8, files: usize) void {
-    const eval =
-        \\[Dir | CacheArg] = init:get_plain_arguments(),
-        \\Opts = [binary, return_errors, {i, Dir}],
-        \\Tag = case CacheArg of
-        \\    [_] ->
-        \\        try
-        \\            _ = crypto:hash(sha256, <<>>),
-        \\            term_to_binary({<<"botopink-beam-cache-2">>, [binary, return_errors],
-        \\                            erlang:system_info(otp_release), erlang:system_info(version),
-        \\                            filename:basename(code:lib_dir(compiler)),
-        \\                            filename:basename(code:lib_dir(stdlib)),
-        \\                            os:getenv("ERL_COMPILER_OPTIONS")})
-        \\        catch _:_ -> none
-        \\        end;
-        \\    _ -> none
-        \\end,
-        \\Publish = fun(Path, Bin) ->
-        \\    Tmp = iolist_to_binary([Path, ".", integer_to_list(erlang:unique_integer([positive])),
-        \\                            "-", os:getpid(), ".tmp"]),
-        \\    case file:write_file(Tmp, Bin) of
-        \\        ok ->
-        \\            case file:rename(Tmp, Path) of
-        \\                ok -> ok;
-        \\                _ -> file:delete(Tmp)
-        \\            end;
-        \\        _ -> file:delete(Tmp)
-        \\    end
-        \\end,
-        \\Relocate = fun(Bin, {Src0, Dir0}, {Src, Dir1}) ->
-        \\    S0 = unicode:characters_to_binary(Src0),
-        \\    S1 = unicode:characters_to_binary(Src),
-        \\    N0 = byte_size(S0),
-        \\    Swap = fun(O) -> [case X of {i, Dir0} -> {i, Dir1}; _ -> X end || X <- O] end,
-        \\    {ok, _, Chunks} = beam_lib:all_chunks(Bin),
-        \\    Fix = fun
-        \\        ("Line", <<H:16/binary, 1:32, Rest/binary>>) ->
-        \\            Items = binary:part(Rest, 0, byte_size(Rest) - 2 - N0),
-        \\            <<N0:16, S0:N0/binary>> = binary:part(Rest, byte_size(Rest) - 2 - N0, 2 + N0),
-        \\            <<H/binary, 1:32, Items/binary, (byte_size(S1)):16, S1/binary>>;
-        \\        ("CInf", D) ->
-        \\            term_to_binary([case X of
-        \\                                {options, O} -> {options, Swap(O)};
-        \\                                {source, _} -> {source, filename:absname(Src)};
-        \\                                _ -> X
-        \\                            end || X <- binary_to_term(D)]);
-        \\        ("Dbgi", D) ->
-        \\            {debug_info_v1, erl_abstract_code, {none, O}} = binary_to_term(D),
-        \\            term_to_binary({debug_info_v1, erl_abstract_code, {none, Swap(O)}});
-        \\        (_, D) -> D
-        \\    end,
-        \\    {ok, Out} = beam_lib:build_module([{Id, Fix(Id, D)} || {Id, D} <- Chunks]),
-        \\    Out
-        \\end,
-        \\EntryOf = fun(Text) ->
-        \\    Key = binary:encode_hex(crypto:hash(sha256, [Tag, Text]), lowercase),
-        \\    <<Shard:2/binary, _/binary>> = Key,
-        \\    [Cache] = CacheArg,
-        \\    filename:join([Cache, Shard, <<Key/binary, ".beam">>])
-        \\end,
-        \\Cacheable = fun(Text) ->
-        \\    Tag =/= none andalso
-        \\        lists:all(fun(W) -> binary:match(Text, W) =:= nomatch end,
-        \\                  [<<"parse_transform">>, <<"?FILE">>, <<"-file">>])
-        \\end,
-        \\Compile = fun(Src) ->
-        \\    {ok, Text} = file:read_file(Src),
-        \\    case binary:match(Text, <<"-include">>) of
-        \\        nomatch ->
-        \\            Beam = filename:rootname(Src) ++ ".beam",
-        \\            Entry = case Cacheable(Text) of
-        \\                true -> EntryOf(Text);
-        \\                false -> none
-        \\            end,
-        \\            Cached = case Entry of
-        \\                none -> none;
-        \\                _ ->
-        \\                    try
-        \\                        {ok, Stored} = file:read_file(Entry),
-        \\                        {From, CBin} = binary_to_term(Stored),
-        \\                        Relocate(CBin, From, {Src, Dir})
-        \\                    catch _:_ -> none
-        \\                    end
-        \\            end,
-        \\            case Cached of
-        \\                none ->
-        \\                    case compile:file(Src, Opts) of
-        \\                        {ok, _Mod, Bin} ->
-        \\                            Publish(Beam, Bin),
-        \\                            case Entry of
-        \\                                none -> ok;
-        \\                                _ ->
-        \\                                    Here = {Src, Dir},
-        \\                                    case catch Relocate(Bin, Here, Here) of
-        \\                                        Bin ->
-        \\                                            filelib:ensure_dir(Entry),
-        \\                                            Publish(Entry, term_to_binary({Here, Bin}));
-        \\                                        _ -> ok
-        \\                                    end
-        \\                            end;
-        \\                        _ -> ok
-        \\                    end;
-        \\                _ ->
-        \\                    Publish(Beam, Cached),
-        \\                    file:change_time(Entry, erlang:localtime())
-        \\            end;
-        \\        _ -> ok
-        \\    end
-        \\end,
-        \\Parent = self(),
-        \\Refs = [begin
-        \\            Ref = make_ref(),
-        \\            spawn(fun() -> catch Compile(S), Parent ! Ref end),
-        \\            Ref
-        \\        end || S <- filelib:wildcard(filename:join([Dir, "**", "*.erl"]))],
-        \\[receive R -> ok end || R <- Refs],
-        \\case Tag of
-        \\    none -> ok;
-        \\    _ ->
-        \\        catch begin
-        \\            [Root] = CacheArg,
-        \\            Pick = binary_to_list(binary:encode_hex(<<(rand:uniform(256) - 1)>>, lowercase)),
-        \\            Now = calendar:datetime_to_gregorian_seconds(calendar:local_time()),
-        \\            Reap = fun(Pattern, MaxAge) ->
-        \\                [case filelib:last_modified(F) of
-        \\                     0 -> ok;
-        \\                     T ->
-        \\                         case Now - calendar:datetime_to_gregorian_seconds(T) > MaxAge of
-        \\                             true -> file:delete(F);
-        \\                             false -> ok
-        \\                         end
-        \\                 end || F <- filelib:wildcard(filename:join([Root, Pick, Pattern]))]
-        \\            end,
-        \\            Reap("*.beam", 7 * 86400),
-        \\            Reap("*.tmp", 86400)
-        \\        end
-        \\end,
-        \\halt(0).
-    ;
-    const argv: []const []const u8 = if (cache_dir) |c|
-        &.{ "erl", "-noshell", "-eval", eval, "-extra", dir, c }
-    else
-        &.{ "erl", "-noshell", "-eval", eval, "-extra", dir };
+/// **The code cache** (decision 509, `code_cache.zig`): a DEPENDENCY's module
+/// — `deps`, the files of every module (and `type` unit) of another package
+/// than the one under test — is linked beside its source from the store when
+/// its `.beam` is there under the key of its bytes and the OTP compiler's
+/// version, else compiled `deterministic` and stored; one that cannot be keyed
+/// or does not compile is compiled as before. The modules under test are
+/// compiled every time. It is a job of the command's `erl` session
+/// (`otp.zig`), `files` (the emitted modules) setting how many schedulers it
+/// brings online.
+fn precompileErlang(arena: std.mem.Allocator, io: std.Io, dir: []const u8, cache_dir: []const u8, deps: []const []const u8, files: usize) !void {
+    const eval = PRECOMPILE_EVAL;
+    const dep_list = try arglist.write(arena, io, deps);
+    defer arglist.remove(io, dep_list);
+    const argv: []const []const u8 = &.{ "erl", "-noshell", "-eval", eval, "-extra", dir, cache_dir, code_cache.mode(), dep_list };
     const result = otp.job(arena, io, eval, argv[5..], otp.onlineFor(files)) catch return;
     _ = result;
 }
 
-/// Where `precompileErlang` keeps its `.beam` cache: `libs.cacheDir`'s
-/// `beam` — `<cache root>/.botopinkbuild/cache/beam`, the cache root being the
-/// workspace root (else the project), so every member of one library
-/// repository shares it: the cells that compile the same dependency `.erl`
-/// run from different member directories (decision 225). Deleting the root's
-/// `.botopinkbuild/` deletes it; entries are content-keyed, so a stale one is
-/// never read — only kept until a run draws its shard (see
-/// `precompileErlang`).
-fn beamCacheDir(arena: std.mem.Allocator, proj: config.ProjectConfig) ![]const u8 {
-    return libs.cacheDir(arena, proj, "beam");
-}
+/// The job `precompileErlang` runs.
+const PRECOMPILE_EVAL =
+    \\[Dir, CacheDir, CacheMode, DepListFile] = init:get_plain_arguments(),
+++ arglist.READ_LIST("DepList", "DepListFile") ++ code_cache.ERL_FUNS ++
+    \\Deps = sets:from_list([filename:absname(F) || F <- DepList]),
+    \\Opts = [binary, return_errors, {i, Dir}],
+    \\Publish = fun(Path, Bin) ->
+    \\    Tmp = iolist_to_binary([Path, ".", integer_to_list(erlang:unique_integer([positive])),
+    \\                            "-", os:getpid(), ".tmp"]),
+    \\    case file:write_file(Tmp, Bin) of
+    \\        ok ->
+    \\            case file:rename(Tmp, Path) of
+    \\                ok -> ok;
+    \\                _ -> file:delete(Tmp)
+    \\            end;
+    \\        _ -> file:delete(Tmp)
+    \\    end
+    \\end,
+    \\Plain = fun(Src, Beam) ->
+    \\    {ok, Text} = file:read_file(Src),
+    \\    case binary:match(Text, <<"-include">>) of
+    \\        nomatch ->
+    \\            case compile:file(Src, Opts) of
+    \\                {ok, _Mod, Bin} -> Publish(Beam, Bin);
+    \\                _ -> ok
+    \\            end;
+    \\        _ -> ok
+    \\    end
+    \\end,
+    \\Compile = fun(Src) ->
+    \\    Beam = filename:rootname(Src) ++ ".beam",
+    \\    case sets:is_element(filename:absname(Src), Deps) andalso (catch CodeDep(Src, erl, Beam)) of
+    \\        ok -> ok;
+    \\        _ -> Plain(Src, Beam)
+    \\    end
+    \\end,
+    \\Parent = self(),
+    \\Refs = [begin
+    \\            Ref = make_ref(),
+    \\            spawn(fun() -> catch Compile(S), Parent ! Ref end),
+    \\            Ref
+    \\        end || S <- filelib:wildcard(filename:join([Dir, "**", "*.erl"]))],
+    \\[receive R -> ok end || R <- Refs],
+    \\CodeReap(),
+    \\halt(0).
+;
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
@@ -404,6 +273,7 @@ pub fn run(
     var arena_instance = std.heap.ArenaAllocator.init(gpa);
     defer arena_instance.deinit();
     const arena = arena_instance.allocator();
+    if (opts.cold) code_cache.cold = true;
 
     // A test run against a stale build measures the previous compiler: when
     // this binary's checkout still exists and its sources have changed since
@@ -619,14 +489,26 @@ pub fn run(
         };
         // Every `.erl` of the run is now in place: compile each once, here,
         // instead of once per test module that loads it.
-        if (target == .erlang) precompileErlang(arena, io, test_out, try beamCacheDir(arena, proj), outputs.items.len);
+        if (target == .erlang) {
+            // A dependency's files: every module and `type` unit of another
+            // package than the one under test (decision 509 (1)).
+            var dep_files: std.ArrayListUnmanaged([]const u8) = .empty;
+            for (outputs.items) |o| {
+                if (o.result.failed() or !cfg.packages.idOf(o.name).package_in_path) continue;
+                try dep_files.append(arena, try artifactIn(arena, test_out, target, cfg.packages, o.name, ext));
+                const unit_dir = if (std.fs.path.dirname(o.name)) |d| try std.fmt.allocPrint(arena, "{s}/{s}", .{ test_out, d }) else test_out;
+                for (o.result.units) |u| try dep_files.append(arena, try std.fmt.allocPrint(arena, "{s}/{s}{s}", .{ unit_dir, u.atom, ext }));
+            }
+            try precompileErlang(arena, io, test_out, try code_cache.dir(arena, proj), dep_files.items, outputs.items.len);
+        }
     }
     // beam: every module of the run assembled beside itself, once; each
     // runner's `'__bp_load_siblings'/0` compiles the host `.erl`s shipped
     // above (`codegen/beam_asm.zig`). A module the assembler refuses fails
     // the run with `erlc`'s own message.
     if (target == .beam) {
-        if (try assembleBeam(arena, io, test_out, child_env) != 0) return 1;
+        const cache: run_cmd.Cache = .{ .dir = try code_cache.dir(arena, proj), .own_prefix = try code_cache.ownAtomPrefix(arena, proj.name) };
+        if (try assembleBeam(arena, io, test_out, cache) != 0) return 1;
     }
 
     // commonJS: root-source imports (`import {x};`) emit `require("./module")`

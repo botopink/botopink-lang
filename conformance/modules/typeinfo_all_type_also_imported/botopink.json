@@ -1,1 +1,1 @@
-{ "name": "typeinfo_all_type_also_imported", "version": "0.0.1", "src": "src/", "dependencies": { "kit": { "path": "deps/kit" } } }
+{ "name": "typeinfo_all_type_also_imported", "dependencies": { "kit": { "path": "deps/kit" } } }

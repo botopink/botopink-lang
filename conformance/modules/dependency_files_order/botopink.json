@@ -1,1 +1,1 @@
-{ "name": "dependency_files_order", "version": "0.0.1", "src": "src/", "dependencies": { "dep": { "path": "deps/dep" } } }
+{ "name": "dependency_files_order", "dependencies": { "dep": { "path": "deps/dep" } } }

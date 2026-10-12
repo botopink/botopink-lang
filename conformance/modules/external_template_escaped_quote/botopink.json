@@ -1,1 +1,1 @@
-{ "name": "external_template_escaped_quote", "version": "0.0.1", "src": "src/", "targets": ["commonJS", "erlang", "beam"] }
+{ "name": "external_template_escaped_quote", "targets": ["commonJS", "erlang", "beam"] }

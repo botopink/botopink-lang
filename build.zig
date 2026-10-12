@@ -134,6 +134,14 @@ pub fn build(b: *std.Build) void {
     const stamp_options = b.addOptions();
     stamp_options.addOption([]const u8, "source_root", stamp_root);
     stamp_options.addOption([]const u8, "source_hash", &stamp_hash);
+    // The same sources partitioned by backend (decision 249): the compiler's
+    // part of the code cache's closure key on each target (decision 509 (3),
+    // `compiler-cli/src/cli/code_cache.zig` `compilerKey`).
+    const partition_hashes = source_stamp.partitionHashes(b.allocator, b.graph.io, b.build_root.handle) catch |err|
+        std.debug.panic("source_stamp: cannot hash the checkout's sources by backend: {s}", .{@errorName(err)});
+    for (source_stamp.TARGETS, partition_hashes) |t, h| {
+        stamp_options.addOption([]const u8, b.fmt("partition_hash_{s}", .{t}), b.dupe(&h));
+    }
     const source_stamp_mod = b.addModule("source_stamp", .{
         .root_source_file = b.path("modules/source-stamp/src/root.zig"),
         .target = target,
@@ -633,12 +641,14 @@ pub fn build(b: *std.Build) void {
     // `modules/compiler-cli/tests/`, each against the installed binary
     // (BOTOPINK_SKIP_BUILD=1): the command contract (`cli_contract.sh`), the
     // `botopink test` behaviours (`test_tooling.sh`), the cell-result store of
-    // stages 8–10 (`result_store.sh`, decision 229), and the wasm core module's
+    // stages 8–10 (`result_store.sh`, decision 229), the code cache of the
+    // dependencies' compiled modules and the workspace a cell inherits from
+    // (`code_cache.sh`, decisions 509, 512), and the wasm core module's
     // `--invoke main` (`backend_exec.sh`, also `test-backends`). The language
     // half these scripts held — numeric, records, the `mod` tree, mutual
     // recursion, `assert` / `try` — is conformance cells (144 B-29 step H). The
     // scripts run one after another — they share `zig-out/` and fixture `out/` dirs.
-    const cli_scripts = [_][]const u8{ "cli_contract.sh", "test_tooling.sh", "result_store.sh", "backend_exec.sh" };
+    const cli_scripts = [_][]const u8{ "cli_contract.sh", "test_tooling.sh", "result_store.sh", "code_cache.sh", "backend_exec.sh" };
     const test_cli_step = b.step("test-cli", "Run every modules/compiler-cli/tests/*.sh against the installed CLI");
     var prev_cli_script: ?*std.Build.Step = null;
     for (cli_scripts) |script| {

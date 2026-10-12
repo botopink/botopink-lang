@@ -51,7 +51,96 @@ pub fn hash(gpa: std.mem.Allocator, io: std.Io, root: std.Io.Dir) ![HEX_LEN]u8 {
     var arena_inst = std.heap.ArenaAllocator.init(gpa);
     defer arena_inst.deinit();
     const arena = arena_inst.allocator();
+    const files = try fileSet(arena, io, root);
+    var h = std.crypto.hash.sha2.Sha256.init(.{});
+    for (files) |p| {
+        const bytes = try root.readFileAlloc(io, p, arena, .unlimited);
+        h.update(p);
+        h.update(&.{0});
+        h.update(bytes);
+        h.update(&.{0});
+    }
+    var digest: [32]u8 = undefined;
+    h.final(&digest);
+    return std.fmt.bytesToHex(digest, .lower);
+}
 
+/// The backend partition (decision 249 of 1.0.11-beta), relative to the
+/// checkout: which of the file set's sources belong to one backend.
+pub const PARTITION = "modules/compiler-core/src/codegen/backend-partition.txt";
+
+/// The targets a partition line may name.
+pub const TARGETS = [_][]const u8{ "commonJS", "erlang", "beam", "wasm" };
+
+/// The hex SHA-256 of the file set under `root` a build for `target` reads
+/// (decision 249): every source the partition (`PARTITION`) does not list
+/// under a target — the shared ones —, and the ones it lists under `target`.
+/// A listed file of another backend is left out, so editing it moves no
+/// other target's hash. The code cache's closure key holds it
+/// (`compiler-cli` `code_cache.zig`, decision 509 (3)). A checkout without the
+/// partition file hashes as if every source were shared.
+pub fn partitionHash(gpa: std.mem.Allocator, io: std.Io, root: std.Io.Dir, target: []const u8) ![HEX_LEN]u8 {
+    const all = try partitionHashes(gpa, io, root);
+    for (TARGETS, all) |t, h| if (std.mem.eql(u8, t, target)) return h;
+    return error.UnknownTarget;
+}
+
+/// `partitionHash` for every target of `TARGETS`, in that order, each source
+/// read once.
+pub fn partitionHashes(gpa: std.mem.Allocator, io: std.Io, root: std.Io.Dir) ![TARGETS.len][HEX_LEN]u8 {
+    var arena_inst = std.heap.ArenaAllocator.init(gpa);
+    defer arena_inst.deinit();
+    const arena = arena_inst.allocator();
+
+    // `<path>` → the target that owns it, from the partition.
+    var owned: std.StringHashMapUnmanaged([]const u8) = .empty;
+    if (root.readFileAlloc(io, PARTITION, arena, .unlimited)) |text| {
+        var lines = std.mem.splitScalar(u8, text, '\n');
+        while (lines.next()) |raw| {
+            const line = std.mem.trim(u8, raw, " \t\r");
+            if (line.len == 0 or line[0] == '#') continue;
+            var it = std.mem.tokenizeAny(u8, line, " \t");
+            const t = it.next() orelse continue;
+            const p = it.next() orelse continue;
+            for (TARGETS) |known| {
+                if (std.mem.eql(u8, known, t)) try owned.put(arena, p, known);
+            }
+        }
+    } else |err| switch (err) {
+        error.FileNotFound => {},
+        else => return err,
+    }
+
+    const files = try fileSet(arena, io, root);
+    var hs: [TARGETS.len]std.crypto.hash.sha2.Sha256 = undefined;
+    for (&hs, TARGETS) |*h, t| {
+        h.* = std.crypto.hash.sha2.Sha256.init(.{});
+        h.update("target\x00");
+        h.update(t);
+        h.update(&.{0});
+    }
+    for (files) |p| {
+        const bytes = try root.readFileAlloc(io, p, arena, .unlimited);
+        const owner = owned.get(p);
+        for (&hs, TARGETS) |*h, t| {
+            if (owner) |o| if (!std.mem.eql(u8, o, t)) continue;
+            h.update(p);
+            h.update(&.{0});
+            h.update(bytes);
+            h.update(&.{0});
+        }
+    }
+    var out: [TARGETS.len][HEX_LEN]u8 = undefined;
+    for (&hs, &out) |*h, *o| {
+        var digest: [32]u8 = undefined;
+        h.final(&digest);
+        o.* = std.fmt.bytesToHex(digest, .lower);
+    }
+    return out;
+}
+
+/// `ROOTS`' files under `root`, sorted.
+fn fileSet(arena: std.mem.Allocator, io: std.Io, root: std.Io.Dir) ![]const []const u8 {
     var files: std.ArrayListUnmanaged([]const u8) = .empty;
     for (ROOTS) |r| {
         const st = root.statFile(io, r, .{}) catch |err| switch (err) {
@@ -65,18 +154,7 @@ pub fn hash(gpa: std.mem.Allocator, io: std.Io, root: std.Io.Dir) ![HEX_LEN]u8 {
         }
     }
     std.mem.sortUnstable([]const u8, files.items, {}, lessThan);
-
-    var h = std.crypto.hash.sha2.Sha256.init(.{});
-    for (files.items) |p| {
-        const bytes = try root.readFileAlloc(io, p, arena, .unlimited);
-        h.update(p);
-        h.update(&.{0});
-        h.update(bytes);
-        h.update(&.{0});
-    }
-    var digest: [32]u8 = undefined;
-    h.final(&digest);
-    return std.fmt.bytesToHex(digest, .lower);
+    return files.items;
 }
 
 fn lessThan(_: void, a: []const u8, b: []const u8) bool {
@@ -190,4 +268,29 @@ test "checkFresh: agreeing hashes and a missing checkout are fresh; a moved sour
     try tmp.dir.writeFile(io, .{ .sub_path = "build.zig", .data = "b2" });
     const stale = (try checkFresh(gpa, io, root, &built)).?;
     try std.testing.expectEqualStrings(&built, stale.built);
+}
+
+test "partitionHash: a backend's file moves its target's hash alone; a shared file moves every one" {
+    const io = std.testing.io;
+    const gpa = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const d = tmp.dir;
+    try d.createDirPath(io, "modules/compiler-core/src/codegen");
+    try d.writeFile(io, .{ .sub_path = "build.zig", .data = "b" });
+    try d.writeFile(io, .{ .sub_path = "modules/compiler-core/src/checker.zig", .data = "c" });
+    try d.writeFile(io, .{ .sub_path = "modules/compiler-core/src/codegen/wat.zig", .data = "w" });
+    try d.writeFile(io, .{ .sub_path = PARTITION, .data = "# list\nwasm modules/compiler-core/src/codegen/wat.zig\n" });
+    const e0 = try partitionHash(gpa, io, d, "erlang");
+    const w0 = try partitionHash(gpa, io, d, "wasm");
+    try std.testing.expect(!std.mem.eql(u8, &e0, &w0));
+
+    try d.writeFile(io, .{ .sub_path = "modules/compiler-core/src/codegen/wat.zig", .data = "w2" });
+    try std.testing.expectEqualStrings(&e0, &(try partitionHash(gpa, io, d, "erlang")));
+    const w1 = try partitionHash(gpa, io, d, "wasm");
+    try std.testing.expect(!std.mem.eql(u8, &w0, &w1));
+
+    try d.writeFile(io, .{ .sub_path = "modules/compiler-core/src/checker.zig", .data = "c2" });
+    try std.testing.expect(!std.mem.eql(u8, &e0, &(try partitionHash(gpa, io, d, "erlang"))));
+    try std.testing.expect(!std.mem.eql(u8, &w1, &(try partitionHash(gpa, io, d, "wasm"))));
 }

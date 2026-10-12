@@ -1,1 +1,1 @@
-{ "name": "dependency_imports_undeclared_package", "version": "0.0.1", "src": "src/", "dependencies": { "starter": { "path": "deps/starter" }, "core": { "path": "deps/core" } } }
+{ "name": "dependency_imports_undeclared_package", "dependencies": { "starter": { "path": "deps/starter" }, "core": { "path": "deps/core" } } }

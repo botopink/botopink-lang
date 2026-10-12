@@ -1,1 +1,1 @@
-{ "name": "external_wasm_std_outside_std", "version": "0.0.1", "src": "src/" }
+{ "name": "external_wasm_std_outside_std" }

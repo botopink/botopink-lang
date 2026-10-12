@@ -1,1 +1,1 @@
-{ "name": "behavior_method_host_value", "version": "0.0.1", "src": "src/", "targets": ["commonJS", "erlang", "beam"] }
+{ "name": "behavior_method_host_value", "targets": ["commonJS", "erlang", "beam"] }

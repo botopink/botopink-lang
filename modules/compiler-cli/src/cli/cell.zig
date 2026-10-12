@@ -28,6 +28,7 @@ const otp = @import("./otp.zig");
 const libs = @import("./libs.zig");
 const snap = @import("./cell_snap.zig");
 const manifest = @import("manifest");
+const code_cache = @import("./code_cache.zig");
 
 const Target = config.Target;
 const Snap = snap.Snap;
@@ -38,6 +39,9 @@ pub const CheckOpts = struct {
     path: []const u8,
     /// Cells checked at once; null is `defaultJobs`.
     jobs: ?usize = null,
+    /// `--cold`: the code cache is not read, and what ran is written
+    /// (decision 509 (5)); handed on to every cell's process.
+    cold: bool = false,
 };
 
 pub const Options = union(enum) {
@@ -68,7 +72,10 @@ pub fn run(gpa: std.mem.Allocator, io: std.Io, opts: Options, env_map: libs.EnvM
     const arena = arena_instance.allocator();
     return switch (opts) {
         .new => |path| newCell(arena, io, path),
-        .check => |c| check(gpa, arena, io, c, env_map),
+        .check => |c| blk: {
+            if (c.cold) code_cache.cold = true;
+            break :blk check(gpa, arena, io, c, env_map);
+        },
     };
 }
 
@@ -246,7 +253,10 @@ const Pool = struct {
     fn runChild(pool: *Pool, cell: []const u8, slot: *Slot) ![]const u8 {
         const a = std.heap.page_allocator;
         const res = try std.process.run(a, pool.ctx.io, .{
-            .argv = &.{ pool.self_exe, "cell", "check", "--jobs", "1", cell },
+            .argv = if (code_cache.cold)
+                &.{ pool.self_exe, "cell", "check", "--jobs", "1", "--cold", cell }
+            else
+                &.{ pool.self_exe, "cell", "check", "--jobs", "1", cell },
             .environ_map = pool.ctx.env_map,
             .stdout_limit = .limited(64 * 1024 * 1024),
             .stderr_limit = .limited(16 * 1024 * 1024),
@@ -466,7 +476,9 @@ fn readTargets(a: std.mem.Allocator, io: std.Io, cell: []const u8, why: *[]const
     const text = try std.Io.Dir.cwd().readFileAlloc(io, path, a, .limited(64 * 1024));
     const parsed = std.json.parseFromSliceLeaky(std.json.Value, a, text, .{}) catch return &ALL_TARGETS;
     if (parsed != .object) return &ALL_TARGETS;
-    const field = parsed.object.get("targets") orelse return &ALL_TARGETS;
+    // A cell that writes no `"targets"` has its workspace's (decision 512 (3)):
+    // a library's `conformance/modules/botopink.json` declares its cells'.
+    const field = parsed.object.get("targets") orelse (try workspaceTargets(a, io, cell)) orelse return &ALL_TARGETS;
     if (field != .array) {
         why.* = "is not an array of target names";
         return error.Malformed;
@@ -500,6 +512,25 @@ fn readTargets(a: std.mem.Allocator, io: std.Io, cell: []const u8, why: *[]const
     var ordered: std.ArrayListUnmanaged(Target) = .empty;
     for (ALL_TARGETS) |t| if (contains(list.items, t)) try ordered.append(a, t);
     return ordered.items;
+}
+
+/// The `"targets"` of the workspace the cell is a member of (`manifest.workspaceOf`,
+/// its globs alone — a sibling's manifest is never read), or null.
+fn workspaceTargets(a: std.mem.Allocator, io: std.Io, cell: []const u8) !?std.json.Value {
+    var err: ?manifest.Located = null;
+    const ws = (manifest.workspaceOf(a, io, cell, &err) catch return null) orelse return null;
+    const parsed = std.json.parseFromSliceLeaky(std.json.Value, a, ws.text, .{}) catch return null;
+    if (parsed != .object) return null;
+    return parsed.object.get("targets");
+}
+
+/// The cache root of the cell's dependencies (decisions 225, 509 (4)): the
+/// workspace it is a member of — every `conformance/modules/` is one, so a
+/// library's cells share one cache — else the cell's own directory.
+fn cacheRootOf(a: std.mem.Allocator, io: std.Io, cell: []const u8) ![]const u8 {
+    var err: ?manifest.Located = null;
+    const ws = (manifest.workspaceOf(a, io, cell, &err) catch null) orelse return cell;
+    return ws.dir();
 }
 
 /// Delete every `*.snap.new` under `dir`.
@@ -583,17 +614,36 @@ fn readSnaps(ctx: *Ctx, dir: []const u8, prefix: []const u8, into: *Files, count
 /// in it while it is open (every CLI path is relative to the current
 /// directory) and returns home when it closes.
 const Scratch = struct {
+    /// The scratch directory, removed when it closes.
+    root: []const u8,
+    /// The copy of the cell — `root` itself, or `<root>/<cell>` when the cell
+    /// is a workspace member.
     dir: []const u8,
     manifest: []const u8,
     /// The environment before the scratch project's own (`cellEnv`).
     prev_env: libs.EnvMap,
+    /// `code_cache.root_override` before this cell's.
+    prev_root: ?[]const u8,
 
     fn open(ctx: *Ctx, cell: []const u8) !Scratch {
         const a = ctx.arena;
         var rand: [8]u8 = undefined;
         ctx.io.random(&rand);
-        const dir = try std.fmt.allocPrint(a, "{s}/{s}/cell-{x:0>16}", .{ ctx.home, TMP_ROOT, std.mem.readInt(u64, &rand, .little) });
+        const root = try std.fmt.allocPrint(a, "{s}/{s}/cell-{x:0>16}", .{ ctx.home, TMP_ROOT, std.mem.readInt(u64, &rand, .little) });
+        // A cell that is a member of a workspace (a library's
+        // `conformance/modules/`, decision 512 (5)) is built as one: the copy
+        // sits in a workspace of its own whose manifest is the cell's
+        // workspace's — its dependencies made absolute against the workspace's
+        // directory — and whose one member is the cell, so the cell inherits
+        // what it inherits in place, and no sibling is read.
+        var err: ?manifest.Located = null;
+        const ws = manifest.workspaceOf(a, ctx.io, cell, &err) catch null;
+        const dir = if (ws != null) try std.fs.path.join(a, &.{ root, std.fs.path.basename(cell) }) else root;
         try std.Io.Dir.cwd().createDirPath(ctx.io, dir);
+        if (ws) |w| {
+            const ws_text = try absolutizePathDeps(a, w.text, w.dir());
+            try std.Io.Dir.cwd().writeFile(ctx.io, .{ .sub_path = try std.fs.path.join(a, &.{ root, manifest.FILENAME }), .data = ws_text });
+        }
         try copyTree(a, ctx.io, cell, dir, true);
         // The copy lives elsewhere, so what the manifest names relative to the
         // cell is made absolute against the cell's own directory.
@@ -604,14 +654,19 @@ const Scratch = struct {
             try std.Io.Dir.cwd().writeFile(ctx.io, .{ .sub_path = manifest_path, .data = manifest_text });
         const prev_env = ctx.env_map;
         ctx.env_map = try cellEnv(ctx, cell);
+        // The cell's dependencies are cached where the cell lives (decision
+        // 509 (4)), never in the scratch copy.
+        const prev_root = code_cache.root_override;
+        code_cache.root_override = try cacheRootOf(a, ctx.io, cell);
         try std.process.setCurrentPath(ctx.io, dir);
-        return .{ .dir = dir, .manifest = manifest_text, .prev_env = prev_env };
+        return .{ .root = root, .dir = dir, .manifest = manifest_text, .prev_env = prev_env, .prev_root = prev_root };
     }
 
     fn close(self: *Scratch, ctx: *Ctx) void {
         std.process.setCurrentPath(ctx.io, ctx.home) catch {};
         ctx.env_map = self.prev_env;
-        std.Io.Dir.cwd().deleteTree(ctx.io, self.dir) catch {};
+        code_cache.root_override = self.prev_root;
+        std.Io.Dir.cwd().deleteTree(ctx.io, self.root) catch {};
     }
 
     /// Build and run the cell on `t`. On wasm the program runs on both hosts

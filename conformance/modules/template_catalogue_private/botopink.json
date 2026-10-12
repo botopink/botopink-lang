@@ -1,1 +1,1 @@
-{ "name": "template_catalogue_private", "version": "0.0.1", "src": "src/", "dependencies": { "looks": { "path": "deps/looks" } } }
+{ "name": "template_catalogue_private", "dependencies": { "looks": { "path": "deps/looks" } } }
