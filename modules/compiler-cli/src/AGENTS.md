@@ -26,7 +26,7 @@ src/
 
 - `main.zig` keeps a `parseXxxOpts(...)` helper per command (`parseBuildOpts`,
   `parseCheckOpts`, `parseRunOpts`, `parseTestOpts`, `parseFormatOpts`,
-  `parseNewOpts`, `parseMigrateOpts`, `parseCellOpts`, `parseNoOpts` for `clean`) — pure: they
+  `parseNewOpts`, `parseCellOpts`, `parseNoOpts` for `clean`) — pure: they
   return `ArgError` with the offending token in `ArgDiag`, and `usageError`
   prints it (exit 1). **No parser drops a token**: an unknown flag, an
   unexpected positional or an unsupported target is an error. `--flag=value`
