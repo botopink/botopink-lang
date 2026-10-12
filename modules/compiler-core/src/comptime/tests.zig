@@ -4,6 +4,13 @@
 
 test {
     _ = @import("tests/infer_exprs.zig");
+    _ = @import("../comptime.zig");
+    _ = @import("decorator_same.zig");
+    _ = @import("effect_chain.zig");
+    _ = @import("host_cells.zig");
+    _ = @import("mod_namespace.zig");
+    _ = @import("mod_tree.zig");
+    _ = @import("typeinfo_all.zig");
     _ = @import("tests/infer_decls.zig");
     _ = @import("tests/infer_generics.zig");
     _ = @import("tests/infer_errors.zig");

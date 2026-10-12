@@ -19,6 +19,9 @@ test {
     _ = @import("tests/wat.zig");
     _ = @import("tests/dts_skips_templates.zig");
     _ = @import("tests/runtime_scratch.zig");
+    _ = @import("runtime.zig");
+    _ = @import("snapshot.zig");
+    _ = @import("wat/std_wasm_link.zig");
     _ = @import("tests/comptime_module.zig");
     _ = @import("tests/beam_templates.zig");
     _ = @import("tests/commonjs.zig");

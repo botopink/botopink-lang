@@ -496,6 +496,7 @@ test {
     _ = @import("./cli/analysis_equivalence.zig");
     _ = @import("./cli/analysis_store.zig");
     _ = @import("./cli/arglist.zig");
+    _ = @import("./cli/bpp.zig");
     _ = @import("./cli/build.zig");
     _ = @import("./cli/cell.zig");
     _ = @import("./cli/cell_snap.zig");

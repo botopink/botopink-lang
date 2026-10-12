@@ -4,6 +4,8 @@
 
 test {
     _ = @import("tests/imports.zig");
+    _ = @import("../parser.zig");
+    _ = @import("template_markers.zig");
     _ = @import("tests/declarations.zig");
     _ = @import("tests/expressions.zig");
     _ = @import("tests/destructuring.zig");
