@@ -15345,6 +15345,10 @@ const Emitter = struct {
             },
             .binaryOp => |bin| switch (bin.op) {
                 .eq, .ne, .lt, .gt, .lte, .gte, .@"and", .@"or" => "i32",
+                // A `+` with a string operand is a concatenation — a string
+                // address — whatever the other operand holds: a template is
+                // `"" + hole`, and a lone float hole made it an `f64` (B-31).
+                .add => if (self.isStringExpr(e)) "i32" else self.unifyNum(self.wasmTypeOf(bin.lhs.*), self.wasmTypeOf(bin.rhs.*)),
                 else => self.unifyNum(self.wasmTypeOf(bin.lhs.*), self.wasmTypeOf(bin.rhs.*)),
             },
             .collection => |col| switch (col.kind) {

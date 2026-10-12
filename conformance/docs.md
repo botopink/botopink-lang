@@ -727,6 +727,12 @@ Three shapes do **not** narrow, and each for its own reason:
 true, false    // bool
 ```
 
+A template is a `string` whatever its parts: a template whose only part is a
+hole (`"${2.5}"`) is the hole written out as text, a `string` as a `val`, as an
+array element and as an operand of `+`.
+
+<!-- example: modules/interpolation_single_float_hole -->
+
 ### Numeric literals
 
 A number is decimal (`1_000_000`, `1.5`, `2.5e-3`) or hexadecimal, octal and

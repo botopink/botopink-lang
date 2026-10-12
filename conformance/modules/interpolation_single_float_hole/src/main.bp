@@ -1,0 +1,8 @@
+pub fn main() {
+    val s = "${5.5}";
+    @print(s + "!");
+    val xs: string[] = ["${2.5}", "a"];
+    @print(xs);
+    @print(xs.length);
+    @print("${1.5}" + "${2.25}");
+}

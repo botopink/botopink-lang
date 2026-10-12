@@ -2460,3 +2460,25 @@ test "wat: print ---- @println lowers as @print does, with its newline" {
         \\}
     );
 }
+
+// B-31: a template is a `string` whatever its parts. The desugared
+// `"" + 5.5` met an `i32` address with an `f64` and typed the whole as `f64`,
+// so `s + "!"` was invalid wasm and an array element was refused.
+test "wat: template ---- a lone float hole is a string, as a val, an element and an operand" {
+    try h.assertWasmRunLog(std.testing.allocator,
+        \\fn main() {
+        \\    val s = "${5.5}";
+        \\    @print(s + "!");
+        \\    val xs: string[] = ["${2.5}", "a"];
+        \\    @print(xs.length);
+        \\    @print("${1.5}" + "${2.25}");
+        \\}
+    ,
+        \\5.5!
+        \\2
+        \\1.52.25
+        \\RUNTIME TRAP (wasmtime):
+        \\wasm trap: wasm `unreachable` instruction executed
+        \\
+    );
+}
