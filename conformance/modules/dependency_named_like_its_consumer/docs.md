@@ -1,0 +1,1 @@
+| a dependency named like the project, or like a member of its workspace, at another directory (the code cache files a dependency's analysis by its name) | `two packages named "x" in this workspace's build — <dirA> here and <dirB> — one name is one package` (on the `dependencies` entry that brought it in) |

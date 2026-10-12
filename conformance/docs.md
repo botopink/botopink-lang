@@ -2700,6 +2700,8 @@ row says otherwise):
 | a dependency named like the project, or like a member of its workspace, at another directory (the code cache files a dependency's analysis by its name) | `two packages named "x" in this workspace's build — <dirA> here and <dirB> — one name is one package` (on the `dependencies` entry that brought it in) |
 | a host sidecar the resolved dependency does not carry | `dependency 'x' requires "./x.mjs" from module 'x/root', but no such file is in its sources (looked at <src>/sidecars/x.mjs, then <src>/x.mjs)` |
 
+<!-- example: modules/dependency_named_like_its_consumer -->
+
 #### Host sidecars
 
 A `#[@External.Node("./x.mjs", "f")]` lowers to a relative `require("./x.mjs")`
