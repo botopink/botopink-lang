@@ -1573,7 +1573,8 @@ inferred) judges it: the callee is a record's constructor (an import alias of on
 call is `call-spread` at the `...` (267: a function call takes no spread); each source is a value of
 the record's own type or of a type whose lineage names it (`Env.derivedTypes`, filled from
 `TypeDecl.derivedFrom` / `derivedPartial`, which `derived_types.zig` computes: `pick`, `omit` and
-`merge` carry their sources', `partial` and `required` carry none), else `record-spread-type`, and
+`merge` carry their sources' — by declared name, so a source named through an import alias
+(`Pessoa as P`) records `Pessoa` — `partial` and `required` carry none), else `record-spread-type`, and
 a `Type.partial` value is `record-spread-partial`, both at the `...`; the arguments apply left to
 right, the later winning; a field no spread and no label supplies takes its default or is
 `record-spread-missing-field` at the call; a label written twice or an unlabelled argument is
@@ -1583,7 +1584,7 @@ default. A source that is not a name or a path of names is bound once, by a `val
 __bp_spread_<line>_<col>_<exp>` in an `if (true) { …; Name(…) } else { @panic(…) }` block (the
 construction at `ast.spread_synthetic_col` past the call's column), which `transform.zig` splices
 whole in the call's place (`modules/record_spread`, `record_spread_other_type`,
-`record_spread_partial`, `record_spread_missing_field`, `call_spread`). Decision 37's `..base` above
+`record_spread_partial`, `record_spread_missing_field`, `call_spread`, `record_spread_import_alias`). Decision 37's `..base` above
 is untouched.
 
 Only a receiver whose type is a record **this module registered** is refused. Everything else keeps

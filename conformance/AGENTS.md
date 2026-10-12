@@ -155,6 +155,10 @@ same fields, `record-spread-type` at the `...`), `record_spread_partial` (a `Typ
 `record-spread-partial` at the `...`), `record_spread_missing_field` (a field nothing supplies,
 `record-spread-missing-field` at the call) and `call_spread` (a function call, `call-spread` at the
 `...`); every one red on the parent binary, where `...` at an argument's start did not parse.
+`modules/record_spread_import_alias` follows an import alias: a source typed `C` (`pessoas.Contato as C`), a
+type derived here from an aliased record (`Type.pick(P, .nome)`) or an aliased derived type spread into
+`Pessoa` and `Contato` and through their aliases, on the four targets — red on the parent, whose lineage
+held the alias's name.
 `modules/derived_type_two_packages` derives over two packages' same-named modules: dependencies `a`
 and `b` each hold `shape` with a record `Box` of different fields, each package's `user` derives
 from its own `Box` (`Type.pick` in `a`, `Type.omit` in `b`) and the project has a `shape` of its

@@ -204,8 +204,10 @@ const Ctx = struct {
             } else return self.refuse(loc, "{s}: `Type.{s}` takes a record type; `{s}` is an imported type alias — import the record it names", .{ diagnostics.derived_type_source_not_record, fn_name, name }, null),
             .type_ => |t| {
                 if (t.isRecord() and !t.isNamespace and t.genericParams.len == 0) {
+                    // The lineage holds declared names: an import alias
+                    // (`Pessoa as P`) names the record it renames (359).
                     const from = try self.arena.alloc([]const u8, t.derivedFrom.len + 1);
-                    from[0] = name;
+                    from[0] = t.name;
                     @memcpy(from[1..], t.derivedFrom);
                     return .{ .name = name, .fields = if (local != null) t.recordFields() else try travelled(self.arena, t.recordFields()), .from = from };
                 }

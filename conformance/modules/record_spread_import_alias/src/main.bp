@@ -1,0 +1,37 @@
+//// Decision 359 — a spread's lineage follows an import alias. A spread's
+//// source typed by an alias of a derived type (`import {pessoas.Contato as
+//// C}`) is that derived type; a type derived here from an aliased record
+//// (`Type.pick(P, .nome)`, `P` = `Pessoa`) or from an aliased derived type
+//// (`Type.pick(C, .email)`) is derived from the records the aliases name, so
+//// it spreads into `Pessoa` and into `Contato` — through their aliases too.
+
+pub mod pessoas;
+
+import {pessoas.Pessoa, pessoas.Contato, pessoas.Pessoa as P, pessoas.Contato as C};
+import {types.Type} from "std";
+
+val SoNome = Type.pick(P, .nome);
+
+val SoEmail = Type.pick(C, .email);
+
+fn completa(c: C, nome: string) -> Pessoa {
+    return Pessoa(...c, nome: nome);
+}
+
+fn pelaAlias(c: C) -> P {
+    return P(...c, nome: "Bia", idade: 41);
+}
+
+pub fn main() {
+    val c = C(email: "ana@a", telefone: "1");
+    @print(completa(c, "Ana"));
+    @print(pelaAlias(c));
+    @print(c);
+    val n = SoNome(nome: "Caio");
+    @print(Pessoa(...n, email: "caio@a", telefone: "2"));
+    @print(P(...n, ...c));
+    val e = SoEmail(email: "duda@a");
+    @print(Contato(...e, telefone: "3"));
+    @print(C(...e, telefone: "4"));
+    @print(Pessoa(...e, nome: "Duda", telefone: "5"));
+}
