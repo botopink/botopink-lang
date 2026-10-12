@@ -11,6 +11,9 @@ pub const Targets = @import("./module.zig").Targets;
 pub const comptime_pipeline = @import("./comptime.zig");
 /// The OTP release check every `erl` / `erlc` / `escript` spawn goes through (decision 228).
 pub const otp = @import("./otp.zig");
+/// The code cache's level B entry format (144 B-60): the container, and the
+/// encoder and decoder of a module's analysis (`comptime/analysis_entry.zig`).
+pub const analysis_entry = @import("./comptime/analysis_entry.zig");
 // `@ExprCustom` tooling read API (expr-custom): the canonical reference node and
 // the per-call-site entries a language server consumes. Generic — names no
 // sub-language. See `comptime_pipeline.OkData.custom_ast`.

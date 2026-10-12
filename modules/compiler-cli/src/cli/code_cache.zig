@@ -40,9 +40,11 @@
 /// **`--cold`** (`cold`): `build`, `run`, `test` and `cell check` read nothing
 /// and write what they ran.
 ///
-/// `closureKey` is the key of level B (B-60): a package's files, its
-/// dependencies' closure keys, the target and the compiler by backend
-/// partition (decision 249) — a function, nothing stored by it yet.
+/// `closureKey` is the key of level B (B-60): a package's files and its
+/// effective manifest, its dependencies' closure keys, the target (with the
+/// wasm host) and the compiler by backend partition (decision 249); `stdKey`
+/// std's, per module. `analysis_store.zig` files entries under them; nothing
+/// reads or writes one during a build yet.
 const std = @import("std");
 const builtin = @import("builtin");
 const bp = @import("botopink");
@@ -239,28 +241,50 @@ pub fn compilerKey(target: config.Target) []const u8 {
     };
 }
 
+/// What an entry is built for: the target and, on wasm, the host (decision
+/// 334) — `wasm` (the `wasi` host's) and `wasm.browser` are two targets of
+/// level B, so a cell running both hosts never replaces one with the other.
+pub const EntryTarget = struct {
+    target: config.Target,
+    /// Read on `wasm` only.
+    host: bp.ast.WasmHost = .wasi,
+
+    /// The directory name under `.botopinkbuild/analysis/` and the name the
+    /// key hashes: `commonJS`, `erlang`, `beam`, `wasm`, `wasm.browser`.
+    pub fn name(self: EntryTarget) []const u8 {
+        return switch (self.target) {
+            .wasm => self.host.lookupName(),
+            else => self.target.toString(),
+        };
+    }
+};
+
 /// The closure key of the package in `pkg_dir` (decision 509 (3)): a hash of
 ///
 ///   * its files by content — its manifest and every file under its `src`
 ///     (hidden entries skipped), each as `<path from the package> NUL <bytes>
 ///     NUL`, sorted by path;
+///   * its EFFECTIVE manifest `m` (`effectiveManifest`): what it inherits
+///     from its workspace (decision 512 — `targets`, `otp`, the inherited
+///     dependencies, `version`) is in no file of the package;
 ///   * its dependencies' closure keys (Merkle): `<name> NUL <key> NUL`, sorted
 ///     by name, so the key of a package moves when any package below it moves;
-///   * the target;
+///   * the target and, on wasm, the host (`EntryTarget.name`);
 ///   * the compiler on that target (`compilerKey`), never the binary's hash
-///     alone.
+///     alone. The entry's format (`compiler-core/src/comptime/analysis_entry.zig`)
+///     is a shared source of every partition, so a change to it moves every
+///     key.
 ///
-/// Nothing is stored here: level B (B-60) keys a package's checked interface
-/// and generated code by it, once its invariant is proved.
+/// Level B (B-60) files a package's analysis under it.
 pub fn closureKey(
     arena: std.mem.Allocator,
     io: std.Io,
     pkg_dir: []const u8,
     m: manifest.Manifest,
     deps: []const DepKey,
-    target: config.Target,
+    target: EntryTarget,
 ) ![KEY_HEX]u8 {
-    return closureKeyWith(arena, io, pkg_dir, m, deps, target, compilerKey(target));
+    return closureKeyWith(arena, io, pkg_dir, m, deps, target, compilerKey(target.target));
 }
 
 /// `closureKey` with the compiler's part given — what a test varies.
@@ -270,7 +294,7 @@ pub fn closureKeyWith(
     pkg_dir: []const u8,
     m: manifest.Manifest,
     deps: []const DepKey,
-    target: config.Target,
+    target: EntryTarget,
     compiler: []const u8,
 ) ![KEY_HEX]u8 {
     var h = std.crypto.hash.sha2.Sha256.init(.{});
@@ -291,6 +315,8 @@ pub fn closureKeyWith(
         h.update(&.{0});
     }
 
+    effectiveManifest(&h, m);
+
     // The dependencies' closure keys, by name.
     const sorted = try arena.dupe(DepKey, deps);
     std.mem.sort(DepKey, sorted, {}, struct {
@@ -306,8 +332,35 @@ pub fn closureKeyWith(
         h.update(&.{0});
     }
 
+    hashTargetAndCompiler(&h, target, compiler);
+    var digest: [32]u8 = undefined;
+    h.final(&digest);
+    return std.fmt.bytesToHex(digest, .lower);
+}
+
+/// The key of std's module `module` (its path under std, `io/fs`): std is
+/// embedded in the binary, so its bytes are inside the compiler key — the
+/// module path, the target, the host and the compiler say it all.
+pub fn stdKey(module: []const u8, target: EntryTarget) [KEY_HEX]u8 {
+    return stdKeyWith(module, target, compilerKey(target.target));
+}
+
+/// `stdKey` with the compiler's part given — what a test varies.
+pub fn stdKeyWith(module: []const u8, target: EntryTarget, compiler: []const u8) [KEY_HEX]u8 {
+    var h = std.crypto.hash.sha2.Sha256.init(.{});
+    h.update("botopink-std-1\x00");
+    h.update("std\x00");
+    h.update(module);
+    h.update(&.{0});
+    hashTargetAndCompiler(&h, target, compiler);
+    var digest: [32]u8 = undefined;
+    h.final(&digest);
+    return std.fmt.bytesToHex(digest, .lower);
+}
+
+fn hashTargetAndCompiler(h: *std.crypto.hash.sha2.Sha256, target: EntryTarget, compiler: []const u8) void {
     h.update("target\x00");
-    h.update(target.toString());
+    h.update(target.name());
     h.update(&.{0});
     h.update("compiler\x00");
     h.update(compiler);
@@ -316,10 +369,59 @@ pub fn closureKeyWith(
     h.update(@tagName(builtin.mode));
     h.update(@tagName(builtin.cpu.arch));
     h.update(@tagName(builtin.os.tag));
+}
 
-    var digest: [32]u8 = undefined;
-    h.final(&digest);
-    return std.fmt.bytesToHex(digest, .lower);
+/// The manifest as the build reads it, after decision 512's inheritance —
+/// every field a build reads, each as `<field> NUL <value> NUL`, a list
+/// counted first. The file's own bytes are hashed beside it (`closureKeyWith`);
+/// this adds what the package inherits from its workspace, which is in no file
+/// of the package.
+fn effectiveManifest(h: *std.crypto.hash.sha2.Sha256, m: manifest.Manifest) void {
+    const field = struct {
+        fn str(hh: *std.crypto.hash.sha2.Sha256, k: []const u8, v: ?[]const u8) void {
+            hh.update(k);
+            hh.update(&.{0});
+            if (v) |x| {
+                hh.update("=");
+                hh.update(x);
+            } else hh.update("-");
+            hh.update(&.{0});
+        }
+        fn count(hh: *std.crypto.hash.sha2.Sha256, k: []const u8, n: usize) void {
+            var buf: [24]u8 = undefined;
+            str(hh, k, std.fmt.bufPrint(&buf, "{d}", .{n}) catch unreachable);
+        }
+    };
+    h.update("manifest\x00");
+    field.str(h, "name", m.name);
+    field.str(h, "version", m.version);
+    field.str(h, "src", m.src);
+    field.str(h, "entry", m.entry);
+    field.str(h, "target", m.target);
+    if (m.targets) |ts| {
+        field.count(h, "targets", ts.len);
+        for (ts) |t| field.str(h, "t", t);
+    } else field.str(h, "targets", null);
+    field.count(h, "files", m.files.len);
+    for (m.files) |f| field.str(h, "f", f);
+    field.count(h, "dependencies", m.dependencies.len);
+    for (m.dependencies) |d| {
+        field.str(h, "name", d.name);
+        field.str(h, "git", d.spec.git);
+        field.str(h, "path", d.spec.path);
+        switch (d.spec.ref) {
+            .branch => |v| field.str(h, "branch", v),
+            .rev => |v| field.str(h, "rev", v),
+            .tag => |v| field.str(h, "tag", v),
+            .none => field.str(h, "ref", null),
+        }
+        field.str(h, "workspace", if (d.spec.workspace) "true" else "false");
+        field.str(h, "subdir", d.spec.subdir);
+        field.str(h, "inherited", if (d.inherited) "true" else "false");
+    }
+    field.str(h, "otp", if (m.otp) |o| o.release else null);
+    field.str(h, "wasm", @tagName(m.wasm_host));
+    field.str(h, "bpp", m.bpp);
 }
 
 fn lessThan(_: void, a: []const u8, b: []const u8) bool {
@@ -382,19 +484,95 @@ test "closureKey: moves with a byte of the package, a dependency's key, the targ
     const m = try manifest.parse(a, "{ \"name\": \"pkg\" }", "botopink.json", &err);
 
     const dep: DepKey = .{ .name = "lib", .key = @splat('a') };
-    const k0 = try closureKeyWith(a, io, pkg, m, &.{dep}, .erlang, "c1");
+    const erl: EntryTarget = .{ .target = .erlang };
+    const k0 = try closureKeyWith(a, io, pkg, m, &.{dep}, erl, "c1");
     // Deterministic.
-    try testing.expectEqualStrings(&k0, &(try closureKeyWith(a, io, pkg, m, &.{dep}, .erlang, "c1")));
+    try testing.expectEqualStrings(&k0, &(try closureKeyWith(a, io, pkg, m, &.{dep}, erl, "c1")));
     // The target, the compiler, a dependency's key.
-    try testing.expect(!std.mem.eql(u8, &k0, &(try closureKeyWith(a, io, pkg, m, &.{dep}, .beam, "c1"))));
-    try testing.expect(!std.mem.eql(u8, &k0, &(try closureKeyWith(a, io, pkg, m, &.{dep}, .erlang, "c2"))));
+    try testing.expect(!std.mem.eql(u8, &k0, &(try closureKeyWith(a, io, pkg, m, &.{dep}, .{ .target = .beam }, "c1"))));
+    try testing.expect(!std.mem.eql(u8, &k0, &(try closureKeyWith(a, io, pkg, m, &.{dep}, erl, "c2"))));
     const dep2: DepKey = .{ .name = "lib", .key = @splat('b') };
-    try testing.expect(!std.mem.eql(u8, &k0, &(try closureKeyWith(a, io, pkg, m, &.{dep2}, .erlang, "c1"))));
+    try testing.expect(!std.mem.eql(u8, &k0, &(try closureKeyWith(a, io, pkg, m, &.{dep2}, erl, "c1"))));
     // One byte of a source.
     try cwd.writeFile(io, .{ .sub_path = main_bp, .data = "pub fn main() {} \n" });
-    try testing.expect(!std.mem.eql(u8, &k0, &(try closureKeyWith(a, io, pkg, m, &.{dep}, .erlang, "c1"))));
+    try testing.expect(!std.mem.eql(u8, &k0, &(try closureKeyWith(a, io, pkg, m, &.{dep}, erl, "c1"))));
     // Something outside the package's files does not move it.
     try cwd.writeFile(io, .{ .sub_path = main_bp, .data = "pub fn main() {}\n" });
     try cwd.writeFile(io, .{ .sub_path = try std.fs.path.join(a, &.{ pkg, "docs.md" }), .data = "x" });
-    try testing.expectEqualStrings(&k0, &(try closureKeyWith(a, io, pkg, m, &.{dep}, .erlang, "c1")));
+    try testing.expectEqualStrings(&k0, &(try closureKeyWith(a, io, pkg, m, &.{dep}, erl, "c1")));
+}
+
+test "closureKey: the effective manifest — what a member inherits moves it, its files unchanged" {
+    var arena_inst = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_inst.deinit();
+    const a = arena_inst.allocator();
+    const io = testing.io;
+    test_scratch.remove(io, "closure-key-manifest");
+    defer test_scratch.remove(io, "closure-key-manifest");
+    const pkg = test_scratch.path(io, "closure-key-manifest/pkg");
+    const cwd = std.Io.Dir.cwd();
+    try cwd.createDirPath(io, try std.fs.path.join(a, &.{ pkg, "src" }));
+    const text = "{ \"name\": \"pkg\" }";
+    try cwd.writeFile(io, .{ .sub_path = try std.fs.path.join(a, &.{ pkg, "botopink.json" }), .data = text });
+    try cwd.writeFile(io, .{ .sub_path = try std.fs.path.join(a, &.{ pkg, "src", "root.bp" }), .data = "pub fn f() {}\n" });
+    var err: ?manifest.Located = null;
+    const m = try manifest.parse(a, text, "botopink.json", &err);
+    const erl: EntryTarget = .{ .target = .erlang };
+    const k0 = try closureKeyWith(a, io, pkg, m, &.{}, erl, "c");
+
+    // Inherited `targets`, `otp`, a dependency, a `version`: the same files, another key each.
+    var targets = m;
+    targets.targets = &.{"erlang"};
+    var otp_pin = m;
+    otp_pin.otp = .{ .release = "28", .path = "../botopink.json", .text = "" };
+    var dep = m;
+    dep.dependencies = &.{.{ .name = "lib", .spec = .{ .workspace = true }, .inherited = true }};
+    var version = m;
+    version.version = "2.0.0";
+    for ([_]manifest.Manifest{ targets, otp_pin, dep, version }) |changed| {
+        try testing.expect(!std.mem.eql(u8, &k0, &(try closureKeyWith(a, io, pkg, changed, &.{}, erl, "c"))));
+    }
+    // A dependency the package writes itself and one it inherits are two keys.
+    var own = dep;
+    own.dependencies = &.{.{ .name = "lib", .spec = .{ .workspace = true } }};
+    try testing.expect(!std.mem.eql(u8, &(try closureKeyWith(a, io, pkg, dep, &.{}, erl, "c")), &(try closureKeyWith(a, io, pkg, own, &.{}, erl, "c"))));
+}
+
+test "closureKey: the wasm host is part of the target — `wasm` and `wasm.browser` never share a key" {
+    var arena_inst = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_inst.deinit();
+    const a = arena_inst.allocator();
+    const io = testing.io;
+    test_scratch.remove(io, "closure-key-host");
+    defer test_scratch.remove(io, "closure-key-host");
+    const pkg = test_scratch.path(io, "closure-key-host/pkg");
+    const cwd = std.Io.Dir.cwd();
+    try cwd.createDirPath(io, try std.fs.path.join(a, &.{ pkg, "src" }));
+    const text = "{ \"name\": \"pkg\" }";
+    try cwd.writeFile(io, .{ .sub_path = try std.fs.path.join(a, &.{ pkg, "botopink.json" }), .data = text });
+    var err: ?manifest.Located = null;
+    const m = try manifest.parse(a, text, "botopink.json", &err);
+    const wasi = try closureKeyWith(a, io, pkg, m, &.{}, .{ .target = .wasm }, "c");
+    const browser = try closureKeyWith(a, io, pkg, m, &.{}, .{ .target = .wasm, .host = .browser }, "c");
+    try testing.expect(!std.mem.eql(u8, &wasi, &browser));
+    // The host means nothing off wasm.
+    try testing.expectEqualStrings(
+        &(try closureKeyWith(a, io, pkg, m, &.{}, .{ .target = .beam }, "c")),
+        &(try closureKeyWith(a, io, pkg, m, &.{}, .{ .target = .beam, .host = .browser }, "c")),
+    );
+    try testing.expectEqualStrings("wasm", (EntryTarget{ .target = .wasm }).name());
+    try testing.expectEqualStrings("wasm.browser", (EntryTarget{ .target = .wasm, .host = .browser }).name());
+    try testing.expectEqualStrings("commonJS", (EntryTarget{ .target = .commonJS, .host = .browser }).name());
+}
+
+test "stdKey: the module path, the target, the host and the compiler" {
+    const k = stdKeyWith("io/fs", .{ .target = .erlang }, "c");
+    try testing.expectEqualStrings(&k, &stdKeyWith("io/fs", .{ .target = .erlang }, "c"));
+    try testing.expect(!std.mem.eql(u8, &k, &stdKeyWith("io/net", .{ .target = .erlang }, "c")));
+    try testing.expect(!std.mem.eql(u8, &k, &stdKeyWith("io/fs", .{ .target = .beam }, "c")));
+    try testing.expect(!std.mem.eql(u8, &k, &stdKeyWith("io/fs", .{ .target = .erlang }, "d")));
+    const w = stdKeyWith("io/fs", .{ .target = .wasm }, "c");
+    try testing.expect(!std.mem.eql(u8, &w, &stdKeyWith("io/fs", .{ .target = .wasm, .host = .browser }, "c")));
+    // The real compiler key is the binary's partition for that target.
+    try testing.expectEqualStrings(&stdKey("io/fs", .{ .target = .wasm }), &stdKeyWith("io/fs", .{ .target = .wasm }, compilerKey(.wasm)));
 }

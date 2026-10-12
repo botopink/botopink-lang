@@ -14,6 +14,7 @@ pass that specializes comptime calls. The façade is `../comptime.zig`
 comptime/
 ├── AGENTS.md          ← you are here
 ├── types.zig          ← core Type union(enum)
+├── analysis_entry.zig ← the code cache's level B entry (144 B-60): the container (magic, key, length, SHA-256, section table; `unpack` proves it whole or answers `error.Doubt`); inside the compiler key's partition, so its change moves every key
 ├── env.zig            ← Env (binding name → *Type), registries, loc-keyed lowering tables
 ├── infer.zig          ← `inferProgramTyped` — HM walk, decorators, template expansion
 ├── unify.zig          ← type-variable unification + occurs check

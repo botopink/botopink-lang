@@ -312,7 +312,7 @@ pub fn loadDependencies(
     const arena = arena_inst.allocator();
     const tiers = try dependencyTiers(gpa, arena, io, env_map, proj.dir, roots);
 
-    try loadClosure(gpa, io, arena, proj.manifest, proj.dir, proj.dependencies, tiers, &modules, bpp_files);
+    try loadClosure(gpa, io, arena, proj.manifest, proj.dir, proj.workspace, proj.dependencies, tiers, &modules, bpp_files);
     return try modules.toOwnedSlice(gpa);
 }
 
@@ -325,6 +325,9 @@ fn loadClosure(
     arena: std.mem.Allocator,
     project: manifest.Manifest,
     project_dir: []const u8,
+    /// The workspace the project is a member of, when it is one: its members
+    /// and the closure's packages share one name space (`refuseNameTwice`).
+    workspace: ?manifest.Workspace,
     deps: []const manifest.DepEntry,
     /// `dependencyTiers` — every package of the closure looks its `git`
     /// dependencies up in the project's tiers (one `.botopinkbuild/deps/`, as
@@ -341,6 +344,7 @@ fn loadClosure(
     // directory by one of them is refused, not silently shadowed.
     for (deps) |dep| _ = try closure.resolve(project, project_dir, dep);
     for (deps) |dep| try closure.visit(project, dep.name);
+    try refuseNameTwice(arena, io, project, project_dir, workspace, closure.order.items);
     // One OTP release across the closure (decision 228): every package that
     // pins `"otp"` pins the project's — or the first pin's — release.
     var pinned: std.ArrayListUnmanaged(manifest.Manifest) = .empty;
@@ -356,6 +360,52 @@ fn loadClosure(
     };
     for (closure.order.items) |pkg| try loadOne(gpa, io, pkg.dir, pkg.manifest, pkg.name, out);
     if (project.bpp) |name| try checkBppRoles(arena, io, project, closure.packages.get(name).?, out.items, bpp_files);
+}
+
+/// 144 B-60 — one package name is one directory in the workspace's closure:
+/// a dependency of the build named like the project, or like a member of the
+/// project's workspace, at another directory is refused, located on the
+/// `dependencies` entry that brought it in, naming both directories. The
+/// code cache files a dependency's analysis by its name
+/// (`<cache root>/.botopinkbuild/analysis/<target>/<name>.bpa`, the
+/// workspace's root shared by its members): two packages of one name would
+/// replace each other's entry, one build after the other. A refusal, never a
+/// silent replacement.
+fn refuseNameTwice(
+    arena: std.mem.Allocator,
+    io: std.Io,
+    project: manifest.Manifest,
+    project_dir: []const u8,
+    workspace: ?manifest.Workspace,
+    packages: []const DepClosure.Package,
+) !void {
+    var cwd_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const cwd = cwd_buf[0..try std.process.currentPath(io, &cwd_buf)];
+    const own_dir = try linkFreeDir(arena, io, try std.fs.path.resolve(arena, &.{ cwd, project_dir }));
+    for (packages) |pkg| {
+        const other: []const u8 = blk: {
+            if (std.mem.eql(u8, pkg.name, project.name)) break :blk own_dir;
+            const ws = workspace orelse continue;
+            const member = ws.member(pkg.name) orelse continue;
+            break :blk try linkFreeDir(arena, io, try std.fs.path.resolve(arena, &.{ cwd, member.dir }));
+        };
+        const dir = try std.fs.path.resolve(arena, &.{ cwd, pkg.dir });
+        if (std.mem.eql(u8, other, dir)) continue;
+        const msg = try std.fmt.allocPrint(arena, "two packages named \"{s}\" in this workspace's build — {s} here and {s} — one name is one package", .{
+            pkg.name,
+            try displayDir(arena, cwd, dir),
+            try displayDir(arena, cwd, other),
+        });
+        pkg.by.locateEntryAt("dependencies", pkg.name, msg).print();
+        return error.LibManifestInvalid;
+    }
+}
+
+/// `dir` relative to `cwd` (`.` for `cwd` itself), the way a refusal names
+/// a directory.
+fn displayDir(arena: std.mem.Allocator, cwd: []const u8, dir: []const u8) ![]const u8 {
+    const rel = try std.fs.path.relative(arena, cwd, null, cwd, dir);
+    return if (rel.len == 0) "." else rel;
 }
 
 /// Decision 361 — the roles std's `bpp` annotations mark in the package the
@@ -2324,7 +2374,7 @@ fn closureOf(arena: std.mem.Allocator, io: std.Io, comptime root: []const u8, te
         }
         out.deinit(gpa);
     }
-    try loadClosure(gpa, io, arena, m, app_dir, m.dependencies, &.{entries}, &out, &.{});
+    try loadClosure(gpa, io, arena, m, app_dir, null, m.dependencies, &.{entries}, &out, &.{});
     var names: std.ArrayListUnmanaged(u8) = .empty;
     for (out.items, 0..) |mod, i| {
         if (i > 0) try names.append(arena, ' ');
@@ -2371,6 +2421,66 @@ test "loadDependencies: one import name meaning two directories in one build is 
         \\{ "name": "app", "dependencies": { "kit-core": { "path": "../other/kit-core" },
         \\  "kit-forms": { "git": "https://example.invalid/kit" } } }
     ));
+}
+
+test "loadDependencies: a dependency named like the project or a member of its workspace, at another directory, is refused naming both (144 B-60)" {
+    var arena_inst = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_inst.deinit();
+    const arena = arena_inst.allocator();
+    const io = std.testing.io;
+    test_scratch.remove(io, "closure-name-twice");
+    defer test_scratch.remove(io, "closure-name-twice");
+    try writeKitWorkspace(io, "closure-name-twice");
+    // A second `kit-core`, outside the workspace, and a package named `app`.
+    try writeFileP(io, test_scratch.path(io, "closure-name-twice/other/kit-core/botopink.json"), "{ \"name\": \"kit-core\", \"files\": [\"core.bp\"] }");
+    try writeFileP(io, test_scratch.path(io, "closure-name-twice/other/kit-core/src/core.bp"), "pub fn core() {}");
+    try writeFileP(io, test_scratch.path(io, "closure-name-twice/other/app/botopink.json"), "{ \"name\": \"app\", \"files\": [\"a.bp\"] }");
+    try writeFileP(io, test_scratch.path(io, "closure-name-twice/other/app/src/a.bp"), "pub fn a() {}");
+
+    var captured: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer captured.deinit();
+    manifest.sink = &captured.writer;
+    defer manifest.sink = null;
+
+    // The project's own name.
+    try std.testing.expectError(error.LibManifestInvalid, closureOf(arena, io, "closure-name-twice",
+        \\{ "name": "app", "dependencies": { "app": { "path": "../other/app" } } }
+    ));
+    const own = captured.written();
+    try std.testing.expect(std.mem.indexOf(u8, own, "two packages named \"app\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, own, "other/app here and ") != null);
+    try std.testing.expect(std.mem.indexOf(u8, own, "closure-name-twice/app — one name is one package") != null);
+    try std.testing.expect(std.mem.indexOf(u8, own, "botopink.json:1:") != null);
+
+    // A member of the project's workspace: `kit-forms` is one, and the
+    // project names a `kit-core` the workspace's member is not.
+    captured.clearRetainingCapacity();
+    var werr: ?manifest.Located = null;
+    const ws_dir = try std.Io.Dir.cwd().realPathFileAlloc(io, test_scratch.path(io, "closure-name-twice/ws/repository/kit"), arena);
+    const ws = try manifest.expand(arena, io, try manifest.read(arena, io, ws_dir, &werr), &werr);
+    const forms = ws.member("kit-forms").?;
+    const gpa = std.testing.allocator;
+    var out: std.ArrayListUnmanaged(Module) = .empty;
+    defer {
+        for (out.items) |mod| {
+            gpa.free(mod.path);
+            gpa.free(mod.source);
+            gpa.free(mod.srcPath);
+        }
+        out.deinit(gpa);
+    }
+    var pm = forms.manifest;
+    pm.dependencies = &.{.{ .name = "kit-core", .spec = .{ .path = "../../../../../other/kit-core" } }};
+    try std.testing.expectError(error.LibManifestInvalid, loadClosure(gpa, io, arena, pm, forms.dir, ws, pm.dependencies, &.{}, &out, &.{}));
+    const member = captured.written();
+    try std.testing.expect(std.mem.indexOf(u8, member, "two packages named \"kit-core\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, member, "other/kit-core here and ") != null);
+    try std.testing.expect(std.mem.indexOf(u8, member, "modules/kit-core — one name is one package") != null);
+
+    // The member itself, reached as `{ "workspace": true }`, is no second package.
+    captured.clearRetainingCapacity();
+    pm.dependencies = &.{.{ .name = "kit-core", .spec = .{ .workspace = true } }};
+    try loadClosure(gpa, io, arena, pm, forms.dir, ws, pm.dependencies, &.{}, &out, &.{});
 }
 
 test "loadDependencies: a cycle between packages is refused" {
@@ -2638,7 +2748,7 @@ fn kitXSource(arena: std.mem.Allocator, io: std.Io, project: []const u8, env_roo
         }
         out.deinit(gpa);
     }
-    try loadClosure(gpa, io, arena, m, project, m.dependencies, tiers, &out, &.{});
+    try loadClosure(gpa, io, arena, m, project, null, m.dependencies, tiers, &out, &.{});
     try std.testing.expectEqual(@as(usize, 1), out.items.len);
     try std.testing.expectEqualStrings("kit-x/x", out.items[0].path);
     return arena.dupe(u8, out.items[0].source);

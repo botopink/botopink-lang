@@ -7,11 +7,14 @@
 /// (decision 225, `libs.cacheRoot`): the project's own `.botopinkbuild/`, which
 /// goes whole, or — for a workspace member — the workspace root's, whose
 /// `.botopinkbuild/cache/` goes too, so a clean leaves no cache the next build
-/// of this package would read. Nothing outside those directories is a cache.
+/// of this package would read, and so does its `.botopinkbuild/analysis/`
+/// (level B of the code cache, 144 B-60: a workspace's members share its
+/// root's). Nothing outside those directories is a cache.
 const std = @import("std");
 const manifest = @import("manifest");
 const reporter = @import("./reporter.zig");
 const libs = @import("./libs.zig");
+const analysis_store = @import("./analysis_store.zig");
 
 const ARTIFACTS = [_][]const u8{ "out", ".botopinkbuild" };
 
@@ -32,9 +35,20 @@ pub fn run(gpa: std.mem.Allocator, io: std.Io) !u8 {
         },
         else => |other| return other,
     } orelse return if (failed) 1 else 0;
-    const cache = try std.fs.path.join(arena, &.{ ws.dir, libs.CACHE_DIR });
-    if (removeOne(io, std.Io.Dir.cwd(), cache)) failed = true;
+    if (removeWorkspaceCaches(arena, io, ws.dir)) failed = true;
     return if (failed) 1 else 0;
+}
+
+/// The caches a member's workspace root keeps for every member: its
+/// `.botopinkbuild/cache/` (level A and the other stores, decision 225) and
+/// its `.botopinkbuild/analysis/` (level B, 144 B-60). True when a delete failed.
+fn removeWorkspaceCaches(arena: std.mem.Allocator, io: std.Io, ws_dir: []const u8) bool {
+    var failed = false;
+    for ([_][]const u8{ libs.CACHE_DIR, analysis_store.DIR }) |sub| {
+        const dir = std.fs.path.join(arena, &.{ ws_dir, sub }) catch return true;
+        if (removeOne(io, std.Io.Dir.cwd(), dir)) failed = true;
+    }
+    return failed;
 }
 
 /// Delete `name` under `dir`; true when the delete failed (reported).
@@ -71,4 +85,27 @@ test "clean removes both artifact trees and succeeds when they are absent" {
     try std.testing.expectEqual(@as(u8, 0), removeAll(io, tmp.dir));
     for (ARTIFACTS) |name| try std.testing.expectError(error.FileNotFound, tmp.dir.access(io, name, .{}));
     try std.testing.expectEqual(@as(u8, 0), removeAll(io, tmp.dir));
+}
+
+test "clean in a member empties its workspace root's cache and analysis directories, nothing else" {
+    var arena_inst = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_inst.deinit();
+    const a = arena_inst.allocator();
+    const io = std.testing.io;
+    const test_scratch = @import("test_scratch");
+    test_scratch.remove(io, "clean-workspace");
+    defer test_scratch.remove(io, "clean-workspace");
+    const ws = test_scratch.path(io, "clean-workspace");
+    const cwd = std.Io.Dir.cwd();
+    const kept = try std.fs.path.join(a, &.{ ws, std.fs.path.dirname(libs.CACHE_DIR).?, "deps", "lib" });
+    try cwd.createDirPath(io, kept);
+    try cwd.createDirPath(io, try std.fs.path.join(a, &.{ ws, libs.CACHE_DIR, "code" }));
+    try cwd.createDirPath(io, try std.fs.path.join(a, &.{ ws, analysis_store.DIR, "erlang" }));
+    try std.testing.expect(!removeWorkspaceCaches(a, io, ws));
+    try std.testing.expectError(error.FileNotFound, cwd.access(io, try std.fs.path.join(a, &.{ ws, libs.CACHE_DIR }), .{}));
+    try std.testing.expectError(error.FileNotFound, cwd.access(io, try std.fs.path.join(a, &.{ ws, analysis_store.DIR }), .{}));
+    // The workspace's `bpmp` links are not a cache.
+    try cwd.access(io, kept, .{});
+    // Absent already: nothing fails.
+    try std.testing.expect(!removeWorkspaceCaches(a, io, ws));
 }

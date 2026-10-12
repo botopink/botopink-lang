@@ -10,5 +10,6 @@ test {
     _ = @import("./parser/tests.zig");
     _ = @import("./format/tests.zig");
     _ = @import("./comptime/tests.zig");
+    _ = @import("./comptime/analysis_entry.zig");
     _ = @import("./codegen/tests.zig");
 }

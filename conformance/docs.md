@@ -2447,8 +2447,9 @@ scratch (`.botopinkbuild/tmp/`), the run directories of `botopink test` and the
 `bpmp install` / `bpmp link` links under `.botopinkbuild/deps/` — run either
 again after it — and every build cache (`.botopinkbuild/cache/`: the code cache of
 the dependencies' compiled modules, `code/`). In
-a workspace member, the workspace root's `.botopinkbuild/cache/` goes too: the
-members of a workspace share one cache there.
+a workspace member, the workspace root's `.botopinkbuild/cache/` and
+`.botopinkbuild/analysis/` (the dependencies' analysis) go too: the members of a
+workspace share one cache there.
 
 ## Project manifest
 
@@ -2684,6 +2685,7 @@ row says otherwise):
 | `bpmp install`: `botopink.lock` pinning two dependencies on one repository at two commits | `install: botopink.lock pins 'a' and 'b' at two commits of one repository — one repository is one checkout (decision 344)` (`bpmp install --update` re-pins) |
 | `bpmp link`: a `git` dependency whose `<checkout>/repository/<name>` holds no manifest | `"x" has no local repository: <checkout>/repository/x holds no botopink.json — check it out there, or name another checkout` (every such dependency named, then exit 1; nothing linked) |
 | `bpmp link`: one name linking to two directories (a project's `"subdir"` entry and a linked package's entry by name) | `"x" links to <dirA> here, but to <dirB> for <manifest> — one name is one link` |
+| a dependency named like the project, or like a member of its workspace, at another directory (the code cache files a dependency's analysis by its name) | `two packages named "x" in this workspace's build — <dirA> here and <dirB> — one name is one package` (on the `dependencies` entry that brought it in) |
 | a host sidecar the resolved dependency does not carry | `dependency 'x' requires "./x.mjs" from module 'x/root', but no such file is in its sources (looked at <src>/sidecars/x.mjs, then <src>/x.mjs)` |
 
 #### Host sidecars
