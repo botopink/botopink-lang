@@ -80,16 +80,10 @@ pub fn run(gpa: std.mem.Allocator, io: std.Io, opts: Options, env_map: libs.EnvM
     try level_b.init(gpa, io, analysis_store.root(proj), entry_target, closure_keys.keys);
     defer level_b.deinit();
 
-    // Keep only real `.bp` dependency modules. Declaration-only (`.d.bp`) modules
-    // use declaration-file syntax the regular pipeline doesn't parse for external
-    // libs yet (the declaration-parse path is std-only), so they are skipped
-    // rather than failed — they carry host-bound / gated surface, not code.
-    var real_deps: std.ArrayListUnmanaged(bp.Module) = .empty;
-    for (dep_modules) |d| {
-        if (!d.declaration) try real_deps.append(arena, d);
-    }
-
-    const all_modules = try std.mem.concat(arena, bp.Module, &.{ real_deps.items, loaded.modules, test_modules });
+    // A dependency's `.d.bp` modules are kept, as `build` and `run` keep them
+    // (decisions 514, 515): one module set under every command, so one level B
+    // entry, and a type a `.d.bp` declares checks here as it builds there.
+    const all_modules = try std.mem.concat(arena, bp.Module, &.{ dep_modules, loaded.modules, test_modules });
 
     reporter.checking(all_modules.len);
     const t0 = std.Io.Timestamp.now(io, .awake);

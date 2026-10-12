@@ -376,17 +376,10 @@ pub fn run(
     try level_b.init(gpa, io, analysis_store.root(proj), entry_target, closure_keys.keys);
     defer level_b.deinit();
 
-    // Keep only real `.bp` dependency modules. Declaration-only (`.d.bp`) modules
-    // use declaration-file syntax the regular pipeline doesn't parse for external
-    // libs yet (the declaration-parse path is std-only), so they are skipped
-    // rather than failed — they carry host-bound / gated surface, not runnable
-    // code. `build` effectively drops them the same way.
-    var real_deps: std.ArrayListUnmanaged(bp.Module) = .empty;
-    for (dep_modules) |d| {
-        if (!d.declaration) try real_deps.append(arena, d);
-    }
-
-    const all_modules = try std.mem.concat(arena, bp.Module, &.{ real_deps.items, src_modules, test_modules });
+    // A dependency's `.d.bp` modules are kept, as `build` and `run` keep them
+    // (decisions 514, 515): one module set under every command, so one level B
+    // entry.
+    const all_modules = try std.mem.concat(arena, bp.Module, &.{ dep_modules, src_modules, test_modules });
 
     reporter.compiling(all_modules.len);
 
@@ -406,7 +399,7 @@ pub fn run(
         .test_mode = true,
         .wasm_host = proj.wasmHost(),
         .wasm_artifact = true,
-        .packages = try libs.packagesOf(arena, proj, real_deps.items),
+        .packages = try libs.packagesOf(arena, proj, dep_modules),
         .analysis_store = &level_b.store,
     };
 
@@ -641,7 +634,7 @@ pub fn run(
     for (outputs.items) |o| {
         // Dependency modules are compiled for their exports, not tested here —
         // run only the project's own `test {}` blocks.
-        if (isDepModule(o.name, real_deps.items)) continue;
+        if (isDepModule(o.name, dep_modules)) continue;
         if (o.result.failed()) continue;
         // A module with no test unit has no tests (decision 513).
         const unit = o.result.test_unit orelse continue;

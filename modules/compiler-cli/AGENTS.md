@@ -25,7 +25,9 @@ compiler-cli/
 │   │                          exit 1, a new cell's candidates and manifest, a
 │   │                          departing target, no majority, every way a
 │   │                          `"targets"` narrowing is refused, a cell without
-│   │                          `botopink.json`, malformed input)
+│   │                          `botopink.json`, malformed input; and `check`
+│   │                          of `local_dependency`, a type its dependency's
+│   │                          `.d.bp` declares — decisions 514, 515)
 │   │                          against the real binary
 │   ├── backend_exec.sh      ← the wasm core module's `--invoke main` (a `wasi`
 │   │                          build's core module run on its own); `zig build

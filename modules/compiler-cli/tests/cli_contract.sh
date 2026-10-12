@@ -1550,6 +1550,19 @@ else
   skip "botopink cell (node, erl, erlc and wasmtime are all needed)"
 fi
 
+echo "==> a dependency's .d.bp modules are one set under every command (decisions 514, 515)"
+# conformance/modules/local_dependency: its dependency's `shapes.d.bp`
+# declares `Rect`, which the cell's main builds. `build` keeps a dependency's
+# `.d.bp` modules; `check` and `test` keep them too — one module set, one
+# level B entry — so `check` answers what `build` answers.
+DBP="$WORK/dbp-dependency"
+rm -rf "$DBP"; cp -R "$REPO_ROOT/conformance/modules/local_dependency" "$DBP"
+rm -rf "$DBP/snapshot" "$DBP/docs.md"
+run "$DBP" check
+expect_code 0 "check of a consumer building a type its dependency's .d.bp declares"
+run "$DBP" build --target erlang --out out
+expect_code 0 "build of the same consumer"
+
 echo
 if [[ "$failures" -gt 0 ]]; then
   echo "==> cli contract: $failures assertion(s) FAILED" >&2
