@@ -5,6 +5,7 @@
 ///   zig build test -Dtest-filter=<substr> → runs only matching tests
 ///   zig build test-cli → runs every modules/compiler-cli/tests/*.sh end to end
 ///   zig build test-closure-invariant → one library under two consumers, its output compared (decision 509 (2))
+///   zig build test-analysis-equivalence → jhonstart, rakun and emilia consumers built cold and through level B, compared (144 B-60)
 ///   zig build test-libs → compiles and tests every visible `.bp` library per target
 ///   zig build run      → builds and runs the botopink CLI
 const std = @import("std");
@@ -647,11 +648,14 @@ pub fn build(b: *std.Build) void {
     // 509 (2)'s closure invariant (`closure_invariant.sh`, also
     // `test-closure-invariant`), and the code cache's level B over its fixture
     // (`level_b.sh`, 144 B-60: cold, writing and reading builds the same
-    // bytes on every target). The language
+    // bytes on every target), and the same over real libraries — a few
+    // conformance cells of jhonstart, rakun and emilia, the checkout's
+    // siblings (`analysis_equivalence.sh`, also `test-analysis-equivalence`,
+    // guard 2). The language
     // half these scripts held — numeric, records, the `mod` tree, mutual
     // recursion, `assert` / `try` — is conformance cells (144 B-29 step H). The
     // scripts run one after another — they share `zig-out/` and fixture `out/` dirs.
-    const cli_scripts = [_][]const u8{ "cli_contract.sh", "test_tooling.sh", "code_cache.sh", "backend_exec.sh", "closure_invariant.sh", "level_b.sh" };
+    const cli_scripts = [_][]const u8{ "cli_contract.sh", "test_tooling.sh", "code_cache.sh", "backend_exec.sh", "closure_invariant.sh", "level_b.sh", "analysis_equivalence.sh" };
     const test_cli_step = b.step("test-cli", "Run every modules/compiler-cli/tests/*.sh against the installed CLI");
     var prev_cli_script: ?*std.Build.Step = null;
     for (cli_scripts) |script| {
@@ -668,6 +672,15 @@ pub fn build(b: *std.Build) void {
     const closure_invariant_run = cliScript(b, "closure_invariant.sh");
     const closure_invariant_step = b.step("test-closure-invariant", "Build one library under two consumers and compare its output on every target");
     closure_invariant_step.dependOn(&closure_invariant_run.step);
+
+    // `zig build test-analysis-equivalence` — level B's guard 2 (144 B-60):
+    // a few cells of jhonstart, rakun and emilia built `--cold`, writing
+    // `.botopinkbuild/analysis/` and reading it, compared byte for byte on
+    // every target their suites declare (`analysis_equivalence.sh`); also a
+    // `test-cli` script, this step runs it alone.
+    const analysis_equivalence_run = cliScript(b, "analysis_equivalence.sh");
+    const analysis_equivalence_step = b.step("test-analysis-equivalence", "Build real libraries' consumers cold, writing and reading level B, and compare their output");
+    analysis_equivalence_step.dependOn(&analysis_equivalence_run.step);
 
     // ── compiler-web: compiler-core for the browser (front 18 step 5) ─────────
     // `zig build compiler-web` → zig-out/web/{botopink.wasm, glue.js, index.html}.

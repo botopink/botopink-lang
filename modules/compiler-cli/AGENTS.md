@@ -77,6 +77,14 @@ compiler-cli/
 │   │                          rewritten (its inode), a changed byte writes anew;
 │   │                          an entry `check` wrote gets its CODE from the next
 │   │                          build (larger, once), read after, the same bytes
+│   └── analysis_equivalence.sh ← level B over real libraries (144 B-60, guard 2,
+│   │                          `test-analysis-equivalence`): two conformance cells
+│   │                          each of jhonstart, rakun and emilia — the checkout's
+│   │                          siblings, the first ancestor's `repository/<lib>`,
+│   │                          copied to scratch with the other siblings linked —
+│   │                          built `--cold`, writing the library's entry and
+│   │                          reading it, the same bytes on every target the
+│   │                          suite declares; the library's entry must exist
 └── src/
     ├── AGENTS.md
     ├── main.zig         ← argv parser, subcommand dispatcher
@@ -100,9 +108,10 @@ zig build test          # includes the CLI unit tests (main.zig parsers / config
 
 # End-to-end scripts under tests/ spawn the CLI and runtimes, so they are NOT
 # part of `zig build test`. From the workspace root:
-zig build test-cli      # all six scripts, in order, against the installed CLI
+zig build test-cli      # all seven scripts, in order, against the installed CLI
 zig build test-backends # backend_exec.sh alone
 zig build test-closure-invariant # closure_invariant.sh alone (also in test-cli)
+zig build test-analysis-equivalence # analysis_equivalence.sh alone (also in test-cli)
 
 # Or directly (each builds the CLI unless BOTOPINK_SKIP_BUILD=1 is set;
 # cli_contract.sh also takes BOTOPINK_BIN=<binary> and BPMP_BIN=<bpmp> to test another build):
@@ -112,6 +121,7 @@ bash modules/compiler-cli/tests/code_cache.sh        # the code cache and worksp
 bash modules/compiler-cli/tests/backend_exec.sh      # the wasm core module's --invoke main
 bash modules/compiler-cli/tests/closure_invariant.sh # a library's output under two consumers (509 (2))
 bash modules/compiler-cli/tests/level_b.sh           # level B: cold, writing and reading builds the same bytes
+bash modules/compiler-cli/tests/analysis_equivalence.sh # level B over jhonstart, rakun and emilia cells
 ```
 
 > **Every assertion is hard** — there are no pinned reds, and a missing runtime
