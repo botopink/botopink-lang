@@ -1062,6 +1062,13 @@ it). Read through the bare name (`fieldTypeIn` drops the `?`), `F(x: null)`
 stored a `0.0` cell and `f.x` loaded the `f64` into `$__print_opt_f64`, which
 validation refused. `conformance/modules/record_optional_float_field`.
 
+A `?Place` over an enum with a payload variant is the variant's tagged cell or
+`0`, and prints through `$__print_opt_tagged` (`optPayloadEnumOf`: a local, a
+field, a call); the integer printer answered the cell's address and `null` as
+`0`. A leading-dot unit variant names its enum's descriptor (`dotIdent`): with
+the enum unnamed it carried descriptor `0` and printed `R(q: )`.
+`conformance/modules/optional_payload_enum_value`.
+
 ## Two run-time rules this backend implements first (2026-09-19)
 
 **No loop has a value** ([decision 105](../../../../../../../specs/1.0.10-beta/decisions-taken.md),

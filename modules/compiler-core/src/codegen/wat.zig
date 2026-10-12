@@ -3854,6 +3854,16 @@ const Emitter = struct {
         return if (enumHasPayload(variants)) t.named else null;
     }
 
+    /// The enum with a payload variant whose `?` `e` is declared — a local,
+    /// a field read (`r.q` of `R(q: ?Place)`), a call; null otherwise.
+    fn optPayloadEnumOf(self: *Emitter, e: ast.Expr) ?[]const u8 {
+        const t = self.typeRefOf(e) orelse return null;
+        if (t != .optional or t.optional.* != .named) return null;
+        const n = t.optional.named;
+        const variants = self.enums.get(n) orelse return null;
+        return if (enumHasPayload(variants)) n else null;
+    }
+
     fn isTaggedValue(self: *Emitter, e: ast.Expr) bool {
         if (self.recordTypeOfExpr(e)) |rt| return self.records.contains(rt);
         switch (e) {
@@ -6564,7 +6574,17 @@ const Emitter = struct {
                     // `.Variant` — type inferred from context. Emit the variant
                     // tag if the name uniquely identifies a unit variant.
                     if (self.findVariant(name)) |fv| {
-                        try self.emitUnitVariant(fv.variants, fv.tag, "", name);
+                        // The enum that declares it names the variant's
+                        // descriptor: with none, a unit variant of an enum
+                        // with payloads carried descriptor `0`, and
+                        // `R(q: .Here)` into a `?Place` field printed
+                        // `R(q: )`.
+                        const ename: []const u8 = if (!enumHasPayload(fv.variants)) "" else blk: {
+                            var it = self.enums.iterator();
+                            while (it.next()) |entry| if (entry.value_ptr.*.ptr == fv.variants.ptr) break :blk entry.key_ptr.*;
+                            break :blk "";
+                        };
+                        try self.emitUnitVariant(fv.variants, fv.tag, ename, name);
                     } else {
                         return self.refuse(id.loc, "`.{s}` names no variant of an enum this program declares", .{name});
                     }
@@ -6978,6 +6998,14 @@ const Emitter = struct {
         // — is a tagged cell carrying its variant's descriptor. Neither
         // `namedShapeOf` nor `isTaggedValue` reads a declared type, and the
         // numeric printer answered the cell's address.
+        // A `?Place` of such an enum (a local, `r.q`): the cell or `0`, which
+        // `$__print_opt_tagged` prints `null`; through the integer printer it
+        // answered the cell's address.
+        if (self.optPayloadEnumOf(arg) != null) {
+            try self.lowerCoerced(arg, "i32");
+            try self.emit(self.builder().helper(if (last) .print_opt_tagged else .print_opt_tagged_raw));
+            return;
+        }
         if (self.payloadEnumOfName(arg) != null) {
             try self.lowerCoerced(arg, "i32");
             try self.emit(self.builder().helper(if (last) .print_tagged else .print_tagged_raw));

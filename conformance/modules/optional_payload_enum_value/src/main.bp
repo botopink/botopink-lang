@@ -1,0 +1,40 @@
+//// An optional of an enum with a payload variant (`?Place`) holds a variant
+//// or nothing — a local, a record's field, a function's parameter and
+//// result — and prints as the variant or `null`. A leading dot where a
+//// `?Place` is expected names `Place`'s variant (`.Here` is `Place.Here`).
+//// wasm printed a present value's address and an absent one as `0`;
+//// unqualified, `.Here` was a bare `Here` on commonJS (`ReferenceError`),
+//// the atom `'Here'` on beam and `R(q: )` on wasm.
+
+type Place {
+    Here,
+    There(n: i32),
+}
+
+type R(q: ?Place)
+
+fn show(q: ?Place) -> ?Place {
+    return q;
+}
+
+pub fn main() {
+    val p: ?Place = Place.There(n: 2);
+    @print(p);
+    val h: ?Place = Place.Here;
+    @print(h);
+    val e: ?Place = null;
+    @print(e);
+    val d: ?Place = .Here;
+    @print(d);
+    @print(show(.Here));
+    @print(show(null));
+    val r = R(q: .Here);
+    @print(r);
+    @print(r.q);
+    val s = R(q: Place.There(n: 5));
+    @print(s);
+    @print(s.q);
+    val t = R(q: null);
+    @print(t);
+    @print(t.q);
+}

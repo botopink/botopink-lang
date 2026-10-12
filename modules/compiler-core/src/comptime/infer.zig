@@ -15053,7 +15053,10 @@ fn isLeadingDotCall(c: ast.CallExprOf(.untyped)) bool {
 /// called `variant` (front 15 handover, `.Circle(radius: 1)`).
 fn expectedEnumDeclaring(env: *Env, variant: []const u8) ?[]const u8 {
     const exp = env.expectedType orelse return null;
-    const d = exp.deref();
+    // A `?Place` position expects a `Place` (or nothing): `.Here` is
+    // `Place.Here` there too. Unqualified, commonJS emitted a bare `Here`
+    // (`ReferenceError`) and beam printed the atom `'Here'`.
+    const d = if (optionalInner(exp)) |inner| inner.deref() else exp.deref();
     if (d.* != .named) return null;
     const td = env.lookupTypeDef(d.named.name) orelse return null;
     if (td != .enum_) return null;

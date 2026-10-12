@@ -1283,7 +1283,9 @@ asks the question its position has:
   rewrite). A section type is an enum too, so `val b: Token.Layout.Break = .Zeta;` resolves the
   section leaf; with no expectation a section leaf is refused naming its section
   (`sectionOwningLeaf`) rather than reported unbound. The right side of `==` / `!=` expects the
-  left side's type.
+  left side's type. A `?Place` position expects a `Place`: `.Here` there is `Place.Here` (a
+  `val`'s annotation, a field, a parameter); unqualified it was a bare `Here` on commonJS
+  (`ReferenceError`) and the atom `'Here'` on beam (`modules/optional_payload_enum_value`).
 - **Bare, with several claimants** — `Env.variantClaims` lists every enum declaring a name; a use
   that reaches a claimant's constructor through the flat table while two or more claim it is
   refused, naming them (`refuseAmbiguousVariant`, decision 67). A name that is also a type or a
