@@ -1,8 +1,7 @@
 //// 1.0.12-beta `1-botopink-lang/144` B-00k (decisions 434 (5), 441, 443) —
 //// a text computed at comptime is std-wasm's, whatever the build's target:
 //// one comptime runtime, so the four targets print one answer. A float's
-//// text is OTP's (`5.0`, `1.0e21`, `1.0e-7` — commonJS's own program prints
-//// `5`, `1e+21`, `1e-7`, which a `comptime` never does), `trim` keeps a
+//// text is OTP's (`5.0`, `1.0e21`, `1.0e-7`, as every target's own program prints it), `trim` keeps a
 //// NBSP (std-wasm's set: space, tab, LF, CR, VT, FF), and case mapping is
 //// OTP's over all of Unicode, the word-final sigma included (`ΟΔΟΣ` lowers
 //// to `οδοσ`, where a JS engine answers `οδος`).

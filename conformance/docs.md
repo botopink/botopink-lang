@@ -730,7 +730,7 @@ true, false    // bool
 ```
 
 A template is a `string` whatever its parts: a template whose only part is a
-hole (`"${2.5}"`) is the hole written out as text, a `string` as a `val`, as an
+hole (`"${5.0}"`) is the hole written out as text, a `string` as a `val`, as an
 array element and as an operand of `+`.
 
 <!-- example: modules/interpolation_single_float_hole -->
@@ -2185,10 +2185,16 @@ std-wasm's — the text of erlang, beam and the comptime: a float is OTP's
 `5.0.toString()` are `5.0`, `1e21` is `1.0e21`, `0.000001` is `1.0e-6`; `NaN`,
 `Infinity`, `-Infinity`, which only a wasm program's arithmetic makes, are
 those words), and `trim` removes space, tab, LF, CR, VT and FF (a no-break
-space stays). A wasm program and its own comptime agree. commonJS prints with
-the JS engine and keeps its text (`5`, `1e+21`).
+space stays). A wasm program and its own comptime agree. commonJS writes the
+same text through the helper `@print` shares (`5.0`, `1.0e21`).
 
 <!-- example: modules/float_text_and_trim -->
+
+**A float written as text keeps its decimal part on every target**, commonJS
+included (144 B-78): in a template hole, through `toString()`, and beside a
+string in a `+`.
+
+<!-- example: modules/float_text_everywhere -->
 
 | Adapter | Signature | Answers |
 |---|---|---|

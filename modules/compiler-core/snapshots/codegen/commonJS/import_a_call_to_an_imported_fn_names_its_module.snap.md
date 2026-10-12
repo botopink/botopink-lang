@@ -40,6 +40,15 @@ pub fn main() {
 
 ----- JAVASCRIPT -- b.js
 ```javascript
+function __bp_f64(v) {
+    if (!Number.isFinite(v)) { return String(v); }
+    const s = Object.is(v, -0) ? "-0" : String(v);
+    const i = s.indexOf("e");
+    if (i < 0) { return s.indexOf(".") < 0 ? s + ".0" : s; }
+    const m = s.slice(0, i);
+    return (m.indexOf(".") < 0 ? m + ".0" : m) + "e" + s.slice(i + 1).replace("+", "");
+}
+
 function __bp_show(v, s, top, a) {
     if ((typeof v === "string")) {
         a.push(top ? v : (("\"" + Array.from(v, (c) => ((c === "\"") || (c === "\\")) ? ("\\" + c) : (c === "\n") ? "\\n" : (c === "\r") ? "\\r" : (c === "\t") ? "\\t" : c).join("")) + "\""));
@@ -50,7 +59,7 @@ function __bp_show(v, s, top, a) {
         return "%s";
     }
     if (((typeof v === "number") && (s === "f"))) {
-        a.push(Number.isInteger(v) ? v.toFixed(1) : String(v));
+        a.push(__bp_f64(v));
         return "%s";
     }
     if (Array.isArray(v)) {

@@ -93,7 +93,8 @@ behavior Float extends Number {
     // `short` is the shortest text that reads back as the same float (`1.5`).
     // On wasm, std-wasm's text (decisions 440, 441): the erlang target's,
     // and the one a wasm program writes for a float anywhere — `@print`,
-    // `"${x}"`. commonJS keeps the JS engine's.
+    // `"${x}"`. commonJS writes the same text through its `__bp_f64` helper
+    // (a float receiver's `toString()` is lowered there, not by this binding).
     #[@External.Erlang("float_to_binary($0, [short])")]
     #[@External.Node("toString")]
     #[@External.Wasm("std:number.floatToString")]

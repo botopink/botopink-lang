@@ -137,15 +137,22 @@ pub const Helper = enum {
     str_index_of,
     /// `String.lastIndexOf(sub)`: the codepoint index of the last match, `-1`.
     str_last_index_of,
+    /// The text of an `f64` (decision 8 § 7, the numbers' text): always a
+    /// decimal part, `5.0`, `-0.5`, `1.0e21`, `1.0e-7` — what erlang, beam and
+    /// wasm answer. JavaScript has one number type, so a call site that types
+    /// a value `f64` (`@print`'s shape `"f"`, a template hole, `toString`, a
+    /// `+` with a string) asks for it.
+    f64_text,
 };
 
 /// Emission order of the helpers a module uses.
-pub const order = [_]Helper{ .assert_fatal, .str_surrogate, .str_count, .string_char_at, .str_length, .str_index_of, .str_last_index_of, .array_at, .range_from, .structural_eq, .show, .print, .print_as, .try_unwrap, .host_task, .adopt, .yield_step, .int_check, .wide_norm, .wide_add, .wide_sub, .wide_mul, .wide_div, .wide_mod, .wide_neg, .big_div, .big_mod };
+pub const order = [_]Helper{ .assert_fatal, .str_surrogate, .str_count, .string_char_at, .str_length, .str_index_of, .str_last_index_of, .array_at, .range_from, .structural_eq, .f64_text, .show, .print, .print_as, .try_unwrap, .host_task, .adopt, .yield_step, .int_check, .wide_norm, .wide_add, .wide_sub, .wide_mul, .wide_div, .wide_mod, .wide_neg, .big_div, .big_mod };
 
 /// The helpers `h`'s body calls, which a module calling `h` carries too.
 pub fn requires(h: Helper) []const Helper {
     return switch (h) {
         .wide_add, .wide_sub, .wide_mul, .wide_div, .wide_mod, .wide_neg => &.{.wide_norm},
+        .show => &.{.f64_text},
         .string_char_at, .str_length => &.{.str_surrogate},
         .str_index_of, .str_last_index_of => &.{ .str_surrogate, .str_count },
         else => &.{},
@@ -153,7 +160,7 @@ pub fn requires(h: Helper) []const Helper {
 }
 
 /// The receiver family of a primitive method call, as inference recorded it.
-pub const Receiver = enum { string, array, other };
+pub const Receiver = enum { string, array, float, other };
 
 /// The helper that replaces the native method `method` on a `receiver`
 /// value, or null when the native method (or the annotation's template)
@@ -165,8 +172,10 @@ pub fn forMethod(receiver: Receiver, method: []const u8, argc: usize) ?Helper {
     if (argc == 1 and std.mem.eql(u8, method, "at")) return switch (receiver) {
         .string => .string_char_at,
         .array => .array_at,
-        .other => null,
+        .float, .other => null,
     };
+    // The numbers' text: a float's `toString` keeps its decimal part.
+    if (receiver == .float and argc == 0 and std.mem.eql(u8, method, "toString")) return .f64_text;
     // Decision 320 — a string index counts codepoints: the native `length`,
     // `indexOf` and `lastIndexOf` count UTF-16 units.
     if (receiver == .string) {
@@ -207,6 +216,7 @@ pub fn name(h: Helper) []const u8 {
         .str_length => "__bp_str_length",
         .str_index_of => "__bp_str_index_of",
         .str_last_index_of => "__bp_str_last_index_of",
+        .f64_text => "__bp_f64",
     };
 }
 
@@ -240,6 +250,7 @@ pub fn decl(h: Helper) ast.Stmt {
         .str_length => str_length,
         .str_index_of => strIndex("__bp_str_index_of", "indexOf"),
         .str_last_index_of => strIndex("__bp_str_last_index_of", "lastIndexOf"),
+        .f64_text => f64_text,
     };
 }
 
@@ -273,6 +284,19 @@ fn hFn(comptime fn_name: []const u8, comptime param_names: []const []const u8, c
     };
     return .{ .function = .{ .name = fn_name, .params = &ps, .body = .{ .stmts = body } } };
 }
+
+/// `function __bp_f64(v) { … }` — see `Helper.f64_text`: JavaScript's shortest
+/// text with a decimal part added where it has none (`5` → `5.0`, `1e+21` →
+/// `1.0e21`, `1e-7` → `1.0e-7`); `-0` keeps its sign; `NaN` and the infinities
+/// are `String(v)`'s.
+const f64_text: ast.Stmt = hFn("__bp_f64", &.{"v"}, &.{
+    hIf("!Number.isFinite(v)", &.{hRet("String(v)")}),
+    hConst(.const_, "s", "Object.is(v, -0) ? \"-0\" : String(v)"),
+    hConst(.const_, "i", "s.indexOf(\"e\")"),
+    hIf("i < 0", &.{hRet("s.indexOf(\".\") < 0 ? s + \".0\" : s")}),
+    hConst(.const_, "m", "s.slice(0, i)"),
+    hRet("(m.indexOf(\".\") < 0 ? m + \".0\" : m) + \"e\" + s.slice(i + 1).replace(\"+\", \"\")"),
+});
 
 /// `function __bp_wnorm(v, u, what) { … }` — see `Helper.wide_norm`.
 const wide_norm: ast.Stmt = hFn("__bp_wnorm", &.{ "v", "u", "what" }, &.{
@@ -657,7 +681,7 @@ fn typeofIs(comptime operand: *const ast.Expr, comptime what: []const u8) ast.Ex
     } };
 }
 
-/// `if ((typeof v === "number") && (s === "f")) { a.push(Number.isInteger(v) ? v.toFixed(1) : String(v)); return "%s"; }`
+/// `if ((typeof v === "number") && (s === "f")) { a.push(__bp_f64(v)); return "%s"; }`
 ///
 /// Decision 8 § 7 — an `f64` always carries its decimal part, on every backend.
 /// JavaScript has one number type, so the call site says which values are
@@ -665,11 +689,7 @@ fn typeofIs(comptime operand: *const ast.Expr, comptime what: []const u8) ast.Ex
 /// types as `f64`.
 const float_branch: ast.Stmt = .{ .if_ = .{
     .cond = .{ .binary = .{ .op = "&&", .lhs = &typeofIs(&v, "number"), .rhs = &eq(&sh, "f") } },
-    .then = &pushAndReturn(.{ .ternary = .{
-        .cond = &callOn(&.{ .name = "Number" }, "isInteger", &.{v}),
-        .then = &callOn(&v, "toFixed", &.{.{ .number = "1" }}),
-        .else_ = &.{ .call = .{ .callee = &.{ .name = "String" }, .args = &.{v} } },
-    } }, "%s", 1),
+    .then = &pushAndReturn(.{ .call = .{ .callee = &.{ .name = "__bp_f64" }, .args = &.{v} } }, "%s", 1),
 } };
 
 /// `if ((typeof v === "bigint")) { a.push(String(v)); return "%s"; }`

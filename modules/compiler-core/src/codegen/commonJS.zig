@@ -4007,6 +4007,10 @@ const Emitter = struct {
                 // operand calls its type's equality (`buildEquality`); a
                 // primitive one keeps the instruction below.
                 if (bin.op == .eq or bin.op == .ne) if (try self.buildEquality(bin)) |cmp| return cmp;
+                // The numbers' text — a `string + f64` (and every template hole,
+                // which inference desugars to one) writes the float with its
+                // decimal part, through the helper `@print` shares.
+                if (bin.op == .add) if (try self.floatConcat(bin)) |cat| return cat;
                 // Decision 264 — an integer result outside its type aborts.
                 if (self.intKindAt(bin.loc)) |k| switch (bin.op) {
                     .add, .sub, .mul, .div, .mod => {
@@ -4784,6 +4788,8 @@ const Emitter = struct {
                 .ident => |n| self.print_shapes.get(n),
                 else => null,
             },
+            // `-3.0`: a negation keeps its operand's type.
+            .unaryOp => |un| if (un.op == .neg) self.printShape(un.expr.*) else null,
             // `d - 1.0`, `0.0 - d`: arithmetic with a float operand is a
             // float, and prints as one (`-1.5`, `0.0` — not `0`).
             .binaryOp => |bin| switch (bin.op) {
@@ -4893,6 +4899,26 @@ const Emitter = struct {
             }
         }
         return found;
+    }
+
+    /// `s + f` / `f + s` where one operand is statically a `string` and the
+    /// other an `f64` (`printShape`): the float goes through `__bp_f64`, so
+    /// `"${5.0}"` is `5.0` as on erlang, beam and wasm. Null for any other `+`.
+    fn floatConcat(self: *Emitter, bin: anytype) anyerror!?js.Expr {
+        const l_str = try self.isStringTyped(bin.lhs.*);
+        const r_str = try self.isStringTyped(bin.rhs.*);
+        if (l_str == r_str) return null;
+        const float_side = if (l_str) bin.rhs.* else bin.lhs.*;
+        if (!try self.isFloatShaped(float_side)) return null;
+        const lhs = try self.buildExpr(bin.lhs.*);
+        const rhs = try self.buildExpr(bin.rhs.*);
+        const text = try self.b.call(self.helper(.f64_text), &.{if (l_str) rhs else lhs});
+        return try self.b.binary("+", if (l_str) lhs else text, if (l_str) text else rhs);
+    }
+
+    fn isStringTyped(self: *Emitter, e: ast.Expr) anyerror!bool {
+        const t = (try self.staticTypeOf(e)) orelse return false;
+        return t == .named and std.mem.eql(u8, t.named, "string");
     }
 
     fn isFloatShaped(self: *Emitter, e: ast.Expr) anyerror!bool {
@@ -5635,6 +5661,7 @@ const Emitter = struct {
         const receiver: jsPrelude.Receiver = switch (kind) {
             .string => .string,
             .array => .array,
+            .float => .float,
             else => .other,
         };
         return jsPrelude.forMethod(receiver, cc.callee, cc.args.len);

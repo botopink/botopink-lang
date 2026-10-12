@@ -1,8 +1,7 @@
 //// Decision 441 (144 B-00e; its cell waited on B-00k for decision 457's
 //// per-target answer, 144 B-29 step H): a float's text at run time is
 //// std-wasm's on wasm, which is erlang's and beam's — `5.0` in a template,
-//// `1.0e21`, `1.0e-7`. commonJS prints with the JS engine and departs
-//// (`5`, `1e+21`, `1e-7`).
+//// `1.0e21`, `1.0e-7` — and commonJS spells them the same (144 B-78).
 
 pub fn main() {
     val five = 5.0;

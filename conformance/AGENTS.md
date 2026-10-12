@@ -1483,7 +1483,7 @@ target has no answer at all, audited on every check — § Narrowing a cell.
 **The per-target answers B-00k left waiting** (144 B-29 step H; decisions 441, 443, 444 — each a pin:
 the behaviour landed with B-00e / B-00g and no cell held it, because one `.out` could not hold two
 answers): `modules/float_text_at_run_time` (`"${5.0}"`, `1.0e21`, `1.0e-7` print `5.0`, `1.0e21`,
-`1.0e-7` on erlang, beam and wasm; commonJS departs with the JS engine's `5`, `1e+21`, `1e-7`),
+`1.0e-7` on every target, commonJS since 144 B-78),
 `modules/string_trim_keeps_nbsp` (`trim` keeps a NBSP; commonJS's engine trims it),
 `modules/string_lower_final_sigma` (`ΟΔΟΣ` lowers to `οδοσ`; commonJS's engine to `οδος`) and
 `modules/float_nan_infinity_words` (`Infinity`, `-Infinity`, `NaN` on commonJS and wasm; erlang and

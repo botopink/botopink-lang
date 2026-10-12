@@ -10,5 +10,5 @@ The reference text this cell shows (from `conformance/docs.md`, § Host bindings
 > `5.0.toString()` are `5.0`, `1e21` is `1.0e21`, `0.000001` is `1.0e-6`; `NaN`,
 > `Infinity`, `-Infinity`, which only a wasm program's arithmetic makes, are
 > those words), and `trim` removes space, tab, LF, CR, VT and FF (a no-break
-> space stays). A wasm program and its own comptime agree. commonJS prints with
-> the JS engine and keeps its text (`5`, `1e+21`).
+> space stays). A wasm program and its own comptime agree. commonJS writes the
+> same text through the helper `@print` shares (`5.0`, `1.0e21`).

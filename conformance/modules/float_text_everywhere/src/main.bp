@@ -1,0 +1,19 @@
+//// An `f64` written as text keeps its decimal part on every target (decision
+//// 8 § 7, the numbers' text): in a template hole, through `toString()`, and
+//// beside a string in a `+`. commonJS has one number type, so it spells the
+//// float through the helper `@print` shares (144 B-78); before it, `"${5.0}"`
+//// was `5` there.
+
+pub fn main() {
+    val five = 5.0;
+    @print("${5.0}");
+    @print(5.0.toString());
+    @print("x" + 2.0);
+    @print("${1.0e21}");
+    @print("${-3.0}");
+    @print("${0.25}");
+    @print("${-0.5}");
+    @print("v=${five}");
+    @print(five.toString());
+    @print("a" + five + "b");
+}

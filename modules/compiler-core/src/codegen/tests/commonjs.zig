@@ -119,3 +119,39 @@ test "js: a library's enum class is its closure's alone, whatever its consumer d
     // and the `case` destructured `{ $0: side }`.
     try h.assertLibrarySameUnder(std.testing.allocator, .commonJS, &.{ "shelf", "rival" }, "shelf", &h.closure_plain, &h.closure_crowded);
 }
+
+// 144 B-78: JavaScript has one number type, so a float written as text lost its
+// decimal part (`"${5.0}"` was `5`, `1e21` was `1e+21`). A template hole, a
+// `string + f64` and `toString()` on a float now go through `__bp_f64`, the
+// formatter `@print` shares: erlang, beam and wasm's text.
+test "js: f64 text ---- a template hole, toString and a string + keep the decimal part" {
+    try h.assertJsRunLog(std.testing.allocator,
+        \\pub fn main() {
+        \\    val five = 5.0;
+        \\    @print("${5.0}");
+        \\    @print(5.0.toString());
+        \\    @print("x" + 2.0);
+        \\    @print("${1.0e21}");
+        \\    @print("${-3.0}");
+        \\    @print("${0.25}");
+        \\    @print("v=${five}");
+        \\    @print(five.toString());
+        \\    @print(1.0e-7);
+        \\    @print(7);
+        \\    @print("${7}");
+        \\}
+    ,
+        \\5.0
+        \\5.0
+        \\x2.0
+        \\1.0e21
+        \\-3.0
+        \\0.25
+        \\v=5.0
+        \\5.0
+        \\1.0e-7
+        \\7
+        \\7
+        \\
+    );
+}
