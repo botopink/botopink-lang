@@ -36,9 +36,8 @@ compiler-cli/
 │   │                          (a second dependency, its own module and std
 │   │                          declaring `shelf`'s names again), every file of
 │   │                          `shelf` — `.js`, `.d.ts`, `.erl`, `.S`, `.wat` —
-│   │                          compared byte for byte; `zig build
-│   │                          test-closure-invariant`, outside `test-cli` while
-│   │                          the defects it reports are open
+│   │                          compared byte for byte; in `test-cli`, and
+│   │                          alone as `zig build test-closure-invariant`
 │   ├── closure_invariant/   ← its fixture: `shelf`, `rival`, `plain`, `crowded`
 │   ├── test_tooling.sh      ← `botopink test` behaviours: empty test, --filter
 │   │                          (multi / none), assert message, a failing `try`, the
@@ -90,7 +89,7 @@ zig build test          # includes the CLI unit tests (main.zig parsers / config
 # part of `zig build test`. From the workspace root:
 zig build test-cli      # all five scripts, in order, against the installed CLI
 zig build test-backends # backend_exec.sh alone
-zig build test-closure-invariant # closure_invariant.sh alone (not in test-cli)
+zig build test-closure-invariant # closure_invariant.sh alone (also in test-cli)
 
 # Or directly (each builds the CLI unless BOTOPINK_SKIP_BUILD=1 is set;
 # cli_contract.sh also takes BOTOPINK_BIN=<binary> and BPMP_BIN=<bpmp> to test another build):

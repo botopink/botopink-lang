@@ -642,12 +642,14 @@ pub fn build(b: *std.Build) void {
     // (BOTOPINK_SKIP_BUILD=1): the command contract (`cli_contract.sh`), the
     // `botopink test` behaviours (`test_tooling.sh`), the code cache of the
     // dependencies' compiled modules and the workspace a cell inherits from
-    // (`code_cache.sh`, decisions 509, 512), and the wasm core module's
-    // `--invoke main` (`backend_exec.sh`, also `test-backends`). The language
+    // (`code_cache.sh`, decisions 509, 512), the wasm core module's
+    // `--invoke main` (`backend_exec.sh`, also `test-backends`), and decision
+    // 509 (2)'s closure invariant (`closure_invariant.sh`, also
+    // `test-closure-invariant`). The language
     // half these scripts held — numeric, records, the `mod` tree, mutual
     // recursion, `assert` / `try` — is conformance cells (144 B-29 step H). The
     // scripts run one after another — they share `zig-out/` and fixture `out/` dirs.
-    const cli_scripts = [_][]const u8{ "cli_contract.sh", "test_tooling.sh", "code_cache.sh", "backend_exec.sh" };
+    const cli_scripts = [_][]const u8{ "cli_contract.sh", "test_tooling.sh", "code_cache.sh", "backend_exec.sh", "closure_invariant.sh" };
     const test_cli_step = b.step("test-cli", "Run every modules/compiler-cli/tests/*.sh against the installed CLI");
     var prev_cli_script: ?*std.Build.Step = null;
     for (cli_scripts) |script| {
@@ -659,8 +661,8 @@ pub fn build(b: *std.Build) void {
 
     // `zig build test-closure-invariant` — decision 509 (2)'s invariant (144
     // B-60): one library built under two consumers emits the same files, byte
-    // for byte, on every target (`closure_invariant.sh`). Its own step, not a
-    // `test-cli` script, while the defects it reports are open 144 rows.
+    // for byte, on every target (`closure_invariant.sh`); also a `test-cli`
+    // script, this step runs it alone.
     const closure_invariant_run = cliScript(b, "closure_invariant.sh");
     const closure_invariant_step = b.step("test-closure-invariant", "Build one library under two consumers and compare its output on every target");
     closure_invariant_step.dependOn(&closure_invariant_run.step);
