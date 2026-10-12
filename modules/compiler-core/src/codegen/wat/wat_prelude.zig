@@ -147,23 +147,25 @@ const print_tagged_raw = func("__print_tagged_raw", &.{"v"}, null, i32s(&.{ "d",
     } ++ putPair(':', ' ') ++ [_]Instr{
         call("__write_bytes"),
     } ++ slot("b", "i") ++ [_]Instr{
-        c32(4),    op("sub"), load(0),
+        c32(4),   op("sub"), load(0),
         set("s"),
         // `G s i` — a field written as the declaration's type parameter. Its
         // construction site stored, after the fields, a mask whose bit `i` says
         // the argument was a string: the `s` shape then, the `i` one if not.
-        get("p"),  load8(0),  c32('G'), op("eq"),
+        get("p"),  load8(0),
+        c32('G'), op("eq"),
         whenElse(&.{
-            get("s"), get("p"), c32(2), op("add"),
-            get("b"), get("k"), c32(4), op("mul"), op("add"), load(0),
-            get("i"), op("shr_u"), c32(1), op("and"), op("sub"),
-            c32(1),   call("__print_shaped_raw"), .drop,
-            get("p"), c32(3), op("add"), set("p"),
+            get("s"),                   get("p"),  c32(2),    op("add"),
+            get("b"),                   get("k"),  c32(4),    op("mul"),
+            op("add"),                  load(0),   get("i"),  op("shr_u"),
+            c32(1),                     op("and"), op("sub"), c32(1),
+            call("__print_shaped_raw"), .drop,     get("p"),  c32(3),
+            op("add"),                  set("p"),
         }, &.{
             get("s"), get("p"), c32(1), call("__print_shaped_raw"), set("p"),
         }),
-        get("i"),  c32(1),
-        op("add"), set("i"),  again,
+        get("i"), c32(1),    op("add"),
+        set("i"), again,
     })),
     get("k"),                                                                               when(&(putByte(')') ++ [_]Instr{call("__write_bytes")})),
 });
@@ -1381,10 +1383,10 @@ const print_shaped_raw_body = [_]Instr{
     // `go` = 0 the call only measures the two shapes.
     get("c"),                                                                                                   c32('R'),                                                                                                   op("eq"),
     when(&([_]Instr{
-        get("sh"), c32(1),  op("add"), set("e"),
-        c32(0),    get("e"), c32(0),   call("__print_shaped_raw"), set("p"),
-        c32(0),    get("p"), c32(0),   call("__print_shaped_raw"), set("n"),
-        get("go"),
+        get("sh"),                  c32(1),   op("add"), set("e"),
+        c32(0),                     get("e"), c32(0),    call("__print_shaped_raw"),
+        set("p"),                   c32(0),   get("p"),  c32(0),
+        call("__print_shaped_raw"), set("n"), get("go"),
         when(&([_]Instr{
             get("v"), load(0),
             whenElse(
@@ -1392,7 +1394,7 @@ const print_shaped_raw_body = [_]Instr{
                 &(putText("Ok(") ++ [_]Instr{ get("v"), load(4), get("e"), c32(1), call("__print_shaped_raw"), .drop }),
             ),
         } ++ putText(")"))),
-        get("n"), ret,
+        get("n"),                   ret,
     })),
     get("c"),                                                                                                   c32('('),                                                                                                   op("eq"),
     when(&([_]Instr{
