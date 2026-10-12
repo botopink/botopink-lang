@@ -84,6 +84,10 @@ compiler-cli/
 │   │                          reads the `shelf` entry `crowded` wrote; an entry
 │   │                          read by `build`, `check` and `test` is never
 │   │                          rewritten (its inode), a changed byte writes anew;
+│   │                          across invocations a file rewritten with the same
+│   │                          bytes reads the entry (the key is by content),
+│   │                          another target leaves it, a truncated one is
+│   │                          discarded and written whole again (as `--cold`);
 │   │                          an entry `check` wrote gets its CODE from the next
 │   │                          build (larger, once), read after, the same bytes
 │   └── analysis_equivalence.sh ← level B over real libraries (144 B-60, guard 2,

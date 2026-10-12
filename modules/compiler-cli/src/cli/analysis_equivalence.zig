@@ -16,8 +16,9 @@
 /// reads — every emitted file the same bytes on every target, over the closure
 /// invariant's consumers (one consumer reading the library entry the other
 /// wrote); an unchanged library is read back and not analysed again
-/// (`Store.stats`); a changed byte of it, another compiler key, another target
-/// and a truncated entry analyse it again.
+/// (`Store.stats`), its file rewritten with the same bytes included; a changed
+/// byte of it, a changed checker or entry format source (the compiler key),
+/// another target and a truncated entry analyse it again.
 ///
 /// S4 — the entry's CODE: a build that writes stages every entry again with
 /// its modules' units, one that reads emits no dependency module (every
@@ -37,6 +38,7 @@ const libs = @import("./libs.zig");
 const code_cache = @import("./code_cache.zig");
 const analysis_store = @import("./analysis_store.zig");
 const test_scratch = @import("test_scratch");
+const source_stamp = @import("source_stamp");
 
 const entry = bp.analysis_entry;
 const codegen = bp.codegen;
@@ -514,7 +516,7 @@ fn scratchFixture(arena: std.mem.Allocator, io: std.Io, comptime name: []const u
     return dir;
 }
 
-test "level B: an unchanged library is not analysed again; a changed byte of it, another target and a truncated entry are" {
+test "level B: an unchanged library is not analysed again, its file rewritten with the same bytes included; a changed byte of it, another target and a truncated entry are" {
     var arena_inst = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena_inst.deinit();
     const arena = arena_inst.allocator();
@@ -561,9 +563,21 @@ test "level B: an unchanged library is not analysed again; a changed byte of it,
     try testing.expectEqual(countOf(&fx, "") + shelf_n, truncated.stats.modules_analysed);
     try testing.expectEqualSlices(u8, whole, try std.Io.Dir.cwd().readFileAlloc(io, shelf_entry, arena, .unlimited));
 
-    // A changed byte of shelf: a new key, shelf analysed again, its entry replaced.
+    // The same bytes written again (the file's time moves, its content does
+    // not): the key is by content — shelf read back, not analysed.
     const tools = try std.fs.path.join(arena, &.{ dir, "shelf", "src", "tools.bp" });
     const text = try std.Io.Dir.cwd().readFileAlloc(io, tools, arena, .unlimited);
+    try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = tools, .data = text });
+    var same_fx = try Fixture.loadAt(gpa, arena, io, plain_dir, entryTarget(erl));
+    defer same_fx.free(gpa);
+    try testing.expectEqualSlices(u8, &fx.keys.get("shelf").?, &same_fx.keys.get("shelf").?);
+    var same = try invoke(gpa, io, &same_fx, erl, root, same_fx.keys);
+    same.deinit(gpa);
+    try testing.expectEqual(countOf(&fx, ""), same.stats.modules_analysed);
+    try testing.expectEqual(std_read + shelf_n, same.stats.modules_read);
+    try testing.expectEqual(@as(usize, 0), same.stats.entries_staged);
+
+    // A changed byte of shelf: a new key, shelf analysed again, its entry replaced.
     try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = tools, .data = try std.mem.concat(arena, u8, &.{ text, "\n" }) });
     var changed_fx = try Fixture.loadAt(gpa, arena, io, plain_dir, entryTarget(erl));
     defer changed_fx.free(gpa);
@@ -575,7 +589,16 @@ test "level B: an unchanged library is not analysed again; a changed byte of it,
     try testing.expect(!std.mem.eql(u8, whole, try std.Io.Dir.cwd().readFileAlloc(io, shelf_entry, arena, .unlimited)));
 }
 
-test "level B: another compiler key reads nothing of the entry the first one wrote" {
+/// The compiler's part of the key on `target` over a checkout at `checkout`:
+/// what `build.zig` embeds as `build_stamp.partition_hash_<target>` (decision
+/// 249, `code_cache.compilerKey`), computed by the same function.
+fn compilerKeyOf(arena: std.mem.Allocator, io: std.Io, checkout: []const u8, target: []const u8) ![]const u8 {
+    var d = try std.Io.Dir.cwd().openDir(io, checkout, .{ .iterate = true });
+    defer d.close(io);
+    return try arena.dupe(u8, &(try source_stamp.partitionHash(testing.allocator, io, d, target)));
+}
+
+test "level B: a changed checker source or entry format source gives every entry a new key; the library is analysed again" {
     var arena_inst = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena_inst.deinit();
     const arena = arena_inst.allocator();
@@ -587,27 +610,52 @@ test "level B: another compiler key reads nothing of the entry the first one wro
     const root = try std.fs.path.join(arena, &.{ dir, "cache" });
     const erl: Variant = .{ .label = "erlang", .target = .erlang };
 
+    // A checkout in miniature: the checker (`comptime/infer.zig`) and the
+    // entry's format (`comptime/analysis_entry.zig`) are shared sources of
+    // every backend partition. Its compiler key before and after each changes.
+    const checkout = try std.fs.path.join(arena, &.{ dir, "checkout" });
+    const cwd = std.Io.Dir.cwd();
+    const infer = try std.fs.path.join(arena, &.{ checkout, "modules/compiler-core/src/comptime/infer.zig" });
+    const format = try std.fs.path.join(arena, &.{ checkout, "modules/compiler-core/src/comptime/analysis_entry.zig" });
+    try cwd.createDirPath(io, std.fs.path.dirname(infer).?);
+    try cwd.createDirPath(io, try std.fs.path.join(arena, &.{ checkout, std.fs.path.dirname(source_stamp.PARTITION).? }));
+    try cwd.writeFile(io, .{ .sub_path = try std.fs.path.join(arena, &.{ checkout, "build.zig" }), .data = "build" });
+    try cwd.writeFile(io, .{ .sub_path = try std.fs.path.join(arena, &.{ checkout, source_stamp.PARTITION }), .data = "erlang modules/compiler-core/src/codegen/erlang.zig\n" });
+    try cwd.writeFile(io, .{ .sub_path = infer, .data = "checker" });
+    try cwd.writeFile(io, .{ .sub_path = format, .data = "format" });
+    const c1 = try compilerKeyOf(arena, io, checkout, "erlang");
+    try cwd.writeFile(io, .{ .sub_path = infer, .data = "checker, changed" });
+    const c2 = try compilerKeyOf(arena, io, checkout, "erlang");
+    try cwd.writeFile(io, .{ .sub_path = format, .data = "format, changed" });
+    const c3 = try compilerKeyOf(arena, io, checkout, "erlang");
+    try testing.expect(!std.mem.eql(u8, c1, c2) and !std.mem.eql(u8, c2, c3) and !std.mem.eql(u8, c1, c3));
+
     var fx = try Fixture.loadAt(gpa, arena, io, try std.fs.path.join(arena, &.{ dir, "plain" }), entryTarget(erl));
     defer fx.free(gpa);
-    // shelf's key under two compilers (`closureKeyWith`): its files and
+    // shelf's key under each compiler (`closureKeyWith`): its files and
     // manifest the same, the compiler's part another.
-    const shelf_text = try std.Io.Dir.cwd().readFileAlloc(io, try std.fs.path.join(arena, &.{ shelf_dir, "botopink.json" }), arena, .unlimited);
+    const shelf_text = try cwd.readFileAlloc(io, try std.fs.path.join(arena, &.{ shelf_dir, "botopink.json" }), arena, .unlimited);
     var err: ?@import("manifest").Located = null;
     const m = try @import("manifest").parse(arena, shelf_text, "botopink.json", &err);
-    var keys_c1: std.StringHashMapUnmanaged([code_cache.KEY_HEX]u8) = .empty;
-    try keys_c1.put(arena, "shelf", try code_cache.closureKeyWith(arena, io, shelf_dir, m, &.{}, entryTarget(erl), "compiler-1"));
-    var keys_c2: std.StringHashMapUnmanaged([code_cache.KEY_HEX]u8) = .empty;
-    try keys_c2.put(arena, "shelf", try code_cache.closureKeyWith(arena, io, shelf_dir, m, &.{}, entryTarget(erl), "compiler-2"));
-    try testing.expect(!std.mem.eql(u8, &keys_c1.get("shelf").?, &keys_c2.get("shelf").?));
+    var keys: [3]std.StringHashMapUnmanaged([code_cache.KEY_HEX]u8) = .{ .empty, .empty, .empty };
+    for (&keys, [_][]const u8{ c1, c2, c3 }) |*k, c| {
+        try k.put(arena, "shelf", try code_cache.closureKeyWith(arena, io, shelf_dir, m, &.{}, entryTarget(erl), c));
+    }
 
-    var first = try invoke(gpa, io, &fx, erl, root, keys_c1);
+    var first = try invoke(gpa, io, &fx, erl, root, keys[0]);
     first.deinit(gpa);
-    var same_key = try invoke(gpa, io, &fx, erl, root, keys_c1);
+    var same_key = try invoke(gpa, io, &fx, erl, root, keys[0]);
     same_key.deinit(gpa);
     const shelf_n = countOf(&fx, "shelf");
+    try testing.expect(same_key.stats.modules_read >= shelf_n);
     const std_read = same_key.stats.modules_read - shelf_n;
-    var other_key = try invoke(gpa, io, &fx, erl, root, keys_c2);
-    other_key.deinit(gpa);
-    try testing.expectEqual(std_read, other_key.stats.modules_read);
-    try testing.expectEqual(@as(usize, 1), other_key.stats.entries_staged);
+    // The checker changed, then the format: each time nothing of shelf's
+    // entry is read, shelf is analysed again and its entry replaced.
+    for (keys[1..]) |k| {
+        var other_key = try invoke(gpa, io, &fx, erl, root, k);
+        other_key.deinit(gpa);
+        try testing.expectEqual(std_read, other_key.stats.modules_read);
+        try testing.expectEqual(countOf(&fx, "") + shelf_n, other_key.stats.modules_analysed);
+        try testing.expectEqual(@as(usize, 1), other_key.stats.entries_staged);
+    }
 }

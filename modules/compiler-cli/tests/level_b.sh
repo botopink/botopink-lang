@@ -10,14 +10,18 @@
 #   • an unchanged library's entry is read, never rewritten (its inode stays);
 #     `check` and `test` read it too; a changed byte of the library writes a
 #     new one;
+#   • across invocations: a file rewritten with the same bytes reads the
+#     entry (the key is by content), another target leaves it, a truncated
+#     entry is discarded and written whole again — the output as --cold's;
 #   • CODE (S4): an entry `check` wrote (no unit) is written again, larger, by
 #     the next build and read, not rewritten, by the ones after (with and
 #     without `--typescript`) — the same bytes as `--cold`;
 #   • the entries live under the workspace's cache root,
 #     `.botopinkbuild/analysis/<target>/<package>.bpa`, std's one per module
 #     under `std/`, `wasm` and `wasm.browser` apart.
-# The in-process twins (the counters of what was analysed and read, another
-# compiler key, a truncated entry) are `cli/analysis_equivalence.zig`'s tests.
+# The in-process twins (the counters of what was analysed and read, a changed
+# checker or format source, a truncated entry) are
+# `cli/analysis_equivalence.zig`'s tests.
 #
 # BOTOPINK_BIN points the script at another binary. Exit 0 = every behaviour held.
 
@@ -105,6 +109,7 @@ done
 # Read, not rewritten: the entry's inode survives a warm build, `check` and
 # `test`; a changed byte of shelf writes a new one.
 inode() { stat -c %i "$1" 2>/dev/null || stat -f %i "$1"; }
+size() { stat -c %s "$1" 2>/dev/null || stat -f %z "$1"; }
 entry="$ANALYSIS/erlang/shelf.bpa"
 before="$(inode "$entry")"
 build plain erlang out-again || true
@@ -125,13 +130,38 @@ build plain erlang out-changed || true
 [[ "$(inode "$entry")" != "$before" ]] || fail "erlang: a changed byte of shelf left its entry as it was"
 [[ "$failures" -eq 0 ]] && echo "  ✓ an unchanged library's entry is read by build, check and test, never rewritten; a changed byte writes a new one"
 
+# Across invocations, each a process of its own: a file of shelf written again
+# with the same bytes (its time moves) keeps the key — the entry is read, not
+# rewritten; a build for another target leaves erlang's entry as it is; a
+# truncated entry is discarded — shelf analysed again, its entry written whole
+# (the same bytes as before) and the output the same as --cold.
+miss_failures=$failures
+before="$(inode "$entry")"
+sleep 1
+cp "$WORK/shelf/src/tools.bp" "$WORK/tools.bp.copy"
+cat "$WORK/tools.bp.copy" > "$WORK/shelf/src/tools.bp"
+touch "$WORK/shelf/src/tools.bp"
+build plain erlang out-touched || true
+[[ "$(inode "$entry")" == "$before" ]] || fail "erlang: shelf's entry was rewritten after its file was written with the same bytes (the key is by content)"
+build plain commonJS out-other-target || true
+[[ "$(inode "$entry")" == "$before" ]] || fail "erlang: a commonJS build touched shelf's erlang entry"
+[[ -f "$ANALYSIS/commonJS/shelf.bpa" ]] || fail "commonJS: the build wrote no shelf entry of its own"
+whole="$WORK/shelf.bpa.whole"
+cp "$entry" "$whole"
+head -c "$(( $(size "$entry") / 2 ))" "$whole" > "$entry"
+build plain erlang out-truncated || true
+cmp -s "$entry" "$whole" || fail "erlang: a truncated shelf entry was not written whole again (the same bytes) by the next build"
+build plain erlang out-truncated-cold --cold || true
+diff -r "$WORK/plain/out-truncated-cold" "$WORK/plain/out-truncated" > "$WORK/diff.log" \
+  || { fail "erlang: the build after a truncated entry differs from --cold"; head -20 "$WORK/diff.log" | sed 's/^/      /' >&2; }
+[[ "$failures" -eq "$miss_failures" ]] && echo "  ✓ across invocations: the same bytes rewritten read the entry, another target leaves it, a truncated one is discarded and written whole again"
+
 # CODE (S4): an entry `check` (commonJS) wrote holds no unit; the next build
 # emits the dependencies and writes the entry again, larger, with its CODE —
 # the `.d.ts` in it although that build asked for none; the builds after read
 # it and write nothing, with or without `--typescript` — every output the
 # same bytes as `--cold`. (That a reading build emitted no dependency module
 # is `Stats.modules_code_read`, `cli/analysis_equivalence.zig`'s.)
-size() { stat -c %s "$1" 2>/dev/null || stat -f %z "$1"; }
 code_failures=$failures
 cjs_entry="$ANALYSIS/commonJS/shelf.bpa"
 build plain commonJS out-code-cold --cold || true
