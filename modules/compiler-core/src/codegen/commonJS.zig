@@ -48,7 +48,7 @@ pub fn codegenEmit(
 ) !std.ArrayListUnmanaged(ModuleOutput) {
     var results: std.ArrayListUnmanaged(ModuleOutput) = .empty;
 
-    // Decisions 238, 263 — a `#[@External.<Target>("fn:<name>")]` binding
+    // Decisions 238, 263, 305 — a `#[@External.<Target>(fn: <name>)]` binding
     // becomes an ordinary function forwarding to `<name>` before anything
     // reads the programs; a binding that names no private fn of the same
     // signature fails its module at the annotation (`hostFnBinding.zig`).

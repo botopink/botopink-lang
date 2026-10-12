@@ -7,8 +7,8 @@
 
 #[@External.Node("Math", "floor")]
 #[@External.Erlang("math", "floor")]
-#[@External.Wasm(op: "f64.floor", host = .Wasi)]
-#[@External.Wasm(fn: floorBody, host = .Browser)]
+#[@External.Wasm(op: "f64.floor", host: .Wasi)]
+#[@External.Wasm(fn: floorBody, host: .Browser)]
 declare fn floorOf(x: f64) -> f64;
 
 fn floorBody(x: f64) -> f64 {

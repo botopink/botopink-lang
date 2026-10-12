@@ -720,7 +720,7 @@ pub fn assertBeamRefusedAt(allocator: Allocator, src: []const u8, needle: []cons
     return assertRefusedAt(allocator, configs[2], src, needle, line, col);
 }
 
-/// `assertWasmRefusedAt` for the commonJS backend: a `#[@External.Node("fn:…")]`
+/// `assertWasmRefusedAt` for the commonJS backend: a `#[@External.Node(fn: …)]`
 /// binding that names no private fn of the same signature is a located build
 /// error at the annotation (decision 238 on every target).
 pub fn assertJsRefusedAt(allocator: Allocator, src: []const u8, needle: []const u8, line: usize, col: usize) !void {

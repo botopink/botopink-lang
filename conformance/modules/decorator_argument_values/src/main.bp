@@ -23,10 +23,10 @@ fn mark(
     decl.setMeta("tags", tags.value.join(","));
 }
 
-#[mark([1, 2], level = .High)]
+#[mark([1, 2], level: .High)]
 type A(x: i32)
 
-#[mark([3], 40, tags = ["x", "y"])]
+#[mark([3], 40, tags: ["x", "y"])]
 type B(x: i32)
 
 pub fn main() {

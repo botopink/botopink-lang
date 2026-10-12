@@ -25,7 +25,7 @@ fn page<P, D>(
     decl.setMeta("seg", seg.value);
 }
 
-#[page("blog/[slug]", paths = allPosts, head = postHead)]
+#[page("blog/[slug]", paths: allPosts, head: postHead)]
 fn blogPage(route: Route<BlogParams, Post>) -> View {
     val post: Post = route.data;
     return View(html: post.title);

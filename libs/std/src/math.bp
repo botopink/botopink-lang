@@ -87,8 +87,8 @@ pub fn clamp(x: f64, lo: f64, hi: f64) -> f64 {
 #[@External.Wasm(op: "f64.sqrt")]
 pub declare fn sqrt(x: f64) -> f64;
 
-#[@External.Node("fn:powBody")]
-#[@External.Erlang("fn:powBody")]
+#[@External.Node(fn: powBody)]
+#[@External.Erlang(fn: powBody)]
 #[@External.Wasm(fn: powBody)]
 pub declare fn pow(x: f64, y: f64) -> f64;
 
@@ -102,22 +102,22 @@ pub fn cbrt(x: f64) -> f64 {
 }
 
 #[@External.Node("Math", "exp")]
-#[@External.Erlang("fn:expBody")]
+#[@External.Erlang(fn: expBody)]
 #[@External.Wasm(fn: expBody)]
 pub declare fn exp(x: f64) -> f64;
 
 #[@External.Node("Math", "log")]
-#[@External.Erlang("fn:lnBody")]
+#[@External.Erlang(fn: lnBody)]
 #[@External.Wasm(fn: lnBody)]
 pub declare fn ln(x: f64) -> f64;
 
 #[@External.Node("Math", "log2")]
-#[@External.Erlang("fn:log2Body")]
+#[@External.Erlang(fn: log2Body)]
 #[@External.Wasm(fn: log2Body)]
 pub declare fn log2(x: f64) -> f64;
 
 #[@External.Node("Math", "log10")]
-#[@External.Erlang("fn:log10Body")]
+#[@External.Erlang(fn: log10Body)]
 #[@External.Wasm(fn: log10Body)]
 pub declare fn log10(x: f64) -> f64;
 
@@ -129,52 +129,52 @@ pub fn hypot(x: f64, y: f64) -> f64 {
 // ── trigonometry ─────────────────────────────────────────────────────────────
 
 #[@External.Node("Math", "sin")]
-#[@External.Erlang("fn:sinBody")]
+#[@External.Erlang(fn: sinBody)]
 #[@External.Wasm(fn: sinBody)]
 pub declare fn sin(x: f64) -> f64;
 
 #[@External.Node("Math", "cos")]
-#[@External.Erlang("fn:cosBody")]
+#[@External.Erlang(fn: cosBody)]
 #[@External.Wasm(fn: cosBody)]
 pub declare fn cos(x: f64) -> f64;
 
 #[@External.Node("Math", "tan")]
-#[@External.Erlang("fn:tanBody")]
+#[@External.Erlang(fn: tanBody)]
 #[@External.Wasm(fn: tanBody)]
 pub declare fn tan(x: f64) -> f64;
 
 #[@External.Node("Math", "asin")]
-#[@External.Erlang("fn:asinBody")]
+#[@External.Erlang(fn: asinBody)]
 #[@External.Wasm(fn: asinBody)]
 pub declare fn asin(x: f64) -> f64;
 
 #[@External.Node("Math", "acos")]
-#[@External.Erlang("fn:acosBody")]
+#[@External.Erlang(fn: acosBody)]
 #[@External.Wasm(fn: acosBody)]
 pub declare fn acos(x: f64) -> f64;
 
 #[@External.Node("Math", "atan")]
-#[@External.Erlang("fn:atanBody")]
+#[@External.Erlang(fn: atanBody)]
 #[@External.Wasm(fn: atanBody)]
 pub declare fn atan(x: f64) -> f64;
 
 #[@External.Node("Math", "atan2")]
-#[@External.Erlang("fn:atan2Body")]
+#[@External.Erlang(fn: atan2Body)]
 #[@External.Wasm(fn: atan2Body)]
 pub declare fn atan2(y: f64, x: f64) -> f64;
 
 #[@External.Node("Math", "sinh")]
-#[@External.Erlang("fn:sinhBody")]
+#[@External.Erlang(fn: sinhBody)]
 #[@External.Wasm(fn: sinhBody)]
 pub declare fn sinh(x: f64) -> f64;
 
 #[@External.Node("Math", "cosh")]
-#[@External.Erlang("fn:coshBody")]
+#[@External.Erlang(fn: coshBody)]
 #[@External.Wasm(fn: coshBody)]
 pub declare fn cosh(x: f64) -> f64;
 
 #[@External.Node("Math", "tanh")]
-#[@External.Erlang("fn:tanhBody")]
+#[@External.Erlang(fn: tanhBody)]
 #[@External.Wasm(fn: tanhBody)]
 pub declare fn tanh(x: f64) -> f64;
 

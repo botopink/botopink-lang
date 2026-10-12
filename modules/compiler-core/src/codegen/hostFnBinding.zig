@@ -1,9 +1,10 @@
 //! Decision 238's `fn:` form on every backend (decisions 259, 263): a
 //! `declare fn` whose binding for the build's target is `fn:<name>` runs
 //! `<name>`, a private bodied `fn` of the same module with the same signature
-//! — `#[@External.Erlang("fn:tanBody")]`,
-//! `#[@External.Node("fn:powBody")]`, `#[@External.Wasm(fn: tanBody)]`. The
-//! arguments are the declared parameters in order.
+//! — `#[@External.Erlang(fn: tanBody)]`, `#[@External.Node(fn: powBody)]`,
+//! `#[@External.Wasm(fn: tanBody)]` (decision 305: a labelled argument the
+//! parser reads as the binding text `fn:<name>`, `ast.translateExternalCells`).
+//! The arguments are the declared parameters in order.
 //!
 //! `resolve` is the one check of a `fn:` binding — the named fn exists in the
 //! declaring module, has a body, is not `pub` and takes and answers the same
@@ -16,7 +17,8 @@
 //! `pub` export and a consumer's cross-module call reach it like any other
 //! function, and no backend learns a fourth binding shape. On those three
 //! targets a single-string binding is otherwise a host expression or a `.S`
-//! template; the `fn:` prefix is the binding there, and nothing else is.
+//! template; the `fn:` cell is the binding there, and nothing else is (a
+//! written `"fn:…"` string is refused by the checker, `checkExternalCells`).
 
 const std = @import("std");
 const ast = @import("../ast.zig");
@@ -55,19 +57,16 @@ pub fn annotationLoc(f: ast.FnDecl, label: []const u8) ?ast.Loc {
     return null;
 }
 
-/// Decision 238's check of `#[@External.<label>("fn:<name>")]` on `f`: `prog`
+/// Decision 238's check of `#[@External.<label>(fn: <name>)]` on `f`: `prog`
 /// (the declaring module's program) declares a bodied, non-`pub` fn `<name>`
 /// taking the parameter types `f` declares, in order, and answering the same
 /// type. `module` is the declaring module's path when its declarations reach
 /// the check through a link that qualified their types (wasm's static
 /// linking, `typeText`), else empty.
 pub fn resolve(ar: std.mem.Allocator, f: ast.FnDecl, name: []const u8, prog: ast.Program, module: []const u8, label: []const u8) !Resolution {
-    // Decision 481 — a wasm cell is the labelled `fn: <name>`; the other
-    // targets' cells are still written `"fn:<name>"`.
-    const cell = if (std.ascii.eqlIgnoreCase(label, "Wasm"))
-        try std.fmt.allocPrint(ar, "fn: {s}", .{name})
-    else
-        try std.fmt.allocPrint(ar, "\"fn:{s}\"", .{name});
+    // Decisions 305 and 481 — the cell is the labelled `fn: <name>` on
+    // every target.
+    const cell = try std.fmt.allocPrint(ar, "fn: {s}", .{name});
     const target: ?ast.FnDecl = for (prog.decls) |pd| switch (pd) {
         .@"fn" => |g| if (std.mem.eql(u8, g.name, name)) break g,
         else => {},

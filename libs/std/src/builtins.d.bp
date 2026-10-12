@@ -282,7 +282,7 @@ pub behavior Annotation {
 // are the two emitters that read it: each has a `hasExternalInline` that skips
 // the dispatch entry when the flag is set, reading the annotation's LAST
 // argument. `Node` declared it too and no JS path ever consulted it, so
-// `#[@External.Node("charAt", inline = true)]` was a switch that silently did
+// `#[@External.Node("charAt", inline: true)]` was a switch that silently did
 // nothing — a configuration that looks like it bypasses the dispatch table and
 // does not, which decision 67 refuses in exactly those words. `Wasm` and
 // `Typescript` do not gain it for the same reason. The checker holds this

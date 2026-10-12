@@ -16,7 +16,7 @@ fn check<T>(
     decl.setMeta("message", message.value);
 }
 
-#[check("taken", code = .custom)]
+#[check("taken", code: .custom)]
 type Account(password: string, confirm: string)
 
 pub fn main() {

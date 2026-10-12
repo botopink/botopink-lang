@@ -73,11 +73,14 @@ zig build compiler-web  # compiler-core for the browser → zig-out/web/ (wasm32
 zig build test-web      # the browser build's smoke test under node (modules/compiler-web/tests/smoke.js)
 ```
 
-`zig build test` also runs two greps that refuse rather than warn (decision 67,
-no flag turns either off):
+`zig build test` also runs three greps that refuse rather than warn (decision 67,
+no flag turns any off):
 
 - the **lib-agnostic gate** — it fails if `modules/compiler-core/src` names a
   non-std library (`rakun|jhonstart|erika`);
+- the **labelled-cells gate** — it fails if a `.bp` under `libs/` writes a
+  prefixed binding string (`"fn:…"`, `"op:…"`, `"wasi:…"`): a binding cell is
+  the labelled argument `fn: name`, `op: "…"`, `wasi: .X` (decision 305);
 - **`scripts/check-test-scratch.sh`** — it fails if a `test` block, or any line
   of a file under a `tests/` directory (the harness helpers), names a
   cwd-anchored `.botopinkbuild` path. Each test binary runs with its package

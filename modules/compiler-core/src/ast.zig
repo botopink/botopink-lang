@@ -1982,17 +1982,14 @@ pub const Annotation = struct {
     /// `args` and its strings are then owned; `source_args` borrows the source.
     source_args: ?[]const []const u8 = null,
     /// The label written before each argument — `keyed` in
-    /// `#[@BeamMemory.Ets(keyed = true)]`, `inline` in `inline = true` — parallel
-    /// to `args`, `""` where the argument had none. Empty when no argument was
-    /// labelled, so an unlabelled annotation dumps and frees as before. The
-    /// value still lands positionally in `args`; the label is what a validator
-    /// checks (decision 41) and what the formatter prints back — before this
-    /// field it printed `#[@External.Node("charAt", true)]` for `inline = true`.
+    /// `#[@BeamMemory.Ets(keyed: true)]`, `inline` in `inline: true`, `fn` in
+    /// `fn: tanBody` — parallel to `args`, `""` where the argument had none.
+    /// Empty when no argument was labelled, so an unlabelled annotation dumps
+    /// and frees as before. The value still lands positionally in `args`; the
+    /// label is what a validator checks (decision 41) and what the formatter
+    /// prints back, always `label: value` (decision 305 — the parser refuses
+    /// `label = value`, `annotation-label-equals`).
     labels: []const []const u8 = &.{},
-    /// Bit `i` is set when argument `i`'s label was written `label = value`
-    /// (fn-style) rather than `label: value`; the formatter prints the
-    /// separator as written. Arguments past the 64th read as `:`.
-    assign_mask: u64 = 0,
     /// Where each argument starts, parallel to `args` (decision 280: a
     /// decorator argument is refused at the argument). Empty for a
     /// synthesized annotation; diagnostic metadata, never serialized.
@@ -2051,11 +2048,6 @@ pub const Annotation = struct {
     pub fn labelOf(this: Annotation, i: usize) ?[]const u8 {
         if (i >= this.labels.len or this.labels[i].len == 0) return null;
         return this.labels[i];
-    }
-
-    /// True when argument `i`'s label was written with `=`.
-    pub fn labelAssigned(this: Annotation, i: usize) bool {
-        return i < 64 and (this.assign_mask >> @intCast(i)) & 1 == 1;
     }
 
     pub fn deinit(this: *Annotation, allocator: std.mem.Allocator) void {
@@ -2167,18 +2159,32 @@ pub fn isExternalWasm(a: Annotation) bool {
     return std.ascii.eqlIgnoreCase(a.name, "External.Wasm");
 }
 
-/// Decision 481 — the parser's reading of a labelled wasm cell: argument `i`
-/// written `fn: x` / `op: "o"` / `wasi: .A` / `std: "m.f"` lands in `args`
-/// as the one binding text every reader takes (`"fn:x"`, `"op:o"`,
-/// `"wasi:a"`, `"std:m.f"` — `externalRefOf`, `wat/host_binding.parse`,
+/// True when `a` is an `@External.<Target>(…)` annotation.
+pub fn isExternal(a: Annotation) bool {
+    return std.mem.startsWith(u8, a.name, "External.");
+}
+
+/// True when `label` names a binding cell of `a`: the four of
+/// `@External.Wasm` (decision 481), and `fn:` on every other target's
+/// `@External.<Target>` (decisions 238, 305 — `#[@External.Erlang(fn: powBody)]`).
+pub fn isCellLabelOf(a: Annotation, label: []const u8) bool {
+    if (isExternalWasm(a)) return isWasmCellLabel(label);
+    return isExternal(a) and std.mem.eql(u8, label, "fn");
+}
+
+/// Decisions 305 and 481 — the parser's reading of a labelled binding cell:
+/// argument `i` written `fn: x` (every target) or, on `@External.Wasm`,
+/// `op: "o"` / `wasi: .A` / `std: "m.f"` lands in `args` as the one binding
+/// text every reader takes (`"fn:x"`, `"op:o"`, `"wasi:a"`, `"std:m.f"` —
+/// `externalRefOf`, `hostFnBinding.fnName`, `wat/host_binding.parse`,
 /// `comptime/host_cells`), its spelling kept in `source_args` for the
 /// formatter and the checker, which refuses a value of the wrong kind
-/// (`infer.zig` `checkWasmCells`). A wasi adapter's enum value is its name in
-/// PascalCase (`.RaceOf` names `race_of`).
-pub fn translateWasmCells(alloc: std.mem.Allocator, a: *Annotation) !void {
-    if (!isExternalWasm(a.*) or a.source_args != null) return;
+/// (`infer.zig` `checkExternalCells`). A wasi adapter's enum value is its name
+/// in PascalCase (`.RaceOf` names `race_of`).
+pub fn translateExternalCells(alloc: std.mem.Allocator, a: *Annotation) !void {
+    if (!isExternal(a.*) or a.source_args != null) return;
     var any = false;
-    for (a.args, 0..) |_, i| if (a.labelOf(i)) |l| if (isWasmCellLabel(l)) {
+    for (a.args, 0..) |_, i| if (a.labelOf(i)) |l| if (isCellLabelOf(a.*, l)) {
         any = true;
     };
     if (!any) return;
@@ -2190,7 +2196,7 @@ pub fn translateWasmCells(alloc: std.mem.Allocator, a: *Annotation) !void {
     }
     for (a.args, 0..) |arg, i| {
         const label = a.labelOf(i) orelse "";
-        out[i] = if (isWasmCellLabel(label)) try wasmCellText(alloc, label, arg) else try alloc.dupe(u8, arg);
+        out[i] = if (isCellLabelOf(a.*, label)) try wasmCellText(alloc, label, arg) else try alloc.dupe(u8, arg);
         done += 1;
     }
     a.source_args = a.args;
@@ -2951,7 +2957,7 @@ pub const MemoryMode = enum {
 /// A module `var`'s storage on the BEAM — `ValDecl.memory`.
 pub const Memory = struct {
     mode: MemoryMode,
-    /// `keyed = true` — a `Dict` stored one row per key (decision 51).
+    /// `keyed: true` — a `Dict` stored one row per key (decision 51).
     keyed: bool = false,
     /// The annotation's location; null for the unannotated default.
     loc: ?Loc = null,

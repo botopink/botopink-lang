@@ -180,7 +180,7 @@ const MEM_ETS_OWNER = "__bp_ets_owner";
 const MEM_LOST = "__bp_lost";
 const MEM_LOAD = "__bp_load";
 const MEM_BOX = "__bp_var";
-/// Decision 168 — a `keyed = true` var's row read and row write, and the tag
+/// Decision 168 — a `keyed: true` var's row read and row write, and the tag
 /// its seed carries to the owner: `{'__bp_rows', Rows}` is inserted as the
 /// table's rows, any other seed as the one row `{Name, Seed}`. No botopink
 /// value is a tuple led by this atom (the `MEM_BOX` reasoning).
@@ -201,7 +201,7 @@ pub const PRIV_PREFIX = "__bp_priv__";
 /// on erlang and beam, `__test__/<module path>` on commonJS and wasm.
 pub const TEST_UNIT_PREFIX = "__test__";
 
-/// Decision 168 — the rows of a `keyed = true` var's seed, as the
+/// Decision 168 — the rows of a `keyed: true` var's seed, as the
 /// `#(key, value)` entries of `Dict.ofEntries([…])` (none for
 /// `Dict.empty()`), folded at compile time: a key written twice keeps its
 /// LAST value at the place of that last entry (decision 174, what a chain of
@@ -645,7 +645,7 @@ pub fn codegenEmit(
 ) !std.ArrayListUnmanaged(ModuleOutput) {
     var results: std.ArrayListUnmanaged(ModuleOutput) = .empty;
 
-    // Decisions 238, 263 — a `#[@External.<Target>("fn:<name>")]` binding
+    // Decisions 238, 263, 305 — a `#[@External.<Target>(fn: <name>)]` binding
     // becomes an ordinary function forwarding to `<name>` before anything
     // reads the programs; a binding that names no private fn of the same
     // signature fails its module at the annotation (`hostFnBinding.zig`).
@@ -5692,7 +5692,7 @@ const Emitter = struct {
                     }),
                 });
             },
-            // A `keyed = true` var has no whole value to read (the checker
+            // A `keyed: true` var has no whole value to read (the checker
             // reads it one row at a time); its reader is the guard, which
             // `'_botopink_init'/0` calls, so the table exists from load.
             .ets => if (mem.keyed)
@@ -5762,9 +5762,9 @@ const Emitter = struct {
         return this.exprNode(b, .{ .binaryOp = .{ .loc = at, .op = .add, .lhs = lhs, .rhs = rhs } });
     }
 
-    // ── `keyed = true` (decision 168) ─────────────────────────────────────────
+    // ── `keyed: true` (decision 168) ─────────────────────────────────────────
     //
-    // A `keyed = true` `Dict` is one ETS row per key in the var's table. The
+    // A `keyed: true` `Dict` is one ETS row per key in the var's table. The
     // checker admits three shapes (`infer.zig` `checkKeyedWrite`,
     // `noteKeyedRowRead`): the seed `Dict.empty()` / `Dict.ofEntries([…])` of
     // literals, the row read `name.at(key)` and the row write
@@ -5778,7 +5778,7 @@ const Emitter = struct {
     //     counts = counts.bump(K, N)       '__bp_ets_bump'(Name, Rows, K, N)
     //                                      (ets:update_counter(T, K, N, {K, 0}), decision 340)
 
-    /// The row read `name.at(key)` of a `keyed = true` var, or null for any
+    /// The row read `name.at(key)` of a `keyed: true` var, or null for any
     /// other call.
     fn keyedRowRead(this: *Emitter, b: Ast.Builder, cc: anytype) anyerror!?Ast.Expr {
         if (cc.is_builtin or cc.optional or cc.args.len != 1 or !std.mem.eql(u8, cc.callee, "at")) return null;
@@ -5812,7 +5812,7 @@ const Emitter = struct {
         });
     }
 
-    /// The seed of `keyed = true` var `name` as the table's rows,
+    /// The seed of `keyed: true` var `name` as the table's rows,
     /// `[{K, V}, …]` (`keyedSeedRows`).
     fn keyedRows(this: *Emitter, b: Ast.Builder, name: []const u8) anyerror!Ast.Expr {
         const decl = this.module_var_decls.get(name).?;
@@ -5888,7 +5888,7 @@ const Emitter = struct {
                 .body = try b.body(&.{A(MEM_LOST)}),
             }}),
         } };
-        // Decision 168: a module with a `keyed = true` var seeds by the
+        // Decision 168: a module with a `keyed: true` var seeds by the
         // seed's tag — `{'__bp_rows', Rows}` is the table's rows, any other
         // seed the one row `{Name, Seed}`. A module without one keeps the
         // plain row.

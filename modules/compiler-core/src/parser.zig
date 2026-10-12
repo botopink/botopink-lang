@@ -327,6 +327,10 @@ pub const ParseErrorType = enum {
     /// blaming the value for a missing `val` (front 15 step 3). Located at the
     /// label.
     tupleLiteralLabel,
+    /// `#[@BeamMemory.Ets(keyed: true)]`, `#[mark(level = .High)]` — an
+    /// annotation's labelled argument is `label: value`, as a call's is
+    /// (decision 305). Located at the label, naming `label:`.
+    annotationLabelEquals,
     /// `42L`, `1.5F` — a numeric suffix is lower case (decision 247).
     /// Located at the suffix; the caption names the lower-case one.
     numberSuffixUppercase,
@@ -1333,7 +1337,6 @@ pub const Parser = struct {
         var argLocs: std.ArrayList(Loc) = .empty;
         errdefer argLocs.deinit(alloc);
         var any_label = false;
-        var assign_mask: u64 = 0;
         if (this.match(.leftParenthesis)) {
             while (!this.check(.rightParenthesis) and !this.check(.endOfFile)) {
                 // `prim-op-annotation` arity-branch label: `when($argc == N): "..."`
@@ -1373,24 +1376,30 @@ pub const Parser = struct {
                     if (!this.match(.comma)) break;
                     continue;
                 }
-                // Labeled argument (`runtime:`, `module:`, `method:`, `inline:`) —
-                // both the `:` (Form B label) and the `=` (fn-style default-arg
-                // assignment, `inline = true`) separators are accepted, keeping
-                // annotation args close to how fn params are written. The label is
+                // Labelled argument (`keyed: true`, `inline: true`, `fn: tanBody`,
+                // `module:`, `method:`) — written `label: value`, as a call's
+                // labelled argument is (decision 305); `label = value` is a
+                // located error at the label naming `label:`. The label is
                 // cosmetic at this layer; the value lands positionally so each
                 // annotation's reader (`FnDecl.externalFor` / `BehaviorMethod.externalFor`
                 // + `hasExternalInline`, `parseExternalCallTemplate`, …) interprets it. See the
                 // `#[@External.<targert>(...)]` vocabulary in `libs/std/AGENTS.md`.
                 // Decision 481 — a keyword names a label too (`fn: tanBody`
-                // on `@External.Wasm`): before a `:` or `=` it starts no
+                // on `@External.Wasm`): before a `:` it starts no
                 // expression, so it can only be the label.
                 var label: []const u8 = "";
                 if ((this.check(.identifier) or isKeywordName(this.peek())) and
                     (this.peekAt(1).kind == .colon or this.peekAt(1).kind == .equal))
                 {
-                    label = this.advance().lexeme; // label name
-                    if (this.advance().kind == .equal and args.items.len < 64) // `:` or `=`
-                        assign_mask |= @as(u64, 1) << @intCast(args.items.len);
+                    const labelTok = this.advance(); // label name
+                    label = labelTok.lexeme;
+                    const sep = this.advance(); // `:` or `=`
+                    if (sep.kind == .equal) {
+                        var info = ParseErrorInfo.fromToken(.annotationLabelEquals, labelTok);
+                        info.end = sep.offset + sep.lexeme.len;
+                        this.parseError = info;
+                        return ParseError.UnexpectedToken;
+                    }
                     any_label = true;
                 }
                 try labels.append(alloc, label);
@@ -1440,13 +1449,12 @@ pub const Parser = struct {
             .name = name,
             .args = try args.toOwnedSlice(alloc),
             .labels = if (any_label) try labels.toOwnedSlice(alloc) else &.{},
-            .assign_mask = assign_mask,
             .argLocs = try argLocs.toOwnedSlice(alloc),
             .is_builtin = is_builtin,
             .loc = .{ .line = name_start.line, .col = name_start.col, .expansion = name_start.expansion },
         };
         errdefer ann.deinit(alloc);
-        if (is_builtin) try ast.translateWasmCells(alloc, &ann);
+        if (is_builtin) try ast.translateExternalCells(alloc, &ann);
         return ann;
     }
 

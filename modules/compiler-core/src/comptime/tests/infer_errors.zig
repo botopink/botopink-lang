@@ -467,7 +467,7 @@ test "infer error: external ---- wrong arity" {
 // accepted and ignored.
 test "infer error: external ---- inline on a variant that does not declare it" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\#[@External.Node("Math.max($args)", inline = true)]
+        \\#[@External.Node("Math.max($args)", inline: true)]
         \\pub declare fn biggest(a: i32, b: i32) -> i32;
     );
 }
@@ -481,14 +481,14 @@ test "infer error: external ---- inline as a bare trailing bool is the same flag
 
 test "infer error: external ---- inline must be the last argument" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\#[@External.Erlang(inline = true, "max($args)")]
+        \\#[@External.Erlang(inline: true, "max($args)")]
         \\pub declare fn biggest(a: i32, b: i32) -> i32;
     );
 }
 
 test "infer error: external ---- inline is a bool" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\#[@External.Erlang("max($args)", inline = 1)]
+        \\#[@External.Erlang("max($args)", inline: 1)]
         \\pub declare fn biggest(a: i32, b: i32) -> i32;
     );
 }
@@ -505,7 +505,7 @@ test "infer error: external ---- Beam binds no host" {
 test "infer error: external ---- inline on a behavior method is checked the same way" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\pub behavior Shape {
-        \\    #[@External.Wasm("area", inline = true)]
+        \\    #[@External.Wasm("area", inline: true)]
         \\    fn area(self: Self) -> i32;
         \\}
     );
@@ -1129,7 +1129,7 @@ test "infer error: an unknown `@BeamMemory` member" {
 }
 
 test "infer error: an unknown `@BeamMemory` argument" {
-    const msg = try typeErrorMessage(std.testing.allocator, "#[@BeamMemory.Ets(keyd = true)]\nvar x: i32 = 0;");
+    const msg = try typeErrorMessage(std.testing.allocator, "#[@BeamMemory.Ets(keyd: true)]\nvar x: i32 = 0;");
     defer std.testing.allocator.free(msg);
     try std.testing.expect(std.mem.indexOf(u8, msg, "unknown argument `keyd` — expected `keyed`") != null);
 }
@@ -1151,20 +1151,20 @@ test "infer error: the `@BeamMemory` hints teach `keyed: true`, never the retire
     }
 }
 
-test "infer error: `keyed = true` on an `i32` has no key" {
-    const msg = try typeErrorMessage(std.testing.allocator, "#[@BeamMemory.Ets(keyed = true)]\nvar n: i32 = 0;");
+test "infer error: `keyed: true` on an `i32` has no key" {
+    const msg = try typeErrorMessage(std.testing.allocator, "#[@BeamMemory.Ets(keyed: true)]\nvar n: i32 = 0;");
     defer std.testing.allocator.free(msg);
     try std.testing.expect(std.mem.indexOf(u8, msg, "`keyed` needs a keyed container — an `i32` has no key") != null);
 }
 
-test "infer error: `keyed = true` on a list has no key (decision 51)" {
-    const msg = try typeErrorMessage(std.testing.allocator, "#[@BeamMemory.Ets(keyed = true)]\nvar xs: i32[] = [];");
+test "infer error: `keyed: true` on a list has no key (decision 51)" {
+    const msg = try typeErrorMessage(std.testing.allocator, "#[@BeamMemory.Ets(keyed: true)]\nvar xs: i32[] = [];");
     defer std.testing.allocator.free(msg);
     try std.testing.expect(std.mem.indexOf(u8, msg, "`keyed` needs a keyed container") != null);
 }
 
 test "infer: `@BeamMemory` accepts its three members, the default said out loud included" {
-    try h.assertInfersOk(std.testing.allocator, "#[@BeamMemory.ProcessDict]\nvar a: i32 = 0;\n#[@BeamMemory.Ets]\nvar b: i32 = 0;\n#[@BeamMemory.PersistentTerm]\nvar c: i32 = 0;\n#[@BeamMemory.Ets(keyed = false)]\nvar d: i32 = 0;");
+    try h.assertInfersOk(std.testing.allocator, "#[@BeamMemory.ProcessDict]\nvar a: i32 = 0;\n#[@BeamMemory.Ets]\nvar b: i32 = 0;\n#[@BeamMemory.PersistentTerm]\nvar c: i32 = 0;\n#[@BeamMemory.Ets(keyed: false)]\nvar d: i32 = 0;");
 }
 
 // ── decision 167: off the BEAM, `#[@BeamMemory]` is refused at the annotation ─
@@ -1205,11 +1205,11 @@ test "infer: `#[@BeamMemory]` is accepted on erlang and beam" {
     }
 }
 
-// ── decision 168: `keyed = true` — its seed, its row read and its row write ──
+// ── decision 168: `keyed: true` — its seed, its row read and its row write ──
 
 const keyed_decl =
     \\import {collections.Dict} from "std";
-    \\#[@BeamMemory.Ets(keyed = true)]
+    \\#[@BeamMemory.Ets(keyed: true)]
     \\var counts: Dict<string, i32> = Dict.empty();
     \\
 ;
@@ -1221,7 +1221,7 @@ test "infer: a keyed Ets var is read and written one row at a time" {
     );
     try h.assertInfersOk(std.testing.allocator,
         \\import {collections.Dict} from "std";
-        \\#[@BeamMemory.Ets(keyed = true)]
+        \\#[@BeamMemory.Ets(keyed: true)]
         \\var counts: Dict<string, i32> = Dict.ofEntries([#("a", 1), #("b", -2)]);
     );
 }
@@ -1284,17 +1284,17 @@ test "infer error: a keyed var has no whole value to read" {
 test "infer error: a keyed seed is `Dict.empty()` or `Dict.ofEntries` of literal entries" {
     const programs = [_][]const u8{
         \\import {collections.Dict} from "std";
-        \\#[@BeamMemory.Ets(keyed = true)]
+        \\#[@BeamMemory.Ets(keyed: true)]
         \\var counts: Dict<string, i32> = Dict.empty().insert("a", 1);
         ,
         \\import {collections.Dict} from "std";
         \\fn entries() -> Array<#(string, i32)> { return []; }
-        \\#[@BeamMemory.Ets(keyed = true)]
+        \\#[@BeamMemory.Ets(keyed: true)]
         \\var counts: Dict<string, i32> = Dict.ofEntries(entries());
         ,
         \\import {collections.Dict} from "std";
         \\fn name() -> string { return "a"; }
-        \\#[@BeamMemory.Ets(keyed = true)]
+        \\#[@BeamMemory.Ets(keyed: true)]
         \\var counts: Dict<string, i32> = Dict.ofEntries([#(name(), 1)]);
     };
     for (programs) |src| {
@@ -1307,7 +1307,7 @@ test "infer error: a keyed seed is `Dict.empty()` or `Dict.ofEntries` of literal
 test "infer error: `keyed` is an argument of `@BeamMemory.Ets` alone" {
     const msg = try typeErrorMessage(std.testing.allocator,
         \\import {collections.Dict} from "std";
-        \\#[@BeamMemory.ProcessDict(keyed = true)]
+        \\#[@BeamMemory.ProcessDict(keyed: true)]
         \\var counts: Dict<string, i32> = Dict.empty();
     );
     defer std.testing.allocator.free(msg);
@@ -1317,7 +1317,7 @@ test "infer error: `keyed` is an argument of `@BeamMemory.Ets` alone" {
 test "infer error: a keyed var is not `pub`" {
     const msg = try typeErrorMessage(std.testing.allocator,
         \\import {collections.Dict} from "std";
-        \\#[@BeamMemory.Ets(keyed = true)]
+        \\#[@BeamMemory.Ets(keyed: true)]
         \\pub var counts: Dict<string, i32> = Dict.empty();
     );
     defer std.testing.allocator.free(msg);

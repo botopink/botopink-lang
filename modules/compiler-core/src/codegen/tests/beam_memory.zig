@@ -120,7 +120,7 @@ test "erlang: beam memory ---- a PersistentTerm var is put at load and read from
     });
 }
 
-// Decision 168 — `keyed = true` stores the `Dict` one ETS row per key: two
+// Decision 168 — `keyed: true` stores the `Dict` one ETS row per key: two
 // processes each writing their own key keep both, where a whole-value write
 // would put one process's stale row back over the other's. The seed is the
 // table's rows, a repeated key keeping its last value (decision 174), and a
@@ -128,7 +128,7 @@ test "erlang: beam memory ---- a PersistentTerm var is put at load and read from
 const keyed_program =
     \\import {async, collections.Dict} from "std";
     \\
-    \\#[@BeamMemory.Ets(keyed = true)]
+    \\#[@BeamMemory.Ets(keyed: true)]
     \\var counts: Dict<string, i32> = Dict.ofEntries([#("seed", 1), #("seed", 7)]);
     \\
     \\fn writer(key: string) -> @Task<i32> {
@@ -171,7 +171,7 @@ test "beam: beam memory ---- a keyed Ets var writes and reads one row per key" {
 const bump_program =
     \\import {async, collections.Dict} from "std";
     \\
-    \\#[@BeamMemory.Ets(keyed = true)]
+    \\#[@BeamMemory.Ets(keyed: true)]
     \\var counts: Dict<string, i32> = Dict.ofEntries([#("seed", 10)]);
     \\
     \\fn worker(n: i32) -> @Task<i32> {

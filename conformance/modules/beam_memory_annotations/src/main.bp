@@ -8,7 +8,7 @@ var hits: i32 = 0;
 #[@BeamMemory.PersistentTerm]
 var buildVersion: i32 = 101;
 
-#[@BeamMemory.Ets(keyed = true)]
+#[@BeamMemory.Ets(keyed: true)]
 var counts: Dict<string, i32> = Dict.empty();
 
 // #[@BeamMemory.Etz] var x: i32 = 0;

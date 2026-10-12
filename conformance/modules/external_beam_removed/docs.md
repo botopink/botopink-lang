@@ -2,7 +2,7 @@
 
 The reference text this cell shows (from `conformance/docs.md`, § Host bindings):
 
-> `inline = true`, written last on `External.Erlang`, opts the declaration out of
+> `inline: true`, written last on `External.Erlang`, opts the declaration out of
 > the dispatch table so the backend's hand-coded shape keeps emitting. That
 > variant alone declares it, because the erlang and beam emitters, which both
 > read `External.Erlang`, alone read it. Written on `Node`, `Wasm` or

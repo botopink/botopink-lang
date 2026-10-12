@@ -416,15 +416,15 @@ test "js: external ---- no prelude template calls the method it patches" {
 // (`hostFnBinding.zig`). It is an ordinary function on each backend, so a
 // call, its value and a `pub` export behave like any other function's.
 const fn_binding_program =
-    \\#[@External.Node("fn:mixBody")]
-    \\#[@External.Erlang("fn:mixBody")]
+    \\#[@External.Node(fn: mixBody)]
+    \\#[@External.Erlang(fn: mixBody)]
     \\#[@External.Wasm(fn: mixBody)]
     \\pub declare fn mix(x: f64, y: f64) -> f64;
     \\fn mixBody(a: f64, b: f64) -> f64 {
     \\    return a * 2.0 + b;
     \\}
-    \\#[@External.Node("fn:greetBody")]
-    \\#[@External.Erlang("fn:greetBody")]
+    \\#[@External.Node(fn: greetBody)]
+    \\#[@External.Erlang(fn: greetBody)]
     \\#[@External.Wasm(fn: greetBody)]
     \\declare fn greet(name: string) -> string;
     \\fn greetBody(name: string) -> string {
@@ -454,40 +454,43 @@ test "beam: external ---- fn: binds a declare fn to a private body" {
     try h.assertBeamRunLog(std.testing.allocator, fn_binding_program, fn_binding_out, &.{});
 }
 
-// The four refusals of `wat.zig`'s `fn:` check, on each host backend, at the
-// annotation: a name the module does not declare, a fn with no body, a `pub`
-// fn and a fn of another signature.
+// The four refusals of a `fn:` cell, on each host backend: a name the module
+// does not bind is the ordinary unbound-name error at the argument (decision
+// 305); a fn with no body, a `pub` fn and a fn of another signature are
+// refused at the annotation. The checker reads every `@External` annotation on
+// every target, so the first one written (`Node`'s) is the one refused.
 test "host backends: external ---- a fn: binding that names no private fn of the same signature is refused at the annotation" {
     const cases = [_]struct { src: []const u8, needle: []const u8 }{
         .{ .src =
-        \\#[@External.Node("fn:mixBodx"), @External.Erlang("fn:mixBodx")]
+        \\#[@External.Node(fn: mixBodx), @External.Erlang(fn: mixBodx)]
         \\declare fn mix(x: f64) -> f64;
         \\fn mixBody(x: f64) -> f64 { return x; }
         \\fn main() { @print(mix(1.5)); }
-        , .needle = "this module declares no fn `mixBodx`" },
+        , .needle = "unbound variable 'mixBodx'" },
         .{ .src =
-        \\#[@External.Node("fn:mixBody"), @External.Erlang("fn:mixBody")]
+        \\#[@External.Node(fn: mixBody), @External.Erlang(fn: mixBody)]
         \\declare fn mix(x: f64) -> f64;
         \\#[@External.Node("Math", "abs"), @External.Erlang("erlang", "abs")]
         \\declare fn mixBody(x: f64) -> f64;
         \\fn main() { @print(mix(1.5)); }
         , .needle = "`mixBody` has no body of its own to run" },
         .{ .src =
-        \\#[@External.Node("fn:mixBody"), @External.Erlang("fn:mixBody")]
+        \\#[@External.Node(fn: mixBody), @External.Erlang(fn: mixBody)]
         \\declare fn mix(x: f64) -> f64;
         \\pub fn mixBody(x: f64) -> f64 { return x; }
         \\fn main() { @print(mix(1.5)); }
         , .needle = "`mixBody` is `pub`" },
         .{ .src =
-        \\#[@External.Node("fn:mixBody"), @External.Erlang("fn:mixBody")]
+        \\#[@External.Node(fn: mixBody), @External.Erlang(fn: mixBody)]
         \\declare fn mix(x: f64) -> f64;
         \\fn mixBody(x: f64, y: f64) -> f64 { return x + y; }
         \\fn main() { @print(mix(1.5)); }
         , .needle = "must take the same parameter types in the same order" },
     };
-    for (cases) |c| {
-        try h.assertJsRefusedAt(std.testing.allocator, c.src, c.needle, 1, 3);
-        try h.assertErlangRefusedAt(std.testing.allocator, c.src, c.needle, 1, 33);
-        try h.assertBeamRefusedAt(std.testing.allocator, c.src, c.needle, 1, 33);
+    for (cases, 0..) |c, i| {
+        const col: usize = if (i == 0) 22 else 3;
+        try h.assertJsRefusedAt(std.testing.allocator, c.src, c.needle, 1, col);
+        try h.assertErlangRefusedAt(std.testing.allocator, c.src, c.needle, 1, col);
+        try h.assertBeamRefusedAt(std.testing.allocator, c.src, c.needle, 1, col);
     }
 }

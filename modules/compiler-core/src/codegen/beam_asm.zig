@@ -278,7 +278,7 @@ const MEM_ETS_ADD = "'__bp_ets_add'";
 const MEM_ETS_SET = "'__bp_ets_set'";
 const MEM_LOAD = "'__bp_load'";
 const MEM_BOX = "__bp_var";
-/// Decision 168 — a `keyed = true` var's row read and row write, and the tag
+/// Decision 168 — a `keyed: true` var's row read and row write, and the tag
 /// its seed carries to the owner (`erlang.zig`'s `MEM_ROWS`).
 const MEM_ETS_AT = "'__bp_ets_at'";
 const MEM_ETS_ROW = "'__bp_ets_row'";
@@ -1572,7 +1572,7 @@ pub fn codegenEmit(
 ) !std.ArrayListUnmanaged(ModuleOutput) {
     var results: std.ArrayListUnmanaged(ModuleOutput) = .empty;
 
-    // Decisions 238, 263 — a `#[@External.<Target>("fn:<name>")]` binding
+    // Decisions 238, 263, 305 — a `#[@External.<Target>(fn: <name>)]` binding
     // becomes an ordinary function forwarding to `<name>` before anything
     // reads the programs; a binding that names no private fn of the same
     // signature fails its module at the annotation (`hostFnBinding.zig`).
@@ -4832,7 +4832,7 @@ const Emitter = struct {
                 try beamEmitter.writeMoveOp(self.out, Op.yr(0), Dst.xr(0));
                 try self.emitReturn();
             },
-            // A `keyed = true` var has no whole value to read (the checker
+            // A `keyed: true` var has no whole value to read (the checker
             // reads it one row at a time); its reader is the guard, which
             // `'_botopink_init'/0` calls, so the table exists from load.
             .ets => if (mem.keyed) {
@@ -4917,7 +4917,7 @@ const Emitter = struct {
         }
     }
 
-    // ── `keyed = true` (decision 168) — `erlang.zig`'s keyed section in
+    // ── `keyed: true` (decision 168) — `erlang.zig`'s keyed section in
     // assembly: the row read `name.at(K)` is `'__bp_ets_at'(Name, Rows, K)`,
     // the row write `name = name.insert(K, V)` is
     // `'__bp_ets_row'(Name, Rows, {K, V})`, `Rows` the seed folded into
@@ -4932,7 +4932,7 @@ const Emitter = struct {
         return false;
     }
 
-    /// The seed of `keyed = true` var `name` as the array literal of its rows.
+    /// The seed of `keyed: true` var `name` as the array literal of its rows.
     fn keyedRows(self: *Emitter, name: []const u8) !ast.Expr {
         const decl = self.module_var_decls.get(name).?;
         const ar = self.atom_arena.allocator();
@@ -4940,7 +4940,7 @@ const Emitter = struct {
         return .{ .collection = .{ .loc = decl.value.getLoc(), .kind = .{ .arrayLit = .{ .elems = rows } } } };
     }
 
-    /// `name.at(K)` on a `keyed = true` var — lowered and true, or false for
+    /// `name.at(K)` on a `keyed: true` var — lowered and true, or false for
     /// any other call.
     fn emitKeyedRowRead(self: *Emitter, cc: anytype) anyerror!bool {
         if (cc.optional or cc.args.len != 1 or !std.mem.eql(u8, cc.callee, "at")) return false;
@@ -4957,7 +4957,7 @@ const Emitter = struct {
         return true;
     }
 
-    /// `name = name.insert(K, V)` on a `keyed = true` var.
+    /// `name = name.insert(K, V)` on a `keyed: true` var.
     fn emitKeyedRowWrite(self: *Emitter, name: []const u8, value: *const ast.Expr) anyerror!void {
         const cc = value.call.kind.call;
         if (std.mem.eql(u8, cc.callee, "bump")) {
@@ -5139,7 +5139,7 @@ const Emitter = struct {
             try beamEmitter.writeTryEnd(self.out, 2);
             // Won the race: seed, register (registered means seeded), park
             // outside this module so a reload leaves no frame of it to purge.
-            // A module with a `keyed = true` var seeds by the seed's tag
+            // A module with a `keyed: true` var seeds by the seed's tag
             // (decision 168): `{'__bp_rows', Rows}` is the table's rows, any
             // other seed the one row `{Name, Seed}`.
             const put = if (keyed) self.allocLabel() else 0;
@@ -8079,7 +8079,7 @@ const Emitter = struct {
             );
             return;
         }
-        // The keyword form (`module = "erlang", method = "max($args)"`)
+        // The keyword form (`module: "erlang", method: "max($args)"`)
         // carries a template: it is the template text, as erlang renders it
         // (`user_erlang_templates` — the module is not prefixed). A `(` with
         // no marker names no shape either backend lowers.

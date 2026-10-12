@@ -30,8 +30,8 @@ fn check<T>(
     decl.setMeta(key, message.value + " (" + kind + ")");
 }
 
-#[check("passwords differ", passwordsMatch, at = .confirm)]
-#[check("handle taken", handleFree, at = .handle, code = .Mismatch)]
+#[check("passwords differ", passwordsMatch, at: .confirm)]
+#[check("handle taken", handleFree, at: .handle, code: .Mismatch)]
 pub type Account(handle: string, password: string, confirm: string)
 
 fn passwordsMatch(a: Account) -> bool {

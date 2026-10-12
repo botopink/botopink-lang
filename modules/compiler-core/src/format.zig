@@ -2295,14 +2295,13 @@ pub const Formatter = struct {
         // name, one space, the literal (`"…"` or `"""…"""`) untouched.
         if (ann.template) |lit| return std.fmt.allocPrint(this.arena, "{s} {s}", .{ ann.name, lit });
         if (ann.writtenArgs().len == 0) return std.fmt.allocPrint(this.arena, "{s}{s}", .{ prefix, ann.name });
-        // A labelled argument prints as written: `label: value` or the
-        // fn-style `label = value` (the parser reads both and records which
-        // in `assign_mask`).
+        // A labelled argument prints `label: value` (decision 305: the
+        // parser refuses `label = value`).
         var written: std.ArrayList([]const u8) = .empty;
         defer written.deinit(this.arena);
         for (ann.writtenArgs(), 0..) |arg, i| {
             try written.append(this.arena, if (ann.labelOf(i)) |label|
-                try std.fmt.allocPrint(this.arena, "{s}{s} {s}", .{ label, if (ann.labelAssigned(i)) " =" else ":", arg })
+                try std.fmt.allocPrint(this.arena, "{s}: {s}", .{ label, arg })
             else
                 arg);
         }

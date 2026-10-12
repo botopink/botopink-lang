@@ -22,7 +22,7 @@ fn allUsers() -> User[] {
     return [];
 }
 
-#[page("blog/[slug]", paths = allUsers)]
+#[page("blog/[slug]", paths: allUsers)]
 fn blog(route: Route<BlogParams>) -> View {
     return View(html: route.params.slug);
 }

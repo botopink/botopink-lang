@@ -2,7 +2,7 @@
 //! vocabulary of four cells, each a labelled argument of the kind it names
 //! (decision 440 added `std:`), read and checked here before anything is
 //! lowered. The parser hands each cell on as one binding text
-//! (`ast.translateWasmCells`: `fn: tanBody` → `fn:tanBody`), which `parse`
+//! (`ast.translateExternalCells`: `fn: tanBody` → `fn:tanBody`), which `parse`
 //! reads; a message names the cell as written (`ast.wasmCellDisplay`).
 //!
 //! | Cell | Means |

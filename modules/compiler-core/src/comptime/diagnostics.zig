@@ -300,7 +300,7 @@ pub const std_decorator_leaf_import: []const u8 = "std-decorator-leaf-import";
 /// name is nearest.
 pub const unknown_primitive_method: []const u8 = "unknown-primitive-method";
 /// A `#[@Family…]` annotation whose family the compiler does not read
-/// (`#[@TotallyMadeUp.Nonsense(whatever = 42)]`). It used to parse, check and
+/// (`#[@TotallyMadeUp.Nonsense(whatever: 42)]`). It used to parse, check and
 /// be dropped (decision 15's failure mode; front 17 step 3's recorded row).
 pub const unknown_annotation: []const u8 = "unknown-annotation";
 

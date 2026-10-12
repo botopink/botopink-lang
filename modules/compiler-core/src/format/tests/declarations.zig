@@ -927,18 +927,10 @@ test "format: module-level `var` keeps its keyword and its annotation" {
     );
 }
 
-test "format: an annotation argument keeps its label" {
+test "format: an annotation argument prints `label: value` (decision 305)" {
     // `inline` is written on the two targets that read it (front 20 F9 —
     // `erlang.zig` and `beam_asm.zig` each have a `hasExternalInline`; no JS
     // path ever consulted the one `External.Node` used to declare).
-    try h.assertFormat(std.testing.allocator,
-        \\#[@BeamMemory.Ets(keyed = true)]
-        \\var cache: i32 = 0;
-        \\
-        \\#[@External.Erlang("string:slice($0, 0, 1)", inline = true)]
-        \\pub declare fn f(s: string) -> string;
-    );
-    // Both separators are kept as written: `label: value` stays `:`.
     try h.assertFormat(std.testing.allocator,
         \\#[@BeamMemory.Ets(keyed: true)]
         \\var cache: i32 = 0;
@@ -946,12 +938,20 @@ test "format: an annotation argument keeps its label" {
         \\#[@External.Erlang("string:slice($0, 0, 1)", inline: true)]
         \\pub declare fn f(s: string) -> string;
     );
-    // Decorators (`check`) keep theirs too, mixed in one list.
+    try h.assertIdempotent(std.testing.allocator,
+        \\#[@BeamMemory.Ets(keyed: true)]
+        \\var cache: i32 = 0;
+        \\
+        \\#[@External.Node(fn: fBody)]
+        \\#[@External.Erlang(fn: fBody)]
+        \\pub declare fn f(s: string) -> string;
+    );
+    // Decorators (`check`) print theirs the same way, mixed in one list.
     try h.assertFormat(std.testing.allocator,
-        \\#[check("passwords differ", passwordsMatch, at = .confirm)]
+        \\#[check("passwords differ", passwordsMatch, at: .confirm)]
         \\pub declare fn g(s: string) -> string;
         \\
-        \\#[check("passwords differ", passwordsMatch, at: .confirm, code = .Custom)]
+        \\#[check("passwords differ", passwordsMatch, at: .confirm, code: .Custom)]
         \\pub declare fn h(s: string) -> string;
     );
 }
@@ -1172,7 +1172,7 @@ test "format: annotations ---- builtin and custom mixed, on a declare fn" {
     );
     try h.assertFormat(std.testing.allocator,
         \\#[@External.Node("a"), check("m", rule, at: .confirm)]
-        \\#[@BeamMemory.Ets(keyed = true)]
+        \\#[@BeamMemory.Ets(keyed: true)]
         \\var cache: i32 = 0;
     );
 }

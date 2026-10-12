@@ -1,0 +1,12 @@
+//// Decision 305 — an annotation's labelled argument is written `label: value`,
+//// as a call's is. `label = value` is a located parse error at the label,
+//// naming the form to write.
+
+import {collections.Dict} from "std";
+
+#[@BeamMemory.Ets(keyed = true)]
+var counts: Dict<string, i32> = Dict.empty();
+
+pub fn main() {
+    @print(counts.at("a"));
+}

@@ -97,7 +97,7 @@ header says how).
 one BEAM annotation, decision 437). An `#[@External.Erlang("mod", "sym")]` pair is a
 plain `call_ext`. An `#[@External.Erlang("…")]` **template** — Erlang *source*
 with receiver/`$N` holes (`"base64:encode($0)"`, the arity-branch
-form, the keyword form's `method = "max($args)"` — its text as written, the
+form, the keyword form's `method: "max($args)"` — its text as written, the
 `module` not prefixed, as erlang renders it — a primitive method's template
 reached through `primErlangTemplate`) — is
 **compiled at build time** into a helper function of the module

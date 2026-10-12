@@ -32,6 +32,9 @@ pub const ErrorMessages = struct {
     /// only the token itself to say something about. Skipped when the lexeme
     /// is empty (end of file).
     lexemeInCaption: bool = false,
+    /// Appended to the lexeme inside its backticks when `lexemeInCaption`
+    /// is set — `:` names `keyed:` from the label `keyed`.
+    lexemeSuffix: []const u8 = "",
     /// Optional `= note: ...` line emitted before `= hint: ...`.
     note: ?[]const u8 = null,
 };
@@ -142,6 +145,14 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .caretCaption = "the type is the receiver already",
             .note = "the `implement` after a bodyless `type P(…)` is the TYPE's clause, `type P(…) implement A { … }`",
             .hint = "Either write the clause, `type P(x: i32) implement A { … }`, or name a standalone block: `Impl implement A for P { … }`.",
+        },
+        .annotationLabelEquals => .{
+            .code = "annotation-label-equals",
+            .message = "an annotation's labelled argument is written `label: value`",
+            .caretCaption = "write",
+            .lexemeInCaption = true,
+            .lexemeSuffix = ":",
+            .hint = "A labelled argument is `label: value` everywhere, in an annotation as in a call (decision 305): `#[@BeamMemory.Ets(keyed: true)]`, `#[@External.Erlang(\"…\", inline: true)]`, `#[mark(level: .High)]`.",
         },
         .tupleLiteralLabel => .{
             .code = "tuple-literal-label",
@@ -664,7 +675,7 @@ pub fn render(
     try writePadN(writer, loc.col - 1, ' ');
     try writePadN(writer, spanLen, '^');
     if (msgs.lexemeInCaption and info.lexeme.len > 0) {
-        try writer.print(" {s} `{s}`\n", .{ caption, info.lexeme });
+        try writer.print(" {s} `{s}{s}`\n", .{ caption, info.lexeme, msgs.lexemeSuffix });
     } else {
         try writer.print(" {s}\n", .{caption});
     }

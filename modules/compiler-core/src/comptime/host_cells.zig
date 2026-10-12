@@ -290,7 +290,6 @@ fn withWasmTarget(arena: std.mem.Allocator, annotations: []const ast.Annotation,
     out[index].args = try arena.dupe([]const u8, &.{text});
     out[index].labels = try arena.dupe([]const u8, &.{"fn"});
     out[index].source_args = try arena.dupe([]const u8, &.{target});
-    out[index].assign_mask = 0;
     out[index].argLocs = &.{};
     return out;
 }

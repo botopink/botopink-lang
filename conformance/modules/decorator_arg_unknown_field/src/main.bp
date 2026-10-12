@@ -20,7 +20,7 @@ fn passwordsMatch(a: Account) -> bool {
     return a.password == a.confirm;
 }
 
-#[check("passwords differ", passwordsMatch, at = .confrim)]
+#[check("passwords differ", passwordsMatch, at: .confrim)]
 type Account(password: string, confirm: string)
 
 pub fn main() {

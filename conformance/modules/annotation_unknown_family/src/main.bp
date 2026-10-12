@@ -3,7 +3,7 @@
 //// `Host`). An unknown one used to parse, check and be dropped — front 17
 //// step 3's recorded row, measured on a `var` and on a `fn`.
 
-#[@TotallyMadeUp.Nonsense(whatever = 42)]
+#[@TotallyMadeUp.Nonsense(whatever: 42)]
 var hits: i32 = 0;
 
 pub fn main() { @print(hits); }

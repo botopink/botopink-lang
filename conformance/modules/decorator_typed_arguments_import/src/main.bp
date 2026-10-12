@@ -8,7 +8,7 @@ pub mod orm;
 import {orm.index, orm.sorted};
 
 #[index(.state, .name)]
-#[sorted(.name, order = .Desc)]
+#[sorted(.name, order: .Desc)]
 type City(code: string, name: string, state: string)
 
 pub fn main() {

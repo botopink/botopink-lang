@@ -27,7 +27,7 @@ that still parse, and one rendered-message case so the code, the caption and the
 assertions — no snapshots — and compares the JSON dump of each old spelling with its new spelling.
 
 `declarations.zig` ends with front 17's rows (decision 38): `var` at module level
-(`ValDecl.mutable`), `#[@BeamMemory.Ets(keyed = true)] var` carrying the annotation on
+(`ValDecl.mutable`), `#[@BeamMemory.Ets(keyed: true)] var` carrying the annotation on
 the binding with its `keyed` label, and an unlabelled argument having no label —
 structural assertions, no snapshot. `surface.zig` carries the front's two `expectError`
 cases: an annotated `val` shorthand (`#[@BeamMemory.Ets] val add = fn …`) is

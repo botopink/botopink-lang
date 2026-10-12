@@ -1826,6 +1826,14 @@ name is `unknown-associated-fn` where the call is written.
 
 <!-- example: modules/decorator_entity_table -->
 
+**An annotation's labelled argument is `label: value`** (decision 305), in every
+annotation — a decorator's (`#[check(…, at: .confirm)]`), `@BeamMemory`'s
+(`keyed: true`), `@External`'s (`inline: true`, `fn: powBody`) — as a call's
+labelled argument is, and `botopink format` prints it so. `label = value` is
+refused where it is written, at the label, naming `label:`:
+
+<!-- example: modules/annotation_label_equals -->
+
 A decorator's arguments are typed compile-time values (decision 280), checked
 where they are written, as a call's are:
 
@@ -2170,7 +2178,7 @@ error naming the capitalised form (`` `#[@external]` binds no host — an extern
 target is written `External.<Target>` ``), rather than a function left silently
 without a host.
 
-`inline = true`, written last on `External.Erlang`, opts the declaration out of
+`inline: true`, written last on `External.Erlang`, opts the declaration out of
 the dispatch table so the backend's hand-coded shape keeps emitting. That
 variant alone declares it, because the erlang and beam emitters, which both
 read `External.Erlang`, alone read it. Written on `Node`, `Wasm` or
@@ -2288,10 +2296,13 @@ carries one; the same declaration in a program is refused:
 
 <!-- example: modules/external_std_binding_refused -->
 
-**A prefixed string is no wasm cell** (decision 481). The strings the
+**A prefixed string is no binding** (decisions 305, 481). The strings the
 vocabulary was once written as — `"fn:tanBody"`, `"op:f64.floor"`,
 `"wasi:delay"`, `"std:hash.contentHash"` — are refused at the argument, on
-every target, naming the labelled cell to write instead:
+every target, naming the labelled cell to write instead; an unlabelled string
+is host code, always:
+
+<!-- example: modules/external_prefixed_fn_refused -->
 
 <!-- example: modules/external_wasm_prefixed_fn_refused -->
 
@@ -2397,10 +2408,10 @@ with `node <module>.mjs`. Every wasm program prints the same on both hosts:
 `conformance` runs its wasm column under both and fails a cell whose
 answers differ.
 
-**A private fn binds a declaration on every target** (decisions 238, 263). On
-`@External.Node` and `@External.Erlang` (which the beam target reads) a single string
-starting with `fn:` (`"fn:powBody"`) is not a host expression or a template: it
-binds what wasm's `fn: <name>` cell binds — a private `fn` of the same module, with a body, taking the same
+**A private fn binds a declaration on every target** (decisions 238, 263, 305). On
+`@External.Node` and `@External.Erlang` (which the beam target reads) the
+labelled cell `fn: <name>` (`#[@External.Erlang(fn: powBody)]`) binds what
+wasm's `fn: <name>` cell binds — a private `fn` of the same module, with a body, taking the same
 parameter types in the same order and answering the same type — and it is
 checked the same way, at the annotation. One algorithm written in botopink then
 answers the same bits on every target, instead of each host's own library
@@ -2408,6 +2419,13 @@ answers the same bits on every target, instead of each host's own library
 commonJS too).
 
 <!-- example: modules/external_fn_body_every_target -->
+
+`<name>` is a botopink identifier, resolved in the module like any other name:
+a misspelt one is the ordinary unbound-name error, at the argument, and
+renaming the function renames the binding.
+
+<!-- example: modules/external_fn_unbound -->
+
 Until 2026-09-21 wasm lowered such a call to a `wasm trap`, so the program
 compiled and then died at run time where the other three refused it; it
 refuses too, and there is no flag that restores the trap.

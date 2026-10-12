@@ -19,7 +19,7 @@ fn mark(
 }
 
 #[index(.state, .name)]
-#[mark([1, 2], level = .High)]
+#[mark([1, 2], level: .High)]
 type City(code: string, name: string, state: string)
 
 fn main() {

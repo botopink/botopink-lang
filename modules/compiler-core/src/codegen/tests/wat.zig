@@ -1896,7 +1896,7 @@ test "wat: host binding ---- an unknown form, opcode, signature, fn or adapter i
         \\declare fn greet(name: string) -> string;
         \\fn greetBody(name: string) -> string { return name; }
         \\fn main() { @print(greet("x")); }
-    , "this module declares no fn `greetBdy`", 1, 3);
+    , "unbound variable 'greetBdy'", 1, 22);
     try h.assertWasmRefusedAt(std.testing.allocator,
         \\#[@External.Wasm(fn: greetBody)]
         \\declare fn greet(name: string) -> string;

@@ -58,7 +58,7 @@
 //// backend does the same for a plain `"<mod>", "<symbol>"` target — every
 //// declaration below — since front 17 step 5 lowered a module `var`'s
 //// reads and writes onto these calls on both BEAM targets; `etsLookup` is
-//// the row read of a `keyed = true` var (decision 168, front 17 step 1 of
+//// the row read of a `keyed: true` var (decision 168, front 17 step 1 of
 //// 1.0.11 — a carve-out of the std track, the layer-1 half of decision 43).
 ////
 //// Adding a primitive: one `#[@External.Erlang("<mod>", "<symbol>")] pub

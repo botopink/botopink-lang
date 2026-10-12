@@ -32,8 +32,8 @@ import {unicode_tables as tables};
 // target runs `fromCodepointBody`, a call of the primitive
 // `String.fromCodepoint`, so a `cp` that is no Unicode scalar value — negative,
 // a surrogate, past U+10FFFF — aborts the program the same way everywhere.
-#[@External.Node("fn:fromCodepointBody")]
-#[@External.Erlang("fn:fromCodepointBody")]
+#[@External.Node(fn: fromCodepointBody)]
+#[@External.Erlang(fn: fromCodepointBody)]
 #[@External.Wasm(fn: fromCodepointBody)]
 pub declare fn fromCodepoint(cp: i32) -> string;
 

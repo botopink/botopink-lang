@@ -677,15 +677,18 @@ annotation's (`#[@…]`) loop special-cases these shapes (vocabulary in
 
 - **Arity branches** — `when($argc == N): "<template>"` spans the balanced parens,
   the `:` and the value into one lexeme (`spanLexemes`).
-- **Labels** — a leading `identifier :` or `identifier =` (`module:`,
-  `inline = true`) lands in `Annotation.labels[i]` (`labelOf(i)`, front 17
+- **Labels** — a leading `identifier :` (`module:`, `inline: true`,
+  `keyed: true`) lands in `Annotation.labels[i]` (`labelOf(i)`, front 17
   step 3 — the validator and the formatter read it); the value still lands
-  positionally in `args`. A keyword is a label too (`fn: tanBody`, decision
-  481): before `:` or `=` it starts no expression. On `@External.Wasm` a
-  cell's value (`fn:`, `op:`, `wasi:`, `std:`) lands as its binding text
-  (`ast.translateWasmCells`: `fn: tanBody` → `"fn:tanBody"`, `wasi: .RaceOf`
-  → `"wasi:race_of"`), the spelling kept in `source_args` for the formatter
-  and the checker.
+  positionally in `args`. A labelled argument is `label: value` in every
+  annotation, a builtin's and a decorator's (decision 305): `label = value`
+  is `annotation-label-equals`, located at the label, the caret caption
+  naming `label:`. A keyword is a label too (`fn: tanBody`, decision 481):
+  before `:` it starts no expression. A binding cell's value — `fn:` on every
+  `@External.<Target>`, and `op:`, `wasi:`, `std:` on `@External.Wasm` —
+  lands as its binding text (`ast.translateExternalCells`: `fn: tanBody` →
+  `"fn:tanBody"`, `wasi: .RaceOf` → `"wasi:race_of"`), the spelling kept in
+  `source_args` for the formatter and the checker.
 - **Enum/member chains** — `.Erlang`, `Target.Erlang`: adjacent `.`/identifier
   tokens fold into one lexeme spanning the source bytes. A bare identifier or
   string literal goes through unchanged.
@@ -698,7 +701,7 @@ annotation's (`#[@…]`) loop special-cases these shapes (vocabulary in
 
 `parseValDecl` reads `var name[: T] = v;` as a `ValDecl` with `mutable = true`;
 `parseValForm` sends `var` straight there (no `val Name = fn …`-style shorthand
-reads it). An annotated binding — `#[@BeamMemory.Ets(keyed = true)] var hits:
+reads it). An annotated binding — `#[@BeamMemory.Ets(keyed: true)] var hits:
 i32 = 0;` — is dispatched from the annotation branch of the top-level loop, and
 the annotations land on `ValDecl.annotations`; only the plain form takes them
 (an annotated shorthand is `UnexpectedToken`, located at the annotation's first

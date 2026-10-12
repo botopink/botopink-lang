@@ -1034,7 +1034,7 @@ test "parser: `#[@BeamMemory.Ets] var` carries the annotation on the binding" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
-    var lx = Lexer.init("#[@BeamMemory.Ets(keyed = true)]\nvar cache: i32 = 0;");
+    var lx = Lexer.init("#[@BeamMemory.Ets(keyed: true)]\nvar cache: i32 = 0;");
     const tokens = try lx.scanAll(alloc);
     var p = Parser.init(tokens);
     const program = try p.parse(alloc);
@@ -1047,6 +1047,14 @@ test "parser: `#[@BeamMemory.Ets] var` carries the annotation on the binding" {
     // The label survives beside the positional value (front 17 step 3).
     try std.testing.expectEqualStrings("true", v.annotations[0].args[0]);
     try std.testing.expectEqualStrings("keyed", v.annotations[0].labelOf(0).?);
+}
+
+test "parser: `label = value` in an annotation is refused at the label (decision 305)" {
+    // A builtin's argument and a decorator's alike: the label is written
+    // `label: value`, as a call's is.
+    try h.expectErrorAt("#[@BeamMemory.Ets(keyed = true)]\nvar cache: i32 = 0;", .annotationLabelEquals, 1, 19);
+    try h.expectErrorAt("#[@External.Erlang(\"m\", \"f\", inline = true)]\npub declare fn f() -> i32;", .annotationLabelEquals, 1, 30);
+    try h.expectErrorAt("#[mark([1, 2], level = .High)]\nfn f() {}", .annotationLabelEquals, 1, 16);
 }
 
 test "parser: a keyword is an annotation argument's label (`fn:`, decision 481)" {

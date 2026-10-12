@@ -198,7 +198,7 @@ an annotation whose every variant carries a payload the compiler reads (front
   runs; on a `declare fn` it emits `require("./file.mjs")`, which throws unless
   the file is shipped next to the emitted module. Name the native method, write
   a template, or keep host code in a sidecar (below).
-- **`inline`** — `#[@External.Erlang("…", inline = true)]`
+- **`inline`** — `#[@External.Erlang("…", inline: true)]`
   opts the `(target, method)` pair out of the dispatch table so the emitter's
   hand-coded shape keeps emitting. Only that variant declares it, because
   only the erlang and beam emitters read it (both through `External.Erlang`, `hasExternalInline` over the last
@@ -260,11 +260,11 @@ is one labelled cell — `op: "<wasm opcode>"` (the declared types must be the o
 `fn: <a private bodied fn of the same module, same signature>`,
 `wasi: .<Adapter>` (the list in `conformance/docs.md` § Host bindings) or std's own
 `std: "<module>.<function>"` (std-wasm, decision 440) —, the arguments being
-the declared parameters in order; a prefixed string (`"fn:…"`) is refused on every
+the declared parameters in order; a prefixed string (`"fn:…"`, `"op:…"`, `"wasi:…"`) is refused on every
 target, anything else is refused at the annotation
 on a wasm build. An algorithm with no wasm instruction stays in the library as
 that private `fn` — the only std edit a wasm binding brings, never a public
-one. The same private-fn binding, written `"fn:<name>"`, binds a declaration on `Node`, `Erlang` and `Beam`
+one. The same private-fn binding, the labelled `fn: <name>` (decision 305), binds a declaration on `Node` and `Erlang`
 (decision 263, `codegen/hostFnBinding.zig`): `math`'s transcendentals run
 std's bodies on erlang and beam and `pow` runs `powBody` on commonJS too, so
 they answer the same bits on every target and OS. Bound today: `math` (every cell), `escape` (both cells), `hash` (every

@@ -397,6 +397,20 @@ pub fn build(b: *std.Build) void {
     lib_agnostic_gate.has_side_effects = true; // never cache — always re-scan
     test_step.dependOn(&lib_agnostic_gate.step);
 
+    // ── labelled binding cells (decision 305) ─────────────────────────────────
+    // HARD RULE: a binding cell is a labelled argument (`fn: powBody`,
+    // `op: "f64.sqrt"`, `wasi: .RandomF64`); the prefixed strings `"fn:…"`,
+    // `"op:…"`, `"wasi:…"` are no binding, and none is left in the bundled
+    // libraries. The checker refuses them where written
+    // (`infer.zig` `checkExternalCells`); this scan keeps them out of `libs/**`
+    // even where nothing checks a file. Runs as part of `zig build test`.
+    const labelled_cells_gate = b.addSystemCommand(&.{
+        "sh",                                                   "-c",
+        "! grep -rnIE --include='*.bp' '\"(fn|op|wasi):' libs",
+    });
+    labelled_cells_gate.has_side_effects = true; // never cache — always re-scan
+    test_step.dependOn(&labelled_cells_gate.step);
+
     // ── language-server tests ─────────────────────────────────────────────────
 
     const lsp_test_mod = b.createModule(.{

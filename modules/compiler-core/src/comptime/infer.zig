@@ -3817,14 +3817,14 @@ fn refuseUnreadInline(env: *Env, a: ast.Annotation) InferError!void {
                 env.arena,
                 "`External.{s}`'s `inline` must be the last argument — the emitters read the last argument only",
                 .{v.name},
-            ), "Write the template first: `#[@External.Erlang(\"<template>\", inline = true)]`.");
+            ), "Write the template first: `#[@External.Erlang(\"<template>\", inline: true)]`.");
         }
         if (!std.mem.eql(u8, arg, "true") and !std.mem.eql(u8, arg, "false")) {
             return fail(env, a, try std.fmt.allocPrint(
                 env.arena,
                 "`External.{s}`'s `inline` is a bool, got `{s}`",
                 .{ v.name, arg },
-            ), "Write `inline = true` or `inline = false`.");
+            ), "Write `inline: true` or `inline: false`.");
         }
     }
 }
@@ -3906,7 +3906,7 @@ fn refuseWasmHostTwice(env: *Env, f: ast.FnDecl) InferError!void {
 /// same way a `declare fn`'s is (`validateExternalAnnotation`).
 fn validateExternalInline(env: *Env, program: ast.Program) InferError!void {
     for (program.decls) |decl| switch (decl) {
-        .@"fn" => |f| for (f.annotations) |a| try checkWasmCells(env, a, f.name, f, program),
+        .@"fn" => |f| for (f.annotations) |a| try checkExternalCells(env, a, f.name, f, program),
         else => {},
     };
     for (program.decls) |decl| switch (decl) {
@@ -3915,7 +3915,7 @@ fn validateExternalInline(env: *Env, program: ast.Program) InferError!void {
                 try refuseUnreadInline(env, a);
                 try refuseHostArg(env, a);
                 try refuseStdBinding(env, a, m.name, m.params, m.returnType, null);
-                try checkWasmCells(env, a, m.name, null, program);
+                try checkExternalCells(env, a, m.name, null, program);
             }
         },
         .behavior => |i| for (i.methods) |m| {
@@ -3923,27 +3923,34 @@ fn validateExternalInline(env: *Env, program: ast.Program) InferError!void {
                 try refuseUnreadInline(env, a);
                 try refuseHostArg(env, a);
                 try refuseStdBinding(env, a, m.name, m.params, m.returnType, selfSpelling(i.name));
-                try checkWasmCells(env, a, m.name, null, program);
+                try checkExternalCells(env, a, m.name, null, program);
             }
         },
         else => {},
     };
 }
 
-/// Decision 481 — an `@External.Wasm` binding is one cell, a labelled
-/// argument of the kind it names: `fn: <identifier>` (resolved in the
-/// module and checked against the declaration, `hostFnBinding.resolve`),
-/// `op: "<opcode>"` (a string the opcode table holds), `wasi: .<Adapter>`
-/// (an adapter's enum value), `std: "<module>.<function>"` (a string,
-/// checked against std-wasm's exports by `refuseStdBinding`). The prefixed
-/// string (`"fn:tanBody"`) is refused at the annotation, naming the labelled
-/// form; so is a value of the wrong kind, a label `External.Wasm` does not
-/// take and a second cell. An opcode's and an adapter's signature are
-/// checked by the wasm backend (`wat/host_binding.zig`). `f` is the
-/// declaration when it is a module-level `declare fn` (`fn:` resolves
-/// against `program`'s functions), null on a method.
-fn checkWasmCells(env: *Env, a: ast.Annotation, name: []const u8, f: ?ast.FnDecl, program: ast.Program) InferError!void {
-    if (!a.is_builtin or !ast.isExternalWasm(a)) return;
+/// Decisions 305 and 481 — a binding cell is a labelled argument of the kind
+/// it names. On `@External.Wasm` it is one of four: `fn: <identifier>`
+/// (resolved in the module and checked against the declaration,
+/// `hostFnBinding.resolve`), `op: "<opcode>"` (a string the opcode table
+/// holds), `wasi: .<Adapter>` (an adapter's enum value), `std:
+/// "<module>.<function>"` (a string, checked against std-wasm's exports by
+/// `refuseStdBinding`); a label `External.Wasm` does not take and a second
+/// cell are refused. Every other target's `@External.<Target>` takes `fn:`
+/// (decision 238). A `fn:` name the module does not bind is the ordinary
+/// unbound-name error at the argument. The prefixed string (`"fn:tanBody"`,
+/// `"op:f64.floor"`, `"wasi:delay"`, `"std:…"`) is no binding on any target:
+/// it is refused at the argument, naming the labelled form (one release,
+/// then an unlabelled string is host code with no exception). An opcode's
+/// and an adapter's signature are checked by the wasm backend
+/// (`wat/host_binding.zig`). `f` is the declaration when it is a
+/// module-level `declare fn` (`fn:` resolves against `program`'s
+/// functions), null on a method.
+fn checkExternalCells(env: *Env, a: ast.Annotation, name: []const u8, f: ?ast.FnDecl, program: ast.Program) InferError!void {
+    if (!a.is_builtin or !ast.isExternal(a)) return;
+    const wasm = ast.isExternalWasm(a);
+    const variant = a.name["External.".len..];
     const written = a.writtenArgs();
     var cells: usize = 0;
     for (written, 0..) |arg, i| {
@@ -3955,16 +3962,27 @@ fn checkWasmCells(env: *Env, a: ast.Annotation, name: []const u8, f: ?ast.FnDecl
             const inner = unquotedString(arg) orelse continue;
             for (ast.wasm_cell_labels) |l| {
                 if (inner.len > l.len and std.mem.startsWith(u8, inner, l) and inner[l.len] == ':') {
+                    // `std:` was only ever a wasm cell; on another target the
+                    // string is host code.
+                    if (!wasm and std.mem.eql(u8, l, "std")) continue;
                     const labelled = try ast.wasmCellDisplay(env.arena, inner);
-                    return wasmCellError(env, loc, try std.fmt.allocPrint(
+                    // `op:` / `wasi:` are `@External.Wasm`'s cells alone.
+                    const into = if (wasm or std.mem.eql(u8, l, "fn")) variant else "Wasm";
+                    if (wasm) return wasmCellError(env, loc, try std.fmt.allocPrint(
                         env.arena,
                         "`#[@External.Wasm({s})]` on `{s}`: a wasm cell is a labelled argument, not a prefixed string (decision 481) — write `#[@External.Wasm({s})]`",
                         .{ arg, name, labelled },
+                    ));
+                    return wasmCellError(env, loc, try std.fmt.allocPrint(
+                        env.arena,
+                        "`#[@External.{s}({s})]` on `{s}`: a binding cell is a labelled argument, not a prefixed string (decision 305) — write `#[@External.{s}({s})]`",
+                        .{ variant, arg, name, into, labelled },
                     ));
                 }
             }
             continue;
         };
+        if (!wasm and !std.mem.eql(u8, label, "fn")) continue;
         if (std.mem.eql(u8, label, "host") or std.mem.eql(u8, label, "inline")) continue;
         if (!ast.isWasmCellLabel(label)) {
             return wasmCellError(env, loc, try std.fmt.allocPrint(
@@ -3977,17 +3995,23 @@ fn checkWasmCells(env: *Env, a: ast.Annotation, name: []const u8, f: ?ast.FnDecl
         if (cells > 1) {
             return wasmCellError(env, loc, try std.fmt.allocPrint(
                 env.arena,
-                "`#[@External.Wasm]` on `{s}` writes a second cell, `{s}:` — a wasm binding is one cell (decision 481)",
-                .{ name, label },
+                "`#[@External.{s}]` on `{s}` writes a second cell, `{s}:` — a {s}binding is one cell (decision 481)",
+                .{ variant, name, label, if (wasm) "wasm " else "" },
             ));
         }
         if (std.mem.eql(u8, label, "fn")) {
             if (!isIdentText(arg)) return wasmCellError(env, loc, try std.fmt.allocPrint(
                 env.arena,
-                "`#[@External.Wasm(fn: {s})]` on `{s}`: `fn:` names a private fn of this module by its identifier, not a string (decision 481) — write `fn: <name>`",
-                .{ arg, name },
+                "`#[@External.{s}(fn: {s})]` on `{s}`: `fn:` names a private fn of this module by its identifier, not a string (decisions 305, 481) — write `fn: <name>`",
+                .{ variant, arg, name },
             ));
-            if (f) |fd| if (fd.isDeclare) switch (try hostFnBinding.resolve(env.arena, fd, arg, program, "", "Wasm")) {
+            // Decision 305 — the name is a botopink name: one the module
+            // does not bind is the ordinary unbound-name error, at it.
+            if (!moduleBinds(env, program, arg)) {
+                env.lastError = TypeError.unboundVariable(arg).withLoc(loc orelse a.loc orelse return error.TypeError);
+                return error.TypeError;
+            }
+            if (f) |fd| if (fd.isDeclare) switch (try hostFnBinding.resolve(env.arena, fd, arg, program, "", variant)) {
                 .ok => {},
                 .refused => |msg| return wasmCellError(env, a.loc, msg),
             };
@@ -4023,8 +4047,21 @@ fn checkWasmCells(env: *Env, a: ast.Annotation, name: []const u8, f: ?ast.FnDecl
     }
 }
 
+/// True when `name` is bound at module level: a declaration of `program`
+/// (a `fn`, a `val`) or a name the checker has registered (a fn signature, an
+/// import, a builtin).
+fn moduleBinds(env: *Env, program: ast.Program, name: []const u8) bool {
+    if (env.lookup(name) != null) return true;
+    for (program.decls) |d| switch (d) {
+        .@"fn" => |g| if (std.mem.eql(u8, g.name, name)) return true,
+        .val => |v| if (std.mem.eql(u8, v.name, name)) return true,
+        else => {},
+    };
+    return false;
+}
+
 fn wasmCellError(env: *Env, loc: ?ast.Loc, msg: []const u8) InferError {
-    var e = TypeError.custom(msg, "A wasm binding is one labelled cell: `fn: <private fn of this module>`, `op: \"<opcode>\"`, `wasi: .<Adapter>` or `std: \"<module>.<function>\"` (std's alone).");
+    var e = TypeError.custom(msg, "A binding is one labelled cell: `fn: <private fn of this module>` on every target; on wasm also `op: \"<opcode>\"`, `wasi: .<Adapter>` or `std: \"<module>.<function>\"` (std's alone).");
     if (loc) |l| e = e.withLoc(l);
     env.lastError = e;
     return error.TypeError;
@@ -4162,7 +4199,7 @@ fn validateExternalAnnotation(env: *Env, f: ast.FnDecl, a: ast.Annotation) Infer
     // Decision 334: `host:` on `External.Wasm` alone, `.Wasi` or `.Browser`.
     try refuseHostArg(env, a);
     // `External.<Target>(module, symbol)` form: 1-2 body args (symbol alone
-    // or module + symbol). The trailing `inline = true`/`false` flag, on a
+    // or module + symbol). The trailing `inline: true`/`false` flag, on a
     // variant that declares it, adds one more arg; so does wasm's `host:`.
     const host_at = ast.hostArgIndex(a);
     var body_args: std.ArrayListUnmanaged([]const u8) = .empty;
@@ -4463,7 +4500,7 @@ fn checkTemplateAnnotationHoles(env: *Env, program: ast.Program) InferError!void
 const builtin_annotation_families = [_][]const u8{ "External", "BeamMemory", "Host" };
 
 /// Decision 15 gives the annotation grammar to the checker, and front 17 step
-/// 3 recorded the hole: `#[@TotallyMadeUp.Nonsense(whatever = 42)]` parsed,
+/// 3 recorded the hole: `#[@TotallyMadeUp.Nonsense(whatever: 42)]` parsed,
 /// checked and was dropped — on a `fn`, a `var`, a type, a field, a method. A
 /// misspelled family (`#[@BeamMemroy.Ets]`) moves where the state lives with
 /// nothing said. Every `@`-prefixed annotation now names a family the compiler
@@ -7138,7 +7175,7 @@ fn refuseValAssign(env: *Env, name: []const u8, loc: ast.Loc) InferError!void {
 /// was born in: the binding is a `var`; the member is one of `ProcessDict`
 /// (the default, said out loud), `Ets` or `PersistentTerm`; every argument is
 /// the one the annotation takes, `keyed`, with a `true`/`false` value; and
-/// `keyed = true` names a `Dict` — an `i32` has no key, and neither has a
+/// `keyed: true` names a `Dict` — an `i32` has no key, and neither has a
 /// list (51).
 fn validateMemoryAnnotations(env: *Env, v: ast.ValDecl, bindTy: *T.Type) InferError!void {
     const members = [_][]const u8{ "ProcessDict", "Ets", "PersistentTerm" };
@@ -7197,7 +7234,7 @@ fn validateMemoryAnnotations(env: *Env, v: ast.ValDecl, bindTy: *T.Type) InferEr
     }
     const mem = v.memory() orelse return;
     if (mem.keyed) {
-        // Decision 168 — `keyed = true` stores a `Dict` one ETS row per key,
+        // Decision 168 — `keyed: true` stores a `Dict` one ETS row per key,
         // so it is `Ets`'s argument; the process dictionary and
         // `persistent_term` hold one value per name.
         if (mem.mode != .ets) return failAt(
@@ -7266,10 +7303,10 @@ fn refuseMemoryWrite(env: *Env, name: []const u8, plus: bool, value: *const ast.
         .ets => switch (ast.classifyMemoryWrite(name, plus, value)) {
             .whole => {},
             // A `Dict` rewritten through its own methods is decision 42's
-            // documented case, not this rule's: under `keyed = false` it is
+            // documented case, not this rule's: under `keyed: false` it is
             // read, updated and stored whole — concurrent writes to different
             // keys can be lost, which `conformance/docs.md` states with the figure and the
-            // compiler deliberately does not warn about — and `keyed = true`
+            // compiler deliberately does not warn about — and `keyed: true`
             // is the one-row-per-key form that exists to remove the race.
             .recompose => if (!typeIsDict(mv.ty)) return failAt(
                 env,
@@ -7287,7 +7324,7 @@ fn refuseMemoryWrite(env: *Env, name: []const u8, plus: bool, value: *const ast.
     }
 }
 
-/// Decision 168 — the accepted seed of a `keyed = true` var: `Dict.empty()`,
+/// Decision 168 — the accepted seed of a `keyed: true` var: `Dict.empty()`,
 /// or `Dict.ofEntries([…])` whose entries are `#(key, value)` tuple literals
 /// of literal seeds (`ast.isMemorySeed`). The BEAM emitters fold the same
 /// shape into the table's rows (`erlang.zig` `keyedSeedRows`).
@@ -7311,7 +7348,7 @@ fn isKeyedSeed(e: ast.Expr) bool {
     return true;
 }
 
-/// The module `var` `name` if it is a `keyed = true` one and no local
+/// The module `var` `name` if it is a `keyed: true` one and no local
 /// shadows it here.
 fn keyedVar(env: *Env, name: []const u8) ?Env.MemoryVar {
     const mv = env.memoryVars.get(name) orelse return null;
@@ -7321,7 +7358,7 @@ fn keyedVar(env: *Env, name: []const u8) ?Env.MemoryVar {
     return mv;
 }
 
-/// Decision 168 — a `keyed = true` var is read one row at a time:
+/// Decision 168 — a `keyed: true` var is read one row at a time:
 /// `name.at(key)` is `ets:lookup` on the key, and the receiver is the one
 /// place the binding may be named in an expression (`refuseKeyedWholeRead`).
 fn noteKeyedRowRead(env: *Env, c: anytype) !void {
@@ -7335,7 +7372,7 @@ fn noteKeyedRowRead(env: *Env, c: anytype) !void {
     try env.keyedRowAccess.put(env.arena, recv.identifier.loc, {});
 }
 
-/// Decision 168 — a `keyed = true` var is written one row at a time, and only
+/// Decision 168 — a `keyed: true` var is written one row at a time, and only
 /// as `name = name.insert(key, value)` with a key and a value that do not
 /// read `name`: that is `ets:insert` of the one row. Any other write — a
 /// whole value, `+=`, a row computed from the var's own rows — is refused
