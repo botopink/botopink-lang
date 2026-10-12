@@ -213,7 +213,10 @@ marked one — `@print(Box(value: 1))` over `Box<T>.display` calling
 while emitting another module's code (a linked declaration, or a copy the
 consumer's call specialised from one — `Emitter.foreign_origin`) is located
 at the consumer's import or call, its message ending "in another module's code
-this line reaches". **Not covered**: `@print` of a value whose static type
+this line reaches". So is one inside the copy of a std prelude `default fn`
+(`primitives.bp`'s, `ast.BehaviorMethod.from_prelude`, `ensurePrimDefault`):
+it is located at the program's call that reached it, never at the prelude's
+line under the program's file name. **Not covered**: `@print` of a value whose static type
 nothing names reaches `$__display_of` unrecorded.
 
 **A host-backed `declare fn` with no wasm binding is REFUSED, not trapped**

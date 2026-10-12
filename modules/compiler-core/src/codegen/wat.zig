@@ -9436,7 +9436,9 @@ const Emitter = struct {
                 .rewrites = self.rewrites,
                 .lowerings = self.instance_lowerings,
                 .renames = self.global_renames,
-                .origin = self.foreign_origin,
+                // A prelude default's locations are `primitives.bp`'s: a
+                // refusal inside its copy is reported at the call reaching it.
+                .origin = self.foreign_origin orelse if (pd.method.from_prelude) self.call_loc else null,
             });
         }
         return sym;

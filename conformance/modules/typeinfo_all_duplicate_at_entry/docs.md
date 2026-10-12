@@ -1,0 +1,1 @@
+The duplicate is refused at the entry point, at compile time, naming both declarations (decision 343); the refusal is located at the call that raised, `@panic` in `uniqueCommands`, 29:21 — not at the `comptime` expression that ran it (decisions 451 (3), 144 B-48).

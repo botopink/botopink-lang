@@ -2,7 +2,7 @@
 //// is evaluated while the program compiles, as a `comptime` is (decision
 //// 331). `boom` is a `val` whose initializer is an expansion with no run-time
 //// hole, so `${boom}` is known at build; its code raises there, and the hole
-//// is refused at the hole rather than read as computed at render.
+//// is refused at build, at the call that raised, not read as computed at render.
 
 pub fn crash(s: string) -> string {
     @panic("crash: " + s);

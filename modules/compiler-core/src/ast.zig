@@ -1859,6 +1859,12 @@ pub const BehaviorMethod = struct {
     /// last member — by `bodyComments`, and either way it moves below the member
     /// it was written on. Slices into the source.
     trailingComment: ?[]const u8 = null,
+    /// Set on a member of std's prelude (`primitives.bp`, `registerStdlib`):
+    /// its locations are that file's, so a backend that copies the member
+    /// into the program reports a refusal inside it at the program's call
+    /// that reached it, never at the prelude's line under the program's file
+    /// name. Left out of the AST dump.
+    from_prelude: bool = false,
 
     /// True when the method is a host-backed `#[@External.<Target>(…)]`
     /// declaration.
@@ -1901,7 +1907,7 @@ pub const BehaviorMethod = struct {
     }
 
     pub fn jsonStringify(this: BehaviorMethod, jws: anytype) !void {
-        return stringifyOmitting(this, jws, &.{"returnTypeLoc"}, &.{ "comments", "trailingComment" });
+        return stringifyOmitting(this, jws, &.{ "returnTypeLoc", "from_prelude" }, &.{ "comments", "trailingComment" });
     }
 };
 

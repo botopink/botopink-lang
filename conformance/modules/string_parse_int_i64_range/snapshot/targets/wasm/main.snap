@@ -1,3 +1,3 @@
 botopink-cell 1
-refused error: the wasm backend cannot resolve the call `stringSlice0/2`: no function, method, variant or function value of the module or its imports answers it
-at src/main.bp:448:34
+refused error: the wasm backend cannot resolve the call `stringSlice0/2`: no function, method, variant or function value of the module or its imports answers it — in another module's code this line reaches
+at src/main.bp:6:19

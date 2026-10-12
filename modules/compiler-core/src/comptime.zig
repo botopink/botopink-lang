@@ -2987,6 +2987,11 @@ pub fn registerStdlib(env: *Env, gpa: std.mem.Allocator) anyerror!void {
         const tokens = try lx.scanAll(alloc);
         var p = Parser.init(tokens);
         const program = try stripTestDecls(try p.parse(alloc), alloc);
+        // A prelude behavior's members keep `primitives.bp`'s locations
+        // wherever a backend copies them (`ast.BehaviorMethod.from_prelude`).
+        for (program.decls) |d| if (d == .behavior) for (d.behavior.methods) |*m| {
+            m.from_prelude = true;
+        };
         _ = try infer.inferProgram(env, program);
     }
     env.inStd = false;

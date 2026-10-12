@@ -1161,6 +1161,18 @@ test "wat: prim method ---- unique over records, flatMap over a scalar and flatt
     , "`flatten` on the wasm backend: nothing shows", 2, 19);
 }
 
+// A prelude `default fn` (`primitives.bp`'s `parseInt`) is copied into the
+// program; a refusal inside its copy was located at the prelude's line under
+// the program's file name. It is located at the program's call that reaches
+// it (`ast.BehaviorMethod.from_prelude`).
+test "wat: prim method ---- a refusal inside a prelude default is located at the program's call" {
+    try h.assertWasmRefusedAt(std.testing.allocator,
+        \\fn main() {
+        \\    @print("12".parseInt().unwrapOr(0l));
+        \\}
+    , "in another module's code this line reaches", 2, 17);
+}
+
 // `Array.pop` and `Array.lastIndexOf` left the trap list: `pop` answers the
 // `?T` `at(-1)` does and rebinds the local to a copy one shorter, as `push`
 // rebinds it to a grown one; `lastIndexOf` walks `indexOf`'s equality from

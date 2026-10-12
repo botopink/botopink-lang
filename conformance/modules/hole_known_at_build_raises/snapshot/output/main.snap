@@ -1,3 +1,3 @@
 botopink-cell 1
 refused error: this hole is known at build (decision 355) and its value raised there: the comptime block raised: {error,{panic,<<"crash: x">>}}
-at src/main.bp:25:25
+at src/main.bp:8:5

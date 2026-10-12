@@ -1,0 +1,1 @@
+wasm departs: `parseInt`'s body in std's `primitives.bp` calls `stringSlice0`, which has no wasm binding, so the module is refused (decision 457 (1)). The refusal is located at the program's call that reaches std's code, `s.parseInt()` at 6:19, and says so — never at `primitives.bp`'s line under this file's name.
