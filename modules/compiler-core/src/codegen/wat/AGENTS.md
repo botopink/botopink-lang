@@ -380,7 +380,13 @@ the shapes that bound a string and still reached the one body:
 local `val k = h.value` called, and the same through `wrap(shout)` over `fn
 wrap<T>(v: T) -> Box<T>` answer a string (a bool, …) — they printed its heap
 address (`320`) or a bool as `1`. A function type has no specialisation; only
-the result type is read.
+the result type is read. A call through such a local answering an array is an
+array (`isArrayExpr` / `elemKindOf` read `valueCallTypeRef`); a generic record
+built in place keeps its own type arguments (`Box(value: Box(value: hi))` is a
+`Box<Box<fn() -> string>>`, and `recvTypeArg` names a generic argument by its
+record), as does any argument whose type is written (`typeRefOf`) —
+`conformance/modules/generic_field_fn_value_nested`. A function value answering
+an `f64` is still refused (`call_indirect` answers an `i32`).
 
 **A lambda in such a field is typed where it is used, or is refused.** The field
 says nothing (`T`), so `lowerRecordCtor` leaves the lifted lambda's

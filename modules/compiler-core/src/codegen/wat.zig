@@ -2953,6 +2953,8 @@ const Emitter = struct {
         if (tr != .generic or !std.mem.eql(u8, tr.generic.name, rty) or tr.generic.args.len != gps.len) return ft;
         return switch (tr.generic.args[idx]) {
             .named => |n| n,
+            // `Box<Box<…>>`: the argument is a generic record by its name.
+            .generic => |g| if (!g.is_builtin and self.records.contains(g.name)) g.name else ft,
             else => ft,
         };
     }
@@ -10969,6 +10971,7 @@ const Emitter = struct {
                     if (self.indexArgs(cc)) |ix| break :blk if (ix.is_slice) self.elemKindOf(ix.recv) else .i32;
                     if (cc.is_builtin) break :blk .i32;
                     if (self.resolvedCallSym(cc, c.loc)) |sym| break :blk self.fn_arr_elem.get(sym) orelse .i32;
+                    if (self.valueCallTypeRef(cc)) |t| if (arrayElemOfTypeRef(t)) |k| break :blk k;
                     break :blk self.fn_arr_elem.get(cc.callee) orelse .i32;
                 },
                 else => .i32,
@@ -12779,11 +12782,19 @@ const Emitter = struct {
             out.* = for (trefs, 0..) |t, i| {
                 if (t != .named or !std.mem.eql(u8, t.named, gp.name) or i >= names.len) continue;
                 const arg = self.argForField(cc.args, names[i], i) orelse continue;
+                // A generic record built in place keeps its own arguments
+                // (`Box(value: Box(value: hi))` is a `Box<Box<fn() -> string>>`).
+                if (self.typeRefOf(arg.value.*)) |at| if (at == .generic and !at.generic.is_builtin) break at;
                 if (self.concreteTypeOf(arg.value.*)) |c| break ast.TypeRef{ .named = c };
                 // A top-level fn stored in the field (`Box(value: shout)`):
                 // its function type, so a call through the field's value
                 // answers its declared return.
                 if (try self.fnRefTypeRef(arg.value.*)) |ft| break ft;
+                // Any other argument whose type is written somewhere — a
+                // generic record built in place (`Box(value: Box(value: hi))`),
+                // a local holding a function: reading the field back answers
+                // that type, and a call through it its return.
+                if (self.typeRefOf(arg.value.*)) |at| break at;
             } else return null;
         }
         return .{ .generic = .{ .name = cc.callee, .args = args, .is_builtin = false } };
@@ -15183,6 +15194,10 @@ const Emitter = struct {
                     else if ((self.indexElemShape(cc) catch null)) |s| s[0] == '[' else false;
                     if (cc.is_builtin) break :blk false;
                     if (self.resolvedCallSym(cc, c.loc)) |sym| break :blk self.fn_arr_elem.contains(sym);
+                    // A function VALUE answering an array — `f(5)` over a
+                    // local read from a generic record's `fn(…) -> i32[]`
+                    // field: it printed the array's address.
+                    if (self.valueCallTypeRef(cc)) |t| if (arrayElemOfTypeRef(t) != null) break :blk true;
                     break :blk self.fn_arr_elem.contains(cc.callee);
                 },
                 else => false,
