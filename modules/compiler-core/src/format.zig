@@ -1752,7 +1752,7 @@ pub const Formatter = struct {
                 try parts.append(this.arena, try this.text(lbl));
                 try parts.append(this.arena, try this.text(": "));
             }
-            try parts.append(this.arena, try this.fmtLambda(tl.params, tl.body, false));
+            try parts.append(this.arena, try this.fmtTrailingLambda(tl.params, tl.body));
         }
 
         return this.concatAll(parts.items);
@@ -1814,6 +1814,37 @@ pub const Formatter = struct {
             }
         }
         return this.fmtLambda(params, body, arrow_when_empty);
+    }
+
+    /// A trailing lambda (decision 165): a body of one value expression prints on
+    /// one line when it fits, arrow or not — `h1 { "my blog" }`, `f(1) { a, b -> a + b }`
+    /// — and the open form otherwise (or when the body is a binding, a jump, a
+    /// comment, or needs a line of its own). The choice is the width's, never the
+    /// source's, so a second pass reads the same layout.
+    fn fmtTrailingLambda(this: *Formatter, params: []const []const u8, body: []ast.Stmt) !*const Doc {
+        const open = try this.fmtLambda(params, body, false);
+        if (body.len != 1) return open;
+        const inlineValue = switch (body[0].expr) {
+            .binding, .jump => false,
+            .literal => |lit| lit.kind != .comment,
+            else => true,
+        };
+        if (!inlineValue) return open;
+        const flatValue = try render(this.arena, try this.fmtExpr(body[0].expr), std.math.maxInt(u32));
+        if (std.mem.indexOfScalar(u8, flatValue, '\n') != null) return open;
+        const head: *const Doc = if (params.len > 0) blk: {
+            var paramDocs = try this.arena.alloc(*const Doc, params.len);
+            for (params, 0..) |p, i| paramDocs[i] = try this.text(p);
+            break :blk try this.concatAll(&.{
+                try this.text("{ "),
+                try this.join(paramDocs, try this.text(", ")),
+                try this.text(" -> "),
+            });
+        } else try this.text("{ ");
+        const flat = try this.concatAll(&.{ head, try this.text(flatValue), try this.text(" }") });
+        const flatText = try render(this.arena, flat, std.math.maxInt(u32));
+        // The statement's `;` follows the lambda and is paid for here.
+        return this.widthChoice(flat, open, flatText.len + 1);
     }
 
     fn fmtLambda(this: *Formatter, params: []const []const u8, body: []ast.Stmt, arrow_when_empty: bool) !*const Doc {

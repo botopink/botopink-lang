@@ -8,38 +8,30 @@ const formatMod = @import("../../format.zig");
 const h = @import("helpers.zig");
 
 test "format: lambda ---- trailing no params" {
-    try h.assertFormat(std.testing.allocator,
+    try h.assertFormatLossless(std.testing.allocator,
         \\behavior Test {
         \\    default fn run() {
-        \\        executar {
-        \\            ok;
-        \\        };
+        \\        executar { ok };
         \\    }
         \\}
     );
 }
 
 test "format: lambda ---- named arg + trailing with params" {
-    try h.assertFormat(std.testing.allocator,
+    try h.assertFormatLossless(std.testing.allocator,
         \\behavior Test {
         \\    default fn run() {
-        \\        calcular(fator: 2) { a, b ->
-        \\            a + b;
-        \\        };
+        \\        calcular(fator: 2) { a, b -> a + b };
         \\    }
         \\}
     );
 }
 
 test "format: lambda ---- two trailing blocks second labeled" {
-    try h.assertFormat(std.testing.allocator,
+    try h.assertFormatLossless(std.testing.allocator,
         \\behavior Test {
         \\    default fn run() {
-        \\        executar {
-        \\            ok;
-        \\        } erro: {
-        \\            fail;
-        \\        };
+        \\        executar { ok } erro: { fail };
         \\    }
         \\}
     );
@@ -769,20 +761,63 @@ test "format: lambda ---- the one-line form prints for a parameterless lambda ar
     );
 }
 
-test "format: lambda ---- a trailing lambda keeps the open form, one statement or not" {
-    // The one-line rule stops at the `arrow_when_empty` boundary, and the reason
-    // was measured rather than assumed: a trailing lambda's body is a statement
-    // block, so `executar { ok }` is a **parse error** (*unexpected `}`*) and so
-    // is `calcular(fator: 2) { a, b -> a + b }`. Printing the one-line form here
-    // would emit text this compiler refuses, which `assertIdempotent` — it
-    // re-parses pass 1 — would then fail on.
+test "format: lambda ---- a trailing lambda with one value expression prints on one line (decision 165)" {
+    // Arrow or not: `h1 { "my blog" }`. A fitting one-expression body is one
+    // line; the written layout (one line or three) does not matter.
     try h.assertFormatLossless(std.testing.allocator,
-        \\behavior Test {
-        \\    default fn run() {
-        \\        executar {
-        \\            ok;
-        \\        };
-        \\    }
+        \\fn main() {
+        \\    h1 { "my blog" };
+        \\    calcular(fator: 2) { a, b -> a + b };
+        \\}
+    );
+    try h.assertFormatAs(std.testing.allocator,
+        \\fn main() {
+        \\    h1 {
+        \\        "my blog";
+        \\    };
+        \\}
+    ,
+        \\fn main() {
+        \\    h1 { "my blog" };
+        \\}
+    );
+    try h.assertIdempotent(std.testing.allocator,
+        \\fn main() {
+        \\    h1 {
+        \\        "my blog";
+        \\    };
+        \\}
+    );
+}
+
+test "format: lambda ---- a trailing lambda keeps the open form when it holds more than one value" {
+    // Several statements, a binding, a jump: not one value expression.
+    try h.assertFormatLossless(std.testing.allocator,
+        \\fn main() {
+        \\    executar {
+        \\        val a = 1;
+        \\    };
+        \\    executar {
+        \\        ok;
+        \\        fail;
+        \\    };
+        \\}
+    );
+}
+
+test "format: lambda ---- a trailing lambda whose one line would pass the width opens" {
+    const src =
+        \\fn main() {
+        \\    executar { aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa + bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb };
+        \\}
+    ;
+    try h.assertIdempotent(std.testing.allocator, src);
+    try h.assertFormatAs(std.testing.allocator, src,
+        \\fn main() {
+        \\    executar {
+        \\        aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+        \\            + bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb;
+        \\    };
         \\}
     );
 }

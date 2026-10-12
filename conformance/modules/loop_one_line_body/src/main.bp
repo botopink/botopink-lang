@@ -17,8 +17,6 @@ pub fn main() {
     for (xs) { x ->
         acc = acc + f(x);
     }
-    val ys = xs.map { x ->
-        f(x);
-    };
+    val ys = xs.map { x -> f(x) };
     @print(acc.toString() + ys.length.toString());
 }
