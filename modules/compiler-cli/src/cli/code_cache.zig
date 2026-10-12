@@ -38,13 +38,14 @@
 /// it — so it has no dependency-only step to cache yet.
 ///
 /// **`--cold`** (`cold`): `build`, `run`, `test` and `cell check` read nothing
-/// and write what they ran.
+/// — neither level — and write what they ran.
 ///
 /// `closureKey` is the key of level B (B-60): a package's files and its
 /// effective manifest, its dependencies' closure keys, the target (with the
 /// wasm host) and the compiler by backend partition (decision 249); `stdKey`
-/// std's, per module. `analysis_store.zig` files entries under them; nothing
-/// reads or writes one during a build yet.
+/// std's, per module. `analysis_store.zig` files entries under them, and
+/// `build`, `run`, `test`, `cell check` and `check` read and write them
+/// (`analysis_store.Cache`); `--cold` reads none.
 const std = @import("std");
 const builtin = @import("builtin");
 const bp = @import("botopink");

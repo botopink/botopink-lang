@@ -31,6 +31,7 @@ const otp = @import("./otp.zig");
 const resolver = @import("./resolver.zig");
 const sources = @import("./sources.zig");
 const bpp = @import("./bpp.zig");
+const code_cache = @import("./code_cache.zig");
 /// Test-only: the one way a test spells a path it writes to (per process, so a
 /// second `zig build test` over this checkout cannot empty it mid-test).
 /// `build.zig` gives this module to the test modules alone.
@@ -271,6 +272,29 @@ pub fn loadDependencies(
     proj: config.ProjectConfig,
     env_map: EnvMap,
 ) ![]Module {
+    return loadDependenciesWith(gpa, io, proj, env_map, null);
+}
+
+/// The closure keys of a build's dependency packages (decision 509 (3),
+/// 144 B-60): computed while the closure is loaded — each package's
+/// directory, effective manifest and dependencies are at hand there — for the
+/// analysis store (`analysis_store.Cache`). Keyed by import name, owned by
+/// `arena`.
+pub const ClosureKeys = struct {
+    arena: std.mem.Allocator,
+    target: code_cache.EntryTarget,
+    keys: std.StringHashMapUnmanaged([code_cache.KEY_HEX]u8) = .empty,
+};
+
+/// `loadDependencies`, filling `keys` (when given) with every package's
+/// closure key on `keys.target`.
+pub fn loadDependenciesWith(
+    gpa: std.mem.Allocator,
+    io: std.Io,
+    proj: config.ProjectConfig,
+    env_map: EnvMap,
+    keys: ?*ClosureKeys,
+) ![]Module {
     var modules: std.ArrayListUnmanaged(Module) = .empty;
     // On error, free what was accumulated, then the list backing — in this order
     // (a single block, not two errdefers, which would run LIFO and free the
@@ -312,7 +336,7 @@ pub fn loadDependencies(
     const arena = arena_inst.allocator();
     const tiers = try dependencyTiers(gpa, arena, io, env_map, proj.dir, roots);
 
-    try loadClosure(gpa, io, arena, proj.manifest, proj.dir, proj.workspace, proj.dependencies, tiers, &modules, bpp_files);
+    try loadClosure(gpa, io, arena, proj.manifest, proj.dir, proj.workspace, proj.dependencies, tiers, &modules, bpp_files, keys);
     return try modules.toOwnedSlice(gpa);
 }
 
@@ -337,6 +361,8 @@ fn loadClosure(
     /// The project's `.bpp` files (decision 361), checked against the roles
     /// of the package `project.bpp` names.
     bpp_files: []const bpp.BppFile,
+    /// Filled with every package's closure key when given (144 B-60).
+    keys: ?*ClosureKeys,
 ) !void {
     var closure: DepClosure = .{ .arena = arena, .io = io, .tiers = tiers };
     // The project's own entries are resolved first, so the directory each of
@@ -360,6 +386,15 @@ fn loadClosure(
     };
     for (closure.order.items) |pkg| try loadOne(gpa, io, pkg.dir, pkg.manifest, pkg.name, out);
     if (project.bpp) |name| try checkBppRoles(arena, io, project, closure.packages.get(name).?, out.items, bpp_files);
+    // Dependencies come before dependents in `order`, so each package's
+    // dependencies have their keys when its own is computed (Merkle). std is
+    // no package of the closure: its bytes are inside the compiler key.
+    if (keys) |k| for (closure.order.items) |pkg| {
+        var dep_keys: std.ArrayListUnmanaged(code_cache.DepKey) = .empty;
+        for (pkg.manifest.dependencies) |d| if (k.keys.get(d.name)) |dk| try dep_keys.append(arena, .{ .name = d.name, .key = dk });
+        const key = try code_cache.closureKey(arena, io, pkg.dir, pkg.manifest, dep_keys.items, k.target);
+        try k.keys.put(k.arena, try k.arena.dupe(u8, pkg.name), key);
+    };
 }
 
 /// 144 B-60 — one package name is one directory in the workspace's closure:
@@ -2374,7 +2409,7 @@ fn closureOf(arena: std.mem.Allocator, io: std.Io, comptime root: []const u8, te
         }
         out.deinit(gpa);
     }
-    try loadClosure(gpa, io, arena, m, app_dir, null, m.dependencies, &.{entries}, &out, &.{});
+    try loadClosure(gpa, io, arena, m, app_dir, null, m.dependencies, &.{entries}, &out, &.{}, null);
     var names: std.ArrayListUnmanaged(u8) = .empty;
     for (out.items, 0..) |mod, i| {
         if (i > 0) try names.append(arena, ' ');
@@ -2471,7 +2506,7 @@ test "loadDependencies: a dependency named like the project or a member of its w
     }
     var pm = forms.manifest;
     pm.dependencies = &.{.{ .name = "kit-core", .spec = .{ .path = "../../../../../other/kit-core" } }};
-    try std.testing.expectError(error.LibManifestInvalid, loadClosure(gpa, io, arena, pm, forms.dir, ws, pm.dependencies, &.{}, &out, &.{}));
+    try std.testing.expectError(error.LibManifestInvalid, loadClosure(gpa, io, arena, pm, forms.dir, ws, pm.dependencies, &.{}, &out, &.{}, null));
     const member = captured.written();
     try std.testing.expect(std.mem.indexOf(u8, member, "two packages named \"kit-core\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, member, "other/kit-core here and ") != null);
@@ -2480,7 +2515,7 @@ test "loadDependencies: a dependency named like the project or a member of its w
     // The member itself, reached as `{ "workspace": true }`, is no second package.
     captured.clearRetainingCapacity();
     pm.dependencies = &.{.{ .name = "kit-core", .spec = .{ .workspace = true } }};
-    try loadClosure(gpa, io, arena, pm, forms.dir, ws, pm.dependencies, &.{}, &out, &.{});
+    try loadClosure(gpa, io, arena, pm, forms.dir, ws, pm.dependencies, &.{}, &out, &.{}, null);
 }
 
 test "loadDependencies: a cycle between packages is refused" {
@@ -2748,7 +2783,7 @@ fn kitXSource(arena: std.mem.Allocator, io: std.Io, project: []const u8, env_roo
         }
         out.deinit(gpa);
     }
-    try loadClosure(gpa, io, arena, m, project, null, m.dependencies, tiers, &out, &.{});
+    try loadClosure(gpa, io, arena, m, project, null, m.dependencies, tiers, &out, &.{}, null);
     try std.testing.expectEqual(@as(usize, 1), out.items.len);
     try std.testing.expectEqualStrings("kit-x/x", out.items[0].path);
     return arena.dupe(u8, out.items[0].source);

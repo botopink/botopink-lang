@@ -109,7 +109,7 @@ pub fn analyse(allocator: std.mem.Allocator, modules: []const Module, io: std.Io
     };
     // The comptime pass runs on the wasm runtime whatever the target
     // (decision 434); `target_name` picks each host function's lookup.
-    return comptimeMod.compile(allocator, modules, io, config.build_root, target_name);
+    return comptimeMod.compileWith(allocator, modules, io, config.build_root, target_name, config.analysis_store);
 }
 
 /// The emit of `generateWith` alone, over analysed `outputs` — the session's,

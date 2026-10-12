@@ -189,10 +189,46 @@ fn isLogical(key: []const u8) bool {
     return !std.mem.endsWith(u8, key, ".bp");
 }
 
+/// What the tree holds of one module, known without parsing it: the module's
+/// analysis read back from the code cache's level B (144 B-60) carries it
+/// (`analysis_entry.ModuleMeta.tree`).
+pub const Known = struct {
+    entry: Entry,
+    reexports: []const NamedReexport = &.{},
+};
+
+/// One re-export a module declares: its name there and what it names.
+pub const NamedReexport = struct { name: []const u8, to: Tree.Reexport };
+
+/// What `tree` holds of module `path`, for `buildWith` to take back.
+pub fn knownOf(arena: std.mem.Allocator, tree: *const Tree, path: []const u8) !?Known {
+    const e = tree.entries.get(path) orelse return null;
+    var out: std.ArrayListUnmanaged(NamedReexport) = .empty;
+    var it = tree.reexports.iterator();
+    while (it.next()) |r| {
+        const k = r.key_ptr.*;
+        if (k.len <= path.len or k[path.len] != 0 or !std.mem.startsWith(u8, k, path)) continue;
+        try out.append(arena, .{ .name = k[path.len + 1 ..], .to = r.value_ptr.* });
+    }
+    std.mem.sort(NamedReexport, out.items, {}, struct {
+        fn lessThan(_: void, a: NamedReexport, b: NamedReexport) bool {
+            return std.mem.order(u8, a.name, b.name) == .lt;
+        }
+    }.lessThan);
+    return .{ .entry = e, .reexports = out.items };
+}
+
+/// `buildWith` with nothing known: every module parsed.
+pub fn build(arena: std.mem.Allocator, modules: []const Module) !Tree {
+    return buildWith(arena, modules, &.{});
+}
+
 /// Build the tree of `modules` (std's own are left out: std is reached only by
 /// `from "std"`). A module that does not lex or parse has no children and no
 /// names; its own diagnostic is reported where it is analysed.
-pub fn build(arena: std.mem.Allocator, modules: []const Module) !Tree {
+/// `known` is empty, or one per module: a module whose entry is known is not
+/// parsed (`Known`).
+pub fn buildWith(arena: std.mem.Allocator, modules: []const Module, known: []const ?Known) !Tree {
     var tree: Tree = .{ .known = true };
     for (modules) |m| {
         if (isStd(m.path)) continue;
@@ -207,6 +243,14 @@ pub fn build(arena: std.mem.Allocator, modules: []const Module) !Tree {
     for (modules, 0..) |m, i| {
         programs[i] = null;
         if (isStd(m.path)) continue;
+        if (known.len > 0) if (known[i]) |k| {
+            const e = tree.entries.getPtr(m.path).?;
+            e.children = k.entry.children;
+            e.pubNames = k.entry.pubNames;
+            e.pubTypes = k.entry.pubTypes;
+            for (k.reexports) |r| try tree.reexports.put(arena, try reexportKey(arena, m.path, r.name), r.to);
+            continue;
+        };
         var lx = Lexer.init(m.source);
         const tokens = lx.scanAll(arena) catch continue;
         var p = Parser.init(tokens);

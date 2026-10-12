@@ -38,10 +38,11 @@ pub const MAGIC = "BPENTRY\x00";
 /// The closure key, raw (the CLI hashes it as hex; `keyFromHex`).
 pub const Key = [32]u8;
 
-/// The sections an entry may hold. META, STRINGS and ANALYSIS are S1's;
-/// JOURNAL (what a module added to the session's registries, replayed on
-/// load) and CODE (a module's own unit on the target) are reserved for the
-/// later stages and written by none yet.
+/// The sections an entry may hold: META, STRINGS, then per module its
+/// ANALYSIS and its JOURNAL (what the module added to or replaced in the
+/// session's registries, the default DSL and the reflection catalogue,
+/// replayed in order on load). CODE (a module's own unit on the target) is
+/// reserved for S4 and written by none yet.
 pub const SectionId = enum(u32) {
     meta = 1,
     strings = 2,
@@ -156,7 +157,13 @@ pub fn keyFromHex(hex: [64]u8) Key {
 //   struct            its fields in declaration order (`skips` left out; a
 //                     packed struct as its backing integer)
 //   array             its elements
-//   string            (a slice of u8) an index into STRINGS, each content once
+//   string            (a slice of u8) 1 + an index into STRINGS, each content
+//                     once — or 0 and (source, offset, length) for a slice of
+//                     one of the sources the binary embeds (std's prelude and
+//                     modules, `embedded_sources`): it reads back as a slice of
+//                     the same bytes, so a reader that asks whether a name
+//                     slices into the prelude (`codegen/erlang.zig`
+//                     `slicesIntoPrelude`) answers as it did live
 //   pointer, slice    through the identity table: 0 (a new one: a slice's
 //                     length, then the contents) or 1 + the index of the one
 //                     already written at the same (address, length) for the
@@ -175,6 +182,32 @@ pub fn keyFromHex(hex: [64]u8) Key {
 
 const comptimeMod = @import("../comptime.zig");
 const infer = @import("./infer.zig");
+const prelude = @import("std_prelude");
+
+/// The sources the binary embeds, whose slices an entry writes by place: the
+/// prelude's three files, then every std module's. Inside the compiler key,
+/// like every other source of the binary.
+const embedded_sources = blk: {
+    var out: [3 + prelude.pkg_modules.len][]const u8 = undefined;
+    out[0] = prelude.primitives;
+    out[1] = prelude.builtins;
+    out[2] = prelude.builtin_fns;
+    for (prelude.pkg_modules, 0..) |m, i| out[3 + i] = m.source;
+    break :blk out;
+};
+
+const EmbeddedAt = struct { source: usize, offset: usize };
+
+/// Where `s` sits in an embedded source, when it is a slice of one.
+fn embeddedAt(s: []const u8) ?EmbeddedAt {
+    if (s.len == 0) return null;
+    const at = @intFromPtr(s.ptr);
+    for (embedded_sources, 0..) |src, i| {
+        const start = @intFromPtr(src.ptr);
+        if (at >= start and at + s.len <= start + src.len) return .{ .source = i, .offset = at - start };
+    }
+    return null;
+}
 
 /// A field the encoding leaves out: on load it takes its default value
 /// (`null`, an empty slice, or the declared default).
@@ -391,8 +424,15 @@ pub fn Encoder(comptime skips: []const Skip) type {
         }
 
         fn encodeString(self: *Self, s: []const u8) EncodeError!void {
+            if (embeddedAt(s)) |at| {
+                try self.out.append(self.gpa, 0);
+                try writeUleb(self.gpa, &self.out, at.source);
+                try writeUleb(self.gpa, &self.out, at.offset);
+                try writeUleb(self.gpa, &self.out, s.len);
+                return;
+            }
             const gop = try self.strings.getOrPut(self.gpa, s);
-            try writeUleb(self.gpa, &self.out, gop.index);
+            try writeUleb(self.gpa, &self.out, @as(u64, gop.index) + 1);
         }
 
         /// 0 and a new entry of the identity table, or 1 + a known one's index.
@@ -550,9 +590,19 @@ pub fn Decoder(comptime skips: []const Skip) type {
                 .pointer => |p| switch (p.size) {
                     .one => return @ptrCast(try self.decodeOne(p.child)),
                     .slice => if (p.child == u8) {
-                        const idx: usize = @intCast(try self.uleb());
-                        if (idx >= self.strings.len) return error.Malformed;
-                        const s = self.strings[idx];
+                        const ref: usize = @intCast(try self.uleb());
+                        const s = if (ref == 0) embedded: {
+                            const src: usize = @intCast(try self.uleb());
+                            const offset: usize = @intCast(try self.uleb());
+                            const len: usize = @intCast(try self.uleb());
+                            if (src >= embedded_sources.len) return error.Malformed;
+                            const whole = embedded_sources[src];
+                            if (offset > whole.len or len > whole.len - offset) return error.Malformed;
+                            break :embedded whole[offset..][0..len];
+                        } else stored: {
+                            if (ref - 1 >= self.strings.len) return error.Malformed;
+                            break :stored self.strings[ref - 1];
+                        };
                         if (p.sentinel() != null) return try self.arena.dupeZ(u8, s);
                         if (!p.is_const) return try self.arena.dupe(u8, s);
                         return s;
@@ -688,17 +738,42 @@ fn writeUleb(gpa: std.mem.Allocator, out: *std.ArrayListUnmanaged(u8), value: u6
     }
 }
 
-// ── The entry (S1: META, STRINGS, ANALYSIS) ───────────────────────────────────
+// ── The entry: META, STRINGS, then per module ANALYSIS and JOURNAL ──────────
+
+const ast = @import("../ast.zig");
+const Types = @import("./types.zig");
+const reflectionMod = @import("./reflection.zig");
+const hooksMod = @import("./hooks.zig");
+const modTree = @import("./mod_tree.zig");
+
+/// What a module's pre-passes learn by parsing it, kept so a hit parses
+/// nothing (`comptime.zig` `expandStdImports`, `orderReaders`,
+/// `mod_tree.build`).
+pub const ModuleMeta = struct {
+    path: []const u8,
+    /// Whether the module reads `@TypeInfo.all` (`orderReaders`): a stored
+    /// entry's never does — its answer is the whole program's.
+    reads_catalogue: bool = false,
+    /// The std modules the module itself needs (`std/<path>`), in
+    /// `std_pkg_modules` order: its `from "std"` items, `std/context` for a
+    /// `@Component`, `std/beam` for a module-level `var` on erlang and beam.
+    std_imports: []const []const u8 = &.{},
+    /// What the session's module tree holds of it (decision 337): its entry
+    /// and the re-exports it declares; null when the tree does not hold it.
+    tree: ?modTree.Known = null,
+};
 
 /// META: what the entry is of. Encoded like everything else.
 pub const Meta = struct {
-    /// The package's import name (`std` for a std module's entry).
+    /// The package's import name (`std/<module>` for a std module's entry).
     package: []const u8,
     /// `code_cache.EntryTarget.name`: `commonJS`, `erlang`, `beam`, `wasm`,
     /// `wasm.browser`.
     target: []const u8,
     /// The modules, in the order their ANALYSIS sections follow.
     modules: []const []const u8,
+    /// One per module, in `modules`' order (empty in S1's test entries).
+    module_meta: []const ModuleMeta = &.{},
 };
 
 /// One module's ANALYSIS: the `ComptimeOutput` of a module that analysed,
@@ -710,13 +785,93 @@ pub const Analysis = struct {
     ok: comptimeMod.ComptimeOutput.OkData,
 };
 
+// ── The JOURNAL ───────────────────────────────────────────────────────────────
+//
+// What one module's analysis and `registerExports` left in the session beyond
+// its own output: a delta per map, computed by comparing the session's state
+// before and after the module (`level_b.zig`), and applied to the reading
+// session at the module's place in the order. A map's delta is its removed
+// keys and its put (added or replaced) entries; a map of maps names each inner
+// map it touched — `reset` when the module replaced it whole (or created it),
+// with every entry it then held; a list keyed by name only grows (the entries
+// appended). Every field of `Reflection` is journaled or named in
+// `unjournaled_reflection` — a test holds the two lists to the type.
+
+pub fn Put(comptime V: type) type {
+    return struct { key: []const u8, value: V };
+}
+
+pub fn MapOps(comptime V: type) type {
+    return struct {
+        removes: []const []const u8 = &.{},
+        puts: []const Put(V) = &.{},
+
+        pub fn isEmpty(self: @This()) bool {
+            return self.removes.len == 0 and self.puts.len == 0;
+        }
+    };
+}
+
+pub fn InnerOps(comptime V: type) type {
+    return struct { key: []const u8, reset: bool, ops: MapOps(V) };
+}
+
+pub fn NestedOps(comptime V: type) type {
+    return struct {
+        /// Outer keys the module removed.
+        removes: []const []const u8 = &.{},
+        maps: []const InnerOps(V) = &.{},
+    };
+}
+
+pub fn Appended(comptime E: type) type {
+    return struct { key: []const u8, items: []const E };
+}
+
+pub fn ListAppends(comptime E: type) type {
+    return struct { lists: []const Appended(E) = &.{} };
+}
+
+pub const Journal = struct {
+    // The five registries of `compileOnce`.
+    registry: NestedOps(*Types.Type) = .{},
+    type_decls: NestedOps(ast.DeclKind) = .{},
+    templates: MapOps(ast.FnDecl) = .{},
+    decorators: MapOps(ast.FnDecl) = .{},
+    extensions: NestedOps(ast.ImplementDecl) = .{},
+    // The default DSL.
+    dsl_mod_names: MapOps([]const u8) = .{},
+    dsl_handlers: MapOps(comptimeMod.DefaultDsl.Handler) = .{},
+    // The reflection catalogue (`reflection.Reflection`).
+    meta: ListAppends(reflectionMod.MetaEntry) = .{},
+    typed_meta: ListAppends(reflectionMod.TypedMetaEntry) = .{},
+    decorator_meta_types: MapOps([]const reflectionMod.MetaCallType) = .{},
+    assoc: ListAppends([]const u8) = .{},
+    declared: []const reflectionMod.DeclaredEntry = &.{},
+    template_queries: MapOps([]const reflectionMod.TemplateQuery) = .{},
+    hook_fns: MapOps(hooksMod.FnInfo) = .{},
+    scopes: MapOps(reflectionMod.WrittenName) = .{},
+};
+
+/// The fields of `Reflection` no journal carries, and why: `arena` (the
+/// session's), `readers` (META's `reads_catalogue`; a reader's package is
+/// never stored), `templateReads` (a package whose module expands a template
+/// reading the catalogue is never stored), `oracle` and `modTree` (the
+/// session's own, built before any module).
+pub const unjournaled_reflection = [_][]const u8{ "arena", "readers", "templateReads", "oracle", "modTree" };
+
+/// The `Reflection` fields `Journal` carries, by their names there.
+pub const journaled_reflection = [_][]const u8{ "meta", "typedMeta", "decoratorMetaTypes", "assoc", "declared", "templateQueries", "hookFns", "scopes" };
+
 /// The entry of `outputs` (each `.ok`) under `key`, allocated with `gpa`.
-pub fn write(gpa: std.mem.Allocator, key: Key, meta: Meta, outputs: []const comptimeMod.ComptimeOutput) ![]u8 {
-    return writeWith(&default_skips, gpa, key, meta, outputs);
+/// `journals` is empty, or one per output.
+pub fn write(gpa: std.mem.Allocator, key: Key, meta: Meta, outputs: []const comptimeMod.ComptimeOutput, journals: []const Journal) ![]u8 {
+    return writeWith(&default_skips, gpa, key, meta, outputs, journals);
 }
 
 /// `write` with the skip list given — a test drops a field more.
-pub fn writeWith(comptime skips: []const Skip, gpa: std.mem.Allocator, key: Key, meta: Meta, outputs: []const comptimeMod.ComptimeOutput) ![]u8 {
+pub fn writeWith(comptime skips: []const Skip, gpa: std.mem.Allocator, key: Key, meta: Meta, outputs: []const comptimeMod.ComptimeOutput, journals: []const Journal) ![]u8 {
+    if (journals.len != 0 and journals.len != outputs.len) return error.JournalCount;
     var enc = Encoder(skips).init(gpa);
     defer enc.deinit();
     var owned: std.ArrayListUnmanaged([]u8) = .empty;
@@ -727,12 +882,14 @@ pub fn writeWith(comptime skips: []const Skip, gpa: std.mem.Allocator, key: Key,
     var sections: std.ArrayListUnmanaged(Section) = .empty;
     defer sections.deinit(gpa);
 
+    // The sections follow in the order they are encoded: the identity table
+    // spans them, so the reader decodes them in this order too.
     try enc.encode(Meta, &meta);
     try owned.append(gpa, try enc.takeSection());
     try sections.append(gpa, .{ .id = .meta, .bytes = owned.items[owned.items.len - 1] });
     // STRINGS takes its place second; its bytes are known once every section is written.
     try sections.append(gpa, .{ .id = .strings, .bytes = "" });
-    for (outputs) |o| {
+    for (outputs, 0..) |o, i| {
         const a: Analysis = .{ .name = o.name, .src = o.src, .srcPath = o.srcPath, .ok = switch (o.outcome) {
             .ok => |ok| ok,
             else => return error.NotAnalysed,
@@ -740,16 +897,22 @@ pub fn writeWith(comptime skips: []const Skip, gpa: std.mem.Allocator, key: Key,
         try enc.encode(Analysis, &a);
         try owned.append(gpa, try enc.takeSection());
         try sections.append(gpa, .{ .id = .analysis, .bytes = owned.items[owned.items.len - 1] });
+        if (journals.len == 0) continue;
+        try enc.encode(Journal, &journals[i]);
+        try owned.append(gpa, try enc.takeSection());
+        try sections.append(gpa, .{ .id = .journal, .bytes = owned.items[owned.items.len - 1] });
     }
     try owned.append(gpa, try enc.stringsSection());
     sections.items[1].bytes = owned.items[owned.items.len - 1];
     return pack(gpa, key, sections.items);
 }
 
-/// What `read` gives back: the META and each module's `ComptimeOutput`.
+/// What `read` gives back: the META, each module's `ComptimeOutput` and,
+/// when the entry carries them, each module's JOURNAL (else empty).
 pub const Decoded = struct {
     meta: Meta,
     outputs: []comptimeMod.ComptimeOutput,
+    journals: []Journal,
 };
 
 /// The modules of a proven entry, built in `arena`.
@@ -759,19 +922,36 @@ pub fn read(arena: std.mem.Allocator, e: Entry) DecodeError!Decoded {
 
 pub fn readWith(comptime skips: []const Skip, arena: std.mem.Allocator, e: Entry) DecodeError!Decoded {
     var dec = try Decoder(skips).init(arena, e.get(.strings) orelse return error.Malformed);
-    dec.section(e.get(.meta) orelse return error.Malformed);
+    // META first, then every other section in the table's order — the order
+    // they were encoded in.
+    if (e.sections.len < 2 or e.sections[0].id != .meta) return error.Malformed;
+    dec.section(e.sections[0].bytes);
     const meta = try dec.decode(Meta);
     if (!dec.done()) return error.Malformed;
-    const sections = try e.all(arena, .analysis);
-    if (sections.len != meta.modules.len) return error.Malformed;
-    const outputs = try arena.alloc(comptimeMod.ComptimeOutput, sections.len);
-    for (sections, outputs) |bytes, *out| {
-        dec.section(bytes);
-        const a = try dec.decode(Analysis);
-        if (!dec.done()) return error.Malformed;
-        out.* = .{ .name = a.name, .src = a.src, .srcPath = a.srcPath, .outcome = .{ .ok = a.ok } };
-    }
-    return .{ .meta = meta, .outputs = outputs };
+    if (meta.module_meta.len != 0 and meta.module_meta.len != meta.modules.len) return error.Malformed;
+    var outputs: std.ArrayListUnmanaged(comptimeMod.ComptimeOutput) = .empty;
+    var journals: std.ArrayListUnmanaged(Journal) = .empty;
+    for (e.sections[1..]) |s| switch (s.id) {
+        .strings => {},
+        .analysis => {
+            if (journals.items.len != 0 and journals.items.len != outputs.items.len) return error.Malformed;
+            dec.section(s.bytes);
+            const a = try dec.decode(Analysis);
+            if (!dec.done()) return error.Malformed;
+            try outputs.append(arena, .{ .name = a.name, .src = a.src, .srcPath = a.srcPath, .outcome = .{ .ok = a.ok } });
+        },
+        .journal => {
+            if (journals.items.len + 1 != outputs.items.len) return error.Malformed;
+            dec.section(s.bytes);
+            try journals.append(arena, try dec.decode(Journal));
+            if (!dec.done()) return error.Malformed;
+        },
+        else => return error.Malformed,
+    };
+    if (outputs.items.len != meta.modules.len) return error.Malformed;
+    if (journals.items.len != 0 and journals.items.len != outputs.items.len) return error.Malformed;
+    for (meta.modules, outputs.items) |m, o| if (!std.mem.eql(u8, m, o.name)) return error.Malformed;
+    return .{ .meta = meta, .outputs = outputs.items, .journals = journals.items };
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -957,4 +1137,45 @@ test "the entry's analysis type is encodable (every field has a rule)" {
     defer enc.deinit();
     const meta: Meta = .{ .package = "p", .target = "erlang", .modules = &.{"p/a"} };
     try enc.encode(Meta, &meta);
+    const j: Journal = .{};
+    try enc.encode(Journal, &j);
+}
+
+test "a slice of an embedded source reads back as a slice of the same bytes; any other string as a copy" {
+    var arena_inst = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_inst.deinit();
+    const a = arena_inst.allocator();
+    const Pair = struct { prelude_name: []const u8, std_text: []const u8, own: []const u8 };
+    const std_src = prelude.pkg_modules[0].source;
+    const value: Pair = .{
+        .prelude_name = prelude.primitives[10..20],
+        .std_text = std_src[0..@min(8, std_src.len)],
+        .own = try a.dupe(u8, prelude.primitives[10..20]),
+    };
+    var enc = Encoder(&.{}).init(testing.allocator);
+    defer enc.deinit();
+    try enc.encode(Pair, &value);
+    const body = try enc.takeSection();
+    defer testing.allocator.free(body);
+    const strs = try enc.stringsSection();
+    defer testing.allocator.free(strs);
+    var dec = try Decoder(&.{}).init(a, strs);
+    dec.section(body);
+    const back = try dec.decode(Pair);
+    // The emitter asks whether a name slices into the prelude
+    // (`codegen/erlang.zig` `slicesIntoPrelude`): the answer survives.
+    try testing.expectEqual(@intFromPtr(value.prelude_name.ptr), @intFromPtr(back.prelude_name.ptr));
+    try testing.expectEqual(@intFromPtr(value.std_text.ptr), @intFromPtr(back.std_text.ptr));
+    try testing.expectEqualStrings(value.own, back.own);
+    try testing.expect(embeddedAt(back.own) == null);
+}
+
+test "the journal names every field of Reflection: journaled, or left out with its reason" {
+    inline for (@typeInfo(reflectionMod.Reflection).@"struct".fields) |f| {
+        const known = for (journaled_reflection ++ unjournaled_reflection) |n| {
+            if (std.mem.eql(u8, n, f.name)) break true;
+        } else false;
+        if (!known) std.debug.print("Reflection.{s} is neither journaled nor left out (analysis_entry.zig)\n", .{f.name});
+        try testing.expect(known);
+    }
 }

@@ -23,6 +23,7 @@ const libs = @import("./libs.zig");
 const build_cmd = @import("./build.zig");
 const diagnostics = @import("./diagnostics.zig");
 const code_cache = @import("./code_cache.zig");
+const analysis_store = @import("./analysis_store.zig");
 const run_cmd = @import("./run.zig");
 
 // ── Options ───────────────────────────────────────────────────────────────────
@@ -343,11 +344,20 @@ pub fn run(
     // so a consumer's tests can `import … from "<lib>"`. Dependency modules are
     // compiled first (their types/exports must resolve before the project), but
     // their OWN `test {}` blocks are not run — only the project's are.
-    const dep_modules = libs.loadDependencies(gpa, io, proj, env_map) catch |err| {
+    const entry_target: code_cache.EntryTarget = .{ .target = target };
+    var closure_keys: libs.ClosureKeys = .{ .arena = arena, .target = entry_target };
+    const dep_modules = libs.loadDependenciesWith(gpa, io, proj, env_map, &closure_keys) catch |err| {
         build_cmd.reportDependencyError(err);
         return 1;
     };
     defer libs.freeModules(gpa, dep_modules);
+
+    // The code cache's level B (144 B-60): a dependency's analysis is read
+    // from its entry when one reads back; its code is still emitted here
+    // (B-64). The package under test is always analysed.
+    var level_b: analysis_store.Cache = undefined;
+    try level_b.init(gpa, io, analysis_store.root(proj), entry_target, closure_keys.keys);
+    defer level_b.deinit();
 
     // Keep only real `.bp` dependency modules. Declaration-only (`.d.bp`) modules
     // use declaration-file syntax the regular pipeline doesn't parse for external
@@ -378,6 +388,7 @@ pub fn run(
         .build_root = ".botopinkbuild",
         .test_mode = true,
         .packages = try libs.packagesOf(arena, proj, real_deps.items),
+        .analysis_store = &level_b.store,
     };
 
     // Emit only: each test module is run once, below, by its runner.
@@ -390,6 +401,7 @@ pub fn run(
         for (outputs.items) |*o| o.result.deinit(gpa);
         outputs.deinit(gpa);
     }
+    level_b.commit();
 
     // Every module comes back from the compiler; one that failed carries its
     // diagnostic, rendered here (file, line, excerpt). It does not stop the

@@ -51,4 +51,9 @@ pub const Config = struct {
     /// (`botopink build` / `run`); the snapshot harness records the module
     /// the backend lowers, so it leaves it off.
     wasm_artifact: bool = false,
+
+    /// The code cache's level B (144 B-60): where the comptime pass reads a
+    /// dependency's analysis from and hands the entries it analysed to — the
+    /// CLI's analysis store. Null analyses everything and stores nothing.
+    analysis_store: ?*@import("../comptime/level_b.zig").Store = null,
 };

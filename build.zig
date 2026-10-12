@@ -645,11 +645,13 @@ pub fn build(b: *std.Build) void {
     // (`code_cache.sh`, decisions 509, 512), the wasm core module's
     // `--invoke main` (`backend_exec.sh`, also `test-backends`), and decision
     // 509 (2)'s closure invariant (`closure_invariant.sh`, also
-    // `test-closure-invariant`). The language
+    // `test-closure-invariant`), and the code cache's level B over its fixture
+    // (`level_b.sh`, 144 B-60: cold, writing and reading builds the same
+    // bytes on every target). The language
     // half these scripts held — numeric, records, the `mod` tree, mutual
     // recursion, `assert` / `try` — is conformance cells (144 B-29 step H). The
     // scripts run one after another — they share `zig-out/` and fixture `out/` dirs.
-    const cli_scripts = [_][]const u8{ "cli_contract.sh", "test_tooling.sh", "code_cache.sh", "backend_exec.sh", "closure_invariant.sh" };
+    const cli_scripts = [_][]const u8{ "cli_contract.sh", "test_tooling.sh", "code_cache.sh", "backend_exec.sh", "closure_invariant.sh", "level_b.sh" };
     const test_cli_step = b.step("test-cli", "Run every modules/compiler-cli/tests/*.sh against the installed CLI");
     var prev_cli_script: ?*std.Build.Step = null;
     for (cli_scripts) |script| {

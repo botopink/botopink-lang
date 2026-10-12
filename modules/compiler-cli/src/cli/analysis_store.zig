@@ -22,7 +22,14 @@
 /// renamed over it — no lock: a reader sees the old entry or the new one,
 /// never half of one, and two writers of one key leave one whole entry.
 ///
-/// Nothing calls these during `build`, `run`, `test` or `cell check` yet (S2).
+/// **The compile's store** (`Cache`, S2): `build` (and through it `run` and
+/// `cell check`), `test` and `check` hand one to the comptime pass
+/// (`codegen.Config.analysis_store`, `comptime_pipeline.compileWith`): it
+/// answers each group's key — a dependency's closure key
+/// (`libs.ClosureKeys`), std's per module — reads entries, and keeps those the
+/// compile staged until `commit`, which the command calls once its generate
+/// (its comptime pass, for `check`) returned. `--cold` reads nothing and still
+/// writes. The language server reads none.
 const std = @import("std");
 const builtin = @import("builtin");
 const bp = @import("botopink");
@@ -104,6 +111,109 @@ pub fn write(arena: std.mem.Allocator, io: std.Io, path: []const u8, bytes: []co
     try cwd.writeFile(io, .{ .sub_path = tmp, .data = bytes });
     try std.Io.Dir.rename(cwd, tmp, cwd, path, io);
 }
+
+/// One command's store: the keys of its build's closure on one target, the
+/// entries it read and the ones its compile staged.
+pub const Cache = struct {
+    arena_inst: std.heap.ArenaAllocator,
+    io: std.Io,
+    /// The cache root (`root`).
+    cache_root: []const u8,
+    target: code_cache.EntryTarget,
+    /// Each dependency package's closure key, by import name.
+    keys: std.StringHashMapUnmanaged([code_cache.KEY_HEX]u8),
+    /// Entries read, by group: one read per invocation, whatever the number
+    /// of compile passes.
+    read_entries: std.StringHashMapUnmanaged(?entry.Entry) = .empty,
+    /// Entries staged, by group, written by `commit`.
+    pending: std.StringArrayHashMapUnmanaged([]const u8) = .empty,
+    store: bp.level_b.Store,
+
+    const vtable: bp.level_b.Store.VTable = .{
+        .key = keyFn,
+        .read = readFn,
+        .discard = discardFn,
+        .stage = stageFn,
+    };
+
+    /// A store over `keys` (copied) on `target`, filing under `cache_root`.
+    pub fn init(self: *Cache, gpa: std.mem.Allocator, io: std.Io, cache_root: []const u8, target: code_cache.EntryTarget, keys: std.StringHashMapUnmanaged([code_cache.KEY_HEX]u8)) !void {
+        self.* = .{
+            .arena_inst = std.heap.ArenaAllocator.init(gpa),
+            .io = io,
+            .cache_root = cache_root,
+            .target = target,
+            .keys = .empty,
+            .store = .{ .ctx = self, .vtable = &vtable, .target = target.name() },
+        };
+        const a = self.arena_inst.allocator();
+        self.cache_root = try a.dupe(u8, cache_root);
+        var it = keys.iterator();
+        while (it.next()) |e| try self.keys.put(a, try a.dupe(u8, e.key_ptr.*), e.value_ptr.*);
+    }
+
+    pub fn deinit(self: *Cache) void {
+        self.arena_inst.deinit();
+    }
+
+    /// Where `group`'s entry lives.
+    fn pathOf(self: *Cache, group: []const u8) ![]const u8 {
+        const a = self.arena_inst.allocator();
+        if (std.mem.startsWith(u8, group, "std/")) return stdPath(a, self.cache_root, self.target, group);
+        return packagePath(a, self.cache_root, self.target, group);
+    }
+
+    fn hexKey(self: *Cache, group: []const u8) ?[code_cache.KEY_HEX]u8 {
+        if (std.mem.startsWith(u8, group, "std/")) return code_cache.stdKey(group["std/".len..], self.target);
+        return self.keys.get(group);
+    }
+
+    fn keyFn(ctx: *anyopaque, group: []const u8) ?entry.Key {
+        const self: *Cache = @ptrCast(@alignCast(ctx));
+        return entry.keyFromHex(self.hexKey(group) orelse return null);
+    }
+
+    fn readFn(ctx: *anyopaque, group: []const u8, key: entry.Key) ?entry.Entry {
+        const self: *Cache = @ptrCast(@alignCast(ctx));
+        if (code_cache.cold) return null;
+        if (self.read_entries.get(group)) |known| return known;
+        const a = self.arena_inst.allocator();
+        const found: ?entry.Entry = blk: {
+            const path = self.pathOf(group) catch break :blk null;
+            break :blk read(a, self.io, path, std.fmt.bytesToHex(key, .lower)) catch null;
+        };
+        const g = a.dupe(u8, group) catch return found;
+        self.read_entries.put(a, g, found) catch {};
+        return found;
+    }
+
+    fn discardFn(ctx: *anyopaque, group: []const u8) void {
+        const self: *Cache = @ptrCast(@alignCast(ctx));
+        const path = self.pathOf(group) catch return;
+        discard(self.io, path);
+        if (self.read_entries.getPtr(group)) |slot| slot.* = null;
+    }
+
+    fn stageFn(ctx: *anyopaque, group: []const u8, bytes: []const u8) void {
+        const self: *Cache = @ptrCast(@alignCast(ctx));
+        const a = self.arena_inst.allocator();
+        const copy = a.dupe(u8, bytes) catch return;
+        const g = a.dupe(u8, group) catch return;
+        self.pending.put(a, g, copy) catch {};
+    }
+
+    /// Write every staged entry, each renamed into place. A write that fails
+    /// leaves the previous entry (or none): the next invocation analyses
+    /// that dependency again.
+    pub fn commit(self: *Cache) void {
+        const a = self.arena_inst.allocator();
+        for (self.pending.keys(), self.pending.values()) |g, bytes| {
+            const path = self.pathOf(g) catch continue;
+            write(a, self.io, path, bytes) catch {};
+        }
+        self.pending.clearRetainingCapacity();
+    }
+};
 
 fn pid() u64 {
     return switch (builtin.os.tag) {

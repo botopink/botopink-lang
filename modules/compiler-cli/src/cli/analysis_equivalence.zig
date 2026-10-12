@@ -9,12 +9,25 @@
 /// purpose (`instance_lowerings`, a test-only skip) changes the output: a
 /// field the format forgets fails here.
 ///
+///
+/// S2 — the level-B store in a compile (`analysis_store.Cache`, the comptime
+/// pass's `level_b`), in process as `botopink build` runs it: built with no
+/// store (`--cold`), then through a store that writes, then through one that
+/// reads — every emitted file the same bytes on every target, over the closure
+/// invariant's consumers (one consumer reading the library entry the other
+/// wrote); an unchanged library is read back and not analysed again
+/// (`Store.stats`); a changed byte of it, another compiler key, another target
+/// and a truncated entry analyse it again.
+///
 /// Tests only; nothing here runs in a command.
 const std = @import("std");
 const bp = @import("botopink");
 const config = @import("./config.zig");
 const sources = @import("./sources.zig");
 const libs = @import("./libs.zig");
+const code_cache = @import("./code_cache.zig");
+const analysis_store = @import("./analysis_store.zig");
+const test_scratch = @import("test_scratch");
 
 const entry = bp.analysis_entry;
 const codegen = bp.codegen;
@@ -93,7 +106,7 @@ fn run(comptime skips: []const entry.Skip, gpa: std.mem.Allocator, io: std.Io, m
             o.* = live[i];
             n.* = live[i].name;
         }
-        const bytes = try entry.writeWith(skips, gpa, key, .{ .package = g, .target = v.label, .modules = names }, outs);
+        const bytes = try entry.writeWith(skips, gpa, key, .{ .package = g, .target = v.label, .modules = names }, outs, &.{});
         defer gpa.free(bytes);
         try blobs.append(arena, try arena.dupe(u8, bytes));
         report.stored += idx.items.len;
@@ -113,7 +126,7 @@ fn run(comptime skips: []const entry.Skip, gpa: std.mem.Allocator, io: std.Io, m
             decoded[i] = o;
         }
         // Encoding what was decoded gives the entry's bytes again.
-        const again = try entry.writeWith(skips, gpa, key, back.meta, back.outputs);
+        const again = try entry.writeWith(skips, gpa, key, back.meta, back.outputs, back.journals);
         defer gpa.free(again);
         try testing.expectEqualSlices(u8, bytes, again);
     }
@@ -187,21 +200,31 @@ const Fixture = struct {
     deps: []Module,
     all: []const Module,
     cfg: codegen.Config,
+    /// The dependencies' closure keys on the target `load` was given.
+    keys: std.StringHashMapUnmanaged([code_cache.KEY_HEX]u8) = .empty,
 
     fn load(gpa: std.mem.Allocator, arena: std.mem.Allocator, io: std.Io) !Fixture {
-        const dir = try std.Io.Dir.cwd().realPathFileAlloc(io, "tests/closure_invariant/crowded", arena);
+        return loadAt(gpa, arena, io, "tests/closure_invariant/crowded", null);
+    }
+
+    /// The project at `project` (from the cwd), its dependencies' keys on
+    /// `target` when given.
+    fn loadAt(gpa: std.mem.Allocator, arena: std.mem.Allocator, io: std.Io, project: []const u8, target: ?code_cache.EntryTarget) !Fixture {
+        const dir = try std.Io.Dir.cwd().realPathFileAlloc(io, project, arena);
         const text = try std.Io.Dir.cwd().readFileAlloc(io, try std.fs.path.join(arena, &.{ dir, "botopink.json" }), arena, .unlimited);
         var proj = try config.parse(arena, text);
         proj.dir = dir;
         var loaded = try sources.load(gpa, io, proj, try std.fs.path.join(arena, &.{ dir, proj.srcDir() }));
         errdefer loaded.free(gpa);
-        const deps = try libs.loadDependencies(gpa, io, proj, null);
+        var keys: libs.ClosureKeys = .{ .arena = arena, .target = target orelse .{ .target = .erlang } };
+        const deps = try libs.loadDependenciesWith(gpa, io, proj, null, if (target != null) &keys else null);
         errdefer libs.freeModules(gpa, deps);
         return .{
             .loaded = loaded,
             .deps = deps,
             .all = try std.mem.concat(arena, Module, &.{ deps, loaded.modules }),
             .cfg = .{ .build_root = ".botopinkbuild", .packages = try libs.packagesOf(arena, proj, deps), .wasm_artifact = true },
+            .keys = keys.keys,
         };
     }
 
@@ -241,4 +264,235 @@ test "analysis entry: a field the format drops changes the emitted output (insta
     const drop = entry.default_skips ++ [_]entry.Skip{.{ .T = ComptimeOutput.OkData, .field = "instance_lowerings" }};
     const r = try run(&drop, testing.allocator, testing.io, fx.all, fx.cfg, .{ .label = "erlang", .target = .erlang }, false);
     try testing.expect(r.differing > 0);
+}
+
+// ── S2: the store in a compile ────────────────────────────────────────────────
+
+fn entryTarget(v: Variant) code_cache.EntryTarget {
+    return .{ .target = switch (v.target) {
+        .commonJS => .commonJS,
+        .erlang => .erlang,
+        .beam => .beam,
+        .wasm => .wasm,
+    }, .host = v.host };
+}
+
+const Invocation = struct {
+    outputs: std.ArrayListUnmanaged(codegen.ModuleOutput),
+    stats: bp.level_b.Stats = .{},
+
+    fn deinit(self: *Invocation, gpa: std.mem.Allocator) void {
+        for (self.outputs.items) |*o| o.result.deinit(gpa);
+        self.outputs.deinit(gpa);
+    }
+};
+
+/// One `botopink build` of `fx` on `v`, in process: the comptime pass and the
+/// emit, through a fresh store under `root` — written once the generate
+/// returned — or through none (`--cold` reads nothing).
+fn invoke(gpa: std.mem.Allocator, io: std.Io, fx: *const Fixture, v: Variant, root: ?[]const u8, keys: std.StringHashMapUnmanaged([code_cache.KEY_HEX]u8)) !Invocation {
+    var cfg = fx.cfg;
+    cfg.targetSource = v.target;
+    cfg.wasm_host = v.host;
+    cfg.typeDefLanguage = if (v.typescript) .typescript else null;
+    var cache: analysis_store.Cache = undefined;
+    if (root) |r| {
+        try cache.init(gpa, io, r, entryTarget(v), keys);
+        cfg.analysis_store = &cache.store;
+    }
+    defer if (root != null) cache.deinit();
+    const outputs = try codegen.generateWith(gpa, fx.all, io, cfg, .{ .execute = false });
+    if (root == null) return .{ .outputs = outputs };
+    cache.commit();
+    return .{ .outputs = outputs, .stats = cache.store.stats };
+}
+
+fn expectSameOutputs(label: []const u8, a: []const codegen.ModuleOutput, b: []const codegen.ModuleOutput) !void {
+    try testing.expectEqual(a.len, b.len);
+    for (a, b) |x, y| {
+        try testing.expectEqualStrings(x.name, y.name);
+        if (!sameOutput(x.result, y.result)) {
+            std.debug.print("level B: {s}: {s} emits otherwise\n", .{ label, x.name });
+            if (!std.mem.eql(u8, x.result.js, y.result.js)) printFirstDifference(x.result.js, y.result.js);
+            return error.TestUnexpectedResult;
+        }
+    }
+}
+
+/// The modules of `fx` a package `pkg` owns (its group), or std's.
+fn countOf(fx: *const Fixture, pkg: []const u8) usize {
+    var n: usize = 0;
+    for (fx.all) |m| if (std.mem.eql(u8, m.package, pkg)) {
+        n += 1;
+    };
+    return n;
+}
+
+/// Copy the closure invariant's fixture to `to`.
+fn copyFixture(arena: std.mem.Allocator, io: std.Io, from: []const u8, to: []const u8) !void {
+    const cwd = std.Io.Dir.cwd();
+    try cwd.createDirPath(io, to);
+    var d = try cwd.openDir(io, from, .{ .iterate = true });
+    defer d.close(io);
+    var it = d.iterate();
+    while (try it.next(io)) |e| {
+        if (e.name[0] == '.' or std.mem.startsWith(u8, e.name, "out")) continue;
+        const src = try std.fs.path.join(arena, &.{ from, e.name });
+        const dst = try std.fs.path.join(arena, &.{ to, e.name });
+        switch (e.kind) {
+            .directory => try copyFixture(arena, io, src, dst),
+            .file => try cwd.writeFile(io, .{ .sub_path = dst, .data = try cwd.readFileAlloc(io, src, arena, .unlimited) }),
+            else => {},
+        }
+    }
+}
+
+test "level B: build cold, build (writes), build (reads) — every file the same bytes on every target; a second consumer reads the library's entry" {
+    var arena_inst = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_inst.deinit();
+    const arena = arena_inst.allocator();
+    const io = testing.io;
+    const gpa = testing.allocator;
+    test_scratch.remove(io, "level-b-equivalence");
+    defer test_scratch.remove(io, "level-b-equivalence");
+    const root = test_scratch.path(io, "level-b-equivalence");
+
+    for (variants) |v| {
+        var crowded = try Fixture.loadAt(gpa, arena, io, "tests/closure_invariant/crowded", entryTarget(v));
+        defer crowded.free(gpa);
+        var plain = try Fixture.loadAt(gpa, arena, io, "tests/closure_invariant/plain", entryTarget(v));
+        defer plain.free(gpa);
+
+        // crowded: cold, writes, reads.
+        var cold = try invoke(gpa, io, &crowded, v, null, crowded.keys);
+        defer cold.deinit(gpa);
+        var writes = try invoke(gpa, io, &crowded, v, root, crowded.keys);
+        defer writes.deinit(gpa);
+        try testing.expectEqual(@as(usize, 0), writes.stats.modules_read);
+        // shelf, rival, and each std module crowded reaches.
+        try testing.expect(writes.stats.entries_staged >= 3);
+        var reads = try invoke(gpa, io, &crowded, v, root, crowded.keys);
+        defer reads.deinit(gpa);
+        // Only crowded's own modules are analysed again.
+        try testing.expectEqual(countOf(&crowded, ""), reads.stats.modules_analysed);
+        try testing.expect(reads.stats.modules_read >= countOf(&crowded, "shelf") + countOf(&crowded, "rival"));
+        try testing.expectEqual(@as(usize, 0), reads.stats.entries_staged);
+        try expectSameOutputs(v.label, cold.outputs.items, writes.outputs.items);
+        try expectSameOutputs(v.label, cold.outputs.items, reads.outputs.items);
+
+        // plain reads shelf's entry crowded wrote: one library, one entry.
+        var plain_cold = try invoke(gpa, io, &plain, v, null, plain.keys);
+        defer plain_cold.deinit(gpa);
+        var plain_reads = try invoke(gpa, io, &plain, v, root, plain.keys);
+        defer plain_reads.deinit(gpa);
+        try testing.expect(plain_reads.stats.modules_read >= countOf(&plain, "shelf"));
+        try expectSameOutputs(v.label, plain_cold.outputs.items, plain_reads.outputs.items);
+    }
+}
+
+/// The closure invariant's fixture copied to a scratch directory, for a test
+/// that changes it.
+fn scratchFixture(arena: std.mem.Allocator, io: std.Io, comptime name: []const u8) ![]const u8 {
+    test_scratch.remove(io, name);
+    const dir = test_scratch.path(io, name);
+    try copyFixture(arena, io, "tests/closure_invariant", dir);
+    return dir;
+}
+
+test "level B: an unchanged library is not analysed again; a changed byte of it, another target and a truncated entry are" {
+    var arena_inst = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_inst.deinit();
+    const arena = arena_inst.allocator();
+    const io = testing.io;
+    const gpa = testing.allocator;
+    const dir = try scratchFixture(arena, io, "level-b-misses");
+    defer test_scratch.remove(io, "level-b-misses");
+    const plain_dir = try std.fs.path.join(arena, &.{ dir, "plain" });
+    const root = try std.fs.path.join(arena, &.{ dir, "cache" });
+    const erl: Variant = .{ .label = "erlang", .target = .erlang };
+
+    var fx = try Fixture.loadAt(gpa, arena, io, plain_dir, entryTarget(erl));
+    defer fx.free(gpa);
+    const shelf_n = countOf(&fx, "shelf");
+    try testing.expect(shelf_n > 0);
+
+    var first = try invoke(gpa, io, &fx, erl, root, fx.keys);
+    first.deinit(gpa);
+    try testing.expectEqual(@as(usize, 0), first.stats.modules_read);
+    const shelf_entry = try analysis_store.packagePath(arena, root, entryTarget(erl), "shelf");
+    try std.Io.Dir.cwd().access(io, shelf_entry, .{});
+
+    // Unchanged: shelf (and std) read back, plain's own module alone analysed.
+    var second = try invoke(gpa, io, &fx, erl, root, fx.keys);
+    second.deinit(gpa);
+    try testing.expectEqual(countOf(&fx, ""), second.stats.modules_analysed);
+    try testing.expect(second.stats.modules_read >= shelf_n);
+    const std_read = second.stats.modules_read - shelf_n;
+
+    // Another target: nothing of erlang's is read.
+    const cjs: Variant = .{ .label = "commonJS", .target = .commonJS, .typescript = true };
+    var other = try Fixture.loadAt(gpa, arena, io, plain_dir, entryTarget(cjs));
+    defer other.free(gpa);
+    var on_cjs = try invoke(gpa, io, &other, cjs, root, other.keys);
+    on_cjs.deinit(gpa);
+    try testing.expectEqual(@as(usize, 0), on_cjs.stats.modules_read);
+
+    // A truncated entry: deleted, shelf analysed again, a whole one written.
+    const whole = try std.Io.Dir.cwd().readFileAlloc(io, shelf_entry, arena, .unlimited);
+    try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = shelf_entry, .data = whole[0 .. whole.len / 2] });
+    var truncated = try invoke(gpa, io, &fx, erl, root, fx.keys);
+    truncated.deinit(gpa);
+    try testing.expectEqual(std_read, truncated.stats.modules_read);
+    try testing.expectEqual(countOf(&fx, "") + shelf_n, truncated.stats.modules_analysed);
+    try testing.expectEqualSlices(u8, whole, try std.Io.Dir.cwd().readFileAlloc(io, shelf_entry, arena, .unlimited));
+
+    // A changed byte of shelf: a new key, shelf analysed again, its entry replaced.
+    const tools = try std.fs.path.join(arena, &.{ dir, "shelf", "src", "tools.bp" });
+    const text = try std.Io.Dir.cwd().readFileAlloc(io, tools, arena, .unlimited);
+    try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = tools, .data = try std.mem.concat(arena, u8, &.{ text, "\n" }) });
+    var changed_fx = try Fixture.loadAt(gpa, arena, io, plain_dir, entryTarget(erl));
+    defer changed_fx.free(gpa);
+    try testing.expect(!std.mem.eql(u8, &fx.keys.get("shelf").?, &changed_fx.keys.get("shelf").?));
+    var changed = try invoke(gpa, io, &changed_fx, erl, root, changed_fx.keys);
+    changed.deinit(gpa);
+    try testing.expectEqual(std_read, changed.stats.modules_read);
+    try testing.expectEqual(@as(usize, 1), changed.stats.entries_staged);
+    try testing.expect(!std.mem.eql(u8, whole, try std.Io.Dir.cwd().readFileAlloc(io, shelf_entry, arena, .unlimited)));
+}
+
+test "level B: another compiler key reads nothing of the entry the first one wrote" {
+    var arena_inst = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_inst.deinit();
+    const arena = arena_inst.allocator();
+    const io = testing.io;
+    const gpa = testing.allocator;
+    const dir = try scratchFixture(arena, io, "level-b-compiler-key");
+    defer test_scratch.remove(io, "level-b-compiler-key");
+    const shelf_dir = try std.fs.path.join(arena, &.{ dir, "shelf" });
+    const root = try std.fs.path.join(arena, &.{ dir, "cache" });
+    const erl: Variant = .{ .label = "erlang", .target = .erlang };
+
+    var fx = try Fixture.loadAt(gpa, arena, io, try std.fs.path.join(arena, &.{ dir, "plain" }), entryTarget(erl));
+    defer fx.free(gpa);
+    // shelf's key under two compilers (`closureKeyWith`): its files and
+    // manifest the same, the compiler's part another.
+    const shelf_text = try std.Io.Dir.cwd().readFileAlloc(io, try std.fs.path.join(arena, &.{ shelf_dir, "botopink.json" }), arena, .unlimited);
+    var err: ?@import("manifest").Located = null;
+    const m = try @import("manifest").parse(arena, shelf_text, "botopink.json", &err);
+    var keys_c1: std.StringHashMapUnmanaged([code_cache.KEY_HEX]u8) = .empty;
+    try keys_c1.put(arena, "shelf", try code_cache.closureKeyWith(arena, io, shelf_dir, m, &.{}, entryTarget(erl), "compiler-1"));
+    var keys_c2: std.StringHashMapUnmanaged([code_cache.KEY_HEX]u8) = .empty;
+    try keys_c2.put(arena, "shelf", try code_cache.closureKeyWith(arena, io, shelf_dir, m, &.{}, entryTarget(erl), "compiler-2"));
+    try testing.expect(!std.mem.eql(u8, &keys_c1.get("shelf").?, &keys_c2.get("shelf").?));
+
+    var first = try invoke(gpa, io, &fx, erl, root, keys_c1);
+    first.deinit(gpa);
+    var same_key = try invoke(gpa, io, &fx, erl, root, keys_c1);
+    same_key.deinit(gpa);
+    const shelf_n = countOf(&fx, "shelf");
+    const std_read = same_key.stats.modules_read - shelf_n;
+    var other_key = try invoke(gpa, io, &fx, erl, root, keys_c2);
+    other_key.deinit(gpa);
+    try testing.expectEqual(std_read, other_key.stats.modules_read);
+    try testing.expectEqual(@as(usize, 1), other_key.stats.entries_staged);
 }

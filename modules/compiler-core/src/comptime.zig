@@ -10,6 +10,9 @@ const context_lower = @import("comptime/context_lower.zig");
 const alias_erase = @import("./comptime/alias_erase.zig");
 const std_namespace = @import("./comptime/std_namespace.zig");
 const mod_tree = @import("./comptime/mod_tree.zig");
+const levelB = @import("./comptime/level_b.zig");
+/// The code cache's level B inside a compile (144 B-60): `compileWith`'s store.
+pub const level_b = levelB;
 const mod_namespace = @import("./comptime/mod_namespace.zig");
 const inline_types = @import("./comptime/inline_types.zig");
 const nested_types = @import("./comptime/nested_types.zig");
@@ -752,6 +755,7 @@ fn orderReaders(
     modules: []const Module,
     reflection: *reflectionMod.Reflection,
     refusals: *std.AutoHashMapUnmanaged(usize, validation.TypeError),
+    lb: ?*levelB.Session,
 ) ![]const Module {
     var readers: std.ArrayListUnmanaged(Module) = .empty;
     var others: std.ArrayListUnmanaged(Module) = .empty;
@@ -760,6 +764,14 @@ fn orderReaders(
     var reader_tokens: std.ArrayListUnmanaged([]const Token) = .empty;
     var other_tokens: std.ArrayListUnmanaged([]const Token) = .empty;
     for (modules) |m| {
+        // A module read back from the code cache's level B is no reader (a
+        // reader's package is never stored) and imports none: not parsed.
+        if (lb) |l| if (l.hitMeta(m.path) != null) {
+            try others.append(arena, m);
+            try other_programs.append(arena, null);
+            try other_tokens.append(arena, &.{});
+            continue;
+        };
         // A module that does not parse is no reader; its own analysis
         // reports the parse error.
         var lx = Lexer.init(m.source);
@@ -1724,78 +1736,52 @@ fn isStdPkgPath(path: []const u8) bool {
 /// emitters lower the binding's reads and writes onto that module's host
 /// primitives (front 17, decision 43's layer 2), so the module has to be in
 /// the build for the calls to answer.
-fn expandStdImports(arena: std.mem.Allocator, modules: []const Module, target_name: ?[]const u8) ![]const Module {
+fn expandStdImports(arena: std.mem.Allocator, modules: []const Module, target_name: ?[]const u8, lb: ?*levelB.Session) ![]const Module {
     var needed = [_]bool{false} ** std_pkg_modules.len;
     var any = false;
     const beam_target = if (target_name) |t| std.mem.eql(u8, t, "erlang") or std.mem.eql(u8, t, "beam") else false;
     for (modules) |mod| {
-        // Decision 388 — a program that writes `@Component` needs std's
-        // `context` module: every component is lowered to a lambda over its
-        // `RenderScope`, and an `await` of one in any module runs it with
-        // `RenderScope.root()` (`comptime/context_lower.zig`).
-        if (!isStdPkgPath(mod.path) and std.mem.indexOf(u8, mod.source, "@Component") != null) {
-            for (std_pkg_modules, 0..) |spm, i| if (std.mem.eql(u8, spm.path, "std/context")) {
+        // A module read back from the code cache's level B (144 B-60) is not
+        // parsed: its entry's META names the std modules it needs.
+        if (lb) |l| if (l.hitMeta(mod.path)) |mm| {
+            for (mm.std_imports) |p| if (stdIndex(p)) |i| {
                 needed[i] = true;
                 any = true;
             };
-        }
-        var lx = Lexer.init(mod.source);
-        const tokens = lx.scanAll(arena) catch continue;
-        var p = Parser.init(tokens);
-        // The same rewrite `analyzeSource` makes, so a module reached only
-        // through a folder namespace (`io.fs.f()`) or a module's type
-        // (`collections.Dict.empty()`) is embedded like any imported one.
-        const program = std_namespace.expand(arena, p.parse(arena) catch continue) catch continue;
-        for (program.decls) |decl| switch (decl) {
-            .val => |v| if (beam_target and v.mutable) {
-                for (std_pkg_modules, 0..) |spm, i| {
-                    if (std.mem.eql(u8, spm.path, "std/beam")) {
-                        needed[i] = true;
-                        any = true;
-                    }
-                }
-            },
-            .use => |u| {
-                if (!importsStd(u, isStdPkgPath(mod.path))) continue;
-                for (u.imports) |imp| {
-                    // Decision 107 — the item names a module by its whole path
-                    // (`io.fs`, the namespace form) or a symbol of the module
-                    // its prefix names (`io.fs.readText`); a single segment is
-                    // both spellings of `dict`. Whichever matches is needed.
-                    const whole = try imp.fullPath(arena);
-                    const prefix = try imp.prefixPath(arena);
-                    for (std_pkg_modules, 0..) |spm, i| {
-                        const key = spm.path["std/".len..];
-                        if (std.mem.eql(u8, key, whole) or (prefix.len > 0 and std.mem.eql(u8, key, prefix))) {
-                            needed[i] = true;
-                            any = true;
-                        }
-                    }
-                }
-            },
-            else => {},
+            continue;
         };
+        const needs = try stdNeedsOf(arena, mod, beam_target);
+        for (needs) |i| {
+            needed[i] = true;
+            any = true;
+        }
+        if (lb) |l| {
+            const paths = try arena.alloc([]const u8, needs.len);
+            for (needs, paths) |i, *p| p.* = std_pkg_modules[i].path;
+            try l.noteStdNeeds(mod, paths);
+        }
     }
     if (!any) return modules;
 
     // A std module that imports another std module needs it too, however deep
     // the chain goes, and each one is emitted after what it imports.
+    const graph = try stdGraph();
     const beam_at = for (std_pkg_modules, 0..) |spm, i| {
         if (std.mem.eql(u8, spm.path, "std/beam")) break i;
     } else std_pkg_modules.len;
     var changed = true;
     while (changed) {
         changed = false;
-        for (std_pkg_modules, 0..) |spm, i| {
+        for (0..std_pkg_modules.len) |i| {
             if (!needed[i]) continue;
-            for (try stdImportsOf(arena, spm.source)) |dep| if (!needed[dep]) {
+            for (graph.imports[i]) |dep| if (!needed[dep]) {
                 needed[dep] = true;
                 changed = true;
             };
             // A std module that declares a module-level `var` reaches
             // `std/beam` the same way a user module does (above), imported
             // or not.
-            if (beam_target and beam_at < std_pkg_modules.len and !needed[beam_at] and declaresModuleVar(arena, spm.source)) {
+            if (beam_target and beam_at < std_pkg_modules.len and !needed[beam_at] and declaresModuleVar(arena, std_pkg_modules[i].source)) {
                 needed[beam_at] = true;
                 changed = true;
             }
@@ -1803,7 +1789,7 @@ fn expandStdImports(arena: std.mem.Allocator, modules: []const Module, target_na
     }
 
     var out: std.ArrayListUnmanaged(Module) = .empty;
-    for (try stdModuleOrder(arena)) |i| {
+    for (graph.order) |i| {
         const spm = std_pkg_modules[i];
         // An embedded std module is `libs/std/src/<name>.bp` inside its own
         // package, so that is what its `@src().file` answers (decision 73).
@@ -1817,6 +1803,96 @@ fn expandStdImports(arena: std.mem.Allocator, modules: []const Module, target_na
     }
     try out.appendSlice(arena, modules);
     return out.toOwnedSlice(arena);
+}
+
+/// The index in `std_pkg_modules` of the std module `path` (`std/<m>`).
+fn stdIndex(path: []const u8) ?usize {
+    for (std_pkg_modules, 0..) |spm, i| if (std.mem.eql(u8, spm.path, path)) return i;
+    return null;
+}
+
+/// The std modules (indices into `std_pkg_modules`, ascending) module `mod`
+/// needs itself: each `from "std"` item, `std/context` for a `@Component`, and
+/// `std/beam` for a module-level `var` on erlang and beam (`beam_target`). A
+/// module that does not parse needs what its `@Component` says; its analysis
+/// reports the error.
+fn stdNeedsOf(arena: std.mem.Allocator, mod: Module, beam_target: bool) ![]const usize {
+    var needed = [_]bool{false} ** std_pkg_modules.len;
+    collect: {
+        // Decision 388 — a program that writes `@Component` needs std's
+        // `context` module: every component is lowered to a lambda over its
+        // `RenderScope`, and an `await` of one in any module runs it with
+        // `RenderScope.root()` (`comptime/context_lower.zig`).
+        if (!isStdPkgPath(mod.path) and std.mem.indexOf(u8, mod.source, "@Component") != null) {
+            if (stdIndex("std/context")) |i| needed[i] = true;
+        }
+        var lx = Lexer.init(mod.source);
+        const tokens = lx.scanAll(arena) catch break :collect;
+        var p = Parser.init(tokens);
+        // The same rewrite `analyzeSource` makes, so a module reached only
+        // through a folder namespace (`io.fs.f()`) or a module's type
+        // (`collections.Dict.empty()`) is embedded like any imported one.
+        const program = std_namespace.expand(arena, p.parse(arena) catch break :collect) catch break :collect;
+        for (program.decls) |decl| switch (decl) {
+            .val => |v| if (beam_target and v.mutable) {
+                if (stdIndex("std/beam")) |i| needed[i] = true;
+            },
+            .use => |u| {
+                if (!importsStd(u, isStdPkgPath(mod.path))) continue;
+                for (u.imports) |imp| {
+                    // Decision 107 — the item names a module by its whole path
+                    // (`io.fs`, the namespace form) or a symbol of the module
+                    // its prefix names (`io.fs.readText`); a single segment is
+                    // both spellings of `dict`. Whichever matches is needed.
+                    const whole = try imp.fullPath(arena);
+                    const prefix = try imp.prefixPath(arena);
+                    for (std_pkg_modules, 0..) |spm, i| {
+                        const key = spm.path["std/".len..];
+                        if (std.mem.eql(u8, key, whole) or (prefix.len > 0 and std.mem.eql(u8, key, prefix))) needed[i] = true;
+                    }
+                }
+            },
+            else => {},
+        };
+    }
+    var out: std.ArrayListUnmanaged(usize) = .empty;
+    for (needed, 0..) |n, i| if (n) try out.append(arena, i);
+    return out.items;
+}
+
+/// std's own import graph: each std module's std imports (`stdImportsOf`)
+/// and the order every build emits them in (`stdModuleOrder`). std is
+/// embedded in the binary, so it is computed once per process — every
+/// compile used to parse every std module for it.
+const StdGraph = struct {
+    imports: []const []const usize,
+    order: []const usize,
+};
+var std_graph_arena: std.heap.ArenaAllocator = undefined;
+var std_graph: StdGraph = undefined;
+/// 0 = not computed, 1 = computing, 2 = ready (as `stdlib_template_init`).
+var std_graph_init: std.atomic.Value(u8) = .init(0);
+
+fn stdGraph() !*const StdGraph {
+    while (true) {
+        const s = std_graph_init.load(.acquire);
+        if (s == 2) return &std_graph;
+        if (s == 0) {
+            if (std_graph_init.cmpxchgStrong(0, 1, .acquire, .acquire)) |_| continue;
+            std_graph_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+            errdefer {
+                std_graph_arena.deinit();
+                std_graph_init.store(0, .release);
+            }
+            const arena = std_graph_arena.allocator();
+            const imports = try arena.alloc([]const usize, std_pkg_modules.len);
+            for (std_pkg_modules, imports) |spm, *im| im.* = try stdImportsOf(arena, spm.source);
+            std_graph = .{ .imports = imports, .order = try stdModuleOrder(arena) };
+            std_graph_init.store(2, .release);
+            return &std_graph;
+        }
+        std.atomic.spinLoopHint();
+    }
 }
 
 /// Whether `u` imports std modules: `from "std"`, or — inside a std module
@@ -2355,15 +2431,15 @@ fn resolveImports(
 /// handler) may live in different modules; this pairs them — keyed by package key
 /// (the module-path prefix before the first `/`, "" for the root package) — so
 /// the handler can be aliased under the handle for `import <pkg>` to bind.
-const DefaultDsl = struct {
+pub const DefaultDsl = struct {
     /// pkgKey -> default module name (= the import handle).
     modName: std.StringHashMap([]const u8),
     /// pkgKey -> the package's default handler fn (defining path + exported type).
     handler: std.StringHashMap(Handler),
 
-    const Handler = struct { path: []const u8, type_: *T.Type, decl: ast.FnDecl };
+    pub const Handler = struct { path: []const u8, type_: *T.Type, decl: ast.FnDecl };
 
-    fn init(a: std.mem.Allocator) DefaultDsl {
+    pub fn init(a: std.mem.Allocator) DefaultDsl {
         return .{
             .modName = std.StringHashMap([]const u8).init(a),
             .handler = std.StringHashMap(Handler).init(a),
@@ -3194,7 +3270,7 @@ pub fn compileTypesOnly(
     // sources and `resolveImports` binds `from "<lib>"` through the shared
     // registry — the core names no specific lib (std is the one exception).
     var reader_refusals: std.AutoHashMapUnmanaged(usize, validation.TypeError) = .empty;
-    const all_modules = try orderReaders(arena_alloc, try expandStdImports(arena_alloc, modules, null), &reflection, &reader_refusals);
+    const all_modules = try orderReaders(arena_alloc, try expandStdImports(arena_alloc, modules, null, null), &reflection, &reader_refusals, null);
     const tree = try arena_alloc.create(mod_tree.Tree);
     tree.* = try mod_tree.build(arena_alloc, all_modules);
     reflection.modTree = tree;
@@ -3383,15 +3459,33 @@ pub fn compile(
     build_root: ?[]const u8,
     target_name: ?[]const u8,
 ) !ComptimeSession {
+    return compileWith(allocator, modules, io, build_root, target_name, null);
+}
+
+/// `compile` reading and writing the code cache's level B through `store`
+/// (144 B-60): a dependency whose entry reads back is not analysed, one
+/// analysed is handed to the store as an entry (`comptime/level_b.zig`).
+pub fn compileWith(
+    allocator: std.mem.Allocator,
+    modules: []const Module,
+    io: std.Io,
+    build_root: ?[]const u8,
+    target_name: ?[]const u8,
+    store: ?*levelB.Store,
+) !ComptimeSession {
+    if (store) |st| st.stats = .{};
     // Decision 353 — a template body's `@TypeInfo.all` answers for the whole
     // program, every module's decorators applied. A session answers it from
     // the catalogue as it stands when the template is expanded; when a module
     // analysed later added an entry to an answer (`staleTemplateRead`), the
     // modules are compiled again with the first session's complete catalogue
     // as the oracle the answers are read from.
-    var first = try compileOnce(allocator, modules, io, build_root, target_name, null);
+    var first = try compileOnce(allocator, modules, io, build_root, target_name, null, store);
     if (try staleTemplateRead(first.session.arena.allocator(), first.reflection) == null) return first.session;
-    var second = compileOnce(allocator, modules, io, build_root, target_name, first.reflection) catch |err| {
+    // The second session counts afresh; what the first staged stays staged
+    // (a stored group's analysis reads no catalogue).
+    if (store) |st| st.stats = .{};
+    var second = compileOnce(allocator, modules, io, build_root, target_name, first.reflection, store) catch |err| {
         first.session.deinit(allocator);
         return err;
     };
@@ -3444,6 +3538,7 @@ fn compileOnce(
     build_root: ?[]const u8,
     target_name: ?[]const u8,
     oracle: ?*const reflectionMod.Reflection,
+    store: ?*levelB.Store,
 ) !CompiledOnce {
     var session = ComptimeSession{
         .arena = std.heap.ArenaAllocator.init(allocator),
@@ -3467,18 +3562,54 @@ fn compileOnce(
     // Non-std libs are ordinary input modules: the driver supplies their `.bp`
     // sources and `resolveImports` binds `from "<lib>"` through the shared
     // registry — the core names no specific lib (std is the one exception).
+    //
+    // The code cache's level B (144 B-60): every dependency package's entry is
+    // looked up before the pre-passes, std's once they named the std modules
+    // the build needs; a hit is parsed by none of them.
+    const regs: levelB.Registries = .{
+        .registry = &registry,
+        .type_decls = &type_decl_registry,
+        .templates = &template_registry,
+        .decorators = &decorator_registry,
+        .extensions = &extension_registry,
+        .dsl = &default_dsl,
+        .reflection = reflection,
+    };
+    var lb_session: levelB.Session = undefined;
+    const lb: ?*levelB.Session = if (store) |st| blk: {
+        lb_session = levelB.Session.init(arena_alloc, allocator, st);
+        break :blk &lb_session;
+    } else null;
+    if (lb) |l| try l.lookup(modules, .packages);
+    const expanded = try expandStdImports(arena_alloc, modules, target_name, lb);
+    if (lb) |l| try l.lookup(expanded, .std);
     var reader_refusals: std.AutoHashMapUnmanaged(usize, validation.TypeError) = .empty;
-    const all_modules = try orderReaders(arena_alloc, try expandStdImports(arena_alloc, modules, target_name), reflection, &reader_refusals);
+    const all_modules = try orderReaders(arena_alloc, expanded, reflection, &reader_refusals, lb);
     const tree = try arena_alloc.create(mod_tree.Tree);
-    tree.* = try mod_tree.build(arena_alloc, all_modules);
+    tree.* = try mod_tree.buildWith(arena_alloc, all_modules, if (lb) |l| try l.treeKnown(all_modules) else &.{});
     reflection.modTree = tree;
+    if (lb) |l| l.plan(all_modules);
 
     for (all_modules, 0..) |mod, idx| {
         const name: []const u8 = if (mod.path.len > 0) mod.path else "main";
+        if (lb) |l| if (l.hitOf(mod.path)) |h| {
+            // The driver's own strings, as a live output carries them: they
+            // outlive the session (a decoded copy is the session arena's).
+            var out = h.output;
+            out.name = name;
+            out.src = mod.source;
+            out.srcPath = mod.srcPath;
+            try session.outputs.append(allocator, out);
+            try l.replayHit(h, regs);
+            continue;
+        };
         if (reader_refusals.get(idx)) |te| {
             try session.outputs.append(allocator, .{ .name = name, .src = mod.source, .srcPath = mod.srcPath, .outcome = .{ .typeError = te } });
+            if (lb) |l| l.abandon(mod);
             continue;
         }
+        var snapshot: ?levelB.Snapshot = if (lb) |l| try l.begin(mod, regs) else null;
+        defer if (snapshot) |*sn| sn.deinit();
         const analysis = try analyzeModule(arena_alloc, mod, &registry, &type_decl_registry, &template_registry, &decorator_registry, &extension_registry, .{
             .io = io,
             .build_root = build_root orelse name,
@@ -3631,6 +3762,7 @@ fn compileOnce(
                 });
             },
         }
+        if (lb) |l| try l.end(mod, idx, session.outputs.items[session.outputs.items.len - 1], regs, if (snapshot) |*sn| sn else null, tree);
     }
 
     return .{ .session = session, .reflection = reflection };

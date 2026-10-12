@@ -2503,6 +2503,17 @@ a workspace member, the workspace root's `.botopinkbuild/cache/` and
 `.botopinkbuild/analysis/` (the dependencies' analysis) go too: the members of a
 workspace share one cache there.
 
+A dependency's analysis is kept between invocations (the code cache's level B,
+decision 509): `botopink build`, `run`, `test`, `check` and `cell check` read
+each dependency package's analysis from
+`.botopinkbuild/analysis/<target>/<package>.bpa` (std's one file per module,
+under `std/`) when it was written under the same closure key — the package's
+files, its manifest, its dependencies' keys, the target and the compiler — and
+write the ones they analysed once the build's compile returned. The package
+being built, run or tested is analysed every time and never stored, and so is a
+package whose module reads `@TypeInfo.all` or expands a template that reads it.
+`--cold` reads none of it.
+
 ## Project manifest
 
 Every project carries a `botopink.json` at its root:

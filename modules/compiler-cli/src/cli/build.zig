@@ -9,6 +9,7 @@ const diagnostics = @import("./diagnostics.zig");
 const arglist = @import("./arglist.zig");
 const otp = @import("./otp.zig");
 const code_cache = @import("./code_cache.zig");
+const analysis_store = @import("./analysis_store.zig");
 
 const Module = bp.Module;
 
@@ -70,11 +71,20 @@ pub fn run(
     // core never names a lib; it only sees these as ordinary `Module[]` and
     // resolves `from "<lib>"` through the shared import registry. `std` is the
     // embedded exception and is not loaded here.
-    const dep_modules = libs.loadDependencies(gpa, io, proj, env_map) catch |err| {
+    const entry_target: code_cache.EntryTarget = .{ .target = target, .host = proj.wasmHost() };
+    var closure_keys: libs.ClosureKeys = .{ .arena = arena, .target = entry_target };
+    const dep_modules = libs.loadDependenciesWith(gpa, io, proj, env_map, &closure_keys) catch |err| {
         reportDependencyError(err);
         return 1;
     };
     defer libs.freeModules(gpa, dep_modules);
+
+    // The code cache's level B (144 B-60): a dependency whose analysis entry
+    // reads back under its closure key is not analysed again; the entries
+    // this build analyses are written once its generate returned.
+    var level_b: analysis_store.Cache = undefined;
+    try level_b.init(gpa, io, analysis_store.root(proj), entry_target, closure_keys.keys);
+    defer level_b.deinit();
 
     // Compile dependency modules ahead of project modules (their types/decorators
     // must resolve before the project that imports them).
@@ -98,6 +108,7 @@ pub fn run(
         // The file a wasm build writes is what its host runs: the WASI
         // preview 2 component on `wasi` (decision 334).
         .wasm_artifact = true,
+        .analysis_store = &level_b.store,
     };
 
     // Run the compiler. `build` emits only: the program is not executed.
@@ -110,6 +121,7 @@ pub fn run(
         for (outputs.items) |*o| o.result.deinit(gpa);
         outputs.deinit(gpa);
     }
+    level_b.commit();
 
     const t1 = std.Io.Timestamp.now(io, .awake);
 

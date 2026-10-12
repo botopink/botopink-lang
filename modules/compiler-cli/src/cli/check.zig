@@ -14,6 +14,8 @@ const scanner = @import("./scanner.zig");
 const libs = @import("./libs.zig");
 const build_cmd = @import("./build.zig");
 const diagnostics = @import("./diagnostics.zig");
+const code_cache = @import("./code_cache.zig");
+const analysis_store = @import("./analysis_store.zig");
 
 pub const Options = struct {
     /// Project directory to check; null → the current directory.
@@ -64,11 +66,19 @@ pub fn run(gpa: std.mem.Allocator, io: std.Io, opts: Options, env_map: libs.EnvM
 
     // Resolve declared external libs (generic — `libs/<name>/`), same as `build`,
     // so `import … from "<lib>"` type-checks. Dependencies compile first.
-    const dep_modules = libs.loadDependencies(gpa, io, proj, env_map) catch |err| {
+    const entry_target: code_cache.EntryTarget = .{ .target = target, .host = proj.wasmHost() };
+    var closure_keys: libs.ClosureKeys = .{ .arena = arena, .target = entry_target };
+    const dep_modules = libs.loadDependenciesWith(gpa, io, proj, env_map, &closure_keys) catch |err| {
         build_cmd.reportDependencyError(err);
         return 1;
     };
     defer libs.freeModules(gpa, dep_modules);
+
+    // The code cache's level B (144 B-60): the target's entries, as `build`
+    // reads and writes them.
+    var level_b: analysis_store.Cache = undefined;
+    try level_b.init(gpa, io, analysis_store.root(proj), entry_target, closure_keys.keys);
+    defer level_b.deinit();
 
     // Keep only real `.bp` dependency modules. Declaration-only (`.d.bp`) modules
     // use declaration-file syntax the regular pipeline doesn't parse for external
@@ -89,18 +99,20 @@ pub fn run(gpa: std.mem.Allocator, io: std.Io, opts: Options, env_map: libs.EnvM
     // STD-001 — same target-name vocabulary `codegen.generate` threads in,
     // so `botopink check` reds on the same `from "std"` imports `botopink build`
     // would have aborted on.
-    var session = bp.comptime_pipeline.compile(
+    var session = bp.comptime_pipeline.compileWith(
         gpa,
         all_modules,
         io,
         ".botopinkbuild",
         diagnostics.comptimeTargetName(target, proj.wasmHost()),
+        &level_b.store,
     ) catch |err| {
         reporter.errMsg("type-check failed");
         std.debug.print("  {s}\n", .{@errorName(err)});
         return 1;
     };
     defer session.deinit(gpa);
+    level_b.commit();
 
     const t1 = std.Io.Timestamp.now(io, .awake);
 

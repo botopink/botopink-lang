@@ -67,6 +67,14 @@ compiler-cli/
 │   │                          live; the member's own module never stored; a changed
 │   │                          byte misses; `--cold` rewrites every entry; two
 │   │                          concurrent writers leave whole entries, nothing staged
+│   └── level_b.sh           ← the code cache's level B (144 B-60): over the closure
+│   │                          invariant's fixture, `build --cold`, a build that
+│   │                          writes `.botopinkbuild/analysis/`, one that reads it —
+│   │                          every file the same bytes on commonJS (+ `.d.ts`),
+│   │                          erlang, beam, wasm and wasm's browser host; `plain`
+│   │                          reads the `shelf` entry `crowded` wrote; an entry
+│   │                          read by `build`, `check` and `test` is never
+│   │                          rewritten (its inode), a changed byte writes anew
 └── src/
     ├── AGENTS.md
     ├── main.zig         ← argv parser, subcommand dispatcher
@@ -90,7 +98,7 @@ zig build test          # includes the CLI unit tests (main.zig parsers / config
 
 # End-to-end scripts under tests/ spawn the CLI and runtimes, so they are NOT
 # part of `zig build test`. From the workspace root:
-zig build test-cli      # all five scripts, in order, against the installed CLI
+zig build test-cli      # all six scripts, in order, against the installed CLI
 zig build test-backends # backend_exec.sh alone
 zig build test-closure-invariant # closure_invariant.sh alone (also in test-cli)
 
@@ -101,6 +109,7 @@ bash modules/compiler-cli/tests/test_tooling.sh      # `botopink test` behaviour
 bash modules/compiler-cli/tests/code_cache.sh        # the code cache and workspace inheritance
 bash modules/compiler-cli/tests/backend_exec.sh      # the wasm core module's --invoke main
 bash modules/compiler-cli/tests/closure_invariant.sh # a library's output under two consumers (509 (2))
+bash modules/compiler-cli/tests/level_b.sh           # level B: cold, writing and reading builds the same bytes
 ```
 
 > **Every assertion is hard** — there are no pinned reds, and a missing runtime
