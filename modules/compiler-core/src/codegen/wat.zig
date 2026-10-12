@@ -14890,7 +14890,10 @@ const Emitter = struct {
     /// at exit 0, where commonJS and erlang answer `five` for both.
     fn armIsString(self: *Emitter, body: ast.Expr) bool {
         return switch (body) {
-            .function => |f| f.kind.params.len == 0 and self.bodyIsString(f.kind.body),
+            // An arm's block, with or without its binder (`_ { n -> "max " +
+            // n.toString(); }`): the binder's arm printed its string's
+            // address once the case was a `val`'s value.
+            .function => |f| (f.kind.params.len == 0 or armLambda(body) != null) and self.bodyIsString(f.kind.body),
             else => self.isStringExpr(body),
         };
     }

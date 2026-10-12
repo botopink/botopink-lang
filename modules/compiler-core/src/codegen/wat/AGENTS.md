@@ -1001,6 +1001,10 @@ pointer, so `isStringExpr` said no, `val a = case …` was typed `i32` and
 syntax-dependent. `armIsString` is the only position allowed to look through a
 lambda node, and `modules/case_value_string_arms` pins both spellings on four
 targets.
+A brace arm with a binder (`_ { n -> "max " + n.toString(); }`) is a lambda node
+with one parameter, and `armIsString` reads its block too (`armLambda`): it
+said no, and `val s = case d.age { 3 { "three"; } _ { n -> … } }` printed the
+string's address. `modules/case_binder_arm_string_value`.
 
 **A `map`'s element shape is asked with the element bound** (`holdElemParam` /
 `releaseElemParam`, in `elemKindOf`'s `map` arm). The shape of `es.map({ e ->
