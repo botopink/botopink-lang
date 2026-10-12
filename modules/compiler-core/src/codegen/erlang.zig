@@ -9835,6 +9835,13 @@ const Emitter = struct {
         return this.module_name;
     }
 
+    /// True for a synthesised inner enum (`__Token__Color`) whose outer enum
+    /// another module declares: that module emits its type module.
+    fn isForeignSectionEnum(this: *const Emitter, type_name: []const u8) bool {
+        if (sectionOuterEnum(type_name) == null) return false;
+        return !std.mem.eql(u8, this.typeOwnerPath(type_name), this.module_name);
+    }
+
     /// Decision 21's T2 tag: element 1 of every value `type_name` builds. It is
     /// the type's own module atom, which is what lets `'__bp_show'` reach the
     /// formatter through the value alone.
@@ -10971,6 +10978,11 @@ const Emitter = struct {
     }
 
     fn enumForms(this: *Emitter, b: Ast.Builder, out: *Forms, e: ast.TypeDecl) !void {
+        // A synthesised inner enum re-synthesised here for an imported outer
+        // enum (§enum-sections F4) is the owner's type: its values carry the
+        // owner's tags, so `'__bp_tagged'` and method dispatch reach the
+        // owner's `<owner>@@__Token__Color` module, and a copy here is dead.
+        if (this.isForeignSectionEnum(e.name)) return;
         try out.append(b.arena, .{ .comment = Ast.Comment.doc(try std.fmt.allocPrint(b.arena, "type {s}", .{e.name})) });
         for (e.variants()) |v| {
             var text: std.ArrayListUnmanaged(u8) = .empty;

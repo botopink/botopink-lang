@@ -3068,6 +3068,13 @@ const Emitter = struct {
         return self.module_path;
     }
 
+    /// True for a synthesised inner enum (`__Token__Color`) whose outer enum
+    /// another module declares: that module emits its type module.
+    fn isForeignSectionEnum(self: *const Emitter, type_name: []const u8) bool {
+        if (sectionOuterEnum(type_name) == null) return false;
+        return !std.mem.eql(u8, self.typeOwnerPath(type_name), self.module_path);
+    }
+
     /// The enum a written variant path belongs to.
     fn enumOfVariantPath(self: *const Emitter, written: []const u8, bare: []const u8) ?[]const u8 {
         if (std.mem.lastIndexOfScalar(u8, written, '.')) |dot| {
@@ -4283,6 +4290,11 @@ const Emitter = struct {
     }
 
     fn emitEnum(self: *Emitter, e: ast.TypeDecl) !void {
+        // A synthesised inner enum re-synthesised here for an imported outer
+        // enum (§enum-sections F4) is the owner's type: its values carry the
+        // owner's tags, so `'__bp_tagged'` and method dispatch reach the
+        // owner's `<owner>@@__Token__Color` module, and a copy here is dead.
+        if (self.isForeignSectionEnum(e.name)) return;
         const methods = try self.withAdoptedDefaults(e);
         defer if (methods.ptr != e.methods.ptr) self.alloc.free(methods);
         try self.emitTypeUnit(e.name, methods, .{ .enum_ = e });

@@ -1298,6 +1298,63 @@ test "js: enum sections ---- path-access lowers to qualified ctor calls" {
     );
 }
 
+// An imported enum's synthesised inner enums are re-synthesised in every module
+// that writes the section path, and their values carry the OWNER's tags, so
+// `'__bp_tagged'` formats them through the owner's `<owner>@@__Token__Color`
+// module. Only the owner emits that type module: before, erlang and beam wrote
+// one byte-identical copy per importing module (emilia's ~680 inner enums,
+// six times over).
+const imported_section_modules = [_]Module{
+    .{ .path = "tok", .source =
+    \\pub type Token {
+    \\    Color {
+    \\        Red, Blue,
+    \\    }
+    \\    Hover(inner: i32),
+    \\}
+    \\pub fn red() -> Token { return .Color.Red; }
+    },
+    .{ .path = "lib", .source =
+    \\import {tok.Token};
+    \\pub fn blue() -> Token { return .Color.Blue; }
+    },
+    .{ .path = "main", .source =
+    \\import {tok.Token, tok.red};
+    \\import {lib.blue};
+    \\pub fn main() {
+    \\    val t: Token = .Color.Red;
+    \\    @print(t);
+    \\    @print(red());
+    \\    @print(blue());
+    \\}
+    },
+};
+
+/// Every unit the program writes for `__Token__Color` is the owner's, once.
+fn expectOneInnerEnumUnit(cfg: config.Config) !void {
+    var outputs = try h.generate(std.testing.allocator, &imported_section_modules, std.testing.io, cfg);
+    defer {
+        for (outputs.items) |*o| o.result.deinit(std.testing.allocator);
+        outputs.deinit(std.testing.allocator);
+    }
+    var inner: usize = 0;
+    for (outputs.items) |o| for (o.result.units) |u| {
+        if (std.mem.endsWith(u8, u.atom, "@@__Token__Color")) {
+            inner += 1;
+            try std.testing.expectEqualStrings("test@tok@@__Token__Color", u.atom);
+        }
+    };
+    try std.testing.expectEqual(@as(usize, 1), inner);
+}
+
+test "erlang: enum sections ---- an imported enum's inner enum has one type module" {
+    try expectOneInnerEnumUnit(h.configs[1]);
+}
+
+test "beam: enum sections ---- an imported enum's inner enum has one type module" {
+    try expectOneInnerEnumUnit(h.configs[2]);
+}
+
 // A comptime body has no inferred types, so a primitive method call in it lowers
 // to the runtime-dispatch shim `'__bp_prim_<method>'` (`codegen/erlang.zig`
 // `untypedPrimCallNode`); the `COMPTIME ERLANG` section shows the call sites.
