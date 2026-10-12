@@ -1166,6 +1166,24 @@ pub fn shipMjsSidecars(
             // to (`sidecarOwner`), and `<src>` is that package's own — never a
             // basename match across the roots. A sidecar that is named and
             // cannot be found is the end of the build, not a silent skip.
+            // `std` is bundled: its sidecars ship from the compiler's own copy,
+            // whether or not the project sits where a `std` directory resolves
+            // (a project outside any checkout, a published binary) — 144 B-49.
+            if (owner) |lib| {
+                if (std.mem.eql(u8, lib, "std")) {
+                    if (bp.comptime_pipeline.stdSidecar(base)) |embedded| {
+                        if (std.fs.path.dirname(target)) |parent| {
+                            std.Io.Dir.cwd().createDirPath(io, parent) catch |err| switch (err) {
+                                error.PathAlreadyExists => {},
+                                else => return err,
+                            };
+                        }
+                        try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = target, .data = embedded });
+                        continue;
+                    }
+                }
+            }
+
             const src: []const u8 = blk: {
                 if (owner) |lib| {
                     if (roots == null) roots = try resolveLibRoots(gpa, io, env_map);
@@ -1217,6 +1235,34 @@ pub fn shipMjsSidecars(
             try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = emitted_rel, .data = text });
         }
     }
+}
+
+test "shipMjsSidecars: std's sidecar ships from the compiler's own copy, not from a std directory a root carries (144 B-49)" {
+    var arena_inst = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_inst.deinit();
+    const arena = arena_inst.allocator();
+    const io = std.testing.io;
+    test_scratch.remove(io, "std-sidecar");
+    defer test_scratch.remove(io, "std-sidecar");
+    // A root carrying a `std` package whose sidecar differs from the bundled
+    // one: the bundled `std` is the compiler's, so its copy is what ships.
+    try writeFileP(io, test_scratch.path(io, "std-sidecar/roots/std/botopink.json"), "{ \"name\": \"std\", \"src\": \"src/\" }");
+    try writeFileP(io, test_scratch.path(io, "std-sidecar/roots/std/src/sidecars/random.mjs"), "// a std that is not the bundled one\n");
+    var env = std.process.Environ.Map.init(std.testing.allocator);
+    defer env.deinit();
+    try env.put(ENV_VAR, test_scratch.path(io, "std-sidecar/roots"));
+
+    const out_dir = test_scratch.path(io, "std-sidecar/out");
+    try writeFileP(io, try std.fs.path.join(arena, &.{ out_dir, "std/io/random.js" }), "const r = require('./sidecars/random.mjs');\n");
+    var outputs = [_]bp.codegen.ModuleOutput{.{
+        .name = "std/io/random",
+        .src = "",
+        .result = .{ .js = try arena.dupe(u8, "const r = require('./sidecars/random.mjs');\n"), .comptime_script = null },
+    }};
+    try shipMjsSidecars(std.testing.allocator, io, &outputs, .{ .root = "app" }, out_dir, ".js", &env);
+
+    const shipped = try std.Io.Dir.cwd().readFileAlloc(io, try std.fs.path.join(arena, &.{ out_dir, "std/io/sidecars/random.mjs" }), arena, .unlimited);
+    try std.testing.expectEqualStrings(bp.comptime_pipeline.stdSidecar("random.mjs").?, shipped);
 }
 
 // ── host `.erl` module shipping ────────────────────────────────────────────────

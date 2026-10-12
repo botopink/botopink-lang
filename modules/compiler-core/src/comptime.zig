@@ -1428,6 +1428,14 @@ pub const module_import_with_from = diagnostics.module_import_with_from;
 /// the CLI's dependency order (`mod_namespace.chains`).
 pub const namespaceChains = mod_namespace.chains;
 
+/// The embedded source of std's sidecar file `base` (`random.mjs`), or null.
+pub fn stdSidecar(base: []const u8) ?[]const u8 {
+    for (@import("std_prelude").std_sidecars) |sc| {
+        if (std.mem.eql(u8, sc.name, base)) return sc.source;
+    }
+    return null;
+}
+
 /// The bundled package called `name`, or null — `from "<name>"` resolves to it
 /// wherever the import is written.
 pub fn bundledPackage(name: []const u8) ?BundledPackage {

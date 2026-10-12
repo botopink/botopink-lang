@@ -69,9 +69,26 @@ pub fn build(b: *std.Build) void {
     );
     pkg_table_src = b.fmt("{s}}};\n", .{pkg_table_src});
 
+    // std's `.mjs` sidecars (`libs/std/src/sidecars/*.mjs`), embedded the same
+    // way: the CLI ships them from the compiler's own copy, so a project outside
+    // any checkout (where `std` resolves to no package directory) still builds
+    // on commonJS (144 B-49).
+    const std_sidecar_files = stdSidecarFiles(b);
+    pkg_table_src = b.fmt(
+        "{s}\n/// std's `.mjs` sidecars, keyed by file name.\npub const std_sidecars = [_]struct {{ name: []const u8, source: []const u8 }}{{\n",
+        .{pkg_table_src},
+    );
+    for (std_sidecar_files) |f| {
+        pkg_table_src = b.fmt(
+            "{s}    .{{ .name = \"{s}\", .source = @embedFile(\"sidecars/{s}\") }},\n",
+            .{ pkg_table_src, f, f },
+        );
+    }
+    pkg_table_src = b.fmt("{s}}};\n", .{pkg_table_src});
+
     const wf = b.addWriteFiles();
     const pkg_table_file = wf.add("std_pkg_modules.zig", pkg_table_src);
-    const std_prelude = stdPreludeModule(b, target, std_pkg_files, pkg_table_file);
+    const std_prelude = stdPreludeModule(b, target, std_pkg_files, std_sidecar_files, pkg_table_file);
 
     const test_filters = b.option([]const []const u8, "test-filter", "Only run tests matching filter") orelse &.{};
 
@@ -649,7 +666,7 @@ pub fn build(b: *std.Build) void {
         .target = web_target,
         .optimize = optimize,
         .imports = &.{
-            .{ .name = "std_prelude", .module = stdPreludeModule(b, web_target, std_pkg_files, pkg_table_file) },
+            .{ .name = "std_prelude", .module = stdPreludeModule(b, web_target, std_pkg_files, std_sidecar_files, pkg_table_file) },
             .{ .name = "manifest", .module = b.createModule(.{ .root_source_file = b.path("modules/manifest/src/root.zig") }) },
             .{ .name = "std_wasm", .module = std_wasm_mod },
         },
@@ -735,6 +752,7 @@ fn stdPreludeModule(
     b: *std.Build,
     target: std.Build.ResolvedTarget,
     std_pkg_files: []const []const u8,
+    std_sidecar_files: []const []const u8,
     pkg_table_file: std.Build.LazyPath,
 ) *std.Build.Module {
     const std_prelude = b.createModule(.{
@@ -766,6 +784,11 @@ fn stdPreludeModule(
     for (std_pkg_files) |f| {
         std_pkg.addAnonymousImport(f, .{
             .root_source_file = b.path(b.fmt("libs/std/src/{s}", .{f})),
+        });
+    }
+    for (std_sidecar_files) |f| {
+        std_pkg.addAnonymousImport(b.fmt("sidecars/{s}", .{f}), .{
+            .root_source_file = b.path(b.fmt("libs/std/src/sidecars/{s}", .{f})),
         });
     }
     std_prelude.addImport("std_pkg", std_pkg);
@@ -864,6 +887,27 @@ fn collectStdModules(
             collectStdModules(b, files, folder, b.fmt("{s}{s}/", .{ prefix, name }));
         }
     }
+}
+
+/// The `.mjs` files of `libs/std/src/sidecars`, sorted by name.
+fn stdSidecarFiles(b: *std.Build) []const []const u8 {
+    var files: std.ArrayListUnmanaged([]const u8) = .empty;
+    var dir = b.build_root.handle.openDir(b.graph.io, "libs/std/src/sidecars", .{ .iterate = true }) catch |err| switch (err) {
+        error.FileNotFound => return &.{},
+        else => std.debug.panic("std sidecars: cannot open libs/std/src/sidecars: {s}", .{@errorName(err)}),
+    };
+    defer dir.close(b.graph.io);
+    var it = dir.iterate();
+    while (it.next(b.graph.io) catch |err| std.debug.panic("std sidecars: {s}", .{@errorName(err)})) |entry| {
+        if (entry.kind != .file or !std.mem.endsWith(u8, entry.name, ".mjs")) continue;
+        files.append(b.allocator, b.dupe(entry.name)) catch @panic("OOM");
+    }
+    std.mem.sort([]const u8, files.items, {}, struct {
+        fn lt(_: void, a: []const u8, c: []const u8) bool {
+            return std.mem.lessThan(u8, a, c);
+        }
+    }.lt);
+    return files.toOwnedSlice(b.allocator) catch @panic("OOM");
 }
 
 fn stdSrcExists(b: *std.Build, rel: []const u8) bool {

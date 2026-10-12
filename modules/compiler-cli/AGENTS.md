@@ -155,7 +155,7 @@ loaded here. `shipMjsSidecars` resolves an owning lib's `.mjs` through the same
 root list, and never writes outside the output directory: a `require` whose path
 escapes it (a lib's `../../src/x.mjs` authored for its own build) ships the file to
 `<out>/<lib>/<base>` (project-own: `<out>/<base>`) and rewrites that module's
-`require` to reach it. `std` — the one bundled package (decision 326) — is the exception to "declared, then found on disk": it is embedded in the binary, and `libs.loadDependencies` refuses it listed in `dependencies`. Every other library (`routing`, `actions`, … included) is declared and found on disk like any dependency.
+`require` to reach it. `std`'s `.mjs` sidecars (`libs/std/src/sidecars/*.mjs`) are embedded in the binary beside its modules (`build.zig` `stdSidecarFiles` → `std_sidecars`, `comptime_pipeline.stdSidecar`) and `shipMjsSidecars` ships them from that copy — never from a `std` directory, which a project outside any checkout (a library's cell, a published binary) does not have (144 B-49). `std` — the one bundled package (decision 326) — is the exception to "declared, then found on disk": it is embedded in the binary, and `libs.loadDependencies` refuses it listed in `dependencies`. Every other library (`routing`, `actions`, … included) is declared and found on disk like any dependency.
 
 `shipErlSidecars` is the erlang counterpart: a `#[@External.Erlang("host",
 "fn")]` lowers to `host:fn(…)`, and `host` is a module the library authors in

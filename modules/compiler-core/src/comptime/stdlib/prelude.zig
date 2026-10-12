@@ -43,3 +43,8 @@ pub const pkg_modules = @import("std_pkg").pkg_modules;
 // place a name is spelled); each non-std entry carries its `.bp` modules.
 pub const BundledPackage = @import("std_pkg").BundledPackage;
 pub const bundled_packages = @import("std_pkg").bundled_packages;
+
+/// std's `.mjs` sidecars (`libs/std/src/sidecars/*.mjs`), embedded by
+/// `build.zig` beside the modules: the CLI ships them from the compiler's own
+/// copy, never from a directory `std` may not have (144 B-49).
+pub const std_sidecars = @import("std_pkg").std_sidecars;
