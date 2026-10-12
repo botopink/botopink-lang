@@ -9205,7 +9205,8 @@ const Emitter = struct {
     /// | a binary, `Top` | itself — a top-level string prints bare |
     /// | a binary, nested | `io_lib:write_string(unicode:characters_to_list(V))` — `"a\"b"`, source escapes and all, in one call instead of a per-character walk |
     /// | a list | `[$[, lists:join(<<", ">>, …), $]]` over the elements |
-    /// | a tuple whose first element is an atom other than `true`/`false`/`undefined` | `~p` — a variant or a `@Result`; §7's `Shape.Square(side: 4)` is `13-module-identity`'s F3 |
+    /// | `{ok, P}` / `{error, P}` | `Ok(` … `)` over `'__bp_show'(P, false)` |
+    /// | a tuple whose first element is another atom (not `true`/`false`/`undefined`) | `~p` — a variant; §7's `Shape.Square(side: 4)` is `13-module-identity`'s F3 |
     /// | any other tuple | `[$#, $(, lists:join(<<", ">>, …), $)]` |
     /// | anything else | `~p` — an integer, a float (which keeps its `.0`, §7 F5), an atom, a record's map (§7 F2, also 13's) |
     fn ensurePrintHelper(self: *Emitter) anyerror![]const u8 {
@@ -9285,6 +9286,8 @@ const Emitter = struct {
         const tagged = self.allocLabel();
         const generic = self.allocLabel();
         const absent = self.allocLabel();
+        const result_error = self.allocLabel();
+        const result_show = self.allocLabel();
         try beamEmitter.writeBlankLine(w);
         try beamEmitter.writeFunctionHeader(w, show_name, 2, show_l.entry);
         try beamEmitter.writeLabel(w, show_l.func_info);
@@ -9337,9 +9340,30 @@ const Emitter = struct {
         try beamEmitter.writeTest(w, .is_ne_exact, plain_tuple, &.{ Op.xr(0), Op.atom("true") });
         try beamEmitter.writeTest(w, .is_ne_exact, plain_tuple, &.{ Op.xr(0), Op.atom("false") });
         try beamEmitter.writeTest(w, .is_ne_exact, plain_tuple, &.{ Op.xr(0), Op.atom("undefined") });
-        // A value that names its own declaration (decision 21): `{x, 0}` holds
-        // the tag, `{y, 0}` the value.
-        try beamEmitter.writeJump(w, tagged);
+        // A `@Result` (`{ok, P}` / `{error, P}`) prints the way the source
+        // writes it: `Ok(` / `Error(`, the payload shown nested, `)` (144 B-53).
+        // `y1` (Top) is free from here on and holds the opening text.
+        try beamEmitter.writeTest(w, .is_eq_exact, result_error, &.{ Op.xr(0), Op.atom("ok") });
+        try beamEmitter.writeMoveOp(w, Op.str("Ok("), Dst.yr(1));
+        try beamEmitter.writeJump(w, result_show);
+        try beamEmitter.writeLabel(w, result_error);
+        try beamEmitter.writeTest(w, .is_eq_exact, tagged, &.{ Op.xr(0), Op.atom("error") });
+        try beamEmitter.writeMoveOp(w, Op.str("Error("), Dst.yr(1));
+        try beamEmitter.writeLabel(w, result_show);
+        try beamEmitter.writeMoveOp(w, Op.int(2), Dst.xr(0));
+        try beamEmitter.writeMoveOp(w, Op.yr(0), Dst.xr(1));
+        try beamEmitter.writeCall(w, .normal, 2, .{ .ext = .{ .module = "erlang", .function = "element" } }, 0);
+        try beamEmitter.writeMoveOp(w, Op.atom("false"), Dst.xr(1));
+        try beamEmitter.writeCall(w, .normal, 2, .{ .local = show_l.entry }, 0);
+        try beamEmitter.writeTestHeap(w, 6, 1);
+        try beamEmitter.writePutList(w, Op.int(')'), Op.nil, Dst.xr(1));
+        try beamEmitter.writePutList(w, Op.xr(0), Op.xr(1), Dst.xr(0));
+        try beamEmitter.writePutList(w, Op.yr(1), Op.xr(0), Dst.xr(0));
+        try beamEmitter.writeDeallocate(w, 2);
+        try beamEmitter.writeReturn(w);
+
+        // Any other tagged value names its own declaration (decision 21): the
+        // `tagged` label below, reached from the `@Result` test above.
 
         try beamEmitter.writeLabel(w, plain_tuple);
         try beamEmitter.writeMoveOp(w, Op.yr(0), Dst.xr(0));

@@ -1,0 +1,8 @@
+botopink-cell 1
+out Ok(81)
+out Error("negative")
+out Ok(Point(x: 2, y: 3))
+out Error(-3)
+out [Ok(1), Error("negative")]
+out Report(label: "a", outcome: Ok(5))
+out Report(label: "b", outcome: Error("negative"))

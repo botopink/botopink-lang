@@ -1473,13 +1473,27 @@ fn escapeClause(comptime char: []const u8, comptime escaped: []const u8) Ast.Cla
     return .{ .patterns = &.{.{ .number = char }}, .body = Ast.Body.of(&.{.{ .expr = .{ .string = escaped } }}), .layout = .inline_ };
 }
 
+/// `'__bp_show'({Tag, P}, _) -> ["<open>", '__bp_show'(P, false), $)]` — one
+/// clause of a `@Result`'s text.
+fn resultShowClause(comptime open: []const u8, comptime tag: []const u8) Ast.Clause {
+    return .{
+        .patterns = &.{ .{ .tuple = &.{ Ast.Expr.a(tag), Ast.Expr.v("P") } }, Ast.Expr.v("_") },
+        .body = Ast.Body.of(&.{.{ .expr = .{ .list = &.{
+            .{ .string = open },
+            .{ .call = .{ .name = "__bp_show", .args = &.{ Ast.Expr.v("P"), Ast.Expr.a("false") } } },
+            .{ .number = "$)" },
+        } } }}),
+        .layout = .inline_,
+    };
+}
+
 /// `'__bp_show'/2`: the text of one printed value as chardata (semantics
 /// decision 1a). `Top` is `true` for an argument of `@print` itself.
 ///   - a binary at top level is its text; nested, it is quoted with the source
 ///     escapes (`\"`, `\\`, `\n`, `\r`, `\t`);
 ///   - a list is `[E1,E2]`, a tuple `#(E1,E2)` — no spaces;
-///   - a tuple tagged by an atom (an enum variant `{'Circle', R}`, a Result
-///     `{ok, V}`) and every other term (numbers, atoms, maps) keep `~p`: the
+///   - a `@Result` `{ok, P}` / `{error, P}` is `Ok(P)` / `Error(P)`, `P` shown nested;
+///   - a tuple tagged by an atom (an enum variant `{'Circle', R}`) and every other term (numbers, atoms, maps) keep `~p`: the
 ///     text of records, enums and maps is not decided by 1a. `true`, `false`
 ///     and `undefined` are values, not tags, so a tuple they open is a tuple.
 const show_helper_form: Ast.Form = .{
@@ -1525,6 +1539,11 @@ const show_helper_form: Ast.Form = .{
                 .body = Ast.Body.of(&.{.{ .expr = .{ .list = &.{ .{ .number = "$[" }, showJoined(Ast.Expr.v("V")), .{ .number = "$]" } } } }}),
                 .layout = .inline_,
             },
+            // A `@Result` (`{ok, P}` / `{error, P}`) prints the way the source
+            // writes it, `Ok(81)` / `Error("bad")`, its payload shown as any
+            // nested value is (144 B-53).
+            resultShowClause("Ok(", "ok"),
+            resultShowClause("Error(", "error"),
             // A tagged value (decision 21): the tag names the module that formats it,
             // and `'__bp_tagged'/2` falls back to `~p` for every other tagged tuple.
             .{
@@ -1589,8 +1608,8 @@ fn valueIsNot(comptime name: []const u8) Ast.Expr {
 /// `'__bp_tagged'/2`: decision 8 §7's dispatch. `A` is the value's tag — the
 /// type's module atom for a record, the `__v__` variant atom for a variant —
 /// so the module that formats the value is the tag with any `__v__` segment
-/// cut off, and it answers `'__bp_format'/1`. Anything else (a `{ok, V}`
-/// Result, a host tuple, a plain atom) keeps the `~p` it printed before.
+/// cut off, and it answers `'__bp_format'/1`. Anything else (a host tuple, a
+/// plain atom) keeps the `~p` it printed before; a `@Result` never reaches it.
 const tagged_helper_form: Ast.Form = .{ .function = .{ .name = "__bp_tagged", .clauses = &.{.{
     .patterns = &.{ Ast.Expr.v("A"), Ast.Expr.v("V") },
     .body = Ast.Body.of(&.{

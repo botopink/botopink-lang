@@ -10491,6 +10491,10 @@ const Emitter = struct {
             },
             else => {},
         }
+        // A `@Result` — a call to a fn declared to answer one, a local, a
+        // parameter or a field of one — prints `Ok(…)` / `Error(…)` by the
+        // shapes of its two payloads.
+        if (self.resultShapeOf(e)) |rs| if (rs.ok) |ok| if (rs.err) |err| if (try self.resultTypeShape(ok, err)) |sh| return sh;
         // A parameter, a fn result or a local whose declared type spells a tuple.
         if (self.typeRefOf(e)) |tr| if (try self.typeRefShape(tr)) |shape| return shape;
         if (!self.isArrayExpr(e)) return null;
@@ -10533,6 +10537,7 @@ const Emitter = struct {
             .array => |inner| return self.arrayTypeShape(inner.*),
             .generic => |g| {
                 if (g.args.len == 1 and std.mem.eql(u8, g.name, "Array")) return self.arrayTypeShape(g.args[0]);
+                if (std.mem.endsWith(u8, g.name, "Result") and g.args.len == 2) return self.resultTypeShape(g.args[0], g.args[1]);
                 // A generic record (`Queue<i32>`) carries its declaration too.
                 if (self.records.contains(g.name)) return "T";
             },
@@ -10551,6 +10556,28 @@ const Emitter = struct {
             else => {},
         }
         return null;
+    }
+
+    /// `R<ok><err>`: the print shape of a `@Result<Ok, Err>` — the shape of
+    /// each payload, a word at +4 of the `{ tag, payload }` pair. Null when a
+    /// payload has no shape code (a float or an `i64` cannot be held at all).
+    fn resultTypeShape(self: *Emitter, ok: ast.TypeRef, err: ast.TypeRef) anyerror!?[]const u8 {
+        var out: std.ArrayListUnmanaged(u8) = .empty;
+        try out.append(self.arena(), 'R');
+        for ([_]ast.TypeRef{ ok, err }) |side| {
+            if (try self.typeRefShape(side)) |inner| {
+                try out.appendSlice(self.arena(), inner);
+                continue;
+            }
+            if (side == .named and self.enums.contains(side.named) and !self.isAllUnitEnum(side.named)) {
+                try out.append(self.arena(), 'T');
+                continue;
+            }
+            const code = scalarCode(side) orelse return null;
+            if (code == 'f') return null;
+            try out.append(self.arena(), code);
+        }
+        return out.items;
     }
 
     fn arrayTypeShape(self: *Emitter, elem: ast.TypeRef) anyerror!?[]const u8 {
@@ -10626,6 +10653,11 @@ const Emitter = struct {
         if (sh.len == 0) return 0;
         switch (sh[0]) {
             '[', '?', '!' => return 1 + shapeSpan(sh[1..]),
+            // `R<ok><err>`: a `@Result` is its two payload shapes.
+            'R' => {
+                const ok = shapeSpan(sh[1..]);
+                return 1 + ok + shapeSpan(sh[1 + ok ..]);
+            },
             '(' => {
                 var i: usize = 1;
                 while (i < sh.len and sh[i] != ')') {
@@ -13214,7 +13246,7 @@ const Emitter = struct {
     fn elemIsPointer(self: *Emitter, recv: ast.Expr) bool {
         const sh = (self.printShapeOf(recv) catch null) orelse return false;
         // Decision 332 — a `bigint` element is its block's address, never `0`.
-        return sh.len >= 2 and sh[0] == '[' and (sh[1] == '[' or sh[1] == '(' or sh[1] == 'n');
+        return sh.len >= 2 and sh[0] == '[' and (sh[1] == '[' or sh[1] == '(' or sh[1] == 'n' or sh[1] == 'R');
     }
 
     /// Whether one element of `recv` is a bool — its print shape is `[b`. The

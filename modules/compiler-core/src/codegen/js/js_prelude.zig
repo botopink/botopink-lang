@@ -757,6 +757,57 @@ const named_branch: ast.Stmt = .{ .if_ = .{
     }, .layout = .indented, .indent = 1 } },
 } };
 
+/// ```js
+/// if ((typeof v === "object") && (v != null) && (typeof v.__bp !== "string")) {
+///     const k = Object.keys(v);
+///     if ((k.length === 1) && ((k[0] === "ok") || (k[0] === "error"))) {
+///         return ((k[0] === "ok") ? "Ok(" : "Error(") + __bp_show(v[k[0]], null, false, a) + ")";
+///     }
+/// }
+/// ```
+///
+/// A `@Result` is the plain object `{ ok: v }` / `{ error: e }` (no `__bp`
+/// marker), and prints the way the source writes it — `Ok(81)`,
+/// `Error("bad")` — its payload shown as any nested value is (144 B-53).
+const result_branch: ast.Stmt = .{ .if_ = .{
+    .cond = .{ .binary = .{
+        .op = "&&",
+        .lhs = &.{ .binary = .{ .op = "&&", .lhs = &typeofIs(&v, "object"), .rhs = &.{ .binary = .{ .op = "!=", .lhs = &v, .rhs = &null_ } } } },
+        .rhs = &.{ .binary = .{ .op = "!==", .lhs = &.{ .unary = .{ .op = "typeof ", .operand = &v_bp, .parens = false } }, .rhs = &.{ .quoted = "string" } } },
+    } },
+    .then = &.{ .block = .{ .stmts = &.{
+        .{ .decl = .{ .pattern = .{ .name = "k" }, .value = callOn(&.{ .name = "Object" }, "keys", &.{v}) } },
+        .{ .if_ = .{
+            .cond = .{ .binary = .{
+                .op = "&&",
+                .lhs = &.{ .binary = .{ .op = "===", .lhs = &.{ .member = .{ .object = &keys_k, .name = "length" } }, .rhs = &one } },
+                .rhs = &.{ .binary = .{
+                    .op = "||",
+                    .lhs = &eq(&k_first, "ok"),
+                    .rhs = &eq(&k_first, "error"),
+                } },
+            } },
+            .then = &.{ .block = .{ .stmts = &.{.{ .return_ = .{ .binary = .{
+                .op = "+",
+                .lhs = &.{ .binary = .{
+                    .op = "+",
+                    .lhs = &.{ .paren = &.{ .ternary = .{ .cond = &eq(&k_first, "ok"), .then = &.{ .quoted = "Ok(" }, .else_ = &.{ .quoted = "Error(" } } } },
+                    .rhs = &.{ .call = .{ .callee = &.{ .name = "__bp_show" }, .args = &.{
+                        .{ .index = .{ .object = &v, .index = &k_first } },
+                        null_,
+                        .{ .name = "false" },
+                        args_a,
+                    } } },
+                } },
+                .rhs = &.{ .quoted = ")" },
+            } } }}, .layout = .indented, .indent = 2 } },
+        } },
+    }, .layout = .indented, .indent = 1 } },
+} };
+
+/// `k[0]` — the one key of a `@Result` object.
+const k_first: ast.Expr = .{ .index = .{ .object = &keys_k, .index = &zero } };
+
 /// `function __bp_show(v, s, top, a) { … }` — see `Helper.show`. It answers the
 /// `console.log` format of `v` and pushes the values its `%s` / `%O` verbs
 /// consume onto `a`: a string through `%s` (quoted when nested), an array or a
@@ -787,6 +838,7 @@ const show: ast.Stmt = .{
                         .{ .return_ = bracketed_v },
                     }, .layout = .indented, .indent = 1 } },
                 } },
+                result_branch,
                 named_branch,
                 // Decision 47: absent has ONE spelling, `null`. JavaScript has two
                 // nones, and `?.` / an `if` with no `else` answer the other one —

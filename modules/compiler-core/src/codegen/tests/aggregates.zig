@@ -618,3 +618,53 @@ test "wasm: a record out of try await keeps its string field a string" {
     ;
     try h.assertWasmRunLog(std.testing.allocator, src, "Hguest\nBana\n");
 }
+
+// 144 B-53: a `@Result` prints the way the source writes it — `Ok(81)`,
+// `Error("bad")` — at the top level and nested in an array or a record, on
+// every target (commonJS printed `{ ok: 81 }`, erlang `{ok,81}`, wasm the
+// pair's address).
+const print_result_src =
+    \\type Point(x: i32, y: i32)
+    \\type Report(label: string, outcome: @Result<i32, string>)
+    \\fn check(n: i32) -> @Result<i32, string> {
+    \\    if (n < 0) throw "negative";
+    \\    return n;
+    \\}
+    \\fn locate(n: i32) -> @Result<Point, i32> {
+    \\    if (n < 0) throw n;
+    \\    return Point(x: n, y: n + 1);
+    \\}
+    \\pub fn main() {
+    \\    @print(check(81));
+    \\    @print(check(-1));
+    \\    @print(locate(2));
+    \\    @print(locate(-3));
+    \\    @print([check(1), check(-2)]);
+    \\    @print(Report(label: "a", outcome: check(5)));
+    \\}
+;
+const print_result_log =
+    \\Ok(81)
+    \\Error("negative")
+    \\Ok(Point(x: 2, y: 3))
+    \\Error(-3)
+    \\[Ok(1), Error("negative")]
+    \\Report(label: "a", outcome: Ok(5))
+    \\
+;
+
+test "aggregates: a @Result prints as Ok(..) / Error(..) on commonJS" {
+    try h.assertJsRunLog(std.testing.allocator, print_result_src, print_result_log);
+}
+
+test "aggregates: a @Result prints as Ok(..) / Error(..) on erlang" {
+    try h.assertErlangRunLog(std.testing.allocator, print_result_src, print_result_log, &.{});
+}
+
+test "aggregates: a @Result prints as Ok(..) / Error(..) on beam" {
+    try h.assertBeamRunLog(std.testing.allocator, print_result_src, print_result_log, &.{});
+}
+
+test "aggregates: a @Result prints as Ok(..) / Error(..) on wasm" {
+    try h.assertWasmRunLog(std.testing.allocator, print_result_src, print_result_log);
+}

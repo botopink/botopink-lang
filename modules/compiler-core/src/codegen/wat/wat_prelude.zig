@@ -1027,6 +1027,17 @@ fn putByte(comptime ch: comptime_int) [5]Instr {
     return .{ c32(8), c32(ch), store8(0), c32(8), c32(1) };
 }
 
+/// `text` byte by byte through the newline scratch cell, one `$__write_bytes` per
+/// byte — the words a `@Result` is written with (`Ok(`, `Error(`).
+fn putText(comptime text: []const u8) [text.len * 6]Instr {
+    var out: [text.len * 6]Instr = undefined;
+    for (text, 0..) |ch, k| {
+        const one = putByte(ch) ++ [_]Instr{call("__write_bytes")};
+        for (one, 0..) |ins, j| out[k * 6 + j] = ins;
+    }
+    return out;
+}
+
 /// `, ` — decision 8 §7's separator inside an array or a tuple. Both bytes go
 /// through the scratch cells at 8 and 9 in one `fd_write`, so the separator
 /// costs the same one call the bare comma did. The whole of §7 F1 is this
@@ -1264,7 +1275,7 @@ const print_quoted_raw = func("__print_quoted_raw", &.{"s"}, null, i32s(&.{ "n",
 /// shape (semantics decision 1a). Shape codes: `i` an i32, `b` a bool, `f` an
 /// `f64` cell, `l` / `u` an `i64` / `u64` cell, `s` a string (quoted), `[X` an array of `X` — `[e1, e2]` —,
 /// `?X` / `!X` a `?T` (`null`, or `X` over the slot / over its box's word),
-/// `(XY…)` a tuple — `#(e1, e2)` —, `n` a `bigint` (in a module that links
+/// `(XY…)` a tuple — `#(e1, e2)` —, `R<ok><err>` a `@Result` — `Ok(x)` / `Error(y)` —, `n` a `bigint` (in a module that links
 /// the `bigint` group, `print_shaped_raw_bigint`), and `E k [ <n> Enum.Variant ] * k` a value
 /// of an all-unit enum, whose ordinal picks one of the `k` names. With `go` =
 /// 0 nothing is written and nothing is read through `v`: the call only
@@ -1364,6 +1375,25 @@ const print_shaped_raw_body = [_]Instr{
         op("and"), when(&.{ get("v"), load(0), set("v") }), get("v"),  get("e"),
         get("go"), call("__print_shaped_raw"),              ret,
     }),
+    // `R <ok> <err>` — a `@Result`: the address of its `{ tag, payload }` pair
+    // (tag 0 = Ok, the payload a word at +4). It is written `Ok(81)` /
+    // `Error("bad")`, the payload by the shape of its side (144 B-53); with
+    // `go` = 0 the call only measures the two shapes.
+    get("c"),                                                                                                   c32('R'),                                                                                                   op("eq"),
+    when(&([_]Instr{
+        get("sh"), c32(1),  op("add"), set("e"),
+        c32(0),    get("e"), c32(0),   call("__print_shaped_raw"), set("p"),
+        c32(0),    get("p"), c32(0),   call("__print_shaped_raw"), set("n"),
+        get("go"),
+        when(&([_]Instr{
+            get("v"), load(0),
+            whenElse(
+                &(putText("Error(") ++ [_]Instr{ get("v"), load(4), get("p"), c32(1), call("__print_shaped_raw"), .drop }),
+                &(putText("Ok(") ++ [_]Instr{ get("v"), load(4), get("e"), c32(1), call("__print_shaped_raw"), .drop }),
+            ),
+        } ++ putText(")"))),
+        get("n"), ret,
+    })),
     get("c"),                                                                                                   c32('('),                                                                                                   op("eq"),
     when(&([_]Instr{
         get("go"), when(&(putByte('#') ++ [_]Instr{call("__write_bytes")} ++ putByte('(') ++ [_]Instr{call("__write_bytes")})),

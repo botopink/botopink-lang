@@ -1719,8 +1719,11 @@ codegen/
   `{text, …}` → a `Display` implementation's own string, nested containers
   included. **Absent — the atom `undefined` — prints `null`** (decision 47's
   one spelling, a `'__bp_show'(undefined, _)` clause; it printed the atom's
-  name). Everything else — a Result `{ok, V}`, a host tuple, a plain atom,
-  `true`/`false` — keeps the `~p` it had. Numeric formatting is
+  name). **A `@Result` — `{ok, P}` / `{error, P}` — prints `Ok(P)` /
+  `Error(P)`** (144 B-53; `resultShowClause` on erlang, a branch of the
+  tuple arm on beam, `result_branch` in commonJS's `__bp_show`, the `R`
+  shape on wasm), `P` shown nested (a string quoted). Everything else — a
+  host tuple, a plain atom, `true`/`false` — keeps the `~p` it had. Numeric formatting is
   `~p`: `1.0` prints `1.0`, decision 8 §7's text on every backend.
 - **Every `type` has a module, and it answers about its own values** (half 3):
   `recordIdentityForms` / `enumIdentityForms` put `'__bp_format'/1` — and

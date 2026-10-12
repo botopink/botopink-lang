@@ -1055,6 +1055,114 @@ fn main() {
       )
     )
     local.get $c
+    i32.const 82
+    i32.eq
+    (if
+      (then
+        local.get $sh
+        i32.const 1
+        i32.add
+        local.set $e
+        i32.const 0
+        local.get $e
+        i32.const 0
+        call $__print_shaped_raw
+        local.set $p
+        i32.const 0
+        local.get $p
+        i32.const 0
+        call $__print_shaped_raw
+        local.set $n
+        local.get $go
+        (if
+          (then
+            local.get $v
+            i32.load
+            (if
+              (then
+                i32.const 8
+                i32.const 69
+                i32.store8
+                i32.const 8
+                i32.const 1
+                call $__write_bytes
+                i32.const 8
+                i32.const 114
+                i32.store8
+                i32.const 8
+                i32.const 1
+                call $__write_bytes
+                i32.const 8
+                i32.const 114
+                i32.store8
+                i32.const 8
+                i32.const 1
+                call $__write_bytes
+                i32.const 8
+                i32.const 111
+                i32.store8
+                i32.const 8
+                i32.const 1
+                call $__write_bytes
+                i32.const 8
+                i32.const 114
+                i32.store8
+                i32.const 8
+                i32.const 1
+                call $__write_bytes
+                i32.const 8
+                i32.const 40
+                i32.store8
+                i32.const 8
+                i32.const 1
+                call $__write_bytes
+                local.get $v
+                i32.load offset=4
+                local.get $p
+                i32.const 1
+                call $__print_shaped_raw
+                drop
+              )
+              (else
+                i32.const 8
+                i32.const 79
+                i32.store8
+                i32.const 8
+                i32.const 1
+                call $__write_bytes
+                i32.const 8
+                i32.const 107
+                i32.store8
+                i32.const 8
+                i32.const 1
+                call $__write_bytes
+                i32.const 8
+                i32.const 40
+                i32.store8
+                i32.const 8
+                i32.const 1
+                call $__write_bytes
+                local.get $v
+                i32.load offset=4
+                local.get $e
+                i32.const 1
+                call $__print_shaped_raw
+                drop
+              )
+            )
+            i32.const 8
+            i32.const 41
+            i32.store8
+            i32.const 8
+            i32.const 1
+            call $__write_bytes
+          )
+        )
+        local.get $n
+        return
+      )
+    )
+    local.get $c
     i32.const 40
     i32.eq
     (if

@@ -2338,6 +2338,12 @@ nested inside a container too.
 
 <!-- example: modules/print_value_text -->
 
+A `@Result` prints the way the source writes it — `Ok(81)`, `Error("bad")` — at
+the top level and nested in a container or a record, its payload printed as any
+nested value is (a string quoted):
+
+<!-- example: modules/print_result -->
+
 A string prints as its text at the top level (`hi`) and quoted inside a
 container (`["hi"]`). erlang, BEAM, commonJS and wasm all write the record and
 variant text; `Display` is consulted on the first three, and wasm prints the

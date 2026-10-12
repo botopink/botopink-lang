@@ -1244,6 +1244,12 @@ function __bp_show(v, s, top, a) {
         const t = ((s != null) && (s[0] === "#"));
         return (((t ? "#(" : "[") + v.map((e, i) => __bp_show(e, (s == null) ? null : t ? s[i + 1] : s[1], false, a)).join(", ")) + (t ? ")" : "]"));
     }
+    if ((((typeof v === "object") && (v != null)) && (typeof v.__bp !== "string"))) {
+        const k = Object.keys(v);
+        if (((k.length === 1) && ((k[0] === "ok") || (k[0] === "error")))) {
+            return ((((k[0] === "ok") ? "Ok(" : "Error(") + __bp_show(v[k[0]], null, false, a)) + ")");
+        }
+    }
     if (((v != null) && (typeof v.__bp === "string"))) {
         if ((typeof v.display === "function")) {
             a.push(v.display());
