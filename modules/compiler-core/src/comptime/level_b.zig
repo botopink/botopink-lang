@@ -97,9 +97,14 @@ pub const Stats = struct {
 /// The group of module `m`: an embedded std module's own path, a dependency's
 /// package, or null for the package under test.
 pub fn groupOf(m: Module) ?[]const u8 {
-    if (m.std_member and std.mem.startsWith(u8, m.path, "std/")) return m.path;
+    if (isStdGroup(m)) return m.path;
     if (m.package.len > 0) return m.package;
     return null;
+}
+
+/// Whether `m` is an embedded std module — a group of its own.
+fn isStdGroup(m: Module) bool {
+    return m.std_member and std.mem.startsWith(u8, m.path, "std/");
 }
 
 /// The session's state a module's analysis and `registerExports` change.
@@ -123,8 +128,7 @@ const Recording = struct {
     key: entry.Key,
     /// The group's modules in the input order.
     paths: std.ArrayListUnmanaged([]const u8) = .empty,
-    /// Their indices in the session's order (`plan`).
-    first: usize = 0,
+    /// The index of the group's last module in the session's order (`plan`).
     last: usize = 0,
     storable: bool = true,
     outputs: std.ArrayListUnmanaged(ComptimeOutput) = .empty,
@@ -162,8 +166,7 @@ pub const Session = struct {
         var groups: std.StringArrayHashMapUnmanaged(std.ArrayListUnmanaged([]const u8)) = .empty;
         for (modules) |m| {
             const g = groupOf(m) orelse continue;
-            const is_std = std.mem.startsWith(u8, g, "std/") and m.std_member;
-            if (is_std != (which == .std)) continue;
+            if (isStdGroup(m) != (which == .std)) continue;
             if (self.looked_up.contains(g)) continue;
             const gop = try groups.getOrPut(self.arena, g);
             if (!gop.found_existing) gop.value_ptr.* = .empty;
@@ -205,14 +208,18 @@ pub const Session = struct {
         return true;
     }
 
-    /// The pre-pass META of module `path` when it is read back.
-    pub fn hitMeta(self: *const Session, path: []const u8) ?*const entry.ModuleMeta {
-        const h = self.hits.getPtr(path) orelse return null;
+    /// The pre-pass META of module `m` when it is read back.
+    pub fn hitMeta(self: *const Session, m: Module) ?*const entry.ModuleMeta {
+        const h = self.hitOf(m) orelse return null;
         return &h.meta;
     }
 
-    pub fn hitOf(self: *const Session, path: []const u8) ?*const Hit {
-        return self.hits.getPtr(path);
+    /// Module `m`'s hit, or null. A hit is a dependency's module: a module of
+    /// the package under test spelled like one (`shelf/items` beside the
+    /// dependency `shelf`'s) is never answered by the dependency's entry.
+    pub fn hitOf(self: *const Session, m: Module) ?*const Hit {
+        if (groupOf(m) == null) return null;
+        return self.hits.getPtr(m.path);
     }
 
     fn recordingOf(self: *Session, m: Module) ?*Recording {
@@ -230,7 +237,7 @@ pub const Session = struct {
     /// One per module of `modules`: what the module tree knows of a hit.
     pub fn treeKnown(self: *const Session, modules: []const Module) ![]const ?modTree.Known {
         const out = try self.arena.alloc(?modTree.Known, modules.len);
-        for (modules, out) |m, *k| k.* = if (self.hitMeta(m.path)) |mm| mm.tree else null;
+        for (modules, out) |m, *k| k.* = if (self.hitMeta(m)) |mm| mm.tree else null;
         return out;
     }
 
@@ -252,7 +259,6 @@ pub const Session = struct {
                 r.storable = false;
                 continue;
             };
-            r.first = f;
             r.last = last;
             if (seen != r.paths.items.len or last - f + 1 != seen) r.storable = false;
         }
@@ -302,7 +308,7 @@ pub const Session = struct {
         // Kept for the emit: staged again with its modules' CODE once they
         // are emitted.
         const kept = try self.arena.dupe(u8, bytes);
-        const sections = (entry.unpack(self.arena, kept, r.key) catch return).sections;
+        const sections = (try entry.unpack(self.arena, kept, r.key)).sections;
         try self.code.pending.append(self.arena, .{ .group = g, .key = r.key, .sections = sections, .modules = r.paths.items });
     }
 
@@ -874,6 +880,57 @@ test "level B: a package that reads @TypeInfo.all is never stored" {
     defer session.deinit(testing.allocator);
     try testing.expect(!mem.staged.contains("cat"));
     try testing.expectEqual(@as(usize, 0), mem.store.stats.entries_staged);
+}
+
+test "level B: a hit is the dependency's module — one of the package under test spelled like it is analysed" {
+    const h = @import("tests/helpers.zig");
+    const io = testing.io;
+    const build_root = h.buildRootPathFromSrc(io, @src());
+    // The dependency `looks` and a module of the package under test at the
+    // same path, `looks/looks` (a folder of the project named like the
+    // dependency).
+    const modules = [_]Module{
+        .{ .path = "looks/looks", .package = "looks", .source = "pub fn n() -> i32 {\n    return 1;\n}\n" },
+        .{ .path = "looks/looks", .source = "pub fn n() -> i32 {\n    return 2;\n}\n" },
+    };
+    var mem: MemoryStore = undefined;
+    mem.init();
+    defer mem.deinit();
+    var first = try comptimeMod.compileWith(testing.allocator, &modules, io, build_root, "erlang", &mem.store);
+    defer first.deinit(testing.allocator);
+    try testing.expect(mem.staged.contains("looks"));
+    try mem.commit();
+
+    var second = try comptimeMod.compileWith(testing.allocator, &modules, io, build_root, "erlang", &mem.store);
+    defer second.deinit(testing.allocator);
+    // The dependency's module read back; the project's own analysed.
+    try testing.expectEqual(@as(usize, 1), mem.store.stats.modules_read);
+    try testing.expectEqual(@as(usize, 1), mem.store.stats.modules_analysed);
+    try testing.expectEqual(@as(usize, 2), second.outputs.items.len);
+    for (second.outputs.items) |o| try testing.expect(o.outcome == .ok);
+}
+
+test "level B: an entry under the group's key for another module set is a miss, and the group is written again" {
+    const h = @import("tests/helpers.zig");
+    const io = testing.io;
+    const build_root = h.buildRootPathFromSrc(io, @src());
+    const root: Module = .{ .path = "looks/root", .package = "looks", .source = "pub default mod looks;\n" };
+    const looks: Module = .{ .path = "looks/looks", .package = "looks", .source = "pub fn n() -> i32 {\n    return 1;\n}\n" };
+    var mem: MemoryStore = undefined;
+    mem.init();
+    defer mem.deinit();
+    var first = try comptimeMod.compileWith(testing.allocator, &[_]Module{ root, looks }, io, build_root, "erlang", &mem.store);
+    defer first.deinit(testing.allocator);
+    try mem.commit();
+
+    // The same key (`MemoryStore` has one), the package with one module
+    // fewer: nothing of the entry is used, the group is analysed and staged.
+    var second = try comptimeMod.compileWith(testing.allocator, &[_]Module{looks}, io, build_root, "erlang", &mem.store);
+    defer second.deinit(testing.allocator);
+    try testing.expectEqual(@as(usize, 0), mem.store.stats.modules_read);
+    try testing.expectEqual(@as(usize, 1), mem.store.stats.modules_analysed);
+    try testing.expectEqual(@as(usize, 1), mem.store.stats.entries_staged);
+    try testing.expect(mem.staged.contains("looks"));
 }
 
 test "level B CODE: every field of GenerateResult is stored and copied back, or named in code_skips" {

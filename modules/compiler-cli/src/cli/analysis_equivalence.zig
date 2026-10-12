@@ -130,6 +130,8 @@ fn run(comptime skips: []const entry.Skip, gpa: std.mem.Allocator, io: std.Io, m
         for (idx.items, back.outputs) |i, o| {
             try testing.expectEqualStrings(live[i].name, o.name);
             decoded[i] = o;
+            // The source text is the driver's, never the entry's.
+            decoded[i].src = live[i].src;
         }
         // Encoding what was decoded gives the entry's bytes again.
         const again = try entry.writeWith(skips, gpa, key, back.meta, back.outputs, back.journals);

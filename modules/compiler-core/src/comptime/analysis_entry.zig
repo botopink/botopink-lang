@@ -780,10 +780,12 @@ pub const Meta = struct {
 };
 
 /// One module's ANALYSIS: the `ComptimeOutput` of a module that analysed,
-/// its outcome `ok`.
+/// its outcome `ok`. The module's source text (`ComptimeOutput.src`) is not
+/// in it: the driver holds it and sets it on the output read back, as it
+/// sets `name` and `srcPath` (`comptime.zig` `compileOnce`); the bytes are
+/// inside the entry's key already.
 pub const Analysis = struct {
     name: []const u8,
-    src: []const u8,
     srcPath: []const u8,
     ok: comptimeMod.ComptimeOutput.OkData,
 };
@@ -893,7 +895,7 @@ pub fn writeWith(comptime skips: []const Skip, gpa: std.mem.Allocator, key: Key,
     // STRINGS takes its place second; its bytes are known once every section is written.
     try sections.append(gpa, .{ .id = .strings, .bytes = "" });
     for (outputs, 0..) |o, i| {
-        const a: Analysis = .{ .name = o.name, .src = o.src, .srcPath = o.srcPath, .ok = switch (o.outcome) {
+        const a: Analysis = .{ .name = o.name, .srcPath = o.srcPath, .ok = switch (o.outcome) {
             .ok => |ok| ok,
             else => return error.NotAnalysed,
         } };
@@ -910,8 +912,9 @@ pub fn writeWith(comptime skips: []const Skip, gpa: std.mem.Allocator, key: Key,
     return pack(gpa, key, sections.items);
 }
 
-/// What `read` gives back: the META, each module's `ComptimeOutput` and,
-/// when the entry carries them, each module's JOURNAL (else empty).
+/// What `read` gives back: the META, each module's `ComptimeOutput` (its
+/// `src` empty: the driver's) and, when the entry carries them, each
+/// module's JOURNAL (else empty).
 pub const Decoded = struct {
     meta: Meta,
     outputs: []comptimeMod.ComptimeOutput,
@@ -948,7 +951,7 @@ pub fn readWith(comptime skips: []const Skip, arena: std.mem.Allocator, e: Entry
             dec.section(s.bytes);
             const a = try dec.decode(Analysis);
             if (!dec.done()) return error.Malformed;
-            try outputs.append(arena, .{ .name = a.name, .src = a.src, .srcPath = a.srcPath, .outcome = .{ .ok = a.ok } });
+            try outputs.append(arena, .{ .name = a.name, .src = "", .srcPath = a.srcPath, .outcome = .{ .ok = a.ok } });
         },
         .journal => {
             if (code.items.len != 0) return error.Malformed;

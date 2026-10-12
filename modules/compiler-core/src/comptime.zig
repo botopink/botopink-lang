@@ -770,7 +770,7 @@ fn orderReaders(
     for (modules) |m| {
         // A module read back from the code cache's level B is no reader (a
         // reader's package is never stored) and imports none: not parsed.
-        if (lb) |l| if (l.hitMeta(m.path) != null) {
+        if (lb) |l| if (l.hitMeta(m) != null) {
             try others.append(arena, m);
             try other_programs.append(arena, null);
             try other_tokens.append(arena, &.{});
@@ -1747,7 +1747,7 @@ fn expandStdImports(arena: std.mem.Allocator, modules: []const Module, target_na
     for (modules) |mod| {
         // A module read back from the code cache's level B (144 B-60) is not
         // parsed: its entry's META names the std modules it needs.
-        if (lb) |l| if (l.hitMeta(mod.path)) |mm| {
+        if (lb) |l| if (l.hitMeta(mod)) |mm| {
             for (mm.std_imports) |p| if (stdIndex(p)) |i| {
                 needed[i] = true;
                 any = true;
@@ -1785,7 +1785,7 @@ fn expandStdImports(arena: std.mem.Allocator, modules: []const Module, target_na
             // A std module that declares a module-level `var` reaches
             // `std/beam` the same way a user module does (above), imported
             // or not.
-            if (beam_target and beam_at < std_pkg_modules.len and !needed[beam_at] and declaresModuleVar(arena, std_pkg_modules[i].source)) {
+            if (beam_target and beam_at < std_pkg_modules.len and !needed[beam_at] and graph.declares_var[i]) {
                 needed[beam_at] = true;
                 changed = true;
             }
@@ -1871,6 +1871,9 @@ fn stdNeedsOf(arena: std.mem.Allocator, mod: Module, beam_target: bool) ![]const
 const StdGraph = struct {
     imports: []const []const usize,
     order: []const usize,
+    /// Per std module, whether it declares a module-level `var`
+    /// (`declaresModuleVar`): on erlang and beam it needs `std/beam`.
+    declares_var: []const bool,
 };
 var std_graph_arena: std.heap.ArenaAllocator = undefined;
 var std_graph: StdGraph = undefined;
@@ -1890,8 +1893,12 @@ fn stdGraph() !*const StdGraph {
             }
             const arena = std_graph_arena.allocator();
             const imports = try arena.alloc([]const usize, std_pkg_modules.len);
-            for (std_pkg_modules, imports) |spm, *im| im.* = try stdImportsOf(arena, spm.source);
-            std_graph = .{ .imports = imports, .order = try stdModuleOrder(arena) };
+            const declares_var = try arena.alloc(bool, std_pkg_modules.len);
+            for (std_pkg_modules, imports, declares_var) |spm, *im, *dv| {
+                im.* = try stdImportsOf(arena, spm.source);
+                dv.* = declaresModuleVar(arena, spm.source);
+            }
+            std_graph = .{ .imports = imports, .order = try stdModuleOrder(arena), .declares_var = declares_var };
             std_graph_init.store(2, .release);
             return &std_graph;
         }
@@ -3597,7 +3604,7 @@ fn compileOnce(
 
     for (all_modules, 0..) |mod, idx| {
         const name: []const u8 = if (mod.path.len > 0) mod.path else "main";
-        if (lb) |l| if (l.hitOf(mod.path)) |h| {
+        if (lb) |l| if (l.hitOf(mod)) |h| {
             // The driver's own strings, as a live output carries them: they
             // outlive the session (a decoded copy is the session arena's).
             var out = h.output;
