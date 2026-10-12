@@ -276,7 +276,9 @@ test "erlang: a record imported by name beside a std module declaring the same n
         \\    return q.label + ":" + q.size.toString();
         \\}
     ;
-    try h.assertErlangRunLogModules(std.testing.allocator, &.{ .{ .path = "items", .source = items }, .{ .path = "main", .source =
+    try h.assertErlangRunLogModules(std.testing.allocator, &.{
+        .{ .path = "items", .source = items },
+        .{ .path = "main", .source =
         \\import {collections} from "std";
         \\import {items.Queue, items.describe};
         \\
@@ -284,8 +286,11 @@ test "erlang: a record imported by name beside a std module declaring the same n
         \\    @print(describe(Queue(label: "crowded", size: 2)));
         \\    @print(collections.toInt(collections.lt()));
         \\}
-    } }, "main", "crowded:2\n-1\n", &.{"{test@items@@Queue, <<\"crowded\">>, 2}"});
-    try h.assertErlangRunLogModules(std.testing.allocator, &.{ .{ .path = "items", .source = items }, .{ .path = "main", .source =
+        },
+    }, "main", "crowded:2\n-1\n", &.{"{test@items@@Queue, <<\"crowded\">>, 2}"});
+    try h.assertErlangRunLogModules(std.testing.allocator, &.{
+        .{ .path = "items", .source = items },
+        .{ .path = "main", .source =
         \\import {items.Queue, items.describe};
         \\import {collections} from "std";
         \\
@@ -293,7 +298,8 @@ test "erlang: a record imported by name beside a std module declaring the same n
         \\    @print(describe(Queue(label: "after", size: 3)));
         \\    @print(collections.toInt(collections.gt()));
         \\}
-    } }, "main", "after:3\n1\n", &.{"{test@items@@Queue, <<\"after\">>, 3}"});
+        },
+    }, "main", "after:3\n1\n", &.{"{test@items@@Queue, <<\"after\">>, 3}"});
 }
 
 test "erlang: a `_`-prefixed module-level val is a binding its readers see, not a discarded statement" {
