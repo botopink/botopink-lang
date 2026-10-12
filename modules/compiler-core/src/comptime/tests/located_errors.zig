@@ -124,3 +124,65 @@ test "an embedded std module that does not parse is located at its libs/std/src 
     try std.testing.expect(std.mem.indexOf(u8, text, "--> libs/std/src/path.bp:5:18") != null);
     try std.testing.expectError(error.EmbeddedStdRefused, comptimeMod.parseEmbeddedStd(a, "std/path", src));
 }
+
+// Decision 451 (3) — a raise inside a decorator body or a `comptime` body is
+// located at the call that raised (`io.random.float()`), not at the annotation
+// or the `comptime` expression that ran it; the frame is named in the hint.
+test "an unseeded draw inside a decorator or a comptime is located at the call" {
+    const gpa = std.testing.allocator;
+    const io = std.testing.io;
+    const build_root = test_scratch.path(io, "comptime/raise_location");
+    const cases = [_]struct { src: []const u8, line: u32, col: u32, frame: []const u8 }{
+        .{
+            .src =
+            \\import {io} from "std";
+            \\
+            \\fn drawn(comptime decl: @Decl) {
+            \\    val x = io.random.float();
+            \\    @emit("pub fn label() -> string { return \"" + decl.name + " ${x}\"; }");
+            \\}
+            \\
+            \\#[drawn]
+            \\type Point(x: i32, y: i32)
+            \\
+            \\pub fn main() {
+            \\    @print(label());
+            \\}
+            \\
+            ,
+            .line = 4,
+            .col = 13,
+            .frame = "while `#[drawn]` (at 8:3) ran the decorator's body",
+        },
+        .{
+            .src =
+            \\import {io} from "std";
+            \\
+            \\pub fn main() {
+            \\    val atBuild = comptime io.random.float();
+            \\    @print(atBuild);
+            \\}
+            \\
+            ,
+            .line = 4,
+            .col = 28,
+            .frame = "while the `comptime` expression at 4:19 ran at build time",
+        },
+    };
+    for (cases) |c| {
+        var session = try comptimeMod.compile(gpa, &.{.{ .path = "", .source = c.src }}, io, build_root, null);
+        defer session.deinit(gpa);
+        var seen = false;
+        for (session.outputs.items) |output| switch (output.outcome) {
+            .typeError => |te| {
+                seen = true;
+                const loc = te.loc.?;
+                try std.testing.expectEqual(c.line, loc.line);
+                try std.testing.expectEqual(c.col, loc.col);
+                try std.testing.expect(std.mem.indexOf(u8, te.kind.custom.hint.?, c.frame) != null);
+            },
+            else => {},
+        };
+        try std.testing.expect(seen);
+    }
+}

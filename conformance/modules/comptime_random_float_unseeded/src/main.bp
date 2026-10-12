@@ -1,7 +1,7 @@
-//// Decisions 451 (3), 456 — `random.float()` is an unseeded draw and has a
-//// `std:random.float` cell: at comptime it is refused, located, with the
-//// seeded stream's message — a build has no entropy — never as a host
-//// function with no cell (`comptime-host-cell-unavailable`).
+//// Decisions 451 (3), 456 — `random.float()` is an unseeded draw with a
+//// `std:random.float` cell: at comptime it is refused at the call that raised
+//// (the `comptime` expression is the frame that ran it), with the seeded
+//// stream's message — never `comptime-host-cell-unavailable`.
 
 import {io} from "std";
 

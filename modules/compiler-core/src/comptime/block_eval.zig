@@ -1499,6 +1499,93 @@ pub fn badarithRefusal(env: *Env, msg: []const u8, e: ast.Expr) Error!?struct { 
     };
 }
 
+/// Decision 451 (3) — where a raise inside a decorator or `comptime` body
+/// happened: the start of the call that raised (`io.random.float()`), when
+/// `msg` is the refusal of an unseeded draw (a `random.float()` or a
+/// `seededFloat()` before a `seed`, 456) and one of `bodies` writes that call.
+/// Null for any other raise, or when no body writes the call (it is then
+/// located at the annotation or the `comptime` expression that ran it).
+pub fn raisingCall(msg: []const u8, bodies: []const []const ast.Stmt, expr: ?*const ast.Expr) ?ast.Loc {
+    if (std.mem.indexOf(u8, msg, "an unseeded draw:") == null) return null;
+    var w = DrawWalk{};
+    if (expr) |e| w.walk(ast.Expr, e);
+    for (bodies) |body| {
+        for (body) |*st| w.walk(ast.Expr, &st.expr);
+        if (w.found != null) break;
+    }
+    return w.found;
+}
+
+/// Whether `e` names std's `random` namespace: `io.random`, or the local
+/// `__bp_ns_io_random` the std-import pass binds it to.
+fn namesRandom(e: ast.Expr) bool {
+    if (e != .identifier) return false;
+    return switch (e.identifier.kind) {
+        .identAccess => |a| std.mem.eql(u8, a.member, "random"),
+        .ident => |n| std.mem.eql(u8, n, "random") or std.mem.endsWith(u8, n, "_random"),
+        else => false,
+    };
+}
+
+/// Where a call written `ns.random.float()` starts: its receiver chain's root.
+/// The std-import pass has folded `io.random` into the local `__bp_ns_io_random`
+/// at the member's token, so the root is the module path's length back.
+fn callStart(receiver: ast.Expr) ast.Loc {
+    var at = receiver;
+    while (at == .identifier and at.identifier.kind == .identAccess) at = at.identifier.kind.identAccess.receiver.*;
+    var loc = at.getLoc();
+    if (at == .identifier and at.identifier.kind == .ident) {
+        const n = at.identifier.kind.ident;
+        const prefix = "__bp_ns_";
+        if (std.mem.startsWith(u8, n, prefix)) if (std.mem.lastIndexOfScalar(u8, n, '_')) |last| if (last > prefix.len) {
+            const back: u32 = @intCast(last - prefix.len + 1);
+            if (loc.col > back) loc.col -= back;
+        };
+    }
+    return loc;
+}
+
+/// The first call of an unseeded draw a body writes: `<ns>.random.float()` or
+/// `seededFloat()`; `found` is where the call starts.
+const DrawWalk = struct {
+    found: ?ast.Loc = null,
+
+    fn walk(self: *DrawWalk, comptime U: type, ptr: *const U) void {
+        if (self.found != null) return;
+        if (U == ast.Expr) switch (ptr.*) {
+            .call => |c| if (c.kind == .call and !c.kind.call.is_builtin) {
+                const k = c.kind.call;
+                const draws = std.mem.eql(u8, k.callee, "seededFloat") or
+                    (std.mem.eql(u8, k.callee, "float") and k.receiver != null and namesRandom(k.receiver.?.*));
+                if (draws) {
+                    self.found = if (k.receiver) |r| callStart(r.*) else c.loc;
+                    return;
+                }
+            },
+            else => {},
+        };
+        if (U == ast.TypeRef or U == ast.Pattern) return;
+        switch (@typeInfo(U)) {
+            .@"struct" => |st| inline for (st.fields) |fl| {
+                if (fl.is_comptime) continue;
+                if (comptime mayHoldNames(fl.type)) self.walk(fl.type, &@field(ptr.*, fl.name));
+            },
+            .@"union" => |u| if (u.tag_type != null) switch (ptr.*) {
+                inline else => |*payload| if (comptime mayHoldNames(@TypeOf(payload.*))) self.walk(@TypeOf(payload.*), payload),
+            },
+            .optional => |o| if (ptr.*) |*inner| self.walk(o.child, inner),
+            .pointer => |pt| switch (pt.size) {
+                .one => if (comptime mayHoldNames(pt.child)) self.walk(pt.child, ptr.*),
+                .slice => if (comptime mayHoldNames(pt.child)) {
+                    for (ptr.*) |*e| self.walk(pt.child, e);
+                },
+                else => {},
+            },
+            else => {},
+        }
+    }
+};
+
 fn clip(text: []const u8) []const u8 {
     return text[0..@min(text.len, 4096)];
 }

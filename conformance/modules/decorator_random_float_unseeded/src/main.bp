@@ -1,7 +1,7 @@
 //// Decisions 451 (3), 456 — `random.float()` reached from a decorator body
-//// is an unseeded draw at build: refused, located at the annotation that
-//// runs it, with the seeded stream's message — a build has no entropy — as
-//// a `comptime` block's draw is (`comptime_random_float_unseeded`); never
+//// is an unseeded draw at build: refused, located at the call that raised
+//// it (the annotation `#[drawn]` is the frame that ran it), with the seeded
+//// stream's message — a build has no entropy — as a `comptime` block's draw is (`comptime_random_float_unseeded`); never
 //// `comptime-host-cell-unavailable`, never the nested namespace `io.random`
 //// read as unbound (144 B-46).
 

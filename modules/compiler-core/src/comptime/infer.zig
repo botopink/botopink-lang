@@ -5331,6 +5331,18 @@ fn runDeclDecorators(
                         _ = try inferFnDecl(env, sf);
                     };
                 }
+                // Decision 451 (3) — a raise inside the body is located at
+                // the call that raised; the annotation is the frame that ran it.
+                if (local) {
+                    var bodies: std.ArrayListUnmanaged([]const ast.Stmt) = .empty;
+                    try bodies.append(env.arena, dfn.body);
+                    for (support) |sf| if (std.mem.eql(u8, env.comptimeOwnerOf(sf), env.modulePath)) try bodies.append(env.arena, sf.body);
+                    if (blockEval.raisingCall(m, bodies.items, null)) |at| {
+                        const frame = try std.fmt.allocPrint(env.arena, "raised by this call while `#[{s}]` (at {d}:{d}) ran the decorator's body", .{ a.name, if (a.loc) |l| l.line else 0, if (a.loc) |l| l.col else 0 });
+                        env.lastError = TypeError.custom(m, frame).withLoc(at);
+                        return error.TypeError;
+                    }
+                }
                 return decoratorError(env, a, m, "the decorator could not be evaluated");
             },
         }
@@ -19959,6 +19971,11 @@ fn foldBodyComptime(env: *Env, ct: ast.ComptimeExprOf(.untyped), typed: TypedExp
         .err => |msg| {
             if (try blockEval.badarithRefusal(env, msg, ct.kind.comptimeExpr.*)) |r| {
                 env.lastError = TypeError.custom(r.message, "Raised while the `comptime` ran at build time (decisions 331, 472): an arithmetic error reads as Erlang's `badarith`, whatever the target.").withLoc(r.loc);
+                return error.TypeError;
+            }
+            if (blockEval.raisingCall(msg, &.{}, ct.kind.comptimeExpr)) |at| {
+                const frame = try std.fmt.allocPrint(env.arena, "raised by this call while the `comptime` expression at {d}:{d} ran at build time (decisions 331, 451)", .{ loc.line, loc.col });
+                env.lastError = TypeError.custom(msg, frame).withLoc(at);
                 return error.TypeError;
             }
             env.lastError = TypeError.custom(msg, "Raised while the `comptime` ran at build time (decision 331).").withLoc(loc);
