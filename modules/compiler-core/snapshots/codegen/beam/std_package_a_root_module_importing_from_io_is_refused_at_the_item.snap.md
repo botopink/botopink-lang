@@ -2027,13 +2027,12 @@ pub declare fn copy(src: string, dest: string) -> @Result<i32, string>;
 // `size` is in bytes.
 // Node: `statSync($0, { bigint: true })`, so `size` and the nanosecond
 // `mtimeNs` arrive exact at any size; `mtime` is `mtimeNs` floored to whole
-// milliseconds, and both answer decision 319's canonical form (a `number`
+// seconds, × 1000, and both answer decision 319's canonical form (a `number`
 // within ±(2^53 − 1), a `BigInt` beyond) — never a `number` rounded past 2^53.
 // Erlang: `file:read_file_info/1` returns a `#file_info` record; the
 // template projects the `size`, `mtime`, and `type` fields. Its `mtime` is
-// whole seconds × 1000 — a resolution the Node form does not share
-// (question `97-s13-d`).
-#[@External.Node("""(() => { try { const __s = require('fs').statSync($0, { bigint: true }); const __c = (__v) => (__v >= -9007199254740991n && __v <= 9007199254740991n) ? Number(__v) : __v; const __ns = __s.mtimeNs; return { ok: { size: __c(__s.size), mtime: __c((__ns - (((__ns % 1000000n) + 1000000n) % 1000000n)) / 1000000n), isDir: __s.isDirectory() } } } catch (__e) { return { error: __e && __e.message ? __e.message : String(__e) } } })()""")]
+// whole seconds × 1000. One value on every target: whole seconds (decision 499).
+#[@External.Node("""(() => { try { const __s = require('fs').statSync($0, { bigint: true }); const __c = (__v) => (__v >= -9007199254740991n && __v <= 9007199254740991n) ? Number(__v) : __v; const __ns = __s.mtimeNs; return { ok: { size: __c(__s.size), mtime: __c(((__ns - (((__ns % 1000000000n) + 1000000000n) % 1000000000n)) / 1000000000n) * 1000n), isDir: __s.isDirectory() } } } catch (__e) { return { error: __e && __e.message ? __e.message : String(__e) } } })()""")]
 #[@External.Erlang("""(fun(__P) -> case file:read_file_info(__P, [{time, posix}]) of {ok, {file_info, __Sz, __Ty, _, _, __Mt, _, _, _, _, _, _, _, _}} -> {ok, #{size => __Sz, mtime => __Mt * 1000, isDir => (__Ty =:= directory)}}; {error, __R} -> {error, iolist_to_binary(io_lib:format("~p", [__R]))} end end)($0)""")]
 pub declare fn stat(path: string) -> @Result<FileStat, string>;
 
@@ -2191,6 +2190,8 @@ test "fs.stat answers a file's size, a directory's kind and the mtime in epoch m
     // After 2020-01-01T00:00:00Z and before 2100-01-01T00:00:00Z.
     assert file.mtime > 1577836800000l;
     assert file.mtime < 4102444800000l;
+    // Whole seconds on every target (decision 499).
+    assert file.mtime % 1000l == 0l;
     assert statOr(dir).isDir;
     assert stat([dir, "/missing.txt"].join("")).isError();
     removeTree(dir);
@@ -2534,12 +2535,11 @@ test "fs.glob of a root that does not exist answers the empty list" {
 % `size` is in bytes.
 % Node: `statSync($0, { bigint: true })`, so `size` and the nanosecond
 % `mtimeNs` arrive exact at any size; `mtime` is `mtimeNs` floored to whole
-% milliseconds, and both answer decision 319's canonical form (a `number`
+% seconds, × 1000, and both answer decision 319's canonical form (a `number`
 % within ±(2^53 − 1), a `BigInt` beyond) — never a `number` rounded past 2^53.
 % Erlang: `file:read_file_info/1` returns a `#file_info` record; the
 % template projects the `size`, `mtime`, and `type` fields. Its `mtime` is
-% whole seconds × 1000 — a resolution the Node form does not share
-% (question `97-s13-d`).
+% whole seconds × 1000. One value on every target: whole seconds (decision 499).
 
 {function, stat, 1, 131}.
   {label, 130}.

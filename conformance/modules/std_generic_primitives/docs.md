@@ -4,7 +4,7 @@ The reference text this cell shows (from `conformance/docs.md`, § Imports):
 
 > | Where | What | Answers |
 > |---|---|---|
-> | a `string` | `s.parseInt()` | `@Result<i64, string>` — an optional `+` / `-` and digits, the whole string; anything else (`"4 2"`, `"42x"`, `"0x2A"`, `""`) is an `Error` naming the input, and so is an integer beyond ±(2^53 − 1), the range every target counts exactly |
+> | a `string` | `s.parseInt()` | `@Result<i64, string>` — an optional `+` / `-` and digits, the whole string; anything else (`"4 2"`, `"42x"`, `"0x2A"`, `""`) is an `Error` naming the input, and so is an integer past the `i64` range, −2^63 … 2^63 − 1 |
 > | a `string` | `s.parseFloat()` | `@Result<f64, string>` — a sign, digits, an optional `.` with digits on both sides, an optional exponent; `.5`, `1.`, `NaN`, `Infinity` are an `Error`, an overflow too; the nearest `f64`, the one `json.decode` answers |
 > | a `string` | `s.indexOf(x)`, `s.lastIndexOf(x)` | an index `s.at` and `s.slice` take, on every target (`-1` when absent) |
 > | `json.Json` | `v.kindName()`, `v.isObject()`, `v.members()`, `v.field(key)`, `v.str()`, `v.items()` | the readers of a decoded value: `members` and `items` are `[]`, `str` is `""` and `field` is `null` for a value of another kind — none throws |

@@ -232,7 +232,7 @@ does what it wants.
 
 | Where | Modules |
 |---|---|
-| the root (pure) | `collections` (`Dict`, `Set`, `Queue`, `Order` — a constructor is called on its type: `Dict.empty()`, `Dict.ofEntries([#("a", 1)])`, `Set.fromList(xs)`; a `Set` member is compared by `==`, so two structurally equal records are one member on every target, decision 210), `math`, `path`, `url`, `querystring`, `json`, `regex`, `unicode`, `string_builder`, `encoding`, `hash`, `escape`, `async`, `bpp` (the four annotations a framework marks its `.bpp` roles with — `#[bpp.html]`, `#[bpp.style]`, `#[bpp.htmlPrelude]`, `#[bpp.stylePrelude]` — and `Prelude`, decision 361); `erlang` and `beam` (the target's surface) |
+| the root (pure) | `collections` (`Dict`, `Set`, `Queue`, `Order` — a constructor is called on its type: `Dict.empty()`, `Dict.ofEntries([#("a", 1)])`, `Set.fromList(xs)`; a `Set` member is compared by `==`, so two structurally equal records are one member on every target, decision 210), `math`, `decimal` (`Decimal`, `Rounding`), `path`, `url`, `querystring`, `json`, `regex`, `unicode`, `string_builder`, `encoding`, `hash`, `escape`, `async`, `bpp` (the four annotations a framework marks its `.bpp` roles with — `#[bpp.html]`, `#[bpp.style]`, `#[bpp.htmlPrelude]`, `#[bpp.stylePrelude]` — and `Prelude`, decision 361); `erlang` and `beam` (the target's surface) |
 | `io` | `io.fs`, `io.http`, `io.net`, `io.clock`, `io.random`, `io.os`, `io.env`, `io.process` |
 | `testing` | `testing.asserts`, `testing.mocks` (`testing.snapshots` is the `snap` library, decision 391) |
 
@@ -244,7 +244,7 @@ std's, and a library calls it rather than writing its own:
 
 | Where | What | Answers |
 |---|---|---|
-| a `string` | `s.parseInt()` | `@Result<i64, string>` — an optional `+` / `-` and digits, the whole string; anything else (`"4 2"`, `"42x"`, `"0x2A"`, `""`) is an `Error` naming the input, and so is an integer beyond ±(2^53 − 1), the range every target counts exactly |
+| a `string` | `s.parseInt()` | `@Result<i64, string>` — an optional `+` / `-` and digits, the whole string; anything else (`"4 2"`, `"42x"`, `"0x2A"`, `""`) is an `Error` naming the input, and so is an integer past the `i64` range, −2^63 … 2^63 − 1 |
 | a `string` | `s.parseFloat()` | `@Result<f64, string>` — a sign, digits, an optional `.` with digits on both sides, an optional exponent; `.5`, `1.`, `NaN`, `Infinity` are an `Error`, an overflow too; the nearest `f64`, the one `json.decode` answers |
 | a `string` | `s.indexOf(x)`, `s.lastIndexOf(x)` | an index `s.at` and `s.slice` take, on every target (`-1` when absent) |
 | `json.Json` | `v.kindName()`, `v.isObject()`, `v.members()`, `v.field(key)`, `v.str()`, `v.items()` | the readers of a decoded value: `members` and `items` are `[]`, `str` is `""` and `field` is `null` for a value of another kind — none throws |
@@ -254,6 +254,48 @@ std's, and a library calls it rather than writing its own:
 | `io.fs` | `walk(root)`, `glob(pattern, root)`, `removeTree(path)` | relative, `/`-separated, sorted paths, the same for every spelling of the root; a dangling link under `walk` is an `Error` naming it; `glob`'s `*` and `**` do not match a name starting with `.` unless the segment writes the dot, and do not descend through a link to a directory |
 
 <!-- example: modules/std_generic_primitives -->
+
+**Exact decimals.** std's `decimal` is Java's `BigDecimal` (decision 332): a
+`Decimal` is an unscaled `bigint` and a `scale`, the value `unscaled × 10^-scale`
+(`Decimal(unscaled: 150n, scale: 2)` is `1.50`). `add`, `sub` and `mul` are
+exact — the sum's scale is the larger of the two, the product's their sum;
+`div(other, scale, rounding)` answers at the scale it is given, rounded by a
+`Rounding` — `Up`, `Down`, `Ceiling`, `Floor`, `HalfUp`, `HalfDown`, `HalfEven`,
+Java's `RoundingMode` — and has no form without them; `Unnecessary` asserts the
+quotient is exact, and an inexact one aborts (`Decimal.div: rounding
+necessary`), as a zero divisor does (`Decimal.div: division by zero`).
+`compare(other)` is `-1`, `0` or `1` by numeric value, whatever the scales
+(`1.0` against `1.00` is `0`); `toString()` writes the plain text with the scale
+kept (`"1.00"`, `"100"` for a negative scale, never an exponent); and
+`Decimal.parse(text)` reads a numeral — an optional sign, digits, an optional
+`.` with digits, an optional exponent — into its scale (`"1.50"` is scale 2,
+`"1E+2"` scale −2), anything else an `Error` naming the text. Pure botopink over
+`bigint`: one answer on the four targets.
+
+<!-- example: modules/decimal_exact_arithmetic -->
+
+<!-- example: modules/decimal_div_rounding_necessary_aborts -->
+
+<!-- example: modules/decimal_div_by_zero_aborts -->
+
+**`io` answers alike on every target.** `io.clock`'s `formatIso8601`,
+`toCivil` and `offsetMinutes` take the epochs RFC 3339 writes,
+0000-01-01T00:00:00Z … 9999-12-31T23:59:59.999Z (−62167219200000 …
+253402300799999 milliseconds), the same on every target, and past them abort
+naming the value (`clock.toCivil: 253402300800000 is past RFC 3339's range`)
+(decision 497). `fs.stat`'s `mtime` is whole seconds, as epoch milliseconds, on
+every target (decision 499). The two run where `io` has a host binding:
+commonJS, erlang and beam.
+
+<!-- example: modules/clock_rfc3339_domain -->
+
+<!-- example: modules/clock_format_past_rfc3339_aborts -->
+
+<!-- example: modules/clock_civil_past_rfc3339_aborts -->
+
+<!-- example: modules/clock_offset_past_rfc3339_aborts -->
+
+<!-- example: modules/fs_stat_mtime_whole_seconds -->
 
 A library is imported the same way, under the name `botopink.json` declares it
 in `dependencies`:
@@ -445,6 +487,15 @@ running off the end would hand out: a `@Result` in any layer has a value (`Ok` o
 
 `i32`, `i64`, `u32`, `u64`, `f32`, `f64`, `bigint`, `string`, `bool`, `void`.
 Their methods are declared in `libs/std/src/primitives.bp`.
+
+A `string` is indexed by codepoint on every target (decision 320): `length`,
+`at`, `slice`, `indexOf` and `lastIndexOf` count codepoints — `"e\u{301}".length`
+is 2 and its `.at(1)` is `"\u{301}"`, `"👍".length` is 1 — never UTF-16 units,
+bytes or grapheme clusters, so the index `indexOf` answers is the one `at` and
+`slice` read back. A JavaScript host template receives and answers codepoint
+indices.
+
+<!-- example: modules/string_index_of_codepoints -->
 
 ### type — records
 
@@ -885,12 +936,30 @@ integer overflow: + on i32 at src/main.bp:7:14
 | `i64`, `isize` / `u64`, `usize` | −2^63 … 2^63 − 1 / 0 … 2^64 − 1 |
 | `bigint` | any integer: no range, never an overflow (below) |
 
-On commonJS an `i64` (and `isize`, `u64`, `usize`) holds the integers a JS
-number counts exactly, ±(2^53 − 1): a result past that bound aborts there too,
-never a rounded value. An integer `/` or `%` by zero aborts on every target
-(commonJS names it `integer division by zero`). A `%` never leaves its type.
+The range is the type's on every target (decision 319). On commonJS an `i64`
+(and `isize`, `u64`, `usize`) is a JS `number` while it lies within
+±(2^53 − 1) and a `BigInt` beyond, always in that canonical form, so `==`, a
+`Dict` key and a `Set` member compare by value across 2^53; an operation keeps
+the number's fast path and computes in `BigInt` only when its result leaves
+that range. A Node host template receives and answers such a value as
+`number | bigint` in the canonical form, and the emitted `.d.ts` types it so.
+The narrower integers stay JS numbers. An integer `/` or `%` by zero aborts on
+every target (commonJS names it `integer division by zero`). A `%` never leaves its type.
 No flag turns the check off (decision 67); wrapping arithmetic, where an
 algorithm wants it, is written with an explicit operation.
+
+<!-- example: modules/i64_full_range -->
+
+<!-- example: modules/i64_dict_key_across_safe_edge -->
+
+Crossing between integer types, and to `f64`, is written and exact:
+`toI32()`, `toI64()`, `toU32()`, `toU64()` and `toF64()` answer the value when
+the target type holds it and abort otherwise, never wrap, saturate or round
+(`toI32: 2147483648 does not fit i32`, `toF64: 9007199254740993 has no exact
+f64`). `@print` and string interpolation write an integer's digits, whatever
+its size.
+
+<!-- example: modules/integer_conversions_exact -->
 
 `bigint` is an integer of any size (decision 332): `+`, `-`, `*`, `/`, `%`, a
 unary `-`, `+=`, the comparisons and `==` over two `bigint`s answer exactly and

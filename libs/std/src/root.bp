@@ -22,6 +22,7 @@
 
 pub mod collections;
 pub mod math;
+pub mod decimal;
 pub mod path;
 pub mod url;
 pub mod querystring;

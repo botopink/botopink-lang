@@ -1,3 +1,3 @@
 botopink-cell 1
-refused error: std-unsupported-on-target: std/io/clock has no `#[@External.Wasm]` for target 'wasm' on host 'wasi' (for formatIso8601, parseIso8601, toCivil, offsetMinutes, sleep)
+refused error: std-unsupported-on-target: std/io/clock has no `#[@External.Wasm]` for target 'wasm' on host 'wasi' (for parseIso8601, sleep)
 at src/main.bp:8:9

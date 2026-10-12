@@ -1,0 +1,10 @@
+//// 144 B-24, decision 497 — `clock.toCivil` one millisecond past 9999-12-31T23:59:59.999Z aborts,
+//// naming the value, on every target (the parent answered year 10000).
+
+import {io.clock} from "std";
+
+pub fn main() {
+    @print("before");
+    @print(clock.toCivil(253402300800000l).year);
+    @print("after");
+}

@@ -1,0 +1,83 @@
+//// 144 B-24, decision 332 (2) and (3) — std's `Decimal` is Java's `BigDecimal`: an unscaled
+//// `bigint` and a scale. `add`, `sub` and `mul` are exact (`0.1 + 0.2` is `0.3`); `div` takes
+//// the scale of its answer and a `Rounding`, Java's `RoundingMode` (the table of its javadoc,
+//// one row per value, the seven modes left to right); `compare` orders by numeric value
+//// (`1.0` and `1.00` compare `0`); `toString()` keeps the scale and writes plain text, never
+//// an exponent; `Decimal.parse` reads a numeral. Alike on the four targets.
+
+import {decimal.Decimal, decimal.Rounding} from "std";
+
+fn d(text: string) -> Decimal {
+    return Decimal.parse(text).unwrapOr(Decimal(unscaled: 0n, scale: 0));
+}
+
+fn parsed(text: string) -> string {
+    return case Decimal.parse(text) {
+        Ok(v) -> v.toString();
+        Error(reason) -> reason;
+    };
+}
+
+pub fn main() {
+    @print(d("0.1").add(d("0.2")).toString());
+    @print(d("1.00").sub(d("0.005")).toString());
+    @print(d("-1.5").mul(d("2.25")).toString());
+    @print(d("123456789012345678901234567890.5").add(d("0.5")).toString());
+
+    @print(Decimal(unscaled: 150n, scale: 2).toString());
+    @print(Decimal(unscaled: 1n, scale: 0 - 2).toString());
+    @print(Decimal(unscaled: 0n, scale: 2).toString());
+    @print(Decimal(unscaled: -5n, scale: 3).toString());
+
+    @print(parsed("1E+2"));
+    @print(parsed("1.5e-3"));
+    @print(parsed("+0.50"));
+    @print(parsed("-12.340"));
+    @print(parsed("1."));
+    @print(parsed(".5"));
+    @print(parsed("1e"));
+    @print(parsed("12x"));
+
+    @print(d("1.0").compare(d("1.00")));
+    @print(d("-2").compare(d("1.5")));
+    @print(d("2.50").compare(d("2.4999")));
+
+    val one = d("1");
+    val three = d("3");
+    @print(one.div(three, 5, Rounding.HalfEven).toString());
+    @print(d("2").div(three, 2, Rounding.HalfUp).toString());
+    @print(d("2").div(three, 2, Rounding.Down).toString());
+    @print(one.div(d("-3"), 3, Rounding.Floor).toString());
+    @print(d("7.50").div(d("2.5"), 1, Rounding.Unnecessary).toString());
+    @print(d("1").div(d("8"), 0 - 1, Rounding.Up).toString());
+
+    val modes = [
+        Rounding.Up,
+        Rounding.Down,
+        Rounding.Ceiling,
+        Rounding.Floor,
+        Rounding.HalfUp,
+        Rounding.HalfDown,
+        Rounding.HalfEven,
+    ];
+    for ([
+        "5.5",
+        "2.5",
+        "1.6",
+        "1.1",
+        "1.0",
+        "-1.0",
+        "-1.1",
+        "-1.6",
+        "-2.5",
+        "-5.5",
+    ]) { x ->
+        @print(
+            [
+                x,
+                ": ",
+                modes.map({ m -> d(x).div(one, 0, m).toString() }).join(" "),
+            ].join(""),
+        );
+    }
+}

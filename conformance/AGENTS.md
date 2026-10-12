@@ -1610,6 +1610,20 @@ sibling's `pub fn`, `pub` record and `pub val` holding `bigint`s; its `.d.ts` th
 `modules/bigint_type_test` (`x is i32` over a `bigint`), `modules/bigint_into_unknown` and
 `modules/bigint_comptime`. Every one was refused by the parent binary (`number-suffix-unknown`).
 
+144 B-24 (decisions 497, 499: std's `io` over the full `i64`) adds `modules/clock_rfc3339_domain` —
+`formatIso8601`, `toCivil` and `offsetMinutes` at both ends of RFC 3339's epochs, −62167219200000 and
+253402300799999 (erlang aborted at year 0: `calendar` read the host's local time, which ERTS refuses before
+1902) — and three aborts naming the value past it, `modules/clock_format_past_rfc3339_aborts` (an epoch past
+2^53, a `BigInt` on commonJS), `modules/clock_civil_past_rfc3339_aborts` and
+`modules/clock_offset_past_rfc3339_aborts` (the parent answered year 10000 and an offset);
+`modules/fs_stat_mtime_whole_seconds` (`mtime % 1000 == 0` on every target; commonJS floored to the
+millisecond). Each runs on commonJS, erlang and beam (`"targets"`: `io` has no wasm binding).
+It adds std's `decimal` (decision 332 (2)) with `modules/decimal_exact_arithmetic` — `add`, `sub`,
+`mul`, `div` at a scale under each `Rounding` (the javadoc's table of `RoundingMode`), `compare`, the
+plain `toString()` and `Decimal.parse`, on all four targets — and two aborts,
+`modules/decimal_div_rounding_necessary_aborts` and `modules/decimal_div_by_zero_aborts` (wasm traps
+with no text: `abort` alone there). The parent refused the import (`unknown "std" module`).
+
 `front/block-backends` (decision 2: an `@block`'s `return` is the block's value) adds
 `modules/block_return_is_block_value` — `val x = @block { return 3; }`, a branch's `return`, a string,
 an `f64`, a `case` arm's `return`, a nested `@block`, a block inside a `for` and a statement block

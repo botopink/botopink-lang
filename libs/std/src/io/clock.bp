@@ -87,13 +87,50 @@ pub fn monotonicMillis() -> i64 {
 
 // Render `epochMillis` as an ISO-8601 / RFC-3339 timestamp string.
 // Node: `new Date($0).toISOString()` (renders `YYYY-MM-DDTHH:MM:SS.sssZ`).
-// Erlang: `calendar:system_time_to_rfc3339/2` with the `second` unit —
-// the divisor lifts the i64 millis into whole seconds before the BIF
-// runs; the resulting binary lacks the millisecond fraction Node always
-// emits.
+// Erlang: `calendar:system_time_to_rfc3339/2` with the `second` unit and
+// the `Z` offset — the i64 millis floored to whole seconds before
+// the BIF runs; the resulting binary lacks the millisecond fraction Node always
+// emits. The `Z` offset keeps `calendar` from reading the host's local time,
+// which ERTS refuses before 1902.
+// Its domain is RFC 3339's (decision 497): past it the call aborts,
+// naming the value, on every target (`checkRfc3339Domain`).
 #[@External.Node("""(new Date($0).toISOString())""")]
-#[@External.Erlang("""list_to_binary(calendar:system_time_to_rfc3339($0 div 1000, [{unit, second}]))""")]
-pub declare fn formatIso8601(epochMillis: i64) -> string;
+#[@External.Erlang("""(fun(__M) -> list_to_binary(calendar:system_time_to_rfc3339((__M - (((__M rem 1000) + 1000) rem 1000)) div 1000, [{unit, second}, {offset, "Z"}])) end)($0)""")]
+declare fn formatIso8601Host(epochMillis: i64) -> string;
+
+pub fn formatIso8601(epochMillis: i64) -> string {
+    checkRfc3339Domain("formatIso8601", epochMillis);
+    return formatIso8601Host(epochMillis);
+}
+
+// The domain of `formatIso8601`, `toCivil` and `offsetMinutes` (decision
+// 497): the epochs RFC 3339 writes, 0000-01-01T00:00:00Z …
+// 9999-12-31T23:59:59.999Z, the same on every target. ECMAScript's `Date`
+// holds a wider range and Erlang's `calendar` a different one, so the bound
+// is checked here, before the host is reached.
+fn earliestRfc3339Millis() -> i64 {
+    return -62167219200000l;
+}
+
+fn latestRfc3339Millis() -> i64 {
+    return 253402300799999l;
+}
+
+// Internal: abort when `epochMillis` is past RFC 3339's domain, naming the
+// function and the value.
+fn checkRfc3339Domain(what: string, epochMillis: i64) -> void {
+    if (epochMillis < earliestRfc3339Millis()
+        || epochMillis > latestRfc3339Millis())
+        @panic(
+            [
+                "clock.",
+                what,
+                ": ",
+                epochMillis.toString(),
+                " is past RFC 3339's range, -62167219200000 to 253402300799999",
+            ].join(""),
+        );
+}
 
 // Measure how long `body` takes to evaluate, in milliseconds. Returns
 // the body's result paired with the elapsed time. Uses `nowMillis()`
@@ -147,15 +184,28 @@ pub declare fn parseIso8601(s: string) -> @Result<i64, string>;
 // (already Monday = 1).
 #[@External.Node("""(() => { const __d = new Date($0); return { year: __d.getUTCFullYear(), month: __d.getUTCMonth() + 1, day: __d.getUTCDate(), hour: __d.getUTCHours(), minute: __d.getUTCMinutes(), second: __d.getUTCSeconds(), weekday: ((__d.getUTCDay() + 6) % 7) + 1 } })()""")]
 #[@External.Erlang("""(fun(__M) -> {{__Y, __Mo, __D}, {__H, __Mi, __S}} = calendar:system_time_to_universal_time(__M, millisecond), #{year => __Y, month => __Mo, day => __D, hour => __H, minute => __Mi, second => __S, weekday => calendar:day_of_the_week(__Y, __Mo, __D)} end)($0)""")]
-pub declare fn toCivil(epochMillis: i64) -> Civil;
+declare fn toCivilHost(epochMillis: i64) -> Civil;
+
+pub fn toCivil(epochMillis: i64) -> Civil {
+    checkRfc3339Domain("toCivil", epochMillis);
+    return toCivilHost(epochMillis);
+}
 
 // The host timezone's offset from UTC at `epochMillis`, in minutes EAST of
 // UTC (`+02:00` is `120`) — the sign RFC 3339 writes. Node's
 // `getTimezoneOffset` counts minutes WEST, so the template negates it.
-// Erlang: local minus universal time of the same instant.
+// Erlang: local minus universal time of the same instant. ERTS reads no
+// local time before 1902 (`universaltime_to_localtime` is a `badarg`), so an
+// earlier instant is read at 1902-01-01T00:00:00Z — the zone's offset there,
+// its local mean time in most zones.
 #[@External.Node("""(0 - new Date($0).getTimezoneOffset())""")]
-#[@External.Erlang("""(fun(__M) -> __U = calendar:system_time_to_universal_time(__M, millisecond), __L = calendar:universal_time_to_local_time(__U), (calendar:datetime_to_gregorian_seconds(__L) - calendar:datetime_to_gregorian_seconds(__U)) div 60 end)($0)""")]
-pub declare fn offsetMinutes(epochMillis: i64) -> i32;
+#[@External.Erlang("""(fun(__M) -> __U = calendar:system_time_to_universal_time(erlang:max(__M, -2145916800000), millisecond), __L = calendar:universal_time_to_local_time(__U), (calendar:datetime_to_gregorian_seconds(__L) - calendar:datetime_to_gregorian_seconds(__U)) div 60 end)($0)""")]
+declare fn offsetMinutesHost(epochMillis: i64) -> i32;
+
+pub fn offsetMinutes(epochMillis: i64) -> i32 {
+    checkRfc3339Domain("offsetMinutes", epochMillis);
+    return offsetMinutesHost(epochMillis);
+}
 
 // Internal: an `i32` read as an `i64` — std's `toI64()` (decision 319), which
 // every `i32` fits, so no host cell is crossed.
@@ -189,10 +239,10 @@ pub fn toMillis(d: Duration) -> i64 {
 
 // ── 1.0.11-beta front 97: a duration written as text ────────────────────────
 
-// Internal: the largest millisecond count `parseDuration` answers — 2^53 - 1,
-// where a commonJS number stopped counting by one. Decision 319 made an `i64`
-// exact past it on every target; whether the bound stays is question
-// `97-s13-c`.
+// Internal: the largest millisecond count `parseDuration` answers — 2^53 - 1
+// (decision 498). A duration is handed on as a timer delay or a JSON number,
+// both `f64`, which stop counting by one past 2^53; an `i64` itself is exact
+// past it on every target (decision 319).
 fn largestExactMillis() -> i64 {
     return 9007199254740991;
 }
@@ -251,7 +301,8 @@ fn durationCount(digits: string) -> i64 {
 // (`"30"`), a fraction (`"1.5s"`), a sign, whitespace anywhere (`"30 s"`), an
 // uppercase unit (`"30S"`), two units (`"1h30m"`), the empty string — the
 // stricter of the two parsers this replaces — and a duration beyond
-// 2^53 - 1 milliseconds, which the two targets do not count alike.
+// 2^53 - 1 milliseconds, which a timer delay or a JSON number (an `f64`)
+// would not hold exactly (decision 498).
 pub fn parseDuration(text: string) -> @Result<i64, string> {
     val unit = durationUnit(text);
     val digits = text.slice(0, text.length() - unit.length());
@@ -262,8 +313,8 @@ pub fn parseDuration(text: string) -> @Result<i64, string> {
             "is not a duration: digits, then one unit of ms, s, m, h or d",
         );
     if (count == wide(0 - 2)) throw durationProblem(text, "is out of range");
-    // Compared before multiplying: a product past 2^53 - 1 is an overflow
-    // that aborts the program on commonJS, never a value to compare.
+    // Compared before multiplying: a count as long as `i64` allows would
+    // overflow the product, which aborts the program, never answers.
     if (count > largestExactMillis() / unitMillis(unit))
         throw durationProblem(text, "is out of range");
     return count * unitMillis(unit);
@@ -418,7 +469,7 @@ test "clock.parseDuration refuses anything but digits and one unit, naming the t
         == "clock.parseDuration: \"30\" is not a duration: digits, then one unit of ms, s, m, h or d";
 }
 
-test "clock.parseDuration refuses a duration both targets do not count alike" {
+test "clock.parseDuration refuses a duration an f64 would not hold exactly" {
     assert parseDuration("9007199254740991ms").unwrapOr(wide(0))
         == largestExactMillis();
     assert parseDuration("104249991d").unwrapOr(wide(0))
