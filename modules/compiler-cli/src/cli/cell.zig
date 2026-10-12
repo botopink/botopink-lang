@@ -754,8 +754,10 @@ fn cellEnv(ctx: *Ctx, cell: []const u8) !libs.EnvMap {
 }
 
 /// `text` (a cell's manifest) with every relative `"path": "…"` dependency
-/// made absolute against `cell_dir`, nothing else touched — lines and
-/// columns before the value stay where they were.
+/// that leaves `cell_dir` made absolute against it, nothing else touched. A
+/// path that stays inside the cell is the copy's own (`copyTree` carries it),
+/// so it stays as written: a refusal located in it is then relative to the
+/// cell (`deps/…`), and the columns of the manifest after it do not move.
 fn absolutizePathDeps(a: std.mem.Allocator, text: []const u8, cell_dir: []const u8) ![]const u8 {
     var out: std.ArrayListUnmanaged(u8) = .empty;
     var i: usize = 0;
@@ -781,7 +783,10 @@ fn absolutizePathDeps(a: std.mem.Allocator, text: []const u8, cell_dir: []const 
         if (value.len == 0 or std.fs.path.isAbsolute(value) or std.mem.indexOfScalar(u8, value, '\\') != null) {
             try out.appendSlice(a, value);
         } else {
-            try out.appendSlice(a, try std.fs.path.resolve(a, &.{ cell_dir, value }));
+            const resolved = try std.fs.path.resolve(a, &.{ cell_dir, value });
+            const base = try std.fs.path.resolve(a, &.{cell_dir});
+            const inside = resolved.len > base.len and std.mem.startsWith(u8, resolved, base) and resolved[base.len] == std.fs.path.sep;
+            try out.appendSlice(a, if (inside) value else resolved);
         }
         i = end;
     }
@@ -1228,4 +1233,12 @@ test "absolutizePathDeps resolves a relative path against the cell, leaving the 
     const text = "{ \"name\": \"c\", \"dependencies\": { \"k\": { \"path\": \"../../lib/k\" }, \"z\": { \"path\": \"/abs/z\" } } }";
     const got = try absolutizePathDeps(a, text, "/w/cells/modules/c");
     try std.testing.expectEqualStrings("{ \"name\": \"c\", \"dependencies\": { \"k\": { \"path\": \"/w/cells/lib/k\" }, \"z\": { \"path\": \"/abs/z\" } } }", got);
+}
+
+test "absolutizePathDeps keeps a path inside the cell as written, so columns and locations hold" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const text = "{ \"dependencies\": { \"m\": { \"path\": \"deps/m\" } }, \"bpp\": \"m\" }";
+    try std.testing.expectEqualStrings(text, try absolutizePathDeps(a, text, "/w/cells/modules/c"));
 }
