@@ -322,8 +322,9 @@ runs, and `scripts/lib/backend-partition-audit.js` audits it on every gate run. 
 budget is 7m30s (decision 265 — the 5-minute target is deferred to the next
 milestone).
 
-One gate runs at a time per machine: a second `gate.sh` waits for the lock,
-naming the holder's pid, checkout and start time. A `--staged` run whose
+One gate with conformance runs at a time per machine: a second one waits for
+the lock, naming the holder's pid, checkout and start time; a `--no-conformance`
+run (the commit hook's) takes no lock (decision 508). A `--staged` run whose
 working tree, sibling libraries and toolchain were already gated green runs
 stage 1 only (`scripts/AGENTS.md` § Gate lock, § Green-tree record).
 

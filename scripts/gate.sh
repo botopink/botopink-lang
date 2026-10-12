@@ -89,10 +89,10 @@
 #             gate WITH conformance. Such a run never writes the green-tree
 #             record and is never a full gate.
 #
-# One gate at a time per machine (§ gate lock): a second `gate.sh` waits for
-# the first, naming its pid, checkout and start time. The stages already use
-# every CPU; two gates side by side took far more than twice as long and
-# starved each other's timing-sensitive tests.
+# One gate with conformance at a time per machine (§ gate lock): a second one
+# waits for the first, naming its pid, checkout and start time. A
+# `--no-conformance` run (the commit hook's) takes no lock and never waits
+# (decision 508).
 #
 # A `--staged` run whose trees were already gated green (§ green-tree record)
 # runs stage 1 and stops: what the commit's diff can affect is nothing that
@@ -150,12 +150,14 @@ pass() { printf "${GREEN}✓ %s${NC}\n" "$1"; }
 fail() { printf "${RED}✗ %s${NC}\n" "$1" >&2; exit 1; }
 
 # ── § gate lock ──────────────────────────────────────────────────────────────
-# One gate per machine: every checkout and worktree takes the same lock, a
-# directory created with `mkdir` (atomic everywhere, including the macOS
-# runner's bash 3.2, which has no `flock`). The holder writes its pid, checkout
-# and start time into it and removes it on exit. A second gate waits, printing
-# who holds it; a lock whose pid is no longer alive was left by a killed gate
-# and is taken over. There is no flag or variable that skips the wait.
+# One gate with conformance per machine: every checkout and worktree takes the
+# same lock, a directory created with `mkdir` (atomic everywhere, including the
+# macOS runner's bash 3.2, which has no `flock`). The holder writes its pid,
+# checkout and start time into it and removes it on exit. A second gate waits,
+# printing who holds it; a lock whose pid is no longer alive was left by a
+# killed gate and is taken over. A `--no-conformance` run takes no lock and
+# never waits (decision 508): the commit hooks of parallel tasks run side by
+# side. There is no flag or variable that skips the wait of a conformance run.
 lock_dir="${XDG_RUNTIME_DIR:-$HOME/.cache}/botopink/gate.lock"
 mkdir -p "$(dirname "$lock_dir")"
 cleanup_dirs=()
@@ -169,7 +171,7 @@ cleanup() {
 }
 trap cleanup EXIT
 waited=0
-while ! mkdir "$lock_dir" 2>/dev/null; do
+while [ "$no_conformance" -eq 0 ] && ! mkdir "$lock_dir" 2>/dev/null; do
     holder="$(cat "$lock_dir/pid" 2>/dev/null || true)"
     if [ -n "$holder" ] && ! kill -0 "$holder" 2>/dev/null; then
         # The holder is gone without removing its lock — take it over.
@@ -184,11 +186,13 @@ while ! mkdir "$lock_dir" 2>/dev/null; do
     waited=1
     sleep 5
 done
-cleanup_dirs+=("$lock_dir")
-echo "$$" >"$lock_dir/pid"
-echo "$root" >"$lock_dir/checkout"
-date '+%Y-%m-%d %H:%M:%S' >"$lock_dir/since"
-[ "$waited" -eq 0 ] || echo "gate: lock taken" >&2
+if [ "$no_conformance" -eq 0 ]; then
+    cleanup_dirs+=("$lock_dir")
+    echo "$$" >"$lock_dir/pid"
+    echo "$root" >"$lock_dir/checkout"
+    date '+%Y-%m-%d %H:%M:%S' >"$lock_dir/since"
+    [ "$waited" -eq 0 ] || echo "gate: lock taken" >&2
+fi
 gate_start="$(date +%s)"
 # One scratch directory per run: the stage times, and each side-by-side stage's
 # capture and exit status (§ side by side).

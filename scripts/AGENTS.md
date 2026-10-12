@@ -256,9 +256,9 @@ wrong line can delay a red to the landing, never land one.
 
 ### Gate lock
 
-**One gate per machine.** The stages already use every CPU, and two gates
-side by side took far more than twice as long and starved each other's
-timing-sensitive tests. `gate.sh` takes `${XDG_RUNTIME_DIR:-$HOME/.cache}/botopink/gate.lock`
+**One gate with conformance per machine.** A `--no-conformance` run (the
+commit hook's) takes no lock and never waits (decision 508), so the hooks of
+parallel tasks run side by side. A run with conformance takes `${XDG_RUNTIME_DIR:-$HOME/.cache}/botopink/gate.lock`
 before its first stage — a directory made with `mkdir` (atomic, and the macOS
 runner's bash 3.2 has no `flock`) holding the holder's `pid`, `checkout` and
 `since` — and removes it on exit. A second gate, from any checkout or worktree,
