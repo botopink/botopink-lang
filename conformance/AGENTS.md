@@ -383,7 +383,8 @@ the parent binary at the `#`.
 Step 8 (decision 45) adds `modules/tuple_label_on_optional` (`rs.at(0).b` names `?.`) and
 `modules/tuple_label_through_optional` (`rs.at(0)?.b` reads the label through the optional, four
 targets); both pass on the parent binary — the checker half landed with decision 45 — and pin it. The
-absent half (`?.b` on a `null`) traps on wasm and raises `badarg` on beam (the backends' rows).
+absent half (`?.b` on a `null`) is `modules/tuple_label_through_absent_optional` (144 B-22), four
+targets.
 Step 15 (report L, R3) adds `modules/imported_type_field_closure` (package `a`'s `Client(life:
 Life, …)` with `Life` in a sibling module, imported by package `b` as `Client` alone and called from
 the root, four targets) and `modules/imported_declaration_error_location` (a type error inside the

@@ -1029,7 +1029,20 @@ array is a box, and read as the bare ordinal `c == Color.Green` answered
 `false`. An optional-binding `if`'s binder is the then-arm's name only
 (`restoreBinderFlags`): every `a ?? b` binds `__bp_nullish`, and a string
 payload left in `str_locals` made the next `??` over an `i32` print as a
-string. `conformance/modules/index_answer_typed_optional`.
+string. `conformance/modules/index_answer_typed_optional`. A binder of another
+width than the local its name already holds (`x ?? 0.0` after `n ?? 0` in one
+function) is a local of its own the arm's reads resolve to (`binder_alias`), and
+the `if`'s value type reads the binder's width off the condition
+(`ifValueType`), not off the stale local.
+
+`recv?._N` — decision 45's `?.label` over an optional tuple — reads the element
+only when the tuple is there (`lowerOptionalField`, as a record field's `?.`): a
+scalar element goes in a box (a present `0` is not absence), a float's or an
+`i64`'s slot is its cell, a string or a container its own pointer, an element
+that is itself optional its own carrier (`optInfoOfElemShape`, from the
+receiver's payload shape, `optTupleElemShapeOf`). It loaded from address `0`
+and answered whatever the WASI iovec held (`8`).
+`conformance/modules/tuple_label_through_absent_optional`.
 
 ## Two run-time rules this backend implements first (2026-09-19)
 

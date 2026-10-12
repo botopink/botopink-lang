@@ -10758,6 +10758,17 @@ const Emitter = struct {
         return tupleShapeElem(sh, idx);
     }
 
+    /// The shape of the element `recv?._N` reads off an optional tuple: the
+    /// receiver's payload shape (`rs.at(1)` over a `#(a: i32, b: string)[]`),
+    /// else its print shape behind its `?`.
+    fn optTupleElemShapeOf(self: *Emitter, ia: anytype) anyerror!?[]const u8 {
+        const idx = tupleIndex(ia.member) orelse return null;
+        if (self.optInfoOf(ia.receiver.*)) |oi| if (oi.shape) |psh| return tupleShapeElem(psh, idx);
+        var sh = (try self.printShapeOf(ia.receiver.*)) orelse return null;
+        if (sh.len > 0 and sh[0] == '?') sh = sh[1..];
+        return tupleShapeElem(sh, idx);
+    }
+
     /// The length of the element shape starting at `sh[0]`: `i`/`f`/`b`/`s` are
     /// one byte, `[X` is one plus its element's, `(XY…)` runs to its `)`. The
     /// Zig twin of `$__print_shaped_raw`'s `go = 0` measuring mode, and it has
@@ -12555,6 +12566,41 @@ const Emitter = struct {
         shape: ?[]const u8 = null,
     };
 
+    /// The carrier an element shape that is itself optional (`?X`, `!X`)
+    /// takes; null for any other shape.
+    fn optInfoOfOptShape(el: []const u8) ?OptInfo {
+        if (el.len < 2) return null;
+        return switch (el[0]) {
+            '!' => .{ .boxed = true, .bool_ = el[1] == 'b' },
+            '?' => switch (el[1]) {
+                'f' => .{ .boxed = true, .cell = .f64 },
+                'l' => .{ .boxed = true, .cell = .i64 },
+                'u' => .{ .boxed = true, .cell = .i64, .inner = .{ .named = "u64" } },
+                's' => .{ .boxed = false, .str = true },
+                else => .{ .boxed = false, .shape = el[1..] },
+            },
+            else => null,
+        };
+    }
+
+    /// The `?T` a `recv?._N` read answers, from element `N`'s shape: an
+    /// optional element stays what it is (`?.` does not nest), a scalar goes
+    /// in a box, a float or `i64` slot already holds its cell, a string or a
+    /// container is its own pointer.
+    fn optInfoOfElemShape(el: []const u8) ?OptInfo {
+        if (optInfoOfOptShape(el)) |oi| return oi;
+        if (el.len == 0) return null;
+        return switch (el[0]) {
+            'i' => .{ .boxed = true },
+            'b' => .{ .boxed = true, .bool_ = true },
+            'f' => .{ .boxed = true, .cell = .f64 },
+            'l' => .{ .boxed = true, .cell = .i64 },
+            'u' => .{ .boxed = true, .cell = .i64, .inner = .{ .named = "u64" } },
+            's' => .{ .boxed = false, .str = true },
+            else => .{ .boxed = false, .shape = el },
+        };
+    }
+
     /// Whether a `?T`'s cell holds a `u64` — its bits print unsigned.
     fn optIsU64(oi: OptInfo) bool {
         const inner = oi.inner orelse return false;
@@ -13497,18 +13543,16 @@ const Emitter = struct {
                 // `t._1` of a `?T` element: the carrier its shape names.
                 // A tuple with no shape here falls to its declared type below.
                 .identAccess => |ia| if (!ia.optional and tupleIndex(ia.member) != null) {
-                    if (self.tupleElemShapeOf(e) catch null) |el| if (el.len >= 2) switch (el[0]) {
-                        '!' => return .{ .boxed = true, .bool_ = el[1] == 'b' },
-                        '?' => return switch (el[1]) {
-                            'f' => .{ .boxed = true, .cell = .f64 },
-                            'l' => .{ .boxed = true, .cell = .i64 },
-                            'u' => .{ .boxed = true, .cell = .i64, .inner = .{ .named = "u64" } },
-                            's' => .{ .boxed = false, .str = true },
-                            else => .{ .boxed = false, .shape = el[1..] },
-                        },
-                        else => {},
-                    };
+                    if (self.tupleElemShapeOf(e) catch null) |el| if (optInfoOfOptShape(el)) |oi| return oi;
                 } else if (ia.optional) {
+                    // `recv?._N` — decision 45 rewrote `?.label` of an optional
+                    // tuple to its position: a scalar element goes in a box
+                    // (a present `0` is not absence), a float's slot is its
+                    // cell, a pointer is its own carrier.
+                    if (tupleIndex(ia.member) != null) {
+                        const el = (self.optTupleElemShapeOf(ia) catch null) orelse return null;
+                        return optInfoOfElemShape(el);
+                    }
                     // `recv?.field` of a scalar field is a boxed optional
                     const rty = self.recordTypeOfExpr(ia.receiver.*) orelse return null;
                     const ft = self.fieldTypeIn(rty, ia.member);
@@ -13957,6 +14001,12 @@ const Emitter = struct {
         // Tuple element access: `_0`, `_1`, ... → load at `index * 4`; a
         // float element's slot holds its cell.
         if (tupleIndex(ia.member)) |idx| {
+            // `recv?._N`: absent when the tuple is — the load reads a present
+            // one only, and a scalar element is boxed (`optInfoOf`).
+            if (ia.optional) {
+                try self.lowerOptionalField(ia, idx * 4, "");
+                return;
+            }
             try self.lowerExpr(ia.receiver.*);
             try self.emitLoadOffset(idx * 4);
             if (try self.tupleElemShapeOf(.{ .identifier = .{ .loc = loc, .kind = .{ .identAccess = ia } } })) |el| try self.emitFromCell(shapeCell(el));
@@ -14050,9 +14100,14 @@ const Emitter = struct {
         try self.emitAt(8, .{ .local_get = mem });
         try self.emitAtCf(8, .{ .load = .{ .offset = off } }, "?.{s}{s}", .{ ia.member, suffix });
         // `?.` makes the result a `?T`: a scalar field goes in a box.
-        if (self.optInfoOf(.{ .identifier = .{ .loc = .{ .line = 0, .col = 0 }, .kind = .{ .identAccess = ia } } })) |oi| {
+        // An element that is itself optional is already its own carrier.
+        const elem_opt = tupleIndex(ia.member) != null and if (self.optTupleElemShapeOf(ia) catch null) |el|
+            el.len > 0 and (el[0] == '?' or el[0] == '!')
+        else
+            false;
+        if (!elem_opt) if (self.optInfoOf(.{ .identifier = .{ .loc = .{ .line = 0, .col = 0 }, .kind = .{ .identAccess = ia } } })) |oi| {
             if (oi.boxed and oi.cell == .none) try self.emitAt(8, self.builder().helper(.box_i32));
-        }
+        };
         const else_seq = self.seal(&else_c, .{ .value = .i32 });
 
         try self.emit(.{ .@"if" = .{
@@ -16820,9 +16875,20 @@ const Emitter = struct {
             .bool_ = self.bool_locals.contains(name),
             .rec = self.local_types.get(name),
         } else null;
-        if (i.binding) |name| {
+        // A binder of another width than a local of its name already has —
+        // every `a ?? b` binds `__bp_nullish`, so `x ?? 0.0` after `n ?? 0` —
+        // is a local of its own, which the arm's reads resolve to until it ends.
+        var binder_alias: ?struct { name: []const u8, prev: ?[]const u8 } = null;
+        if (i.binding) |bname| {
             const oi = self.optInfoOf(i.cond.*);
             const cell: Cell = if (oi) |o| o.cell else .none;
+            var name = bname;
+            if (self.locals.get(bname)) |existing| if (!std.mem.eql(u8, existing, cell.ty())) {
+                name = try std.fmt.allocPrint(self.arena(), "{s}__{d}", .{ bname, self.alias_seq });
+                self.alias_seq += 1;
+                binder_alias = .{ .name = bname, .prev = self.aliases.get(bname) };
+                try self.aliases.put(bname, name);
+            };
             try self.declareLocal(name, cell.ty());
             if (!std.mem.eql(u8, self.locals.get(name).?, cell.ty()))
                 return self.refuse(i.cond.getLoc(), "the wasm backend binds `{s}` to values of two widths in one function", .{name});
@@ -16852,6 +16918,9 @@ const Emitter = struct {
         self.dropUnknownNarrowing(unknown_narrowed);
         self.dropNarrowing(then_marked);
         if (binder_prev) |bp| try self.restoreBinderFlags(bp);
+        if (binder_alias) |ba| {
+            if (ba.prev) |p| try self.aliases.put(ba.name, p) else _ = self.aliases.remove(ba.name);
+        }
         const then_seq = self.seal(&then_c, stackOf(then_tail, ty));
 
         var else_seq: ?Seq = null;
@@ -16888,12 +16957,19 @@ const Emitter = struct {
         // over two `i32`s (a bool, a digit) inside a function answering `f64`
         // was `(if (result f64)` around two `i32`s — invalid code.
         var int: []const u8 = "";
-        for ([_]?[]const ast.Stmt{ i.then_, i.else_ }) |maybe| {
+        for ([_]?[]const ast.Stmt{ i.then_, i.else_ }, 0..) |maybe, arm| {
             const body = maybe orelse continue;
             if (body.len == 0) continue;
             const last = body[body.len - 1].expr;
             if (self.exprTail(last) != .value) continue;
-            const lt = self.wasmTypeOf(last);
+            // The then-arm answering the binder (`a ?? b`'s `__bp_nullish`)
+            // answers the payload's width, which a local of the binder's name
+            // an earlier `if` declared at another width does not tell.
+            const binder_read = arm == 0 and if (i.binding) |bn| if (plainIdentName(last)) |ln| std.mem.eql(u8, ln, bn) else false else false;
+            const lt = if (binder_read)
+                (if (self.optInfoOf(i.cond.*)) |oi| oi.cell.ty() else self.wasmTypeOf(last))
+            else
+                self.wasmTypeOf(last);
             if (lt[0] == 'f') {
                 t = if (t.len == 0) lt else self.unifyNum(t, lt);
             } else if (int.len == 0) int = lt;

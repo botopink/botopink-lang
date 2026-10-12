@@ -90,8 +90,18 @@ fn main() {
     local.get $__out0
     i32.const 0
     call $__arr_at
-    i32.load offset=4
-    call $__box_i32
+    local.tee $__mem0
+    i32.eqz
+    (if (result i32)
+      (then
+        i32.const 0 ;; ?.1 on null
+      )
+      (else
+        local.get $__mem0
+        i32.load offset=4 ;; ?.1
+        call $__box_i32
+      )
+    )
     return
   )
   (func $main
@@ -594,5 +604,5 @@ fn main() {
 ----- RUN LOG -----
 ```logs
 2
-false
+true
 ```
