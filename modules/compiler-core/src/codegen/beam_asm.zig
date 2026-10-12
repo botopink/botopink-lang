@@ -282,6 +282,7 @@ const MEM_BOX = "__bp_var";
 /// its seed carries to the owner (`erlang.zig`'s `MEM_ROWS`).
 const MEM_ETS_AT = "'__bp_ets_at'";
 const MEM_ETS_ROW = "'__bp_ets_row'";
+const MEM_ETS_BUMP = "'__bp_ets_bump'";
 const MEM_ROWS = "__bp_rows";
 
 /// The entry's host-module loader and its per-file step (`emitLoadSiblings`).
@@ -2009,6 +2010,7 @@ fn emitBeamAsm(
         if (em.anyKeyedVar()) {
             try em.reserveFn(MEM_ETS_AT, 3);
             try em.reserveFn(MEM_ETS_ROW, 3);
+            try em.reserveFn(MEM_ETS_BUMP, 4);
         }
     }
     if (pt_vars.items.len > 0) try em.reserveFn(MEM_LOAD, 0);
@@ -4958,6 +4960,14 @@ const Emitter = struct {
     /// `name = name.insert(K, V)` on a `keyed = true` var.
     fn emitKeyedRowWrite(self: *Emitter, name: []const u8, value: *const ast.Expr) anyerror!void {
         const cc = value.call.kind.call;
+        if (std.mem.eql(u8, cc.callee, "bump")) {
+            // `name = name.bump(K, N)` (decision 340): `ets:update_counter(T, K, N, {K, 0})`.
+            const rows = try self.keyedRows(name);
+            const st = try self.stageOperands(&.{ cc.args[0].value.*, cc.args[1].value.*, rows }, &[_]ast.TrailingLambda{});
+            try self.emitParallelMove(&.{ Op.atom(try self.memoryKey(name)), st.ops[2], st.ops[0], st.ops[1] }, &.{ 0, 1, 2, 3 });
+            try self.callFileHelper(MEM_ETS_BUMP, 4);
+            return;
+        }
         const ar = self.atom_arena.allocator();
         const entry = try ar.dupe(ast.Expr, &.{ cc.args[0].value.*, cc.args[1].value.* });
         const row: ast.Expr = .{ .collection = .{ .loc = value.getLoc(), .kind = .{ .tupleLit = .{ .elems = entry } } } };
@@ -5008,6 +5018,23 @@ const Emitter = struct {
             try beamEmitter.writeCall(self.out, .normal, 2, .{ .local = guard }, 0);
             try beamEmitter.writeMoveOp(self.out, Op.yr(0), Dst.xr(1));
             try self.beamPrimCall(.last, "etsPut", 2, 1);
+        }
+        // '__bp_ets_bump'(Name, Rows, Key, By): y0 Key, y1 By — the table the
+        // guard answers, then etsBumpFrom(T, Key, By, {Key, 0}).
+        try self.beginHelper(MEM_ETS_BUMP, 4);
+        {
+            try beamEmitter.writeAllocate(self.out, 2, 4);
+            try beamEmitter.writeInitYregs(self.out, 2);
+            try beamEmitter.writeMoveOp(self.out, Op.xr(2), Dst.yr(0));
+            try beamEmitter.writeMoveOp(self.out, Op.xr(3), Dst.yr(1));
+            try beamEmitter.writeTestHeap(self.out, 3, 2);
+            try beamEmitter.writePutTuple2(self.out, Dst.xr(1), &.{ Op.atom(MEM_ROWS), Op.xr(1) });
+            try beamEmitter.writeCall(self.out, .normal, 2, .{ .local = guard }, 0);
+            try beamEmitter.writeMoveOp(self.out, Op.yr(0), Dst.xr(1));
+            try beamEmitter.writeMoveOp(self.out, Op.yr(1), Dst.xr(2));
+            try beamEmitter.writeTestHeap(self.out, 3, 3);
+            try beamEmitter.writePutTuple2(self.out, Dst.xr(3), &.{ Op.yr(0), Op.int(0) });
+            try self.beamPrimCall(.last, "etsBumpFrom", 4, 2);
         }
     }
 
@@ -5369,7 +5396,7 @@ const Emitter = struct {
             .behavior => |bh| for (bh.methods) |m| try names.put(arena, try std.fmt.allocPrint(arena, "'{s}_{s}'", .{ bh.name, m.name }), {}),
             else => {},
         };
-        for ([_][]const u8{ MEM_PD_SET, MEM_ETS_GUARD, MEM_ETS_ADD, MEM_ETS_SET, MEM_ETS_AT, MEM_ETS_ROW }) |n| try names.put(arena, n, {});
+        for ([_][]const u8{ MEM_PD_SET, MEM_ETS_GUARD, MEM_ETS_ADD, MEM_ETS_SET, MEM_ETS_AT, MEM_ETS_ROW, MEM_ETS_BUMP }) |n| try names.put(arena, n, {});
         // The candidates, sorted, so the wrappers come out in one order.
         var keys: std.ArrayListUnmanaged([]const u8) = .empty;
         var it = self.fn_labels.keyIterator();

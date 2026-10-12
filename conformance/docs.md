@@ -452,7 +452,9 @@ whole dict, and two processes writing *different* keys at the same time lose one
 of the writes — measured, 20 000 writes each to two keys finished at `19 996`
 and `20 000`. Under **`keyed: true`** each key is its own row: the seed is
 `Dict.empty()` or `Dict.ofEntries([#("a", 1)])` of literals, a row is read as
-`counts.at(k)` and written as `counts = counts.insert(k, v)`, and nothing else
+`counts.at(k)`, written as `counts = counts.insert(k, v)` and counted as
+`counts = counts.bump(k, n)` (`Dict.bump`, integer values, an absent key counting from 0 — one
+atomic `ets:update_counter`, so concurrent bumps of one key lose none), and nothing else
 names the var — measured, two processes writing 20 000 times each to their own
 key finish at `20000` and `20000`; at 10 keys a write is 5× cheaper, at 10 000
 keys 5 000×. Choose `keyed: true` whenever more than one process writes; keep

@@ -186,6 +186,7 @@ const MEM_BOX = "__bp_var";
 /// value is a tuple led by this atom (the `MEM_BOX` reasoning).
 const MEM_ETS_AT = "__bp_ets_at";
 const MEM_ETS_ROW = "__bp_ets_row";
+const MEM_ETS_BUMP = "__bp_ets_bump";
 const MEM_ROWS = "__bp_rows";
 
 const TOP_VAL_UNSET: []const u8 = "__bp_unset";
@@ -5774,6 +5775,8 @@ const Emitter = struct {
     //
     //     counts.at(K)                     '__bp_ets_at'(Name, Rows, K)
     //     counts = counts.insert(K, V)     '__bp_ets_row'(Name, Rows, {K, V})
+    //     counts = counts.bump(K, N)       '__bp_ets_bump'(Name, Rows, K, N)
+    //                                      (ets:update_counter(T, K, N, {K, 0}), decision 340)
 
     /// The row read `name.at(key)` of a `keyed = true` var, or null for any
     /// other call.
@@ -5796,6 +5799,12 @@ const Emitter = struct {
     /// one row `{Key, Value}`.
     fn keyedRowWrite(this: *Emitter, b: Ast.Builder, name: []const u8, value: ast.Expr) anyerror!Ast.Expr {
         const cc = value.call.kind.call;
+        if (std.mem.eql(u8, cc.callee, "bump")) return this.fileCall(b, MEM_ETS_BUMP, &.{
+            try this.memoryKey(b, name),
+            try this.keyedRows(b, name),
+            try this.exprNode(b, cc.args[0].value.*),
+            try this.exprNode(b, cc.args[1].value.*),
+        });
         return this.fileCall(b, MEM_ETS_ROW, &.{
             try this.memoryKey(b, name),
             try this.keyedRows(b, name),
@@ -5918,6 +5927,15 @@ const Emitter = struct {
             .blank,
             try blockFunction(b, MEM_ETS_ROW, &.{ name, V("Rows"), V("Row") }, try b.body(&.{
                 try this.beamPrim(b, "etsPut", &.{ try b.call(MEM_ETS_GUARD, &.{ name, rows_seed }), V("Row") }),
+            })),
+            .blank,
+            try blockFunction(b, MEM_ETS_BUMP, &.{ name, V("Rows"), V("Key"), V("By") }, try b.body(&.{
+                try this.beamPrim(b, "etsBumpFrom", &.{
+                    try b.call(MEM_ETS_GUARD, &.{ name, rows_seed }),
+                    V("Key"),
+                    V("By"),
+                    try b.tuple(&.{ V("Key"), Ast.Expr{ .number = "0" } }),
+                }),
             })),
         });
     }
@@ -11150,7 +11168,7 @@ const Emitter = struct {
             },
             else => {},
         };
-        for ([_][]const u8{ MEM_ETS_GUARD, MEM_ETS_AT, MEM_ETS_ROW }) |n| try names.put(b.arena, n, {});
+        for ([_][]const u8{ MEM_ETS_GUARD, MEM_ETS_AT, MEM_ETS_ROW, MEM_ETS_BUMP }) |n| try names.put(b.arena, n, {});
         _ = this;
         var seen: std.StringHashMapUnmanaged(void) = .empty;
         for (forms) |form| {

@@ -76,6 +76,13 @@ pub type Dict<K, V>(
         return Dict(pairs: filtered.append([#(key, value)]));
     }
 
+    // Decision 340 — `insert(key, (at(key) ?? 0) + by)`: an integer `V`, an
+    // absent key counting from 0. On a `#[@BeamMemory.Ets(keyed = true)]` var,
+    // `counts = counts.bump(k, n)` is one atomic `ets:update_counter`.
+    pub fn bump(self: Self<K, V>, key: K, by: V) -> Dict<K, V> {
+        return self.insert(key, (self.at(key) ?? 0) + by);
+    }
+
     pub fn delete(self: Self<K, V>, key: K) -> Dict<K, V> {
         return Dict(pairs: self.pairs.filter({ p -> p._0 != key }));
     }
@@ -820,7 +827,7 @@ reverse(O) ->
 ```erlang
 -module(std@collections@@Dict).
 -compile({no_auto_import,[size/1]}).
--export([display/1, at/2, hasKey/2, size/1, isEmpty/1, keys/1, values/1, insert/3, delete/2, merge/2, fold/3, mapValues/2, empty/0, ofEntries/1, '__bp_get'/2, '__bp_format'/1]).
+-export([display/1, at/2, hasKey/2, size/1, isEmpty/1, keys/1, values/1, insert/3, bump/3, delete/2, merge/2, fold/3, mapValues/2, empty/0, ofEntries/1, '__bp_get'/2, '__bp_format'/1]).
 
 display(Self) ->
     Parts = lists:foldl(fun(P, Parts) ->
@@ -868,6 +875,14 @@ insert(Self, Key, Value) ->
     end, erlang:element(2, Self)),
     {std@collections@@Dict, (Filtered ++ [{Key, Value}])}.
 
+bump(Self, Key, By) ->
+    insert(Self, Key, '__bp_add'((case at(Self, Key) of
+        undefined ->
+            0;
+        __bp_nullish ->
+            __bp_nullish
+    end), By)).
+
 delete(Self, Key) ->
     {std@collections@@Dict, lists:filter(fun(P) ->
         (erlang:element(1, P) =/= Key)
@@ -903,6 +918,9 @@ ofEntries(Entries) ->
 '__bp_get'(V, pairs) -> erlang:element(2, V).
 
 '__bp_format'(V) -> {text, display(V)}.
+
+'__bp_add'(A, B) when erlang:is_binary(A), erlang:is_binary(B) -> <<A/binary, B/binary>>;
+'__bp_add'(A, B) -> A + B.
 
 '__bp_text'(Value) when erlang:is_binary(Value) -> Value;
 '__bp_text'(Value) -> erlang:iolist_to_binary(io_lib:format(<<"~p">>, [Value])).

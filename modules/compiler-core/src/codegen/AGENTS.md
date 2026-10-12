@@ -1650,7 +1650,9 @@ codegen/
   `keyedRowRead` lowers the read to `'__bp_ets_at'(Name, Rows, K)` (`etsLookup`
   through the guard: the row's value, `undefined` without one) and
   `memoryWrite` → `keyedRowWrite` the write to `'__bp_ets_row'(Name, Rows,
-  {K, V})` (`etsPut` of the one row). `Rows` is the seed folded at compile time
+  {K, V})` (`etsPut` of the one row); decision 340's `name = name.bump(K, N)` (std `Dict.bump`, integer `V`)
+  to `'__bp_ets_bump'(Name, Rows, K, N)` (`etsBumpFrom`: `ets:update_counter(T, K, N, {K, 0})`, atomic;
+  `modules/beam_memory_ets_keyed_bump`; beam's twin is `emitKeyedRowWrite`'s `bump` branch and a 4-arity helper). `Rows` is the seed folded at compile time
   (`keyedSeedRows`, `pub` for the beam backend: a repeated key keeps its last
   value, decision 174), carried to the owner tagged `{'__bp_rows', Rows}` —
   in a module with a keyed var the owner inserts a tagged seed as the table's

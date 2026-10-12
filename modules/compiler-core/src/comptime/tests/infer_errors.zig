@@ -1226,6 +1226,30 @@ test "infer: a keyed Ets var is read and written one row at a time" {
     );
 }
 
+// Decision 340 — `counts = counts.bump(k, n)` is the one per-row increment; the
+// written read-modify-write stays the recompose refusal, and `bump` is for integers.
+test "infer: a keyed Ets var is incremented one row at a time with bump" {
+    try h.assertInfersOk(std.testing.allocator, keyed_decl ++
+        \\fn add(k: string, n: i32) { counts = counts.bump(k, n); }
+    );
+}
+
+test "infer error: a keyed row incremented as a written read-modify-write is the recompose refusal" {
+    const msg = try typeErrorMessage(std.testing.allocator, keyed_decl ++
+        \\fn f(k: string, n: i32) { counts = counts.insert(k, (counts.at(k) ?? 0) + n); }
+    );
+    defer std.testing.allocator.free(msg);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "a write that recomputes it from its own value can lose one of two concurrent runs") != null);
+}
+
+test "infer error: bump on a keyed var reading itself in its amount is the recompose refusal" {
+    const msg = try typeErrorMessage(std.testing.allocator, keyed_decl ++
+        \\fn f(k: string) { counts = counts.bump(k, counts.size()); }
+    );
+    defer std.testing.allocator.free(msg);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "a write that recomputes it from its own value can lose one of two concurrent runs") != null);
+}
+
 test "infer error: a keyed var is written only as `name = name.insert(key, value)`" {
     const bodies = [_][]const u8{
         \\fn f() { counts = Dict.empty(); }

@@ -76,6 +76,13 @@ pub type Dict<K, V>(
         return Dict(pairs: filtered.append([#(key, value)]));
     }
 
+    // Decision 340 — `insert(key, (at(key) ?? 0) + by)`: an integer `V`, an
+    // absent key counting from 0. On a `#[@BeamMemory.Ets(keyed = true)]` var,
+    // `counts = counts.bump(k, n)` is one atomic `ets:update_counter`.
+    pub fn bump(self: Self<K, V>, key: K, by: V) -> Dict<K, V> {
+        return self.insert(key, (self.at(key) ?? 0) + by);
+    }
+
     pub fn delete(self: Self<K, V>, key: K) -> Dict<K, V> {
         return Dict(pairs: self.pairs.filter({ p -> p._0 != key }));
     }
@@ -590,6 +597,8 @@ function __bp_eq(a, b, d) {
     return ((k.length === Object.keys(b).length) && k.every((n) => __bp_eq(a[n], b[n], (d + 1))));
 }
 
+function __bp_int(v, lo, hi, what) { if (v >= lo && v <= hi) { return v + 0; } throw new Error((Number.isFinite(v) ? "integer overflow: " : "integer division by zero: ") + what); }
+
 // behavior Array
 //   length: i32
 //   fn at(...)
@@ -843,6 +852,10 @@ class Dict {
     return (!__bp_eq(p[0], key, 0));
 });
         return new Dict(filtered.concat([[key, value]]));
+    }
+
+    bump(key, by) {
+        return this.insert(key, __bp_int((((() => { const __bp_nullish = this.at(key); if (__bp_nullish != null) { return __bp_nullish; } else { return 0; } })()) + by), -2147483648, 2147483647, "+ on i32 at src/collections.bp:81:53"));
     }
 
     delete(key) {
@@ -1133,6 +1146,7 @@ export declare class Dict<K, V> {
     keys(): Array<K>;
     values(): Array<V>;
     insert(key: K, value: V): Dict<K, V>;
+    bump(key: K, by: V): Dict<K, V>;
     delete(key: K): Dict<K, V>;
     merge(other: Dict<K, V>): Dict<K, V>;
     fold<A>(initial: A, f: (acc: A, key: K, value: V) => A): A;

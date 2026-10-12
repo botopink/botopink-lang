@@ -76,6 +76,13 @@ pub type Dict<K, V>(
         return Dict(pairs: filtered.append([#(key, value)]));
     }
 
+    // Decision 340 — `insert(key, (at(key) ?? 0) + by)`: an integer `V`, an
+    // absent key counting from 0. On a `#[@BeamMemory.Ets(keyed = true)]` var,
+    // `counts = counts.bump(k, n)` is one atomic `ets:update_counter`.
+    pub fn bump(self: Self<K, V>, key: K, by: V) -> Dict<K, V> {
+        return self.insert(key, (self.at(key) ?? 0) + by);
+    }
+
     pub fn delete(self: Self<K, V>, key: K) -> Dict<K, V> {
         return Dict(pairs: self.pairs.filter({ p -> p._0 != key }));
     }
@@ -1036,6 +1043,31 @@ test "order case over Order" {
     local.get $__mem0
     i32.const 4
     i32.add
+    return
+  )
+  (func $Dict_bump (param $self i32) (param $key i32) (param $by i32) (result i32)
+    (local $__bp_nullish i32)
+    (local $__opt0 i32)
+    local.get $self
+    local.get $key
+    local.get $self
+    local.get $key
+    call $Dict_at
+    local.tee $__opt0
+    (if (result i32)
+      (then
+    local.get $__opt0
+    i32.load ;; optional payload
+    local.set $__bp_nullish
+    local.get $__bp_nullish
+      )
+      (else
+    i32.const 0
+      )
+    )
+    local.get $by
+    call $__i32_add_chk
+    call $Dict_insert
     return
   )
   (func $Dict_delete (param $self i32) (param $key i32) (result i32)
@@ -3255,6 +3287,31 @@ fn main() {
     local.get $__mem0
     i32.const 4
     i32.add
+    return
+  )
+  (func $Dict_bump (param $self i32) (param $key i32) (param $by i32) (result i32)
+    (local $__bp_nullish i32)
+    (local $__opt0 i32)
+    local.get $self
+    local.get $key
+    local.get $self
+    local.get $key
+    call $Dict_at
+    local.tee $__opt0
+    (if (result i32)
+      (then
+    local.get $__opt0
+    i32.load ;; optional payload
+    local.set $__bp_nullish
+    local.get $__bp_nullish
+      )
+      (else
+    i32.const 0
+      )
+    )
+    local.get $by
+    call $__i32_add_chk
+    call $Dict_insert
     return
   )
   (func $Dict_delete (param $self i32) (param $key i32) (result i32)

@@ -7339,13 +7339,17 @@ fn noteKeyedRowRead(env: *Env, c: anytype) !void {
 /// read `name`: that is `ets:insert` of the one row. Any other write — a
 /// whole value, `+=`, a row computed from the var's own rows — is refused
 /// before the value is inferred, with the diagnostic of the write it is.
+/// Decision 340 adds the increment `name = name.bump(key, by)` — `ets:update_counter`
+/// of the one row, atomic — with the same rule for its key and its amount; the written
+/// read-modify-write `name.insert(k, (name.at(k) ?? 0) + n)` stays refused as a row
+/// computed from the var's own rows (no pattern is recognised).
 fn checkKeyedWrite(env: *Env, name: []const u8, plus: bool, value: *const ast.Expr, loc: ast.Loc) InferError!void {
     if (keyedVar(env, name) == null) return;
     const row: ?*const ast.Expr = blk: {
         if (plus or value.* != .call or value.call.kind != .call) break :blk null;
         const cc = value.call.kind.call;
         if (cc.is_builtin or cc.optional or cc.trailing.len != 0 or cc.args.len != 2) break :blk null;
-        if (!std.mem.eql(u8, cc.callee, "insert")) break :blk null;
+        if (!std.mem.eql(u8, cc.callee, "insert") and !std.mem.eql(u8, cc.callee, "bump")) break :blk null;
         const recv = cc.receiver orelse break :blk null;
         if (!(recv.* == .identifier and recv.identifier.kind == .ident and std.mem.eql(u8, recv.identifier.kind.ident, name))) break :blk null;
         break :blk recv;
@@ -7357,6 +7361,15 @@ fn checkKeyedWrite(env: *Env, name: []const u8, plus: bool, value: *const ast.Ex
         "Under `keyed: true` the `Dict` lives one ETS row per key; there is no whole value to replace.",
     );
     const cc = value.call.kind.call;
+    if (std.mem.eql(u8, cc.callee, "bump")) {
+        const vt = keyedValueType(keyedVar(env, name).?.ty);
+        if (vt) |t| if (!isIntType(t.deref())) return failAt(
+            env,
+            loc,
+            try std.fmt.allocPrint(env.arena, "`{s}.bump` is atomic only on an integer — the rows of `{s}` are {s}", .{ name, name, try describeForKeyed(env, t) }),
+            try std.fmt.allocPrint(env.arena, "Declare `{s}` a `Dict` of integers, or write a row whole with `{s} = {s}.insert(key, value)`.", .{ name, name, name }),
+        );
+    }
     if (ast.exprMentions(cc.args[0].value.*, name) or ast.exprMentions(cc.args[1].value.*, name)) return failAt(
         env,
         loc,
@@ -7364,6 +7377,15 @@ fn checkKeyedWrite(env: *Env, name: []const u8, plus: bool, value: *const ast.Ex
         try std.fmt.allocPrint(env.arena, "Under `keyed: true` a row is written whole — `{s} = {s}.insert(key, value)` with a key and a value that do not read `{s}`.", .{ name, name, name }),
     );
     try env.keyedRowAccess.put(env.arena, recv.identifier.loc, {});
+}
+
+/// The value type `V` of a `Dict<K, V>`, or null when it is not spelled out.
+fn keyedValueType(t: *T.Type) ?*T.Type {
+    const d = t.deref();
+    return switch (d.*) {
+        .named => |n| if (n.args.len == 2) n.args[1] else null,
+        else => null,
+    };
 }
 
 /// Decision 168 — `name` read anywhere but as the receiver of its own row

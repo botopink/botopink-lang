@@ -165,6 +165,47 @@ test "beam: beam memory ---- a keyed Ets var writes and reads one row per key" {
     });
 }
 
+// Decision 340 — `counts = counts.bump(k, n)` on a keyed var is one
+// `ets:update_counter(T, K, N, {K, 0})`: two processes bumping the SAME key lose none, and an
+// absent key counts from 0.
+const bump_program =
+    \\import {async, collections.Dict} from "std";
+    \\
+    \\#[@BeamMemory.Ets(keyed = true)]
+    \\var counts: Dict<string, i32> = Dict.ofEntries([#("seed", 10)]);
+    \\
+    \\fn worker(n: i32) -> @Task<i32> {
+    \\    var i = 0;
+    \\    while (i < 2000) {
+    \\        i += 1;
+    \\        counts = counts.bump("hot", n);
+    \\    }
+    \\    return i;
+    \\}
+    \\
+    \\fn main() -> @Task<void> {
+    \\    val done = await async.runAll([{ -> worker(1) }, { -> worker(2) }]);
+    \\    counts = counts.bump("seed", 5);
+    \\    @print(done);
+    \\    @print(counts.at("hot"), counts.at("seed"), counts.at("none"));
+    \\}
+;
+
+test "erlang: beam memory ---- bump on a keyed Ets var loses no concurrent increment of one key" {
+    try h.assertErlangRunLog(std.testing.allocator, bump_program, "[2000, 2000]\n6000 15 null\n", &.{
+        "'__bp_ets_bump'(Name, Rows, Key, By) ->",
+        "std@beam:etsBumpFrom(",
+        "{Key, 0}",
+    });
+}
+
+test "beam: beam memory ---- bump on a keyed Ets var loses no concurrent increment of one key" {
+    try h.assertBeamRunLog(std.testing.allocator, bump_program, "[2000, 2000]\n6000 15 null\n", &.{
+        "{function, '__bp_ets_bump', 4,",
+        "{extfunc, std@beam, etsBumpFrom, 4}",
+    });
+}
+
 // A module that imports nothing from std still reaches `std@beam`: the build
 // embeds `std/beam` for any module declaring a `var` (`expandStdImports`), so
 // the remote calls the reader and the writes lower to answer.
