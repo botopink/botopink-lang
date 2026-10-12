@@ -1004,12 +1004,15 @@ test "order case over Order" {
     i32.store ;; kept count
     local.get $__out0
     local.set $filtered
-    i32.const 8
+    i32.const 12
     call $__alloc
     local.set $__mem0
     local.get $__mem0
     i32.const 296
     i32.store
+    local.get $__mem0
+    i32.const 0
+    i32.store offset=8
     local.get $__mem0
     local.get $filtered
     i32.const 8
@@ -1046,12 +1049,15 @@ test "order case over Order" {
     (local $__acc0 i32)
     (local $__out0 i32)
     (local $p i32)
-    i32.const 8
+    i32.const 12
     call $__alloc
     local.set $__mem0
     local.get $__mem0
     i32.const 296
     i32.store
+    local.get $__mem0
+    i32.const 0
+    i32.store offset=8
     local.get $__mem0
     local.get $self
     i32.load ;; .pairs
@@ -1294,12 +1300,15 @@ test "order case over Order" {
         br $__continue
       )
     )
-    i32.const 8
+    i32.const 12
     call $__alloc
     local.set $__mem2
     local.get $__mem2
     i32.const 296
     i32.store
+    local.get $__mem2
+    i32.const 0
+    i32.store offset=8
     local.get $__mem2
     local.get $out
     i32.store offset=4
@@ -1311,12 +1320,15 @@ test "order case over Order" {
   (func $Dict_empty (result i32)
     (local $__mem0 i32)
     (local $__mem1 i32)
-    i32.const 8
+    i32.const 12
     call $__alloc
     local.set $__mem0
     local.get $__mem0
     i32.const 296
     i32.store
+    local.get $__mem0
+    i32.const 0
+    i32.store offset=8
     local.get $__mem0
     i32.const 4
     call $__alloc
@@ -1340,12 +1352,15 @@ test "order case over Order" {
     (local $__len0 i32)
     (local $__acc0 i32)
     (local $e i32)
-    i32.const 8
+    i32.const 12
     call $__alloc
     local.set $__mem0
     local.get $__mem0
     i32.const 296
     i32.store
+    local.get $__mem0
+    i32.const 0
+    i32.store offset=8
     local.get $__mem0
     i32.const 4
     call $__alloc
@@ -1482,12 +1497,15 @@ test "order case over Order" {
     local.get $self
       )
       (else
-    i32.const 8
+    i32.const 12
     call $__alloc
     local.set $__mem0
     local.get $__mem0
     i32.const 328
     i32.store
+    local.get $__mem0
+    i32.const 0
+    i32.store offset=8
     local.get $__mem0
     local.get $self
     i32.load ;; .items
@@ -1518,12 +1536,15 @@ test "order case over Order" {
     (local $__acc0 i32)
     (local $__out0 i32)
     (local $item i32)
-    i32.const 8
+    i32.const 12
     call $__alloc
     local.set $__mem0
     local.get $__mem0
     i32.const 328
     i32.store
+    local.get $__mem0
+    i32.const 0
+    i32.store offset=8
     local.get $__mem0
     local.get $self
     i32.load ;; .items
@@ -1645,12 +1666,15 @@ test "order case over Order" {
     (local $__acc0 i32)
     (local $__out0 i32)
     (local $x i32)
-    i32.const 8
+    i32.const 12
     call $__alloc
     local.set $__mem0
     local.get $__mem0
     i32.const 328
     i32.store
+    local.get $__mem0
+    i32.const 0
+    i32.store offset=8
     local.get $__mem0
     local.get $self
     i32.load ;; .items
@@ -1731,12 +1755,15 @@ test "order case over Order" {
     (local $__acc0 i32)
     (local $__out0 i32)
     (local $x i32)
-    i32.const 8
+    i32.const 12
     call $__alloc
     local.set $__mem0
     local.get $__mem0
     i32.const 328
     i32.store
+    local.get $__mem0
+    i32.const 0
+    i32.store offset=8
     local.get $__mem0
     local.get $self
     i32.load ;; .items
@@ -1812,12 +1839,15 @@ test "order case over Order" {
   (func $Set_empty (result i32)
     (local $__mem0 i32)
     (local $__mem1 i32)
-    i32.const 8
+    i32.const 12
     call $__alloc
     local.set $__mem0
     local.get $__mem0
     i32.const 328
     i32.store
+    local.get $__mem0
+    i32.const 0
+    i32.store offset=8
     local.get $__mem0
     i32.const 4
     call $__alloc
@@ -1841,12 +1871,15 @@ test "order case over Order" {
     (local $__len0 i32)
     (local $__acc0 i32)
     (local $x i32)
-    i32.const 8
+    i32.const 12
     call $__alloc
     local.set $__mem0
     local.get $__mem0
     i32.const 328
     i32.store
+    local.get $__mem0
+    i32.const 0
+    i32.store offset=8
     local.get $__mem0
     i32.const 4
     call $__alloc
@@ -1924,12 +1957,15 @@ test "order case over Order" {
   (func $Queue_enqueue (param $self i32) (param $item i32) (result i32)
     (local $__mem0 i32)
     (local $__mem1 i32)
-    i32.const 8
+    i32.const 12
     call $__alloc
     local.set $__mem0
     local.get $__mem0
     i32.const 348
     i32.store
+    local.get $__mem0
+    i32.const 0
+    i32.store offset=8
     local.get $__mem0
     local.get $self
     i32.load ;; .items
@@ -1972,12 +2008,15 @@ test "order case over Order" {
     call $__alloc
     local.set $__mem0
     local.get $__mem0
-    i32.const 8
+    i32.const 12
     call $__alloc
     local.set $__mem1
     local.get $__mem1
     i32.const 348
     i32.store
+    local.get $__mem1
+    i32.const 0
+    i32.store offset=8
     local.get $__mem1
     local.get $rest
     i32.store offset=4
@@ -2006,12 +2045,15 @@ test "order case over Order" {
   (func $Queue_empty (result i32)
     (local $__mem0 i32)
     (local $__mem1 i32)
-    i32.const 8
+    i32.const 12
     call $__alloc
     local.set $__mem0
     local.get $__mem0
     i32.const 348
     i32.store
+    local.get $__mem0
+    i32.const 0
+    i32.store offset=8
     local.get $__mem0
     i32.const 4
     call $__alloc
@@ -2028,12 +2070,15 @@ test "order case over Order" {
   )
   (func $Queue_fromList (param $xs i32) (result i32)
     (local $__mem0 i32)
-    i32.const 8
+    i32.const 12
     call $__alloc
     local.set $__mem0
     local.get $__mem0
     i32.const 348
     i32.store
+    local.get $__mem0
+    i32.const 0
+    i32.store offset=8
     local.get $__mem0
     local.get $xs
     i32.store offset=4
@@ -3125,12 +3170,15 @@ fn main() {
     i32.store ;; kept count
     local.get $__out0
     local.set $filtered
-    i32.const 8
+    i32.const 12
     call $__alloc
     local.set $__mem0
     local.get $__mem0
     i32.const 296
     i32.store
+    local.get $__mem0
+    i32.const 0
+    i32.store offset=8
     local.get $__mem0
     local.get $filtered
     i32.const 8
@@ -3167,12 +3215,15 @@ fn main() {
     (local $__acc0 i32)
     (local $__out0 i32)
     (local $p i32)
-    i32.const 8
+    i32.const 12
     call $__alloc
     local.set $__mem0
     local.get $__mem0
     i32.const 296
     i32.store
+    local.get $__mem0
+    i32.const 0
+    i32.store offset=8
     local.get $__mem0
     local.get $self
     i32.load ;; .pairs
@@ -3415,12 +3466,15 @@ fn main() {
         br $__continue
       )
     )
-    i32.const 8
+    i32.const 12
     call $__alloc
     local.set $__mem2
     local.get $__mem2
     i32.const 296
     i32.store
+    local.get $__mem2
+    i32.const 0
+    i32.store offset=8
     local.get $__mem2
     local.get $out
     i32.store offset=4
@@ -3432,12 +3486,15 @@ fn main() {
   (func $Dict_empty (result i32)
     (local $__mem0 i32)
     (local $__mem1 i32)
-    i32.const 8
+    i32.const 12
     call $__alloc
     local.set $__mem0
     local.get $__mem0
     i32.const 296
     i32.store
+    local.get $__mem0
+    i32.const 0
+    i32.store offset=8
     local.get $__mem0
     i32.const 4
     call $__alloc
@@ -3461,12 +3518,15 @@ fn main() {
     (local $__len0 i32)
     (local $__acc0 i32)
     (local $e i32)
-    i32.const 8
+    i32.const 12
     call $__alloc
     local.set $__mem0
     local.get $__mem0
     i32.const 296
     i32.store
+    local.get $__mem0
+    i32.const 0
+    i32.store offset=8
     local.get $__mem0
     i32.const 4
     call $__alloc
@@ -3591,12 +3651,15 @@ fn main() {
     local.get $self
       )
       (else
-    i32.const 8
+    i32.const 12
     call $__alloc
     local.set $__mem0
     local.get $__mem0
     i32.const 328
     i32.store
+    local.get $__mem0
+    i32.const 0
+    i32.store offset=8
     local.get $__mem0
     local.get $self
     i32.load ;; .items
@@ -3627,12 +3690,15 @@ fn main() {
     (local $__acc0 i32)
     (local $__out0 i32)
     (local $item i32)
-    i32.const 8
+    i32.const 12
     call $__alloc
     local.set $__mem0
     local.get $__mem0
     i32.const 328
     i32.store
+    local.get $__mem0
+    i32.const 0
+    i32.store offset=8
     local.get $__mem0
     local.get $self
     i32.load ;; .items
@@ -3754,12 +3820,15 @@ fn main() {
     (local $__acc0 i32)
     (local $__out0 i32)
     (local $x i32)
-    i32.const 8
+    i32.const 12
     call $__alloc
     local.set $__mem0
     local.get $__mem0
     i32.const 328
     i32.store
+    local.get $__mem0
+    i32.const 0
+    i32.store offset=8
     local.get $__mem0
     local.get $self
     i32.load ;; .items
@@ -3840,12 +3909,15 @@ fn main() {
     (local $__acc0 i32)
     (local $__out0 i32)
     (local $x i32)
-    i32.const 8
+    i32.const 12
     call $__alloc
     local.set $__mem0
     local.get $__mem0
     i32.const 328
     i32.store
+    local.get $__mem0
+    i32.const 0
+    i32.store offset=8
     local.get $__mem0
     local.get $self
     i32.load ;; .items
@@ -3921,12 +3993,15 @@ fn main() {
   (func $Set_empty (result i32)
     (local $__mem0 i32)
     (local $__mem1 i32)
-    i32.const 8
+    i32.const 12
     call $__alloc
     local.set $__mem0
     local.get $__mem0
     i32.const 328
     i32.store
+    local.get $__mem0
+    i32.const 0
+    i32.store offset=8
     local.get $__mem0
     i32.const 4
     call $__alloc
@@ -3950,12 +4025,15 @@ fn main() {
     (local $__len0 i32)
     (local $__acc0 i32)
     (local $x i32)
-    i32.const 8
+    i32.const 12
     call $__alloc
     local.set $__mem0
     local.get $__mem0
     i32.const 328
     i32.store
+    local.get $__mem0
+    i32.const 0
+    i32.store offset=8
     local.get $__mem0
     i32.const 4
     call $__alloc
@@ -4022,12 +4100,15 @@ fn main() {
   (func $Queue_enqueue (param $self i32) (param $item i32) (result i32)
     (local $__mem0 i32)
     (local $__mem1 i32)
-    i32.const 8
+    i32.const 12
     call $__alloc
     local.set $__mem0
     local.get $__mem0
     i32.const 348
     i32.store
+    local.get $__mem0
+    i32.const 0
+    i32.store offset=8
     local.get $__mem0
     local.get $self
     i32.load ;; .items
@@ -4070,12 +4151,15 @@ fn main() {
     call $__alloc
     local.set $__mem0
     local.get $__mem0
-    i32.const 8
+    i32.const 12
     call $__alloc
     local.set $__mem1
     local.get $__mem1
     i32.const 348
     i32.store
+    local.get $__mem1
+    i32.const 0
+    i32.store offset=8
     local.get $__mem1
     local.get $rest
     i32.store offset=4
@@ -4104,12 +4188,15 @@ fn main() {
   (func $Queue_empty (result i32)
     (local $__mem0 i32)
     (local $__mem1 i32)
-    i32.const 8
+    i32.const 12
     call $__alloc
     local.set $__mem0
     local.get $__mem0
     i32.const 348
     i32.store
+    local.get $__mem0
+    i32.const 0
+    i32.store offset=8
     local.get $__mem0
     i32.const 4
     call $__alloc
@@ -4126,12 +4213,15 @@ fn main() {
   )
   (func $Queue_fromList (param $xs i32) (result i32)
     (local $__mem0 i32)
-    i32.const 8
+    i32.const 12
     call $__alloc
     local.set $__mem0
     local.get $__mem0
     i32.const 348
     i32.store
+    local.get $__mem0
+    i32.const 0
+    i32.store offset=8
     local.get $__mem0
     local.get $xs
     i32.store offset=4
@@ -4303,12 +4393,15 @@ fn main() {
     i32.store ;; kept count
     local.get $__out0
     local.set $filtered
-    i32.const 8
+    i32.const 12
     call $__alloc
     local.set $__mem0
     local.get $__mem0
     i32.const 296
     i32.store
+    local.get $__mem0
+    i32.const 0
+    i32.store offset=8
     local.get $__mem0
     local.get $filtered
     i32.const 8

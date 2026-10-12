@@ -147,7 +147,7 @@ fn frameParent(f: Frame) -> unknown {
   (data (i32.const 408) "\21\00\00\00context-unbound: no `use provide(")
   (data (i32.const 448) "\20\00\00\00, ...)` above this `use context(")
   (data (i32.const 484) "\11\00\00\00)` (decision 354)")
-  (data (i32.const 508) "\19\00\00\00R\08Rendered\02\05valuei\05scopeT")
+  (data (i32.const 508) "\1b\00\00\00R\08Rendered\02\05valueGsi\05scopeT")
   (global $__heap_ptr (mut i32) (i32.const 540))
   ;; Contexts (decision 354) — what a component's body reads from above it,
   ;; React's context in botopink's spelling.
@@ -344,12 +344,15 @@ fn frameParent(f: Frame) -> unknown {
   ;; A body's answer: its result over its children's scope.
   (func $rendered (export "rendered") (param $value i32) (param $scope i32) (result i32)
     (local $__mem0 i32)
-    i32.const 12
+    i32.const 16
     call $__alloc
     local.set $__mem0
     local.get $__mem0
     i32.const 512
     i32.store
+    local.get $__mem0
+    i32.const 0
+    i32.store offset=12
     local.get $__mem0
     local.get $value
     i32.store offset=4

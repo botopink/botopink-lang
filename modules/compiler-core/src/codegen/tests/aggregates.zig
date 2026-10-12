@@ -568,3 +568,53 @@ test "js: behavior literal ---- a method taking self is called on the literal" {
     try h.assertJsRunLog(std.testing.allocator, src, "hi bo\n");
     try h.assertWasmRunLog(std.testing.allocator, src, "hi bo\n");
 }
+
+test "wasm: a string in a generic declaration's type-parameter field prints as text" {
+    // The descriptor is the declaration's, shared by every instantiation, so a
+    // field written `T` could not say it held a string: `Tree.Leaf(value: 280)`.
+    // The construction site stores a mask after the fields and the printer
+    // reads it (`G s i`).
+    const src =
+        \\type Tree<T> {
+        \\    Leaf(value: T),
+        \\    Node(left: Tree<T>, right: Tree<T>),
+        \\}
+        \\type Box<T>(value: T, n: i32)
+        \\fn main() {
+        \\    @print(Tree.Leaf(value: "a"));
+        \\    @print(Tree.Leaf(value: 7));
+        \\    @print(Box(value: "b", n: 2));
+        \\    @print(Box(value: 3, n: 4));
+        \\}
+    ;
+    try h.assertWasmRunLog(std.testing.allocator, src, "Tree.Leaf(value: \"a\")\nTree.Leaf(value: 7)\nBox(value: \"b\", n: 2)\nBox(value: 3, n: 4)\n");
+}
+
+test "wasm: a record out of try await keeps its string field a string" {
+    // `try await f()` and `try await f() catch d` bound a name nothing typed,
+    // so `u.name` was a word and `"H" + u.name` concatenated its address.
+    const src =
+        \\type User(id: i32, name: string)
+        \\fn fetchUser(id: i32) -> @Task<@Result<User, string>> {
+        \\    if (id <= 0) throw "no user";
+        \\    return User(id: id, name: "ana");
+        \\}
+        \\fn viaCatch(id: i32) -> @Task<string> {
+        \\    val u = try await fetchUser(id) catch User(id: 0, name: "guest");
+        \\    return "H" + u.name;
+        \\}
+        \\fn viaBlock() -> @Task<@Result<string, string>> {
+        \\    val first = async {
+        \\        return try await fetchUser(1);
+        \\    };
+        \\    val u = try await first;
+        \\    return "B" + u.name;
+        \\}
+        \\pub fn main() -> @Task<void> {
+        \\    @print(await viaCatch(0));
+        \\    val r = await viaBlock();
+        \\    @print(r.unwrapOr("none"));
+        \\}
+    ;
+    try h.assertWasmRunLog(std.testing.allocator, src, "Hguest\nBana\n");
+}

@@ -1066,6 +1066,14 @@ descriptor per variant, not per enum**: a variant IS a declaration for the
 purpose of identity, and that is what lets the printer name `Shape.Circle`
 without walking past the variants before it.
 
+A field written as one of the declaration's type parameters (`value: T`) has the
+shape `Gsi`, and a value of a generic declaration carries one more slot after its
+fields: a mask whose bit `i` says the argument of field `i` was a string, stored
+by the construction site (`genericMask`). The descriptor stays one per
+declaration, so identity tests are untouched; `$__print_tagged_raw` reads the
+mask and prints the field by `s` or by `i`. A value built where the argument's
+type is unknown (a parameter typed `T` of a generic body) keeps the `i` reading.
+
 * `$__print_tagged_raw` (in the `print_shaped` group, because the two call each
   other) writes decision 8 §7's text: `Point(x: 1, y: 2)`, `Shape.Dot`,
   `Shape.Circle(radius: 4)`. The shape walker gained a `T` arm that calls it, so

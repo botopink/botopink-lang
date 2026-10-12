@@ -1824,6 +1824,8 @@ const Emitter = struct {
     /// The type parameters a record declares (`type Pair<A>(…)`), for the
     /// type arguments a constructor call binds (`ctorTypeRef`). In `reg_arena`.
     record_generics: std.StringHashMapUnmanaged([]const ast.GenericParam) = .empty,
+    /// The same for a generic enum (`type Tree<T> { Leaf(value: T), … }`).
+    enum_generics: std.StringHashMapUnmanaged([]const ast.GenericParam) = .empty,
     /// record/struct name → ordered field type-names (parallel to `records`).
     /// Used to chain-infer the type of `recv.a.b` (`a`'s declared type drives
     /// the lookup for `.b`). Empty/unknown types stay as `""`.
@@ -2711,6 +2713,7 @@ const Emitter = struct {
                 },
                 .enum_ => {
                     try self.enums.put(tdecl.name, tdecl.variants());
+                    if (tdecl.genericParams.len > 0) try self.enum_generics.put(ra, tdecl.name, tdecl.genericParams);
                     if (tdecl.displayName) |shown| try self.printed_names.put(self.reg_arena.allocator(), tdecl.name, shown);
                 },
             },
@@ -2955,23 +2958,9 @@ const Emitter = struct {
             // `val v = try readValue(doc, i); v.next` (`std/json`'s reader)
             // reads a field of a `Parsed`, which nothing typed before.
             .jump => |j| switch (j.kind) {
-                .try_ => |t| blk: {
-                    const inner = t orelse break :blk null;
-                    switch (inner.*) {
-                        .call => |c| switch (c.kind) {
-                            .call => |cc| {
-                                const sym = self.assocSym(cc) orelse cc.callee;
-                                const rt = self.fn_ret_typerefs.get(sym) orelse break :blk null;
-                                if (rt != .generic) break :blk null;
-                                const g = rt.generic;
-                                if (!std.mem.endsWith(u8, g.name, "Result") or g.args.len != 2) break :blk null;
-                                break :blk self.resolveRecordName(typeRefName(g.args[0]));
-                            },
-                            else => break :blk null,
-                        },
-                        else => break :blk null,
-                    }
-                },
+                .try_ => |t| if (t) |inner| (self.resultPayloadRecord(inner.*) orelse
+                    // A name bound to a task whose value is the payload (`val first = async { return try … }`).
+                    (if (inner.* == .jump) self.recordTypeOfExpr(inner.*) else null)) else null,
                 else => null,
             },
             // `a ?? b` — the transform pass writes it as `if (a) { <this> ->
@@ -2989,10 +2978,48 @@ const Emitter = struct {
                     if (els.len == 0) break :blk null;
                     break :blk self.recordTypeOfExpr(els[els.len - 1].expr);
                 },
-                else => null,
+                // `try f(…) catch H`: the handler and the call's ok payload
+                // are one type; either names the record.
+                .tryCatch => |tc| self.recordTypeOfExpr(tc.handler.*) orelse self.resultPayloadRecord(tc.expr.*),
             },
             else => null,
         };
+    }
+
+    /// The record an `Ok` payload of `e` is, when `e` is a call whose declared
+    /// return is a `@Result<Rec, _>` (or a `@Task` of one) — `await` and
+    /// grouping are looked through, a task being its value here.
+    fn resultPayloadRecord(self: *Emitter, e: ast.Expr) ?[]const u8 {
+        var cur = e;
+        while (true) {
+            switch (cur) {
+                .jump => |j| switch (j.kind) {
+                    .await_ => |a| cur = a.*,
+                    else => return null,
+                },
+                .collection => |col| switch (col.kind) {
+                    .grouped => |inner| cur = inner.*,
+                    else => return null,
+                },
+                // A name bound to a task or a `@Result`: its recorded shape.
+                .identifier => {
+                    const ok = (self.resultShapeOf(cur) orelse return null).ok orelse return null;
+                    return self.resolveRecordName(typeRefName(ok));
+                },
+                .call => |c| switch (c.kind) {
+                    .call => |cc| {
+                        const sym = self.assocSym(cc) orelse cc.callee;
+                        const rt = eagerTypeRef(self.fn_ret_typerefs.get(sym) orelse return null);
+                        if (rt != .generic) return null;
+                        const g = rt.generic;
+                        if (!std.mem.endsWith(u8, g.name, "Result") or g.args.len != 2) return null;
+                        return self.resolveRecordName(typeRefName(g.args[0]));
+                    },
+                    else => return null,
+                },
+                else => return null,
+            }
+        }
     }
 
     /// Decision 8 §7's two rows this front cannot close: a value whose printed
@@ -13604,7 +13631,12 @@ const Emitter = struct {
         const expected_ctor = self.expected_ctor;
         self.expected_ctor = null;
         const desc = try self.typeDescriptorAddr(cc.callee, null);
-        const base = try self.allocTagged(desc orelse 0, @intCast(fields.len * 4));
+        const rgens = self.record_generics.get(cc.callee) orelse &.{};
+        const base = try self.allocTagged(desc orelse 0, @intCast((fields.len + @intFromBool(rgens.len > 0)) * 4));
+        if (rgens.len > 0) {
+            const refs = self.record_field_typerefs.get(cc.callee) orelse &.{};
+            try self.storeSlotConst(base, @intCast(tag_header_bytes + fields.len * 4), self.genericMask(cc, fields, refs, rgens));
+        }
         for (fields, 0..) |fname, i| {
             const off: u32 = @intCast(tag_header_bytes + i * 4);
             if (self.argForField(cc.args, fname, i)) |arg| {
@@ -13678,8 +13710,19 @@ const Emitter = struct {
     /// lives at offset 0; payload fields follow at 4, 8, ...
     fn lowerEnumCtor(self: *Emitter, cc: anytype, tag: u32, variant: ast.EnumVariant) anyerror!void {
         const nslots = 1 + variant.fields.len;
-        const desc = try self.variantDescriptorAddr(receiverName(cc) orelse self.enumOfVariant(variant.name) orelse "", variant);
-        const base = try self.allocTagged(desc orelse 0, @intCast(nslots * 4));
+        const ename = receiverName(cc) orelse self.enumOfVariant(variant.name) orelse "";
+        const desc = try self.variantDescriptorAddr(ename, variant);
+        const egens = self.enum_generics.get(ename) orelse &.{};
+        const base = try self.allocTagged(desc orelse 0, @intCast((nslots + @intFromBool(egens.len > 0)) * 4));
+        if (egens.len > 0) {
+            var names: std.ArrayListUnmanaged([]const u8) = .empty;
+            var refs: std.ArrayListUnmanaged(ast.TypeRef) = .empty;
+            for (variant.fields) |vf| {
+                try names.append(self.arena(), vf.name);
+                try refs.append(self.arena(), vf.typeRef);
+            }
+            try self.storeSlotConst(base, @intCast(tag_header_bytes + nslots * 4), self.genericMask(cc, names.items, refs.items, egens));
+        }
         try self.storeSlotConst(base, tag_header_bytes, tag);
         for (variant.fields, 0..) |vf, i| {
             const off: u32 = @intCast(tag_header_bytes + (i + 1) * 4);
@@ -13863,7 +13906,7 @@ const Emitter = struct {
         const fields = self.records.get(name) orelse return null;
         var out: std.ArrayListUnmanaged(u8) = .empty;
         try out.append(self.arena(), 'R');
-        try self.appendNameAndFields(&out, name, fields, self.record_field_typerefs.get(name), true);
+        try self.appendNameAndFields(&out, name, fields, self.record_field_typerefs.get(name), true, self.record_generics.get(name) orelse &.{});
         const seg = try self.internString(out.items);
         const addr = seg.offset + 4;
         try self.type_descs.put(name, addr);
@@ -13986,7 +14029,7 @@ const Emitter = struct {
         }
         var out: std.ArrayListUnmanaged(u8) = .empty;
         try out.append(self.arena(), 'V');
-        try self.appendNameAndFields(&out, key, names.items, refs.items, false);
+        try self.appendNameAndFields(&out, key, names.items, refs.items, false, self.enum_generics.get(ename) orelse &.{});
         const seg = try self.internString(out.items);
         const addr = seg.offset + 4;
         try self.type_descs.put(key, addr);
@@ -14006,6 +14049,9 @@ const Emitter = struct {
         /// variant's payload holds only an `i32` word, the one an `i64` slot
         /// is ever given.
         record: bool,
+        /// The type parameters of the declaration: a field written as one is
+        /// shaped `G s i` (its construction site says which), see `genericMask`.
+        generics: []const ast.GenericParam,
     ) anyerror!void {
         const a = self.arena();
         const shown = self.printed_names.get(name) orelse displayTypeName(name);
@@ -14026,8 +14072,30 @@ const Emitter = struct {
                 try out.append(a, c);
                 continue;
             };
+            if (tref) |t| if (t == .named and isGenericParamName(t.named, generics, &.{})) {
+                try out.appendSlice(a, "Gsi");
+                continue;
+            };
             try out.appendSlice(a, try self.fieldShape(tref));
         }
+    }
+
+    /// Whether a declaration's field is written as one of its type parameters.
+    fn isGenericField(t: ast.TypeRef, generics: []const ast.GenericParam) bool {
+        return t == .named and isGenericParamName(t.named, generics, &.{});
+    }
+
+    /// Bit `i` set when the argument of the type-parameter field `i` is a
+    /// string — the one the printer cannot tell from a word by itself. Stored
+    /// after the fields of a value of a generic declaration.
+    fn genericMask(self: *Emitter, cc: anytype, names: []const []const u8, refs: []const ast.TypeRef, generics: []const ast.GenericParam) u32 {
+        var mask: u32 = 0;
+        for (names, 0..) |fname, i| {
+            if (i >= refs.len or i >= 32 or !isGenericField(refs[i], generics)) continue;
+            const arg = self.argForField(cc.args, fname, i) orelse continue;
+            if (self.isStringExpr(arg.value.*)) mask |= @as(u32, 1) << @intCast(i);
+        }
+        return mask;
     }
 
     /// The `$__print_shaped_raw` code a field's declared type takes. An
@@ -14354,6 +14422,8 @@ const Emitter = struct {
                 else => null,
             },
             .useHook => |uh| self.resultShapeOf(uh.kind.inner.*),
+            // `async { return f(); }` is the task `f` answers.
+            .function => if (asyncBlockValue(e)) |v| self.resultShapeOf(v) else null,
             else => null,
         };
     }

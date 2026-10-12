@@ -148,8 +148,21 @@ const print_tagged_raw = func("__print_tagged_raw", &.{"v"}, null, i32s(&.{ "d",
         call("__write_bytes"),
     } ++ slot("b", "i") ++ [_]Instr{
         c32(4),    op("sub"), load(0),
-        get("p"),  c32(1),    call("__print_shaped_raw"),
-        set("p"),  get("i"),  c32(1),
+        set("s"),
+        // `G s i` — a field written as the declaration's type parameter. Its
+        // construction site stored, after the fields, a mask whose bit `i` says
+        // the argument was a string: the `s` shape then, the `i` one if not.
+        get("p"),  load8(0),  c32('G'), op("eq"),
+        whenElse(&.{
+            get("s"), get("p"), c32(2), op("add"),
+            get("b"), get("k"), c32(4), op("mul"), op("add"), load(0),
+            get("i"), op("shr_u"), c32(1), op("and"), op("sub"),
+            c32(1),   call("__print_shaped_raw"), .drop,
+            get("p"), c32(3), op("add"), set("p"),
+        }, &.{
+            get("s"), get("p"), c32(1), call("__print_shaped_raw"), set("p"),
+        }),
+        get("i"),  c32(1),
         op("add"), set("i"),  again,
     })),
     get("k"),                                                                               when(&(putByte(')') ++ [_]Instr{call("__write_bytes")})),

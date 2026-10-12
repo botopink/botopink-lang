@@ -730,10 +730,44 @@ fn main() {
         i32.const 4
         i32.sub
         i32.load
+        local.set $s
         local.get $p
-        i32.const 1
-        call $__print_shaped_raw
-        local.set $p
+        i32.load8_u
+        i32.const 71
+        i32.eq
+        (if
+          (then
+            local.get $s
+            local.get $p
+            i32.const 2
+            i32.add
+            local.get $b
+            local.get $k
+            i32.const 4
+            i32.mul
+            i32.add
+            i32.load
+            local.get $i
+            i32.shr_u
+            i32.const 1
+            i32.and
+            i32.sub
+            i32.const 1
+            call $__print_shaped_raw
+            drop
+            local.get $p
+            i32.const 3
+            i32.add
+            local.set $p
+          )
+          (else
+            local.get $s
+            local.get $p
+            i32.const 1
+            call $__print_shaped_raw
+            local.set $p
+          )
+        )
         local.get $i
         i32.const 1
         i32.add

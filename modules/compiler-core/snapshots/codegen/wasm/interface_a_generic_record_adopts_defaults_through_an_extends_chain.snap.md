@@ -63,12 +63,15 @@ fn main() {
     (local $__mem3 i32)
     (local $__mem4 i32)
     (local $__mem5 i32)
-    i32.const 8
+    i32.const 12
     call $__alloc
     local.set $__mem0
     local.get $__mem0
     i32.const 260
     i32.store
+    local.get $__mem0
+    i32.const 0
+    i32.store offset=8
     local.get $__mem0
     i32.const 4
     call $__alloc
@@ -83,12 +86,15 @@ fn main() {
     i32.add
     call $Bag_isEmpty
     call $__print_bool
-    i32.const 8
+    i32.const 12
     call $__alloc
     local.set $__mem2
     local.get $__mem2
     i32.const 260
     i32.store
+    local.get $__mem2
+    i32.const 0
+    i32.store offset=8
     local.get $__mem2
     i32.const 8
     call $__alloc
@@ -106,12 +112,15 @@ fn main() {
     i32.add
     call $Bag_isEmpty
     call $__print_bool
-    i32.const 8
+    i32.const 12
     call $__alloc
     local.set $__mem4
     local.get $__mem4
     i32.const 260
     i32.store
+    local.get $__mem4
+    i32.const 0
+    i32.store offset=8
     local.get $__mem4
     i32.const 12
     call $__alloc
