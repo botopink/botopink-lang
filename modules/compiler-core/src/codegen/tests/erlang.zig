@@ -262,3 +262,27 @@ test "erlang: a library's field read is its closure's alone, whatever its consum
     // under `crowded` alone.
     try h.assertLibrarySameUnder(std.testing.allocator, .erlang, &.{ "shelf", "rival" }, "shelf", &h.closure_plain, &h.closure_crowded);
 }
+
+test "erlang: a `_`-prefixed module-level val is a binding its readers see, not a discarded statement" {
+    // Only `_`, `_loop` and `_main…` are statements. `val _c = …` was inlined
+    // into `'_botopink_init'/0` with no 0-arity function, so `_d`'s initialiser
+    // and `main` referred to an unbound variable and `erlc` refused the module.
+    try h.assertErlangRunLog(std.testing.allocator,
+        \\type Box(n: i32) {
+        \\    fn get(self: Self) -> i32 {
+        \\        return self.n;
+        \\    }
+        \\}
+        \\
+        \\fn double(x: i32) -> i32 {
+        \\    return x * 2;
+        \\}
+        \\
+        \\val _c = Box(n: 5);
+        \\val _d = double(_c.get());
+        \\
+        \\pub fn main() {
+        \\    @print(_d);
+        \\}
+    , "10\n", &.{"'_c'() ->"});
+}

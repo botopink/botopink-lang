@@ -161,7 +161,7 @@ fn isMain0(f: ast.FnDecl) bool {
 }
 
 fn isSyntheticEntrypointVal(v: ast.ValDecl) bool {
-    return std.mem.startsWith(u8, v.name, "_");
+    return v.isStatement();
 }
 
 /// A synthetic statement that only calls `main()` — the entrypoint wrapper

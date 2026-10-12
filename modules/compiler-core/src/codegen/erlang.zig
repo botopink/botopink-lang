@@ -165,7 +165,7 @@ fn isZeroArgMainCallExpr(expr: ast.Expr) bool {
 
 fn isSyntheticMainEntrypointCall(v: ast.ValDecl) bool {
     if (std.mem.startsWith(u8, v.name, "_main")) return true;
-    return std.mem.startsWith(u8, v.name, "_") and isZeroArgMainCallExpr(v.value.*);
+    return v.isStatement() and isZeroArgMainCallExpr(v.value.*);
 }
 
 /// The atom a module-level `val` caches under before it has a value. A `val`
@@ -2072,11 +2072,11 @@ fn emitErlangModule(
             else => continue,
         };
         if (!v.value.isComptimeExpr() or isSyntheticMainEntrypointCall(v)) continue;
-        if (std.mem.startsWith(u8, v.name, "_")) continue;
+        if (v.isStatement()) continue;
         em.top_vals.put(v.name, {}) catch {};
     }
     for (top_runtime_vals.items) |v| {
-        if (std.mem.startsWith(u8, v.name, "_")) continue;
+        if (v.isStatement()) continue;
         em.top_vals.put(v.name, {}) catch {};
     }
     defer em.module_vars.deinit(alloc);
@@ -2248,7 +2248,7 @@ fn emitErlangModule(
             // keeps its 0-arity form (see `top_vals`). This does not depend on
             // the mode: test and build emit the same forms.
             .val => |v| if (v.value.isComptimeExpr() or
-                !std.mem.startsWith(u8, v.name, "_")) try em.topValForms(b, &forms, v),
+                !v.isStatement()) try em.topValForms(b, &forms, v),
             .@"fn" => |f| {
                 if (!f.isExternal()) {
                     try em.fnForms(b, &forms, f);
@@ -5605,7 +5605,7 @@ const Emitter = struct {
         this.resetLocals();
         var stmts: std.ArrayListUnmanaged(Ast.Expr) = .empty;
         for (body) |v| {
-            if (std.mem.startsWith(u8, v.name, "_")) {
+            if (v.isStatement()) {
                 try stmts.append(b.arena, try this.exprNode(b, v.value.*));
             } else {
                 try stmts.append(b.arena, try b.call(v.name, &.{}));

@@ -524,7 +524,7 @@ fn bodyExits(body: []const ast.Stmt) bool {
 /// model script-level statements (names starting with `_`). A *named* val is a
 /// 0-arity function; a synthetic one is a statement run by `'_botopink_main'`.
 fn isSyntheticEntrypointVal(v: ast.ValDecl) bool {
-    return std.mem.startsWith(u8, v.name, "_");
+    return v.isStatement();
 }
 
 /// The atom a cached module-level `val` reads as "not evaluated yet"

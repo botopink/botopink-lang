@@ -2683,6 +2683,16 @@ pub const ValDecl = struct {
     typeAnnotation: ?TypeRef = null,
     value: *Expr,
 
+    /// A module-level statement rather than a binding: the discard `val _ = …`
+    /// and the statements the parser and the comptime transform synthesise
+    /// (`_loop`, `_main…`). It has no reader. A `_`-prefixed name a user wrote
+    /// (`val _cpf = …`) is a binding like any other and is read by name.
+    pub fn isStatement(this: ValDecl) bool {
+        return std.mem.eql(u8, this.name, "_") or
+            std.mem.eql(u8, this.name, "_loop") or
+            std.mem.startsWith(u8, this.name, "_main");
+    }
+
     pub fn deinit(this: *ValDecl, allocator: std.mem.Allocator) void {
         if (this.typeAnnotation) |*ann| ann.deinit(allocator);
         for (this.annotations) |*ann| ann.deinit(allocator);
