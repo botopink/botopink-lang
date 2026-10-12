@@ -938,13 +938,21 @@ test "format: an annotation argument keeps its label" {
         \\#[@External.Erlang("string:slice($0, 0, 1)", inline = true)]
         \\pub declare fn f(s: string) -> string;
     );
-    // `label: value` is read too, and printed in the one canonical form.
-    try h.assertFormatAs(std.testing.allocator,
+    // Both separators are kept as written: `label: value` stays `:`.
+    try h.assertFormat(std.testing.allocator,
+        \\#[@BeamMemory.Ets(keyed: true)]
+        \\var cache: i32 = 0;
+        \\
         \\#[@External.Erlang("string:slice($0, 0, 1)", inline: true)]
         \\pub declare fn f(s: string) -> string;
-    ,
-        \\#[@External.Erlang("string:slice($0, 0, 1)", inline = true)]
-        \\pub declare fn f(s: string) -> string;
+    );
+    // Decorators (`check`) keep theirs too, mixed in one list.
+    try h.assertFormat(std.testing.allocator,
+        \\#[check("passwords differ", passwordsMatch, at = .confirm)]
+        \\pub declare fn g(s: string) -> string;
+        \\
+        \\#[check("passwords differ", passwordsMatch, at: .confirm, code = .Custom)]
+        \\pub declare fn h(s: string) -> string;
     );
 }
 

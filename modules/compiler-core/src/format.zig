@@ -2310,15 +2310,14 @@ pub const Formatter = struct {
                     try std.fmt.allocPrint(this.arena, "#[{s}{s}]", .{ prefix, ann.name }),
                 ));
             } else {
-                // A labelled argument prints `label = value` — the fn-style
-                // spelling `#[@BeamMemory.Ets(keyed = true)]` is written with;
-                // the parser also reads `label: value`, and this is its one
-                // canonical form.
+                // A labelled argument prints as written: `label: value` or
+                // the fn-style `label = value` (the parser reads both and
+                // records which in `assign_mask`).
                 var written: std.ArrayList([]const u8) = .empty;
                 defer written.deinit(this.arena);
                 for (ann.writtenArgs(), 0..) |arg, i| {
                     try written.append(this.arena, if (ann.labelOf(i)) |label|
-                        try std.fmt.allocPrint(this.arena, "{s} = {s}", .{ label, arg })
+                        try std.fmt.allocPrint(this.arena, "{s}{s} {s}", .{ label, if (ann.labelAssigned(i)) " =" else ":", arg })
                     else
                         arg);
                 }

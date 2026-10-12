@@ -1928,6 +1928,10 @@ pub const Annotation = struct {
     /// checks (decision 41) and what the formatter prints back — before this
     /// field it printed `#[@External.Node("charAt", true)]` for `inline = true`.
     labels: []const []const u8 = &.{},
+    /// Bit `i` is set when argument `i`'s label was written `label = value`
+    /// (fn-style) rather than `label: value`; the formatter prints the
+    /// separator as written. Arguments past the 64th read as `:`.
+    assign_mask: u64 = 0,
     /// Where each argument starts, parallel to `args` (decision 280: a
     /// decorator argument is refused at the argument). Empty for a
     /// synthesized annotation; diagnostic metadata, never serialized.
@@ -1951,6 +1955,11 @@ pub const Annotation = struct {
     pub fn labelOf(this: Annotation, i: usize) ?[]const u8 {
         if (i >= this.labels.len or this.labels[i].len == 0) return null;
         return this.labels[i];
+    }
+
+    /// True when argument `i`'s label was written with `=`.
+    pub fn labelAssigned(this: Annotation, i: usize) bool {
+        return i < 64 and (this.assign_mask >> @intCast(i)) & 1 == 1;
     }
 
     pub fn deinit(this: *Annotation, allocator: std.mem.Allocator) void {

@@ -1274,6 +1274,7 @@ pub const Parser = struct {
         var argLocs: std.ArrayList(Loc) = .empty;
         errdefer argLocs.deinit(alloc);
         var any_label = false;
+        var assign_mask: u64 = 0;
         if (this.match(.leftParenthesis)) {
             while (!this.check(.rightParenthesis) and !this.check(.endOfFile)) {
                 // `prim-op-annotation` arity-branch label: `when($argc == N): "..."`
@@ -1326,7 +1327,8 @@ pub const Parser = struct {
                     (this.peekAt(1).kind == .colon or this.peekAt(1).kind == .equal))
                 {
                     label = this.advance().lexeme; // label name
-                    _ = this.advance(); // `:` or `=`
+                    if (this.advance().kind == .equal and args.items.len < 64) // `:` or `=`
+                        assign_mask |= @as(u64, 1) << @intCast(args.items.len);
                     any_label = true;
                 }
                 try labels.append(alloc, label);
@@ -1376,6 +1378,7 @@ pub const Parser = struct {
             .name = name,
             .args = try args.toOwnedSlice(alloc),
             .labels = if (any_label) try labels.toOwnedSlice(alloc) else &.{},
+            .assign_mask = assign_mask,
             .argLocs = try argLocs.toOwnedSlice(alloc),
             .is_builtin = is_builtin,
             .loc = .{ .line = name_start.line, .col = name_start.col, .expansion = name_start.expansion },
