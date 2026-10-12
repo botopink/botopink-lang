@@ -1,3 +1,3 @@
 botopink-cell 1
 refused error: "bpp" names "markup", and #[bpp.htmlPrelude] marks 2 of its declarations — `prelude` (deps/markup/src/prelude.bp:6), `second` (deps/markup/src/second.bp:4); the marker `val` of the markup's prelude module is at most one
-at botopink.json:1:121
+at botopink.json:1:124

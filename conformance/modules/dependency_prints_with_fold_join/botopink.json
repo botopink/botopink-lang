@@ -1,1 +1,1 @@
-{ "name": "language_tests", "version": "0.0.1", "src": "src/", "dependencies": { "strip": { "path": "deps/strip" } } }
+{ "name": "dependency_prints_with_fold_join", "version": "0.0.1", "src": "src/", "dependencies": { "strip": { "path": "deps/strip" } } }

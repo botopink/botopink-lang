@@ -41,7 +41,7 @@ pub type Level {
     High,
 
     #[@External.Node("""($0.tag === "High" ? $1 * 10 : $1)""")]
-    #[@External.Erlang("""case $0 of 'language_tests@main@@Level__v__high' -> $1 * 10; _ -> $1 end""")]
+    #[@External.Erlang("""case $0 of 'external_method_local@main@@Level__v__high' -> $1 * 10; _ -> $1 end""")]
     pub declare fn scale(self: Self, n: i32) -> i32;
 }
 

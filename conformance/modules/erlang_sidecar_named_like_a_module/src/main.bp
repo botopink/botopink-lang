@@ -1,6 +1,6 @@
 //// A host module whose name is also the basename of a module of the build —
 //// `src/sidecars/text.erl` beside `src/text.bp` — is shipped and called. The
-//// erlang atom of the botopink module is `language_tests@text` (decision
+//// erlang atom of the botopink module is `erlang_sidecar_named_like_a_module@text` (decision
 //// 109), so the two never meet.
 ////
 //// The gap this pins (`00 · 10-cli-residuals`, `language-gaps.md`'s sidecar

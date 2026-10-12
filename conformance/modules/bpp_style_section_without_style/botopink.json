@@ -1,1 +1,1 @@
-{ "name": "language_tests", "version": "0.0.1", "src": "src/", "dependencies": { "markup": { "path": "deps/markup" } }, "bpp": "markup" }
+{ "name": "bpp_style_section_without_style", "version": "0.0.1", "src": "src/", "dependencies": { "markup": { "path": "deps/markup" } }, "bpp": "markup" }

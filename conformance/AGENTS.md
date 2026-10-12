@@ -28,7 +28,7 @@ conformance/
 ├── docs.md                  ← the language reference (decisions 461, 462): its index, the text no one cell owns, the manifest schema; every example a `<!-- example: … -->` line naming a cell or a suite
 ├── run.sh                   ← the runner: `zig build test-conformance`, the gate's stage 9
 ├── modules/<cell>/          ← one cell (decisions 457, 475)
-│   ├── botopink.json           its own manifest: `name`, `"targets"` when narrowed, path dependencies, a wasm host
+│   ├── botopink.json           its own manifest: `name` (the directory's name), `"targets"` when narrowed, path dependencies, a wasm host
 │   ├── src/main.bp             the program (`pub fn main`); more modules beside it (`mod` tree, `src/sidecars/*.erl`)
 │   ├── snapshot/output/<module>.snap        the answer on every target
 │   ├── snapshot/targets/<t>/<module>.snap   target <t>'s departure — only where it departs
@@ -74,9 +74,10 @@ A `.expect` named a *part* of the diagnostic; a `refused` record holds the compi
 line, so the migration read each refusal off `botopink cell check` and accepted it only where it
 contains the old text at the old location (`codemod-conformance-cells.py accept`); its `audit`
 subcommand checks every old claim against the new snapshots, cell by cell. Single-file cells are
-packages named after the cell; `modules/external_host_record` and `modules/external_method_local`
-keep `language_tests`, the package their host templates spell in an atom
-(`'language_tests@main@@Point'`), and every former `modules/` cell keeps the manifest it had.
+packages named after the cell. **A cell's package name is its directory's name** (decision 511; a workspace
+member's `name` is required and unique, 512 (1)): `botopink cell check` refuses a manifest with no `name`, or
+whose `name` differs from the directory, located at the manifest and naming the expected name, and
+`botopink cell new` writes it.
 Throughout this file, `run/<n>`, `reject/<n>` and a sidecar name (`.out`, `.exit`, `.<t>.expect`,
 `.<t>.stderr`, `.targets`) are how a cell's history was written; the cell is `modules/<n>`.
 
@@ -749,7 +750,7 @@ sidecar `text.erl` beside the module `text.bp` is shipped — the shipper skippe
 `modules/sidecar_called_from_folder_module` (front 26, T16: a sidecar called only from `src/orm/entity.bp`
 is shipped on erlang and beam although the cell's own `libs/orm/` — a library root the walk-up finds —
 carries a package named like the folder; the shipper took that package for the module's owner) and
-`modules/sidecar_named_like_emitted_atom` (front 26, C-25: `src/sidecars/language_tests@text.erl`, named
+`modules/sidecar_named_like_emitted_atom` (front 26, C-25: `src/sidecars/sidecar_named_like_emitted_atom@text.erl`, named
 like the atom `src/text.bp` compiles to, is a located build error on erlang and beam naming both,
 `erlang.expect` / `beam.expect`), `modules/bare_print_call` (`println(x)` is unbound
 and the refusal names `@println`), `modules/float_record_field` (an `f64` record field read, compared,
@@ -1544,7 +1545,7 @@ answer three texts, and the decorator's call prints `Point:fn` on the four targe
 comptime printed `Point:erlang` on erlang and beam), `modules/comptime_expression_erlang_cell_never_runs`
 (decision 452 from a `comptime` expression rather than a decorator — an Erlang-only host function
 refused `comptime-host-cell-unavailable` at the `comptime`; the parent ran its Erlang cell on erlang
-and beam and refused it with decision 341's message on the wat runtime) and `modules/package_named_std` (decision 453 — a
+and beam and refused it with decision 341's message on the wat runtime) and `modules/std` (decision 453 — a
 project whose `botopink.json` names itself `std` refused at the name, `botopink.json:1:3`, on the four
 targets by a `<target>.expect` each; the parent ran it). A wasm program's own float text, `trim` and
 final sigma (decisions 441, 443) and `NaN` / `Infinity` (444) part from commonJS's — or, for `NaN`,
@@ -1676,8 +1677,8 @@ different reason, § Notes). A cell that every target refuses (a former `reject/
 all four, and its `refused` line is the same on each.
 
 An erlang/BEAM module atom starts with its package (decision 109 of 1.0.10-beta): a cell's entry
-is `<cell>@main` (`language_tests@main` in the cells that keep that name, § Layout), and a host
-template that builds a record's tag spells it (`'language_tests@main@@Point'`,
+is `<cell>@main`, and a host
+template that builds a record's tag spells it (`'external_host_record@main@@Point'`,
 `modules/external_host_record`).
 
 **A beam program's host modules.** `botopink build --target beam` ships the `.erl` of every

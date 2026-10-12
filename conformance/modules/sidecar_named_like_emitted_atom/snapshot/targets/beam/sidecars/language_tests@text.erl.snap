@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: the sidecar src/sidecars/language_tests@text.erl is named like the module atom 'language_tests@text', which module 'text' of this build compiles to — the code path cannot hold both; rename the sidecar
-at src/sidecars/language_tests@text.erl:1:1
