@@ -22,7 +22,6 @@ const format_cmd = @import("./cli/format_cmd.zig");
 const new_cmd = @import("./cli/new.zig");
 const clean_cmd = @import("./cli/clean.zig");
 const test_cmd = @import("./cli/test_cmd.zig");
-const migrate_cmd = @import("./cli/migrate.zig");
 const cell_cmd = @import("./cli/cell.zig");
 const cfg = @import("./cli/config.zig");
 const otp = @import("./cli/otp.zig");
@@ -59,7 +58,6 @@ const HELP =
     \\  format   Format source files
     \\  new      Create a new botopink project
     \\  clean    Remove build artifacts
-    \\  migrate  Generate the module tree (mod/pub mod) from the src/ layout
     \\  cell     Scaffold a language cell, or check cells against their snapshots
     \\  help     Show this message
     \\  version  Show the compiler version and the Erlang/OTP release it emits for
@@ -93,9 +91,6 @@ const HELP =
     \\Options for `new`:
     \\  <name>                       Project name
     \\  --target <commonJS|erlang|beam|wasm>   Initial target (default: commonJS)
-    \\
-    \\Options for `migrate`:
-    \\  --dry-run                    Report the index files without writing them
     \\
     \\`cell new <path>` scaffolds a cell: <path>/botopink.json (its package named
     \\after the directory), <path>/src/main.bp and <path>/docs.md.
@@ -207,11 +202,6 @@ fn dispatch(init: std.process.Init) !u8 {
     if (std.mem.eql(u8, cmd, "cell")) {
         const opts = parseCellOpts(rest, &diag) catch |err| return usageError(cmd, err, diag);
         return cell_cmd.run(gpa, io, opts, env_map);
-    }
-
-    if (std.mem.eql(u8, cmd, "migrate")) {
-        const opts = parseMigrateOpts(rest, &diag) catch |err| return usageError(cmd, err, diag);
-        return migrate_cmd.run(gpa, io, opts);
     }
 
     // Unknown command.
@@ -466,16 +456,6 @@ fn parseCellOpts(args: []const [:0]const u8, diag: *ArgDiag) ArgError!cell_cmd.O
     return if (is_new) .{ .new = p } else .{ .check = .{ .path = p, .jobs = jobs } };
 }
 
-fn parseMigrateOpts(args: []const [:0]const u8, diag: *ArgDiag) ArgError!migrate_cmd.Options {
-    var opts: migrate_cmd.Options = .{};
-    for (args) |a| {
-        if (std.mem.eql(u8, a, "--dry-run")) {
-            opts.dry_run = true;
-        } else return reject(a, diag);
-    }
-    return opts;
-}
-
 fn parseNoOpts(args: []const [:0]const u8, diag: *ArgDiag) ArgError!void {
     if (args.len > 0) return reject(args[0], diag);
 }
@@ -483,7 +463,7 @@ fn parseNoOpts(args: []const [:0]const u8, diag: *ArgDiag) ArgError!void {
 // ── Tests ─────────────────────────────────────────────────────────────────────
 //
 // One block per contract row the parsers close (`specs/1.0.2-beta/02-cli-gate/
-// command-contract.md`): C8 migrate --dry-run anywhere, C10 check <path>, C11
+// command-contract.md`): C10 check <path>, C11
 // unknown flags and --flag=value, C12 new --target validation, C14 no leaked
 // argument lists (the parsers run under `std.testing.allocator` via an arena).
 
@@ -500,7 +480,6 @@ test {
     _ = @import("./cli/diagnostics.zig");
     _ = @import("./cli/format_cmd.zig");
     _ = @import("./cli/libs.zig");
-    _ = @import("./cli/migrate.zig");
     _ = @import("./cli/new.zig");
     _ = @import("./cli/otp.zig");
     _ = @import("./cli/reporter.zig");
@@ -613,20 +592,6 @@ test "C10: check forwards one path and rejects anything else" {
     try std.testing.expectEqualStrings("libs/std", one.path.?);
     try std.testing.expectError(error.UnexpectedArgument, parseCheckOpts(argv(&.{ "a", "b" }), &d));
     try std.testing.expectError(error.UnknownFlag, parseCheckOpts(argv(&.{"--strict"}), &d));
-}
-
-test "C8: migrate recognises --dry-run wherever it appears and rejects a positional" {
-    var d: ArgDiag = .{};
-    try std.testing.expect((try parseMigrateOpts(argv(&.{"--dry-run"}), &d)).dry_run);
-    try std.testing.expectError(error.UnexpectedArgument, parseMigrateOpts(argv(&.{ "src", "--dry-run" }), &d));
-    try std.testing.expectEqualStrings("src", d.token);
-    try std.testing.expect(!(try parseMigrateOpts(argv(&.{}), &d)).dry_run);
-}
-
-test "migrate takes no subcommand: `effects` is a positional, refused" {
-    var d: ArgDiag = .{};
-    try std.testing.expectError(error.UnexpectedArgument, parseMigrateOpts(argv(&.{"effects"}), &d));
-    try std.testing.expectEqualStrings("effects", d.token);
 }
 
 test "C14: run and format argument lists are arena-owned (no leak under testing.allocator)" {

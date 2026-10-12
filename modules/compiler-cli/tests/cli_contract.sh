@@ -688,19 +688,6 @@ else
   skip "node not on PATH"
 fi
 
-# ── C8 — migrate --dry-run writes nothing, wherever the flag appears ─────────
-echo "==> C8 migrate --dry-run writes nothing"
-P="$(project c8)"
-printf '%s' "$MAIN_OK" >"$P/src/main.bp"
-mkdir -p "$P/src/shapes" && printf 'pub fn area() -> i32 {\n    return 1;\n}\n' >"$P/src/shapes/circle.bp"
-before="$(cd "$P" && find src -type f | sort | xargs cat | cksum)"
-run "$P" migrate src --dry-run
-expect_code 1 "migrate with a positional is a usage error"
-run "$P" migrate --dry-run
-expect_code 0 "migrate --dry-run"
-after="$(cd "$P" && find src -type f | sort | xargs cat | cksum)"
-[[ "$before" == "$after" ]] && [[ ! -e "$P/src/shapes/mod.bp" ]] && ok "src/ untouched" || fail "migrate --dry-run wrote into src/"
-
 # ── C9 — format / format --check count an unparseable file as an error ──────
 echo "==> C9 format and format --check fail on unlexable or unparseable source"
 P="$(project c9)"

@@ -73,7 +73,7 @@ zig build               # produce zig-out/bin/botopink
 zig build run -- help
 zig build run -- version
 zig build test          # includes the CLI unit tests (main.zig parsers / config /
-                        # libs / resolver / migrate / test_cmd /
+                        # libs / resolver / test_cmd /
                         # diagnostics / clean;
                         # root = src/main.zig, cwd = modules/compiler-cli) — main.zig's
                         # `test { _ = @import(...) }` block pulls every cli/ file in; a
@@ -275,7 +275,6 @@ What each command promises. A row the code does not meet yet is marked
 | `clean` | nothing | deletes `out/` and `.botopinkbuild/` whole (with `.botopinkbuild/deps/`, the `bpmp install` links, and `.botopinkbuild/cache/`, every build cache), and in a workspace member the workspace root's `.botopinkbuild/cache/` | nothing | both are gone (`Removed <dir>/` printed per success) | a delete failed |
 | `cell new <path>` | nothing | `<path>/src/main.bp` (it prints `hello`) and `<path>/docs.md` | nothing | scaffolded | `<path>` exists |
 | `cell check [--jobs <N>] <cell\|directory>` | each cell (a directory holding `src/`; a directory argument is walked for them, not into a cell, a hidden directory or `node_modules`): `src/`, `snapshot/`, `targets`, an optional `botopink.json` — never `docs.md` | `<file>.snap.new` candidates under the cell's `snapshot/` (the previous run's deleted first); a scratch copy under `.botopinkbuild/tmp/cell-<id>/` of the current directory, removed when the cell ends. Never an accepted `.snap` | `node`, `erl`, `wasmtime` — the built program; the build itself runs in process | every cell answers its accepted snapshots on every target it declares, and every narrowing stands | a mismatch (candidate written, difference shown), a new cell, a tool that could not run, a malformed cell, or no cell found (§ Cells) |
-| `migrate [--dry-run]` | the `src/` tree | index files (`root.bp`/`main.bp`/`mod.bp`) — **none** under `--dry-run` | nothing | the tree is covered | `src/` unreadable |
 
 Cross-command rules:
 

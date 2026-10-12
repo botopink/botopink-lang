@@ -28,5 +28,3 @@ botopink run
 # circle
 # 7
 ```
-
-The tree can also be generated from a flat `src/` layout with `botopink migrate`.
