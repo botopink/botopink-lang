@@ -2482,3 +2482,22 @@ test "wat: template ---- a lone float hole is a string, as a val, an element and
         \\
     );
 }
+
+// A module-level tuple's `bool` element read inside a function. `print_shape_locals` is cleared
+// per function and held only locals, so `t.flag` (a labelled tuple, the shape a template's
+// `@expr(#(server, debug))` lifts) had no shape for a global `t` and printed `1`, where every
+// other target prints `true`. `conformance/modules/global_tuple_bool_field` is the cross-backend
+// half.
+test "wat: print ---- a bool element of a module-level tuple prints true / false" {
+    try h.assertWasmRunLog(std.testing.allocator,
+        \\val flag = true;
+        \\val off = false;
+        \\val a = 3;
+        \\val t = #(a, flag, off);
+        \\fn main() {
+        \\    @print(t.flag);
+        \\    @print(t.2);
+        \\    @print(t.0);
+        \\}
+    , "true\nfalse\n3\n");
+}

@@ -1761,6 +1761,9 @@ const Emitter = struct {
     /// Local name → the `$__print_shaped_raw` shape of its value, when it is
     /// an array or a tuple (`printShapeOf`).
     print_shape_locals: std.StringHashMap([]const u8),
+    /// A module-level `val`'s print shape (a tuple or an array), which a function body reads
+    /// where `print_shape_locals` (cleared per function) has no entry for the name.
+    print_shape_globals: std.StringHashMap([]const u8),
     arr_globals: std.StringHashMap(void),
     bool_globals: std.StringHashMap(void),
     /// Every emitted WAT function symbol → its signature.
@@ -2217,6 +2220,7 @@ const Emitter = struct {
             .str_globals = std.StringHashMap(void).init(alloc),
             .arr_locals = std.StringHashMap(void).init(alloc),
             .print_shape_locals = std.StringHashMap([]const u8).init(alloc),
+            .print_shape_globals = std.StringHashMap([]const u8).init(alloc),
             .arr_globals = std.StringHashMap(void).init(alloc),
             .bool_globals = std.StringHashMap(void).init(alloc),
             .fn_sigs = std.StringHashMap(FnSig).init(alloc),
@@ -2288,6 +2292,7 @@ const Emitter = struct {
         self.str_globals.deinit();
         self.arr_locals.deinit();
         self.print_shape_locals.deinit();
+        self.print_shape_globals.deinit();
         self.arr_globals.deinit();
         self.bool_globals.deinit();
         self.fn_sigs.deinit();
@@ -2472,6 +2477,9 @@ const Emitter = struct {
                     if (self.isBoolExpr(v.value.*)) try self.bool_globals.put(v.name, {});
                 }
                 if (self.recordTypeOfExpr(v.value.*)) |rty| try self.global_rec_types.put(v.name, rty);
+                // `val t = #(a, flag)`: a function body reads `t.flag` as a `bool` through the
+                // tuple's shape, which only the initialiser says.
+                if (try self.printShapeOf(v.value.*)) |sh| if (sh[0] == '(') try self.print_shape_globals.put(v.name, sh);
                 // `val g = greet` types `g` by `greet`'s declaration (the
                 // local's rule, `.localBind`); a fn declared further down is
                 // typed by `typeFnValueGlobals` once every signature is known.
@@ -10414,7 +10422,11 @@ const Emitter = struct {
         if (optOperatorParts(e)) |op| if (op.bang) if (self.optInfoOf(op.cond.*)) |oi| if (oi.shape) |sh| return sh;
         switch (e) {
             .identifier => |id| switch (id.kind) {
-                .ident => |n| if (self.print_shape_locals.get(self.resolveName(n))) |shape| return shape,
+                .ident => |n| {
+                    const rn = self.resolveName(n);
+                    if (self.print_shape_locals.get(rn)) |shape| return shape;
+                    if (!self.locals.contains(rn)) if (self.print_shape_globals.get(rn)) |shape| return shape;
+                },
                 // A tuple element that is itself a container — `t._0` of
                 // `#(#(1, 2), "x")`. The same slice `isStringExpr` takes, kept
                 // only when it is an array or a tuple, which is this

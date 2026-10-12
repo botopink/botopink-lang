@@ -1,0 +1,16 @@
+// A `bool` element of a module-level tuple prints `true` / `false` on every target, read by its
+// label or its index inside a function (wasm printed `1`: the global tuple had no print shape).
+
+val flag = true;
+
+val off = false;
+
+val a = 3;
+
+val t = #(a, flag, off);
+
+fn main() {
+    @print(t.flag);
+    @print(t.2);
+    @print(t.a);
+}
