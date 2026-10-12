@@ -576,6 +576,21 @@ pub fn StmtOf(comptime phase: Phase) type {
 /// prints it back as `..base`.
 pub const spread_arg_label = "..";
 
+/// Decision 359 — the label the parser gives a record spread argument:
+/// `Pessoa(...old, nome: "Ana")` holds `old` as the argument labelled `...`,
+/// the `...` token's place on `CallArg.spreadLoc`. Like `spread_arg_label` it
+/// is not an identifier, so no source writes it as a label; the formatter
+/// prints it back as `...old`. Inference (`infer.inferRecordSpread`) builds
+/// the complete constructor call it means, and refuses it anywhere but a
+/// record's constructor (`call-spread`).
+pub const record_spread_label = "...";
+
+/// The column the checker adds to a node it synthesises for a record spread
+/// (decision 359, `infer.inferRecordSpread`): past any written column and
+/// apart from `optional_synthetic_col`'s, so its loc keys no plan of a written
+/// node.
+pub const spread_synthetic_col: usize = 3_000_000;
+
 /// Helper to get the correct call argument type based on phase
 pub fn CallArgOf(comptime phase: Phase) type {
     return struct {
@@ -594,9 +609,13 @@ pub fn CallArgOf(comptime phase: Phase) type {
         /// comma before its `)`; the formatter opens the list on it and on
         /// nothing else. Dumped only when set; the typed phase never copies it.
         trailingComma: bool = false,
+        /// Decision 359 — where the `...` of a record spread argument
+        /// (`record_spread_label`) is written: its refusals are located
+        /// there. Null on every other argument; left out of the dump.
+        spreadLoc: ?Loc = null,
 
         pub fn jsonStringify(this: @This(), jws: anytype) !void {
-            return stringifyOmitting(this, jws, &.{}, &.{"trailingComma"});
+            return stringifyOmitting(this, jws, &.{"spreadLoc"}, &.{"trailingComma"});
         }
 
         pub fn deinit(this: *@This(), allocator: std.mem.Allocator) void {
@@ -3832,6 +3851,16 @@ pub const TypeDecl = struct {
     /// Comment lines written above a type declared in a type's body ("" =
     /// blank line). Owned slice. Left out of the dump when empty.
     comments: []const []const u8 = &.{},
+    /// Decision 359 — a derived type's (307) lineage: the records it was made
+    /// from by `Type.pick`, `Type.omit` and `Type.merge`, each derived source
+    /// with its own lineage — the records a value of it may be spread into.
+    /// Empty for a type written by hand, and for `Type.partial` /
+    /// `Type.required` (neither is a pick, an omit or a merge). Left out of the
+    /// dump when empty.
+    derivedFrom: []const []const u8 = &.{},
+    /// Decision 359 — the type is `Type.partial(…)`'s answer: a value of it is
+    /// never spread. Left out of the dump when false.
+    derivedPartial: bool = false,
 
     /// The type's name as `@print` writes it.
     pub fn printedName(this: TypeDecl) []const u8 {
@@ -3884,7 +3913,7 @@ pub const TypeDecl = struct {
     }
 
     pub fn jsonStringify(this: TypeDecl, jws: anytype) !void {
-        return stringifyOmitting(this, jws, &.{"loc"}, &.{ "bodyComments", "displayName", "isNamespace", "assocTypes", "comments" });
+        return stringifyOmitting(this, jws, &.{"loc"}, &.{ "bodyComments", "displayName", "isNamespace", "assocTypes", "comments", "derivedFrom", "derivedPartial" });
     }
 };
 

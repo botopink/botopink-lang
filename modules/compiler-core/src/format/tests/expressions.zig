@@ -1340,6 +1340,34 @@ test "format: record update ---- the spread stays a spread in the open argument 
     );
 }
 
+test "format: record spread ---- `...src` prints as written, beside labels and ranges (decision 359)" {
+    const src =
+        \\fn f(old: Pessoa, contato: Contato) {
+        \\    val a = Pessoa(...old, nome: "Ana");
+        \\    val b = Pessoa(...old, ...contato, nome: n);
+        \\    val c = Pessoa(nome: "Zé", ...make(1));
+        \\    val d = Pessoa(...holder.pessoa);
+        \\    val r = case n {
+        \\        1...5 -> 1;
+        \\        _ -> 0;
+        \\    };
+        \\}
+    ;
+    try h.assertFormatLossless(std.testing.allocator, src);
+    try h.assertIdempotent(std.testing.allocator, src);
+    const open =
+        \\fn f(old: Pessoa) {
+        \\    val c = Pessoa(
+        \\        ...old,
+        \\        nome: "a name long enough to push the list past the width",
+        \\        idade: 60,
+        \\    );
+        \\}
+    ;
+    try h.assertFormatLossless(std.testing.allocator, open);
+    try h.assertIdempotent(std.testing.allocator, open);
+}
+
 test "format: catch ---- the tail form gains no `try`" {
     // `(e catch h)` is legal, alone and as an operand; with a `try` it is
     // `try-await-operand` (decision 137).
