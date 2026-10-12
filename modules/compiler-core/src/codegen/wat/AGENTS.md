@@ -589,7 +589,7 @@ binding `hash` and `io/random`, and each still open:
 | `i64` was lowered as `i32` | an `i64` local, parameter, return, record field, tuple element, `?i64` and closure capture is an `i64` (§ Numbers); an `i64` in an array, a variant's payload or a `@Result` is refused where it enters — the bodies still use exact `f64` | fixed / refused |
 | a float in an array was stored as its `f32`, and `xs.at(i).unwrapOr(0.0)` on an `Array<f64>` was invalid code | every float slot holds its `f64` cell (§ Numbers); `unwrapOr` over a `?f64` answers an `f64` | fixed |
 | `Float.toString` wrote six fraction digits; a float ≥ 2^31 trapped in the prelude's float text | std-wasm's shortest digits (§ Numbers, decision 441) — `0.26642920868471265` prints whole | fixed |
-| `Array.range` / `Array.repeat` recurse once per element through a spread (`primitives.bp`), O(n²) memory | `Array.repeat(0, 128)` exhausts the page; the bodies double an array instead | open |
+| `Array.range` / `Array.repeat` recurse once per element through a spread (`primitives.bp`), O(n²) memory | the bodies double an array (a range of one is its element); an associated `default fn` whose cells name other targets only (their `External.Node` template) is lowered from its body, as erlang and beam lower it — skipped, `Array.range(0, 3)` was an unresolved call; a local bound to an array in such a body has the array's methods (`primKindAt`). `conformance/modules/array_range_and_repeat` | fixed |
 
 ## Numbers: a float's text, the 8-byte cells, integers that do not wrap
 

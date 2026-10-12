@@ -277,9 +277,9 @@ hex read in place; `run/std_hash_{digests,macs,content}_on_every_target`) and
 sidecar's Mulberry32, which also answers at comptime on every target and
 refuses a draw before any seed there (decision 451) —, the rest `fn:` bodies at
 the end of `io/random.bp`; `modules/std_random_on_every_target`,
-`modules/comptime_random_seeded`, `modules/comptime_random_unseeded`). A body here avoids
-what the wasm backend cannot do yet (`codegen/wat/AGENTS.md` § Host bindings:
-`Array.range` / `repeat`); no
+`modules/comptime_random_seeded`, `modules/comptime_random_unseeded`).
+`Array.range` / `Array.repeat` build by doubling, a range of one being its
+element, and wasm lowers them from their bodies (`modules/array_range_and_repeat`); no
 std module holds a module-level `var` (on erlang it lowers to `std@beam`,
 which a std module does not import). `encoding`, `querystring` and `unicode`
 build and run on wasm (their `fn:` bodies, decision 238; `unicode.normalize`

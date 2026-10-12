@@ -584,15 +584,15 @@ test "order case over Order" {
 {module, std@collections}.
 {exports, [{lt, 0}, {eq, 0}, {gt, 0}, {toInt, 1}, {reverse, 1}, {shown, 1}, {'__bp_priv__Array_range', 2}, {'__bp_priv__Array_repeat', 2}]}.
 {attributes, []}.
-{labels, 44}.
+{labels, 46}.
 
 {function, 'Array_range', 2, 3}.
   {label, 2}.
     {line, [{location, "std@collections.erl", 1}]}.
     {func_info, {atom, std@collections}, {atom, 'Array_range'}, 2}.
   {label, 3}.
-    {allocate, 5, 2}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}]}}.
+    {allocate, 6, 2}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {gc_bif, '-', {f, 0}, 0, [{y, 1}, {y, 0}], {x, 0}}.
@@ -601,23 +601,34 @@ test "order case over Order" {
     {jump, {f, 19}}.
   {label, 18}.
     {gc_bif, '-', {f, 0}, 0, [{y, 1}, {y, 0}], {x, 0}}.
+    {test, is_eq_exact, {f, 20}, [{x, 0}, {integer, 1}]}.
+    {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 2}}.
-    {gc_bif, 'div', {f, 0}, 0, [{y, 2}, {integer, 2}], {x, 0}}.
+    {move, {y, 0}, {x, 0}}.
+    {move, {y, 2}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {jump, {f, 21}}.
+  {label, 20}.
+    {gc_bif, '-', {f, 0}, 0, [{y, 1}, {y, 0}], {x, 0}}.
+    {move, {x, 0}, {y, 3}}.
+    {gc_bif, 'div', {f, 0}, 0, [{y, 3}, {integer, 2}], {x, 0}}.
     {gc_bif, '+', {f, 0}, 1, [{y, 0}, {x, 0}], {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 0}, {x, 0}}.
     {call, 2, {f, 3}}.
-    {move, {x, 0}, {y, 3}}.
-    {gc_bif, 'div', {f, 0}, 0, [{y, 2}, {integer, 2}], {x, 0}}.
+    {move, {x, 0}, {y, 4}}.
+    {gc_bif, 'div', {f, 0}, 0, [{y, 3}, {integer, 2}], {x, 0}}.
     {gc_bif, '+', {f, 0}, 1, [{y, 0}, {x, 0}], {x, 0}}.
     {move, {y, 1}, {x, 1}}.
     {call, 2, {f, 3}}.
-    {move, {x, 0}, {y, 4}}.
-    {move, {y, 3}, {x, 0}}.
-    {move, {y, 4}, {x, 1}}.
-    {call, 2, {f, 21}}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {y, 4}, {x, 0}}.
+    {move, {y, 5}, {x, 1}}.
+    {call, 2, {f, 23}}.
+  {label, 21}.
   {label, 19}.
-    {deallocate, 5}.
+    {deallocate, 6}.
     return.
 
 {function, 'Array_repeat', 2, 5}.
@@ -629,25 +640,25 @@ test "order case over Order" {
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
-    {test, is_ge, {f, 22}, [{integer, 0}, {y, 1}]}.
+    {test, is_ge, {f, 24}, [{integer, 0}, {y, 1}]}.
     {move, nil, {x, 0}}.
-    {jump, {f, 23}}.
-  {label, 22}.
+    {jump, {f, 25}}.
+  {label, 24}.
     {gc_bif, 'div', {f, 0}, 0, [{y, 1}, {integer, 2}], {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 0}, {x, 0}}.
     {call, 2, {f, 5}}.
     {move, {x, 0}, {y, 2}}.
     {gc_bif, 'rem', {f, 0}, 0, [{y, 1}, {integer, 2}], {x, 0}}.
-    {test, is_eq_exact, {f, 24}, [{x, 0}, {integer, 0}]}.
+    {test, is_eq_exact, {f, 26}, [{x, 0}, {integer, 0}]}.
     {move, {y, 2}, {x, 0}}.
     {move, {y, 2}, {x, 1}}.
-    {call, 2, {f, 21}}.
-    {jump, {f, 25}}.
-  {label, 24}.
+    {call, 2, {f, 23}}.
+    {jump, {f, 27}}.
+  {label, 26}.
     {move, {y, 2}, {x, 0}}.
     {move, {y, 2}, {x, 1}}.
-    {call, 2, {f, 21}}.
+    {call, 2, {f, 23}}.
     {move, {x, 0}, {x, 1}}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 3}}.
@@ -658,9 +669,9 @@ test "order case over Order" {
     {move, {x, 1}, {x, 2}}.
     {move, {x, 0}, {x, 1}}.
     {move, {x, 2}, {x, 0}}.
-    {call, 2, {f, 21}}.
+    {call, 2, {f, 23}}.
+  {label, 27}.
   {label, 25}.
-  {label, 23}.
     {deallocate, 6}.
     return.
 %%% std/collections — the four collection types, one namespace each (decision
@@ -700,13 +711,13 @@ test "order case over Order" {
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_binary, {f, 27}, [{x, 0}]}.
+    {test, is_binary, {f, 29}, [{x, 0}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 28}}.
-  {label, 27}.
+    {jump, {f, 30}}.
+  {label, 29}.
     {move, {atom, false}, {x, 0}}.
-  {label, 28}.
-    {test, is_eq, {f, 26}, [{x, 0}, {atom, true}]}.
+  {label, 30}.
+    {test, is_eq, {f, 28}, [{x, 0}, {atom, true}]}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 1}}.
     {move, {literal, <<"\"">>}, {x, 0}}.
@@ -725,12 +736,12 @@ test "order case over Order" {
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
-    {make_fun3, {f, 30}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 32}, 0, 0, {x, 0}, {list, []}}.
     {call_ext, 2, {extfunc, lists, map, 2}}.
     {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
     {deallocate, 3}.
     return.
-  {label, 26}.
+  {label, 28}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 0}, {x, 0}}.
@@ -744,7 +755,7 @@ test "order case over Order" {
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
-    {make_fun3, {f, 30}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 32}, 0, 0, {x, 0}, {list, []}}.
     {call_ext, 2, {extfunc, lists, map, 2}}.
     {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
     {deallocate, 3}.
@@ -817,17 +828,17 @@ test "order case over Order" {
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_eq, {f, 34}, [{x, 0}, {atom, std@collections@@Order__v__lt}]}.
+    {test, is_eq, {f, 36}, [{x, 0}, {atom, std@collections@@Order__v__lt}]}.
     {move, {integer, -1}, {x, 0}}.
-    {jump, {f, 33}}.
-  {label, 34}.
-    {test, is_eq, {f, 35}, [{x, 0}, {atom, std@collections@@Order__v__eq}]}.
+    {jump, {f, 35}}.
+  {label, 36}.
+    {test, is_eq, {f, 37}, [{x, 0}, {atom, std@collections@@Order__v__eq}]}.
     {move, {integer, 0}, {x, 0}}.
-    {jump, {f, 33}}.
-  {label, 35}.
+    {jump, {f, 35}}.
+  {label, 37}.
     {move, {integer, 1}, {x, 0}}.
-    {jump, {f, 33}}.
-  {label, 33}.
+    {jump, {f, 35}}.
+  {label, 35}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
     {deallocate, 4}.
@@ -842,69 +853,69 @@ test "order case over Order" {
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_eq, {f, 37}, [{x, 0}, {atom, std@collections@@Order__v__lt}]}.
+    {test, is_eq, {f, 39}, [{x, 0}, {atom, std@collections@@Order__v__lt}]}.
     {move, {atom, std@collections@@Order__v__gt}, {x, 0}}.
-    {jump, {f, 36}}.
-  {label, 37}.
-    {test, is_eq, {f, 38}, [{x, 0}, {atom, std@collections@@Order__v__gt}]}.
+    {jump, {f, 38}}.
+  {label, 39}.
+    {test, is_eq, {f, 40}, [{x, 0}, {atom, std@collections@@Order__v__gt}]}.
     {move, {atom, std@collections@@Order__v__lt}, {x, 0}}.
-    {jump, {f, 36}}.
-  {label, 38}.
+    {jump, {f, 38}}.
+  {label, 40}.
     {move, {atom, std@collections@@Order__v__eq}, {x, 0}}.
-    {jump, {f, 36}}.
-  {label, 36}.
+    {jump, {f, 38}}.
+  {label, 38}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
     {deallocate, 4}.
     return.
 
-{function, '__bp_priv__Array_range', 2, 41}.
-  {label, 40}.
+{function, '__bp_priv__Array_range', 2, 43}.
+  {label, 42}.
     {line, [{location, "std@collections.erl", 45}]}.
     {func_info, {atom, std@collections}, {atom, '__bp_priv__Array_range'}, 2}.
-  {label, 41}.
+  {label, 43}.
     {call_only, 2, {f, 3}}.
 
-{function, '__bp_priv__Array_repeat', 2, 43}.
-  {label, 42}.
+{function, '__bp_priv__Array_repeat', 2, 45}.
+  {label, 44}.
     {line, [{location, "std@collections.erl", 46}]}.
     {func_info, {atom, std@collections}, {atom, '__bp_priv__Array_repeat'}, 2}.
-  {label, 43}.
+  {label, 45}.
     {call_only, 2, {f, 5}}.
 
-{function, '-bp_stringify-', 1, 30}.
-  {label, 29}.
+{function, '-bp_stringify-', 1, 32}.
+  {label, 31}.
     {line, [{location, "std@collections.erl", 19}]}.
     {func_info, {atom, std@collections}, {atom, '-bp_stringify-'}, 1}.
-  {label, 30}.
+  {label, 32}.
     {allocate, 0, 1}.
-    {test, is_binary, {f, 31}, [{x, 0}]}.
+    {test, is_binary, {f, 33}, [{x, 0}]}.
     {deallocate, 0}.
     return.
-  {label, 31}.
-    {test, is_integer, {f, 32}, [{x, 0}]}.
+  {label, 33}.
+    {test, is_integer, {f, 34}, [{x, 0}]}.
     {call_ext_last, 1, {extfunc, erlang, integer_to_binary, 1}, 0}.
-  {label, 32}.
+  {label, 34}.
     {test_heap, 2, 1}.
     {put_list, {x, 0}, nil, {x, 1}}.
     {move, {literal, <<"~p">>}, {x, 0}}.
     {call_ext_last, 2, {extfunc, io_lib, format, 2}, 0}.
 
-{function, '__bp_prim_append', 2, 21}.
-  {label, 20}.
+{function, '__bp_prim_append', 2, 23}.
+  {label, 22}.
     {line, [{location, "std@collections.erl", 44}]}.
     {func_info, {atom, std@collections}, {atom, '__bp_prim_append'}, 2}.
-  {label, 21}.
+  {label, 23}.
     {allocate, 2, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_list, {f, 39}, [{x, 0}]}.
+    {test, is_list, {f, 41}, [{x, 0}]}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
     {call_ext_last, 2, {extfunc, lists, append, 2}, 2}.
-  {label, 39}.
+  {label, 41}.
     %% unresolved_method: append/2
     {move, {literal, {unresolved_method, append, 2}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.

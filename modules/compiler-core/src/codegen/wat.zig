@@ -637,6 +637,12 @@ fn displayTypeName(name: []const u8) []const u8 {
     return name;
 }
 
+/// Whether `anns` carries an `External.Wasm` cell.
+fn hasWasmCell(anns: []const ast.Annotation) bool {
+    for (anns) |a| if (ast.isExternalWasm(a)) return true;
+    return false;
+}
+
 /// Whether `b` is a primitive behavior of the std prelude (`String`, `Array`,
 /// the numeric tower, `Bool`, `Function`, `Pair`) whose declaration already
 /// sits in `own` or `linked` with the same members, name for name — the
@@ -1397,7 +1403,9 @@ fn emitWat(
         // by the symbol its calls emit.
         .behavior => |b| for (b.methods) |m| {
             const body = m.body orelse continue;
-            if (!m.is_default or m.is_declare or m.isExternal() or m.isHost()) continue;
+            // One whose cells name other targets only is its body here
+            // (`Array.repeat`'s `External.Node` template; `registerSymbols`).
+            if (!m.is_default or m.is_declare or (m.isExternal() and hasWasmCell(m.annotations)) or m.isHost()) continue;
             if (m.params.len > 0 and std.mem.eql(u8, m.params[0].name, "self")) continue;
             if (b.genericParams.len + m.genericParams.len == 0) continue;
             const gps = try ar0.alloc(ast.GenericParam, b.genericParams.len + m.genericParams.len);
@@ -2619,7 +2627,12 @@ const Emitter = struct {
             .behavior => |i| for (i.methods) |m| {
                 try self.behavior_methods.put(self.alloc, try std.fmt.allocPrint(ra, "{s}.{s}", .{ i.name, m.name }), m);
                 const body = m.body orelse continue;
-                if (!m.is_default or m.is_declare or m.isExternal() or m.isHost()) continue;
+                // An associated default whose cells name other targets only
+                // (`Array.range`'s `External.Node` template) is its body here,
+                // as it is on erlang and beam: skipped, `Array.range(0, 3)`
+                // was an unresolved call.
+                const body_here = m.isExternal() and !hasWasmCell(m.annotations) and !(m.params.len > 0 and std.mem.eql(u8, m.params[0].name, "self"));
+                if (!m.is_default or m.is_declare or (m.isExternal() and !body_here) or m.isHost()) continue;
                 if (m.params.len > 0 and std.mem.eql(u8, m.params[0].name, "self")) {
                     // A primitive behavior's default with a `self`: a call on
                     // a primitive receiver reaches it (`lowerPrimDefault`).
@@ -2640,6 +2653,9 @@ const Emitter = struct {
                 if (m.returnType) |rt| {
                     if (isStringTypeRef(rt)) try self.str_fns.put(sym, {});
                     if (isBoolTypeRef(rt)) try self.bool_fns.put(sym, {});
+                    // `Array.range(…)` answers an array: its own body's
+                    // `low.append(high)` was an unresolved call.
+                    if (arrayElemOfTypeRef(rt)) |ek| try self.fn_arr_elem.put(sym, ek);
                 }
                 try self.iface_assoc.put(sym, m);
                 // One with no type parameter is emitted whether or not a call
@@ -9342,6 +9358,10 @@ const Emitter = struct {
             // A lambda parameter inference left a type variable (`acc` of
             // `fold`) that the inlined walk bound to a string: its methods are
             // the string's.
+            // A local bound to an array in a body inference saw apart from
+            // this module — std's `Array.range` copy, `low.append(high)` —
+            // has the array's methods.
+            if (!self.tuple_binders.contains(n) and self.arr_locals.contains(self.resolveName(n)) and primCallRes(.array, cc) != null) return .array;
             if (!self.tuple_binders.contains(n)) return if (self.str_locals.contains(self.resolveName(n)) and primCallRes(.string, cc) != null) .string else null;
             const tr = self.local_typerefs.get(n) orelse return null;
             return switch (tr) {

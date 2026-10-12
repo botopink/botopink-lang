@@ -336,10 +336,15 @@ array_range(Start, Stop) ->
         true ->
             [];
         false ->
-            Count = (Stop - Start),
-            Low = array_range(Start, (Start + (Count div 2))),
-            High = array_range((Start + (Count div 2)), Stop),
-            '__bp_prim_append'(Low, High)
+            case ((Stop - Start) =:= 1) of
+                true ->
+                    [Start];
+                false ->
+                    Count = (Stop - Start),
+                    Low = array_range(Start, (Start + (Count div 2))),
+                    High = array_range((Start + (Count div 2)), Stop),
+                    '__bp_prim_append'(Low, High)
+            end
     end.
 
 array_repeat(Value, Times) ->
