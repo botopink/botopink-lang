@@ -32,11 +32,12 @@
 //! **The code** (S4): an entry's CODE holds each of its modules' own unit on
 //! the target, as a build emitted it. The compile hands the emit a `Code`
 //! (`ComptimeSession.level_b_code`): `codegen.generateWith` passes it to the
-//! emitter (`Config.level_b_code`, never under `botopink test` — it emits a
-//! dependency's test blocks until B-64), which takes a module's unit from it
-//! instead of emitting the module (`Config.cachedUnit`), and once the emit
-//! returned, every entry staged or read without CODE (`check` and `test` write
-//! none) is staged again with it (`Code.record`). All four targets skip: a
+//! emitter (`Config.level_b_code`, under `botopink test` too: a dependency
+//! has no test unit and its production unit does not depend on `test_mode`,
+//! decision 513), which takes a module's unit from it instead of emitting the
+//! module (`Config.cachedUnit`), and once the emit returned, every entry
+//! staged or read without CODE (`check` writes none) is staged again with it
+//! (`Code.record`); a test unit is never in it (`code_skips`). All four targets skip: a
 //! dependency's unit is lowered against its own closure, never its consumers'
 //! (decision 509 (2)) — wasm too, which links a dependency's bodies into each
 //! CONSUMER's unit, lowered there; the dependency's own unit links only its

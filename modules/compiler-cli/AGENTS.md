@@ -52,7 +52,9 @@ compiler-cli/
 │   │                          and prints under `--jobs 4` what `--jobs 1` prints;
 │   │                          a test reads its module's private fn and `val` on
 │   │                          all four targets, a dependency's tests never run
-│   │                          (decision 513);
+│   │                          (decision 513), and a second run reads the
+│   │                          dependency's level B entry with its CODE (not
+│   │                          rewritten) with the same results (144 B-60);
 │   │                          a `"targets"` exclusion is never run and is audited
 │   │                          (structural / builds / another error — runner and
 │   │                          `scripts/test-libs.sh`); `BOTOPINK_BIN` in a test;

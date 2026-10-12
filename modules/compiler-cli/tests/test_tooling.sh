@@ -25,6 +25,10 @@
 #     private fn and `val` of its module on commonJS, erlang, beam and wasm,
 #     the module's `main` is not run, a dependency's tests never run, and
 #     `botopink build` writes none
+#   • `botopink test` reads a dependency's level B entry with its CODE as
+#     `build` does (144 B-60): the first run writes the entry, the next reads
+#     it without writing it again (its inode), with the same results, on
+#     every target; the package under test is never stored
 #
 # What `assert cond, "msg"` and `try` mean in the language — an assertion that
 # holds does nothing, one that fails aborts naming its message, a `try` on a
@@ -489,6 +493,20 @@ for t in commonJS erlang beam wasm; do
   ! grep -q "main ran" <<<"$out" || { rm -rf "$UNITWORK"; fail "$t: the test unit ran the production module's main"; }
   ! grep -q "dependency's own test" <<<"$out" || { rm -rf "$UNITWORK"; fail "$t: a dependency's test ran"; }
   [[ "$(tail -1 <<<"$out")" == "total: 1 passed, 0 failed in 1 module(s)" ]] || { rm -rf "$UNITWORK"; fail "$t: expected one module with one test, got: $(tail -1 <<<"$out")"; }
+  # Level B (144 B-60): that run wrote unitlib's entry with its CODE (a
+  # dependency's unit is the same bytes under `test`, decision 513); the next
+  # run reads it — not written again — and its results are the same.
+  lib_entry="$(find "$UNITWORK" -path "*/.botopinkbuild/analysis/$t/unitlib.bpa" | head -1)"
+  [[ -n "$lib_entry" ]] || { rm -rf "$UNITWORK"; fail "$t: \`botopink test\` wrote no level B entry for its dependency"; }
+  ! find "$UNITWORK" -path "*/.botopinkbuild/analysis/$t/unitapp.bpa" | grep -q . || { rm -rf "$UNITWORK"; fail "$t: the package under test was stored"; }
+  entry_inode="$(stat -c %i "$lib_entry" 2>/dev/null || stat -f %i "$lib_entry")"
+  set +e
+  again="$( cd "$UNITWORK/app" && "$BP_BIN" test --target "$t" 2>&1 )"
+  code=$?
+  set -e
+  [[ $code -eq 0 ]] || { echo "$again"; rm -rf "$UNITWORK"; fail "$t: the test run reading the dependency's entry must pass (exit $code)"; }
+  [[ "$(stat -c %i "$lib_entry" 2>/dev/null || stat -f %i "$lib_entry")" == "$entry_inode" ]] || { rm -rf "$UNITWORK"; fail "$t: the second test run wrote the dependency's entry again (its CODE was not read)"; }
+  [[ "$(grep -E '^(ok|FAIL|total:)' <<<"$out")" == "$(grep -E '^(ok|FAIL|total:)' <<<"$again")" ]] || { echo "$again"; rm -rf "$UNITWORK"; fail "$t: the results differ once the dependency's CODE is read"; }
 done
 ( cd "$UNITWORK/app" && "$BP_BIN" build --target commonJS --out out >/dev/null )
 ! grep -rq "__bp_test_" "$UNITWORK/app/out" || { rm -rf "$UNITWORK"; fail "botopink build wrote a test of the module"; }

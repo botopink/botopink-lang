@@ -59,8 +59,9 @@ pub const Config = struct {
     /// CLI's analysis store. Null analyses everything and stores nothing.
     analysis_store: ?*@import("../comptime/level_b.zig").Store = null,
     /// The CODE of the compile's level B entries (144 B-60 S4), set by
-    /// `codegen.generateWith` outside `test_mode` (`botopink test` emits a
-    /// dependency's test blocks until B-64): an emitter takes a dependency
+    /// `codegen.generateWith` under every command that emits, `test_mode`
+    /// too (decision 513: a dependency's unit is the same bytes under
+    /// `botopink test`, and a test unit is never cached): an emitter takes a dependency
     /// module's unit from it (`cachedUnit`) instead of emitting the module,
     /// and gives a module whose entry lacks CODE everything CODE holds
     /// (`recordsCode`). Null: emit every module.

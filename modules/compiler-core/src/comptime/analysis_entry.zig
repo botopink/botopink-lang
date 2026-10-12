@@ -972,7 +972,7 @@ pub fn readWith(comptime skips: []const Skip, arena: std.mem.Allocator, e: Entry
 // ── CODE (S4) ─────────────────────────────────────────────────────────────────
 //
 // A module's own unit on the target, as the emitter produced it in a build
-// (`codegen.generateWith`, never under `botopink test` until B-64): every
+// (`codegen.generateWith`, `botopink test` too — decision 513): every
 // field of `GenerateResult` but what describes a failure or a run, encoded
 // generically like the rest — a field added to `GenerateResult` is stored
 // without anyone remembering to. On commonJS the `.d.ts` is always there
@@ -983,8 +983,7 @@ pub fn readWith(comptime skips: []const Skip, arena: std.mem.Allocator, e: Entry
 //
 // A CODE section is self-contained — `STRINGS-length` (LEB128), its strings,
 // then the `CodeUnit` — so it is added to an entry read back (one written by
-// `check` or `test`, which emit no dependency's code) without encoding the
-// rest again.
+// `check`, which emits no code) without encoding the rest again.
 
 const moduleOutput = @import("../codegen/moduleOutput.zig");
 

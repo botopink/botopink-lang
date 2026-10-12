@@ -369,9 +369,11 @@ pub fn run(
     };
     defer libs.freeModules(gpa, dep_modules);
 
-    // The code cache's level B (144 B-60): a dependency's analysis is read
-    // from its entry when one reads back; its code is still emitted here
-    // (B-64). The package under test is always analysed.
+    // The code cache's level B (144 B-60): a dependency's analysis and its
+    // unit (CODE) are read from its entry when one reads back, as `build`
+    // reads them — a dependency has no test unit and its production unit
+    // does not depend on `test_mode` (decision 513). The package under test
+    // is always analysed and emitted, and never stored.
     var level_b: analysis_store.Cache = undefined;
     try level_b.init(gpa, io, analysis_store.root(proj), entry_target, closure_keys.keys);
     defer level_b.deinit();

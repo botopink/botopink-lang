@@ -141,10 +141,11 @@ pub fn generateWith(
     defer session.deinit(allocator);
     // The code cache's level B CODE (144 B-60 S4): a dependency module whose
     // entry holds its unit is not emitted again, and an entry without one is
-    // staged again with it. Not under `botopink test`, which reads and
-    // records no CODE.
+    // staged again with it. `botopink test` too: a dependency gets no test
+    // unit and its production unit does not depend on `test_mode` (decision
+    // 513), and a test unit is never cached (`analysis_entry.code_skips`).
     var cfg = config;
-    if (!config.test_mode) cfg.level_b_code = session.level_b_code;
+    cfg.level_b_code = session.level_b_code;
     var outputs = try emit(allocator, session.outputs.items, cfg);
     errdefer {
         for (outputs.items) |*o| o.result.deinit(allocator);
