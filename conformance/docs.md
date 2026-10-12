@@ -2795,6 +2795,10 @@ application; nothing is shipped from it by design.
 
 ### Refusals common to every manifest
 
+The manifest's refusals are the toolchain's, not the language's: `modules/manifest/src/root.zig`'s unit tests
+check each one (`zig build test`), never a conformance cell — every cell's manifest is valid, a member of its
+`conformance/modules/` workspace (decision 512).
+
 | Manifest | Message |
 |---|---|
 | not JSON | `botopink.json is not valid JSON` |

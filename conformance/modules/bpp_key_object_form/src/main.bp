@@ -1,5 +1,0 @@
-import markup from "markup";
-
-pub fn main() {
-    @print(markup "abcd");
-}

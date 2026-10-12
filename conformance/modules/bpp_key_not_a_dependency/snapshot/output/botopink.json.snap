@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: "bpp" names "jhonstart", which is not a dependency — the package that unfolds .bpp files is an entry of "dependencies"
-at botopink.json:1:138
