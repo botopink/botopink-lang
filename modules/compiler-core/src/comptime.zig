@@ -1975,6 +1975,11 @@ fn resolveImports(
                         if (isStdPkgPath(e.key_ptr.*)) continue;
                         if (e.value_ptr.get(pkg)) |ty| {
                             try env.bind(pkg, ty);
+                            // The types its signature names come with it, as
+                            // types only (01 R2), as a named import's do: a
+                            // template answering `@Expr<Label>` gives the
+                            // call's value `Label`'s fields and methods.
+                            if (typeDeclRegistry.get(e.key_ptr.*)) |decls| try infer.registerImportedSignatureClosure(env, decls, ty);
                             pkg_owner = e.key_ptr.*;
                             break;
                         }

@@ -804,6 +804,32 @@ pub fn assertWasmRunLog(allocator: Allocator, src: []const u8, expected: []const
     return error.ModuleDidNotCompile;
 }
 
+/// `assertWasmRunLog` over several modules: the consumer is the one with the
+/// empty path (`main`); its RUN LOG under wasmtime is compared with `expected`,
+/// and a refusal of it is printed.
+pub fn assertWasmRunLogModules(allocator: Allocator, modules: []const Module, expected: []const u8) !void {
+    const io = std.testing.io;
+    var outputs = try codegen.generateWith(allocator, modules, io, configs[3], .{ .execute = true });
+    defer {
+        for (outputs.items) |*o| o.result.deinit(allocator);
+        outputs.deinit(allocator);
+    }
+    for (outputs.items) |o| {
+        if (!std.mem.eql(u8, o.name, "") and !std.mem.eql(u8, o.name, "main")) continue;
+        if (o.result.diagnostic) |d| switch (d) {
+            .type => |t| std.debug.print("\n=== refused: {s}\n", .{t.message}),
+            .syntax => {},
+        };
+        const got = o.result.run_output orelse "";
+        if (!std.mem.eql(u8, got, expected)) {
+            std.debug.print("\n=== generated WAT ===\n{s}\n=== RUN LOG ===\n{s}\n=== expected ===\n{s}\n", .{ o.result.js, got, expected });
+            return error.RunLogMismatch;
+        }
+        return;
+    }
+    return error.ModuleDidNotCompile;
+}
+
 /// `src` (a program whose `main` aborts) compiled for every backend and run
 /// the way `botopink run` runs it (`runtime.executeAborting`; wasm under
 /// wasmtime, its RUN LOG): each run aborts and what it writes contains

@@ -979,6 +979,8 @@ on the four targets, `modules/template_in_type_method`, `modules/template_destru
 `modules/template_in_field_default` (a field's and a parameter's default) — red on the parent binary
 (`twice is not defined` at run time) — and `modules/template_in_lambda`, `modules/template_in_argument`,
 `modules/template_in_case_arm`, which the parent already expanded.
+144 B-68 adds `modules/template_answer_method` (a library template's answer, a type the consumer does not import: a method on its field),
+red on the parent binary (erlang aborted, wasm refused `toString/0`).
 
 Every cell is copied into its own scratch project, so a parse error fails only that cell. Test names
 start with the decision-8 section they pin (`test "§5.4 …"`) when there is one, so a failure points at

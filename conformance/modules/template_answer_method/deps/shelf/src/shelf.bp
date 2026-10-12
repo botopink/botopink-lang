@@ -1,0 +1,12 @@
+//// A package's template answering a record, its built code calling the
+//// package's own function.
+
+pub type Label(text: string, size: i32)
+
+pub fn makeLabel(text: string) -> Label {
+    return Label(text: text, size: text.length);
+}
+
+pub default fn label(comptime t: @Expr<string>) -> @Expr<Label> {
+    return t.build("makeLabel(\"" + t.text() + "\")");
+}

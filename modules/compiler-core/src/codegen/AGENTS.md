@@ -469,7 +469,9 @@ codegen/
   (local → owner atom + declared name) ahead of the name-keyed
   `crossOwnerOf`; wat, which links statically, registers the alias beside the
   declared name in every fn table and maps it back at the `call`
-  (`import_aliases`) — and for a `pub val`, in every global table
+  (`import_aliases`; `fn_return_types` among them, so a template's built call
+  to the library's function under its alias answers the library's record,
+  144 B-68) — and for a `pub val`, in every global table
   (`aliasGlobal`), mapped back at the `global.get` (`globalName`).
 - **Default handle member (erlang)**: the handle of an imported library
   (`import {shapes} from "shapes"`) is a comptime fn with no run-time binding;

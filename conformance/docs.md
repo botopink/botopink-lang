@@ -1669,6 +1669,13 @@ parameter's default (each call that leaves it out gets the expansion), a
 written (`template-call-unexpanded`), never left to run as a call of a
 function that exists only at build.
 
+A template a library exports answers a type of the library's, and the call's
+value is that type wherever it was not imported: its fields and their methods
+resolve on every target, as they do on the value of an imported function
+(`built.size.toString()` after `val built = shelf "built"`).
+
+<!-- example: modules/template_answer_method -->
+
 A template whose second parameter is `comptime decl: @Decl` is written as an
 annotation, `#[f "…"]` — § Template annotations below.
 

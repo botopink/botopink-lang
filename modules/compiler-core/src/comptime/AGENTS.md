@@ -1666,7 +1666,9 @@ found in neither is left to the ordinary unknown-type diagnostic. Cells:
 `conformance/modules/narrowed_optional_std_field_across_packages`. An imported FUNCTION brings the
 types its signature names the same way (`registerImportedSignatureClosure`, from the module that
 exports it): `import {matchPath}` alone gives `?RouteMatch`'s fields and methods to the value it
-returns, through a narrowing or an optional binder. The constructor and variant bindings a type-only
+returns, through a narrowing or an optional binder. A package handle's template (`import shelf from "shelf"`, `shelf "x"`)
+brings its signature's types the same way (144 B-68; cell `conformance/modules/template_answer_method`): the call's value
+is the library's `Label`, so `built.size.toString()` resolves. The constructor and variant bindings a type-only
 registration takes back are kept in `Env.typeOnlyCtors`, out of scope, because a generic type's
 field instantiation reads its registration cells from them (`instantiateFieldType`).
 

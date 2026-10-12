@@ -2569,6 +2569,10 @@ const Emitter = struct {
                 try self.fn_sigs.put(alias, sig);
                 if (self.fn_param_typerefs.get(leaf)) |v| try self.fn_param_typerefs.put(alias, v);
                 if (self.fn_ret_typerefs.get(leaf)) |v| try self.fn_ret_typerefs.put(alias, v);
+                // The record a call answers (`recordTypeOfExpr`): an aliased
+                // import (a template's built code calls its library's function
+                // under one) answers what its leaf does.
+                if (self.fn_return_types.get(leaf)) |v| try self.fn_return_types.put(alias, v);
                 if (self.generic_result_arg.get(leaf)) |v| try self.generic_result_arg.put(self.alloc, alias, v);
                 if (self.fn_arr_elem.get(leaf)) |v| try self.fn_arr_elem.put(alias, v);
                 if (self.result_shape_fns.get(leaf)) |v| try self.result_shape_fns.put(alias, v);
