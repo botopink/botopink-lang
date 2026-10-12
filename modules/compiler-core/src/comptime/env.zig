@@ -445,7 +445,9 @@ pub const StdArrayLowering = struct {
 /// `s.toUpper()` / `n.abs()` to the host's equivalent (`lists:map(F, Xs)`, …).
 /// `bigint` is a family of its own (decision 332): its methods are
 /// `primitives.bp`'s `BigInt`, never the fixed-width tower's.
-pub const PrimKind = enum { array, string, bool, int, float, bigint };
+/// `bytes` is decision 346's `Bytes`: its methods are `primitives.bp`'s
+/// `Bytes`, never `String`'s (an Erlang binary holds both).
+pub const PrimKind = enum { array, string, bool, int, float, bigint, bytes };
 
 /// How a value-receiver instance call `recv.method(args)` lowers on backends
 /// without native method dispatch. Recorded by inference keyed by call loc.
@@ -2068,9 +2070,11 @@ pub const Env = struct {
     pub fn registerBuiltins(self: *Env) !void {
         const primitives = [_][]const u8{
             // integer types
-            "i8",     "u8",  "i16", "u16",  "i32",    "u32",  "i64",  "u64",      "isize", "usize",
+            "i8",     "u8",    "i16", "u16", "i32",  "u32",    "i64",  "u64",  "isize",    "usize",
             // Decision 332 — an integer of any size
             "bigint",
+            // Decision 346 — an immutable byte sequence
+            "Bytes",
             // float types
             "f32", "f64",
             // other primitives

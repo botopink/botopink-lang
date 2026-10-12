@@ -153,10 +153,11 @@ fn describe() -> string {
     )
     local.get $sp
   )
-  ;; __std_f372 — from std_wasm.wasm (sha256 d13a98c08300)
-  ;; __std_f373 — from std_wasm.wasm (sha256 bc86b40f7ebe)
-  ;; __std_f374 — from std_wasm.wasm (sha256 964928f3a255)
-  ;; std:array.slice — from std_wasm.wasm (sha256 7a88a5e1bf0d)
+  ;; __std_f386 — from std_wasm.wasm (sha256 d13a98c08300)
+  ;; __std_f387 — from std_wasm.wasm (sha256 c8d3cb27276b)
+  ;; __std_f388 — from std_wasm.wasm (sha256 0314fe5f477f)
+  ;; __std_f389 — from std_wasm.wasm (sha256 c9423096e50e)
+  ;; std:array.slice — from std_wasm.wasm (sha256 c7da1da4f3c1)
 )
 ```
 

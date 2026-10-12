@@ -325,3 +325,22 @@ test "erlang: a `_`-prefixed module-level val is a binding its readers see, not 
         \\}
     , "10\n", &.{"'_c'() ->"});
 }
+
+// Decision 346 — `Bytes` on this backend: in and out of text, length, slice,
+// concat, `==`, and the `Error` of bytes that are not UTF-8.
+const bytes_src =
+    \\pub fn main() {
+    \\    val b = Bytes.fromUtf8("héllo");
+    \\    @print(b.length());
+    \\    @print(b.slice(1, 3).toUtf8().unwrapOr("?"));
+    \\    @print(b.slice(1, 2).toUtf8().isError());
+    \\    val j = Bytes.fromUtf8("ab").concat(Bytes.fromUtf8("cd"));
+    \\    @print(j[2..].toUtf8().unwrapOr("?"));
+    \\    @print(j == Bytes.fromUtf8("abcd"));
+    \\}
+;
+const bytes_log = "6\né\ntrue\ncd\ntrue\n";
+
+test "erlang: decision 346 ---- Bytes is a binary, its methods std's templates" {
+    try h.assertErlangRunLog(std.testing.allocator, bytes_src, bytes_log, &.{"byte_size("});
+}

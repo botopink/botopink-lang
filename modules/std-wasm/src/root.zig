@@ -35,6 +35,7 @@ pub const text = @import("text.zig");
 pub const number = @import("number.zig");
 pub const array = @import("array.zig");
 pub const bigint = @import("bigint.zig");
+pub const encoding = @import("encoding.zig");
 pub const case_tables = @import("case_tables.zig");
 pub const term = @import("term.zig");
 pub const term_faces = @import("term_faces.zig");
@@ -47,7 +48,9 @@ pub const random = @import("random.zig");
 /// `i64` as themselves; a `bool` as an `i32` `0` / `1` (the atoms at
 /// comptime); a `string[]` as the program's array (`[n][s0][s1]…`, a list at
 /// comptime); a `?string` as the string or `0` (`undefined` at comptime); a
-/// `void` result as none.
+/// `Bytes` (decision 346) as a string does — its byte count, the bytes behind
+/// it — and a binary at comptime, a `?Bytes` as a `?string`; a `void` result
+/// as none.
 pub const Type = enum {
     string,
     f64,
@@ -57,12 +60,16 @@ pub const Type = enum {
     void,
     string_array,
     opt_string,
+    bytes,
+    opt_bytes,
 
     /// The type as botopink spells it.
     pub fn spelling(t: Type) []const u8 {
         return switch (t) {
             .string_array => "string[]",
             .opt_string => "?string",
+            .bytes => "Bytes",
+            .opt_bytes => "?Bytes",
             else => @tagName(t),
         };
     }
@@ -142,6 +149,10 @@ pub const exports = [_]Export{
     .{ .name = "random.float", .params = &.{}, .result = .f64, .api = "io.random.float" },
     .{ .name = "random.seed", .params = &.{.i32}, .result = .void, .api = "io.random.seed" },
     .{ .name = "random.seededFloat", .params = &.{}, .result = .f64, .api = "io.random.seededFloat" },
+    .{ .name = "encoding.base64EncodeBytes", .params = &.{.bytes}, .result = .string, .api = "encoding.base64EncodeBytes" },
+    .{ .name = "encoding.base64DecodeBytes", .params = &.{.string}, .result = .opt_bytes, .api = "encoding.base64DecodeBytes" },
+    .{ .name = "encoding.hexEncodeBytes", .params = &.{.bytes}, .result = .string, .api = "encoding.hexEncodeBytes" },
+    .{ .name = "encoding.hexDecodeBytes", .params = &.{.string}, .result = .opt_bytes, .api = "encoding.hexDecodeBytes" },
 };
 
 /// A wasm value type a program function takes or answers.
@@ -164,6 +175,8 @@ pub const Program = struct {
 /// Every function std-wasm's program face exports for the wasm codegen alone.
 pub const program = [_]Program{
     .{ .name = "text.slice", .params = &.{ .i32, .i32, .i32 }, .result = .i32 },
+    .{ .name = "bytes.slice", .params = &.{ .i32, .i32, .i32 }, .result = .i32 },
+    .{ .name = "bytes.isUtf8", .params = &.{.i32}, .result = .i32 },
     .{ .name = "number.i32ToString", .params = &.{.i32}, .result = .i32 },
     .{ .name = "number.i64ToString", .params = &.{.i64}, .result = .i32 },
     .{ .name = "number.u64ToString", .params = &.{.i64}, .result = .i32 },
@@ -252,6 +265,7 @@ test {
     _ = number;
     _ = array;
     _ = bigint;
+    _ = encoding;
     _ = random;
 }
 

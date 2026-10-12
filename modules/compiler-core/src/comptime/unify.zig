@@ -34,6 +34,22 @@ pub fn mentionsBigint(t: *T.Type) bool {
     };
 }
 
+/// Decision 346 — whether `t` is or holds `Bytes`.
+pub fn mentionsBytes(t: *T.Type) bool {
+    const d = t.deref();
+    return switch (d.*) {
+        .named => |n| blk: {
+            if (std.mem.eql(u8, n.name, "Bytes")) break :blk true;
+            for (n.args) |a| if (mentionsBytes(a)) break :blk true;
+            break :blk false;
+        },
+        .union_ => |ms| for (ms) |m| {
+            if (mentionsBytes(m)) break true;
+        } else false,
+        else => false,
+    };
+}
+
 /// Unify types `a` and `b`.  Both are dereferenced first so link chains
 /// are never seen inside the match arms.
 ///
@@ -78,6 +94,17 @@ fn unifyTypes(env: *Env, a: *T.Type, b: *T.Type) UnifyError!void {
             env.lastError = TypeError.custom(
                 diagnostics.bigint_widened ++ ": a `bigint` does not widen to `unknown`",
                 "A `bigint` is told from another integer by its static type alone (decision 332): keep it typed `bigint`, or convert it (`b.toString()`, `b.toI64()`).",
+            );
+            return error.TypeError;
+        }
+        // Decision 346 — nor does `Bytes`: erlang and beam hold `Bytes` and
+        // `string` alike (a binary), so a test on the `unknown` would answer
+        // per target, and a printed `Bytes` would read as text on one target
+        // and as numbers on another.
+        if (mentionsBytes(tb)) {
+            env.lastError = TypeError.custom(
+                diagnostics.bytes_widened ++ ": `Bytes` does not widen to `unknown`",
+                "`Bytes` is told from a `string` by its static type alone (decision 346): keep it typed `Bytes`, or convert it (`b.toUtf8()`, `b.length()`).",
             );
             return error.TypeError;
         }

@@ -182,6 +182,55 @@ behavior BigInt {
     fn toF64(self: Self) -> f64;
 }
 
+// ── Bytes (decision 346) ──────────────────────────────────────────────────────
+// An immutable sequence of bytes: an Erlang binary on erlang and beam, a
+// `Uint8Array` on commonJS, on wasm a buffer laid out as a string is (the
+// address of its `u32` length, the bytes behind it). No literal is `Bytes`,
+// and nothing converts between `Bytes` and `string` but the two calls below:
+// `Bytes.fromUtf8(s)` in, `b.toUtf8()` out — an `Error` on bytes that are not
+// UTF-8. A binary payload (an upload, a download, an image, a socket read) is
+// `Bytes` where it enters, and a host cell takes and answers it as the
+// target holds it. `Bytes` never widens to `unknown` and no `is` tests it:
+// erlang holds it and a `string` alike. `==` compares the bytes. commonJS
+// patches the methods on `Uint8Array.prototype`; `length` is the native
+// property, and `slice`'s Node templates cut with `subarray` (the patch
+// replaces native `slice`). Every index counts bytes. The associated function
+// is decision 262's form, written through the type's own name.
+behavior Bytes {
+    // `Bytes.fromUtf8(s)` — the UTF-8 bytes of `s`.
+    #[@External.Erlang("$0")]
+    #[@External.Node("""(new TextEncoder().encode($0))""")]
+    fn fromUtf8(s: string) -> Bytes;
+
+    // The text the bytes spell in UTF-8; anything else (a byte no UTF-8
+    // sequence starts with, a sequence cut short, an overlong form, a
+    // surrogate, a code point past U+10FFFF) is an `Error`. A byte order mark
+    // is kept as U+FEFF.
+    #[@External.Erlang("""(fun(__B) -> case unicode:characters_to_binary(__B) of __S when is_binary(__S) -> {ok, __S}; _ -> {error, <<"Bytes.toUtf8: not valid UTF-8">>} end end)($0)""")]
+    #[@External.Node("""((__b) => { try { return { ok: new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(__b) }; } catch (__e) { return { error: "Bytes.toUtf8: not valid UTF-8" }; } })($0)""")]
+    fn toUtf8(self: Self) -> @Result<string, string>;
+
+    // The number of bytes.
+    #[@External.Erlang("byte_size($0)")]
+    #[@External.Node("length")]
+    fn length(self: Self) -> i32;
+
+    // The bytes of `self`, then those of `other`.
+    #[@External.Erlang("<<($0)/binary, ($1)/binary>>")]
+    #[@External.Node("""((__a, __b) => { const __r = new Uint8Array(__a.length + __b.length); __r.set(__a, 0); __r.set(__b, __a.length); return __r; })($0, $1)""")]
+    fn concat(self: Self, other: Bytes) -> Bytes;
+
+    // `Slice<Bytes>.slice` — `string`'s bounds (decision 139): a negative
+    // index counts from the end, both are clamped to the length, an end
+    // before the start is empty, and an absent end is the length — `b[1..]`.
+    default fn slice(self: Self, start: i32, end: ?i32 = null) -> Bytes {
+        if (end != null)
+            return bytesSlice1(self, start, end)
+        else
+            return bytesSlice0(self, start);
+    }
+}
+
 // ── boolean ───────────────────────────────────────────────────────────────────
 
 behavior Bool {
@@ -522,6 +571,19 @@ declare fn stringSlice0(s: string, start: i32) -> string;
 #[@External.Erlang("""(fun(__S, __A, __E) -> __L = unicode:characters_to_list(__S), __N = erlang:length(__L), __B = case __A < 0 of true -> erlang:max(__N + __A, 0); false -> erlang:min(__A, __N) end, __F = case __E < 0 of true -> erlang:max(__N + __E, 0); false -> erlang:min(__E, __N) end, unicode:characters_to_binary(lists:sublist(__L, __B + 1, erlang:max(__F - __B, 0))) end)($0, $1, $2)""")]
 #[@External.Node("""((__s, __a, __e) => { if (__a == null) __a = 0; if (/[\u{D800}-\u{DFFF}\u{10000}-\u{10FFFF}]/u.test(__s)) { const __c = Array.from(__s); const __m = __c.length; const __d = __a < 0 ? Math.max(__m + __a, 0) : Math.min(__a, __m); const __g = __e < 0 ? Math.max(__m + __e, 0) : Math.min(__e, __m); return Array.from({ length: Math.max(__g - __d, 0) }, (_, __i) => __c[__d + __i]).join(""); } const __n = __s.length; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); const __f = __e < 0 ? Math.max(__n + __e, 0) : Math.min(__e, __n); return __s.substring(__b, Math.max(__b, __f)); })($0, $1, $2)""")]
 declare fn stringSlice1(s: string, start: i32, end: ?i32) -> string;
+
+// ── Bytes slice arity dispatch ───────────────────────────────────────────────
+// The string pair's shape, over bytes: commonJS patches
+// `Uint8Array.prototype.slice` with `Bytes`' `default fn slice`, so the Node
+// templates cut with `subarray` and copy. wasm lowers `slice` itself.
+
+#[@External.Erlang("""(fun(__B, __A) -> __N = byte_size(__B), __S = case __A < 0 of true -> erlang:max(__N + __A, 0); false -> erlang:min(__A, __N) end, binary:part(__B, __S, __N - __S) end)($0, $1)""")]
+#[@External.Node("""((__b, __a) => { if (__a == null) __a = 0; const __n = __b.length; const __s = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); return new Uint8Array(__b.subarray(__s, __n)); })($0, $1)""")]
+declare fn bytesSlice0(b: Bytes, start: i32) -> Bytes;
+
+#[@External.Erlang("""(fun(__B, __A, __E) -> __N = byte_size(__B), __S = case __A < 0 of true -> erlang:max(__N + __A, 0); false -> erlang:min(__A, __N) end, __F = case __E < 0 of true -> erlang:max(__N + __E, 0); false -> erlang:min(__E, __N) end, binary:part(__B, __S, erlang:max(__F - __S, 0)) end)($0, $1, $2)""")]
+#[@External.Node("""((__b, __a, __e) => { if (__a == null) __a = 0; const __n = __b.length; const __s = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); const __f = __e < 0 ? Math.max(__n + __e, 0) : Math.min(__e, __n); return new Uint8Array(__b.subarray(__s, Math.max(__s, __f))); })($0, $1, $2)""")]
+declare fn bytesSlice1(b: Bytes, start: i32, end: ?i32) -> Bytes;
 
 // ── string numerals ──────────────────────────────────────────────────────────
 // Host helpers behind `default fn parseInt` / `parseFloat`. The methods decide

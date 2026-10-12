@@ -344,6 +344,14 @@ no `+ 0` canonicalisation — a `BigInt` mixes with no number, `NumKind.big`), `
 (`isBoxedPrototype` unwraps `this`). The `.d.ts` spells it `bigint` (`typescript.zig` passes the name
 through); `modules/bigint_across_modules` puts one through `scripts/tsc-check.sh`.
 
+## `Bytes` (decision 346)
+
+A `Bytes` is a `Uint8Array` (`jsPrototypeOwner("Bytes")`, a global namespace): `Bytes.fromUtf8(s)`
+is `new TextEncoder().encode(s)`, `length()` the native property (inference's rename), and
+`toUtf8`, `concat` and `slice` prototype patches of std's `behavior Bytes` — `slice` replaces
+the native one, so its Node templates cut with `subarray` and copy. `==` is `__bp_eq`, which compares
+two `Uint8Array`s index by index (same constructor, `Object.keys`).
+
 ## String indices count codepoints (decision 320)
 
 `length`, `at`, `slice`, `indexOf`, `lastIndexOf` and `charCodeAt` count

@@ -522,3 +522,22 @@ test "beam: a library's field read is its closure's alone, whatever its consumer
     // `q.size` in `shelf` is a `get_tuple_element` under both consumers.
     try h.assertLibrarySameUnder(std.testing.allocator, .beam, &.{ "shelf", "rival" }, "shelf", &h.closure_plain, &h.closure_crowded);
 }
+
+// Decision 346 — `Bytes` on this backend: in and out of text, length, slice,
+// concat, `==`, and the `Error` of bytes that are not UTF-8.
+const bytes_src =
+    \\pub fn main() {
+    \\    val b = Bytes.fromUtf8("héllo");
+    \\    @print(b.length());
+    \\    @print(b.slice(1, 3).toUtf8().unwrapOr("?"));
+    \\    @print(b.slice(1, 2).toUtf8().isError());
+    \\    val j = Bytes.fromUtf8("ab").concat(Bytes.fromUtf8("cd"));
+    \\    @print(j[2..].toUtf8().unwrapOr("?"));
+    \\    @print(j == Bytes.fromUtf8("abcd"));
+    \\}
+;
+const bytes_log = "6\né\ntrue\ncd\ntrue\n";
+
+test "beam: decision 346 ---- Bytes is a binary, its methods std's templates" {
+    try h.assertBeamRunLog(std.testing.allocator, bytes_src, bytes_log, &.{});
+}

@@ -458,11 +458,11 @@ fn main() {
   ;; __std_f4 — from std_wasm.wasm (sha256 b4b6f06748d6)
   ;; __std_f57 — from std_wasm.wasm (sha256 abc0c5a2112e)
   ;; __std_f58 — from std_wasm.wasm (sha256 432c7dfb021a)
-  ;; __std_f356 — from std_wasm.wasm (sha256 91fc3314249d)
-  ;; __std_f372 — from std_wasm.wasm (sha256 d13a98c08300)
-  ;; std:array.joinStrings — from std_wasm.wasm (sha256 1bf15bd4e79f)
-  ;; std:array.joinInts — from std_wasm.wasm (sha256 08bec9021496)
-  ;; __std_f392 — from std_wasm.wasm (sha256 0a401b24534c)
+  ;; __std_f370 — from std_wasm.wasm (sha256 91fc3314249d)
+  ;; __std_f386 — from std_wasm.wasm (sha256 d13a98c08300)
+  ;; std:array.joinStrings — from std_wasm.wasm (sha256 1e153bc98021)
+  ;; std:array.joinInts — from std_wasm.wasm (sha256 18182980569f)
+  ;; __std_f407 — from std_wasm.wasm (sha256 0a401b24534c)
 )
 ```
 

@@ -1,0 +1,7 @@
+//// Decision 346 — a `comptime` does not compute `Bytes` yet: no compile-time value lifts
+//// into a byte sequence.
+
+pub fn main() {
+    val b = comptime Bytes.fromUtf8("a");
+    @print(b.length());
+}

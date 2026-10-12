@@ -1952,3 +1952,39 @@ test "infer error: record spread ---- at a method call and on an enum variant, `
         \\}
     , "call-spread", 5, 20);
 }
+
+// ── decision 346: `Bytes` ─────────────────────────────────────────────────────
+
+test "decision 346: Bytes crosses to and from text through fromUtf8 / toUtf8 alone" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\fn roundTrip(s: string) -> string {
+        \\    val b: Bytes = Bytes.fromUtf8(s);
+        \\    val n: i32 = b.length();
+        \\    val cut: Bytes = b.slice(1).concat(b[0..1]);
+        \\    val same: bool = cut == b;
+        \\    @print(n);
+        \\    @print(same);
+        \\    return cut.toUtf8().unwrapOr("");
+        \\}
+        \\pub fn main() { @print(roundTrip("ab")); }
+    );
+    const cases = [_]struct { src: []const u8, want: []const u8 }{
+        .{ .src = "pub fn main() { val b: Bytes = \"a\"; @print(b.length()); }", .want = "expected Bytes, got string" },
+        .{ .src = "fn f(s: string) -> i32 { return s.length(); }\npub fn main() { @print(f(Bytes.fromUtf8(\"a\"))); }", .want = "expected string, got Bytes" },
+        .{ .src = "pub fn main() { @print(Bytes.fromUtf8(\"a\")); }", .want = "bytes-widened" },
+        .{ .src = "pub fn main() { val s = \"x\" + Bytes.fromUtf8(\"a\"); @print(s); }", .want = "`Bytes` is no text to join" },
+        .{ .src = "pub fn main() { val b = Bytes.fromUtf8(\"a\"); @print(\"${b}\"); }", .want = "`Bytes` is no text to join" },
+        .{ .src = "pub fn main() { val b = Bytes.fromUtf8(\"a\"); @print(b < b); }", .want = "`Bytes` takes no `<`" },
+        .{ .src = "fn f(v: string | Bytes) -> bool { return v is Bytes; }\npub fn main() { @print(f(\"a\")); }", .want = "bytes-type-test" },
+        .{ .src = "pub fn main() { val b = comptime Bytes.fromUtf8(\"a\"); @print(b.length()); }", .want = "comptime-bytes" },
+        .{ .src = "pub fn main() { val b = Bytes.fromText(\"a\"); @print(b.length()); }", .want = "`Bytes` has no associated function `fromText`" },
+    };
+    for (cases) |c| {
+        const msg = try typeErrorMessage(std.testing.allocator, c.src);
+        defer std.testing.allocator.free(msg);
+        if (std.mem.indexOf(u8, msg, c.want) == null) {
+            std.debug.print("\n{s}\nanswered: {s}\n", .{ c.src, msg });
+            return error.TestExpectedEqual;
+        }
+    }
+}

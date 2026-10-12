@@ -1,0 +1,8 @@
+//// Decision 346 — `+` does not read `Bytes` as text: `Bytes` answers `==` and `!=` alone, and
+//// two are joined with `a.concat(b)`.
+
+pub fn main() {
+    val b = Bytes.fromUtf8("a");
+    val s = "x" + b;
+    @print(s);
+}

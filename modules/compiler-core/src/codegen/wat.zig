@@ -4630,7 +4630,12 @@ const Emitter = struct {
         return switch (t) {
             .named => |n| n,
             .array => |e| if (std.mem.eql(u8, stdSpelling(e.*), "string")) "string[]" else "another type",
-            .optional => |e| if (std.mem.eql(u8, stdSpelling(e.*), "string")) "?string" else "another type",
+            .optional => |e| if (std.mem.eql(u8, stdSpelling(e.*), "string"))
+                "?string"
+            else if (std.mem.eql(u8, stdSpelling(e.*), "Bytes"))
+                "?Bytes"
+            else
+                "another type",
             else => "another type",
         };
     }
@@ -6664,6 +6669,7 @@ const Emitter = struct {
                             return;
                         }
                         if (self.bigintAssoc(cc)) |which| return self.lowerBigintAssoc(which, cc);
+                        if (self.isBytesFromUtf8(cc)) return self.lowerCoerced(callArg(cc, 0).?, "i32");
                         if (self.assocSym(cc)) |sym_tmp| {
                             const generic = try self.arena().dupe(u8, sym_tmp);
                             const spec = (try self.specializeFor(generic, cc.args)) orelse
@@ -9553,6 +9559,7 @@ const Emitter = struct {
             .float => "f64",
             .array => "i32",
             .bigint => "bigint",
+            .bytes => "Bytes",
         };
     }
 
@@ -9704,6 +9711,13 @@ const Emitter = struct {
             },
             // Decision 332 — through the `bigint` group.
             .bigint => &.{ .{ "toString", 0, .str }, .{ "toI64", 0, .i64 }, .{ "toF64", 0, .f64 } },
+            // Decision 346 — a `Bytes` is laid out as a string is, and is no
+            // string: its results are addresses (`.i32`), never `.str`, which
+            // would print it as text.
+            .bytes => &.{
+                .{ "length", 0, .i32 }, .{ "toUtf8", 0, .i32 }, .{ "concat", 1, .i32 },
+                .{ "slice", 1, .i32 },  .{ "slice", 2, .i32 },
+            },
         };
         for (rows) |r| {
             if (r[1] == argc and std.mem.eql(u8, r[0], name)) return r[2];
@@ -9968,6 +9982,7 @@ const Emitter = struct {
             },
             .string => try self.lowerStringMethod(cc),
             .array => try self.lowerArrayMethod(cc),
+            .bytes => try self.lowerBytesMethod(cc),
             .bigint => {
                 try self.lowerCoerced(recv, "i32");
                 try self.emit(try self.stdCall(if (eq(u8, name, "toString"))
@@ -9978,6 +9993,77 @@ const Emitter = struct {
                     "bigint.toF64"));
             },
         }
+    }
+
+    /// Decision 346 — `Bytes`' methods. A `Bytes` is laid out as a string is
+    /// (the address of its `u32` byte count, the bytes behind it), so its
+    /// length is that word, `concat` the strings' concatenation, `slice`
+    /// std-wasm's `bytes.slice` (byte bounds, `slice`'s normalisation), and
+    /// `toUtf8` the same address once std-wasm's `bytes.isUtf8` accepts it.
+    fn lowerBytesMethod(self: *Emitter, cc: anytype) anyerror!void {
+        const recv = cc.receiver.?.*;
+        const name: []const u8 = cc.callee;
+        const eq = std.mem.eql;
+        if (eq(u8, name, "slice")) {
+            try self.lowerCoerced(recv, "i32");
+            if (cc.args.len > 0) try self.lowerCoerced(cc.args[0].value.*, "i32") else try self.emit(zero);
+            if (cc.args.len > 1 and !isNullLit(cc.args[1].value.*))
+                try self.lowerSliceEnd(cc.args[1].value.*)
+            else
+                try self.emit(try self.constInt(std.math.maxInt(i32)));
+            try self.emit(try self.stdCall("bytes.slice"));
+            return;
+        }
+        if (eq(u8, name, "length")) {
+            try self.lowerCoerced(recv, "i32");
+            try self.emitC(.{ .load = .{} }, "byte count");
+            return;
+        }
+        if (eq(u8, name, "concat")) {
+            try self.lowerCoerced(recv, "i32");
+            try self.lowerCoerced(callArg(cc, 0).?, "i32");
+            try self.emit(self.builder().helper(.str_concat));
+            return;
+        }
+        // `toUtf8`: `Ok` holding the same buffer (a string's layout), or the
+        // `Error` the other targets write.
+        const p = try self.declRes();
+        const out = try self.declRes();
+        try self.lowerCoerced(recv, "i32");
+        try self.emit(.{ .local_set = p });
+        try self.allocResultPair(out);
+        try self.emit(.{ .local_get = p });
+        try self.emit(try self.stdCall("bytes.isUtf8"));
+        var then_c: Capture = .{};
+        self.open(&then_c);
+        try self.emit(.{ .local_get = out });
+        try self.emit(zero);
+        try self.emitC(.{ .store = .{} }, "Ok tag");
+        try self.emit(.{ .local_get = out });
+        try self.emit(.{ .local_get = p });
+        try self.emitC(.{ .store = .{ .offset = 4 } }, "payload");
+        const then_seq = self.seal(&then_c, .none);
+        var else_c: Capture = .{};
+        self.open(&else_c);
+        try self.emit(.{ .local_get = out });
+        try self.emit(one);
+        try self.emitC(.{ .store = .{} }, "Error tag");
+        try self.emit(.{ .local_get = out });
+        const msg = try self.internString("Bytes.toUtf8: not valid UTF-8");
+        try self.emit(try self.constInt(msg.offset));
+        try self.emitC(.{ .store = .{ .offset = 4 } }, "payload");
+        const else_seq = self.seal(&else_c, .none);
+        try self.emit(.{ .@"if" = .{ .then = .{ .seq = then_seq }, .@"else" = .{ .seq = else_seq } } });
+        try self.emit(.{ .local_get = out });
+    }
+
+    /// Decision 346 — `Bytes.fromUtf8(s)`, which inference names by the
+    /// behavior: the string's own buffer, a `Bytes`' layout (both immutable).
+    fn isBytesFromUtf8(self: *Emitter, cc: anytype) bool {
+        const rn = receiverName(cc) orelse return false;
+        if (!std.mem.eql(u8, rn, "Bytes") or cc.args.len != 1 or cc.trailing.len != 0) return false;
+        if (self.locals.contains(rn) or self.globals.contains(rn) or self.records.contains(rn) or self.enums.contains(rn)) return false;
+        return std.mem.eql(u8, cc.callee, "fromUtf8");
     }
 
     fn lowerStringMethod(self: *Emitter, cc: anytype) anyerror!void {
@@ -13422,6 +13508,19 @@ const Emitter = struct {
                     // Decision 332 — `bigint.of(n)` answers a `bigint`, and so
                     // does `xs.fold(0n, f)`: a fold answers its accumulator.
                     if (self.bigintAssoc(cc)) |which| if (which == .of) break :blk .{ .named = "bigint" };
+                    // Decision 346 — `Bytes.fromUtf8(s)`, `slice` and `concat`
+                    // answer a `Bytes`; `toUtf8` its `@Result<string, string>`.
+                    if (self.isBytesFromUtf8(cc)) break :blk .{ .named = "Bytes" };
+                    if (cc.receiver != null) if (self.primKindAt(cc, c.loc)) |k| if (k == .bytes) {
+                        if (std.mem.eql(u8, cc.callee, "slice") or std.mem.eql(u8, cc.callee, "concat")) break :blk .{ .named = "Bytes" };
+                        if (std.mem.eql(u8, cc.callee, "length")) break :blk .{ .named = "i32" };
+                        if (std.mem.eql(u8, cc.callee, "toUtf8")) {
+                            const args = self.reg_arena.allocator().alloc(ast.TypeRef, 2) catch break :blk null;
+                            args[0] = .{ .named = "string" };
+                            args[1] = .{ .named = "string" };
+                            break :blk .{ .generic = .{ .name = "Result", .args = args, .is_builtin = true } };
+                        }
+                    };
                     if (cc.receiver != null and std.mem.eql(u8, cc.callee, "fold") and cc.args.len > 0) if (self.primKindAt(cc, c.loc)) |k| if (k == .array and self.isBigintExpr(cc.args[0].value.*)) break :blk .{ .named = "bigint" };
                     // Inside a specialisation a primitive method's result is
                     // typed by what it answers, so the next link of a chain
@@ -14868,6 +14967,9 @@ const Emitter = struct {
             },
             .call => |c| switch (c.kind) {
                 .call => |cc| blk: {
+                    // Decision 346 — `b.toUtf8()` answers `@Result<string, string>`.
+                    if (cc.receiver != null) if (self.primKindAt(cc, c.loc)) |k| if (k == .bytes)
+                        break :blk resultShapeOfTypeRef(self.typeRefOf(e) orelse break :blk null);
                     const sym = self.calleeSymbol(cc, c.loc) orelse break :blk null;
                     break :blk self.result_shape_fns.get(sym);
                 },
@@ -16625,6 +16727,10 @@ const Emitter = struct {
 
     fn lowerBinOp(self: *Emitter, op: anytype, lhs: ast.Expr, rhs: ast.Expr, loc: ast.Loc) anyerror!void {
         const Op = @TypeOf(op);
+        // Decision 346 — `==` / `!=` over `Bytes` (inference records it at
+        // the operator) compares the bytes, as a string's do.
+        if ((op == Op.eq or op == Op.ne) and !(isNullLit(lhs) or isNullLit(rhs))) if (self.instance_lowerings.get(loc)) |il| if (il == .prim and il.prim == .bytes)
+            return self.lowerStrEq(lhs, rhs, op == Op.ne);
         // `x == null` compares the carrier with 0, whatever `x` holds — a
         // string `==` would read the length word at address 0.
         if ((op == Op.eq or op == Op.ne) and (isNullLit(lhs) or isNullLit(rhs))) {

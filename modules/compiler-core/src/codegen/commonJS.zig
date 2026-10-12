@@ -263,6 +263,8 @@ pub fn isAssociatedFn(m: ast.BehaviorMethod) bool {
 /// (incl. local interfaces) own their prototype directly.
 pub fn jsPrototypeOwner(name: []const u8) []const u8 {
     if (std.mem.eql(u8, name, "Bool")) return "Boolean";
+    // Decision 346 — `Bytes` is a `Uint8Array`.
+    if (std.mem.eql(u8, name, "Bytes")) return "Uint8Array";
     // The numeric tower (controllers + concrete widths) maps to `Number`.
     const numeric = [_][]const u8{ "Number", "Integer", "Signed", "Float", "I32", "I64", "U32", "U64", "F32", "F64" };
     for (numeric) |nm| if (std.mem.eql(u8, name, nm)) return "Number";
@@ -313,7 +315,7 @@ const js_global_namespaces = [_][]const u8{
     "globalThis", "Math",    "JSON",    "console", "Number",  "Date",
     "Object",     "Array",   "String",  "Boolean", "Symbol",  "BigInt",
     "Promise",    "Reflect", "Intl",    "Error",   "RegExp",  "Map",
-    "Set",        "WeakMap", "WeakSet", "Atomics", "process",
+    "Set",        "WeakMap", "WeakSet", "Atomics", "process", "Uint8Array",
 };
 
 /// True when an `#[@External.Node(module, …)]` module name is a JS global
@@ -5521,6 +5523,7 @@ const Emitter = struct {
                             .int, .float => "Number",
                             .bool => "Bool",
                             .bigint => "BigInt",
+                            .bytes => "Bytes",
                         },
                         else => break :blk null,
                     };

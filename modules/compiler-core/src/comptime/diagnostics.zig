@@ -244,6 +244,15 @@ pub const bigint_widened: []const u8 = "bigint-widened";
 /// Decision 332 (question 139-a) — `is` / a type pattern over a `bigint`, or
 /// testing for one: its type is static.
 pub const bigint_type_test: []const u8 = "bigint-type-test";
+/// Decision 346 — a `comptime` whose value is (or holds) `Bytes`: no
+/// compile-time value lifts into a byte sequence yet.
+pub const comptime_bytes: []const u8 = "comptime-bytes";
+/// Decision 346 — `Bytes` widened to `unknown`: erlang and beam hold `Bytes`
+/// and `string` alike (a binary), so no run-time test tells them apart.
+pub const bytes_widened: []const u8 = "bytes-widened";
+/// Decision 346 — `is` / a type pattern over `Bytes`, or testing for it: its
+/// type is static.
+pub const bytes_type_test: []const u8 = "bytes-type-test";
 /// Decisions 434, 341, 452 — a host function reached at comptime has neither
 /// cell the comptime runtime answers by: an `@External.Wasm(std: "…")` cell
 /// (std-wasm) or an `@External.Wasm(fn: …)` cell (an `@External.Erlang` cell
@@ -741,6 +750,9 @@ pub const all_codes = [_][]const u8{
     comptime_bigint,
     bigint_widened,
     bigint_type_test,
+    comptime_bytes,
+    bytes_widened,
+    bytes_type_test,
     comptime_host_cell_unavailable,
     comptime_badarith,
     decorator_writes_module_var,

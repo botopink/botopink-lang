@@ -492,8 +492,8 @@ running off the end would hand out: a `@Result` in any layer has a value (`Ok` o
 
 ### Primitives
 
-`i32`, `i64`, `u32`, `u64`, `f32`, `f64`, `bigint`, `string`, `bool`, `void`.
-Their methods are declared in `libs/std/src/primitives.bp`.
+`i32`, `i64`, `u32`, `u64`, `f32`, `f64`, `bigint`, `string`, `Bytes`, `bool`,
+`void`. Their methods are declared in `libs/std/src/primitives.bp`.
 
 A `string` is indexed by codepoint on every target (decision 320): `length`,
 `at`, `slice`, `indexOf` and `lastIndexOf` count codepoints — `"e\u{301}".length`
@@ -503,6 +503,35 @@ bytes or grapheme clusters, so the index `indexOf` answers is the one `at` and
 indices.
 
 <!-- example: modules/string_index_of_codepoints -->
+
+`Bytes` is an immutable sequence of bytes (decision 346): an Erlang binary on
+erlang and beam, a `Uint8Array` on commonJS, a buffer in wasm memory. No literal
+is `Bytes`, and nothing converts between `Bytes` and `string` but two calls:
+`Bytes.fromUtf8(s)` answers the UTF-8 bytes of `s`, and `b.toUtf8()` answers
+`@Result<string, string>` — the text, or `Error("Bytes.toUtf8: not valid
+UTF-8")` for bytes that are not well-formed UTF-8 (a sequence cut short, an
+overlong form, a surrogate, a code point past U+10FFFF; a byte order mark is kept).
+A string literal where `Bytes` is expected, and `Bytes` where a `string` is, are
+mismatches at the value. Every index counts bytes: `length()`, `slice(start,
+end)` with `string`'s bounds (a negative index counts from the end, both clamp,
+an absent end is the length — `b[1..3]`, `b[2..]`), and `a.concat(b)` joins two.
+`==` and `!=` compare the bytes; `Bytes` takes no other operator (`+` and a string
+template do not read it as text). A host binding takes and answers `Bytes` as its
+target holds it. `Bytes` does not widen to `unknown` (so `@print` does not take it),
+`is` does not test it — erlang holds it and a `string` alike — and a `comptime`
+does not compute one yet.
+
+<!-- example: modules/bytes_round_trip -->
+
+std's `encoding` bridges `Bytes` and text losslessly: `base64EncodeBytes(b)` and
+`hexEncodeBytes(b)` answer the text of the bytes as they are, and
+`base64DecodeBytes(s)` / `hexDecodeBytes(s)` answer `@Result<Bytes, string>` with
+the text codecs' rules and `Error` texts (`"not base64"`, `"not hex"`).
+
+<!-- example: modules/bytes_encoding_bridges -->
+<!-- example: modules/bytes_string_literal -->
+<!-- example: modules/bytes_where_string_expected -->
+<!-- example: modules/bytes_plus_string -->
 
 ### type — records
 

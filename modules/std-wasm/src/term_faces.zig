@@ -233,6 +233,40 @@ pub fn rt_std_text__fromCodepoint(c: T) callconv(.c) term.T {
     return term.binCopy(stdWasm.text.encodeCodepoint(&buf, cp) orelse return term.badarg());
 }
 
+// Decision 346 — `Bytes`' codecs: a `Bytes` crosses as a binary, a `?Bytes`
+// as the binary or `undefined`.
+
+pub fn rt_std_encoding__base64EncodeBytes(t: T) callconv(.c) term.T {
+    const s = string.strArg(t) orelse return &term.nil_cell;
+    const n = stdWasm.encoding.base64EncodedLength(s.len);
+    const out = term.alloc(n);
+    stdWasm.encoding.base64Encode(out[0..n], s);
+    return term.binOf(out[0..n]);
+}
+
+pub fn rt_std_encoding__base64DecodeBytes(t: T) callconv(.c) term.T {
+    const s = string.strArg(t) orelse return &term.nil_cell;
+    const n = stdWasm.encoding.base64DecodedLength(s) orelse return term.a_undefined;
+    const out = term.alloc(n);
+    stdWasm.encoding.base64Decode(out[0..n], s);
+    return term.binOf(out[0..n]);
+}
+
+pub fn rt_std_encoding__hexEncodeBytes(t: T) callconv(.c) term.T {
+    const s = string.strArg(t) orelse return &term.nil_cell;
+    const out = term.alloc(2 * s.len);
+    stdWasm.encoding.hexEncode(out[0 .. 2 * s.len], s);
+    return term.binOf(out[0 .. 2 * s.len]);
+}
+
+pub fn rt_std_encoding__hexDecodeBytes(t: T) callconv(.c) term.T {
+    const s = string.strArg(t) orelse return &term.nil_cell;
+    const n = stdWasm.encoding.hexDecodedLength(s) orelse return term.a_undefined;
+    const out = term.alloc(n);
+    stdWasm.encoding.hexDecode(out[0..n], s);
+    return term.binOf(out[0..n]);
+}
+
 comptime {
     // Every function std-wasm implements has its export here, by name.
     for (stdWasm.exports) |e| {

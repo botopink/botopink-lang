@@ -4285,14 +4285,20 @@ fn refuseStdBinding(env: *Env, a: ast.Annotation, name: []const u8, params: []co
 }
 
 /// A written type as a `std:` cell's check spells it: a plain name as
-/// written (`Self` as `self_ty` spells it), `string[]` and `?string` as
+/// written (`Self` as `self_ty` spells it), `string[]`, `?string` and `?Bytes` as
 /// std-wasm's types spell them (`std_wasm.Type`), anything else `another
 /// type`.
 fn spelledType(t: ast.TypeRef, self_ty: ?[]const u8) []const u8 {
     return switch (t) {
         .named => |n| if (std.mem.eql(u8, n, "Self")) (self_ty orelse "Self") else n,
         .array => |e| if (std.mem.eql(u8, spelledType(e.*, self_ty), "string")) "string[]" else "another type",
-        .optional => |e| if (std.mem.eql(u8, spelledType(e.*, self_ty), "string")) "?string" else "another type",
+        .optional => |e| if (std.mem.eql(u8, spelledType(e.*, self_ty), "string"))
+            "?string"
+        else if (std.mem.eql(u8, spelledType(e.*, self_ty), "Bytes"))
+            // Decision 346 — `Bytes`' codecs answer one when the text is one.
+            "?Bytes"
+        else
+            "another type",
         else => "another type",
     };
 }
@@ -10053,11 +10059,12 @@ fn checkDeclaredArguments(
 }
 
 /// Decision 332 — the primitive a call's receiver names as a type, when it
-/// names one with associated functions (`bigint`) and no binding shadows it.
+/// names one with associated functions (`bigint`; decision 346's `Bytes`) and
+/// no binding shadows it.
 fn primitiveStaticReceiver(env: *Env, recv: ast.Expr) ?[]const u8 {
     if (recv != .identifier or recv.identifier.kind != .ident) return null;
     const name = recv.identifier.kind.ident;
-    if (!std.mem.eql(u8, name, "bigint")) return null;
+    if (!std.mem.eql(u8, name, "bigint") and !std.mem.eql(u8, name, "Bytes")) return null;
     // `registerBuiltins` binds each primitive's name to its type; a local
     // binding of the name holds a value of another type.
     if (env.lookup(name)) |t| if (!t.deref().isNamed(name)) return null;
@@ -10077,7 +10084,11 @@ fn inferPrimitiveStaticCall(env: *Env, call: anytype, recv: *ast.Expr, loc: ast.
     const key = try std.fmt.allocPrint(env.arena, "{s}.{s}", .{ iface, call.callee });
     const fnTy = env.lookup(key) orelse {
         const msg = try std.fmt.allocPrint(env.arena, "`{s}` has no associated function `{s}`", .{ owner, call.callee });
-        env.lastError = TypeError.custom(msg, "`bigint`'s associated functions are `bigint.of(n)` and `bigint.parse(text)` (`primitives.bp`, decision 332); its methods are called on a value (`x.toString()`).").withLoc(loc);
+        const hint = if (std.mem.eql(u8, owner, "Bytes"))
+            "`Bytes`' associated function is `Bytes.fromUtf8(s)` (`primitives.bp`, decision 346); its methods are called on a value (`b.length()`)."
+        else
+            "`bigint`'s associated functions are `bigint.of(n)` and `bigint.parse(text)` (`primitives.bp`, decision 332); its methods are called on a value (`x.toString()`).";
+        env.lastError = TypeError.custom(msg, hint).withLoc(loc);
         return error.TypeError;
     };
     const params: []const *T.Type = if (fnTy.deref().* == .func) fnTy.deref().func.params else &.{};
@@ -11575,6 +11586,15 @@ fn bindPatternNamesForSubject(
                     );
                     return error.TypeError;
                 }
+                // Decision 346 — nor `Bytes`: erlang and beam hold it and a
+                // `string` alike.
+                if (unifyMod.mentionsBytes(tested) or unifyMod.mentionsBytes(subjectType)) {
+                    env.lastError = TypeError.custom(
+                        diagnostics.bytes_type_test ++ ": a type pattern does not test `Bytes`",
+                        "`Bytes`' type is static (decision 346): a value typed `Bytes` is one, and nothing else is.",
+                    );
+                    return error.TypeError;
+                }
                 return;
             }
             // C8 — a binder names the matched value itself.
@@ -12442,9 +12462,9 @@ fn requireNumericOperand(env: *Env, ty: *T.Type, op: []const u8, loc: ast.Loc) I
 /// against one of them can never match. Every other unregistered name stays
 /// permissive (a forward reference, or an imported type).
 pub const scalar_type_names = [_][]const u8{
-    "i8",       "u8",     "i16", "u16", "i32",  "u32",    "i64",  "u64",
-    "isize",    "usize",  "f32", "f64", "bool", "string", "void", "v128",
-    "noreturn", "bigint",
+    "i8",       "u8",     "i16",   "u16", "i32",  "u32",    "i64",  "u64",
+    "isize",    "usize",  "f32",   "f64", "bool", "string", "void", "v128",
+    "noreturn", "bigint", "Bytes",
 };
 
 /// Decision 8 § 9 — a `val assert` variant pattern must name a variant the
@@ -13241,15 +13261,21 @@ fn equalityOperandExpectation(op: @FieldType(ast.BinOpExprOf(.untyped), "op"), o
 
 /// Decision 332 — whether the written type `t` is or holds `bigint`.
 fn typeRefMentionsBigint(t: ast.TypeRef) bool {
+    return typeRefMentions(t, "bigint");
+}
+
+/// Whether the written type `t` is or holds the primitive `name` (`bigint`,
+/// decision 346's `Bytes`).
+fn typeRefMentions(t: ast.TypeRef, name: []const u8) bool {
     return switch (t) {
-        .named => |n| std.mem.eql(u8, n, "bigint"),
-        .optional => |inner| typeRefMentionsBigint(inner.*),
-        .array => |inner| typeRefMentionsBigint(inner.*),
+        .named => |n| std.mem.eql(u8, n, name),
+        .optional => |inner| typeRefMentions(inner.*, name),
+        .array => |inner| typeRefMentions(inner.*, name),
         .generic => |g| for (g.args) |a| {
-            if (typeRefMentionsBigint(a)) break true;
+            if (typeRefMentions(a, name)) break true;
         } else false,
         else => if (t.tupleElems()) |elems| for (elems) |e| {
-            if (typeRefMentionsBigint(e)) break true;
+            if (typeRefMentions(e, name)) break true;
         } else false else false,
     };
 }
@@ -13929,6 +13955,37 @@ fn inferBinaryOpExpr(env: *Env, binop: ast.BinOpExprOf(.untyped), loc: ast.Loc) 
             env.lastError = TypeError.custom(msg, "`==` between numbers is exact and never widens; write the literal as the float it is compared with.").withLoc(lit.getLoc());
             return error.TypeError;
         }
+    }
+    // Decision 346 — `Bytes` answers `==` / `!=` (its bytes compared) and no
+    // other operator: `+` would read it as text, and an ordering has no one
+    // answer across the targets. The backends without a native comparison of
+    // two byte sequences read the `==` from the operator's lowering.
+    switch (binop.op) {
+        .eq, .ne => if (lhsTyped.getType().deref().isNamed("Bytes") or rhsTyped.getType().deref().isNamed("Bytes")) {
+            try env.instanceLowerings.put(loc, .{ .prim = .bytes });
+        },
+        .add, .sub, .mul, .div, .mod, .lt, .gt, .lte, .gte => for ([_]TypedExpr{ lhsTyped, rhsTyped }, [_]ast.Expr{ binop.lhs.*, binop.rhs.* }) |t, e| {
+            if (!t.getType().deref().isNamed("Bytes")) continue;
+            const sym: []const u8 = switch (binop.op) {
+                .add => "+",
+                .sub => "-",
+                .mul => "*",
+                .div => "/",
+                .mod => "%",
+                .lt => "<",
+                .gt => ">",
+                .lte => "<=",
+                else => ">=",
+            };
+            // A string template's holes are joined with `+` (`inferLiteralExpr`).
+            const msg = if (binop.op == .add)
+                "`Bytes` is no text to join with `+` or a string template"
+            else
+                try std.fmt.allocPrint(env.arena, "`Bytes` takes no `{s}`", .{sym});
+            env.lastError = TypeError.custom(msg, "`Bytes` answers `==` and `!=` alone (decision 346): join two with `a.concat(b)`, read one as text with `b.toUtf8()`.").withLoc(e.getLoc());
+            return error.TypeError;
+        },
+        else => {},
     }
     const lhsPtr = try makeTypedPtr(env, lhsTyped);
     const rhsPtr = try makeTypedPtr(env, rhsTyped);
@@ -16512,6 +16569,7 @@ fn primKindOfName(typeName: []const u8) ?envMod.PrimKind {
         .{ .t = "f32", .k = .float },
         .{ .t = "f64", .k = .float },
         .{ .t = "bigint", .k = .bigint },
+        .{ .t = "Bytes", .k = .bytes },
     };
     for (map) |e| if (std.mem.eql(u8, typeName, e.t)) return e.k;
     return null;
@@ -16785,6 +16843,7 @@ fn primitiveInterfaceName(typeName: []const u8) ?[]const u8 {
         .{ .t = "f32", .i = "F32" },
         .{ .t = "f64", .i = "F64" },
         .{ .t = "bigint", .i = "BigInt" },
+        .{ .t = "Bytes", .i = "Bytes" },
     };
     for (map) |e| if (std.mem.eql(u8, typeName, e.t)) return e.i;
     return null;
@@ -16793,7 +16852,7 @@ fn primitiveInterfaceName(typeName: []const u8) ?[]const u8 {
 /// The primitive a controller interface of `primitives.bp` is the behavior
 /// of (`String` → `string`), the inverse of `primitiveInterfaceName`.
 fn primitiveOfInterface(iface: []const u8) ?[]const u8 {
-    const prims = [_][]const u8{ "array", "bool", "string", "i32", "i64", "u32", "u64", "f32", "f64", "bigint" };
+    const prims = [_][]const u8{ "array", "bool", "string", "i32", "i64", "u32", "u64", "f32", "f64", "bigint", "Bytes" };
     for (prims) |p| if (primitiveInterfaceName(p)) |i| if (std.mem.eql(u8, i, iface)) return p;
     return null;
 }
@@ -18664,6 +18723,15 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                             ).withLoc(loc);
                             return error.TypeError;
                         }
+                        // Decision 346 — nor `Bytes`, which erlang and beam
+                        // hold as a `string` is held (a binary).
+                        if (typeRefMentions(tested, "Bytes") or (typedArgs.len == 1 and unifyMod.mentionsBytes(typedArgs[0].value.getType()))) {
+                            env.lastError = TypeError.custom(
+                                diagnostics.bytes_type_test ++ ": `is` does not test `Bytes`",
+                                "`Bytes`' type is static (decision 346): a value typed `Bytes` is one, and nothing else is.",
+                            ).withLoc(loc);
+                            return error.TypeError;
+                        }
                         try checkIsTestableType(env, tested, loc);
                         if (typedArgs.len == 1) try warnAlwaysFalseIs(env, typedArgs[0].value.getType(), tested, loc);
                     }
@@ -18980,7 +19048,10 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                 // — `resolveReceiverCall` above only fires for bare-identifier
                 // receivers. This recovers the method's real return type so a
                 // `Queue<i32>` chain keeps tracking `?i32` through `.peek()`.
-                if (nominalName(recvPtr.getType())) |tn| {
+                // Decision 346 — `Bytes` names a primitive and its behavior
+                // alike: a call on a `Bytes` value is the primitive's, below,
+                // never a behavior-typed receiver's.
+                if (nominalName(recvPtr.getType())) |tn| if (!std.mem.eql(u8, tn, "Bytes")) {
                     if (env.hasInherentMethod(tn, call.callee)) {
                         try recordInstanceCall(env, loc, tn);
                         return try makeMethodCall(env, recvPtr, call.callee, typedArgs, typedTrailing, loc);
@@ -19020,7 +19091,7 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                         if (fd.type_.deref().* == .func and env.instanceLowerings.get(loc) == null)
                             try env.instanceLowerings.put(loc, .{ .type_ = tn });
                     };
-                }
+                };
 
                 // A builtin-primitive receiver (`xs.map(f)`, `s.split(sep)`) has
                 // no native method dispatch on erlang/beam/wasm — record the
@@ -19038,7 +19109,7 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                         // string receiver keeps it safe — a `record` with a `len`/
                         // `size`/`length` method is never renamed.
                         const pk = primKindOfName(recvTy.named.name).?;
-                        if ((pk == .array or pk == .string) and
+                        if ((pk == .array or pk == .string or pk == .bytes) and
                             (std.mem.eql(u8, call.callee, "len") or
                                 std.mem.eql(u8, call.callee, "size") or
                                 std.mem.eql(u8, call.callee, "length")))
@@ -19087,7 +19158,7 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                         const innerTy = inner.deref();
                         if (innerTy.* == .named) {
                             if (primKindOfName(innerTy.named.name)) |pk| {
-                                if (pk == .array or pk == .string) try env.jsMethodRenames.put(loc, "length");
+                                if (pk == .array or pk == .string or pk == .bytes) try env.jsMethodRenames.put(loc, "length");
                             }
                         }
                     }
@@ -20510,6 +20581,15 @@ fn foldBodyComptime(env: *Env, ct: ast.ComptimeExprOf(.untyped), typed: TypedExp
         env.lastError = TypeError.custom(
             diagnostics.comptime_bigint ++ ": a `bigint` is not computed at compile time yet",
             "The compile-time evaluator holds a 64-bit integer (decision 332, front 01-compiler/139): compute the `bigint` when the program runs — drop the `comptime`.",
+        ).withLoc(loc);
+        return error.TypeError;
+    }
+    // Decision 346 — nor `Bytes`: the comptime runtimes hold it as a binary,
+    // which the lift writes back as a `string` literal.
+    if (unifyMod.mentionsBytes(typed.getType())) {
+        env.lastError = TypeError.custom(
+            diagnostics.comptime_bytes ++ ": `Bytes` is not computed at compile time yet",
+            "No compile-time value lifts into a byte sequence yet (decision 346): compute the `Bytes` when the program runs — drop the `comptime`.",
         ).withLoc(loc);
         return error.TypeError;
     }

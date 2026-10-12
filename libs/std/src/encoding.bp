@@ -12,10 +12,12 @@
 //// One import for the whole wire-format surface. Every encoder answers a
 //// string; every decoder that can meet malformed input answers
 //// `@Result<string, string>` through the template-owned `-> @Result`
-//// wrapper (`fs.bp`'s shape) — nothing here returns a sentinel. Text in,
-//// text out: there is no byte type, so `base64Decode` and `hexDecode`
-//// answer the bytes read back as UTF-8 (a non-UTF-8 payload is lossy —
-//// `language-gaps.md`).
+//// wrapper (`fs.bp`'s shape) — nothing here returns a sentinel. The text
+//// codecs read and write the UTF-8 bytes of a `string`: `base64Decode` and
+//// `hexDecode` answer the bytes read back as UTF-8 (a non-UTF-8 payload is
+//// lossy). Bytes cross losslessly through the `Bytes` bridges
+//// (decision 346): `base64EncodeBytes` / `base64DecodeBytes` and
+//// `hexEncodeBytes` / `hexDecodeBytes`.
 ////
 //// Was also `base64` (decision 106): its `encode`/`decode`/`encodeUrlSafe`/
 //// `decodeUrlSafe` are `base64Encode`/`base64Decode`/`base64UrlEncode`/
@@ -76,6 +78,53 @@ pub declare fn hexEncode(s: string) -> string;
 #[@External.Erlang("""(fun(__H) -> try {ok, binary:decode_hex(__H)} catch _:_ -> {error, <<"not hex">>} end end)($0)""")]
 #[@External.Wasm(fn: hexDecodeBody)]
 pub declare fn hexDecode(s: string) -> @Result<string, string>;
+
+// ── the `Bytes` bridges (decision 346) ───────────────────────────────────────
+// The codecs above over `Bytes`, lossless: an encoder answers the text of the
+// bytes as they are, a decoder the bytes the text spells — with the text
+// codecs' rules (the Node cell's base64: trailing `=` optional, no length of
+// the form 4k + 1, zero bits after the last whole byte; hex either case, an
+// even length) and their `Error` texts. On wasm and at comptime std-wasm
+// answers (`encoding.zig`); a decoder's cell answers `?Bytes`, absent for text
+// that is not one, and the public function makes it the `Error`.
+
+// Standard base64 (RFC 4648 §4) of `b`, with `=` padding.
+#[@External.Node("""Buffer.from($0).toString('base64')""")]
+#[@External.Erlang("base64:encode($0)")]
+#[@External.Wasm(std: "encoding.base64EncodeBytes")]
+pub declare fn base64EncodeBytes(b: Bytes) -> string;
+
+// The bytes the base64 text `s` spells; anything `base64Decode` refuses is
+// the same `Error`.
+pub fn base64DecodeBytes(s: string) -> @Result<Bytes, string> {
+    val b = base64BytesOf(s);
+    if (b == null) throw "not base64";
+    return b;
+}
+
+#[@External.Node("""((__s) => { const __t = __s.replace(/=+$/, ''); if (__t.length % 4 === 1 || !/^[A-Za-z0-9+/]*$/.test(__t)) return null; const __b = Buffer.from(__t, 'base64'); return __b.toString('base64').replace(/=+$/, '') === __t ? new Uint8Array(__b) : null; })($0)""")]
+#[@External.Erlang("""(fun(__S) -> __T = string:trim(__S, trailing, [61]), __N = byte_size(__T), case (__N rem 4 =/= 1) andalso lists:all(fun(__C) -> ((__C >= 65) andalso (__C =< 90)) orelse ((__C >= 97) andalso (__C =< 122)) orelse ((__C >= 48) andalso (__C =< 57)) orelse (__C =:= 43) orelse (__C =:= 47) end, binary_to_list(__T)) of false -> undefined; true -> __P = <<__T/binary, (binary:copy(<<61>>, (4 - __N rem 4) rem 4))/binary>>, __B = base64:decode(__P), case base64:encode(__B) =:= __P of true -> __B; false -> undefined end end end)($0)""")]
+#[@External.Wasm(std: "encoding.base64DecodeBytes")]
+declare fn base64BytesOf(s: string) -> ?Bytes;
+
+// Lowercase hex of `b`: the bytes `0x68 0x69` are `6869`.
+#[@External.Node("""Buffer.from($0).toString('hex')""")]
+#[@External.Erlang("""string:lowercase(binary:encode_hex($0))""")]
+#[@External.Wasm(std: "encoding.hexEncodeBytes")]
+pub declare fn hexEncodeBytes(b: Bytes) -> string;
+
+// The bytes the hex text `s` spells, either case; an odd length or a non-hex
+// digit is `hexDecode`'s `Error`.
+pub fn hexDecodeBytes(s: string) -> @Result<Bytes, string> {
+    val b = hexBytesOf(s);
+    if (b == null) throw "not hex";
+    return b;
+}
+
+#[@External.Node("""(/^([0-9a-fA-F]{2})*$/.test($0) ? new Uint8Array(Buffer.from($0, 'hex')) : null)""")]
+#[@External.Erlang("""(fun(__H) -> try binary:decode_hex(__H) catch _:_ -> undefined end end)($0)""")]
+#[@External.Wasm(std: "encoding.hexDecodeBytes")]
+declare fn hexBytesOf(s: string) -> ?Bytes;
 
 // RFC 3986 percent-encoding of a component: every byte of the UTF-8 form
 // outside the unreserved set `A-Z a-z 0-9 - . _ ~` becomes `%XX`, uppercase.

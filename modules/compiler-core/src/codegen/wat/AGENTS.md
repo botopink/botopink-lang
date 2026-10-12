@@ -864,6 +864,18 @@ reached function addresses it. A decoded function's nesting indents its lines
 to column 40 at most (`std_wasm_link.zig` `deeper`): LLVM lowers the case
 tables' `switch`es to hundreds of nested blocks.
 
+## `Bytes` (decision 346)
+
+A `Bytes` is laid out as a string is — the address of its `u32` byte count, the bytes behind it —
+and is no string: `primCallRes` answers `.i32` for its methods, never `.str`, so nothing prints it
+as text. `Bytes.fromUtf8(s)` is the string's own address (`isBytesFromUtf8`; both are immutable),
+`length()` the count word, `concat` `$__str_concat`, `slice` std-wasm's `bytes.slice` (byte bounds,
+`slice`'s normalisation; an absent end the largest `i32`), and `toUtf8()` the same address in an
+`Ok` once std-wasm's `bytes.isUtf8` accepts it, else the `Error` text the other targets write
+(`lowerBytesMethod`). `typeRefOf` / `resultShapeOf` answer `Bytes` and `@Result<string, string>`
+for those calls. `==` / `!=` read inference's `prim = .bytes` at the operator and compare through
+`$__str_eq`. `stdSpelling` spells `?Bytes` for `encoding`'s decoders' `std:` cells.
+
 ## `bigint` — the runtime library (decision 332, front `01-compiler/139` step 4)
 
 A `bigint` is the address of an immutable block, `[L][limb0][limb1]…`: `L` the limbs' byte count

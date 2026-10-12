@@ -1276,6 +1276,24 @@ and a `comptime` whose value holds one is refused at the `comptime` (`foldBodyCo
 `modules/bigint_arithmetic`, `modules/bigint_in_containers`, `modules/bigint_to_i64_aborts`,
 `modules/bigint_division_by_zero`, `modules/bigint_across_modules`, `reject/bigint_*`.
 
+## `Bytes`, an immutable byte sequence (decision 346, 144 B-12 step 32)
+
+`Bytes` is a primitive (`Env.registerBuiltins`, `scalar_type_names`, `primKindOfName` →
+`PrimKind.bytes`) whose behavior shares its name (`primitives.bp`'s `behavior Bytes`,
+`primitiveInterfaceName("Bytes")` is `"Bytes"`): a method call on a `Bytes` value skips the
+inherent-method and behavior-typed-receiver paths of `inferCallExprWith` (which the shared name
+would otherwise enter) and is the primitive's, `length` renamed to commonJS's property as an array's
+and a string's are. `Bytes.fromUtf8(s)` is `inferPrimitiveStaticCall`'s, as `bigint.of` is. No
+literal is `Bytes` and nothing converts: a string where `Bytes` is expected, and `Bytes` where a
+`string` is, are the ordinary mismatch at the value. The most restrictive reading of the rest
+(decision 67): `Bytes` does not widen to `unknown` (`unify.zig`, `bytes-widened` — so `@print` does
+not take one: erlang holds `Bytes` and a `string` alike), `is` and a type pattern do not test it
+(`bytes-type-test`), a `comptime` whose value holds one is refused (`comptime-bytes`), and an
+operator other than `==` / `!=` is refused at the `Bytes` operand (`+` — and so a string template,
+which `inferLiteralExpr` joins with `+` — answers "no text to join"). `==` / `!=` over `Bytes` records
+`InstanceLowering.prim = .bytes` at the operator, which wasm reads to compare the bytes. A `std:`
+cell spells `?Bytes` (`spelledType`). Cells: `modules/bytes_*`.
+
 Decision 472 — an arithmetic error while a `comptime` runs (the runtime's `{error,badarith}`) is
 `comptime-badarith: an error occurred when evaluating an arithmetic expression — \`<expression>\``
 (`(division by zero)` when the expression is a `/`), located at the expression — or, when the raise

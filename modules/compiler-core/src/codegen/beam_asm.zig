@@ -90,12 +90,14 @@ fn primIfaceChain(k: envMod.PrimKind) []const []const u8 {
         .float => &.{ "F64", "F32", "Float", "Number" },
         // Decision 332 — `bigint`'s own interface, outside the tower.
         .bigint => &.{"BigInt"},
+        // Decision 346 — `Bytes`' own interface.
+        .bytes => &.{"Bytes"},
     };
 }
 
 /// The primitive kind whose chain contains `iface` (`Number` answers `.int`).
 fn primKindForIface(iface: []const u8) ?envMod.PrimKind {
-    for ([_]envMod.PrimKind{ .array, .string, .bool, .int, .float, .bigint }) |k| {
+    for ([_]envMod.PrimKind{ .array, .string, .bool, .int, .float, .bigint, .bytes }) |k| {
         for (primIfaceChain(k)) |name| {
             if (std.mem.eql(u8, name, iface)) return k;
         }
@@ -7719,7 +7721,7 @@ const Emitter = struct {
                 if (eq(u8, callee, "contains")) try self.primCmpAgainstNomatch("binary", "match", recv_expr, cc, mode) else if (eq(u8, callee, "startsWith")) try self.primCmpAgainstNomatch("string", "prefix", recv_expr, cc, mode) else return false;
                 return true;
             },
-            .bool, .int, .float, .bigint => return false,
+            .bool, .int, .float, .bigint, .bytes => return false,
         }
     }
 

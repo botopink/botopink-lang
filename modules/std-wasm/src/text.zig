@@ -82,6 +82,20 @@ fn decodeSequence(q: []const u8) u32 {
     return cp;
 }
 
+/// Whether `s` is well-formed UTF-8 — `Bytes.toUtf8`'s test (decision 346):
+/// every sequence complete, no overlong form, no surrogate, nothing past
+/// U+10FFFF.
+pub fn isUtf8(s: []const u8) bool {
+    var i: usize = 0;
+    while (i < s.len) {
+        const n = sequenceLength(s[i]);
+        if (n == 0 or i + n > s.len) return false;
+        if (decodeSequence(s[i..][0..n]) == invalid) return false;
+        i += n;
+    }
+    return true;
+}
+
 /// The UTF-8 bytes of the scalar value `cp` into `out`.
 fn encodeScalar(out: *[4]u8, cp: u21) []const u8 {
     if (cp < 0x80) {
@@ -595,6 +609,17 @@ test "decodeSequence and encodeScalar agree with std.unicode on every scalar val
         try std.testing.expectEqual(@as(u32, cp), decodeSequence(want[0..n]));
         if (cp == 0x10FFFF) break;
     }
+}
+
+test "isUtf8: well-formed UTF-8 alone, as std.unicode reads it" {
+    const cases = [_][]const u8{
+        "",                 "abc",              "a\xC3\xA9", "\xEF\xBB\xBFx",
+        "\xF0\x9F\x98\x80", "\xFF",             "\xC3",      "\xC0\x80",
+        "\xED\xA0\x80",     "\xF4\x90\x80\x80", "\xE2\x82",  "a\x80b",
+    };
+    for (cases) |c| try std.testing.expectEqual(std.unicode.utf8ValidateSlice(c), isUtf8(c));
+    try std.testing.expect(!isUtf8("\xFF"));
+    try std.testing.expect(isUtf8("a\xC3\xA9"));
 }
 
 test "trim: each direction" {

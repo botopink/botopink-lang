@@ -155,3 +155,22 @@ test "js: f64 text ---- a template hole, toString and a string + keep the decima
         \\
     );
 }
+
+// Decision 346 — `Bytes` on this backend: in and out of text, length, slice,
+// concat, `==`, and the `Error` of bytes that are not UTF-8.
+const bytes_src =
+    \\pub fn main() {
+    \\    val b = Bytes.fromUtf8("héllo");
+    \\    @print(b.length());
+    \\    @print(b.slice(1, 3).toUtf8().unwrapOr("?"));
+    \\    @print(b.slice(1, 2).toUtf8().isError());
+    \\    val j = Bytes.fromUtf8("ab").concat(Bytes.fromUtf8("cd"));
+    \\    @print(j[2..].toUtf8().unwrapOr("?"));
+    \\    @print(j == Bytes.fromUtf8("abcd"));
+    \\}
+;
+const bytes_log = "6\né\ntrue\ncd\ntrue\n";
+
+test "js: decision 346 ---- Bytes is a Uint8Array, its methods patched on its prototype" {
+    try h.assertJsRunLog(std.testing.allocator, bytes_src, bytes_log);
+}

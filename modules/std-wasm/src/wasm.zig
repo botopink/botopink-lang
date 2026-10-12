@@ -251,6 +251,57 @@ fn textSlice(s: u32, a: i32, b: i32) callconv(.c) u32 {
     return fresh(root.text.cpSlice(arg(s), a, b));
 }
 
+// ── `Bytes` (decision 346) ──────────────────────────────────────────────────
+// A `Bytes` is laid out as a program string is: its `u32` byte count, the
+// bytes behind it.
+
+/// `b.slice(a, e)` in bytes, with `slice`'s bounds (`array.sliceRange`).
+fn bytesSlice(s: u32, a: i32, e: i32) callconv(.c) u32 {
+    const all = arg(s);
+    const r = root.array.sliceRange(all.len, a, e);
+    return fresh(all[r.from..][0..r.len]);
+}
+
+/// `b.toUtf8()`'s test: `1` when the bytes are well-formed UTF-8.
+fn bytesIsUtf8(s: u32) callconv(.c) i32 {
+    return @intFromBool(root.text.isUtf8(arg(s)));
+}
+
+/// `encoding.base64EncodeBytes` — `=`-padded base64 of the bytes.
+fn base64EncodeBytes(b: u32) callconv(.c) u32 {
+    const in = arg(b);
+    const out = blank(root.encoding.base64EncodedLength(in.len));
+    root.encoding.base64Encode(out.bytes, in);
+    return out.ptr;
+}
+
+/// `encoding.base64DecodeBytes`'s cell — the bytes, or `0` (absent) for
+/// text that is not base64.
+fn base64DecodeBytes(s: u32) callconv(.c) u32 {
+    const in = arg(s);
+    const n = root.encoding.base64DecodedLength(in) orelse return 0;
+    const out = blank(n);
+    root.encoding.base64Decode(out.bytes, in);
+    return out.ptr;
+}
+
+/// `encoding.hexEncodeBytes` — lower-case hex of the bytes.
+fn hexEncodeBytes(b: u32) callconv(.c) u32 {
+    const in = arg(b);
+    const out = blank(2 * in.len);
+    root.encoding.hexEncode(out.bytes, in);
+    return out.ptr;
+}
+
+/// `encoding.hexDecodeBytes`'s cell — the bytes, or `0` (absent).
+fn hexDecodeBytes(s: u32) callconv(.c) u32 {
+    const in = arg(s);
+    const n = root.encoding.hexDecodedLength(in) orelse return 0;
+    const out = blank(n);
+    root.encoding.hexDecode(out.bytes, in);
+    return out.ptr;
+}
+
 // ── integers as text (decision 442 (2)) ─────────────────────────────────────
 
 fn intString(v: i64, unsigned: bool) u32 {
@@ -666,10 +717,16 @@ const faces = .{
     .{ "random.float", float },
     .{ "random.seed", seed },
     .{ "random.seededFloat", seededFloat },
+    .{ "encoding.base64EncodeBytes", base64EncodeBytes },
+    .{ "encoding.base64DecodeBytes", base64DecodeBytes },
+    .{ "encoding.hexEncodeBytes", hexEncodeBytes },
+    .{ "encoding.hexDecodeBytes", hexDecodeBytes },
 };
 
 const program_faces = .{
     .{ "text.slice", textSlice },
+    .{ "bytes.slice", bytesSlice },
+    .{ "bytes.isUtf8", bytesIsUtf8 },
     .{ "number.i32ToString", i32ToString },
     .{ "number.i64ToString", i64ToString },
     .{ "number.u64ToString", u64ToString },
@@ -710,7 +767,7 @@ const program_faces = .{
 /// The wasm type a `root.Type` crosses as.
 fn wasmType(t: root.Type) type {
     return switch (t) {
-        .string, .string_array, .opt_string => u32,
+        .string, .string_array, .opt_string, .bytes, .opt_bytes => u32,
         .f64 => f64,
         .i32, .bool => i32,
         .i64 => i64,

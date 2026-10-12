@@ -291,10 +291,10 @@ fn main() {
   ;; __std_f131 — from std_wasm.wasm (sha256 38e98c1edeed)
   ;; __std_f132 — from std_wasm.wasm (sha256 16c99e1a095a)
   ;; __std_f133 — from std_wasm.wasm (sha256 30c514d3cfe8)
-  ;; __std_f356 — from std_wasm.wasm (sha256 91fc3314249d)
-  ;; std:text.toLower — from std_wasm.wasm (sha256 e39847d1bc2d)
-  ;; __std_f410 — from std_wasm.wasm (sha256 66ef29f969d0)
-  ;; std:text.toUpper — from std_wasm.wasm (sha256 3f353e4b8423)
+  ;; __std_f370 — from std_wasm.wasm (sha256 91fc3314249d)
+  ;; std:text.toLower — from std_wasm.wasm (sha256 4d9bd1dbaebe)
+  ;; __std_f431 — from std_wasm.wasm (sha256 ad0c4ce5da65)
+  ;; std:text.toUpper — from std_wasm.wasm (sha256 b86b539c918c)
 )
 ```
 
