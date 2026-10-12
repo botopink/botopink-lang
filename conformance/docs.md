@@ -1355,6 +1355,11 @@ bounded by the data, not by the runtime.
 
 <!-- example: modules/self_tail_recursion -->
 
+An expression in the body that reads the parameters — `xs.at(i) ?? 0` — keeps
+the tail call a loop:
+
+<!-- example: modules/self_tail_recursion_nullish -->
+
 Every other recursion uses the stack, and how deep it may go is the host's
 answer, not the language's:
 
