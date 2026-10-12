@@ -48,6 +48,9 @@ compiler-cli/
 │   │                          mixed pass/fail exit, the `.snap.new` candidate list;
 │   │                          `botopink-lib-test` compiles a test-less library,
 │   │                          and prints under `--jobs 4` what `--jobs 1` prints;
+│   │                          a test reads its module's private fn and `val` on
+│   │                          all four targets, a dependency's tests never run
+│   │                          (decision 513);
 │   │                          a `"targets"` exclusion is never run and is audited
 │   │                          (structural / builds / another error — runner and
 │   │                          `scripts/test-libs.sh`); `BOTOPINK_BIN` in a test;
@@ -63,7 +66,9 @@ compiler-cli/
 │   │                          builds against its workspace's dependency; two members
 │   │                          over one dependency compile it once (the entries' inodes
 │   │                          kept, the second member's `.beam` a link to the first's
-│   │                          entry); `cell check` keeps the store where the cells
+│   │                          entry); `test` and `build` link the entries `run`
+│   │                          stored (a dependency's production unit is one under
+│   │                          all three, decision 513); `cell check` keeps the store where the cells
 │   │                          live; the member's own module never stored; a changed
 │   │                          byte misses; `--cold` rewrites every entry; two
 │   │                          concurrent writers leave whole entries, nothing staged
@@ -572,11 +577,25 @@ pre-commit gate refuses a staged candidate (`scripts/gate.sh --staged`).
 per test through a `process.stdout.write` override), `erlang` (via `escript`;
 `io:format` output lands inside the fence through the group leader) and `beam`
 (every module of the run written as `<atom>.S` in the run's directory,
-assembled once with `erlc +from_asm`, each test module's runner run with
+assembled once with `erlc +from_asm`, each test unit's runner run with
 `erl -noshell -pa <dir> -eval "'<atom>':main(init:get_plain_arguments()),
-halt()." -extra [filter]` — the same envelope, the same group-leader capture).
-`wasm` is rejected with "currently supports only the commonJS, erlang and beam
-targets".
+halt()." -extra [filter]` — the same envelope, the same group-leader capture)
+and `wasm` on the `wasi` host (each test unit, a `.wat` component linking the
+whole program, run with `wasmtime run -S http`; the filter is not read, and a
+failing `assert` traps, ending the module's run inside that test's fence — it
+is reported as a module whose runner printed no summary). A `browser` host is
+refused.
+
+**What runs is the module's test unit** (decision 513, 144 B-64): the
+production modules `test` writes are the bytes `build` writes, and each module
+of the package under test that declares tests has a test unit beside them —
+`__test__/<module path>.js` (commonJS), `'__test__@<pkg>@<mod>'.erl` in its
+module's directory (erlang), `'__test__@<pkg>@<mod>'.S` (beam),
+`__test__/<module path>.wat` (wasm) — which reaches the module's private
+functions and `val`s through the production unit's reserved export
+(`codegen/AGENTS.md`). A dependency has no test unit: its tests never run for
+a consumer, and its production unit is the one `build` and `run` compile, so
+the code cache serves it to all three.
 
 **`--json` (JSONL)**: `botopink test --json` captures each child runner's
 stdout, parses the envelope above, and re-emits one JSON object per line

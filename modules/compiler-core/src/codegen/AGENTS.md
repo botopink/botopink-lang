@@ -12,19 +12,30 @@ process (`../comptime/runtime/runtime.zig` `can_spawn` — the browser build,
 `error.NoExecutorOnThisHost` and `runtime.zig` is never analysed; the executors
 below exist on native hosts only.
 
-Top-level `test { … }` declarations (`DeclKind.@"test"`) are **skipped by every
-backend** in normal `build`/`run` output — they are only collected and emitted
-under `botopink test` (`Config.test_mode`): commonJS emits
-`async function __bp_test_N` functions + a `__bp_tests` registry +
-`__bp_run_tests()` runner (which reads node's `process` through `globalThis`,
-so a module-level `const process` from `import { process } from "std"` cannot
-shadow it); erlang emits `'__bp_test_N'/0` functions +
-`'__bp_run_one'/1` / `'__bp_run_tests'/1` + a `main/1` escript entry; beam_asm
-emits exported `'__bp_test_N'/0` functions, `'__bp_run_tests'/1` and a `main/1`
-run with `erl` (§ beam_asm, "`botopink test`"). In test mode `assert` lowers
-to a recoverable per-test failure (JS: throwing `__bp_assert`; Erlang and
-BEAM: `erlang:error({bp_assert, Msg, Loc})`) and `fn main/0` is not
-auto-invoked. WAT has no test runner.
+**A module's tests are a unit of their own** (decision 513, 144 B-64). Every
+backend emits a module's **production unit** — `GenerateResult.js` — the same
+bytes under `build`, `run` and `test`: top-level `test { … }` declarations
+(`DeclKind.@"test"`) never enter it. Under `botopink test` (`Config.test_mode`)
+a module of the package under test (`Config.packages.idOf(name)` is not a
+dependency's — never std's or a library's, so a dependency's tests are never
+emitted for a consumer) that declares tests also gets its **test unit**,
+`GenerateResult.test_unit` (`moduleOutput.Unit`: `atom` the artifact stem,
+`code` its text):
+
+| target | test unit | reaches the module's privates through |
+|---|---|---|
+| commonJS | `__test__/<module path>.js`: `require`s the production module and destructures its hidden export, then `async function __bp_test_N` + the `__bp_tests` registry + `__bp_run_tests()` (which reads node's `process` through `globalThis`) | `Object.defineProperty(exports, "__bp_priv__", { value: { … } })` — every top-level binding of the module, not enumerable (`privExportSource`) |
+| erlang | `'__test__@<pkg>@<mod>'` (`emitTestUnit`): `'__bp_test_N'/0`, `'__bp_run_one'/1` / `'__bp_run_tests'/1`, the sibling loader and the escript entry `main/1` | `'__bp_priv__<name>'/N` (`privWrapperForms`): every private `fn`, module-level `val` reader, `implement`/`extend` method and `var` storage helper the module defines and does not export, a wrapper calling it, exported; a unit's reach into the file is `fileCall`'s remote call (`prodName`) |
+| beam | the same atom (`emitTestUnit`, a unit opened like a `type`'s): exported `'__bp_test_N'/0`, `'__bp_run_tests'/1`, `main/1` | `'__bp_priv__<name>'/N` (`emitPrivWrappers`, a `call_only` to the local); `tryFileCall` / `fileFnAtom` |
+| wasm | `__test__/<module path>` (`testProgram`): the module linked again with each `test` as `fn __bp_test_N()` and a `main` running them inside the envelope — the `.wat` component `botopink test` runs with `wasmtime` | none: one linked module (decision 513 (2)) |
+
+The test unit's runner runs the production module's body
+(`'_botopink_init'/0`) and its imports' before the first test, never `main/0`
+— commonJS's production entry is `if (require.main === module)
+_botopink_main();`. `assert` in a test body lowers to a recoverable per-test
+failure (JS: throwing `__bp_assert`; Erlang and BEAM: `erlang:error({bp_assert,
+Msg, Loc})`); on wasm it traps, ending the run inside that test's fence, and
+`botopink test` reports a module whose runner printed no summary.
 
 ## Tree
 
@@ -86,7 +97,7 @@ codegen/
 | `wat/` | WebAssembly-text code model and the only writer of `.wat`: `wat_ast.zig` (`Module`/`Item`/`Func`/`Seq`/`Instr` + `Builder` + the invariants), `wat_emitter.zig` (s-expression layout, `$` names, data escaping), `wat_prelude.zig` (the runtime helpers as built nodes), `host_binding.zig` (decisions 238 and 440: the `@External.Wasm` vocabulary, WASI adapters, `std:`), `std_wasm_link.zig` (decision 440: std-wasm decoded into the program). See [`wat/AGENTS.md`](wat/AGENTS.md) |
 | `wat.zig` | WAT backend: builds `wat/wat_ast.zig` nodes and hands them to the emitter. See [wat](#wat) below A linked module's aliased import of a function no other module declares (a hygiene alias, `__bp_tpl_<module>__<name>`, decisions 112 and 384) is renamed to the declared name in that module's code (`linkRenames`, `linked_module`): a linked module's `use` items never reach `registerSymbols` (`modules/decorator_member_type_travels`). A `Result.<name>` pattern is the `@Result` variant even where a user enum declares that name (`variantRef`); a method answering `@Result<string, …>` is in `result_str_fns`, so a `try` of it binds a string. An all-unit enum prints by name, a `case` reads a bare arm in its subject's enum, a multi-subject `case` tests every pattern, a record's constructor pattern tests and binds, a generic call answers its argument's shape, a value `if` has its own type, a module-level `val` two linked modules declare is mangled per module — and so are a `type`, a `behavior`, an `implement` and an `extend` block, with every reference renamed (`renameLinkedTypes`), a call binding a type parameter to a string, bool or float calls a specialisation of the generic function or method, and a function named as an array method's argument is inlined — see [`wat/AGENTS.md`](wat/AGENTS.md). A lowering this backend cannot complete is refused where it is written (`Emitter.refuse` → `error.WasmLoweringRefused`, a located `Diagnostic` the driver reports like `MissingExternal`'s); no site writes `i32.const 0` for a value it could not produce any more (`00 · 110-gate-wasm`). An array literal's trailing spread is lowered through `$__arr_concat`. **Decision 388**: a module `context_lower.zig` reached (it imports the scope lowering's `bpScope…__` functions) is refused at its first component (`refuseScopeLowering`, or at the first call of the lowering's functions when it declares none), and a call of one of them anywhere else at the call — a `@Component` is a lambda over a `RenderScope` whose values cross `unknown` slots written after inference, and the backend boxes and unboxes only by a static type inference gave (`language-gaps.md` row 354-wasm). |
 | `typescript.zig` | `.d.ts` typedef backend (optional secondary output, `Config.typeDefLanguage`) — builds `js/js_ast.zig` `TsDecl` nodes, rendered by `js/ts_emitter.zig`. Type declarations only — no call lowering. A package import in the `.d.ts` keeps only names the owner emits (`CrossModule.exports`): a template fn or a lib namespace handle has no declaration there, so `import { html } from "view"` is dropped instead of dangling. Parameter types come from `Param.typeRef` (the parser leaves the legacy `typeName` empty; an unannotated position is `any`, a zero-argument generic such as `@Decl` is the bare name). Skips template fns (`TypeRef.isTemplateReturnType()`), maps `@Component<R>` to `Promise<R>` (decisions 104, 354), renders an anonymous `TypeRef.record_type` as `{ f: T; … }`. **A botopink primitive takes its TypeScript spelling** (`primitiveTsName`: every integer and float width plus `int`/`uint`/`float`/`isize`/`usize` → `number`, `bool` → `boolean`, `char` → `string`; `string`, `void` and `unknown` are spelled the same) — a `.d.ts` naming `i32` is not TypeScript. **An enum declares the class the JavaScript builds** (decision 5): `readonly tag` as the union of the variant names, a `static` factory per payload variant returning the enum type, a `static readonly` singleton per payload-less one, and each enum method as a `static` whose `self` is typed as the enum. It was a TypeScript `enum` of strings or a discriminated union of plain objects before, and the `.js` beside it built neither. **Decision 8 §3's union `A | B`** rides on `TypeRef.generic` under the reserved name `ast.union_type_name` (`"|"`), and takes TypeScript's own union (`TsType.union_`) rather than the generic path's `|<A, B>`, which is not TypeScript. **Every import is spelled as the `.js` beside it spells its `require`** (`use`, 1.0.10-beta `00 · 04-js` step 6): relative to the module's own path (`./geometry`, `../tree/leaf` — `emitProgram` takes the module name), one `import` per owning file resolved through `CrossModule.picked`, `import * as dict from "./std/dict"` for a whole std module and `import { empty as newDict } from "./std/dict"` for a std symbol, each `ImportDecl` written once and each name bound once (the checker hands one binding per imported name, and each wrote the whole `import` again — `Duplicate identifier`), an activated `implement` (`PatoNada*`) left out. **Type parameters are declared** (`Dict<K, V>`, `empty<K, V>()`, `fold<A>(…)`; an enum static declares the enum's and its own), **`Self` is the declaring type** (`self_type`), **a function type names its parameters** (`(acc: A, key: K) => A` from `paramNames`, else `p0…`), **`@Result<T, E>` is `{ ok: T } \| { error: E }`** — what `buildResult` builds —, and **a decorator (`comptime _: @Decl`) has no declaration**, since the program drops it. **A type-only `pub` declaration is imported from its owner's `.d.ts`** — a `behavior` (an `interface`) or a type alias has no value, so `CrossModule` does not index it; `commonJS.codegenEmit` collects every one as a `TypeExport` and `ownerOf` resolves an import name against the value index first, then against them, narrowed by the import's source as `CrossModule.pick` narrows (a contest answers nothing). **An inferred type takes the written type's spelling** (`applied`, one table for both): the checker's `array<T>` / `optional<T>` / `tuple<…>` are `T[]` / `T \| null` / `[…]`, `noreturn` is `never`. **An enum's sections are a namespace merged with its class**: each top-level section is a `static Sec(_inner: Enum.Sec): Enum` and a tag, and `export declare namespace Enum { interface Sec { readonly tag: …; } namespace Sec { … } }` declares the section types a signature writes (`Token.Layout.Break`) — interfaces, because no module exports a section's runtime class; an enum with no variant and no section has `tag: never`. **A private type a public signature names is declared, not exported** (`localTypes`): a `type` written without `pub`, a private `behavior`, type alias or delegate, and a prelude record the comptime pass splices into the transformed program (`SourceLocation` in std's `testing/snapshots` — `emitProgram` takes the transformed program's declarations, whose `type`s are candidates beside the bindings) is written `declare class` / `declare interface` / `declare type` after the module's own declarations, to a fixpoint over what those name in turn, and the file then ends in `export {};` (`TsDecl.export_none`), which turns off TypeScript's implicit export of every top-level declaration of a declaration file — the `.js` exports none of them. A comptime reflection record a signature names (`__Decl__Annotation` in std's `Type.Field<T>`, `annotations: DeclAnnotation[]`) is a candidate too, read from `comptime.zig` `decl_reflection_src` only when a `__Decl__` name is named (`reflectionCandidates`) — the module never declares it; that source's behaviors join as private candidates with it (`Decorator`, the type of `__Decl__Annotation.decorator`, decision 277 — `declare interface Decorator {}` when named). The primitive behaviors the comptime pass prepends (`Array<T>`, `Pair`, `String`) are not candidates: `Array<K>` in a signature is TypeScript's own `Array`. **A type of another module a signature names, which the source never imports, is imported from the transformed program's `import`** (`programImports`): a `comptime` whose answer is a package's record is lifted as that record's constructor and imported where it is written, under its template alias (`Env.templateImports`, 01-compiler/14 step 8); the `.js` requires it from that `import`, which is no binding, so each name a declaration reads that nothing binds and such an `import` brings is written `import { Badge } from "./badges/badges"` at the top of the file, by its declared name (decision 110: the alias is a checker name only) — `conformance/modules/comptime_reaches_package_template`. `scripts/tsc-check.sh` (gate stage 11) holds every typedef of a commonJS build of `libs/` (std and the bundled packages), `examples/` and `conformance/modules` to `tsc --noEmit --strict` (TypeScript 7.0.2): 6 of 62 projects were rejected before these three rows, 0 after; std was rejected (`Cannot find name 'SourceLocation'`) before the private-type row |
-| `runtime.zig` | Test-side execution for the snapshot `----- RUN LOG -----` block. See [runtime](#runtime) below. `executeTestModule` runs a **test-mode** module the way `botopink test` does (`node main.js` / `escript main.erl`) and answers its output whatever the exit status — the decision-74 FAIL line is a non-zero exit, which the snapshot path records as an empty RUN LOG, and `executeErlang` never runs a test module (no `_botopink_main`) |
+| `runtime.zig` | Test-side execution for the snapshot `----- RUN LOG -----` block. See [runtime](#runtime) below. `executeTestModule` runs a module's **test unit** the way `botopink test` does (the production module beside it, `node __test__/main.js` / `escript <unit atom>.erl`) and answers its output whatever the exit status — the decision-74 FAIL line is a non-zero exit, which the snapshot path records as an empty RUN LOG, and `executeErlang` never runs a test module (no `_botopink_main`) |
 | `snapshot.zig` | `buildSnapshot` / `buildSnapshotMulti` / `assertCodegen` / `assertCodegenError` — paths `codegen/<target>/<slug>` and `codegen/errors/<target>/<slug>` (one tree: the comptime runtime is wasm for every target, decision 434 — front 18's doubled `codegen/{beam,wat}/` tree collapsed); `writeComptimeSections` writes `GenerateResult.comptime_trace` (`COMPTIME WAT`, then `COMPTIME REPLY`, rendered by `comptime/trace.zig`) then `COMPTIME VALUES` for every backend. A `SnapInput` with `result == null` (the module never reached the backend) or with `comptime_err` set writes a `COMPILE DIAGNOSTIC` section instead of the code section — spec 06 H3, which used to leave such snapshots empty. `writeUnitSections` adds one `----- ERLANG -- <atom>.erl` / `----- BEAM ASSEMBLY -- <atom>.S` section per `GenerateResult.units` entry, so a cell shows every module its program loads and `beam_export_audit.sh` — which keys on the `{module, …}` form, not on the fixture — assembles each of them. `writeRunLog` is the one writer of the `----- RUN LOG -----` section on every backend, and it normalises the `botopink test` envelope's `  duration <digits>ms` line to `  duration <ms>ms` (`isDurationLine`: the two-space indent, the word, digits, `ms` — nothing a program prints by accident): that line is the runner's wall clock around each test body, the ONE nondeterministic line of the envelope, and a snapshot pinning its digits (`src_in_a_test` recorded `0ms`) failed on any machine slower than the one that wrote it — `1ms` under load, the only line that differed. `tests/helpers.zig`'s `stripDurationLines` is the same rule for `assertTestModeRunLog`, which writes no snapshot. `writeWatModule` (wasm) writes the module text with every function in `GenerateResult.std_funcs` (`moduleOutput.StdFunc`: transpiled from `std_wasm.wasm`, decision 440) as the one line `;; <label> — from std_wasm.wasm (sha256 <12 hex>)`, its body omitted (decision 446): the snapshot's rendering alone, `GenerateResult.js` and the binary the RUN LOG runs keep every body |
 | `tests.zig` | Barrel aggregating `tests/<feature>.zig` plus the `beam/*.zig` and `wat/wat_emitter.zig` unit tests; harness in `tests/helpers.zig` (`assertJs`, `assertJsSingle`, `assertJsError`, `assertJsTestMode`, `assertJsContains`, `assertJsNotContains`, `assertJsRunLog`, `assertDtsContains`, `assertConsumerJs`, `configs` — one config per target). The snapshot-free helpers are what a **single backend's** row uses: a snapshot carries the same program through all four, so a commonJS-only fixture would write into the erlang, beam and wasm snapshot directories other fronts own |
 
@@ -1188,9 +1199,12 @@ codegen/
   `interfaceForms`/`implementForms`/`extendForms` (a `%%` comment plus method
   functions), `use`/`delegate`/external-fn comments, `testFunction` — the comptime
   helper and host forms, the `'_botopink_init'/0` module body (see **Module-level
-  `val`s** below), the `'_botopink_main'/0` + `main/1` entrypoint wrapper and,
-  in test mode, the runner (`testRunnerForms`: `'__bp_run_one'/1`,
-  `'__bp_run_tests'/1`, `main/1`).
+  `val`s** below), the `'_botopink_main'/0` + `main/1` entrypoint wrapper, and
+  last the reserved exports `'__bp_priv__<name>'/N` (`privWrapperForms`,
+  decision 513). The test unit (`emitTestUnit`) holds the runner
+  (`testRunnerForms`: `'__bp_run_one'/1`, `'__bp_run_tests'/1`, the sibling
+  loader with `'__bp_load_all'/1` — a module whose `-on_load` reaches a
+  sibling not loaded yet is loaded again once the others are — and `main/1`).
 - **An entry point sets its own `standard_io` to unicode** (`unicodeStdio`):
   `io:setopts(standard_io, [{encoding, unicode}])` is the first statement of
   `'_botopink_main'/0` and of the test runner's `main/1`. `erl` opens
@@ -1854,8 +1868,12 @@ codegen/
 
 ### beam_asm
 
-- **`botopink test`** (`Config.test_mode`, std's modules excepted —
-  `emitBeamAsm`'s `test_mode`): each `test` block is `'__bp_test_N'/0`
+- **`botopink test`** (`Config.test_mode`, a dependency's modules excepted —
+  `emitBeamAsm`'s `test_mode`): the module's test unit (`emitTestUnit`,
+  decision 513) holds the tests and the runner below, its reach into the file
+  module a `call_ext` to an export or a `'__bp_priv__<name>'` wrapper
+  (`emitPrivWrappers`); the production module keeps its `main/0` entry and
+  carries `'_botopink_init'/0` whenever it has a body. Each `test` block is `'__bp_test_N'/0`
   (`emitTestFn`: the body lowered like a `fn`'s, exported because the
   registry names it as `fun M:'__bp_test_N'/0`), and a module with tests gets
   `main(Args)` — the host loader (`'__bp_load_siblings'/0`), the imported
@@ -1870,12 +1888,11 @@ codegen/
   `halt(1)` on a failure — what `erlang.zig`'s `testRunnerForms` prints, byte
   for byte. A `try` on an `Error` in a test body (decision 74,
   `in_test_body`; a lambda's body is its own) raises `{bp_assert, E,
-  <<"file:line">>}` (`emitTryError`). `main/0` is an ordinary function here:
-  the wrapper that runs it is not emitted. An `assert`'s location is the
+  <<"file:line">>}` (`emitTryError`). An `assert`'s location is the
   package-relative source path when the driver gives one (`src_path`), else
   `<module atom>.bp`. `cli/test_cmd.zig` writes every module (and unit) as
-  `<atom>.S` in the run's directory, assembles them all once
-  (`erlc +from_asm`) and runs each test module with `erl -noshell -pa <dir>
+  `<atom>.S` in the run's directory, the test units beside them, assembles
+  them all once (`erlc +from_asm`) and runs each test unit with `erl -noshell -pa <dir>
   -eval "'<atom>':main(init:get_plain_arguments()), halt()." -extra
   [filter]`; all 68 test-kind cells of `conformance` pass there.
 - **An entry point sets its own `standard_io` to unicode** (`emitUnicodeStdio`,

@@ -20,6 +20,8 @@ function label() {
     return "shapes/circle";
 }
 exports.label = label;
+
+Object.defineProperty(exports, "__bp_priv__", { value: { name, label } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- shapes/circle.d.ts
@@ -57,6 +59,8 @@ function label() {
     return "shapes/helpers";
 }
 exports.label = label;
+
+Object.defineProperty(exports, "__bp_priv__", { value: { seven, label } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- shapes/helpers.d.ts
@@ -150,7 +154,9 @@ function main() {
 function _botopink_main() {
     main();
 }
-_botopink_main();
+if (require.main === module) _botopink_main();
+
+Object.defineProperty(exports, "__bp_priv__", { value: { circleName, circleLabel, seven, label, main } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

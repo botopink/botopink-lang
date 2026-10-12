@@ -10,6 +10,8 @@ fn process(#(x, y): #(i32, i32)) -> i32 {
 function process([ x, y ]) {
     return x;
 }
+
+Object.defineProperty(exports, "__bp_priv__", { value: { process } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

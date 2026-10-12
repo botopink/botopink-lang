@@ -853,6 +853,7 @@ fn main() {
 ```erlang
 -module(test@main).
 -export(['_botopink_main'/0, main/1]).
+-export(['__bp_priv__two'/0, '__bp_priv__main'/0]).
 
 %% type Op: name, run, twice
 
@@ -899,6 +900,10 @@ main() ->
 
 main(_Args) ->
     '_botopink_main'().
+
+'__bp_priv__two'() -> two().
+
+'__bp_priv__main'() -> main().
 ```
 
 ----- ERLANG -- test@main@@Op.erl

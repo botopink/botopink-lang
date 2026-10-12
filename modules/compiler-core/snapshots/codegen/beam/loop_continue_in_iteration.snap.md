@@ -13,9 +13,9 @@ fn sumEvens(arr: i32[]) -> i32[] {
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
 {module, test@main}.
-{exports, []}.
+{exports, [{'__bp_priv__sumEvens', 1}]}.
 {attributes, []}.
-{labels, 8}.
+{labels, 10}.
 
 {function, sumEvens, 1, 3}.
   {label, 2}.
@@ -37,6 +37,13 @@ fn sumEvens(arr: i32[]) -> i32[] {
     {move, {y, 1}, {x, 0}}.
     {deallocate, 2}.
     return.
+
+{function, '__bp_priv__sumEvens', 1, 9}.
+  {label, 8}.
+    {line, [{location, "test@main.erl", 2}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__sumEvens'}, 1}.
+  {label, 9}.
+    {call_only, 1, {f, 3}}.
 
 {function, '-sumEvens/1-fun-0-', 2, 5}.
   {label, 4}.

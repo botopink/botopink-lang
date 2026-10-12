@@ -190,6 +190,16 @@ const MEM_ROWS = "__bp_rows";
 
 const TOP_VAL_UNSET: []const u8 = "__bp_unset";
 
+/// Decision 513 (2): the reserved export a production module carries for each
+/// of its private functions and module-level `val`s — `'__bp_priv__<name>'/N`,
+/// calling the private one — so its test unit reaches them without the
+/// production module's bytes depending on whether tests are compiled.
+pub const PRIV_PREFIX = "__bp_priv__";
+
+/// Decision 513 (1): the prefix of a module's test unit — `'__test__@<pkg>@<mod>'`
+/// on erlang and beam, `__test__/<module path>` on commonJS and wasm.
+pub const TEST_UNIT_PREFIX = "__test__";
+
 /// Decision 168 — the rows of a `keyed = true` var's seed, as the
 /// `#(key, value)` entries of `Dict.ofEntries([…])` (none for
 /// `Dict.empty()`), folded at compile time: a key written twice keeps its
@@ -688,8 +698,6 @@ pub fn codegenEmit(
                     try results.append(alloc, try r.failed(alloc, ct.*));
                     continue;
                 }
-                // `"std"` package copies are dependencies — never emit their
-                // test blocks (mirrors the commonJS rule).
                 // The atom the module will be named by must be its own: two
                 // paths rendering one atom used to be a silent overwrite (or a
                 // silent shadow across two output directories), which is the
@@ -730,7 +738,9 @@ pub fn codegenEmit(
                     try results.append(alloc, .{ .name = ct.name, .src = ct.src, .result = unit });
                     continue;
                 }
-                const module_test_mode = config.test_mode and !std.mem.startsWith(u8, ct.name, "std/");
+                // Decision 513: the test unit of a module of the package under
+                // test only — never a dependency's (std's included).
+                const module_test_mode = config.test_mode and !config.packages.idOf(ct.name).package_in_path;
                 // 06 C13 — a host-backed fn with no `erlang` target used to
                 // abort the whole build with the bare error name. It reaches
                 // the driver as a located diagnostic naming the function now,
@@ -783,6 +793,7 @@ pub fn codegenEmit(
                     .result = .{
                         .js = emitted.code,
                         .units = emitted.units,
+                        .test_unit = emitted.test_unit,
                         .comptime_script = if (ok.comptime_script) |s| try alloc.dupe(u8, s) else null,
                         .comptime_trace = try comptimeMod.trace.renderAlloc(alloc, ok.comptime_traces),
                         .comptime_err = null,
@@ -1844,6 +1855,8 @@ fn emitErlang(
 pub const EmittedModule = struct {
     code: []u8,
     units: []moduleOutput.Unit = &.{},
+    /// The module's test unit (decision 513), under `botopink test` only.
+    test_unit: ?moduleOutput.Unit = null,
 };
 
 fn emitErlangModule(
@@ -1882,15 +1895,11 @@ fn emitErlangModule(
         for (em.prim_shims.keys()) |k| alloc.free(k);
         em.prim_shims.deinit(alloc);
     }
-    em.test_mode = test_mode;
     em.module_name = module_name;
     em.src_file = src_file;
     em.cross = cross;
 
-    // Test registry entries collected while emitting decls (test mode only).
-    const TestEntry = struct { name: ?[]const u8, line: usize, idx: usize };
-    var test_entries: std.ArrayListUnmanaged(TestEntry) = .empty;
-    defer test_entries.deinit(alloc);
+    // The module's `test` blocks — its test unit's, when `test_mode` asks for one.
     var test_count: usize = 0;
     if (test_mode) {
         for (program.decls) |decl| {
@@ -2078,8 +2087,9 @@ fn emitErlangModule(
             else => {},
         }
     }
-    // Test mode never auto-runs `main/0` — the escript entry is the test runner.
-    const emit_entrypoint_wrapper = has_main_0 and !test_mode;
+    // Decision 513 (1): the production module is the same under `build`, `run`
+    // and `test` — its `test` blocks live in the test unit (`emitTestUnit`).
+    const emit_entrypoint_wrapper = has_main_0;
 
     // The module body: every runtime module-level `val` whose initialiser can
     // have an effect, in declaration order. `'_botopink_init'/0` evaluates them
@@ -2183,10 +2193,6 @@ fn emitErlangModule(
     if (emit_entrypoint_wrapper) {
         try forms.append(b.arena, .{ .exports = &.{ .{ .name = "_botopink_main", .arity = 0 }, .{ .name = "main", .arity = 1 } } });
     }
-    // Test runner escript entry point.
-    if (test_mode and test_count > 0) {
-        try forms.append(b.arena, .{ .exports = &.{.{ .name = "main", .arity = 1 }} });
-    }
 
     // A record/enum whose name another module imports exports its associated
     // fns: the consumer reaches them via a remote call (`http:ok(...)`). Records
@@ -2200,8 +2206,6 @@ fn emitErlangModule(
     if (emit_init) try exports.append(b.arena, .{ .name = "_botopink_init", .arity = 0 });
     // The `Ets` owner is started with `spawn/3`, which reaches it by name.
     if (any_ets_var) try exports.append(b.arena, .{ .name = MEM_ETS_OWNER, .arity = 2 });
-    // Under `botopink test` another module's runner calls the load hook.
-    if (pt_vars.items.len > 0 and test_mode) try exports.append(b.arena, .{ .name = MEM_LOAD, .arity = 0 });
     for (pub_fns.items) |f| try exports.append(b.arena, .{ .name = f.name, .arity = fnArityNoSelf(f) });
     // A module-level `pub val` is its 0-arity function (`top_vals`); another
     // module reads it as `owner:name()` (`imported_vals`), so it is exported
@@ -2249,15 +2253,10 @@ fn emitErlangModule(
     const exports_at = forms.items.len;
     try forms.append(b.arena, .blank);
     // A `PersistentTerm` var is put once, at load (front 17): the one module
-    // attribute that has to precede every function.
-    //
-    // Not under `botopink test`: the runner is an escript, which loads its own
-    // module before any sibling — `std@beam` included — is compiled, so an
-    // `-on_load` there would run against a module that is not loaded yet. The
-    // runner calls `'__bp_load'/0` itself instead, once every sibling is
-    // loaded, and does the same for each sibling that exports one
-    // (`testRunnerForms`).
-    if (pt_vars.items.len > 0 and !test_mode) try forms.append(b.arena, .{ .on_load = .{ .name = MEM_LOAD, .arity = 0 } });
+    // attribute that has to precede every function. Under `botopink test` the
+    // runner's sibling loader loads such a module again once the siblings its
+    // `-on_load` reaches are loaded (`testRunnerForms`).
+    if (pt_vars.items.len > 0) try forms.append(b.arena, .{ .on_load = .{ .name = MEM_LOAD, .arity = 0 } });
 
     // A comptime module reaches its host glue in the resident prelude by its
     // bare name, so the lowered body reads the same whether the glue is
@@ -2318,14 +2317,8 @@ fn emitErlangModule(
             // `mod` is module-tree metadata; the submodule emits as its own atom.
             .mod => {},
             .delegate => |d| try forms.append(b.arena, .{ .comment = Ast.Comment.doc(try std.fmt.allocPrint(b.arena, "delegate {s}", .{d.name})) }),
-            // Test blocks are only compiled under `botopink test`; in normal
-            // builds they are skipped entirely.
-            .@"test" => |t| {
-                if (!test_mode) continue;
-                const idx = test_entries.items.len;
-                try test_entries.append(alloc, .{ .name = t.name, .line = t.loc.line, .idx = idx });
-                try forms.append(b.arena, try em.testFunction(b, t, idx));
-            },
+            // Test blocks live in the test unit (`emitTestUnit`, decision 513).
+            .@"test" => {},
             .comment => |c| try forms.append(b.arena, .{ .comment = .{
                 .level = if (c.is_doc) .doc else if (c.is_module) .module else .line,
                 .text = c.text,
@@ -2347,6 +2340,10 @@ fn emitErlangModule(
             if (seen.arity == ref.arity and std.mem.eql(u8, seen.name, ref.name)) break;
         } else try exports.append(b.arena, ref);
     }
+    // Decision 513 (2): every private function and module-level `val` the
+    // module defines answers under its reserved export, in every mode.
+    var priv_forms: Forms = .empty;
+    if (comptime_module == null) try em.privWrapperForms(b, forms.items, &exports, &priv_forms, program);
     if (exports.items.len > 0) {
         forms.items[exports_at] = .{ .exports = exports.items };
     } else {
@@ -2425,42 +2422,8 @@ fn emitErlangModule(
         if (load_siblings) try forms.appendSlice(b.arena, &.{ .blank, try siblingLoaderForm(b) });
     }
 
-    // Test mode: the registry, the runner and the escript entry.
-    if (test_mode and test_entries.items.len > 0) {
-        const tests = try b.arena.alloc(Ast.Expr, test_entries.items.len);
-        for (test_entries.items, 0..) |t, i| {
-            const name = t.name orelse try std.fmt.allocPrint(b.arena, "test_{d}", .{t.idx});
-            tests[i] = try b.tuple(&.{
-                .{ .lexeme_binary = name },
-                .{ .fun_ref = .{ .name = try std.fmt.allocPrint(b.arena, "__bp_test_{d}", .{t.idx}), .arity = 0 } },
-                .{ .lexeme_binary = try std.fmt.allocPrint(b.arena, "{s}:{d}", .{ try em.srcFile(b.arena), t.line }) },
-            });
-        }
-        // Only a module that calls into another needs the sibling loader: a
-        // single-module project's runner stays exactly as it was.
-        // A file with a type module calls into it, so the runner has to load
-        // the siblings the emitter wrote beside it. `from "std"` is the fourth
-        // route and was missing: `import {querystring} from "std"` fills
-        // `std_imports`, not `imported_fns`, so `querystring.parse(q)` lowered
-        // to the remote `std@querystring:parse/1` in a module whose runner
-        // never loaded `std@querystring` — `{error,undef}`, pinned to the test.
-        // A `pub val` read from a sibling (decision 140) is a remote call
-        // too — `imported_vals`, the fifth route. The sixth is a host module:
-        // a build some module of which binds a BEAM host of its own
-        // (`binds_erlang_host`, the rule a built entry point loads its
-        // sidecars by) — a test module declaring
-        // `#[@External.Erlang("lt_greeter", "hello")]` itself imports
-        // nothing, and its call died `{error,undef}`.
-        const calls_out = (if (cross) |xc| xc.binds_erlang_host else false) or
-            em.imported_fns.count() > 0 or
-            em.imported_vals.count() > 0 or
-            em.imported_types.count() > 0 or
-            em.std_imports.count() > 0 or
-            em.module_vars.count() > 0 or
-            em.type_units.items.len > 0 or
-            import_inits.len > 0;
-        try testRunnerForms(b, &forms, tests, calls_out, import_inits, emit_init, pt_vars.items.len > 0, std.mem.count(u8, module_name, "/"));
-    }
+    // Decision 513 (2): the reserved exports, last.
+    try forms.appendSlice(b.arena, priv_forms.items);
 
     var aw: std.Io.Writer.Allocating = .init(alloc);
     defer aw.deinit();
@@ -2476,11 +2439,18 @@ fn emitErlangModule(
     errdefer alloc.free(units);
     for (em.type_units.items, 0..) |u, i| units[i] = .{ .atom = u.atom, .code = u.code };
     em.type_units.items.len = 0;
+    // Decision 513 (1): the module's test unit, under `botopink test` of the
+    // package that declares it — lowered after the production module, whose
+    // exports it reaches.
+    var test_unit: ?moduleOutput.Unit = null;
+    if (test_mode and test_count > 0 and comptime_module == null) {
+        test_unit = try em.emitTestUnit(b, program, exports.items, import_inits, emit_init);
+    }
     // A variant path this emit could not place: the code is written, and
     // written wrong — refuse the module instead of shipping a tag no `case`
     // over the right enum can match.
     if (em.ambiguous_variant != null) return error.AmbiguousVariant;
-    return .{ .code = code, .units = units };
+    return .{ .code = code, .units = units, .test_unit = test_unit };
 }
 
 /// One `type`'s module while its methods are lowered (`openTypeUnit` …
@@ -2624,7 +2594,7 @@ fn comments(b: Ast.Builder, lines: []const []const u8) ![]const Ast.Stmt {
 /// the first test, exactly where `'_botopink_main'/0` runs it before `main/0` in
 /// a build. A module-level `val` therefore has the same effect in both modes —
 /// the divergence that made module-load self-registration untestable on erlang.
-fn testRunnerForms(b: Ast.Builder, forms: *Forms, tests: []const Ast.Expr, load_siblings: bool, import_inits: []const []const u8, run_init: bool, run_load: bool, depth: usize) !void {
+fn testRunnerForms(b: Ast.Builder, forms: *Forms, tests: []const Ast.Expr, import_inits: []const []const u8, run_init: ?[]const u8, depth: usize) !void {
     const V = Ast.Expr.v;
     const A = Ast.Expr.a;
     const monotonic = try b.remote("erlang", "monotonic_time", &.{A("millisecond")});
@@ -2749,7 +2719,8 @@ fn testRunnerForms(b: Ast.Builder, forms: *Forms, tests: []const Ast.Expr, load_
     // invisible until it was read off the emitted `.erl` by hand.
     var main_stmts: std.ArrayListUnmanaged(Ast.Expr) = .empty;
     try main_stmts.append(b.arena, try unicodeStdio(b));
-    if (load_siblings) {
+    // The test unit always calls into its production module (decision 513).
+    {
         // The runner sits `depth` folders below the run's output root (a test
         // file in `test/unit/`), and the modules it calls are anywhere in the
         // tree — the project's own at the root. `Dir` is that root, so a
@@ -2767,22 +2738,21 @@ fn testRunnerForms(b: Ast.Builder, forms: *Forms, tests: []const Ast.Expr, load_
             root.items,
             \\,
             \\        Self = erlang:atom_to_list(?MODULE) ++ ".erl",
-            \\        Loaded = lists:foldl(fun(Src, Acc) ->
+            \\        Compiled = lists:foldl(fun(Src, Acc) ->
             \\            case filename:basename(Src) =:= Self of
             \\                true -> Acc;
             \\                false ->
             \\                    case '__bp_prebuilt'(Src) of
-            \\                        {ok, Mod, Bin} -> code:load_binary(Mod, Src, Bin), [Mod | Acc];
+            \\                        {ok, Mod, Bin} -> [{Mod, Src, Bin} | Acc];
             \\                        none ->
             \\                            case compile:file(Src, [binary, return_errors, {i, Dir}]) of
-            \\                                {ok, Mod, Bin} -> code:load_binary(Mod, Src, Bin), [Mod | Acc];
+            \\                                {ok, Mod, Bin} -> [{Mod, Src, Bin} | Acc];
             \\                                Bad -> '__bp_dead_module'(Src, Bad)
             \\                            end
             \\                    end
             \\            end
             \\        end, [], filelib:wildcard(filename:join([Dir, "**", "*.erl"]))),
-            \\        [Mod:'__bp_load'() || Mod <- lists:reverse(Loaded), erlang:function_exported(Mod, '__bp_load', 0)],
-            \\        ok
+            \\        '__bp_load_all'(lists:reverse(Compiled))
             \\    end)()
         }) };
         // The `.beam` `botopink test` already compiled from this same `.erl`,
@@ -2850,14 +2820,23 @@ fn testRunnerForms(b: Ast.Builder, forms: *Forms, tests: []const Ast.Expr, load_
             .blank,
             try blockFunction(b, "__bp_error_loc", &.{V("Loc")}, try b.body(&.{error_loc})),
         });
+        // A module whose `-on_load` (its `PersistentTerm` vars, front 17)
+        // reaches a sibling not loaded yet is refused by the loader: it is
+        // loaded again once the others are, until a round loads nothing more.
+        const load_all: Ast.Expr = .{ .raw =
+            \\case [P || {Mod, Src, Bin} = P <- Pending, code:load_binary(Mod, Src, Bin) =/= {module, Mod}] of
+            \\        [] -> ok;
+            \\        Failed when erlang:length(Failed) < erlang:length(Pending) -> '__bp_load_all'(Failed);
+            \\        _ -> ok
+            \\    end
+        };
+        try forms.appendSlice(b.arena, &.{ .blank, try blockFunction(b, "__bp_load_all", &.{V("Pending")}, try b.body(&.{load_all})) });
         try main_stmts.append(b.arena, try b.call("__bp_load_siblings", &.{}));
     }
-    // Front 17 — this module's `PersistentTerm` vars, put before the module
-    // body and the tests read them (the build's `-on_load`; see `emitModule`).
-    if (run_load) try main_stmts.append(b.arena, try b.call(MEM_LOAD, &.{}));
-    // Decision 140 — the imported modules' bodies first, dependencies first.
+    // Decision 140 — the imported modules' bodies first, dependencies first,
+    // then the production module's own.
     for (import_inits) |dep| try main_stmts.append(b.arena, try b.remote(dep, "_botopink_init", &.{}));
-    if (run_init) try main_stmts.append(b.arena, try b.call("_botopink_init", &.{}));
+    if (run_init) |prod| try main_stmts.append(b.arena, try b.remote(prod, "_botopink_init", &.{}));
     try main_stmts.appendSlice(b.arena, &.{
         try b.match(V("Filter"), filter),
         try b.call("__bp_run_tests", &.{V("Filter")}),
@@ -3176,9 +3155,15 @@ const Emitter = struct {
     /// When true, `fnForms` keeps the `self` parameter (extension methods take
     /// the receiver as an explicit first argument; ordinary fns drop `self`).
     keep_self: bool = false,
-    /// `botopink test` compilation: `assert` lowers to a `bp_assert` error the
-    /// test runner catches per test instead of a hard `true = (...)` badmatch.
-    test_mode: bool = false,
+    /// 144 B-64 (decision 513): true while the module's TEST UNIT
+    /// (`'__test__@<pkg>@<mod>'`, `emitTestUnit`) is lowered. Every reach into
+    /// the file's own functions and module-level `val`s is then a remote call
+    /// into the production module (`fileCall`): its export when it has one,
+    /// else its reserved `'__bp_priv__<name>'` export (`privWrapperForms`).
+    test_unit: bool = false,
+    /// The production module's `-export` list, read by `fileCall` while the
+    /// test unit is lowered.
+    prod_exports: []const Ast.FnRef = &.{},
     /// Module name (`lib/db`), the atom's source.
     module_name: []const u8 = "main",
     /// The package-relative source path (`src/main.bp`) a test's and an
@@ -4101,11 +4086,29 @@ const Emitter = struct {
     /// module — the file's functions are one module and the type's methods
     /// another under policy 3.
     fn fileCall(this: *Emitter, b: Ast.Builder, name: []const u8, args: []const Ast.Expr) !Ast.Expr {
+        if (this.test_unit) return b.remote(this.atomOf(this.module_name), try this.prodName(b, name, args.len), args);
         if (this.cur_type == null) return b.call(name, args);
         const key = try std.fmt.allocPrint(this.atom_arena.allocator(), "{s}/{d}", .{ name, args.len });
         const gop = try this.file_exports_needed.getOrPut(this.alloc, key);
         if (!gop.found_existing) gop.value_ptr.* = .{ .name = name, .arity = args.len };
         return b.remote(this.atomOf(this.module_name), name, args);
+    }
+
+    /// The name the test unit calls the production module's `name/arity`
+    /// by: the name itself when the production module exports it, else its
+    /// reserved export `'__bp_priv__<name>'` (decision 513 (2)).
+    fn prodName(this: *const Emitter, b: Ast.Builder, name: []const u8, arity: usize) ![]const u8 {
+        for (this.prod_exports) |e| {
+            if (e.arity == arity and std.mem.eql(u8, e.name, name)) return name;
+        }
+        return std.fmt.allocPrint(b.arena, PRIV_PREFIX ++ "{s}", .{name});
+    }
+
+    /// True while the lowered body belongs to another module than the file's
+    /// own — a `type`'s unit (policy 3) or the test unit (decision 513): a
+    /// reach into the file's functions is then a remote call (`fileCall`).
+    fn inForeignUnit(this: *const Emitter) bool {
+        return this.cur_type != null or this.test_unit;
     }
 
     /// The name a `implement` clause refers to (`implement Sized`,
@@ -4524,7 +4527,7 @@ const Emitter = struct {
         // calls the file's (exported) function.
         if (!this.locals.contains(name) and !this.untyped) {
             if (this.fileFnArity(name)) |arity| {
-                if (this.cur_type == null) return .{ .fun_ref = .{ .name = name, .arity = arity } };
+                if (!this.inForeignUnit()) return .{ .fun_ref = .{ .name = name, .arity = arity } };
                 const params = try b.arena.alloc(Ast.Expr, arity);
                 for (params, 0..) |*p, i| p.* = Ast.Expr.v(try std.fmt.allocPrint(b.arena, "__BpA{d}", .{i}));
                 return .{ .fun_clauses = try b.arena.dupe(Ast.Clause, &.{
@@ -8530,7 +8533,7 @@ const Emitter = struct {
             // A bare call to one of this file's own functions — remote from
             // inside a type module (policy 3), local everywhere else.
             const bare_args = try this.callArgs(b, null, cc);
-            if (this.cur_type != null and this.isFileFn(cc.callee, bare_args.len)) return this.fileCall(b, cc.callee, bare_args);
+            if (this.inForeignUnit() and this.isFileFn(cc.callee, bare_args.len)) return this.fileCall(b, cc.callee, bare_args);
             return b.call(cc.callee, bare_args);
         };
 
@@ -8776,7 +8779,7 @@ const Emitter = struct {
             return b.remote(owner, cc.callee, try this.callArgs(b, try this.exprNode(b, recv.*), cc));
         }
         const recv_args = try this.callArgs(b, try this.exprNode(b, recv.*), cc);
-        if (this.cur_type != null and this.isFileFn(cc.callee, recv_args.len)) return this.fileCall(b, cc.callee, recv_args);
+        if (this.inForeignUnit() and this.isFileFn(cc.callee, recv_args.len)) return this.fileCall(b, cc.callee, recv_args);
         // A method declared only by a `behavior` — the host builds the value, so
         // no module of this program emits the function. Dispatch through the
         // value, which is where commonJS finds it too.
@@ -10994,21 +10997,7 @@ const Emitter = struct {
             return;
         }
         // The unit's own tail, in the file module's order.
-        try this.instanceDefaultForms(b, &unit.forms);
-        if (this.prim_shims.count() > 0) {
-            try this.primShimForms(b, &unit.forms);
-            if (this.prim_shims.contains("toString/0")) this.needs_text_helper = true;
-        }
-        if (this.needs_add_helper) try unit.forms.appendSlice(b.arena, &.{ .blank, add_helper_form });
-        if (this.needs_int_helper) try unit.forms.appendSlice(b.arena, &.{ .blank, int_inline_form, int_helper_form });
-        if (this.needs_len_helper) try unit.forms.appendSlice(b.arena, &.{ .blank, len_helper_form });
-        if (this.needs_field_helper) try unit.forms.appendSlice(b.arena, &.{ .blank, field_helper_form });
-        if (this.needs_method_helper) try unit.forms.appendSlice(b.arena, &.{ .blank, method_helper_form });
-        if (this.needs_adopt_helper) try unit.forms.appendSlice(b.arena, &.{ .blank, adopt_helper_form });
-        if (this.needs_index_helper) try unit.forms.appendSlice(b.arena, &.{ .blank, index_helper_form });
-        if (this.needs_slice_helper) try unit.forms.appendSlice(b.arena, &.{ .blank, slice_helper_form });
-        if (this.needs_text_helper) try unit.forms.appendSlice(b.arena, &.{ .blank, text_helper_form });
-        if (this.needs_print_helper) try unit.forms.appendSlice(b.arena, &.{ .blank, print_helper_form, .blank, show_helper_form, .blank, tagged_helper_form, .blank, render_helper_form });
+        try this.unitTailForms(b, &unit.forms);
 
         // The header: the type's atom, its exports, then the forms.
         const atom = try crossModule.typeAtom(this.alloc, this.idOf(this.module_name), type_name);
@@ -11027,6 +11016,166 @@ const Emitter = struct {
         try this.type_units.append(this.alloc, .{ .atom = atom, .code = code });
 
         this.restoreFromUnit(unit);
+    }
+
+    /// The tail of a unit — the behavior defaults, primitive shims and
+    /// helpers its own bodies reached, in the file module's order.
+    fn unitTailForms(this: *Emitter, b: Ast.Builder, forms: *Forms) !void {
+        try this.instanceDefaultForms(b, forms);
+        if (this.prim_shims.count() > 0) {
+            try this.primShimForms(b, forms);
+            if (this.prim_shims.contains("toString/0")) this.needs_text_helper = true;
+        }
+        if (this.needs_add_helper) try forms.appendSlice(b.arena, &.{ .blank, add_helper_form });
+        if (this.needs_int_helper) try forms.appendSlice(b.arena, &.{ .blank, int_inline_form, int_helper_form });
+        if (this.needs_len_helper) try forms.appendSlice(b.arena, &.{ .blank, len_helper_form });
+        if (this.needs_field_helper) try forms.appendSlice(b.arena, &.{ .blank, field_helper_form });
+        if (this.needs_method_helper) try forms.appendSlice(b.arena, &.{ .blank, method_helper_form });
+        if (this.needs_adopt_helper) try forms.appendSlice(b.arena, &.{ .blank, adopt_helper_form });
+        if (this.needs_index_helper) try forms.appendSlice(b.arena, &.{ .blank, index_helper_form });
+        if (this.needs_slice_helper) try forms.appendSlice(b.arena, &.{ .blank, slice_helper_form });
+        if (this.needs_text_helper) try forms.appendSlice(b.arena, &.{ .blank, text_helper_form });
+        if (this.needs_print_helper) try forms.appendSlice(b.arena, &.{ .blank, print_helper_form, .blank, show_helper_form, .blank, tagged_helper_form, .blank, render_helper_form });
+    }
+
+    /// Set the file module's helper state aside for a unit lowered beside it
+    /// (a `type`'s, `openTypeUnit`; the test unit, `emitTestUnit`).
+    fn saveUnitState(this: *Emitter, bif_shadows: []const Ast.FnRef) SavedUnitState {
+        const saved: SavedUnitState = .{
+            .bif_shadows = this.bif_shadows,
+            .cur_type = this.cur_type,
+            .needs_text_helper = this.needs_text_helper,
+            .needs_print_helper = this.needs_print_helper,
+            .needs_len_helper = this.needs_len_helper,
+            .needs_field_helper = this.needs_field_helper,
+            .needs_method_helper = this.needs_method_helper,
+            .needs_adopt_helper = this.needs_adopt_helper,
+            .needs_index_helper = this.needs_index_helper,
+            .needs_slice_helper = this.needs_slice_helper,
+            .needs_add_helper = this.needs_add_helper,
+            .needs_int_helper = this.needs_int_helper,
+            .prim_shims = this.prim_shims,
+            .needed_instance_defaults = this.needed_instance_defaults,
+            .forms = .empty,
+            .exports = .empty,
+        };
+        this.bif_shadows = bif_shadows;
+        this.needs_text_helper = false;
+        this.needs_print_helper = false;
+        this.needs_len_helper = false;
+        this.needs_field_helper = false;
+        this.needs_method_helper = false;
+        this.needs_adopt_helper = false;
+        this.needs_index_helper = false;
+        this.needs_slice_helper = false;
+        this.needs_add_helper = false;
+        this.needs_int_helper = false;
+        this.prim_shims = .empty;
+        this.needed_instance_defaults = .empty;
+        return saved;
+    }
+
+    /// Decision 513 (1): the module's test unit, `'__test__@<pkg>@<mod>'` —
+    /// its `test` blocks as `'__bp_test_N'/0`, the registry, the runner and
+    /// the escript entry `main/1`. A reach into the file's functions and
+    /// `val`s is a remote call into the production module (`fileCall`), whose
+    /// bytes therefore do not depend on whether tests are compiled. The
+    /// runner runs the production module's body (`'_botopink_init'/0`) and its
+    /// imports' before the first test, as a built entry does before `main/0`.
+    fn emitTestUnit(
+        this: *Emitter,
+        b: Ast.Builder,
+        program: ast.Program,
+        prod_exports: []const Ast.FnRef,
+        import_inits: []const []const u8,
+        run_init: bool,
+    ) !moduleOutput.Unit {
+        var unit = this.saveUnitState(&.{});
+        this.test_unit = true;
+        this.prod_exports = prod_exports;
+        defer {
+            this.test_unit = false;
+            this.prod_exports = &.{};
+            this.restoreFromUnit(&unit);
+        }
+        const prod_atom = this.atomOf(this.module_name);
+        var forms: Forms = .empty;
+        var entries: std.ArrayListUnmanaged(Ast.Expr) = .empty;
+        for (program.decls) |decl| {
+            const t = switch (decl) {
+                .@"test" => |t| t,
+                else => continue,
+            };
+            const idx = entries.items.len;
+            try forms.appendSlice(b.arena, &.{ .blank, try this.testFunction(b, t, idx) });
+            const name = t.name orelse try std.fmt.allocPrint(b.arena, "test_{d}", .{idx});
+            try entries.append(b.arena, try b.tuple(&.{
+                .{ .lexeme_binary = name },
+                .{ .fun_ref = .{ .name = try std.fmt.allocPrint(b.arena, "__bp_test_{d}", .{idx}), .arity = 0 } },
+                .{ .lexeme_binary = try std.fmt.allocPrint(b.arena, "{s}:{d}", .{ try this.srcFile(b.arena), t.loc.line }) },
+            }));
+        }
+        try this.unitTailForms(b, &forms);
+        try testRunnerForms(b, &forms, entries.items, import_inits, if (run_init) prod_atom else null, std.mem.count(u8, this.module_name, "/"));
+
+        const atom = try std.fmt.allocPrint(this.alloc, TEST_UNIT_PREFIX ++ "@{s}", .{prod_atom});
+        errdefer this.alloc.free(atom);
+        var all: Forms = .empty;
+        // The atom starts with `_`, so the `-module` form quotes it.
+        try all.appendSlice(b.arena, &.{ .{ .module = try std.fmt.allocPrint(b.arena, "'{s}'", .{atom}) }, .{ .exports = &.{.{ .name = "main", .arity = 1 }} } });
+        try all.appendSlice(b.arena, forms.items);
+        var aw: std.Io.Writer.Allocating = .init(this.alloc);
+        defer aw.deinit();
+        try erlEmitter.writeForms(&aw.writer, all.items);
+        return .{ .atom = atom, .code = try aw.toOwnedSlice() };
+    }
+
+    /// Decision 513 (2): `'__bp_priv__<name>'/N` for every function of the
+    /// production module that is a private `fn`, a module-level `val`'s
+    /// reader, an `implement` / `extend` method or a module `var`'s storage
+    /// helper and is not exported already — each calling the function it
+    /// names, each exported. Read off the lowered `forms`, so a wrapper never
+    /// names a function the module does not define.
+    fn privWrapperForms(this: *Emitter, b: Ast.Builder, forms: []const Ast.Form, exports: *std.ArrayListUnmanaged(Ast.FnRef), out: *Forms, program: ast.Program) !void {
+        var names: std.StringHashMapUnmanaged(void) = .empty;
+        for (program.decls) |decl| switch (decl) {
+            .@"fn" => |f| try names.put(b.arena, f.name, {}),
+            .val => |v| try names.put(b.arena, v.name, {}),
+            .implement => |im| for (im.methods) |m| try names.put(b.arena, m.name, {}),
+            .extend => |ex| for (ex.methods) |m| try names.put(b.arena, m.name, {}),
+            // A behavior's associated `default fn`, the file's mangled local.
+            .behavior => |bh| for (bh.methods) |m| {
+                var raw: [256]u8 = undefined;
+                try names.put(b.arena, try b.arena.dupe(u8, try interfaceAssocAtom(&raw, bh.name, m.name)), {});
+            },
+            else => {},
+        };
+        for ([_][]const u8{ MEM_ETS_GUARD, MEM_ETS_AT, MEM_ETS_ROW }) |n| try names.put(b.arena, n, {});
+        _ = this;
+        var seen: std.StringHashMapUnmanaged(void) = .empty;
+        for (forms) |form| {
+            const f = switch (form) {
+                .function => |f| f,
+                else => continue,
+            };
+            if (!names.contains(f.name) or f.clauses.len == 0) continue;
+            const arity = f.clauses[0].patterns.len;
+            const exported = for (exports.items) |e| {
+                if (e.arity == arity and std.mem.eql(u8, e.name, f.name)) break true;
+            } else false;
+            if (exported) continue;
+            const key = try std.fmt.allocPrint(b.arena, "{s}/{d}", .{ f.name, arity });
+            if ((try seen.getOrPut(b.arena, key)).found_existing) continue;
+            const wrapper = try std.fmt.allocPrint(b.arena, PRIV_PREFIX ++ "{s}", .{f.name});
+            const params = try b.arena.alloc(Ast.Expr, arity);
+            for (params, 0..) |*p, i| p.* = Ast.Expr.v(try std.fmt.allocPrint(b.arena, "A{d}", .{i}));
+            try out.appendSlice(b.arena, &.{ .blank, .{ .function = .{ .name = wrapper, .clauses = try b.arena.dupe(Ast.Clause, &.{.{
+                .patterns = params,
+                .body = try b.body(&.{try b.call(f.name, params)}),
+                .layout = .inline_,
+            }}) } } });
+            try exports.append(b.arena, .{ .name = wrapper, .arity = arity });
+        }
     }
 
     /// Give the file module back the helper state `openTypeUnit` set aside,

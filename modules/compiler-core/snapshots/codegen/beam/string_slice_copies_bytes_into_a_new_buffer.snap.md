@@ -9,9 +9,9 @@ fn first3() -> string {
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
 {module, test@main}.
-{exports, []}.
+{exports, [{'__bp_priv__String_slice', 3}, {'__bp_priv__first3', 0}]}.
 {attributes, []}.
-{labels, 46}.
+{labels, 50}.
 
 {function, first3, 0, 3}.
   {label, 2}.
@@ -46,6 +46,20 @@ fn first3() -> string {
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
     {call_last, 2, {f, 30}, 3}.
+
+{function, '__bp_priv__String_slice', 3, 47}.
+  {label, 46}.
+    {line, [{location, "test@main.erl", 3}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__String_slice'}, 3}.
+  {label, 47}.
+    {call_only, 3, {f, 5}}.
+
+{function, '__bp_priv__first3', 0, 49}.
+  {label, 48}.
+    {line, [{location, "test@main.erl", 4}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__first3'}, 0}.
+  {label, 49}.
+    {call_only, 0, {f, 3}}.
 
 {function, '__bp_tpl_0-t/3-fun-0-', 3, 12}.
   {label, 11}.

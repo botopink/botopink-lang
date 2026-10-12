@@ -21,6 +21,7 @@ fn main() {
 ```erlang
 -module(test@main).
 -export(['_botopink_main'/0, main/1]).
+-export(['__bp_priv__fetchName'/0, '__bp_priv__fetchAge'/0, '__bp_priv__loadUser'/0, '__bp_priv__main'/0]).
 
 %% type UserError: msg
 
@@ -82,6 +83,14 @@ main() ->
 
 main(_Args) ->
     '_botopink_main'().
+
+'__bp_priv__fetchName'() -> fetchName().
+
+'__bp_priv__fetchAge'() -> fetchAge().
+
+'__bp_priv__loadUser'() -> loadUser().
+
+'__bp_priv__main'() -> main().
 ```
 
 ----- ERLANG -- test@main@@UserError.erl

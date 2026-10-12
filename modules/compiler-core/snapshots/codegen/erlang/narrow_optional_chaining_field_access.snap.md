@@ -15,6 +15,7 @@ fn main() {
 ```erlang
 -module(test@main).
 -export(['_botopink_main'/0, main/1]).
+-export(['__bp_priv__getValue'/1, '__bp_priv__main'/0]).
 
 %% type Inner: value
 
@@ -55,6 +56,10 @@ main() ->
 
 main(_Args) ->
     '_botopink_main'().
+
+'__bp_priv__getValue'(A0) -> getValue(A0).
+
+'__bp_priv__main'() -> main().
 ```
 
 ----- ERLANG -- test@main@@Inner.erl

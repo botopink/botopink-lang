@@ -12,6 +12,8 @@ function f() {
     const list = [];
     (() => { const _match = list; if ((Array.isArray(_match))) { return _match; } else { throw "not empty"; } })();
 }
+
+Object.defineProperty(exports, "__bp_priv__", { value: { f } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

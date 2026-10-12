@@ -18,6 +18,7 @@ fn main() {
 ```erlang
 -module(test@main).
 -export(['_botopink_main'/0, main/1]).
+-export(['__bp_priv__main'/0, '__bp_priv__multiply_$0'/1, '__bp_priv__multiply_$1'/1]).
 
 main() ->
     Double = 'multiply_$0'(21),
@@ -67,6 +68,12 @@ main() ->
 
 main(_Args) ->
     '_botopink_main'().
+
+'__bp_priv__main'() -> main().
+
+'__bp_priv__multiply_$0'(A0) -> 'multiply_$0'(A0).
+
+'__bp_priv__multiply_$1'(A0) -> 'multiply_$1'(A0).
 ```
 
 ----- RUN LOG -----

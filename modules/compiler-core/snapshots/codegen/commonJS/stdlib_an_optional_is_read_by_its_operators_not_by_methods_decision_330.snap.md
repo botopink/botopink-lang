@@ -23,6 +23,8 @@ function find(p) {
 function greet(p) {
     return (() => { const __bp_nullish = find(p)?.name; if (__bp_nullish != null) { return __bp_nullish; } else { return "Hello stranger"; } })();
 }
+
+Object.defineProperty(exports, "__bp_priv__", { value: { Person, find, greet } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

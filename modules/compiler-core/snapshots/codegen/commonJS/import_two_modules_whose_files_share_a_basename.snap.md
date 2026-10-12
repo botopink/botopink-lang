@@ -11,6 +11,8 @@ function label() {
     return "models/user";
 }
 exports.label = label;
+
+Object.defineProperty(exports, "__bp_priv__", { value: { label } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- models/user.d.ts
@@ -36,6 +38,8 @@ function tag() {
     return "services/user";
 }
 exports.tag = tag;
+
+Object.defineProperty(exports, "__bp_priv__", { value: { tag } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- services/user.d.ts
@@ -124,7 +128,9 @@ function main() {
 function _botopink_main() {
     main();
 }
-_botopink_main();
+if (require.main === module) _botopink_main();
+
+Object.defineProperty(exports, "__bp_priv__", { value: { label, tag, main } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

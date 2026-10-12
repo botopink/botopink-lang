@@ -29,6 +29,8 @@ const PersonPrintable = {
         return self.name;
     },
 };
+
+Object.defineProperty(exports, "__bp_priv__", { value: { Person, PersonPrintable } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

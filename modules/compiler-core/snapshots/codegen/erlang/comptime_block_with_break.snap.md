@@ -21,6 +21,7 @@ ct_0: val result = comptime {
 ```erlang
 -module(test@main).
 -export(['_botopink_main'/0, main/1]).
+-export(['__bp_priv__result'/0, '__bp_priv__main'/0]).
 
 result() ->
     20.
@@ -56,6 +57,10 @@ main() ->
 
 main(_Args) ->
     '_botopink_main'().
+
+'__bp_priv__result'() -> result().
+
+'__bp_priv__main'() -> main().
 ```
 
 ----- RUN LOG -----

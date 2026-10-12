@@ -13,9 +13,9 @@ fn describe() -> string {
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
 {module, test@main}.
-{exports, []}.
+{exports, [{'__bp_priv__describe', 0}]}.
 {attributes, []}.
-{labels, 8}.
+{labels, 10}.
 
 {function, describe, 0, 3}.
   {label, 2}.
@@ -67,6 +67,13 @@ fn describe() -> string {
   {label, 4}.
     {deallocate, 5}.
     return.
+
+{function, '__bp_priv__describe', 0, 9}.
+  {label, 8}.
+    {line, [{location, "test@main.erl", 2}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__describe'}, 0}.
+  {label, 9}.
+    {call_only, 0, {f, 3}}.
 ```
 
 ----- RUN LOG -----

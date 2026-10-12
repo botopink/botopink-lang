@@ -12,6 +12,7 @@ fn sumTo(n: i32) -> i32 {
 ----- ERLANG -- main.erl
 ```erlang
 -module(test@main).
+-export(['__bp_priv__sumTo'/1]).
 
 sumTo(N) ->
     Sum = 0,
@@ -24,6 +25,8 @@ sumTo(N) ->
 -compile({inline,['__bp_int'/4]}).
 '__bp_int'(V, Lo, Hi, _) when V >= Lo, V =< Hi -> V;
 '__bp_int'(_, _, _, What) -> erlang:error({integer_overflow, What}).
+
+'__bp_priv__sumTo'(A0) -> sumTo(A0).
 ```
 
 ----- RUN LOG -----

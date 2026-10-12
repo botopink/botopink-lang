@@ -17,9 +17,9 @@ fn pipeline() -> @Result<i32, IoError> {
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
 {module, test@main}.
-{exports, []}.
+{exports, [{'__bp_priv__pipeline', 0}, {'__bp_priv__step1', 0}, {'__bp_priv__step2', 1}]}.
 {attributes, []}.
-{labels, 12}.
+{labels, 18}.
 
 {function, step1, 0, 3}.
   {label, 2}.
@@ -85,6 +85,27 @@ fn pipeline() -> @Result<i32, IoError> {
     {put_tuple2, {x, 0}, {list, [{atom, ok}, {x, 1}]}}.
     {deallocate, 2}.
     return.
+
+{function, '__bp_priv__pipeline', 0, 13}.
+  {label, 12}.
+    {line, [{location, "test@main.erl", 4}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__pipeline'}, 0}.
+  {label, 13}.
+    {call_only, 0, {f, 7}}.
+
+{function, '__bp_priv__step1', 0, 15}.
+  {label, 14}.
+    {line, [{location, "test@main.erl", 5}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__step1'}, 0}.
+  {label, 15}.
+    {call_only, 0, {f, 3}}.
+
+{function, '__bp_priv__step2', 1, 17}.
+  {label, 16}.
+    {line, [{location, "test@main.erl", 6}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__step2'}, 1}.
+  {label, 17}.
+    {call_only, 1, {f, 5}}.
 ```
 
 ----- BEAM ASSEMBLY -- test@main@@IoError.S

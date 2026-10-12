@@ -30,6 +30,7 @@ fn main() {
 ```erlang
 -module(test@main).
 -export(['_botopink_main'/0, main/1]).
+-export(['__bp_priv__firstSquareOver'/1, '__bp_priv__nested'/0, '__bp_priv__main'/0]).
 
 firstSquareOver(N) ->
     K = 0,
@@ -106,6 +107,12 @@ main() ->
 
 main(_Args) ->
     '_botopink_main'().
+
+'__bp_priv__firstSquareOver'(A0) -> firstSquareOver(A0).
+
+'__bp_priv__nested'() -> nested().
+
+'__bp_priv__main'() -> main().
 ```
 
 ----- RUN LOG -----

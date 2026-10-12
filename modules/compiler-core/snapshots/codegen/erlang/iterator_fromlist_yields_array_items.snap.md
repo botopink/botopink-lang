@@ -23,6 +23,7 @@ fn main() {
 ```erlang
 -module(test@main).
 -export(['_botopink_main'/0, main/1]).
+-export(['__bp_priv__fromList'/1, '__bp_priv__toList'/1, '__bp_priv__main'/0]).
 
 %% @Iterator — eager lowering
 fromList(Xs) ->
@@ -76,6 +77,12 @@ main() ->
 
 main(_Args) ->
     '_botopink_main'().
+
+'__bp_priv__fromList'(A0) -> fromList(A0).
+
+'__bp_priv__toList'(A0) -> toList(A0).
+
+'__bp_priv__main'() -> main().
 ```
 
 ----- RUN LOG -----

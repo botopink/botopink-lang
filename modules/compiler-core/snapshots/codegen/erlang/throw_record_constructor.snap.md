@@ -11,6 +11,7 @@ fn validate(x: i32) {
 ----- ERLANG -- main.erl
 ```erlang
 -module(test@main).
+-export(['__bp_priv__validate'/1]).
 
 %% type AppError: code, msg
 
@@ -20,6 +21,8 @@ validate(X) ->
             erlang:throw({test@main@@AppError, 400, <<"negative">>});
         _ -> ok
     end.
+
+'__bp_priv__validate'(A0) -> validate(A0).
 ```
 
 ----- ERLANG -- test@main@@AppError.erl

@@ -9,10 +9,13 @@ fn f() {
 ----- ERLANG -- main.erl
 ```erlang
 -module(test@main).
+-export(['__bp_priv__f'/0]).
 
 f() ->
     List = [],
     case List of [] -> List; _ -> erlang:throw(<<"not empty">>) end.
+
+'__bp_priv__f'() -> f().
 ```
 
 ----- RUN LOG -----

@@ -13,9 +13,9 @@ fn process() -> @Result<i32, string> {
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
 {module, test@main}.
-{exports, []}.
+{exports, [{'__bp_priv__fetch', 0}, {'__bp_priv__process', 0}]}.
 {attributes, []}.
-{labels, 36}.
+{labels, 40}.
 
 {function, fetch, 0, 3}.
   {label, 2}.
@@ -57,6 +57,20 @@ fn process() -> @Result<i32, string> {
     {put_tuple2, {x, 0}, {list, [{atom, ok}, {x, 1}]}}.
     {deallocate, 1}.
     return.
+
+{function, '__bp_priv__fetch', 0, 37}.
+  {label, 36}.
+    {line, [{location, "test@main.erl", 3}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__fetch'}, 0}.
+  {label, 37}.
+    {call_only, 0, {f, 3}}.
+
+{function, '__bp_priv__process', 0, 39}.
+  {label, 38}.
+    {line, [{location, "test@main.erl", 4}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__process'}, 0}.
+  {label, 39}.
+    {call_only, 0, {f, 5}}.
 
 {function, '__bp_print', 1, 9}.
   {label, 8}.

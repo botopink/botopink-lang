@@ -18,9 +18,9 @@ fn main() {
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
 {module, test@main}.
-{exports, [{'_botopink_main', 0}, {main, 1}]}.
+{exports, [{'_botopink_main', 0}, {main, 1}, {'__bp_priv__Array_range', 2}, {'__bp_priv__Array_repeat', 2}, {'__bp_priv__String_slice', 3}, {'__bp_priv__main', 0}]}.
 {attributes, []}.
-{labels, 120}.
+{labels, 128}.
 
 {function, 'Array_range', 2, 3}.
   {label, 2}.
@@ -233,6 +233,34 @@ fn main() {
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
     {call_last, 2, {f, 103}, 3}.
+
+{function, '__bp_priv__Array_range', 2, 121}.
+  {label, 120}.
+    {line, [{location, "test@main.erl", 8}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__Array_range'}, 2}.
+  {label, 121}.
+    {call_only, 2, {f, 3}}.
+
+{function, '__bp_priv__Array_repeat', 2, 123}.
+  {label, 122}.
+    {line, [{location, "test@main.erl", 9}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__Array_repeat'}, 2}.
+  {label, 123}.
+    {call_only, 2, {f, 5}}.
+
+{function, '__bp_priv__String_slice', 3, 125}.
+  {label, 124}.
+    {line, [{location, "test@main.erl", 10}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__String_slice'}, 3}.
+  {label, 125}.
+    {call_only, 3, {f, 78}}.
+
+{function, '__bp_priv__main', 0, 127}.
+  {label, 126}.
+    {line, [{location, "test@main.erl", 11}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__main'}, 0}.
+  {label, 127}.
+    {call_only, 0, {f, 7}}.
 
 {function, '-bp_at-', 2, 21}.
   {label, 20}.

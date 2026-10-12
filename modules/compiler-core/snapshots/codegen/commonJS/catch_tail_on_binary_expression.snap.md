@@ -28,6 +28,8 @@ function compute() {
     const r = "error" in _try0 ? (0) : _try0.ok;
     return r;
 }
+
+Object.defineProperty(exports, "__bp_priv__", { value: { CalcError, getA, compute } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

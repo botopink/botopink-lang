@@ -19,6 +19,7 @@ fn main() {
 ```erlang
 -module(test@main).
 -export(['_botopink_main'/0, main/1]).
+-export(['__bp_priv__pairish_of'/2, '__bp_priv__pairish_first'/1, '__bp_priv__main'/0]).
 
 %% behavior Pairish
 
@@ -60,6 +61,12 @@ main() ->
 
 main(_Args) ->
     '_botopink_main'().
+
+'__bp_priv__pairish_of'(A0, A1) -> pairish_of(A0, A1).
+
+'__bp_priv__pairish_first'(A0) -> pairish_first(A0).
+
+'__bp_priv__main'() -> main().
 ```
 
 ----- RUN LOG -----

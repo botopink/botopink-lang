@@ -9,6 +9,8 @@
 #     every dependency `.beam` from the store (the entry's inode, unchanged),
 #     adds no entry, and `cell check` over two cells keeps the store where the
 #     cells live — never in a scratch copy
+#   • `run`, `test` and `build` share a dependency's entries: its production
+#     unit is the same bytes under each (decision 513, 144 B-64)
 #   • the member's own modules are compiled every time: never stored, never a
 #     link to an entry
 #   • a changed byte of the dependency misses: a new entry, the new answer
@@ -45,7 +47,9 @@ WS="$WORK/cells"
 STORE="$WS/.botopinkbuild/cache/code"
 mkdir -p "$WORK/lib/src" "$WS/one/src" "$WS/two/src"
 printf '{ "name": "lib", "entry": "root.bp", "files": ["root.bp"] }\n' >"$WORK/lib/botopink.json"
-printf 'pub fn greet(n: string) -> string {\n    return "hello " + n;\n}\n' >"$WORK/lib/src/root.bp"
+# The library declares a test of its own: a consumer never emits it, so its
+# production unit is the same under `build`, `run` and `test` (decision 513).
+printf 'pub fn greet(n: string) -> string {\n    return "hello " + n;\n}\n\ntest "greets" {\n    assert greet("a") == "hello a";\n}\n' >"$WORK/lib/src/root.bp"
 cat >"$WS/botopink.json" <<'EOF'
 {
   "name": "cells",
@@ -100,6 +104,16 @@ run_in "$WS/two" run --target erlang
 [[ "$(inode "$WS/two/out/erl/lib@root.beam")" -eq "$(inode "$LIB1")" ]] || fail "the second member's lib .beam is the entry the first stored"
 [[ "$(links "$WS/two/out/erl/two@main.beam")" -eq 1 ]] || fail "the second member's own module was compiled"
 ok "the second member linked every dependency .beam, compiled its own"
+
+echo "==> build, run and test share a dependency's entry"
+BEFORE="$(inodes)"
+run_in "$WS/one" test --target erlang
+[[ $CODE -eq 0 ]] || { echo "$OUT" >&2; fail "test of the first member (exit $CODE)"; }
+[[ "$(inodes)" == "$BEFORE" ]] || fail "test stored a dependency entry run had stored already — the dependency's production unit differs under test"
+run_in "$WS/one" build --target erlang
+[[ $CODE -eq 0 ]] || { echo "$OUT" >&2; fail "build of the first member (exit $CODE)"; }
+[[ "$(inodes)" == "$BEFORE" ]] || fail "build stored a dependency entry run had stored already"
+ok "test and build link the dependency entries run stored (decision 513)"
 
 echo "==> cell check: two cells, one store where the cells live"
 run_in "$WORK" cell check "$WS"

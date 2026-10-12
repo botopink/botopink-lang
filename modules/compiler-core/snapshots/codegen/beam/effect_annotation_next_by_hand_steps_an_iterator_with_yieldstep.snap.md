@@ -22,9 +22,9 @@ pub fn main() {
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
 {module, test@main}.
-{exports, [{'_botopink_main', 0}, {main, 1}, {main, 0}]}.
+{exports, [{'_botopink_main', 0}, {main, 1}, {main, 0}, {'__bp_priv__stepText', 1}, {'__bp_priv__two', 0}]}.
 {attributes, []}.
-{labels, 54}.
+{labels, 58}.
 
 %% @Iterator — eager lowering
 {function, two, 0, 3}.
@@ -146,6 +146,20 @@ pub fn main() {
     {func_info, {atom, test@main}, {atom, main}, 1}.
   {label, 11}.
     {call_only, 0, {f, 9}}.
+
+{function, '__bp_priv__stepText', 1, 55}.
+  {label, 54}.
+    {line, [{location, "test@main.erl", 6}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__stepText'}, 1}.
+  {label, 55}.
+    {call_only, 1, {f, 5}}.
+
+{function, '__bp_priv__two', 0, 57}.
+  {label, 56}.
+    {line, [{location, "test@main.erl", 7}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__two'}, 0}.
+  {label, 57}.
+    {call_only, 0, {f, 3}}.
 
 {function, '-bp_stringify-', 1, 16}.
   {label, 15}.

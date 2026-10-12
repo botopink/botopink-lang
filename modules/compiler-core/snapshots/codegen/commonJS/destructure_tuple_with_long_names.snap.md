@@ -17,6 +17,8 @@ function get_coordinates() {
 function extract_coordinates() {
     const [ longitude, latitude ] = get_coordinates();
 }
+
+Object.defineProperty(exports, "__bp_priv__", { value: { get_coordinates, extract_coordinates } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

@@ -27,6 +27,8 @@ function span() {
 function lineNo() {
     return span().line;
 }
+
+Object.defineProperty(exports, "__bp_priv__", { value: { Span, span, lineNo } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

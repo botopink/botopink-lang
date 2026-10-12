@@ -74,6 +74,8 @@ function process() {
     __bp_print(r);
     return ({ ok: r });
 }
+
+Object.defineProperty(exports, "__bp_priv__", { value: { fetch, process } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

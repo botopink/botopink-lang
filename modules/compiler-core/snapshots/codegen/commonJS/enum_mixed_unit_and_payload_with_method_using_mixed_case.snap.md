@@ -42,6 +42,8 @@ class Maybe$Just extends Maybe {
 }
 Maybe$Just.prototype.tag = "Just";
 Maybe.Nothing = new Maybe$Nothing();
+
+Object.defineProperty(exports, "__bp_priv__", { value: { Maybe, Maybe$Nothing, Maybe$Just } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

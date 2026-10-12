@@ -1790,7 +1790,7 @@ fn main() {
 ```erlang
 -module(test@main).
 -export(['_botopink_main'/0, main/1]).
--export([describeUser/0]).
+-export([describeUser/0, '__bp_priv__array_range'/2, '__bp_priv__array_repeat'/2, '__bp_priv__main'/0]).
 
 %% behavior String
 
@@ -1862,6 +1862,12 @@ describeUser() ->
 
 main(_Args) ->
     '_botopink_main'().
+
+'__bp_priv__array_range'(A0, A1) -> array_range(A0, A1).
+
+'__bp_priv__array_repeat'(A0, A1) -> array_repeat(A0, A1).
+
+'__bp_priv__main'() -> main().
 ```
 
 ----- ERLANG -- test@main@@User.erl

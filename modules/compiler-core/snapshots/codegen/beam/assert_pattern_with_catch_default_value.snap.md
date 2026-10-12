@@ -10,9 +10,9 @@ fn f() {
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
 {module, test@main}.
-{exports, []}.
+{exports, [{'__bp_priv__f', 0}]}.
 {attributes, []}.
-{labels, 8}.
+{labels, 10}.
 
 {function, f, 0, 3}.
   {label, 2}.
@@ -53,6 +53,13 @@ fn f() {
     {move, {atom, ok}, {x, 0}}.
     {deallocate, 5}.
     return.
+
+{function, '__bp_priv__f', 0, 9}.
+  {label, 8}.
+    {line, [{location, "test@main.erl", 2}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__f'}, 0}.
+  {label, 9}.
+    {call_only, 0, {f, 3}}.
 ```
 
 ----- BEAM ASSEMBLY -- test@main@@Person.S

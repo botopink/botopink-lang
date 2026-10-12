@@ -35,6 +35,8 @@ function parse(n) {
     if ((n < 0)) { return ({ error: "negative" }); }
     return ({ ok: n });
 }
+
+Object.defineProperty(exports, "__bp_priv__", { value: { fetch, counter, stream, parse } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

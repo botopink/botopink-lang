@@ -50,6 +50,8 @@ class Token$Text extends Token {
     }
 }
 Token$Text.prototype.tag = "Text";
+
+Object.defineProperty(exports, "__bp_priv__", { value: { __Token__Text, __Token__Text$Bold, __Token__Text$Italic, __Token__Text$Underline, Token, Token$Hover, Token$Text } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

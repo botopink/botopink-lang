@@ -16,18 +16,24 @@ test {
 
 ----- JAVASCRIPT -- main.js
 ```javascript
+function __bp_int(v, lo, hi, what) { if (v >= lo && v <= hi) { return v + 0; } throw new Error((Number.isFinite(v) ? "integer overflow: " : "integer division by zero: ") + what); }
+
+function add(a, b) {
+    return __bp_int((a + b), -2147483648, 2147483647, "+ on i32 at main.bp:2:14");
+}
+
+Object.defineProperty(exports, "__bp_priv__", { value: { add } });
+```
+
+----- JAVASCRIPT TEST UNIT -- __test__/main.js
+```javascript
+const { add } = require("../main.js").__bp_priv__;
 function __bp_assert(cond, msg, loc) {
     if (!cond) {
         const e = new Error(msg || "assertion failed");
         e.__bp_assert_loc = loc;
         throw e;
     }
-}
-
-function __bp_int(v, lo, hi, what) { if (v >= lo && v <= hi) { return v + 0; } throw new Error((Number.isFinite(v) ? "integer overflow: " : "integer division by zero: ") + what); }
-
-function add(a, b) {
-    return __bp_int((a + b), -2147483648, 2147483647, "+ on i32 at main.bp:2:14");
 }
 
 async function __bp_test_0() {

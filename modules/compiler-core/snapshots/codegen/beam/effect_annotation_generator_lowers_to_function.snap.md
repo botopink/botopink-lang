@@ -9,9 +9,9 @@ fn range(a: i32, b: i32) -> @Iterator<i32> {
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
 {module, test@main}.
-{exports, []}.
+{exports, [{'__bp_priv__range', 2}]}.
 {attributes, []}.
-{labels, 5}.
+{labels, 7}.
 
 %% @Iterator — eager lowering
 {function, range, 2, 3}.
@@ -35,6 +35,13 @@ fn range(a: i32, b: i32) -> @Iterator<i32> {
     {call_ext, 1, {extfunc, lists, reverse, 1}}.
     {deallocate, 3}.
     return.
+
+{function, '__bp_priv__range', 2, 6}.
+  {label, 5}.
+    {line, [{location, "test@main.erl", 2}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__range'}, 2}.
+  {label, 6}.
+    {call_only, 2, {f, 3}}.
 ```
 
 ----- RUN LOG -----

@@ -841,7 +841,7 @@ fn main() {
 ```erlang
 -module(test@main).
 -export(['_botopink_main'/0, main/1]).
--export([wireService/0]).
+-export([wireService/0, '__bp_priv__collect'/1, '__bp_priv__main'/0]).
 
 %% type Service: port, name
 
@@ -897,6 +897,10 @@ wireService() ->
 
 main(_Args) ->
     '_botopink_main'().
+
+'__bp_priv__collect'(A0) -> collect(A0).
+
+'__bp_priv__main'() -> main().
 ```
 
 ----- ERLANG -- test@main@@Service.erl

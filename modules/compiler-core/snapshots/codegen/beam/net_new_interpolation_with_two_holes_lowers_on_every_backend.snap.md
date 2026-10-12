@@ -8,9 +8,9 @@ fn label(a: string, b: string) -> string {
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
 {module, test@main}.
-{exports, []}.
+{exports, [{'__bp_priv__label', 2}]}.
 {attributes, []}.
-{labels, 8}.
+{labels, 10}.
 
 {function, label, 2, 3}.
   {label, 2}.
@@ -49,6 +49,13 @@ fn label(a: string, b: string) -> string {
     {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
     {deallocate, 3}.
     return.
+
+{function, '__bp_priv__label', 2, 9}.
+  {label, 8}.
+    {line, [{location, "test@main.erl", 2}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__label'}, 2}.
+  {label, 9}.
+    {call_only, 2, {f, 3}}.
 
 {function, '-bp_stringify-', 1, 5}.
   {label, 4}.

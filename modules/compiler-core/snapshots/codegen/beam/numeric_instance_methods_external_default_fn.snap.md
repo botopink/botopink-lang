@@ -14,9 +14,9 @@ fn main() {
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
 {module, test@main}.
-{exports, [{'_botopink_main', 0}, {main, 1}]}.
+{exports, [{'_botopink_main', 0}, {main, 1}, {'__bp_priv__Integer_isEven', 1}, {'__bp_priv__Number_clamp', 3}, {'__bp_priv__main', 0}]}.
 {attributes, []}.
-{labels, 42}.
+{labels, 48}.
 
 {function, main, 0, 3}.
   {label, 2}.
@@ -113,6 +113,27 @@ fn main() {
   {label, 41}.
     {deallocate, 1}.
     return.
+
+{function, '__bp_priv__Integer_isEven', 1, 43}.
+  {label, 42}.
+    {line, [{location, "test@main.erl", 6}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__Integer_isEven'}, 1}.
+  {label, 43}.
+    {call_only, 1, {f, 39}}.
+
+{function, '__bp_priv__Number_clamp', 3, 45}.
+  {label, 44}.
+    {line, [{location, "test@main.erl", 7}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__Number_clamp'}, 3}.
+  {label, 45}.
+    {call_only, 3, {f, 37}}.
+
+{function, '__bp_priv__main', 0, 47}.
+  {label, 46}.
+    {line, [{location, "test@main.erl", 8}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__main'}, 0}.
+  {label, 47}.
+    {call_only, 0, {f, 3}}.
 
 {function, '__bp_print', 1, 9}.
   {label, 8}.

@@ -1116,6 +1116,8 @@ function reverse(o) {
     return r;
 }
 exports.reverse = reverse;
+
+Object.defineProperty(exports, "__bp_priv__", { value: { Dict, shown, Set, Queue, Order, Order$Lt, Order$Eq, Order$Gt, lt, eq, gt, toInt, reverse } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- std/collections.d.ts
@@ -1276,7 +1278,9 @@ function main() {
 function _botopink_main() {
     main();
 }
-_botopink_main();
+if (require.main === module) _botopink_main();
+
+Object.defineProperty(exports, "__bp_priv__", { value: { Dict, main } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

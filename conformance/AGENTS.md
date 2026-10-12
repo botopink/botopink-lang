@@ -1680,12 +1680,12 @@ meta workspace), OTP 28, node v25.
 |---|---|---|---|
 | commonJS | yes | yes | cells and test suites |
 | erlang | yes | yes | cells and test suites |
-| wasm | refused — "supports only the commonJS, erlang and beam targets" | yes, it executes | cells only |
+| wasm | yes on the `wasi` host (decision 513: each test unit a `.wat` component under `wasmtime`; a failing `assert` traps the module's run) — not in the `test/` suites' plan | yes, it executes | cells only |
 | beam | yes: every module of the run assembled beside itself (`erlc +from_asm`), each test module's runner run with `erl -pa` (`01 · 03-beam`) | yes: it builds `out/beam/*.S`, assembles each beside itself (`erlc +from_asm -o out/beam`) and runs the entry with `erl -pa out/beam` | cells and test suites |
 
 A cell runs on every target its manifest declares, whatever `run.sh --target` says: `botopink cell
 check` has no target option, and a cell is one job (target `*` in the plan). `--target all` is the
-four targets of the `test/` suites' plan (wasm never: `botopink test` refuses it); `--target` also
+four targets of the `test/` suites' plan (wasm never: a failing `assert` traps a wasm test run); `--target` also
 takes a comma list (`wasm,beam`) — a subset in canonical order, a name twice or unknown refused —
 which is what the step gate (`scripts/AGENTS.md` § Step gate and full gate) passes for a change that
 reaches those backends only. A machine without `erlc`, `erl` or `wasmtime` fails the run before any

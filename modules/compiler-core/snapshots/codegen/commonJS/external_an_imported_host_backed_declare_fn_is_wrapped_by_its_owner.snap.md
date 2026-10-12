@@ -25,6 +25,8 @@ exports.hostLen = hostLen;
 // nodeOnly: per-call template (see annotation)
 function nodeOnly(s) { return console.log(s); }
 exports.nodeOnly = nodeOnly;
+
+Object.defineProperty(exports, "__bp_priv__", { value: { hostKey, hostLen, nodeOnly } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- hostlib.d.ts
@@ -117,7 +119,9 @@ exports.main = main;
 function _botopink_main() {
     main();
 }
-_botopink_main();
+if (require.main === module) _botopink_main();
+
+Object.defineProperty(exports, "__bp_priv__", { value: { hostKey, hostLen, nodeOnly, main } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

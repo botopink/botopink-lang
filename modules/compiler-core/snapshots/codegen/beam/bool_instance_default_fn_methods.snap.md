@@ -11,9 +11,9 @@ fn main() {
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
 {module, test@main}.
-{exports, [{'_botopink_main', 0}, {main, 1}]}.
+{exports, [{'_botopink_main', 0}, {main, 1}, {'__bp_priv__Bool_exclusiveOr', 2}, {'__bp_priv__Bool_nand', 2}, {'__bp_priv__Bool_nor', 2}, {'__bp_priv__main', 0}]}.
 {attributes, []}.
-{labels, 54}.
+{labels, 62}.
 
 {function, main, 0, 3}.
   {label, 2}.
@@ -143,6 +143,34 @@ fn main() {
   {label, 53}.
     {deallocate, 2}.
     return.
+
+{function, '__bp_priv__Bool_exclusiveOr', 2, 55}.
+  {label, 54}.
+    {line, [{location, "test@main.erl", 7}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__Bool_exclusiveOr'}, 2}.
+  {label, 55}.
+    {call_only, 2, {f, 43}}.
+
+{function, '__bp_priv__Bool_nand', 2, 57}.
+  {label, 56}.
+    {line, [{location, "test@main.erl", 8}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__Bool_nand'}, 2}.
+  {label, 57}.
+    {call_only, 2, {f, 41}}.
+
+{function, '__bp_priv__Bool_nor', 2, 59}.
+  {label, 58}.
+    {line, [{location, "test@main.erl", 9}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__Bool_nor'}, 2}.
+  {label, 59}.
+    {call_only, 2, {f, 39}}.
+
+{function, '__bp_priv__main', 0, 61}.
+  {label, 60}.
+    {line, [{location, "test@main.erl", 10}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__main'}, 0}.
+  {label, 61}.
+    {call_only, 0, {f, 3}}.
 
 {function, '__bp_tpl_0', 1, 9}.
   {label, 8}.

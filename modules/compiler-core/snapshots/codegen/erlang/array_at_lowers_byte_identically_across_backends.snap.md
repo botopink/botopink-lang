@@ -10,6 +10,7 @@ fn main() {
 ```erlang
 -module(test@main).
 -export(['_botopink_main'/0, main/1]).
+-export(['__bp_priv__main'/0]).
 
 main() ->
     '__bp_print'([(fun(__L, __I) -> __N = length(__L), __J = case __I < 0 of true -> __I + __N; false -> __I end, case ((__J >= 0) andalso (__J < __N)) of true -> lists:nth(__J + 1, __L); false -> undefined end end)([10, 20], 0)]),
@@ -43,6 +44,8 @@ main() ->
 
 main(_Args) ->
     '_botopink_main'().
+
+'__bp_priv__main'() -> main().
 ```
 
 ----- RUN LOG -----

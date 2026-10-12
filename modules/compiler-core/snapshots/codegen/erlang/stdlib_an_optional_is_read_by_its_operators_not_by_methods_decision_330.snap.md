@@ -10,6 +10,7 @@ fn greet(p: Person) -> string {
 ----- ERLANG -- main.erl
 ```erlang
 -module(test@main).
+-export(['__bp_priv__find'/1, '__bp_priv__greet'/1]).
 
 %% type Person: name
 
@@ -23,6 +24,10 @@ greet(P) ->
         __bp_nullish ->
             __bp_nullish
     end.
+
+'__bp_priv__find'(A0) -> find(A0).
+
+'__bp_priv__greet'(A0) -> greet(A0).
 ```
 
 ----- ERLANG -- test@main@@Person.erl

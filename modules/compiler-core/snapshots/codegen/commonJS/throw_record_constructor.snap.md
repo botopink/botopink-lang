@@ -21,6 +21,8 @@ AppError.prototype.__bp = "AppError";
 function validate(x) {
     (() => { if ((x < 0)) { throw new AppError(400, "negative"); } })();
 }
+
+Object.defineProperty(exports, "__bp_priv__", { value: { AppError, validate } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

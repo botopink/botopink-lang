@@ -22,6 +22,8 @@ function classify(n) {
         return "negative";
     })();
 }
+
+Object.defineProperty(exports, "__bp_priv__", { value: { classify } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

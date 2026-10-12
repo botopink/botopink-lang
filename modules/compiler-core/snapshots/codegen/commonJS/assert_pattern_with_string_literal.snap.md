@@ -12,6 +12,8 @@ function f() {
     const greeting = "hello";
     (() => { const _match = greeting; if ((_match === "hello")) { return _match; } else { throw "not hello"; } })();
 }
+
+Object.defineProperty(exports, "__bp_priv__", { value: { f } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

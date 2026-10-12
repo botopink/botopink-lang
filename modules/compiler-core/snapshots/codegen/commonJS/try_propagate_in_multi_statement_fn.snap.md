@@ -40,6 +40,8 @@ function pipeline() {
     const b = _try1.ok;
     return ({ ok: b });
 }
+
+Object.defineProperty(exports, "__bp_priv__", { value: { IoError, step1, step2, pipeline } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

@@ -22,6 +22,7 @@ fn main() {
 ```erlang
 -module(test@main).
 -export(['_botopink_main'/0, main/1]).
+-export(['__bp_priv__inner'/0, '__bp_priv__outer'/0, '__bp_priv__process'/0, '__bp_priv__main'/0]).
 
 %% type DbError: msg
 
@@ -87,6 +88,14 @@ main() ->
 
 main(_Args) ->
     '_botopink_main'().
+
+'__bp_priv__inner'() -> inner().
+
+'__bp_priv__outer'() -> outer().
+
+'__bp_priv__process'() -> process().
+
+'__bp_priv__main'() -> main().
 ```
 
 ----- ERLANG -- test@main@@DbError.erl

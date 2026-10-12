@@ -10,12 +10,15 @@ fn describe(p: Point) -> i32 {
 ----- ERLANG -- main.erl
 ```erlang
 -module(test@main).
+-export(['__bp_priv__describe'/1]).
 
 %% type Point: x, y, z
 
 describe(P) ->
     {test@main@@Point, X, _, _} = P,
     X.
+
+'__bp_priv__describe'(A0) -> describe(A0).
 ```
 
 ----- ERLANG -- test@main@@Point.erl

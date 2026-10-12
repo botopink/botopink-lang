@@ -14,9 +14,9 @@ fn main() {
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
 {module, test@main}.
-{exports, [{'_botopink_main', 0}, {main, 1}]}.
+{exports, [{'_botopink_main', 0}, {main, 1}, {'__bp_priv__execute_$0', 1}, {'__bp_priv__execute_$1', 1}, {'__bp_priv__main', 0}]}.
 {attributes, []}.
-{labels, 16}.
+{labels, 22}.
 
 {function, main, 0, 3}.
   {label, 2}.
@@ -93,6 +93,27 @@ fn main() {
     {func_info, {atom, test@main}, {atom, main}, 1}.
   {label, 11}.
     {call_only, 0, {f, 9}}.
+
+{function, '__bp_priv__execute_$0', 1, 17}.
+  {label, 16}.
+    {line, [{location, "test@main.erl", 6}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__execute_$0'}, 1}.
+  {label, 17}.
+    {call_only, 1, {f, 5}}.
+
+{function, '__bp_priv__execute_$1', 1, 19}.
+  {label, 18}.
+    {line, [{location, "test@main.erl", 7}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__execute_$1'}, 1}.
+  {label, 19}.
+    {call_only, 1, {f, 7}}.
+
+{function, '__bp_priv__main', 0, 21}.
+  {label, 20}.
+    {line, [{location, "test@main.erl", 8}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__main'}, 0}.
+  {label, 21}.
+    {call_only, 0, {f, 3}}.
 ```
 
 ----- RUN LOG -----

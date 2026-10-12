@@ -10,6 +10,8 @@ fn getFirst(t: #(i32, string)) -> i32 {
 function getFirst(t) {
     return t[0];
 }
+
+Object.defineProperty(exports, "__bp_priv__", { value: { getFirst } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

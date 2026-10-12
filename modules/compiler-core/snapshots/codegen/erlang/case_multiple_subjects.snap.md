@@ -11,6 +11,7 @@ fn process(a: i32, b: i32) {
 ----- ERLANG -- main.erl
 ```erlang
 -module(test@main).
+-export(['__bp_priv__process'/2]).
 
 process(A, B) ->
     case {A, B} of
@@ -19,6 +20,8 @@ process(A, B) ->
         {_, _} ->
             undefined
     end.
+
+'__bp_priv__process'(A0, A1) -> process(A0, A1).
 ```
 
 ----- RUN LOG -----

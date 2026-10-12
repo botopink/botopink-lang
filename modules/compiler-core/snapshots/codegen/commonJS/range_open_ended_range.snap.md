@@ -18,6 +18,8 @@ function countUp(x) {
     if ((i > 100)) { break; }
 }
 }
+
+Object.defineProperty(exports, "__bp_priv__", { value: { countUp } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

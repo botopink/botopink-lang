@@ -43,7 +43,9 @@ function scale_$1(value) {
 function _botopink_main() {
     main();
 }
-_botopink_main();
+if (require.main === module) _botopink_main();
+
+Object.defineProperty(exports, "__bp_priv__", { value: { base, main, scale_$0, scale_$1 } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

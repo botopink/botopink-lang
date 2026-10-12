@@ -13,9 +13,9 @@ fn safe() -> i32 {
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
 {module, test@main}.
-{exports, []}.
+{exports, [{'__bp_priv__fetch', 0}, {'__bp_priv__safe', 0}]}.
 {attributes, []}.
-{labels, 9}.
+{labels, 13}.
 
 {function, fetch, 0, 3}.
   {label, 2}.
@@ -55,6 +55,20 @@ fn safe() -> i32 {
     {move, {y, 1}, {x, 0}}.
     {deallocate, 2}.
     return.
+
+{function, '__bp_priv__fetch', 0, 10}.
+  {label, 9}.
+    {line, [{location, "test@main.erl", 3}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__fetch'}, 0}.
+  {label, 10}.
+    {call_only, 0, {f, 3}}.
+
+{function, '__bp_priv__safe', 0, 12}.
+  {label, 11}.
+    {line, [{location, "test@main.erl", 4}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__safe'}, 0}.
+  {label, 12}.
+    {call_only, 0, {f, 5}}.
 ```
 
 ----- BEAM ASSEMBLY -- test@main@@NetError.S

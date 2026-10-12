@@ -410,12 +410,55 @@ pub fn codegenEmit(
                     });
                     continue;
                 };
+                // Decision 513 (1): the test unit — the module linked again
+                // with its `test` blocks and their runner as the entry —
+                // under `botopink test` of the package that declares it.
+                var test_unit: ?moduleOutput.Unit = null;
+                if (config.test_mode and !config.packages.idOf(ct.name).package_in_path) {
+                    var unit_arena = std.heap.ArenaAllocator.init(alloc);
+                    defer unit_arena.deinit();
+                    if (try testProgram(unit_arena.allocator(), ok.transformed, if (ct.srcPath.len > 0) ct.srcPath else try std.fmt.allocPrint(unit_arena.allocator(), "{s}.bp", .{ct.name}))) |tp| {
+                        var unit_missing: ?moduleOutput.MissingExternal = null;
+                        var unit_refused: ?Emitter.Refusal = null;
+                        const unit = emitWat(alloc, ct.name, tp, ok.comptime_vals, ok.dispatch_rewrites, ok.instance_lowerings, linked.items, &scope.cross, external_lookup, artifact, &unit_missing, &unit_refused) catch |err| {
+                            const diagnostic: moduleOutput.Diagnostic = if (unit_missing) |me|
+                                try me.diagnostic(alloc)
+                            else if (unit_refused) |r|
+                                .{ .type = .{ .message = r.message, .loc = r.loc } }
+                            else
+                                return err;
+                            alloc.free(emitted.text);
+                            alloc.free(emitted.binary);
+                            for (emitted.std_funcs) |f| {
+                                alloc.free(f.symbol);
+                                alloc.free(f.label);
+                            }
+                            if (emitted.std_funcs.len > 0) alloc.free(emitted.std_funcs);
+                            try results.append(alloc, .{
+                                .name = ct.name,
+                                .src = ct.src,
+                                .result = .{ .js = try alloc.dupe(u8, ""), .comptime_script = null, .diagnostic = diagnostic },
+                            });
+                            continue;
+                        };
+                        // The text is the artifact (`wasmtime` runs a `.wat`
+                        // component as `botopink run` does).
+                        alloc.free(unit.binary);
+                        for (unit.std_funcs) |f| {
+                            alloc.free(f.symbol);
+                            alloc.free(f.label);
+                        }
+                        if (unit.std_funcs.len > 0) alloc.free(unit.std_funcs);
+                        test_unit = .{ .atom = try std.fmt.allocPrint(alloc, TEST_UNIT_PREFIX ++ "/{s}", .{ct.name}), .code = unit.text };
+                    }
+                }
                 try results.append(alloc, .{
                     .name = ct.name,
                     .src = ct.src,
                     .result = .{
                         .js = emitted.text,
                         .wasm = emitted.binary,
+                        .test_unit = test_unit,
                         .std_funcs = emitted.std_funcs,
                         .comptime_script = if (ok.comptime_script) |s| try alloc.dupe(u8, s) else null,
                         .comptime_trace = try comptimeMod.trace.renderAlloc(alloc, ok.comptime_traces),
@@ -428,6 +471,54 @@ pub fn codegenEmit(
 
     try relocateLinkedRefusals(alloc, results.items, &refusals, refused_links.items);
     return results;
+}
+
+/// Decision 513 (1): the test unit's prefix (`__test__/<module path>`).
+const TEST_UNIT_PREFIX = "__test__";
+
+/// The program of a module's wasm test unit, or null when the module has no
+/// `test` block: its declarations but `main/0`, each `test` block as
+/// `fn __bp_test_N()`, and a `main` that runs them in order inside the
+/// `botopink test` envelope (`TEST <file>:<line> <name>`, the RUN LOG fence,
+/// `  ok   <name>`, then `<P> passed, 0 failed`). wasm has no exception to
+/// catch: a failing `assert` traps, the run stops inside the failing test's
+/// fence, and `botopink test` reports a module whose runner printed no summary.
+/// The runner is parsed from source placed past every line of the module, so
+/// no location of it meets one the module's lowering tables are keyed by.
+fn testProgram(arena: std.mem.Allocator, program: ast.Program, src_file: []const u8) !?ast.Program {
+    var decls: std.ArrayListUnmanaged(ast.DeclKind) = .empty;
+    var tests: std.ArrayListUnmanaged(ast.TestDecl) = .empty;
+    for (program.decls) |d| switch (d) {
+        .@"test" => |t| try tests.append(arena, t),
+        .@"fn" => |f| if (!isMain0(f)) try decls.append(arena, d),
+        else => try decls.append(arena, d),
+    };
+    if (tests.items.len == 0) return null;
+    var src: std.ArrayListUnmanaged(u8) = .empty;
+    try src.appendNTimes(arena, '\n', 1 << 20);
+    try src.appendSlice(arena, "fn main() {\n");
+    for (tests.items, 0..) |t, i| {
+        const name = t.name orelse try std.fmt.allocPrint(arena, "test_{d}", .{i});
+        try src.print(arena, "    @print(\"TEST {s}:{d} {s}\");\n", .{ src_file, t.loc.line, name });
+        try src.appendSlice(arena, "    @print(\"----- RUN LOG -----\");\n    @print(\"```logs\");\n");
+        try src.print(arena, "    __bp_test_{d}();\n", .{i});
+        try src.print(arena, "    @print(\"```\");\n    @print(\"  ok   {s}\");\n", .{name});
+        try decls.append(arena, .{ .@"fn" = .{
+            .isPub = false,
+            .name = try std.fmt.allocPrint(arena, "__bp_test_{d}", .{i}),
+            .genericParams = &.{},
+            .params = &.{},
+            .returnType = null,
+            .body = t.body,
+        } });
+    }
+    try src.print(arena, "    @print(\"{d} passed, 0 failed\");\n}}\n", .{tests.items.len});
+    var lx = lexerMod.Lexer.init(src.items);
+    const tokens = try lx.scanAll(arena);
+    var p = @import("../parser.zig").Parser.init(tokens);
+    const runner = try p.parse(arena);
+    try decls.appendSlice(arena, runner.decls);
+    return .{ .decls = decls.items };
 }
 
 /// A module one refused module links, and the import item of that module

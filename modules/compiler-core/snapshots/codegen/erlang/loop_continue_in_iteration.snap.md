@@ -13,6 +13,7 @@ fn sumEvens(arr: i32[]) -> i32[] {
 ----- ERLANG -- main.erl
 ```erlang
 -module(test@main).
+-export(['__bp_priv__sumEvens'/1]).
 
 sumEvens(Arr) ->
     Out = [],
@@ -34,6 +35,8 @@ sumEvens(Arr) ->
         end
     end)(Arr, Out),
     Out@3.
+
+'__bp_priv__sumEvens'(A0) -> sumEvens(A0).
 ```
 
 ----- RUN LOG -----

@@ -139,7 +139,7 @@ fn frameParent(f: Frame) -> unknown {
 ----- ERLANG -- std/context.erl
 ```erlang
 -module(std@context).
--export([provide/2, context/1, push/3, find/3, rendered/2, valueOf/1, root/0]).
+-export([provide/2, context/1, push/3, find/3, rendered/2, valueOf/1, root/0, '__bp_priv__frameValue'/1, '__bp_priv__frameParent'/1]).
 
 %%% Contexts (decision 354) — what a component's body reads from above it,
 
@@ -322,6 +322,10 @@ frameValue(F) ->
 
 frameParent(F) ->
     erlang:element(4, F).
+
+'__bp_priv__frameValue'(A0) -> frameValue(A0).
+
+'__bp_priv__frameParent'(A0) -> frameParent(A0).
 ```
 
 ----- ERLANG -- std@context@@Context.erl
@@ -391,6 +395,7 @@ fn Counter() -> @Component<Element> {
 ----- ERLANG -- main.erl
 ```erlang
 -module(test@main).
+-export(['__bp_priv__state'/1, '__bp_priv__memo'/0, '__bp_priv__Counter'/0]).
 
 %% import bpScopePush__, bpScopeFind__, bpScopeRendered__, bpScopeValue__, bpScopeRoot__
 
@@ -418,6 +423,12 @@ memo() ->
 -compile({inline,['__bp_int'/4]}).
 '__bp_int'(V, Lo, Hi, _) when V >= Lo, V =< Hi -> V;
 '__bp_int'(_, _, _, What) -> erlang:error({integer_overflow, What}).
+
+'__bp_priv__state'(A0) -> state(A0).
+
+'__bp_priv__memo'() -> memo().
+
+'__bp_priv__Counter'() -> 'Counter'().
 ```
 
 ----- ERLANG -- test@main@@Element.erl

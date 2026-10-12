@@ -14,7 +14,7 @@ fn main() {
 -module(test@main).
 -compile({no_auto_import,[floor/1]}).
 -export(['_botopink_main'/0, main/1]).
--export([floor/1]).
+-export([floor/1, '__bp_priv__main'/0]).
 
 %% external fn floor -> math:floor
 floor(N) ->
@@ -70,6 +70,8 @@ main(_Args) ->
             end, filelib:wildcard(filename:join(filename:dirname(Path), "*.erl")));
         _ -> ok
     end.
+
+'__bp_priv__main'() -> main().
 ```
 
 ----- RUN LOG -----

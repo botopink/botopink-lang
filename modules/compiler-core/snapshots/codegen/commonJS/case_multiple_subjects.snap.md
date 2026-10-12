@@ -17,6 +17,8 @@ function process(a, b) {
         return null;
     })();
 }
+
+Object.defineProperty(exports, "__bp_priv__", { value: { process } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

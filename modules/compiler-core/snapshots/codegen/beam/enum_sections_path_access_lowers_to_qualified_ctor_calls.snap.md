@@ -13,9 +13,9 @@ fn red500() -> Token {
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
 {module, test@main}.
-{exports, []}.
+{exports, [{'__bp_priv__red500', 0}]}.
 {attributes, []}.
-{labels, 4}.
+{labels, 6}.
 
 {function, red500, 0, 3}.
   {label, 2}.
@@ -31,6 +31,13 @@ fn red500() -> Token {
     {put_tuple2, {x, 0}, {list, [{atom, test@main@@Token__v__color}, {x, 0}]}}.
     {deallocate, 2}.
     return.
+
+{function, '__bp_priv__red500', 0, 5}.
+  {label, 4}.
+    {line, [{location, "test@main.erl", 2}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__red500'}, 0}.
+  {label, 5}.
+    {call_only, 0, {f, 3}}.
 ```
 
 ----- BEAM ASSEMBLY -- test@main@@__Token__Color.S

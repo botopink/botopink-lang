@@ -45,9 +45,9 @@ val result = double(21);
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
 {module, test@main}.
-{exports, [{'_botopink_init', 0}]}.
+{exports, [{'_botopink_init', 0}, {'__bp_priv__result', 0}]}.
 {attributes, []}.
-{labels, 7}.
+{labels, 9}.
 
 {function, result, 0, 3}.
   {label, 2}.
@@ -81,6 +81,13 @@ val result = double(21);
     {move, {atom, ok}, {x, 0}}.
     {deallocate, 0}.
     return.
+
+{function, '__bp_priv__result', 0, 8}.
+  {label, 7}.
+    {line, [{location, "test@main.erl", 3}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__result'}, 0}.
+  {label, 8}.
+    {call_only, 0, {f, 3}}.
 ```
 
 ----- RUN LOG -----

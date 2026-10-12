@@ -55,6 +55,8 @@ Token$Color.prototype.tag = "Color";
 function red500() {
     return Token.Color(__Token__Color.Red(__Token__Color__Red.__500));
 }
+
+Object.defineProperty(exports, "__bp_priv__", { value: { __Token__Color, __Token__Color$Red, __Token__Color__Red, __Token__Color__Red$__100, __Token__Color__Red$__500, Token, Token$Color, red500 } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

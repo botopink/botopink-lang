@@ -13,6 +13,7 @@ fn describe() -> string {
 ----- ERLANG -- main.erl
 ```erlang
 -module(test@main).
+-export(['__bp_priv__describe'/0]).
 
 describe() ->
     Items = [<<"a">>, <<"b">>, <<"c">>],
@@ -24,6 +25,8 @@ describe() ->
         [First | Rest] ->
             <<"many">>
     end.
+
+'__bp_priv__describe'() -> describe().
 ```
 
 ----- RUN LOG -----

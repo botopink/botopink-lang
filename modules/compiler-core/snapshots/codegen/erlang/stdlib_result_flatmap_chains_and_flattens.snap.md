@@ -11,6 +11,7 @@ fn main() {
 ```erlang
 -module(test@main).
 -export(['_botopink_main'/0, main/1]).
+-export(['__bp_priv__parseAge'/1, '__bp_priv__validate'/1, '__bp_priv__main'/0]).
 
 parseAge(S) ->
     erlang:error({todo, <<"not implemented">>}).
@@ -29,6 +30,12 @@ main() ->
 
 main(_Args) ->
     '_botopink_main'().
+
+'__bp_priv__parseAge'(A0) -> parseAge(A0).
+
+'__bp_priv__validate'(A0) -> validate(A0).
+
+'__bp_priv__main'() -> main().
 ```
 
 ----- RUN LOG -----

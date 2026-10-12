@@ -17,6 +17,7 @@ fn pipeline() -> @Result<i32, IoError> {
 ----- ERLANG -- main.erl
 ```erlang
 -module(test@main).
+-export(['__bp_priv__step1'/0, '__bp_priv__step2'/1, '__bp_priv__pipeline'/0]).
 
 %% type IoError: path
 
@@ -36,6 +37,12 @@ pipeline() ->
             end;
         {error, _TryE0} -> {error, _TryE0}
     end.
+
+'__bp_priv__step1'() -> step1().
+
+'__bp_priv__step2'(A0) -> step2(A0).
+
+'__bp_priv__pipeline'() -> pipeline().
 ```
 
 ----- ERLANG -- test@main@@IoError.erl

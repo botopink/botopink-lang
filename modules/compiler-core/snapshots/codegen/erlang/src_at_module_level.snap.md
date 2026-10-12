@@ -11,7 +11,7 @@ fn main() {
 ```erlang
 -module(test@main).
 -export(['_botopink_main'/0, main/1]).
--export(['_botopink_init'/0]).
+-export(['_botopink_init'/0, '__bp_priv__top'/0, '__bp_priv__main'/0]).
 
 %% type SourceLocation: file, line, column, fnName
 
@@ -58,6 +58,10 @@ main() ->
 
 main(_Args) ->
     '_botopink_main'().
+
+'__bp_priv__top'() -> top().
+
+'__bp_priv__main'() -> main().
 ```
 
 ----- ERLANG -- test@main@@SourceLocation.erl

@@ -13,6 +13,8 @@ function twice(x) {
     return __bp_int((x * 2), -2147483648, 2147483647, "* on i32 at a.bp:2:14");
 }
 exports.twice = twice;
+
+Object.defineProperty(exports, "__bp_priv__", { value: { twice } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- a.d.ts
@@ -106,7 +108,9 @@ exports.main = main;
 function _botopink_main() {
     main();
 }
-_botopink_main();
+if (require.main === module) _botopink_main();
+
+Object.defineProperty(exports, "__bp_priv__", { value: { twice, quad, main } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- b.d.ts

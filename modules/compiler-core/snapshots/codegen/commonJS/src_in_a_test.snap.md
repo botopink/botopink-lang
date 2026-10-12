@@ -12,6 +12,26 @@ test {
 
 ----- JAVASCRIPT -- main.js
 ```javascript
+class SourceLocation {
+    constructor(file, line, column, fnName) {
+        this.file = file;
+        this.line = line;
+        this.column = column;
+        this.fnName = fnName;
+    }
+}
+SourceLocation.prototype.__bp = "SourceLocation";
+
+function helper() {
+    return 1;
+}
+
+Object.defineProperty(exports, "__bp_priv__", { value: { SourceLocation, helper } });
+```
+
+----- JAVASCRIPT TEST UNIT -- __test__/main.js
+```javascript
+const { SourceLocation, helper } = require("../main.js").__bp_priv__;
 function __bp_assert(cond, msg, loc) {
     if (!cond) {
         const e = new Error(msg || "assertion failed");
@@ -69,20 +89,6 @@ function __bp_print() {
     const a = [];
     const f = Array.from(arguments, (v, i) => __bp_show(v, null, true, a)).join(" ");
     console.log.apply(console, [f, ...a]);
-}
-
-class SourceLocation {
-    constructor(file, line, column, fnName) {
-        this.file = file;
-        this.line = line;
-        this.column = column;
-        this.fnName = fnName;
-    }
-}
-SourceLocation.prototype.__bp = "SourceLocation";
-
-function helper() {
-    return 1;
 }
 
 async function __bp_test_0() {

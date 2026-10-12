@@ -30,6 +30,8 @@ function safe() {
 })(_try0.error) : _try0.ok;
     return r;
 }
+
+Object.defineProperty(exports, "__bp_priv__", { value: { FetchError, fetch, safe } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

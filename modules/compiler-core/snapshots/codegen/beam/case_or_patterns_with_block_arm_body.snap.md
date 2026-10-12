@@ -12,9 +12,9 @@ val parity = case 5 {
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
 {module, test@main}.
-{exports, [{'_botopink_init', 0}]}.
+{exports, [{'_botopink_init', 0}, {'__bp_priv__parity', 0}]}.
 {attributes, []}.
-{labels, 11}.
+{labels, 13}.
 
 {function, parity, 0, 3}.
   {label, 2}.
@@ -64,6 +64,13 @@ val parity = case 5 {
     {move, {atom, ok}, {x, 0}}.
     {deallocate, 0}.
     return.
+
+{function, '__bp_priv__parity', 0, 12}.
+  {label, 11}.
+    {line, [{location, "test@main.erl", 3}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__parity'}, 0}.
+  {label, 12}.
+    {call_only, 0, {f, 3}}.
 ```
 
 ----- RUN LOG -----

@@ -13,6 +13,7 @@ fn red500() -> Token {
 ----- ERLANG -- main.erl
 ```erlang
 -module(test@main).
+-export(['__bp_priv__red500'/0]).
 
 %% type __Token__Color
 %%   Red(_inner)
@@ -26,6 +27,8 @@ fn red500() -> Token {
 
 red500() ->
     {test@main@@Token__v__color, {test@main@@__Token__Color__v__red, test@main@@__Token__Color__Red__v__500}}.
+
+'__bp_priv__red500'() -> red500().
 ```
 
 ----- ERLANG -- test@main@@__Token__Color.erl

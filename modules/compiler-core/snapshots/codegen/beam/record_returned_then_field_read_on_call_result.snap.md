@@ -12,9 +12,9 @@ fn lineNo() -> i32 {
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
 {module, test@main}.
-{exports, []}.
+{exports, [{'__bp_priv__lineNo', 0}, {'__bp_priv__span', 0}]}.
 {attributes, []}.
-{labels, 7}.
+{labels, 11}.
 
 {function, span, 0, 3}.
   {label, 2}.
@@ -39,6 +39,20 @@ fn lineNo() -> i32 {
   {label, 6}.
     {deallocate, 0}.
     return.
+
+{function, '__bp_priv__lineNo', 0, 8}.
+  {label, 7}.
+    {line, [{location, "test@main.erl", 3}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__lineNo'}, 0}.
+  {label, 8}.
+    {call_only, 0, {f, 5}}.
+
+{function, '__bp_priv__span', 0, 10}.
+  {label, 9}.
+    {line, [{location, "test@main.erl", 4}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__span'}, 0}.
+  {label, 10}.
+    {call_only, 0, {f, 3}}.
 ```
 
 ----- BEAM ASSEMBLY -- test@main@@Span.S

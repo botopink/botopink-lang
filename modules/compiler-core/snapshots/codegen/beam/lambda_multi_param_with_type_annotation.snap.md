@@ -11,9 +11,9 @@ fn main() -> i32 {
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
 {module, test@main}.
-{exports, [{'_botopink_main', 0}, {main, 1}]}.
+{exports, [{'_botopink_main', 0}, {main, 1}, {'__bp_priv__main', 0}]}.
 {attributes, []}.
-{labels, 13}.
+{labels, 15}.
 
 {function, main, 0, 3}.
   {label, 2}.
@@ -49,6 +49,13 @@ fn main() -> i32 {
     {func_info, {atom, test@main}, {atom, main}, 1}.
   {label, 7}.
     {call_only, 0, {f, 5}}.
+
+{function, '__bp_priv__main', 0, 14}.
+  {label, 13}.
+    {line, [{location, "test@main.erl", 4}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__main'}, 0}.
+  {label, 14}.
+    {call_only, 0, {f, 3}}.
 
 {function, '__bp_add', 2, 11}.
   {label, 10}.

@@ -11,9 +11,9 @@ fn process(a: i32, b: i32) {
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
 {module, test@main}.
-{exports, []}.
+{exports, [{'__bp_priv__process', 2}]}.
 {attributes, []}.
-{labels, 7}.
+{labels, 9}.
 
 {function, process, 2, 3}.
   {label, 2}.
@@ -45,6 +45,13 @@ fn process(a: i32, b: i32) {
     {move, {atom, ok}, {x, 0}}.
     {deallocate, 2}.
     return.
+
+{function, '__bp_priv__process', 2, 8}.
+  {label, 7}.
+    {line, [{location, "test@main.erl", 2}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__process'}, 2}.
+  {label, 8}.
+    {call_only, 2, {f, 3}}.
 ```
 
 ----- RUN LOG -----

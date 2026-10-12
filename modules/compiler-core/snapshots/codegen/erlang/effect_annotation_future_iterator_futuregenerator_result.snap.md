@@ -19,6 +19,7 @@ fn parse(n: i32) -> @Result<i32, string> {
 ----- ERLANG -- main.erl
 ```erlang
 -module(test@main).
+-export(['__bp_priv__fetch'/1, '__bp_priv__counter'/0, '__bp_priv__stream'/0, '__bp_priv__parse'/1]).
 
 %% @Task — eager lowering
 fetch(X) ->
@@ -39,6 +40,14 @@ parse(N) ->
         _ ->
             {ok, N}
     end.
+
+'__bp_priv__fetch'(A0) -> fetch(A0).
+
+'__bp_priv__counter'() -> counter().
+
+'__bp_priv__stream'() -> stream().
+
+'__bp_priv__parse'(A0) -> parse(A0).
 ```
 
 ----- RUN LOG -----

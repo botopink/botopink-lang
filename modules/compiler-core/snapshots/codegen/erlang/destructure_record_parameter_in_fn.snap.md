@@ -14,6 +14,7 @@ fn main() {
 ```erlang
 -module(test@main).
 -export(['_botopink_main'/0, main/1]).
+-export(['__bp_priv__greet'/1, '__bp_priv__main'/0]).
 
 %% type Person: name, age
 
@@ -52,6 +53,10 @@ main() ->
 
 main(_Args) ->
     '_botopink_main'().
+
+'__bp_priv__greet'(A0) -> greet(A0).
+
+'__bp_priv__main'() -> main().
 ```
 
 ----- ERLANG -- test@main@@Person.erl

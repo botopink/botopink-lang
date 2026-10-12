@@ -14,6 +14,8 @@ function* counter() {
     yield 2;
     yield 3;
 }
+
+Object.defineProperty(exports, "__bp_priv__", { value: { counter } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

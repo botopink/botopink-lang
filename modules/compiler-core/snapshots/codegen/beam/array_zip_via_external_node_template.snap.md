@@ -10,9 +10,9 @@ fn main() {
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
 {module, test@main}.
-{exports, [{'_botopink_main', 0}, {main, 1}]}.
+{exports, [{'_botopink_main', 0}, {main, 1}, {'__bp_priv__Array_range', 2}, {'__bp_priv__Array_repeat', 2}, {'__bp_priv__main', 0}]}.
 {attributes, []}.
-{labels, 55}.
+{labels, 61}.
 
 {function, 'Array_range', 2, 3}.
   {label, 2}.
@@ -160,6 +160,27 @@ fn main() {
     {func_info, {atom, test@main}, {atom, main}, 1}.
   {label, 11}.
     {call_only, 0, {f, 9}}.
+
+{function, '__bp_priv__Array_range', 2, 56}.
+  {label, 55}.
+    {line, [{location, "test@main.erl", 7}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__Array_range'}, 2}.
+  {label, 56}.
+    {call_only, 2, {f, 3}}.
+
+{function, '__bp_priv__Array_repeat', 2, 58}.
+  {label, 57}.
+    {line, [{location, "test@main.erl", 8}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__Array_repeat'}, 2}.
+  {label, 58}.
+    {call_only, 2, {f, 5}}.
+
+{function, '__bp_priv__main', 0, 60}.
+  {label, 59}.
+    {line, [{location, "test@main.erl", 9}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__main'}, 0}.
+  {label, 60}.
+    {call_only, 0, {f, 7}}.
 
 {function, '__bp_tpl_0-t/2-fun-0-', 2, 25}.
   {label, 24}.

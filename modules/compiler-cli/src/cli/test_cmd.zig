@@ -1,13 +1,12 @@
 /// `botopink test` — compile in test mode then run every test block.
 ///
-/// Compiles the project with `test_mode = true` (test blocks emit as
-/// functions + a registry + runner entry; `fn main/0` is not auto-invoked),
-/// writes artifacts under `.botopinkbuild/test-out/<target>/<id>/` (one
-/// directory per run, removed when the run ends), then executes each
-/// module that contains tests and aggregates the exit codes.
-///
-/// Currently only the `commonJS` target runs tests (node); other targets
-/// are pending phases of the `test-blocks` spec.
+/// Compiles the project with `test_mode = true`: every module's production
+/// unit is the one `build` writes, and each module of the package under test
+/// that declares tests gets its test unit — its tests, their registry and the
+/// runner (decision 513). Writes the artifacts under
+/// `.botopinkbuild/test-out/<target>/<id>/` (one directory per run, removed
+/// when the run ends), then runs each test unit and aggregates the exit
+/// codes, on commonJS, erlang, beam and wasm (the `wasi` host).
 const std = @import("std");
 const source_stamp = @import("source_stamp");
 const build_stamp = @import("build_stamp");
@@ -65,6 +64,23 @@ fn artifactIn(arena: std.mem.Allocator, test_out: []const u8, target: config.Tar
     if (target != .beam) return std.fmt.allocPrint(arena, "{s}/{s}{s}", .{ test_out, name, ext });
     const stem = try bp.codegen.crossModule.outputStem(.beam, arena, packages.idOf(name));
     return std.fmt.allocPrint(arena, "{s}/{s}{s}", .{ test_out, stem, ext });
+}
+
+/// Where a module's test unit (decision 513, `GenerateResult.test_unit`) is
+/// written: on erlang `<atom>.erl` in the directory of the module that
+/// declares it, as its type units (its runner loads that directory and
+/// below); on beam `<atom>.S` in the run's one directory; on commonJS
+/// `__test__/<module path>.js` under the run's root.
+fn testUnitPath(arena: std.mem.Allocator, test_out: []const u8, target: config.Target, name: []const u8, unit: bp.codegen.Unit) ![]const u8 {
+    return switch (target) {
+        .erlang => if (std.fs.path.dirname(name)) |d|
+            std.fmt.allocPrint(arena, "{s}/{s}/{s}.erl", .{ test_out, d, unit.atom })
+        else
+            std.fmt.allocPrint(arena, "{s}/{s}.erl", .{ test_out, unit.atom }),
+        .beam => std.fmt.allocPrint(arena, "{s}/{s}.S", .{ test_out, unit.atom }),
+        .commonJS => std.fmt.allocPrint(arena, "{s}/{s}.js", .{ test_out, unit.atom }),
+        .wasm => std.fmt.allocPrint(arena, "{s}/{s}.wat", .{ test_out, unit.atom }),
+    };
 }
 
 /// `erlc +from_asm -o <dir>` over every `.S` in `dir` — a job of the command's
@@ -309,9 +325,10 @@ pub fn run(
         build_cmd.reportUnsupportedTarget(proj.target);
         return 1;
     };
-    if (target == .wasm) {
-        reporter.errMsg("`botopink test` currently supports only the commonJS, erlang and beam targets");
-        reporter.hintMsg("run with `--target commonJS` or set \"target\": \"commonJS\" in botopink.json");
+    // wasm: a test unit is a WASI component run by `wasmtime` (decision 513);
+    // the `browser` host has no runner of its own.
+    if (target == .wasm and proj.wasmHost() == .browser) {
+        reporter.errMsg("`botopink test` on wasm runs the `wasi` host only — this project's \"wasm\" host is `browser`");
         return 1;
     }
     // erlang and beam: the `erl` on PATH runs the OTP release the compiler
@@ -383,10 +400,12 @@ pub fn run(
             .commonJS => .commonJS,
             .erlang => .erlang,
             .beam => .beam,
-            .wasm => unreachable, // guarded above
+            .wasm => .wasm,
         },
         .build_root = ".botopinkbuild",
         .test_mode = true,
+        .wasm_host = proj.wasmHost(),
+        .wasm_artifact = true,
         .packages = try libs.packagesOf(arena, proj, real_deps.items),
         .analysis_store = &level_b.store,
     };
@@ -438,17 +457,26 @@ pub fn run(
         .commonJS => ".js",
         .erlang => ".erl",
         .beam => ".S",
-        .wasm => unreachable,
+        .wasm => ".wat",
     };
     const runner: []const u8 = switch (target) {
         .commonJS => "node",
         .erlang => "escript",
         .beam => "erl",
-        .wasm => unreachable,
+        .wasm => "wasmtime",
     };
 
     for (outputs.items) |o| {
         if (o.result.failed()) continue;
+        // wasm: a test unit is the whole program, linked; nothing else runs.
+        if (target == .wasm) {
+            if (o.result.test_unit) |u| {
+                const unit_path = try testUnitPath(arena, test_out, target, o.name, u);
+                if (std.fs.path.dirname(unit_path)) |parent| try std.Io.Dir.cwd().createDirPath(io, parent);
+                try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = unit_path, .data = u.code });
+            }
+            continue;
+        }
         const sub_path = try artifactIn(arena, test_out, target, cfg.packages, o.name, ext);
         if (std.fs.path.dirname(sub_path)) |parent| {
             std.Io.Dir.cwd().createDirPath(io, parent) catch |err| switch (err) {
@@ -470,6 +498,12 @@ pub fn run(
         const unit_dir = if (target == .beam) test_out else if (std.fs.path.dirname(o.name)) |d| try std.fmt.allocPrint(arena, "{s}/{s}", .{ test_out, d }) else test_out;
         for (o.result.units) |u| {
             const unit_path = try std.fmt.allocPrint(arena, "{s}/{s}{s}", .{ unit_dir, u.atom, ext });
+            try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = unit_path, .data = u.code });
+        }
+        // Decision 513: the module's test unit, beside its type units.
+        if (o.result.test_unit) |u| {
+            const unit_path = try testUnitPath(arena, test_out, target, o.name, u);
+            if (std.fs.path.dirname(unit_path)) |parent| try std.Io.Dir.cwd().createDirPath(io, parent);
             try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = unit_path, .data = u.code });
         }
     }
@@ -609,11 +643,11 @@ pub fn run(
         // run only the project's own `test {}` blocks.
         if (isDepModule(o.name, real_deps.items)) continue;
         if (o.result.failed()) continue;
-        // Modules without test blocks have no runner — skip them.
-        if (std.mem.indexOf(u8, o.result.js, "__bp_run_tests") == null) continue;
+        // A module with no test unit has no tests (decision 513).
+        const unit = o.result.test_unit orelse continue;
         any_tests = true;
 
-        const sub_path = try artifactIn(arena, test_out, target, cfg.packages, o.name, ext);
+        const sub_path = try testUnitPath(arena, test_out, target, o.name, unit);
 
         var argv = std.ArrayListUnmanaged([]const u8).empty;
         defer argv.deinit(arena);
@@ -623,6 +657,9 @@ pub fn run(
             // filter as the command line `-extra` leaves it.
             const atom = std.fs.path.stem(sub_path);
             try argv.appendSlice(arena, &.{ "-noshell", "-pa", test_out, "-eval", try std.fmt.allocPrint(arena, "'{s}':main(init:get_plain_arguments()), halt().", .{atom}), "-extra" });
+        } else if (target == .wasm) {
+            // A WASI preview 2 component, `wasi:http` granted as `run` does.
+            try argv.appendSlice(arena, &.{ "run", "-S", "http", sub_path });
         } else try argv.append(arena, sub_path);
         if (opts.filter) |f| try argv.append(arena, f);
 

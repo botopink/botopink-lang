@@ -575,7 +575,7 @@ test "order case over Order" {
 ----- ERLANG -- std/collections.erl
 ```erlang
 -module(std@collections).
--export([lt/0, eq/0, gt/0, toInt/1, reverse/1, shown/1]).
+-export([lt/0, eq/0, gt/0, toInt/1, reverse/1, shown/1, '__bp_priv__array_range'/2, '__bp_priv__array_repeat'/2]).
 
 %% behavior Array
 
@@ -810,6 +810,10 @@ reverse(O) ->
 
 '__bp_text'(Value) when erlang:is_binary(Value) -> Value;
 '__bp_text'(Value) -> erlang:iolist_to_binary(io_lib:format(<<"~p">>, [Value])).
+
+'__bp_priv__array_range'(A0, A1) -> array_range(A0, A1).
+
+'__bp_priv__array_repeat'(A0, A1) -> array_repeat(A0, A1).
 ```
 
 ----- ERLANG -- std@collections@@Dict.erl
@@ -1043,6 +1047,7 @@ fn main() {
 ```erlang
 -module(test@main).
 -export(['_botopink_main'/0, main/1]).
+-export(['__bp_priv__main'/0]).
 
 %% import Dict
 
@@ -1084,6 +1089,8 @@ main() ->
 
 main(_Args) ->
     '_botopink_main'().
+
+'__bp_priv__main'() -> main().
 ```
 
 ----- RUN LOG -----

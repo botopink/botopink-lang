@@ -15,6 +15,7 @@ fn run(p: Parser) -> i32 {
 ----- ERLANG -- main.erl
 ```erlang
 -module(test@main).
+-export(['__bp_priv__run'/1]).
 
 %% type ParseError: msg
 
@@ -31,6 +32,8 @@ run(P) ->
             0
     end,
     Result.
+
+'__bp_priv__run'(A0) -> run(A0).
 ```
 
 ----- ERLANG -- test@main@@ParseError.erl

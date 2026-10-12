@@ -64,6 +64,15 @@ fn writeUnitSections(alloc: std.mem.Allocator, buf: *std.ArrayListUnmanaged(u8),
     }
 }
 
+/// The module's test unit (decision 513), under `botopink test` only:
+/// `----- <kind> TEST UNIT -- <stem><ext>`.
+fn writeTestUnitSection(alloc: std.mem.Allocator, buf: *std.ArrayListUnmanaged(u8), kind: []const u8, ext: []const u8, fence: []const u8, result: GenerateResult) !void {
+    const u = result.test_unit orelse return;
+    try buf.print(alloc, "\n----- {s} TEST UNIT -- {s}{s}\n```{s}\n", .{ kind, u.atom, ext, fence });
+    try buf.appendSlice(alloc, u.code);
+    try buf.appendSlice(alloc, "```\n");
+}
+
 pub fn buildSnapshot(
     alloc: std.mem.Allocator,
     name: []const u8,
@@ -114,6 +123,7 @@ pub fn buildSnapshot(
             try buf.appendSlice(alloc, jsHdr);
             try buf.appendSlice(alloc, result.js);
             try buf.appendSlice(alloc, "```\n");
+            try writeTestUnitSection(alloc, &buf, "JAVASCRIPT", ".js", "javascript", result);
 
             // TypeScript typedef section (if any)
             if (result.typedef) |ts| {
@@ -137,6 +147,7 @@ pub fn buildSnapshot(
             try buf.appendSlice(alloc, result.js);
             try buf.appendSlice(alloc, "```\n");
             try writeUnitSections(alloc, &buf, "ERLANG", ".erl", result);
+            try writeTestUnitSection(alloc, &buf, "ERLANG", ".erl", "erlang", result);
 
             // RUN LOG section (if any)
             if (result.run_output) |output| try writeRunLog(alloc, &buf, output);
@@ -151,6 +162,7 @@ pub fn buildSnapshot(
             try buf.appendSlice(alloc, result.js);
             try buf.appendSlice(alloc, "```\n");
             try writeUnitSections(alloc, &buf, "BEAM ASSEMBLY", ".S", result);
+            try writeTestUnitSection(alloc, &buf, "BEAM ASSEMBLY", ".S", "erlang", result);
 
             if (result.run_output) |output| try writeRunLog(alloc, &buf, output);
         },

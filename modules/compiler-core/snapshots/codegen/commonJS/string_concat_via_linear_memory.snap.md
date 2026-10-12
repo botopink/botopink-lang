@@ -10,6 +10,8 @@ fn greeting() -> string {
 function greeting() {
     return ("Hello, " + "World");
 }
+
+Object.defineProperty(exports, "__bp_priv__", { value: { greeting } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

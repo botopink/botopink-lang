@@ -40,6 +40,8 @@ class Pipeline {
     }
 }
 Pipeline.prototype.__bp = "Pipeline";
+
+Object.defineProperty(exports, "__bp_priv__", { value: { List, Pipeline } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

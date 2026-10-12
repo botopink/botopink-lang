@@ -33,6 +33,8 @@ function handle() {
     const r = "error" in _try0 ? (0) : _try0.ok;
     return r;
 }
+
+Object.defineProperty(exports, "__bp_priv__", { value: { ErrorKind, ErrorKind$NotFound, ErrorKind$Timeout, fetch, handle } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

@@ -10,6 +10,7 @@ fn main() {
 ```erlang
 -module(test@main).
 -export(['_botopink_main'/0, main/1]).
+-export(['__bp_priv__sum'/0, '__bp_priv__main'/0]).
 
 sum() ->
     '__bp_int'((1 + 2), -2147483648, 2147483647, <<"integer overflow: + on i32 at main.bp:1:13">>).
@@ -49,6 +50,10 @@ main() ->
 
 main(_Args) ->
     '_botopink_main'().
+
+'__bp_priv__sum'() -> sum().
+
+'__bp_priv__main'() -> main().
 ```
 
 ----- RUN LOG -----

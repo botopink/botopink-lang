@@ -12,6 +12,8 @@ function* range(a, b) {
     yield a;
     yield b;
 }
+
+Object.defineProperty(exports, "__bp_priv__", { value: { range } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

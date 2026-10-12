@@ -13,12 +13,35 @@ test {
 ----- ERLANG -- main.erl
 ```erlang
 -module(test@main).
--export([main/1]).
+-export(['__bp_priv__helper'/0]).
 
 %% type SourceLocation: file, line, column, fnName
 
 helper() ->
     1.
+
+
+
+'__bp_priv__helper'() -> helper().
+```
+
+----- ERLANG -- test@main@@SourceLocation.erl
+```erlang
+-module(test@main@@SourceLocation).
+-export(['__bp_get'/2, '__bp_format'/1]).
+
+'__bp_get'(V, file) -> erlang:element(2, V);
+'__bp_get'(V, line) -> erlang:element(3, V);
+'__bp_get'(V, column) -> erlang:element(4, V);
+'__bp_get'(V, fnName) -> erlang:element(5, V).
+
+'__bp_format'(V) -> {record, "SourceLocation", [{"file", erlang:element(2, V)}, {"line", erlang:element(3, V)}, {"column", erlang:element(4, V)}, {"fnName", erlang:element(5, V)}]}.
+```
+
+----- ERLANG TEST UNIT -- __test__@test@main.erl
+```erlang
+-module('__test__@test@main').
+-export([main/1]).
 
 '__bp_test_0'() ->
     Loc = {test@main@@SourceLocation, <<"main.bp">>, 3, 15, <<"src: in a test">>},
@@ -106,22 +129,21 @@ helper() ->
     (fun() ->
         Dir = filename:dirname(filename:absname(escript:script_name())),
         Self = erlang:atom_to_list(?MODULE) ++ ".erl",
-        Loaded = lists:foldl(fun(Src, Acc) ->
+        Compiled = lists:foldl(fun(Src, Acc) ->
             case filename:basename(Src) =:= Self of
                 true -> Acc;
                 false ->
                     case '__bp_prebuilt'(Src) of
-                        {ok, Mod, Bin} -> code:load_binary(Mod, Src, Bin), [Mod | Acc];
+                        {ok, Mod, Bin} -> [{Mod, Src, Bin} | Acc];
                         none ->
                             case compile:file(Src, [binary, return_errors, {i, Dir}]) of
-                                {ok, Mod, Bin} -> code:load_binary(Mod, Src, Bin), [Mod | Acc];
+                                {ok, Mod, Bin} -> [{Mod, Src, Bin} | Acc];
                                 Bad -> '__bp_dead_module'(Src, Bad)
                             end
                     end
             end
         end, [], filelib:wildcard(filename:join([Dir, "**", "*.erl"]))),
-        [Mod:'__bp_load'() || Mod <- lists:reverse(Loaded), erlang:function_exported(Mod, '__bp_load', 0)],
-        ok
+        '__bp_load_all'(lists:reverse(Compiled))
     end)().
 
 '__bp_prebuilt'(Src) ->
@@ -166,6 +188,13 @@ helper() ->
         _ -> ""
     end.
 
+'__bp_load_all'(Pending) ->
+    case [P || {Mod, Src, Bin} = P <- Pending, code:load_binary(Mod, Src, Bin) =/= {module, Mod}] of
+        [] -> ok;
+        Failed when erlang:length(Failed) < erlang:length(Pending) -> '__bp_load_all'(Failed);
+        _ -> ok
+    end.
+
 main(Args) ->
     io:setopts(standard_io, [{encoding, unicode}]),
     '__bp_load_siblings'(),
@@ -174,19 +203,6 @@ main(Args) ->
         _ -> none
     end,
     '__bp_run_tests'(Filter).
-```
-
------ ERLANG -- test@main@@SourceLocation.erl
-```erlang
--module(test@main@@SourceLocation).
--export(['__bp_get'/2, '__bp_format'/1]).
-
-'__bp_get'(V, file) -> erlang:element(2, V);
-'__bp_get'(V, line) -> erlang:element(3, V);
-'__bp_get'(V, column) -> erlang:element(4, V);
-'__bp_get'(V, fnName) -> erlang:element(5, V).
-
-'__bp_format'(V) -> {record, "SourceLocation", [{"file", erlang:element(2, V)}, {"line", erlang:element(3, V)}, {"column", erlang:element(4, V)}, {"fnName", erlang:element(5, V)}]}.
 ```
 
 ----- RUN LOG -----

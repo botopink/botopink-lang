@@ -48,6 +48,8 @@ HttpMethod.Get = new HttpMethod$Get();
 HttpMethod.Post = new HttpMethod$Post();
 HttpMethod.Put = new HttpMethod$Put();
 HttpMethod.Delete = new HttpMethod$Delete();
+
+Object.defineProperty(exports, "__bp_priv__", { value: { HttpMethod, HttpMethod$Get, HttpMethod$Post, HttpMethod$Put, HttpMethod$Delete } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

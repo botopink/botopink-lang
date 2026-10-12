@@ -20,6 +20,8 @@ function sumTo(n) {
 }
     return sum;
 }
+
+Object.defineProperty(exports, "__bp_priv__", { value: { sumTo } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

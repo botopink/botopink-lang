@@ -840,9 +840,9 @@ fn main() {
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
 {module, test@main}.
-{exports, [{'_botopink_main', 0}, {main, 1}, {wireService, 0}]}.
+{exports, [{'_botopink_main', 0}, {main, 1}, {wireService, 0}, {'__bp_priv__collect', 1}, {'__bp_priv__main', 0}]}.
 {attributes, []}.
-{labels, 50}.
+{labels, 54}.
 
 {function, collect, 1, 3}.
   {label, 2}.
@@ -939,6 +939,20 @@ fn main() {
     {func_info, {atom, test@main}, {atom, main}, 1}.
   {label, 11}.
     {call_only, 0, {f, 9}}.
+
+{function, '__bp_priv__collect', 1, 51}.
+  {label, 50}.
+    {line, [{location, "test@main.erl", 6}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__collect'}, 1}.
+  {label, 51}.
+    {call_only, 1, {f, 3}}.
+
+{function, '__bp_priv__main', 0, 53}.
+  {label, 52}.
+    {line, [{location, "test@main.erl", 7}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__main'}, 0}.
+  {label, 53}.
+    {call_only, 0, {f, 5}}.
 
 {function, '-bp_stringify-', 1, 17}.
   {label, 16}.

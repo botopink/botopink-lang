@@ -16,6 +16,7 @@ fn arrayEq() -> bool {
 ----- ERLANG -- main.erl
 ```erlang
 -module(test@main).
+-export(['__bp_priv__recordEq'/0, '__bp_priv__arrayEq'/0]).
 
 %% type Point: x, y
 
@@ -28,6 +29,10 @@ arrayEq() ->
     Xs = [1, 2],
     Ys = [1, 2],
     (Xs =:= Ys).
+
+'__bp_priv__recordEq'() -> recordEq().
+
+'__bp_priv__arrayEq'() -> arrayEq().
 ```
 
 ----- ERLANG -- test@main@@Point.erl

@@ -15,6 +15,8 @@ function f() {
     const first = _assert0[0];
     const second = _assert0[1];
 }
+
+Object.defineProperty(exports, "__bp_priv__", { value: { f } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

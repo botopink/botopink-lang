@@ -16,9 +16,9 @@ fn arrayEq() -> bool {
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
 {module, test@main}.
-{exports, []}.
+{exports, [{'__bp_priv__arrayEq', 0}, {'__bp_priv__recordEq', 0}]}.
 {attributes, []}.
-{labels, 10}.
+{labels, 14}.
 
 {function, recordEq, 0, 3}.
   {label, 2}.
@@ -81,6 +81,20 @@ fn arrayEq() -> bool {
   {label, 9}.
     {deallocate, 4}.
     return.
+
+{function, '__bp_priv__arrayEq', 0, 11}.
+  {label, 10}.
+    {line, [{location, "test@main.erl", 3}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__arrayEq'}, 0}.
+  {label, 11}.
+    {call_only, 0, {f, 5}}.
+
+{function, '__bp_priv__recordEq', 0, 13}.
+  {label, 12}.
+    {line, [{location, "test@main.erl", 4}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__recordEq'}, 0}.
+  {label, 13}.
+    {call_only, 0, {f, 3}}.
 ```
 
 ----- BEAM ASSEMBLY -- test@main@@Point.S

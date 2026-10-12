@@ -39,6 +39,8 @@ Shape$Square.prototype.tag = "Square";
 function makeCircle() {
     return Shape.Circle(5);
 }
+
+Object.defineProperty(exports, "__bp_priv__", { value: { Shape, Shape$Circle, Shape$Square, makeCircle } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

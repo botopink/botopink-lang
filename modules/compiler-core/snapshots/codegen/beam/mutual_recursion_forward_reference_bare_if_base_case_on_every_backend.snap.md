@@ -18,9 +18,9 @@ fn isOdd(n: i32) -> bool {
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
 {module, test@main}.
-{exports, [{'_botopink_main', 0}, {main, 1}]}.
+{exports, [{'_botopink_main', 0}, {main, 1}, {'__bp_priv__isEven', 1}, {'__bp_priv__isOdd', 1}, {'__bp_priv__main', 0}]}.
 {attributes, []}.
-{labels, 18}.
+{labels, 24}.
 
 {function, main, 0, 3}.
   {label, 2}.
@@ -94,6 +94,27 @@ fn isOdd(n: i32) -> bool {
     {func_info, {atom, test@main}, {atom, main}, 1}.
   {label, 11}.
     {call_only, 0, {f, 9}}.
+
+{function, '__bp_priv__isEven', 1, 19}.
+  {label, 18}.
+    {line, [{location, "test@main.erl", 6}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__isEven'}, 1}.
+  {label, 19}.
+    {call_only, 1, {f, 5}}.
+
+{function, '__bp_priv__isOdd', 1, 21}.
+  {label, 20}.
+    {line, [{location, "test@main.erl", 7}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__isOdd'}, 1}.
+  {label, 21}.
+    {call_only, 1, {f, 7}}.
+
+{function, '__bp_priv__main', 0, 23}.
+  {label, 22}.
+    {line, [{location, "test@main.erl", 8}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__main'}, 0}.
+  {label, 23}.
+    {call_only, 0, {f, 3}}.
 ```
 
 ----- RUN LOG -----

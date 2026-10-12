@@ -15,6 +15,8 @@ Element.prototype.__bp = "Element";
 function render() {
     return new Element();
 }
+
+Object.defineProperty(exports, "__bp_priv__", { value: { Element, render } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

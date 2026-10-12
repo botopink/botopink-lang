@@ -191,6 +191,8 @@ function vars() { return (Object.entries(process.env)); }
 exports.vars = vars;
 
 // ── tests ────────────────────────────────────────────────────────────────────
+
+Object.defineProperty(exports, "__bp_priv__", { value: { read, write, clear, args, vars } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- std/io/env.d.ts

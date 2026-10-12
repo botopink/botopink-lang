@@ -11,9 +11,9 @@ fn extract_coordinates() {
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
 {module, test@main}.
-{exports, []}.
+{exports, [{'__bp_priv__extract_coordinates', 0}, {'__bp_priv__get_coordinates', 0}]}.
 {attributes, []}.
-{labels, 6}.
+{labels, 10}.
 
 {function, get_coordinates, 0, 3}.
   {label, 2}.
@@ -47,6 +47,20 @@ fn extract_coordinates() {
     {move, {atom, ok}, {x, 0}}.
     {deallocate, 3}.
     return.
+
+{function, '__bp_priv__extract_coordinates', 0, 7}.
+  {label, 6}.
+    {line, [{location, "test@main.erl", 3}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__extract_coordinates'}, 0}.
+  {label, 7}.
+    {call_only, 0, {f, 5}}.
+
+{function, '__bp_priv__get_coordinates', 0, 9}.
+  {label, 8}.
+    {line, [{location, "test@main.erl", 4}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__get_coordinates'}, 0}.
+  {label, 9}.
+    {call_only, 0, {f, 3}}.
 ```
 
 ----- RUN LOG -----

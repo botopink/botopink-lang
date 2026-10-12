@@ -35,6 +35,8 @@ class App {
 }
 App.prototype.__bp = "App";
 exports.App = App;
+
+Object.defineProperty(exports, "__bp_priv__", { value: { Response, App } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- http.d.ts
@@ -135,7 +137,9 @@ function main() {
 function _botopink_main() {
     main();
 }
-_botopink_main();
+if (require.main === module) _botopink_main();
+
+Object.defineProperty(exports, "__bp_priv__", { value: { Response, App, main } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

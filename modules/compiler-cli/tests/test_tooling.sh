@@ -21,6 +21,10 @@
 #     258), and a `--lib` that names no library fails the run
 #   • a test reads the compiler that runs it from `BOTOPINK_BIN`, unless the
 #     caller set the variable
+#   • a module's tests are a unit of their own (decision 513): a test reads a
+#     private fn and `val` of its module on commonJS, erlang, beam and wasm,
+#     the module's `main` is not run, a dependency's tests never run, and
+#     `botopink build` writes none
 #
 # What `assert cond, "msg"` and `try` mean in the language — an assertion that
 # holds does nothing, one that fails aborts naming its message, a `try` on a
@@ -33,7 +37,9 @@
 # runtime-throwing construct (`arr[index]` is a compile error, no `@panic`); the
 # failing-assert case below already shows the runner catches a thrown assertion
 # and reports FAIL rather than crashing. wasm-target lib execution stays
-# skipped-unsupported (lib-test-runner runs commonJS/erlang only). See
+# skipped-unsupported (lib-test-runner runs commonJS/erlang only); `botopink
+# test --target wasm` runs a module's test unit, a failing assert trapping the
+# run (decision 513). See
 # front-c-runtime.md C1.
 
 set -euo pipefail
@@ -427,5 +433,65 @@ BP
 else
   echo "==> SKIPPED: the erlang host-module cell (escript not on PATH)"
 fi
+
+# ── a module's tests are a unit of their own (decision 513, 144 B-64) ────────
+# A test reads a private fn and a private module-level `val` of its module
+# through the production unit's reserved export, on every target; the
+# production module's `main` is not run by the test unit; a dependency's own
+# tests are never run; and `botopink build` writes no test of the module.
+echo "==> [units] a test reads its module's privates on every target; a dependency's tests never run"
+UNITWORK="$(mktemp -d)"
+mkdir -p "$UNITWORK/app/src" "$UNITWORK/lib/src"
+cat >"$UNITWORK/lib/botopink.json" <<'JSON'
+{ "name": "unitlib", "version": "0.0.1", "src": "src/", "files": ["lib.bp"] }
+JSON
+cat >"$UNITWORK/lib/src/lib.bp" <<'BP'
+pub fn one() -> i32 {
+    return 1;
+}
+
+test "the dependency's own test" {
+    assert one() == 2, "a dependency's test ran";
+}
+BP
+cat >"$UNITWORK/app/botopink.json" <<'JSON'
+{ "name": "unitapp", "version": "0.0.1", "src": "src/", "dependencies": { "unitlib": { "path": "../lib" } } }
+JSON
+cat >"$UNITWORK/app/src/main.bp" <<'BP'
+import {one} from "unitlib";
+
+fn helper(x: i32) -> i32 {
+    return x * 2;
+}
+
+val secret = 21;
+
+fn main() {
+    @print("main ran");
+}
+
+test "reads a private fn and a private val" {
+    assert helper(secret) + one() == 43;
+}
+BP
+for t in commonJS erlang beam wasm; do
+  case "$t" in
+    erlang|beam) command -v escript >/dev/null 2>&1 || { echo "  (skipped $t: no escript)"; continue; } ;;
+    wasm) command -v wasmtime >/dev/null 2>&1 || { echo "  (skipped $t: no wasmtime)"; continue; } ;;
+  esac
+  set +e
+  out="$( cd "$UNITWORK/app" && "$BP_BIN" test --target "$t" 2>&1 )"
+  code=$?
+  set -e
+  echo "$out"
+  [[ $code -eq 0 ]] || { rm -rf "$UNITWORK"; fail "$t: the test reading the module's privates must pass (exit $code)"; }
+  grep -q "ok   reads a private fn and a private val" <<<"$out" || { rm -rf "$UNITWORK"; fail "$t: the private fn and val were not reached"; }
+  ! grep -q "main ran" <<<"$out" || { rm -rf "$UNITWORK"; fail "$t: the test unit ran the production module's main"; }
+  ! grep -q "dependency's own test" <<<"$out" || { rm -rf "$UNITWORK"; fail "$t: a dependency's test ran"; }
+  [[ "$(tail -1 <<<"$out")" == "total: 1 passed, 0 failed in 1 module(s)" ]] || { rm -rf "$UNITWORK"; fail "$t: expected one module with one test, got: $(tail -1 <<<"$out")"; }
+done
+( cd "$UNITWORK/app" && "$BP_BIN" build --target commonJS --out out >/dev/null )
+! grep -rq "__bp_test_" "$UNITWORK/app/out" || { rm -rf "$UNITWORK"; fail "botopink build wrote a test of the module"; }
+rm -rf "$UNITWORK"
 
 echo "==> test-tooling behaviours: OK"

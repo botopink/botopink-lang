@@ -16,6 +16,7 @@ fn process(x: i32) -> string {
 ----- ERLANG -- main.erl
 ```erlang
 -module(test@main).
+-export(['__bp_priv__process'/1]).
 
 process(X) ->
     case X of
@@ -29,6 +30,8 @@ process(X) ->
         _ ->
             <<"non-zero">>
     end.
+
+'__bp_priv__process'(A0) -> process(A0).
 ```
 
 ----- RUN LOG -----

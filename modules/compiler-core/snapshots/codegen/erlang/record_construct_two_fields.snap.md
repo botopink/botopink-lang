@@ -9,11 +9,14 @@ fn make() -> Point {
 ----- ERLANG -- main.erl
 ```erlang
 -module(test@main).
+-export(['__bp_priv__make'/0]).
 
 %% type Point: x, y
 
 make() ->
     {test@main@@Point, 3, 4}.
+
+'__bp_priv__make'() -> make().
 ```
 
 ----- ERLANG -- test@main@@Point.erl

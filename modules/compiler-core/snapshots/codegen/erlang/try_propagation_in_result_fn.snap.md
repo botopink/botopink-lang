@@ -23,6 +23,7 @@ fn main() {
 ```erlang
 -module(test@main).
 -export(['_botopink_main'/0, main/1]).
+-export(['__bp_priv__inner'/1, '__bp_priv__outer'/1, '__bp_priv__main'/0]).
 
 inner(Should_fail) ->
     case Should_fail of
@@ -93,6 +94,12 @@ main() ->
 
 main(_Args) ->
     '_botopink_main'().
+
+'__bp_priv__inner'(A0) -> inner(A0).
+
+'__bp_priv__outer'(A0) -> outer(A0).
+
+'__bp_priv__main'() -> main().
 ```
 
 ----- RUN LOG -----

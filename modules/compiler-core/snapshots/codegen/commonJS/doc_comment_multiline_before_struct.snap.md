@@ -18,6 +18,8 @@ class Account {
     }
 }
 Account.prototype.__bp = "Account";
+
+Object.defineProperty(exports, "__bp_priv__", { value: { Account } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

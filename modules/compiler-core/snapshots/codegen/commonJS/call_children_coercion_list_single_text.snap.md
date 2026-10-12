@@ -22,6 +22,8 @@ const many = box([node(), node()]);
 const one = box(node());
 
 const txt = box("hi");
+
+Object.defineProperty(exports, "__bp_priv__", { value: { node, box, many, one, txt } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

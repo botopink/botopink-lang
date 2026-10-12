@@ -10,6 +10,7 @@ fn f() {
 ----- ERLANG -- main.erl
 ```erlang
 -module(test@main).
+-export(['__bp_priv__f'/0]).
 
 %% type Person: name, age
 
@@ -17,6 +18,8 @@ f() ->
     R = {test@main@@Person, <<"ann">>, 30},
     BpAssert4_9 = R,
     {test@main@@Person, Name, Age} = case BpAssert4_9 of {test@main@@Person, _, _} -> BpAssert4_9; _ -> erlang:throw(<<"is not person">>) end.
+
+'__bp_priv__f'() -> f().
 ```
 
 ----- ERLANG -- test@main@@Person.erl

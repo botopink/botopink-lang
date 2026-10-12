@@ -575,9 +575,9 @@ test "order case over Order" {
 ----- BEAM ASSEMBLY -- std/collections.S
 ```erlang
 {module, std@collections}.
-{exports, [{lt, 0}, {eq, 0}, {gt, 0}, {toInt, 1}, {reverse, 1}, {shown, 1}]}.
+{exports, [{lt, 0}, {eq, 0}, {gt, 0}, {toInt, 1}, {reverse, 1}, {shown, 1}, {'__bp_priv__Array_range', 2}, {'__bp_priv__Array_repeat', 2}]}.
 {attributes, []}.
-{labels, 40}.
+{labels, 44}.
 
 {function, 'Array_range', 2, 3}.
   {label, 2}.
@@ -850,6 +850,20 @@ test "order case over Order" {
     {move, {y, 1}, {x, 0}}.
     {deallocate, 4}.
     return.
+
+{function, '__bp_priv__Array_range', 2, 41}.
+  {label, 40}.
+    {line, [{location, "std@collections.erl", 44}]}.
+    {func_info, {atom, std@collections}, {atom, '__bp_priv__Array_range'}, 2}.
+  {label, 41}.
+    {call_only, 2, {f, 3}}.
+
+{function, '__bp_priv__Array_repeat', 2, 43}.
+  {label, 42}.
+    {line, [{location, "std@collections.erl", 45}]}.
+    {func_info, {atom, std@collections}, {atom, '__bp_priv__Array_repeat'}, 2}.
+  {label, 43}.
+    {call_only, 2, {f, 5}}.
 
 {function, '-bp_stringify-', 1, 30}.
   {label, 29}.
@@ -2332,9 +2346,9 @@ fn main() {
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
 {module, test@main}.
-{exports, [{'_botopink_main', 0}, {main, 1}]}.
+{exports, [{'_botopink_main', 0}, {main, 1}, {'__bp_priv__describe', 1}, {'__bp_priv__main', 0}]}.
 {attributes, []}.
-{labels, 41}.
+{labels, 45}.
 
 {function, describe, 1, 3}.
   {label, 2}.
@@ -2400,6 +2414,20 @@ fn main() {
     {func_info, {atom, test@main}, {atom, main}, 1}.
   {label, 9}.
     {call_only, 0, {f, 7}}.
+
+{function, '__bp_priv__describe', 1, 42}.
+  {label, 41}.
+    {line, [{location, "test@main.erl", 5}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__describe'}, 1}.
+  {label, 42}.
+    {call_only, 1, {f, 3}}.
+
+{function, '__bp_priv__main', 0, 44}.
+  {label, 43}.
+    {line, [{location, "test@main.erl", 6}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__main'}, 0}.
+  {label, 44}.
+    {call_only, 0, {f, 5}}.
 
 {function, '__bp_print', 1, 14}.
   {label, 13}.

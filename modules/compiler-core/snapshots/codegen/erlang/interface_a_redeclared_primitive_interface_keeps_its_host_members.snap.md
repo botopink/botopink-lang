@@ -16,6 +16,7 @@ fn main() {
 ```erlang
 -module(test@main).
 -export(['_botopink_main'/0, main/1]).
+-export(['__bp_priv__main'/0, '__bp_priv__number_clampTo'/3]).
 
 %% behavior Number
 
@@ -54,6 +55,10 @@ number_clampTo(Self, Lo, Hi) ->
 
 main(_Args) ->
     '_botopink_main'().
+
+'__bp_priv__main'() -> main().
+
+'__bp_priv__number_clampTo'(A0, A1, A2) -> number_clampTo(A0, A1, A2).
 ```
 
 ----- RUN LOG -----

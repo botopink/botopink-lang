@@ -8,9 +8,12 @@ fn fail() {
 ----- ERLANG -- main.erl
 ```erlang
 -module(test@main).
+-export(['__bp_priv__fail'/0]).
 
 fail() ->
     erlang:error({panic, <<"something went wrong">>}).
+
+'__bp_priv__fail'() -> fail().
 ```
 
 ----- RUN LOG -----

@@ -12,9 +12,9 @@ fn loadTwice(x: i32) -> @Task<i32> {
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
 {module, test@main}.
-{exports, []}.
+{exports, [{'__bp_priv__fetch', 1}, {'__bp_priv__loadTwice', 1}]}.
 {attributes, []}.
-{labels, 9}.
+{labels, 13}.
 
 %% @Task — eager lowering
 {function, fetch, 1, 3}.
@@ -46,6 +46,20 @@ fn loadTwice(x: i32) -> @Task<i32> {
     {call, 2, {f, 7}}.
     {deallocate, 2}.
     return.
+
+{function, '__bp_priv__fetch', 1, 10}.
+  {label, 9}.
+    {line, [{location, "test@main.erl", 3}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__fetch'}, 1}.
+  {label, 10}.
+    {call_only, 1, {f, 3}}.
+
+{function, '__bp_priv__loadTwice', 1, 12}.
+  {label, 11}.
+    {line, [{location, "test@main.erl", 4}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__loadTwice'}, 1}.
+  {label, 12}.
+    {call_only, 1, {f, 5}}.
 
 {function, '__bp_add', 2, 7}.
   {label, 6}.

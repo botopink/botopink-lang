@@ -39,6 +39,8 @@ Color$Blue.prototype.tag = "Blue";
 Color.Red = new Color$Red();
 Color.Green = new Color$Green();
 Color.Blue = new Color$Blue();
+
+Object.defineProperty(exports, "__bp_priv__", { value: { Color, Color$Red, Color$Green, Color$Blue } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

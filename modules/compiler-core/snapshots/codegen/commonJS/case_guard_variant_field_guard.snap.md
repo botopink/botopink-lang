@@ -49,6 +49,8 @@ function big(sh) {
         return "other";
     })();
 }
+
+Object.defineProperty(exports, "__bp_priv__", { value: { Shape, Shape$Circle, Shape$Square, big } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

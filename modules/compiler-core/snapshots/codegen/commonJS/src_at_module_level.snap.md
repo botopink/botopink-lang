@@ -80,7 +80,9 @@ function main() {
 function _botopink_main() {
     main();
 }
-_botopink_main();
+if (require.main === module) _botopink_main();
+
+Object.defineProperty(exports, "__bp_priv__", { value: { SourceLocation, top, main } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

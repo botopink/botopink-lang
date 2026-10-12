@@ -8,6 +8,7 @@ fn apply(s: State<i32>) -> i32 { s.set(s.value); return s.value; }
 ----- ERLANG -- main.erl
 ```erlang
 -module(test@main).
+-export(['__bp_priv__make'/0, '__bp_priv__apply'/1]).
 
 %% type State: value, set
 
@@ -19,6 +20,10 @@ make() ->
 apply(S) ->
     (erlang:element(3, S))(erlang:element(2, S)),
     erlang:element(2, S).
+
+'__bp_priv__make'() -> make().
+
+'__bp_priv__apply'(A0) -> apply(A0).
 ```
 
 ----- ERLANG -- test@main@@State.erl

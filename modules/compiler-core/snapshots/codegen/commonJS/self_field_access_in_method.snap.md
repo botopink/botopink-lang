@@ -24,6 +24,8 @@ class Point {
     }
 }
 Point.prototype.__bp = "Point";
+
+Object.defineProperty(exports, "__bp_priv__", { value: { Point } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

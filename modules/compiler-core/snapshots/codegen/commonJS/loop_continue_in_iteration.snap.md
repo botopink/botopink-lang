@@ -22,6 +22,8 @@ function sumEvens(arr) {
 }
     return out;
 }
+
+Object.defineProperty(exports, "__bp_priv__", { value: { sumEvens } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

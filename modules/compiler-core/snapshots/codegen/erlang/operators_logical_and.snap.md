@@ -12,6 +12,7 @@ fn main() {
 ```erlang
 -module(test@main).
 -export(['_botopink_main'/0, main/1]).
+-export(['__bp_priv__both'/2, '__bp_priv__main'/0]).
 
 both(A, B) ->
     (A andalso B).
@@ -47,6 +48,10 @@ main() ->
 
 main(_Args) ->
     '_botopink_main'().
+
+'__bp_priv__both'(A0, A1) -> both(A0, A1).
+
+'__bp_priv__main'() -> main().
 ```
 
 ----- RUN LOG -----

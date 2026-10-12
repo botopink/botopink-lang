@@ -27,6 +27,8 @@ class Color$Rgb extends Color {
 }
 Color$Rgb.prototype.tag = "Rgb";
 Color.Red = new Color$Red();
+
+Object.defineProperty(exports, "__bp_priv__", { value: { Color, Color$Red, Color$Rgb } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

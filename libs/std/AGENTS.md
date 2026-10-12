@@ -355,7 +355,8 @@ botopink test                      # commonJS (default) or --target erlang
 botopink test --filter "dict"      # by name substring (the `collections` tests of `Dict`)
 ```
 
-`botopink test` supports only the commonJS and erlang targets. Each test's
+`botopink test` runs on commonJS, erlang, beam and wasm (a module's tests are a
+unit of their own, decision 513). Each test's
 stdout is captured under a `----- RUN LOG -----` fence; failures print
 `FAIL <name> (<message>) at <file>:<line>` — see
 [`../../modules/compiler-cli/AGENTS.md`](../../modules/compiler-cli/AGENTS.md)

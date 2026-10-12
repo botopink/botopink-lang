@@ -60,6 +60,8 @@ class Token$Color extends Token {
     }
 }
 Token$Color.prototype.tag = "Color";
+
+Object.defineProperty(exports, "__bp_priv__", { value: { __Token__Color, __Token__Color$Hex, __Token__Color$Red, __Token__Color__Red, __Token__Color__Red$__100, __Token__Color__Red$__500, Token, Token$Color } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

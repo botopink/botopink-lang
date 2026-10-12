@@ -148,6 +148,13 @@ pub const GenerateResult = struct {
     /// The per-`type` modules beside the file's own (`Unit`); empty on commonJS
     /// and wasm. Written, compiled and loaded wherever `js` is.
     units: []Unit = &.{},
+    /// Decision 513 (1): the module's test unit — its `test` blocks, their
+    /// registry and runner — emitted only under `botopink test` of the
+    /// package that declares the module, never a dependency's. `atom` is the
+    /// artifact's stem: the module atom on erlang and beam
+    /// (`__test__@<pkg>@<mod>`), the path `__test__/<module path>` on commonJS.
+    /// `js` (the production module) is the same bytes with or without it.
+    test_unit: ?Unit = null,
     comptime_script: ?[]u8,
     /// The binary module of a `wasm`-target output (`js` is its `.wat` text);
     /// null on the other targets. Rendered from the same model as the text
@@ -182,6 +189,10 @@ pub const GenerateResult = struct {
             allocator.free(u.code);
         }
         if (self.units.len > 0) allocator.free(self.units);
+        if (self.test_unit) |u| {
+            allocator.free(u.atom);
+            allocator.free(u.code);
+        }
         if (self.typedef) |t| allocator.free(t);
         if (self.comptime_script) |s| allocator.free(s);
         if (self.wasm) |w| allocator.free(w);

@@ -14,9 +14,9 @@ ct_0: val result = comptime 10 + 20 → 30
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
 {module, test@main}.
-{exports, [{'_botopink_main', 0}, {main, 1}]}.
+{exports, [{'_botopink_main', 0}, {main, 1}, {'__bp_priv__main', 0}, {'__bp_priv__result', 0}]}.
 {attributes, []}.
-{labels, 38}.
+{labels, 42}.
 
 {function, result, 0, 3}.
   {label, 2}.
@@ -59,6 +59,20 @@ ct_0: val result = comptime 10 + 20 → 30
     {func_info, {atom, test@main}, {atom, main}, 1}.
   {label, 9}.
     {call_only, 0, {f, 7}}.
+
+{function, '__bp_priv__main', 0, 39}.
+  {label, 38}.
+    {line, [{location, "test@main.erl", 5}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__main'}, 0}.
+  {label, 39}.
+    {call_only, 0, {f, 5}}.
+
+{function, '__bp_priv__result', 0, 41}.
+  {label, 40}.
+    {line, [{location, "test@main.erl", 6}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__result'}, 0}.
+  {label, 41}.
+    {call_only, 0, {f, 3}}.
 
 {function, '__bp_print', 1, 11}.
   {label, 10}.

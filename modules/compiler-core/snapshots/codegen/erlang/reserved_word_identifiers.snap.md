@@ -14,7 +14,7 @@ fn main() {
 ```erlang
 -module(test@main).
 -export(['_botopink_main'/0, main/1]).
--export([delete/2]).
+-export([delete/2, '__bp_priv__main'/0]).
 
 delete(With, Class) ->
     Static = <<With/binary, Class/binary>>,
@@ -51,6 +51,8 @@ main() ->
 
 main(_Args) ->
     '_botopink_main'().
+
+'__bp_priv__main'() -> main().
 ```
 
 ----- RUN LOG -----

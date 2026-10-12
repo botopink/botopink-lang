@@ -12,6 +12,7 @@ fn main() {
 ```erlang
 -module(test@main).
 -export(['_botopink_main'/0, main/1]).
+-export(['__bp_priv__diff'/2, '__bp_priv__main'/0]).
 
 diff(X, Y) ->
     '__bp_int'((X + '__bp_int'((-Y), -2147483648, 2147483647, <<"integer overflow: - on i32 at main.bp:2:16">>)), -2147483648, 2147483647, <<"integer overflow: + on i32 at main.bp:2:14">>).
@@ -51,6 +52,10 @@ main() ->
 
 main(_Args) ->
     '_botopink_main'().
+
+'__bp_priv__diff'(A0, A1) -> diff(A0, A1).
+
+'__bp_priv__main'() -> main().
 ```
 
 ----- RUN LOG -----

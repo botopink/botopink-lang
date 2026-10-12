@@ -10,9 +10,9 @@ fn describe(p: Point) -> i32 {
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
 {module, test@main}.
-{exports, []}.
+{exports, [{'__bp_priv__describe', 1}]}.
 {attributes, []}.
-{labels, 6}.
+{labels, 8}.
 
 {function, describe, 1, 3}.
   {label, 2}.
@@ -32,6 +32,13 @@ fn describe(p: Point) -> i32 {
     {move, {y, 1}, {x, 0}}.
     {deallocate, 2}.
     return.
+
+{function, '__bp_priv__describe', 1, 7}.
+  {label, 6}.
+    {line, [{location, "test@main.erl", 2}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__describe'}, 1}.
+  {label, 7}.
+    {call_only, 1, {f, 3}}.
 ```
 
 ----- BEAM ASSEMBLY -- test@main@@Point.S

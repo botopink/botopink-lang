@@ -13,6 +13,7 @@ fn process() -> @Result<i32, string> {
 ----- ERLANG -- main.erl
 ```erlang
 -module(test@main).
+-export(['__bp_priv__fetch'/0, '__bp_priv__process'/0]).
 
 fetch() ->
     erlang:error({todo, <<"not implemented">>}).
@@ -46,6 +47,10 @@ process() ->
 '__bp_render'({text, T}) -> T;
 '__bp_render'({variant, N, []}) -> N;
 '__bp_render'({_, N, Fs}) -> [N, $(, lists:join(", ", [[K, ": ", '__bp_show'(Val, false)] || {K, Val} <- Fs]), $)].
+
+'__bp_priv__fetch'() -> fetch().
+
+'__bp_priv__process'() -> process().
 ```
 
 ----- RUN LOG -----

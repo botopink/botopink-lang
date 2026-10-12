@@ -19,9 +19,9 @@ pub fn main() {
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
 {module, test@main}.
-{exports, [{'_botopink_main', 0}, {main, 1}, {main, 0}]}.
+{exports, [{'_botopink_main', 0}, {main, 1}, {main, 0}, {'__bp_priv__mk', 1}]}.
 {attributes, []}.
-{labels, 44}.
+{labels, 46}.
 
 {function, mk, 1, 3}.
   {label, 2}.
@@ -86,6 +86,13 @@ pub fn main() {
     {func_info, {atom, test@main}, {atom, main}, 1}.
   {label, 9}.
     {call_only, 0, {f, 7}}.
+
+{function, '__bp_priv__mk', 1, 45}.
+  {label, 44}.
+    {line, [{location, "test@main.erl", 5}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__mk'}, 1}.
+  {label, 45}.
+    {call_only, 1, {f, 3}}.
 
 {function, '-mk/1-fun-0-', 2, 11}.
   {label, 10}.

@@ -12,9 +12,9 @@ fn main() {
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
 {module, test@main}.
-{exports, [{'_botopink_main', 0}, {main, 1}]}.
+{exports, [{'_botopink_main', 0}, {main, 1}, {'__bp_priv__Function_compose', 2}, {'__bp_priv__Function_constant', 1}, {'__bp_priv__Function_flip', 1}, {'__bp_priv__Function_identity', 1}, {'__bp_priv__Pair_first', 1}, {'__bp_priv__Pair_mapFirst', 2}, {'__bp_priv__Pair_mapSecond', 2}, {'__bp_priv__Pair_of', 2}, {'__bp_priv__Pair_second', 1}, {'__bp_priv__Pair_swap', 1}, {'__bp_priv__main', 0}]}.
 {attributes, []}.
-{labels, 70}.
+{labels, 92}.
 
 {function, 'Function_identity', 1, 3}.
   {label, 2}.
@@ -243,6 +243,83 @@ fn main() {
     {func_info, {atom, test@main}, {atom, main}, 1}.
   {label, 27}.
     {call_only, 0, {f, 25}}.
+
+{function, '__bp_priv__Function_compose', 2, 71}.
+  {label, 70}.
+    {line, [{location, "test@main.erl", 14}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__Function_compose'}, 2}.
+  {label, 71}.
+    {call_only, 2, {f, 5}}.
+
+{function, '__bp_priv__Function_constant', 1, 73}.
+  {label, 72}.
+    {line, [{location, "test@main.erl", 15}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__Function_constant'}, 1}.
+  {label, 73}.
+    {call_only, 1, {f, 9}}.
+
+{function, '__bp_priv__Function_flip', 1, 75}.
+  {label, 74}.
+    {line, [{location, "test@main.erl", 16}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__Function_flip'}, 1}.
+  {label, 75}.
+    {call_only, 1, {f, 7}}.
+
+{function, '__bp_priv__Function_identity', 1, 77}.
+  {label, 76}.
+    {line, [{location, "test@main.erl", 17}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__Function_identity'}, 1}.
+  {label, 77}.
+    {call_only, 1, {f, 3}}.
+
+{function, '__bp_priv__Pair_first', 1, 79}.
+  {label, 78}.
+    {line, [{location, "test@main.erl", 18}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__Pair_first'}, 1}.
+  {label, 79}.
+    {call_only, 1, {f, 13}}.
+
+{function, '__bp_priv__Pair_mapFirst', 2, 81}.
+  {label, 80}.
+    {line, [{location, "test@main.erl", 19}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__Pair_mapFirst'}, 2}.
+  {label, 81}.
+    {call_only, 2, {f, 19}}.
+
+{function, '__bp_priv__Pair_mapSecond', 2, 83}.
+  {label, 82}.
+    {line, [{location, "test@main.erl", 20}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__Pair_mapSecond'}, 2}.
+  {label, 83}.
+    {call_only, 2, {f, 21}}.
+
+{function, '__bp_priv__Pair_of', 2, 85}.
+  {label, 84}.
+    {line, [{location, "test@main.erl", 21}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__Pair_of'}, 2}.
+  {label, 85}.
+    {call_only, 2, {f, 11}}.
+
+{function, '__bp_priv__Pair_second', 1, 87}.
+  {label, 86}.
+    {line, [{location, "test@main.erl", 22}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__Pair_second'}, 1}.
+  {label, 87}.
+    {call_only, 1, {f, 15}}.
+
+{function, '__bp_priv__Pair_swap', 1, 89}.
+  {label, 88}.
+    {line, [{location, "test@main.erl", 23}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__Pair_swap'}, 1}.
+  {label, 89}.
+    {call_only, 1, {f, 17}}.
+
+{function, '__bp_priv__main', 0, 91}.
+  {label, 90}.
+    {line, [{location, "test@main.erl", 24}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__main'}, 0}.
+  {label, 91}.
+    {call_only, 0, {f, 23}}.
 
 {function, '-/2-fun-0-', 3, 29}.
   {label, 28}.

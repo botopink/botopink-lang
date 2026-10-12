@@ -139,7 +139,7 @@ fn frameParent(f: Frame) -> unknown {
 ----- ERLANG -- std/context.erl
 ```erlang
 -module(std@context).
--export([provide/2, context/1, push/3, find/3, rendered/2, valueOf/1, root/0]).
+-export([provide/2, context/1, push/3, find/3, rendered/2, valueOf/1, root/0, '__bp_priv__frameValue'/1, '__bp_priv__frameParent'/1]).
 
 %%% Contexts (decision 354) — what a component's body reads from above it,
 
@@ -322,6 +322,10 @@ frameValue(F) ->
 
 frameParent(F) ->
     erlang:element(4, F).
+
+'__bp_priv__frameValue'(A0) -> frameValue(A0).
+
+'__bp_priv__frameParent'(A0) -> frameParent(A0).
 ```
 
 ----- ERLANG -- std@context@@Context.erl
@@ -390,6 +394,7 @@ fn Widget() -> @Component<Element> {
 ----- ERLANG -- main.erl
 ```erlang
 -module(test@main).
+-export(['__bp_priv__cleanup'/0, '__bp_priv__effect'/0, '__bp_priv__Widget'/0]).
 
 %% import bpScopePush__, bpScopeFind__, bpScopeRendered__, bpScopeValue__, bpScopeRoot__
 
@@ -410,6 +415,12 @@ effect() ->
         end))(BpScope__)),
         std@context:rendered({test@main@@Element}, BpScope__)
     end.
+
+'__bp_priv__cleanup'() -> cleanup().
+
+'__bp_priv__effect'() -> effect().
+
+'__bp_priv__Widget'() -> 'Widget'().
 ```
 
 ----- ERLANG -- test@main@@Element.erl

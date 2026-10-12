@@ -22,6 +22,7 @@ fn main() {
 ```erlang
 -module(test@main).
 -export(['_botopink_main'/0, main/1]).
+-export(['__bp_priv__COMMANDS'/0, '__bp_priv__main'/0, '__bp_priv__execute_$0'/1, '__bp_priv__execute_$1'/1]).
 
 'COMMANDS'() ->
     [<<"calc">>, <<"noop">>, <<"help">>].
@@ -70,6 +71,14 @@ main() ->
 
 main(_Args) ->
     '_botopink_main'().
+
+'__bp_priv__COMMANDS'() -> 'COMMANDS'().
+
+'__bp_priv__main'() -> main().
+
+'__bp_priv__execute_$0'(A0) -> 'execute_$0'(A0).
+
+'__bp_priv__execute_$1'(A0) -> 'execute_$1'(A0).
 ```
 
 ----- RUN LOG -----

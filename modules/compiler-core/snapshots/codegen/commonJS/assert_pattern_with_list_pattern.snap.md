@@ -13,6 +13,8 @@ function f() {
     const _assert0 = (() => { const _match = items; if ((Array.isArray(_match) && _match.length >= 1)) { return _match; } else { throw "not a list"; } })();
     const first = _assert0[0];
 }
+
+Object.defineProperty(exports, "__bp_priv__", { value: { f } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

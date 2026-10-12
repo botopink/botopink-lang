@@ -19,6 +19,7 @@ fn isOdd(n: i32) -> bool {
 ```erlang
 -module(test@main).
 -export(['_botopink_main'/0, main/1]).
+-export(['__bp_priv__main'/0, '__bp_priv__isEven'/1, '__bp_priv__isOdd'/1]).
 
 main() ->
     isEven(10).
@@ -49,6 +50,12 @@ isOdd(N) ->
 
 main(_Args) ->
     '_botopink_main'().
+
+'__bp_priv__main'() -> main().
+
+'__bp_priv__isEven'(A0) -> isEven(A0).
+
+'__bp_priv__isOdd'(A0) -> isOdd(A0).
 ```
 
 ----- RUN LOG -----

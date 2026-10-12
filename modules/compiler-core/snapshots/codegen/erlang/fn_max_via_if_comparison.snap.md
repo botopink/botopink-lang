@@ -17,7 +17,7 @@ fn main() {
 -module(test@main).
 -compile({no_auto_import,[max/2]}).
 -export(['_botopink_main'/0, main/1]).
--export([max/2]).
+-export([max/2, '__bp_priv__main'/0]).
 
 max(A, B) ->
     case (A < B) of
@@ -58,6 +58,8 @@ main() ->
 
 main(_Args) ->
     '_botopink_main'().
+
+'__bp_priv__main'() -> main().
 ```
 
 ----- RUN LOG -----

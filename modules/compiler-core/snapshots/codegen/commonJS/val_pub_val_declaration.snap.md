@@ -13,6 +13,8 @@ exports.VERSION = VERSION;
 const HOST = "localhost";
 
 exports.HOST = HOST;
+
+Object.defineProperty(exports, "__bp_priv__", { value: { VERSION, HOST } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

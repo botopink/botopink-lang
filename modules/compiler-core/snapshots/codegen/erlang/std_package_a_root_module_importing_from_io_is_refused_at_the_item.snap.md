@@ -323,7 +323,7 @@ test "path.isInside treats a name starting with two dots as a name" {
 ----- ERLANG -- std/path.erl
 ```erlang
 -module(std@path).
--export([split/1, isAbsolute/1, basename/1, dirname/1, extname/1, join/1, normalize/1, relative/2, resolve/1, withoutExtension/1, isInside/2, separator/0, delimiter/0]).
+-export([split/1, isAbsolute/1, basename/1, dirname/1, extname/1, join/1, normalize/1, relative/2, resolve/1, withoutExtension/1, isInside/2, separator/0, delimiter/0, '__bp_priv__array_range'/2, '__bp_priv__array_repeat'/2, '__bp_priv__commonPrefixCount'/3, '__bp_priv__makeUps'/1, '__bp_priv__applyPieces'/2, '__bp_priv__resolveStep'/2, '__bp_priv__resolveAll'/3, '__bp_priv__array_slice'/3, '__bp_priv__string_slice'/3]).
 
 %% behavior String
 
@@ -823,6 +823,24 @@ string_slice(Self, Start, End) ->
 -compile({inline,['__bp_int'/4]}).
 '__bp_int'(V, Lo, Hi, _) when V >= Lo, V =< Hi -> V;
 '__bp_int'(_, _, _, What) -> erlang:error({integer_overflow, What}).
+
+'__bp_priv__array_range'(A0, A1) -> array_range(A0, A1).
+
+'__bp_priv__array_repeat'(A0, A1) -> array_repeat(A0, A1).
+
+'__bp_priv__commonPrefixCount'(A0, A1, A2) -> commonPrefixCount(A0, A1, A2).
+
+'__bp_priv__makeUps'(A0) -> makeUps(A0).
+
+'__bp_priv__applyPieces'(A0, A1) -> applyPieces(A0, A1).
+
+'__bp_priv__resolveStep'(A0, A1) -> resolveStep(A0, A1).
+
+'__bp_priv__resolveAll'(A0, A1, A2) -> resolveAll(A0, A1, A2).
+
+'__bp_priv__array_slice'(A0, A1, A2) -> array_slice(A0, A1, A2).
+
+'__bp_priv__string_slice'(A0, A1, A2) -> string_slice(A0, A1, A2).
 ```
 
 ----- ERLANG -- std@path@@PathAccum.erl
@@ -1335,7 +1353,7 @@ test "fs.glob of a root that does not exist answers the empty list" {
 ----- ERLANG -- std/io/fs.erl
 ```erlang
 -module(std@io@fs).
--export([readText/1, writeText/2, exists/1, list/1, mkdir/1, mkdirRecursive/1, rm/1, copy/2, stat/1, walk/1, glob/2, removeTree/1]).
+-export([readText/1, writeText/2, exists/1, list/1, mkdir/1, mkdirRecursive/1, rm/1, copy/2, stat/1, walk/1, glob/2, removeTree/1, '__bp_priv__statOr'/1, '__bp_priv__makeFixtureTree'/1, '__bp_priv__walkFixture'/1, '__bp_priv__walkFixtureFromCwd'/1, '__bp_priv__walkRefusal'/1, '__bp_priv__makeGlobTree'/1, '__bp_priv__globbed'/1]).
 
 %% behavior Bool
 
@@ -1763,6 +1781,20 @@ globbed(Pattern) ->
 '__bp_adopt'(V, T, Ks) when erlang:is_list(V) -> ['__bp_adopt'(E, T, Ks) || E <- V];
 '__bp_adopt'({ok, V}, T, Ks) -> {ok, '__bp_adopt'(V, T, Ks)};
 '__bp_adopt'(V, _, _) -> V.
+
+'__bp_priv__statOr'(A0) -> statOr(A0).
+
+'__bp_priv__makeFixtureTree'(A0) -> makeFixtureTree(A0).
+
+'__bp_priv__walkFixture'(A0) -> walkFixture(A0).
+
+'__bp_priv__walkFixtureFromCwd'(A0) -> walkFixtureFromCwd(A0).
+
+'__bp_priv__walkRefusal'(A0) -> walkRefusal(A0).
+
+'__bp_priv__makeGlobTree'(A0) -> makeGlobTree(A0).
+
+'__bp_priv__globbed'(A0) -> globbed(A0).
 ```
 
 ----- ERLANG -- std@io@fs@@FileStat.erl

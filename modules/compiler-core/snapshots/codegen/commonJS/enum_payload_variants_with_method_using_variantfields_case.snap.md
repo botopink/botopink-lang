@@ -72,6 +72,8 @@ class Shape$Triangle extends Shape {
     }
 }
 Shape$Triangle.prototype.tag = "Triangle";
+
+Object.defineProperty(exports, "__bp_priv__", { value: { Shape, Shape$Circle, Shape$Square, Shape$Triangle } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

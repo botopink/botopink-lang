@@ -13,6 +13,7 @@ fn safe() -> i32 {
 ----- ERLANG -- main.erl
 ```erlang
 -module(test@main).
+-export(['__bp_priv__fetch'/0, '__bp_priv__safe'/0]).
 
 %% type FetchError: url
 
@@ -32,6 +33,10 @@ safe() ->
             end(_TryE0)
     end,
     R.
+
+'__bp_priv__fetch'() -> fetch().
+
+'__bp_priv__safe'() -> safe().
 ```
 
 ----- ERLANG -- test@main@@FetchError.erl

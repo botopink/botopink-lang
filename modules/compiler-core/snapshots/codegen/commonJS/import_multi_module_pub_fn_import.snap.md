@@ -13,6 +13,8 @@ function double(x) {
     return __bp_int((x * 2), -2147483648, 2147483647, "* on i32 at math.bp:2:14");
 }
 exports.double = double;
+
+Object.defineProperty(exports, "__bp_priv__", { value: { double } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- math.d.ts
@@ -36,6 +38,8 @@ val result = double(21);
 const { double } = require("./math.js");
 
 const result = double(21);
+
+Object.defineProperty(exports, "__bp_priv__", { value: { double, result } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

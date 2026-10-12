@@ -26,6 +26,8 @@ function __bp_eq(a, b, d) {
 function f() {
     __bp_assert_fatal(__bp_eq([], [], 0), null, "main.bp:2");
 }
+
+Object.defineProperty(exports, "__bp_priv__", { value: { f } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

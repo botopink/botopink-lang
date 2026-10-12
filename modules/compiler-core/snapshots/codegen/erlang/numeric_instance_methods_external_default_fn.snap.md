@@ -15,6 +15,7 @@ fn main() {
 ```erlang
 -module(test@main).
 -export(['_botopink_main'/0, main/1]).
+-export(['__bp_priv__main'/0, '__bp_priv__number_clamp'/3, '__bp_priv__integer_isEven'/1]).
 
 %% behavior Number
 
@@ -65,6 +66,12 @@ integer_isEven(Self) ->
 
 main(_Args) ->
     '_botopink_main'().
+
+'__bp_priv__main'() -> main().
+
+'__bp_priv__number_clamp'(A0, A1, A2) -> number_clamp(A0, A1, A2).
+
+'__bp_priv__integer_isEven'(A0) -> integer_isEven(A0).
 ```
 
 ----- RUN LOG -----

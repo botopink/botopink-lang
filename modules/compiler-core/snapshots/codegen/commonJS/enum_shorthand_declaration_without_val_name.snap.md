@@ -29,6 +29,8 @@ Direction.North = new Direction$North();
 Direction.South = new Direction$South();
 Direction.East = new Direction$East();
 Direction.West = new Direction$West();
+
+Object.defineProperty(exports, "__bp_priv__", { value: { Direction, Direction$North, Direction$South, Direction$East, Direction$West } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

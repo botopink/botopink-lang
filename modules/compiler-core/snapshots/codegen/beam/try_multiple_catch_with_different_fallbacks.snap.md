@@ -20,9 +20,9 @@ fn main() {
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
 {module, test@main}.
-{exports, [{'_botopink_main', 0}, {main, 1}]}.
+{exports, [{'_botopink_main', 0}, {main, 1}, {'__bp_priv__fetchAge', 0}, {'__bp_priv__fetchName', 0}, {'__bp_priv__loadUser', 0}, {'__bp_priv__main', 0}]}.
 {attributes, []}.
-{labels, 48}.
+{labels, 56}.
 
 {function, fetchName, 0, 3}.
   {label, 2}.
@@ -129,6 +129,34 @@ fn main() {
     {func_info, {atom, test@main}, {atom, main}, 1}.
   {label, 13}.
     {call_only, 0, {f, 11}}.
+
+{function, '__bp_priv__fetchAge', 0, 49}.
+  {label, 48}.
+    {line, [{location, "test@main.erl", 7}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__fetchAge'}, 0}.
+  {label, 49}.
+    {call_only, 0, {f, 5}}.
+
+{function, '__bp_priv__fetchName', 0, 51}.
+  {label, 50}.
+    {line, [{location, "test@main.erl", 8}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__fetchName'}, 0}.
+  {label, 51}.
+    {call_only, 0, {f, 3}}.
+
+{function, '__bp_priv__loadUser', 0, 53}.
+  {label, 52}.
+    {line, [{location, "test@main.erl", 9}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__loadUser'}, 0}.
+  {label, 53}.
+    {call_only, 0, {f, 7}}.
+
+{function, '__bp_priv__main', 0, 55}.
+  {label, 54}.
+    {line, [{location, "test@main.erl", 10}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__main'}, 0}.
+  {label, 55}.
+    {call_only, 0, {f, 9}}.
 
 {function, '__bp_print', 1, 21}.
   {label, 20}.

@@ -12,9 +12,9 @@ fn main() {
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
 {module, test@main}.
-{exports, [{'_botopink_main', 0}, {main, 1}]}.
+{exports, [{'_botopink_main', 0}, {main, 1}, {'__bp_priv__main', 0}]}.
 {attributes, []}.
-{labels, 49}.
+{labels, 51}.
 
 {function, main, 0, 3}.
   {label, 2}.
@@ -116,6 +116,13 @@ fn main() {
   {label, 45}.
     {move, {atom, ok}, {x, 0}}.
     return.
+
+{function, '__bp_priv__main', 0, 50}.
+  {label, 49}.
+    {line, [{location, "test@main.erl", 6}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__main'}, 0}.
+  {label, 50}.
+    {call_only, 0, {f, 3}}.
 
 {function, '__bp_tpl_0', 0, 13}.
   {label, 12}.

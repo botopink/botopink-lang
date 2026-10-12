@@ -19,9 +19,9 @@ fn parse(n: i32) -> @Result<i32, string> {
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
 {module, test@main}.
-{exports, []}.
+{exports, [{'__bp_priv__counter', 0}, {'__bp_priv__fetch', 1}, {'__bp_priv__parse', 1}, {'__bp_priv__stream', 0}]}.
 {attributes, []}.
-{labels, 13}.
+{labels, 21}.
 
 %% @Task — eager lowering
 {function, fetch, 1, 3}.
@@ -100,6 +100,34 @@ fn parse(n: i32) -> @Result<i32, string> {
     {put_tuple2, {x, 0}, {list, [{atom, ok}, {x, 1}]}}.
     {deallocate, 1}.
     return.
+
+{function, '__bp_priv__counter', 0, 14}.
+  {label, 13}.
+    {line, [{location, "test@main.erl", 5}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__counter'}, 0}.
+  {label, 14}.
+    {call_only, 0, {f, 5}}.
+
+{function, '__bp_priv__fetch', 1, 16}.
+  {label, 15}.
+    {line, [{location, "test@main.erl", 6}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__fetch'}, 1}.
+  {label, 16}.
+    {call_only, 1, {f, 3}}.
+
+{function, '__bp_priv__parse', 1, 18}.
+  {label, 17}.
+    {line, [{location, "test@main.erl", 7}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__parse'}, 1}.
+  {label, 18}.
+    {call_only, 1, {f, 9}}.
+
+{function, '__bp_priv__stream', 0, 20}.
+  {label, 19}.
+    {line, [{location, "test@main.erl", 8}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__stream'}, 0}.
+  {label, 20}.
+    {call_only, 0, {f, 7}}.
 ```
 
 ----- RUN LOG -----

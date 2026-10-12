@@ -29,6 +29,8 @@ function strict() {
     const r = _try0.ok;
     return ({ ok: r });
 }
+
+Object.defineProperty(exports, "__bp_priv__", { value: { ApiError, fetch, strict } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

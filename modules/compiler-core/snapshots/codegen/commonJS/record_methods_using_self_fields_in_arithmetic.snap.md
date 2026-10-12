@@ -29,6 +29,8 @@ class Vec2 {
     }
 }
 Vec2.prototype.__bp = "Vec2";
+
+Object.defineProperty(exports, "__bp_priv__", { value: { Vec2 } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

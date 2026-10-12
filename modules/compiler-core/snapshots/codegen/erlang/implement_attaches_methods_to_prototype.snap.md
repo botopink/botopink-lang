@@ -14,6 +14,7 @@ val PersonPrintable = implement Printable for Person {
 ----- ERLANG -- main.erl
 ```erlang
 -module(test@main).
+-export(['__bp_priv__print'/1]).
 
 %% behavior Printable
 
@@ -23,6 +24,8 @@ val PersonPrintable = implement Printable for Person {
 
 print(Self) ->
     erlang:element(2, Self).
+
+'__bp_priv__print'(A0) -> print(A0).
 ```
 
 ----- ERLANG -- test@main@@Person.erl

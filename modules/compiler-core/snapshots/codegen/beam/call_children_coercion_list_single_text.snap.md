@@ -10,9 +10,9 @@ val txt = box("hi");
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
 {module, test@main}.
-{exports, [{'_botopink_init', 0}]}.
+{exports, [{'_botopink_init', 0}, {'__bp_priv__box', 1}, {'__bp_priv__many', 0}, {'__bp_priv__node', 0}, {'__bp_priv__one', 0}, {'__bp_priv__txt', 0}]}.
 {attributes, []}.
-{labels, 17}.
+{labels, 27}.
 
 {function, node, 0, 3}.
   {label, 2}.
@@ -124,6 +124,41 @@ val txt = box("hi");
     {move, {atom, ok}, {x, 0}}.
     {deallocate, 0}.
     return.
+
+{function, '__bp_priv__box', 1, 18}.
+  {label, 17}.
+    {line, [{location, "test@main.erl", 7}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__box'}, 1}.
+  {label, 18}.
+    {call_only, 1, {f, 5}}.
+
+{function, '__bp_priv__many', 0, 20}.
+  {label, 19}.
+    {line, [{location, "test@main.erl", 8}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__many'}, 0}.
+  {label, 20}.
+    {call_only, 0, {f, 7}}.
+
+{function, '__bp_priv__node', 0, 22}.
+  {label, 21}.
+    {line, [{location, "test@main.erl", 9}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__node'}, 0}.
+  {label, 22}.
+    {call_only, 0, {f, 3}}.
+
+{function, '__bp_priv__one', 0, 24}.
+  {label, 23}.
+    {line, [{location, "test@main.erl", 10}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__one'}, 0}.
+  {label, 24}.
+    {call_only, 0, {f, 9}}.
+
+{function, '__bp_priv__txt', 0, 26}.
+  {label, 25}.
+    {line, [{location, "test@main.erl", 11}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__txt'}, 0}.
+  {label, 26}.
+    {call_only, 0, {f, 11}}.
 ```
 
 ----- RUN LOG -----

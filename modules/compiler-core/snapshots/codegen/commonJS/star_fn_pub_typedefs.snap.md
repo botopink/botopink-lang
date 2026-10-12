@@ -27,6 +27,8 @@ async function* pulses() {
     yield ({ ok: 1 });
 }
 exports.pulses = pulses;
+
+Object.defineProperty(exports, "__bp_priv__", { value: { loadOne, count, pulses } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

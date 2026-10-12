@@ -10,6 +10,8 @@ fn label(a: string, b: string) -> string {
 function label(a, b) {
     return ((("" + a) + "-") + b);
 }
+
+Object.defineProperty(exports, "__bp_priv__", { value: { label } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

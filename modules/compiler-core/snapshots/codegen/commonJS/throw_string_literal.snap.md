@@ -10,6 +10,8 @@ fn fail() {
 function fail() {
     throw "something went wrong";
 }
+
+Object.defineProperty(exports, "__bp_priv__", { value: { fail } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

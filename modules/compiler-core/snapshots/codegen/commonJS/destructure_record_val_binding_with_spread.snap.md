@@ -22,6 +22,8 @@ function describe(p) {
     const { x } = p;
     return x;
 }
+
+Object.defineProperty(exports, "__bp_priv__", { value: { Point, describe } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

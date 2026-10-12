@@ -6,9 +6,9 @@ val nested = #(#(1, 2), #(3, 4));
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
 {module, test@main}.
-{exports, []}.
+{exports, [{'__bp_priv__nested', 0}]}.
 {attributes, []}.
-{labels, 4}.
+{labels, 6}.
 
 {function, nested, 0, 3}.
   {label, 2}.
@@ -25,6 +25,13 @@ val nested = #(#(1, 2), #(3, 4));
     {put_tuple2, {x, 0}, {list, [{x, 1}, {x, 0}]}}.
     {deallocate, 0}.
     return.
+
+{function, '__bp_priv__nested', 0, 5}.
+  {label, 4}.
+    {line, [{location, "test@main.erl", 2}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__nested'}, 0}.
+  {label, 5}.
+    {call_only, 0, {f, 3}}.
 ```
 
 ----- RUN LOG -----

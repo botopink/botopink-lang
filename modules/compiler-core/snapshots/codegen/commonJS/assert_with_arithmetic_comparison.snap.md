@@ -12,6 +12,8 @@ function __bp_assert_fatal(cond, msg, loc) { if (!cond) { throw new Error((msg ?
 function f() {
     __bp_assert_fatal(Object.is((1.0 + 2.0), 3.0), null, "main.bp:2");
 }
+
+Object.defineProperty(exports, "__bp_priv__", { value: { f } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

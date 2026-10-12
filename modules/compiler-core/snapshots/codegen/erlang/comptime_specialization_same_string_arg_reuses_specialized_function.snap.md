@@ -16,6 +16,7 @@ fn main() {
 ```erlang
 -module(test@main).
 -export(['_botopink_main'/0, main/1]).
+-export(['__bp_priv__main'/0, '__bp_priv__build_$0'/1]).
 
 main() ->
     R1 = 'build_$0'(<<"Sistema iniciado">>),
@@ -55,6 +56,10 @@ main() ->
 
 main(_Args) ->
     '_botopink_main'().
+
+'__bp_priv__main'() -> main().
+
+'__bp_priv__build_$0'(A0) -> 'build_$0'(A0).
 ```
 
 ----- RUN LOG -----

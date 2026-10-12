@@ -11,6 +11,7 @@ fn main() {
 ```erlang
 -module(test@main).
 -export(['_botopink_main'/0, main/1]).
+-export(['__bp_priv__main'/0, '__bp_priv__string_slice'/3]).
 
 %% behavior String
 
@@ -55,6 +56,10 @@ string_slice(Self, Start, End) ->
 
 main(_Args) ->
     '_botopink_main'().
+
+'__bp_priv__main'() -> main().
+
+'__bp_priv__string_slice'(A0, A1, A2) -> string_slice(A0, A1, A2).
 ```
 
 ----- RUN LOG -----

@@ -33,6 +33,8 @@ function run(p) {
     const result = "error" in _try0 ? (0) : _try0.ok;
     return result;
 }
+
+Object.defineProperty(exports, "__bp_priv__", { value: { ParseError, Parser, run } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

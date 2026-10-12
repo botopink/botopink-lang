@@ -11,9 +11,9 @@ fn main() -> string {
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
 {module, test@main}.
-{exports, [{'_botopink_main', 0}, {main, 1}]}.
+{exports, [{'_botopink_main', 0}, {main, 1}, {'__bp_priv__main', 0}]}.
 {attributes, []}.
-{labels, 10}.
+{labels, 12}.
 
 {function, main, 0, 3}.
   {label, 2}.
@@ -48,6 +48,13 @@ fn main() -> string {
     {func_info, {atom, test@main}, {atom, main}, 1}.
   {label, 7}.
     {call_only, 0, {f, 5}}.
+
+{function, '__bp_priv__main', 0, 11}.
+  {label, 10}.
+    {line, [{location, "test@main.erl", 4}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__main'}, 0}.
+  {label, 11}.
+    {call_only, 0, {f, 3}}.
 
 {function, '-main/0-fun-0-', 1, 9}.
   {label, 8}.

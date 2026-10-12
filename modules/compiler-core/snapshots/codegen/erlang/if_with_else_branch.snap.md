@@ -15,6 +15,7 @@ fn main() {
 -module(test@main).
 -compile({no_auto_import,[abs/1]}).
 -export(['_botopink_main'/0, main/1]).
+-export(['__bp_priv__abs'/1, '__bp_priv__main'/0]).
 
 abs(N) ->
     Result = case (N < 0) of
@@ -61,6 +62,10 @@ main() ->
 
 main(_Args) ->
     '_botopink_main'().
+
+'__bp_priv__abs'(A0) -> abs(A0).
+
+'__bp_priv__main'() -> main().
 ```
 
 ----- RUN LOG -----

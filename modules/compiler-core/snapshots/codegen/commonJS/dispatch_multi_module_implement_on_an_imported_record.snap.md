@@ -12,6 +12,8 @@ class Pato {
 }
 Pato.prototype.__bp = "Pato";
 exports.Pato = Pato;
+
+Object.defineProperty(exports, "__bp_priv__", { value: { Pato } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- pond.d.ts
@@ -117,7 +119,9 @@ function main() {
 function _botopink_main() {
     main();
 }
-_botopink_main();
+if (require.main === module) _botopink_main();
+
+Object.defineProperty(exports, "__bp_priv__", { value: { Pato, PatoNada, main } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

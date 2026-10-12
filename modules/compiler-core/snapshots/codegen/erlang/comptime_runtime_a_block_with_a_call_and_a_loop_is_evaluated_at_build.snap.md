@@ -1361,6 +1361,7 @@ fn main() {
 ```erlang
 -module(test@main).
 -export(['_botopink_main'/0, main/1]).
+-export(['__bp_priv__add'/2, '__bp_priv__two'/0, '__bp_priv__main'/0]).
 
 add(A, B) ->
     '__bp_int'((A + B), -2147483648, 2147483647, <<"integer overflow: + on i32 at main.bp:2:14">>).
@@ -1406,6 +1407,12 @@ main() ->
 
 main(_Args) ->
     '_botopink_main'().
+
+'__bp_priv__add'(A0, A1) -> add(A0, A1).
+
+'__bp_priv__two'() -> two().
+
+'__bp_priv__main'() -> main().
 ```
 
 ----- RUN LOG -----

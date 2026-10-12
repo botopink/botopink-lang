@@ -12,6 +12,7 @@ fn makeCircle() -> Shape {
 ----- ERLANG -- main.erl
 ```erlang
 -module(test@main).
+-export(['__bp_priv__makeCircle'/0]).
 
 %% type Shape
 %%   Circle(r)
@@ -19,6 +20,8 @@ fn makeCircle() -> Shape {
 
 makeCircle() ->
     {test@main@@Shape__v__circle, 5}.
+
+'__bp_priv__makeCircle'() -> makeCircle().
 ```
 
 ----- ERLANG -- test@main@@Shape.erl

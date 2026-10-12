@@ -20,6 +20,7 @@ fn main() {
 ```erlang
 -module(test@main).
 -export(['_botopink_main'/0, main/1]).
+-export(['__bp_priv__average'/1, '__bp_priv__main'/0]).
 
 average(Xs) ->
     Total = 0.0,
@@ -69,6 +70,10 @@ main() ->
 
 main(_Args) ->
     '_botopink_main'().
+
+'__bp_priv__average'(A0) -> average(A0).
+
+'__bp_priv__main'() -> main().
 ```
 
 ----- RUN LOG -----

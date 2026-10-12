@@ -15,6 +15,7 @@ fn main() {
 ```erlang
 -module(test@main).
 -export(['_botopink_main'/0, main/1]).
+-export(['__bp_priv__array_range'/2, '__bp_priv__array_repeat'/2, '__bp_priv__lookup'/2, '__bp_priv__main'/0, '__bp_priv__array_find'/2]).
 
 %% behavior Array
 
@@ -89,6 +90,16 @@ array_find(Self, Pred) ->
 
 main(_Args) ->
     '_botopink_main'().
+
+'__bp_priv__array_range'(A0, A1) -> array_range(A0, A1).
+
+'__bp_priv__array_repeat'(A0, A1) -> array_repeat(A0, A1).
+
+'__bp_priv__lookup'(A0, A1) -> lookup(A0, A1).
+
+'__bp_priv__main'() -> main().
+
+'__bp_priv__array_find'(A0, A1) -> array_find(A0, A1).
 ```
 
 ----- RUN LOG -----

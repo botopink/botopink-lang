@@ -26,6 +26,8 @@ function first(p) {
 function second(p) {
     return p.y;
 }
+
+Object.defineProperty(exports, "__bp_priv__", { value: { Point, first, second } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

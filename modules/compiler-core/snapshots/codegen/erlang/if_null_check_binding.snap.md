@@ -11,6 +11,7 @@ fn getName(name: ?string) -> string {
 ----- ERLANG -- main.erl
 ```erlang
 -module(test@main).
+-export(['__bp_priv__getName'/1]).
 
 getName(Name) ->
     case Name of
@@ -19,6 +20,8 @@ getName(Name) ->
         N ->
             N
     end.
+
+'__bp_priv__getName'(A0) -> getName(A0).
 ```
 
 ----- RUN LOG -----

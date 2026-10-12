@@ -12,6 +12,7 @@ fn second(p: Point) -> i32 {
 ----- ERLANG -- main.erl
 ```erlang
 -module(test@main).
+-export(['__bp_priv__first'/1, '__bp_priv__second'/1]).
 
 %% type Point: x, y
 
@@ -20,6 +21,10 @@ first(P) ->
 
 second(P) ->
     erlang:element(3, P).
+
+'__bp_priv__first'(A0) -> first(A0).
+
+'__bp_priv__second'(A0) -> second(A0).
 ```
 
 ----- ERLANG -- test@main@@Point.erl

@@ -11,9 +11,9 @@ fn getName(name: ?string) -> string {
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
 {module, test@main}.
-{exports, []}.
+{exports, [{'__bp_priv__getName', 1}]}.
 {attributes, []}.
-{labels, 5}.
+{labels, 7}.
 
 {function, getName, 1, 3}.
   {label, 2}.
@@ -33,6 +33,13 @@ fn getName(name: ?string) -> string {
     {move, {literal, <<"unknown">>}, {x, 0}}.
     {deallocate, 2}.
     return.
+
+{function, '__bp_priv__getName', 1, 6}.
+  {label, 5}.
+    {line, [{location, "test@main.erl", 2}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__getName'}, 1}.
+  {label, 6}.
+    {call_only, 1, {f, 3}}.
 ```
 
 ----- RUN LOG -----

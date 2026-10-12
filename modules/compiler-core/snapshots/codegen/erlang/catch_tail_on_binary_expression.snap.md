@@ -13,6 +13,7 @@ fn compute() -> i32 {
 ----- ERLANG -- main.erl
 ```erlang
 -module(test@main).
+-export(['__bp_priv__getA'/0, '__bp_priv__compute'/0]).
 
 %% type CalcError: msg
 
@@ -30,6 +31,10 @@ compute() ->
             0
     end,
     R.
+
+'__bp_priv__getA'() -> getA().
+
+'__bp_priv__compute'() -> compute().
 ```
 
 ----- ERLANG -- test@main@@CalcError.erl

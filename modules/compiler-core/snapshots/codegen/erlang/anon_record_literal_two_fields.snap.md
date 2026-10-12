@@ -9,10 +9,13 @@ fn make() -> #(i32, i32) {
 ----- ERLANG -- main.erl
 ```erlang
 -module(test@main).
+-export(['__bp_priv__make'/0]).
 
 make() ->
     R = {7, 11},
     R.
+
+'__bp_priv__make'() -> make().
 ```
 
 ----- RUN LOG -----

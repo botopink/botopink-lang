@@ -26,6 +26,8 @@ function safe() {
     const _try0 = risky();
     return "error" in _try0 ? ((-1)) : _try0.ok;
 }
+
+Object.defineProperty(exports, "__bp_priv__", { value: { RiskError, risky, safe } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

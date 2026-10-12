@@ -10,6 +10,8 @@ fn apply(f: syntax fn(x: i32) -> i32) -> i32 {
 function apply(f) {
     return f(10);
 }
+
+Object.defineProperty(exports, "__bp_priv__", { value: { apply } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

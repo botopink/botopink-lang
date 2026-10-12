@@ -113,22 +113,21 @@ pub fn codegenEmit(
                     });
                     continue;
                 }
-                // `"std"` package copies are dependencies — never emit their
-                // test blocks (a project's `botopink test` runs only its own
-                // tests; the stdlib's inline tests run from `libs/std` itself).
                 // 144 B-60 S4 — a dependency module whose level B entry
                 // holds its unit is not emitted again.
                 if (try config.cachedUnit(alloc, ct.name)) |unit| {
                     try results.append(alloc, .{ .name = ct.name, .src = ct.src, .result = unit });
                     continue;
                 }
-                const module_test_mode = config.test_mode and !std.mem.startsWith(u8, ct.name, "std/");
+                // Decision 513: the test unit of a module of the package under
+                // test only — never a dependency's (std's included).
+                const module_test_mode = config.test_mode and !config.packages.idOf(ct.name).package_in_path;
                 // 06 C13 — a host-backed fn with no `node` target reaches the
                 // driver as a located diagnostic naming the function, not as
                 // the bare error name that aborted the whole build.
                 var missing: ?moduleOutput.MissingExternal = null;
                 const scope = try scopes.forModule(ct.name);
-                const js_src = emitJs(alloc, ok.transformed, ok.comptime_vals, ok.dispatch_rewrites, &ok.js_method_renames, &ok.instance_lowerings, module_test_mode, ct.name, ct.srcPath, &scope.cross, &missing, .{ .fns = &ok.sync_fns, .calls = &ok.sync_calls }) catch |err| {
+                const emitted = emitJs(alloc, ok.transformed, ok.comptime_vals, ok.dispatch_rewrites, &ok.js_method_renames, &ok.instance_lowerings, module_test_mode, ct.name, ct.srcPath, &scope.cross, &missing, .{ .fns = &ok.sync_fns, .calls = &ok.sync_calls }) catch |err| {
                     const me = missing orelse return err;
                     try results.append(alloc, .{
                         .name = ct.name,
@@ -155,7 +154,8 @@ pub fn codegenEmit(
                     .name = ct.name,
                     .src = ct.src,
                     .result = .{
-                        .js = js_src,
+                        .js = emitted.code,
+                        .test_unit = emitted.test_unit,
                         .typedef = typedef,
                         .comptime_script = if (ok.comptime_script) |s| try alloc.dupe(u8, s) else null,
                         .comptime_trace = try comptimeMod.trace.renderAlloc(alloc, ok.comptime_traces),
@@ -185,9 +185,16 @@ fn emitJs(
     /// 06 C13 — set when the emit fails with `error.MissingExternalTarget`.
     missing: ?*?moduleOutput.MissingExternal,
     sync: SyncMarks,
-) ![]u8 {
+) !Emitted {
     return try emitProgramOptsX(alloc, program, comptime_vals, rewrites, renames, lowerings, test_mode, module_name, src_file, cross, missing, sync);
 }
+
+/// One module's commonJS: the production module and, under `botopink test`
+/// of its package, its test unit (decision 513). Both owned by the caller.
+pub const Emitted = struct {
+    code: []u8,
+    test_unit: ?moduleOutput.Unit = null,
+};
 
 /// Decision 375 — what the hooks list says is synchronous in one module.
 pub const SyncMarks = struct {
@@ -357,7 +364,12 @@ pub fn emitProgramOpts(
     test_mode: bool,
     module_name: []const u8,
 ) ![]u8 {
-    return emitProgramOptsX(alloc, program, comptime_vals, rewrites, null, null, test_mode, module_name, "", null, null, .{});
+    const emitted = try emitProgramOptsX(alloc, program, comptime_vals, rewrites, null, null, test_mode, module_name, "", null, null, .{});
+    if (emitted.test_unit) |u| {
+        alloc.free(u.atom);
+        alloc.free(u.code);
+    }
+    return emitted.code;
 }
 
 /// The test-mode preamble: a throwing assert helper the runner can catch.
@@ -447,7 +459,7 @@ fn emitProgramOptsX(
     cross: ?*const CrossModule,
     missing: ?*?moduleOutput.MissingExternal,
     sync: SyncMarks,
-) ![]u8 {
+) !Emitted {
     var arena = std.heap.ArenaAllocator.init(alloc);
     defer arena.deinit();
     var em = Emitter.emitterInit(alloc, arena.allocator(), comptime_vals, rewrites);
@@ -458,7 +470,6 @@ fn emitProgramOptsX(
     em.renames = renames;
     em.lowerings = lowerings;
     em.sync = sync;
-    em.test_mode = test_mode;
     em.module_name = module_name;
     em.src_file = if (src_file.len > 0) src_file else try std.fmt.allocPrint(arena.allocator(), "{s}.bp", .{module_name});
     em.cross = cross;
@@ -473,10 +484,9 @@ fn emitProgramOptsX(
     const arena_alloc = arena.allocator();
     var items: std.ArrayListUnmanaged(js.Item) = .empty;
 
-    // Test registry entries collected while building decls (test mode only).
-    const TestEntry = struct { name: ?[]const u8, line: usize, idx: usize };
-    var test_entries: std.ArrayListUnmanaged(TestEntry) = .empty;
-    defer test_entries.deinit(alloc);
+    // The module's `test` blocks — its test unit's (decision 513).
+    var tests: std.ArrayListUnmanaged(ast.TestDecl) = .empty;
+    defer tests.deinit(alloc);
 
     // Track which val names are comptime-only (consumed at compile time).
     var comptime_only = std.StringHashMap(void).init(alloc);
@@ -526,8 +536,6 @@ fn emitProgramOptsX(
         }
     }
 
-    if (test_mode) try items.append(arena_alloc, .{ .runtime = assert_helper_source });
-
     // Build declarations from the transformed program.
     for (program.decls) |decl| {
         switch (decl) {
@@ -572,14 +580,8 @@ fn emitProgramOptsX(
             .mod => {},
             // A type alias is erased: the checker substituted its target.
             .typeAlias => {},
-            // Test blocks are only compiled under `botopink test`; in normal
-            // builds they are skipped entirely.
-            .@"test" => |t| {
-                if (!test_mode) continue;
-                const idx = test_entries.items.len;
-                try test_entries.append(alloc, .{ .name = t.name, .line = t.loc.line, .idx = idx });
-                try items.append(arena_alloc, .{ .stmt = try em.buildTestFn(t, idx) });
-            },
+            // Test blocks are the test unit's (`emitTestUnit`, decision 513).
+            .@"test" => |t| try tests.append(alloc, t),
             .comment => |c| try items.append(arena_alloc, .{ .stmt = .{ .comment = .{
                 .style = if (c.is_doc) .doc else if (c.is_module) .module else .line,
                 .text = c.text,
@@ -587,71 +589,239 @@ fn emitProgramOptsX(
         }
     }
 
-    // Auto-invoke entry point when `fn main/0` is defined (never in test mode).
-    if (has_main_0 and !test_mode) {
+    // Auto-invoke entry point when `fn main/0` is defined — when the module
+    // is the program's entry, so a test unit (decision 513) or another
+    // module that `require`s it does not run it.
+    if (has_main_0) {
         try items.append(arena_alloc, .{ .stmt = try em.b.group(&.{
             .{ .function = .{ .name = "_botopink_main", .body = .{
                 .stmts = try em.b.stmts(&.{.{ .expr = try em.b.call(.{ .name = "main" }, &.{}) }}),
             } } },
-            .{ .expr = try em.b.call(.{ .name = "_botopink_main" }, &.{}) },
+            .{ .if_ = .{
+                .cond = .{ .name = "require.main === module" },
+                .then = try ptrTo(arena_alloc, js.Stmt{ .expr = try em.b.call(.{ .name = "_botopink_main" }, &.{}) }),
+            } },
         }) });
     }
 
-    // Test mode: emit the registry + runner entry.
-    if (test_mode and test_entries.items.len > 0) {
-        // F6 — warn on duplicate test names within a module: two `test "x"`
-        // blocks both run, but a shared name makes a failure report ambiguous.
-        {
-            var seen_names = std.StringHashMap(void).init(alloc);
-            defer seen_names.deinit();
-            for (test_entries.items) |t| {
-                const n = t.name orelse continue;
-                const gop = try seen_names.getOrPut(n);
-                if (gop.found_existing) {
-                    std.debug.print(
-                        "warning: duplicate test name \"{s}\" in {s}:{d}\n",
-                        .{ n, em.src_file, t.line },
-                    );
-                }
-            }
-        }
-        const entries = try arena_alloc.alloc(js.Expr, test_entries.items.len);
-        for (test_entries.items, 0..) |t, i| {
-            const name = t.name orelse try std.fmt.allocPrint(arena_alloc, "test_{d}", .{t.idx});
-            entries[i] = try em.b.object(&.{
-                .{ .kv = .{ .key = "name", .value = .{ .quoted = name } } },
-                .{ .kv = .{ .key = "fn", .value = .{ .name = try std.fmt.allocPrint(arena_alloc, "__bp_test_{d}", .{t.idx}) } } },
-                .{ .kv = .{ .key = "loc", .value = .{ .quoted = try std.fmt.allocPrint(arena_alloc, "{s}:{d}", .{ em.src_file, t.line }) } } },
-            });
-        }
-        try items.append(arena_alloc, .{ .stmt = .{ .decl = .{
-            .pattern = .{ .name = "__bp_tests" },
-            .value = .{ .array = .{ .elems = entries, .layout = .lines } },
-        } } });
-        try items.append(arena_alloc, .{ .runtime = test_runner_source });
-    }
+    // Decision 513 (2): every binding of the module — its private functions
+    // and module-level `val`s among them — in one hidden export, which the
+    // test unit destructures. Not enumerable, so no `Object.assign` of the
+    // module's exports copies it.
+    const bound = try boundNames(arena_alloc, items.items);
+    if (try privExportSource(arena_alloc, bound)) |line| try items.append(arena_alloc, .{ .runtime = line });
 
-    // The prelude helpers the module called, ahead of every declaration (after
-    // the test-mode assert helper) — only the ones actually used.
-    {
-        var at: usize = if (test_mode) 1 else 0;
-        for (jsPrelude.order) |hp| {
-            if (!em.helpers.contains(hp)) continue;
-            try items.insert(arena_alloc, at, .{ .stmt = jsPrelude.decl(hp) });
-            at += 1;
-        }
-        // Decision 210 — the per-type equalities the module's `==` asked
-        // for, after the prelude helpers they may call (`__bp_eq`).
-        for (em.eq_fns.values()) |f| {
-            try items.insert(arena_alloc, at, .{ .stmt = f });
-            at += 1;
-        }
-    }
+    // The prelude helpers the module called, ahead of every declaration —
+    // only the ones actually used.
+    try insertHelpers(&em, arena_alloc, &items, 0);
 
     var aw: std.Io.Writer.Allocating = .init(alloc);
     defer aw.deinit();
     try jsEmitter.writeProgram(&aw.writer, items.items);
-    return aw.toOwnedSlice();
+    const code = try aw.toOwnedSlice();
+    errdefer alloc.free(code);
+
+    var test_unit: ?moduleOutput.Unit = null;
+    if (test_mode and tests.items.len > 0) test_unit = try emitTestUnit(alloc, &em, arena_alloc, tests.items, module_name, bound);
+    return .{ .code = code, .test_unit = test_unit };
+}
+
+/// The prelude helpers and per-type equalities `em` reached, inserted into
+/// `items` at `at`.
+fn insertHelpers(em: *Emitter, arena_alloc: std.mem.Allocator, items: *std.ArrayListUnmanaged(js.Item), start: usize) !void {
+    var at = start;
+    for (jsPrelude.order) |hp| {
+        if (!em.helpers.contains(hp)) continue;
+        try items.insert(arena_alloc, at, .{ .stmt = jsPrelude.decl(hp) });
+        at += 1;
+    }
+    // Decision 210 — the per-type equalities the module's `==` asked
+    // for, after the prelude helpers they may call (`__bp_eq`).
+    for (em.eq_fns.values()) |f| {
+        try items.insert(arena_alloc, at, .{ .stmt = f });
+        at += 1;
+    }
+}
+
+/// The JS names a module's top-level statements bind, in order, without its
+/// entry wrapper (`_botopink_main`). The prelude helpers and per-type
+/// equalities are inserted after this is read, so they are never among them.
+fn collectBoundNames(arena_alloc: std.mem.Allocator, stmt: js.Stmt, out: *std.ArrayListUnmanaged([]const u8)) !void {
+    switch (stmt) {
+        .decl => |d| try collectPatternNames(arena_alloc, d.pattern, out),
+        .function => |f| try addBoundName(arena_alloc, jsEmitter.ident(f.name), out),
+        .class => |c| try addBoundName(arena_alloc, jsEmitter.ident(c.name), out),
+        .group => |g| for (g) |sub| try collectBoundNames(arena_alloc, sub, out),
+        else => {},
+    }
+}
+
+fn collectPatternNames(arena_alloc: std.mem.Allocator, p: js.Pattern, out: *std.ArrayListUnmanaged([]const u8)) std.mem.Allocator.Error!void {
+    switch (p) {
+        .ident => |n| try addBoundName(arena_alloc, jsEmitter.ident(n), out),
+        .name => |n| try addBoundName(arena_alloc, n, out),
+        .object => |o| {
+            for (o.props) |prop| {
+                if (prop.nested) |n| try collectPatternNames(arena_alloc, n.*, out) else try addBoundName(arena_alloc, prop.bind orelse jsEmitter.ident(prop.key), out);
+            }
+            if (o.rest) |r| try addBoundName(arena_alloc, r.binding, out);
+        },
+        .array => |a| {
+            for (a.elems) |e| try collectPatternNames(arena_alloc, e, out);
+            if (a.rest) |r| try addBoundName(arena_alloc, r.binding, out);
+        },
+    }
+}
+
+fn addBoundName(arena_alloc: std.mem.Allocator, name: []const u8, out: *std.ArrayListUnmanaged([]const u8)) !void {
+    if (name.len == 0 or std.mem.eql(u8, name, "_")) return;
+    if (std.mem.startsWith(u8, name, "_botopink_")) return;
+    for (out.items) |seen| if (std.mem.eql(u8, seen, name)) return;
+    try out.append(arena_alloc, name);
+}
+
+fn ptrTo(arena_alloc: std.mem.Allocator, st: js.Stmt) !*const js.Stmt {
+    const p = try arena_alloc.create(js.Stmt);
+    p.* = st;
+    return p;
+}
+
+/// Every name `items` binds at the top level (`collectBoundNames`).
+fn boundNames(arena_alloc: std.mem.Allocator, items: []const js.Item) ![]const []const u8 {
+    var names: std.ArrayListUnmanaged([]const u8) = .empty;
+    for (items) |it| switch (it) {
+        .stmt => |st| try collectBoundNames(arena_alloc, st, &names),
+        .runtime => {},
+    };
+    return names.items;
+}
+
+/// `{ a, b }` over `names`.
+fn nameList(arena_alloc: std.mem.Allocator, names: []const []const u8) ![]const u8 {
+    var text: std.ArrayListUnmanaged(u8) = .empty;
+    try text.appendSlice(arena_alloc, "{ ");
+    for (names, 0..) |n, i| {
+        if (i > 0) try text.appendSlice(arena_alloc, ", ");
+        try text.appendSlice(arena_alloc, n);
+    }
+    try text.appendSlice(arena_alloc, " }");
+    return text.items;
+}
+
+/// `Object.defineProperty(exports, "__bp_priv__", { value: { a, b } });` over
+/// `names`, or null when there is none.
+fn privExportSource(arena_alloc: std.mem.Allocator, names: []const []const u8) !?[]const u8 {
+    if (names.len == 0) return null;
+    return try std.fmt.allocPrint(arena_alloc, "\nObject.defineProperty(exports, \"" ++ PRIV_EXPORT ++ "\", {{ value: {s} }});\n", .{try nameList(arena_alloc, names)});
+}
+
+/// The test unit's text with every relative `require` after its first line
+/// (the production module's, already spelled from the unit) spelled from the
+/// unit instead of from its module: `prefix` — `../` per level of
+/// `__test__/<path>`, then the module's directory — goes before the relative
+/// path. A host module a test body reaches — a call's `require`, or a host
+/// template's verbatim `require('./sidecars/…')` — is written relative to the
+/// module's directory.
+fn deeperRequires(alloc: std.mem.Allocator, text: []const u8, prefix: []const u8) ![]u8 {
+    var out: std.ArrayListUnmanaged(u8) = .empty;
+    errdefer out.deinit(alloc);
+    const first_end = (std.mem.indexOfScalar(u8, text, '\n') orelse text.len);
+    try out.appendSlice(alloc, text[0..first_end]);
+    var i = first_end;
+    while (i < text.len) {
+        const rest = text[i..];
+        const open_len: usize = if (std.mem.startsWith(u8, rest, "require(\"") or std.mem.startsWith(u8, rest, "require('")) "require(\"".len else 0;
+        if (open_len > 0 and (std.mem.startsWith(u8, rest[open_len..], "./") or std.mem.startsWith(u8, rest[open_len..], "../"))) {
+            try out.appendSlice(alloc, rest[0..open_len]);
+            try out.appendSlice(alloc, prefix);
+            i += open_len;
+            continue;
+        }
+        try out.append(alloc, text[i]);
+        i += 1;
+    }
+    return out.toOwnedSlice(alloc);
+}
+
+/// Decision 513 (2): the hidden export a commonJS module carries, every
+/// binding of the module by name.
+pub const PRIV_EXPORT = "__bp_priv__";
+
+/// Decision 513 (1): the module's test unit, `__test__/<module path>.js` —
+/// it requires the production module, destructures its hidden export
+/// (`PRIV_EXPORT`), and holds the `test` blocks as `__bp_test_N`, the
+/// registry and the runner. The production module's helpers and equalities
+/// are set aside while the tests are lowered, so the unit carries the ones its
+/// own bodies reach.
+fn emitTestUnit(alloc: std.mem.Allocator, em: *Emitter, arena_alloc: std.mem.Allocator, tests: []const ast.TestDecl, module_name: []const u8, bound: []const []const u8) !moduleOutput.Unit {
+    const prod_helpers = em.helpers;
+    const prod_eq = em.eq_fns;
+    em.helpers = .initEmpty();
+    em.eq_fns = .empty;
+    em.test_mode = true;
+    defer {
+        em.helpers = prod_helpers;
+        em.eq_fns = prod_eq;
+        em.test_mode = false;
+    }
+    const stem = if (module_name.len > 0) module_name else "main";
+    var items: std.ArrayListUnmanaged(js.Item) = .empty;
+    var up: std.ArrayListUnmanaged(u8) = .empty;
+    for (0..std.mem.count(u8, stem, "/") + 1) |_| try up.appendSlice(arena_alloc, "../");
+    try items.append(arena_alloc, .{ .runtime = assert_helper_source });
+    const entries = try arena_alloc.alloc(js.Expr, tests.len);
+    for (tests, 0..) |t, idx| {
+        try items.append(arena_alloc, .{ .stmt = try em.buildTestFn(t, idx) });
+        const name = t.name orelse try std.fmt.allocPrint(arena_alloc, "test_{d}", .{idx});
+        entries[idx] = try em.b.object(&.{
+            .{ .kv = .{ .key = "name", .value = .{ .quoted = name } } },
+            .{ .kv = .{ .key = "fn", .value = .{ .name = try std.fmt.allocPrint(arena_alloc, "__bp_test_{d}", .{idx}) } } },
+            .{ .kv = .{ .key = "loc", .value = .{ .quoted = try std.fmt.allocPrint(arena_alloc, "{s}:{d}", .{ em.src_file, t.loc.line }) } } },
+        });
+    }
+    // F6 — warn on duplicate test names within a module: two `test "x"`
+    // blocks both run, but a shared name makes a failure report ambiguous.
+    {
+        var seen_names = std.StringHashMap(void).init(alloc);
+        defer seen_names.deinit();
+        for (tests) |t| {
+            const n = t.name orelse continue;
+            const gop = try seen_names.getOrPut(n);
+            if (gop.found_existing) {
+                std.debug.print("warning: duplicate test name \"{s}\" in {s}:{d}\n", .{ n, em.src_file, t.loc.line });
+            }
+        }
+    }
+    try items.append(arena_alloc, .{ .stmt = .{ .decl = .{
+        .pattern = .{ .name = "__bp_tests" },
+        .value = .{ .array = .{ .elems = entries, .layout = .lines } },
+    } } });
+    try items.append(arena_alloc, .{ .runtime = test_runner_source });
+    // The names the production module binds, destructured first — the test
+    // bodies read them as they are written — but the helpers and equalities
+    // this unit declares itself.
+    var wanted: std.ArrayListUnmanaged([]const u8) = .empty;
+    for (bound) |n| {
+        const own = for (jsPrelude.order) |hp| {
+            if (em.helpers.contains(hp) and std.mem.eql(u8, jsPrelude.name(hp), n)) break true;
+        } else em.eq_fns.contains(n);
+        if (!own) try wanted.append(arena_alloc, n);
+    }
+    const bound_names = wanted.items;
+    const require_line = if (bound_names.len > 0)
+        try std.fmt.allocPrint(arena_alloc, "const {s} = require(\"{s}{s}.js\")." ++ PRIV_EXPORT ++ ";\n", .{ try nameList(arena_alloc, bound_names), up.items, stem })
+    else
+        try std.fmt.allocPrint(arena_alloc, "require(\"{s}{s}.js\");\n", .{ up.items, stem });
+    try items.insert(arena_alloc, 0, .{ .runtime = require_line });
+    try insertHelpers(em, arena_alloc, &items, 2);
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    try jsEmitter.writeProgram(&aw.writer, items.items);
+    const dir_prefix = if (std.fs.path.dirnamePosix(stem)) |d| try std.fmt.allocPrint(arena_alloc, "{s}{s}/", .{ up.items, d }) else up.items;
+    const code = try deeperRequires(alloc, aw.written(), dir_prefix);
+    errdefer alloc.free(code);
+    const atom = try std.fmt.allocPrint(alloc, "__test__/{s}", .{stem});
+    return .{ .atom = atom, .code = code };
 }
 
 fn isComptimeVal(v: ast.ValDecl) bool {

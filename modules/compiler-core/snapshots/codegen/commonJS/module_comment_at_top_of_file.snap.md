@@ -17,6 +17,8 @@ fn capitalize(s: string) -> string {
 function capitalize(s) {
     return s;
 }
+
+Object.defineProperty(exports, "__bp_priv__", { value: { capitalize } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

@@ -19,6 +19,8 @@ class Unimplemented {
     }
 }
 Unimplemented.prototype.__bp = "Unimplemented";
+
+Object.defineProperty(exports, "__bp_priv__", { value: { Unimplemented } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

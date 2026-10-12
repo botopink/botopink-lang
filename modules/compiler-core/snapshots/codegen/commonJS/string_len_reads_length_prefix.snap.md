@@ -12,6 +12,8 @@ function n() {
     const s = "hello";
     return s.length;
 }
+
+Object.defineProperty(exports, "__bp_priv__", { value: { n } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

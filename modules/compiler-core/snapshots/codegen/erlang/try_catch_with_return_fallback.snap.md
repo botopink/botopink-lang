@@ -13,6 +13,7 @@ fn safe() -> i32 {
 ----- ERLANG -- main.erl
 ```erlang
 -module(test@main).
+-export(['__bp_priv__fetch'/0, '__bp_priv__safe'/0]).
 
 %% type NetError: code
 
@@ -34,6 +35,10 @@ safe() ->
     catch
         throw:{'__bp_try', __BpTryR} -> __BpTryR
     end.
+
+'__bp_priv__fetch'() -> fetch().
+
+'__bp_priv__safe'() -> safe().
 ```
 
 ----- ERLANG -- test@main@@NetError.erl

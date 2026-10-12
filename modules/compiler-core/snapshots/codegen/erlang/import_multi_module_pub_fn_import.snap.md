@@ -31,7 +31,7 @@ val result = double(21);
 ----- ERLANG -- main.erl
 ```erlang
 -module(test@main).
--export(['_botopink_init'/0]).
+-export(['_botopink_init'/0, '__bp_priv__result'/0]).
 
 %% import double
 
@@ -44,6 +44,8 @@ result() ->
 '_botopink_init'() ->
     result(),
     ok.
+
+'__bp_priv__result'() -> result().
 ```
 
 ----- RUN LOG -----

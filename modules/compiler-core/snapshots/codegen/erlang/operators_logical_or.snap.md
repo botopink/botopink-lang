@@ -12,6 +12,7 @@ fn main() {
 ```erlang
 -module(test@main).
 -export(['_botopink_main'/0, main/1]).
+-export(['__bp_priv__either'/2, '__bp_priv__main'/0]).
 
 either(A, B) ->
     (A orelse B).
@@ -47,6 +48,10 @@ main() ->
 
 main(_Args) ->
     '_botopink_main'().
+
+'__bp_priv__either'(A0, A1) -> either(A0, A1).
+
+'__bp_priv__main'() -> main().
 ```
 
 ----- RUN LOG -----

@@ -13,6 +13,8 @@ exports.PORT = PORT;
 const HOST = "localhost";
 
 exports.HOST = HOST;
+
+Object.defineProperty(exports, "__bp_priv__", { value: { PORT, HOST } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- config.d.ts
@@ -42,6 +44,8 @@ const { PORT, HOST } = require("./config.js");
 const addr = HOST;
 
 const port = PORT;
+
+Object.defineProperty(exports, "__bp_priv__", { value: { PORT, HOST, addr, port } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

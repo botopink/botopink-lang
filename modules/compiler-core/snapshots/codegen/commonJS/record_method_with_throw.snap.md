@@ -29,6 +29,8 @@ class Invoice {
     }
 }
 Invoice.prototype.__bp = "Invoice";
+
+Object.defineProperty(exports, "__bp_priv__", { value: { Invoice } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

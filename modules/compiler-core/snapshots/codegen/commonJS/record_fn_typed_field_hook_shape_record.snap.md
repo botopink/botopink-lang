@@ -24,6 +24,8 @@ function apply(s) {
     s.set(s.value);
     return s.value;
 }
+
+Object.defineProperty(exports, "__bp_priv__", { value: { State, make, apply } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

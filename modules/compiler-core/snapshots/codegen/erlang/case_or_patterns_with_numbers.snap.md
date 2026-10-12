@@ -19,6 +19,7 @@ fn main() {
 ```erlang
 -module(test@main).
 -export(['_botopink_main'/0, main/1]).
+-export(['__bp_priv__classify'/1, '__bp_priv__main'/0]).
 
 classify(Day) ->
     Kind = case Day of
@@ -65,6 +66,10 @@ main() ->
 
 main(_Args) ->
     '_botopink_main'().
+
+'__bp_priv__classify'(A0) -> classify(A0).
+
+'__bp_priv__main'() -> main().
 ```
 
 ----- RUN LOG -----

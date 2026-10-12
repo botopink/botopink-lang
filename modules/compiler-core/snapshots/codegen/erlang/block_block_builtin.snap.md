@@ -15,6 +15,7 @@ fn main() -> string {
 ```erlang
 -module(test@main).
 -export(['_botopink_main'/0, main/1]).
+-export(['__bp_priv__main'/0]).
 
 main() ->
     Input = 42,
@@ -39,6 +40,8 @@ main() ->
 
 main(_Args) ->
     '_botopink_main'().
+
+'__bp_priv__main'() -> main().
 ```
 
 ----- RUN LOG -----

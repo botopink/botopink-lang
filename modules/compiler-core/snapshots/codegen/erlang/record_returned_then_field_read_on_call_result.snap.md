@@ -12,6 +12,7 @@ fn lineNo() -> i32 {
 ----- ERLANG -- main.erl
 ```erlang
 -module(test@main).
+-export(['__bp_priv__span'/0, '__bp_priv__lineNo'/0]).
 
 %% type Span: start, end, line
 
@@ -20,6 +21,10 @@ span() ->
 
 lineNo() ->
     erlang:element(4, span()).
+
+'__bp_priv__span'() -> span().
+
+'__bp_priv__lineNo'() -> lineNo().
 ```
 
 ----- ERLANG -- test@main@@Span.erl

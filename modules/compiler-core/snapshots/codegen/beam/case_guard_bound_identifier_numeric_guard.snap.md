@@ -12,9 +12,9 @@ fn classify(n: i32) -> string {
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
 {module, test@main}.
-{exports, []}.
+{exports, [{'__bp_priv__classify', 1}]}.
 {attributes, []}.
-{labels, 7}.
+{labels, 9}.
 
 {function, classify, 1, 3}.
   {label, 2}.
@@ -41,6 +41,13 @@ fn classify(n: i32) -> string {
   {label, 4}.
     {deallocate, 2}.
     return.
+
+{function, '__bp_priv__classify', 1, 8}.
+  {label, 7}.
+    {line, [{location, "test@main.erl", 2}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__classify'}, 1}.
+  {label, 8}.
+    {call_only, 1, {f, 3}}.
 ```
 
 ----- RUN LOG -----

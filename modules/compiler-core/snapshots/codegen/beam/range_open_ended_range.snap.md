@@ -12,9 +12,9 @@ fn countUp(x: i32) {
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
 {module, test@main}.
-{exports, []}.
+{exports, [{'__bp_priv__countUp', 1}]}.
 {attributes, []}.
-{labels, 11}.
+{labels, 13}.
 
 {function, countUp, 1, 3}.
   {label, 2}.
@@ -46,6 +46,13 @@ fn countUp(x: i32) {
     {move, {atom, ok}, {x, 0}}.
     {deallocate, 2}.
     return.
+
+{function, '__bp_priv__countUp', 1, 12}.
+  {label, 11}.
+    {line, [{location, "test@main.erl", 2}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__countUp'}, 1}.
+  {label, 12}.
+    {call_only, 1, {f, 3}}.
 
 {function, '-countUp/1-fun-0-', 1, 5}.
   {label, 4}.

@@ -8,9 +8,9 @@ fn apply(f: syntax fn(x: i32) -> i32) -> i32 {
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
 {module, test@main}.
-{exports, []}.
+{exports, [{'__bp_priv__apply', 1}]}.
 {attributes, []}.
-{labels, 4}.
+{labels, 6}.
 
 {function, apply, 1, 3}.
   {label, 2}.
@@ -25,6 +25,13 @@ fn apply(f: syntax fn(x: i32) -> i32) -> i32 {
     {call_fun, 1}.
     {deallocate, 1}.
     return.
+
+{function, '__bp_priv__apply', 1, 5}.
+  {label, 4}.
+    {line, [{location, "test@main.erl", 2}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__apply'}, 1}.
+  {label, 5}.
+    {call_only, 1, {f, 3}}.
 ```
 
 ----- RUN LOG -----

@@ -12,6 +12,8 @@ function f() {
     const answer = 42;
     (() => { const _match = answer; if ((_match === 42)) { return _match; } else { throw "not 42"; } })();
 }
+
+Object.defineProperty(exports, "__bp_priv__", { value: { f } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

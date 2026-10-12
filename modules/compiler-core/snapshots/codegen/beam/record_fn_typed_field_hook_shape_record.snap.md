@@ -8,9 +8,9 @@ fn apply(s: State<i32>) -> i32 { s.set(s.value); return s.value; }
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
 {module, test@main}.
-{exports, []}.
+{exports, [{'__bp_priv__apply', 1}, {'__bp_priv__make', 0}]}.
 {attributes, []}.
-{labels, 11}.
+{labels, 15}.
 
 {function, make, 0, 3}.
   {label, 2}.
@@ -52,6 +52,20 @@ fn apply(s: State<i32>) -> i32 { s.set(s.value); return s.value; }
   {label, 10}.
     {deallocate, 1}.
     return.
+
+{function, '__bp_priv__apply', 1, 12}.
+  {label, 11}.
+    {line, [{location, "test@main.erl", 3}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__apply'}, 1}.
+  {label, 12}.
+    {call_only, 1, {f, 5}}.
+
+{function, '__bp_priv__make', 0, 14}.
+  {label, 13}.
+    {line, [{location, "test@main.erl", 4}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__make'}, 0}.
+  {label, 14}.
+    {call_only, 0, {f, 3}}.
 
 {function, '-make/0-fun-0-', 1, 7}.
   {label, 6}.

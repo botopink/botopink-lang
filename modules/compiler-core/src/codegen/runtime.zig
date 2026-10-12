@@ -65,6 +65,7 @@
 //! ever resurfaces, filter the known lines here, do not go back to inferring
 //! failure from the output.
 const std = @import("std");
+const moduleOutput = @import("./moduleOutput.zig");
 const crossModule = @import("./crossModule.zig");
 const otp = @import("../otp.zig");
 fn isProcessSuccess(term: std.process.Child.Term) bool {
@@ -580,34 +581,44 @@ fn beamAsmCodeWritesOutput(asm_code: []const u8) bool {
 /// The `botopink test` targets a test-mode module can be run under.
 pub const TestTarget = enum { commonJS, erlang };
 
-/// Run a **test-mode** module the way `botopink test` does — `node main.js` /
-/// `escript main.erl` from the directory the file is written to — and answer
-/// everything it printed, **whatever its exit status**. The test runner exits
-/// non-zero when a test fails (`process.exit(1)` / `halt(1)`), and that
-/// failing run is exactly the output a decision-74 fixture pins (`FAIL <name>
-/// (<e>) at <file>:<line>`), so the "crash → empty RUN LOG" rule of
-/// `executeJavaScript`/`executeErlang` does not apply here. `executeErlang`
-/// also never runs a test-mode module (it looks for `_botopink_main`, and a
-/// test module's entry is `main/1`). Answers `""` only when the runtime is
-/// not on PATH. No output cache: the caller compares the text itself.
-pub fn executeTestModule(allocator: std.mem.Allocator, io: anytype, target: TestTarget, code: []const u8) ![]u8 {
+/// Run a module's **test unit** (decision 513) the way `botopink test` does —
+/// the production module `code` written where its unit reaches it
+/// (`main.js` beside `__test__/main.js`; `<atom>.erl` beside
+/// `<unit atom>.erl`), then `node __test__/main.js` / `escript <unit>.erl` —
+/// and answer everything it printed, **whatever its exit status**. The test
+/// runner exits non-zero when a test fails (`process.exit(1)` / `halt(1)`), and
+/// that failing run is exactly the output a decision-74 fixture pins (`FAIL
+/// <name> (<e>) at <file>:<line>`), so the "crash → empty RUN LOG" rule of
+/// `executeJavaScript`/`executeErlang` does not apply here. Answers `""` only
+/// when the runtime is not on PATH. No output cache: the caller compares the
+/// text itself.
+pub fn executeTestModule(allocator: std.mem.Allocator, io: anytype, target: TestTarget, code: []const u8, unit: moduleOutput.Unit) ![]u8 {
     var dir_buf: [96]u8 = undefined;
     const tmp_dir = try makeScratchDir(io, &dir_buf);
     defer std.Io.Dir.cwd().deleteTree(io, tmp_dir) catch {};
 
-    const basename: []const u8 = switch (target) {
-        .commonJS => "main.js",
-        .erlang => "main.erl",
+    const prod_name: []const u8 = switch (target) {
+        .commonJS => try allocator.dupe(u8, "main.js"),
+        .erlang => blk: {
+            const at = std.mem.indexOf(u8, code, "-module(") orelse return error.NoModuleForm;
+            const close = std.mem.indexOfScalarPos(u8, code, at, ')') orelse return error.NoModuleForm;
+            break :blk try std.fmt.allocPrint(allocator, "{s}.erl", .{code[at + "-module(".len .. close]});
+        },
     };
+    defer allocator.free(prod_name);
+    const unit_name = try std.fmt.allocPrint(allocator, "{s}{s}", .{ unit.atom, if (target == .commonJS) ".js" else ".erl" });
+    defer allocator.free(unit_name);
+    for ([_][2][]const u8{ .{ prod_name, code }, .{ unit_name, unit.code } }) |file| {
+        const path = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ tmp_dir, file[0] });
+        defer allocator.free(path);
+        if (std.fs.path.dirname(path)) |d| try std.Io.Dir.cwd().createDirPath(io, d);
+        try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = path, .data = file[1] });
+    }
     const runner: []const u8 = switch (target) {
         .commonJS => "node",
         .erlang => "escript",
     };
-    const filename = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ tmp_dir, basename });
-    defer allocator.free(filename);
-    try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = filename, .data = code });
-
-    const ran = try runCaptured(allocator, io, &.{ runner, basename }, tmp_dir, RUNTIME_TIMEOUT_NS);
+    const ran = try runCaptured(allocator, io, &.{ runner, unit_name }, tmp_dir, RUNTIME_TIMEOUT_NS);
     if (ran.status == .unavailable or ran.status == .interrupted) {
         allocator.free(ran.output);
         return allocator.dupe(u8, "");

@@ -19,6 +19,7 @@ fn main() {
 ```erlang
 -module(test@main).
 -export(['_botopink_main'/0, main/1]).
+-export(['__bp_priv__pairOf'/2, '__bp_priv__show'/1, '__bp_priv__main'/0]).
 
 pairOf(A, B) ->
     {A, B}.
@@ -61,6 +62,12 @@ main() ->
 
 main(_Args) ->
     '_botopink_main'().
+
+'__bp_priv__pairOf'(A0, A1) -> pairOf(A0, A1).
+
+'__bp_priv__show'(A0) -> show(A0).
+
+'__bp_priv__main'() -> main().
 ```
 
 ----- RUN LOG -----

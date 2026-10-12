@@ -29,9 +29,9 @@ fn main() {
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
 {module, test@main}.
-{exports, [{'_botopink_main', 0}, {main, 1}]}.
+{exports, [{'_botopink_main', 0}, {main, 1}, {'__bp_priv__firstSquareOver', 1}, {'__bp_priv__main', 0}, {'__bp_priv__nested', 0}]}.
 {attributes, []}.
-{labels, 59}.
+{labels, 65}.
 
 {function, firstSquareOver, 1, 3}.
   {label, 2}.
@@ -168,6 +168,27 @@ fn main() {
     {func_info, {atom, test@main}, {atom, main}, 1}.
   {label, 11}.
     {call_only, 0, {f, 9}}.
+
+{function, '__bp_priv__firstSquareOver', 1, 60}.
+  {label, 59}.
+    {line, [{location, "test@main.erl", 6}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__firstSquareOver'}, 1}.
+  {label, 60}.
+    {call_only, 1, {f, 3}}.
+
+{function, '__bp_priv__main', 0, 62}.
+  {label, 61}.
+    {line, [{location, "test@main.erl", 7}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__main'}, 0}.
+  {label, 62}.
+    {call_only, 0, {f, 7}}.
+
+{function, '__bp_priv__nested', 0, 64}.
+  {label, 63}.
+    {line, [{location, "test@main.erl", 8}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__nested'}, 0}.
+  {label, 64}.
+    {call_only, 0, {f, 5}}.
 
 {function, '__bp_print', 1, 32}.
   {label, 31}.

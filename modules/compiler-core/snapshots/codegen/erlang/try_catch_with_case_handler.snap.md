@@ -13,6 +13,7 @@ fn handle() -> i32 {
 ----- ERLANG -- main.erl
 ```erlang
 -module(test@main).
+-export(['__bp_priv__fetch'/0, '__bp_priv__handle'/0]).
 
 %% type ErrorKind
 %%   NotFound
@@ -32,6 +33,10 @@ handle() ->
             0
     end,
     R.
+
+'__bp_priv__fetch'() -> fetch().
+
+'__bp_priv__handle'() -> handle().
 ```
 
 ----- ERLANG -- test@main@@ErrorKind.erl

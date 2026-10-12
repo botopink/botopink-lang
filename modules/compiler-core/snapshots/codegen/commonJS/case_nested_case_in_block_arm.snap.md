@@ -24,6 +24,8 @@ const result = (() => {
     }
     return 1;
 })();
+
+Object.defineProperty(exports, "__bp_priv__", { value: { result } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

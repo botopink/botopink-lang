@@ -12,6 +12,8 @@ async function* stream() {
     yield ({ ok: 1 });
     yield ({ ok: 2 });
 }
+
+Object.defineProperty(exports, "__bp_priv__", { value: { stream } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

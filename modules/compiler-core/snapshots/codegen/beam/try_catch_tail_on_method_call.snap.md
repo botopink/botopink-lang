@@ -15,9 +15,9 @@ fn run(p: Parser) -> i32 {
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
 {module, test@main}.
-{exports, []}.
+{exports, [{'__bp_priv__run', 1}]}.
 {attributes, []}.
-{labels, 7}.
+{labels, 9}.
 
 {function, run, 1, 3}.
   {label, 2}.
@@ -43,6 +43,13 @@ fn run(p: Parser) -> i32 {
     {move, {y, 2}, {x, 0}}.
     {deallocate, 3}.
     return.
+
+{function, '__bp_priv__run', 1, 8}.
+  {label, 7}.
+    {line, [{location, "test@main.erl", 3}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__run'}, 1}.
+  {label, 8}.
+    {call_only, 1, {f, 3}}.
 ```
 
 ----- BEAM ASSEMBLY -- test@main@@ParseError.S

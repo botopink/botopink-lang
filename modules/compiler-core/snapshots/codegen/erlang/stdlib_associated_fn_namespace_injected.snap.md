@@ -13,6 +13,7 @@ fn main() {
 ```erlang
 -module(test@main).
 -export(['_botopink_main'/0, main/1]).
+-export(['__bp_priv__function_identity'/1, '__bp_priv__function_compose'/2, '__bp_priv__function_flip'/1, '__bp_priv__function_constant'/1, '__bp_priv__pair_of'/2, '__bp_priv__pair_first'/1, '__bp_priv__pair_second'/1, '__bp_priv__pair_swap'/1, '__bp_priv__pair_mapFirst'/2, '__bp_priv__pair_mapSecond'/2, '__bp_priv__main'/0]).
 
 %% behavior Function
 
@@ -97,6 +98,28 @@ main() ->
 
 main(_Args) ->
     '_botopink_main'().
+
+'__bp_priv__function_identity'(A0) -> function_identity(A0).
+
+'__bp_priv__function_compose'(A0, A1) -> function_compose(A0, A1).
+
+'__bp_priv__function_flip'(A0) -> function_flip(A0).
+
+'__bp_priv__function_constant'(A0) -> function_constant(A0).
+
+'__bp_priv__pair_of'(A0, A1) -> pair_of(A0, A1).
+
+'__bp_priv__pair_first'(A0) -> pair_first(A0).
+
+'__bp_priv__pair_second'(A0) -> pair_second(A0).
+
+'__bp_priv__pair_swap'(A0) -> pair_swap(A0).
+
+'__bp_priv__pair_mapFirst'(A0, A1) -> pair_mapFirst(A0, A1).
+
+'__bp_priv__pair_mapSecond'(A0, A1) -> pair_mapSecond(A0, A1).
+
+'__bp_priv__main'() -> main().
 ```
 
 ----- RUN LOG -----

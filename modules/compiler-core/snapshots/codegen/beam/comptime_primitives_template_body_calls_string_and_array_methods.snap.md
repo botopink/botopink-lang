@@ -3287,9 +3287,9 @@ fn main() {
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
 {module, test@main}.
-{exports, [{'_botopink_main', 0}, {main, 1}, {s, 0}, {main, 0}]}.
+{exports, [{'_botopink_main', 0}, {main, 1}, {s, 0}, {main, 0}, {'__bp_priv__Array_range', 2}, {'__bp_priv__Array_repeat', 2}]}.
 {attributes, []}.
-{labels, 51}.
+{labels, 55}.
 
 {function, 'Array_range', 2, 3}.
   {label, 2}.
@@ -3410,6 +3410,20 @@ fn main() {
     {func_info, {atom, test@main}, {atom, main}, 1}.
   {label, 13}.
     {call_only, 0, {f, 11}}.
+
+{function, '__bp_priv__Array_range', 2, 52}.
+  {label, 51}.
+    {line, [{location, "test@main.erl", 8}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__Array_range'}, 2}.
+  {label, 52}.
+    {call_only, 2, {f, 3}}.
+
+{function, '__bp_priv__Array_repeat', 2, 54}.
+  {label, 53}.
+    {line, [{location, "test@main.erl", 9}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__Array_repeat'}, 2}.
+  {label, 54}.
+    {call_only, 2, {f, 5}}.
 
 {function, '__bp_print', 1, 23}.
   {label, 22}.

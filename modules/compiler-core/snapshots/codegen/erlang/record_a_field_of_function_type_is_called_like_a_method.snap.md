@@ -20,7 +20,7 @@ pub fn main() {
 ```erlang
 -module(test@main).
 -export(['_botopink_main'/0, main/1]).
--export([main/0]).
+-export([main/0, '__bp_priv__mk'/1]).
 
 %% type Cell: value, set
 
@@ -66,6 +66,8 @@ main() ->
 
 main(_Args) ->
     '_botopink_main'().
+
+'__bp_priv__mk'(A0) -> mk(A0).
 ```
 
 ----- ERLANG -- test@main@@Cell.erl

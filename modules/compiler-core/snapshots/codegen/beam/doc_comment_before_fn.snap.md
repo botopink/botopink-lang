@@ -9,9 +9,9 @@ fn greet(name: string) -> string {
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
 {module, test@main}.
-{exports, []}.
+{exports, [{'__bp_priv__greet', 1}]}.
 {attributes, []}.
-{labels, 4}.
+{labels, 6}.
 %% This function greets the user
 
 {function, greet, 1, 3}.
@@ -25,6 +25,13 @@ fn greet(name: string) -> string {
     {move, {y, 0}, {x, 0}}.
     {deallocate, 1}.
     return.
+
+{function, '__bp_priv__greet', 1, 5}.
+  {label, 4}.
+    {line, [{location, "test@main.erl", 2}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__greet'}, 1}.
+  {label, 5}.
+    {call_only, 1, {f, 3}}.
 ```
 
 ----- RUN LOG -----

@@ -19,6 +19,8 @@ const parity = (() => {
         return value;
     }
 })();
+
+Object.defineProperty(exports, "__bp_priv__", { value: { parity } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

@@ -11,7 +11,7 @@ val txt = box("hi");
 ```erlang
 -module(test@main).
 -compile({no_auto_import,[node/0]}).
--export(['_botopink_init'/0]).
+-export(['_botopink_init'/0, '__bp_priv__node'/0, '__bp_priv__box'/1, '__bp_priv__many'/0, '__bp_priv__one'/0, '__bp_priv__txt'/0]).
 
 node() ->
     <<"n">>.
@@ -42,6 +42,16 @@ txt() ->
     one(),
     txt(),
     ok.
+
+'__bp_priv__node'() -> node().
+
+'__bp_priv__box'(A0) -> box(A0).
+
+'__bp_priv__many'() -> many().
+
+'__bp_priv__one'() -> one().
+
+'__bp_priv__txt'() -> txt().
 ```
 
 ----- RUN LOG -----

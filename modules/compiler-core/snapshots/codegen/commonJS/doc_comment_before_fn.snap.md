@@ -13,6 +13,8 @@ fn greet(name: string) -> string {
 function greet(name) {
     return name;
 }
+
+Object.defineProperty(exports, "__bp_priv__", { value: { greet } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

@@ -12,6 +12,8 @@ function f() {
     const numbers = [1, 2, 3];
     (() => { const _match = numbers; if ((Array.isArray(_match) && _match.length >= 3)) { return _match; } else { throw "not matching"; } })();
 }
+
+Object.defineProperty(exports, "__bp_priv__", { value: { f } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

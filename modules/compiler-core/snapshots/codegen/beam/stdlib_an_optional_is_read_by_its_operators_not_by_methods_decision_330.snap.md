@@ -10,9 +10,9 @@ fn greet(p: Person) -> string {
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
 {module, test@main}.
-{exports, []}.
+{exports, [{'__bp_priv__find', 1}, {'__bp_priv__greet', 1}]}.
 {attributes, []}.
-{labels, 11}.
+{labels, 15}.
 
 {function, find, 1, 3}.
   {label, 2}.
@@ -59,6 +59,20 @@ fn greet(p: Person) -> string {
   {label, 10}.
     {deallocate, 2}.
     return.
+
+{function, '__bp_priv__find', 1, 12}.
+  {label, 11}.
+    {line, [{location, "test@main.erl", 3}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__find'}, 1}.
+  {label, 12}.
+    {call_only, 1, {f, 3}}.
+
+{function, '__bp_priv__greet', 1, 14}.
+  {label, 13}.
+    {line, [{location, "test@main.erl", 4}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__greet'}, 1}.
+  {label, 14}.
+    {call_only, 1, {f, 5}}.
 ```
 
 ----- BEAM ASSEMBLY -- test@main@@Person.S

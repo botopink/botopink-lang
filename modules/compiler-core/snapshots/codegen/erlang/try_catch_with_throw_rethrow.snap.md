@@ -13,6 +13,7 @@ fn strict() -> @Result<i32, string> {
 ----- ERLANG -- main.erl
 ```erlang
 -module(test@main).
+-export(['__bp_priv__fetch'/0, '__bp_priv__strict'/0]).
 
 %% type ApiError: msg
 
@@ -34,6 +35,10 @@ strict() ->
     catch
         throw:{'__bp_try', __BpTryR} -> __BpTryR
     end.
+
+'__bp_priv__fetch'() -> fetch().
+
+'__bp_priv__strict'() -> strict().
 ```
 
 ----- ERLANG -- test@main@@ApiError.erl

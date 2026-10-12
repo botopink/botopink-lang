@@ -8,9 +8,9 @@ fn getFirst(t: #(i32, string)) -> i32 {
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
 {module, test@main}.
-{exports, []}.
+{exports, [{'__bp_priv__getFirst', 1}]}.
 {attributes, []}.
-{labels, 4}.
+{labels, 6}.
 
 {function, getFirst, 1, 3}.
   {label, 2}.
@@ -26,6 +26,13 @@ fn getFirst(t: #(i32, string)) -> i32 {
     {call_ext, 2, {extfunc, erlang, element, 2}}.
     {deallocate, 1}.
     return.
+
+{function, '__bp_priv__getFirst', 1, 5}.
+  {label, 4}.
+    {line, [{location, "test@main.erl", 2}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__getFirst'}, 1}.
+  {label, 5}.
+    {call_only, 1, {f, 3}}.
 ```
 
 ----- RUN LOG -----

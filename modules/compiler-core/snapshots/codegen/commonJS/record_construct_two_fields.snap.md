@@ -19,6 +19,8 @@ Point.prototype.__bp = "Point";
 function make() {
     return new Point(3, 4);
 }
+
+Object.defineProperty(exports, "__bp_priv__", { value: { Point, make } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

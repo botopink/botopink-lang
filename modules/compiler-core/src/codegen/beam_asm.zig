@@ -291,6 +291,17 @@ const LOAD_SIBLINGS = "'__bp_load_siblings'";
 /// with tests from one without.
 const RUN_TESTS = "'__bp_run_tests'";
 
+/// Decision 513 — the reserved export prefix of a private function or
+/// module-level `val` (`erlang.zig`'s `PRIV_PREFIX`), and the test unit's.
+const PRIV_PREFIX = "__bp_priv__";
+const TEST_UNIT_PREFIX = "__test__";
+
+/// `name` without the quotes an atom literal written in this file carries.
+fn unquoted(name: []const u8) []const u8 {
+    if (name.len >= 2 and name[0] == '\'' and name[name.len - 1] == '\'') return name[1 .. name.len - 1];
+    return name;
+}
+
 /// The `botopink test` runner's loop, compiled at build time like a host
 /// template (`lowerTemplateFn`): `__BpA0` is the registry — `[{Name, Fun,
 /// Loc}]`, `Fun` the test's `fun M:'__bp_test_N'/0` — and `__BpA1` the
@@ -1642,7 +1653,7 @@ pub fn codegenEmit(
                 // `botopink test` (`Config.test_mode`): a module's `test`
                 // blocks and their runner; std's own tests are not the
                 // project's.
-                const module_test_mode = config.test_mode and !std.mem.startsWith(u8, ct.name, "std/");
+                const module_test_mode = config.test_mode and !config.packages.idOf(ct.name).package_in_path;
                 const scope = try scopes.forModule(ct.name);
                 const emitted = emitBeamAsm(alloc, ct.name, ct.srcPath, ok.transformed, ok.comptime_vals, ok.dispatch_rewrites, ok.instance_lowerings, &scope.cross, scope.outputs, module_test_mode, &missing) catch |err| {
                     const me = missing orelse return err;
@@ -1666,6 +1677,7 @@ pub fn codegenEmit(
                     .result = .{
                         .js = emitted.code,
                         .units = emitted.units,
+                        .test_unit = emitted.test_unit,
                         .comptime_script = if (ok.comptime_script) |s| try alloc.dupe(u8, s) else null,
                         .comptime_trace = try comptimeMod.trace.renderAlloc(alloc, ok.comptime_traces),
                         .comptime_err = null,
@@ -1697,6 +1709,8 @@ const ExportEntry = beamEmitter.Export;
 pub const EmittedBeam = struct {
     code: []u8,
     units: []moduleOutput.Unit = &.{},
+    /// The module's test unit (decision 513), under `botopink test` only.
+    test_unit: ?moduleOutput.Unit = null,
 };
 
 /// `program` with every host-backed method (`hostMethods`) that has a beam
@@ -1894,10 +1908,12 @@ fn emitBeamAsm(
             else => {},
         }
     }
-    if (test_mode) has_main_0 = false;
-    const has_tests = tests.items.len > 0;
-    // What the entry — `main/1`, the wrapper's or the runner's — runs first.
-    const has_entry = has_main_0 or has_tests;
+    // Decision 513 (1): the production module is the same under `build`,
+    // `run` and `test`; the `test` blocks are the test unit's
+    // (`emitTestUnit`), emitted after it under `botopink test` only.
+    const has_tests = test_mode and tests.items.len > 0;
+    // What the entry — `main/1` — runs first.
+    const has_entry = has_main_0;
 
     // Pass 1: pre-assign labels (func_info, entry) for every emitted function
     // so wrappers and (eventually) local calls can resolve targets by name.
@@ -1952,29 +1968,23 @@ fn emitBeamAsm(
         try em.reserveFn("'_botopink_main'", 0);
         try em.reserveFn("main", 1);
     }
-    if (has_tests) {
-        for (0..tests.items.len) |i| {
-            var name_buf: [64]u8 = undefined;
-            try em.reserveFn(try std.fmt.bufPrint(&name_buf, "__bp_test_{d}", .{i}), 0);
-        }
-        try em.reserveFn(RUN_TESTS, 1);
-        try em.reserveFn("main", 1);
-    }
     // A host `.erl` the build ships beside the assembled modules is compiled
     // and loaded by the entry, before the module body runs — when a module of
     // the build binds a host at all (`emitLoadSiblings`).
-    if (has_entry and buildBindsBeamHost(all_outputs)) {
+    const binds_host = buildBindsBeamHost(all_outputs);
+    if (has_entry and binds_host) {
         em.load_siblings = true;
         try em.reserveFn(LOAD_SIBLINGS, 0);
         try em.reserveFn(LOAD_SIBLING, 1);
     }
-    // Decision 140 — a module without `main/0` runs its body when a program
-    // that imports it starts: `'_botopink_init'/0`, called by the entry.
-    const emit_init = !has_main_0 and em.entry_stmts.items.len > 0;
+    // Decision 140 — a module runs its body when a program that imports it
+    // starts: `'_botopink_init'/0`, called by the entry; a test unit's runner
+    // calls it too (decision 513), so a module with `main/0` carries it as well.
+    const emit_init = em.entry_stmts.items.len > 0;
     if (emit_init) try em.reserveFn("'_botopink_init'", 0);
     // The modules this one imports, transitively, whose body the entry runs
     // before its own, dependencies first.
-    if (has_entry) if (cross) |xc| {
+    if (has_entry or has_tests) if (cross) |xc| {
         var closure: std.ArrayListUnmanaged([]const u8) = .empty;
         defer closure.deinit(alloc);
         var seen: std.StringHashMapUnmanaged(void) = .empty;
@@ -2025,21 +2035,6 @@ fn emitBeamAsm(
         try exports.append(alloc, .{ .name = "main", .arity = 1 });
     }
     if (emit_init) try exports.append(alloc, .{ .name = "'_botopink_init'", .arity = 0 });
-    // The runner's entry, and each test: the registry names them as
-    // `fun M:'__bp_test_N'/0`, which reaches an exported function only.
-    var test_names: std.ArrayListUnmanaged([]u8) = .empty;
-    defer {
-        for (test_names.items) |n| alloc.free(n);
-        test_names.deinit(alloc);
-    }
-    if (has_tests) {
-        try exports.append(alloc, .{ .name = "main", .arity = 1 });
-        for (0..tests.items.len) |i| {
-            const n = try std.fmt.allocPrint(alloc, "__bp_test_{d}", .{i});
-            try test_names.append(alloc, n);
-            try exports.append(alloc, .{ .name = n, .arity = 0 });
-        }
-    }
     for (program.decls) |decl| {
         switch (decl) {
             .@"fn" => |f| if (f.isPub and !isHostDeclare(f)) {
@@ -2097,10 +2092,6 @@ fn emitBeamAsm(
     if (has_main_0) {
         try em.emitEntrypointWrappers();
     }
-    if (has_tests) {
-        for (tests.items, test_names.items) |t, n| try em.emitTestFn(t, n);
-        try em.emitTestRunner(tests.items, test_names.items, emit_init);
-    }
     if (em.load_siblings) try em.emitLoadSiblings();
     if (emit_init) try em.emitInitFunction();
 
@@ -2137,6 +2128,9 @@ fn emitBeamAsm(
             if (seen.arity == ref.arity and std.mem.eql(u8, seen.name, ref.name)) break;
         } else try exports.append(alloc, ref);
     }
+    // Decision 513 (2): every private function and module-level `val` the
+    // module defines answers under its reserved export, in every mode.
+    try em.emitPrivWrappers(program, &exports);
 
     var header: std.Io.Writer.Allocating = .init(alloc);
     defer header.deinit();
@@ -2165,7 +2159,16 @@ fn emitBeamAsm(
     errdefer alloc.free(units);
     for (em.type_units.items, 0..) |u, i| units[i] = u;
     em.type_units.items.len = 0;
-    return .{ .code = code, .units = units };
+    // Decision 513 (1): the module's test unit, after the production module
+    // whose exports it reaches.
+    var test_unit: ?moduleOutput.Unit = null;
+    if (has_tests) {
+        const saved_load = em.load_siblings;
+        em.load_siblings = binds_host;
+        defer em.load_siblings = saved_load;
+        test_unit = try em.emitTestUnit(tests.items, exports.items, emit_init);
+    }
+    return .{ .code = code, .units = units, .test_unit = test_unit };
 }
 
 // ── Emitter ──────────────────────────────────────────────────────────────────
@@ -2236,6 +2239,14 @@ const Emitter = struct {
     type_units: std.ArrayListUnmanaged(moduleOutput.Unit) = .empty,
     /// The `type` whose module is being emitted, or null in the file's own.
     cur_type: ?[]const u8 = null,
+    /// 144 B-64 (decision 513): true while the module's TEST UNIT
+    /// (`'__test__@<pkg>@<mod>'`, `emitTestUnit`) is emitted. A reach into the
+    /// file's functions is then a `call_ext` into the production module — its
+    /// export, else its reserved `'__bp_priv__<name>'` (`emitPrivWrappers`) —
+    /// and records no export of the file module's.
+    test_unit: bool = false,
+    /// The production module's exports while the test unit is emitted.
+    prod_exports: []const ExportEntry = &.{},
     /// The `type`s THIS file declares — the ones whose methods moved out, so a
     /// call site can tell "another module of mine" from "not a type at all".
     own_types: std.StringHashMap(void),
@@ -4181,6 +4192,13 @@ const Emitter = struct {
     /// call into the file's functions becomes a `call_ext` the file module then
     /// exports.
     fn openTypeUnit(self: *Emitter, type_name: []const u8, buf: *std.Io.Writer.Allocating) !SavedBeamUnit {
+        const atom = try crossModule.typeAtom(self.atom_arena.allocator(), self.idOf(self.module_path), type_name);
+        return self.openUnit(atom, type_name, buf);
+    }
+
+    /// Open a unit named `atom` beside the file's module — a `type`'s
+    /// (`cur_type` its name) or the test unit (`cur_type` null).
+    fn openUnit(self: *Emitter, atom: []const u8, cur_type: ?[]const u8, buf: *std.Io.Writer.Allocating) !SavedBeamUnit {
         const saved: SavedBeamUnit = .{
             .template_fns = self.template_fns,
             .template_count = self.template_count,
@@ -4200,11 +4218,11 @@ const Emitter = struct {
             .exports = .empty,
             .helpers = self.takeHelperNames(),
         };
-        self.module_name = try crossModule.typeAtom(self.atom_arena.allocator(), self.idOf(self.module_path), type_name);
+        self.module_name = atom;
         self.out = &buf.writer;
         self.next_label = 2;
         self.lambda_count = 0;
-        self.cur_type = type_name;
+        self.cur_type = cur_type;
         // `file_labels` / `file_atom` are set by the caller, which owns the
         // frame the saved table lives in.
         self.fn_labels = std.StringHashMap(FnLabels).init(self.alloc);
@@ -5296,6 +5314,92 @@ const Emitter = struct {
 
     // ── entrypoint wrappers when main/0 exists ───────────────────────────────
 
+    /// Decision 513 (1): the module's test unit, `'__test__@<pkg>@<mod>'` —
+    /// its `test` blocks as `'__bp_test_N'/0`, the registry and runner, and the
+    /// entry `main/1` — opened like a `type`'s unit beside the file module,
+    /// whose functions it reaches by `call_ext` (`tryFileCall`, `fileFnAtom`).
+    fn emitTestUnit(self: *Emitter, tests: []const ast.TestDecl, prod_exports: []const ExportEntry, run_init: bool) !moduleOutput.Unit {
+        var buf: std.Io.Writer.Allocating = .init(self.alloc);
+        defer buf.deinit();
+        const atom = try std.fmt.allocPrint(self.atom_arena.allocator(), TEST_UNIT_PREFIX ++ "@{s}", .{self.module_name});
+        var unit = try self.openUnit(atom, null, &buf);
+        defer unit.exports.deinit(self.alloc);
+        self.file_labels = &unit.fn_labels;
+        self.file_atom = unit.module_name;
+        self.test_unit = true;
+        self.prod_exports = prod_exports;
+        defer {
+            self.test_unit = false;
+            self.prod_exports = &.{};
+        }
+        const names = try self.atom_arena.allocator().alloc([]const u8, tests.len);
+        for (names, 0..) |*n, i| {
+            n.* = try std.fmt.allocPrint(self.atom_arena.allocator(), "__bp_test_{d}", .{i});
+            try self.reserveFn(n.*, 0);
+            try unit.exports.append(self.alloc, .{ .name = n.*, .arity = 0 });
+        }
+        try self.reserveFn(RUN_TESTS, 1);
+        try self.reserveFn("main", 1);
+        try unit.exports.append(self.alloc, .{ .name = "main", .arity = 1 });
+        if (self.load_siblings) {
+            try self.reserveFn(LOAD_SIBLINGS, 0);
+            try self.reserveFn(LOAD_SIBLING, 1);
+        }
+        for (tests, names) |t, n| try self.emitTestFn(t, n);
+        try self.emitTestRunner(tests, names, run_init);
+        if (self.load_siblings) try self.emitLoadSiblings();
+        try self.closeTypeUnit(atom, &unit, &buf);
+        return self.type_units.pop().?;
+    }
+
+    /// Decision 513 (2): `'__bp_priv__<name>'/N` for every function of the
+    /// production module that is a private `fn`, a module-level `val`'s
+    /// reader, an `implement` / `extend` method or a module `var`'s storage
+    /// helper and is not exported already — a `call_only` to it, exported.
+    /// Read off the reserved labels, so a wrapper never names a function the
+    /// module does not define.
+    fn emitPrivWrappers(self: *Emitter, program: ast.Program, exports: *std.ArrayListUnmanaged(ExportEntry)) !void {
+        const arena = self.atom_arena.allocator();
+        var names: std.StringHashMapUnmanaged(void) = .empty;
+        for (program.decls) |decl| switch (decl) {
+            .@"fn" => |f| try names.put(arena, f.name, {}),
+            .val => |v| try names.put(arena, v.name, {}),
+            .implement => |im| for (im.methods) |m| try names.put(arena, try std.fmt.allocPrint(arena, "'{s}_{s}'", .{ m.qualifier orelse im.target, m.name }), {}),
+            .extend => |ex| for (ex.methods) |m| try names.put(arena, try std.fmt.allocPrint(arena, "'{s}_{s}'", .{ m.qualifier orelse ex.target, m.name }), {}),
+            .behavior => |bh| for (bh.methods) |m| try names.put(arena, try std.fmt.allocPrint(arena, "'{s}_{s}'", .{ bh.name, m.name }), {}),
+            else => {},
+        };
+        for ([_][]const u8{ MEM_PD_SET, MEM_ETS_GUARD, MEM_ETS_ADD, MEM_ETS_SET, MEM_ETS_AT, MEM_ETS_ROW }) |n| try names.put(arena, n, {});
+        // The candidates, sorted, so the wrappers come out in one order.
+        var keys: std.ArrayListUnmanaged([]const u8) = .empty;
+        var it = self.fn_labels.keyIterator();
+        while (it.next()) |k| {
+            const slash = std.mem.lastIndexOfScalar(u8, k.*, '/') orelse continue;
+            if (!names.contains(k.*[0..slash])) continue;
+            try keys.append(arena, k.*);
+        }
+        std.mem.sort([]const u8, keys.items, {}, struct {
+            fn lt(_: void, a: []const u8, b: []const u8) bool {
+                return std.mem.lessThan(u8, a, b);
+            }
+        }.lt);
+        for (keys.items) |k| {
+            const slash = std.mem.lastIndexOfScalar(u8, k, '/').?;
+            const name = k[0..slash];
+            const arity = std.fmt.parseInt(usize, k[slash + 1 ..], 10) catch continue;
+            const exported = for (exports.items) |e| {
+                if (e.arity == arity and std.mem.eql(u8, e.name, name)) break true;
+            } else false;
+            if (exported) continue;
+            const target = self.fn_labels.get(k).?;
+            const wrapper = try std.fmt.allocPrint(arena, "'" ++ PRIV_PREFIX ++ "{s}'", .{unquoted(name)});
+            try self.reserveFn(wrapper, arity);
+            try self.beginHelper(wrapper, arity);
+            try beamEmitter.writeCall(self.out, .only, arity, .{ .local = target.entry }, 0);
+            try exports.append(self.alloc, .{ .name = wrapper, .arity = arity });
+        }
+    }
+
     /// A `test "name" { … }` block as `'__bp_test_N'/0` (`name`): its body
     /// lowered like a function's, with decision 74's `try` (`in_test_body`).
     fn emitTestFn(self: *Emitter, t: ast.TestDecl, name: []const u8) !void {
@@ -5355,9 +5459,10 @@ const Emitter = struct {
         for (self.import_inits.items) |dep| {
             try beamEmitter.writeCall(w, .normal, 0, .{ .ext = .{ .module = dep, .function = "'_botopink_init'" } }, 0);
         }
+        // The production module's body (decision 513: the runner is the
+        // test unit's, the body the production module's).
         if (run_init) {
-            const init_fn = try self.fnLabelsFor("'_botopink_init'", 0);
-            try beamEmitter.writeCall(w, .normal, 0, .{ .local = init_fn.entry }, 0);
+            try beamEmitter.writeCall(w, .normal, 0, .{ .ext = .{ .module = self.file_atom, .function = "'_botopink_init'" } }, 0);
         }
         try beamEmitter.writeMoveOp(w, Op.yr(0), Dst.xr(0));
         const run = try self.fnLabelsFor(RUN_TESTS, 1);
@@ -6120,7 +6225,7 @@ const Emitter = struct {
                     // (`apply(one)`, `xs.map(inc)`): its fun, a `make_fun3` over
                     // the function's own entry with no environment — erlang's
                     // `fun one/0`. It was `{unresolved_identifier, one}`.
-                    if (self.cur_type == null and self.top_fns.get(n) != null and self.top_fns.get(n).? != std.math.maxInt(usize)) {
+                    if (!self.inForeignUnit() and self.top_fns.get(n) != null and self.top_fns.get(n).? != std.math.maxInt(usize)) {
                         const arity = self.top_fns.get(n).?;
                         if (self.fnLabelsFor(n, arity)) |labels| {
                             try self.emitMakeFun(labels.entry, 0, &.{});
@@ -6133,10 +6238,10 @@ const Emitter = struct {
                     // modules (policy 3), so the file's exported fun —
                     // erlang's `fun 'app@main':ok/1`. It was
                     // `{unresolved_identifier, ok}`.
-                    if (self.cur_type != null) if (self.top_fns.get(n)) |arity| if (arity != std.math.maxInt(usize) and self.isFileFn(n, arity)) {
+                    if (self.inForeignUnit()) if (self.top_fns.get(n)) |arity| if (arity != std.math.maxInt(usize) and self.isFileFn(n, arity)) {
                         const owner = try self.fileCallTarget(n, arity);
                         var fn_buf: [256]u8 = undefined;
-                        const fn_atom = atomName(n, &fn_buf) catch n;
+                        const fn_atom = try self.fileFnAtom(n, arity, &fn_buf);
                         try beamEmitter.writeMoveOp(self.out, .{ .ext_fun = .{ .module = owner, .name = fn_atom, .arity = arity } }, Dst.xr(0));
                         return;
                     };
@@ -7025,6 +7130,13 @@ const Emitter = struct {
                             }
                             return;
                         } else |_| {}
+                        // From the test unit (decision 513): the file module's
+                        // mangled local, through its export.
+                        if (self.test_unit and self.isFileFn(mangled, arity)) {
+                            const owned = try self.atom_arena.allocator().dupe(u8, mangled);
+                            try self.materializeCallArgs(cc.args, cc.trailing);
+                            if (try self.tryFileCall(owned, arity, mode, self.num_y)) return;
+                        }
                     }
                     const total = cc.args.len + cc.trailing.len;
                     try self.materializeCallArgs(cc.args, cc.trailing);
@@ -7072,7 +7184,7 @@ const Emitter = struct {
             // A value-receiver call answered by one of the FILE module's
             // functions, made from inside a type's: a `call_ext`, because
             // policy 3 put the two in separate modules.
-            if (self.cur_type != null and self.isFileFn(cc.callee, total_arity)) {
+            if (self.inForeignUnit() and self.isFileFn(cc.callee, total_arity)) {
                 const st = try self.stageCall(recv_expr, cc.args, &[_]ast.TrailingLambda{});
                 try self.placeStaged(&st);
                 if (try self.tryFileCall(cc.callee, total_arity, mode, self.num_y)) return;
@@ -7164,7 +7276,7 @@ const Emitter = struct {
 
         // One of the FILE module's functions, called from inside a type's: the
         // two are separate modules under policy 3.
-        if (self.cur_type != null and self.isFileFn(cc.callee, arity)) {
+        if (self.inForeignUnit() and self.isFileFn(cc.callee, arity)) {
             try self.materializeCallArgs(cc.args, cc.trailing);
             if (try self.tryFileCall(cc.callee, arity, mode, self.num_y)) return;
         }
@@ -7345,11 +7457,11 @@ const Emitter = struct {
     /// answers true; false when there is no unit open or the name is not one of
     /// the file's, and the caller keeps its own path.
     fn tryFileCall(self: *Emitter, name: []const u8, arity: usize, mode: CallMode, live: u32) anyerror!bool {
-        if (self.cur_type == null) return false;
+        if (!self.inForeignUnit()) return false;
         if (!self.isFileFn(name, arity)) return false;
         const owner = try self.fileCallTarget(name, arity);
         var fn_buf: [256]u8 = undefined;
-        const fn_atom = atomName(name, &fn_buf) catch name;
+        const fn_atom = try self.fileFnAtom(name, arity, &fn_buf);
         try beamEmitter.writeCall(
             self.out,
             if (mode == .tail) .last else .normal,
@@ -7398,6 +7510,13 @@ const Emitter = struct {
             }
             return true;
         } else |_| {}
+        // The file module's mangled local reached from a unit beside it (the
+        // test unit, decision 513): a `call_ext` to its export.
+        if (self.test_unit and self.isFileFn(name, arity)) {
+            const owned = try self.atom_arena.allocator().dupe(u8, name);
+            try self.materializeCallArgs(cc.args, cc.trailing);
+            if (try self.tryFileCall(owned, arity, mode, self.num_y)) return true;
+        }
         return false;
     }
 
@@ -7437,6 +7556,24 @@ const Emitter = struct {
         return std.fmt.bufPrint(buf, "'{s}_{s}'", .{ owner, method });
     }
 
+    /// True while the emitted body belongs to another module than the file's
+    /// own — a `type`'s unit (policy 3) or the test unit (decision 513).
+    fn inForeignUnit(self: *const Emitter) bool {
+        return self.cur_type != null or self.test_unit;
+    }
+
+    /// The function atom a unit calls the file module's `name/arity` by: the
+    /// name itself, or — from the test unit, when the production module does
+    /// not export it — its reserved export `'__bp_priv__<name>'` (decision 513).
+    fn fileFnAtom(self: *Emitter, name: []const u8, arity: usize, buf: []u8) ![]const u8 {
+        if (self.test_unit) {
+            for (self.prod_exports) |e| {
+                if (e.arity == arity and std.mem.eql(u8, e.name, name)) break;
+            } else return try std.fmt.allocPrint(self.atom_arena.allocator(), "'" ++ PRIV_PREFIX ++ "{s}'", .{unquoted(name)});
+        }
+        return atomName(name, buf) catch name;
+    }
+
     /// True when a unit is open and `name/arity` is one of the FILE module's
     /// functions — a call to it is a `call_ext` the file module has to export.
     fn isFileFn(self: *Emitter, name: []const u8, arity: usize) bool {
@@ -7449,6 +7586,7 @@ const Emitter = struct {
     /// Note that the file module must export `name/arity`, reached from inside
     /// a type module, and answer the file's atom to call it in.
     fn fileCallTarget(self: *Emitter, name: []const u8, arity: usize) ![]const u8 {
+        if (self.test_unit) return self.file_atom;
         const key = try fnKey(self.atom_arena.allocator(), name, arity);
         const gop = try self.file_exports_needed.getOrPut(self.alloc, key);
         if (!gop.found_existing) gop.value_ptr.* = .{ .name = name, .arity = arity };

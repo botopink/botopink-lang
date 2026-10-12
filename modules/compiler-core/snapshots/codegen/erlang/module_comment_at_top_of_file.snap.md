@@ -11,6 +11,7 @@ fn capitalize(s: string) -> string {
 ----- ERLANG -- main.erl
 ```erlang
 -module(test@main).
+-export(['__bp_priv__capitalize'/1]).
 
 %%% This module provides utility functions
 
@@ -18,6 +19,8 @@ fn capitalize(s: string) -> string {
 
 capitalize(S) ->
     S.
+
+'__bp_priv__capitalize'(A0) -> capitalize(A0).
 ```
 
 ----- RUN LOG -----

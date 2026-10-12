@@ -323,9 +323,9 @@ test "path.isInside treats a name starting with two dots as a name" {
 ----- BEAM ASSEMBLY -- std/path.S
 ```erlang
 {module, std@path}.
-{exports, [{separator, 0}, {delimiter, 0}, {split, 1}, {isAbsolute, 1}, {basename, 1}, {dirname, 1}, {extname, 1}, {join, 1}, {normalize, 1}, {relative, 2}, {resolve, 1}, {withoutExtension, 1}, {isInside, 2}]}.
+{exports, [{separator, 0}, {delimiter, 0}, {split, 1}, {isAbsolute, 1}, {basename, 1}, {dirname, 1}, {extname, 1}, {join, 1}, {normalize, 1}, {relative, 2}, {resolve, 1}, {withoutExtension, 1}, {isInside, 2}, {'__bp_priv__Array_range', 2}, {'__bp_priv__Array_repeat', 2}, {'__bp_priv__String_slice', 3}, {'__bp_priv__applyPieces', 2}, {'__bp_priv__commonPrefixCount', 3}, {'__bp_priv__makeUps', 1}, {'__bp_priv__resolveAll', 3}, {'__bp_priv__resolveStep', 2}]}.
 {attributes, []}.
-{labels, 238}.
+{labels, 254}.
 
 {function, 'Array_range', 2, 3}.
   {label, 2}.
@@ -1417,6 +1417,62 @@ test "path.isInside treats a name starting with two dots as a name" {
     {move, {y, 1}, {x, 1}}.
     {call_last, 2, {f, 221}, 3}.
 
+{function, '__bp_priv__Array_range', 2, 239}.
+  {label, 238}.
+    {line, [{location, "std@path.erl", 23}]}.
+    {func_info, {atom, std@path}, {atom, '__bp_priv__Array_range'}, 2}.
+  {label, 239}.
+    {call_only, 2, {f, 3}}.
+
+{function, '__bp_priv__Array_repeat', 2, 241}.
+  {label, 240}.
+    {line, [{location, "std@path.erl", 24}]}.
+    {func_info, {atom, std@path}, {atom, '__bp_priv__Array_repeat'}, 2}.
+  {label, 241}.
+    {call_only, 2, {f, 5}}.
+
+{function, '__bp_priv__String_slice', 3, 243}.
+  {label, 242}.
+    {line, [{location, "std@path.erl", 25}]}.
+    {func_info, {atom, std@path}, {atom, '__bp_priv__String_slice'}, 3}.
+  {label, 243}.
+    {call_only, 3, {f, 186}}.
+
+{function, '__bp_priv__applyPieces', 2, 245}.
+  {label, 244}.
+    {line, [{location, "std@path.erl", 26}]}.
+    {func_info, {atom, std@path}, {atom, '__bp_priv__applyPieces'}, 2}.
+  {label, 245}.
+    {call_only, 2, {f, 31}}.
+
+{function, '__bp_priv__commonPrefixCount', 3, 247}.
+  {label, 246}.
+    {line, [{location, "std@path.erl", 27}]}.
+    {func_info, {atom, std@path}, {atom, '__bp_priv__commonPrefixCount'}, 3}.
+  {label, 247}.
+    {call_only, 3, {f, 25}}.
+
+{function, '__bp_priv__makeUps', 1, 249}.
+  {label, 248}.
+    {line, [{location, "std@path.erl", 28}]}.
+    {func_info, {atom, std@path}, {atom, '__bp_priv__makeUps'}, 1}.
+  {label, 249}.
+    {call_only, 1, {f, 27}}.
+
+{function, '__bp_priv__resolveAll', 3, 251}.
+  {label, 250}.
+    {line, [{location, "std@path.erl", 29}]}.
+    {func_info, {atom, std@path}, {atom, '__bp_priv__resolveAll'}, 3}.
+  {label, 251}.
+    {call_only, 3, {f, 35}}.
+
+{function, '__bp_priv__resolveStep', 2, 253}.
+  {label, 252}.
+    {line, [{location, "std@path.erl", 30}]}.
+    {func_info, {atom, std@path}, {atom, '__bp_priv__resolveStep'}, 2}.
+  {label, 253}.
+    {call_only, 2, {f, 33}}.
+
 {function, '__bp_tpl_0-t/2-fun-0-', 2, 55}.
   {label, 54}.
     {func_info, {atom, std@path}, {atom, '__bp_tpl_0-t/2-fun-0-'}, 2}.
@@ -2416,9 +2472,9 @@ test "fs.glob of a root that does not exist answers the empty list" {
 ----- BEAM ASSEMBLY -- std/io/fs.S
 ```erlang
 {module, std@io@fs}.
-{exports, [{readText, 1}, {writeText, 2}, {exists, 1}, {list, 1}, {mkdir, 1}, {mkdirRecursive, 1}, {rm, 1}, {copy, 2}, {stat, 1}, {walk, 1}, {glob, 2}, {removeTree, 1}]}.
+{exports, [{readText, 1}, {writeText, 2}, {exists, 1}, {list, 1}, {mkdir, 1}, {mkdirRecursive, 1}, {rm, 1}, {copy, 2}, {stat, 1}, {walk, 1}, {glob, 2}, {removeTree, 1}, {'__bp_priv__globbed', 1}, {'__bp_priv__makeFixtureTree', 1}, {'__bp_priv__makeGlobTree', 1}, {'__bp_priv__statOr', 1}, {'__bp_priv__walkFixture', 1}, {'__bp_priv__walkFixtureFromCwd', 1}, {'__bp_priv__walkRefusal', 1}]}.
 {attributes, []}.
-{labels, 419}.
+{labels, 433}.
 %%% std/io/fs — synchronous filesystem primitives, cross-backend.
 %%% 
 %%% Reference:
@@ -3143,6 +3199,55 @@ test "fs.glob of a root that does not exist answers the empty list" {
     {move, {x, 0}, {x, 1}}.
     {move, {y, 4}, {x, 0}}.
     {call_last, 2, {f, 368}, 7}.
+
+{function, '__bp_priv__globbed', 1, 420}.
+  {label, 419}.
+    {line, [{location, "std@io@fs.erl", 20}]}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_priv__globbed'}, 1}.
+  {label, 420}.
+    {call_only, 1, {f, 15}}.
+
+{function, '__bp_priv__makeFixtureTree', 1, 422}.
+  {label, 421}.
+    {line, [{location, "std@io@fs.erl", 21}]}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_priv__makeFixtureTree'}, 1}.
+  {label, 422}.
+    {call_only, 1, {f, 5}}.
+
+{function, '__bp_priv__makeGlobTree', 1, 424}.
+  {label, 423}.
+    {line, [{location, "std@io@fs.erl", 22}]}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_priv__makeGlobTree'}, 1}.
+  {label, 424}.
+    {call_only, 1, {f, 13}}.
+
+{function, '__bp_priv__statOr', 1, 426}.
+  {label, 425}.
+    {line, [{location, "std@io@fs.erl", 23}]}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_priv__statOr'}, 1}.
+  {label, 426}.
+    {call_only, 1, {f, 3}}.
+
+{function, '__bp_priv__walkFixture', 1, 428}.
+  {label, 427}.
+    {line, [{location, "std@io@fs.erl", 24}]}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_priv__walkFixture'}, 1}.
+  {label, 428}.
+    {call_only, 1, {f, 7}}.
+
+{function, '__bp_priv__walkFixtureFromCwd', 1, 430}.
+  {label, 429}.
+    {line, [{location, "std@io@fs.erl", 25}]}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_priv__walkFixtureFromCwd'}, 1}.
+  {label, 430}.
+    {call_only, 1, {f, 9}}.
+
+{function, '__bp_priv__walkRefusal', 1, 432}.
+  {label, 431}.
+    {line, [{location, "std@io@fs.erl", 26}]}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_priv__walkRefusal'}, 1}.
+  {label, 432}.
+    {call_only, 1, {f, 11}}.
 
 {function, '__bp_tpl_0-t/1-fun-0-', 1, 21}.
   {label, 20}.

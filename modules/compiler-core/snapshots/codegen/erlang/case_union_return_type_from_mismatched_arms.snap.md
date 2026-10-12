@@ -9,7 +9,7 @@ val result = case 42 {
 ----- ERLANG -- main.erl
 ```erlang
 -module(test@main).
--export(['_botopink_init'/0]).
+-export(['_botopink_init'/0, '__bp_priv__result'/0]).
 
 result() ->
     case persistent_term:get({test@main, result}, '__bp_unset') of
@@ -25,6 +25,8 @@ result() ->
 '_botopink_init'() ->
     result(),
     ok.
+
+'__bp_priv__result'() -> result().
 ```
 
 ----- RUN LOG -----

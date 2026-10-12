@@ -12,6 +12,8 @@ function make() {
     const outer = [[1, 2], 3];
     return outer;
 }
+
+Object.defineProperty(exports, "__bp_priv__", { value: { make } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

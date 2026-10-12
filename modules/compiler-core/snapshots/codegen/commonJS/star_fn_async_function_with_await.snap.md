@@ -21,6 +21,8 @@ async function loadTwice(x) {
     const a = await fetch(x);
     return __bp_int((a + a), -2147483648, 2147483647, "+ on i32 at main.bp:6:14");
 }
+
+Object.defineProperty(exports, "__bp_priv__", { value: { fetch, loadTwice } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

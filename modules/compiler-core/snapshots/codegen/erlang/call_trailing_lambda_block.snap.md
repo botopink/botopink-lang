@@ -14,6 +14,7 @@ fn main() {
 ```erlang
 -module(test@main).
 -export(['_botopink_main'/0, main/1]).
+-export(['__bp_priv__run'/0, '__bp_priv__main'/0]).
 
 run() ->
     erlang:error({todo, <<"not implemented">>}).
@@ -29,6 +30,10 @@ main() ->
 
 main(_Args) ->
     '_botopink_main'().
+
+'__bp_priv__run'() -> run().
+
+'__bp_priv__main'() -> main().
 ```
 
 ----- RUN LOG -----

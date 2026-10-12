@@ -17,6 +17,7 @@ fn main() {
 ```erlang
 -module(test@main).
 -export(['_botopink_main'/0, main/1]).
+-export(['__bp_priv__check'/1, '__bp_priv__main'/0]).
 
 check(X) ->
     case (X > 0) of
@@ -58,6 +59,10 @@ main() ->
 
 main(_Args) ->
     '_botopink_main'().
+
+'__bp_priv__check'(A0) -> check(A0).
+
+'__bp_priv__main'() -> main().
 ```
 
 ----- RUN LOG -----

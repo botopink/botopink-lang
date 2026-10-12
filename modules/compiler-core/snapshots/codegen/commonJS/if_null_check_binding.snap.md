@@ -14,6 +14,8 @@ function getName(name) {
     { const n = name; if (n != null) { return n; } }
     return "unknown";
 }
+
+Object.defineProperty(exports, "__bp_priv__", { value: { getName } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

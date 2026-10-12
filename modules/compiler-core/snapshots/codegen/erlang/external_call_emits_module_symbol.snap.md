@@ -13,7 +13,7 @@ fn main() {
 ```erlang
 -module(test@main).
 -export(['_botopink_main'/0, main/1]).
--export([basename/1]).
+-export([basename/1, '__bp_priv__main'/0]).
 
 %% external fn basename -> filename:basename
 basename(P) ->
@@ -69,6 +69,8 @@ main(_Args) ->
             end, filelib:wildcard(filename:join(filename:dirname(Path), "*.erl")));
         _ -> ok
     end.
+
+'__bp_priv__main'() -> main().
 ```
 
 ----- RUN LOG -----

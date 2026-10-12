@@ -15,6 +15,7 @@ fn main() {
 ```erlang
 -module(test@main).
 -export(['_botopink_main'/0, main/1]).
+-export(['__bp_priv__main'/0, '__bp_priv__coerce_$0'/1, '__bp_priv__coerce_$1'/1]).
 
 main() ->
     A = 'coerce_$0'(1),
@@ -33,6 +34,12 @@ main() ->
 
 main(_Args) ->
     '_botopink_main'().
+
+'__bp_priv__main'() -> main().
+
+'__bp_priv__coerce_$0'(A0) -> 'coerce_$0'(A0).
+
+'__bp_priv__coerce_$1'(A0) -> 'coerce_$1'(A0).
 ```
 
 ----- RUN LOG -----

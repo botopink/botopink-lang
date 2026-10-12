@@ -22,6 +22,8 @@ function f() {
     const _assert0 = (() => { const _match = r; if ((_match instanceof Person)) { return _match; } else { return new Person("bob", 12); } })();
     const { name, age } = _assert0;
 }
+
+Object.defineProperty(exports, "__bp_priv__", { value: { Person, f } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

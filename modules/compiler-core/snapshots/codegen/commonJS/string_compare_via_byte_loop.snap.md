@@ -10,6 +10,8 @@ fn sameWord() -> bool {
 function sameWord() {
     return ("foo" === "bar");
 }
+
+Object.defineProperty(exports, "__bp_priv__", { value: { sameWord } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

@@ -23,7 +23,7 @@ test "t: a lambda's try is its own" {
 ----- ERLANG -- main.erl
 ```erlang
 -module(test@main).
--export([main/1]).
+-export(['__bp_priv__failing'/0, '__bp_priv__passing'/0]).
 
 failing() ->
     {error, <<"boom">>}.
@@ -31,15 +31,28 @@ failing() ->
 passing() ->
     {ok, undefined}.
 
+
+
+
+'__bp_priv__failing'() -> failing().
+
+'__bp_priv__passing'() -> passing().
+```
+
+----- ERLANG TEST UNIT -- __test__@test@main.erl
+```erlang
+-module('__test__@test@main').
+-export([main/1]).
+
 '__bp_test_0'() ->
-    case failing() of
+    case test@main:'__bp_priv__failing'() of
         {ok, _TryV0} ->
             '__bp_print'([<<"not reached">>]);
         {error, _TryE0} -> erlang:error({bp_assert, _TryE0, <<"main.bp:7">>})
     end.
 
 '__bp_test_1'() ->
-    case passing() of
+    case test@main:'__bp_priv__passing'() of
         {ok, _TryV0} ->
             '__bp_print'([<<"reached">>]);
         {error, _TryE0} -> erlang:error({bp_assert, _TryE0, <<"main.bp:11">>})
@@ -47,7 +60,7 @@ passing() ->
 
 '__bp_test_2'() ->
     F = fun() ->
-        case failing() of
+        case test@main:'__bp_priv__failing'() of
             {ok, _TryV0} ->
                 {ok, 0};
             {error, _TryE0} -> {error, _TryE0}
@@ -131,8 +144,79 @@ passing() ->
     io:format("~p passed, ~p failed~n", [Passed, Failed]),
     case Failed > 0 of true -> erlang:halt(1); false -> ok end.
 
+'__bp_load_siblings'() ->
+    (fun() ->
+        Dir = filename:dirname(filename:absname(escript:script_name())),
+        Self = erlang:atom_to_list(?MODULE) ++ ".erl",
+        Compiled = lists:foldl(fun(Src, Acc) ->
+            case filename:basename(Src) =:= Self of
+                true -> Acc;
+                false ->
+                    case '__bp_prebuilt'(Src) of
+                        {ok, Mod, Bin} -> [{Mod, Src, Bin} | Acc];
+                        none ->
+                            case compile:file(Src, [binary, return_errors, {i, Dir}]) of
+                                {ok, Mod, Bin} -> [{Mod, Src, Bin} | Acc];
+                                Bad -> '__bp_dead_module'(Src, Bad)
+                            end
+                    end
+            end
+        end, [], filelib:wildcard(filename:join([Dir, "**", "*.erl"]))),
+        '__bp_load_all'(lists:reverse(Compiled))
+    end)().
+
+'__bp_prebuilt'(Src) ->
+    case file:read_file(filename:rootname(Src) ++ ".beam") of
+        {ok, Bin} ->
+            case beam_lib:chunks(Bin, []) of
+                {ok, {Mod, _}} -> {ok, Mod, Bin};
+                _ -> none
+            end;
+        _ -> none
+    end.
+
+'__bp_dead_module'(Src, Bad) ->
+    io:format(standard_error,
+        "error: ~ts does not compile — refusing to run the tests of ~ts~n",
+        [Src, escript:script_name()]),
+    case Bad of
+        {error, Errors, _Warnings} ->
+            lists:foreach(fun({File, Ds}) ->
+                lists:foreach(fun(D) ->
+                    io:format(standard_error, "  ~ts:~ts~n", [File, '__bp_error_text'(D)])
+                end, Ds)
+            end, Errors);
+        Other ->
+            io:format(standard_error, "  ~p~n", [Other])
+    end,
+    erlang:halt(1).
+
+'__bp_error_text'(D) ->
+    case D of
+        {Loc, Mod, Desc} ->
+            io_lib:format("~ts ~ts", ['__bp_error_loc'(Loc),
+                try Mod:format_error(Desc) catch _:_ -> io_lib:format("~p", [Desc]) end]);
+        Other ->
+            io_lib:format(" ~p", [Other])
+    end.
+
+'__bp_error_loc'(Loc) ->
+    case Loc of
+        {L, C} -> io_lib:format("~p:~p:", [L, C]);
+        L when erlang:is_integer(L) -> io_lib:format("~p:", [L]);
+        _ -> ""
+    end.
+
+'__bp_load_all'(Pending) ->
+    case [P || {Mod, Src, Bin} = P <- Pending, code:load_binary(Mod, Src, Bin) =/= {module, Mod}] of
+        [] -> ok;
+        Failed when erlang:length(Failed) < erlang:length(Pending) -> '__bp_load_all'(Failed);
+        _ -> ok
+    end.
+
 main(Args) ->
     io:setopts(standard_io, [{encoding, unicode}]),
+    '__bp_load_siblings'(),
     Filter = case Args of
         [F | _] -> erlang:list_to_binary(F);
         _ -> none

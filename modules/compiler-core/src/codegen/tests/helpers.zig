@@ -657,15 +657,17 @@ pub fn assertErlangTestModeContains(
     }
     for (outputs.items) |o| {
         if (!std.mem.eql(u8, o.name, "") and !std.mem.eql(u8, o.name, "main")) continue;
+        // The runner is the module's test unit's (decision 513).
+        const code = if (o.result.test_unit) |u| u.code else return error.NoTestUnit;
         for (present) |needle| {
-            if (std.mem.indexOf(u8, o.result.js, needle) == null) {
-                std.debug.print("\n=== generated erlang (test mode) ===\n{s}\n=== missing needle: {s} ===\n", .{ o.result.js, needle });
+            if (std.mem.indexOf(u8, code, needle) == null) {
+                std.debug.print("\n=== generated erlang test unit ===\n{s}\n=== missing needle: {s} ===\n", .{ code, needle });
                 return error.NeedleNotFound;
             }
         }
         for (absent) |needle| {
-            if (std.mem.indexOf(u8, o.result.js, needle) != null) {
-                std.debug.print("\n=== generated erlang (test mode) ===\n{s}\n=== unexpected needle: {s} ===\n", .{ o.result.js, needle });
+            if (std.mem.indexOf(u8, code, needle) != null) {
+                std.debug.print("\n=== generated erlang test unit ===\n{s}\n=== unexpected needle: {s} ===\n", .{ code, needle });
                 return error.UnexpectedNeedle;
             }
         }
@@ -1025,7 +1027,11 @@ pub fn assertTestModeRunLog(allocator: Allocator, src: []const u8, expected: []c
             if (o.result.failed()) break;
             ran_one = true;
             const target: runtime.TestTarget = if (cfg.targetSource == .commonJS) .commonJS else .erlang;
-            const raw = try runtime.executeTestModule(allocator, io, target, o.result.js);
+            const unit = o.result.test_unit orelse {
+                if (first_err == null) first_err = error.NoTestUnit;
+                continue;
+            };
+            const raw = try runtime.executeTestModule(allocator, io, target, o.result.js, unit);
             defer allocator.free(raw);
             const got = try stripDurationLines(allocator, raw);
             defer allocator.free(got);

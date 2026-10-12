@@ -12,6 +12,8 @@ const hostRuntime = @import("./comptime/runtime/runtime.zig");
 
 pub const Module = moduleMod.Module;
 pub const ModuleOutput = moduleOutput.ModuleOutput;
+/// A module's extra units (a `type`'s module, the test unit — decision 513).
+pub const Unit = moduleOutput.Unit;
 pub const ComptimeSession = comptimeMod.ComptimeSession;
 pub const ComptimeOutput = comptimeMod.ComptimeOutput;
 
@@ -139,8 +141,8 @@ pub fn generateWith(
     defer session.deinit(allocator);
     // The code cache's level B CODE (144 B-60 S4): a dependency module whose
     // entry holds its unit is not emitted again, and an entry without one is
-    // staged again with it. Not under `botopink test`: it emits a
-    // dependency's test blocks (until B-64), which no entry holds.
+    // staged again with it. Not under `botopink test`, which reads and
+    // records no CODE.
     var cfg = config;
     if (!config.test_mode) cfg.level_b_code = session.level_b_code;
     var outputs = try emit(allocator, session.outputs.items, cfg);
@@ -178,10 +180,18 @@ pub fn generateWith(
     for (outputs.items) |*output| {
         if (!output.result.failed()) {
             output.result.run_output = switch (config.targetSource) {
-                .commonJS => runtime.executeJavaScript(allocator, output.result.js, aux_files.items, io) catch |err| blk: {
-                    const err_msg = try std.fmt.allocPrint(allocator, "Execution error: {}", .{err});
-                    break :blk err_msg;
-                },
+                // Decision 513: under `botopink test` the module's test unit
+                // runs, its production module beside it.
+                .commonJS => if (output.result.test_unit) |unit|
+                    runtime.executeTestModule(allocator, io, .commonJS, output.result.js, unit) catch |err| blk: {
+                        const err_msg = try std.fmt.allocPrint(allocator, "Execution error: {}", .{err});
+                        break :blk err_msg;
+                    }
+                else
+                    runtime.executeJavaScript(allocator, output.result.js, aux_files.items, io) catch |err| blk: {
+                        const err_msg = try std.fmt.allocPrint(allocator, "Execution error: {}", .{err});
+                        break :blk err_msg;
+                    },
                 .erlang => runtime.executeErlang(allocator, output.result.js, output.name, aux_files.items, io) catch |err| blk: {
                     const err_msg = try std.fmt.allocPrint(allocator, "Execution error: {}", .{err});
                     break :blk err_msg;

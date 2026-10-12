@@ -931,6 +931,8 @@ function isInside(parent, child) {
 exports.isInside = isInside;
 
 // ── tests ────────────────────────────────────────────────────────────────────
+
+Object.defineProperty(exports, "__bp_priv__", { value: { separator, delimiter, split, isAbsolute, basename, dirname, extname, join, normalize, commonPrefixCount, makeUps, relative, PathAccum, applyPieces, resolveStep, resolveAll, resolve, withoutExtension, isInside } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- std/path.d.ts
@@ -1928,6 +1930,8 @@ function globbed(pattern) {
     (() => { try { require('fs').rmSync(dir, { recursive: true, force: true }); return { ok: 0 } } catch (__e) { return { error: __e && __e.message ? __e.message : String(__e) } } })();
     return found.join(",");
 }
+
+Object.defineProperty(exports, "__bp_priv__", { value: { relative, FileStat, readText, writeText, exists, list, mkdir, mkdirRecursive, rm, copy, stat, walk, glob, removeTree, statOr, makeFixtureTree, walkFixture, walkFixtureFromCwd, walkRefusal, makeGlobTree, globbed } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- std/io/fs.d.ts

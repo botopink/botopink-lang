@@ -46,9 +46,9 @@ val port = PORT;
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
 {module, test@main}.
-{exports, []}.
+{exports, [{'__bp_priv__addr', 0}, {'__bp_priv__port', 0}]}.
 {attributes, []}.
-{labels, 6}.
+{labels, 10}.
 
 {function, addr, 0, 3}.
   {label, 2}.
@@ -69,6 +69,20 @@ val port = PORT;
     {call_ext, 0, {extfunc, test@config, 'PORT', 0}}.
     {deallocate, 0}.
     return.
+
+{function, '__bp_priv__addr', 0, 7}.
+  {label, 6}.
+    {line, [{location, "test@main.erl", 3}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__addr'}, 0}.
+  {label, 7}.
+    {call_only, 0, {f, 3}}.
+
+{function, '__bp_priv__port', 0, 9}.
+  {label, 8}.
+    {line, [{location, "test@main.erl", 4}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__port'}, 0}.
+  {label, 9}.
+    {call_only, 0, {f, 5}}.
 ```
 
 ----- RUN LOG -----

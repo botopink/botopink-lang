@@ -27,6 +27,8 @@ class Status$Inactive extends Status {
 Status$Inactive.prototype.tag = "Inactive";
 Status.Active = new Status$Active();
 Status.Inactive = new Status$Inactive();
+
+Object.defineProperty(exports, "__bp_priv__", { value: { Status, Status$Active, Status$Inactive } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

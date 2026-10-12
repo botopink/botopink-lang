@@ -22,6 +22,20 @@ test "t: a lambda's try is its own" {
 
 ----- JAVASCRIPT -- main.js
 ```javascript
+function failing() {
+    return ({ error: "boom" });
+}
+
+function passing() {
+    return ({ ok: null });
+}
+
+Object.defineProperty(exports, "__bp_priv__", { value: { failing, passing } });
+```
+
+----- JAVASCRIPT TEST UNIT -- __test__/main.js
+```javascript
+const { failing, passing } = require("../main.js").__bp_priv__;
 function __bp_assert(cond, msg, loc) {
     if (!cond) {
         const e = new Error(msg || "assertion failed");
@@ -79,14 +93,6 @@ function __bp_print() {
     const a = [];
     const f = Array.from(arguments, (v, i) => __bp_show(v, null, true, a)).join(" ");
     console.log.apply(console, [f, ...a]);
-}
-
-function failing() {
-    return ({ error: "boom" });
-}
-
-function passing() {
-    return ({ ok: null });
 }
 
 async function __bp_test_0() {
@@ -177,4 +183,25 @@ if (require.main === module) __bp_run_tests();
 
 ----- RUN LOG -----
 ```logs
+TEST main.bp:7 t: fails
+----- RUN LOG -----
+```logs
+```
+  duration <ms>ms
+  FAIL t: fails  (boom)  at main.bp:7
+TEST main.bp:11 t: passes
+----- RUN LOG -----
+```logs
+reached
+```
+  duration <ms>ms
+  ok   t: passes
+TEST main.bp:15 t: a lambda's try is its own
+----- RUN LOG -----
+```logs
+still here
+```
+  duration <ms>ms
+  ok   t: a lambda's try is its own
+2 passed, 1 failed
 ```

@@ -31,6 +31,7 @@ fn main() {
 ```erlang
 -module(test@main).
 -export(['_botopink_main'/0, main/1]).
+-export(['__bp_priv__count'/1, '__bp_priv__evens'/1, '__bp_priv__main'/0]).
 
 count(Limit) ->
     I = 0,
@@ -110,6 +111,12 @@ main() ->
 
 main(_Args) ->
     '_botopink_main'().
+
+'__bp_priv__count'(A0) -> count(A0).
+
+'__bp_priv__evens'(A0) -> evens(A0).
+
+'__bp_priv__main'() -> main().
 ```
 
 ----- RUN LOG -----

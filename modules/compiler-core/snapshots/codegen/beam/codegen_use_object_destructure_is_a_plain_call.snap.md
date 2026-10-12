@@ -139,9 +139,9 @@ fn frameParent(f: Frame) -> unknown {
 ----- BEAM ASSEMBLY -- std/context.S
 ```erlang
 {module, std@context}.
-{exports, [{provide, 2}, {context, 1}, {push, 3}, {find, 3}, {rendered, 2}, {valueOf, 1}, {root, 0}]}.
+{exports, [{provide, 2}, {context, 1}, {push, 3}, {find, 3}, {rendered, 2}, {valueOf, 1}, {root, 0}, {'__bp_priv__frameParent', 1}, {'__bp_priv__frameValue', 1}]}.
 {attributes, []}.
-{labels, 37}.
+{labels, 41}.
 %%% Contexts (decision 354) — what a component's body reads from above it,
 %%% React's context in botopink's spelling.
 %%% 
@@ -410,6 +410,20 @@ fn frameParent(f: Frame) -> unknown {
     {deallocate, 1}.
     return.
 
+{function, '__bp_priv__frameParent', 1, 38}.
+  {label, 37}.
+    {line, [{location, "std@context.erl", 11}]}.
+    {func_info, {atom, std@context}, {atom, '__bp_priv__frameParent'}, 1}.
+  {label, 38}.
+    {call_only, 1, {f, 19}}.
+
+{function, '__bp_priv__frameValue', 1, 40}.
+  {label, 39}.
+    {line, [{location, "std@context.erl", 12}]}.
+    {func_info, {atom, std@context}, {atom, '__bp_priv__frameValue'}, 1}.
+  {label, 40}.
+    {call_only, 1, {f, 17}}.
+
 {function, '-bp_stringify-', 1, 31}.
   {label, 30}.
     {line, [{location, "std@context.erl", 6}]}.
@@ -637,9 +651,9 @@ fn Counter() -> @Component<Element> {
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
 {module, test@main}.
-{exports, []}.
+{exports, [{'__bp_priv__Counter', 0}, {'__bp_priv__state', 1}]}.
 {attributes, []}.
-{labels, 14}.
+{labels, 18}.
 
 {function, state, 1, 3}.
   {label, 2}.
@@ -664,6 +678,20 @@ fn Counter() -> @Component<Element> {
     {make_fun3, {f, 9}, 0, 0, {x, 0}, {list, []}}.
     {deallocate, 0}.
     return.
+
+{function, '__bp_priv__Counter', 0, 15}.
+  {label, 14}.
+    {line, [{location, "test@main.erl", 3}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__Counter'}, 0}.
+  {label, 15}.
+    {call_only, 0, {f, 5}}.
+
+{function, '__bp_priv__state', 1, 17}.
+  {label, 16}.
+    {line, [{location, "test@main.erl", 4}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__state'}, 1}.
+  {label, 17}.
+    {call_only, 1, {f, 3}}.
 
 {function, '-state/1-fun-0-', 2, 7}.
   {label, 6}.

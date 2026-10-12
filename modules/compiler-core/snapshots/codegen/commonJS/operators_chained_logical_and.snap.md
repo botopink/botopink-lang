@@ -10,6 +10,8 @@ fn allThree(a: bool, b: bool, c: bool) -> bool {
 function allThree(a, b, c) {
     return ((a && b) && c);
 }
+
+Object.defineProperty(exports, "__bp_priv__", { value: { allThree } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

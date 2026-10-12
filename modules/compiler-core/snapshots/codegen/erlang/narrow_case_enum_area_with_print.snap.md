@@ -17,6 +17,7 @@ fn main() {
 ```erlang
 -module(test@main).
 -export(['_botopink_main'/0, main/1]).
+-export(['__bp_priv__area'/1, '__bp_priv__main'/0]).
 
 %% type Shape
 %%   Circle(radius)
@@ -62,6 +63,10 @@ main() ->
 
 main(_Args) ->
     '_botopink_main'().
+
+'__bp_priv__area'(A0) -> area(A0).
+
+'__bp_priv__main'() -> main().
 ```
 
 ----- ERLANG -- test@main@@Shape.erl

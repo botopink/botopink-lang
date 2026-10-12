@@ -27,6 +27,8 @@ function f() {
     if ("error" in _try0) { throw new Error("failed"); }
     const [ a, b ] = _try0.ok;
 }
+
+Object.defineProperty(exports, "__bp_priv__", { value: { Error, fetch, f } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

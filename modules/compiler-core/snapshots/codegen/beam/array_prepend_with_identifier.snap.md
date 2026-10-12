@@ -7,9 +7,9 @@ val list = [1, 2, ..rest];
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
 {module, test@main}.
-{exports, []}.
+{exports, [{'__bp_priv__list', 0}, {'__bp_priv__rest', 0}]}.
 {attributes, []}.
-{labels, 6}.
+{labels, 10}.
 
 {function, rest, 0, 3}.
   {label, 2}.
@@ -52,6 +52,20 @@ val list = [1, 2, ..rest];
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {deallocate, 1}.
     return.
+
+{function, '__bp_priv__list', 0, 7}.
+  {label, 6}.
+    {line, [{location, "test@main.erl", 3}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__list'}, 0}.
+  {label, 7}.
+    {call_only, 0, {f, 5}}.
+
+{function, '__bp_priv__rest', 0, 9}.
+  {label, 8}.
+    {line, [{location, "test@main.erl", 4}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__rest'}, 0}.
+  {label, 9}.
+    {call_only, 0, {f, 3}}.
 ```
 
 ----- RUN LOG -----

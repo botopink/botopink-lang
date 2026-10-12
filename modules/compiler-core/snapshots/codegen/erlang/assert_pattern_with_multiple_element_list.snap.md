@@ -9,10 +9,13 @@ fn f() {
 ----- ERLANG -- main.erl
 ```erlang
 -module(test@main).
+-export(['__bp_priv__f'/0]).
 
 f() ->
     Numbers = [1, 2, 3],
     case Numbers of [1, 2, 3] -> Numbers; _ -> erlang:throw(<<"not matching">>) end.
+
+'__bp_priv__f'() -> f().
 ```
 
 ----- RUN LOG -----

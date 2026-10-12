@@ -17,9 +17,9 @@ fn main() {
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
 {module, test@main}.
-{exports, [{'_botopink_main', 0}, {main, 1}]}.
+{exports, [{'_botopink_main', 0}, {main, 1}, {'__bp_priv__main', 0}, {'__bp_priv__mapFields', 1}, {'__bp_priv__mergeRecords', 2}, {'__bp_priv__omit', 1}, {'__bp_priv__partial', 1}, {'__bp_priv__pick', 1}]}.
 {attributes, []}.
-{labels, 56}.
+{labels, 68}.
 
 {function, pick, 1, 3}.
   {label, 2}.
@@ -170,6 +170,48 @@ fn main() {
     {func_info, {atom, test@main}, {atom, main}, 1}.
   {label, 17}.
     {call_only, 0, {f, 15}}.
+
+{function, '__bp_priv__main', 0, 57}.
+  {label, 56}.
+    {line, [{location, "test@main.erl", 9}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__main'}, 0}.
+  {label, 57}.
+    {call_only, 0, {f, 13}}.
+
+{function, '__bp_priv__mapFields', 1, 59}.
+  {label, 58}.
+    {line, [{location, "test@main.erl", 10}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__mapFields'}, 1}.
+  {label, 59}.
+    {call_only, 1, {f, 11}}.
+
+{function, '__bp_priv__mergeRecords', 2, 61}.
+  {label, 60}.
+    {line, [{location, "test@main.erl", 11}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__mergeRecords'}, 2}.
+  {label, 61}.
+    {call_only, 2, {f, 9}}.
+
+{function, '__bp_priv__omit', 1, 63}.
+  {label, 62}.
+    {line, [{location, "test@main.erl", 12}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__omit'}, 1}.
+  {label, 63}.
+    {call_only, 1, {f, 5}}.
+
+{function, '__bp_priv__partial', 1, 65}.
+  {label, 64}.
+    {line, [{location, "test@main.erl", 13}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__partial'}, 1}.
+  {label, 65}.
+    {call_only, 1, {f, 7}}.
+
+{function, '__bp_priv__pick', 1, 67}.
+  {label, 66}.
+    {line, [{location, "test@main.erl", 14}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__pick'}, 1}.
+  {label, 67}.
+    {call_only, 1, {f, 3}}.
 
 {function, '__bp_print', 1, 29}.
   {label, 28}.

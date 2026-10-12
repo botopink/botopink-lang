@@ -44,6 +44,8 @@ function arrayEq() {
     const ys = [1, 2];
     return __bp_eq_Array_i32(xs, ys);
 }
+
+Object.defineProperty(exports, "__bp_priv__", { value: { Point, recordEq, arrayEq } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

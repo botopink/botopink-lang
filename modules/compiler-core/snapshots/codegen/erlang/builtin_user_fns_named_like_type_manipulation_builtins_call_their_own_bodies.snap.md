@@ -18,6 +18,7 @@ fn main() {
 ```erlang
 -module(test@main).
 -export(['_botopink_main'/0, main/1]).
+-export(['__bp_priv__pick'/1, '__bp_priv__omit'/1, '__bp_priv__partial'/1, '__bp_priv__mergeRecords'/2, '__bp_priv__mapFields'/1, '__bp_priv__main'/0]).
 
 pick(N) ->
     '__bp_int'((N + 1), -2147483648, 2147483647, <<"integer overflow: + on i32 at main.bp:1:35">>).
@@ -73,6 +74,18 @@ main() ->
 
 main(_Args) ->
     '_botopink_main'().
+
+'__bp_priv__pick'(A0) -> pick(A0).
+
+'__bp_priv__omit'(A0) -> omit(A0).
+
+'__bp_priv__partial'(A0) -> partial(A0).
+
+'__bp_priv__mergeRecords'(A0, A1) -> mergeRecords(A0, A1).
+
+'__bp_priv__mapFields'(A0) -> mapFields(A0).
+
+'__bp_priv__main'() -> main().
 ```
 
 ----- RUN LOG -----

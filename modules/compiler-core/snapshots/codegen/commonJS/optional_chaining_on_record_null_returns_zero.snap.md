@@ -19,6 +19,8 @@ R.prototype.__bp = "R";
 function pick(maybe) {
     return maybe?.b;
 }
+
+Object.defineProperty(exports, "__bp_priv__", { value: { R, pick } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

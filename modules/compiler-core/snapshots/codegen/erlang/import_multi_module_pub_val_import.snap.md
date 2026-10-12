@@ -30,6 +30,7 @@ val port = PORT;
 ----- ERLANG -- main.erl
 ```erlang
 -module(test@main).
+-export(['__bp_priv__addr'/0, '__bp_priv__port'/0]).
 
 %% import PORT, HOST
 
@@ -38,6 +39,10 @@ addr() ->
 
 port() ->
     test@config:'PORT'().
+
+'__bp_priv__addr'() -> addr().
+
+'__bp_priv__port'() -> port().
 ```
 
 ----- RUN LOG -----

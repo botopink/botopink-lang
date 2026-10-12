@@ -345,6 +345,8 @@ function frameValue(f) {
 function frameParent(f) {
     return f.parent;
 }
+
+Object.defineProperty(exports, "__bp_priv__", { value: { Context, provide, context, RenderScope, Rendered, Frame, push, find, rendered, valueOf, root, frameValue, frameParent } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- std/context.d.ts
@@ -447,6 +449,8 @@ function Widget() {
     return bpScopeRendered__(new Element(), bpScope__);
 };
 }
+
+Object.defineProperty(exports, "__bp_priv__", { value: { bpScopePush__, bpScopeFind__, bpScopeRendered__, bpScopeValue__, bpScopeRoot__, Element, cleanup, effect, Widget } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

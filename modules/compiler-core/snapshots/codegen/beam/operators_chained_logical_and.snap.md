@@ -8,9 +8,9 @@ fn allThree(a: bool, b: bool, c: bool) -> bool {
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
 {module, test@main}.
-{exports, []}.
+{exports, [{'__bp_priv__allThree', 3}]}.
 {attributes, []}.
-{labels, 8}.
+{labels, 10}.
 
 {function, allThree, 3, 3}.
   {label, 2}.
@@ -37,6 +37,13 @@ fn allThree(a: bool, b: bool, c: bool) -> bool {
   {label, 7}.
     {deallocate, 3}.
     return.
+
+{function, '__bp_priv__allThree', 3, 9}.
+  {label, 8}.
+    {line, [{location, "test@main.erl", 2}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__allThree'}, 3}.
+  {label, 9}.
+    {call_only, 3, {f, 3}}.
 ```
 
 ----- RUN LOG -----

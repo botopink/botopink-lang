@@ -13,6 +13,7 @@ fn main() {
 ```erlang
 -module(test@main).
 -export(['_botopink_main'/0, main/1]).
+-export(['__bp_priv__isPositive'/1, '__bp_priv__main'/0]).
 
 isPositive(N) ->
     (N > 0).
@@ -49,6 +50,10 @@ main() ->
 
 main(_Args) ->
     '_botopink_main'().
+
+'__bp_priv__isPositive'(A0) -> isPositive(A0).
+
+'__bp_priv__main'() -> main().
 ```
 
 ----- RUN LOG -----

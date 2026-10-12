@@ -107,6 +107,8 @@ function first3() {
     const s = "hello";
     return s.slice(0, 3);
 }
+
+Object.defineProperty(exports, "__bp_priv__", { value: { first3 } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

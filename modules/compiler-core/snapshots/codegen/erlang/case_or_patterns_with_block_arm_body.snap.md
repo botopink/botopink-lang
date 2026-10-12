@@ -12,7 +12,7 @@ val parity = case 5 {
 ----- ERLANG -- main.erl
 ```erlang
 -module(test@main).
--export(['_botopink_init'/0]).
+-export(['_botopink_init'/0, '__bp_priv__parity'/0]).
 
 parity() ->
     case persistent_term:get({test@main, parity}, '__bp_unset') of
@@ -33,6 +33,8 @@ parity() ->
 '_botopink_init'() ->
     parity(),
     ok.
+
+'__bp_priv__parity'() -> parity().
 ```
 
 ----- RUN LOG -----

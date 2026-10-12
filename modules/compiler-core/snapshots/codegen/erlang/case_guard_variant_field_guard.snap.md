@@ -15,6 +15,7 @@ fn big(sh: Shape) -> string {
 ----- ERLANG -- main.erl
 ```erlang
 -module(test@main).
+-export(['__bp_priv__big'/1]).
 
 %% type Shape
 %%   Circle(r)
@@ -27,6 +28,8 @@ big(Sh) ->
         _ ->
             <<"other">>
     end.
+
+'__bp_priv__big'(A0) -> big(A0).
 ```
 
 ----- ERLANG -- test@main@@Shape.erl

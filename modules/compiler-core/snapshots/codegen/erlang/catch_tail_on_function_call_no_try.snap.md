@@ -12,6 +12,7 @@ fn safe() -> i32 {
 ----- ERLANG -- main.erl
 ```erlang
 -module(test@main).
+-export(['__bp_priv__risky'/0, '__bp_priv__safe'/0]).
 
 %% type RiskError: level
 
@@ -28,6 +29,10 @@ safe() ->
         {error, _TryE0} ->
             (-1)
     end.
+
+'__bp_priv__risky'() -> risky().
+
+'__bp_priv__safe'() -> safe().
 ```
 
 ----- ERLANG -- test@main@@RiskError.erl

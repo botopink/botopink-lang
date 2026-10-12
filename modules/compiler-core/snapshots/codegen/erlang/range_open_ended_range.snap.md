@@ -12,6 +12,7 @@ fn countUp(x: i32) {
 ----- ERLANG -- main.erl
 ```erlang
 -module(test@main).
+-export(['__bp_priv__countUp'/1]).
 
 countUp(X) ->
     try
@@ -26,6 +27,8 @@ countUp(X) ->
     catch
         throw:'__bp_break' -> ok
     end.
+
+'__bp_priv__countUp'(A0) -> countUp(A0).
 ```
 
 ----- RUN LOG -----

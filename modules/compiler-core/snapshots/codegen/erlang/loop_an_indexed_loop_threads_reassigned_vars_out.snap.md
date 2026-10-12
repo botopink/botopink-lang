@@ -28,6 +28,7 @@ fn main() {
 ```erlang
 -module(test@main).
 -export(['_botopink_main'/0, main/1]).
+-export(['__bp_priv__pick'/1, '__bp_priv__weigh'/1, '__bp_priv__main'/0]).
 
 pick(Xs) ->
     First = <<"">>,
@@ -96,6 +97,12 @@ main() ->
 
 main(_Args) ->
     '_botopink_main'().
+
+'__bp_priv__pick'(A0) -> pick(A0).
+
+'__bp_priv__weigh'(A0) -> weigh(A0).
+
+'__bp_priv__main'() -> main().
 ```
 
 ----- RUN LOG -----

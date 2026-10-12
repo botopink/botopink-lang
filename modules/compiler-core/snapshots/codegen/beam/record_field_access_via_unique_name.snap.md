@@ -12,9 +12,9 @@ fn second(p: Point) -> i32 {
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
 {module, test@main}.
-{exports, []}.
+{exports, [{'__bp_priv__first', 1}, {'__bp_priv__second', 1}]}.
 {attributes, []}.
-{labels, 8}.
+{labels, 12}.
 
 {function, first, 1, 3}.
   {label, 2}.
@@ -45,6 +45,20 @@ fn second(p: Point) -> i32 {
   {label, 7}.
     {deallocate, 1}.
     return.
+
+{function, '__bp_priv__first', 1, 9}.
+  {label, 8}.
+    {line, [{location, "test@main.erl", 3}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__first'}, 1}.
+  {label, 9}.
+    {call_only, 1, {f, 3}}.
+
+{function, '__bp_priv__second', 1, 11}.
+  {label, 10}.
+    {line, [{location, "test@main.erl", 4}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__second'}, 1}.
+  {label, 11}.
+    {call_only, 1, {f, 5}}.
 ```
 
 ----- BEAM ASSEMBLY -- test@main@@Point.S

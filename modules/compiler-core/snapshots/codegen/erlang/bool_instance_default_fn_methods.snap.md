@@ -12,6 +12,7 @@ fn main() {
 ```erlang
 -module(test@main).
 -export(['_botopink_main'/0, main/1]).
+-export(['__bp_priv__main'/0, '__bp_priv__bool_nor'/2, '__bp_priv__bool_nand'/2, '__bp_priv__bool_exclusiveOr'/2]).
 
 %% behavior Bool
 
@@ -58,6 +59,14 @@ bool_exclusiveOr(Self, Other) ->
 
 main(_Args) ->
     '_botopink_main'().
+
+'__bp_priv__main'() -> main().
+
+'__bp_priv__bool_nor'(A0, A1) -> bool_nor(A0, A1).
+
+'__bp_priv__bool_nand'(A0, A1) -> bool_nand(A0, A1).
+
+'__bp_priv__bool_exclusiveOr'(A0, A1) -> bool_exclusiveOr(A0, A1).
 ```
 
 ----- RUN LOG -----

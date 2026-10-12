@@ -28,7 +28,7 @@ pub fn main() {
 ```erlang
 -module(test@main).
 -export(['_botopink_main'/0, main/1]).
--export([main/0]).
+-export([main/0, '__bp_priv__countdown'/1, '__bp_priv__stepText'/1, '__bp_priv__run'/0]).
 
 %% type YieldStep
 %%   Yield(value)
@@ -109,6 +109,12 @@ main() ->
 
 main(_Args) ->
     '_botopink_main'().
+
+'__bp_priv__countdown'(A0) -> countdown(A0).
+
+'__bp_priv__stepText'(A0) -> stepText(A0).
+
+'__bp_priv__run'() -> run().
 ```
 
 ----- ERLANG -- test@main@@YieldStep.erl

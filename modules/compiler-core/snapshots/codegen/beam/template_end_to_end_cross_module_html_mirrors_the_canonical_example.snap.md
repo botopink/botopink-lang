@@ -369,9 +369,9 @@ fn main() {
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
 {module, test@main}.
-{exports, [{'_botopink_main', 0}, {main, 1}]}.
+{exports, [{'_botopink_main', 0}, {main, 1}, {'__bp_priv__main', 0}, {'__bp_priv__name', 0}, {'__bp_priv__page', 0}]}.
 {attributes, []}.
-{labels, 44}.
+{labels, 50}.
 
 {function, name, 0, 3}.
   {label, 2}.
@@ -450,6 +450,27 @@ fn main() {
     {func_info, {atom, test@main}, {atom, main}, 1}.
   {label, 11}.
     {call_only, 0, {f, 9}}.
+
+{function, '__bp_priv__main', 0, 45}.
+  {label, 44}.
+    {line, [{location, "test@main.erl", 6}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__main'}, 0}.
+  {label, 45}.
+    {call_only, 0, {f, 7}}.
+
+{function, '__bp_priv__name', 0, 47}.
+  {label, 46}.
+    {line, [{location, "test@main.erl", 7}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__name'}, 0}.
+  {label, 47}.
+    {call_only, 0, {f, 3}}.
+
+{function, '__bp_priv__page', 0, 49}.
+  {label, 48}.
+    {line, [{location, "test@main.erl", 8}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__page'}, 0}.
+  {label, 49}.
+    {call_only, 0, {f, 5}}.
 
 {function, '-bp_stringify-', 1, 13}.
   {label, 12}.

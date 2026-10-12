@@ -14,7 +14,7 @@ fn main() {
 ```erlang
 -module(test@main).
 -export(['_botopink_main'/0, main/1]).
--export([parseInt/1]).
+-export([parseInt/1, '__bp_priv__main'/0]).
 
 %% external fn parseInt -> erlang template
 parseInt(S) ->
@@ -71,6 +71,8 @@ main(_Args) ->
             end, filelib:wildcard(filename:join(filename:dirname(Path), "*.erl")));
         _ -> ok
     end.
+
+'__bp_priv__main'() -> main().
 ```
 
 ----- RUN LOG -----

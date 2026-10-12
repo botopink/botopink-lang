@@ -11,6 +11,7 @@ fn main() {
 ```erlang
 -module(test@main).
 -export(['_botopink_main'/0, main/1]).
+-export(['__bp_priv__main'/0]).
 
 main() ->
     Words = [<<"plain">>, <<"say \"hi\"">>, <<"back\\slash">>, <<"two\nlines">>],
@@ -45,6 +46,8 @@ main() ->
 
 main(_Args) ->
     '_botopink_main'().
+
+'__bp_priv__main'() -> main().
 ```
 
 ----- RUN LOG -----

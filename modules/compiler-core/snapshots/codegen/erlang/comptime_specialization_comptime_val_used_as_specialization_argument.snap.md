@@ -22,6 +22,7 @@ ct_0: val base = comptime 10 + 5 → 15
 ```erlang
 -module(test@main).
 -export(['_botopink_main'/0, main/1]).
+-export(['__bp_priv__base'/0, '__bp_priv__main'/0, '__bp_priv__scale_$0'/1, '__bp_priv__scale_$1'/1]).
 
 base() ->
     15.
@@ -49,6 +50,14 @@ main() ->
 
 main(_Args) ->
     '_botopink_main'().
+
+'__bp_priv__base'() -> base().
+
+'__bp_priv__main'() -> main().
+
+'__bp_priv__scale_$0'(A0) -> 'scale_$0'(A0).
+
+'__bp_priv__scale_$1'(A0) -> 'scale_$1'(A0).
 ```
 
 ----- RUN LOG -----
