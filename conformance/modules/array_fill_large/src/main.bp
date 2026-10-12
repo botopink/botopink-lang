@@ -11,7 +11,15 @@ pub fn main() {
     val e = d.append(d);
     val f = e.fill(0);
     @print(f.length);
-    val g = f.append(f).append(f).append(f).append(f).append(f).append(f).append(f).append(f);
+    val g = f
+        .append(f)
+        .append(f)
+        .append(f)
+        .append(f)
+        .append(f)
+        .append(f)
+        .append(f)
+        .append(f);
     val h = g.fill("q");
     @print(h.length);
     @print(h.at(9215));

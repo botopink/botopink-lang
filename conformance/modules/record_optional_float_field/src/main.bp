@@ -22,7 +22,7 @@ pub fn main() {
     @print(g.y + 1.0);
     @print(mk(null));
     @print(mk(7.5).x);
-    val {x, y} = g;
+    val { x, y } = g;
     @print(x);
     @print(y);
 }

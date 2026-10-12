@@ -793,7 +793,11 @@ behavior Array<T> {
     // as a one-line IIFE, where a `//` would swallow the rest of the block.)
     #[@External.Node("((__a, __b) => Array.from({ length: Math.max(0, __b - __a) }, (_, __i) => __a + __i))($0, $1)")]
     default fn range(start: i32, stop: i32) -> Array<i32> {
-        return if (stop - start <= 0) [] else if (stop - start == 1) [start] else {
+        return if (stop - start <= 0)
+            []
+        else if (stop - start == 1)
+            [start]
+        else {
             val count = stop - start;
             val low = Array.range(start, start + count / 2);
             val high = Array.range(start + count / 2, stop);
@@ -805,7 +809,10 @@ behavior Array<T> {
     default fn repeat<E>(value: E, times: i32) -> Array<E> {
         return if (times <= 0) [] else {
             val half = Array.repeat(value, times / 2);
-            if (times % 2 == 0) half.append(half) else half.append(half).append([value]);
+            if (times % 2 == 0)
+                half.append(half)
+            else
+                half.append(half).append([value]);
         };
     }
 
