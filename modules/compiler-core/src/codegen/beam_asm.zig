@@ -1630,6 +1630,12 @@ pub fn codegenEmit(
                     });
                     continue;
                 }
+                // 144 B-60 S4 — a dependency module whose level B entry
+                // holds its unit is not emitted again.
+                if (try config.cachedUnit(alloc, ct.name)) |unit| {
+                    try results.append(alloc, .{ .name = ct.name, .src = ct.src, .result = unit });
+                    continue;
+                }
                 // 06 C13 — a host-backed fn with no beam or erlang target
                 // reaches the driver as a located diagnostic naming it.
                 var missing: ?moduleOutput.MissingExternal = null;

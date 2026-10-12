@@ -364,6 +364,15 @@ pub fn codegenEmit(
                 });
             },
             .ok => |*ok| {
+                // 144 B-60 S4 — a dependency module whose level B entry
+                // holds its unit is not emitted again. Its unit links only
+                // its own dependencies (its closure, decision 509 (2)); a
+                // consumer links the dependency's bodies into ITS unit and
+                // lowers them there, so nothing of a consumer is in it.
+                if (try config.cachedUnit(alloc, ct.name)) |unit| {
+                    try results.append(alloc, .{ .name = ct.name, .src = ct.src, .result = unit });
+                    continue;
+                }
                 var linked: std.ArrayListUnmanaged(Linked) = .empty;
                 defer linked.deinit(alloc);
                 var visited = std.StringHashMap(void).init(alloc);

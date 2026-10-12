@@ -19,6 +19,12 @@
 /// (`Store.stats`); a changed byte of it, another compiler key, another target
 /// and a truncated entry analyse it again.
 ///
+/// S4 — the entry's CODE: a build that writes stages every entry again with
+/// its modules' units, one that reads emits no dependency module (every
+/// module read back takes its unit from CODE, `Stats.modules_code_read`) —
+/// still the same bytes; an entry written without CODE (`check`, `test`) gets
+/// it from the next build, once, and `test` (`test_mode`) reads none.
+///
 /// Tests only; nothing here runs in a command.
 const std = @import("std");
 const bp = @import("botopink");
@@ -369,14 +375,20 @@ test "level B: build cold, build (writes), build (reads) — every file the same
         var writes = try invoke(gpa, io, &crowded, v, root, crowded.keys);
         defer writes.deinit(gpa);
         try testing.expectEqual(@as(usize, 0), writes.stats.modules_read);
-        // shelf, rival, and each std module crowded reaches.
+        // shelf, rival, and each std module crowded reaches — each staged
+        // again with its CODE once the emit returned (S4).
         try testing.expect(writes.stats.entries_staged >= 3);
+        try testing.expectEqual(writes.stats.entries_staged, writes.stats.code_staged);
+        try testing.expectEqual(@as(usize, 0), writes.stats.modules_code_read);
         var reads = try invoke(gpa, io, &crowded, v, root, crowded.keys);
         defer reads.deinit(gpa);
-        // Only crowded's own modules are analysed again.
+        // Only crowded's own modules are analysed again, and emitted: every
+        // module read back takes its unit from the entry's CODE.
         try testing.expectEqual(countOf(&crowded, ""), reads.stats.modules_analysed);
         try testing.expect(reads.stats.modules_read >= countOf(&crowded, "shelf") + countOf(&crowded, "rival"));
+        try testing.expectEqual(reads.stats.modules_read, reads.stats.modules_code_read);
         try testing.expectEqual(@as(usize, 0), reads.stats.entries_staged);
+        try testing.expectEqual(@as(usize, 0), reads.stats.code_staged);
         try expectSameOutputs(v.label, cold.outputs.items, writes.outputs.items);
         try expectSameOutputs(v.label, cold.outputs.items, reads.outputs.items);
 
@@ -386,7 +398,67 @@ test "level B: build cold, build (writes), build (reads) — every file the same
         var plain_reads = try invoke(gpa, io, &plain, v, root, plain.keys);
         defer plain_reads.deinit(gpa);
         try testing.expect(plain_reads.stats.modules_read >= countOf(&plain, "shelf"));
+        try testing.expect(plain_reads.stats.modules_code_read >= countOf(&plain, "shelf"));
         try expectSameOutputs(v.label, plain_cold.outputs.items, plain_reads.outputs.items);
+    }
+}
+
+test "level B: an entry written without CODE (by `check`, by `test`) gets it from the next build, once; `test` reads none" {
+    var arena_inst = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_inst.deinit();
+    const arena = arena_inst.allocator();
+    const io = testing.io;
+    const gpa = testing.allocator;
+    const dir = try scratchFixture(arena, io, "level-b-code");
+    defer test_scratch.remove(io, "level-b-code");
+    const root = try std.fs.path.join(arena, &.{ dir, "cache" });
+
+    for (variants) |v| {
+        var fx = try Fixture.loadAt(gpa, arena, io, try std.fs.path.join(arena, &.{ dir, "plain" }), entryTarget(v));
+        defer fx.free(gpa);
+        const shelf_n = countOf(&fx, "shelf");
+
+        // `check`: the comptime pass alone, committed — entries without CODE.
+        {
+            var cfg = fx.cfg;
+            cfg.targetSource = v.target;
+            cfg.wasm_host = v.host;
+            var cache: analysis_store.Cache = undefined;
+            try cache.init(gpa, io, root, entryTarget(v), fx.keys);
+            defer cache.deinit();
+            cfg.analysis_store = &cache.store;
+            var session = try codegen.analyse(gpa, fx.all, io, cfg);
+            session.deinit(gpa);
+            cache.commit();
+            try testing.expect(cache.store.stats.entries_staged >= 1);
+            try testing.expectEqual(@as(usize, 0), cache.store.stats.code_staged);
+        }
+        var cold = try invoke(gpa, io, &fx, v, null, fx.keys);
+        defer cold.deinit(gpa);
+
+        // `test` reads the analysis, emits every module and records no CODE.
+        var tested_fx = fx;
+        tested_fx.cfg.test_mode = true;
+        var tested = try invoke(gpa, io, &tested_fx, v, root, fx.keys);
+        tested.deinit(gpa);
+        try testing.expect(tested.stats.modules_read >= shelf_n);
+        try testing.expectEqual(@as(usize, 0), tested.stats.modules_code_read);
+        try testing.expectEqual(@as(usize, 0), tested.stats.code_staged);
+
+        // The first build reads the analysis, emits the dependencies and
+        // stages each entry again with its CODE; the next one emits none.
+        var first = try invoke(gpa, io, &fx, v, root, fx.keys);
+        defer first.deinit(gpa);
+        try testing.expectEqual(@as(usize, 0), first.stats.entries_staged);
+        try testing.expectEqual(@as(usize, 0), first.stats.modules_code_read);
+        try testing.expect(first.stats.code_staged >= 1);
+        var second = try invoke(gpa, io, &fx, v, root, fx.keys);
+        defer second.deinit(gpa);
+        try testing.expectEqual(@as(usize, 0), second.stats.code_staged);
+        try testing.expectEqual(second.stats.modules_read, second.stats.modules_code_read);
+        try testing.expect(second.stats.modules_code_read >= shelf_n);
+        try expectSameOutputs(v.label, cold.outputs.items, first.outputs.items);
+        try expectSameOutputs(v.label, cold.outputs.items, second.outputs.items);
     }
 }
 

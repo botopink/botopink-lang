@@ -724,6 +724,12 @@ pub fn codegenEmit(
                     });
                     continue;
                 }
+                // 144 B-60 S4 — a dependency module whose level B entry
+                // holds its unit is not emitted again.
+                if (try config.cachedUnit(alloc, ct.name)) |unit| {
+                    try results.append(alloc, .{ .name = ct.name, .src = ct.src, .result = unit });
+                    continue;
+                }
                 const module_test_mode = config.test_mode and !std.mem.startsWith(u8, ct.name, "std/");
                 // 06 C13 — a host-backed fn with no `erlang` target used to
                 // abort the whole build with the bare error name. It reaches

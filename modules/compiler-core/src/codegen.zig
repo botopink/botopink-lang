@@ -137,7 +137,18 @@ pub fn generateWith(
 ) !std.ArrayListUnmanaged(ModuleOutput) {
     var session = try analyse(allocator, modules, io, config);
     defer session.deinit(allocator);
-    const outputs = try emit(allocator, session.outputs.items, config);
+    // The code cache's level B CODE (144 B-60 S4): a dependency module whose
+    // entry holds its unit is not emitted again, and an entry without one is
+    // staged again with it. Not under `botopink test`: it emits a
+    // dependency's test blocks (until B-64), which no entry holds.
+    var cfg = config;
+    if (!config.test_mode) cfg.level_b_code = session.level_b_code;
+    var outputs = try emit(allocator, session.outputs.items, cfg);
+    errdefer {
+        for (outputs.items) |*o| o.result.deinit(allocator);
+        outputs.deinit(allocator);
+    }
+    if (cfg.level_b_code) |code| try code.record(allocator, outputs.items, cfg.codeEmit());
     try attachWarnings(allocator, session.outputs.items, outputs.items);
 
     // A host that cannot spawn a process (the browser build, front 18 step 5)

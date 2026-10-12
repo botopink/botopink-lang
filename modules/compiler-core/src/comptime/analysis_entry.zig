@@ -41,14 +41,17 @@ pub const Key = [32]u8;
 /// The sections an entry may hold: META, STRINGS, then per module its
 /// ANALYSIS and its JOURNAL (what the module added to or replaced in the
 /// session's registries, the default DSL and the reflection catalogue,
-/// replayed in order on load). CODE (a module's own unit on the target) is
-/// reserved for S4 and written by none yet.
+/// replayed in order on load), then — once a build emitted them (S4) — one
+/// CODE per module: the module's own unit on the target (`CodeUnit`).
 pub const SectionId = enum(u32) {
     meta = 1,
     strings = 2,
     /// One per module, in META's module order.
     analysis = 3,
     journal = 4,
+    /// None, or one per module in META's module order, after every ANALYSIS
+    /// and JOURNAL. Self-contained (its own strings), so a build adds it to
+    /// an entry it read without encoding the rest again.
     code = 5,
     _,
 };
@@ -913,6 +916,9 @@ pub const Decoded = struct {
     meta: Meta,
     outputs: []comptimeMod.ComptimeOutput,
     journals: []Journal,
+    /// Each module's CODE section, undecoded (`decodeCode`), when the entry
+    /// carries them (else empty).
+    code: []const []const u8 = &.{},
 };
 
 /// The modules of a proven entry, built in `arena`.
@@ -931,9 +937,13 @@ pub fn readWith(comptime skips: []const Skip, arena: std.mem.Allocator, e: Entry
     if (meta.module_meta.len != 0 and meta.module_meta.len != meta.modules.len) return error.Malformed;
     var outputs: std.ArrayListUnmanaged(comptimeMod.ComptimeOutput) = .empty;
     var journals: std.ArrayListUnmanaged(Journal) = .empty;
+    var code: std.ArrayListUnmanaged([]const u8) = .empty;
     for (e.sections[1..]) |s| switch (s.id) {
         .strings => {},
+        // Decoded when an emit asks for it (`decodeCode`); after every module.
+        .code => try code.append(arena, s.bytes),
         .analysis => {
+            if (code.items.len != 0) return error.Malformed;
             if (journals.items.len != 0 and journals.items.len != outputs.items.len) return error.Malformed;
             dec.section(s.bytes);
             const a = try dec.decode(Analysis);
@@ -941,6 +951,7 @@ pub fn readWith(comptime skips: []const Skip, arena: std.mem.Allocator, e: Entry
             try outputs.append(arena, .{ .name = a.name, .src = a.src, .srcPath = a.srcPath, .outcome = .{ .ok = a.ok } });
         },
         .journal => {
+            if (code.items.len != 0) return error.Malformed;
             if (journals.items.len + 1 != outputs.items.len) return error.Malformed;
             dec.section(s.bytes);
             try journals.append(arena, try dec.decode(Journal));
@@ -950,8 +961,79 @@ pub fn readWith(comptime skips: []const Skip, arena: std.mem.Allocator, e: Entry
     };
     if (outputs.items.len != meta.modules.len) return error.Malformed;
     if (journals.items.len != 0 and journals.items.len != outputs.items.len) return error.Malformed;
+    if (code.items.len != 0 and code.items.len != outputs.items.len) return error.Malformed;
     for (meta.modules, outputs.items) |m, o| if (!std.mem.eql(u8, m, o.name)) return error.Malformed;
-    return .{ .meta = meta, .outputs = outputs.items, .journals = journals.items };
+    return .{ .meta = meta, .outputs = outputs.items, .journals = journals.items, .code = code.items };
+}
+
+// ── CODE (S4) ─────────────────────────────────────────────────────────────────
+//
+// A module's own unit on the target, as the emitter produced it in a build
+// (`codegen.generateWith`, never under `botopink test` until B-64): every
+// field of `GenerateResult` but what describes a failure or a run, encoded
+// generically like the rest — a field added to `GenerateResult` is stored
+// without anyone remembering to. On commonJS the `.d.ts` is always there
+// (the build that wrote it emitted it whether or not it asked for one).
+// What a consumer instantiates never is: a dependency's unit is the same
+// under every consumer (the closure invariant, `test-closure-invariant`), and
+// a consumer's instantiations live in the consumer's own unit.
+//
+// A CODE section is self-contained — `STRINGS-length` (LEB128), its strings,
+// then the `CodeUnit` — so it is added to an entry read back (one written by
+// `check` or `test`, which emit no dependency's code) without encoding the
+// rest again.
+
+const moduleOutput = @import("../codegen/moduleOutput.zig");
+
+/// The fields of `GenerateResult` CODE never stores: a failure (a unit is
+/// stored only when every module of its entry emitted), the warnings (the
+/// analysis carries them, `OkData.warnings`) and a run's output.
+pub const code_skips = [_]Skip{
+    .{ .T = moduleOutput.GenerateResult, .field = "diagnostic" },
+    .{ .T = moduleOutput.GenerateResult, .field = "comptime_err" },
+    .{ .T = moduleOutput.GenerateResult, .field = "warnings" },
+    .{ .T = moduleOutput.GenerateResult, .field = "run_output" },
+};
+
+/// One CODE section: the unit and what of the emit's configuration its bytes
+/// depend on beyond the entry's key (the target and the host are in it).
+pub const CodeUnit = struct {
+    /// `codegen.Config.wasm_artifact`: whether wasm's text is the build's
+    /// artifact (a component, the browser's module) or a bare module.
+    wasm_artifact: bool,
+    result: moduleOutput.GenerateResult,
+};
+
+/// The CODE section of `unit`, allocated with `gpa`.
+pub fn encodeCode(gpa: std.mem.Allocator, unit: *const CodeUnit) EncodeError![]u8 {
+    var enc = Encoder(&code_skips).init(gpa);
+    defer enc.deinit();
+    try enc.encode(CodeUnit, unit);
+    const body = try enc.takeSection();
+    defer gpa.free(body);
+    const strings = try enc.stringsSection();
+    defer gpa.free(strings);
+    var out: std.ArrayListUnmanaged(u8) = .empty;
+    errdefer out.deinit(gpa);
+    try writeUleb(gpa, &out, strings.len);
+    try out.appendSlice(gpa, strings);
+    try out.appendSlice(gpa, body);
+    return out.toOwnedSlice(gpa);
+}
+
+/// The `CodeUnit` a CODE section holds, built in `arena` (its slices are the
+/// arena's: a caller that owns a `GenerateResult` copies them).
+pub fn decodeCode(arena: std.mem.Allocator, bytes: []const u8) DecodeError!CodeUnit {
+    var head = try Decoder(&code_skips).init(arena, "\x00");
+    head.section(bytes);
+    const strings_len: usize = std.math.cast(usize, try head.uleb()) orelse return error.Malformed;
+    if (strings_len > bytes.len - head.pos) return error.Malformed;
+    const strings = bytes[head.pos..][0..strings_len];
+    var dec = try Decoder(&code_skips).init(arena, strings);
+    dec.section(bytes[head.pos + strings_len ..]);
+    const unit = try dec.decode(CodeUnit);
+    if (!dec.done()) return error.Malformed;
+    return unit;
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -1178,4 +1260,56 @@ test "the journal names every field of Reflection: journaled, or left out with i
         if (!known) std.debug.print("Reflection.{s} is neither journaled nor left out (analysis_entry.zig)\n", .{f.name});
         try testing.expect(known);
     }
+}
+
+test "CODE: a unit round-trips whole; an entry with CODE for some modules only is malformed" {
+    var arena_inst = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_inst.deinit();
+    const a = arena_inst.allocator();
+    var units = [_]moduleOutput.Unit{.{ .atom = try a.dupe(u8, "lib@m@@T"), .code = try a.dupe(u8, "-module('lib@m@@T').") }};
+    var funcs = [_]moduleOutput.StdFunc{.{ .symbol = "s", .label = "std:list.map", .hash = "0123456789ab".* }};
+    const unit: CodeUnit = .{ .wasm_artifact = true, .result = .{
+        .js = try a.dupe(u8, "-module('lib@m')."),
+        .typedef = try a.dupe(u8, "export {};"),
+        .units = &units,
+        .comptime_script = null,
+        .wasm = try a.dupe(u8, "\x00asm"),
+        .std_funcs = &funcs,
+        .comptime_trace = try a.dupe(u8, "trace"),
+        .run_output = try a.dupe(u8, "never stored"),
+    } };
+    const bytes = try encodeCode(testing.allocator, &unit);
+    defer testing.allocator.free(bytes);
+    const back = try decodeCode(a, bytes);
+    try testing.expect(back.wasm_artifact);
+    try testing.expectEqualStrings(unit.result.js, back.result.js);
+    try testing.expectEqualStrings(unit.result.typedef.?, back.result.typedef.?);
+    try testing.expectEqualStrings(unit.result.wasm.?, back.result.wasm.?);
+    try testing.expectEqualStrings(unit.result.comptime_trace.?, back.result.comptime_trace.?);
+    try testing.expect(back.result.comptime_script == null);
+    try testing.expect(back.result.run_output == null);
+    try testing.expectEqual(@as(usize, 1), back.result.units.len);
+    try testing.expectEqualStrings("lib@m@@T", back.result.units[0].atom);
+    try testing.expectEqualStrings(units[0].code, back.result.units[0].code);
+    try testing.expectEqualStrings("std:list.map", back.result.std_funcs[0].label);
+    try testing.expectEqualSlices(u8, &funcs[0].hash, &back.result.std_funcs[0].hash);
+    for (0..bytes.len) |n| _ = decodeCode(a, bytes[0..n]) catch continue;
+
+    // Two modules, one CODE: never used in part.
+    const key: Key = @splat(3);
+    const meta: Meta = .{ .package = "lib", .target = "erlang", .modules = &.{} };
+    var enc = Encoder(&default_skips).init(testing.allocator);
+    defer enc.deinit();
+    try enc.encode(Meta, &meta);
+    const meta_bytes = try enc.takeSection();
+    defer testing.allocator.free(meta_bytes);
+    const strings = try enc.stringsSection();
+    defer testing.allocator.free(strings);
+    const packed_bytes = try pack(testing.allocator, key, &.{
+        .{ .id = .meta, .bytes = meta_bytes },
+        .{ .id = .strings, .bytes = strings },
+        .{ .id = .code, .bytes = bytes },
+    });
+    defer testing.allocator.free(packed_bytes);
+    try testing.expectError(error.Malformed, read(a, try unpack(a, packed_bytes, key)));
 }

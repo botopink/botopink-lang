@@ -10,6 +10,9 @@
 #   • an unchanged library's entry is read, never rewritten (its inode stays);
 #     `check` and `test` read it too; a changed byte of the library writes a
 #     new one;
+#   • CODE (S4): an entry `check` wrote (no unit) is written again, larger, by
+#     the next build and read, not rewritten, by the ones after (with and
+#     without `--typescript`) — the same bytes as `--cold`;
 #   • the entries live under the workspace's cache root,
 #     `.botopinkbuild/analysis/<target>/<package>.bpa`, std's one per module
 #     under `std/`, `wasm` and `wasm.browser` apart.
@@ -121,6 +124,38 @@ printf '\n' >> "$WORK/shelf/src/tools.bp"
 build plain erlang out-changed || true
 [[ "$(inode "$entry")" != "$before" ]] || fail "erlang: a changed byte of shelf left its entry as it was"
 [[ "$failures" -eq 0 ]] && echo "  ✓ an unchanged library's entry is read by build, check and test, never rewritten; a changed byte writes a new one"
+
+# CODE (S4): an entry `check` (commonJS) wrote holds no unit; the next build
+# emits the dependencies and writes the entry again, larger, with its CODE —
+# the `.d.ts` in it although that build asked for none; the builds after read
+# it and write nothing, with or without `--typescript` — every output the
+# same bytes as `--cold`. (That a reading build emitted no dependency module
+# is `Stats.modules_code_read`, `cli/analysis_equivalence.zig`'s.)
+size() { stat -c %s "$1" 2>/dev/null || stat -f %z "$1"; }
+code_failures=$failures
+cjs_entry="$ANALYSIS/commonJS/shelf.bpa"
+build plain commonJS out-code-cold --cold || true
+build plain commonJS out-code-cold-ts --cold --typescript || true
+rm -rf "$ANALYSIS/commonJS"
+( cd "$WORK/plain" && "$BP_BIN" check ) > "$WORK/check.log" 2>&1 || { fail "\`botopink check\` of plain failed"; sed 's/^/      /' "$WORK/check.log" >&2; }
+if [[ -f "$cjs_entry" ]]; then
+  checked_inode="$(inode "$cjs_entry")"; checked_size="$(size "$cjs_entry")"
+  build plain commonJS out-code-first || true
+  [[ "$(inode "$cjs_entry")" != "$checked_inode" && "$(size "$cjs_entry")" -gt "$checked_size" ]] \
+    || fail "commonJS: the build after \`check\` did not write shelf's entry again with its CODE"
+  coded_inode="$(inode "$cjs_entry")"
+  build plain commonJS out-code-second || true
+  build plain commonJS out-code-second-ts --typescript || true
+  [[ "$(inode "$cjs_entry")" == "$coded_inode" ]] || fail "commonJS: a build reading shelf's entry with its CODE wrote it again"
+  for run in first second second-ts; do
+    cold="out-code-cold"; [[ "$run" == *-ts ]] && cold="out-code-cold-ts"
+    diff -r "$WORK/plain/$cold" "$WORK/plain/out-code-$run" > "$WORK/diff.log" \
+      || { fail "commonJS: plain's $run build through CODE differs from its --cold build"; head -20 "$WORK/diff.log" | sed 's/^/      /' >&2; }
+  done
+else
+  fail "commonJS: \`check\` wrote no shelf entry"
+fi
+[[ "$failures" -eq "$code_failures" ]] && echo "  ✓ an entry \`check\` wrote gets its CODE (the .d.ts in it) from the next build, once; reading it emits the same bytes, with or without --typescript"
 
 if [[ "$failures" -ne 0 ]]; then
   echo "level B: $failures failure(s)" >&2

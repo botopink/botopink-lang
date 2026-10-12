@@ -69,7 +69,9 @@ pub fn codegenEmit(
     // other (`typescript.TypeExport`), which the value index above omits.
     var type_exports: std.ArrayListUnmanaged(tsEmit.TypeExport) = .empty;
     defer type_exports.deinit(alloc);
-    if (config.typeDefLanguage != null) for (outputs) |*ct| switch (ct.outcome) {
+    // A module whose unit goes into its level B entry's CODE takes its
+    // `.d.ts` along, asked for or not (144 B-60 S4).
+    if (config.typeDefLanguage != null or config.level_b_code != null) for (outputs) |*ct| switch (ct.outcome) {
         .ok => |*ok| for (ok.bindings) |bd| if (tsEmit.typeExportOf(bd)) |name|
             try type_exports.append(alloc, .{ .name = name, .module = ct.name }),
         else => {},
@@ -114,6 +116,12 @@ pub fn codegenEmit(
                 // `"std"` package copies are dependencies — never emit their
                 // test blocks (a project's `botopink test` runs only its own
                 // tests; the stdlib's inline tests run from `libs/std` itself).
+                // 144 B-60 S4 — a dependency module whose level B entry
+                // holds its unit is not emitted again.
+                if (try config.cachedUnit(alloc, ct.name)) |unit| {
+                    try results.append(alloc, .{ .name = ct.name, .src = ct.src, .result = unit });
+                    continue;
+                }
                 const module_test_mode = config.test_mode and !std.mem.startsWith(u8, ct.name, "std/");
                 // 06 C13 — a host-backed fn with no `node` target reaches the
                 // driver as a located diagnostic naming the function, not as
@@ -138,7 +146,7 @@ pub fn codegenEmit(
                 var scope_types: std.ArrayListUnmanaged(tsEmit.TypeExport) = .empty;
                 defer scope_types.deinit(alloc);
                 for (type_exports.items) |te| if (scope.holds(te.module)) try scope_types.append(alloc, te);
-                const typedef: ?[]u8 = if (config.typeDefLanguage) |_|
+                const typedef: ?[]u8 = if (config.typeDefLanguage != null or config.recordsCode(ct.name))
                     try emitTypeDef(alloc, ok.bindings, &scope.cross, scope_types.items, ct.name, ok.transformed.decls, &ok.sync_fns)
                 else
                     null;

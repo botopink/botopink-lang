@@ -74,7 +74,9 @@ compiler-cli/
 │   │                          erlang, beam, wasm and wasm's browser host; `plain`
 │   │                          reads the `shelf` entry `crowded` wrote; an entry
 │   │                          read by `build`, `check` and `test` is never
-│   │                          rewritten (its inode), a changed byte writes anew
+│   │                          rewritten (its inode), a changed byte writes anew;
+│   │                          an entry `check` wrote gets its CODE from the next
+│   │                          build (larger, once), read after, the same bytes
 └── src/
     ├── AGENTS.md
     ├── main.zig         ← argv parser, subcommand dispatcher

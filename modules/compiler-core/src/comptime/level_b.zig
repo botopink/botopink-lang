@@ -28,6 +28,20 @@
 //! contiguous in the order, none reads `@TypeInfo.all` and none expanded a
 //! template that queries the catalogue: their answers are the whole
 //! program's, never the closure's.
+//!
+//! **The code** (S4): an entry's CODE holds each of its modules' own unit on
+//! the target, as a build emitted it. The compile hands the emit a `Code`
+//! (`ComptimeSession.level_b_code`): `codegen.generateWith` passes it to the
+//! emitter (`Config.level_b_code`, never under `botopink test` — it emits a
+//! dependency's test blocks until B-64), which takes a module's unit from it
+//! instead of emitting the module (`Config.cachedUnit`), and once the emit
+//! returned, every entry staged or read without CODE (`check` and `test` write
+//! none) is staged again with it (`Code.record`). All four targets skip: a
+//! dependency's unit is lowered against its own closure, never its consumers'
+//! (decision 509 (2)) — wasm too, which links a dependency's bodies into each
+//! CONSUMER's unit, lowered there; the dependency's own unit links only its
+//! own dependencies. What a consumer instantiates never reaches an entry
+//! (guard 4).
 const std = @import("std");
 const ast = @import("../ast.zig");
 const T = @import("./types.zig");
@@ -36,6 +50,7 @@ const entry = @import("./analysis_entry.zig");
 const reflectionMod = @import("./reflection.zig");
 const modTree = @import("./mod_tree.zig");
 const Module = @import("../module.zig").Module;
+const moduleOutput = @import("../codegen/moduleOutput.zig");
 
 const Allocator = std.mem.Allocator;
 const ComptimeOutput = comptimeMod.ComptimeOutput;
@@ -73,6 +88,10 @@ pub const Stats = struct {
     modules_read: usize = 0,
     entries_read: usize = 0,
     entries_staged: usize = 0,
+    /// Modules the emit skipped: their unit read from the entry's CODE.
+    modules_code_read: usize = 0,
+    /// Entries staged again with the CODE of their modules.
+    code_staged: usize = 0,
 };
 
 /// The group of module `m`: an embedded std module's own path, a dependency's
@@ -126,9 +145,13 @@ pub const Session = struct {
     /// `expandStdImports` found them, for a recording group's META.
     std_needs: std.StringHashMapUnmanaged([]const []const u8) = .empty,
     looked_up: std.StringHashMapUnmanaged(void) = .empty,
+    /// What the emit reads and writes of the entries' CODE.
+    code: *Code,
 
-    pub fn init(arena: Allocator, gpa: Allocator, store: *Store) Session {
-        return .{ .arena = arena, .gpa = gpa, .store = store };
+    pub fn init(arena: Allocator, gpa: Allocator, store: *Store) !Session {
+        const code = try arena.create(Code);
+        code.* = .{ .store = store };
+        return .{ .arena = arena, .gpa = gpa, .store = store, .code = code };
     }
 
     pub const Which = enum { packages, std };
@@ -175,6 +198,9 @@ pub const Session = struct {
         for (paths, decoded.outputs, decoded.journals, meta.module_meta) |p, o, j, mm| {
             try self.hits.put(self.arena, p, .{ .output = o, .journal = j, .meta = mm });
         }
+        if (decoded.code.len == paths.len) {
+            for (paths, decoded.code) |p, c| try self.code.units.put(self.arena, p, c);
+        } else try self.code.pending.append(self.arena, .{ .group = g, .key = key, .sections = e.sections, .modules = paths });
         self.store.stats.entries_read += 1;
         return true;
     }
@@ -273,6 +299,11 @@ pub const Session = struct {
         self.store.vtable.stage(self.store.ctx, g, bytes);
         self.store.stats.entries_staged += 1;
         r.storable = false;
+        // Kept for the emit: staged again with its modules' CODE once they
+        // are emitted.
+        const kept = try self.arena.dupe(u8, bytes);
+        const sections = (entry.unpack(self.arena, kept, r.key) catch return).sections;
+        try self.code.pending.append(self.arena, .{ .group = g, .key = r.key, .sections = sections, .modules = r.paths.items });
     }
 
     /// Module `m` was not analysed (a reader refused at its import): its
@@ -287,6 +318,152 @@ pub const Session = struct {
         try replay(self.arena, h.journal, regs);
     }
 };
+
+// ── The code (S4) ─────────────────────────────────────────────────────────────
+
+/// One compile's CODE: the units its entries hold, and the entries still
+/// without them. Lives in the compile session's arena.
+pub const Code = struct {
+    store: *Store,
+    /// A module read back from an entry with CODE → its CODE section.
+    units: std.StringHashMapUnmanaged([]const u8) = .empty,
+    /// The entries staged by this compile, or read without CODE.
+    pending: std.ArrayListUnmanaged(Pending) = .empty,
+
+    pub const Pending = struct {
+        group: []const u8,
+        key: entry.Key,
+        /// The entry's sections, CODE aside.
+        sections: []const entry.Section,
+        /// Its modules, in META's order.
+        modules: []const []const u8,
+    };
+
+    /// What of the emit's configuration a unit's bytes depend on beyond the
+    /// entry's key.
+    pub const Emit = struct {
+        wasm_artifact: bool,
+        /// The build asked for a `.d.ts` (commonJS).
+        typedef: bool,
+    };
+
+    /// Whether module `name`'s unit is to be recorded: the emit gives it
+    /// everything CODE holds (commonJS: its `.d.ts`, asked for or not).
+    pub fn records(self: *const Code, name: []const u8) bool {
+        for (self.pending.items) |p| for (p.modules) |m| if (std.mem.eql(u8, m, name)) return true;
+        return false;
+    }
+
+    /// Module `name`'s unit read back, owned by `gpa`, or null: emit it.
+    /// A CODE that does not decode, or was emitted otherwise, is not used.
+    pub fn take(self: *Code, gpa: Allocator, name: []const u8, how: Emit) !?moduleOutput.GenerateResult {
+        const bytes = self.units.get(name) orelse return null;
+        var scratch = std.heap.ArenaAllocator.init(gpa);
+        defer scratch.deinit();
+        const unit = entry.decodeCode(scratch.allocator(), bytes) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            error.Malformed => return null,
+        };
+        if (unit.wasm_artifact != how.wasm_artifact) return null;
+        var r = unit.result;
+        if (!how.typedef) r.typedef = null;
+        const owned = try ownResult(gpa, r);
+        self.store.stats.modules_code_read += 1;
+        return owned;
+    }
+
+    /// The emit returned `outputs`: every pending entry whose modules all
+    /// emitted is staged again with their CODE. With `typedef` false the
+    /// `.d.ts` the emit made for CODE alone is dropped from `outputs` after.
+    pub fn record(self: *Code, gpa: Allocator, outputs: []moduleOutput.ModuleOutput, how: Emit) !void {
+        var codes: std.ArrayListUnmanaged([]u8) = .empty;
+        defer {
+            for (codes.items) |c| gpa.free(c);
+            codes.deinit(gpa);
+        }
+        var sections: std.ArrayListUnmanaged(entry.Section) = .empty;
+        defer sections.deinit(gpa);
+        groups: for (self.pending.items) |p| {
+            for (codes.items) |c| gpa.free(c);
+            codes.clearRetainingCapacity();
+            sections.clearRetainingCapacity();
+            try sections.appendSlice(gpa, p.sections);
+            for (p.modules) |m| {
+                const o = outputOf(outputs, m) orelse continue :groups;
+                if (o.result.failed()) continue :groups;
+                const unit: entry.CodeUnit = .{ .wasm_artifact = how.wasm_artifact, .result = o.result };
+                try codes.append(gpa, try entry.encodeCode(gpa, &unit));
+                try sections.append(gpa, .{ .id = .code, .bytes = codes.items[codes.items.len - 1] });
+            }
+            const bytes = try entry.pack(gpa, p.key, sections.items);
+            defer gpa.free(bytes);
+            self.store.vtable.stage(self.store.ctx, p.group, bytes);
+            self.store.stats.code_staged += 1;
+        }
+        if (!how.typedef) for (outputs) |*o| if (o.result.typedef) |t| {
+            gpa.free(t);
+            o.result.typedef = null;
+        };
+    }
+};
+
+fn outputOf(outputs: []const moduleOutput.ModuleOutput, name: []const u8) ?*const moduleOutput.ModuleOutput {
+    for (outputs) |*o| if (std.mem.eql(u8, o.name, name)) return o;
+    return null;
+}
+
+/// The fields of `GenerateResult` `ownResult` copies, `entry.code_skips`
+/// aside — a test holds the two lists to the type, so a field added there
+/// is copied here too.
+const owned_result_fields = [_][]const u8{ "js", "typedef", "units", "comptime_script", "wasm", "std_funcs", "comptime_trace" };
+
+/// `r` (a decoded unit, in a scratch arena) copied into `gpa`, as an
+/// emitter's own result is.
+fn ownResult(gpa: Allocator, r: moduleOutput.GenerateResult) !moduleOutput.GenerateResult {
+    var out: moduleOutput.GenerateResult = .{ .js = try gpa.dupe(u8, r.js), .comptime_script = null };
+    errdefer out.deinit(gpa);
+    if (r.typedef) |t| out.typedef = try gpa.dupe(u8, t);
+    if (r.comptime_script) |t| out.comptime_script = try gpa.dupe(u8, t);
+    if (r.wasm) |t| out.wasm = try gpa.dupe(u8, t);
+    if (r.comptime_trace) |t| out.comptime_trace = try gpa.dupe(u8, t);
+    if (r.units.len > 0) {
+        const units = try gpa.alloc(moduleOutput.Unit, r.units.len);
+        var filled: usize = 0;
+        errdefer {
+            for (units[0..filled]) |u| {
+                gpa.free(u.atom);
+                gpa.free(u.code);
+            }
+            gpa.free(units);
+        }
+        for (r.units, units) |u, *d| {
+            const atom = try gpa.dupe(u8, u.atom);
+            errdefer gpa.free(atom);
+            d.* = .{ .atom = atom, .code = try gpa.dupe(u8, u.code) };
+            filled += 1;
+        }
+        out.units = units;
+    }
+    if (r.std_funcs.len > 0) {
+        const funcs = try gpa.alloc(moduleOutput.StdFunc, r.std_funcs.len);
+        var filled: usize = 0;
+        errdefer {
+            for (funcs[0..filled]) |f| {
+                gpa.free(f.symbol);
+                gpa.free(f.label);
+            }
+            gpa.free(funcs);
+        }
+        for (r.std_funcs, funcs) |f, *d| {
+            const symbol = try gpa.dupe(u8, f.symbol);
+            errdefer gpa.free(symbol);
+            d.* = .{ .symbol = symbol, .label = try gpa.dupe(u8, f.label), .hash = f.hash };
+            filled += 1;
+        }
+        out.std_funcs = funcs;
+    }
+    return out;
+}
 
 // ── Snapshot and difference ───────────────────────────────────────────────────
 
@@ -597,6 +774,11 @@ const MemoryStore = struct {
     fn stageFn(ctx: *anyopaque, group: []const u8, bytes: []const u8) void {
         const self: *MemoryStore = @ptrCast(@alignCast(ctx));
         const copy = testing.allocator.dupe(u8, bytes) catch return;
+        if (self.staged.getPtr(group)) |slot| {
+            testing.allocator.free(slot.*);
+            slot.* = copy;
+            return;
+        }
         const g = testing.allocator.dupe(u8, group) catch return;
         self.staged.put(testing.allocator, g, copy) catch {};
     }
@@ -692,4 +874,15 @@ test "level B: a package that reads @TypeInfo.all is never stored" {
     defer session.deinit(testing.allocator);
     try testing.expect(!mem.staged.contains("cat"));
     try testing.expectEqual(@as(usize, 0), mem.store.stats.entries_staged);
+}
+
+test "level B CODE: every field of GenerateResult is stored and copied back, or named in code_skips" {
+    const fields = @typeInfo(moduleOutput.GenerateResult).@"struct".fields;
+    try testing.expectEqual(fields.len, owned_result_fields.len + entry.code_skips.len);
+    inline for (fields) |f| {
+        var found = false;
+        for (owned_result_fields) |n| found = found or std.mem.eql(u8, n, f.name);
+        inline for (entry.code_skips) |sk| found = found or comptime std.mem.eql(u8, sk.field, f.name);
+        try testing.expect(found);
+    }
 }
