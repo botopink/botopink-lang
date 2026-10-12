@@ -1107,3 +1107,34 @@ pub fn assertConsumerJs(
         }
     }
 }
+
+/// `assertConsumerJs` for the beam target: generates every module (the last one
+/// is the consumer `main`) and asserts the consumer's BEAM assembly contains
+/// every `present` needle and none of the `absent` ones.
+pub fn assertConsumerBeam(
+    allocator: Allocator,
+    modules: []const Module,
+    present: []const []const u8,
+    absent: []const []const u8,
+) !void {
+    const io = std.testing.io;
+    var outputs = try generate(allocator, modules, io, configs[2]);
+    defer {
+        for (outputs.items) |*o| o.result.deinit(allocator);
+        outputs.deinit(allocator);
+    }
+    try std.testing.expect(outputs.items.len > 0);
+    const asm_text = outputs.items[outputs.items.len - 1].result.js;
+    for (present) |needle| {
+        if (std.mem.indexOf(u8, asm_text, needle) == null) {
+            std.debug.print("\n=== consumer beam ===\n{s}\n=== missing: {s} ===\n", .{ asm_text, needle });
+            return error.NeedleNotFound;
+        }
+    }
+    for (absent) |needle| {
+        if (std.mem.indexOf(u8, asm_text, needle) != null) {
+            std.debug.print("\n=== consumer beam ===\n{s}\n=== unexpected: {s} ===\n", .{ asm_text, needle });
+            return error.UnexpectedNeedle;
+        }
+    }
+}

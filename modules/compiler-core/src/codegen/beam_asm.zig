@@ -2382,6 +2382,12 @@ const Emitter = struct {
     /// set lowers to a remote `call_ext` into the lowercase module atom,
     /// parity with the erlang backend's `std_imports` path.
     std_imports: std.StringHashMap([]const u8),
+    /// The default handle of an imported library (`import {shapes} from
+    /// "shapes"`): handle name → the import's `from`. The handle is a comptime
+    /// fn with no run-time binding; a call through it (`shapes.twice(x)`)
+    /// lowers to the remote call into the module that declares the member.
+    /// Parity with the erlang backend's `lib_handles`.
+    lib_handles: std.StringHashMap(ast.ImportSource),
     /// Decision 107 — an imported `pub fn` bound here (`import {a.twice}`,
     /// `import {a.twice as double}`): the LOCAL name → the owner's atom and
     /// the declared name the owner exports. Mirrors the erlang backend's
@@ -2548,6 +2554,7 @@ const Emitter = struct {
             .user_behavior_methods = std.StringHashMap(void).init(alloc),
             .prim_erlang_dispatch = std.StringHashMap(PrimErlangCall).init(alloc),
             .std_imports = std.StringHashMap([]const u8).init(alloc),
+            .lib_handles = std.StringHashMap(ast.ImportSource).init(alloc),
             .imported_fn_owners = std.StringHashMap(ImportedFn).init(alloc),
             .top_vals = std.StringHashMap(void).init(alloc),
             .prelude_arena = std.heap.ArenaAllocator.init(alloc),
@@ -2621,6 +2628,7 @@ const Emitter = struct {
         self.prim_erlang_dispatch.deinit();
         self.std_imports.deinit();
         self.imported_fn_owners.deinit();
+        self.lib_handles.deinit();
         self.imported_val_owners.deinit(self.alloc);
         self.top_vals.deinit();
         self.top_fns.deinit(self.alloc);
@@ -2955,7 +2963,16 @@ const Emitter = struct {
                 // and `exports.get` answered with whichever the walk reached
                 // last. A contest is refused in the driver, not guessed here.
                 const leaf_src = try u.leafSource(imp, self.atom_arena.allocator(), false);
-                const info = xc.picked(name, leaf_src, null) orelse continue;
+                const info = xc.picked(name, leaf_src, null) orelse {
+                    // Not a `pub` symbol: the library's default handle when
+                    // the import names the library itself.
+                    switch (u.source) {
+                        .module => |lib| if (imp.alias == null and std.mem.eql(u8, lib, name) and !std.mem.eql(u8, lib, "std"))
+                            try self.lib_handles.put(name, u.source),
+                        .root, .key => {},
+                    }
+                    continue;
+                };
                 const owner = self.atomOf(info.module);
                 if (std.mem.eql(u8, owner, self.module_name)) continue;
                 switch (info.kind) {
@@ -6880,6 +6897,29 @@ const Emitter = struct {
                     if (mode == .tail) try self.emitReturn();
                     return;
                 },
+            };
+            // A library's default handle is also its namespace:
+            // `shapes.twice(x)` after `import {shapes} from "shapes"` is a
+            // remote call into the module that declares `twice`. Parity with
+            // the erlang backend's `lib_handles` path.
+            if (recv_name) |rn| if (self.cross) |xc| if (self.lib_handles.get(rn)) |src| {
+                if (!self.reg_map.contains(rn) and self.instanceLowering(loc, recv_expr.*) == null) {
+                    if (xc.picked(cc.callee, src, cc.args.len + cc.trailing.len)) |member| {
+                        if (member.kind == .@"fn" and (!member.is_external or member.erlang_backed)) {
+                            try self.materializeCallArgs(cc.args, cc.trailing);
+                            var fn_buf: [256]u8 = undefined;
+                            const fn_atom = atomName(cc.callee, &fn_buf) catch cc.callee;
+                            try beamEmitter.writeCall(
+                                self.out,
+                                if (mode == .tail) .last else .normal,
+                                cc.args.len + cc.trailing.len,
+                                .{ .ext = .{ .module = self.atomOf(member.module), .function = fn_atom } },
+                                self.num_y,
+                            );
+                            return;
+                        }
+                    }
+                }
             };
             // §D2 — `"std"` package qualified call: a lowercase receiver naming
             // an imported std module (`math`, `path`, …) lowers to a remote

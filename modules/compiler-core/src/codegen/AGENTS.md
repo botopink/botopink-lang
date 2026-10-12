@@ -476,6 +476,10 @@ codegen/
   `collectImportedTypes` records it in `lib_handles` (name → the import's
   `from`) and a call through it (`shapes.twice(x)`) lowers to the remote call
   into the module that declares `twice` (`conformance/modules/default_handle_member`).
+- **Default handle member (beam)**: `beam_asm.zig` records the handle in its own `lib_handles`
+  (`collectImportedTypes`' cross loop) and lowers `shapes.twice(x)` to a `call_ext` into the module that
+  declares `twice`, ahead of the `std_imports` path; without it the call ended in `{unresolved_method, twice, 1}`.
+  Test: `codegen/tests/beam.zig` (`assertConsumerBeam`).
 - **Lib namespace object**: when an import names the lib itself
   (`import {Lib} from "Lib"`) and that name has no emitted symbol, `emitUse`
   binds the lib's module object (`buildUse`: `const Lib = require(…)`, or

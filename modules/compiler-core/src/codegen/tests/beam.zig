@@ -490,3 +490,29 @@ test "beam: a loop closure does not capture the register of an earlier `??`" {
         \\}
     , "<a|b|c>\n", &.{"{make_fun3, "});
 }
+
+test "beam: a member call through a library's default handle is a call into the library" {
+    // `qlib.make(5)` after `import {qlib} from "qlib"`: the handle is a comptime
+    // fn with no run-time binding, so the receiver used to lower as an unbound
+    // name and the call aborted with `{unresolved_method, make, 1}`. It is the
+    // remote call into the module that declares `make` (144 B-50;
+    // `conformance/modules/default_handle_member` runs it).
+    try h.assertConsumerBeam(std.testing.allocator, &.{
+        .{ .path = "qlib/qlib", .source =
+        \\pub fn make(x: i32) -> i32 {
+        \\    return x + 1;
+        \\}
+        \\
+        \\pub fn qlib(comptime e: @Expr<string>) -> @Expr<i32> {
+        \\    return e.build("99");
+        \\}
+        },
+        .{ .path = "", .source =
+        \\import {qlib} from "qlib";
+        \\
+        \\fn main() {
+        \\    @print(qlib.make(5));
+        \\}
+        },
+    }, &.{"{extfunc, test@qlib@qlib, make, 1}"}, &.{"unresolved_method"});
+}
