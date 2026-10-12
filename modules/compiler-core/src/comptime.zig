@@ -1695,6 +1695,20 @@ fn outOfScope(scope: ?[]const u8, path: []const u8) bool {
     return !ast.ImportSource.ofPackage(pkg, path);
 }
 
+/// True when `source` declares a module-level `var`. A source that does not
+/// parse declares none here; `analyzeModule` reports it later.
+fn declaresModuleVar(arena: std.mem.Allocator, source: []const u8) bool {
+    var lx = Lexer.init(source);
+    const tokens = lx.scanAll(arena) catch return false;
+    var p = Parser.init(tokens);
+    const program = p.parse(arena) catch return false;
+    for (program.decls) |decl| switch (decl) {
+        .val => |v| if (v.mutable) return true,
+        else => {},
+    };
+    return false;
+}
+
 /// True when `path` is a "std" package registry key (`std/<module>`).
 fn isStdPkgPath(path: []const u8) bool {
     return std.mem.startsWith(u8, path, "std/");
@@ -1766,6 +1780,9 @@ fn expandStdImports(arena: std.mem.Allocator, modules: []const Module, target_na
 
     // A std module that imports another std module needs it too, however deep
     // the chain goes, and each one is emitted after what it imports.
+    const beam_at = for (std_pkg_modules, 0..) |spm, i| {
+        if (std.mem.eql(u8, spm.path, "std/beam")) break i;
+    } else std_pkg_modules.len;
     var changed = true;
     while (changed) {
         changed = false;
@@ -1775,6 +1792,13 @@ fn expandStdImports(arena: std.mem.Allocator, modules: []const Module, target_na
                 needed[dep] = true;
                 changed = true;
             };
+            // A std module that declares a module-level `var` reaches
+            // `std/beam` the same way a user module does (above), imported
+            // or not.
+            if (beam_target and beam_at < std_pkg_modules.len and !needed[beam_at] and declaresModuleVar(arena, spm.source)) {
+                needed[beam_at] = true;
+                changed = true;
+            }
         }
     }
 
@@ -3664,4 +3688,13 @@ test "embedded std module: a brace import of a sibling resolves to std/<path> (d
     try std.testing.expect(items.len >= 2);
     try std.testing.expectEqualStrings("std/path", items[0].name);
     try std.testing.expect(items[items.len - 1].outcome == .ok);
+}
+
+test "declaresModuleVar: a module-level var is seen, a val and a local var are not" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    try std.testing.expect(declaresModuleVar(arena, "var hits: i32 = 0;\npub fn f() -> i32 { return hits; }\n"));
+    try std.testing.expect(!declaresModuleVar(arena, "pub val hits: i32 = 0;\n"));
+    try std.testing.expect(!declaresModuleVar(arena, "pub fn f() -> i32 {\n    var n: i32 = 0;\n    n = n + 1;\n    return n;\n}\n"));
 }

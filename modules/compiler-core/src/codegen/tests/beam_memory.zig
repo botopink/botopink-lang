@@ -164,3 +164,21 @@ test "beam: beam memory ---- a keyed Ets var writes and reads one row per key" {
         "{test, is_tagged_tuple, {f, ",
     });
 }
+
+// A module that imports nothing from std still reaches `std@beam`: the build
+// embeds `std/beam` for any module declaring a `var` (`expandStdImports`), so
+// the remote calls the reader and the writes lower to answer.
+test "erlang: beam memory ---- a var in a module that imports nothing from std reaches std@beam" {
+    try h.assertErlangRunLog(std.testing.allocator,
+        \\var hits: i32 = 0;
+        \\
+        \\fn main() {
+        \\    hits = hits + 1;
+        \\    hits = hits + 1;
+        \\    @print(hits);
+        \\}
+    , "2\n", &.{
+        "std@beam:pdGet(",
+        "std@beam:pdPut(",
+    });
+}
