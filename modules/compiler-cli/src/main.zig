@@ -493,6 +493,7 @@ fn parseNoOpts(args: []const [:0]const u8, diag: *ArgDiag) ArgError!void {
 // Zig runs the tests of an imported file only when a test references it: pull
 // in every `cli/` file so their `test` blocks run under `zig build test`.
 test {
+    _ = @import("./cli/analysis_equivalence.zig");
     _ = @import("./cli/analysis_store.zig");
     _ = @import("./cli/arglist.zig");
     _ = @import("./cli/build.zig");

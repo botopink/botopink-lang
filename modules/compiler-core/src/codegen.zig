@@ -94,6 +94,36 @@ fn attachWarnings(allocator: std.mem.Allocator, session: []const ComptimeOutput,
     }
 }
 
+/// The comptime pass of `generateWith` alone: every module analysed for
+/// `config`'s target. The caller owns the session (`deinit`).
+pub fn analyse(allocator: std.mem.Allocator, modules: []const Module, io: std.Io, config: Config) !ComptimeSession {
+    // STD-001 — lookup name the `#[@External.<Target>(…)]` parser expects for
+    // each codegen target. BEAM consumes the Erlang vocabulary (matches the
+    // `externalFor("erlang")` calls in `beam_asm.zig`).
+    const target_name: []const u8 = switch (config.targetSource) {
+        .commonJS => "node",
+        .erlang, .beam => "erlang",
+        // Decision 334: a wasm build's lookup names its host (`wasm` is
+        // `wasi`'s, `wasm.browser` the browser's).
+        .wasm => config.wasm_host.lookupName(),
+    };
+    // The comptime pass runs on the wasm runtime whatever the target
+    // (decision 434); `target_name` picks each host function's lookup.
+    return comptimeMod.compile(allocator, modules, io, config.build_root, target_name);
+}
+
+/// The emit of `generateWith` alone, over analysed `outputs` — the session's,
+/// or ones read back from the code cache's level B (144 B-60). An emitter may
+/// rewrite an output's AST in place: an entry is encoded before this runs.
+pub fn emit(allocator: std.mem.Allocator, outputs: []ComptimeOutput, config: Config) !std.ArrayListUnmanaged(ModuleOutput) {
+    return switch (config.targetSource) {
+        .commonJS => commonJS.codegenEmit(allocator, outputs, config),
+        .erlang => erlang.codegenEmit(allocator, outputs, config),
+        .beam => beam_asm.codegenEmit(allocator, outputs, config),
+        .wasm => wat.codegenEmit(allocator, outputs, config),
+    };
+}
+
 /// Compile `modules` for `config.targetSource`. Executes the emitted modules
 /// only when `options.execute` is set. Every module comes back: one that did
 /// not lex, parse or type-check carries its `result.diagnostic`, one that
@@ -105,27 +135,9 @@ pub fn generateWith(
     config: Config,
     options: Options,
 ) !std.ArrayListUnmanaged(ModuleOutput) {
-    // STD-001 — lookup name the `#[@External.<Target>(…)]` parser expects for
-    // each codegen target. BEAM consumes the Erlang vocabulary (matches the
-    // `externalFor("erlang")` calls in `beam_asm.zig`).
-    const target_name: []const u8 = switch (config.targetSource) {
-        .commonJS => "node",
-        .erlang, .beam => "erlang",
-        // Decision 334: a wasm build's lookup names its host (`wasm` is
-        // `wasi`'s, `wasm.browser` the browser's).
-        .wasm => config.wasm_host.lookupName(),
-    };
-
-    // The comptime pass runs on the wasm runtime whatever the target
-    // (decision 434); `target_name` picks each host function's lookup.
-    var session = try comptimeMod.compile(allocator, modules, io, config.build_root, target_name);
+    var session = try analyse(allocator, modules, io, config);
     defer session.deinit(allocator);
-    const outputs = try switch (config.targetSource) {
-        .commonJS => commonJS.codegenEmit(allocator, session.outputs.items, config),
-        .erlang => erlang.codegenEmit(allocator, session.outputs.items, config),
-        .beam => beam_asm.codegenEmit(allocator, session.outputs.items, config),
-        .wasm => wat.codegenEmit(allocator, session.outputs.items, config),
-    };
+    const outputs = try emit(allocator, session.outputs.items, config);
     try attachWarnings(allocator, session.outputs.items, outputs.items);
 
     // A host that cannot spawn a process (the browser build, front 18 step 5)

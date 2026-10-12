@@ -14,7 +14,7 @@ pass that specializes comptime calls. The façade is `../comptime.zig`
 comptime/
 ├── AGENTS.md          ← you are here
 ├── types.zig          ← core Type union(enum)
-├── analysis_entry.zig ← the code cache's level B entry (144 B-60): the container (magic, key, length, SHA-256, section table; `unpack` proves it whole or answers `error.Doubt`); inside the compiler key's partition, so its change moves every key
+├── analysis_entry.zig ← the code cache's level B entry (144 B-60): the container (magic, key, length, SHA-256, section table; `unpack` proves it whole or answers `error.Doubt`) and the encoding — `Encoder(skips).encode(T, &v)` / `Decoder(skips).decode(T)`, generic over `@typeInfo` (every field written unless `default_skips` names it: `TypedBinding.typedExpr`, `OkData.custom_ast`; a type with no rule is a compile error), strings interned in STRINGS, pointers and slices through an identity table keyed by (address, length, element type) so sharing survives, hash maps sorted by key, array hash maps in insertion order; `write` / `read` an entry of META, STRINGS and one ANALYSIS per module (JOURNAL and CODE ids reserved); inside the compiler key's partition, so its change moves every key
 ├── env.zig            ← Env (binding name → *Type), registries, loc-keyed lowering tables
 ├── infer.zig          ← `inferProgramTyped` — HM walk, decorators, template expansion
 ├── unify.zig          ← type-variable unification + occurs check
