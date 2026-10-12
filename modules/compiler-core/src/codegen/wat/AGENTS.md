@@ -1054,6 +1054,14 @@ receiver's payload shape, `optTupleElemShapeOf`). It loaded from address `0`
 and answered whatever the WASI iovec held (`8`).
 `conformance/modules/tuple_label_through_absent_optional`.
 
+A record's `?f64` (`?i64`) field holds the `?`'s box — the value's cell, `0`
+absent — and is read as that box, not as the field's number (`fieldCellIn`: an
+optional field has no cell of its own to load; the constructor, a field read, a
+destructuring `val`, whose binder is an optional local, and `wasmTypeOf` all ask
+it). Read through the bare name (`fieldTypeIn` drops the `?`), `F(x: null)`
+stored a `0.0` cell and `f.x` loaded the `f64` into `$__print_opt_f64`, which
+validation refused. `conformance/modules/record_optional_float_field`.
+
 ## Two run-time rules this backend implements first (2026-09-19)
 
 **No loop has a value** ([decision 105](../../../../../../../specs/1.0.10-beta/decisions-taken.md),

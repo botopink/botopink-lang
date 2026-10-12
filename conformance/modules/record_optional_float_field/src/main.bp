@@ -1,0 +1,28 @@
+//// A record's `?f64` field holds a float or nothing: `null` reads back as
+//// `null`, a float as itself, through the field, `??`, the record's printed
+//// form, a function's parameter and a destructuring `val`. wasm stored
+//// `null` as the float `0.0` and read the field as a bare `f64`, which the
+//// module's validation refused.
+
+type F(x: ?f64, y: f64)
+
+fn mk(v: ?f64) -> F {
+    return F(x: v, y: 0.25);
+}
+
+pub fn main() {
+    val f = F(x: null, y: 1.5);
+    @print(f.x);
+    @print(f);
+    @print(f.x ?? 9.5);
+    val g = F(x: 2.25, y: 0.5);
+    @print(g.x);
+    @print(g);
+    @print(g.x ?? 9.5);
+    @print(g.y + 1.0);
+    @print(mk(null));
+    @print(mk(7.5).x);
+    val {x, y} = g;
+    @print(x);
+    @print(y);
+}

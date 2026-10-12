@@ -2940,6 +2940,17 @@ const Emitter = struct {
         return null;
     }
 
+    /// The 8-byte cell a field of `record` holds its value in, read as the
+    /// field's value: `.none` for a word, and for an optional (`?f64`), whose
+    /// slot holds the `?`'s box — the cell, or `0` when absent — that the
+    /// reader takes as it is. Read as `f64`, `F(x: null)` stored a `0.0` cell
+    /// and `f.x` loaded it into `$__print_opt_f64`, which the module's
+    /// validation refused.
+    fn fieldCellIn(self: *Emitter, record: []const u8, field: []const u8) Cell {
+        if (self.fieldTypeRefIn(record, field)) |t| if (eagerTypeRef(t) == .optional) return .none;
+        return fieldCellOf(self.fieldTypeIn(record, field) orelse "");
+    }
+
     /// A field type `ft` of the generic record `rty` that names one of its
     /// type parameters, read through `recv` whose type spells the arguments
     /// (`p: Pair<string>` in a copy, a `Pair(left: s, …)` local): that
@@ -5358,7 +5369,7 @@ const Emitter = struct {
                                         if (self.fieldTypeIn(rty, fld.field_name)) |ft| {
                                             if (self.resolveRecordName(ft)) |sub|
                                                 try self.local_types.put(fld.bind_name, sub);
-                                            cell = fieldCellOf(ft);
+                                            cell = self.fieldCellIn(rty, fld.field_name);
                                         }
                                     }
                                     try self.declareLocal(fld.bind_name, cell.ty());
@@ -6223,13 +6234,13 @@ const Emitter = struct {
                             // a write into the old one, which another value
                             // may share.
                             .assign => {
-                                const cell = fieldCellOf(self.fieldTypeIn(rty_opt.?, fa.field) orelse "");
+                                const cell = self.fieldCellIn(rty_opt.?, fa.field);
                                 try self.lowerValue(fa.receiver.*);
                                 if (cell != .none) try self.lowerCellWord(a.value.*, cell) else try self.lowerValue(a.value.*);
                                 try self.emitCf(.{ .store = .{ .offset = off } }, ".{s} =", .{fa.field});
                             },
                             .plusAssign => {
-                                const cell = fieldCellOf(self.fieldTypeIn(rty_opt.?, fa.field) orelse "");
+                                const cell = self.fieldCellIn(rty_opt.?, fa.field);
                                 const mem = try self.memName(self.nextMem());
                                 try self.lowerValue(fa.receiver.*);
                                 try self.emit(.{ .local_set = mem });
@@ -6275,13 +6286,17 @@ const Emitter = struct {
                                     @as(u32, @intCast(i * 4));
                                 try self.emitLoadOffset(off);
                                 // A float or `i64` field holds its cell.
-                                if (recv_rty) |rty| try self.emitFromCell(fieldCellOf(self.fieldTypeIn(rty, fld.field_name) orelse ""));
+                                if (recv_rty) |rty| try self.emitFromCell(self.fieldCellIn(rty, fld.field_name));
                                 // The binder is the field's type, as `.ctor`'s
                                 // below: a string field concatenates as text.
                                 if (recv_rty) |rty| if (self.fieldTypeIn(rty, fld.field_name)) |ft| {
                                     if (std.mem.eql(u8, ft, "string")) try self.str_locals.put(fld.bind_name, {});
                                     if (std.mem.eql(u8, ft, "bool")) try self.bool_locals.put(fld.bind_name, {});
                                     if (self.resolveRecordName(ft)) |sub| try self.local_types.put(fld.bind_name, sub);
+                                };
+                                // An optional field's binder is that `?T`: its box, read as one.
+                                if (recv_rty) |rty| if (self.fieldTypeRefIn(rty, fld.field_name)) |ftr| if (eagerTypeRef(ftr) == .optional) {
+                                    if (self.optInfoOfTypeRef(ftr)) |oi| try self.opt_locals.put(fld.bind_name, oi);
                                 };
                                 try self.emit(.{ .local_set = fld.bind_name });
                             }
@@ -6310,7 +6325,7 @@ const Emitter = struct {
                             if (self.ctorRecordFields(pat)) |r| {
                                 for (r.binds, 0..) |bind, i| {
                                     if (bind.len == 0) continue;
-                                    const cell = fieldCellOf(self.fieldTypeIn(r.record, r.fields[i]) orelse "");
+                                    const cell = self.fieldCellIn(r.record, r.fields[i]);
                                     try self.declareLocal(bind, cell.ty());
                                     if (self.fieldTypeIn(r.record, r.fields[i])) |ft| {
                                         if (std.mem.eql(u8, ft, "string")) try self.str_locals.put(bind, {});
@@ -13983,10 +13998,10 @@ const Emitter = struct {
                     try self.emit(.{ .local_get = base });
                     try self.lowerBoxedInto(ftref, arg.value.*);
                     try self.emit(.{ .store = .{ .offset = off } });
-                } else if (fieldCellOf(self.fieldTypeIn(cc.callee, fname) orelse "") != .none) {
+                } else if (self.fieldCellIn(cc.callee, fname) != .none) {
                     // A float or `i64` field holds the address of its cell.
                     try self.emit(.{ .local_get = base });
-                    try self.lowerCellWord(arg.value.*, fieldCellOf(self.fieldTypeIn(cc.callee, fname).?));
+                    try self.lowerCellWord(arg.value.*, self.fieldCellIn(cc.callee, fname));
                     try self.emit(.{ .store = .{ .offset = off } });
                 } else {
                     // A lambda stored in a function-typed field takes its
@@ -14179,7 +14194,7 @@ const Emitter = struct {
                 try self.lowerExpr(ia.receiver.*);
                 try self.emitCf(.{ .load = .{ .offset = off } }, ".{s}", .{ia.member});
                 // A float or `i64` field holds its cell.
-                try self.emitFromCell(fieldCellOf(self.fieldTypeIn(rty, ia.member) orelse ""));
+                try self.emitFromCell(self.fieldCellIn(rty, ia.member));
                 return;
             }
         }
@@ -14548,7 +14563,7 @@ const Emitter = struct {
     fn someFieldIsFloat(self: *Emitter, name: []const u8) bool {
         var it = self.records.iterator();
         while (it.next()) |entry| {
-            if (fieldCellOf(self.fieldTypeIn(entry.key_ptr.*, name) orelse "") != .none) return true;
+            if (self.fieldCellIn(entry.key_ptr.*, name) != .none) return true;
         }
         return false;
     }
@@ -15733,7 +15748,7 @@ const Emitter = struct {
                     }
                     const rty = self.recordTypeOfExpr(ia.receiver.*) orelse break :blk "i32";
                     if (self.fieldOffsetIn(rty, ia.member) == null) break :blk "i32";
-                    break :blk fieldCellOf(self.fieldTypeIn(rty, ia.member) orelse "").ty();
+                    break :blk self.fieldCellIn(rty, ia.member).ty();
                 },
                 else => "i32",
             },
