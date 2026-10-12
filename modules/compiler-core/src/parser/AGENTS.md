@@ -289,6 +289,12 @@ with `<…>` wraps, and two additions for record/builder ergonomics:
 - **Function-type params may be named** — `fn(next: T)` parses alongside the
   bare `fn(T)`; the name is documentation-only (function types are positional)
   and is discarded.
+- **`fn(..) -> R`, a function of any parameters** (decision 316) — the shape a
+  decorator's `@Decl<…>` names: `TypeRef.function.anyParams`, `params` empty.
+  `Parser.inDeclPattern` is set for `@Decl<…>`'s argument alone and cleared by
+  `parseBaseTypeRefArm` for everything inside it, so `..` written anywhere
+  else (a parameter's type, inside the pattern) is `any-params-outside-decl`
+  at the `..`.
 - **The removed anonymous record type** — `{ value: T, … }` in type position
   raises `removed-record-type` at the `{` (1.0.3: a labeled tuple type
   `#(value: T, …)`).

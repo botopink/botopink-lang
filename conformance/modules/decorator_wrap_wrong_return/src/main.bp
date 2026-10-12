@@ -1,0 +1,17 @@
+//// Decision 316 — a wrapper answers the wrapped function's return type, the
+//// `R` of the decorator's `@Decl<fn(..) -> R>`: one answering an `i32` where
+//// the pattern names `string` is refused at the wrapper, in the decorator —
+//// before any function it annotates is wrapped.
+
+fn counted(comptime decl: @Decl<fn(..) -> string>) {
+    decl.wrapWith({ call -> 42 });
+}
+
+#[counted]
+pub fn posts() -> string {
+    return "posts";
+}
+
+pub fn main() {
+    @print(posts());
+}

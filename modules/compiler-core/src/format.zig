@@ -3060,7 +3060,9 @@ pub const Formatter = struct {
                     else
                         try this.fmtTypeRef(p);
                 }
-                const inner = if (f.params.len == 0)
+                const inner = if (f.anyParams)
+                    try this.text("..")
+                else if (f.params.len == 0)
                     this.nil()
                 else
                     try this.join(paramDocs, try this.text(", "));

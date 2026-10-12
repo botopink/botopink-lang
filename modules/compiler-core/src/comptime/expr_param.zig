@@ -35,6 +35,10 @@ const Ctx = struct {
     /// program's code, not the body's.
     declName: ?[]const u8 = null,
     members: usize = 0,
+    /// Decision 316 — each `decl.wrapWith(f)` hands the runtime the wrapper's
+    /// index (`member_fn.collectWrappers`'s order): the wrapper is the
+    /// program's code.
+    wrappers: usize = 0,
     /// Decision 298 — each `decl.setMeta(v)` / `decl.addMeta(v)` hands the
     /// runtime `'__bp_typedMeta'(k, v)`, `k` in `typed_meta.collect`'s order.
     metas: usize = 0,
@@ -192,6 +196,18 @@ fn clone(comptime T: type, ctx: *Ctx, v: T) error{OutOfMemory}!T {
             idx.* = .{ .literal = .{ .loc = mc.loc, .kind = .{ .numberLit = try std.fmt.allocPrint(ctx.arena, "{d}", .{ctx.members}) } } };
             ctx.members += 1;
             args[1] = .{ .label = c.args[1].label, .value = idx };
+            out.call.kind.call.args = args;
+            return out;
+        };
+        // `decl.wrapWith(f)` → `decl.wrapWith(<k>)` (316).
+        if (ctx.declName) |dn| if (memberFn.asWrapCall(v, dn)) |func| {
+            var out = v;
+            const c = v.call.kind.call;
+            const args = try ctx.arena.alloc(ast.CallArg, 1);
+            const idx = try ctx.arena.create(ast.Expr);
+            idx.* = .{ .literal = .{ .loc = func.loc, .kind = .{ .numberLit = try std.fmt.allocPrint(ctx.arena, "{d}", .{ctx.wrappers}) } } };
+            ctx.wrappers += 1;
+            args[0] = .{ .label = c.args[0].label, .value = idx };
             out.call.kind.call.args = args;
             return out;
         };

@@ -1,0 +1,14 @@
+//// Decision 316 — `decl.wrapWith(f)` wraps the call of a function or a
+//// method: from a decorator on a `type` it is refused at the annotation (a
+//// type has no call to wrap).
+
+fn traced(comptime decl: @Decl) {
+    decl.wrapWith({ call -> call.run() });
+}
+
+#[traced]
+pub type City(name: string)
+
+pub fn main() {
+    @print(City(name: "Recife").name);
+}

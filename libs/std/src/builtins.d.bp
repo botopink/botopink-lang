@@ -740,7 +740,32 @@ pub behavior Decl<T> {
     // already answers (`decorator-type-duplicate`) and a source that is not
     // the shape of one type (`decorator-type-not-one-type`).
     fn addType(self: Self, name: string, source: string);
+
+    // Decision 316 — wrap the annotated function or method:
+    // `decl.wrapWith({ call -> … })`, the wrapper written at the call. It
+    // receives the call value — `call.args`, the arguments as a tuple (typed
+    // by the `@Decl<fn(…) -> R>` pattern's parameters, `unknown` under
+    // `fn(..) -> R`), and `call.run()`, which runs the original body with them
+    // — and answers the function's return type `R`, checked here: a wrapper of
+    // another type is an error at the decorator. Several wrappers compose in
+    // annotation order, the first written outermost. The function keeps its
+    // name, signature and identity for its callers, an importer's included;
+    // its original body is reachable only through `call.run()`. Like a member
+    // function (370 (2)), the wrapper is the program's code: it reads the
+    // decorator's `@Expr` parameters, spliced, never the handle or a local of
+    // the body (`decorator-member-captures`). From a decorator on anything but
+    // a function or a method it is refused at the annotation
+    // (`decorator-wrap-without-function`). The checker answers the call itself
+    // (`infer.zig` `inferWrapWithCall`).
+    fn wrapWith<A, R>(self: Self, wrapper: fn(call: __Decl__Call<A, R>) -> R);
 }
+
+// Decision 316 — the call value a `decl.wrapWith` wrapper receives. No program
+// names it; it is the wrapper's parameter alone.
+pub type __Decl__Call<A, R>(
+    args: A,
+    run: fn() -> R,
+)
 
 // Decision 216 (4) — what `@TypeInfo.all(with: d)` answers: one `Declared`
 // per declaration of the program carrying the decorator `d`, by module path

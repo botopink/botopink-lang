@@ -286,6 +286,12 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .caretCaption = "write `@Renderable`",
             .hint = "`type Element(…) implement @Renderable` marks the type a component returns.",
         },
+        .anyParamsOutsideDecl => .{
+            .code = "any-params-outside-decl",
+            .message = "`fn(..)` names a function of any parameters only as a decorator's `@Decl<fn(..) -> R>` pattern (decision 316)",
+            .caretCaption = "write the parameters' types",
+            .hint = "A function type lists its parameters (`fn(i32, string) -> R`); `..` matches any of them only where `@Decl<…>` names the shape of the declaration a decorator annotates.",
+        },
         .effectTypeRemovedLegacy => .{
             .code = "effect-type-removed",
             .message = "this sequence type left the language (decisions 103, 122)",

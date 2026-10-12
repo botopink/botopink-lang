@@ -21,6 +21,7 @@
 /// from the declaration it runs over — so one module serves every declaration a
 /// decorator annotates with the same annotation arguments.
 const std = @import("std");
+const memberFnMod = @import("member_fn.zig");
 const ast = @import("../ast.zig");
 const template = @import("./template.zig");
 const erlang = @import("../codegen/erlang.zig");
@@ -109,7 +110,9 @@ pub const Contribution = struct {
     /// untagged map: its type is the call's, `typed_meta.render`).
     data: ?std.json.Value = null,
 
-    pub const Kind = enum { emit, member, memberFn, meta, assoc, typedMeta };
+    /// `wrap` — decision 316, `decl.wrapWith(f)`: `index` is the wrapper's
+    /// (`member_fn.collectWrappers`'s order).
+    pub const Kind = enum { emit, member, memberFn, meta, assoc, typedMeta, wrap };
 };
 
 pub const Outcome = union(enum) {
@@ -842,7 +845,9 @@ pub fn moduleVarWrite(arena: std.mem.Allocator, decls: []const ast.DeclKind, dfn
     while (i < queue.items.len) : (i += 1) {
         const f = queue.items[i];
         const declared = try blockEval.declaredNames(arena, f.body);
-        var w = WriteWalk{ .arena = arena, .vars = &vars };
+        // The program's code a decorator hands on — a member function
+        // (370 (2)), a wrapper (316) — runs at run time, not in the body.
+        var w = WriteWalk{ .arena = arena, .vars = &vars, .declName = if (i == 0) memberFnMod.declParamName(f) else null };
         for (f.body) |*st| try w.walk(ast.Expr, &st.expr);
         for (w.writes.items) |wr| {
             if (declared.contains(wr.name)) continue;
@@ -866,8 +871,12 @@ const WriteWalk = struct {
     vars: *const std.StringHashMapUnmanaged(void),
     writes: std.ArrayListUnmanaged(VarWrite) = .empty,
     calls: std.ArrayListUnmanaged([]const u8) = .empty,
+    declName: ?[]const u8 = null,
 
     fn walk(self: *WriteWalk, comptime U: type, ptr: *const U) std.mem.Allocator.Error!void {
+        if (U == ast.Expr) if (self.declName) |dn| {
+            if (memberFnMod.asWrapCall(ptr.*, dn) != null or memberFnMod.asCall(ptr.*, dn) != null) return;
+        };
         if (U == ast.Expr) switch (ptr.*) {
             .binding => |b| switch (b.kind) {
                 .assign => |a| switch (a.target) {

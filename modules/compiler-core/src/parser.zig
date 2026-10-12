@@ -118,6 +118,9 @@ pub const ParseErrorType = enum {
     componentBaseParamRemoved,
     /// Decision 354 — `@Renderable` is a bare marker, `@Renderable<…>` is refused.
     renderableTakesNoTypeArguments,
+    /// Decision 316 — `fn(..) -> R` written anywhere but as `@Decl<…>`'s
+    /// pattern. Located on the `..`.
+    anyParamsOutsideDecl,
     /// Decision 127 — a pre-122 sequence name that had already left
     /// (`@AsyncIterator`, `@Iterable`, `@IteratorStep`, `@Yield`): refused,
     /// naming the current one.
@@ -432,6 +435,10 @@ pub const Parser = struct {
     /// token (`Array<Array<T>>`). `consumeGenericClose` consumes the `>>`
     /// for the inner list and credits the second `>` here for the outer one.
     pending_gt: bool = false,
+    /// Decision 316 — set while the type argument of `@Decl<…>` is parsed:
+    /// `fn(..) -> R` (a function of any parameters) is a pattern written there
+    /// alone (`anyParamsOutsideDecl` anywhere else).
+    inDeclPattern: bool = false,
     /// Auto-incrementing counters for unique IDs per declaration type.
     id_counters: struct {
         behavior: u32 = 0,

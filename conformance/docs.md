@@ -1939,6 +1939,38 @@ argument never reaches an output (`rule.text()` is `expr-param-method`, 370
 (3)). The other channel is typed meta whose record has `@Expr<T>` fields
 (370 (1), § Typed meta below).
 
+A decorator on a function or a method may wrap it (decision 316):
+`decl.wrapWith({ call -> … })`, the wrapper a lambda written at the call. It
+receives the call value — `call.args`, the arguments as a tuple, and
+`call.run()`, which runs the original body with them — and answers the
+function's return type. `@Decl<fn(..) -> R>` names a function of any
+parameters (`call.args` is then `unknown`; a pattern that lists them types
+it, `@Decl<fn(id: i32) -> string>` gives `#(i32)`); `fn(..)` is written
+nowhere else (`any-params-outside-decl`, at the `..`). Several wrappers
+compose in annotation order, the first written outermost. The function keeps
+its name, signature and annotations: every call of it, an importer's
+included, runs the wrapper, and its original body is reachable only through
+`call.run()`. The wrapper is the program's code, as a member function is: it
+reads the decorator's `@Expr` parameters, spliced, and the names of the
+decorator's module, never the handle or a local of the body
+(`decorator-member-captures`).
+
+<!-- example: modules/decorator_wraps_function -->
+
+A wrapper answering another type than the pattern's `R` is
+`decorator-wrap-type` at the wrapper, in the decorator; `decl.wrapWith` from a
+decorator on anything but a function or a method of a `type` is
+`decorator-wrap-without-function` at the annotation; a wrapper that is no
+lambda written at the call is `decorator-wrap-not-lambda`, and a wrapped
+function (or the type owning a wrapped method) with type parameters
+`decorator-wrap-generic`.
+
+<!-- example: modules/decorator_wrap_wrong_return -->
+
+<!-- example: modules/decorator_wrap_outside_function -->
+
+<!-- example: modules/decorator_any_params_outside_decl -->
+
 ### Typed meta (decision 298)
 
 A decorator's meta is a typed value keyed by its record type, never by the

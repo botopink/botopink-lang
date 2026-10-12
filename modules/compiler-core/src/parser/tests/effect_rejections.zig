@@ -358,3 +358,21 @@ test "RG4 — user-defined generic skip is rejected" {
         \\fn p() -> Container<i32, , bool> { return 0; }
     , .genericArgSkipForbidden);
 }
+
+test "decision 316 — `fn(..) -> R` is `@Decl<…>`'s pattern alone, refused anywhere else at the `..`" {
+    try expectKindAt("fn f(g: fn(..) -> i32) -> i32 { return 0; }", .anyParamsOutsideDecl, 1, 12);
+    try expectKind("fn d(comptime decl: @Decl<fn(g: fn(..) -> i32) -> i32>) {}", .anyParamsOutsideDecl);
+    try expectKind("fn d(comptime decl: @Decl<Box<fn(..) -> i32>>) {}", .anyParamsOutsideDecl);
+
+    const alloc = std.testing.allocator;
+    const src = "fn d(comptime decl: @Decl<fn(..) -> string>) {}";
+    var l = Lexer.init(src);
+    const tokens = try l.scanAll(alloc);
+    defer l.deinit(alloc);
+    var p = Parser.initWithSource(tokens, src);
+    var prog = try p.parse(alloc);
+    defer prog.deinit(alloc);
+    const pattern = prog.decls[0].@"fn".params[0].typeRef.generic.args[0];
+    try std.testing.expect(pattern.function.anyParams);
+    try std.testing.expectEqual(@as(usize, 0), pattern.function.params.len);
+}

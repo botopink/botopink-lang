@@ -868,6 +868,38 @@ method's, a `declare fn`'s (std's `builtins.d.bp` and `types.bp` included).
   (370 (1), a record with `@Expr<T>` fields) is § Typed meta below.
   An ordinary function's argument stays known at build
   (`comptime-arg-not-known`, `value_or_type.zig`'s rule).
+- **Handed on — a wrapper (decision 316).** `decl.wrapWith({ call -> … })`
+  wraps the annotated function or method. `infer.zig` `inferWrapWithCall`
+  (reached beside `inferMemberFnCall`) types the lambda as the program's code,
+  as a member function is (each `exprWrapped` parameter its `T`,
+  `refuseMemberCaptures`), against `fn(call: __Decl__Call<A, R>) -> answer`:
+  the call value (`comptime.zig` `decl_reflection_src`) has `args` — a tuple of
+  the `@Decl<fn(…) -> R>` pattern's parameters, `unknown` under `fn(..) -> R`
+  (the parser's `TypeRef.function.anyParams`, written only as `@Decl<…>`'s
+  pattern, `any-params-outside-decl` elsewhere; `checkDecoratorArgs` meets only
+  its return with the declaration's) — and `run: fn() -> R`; `answer` met with
+  `R` afterwards is `decorator-wrap-type` at the lambda; no lambda at the call
+  is `decorator-wrap-not-lambda`. `eraseFn` hands the runtime
+  `decl.wrapWith(<k>)` (`member_fn.collectWrappers`'s order), the prelude's
+  `wrapWith/2` replies `wrap`; `runDeclDecorators` refuses one from a decorator
+  on anything but a function or a method of a type
+  (`decorator-wrap-without-function`, at the annotation) and appends the
+  rendered lambda (`wrapperSource` → `member_fn.renderWrapper`, splices and
+  384's renames as a member's) to `Env.wrapContributions`. `comptime.zig`
+  `mergeWrappers` then rewrites each wrapped declaration, its wrappers in
+  annotation order (first written outermost): a call type `BpWrapCall__<f>`
+  (`BpWrapCall__<Owner>__<m>`; upper-case first, the BEAM reads a constructor
+  so), one `__bp_wrapper_<f>_<k>` per wrapper holding it as a typed `val`
+  (`val __bp_w: fn(call: C) -> R = …`; a lambda handed straight to a
+  parameter reads its parameter's fields wrongly on wasm), the function's body
+  replaced by the chain of calls, and the original body kept as the private
+  `__bp_wrapped_<f>` (a method's as a private method of its type). The
+  function keeps its name, signature and annotations, so every caller — an
+  importer too — runs the wrapper. A generic function or owner is
+  `decorator-wrap-generic`; a `declare fn` and a method outside a `type`'s
+  body `decorator-wrap-without-function`. `decoratorEval.moduleVarWrite`
+  skips a wrapper and a member function (they run with the program), and
+  `written_names.sharesPrivates` counts a wrapper as it counts a member.
 
 ## Typed meta (decisions 298, 370 (1))
 

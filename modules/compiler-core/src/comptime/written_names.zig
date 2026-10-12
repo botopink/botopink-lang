@@ -66,12 +66,16 @@ pub fn typeAliasOf(arena: std.mem.Allocator, module: []const u8, name: []const u
 
 /// Whether `decls` (module `path`) shares its private functions and values
 /// with the modules that read what it wrote: it declares a decorator whose
-/// body hands a typed member on (384), or a declaration of it carries typed
+/// body hands a typed member or a wrapper (316) on (384), or a declaration of it carries typed
 /// meta with `@Expr` fields an annotation of it wrote (385).
 pub fn sharesPrivates(arena: std.mem.Allocator, decls: []const ast.DeclKind, reflection: ?*const reflectionMod.Reflection, path: []const u8) Error!bool {
     for (decls) |d| if (d == .@"fn") {
         const f = d.@"fn";
-        if (member_fn.declParamName(f)) |handle| if ((try member_fn.collect(arena, f, handle)).len > 0) return true;
+        if (member_fn.declParamName(f)) |handle| {
+            if ((try member_fn.collect(arena, f, handle)).len > 0) return true;
+            // Decision 316 — a wrapper is written where the function it wraps is.
+            if ((try member_fn.collectWrappers(arena, f, handle)).len > 0) return true;
+        }
     };
     const r = reflection orelse return false;
     var it = r.typedMeta.valueIterator();

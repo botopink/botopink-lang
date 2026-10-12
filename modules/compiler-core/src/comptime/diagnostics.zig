@@ -512,6 +512,24 @@ pub const decorator_member_duplicate: []const u8 = "decorator-member-duplicate";
 /// `decl.addMember(source)` whose source is not exactly one `fn` member.
 pub const decorator_member_not_one_fn: []const u8 = "decorator-member-not-one-fn";
 
+// ── decision 316 — a decorator wraps the function it annotates ─────────────
+
+/// `decl.wrapWith(f)` from a decorator on anything but a function or a method
+/// (a `type`, a field, a `val`): only a function's call can be wrapped.
+pub const decorator_wrap_without_function: []const u8 = "decorator-wrap-without-function";
+
+/// `decl.wrapWith(f)` whose `f` is not a lambda written at the call: the
+/// wrapper is the program's code, where the parameters' `@Expr`s are spliced.
+pub const decorator_wrap_not_lambda: []const u8 = "decorator-wrap-not-lambda";
+
+/// A wrapper answering another type than the wrapped function's return, as
+/// the `@Decl<fn(…) -> R>` pattern names it.
+pub const decorator_wrap_type: []const u8 = "decorator-wrap-type";
+
+/// A wrapped function, or the type owning a wrapped method, with type
+/// parameters: the call value is typed by the function's own signature.
+pub const decorator_wrap_generic: []const u8 = "decorator-wrap-generic";
+
 // ── decision 370 (2) — a typed member carrying the parameters' `@Expr`s ─────
 
 /// A typed function expression (`fn(x: T) -> R { … }`) anywhere but the
@@ -772,6 +790,10 @@ pub const all_codes = [_][]const u8{
     decorator_member_without_type,
     decorator_member_duplicate,
     decorator_member_not_one_fn,
+    decorator_wrap_without_function,
+    decorator_wrap_not_lambda,
+    decorator_wrap_type,
+    decorator_wrap_generic,
     fn_expr_typed,
     decorator_member_not_fn,
     decorator_member_fn_untyped,

@@ -107,6 +107,10 @@ pub fn parseBaseTypeRef(this: *This, alloc: std.mem.Allocator) ParseError!ast.Ty
 /// One arm of the base-type grammar, without the `[]` suffix — see
 /// `parseBaseTypeRef`, which applies that once for all of them.
 fn parseBaseTypeRefArm(this: *This, alloc: std.mem.Allocator) ParseError!ast.TypeRef {
+    // Decision 316 — `@Decl<…>`'s pattern is this type alone: whatever it
+    // names inside (a parameter, a generic argument) is no pattern.
+    const declPattern = this.inDeclPattern;
+    this.inDeclPattern = false;
     // `unknown` — decision 8 §2 (06 N19). A keyword, so no declaration can be
     // called `unknown` and the name always means this type; it travels as
     // `TypeRef.named` under the reserved spelling `ast.unknown_type_name`,
@@ -191,8 +195,19 @@ fn parseBaseTypeRefArm(this: *This, alloc: std.mem.Allocator) ParseError!ast.Typ
         var names: std.ArrayList([]const u8) = .empty;
         errdefer names.deinit(alloc);
         var anyName = false;
+        // Decision 316 — `fn(..) -> R`: any parameters, a pattern of
+        // `@Decl<…>` alone.
+        var anyParams = false;
+        if (this.check(.dotDot) and this.peekAt(1).kind == .rightParenthesis) {
+            if (!declPattern) {
+                this.parseError = ParseErrorInfo.fromToken(.anyParamsOutsideDecl, this.peek());
+                return ParseError.UnexpectedToken;
+            }
+            _ = this.advance();
+            anyParams = true;
+        }
 
-        while (!this.check(.rightParenthesis) and !this.check(.endOfFile)) {
+        while (!anyParams and !this.check(.rightParenthesis) and !this.check(.endOfFile)) {
             // Optional `name:` prefix — `fn(next: T)` is accepted alongside the
             // bare `fn(T)` form. The name is documentation-only (function types
             // are positional); it is kept for the formatter.
@@ -227,6 +242,7 @@ fn parseBaseTypeRefArm(this: *This, alloc: std.mem.Allocator) ParseError!ast.Typ
             .params = paramsSlice,
             .returnType = returnPtr,
             .paramNames = nameSlice,
+            .anyParams = anyParams,
         } };
     }
     // `{ name: T, … }` — the removed anonymous record type (1.0.3: a tuple type).
@@ -305,7 +321,9 @@ fn parseBaseTypeRefArm(this: *This, alloc: std.mem.Allocator) ParseError!ast.Typ
                 return ParseError.UnexpectedToken;
             }
             if (args.items.len == 0) first_arg_tok = this.peek();
+            this.inDeclPattern = std.mem.eql(u8, name, "Decl");
             try args.append(alloc, try this.parseTypeRef(alloc));
+            this.inDeclPattern = false;
             // A `>>` that closed an inner list left the outer close pending: the
             // `,` after it separates the ENCLOSING list, not this one.
             if (this.pending_gt or !this.match(.comma)) break;

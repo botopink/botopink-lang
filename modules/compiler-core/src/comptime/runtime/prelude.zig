@@ -294,6 +294,12 @@ pub fn decoratorForms(b: Ast.Builder) Error![]const Ast.Form {
         try b.function("addMember", &.{ V("_Decl"), V("Name"), V("Index") }, &.{}, &.{
             try b.call("__bp_contribute", &.{try b.map(&.{ Ast.field("kind", Ast.str("memberFn")), Ast.field("name", V("Name")), Ast.field("index", V("Index")) })}),
         }),
+        // Decision 316 — `decl.wrapWith(f)`: the wrapper is the program's
+        // code, so the body hands its index (`expr_param.eraseFn`,
+        // `member_fn.collectWrappers`'s order).
+        try b.function("wrapWith", &.{ V("_Decl"), V("Index") }, &.{}, &.{
+            try b.call("__bp_contribute", &.{try b.map(&.{ Ast.field("kind", Ast.str("wrap")), Ast.field("index", V("Index")) })}),
+        }),
         try b.function("setMeta", &.{ V("_Decl"), V("Key"), V("Value") }, &.{}, &.{
             try b.call("__bp_contribute", &.{try b.map(&.{ Ast.field("kind", Ast.str("meta")), Ast.field("key", V("Key")), Ast.field("value", V("Value")) })}),
         }),

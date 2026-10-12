@@ -2729,6 +2729,9 @@ pub const TypeRef = union(enum) {
         /// the formatter; function types stay positional. Owned slice; the
         /// strings slice into the source. Left out of the AST dump.
         paramNames: []const []const u8 = &.{},
+        /// Decision 316 — `fn(..) -> R`: a function of any parameters, written
+        /// only as `@Decl<…>`'s pattern (`params` is empty).
+        anyParams: bool = false,
 
         pub fn jsonStringify(this: @This(), jws: anytype) !void {
             try jws.beginObject();
@@ -2801,6 +2804,7 @@ pub const TypeRef = union(enum) {
             .optional => |inner| try w.print("?{f}", .{inner.*}),
             .function => |f| {
                 try w.writeAll("fn(");
+                if (f.anyParams) try w.writeAll("..");
                 for (f.params, 0..) |p, i| try w.print("{s}{f}", .{ if (i > 0) ", " else "", p });
                 try w.print(") -> {f}", .{f.returnType.*});
             },
@@ -3438,6 +3442,9 @@ fn collectExprNames(gpa: std.mem.Allocator, e: Expr, out: *std.ArrayListUnmanage
         .call => |c| switch (c.kind) {
             .call => |cc| {
                 if (cc.receiver) |r| try collectExprNames(gpa, r.*, out) else if (!cc.is_builtin) try out.append(gpa, cc.callee);
+                // Decision 316 — `<handle>.wrapWith({ call -> … })`: the
+                // wrapper runs with the program, as a typed member does.
+                if (cc.receiver != null and !cc.is_builtin and std.mem.eql(u8, cc.callee, "wrapWith") and cc.args.len == 1 and cc.args[0].value.* == .function) return;
                 for (cc.args) |a| try collectExprNames(gpa, a.value.*, out);
                 for (cc.trailing) |tl| try collectNames(gpa, tl.body, out);
             },

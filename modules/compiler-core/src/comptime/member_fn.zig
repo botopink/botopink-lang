@@ -52,6 +52,27 @@ pub fn isAddMemberOn(c: anytype, declName: []const u8) bool {
     return std.mem.eql(u8, r.identifier.kind.ident, declName) and std.mem.eql(u8, c.callee, add_member) and !c.is_builtin;
 }
 
+/// Decision 316 — the name a decorator body's `wrapWith` is written with.
+pub const wrap_with = "wrapWith";
+
+/// `e` as `<declName>.wrapWith(<function>)` — the wrapper written at the call
+/// (a lambda); null for any other node.
+pub fn asWrapCall(e: ast.Expr, declName: []const u8) ?ast.FunctionExpr {
+    if (e != .call or e.call.kind != .call) return null;
+    const c = e.call.kind.call;
+    if (!isWrapWithOn(c, declName) or c.args.len != 1) return null;
+    const f = c.args[0].value.*;
+    if (f != .function) return null;
+    return f.function;
+}
+
+/// Whether `c` is `<declName>.wrapWith(…)`.
+pub fn isWrapWithOn(c: anytype, declName: []const u8) bool {
+    const r = c.receiver orelse return false;
+    if (r.* != .identifier or r.identifier.kind != .ident) return false;
+    return std.mem.eql(u8, r.identifier.kind.ident, declName) and std.mem.eql(u8, c.callee, wrap_with) and !c.is_builtin;
+}
+
 /// The `@Decl` parameter's name of a decorator or a template annotation
 /// function (`declParamIndex`), null for any other function.
 pub fn declParamName(f: ast.FnDecl) ?[]const u8 {
@@ -105,13 +126,29 @@ pub fn collect(arena: std.mem.Allocator, f: ast.FnDecl, declName: []const u8) ![
     return out.items;
 }
 
+/// Decision 316 — every wrapper `f`'s body hands to `decl.wrapWith`, in the
+/// order `expr_param.eraseFn` numbers them (a pre-order walk).
+pub fn collectWrappers(arena: std.mem.Allocator, f: ast.FnDecl, declName: []const u8) ![]const ast.FunctionExpr {
+    var out: std.ArrayListUnmanaged(ast.FunctionExpr) = .empty;
+    var c: Collector = .{ .arena = arena, .declName = declName, .out = &out, .wrappers = true };
+    try c.walk([]ast.Stmt, f.body);
+    return out.items;
+}
+
 const Collector = struct {
     arena: std.mem.Allocator,
     declName: []const u8,
     out: *std.ArrayListUnmanaged(ast.FunctionExpr),
+    /// Collect `decl.wrapWith(f)`'s functions in place of `addMember`'s.
+    wrappers: bool = false,
 
     fn walk(self: *Collector, comptime T: type, v: T) std.mem.Allocator.Error!void {
-        if (T == ast.Expr) if (asCall(v, self.declName)) |mc| {
+        if (T == ast.Expr) if (self.wrappers) {
+            if (asWrapCall(v, self.declName)) |func| {
+                try self.out.append(self.arena, func);
+                return;
+            }
+        } else if (asCall(v, self.declName)) |mc| {
             try self.walk(ast.Expr, mc.name.*);
             try self.out.append(self.arena, mc.func);
             return;
@@ -354,9 +391,35 @@ pub fn render(
     var fm = format.Formatter.init(arena);
     const text = try format.render(arena, try fm.fmtExpr(.{ .function = f }), std.math.maxInt(u16));
     if (!std.mem.startsWith(u8, text, "fn(")) return error.OutOfMemory;
+    return std.fmt.allocPrint(arena, "pub fn {s}{s}", .{ name, try spliceLexemes(arena, text[2..], splices) });
+}
+
+/// Decision 316 — the wrapper `func` (a lambda written at `decl.wrapWith`)
+/// as source, each read of a spliced parameter replaced by its argument as
+/// `render` replaces it, each type parameter by its spelling and each name of
+/// `renames` by its alias.
+pub fn renderWrapper(
+    arena: std.mem.Allocator,
+    func: ast.FunctionExpr,
+    splices: []const Splice,
+    typeArgs: []const TypeArg,
+    owner: []const u8,
+    renames: []const Rename,
+) ![]const u8 {
+    const bound = try boundNames(arena, func.kind.params, func.kind.body);
+    var sub: Substitution = .{ .arena = arena, .splices = splices, .typeArgs = typeArgs, .owner = owner, .bound = &bound, .renames = renames };
+    var f = func;
+    f.kind.body = try sub.clone([]ast.Stmt, func.kind.body);
+    var fm = format.Formatter.init(arena);
+    const text = try format.render(arena, try fm.fmtExpr(.{ .function = f }), std.math.maxInt(u16));
+    return spliceLexemes(arena, text, splices);
+}
+
+/// `text` with every splice placeholder replaced by its argument's lexeme —
+/// bare when it is one name, parenthesised otherwise.
+fn spliceLexemes(arena: std.mem.Allocator, text: []const u8, splices: []const Splice) ![]const u8 {
     var out: std.ArrayListUnmanaged(u8) = .empty;
-    try out.print(arena, "pub fn {s}", .{name});
-    var rest = text[2..];
+    var rest = text;
     while (std.mem.indexOf(u8, rest, placeholder_prefix)) |at| {
         try out.appendSlice(arena, rest[0..at]);
         const tail = rest[at + placeholder_prefix.len ..];
@@ -553,4 +616,26 @@ test "a member function: collected in order, its free names, rendered with each 
     try std.testing.expect(std.mem.indexOf(u8, text, "return [__bp_tpl_rules__Violation(field: \"confirm\", message: m)];") != null);
     try std.testing.expect(std.mem.indexOf(u8, text, "if (passwordsMatch(self))") != null);
     try std.testing.expect(std.mem.indexOf(u8, text, "val m = (t(\"signup.mismatch\"));") != null);
+}
+
+test "decision 316 — a wrapper: collected in order apart from the members, rendered with each argument spliced" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const lexer = @import("../lexer.zig");
+    const parser = @import("../parser.zig");
+    var lx = lexer.Lexer.init(
+        \\fn tagged(comptime decl: @Decl<fn(..) -> string>, comptime mark: @Expr<string>) {
+        \\    decl.addMember("m", fn(self: T) -> string { return mark; });
+        \\    decl.wrapWith({ call -> mark + call.run() });
+        \\    decl.wrapWith({ call -> call.run() });
+        \\}
+    );
+    var p = parser.Parser.init(try lx.scanAll(arena));
+    const f = (try p.parse(arena)).decls[0].@"fn";
+    try std.testing.expectEqual(@as(usize, 2), (try collectWrappers(arena, f, "decl")).len);
+    try std.testing.expectEqual(@as(usize, 1), (try collect(arena, f, "decl")).len);
+    const wrapper = (try collectWrappers(arena, f, "decl"))[0];
+    const text = try renderWrapper(arena, wrapper, &.{.{ .param = "mark", .lexeme = "\"*\" + suffix" }}, &.{}, "", &.{});
+    try std.testing.expect(std.mem.indexOf(u8, text, "(\"*\" + suffix) + call.run()") != null);
 }
