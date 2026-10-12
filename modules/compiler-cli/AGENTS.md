@@ -702,9 +702,8 @@ importer's answer too; a build that succeeds gives `main.snap`: stdout, and
    claim on commonJS repeats the `out` lines).
 3. **The cell's package and manifest** — decided by 475 (1): every cell has its
    own `botopink.json`, and `check` refuses a cell without one. The migration of
-   `tests/language` named each single-file cell's package after the cell (two keep
-   `language_tests`, the package their host templates spell — `conformance/AGENTS.md`
-   § Layout); the `targets` file became the manifest's `"targets"`.
+   `tests/language` named each cell's package after the cell, and every cell's package is its directory's
+   name (decision 511); the `targets` file became the manifest's `"targets"`.
 4. **The entry** is `src/main.bp`, required in every cell, its `main` the
    program; the other modules are what its `mod` tree reaches. Snapshots are
    named after the module's file under `src/` (`x/mod.bp` → `x/mod.snap`).

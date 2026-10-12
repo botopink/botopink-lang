@@ -1244,7 +1244,7 @@ if have erl && have erlc; then
       COMPILE="$(erlc +from_asm -o "$D" "$D"/*.S 2>&1)"
     fi
     CC=$?
-    OUT="$(cd "$WORK" && erl -noshell -pa "$D" -eval "'language_tests@main':main([]), halt()." 2>&1)"
+    OUT="$(cd "$WORK" && erl -noshell -pa "$D" -eval "'erlang_host_sidecar_shipped@main':main([]), halt()." 2>&1)"
     CODE=$?
     set -e
     [[ "$CC" -eq 0 ]] && ok "$T: the emitted modules compile with the OTP tools" || { fail "$T: erlc refused the build"; echo "$COMPILE" | sed 's/^/      /' >&2; }
