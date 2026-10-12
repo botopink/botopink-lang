@@ -494,7 +494,10 @@ codegen/
   on JS-global-backed primitives (`isJsGlobalNamespace(jsPrototypeOwner(name))`:
   `Array`/`String`/numeric/`Bool`), where they become statics on the existing
   global (`Array.range = function…`) — `const Array = {}` would shadow the
-  global.
+  global. An associated fn carrying a template-form `#[@External.Node("… $0 …")]`
+  emits the template as its body: the prelude copy is not inferred, so an integer
+  `/` in a body there would stay a float division (`Array.range` / `Array.repeat`
+  use it; their bodies double an array on the other targets).
 - **Bare `throw`** (JS-6, decided): rejected, not a rethrow. The parser
   requires an operand (`throw [new] <expr>`), so `throw;` is a parse error on
   every backend (`throw_bare_throw_inside_try_catch_is_rejected` pins it on all

@@ -2865,6 +2865,27 @@ const Emitter = struct {
             }
             for (i.methods) |m| {
                 if (!isAssociatedFn(m)) continue;
+                // A template-form `#[@External.Node("… $0 …")]` replaces the body:
+                // the prelude's emitted copy is not inferred, so a body's integer
+                // `/` would stay a float division here.
+                if (m.externalFor("node")) |ref| if (primOpTemplate.looksLikeTemplate(ref.symbol)) {
+                    var holes = MethodHoles{ .params = m.params, .boxed_recv = false };
+                    var tmpl = HostTemplate(MethodHoles){
+                        .arena = self.arena(),
+                        .holes = &holes,
+                        .argc = m.params.len,
+                    };
+                    try primOpTemplate.render(ref.symbol, &tmpl);
+                    try stmts.append(self.arena(), .{ .expr = try self.b.assign(
+                        try self.b.member(.{ .name = assoc_ns }, m.name),
+                        "=",
+                        .{ .function = .{
+                            .params = try self.buildParams(m.params),
+                            .body = .{ .stmts = try self.b.stmts(&.{.{ .return_ = try tmpl.finish() }}), .layout = .spaced },
+                        } },
+                    ) });
+                    continue;
+                };
                 const body_src = m.body orelse continue;
                 const params = try self.buildParams(m.params);
                 const prev = self.current_indent;

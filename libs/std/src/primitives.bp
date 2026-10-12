@@ -721,23 +721,29 @@ behavior Array<T> {
     // ── producers (associated — no receiver) ──
     // Pure botopink (no host backing): the host `lists:seq`/`duplicate` have the
     // wrong semantics (`seq` is end-inclusive; `duplicate` swaps the args), so
-    // these recurse with an array-literal spread `[head, ..tail]`, giving
-    // identical end-exclusive `[start, stop)` / `times`-copy results on every
-    // backend. `head` is bound to a `val` first so the BEAM backend spills it to a
-    // stack slot — an x-register would be clobbered by the recursive call. (No
-    // comments inside the bodies: the commonJS if-expr emits as a one-line IIFE,
-    // where a `//` would swallow the rest of the block.)
+    // these build the result by doubling — the half is built once, then appended
+    // to itself — giving identical end-exclusive `[start, stop)` / `times`-copy
+    // results on every backend in O(log n) calls and O(n) allocated elements
+    // (a `[head, ..tail]` recursion copies the tail per element: O(n) calls,
+    // O(n²) elements). Each half is bound to a `val` first so the BEAM backend
+    // spills it to a stack slot — an x-register would be clobbered by the
+    // recursive call. (No comments inside the bodies: the commonJS if-expr emits
+    // as a one-line IIFE, where a `//` would swallow the rest of the block.)
+    #[@External.Node("((__a, __b) => Array.from({ length: Math.max(0, __b - __a) }, (_, __i) => __a + __i))($0, $1)")]
     default fn range(start: i32, stop: i32) -> Array<i32> {
-        return if (start >= stop) [] else {
-            val head = start;
-            [head, ..(Array.range(start + 1, stop))];
+        return if (stop - start <= 0) [] else {
+            val count = stop - start;
+            val low = Array.range(start, start + count / 2);
+            val high = Array.range(start + count / 2, stop);
+            low.append(high);
         };
     }
 
+    #[@External.Node("((__v, __n) => Array.from({ length: Math.max(0, __n) }, () => __v))($0, $1)")]
     default fn repeat<E>(value: E, times: i32) -> Array<E> {
         return if (times <= 0) [] else {
-            val head = value;
-            [head, ..(Array.repeat(value, times - 1))];
+            val half = Array.repeat(value, times / 2);
+            if (times % 2 == 0) half.append(half) else half.append(half).append([value]);
         };
     }
 

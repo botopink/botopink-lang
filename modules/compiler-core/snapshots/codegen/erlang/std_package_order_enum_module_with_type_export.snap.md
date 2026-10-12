@@ -580,12 +580,14 @@ test "order case over Order" {
 %% behavior Array
 
 array_range(Start, Stop) ->
-    case (Start >= Stop) of
+    case ((Stop - Start) =< 0) of
         true ->
             [];
         false ->
-            Head = Start,
-            [Head] ++ (array_range((Start + 1), Stop))
+            Count = (Stop - Start),
+            Low = array_range(Start, (Start + (Count div 2))),
+            High = array_range((Start + (Count div 2)), Stop),
+            '__bp_prim_append'(Low, High)
     end.
 
 array_repeat(Value, Times) ->
@@ -593,8 +595,13 @@ array_repeat(Value, Times) ->
         true ->
             [];
         false ->
-            Head = Value,
-            [Head] ++ (array_repeat(Value, (Times - 1)))
+            Half = array_repeat(Value, (Times div 2)),
+            case ((Times rem 2) =:= 0) of
+                true ->
+                    '__bp_prim_append'(Half, Half);
+                false ->
+                    '__bp_prim_append'('__bp_prim_append'(Half, Half), [Value])
+            end
     end.
 
 %%% std/collections — the four collection types, one namespace each (decision
@@ -795,6 +802,11 @@ reverse(O) ->
 
 
 
+
+'__bp_prim_append'(Recv, Arg0) when erlang:is_list(Recv) ->
+    (Recv ++ Arg0);
+'__bp_prim_append'(Recv, _) ->
+    erlang:error({bp_unsupported_method, <<"append">>, 1, Recv}).
 
 '__bp_text'(Value) when erlang:is_binary(Value) -> Value;
 '__bp_text'(Value) -> erlang:iolist_to_binary(io_lib:format(<<"~p">>, [Value])).
