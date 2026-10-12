@@ -2207,12 +2207,13 @@ fn fnKey(alloc: std.mem.Allocator, name: []const u8, arity: usize) ![]u8 {
     return std.fmt.allocPrint(alloc, "{s}/{d}", .{ name, arity });
 }
 
+/// True when any `External.<target>(…)` annotation writes `inline: true` —
+/// read by its label, wherever it is written (decision 487).
 fn hasExternalInline(annotations: []const ast.Annotation, target: []const u8) bool {
     for (annotations) |a| {
         if (!std.mem.startsWith(u8, a.name, "External.")) continue;
         if (!std.ascii.eqlIgnoreCase(a.name["External.".len..], target)) continue;
-        if (a.args.len == 0) continue;
-        if (std.mem.eql(u8, a.args[a.args.len - 1], "true")) return true;
+        if (ast.externalFlagSet(a, "inline")) return true;
     }
     return false;
 }

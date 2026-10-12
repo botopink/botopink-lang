@@ -2251,7 +2251,9 @@ pub fn wasmCellDisplay(alloc: std.mem.Allocator, text: []const u8) ![]u8 {
 /// The `(module, symbol)` of `a` when it is an `External.<member>` annotation
 /// serving `lookup` (`ExternalLookup.of`): a `host:` argument other than the
 /// lookup's host passes it by, and is not counted among the template's
-/// arguments; neither is a trailing `inline` flag.
+/// arguments; neither is any bool flag — `inline:`, `result:` (decisions 487,
+/// 490), wherever it is written, or a bare `true` / `false` the checker
+/// refuses.
 pub fn externalRefOf(a: Annotation, target: []const u8) ?ExternalRef {
     const lookup = ExternalLookup.of(target);
     if (!std.mem.startsWith(u8, a.name, "External.")) return null;
@@ -2264,11 +2266,11 @@ pub fn externalRefOf(a: Annotation, target: []const u8) ?ExternalRef {
     var n: usize = 0;
     for (a.args, 0..) |arg, i| {
         if (host_at != null and i == host_at.?) continue;
+        if (isExternalFlagArg(a, i)) continue;
         if (n == pos.len) return null;
         pos[n] = arg;
         n += 1;
     }
-    if (n >= 1 and isBoolFlagArg(pos[n - 1])) n -= 1;
     if (n == 1) return .{ .module = "", .symbol = unquoteAnnotationArg(pos[0]) };
     if (n == 2) return .{ .module = unquoteAnnotationArg(pos[0]), .symbol = unquoteAnnotationArg(pos[1]) };
     return null;
@@ -2354,6 +2356,34 @@ pub fn externalTargetMatches(arg: []const u8, target: []const u8) bool {
 /// after the parser strips its `inline:` label.
 fn isBoolFlagArg(arg: []const u8) bool {
     return std.mem.eql(u8, arg, "true") or std.mem.eql(u8, arg, "false");
+}
+
+/// The bool flags an `External.<Target>` annotation declares
+/// (`libs/std/src/builtins.d.bp`): `inline:` on `Erlang`, `result:` on every
+/// variant (decisions 487, 490). Each is labelled and read by its label.
+pub const external_flag_labels = [_][]const u8{ "inline", "result" };
+
+/// True when argument `i` of an `External.<Target>` annotation is a flag,
+/// not a template argument: labelled with one of `external_flag_labels`, or
+/// a bare `true` / `false` (refused by the checker, decision 487, and never a
+/// template either way).
+pub fn isExternalFlagArg(a: Annotation, i: usize) bool {
+    if (a.labelOf(i)) |label| {
+        for (external_flag_labels) |l| if (std.mem.eql(u8, l, label)) return true;
+        return false;
+    }
+    return isBoolFlagArg(a.args[i]);
+}
+
+/// The value of the labelled flag `label` on `a` (`inline`, `result`) when
+/// it is written `true`; false when absent, `false`, or any other value
+/// (which the checker refuses).
+pub fn externalFlagSet(a: Annotation, label: []const u8) bool {
+    for (a.args, 0..) |arg, i| {
+        const l = a.labelOf(i) orelse continue;
+        if (std.mem.eql(u8, l, label)) return std.mem.eql(u8, arg, "true");
+    }
+    return false;
 }
 
 /// `prim-op-annotation` arity branch: `when($argc == N): "<template>"`.

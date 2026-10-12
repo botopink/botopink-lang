@@ -816,16 +816,20 @@ test "infer: external ---- fn no body typechecks" {
     );
 }
 
-// Front 20 F9, decision 437 — `inline` on the one variant that declares it
-// (`External.Erlang`) is accepted, in both spellings the parser reads
-// (`inline: true` and the bare trailing bool).
+// Front 20 F9, decisions 437, 487 — `inline` on the one variant that
+// declares it (`External.Erlang`) is accepted, labelled
+// (`inline: true`) and read by its label in any position;
+// `result: false`, the default, sits beside it on any variant.
 test "infer: external ---- inline on erlang typechecks" {
     try h.assertInfersOk(std.testing.allocator,
         \\#[@External.Erlang("max($args)", inline: true)]
         \\pub declare fn biggest(a: i32, b: i32) -> i32;
         \\
-        \\#[@External.Erlang("min($args)", true)]
+        \\#[@External.Erlang(inline: true, "min($args)", result: false)]
         \\pub declare fn smallest(a: i32, b: i32) -> i32;
+        \\
+        \\#[@External.Node(result: false, "Math.abs($0)")]
+        \\pub declare fn magnitude(a: i32) -> i32;
         \\
         \\fn main() {
         \\    val n = biggest(1, 2);
@@ -837,8 +841,8 @@ test "infer: external ---- inline on erlang typechecks" {
 // Annotation { … }` from `builtins.d.bp`, which the compiler does not parse
 // (the same reason `effect_chain.zig` restates the `extends` clauses). The
 // test reads the file and fails in both directions: a variant declared there
-// that the table does not carry, or whose `inline` the table gets wrong, and a
-// table row the file does not declare.
+// that the table does not carry, or whose `inline` or `result` the table gets
+// wrong, and a table row the file does not declare.
 test "infer: external ---- the variant table agrees with builtins.d.bp" {
     const source: []const u8 = @import("std_prelude").builtins;
     const head = "pub type External implement Annotation {";
@@ -852,6 +856,8 @@ test "infer: external ---- the variant table agrees with builtins.d.bp" {
         const paren = std.mem.indexOfScalar(u8, line, '(') orelse return error.VariantWithoutPayload;
         const name = line[0..paren];
         const declares_inline = std.mem.indexOf(u8, line, "inline: bool = false") != null;
+        // Decisions 431, 490 — `result: bool = false` on every variant, last.
+        const declares_result = std.mem.endsWith(u8, line, "result: bool = false)");
         declared += 1;
         const row = for (inferMod.external_variants) |v| {
             if (std.mem.eql(u8, v.name, name)) break v;
@@ -865,6 +871,13 @@ test "infer: external ---- the variant table agrees with builtins.d.bp" {
                 .{ name, if (declares_inline) "declares" else "does not declare", if (row.declares_inline) "it does" else "it does not" },
             );
             return error.InlineDrifted;
+        }
+        if (row.declares_result != declares_result) {
+            std.debug.print(
+                "`External.{s}`: builtins.d.bp {s} `result` last, `external_variants` says {s}\n",
+                .{ name, if (declares_result) "declares" else "does not declare", if (row.declares_result) "it does" else "it does not" },
+            );
+            return error.ResultDrifted;
         }
     }
     try std.testing.expectEqual(inferMod.external_variants.len, declared);

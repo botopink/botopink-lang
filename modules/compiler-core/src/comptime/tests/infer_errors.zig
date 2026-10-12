@@ -461,10 +461,10 @@ test "infer error: external ---- wrong arity" {
 }
 
 // Front 20 F9, decisions 67, 437 — `inline` is read by two emitters (`erlang.zig`
-// and `beam_asm.zig`, `hasExternalInline` over the last argument of
-// `External.Erlang`), so it is declared on `External.Erlang` alone, and a
-// written flag no emitter would read is refused at the annotation rather than
-// accepted and ignored.
+// and `beam_asm.zig`, `hasExternalInline` over `External.Erlang`'s labelled
+// `inline:`), so it is declared on `External.Erlang` alone, and a written flag
+// no emitter would read is refused at the annotation rather than accepted and
+// ignored.
 test "infer error: external ---- inline on a variant that does not declare it" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\#[@External.Node("Math.max($args)", inline: true)]
@@ -472,16 +472,11 @@ test "infer error: external ---- inline on a variant that does not declare it" {
     );
 }
 
-test "infer error: external ---- inline as a bare trailing bool is the same flag" {
+// Decision 487 — `External`'s flags are labelled and read by their label; a
+// bare positional bool names no flag, refused at the argument.
+test "infer error: external ---- a bare positional bool is refused" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\#[@External.Typescript("Math.max($args)", true)]
-        \\pub declare fn biggest(a: i32, b: i32) -> i32;
-    );
-}
-
-test "infer error: external ---- inline must be the last argument" {
-    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\#[@External.Erlang(inline: true, "max($args)")]
         \\pub declare fn biggest(a: i32, b: i32) -> i32;
     );
 }
@@ -490,6 +485,66 @@ test "infer error: external ---- inline is a bool" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\#[@External.Erlang("max($args)", inline: 1)]
         \\pub declare fn biggest(a: i32, b: i32) -> i32;
+    );
+}
+
+// Decisions 431 (2), 488, 490 — `result: true` says the host call can fail,
+// answered `Error(HostError(…))`: the return must be `@Result<…, HostError>`
+// (or a `@Task` of one) with std's `failure.HostError`, else the annotation is
+// refused.
+test "infer error: external ---- result true on a plain return" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\#[@External.Node("JSON.parse($0)", result: true)]
+        \\pub declare fn jsParse(s: string) -> i32;
+    );
+}
+
+test "infer error: external ---- result true on a Task of a plain value" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\#[@External.Erlang("timer:sleep($0)", result: true)]
+        \\pub declare fn pause(ms: i32) -> @Task<i32>;
+    );
+}
+
+test "infer error: external ---- result true with a HostError of the module's own" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\pub type HostError(message: string)
+        \\
+        \\#[@External.Node("JSON.parse($0)", result: true)]
+        \\pub declare fn jsParse(s: string) -> @Result<i32, HostError>;
+    );
+}
+
+// Decision 491 — an `op:` / `fn:` cell is wasm code, not a host call.
+test "infer error: external ---- result on a wasm op cell" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\#[@External.Wasm(op: "f64.floor", result: true)]
+        \\pub declare fn floor(x: f64) -> f64;
+    );
+}
+
+test "infer error: external ---- result on a fn cell" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\fn absBody(x: i32) -> i32 { if (x < 0) { -x } else { x } }
+        \\
+        \\#[@External.Node(fn: absBody, result: true)]
+        \\pub declare fn magnitude(x: i32) -> i32;
+    );
+}
+
+test "infer error: external ---- result is a bool" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\#[@External.Node("JSON.parse($0)", result: 1)]
+        \\pub declare fn jsParse(s: string) -> i32;
+    );
+}
+
+test "infer error: external ---- result true on a behavior method is checked the same way" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\pub behavior Shape {
+        \\    #[@External.Node("area", result: true)]
+        \\    fn area(self: Self) -> i32;
+        \\}
     );
 }
 

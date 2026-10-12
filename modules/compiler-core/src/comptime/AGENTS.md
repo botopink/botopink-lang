@@ -124,17 +124,30 @@ spells the target capitalised. It fires on the `@`-prefixed builtin form only: `
 without the `@` is a user-defined attribute and means something else.
 
 **An `inline` no emitter reads is refused** (front 20 F9, decision 67). `External`'s flag is read
-by `codegen/erlang.zig` and `codegen/beam_asm.zig` alone (`hasExternalInline`, over the LAST
-argument), so `builtins.d.bp` declares it on `Erlang` and `Beam` alone — and until this rule the
+by `codegen/erlang.zig` and `codegen/beam_asm.zig` alone (`hasExternalInline`, over the labelled
+`inline:`), so `builtins.d.bp` declares it on `Erlang` alone — and until this rule the
 checker never read that declaration, so `#[@External.Node("…", inline: true)]` checked and ran
-as a switch that did nothing. `external_variants` restates the five variants with their
-`declares_inline` bit (`comptime/tests/infer_decls.zig` reads `builtins.d.bp` through
-`std_prelude` and fails in both directions when they drift), and `refuseUnreadInline` reds at
-the annotation for the three unread shapes: the flag on `Node` / `Wasm` / `Typescript`, the flag
-anywhere but last, and a value that is not `true` / `false`. It runs from
-`validateExternalAnnotation` for a `declare fn` and from `validateExternalInline` — a program
-walk beside `validateEffectAnnotations` — for a behavior's and a type's methods, which the two
-emitters read the same way.
+as a switch that did nothing. `external_variants` restates the four variants with their
+`declares_inline` and `declares_result` bits (`comptime/tests/infer_decls.zig` reads `builtins.d.bp`
+through `std_prelude` and fails in both directions when they drift), and `refuseUnreadInline` reds at
+the annotation for the two unread shapes: the flag on `Node` / `Wasm` / `Typescript`, and a value
+that is not `true` / `false`. It runs from `validateExternalAnnotation` for a `declare fn` and from
+`validateExternalInline` — a program walk beside `validateEffectAnnotations` — for a behavior's and
+a type's methods, which the two emitters read the same way.
+
+**`External`'s flags are labelled; `result: true` answers a `@Result<…, HostError>`** (decisions
+431 (2), 487, 488, 490). `inline:` and `result:` are read by their label in any order
+(`ast.isExternalFlagArg` / `ast.externalFlagSet`; `ast.externalRefOf` skips every flag), and a bare
+positional `true` / `false` is refused at the argument (`refuseBareBoolFlag`). `refuseResultReturn`,
+from `validateExternalInline` on a `declare fn` and on every method, refuses at the annotation a
+`result:` that is not a bool and a `result: true` whose declared return is not `@Result<…, HostError>`
+or `@Task<@Result<…, HostError>>` — `HostError` std's `failure.HostError` by module identity
+(`isStdHostError`: a `from "std"` item `failure.HostError` binding the name, or `failure`'s own
+type inside that std module; a module's own `HostError` is not it). A `result:` beside an `op:` cell or a `fn:`
+cell (on any variant) is refused whatever its value (decision 491), and so is one on a variant whose
+`external_variants` row has no `declares_result`. `conformance/modules/external_result_return` (refused) and
+`external_result_return_accepted` (the accepted shapes) are its cells. The codegen of `result: true` is
+the backends' (144 B-05).
 
 **A binding is one labelled cell** (decisions 305, 481). The parser reads `fn: tanBody` on every
 `@External.<Target>`, and `op: "f64.floor"`, `wasi: .Delay` and `std: "hash.contentHash"` on `@External.Wasm`

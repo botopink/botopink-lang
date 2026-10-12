@@ -3732,24 +3732,28 @@ fn inferTestDecl(env: *Env, t: ast.TestDecl) InferError!void {
 }
 
 /// One variant of `pub type External implement Annotation { … }` in
-/// `libs/std/src/builtins.d.bp`, and whether it declares `inline: bool = false`.
-pub const ExternalVariant = struct { name: []const u8, declares_inline: bool };
+/// `libs/std/src/builtins.d.bp`, and which of the two bool flags it declares:
+/// `inline: bool = false` and `result: bool = false` (decision 490).
+pub const ExternalVariant = struct { name: []const u8, declares_inline: bool, declares_result: bool };
 
 /// The four `External` variants (front 20 F9; `Beam` is gone, decision 437). `inline` opts a `(target,
 /// method)` pair out of the dispatch table, and exactly two emitters read it —
 /// `codegen/erlang.zig` and `codegen/beam_asm.zig`, each through a
-/// `hasExternalInline` over the LAST argument of `External.Erlang` (the beam
+/// `hasExternalInline` over `External.Erlang`'s labelled `inline:` (the beam
 /// target reads that cell too, decision 437) — so exactly one variant declares
 /// it. On the other three a written `inline` is a switch nothing reads, which
 /// decision 67 refuses rather than accepts and ignores (`refuseUnreadInline`).
+/// `result:` (decisions 431, 490) is declared on every variant: a binding
+/// whose host call can fail answers `@Result<…, HostError>`
+/// (`refuseResultReturn`).
 /// `builtins.d.bp` is documentation the compiler does not parse, so the table
 /// is restated here, once, and `comptime/tests/infer_decls.zig` reads the file
 /// and fails in both directions when the two disagree.
 pub const external_variants = [_]ExternalVariant{
-    .{ .name = "Erlang", .declares_inline = true },
-    .{ .name = "Node", .declares_inline = false },
-    .{ .name = "Wasm", .declares_inline = false },
-    .{ .name = "Typescript", .declares_inline = false },
+    .{ .name = "Erlang", .declares_inline = true, .declares_result = true },
+    .{ .name = "Node", .declares_inline = false, .declares_result = true },
+    .{ .name = "Wasm", .declares_inline = false, .declares_result = true },
+    .{ .name = "Typescript", .declares_inline = false, .declares_result = true },
 };
 
 /// The `External` variant the annotation names, or null when the path names none
@@ -3764,41 +3768,48 @@ fn externalVariantOf(a: ast.Annotation) ?ExternalVariant {
     return null;
 }
 
-/// True when `a` writes the `inline` flag: an argument labelled `inline`, or a
-/// bare trailing `true` / `false` after the template — the positional form the
-/// emitters' `hasExternalInline` reads (last argument, literally `true`).
-fn writesInline(a: ast.Annotation) bool {
-    for (a.args, 0..) |arg, i| {
-        if (a.labelOf(i)) |label| {
-            if (std.mem.eql(u8, label, "inline")) return true;
-        } else if (i == a.args.len - 1 and i > 0 and
-            (std.mem.eql(u8, arg, "true") or std.mem.eql(u8, arg, "false")))
-        {
-            return true;
-        }
+/// The index of the argument labelled `label`, or null.
+fn labelledArg(a: ast.Annotation, label: []const u8) ?usize {
+    for (a.args, 0..) |_, i| {
+        if (a.labelOf(i)) |l| if (std.mem.eql(u8, l, label)) return i;
     }
-    return false;
+    return null;
+}
+
+fn externalFlagError(env: *Env, loc: ?ast.Loc, msg: []const u8, hint: []const u8) InferError {
+    var e = TypeError.custom(msg, hint);
+    if (loc) |l| e = e.withLoc(l);
+    env.lastError = e;
+    return error.TypeError;
+}
+
+/// Decision 487 — `External`'s flags, `inline:` and `result:`, are labelled
+/// and read by their label in any order; a bare positional `true` / `false`
+/// names no flag, so it is refused at the argument rather than guessed.
+fn refuseBareBoolFlag(env: *Env, a: ast.Annotation) InferError!void {
+    const v = externalVariantOf(a) orelse return;
+    for (a.args, 0..) |arg, i| {
+        if (a.labelOf(i) != null) continue;
+        if (!std.mem.eql(u8, arg, "true") and !std.mem.eql(u8, arg, "false")) continue;
+        return externalFlagError(env, a.argLoc(i), try std.fmt.allocPrint(
+            env.arena,
+            "`External.{s}` takes no bare `{s}` — its flags are labelled, `result:`{s} (decision 487)",
+            .{ v.name, arg, if (v.declares_inline) " and `inline:`" else "" },
+        ), "Write the flag by its label: `result: true`, or `inline: true` on `External.Erlang`.");
+    }
 }
 
 /// Front 20 F9, decision 67 — a written `inline` that no emitter would read is
 /// refused at the annotation rather than accepted as a switch that does
-/// nothing. Three shapes are unread: the flag on a variant that does not
-/// declare it (`Node` / `Wasm` / `Typescript`), the flag anywhere but last
-/// (both `hasExternalInline` read the last argument only), and a value that is
-/// not `true` / `false` (the readers compare against the literal `true`).
+/// nothing. Two shapes are unread: the flag on a variant that does not
+/// declare it (`Node` / `Wasm` / `Typescript`), and a value that is not
+/// `true` / `false` (the readers compare against the literal `true`). The
+/// flag is read by its label, so its position is free (decision 487).
 fn refuseUnreadInline(env: *Env, a: ast.Annotation) InferError!void {
     const v = externalVariantOf(a) orelse return;
-    if (!writesInline(a)) return;
-    const fail = struct {
-        fn fail(e_: *Env, a_: ast.Annotation, msg: []const u8, hint: []const u8) InferError {
-            var e = TypeError.custom(msg, hint);
-            if (a_.loc) |l| e = e.withLoc(l);
-            e_.lastError = e;
-            return error.TypeError;
-        }
-    }.fail;
+    const at = labelledArg(a, "inline") orelse return;
     if (!v.declares_inline) {
-        return fail(env, a, try std.fmt.allocPrint(
+        return externalFlagError(env, a.loc, try std.fmt.allocPrint(
             env.arena,
             "`External.{s}` declares no `inline` — the flag is read by the erlang and beam emitters from `External.Erlang` only",
             .{v.name},
@@ -3808,25 +3819,135 @@ fn refuseUnreadInline(env: *Env, a: ast.Annotation) InferError!void {
             .{v.name},
         ));
     }
-    for (a.args, 0..) |arg, i| {
-        const labelled = if (a.labelOf(i)) |label| std.mem.eql(u8, label, "inline") else false;
-        const last = i == a.args.len - 1;
-        if (!labelled and !last) continue;
-        if (!last) {
-            return fail(env, a, try std.fmt.allocPrint(
-                env.arena,
-                "`External.{s}`'s `inline` must be the last argument — the emitters read the last argument only",
-                .{v.name},
-            ), "Write the template first: `#[@External.Erlang(\"<template>\", inline: true)]`.");
-        }
-        if (!std.mem.eql(u8, arg, "true") and !std.mem.eql(u8, arg, "false")) {
-            return fail(env, a, try std.fmt.allocPrint(
-                env.arena,
-                "`External.{s}`'s `inline` is a bool, got `{s}`",
-                .{ v.name, arg },
-            ), "Write `inline: true` or `inline: false`.");
-        }
+    const arg = a.args[at];
+    if (!std.mem.eql(u8, arg, "true") and !std.mem.eql(u8, arg, "false")) {
+        return externalFlagError(env, a.loc, try std.fmt.allocPrint(
+            env.arena,
+            "`External.{s}`'s `inline` is a bool, got `{s}`",
+            .{ v.name, arg },
+        ), "Write `inline: true` or `inline: false`.");
     }
+}
+
+/// Decisions 431 (2), 488, 490 — `result: true` on an `External.<Target>`
+/// binding says the host call can fail and the backend answers every failure
+/// as `Error(HostError(…))`, so the declared return must be
+/// `@Result<…, HostError>` or `@Task<@Result<…, HostError>>`, `HostError`
+/// being std's `failure.HostError` by module identity (488): a type of
+/// another module that happens to be named `HostError` is not it. Any other
+/// return is refused at the annotation, so the flag has one reading. The
+/// flag is a bool; `result: false` is the default and says nothing.
+fn refuseResultReturn(env: *Env, a: ast.Annotation, name: []const u8, ret: ?ast.TypeRef, program: ast.Program) InferError!void {
+    const v = externalVariantOf(a) orelse return;
+    const at = labelledArg(a, "result") orelse return;
+    if (!v.declares_result) {
+        return externalFlagError(env, a.loc, try std.fmt.allocPrint(
+            env.arena,
+            "`External.{s}` declares no `result`",
+            .{v.name},
+        ), "`builtins.d.bp` declares `result: bool = false` on the variants whose backends answer it.");
+    }
+    const arg = a.args[at];
+    // Decision 491 — an `op:` cell is a wasm instruction and a `fn:` cell a
+    // botopink fn of the module (on every target, decision 305): neither is
+    // a host call that raises, so `result:` there is refused.
+    for ([_][]const u8{ "op", "fn" }) |cell| if (labelledArg(a, cell) != null) {
+        return externalFlagError(env, a.loc, try std.fmt.allocPrint(
+            env.arena,
+            "`{s}`'s `External.{s}({s}: …)` takes no `result:` — an `{s}:` cell is not a host call that can fail (decision 491)",
+            .{ name, v.name, cell, cell },
+        ), "Delete `result:`; a host call that can fail is a template binding, or a `wasi:` or `std:` cell on `External.Wasm`.");
+    };
+    if (std.mem.eql(u8, arg, "false")) return;
+    if (!std.mem.eql(u8, arg, "true")) {
+        return externalFlagError(env, a.loc, try std.fmt.allocPrint(
+            env.arena,
+            "`External.{s}`'s `result` is a bool, got `{s}`",
+            .{ v.name, arg },
+        ), "Write `result: true` or `result: false`.");
+    }
+    const shape: HostResultShape = if (ret) |r| hostResultShape(env, r, program) else .other;
+    if (shape == .host_error) return;
+    if (shape == .foreign_error) {
+        return externalFlagError(env, a.loc, try std.fmt.allocPrint(
+            env.arena,
+            "`{s}` writes `result: true` on `External.{s}`, and its `HostError` is not std's `failure.HostError` — only std's counts, by module identity (decision 488)",
+            .{ name, v.name },
+        ), "Import std's: `import {failure.HostError} from \"std\";`, and name the module's own type otherwise.");
+    }
+    const written = if (ret) |r| try std.fmt.allocPrint(env.arena, "{f}", .{r}) else "void";
+    return externalFlagError(env, a.loc, try std.fmt.allocPrint(
+        env.arena,
+        "`{s}` writes `result: true` on `External.{s}`, so it must return `@Result<…, HostError>` or `@Task<@Result<…, HostError>>`, not `{s}`",
+        .{ name, v.name, written },
+    ), "`result: true` turns every way the host fails into `Error(HostError(…))`, std's `failure.HostError` (`import {failure.HostError} from \"std\";`). Without the flag the binding promises no failure: delete it, or declare the `@Result`.");
+}
+
+/// How a `result: true` binding's return reads: `@Result<T, E>` or
+/// `@Task<@Result<T, E>>` with `E` std's `failure.HostError` (`isStdHostError`)
+/// — `.host_error`; that shape with `E` a type of another module spelled
+/// `HostError` — `.foreign_error`; anything else — `.other`.
+const HostResultShape = enum { host_error, foreign_error, other };
+
+fn hostResultShape(env: *Env, r: ast.TypeRef, program: ast.Program) HostResultShape {
+    const g = switch (r) {
+        .generic => |g| g,
+        else => return .other,
+    };
+    if (!g.is_builtin) return .other;
+    const res = if (std.mem.eql(u8, g.name, "Task")) blk: {
+        if (g.args.len != 1) return .other;
+        break :blk switch (g.args[0]) {
+            .generic => |ig| ig,
+            else => return .other,
+        };
+    } else g;
+    if (!res.is_builtin or !std.mem.eql(u8, res.name, "Result") or res.args.len != 2) return .other;
+    if (isStdHostError(env, res.args[1], program)) return .host_error;
+    const e = switch (res.args[1]) {
+        .named => |n| n,
+        else => return .other,
+    };
+    const leaf = if (std.mem.lastIndexOfScalar(u8, e, '.')) |i| e[i + 1 ..] else e;
+    return if (std.mem.eql(u8, leaf, "HostError")) .foreign_error else .other;
+}
+
+/// Decision 488 — `t` names std's `failure.HostError`, by module identity:
+/// an import item of `from "std"` whose path is `failure.HostError` binds the
+/// name `t` spells (`failure.HostError` through the namespace is rewritten to
+/// that item before the checker runs, `std_namespace.zig`), or, inside std's
+/// `failure` module itself, its own `HostError`. A type the module declares,
+/// or one imported from anywhere else, under the same name is not it.
+fn isStdHostError(env: *Env, t: ast.TypeRef, program: ast.Program) bool {
+    const n = switch (t) {
+        .named => |n| n,
+        else => return false,
+    };
+    if (env.inStd and std.mem.eql(u8, n, "HostError") and
+        (std.mem.eql(u8, env.modulePath, "failure") or std.mem.eql(u8, env.modulePath, "std/failure")))
+    {
+        for (program.decls) |d| switch (d) {
+            .type_ => |td| if (std.mem.eql(u8, td.name, "HostError")) return true,
+            else => {},
+        };
+    }
+    for (program.decls) |d| switch (d) {
+        .type_ => |td| if (std.mem.eql(u8, td.name, n)) return false,
+        else => {},
+    };
+    for (program.decls) |d| switch (d) {
+        .use => |u| {
+            const pkg = u.source.packageName() orelse continue;
+            if (!std.mem.eql(u8, pkg, "std")) continue;
+            for (u.imports) |imp| {
+                if (!std.mem.eql(u8, imp.name(), n)) continue;
+                const segs = imp.segments;
+                if (segs.len == 2 and std.mem.eql(u8, segs[0], "failure") and std.mem.eql(u8, segs[1], "HostError")) return true;
+            }
+        },
+        else => {},
+    };
+    return false;
 }
 
 /// Decision 437 — `@External.Beam` is gone: `External.Erlang` binds the erlang
@@ -3906,13 +4027,19 @@ fn refuseWasmHostTwice(env: *Env, f: ast.FnDecl) InferError!void {
 /// same way a `declare fn`'s is (`validateExternalAnnotation`).
 fn validateExternalInline(env: *Env, program: ast.Program) InferError!void {
     for (program.decls) |decl| switch (decl) {
-        .@"fn" => |f| for (f.annotations) |a| try checkExternalCells(env, a, f.name, f, program),
+        .@"fn" => |f| for (f.annotations) |a| {
+            try refuseBareBoolFlag(env, a);
+            try refuseResultReturn(env, a, f.name, f.returnType, program);
+            try checkExternalCells(env, a, f.name, f, program);
+        },
         else => {},
     };
     for (program.decls) |decl| switch (decl) {
         .type_ => |tdecl| for (tdecl.methods) |m| {
             for (m.annotations) |a| {
+                try refuseBareBoolFlag(env, a);
                 try refuseUnreadInline(env, a);
+                try refuseResultReturn(env, a, m.name, m.returnType, program);
                 try refuseHostArg(env, a);
                 try refuseStdBinding(env, a, m.name, m.params, m.returnType, null);
                 try checkExternalCells(env, a, m.name, null, program);
@@ -3920,7 +4047,9 @@ fn validateExternalInline(env: *Env, program: ast.Program) InferError!void {
         },
         .behavior => |i| for (i.methods) |m| {
             for (m.annotations) |a| {
+                try refuseBareBoolFlag(env, a);
                 try refuseUnreadInline(env, a);
+                try refuseResultReturn(env, a, m.name, m.returnType, program);
                 try refuseHostArg(env, a);
                 try refuseStdBinding(env, a, m.name, m.params, m.returnType, selfSpelling(i.name));
                 try checkExternalCells(env, a, m.name, null, program);
@@ -3983,7 +4112,7 @@ fn checkExternalCells(env: *Env, a: ast.Annotation, name: []const u8, f: ?ast.Fn
             continue;
         };
         if (!wasm and !std.mem.eql(u8, label, "fn")) continue;
-        if (std.mem.eql(u8, label, "host") or std.mem.eql(u8, label, "inline")) continue;
+        if (std.mem.eql(u8, label, "host") or std.mem.eql(u8, label, "inline") or std.mem.eql(u8, label, "result")) continue;
         if (!ast.isWasmCellLabel(label)) {
             return wasmCellError(env, loc, try std.fmt.allocPrint(
                 env.arena,
@@ -4199,13 +4328,16 @@ fn validateExternalAnnotation(env: *Env, f: ast.FnDecl, a: ast.Annotation) Infer
     // Decision 334: `host:` on `External.Wasm` alone, `.Wasi` or `.Browser`.
     try refuseHostArg(env, a);
     // `External.<Target>(module, symbol)` form: 1-2 body args (symbol alone
-    // or module + symbol). The trailing `inline: true`/`false` flag, on a
-    // variant that declares it, adds one more arg; so does wasm's `host:`.
+    // or module + symbol). The labelled flags (`inline:`, `result:`) and
+    // wasm's `host:` are not among them, wherever they are written.
     const host_at = ast.hostArgIndex(a);
     var body_args: std.ArrayListUnmanaged([]const u8) = .empty;
-    for (a.args, 0..) |arg, i| if (host_at == null or i != host_at.?) try body_args.append(env.arena, arg);
-    var effective_len = body_args.items.len;
-    if (effective_len >= 2 and writesInline(a)) effective_len -= 1;
+    for (a.args, 0..) |arg, i| {
+        if (host_at != null and i == host_at.?) continue;
+        if (ast.isExternalFlagArg(a, i)) continue;
+        try body_args.append(env.arena, arg);
+    }
+    const effective_len = body_args.items.len;
     if (effective_len < 1 or effective_len > 2) {
         return fail(env, fnLoc, "`@external` expects 1 or 2 arguments: module and/or symbol", "Example: #[@External.Erlang( \"string\", \"length\")] or #[@External.Node(\"reverse\")]");
     }

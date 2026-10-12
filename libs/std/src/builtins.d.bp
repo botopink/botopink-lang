@@ -280,19 +280,30 @@ pub behavior Annotation {
 //
 // F9 — it is declared on `Erlang` and `Beam` and NOWHERE ELSE, because those
 // are the two emitters that read it: each has a `hasExternalInline` that skips
-// the dispatch entry when the flag is set, reading the annotation's LAST
-// argument. `Node` declared it too and no JS path ever consulted it, so
+// the dispatch entry when the flag is set, reading the labelled `inline:`.
+// `Node` declared it too and no JS path ever consulted it, so
 // `#[@External.Node("charAt", inline: true)]` was a switch that silently did
 // nothing — a configuration that looks like it bypasses the dispatch table and
 // does not, which decision 67 refuses in exactly those words. `Wasm` and
 // `Typescript` do not gain it for the same reason. The checker holds this
 // block to its word (`comptime/infer.zig` `external_variants`, kept in step
 // with the declaration below by a drift test): `inline` written on `Node`,
-// `Wasm` or `Typescript`, written anywhere but last, or given a value that is
-// not a bool is refused at the annotation
+// `Wasm` or `Typescript`, or given a value that is not a bool, is refused at
+// the annotation
 // (`conformance/modules/external_inline_unread`). A backend that grows a
 // hand-coded shape worth opting out of adds the parameter here, the table row
 // and the `hasExternalInline` that honours it, in one change.
+//
+// `result` (decisions 431, 490), on every variant: `result: true` says the
+// host call can fail, and the backend answers every way it fails —
+// a raise, a rejected Promise, an erlang `{error, R}` — as
+// `Error(HostError(…))`. The declared return must then be
+// `@Result<…, HostError>` or `@Task<@Result<…, HostError>>`, with std's
+// `failure.HostError` (decision 488); any other return is refused at the
+// annotation (`comptime/infer.zig` `refuseResultReturn`,
+// `conformance/modules/external_result_return`). Both flags are labelled and
+// read by their label in any order; a bare positional `true` / `false` is
+// refused (decision 487).
 //
 // F9, the other half — `External` is not `Target`, because `Target` is a value
 // a program holds and compares (`Target.Node`) while `External.<T>` is an
@@ -302,10 +313,10 @@ pub behavior Annotation {
 // there are five backends; that is the only thing they share.
 
 pub type External implement Annotation {
-    Erlang(template: string, inline: bool = false),
-    Node(template: string),
-    Wasm(template: string),
-    Typescript(template: string),
+    Erlang(template: string, inline: bool = false, result: bool = false),
+    Node(template: string, result: bool = false),
+    Wasm(template: string, result: bool = false),
+    Typescript(template: string, result: bool = false),
 }
 
 // ── builtin functions (decision 252) ────────────────────────────────────────
