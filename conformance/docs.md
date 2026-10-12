@@ -411,6 +411,11 @@ print `2`:
 
 <!-- example: modules/module_var -->
 
+The same holds for a `var` of a dependency's module, read and written through
+that module's functions:
+
+<!-- example: modules/module_var_in_dependency -->
+
 On the BEAM the annotation `#[@BeamMemory.<member>]` widens where a module `var`
 lives beyond the process (§ `@BeamMemory`). Off the BEAM the annotation is
 refused where it is written — ``error: `#[@BeamMemory]` has no meaning on the
