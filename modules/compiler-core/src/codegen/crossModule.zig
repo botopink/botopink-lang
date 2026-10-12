@@ -76,6 +76,9 @@ pub const ExportInfo = struct {
     /// enum and a `val` are identified by their name alone, which is why a
     /// collision on one of those can only be refused).
     arity: usize = 0,
+    /// A `.@"fn"` export declared to return `f64` / `f32`: a consumer printing
+    /// a call to it keeps the value's `.0` (commonJS has one number type).
+    returns_float: bool = false,
 };
 
 /// What a name resolves to for one consumer, counted over the PROGRAM.
@@ -1067,6 +1070,8 @@ pub fn buildIn(alloc: std.mem.Allocator, outputs: []ComptimeOutput, packages: Pa
                         (f.externalFor("erlang") != null or
                             ast.externalArityBranchFor(f.annotations, "erlang", f.params.len) != null),
                     .arity = f.params.len,
+                    .returns_float = if (f.returnType) |rt| rt == .named and
+                        (std.mem.eql(u8, rt.named, "f64") or std.mem.eql(u8, rt.named, "f32")) else false,
                 }),
             .val => |v| if (v.isPub) try putExport(alloc, &exports, &owners, v.name, .{ .module = ct.name, .kind = .val, .is_class = false }),
             // A `pub implement` is emitted as a namespace object; a consumer that

@@ -1492,3 +1492,38 @@ test "js: removed surface ---- an anonymous record type" {
         \\}
     );
 }
+
+// B-51: JavaScript has one number type, so an `f64` only prints with its `.0`
+// when the emitter knows the value is one. A call through an imported module's
+// handle to a `pub fn` declared `-> f64` (`math.abs(0.0 - 1.0)`) is known from
+// the owner's declared return type; without it `@print` wrote `1`.
+test "js: print ---- an f64 answered by a module-handle call keeps its .0" {
+    try h.assertJsContains(std.testing.allocator,
+        \\import {math} from "std";
+        \\
+        \\fn main() {
+        \\    @print(math.abs(0.0 - 1.0));
+        \\}
+    , &.{"__bp_print_as([\"f\"], math.abs("});
+}
+
+// B-51: an `f64` read out of a `case` arm's payload binding (`Circle(r) -> r`)
+// is typed by the variant's declared field, so it prints `2.0`, not `2`.
+test "js: print ---- an f64 out of a case payload binding keeps its .0" {
+    try h.assertJsContains(std.testing.allocator,
+        \\type Shape {
+        \\    Circle(radius: f64),
+        \\    Square(side: f64),
+        \\}
+        \\
+        \\fn main() {
+        \\    val s = Shape.Circle(radius: 2.0);
+        \\    @print(
+        \\        case s {
+        \\            Circle(r) -> r;
+        \\            Square(side) -> side;
+        \\        },
+        \\    );
+        \\}
+    , &.{"__bp_print_as([\"f\"], "});
+}

@@ -4769,6 +4769,15 @@ const Emitter = struct {
                 else
                     null,
                 .grouped => |inner| self.printShape(inner.*),
+                // `case s { Circle(r) -> r; … }`: the arms answer one type, so
+                // the first arm that is float-shaped (a payload binding read
+                // off the variant's declared field type) types the case.
+                .case => |cs| blk: {
+                    for (cs.arms) |arm| {
+                        if (try self.armShape(arm)) |sh| break :blk sh;
+                    }
+                    break :blk null;
+                },
                 else => null,
             },
             .identifier => |id| switch (id.kind) {
@@ -4799,6 +4808,7 @@ const Emitter = struct {
                 .call => |cc| blk: {
                     if (cc.is_builtin) break :blk null;
                     if (cc.receiver == null) break :blk if (self.fn_return_types.get(cc.callee)) |rt| try self.typeShape(rt) else null;
+                    if (self.moduleFnReturnsFloat(cc)) break :blk float_shape;
                     const lw = self.lowerings orelse break :blk null;
                     const iface_name: []const u8 = switch (lw.get(c.loc) orelse break :blk null) {
                         .prim => |k| switch (k) {
@@ -4821,6 +4831,68 @@ const Emitter = struct {
             },
             else => null,
         };
+    }
+
+    /// `math.abs(x)`: a call through an imported module's name to a `pub fn`
+    /// that module declares with an `f64`/`f32` return type. The receiver must
+    /// be no local (a local's method is not a module function).
+    fn moduleFnReturnsFloat(self: *Emitter, cc: anytype) bool {
+        const recv = cc.receiver orelse return false;
+        if (recv.* != .identifier or recv.identifier.kind != .ident) return false;
+        const rn = recv.identifier.kind.ident;
+        if (self.print_shapes.contains(rn) or self.eq_types.contains(rn)) return false;
+        const xc = self.cross orelse return false;
+        const list = xc.owners.get(cc.callee) orelse return false;
+        var hit: ?crossModule.ExportInfo = null;
+        for (list) |e| {
+            if (e.kind != .@"fn" or e.arity != cc.args.len) continue;
+            if (!std.mem.eql(u8, crossModule.moduleBasename(e.module), rn)) continue;
+            if (hit != null) return false;
+            hit = e;
+        }
+        return if (hit) |h| h.returns_float else false;
+    }
+
+    /// The print shape of one `case` arm's body, with the arm's payload
+    /// bindings (`Circle(r)`) bound to the shapes of the variant's declared
+    /// field types for the duration.
+    fn armShape(self: *Emitter, arm: ast.CaseArm) anyerror!?js.Expr {
+        var saved: [8]struct { name: []const u8, prev: ?js.Expr } = undefined;
+        var n: usize = 0;
+        defer while (n > 0) {
+            n -= 1;
+            self.notePrintShape(saved[n].name, saved[n].prev) catch {};
+        };
+        if (arm.pattern == .variant) {
+            const v = arm.pattern.variant;
+            if (v.payload == .fields) {
+                if (self.uniqueVariant(v.name)) |variant| {
+                    for (v.payload.fields, 0..) |bind, i| {
+                        if (i >= variant.fields.len or n >= saved.len) break;
+                        saved[n] = .{ .name = bind, .prev = self.print_shapes.get(bind) };
+                        n += 1;
+                        try self.notePrintShape(bind, try self.typeShape(variant.fields[i].typeRef));
+                    }
+                }
+            }
+        }
+        return self.printShape(arm.body);
+    }
+
+    /// The one payload variant of this module's enums named `name`; null when
+    /// none or several declare it.
+    fn uniqueVariant(self: *Emitter, name: []const u8) ?ast.EnumVariant {
+        var found: ?ast.EnumVariant = null;
+        var it = self.eq_decls.iterator();
+        while (it.next()) |e| {
+            if (e.value_ptr.isRecord()) continue;
+            for (e.value_ptr.variants()) |v| {
+                if (!std.mem.eql(u8, v.name, name)) continue;
+                if (found != null) return null;
+                found = v;
+            }
+        }
+        return found;
     }
 
     fn isFloatShaped(self: *Emitter, e: ast.Expr) anyerror!bool {
