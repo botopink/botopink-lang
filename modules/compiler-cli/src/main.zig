@@ -99,12 +99,13 @@ const HELP =
     \\
     \\`cell new <path>` scaffolds a cell: <path>/botopink.json (its package named
     \\after the directory), <path>/src/main.bp and <path>/docs.md.
-    \\`cell check <cell|directory>` builds and runs each cell on every target it
+    \\`cell check [--jobs <N>] <cell|directory>` builds and runs each cell on every target it
     \\declares (all four, or those of its botopink.json "targets") and compares each module's
     \\answer with snapshot/output/<module>.snap and snapshot/targets/<t>/<module>.snap.
     \\A difference writes a <file>.snap.new candidate beside it and exits 1; a new
     \\cell gets candidates. An accepted snapshot is never overwritten, and no flag
-    \\accepts a candidate: rename it.
+    \\accepts a candidate: rename it. `--jobs <N>` checks N cells at once (default: the machine's
+    \\jobs, as the gate counts them, halved); the report is in the cells' order whatever N is.
     \\
     \\`clean` takes no option. It deletes out/ and .botopinkbuild/ whole: the
     \\comptime scratch (.botopinkbuild/tmp/), the run directories of `test` and
@@ -250,6 +251,7 @@ pub const ArgError = error{
     UnknownFlag,
     MissingArgument,
     InvalidTarget,
+    InvalidJobs,
     UnexpectedArgument,
     MissingProjectName,
     MissingCellCommand,
@@ -267,6 +269,7 @@ fn usageError(cmd: []const u8, err: ArgError, diag: ArgDiag) u8 {
         error.UnknownFlag => std.fmt.bufPrint(&buf, "`{s}`: unknown flag '{s}'", .{ cmd, diag.token }),
         error.MissingArgument => std.fmt.bufPrint(&buf, "`{s}`: flag '{s}' needs a value", .{ cmd, diag.token }),
         error.InvalidTarget => std.fmt.bufPrint(&buf, "`{s}`: unsupported target '{s}' (expected commonJS, erlang, beam or wasm)", .{ cmd, diag.token }),
+        error.InvalidJobs => std.fmt.bufPrint(&buf, "`{s}`: --jobs takes a positive number of cells to check at once, got '{s}'", .{ cmd, diag.token }),
         error.UnexpectedArgument => std.fmt.bufPrint(&buf, "`{s}`: unexpected argument '{s}'", .{ cmd, diag.token }),
         error.MissingProjectName => std.fmt.bufPrint(&buf, "usage: botopink new <name> [--target <t>]", .{}),
         error.MissingCellCommand => std.fmt.bufPrint(&buf, "usage: botopink cell new <path> | botopink cell check <cell|directory>", .{}),
@@ -442,12 +445,25 @@ fn parseCellOpts(args: []const [:0]const u8, diag: *ArgDiag) ArgError!cell_cmd.O
     const is_new = std.mem.eql(u8, sub, "new");
     if (!is_new and !std.mem.eql(u8, sub, "check")) return reject(sub, diag);
     var path: ?[]const u8 = null;
-    for (args[1..]) |a| {
+    var jobs: ?usize = null;
+    var i: usize = 1;
+    while (i < args.len) : (i += 1) {
+        const a = args[i];
+        const flag = splitFlag(a);
+        if (!is_new and std.mem.eql(u8, flag.name, "--jobs")) {
+            const v = try flagValue(args, &i, flag, diag);
+            jobs = std.fmt.parseUnsigned(usize, v, 10) catch 0;
+            if (jobs.? == 0) {
+                diag.token = v;
+                return error.InvalidJobs;
+            }
+            continue;
+        }
         if (isFlag(a) or path != null) return reject(a, diag);
         path = a;
     }
     const p = path orelse return error.MissingCellCommand;
-    return if (is_new) .{ .new = p } else .{ .check = p };
+    return if (is_new) .{ .new = p } else .{ .check = .{ .path = p, .jobs = jobs } };
 }
 
 fn parseMigrateOpts(args: []const [:0]const u8, diag: *ArgDiag) ArgError!migrate_cmd.Options {
@@ -568,7 +584,12 @@ test "cell takes `new` or `check` and one path, no flag (decision 464: no update
     const n = try parseCellOpts(argv(&.{ "new", "cells/hello" }), &d);
     try std.testing.expectEqualStrings("cells/hello", n.new);
     const c = try parseCellOpts(argv(&.{ "check", "cells" }), &d);
-    try std.testing.expectEqualStrings("cells", c.check);
+    try std.testing.expectEqualStrings("cells", c.check.path);
+    try std.testing.expectEqual(@as(?usize, null), c.check.jobs);
+    const j = try parseCellOpts(argv(&.{ "check", "--jobs", "3", "cells" }), &d);
+    try std.testing.expectEqual(@as(?usize, 3), j.check.jobs);
+    try std.testing.expectError(error.InvalidJobs, parseCellOpts(argv(&.{ "check", "--jobs=0", "cells" }), &d));
+    try std.testing.expectError(error.UnknownFlag, parseCellOpts(argv(&.{ "new", "--jobs", "2", "x" }), &d));
     try std.testing.expectError(error.MissingCellCommand, parseCellOpts(argv(&.{}), &d));
     try std.testing.expectError(error.MissingCellCommand, parseCellOpts(argv(&.{"check"}), &d));
     try std.testing.expectError(error.UnexpectedArgument, parseCellOpts(argv(&.{ "accept", "cells" }), &d));

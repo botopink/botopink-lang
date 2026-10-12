@@ -34,9 +34,15 @@ const Snap = snap.Snap;
 
 // ── Options ───────────────────────────────────────────────────────────────────
 
+pub const CheckOpts = struct {
+    path: []const u8,
+    /// Cells checked at once; null is `defaultJobs`.
+    jobs: ?usize = null,
+};
+
 pub const Options = union(enum) {
     new: []const u8,
-    check: []const u8,
+    check: CheckOpts,
 };
 
 /// Every target a cell runs on unless its manifest's `"targets"` narrows it.
@@ -62,7 +68,7 @@ pub fn run(gpa: std.mem.Allocator, io: std.Io, opts: Options, env_map: libs.EnvM
     const arena = arena_instance.allocator();
     return switch (opts) {
         .new => |path| newCell(arena, io, path),
-        .check => |path| check(gpa, arena, io, path, env_map),
+        .check => |c| check(gpa, arena, io, c, env_map),
     };
 }
 
@@ -143,7 +149,8 @@ const Ctx = struct {
     }
 };
 
-fn check(gpa: std.mem.Allocator, arena: std.mem.Allocator, io: std.Io, path: []const u8, env_map: libs.EnvMap) !u8 {
+fn check(gpa: std.mem.Allocator, arena: std.mem.Allocator, io: std.Io, opts: CheckOpts, env_map: libs.EnvMap) !u8 {
+    const path = opts.path;
     var buf: [std.fs.max_path_bytes]u8 = undefined;
     const home = try arena.dupe(u8, buf[0..try std.process.currentPath(io, &buf)]);
     var ctx: Ctx = .{ .gpa = gpa, .arena = arena, .io = io, .env_map = env_map, .home = home };
@@ -162,7 +169,10 @@ fn check(gpa: std.mem.Allocator, arena: std.mem.Allocator, io: std.Io, path: []c
     }
 
     var passed: usize = 0;
-    for (cells.items) |cell| {
+    const jobs = @min(opts.jobs orelse defaultJobs(io), cells.items.len);
+    if (jobs > 1) {
+        passed = try checkParallel(&ctx, cells.items, jobs);
+    } else for (cells.items) |cell| {
         const ok = checkCell(&ctx, cell) catch |err| blk: {
             ctx.say("FAIL {s}\n  {s}\n", .{ ctx.rel(cell), @errorName(err) });
             break :blk false;
@@ -177,6 +187,111 @@ fn check(gpa: std.mem.Allocator, arena: std.mem.Allocator, io: std.Io, path: []c
     ctx.say("cells: {d} checked — {d} passed, {d} failed\n", .{ cells.items.len, passed, failed });
     ctx.flush();
     return if (failed == 0) 0 else 1;
+}
+
+// ── the pool ──────────────────────────────────────────────────────────────────
+
+/// Default cells at once (decision 468): one job per CPU bounded by
+/// `MemAvailable / 768 MiB`, a job counted as ~2 runnable threads, so half of
+/// that, at least 1.
+fn defaultJobs(io: std.Io) usize {
+    const cpus = std.Thread.getCpuCount() catch 1;
+    var jobs = cpus;
+    var buf: [4096]u8 = undefined;
+    if (std.Io.Dir.cwd().readFile(io, "/proc/meminfo", &buf)) |text| {
+        const key = "MemAvailable:";
+        if (std.mem.indexOf(u8, text, key)) |at| {
+            var it = std.mem.tokenizeAny(u8, text[at + key.len ..], " \t\n");
+            if (it.next()) |tok| if (std.fmt.parseUnsigned(u64, tok, 10)) |kb| {
+                jobs = @min(jobs, @as(usize, @intCast(@max(kb * 1024 / (768 * 1024 * 1024), 1))));
+            } else |_| {};
+        }
+    } else |_| {}
+    return @max(jobs / 2, 1);
+}
+
+const Slot = struct {
+    /// What `botopink cell check <cell>` printed for the cell, its summary line off.
+    out: []const u8 = "",
+    ok: bool = false,
+    /// The child's stderr (warnings of generated code), passed on in order.
+    err: []const u8 = "",
+    done: std.Io.Event = .unset,
+};
+
+const Pool = struct {
+    ctx: *Ctx,
+    cells: []const []const u8,
+    slots: []Slot,
+    self_exe: []const u8,
+    next: std.atomic.Value(usize) = .init(0),
+
+    fn work(pool: *Pool) void {
+        while (pool.runNext()) {}
+    }
+
+    fn runNext(pool: *Pool) bool {
+        const i = pool.next.fetchAdd(1, .monotonic);
+        if (i >= pool.cells.len) return false;
+        const slot = &pool.slots[i];
+        // Each cell is checked by a process of its own (the build is in
+        // process and keeps global state: the report sinks, the directory),
+        // run with `--jobs 1`, so it prints what it prints today.
+        slot.out = pool.runChild(pool.cells[i], slot) catch |err|
+            std.fmt.allocPrint(std.heap.page_allocator, "FAIL {s}\n  {s}\n", .{ pool.ctx.rel(pool.cells[i]), @errorName(err) }) catch "";
+        slot.done.set(pool.ctx.io);
+        return true;
+    }
+
+    fn runChild(pool: *Pool, cell: []const u8, slot: *Slot) ![]const u8 {
+        const a = std.heap.page_allocator;
+        const res = try std.process.run(a, pool.ctx.io, .{
+            .argv = &.{ pool.self_exe, "cell", "check", "--jobs", "1", cell },
+            .environ_map = pool.ctx.env_map,
+            .stdout_limit = .limited(64 * 1024 * 1024),
+            .stderr_limit = .limited(16 * 1024 * 1024),
+        });
+        slot.err = res.stderr;
+        slot.ok = switch (res.term) {
+            .exited => |c| c == 0,
+            else => false,
+        };
+        // The last line is the child's own `cells: …` summary: the parent prints one.
+        const body = std.mem.trimEnd(u8, res.stdout, "\n");
+        const cut = if (std.mem.lastIndexOfScalar(u8, body, '\n')) |n| n + 1 else 0;
+        if (!std.mem.startsWith(u8, body[cut..], "cells: ")) {
+            return std.fmt.allocPrint(a, "{s}FAIL {s}\n  the check process ended without a report\n", .{ res.stdout, pool.ctx.rel(cell) });
+        }
+        return body[0..cut];
+    }
+};
+
+/// Check `cells` on `jobs` workers; the report is printed in the cells' order.
+/// Returns how many passed.
+fn checkParallel(ctx: *Ctx, cells: []const []const u8, jobs: usize) !usize {
+    const a = ctx.arena;
+    const slots = try a.alloc(Slot, cells.len);
+    for (slots) |*s| s.* = .{};
+    const self_exe = try std.process.executablePathAlloc(ctx.io, a);
+    var pool: Pool = .{ .ctx = ctx, .cells = cells, .slots = slots, .self_exe = self_exe };
+    const workers = try a.alloc(?std.Io.Future(void), jobs);
+    var started: usize = 0;
+    for (workers) |*w| {
+        w.* = ctx.io.concurrent(Pool.work, .{&pool}) catch null;
+        if (w.* != null) started += 1;
+    }
+    defer for (workers) |*w| if (w.*) |*f| f.cancel(ctx.io);
+    var passed: usize = 0;
+    for (slots) |*slot| {
+        if (started == 0) while (!slot.done.isSet() and pool.runNext()) {};
+        slot.done.waitUncancelable(ctx.io);
+        if (slot.ok) passed += 1;
+        ctx.flush();
+        if (slot.err.len > 0) std.Io.File.stderr().writeStreamingAll(ctx.io, slot.err) catch {};
+        ctx.say("{s}", .{slot.out});
+        ctx.flush();
+    }
+    return passed;
 }
 
 /// `root` itself when it is a cell (it holds `src/`), else every cell under

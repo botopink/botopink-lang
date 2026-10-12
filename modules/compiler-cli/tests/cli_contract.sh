@@ -1323,6 +1323,17 @@ if have node && have erl && have erlc && have wasmtime; then
   expect_file_out "$CELLS/prints/snapshot/output/main.snap.new" "out finished" "the candidate holds the new answer"
   [[ "$(cat "$CELLS/prints/snapshot/output/main.snap")" == "$ACCEPTED" ]] && ok "the accepted snapshot is never overwritten" || fail "main.snap was rewritten"
   [[ ! -e "$CELLS/prints/snapshot/targets" ]] && ok "one answer on every target is one output/ candidate" || fail "a targets/ candidate for an answer every target gives"
+  # B-63: the cells checked at once report in the cells' order, with the very
+  # lines a single worker prints — a failing cell's lines (the candidate, the
+  # diff) and the totals included.
+  run "$CELLS" cell check --jobs 1 .
+  SERIAL_CODE=$CODE; SERIAL_OUT="$OUT"
+  run "$CELLS" cell check --jobs 4 .
+  [[ "$CODE" -eq "$SERIAL_CODE" && "$CODE" -eq 1 ]] && ok "cell check --jobs 4 exits as --jobs 1 does (exit 1)" || fail "cell check --jobs 4: exit $CODE, --jobs 1 exit $SERIAL_CODE"
+  [[ "$OUT" == "$SERIAL_OUT" ]] && ok "cell check --jobs 4 prints what --jobs 1 prints, in the cells' order" || { fail "cell check --jobs 4 differs from --jobs 1"; diff <(echo "$SERIAL_OUT") <(echo "$OUT") | sed 's/^/      /' >&2; }
+  expect_out "cells: 5 checked — 4 passed, 1 failed" "the totals of a parallel run count the failing cell"
+  run "$CELLS" cell check --jobs 0 .
+  expect_code 1 "cell check --jobs 0 is refused"
   mv "$CELLS/prints/snapshot/output/main.snap.new" "$CELLS/prints/snapshot/output/main.snap"
   run "$CELLS" cell check prints
   expect_code 0 "a candidate accepted by renaming it passes"
