@@ -124,8 +124,21 @@ const Ctx = struct {
         self.out.print(self.arena, fmt, args) catch {};
     }
 
+    /// Every byte reaches stdout: a write that fails is retried (a pipe the
+    /// children share can be non-blocking and refuse a write for a moment),
+    /// never dropped — a report that loses a line loses a cell.
     fn flush(self: *Ctx) void {
-        reporter.stdout(self.io, self.out.items);
+        var rest: []const u8 = self.out.items;
+        var failures: usize = 0;
+        while (rest.len > 0) {
+            const n = std.Io.File.stdout().writeStreaming(self.io, &.{}, &.{rest}, 1) catch {
+                failures += 1;
+                if (failures > 2000) break;
+                self.io.sleep(.fromMilliseconds(5), .real) catch {};
+                continue;
+            };
+            rest = rest[n..];
+        }
         self.out.clearRetainingCapacity();
     }
 };
@@ -457,6 +470,8 @@ fn readSnaps(ctx: *Ctx, dir: []const u8, prefix: []const u8, into: *Files, count
 const Scratch = struct {
     dir: []const u8,
     manifest: []const u8,
+    /// The environment before the scratch project's own (`cellEnv`).
+    prev_env: libs.EnvMap,
 
     fn open(ctx: *Ctx, cell: []const u8) !Scratch {
         const a = ctx.arena;
@@ -465,14 +480,22 @@ const Scratch = struct {
         const dir = try std.fmt.allocPrint(a, "{s}/{s}/cell-{x:0>16}", .{ ctx.home, TMP_ROOT, std.mem.readInt(u64, &rand, .little) });
         try std.Io.Dir.cwd().createDirPath(ctx.io, dir);
         try copyTree(a, ctx.io, cell, dir, true);
+        // The copy lives elsewhere, so what the manifest names relative to the
+        // cell is made absolute against the cell's own directory.
         const manifest_path = try std.fs.path.join(a, &.{ dir, "botopink.json" });
-        const manifest_text = try std.Io.Dir.cwd().readFileAlloc(ctx.io, manifest_path, a, .limited(64 * 1024));
+        const original = try std.Io.Dir.cwd().readFileAlloc(ctx.io, manifest_path, a, .limited(64 * 1024));
+        const manifest_text = try absolutizePathDeps(a, original, cell);
+        if (!std.mem.eql(u8, original, manifest_text))
+            try std.Io.Dir.cwd().writeFile(ctx.io, .{ .sub_path = manifest_path, .data = manifest_text });
+        const prev_env = ctx.env_map;
+        ctx.env_map = try cellEnv(ctx, cell);
         try std.process.setCurrentPath(ctx.io, dir);
-        return .{ .dir = dir, .manifest = manifest_text };
+        return .{ .dir = dir, .manifest = manifest_text, .prev_env = prev_env };
     }
 
     fn close(self: *Scratch, ctx: *Ctx) void {
         std.process.setCurrentPath(ctx.io, ctx.home) catch {};
+        ctx.env_map = self.prev_env;
         std.Io.Dir.cwd().deleteTree(ctx.io, self.dir) catch {};
     }
 
@@ -528,6 +551,73 @@ const Scratch = struct {
         return try std.fmt.allocPrint(a, "excluded by \"targets\", and {s} refuses it for another reason than a host binding ({s}) — let it run there, its refusal answered in snapshot/targets/{s}/", .{ t.toString(), first, t.toString() });
     }
 };
+
+/// The environment a cell builds under: the command's own, with
+/// `BOTOPINK_LIB_ROOTS` extended by the tiers of the project the cell is
+/// (decision 483) — the command's roots (relative ones against the directory
+/// the command started in), the cell's `.botopinkbuild/deps/` (and its
+/// workspace's), then the walk-up from the cell's own directory. The scratch
+/// copy skips hidden entries and sits elsewhere, so it could reach none of
+/// them by itself.
+fn cellEnv(ctx: *Ctx, cell: []const u8) !libs.EnvMap {
+    const a = ctx.arena;
+    const map = try a.create(std.process.Environ.Map);
+    map.* = std.process.Environ.Map.init(a);
+    if (ctx.env_map) |src| {
+        for (src.keys(), src.values()) |k, v| try map.put(k, v);
+    }
+    const env_roots = try libs.parseEnvRoots(ctx.gpa, ctx.env_map, ctx.home);
+    defer libs.freeRoots(ctx.gpa, env_roots);
+    var roots: std.ArrayListUnmanaged([]const u8) = .empty;
+    for (env_roots) |r| try roots.append(a, r);
+    for (try manifest.depsRoots(a, ctx.io, cell)) |d| try roots.append(a, d);
+    const walk_up = try libs.rootsFrom(ctx.gpa, ctx.io, &.{}, cell);
+    defer libs.freeRoots(ctx.gpa, walk_up);
+    for (walk_up) |r| try roots.append(a, r);
+    var value: std.ArrayListUnmanaged(u8) = .empty;
+    for (roots.items, 0..) |r, i| {
+        if (i > 0) try value.append(a, ':');
+        try value.appendSlice(a, r);
+    }
+    try map.put(libs.ENV_VAR, value.items);
+    return map;
+}
+
+/// `text` (a cell's manifest) with every relative `"path": "…"` dependency
+/// made absolute against `cell_dir`, nothing else touched — lines and
+/// columns before the value stay where they were.
+fn absolutizePathDeps(a: std.mem.Allocator, text: []const u8, cell_dir: []const u8) ![]const u8 {
+    var out: std.ArrayListUnmanaged(u8) = .empty;
+    var i: usize = 0;
+    while (std.mem.indexOfPos(u8, text, i, "\"path\"")) |k| {
+        var j = k + "\"path\"".len;
+        while (j < text.len and std.ascii.isWhitespace(text[j])) j += 1;
+        if (j >= text.len or text[j] != ':') {
+            try out.appendSlice(a, text[i..j]);
+            i = j;
+            continue;
+        }
+        j += 1;
+        while (j < text.len and std.ascii.isWhitespace(text[j])) j += 1;
+        if (j >= text.len or text[j] != '"') {
+            try out.appendSlice(a, text[i..j]);
+            i = j;
+            continue;
+        }
+        const start = j + 1;
+        const end = std.mem.indexOfScalarPos(u8, text, start, '"') orelse break;
+        const value = text[start..end];
+        try out.appendSlice(a, text[i..start]);
+        if (value.len == 0 or std.fs.path.isAbsolute(value) or std.mem.indexOfScalar(u8, value, '\\') != null) {
+            try out.appendSlice(a, value);
+        } else {
+            try out.appendSlice(a, try std.fs.path.resolve(a, &.{ cell_dir, value }));
+        }
+        i = end;
+    }
+    try out.appendSlice(a, text[i..]);
+    return out.items;
+}
 
 /// Copy `from` into `to`. At the top level `snapshot/` and `docs.md` stay
 /// behind; hidden entries stay behind at every level.
@@ -959,4 +1049,13 @@ test "stripAnsi drops colour sequences only" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     try testing.expectEqualStrings("error: x [1]", try stripAnsi(arena.allocator(), "\x1b[1m\x1b[31merror\x1b[0m: x [1]"));
+}
+
+test "absolutizePathDeps resolves a relative path against the cell, leaving the rest" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const text = "{ \"name\": \"c\", \"dependencies\": { \"k\": { \"path\": \"../../lib/k\" }, \"z\": { \"path\": \"/abs/z\" } } }";
+    const got = try absolutizePathDeps(a, text, "/w/cells/modules/c");
+    try std.testing.expectEqualStrings("{ \"name\": \"c\", \"dependencies\": { \"k\": { \"path\": \"/w/cells/lib/k\" }, \"z\": { \"path\": \"/abs/z\" } } }", got);
 }

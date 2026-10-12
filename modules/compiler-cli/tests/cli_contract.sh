@@ -1468,6 +1468,41 @@ if have node && have erl && have erlc && have wasmtime; then
   expect_out "labelled/snapshot/output/main.snap:3:" "names the line"
   rm -rf "$CELLS/labelled"
 
+  # A cell's `path` dependency is the cell manifest's own (144 B-38): resolved
+  # against the cell's directory from whatever directory the check runs in, and
+  # the same for the dependency tiers of the project the cell is.
+  PD="$WORK/pathdep_cells"; rm -rf "$PD"
+  mkdir -p "$PD/lib/src" "$PD/cells/needs/src" "$PD/cells/needs/snapshot/output" "$PD/elsewhere"
+  printf '{ "name": "kitlib", "version": "0.0.1", "src": "src/", "entry": "root.bp", "files": ["root.bp"] }\n' >"$PD/lib/botopink.json"
+  printf 'pub fn answer() -> i32 {\n    return 7;\n}\n' >"$PD/lib/src/root.bp"
+  printf '{ "name": "needs", "version": "0.0.1", "src": "src/", "dependencies": { "kitlib": { "path": "../../lib" } } }\n' >"$PD/cells/needs/botopink.json"
+  printf 'import { answer } from "kitlib";\n\npub fn main() {\n    @print(answer());\n}\n' >"$PD/cells/needs/src/main.bp"
+  printf 'botopink-cell 1\nout 7\n' >"$PD/cells/needs/snapshot/output/main.snap"
+  run "$PD/elsewhere" cell check ../cells
+  expect_code 0 "a cell's path dependency resolves against the cell, from another directory"
+  expect_out "cells: 1 checked — 1 passed, 0 failed" "the cell with a path dependency passes"
+  run "$PD/cells" cell check .
+  expect_code 0 "a cell's path dependency resolves against the cell, from the cells' directory"
+  # A dependency a cell reaches through its own `.botopinkbuild/deps/` link.
+  mkdir -p "$PD/cells/needs/.botopinkbuild/deps"
+  ln -s "$PD/lib" "$PD/cells/needs/.botopinkbuild/deps/kitlib"
+  printf '{ "name": "needs", "version": "0.0.1", "src": "src/", "dependencies": { "kitlib": { "git": "https://example.invalid/kitlib.git", "tag": "v0" } } }\n' >"$PD/cells/needs/botopink.json"
+  run "$PD/elsewhere" cell check ../cells
+  expect_code 0 "a cell inherits its own .botopinkbuild/deps/ tier"
+
+  # Every cell found is reported: a directory of cells is counted.
+  MANY="$WORK/many_cells"; rm -rf "$MANY"
+  for n in 01 02 03 04 05 06 07 08 09 10 11 12; do
+    mkdir -p "$MANY/c$n/src" "$MANY/c$n/snapshot/output"
+    printf '{ "name": "c%s", "version": "0.0.1", "src": "src/" }\n' "$n" >"$MANY/c$n/botopink.json"
+    printf 'pub fn main() {\n    @print(%s);\n}\n' "$((10#$n))" >"$MANY/c$n/src/main.bp"
+    printf 'botopink-cell 1\nout %s\n' "$((10#$n))" >"$MANY/c$n/snapshot/output/main.snap"
+  done
+  run "$WORK" cell check many_cells
+  expect_code 0 "a directory of twelve cells"
+  expect_out "cells: 12 checked — 12 passed, 0 failed" "every cell found is counted"
+  [[ "$(grep -c '^ok   ' <<<"$OUT")" -eq 12 ]] && ok "every cell is reported ok" || fail "ok lines: $(grep -c '^ok   ' <<<"$OUT"), want 12"
+
   # A malformed .snap is located; so is a departure for a target not run.
   printf 'botopink-cell 1\nexit 0\n' >"$CELLS/prints/snapshot/output/main.snap"
   run "$CELLS" cell check prints

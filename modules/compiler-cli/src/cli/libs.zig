@@ -176,7 +176,7 @@ pub fn parseEnvRootsString(
 /// `resolveLibRoots` minus the cwd lookup — walks up from `start` after seeding
 /// with `env_roots`. Split out so a test can drive a synthetic tree without
 /// touching the process cwd.
-fn rootsFrom(
+pub fn rootsFrom(
     gpa: std.mem.Allocator,
     io: std.Io,
     env_roots: []const []const u8,

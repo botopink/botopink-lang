@@ -595,7 +595,7 @@ and `docs.md`. The suite these commands serve is `../../conformance/` (`conforma
 `botopink cell check <cell|directory>` (`src/cli/cell.zig`) builds each cell
 **in this process** — `build.zig`'s pipeline over a scratch copy of the cell
 made afresh for each target (a program that writes into its working directory
-finds it as it would alone), with `reporter.sink` and the manifest module's
+finds it as it would alone; the copy's manifest has its relative `path` dependencies made absolute against the cell's own directory, and its `BOTOPINK_LIB_ROOTS` carries the command's roots, the cell's `.botopinkbuild/deps/` tiers and the walk-up from the cell, so a cell run from any directory resolves its dependencies as it does in place, and a library's cells need no per-cell `deps/` workspace of links; the report is written with a retried write, never dropped), with `reporter.sink` and the manifest module's
 `manifest.sink` (where `Located.print` writes: a manifest's, a dependency's and
 a sidecar's refusals) pointed at a buffer, so a refusal is read off exactly the
 text `botopink build` prints — and runs the built program (`run.programArgv`: `node`,
