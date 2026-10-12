@@ -14,7 +14,7 @@ call nothing serves, an operand or a literal of another kind — refuses the fun
 named; the refusal reaches a caller only when a call reaches that function, located
 (`` `re:run/3` in `mymod:f/1` ``). **It has no role in botopink for now (decision 452):** the
 compiler's comptime never calls it — a host function reached at build answers by its `std:` cell
-(std-wasm) or its `@External.Wasm("fn:…")` cell, and an `@External.Erlang` cell never runs at
+(std-wasm) or its `@External.Wasm(fn: …)` cell, and an `@External.Erlang` cell never runs at
 build — and compiler-core imports nothing of this module (`build.zig` wires it to its own tests
 only). It stays a utility with its tests and fixtures, knowing only std-wasm; decision 439 (an
 Erlang cell it refuses is final) no longer applies.

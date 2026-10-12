@@ -26,7 +26,7 @@ pub const Module = struct {
     /// none declared is every target). The CLI's loaders fill it in
     /// (`Targets.of`).
     targets: ?Targets = null,
-    /// One of std's own modules (decision 445: a `#[@External.Wasm("std:…")]`
+    /// One of std's own modules (decision 445: a `#[@External.Wasm(std: "…")]`
     /// cell is std's alone) — never read from `path`, which a package's own
     /// `src/std/` folder spells too. The compiler sets it on the embedded std
     /// modules it prepends (the prelude is std's by `registerStdlib`); the CLI

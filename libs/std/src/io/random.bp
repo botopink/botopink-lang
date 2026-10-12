@@ -19,7 +19,7 @@
 
 #[@External.Node("Math", "random")]
 #[@External.Erlang("rand", "uniform")]
-#[@External.Wasm("std:random.float")]
+#[@External.Wasm(std: "random.float")]
 pub declare fn float() -> f64;
 
 // Seed the Node-side userland PRNG (Mulberry32) shipped via the sidecar
@@ -33,7 +33,7 @@ pub declare fn float() -> f64;
 // triple. `S` is folded to an integer via the i64 input.
 #[@External.Node("""require('./sidecars/random.mjs').seed($0)""")]
 #[@External.Erlang("""(fun(__S) -> rand:seed(exsplus, {__S, __S, __S}) end)($0)""")]
-#[@External.Wasm("std:random.seed")]
+#[@External.Wasm(std: "random.seed")]
 pub declare fn seed(s: i32) -> void;
 
 // Draw from the seeded PRNG when a `seed` call has been made; otherwise
@@ -43,7 +43,7 @@ pub declare fn seed(s: i32) -> void;
 // stream automatically.
 #[@External.Node("""require('./sidecars/random.mjs').seededFloat()""")]
 #[@External.Erlang("rand", "uniform")]
-#[@External.Wasm("std:random.seededFloat")]
+#[@External.Wasm(std: "random.seededFloat")]
 pub declare fn seededFloat() -> f64;
 
 // 50/50 boolean draw. `float() >= 0.5` picks the upper half of the
@@ -114,7 +114,7 @@ fn floorWalk(start: i32, threshold: f64, product: f64, upper: i32) -> i32 {
 // until the corresponding shim lands.
 #[@External.Node("""(function(__A){ var __O = __A.slice(); for (var __I = __O.length - 1; __I > 0; __I--) { var __J = Math.floor(Math.random() * (__I + 1)); var __T = __O[__I]; __O[__I] = __O[__J]; __O[__J] = __T; } return __O; })($0)""")]
 #[@External.Erlang("""[__X || {_, __X} <- lists:sort([{rand:uniform(), __Y} || __Y <- $0])]""")]
-#[@External.Wasm("fn:shuffleBody")]
+#[@External.Wasm(fn: shuffleBody)]
 pub declare fn shuffle<T>(xs: Array<T>) -> Array<T>;
 
 // ── 1.0.10-beta front 01 additions ──────────────────────────────────────────
@@ -131,7 +131,7 @@ pub declare fn shuffle<T>(xs: Array<T>) -> Array<T>;
 // mode without padding (OTP 26+).
 #[@External.Node("""require('crypto').randomBytes($0).toString('base64url')""")]
 #[@External.Erlang("""base64:encode(crypto:strong_rand_bytes($0), #{mode => urlsafe, padding => false})""")]
-#[@External.Wasm("fn:secureTokenBody")]
+#[@External.Wasm(fn: secureTokenBody)]
 pub declare fn secureToken(bytes: i32) -> string;
 
 // A random (version 4) UUID, lowercase: 122 strong random bits with the
@@ -142,7 +142,7 @@ pub declare fn secureToken(bytes: i32) -> string;
 // no bitwise operators (`language-gaps.md`).
 #[@External.Node("""require('crypto').randomUUID()""")]
 #[@External.Erlang("""(fun() -> <<__A:32, __B:16, _:4, __C:12, _:2, __D:14, __E:48>> = crypto:strong_rand_bytes(16), iolist_to_binary(io_lib:format("~8.16.0b-~4.16.0b-4~3.16.0b-~4.16.0b-~12.16.0b", [__A, __B, __C, __D bor 16#8000, __E])) end)()""")]
-#[@External.Wasm("fn:uuidV4Body")]
+#[@External.Wasm(fn: uuidV4Body)]
 pub declare fn uuidV4() -> string;
 
 // ── tests ────────────────────────────────────────────────────────────────────
@@ -270,7 +270,7 @@ test "random.uuidV4 has the version 4 layout" {
 // string used by the hashes above.
 #[@External.Node("""require('crypto').randomBytes($0).toString('hex')""")]
 #[@External.Erlang("""list_to_binary([io_lib:format("~2.16.0b", [__B]) || __B <- binary_to_list(crypto:strong_rand_bytes($0))])""")]
-#[@External.Wasm("fn:randomBytesBody")]
+#[@External.Wasm(fn: randomBytesBody)]
 pub declare fn randomBytes(n: i32) -> string;
 
 test "random.randomBytes(16) returns 32 hex chars" {
@@ -285,12 +285,12 @@ test "random.randomBytes(0) is empty" {
 
 // ── the wasm bodies (decision 238) ──────────────────────────────────────────
 // wasm has no host for these cells, so each names one of the private bodies
-// below with `#[@External.Wasm("fn:…")]`; commonJS and erlang call their
-// host. On wasm `float()` is `wasi:random_f64` — 53 bits of WASI's
+// below with `#[@External.Wasm(fn: …)]`; commonJS and erlang call their
+// host. On wasm `float()` is `std: "random.float"` — 53 bits of WASI's
 // `random_get`, the host's cryptographic source — so the token, UUID and
 // byte bodies draw from it a byte at a time (`randomByte`: ⌊u · 256⌋ of a
 // 53-bit uniform `u` is exactly uniform). `seed` / `seededFloat` are
-// std-wasm's seeded stream (decision 451, `std:random.*`), drawn as the
+// std-wasm's seeded stream (decision 451, `std: "random.…"`), drawn as the
 // commonJS sidecar does (Mulberry32): the same draws after the same `seed`; a
 // draw before any seed is the host's (`float()`'s source). At comptime the
 // same cells answer, and a draw before any seed is refused — a build has no

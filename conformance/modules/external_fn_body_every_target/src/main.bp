@@ -1,6 +1,6 @@
 #[@External.Node("fn:mixBody")]
 #[@External.Erlang("fn:mixBody")]
-#[@External.Wasm("fn:mixBody")]
+#[@External.Wasm(fn: mixBody)]
 pub declare fn mix(x: f64, y: f64) -> f64;
 
 fn mixBody(a: f64, b: f64) -> f64 {

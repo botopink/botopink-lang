@@ -1,0 +1,8 @@
+# external_wasm_prefixed_std_refused
+
+The reference text this cell shows (from `conformance/docs.md`, § Host bindings):
+
+> **A prefixed string is no wasm cell** (decision 481). The strings the
+> vocabulary was once written as — `"fn:tanBody"`, `"op:f64.floor"`,
+> `"wasi:delay"`, `"std:hash.contentHash"` — are refused at the argument, on
+> every target, naming the labelled cell to write instead:

@@ -2131,6 +2131,98 @@ pub fn hostArgIndex(a: Annotation) ?usize {
     return null;
 }
 
+/// Decision 481 — the four cells an `@External.Wasm` binding writes, each a
+/// labelled argument of the kind it names: `fn: tanBody` (an identifier),
+/// `op: "f64.floor"` (a string), `wasi: .Delay` (an adapter, an enum value),
+/// `std: "hash.contentHash"` (a string naming a std-wasm export).
+pub const wasm_cell_labels = [_][]const u8{ "fn", "op", "wasi", "std" };
+
+/// True when `label` is one of `wasm_cell_labels`.
+pub fn isWasmCellLabel(label: []const u8) bool {
+    for (wasm_cell_labels) |l| if (std.mem.eql(u8, l, label)) return true;
+    return false;
+}
+
+/// True when `a` is an `@External.Wasm(…)` annotation.
+pub fn isExternalWasm(a: Annotation) bool {
+    return std.ascii.eqlIgnoreCase(a.name, "External.Wasm");
+}
+
+/// Decision 481 — the parser's reading of a labelled wasm cell: argument `i`
+/// written `fn: x` / `op: "o"` / `wasi: .A` / `std: "m.f"` lands in `args`
+/// as the one binding text every reader takes (`"fn:x"`, `"op:o"`,
+/// `"wasi:a"`, `"std:m.f"` — `externalRefOf`, `wat/host_binding.parse`,
+/// `comptime/host_cells`), its spelling kept in `source_args` for the
+/// formatter and the checker, which refuses a value of the wrong kind
+/// (`infer.zig` `checkWasmCells`). A wasi adapter's enum value is its name in
+/// PascalCase (`.RaceOf` names `race_of`).
+pub fn translateWasmCells(alloc: std.mem.Allocator, a: *Annotation) !void {
+    if (!isExternalWasm(a.*) or a.source_args != null) return;
+    var any = false;
+    for (a.args, 0..) |_, i| if (a.labelOf(i)) |l| if (isWasmCellLabel(l)) {
+        any = true;
+    };
+    if (!any) return;
+    const out = try alloc.alloc([]const u8, a.args.len);
+    var done: usize = 0;
+    errdefer {
+        for (out[0..done]) |x| alloc.free(x);
+        alloc.free(out);
+    }
+    for (a.args, 0..) |arg, i| {
+        const label = a.labelOf(i) orelse "";
+        out[i] = if (isWasmCellLabel(label)) try wasmCellText(alloc, label, arg) else try alloc.dupe(u8, arg);
+        done += 1;
+    }
+    a.source_args = a.args;
+    a.args = out;
+}
+
+/// `"<label>:<value>"` — the binding text of a labelled cell, quoted as a
+/// string argument is.
+fn wasmCellText(alloc: std.mem.Allocator, label: []const u8, arg: []const u8) ![]u8 {
+    var value = arg;
+    if (value.len >= 2 and value[0] == '"' and value[value.len - 1] == '"') value = value[1 .. value.len - 1];
+    if (std.mem.eql(u8, label, "wasi") and value.len > 1 and value[0] == '.') {
+        var buf: std.ArrayList(u8) = .empty;
+        defer buf.deinit(alloc);
+        for (value[1..], 0..) |c, k| {
+            if (std.ascii.isUpper(c) and k > 0) try buf.append(alloc, '_');
+            try buf.append(alloc, std.ascii.toLower(c));
+        }
+        return std.fmt.allocPrint(alloc, "\"{s}:{s}\"", .{ label, buf.items });
+    }
+    return std.fmt.allocPrint(alloc, "\"{s}:{s}\"", .{ label, value });
+}
+
+/// Decision 481 — a binding text (`fn:tanBody`, `op:f64.floor`,
+/// `wasi:race_of`, `std:hash.contentHash`) as the labelled cell that writes
+/// it (`fn: tanBody`, `op: "f64.floor"`, `wasi: .RaceOf`,
+/// `std: "hash.contentHash"`), for a message; any other text quoted.
+pub fn wasmCellDisplay(alloc: std.mem.Allocator, text: []const u8) ![]u8 {
+    const colon = std.mem.indexOfScalar(u8, text, ':') orelse return std.fmt.allocPrint(alloc, "\"{s}\"", .{text});
+    const label = text[0..colon];
+    const value = text[colon + 1 ..];
+    if (std.mem.eql(u8, label, "fn")) return std.fmt.allocPrint(alloc, "fn: {s}", .{value});
+    if (std.mem.eql(u8, label, "op") or std.mem.eql(u8, label, "std")) return std.fmt.allocPrint(alloc, "{s}: \"{s}\"", .{ label, value });
+    if (std.mem.eql(u8, label, "wasi")) {
+        var buf: std.ArrayList(u8) = .empty;
+        defer buf.deinit(alloc);
+        try buf.appendSlice(alloc, "wasi: .");
+        var up = true;
+        for (value) |c| {
+            if (c == '_') {
+                up = true;
+                continue;
+            }
+            try buf.append(alloc, if (up) std.ascii.toUpper(c) else c);
+            up = false;
+        }
+        return buf.toOwnedSlice(alloc);
+    }
+    return std.fmt.allocPrint(alloc, "\"{s}\"", .{text});
+}
+
 /// The `(module, symbol)` of `a` when it is an `External.<member>` annotation
 /// serving `lookup` (`ExternalLookup.of`): a `host:` argument other than the
 /// lookup's host passes it by, and is not counted among the template's

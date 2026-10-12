@@ -1,5 +1,5 @@
 //// 1.0.12-beta `1-botopink-lang/144` B-00k (decisions 434, 452) — at build a
-//// host function answers by its `std:` cell, else its `@External.Wasm("fn:…")`
+//// host function answers by its `std:` cell, else its `@External.Wasm(fn: …)`
 //// cell; an `@External.Erlang` cell never runs there, whatever the build's
 //// target. `tag`'s three cells answer three different texts, so the output
 //// names the cell the decorator's call ran: `Point:fn` on the four targets.
@@ -12,7 +12,7 @@
 
 #[@External.Node("""($0 + ":node")""")]
 #[@External.Erlang("""<<($0)/binary, ":erlang">>""")]
-#[@External.Wasm("fn:tagBody")]
+#[@External.Wasm(fn: tagBody)]
 declare fn tag(value: string) -> string;
 
 fn tagBody(value: string) -> string {

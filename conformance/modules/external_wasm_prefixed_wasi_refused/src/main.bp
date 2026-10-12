@@ -1,0 +1,12 @@
+#[@External.Node("""((__ms, __v) => new Promise((__r) => setTimeout(() => __r(__v), __ms)))($0, $1)""")]
+#[@External.Erlang("""(fun(__M, __V) -> timer:sleep(__M), __V end)($0, $1)""")]
+#[@External.Wasm("wasi:delay")]
+declare fn later<T>(millis: i32, value: T) -> @Task<T>;
+
+fn run() -> @Task<void> {
+    @print(await later(1, "done"));
+}
+
+pub fn main() {
+    run();
+}

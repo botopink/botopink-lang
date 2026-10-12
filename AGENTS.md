@@ -359,8 +359,8 @@ Do not use `--no-verify`.
 - **A body's `io:format`** goes to a buffer in the module's own memory, never to
   the compiler's stdout.
 - **Host functions** reached at build answer by std-wasm (`modules/std-wasm`) —
-  the function their `@External.Wasm("std:…")` cell names (decision 440) —, else
-  their `@External.Wasm("fn:…")` cell (`comptime/host_cells.zig`); none is
+  the function their `@External.Wasm(std: "…")` cell names (decision 440) —, else
+  their `@External.Wasm(fn: …)` cell (`comptime/host_cells.zig`); none is
   refused (`comptime-host-cell-unavailable`). An `@External.Erlang` cell never
   runs at build, and compiler-core imports nothing of `modules/beam-to-wasm`
   (decision 452).

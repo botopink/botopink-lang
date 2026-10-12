@@ -418,14 +418,14 @@ test "js: external ---- no prelude template calls the method it patches" {
 const fn_binding_program =
     \\#[@External.Node("fn:mixBody")]
     \\#[@External.Erlang("fn:mixBody")]
-    \\#[@External.Wasm("fn:mixBody")]
+    \\#[@External.Wasm(fn: mixBody)]
     \\pub declare fn mix(x: f64, y: f64) -> f64;
     \\fn mixBody(a: f64, b: f64) -> f64 {
     \\    return a * 2.0 + b;
     \\}
     \\#[@External.Node("fn:greetBody")]
     \\#[@External.Erlang("fn:greetBody")]
-    \\#[@External.Wasm("fn:greetBody")]
+    \\#[@External.Wasm(fn: greetBody)]
     \\declare fn greet(name: string) -> string;
     \\fn greetBody(name: string) -> string {
     \\    return "hi " + name;

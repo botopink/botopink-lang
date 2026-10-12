@@ -2011,8 +2011,8 @@ one runtime, wasm (wasm3 inside the compiler), whatever the build's target
 (decision 434): a compile starts no `erl`. A host function reached there
 answers by the first of two cells it has: its std-wasm implementation
 (std's own host functions, written in Zig and compiled to wasm — the
-function its `@External.Wasm("std:<module>.<function>")` cell names, below),
-or the botopink function its `@External.Wasm("fn:…")` binding names (an `op:`
+function its `@External.Wasm(std: "<module>.<function>")` cell names, below),
+or the botopink function its `@External.Wasm(fn: …)` binding names (an `op:`
 or `wasi:` binding does not run there). A std function is served by std-wasm
 only where its `std:` cell says so; there is no match by name.
 `@External.Node` never serves: there is no Node at compile time. An
@@ -2027,7 +2027,7 @@ What a decorator may call is decided when its package is compiled, never at a
 consumer's build, and whatever the package's `targets` (decisions 434, 452): a
 host function it reaches — in its body, in a function of its module, through a
 std or an imported function — needs one of the two cells the comptime runtime
-answers by: its `std:` cell (std-wasm) or its `@External.Wasm("fn:…")` cell.
+answers by: its `std:` cell (std-wasm) or its `@External.Wasm(fn: …)` cell.
 Neither is refused at the call (`comptime-host-cell-unavailable`), naming the
 function and both cells; an `@External.Erlang` cell beside them is ignored,
 never tried.
@@ -2152,16 +2152,17 @@ such a wrapper names its `targets`, or the declaration gains the other
 target's binding.
 
 wasm has no host of its own, so `@External.Wasm` does not name a host symbol
-or carry target text: it is **one string from a closed vocabulary of four
-forms** (decisions 238, 440), read and checked where the annotation is
-written. The arguments are always the declared parameters, in order.
+or carry target text: it is **one cell from a closed vocabulary of four**
+(decisions 238, 440, 481), each a labelled argument holding a value of the
+kind it names, read and checked where the annotation is written. The arguments
+are always the declared parameters, in order.
 
-| Form | Binds the declaration to |
+| Cell | Binds the declaration to |
 |---|---|
-| `op:<opcode>` | one numeric wasm instruction (`op:f64.floor`, `op:i32.add`, `op:f64.lt`, `op:f64.convert_i32_s`); the declared parameter and return types must be exactly the instruction's — a comparison or `eqz` answers `bool` |
-| `fn:<name>` | a private (not `pub`) `fn` of the same module, with a body, taking the same parameter types in the same order and answering the same type — the algorithm stays in the library, in botopink |
-| `wasi:<adapter>` | a compiler adapter over the host, one of the list below — each has an implementation per host (WASI preview 2 through the `wasi` component, JavaScript in the `browser` loader), so one list serves both (decision 394) |
-| `std:<module>.<function>` | a function std-wasm implements — std's host functions written in Zig (`modules/std-wasm`) —, which the compiler transpiles into the program; the declared parameter and return types must be exactly the function's. The same cell is what the comptime answers by, on every target (decision 440). std's alone: a `std:` cell outside `libs/std` is refused (decision 445, below) |
+| `op: "<opcode>"` | one numeric wasm instruction, its text a string (`op: "f64.floor"`, `op: "i32.add"`, `op: "f64.lt"`, `op: "f64.convert_i32_s"`); the declared parameter and return types must be exactly the instruction's — a comparison or `eqz` answers `bool` |
+| `fn: <name>` | a botopink identifier, resolved in the module: a private (not `pub`) `fn` of the same module, with a body, taking the same parameter types in the same order and answering the same type — the algorithm stays in the library, in botopink |
+| `wasi: .<Adapter>` | an enum value naming a compiler adapter over the host, one of the list below — each has an implementation per host (WASI preview 2 through the `wasi` component, JavaScript in the `browser` loader), so one list serves both (decision 394) |
+| `std: "<module>.<function>"` | a string naming a function std-wasm implements (checked against std-wasm's exports, never resolved as botopink) — std's host functions written in Zig (`modules/std-wasm`) —, which the compiler transpiles into the program; the declared parameter and return types must be exactly the function's. The same cell is what the comptime answers by, on every target (decision 440). std's alone: a `std:` cell outside `libs/std` is refused (decision 445, below) |
 
 <!-- example: modules/external_wasm_op_and_fn -->
 
@@ -2191,6 +2192,19 @@ carries one; the same declaration in a program is refused:
 
 <!-- example: modules/external_std_binding_refused -->
 
+**A prefixed string is no wasm cell** (decision 481). The strings the
+vocabulary was once written as — `"fn:tanBody"`, `"op:f64.floor"`,
+`"wasi:delay"`, `"std:hash.contentHash"` — are refused at the argument, on
+every target, naming the labelled cell to write instead:
+
+<!-- example: modules/external_wasm_prefixed_fn_refused -->
+
+<!-- example: modules/external_wasm_prefixed_op_refused -->
+
+<!-- example: modules/external_wasm_prefixed_wasi_refused -->
+
+<!-- example: modules/external_wasm_prefixed_std_refused -->
+
 **Case mapping covers all of Unicode** (decision 443) on the four targets —
 `"straße".toUpper()` is `"STRASSE"`, `"É".toLower()` is `"é"`. A wasm program
 answers OTP's where a JS engine's differs: no final sigma (`"ΟΔΟΣ".toLower()`
@@ -2217,17 +2231,17 @@ string in a `+`.
 
 | Adapter | Signature | Answers |
 |---|---|---|
-| `random_f64` | `() -> f64` | a uniform `f64` in `[0.0, 1.0)` from 53 bits of `random_get` (an errno from the host traps) |
-| `delay` | `(i32, T) -> @Task<T>` | a task that settles with the value once the milliseconds have passed on the host's monotonic clock (`wasi:clocks/monotonic-clock` and `wasi:io/poll` on `wasi`, `setTimeout` on `browser`); a negative duration is `0` |
-| `race` | `(Array<@Task<T>>) -> @Task<T>` | the first of the started tasks to settle — the first settled one in input order when some already are; an empty list traps |
-| `race_of` | `(Array<fn() -> @Task<T>>) -> @Task<T>` | each thunk called in order (its task runs to its first `await`), then raced; an empty list traps |
-| `spawn_all` | `(Array<fn() -> @Task<T>>) -> @Task<Array<T>>` | each thunk called in order; the answers in input order once the last has settled |
+| `.RandomF64` | `() -> f64` | a uniform `f64` in `[0.0, 1.0)` from 53 bits of `random_get` (an errno from the host traps) |
+| `.Delay` | `(i32, T) -> @Task<T>` | a task that settles with the value once the milliseconds have passed on the host's monotonic clock (`wasi:clocks/monotonic-clock` and `wasi:io/poll` on `wasi`, `setTimeout` on `browser`); a negative duration is `0` |
+| `.Race` | `(Array<@Task<T>>) -> @Task<T>` | the first of the started tasks to settle — the first settled one in input order when some already are; an empty list traps |
+| `.RaceOf` | `(Array<fn() -> @Task<T>>) -> @Task<T>` | each thunk called in order (its task runs to its first `await`), then raced; an empty list traps |
+| `.SpawnAll` | `(Array<fn() -> @Task<T>>) -> @Task<Array<T>>` | each thunk called in order; the answers in input order once the last has settled |
 
 `std/io/random`'s seeded stream is std-wasm's (decision 451), bound by the
 `std:` cells on `seed` and `seededFloat`: Mulberry32 as the commonJS sidecar
 draws it, so a seed gives the same draws there, in a wasm program and at
 comptime on every target. Before any seed a wasm program's `seededFloat()`
-draws the host's entropy (`random_f64`'s); at comptime that draw is refused,
+draws the host's entropy (`.RandomF64`'s); at comptime that draw is refused,
 located — a build has no entropy and never pretends to.
 
 An adapter answering `@Task<T>` (decision 393) is declared over one type
@@ -2240,7 +2254,9 @@ pollable backs:
 The task carries its `T` in one word: a task adapter reached with a float or
 an `i64` value is refused at the call.
 
-Anything else — another prefix, an opcode the backend does not bind, an opcode
+Anything else — another label, a second cell, a value of another kind than
+its label names (`fn: "tanBody"`, `op: f64`, `wasi: "delay"`), an opcode the
+backend does not bind, an opcode
 whose type differs from the signature, a `fn:` naming no private bodied fn of
 the module (or a `pub` one, or one of another signature), an adapter not in
 the list, a `std:` naming a function std-wasm does not implement or declared
@@ -2254,8 +2270,8 @@ writes names an address: there is no raw memory in the vocabulary. A
 names it in `botopink.json`, `"wasm": { "host": "wasi" }` or `"browser"`
 (*The manifest schema*); absent, it is `wasi` — wasmtime and the runtimes
 that follow WASI preview 2. A binding may name the host it serves with
-`host:` — `#[@External.Wasm("op:f64.floor", host: .Wasi)]` beside
-`#[@External.Wasm("fn:floorBody", host: .Browser)]` —, and one written without
+`host:` — `#[@External.Wasm(op: "f64.floor", host: .Wasi)]` beside
+`#[@External.Wasm(fn: floorBody, host: .Browser)]` —, and one written without
 `host:` serves every host. A build reads the binding serving its host and
 checks every other one too; a function with no binding for the build's host
 is refused at its call as above, and a std function with none is
@@ -2285,10 +2301,10 @@ with `node <module>.mjs`. Every wasm program prints the same on both hosts:
 `conformance` runs its wasm column under both and fails a cell whose
 answers differ.
 
-**`fn:<name>` binds a declaration on every target** (decisions 238, 263). On
+**A private fn binds a declaration on every target** (decisions 238, 263). On
 `@External.Node` and `@External.Erlang` (which the beam target reads) a single string
-starting with `fn:` is not a host expression or a template: it is the same form
-as on wasm — a private `fn` of the same module, with a body, taking the same
+starting with `fn:` (`"fn:powBody"`) is not a host expression or a template: it
+binds what wasm's `fn: <name>` cell binds — a private `fn` of the same module, with a body, taking the same
 parameter types in the same order and answering the same type — and it is
 checked the same way, at the annotation. One algorithm written in botopink then
 answers the same bits on every target, instead of each host's own library

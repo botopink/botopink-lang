@@ -3,8 +3,8 @@
 //// other; the second is refused at its annotation.
 
 #[@External.Node("Math", "floor")]
-#[@External.Wasm("op:f64.floor", host = .Wasi)]
-#[@External.Wasm("op:f64.ceil", host = .Wasi)]
+#[@External.Wasm(op: "f64.floor", host = .Wasi)]
+#[@External.Wasm(op: "f64.ceil", host = .Wasi)]
 declare fn roundOf(x: f64) -> f64;
 
 pub fn main() {

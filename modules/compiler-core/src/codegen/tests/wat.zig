@@ -3,6 +3,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const codegen = @import("../../codegen.zig");
+const bpAst = @import("../../ast.zig");
 const snap = @import(".././snapshot.zig");
 const config = @import(".././config.zig");
 const Lexer = @import("../../lexer.zig").Lexer;
@@ -1794,18 +1795,18 @@ test "wat: refusal ---- a generic body reached with nothing bound is refused at 
 // function of the declared name and signature, so a call is an ordinary call.
 test "wat: host binding ---- op:, fn: and wasi: bind a declare fn" {
     try h.assertWasmRunLog(std.testing.allocator,
-        \\#[@External.Wasm("op:f64.floor")]
+        \\#[@External.Wasm(op: "f64.floor")]
         \\declare fn down(x: f64) -> f64;
-        \\#[@External.Wasm("op:i32.add")]
+        \\#[@External.Wasm(op: "i32.add")]
         \\declare fn plus(a: i32, b: i32) -> i32;
-        \\#[@External.Wasm("op:f64.lt")]
+        \\#[@External.Wasm(op: "f64.lt")]
         \\declare fn below(a: f64, b: f64) -> bool;
-        \\#[@External.Wasm("fn:greetBody")]
+        \\#[@External.Wasm(fn: greetBody)]
         \\declare fn greet(name: string) -> string;
         \\fn greetBody(name: string) -> string {
         \\    return "hi " + name;
         \\}
-        \\#[@External.Wasm("wasi:random_f64")]
+        \\#[@External.Wasm(wasi: .RandomF64)]
         \\declare fn draw() -> f64;
         \\fn main() {
         \\    @print(down(2.75) == 2.0);
@@ -1876,48 +1877,48 @@ test "wat: an integer if-expression inside a float function" {
 // as text, never lowered to a guess.
 test "wat: host binding ---- an unknown form, opcode, signature, fn or adapter is refused at the annotation" {
     try h.assertWasmRefusedAt(std.testing.allocator,
-        \\#[@External.Wasm("op:f64.flor")]
+        \\#[@External.Wasm(op: "f64.flor")]
         \\declare fn down(x: f64) -> f64;
         \\fn main() { @print(down(1.5)); }
     , "`f64.flor` is not a wasm numeric instruction", 1, 3);
     try h.assertWasmRefusedAt(std.testing.allocator,
-        \\#[@External.Wasm("op:f64.min")]
+        \\#[@External.Wasm(op: "f64.min")]
         \\declare fn least(x: f64) -> f64;
         \\fn main() { @print(least(1.5)); }
     , "`f64.min` is `(f64, f64) -> f64`", 1, 3);
     try h.assertWasmRefusedAt(std.testing.allocator,
-        \\#[@External.Wasm("op:f64.lt")]
+        \\#[@External.Wasm(op: "f64.lt")]
         \\declare fn below(a: f64, b: f64) -> f64;
         \\fn main() { @print(below(1.0, 2.0)); }
     , "`f64.lt` is `(f64, f64) -> bool`", 1, 3);
     try h.assertWasmRefusedAt(std.testing.allocator,
-        \\#[@External.Wasm("fn:greetBdy")]
+        \\#[@External.Wasm(fn: greetBdy)]
         \\declare fn greet(name: string) -> string;
         \\fn greetBody(name: string) -> string { return name; }
         \\fn main() { @print(greet("x")); }
     , "this module declares no fn `greetBdy`", 1, 3);
     try h.assertWasmRefusedAt(std.testing.allocator,
-        \\#[@External.Wasm("fn:greetBody")]
+        \\#[@External.Wasm(fn: greetBody)]
         \\declare fn greet(name: string) -> string;
         \\pub fn greetBody(name: string) -> string { return name; }
         \\fn main() { @print(greet("x")); }
     , "`greetBody` is `pub`", 1, 3);
     try h.assertWasmRefusedAt(std.testing.allocator,
-        \\#[@External.Wasm("fn:greetBody")]
+        \\#[@External.Wasm(fn: greetBody)]
         \\declare fn greet(name: string) -> string;
         \\fn greetBody(name: string, n: i32) -> string { return name; }
         \\fn main() { @print(greet("x")); }
     , "must take the same parameter types in the same order", 1, 3);
     try h.assertWasmRefusedAt(std.testing.allocator,
-        \\#[@External.Wasm("wasi:clock_time_get")]
+        \\#[@External.Wasm(wasi: .ClockTimeGet)]
         \\declare fn now() -> f64;
         \\fn main() { @print(now()); }
-    , "`clock_time_get` is not a WASI adapter", 1, 3);
+    , "`.ClockTimeGet` is not a WASI adapter", 1, 3);
     try h.assertWasmRefusedAt(std.testing.allocator,
         \\#[@External.Wasm("""(f64.floor $0)""")]
         \\declare fn down(x: f64) -> f64;
         \\fn main() { @print(down(1.5)); }
-    , "is none of the four forms", 1, 3);
+    , "is none of the four cells", 1, 3);
 }
 
 // `wat/host_binding.zig`'s `adapters` is the list `conformance/docs.md` § Host bindings
@@ -1930,6 +1931,8 @@ test "wat: host binding ---- the adapter list agrees with conformance/docs.md" {
     const alloc = std.testing.allocator;
     const docs = try std.Io.Dir.cwd().readFileAlloc(io, "../../conformance/docs.md", alloc, .limited(1 << 22));
     defer alloc.free(docs);
+    var arena = std.heap.ArenaAllocator.init(alloc);
+    defer arena.deinit();
     const head = "| Adapter | Signature | Answers |";
     const at = std.mem.indexOf(u8, docs, head) orelse return error.AdapterTableMissing;
     var rows: usize = 0;
@@ -1939,7 +1942,16 @@ test "wat: host binding ---- the adapter list agrees with conformance/docs.md" {
     while (lines.next()) |line| {
         if (!std.mem.startsWith(u8, line, "| `")) break;
         const end = std.mem.indexOfScalarPos(u8, line, 3, '`') orelse return error.AdapterRowUnreadable;
-        const name = line[3..end];
+        // Decision 481 — a row names the adapter as a `wasi:` cell writes
+        // it, `.RandomF64` for `random_f64`.
+        var snake: std.ArrayList(u8) = .empty;
+        defer snake.deinit(alloc);
+        if (line[3] != '.') return error.AdapterRowUnreadable;
+        for (line[4..end], 0..) |c, k| {
+            if (std.ascii.isUpper(c) and k > 0) try snake.append(alloc, '_');
+            try snake.append(alloc, std.ascii.toLower(c));
+        }
+        const name = snake.items;
         if (hb.findAdapter(name) == null) {
             std.debug.print("conformance/docs.md lists the adapter `{s}` and host_binding.zig binds none\n", .{name});
             return error.AdapterNotBound;
@@ -1947,7 +1959,9 @@ test "wat: host binding ---- the adapter list agrees with conformance/docs.md" {
         rows += 1;
     }
     for (hb.adapters) |a| {
-        const needle = try std.fmt.allocPrint(alloc, "| `{s}` |", .{a.name});
+        const cell = try bpAst.wasmCellDisplay(alloc, try std.fmt.allocPrint(arena.allocator(), "wasi:{s}", .{a.name}));
+        defer alloc.free(cell);
+        const needle = try std.fmt.allocPrint(alloc, "| `{s}` |", .{cell["wasi: ".len..]});
         defer alloc.free(needle);
         if (std.mem.indexOf(u8, docs[at..], needle) == null) {
             std.debug.print("host_binding.zig binds `{s}` and conformance/docs.md does not list it\n", .{a.name});
@@ -2106,7 +2120,7 @@ test "wat: std-wasm ---- primitives.bp's std: cells agree with the codegen's tab
         const decl = try std.fmt.bufPrint(&fn_buf, "fn {s}(", .{row.method});
         const f = std.mem.indexOfPos(u8, src, at, decl) orelse return error.MethodMissing;
         var cell_buf: [96]u8 = undefined;
-        const cell = try std.fmt.bufPrint(&cell_buf, "#[@External.Wasm(\"std:{s}\")]", .{row.export_name});
+        const cell = try std.fmt.bufPrint(&cell_buf, "#[@External.Wasm(std: \"{s}\")]", .{row.export_name});
         // The cell sits in the annotation block right above the declaration.
         const block_start = std.mem.lastIndexOf(u8, src[0..f], ";") orelse at;
         if (std.mem.indexOf(u8, src[block_start..f], cell) == null) {
@@ -2115,7 +2129,7 @@ test "wat: std-wasm ---- primitives.bp's std: cells agree with the codegen's tab
         }
     }
     var n: usize = 0;
-    var it = std.mem.splitSequence(u8, src, "#[@External.Wasm(\"std:");
+    var it = std.mem.splitSequence(u8, src, "#[@External.Wasm(std: \"");
     _ = it.next();
     while (it.next()) |rest| : (n += 1) {
         const end = std.mem.indexOfScalar(u8, rest, '"') orelse return error.CellUnreadable;
@@ -2179,7 +2193,7 @@ test "wat: std-wasm ---- a std: cell is std's alone, and inside std it names an 
     const a = std.testing.allocator;
     try h.assertJsRefusedAt(a,
         \\#[@External.Node("String")]
-        \\#[@External.Wasm("std:hash.contentHash")]
+        \\#[@External.Wasm(std: "hash.contentHash")]
         \\declare fn digest(x: string) -> string;
         \\fn main() {
         \\    @print(digest("Point"));
@@ -2187,7 +2201,7 @@ test "wat: std-wasm ---- a std: cell is std's alone, and inside std it names an 
     , "a `std:` binding is std's alone (decision 445) — call std's `hash.contentHash` instead", 2, 3);
     try h.assertStdModuleRefusedAt(a,
         \\#[@External.Node("Math", "floor")]
-        \\#[@External.Wasm("std:math.floorOf")]
+        \\#[@External.Wasm(std: "math.floorOf")]
         \\declare fn floorOf(x: f64) -> f64;
         \\fn main() {
         \\    @print(floorOf(2.5));
@@ -2195,7 +2209,7 @@ test "wat: std-wasm ---- a std: cell is std's alone, and inside std it names an 
     , "std-wasm implements no `math.floorOf`", 2, 3);
     try h.assertStdModuleRefusedAt(a,
         \\#[@External.Node("String")]
-        \\#[@External.Wasm("std:hash.contentHash")]
+        \\#[@External.Wasm(std: "hash.contentHash")]
         \\declare fn digestOf(x: i32) -> string;
         \\fn main() {
         \\    @print(digestOf(7));

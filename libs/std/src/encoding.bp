@@ -24,7 +24,7 @@
 // Standard base64 (RFC 4648 §4) of the UTF-8 bytes of `s`, with `=` padding.
 #[@External.Node("""Buffer.from($0, 'utf8').toString('base64')""")]
 #[@External.Erlang("base64:encode($0)")]
-#[@External.Wasm("fn:base64EncodeBody")]
+#[@External.Wasm(fn: base64EncodeBody)]
 pub declare fn base64Encode(s: string) -> string;
 
 // The inverse of `base64Encode`. Malformed input is an `Error`: Node's
@@ -33,7 +33,7 @@ pub declare fn base64Encode(s: string) -> string;
 // raises, and the template catches.
 #[@External.Node("""(() => { const __s = String($0).replace(/=+$/, ''); const __b = Buffer.from(__s, 'base64'); return __b.toString('base64').replace(/=+$/, '') === __s ? { ok: __b.toString('utf8') } : { error: 'not base64' } })()""")]
 #[@External.Erlang("""(fun(__B) -> try {ok, base64:decode(__B)} catch _:_ -> {error, <<"not base64">>} end end)($0)""")]
-#[@External.Wasm("fn:base64DecodeBody")]
+#[@External.Wasm(fn: base64DecodeBody)]
 pub declare fn base64Decode(b: string) -> @Result<string, string>;
 
 // base64url (RFC 4648 §5): the `-_` alphabet, no `=` padding — the form
@@ -65,7 +65,7 @@ fn padToMultipleOfFour(s: string) -> string {
 // Lowercase hex of the UTF-8 bytes of `s`: `"hi"` → `6869`.
 #[@External.Node("""Buffer.from($0, 'utf8').toString('hex')""")]
 #[@External.Erlang("""string:lowercase(binary:encode_hex($0))""")]
-#[@External.Wasm("fn:hexEncodeBody")]
+#[@External.Wasm(fn: hexEncodeBody)]
 pub declare fn hexEncode(s: string) -> string;
 
 // The inverse of `hexEncode`, either case. An odd length or a non-hex digit
@@ -74,7 +74,7 @@ pub declare fn hexEncode(s: string) -> string;
 // `binary:decode_hex/1` raises `badarg`, caught).
 #[@External.Node("""(() => { const __s = String($0); return /^([0-9a-fA-F]{2})*$/.test(__s) ? { ok: Buffer.from(__s, 'hex').toString('utf8') } : { error: 'not hex' } })()""")]
 #[@External.Erlang("""(fun(__H) -> try {ok, binary:decode_hex(__H)} catch _:_ -> {error, <<"not hex">>} end end)($0)""")]
-#[@External.Wasm("fn:hexDecodeBody")]
+#[@External.Wasm(fn: hexDecodeBody)]
 pub declare fn hexDecode(s: string) -> @Result<string, string>;
 
 // RFC 3986 percent-encoding of a component: every byte of the UTF-8 form
@@ -84,7 +84,7 @@ pub declare fn hexDecode(s: string) -> @Result<string, string>;
 // those five too — the two targets answer the same bytes for the same input.
 #[@External.Node("""encodeURIComponent($0).replace(/[!'()*]/g, __c => '%' + __c.charCodeAt(0).toString(16).toUpperCase())""")]
 #[@External.Erlang("uri_string:quote($0)")]
-#[@External.Wasm("fn:percentEncodeBody")]
+#[@External.Wasm(fn: percentEncodeBody)]
 pub declare fn percentEncode(s: string) -> string;
 
 // The inverse of `percentEncode`. A `%` not followed by two hex digits, or a
@@ -92,7 +92,7 @@ pub declare fn percentEncode(s: string) -> string;
 // codec below is what reads `+` as a space.
 #[@External.Node("""(() => { try { return { ok: decodeURIComponent($0) } } catch (__e) { return { error: 'not percent-encoded' } } })()""")]
 #[@External.Erlang("""(fun(__S) -> try uri_string:unquote(__S) of __U when is_binary(__U) -> case unicode:characters_to_binary(__U) of __V when is_binary(__V) -> {ok, __V}; _ -> {error, <<"not percent-encoded">>} end; _ -> {error, <<"not percent-encoded">>} catch _:_ -> {error, <<"not percent-encoded">>} end end)($0)""")]
-#[@External.Wasm("fn:percentDecodeBody")]
+#[@External.Wasm(fn: percentDecodeBody)]
 pub declare fn percentDecode(s: string) -> @Result<string, string>;
 
 // `application/x-www-form-urlencoded`, the escaping form: each pair is
@@ -133,7 +133,7 @@ fn formDecode(s: string) -> string {
 
 // ── the wasm bodies (decision 238) ───────────────────────────────────────────
 // wasm has no host to encode with, so each cell above names one of these
-// private bodies with `#[@External.Wasm("fn:…")]`. They run only on wasm and
+// private bodies with `#[@External.Wasm(fn: …)]`. They run only on wasm and
 // answer what the Node cell answers: a string's bytes are its UTF-8, a decoded
 // byte string is read back as Node's `toString('utf8')` reads it (WHATWG UTF-8:
 // each maximal ill-formed subsequence one U+FFFD), and the text is built from

@@ -1381,8 +1381,11 @@ pub const Parser = struct {
                 // annotation's reader (`FnDecl.externalFor` / `BehaviorMethod.externalFor`
                 // + `hasExternalInline`, `parseExternalCallTemplate`, …) interprets it. See the
                 // `#[@External.<targert>(...)]` vocabulary in `libs/std/AGENTS.md`.
+                // Decision 481 — a keyword names a label too (`fn: tanBody`
+                // on `@External.Wasm`): before a `:` or `=` it starts no
+                // expression, so it can only be the label.
                 var label: []const u8 = "";
-                if (this.check(.identifier) and
+                if ((this.check(.identifier) or isKeywordName(this.peek())) and
                     (this.peekAt(1).kind == .colon or this.peekAt(1).kind == .equal))
                 {
                     label = this.advance().lexeme; // label name
@@ -1433,7 +1436,7 @@ pub const Parser = struct {
             }
             _ = try this.consume(.rightParenthesis);
         }
-        return Annotation{
+        var ann = Annotation{
             .name = name,
             .args = try args.toOwnedSlice(alloc),
             .labels = if (any_label) try labels.toOwnedSlice(alloc) else &.{},
@@ -1442,6 +1445,9 @@ pub const Parser = struct {
             .is_builtin = is_builtin,
             .loc = .{ .line = name_start.line, .col = name_start.col, .expansion = name_start.expansion },
         };
+        errdefer ann.deinit(alloc);
+        if (is_builtin) try ast.translateWasmCells(alloc, &ann);
+        return ann;
     }
 
     /// The single source lexeme spanning `first`..`last` inclusive. Used to keep

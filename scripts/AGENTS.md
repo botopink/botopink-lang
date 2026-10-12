@@ -29,6 +29,7 @@ scripts/
 ├── codemod-import-without-from.py ← decision 206's one-shot migration: `from "<a module of this package>"` → the brace form; `--shorthand`, decision 337's: `import {x};` → `import {<module>.x};` (§ below)
 ├── codemod-optional-operators.py ← decision 330's migration: `.unwrapOr(d)` on a `?T` → `?? d`, `result.<op>(r, …)` → `r.<op>(…)` (§ below)
 ├── codemod-component-contexts.py ← decision 354's migration: `@Component<C, R>` → `@Component<R>`, `@Context<C>` → `@Renderable`, `use @getContext(T)` reported (§ below)
+├── codemod-wasm-cells.py ← decision 481's migration: `@External.Wasm`'s prefixed strings → labelled cells (`"fn:x"` → `fn: x`, `"op:o"` → `op: "o"`, `"wasi:a_b"` → `wasi: .AB`, `"std:m.f"` → `std: "m.f"`) (§ below)
 ├── codemod-conformance-cells.py ← 144 B-29 step H: `tests/language/` → `conformance/` cells (`migrate`, `accept`, `audit` — § below)
 ├── lib/
 │   ├── gate-mode.sh   ← which gate a checkout runs (`front/*` → step, anything else → full) and what a changed-file list reaches, from the backend partition (sourced by gate.sh; run directly it explains a branch and a file list)
@@ -791,6 +792,24 @@ ubuntu and macos.
 ## See also
 
 - [`modules/bpmp/AGENTS.md`](../modules/bpmp/AGENTS.md) — the `bpmp` CLI surface used after install.
+
+## codemod-wasm-cells.py
+
+Decision 481 (144 B-33): `@External.Wasm`'s cells are labelled arguments, each value of the kind it
+names, and the prefixed strings are refused on every target. The script rewrites a tree:
+
+```sh
+python3 scripts/codemod-wasm-cells.py [--write] [--ext <.ext>]... <root>...
+```
+
+- `#[@External.Wasm("fn:tanBody")]` → `#[@External.Wasm(fn: tanBody)]`, `"op:f64.floor"` →
+  `op: "f64.floor"`, `"wasi:race_of"` → `wasi: .RaceOf`, `"std:hash.contentHash"` →
+  `std: "hash.contentHash"`; a `host:` beside the cell stays.
+- Textual, over code and comments alike (`@External.Wasm("fn:…")` in prose becomes
+  `@External.Wasm(fn: …)`). It reads `.bp`, `.d.bp` and `.bp.fixture` files, plus each `--ext`;
+  a root may be a file. A `CHANGELOG.md` is not a target.
+- One `rewrite <file>: <n>` line per file and the count per root; without `--write` it only
+  reports (a library's count before its own commit).
 
 ## codemod-optional-operators.py
 

@@ -1,6 +1,6 @@
 //// Decisions 434, 452 — an `@External.Erlang` cell never runs at build: a host
 //// function a decorator reaches answers by its `std:` cell or its
-//// `@External.Wasm("fn:…")` cell, and `tidy` has neither. Its Erlang cell
+//// `@External.Wasm(fn: …)` cell, and `tidy` has neither. Its Erlang cell
 //// (`re:replace/4`, once a call beam-to-wasm did not convert) is not looked
 //// at: the call is refused when the package is compiled, naming both cells.
 

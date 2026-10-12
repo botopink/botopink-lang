@@ -3,8 +3,8 @@
 //// second annotation.
 
 #[@External.Node("Math", "floor")]
-#[@External.Wasm("op:f64.floor")]
-#[@External.Wasm("op:f64.ceil", host = .Browser)]
+#[@External.Wasm(op: "f64.floor")]
+#[@External.Wasm(op: "f64.ceil", host = .Browser)]
 declare fn roundOf(x: f64) -> f64;
 
 pub fn main() {

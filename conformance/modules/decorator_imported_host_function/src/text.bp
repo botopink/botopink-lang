@@ -5,7 +5,7 @@ import {hash} from "std";
 
 #[@External.Node("""($0 + "!")""")]
 #[@External.Erlang("""<<($0)/binary, "!">>""")]
-#[@External.Wasm("fn:bangBody")]
+#[@External.Wasm(fn: bangBody)]
 declare fn bang(value: string) -> string;
 
 fn bangBody(value: string) -> string {

@@ -30,6 +30,8 @@ const stages = @import("runtime/stages.zig");
 const decoratorEval = @import("decorator_eval.zig");
 const hostCells = @import("host_cells.zig");
 const stdWasm = @import("std_wasm");
+const wasmHostBinding = @import("../codegen/wat/host_binding.zig");
+const hostFnBinding = @import("../codegen/hostFnBinding.zig");
 const decoratorSameMod = @import("decorator_same.zig");
 const dslHygiene = @import("dsl_hygiene.zig");
 const specializeMod = @import("specialize.zig");
@@ -3854,7 +3856,7 @@ fn refuseHostArg(env: *Env, a: ast.Annotation) InferError!void {
             env.arena,
             "`External.{s}` declares no `host` — a host is the runtime a wasm build binds to (decision 334)",
             .{v.name},
-        ), "Delete it: `host:` is read on `External.Wasm` alone (`#[@External.Wasm(\"…\", host: .Wasi)]`).");
+        ), "Delete it: `host:` is read on `External.Wasm` alone (`#[@External.Wasm(fn: body, host: .Wasi)]`).");
     } else if (ast.WasmHost.ofArg(a.args[at]) == null) {
         e = TypeError.custom(try std.fmt.allocPrint(
             env.arena,
@@ -3903,11 +3905,16 @@ fn refuseWasmHostTwice(env: *Env, f: ast.FnDecl) InferError!void {
 /// same way a `declare fn`'s is (`validateExternalAnnotation`).
 fn validateExternalInline(env: *Env, program: ast.Program) InferError!void {
     for (program.decls) |decl| switch (decl) {
+        .@"fn" => |f| for (f.annotations) |a| try checkWasmCells(env, a, f.name, f, program),
+        else => {},
+    };
+    for (program.decls) |decl| switch (decl) {
         .type_ => |tdecl| for (tdecl.methods) |m| {
             for (m.annotations) |a| {
                 try refuseUnreadInline(env, a);
                 try refuseHostArg(env, a);
                 try refuseStdBinding(env, a, m.name, m.params, m.returnType, null);
+                try checkWasmCells(env, a, m.name, null, program);
             }
         },
         .behavior => |i| for (i.methods) |m| {
@@ -3915,10 +3922,127 @@ fn validateExternalInline(env: *Env, program: ast.Program) InferError!void {
                 try refuseUnreadInline(env, a);
                 try refuseHostArg(env, a);
                 try refuseStdBinding(env, a, m.name, m.params, m.returnType, selfSpelling(i.name));
+                try checkWasmCells(env, a, m.name, null, program);
             }
         },
         else => {},
     };
+}
+
+/// Decision 481 — an `@External.Wasm` binding is one cell, a labelled
+/// argument of the kind it names: `fn: <identifier>` (resolved in the
+/// module and checked against the declaration, `hostFnBinding.resolve`),
+/// `op: "<opcode>"` (a string the opcode table holds), `wasi: .<Adapter>`
+/// (an adapter's enum value), `std: "<module>.<function>"` (a string,
+/// checked against std-wasm's exports by `refuseStdBinding`). The prefixed
+/// string (`"fn:tanBody"`) is refused at the annotation, naming the labelled
+/// form; so is a value of the wrong kind, a label `External.Wasm` does not
+/// take and a second cell. An opcode's and an adapter's signature are
+/// checked by the wasm backend (`wat/host_binding.zig`). `f` is the
+/// declaration when it is a module-level `declare fn` (`fn:` resolves
+/// against `program`'s functions), null on a method.
+fn checkWasmCells(env: *Env, a: ast.Annotation, name: []const u8, f: ?ast.FnDecl, program: ast.Program) InferError!void {
+    if (!a.is_builtin or !ast.isExternalWasm(a)) return;
+    const written = a.writtenArgs();
+    var cells: usize = 0;
+    for (written, 0..) |arg, i| {
+        // A cell of the wrong form is located at the argument that writes
+        // it; a cell naming what does not exist, at the annotation, as the
+        // wasm backend's binding refusals are.
+        const loc = a.argLoc(i);
+        const label = a.labelOf(i) orelse {
+            const inner = unquotedString(arg) orelse continue;
+            for (ast.wasm_cell_labels) |l| {
+                if (inner.len > l.len and std.mem.startsWith(u8, inner, l) and inner[l.len] == ':') {
+                    const labelled = try ast.wasmCellDisplay(env.arena, inner);
+                    return wasmCellError(env, loc, try std.fmt.allocPrint(
+                        env.arena,
+                        "`#[@External.Wasm({s})]` on `{s}`: a wasm cell is a labelled argument, not a prefixed string (decision 481) — write `#[@External.Wasm({s})]`",
+                        .{ arg, name, labelled },
+                    ));
+                }
+            }
+            continue;
+        };
+        if (std.mem.eql(u8, label, "host") or std.mem.eql(u8, label, "inline")) continue;
+        if (!ast.isWasmCellLabel(label)) {
+            return wasmCellError(env, loc, try std.fmt.allocPrint(
+                env.arena,
+                "`External.Wasm` on `{s}` takes no `{s}:` — a wasm binding is one cell, `fn:`, `op:`, `wasi:` or `std:`, beside `host:` (decision 481)",
+                .{ name, label },
+            ));
+        }
+        cells += 1;
+        if (cells > 1) {
+            return wasmCellError(env, loc, try std.fmt.allocPrint(
+                env.arena,
+                "`#[@External.Wasm]` on `{s}` writes a second cell, `{s}:` — a wasm binding is one cell (decision 481)",
+                .{ name, label },
+            ));
+        }
+        if (std.mem.eql(u8, label, "fn")) {
+            if (!isIdentText(arg)) return wasmCellError(env, loc, try std.fmt.allocPrint(
+                env.arena,
+                "`#[@External.Wasm(fn: {s})]` on `{s}`: `fn:` names a private fn of this module by its identifier, not a string (decision 481) — write `fn: <name>`",
+                .{ arg, name },
+            ));
+            if (f) |fd| if (fd.isDeclare) switch (try hostFnBinding.resolve(env.arena, fd, arg, program, "", "Wasm")) {
+                .ok => {},
+                .refused => |msg| return wasmCellError(env, a.loc, msg),
+            };
+        } else if (std.mem.eql(u8, label, "op")) {
+            const op = unquotedString(arg) orelse return wasmCellError(env, loc, try std.fmt.allocPrint(
+                env.arena,
+                "`#[@External.Wasm(op: {s})]` on `{s}`: `op:` names a wasm opcode by its text, a string (decision 481) — write `op: \"f64.floor\"`",
+                .{ arg, name },
+            ));
+            if (wasmHostBinding.findOp(op) == null) return wasmCellError(env, a.loc, try std.fmt.allocPrint(
+                env.arena,
+                "`#[@External.Wasm(op: {s})]` on `{s}`: `{s}` is not a wasm numeric instruction a binding names (an `op:` names one opcode, e.g. `op: \"f64.floor\"`)",
+                .{ arg, name, op },
+            ));
+        } else if (std.mem.eql(u8, label, "wasi")) {
+            if (arg.len < 2 or arg[0] != '.' or !isIdentText(arg[1..]) or !std.ascii.isUpper(arg[1])) return wasmCellError(env, loc, try std.fmt.allocPrint(
+                env.arena,
+                "`#[@External.Wasm(wasi: {s})]` on `{s}`: `wasi:` names an adapter by its enum value (decision 481) — write `wasi: .Delay`",
+                .{ arg, name },
+            ));
+            const text = unquotedString(a.args[i]) orelse a.args[i];
+            if (wasmHostBinding.findAdapter(text["wasi:".len..]) == null) {
+                const parsed = try wasmHostBinding.parse(env.arena, text, .{ .params = &.{}, .result = null });
+                return wasmCellError(env, a.loc, try std.fmt.allocPrint(env.arena, "{s} (on `{s}`)", .{ parsed.refused.message, name }));
+            }
+        } else if (std.mem.eql(u8, label, "std")) {
+            if (unquotedString(arg) == null) return wasmCellError(env, loc, try std.fmt.allocPrint(
+                env.arena,
+                "`#[@External.Wasm(std: {s})]` on `{s}`: `std:` names a std-wasm function as a string, never a botopink name (decision 481) — write `std: \"<module>.<function>\"`",
+                .{ arg, name },
+            ));
+        }
+    }
+}
+
+fn wasmCellError(env: *Env, loc: ?ast.Loc, msg: []const u8) InferError {
+    var e = TypeError.custom(msg, "A wasm binding is one labelled cell: `fn: <private fn of this module>`, `op: \"<opcode>\"`, `wasi: .<Adapter>` or `std: \"<module>.<function>\"` (std's alone).");
+    if (loc) |l| e = e.withLoc(l);
+    env.lastError = e;
+    return error.TypeError;
+}
+
+/// The text inside a plain string literal argument (`"f64.floor"`), or null.
+fn unquotedString(arg: []const u8) ?[]const u8 {
+    if (arg.len < 2 or arg[0] != '"' or arg[arg.len - 1] != '"') return null;
+    if (std.mem.startsWith(u8, arg, "\"\"\"")) return null;
+    return arg[1 .. arg.len - 1];
+}
+
+fn isIdentText(s: []const u8) bool {
+    if (s.len == 0) return false;
+    for (s, 0..) |c, i| {
+        const ok = std.ascii.isAlphabetic(c) or c == '_' or (i > 0 and std.ascii.isDigit(c));
+        if (!ok) return false;
+    }
+    return true;
 }
 
 /// The type `Self` spells in a primitive behavior a `std:` cell may bind
@@ -3931,7 +4055,7 @@ fn selfSpelling(behavior: []const u8) ?[]const u8 {
     return null;
 }
 
-/// Decision 440 (3) — `#[@External.Wasm("std:<module>.<function>")]` names a
+/// Decision 440 (3) — `#[@External.Wasm(std: "<module>.<function>")]` names a
 /// function std-wasm implements (`std_wasm.exports`), with the declaration's
 /// parameter and return types exactly — and only in one of std's own modules
 /// (decision 445, `Env.inStd`): anywhere else the cell is refused, naming the
@@ -3944,6 +4068,7 @@ fn refuseStdBinding(env: *Env, a: ast.Annotation, name: []const u8, params: []co
     const ref = ast.externalRefOf(a, "wasm") orelse ast.externalRefOf(a, "wasm.browser") orelse return;
     if (ref.module.len > 0 or !std.mem.startsWith(u8, ref.symbol, hostCells.std_cell_prefix)) return;
     const fname = ref.symbol[hostCells.std_cell_prefix.len..];
+    const shown = try ast.wasmCellDisplay(env.arena, ref.symbol);
     var e: TypeError = undefined;
     if (!env.inStd) {
         // Decision 445 — std-wasm's export names are internal to std: the
@@ -3954,9 +4079,9 @@ fn refuseStdBinding(env: *Env, a: ast.Annotation, name: []const u8, params: []co
             "";
         e = TypeError.custom(try std.fmt.allocPrint(
             env.arena,
-            "`#[@External.Wasm(\"{s}\")]` on `{s}`: a `std:` binding is std's alone (decision 445){s}",
-            .{ ref.symbol, name, instead },
-        ), "std-wasm's functions are std's implementation, reached through std's API; a module of another package binds a host function of its own (`fn:<private fn>`, `op:`, `wasi:`).");
+            "`#[@External.Wasm({s})]` on `{s}`: a `std:` binding is std's alone (decision 445){s}",
+            .{ shown, name, instead },
+        ), "std-wasm's functions are std's implementation, reached through std's API; a module of another package binds a host function of its own (`fn: <private fn>`, `op:`, `wasi:`).");
         if (a.loc) |l| e = e.withLoc(l);
         env.lastError = e;
         return error.TypeError;
@@ -3977,14 +4102,14 @@ fn refuseStdBinding(env: *Env, a: ast.Annotation, name: []const u8, params: []co
         try have.appendSlice(env.arena, r orelse "void");
         e = TypeError.custom(try std.fmt.allocPrint(
             env.arena,
-            "`#[@External.Wasm(\"{s}\")]` on `{s}`: std-wasm's `{s}` is `{s}`, and `{s}` is declared `{s}` — a `std:` binding takes exactly its function's types (decision 440)",
-            .{ ref.symbol, name, fname, stdWasm.signatureText(ex, &buf), name, have.items },
-        ), "Declare the function with std-wasm's types, or bind it otherwise (`fn:<private fn>`).");
+            "`#[@External.Wasm({s})]` on `{s}`: std-wasm's `{s}` is `{s}`, and `{s}` is declared `{s}` — a `std:` binding takes exactly its function's types (decision 440)",
+            .{ shown, name, fname, stdWasm.signatureText(ex, &buf), name, have.items },
+        ), "Declare the function with std-wasm's types, or bind it otherwise (`fn: <private fn>`).");
     } else {
         e = TypeError.custom(try std.fmt.allocPrint(
             env.arena,
-            "`#[@External.Wasm(\"{s}\")]` on `{s}`: std-wasm implements no `{s}` (decision 440)",
-            .{ ref.symbol, name, fname },
+            "`#[@External.Wasm({s})]` on `{s}`: std-wasm implements no `{s}` (decision 440)",
+            .{ shown, name, fname },
         ), try std.fmt.allocPrint(env.arena, "A `std:` binding names one of std-wasm's functions: {s}.", .{stdWasm.names}));
     }
     if (a.loc) |l| e = e.withLoc(l);

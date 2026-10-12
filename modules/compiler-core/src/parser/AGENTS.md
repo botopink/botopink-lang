@@ -680,7 +680,12 @@ annotation's (`#[@…]`) loop special-cases these shapes (vocabulary in
 - **Labels** — a leading `identifier :` or `identifier =` (`module:`,
   `inline = true`) lands in `Annotation.labels[i]` (`labelOf(i)`, front 17
   step 3 — the validator and the formatter read it); the value still lands
-  positionally in `args`.
+  positionally in `args`. A keyword is a label too (`fn: tanBody`, decision
+  481): before `:` or `=` it starts no expression. On `@External.Wasm` a
+  cell's value (`fn:`, `op:`, `wasi:`, `std:`) lands as its binding text
+  (`ast.translateWasmCells`: `fn: tanBody` → `"fn:tanBody"`, `wasi: .RaceOf`
+  → `"wasi:race_of"`), the spelling kept in `source_args` for the formatter
+  and the checker.
 - **Enum/member chains** — `.Erlang`, `Target.Erlang`: adjacent `.`/identifier
   tokens fold into one lexeme spanning the source bytes. A bare identifier or
   string literal goes through unchanged.

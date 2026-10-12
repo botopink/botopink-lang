@@ -21,7 +21,7 @@ const T = term.T;
 // ── the functions std-wasm implements (`stdWasm.exports`) ───────────────────
 // One export per entry, `rt_std_<symbol>`: a comptime module's call
 // `bp_std_wasm:<symbol>(…)` — what `host_cells.forRuntime` makes of a host
-// function whose `@External.Wasm("std:<module>.<function>")` cell names the
+// function whose `@External.Wasm(std: "<module>.<function>")` cell names the
 // entry (decision 440 (3)) — lowers to it (`lower.zig`). A `string` crosses
 // as a binary, an `f64` as a float.
 

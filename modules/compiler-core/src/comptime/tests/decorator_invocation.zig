@@ -436,14 +436,14 @@ test "decorator invocation: a helper of another module builds that module's reco
 
 test "comptime: round trip ---- a decorator's host function runs its runtime's cell, the reply byte-identical (decision 341)" {
     // 01-compiler/14 step 6, decisions 434, 452. `bang` carries both cells —
-    // the comptime runtime runs its `@External.Wasm("fn:…")` body, its Erlang
+    // the comptime runtime runs its `@External.Wasm(fn: …)` body, its Erlang
     // template never runs at build — and std's `hash.contentHash` answers
     // std-wasm's text (`host_cells.zig`).
     const src =
         \\import {hash} from "std";
         \\#[@External.Node("""($0 + "!")"""),
         \\  @External.Erlang("""<<($0)/binary, "!">>"""),
-        \\  @External.Wasm("fn:bangBody")]
+        \\  @External.Wasm(fn: bangBody)]
         \\declare fn bang(value: string) -> string;
         \\fn bangBody(value: string) -> string {
         \\    return value + "!";

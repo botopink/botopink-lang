@@ -492,7 +492,7 @@ constructor pattern in an arm and in a `val`, `is`, an arm naming `Block`, a rec
 variant; the parent's lowering failed `MissingPackage`).
 `01-compiler/14` step 6 (decisions 341, 343) adds `modules/decorator_host_cells` (a decorator body calls
 a host function with both cells and std's `hash.contentHash` through its namespace and a leaf
-import — the wasm comptime runtime runs `bang`'s `@External.Wasm("fn:…")` cell (its Erlang cell never runs at
+import — the wasm comptime runtime runs `bang`'s `@External.Wasm(fn: …)` cell (its Erlang cell never runs at
 build, decision 452) and `contentHash` as std-wasm's, for every target; four targets, one output; the parent binary was `call to undefined function bang/1`),
 `modules/decorator_imported_host_function` (the same through an imported function and an imported
 decorator: the export carries its host and std functions),

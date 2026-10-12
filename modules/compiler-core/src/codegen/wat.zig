@@ -1515,7 +1515,7 @@ fn emitWat(
 }
 
 /// Decision 440 (3) — the primitive methods `primitives.bp` binds with a
-/// `#[@External.Wasm("std:…")]` cell, by the std-wasm function the cell
+/// `#[@External.Wasm(std: "…")]` cell, by the std-wasm function the cell
 /// names: the wasm codegen lowers each to a call of that function
 /// (`lowerStringMethod`; `Float.toString` through `number.floatToString`, which every
 /// float-to-text path calls). `codegen/tests/wat.zig` holds this table and
@@ -4338,7 +4338,7 @@ const Emitter = struct {
         const ar = self.arena();
         self.foreign_origin = if (from < linked.len) linked[from].via else null;
         if (ext.module.len > 0)
-            return self.refuse(ann_loc, "`#[@External.Wasm(…)]` on `{s}` takes one string — `op:<opcode>`, `fn:<private fn of this module>`, `wasi:<adapter>` or `std:<module>.<function>`", .{f.name});
+            return self.refuse(ann_loc, "`#[@External.Wasm(…)]` on `{s}` takes one cell — `op: \"<opcode>\"`, `fn: <private fn of this module>`, `wasi: .<Adapter>` or `std: \"<module>.<function>\"`", .{f.name});
         var slots: std.ArrayListUnmanaged(?hostBinding.Slot) = .empty;
         for (f.params) |p| {
             if (std.mem.eql(u8, p.name, "self")) continue;
@@ -4377,7 +4377,7 @@ const Emitter = struct {
             const r: ?[]const u8 = if (f.returnType) |rt| stdSpelling(rt) else null;
             if (!stdWasm.matches(binding.std_, spelled.items, r)) {
                 var buf: [128]u8 = undefined;
-                return self.refuse(ann_loc, "`#[@External.Wasm(\"{s}\")]` on `{s}`: std-wasm's `{s}` is `{s}`, and the declared parameters and return must be exactly those types", .{ ext.symbol, f.name, binding.std_.name, stdWasm.signatureText(binding.std_, &buf) });
+                return self.refuse(ann_loc, "`#[@External.Wasm({s})]` on `{s}`: std-wasm's `{s}` is `{s}`, and the declared parameters and return must be exactly those types", .{ try ast.wasmCellDisplay(ar, ext.symbol), f.name, binding.std_.name, stdWasm.signatureText(binding.std_, &buf) });
             }
         }
         if (binding == .fn_) {
@@ -4535,7 +4535,7 @@ const Emitter = struct {
             else => true,
         };
         if (result != null and !yields) try lines.append(ar, .{ .indent = 4, .instr = constOf(@tagName(result.?), "0") });
-        try self.itemCommentF("{s} — #[@External.Wasm(\"{s}\")]", .{ f.name, f.externalFor(self.external_lookup).?.symbol });
+        try self.itemCommentF("{s} — #[@External.Wasm({s})]", .{ f.name, try ast.wasmCellDisplay(ar, f.externalFor(self.external_lookup).?.symbol) });
         try self.item(.{ .func = try self.builder().func(.{
             .name = f.name,
             .exports = if (f.isPub) try ar.dupe([]const u8, &.{f.name}) else &.{},

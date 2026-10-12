@@ -1,13 +1,16 @@
-//! Decision 238 — what a `#[@External.Wasm("…")]` binding names: a closed
-//! vocabulary of four forms (decision 440 added `std:`), read and checked
-//! here before anything is lowered.
+//! Decisions 238, 481 — what a `#[@External.Wasm(…)]` binding names: a closed
+//! vocabulary of four cells, each a labelled argument of the kind it names
+//! (decision 440 added `std:`), read and checked here before anything is
+//! lowered. The parser hands each cell on as one binding text
+//! (`ast.translateWasmCells`: `fn: tanBody` → `fn:tanBody`), which `parse`
+//! reads; a message names the cell as written (`ast.wasmCellDisplay`).
 //!
-//! | Form | Means |
+//! | Cell | Means |
 //! |---|---|
-//! | `op:<opcode>` | one numeric wasm instruction over the declared parameters (`op:f64.floor`) |
-//! | `fn:<name>` | a private botopink `fn` of the same module, with the same signature |
-//! | `wasi:<adapter>` | a compiler adapter over the host (WASI preview 1 through the component, or the `browser` loader's JavaScript), from `adapters` |
-//! | `std:<module>.<function>` | a function std-wasm implements (`modules/std-wasm`, `std_wasm.exports`), transpiled into the program — the same cell the comptime runtime answers by (decision 440) |
+//! | `op: "<opcode>"` | one numeric wasm instruction over the declared parameters (`op: "f64.floor"`) |
+//! | `fn: <name>` | a private botopink `fn` of the same module, with the same signature |
+//! | `wasi: .<Adapter>` | a compiler adapter over the host (WASI preview 1 through the component, or the `browser` loader's JavaScript), from `adapters` (`.RaceOf` names `race_of`) |
+//! | `std: "<module>.<function>"` | a function std-wasm implements (`modules/std-wasm`, `std_wasm.exports`), transpiled into the program — the same cell the comptime runtime answers by (decision 440) |
 //!
 //! The arguments are always the declared parameters, in order — there are no
 //! markers, no expression text and no way to name an address: nothing a
@@ -26,6 +29,7 @@
 const std = @import("std");
 const wat = @import("wat_ast.zig");
 const stdWasm = @import("std_wasm");
+const ast = @import("../../ast.zig");
 
 /// A numeric value type a binding's signature may spell, or `bool` — the
 /// `i32` a comparison answers, which a signature writes as `bool`.
@@ -138,40 +142,45 @@ pub const Result = union(enum) { ok: Binding, refused: Refused };
 /// Reads `text` (the annotation's string, unquoted). `fn:` is only split
 /// here; its name is resolved by the caller, which knows the module.
 pub fn parse(alloc: std.mem.Allocator, text: []const u8, sig: Signature) !Result {
+    // Decision 481 — a message names the cell as it is written: `fn: x`,
+    // `op: "f64.floor"`, `wasi: .Delay`, `std: "hash.contentHash"`.
+    const shown = try ast.wasmCellDisplay(alloc, text);
+    defer alloc.free(shown);
     if (std.mem.startsWith(u8, text, "op:")) {
         const name = text["op:".len..];
-        const op = findOp(name) orelse return refused(alloc, "`#[@External.Wasm(\"{s}\")]`: `{s}` is not a wasm numeric instruction this backend binds (an `op:` names one opcode, e.g. `op:f64.floor`)", .{ text, name });
-        if (try checkOp(alloc, text, op, sig)) |r| return r;
+        const op = findOp(name) orelse return refused(alloc, "`#[@External.Wasm({s})]`: `{s}` is not a wasm numeric instruction this backend binds (an `op:` names one opcode, e.g. `op: \"f64.floor\"`)", .{ shown, name });
+        if (try checkOp(alloc, shown, op, sig)) |r| return r;
         return .{ .ok = .{ .op = op } };
     }
     if (std.mem.startsWith(u8, text, "fn:")) {
         const name = text["fn:".len..];
-        if (!isIdent(name)) return refused(alloc, "`#[@External.Wasm(\"{s}\")]`: `fn:` names a private fn of this module by its identifier", .{text});
+        if (!isIdent(name)) return refused(alloc, "`#[@External.Wasm({s})]`: `fn:` names a private fn of this module by its identifier — `fn: name`", .{shown});
         return .{ .ok = .{ .fn_ = name } };
     }
     if (std.mem.startsWith(u8, text, "wasi:")) {
         const name = text["wasi:".len..];
-        const ad = findAdapter(name) orelse return refused(alloc, "`#[@External.Wasm(\"{s}\")]`: `{s}` is not a WASI adapter — the adapters are listed in conformance/docs.md § Host bindings ({s})", .{ text, name, adapterNames() });
+        const value = shown["wasi: ".len..];
+        const ad = findAdapter(name) orelse return refused(alloc, "`#[@External.Wasm({s})]`: `{s}` is not a WASI adapter — the adapters are listed in conformance/docs.md § Host bindings ({s})", .{ shown, value, adapterNames() });
         if (ad.task) |ts| {
             const ok = if (sig.shapes) |shapes| shapes.len == ts.params.len and std.mem.eql(Shape, shapes, ts.params) and sig.result_shape == ts.result else false;
             if (ok) return .{ .ok = .{ .wasi = ad } };
             const shape = try taskSigText(alloc, ts);
             defer alloc.free(shape);
-            return refused(alloc, "`#[@External.Wasm(\"{s}\")]`: the adapter `{s}` is `{s}` over one type parameter `T`; the declaration's signature differs", .{ text, name, shape });
+            return refused(alloc, "`#[@External.Wasm({s})]`: the adapter `{s}` is `{s}` over one type parameter `T`; the declaration's signature differs", .{ shown, value, shape });
         }
         if (sig.params.len != ad.params.len or !slotsEql(sig.params, ad.params) or !resultEql(sig, ad.result)) {
             const takes = try slotsText(alloc, ad.params);
             defer alloc.free(takes);
-            return refused(alloc, "`#[@External.Wasm(\"{s}\")]`: the adapter `{s}` takes {s} and answers {s}; the declaration's signature differs", .{ text, name, takes, slotText(ad.result) });
+            return refused(alloc, "`#[@External.Wasm({s})]`: the adapter `{s}` takes {s} and answers {s}; the declaration's signature differs", .{ shown, value, takes, slotText(ad.result) });
         }
         return .{ .ok = .{ .wasi = ad } };
     }
     if (std.mem.startsWith(u8, text, "std:")) {
         const name = text["std:".len..];
-        const e = stdWasm.find(name) orelse return refused(alloc, "`#[@External.Wasm(\"{s}\")]`: std-wasm implements no `{s}` — a `std:` binding names one of its functions ({s})", .{ text, name, stdWasm.names });
+        const e = stdWasm.find(name) orelse return refused(alloc, "`#[@External.Wasm({s})]`: std-wasm implements no `{s}` — a `std:` binding names one of its functions ({s})", .{ shown, name, stdWasm.names });
         return .{ .ok = .{ .std_ = e } };
     }
-    return refused(alloc, "`#[@External.Wasm(\"{s}\")]` is none of the four forms a wasm binding takes: `op:<opcode>`, `fn:<private fn of this module>`, `wasi:<adapter>`, `std:<module>.<function>`", .{text});
+    return refused(alloc, "`#[@External.Wasm({s})]` is none of the four cells a wasm binding takes: `op: \"<opcode>\"`, `fn: <private fn of this module>`, `wasi: .<Adapter>`, `std: \"<module>.<function>\"`", .{shown});
 }
 
 fn refused(alloc: std.mem.Allocator, comptime f: []const u8, args: anytype) !Result {
@@ -188,7 +197,7 @@ fn checkOp(alloc: std.mem.Allocator, text: []const u8, op: Op, sig: Signature) !
         if (got == .bool or !std.mem.eql(u8, @tagName(got), @tagName(want))) ok = false;
     };
     if (ok) {
-        const r = sig.result orelse return try refused(alloc, "`#[@External.Wasm(\"{s}\")]`: `{s}` answers a value; the declaration answers none", .{ text, op.text });
+        const r = sig.result orelse return try refused(alloc, "`#[@External.Wasm({s})]`: `{s}` answers a value; the declaration answers none", .{ text, op.text });
         ok = if (op.yields_bool) r == .bool else (r != .bool and std.mem.eql(u8, @tagName(r), @tagName(op.result)));
     }
     if (ok) return null;
@@ -201,7 +210,7 @@ fn checkOp(alloc: std.mem.Allocator, text: []const u8, op: Op, sig: Signature) !
     }
     try buf.appendSlice(alloc, ") -> ");
     try buf.appendSlice(alloc, if (op.yields_bool) "bool" else @tagName(op.result));
-    return try refused(alloc, "`#[@External.Wasm(\"{s}\")]`: `{s}` is `{s}`, and the declared parameters and return must be exactly those types", .{ text, op.text, buf.items });
+    return try refused(alloc, "`#[@External.Wasm({s})]`: `{s}` is `{s}`, and the declared parameters and return must be exactly those types", .{ text, op.text, buf.items });
 }
 
 fn slotsEql(a: []const ?Slot, b: []const Slot) bool {
@@ -248,10 +257,27 @@ pub fn taskSigText(alloc: std.mem.Allocator, ts: TaskSig) ![]u8 {
     return buf.toOwnedSlice(alloc);
 }
 
+/// The adapters as a `wasi:` cell writes them (decision 481): `.RandomF64`,
+/// `.Delay`, … — each name in PascalCase.
 fn adapterNames() []const u8 {
     comptime var text: []const u8 = "";
-    inline for (adapters, 0..) |a, i| text = text ++ (if (i > 0) ", " else "") ++ a.name;
+    inline for (adapters, 0..) |a, i| text = text ++ (if (i > 0) ", " else "") ++ "." ++ comptime pascal(a.name);
     return text;
+}
+
+/// `race_of` → `RaceOf`, at compile time.
+fn pascal(comptime name: []const u8) []const u8 {
+    comptime var out: []const u8 = "";
+    comptime var up = true;
+    inline for (name) |c| {
+        if (c == '_') {
+            up = true;
+        } else {
+            out = out ++ &[_]u8{if (up) std.ascii.toUpper(c) else c};
+            up = false;
+        }
+    }
+    return out;
 }
 
 pub fn findAdapter(name: []const u8) ?Adapter {
@@ -435,7 +461,7 @@ test "host binding: the three forms and their refusals" {
     {
         const r = try parse(a, "$0 + 1", f64x1);
         defer a.free(r.refused.message);
-        try std.testing.expect(std.mem.indexOf(u8, r.refused.message, "none of the four forms") != null);
+        try std.testing.expect(std.mem.indexOf(u8, r.refused.message, "none of the four cells") != null);
     }
     {
         const r = try parse(a, "std:hash.contentHash", .{ .params = &.{null}, .result = null, .result_other = true });

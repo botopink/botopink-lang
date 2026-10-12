@@ -1049,6 +1049,32 @@ test "parser: `#[@BeamMemory.Ets] var` carries the annotation on the binding" {
     try std.testing.expectEqualStrings("keyed", v.annotations[0].labelOf(0).?);
 }
 
+test "parser: a keyword is an annotation argument's label (`fn:`, decision 481)" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lx = Lexer.init(
+        \\#[@External.Wasm(fn: tanBody, host: .Wasi)]
+        \\#[@External.Wasm(wasi: .RaceOf, host: .Browser)]
+        \\pub declare fn tan(x: f64) -> f64;
+    );
+    const tokens = try lx.scanAll(alloc);
+    var p = Parser.init(tokens);
+    const program = try p.parse(alloc);
+    const anns = program.decls[0].@"fn".annotations;
+    try std.testing.expectEqual(@as(usize, 2), anns.len);
+    // The label is the keyword; the cell lands as the binding text every
+    // reader takes, its spelling kept for the formatter and the checker.
+    try std.testing.expectEqualStrings("fn", anns[0].labelOf(0).?);
+    try std.testing.expectEqualStrings("\"fn:tanBody\"", anns[0].args[0]);
+    try std.testing.expectEqualStrings("tanBody", anns[0].writtenArgs()[0]);
+    try std.testing.expectEqualStrings("host", anns[0].labelOf(1).?);
+    try std.testing.expectEqualStrings(".Wasi", anns[0].args[1]);
+    try std.testing.expectEqualStrings("\"wasi:race_of\"", anns[1].args[0]);
+    try std.testing.expectEqualStrings(".RaceOf", anns[1].writtenArgs()[0]);
+    try std.testing.expectEqualStrings("race_of", ast.externalRefOf(anns[1], "wasm.browser").?.symbol["wasi:".len..]);
+}
+
 test "parser: an unlabelled annotation argument has no label" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();

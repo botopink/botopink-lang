@@ -956,6 +956,22 @@ test "format: an annotation argument keeps its label" {
     );
 }
 
+test "format: a wasm cell prints as its labelled argument (decision 481)" {
+    try h.assertFormat(std.testing.allocator,
+        \\#[@External.Wasm(fn: tanBody)]
+        \\pub declare fn tan(x: f64) -> f64;
+        \\
+        \\#[@External.Wasm(op: "f64.floor", host: .Wasi)]
+        \\pub declare fn floorOf(x: f64) -> f64;
+        \\
+        \\#[@External.Wasm(wasi: .Delay)]
+        \\declare fn later<T>(millis: i32, value: T) -> @Task<T>;
+        \\
+        \\#[@External.Wasm(std: "hash.contentHash")]
+        \\pub declare fn contentHash(value: string) -> string;
+    );
+}
+
 test "format: type alias ---- plain, generic and pub round-trip" {
     try h.assertFormatLossless(std.testing.allocator,
         \\type Id = i32;

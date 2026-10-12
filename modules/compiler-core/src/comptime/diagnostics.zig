@@ -231,8 +231,8 @@ pub const bigint_widened: []const u8 = "bigint-widened";
 /// testing for one: its type is static.
 pub const bigint_type_test: []const u8 = "bigint-type-test";
 /// Decisions 434, 341, 452 — a host function reached at comptime has neither
-/// cell the comptime runtime answers by: an `@External.Wasm("std:…")` cell
-/// (std-wasm) or an `@External.Wasm("fn:…")` cell (an `@External.Erlang` cell
+/// cell the comptime runtime answers by: an `@External.Wasm(std: "…")` cell
+/// (std-wasm) or an `@External.Wasm(fn: …)` cell (an `@External.Erlang` cell
 /// never runs at build). Fires from `comptime/host_cells.zig`, naming the
 /// function and both cells.
 pub const comptime_host_cell_unavailable: []const u8 = "comptime-host-cell-unavailable";

@@ -1,3 +1,3 @@
 botopink-cell 1
-refused error: `#[@External.Wasm("std:hash.contentHash")]` on `contentHash`: a `std:` binding is std's alone (decision 445) — call std's `hash.contentHash` instead
+refused error: `#[@External.Wasm(std: "hash.contentHash")]` on `contentHash`: a `std:` binding is std's alone (decision 445) — call std's `hash.contentHash` instead
 at src/main.bp:3:3

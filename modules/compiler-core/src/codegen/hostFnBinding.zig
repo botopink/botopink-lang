@@ -2,7 +2,7 @@
 //! `declare fn` whose binding for the build's target is `fn:<name>` runs
 //! `<name>`, a private bodied `fn` of the same module with the same signature
 //! — `#[@External.Erlang("fn:tanBody")]`,
-//! `#[@External.Node("fn:powBody")]`, `#[@External.Wasm("fn:tanBody")]`. The
+//! `#[@External.Node("fn:powBody")]`, `#[@External.Wasm(fn: tanBody)]`. The
 //! arguments are the declared parameters in order.
 //!
 //! `resolve` is the one check of a `fn:` binding — the named fn exists in the
@@ -62,18 +62,24 @@ pub fn annotationLoc(f: ast.FnDecl, label: []const u8) ?ast.Loc {
 /// the check through a link that qualified their types (wasm's static
 /// linking, `typeText`), else empty.
 pub fn resolve(ar: std.mem.Allocator, f: ast.FnDecl, name: []const u8, prog: ast.Program, module: []const u8, label: []const u8) !Resolution {
+    // Decision 481 — a wasm cell is the labelled `fn: <name>`; the other
+    // targets' cells are still written `"fn:<name>"`.
+    const cell = if (std.ascii.eqlIgnoreCase(label, "Wasm"))
+        try std.fmt.allocPrint(ar, "fn: {s}", .{name})
+    else
+        try std.fmt.allocPrint(ar, "\"fn:{s}\"", .{name});
     const target: ?ast.FnDecl = for (prog.decls) |pd| switch (pd) {
         .@"fn" => |g| if (std.mem.eql(u8, g.name, name)) break g,
         else => {},
     } else null;
     const g = target orelse
-        return .{ .refused = try std.fmt.allocPrint(ar, "`#[@External.{s}(\"fn:{s}\")]` on `{s}`: this module declares no fn `{s}`", .{ label, name, f.name, name }) };
+        return .{ .refused = try std.fmt.allocPrint(ar, "`#[@External.{s}({s})]` on `{s}`: this module declares no fn `{s}`", .{ label, cell, f.name, name }) };
     if (g.isDeclare or g.body.len == 0)
-        return .{ .refused = try std.fmt.allocPrint(ar, "`#[@External.{s}(\"fn:{s}\")]` on `{s}`: `{s}` has no body of its own to run", .{ label, name, f.name, name }) };
+        return .{ .refused = try std.fmt.allocPrint(ar, "`#[@External.{s}({s})]` on `{s}`: `{s}` has no body of its own to run", .{ label, cell, f.name, name }) };
     if (g.isPub)
-        return .{ .refused = try std.fmt.allocPrint(ar, "`#[@External.{s}(\"fn:{s}\")]` on `{s}`: `{s}` is `pub` — a binding names a private fn, so no body becomes the module's surface twice", .{ label, name, f.name, name }) };
+        return .{ .refused = try std.fmt.allocPrint(ar, "`#[@External.{s}({s})]` on `{s}`: `{s}` is `pub` — a binding names a private fn, so no body becomes the module's surface twice", .{ label, cell, f.name, name }) };
     if (!try sameSignature(ar, f, g, module))
-        return .{ .refused = try std.fmt.allocPrint(ar, "`#[@External.{s}(\"fn:{s}\")]` on `{s}`: `{s}` must take the same parameter types in the same order and answer the same type", .{ label, name, f.name, name }) };
+        return .{ .refused = try std.fmt.allocPrint(ar, "`#[@External.{s}({s})]` on `{s}`: `{s}` must take the same parameter types in the same order and answer the same type", .{ label, cell, f.name, name }) };
     return .{ .ok = g };
 }
 

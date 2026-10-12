@@ -34,7 +34,7 @@ import {unicode_tables as tables};
 // a surrogate, past U+10FFFF — aborts the program the same way everywhere.
 #[@External.Node("fn:fromCodepointBody")]
 #[@External.Erlang("fn:fromCodepointBody")]
-#[@External.Wasm("fn:fromCodepointBody")]
+#[@External.Wasm(fn: fromCodepointBody)]
 pub declare fn fromCodepoint(cp: i32) -> string;
 
 fn fromCodepointBody(cp: i32) -> string {
@@ -43,7 +43,7 @@ fn fromCodepointBody(cp: i32) -> string {
 
 #[@External.Node("($0.codePointAt(0) ?? 0)")]
 #[@External.Erlang("""(fun(__S) -> case unicode:characters_to_list(__S, utf8) of [__C | _] -> __C; _ -> 0 end end)($0)""")]
-#[@External.Wasm("fn:firstCodepointOrZeroBody")]
+#[@External.Wasm(fn: firstCodepointOrZeroBody)]
 declare fn firstCodepointOrZero(s: string) -> i32;
 
 // wasm's cell: a wasm string is UTF-8 indexed by code point (decision 240),
@@ -71,7 +71,7 @@ pub fn firstCodepoint(s: string) -> ?i32 {
 // integer list of codepoints when given a UTF-8 binary.
 #[@External.Node("""(Array.from($0).map((__c) => __c.codePointAt(0)))""")]
 #[@External.Erlang("unicode:characters_to_list($0, utf8)")]
-#[@External.Wasm("fn:codepointsBody")]
+#[@External.Wasm(fn: codepointsBody)]
 pub declare fn codepoints(s: string) -> Array<i32>;
 
 // wasm's cell: one code point per character (decision 240).

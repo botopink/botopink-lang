@@ -24,7 +24,7 @@
 //!   per process; a comptime module's calls resolve to them.
 //!
 //! A std function is served by std-wasm only where its
-//! `#[@External.Wasm("std:<module>.<function>")]` cell names one of `exports`
+//! `#[@External.Wasm(std: "<module>.<function>")]` cell names one of `exports`
 //! (decision 440 (3)); there is no match by name. Allocation is always the
 //! caller's (`env.bp_alloc`, decision 450 (5)). Each function has a Zig unit
 //! test.

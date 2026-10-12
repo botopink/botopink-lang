@@ -1,0 +1,12 @@
+#[@External.Node("Math", "tan")]
+#[@External.Erlang("math", "tan")]
+#[@External.Wasm("fn:tanBody")]
+pub declare fn tanOf(x: f64) -> f64;
+
+fn tanBody(x: f64) -> f64 {
+    return x;
+}
+
+pub fn main() {
+    @print(tanOf(0.0));
+}

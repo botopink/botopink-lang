@@ -4,7 +4,7 @@
 //// "every host".
 
 #[@External.Node("Math", "floor")]
-#[@External.Wasm("op:f64.floor", host = .Deno)]
+#[@External.Wasm(op: "f64.floor", host = .Deno)]
 declare fn floorOf(x: f64) -> f64;
 
 pub fn main() {

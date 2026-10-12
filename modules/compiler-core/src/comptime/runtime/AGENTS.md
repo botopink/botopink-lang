@@ -9,7 +9,7 @@ The comptime runtime and the one entry the evaluators call. **Comptime runs on w
 links into std-wasm's term library (`modules/std-wasm`, decoded from `std_wasm.wasm` once per process, decision 450) and runs in-process on wasm3 (`persistent_wat.zig`, `wat/`) —
 for every target (`erlang`, `beam`, `commonJS`, `wasm`) and for a compilation that names none. A
 compile spawns no `erl`; building the compiler runs no `erlc`. A host function the body reaches
-answers by std-wasm (`modules/std-wasm`), else its `@External.Wasm("fn:…")` cell
+answers by std-wasm (`modules/std-wasm`), else its `@External.Wasm(fn: …)` cell
 (`../host_cells.zig`); its `@External.Erlang` cell never runs at build, and nothing here calls
 `modules/beam-to-wasm` — a standalone utility botopink does not use (decision 452). (Comptime `val`s are folded in Zig by `../eval.zig` and never reach it.)
 

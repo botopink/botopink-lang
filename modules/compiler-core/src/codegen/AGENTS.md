@@ -36,7 +36,7 @@ codegen/
 ├── moduleOutput.zig  ← GenerateResult, ModuleOutput
 ├── crossModule.zig   ← backend-agnostic cross-module link index (exports + imported set; every payload variant's field names, `variantFields`); `Scopes`, each module's closure view
 ├── patterns.zig      ← backend-agnostic pattern facts (does a pattern bind names?)
-├── hostFnBinding.zig ← decision 238's `fn:<private fn>` binding on every backend: the one check (`resolve`) and, for commonJS/erlang/beam, the lowering of a bound `declare fn` to an ordinary forwarding function (`Lowering`)
+├── hostFnBinding.zig ← decision 238's private-fn binding on every backend (wasm's `fn: <name>` cell, decision 481; `"fn:<name>"` on Node and Erlang): the one check (`resolve`) and, for commonJS/erlang/beam, the lowering of a bound `declare fn` to an ordinary forwarding function (`Lowering`)
 ├── hostMethods.zig   ← host-backed methods: a `declare fn` + `#[@External.*]` inside a `type` body — which backends bind it, and the call-site refusal
 ├── commonJS.zig      ← CommonJS backend: builds the JS model (blind: iterates transformed AST)
 ├── js/               ← JS/TS code model + the only JS/`.d.ts` writers — see [`js/AGENTS.md`](js/AGENTS.md)
@@ -2961,9 +2961,10 @@ first three are now enforced by the model, not by discipline:
   (`emitPendingFns`, after the declarations and `$__init_globals`). A record's
   own fn called on the type (`Response.ok(…)`) calls `$<Record>_<fn>`.
 - **Host-backed `declare fn`** (`#[@External.<Target>(…)]`, no body) — one
-  with `#[@External.Wasm("…")]` is bound by decision 238's closed vocabulary
-  (`op:<opcode>`, `fn:<private fn of the module>`, `wasi:<adapter>`, and
-  decision 440's `std:<module>.<function>` — std-wasm, transpiled in; checked
+  with `#[@External.Wasm(…)]` is bound by decision 238's closed vocabulary of
+  labelled cells (decision 481: `op: "<opcode>"`, `fn: <private fn of the module>`,
+  `wasi: .<Adapter>`, and decision 440's `std: "<module>.<function>"` — std-wasm,
+  transpiled in; checked
   at the annotation — `wat/host_binding.zig`, `wat.zig` `checkHostBindings` /
   `emitHostBinding`, the `fn:` check `hostFnBinding.resolve`, shared with the
   three host backends; [`wat/AGENTS.md`](wat/AGENTS.md) § Host bindings). For
