@@ -110,3 +110,12 @@ test "js: f64 ---- NaN equals NaN under ==, bare and inside composites" {
         \\}
     , "true\nfalse\nfalse\nfalse\ntrue\ntrue\ntrue\ntrue\nfalse\n");
 }
+
+test "js: a library's enum class is its closure's alone, whatever its consumer declares" {
+    // Decision 509 (2), 144 B-66: `shelf`'s `Square(side)` reads `side` by
+    // name — `shelf`'s closure declares one `Square`. `rival`'s
+    // `Square(side, color)` is not in it; the variant table used to be the
+    // whole program's, so under `crowded` alone the class gained `get $0()`
+    // and the `case` destructured `{ $0: side }`.
+    try h.assertLibrarySameUnder(std.testing.allocator, .commonJS, &.{ "shelf", "rival" }, "shelf", &h.closure_plain, &h.closure_crowded);
+}

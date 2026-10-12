@@ -60,6 +60,11 @@ pub fn codegenEmit(
     // `exports.X` only for symbols consumed elsewhere.
     var cross = try crossModule.build(alloc, outputs);
     defer cross.deinit();
+    // Each module is lowered against its own package's closure, never the
+    // whole program (decision 509 (2)): `cross` answers only the program's
+    // question — an ambiguous import.
+    var scopes = crossModule.Scopes.init(alloc, outputs, &cross, config.packages);
+    defer scopes.deinit();
     // The type-only `pub` declarations the `.d.ts` files import from each
     // other (`typescript.TypeExport`), which the value index above omits.
     var type_exports: std.ArrayListUnmanaged(tsEmit.TypeExport) = .empty;
@@ -114,7 +119,8 @@ pub fn codegenEmit(
                 // driver as a located diagnostic naming the function, not as
                 // the bare error name that aborted the whole build.
                 var missing: ?moduleOutput.MissingExternal = null;
-                const js_src = emitJs(alloc, ok.transformed, ok.comptime_vals, ok.dispatch_rewrites, &ok.js_method_renames, &ok.instance_lowerings, module_test_mode, ct.name, ct.srcPath, &cross, &missing, .{ .fns = &ok.sync_fns, .calls = &ok.sync_calls }) catch |err| {
+                const scope = try scopes.forModule(ct.name);
+                const js_src = emitJs(alloc, ok.transformed, ok.comptime_vals, ok.dispatch_rewrites, &ok.js_method_renames, &ok.instance_lowerings, module_test_mode, ct.name, ct.srcPath, &scope.cross, &missing, .{ .fns = &ok.sync_fns, .calls = &ok.sync_calls }) catch |err| {
                     const me = missing orelse return err;
                     try results.append(alloc, .{
                         .name = ct.name,
@@ -129,8 +135,11 @@ pub fn codegenEmit(
                 };
 
                 // Generate TypeScript typedefs if configured.
+                var scope_types: std.ArrayListUnmanaged(tsEmit.TypeExport) = .empty;
+                defer scope_types.deinit(alloc);
+                for (type_exports.items) |te| if (scope.holds(te.module)) try scope_types.append(alloc, te);
                 const typedef: ?[]u8 = if (config.typeDefLanguage) |_|
-                    try emitTypeDef(alloc, ok.bindings, &cross, type_exports.items, ct.name, ok.transformed.decls, &ok.sync_fns)
+                    try emitTypeDef(alloc, ok.bindings, &scope.cross, scope_types.items, ct.name, ok.transformed.decls, &ok.sync_fns)
                 else
                     null;
 
@@ -2034,7 +2043,7 @@ const Emitter = struct {
     /// (the vast majority of fixtures) emit no export line and stay unchanged.
     fn crossExport(self: *Emitter, name: []const u8) !?js.Stmt {
         const xc = self.cross orelse return null;
-        if (!xc.imported.contains(name)) return null;
+        if (!xc.exportsName(name)) return null;
         return js.Stmt{ .expr = try self.b.assign(
             try self.b.member(.{ .name = "exports" }, name),
             "=",
