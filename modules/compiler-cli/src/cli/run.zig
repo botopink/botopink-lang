@@ -76,6 +76,10 @@ pub fn programArgv(
     out_dir: []const u8,
     module: []const u8,
 ) !?[]const []const u8 {
+    // A package whose entry module declares no `fn main` has nothing to run:
+    // one located refusal on every target and host (decision 517).
+    if (try refuseWithoutMain(arena, io, proj, module)) return null;
+
     // Resolve the entry-point file path. erlang and BEAM artifacts are named by
     // the module ATOM under `out/<target>/`; commonJS and wasm keep the mirrored
     // module-path tree (`build_cmd.artifactPath`).
@@ -112,6 +116,53 @@ pub fn programArgv(
     }
     try argv.append(arena, entry_path);
     return argv.items;
+}
+
+// ── no `fn main` ──────────────────────────────────────────────────────────────
+
+/// True when `source` declares a top-level `fn main` (`pub` or not).
+pub fn declaresMain(source: []const u8) bool {
+    var lines = std.mem.splitScalar(u8, source, '\n');
+    while (lines.next()) |raw| {
+        var l = std.mem.trimStart(u8, raw, " \t");
+        if (std.mem.startsWith(u8, l, "pub ")) l = std.mem.trimStart(u8, l["pub ".len..], " \t");
+        if (!std.mem.startsWith(u8, l, "fn ")) continue;
+        l = std.mem.trimStart(u8, l["fn ".len..], " \t");
+        if (!std.mem.startsWith(u8, l, "main")) continue;
+        const rest = std.mem.trimStart(u8, l["main".len..], " \t");
+        if (rest.len > 0 and (rest[0] == '(' or rest[0] == '<')) return true;
+    }
+    return false;
+}
+
+/// Prints the refusal and returns true when the project's entry module
+/// (`<src>/<module>.bp`) exists and declares no `fn main` (decision 517). The
+/// message is the same for commonJS, erlang, beam and wasm on either host,
+/// located at the entry module.
+fn refuseWithoutMain(arena: std.mem.Allocator, io: std.Io, proj: config.ProjectConfig, module: []const u8) !bool {
+    const path = try std.fmt.allocPrint(arena, "{s}/{s}.bp", .{ proj.srcDir(), module });
+    const source = std.Io.Dir.cwd().readFileAlloc(io, path, arena, .limited(16 * 1024 * 1024)) catch return false;
+    if (declaresMain(source)) return false;
+    reporter.print("{s}\n", .{try refusalText(arena, path)});
+    return true;
+}
+
+fn refusalText(arena: std.mem.Allocator, path: []const u8) ![]const u8 {
+    return std.fmt.allocPrint(arena, "error: the package's entry module declares no `fn main`, so there is nothing to run\n  --> {s}:1:1", .{path});
+}
+
+test "declaresMain: a top-level fn main, pub or not" {
+    try std.testing.expect(declaresMain("fn main() {\n}\n"));
+    try std.testing.expect(declaresMain("import x;\npub fn main() -> i32 {\n  return 0;\n}\n"));
+    try std.testing.expect(!declaresMain("test \"t\" {\n}\npub mod registry;\n"));
+    try std.testing.expect(!declaresMain("fn mainly() {\n}\n"));
+}
+
+test "refusalText: located at the entry module, one message for every target" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const t = try refusalText(arena.allocator(), "src/main.bp");
+    try std.testing.expectEqualStrings("error: the package's entry module declares no `fn main`, so there is nothing to run\n  --> src/main.bp:1:1", t);
 }
 
 // ── the erlang runner ─────────────────────────────────────────────────────────
