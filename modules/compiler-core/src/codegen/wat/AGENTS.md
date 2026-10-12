@@ -1583,7 +1583,7 @@ answers as the other backends do, a multi-byte one by bytes.
 
 ## Shapes a container carries (`01-compiler/05-wasm` step 1)
 
-The step-1 cells ran into five more places where a container's element was
+The step-1 cells (and decision 150's union array) ran into these places where a container's element was
 printed or compared as the word its slot holds — each a wrong value at exit 0,
 each fixed where the shape is decided:
 
@@ -1594,6 +1594,7 @@ each fixed where the shape is decided:
 | `[[1], [2]].reverse()`, `bs.filter(…)` | the rows' addresses | `[[2], [1]]` | `printShapeOf` reads a `keepsElements` method's receiver |
 | `var names: string[] = []; names.push("a")`, `var rows: i32[][] = []` | `[256]`, `[280]` | `["a"]`, `[[1]]` | `noteAnnotatedArray`: a written array type decides a local's shape, element kind and record over what the initialiser suggested — `[]` says nothing. It moved std's `Dict.display` (`var parts: string[] = []` … `parts.join(", ")`) from `$__arr_join_i32` to `_str`: three `std_package_*` wasm snapshots' text, no RUN LOG |
 | `xs.map({ x -> x > 1 })` | `[0, 1]` | `[false, true]` | `newArrShape`'s `map` arm |
+| `[3, "abcd"]`, `val ys: (i32 \| string)[] = [2, "b", 3]`, `xs[1]`, `xs.at(7)`, `for (xs) { x -> size(x) }` | `[3, 256]`, a trap in `$__print_unknown_raw` | `[3, "abcd"]`, `abcd`, `null`, `7` | decision 150: an array literal whose elements disagree (`unionArrayLitTypeRef`, numbers alone widen instead) or that stands where a union array is written (`expected_union_array`: a `val`'s annotation, a parameter, the return) holds each element in `lowerAsUnknown`'s box; its shape is `[U`, which `$__print_shaped_raw` prints by the box (`print_shaped_unknown`, a marker group as `bigint` is); an element read (`xs[i]`, `at`, `first`, `last`, `pop`) is the union's box, `0` absent (`elemIsPointer`). `conformance/modules/array_literal_union_elements` |
 
 `snapshots/codegen/wasm/index_a_nested_index_a_slice_s_length_and_a_tuple_element`
 recorded `304` and `376` for `rows[1]` and `ps[1]`; it records `[3, 4]` and

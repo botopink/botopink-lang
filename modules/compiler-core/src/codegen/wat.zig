@@ -1525,8 +1525,15 @@ fn emitWat(
         }
         // Decision 332 — a module holding `bigint`s prints one in a container
         // by the `n` shape code.
-        if (group == .print_shaped and em.b.helpers.has(.bigint)) {
-            try items.appendSlice(ar, &prelude.print_shaped_items_bigint);
+        if (group == .print_shaped and (em.b.helpers.has(.bigint) or em.b.helpers.has(.print_shaped_unknown))) {
+            const bn = em.b.helpers.has(.bigint);
+            const un = em.b.helpers.has(.print_shaped_unknown);
+            try items.appendSlice(ar, if (bn and un)
+                &prelude.print_shaped_items_bigint_unknown
+            else if (bn)
+                &prelude.print_shaped_items_bigint
+            else
+                &prelude.print_shaped_items_unknown);
             continue;
         }
         if (group == .task_poll and em.b.helpers.has(.task_host) and artifact != .browser) {
@@ -2134,6 +2141,11 @@ const Emitter = struct {
     /// `lowerRecordCtor`: a lambda in a field written `T` takes its type
     /// from the type argument at `T`.
     expected_ctor: ?ast.TypeRef = null,
+    /// The array literal being lowered stands where an array of a union (or of
+    /// `unknown`) is written — a `val`'s annotation, a parameter, the return
+    /// type: each element goes into its slot boxed (`lowerAsUnknown`), so a
+    /// reader of the element tells `2` from `"b"` (decision 150).
+    expected_union_array: bool = false,
     /// Inside a lifted lambda: a captured name the body assigns → its slot in
     /// the environment cell, written back after every assignment (cleared per
     /// fn).
@@ -5956,6 +5968,10 @@ const Emitter = struct {
                             self.expected_ctor = rt;
                         };
                         defer self.expected_ctor = null;
+                        if (self.cur_ret_typeref) |rt| if (isUnionArrayTypeRef(rt) and isArrayLit(val.*)) {
+                            self.expected_union_array = true;
+                        };
+                        defer self.expected_union_array = false;
                         defer self.expected_fn = null;
                         if (self.fn_has_result and self.boxesInto(self.cur_ret_typeref, val.*))
                             try self.lowerBoxedInto(self.cur_ret_typeref, val.*)
@@ -6102,6 +6118,10 @@ const Emitter = struct {
                         self.expected_ctor = ta;
                     };
                     defer self.expected_ctor = null;
+                    if (lb.typeAnnotation) |ta| if (isUnionArrayTypeRef(ta) and isArrayLit(lb.value.*)) {
+                        self.expected_union_array = true;
+                    };
+                    defer self.expected_union_array = false;
                     if (lb.value.* == .function) self.expected_fn = lb.typeAnnotation;
                     defer self.expected_fn = null;
                     // `val f: fn(a: string, b: string) -> bool = same` over a
@@ -8900,6 +8920,26 @@ const Emitter = struct {
     /// spread was dropped with a `;; note` and the array was two short.
     fn lowerArrayLit(self: *Emitter, al: anytype, loc: ast.Loc) anyerror!void {
         const total: u32 = @intCast((al.elems.len + 1) * 4);
+        // Decision 150 — the elements of a union array are each boxed as the
+        // member they are: written so (`expected_union_array`), or disagreeing
+        // in the literal (`[1, "a"]`). Stored as bare words, `[3, "abcd"]`
+        // printed `[3, 256]` and its elements could not be told apart.
+        const union_elems = self.expected_union_array or (try self.unionArrayLitTypeRef(al)) != null;
+        self.expected_union_array = false;
+        if (union_elems) {
+            self.builder().helpers.require(.print_shaped_unknown);
+            const ubase = try self.allocSlots(total);
+            try self.storeSlotConst(ubase, 0, @intCast(al.elems.len));
+            for (al.elems, 0..) |el, i| {
+                try self.emit(.{ .local_get = ubase });
+                try self.lowerAsUnknown(el);
+                try self.emit(.{ .store = .{ .offset = @intCast((i + 1) * 4) } });
+            }
+            try self.loadBase(ubase);
+            if (al.spreadExpr != null or al.spread != null)
+                return self.refuse(loc, "the wasm backend has no spread into an array of a union yet", .{});
+            return;
+        }
         // One element kind for the whole literal (`elemKindOf`: a float
         // anywhere makes every slot a cell), which is the kind its readers ask.
         const kind = self.elemKindOf(.{ .collection = .{ .loc = loc, .kind = .{ .arrayLit = al } } });
@@ -9138,6 +9178,10 @@ const Emitter = struct {
                     self.expected_ctor = pt;
                 };
                 defer self.expected_ctor = null;
+                if (ptref) |pt| if (isUnionArrayTypeRef(pt) and isArrayLit(arg.value.*)) {
+                    self.expected_union_array = true;
+                };
+                defer self.expected_union_array = false;
                 if (self.boxesInto(ptref, arg.value.*))
                     try self.lowerBoxedInto(ptref, arg.value.*)
                 else
@@ -10432,6 +10476,55 @@ const Emitter = struct {
     /// (`emitToFloatSlot`).
     const ElemKind = enum { i32, f64, str };
 
+    /// Whether `t` is an array (`T[]`, `Array<T>`) whose element is a union or
+    /// `unknown` — its slots hold boxes (`lowerArrayLit`).
+    fn isUnionArrayTypeRef(t: ast.TypeRef) bool {
+        const elem: ast.TypeRef = switch (t) {
+            .array => |inner| inner.*,
+            .generic => |g| if (g.args.len == 1 and std.mem.eql(u8, g.name, "Array")) g.args[0] else return false,
+            else => return false,
+        };
+        return isUnknownTypeRef(elem);
+    }
+
+    /// The member an element of an array literal is, by what this backend
+    /// can tell of it: a string, a bool, a float, an integer, or the record it
+    /// constructs. Null when it cannot tell.
+    fn litMemberName(self: *Emitter, e: ast.Expr) ?[]const u8 {
+        if (self.isStringExpr(e)) return "string";
+        if (self.isBoolExpr(e)) return "bool";
+        if (self.isTaggedValue(e)) return self.recordTypeOfExpr(e);
+        const t = self.wasmTypeOf(e);
+        if (t[0] == 'f') return "f64";
+        if (std.mem.eql(u8, t, "i64")) return "i64";
+        if (self.isKnownInteger(e)) return "i32";
+        return null;
+    }
+
+    /// Decision 150 (decision 8 §3.2) — `[1, "a"]` is `(i32 | string)[]`: the
+    /// literal's elements disagree, and each member they are is one of the
+    /// union's. Numbers alone (`[1, 2.5]`) are not a union here: they widen.
+    /// Null when the elements agree or one cannot be told.
+    fn unionArrayLitTypeRef(self: *Emitter, al: anytype) !?ast.TypeRef {
+        if (al.elems.len < 2) return null;
+        const ar = self.reg_arena.allocator();
+        var members: std.ArrayListUnmanaged(ast.TypeRef) = .empty;
+        var numeric_only = true;
+        for (al.elems) |el| {
+            const m = self.litMemberName(el) orelse return null;
+            const numeric = std.mem.eql(u8, m, "i32") or std.mem.eql(u8, m, "f64") or std.mem.eql(u8, m, "i64");
+            if (!numeric) numeric_only = false;
+            const seen = for (members.items) |x| {
+                if (std.mem.eql(u8, x.named, m)) break true;
+            } else false;
+            if (!seen) try members.append(ar, .{ .named = m });
+        }
+        if (members.items.len < 2 or numeric_only) return null;
+        const inner = try ar.create(ast.TypeRef);
+        inner.* = .{ .generic = .{ .name = ast.union_type_name, .args = members.items, .is_builtin = false } };
+        return .{ .array = inner };
+    }
+
     /// The element shape a `T[]` / `Array<T>` type spells, when it is an array.
     fn arrayElemOfTypeRef(t: ast.TypeRef) ?ElemKind {
         const elem: ast.TypeRef = switch (eagerTypeRef(t)) {
@@ -10561,6 +10654,10 @@ const Emitter = struct {
                     return out.items;
                 },
                 .arrayLit => |al| if (al.elems.len > 0) {
+                    if ((try self.unionArrayLitTypeRef(al)) != null) {
+                        self.builder().helpers.require(.print_shaped_unknown);
+                        return "[U";
+                    }
                     if (try self.printShapeOf(al.elems[0])) |inner| return try std.fmt.allocPrint(self.arena(), "[{s}", .{inner});
                     if (self.isTaggedValue(al.elems[0])) return "[T";
                     // A bool is an `i32` slot like an integer; only the shape
@@ -10696,6 +10793,11 @@ const Emitter = struct {
     }
 
     fn arrayTypeShape(self: *Emitter, elem: ast.TypeRef) anyerror!?[]const u8 {
+        // A union's (or `unknown`'s) slot is a box that names what it holds.
+        if (isUnknownTypeRef(elem)) {
+            self.builder().helpers.require(.print_shaped_unknown);
+            return "[U";
+        }
         if (try self.typeRefShape(elem)) |inner| return try std.fmt.allocPrint(self.arena(), "[{s}", .{inner});
         // An array OF arrays of a scalar — `i32[][]` — is a container whose
         // elements are pointers (`elemIsPointer`), whatever its innermost
@@ -10904,6 +11006,8 @@ const Emitter = struct {
                 .grouped => |inner| self.elemKindOf(inner.*),
                 .arrayLit => |al| blk: {
                     if (al.elems.len == 0) break :blk .i32;
+                    // A union's slots are boxes, whatever the members are.
+                    if ((self.unionArrayLitTypeRef(al) catch null) != null) break :blk .i32;
                     const first = al.elems[0];
                     if (self.isStringExpr(first)) break :blk .str;
                     // A float anywhere makes it a float array: `[1, 2.5]`.
@@ -13226,6 +13330,13 @@ const Emitter = struct {
             },
             .call => |c| switch (c.kind) {
                 .call => |cc| blk: {
+                    // Decision 150 — an element read off an array of a union
+                    // is the union's box (`0` when `at` finds none, which
+                    // prints `null`): `xs[1]`, `xs.at(1)`, `xs.first()`.
+                    if (self.indexArgs(cc)) |ix| if (!ix.is_slice) if (self.elemTypeRefOf(ix.recv)) |et| if (isUnknownTypeRef(et)) break :blk et;
+                    if (cc.receiver) |r| if (cc.args.len <= 1) if (self.elemTypeRefOf(r.*)) |et| if (isUnknownTypeRef(et)) {
+                        for ([_][]const u8{ "at", "first", "last", "pop" }) |m| if (std.mem.eql(u8, cc.callee, m)) break :blk et;
+                    };
                     // `o.unwrapOr(d)` over a `?T` answers a `T`: a `?u64`'s
                     // payload stays a `u64`, which prints, compares and turns
                     // into text unsigned (`-1` at exit 0 before).
@@ -13307,6 +13418,7 @@ const Emitter = struct {
                 // literal keeps answering nothing here.
                 .arrayLit => |al| blk: {
                     if (al.elems.len == 0) break :blk null;
+                    if (self.unionArrayLitTypeRef(al) catch null) |ut| break :blk ut;
                     const first = switch (al.elems[0]) {
                         .call => |c| switch (c.kind) {
                             .call => |fc| fc,
@@ -13416,7 +13528,8 @@ const Emitter = struct {
     fn elemIsPointer(self: *Emitter, recv: ast.Expr) bool {
         const sh = (self.printShapeOf(recv) catch null) orelse return false;
         // Decision 332 — a `bigint` element is its block's address, never `0`.
-        return sh.len >= 2 and sh[0] == '[' and (sh[1] == '[' or sh[1] == '(' or sh[1] == 'n' or sh[1] == 'R');
+        // Decision 150 — a union's element is its box (`U`), `0` only absent.
+        return sh.len >= 2 and sh[0] == '[' and (sh[1] == '[' or sh[1] == '(' or sh[1] == 'n' or sh[1] == 'R' or sh[1] == 'U');
     }
 
     /// Whether one element of `recv` is a bool — its print shape is `[b`. The

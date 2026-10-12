@@ -75,6 +75,8 @@ pub fn items(g: ast.HelperGroup) []const ast.Item {
         // Decision 442 (2): `bigint`'s arithmetic is std-wasm's; the group
         // only marks a module that prints one in a container (`stdCalls`).
         .bigint => &.{},
+        // Decision 150: a marker, as `bigint` is (`print_shaped_items_unknown`).
+        .print_shaped_unknown => &.{},
         .print_opt => &.{
             .{ .func = print_null },         .{ .func = print_opt_i32_raw }, .{ .func = print_opt_i32 },
             .{ .func = print_opt_bool_raw }, .{ .func = print_opt_bool },    .{ .func = print_opt_str_raw },
@@ -1422,7 +1424,7 @@ const print_shaped_raw = func("__print_shaped_raw", &.{ "v", "sh", "go" }, .i32,
 /// the address of its block, written as its digits (std-wasm's
 /// `bigint.toString`). The module substitutes this form when it holds the
 /// `bigint` group, so a module without one renders as before.
-const print_shaped_raw_bigint = func("__print_shaped_raw", &.{ "v", "sh", "go" }, .i32, i32s(&.{ "c", "n", "i", "p", "e" }), &([_]Instr{
+const bigint_arm = [_]Instr{
     get("sh"), load8(0), c32('n'), op("eq"),
     when(&.{
         get("go"),
@@ -1432,10 +1434,40 @@ const print_shaped_raw_bigint = func("__print_shaped_raw", &.{ "v", "sh", "go" }
         op("add"),
         ret,
     }),
-} ++ print_shaped_raw_body));
+};
+
+/// Decision 150 — the `U` code: a slot holding a union's (or `unknown`'s)
+/// box, printed by what it holds — a string quoted, as in any container,
+/// `0` as `null`. The module substitutes this form when it holds the
+/// `print_shaped_unknown` group.
+const unknown_arm = [_]Instr{
+    get("sh"), load8(0), c32('U'), op("eq"),
+    when(&.{
+        get("go"),
+        when(&.{
+            get("v"), op("eqz"),
+            whenElse(&.{call("__print_null")}, &.{
+                get("v"),                                                                                                   call("__unknown_kind"), c32('s'), op("eq"),
+                whenElse(&.{ get("v"), load(0), call("__print_quoted_raw") }, &.{ get("v"), call("__print_unknown_raw") }),
+            }),
+        }),
+        get("sh"),
+        c32(1),
+        op("add"),
+        ret,
+    }),
+};
+
+const print_shaped_raw_bigint = func("__print_shaped_raw", &.{ "v", "sh", "go" }, .i32, i32s(&.{ "c", "n", "i", "p", "e" }), &(bigint_arm ++ print_shaped_raw_body));
+const print_shaped_raw_unknown = func("__print_shaped_raw", &.{ "v", "sh", "go" }, .i32, i32s(&.{ "c", "n", "i", "p", "e" }), &(unknown_arm ++ print_shaped_raw_body));
+const print_shaped_raw_bigint_unknown = func("__print_shaped_raw", &.{ "v", "sh", "go" }, .i32, i32s(&.{ "c", "n", "i", "p", "e" }), &(bigint_arm ++ unknown_arm ++ print_shaped_raw_body));
 
 /// `print_shaped`'s forms with `print_shaped_raw_bigint` in its place.
 pub const print_shaped_items_bigint = [_]ast.Item{ .{ .func = print_quoted_raw }, .{ .func = print_tagged_raw }, .{ .func = print_tagged }, .{ .func = print_shaped_raw_bigint } };
+/// With `print_shaped_raw_unknown` in its place.
+pub const print_shaped_items_unknown = [_]ast.Item{ .{ .func = print_quoted_raw }, .{ .func = print_tagged_raw }, .{ .func = print_tagged }, .{ .func = print_shaped_raw_unknown } };
+/// With both arms.
+pub const print_shaped_items_bigint_unknown = [_]ast.Item{ .{ .func = print_quoted_raw }, .{ .func = print_tagged_raw }, .{ .func = print_tagged }, .{ .func = print_shaped_raw_bigint_unknown } };
 
 /// A `?T` box: a fresh 4-byte cell holding `v`.
 const box_i32 = func("__box_i32", &.{"v"}, .i32, i32s(&.{"p"}), &.{

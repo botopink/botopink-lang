@@ -560,6 +560,11 @@ pub const HelperGroup = enum {
     /// a `bigint` inside a container, which gets `print_shaped_raw_bigint` and
     /// links `bigint.toString` (`stdCalls`).
     bigint,
+    /// Decision 150 — marks a module that prints a union (or `unknown`)
+    /// inside a container by the `U` shape code: it gets a
+    /// `$__print_shaped_raw` with the `U` arm (`print_shaped_raw_unknown`).
+    /// It holds no function of its own.
+    print_shaped_unknown,
 
     /// The groups `g`'s functions call into.
     pub fn deps(g: HelperGroup) []const HelperGroup {
@@ -585,6 +590,7 @@ pub const HelperGroup = enum {
             .arr_push => &.{.arr_new},
             .unknown => &.{.str_eq},
             .print_unknown => &.{ .print, .print_bool, .print_f64, .print_str, .print_opt, .print_shaped, .unknown },
+            .print_shaped_unknown => &.{.print_unknown},
             .print_u64 => &.{.print},
             .print_opt_u64 => &.{ .print, .print_opt, .print_u64 },
             .task => &.{ .alloc, .task_resume, .task_poll },
