@@ -1,0 +1,22 @@
+//// std/failure — the two records a failure that is not a typed error carries
+//// (decisions 431, 492).
+////
+//// `HostError` is what a host binding that writes `result: true` answers on
+//// the `Error` side: the host's message and `kind`, always `"host"`.
+//// `Failure` is what `attempt` answers on the `Error` side: `kind` is `panic`
+//// (`@panic`, `@todo`, `x!`, an overflow, a division by zero), `host` (a raise
+//// from a binding without `result: true`) or `crash` (a VM or emitted-code
+//// fault, a wasm trap).
+////
+//// Types only for now: `attempt` / `attemptTask` need runtime catching in every
+//// backend and land with 144 B-07.
+
+pub type HostErrorName {
+    Error,
+    Throw,
+    Exit,
+}
+
+pub type HostError(message: string, kind: string, name: HostErrorName, detail: ?string)
+
+pub type Failure(message: string, kind: string)

@@ -35,6 +35,7 @@ pub mod encoding;
 pub mod hash;
 pub mod escape;
 pub mod async;
+pub mod failure;
 pub mod types;
 pub mod context;
 pub mod bpp;
