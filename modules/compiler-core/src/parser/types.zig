@@ -426,6 +426,7 @@ pub fn parseGenericParams(this: *This, alloc: std.mem.Allocator) ParseError![]Ge
         try list.append(alloc, .{ .name = nameTok.lexeme, .default = default });
         if (!this.match(.comma)) break;
     }
+    if (list.items.len > 0 and this.prevIsComma()) list.items[list.items.len - 1].trailingComma = true;
     _ = try this.consume(.greaterThan);
     return list.toOwnedSlice(alloc);
 }

@@ -1888,6 +1888,20 @@ pub const Parser = struct {
         return ParseError.UnexpectedToken;
     }
 
+    /// Decision 166 — true when the last significant token consumed (comments
+    /// skipped) is a comma: asked right before a list's closing delimiter, it
+    /// is the list's trailing comma.
+    pub fn prevIsComma(this: *const This) bool {
+        var i = this.current;
+        while (i > 0) {
+            i -= 1;
+            const k = this.tokens[i].kind;
+            if (k == .commentNormal or k == .commentDoc or k == .commentModule) continue;
+            return k == .comma;
+        }
+        return false;
+    }
+
     pub fn match(this: *This, kind: TokenKind) bool {
         if (!this.check(kind)) return false;
         _ = this.advance();

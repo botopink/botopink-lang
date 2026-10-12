@@ -237,10 +237,32 @@ pub const Formatter = struct {
         }));
     }
 
+    /// The open form of a delimited list (decision 166): `open`, one element per
+    /// line `+INDENT` each followed by its comma, `close` on its own line.
+    fn openList(this: *Formatter, open: []const u8, items: []const *const Doc, close: []const u8) !*const Doc {
+        var rows = try this.arena.alloc(*const Doc, items.len);
+        for (items, 0..) |it, i| rows[i] = try this.concat(it, try this.text(","));
+        return this.forceBreak(try this.concatAll(&.{
+            try this.text(open),
+            try this.nest(INDENT, try this.concat(this.hardline(), try this.join(rows, this.hardline()))),
+            this.hardline(),
+            try this.text(close),
+        }));
+    }
+
     /// Comma-separated list grouped in `open`/`close` delimiters.
     /// In flat mode: `(a, b, c)` ---- no extra spaces inside.
     /// In break mode: each item on its own indented line.
     fn commaList(this: *Formatter, open: []const u8, items: []const *const Doc, close: []const u8) !*const Doc {
+        return this.commaListT(open, items, close, false);
+    }
+
+    /// `commaList` with decision 166's rule: `trailing` — the source had a comma
+    /// after the last element — opens the list one element per line, each with
+    /// its comma, `close` on its own line; without it the list is one line
+    /// whatever its width.
+    fn commaListT(this: *Formatter, open: []const u8, items: []const *const Doc, close: []const u8, trailing: bool) !*const Doc {
+        if (trailing and items.len > 0) return this.openList(open, items, close);
         if (items.len == 0) {
             return this.text(try std.fmt.allocPrint(this.arena, "{s}{s}", .{ open, close }));
         }
@@ -273,7 +295,7 @@ pub const Formatter = struct {
                 items[i] = try this.text(gp.name);
             }
         }
-        return this.commaList("<", items, ">");
+        return this.commaListT("<", items, ">", gps[gps.len - 1].trailingComma);
     }
 
     fn fmtImplementClause(this: *Formatter, impls: []const ast.TypeRef) anyerror!*const Doc {
@@ -398,44 +420,30 @@ pub const Formatter = struct {
         return this.commaList("(", items, ")");
     }
 
-    /// What a body puts on the signature's own line: ` {` when it opens, ` {}`
-    /// when it is empty (`fmtBody`'s answer for no statements).
-    fn bodyCols(stmts: usize) usize {
-        return if (stmts == 0) 3 else 2;
-    }
-
     /// A declaration's parameter list, and whatever follows the closing paren on
-    /// the same line. A signature that does not fit breaks **one parameter per
-    /// line, with a trailing comma**, closing on its own line
-    /// ([decision 61](../../../specs/1.0.5-beta/decisions-taken.md) rule 4):
+    /// the same line (`tail`). The trailing comma alone decides the shape
+    /// (decisions 166, 345): written with a comma after the last parameter the
+    /// list opens **one parameter per line, the comma on every one**, closing on
+    /// its own line; written without, it is one line whatever its width.
     ///
     /// ```botopink
     /// fn aVeryLongFunctionName(
     ///     firstParameter: i32,
     ///     secondParameter: string,
-    ///     thirdParameter: bool,
     /// ) -> string {
     /// ```
-    ///
-    /// `fmtParams`' `commaList` is a `group` that was meant to do exactly this and
-    /// never did once: `fits` stops at the first `concat`, so the group always went
-    /// flat and the signature above joined to **104 columns** against a
-    /// `LINE_WIDTH` of 80. The decision is taken here instead, from a flat width
-    /// measured at build time against the column the render has really reached —
-    /// see `Doc.widthChoice`.
-    ///
-    /// `tail` is printed after the closing paren and is part of the measurement.
-    /// `tailCols` is what follows *that* and is **not** part of this document —
-    /// the `;` of a bodyless declaration, or the ` {` a body opens with — which
-    /// the fit decision still has to pay for, or a signature would be broken one
-    /// column too late.
-    fn fmtSignature(this: *Formatter, params: []const ast.Param, tail: *const Doc, tailCols: usize) !*const Doc {
+    fn fmtSignature(this: *Formatter, params: []const ast.Param, tail: *const Doc) !*const Doc {
         if (params.len == 0) return this.concat(try this.text("()"), tail);
 
         var items = try this.arena.alloc(*const Doc, params.len);
         for (params, 0..) |p, i| items[i] = try this.fmtParam(p);
 
-        const flat = try this.concat(
+        // Decision 166, 345: the trailing comma alone decides — with it one
+        // parameter per line, the comma on every one, `)` on its own line; without
+        // it one line whatever its width.
+        if (params[params.len - 1].trailingComma)
+            return this.concat(try this.openList("(", items, ")"), tail);
+        return this.concat(
             try this.concatAll(&.{
                 try this.text("("),
                 try this.join(items, try this.text(", ")),
@@ -443,31 +451,6 @@ pub const Formatter = struct {
             }),
             tail,
         );
-        const flatText = try render(this.arena, flat, std.math.maxInt(u32));
-        // A parameter default that needs a line of its own (a lambda) has no flat
-        // width to compare, so such a signature keeps whatever it printed before
-        // rather than being broken on a number that does not mean anything.
-        if (std.mem.indexOfScalar(u8, flatText, '\n') != null) return flat;
-
-        var brokenParts: std.ArrayList(*const Doc) = .empty;
-        defer brokenParts.deinit(this.arena);
-        for (items, 0..) |it, i| {
-            if (i > 0) try brokenParts.append(this.arena, this.hardline());
-            // The trailing comma is on every parameter, the last one included —
-            // measured to parse, and it is what makes adding a parameter a
-            // one-line diff.
-            try brokenParts.append(this.arena, try this.concat(it, try this.text(",")));
-        }
-        const broken = try this.concat(
-            try this.forceBreak(try this.concatAll(&.{
-                try this.text("("),
-                try this.nest(INDENT, try this.concat(this.hardline(), try this.concatAll(brokenParts.items))),
-                this.hardline(),
-                try this.text(")"),
-            })),
-            tail,
-        );
-        return this.widthChoice(flat, broken, flatText.len + tailCols);
     }
 
     fn fmtReturnTypeRef(this: *Formatter, ret: ?ast.TypeRef, typeGuardParam: ?[]const u8) !*const Doc {
@@ -917,16 +900,13 @@ pub const Formatter = struct {
                         try this.text(": "),
                         try this.fmtExpr(f.value.*),
                     });
-                    break :blk try this.concat(head, try this.groupMeasured(try this.concatAll(&.{
+                    if (il.trailingComma) break :blk try this.concat(head, try this.openList("(", fields, ")"));
+                    break :blk try this.concatAll(&.{
+                        head,
                         try this.text("("),
-                        try this.nest(INDENT, try this.concatAll(&.{
-                            this.softline(),
-                            try this.join(fields, try this.concat(try this.text(","), this.line())),
-                            try this.ifBreak(","),
-                        })),
-                        this.softline(),
+                        try this.join(fields, try this.text(", ")),
                         try this.text(")"),
-                    })));
+                    });
                 },
                 .case => |c| try this.fmtCase(c.subjects, c.arms, c.trailingComments),
                 .arrayLit => |al| blk: {
@@ -1036,21 +1016,18 @@ pub const Formatter = struct {
                         }));
                     }
 
-                    // Otherwise one measured group (decision 65): the list on one
-                    // line when it fits, what follows it counted; otherwise one
-                    // element per line, `+4`, with the trailing comma of the open
-                    // form, the spread included, `]` on its own line.
-                    var inner = try this.join(docs.items, this.line());
+                    // Otherwise (decision 166, 345) the list is one line whatever
+                    // its width: only a trailing comma or a comment opens it.
+                    var inner = try this.join(docs.items, try this.text(" "));
                     if (hasSpread) inner = if (docs.items.len > 0)
-                        try this.concatAll(&.{ inner, this.line(), spreadDoc })
+                        try this.concatAll(&.{ inner, try this.text(" "), spreadDoc })
                     else
                         spreadDoc;
-                    break :blk this.groupMeasured(try this.concatAll(&.{
+                    break :blk try this.concatAll(&.{
                         try this.text("["),
-                        try this.nest(INDENT, try this.concatAll(&.{ this.softline(), inner, try this.ifBreak(",") })),
-                        this.softline(),
+                        inner,
                         try this.text("]"),
-                    }));
+                    });
                 },
 
                 .tupleLit => |tl| blk: {
@@ -1128,23 +1105,14 @@ pub const Formatter = struct {
                         }));
                     }
 
-                    // No comments: comma-separated
-                    var parts: std.ArrayList(*const Doc) = .empty;
-                    defer parts.deinit(this.arena);
-                    for (items.items, 0..) |item, i| {
-                        if (i > 0) {
-                            try parts.append(this.arena, try this.concat(try this.text(","), this.line()));
-                        }
-                        try parts.append(this.arena, item);
-                    }
-                    const inner = try this.concatAll(parts.items);
-                    // One measured group, as the array literal's.
-                    break :blk this.groupMeasured(try this.concatAll(&.{
+                    // No comments: decision 166 — the trailing comma alone opens
+                    // the list; otherwise one line, whatever its width.
+                    if (tl.trailingComma) break :blk try this.openList("#(", items.items, ")");
+                    break :blk try this.concatAll(&.{
                         try this.text("#("),
-                        try this.nest(INDENT, try this.concatAll(&.{ this.softline(), inner, try this.ifBreak(",") })),
-                        this.softline(),
+                        try this.join(items.items, try this.text(", ")),
                         try this.text(")"),
-                    }));
+                    });
                 },
 
                 .range => |r| if (r.end) |end|
@@ -1684,9 +1652,10 @@ pub const Formatter = struct {
             }
         }
 
+        const trailingComma = c.args.len > 0 and c.args[c.args.len - 1].trailingComma;
         const argsDoc = if (argParts.items.len == 0)
             try this.text("()")
-        else if (hugsLambdaArg)
+        else if (hugsLambdaArg and !trailingComma)
             // No nest, no softlines, and `", "` as the separator rather than
             // `line()` — outside a group the mode is the enclosing break mode, in
             // which a `line()` would become a newline of its own.
@@ -1695,33 +1664,24 @@ pub const Formatter = struct {
                 try this.join(items.items, try this.text(", ")),
                 try this.text(")"),
             })
-        else blk: {
+        else if (hasComments or hasMultilineStringArg) blk: {
             const inner = try this.concatAll(argParts.items);
-
-            if (hasComments or hasMultilineStringArg) {
-                break :blk try this.forceBreak(try this.concatAll(&.{
-                    try this.text("("),
-                    try this.nest(INDENT, try this.concat(this.hardline(), inner)),
-                    this.hardline(),
-                    try this.text(")"),
-                }));
-            } else {
-                // Still pinned. Enabled as the signature's shape (decision 61
-                // rule 4) it opens about half its lists for what *follows* them
-                // — `assert doc.indexOf(` / `"…",` / `) != -1;` — because the
-                // binary expression, `assert` and `case` arm around it are
-                // pinned and cannot break first: the middle decision 65 calls
-                // wrong. Measured and parked (`format/AGENTS.md`); the enabling
-                // is `groupMeasured` plus `ifBreak(",")` before the softline.
-                break :blk try this.groupMeasured(try this.concatAll(&.{
-                    try this.text("("),
-                    try this.nest(INDENT, try this.concat(this.softline(), inner)),
-                    try this.ifBreak(","),
-                    this.softline(),
-                    try this.text(")"),
-                }));
-            }
-        };
+            break :blk try this.forceBreak(try this.concatAll(&.{
+                try this.text("("),
+                try this.nest(INDENT, try this.concat(this.hardline(), inner)),
+                this.hardline(),
+                try this.text(")"),
+            }));
+        } else if (trailingComma)
+            // Decision 166 — the trailing comma alone opens the list.
+            try this.openList("(", items.items, ")")
+        else
+            // …and without it the list is one line, whatever its width.
+            try this.concatAll(&.{
+                try this.text("("),
+                try this.join(items.items, try this.text(", ")),
+                try this.text(")"),
+            });
 
         // No trailing lambdas → simple call
         if (c.trailing.len == 0) {
@@ -2299,9 +2259,9 @@ pub const Formatter = struct {
             if (u.imports.len == 0) break :blk try this.text(try std.fmt.allocPrint(this.arena, "import {s}", .{pkg}));
             break :blk try this.concatAll(&.{
                 try this.text(try std.fmt.allocPrint(this.arena, "import {s}, ", .{pkg})),
-                try this.commaList("{", items, "}"),
+                try this.commaListT("{", items, "}", u.trailingComma),
             });
-        } else try this.concatAll(&.{ try this.text("import "), try this.commaList("{", items, "}") });
+        } else try this.concatAll(&.{ try this.text("import "), try this.commaListT("{", items, "}", u.trailingComma) });
         return switch (u.source) {
             .root => head,
             .module, .key => |name| this.concatAll(&.{
@@ -2320,7 +2280,7 @@ pub const Formatter = struct {
             prefix,
             try this.text(d.name),
             try this.fmtGenericParams(d.genericParams),
-            try this.fmtSignature(d.params, try this.fmtReturnTypeRef(d.returnType, null), 1),
+            try this.fmtSignature(d.params, try this.fmtReturnTypeRef(d.returnType, null)),
         });
     }
 
@@ -2580,7 +2540,6 @@ pub const Formatter = struct {
             try this.fmtSignature(
                 m.params,
                 try this.fmtReturnTypeRef(m.returnType, null),
-                if (m.body) |stmts| bodyCols(stmts.len) else 1,
             ),
         });
         if (m.body) |stmts| {
@@ -2936,7 +2895,7 @@ pub const Formatter = struct {
         return this.concatAll(&.{
             try this.text("fn "),
             nameDoc,
-            try this.fmtSignature(m.params, this.nil(), bodyCols(m.body.len)),
+            try this.fmtSignature(m.params, this.nil()),
             try this.text(" "),
             try this.fmtBody(m.body),
         });
@@ -2969,7 +2928,7 @@ pub const Formatter = struct {
                 prefix,
                 try this.text(f.name),
                 try this.fmtGenericParams(f.genericParams),
-                try this.fmtSignature(f.params, try this.fmtReturnTypeRef(f.returnType, f.typeGuardParam), 1),
+                try this.fmtSignature(f.params, try this.fmtReturnTypeRef(f.returnType, f.typeGuardParam)),
                 try this.text(";"),
             });
         }
@@ -2992,7 +2951,6 @@ pub const Formatter = struct {
             try this.fmtSignature(
                 f.params,
                 try this.concat(try this.fmtReturnTypeRef(f.returnType, f.typeGuardParam), labelDoc),
-                bodyCols(f.body.len),
             ),
             try this.text(" "),
             try this.fmtBody(f.body),

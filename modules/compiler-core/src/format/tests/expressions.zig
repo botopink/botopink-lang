@@ -1121,12 +1121,21 @@ test "format: C-12 ---- an argument list past the width takes one argument per l
     );
 }
 
-test "format: C-12 ---- an open argument list that fits is joined (a pure function of the content)" {
-    try h.assertFormatAs(std.testing.allocator,
+test "format: C-12 ---- the trailing comma keeps an argument list open, without it the list is joined (decisions 166, 345)" {
+    const open =
         \\fn f() {
         \\    g(
         \\        1,
         \\        2,
+        \\    );
+        \\}
+    ;
+    try h.assertFormatLossless(std.testing.allocator, open);
+    try h.assertFormatAs(std.testing.allocator,
+        \\fn f() {
+        \\    g(
+        \\        1,
+        \\        2
         \\    );
         \\}
     ,
@@ -1322,12 +1331,13 @@ test "format: record update ---- the spread stays a spread in the open argument 
     ;
     try h.assertFormatLossless(std.testing.allocator, src);
     try h.assertIdempotent(std.testing.allocator, src);
-    // Written on one line it opens to the same text.
-    try h.assertFormatAs(std.testing.allocator,
+    // Written on one line, without the trailing comma, it stays on one line
+    // whatever its width (decision 345).
+    try h.assertFormatLossless(std.testing.allocator,
         \\fn f(base: Cfg) {
         \\    val c = Cfg(..base, name: "a name long enough to push the list past the width", revalidate: 60);
         \\}
-    , src);
+    );
 }
 
 test "format: catch ---- the tail form gains no `try`" {

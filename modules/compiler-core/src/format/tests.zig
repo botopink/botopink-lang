@@ -11,4 +11,5 @@ test {
     _ = @import("tests/comments.zig");
     _ = @import("tests/idempotent.zig");
     _ = @import("tests/predicate.zig");
+    _ = @import("tests/trailing_comma.zig");
 }

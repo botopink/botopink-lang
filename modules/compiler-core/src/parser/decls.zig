@@ -95,6 +95,7 @@ pub fn parseParamList(this: *This, alloc: std.mem.Allocator) ParseError![]Param 
         }
         if (!this.match(.comma)) break;
     }
+    if (params.items.len > 0 and this.prevIsComma()) params.items[params.items.len - 1].trailingComma = true;
     _ = try this.consume(.rightParenthesis);
     return params.toOwnedSlice(alloc);
 }
@@ -221,12 +222,13 @@ pub fn parseImportDecl(this: *This, alloc: std.mem.Allocator) ParseError!ImportD
         for (imports) |imp| alloc.free(imp.segments);
         alloc.free(imports);
     }
+    const importsTrailingComma = imports.len > 0 and this.prevIsComma();
     _ = try this.consume(.rightBrace);
     const source: ImportSource = if (this.match(.from)) blk: {
         const tok = try this.consume(.stringLiteral);
         break :blk .{ .module = tok.lexeme[1 .. tok.lexeme.len - 1] };
     } else .root;
-    return ImportDecl{ .imports = imports, .source = source, .package = package };
+    return ImportDecl{ .imports = imports, .source = source, .package = package, .trailingComma = importsTrailingComma };
 }
 
 /// Fallback activation statement `dottedPath "*" ";"` — activates an

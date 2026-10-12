@@ -1428,10 +1428,12 @@ pub fn parsePrimary(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
                     try fields.append(alloc, .{ .name = nameTok2.lexeme, .value = valuePtr });
                     if (!this.match(.comma)) break;
                 }
+                const litTrailingComma = fields.items.len > 0 and this.prevIsComma();
                 _ = try this.consume(.rightParenthesis);
                 const lit = Expr{ .collection = .{ .loc = locFromToken(nameTok), .kind = .{ .behaviorLit = .{
                     .name = callee,
                     .fields = try fields.toOwnedSlice(alloc),
+                    .trailingComma = litTrailingComma,
                 } } } };
                 return parsePostfixChain(this, alloc, lit);
             }
@@ -1777,6 +1779,7 @@ pub fn parseTupleLitExpr(this: *This, alloc: std.mem.Allocator) ParseError!Colle
     } else {
         commentsPerElem.clearAndFree(alloc);
     }
+    const tupleTrailingComma = elems.items.len > 0 and this.prevIsComma();
     _ = try this.consume(.rightParenthesis);
     return .{
         .loc = locFromToken(tupleTok),
@@ -1786,6 +1789,7 @@ pub fn parseTupleLitExpr(this: *This, alloc: std.mem.Allocator) ParseError!Colle
                 .comments = try allComments.toOwnedSlice(alloc),
                 .commentsPerElem = try commentsPerElem.toOwnedSlice(alloc),
                 .trailingPerElem = try trailingSlotsOwned(alloc, &trailingPerElem),
+                .trailingComma = tupleTrailingComma,
             },
         },
     };
@@ -2102,6 +2106,7 @@ pub fn parseCallArgs(this: *This, alloc: std.mem.Allocator) ParseError![]CallArg
         if (!this.match(.comma)) break;
     }
 
+    if (args.items.len > 0 and this.prevIsComma()) args.items[args.items.len - 1].trailingComma = true;
     _ = try this.consume(.rightParenthesis);
     return args.toOwnedSlice(alloc);
 }

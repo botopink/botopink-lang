@@ -26,7 +26,8 @@
         "activationOnly": false,
         "docComment": null,
         "comment": null,
-        "moduleComment": null
+        "moduleComment": null,
+        "trailingComma": true
       }
     }
   ]

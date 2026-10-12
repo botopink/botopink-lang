@@ -28,13 +28,7 @@ pub val xs = [1, 2, 3];
 
 pub val maybe: ?i32 = null;
 
-pub val got = #(
-    origin,
-    xs,
-    maybe,
-    "p= xs= m=",
-    "0-2;2-15;15-19;19-32;32-35;35-48;",
-);
+pub val got = #(origin, xs, maybe, "p= xs= m=", "0-2;2-15;15-19;19-32;32-35;35-48;");
 ```
 
 ----- TYPED AST JSON -- main.json

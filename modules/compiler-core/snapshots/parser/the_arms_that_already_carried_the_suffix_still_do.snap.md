@@ -123,7 +123,8 @@
             "modifier": "none",
             "fnType": null,
             "destruct": null,
-            "default": null
+            "default": null,
+            "trailingComma": true
           }
         ],
         "returnType": {

@@ -279,9 +279,12 @@ pub const ImportDecl = struct {
     /// {theme.make};` in `a/user` names `a/theme` and never `b/theme`
     /// (decisions 170, 337). Left out of the dump.
     ownPackage: []const u8 = "",
+    /// Decision 166 — the braced list had a comma before its `}`. Dumped only
+    /// when set.
+    trailingComma: bool = false,
 
     pub fn jsonStringify(this: ImportDecl, jws: anytype) !void {
-        return stringifyOmitting(this, jws, &.{"ownPackage"}, &.{});
+        return stringifyOmitting(this, jws, &.{"ownPackage"}, &.{"trailingComma"});
     }
 
     /// `program` with every import marking `package` as the package that wrote
@@ -587,6 +590,14 @@ pub fn CallArgOf(comptime phase: Phase) type {
         /// `comptime/transform.zig`). `deinit` skips the value teardown since
         /// the source decl owns it.
         is_default_inj: bool = false,
+        /// Decision 166 — set on the **last** argument of a list written with a
+        /// comma before its `)`; the formatter opens the list on it and on
+        /// nothing else. Dumped only when set; the typed phase never copies it.
+        trailingComma: bool = false,
+
+        pub fn jsonStringify(this: @This(), jws: anytype) !void {
+            return stringifyOmitting(this, jws, &.{}, &.{"trailingComma"});
+        }
 
         pub fn deinit(this: *@This(), allocator: std.mem.Allocator) void {
             if (!this.is_default_inj) {
@@ -1240,9 +1251,12 @@ pub fn CollectionExprOf(comptime phase: Phase) type {
             labels: []const []const u8 = &.{},
             /// One slot per element, as `arrayLit.trailingPerElem`.
             trailingPerElem: []const ?[]const u8 = &.{},
+            /// Decision 166 — the source had a comma before the `)`. Dumped
+            /// only when set.
+            trailingComma: bool = false,
 
             pub fn jsonStringify(this: @This(), jws: anytype) !void {
-                return stringifyOmitting(this, jws, &.{}, &.{"trailingPerElem"});
+                return stringifyOmitting(this, jws, &.{}, &.{ "trailingPerElem", "trailingComma" });
             }
         },
         /// `start..end` (exclusive), `start...end` (inclusive, decision 105 —
@@ -1269,6 +1283,13 @@ pub fn CollectionExprOf(comptime phase: Phase) type {
         behaviorLit: struct {
             name: []const u8,
             fields: []RecordLitFieldOf(phase),
+            /// Decision 166 — the source had a comma before the `)`. Dumped
+            /// only when set.
+            trailingComma: bool = false,
+
+            pub fn jsonStringify(this: @This(), jws: anytype) !void {
+                return stringifyOmitting(this, jws, &.{}, &.{"trailingComma"});
+            }
         },
 
         pub fn deinit(this: *@This(), allocator: std.mem.Allocator) void {
@@ -1714,6 +1735,10 @@ pub const Param = struct {
     /// (`x.value`), and the formatter prints `@Expr<T>` back. A template
     /// function's `@Expr` parameters keep the wrapper. Dumped only when set.
     exprWrapped: bool = false,
+    /// Decision 166 — set on the **last** parameter of a list written with a
+    /// comma before its `)`; the formatter opens the list on it. Dumped only
+    /// when set.
+    trailingComma: bool = false,
 
     /// Dumped without `typeLoc`: the location is a diagnostic aid, not surface.
     pub fn jsonStringify(this: Param, jws: anytype) !void {
@@ -1742,6 +1767,10 @@ pub const Param = struct {
         }
         if (this.exprWrapped) {
             try jws.objectField("exprWrapped");
+            try jws.write(true);
+        }
+        if (this.trailingComma) {
+            try jws.objectField("trailingComma");
             try jws.write(true);
         }
         try jws.endObject();
@@ -1785,6 +1814,13 @@ pub fn ownerOfInlineType(name: []const u8) ?struct { owner: []const u8, param: [
 pub const GenericParam = struct {
     name: []const u8,
     default: ?TypeRef = null,
+    /// Decision 166 — set on the **last** parameter of a list written with a
+    /// comma before its `>`. Dumped only when set.
+    trailingComma: bool = false,
+
+    pub fn jsonStringify(this: GenericParam, jws: anytype) !void {
+        return stringifyOmitting(this, jws, &.{}, &.{"trailingComma"});
+    }
 
     pub fn deinit(this: *GenericParam, allocator: std.mem.Allocator) void {
         if (this.default) |*d| d.deinit(allocator);
