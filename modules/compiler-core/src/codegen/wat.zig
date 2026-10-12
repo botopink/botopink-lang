@@ -9035,6 +9035,23 @@ const Emitter = struct {
 
     /// The primitive family of `recv.method(…)`'s receiver, when inference
     /// recorded one.
+    /// Whether `e` is a primitive method call that answers an array
+    /// (`s.split(c)`, `xs.map(f)`): the family comes from the call's own
+    /// receiver, so it holds where the call sits in a lambda whose parameter
+    /// inference left unplaced.
+    fn arrayAnsweredBy(self: *Emitter, e: ast.Expr) bool {
+        const c = switch (e) {
+            .call => |c| c,
+            else => return false,
+        };
+        const cc = switch (c.kind) {
+            .call => |cc| cc,
+            else => return false,
+        };
+        const k = self.primKindAt(cc, c.loc) orelse return false;
+        return (primCallRes(k, cc) orelse return false) == .arr;
+    }
+
     fn primKindAt(self: *Emitter, cc: anytype, loc: ast.Loc) ?envMod.PrimKind {
         if (cc.receiver == null or cc.is_builtin) return null;
         // In a specialisation the substituted type is the answer: inference
@@ -9064,6 +9081,11 @@ const Emitter = struct {
             // It trapped in `Sq_label` (`unresolved call: toString/0`).
             const recv = cc.receiver.?.*;
             if (recv == .call) {
+                // A chain whose first link answers an array by its own
+                // primitive family (`acc.split(c).join("")` in a lambda
+                // whose accumulator inference left a type variable): the
+                // link's answer is the next link's receiver.
+                if (self.arrayAnsweredBy(recv)) return if (primCallRes(.array, cc) != null) .array else null;
                 const tr = self.typeRefOf(recv) orelse return null;
                 const k = switch (tr) {
                     .named => |tn| primKindOfName(tn) orelse return null,
@@ -9072,7 +9094,10 @@ const Emitter = struct {
                 return if (primCallRes(k, cc) != null) k else null;
             }
             const n = plainIdentName(recv) orelse return null;
-            if (!self.tuple_binders.contains(n)) return null;
+            // A lambda parameter inference left a type variable (`acc` of
+            // `fold`) that the inlined walk bound to a string: its methods are
+            // the string's.
+            if (!self.tuple_binders.contains(n)) return if (self.str_locals.contains(self.resolveName(n)) and primCallRes(.string, cc) != null) .string else null;
             const tr = self.local_typerefs.get(n) orelse return null;
             return switch (tr) {
                 .named => |tn| primKindOfName(tn),
