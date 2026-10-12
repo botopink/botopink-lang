@@ -1093,13 +1093,164 @@ test "format: template annotation ---- idempotent and lossless beside a decorato
     );
 }
 
-test "format: template annotation ---- inside a list prints one block each, as every list does" {
-    try h.assertFormatAs(std.testing.allocator,
+test "format: template annotation ---- inside a list stays in the list" {
+    try h.assertFormat(std.testing.allocator,
         \\#[mark, sql "a ${b}"]
         \\fn f(b: string) {}
-    ,
-        \\#[mark]
-        \\#[sql "a ${b}"]
+    );
+    try h.assertFormat(std.testing.allocator,
+        \\#[
+        \\    mark,
+        \\    sql """
+        \\        x ${b}
+        \\    """,
+        \\]
         \\fn f(b: string) {}
     );
+    try h.assertIdempotent(std.testing.allocator,
+        \\#[mark, sql "a ${b}"]
+        \\fn f(b: string) {}
+    );
+}
+
+// Decision 286 — annotations print as written: separate blocks stay separate,
+// a list stays a list, a trailing comma opens the list one annotation per line.
+test "format: annotations ---- two blocks and one list on a function" {
+    try h.assertFormat(std.testing.allocator,
+        \\#[a]
+        \\#[b]
+        \\fn f() {}
+    );
+    try h.assertFormat(std.testing.allocator,
+        \\#[a, b]
+        \\fn f() {}
+    );
+    try h.assertFormat(std.testing.allocator,
+        \\#[a, b]
+        \\#[c]
+        \\fn f() {}
+    );
+    try h.assertFormatAs(std.testing.allocator,
+        \\#[a,
+        \\  b,]
+        \\fn f() {}
+    ,
+        \\#[
+        \\    a,
+        \\    b,
+        \\]
+        \\fn f() {}
+    );
+}
+
+test "format: annotations ---- builtin and custom mixed, on a declare fn" {
+    try h.assertFormat(std.testing.allocator,
+        \\#[
+        \\    @External.Node("mixBody", inline: true),
+        \\    @External.Erlang("mixBody", inline: true),
+        \\    @External.Beam("mixBody", inline: true),
+        \\]
+        \\fn mix(a: i32) -> i32 {
+        \\    return a;
+        \\}
+    );
+    try h.assertFormat(std.testing.allocator,
+        \\#[@External.Node("a"), check("m", rule, at: .confirm)]
+        \\#[@BeamMemory.Ets(keyed = true)]
+        \\var cache: i32 = 0;
+    );
+}
+
+test "format: annotations ---- on a type, a field, a method and a loop" {
+    try h.assertFormat(std.testing.allocator,
+        \\#[check("As senhas", passwordsMatch, at: .confirm)]
+        \\#[check("Esse nome", noReusedHandle)]
+        \\pub type Account(#[email] #[trim, lower] mail: string, age: i32)
+    );
+    try h.assertFormat(std.testing.allocator,
+        \\type Users(n: i32) {
+        \\    #[a, b]
+        \\    #[c]
+        \\    pub fn find(self: Self) -> i32 {
+        \\        return 1;
+        \\    }
+        \\}
+    );
+}
+
+test "format: annotations ---- round trips, idempotent, lossless, order kept" {
+    const sources = [_][]const u8{
+        \\#[a]
+        \\#[b]
+        \\fn f() {}
+        ,
+        \\#[a, b]
+        \\fn f() {}
+        ,
+        \\#[
+        \\    @External.Node("mixBody", inline: true),
+        \\    @External.Erlang("mixBody", inline: true),
+        \\]
+        \\fn mix() {}
+        ,
+        \\#[mark, sql "a ${b}"]
+        \\#[check("m", rule)]
+        \\fn f(b: string) {}
+        ,
+        \\#[a, b]
+        \\#[c]
+        \\pub type T(#[x, y] #[z] n: i32)
+        ,
+        \\type U(n: i32) {
+        \\    #[a]
+        \\    #[b, c]
+        \\    pub fn m(self: Self) {}
+        \\}
+    };
+    for (sources) |src| {
+        try h.assertFormat(std.testing.allocator, src);
+        try h.assertIdempotent(std.testing.allocator, src);
+        try h.assertLossless(std.testing.allocator, src);
+        try h.assertAnnotationsKept(std.testing.allocator, src);
+    }
+}
+
+test "format: annotations ---- a comment between blocks and inside an open list stays" {
+    try h.assertFormat(std.testing.allocator,
+        \\#[a]
+        \\// between
+        \\#[b]
+        \\fn f() {}
+    );
+    try h.assertFormat(std.testing.allocator,
+        \\#[
+        \\    // first
+        \\    a,
+        \\    // second
+        \\    b,
+        \\    // last
+        \\]
+        \\fn f() {}
+    );
+    try h.assertFormat(std.testing.allocator,
+        \\#[a]
+        \\// before the function
+        \\fn f() {}
+    );
+    const src =
+        \\#[a]
+        \\// between
+        \\#[
+        \\    // inside
+        \\    b,
+        \\    c,
+        \\    // end
+        \\]
+        \\// after
+        \\fn f() {}
+    ;
+    try h.assertFormat(std.testing.allocator, src);
+    try h.assertIdempotent(std.testing.allocator, src);
+    try h.assertLossless(std.testing.allocator, src);
+    try h.assertAnnotationsKept(std.testing.allocator, src);
 }

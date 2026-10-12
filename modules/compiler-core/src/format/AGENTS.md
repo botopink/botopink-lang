@@ -127,7 +127,8 @@ form has always done that); whether it should is a question, recorded in
 |---|---|
 | Declarations | Only the 1.0.3 surface is printed, whatever the source spelled (`record`/`enum`/`interface` included): `type`, `behavior`; no `;` after them |
 | Module-level `val` / `var` | `fmtValDecl` prints the keyword the binding was declared with (`var` when `ValDecl.mutable`, decision 48's arm) and its annotations above it, as a `fn`'s print — without the arm `format` deleted `var` and `#[@BeamMemory.Ets]` and reported the file clean |
-| Template annotation | `#[f "…"]` / `#[f """…"""]` (decision 311, `Annotation.template`) prints as written — the name, one space, the literal untouched (`fmtAnnotations`, `fmtField`); inside a `#[a, b]` list it prints as its own block like every list's annotation (16 s9 box 1 keeps the list) — `tests/declarations.zig` "template annotation" |
+| Template annotation | `#[f "…"]` / `#[f """…"""]` (decision 311, `Annotation.template`) prints as written — the name, one space, the literal untouched (`fmtAnnotations`, `fmtField`); inside a `#[a, b]` list it stays in the list — `tests/declarations.zig` "template annotation" |
+| Annotations (decision 286) | Printed as written (`fmtAnnotations`, `fmtInlineAnnotations` for a field): `#[a]` `#[b]` stay two blocks and `#[a, b]` one list, in the order written (`Annotation.written.listContinues`). A list with a comma before its `]` — or holding a comment — prints one annotation per line with the trailing comma (`#[` … `]`); a field's annotations print flat (`#[a, b] #[c] name: T`) unless a comment sits among them. A comment between two blocks, inside a list or after the last block, before the declaration, stays where it was written (`Annotation.written.{lead,inner,close,after}Comments`, read by `parseAnnotations`, which `skipAnnotationsLookaheadFrom` mirrors); none of it reaches the parser dump. `helpers.assertAnnotationsKept` compares the dump before and after |
 | Annotation arguments | A labelled argument keeps the separator it was written with, `label: value` or `label = value` (`Annotation.assign_mask` records the `=`; `#[@BeamMemory.Ets(keyed: true)]` stays `:`, `keyed = true` stays `=`; `#[@External.Erlang("string:slice($0, 0, 1)", inline = true)]` — on the two targets whose emitters read the flag, front 20 F9) — before `Annotation.labels` it printed `("charAt", true)` |
 | Record (`type`) | Field list in parentheses, no `val` → `type Point(x: i32, y: i32)`, always written — `type Empty()` for a record with no fields (decision 138); compact without a trailing comma (even past the width), open one field per line with the trailing comma when the source had one or a field carries a `//` comment; field annotations and defaults inline; no body when there are no methods; ` implement B` after the field list |
 | Enum (`type`) | `type Color { Red, Rgb(r: i32, g: i32, b: i32) }` compact; open (one item per line, trailing comma added) with a trailing comma, a section or a method; a blank line before the first method |
@@ -226,8 +227,7 @@ scratch copy and checked again: every file re-parses and a second pass moves **0
 checkout's trees (508 files walked) and in the five sibling libraries under `repository/` at their
 pinned commits (673 files; one library is canonical whole, the other four would reformat 26 to 285
 files each — their own reformat commits, none of it a printer defect, and no file that cannot be
-formatted). Canonical rewrites that remain (no content lost): a `#[a, b]` annotation list prints as
-one `#[…]` per annotation, a method chain that fits joins onto one line and one that does not opens,
+formatted). Canonical rewrites that remain (no content lost): a method chain that fits joins onto one line and one that does not opens,
 a single-expression `if` block drops its braces, a `\\` line string prints as `"""…"""`.
 
 - **End-of-line comments on an array or tuple element** (G7) — `trailingPerElem[i]`, the comment

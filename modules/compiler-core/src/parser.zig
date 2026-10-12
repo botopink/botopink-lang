@@ -1137,10 +1137,13 @@ pub const Parser = struct {
     /// Pure lookahead.
     pub fn skipAnnotationsLookaheadFrom(this: *This, offset: usize) usize {
         var o = offset;
-        while ((this.peekAt(o).kind == .hash or this.peekAt(o).kind == .at) and
-            this.peekAt(o + 1).kind == .leftSquareBracket)
-        {
-            o += 2; // skip `#`/`@` and `[`
+        while (true) {
+            // Decision 286 — comments may sit between two blocks (and after
+            // the last), as `parseAnnotations` reads them.
+            var q = o;
+            if (o > offset) while (isCommentKind(this.peekAt(q).kind)) : (q += 1) {};
+            if (!this.isAnnotationStartAt(q)) break;
+            o = q + 2; // skip `#`/`@` and `[`
             var depth: usize = 1;
             while (depth > 0 and this.peekAt(o).kind != .endOfFile) {
                 switch (this.peekAt(o).kind) {
@@ -1151,6 +1154,7 @@ pub const Parser = struct {
                 o += 1;
             }
         }
+        if (o > offset) while (isCommentKind(this.peekAt(o).kind)) : (o += 1) {};
         return o;
     }
 
@@ -1174,7 +1178,18 @@ pub const Parser = struct {
             for (list.items) |*ann| ann.deinit(alloc);
             list.deinit(alloc);
         }
-        while ((this.check(.hash) or this.check(.at)) and this.peekAt(1).kind == .leftSquareBracket) {
+        // Decision 286 — the comments met around the annotations: each lands
+        // in the `written` slot of the annotation it precedes.
+        var lead: std.ArrayList([]const u8) = .empty;
+        defer lead.deinit(alloc);
+        var pending: std.ArrayList([]const u8) = .empty;
+        defer pending.deinit(alloc);
+        while (true) {
+            // The first block starts here (the caller owns the comments before
+            // it); a later one may follow comments, which belong to it.
+            const skipped = if (list.items.len > 0) this.commentRunLength() else 0;
+            if (!this.isAnnotationStartAt(skipped)) break;
+            try this.takeAnnotationComments(alloc, &lead);
             if (this.check(.at)) {
                 this.parseError = ParseErrorInfo.fromTokenSpan(.retiredAnnotationBlock, this.peek(), "@[".len);
                 return ParseError.UnexpectedToken;
@@ -1184,18 +1199,31 @@ pub const Parser = struct {
             // Decisions 118 / 127 — the six effect annotations are recognised
             // only to be refused, located on the annotation's name.
             var removed: ?Token = null;
+            var first = true;
             while (true) {
+                try this.takeAnnotationComments(alloc, &pending);
                 const nameTok = this.peek();
-                const ann = try this.parseAnnotationCall(alloc);
+                var ann = try this.parseAnnotationCall(alloc);
+                errdefer ann.deinit(alloc);
                 if (ann.is_builtin and ast.isRemovedEffectAnnotation(ann.name)) {
                     if (removed == null) removed = nameTok;
                 }
+                ann.written.listContinues = !first;
+                if (first) ann.written.leadComments = try lead.toOwnedSlice(alloc);
+                ann.written.innerComments = try pending.toOwnedSlice(alloc);
                 try list.append(alloc, ann);
+                first = false;
+                try this.takeAnnotationComments(alloc, &pending);
                 if (!this.match(.comma)) break;
+                try this.takeAnnotationComments(alloc, &pending);
                 // A list written one annotation per line ends with a comma
                 // (`#[\n    a(…),\n    b(…),\n]`), as an argument list may.
-                if (this.check(.rightSquareBracket)) break;
+                if (this.check(.rightSquareBracket)) {
+                    list.items[list.items.len - 1].written.trailingComma = true;
+                    break;
+                }
             }
+            list.items[list.items.len - 1].written.closeComments = try pending.toOwnedSlice(alloc);
             _ = try this.consume(.rightSquareBracket);
             if (removed) |tok| {
                 // Before a loop the fix-it is the `iter` / `stream` prefix
@@ -1205,7 +1233,38 @@ pub const Parser = struct {
                 return ParseError.UnexpectedToken;
             }
         }
+        if (list.items.len > 0) {
+            try this.takeAnnotationComments(alloc, &pending);
+            list.items[list.items.len - 1].written.afterComments = try pending.toOwnedSlice(alloc);
+        }
         return list.toOwnedSlice(alloc);
+    }
+
+    /// True when the token at `offset` opens an annotation block (`#[`, or the
+    /// retired `@[`, which `parseAnnotations` refuses by name).
+    fn isAnnotationStartAt(this: *This, offset: usize) bool {
+        const k = this.peekAt(offset).kind;
+        return (k == .hash or k == .at) and this.peekAt(offset + 1).kind == .leftSquareBracket;
+    }
+
+    /// How many comment tokens start at the current position.
+    fn commentRunLength(this: *This) usize {
+        var o: usize = 0;
+        while (isCommentKind(this.peekAt(o).kind)) o += 1;
+        return o;
+    }
+
+    fn isCommentKind(k: TokenKind) bool {
+        return k == .commentNormal or k == .commentDoc or k == .commentModule;
+    }
+
+    /// Consumes the run of comments at the current position into `out`, each
+    /// as the source wrote it (decision 286: a comment around an annotation
+    /// stays where it was written).
+    fn takeAnnotationComments(this: *This, alloc: std.mem.Allocator, out: *std.ArrayList([]const u8)) !void {
+        while (isCommentKind(this.peek().kind)) {
+            try out.append(alloc, std.mem.trimEnd(u8, this.advance().lexeme, " \t\r\n"));
+        }
     }
 
     /// Parses a single annotation call.

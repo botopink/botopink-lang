@@ -1944,6 +1944,41 @@ pub const Annotation = struct {
     template: ?[]const u8 = null,
     /// Where the template annotation's literal starts.
     templateLoc: ?Loc = null,
+    /// Decision 286 — how the annotation was written, for the formatter only
+    /// (never serialized): which `#[…]` block it sits in and the comments
+    /// around it.
+    written: Written = .{},
+
+    /// The layout of the source around one annotation. `#[a]` `#[b]` are two
+    /// blocks and `#[a, b]` one list; the formatter prints both back as
+    /// written. The comment slices are owned, their texts borrow the source.
+    pub const Written = struct {
+        /// True when this annotation shares the previous one's `#[…]`
+        /// (`b` in `#[a, b]`); false when it opens a block of its own.
+        listContinues: bool = false,
+        /// True on the last annotation of a block written with a comma
+        /// before the `]` — the list prints one annotation per line.
+        trailingComma: bool = false,
+        /// Comments between the previous block and this block's `#[`
+        /// (only on the annotation that opens a block).
+        leadComments: []const []const u8 = &.{},
+        /// Comments inside the list, before this annotation (after the `[`
+        /// or after the previous annotation's `,`).
+        innerComments: []const []const u8 = &.{},
+        /// Comments inside the list after the last annotation, before the `]`
+        /// (only on the last annotation of a block).
+        closeComments: []const []const u8 = &.{},
+        /// Comments after the last block, before what the annotations
+        /// annotate (only on the last annotation).
+        afterComments: []const []const u8 = &.{},
+
+        pub fn deinit(this: *Written, allocator: std.mem.Allocator) void {
+            if (this.leadComments.len > 0) allocator.free(this.leadComments);
+            if (this.innerComments.len > 0) allocator.free(this.innerComments);
+            if (this.closeComments.len > 0) allocator.free(this.closeComments);
+            if (this.afterComments.len > 0) allocator.free(this.afterComments);
+        }
+    };
 
     /// Where argument `i` starts, or the annotation's own location.
     pub fn argLoc(this: Annotation, i: usize) ?Loc {
@@ -1963,6 +1998,7 @@ pub const Annotation = struct {
     }
 
     pub fn deinit(this: *Annotation, allocator: std.mem.Allocator) void {
+        this.written.deinit(allocator);
         if (this.labels.len > 0) allocator.free(this.labels);
         if (this.argLocs.len > 0) allocator.free(this.argLocs);
         if (this.source_args) |src| {

@@ -101,6 +101,37 @@ pub fn assertIdempotent(allocator: Allocator, src: []const u8) !void {
     }
 }
 
+/// Decision 286 — formatting keeps the annotations and their order: the parser
+/// dump of the source and of its formatted output are the same text (every
+/// `Decl.annotations` is in it, in the order written).
+pub fn assertAnnotationsKept(allocator: Allocator, src: []const u8) !void {
+    const before = try parseDump(allocator, src);
+    defer allocator.free(before);
+    const formatted = blk: {
+        var l = lexerMod.Lexer.init(src);
+        const tokens = try l.scanAll(allocator);
+        defer l.deinit(allocator);
+        var p = parserMod.Parser.init(tokens);
+        var program = try p.parse(allocator);
+        defer program.deinit(allocator);
+        break :blk try formatMod.format(allocator, program);
+    };
+    defer allocator.free(formatted);
+    const after = try parseDump(allocator, formatted);
+    defer allocator.free(after);
+    try std.testing.expectEqualStrings(before, after);
+}
+
+fn parseDump(allocator: Allocator, src: []const u8) ![]u8 {
+    var l = lexerMod.Lexer.init(src);
+    const tokens = try l.scanAll(allocator);
+    defer l.deinit(allocator);
+    var p = parserMod.Parser.init(tokens);
+    var program = try p.parse(allocator);
+    defer program.deinit(allocator);
+    return std.json.Stringify.valueAlloc(allocator, program, .{ .whitespace = .indent_2 });
+}
+
 // ── losslessness ─────────────────────────────────────────────────────────────
 
 /// Token kinds the canonical form is allowed to **add or drop**, and which
@@ -215,8 +246,10 @@ fn tokenKey(allocator: Allocator, t: lexerMod.Token) ![]u8 {
 /// Stated as *containment*, over the whole token stream: every token of the
 /// source occurs in the output at least as many times, modulo
 /// `droppable_separators`. Additions are allowed on purpose — the canonical form
-/// splits `#[a, b]` into two annotations and adds a trailing comma — because
-/// what makes a formatter unsafe is losing text, not producing it.
+/// adds the trailing comma of an open list — because what makes a formatter
+/// unsafe is losing text, not producing it. (Annotations are not an addition:
+/// since decision 286 `#[a]` `#[b]` and `#[a, b]` print as written, and
+/// `assertAnnotationsKept` pins their order.)
 ///
 /// **Order is deliberately not asserted**, and the reason was measured rather
 /// than assumed: the formatter translates the pre-1.0.3 spellings, and each

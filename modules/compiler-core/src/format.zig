@@ -2293,43 +2293,119 @@ pub const Formatter = struct {
         });
     }
 
+    /// One annotation as written inside its `#[…]`: `@name(label: v, w)`,
+    /// `name`, or the template annotation `name "…"` (decision 311).
+    fn annotationBody(this: *Formatter, ann: ast.Annotation) ![]const u8 {
+        const prefix: []const u8 = if (ann.is_builtin) "@" else "";
+        // Decision 311 — the template annotation prints as written: the
+        // name, one space, the literal (`"…"` or `"""…"""`) untouched.
+        if (ann.template) |lit| return std.fmt.allocPrint(this.arena, "{s} {s}", .{ ann.name, lit });
+        if (ann.writtenArgs().len == 0) return std.fmt.allocPrint(this.arena, "{s}{s}", .{ prefix, ann.name });
+        // A labelled argument prints as written: `label: value` or the
+        // fn-style `label = value` (the parser reads both and records which
+        // in `assign_mask`).
+        var written: std.ArrayList([]const u8) = .empty;
+        defer written.deinit(this.arena);
+        for (ann.writtenArgs(), 0..) |arg, i| {
+            try written.append(this.arena, if (ann.labelOf(i)) |label|
+                try std.fmt.allocPrint(this.arena, "{s}{s} {s}", .{ label, if (ann.labelAssigned(i)) " =" else ":", arg })
+            else
+                arg);
+        }
+        const argsStr = try std.mem.join(this.arena, ", ", written.items);
+        return std.fmt.allocPrint(this.arena, "{s}{s}({s})", .{ prefix, ann.name, argsStr });
+    }
+
+    /// The end of the block that starts at `annotations[start]`: the index of
+    /// the next annotation that opens a block of its own.
+    fn annotationBlockEnd(annotations: []const ast.Annotation, start: usize) usize {
+        var end = start + 1;
+        while (end < annotations.len and annotations[end].written.listContinues) end += 1;
+        return end;
+    }
+
+    /// True when a block cannot print on one line: a trailing comma (decision
+    /// 290 — the list prints one annotation per line) or a comment inside it.
+    fn annotationBlockOpen(block: []const ast.Annotation, trailingCommaOpens: bool) bool {
+        if (trailingCommaOpens and block[block.len - 1].written.trailingComma) return true;
+        for (block) |a| if (a.written.innerComments.len > 0) return true;
+        return block[block.len - 1].written.closeComments.len > 0;
+    }
+
+    fn commentDocs(this: *Formatter, comments: []const []const u8, docs: *std.ArrayList(*const Doc)) !void {
+        for (comments) |c| {
+            try docs.append(this.arena, try this.text(c));
+            try docs.append(this.arena, this.hardline());
+        }
+    }
+
+    /// Decision 286 — annotations print as written: `#[a]` `#[b]` stay two
+    /// blocks and `#[a, b]` stays one list, in the order written, with the
+    /// comments between blocks and inside an open list where they were. A list
+    /// written with a comma before its `]` (or holding a comment) prints one
+    /// annotation per line with the trailing comma.
     fn fmtAnnotations(this: *Formatter, annotations: []const ast.Annotation) !*const Doc {
         if (annotations.len == 0) return this.nil();
         var docs: std.ArrayList(*const Doc) = .empty;
         defer docs.deinit(this.arena);
-        for (annotations) |ann| {
-            const prefix: []const u8 = if (ann.is_builtin) "@" else "";
-            // Decision 311 — the template annotation prints as written: the
-            // name, one space, the literal (`"…"` or `"""…"""`) untouched.
-            if (ann.template) |lit| {
+        var start: usize = 0;
+        while (start < annotations.len) {
+            const end = annotationBlockEnd(annotations, start);
+            const block = annotations[start..end];
+            try this.commentDocs(block[0].written.leadComments, &docs);
+            if (!annotationBlockOpen(block, true)) {
+                const bodies = try this.arena.alloc([]const u8, block.len);
+                for (block, 0..) |a, i| bodies[i] = try this.annotationBody(a);
                 try docs.append(this.arena, try this.text(
-                    try std.fmt.allocPrint(this.arena, "#[{s} {s}]", .{ ann.name, lit }),
+                    try std.fmt.allocPrint(this.arena, "#[{s}]", .{try std.mem.join(this.arena, ", ", bodies)}),
                 ));
-            } else if (ann.writtenArgs().len == 0) {
-                try docs.append(this.arena, try this.text(
-                    try std.fmt.allocPrint(this.arena, "#[{s}{s}]", .{ prefix, ann.name }),
-                ));
+                try docs.append(this.arena, this.hardline());
             } else {
-                // A labelled argument prints as written: `label: value` or
-                // the fn-style `label = value` (the parser reads both and
-                // records which in `assign_mask`).
-                var written: std.ArrayList([]const u8) = .empty;
-                defer written.deinit(this.arena);
-                for (ann.writtenArgs(), 0..) |arg, i| {
-                    try written.append(this.arena, if (ann.labelOf(i)) |label|
-                        try std.fmt.allocPrint(this.arena, "{s}{s} {s}", .{ label, if (ann.labelAssigned(i)) " =" else ":", arg })
-                    else
-                        arg);
+                var items: std.ArrayList(*const Doc) = .empty;
+                defer items.deinit(this.arena);
+                for (block) |a| {
+                    var item: std.ArrayList(*const Doc) = .empty;
+                    defer item.deinit(this.arena);
+                    try this.commentDocs(a.written.innerComments, &item);
+                    try item.append(this.arena, try this.text(
+                        try std.fmt.allocPrint(this.arena, "{s},", .{try this.annotationBody(a)}),
+                    ));
+                    try items.append(this.arena, try this.concatAll(item.items));
                 }
-                const argsStr = try std.mem.join(this.arena, ", ", written.items);
-                try docs.append(this.arena, try this.text(
-                    try std.fmt.allocPrint(this.arena, "#[{s}{s}({s})]", .{ prefix, ann.name, argsStr }),
-                ));
+                for (block[block.len - 1].written.closeComments) |c| try items.append(this.arena, try this.text(c));
+                try docs.append(this.arena, try this.surroundBreak("#[", try this.join(items.items, this.hardline()), "]"));
+                try docs.append(this.arena, this.hardline());
             }
+            start = end;
         }
-        const sep = try this.concat(this.hardline(), try this.text(""));
-        const annsDoc = try this.join(docs.items, sep);
-        return this.concat(annsDoc, this.hardline());
+        try this.commentDocs(annotations[annotations.len - 1].written.afterComments, &docs);
+        return this.concatAll(docs.items);
+    }
+
+    /// A field's or parameter's annotations on its own line: `#[a] #[b, c] `
+    /// — each block flat, one space after. Comments among them (rare) take
+    /// the stacked form of `fmtAnnotations`, which ends in a line break.
+    fn fmtInlineAnnotations(this: *Formatter, annotations: []const ast.Annotation) !*const Doc {
+        if (annotations.len == 0) return this.nil();
+        for (annotations) |a| {
+            const w = a.written;
+            if (w.leadComments.len + w.innerComments.len + w.closeComments.len + w.afterComments.len > 0)
+                return this.fmtAnnotations(annotations);
+        }
+        var buf: std.ArrayList(u8) = .empty;
+        defer buf.deinit(this.arena);
+        var start: usize = 0;
+        while (start < annotations.len) {
+            const end = annotationBlockEnd(annotations, start);
+            try buf.appendSlice(this.arena, "#[");
+            for (annotations[start..end], 0..) |a, i| {
+                if (i > 0) try buf.appendSlice(this.arena, ", ");
+                try buf.appendSlice(this.arena, try this.annotationBody(a));
+            }
+            try buf.appendSlice(this.arena, "] ");
+            start = end;
+        }
+        return this.text(try this.arena.dupe(u8, buf.items));
     }
 
     /// `#[…] [pub] behavior Name<G> extends A, B { members }` — the 1.0.3
@@ -2495,16 +2571,7 @@ pub const Formatter = struct {
             try parts.append(this.arena, try this.text(try std.fmt.allocPrint(this.arena, "// {s}", .{c})));
             try parts.append(this.arena, this.hardline());
         }
-        for (f.annotations) |ann| {
-            const prefix: []const u8 = if (ann.is_builtin) "@" else "";
-            const annText = if (ann.template) |lit|
-                try std.fmt.allocPrint(this.arena, "#[{s} {s}] ", .{ ann.name, lit })
-            else if (ann.writtenArgs().len == 0)
-                try std.fmt.allocPrint(this.arena, "#[{s}{s}] ", .{ prefix, ann.name })
-            else
-                try std.fmt.allocPrint(this.arena, "#[{s}{s}({s})] ", .{ prefix, ann.name, try std.mem.join(this.arena, ", ", ann.writtenArgs()) });
-            try parts.append(this.arena, try this.text(annText));
-        }
+        try parts.append(this.arena, try this.fmtInlineAnnotations(f.annotations));
         try parts.append(this.arena, try this.text(f.name));
         try parts.append(this.arena, try this.text(": "));
         // Decision 370 (1) — the parser read `@Expr<T>`'s `T` off a record
