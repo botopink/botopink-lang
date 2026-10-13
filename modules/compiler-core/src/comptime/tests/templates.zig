@@ -625,7 +625,9 @@ test "comptime: round trip ---- a hole known at build reaches the body as its va
     // 01-compiler/14 step 8. `${label}` names a `val` holding a literal,
     // `${pt}` a `val` whose initializer is another expansion with no run-time
     // hole (its value is the record that expansion's code builds, evaluated on
-    // the comptime runtime), `${dyn()}` a call: computed at render.
+    // the comptime runtime), `${dyn()}` a call of a function that reads a
+    // module `var`: computed at render (a call of an `Any` function that reads
+    // nothing of the run time would be known at build, decision 380).
     const src =
         \\pub type Point(x: i32, y: i32)
         \\pub fn mk(comptime q: @Expr<string>) -> @Expr<Point> {
@@ -654,8 +656,9 @@ test "comptime: round trip ---- a hole known at build reaches the body as its va
         \\    }
         \\    return q.build("\"" + out + "\"");
         \\}
+        \\var seen = "d";
         \\fn dyn() -> string {
-        \\    return "d";
+        \\    return seen;
         \\}
         \\pub val label = "a";
         \\pub val pt = mk "abc";

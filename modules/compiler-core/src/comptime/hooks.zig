@@ -144,6 +144,12 @@ pub const StageFacts = struct {
     build: ?Mark = null,
     run: ?Mark = null,
     calls: []const StageCall = &.{},
+    /// Decision 380 — the first thing the body writes that keeps a call of it
+    /// from being computed at build although it is `any`: a written raise
+    /// (`@panic`, `@todo`, `throw`, 380 (3)), the program's output
+    /// (`@print`), a module `var`, a call the checker does not follow (a
+    /// function value, a method of a declared type). Null when none.
+    blocker: ?Mark = null,
     /// The function's body runs at build: a decorator's or a template's.
     buildBody: ?[]const u8 = null,
 };
@@ -164,6 +170,10 @@ pub const Node = struct {
     /// (`""` for `any`), for a refusal in another module.
     stage: Stage = .any,
     why: []const u8 = "",
+    /// Decision 380 — a call of the function with arguments known at build
+    /// is computed at build: it is `any`, and neither it nor what it calls
+    /// writes a `StageFacts.blocker`.
+    foldable: bool = false,
 };
 
 /// A top-level function of a module, as the session knows it.
@@ -199,6 +209,7 @@ pub const Builder = struct {
     build: ?Mark = null,
     run: ?Mark = null,
     stageCalls: std.ArrayListUnmanaged(StageCall) = .empty,
+    blocker: ?Mark = null,
 
     pub const DynamicCall = struct { type_: *T.Type, at: ast.Loc };
 
@@ -412,6 +423,88 @@ const BuildWalk = struct {
                 .identifier => |id| if (id.kind == .ident) for (self.reflected) |n| if (std.mem.eql(u8, n, id.kind.ident)) {
                     self.found = .{ .at = id.loc, .what = std.fmt.allocPrint(self.arena, "`{s}`, a `comptime` parameter read", .{n}) catch n };
                     return;
+                },
+                else => {},
+            }
+        }
+        if (X == ast.ImportDecl or X == ast.TypeRef or X == ast.Pattern) return;
+        switch (@typeInfo(X)) {
+            .@"struct" => |s| inline for (s.fields) |f| {
+                if (f.is_comptime) continue;
+                if (comptime mayHoldExpr(f.type)) self.walk(f.type, &@field(ptr.*, f.name));
+            },
+            .@"union" => |u| if (u.tag_type != null) {
+                switch (ptr.*) {
+                    inline else => |*payload| if (comptime mayHoldExpr(@TypeOf(payload.*))) {
+                        self.walk(@TypeOf(payload.*), payload);
+                    },
+                }
+            },
+            .optional => |o| if (ptr.*) |*inner| self.walk(o.child, inner),
+            .pointer => |p| switch (p.size) {
+                .one => if (comptime mayHoldExpr(p.child)) self.walk(p.child, ptr.*),
+                .slice => if (comptime mayHoldExpr(p.child)) {
+                    for (ptr.*) |*e| self.walk(p.child, e);
+                },
+                else => {},
+            },
+            .array => |arr| if (comptime mayHoldExpr(arr.child)) {
+                for (ptr) |*e| self.walk(arr.child, e);
+            },
+            else => {},
+        }
+    }
+};
+
+// ── decision 380 — what keeps a call from being computed at build ──────────
+
+/// The first raise (`@panic`, `@todo`, `@trap`, `throw`), output (`@print`,
+/// `@println`, `@debug`) or read or write of one of `vars` (the module's
+/// `var`s) in `body`, outside a `comptime`.
+pub fn foldBlocker(body: []const ast.Stmt, vars: []const []const u8) ?Mark {
+    var w: BlockWalk = .{ .vars = vars };
+    for (body) |*st| {
+        w.walk(ast.Stmt, st);
+        if (w.found) |m| return m;
+    }
+    return null;
+}
+
+const BlockWalk = struct {
+    vars: []const []const u8,
+    found: ?Mark = null,
+
+    fn isVar(self: *BlockWalk, n: []const u8) bool {
+        for (self.vars) |v| if (std.mem.eql(u8, v, n)) return true;
+        return false;
+    }
+
+    fn walk(self: *BlockWalk, comptime X: type, ptr: *const X) void {
+        if (self.found != null) return;
+        if (X == ast.Expr) {
+            switch (ptr.*) {
+                .comptime_ => |c| switch (c.kind) {
+                    .comptimeExpr, .comptimeBlock => return,
+                    else => {},
+                },
+                .identifier => |id| if (id.kind == .ident and self.isVar(id.kind.ident)) {
+                    self.found = .{ .at = id.loc, .what = "a module `var`" };
+                    return;
+                },
+                .binding => |b| if (b.kind == .assign and b.kind.assign.target == .name and self.isVar(b.kind.assign.target.name)) {
+                    self.found = .{ .at = b.loc, .what = "a module `var`" };
+                    return;
+                },
+                .jump => |j| if (j.kind == .throw_) {
+                    self.found = .{ .at = j.loc, .what = "`throw`" };
+                    return;
+                },
+                .call => |c| if (c.kind == .call and c.kind.call.is_builtin) {
+                    const raises = [_][]const u8{ "panic", "todo", "trap", "print", "println", "debug" };
+                    for (raises) |r| if (std.mem.eql(u8, c.kind.call.callee, r)) {
+                        self.found = .{ .at = c.loc, .what = r };
+                        return;
+                    };
                 },
                 else => {},
             }

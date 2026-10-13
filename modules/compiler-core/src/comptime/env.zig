@@ -942,6 +942,9 @@ pub const Env = struct {
     /// Decision 376 — the functions whose stage `markStages` has written
     /// into their node.
     stagesDone: std.StringHashMapUnmanaged(void) = .empty,
+    /// Decision 380 — whether a call is of a function computed at build
+    /// (`infer.zig` `callFoldable`), for `block_eval.knownAtBuild`.
+    foldableCall: ?*const fn (*Env, ast.CallExprOf(.untyped)) bool = null,
     /// Decision 376 — each local name a std leaf import binds to a function
     /// (`import {io.clock.nowMillis} from "std"` → `nowMillis`), with the
     /// std module and the declared name: its stage is that declaration's.

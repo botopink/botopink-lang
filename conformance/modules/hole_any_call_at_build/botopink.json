@@ -1,0 +1,1 @@
+{ "name": "hole_any_call_at_build", "targets": ["commonJS", "erlang", "beam"] }

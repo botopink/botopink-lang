@@ -1960,11 +1960,26 @@ pub fn knownAtBuild(env: *Env, e: *const ast.Expr, depth: usize) bool {
         .comptime_ => |ct| ct.kind == .comptimeExpr or ct.kind == .comptimeBlock,
         .call => |c| switch (c.kind) {
             .call => |cc| blk: {
-                if (cc.is_builtin or cc.receiver != null or cc.trailing.len > 0) break :blk false;
-                if (!env.templateExpansions.contains(c.loc)) break :blk false;
+                if (cc.is_builtin or cc.trailing.len > 0) break :blk false;
+                // A template call (expanded already), or — decision 380 — a
+                // call of a function computed at build (`any`, nothing in it
+                // kept from the build, `Env.foldableCall`); a method's
+                // receiver is one more argument.
+                const template = cc.receiver == null and env.templateExpansions.contains(c.loc);
+                if (!template) {
+                    const f = env.foldableCall orelse break :blk false;
+                    if (cc.receiver != null or !f(env, c)) break :blk false;
+                }
                 for (cc.args) |a| if (!knownAtBuild(env, a.value, depth + 1)) break :blk false;
                 break :blk true;
             },
+            else => false,
+        },
+        // Decision 380 — an operator over values known at build.
+        .binaryOp => |op| knownAtBuild(env, op.lhs, depth + 1) and knownAtBuild(env, op.rhs, depth + 1),
+        .unaryOp => |op| knownAtBuild(env, op.expr, depth + 1),
+        .collection => |col| switch (col.kind) {
+            .grouped => |inner| knownAtBuild(env, inner, depth + 1),
             else => false,
         },
         else => false,

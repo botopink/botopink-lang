@@ -650,6 +650,7 @@ fn refuseDeclsNamedLikePrimitives(env: *Env, program: ast.Program) InferError!vo
 }
 
 pub fn inferProgram(env: *Env, program: ast.Program) InferError![]Binding {
+    env.foldableCall = callFoldable;
     var list: std.ArrayListUnmanaged(Binding) = .empty;
     env.testIndex = 0;
     // Decision 216 (3): before this module's decorators run, `Owner.Name`
@@ -804,6 +805,7 @@ fn refuseDeclsNamedLikeImports(env: *Env, program: ast.Program) InferError!void 
 }
 
 pub fn inferProgramTyped(env: *Env, program: ast.Program) InferError![]TypedBinding {
+    env.foldableCall = callFoldable;
     var list: std.ArrayListUnmanaged(TypedBinding) = .empty;
     env.testIndex = 0;
     env.moduleDecls = program.decls;
@@ -14013,7 +14015,7 @@ pub fn inferExprTyped(env: *Env, expr: ast.Expr) InferError!TypedExpr {
             try noteComponentCall(env, c, typedCall);
             try noteHostCall(env, c);
             try noteAsyncCall(env, c, typedCall);
-            try noteStageCall(env, c);
+            try noteStageCall(env, c, typedCall);
             break :blk inferComponentCall(env, c, try applyReceiverTypeArgs(env, c, try applyExplicitTypeArgs(env, c, typedCall)));
         },
 
@@ -18534,9 +18536,14 @@ fn finishHookNode(env: *Env, f: ast.FnDecl, b: *hooksMod.Builder) InferError!voi
             return hooksMod.before(a.at, z.at);
         }
     }.lt);
+    var moduleVars: std.ArrayListUnmanaged([]const u8) = .empty;
+    for (env.moduleDecls) |d| if (d == .val and d.val.mutable) try moduleVars.append(env.arena, d.val.name);
+    const written = hooksMod.foldBlocker(f.body, moduleVars.items);
+    const blocker = if (b.blocker) |m| (if (written) |w| (if (hooksMod.before(w.at, m.at)) w else m) else m) else written;
     try env.stageFacts.put(env.arena, f.name, .{
         .build = b.build,
         .run = b.run,
+        .blocker = blocker,
         .calls = b.stageCalls.items,
         .buildBody = if (isDecoratorParams(f.params)) "decorator" else if (f.returnType) |rt| (if (rt.isTemplateReturnType()) "template" else null) else null,
     });
@@ -18643,12 +18650,19 @@ fn stageCallText(env: *Env, c: ast.CallExprOf(.untyped)) InferError![]const u8 {
 /// (read once every body is inferred, `markStages`); std's `provide` /
 /// `context` are `any` (388: a scope push and a lookup); a method or a
 /// function value is not followed.
-fn noteStageCall(env: *Env, c: ast.CallExprOf(.untyped)) InferError!void {
+fn noteStageCall(env: *Env, c: ast.CallExprOf(.untyped), typed: TypedExpr) InferError!void {
     if (c.kind != .call or c.kind.call.is_builtin) return;
     // A `comptime` is computed at build into a constant: it gives the
     // function no stage (376 (2)).
     if (env.comptimeDepth > 0) return;
     if (stdContextCallee(env, c) != null) return;
+    // A template call is expanded where it is written: the code it builds is
+    // inferred here and gives the stage, never the template's body (which
+    // runs at build to build it). A namespace's template is `<ns>.<name>`.
+    if (c.kind.call.receiver == null and env.templateFns.contains(c.kind.call.callee)) return;
+    if (c.kind.call.receiver) |r| if (r.* == .identifier and r.identifier.kind == .ident) {
+        if (env.templateFns.contains(try std.fmt.allocPrint(env.arena, "{s}.{s}", .{ r.identifier.kind.ident, c.kind.call.callee }))) return;
+    };
     var run: ?hooksMod.Mark = null;
     var ref: ?hooksMod.DeclRef = null;
     if (try hostCallee(env, c)) |h| {
@@ -18657,9 +18671,20 @@ fn noteStageCall(env: *Env, c: ast.CallExprOf(.untyped)) InferError!void {
     } else if (try hookCalleeDecl(env, c)) |d| {
         ref = d;
     } else if (stdCallee(env, c)) |sf| {
-        if (try stdStage(env, sf.module, sf.name) != .run) return;
+        if (try stdStage(env, sf.module, sf.name) != .run) {
+            // Decision 380 — an `any` std function computed at build when
+            // nothing in it is kept from it.
+            if (!try stdFoldable(env, sf.module, sf.name)) try noteFoldBlocker(env, c.loc, "a std function that is not computed at build");
+            return;
+        }
         run = .{ .at = c.loc, .what = try std.fmt.allocPrint(env.arena, "{s}, a std function that runs only when the program runs", .{try stageCallText(env, c)}) };
-    } else return;
+    } else {
+        // Decision 380 — a call the stage does not follow: a function value,
+        // or a method of a declared type (a primitive's, an array's or a
+        // collection's is computed as written).
+        if (!callOnPureReceiver(c, typed) and !isConstructorCall(env, c)) try noteFoldBlocker(env, c.loc, "a call that is not followed");
+        return;
+    }
     const what = try stageCallText(env, c);
     const b = env.hookBuilder orelse return;
     if (run) |m| {
@@ -18667,6 +18692,49 @@ fn noteStageCall(env: *Env, c: ast.CallExprOf(.untyped)) InferError!void {
         return;
     }
     if (ref) |d| try b.stageCalls.append(env.arena, .{ .ref = d, .at = c.loc, .what = what });
+}
+
+fn noteFoldBlocker(env: *Env, at: ast.Loc, what: []const u8) InferError!void {
+    const b = env.hookBuilder orelse return;
+    if (b.blocker == null or hooksMod.before(at, b.blocker.?.at)) b.blocker = .{ .at = at, .what = what };
+}
+
+/// A record's or a variant's constructor (`Rule(text: …)`, `Shape.Rect(…)`,
+/// `.Rect(…)`): data, computed as written.
+fn isConstructorCall(env: *Env, c: ast.CallExprOf(.untyped)) bool {
+    const call = c.kind.call;
+    if (call.calleeExpr != null) return false;
+    if (call.callee.len == 0 or !std.ascii.isUpper(call.callee[0])) return false;
+    if (call.receiver) |r| {
+        if (r.* != .identifier or r.identifier.kind != .ident) return false;
+        return env.lookupTypeDef(r.identifier.kind.ident) != null;
+    }
+    if (env.localBindDepth(call.callee) != null) return false;
+    return env.lookupTypeDef(call.callee) != null;
+}
+
+/// A method call whose receiver is a primitive, an array or a std
+/// collection: computed as written wherever it runs.
+fn callOnPureReceiver(c: ast.CallExprOf(.untyped), typed: TypedExpr) bool {
+    if (c.kind.call.receiver == null) return false;
+    if (typed != .call or typed.call.kind != .call) return false;
+    const recv = typed.call.kind.call.receiver orelse return false;
+    const d = recv.getType().deref();
+    if (d.* != .named) return false;
+    const pure = [_][]const u8{ "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "f32", "f64", "bool", "string", "Array", "array", "Dict", "Set", "bigint", "decimal" };
+    for (pure) |n| if (std.mem.eql(u8, n, d.named.name)) return true;
+    return false;
+}
+
+/// Decision 380 — whether a std function is computed at build: a host one
+/// when it is `any`, a body as its module published it.
+fn stdFoldable(env: *Env, module: []const u8, name: []const u8) InferError!bool {
+    const r = env.reflection orelse return true;
+    const path = try std.fmt.allocPrint(env.arena, "std/{s}", .{module});
+    const info = r.hookFns.get(try envMod.declIdentity(env.arena, path, name)) orelse return true;
+    if (info.host) return info.stage == .any;
+    const n = info.node orelse return false;
+    return n.foldable;
 }
 
 /// The stage a host declaration `ref` names declares (own module or
@@ -18682,6 +18750,70 @@ fn declaredStage(env: *Env, ref: hooksMod.DeclRef) InferError!hooksMod.Stage {
 }
 
 const StageAnswer = struct { stage: hooksMod.Stage, why: []const u8 };
+
+/// Decision 380 (`block_eval.knownAtBuild`, through `Env.foldableCall`) —
+/// whether the call `c` is of a function computed at build: a host or std
+/// function that is `any`, or a declaration of the program whose node is
+/// `foldable` (this module's computed now). Builtins, methods and function
+/// values are not.
+fn callFoldable(env: *Env, c: ast.CallExprOf(.untyped)) bool {
+    return callFoldableOrErr(env, c) catch false;
+}
+
+fn callFoldableOrErr(env: *Env, c: ast.CallExprOf(.untyped)) InferError!bool {
+    if (c.kind != .call) return false;
+    const call = c.kind.call;
+    if (call.is_builtin or call.trailing.len > 0 or call.calleeExpr != null) return false;
+    if (stdContextCallee(env, c) != null) return false;
+    if (try hostCallee(env, c)) |h| return try declaredStage(env, h) == .any;
+    if (try hookCalleeDecl(env, c)) |d| return foldableNow(env, d);
+    if (stdCallee(env, c)) |sf| return try stdStage(env, sf.module, sf.name) == .any and try stdFoldable(env, sf.module, sf.name);
+    return false;
+}
+
+/// Decision 380 — whether the declaration `ref` names is computed at build
+/// (its node's `foldable`, once its stage is computed; a host when `any`).
+fn foldableRef(env: *Env, ref: hooksMod.DeclRef) InferError!bool {
+    if (std.mem.eql(u8, ref.module, "std/context")) return false;
+    if (std.mem.eql(u8, ref.module, env.modulePath)) {
+        const f = env.fnDecls.get(ref.name) orelse return false;
+        if (isHookHost(f)) return hostStage(f) == .any;
+        if (!env.stagesDone.contains(ref.name)) return false;
+        const n = env.hookNodes.get(ref.name) orelse return false;
+        return n.foldable;
+    }
+    const r = env.reflection orelse return false;
+    const info = r.hookFns.get(try envMod.declIdentity(env.arena, ref.module, ref.name)) orelse return false;
+    if (info.host) return info.stage == .any;
+    const n = info.node orelse return false;
+    return n.foldable;
+}
+
+/// Decision 380 — the stage of this module's function `name` now, while the
+/// module is being inferred: computed when its body and every body of this
+/// module it reaches are inferred (`Env.stageFacts`), else null — a call of
+/// a function declared later is not computed at build (14s8-d's order).
+pub fn foldableNow(env: *Env, ref: hooksMod.DeclRef) InferError!bool {
+    if (std.mem.eql(u8, ref.module, env.modulePath)) {
+        if (env.fnDecls.get(ref.name)) |f| if (isHookHost(f)) return hostStage(f) == .any;
+        var seen: std.StringHashMapUnmanaged(void) = .empty;
+        if (!try factsComplete(env, ref.name, &seen)) return false;
+        var visiting: std.StringHashMapUnmanaged(void) = .empty;
+        _ = try stageOfOwn(env, ref.name, &visiting);
+    }
+    return foldableRef(env, ref);
+}
+
+fn factsComplete(env: *Env, name: []const u8, seen: *std.StringHashMapUnmanaged(void)) InferError!bool {
+    if (seen.contains(name)) return true;
+    try seen.put(env.arena, name, {});
+    const facts = env.stageFacts.get(name) orelse return false;
+    for (facts.calls) |sc| if (std.mem.eql(u8, sc.ref.module, env.modulePath)) {
+        if (env.fnDecls.get(sc.ref.name)) |f| if (isHookHost(f)) continue;
+        if (!try factsComplete(env, sc.ref.name, seen)) return false;
+    };
+    return true;
+}
 
 /// The stage of the declaration `ref` names: std's `provide` / `context`
 /// `any`; this module's function by its body (`stageOfOwn`); another
@@ -18750,6 +18882,11 @@ fn stageOfOwn(env: *Env, name: []const u8, visiting: *std.StringHashMapUnmanaged
             "A function has one stage (decision 376 (2)): compute the build half under `comptime` (`val names = comptime fields(Post);`) or move it to a function of its own.",
         );
     };
+    // Decision 380 — computed at build when `any`, nothing in it kept from
+    // the build and every callee so.
+    node.foldable = run == null and build == null and facts.blocker == null and for (facts.calls) |sc| {
+        if (!try foldableRef(env, sc.ref)) break false;
+    } else true;
     if (run) |m| {
         node.stage = .run;
         node.why = m.root orelse try markText(env, m);

@@ -5,7 +5,9 @@
 //// expansion with no run-time hole included, read as the record its code
 //// builds. `rule "…"` writes the text into the code when every hole is known
 //// (`at: "build"`) and leaves the holes to the program otherwise
-//// (`at: "render"`): a parameter, a call.
+//// (`at: "render"`): a parameter. A call of an `Any` function whose
+//// arguments are known at build is known at build (decision 380):
+//// `${badge("green")}`.
 
 pub type Rule(text: string, at: string)
 
