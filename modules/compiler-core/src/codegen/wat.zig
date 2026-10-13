@@ -6671,6 +6671,7 @@ const Emitter = struct {
                             return;
                         };
                         if (try self.lowerChainedCall(cc, c.loc)) return;
+                        if (try self.lowerOptionalTypedMethod(c)) return;
                         if (self.primKindAt(cc, c.loc)) |k| {
                             try self.lowerPrimMethod(k, cc);
                             return;
@@ -9643,6 +9644,112 @@ const Emitter = struct {
         link.optional = false;
         try self.lowerPrimMethod(k, link);
         if (res.boxed) try self.emit(self.builder().helper(.box_i32));
+        const else_seq = self.seal(&else_c, .{ .value = .i32 });
+
+        try self.emit(.{ .@"if" = .{
+            .result = .i32,
+            .then = .{ .seq = then_seq },
+            .@"else" = .{ .seq = else_seq },
+        } });
+        return true;
+    }
+
+    /// `recv?.m(args)` over a method of a record or an enum the program
+    /// declares (decision 330): the optional receiver is evaluated once, the
+    /// method runs only on a present one, and its answer is the `?R` the
+    /// checker typed the call as. Unguarded, an absent receiver reached the
+    /// method as address `0` — an enum's dispatcher trapped, a record's method
+    /// read its fields off address 0 — and an unboxed `0` answered by a
+    /// present one read as absent (`p?.twice() ?? -1` printed `-1`).
+    const OptTypedMethod = struct {
+        payload: ast.TypeRef,
+        ret: ast.TypeRef,
+        word: []const u8,
+        /// `<Owner>_<method>`, called on the payload directly: the owner is
+        /// the optional's payload type, so nothing dispatches by value (an
+        /// all-unit enum's values carry no header to dispatch on).
+        direct: ?[]const u8,
+    };
+
+    fn optionalTypedMethod(self: *Emitter, cc: anytype, loc: ast.Loc) ?OptTypedMethod {
+        if (!cc.optional or cc.is_builtin) return null;
+        const recv = cc.receiver orelse return null;
+        const rtr = self.typeRefOf(recv.*) orelse return null;
+        if (rtr != .optional or rtr.optional.* != .named) return null;
+        const owner = rtr.optional.named;
+        if (!self.records.contains(owner) and !self.enums.contains(owner)) return null;
+        const own = std.fmt.allocPrint(self.arena(), "{s}_{s}", .{ owner, cc.callee }) catch return null;
+        const direct: ?[]const u8 = if (self.fn_sigs.get(own)) |sig|
+            (if (!self.generic_methods.contains(own) and sig.params.len == cc.args.len + 1) own else null)
+        else
+            null;
+        const sym = direct orelse self.resolvedCallSym(cc, loc) orelse return null;
+        const ret = self.fn_ret_typerefs.get(sym) orelse return null;
+        const sig = self.fn_sigs.get(sym) orelse return null;
+        return .{ .payload = rtr.optional.*, .ret = ret, .word = sig.result orelse "i32", .direct = direct };
+    }
+
+    /// The carrier `optionalTypedMethod`'s call answers: the method's own
+    /// optional when it answers one (`?.` flattens), else a `?R` of its answer.
+    fn optionalTypedMethodOpt(self: *Emitter, cc: anytype, loc: ast.Loc) ?OptInfo {
+        const m = self.optionalTypedMethod(cc, loc) orelse return null;
+        if (m.ret == .optional) return self.optInfoOfTypeRef(m.ret);
+        const inner = self.arena().create(ast.TypeRef) catch return null;
+        inner.* = m.ret;
+        return self.optInfoOfTypeRef(.{ .optional = inner });
+    }
+
+    fn lowerOptionalTypedMethod(self: *Emitter, c: anytype) anyerror!bool {
+        const cc = c.kind.call;
+        const res = self.optionalTypedMethodOpt(cc, c.loc) orelse return false;
+        const m = self.optionalTypedMethod(cc, c.loc).?;
+        const recv = cc.receiver.?.*;
+        const recv_boxed = if (self.optInfoOf(recv)) |oi| oi.boxed else false;
+        const mem = try self.memName(self.nextMem());
+        try self.lowerValue(recv);
+        try self.emit(.{ .local_tee = mem });
+        try self.emit(opOf("i32", "eqz"));
+
+        var then_c: Capture = .{};
+        self.open(&then_c);
+        try self.emitC(zero, "?. method: absent");
+        const then_seq = self.seal(&then_c, .{ .value = .i32 });
+
+        var else_c: Capture = .{};
+        self.open(&else_c);
+        if (recv_boxed) {
+            try self.emit(.{ .local_get = mem });
+            try self.emitC(.{ .load = .{} }, "?. method: unbox");
+            try self.emit(.{ .local_set = mem });
+        }
+        try self.local_typerefs.put(mem, m.payload);
+        const payload = try self.arena().create(ast.Expr);
+        payload.* = .{ .identifier = .{ .loc = c.loc, .kind = .{ .ident = mem } } };
+        var link = cc;
+        link.receiver = payload;
+        link.optional = false;
+        var call = c;
+        call.kind = .{ .call = link };
+        // The method's own answer, as its signature leaves it: the payload
+        // receiver is dispatched as the optional one was (`resolvedCallSym`).
+        if (m.direct) |sym| {
+            try self.emit(.{ .local_get = mem });
+            try self.lowerCallArgs(cc.args, self.fn_sigs.get(sym).?, 1);
+            try self.emit(.{ .call = sym });
+        } else try self.lowerValue(.{ .call = call });
+        if (m.ret == .optional) {
+            try self.emitConvert(m.word, "i32");
+        } else if (res.cell != .none) {
+            try self.emitConvert(m.word, res.cell.ty());
+            try self.emit(self.builder().helper(switch (res.cell) {
+                .f64 => .box_f64,
+                .i64 => .box_i64,
+                .none => unreachable,
+            }));
+        } else {
+            try self.emitConvert(m.word, "i32");
+            if (res.boxed) try self.emit(self.builder().helper(.box_i32));
+        }
         const else_seq = self.seal(&else_c, .{ .value = .i32 });
 
         try self.emit(.{ .@"if" = .{
@@ -14553,6 +14660,8 @@ const Emitter = struct {
             .call => |c| switch (c.kind) {
                 .call => |cc| if (self.chainedCallOpt(cc, c.loc)) |oi| {
                     return oi;
+                } else if (self.optionalTypedMethodOpt(cc, c.loc)) |oi| {
+                    return oi;
                 } else if (cc.is_builtin and std.mem.eql(u8, cc.callee, "__bp_option_map") and cc.args.len > 1 and lambdaArg(cc.args[1].value) != null) {
                     // `opt.map({ x -> … })` is an optional again, boxed when
                     // the closure answers a scalar (`lowerResultOptionOp`).
@@ -16835,6 +16944,9 @@ const Emitter = struct {
                         const res = self.primRes(k, cc);
                         break :blk if (res == .f64) "f64" else if (res == .i64) "i64" else "i32";
                     }
+                    // `recv?.m()` over a record's or an enum's method is the
+                    // `?R` carrier `lowerOptionalTypedMethod` leaves.
+                    if (self.optionalTypedMethod(cc, c.loc) != null) break :blk "i32";
                     if (self.recordMethodSym(cc, c.loc)) |sym| {
                         if (self.fn_sigs.get(sym)) |sig| break :blk sig.result orelse "i32";
                     }

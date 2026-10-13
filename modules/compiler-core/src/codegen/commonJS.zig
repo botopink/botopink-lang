@@ -4404,10 +4404,11 @@ const Emitter = struct {
                     // codepoints (`__bp_str_length`), not UTF-16 units.
                     if (std.mem.eql(u8, ia.member, "len") or std.mem.eql(u8, ia.member, "length")) if (self.lowerings) |lw| if (lw.get(id.loc)) |il| if (il == .prim) {
                         if (il.prim == .string and !ia.optional) return self.strRead(ia.receiver, recv, .str_length, &.{});
-                        return self.b.memberOpt(recv, "length", ia.optional);
+                        return self.b.memberOpt(recv, "length", ia.optional or isOptEnumCall(recv));
                     };
-                    // Optional chaining maps 1:1 to native JS `?.`.
-                    return self.b.memberOpt(recv, ia.member, ia.optional);
+                    // Optional chaining maps 1:1 to native JS `?.`; a member
+                    // read continuing a guarded enum call stays under its guard.
+                    return self.b.memberOpt(recv, ia.member, ia.optional or isOptEnumCall(recv));
                 },
             },
 
@@ -6340,14 +6341,18 @@ const Emitter = struct {
                 // member access with no call parens or args.
                 const len_prop = cc.args.len == 0 and cc.trailing.len == 0 and
                     if (loc_rename) |rn| std.mem.eql(u8, rn, "length") else false;
-                if (len_prop) return self.b.memberOpt(recv_node, "length", cc.optional);
+                // A link continuing a guarded enum call (`x?.str().length()`)
+                // stays under its guard: the call answers `undefined` when
+                // `x` is absent, and the rest of the chain with it.
+                const cont = cc.optional or isOptEnumCall(recv_node);
+                if (len_prop) return self.b.memberOpt(recv_node, "length", cont);
                 // `Shape.Rect(width: 5, height: 2)` — an enum variant reached
                 // through its own enum. The variant's declared fields are the
                 // slots; the guard is that the receiver names the enum that
                 // DECLARES the variant, so a record method that happens to be
                 // spelled `Rect` is never re-ordered.
                 if (self.variantSlotsFor(recv.*, cc.callee)) |names| slots = names;
-                callee = try self.b.memberOpt(recv_node, method, cc.optional);
+                callee = try self.b.memberOpt(recv_node, method, cont);
             }
         } else if (self.externals_missing.contains(cc.callee)) {
             // External fn with no `node` target — no symbol to call on this
@@ -6416,6 +6421,19 @@ const Emitter = struct {
         );
         const arrow = try self.b.arrowExpr(&.{js.Param.id(opt_recv_param)}, try self.b.paren(guarded));
         return self.b.call(try self.b.paren(arrow), &.{recv});
+    }
+
+    /// Whether `e` is `optEnumCall`'s guarded call, which answers `undefined`
+    /// for an absent receiver: a link after it continues the `?.` chain, so
+    /// it is written `?.` as JavaScript's own chain would short-circuit it —
+    /// `find(0)?.str().length()` read `.length` off `undefined` (a
+    /// `TypeError`, exit 1) where the other targets answered absent.
+    fn isOptEnumCall(e: js.Expr) bool {
+        if (e != .call) return false;
+        const callee = e.call.callee.*;
+        if (callee != .paren or callee.paren.* != .arrow) return false;
+        const ps = callee.paren.arrow.params;
+        return ps.len == 1 and ps[0].pattern == .ident and std.mem.eql(u8, ps[0].pattern.ident, opt_recv_param);
     }
 
     /// The inclusive range of an integer type, as JS number literals, or null

@@ -1124,6 +1124,37 @@ program error like `@panic`, alike on every target; and `map`, `flatMap` and
 `unwrapOr` belong to `@Result` alone (`r.unwrapOr(0)`) — there is no `result`
 namespace.
 
+A `?.` makes the rest of its chain conditional: at the first absent link the whole
+chain is absent, and a member or a method after the link runs only on a present
+value — along record fields, and for a primitive's, a record's or an enum's method:
+
+<!-- example: modules/optional_operators -->
+
+<!-- example: modules/optional_chain_record_fields -->
+
+<!-- example: modules/optional_method_absent_receiver -->
+
+<!-- example: modules/optional_record_method_absent_receiver -->
+
+<!-- example: modules/optional_enum_method_absent_receiver -->
+
+`f?.(args)` over a function answering a plain `T` is a `?T`, a present `0`
+included. The default of `??` may itself be such a call, and a default runs only
+when everything before it is absent:
+
+<!-- example: modules/optional_call_operator -->
+
+<!-- example: modules/optional_call_plain_answers -->
+
+<!-- example: modules/nullish_optional_call_default -->
+
+`x!` over `null` aborts after what was printed before it, naming the expression
+and where it is written — inside a lambda too, when the lambda runs:
+
+<!-- example: modules/optional_bang_aborts -->
+
+<!-- example: modules/optional_bang_in_lambda -->
+
 ### Numbers
 
 An integer never wraps and never widens. `+`, `-`, `*`, `/`, a unary `-` and

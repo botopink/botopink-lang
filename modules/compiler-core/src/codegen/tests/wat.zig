@@ -2600,3 +2600,41 @@ const bytes_log = "6\né\ntrue\ncd\ntrue\n";
 test "wat: decision 346 ---- Bytes is a string's buffer, toUtf8 std-wasm's bytes.isUtf8" {
     try h.assertWasmRunLog(std.testing.allocator, bytes_src, bytes_log);
 }
+
+// 144 B-20 Conformance — `recv?.m()` over a record's and an all-unit enum's
+// method: the method runs only on a present receiver and its answer is a
+// `?R` (a present `0` stays present). The enum's dispatcher trapped on an
+// absent one, a record's method read address 0.
+test "wat: decision 330 ---- recv?.m() over a record's or an all-unit enum's method is guarded and boxed" {
+    try h.assertWasmRunLog(std.testing.allocator,
+        \\type P(x: i32) {
+        \\    fn twice(self: Self) -> i32 {
+        \\        return self.x * 2;
+        \\    }
+        \\}
+        \\type C {
+        \\    Red,
+        \\    Green,
+        \\
+        \\    fn n(self: Self) -> i32 {
+        \\        return case self {
+        \\            Red -> 0;
+        \\            Green -> 1;
+        \\        };
+        \\    }
+        \\}
+        \\fn p(c: bool) -> ?P {
+        \\    return if (c) P(x: 0) else null;
+        \\}
+        \\fn col(c: i32) -> ?C {
+        \\    if (c == 0) return null;
+        \\    return C.Red;
+        \\}
+        \\fn main() {
+        \\    @print(p(true)?.twice() ?? -1);
+        \\    @print(p(false)?.twice() ?? -1);
+        \\    @print(col(1)?.n() ?? -1);
+        \\    @print(col(0)?.n() ?? -1);
+        \\}
+    , "0\n-1\n0\n-1\n");
+}

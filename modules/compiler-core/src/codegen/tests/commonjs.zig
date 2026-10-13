@@ -174,3 +174,30 @@ const bytes_log = "6\né\ntrue\ncd\ntrue\n";
 test "js: decision 346 ---- Bytes is a Uint8Array, its methods patched on its prototype" {
     try h.assertJsRunLog(std.testing.allocator, bytes_src, bytes_log);
 }
+
+// 144 B-20 Conformance — a link after a guarded enum call (`optEnumCall`)
+// continues its `?.` chain: `.length` was read off `undefined`.
+test "js: decision 330 ---- a method after recv?.m() over an enum method stays under the guard" {
+    try h.assertJsRunLog(std.testing.allocator,
+        \\type Val {
+        \\    Text(s: string),
+        \\
+        \\    fn str(self: Self) -> string {
+        \\        return case self {
+        \\            Text(s: t) -> t;
+        \\        };
+        \\    }
+        \\}
+        \\fn find(k: i32) -> ?Val {
+        \\    return if (k == 1) Val.Text(s: "abc") else null;
+        \\}
+        \\pub fn main() {
+        \\    @print(find(1)?.str().length() ?? -1);
+        \\    @print(find(0)?.str().length() ?? -1);
+        \\}
+    ,
+        \\3
+        \\-1
+        \\
+    );
+}

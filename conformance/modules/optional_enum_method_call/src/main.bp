@@ -3,7 +3,7 @@
 //// commonJS keeps an enum's methods as statics of its class and lowered
 //// `x?.m()` as a member call on the value: `…?.str is not a function` at
 //// run time (std's `Json`: `doc.field("src")?.str()`). An absent `x` is
-//// 01-checker step 31's open erlang/beam/wasm box, not this cell.
+//// `modules/optional_enum_method_absent_receiver`.
 
 type Val {
     Num(n: i32),

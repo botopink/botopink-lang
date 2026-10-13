@@ -1129,6 +1129,17 @@ is lowered the same way (`chainedCallKind`: the plan inference recorded, else
 the family of the receiver's `?T` payload — its type, or a string element's
 `OptInfo`); an absent `s` read a length off address 0
 (`modules/optional_method_absent_receiver`).
+`recv?.m(args)` over a method of a record or an enum the program declares is
+guarded the same way (`lowerOptionalTypedMethod`, `optionalTypedMethod`): the
+receiver once, `0` when absent, else `<Owner>_<method>` called on the payload
+(the optional's payload type names the owner, so nothing dispatches by value —
+an all-unit enum's ordinal has no header to dispatch on), its answer boxed as a
+`?R` of the method's declared return (`optionalTypedMethodOpt`, also what
+`optInfoOf` answers; `wasmTypeOf` says `i32`), a method answering an optional
+left as it is. Unguarded, an enum's dispatcher trapped on an absent receiver, a
+record's method read its fields off address 0, and a present `0` read as absent
+(`modules/optional_record_method_absent_receiver`,
+`modules/optional_enum_method_absent_receiver`).
 
 A `val c: ?T = …` keeps the VALUE's carrier (`opt_locals` from `optInfoOf` of
 the initializer, not only when unannotated): `cs[1]` over an all-unit enum's

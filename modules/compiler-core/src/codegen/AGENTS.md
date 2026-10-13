@@ -641,7 +641,10 @@ codegen/
   the checker typed the call through (`ast.optional_synthetic_col`), since the
   written `?.` call's own loc records no instance lowering; written as a member
   call it failed with `…?.str is not a function` on std's `Json`
-  (`modules/optional_enum_method_call`).
+  (`modules/optional_enum_method_call`). A link after that guarded call
+  continues its chain, so it is written `?.` (`isOptEnumCall`):
+  `find(0)?.str().length()` read `.length` off `undefined`
+  (`modules/optional_enum_method_absent_receiver`).
 - **User interface `default fn`s**: an interface that is not a JS global owns
   no constructor, so its instance defaults are copied as class methods into
   every local record that implements it and does not define the method

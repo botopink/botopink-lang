@@ -216,6 +216,17 @@ an `else if` chain and a `?f64`, four targets (wasm read an absent value as a pr
 binary).
 `modules/nullish_default_namespace_call` — `a ?? ns.f()` with a std module's and a package module's
 namespace call as the default, four targets.
+144 B-20's Conformance step adds `modules/optional_record_method_absent_receiver` — `recv?.m()` over a
+record's methods (answering an `i32`, an `f64`, a `bool`, a `?i32`, a record) and an all-unit enum's, absent
+and present, four targets (on the parent binary wasm ran the method on address `0`, read a present `0` as
+absent and refused the all-unit enum's dispatch; erlang and beam failed the absent receiver) —,
+`modules/optional_enum_method_absent_receiver` — `x?.m()` over an absent payload enum, and a method
+continuing it (`find(0)?.str().length()`), four targets (commonJS read `.length` off `undefined` and wasm's
+dispatcher trapped on `feat`; all four failed on the parent binary) —, `modules/nullish_optional_call_default`
+(`a ?? f?.(x) ?? d`, the defaults run only when what precedes them is absent; wasm refused the `?.()` default
+on the parent binary) and two pins that held on the parent binary: `modules/optional_chain_record_fields`
+(`?.` along optional record fields, a member and a method after a link) and `modules/optional_bang_in_lambda`
+(`x!` in a lambda's body, its abort naming the expression inside the lambda).
 `modules/optional_member_default` — `xs.at(k)?.field ?? d` over a present and an absent element, a string
 field, an empty array, an array built by `map` and one passed in, four targets (wasm printed the
 element's address for the `map`-built array on the parent binary).
