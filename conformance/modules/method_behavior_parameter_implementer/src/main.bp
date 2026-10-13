@@ -32,6 +32,9 @@ type Sheet(items: string[]) {
 
 pub fn main() {
     val s = Styled(rule: "color: red");
-    val sheet = Sheet.of(Prop(name: "gap", value: "1rem")).add("c", s).add("u", Prop(name: "m", value: "0"));
+    val sheet = Sheet
+        .of(Prop(name: "gap", value: "1rem"))
+        .add("c", s)
+        .add("u", Prop(name: "m", value: "0"));
     @print(sheet.items.join(" | "));
 }
