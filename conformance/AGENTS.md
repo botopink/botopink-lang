@@ -46,7 +46,7 @@ conformance/
 | Path | Kind | Passes when |
 |---|---|---|
 | `modules/<cell>/` | a cell: `botopink cell check <cell>` builds and runs it in process on every target its manifest declares (`modules/compiler-cli/AGENTS.md` § Cells) | every module's answer on every target is its accepted snapshot — `snapshot/targets/<t>/<m>.snap` where it exists, else `snapshot/output/<m>.snap`, else empty — and every target its `"targets"` leaves out refuses it on a host binding (§ Narrowing a cell) |
-| `test/<area>_<group>.bp` | `test "…" { … assert … }` blocks, run by `botopink test --target <t> --json` in a scratch project on commonJS, erlang and beam | every test reports `ok` |
+| `test/<area>_<group>.bp` | `test "…" { … assert … }` blocks, run by `botopink test --target <t> --json` in a scratch project on commonJS, erlang, wasm and beam (a `// targets: <t> …` line in the file narrows it to the targets named, each excluded one audited as a project suite's is: `botopink test --target <t>` must refuse it on a host binding) | every test reports `ok` |
 | `test/<project>/` | a whole project with a `test/` tree, run by `botopink test --target <t> --json`; results keyed `test/<project>::<test>`; `"targets"` in its `botopink.json` narrows it (§ Narrowing a cell) | every test reports `ok` |
 
 A cell's `.snap` (`compiler-cli/src/cli/cell_snap.zig`, decision 475 (2)): `botopink-cell 1`, then
@@ -2203,8 +2203,8 @@ is never `-0` (`0 * -1`, `-x`, `-4 % 2` and `0 / -3` print `0` and compare equal
 `0`), so a generic `same<T>` answers `true` for two integer zeros and `false` for
 `0.0` against `-0.0` on four targets — commonJS printed `-0` and answered `true`.
 
-**The identity is asserted on three backends and RUN on four.** `botopink test` refuses wasm,
-so a `test/` cell reaches commonJS, erlang and beam. `modules/type_identity_equality` is the same
+**The identity is asserted on three backends and RUN on four.** `botopink test --target wasm` (decision 513) runs
+a `test/` suite on wasm too, and the suite's assertions are the four targets'. `modules/type_identity_equality` is the same
 statement as a `run/`: `Person(name: "a", age: 1) == Vec(name: "a", age: 1)` prints `false` on all
 four since `13-module-identity` half 3 put the declaration inside the value.
 

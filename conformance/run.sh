@@ -11,7 +11,7 @@
 #   conformance/run.sh --self-test [--compiler <botopink>] [--lib-root <dir>]
 #
 #   --target    the targets the `test/` suites run on; default `all` (a suite
-#               never runs on wasm: `botopink test` refuses it). A cell is one
+#               runs on wasm too: `botopink test --target wasm`). A cell is one
 #               job whatever the target: `botopink cell check` runs it on every
 #               target its manifest declares. A missing runtime fails the run;
 #               it never drops a target (decision 67).
@@ -128,16 +128,17 @@ pool_check_jobs "$jobs" run.sh
 
 # ── § beam ────────────────────────────────────────────────────────────────────
 # `botopink test --target beam` assembles every module of the run beside
-# itself and runs each test module's runner with `erl -pa`, so `test/` suites
-# run on beam too; `botopink test` refuses wasm alone, so a suite never runs
-# there. A cell reaches every target through `botopink cell check`.
+# itself and runs each test module's runner with `erl -pa`, and `botopink test
+# --target wasm` runs each test unit under wasmtime (decision 513), so `test/`
+# suites run on all four targets. A cell reaches every target through
+# `botopink cell check`.
 #
 # `erlc` and `erl` are gate dependencies already, so beam costs no new tool; a
 # machine without them fails the run below rather than run fewer targets and
 # say "all".
 #
 # ── § the targets of a test suite ─────────────────────────────────────────────
-# A `test/` suite runs on commonJS, erlang and beam unless a project suite
+# A `test/` suite runs on commonJS, erlang, wasm and beam unless a project suite
 # NARROWS itself with `"targets"` in its `botopink.json`. A narrowing is a
 # claim about the compiler, and the runner checks it on every run: for each
 # target of the run the suite excludes, `botopink build --target <t>` in the
@@ -149,13 +150,13 @@ pool_check_jobs "$jobs" run.sh
 #
 # — the one reason a program structurally has no row on a target. A target the
 # build accepts, or refuses for any other reason, fails the run naming the
-# suite; so is a narrowing that names wasm, an unknown target, the same one
+# suite; so is a narrowing that names an unknown target, the same one
 # twice, or every target (it narrows nothing: delete it). No flag, list or
 # environment variable turns the audit off (decision 67); `--self-test` shows
 # each refusal firing. A cell's narrowing is the same rule, checked by
 # `botopink cell check` itself.
 ALL_TARGETS="commonJS erlang wasm beam"
-TEST_TARGETS="commonJS erlang beam"
+TEST_TARGETS="commonJS erlang wasm beam"
 # `--target` takes `all`, one target, or a comma list (`wasm,beam`) — the subset the
 # step gate runs (decision 460); a list is read in the canonical order, so the plan
 # does not depend on how it was spelled.
@@ -225,12 +226,7 @@ pub fn one() -> i32 {
     return nowhere;
 }
 BP
-    project_suite names_wasm '["commonJS", "wasm"]' <<'BP'
-pub fn one() -> i32 {
-    return 1;
-}
-BP
-    project_suite narrows_nothing '["commonJS", "erlang", "beam"]' <<'BP'
+    project_suite narrows_nothing '["commonJS", "erlang", "wasm", "beam"]' <<'BP'
 pub fn one() -> i32 {
     return 1;
 }
@@ -259,16 +255,17 @@ BP
         [ -n "$line" ] || continue
         grep -qF -- "$line" "$st/report.txt" || { echo "self-test: the report lacks: $line" >&2; missing=1; }
     done <<'WANT'
+[wasm] test/unbacked — excluded by test/unbacked/botopink.json "targets", but `botopink build --target wasm` accepts the suite
 [beam] test/unbacked — excluded by test/unbacked/botopink.json "targets", but `botopink build --target beam` accepts the suite
+[wasm] test/another_reason — excluded by test/another_reason/botopink.json "targets", and wasm refuses it for another reason than a host binding
 [beam] test/another_reason — excluded by test/another_reason/botopink.json "targets", and beam refuses it for another reason than a host binding
-[*] test/names_wasm — test/names_wasm/botopink.json "targets" names wasm, a target a test suite never runs on
 [*] test/narrows_nothing — test/narrows_nothing/botopink.json "targets" names every target the suite runs on, so it narrows nothing
 [*] test/unknown_target — test/unknown_target/botopink.json "targets" names `jvm`, which is no target
 [*] modules/red — botopink cell check: exit 1
     candidate modules/red/snapshot/output/main.snap.new
-narrowings: 1 exclusion audited
-by target: commonJS 1/2 · erlang 2/3 · beam 1/3 · * 1/5
-conformance: 5 passed, 8 failed
+narrowings: 2 exclusions audited
+by target: commonJS 1/2 · erlang 2/3 · wasm 0/2 · beam 1/3 · * 1/4
+conformance: 5 passed, 9 failed
 WANT
     # The backed suite ran where it said and nowhere else, and the green cell
     # passed: no line may name them.
@@ -282,7 +279,7 @@ WANT
         sed 's/^/    /' "$st/report.txt" >&2
         return 1
     fi
-    echo "self-test: 5 malformed or unbacked narrowings refused, 1 backed one scheduled on its declared targets alone, a red cell named"
+    echo "self-test: 4 malformed or unbacked narrowings refused, 1 backed one scheduled on its declared targets alone, a red cell named"
 }
 
 # ── collect the jobs' paths ───────────────────────────────────────────────────
@@ -419,10 +416,21 @@ audit_one() { # <path> <excluded target> <the file that narrows>
     slug="$(printf '%s-%s' "$path" "$t" | tr '/.' '__')"
     dir="$work/x-$slug"; out="$work/r-audit-$slug"
     rm -rf "$dir"
-    cp -R "$here/$path" "$dir"
     export BOTOPINK_LIB_ROOTS="$lib_root"
-    (cd "$dir" && with_timeout 300 "$compiler" build --target "$t" ${cold_flag[@]+"${cold_flag[@]}"} >"$dir/o.txt" 2>"$dir/e.txt")
-    local code=$?
+    local code
+    case "$path" in
+        # A single-file suite carries its host binding in the test file: the refusal
+        # shows when the suite is compiled for the target, so it is `test` that is run.
+        *.bp)
+            project "$dir"
+            cp "$here/$path" "$dir/test/$(basename "$path")"
+            (cd "$dir" && with_timeout 300 "$compiler" test --target "$t" ${cold_flag[@]+"${cold_flag[@]}"} >"$dir/o.txt" 2>"$dir/e.txt")
+            code=$? ;;
+        *)
+            cp -R "$here/$path" "$dir"
+            (cd "$dir" && with_timeout 300 "$compiler" build --target "$t" ${cold_flag[@]+"${cold_flag[@]}"} >"$dir/o.txt" 2>"$dir/e.txt")
+            code=$? ;;
+    esac
     quiet <"$dir/o.txt" >"$dir/all.txt"; quiet <"$dir/e.txt" >>"$dir/all.txt"
     if [ $code -eq 0 ]; then
         printf '%s\t%s\t%s\t%s\n' "$t" "$path" fail "excluded by $by, but \`botopink build --target $t\` accepts the suite — a narrowing stands on a host-binding refusal: let it run on $t, and a red there is a row of that backend's front" >"$out"
@@ -467,6 +475,12 @@ node -e '
     if (m.targets === undefined) continue;
     const ok = Array.isArray(m.targets) && m.targets.every((t) => typeof t === "string" && /^[A-Za-z]+$/.test(t));
     console.log(`test/${d}\t${ok ? m.targets.join(" ") : "!"}`);
+  }
+  // A single-file suite narrows itself with one `// targets: <t> <t>…` line.
+  for (const f of dirs) {
+    if (!f.endsWith(".bp")) continue;
+    const m = /^\/\/ targets:[ \t]*(.*)$/m.exec(fs.readFileSync(path.join(root, "test", f), "utf8"));
+    if (m) console.log(`test/${f}\t${/^([A-Za-z]+[ \t]*)*$/.test(m[1]) ? m[1].trim().split(/[ \t]+/).join(" ") : "!"}`);
   }' "$here" >"$work/manifest-targets"
 
 # Schedule <suite> under the narrowing <declared…> written in <by>: a run job on
@@ -476,7 +490,6 @@ narrowed() { # <path> <by> <declared>
     local f="$1" by="$2" declared="$3" t d seen="" why=""
     for d in $declared; do
         case " $ALL_TARGETS " in *" $d "*) ;; *) why="names \`$d\`, which is no target"; break ;; esac
-        case " $TEST_TARGETS " in *" $d "*) ;; *) why="names $d, a target a test suite never runs on"; break ;; esac
         case " $seen " in *" $d "*) why="names $d twice"; break ;; esac
         seen="$seen $d"
     done
@@ -507,16 +520,13 @@ for f in "${files[@]}"; do
     case "$f" in
         # A cell is one job: `botopink cell check` runs every target it declares.
         modules/*) printf '%s\t*\trun\n' "$f" >>"$jobs_list" ;;
-        test/*.bp)
-            for t in "${targets[@]}"; do
-                case " $TEST_TARGETS " in *" $t "*) printf '%s\t%s\trun\n' "$f" "$t" >>"$jobs_list" ;; esac
-            done ;;
-        test/*)
+        test/*.bp|test/*)
             declared="$(awk -F '\t' -v c="$f" '$1 == c { print $2 }' "$work/manifest-targets")"
+            case "$f" in *.bp) narrow_by="$f \`// targets:\` line"; narrow_bad="$f's \`// targets:\` line is not a list of target names" ;; *) narrow_by="$f/botopink.json \"targets\""; narrow_bad="$f/botopink.json is not JSON, or its \"targets\" is not an array of target names" ;; esac
             if [ "$declared" = "!" ]; then
-                printf '*\t%s\tfail\t%s\n' "$f" "$f/botopink.json is not JSON, or its \"targets\" is not an array of target names" >"$work/r-narrowing-$(printf '%s' "$f" | tr '/.' '__')"
+                printf '*\t%s\tfail\t%s\n' "$f" "$narrow_bad" >"$work/r-narrowing-$(printf '%s' "$f" | tr '/.' '__')"
             elif [ -n "$declared" ]; then
-                narrowed "$f" "$f/botopink.json \"targets\"" "$declared"
+                narrowed "$f" "$narrow_by" "$declared"
             else
                 for t in "${targets[@]}"; do
                     case " $TEST_TARGETS " in *" $t "*) printf '%s\t%s\trun\n' "$f" "$t" >>"$jobs_list" ;; esac

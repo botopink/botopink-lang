@@ -7,6 +7,9 @@
 //// required a return type, and whether it should for the same reason is the open
 //// question decision 33 records rather than answers.
 
+// wasm refuses this suite on a host binding: `hostMin` has no `#[@External.Wasm]` binding.
+// targets: commonJS erlang beam
+
 #[@External.Node("Math.min($0, $1)")]
 #[@External.Erlang("erlang", "min")]
 declare fn hostMin(a: i32, b: i32) -> i32;

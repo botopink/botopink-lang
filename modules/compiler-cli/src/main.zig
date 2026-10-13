@@ -76,7 +76,7 @@ const HELP =
     \\  --                           Pass remaining args to the program
     \\
     \\Options for `test`:
-    \\  --target <commonJS|erlang>   Override the codegen target
+    \\  --target <commonJS|erlang|beam|wasm>   Override the codegen target
     \\  --filter <substr>            Only run tests whose name contains the substring
     \\  --json                       Emit one JSON object per test (JSONL)
     \\  --cold                       Read nothing from the code cache; write what is compiled

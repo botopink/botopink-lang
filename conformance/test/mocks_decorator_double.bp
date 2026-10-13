@@ -1,6 +1,9 @@
 //// conformance/docs.md § Mocks — the reference's example, a test suite run on commonJS, erlang
 //// and beam (`botopink test` does not run on wasm).
 
+// wasm refuses this suite on a host binding: `pushMatcher` has no `#[@External.Wasm]` binding.
+// targets: commonJS erlang beam
+
 import {testing.mocks} from "std";
 
 #[mocks.mock]
