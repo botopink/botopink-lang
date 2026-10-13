@@ -1,0 +1,12 @@
+//// Decisions 487, 490 — `result:` is a `bool`: `result: true` says the host
+//// call can fail, `result: false` (the default) that it cannot. Any other
+//// value is refused at the annotation.
+
+import {failure, failure.HostError} from "std";
+
+#[@External.Node("JSON.parse($0)", result: 1), @External.Erlang("json:decode($0)", result: 1)]
+declare fn jsParse(s: string) -> @Result<i32, HostError>;
+
+pub fn main() {
+    @print(jsParse("1").isOk());
+}

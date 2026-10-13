@@ -2023,10 +2023,10 @@ The rules that make it work:
    in some layer of the return. A capability the return does not grant is a
    located compile error, and no flag turns it off (decision 67):
 
-```
-error: effect-try-without-fallible-channel: `try` needs a @Result in the return
-(@Result<…>, @Task<@Result<…>>, @Component<@Result<…>>, …) — or handle it
-here with `try … catch`
+```text
+error: effect-try-without-fallible-channel: `try` needs a `@Result` in some layer
+of the return — this fn's return has no `@Result` in it; `try … catch` handles
+the failure on the spot, and a host binding answers a `@Result` with `result: true`
 ```
 
 Two forms are **not** gated by the return, because neither leaves the body.
@@ -2104,7 +2104,26 @@ enclosing function's return (`@Result<T, E>`, `@Task<@Result<T, E>>`,
 expected return has none, both are `effect-try-without-fallible-channel`. The
 message names the two ways out: `try … catch` handles the failure on the spot,
 in any function, and needs no channel; a host binding answers a `@Result` with
-`result: true` (§ Host bindings).
+`result: true` (§ Host bindings). The refusal is located at the `throw` or the
+`try`, and its middle part names the return that lacks the channel — a plain
+`fn`, a `@Task<T>`, a `@Component`, the item of an `@Iterator<T>`, a lambda's
+expected return:
+
+<!-- example: modules/throw_outside_result -->
+
+<!-- example: modules/try_in_plain_fn -->
+
+<!-- example: modules/task_throw_without_result -->
+
+<!-- example: modules/task_try_await_without_result -->
+
+<!-- example: modules/component_try_element -->
+
+<!-- example: modules/throw_in_generator -->
+
+<!-- example: modules/try_in_generator -->
+
+<!-- example: modules/try_in_lambda_without_result -->
 
 ### Tasks
 
@@ -3019,14 +3038,23 @@ error naming the capitalised form (`` `#[@external]` binds no host — an extern
 target is written `External.<Target>` ``), rather than a function left silently
 without a host.
 
-`inline: true`, written last on `External.Erlang`, opts the declaration out of
-the dispatch table so the backend's hand-coded shape keeps emitting. That
-variant alone declares it, because the erlang and beam emitters, which both
-read `External.Erlang`, alone read it. Written on `Node`, `Wasm` or
-`Typescript`, anywhere but last, or with a value that is not a bool, it would
-be a switch nothing reads, so it is refused at the annotation (`` `External.Node`
-declares no `inline` — the flag is read by the erlang and beam emitters from
-`External.Erlang` only ``).
+**An `@External` variant's flags are labelled** (decision 487): `result:` on
+every variant, `inline:` on `External.Erlang`, each a `bool` read by its label in
+any order among the arguments (`@External.Erlang(result: true, "json:decode($0)")`
+is the same binding as `@External.Erlang("json:decode($0)", result: true)`). A
+bare `true` or `false` names no flag, so it is refused at the argument:
+
+<!-- example: modules/external_flag_bare_bool_refused -->
+
+`inline: true` on `External.Erlang` opts the declaration out of the dispatch
+table so the backend's hand-coded shape keeps emitting. That variant alone
+declares it, because the erlang and beam emitters, which both read
+`External.Erlang`, alone read it. Written on `Node`, `Wasm` or `Typescript`, or
+with a value that is not a bool, it would be a switch nothing reads, so it is
+refused at the annotation (`` `External.Node` declares no `inline` — the flag is
+read by the erlang and beam emitters from `External.Erlang` only ``).
+
+<!-- example: modules/external_inline_unread -->
 
 A host call that can fail answers a `@Result` only when its binding writes
 `result: true`: the return is then `@Result<T, HostError>` (or a `@Task` of
@@ -3034,6 +3062,46 @@ one), and every way the host fails becomes `Error(HostError(…))`. Without the
 flag the binding promises no failure. `effect-try-without-fallible-channel`
 names this flag and `try … catch` as the ways out of a `throw` or `try` that
 has no `@Result` channel.
+
+The flag has one reading, so the checker holds it to it, at the annotation
+(decisions 487, 488, 490, 491):
+
+- `result: true` needs the return `@Result<…, HostError>` or
+  `@Task<@Result<…, HostError>>` — a plain value, or a `@Task<T>` that has no
+  `@Result` inside it, is refused:
+
+<!-- example: modules/external_result_return -->
+
+<!-- example: modules/external_result_task_plain_value -->
+
+- its `HostError` is std's `failure.HostError`, by module identity: a type the
+  module declares under the same name is refused, naming std's:
+
+<!-- example: modules/external_result_own_host_error -->
+
+- `result:` is a `bool`; any other value is refused:
+
+<!-- example: modules/external_result_not_bool -->
+
+- `result:` belongs to a host call that can fail: beside an `fn:` cell (a
+  botopink function, which fails only through its own `@Result`) or an `op:`
+  cell (a wasm instruction) it is refused:
+
+<!-- example: modules/external_result_on_fn_cell -->
+
+<!-- example: modules/external_result_on_wasm_op_cell -->
+
+Accepted, std's `HostError` is named as a leaf or through its module, and the
+flag stands anywhere among the arguments, beside `inline:`:
+
+<!-- example: modules/external_result_return_accepted -->
+
+std's `failure` module declares the types (decisions 489, 492):
+`HostErrorName` (`Error`, `Throw`, `Exit`), `HostError(message, kind, name,
+detail)` with `detail: ?string`, and `Failure(message, kind)`, whose `kind` is
+`"panic"`, `"host"` or `"crash"`:
+
+<!-- example: modules/std_failure_types -->
 
 `HostError(message, kind, name, detail)`: `kind` is always `"host"`; `name` is
 the same on every target — a JavaScript `Error` and an erlang `error` raise, or an
@@ -3044,6 +3112,16 @@ value and an erlang `throw` are `HostErrorName.Throw`, an erlang `exit` is
 backend may leave empty. An erlang host's `{ok, V}` or plain value is `Ok(V)`.
 
 <!-- example: modules/external_result_host_error -->
+
+An erlang host names the class of each raise, and `exit` is the erlang host's
+alone:
+
+<!-- example: modules/external_result_erlang_exit -->
+
+A host function declared as a method of its type answers the same way, a
+`@Task` method's failure read back as `Error(HostError(…))` at its `await`:
+
+<!-- example: modules/external_result_host_method -->
 
 One annotation binds the BEAM: `External.Erlang` serves the erlang and the beam
 targets, the same VM and the same OTP calls (decision 437). `@External.Beam` is

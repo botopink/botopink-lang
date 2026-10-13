@@ -1444,7 +1444,7 @@ Task eagerly, and inside one body the order is the same everywhere.
 | Iterators | `modules/iterator_fibonacci`, `modules/iterator_result_item`, `modules/iterator_result_items` (step E4), `modules/iterator_factory`, `test/yield_step_next` and `modules/yield_step_next` (`.next()` by hand on an `@Iterator` and, awaited, on a `@Stream` — the `run/` half reaches beam and wasm, which a `test/` cell cannot, and steps a parameter inside a `while`); `modules/iterator_throw_without_result`, `modules/iter_await`, `modules/iter_mixed_yield_return`, `modules/iterator_error_param_removed` |
 | Streams | `modules/stream_pages` (a simulated http failing mid-way), `modules/stream_loop_no_failure`; `modules/for_await_without_task` |
 | Prefixed loops | `modules/prefixed_loop_forms`, `modules/prefixed_loop_result_item`, `modules/prefixed_loop_break_value`, `modules/prefixed_loop_nearest_scope`, `test/contextual_words`; `modules/prefixed_loop_break_outer` |
-| Host (decisions 126, 431, 490) | `modules/host_node_task_result` (`.targets commonJS`; `result: true`, a rejection is `Error(HostError(…))`), `modules/host_erlang_task_result` (`.targets erlang beam`), `modules/external_result_host_error` (`result: true` on a sync and a `@Task` binding, every way the host fails — an `Error`, another thrown value, an erlang `{error, R}` — `Error(HostError(…))` with the same `name` on every target; wasm binds each by `fn:`) |
+| Host (decisions 126, 431, 490) | `modules/host_node_task_result` (`.targets commonJS`; `result: true`, a rejection is `Error(HostError(…))`), `modules/host_erlang_task_result` (`.targets erlang beam`), `modules/external_result_host_error` (`result: true` on a sync and a `@Task` binding, every way the host fails — an `Error`, another thrown value, an erlang `{error, R}` — `Error(HostError(…))` with the same `name` on every target; wasm binds each by `fn:`), `modules/external_result_erlang_exit` (`.targets erlang beam`: `error`, `throw` and `exit` named `Error`, `Throw`, `Exit`), `modules/external_result_host_method` (`.targets commonJS erlang beam`: a host method, sync and `@Task`, answers the same); the checker's refusals of the flag (decisions 487, 488, 491) — `modules/external_flag_bare_bool_refused`, `modules/external_result_return`, `modules/external_result_task_plain_value`, `modules/external_result_own_host_error`, `modules/external_result_not_bool`, `modules/external_result_on_fn_cell`, `modules/external_result_on_wasm_op_cell` — and the accepted shapes `modules/external_result_return_accepted`; std's types `modules/std_failure_types` |
 | The E3.9 hint (a `@Result` used as its `U`, one hint per source) | `modules/result_hint_await` (`try await t`), `modules/result_hint_for_item` (`try r`), `modules/result_hint_inferred_async` (the `await` hint plus the `try` that made the block's value a `@Result`) and `modules/result_hint_inferred_iter` (the `for`-item hint plus the `throw` that made the `iter` items `@Result`s); the two `for` cells carry no location line — the mismatch is reported at the file |
 | Migration (decision 127, guide § 9's "Old names that left") | `effect-annotation-removed`: `reject/effect_annotation_removed_{result,future,use,generator,result_generator,future_generator}`, the three loop forms `…_{generator,result_generator,future_generator}_loop`, and the older `…_{context,iterator,async_generator}`; `effect-type-removed`: `reject/effect_type_removed_{future,future_no_error,use,generator,result_generator,future_generator}` and the older `…_{async_iterator,iterable,iterator_step,yield}`; the arity refusals `modules/component_base_parameter` (`@Component<C, R>`, decision 354), `modules/yield_step_error_param` (`YieldStep<T, E>`); and the existing refusals `modules/loop_condition_parenthesised`, `modules/loop_await_removed`, `modules/component_plain_return` |
 
@@ -1951,6 +1951,8 @@ lines are in the front's README):
 | `modules/behavior_method_host_value` | commonJS erlang beam | wasm — `makeGreeter` |
 | `modules/external_erlang_host_module_missing` | erlang beam (each refuses it: `output/main.snap`) | commonJS, wasm — `total` |
 | `modules/external_host_record` | commonJS erlang beam | wasm — `hostPoint` |
+| `modules/external_result_erlang_exit` | erlang beam | commonJS, wasm — `host` |
+| `modules/external_result_host_method` | commonJS erlang beam | wasm — `Meter.plus` |
 | `modules/external_method_on_host_record` | commonJS erlang beam | wasm — `Pair.at` |
 | `modules/external_template_escaped_quote` | commonJS erlang beam | wasm — `say` |
 | `modules/external_template_refused_on_beam` | erlang beam | commonJS, wasm — `moduleNamed` |
@@ -1965,7 +1967,7 @@ lines are in the front's README):
 | `modules/manifest_targets_host_binding` | erlang beam (`"targets"`) | commonJS, wasm — `magnitude` |
 | `test/erlang_host_sidecar_in_a_test` (a project suite) | erlang beam (`"targets"`) | commonJS — `hello` |
 
-Thirty-seven exclusions. No other manifest carries `"targets"`: the field used to be boilerplate
+Forty exclusions. No other manifest carries `"targets"`: the field used to be boilerplate
 (`["commonJS", "erlang", "wasm"]` in 33 cells, `["commonJS", "erlang"]` in 14) that the runner
 ignored — honoured as written it would have taken beam away from 33 passing cells — and a project
 that must be refused on a target says so with its departure.
