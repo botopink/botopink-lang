@@ -383,8 +383,15 @@ fn withImportTypeAliasesErased(arena: std.mem.Allocator, prog: ast.Program, env:
 /// meeting the other declaration beside it (a key never reads as a basename:
 /// the root package's `config` is not a dependency's `x/config`).
 fn withImportSourcesNamed(arena: std.mem.Allocator, prog: ast.Program, env: *const envMod.Env) !ast.Program {
-    if (env.itemOwners.count() == 0) return prog;
+    if (env.itemOwners.count() == 0 and env.implicitEnumImports.count() == 0) return prog;
     var out: std.ArrayListUnmanaged(ast.DeclKind) = .empty;
+    // 144 B-10 — an enum the module wrote by dot-shorthand only, imported
+    // from the module that declares it (`Env.implicitEnumImports`).
+    var iit = env.implicitEnumImports.iterator();
+    while (iit.next()) |e| {
+        const imports = try arena.dupe(ast.ImportPath, &.{.{ .segments = try arena.dupe([]const u8, &.{e.key_ptr.*}), .loc = .{ .line = 0, .col = 0 } }});
+        try out.append(arena, .{ .use = .{ .imports = imports, .source = .{ .key = e.value_ptr.* } } });
+    }
     for (prog.decls) |d| switch (d) {
         .use => |u| {
             if (u.package != null or u.activationOnly) {

@@ -1406,6 +1406,13 @@ pub const Env = struct {
     /// decision 170's two-types check (`noteExplicitTypeNames`), however each
     /// item spells its source.
     importedTypeDecls: std.StringHashMapUnmanaged(ImportedTypeDecl) = .empty,
+    /// 144 B-10 — an enum this module writes by dot-shorthand (`.Top` where a
+    /// `Mode` is expected) and neither declares nor imports by name: the
+    /// enum's name → the module that declares it. The transformed program
+    /// imports it there (`comptime.zig` `withImportSourcesNamed`), so a
+    /// backend that names the enum to build the variant (commonJS's class,
+    /// erlang's tag) has it in scope.
+    implicitEnumImports: std.StringArrayHashMapUnmanaged([]const u8) = .empty,
     /// Decision 170 — the type names this module declares or imports by name
     /// (`type Dict(…)`, `import {kit.store.Dict as OwnDict}` → `Dict`),
     /// collected before any import is marked (`noteExplicitTypeNames`). A std

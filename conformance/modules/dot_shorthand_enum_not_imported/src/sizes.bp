@@ -1,0 +1,13 @@
+//// A module of the package: an enum and a function taking it.
+
+pub type Size {
+    Small,
+    Large,
+}
+
+pub fn width(s: Size) -> i32 {
+    return case s {
+        Small -> 1;
+        Large -> 9;
+    };
+}

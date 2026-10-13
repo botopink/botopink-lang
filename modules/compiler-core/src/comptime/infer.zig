@@ -14073,6 +14073,7 @@ fn inferIdentifierExpr(env: *Env, ident: ast.IdentifierExprOf(.untyped), loc: as
             // an expectation the flat table answers only when one enum
             // claims the name.
             if (expectedEnumDeclaring(env, name)) |en| {
+                try noteImplicitEnum(env, en);
                 const recv = try env.arena.create(ast.Expr);
                 recv.* = .{ .identifier = .{ .loc = loc, .kind = .{ .ident = en } } };
                 const qualified = try env.arena.create(ast.Expr);
@@ -15823,6 +15824,26 @@ fn isLeadingDotCall(c: ast.CallExprOf(.untyped)) bool {
 
 /// The name of the enum the expected type names, when it declares a variant
 /// called `variant` (front 15 handover, `.Circle(radius: 1)`).
+/// 144 B-10 — `en`, an enum a dot-shorthand variant resolved to, recorded in
+/// `Env.implicitEnumImports` when this module neither declares nor imports
+/// it by name: the one non-std module of the registry that declares it. Two
+/// such modules leave it unrecorded (nothing here says which one).
+fn noteImplicitEnum(env: *Env, en: []const u8) InferError!void {
+    if (env.explicitTypeNames.contains(en) or env.implicitEnumImports.contains(en)) return;
+    const reg = env.typeDeclRegistry orelse return;
+    var owner: ?[]const u8 = null;
+    var it = reg.iterator();
+    while (it.next()) |e| {
+        if (std.mem.startsWith(u8, e.key_ptr.*, "std/")) continue;
+        if (std.mem.eql(u8, e.key_ptr.*, env.modulePath)) return;
+        const d = e.value_ptr.get(en) orelse continue;
+        if (d != .type_ or d.type_.shape != .enum_) continue;
+        if (owner != null) return;
+        owner = e.key_ptr.*;
+    }
+    if (owner) |o| try env.implicitEnumImports.put(env.arena, en, o);
+}
+
 fn expectedEnumDeclaring(env: *Env, variant: []const u8) ?[]const u8 {
     const exp = env.expectedType orelse return null;
     // A `?Place` position expects a `Place` (or nothing): `.Here` is
@@ -19092,7 +19113,12 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                     // node; the call resolves to the registered `rn.callee` below.
                     if (env.lookup(rn) == null) {
                         const qn = try std.fmt.allocPrint(env.arena, "{s}.{s}", .{ rn, call.callee });
-                        if (env.lookup(qn) != null) {
+                        // 144 B-10 — a payload variant of an enum the module
+                        // reaches only through a signature (`.Two("x")` where
+                        // a `Mode` is expected, `Mode` never imported): the
+                        // enum is a type here, its name bound to no value.
+                        const typeOnlyVariant = if (env.lookupTypeDef(rn)) |td| td == .enum_ and env.variantCtors.contains(qn) else false;
+                        if (env.lookup(qn) != null or typeOnlyVariant) {
                             break :blk try makeTypedPtr(env, TypedExpr{ .identifier = .{
                                 .loc = recvExpr.*.identifier.loc,
                                 .type_ = try env.namedType(rn),

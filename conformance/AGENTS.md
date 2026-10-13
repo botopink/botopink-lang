@@ -2156,6 +2156,10 @@ associated fn's behavior-typed parameter (`expected Styleable, got Prop` before)
 `Decorator` / `Decorator[]` parameter of a decorator in a submodule (`expects Decorator, got fn(Decl)
 -> void` before).
 
+`modules/dot_shorthand_enum_not_imported` writes `.Top` and `.Two("x")` where a dependency's `Mode` is
+expected and the module never names `Mode` (commonJS and erlang emitted it unbound, the checker refused
+the payload form `unbound variable 'Mode'`); the transformed program imports the enum
+(`Env.implicitEnumImports`).
 `modules/decorator_lambda_many_locals` pins a decorator lambda with 120 locals on the comptime
 runtime.
 

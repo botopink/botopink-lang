@@ -653,6 +653,12 @@ parameter, the function's return type, the element type of an array literal:
 
 <!-- example: modules/enum_section_path_by_expected_type -->
 
+The expected type names the enum also where the module never does — an enum
+of a dependency or of another module, reached through an imported function's
+parameter (decision 430):
+
+<!-- example: modules/dot_shorthand_enum_not_imported -->
+
 A position that expects nothing (`val x = .Color.Red.500;`) leaves the path
 carried by two enums with nothing to choose between them, and the compiler
 refuses rather than pick one, naming both candidates:
