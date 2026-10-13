@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: the wasm backend cannot read `.value`: the receiver's type is not known here, and a record declares it a float or an `i64`
-at std/json.bp:421:31
