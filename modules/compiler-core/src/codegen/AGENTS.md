@@ -650,7 +650,8 @@ codegen/
   index by its type name (`enumMethodOwner`), required under
   `__bp_enum_<Type>` from its owner module (`reached_enums`,
   `reachedEnumRequires`) and called through that binding
-  (`modules/optional_enum_method_unimported`); without it the call stayed a
+  (`modules/optional_enum_method_unimported`; a sibling module's enum, `pub mod`
+  imported by `find` alone: `modules/optional_enum_method_sibling`, a pin); without it the call stayed a
   member call, `b?.str is not a function`. A type name two modules declare is
   contested and stays the member call.
 - **User interface `default fn`s**: an interface that is not a JS global owns
