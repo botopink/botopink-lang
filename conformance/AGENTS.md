@@ -308,7 +308,8 @@ enum value in a record's field, `comptime-value-not-liftable`), `modules/comptim
 in a record and a generic record), `modules/inject_default_imported` (an `inject` field's default declared in its
 type's own module) and `modules/inject_not_record_enum` (`inject-not-record` for an enum); the first two and the
 last two red on the parent, where std's `context` had no `createContext` or `inject`, `comptime_enum_in_record`
-red on the group's tip.
+red on the group's tip; `modules/context_behavior_undeclared` (a read of a behavior with no declared default names
+`createContext(value, Repository)`, red on the parent, which proposed the constructor call `Repository(…)`).
 Decision 388 (a `@Component` is a lambda over a `RenderScope`, `01-compiler/134` step 6 box 4b) replaced
 374's capture: the cell `context_host_thunk` left with it, and `modules/render_scope_library` holds the scope in
 the library instead — a renderer that runs the root with `RenderScope.root()` and each child with the

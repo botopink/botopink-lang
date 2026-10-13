@@ -1192,7 +1192,9 @@ implementing `B` by its `implements`, `context-behavior-not-implemented`);
 `noteContextUse` records an `inject` with its fields (`InjectField`: each
 field's key, its default from `Env.ctorParams`), `resolveContextReads` gives
 each field its type's declared default (`contextDefaultRef`) or keeps its own,
-else refuses the field at the `inject`; `context_lower.injectRecord` writes
+else refuses the field at the `inject`; a read of a behavior with no declared
+default is refused naming `createContext(value, B)`, never a constructor call
+(`modules/context_behavior_undeclared`); `context_lower.injectRecord` writes
 `R(f: find(scope, key, <fallback>), …)`. Cells `modules/inject_record`,
 `modules/inject_behavior_keyed`, `modules/inject_test_root_fake`,
 `modules/inject_field_undeclared`, `modules/inject_behavior`,

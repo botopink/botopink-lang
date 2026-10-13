@@ -18854,6 +18854,14 @@ fn resolveContextReads(env: *Env) InferError!void {
             use.default_ref = alias;
             continue;
         };
+        // Decision 416 (2) — a behavior has no constructor: its default is a
+        // value of a type implementing it, keyed by the second argument.
+        const vt = use.value_type.deref();
+        if (vt.* == .named and isBehaviorName(env, vt.named.name)) {
+            const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` has no context declared — declare its default with `createContext(value, {s})` (decisions 379 (3), 416 (2))", .{ diagnostics.context_not_declared, use.name, use.name });
+            env.lastError = TypeError.custom(msg, "A read of a behavior answers the nearest context provided as it above, else its declared default: `pub val repoContext = comptime createContext(PgRepository(…), Repository);`, the value of a type that implements it.").withLoc(e.key_ptr.*);
+            return error.TypeError;
+        }
         const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` has no context declared — declare its default with `createContext({s}(…))` (decision 379 (3))", .{ diagnostics.context_not_declared, use.name, use.name });
         env.lastError = TypeError.custom(msg, "A read answers the nearest context of its type provided above, else the type's declared default: `pub val themeContext = comptime createContext(Theme(…));` beside the type.").withLoc(e.key_ptr.*);
         return error.TypeError;

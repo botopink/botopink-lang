@@ -1953,8 +1953,11 @@ implement it as a parameter typed `Repository` is, through its own `implement`
 clause or a behavior that `extends` `Repository` (`context-behavior-not-implemented`
 at the argument) — so `use
 context(Repository)` and an `inject` field typed `Repository` read it; its
-declaration is the behavior's default. Providing stays one context per
-dependency, so a test's root swaps one.
+declaration is the behavior's default. A read of a behavior with no declared
+default is `context-not-declared` at the read, naming the declaration a behavior
+takes — `createContext(value, Repository)`, a value of a type that implements it
+— never a constructor call, which a behavior has none of. Providing stays one
+context per dependency, so a test's root swaps one.
 
 <!-- example: modules/inject_record -->
 
@@ -1971,6 +1974,8 @@ dependency, so a test's root swaps one.
 <!-- example: modules/inject_default_imported -->
 
 <!-- example: modules/context_behavior_not_implemented -->
+
+<!-- example: modules/context_behavior_undeclared -->
 
 <!-- example: modules/context_behavior_implemented_indirectly -->
 
