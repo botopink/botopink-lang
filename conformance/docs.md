@@ -488,6 +488,11 @@ whose initialisers have effects registers itself by being loaded:
 
 <!-- example: modules/val_runs_at_module_load -->
 
+An initialiser is any expression, a call included (`val t = "a b".split(" ");`):
+the functions of the module read the bound value, whatever else they call:
+
+<!-- example: modules/module_val_call_init -->
+
 `botopink test` and `botopink build` agree on this: the module body runs in both,
 at the same point relative to the program's own code. A backend that cannot run
 it is a gap in that backend, not a different meaning of `val`.
@@ -873,6 +878,12 @@ known at compile time: a local or a non-`comptime` parameter is
 
 <!-- example: modules/comptime_value_or_type_param -->
 
+A field of a generic record may hold a function: read into a local and called, it
+answers what the function answers — an array, a record, an optional, a string,
+through two type parameters or a generic record nested in another:
+
+<!-- example: modules/generic_field_fn_value_nested -->
+
 ### Type aliases
 
 <!-- example: modules/type_alias_declarations -->
@@ -1044,6 +1055,13 @@ test; what it answers is the caller's to trust.
 
 <!-- example: modules/is_function_type -->
 
+The elements of an array literal that disagree make the union of their types
+(`[3, "abcd"]` is `(i32 | string)[]`), and each element read back — printed,
+iterated, by index or `at`, passed to a parameter of the union — is the member it
+is, whether the union is inferred or written:
+
+<!-- example: modules/array_literal_union_elements -->
+
 `is` tests a type; it does not bind. Read a variant's payload in a `case` arm
 (`Circle(radius) -> …`, below) and an optional with `if (x) { n -> … }`;
 `assert x is Some(v)` is a located error.
@@ -1138,6 +1156,15 @@ range, an `|` of patterns and a guard see the value whole, on every target.
 
 An array method **answers a value and leaves its receiver alone**, on every
 target: `reverse`, `slice`, `map` and `filter` all hand back a new array.
+
+`Array.range(start, stop)` is the integers of `[start, stop)`, empty when
+`stop <= start`; `Array.repeat(value, times)` is `times` copies of `value`, empty
+when `times <= 0`. A result costs its own length in memory, a long one too, and so
+does `xs.fill(v)`, which is `Array.repeat(v, xs.length)`:
+
+<!-- example: modules/array_range_and_repeat -->
+
+<!-- example: modules/array_fill_large -->
 
 ### Indexing and slicing
 
@@ -1240,6 +1267,21 @@ the chain, and so does a method after it (`p(true)?.me().name.length()`):
 
 <!-- example: modules/optional_chain_field_after_call -->
 
+A tuple's label read through `?.` on an absent element is absent (`es.at(3)?.a ?? 0`
+is `0`), and a present element's label is its value, `0`, `false` and `""` included
+— never taken for absence:
+
+<!-- example: modules/tuple_label_through_absent_optional -->
+
+An optional holds any type: a record's `?f64` field holds a float or `null` and
+reads back as either, and an optional of an enum with a payload variant holds a
+variant or `null`. A leading dot where a `?Place` is expected names `Place`'s
+variant (`.Here` is `Place.Here`):
+
+<!-- example: modules/record_optional_float_field -->
+
+<!-- example: modules/optional_payload_enum_value -->
+
 `f?.(args)` over a function answering a plain `T` is a `?T`, a present `0`
 included. The default of `??` may itself be such a call, and a default runs only
 when everything before it is absent:
@@ -1304,6 +1346,10 @@ its size.
 <!-- example: modules/integer_conversions_exact -->
 
 <!-- example: modules/integer_conversion_u64_to_i64_aborts -->
+
+<!-- example: modules/integer_conversion_to_i32_aborts -->
+
+<!-- example: modules/integer_conversion_to_f64_inexact_aborts -->
 
 `bigint` is an integer of any size (decision 332): `+`, `-`, `*`, `/`, `%`, a
 unary `-`, `+=`, the comparisons and `==` over two `bigint`s answer exactly and
@@ -1464,6 +1510,11 @@ A variant pattern names **every** field of its variant, or ends with `..`:
 
 <!-- example: modules/case_dot_variant_patterns -->
 
+A constructor pattern of a record type takes the same `..`, and a field it names
+may hold a literal (`Point(x: 0, ..)` matches a point whose `x` is `0`):
+
+<!-- example: modules/point_ctor_rest_in_case -->
+
 `.Rect(width: w)` without the `..` is `error: missing required field 'height' on
 type 'Rect'`, at the arm — the fields a pattern does not name are dropped, and
 `..` is how you say so.
@@ -1487,6 +1538,11 @@ The binder of a catch-all arm over a record is that record: its fields read as
 declared, a generic record's too, wherever the `case` stands:
 
 <!-- example: modules/case_catch_all_binder_record -->
+
+A `case` is a value of its arms' type, a catch-all arm that binds the subject
+included — a string here, as a `val`'s value and as an argument:
+
+<!-- example: modules/case_binder_arm_string_value -->
 
 #### An optional is matched by `null` and a binder
 
@@ -3243,6 +3299,12 @@ A variant with a payload prints as `Enum.Variant(…)` however it reaches
 the module or imported:
 
 <!-- example: modules/enum_payload_value_prints -->
+
+A value of a generic declaration prints each field as the value it holds,
+whatever the type argument — a field written as the type parameter or an array of
+it, in a record or a variant, built directly or by a generic function:
+
+<!-- example: modules/generic_record_prints_its_arguments -->
 
 A `@Result` prints the way the source writes it — `Ok(81)`, `Error("bad")` — at
 the top level and nested in a container or a record, its payload printed as any

@@ -1,3 +1,6 @@
 # module_val_call_init
 
-A module-level `val` initialised by a call is bound before any function reads it, on every target, beside a function that calls `floor`.
+The reference text this cell shows (from `conformance/docs.md`, § val — immutable binding):
+
+> An initialiser is any expression, a call included (`val t = "a b".split(" ");`):
+> the functions of the module read the bound value, whatever else they call:
