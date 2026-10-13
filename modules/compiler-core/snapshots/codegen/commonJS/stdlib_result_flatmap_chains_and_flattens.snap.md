@@ -10,11 +10,11 @@ fn main() {
 ----- JAVASCRIPT -- main.js
 ```javascript
 function parseAge(s) {
-    (() => { throw new Error("not implemented") })();
+    (() => { throw Object.defineProperty(new Error("not implemented"), '__bp_panic', { value: true }) })();
 }
 
 function validate(n) {
-    (() => { throw new Error("not implemented") })();
+    (() => { throw Object.defineProperty(new Error("not implemented"), '__bp_panic', { value: true }) })();
 }
 
 function main() {

@@ -8,7 +8,7 @@ fn fail() {
 ----- JAVASCRIPT -- main.js
 ```javascript
 function fail() {
-    (() => { throw new Error("something went wrong") })();
+    (() => { throw Object.defineProperty(new Error("something went wrong"), '__bp_panic', { value: true }) })();
 }
 
 Object.defineProperty(exports, "__bp_priv__", { value: { fail } });

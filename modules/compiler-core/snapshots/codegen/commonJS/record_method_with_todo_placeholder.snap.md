@@ -15,7 +15,7 @@ class Unimplemented {
     }
 
     process() {
-        return (() => { throw new Error("not implemented") })();
+        return (() => { throw Object.defineProperty(new Error("not implemented"), '__bp_panic', { value: true }) })();
     }
 }
 Unimplemented.prototype.__bp = "Unimplemented";

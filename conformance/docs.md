@@ -2313,6 +2313,27 @@ expected return:
 
 <!-- example: modules/try_in_lambda_without_result -->
 
+**A crash is contained by `attempt`.** `@panic`, `@todo`, `x!` over `null`, a
+failed `assert`, an integer overflow or division by zero, and a raise from a
+host binding without `result: true` are defects, never in a signature. std's
+`failure.attempt(f)` runs `f` and answers `@Result<T, Failure>`: `Ok` of its
+value, or `Error(Failure(message, kind))` for the crash it caught — `kind` is
+`"panic"` for the program's own abort, its message the text the program wrote,
+and `"host"` for a host raise, its message the host's text (a JavaScript
+`Error`'s `message`, the erlang reason by `~tp`). The program goes on after a
+contained crash. On wasm `attempt` runs the thunk under wasm exception
+handling (decision 518): a program reaching it raises its aborts as an
+exception, which `attempt` catches as `panic`; a trap is no exception and
+ends the program.
+
+<!-- example: modules/std_failure_attempt -->
+
+`failure.attemptTask(f)` is its `@Task` form: it awaits the task `f` answers,
+and is `Error(Failure)` when that task crashed. A task that fails with its own
+`E` did not crash — its `@Result` is the value.
+
+<!-- example: modules/std_failure_attempt_task -->
+
 ### Tasks
 
 `@Task<T>` is a value that has not arrived yet, and `await` unwraps it. A
@@ -3461,6 +3482,15 @@ refuses the program even when nothing calls the wrapper. A project that needs
 such a wrapper names its `targets`, or the declaration gains the other
 target's binding.
 
+**std is refused at the call, never at the import** (decision 518 (4)). Every
+std module is importable on every target; a call of a std function that
+reaches a host declaration with no binding for the target — the function
+itself, or one its body reaches through its module's own functions — is
+`std-unsupported-on-target`, located at the call and naming the function (and
+the declaration it reaches, when that is another):
+
+<!-- example: modules/std_unsupported_refused_at_the_call -->
+
 wasm has no host of its own, so `@External.Wasm` does not name a host symbol
 or carry target text: it is **one cell from a closed vocabulary of four**
 (decisions 238, 440, 481), each a labelled argument holding a value of the
@@ -3596,6 +3626,7 @@ string in a `+`.
 | `.GateNew` | `() -> unknown` | a closed gate (std's `async` gates): a pending task no host answers |
 | `.GateOpen` | `(unknown) -> void` | the gate opened: every task waiting on it answers `true`, and each wait's own timer is dropped first, so an open gate leaves no timer behind; opening an open gate changes nothing |
 | `.GateAwait` | `(unknown, i32) -> @Task<bool>` | a task answering `true` once the gate is open (at once when it already is), `false` when the milliseconds pass first on the host's monotonic clock (`.Delay`'s pollable) |
+| `.Attempt` | `(fn() -> T) -> @Result<T, string>` | the thunk called inside a `try_table` catching the program's aborts (wasm exception handling): `Ok` of its value, or `Error` of the abort's message — std's `failure.attempt` and `attemptTask` on wasm; the binding declares `needs: [.Exceptions]` |
 
 `std/io/random`'s seeded stream is std-wasm's (decision 451), bound by the
 `std:` cells on `seed` and `seededFloat`: Mulberry32 as the commonJS sidecar
@@ -3651,9 +3682,23 @@ another `External` variant, a value other than `.Wasi` or `.Browser`, and a
 second binding for one host (a binding without `host:` beside a hosted one
 included) are errors at the annotation.
 
+**A binding declares the host features it needs** (decision 518):
+`#[@External.Wasm(wasi: .Attempt, needs: [.Exceptions])]`, each a value of
+std's closed enum `WasmNeed { Exceptions, Http }`. The compiler gathers the
+needs of the bindings a program reaches into the custom section
+`botopink.needs` of the module, and the runner hands the host only the
+matching flags — wasmtime's `-W exceptions=y` for `Exceptions`, `-S http` for
+`Http`; node runs exceptions by default. A program that needs none runs with
+no flag, and no annotation of a program turns a feature on or off: `needs` is
+no configuration. A binding that forgets its need fails visibly on the host. A
+value outside `WasmNeed`, or `needs:` on another `External` variant, is an
+error at the annotation, on every target:
+
+<!-- example: modules/external_wasm_needs_unknown -->
+
 On the `wasi` host the file `botopink build --target wasm` writes is a **WASI
 preview 2 component** in WebAssembly text, which `botopink run` runs with
-`wasmtime run -S http`: the module the backend lowers, unchanged but for its
+`wasmtime run` and the flags its needs ask for: the module the backend lowers, unchanged but for its
 start function (called by the component's `wasi:cli/run` export before
 `main`), and a preview 1 adapter the compiler writes — `fd_write` on
 `wasi:cli/stdout` and `wasi:cli/stderr` through `wasi:io/streams`,

@@ -8,7 +8,7 @@ fn main() {
 
 ----- JAVASCRIPT -- main.js
 ```javascript
-function __bp_assert_fatal(cond, msg, loc) { if (!cond) { throw new Error((msg ?? "assertion failed") + " at " + loc); } }
+function __bp_assert_fatal(cond, msg, loc) { if (!cond) { throw Object.defineProperty(new Error((msg ?? "assertion failed") + " at " + loc), "__bp_panic", { value: msg ?? "assertion failed" }); } }
 
 function __bp_f64(v) {
     if (!Number.isFinite(v)) { return String(v); }
@@ -61,7 +61,7 @@ function __bp_print() {
     console.log.apply(console, [f, ...a]);
 }
 
-function __bp_int(v, lo, hi, what) { if (v >= lo && v <= hi) { return v + 0; } throw new Error((Number.isFinite(v) ? "integer overflow: " : "integer division by zero: ") + what); }
+function __bp_int(v, lo, hi, what) { if (v >= lo && v <= hi) { return v + 0; } throw Object.defineProperty(new Error((Number.isFinite(v) ? "integer overflow: " : "integer division by zero: ") + what), "__bp_panic", { value: true }); }
 
 function main() {
     __bp_assert_fatal((__bp_int((1 + 1), -2147483648, 2147483647, "+ on i32 at main.bp:2:14") === 2), "arithmetic", "main.bp:2");

@@ -36,6 +36,7 @@ const wat = @import("./wat/wat_ast.zig");
 const watEmitter = @import("./wat/wat_emitter.zig");
 const wasmBinary = @import("./wat/wasm_binary_emitter.zig");
 const prelude = @import("./wat/wat_prelude.zig");
+const wasmNeeds = @import("./wat/needs.zig");
 const hostBinding = @import("./wat/host_binding.zig");
 const stdWasmLink = @import("./wat/std_wasm_link.zig");
 const stdWasm = @import("std_wasm");
@@ -1341,6 +1342,7 @@ fn emitWat(
         }
     }
     try em.checkHostBindings(decls.items, owner.items, linked, own_program, module_name);
+    em.exceptions = em.needs.contains(.exceptions);
     const program: ast.Program = .{ .decls = decls.items };
     try em.registerTypes(program);
     try em.collectExtensions(program);
@@ -1457,6 +1459,9 @@ fn emitWat(
 
     var memory_at = items.items.len;
     try items.append(ar, .{ .memory = .{ .@"export" = "memory", .min_pages = 1 } });
+    // Decision 518 — the tag an abort is raised as, in a program that
+    // reaches a binding needing exceptions.
+    if (em.exceptions) try items.append(ar, .{ .tag = prelude.panic_tag });
 
     // The function table a lambda value indexes into.
     if (em.lambdas.items.len > 0 or em.uses_table) {
@@ -1586,6 +1591,19 @@ fn emitWat(
             errdefer alloc.free(sym);
             o.* = .{ .symbol = sym, .label = try alloc.dupe(u8, f.label), .hash = f.hash };
         }
+    }
+
+    // Decision 518 — the host features the program needs, for the runner:
+    // the custom section `botopink.needs`, the needs' names (`exceptions`,
+    // `http`) one per line. A program needing none carries no section.
+    if (em.needs.count() > 0) {
+        var text: std.ArrayListUnmanaged(u8) = .empty;
+        var it = em.needs.iterator();
+        while (it.next()) |n| {
+            try text.appendSlice(ar, @tagName(n));
+            try text.append(ar, '\n');
+        }
+        try items.append(ar, .{ .custom = .{ .name = wasmNeeds.section, .bytes = text.items } });
     }
 
     // One model, two renderings: the text the snapshot records and the binary
@@ -2196,6 +2214,19 @@ const Emitter = struct {
     /// lifted no lambda of its own (a function value that came in as a
     /// parameter).
     uses_table: bool = false,
+    /// Decision 518 — the host features the program's wasm bindings need
+    /// (their `needs:`), gathered over the program and the modules it links
+    /// (`checkHostBindings`); written into the `botopink.needs` custom
+    /// section, which the runner reads for the host's flags.
+    needs: ast.WasmNeeds = .initEmpty(),
+    /// `needs` holds `.exceptions`: an abort is raised as the tag
+    /// `$__bp_panic` (`panic_raise`), which `attempt` catches, and
+    /// `_botopink_main` catches what escapes.
+    exceptions: bool = false,
+    /// A generic `declare fn` a wasm binding binds (std's `failure.attempt`),
+    /// by name: its declared return is read with the type parameters its
+    /// arguments bind (`genericRetByFnArg`), as a bodied generic's is.
+    host_generic_decls: std.StringHashMapUnmanaged(ast.FnDecl) = .empty,
     /// Top-level fn name → the table slot of its trampoline, for a fn used as
     /// a value.
     fn_refs: std.StringHashMap(u32),
@@ -2493,6 +2524,7 @@ const Emitter = struct {
         self.host_fns.deinit();
         self.external_missing.deinit();
         self.host_bindings.deinit(self.alloc);
+        self.host_generic_decls.deinit(self.alloc);
         self.std_exports.deinit(self.alloc);
         self.task_kinds.deinit(self.alloc);
         self.task_syms.deinit(self.alloc);
@@ -4542,7 +4574,12 @@ const Emitter = struct {
     /// A `declare fn` decision 238's vocabulary binds: the form, and for
     /// `fn:` the name the private fn is emitted under (a linked module's
     /// function may be mangled, `<module>/<name>`).
-    const HostBound = struct { binding: hostBinding.Binding, target: []const u8 = "" };
+    const HostBound = struct {
+        binding: hostBinding.Binding,
+        target: []const u8 = "",
+        /// Decision 518 — the binding's `needs:`.
+        needs: ast.WasmNeeds = .initEmpty(),
+    };
 
     /// Decision 238 — every `#[@External.Wasm("…")]` of the program and its
     /// linked modules is read before anything is registered: `op:` against
@@ -4576,8 +4613,13 @@ const Emitter = struct {
                 if (!std.mem.startsWith(u8, a.name, "External.") or !std.ascii.eqlIgnoreCase(a.name["External.".len..], "Wasm")) continue;
                 const host: ?ast.WasmHost = if (ast.hostArgIndex(a)) |at| ast.WasmHost.ofArg(a.args[at]) else null;
                 const ext = ast.externalRefOf(a, (host orelse build_host).lookupName()) orelse continue;
-                const bound = try self.checkHostBinding(f, from, ext, a.loc, linked, own_program, module_name);
-                if (host == null or host.? == build_host) try self.host_bindings.put(self.alloc, f.name, bound);
+                var bound = try self.checkHostBinding(f, from, ext, a.loc, linked, own_program, module_name);
+                bound.needs = ast.wasmNeedsOf(a);
+                if (host == null or host.? == build_host) {
+                    try self.host_bindings.put(self.alloc, f.name, bound);
+                    if (f.genericParams.len > 0) try self.host_generic_decls.put(self.alloc, f.name, f);
+                    self.needs.setUnion(bound.needs);
+                }
             }
         }
     }
@@ -4740,6 +4782,10 @@ const Emitter = struct {
                 if (std.mem.eql(u8, ad.name, "gate_new")) break :blk self.builder().helper(.task_gate_new);
                 if (std.mem.eql(u8, ad.name, "gate_open")) break :blk self.builder().helper(.task_gate_open);
                 if (std.mem.eql(u8, ad.name, "gate_await")) break :blk self.builder().helper(.task_gate_await);
+                if (std.mem.eql(u8, ad.name, "attempt")) {
+                    self.uses_table = true;
+                    break :blk self.builder().helper(.wasi_attempt);
+                }
                 unreachable; // every listed adapter has its helper (`host_binding.zig` `adapters`)
             },
         };
@@ -6031,11 +6077,43 @@ const Emitter = struct {
         // and on `wasi` the host's answers as they come (the `browser`
         // host's loader drives the rest from the event loop).
         if (self.b.helpers.has(.task)) try self.emitC(self.builder().helper(.task_finish), "the tasks main started");
-        const body = self.seal(&c, .none);
-
+        const run = self.seal(&c, .none);
+        if (!self.exceptions) {
+            try self.item(.{ .func = try self.builder().func(.{
+                .name = "_botopink_main",
+                .exports = &.{ "_botopink_main", "_start" },
+                .body = run,
+            }) });
+            return;
+        }
+        // Decision 518 — an abort nothing caught leaves `main` as
+        // `$__bp_panic`: written as `@panic` writes it (its `print` word), then
+        // the trap an abort is.
+        const ar = self.arena();
+        const try_line: wat.Line = .{ .instr = .{ .block = .{
+            .kind = .try_table,
+            .catches = try ar.dupe(wat.Block.Catch, &.{.{ .tag = prelude.panic_tag.name, .label = "__uncaught" }}),
+            .body = run,
+        } } };
+        const caught = try self.builder().seq(&.{ try_line, .{ .instr = .@"return" } }, .terminated);
+        const fail = self.builder().helper(.panic_fail);
+        const print_arm = try self.builder().seq(&.{
+            .{ .instr = .{ .local_get = "__c" }, .indent = 6 },
+            .{ .instr = .{ .load = .{} }, .indent = 6, .comment = "the message" },
+            .{ .instr = fail, .indent = 6 },
+        }, .none);
+        const body = try self.builder().seq(&.{
+            .{ .instr = .{ .block = .{ .kind = .block, .label = "__uncaught", .result = .i32, .body = caught } } },
+            .{ .instr = .{ .local_set = "__c" }, .comment = "an abort nothing caught (decision 518)" },
+            .{ .instr = .{ .local_get = "__c" } },
+            .{ .instr = .{ .load = .{ .offset = 4 } }, .comment = "print" },
+            .{ .instr = .{ .@"if" = .{ .then = .{ .seq = print_arm } } } },
+            .{ .instr = .@"unreachable" },
+        }, .terminated);
         try self.item(.{ .func = try self.builder().func(.{
             .name = "_botopink_main",
             .exports = &.{ "_botopink_main", "_start" },
+            .locals = try self.builder().localLines(&.{.{ .name = "__c", .ty = .i32 }}),
             .body = body,
         }) });
     }
@@ -7329,6 +7407,22 @@ const Emitter = struct {
 
     fn lowerBuiltin(self: *Emitter, cc: anytype, loc: ast.Loc) anyerror!void {
         if (std.mem.eql(u8, cc.callee, "todo") or std.mem.eql(u8, cc.callee, "panic")) {
+            const is_panic = std.mem.eql(u8, cc.callee, "panic");
+            // Decision 518 — a program that reaches `attempt` raises the abort
+            // as `$__bp_panic`, its message the text the program wrote (else
+            // the other targets' `panic` / `not implemented`); `print` keeps
+            // what an uncaught one writes (a `@panic` with a message).
+            if (self.exceptions) {
+                const has_text = cc.args.len == 1 and self.isStringExpr(cc.args[0].value.*);
+                if (has_text)
+                    try self.lowerCoerced(cc.args[0].value.*, "i32")
+                else
+                    try self.emit(try self.constInt((try self.internString(if (is_panic) "panic" else "not implemented")).offset));
+                try self.emit(if (is_panic and has_text) one else zero);
+                try self.emit(self.builder().helper(.panic_raise));
+                try self.emit(.@"unreachable");
+                return;
+            }
             // `@panic(msg)` writes `msg` to stderr before it traps (B-41).
             if (cc.args.len == 1 and std.mem.eql(u8, cc.callee, "panic") and self.isStringExpr(cc.args[0].value.*)) {
                 try self.lowerCoerced(cc.args[0].value.*, "i32");
@@ -14218,8 +14312,8 @@ const Emitter = struct {
     fn genericRetByFnArg(self: *Emitter, cc: anytype) !?ast.TypeRef {
         if (cc.is_builtin or cc.calleeExpr != null) return null;
         if (cc.receiver != null and !self.isNamespaceReceiver(cc)) return null;
-        const g = self.generic_fns.get(self.import_aliases.get(cc.callee) orelse cc.callee) orelse return null;
-        const f = g.decl;
+        const callee = self.import_aliases.get(cc.callee) orelse cc.callee;
+        const f = if (self.generic_fns.get(callee)) |g| g.decl else self.host_generic_decls.get(callee) orelse return null;
         const rt = f.returnType orelse return null;
         const ar = self.reg_arena.allocator();
         var subs: std.ArrayListUnmanaged(TypeSub) = .empty;
@@ -14228,6 +14322,18 @@ const Emitter = struct {
             if (std.mem.eql(u8, p.name, "self")) continue;
             defer pi += 1;
             if (pi >= cc.args.len) break;
+            // A thunk parameter, `fn() -> T` or `fn() -> @Task<T>` (std's
+            // `failure.attempt` / `attemptTask`, decision 518): `T` is what
+            // the argument answers — a `@Result` or any other type included.
+            if (p.typeRef == .function and p.typeRef.function.params.len == 0) {
+                const want = p.typeRef.function.returnType.*;
+                const got = self.fnArgReturn(cc.args[pi].value.*) orelse continue;
+                const w = if (isTaskTypeRef(want)) (taskValueTypeRef(want) orelse continue) else want;
+                const a = if (isTaskTypeRef(want)) (taskValueTypeRef(got) orelse continue) else got;
+                if (w == .named and isGenericParamName(w.named, f.genericParams, &.{}))
+                    try subs.append(ar, .{ .name = w.named, .to = a });
+                continue;
+            }
             if (p.typeRef != .named or !isGenericParamName(p.typeRef.named, f.genericParams, &.{})) continue;
             const ft = (try self.fnRefTypeRef(cc.args[pi].value.*)) orelse continue;
             try subs.append(ar, .{ .name = p.typeRef.named, .to = ft });
@@ -14928,6 +15034,10 @@ const Emitter = struct {
                     // parameter, so unboxed here — while the reader guessed
                     // "boxed" and loaded through the payload as an address.
                     if (cc.receiver != null) {
+                        // A generic function reached through its module's
+                        // namespace (`failure.attempt(…)`): its return with
+                        // what the arguments bind written in.
+                        if (self.isNamespaceReceiver(cc)) if (self.genericRetByFnArg(cc) catch null) |t| break :blk t;
                         if (self.recordMethodSym(cc, c.loc)) |sym| {
                             if (self.fn_ret_typerefs.get(sym)) |t| break :blk self.bindMethodRet(sym, cc, t);
                         }
@@ -16632,6 +16742,12 @@ const Emitter = struct {
                     // Decision 346 — `b.toUtf8()` answers `@Result<string, string>`.
                     if (cc.receiver != null) if (self.primKindAt(cc, c.loc)) |k| if (k == .bytes)
                         break :blk resultShapeOfTypeRef(self.typeRefOf(e) orelse break :blk null);
+                    // A generic function whose thunk argument binds its type
+                    // parameter (`failure.attempt(…)`): the shape of its return
+                    // with that written in (a task's value for `attemptTask`).
+                    if (cc.receiver == null or self.isNamespaceReceiver(cc)) if (self.genericRetByFnArg(cc) catch null) |t| {
+                        if (resultShapeOfTypeRef(taskValueTypeRef(t) orelse t)) |sh| break :blk sh;
+                    };
                     if (self.calleeSymbol(cc, c.loc)) |sym| break :blk self.result_shape_fns.get(sym);
                     // A primitive's `default fn` (`"1.5".parseFloat()`): its
                     // copy's declared return.

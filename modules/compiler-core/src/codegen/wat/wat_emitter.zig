@@ -366,6 +366,23 @@ fn renderItem(w: *Writer, it: ast.Item) Error!void {
         .global => |g| try global(w, g),
         .func => |f| try func(w, f),
         .comment => |text| try w.print("  ;; {s}\n", .{text}),
+        .tag => |t| {
+            try w.print("  (tag ${s}", .{t.name});
+            if (t.params.len > 0) {
+                try w.writeAll(" (param");
+                for (t.params) |p| try w.print(" {s}", .{p.text()});
+                try w.writeAll(")");
+            }
+            try w.writeAll(")\n");
+        },
+        .custom => |c| {
+            try w.print("  (@custom \"{s}\" \"", .{c.name});
+            for (c.bytes) |b| if (b < 0x20 or b >= 0x7f or b == '"' or b == '\\')
+                try w.print("\\{x:0>2}", .{b})
+            else
+                try w.writeByte(b);
+            try w.writeAll("\")\n");
+        },
     }
 }
 
@@ -510,6 +527,7 @@ fn blockForm(w: *Writer, col: u8, b: ast.Block) Error!void {
     try w.print("({s}", .{@tagName(b.kind)});
     if (b.label) |l| try w.print(" ${s}", .{l});
     if (b.result) |r| try w.print(" (result {s})", .{r.text()});
+    for (b.catches) |c| try w.print(" (catch ${s} ${s})", .{ c.tag, c.label });
     try w.writeAll("\n");
     try seq(w, b.body);
     try indent(w, col);
@@ -563,6 +581,7 @@ fn instr(w: *Writer, i: ast.Instr) Error!void {
         },
         .memory_size => try w.writeAll("memory.size"),
         .memory_grow => try w.writeAll("memory.grow"),
+        .throw => |t| try w.print("throw ${s}", .{t}),
         .comment => |text| try w.print(";; {s}", .{text}),
         // Structured forms own their own lines; `line`/`arm` never reach here.
         .@"if", .block => unreachable,
@@ -780,6 +799,9 @@ test "every runtime helper group renders with its deps, and only with them" {
             try items.append(alloc, .{ .import = prelude.bp_host_wait_import });
             try items.append(alloc, .{ .import = prelude.bp_host_drop_import });
         }
+        // Decision 518: a module raising its aborts declares the tag
+        // (`wat.zig` adds it with `Emitter.exceptions`).
+        if (set.has(.panic_raise) or set.has(.wasi_attempt)) try items.append(alloc, .{ .tag = prelude.panic_tag });
         try items.append(alloc, .{ .global = .{ .name = "__heap_ptr", .ty = .i32, .mutable = true, .init = "256" } });
         for (prelude.order) |og| {
             if (!set.has(og)) continue;

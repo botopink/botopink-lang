@@ -1625,6 +1625,63 @@ const panic_fail = func("__panic_fail", &.{"msg"}, null, &.{}, &.{
     c32(188),   c32(10), store8(0), c32(188),   c32(1),  call("__write_err"),
 });
 
+// ── decision 518: aborts as wasm exceptions, and `attempt` ──────────────────
+//
+// A program reaching a binding that `needs: [.Exceptions]` (std's
+// `failure.attempt` / `attemptTask`) raises its aborts as the tag
+// `$__bp_panic`, whose one value is a cell `[msg, print]`: `msg` the
+// message (a length-prefixed string) and `print` whether the abort writes it
+// on stderr when nothing catches it (`@panic` with a message does, as it does
+// without exceptions). `_botopink_main` catches what escapes, writes it and
+// traps, so an uncaught abort answers what it answered before.
+
+/// The program's exception tag (decision 518).
+pub const panic_tag = ast.Tag{ .name = "__bp_panic", .params = &.{.i32} };
+
+/// `$__panic_raise(msg, print)` — the abort's cell, thrown.
+const panic_raise = func("__panic_raise", &.{ "msg", "print" }, null, i32s(&.{"c"}), &.{
+    c32(8),   call("__alloc"),            set("c"),
+    get("c"), get("msg"),                 store(0),
+    get("c"), get("print"),               store(4),
+    get("c"), .{ .throw = "__bp_panic" },
+});
+
+/// `wasi:attempt` — `$__wasi_attempt(f)`: the thunk `f` (a closure cell, its
+/// table index at `+0`) called inside a `try_table` catching `$__bp_panic`;
+/// a `@Result` pair `[tag, payload]` — `Ok` (0) of the thunk's word, or
+/// `Error` (1) of the abort's message.
+const wasi_attempt = func("__wasi_attempt", &.{"f"}, .i32, i32s(&.{ "v", "r" }), &.{
+    .{ .block = .{ .kind = .block, .label = "caught", .result = .i32, .body = seqOf(&.{
+        .{ .block = .{ .kind = .try_table, .result = .i32, .catches = &.{.{ .tag = "__bp_panic", .label = "caught" }}, .body = seqOf(&.{
+            get("f"), get("f"), load(0), .{ .call_indirect = .{ .params = &.{.i32}, .result = .i32 } },
+        }, .{ .value = .i32 }) } },
+        set("v"),
+        c32(8),
+        call("__alloc"),
+        set("r"),
+        get("r"),
+        c32(0),
+        store(0),
+        get("r"),
+        get("v"),
+        store(4),
+        get("r"),
+        ret,
+    }, .terminated) } },
+    load(0),
+    set("v"),
+    c32(8),
+    call("__alloc"),
+    set("r"),
+    get("r"),
+    c32(1),
+    store(0),
+    get("r"),
+    get("v"),
+    store(4),
+    get("r"),
+});
+
 // ── decision 392's scheduler (`@Task<T>`, front `01-compiler/140` step 4) ──────
 //
 // A task is a 40-byte record: `+0` its state (0 pending, 1 settled), `+4` the

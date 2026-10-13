@@ -26,6 +26,7 @@ pub const crossModule = @import("./codegen/crossModule.zig");
 /// Decision 334 — the loader a wasm build for the `browser` host writes
 /// beside its `.wasm` (`botopink build`).
 pub const wasmBrowserLoader = @import("./codegen/wat/browser_loader.zig");
+pub const wasmNeeds = @import("./codegen/wat/needs.zig");
 
 /// What `generateWith` does after emitting each module.
 pub const Options = struct {

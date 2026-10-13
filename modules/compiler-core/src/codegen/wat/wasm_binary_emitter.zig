@@ -7,9 +7,11 @@
 //! emitters, never through the lowering; there is no text re-parse anywhere.
 //!
 //! Sections, in the order the format requires: type (1), import (2),
-//! function (3), table (4), memory (5), global (6), export (7), start (8),
-//! element (9), code (10), data (11). One function type per distinct
-//! signature; LEB128 everywhere; no custom sections (names live in the text).
+//! function (3), table (4), memory (5), tag (13, decision 518's exception
+//! tag), global (6), export (7), start (8), element (9), code (10), data
+//! (11), then the module's custom sections (0 — `botopink.needs`, decision
+//! 518; names live in the text). One function type per distinct signature;
+//! LEB128 everywhere.
 //!
 //! The module is validated first (`wat_ast.validateModule`), as the text
 //! emitter does, and everything the text resolves by name is resolved here to
@@ -48,6 +50,7 @@ pub fn encodeModule(alloc: std.mem.Allocator, m: ast.Module) Error![]u8 {
     for (m.items) |it| switch (it) {
         .import => |im| _ = try e.typeIndex(im.type),
         .func => |f| _ = try e.typeIndex(try funcType(ar, f)),
+        .tag => |t| _ = try e.typeIndex(.{ .params = t.params }),
         else => {},
     };
     var bodies: std.ArrayListUnmanaged([]const u8) = .empty;
@@ -120,6 +123,21 @@ pub fn encodeModule(alloc: std.mem.Allocator, m: ast.Module) Error![]u8 {
         try sec.append(ar, 0x00);
         try uleb(ar, &sec, mem.min_pages);
         try section(alloc, &out, 5, sec.items);
+    }
+
+    // tag (decision 518 — wasm exception handling): attribute 0, the type
+    // of the values it carries.
+    if (e.tags.items.len > 0) {
+        sec = .empty;
+        try uleb(ar, &sec, e.tags.items.len);
+        for (m.items) |it| switch (it) {
+            .tag => |t| {
+                try sec.append(ar, 0x00);
+                try uleb(ar, &sec, try e.typeIndex(.{ .params = t.params }));
+            },
+            else => {},
+        };
+        try section(alloc, &out, 13, sec.items);
     }
 
     // global
@@ -231,6 +249,17 @@ pub fn encodeModule(alloc: std.mem.Allocator, m: ast.Module) Error![]u8 {
         try section(alloc, &out, 11, sec.items);
     }
 
+    // custom sections (decision 518's `botopink.needs`), after every other.
+    for (m.items) |it| switch (it) {
+        .custom => |cs| {
+            sec = .empty;
+            try name(ar, &sec, cs.name);
+            try sec.appendSlice(ar, cs.bytes);
+            try section(alloc, &out, 0, sec.items);
+        },
+        else => {},
+    };
+
     return out.toOwnedSlice(alloc);
 }
 
@@ -248,6 +277,8 @@ pub const Encoder = struct {
     /// Every callable symbol by index: imports first, then definitions.
     funcs: std.ArrayListUnmanaged([]const u8) = .empty,
     globals: std.ArrayListUnmanaged([]const u8) = .empty,
+    /// The exception tags, by index (decision 518).
+    tags: std.ArrayListUnmanaged([]const u8) = .empty,
     n_imports: usize = 0,
     n_data: usize = 0,
     memory: ?ast.Memory = null,
@@ -269,7 +300,8 @@ pub const Encoder = struct {
             .table => |names| e.table = names,
             .start => |s| e.start = s,
             .data => e.n_data += 1,
-            .import, .comment => {},
+            .tag => |t| try e.tags.append(e.ar, t.name),
+            .import, .comment, .custom => {},
         };
     }
 
@@ -283,6 +315,11 @@ pub const Encoder = struct {
 
     pub fn funcIndex(e: *Encoder, sym: []const u8) Error!usize {
         for (e.funcs.items, 0..) |n, i| if (std.mem.eql(u8, n, sym)) return i;
+        return error.UnknownName;
+    }
+
+    fn tagIndex(e: *Encoder, sym: []const u8) Error!usize {
+        for (e.tags.items, 0..) |n, i| if (std.mem.eql(u8, n, sym)) return i;
         return error.UnknownName;
     }
 
@@ -477,6 +514,10 @@ const Body = struct {
             .memory_size => try o.appendSlice(ar, &.{ 0x3F, 0x00 }),
             .memory_grow => try o.appendSlice(ar, &.{ 0x40, 0x00 }),
             .comment => {},
+            .throw => |t| {
+                try o.append(ar, 0x08);
+                try uleb(ar, o, try c.e.tagIndex(t));
+            },
             .@"if" => |n| {
                 try o.append(ar, 0x04);
                 try c.blockType(n.result);
@@ -493,8 +534,20 @@ const Body = struct {
                 try o.append(ar, switch (b.kind) {
                     .block => 0x02,
                     .loop => 0x03,
+                    .try_table => 0x1F,
                 });
                 try c.blockType(b.result);
+                // Decision 518 — a `try_table`'s catch clauses: `catch` (0x00)
+                // tag, label — the label resolved before the try_table's own
+                // is pushed.
+                if (b.kind == .try_table) {
+                    try uleb(ar, o, b.catches.len);
+                    for (b.catches) |k| {
+                        try o.append(ar, 0x00);
+                        try uleb(ar, o, try c.e.tagIndex(k.tag));
+                        try uleb(ar, o, try c.labelDepth(k.label));
+                    }
+                }
                 try c.labels.append(ar, b.label);
                 try c.seq(b.body);
                 _ = c.labels.pop();

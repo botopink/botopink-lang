@@ -9,7 +9,7 @@ fn main() {
 
 ----- JAVASCRIPT -- main.js
 ```javascript
-function __bp_assert_fatal(cond, msg, loc) { if (!cond) { throw new Error((msg ?? "assertion failed") + " at " + loc); } }
+function __bp_assert_fatal(cond, msg, loc) { if (!cond) { throw Object.defineProperty(new Error((msg ?? "assertion failed") + " at " + loc), "__bp_panic", { value: msg ?? "assertion failed" }); } }
 
 function __bp_f64(v) {
     if (!Number.isFinite(v)) { return String(v); }

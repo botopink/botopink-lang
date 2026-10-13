@@ -8,6 +8,7 @@ const prettyMod = @import("../../utils/pretty.zig");
 const T = @import(".././types.zig");
 const envMod = @import("../env.zig");
 const inferMod = @import("../infer.zig");
+const ast = @import("../../ast.zig");
 /// Test-only: the one way a test spells a path it writes to (per process, so a
 /// second `zig build test` over this checkout cannot empty it mid-test).
 /// `build.zig` gives this module to the test modules alone.
@@ -978,6 +979,28 @@ test "infer: external ---- the variant table agrees with builtins.d.bp" {
         }
     }
     try std.testing.expectEqual(inferMod.external_variants.len, declared);
+}
+
+// Decision 518 — `ast.WasmNeed` restates std's `pub type WasmNeed { … }` from
+// `builtins.d.bp`: the same values in the same order, and `External.Wasm`
+// declares `needs: WasmNeed[]`.
+test "infer: external ---- WasmNeed agrees with builtins.d.bp" {
+    const source: []const u8 = @import("std_prelude").builtins;
+    const head = "pub type WasmNeed {";
+    const at = std.mem.indexOf(u8, source, head) orelse return error.WasmNeedNotDeclared;
+    const close = std.mem.indexOfScalarPos(u8, source, at + head.len, '}') orelse return error.WasmNeedNotClosed;
+    var lines = std.mem.splitScalar(u8, source[at + head.len .. close], '\n');
+    var i: usize = 0;
+    const want = std.enums.values(ast.WasmNeed);
+    while (lines.next()) |raw| {
+        const line = std.mem.trim(u8, raw, " \t\r,");
+        if (line.len == 0) continue;
+        try std.testing.expect(i < want.len);
+        try std.testing.expectEqualStrings(want[i].spelling(), line);
+        i += 1;
+    }
+    try std.testing.expectEqual(want.len, i);
+    try std.testing.expect(std.mem.indexOf(u8, source, "Wasm(template: string, needs: WasmNeed[] = [], result: bool = false)") != null);
 }
 
 test "infer: std package ---- import binds namespace" {

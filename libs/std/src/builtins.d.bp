@@ -313,10 +313,27 @@ pub behavior Annotation {
 // and an annotation with per-variant parameters. The names coincide because
 // there are five backends; that is the only thing they share.
 
+// `needs` (decision 518), on `Wasm` alone: the host features the binding
+// needs, from the closed enum `WasmNeed` — `#[@External.Wasm(wasi:
+// .Attempt, needs: [.Exceptions])]`. The compiler gathers the needs of every
+// binding a program reaches into the `.wasm`'s `botopink.needs` custom
+// section, and the runner hands the host only the matching flags (wasmtime's
+// `-W exceptions=y` for `Exceptions`, `-S http` for `Http`; node runs
+// exceptions by default): a program reaching none runs with no flag. `needs`
+// is no configuration — no annotation of a program turns a feature on or off
+// (decision 67). Written on another variant, or naming a value outside
+// `WasmNeed`, it is refused at the annotation (`comptime/infer.zig`
+// `refuseNeedsArg`, `conformance/modules/external_wasm_needs_unknown`); the
+// compiler's copy of the enum is `ast.WasmNeed`, kept in step by a test.
+pub type WasmNeed {
+    Exceptions,
+    Http,
+}
+
 pub type External implement Annotation {
     Erlang(template: string, inline: bool = false, result: bool = false),
     Node(template: string, result: bool = false),
-    Wasm(template: string, result: bool = false),
+    Wasm(template: string, needs: WasmNeed[] = [], result: bool = false),
     Typescript(template: string, result: bool = false),
 }
 

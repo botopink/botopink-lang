@@ -773,12 +773,6 @@ pub const ResultJumpLowering = enum { wrap_ok, wrap_error, unwrap_passthrough, y
 /// `break`, and a `break <value>` anywhere else needs a generator scope.
 pub const BreakScope = enum { none, loop, valueBlock };
 
-/// See `Env.stdTargetGates`.
-pub const StdTargetGate = struct {
-    module: []const u8,
-    loc: ast.Loc,
-};
-
 /// Decision 359 — a derived type's lineage (`Env.derivedTypes`).
 pub const DerivedLineage = struct {
     from: []const []const u8,
@@ -1385,14 +1379,11 @@ pub const Env = struct {
     /// `#[@External.<Target>(…)]` binding. Owns nothing — the FnDecl slices
     /// point into the arena where `registerStdlib` parsed them.
     stdModuleFns: std.StringHashMap([]const ast.FnDecl),
-    /// STD-001 — a namespace import of a std module some of whose host-bound
-    /// declares have no binding for the active target, keyed by the local
-    /// name it binds. The refusal belongs to the CALL of such a function, so
-    /// it waits here: a qualified call of one reds at the call, naming it
-    /// (`checkStdGatedCall`), and an import none of whose unsupported
-    /// functions is called reds at the import once the program is inferred
-    /// (`reportStdTargetGates`). Arena-owned.
-    stdTargetGates: std.StringArrayHashMapUnmanaged(StdTargetGate) = .empty,
+    /// STD-001 (decision 518 (4)) — every `fn` of each std module, private
+    /// ones too, keyed like `stdModuleFns`: the call check follows a call
+    /// through the module's own bodies to the host cell it reaches
+    /// (`infer.zig` `stdUnsupportedReach`). Owns nothing.
+    stdModuleAllFns: std.StringHashMap([]const ast.FnDecl),
     /// STD-001 — active codegen target name when this env is on the
     /// project-side compile path (null in tests / LSP / std-prelude
     /// inference). Set via `setTarget`; consumed by `markStdImports`.
@@ -1782,6 +1773,7 @@ pub const Env = struct {
             .importBound = std.StringHashMap(ast.ImportPath).init(arena),
             .stdModuleTypes = std.StringHashMap([]const ast.DeclKind).init(arena),
             .stdModuleFns = std.StringHashMap([]const ast.FnDecl).init(arena),
+            .stdModuleAllFns = std.StringHashMap([]const ast.FnDecl).init(arena),
             .stdArrayLowerings = std.AutoHashMap(ast.Loc, StdArrayLowering).init(arena),
             .instanceLowerings = std.AutoHashMap(ast.Loc, InstanceLowering).init(arena),
             .divisions = std.AutoHashMap(ast.Loc, *T.Type).init(arena),
@@ -1881,6 +1873,7 @@ pub const Env = struct {
             .importBound = std.StringHashMap(ast.ImportPath).init(arena),
             .stdModuleTypes = try tmpl.stdModuleTypes.cloneWithAllocator(arena),
             .stdModuleFns = try tmpl.stdModuleFns.cloneWithAllocator(arena),
+            .stdModuleAllFns = try tmpl.stdModuleAllFns.cloneWithAllocator(arena),
             .stdArrayLowerings = std.AutoHashMap(ast.Loc, StdArrayLowering).init(arena),
             .instanceLowerings = std.AutoHashMap(ast.Loc, InstanceLowering).init(arena),
             .divisions = std.AutoHashMap(ast.Loc, *T.Type).init(arena),
@@ -1949,6 +1942,7 @@ pub const Env = struct {
         self.importBound.deinit();
         self.stdModuleTypes.deinit();
         self.stdModuleFns.deinit();
+        self.stdModuleAllFns.deinit();
         self.stdArrayLowerings.deinit();
         self.instanceLowerings.deinit();
         self.divisions.deinit();

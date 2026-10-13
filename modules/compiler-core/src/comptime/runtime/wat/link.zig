@@ -302,7 +302,9 @@ pub fn link(alloc: std.mem.Allocator, rt_bytes: []const u8, program: wat.Module,
         },
         .table => |t| prog_table = t,
         .import, .comment => {},
-        .memory, .start, .data => return error.Malformed, // the program has none of these
+        // The program has none of these; a tag (decision 518's exceptions)
+        // is a run-time program's, which wasm3 does not run.
+        .memory, .start, .data, .tag, .custom => return error.Malformed,
     };
     for (prog_funcs.items) |f| _ = try e.typeIndex(try bin.funcType(ar, f));
     var bodies: std.ArrayListUnmanaged([]const u8) = .empty;

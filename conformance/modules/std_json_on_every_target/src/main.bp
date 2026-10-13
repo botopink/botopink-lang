@@ -2,8 +2,8 @@
 //// writers (`quote`, `array`, `object`), `unquote`, the reader `decode` with
 //// its accessors, and the host round-trip `parse` / `stringify` over
 //// documents every host writes alike. On wasm `parse` / `stringify` have no
-//// binding yet (`decisions-pending.md` 05w-j), so STD-001 refuses the import
-//// (`.wasm.expect`).
+//// binding yet (`decisions-pending.md` 05w-j), so STD-001 refuses the first
+//// call of one, never the import (decision 518 (4)).
 
 import {json} from "std";
 

@@ -106,16 +106,30 @@ pub fn programArgv(
 
     var argv = std.ArrayListUnmanaged([]const u8).empty;
     // A `wasi` build is a WASI preview 2 component (decision 334): `wasmtime
-    // run` with `wasi:http` granted (`-S http`), which a component that
-    // imports no `wasi:http` does not read.
-    // A `browser` build is `node <module>.mjs`, its loader.
+    // run` handed only the host features the program's `botopink.needs`
+    // section names (decision 518: `-W exceptions=y`, `-S http`) — none, no
+    // flag. A `browser` build is `node <module>.mjs`, its loader (node runs
+    // exceptions by default).
     switch (target) {
         .commonJS => try argv.append(arena, "node"),
-        .wasm => if (browser) try argv.append(arena, "node") else try argv.appendSlice(arena, &.{ "wasmtime", "run", "-S", "http" }),
+        .wasm => if (browser) try argv.append(arena, "node") else {
+            try argv.appendSlice(arena, &.{ "wasmtime", "run" });
+            try argv.appendSlice(arena, try wasmtimeFlags(arena, io, entry_path));
+        },
         .erlang, .beam => unreachable, // handled above
     }
     try argv.append(arena, entry_path);
     return argv.items;
+}
+
+/// Decision 518 — the `wasmtime run` flags a `wasi` build's component text at
+/// `path` asks for by its `botopink.needs` section (`-W exceptions=y`,
+/// `-S http`); none when it names no need or cannot be read (the run then
+/// reports the missing file itself).
+pub fn wasmtimeFlags(arena: std.mem.Allocator, io: std.Io, path: []const u8) ![]const []const u8 {
+    const text = std.Io.Dir.cwd().readFileAlloc(io, path, arena, .unlimited) catch return &.{};
+    var buf: [4][]const u8 = undefined;
+    return arena.dupe([]const u8, bp.codegen.wasmNeeds.wasmtimeArgs(bp.codegen.wasmNeeds.needsOfText(text), &buf));
 }
 
 // ── no `fn main` ──────────────────────────────────────────────────────────────

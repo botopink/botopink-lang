@@ -150,8 +150,11 @@ pub const Instr = union(enum) {
     /// `memory.grow` — grow by the popped page count; answers the old size,
     /// or `-1` when the host refuses (decision 261).
     memory_grow,
+    /// `throw $<tag>` — raise the module's exception tag with the operands
+    /// its parameters take (wasm exception handling, decision 518).
+    throw: []const u8,
     @"if": If,
-    /// `block` / `loop`.
+    /// `block` / `loop` / `try_table`.
     block: Block,
     /// A `;; text` line of its own.
     comment: []const u8,
@@ -186,14 +189,19 @@ pub const If = struct {
     };
 };
 
-/// `(block $label …)` / `(loop $label …)`.
+/// `(block $label …)` / `(loop $label …)` / `(try_table … (catch $tag $l) …)`.
 pub const Block = struct {
     kind: Kind,
     label: ?[]const u8 = null,
     result: ?ValType = null,
+    /// A `try_table`'s catch clauses (decision 518): an exception of `tag`
+    /// raised in the body branches to `label` with the tag's values. Their
+    /// labels are the try_table's surroundings', never its own.
+    catches: []const Catch = &.{},
     body: Seq,
 
-    pub const Kind = enum { block, loop };
+    pub const Kind = enum { block, loop, try_table };
+    pub const Catch = struct { tag: []const u8, label: []const u8 };
 };
 
 /// One output line: an instruction, the column it is written at, and an
@@ -292,6 +300,11 @@ pub const DataSegment = struct {
 pub const Item = union(enum) {
     import: Import,
     memory: Memory,
+    /// `(tag $name (param …))` — an exception tag (decision 518).
+    tag: Tag,
+    /// `(@custom "name" "…")` — a custom section; the binary writes it after
+    /// every other section (decision 518's `botopink.needs`).
+    custom: Custom,
     /// `(start $name)`.
     start: []const u8,
     /// `(table funcref (elem $f0 $f1 …))` — the functions a `call_indirect`
@@ -302,6 +315,18 @@ pub const Item = union(enum) {
     func: Func,
     /// A `;; text` line between forms.
     comment: []const u8,
+};
+
+/// An exception tag: its symbol, without `$`, and the values it carries.
+pub const Tag = struct {
+    name: []const u8,
+    params: []const ValType = &.{},
+};
+
+/// A custom section: its name and its bytes.
+pub const Custom = struct {
+    name: []const u8,
+    bytes: []const u8,
 };
 
 pub const Module = struct {
@@ -324,6 +349,8 @@ pub const Invalid = error{
     /// `call $x` where `x` is neither defined nor imported, or a table entry
     /// naming a function the module does not define.
     UndefinedCall,
+    /// A `throw` or a `catch` naming a tag the module does not declare.
+    UndefinedTag,
 };
 
 /// The export name a host calls a module's start function by (decision 334).
@@ -412,14 +439,27 @@ pub fn validateModule(m: Module) Invalid!void {
     };
 }
 
+/// Whether the module declares the exception tag `name`.
+pub fn declaresTag(m: Module, name: []const u8) bool {
+    for (m.items) |it| switch (it) {
+        .tag => |t| if (std.mem.eql(u8, t.name, name)) return true,
+        else => {},
+    };
+    return false;
+}
+
 fn checkCalls(m: Module, s: Seq) Invalid!void {
     for (s.lines) |l| switch (l.instr) {
         .call => |name| if (!declaresCall(m, name)) return error.UndefinedCall,
+        .throw => |name| if (!declaresTag(m, name)) return error.UndefinedTag,
         .@"if" => |n| {
             try checkCalls(m, n.then.seq);
             if (n.@"else") |e| try checkCalls(m, e.seq);
         },
-        .block => |b| try checkCalls(m, b.body),
+        .block => |b| {
+            for (b.catches) |c| if (!declaresTag(m, c.tag)) return error.UndefinedTag;
+            try checkCalls(m, b.body);
+        },
         else => {},
     };
 }
@@ -575,6 +615,16 @@ pub const HelperGroup = enum {
     /// A module holding it gets the capturing `$__write_bytes`
     /// (`print_items_capture`).
     text_capture,
+    /// Decision 518 — `$__panic_raise(msg, print)`: an abort raised as the
+    /// module's exception tag `$__bp_panic` (`wat_prelude.panic_tag`) when
+    /// the program reaches a binding that `needs: [.Exceptions]`, so
+    /// `attempt` can catch it; uncaught, the entry writes what `@panic`
+    /// writes and traps.
+    panic_raise,
+    /// Decision 518 — `wasi:attempt`, `$__wasi_attempt(f)`: the thunk `f`
+    /// called inside a `try_table` catching `$__bp_panic` — `Ok` of its value
+    /// or `Error` of the abort's message.
+    wasi_attempt,
 
     /// The groups `g`'s functions call into.
     pub fn deps(g: HelperGroup) []const HelperGroup {
@@ -611,6 +661,8 @@ pub const HelperGroup = enum {
             .task_spawn_all => &.{ .task, .arr_new },
             .task_gate => &.{.task_delay},
             .text_capture => &.{ .print, .alloc },
+            .panic_raise => &.{.alloc},
+            .wasi_attempt => &.{.alloc},
             else => &.{},
         };
     }
@@ -735,6 +787,8 @@ pub const Helper = enum {
     task_host_cancel,
     cap_begin,
     cap_end,
+    panic_raise,
+    wasi_attempt,
 
     pub fn symbol(h: Helper) []const u8 {
         return switch (h) {

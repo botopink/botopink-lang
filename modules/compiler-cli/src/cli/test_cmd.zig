@@ -654,8 +654,11 @@ pub fn run(
             const atom = std.fs.path.stem(sub_path);
             try argv.appendSlice(arena, &.{ "-noshell", "-pa", test_out, "-eval", try std.fmt.allocPrint(arena, "'{s}':main(init:get_plain_arguments()), halt().", .{atom}), "-extra" });
         } else if (target == .wasm) {
-            // A WASI preview 2 component, `wasi:http` granted as `run` does.
-            try argv.appendSlice(arena, &.{ "run", "-S", "http", sub_path });
+            // A WASI preview 2 component, handed the host features its
+            // `botopink.needs` section names, as `run` does (decision 518).
+            try argv.append(arena, "run");
+            try argv.appendSlice(arena, try run_cmd.wasmtimeFlags(arena, io, sub_path));
+            try argv.append(arena, sub_path);
         } else try argv.append(arena, sub_path);
         if (opts.filter) |f| try argv.append(arena, f);
 

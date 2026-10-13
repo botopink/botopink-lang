@@ -62,6 +62,10 @@ pub const Shape = enum {
     array_task_t,
     /// `Array<fn() -> @Task<T>>` — unstarted ones.
     array_thunk_task_t,
+    /// `fn() -> T` — a thunk (decision 518's `attempt`).
+    thunk_t,
+    /// `@Result<T, E>` over the type parameter, whatever `E`.
+    result_t,
     /// Anything else.
     other,
 
@@ -73,13 +77,15 @@ pub const Shape = enum {
             .task_array_t => "@Task<Array<T>>",
             .array_task_t => "Array<@Task<T>>",
             .array_thunk_task_t => "Array<fn() -> @Task<T>>",
+            .thunk_t => "fn() -> T",
+            .result_t => "@Result<T, string>",
             .other => "another type",
         };
     }
 };
 
-/// An adapter answering `@Task<T>` over a generic `T` (decision 393): its
-/// parameters' and result's shapes.
+/// An adapter over a generic `T` (decision 393's task adapters, decision
+/// 518's `attempt`): its parameters' and result's shapes.
 pub const TaskSig = struct { params: []const Shape, result: Shape };
 
 /// A host adapter: the compiler-owned bridge from a host call to a botopink
@@ -114,6 +120,7 @@ pub const adapters = [_]Adapter{
     .{ .name = "gate_new", .result = .unknown, .what = "a closed gate: a pending task no host answers, opened by `gate_open`" },
     .{ .name = "gate_open", .params = &.{.unknown}, .what = "the gate opened: every task waiting on it answers `true`, and each wait's own timer is dropped; opening an open gate changes nothing" },
     .{ .name = "gate_await", .params = &.{ .unknown, .i32 }, .result = .bool, .answers_task = true, .what = "a task answering `true` once the gate is open (at once when it is), `false` when the milliseconds pass first on the host's monotonic clock (the `delay` adapter's pollable)" },
+    .{ .name = "attempt", .task = .{ .params = &.{.thunk_t}, .result = .result_t }, .what = "the thunk called inside a `try_table` catching the program's aborts (wasm exception handling, decision 518 — the binding declares `needs: [.Exceptions]`): `Ok` of its value, or `Error` of the abort's message" },
 };
 
 pub const Binding = union(enum) {
@@ -244,6 +251,8 @@ fn shapeOf(t: ast.TypeRef, tp: []const u8) Shape {
         if (taskValue(el)) |v| if (isParam(v, tp)) return .array_task_t;
         if (el == .function and el.function.params.len == 0) if (taskValue(el.function.returnType.*)) |v| if (isParam(v, tp)) return .array_thunk_task_t;
     }
+    if (t == .function and t.function.params.len == 0 and isParam(t.function.returnType.*, tp)) return .thunk_t;
+    if (t == .generic and t.generic.is_builtin and std.mem.eql(u8, t.generic.name, "Result") and t.generic.args.len == 2 and isParam(t.generic.args[0], tp)) return .result_t;
     return .other;
 }
 

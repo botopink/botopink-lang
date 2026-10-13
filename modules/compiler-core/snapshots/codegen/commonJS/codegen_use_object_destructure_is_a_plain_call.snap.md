@@ -262,7 +262,7 @@ exports.createContext = createContext;
 // to itself or a sibling; the nearest provider of a type wins.
 
 function provide(ctx) {
-    (() => { throw new Error("`use provide` / `use context` are lowered where they are written; this body never runs") })();
+    (() => { throw Object.defineProperty(new Error("`use provide` / `use context` are lowered where they are written; this body never runs"), '__bp_panic', { value: true }) })();
 }
 exports.provide = provide;
 
@@ -273,7 +273,7 @@ exports.provide = provide;
 // reads off the type the argument names (decision 379 (3)).
 
 function context(t) {
-    (() => { throw new Error("`use provide` / `use context` are lowered where they are written; this body never runs") })();
+    (() => { throw Object.defineProperty(new Error("`use provide` / `use context` are lowered where they are written; this body never runs"), '__bp_panic', { value: true }) })();
 }
 exports.context = context;
 
@@ -290,7 +290,7 @@ exports.context = context;
 // implements, so a field typed by the behavior reads it.
 
 function inject(t) {
-    (() => { throw new Error("`use inject` is lowered where it is written; this body never runs") })();
+    (() => { throw Object.defineProperty(new Error("`use inject` is lowered where it is written; this body never runs"), '__bp_panic', { value: true }) })();
 }
 exports.inject = inject;
 

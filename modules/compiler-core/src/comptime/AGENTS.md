@@ -1409,20 +1409,35 @@ else { null }`, binder `__bp_optf_<line>_<col>`), recorded in `enumSectionRewrit
 access's loc for the transform to splice, and answers the access as a `?.` link so a link after it
 continues too (`continuesOptionalChain`).
 
-## STD-001 names the function called (C-03)
+## STD-001 refuses at the call, never at the import (C-03, decision 518 (4))
 
-`std-unsupported-on-target` belongs to the call of a host-bound std function
-with no binding for the target, and names it at the call. A symbol import
-(`import {erlang.node}`) is refused at the import, naming its leaf when the leaf
-is one; a namespace import is recorded (`gateStdTargetSupport`,
-`Env.stdTargetGates`) and a qualified call of one of the module's unsupported
-functions reds at the call (`checkStdGatedCall`). A gated import none of whose
-unsupported functions is called is still refused — the module has no binding
-for the target — at the import, once the program is inferred
-(`reportStdTargetGates`), naming the module and every function it lacks. It
-named the module's first unsupported declaration (`std/erlang.abs`) at no
-location. Cells: `conformance/modules/std_unsupported_names_the_call`,
-`modules/std_erlang_node`, `modules/import_std_folder_namespace` (`wasm.expect`).
+`std-unsupported-on-target` belongs to the call of a std function that reaches a
+host-bound declaration with no binding for the target, and names it at the call.
+`inferCallExprWith` asks `stdCallee` which std function a call names — through a
+namespace (`clock.nowMillis()`, a folder's `io.clock.…` after `std_namespace`'s
+rewrite) or a leaf import (`node()` after `import {erlang.node}`) — and
+`checkStdCall` refuses it when `stdUnsupportedReach` finds a declaration with no
+binding: the function itself, or one its body reaches through its module's own
+functions (`Env.stdModuleAllFns`, every `fn` of the module, private ones too,
+followed by `ast.collectNames`) — the message then names both
+(``std/io/clock.nowMillis reaches `systemTimeWithUnit`, which has no …``). An
+import is never refused: `std/failure`, `erlang`, `io/process` import on every
+target, and a declaration nothing calls costs nothing. A function value taken
+without a call is the backend's refusal. Cells:
+`conformance/modules/std_unsupported_refused_at_the_call`,
+`modules/std_unsupported_names_the_call`, `modules/std_erlang_node`,
+`modules/import_std_folder_namespace`, `modules/std_asserts_host_cell_on_wasm`.
+
+## `needs:` on `@External.Wasm` (decision 518)
+
+`refuseNeedsArg` (beside `refuseHostArg`, on every `declare fn`, method and
+behavior method, every target) holds `needs:` to std's closed enum `WasmNeed {
+Exceptions, Http }` (`builtins.d.bp`; the compiler's copy is `ast.WasmNeed`, a
+test keeps them in step): a list, each item `.Exceptions` or `.Http`, on
+`External.Wasm` alone — anything else is refused at the annotation
+(`conformance/modules/external_wasm_needs_unknown`). `checkExternalCells` and the
+arity count skip it, as they skip `host:`; the parser reads the `[…]` list as
+one argument.
 
 ## An integer literal takes the width its position asks for (01-std's handover)
 

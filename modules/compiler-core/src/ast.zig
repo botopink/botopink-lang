@@ -2180,6 +2180,74 @@ pub const ExternalLookup = struct {
     }
 };
 
+/// Decision 518 — a host feature a wasm binding needs, from std's closed
+/// enum `WasmNeed` (`libs/std/src/builtins.d.bp`, kept in step by a test):
+/// `#[@External.Wasm(…, needs: [.Exceptions])]`. The compiler gathers the
+/// needs of every binding a program reaches into the `.wasm`'s
+/// `botopink.needs` custom section, and the runner hands the host only the
+/// matching flags (`wasmtime run -W exceptions=y`, `-S http`).
+pub const WasmNeed = enum {
+    exceptions,
+    http,
+
+    /// The written value of one item — `.Exceptions` / `.Http` —, or null.
+    pub fn ofItem(item: []const u8) ?WasmNeed {
+        if (std.mem.eql(u8, item, ".Exceptions")) return .exceptions;
+        if (std.mem.eql(u8, item, ".Http")) return .http;
+        return null;
+    }
+
+    /// The value as std's enum spells it (`Exceptions`).
+    pub fn spelling(self: WasmNeed) []const u8 {
+        return switch (self) {
+            .exceptions => "Exceptions",
+            .http => "Http",
+        };
+    }
+};
+
+/// A set of `WasmNeed`s.
+pub const WasmNeeds = std.EnumSet(WasmNeed);
+
+/// The index of the argument an annotation labels `needs:`, or null.
+pub fn needsArgIndex(a: Annotation) ?usize {
+    for (a.args, 0..) |_, i| {
+        if (a.labelOf(i)) |label| if (std.mem.eql(u8, label, "needs")) return i;
+    }
+    return null;
+}
+
+/// The items of a written `needs:` list (`[.Exceptions, .Http]`), trimmed;
+/// null when the text is no `[…]` list.
+pub fn needsItems(alloc: std.mem.Allocator, arg: []const u8) !?[]const []const u8 {
+    const t = std.mem.trim(u8, arg, " \t\r\n");
+    if (t.len < 2 or t[0] != '[' or t[t.len - 1] != ']') return null;
+    var out: std.ArrayListUnmanaged([]const u8) = .empty;
+    const inner = std.mem.trim(u8, t[1 .. t.len - 1], " \t\r\n");
+    if (inner.len == 0) return out.items;
+    var it = std.mem.splitScalar(u8, inner, ',');
+    while (it.next()) |raw| {
+        const item = std.mem.trim(u8, raw, " \t\r\n");
+        if (item.len == 0) continue; // a trailing comma
+        try out.append(alloc, item);
+    }
+    return out.items;
+}
+
+/// The needs `a`'s `needs:` argument declares; empty when it writes none or
+/// an item outside `WasmNeed` (the checker refuses those at the annotation).
+pub fn wasmNeedsOf(a: Annotation) WasmNeeds {
+    var set = WasmNeeds.initEmpty();
+    const at = needsArgIndex(a) orelse return set;
+    const t = std.mem.trim(u8, a.args[at], " \t\r\n");
+    if (t.len < 2 or t[0] != '[' or t[t.len - 1] != ']') return set;
+    var it = std.mem.splitScalar(u8, t[1 .. t.len - 1], ',');
+    while (it.next()) |raw| {
+        if (WasmNeed.ofItem(std.mem.trim(u8, raw, " \t\r\n"))) |n| set.insert(n);
+    }
+    return set;
+}
+
 /// The index of the argument an annotation labels `host:`, or null.
 pub fn hostArgIndex(a: Annotation) ?usize {
     for (a.args, 0..) |_, i| {
@@ -2297,9 +2365,9 @@ pub fn wasmCellDisplay(alloc: std.mem.Allocator, text: []const u8) ![]u8 {
 /// The `(module, symbol)` of `a` when it is an `External.<member>` annotation
 /// serving `lookup` (`ExternalLookup.of`): a `host:` argument other than the
 /// lookup's host passes it by, and is not counted among the template's
-/// arguments; neither is any bool flag — `inline:`, `result:` (decisions 487,
-/// 490), wherever it is written, or a bare `true` / `false` the checker
-/// refuses.
+/// arguments; neither is wasm's `needs:` list (decision 518) nor any bool
+/// flag — `inline:`, `result:` (decisions 487, 490), wherever it is written,
+/// or a bare `true` / `false` the checker refuses.
 pub fn externalRefOf(a: Annotation, target: []const u8) ?ExternalRef {
     const lookup = ExternalLookup.of(target);
     if (!std.mem.startsWith(u8, a.name, "External.")) return null;
@@ -2308,10 +2376,12 @@ pub fn externalRefOf(a: Annotation, target: []const u8) ?ExternalRef {
     if (host_at) |h| if (lookup.host) |want| {
         if (WasmHost.ofArg(a.args[h]) != want) return null;
     };
+    const needs_at = needsArgIndex(a);
     var pos: [3][]const u8 = undefined;
     var n: usize = 0;
     for (a.args, 0..) |arg, i| {
         if (host_at != null and i == host_at.?) continue;
+        if (needs_at != null and i == needs_at.?) continue;
         if (isExternalFlagArg(a, i)) continue;
         if (n == pos.len) return null;
         pos[n] = arg;

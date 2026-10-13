@@ -1554,13 +1554,6 @@ const Emitter = struct {
     /// wraps the body in the guard that turns the thrown Result back into
     /// the propagated one (`guardExprTry`). Saved and restored per function.
     expr_try_used: bool = false,
-    /// Host functions of this module declared `-> @Task<@Result<T, E>>`
-    /// without `result: true` (decision 126): every call — and a `pub`
-    /// template's exported wrapper — goes through `__bp_host_task`, so a
-    /// rejection becomes `Error(e)`. Decision 490 retires the conversion; it
-    /// stays while a library binding reads it (a task-catching binding that
-    /// 144 B-07 replaces with `attempt`).
-    host_task_externals: std.StringHashMap(void) = undefined,
     /// The `result: true` bindings of this module (decisions 431, 490): each
     /// is a function of its own (`buildResultBinding`) whose body runs the
     /// host call through `__bp_host_result` / `__bp_host_result_task`, so a call is a
@@ -1998,12 +1991,12 @@ const Emitter = struct {
     /// to lower `@panic(…)` / `@todo(…)`.
     fn registerInlineBuiltinDispatch(self: *Emitter) !void {
         try self.putInlineBuiltin("todo", &.{
-            .{ .argc = 0, .template = "(() => { throw new Error(\"not implemented\") })()" },
-            .{ .argc = 1, .template = "(() => { throw new Error($0) })()" },
+            .{ .argc = 0, .template = "(() => { throw Object.defineProperty(new Error(\"not implemented\"), '__bp_panic', { value: true }) })()" },
+            .{ .argc = 1, .template = "(() => { throw Object.defineProperty(new Error($0), '__bp_panic', { value: true }) })()" },
         });
         try self.putInlineBuiltin("panic", &.{
-            .{ .argc = 0, .template = "(() => { throw new Error(\"panic\") })()" },
-            .{ .argc = 1, .template = "(() => { throw new Error($0) })()" },
+            .{ .argc = 0, .template = "(() => { throw Object.defineProperty(new Error(\"panic\"), '__bp_panic', { value: true }) })()" },
+            .{ .argc = 1, .template = "(() => { throw Object.defineProperty(new Error($0), '__bp_panic', { value: true }) })()" },
         });
         // §D1: `print`/`println`/`debug` — host `console.log`/`console.debug`
         // via the same template machinery. Variadic shape via `$args` (the
@@ -2093,7 +2086,6 @@ const Emitter = struct {
     fn collectExternals(self: *Emitter, program: ast.Program) !void {
         if (!self.host_returns_init) {
             self.result_bindings = std.StringHashMap(void).init(self.arena());
-            self.host_task_externals = std.StringHashMap(void).init(self.arena());
             self.host_returns = std.StringHashMap(ast.TypeRef).init(self.arena());
             self.host_returns_init = true;
         }
@@ -2106,7 +2098,6 @@ const Emitter = struct {
                     try self.result_bindings.put(f.name, {});
                     continue;
                 }
-                if (isTaskOfResult(f.returnType)) try self.host_task_externals.put(f.name, {});
                 // §A2 arity-branched template: `when(argc == N): "<tmpl>"`.
                 if (ast.externalHasArityBranches(f.annotations, "node")) {
                     var branches: std.ArrayList(ast.ArityBranch) = .empty;
@@ -2559,8 +2550,6 @@ const Emitter = struct {
         // the host fails as `Error(HostError(…))`, as the module-level form does.
         const wrapped = if (ast.externalResultFor(m.annotations, "node"))
             try self.wrapResult(m.returnType, value)
-        else if (isTaskOfResult(m.returnType))
-            try self.b.call(self.helper(.host_task), &.{try self.adoptHost(m.returnType, value)})
         else
             try self.adoptHost(m.returnType, value);
         return .{
@@ -2688,10 +2677,7 @@ const Emitter = struct {
             }
         } else {
             const value = try self.renderParamTemplate(call.symbol, &holes, names.items.len) orelse return null;
-            // Decision 126 — the exported face of a `-> @Task<@Result<…>>` host fn.
-            const adopted = try self.adoptHost(f.returnType, value);
-            const wrapped = if (isTaskOfResult(f.returnType)) try self.b.call(self.helper(.host_task), &.{adopted}) else adopted;
-            try body.append(self.arena(), .{ .return_ = wrapped });
+            try body.append(self.arena(), .{ .return_ = try self.adoptHost(f.returnType, value) });
         }
         return .{ .function = .{
             .name = f.name,
@@ -6268,13 +6254,6 @@ const Emitter = struct {
             (if (self.host_returns.get(cc.callee)) |rt| try self.adoptHost(rt, raw) else raw)
         else
             raw;
-        // Decision 126 — a host call declared `-> @Task<@Result<T, E>>`
-        // without `result: true`.
-        if (!cc.is_builtin and cc.receiver == null and self.host_returns_init and
-            self.host_task_externals.contains(cc.callee))
-        {
-            return self.b.call(self.helper(.host_task), &.{out});
-        }
         return out;
     }
 
@@ -6720,11 +6699,11 @@ const Emitter = struct {
         const is_panic = std.mem.eql(u8, cc.callee, "panic");
         if (is_todo or is_panic) {
             const template: []const u8 = if (cc.args.len > 0)
-                "(() => { throw new Error($0) })()"
+                "(() => { throw Object.defineProperty(new Error($0), '__bp_panic', { value: true }) })()"
             else if (is_todo)
-                "(() => { throw new Error(\"not implemented\") })()"
+                "(() => { throw Object.defineProperty(new Error(\"not implemented\"), '__bp_panic', { value: true }) })()"
             else
-                "(() => { throw new Error(\"panic\") })()";
+                "(() => { throw Object.defineProperty(new Error(\"panic\"), '__bp_panic', { value: true }) })()";
             return self.renderTemplate(template, cc, cc.args.len, error.PrimOpRecvInBuiltinTemplate);
         }
 

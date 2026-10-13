@@ -1570,6 +1570,19 @@ pub const Parser = struct {
                     const first = this.advance(); // `-`
                     const last = this.advance(); // the digits
                     try args.append(alloc, spanLexemes(first, last));
+                } else if (this.check(.leftSquareBracket)) {
+                    // Decision 518 — a list of enum values (`needs:
+                    // [.Exceptions, .Http]`) is one argument, spanned from
+                    // `[` to its `]`; the checker reads its items.
+                    const first = this.advance(); // `[`
+                    var last = first;
+                    var depth: usize = 1;
+                    while (depth > 0 and !this.check(.endOfFile)) {
+                        if (this.check(.leftSquareBracket)) depth += 1;
+                        if (this.check(.rightSquareBracket)) depth -= 1;
+                        last = this.advance();
+                    }
+                    try args.append(alloc, spanLexemes(first, last));
                 } else {
                     const tok = this.advance();
                     try args.append(alloc, tok.lexeme);

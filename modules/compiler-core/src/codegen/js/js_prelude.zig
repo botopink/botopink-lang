@@ -78,13 +78,6 @@ pub const Helper = enum {
     /// with `host_fail`'s `HostError` for a rejection or a throw before the
     /// Promise exists.
     host_result_task,
-    /// A host function declared `-> @Task<@Result<T, E>>` WITHOUT `result:
-    /// true` (decision 126): a failing task (`task`) that resolves with the
-    /// host's `v` and rejects with `<message>` for the host's rejection.
-    /// Decision 490 retires it; it stays while a library binding still reads
-    /// it (a library's task-catching binding, which 144 B-07 replaces with
-    /// `attempt`).
-    host_task,
     /// Decision 432 — a failing task: `__bp_task(p)` takes the Promise of a
     /// `@Task<@Result<T, E>>` body, which settles with the `{ ok }` /
     /// `{ error }` value the body built, and answers the task botopink's
@@ -192,7 +185,7 @@ pub const Helper = enum {
 };
 
 /// Emission order of the helpers a module uses.
-pub const order = [_]Helper{ .assert_fatal, .str_surrogate, .str_count, .string_char_at, .str_length, .str_index_of, .str_last_index_of, .array_at, .range_from, .structural_eq, .f64_text, .show, .text, .print, .print_as, .try_unwrap, .host_fail, .task, .await_task, .host_result, .host_result_task, .host_task, .adopt, .yield_step, .int_check, .wide_norm, .wide_add, .wide_sub, .wide_mul, .wide_div, .wide_mod, .wide_neg, .big_div, .big_mod };
+pub const order = [_]Helper{ .assert_fatal, .str_surrogate, .str_count, .string_char_at, .str_length, .str_index_of, .str_last_index_of, .array_at, .range_from, .structural_eq, .f64_text, .show, .text, .print, .print_as, .try_unwrap, .host_fail, .task, .await_task, .host_result, .host_result_task, .adopt, .yield_step, .int_check, .wide_norm, .wide_add, .wide_sub, .wide_mul, .wide_div, .wide_mod, .wide_neg, .big_div, .big_mod };
 
 /// The helpers `h`'s body calls, which a module calling `h` carries too.
 pub fn requires(h: Helper) []const Helper {
@@ -202,7 +195,6 @@ pub fn requires(h: Helper) []const Helper {
         .text => &.{ .show, .f64_text },
         .host_result => &.{.host_fail},
         .host_result_task => &.{ .host_fail, .task },
-        .host_task => &.{.task},
         .string_char_at, .str_length => &.{.str_surrogate},
         .str_index_of, .str_last_index_of => &.{ .str_surrogate, .str_count },
         else => &.{},
@@ -251,7 +243,6 @@ pub fn name(h: Helper) []const u8 {
         .host_fail => "__bp_host_fail",
         .host_result => "__bp_host_result",
         .host_result_task => "__bp_host_result_task",
-        .host_task => "__bp_host_task",
         .task => "__bp_task",
         .await_task => "__bp_await",
         .adopt => "__bp_adopt",
@@ -291,7 +282,6 @@ pub fn decl(h: Helper) ast.Stmt {
         .host_fail => host_fail,
         .host_result => host_result,
         .host_result_task => host_result_task,
-        .host_task => host_task,
         .task => task,
         .await_task => await_task,
         .adopt => adopt,
@@ -373,7 +363,7 @@ const show_text: ast.Stmt = hFn("__bp_text", &.{"v"}, &.{
 /// `function __bp_wnorm(v, u, what) { … }` — see `Helper.wide_norm`.
 const wide_norm: ast.Stmt = hFn("__bp_wnorm", &.{ "v", "u", "what" }, &.{
     hIf("u ? (v < 0n || v > 18446744073709551615n) : (v < -9223372036854775808n || v > 9223372036854775807n)", &.{
-        .{ .throw_ = hx("new Error(\"integer overflow: \" + what)") },
+        .{ .throw_ = hx("Object.defineProperty(new Error(\"integer overflow: \" + what), \"__bp_panic\", { value: true })") },
     }),
     hRet("(v >= -9007199254740991n && v <= 9007199254740991n) ? Number(v) : v"),
 });
@@ -394,7 +384,7 @@ fn wideArith(comptime fn_name: []const u8, comptime op: []const u8) ast.Stmt {
 /// (`Helper.wide_div`). `b == 0` is loose so `0n` is zero too.
 fn wideDivision(comptime fn_name: []const u8, comptime op: []const u8, comptime fast: []const u8) ast.Stmt {
     return hFn(fn_name, &.{ "a", "b", "u", "what" }, &.{
-        hIf("b == 0", &.{.{ .throw_ = hx("new Error(\"integer division by zero: \" + what)") }}),
+        hIf("b == 0", &.{.{ .throw_ = hx("Object.defineProperty(new Error(\"integer division by zero: \" + what), \"__bp_panic\", { value: true })") }}),
         hIf("typeof a === \"number\" && typeof b === \"number\"", &.{hRet(fast)}),
         hRet("__bp_wnorm(BigInt(a) " ++ op ++ " BigInt(b), u, what)"),
     });
@@ -404,7 +394,7 @@ fn wideDivision(comptime fn_name: []const u8, comptime op: []const u8, comptime 
 /// (`Helper.big_div`).
 fn bigDivision(comptime fn_name: []const u8, comptime op: []const u8) ast.Stmt {
     return hFn(fn_name, &.{ "a", "b", "what" }, &.{
-        hIf("b === 0n", &.{.{ .throw_ = hx("new Error(\"integer division by zero: \" + what)") }}),
+        hIf("b === 0n", &.{.{ .throw_ = hx("Object.defineProperty(new Error(\"integer division by zero: \" + what), \"__bp_panic\", { value: true })") }}),
         hRet("a " ++ op ++ " b"),
     });
 }
@@ -481,25 +471,34 @@ const cond: ast.Expr = .{ .name = "cond" };
 const msg: ast.Expr = .{ .name = "msg" };
 const loc: ast.Expr = .{ .name = "loc" };
 
-/// `function __bp_assert_fatal(cond, msg, loc) { if (!cond) { throw new Error((msg ?? "assertion failed") + " at " + loc); } }`
+/// `function __bp_assert_fatal(cond, msg, loc) { if (!cond) { throw Object.defineProperty(new Error((msg ?? "assertion failed") + " at " + loc), "__bp_panic", { value: msg ?? "assertion failed" }); } }`
+/// — the mark carries the message alone, which std's `failure.attempt` reads
+/// as the `Failure`'s message (an abort, kind `panic`).
 const assert_fatal: ast.Stmt = .{ .function = .{
     .name = "__bp_assert_fatal",
     .params = &.{ .{ .pattern = .{ .name = "cond" } }, .{ .pattern = .{ .name = "msg" } }, .{ .pattern = .{ .name = "loc" } } },
     .body = .{ .stmts = &.{.{ .if_ = .{
         .cond = .{ .unary = .{ .op = "!", .operand = &cond, .parens = false } },
-        .then = &.{ .block = .{ .stmts = &.{.{ .throw_ = .{ .new_ = .{
-            .callee = &.{ .name = "Error" },
-            .args = &.{.{ .binary = .{
-                .op = "+",
-                .lhs = &.{ .binary = .{
-                    .op = "+",
-                    .lhs = &.{ .binary = .{ .op = "??", .lhs = &msg, .rhs = &.{ .quoted = "assertion failed" } } },
-                    .rhs = &.{ .quoted = " at " },
-                    .parens = false,
+        .then = &.{ .block = .{ .stmts = &.{.{ .throw_ = .{ .call = .{
+            .callee = &.{ .member = .{ .object = &.{ .name = "Object" }, .name = "defineProperty" } },
+            .args = &.{
+                .{ .new_ = .{
+                    .callee = &.{ .name = "Error" },
+                    .args = &.{.{ .binary = .{
+                        .op = "+",
+                        .lhs = &.{ .binary = .{
+                            .op = "+",
+                            .lhs = &.{ .binary = .{ .op = "??", .lhs = &msg, .rhs = &.{ .quoted = "assertion failed" } } },
+                            .rhs = &.{ .quoted = " at " },
+                            .parens = false,
+                        } },
+                        .rhs = &loc,
+                        .parens = false,
+                    } }},
                 } },
-                .rhs = &loc,
-                .parens = false,
-            } }},
+                .{ .quoted = "__bp_panic" },
+                hx("{ value: msg ?? \"assertion failed\" }"),
+            },
         } } }}, .layout = .spaced } },
     } }}, .layout = .spaced },
 } };
@@ -552,12 +551,6 @@ const await_task: ast.Stmt = hFn("__bp_await", &.{"t"}, &.{
     hRet("(t != null && t.__bp_fails === true) ? t.then((v) => ({ ok: v }), (e) => { if (t.__bp_failure === true) { return { error: e }; } throw e; }) : t"),
 });
 
-/// `function __bp_host_task(p) { return __bp_task(Promise.resolve(p).then((v) => ({ ok: v }),
-/// (e) => ({ error: (e && e.message) ? e.message : String(e) }))); }`
-const host_task: ast.Stmt = hFn("__bp_host_task", &.{"p"}, &.{
-    hRet("__bp_task(Promise.resolve(p).then((v) => ({ ok: v }), (e) => ({ error: (e && e.message) ? e.message : String(e) })))"),
-});
-
 /// `function __bp_adopt(v, C, p) { return … }` — see `Helper.adopt`.
 const adopt: ast.Stmt = .{ .function = .{
     .name = "__bp_adopt",
@@ -581,18 +574,25 @@ const int_check: ast.Stmt = .{ .function = .{
             } },
             .then = &.{ .block = .{ .stmts = &.{.{ .return_ = .{ .binary = .{ .op = "+", .lhs = &iv, .rhs = &.{ .number = "0" }, .parens = false } } }}, .layout = .spaced } },
         } },
-        .{ .throw_ = .{ .new_ = .{
-            .callee = &.{ .name = "Error" },
-            .args = &.{.{ .binary = .{
-                .op = "+",
-                .lhs = &.{ .paren = &.{ .ternary = .{
-                    .cond = &.{ .call = .{ .callee = &.{ .member = .{ .object = &.{ .name = "Number" }, .name = "isFinite" } }, .args = &.{iv} } },
-                    .then = &.{ .quoted = "integer overflow: " },
-                    .else_ = &.{ .quoted = "integer division by zero: " },
-                } } },
-                .rhs = &.{ .name = "what" },
-                .parens = false,
-            } }},
+        .{ .throw_ = .{ .call = .{
+            .callee = &.{ .member = .{ .object = &.{ .name = "Object" }, .name = "defineProperty" } },
+            .args = &.{
+                .{ .new_ = .{
+                    .callee = &.{ .name = "Error" },
+                    .args = &.{.{ .binary = .{
+                        .op = "+",
+                        .lhs = &.{ .paren = &.{ .ternary = .{
+                            .cond = &.{ .call = .{ .callee = &.{ .member = .{ .object = &.{ .name = "Number" }, .name = "isFinite" } }, .args = &.{iv} } },
+                            .then = &.{ .quoted = "integer overflow: " },
+                            .else_ = &.{ .quoted = "integer division by zero: " },
+                        } } },
+                        .rhs = &.{ .name = "what" },
+                        .parens = false,
+                    } }},
+                } },
+                .{ .quoted = "__bp_panic" },
+                hx("{ value: true }"),
+            },
         } } },
     }, .layout = .spaced },
 } };
@@ -1140,7 +1140,7 @@ test "js_prelude: an integer outside its type's range aborts (decision 264)" {
     defer aw.deinit();
     try @import("js_emitter.zig").writeStmt(&aw.writer, decl(.int_check), 0);
     try std.testing.expectEqualStrings(
-        \\function __bp_int(v, lo, hi, what) { if (v >= lo && v <= hi) { return v + 0; } throw new Error((Number.isFinite(v) ? "integer overflow: " : "integer division by zero: ") + what); }
+        \\function __bp_int(v, lo, hi, what) { if (v >= lo && v <= hi) { return v + 0; } throw Object.defineProperty(new Error((Number.isFinite(v) ? "integer overflow: " : "integer division by zero: ") + what), "__bp_panic", { value: true }); }
     , aw.written());
 }
 
@@ -1155,7 +1155,7 @@ test "js_prelude: a 64-bit integer is a number or a BigInt, the full range (deci
     try emitter.writeStmt(&aw.writer, decl(.wide_div), 0);
     try std.testing.expectEqualStrings(
         \\function __bp_wnorm(v, u, what) {
-        \\    if (u ? (v < 0n || v > 18446744073709551615n) : (v < -9223372036854775808n || v > 9223372036854775807n)) { throw new Error("integer overflow: " + what); }
+        \\    if (u ? (v < 0n || v > 18446744073709551615n) : (v < -9223372036854775808n || v > 9223372036854775807n)) { throw Object.defineProperty(new Error("integer overflow: " + what), "__bp_panic", { value: true }); }
         \\    return (v >= -9007199254740991n && v <= 9007199254740991n) ? Number(v) : v;
         \\}
         \\function __bp_wadd(a, b, u, what) {
@@ -1163,7 +1163,7 @@ test "js_prelude: a 64-bit integer is a number or a BigInt, the full range (deci
         \\    return __bp_wnorm(BigInt(a) + BigInt(b), u, what);
         \\}
         \\function __bp_wdiv(a, b, u, what) {
-        \\    if (b == 0) { throw new Error("integer division by zero: " + what); }
+        \\    if (b == 0) { throw Object.defineProperty(new Error("integer division by zero: " + what), "__bp_panic", { value: true }); }
         \\    if (typeof a === "number" && typeof b === "number") { return Math.trunc(a / b) + 0; }
         \\    return __bp_wnorm(BigInt(a) / BigInt(b), u, what);
         \\}
@@ -1182,7 +1182,7 @@ test "js_prelude: a bigint divides as a BigInt, a zero divisor named (decision 3
     try emitter.writeStmt(&aw.writer, decl(.big_div), 0);
     try std.testing.expectEqualStrings(
         \\function __bp_bdiv(a, b, what) {
-        \\    if (b === 0n) { throw new Error("integer division by zero: " + what); }
+        \\    if (b === 0n) { throw Object.defineProperty(new Error("integer division by zero: " + what), "__bp_panic", { value: true }); }
         \\    return a / b;
         \\}
     , aw.written());
@@ -1228,7 +1228,7 @@ test "js_prelude: a failed assert throws with its message and location" {
     defer aw.deinit();
     try @import("js_emitter.zig").writeStmt(&aw.writer, decl(.assert_fatal), 0);
     try std.testing.expectEqualStrings(
-        "function __bp_assert_fatal(cond, msg, loc) { if (!cond) { throw new Error((msg ?? \"assertion failed\") + \" at \" + loc); } }",
+        "function __bp_assert_fatal(cond, msg, loc) { if (!cond) { throw Object.defineProperty(new Error((msg ?? \"assertion failed\") + \" at \" + loc), \"__bp_panic\", { value: msg ?? \"assertion failed\" }); } }",
         aw.written(),
     );
 }

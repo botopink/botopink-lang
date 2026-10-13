@@ -13,7 +13,7 @@ fn main() {
 ----- JAVASCRIPT -- main.js
 ```javascript
 function calc(factor) {
-    (() => { throw new Error("not implemented") })();
+    (() => { throw Object.defineProperty(new Error("not implemented"), '__bp_panic', { value: true }) })();
 }
 
 function main() {

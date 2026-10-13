@@ -64,7 +64,7 @@ function __bp_print() {
 }
 
 function fetch() {
-    (() => { throw new Error("not implemented") })();
+    (() => { throw Object.defineProperty(new Error("not implemented"), '__bp_panic', { value: true }) })();
 }
 
 function process() {

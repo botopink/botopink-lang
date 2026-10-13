@@ -67,6 +67,7 @@
 const std = @import("std");
 const moduleOutput = @import("./moduleOutput.zig");
 const crossModule = @import("./crossModule.zig");
+const wasmNeeds = @import("./wat/needs.zig");
 const otp = @import("../otp.zig");
 fn isProcessSuccess(term: std.process.Child.Term) bool {
     return switch (term) {
@@ -970,8 +971,17 @@ pub fn executeWat(allocator: std.mem.Allocator, wat_code: []const u8, wasm_binar
     // stdout and stderr are concatenated as written, with no separator: a
     // module's stderr (an `assert` message) and wasmtime's error chain both
     // end their own lines.
+    // Decision 518 — the host is handed only the features the module's
+    // `botopink.needs` section names (`-W exceptions=y` …); none, no flag.
+    var flag_buf: [4][]const u8 = undefined;
+    const flags = wasmNeeds.wasmtimeArgs(if (wasm_binary) |b| wasmNeeds.needsOf(b) else wasmNeeds.needsOfText(wat_code), &flag_buf);
+    var argv_buf: [8][]const u8 = undefined;
+    argv_buf[0] = "wasmtime";
+    argv_buf[1] = "run";
+    for (flags, 0..) |f, i| argv_buf[2 + i] = f;
+    argv_buf[2 + flags.len] = basename;
     const result = std.process.run(allocator, io, .{
-        .argv = &.{ "wasmtime", "run", basename },
+        .argv = argv_buf[0 .. 3 + flags.len],
         .cwd = .{ .path = tmp_dir },
         .timeout = .{ .duration = .{ .raw = .{ .nanoseconds = RUNTIME_TIMEOUT_NS }, .clock = .real } },
     }) catch return allocator.dupe(u8, "");

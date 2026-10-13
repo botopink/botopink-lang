@@ -1,0 +1,40 @@
+//// Decision 431 (3) — std's `failure.attempt` contains a crash: `Ok` of the
+//// body's value, or `Error(Failure(message, kind))` for a raise it caught.
+//// The kinds are decision 492's: a `@panic` is `panic`, its message the text
+//// the program wrote; a raise from a host binding without `result: true` is
+//// `host`, its message the host's text (a JavaScript `Error`'s `message`, the
+//// erlang reason by `~tp`). After a contained crash the program goes on.
+////
+//// On wasm (decision 518) `attempt` runs the thunk under wasm exception
+//// handling, so the program runs with the host's exceptions on. wasm has no
+//// host that raises: its binding of `hostRaise` is a private fn that aborts
+//// with the host's text, so its crash is a `panic` there.
+
+import {failure, failure.Failure} from "std";
+
+#[@External.Node("""(() => { throw new Error("boom"); })()""")]
+#[@External.Erlang("""erlang:error(boom)""")]
+#[@External.Wasm(fn: hostRaiseBody)]
+declare fn hostRaise() -> i32;
+
+fn hostRaiseBody() -> i32 {
+    @panic("boom");
+}
+
+fn explode() -> i32 {
+    @panic("the body exploded");
+}
+
+fn show(r: @Result<i32, Failure>) {
+    case r {
+        Ok(v) -> @print("Ok " + v.toString());
+        Error(f) -> @print("Error " + f.kind + ": " + f.message);
+    }
+}
+
+pub fn main() {
+    show(failure.attempt({ -> explode() }));
+    show(failure.attempt({ -> hostRaise() }));
+    show(failure.attempt({ -> 6 * 7 }));
+    @print("after");
+}

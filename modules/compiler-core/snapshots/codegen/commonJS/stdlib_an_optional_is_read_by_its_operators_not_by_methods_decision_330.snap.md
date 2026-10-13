@@ -17,7 +17,7 @@ class Person {
 Person.prototype.__bp = "Person";
 
 function find(p) {
-    (() => { throw new Error("not implemented") })();
+    (() => { throw Object.defineProperty(new Error("not implemented"), '__bp_panic', { value: true }) })();
 }
 
 function greet(p) {

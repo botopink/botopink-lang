@@ -8,7 +8,7 @@ fn notImplemented() {
 ----- JAVASCRIPT -- main.js
 ```javascript
 function notImplemented() {
-    (() => { throw new Error("implement this function") })();
+    (() => { throw Object.defineProperty(new Error("implement this function"), '__bp_panic', { value: true }) })();
 }
 
 Object.defineProperty(exports, "__bp_priv__", { value: { notImplemented } });

@@ -595,7 +595,7 @@ assembled once with `erlc +from_asm`, each test unit's runner run with
 `erl -noshell -pa <dir> -eval "'<atom>':main(init:get_plain_arguments()),
 halt()." -extra [filter]` — the same envelope, the same group-leader capture)
 and `wasm` on the `wasi` host (each test unit, a `.wat` component linking the
-whole program, run with `wasmtime run -S http`; the filter is not read, and a
+whole program, run with `wasmtime run` and the flags its `botopink.needs` section asks for — `-W exceptions=y`, `-S http`, none when it names no need (decision 518, `run.wasmtimeFlags`); the filter is not read, and a
 failing `assert` traps, ending the module's run inside that test's fence — it
 is reported as a module whose runner printed no summary). A `browser` host is
 refused.

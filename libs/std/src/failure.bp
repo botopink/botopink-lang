@@ -8,8 +8,27 @@
 //// from a binding without `result: true`) or `crash` (a VM or emitted-code
 //// fault, a wasm trap).
 ////
-//// Types only for now: `attempt` / `attemptTask` need runtime catching in every
-//// backend and land with 144 B-07.
+//// `attempt(f)` runs `f` and answers `Ok` of its value, or `Error(Failure)`
+//// for a raise it caught — the one way to contain a crash (decision 431 (3)).
+//// `attemptTask(f)` is its `@Task` form (decision 494): the task `f` answers,
+//// awaited, or the `Failure` it crashed with — a `@Task<@Result<…>>` read
+//// back by `await` like any failing task (decision 432). The kinds
+//// (decision 492): a `@panic` / `@todo` (and so `x!`), a failed `assert`
+//// and an integer overflow or division by zero are `panic`, their message
+//// the text the program wrote; any other raise is `host`, its message the host's text —
+//// on commonJS an `Error`'s `message`, else `String(e)`; on erlang and beam
+//// the reason by `~tp` (decision 489's reading).
+////
+//// Both are bodyless: each backend wraps the call (a JavaScript `try` /
+//// rejection handler, an erlang `try … catch`; beam compiles the erlang
+//// form). On wasm (decision 518) each is a private body over `caught`, the
+//// `wasi: .Attempt` adapter: the thunk runs inside a `try_table` that
+//// catches the program's aborts (wasm exception handling), so the binding
+//// declares `needs: [.Exceptions]` and a program reaching it runs with the
+//// host's exceptions on (`-W exceptions=y` on wasmtime). On wasm an abort
+//// is `panic`; a trap (an overflow or a division by zero there, a host
+//// fault) is no exception and is not caught. `attemptTask` contains what
+//// the thunk raises before the task's first `await`.
 
 pub type HostErrorName {
     Error,
@@ -20,3 +39,45 @@ pub type HostErrorName {
 pub type HostError(message: string, kind: string, name: HostErrorName, detail: ?string)
 
 pub type Failure(message: string, kind: string)
+
+// The Node forms read an abort by the `__bp_panic` mark the backend puts on
+// every one it raises — `@panic`, `@todo`, an integer overflow or division
+// by zero, a failed `assert` (whose mark carries its message) — or a test
+// body's `assert` (`__bp_assert_loc`); the Erlang forms by the reasons the
+// backends raise for them (`{panic, M}`, `{todo, M}`, `{integer_overflow,
+// M}`, `{bp_assert, M, Where}`). `attemptTask` answers a failing task
+// (decision 432): marked `__bp_fails`, resolved with the value, rejected with
+// the `Failure` (`__bp_failure`); a failing task `f` answers is read as
+// `await` reads it.
+#[@External.Node("""((__f, __k) => { try { return { ok: __f() }; } catch (__e) { return { error: __k(__e) }; } })($0, ((__e) => (__e != null && __e.__bp_panic != null) ? new Failure(typeof __e.__bp_panic === "string" ? __e.__bp_panic : __e.message, "panic") : (__e != null && typeof __e.__bp_assert_loc === "string") ? new Failure(__e.message, "panic") : new Failure((__e instanceof Error) ? __e.message : String(__e), "host")))""")]
+#[@External.Erlang("""(fun(__F) -> try {ok, __F()} catch error:{__T, __M} when (__T =:= panic orelse __T =:= todo orelse __T =:= integer_overflow) andalso (is_binary(__M) orelse is_list(__M)) -> {error, {'std@failure@@Failure', unicode:characters_to_binary(__M), <<"panic">>}}; error:{bp_assert, __M, _} when is_binary(__M) -> {error, {'std@failure@@Failure', __M, <<"panic">>}}; _:__R -> {error, {'std@failure@@Failure', unicode:characters_to_binary(io_lib:format("~tp", [__R])), <<"host">>}} end end)($0)""")]
+#[@External.Wasm(fn: attemptOnWasm)]
+pub declare fn attempt<T>(f: fn() -> T) -> @Result<T, Failure>;
+
+#[@External.Node("""((__f, __k) => { const __t = (async () => { const __x = __f(); return (__x != null && __x.__bp_fails === true) ? await __x.then((__v) => ({ ok: __v }), (__e) => { if (__x.__bp_failure === true) { return { error: __e }; } throw __e; }) : await __x; })().then((__v) => __v, (__e) => { __t.__bp_failure = true; throw __k(__e); }); __t.__bp_fails = true; __t.catch(() => {}); return __t; })($0, ((__e) => (__e != null && __e.__bp_panic != null) ? new Failure(typeof __e.__bp_panic === "string" ? __e.__bp_panic : __e.message, "panic") : (__e != null && typeof __e.__bp_assert_loc === "string") ? new Failure(__e.message, "panic") : new Failure((__e instanceof Error) ? __e.message : String(__e), "host")))""")]
+#[@External.Erlang("""(fun(__F) -> try {ok, __F()} catch error:{__T, __M} when (__T =:= panic orelse __T =:= todo orelse __T =:= integer_overflow) andalso (is_binary(__M) orelse is_list(__M)) -> {error, {'std@failure@@Failure', unicode:characters_to_binary(__M), <<"panic">>}}; error:{bp_assert, __M, _} when is_binary(__M) -> {error, {'std@failure@@Failure', __M, <<"panic">>}}; _:__R -> {error, {'std@failure@@Failure', unicode:characters_to_binary(io_lib:format("~tp", [__R])), <<"host">>}} end end)($0)""")]
+#[@External.Wasm(fn: attemptTaskOnWasm)]
+pub declare fn attemptTask<T>(f: fn() -> @Task<T>) -> @Task<@Result<T, Failure>>;
+
+// wasm's form (decision 518): the thunk's value, or the message of the abort
+// it raised — `Error` of the abort's text, which `attempt` makes a `panic`.
+// The bodies over it are compiled on every target, so it has a form on each;
+// only wasm calls it (`attempt`'s own forms answer elsewhere).
+#[@External.Node("""((__f) => { try { return { ok: __f() }; } catch (__e) { return { error: (__e instanceof Error) ? __e.message : String(__e) }; } })($0)""")]
+#[@External.Erlang("""(fun(__F) -> try {ok, __F()} catch _:__R -> {error, unicode:characters_to_binary(io_lib:format("~tp", [__R]))} end end)($0)""")]
+#[@External.Wasm(wasi: .Attempt, needs: [.Exceptions])]
+declare fn caught<T>(f: fn() -> T) -> @Result<T, string>;
+
+fn attemptOnWasm<T>(f: fn() -> T) -> @Result<T, Failure> {
+    case caught(f) {
+        Ok(v) -> return v;
+        Error(m) -> throw Failure(message: m, kind: "panic");
+    }
+}
+
+// The task the thunk started — or the `Failure` it raised before its first
+// `await` — and then its value.
+fn attemptTaskOnWasm<T>(f: fn() -> @Task<T>) -> @Task<@Result<T, Failure>> {
+    val t: @Task<T> = try attemptOnWasm(f);
+    return await t;
+}

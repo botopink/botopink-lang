@@ -1,9 +1,10 @@
 //// Decision 110 rule 2 — a leaf that names a folder of std is a namespace of
 //// its submodules: `import {io} from "std"` reaches `io/clock` as
 //// `io.clock`, beside the leaf form `import {io.clock}` of decision 107. The
-//// folder binds no value of its own. wasm refuses the program: `io/clock`'s
-//// host cells have no wasm binding (`wasm.expect`, STD-001), exactly as it
-//// refuses `import {io.clock}`.
+//// folder binds no value of its own. wasm refuses the program at its first
+//// call: `nowMillis` reaches `io/clock`'s host cell `systemTimeWithUnit`,
+//// which has no wasm binding — STD-001 refuses the call, never the import
+//// (decision 518 (4)).
 
 import {io} from "std";
 import {io.clock as clock} from "std";

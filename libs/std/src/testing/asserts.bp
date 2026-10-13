@@ -27,11 +27,12 @@
 ////      so none is used here (measured 2026-09-20; `libs/std/AGENTS.md`).
 ////   5. No `pub declare fn` in the file, so `import {asserts} from "std"`
 ////      passes STD-001 on every target. The four functions that need a host
-////      — `matches`, `deepEquals`, `throws`, `throwsWith` — sit on the three
-////      PRIVATE cells `regexMatches`, `canonical` and `tryCatch`, which carry
-////      Node and Erlang templates: beam compiles the Erlang ones at build
-////      time, and wasm, which has no host, refuses the module where those
-////      four call their cells — and so every import of it (decision 146).
+////      — `matches`, `deepEquals`, `throws`, `throwsWith` — sit on the two
+////      PRIVATE cells `regexMatches` and `canonical`, which carry Node and
+////      Erlang templates, and on `failure.attempt` (decisions 431, 493): beam
+////      compiles the Erlang ones at build time, and wasm, which has no host,
+////      refuses the module where those four call their cells — and so every
+////      import of it (decision 146).
 ////
 //// The module is named `asserts` (plural) because the unqualified `assert`
 //// is a reserved keyword statement; `import {asserts} from "std";` then
@@ -42,6 +43,8 @@
 //// `equals` on two arrays therefore passes on erlang and fails on commonJS;
 //// `deepEquals` is the cross-target answer (both sides are rendered by the
 //// same host, so key order agrees).
+
+import {failure, failure.Failure};
 
 // ── boolean ──────────────────────────────────────────────────────────────────
 
@@ -243,44 +246,34 @@ pub fn lessThan(actual: i32, bound: i32) -> @Result<void, string> {
 
 // ── exceptions ───────────────────────────────────────────────────────────────
 
-// Private host-level try/catch wrapper (§A3 — `declare fn`
-// template-owned). Runs `body` (no-arg fn returning a discardable `i32`
-// sentinel) and answers `{ok, 0}` on normal exit, `{error, <message>}` when
-// the body throws/panics. The sentinel `i32` (instead of `void`) lets the
-// caller pass a closure whose final expression is an integer so the checker
-// can unify the return — a closure whose only statement is `@panic("…")` does
-// not unify with `void` (noreturn ≠ void). Callers end the body with `0;`.
-#[@External.Node("""(() => { try { $0(); return { ok: 0 } } catch (__e) { return { error: __e && __e.message ? __e.message : String(__e) } } })()""")]
-#[@External.Erlang("""(fun(__B) -> try __B(), {ok, 0} catch error:{__T, __M} when (__T =:= panic orelse __T =:= todo) andalso (is_binary(__M) orelse is_list(__M)) -> {error, unicode:characters_to_binary(__M)}; __C:__E -> {error, iolist_to_binary(io_lib:format("~p:~p", [__C, __E]))} end end)($0)""")]
-declare fn tryCatch(body: fn() -> i32) -> @Result<i32, string>;
-
-// Private: the message `tryCatch` caught, or `""` for a body that completed.
-fn caughtMessage(r: @Result<i32, string>) -> string {
+// Private: the message `failure.attempt` caught, or `""` for a body that
+// completed.
+fn caughtMessage<T>(r: @Result<T, Failure>) -> string {
     val text = case r {
         Ok(v) -> "";
-        Error(e) -> e;
+        Error(f) -> f.message;
     };
     return text;
 }
 
-// Fails when `body` completes normally — for a `@panic` or a host throw from
-// code whose return carries no `@Result` (a failing `@Result` is `isError`). Needs Node
-// or Erlang at run time (`tryCatch`). End the body with `0;` (see `tryCatch`).
-pub fn throws(body: fn() -> i32) -> @Result<void, string> {
-    val r = tryCatch(body);
+// Fails when `body` completes normally — for a `@panic` or a host raise from
+// code whose return carries no `@Result` (a failing `@Result` is `isError`).
+// Generic over the body's own type and run under `failure.attempt` (decisions
+// 431, 493), so it needs Node or Erlang at run time.
+pub fn throws<T>(body: fn() -> T) -> @Result<void, string> {
+    val r = failure.attempt(body);
     if (r.isOk()) throw "asserts.throws: body did not raise";
     return;
 }
 
 // Fails when `body` completes normally, or when the caught message does not
-// contain `needle`. A `@panic(text)` / `@todo(text)` is caught as its own
-// `text` on both targets, byte for byte — a needle with a `"`, a `\` or a
-// non-ASCII character matches alike (the erlang cell reads the raised
-// binary, not its `~p` rendering, where `"` came back escaped). Any other
-// host raise is its JS `message` on Node and `Class:Reason` on Erlang
-// (`error:badarg`).
-pub fn throwsWith(body: fn() -> i32, needle: string) -> @Result<void, string> {
-    val r = tryCatch(body);
+// contain `needle`. The message is `failure.attempt`'s `Failure.message`: a
+// `@panic(text)` / `@todo(text)` is its own `text` on every target, byte for
+// byte — a needle with a `"`, a `\` or a non-ASCII character matches alike;
+// any other host raise is its JS `message` (else `String(e)`) on Node and
+// the reason by `~tp` on Erlang (`badarg`).
+pub fn throwsWith<T>(body: fn() -> T, needle: string) -> @Result<void, string> {
+    val r = failure.attempt(body);
     if (r.isOk()) throw "asserts.throwsWith: body did not raise";
     if (caughtMessage(r).contains(needle) == false)
         throw "asserts.throwsWith: message does not contain needle";

@@ -7,7 +7,7 @@ fn f() {
 
 ----- JAVASCRIPT -- main.js
 ```javascript
-function __bp_assert_fatal(cond, msg, loc) { if (!cond) { throw new Error((msg ?? "assertion failed") + " at " + loc); } }
+function __bp_assert_fatal(cond, msg, loc) { if (!cond) { throw Object.defineProperty(new Error((msg ?? "assertion failed") + " at " + loc), "__bp_panic", { value: msg ?? "assertion failed" }); } }
 
 function __bp_eq(a, b, d) {
     if (Object.is(a, b)) {

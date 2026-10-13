@@ -3532,6 +3532,8 @@ pub fn registerStdlib(env: *Env, gpa: std.mem.Allocator) anyerror!void {
             while (tit.next()) |e| try env2.stdModuleTypes.put(e.key_ptr.*, e.value_ptr.*);
             var fit = env.stdModuleFns.iterator();
             while (fit.next()) |e| try env2.stdModuleFns.put(e.key_ptr.*, e.value_ptr.*);
+            var ait = env.stdModuleAllFns.iterator();
+            while (ait.next()) |e| try env2.stdModuleAllFns.put(e.key_ptr.*, e.value_ptr.*);
         }
         for (sources) |src| {
             var lx = Lexer.init(src);
@@ -3579,14 +3581,24 @@ pub fn registerStdlib(env: *Env, gpa: std.mem.Allocator) anyerror!void {
         // shared parse arena), so callers see stable references.
         {
             var fn_decls: std.ArrayListUnmanaged(ast.FnDecl) = .empty;
+            var all_decls: std.ArrayListUnmanaged(ast.FnDecl) = .empty;
             for (program.decls) |decl| {
                 switch (decl) {
-                    .@"fn" => |f| if (f.isPub) try fn_decls.append(env.arena, f),
+                    .@"fn" => |f| {
+                        if (f.isPub) try fn_decls.append(env.arena, f);
+                        try all_decls.append(env.arena, f);
+                    },
                     else => {},
                 }
             }
             if (fn_decls.items.len > 0) {
                 try env.stdModuleFns.put(mod_name, try fn_decls.toOwnedSlice(env.arena));
+            }
+            // Decision 518 (4) — every function of the module, private ones
+            // too, so STD-001 follows a call through the module's own bodies
+            // to the host cell it reaches (`infer.zig` `stdUnsupportedReach`).
+            if (all_decls.items.len > 0) {
+                try env.stdModuleAllFns.put(mod_name, try all_decls.toOwnedSlice(env.arena));
             }
         }
 
