@@ -1202,14 +1202,16 @@ Now it is `subj >= low and subj <= high` (`emitRangeBound`), a float bound
 truncated like a `numberLit` pattern's; a string bound has no ordering here and
 answers `0`. `conformance/modules/case_range_value` pins the five points.
 
-**A `case` subject keeps its wasm type** (`lowerCase`). A single subject is lowered as
+**A `case` subject keeps its wasm type** (`lowerCase`). A subject is lowered as
 `wasmTypeOf` says (`i64` for an `i64`, a `u64` and a `u32`; `f64` for a float), its
 `__case_<d>` local declared as that type, and not coerced to `i32` — which refused the
-`case` (`would narrow this i64 value to an i32 slot`). A number pattern against such a
-subject is `<ty>.const` + `<ty>.eq`, a range bound `<ty>.ge_s` / `le_s` (`ge` / `le` for a
-float), and a binder or an arm's lambda parameter takes the subject local's type
-(`bindPattern`, `lowerArmBody`). A multi-subject `case` keeps `i32` slots. A `u64` above
-`i64`'s top still orders as signed in a range. `conformance/modules/case_wide_integer_scrutinee`.
+`case` (`would narrow this i64 value to an i32 slot`). In a multi-subject `case` each
+subject's own local (`multiSubjectLocal`) takes its own type, so an `i64`, `u64` or `f64`
+among several is compared whole. A number pattern against such a subject is `<ty>.const`
++ `<ty>.eq`, a range bound `<ty>.ge_s` / `le_s` (`ge_u` / `le_u` for a `u64` subject,
+`u64_subjects`, so a value past `i64`'s top is above the bounds; `ge` / `le` for a float), and
+a binder or an arm's lambda parameter takes the subject local's type (`bindPattern`,
+`lowerArmBody`). `conformance/modules/case_wide_integer_scrutinee`.
 
 ## The value knows its own declaration (2026-09-21, `13-module-identity` half 3)
 

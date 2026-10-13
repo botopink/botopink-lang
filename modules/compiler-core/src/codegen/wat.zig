@@ -2106,6 +2106,8 @@ const Emitter = struct {
     /// The `case` subject locals holding an `unknown` / union value, whose
     /// arms may name a primitive type (`i32 { n -> … }`, §5.2).
     unknown_subjects: std.StringHashMapUnmanaged(void) = .empty,
+    /// `case` subject locals holding a `u64`: a range pattern orders them unsigned.
+    u64_subjects: std.StringHashMapUnmanaged(void) = .empty,
     /// Set for the one arm body a primitive-type arm opens: its binder is the
     /// payload the test proved, unboxed (`lowerArmBody` reads and clears it).
     arm_unbox: ?PrimTest = null,
@@ -2464,6 +2466,7 @@ const Emitter = struct {
         self.mspec_pending.deinit(self.alloc);
         self.field_lambdas.deinit(self.alloc);
         self.unknown_subjects.deinit(self.alloc);
+        self.u64_subjects.deinit(self.alloc);
         self.subject_enums.deinit(self.alloc);
         self.behavior_methods.deinit(self.alloc);
         self.behavior_decls.deinit(self.alloc);
@@ -7793,7 +7796,7 @@ const Emitter = struct {
         self.case_depth += 1;
         // A single subject keeps the wasm type it has (`i64`, `u64`, `u32`,
         // `f64`, …): the patterns compare it as that type, never narrowed.
-        const subj_ty: []const u8 = if (c.subjects.len == 1) self.wasmTypeOf(c.subjects[0]) else "i32";
+        const subj_ty: []const u8 = self.wasmTypeOf(c.subjects[0]);
         try self.declareLocal(subj_local, subj_ty);
         const start_lo = if (self.machine) |m| m.next else 0;
         var start: Capture = .{};
@@ -7804,6 +7807,7 @@ const Emitter = struct {
             try self.lowerCoerced(c.subjects[0], subj_ty);
             try self.emit(.{ .local_set = subj_local });
         }
+        if (self.isU64Expr(c.subjects[0])) try self.u64_subjects.put(self.alloc, subj_local, {}) else _ = self.u64_subjects.remove(subj_local);
         if (self.isUnknownExpr(c.subjects[0])) try self.unknown_subjects.put(self.alloc, subj_local, {});
         const subj_is_str = self.isStringExpr(c.subjects[0]);
         if (subj_is_str) try self.str_locals.put(subj_local, {});
@@ -7819,9 +7823,12 @@ const Emitter = struct {
         // `.multi` pattern tested nothing — the first arm answered every call.
         if (c.subjects.len > 1) for (c.subjects, 0..) |subj, i| {
             const sub = try multiSubjectLocal(self.arena(), subj_local, i);
-            try self.declareLocal(sub, "i32");
-            try self.lowerCoerced(subj, "i32");
+            // Each subject keeps its own wasm type, as a single subject does.
+            const sub_ty = self.wasmTypeOf(subj);
+            try self.declareLocal(sub, sub_ty);
+            try self.lowerCoerced(subj, sub_ty);
             try self.emit(.{ .local_set = sub });
+            if (self.isU64Expr(subj)) try self.u64_subjects.put(self.alloc, sub, {}) else _ = self.u64_subjects.remove(sub);
             if (self.isUnknownExpr(subj)) try self.unknown_subjects.put(self.alloc, sub, {});
             if (self.isStringExpr(subj)) try self.str_locals.put(sub, {});
             if (self.resultShapeOf(subj)) |shape| try self.result_subjects.put(sub, shape);
@@ -8174,8 +8181,11 @@ const Emitter = struct {
                     // this arm the shape fell into the variant path below, found
                     // no variant named `""` and answered `0` for every value.
                     const bounds = v.payload.literals;
-                    try self.emitRangeBound(bounds[0], subj, "ge_s", loc);
-                    try self.emitRangeBound(bounds[1], subj, "le_s", loc);
+                    // A `u64` subject orders unsigned: a value past `i64`'s top
+                    // is above every bound, not below zero.
+                    const uns = self.u64_subjects.contains(subj);
+                    try self.emitRangeBound(bounds[0], subj, if (uns) "ge_u" else "ge_s", loc);
+                    try self.emitRangeBound(bounds[1], subj, if (uns) "le_u" else "le_s", loc);
                     try self.emit(opOf("i32", "and"));
                     return;
                 }
