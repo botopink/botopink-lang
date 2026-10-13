@@ -5083,17 +5083,17 @@ const Emitter = struct {
     /// { … })()`: an `await` inside a plain arrow does not parse.
     fn iife(self: *Emitter, items: []const js.Stmt) anyerror!js.Expr {
         if (!AwaitScan.stmts(items)) return self.b.iife(items);
-        const fnx = try self.b.paren(.{ .function = .{
-            .keyword = "async function",
-            .params = &.{},
-            .body = try self.b.spacedBlock(items),
-        } });
-        return self.b.await_(try self.b.call(fnx, &.{}));
+        var arrow = try self.b.arrowBlock(&.{}, try self.b.spacedBlock(items));
+        arrow.arrow.is_async = true;
+        return self.b.await_(try self.b.call(try self.b.paren(arrow), &.{}));
     }
 
     /// `async { … }` (decision 124) — an async function called in place:
     ///
-    ///     (async function() { …; return v; })()
+    ///     (async () => { …; return v; })()
+    ///
+    /// An arrow, not a `function`: the block keeps the enclosing method's `this`
+    /// (`self`).
     ///
     /// Its `return`s leave the block (they are the function's); a `throw` /
     /// failing `try` settles it with the `{ error }` value, which the
@@ -5129,11 +5129,9 @@ const Emitter = struct {
             self.current_indent = base;
         }
         const body = try self.guardExprTry(try self.buildStmts(body_stmts), base);
-        return self.b.call(try self.b.paren(.{ .function = .{
-            .keyword = "async function",
-            .params = &.{},
-            .body = .{ .stmts = body, .indent = base },
-        } }), &.{});
+        var arrow = try self.b.arrowBlock(&.{}, .{ .stmts = body, .indent = base });
+        arrow.arrow.is_async = true;
+        return self.b.call(try self.b.paren(arrow), &.{});
     }
 
     // ── @print ────────────────────────────────────────────────────────────────
