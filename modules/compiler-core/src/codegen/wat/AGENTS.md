@@ -330,6 +330,14 @@ as bodyless emitted no `pub fn main() {}` for `_start` to call (`compilation fai
 UndefinedCall`) and refused every call of an empty `fn`
 (`conformance/modules/fn_empty_main`, `modules/fn_empty_body_call`).
 
+**A method of a behavior only a host builds is refused on the host binding** (`lowerPlainCall`):
+`g.greet("ana")` over `behavior Greeter` that no type of the program implements has no function
+to call — the value comes from a `declare fn` answering `Greeter` (`external_missing` maps each
+such function to the named type it answers). When one of them has no wasm cell, the call is refused
+as that function's missing `#[@External.Wasm(…)]`, not as an unresolved call, so a `// targets:`
+narrowing (`conformance/test/behavior_host_dispatch.bp`) stands on a host binding as the runner's
+audit requires (`conformance/modules/behavior_host_value_wasm_refused`).
+
 **A function that reaches such a cell is refused where the call is written,
 called or not** (decision 146 — "an error for whatever has no target"). Every
 bodied function is emitted — `emitDecl` lowers each `fn` and each method, and
@@ -467,6 +475,15 @@ the shapes that bound a string and still reached the one body:
   generic body, and `val held: fn(…) -> bool = same` too (its call also
   prints as a bool now — `isBoolExpr` reads a function value's declared
   return).
+
+**A lambda written as the argument of a generic type's method is written against the type the
+method declares** (`methodLambdaExpectations`, `Lifted.param_tref`): `Bag(items: [1, 2]).map({ x ->
+x.toString() })` over `map<U>(f: fn(x: T) -> U)` gives `x` the receiver's argument (`ctorTypeRef`
+binds `T` from a field written `Array<T>` / `T[]` by its elements, `bindParam`), so `toString`
+resolves as the integer's (`primKindAt` reads a parameter's `local_typerefs`), `bindMethodRet`
+types the answer `Bag<string>`, and a composite field read through that receiver is
+`Array<string>` (`recvTypeArgRef` writes the receiver's arguments into `Array<T>`). It was
+`cannot resolve the call toString/0` (`conformance/modules/generic_method_lambda_param_typed`).
 
 **A function in a generic record's field answers its declared return**
 (`ctorTypeRef` + `fnRefTypeRef`, `recvTypeArgRef`, `genericRetByFnArg`):

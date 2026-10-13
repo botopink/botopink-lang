@@ -3022,8 +3022,17 @@ const Emitter = struct {
     /// argument. `ft` itself otherwise.
     /// `recvTypeArg` for any type argument, a function type included.
     fn recvTypeArgRef(self: *Emitter, recv: ast.Expr, rty: []const u8, ft: ast.TypeRef) ast.TypeRef {
-        if (ft != .named) return ft;
         const gps = self.record_generics.get(rty) orelse return ft;
+        // A composite field type (`items: Array<T>`) reads the receiver's
+        // arguments written in: `Array<string>` through a `Bag<string>`.
+        if (ft != .named) {
+            const tr = self.typeRefOf(recv) orelse return ft;
+            if (tr != .generic or !std.mem.eql(u8, tr.generic.name, rty) or tr.generic.args.len != gps.len) return ft;
+            const ar = self.reg_arena.allocator();
+            var subs: std.ArrayListUnmanaged(TypeSub) = .empty;
+            for (gps, tr.generic.args) |gp, arg| subs.append(ar, .{ .name = gp.name, .to = arg }) catch return ft;
+            return substTypeParams(ast.TypeRef, ar, ft, subs.items) catch ft;
+        }
         const idx = for (gps, 0..) |gp, i| {
             if (std.mem.eql(u8, gp.name, ft.named)) break i;
         } else return ft;
@@ -9746,7 +9755,13 @@ const Emitter = struct {
             // this module — std's `Array.range` copy, `low.append(high)` —
             // has the array's methods.
             if (!self.tuple_binders.contains(n) and self.arr_locals.contains(self.resolveName(n)) and primCallRes(.array, cc) != null) return .array;
-            if (!self.tuple_binders.contains(n)) return if (self.str_locals.contains(self.resolveName(n)) and primCallRes(.string, cc) != null) .string else null;
+            if (!self.tuple_binders.contains(n)) {
+                if (self.str_locals.contains(self.resolveName(n)) and primCallRes(.string, cc) != null) return .string;
+                // A lambda parameter its declared function type types
+                // (`Lifted.param_tref`).
+                if (self.local_typerefs.get(n)) |tr| if (tr == .named) if (primKindOfName(tr.named)) |k| if (primCallRes(k, cc) != null) return k;
+                return null;
+            }
             const tr = self.local_typerefs.get(n) orelse return null;
             return switch (tr) {
                 .named => |tn| primKindOfName(tn),
@@ -11923,6 +11938,11 @@ const Emitter = struct {
         /// `[1, 2].map({ x -> x + 1 })` printed its integers as floats).
         prev_local: ?[]const u8 = null,
         prev_alias: ?[]const u8 = null,
+        /// The written type the parameter held, when the question set it
+        /// (`set_tref`): a primitive element's methods resolve by it
+        /// (`primKindAt`).
+        prev_tref: ?ast.TypeRef = null,
+        set_tref: bool = false,
     };
 
     /// Bind a HOF lambda's element parameter the way `lowerArrayHof` does —
@@ -11951,6 +11971,9 @@ const Emitter = struct {
         if (!held.prev_str) _ = self.str_locals.remove(p);
         if (held.prev_local) |t| self.locals.put(p, t) catch {} else _ = self.locals.remove(p);
         if (held.prev_alias) |a| self.aliases.put(p, a) catch {};
+        if (held.set_tref) {
+            if (held.prev_tref) |t| self.local_typerefs.put(p, t) catch {} else _ = self.local_typerefs.remove(p);
+        }
     }
 
     // ── function values ──────────────────────────────────────────────────────
@@ -12003,6 +12026,10 @@ const Emitter = struct {
         /// lambda is written against gives it, so `out.tag` reads the slot
         /// `Out` declares rather than guessing one by the field's name.
         param_rec: []const ?[]const u8 = &.{},
+        /// Per parameter: the primitive type the declared function type gives
+        /// it (`{ x -> x.toString() }` against `fn(x: T)` with `T` bound to
+        /// `i32`), so a method on it resolves (`primKindAt`).
+        param_tref: []const ?ast.TypeRef = &.{},
         /// Per parameter: something gave it a type — the declared function
         /// type the lambda is written against, a behavior's declaration, or
         /// a call through a closure local passing an argument. A parameter
@@ -12867,6 +12894,8 @@ const Emitter = struct {
         self.expected_fn = null;
         const param_rec = try ra.alloc(?[]const u8, params.len);
         @memset(param_rec, null);
+        const param_tref = try ra.alloc(?ast.TypeRef, params.len);
+        @memset(param_tref, null);
         // Known unless the slot the lambda goes into says nothing about it
         // (`lowerRecordCtor` clears it for a field written as a type
         // parameter); a call through the slot sets it again.
@@ -12887,6 +12916,9 @@ const Emitter = struct {
             for (param_rec, 0..) |*pr, i| {
                 if (i < pts.len and pts[i] == .named) pr.* = self.resolveRecordName(pts[i].named);
             }
+            for (param_tref, 0..) |*pt, i| {
+                if (i < pts.len and pts[i] == .named and primKindOfName(pts[i].named) != null) pt.* = pts[i];
+            }
         };
         const expected_params = self.expected_params;
         self.expected_params = null;
@@ -12900,6 +12932,7 @@ const Emitter = struct {
             .captures = caps.items,
             .param_str = param_str,
             .param_rec = param_rec,
+            .param_tref = param_tref,
             .param_known = param_known,
             .param_cell = param_cell,
             .ret_cell = ret_cell,
@@ -13331,6 +13364,7 @@ const Emitter = struct {
             self.stmt_loc = outer_loc;
         } else {
             for (l.params, 0..) |p, i| {
+                if (i < l.param_tref.len) if (l.param_tref[i]) |t| try self.local_typerefs.put(p, t);
                 const cell: Cell = if (i < l.param_cell.len) l.param_cell[i] else .none;
                 if (cell != .none) {
                     // The argument is its cell's address: the parameter is a
@@ -14083,7 +14117,16 @@ const Emitter = struct {
         const args = try ar.alloc(ast.TypeRef, gps.len);
         for (gps, args) |gp, *out| {
             out.* = for (trefs, 0..) |t, i| {
-                if (t != .named or !std.mem.eql(u8, t.named, gp.name) or i >= names.len) continue;
+                if (i >= names.len) continue;
+                // A field written `Array<T>` / `T[]` binds `T` by its
+                // elements (`Bag(items: [1, 2])` is a `Bag<i32>`).
+                if (t == .array or t == .generic) {
+                    const arg = self.argForField(cc.args, names[i], i) orelse continue;
+                    if (self.bindParam(t, arg.value.*, &isGenericParamName, gps, &.{})) |bnd|
+                        if (std.mem.eql(u8, bnd.name, gp.name)) break ast.TypeRef{ .named = bnd.ty };
+                    continue;
+                }
+                if (t != .named or !std.mem.eql(u8, t.named, gp.name)) continue;
                 const arg = self.argForField(cc.args, names[i], i) orelse continue;
                 // A generic record built in place keeps its own arguments
                 // (`Box(value: Box(value: hi))` is a `Box<Box<fn() -> string>>`).
@@ -14670,7 +14713,7 @@ const Emitter = struct {
                 };
                 // The lambda's parameter is the receiver's element while its
                 // tail is asked about.
-                const held: HeldElemParam = if (lam.params.len > 0) .{
+                var held: HeldElemParam = if (lam.params.len > 0) .{
                     .name = lam.params[0],
                     .prev_type = self.local_types.get(lam.params[0]),
                     .prev_str = self.str_locals.contains(lam.params[0]),
@@ -14683,6 +14726,11 @@ const Emitter = struct {
                     if (self.records.contains(en)) self.local_types.put(hp, en) catch {};
                     if (std.mem.eql(u8, en, "string")) self.str_locals.put(hp, {}) catch {};
                     self.locals.put(hp, if (en.len > 0 and en[0] == 'f') "f64" else "i32") catch {};
+                    if (primKindOfName(en) != null) {
+                        held.prev_tref = self.local_typerefs.get(hp);
+                        held.set_tref = true;
+                        self.local_typerefs.put(hp, .{ .named = en }) catch {};
+                    }
                 };
                 const to: []const u8 = if (self.isStringExpr(v)) "string" else if (self.isBoolExpr(v)) "bool" else if (self.wasmTypeOf(v)[0] == 'f') "f64" else if (self.recordTypeOfExpr(v)) |r| r else continue;
                 subs.append(ar, .{ .name = un, .to = .{ .named = to } }) catch return ret;
@@ -15473,9 +15521,46 @@ const Emitter = struct {
             try self.lowerCoerced(cc.receiver.?.*, sig.params[0]);
             base = 1;
         }
-        try self.lowerCallArgs(cc.args, sig, base);
+        const expected = try self.methodLambdaExpectations(sym, cc);
+        for (cc.args, 0..) |arg, i| {
+            if (base + i >= sig.params.len) break;
+            if (expected) |ex| if (arg.value.* == .function) {
+                self.expected_fn = ex[i];
+            };
+            defer self.expected_fn = null;
+            try self.lowerCoerced(arg.value.*, sig.params[base + i]);
+        }
+        var k = base + cc.args.len;
+        while (k < sig.params.len) : (k += 1) {
+            try self.emitC(constOf(sig.params[k], "0"), "missing argument");
+        }
         try self.emit(.{ .call = sym });
         return true;
+    }
+
+    /// The function types a generic method declares for its parameters, with
+    /// the owner's type parameters written as the receiver's type arguments
+    /// (`Bag<i32>.map(f: fn(x: T) -> U)` → `fn(x: i32) -> U`): a lambda
+    /// written as the argument is written against them. Inference saw `T`
+    /// there and typed nothing the lambda's body could read.
+    fn methodLambdaExpectations(self: *Emitter, sym: []const u8, cc: anytype) !?[]const ?ast.TypeRef {
+        const gm = self.generic_methods.get(sym) orelse return null;
+        const recv = cc.receiver orelse return null;
+        const tr = self.typeRefOf(recv.*) orelse return null;
+        if (tr != .generic or tr.generic.args.len != gm.tparams.len) return null;
+        const ar = self.reg_arena.allocator();
+        var subs: std.ArrayListUnmanaged(TypeSub) = .empty;
+        for (tr.generic.args, gm.tparams) |arg, gp| try subs.append(ar, .{ .name = gp.name, .to = arg });
+        const out = try ar.alloc(?ast.TypeRef, cc.args.len);
+        @memset(out, null);
+        var pi: usize = 0;
+        for (gm.method.params) |p| {
+            if (std.mem.eql(u8, p.name, "self")) continue;
+            defer pi += 1;
+            if (pi >= out.len) break;
+            if (p.typeRef == .function) out[pi] = try substTypeParams(ast.TypeRef, ar, p.typeRef, subs.items);
+        }
+        return out;
     }
 
     /// Instance methods on the built-in array layout (`[len][e0][e1]…`) that
