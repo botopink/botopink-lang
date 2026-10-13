@@ -1,0 +1,8 @@
+pub type Signal {
+    Low,
+    High(db: i32),
+}
+
+pub fn quiet() -> Signal {
+    return Signal.Low;
+}

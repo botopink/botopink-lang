@@ -787,7 +787,14 @@ fn linkTypeRenames(
             const src = try u.leafSource(imp, arena, false);
             const info = c.picked(imp.leaf(), src, null) orelse continue;
             if (info.kind != .record and info.kind != .@"enum") continue;
-            const m = mangled.get(try linkKey(arena, info.module, imp.leaf())) orelse continue;
+            // Decision 310 — a type kept under its alias (two modules'
+            // same-named types meet in this module) names the linked
+            // declaration: the mangled one, or the declared name the first
+            // declaration kept.
+            const m = mangled.get(try linkKey(arena, info.module, imp.leaf())) orelse {
+                if (imp.alias) |al| if (!std.mem.eql(u8, al, imp.leaf())) try out.put(arena, al, imp.leaf());
+                continue;
+            };
             try out.put(arena, imp.alias orelse imp.leaf(), m);
         },
         else => {},

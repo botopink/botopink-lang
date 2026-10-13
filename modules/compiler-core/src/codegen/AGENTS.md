@@ -1809,7 +1809,16 @@ codegen/
   registered after every by-name item and never over one (an imported enum by
   name before a namespace's in the variant pass too) — `import {collections} from
   "std"` before `import {items.Queue} from "shelf"` built `{std@collections@@Queue,
-  …}` (144 B-67, cell `import_record_beside_std_record_of_same_name`). And
+  …}` (144 B-67, cell `import_record_beside_std_record_of_same_name`). A type
+  kept under its ALIAS (decision 310: two modules' same-named types imported
+  into one module, `import {Policy as APolicy} from "a/p"`) is keyed by the
+  alias in every one of these maps, and its atoms spell the declared name
+  through `type_declared` (`declaredTypeName`: `'a@p@@Policy'`,
+  `'a@e@@Signal__v__red'`); beam also keeps the alias's link-index entry
+  (`aliased_type_exports`) for `typeMethodModule`. wasm maps the alias to the
+  linked declaration in `linkTypeRenames` (the mangled `<module>/Policy`, or
+  the declared name the first declaration kept); commonJS binds the class
+  under the alias in its `require` destructuring. And
   `Response.ok(…)` calls into the owner module atom (`http:ok(…)`); the owner
   exports a `pub` type's associated fns when another module imports it, and a
   `pub implement`/`extend` another module activates (`import {PatoNada*} …`) is

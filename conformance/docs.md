@@ -270,8 +270,16 @@ refused itself: every **use** of the name is, where it is written, naming both
 (`ambiguous-import-use`), and the item that names the module (`import
 {a.parse} from "kit"`) is the way out. An alias reaches a type and a type alias too (decision 110):
 `import {collections.Dict as D}` brings `D`, a name for `Dict` in the program's
-own text — the emitted code keeps `Dict`. An activation cannot be renamed
-(`import-alias-on-activation`). A leaf that names a folder is a namespace of
+own text — the emitted code keeps `Dict`. Two same-named types of two modules
+are two types when each is imported under an alias, or one of the two is
+(decision 310): `import {a.p.Policy as APolicy}; import {b.p.Policy as
+BPolicy};` — each alias names its own type in every type and value position,
+a function of either module taking or answering its `Policy` takes or answers
+that alias's type, `is` tells them apart, and each value prints as declared.
+Without an alias the second item binds the name again (`import-name-collision`,
+decision 170), and a type this module declares beside an aliased import of a
+same-named type is refused too (question B-23-a). An activation cannot be
+renamed (`import-alias-on-activation`). A leaf that names a folder is a namespace of
 its submodules (decision 110): after `import {io} from "std"`, `io.fs.readText(p)`
 calls `io/fs`'s `readText` — only the modules the program reaches are imported —
 and a module namespace reaches its types, so `import {collections} from "std"`
@@ -281,6 +289,12 @@ constructors are type-scoped).
 <!-- example: modules/import_tree_group -->
 
 <!-- example: modules/import_record_beside_std_record_of_same_name -->
+
+<!-- example: modules/import_two_types_one_name -->
+
+<!-- example: modules/import_two_enums_one_name -->
+
+<!-- example: modules/import_same_type_name_two_packages_one_aliased -->
 
 **The root of std is pure.** One criterion sorts the standard library:
 `io/` is everything that talks to the world outside the process — disk,

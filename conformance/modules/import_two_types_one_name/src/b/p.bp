@@ -1,1 +1,9 @@
-pub type Policy(name: string)
+pub type Policy(name: string) {
+    fn describe(self: Self) -> string {
+        return "b:" + self.name;
+    }
+}
+
+pub fn nameOf(p: Policy) -> string {
+    return p.name;
+}

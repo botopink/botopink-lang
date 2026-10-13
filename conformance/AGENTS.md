@@ -438,9 +438,15 @@ namespace reads `kit/store`'s fields; the cell builds the value through a functi
 because commonJS emits `Dict(5)` without `new` for an imported record constructor beside a std
 namespace declaring the same name — `04-js`'s row),
 `modules/std_namespace_signature_names_shadowed_type` (a namespace call whose signature names the
-shadowed std type), `modules/import_two_types_one_name` and `modules/own_type_beside_std_type_import`
-(two types of one declared name in one module, aliased or not, are `import-name-collision`). Each
+shadowed std type) and `modules/own_type_beside_std_type_import` (a type of this module beside an
+aliased import of a same-named type is `import-name-collision`, question B-23-a). Each
 was accepted wrongly or refused with the wrong type by the parent binary.
+Decision 310 (144 B-23) turns `modules/import_two_types_one_name` and
+`modules/import_same_type_name_two_packages_one_aliased` into accept cells and adds
+`modules/import_two_enums_one_name`, on the four targets: two same-named types of two modules, each
+imported under an alias (or one of the two), are two types — each constructs, prints as declared,
+answers its own method and is told apart by `is`, and a function of either module takes and answers
+its own. Each refused (`import-name-collision`) by the parent binary.
 `modules/behavior_default_fn_body_checked` and `test/behavior_default_fn_result` (another front's
 finding) — a behavior's `default fn` body is checked (an unbound call is refused at it), and a
 `-> @Result` default fn wraps its `return` and `throw`, its adopted call answering the `@Result`; a
@@ -1080,8 +1086,8 @@ Decisions 384 and 395 add, on the four targets, `modules/member_reads_own_meta` 
 member reads `for (comptime @typeInfo(T).metaAll(Check))`, typed `Check<T>[]` in the decorator's
 body and answered with `Conta`'s two `#[check]`s where the member is rendered; the rules and messages
 run with the program) and `modules/decorator_member_type_same_name` (a member naming its module's
-`Violation` where the annotated module declares one: `import-name-collision` at the annotation until
-decision 310 is built), and `modules/decorator_member_type_travels` (an importer of the annotated type calls the member whose signature names the decorator module's `Violation`, which the importer never imports; on wasm the linked module's hygiene alias resolves by `wat.zig` `linkRenames`). Each red on the parent binary.
+`Violation` where the annotated module declares one: `import-name-collision` at the annotation — a
+type of this module beside another module's same-named type, question B-23-a), and `modules/decorator_member_type_travels` (an importer of the annotated type calls the member whose signature names the decorator module's `Violation`, which the importer never imports; on wasm the linked module's hygiene alias resolves by `wat.zig` `linkRenames`). Each red on the parent binary.
 Decision 311 (`01-checker` step 29 — the template annotation `#[f "…"]`) adds, on the four targets,
 `modules/template_annotation`: a template `query(comptime q: @Expr<string>, comptime decl: @Decl)`
 written on a behavior's methods (`"…"` and `"""…"""`, beside a decorator) and on a function, each

@@ -44,6 +44,7 @@ const exprParam = @import("expr_param.zig");
 const memberFn = @import("member_fn.zig");
 const writtenNames = @import("written_names.zig");
 const typedMeta = @import("typed_meta.zig");
+const typeIdentity = @import("type_identity.zig");
 /// `unify` raises its `TypeError` unlocated: it sees types, not source. Every
 /// call is `unifyAt` (which stamps the location it is given) or sits under a
 /// caller that stamps one with `locateLast` — 01 step 9: no type error leaves
@@ -284,14 +285,17 @@ fn markStdImports(env: *Env, u: ast.ImportDecl) InferError!bool {
 /// (the item's leaf: `import {kit.store.Dict as OwnDict}` names `Dict`), into
 /// `env.explicitTypeNames`, before any std import is marked.
 ///
-/// Types are nominal by their DECLARED name in the checker and the backends,
-/// so one module cannot hold two type declarations of one name, aliases or
-/// not: `import {a.p.Policy as APolicy}; import {b.p.Policy as BPolicy};`,
-/// a `type Dict(…)` beside `import {collections.Dict as D} from "std"`. Each
-/// used to resolve silently to whichever registered last; the second source
-/// is `import-name-collision` at its import item, naming both. (Two functions
-/// of one name under two aliases stay legal — a function is bound by its
-/// local name.)
+/// Types are nominal by name in the checker, so one module holds one type of
+/// a name: a `type Dict(…)` beside `import {collections.Dict as D} from
+/// "std"`, two un-aliased imports of two modules' `Policy` (decision 170), a
+/// type of this module beside an aliased import of a same-named type
+/// (question B-23-a). Each used to resolve silently to whichever registered
+/// last; the second source is `import-name-collision` at its import item,
+/// naming both. Two imported types of one declared name each under an alias
+/// (`import {a.p.Policy as APolicy}; import {b.p.Policy as BPolicy};`, or one
+/// of them un-aliased) are two types (decision 310): the alias is the type's
+/// identity here (`Env.renamedTypeImports`). (Two functions of one name under
+/// two aliases are legal too — a function is bound by its local name.)
 fn noteExplicitTypeNames(env: *Env, program: ast.Program) InferError!void {
     // Declared name → where it comes from (a module path, or "" for this module).
     var sources: std.StringHashMapUnmanaged(TypeSource) = .empty;
@@ -320,6 +324,13 @@ fn noteExplicitTypeNames(env: *Env, program: ast.Program) InferError!void {
                     try noteTypeSource(env, &sources, leaf, .{ .label = try std.fmt.allocPrint(env.arena, "std/{s}", .{prefix}) }, imp);
                     continue;
                 }
+                // Decision 310 — an item whose alias is its type's identity
+                // here holds the alias, never the declared name: two of them,
+                // or one beside an un-aliased item of the name, are two types.
+                if (imp.alias) |al| if (env.renamedTypeImports.contains(al)) {
+                    try env.explicitTypeNames.put(env.arena, al, {});
+                    continue;
+                };
                 try env.explicitTypeNames.put(env.arena, leaf, {});
                 // Only an item that resolved to a TYPE is a type source.
                 const isType = if (imp.alias) |al| env.importedTypeAliases.contains(al) else env.lookupTypeDef(leaf) != null;
@@ -8870,6 +8881,72 @@ pub fn registerImportedTypeAlias(env: *Env, decl: ast.DeclKind, alias: []const u
     });
     try env.importedTypeAliases.put(env.arena, alias, real);
     if (env.lookup(real)) |ctor| try env.bind(alias, ctor);
+}
+
+/// Decision 310 — `import {m1.T as A}` beside an import of another module's
+/// `T`: the declaration is registered under the alias, which is the type's
+/// identity in this module (`Env.renamedTypeImports`); its own name in its
+/// signatures is renamed with it. No checker alias is bound and no
+/// constructor call renamed: the backends see the alias and map it back to
+/// the declared name in its module.
+pub fn registerRenamedImportedType(env: *Env, t: ast.TypeDecl, alias: []const u8) !void {
+    try registerTypeDecl(env, .{ .type_ = try typeIdentity.renameDecl(env.arena, t, t.name, alias) });
+}
+
+/// Decision 310 — the type of a value imported from `owner`, its signature's
+/// types renamed to this module's identities: a type `owner` names that is
+/// one of `Env.renamedTypeImports` is spelled by its alias here (`site`'s
+/// `makeSite() -> App` answers `SiteApp` where `App` is `srv`'s). Unchanged
+/// when this module renames no type.
+pub fn renameImportedType(env: *Env, ty: *T.Type, owner: []const u8) !*T.Type {
+    if (env.renamedTypeImports.count() == 0) return ty;
+    const Ctx = struct {
+        env: *Env,
+        owner: []const u8,
+        pub fn rename(self: @This(), name: []const u8) ?[]const u8 {
+            const module = renamedTypeOwner(self.env, self.owner, name) orelse return null;
+            var it = self.env.renamedTypeImports.iterator();
+            while (it.next()) |e| {
+                if (std.mem.eql(u8, e.value_ptr.name, name) and std.mem.eql(u8, e.value_ptr.module, module)) return e.key_ptr.*;
+            }
+            return null;
+        }
+    };
+    return typeIdentity.renameType(env.arena, ty, Ctx{ .env = env, .owner = owner }, 0);
+}
+
+/// The module that declares the type `owner` names `name` — `owner` itself,
+/// or, for a type it imported, the module of the renamed import whose
+/// declaration it is. Null when `name` is no renamed import's declared name.
+fn renamedTypeOwner(env: *Env, owner: []const u8, name: []const u8) ?[]const u8 {
+    var candidate = false;
+    for (env.renamedTypeImports.values()) |v| if (std.mem.eql(u8, v.name, name)) {
+        candidate = true;
+    };
+    if (!candidate) return null;
+    const registry = env.typeDeclRegistry orelse return null;
+    const decls = registry.get(owner) orelse return null;
+    if (decls.contains(name)) return owner;
+    var key_buf: [256]u8 = undefined;
+    const key = std.fmt.bufPrint(&key_buf, "{s}{s}", .{ comptimeMod.imported_type_scope_prefix, name }) catch return null;
+    const scoped = decls.get(key) orelse return null;
+    if (scoped != .type_) return null;
+    for (env.renamedTypeImports.values()) |v| {
+        if (!std.mem.eql(u8, v.name, name)) continue;
+        const d = (registry.get(v.module) orelse continue).get(name) orelse continue;
+        if (d == .type_ and sameTypeDecl(d.type_, scoped.type_)) return v.module;
+    }
+    return null;
+}
+
+/// One parsed declaration reached through two registries (by its location and
+/// its member list, which the copies share).
+fn sameTypeDecl(a: ast.TypeDecl, b: ast.TypeDecl) bool {
+    if (a.loc.line != b.loc.line or a.loc.col != b.loc.col) return false;
+    return switch (a.shape) {
+        .record => |fs| b.shape == .record and b.shape.record.ptr == fs.ptr,
+        .enum_ => |e| b.shape == .enum_ and b.shape.enum_.variants.ptr == e.variants.ptr,
+    };
 }
 
 /// 01 R2 — importing a type registers the closure of the types its

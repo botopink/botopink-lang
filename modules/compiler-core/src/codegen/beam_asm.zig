@@ -2402,6 +2402,12 @@ const Emitter = struct {
     /// variant atoms from the OWNER, so a consumer building an imported value
     /// writes the owner's atom. The BEAM twin of `erlang.zig`'s.
     type_owner_path: std.StringHashMap([]const u8),
+    /// Decision 310 — an imported type's alias that is its identity in this
+    /// module → the declared name its atoms spell. The twin of `erlang.zig`'s.
+    type_declared: std.StringHashMapUnmanaged([]const u8) = .empty,
+    /// The link index's entry of each type in `type_declared`, by its alias:
+    /// the index keys a type by its declared name, which two modules share.
+    aliased_type_exports: std.StringHashMapUnmanaged(crossModule.ExportInfo) = .empty,
     /// Variant name → the enum that declares it, first declaration winning.
     variant_enum: std.StringHashMap([]const u8),
     /// Enum name → its variants in DECLARATION order, each with the payload
@@ -2666,6 +2672,8 @@ const Emitter = struct {
         while (rf.next()) |names| self.alloc.free(names.*);
         self.record_fields.deinit();
         self.type_owner_path.deinit();
+        self.type_declared.deinit(self.alloc);
+        self.aliased_type_exports.deinit(self.alloc);
         self.variant_enum.deinit();
         {
             var evn_it = self.enum_variant_names.valueIterator();
@@ -3052,11 +3060,20 @@ const Emitter = struct {
                     // and its methods and associated fns are remote calls into
                     // the TYPE's module (policy 3), not the owner file's.
                     .record => {
-                        if (!self.record_fields.contains(name)) {
-                            try self.record_fields.put(name, try self.alloc.dupe([]const u8, info.fields));
+                        // Decision 310 — a type kept under its alias is keyed
+                        // by it; its atoms spell the declared name.
+                        const tname = if (imp.alias) |al| blk: {
+                            if (!std.mem.eql(u8, al, name)) {
+                                try self.type_declared.put(self.alloc, al, name);
+                                try self.aliased_type_exports.put(self.alloc, al, info);
+                            }
+                            break :blk al;
+                        } else name;
+                        if (!self.record_fields.contains(tname)) {
+                            try self.record_fields.put(tname, try self.alloc.dupe([]const u8, info.fields));
                         }
-                        try self.imported_types.put(name, try crossModule.typeAtom(self.atom_arena.allocator(), self.idOf(info.module), name));
-                        _ = try self.type_owner_path.getOrPutValue(name, info.module);
+                        try self.imported_types.put(tname, try crossModule.typeAtom(self.atom_arena.allocator(), self.idOf(info.module), name));
+                        _ = try self.type_owner_path.getOrPutValue(tname, info.module);
                     },
                     // An imported enum's nullary variants are atoms a `case`
                     // arm tests against, exactly like a local enum's.
@@ -3068,18 +3085,27 @@ const Emitter = struct {
                         };
                         for (ok.transformed.decls) |d| switch (d) {
                             .type_ => |e| if (!e.isRecord() and std.mem.eql(u8, e.name, name)) {
+                                // Decision 310 — an enum kept under its alias
+                                // is keyed by it; its atoms spell the declared
+                                // name (`type_declared`).
+                                const ename = if (imp.alias) |al| blk: {
+                                    if (std.mem.eql(u8, al, e.name)) break :blk e.name;
+                                    try self.type_declared.put(self.alloc, al, e.name);
+                                    try self.aliased_type_exports.put(self.alloc, al, info);
+                                    break :blk al;
+                                } else e.name;
                                 // An imported enum is an enum a `case` subject
                                 // typed by it names (`enumOfSubject`): without
                                 // it a variant two enums declare (`Item`) took
                                 // the first writer's tag and matched no arm.
                                 // Parity with `erlang.zig`.
-                                try self.enum_names.put(e.name, {});
-                                _ = try self.type_owner_path.getOrPutValue(e.name, info.module);
-                                try self.rememberVariantOrder(e.name, e.variants());
+                                try self.enum_names.put(ename, {});
+                                _ = try self.type_owner_path.getOrPutValue(ename, info.module);
+                                try self.rememberVariantOrder(ename, e.variants());
                                 for (e.variants()) |v| {
                                     try self.enum_variants.put(v.name, {});
-                                    _ = try self.variant_enum.getOrPutValue(v.name, e.name);
-                                    try self.rememberEnumVariant(e.name, v.name);
+                                    _ = try self.variant_enum.getOrPutValue(v.name, ename);
+                                    try self.rememberEnumVariant(ename, v.name);
                                 }
                             },
                             else => {},
@@ -3120,12 +3146,18 @@ const Emitter = struct {
     }
 
     fn variantTagAtom(self: *Emitter, enum_name: []const u8, variant: []const u8) ![]const u8 {
-        return crossModule.variantAtom(self.atom_arena.allocator(), self.idOf(self.typeOwnerPath(enum_name)), enum_name, variant);
+        return crossModule.variantAtom(self.atom_arena.allocator(), self.idOf(self.typeOwnerPath(enum_name)), self.declaredTypeName(enum_name), variant);
+    }
+
+    /// The name `type_name` is declared with in its module: itself, unless it
+    /// is an alias that is an imported type's identity here (decision 310).
+    fn declaredTypeName(self: *const Emitter, type_name: []const u8) []const u8 {
+        return self.type_declared.get(type_name) orelse type_name;
     }
 
     /// Decision 21's T2 tag: element 1 of every value `type_name` builds.
     fn recordTagAtom(self: *Emitter, type_name: []const u8) ![]const u8 {
-        return crossModule.typeAtom(self.atom_arena.allocator(), self.idOf(self.typeOwnerPath(type_name)), type_name);
+        return crossModule.typeAtom(self.atom_arena.allocator(), self.idOf(self.typeOwnerPath(type_name)), self.declaredTypeName(type_name));
     }
 
     /// The module path that DECLARES `type_name`. A synthesised inner enum
@@ -7660,7 +7692,7 @@ const Emitter = struct {
             return try self.typeModuleAtom(type_name);
         }
         const xc = self.cross orelse return null;
-        const info = xc.exports.get(type_name) orelse return null;
+        const info = self.aliased_type_exports.get(type_name) orelse xc.exports.get(type_name) orelse return null;
         switch (info.kind) {
             .record, .@"enum" => {},
             else => return null,

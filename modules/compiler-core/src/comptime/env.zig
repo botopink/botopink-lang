@@ -1467,6 +1467,16 @@ pub const Env = struct {
     /// decision 170's two-types check (`noteExplicitTypeNames`), however each
     /// item spells its source.
     importedTypeDecls: std.StringHashMapUnmanaged(ImportedTypeDecl) = .empty,
+    /// Decision 310 — a type import item whose alias is the type's identity
+    /// in this module: the module imports two same-named types from two
+    /// modules (`import {m1.T as A}; import {m2.T as B};`), so the declared
+    /// name tells them apart nowhere. The alias → the declared name and the
+    /// declaring module. The declaration is registered under the alias
+    /// (`infer.registerRenamedImportedType`), a value imported from another
+    /// module has its signature's type renamed so (`infer.renameImportedType`),
+    /// and the transformed program keeps the alias, which each backend maps
+    /// back to the declared name in its module (`crossModule.TypeAliases`).
+    renamedTypeImports: std.StringArrayHashMapUnmanaged(ImportedTypeDecl) = .empty,
     /// 144 B-10 — an enum this module writes by dot-shorthand (`.Top` where a
     /// `Mode` is expected) and neither declares nor imports by name: the
     /// enum's name → the module that declares it. The transformed program

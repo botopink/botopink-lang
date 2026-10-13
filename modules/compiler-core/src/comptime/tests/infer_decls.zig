@@ -524,6 +524,87 @@ test "infer: import source ---- two un-aliased imports of one name collide at th
     return error.ConsumerNotCompiled;
 }
 
+/// Decision 310 — two modules' `Policy` and `consumer` (module `routes`): the
+/// consumer's type error rendered, or null when it infers.
+fn policyConsumerTypeError(consumer: []const u8, comptime scratch: []const u8) !?[]u8 {
+    const io = std.testing.io;
+    const modules = [_]Module{
+        .{ .path = "app/a", .source =
+        \\pub type Policy(ms: i32)
+        \\pub fn slow() -> Policy {
+        \\    return Policy(ms: 100);
+        \\}
+        },
+        .{ .path = "app/b", .source =
+        \\pub type Policy(name: string)
+        \\pub fn named(p: Policy) -> string {
+        \\    return p.name;
+        \\}
+        },
+        .{ .path = "routes", .source = consumer },
+    };
+    var session = try comptimeMod.compile(std.testing.allocator, &modules, io, test_scratch.path(io, scratch), null);
+    defer session.deinit(std.testing.allocator);
+    for (session.outputs.items) |out| {
+        if (!std.mem.eql(u8, out.name, "routes")) continue;
+        return switch (out.outcome) {
+            .ok => null,
+            .typeError => |te| try te.message(std.testing.allocator),
+            else => error.ConsumerDidNotReachInference,
+        };
+    }
+    return error.ConsumerNotCompiled;
+}
+
+// Decision 310 — two same-named types of two modules, each under an alias,
+// are two types: each alias constructs its own fields, and a function of
+// either module takes and answers its alias's type.
+test "infer: two aliased imports of two same-named types are two types" {
+    const err = try policyConsumerTypeError(
+        \\import {app.a.Policy as APolicy, app.a.slow};
+        \\import {app.b.Policy as BPolicy, app.b.named};
+        \\pub fn total() -> string {
+        \\    val x: APolicy = slow();
+        \\    val y = BPolicy(name: "n");
+        \\    return named(y) + x.ms.toString() + APolicy(ms: 1).ms.toString();
+        \\}
+    , "comptime/two_aliased_types");
+    defer if (err) |e| std.testing.allocator.free(e);
+    if (err) |e| std.debug.print("unexpected: {s}\n", .{e});
+    try std.testing.expect(err == null);
+}
+
+// Decision 310 — each alias is its own type: one module's value where the
+// other's is expected is a type mismatch, never the declared name's match.
+test "infer: an aliased type's value is not the other same-named type" {
+    const err = try policyConsumerTypeError(
+        \\import {app.a.Policy as APolicy, app.a.slow};
+        \\import {app.b.Policy as BPolicy, app.b.named};
+        \\pub fn wrong() -> string {
+        \\    return named(slow());
+        \\}
+    , "comptime/two_aliased_types_mismatch");
+    defer if (err) |e| std.testing.allocator.free(e);
+    try std.testing.expect(err != null);
+    try std.testing.expect(std.mem.indexOf(u8, err.?, "BPolicy") != null);
+}
+
+// Question B-23-a is open: a type of this module beside an aliased import of
+// a same-named type stays `import-name-collision`.
+test "infer: a local type beside an aliased same-named import stays refused" {
+    const err = try policyConsumerTypeError(
+        \\import {app.a.Policy as APolicy};
+        \\import {app.b.Policy as BPolicy};
+        \\pub type Policy(id: i32)
+        \\pub fn f() -> i32 {
+        \\    return Policy(id: 1).id;
+        \\}
+    , "comptime/local_beside_aliased_types");
+    defer if (err) |e| std.testing.allocator.free(e);
+    try std.testing.expect(err != null);
+    try std.testing.expect(std.mem.startsWith(u8, err.?, "import-name-collision"));
+}
+
 // The same declaration imported twice is one declaration: an `@emit`
 // contribution re-imports what its module already imports.
 test "infer: import source ---- the same declaration imported twice is not a collision" {

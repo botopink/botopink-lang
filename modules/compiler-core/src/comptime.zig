@@ -2347,6 +2347,7 @@ fn resolveImports(
     decoratorRegistry: *const std.StringHashMap(ast.FnDecl),
     extensionRegistry: *const std.StringHashMap(std.StringHashMap(ast.ImplementDecl)),
 ) !void {
+    const contested = try contestedTypeNames(env, program, typeDeclRegistry);
     for (program.decls) |decl| {
         switch (decl) {
             .use => |u| {
@@ -2537,6 +2538,15 @@ fn resolveImports(
                                     if (std.mem.eql(u8, prev.name, name) and std.mem.eql(u8, prev.module, e.key_ptr.*)) seen = true;
                                 }
                                 try env.importedTypeDecls.put(env.arena, local, .{ .name = name, .module = e.key_ptr.* });
+                                // Decision 310 — two same-named types of two
+                                // modules: the alias is this one's identity.
+                                if (imp.alias) |al| if (contested.contains(name) and type_decl == .type_) {
+                                    try env.renamedTypeImports.put(env.arena, al, .{ .name = name, .module = e.key_ptr.* });
+                                    try infer.registerImportedTypeClosure(env, e.value_ptr.*, type_decl);
+                                    try infer.registerRenamedImportedType(env, type_decl.type_, al);
+                                    bound_type_decl = true;
+                                    break;
+                                };
                                 if (!seen) {
                                     try infer.registerImportedTypeClosure(env, e.value_ptr.*, type_decl);
                                     try infer.registerImportedTypeDecl(env, type_decl);
@@ -2630,7 +2640,10 @@ fn resolveImports(
                             while (it.next()) |e| {
                                 if (isStdPkgPath(e.key_ptr.*)) continue;
                                 if (!leaf_src.admits(e.key_ptr.*, pass) or outOfScope(scope, e.key_ptr.*)) continue;
-                                if (e.value_ptr.get(name)) |ty| {
+                                if (e.value_ptr.get(name)) |ty_| {
+                                    // Decision 310 — its signature names a
+                                    // type this module holds under an alias.
+                                    const ty = try infer.renameImportedType(env, ty_, e.key_ptr.*);
                                     try env.bind(local, ty);
                                     // The types its signature names come
                                     // with it, as types only (01 R2).
@@ -2735,6 +2748,63 @@ fn resolveImports(
             else => {},
         }
     }
+}
+
+/// Decision 310 — the declared names two type import items of `program`
+/// resolve to in two different modules (`import {m1.T as A}; import {m2.T as
+/// B};`): each aliased item of such a name is the type's identity in this
+/// module (`Env.renamedTypeImports`). A name this module declares itself is
+/// left out: a type of this module beside an aliased import of a same-named
+/// type stays refused (`import-name-collision`, question B-23-a), and so does
+/// an un-aliased pair (decision 170) — `noteExplicitTypeNames` refuses both.
+fn contestedTypeNames(
+    env: *envMod.Env,
+    program: anytype,
+    typeDeclRegistry: *std.StringHashMap(std.StringHashMap(ast.DeclKind)),
+) !std.StringHashMapUnmanaged(void) {
+    var out: std.StringHashMapUnmanaged(void) = .empty;
+    var first: std.StringHashMapUnmanaged([]const u8) = .empty;
+    for (program.decls) |decl| {
+        if (decl != .use) continue;
+        const u = decl.use;
+        switch (u.source) {
+            .module => |m| if (std.mem.eql(u8, m, "std")) continue,
+            .root, .key => {},
+        }
+        const scope = packageScope(typeDeclRegistry, u.source);
+        for (u.imports) |imp| {
+            const name = imp.leaf();
+            if (name.len == 0 or !std.ascii.isUpper(name[0])) continue;
+            var leaf_src = try itemSource(u, imp, env.arena);
+            if (leaf_src == .key) if (env.reflection) |r| if (r.modTree) |tree| {
+                if (try tree.reexportOf(env.arena, leaf_src.key, name)) |re| leaf_src = .{ .key = re.owner };
+            };
+            const module: []const u8 = found: for ([3]u2{ 0, 1, 2 }) |pass| {
+                var it = typeDeclRegistry.iterator();
+                while (it.next()) |e| {
+                    if (isStdPkgPath(e.key_ptr.*)) continue;
+                    if (!leaf_src.admits(e.key_ptr.*, pass) or outOfScope(scope, e.key_ptr.*)) continue;
+                    const d = e.value_ptr.get(name) orelse continue;
+                    if (d != .type_) break :found "";
+                    break :found e.key_ptr.*;
+                }
+            } else "";
+            if (module.len == 0) continue;
+            const gop = try first.getOrPut(env.arena, name);
+            if (!gop.found_existing) {
+                gop.value_ptr.* = module;
+            } else if (!std.mem.eql(u8, gop.value_ptr.*, module)) {
+                try out.put(env.arena, name, {});
+            }
+        }
+    }
+    for (program.decls) |decl| switch (decl) {
+        .type_ => |t| _ = out.remove(t.name),
+        .typeAlias => |a| _ = out.remove(a.name),
+        .behavior => |b| _ = out.remove(b.name),
+        else => {},
+    };
+    return out;
 }
 
 /// Cross-module aggregation for the package-default DSL. A package's

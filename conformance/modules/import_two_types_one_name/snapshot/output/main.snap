@@ -1,3 +1,13 @@
 botopink-cell 1
-refused error: import-name-collision: this module would hold two types declared `Policy` — `a/p`'s and `b/p`'s; a type is told apart by its declared name, so one module holds one type of a name, aliased or not
-at src/main.bp:10:9
+out Policy(ms: 5)
+out Policy(name: "n")
+out 5
+out n
+out 10
+out n!
+out a:5
+out b:n
+out a
+out b
+out 100
+out n

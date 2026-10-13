@@ -2021,6 +2021,7 @@ fn emitErlangModule(
         em.enum_variants_known.deinit();
         em.imported_types.deinit();
         em.type_owner_path.deinit();
+        em.type_declared.deinit(em.alloc);
         em.variant_enum.deinit();
         em.variant_contested.deinit(alloc);
         {
@@ -3212,6 +3213,11 @@ const Emitter = struct {
     /// `imported_types` only kept the already-rendered type atom, which a
     /// variant tag cannot be built from.
     type_owner_path: std.StringHashMap([]const u8),
+    /// Decision 310 — an imported type's alias that is its identity in this
+    /// module (`import {Policy as APolicy} from "a/p"` beside another
+    /// module's `Policy`) → the declared name, which its atoms spell
+    /// (`'a@p@@Policy'`). Every other map keys the type by the alias.
+    type_declared: std.StringHashMapUnmanaged([]const u8) = .empty,
     /// Enum name → its variant names in DECLARATION order. Decision 8 §4.2's
     /// `x is Shape` enumerates them — every tag the enum builds, joined by
     /// `orelse` — and the order has to be the source's, or the emitted test
@@ -4942,13 +4948,20 @@ const Emitter = struct {
                     const by_name = std.mem.eql(u8, ee.name, name) and (if (named) |m| std.mem.eql(u8, m, ee.module) else self.cross == null);
                     const by_module = if (whole == .key) whole.namesModule(ee.module) else std.mem.eql(u8, crossModule.moduleBasename(ee.module), name);
                     if (if (by_name_pass) !by_name else (by_name or !by_module)) continue;
-                    try self.enum_variants_known.put(ee.name, {});
-                    _ = try self.type_owner_path.getOrPutValue(ee.name, ee.module);
-                    try self.rememberVariantOrder(ee.name, ee.variants);
+                    // Decision 310 — an enum kept under its alias is keyed by
+                    // it; its atoms spell the declared name (`type_declared`).
+                    const ename = if (by_name) if (imp.alias) |al| blk: {
+                        if (std.mem.eql(u8, al, ee.name)) break :blk ee.name;
+                        try self.type_declared.put(self.alloc, al, ee.name);
+                        break :blk al;
+                    } else ee.name else ee.name;
+                    try self.enum_variants_known.put(ename, {});
+                    _ = try self.type_owner_path.getOrPutValue(ename, ee.module);
+                    try self.rememberVariantOrder(ename, ee.variants);
                     for (ee.variants) |v| {
                         try self.enum_variants.put(v.name, {});
-                        try self.rememberVariantOwner(v.name, ee.name);
-                        try self.rememberEnumVariant(ee.name, v.name);
+                        try self.rememberVariantOwner(v.name, ename);
+                        try self.rememberEnumVariant(ename, v.name);
                         try self.rememberVariantFields(v);
                     }
                 }
@@ -4998,13 +5011,23 @@ const Emitter = struct {
                     try namespace_items.append(self.alloc, .{ .name = name, .whole = try u.leafSource(imp, self.atom_arena.allocator(), true) });
                     continue;
                 };
+                // Decision 310 — a type kept under its alias (the checker's
+                // identity here) is keyed by the alias; its atoms spell the
+                // declared name (`type_declared`).
+                const tname = switch (info.kind) {
+                    .record, .@"enum" => if (imp.alias) |al| blk: {
+                        if (!std.mem.eql(u8, al, name)) try self.type_declared.put(self.alloc, al, name);
+                        break :blk al;
+                    } else name,
+                    else => name,
+                };
                 switch (info.kind) {
                     .record => {
                         // Records are maps at runtime, so the consumer inlines
                         // the same `#{field => V}` literal the owner would build
                         // — there is no constructor function to call remotely.
-                        if (!self.record_fields.contains(name)) {
-                            try self.record_fields.put(name, try self.alloc.dupe([]const u8, info.fields));
+                        if (!self.record_fields.contains(tname)) {
+                            try self.record_fields.put(tname, try self.alloc.dupe([]const u8, info.fields));
                         }
                         // Its fields of function type, as `collectTypeShapes`
                         // records a local record's: `c.set(5)` applies the
@@ -5012,18 +5035,18 @@ const Emitter = struct {
                         // local `set(C, 5)` no module defines.
                         for (info.fn_fields) |ff| {
                             var key_buf: [256]u8 = undefined;
-                            const key = std.fmt.bufPrint(&key_buf, "{s}.{s}", .{ name, ff }) catch continue;
+                            const key = std.fmt.bufPrint(&key_buf, "{s}.{s}", .{ tname, ff }) catch continue;
                             if (!self.fn_typed_fields.contains(key)) try self.fn_typed_fields.put(try self.alloc.dupe(u8, key), {});
                             try self.fn_typed_field_names.put(ff, {});
                         }
                         // Its methods and associated fns are in the TYPE's
                         // module (policy 3), not the file's.
-                        try self.imported_types.put(name, try crossModule.typeAtom(self.atom_arena.allocator(), self.idOf(info.module), name));
-                        _ = try self.type_owner_path.getOrPutValue(name, info.module);
+                        try self.imported_types.put(tname, try crossModule.typeAtom(self.atom_arena.allocator(), self.idOf(info.module), name));
+                        _ = try self.type_owner_path.getOrPutValue(tname, info.module);
                     },
                     .@"enum" => {
-                        try self.enum_names.put(name, {});
-                        _ = try self.type_owner_path.getOrPutValue(name, info.module);
+                        try self.enum_names.put(tname, {});
+                        _ = try self.type_owner_path.getOrPutValue(tname, info.module);
                     },
                     // A behavior with associated `default fn`s: a method call
                     // on a value it types still dispatches through the value,
@@ -10008,7 +10031,13 @@ const Emitter = struct {
     }
 
     fn variantTagAtom(this: *Emitter, enum_name: []const u8, variant: []const u8) ![]const u8 {
-        return crossModule.variantAtom(this.atom_arena.allocator(), this.idOf(this.typeOwnerPath(enum_name)), enum_name, variant);
+        return crossModule.variantAtom(this.atom_arena.allocator(), this.idOf(this.typeOwnerPath(enum_name)), this.declaredTypeName(enum_name), variant);
+    }
+
+    /// The name `type_name` is declared with in its module: itself, unless it
+    /// is an alias that is an imported type's identity here (decision 310).
+    fn declaredTypeName(this: *const Emitter, type_name: []const u8) []const u8 {
+        return this.type_declared.get(type_name) orelse type_name;
     }
 
     /// The module path that DECLARES `type_name`: this file, unless the type
@@ -10041,7 +10070,7 @@ const Emitter = struct {
     /// the type's own module atom, which is what lets `'__bp_show'` reach the
     /// formatter through the value alone.
     fn recordTagAtom(this: *Emitter, type_name: []const u8) ![]const u8 {
-        return crossModule.typeAtom(this.atom_arena.allocator(), this.idOf(this.typeOwnerPath(type_name)), type_name);
+        return crossModule.typeAtom(this.atom_arena.allocator(), this.idOf(this.typeOwnerPath(type_name)), this.declaredTypeName(type_name));
     }
 
     /// A record field read under decision 21. A record is `{TypeAtom, F1, …}`,

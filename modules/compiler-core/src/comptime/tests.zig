@@ -44,6 +44,7 @@ test {
     _ = @import("./expr_param.zig");
     _ = @import("./member_fn.zig");
     _ = @import("./written_names.zig");
+    _ = @import("./type_identity.zig");
     _ = @import("./typed_meta.zig");
     _ = @import("./diagnostics.zig");
     _ = @import("./reflection.zig");
