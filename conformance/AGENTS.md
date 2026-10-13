@@ -1821,9 +1821,15 @@ conformance/run.sh --self-test                         # § Narrowing a cell —
 conformance/run.sh --list                              # the plan: one `<path>\t<target>\t<run|audit>` line per job, nothing spawned
 ```
 
-`--lib-root` defaults to `<compiler>/../../libs` (where `from "std"` resolves). `run.sh` runs each
-cell's `botopink cell check` from a scratch directory of its own, so no library root above the
-checkout is found, and exports `BOTOPINK_LIB_ROOTS=<lib-root>`.
+`--lib-root` defaults to `<compiler>/../../libs` (where `from "std"` resolves). `run.sh` hands the
+cells to its pool in **shares** (about two per job, at most 32 cells): a share is one
+`botopink cell check --jobs 1 <cell>…` process, from a scratch directory of its own (so no library
+root above the checkout is found, and `BOTOPINK_LIB_ROOTS=<lib-root>` exported), that builds its
+cells in process one after another — no `botopink` process per cell (144 B-29 step H). Every cell
+keeps its own verdict, read off the verdict line `botopink cell check` prints for it, so the plan,
+the report and its counts are the cells', not the shares'; a cell the process left with no verdict
+line (it died on it) is checked again alone. What runs in process and what stays a process of its
+own is § What runs in process.
 
 A red cell writes its candidates beside its accepted snapshots (`<file>.snap.new`, never committed:
 the gate's stage 1 refuses one staged) and the report prints, under its `FAIL` line, what `botopink
@@ -1845,6 +1851,17 @@ A whole run also prints `cells: <J> jobs — <R> run, <A> audits`: the jobs that
 (every job writes exactly one file; a malformed narrowing writes its `FAIL` without a job). `--list`
 prints the same plan without running it, one line per job (a cell's target is `*`), and
 `scripts/gate.sh` holds `J` and `A` to it — stage 9 cannot run fewer jobs than the tree declares.
+
+### What runs in process
+
+144 B-29 step H, decision 464 (5) — one implementation, `botopink cell check`, over compiler-core:
+
+| What | How it runs | Why |
+|---|---|---|
+| a cell's build, every target (the former `run/`, `reject/` and `modules/` alike) | in process: `botopink cell check` calls the CLI's own build (`build.zig`'s pipeline) with its report captured, many cells in one process | a refusal is the exact text `botopink build` prints — a manifest's, a dependency's and a sidecar's included — and no cell's claim is about the `botopink` process itself (its argv, its exit status, its stdout), so none needs one of its own; a cell every target refuses runs no program at all |
+| a narrowed cell's excluded targets | in process, the same build | the audit reads the build's refusal |
+| a cell's program | a process of its runtime: `node`, `erl` (after the in-session compile of every `.erl` / `.S`), `wasmtime`, and `node` for wasm's browser host | compiler-core's snapshot executors (`executeJavaScript`, `executeErlang`, `executeBeamAsm`, `executeWat`) cannot carry a cell's answer: they answer from `.botopinkbuild/runtime-cache/` (a stored result, decision 510), merge stdout and stderr into one log and record a crashed `node` or `erl` program as an empty log (`abort`, `stderr`, `no-final-newline` could not be read), and run one module's text, not a cell's project (its sidecar `.erl`s, its path dependencies, wasm's two hosts) |
+| a `test/` suite | `botopink test --json`, one process per suite and target | the test runner is the path the suite states (decision 457 (2)) |
 
 ### No result is cached (decision 510)
 

@@ -36,7 +36,9 @@ const Snap = snap.Snap;
 // ── Options ───────────────────────────────────────────────────────────────────
 
 pub const CheckOpts = struct {
-    path: []const u8,
+    /// Cells or directories of cells, checked in the order given (each
+    /// directory's cells sorted); a cell reached twice is checked once.
+    paths: []const []const u8,
     /// Cells checked at once; null is `defaultJobs`.
     jobs: ?usize = null,
     /// `--cold`: the code cache is not read, and what ran is written
@@ -157,22 +159,29 @@ const Ctx = struct {
 };
 
 fn check(gpa: std.mem.Allocator, arena: std.mem.Allocator, io: std.Io, opts: CheckOpts, env_map: libs.EnvMap) !u8 {
-    const path = opts.path;
     var buf: [std.fs.max_path_bytes]u8 = undefined;
     const home = try arena.dupe(u8, buf[0..try std.process.currentPath(io, &buf)]);
     var ctx: Ctx = .{ .gpa = gpa, .arena = arena, .io = io, .env_map = env_map, .home = home };
-    const root = try std.fs.path.resolve(arena, &.{ home, path });
 
-    var dir = std.Io.Dir.cwd().openDir(io, root, .{}) catch {
-        reporter.errMsg(try std.fmt.allocPrint(arena, "{s} is not a directory", .{path}));
-        return 1;
-    };
-    dir.close(io);
     var cells: std.ArrayListUnmanaged([]const u8) = .empty;
-    try discover(arena, io, root, &cells);
-    if (cells.items.len == 0) {
-        reporter.errMsg(try std.fmt.allocPrint(arena, "no cell under {s} — a cell is a directory holding src/main.bp", .{path}));
-        return 1;
+    var seen: std.StringHashMapUnmanaged(void) = .empty;
+    for (opts.paths) |path| {
+        const root = try std.fs.path.resolve(arena, &.{ home, path });
+        var dir = std.Io.Dir.cwd().openDir(io, root, .{}) catch {
+            reporter.errMsg(try std.fmt.allocPrint(arena, "{s} is not a directory", .{path}));
+            return 1;
+        };
+        dir.close(io);
+        var found: std.ArrayListUnmanaged([]const u8) = .empty;
+        try discover(arena, io, root, &found);
+        if (found.items.len == 0) {
+            reporter.errMsg(try std.fmt.allocPrint(arena, "no cell under {s} — a cell is a directory holding src/main.bp", .{path}));
+            return 1;
+        }
+        for (found.items) |cell| {
+            if ((try seen.getOrPut(arena, cell)).found_existing) continue;
+            try cells.append(arena, cell);
+        }
     }
 
     var passed: usize = 0;
@@ -180,6 +189,17 @@ fn check(gpa: std.mem.Allocator, arena: std.mem.Allocator, io: std.Io, opts: Che
     if (jobs > 1) {
         passed = try checkParallel(&ctx, cells.items, jobs);
     } else for (cells.items) |cell| {
+        // Every cell is checked in this process, one after another: what it
+        // allocates (its scratch paths, its build's text, its report) lives in
+        // an arena of its own, freed once its report is out, so a run over a
+        // thousand cells holds one cell's at a time.
+        var cell_arena = std.heap.ArenaAllocator.init(gpa);
+        defer cell_arena.deinit();
+        ctx.arena = cell_arena.allocator();
+        defer {
+            ctx.out = .empty;
+            ctx.arena = arena;
+        }
         const ok = checkCell(&ctx, cell) catch |err| blk: {
             ctx.say("FAIL {s}\n  {s}\n", .{ ctx.rel(cell), @errorName(err) });
             break :blk false;
@@ -218,18 +238,30 @@ fn defaultJobs(io: std.Io) usize {
 }
 
 const Slot = struct {
-    /// What `botopink cell check <cell>` printed for the cell, its summary line off.
+    /// What the worker printed for the cell: its verdict line and the lines
+    /// under it.
     out: []const u8 = "",
     ok: bool = false,
-    /// The child's stderr (warnings of generated code), passed on in order.
+    /// The worker's stderr (warnings of generated code), passed on in order —
+    /// on the first cell of its share.
     err: []const u8 = "",
     done: std.Io.Event = .unset,
 };
+
+/// How many cells one worker process checks, one after another: about two
+/// shares per job, so a slow share leaves the others something to take, and
+/// at most `MAX_SHARE`, so a share that dies costs little to check again.
+const MAX_SHARE = 32;
+
+fn shareSize(cells: usize, jobs: usize) usize {
+    return std.math.clamp(std.math.divCeil(usize, cells, jobs * 2) catch 1, 1, MAX_SHARE);
+}
 
 const Pool = struct {
     ctx: *Ctx,
     cells: []const []const u8,
     slots: []Slot,
+    share: usize,
     self_exe: []const u8,
     next: std.atomic.Value(usize) = .init(0),
 
@@ -237,67 +269,145 @@ const Pool = struct {
         while (pool.runNext()) {}
     }
 
+    /// Take the next share of cells and check it in a process of its own
+    /// (the build is in process and keeps global state — the report sinks,
+    /// the directory — so two cells never build at once in one process). The
+    /// process checks its cells one after another with `--jobs 1`, so each
+    /// prints what it prints alone. A cell its process left without a verdict
+    /// (the process died on it) is checked again in a process of its own, and
+    /// so is each cell after it.
     fn runNext(pool: *Pool) bool {
-        const i = pool.next.fetchAdd(1, .monotonic);
-        if (i >= pool.cells.len) return false;
-        const slot = &pool.slots[i];
-        // Each cell is checked by a process of its own (the build is in
-        // process and keeps global state: the report sinks, the directory),
-        // run with `--jobs 1`, so it prints what it prints today.
-        slot.out = pool.runChild(pool.cells[i], slot) catch |err|
-            std.fmt.allocPrint(std.heap.page_allocator, "FAIL {s}\n  {s}\n", .{ pool.ctx.rel(pool.cells[i]), @errorName(err) }) catch "";
-        // A slot is never left without a line naming its cell: the parent
-        // adds one (`hasVerdict`) when this is empty or names no verdict.
-        slot.done.set(pool.ctx.io);
+        const first = pool.next.fetchAdd(pool.share, .monotonic);
+        if (first >= pool.cells.len) return false;
+        const last = @min(first + pool.share, pool.cells.len);
+        const share = pool.cells[first..last];
+        const a = std.heap.page_allocator;
+        if (pool.runChild(share)) |res| {
+            pool.slots[first].err = res.err;
+            for (share, first..) |cell, i| {
+                if (sectionOf(pool.ctx, res.out, cell)) |sec| {
+                    pool.slots[i].out = sec.text;
+                    pool.slots[i].ok = sec.ok;
+                }
+            }
+        } else |_| {}
+        for (share, first..) |cell, i| {
+            const slot = &pool.slots[i];
+            if (slot.out.len == 0 and share.len > 1) {
+                if (pool.runChild(&.{cell})) |res| {
+                    slot.err = res.err;
+                    if (sectionOf(pool.ctx, res.out, cell)) |sec| {
+                        slot.out = sec.text;
+                        slot.ok = sec.ok and res.exit_ok;
+                    } else slot.out = res.out;
+                } else |err| {
+                    slot.out = std.fmt.allocPrint(a, "FAIL {s}\n  {s}\n", .{ pool.ctx.rel(cell), @errorName(err) }) catch "";
+                }
+            }
+            // A slot is never left without a line naming its cell: the parent
+            // adds one (`hasVerdict`) when this is empty or names no verdict.
+            slot.done.set(pool.ctx.io);
+        }
         return true;
     }
 
-    fn runChild(pool: *Pool, cell: []const u8, slot: *Slot) ![]const u8 {
+    const Child = struct {
+        /// The child's stdout, its last line (its own `cells: …` summary) off.
+        out: []const u8,
+        err: []const u8,
+        exit_ok: bool,
+    };
+
+    fn runChild(pool: *Pool, cells: []const []const u8) !Child {
         const a = std.heap.page_allocator;
+        var argv: std.ArrayListUnmanaged([]const u8) = .empty;
+        defer argv.deinit(a);
+        try argv.appendSlice(a, &.{ pool.self_exe, "cell", "check", "--jobs", "1" });
+        if (code_cache.cold) try argv.append(a, "--cold");
+        try argv.appendSlice(a, cells);
         const res = try std.process.run(a, pool.ctx.io, .{
-            .argv = if (code_cache.cold)
-                &.{ pool.self_exe, "cell", "check", "--jobs", "1", "--cold", cell }
-            else
-                &.{ pool.self_exe, "cell", "check", "--jobs", "1", cell },
+            .argv = argv.items,
             .environ_map = pool.ctx.env_map,
             .stdout_limit = .limited(64 * 1024 * 1024),
             .stderr_limit = .limited(16 * 1024 * 1024),
         });
-        slot.err = res.stderr;
-        slot.ok = switch (res.term) {
+        const exit_ok = switch (res.term) {
             .exited => |c| c == 0,
             else => false,
         };
-        // The last line is the child's own `cells: …` summary: the parent prints one.
         const body = std.mem.trimEnd(u8, res.stdout, "\n");
         const cut = if (std.mem.lastIndexOfScalar(u8, body, '\n')) |n| n + 1 else 0;
         if (!std.mem.startsWith(u8, body[cut..], "cells: ")) {
-            return std.fmt.allocPrint(a, "{s}FAIL {s}\n  the check process ended without a report\n", .{ res.stdout, pool.ctx.rel(cell) });
+            return .{ .out = res.stdout, .err = res.stderr, .exit_ok = false };
         }
-        return body[0..cut];
+        return .{ .out = body[0..cut], .err = res.stderr, .exit_ok = exit_ok };
     }
 };
+
+/// The verdict line `line` gives `want` (a cell as printed): `.ok` for
+/// `ok   <want>`, `.fail` for `FAIL <want>` alone or followed by ` — …`.
+fn verdictOf(line: []const u8, want: []const u8) ?enum { ok, fail } {
+    if (std.mem.startsWith(u8, line, "ok   ") and std.mem.eql(u8, line["ok   ".len..], want)) return .ok;
+    if (!std.mem.startsWith(u8, line, "FAIL ")) return null;
+    const rest = line["FAIL ".len..];
+    if (!std.mem.startsWith(u8, rest, want)) return null;
+    const tail = rest[want.len..];
+    return if (tail.len == 0 or std.mem.startsWith(u8, tail, " — ")) .fail else null;
+}
+
+/// Whether `line` is a verdict line at all (a cell's report starts with one;
+/// every line under it is indented).
+fn isVerdictLine(line: []const u8) bool {
+    return std.mem.startsWith(u8, line, "ok   ") or std.mem.startsWith(u8, line, "FAIL ");
+}
+
+const Section = struct { text: []const u8, ok: bool };
+
+/// The lines a worker printed for `cell`: its verdict line and every line up
+/// to the next verdict line; null when no verdict line names it.
+fn sectionOf(ctx: *Ctx, out: []const u8, cell: []const u8) ?Section {
+    return sectionFor(out, ctx.rel(cell));
+}
+
+fn sectionFor(out: []const u8, want: []const u8) ?Section {
+    var at: usize = 0;
+    while (at < out.len) {
+        const nl = std.mem.indexOfScalarPos(u8, out, at, '\n') orelse out.len;
+        const line = out[at..nl];
+        if (verdictOf(line, want)) |v| {
+            var end = @min(nl + 1, out.len);
+            while (end < out.len) {
+                const e = std.mem.indexOfScalarPos(u8, out, end, '\n') orelse out.len;
+                if (isVerdictLine(out[end..e])) break;
+                end = @min(e + 1, out.len);
+            }
+            return .{ .text = out[at..end], .ok = v == .ok };
+        }
+        at = nl + 1;
+    }
+    return null;
+}
 
 /// Whether `out` holds the verdict line of `cell`: `ok   <cell>` for a pass,
 /// a `FAIL <cell>` line for anything else.
 fn hasVerdict(ctx: *Ctx, out: []const u8, cell: []const u8, ok: bool) bool {
     const want = ctx.rel(cell);
-    const prefix = if (ok) "ok   " else "FAIL ";
     var lines = std.mem.splitScalar(u8, out, '\n');
     while (lines.next()) |l| {
-        if (std.mem.startsWith(u8, l, prefix) and std.mem.eql(u8, l[prefix.len..], want)) return true;
+        if (verdictOf(l, want)) |v| return (v == .ok) == ok;
     }
     return false;
 }
 
-/// Check `cells` on `jobs` workers; the report is printed in the cells' order.
-/// Returns how many passed.
+/// Check `cells` on `jobs` workers, each a process checking a share of them
+/// (`shareSize`); the report is printed in the cells' order. Returns how many
+/// passed.
 fn checkParallel(ctx: *Ctx, cells: []const []const u8, jobs: usize) !usize {
     const a = ctx.arena;
     const slots = try a.alloc(Slot, cells.len);
     for (slots) |*s| s.* = .{};
     const self_exe = try std.process.executablePathAlloc(ctx.io, a);
-    var pool: Pool = .{ .ctx = ctx, .cells = cells, .slots = slots, .self_exe = self_exe };
+    var pool: Pool = .{ .ctx = ctx, .cells = cells, .slots = slots, .share = shareSize(cells.len, jobs), .self_exe = self_exe };
     const workers = try a.alloc(?std.Io.Future(void), jobs);
     var started: usize = 0;
     for (workers) |*w| {
@@ -1292,4 +1402,36 @@ test "discover finds the cells of a directory and never a nested package under d
     try discover(a, io, root, &cells);
     try std.testing.expectEqual(@as(usize, 1), cells.items.len);
     try std.testing.expectEqualStrings(try std.fs.path.join(a, &.{ root, "one" }), cells.items[0]);
+}
+
+test "a worker's report is cut into each cell's section by its verdict line" {
+    const out =
+        \\ok   cells/a
+        \\FAIL cells/ab — a new cell: no accepted snapshot yet, candidates written
+        \\  main on commonJS: the answer every target gives
+        \\    candidate cells/ab/snapshot/output/main.snap.new
+        \\FAIL cells/b
+        \\  wasm: the program ran past 300 s
+        \\
+    ;
+    const a = sectionFor(out, "cells/a").?;
+    try testing.expect(a.ok);
+    try testing.expectEqualStrings("ok   cells/a\n", a.text);
+    const ab = sectionFor(out, "cells/ab").?;
+    try testing.expect(!ab.ok);
+    try testing.expect(std.mem.endsWith(u8, ab.text, "main.snap.new\n"));
+    try testing.expect(std.mem.startsWith(u8, ab.text, "FAIL cells/ab — "));
+    const b = sectionFor(out, "cells/b").?;
+    try testing.expect(!b.ok);
+    try testing.expectEqualStrings("FAIL cells/b\n  wasm: the program ran past 300 s\n", b.text);
+    // A cell no verdict line names has no section: the parent reports it.
+    try testing.expect(sectionFor(out, "cells/c") == null);
+    try testing.expect(sectionFor(out, "cells") == null);
+}
+
+test "a share is about two per job, at least one cell and at most MAX_SHARE" {
+    try testing.expectEqual(@as(usize, 1), shareSize(5, 4));
+    try testing.expectEqual(@as(usize, 2), shareSize(5, 2));
+    try testing.expectEqual(@as(usize, MAX_SHARE), shareSize(1085, 6));
+    try testing.expectEqual(@as(usize, 1), shareSize(1, 8));
 }

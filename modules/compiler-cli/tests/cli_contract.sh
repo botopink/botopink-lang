@@ -1327,6 +1327,16 @@ if have node && have erl && have erlc && have wasmtime; then
   [[ "$CODE" -eq "$SERIAL_CODE" && "$CODE" -eq 1 ]] && ok "cell check --jobs 4 exits as --jobs 1 does (exit 1)" || fail "cell check --jobs 4: exit $CODE, --jobs 1 exit $SERIAL_CODE"
   [[ "$OUT" == "$SERIAL_OUT" ]] && ok "cell check --jobs 4 prints what --jobs 1 prints, in the cells' order" || { fail "cell check --jobs 4 differs from --jobs 1"; diff <(echo "$SERIAL_OUT") <(echo "$OUT") | sed 's/^/      /' >&2; }
   expect_out "cells: 5 checked — 4 passed, 1 failed" "the totals of a parallel run count the failing cell"
+  # 144 B-29 step H: a worker is one process over a share of the cells, one
+  # after another (`--jobs 2` over five cells: shares of two) — the report the
+  # same bytes as one process checking them all.
+  run "$CELLS" cell check --jobs 2 .
+  [[ "$CODE" -eq "$SERIAL_CODE" && "$OUT" == "$SERIAL_OUT" ]] && ok "cell check --jobs 2 (shares of two cells) prints what --jobs 1 prints, and exits alike" || { fail "cell check --jobs 2 differs from --jobs 1 (exit $CODE)"; diff <(echo "$SERIAL_OUT") <(echo "$OUT") | sed 's/^/      /' >&2; }
+  # Several paths: their cells in the order given, a cell named twice checked once.
+  run "$CELLS" cell check --jobs 1 refused prints refused
+  VERDICTS="$(printf '%s\n' "$OUT" | grep -E '^(ok   |FAIL )' | awk '{print $2}' | tr '\n' ' ')"
+  [[ "$VERDICTS" == "refused prints " ]] && ok "cell check over several paths checks their cells in the order given, each once" || fail "cell check refused prints refused: verdicts '$VERDICTS'"
+  expect_out "cells: 2 checked" "a cell named twice is counted once"
   run "$CELLS" cell check --jobs 0 .
   expect_code 1 "cell check --jobs 0 is refused"
   # B-38: every cell found is reported, in the cells' order, and the summary's

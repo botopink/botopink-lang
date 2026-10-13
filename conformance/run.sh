@@ -38,7 +38,7 @@
 #               cells' dependencies is not read (decision 509 (5)); `scripts/gate.sh
 #               --cold` passes it
 #
-# Three kinds, every job in its own scratch directory:
+# Three kinds, every job (a share of cells, § run) in its own scratch directory:
 #   modules/<cell>/    a cell (decisions 457, 475): `botopink.json`, `src/`,
 #                      `snapshot/output/<module>.snap`, `snapshot/targets/<t>/
 #                      <module>.snap` where a target departs, `docs.md`.
@@ -117,8 +117,10 @@ fi
 # The pool is scripts/lib/pool.sh — `botopink-lib-test`'s rule: one job per
 # CPU, bounded by `MemAvailable / 768 MiB`, and a job admitted only while the
 # machine's runnable threads are at most the CPU count (other gates share it).
-# A cell is one job: `botopink cell check` builds it in process on each target
-# its manifest declares and runs the program with node, erl or wasmtime.
+# A cell is one job of the plan: `botopink cell check` builds it in process on
+# each target its manifest declares and runs the program with node, erl or
+# wasmtime. The cells run in shares (§ run, § in process): one `botopink`
+# process checks a share of them, one after another.
 # shellcheck source=../scripts/lib/pool.sh
 . "$repo/scripts/lib/pool.sh"
 [ -n "$jobs" ] || jobs="$(pool_default_jobs)"
@@ -333,21 +335,62 @@ test_project() { # <dir> <path> <target> <out>
     fi
 }
 
-# `botopink cell check <cell>` from a scratch directory (its `.botopinkbuild/tmp/`
-# lands there, and no library root is found above it but --lib-root). Its whole
-# output is kept beside the verdict for a red cell: the candidates and the diffs
-# are what a person reads.
-check_cell() { # <dir> <path> <out>
-    local dir="$1" path="$2" out="$3"
+# A share of the cells — `--list`'s lines, in plan order — checked by ONE
+# `botopink cell check --jobs 1 <cell>…` from a scratch directory of the share's
+# own (its `.botopinkbuild/tmp/` lands there, and no library root is found above
+# it but --lib-root): the process builds each cell in process, one after
+# another, and runs its programs (§ in process). Every cell of the share still
+# writes its own verdict, read off the verdict line `botopink cell check` prints
+# for it (`ok   <cell>`, or `FAIL <cell>` and the lines under it — the
+# candidates and their differences, what a person reads, kept beside a red
+# cell's verdict). A cell the process left without a verdict line (it died on
+# it) is checked again alone, and its verdict is that run's.
+check_share() { # <share id> <path…, one per line>
+    local id="$1" dir="$work/s-$1" path paths=() abs=() code
+    while IFS= read -r path; do [ -n "$path" ] && { paths+=("$path"); abs+=("$here/$path"); }; done <<<"$2"
     mkdir -p "$dir"
-    (cd "$dir" && with_timeout 3600 "$compiler" cell check ${cold_flag[@]+"${cold_flag[@]}"} "$here/$path" >"$dir/cell.txt" 2>&1)
-    local code=$?
-    if [ $code -eq 0 ]; then
-        printf '*\t%s\t%s\t\n' "$path" ok >"$out"
-    else
-        printf '*\t%s\t%s\t%s\n' "$path" fail "botopink cell check: exit $code" >"$out"
-        strip <"$dir/cell.txt" | sed "s#$here/##g" >"$work/log-$(basename "$out")"
-    fi
+    (cd "$dir" && with_timeout $((3600 * ${#paths[@]})) "$compiler" cell check --jobs 1 ${cold_flag[@]+"${cold_flag[@]}"} "${abs[@]}" >"$dir/cell.txt" 2>&1)
+    code=$?
+    for path in "${paths[@]}"; do
+        verdict_of "$dir/cell.txt" "$path" "$code" || {
+            local alone="$dir/alone-$(printf '%s' "$path" | tr '/.' '__')"
+            mkdir -p "$alone"
+            (cd "$alone" && with_timeout 3600 "$compiler" cell check --jobs 1 ${cold_flag[@]+"${cold_flag[@]}"} "$here/$path" >"$alone/cell.txt" 2>&1)
+            verdict_of "$alone/cell.txt" "$path" "$?" whole
+        }
+    done
+}
+
+# The verdict of the cell <path> in what `botopink cell check` printed (<file>):
+# its section — the verdict line naming it and every indented line under it.
+# Returns 1 when no verdict line names the cell, unless `whole` is given: then
+# the cell fails and the whole output is its log.
+verdict_of() { # <file> <path> <exit code> [whole]
+    local file="$1" path="$2" code="$3" slug out
+    slug="$(printf '%s-%s' "$path" '*' | tr '/.*' '___')"
+    out="$work/r-$slug"
+    strip <"$file" | awk -v want="$here/$path" '
+        function verdict(l) { return substr(l, 1, 5) == "ok   " || substr(l, 1, 5) == "FAIL " }
+        verdict($0) {
+            rest = substr($0, 6)
+            on = (rest == want || index(rest, want " — ") == 1)
+            if (on) print
+            next
+        }
+        on { print }' >"$out.section"
+    local first; first="$(head -n1 "$out.section")"
+    case "$first" in
+        "ok   "*)
+            printf '*\t%s\t%s\t\n' "$path" ok >"$out" ;;
+        "FAIL "*)
+            printf '*\t%s\t%s\t%s\n' "$path" fail "botopink cell check: exit 1" >"$out"
+            sed "s#$here/##g" <"$out.section" >"$work/log-$(basename "$out")" ;;
+        *)
+            if [ "${4:-}" != whole ]; then rm -f "$out.section"; return 1; fi
+            printf '*\t%s\t%s\t%s\n' "$path" fail "botopink cell check: exit $code, no verdict for the cell" >"$out"
+            strip <"$file" | sed "s#$here/##g" >"$work/log-$(basename "$out")" ;;
+    esac
+    rm -f "$out.section"
 }
 
 run_one() { # <path> <target>
@@ -357,7 +400,6 @@ run_one() { # <path> <target>
     rm -rf "$dir"
     export BOTOPINK_LIB_ROOTS="$lib_root"
     case "$path" in
-        modules/*) check_cell "$dir" "$path" "$out" ;;
         test/*.bp)
             project "$dir"
             cp "$here/$path" "$dir/test/$(basename "$path")"
@@ -391,7 +433,7 @@ audit_one() { # <path> <excluded target> <the file that narrows>
         printf '%s\t%s\t%s\t%s\n' "$t" "$path" fail "excluded by $by, and $t refuses it for another reason than a host binding (got: ${first:-no error line}) — let the suite run there" >"$out"
     fi
 }
-export -f run_one check_cell test_project json_tests strip quiet project audit_one pool_job pool_admit pool_cpus with_timeout
+export -f run_one check_share verdict_of test_project json_tests strip quiet project audit_one pool_job pool_admit pool_cpus with_timeout
 export here work compiler lib_root
 
 if [ $self_test -eq 1 ]; then
@@ -492,14 +534,31 @@ fi
 # ── § run ─────────────────────────────────────────────────────────────────────
 # Decision 510: every job runs on every run — no verdict is stored nor answered
 # from a store. The jobs are the plan's lines, in plan order.
-while IFS=$'\t' read -r f t what; do
-    case "$what" in
-        audit:*) printf 'audit_one\0%s\0%s\0%s\0' "$f" "$t" "${what#audit:}" ;;
-        # The 4th field is `-`, never empty: BSD xargs (macOS) drops an empty
-        # argument even under -0, and every later group of 4 would shift.
-        *) if [ "$t" = "*" ]; then printf 'run_one\0%s\0%s\0-\0' "$f" "${targets[0]}"; else printf 'run_one\0%s\0%s\0-\0' "$f" "$t"; fi ;;
-    esac
-done <"$jobs_list" | xargs -0 -r -n 4 -P "$jobs" bash -c 'pool_job "$work/inflight" "$0" "$1" "$2" "$3"'
+#
+# § in process: the cells (target `*`) go to the pool in shares — about two per
+# job, at most 32 cells each — and a share is one `botopink cell check`
+# process that builds its cells in process one after another (144 B-29 step
+# H): no `botopink` process per cell. Each cell keeps its own verdict, so the
+# report, its counts and `--list`'s plan are the cells', not the shares'.
+cells_total="$(awk -F '\t' '$2 == "*"' "$jobs_list" | wc -l | tr -d ' ')"
+share=1
+if [ "$cells_total" -gt 0 ]; then
+    share=$(( (cells_total + 2 * jobs - 1) / (2 * jobs) ))
+    [ "$share" -le 32 ] || share=32
+fi
+{
+    awk -F '\t' '$2 == "*" { print $1 }' "$jobs_list" | awk -v n="$share" '
+        { batch = batch $0 "\n"; if (++k == n) { printf "check_share%c%d%c%s%c-%c", 0, ++id, 0, batch, 0, 0; batch = ""; k = 0 } }
+        END { if (k) printf "check_share%c%d%c%s%c-%c", 0, ++id, 0, batch, 0, 0 }'
+    while IFS=$'\t' read -r f t what; do
+        case "$what" in
+            audit:*) printf 'audit_one\0%s\0%s\0%s\0' "$f" "$t" "${what#audit:}" ;;
+            # The 4th field is `-`, never empty: BSD xargs (macOS) drops an empty
+            # argument even under -0, and every later group of 4 would shift.
+            *) [ "$t" = "*" ] || printf 'run_one\0%s\0%s\0-\0' "$f" "$t" ;;
+        esac
+    done <"$jobs_list"
+} | xargs -0 -r -n 4 -P "$jobs" bash -c 'pool_job "$work/inflight" "$0" "$1" "$2" "$3"'
 
 cat "$work"/r-* 2>/dev/null | sort >"$work/results"
 # How many jobs wrote their verdict — every job writes exactly one file
