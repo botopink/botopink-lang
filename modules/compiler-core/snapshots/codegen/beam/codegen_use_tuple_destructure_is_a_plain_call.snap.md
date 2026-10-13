@@ -1,23 +1,27 @@
 ----- SOURCE CODE -- std/context.bp
 ```botopink
-//// Contexts (decision 354) — what a component's body reads from above it,
-//// React's context in botopink's spelling.
+//// Contexts (decisions 354, 378, 379) — what a component's body reads from
+//// above it, React's context in botopink's spelling.
 ////
-//// A context is a declared object, its identity the declaration (decision
-//// 281): `pub val ThemeContext = Context<Theme>();` — no default value, and
-//// no other way to make one (`context-not-declared`). A component provides a
-//// value to everything it renders below it, and a body reads the nearest
-//// value provided above it:
+//// A context is named by its value's type. `createContext(value)` at module
+//// level declares the default of that type — one declaration per type in
+//// the program:
 ////
-////     use provide(ThemeContext, Theme(mode: .Dark));   // the children's
-////     val theme = use context(ThemeContext);           // the nearest above
+////     pub val themeContext = comptime createContext(Theme(mode: .Light));
+////
+//// A component provides a context to everything it renders below it, and a
+//// body reads the nearest one of a type provided above it, else the type's
+//// declared default:
+////
+////     use provide(createContext(Theme(mode: .Dark)));   // the children's
+////     val theme = use context(Theme);                    // the nearest above
 ////
 //// Both are hooks, so they are `use`d, never called for a value; `provide`
 //// only in a component's body (a `@Component<R>` whose `R` implements
 //// `@Renderable`), before it renders a child. `use` exists only where there
 //// is a render tree — a decorator body, a template body and a
-//// `comptime { … }` have none (`use-outside-render-tree`). A read with no
-//// provider above it is `context-unbound` at run time.
+//// `comptime { … }` have none (`use-outside-render-tree`). A read of a type
+//// with no declared default is refused at build, at the read.
 ////
 //// A component at run time is a lambda over a `RenderScope` (decision 388):
 //// calling `Card(item)` only makes the lambda, and the render library runs it
@@ -30,23 +34,33 @@
 ////
 //// The work is the compiler's: each `use provide(…)` / `use context(…)` is
 //// lowered where it is written — `provide` makes the children's scope and
-//// `context` looks the received one up. Neither hook below is ever called:
-//// the checker refuses every reference to them but a `use`'s operand, and the
-//// bodies panic.
+//// `context` looks the received one up, the declared default when nothing
+//// of its type is provided. Neither hook below is ever called: the checker
+//// refuses every reference to them but a `use`'s operand, and the bodies
+//// panic.
 
-// A context of `T`, named by the `val` that declares it.
-pub type Context<T>()
+// A context of `T`: the value a provider gives, or a type's declared default.
+pub type Context<T>(contextValue: T)
 
-// Gives `value` to every component this component renders below it — never
-// to itself or a sibling; the nearest provider wins.
-pub fn provide<T>(ctx: Context<T>, value: T) -> @Component<void> {
+// A context of `value`'s type. At module level it declares that type's
+// default (decisions 378, 379); inside a component it makes the context a
+// `use provide(…)` gives.
+pub fn createContext<T>(value: T) -> Context<T> {
+    return Context(contextValue: value);
+}
+
+// Gives `ctx` to every component this component renders below it — never
+// to itself or a sibling; the nearest provider of a type wins.
+pub fn provide<T>(ctx: Context<T>) -> @Component<void> {
     @panic(
         "`use provide` / `use context` are lowered where they are written; this body never runs",
     );
 }
 
-// The value of `ctx` provided nearest above this body.
-pub fn context<T>(ctx: Context<T>) -> @Component<T> {
+// The value of the context of type `T` provided nearest above this body, or
+// `T`'s declared default: `use context(T)` answers `T`, which the checker
+// reads off the type the argument names (decision 379 (3)).
+pub fn context(comptime t: @Expr<type>) -> @Component<unknown> {
     @panic(
         "`use provide` / `use context` are lowered where they are written; this body never runs",
     );
@@ -74,12 +88,14 @@ pub type Rendered<R>(value: R, scope: RenderScope)
 // A program never names these: the compiler imports them under names no
 // source can spell. A `@Component` function answers `{ scope -> … }`; each
 // `return v` of its body answers `rendered(v, <children's scope>)`; `use
-// provide(C, v)` binds `push(<children's scope>, <C's identity>, v)` for the
-// children, `use context(C)` is `find(<received scope>, <C's identity>, "C")`,
+// provide(c)` binds `push(<children's scope>, <T's identity>, c)` for the
+// children (a context is its value at run time: the compiler writes
+// `createContext(v)` as `v`), `use context(T)` is `find(<received scope>, <T's
+// identity>, <T's declared default>)`,
 // a `use` of a hook and an `await` of a component value run the lambda and
 // read `valueOf` of what it answers, and an `await` outside every body runs it
-// with `root()`. A context's identity is the declaration of its `val` (281) —
-// the compiler writes it, never a program.
+// with `root()`. A context's identity is its value's type (379) — the
+// compiler writes it, never a program.
 
 // One provided value over the frames it was provided in.
 pub type Frame(key: string, value: unknown, parent: unknown)
@@ -91,23 +107,17 @@ pub fn push(scope: RenderScope, key: string, value: unknown) -> RenderScope {
     );
 }
 
-// The value provided nearest above for `key`; `context-unbound` when no
-// provider of `name` is above.
+// The value provided nearest above for `key`, else `fallback` — the type's
+// declared default (decision 378 (3): no read is unbound).
 // The two `unknown` fields are read through `frameValue` / `frameParent`: wasm boxes a field read as `unknown` only as a function's answer.
-pub fn find(scope: RenderScope, key: string, name: string) -> unknown {
+pub fn find(scope: RenderScope, key: string, fallback: unknown) -> unknown {
     var cur = scope.frames;
     loop {
         if (cur is Frame) {
             val f: Frame = cur;
             if (f.key == key) return frameValue(f);
             cur = frameParent(f);
-        } else @panic(
-            "context-unbound: no `use provide("
-                + name
-                + ", ...)` above this `use context("
-                + name
-                + ")` (decision 354)",
-        );
+        } else return frameValue(Frame(key: key, value: fallback, parent: null)); // the default read back as a provided value is
     }
 }
 
@@ -139,27 +149,31 @@ fn frameParent(f: Frame) -> unknown {
 ----- BEAM ASSEMBLY -- std/context.S
 ```erlang
 {module, std@context}.
-{exports, [{provide, 2}, {context, 1}, {push, 3}, {find, 3}, {rendered, 2}, {valueOf, 1}, {root, 0}, {'__bp_priv__frameParent', 1}, {'__bp_priv__frameValue', 1}]}.
+{exports, [{createContext, 1}, {provide, 1}, {context, 1}, {push, 3}, {find, 3}, {rendered, 2}, {valueOf, 1}, {root, 0}, {'__bp_priv__frameParent', 1}, {'__bp_priv__frameValue', 1}]}.
 {attributes, []}.
-{labels, 69}.
-%%% Contexts (decision 354) — what a component's body reads from above it,
-%%% React's context in botopink's spelling.
+{labels, 39}.
+%%% Contexts (decisions 354, 378, 379) — what a component's body reads from
+%%% above it, React's context in botopink's spelling.
 %%% 
-%%% A context is a declared object, its identity the declaration (decision
-%%% 281): `pub val ThemeContext = Context<Theme>();` — no default value, and
-%%% no other way to make one (`context-not-declared`). A component provides a
-%%% value to everything it renders below it, and a body reads the nearest
-%%% value provided above it:
+%%% A context is named by its value's type. `createContext(value)` at module
+%%% level declares the default of that type — one declaration per type in
+%%% the program:
 %%% 
-%%%     use provide(ThemeContext, Theme(mode: .Dark));   // the children's
-%%%     val theme = use context(ThemeContext);           // the nearest above
+%%%     pub val themeContext = comptime createContext(Theme(mode: .Light));
+%%% 
+%%% A component provides a context to everything it renders below it, and a
+%%% body reads the nearest one of a type provided above it, else the type's
+%%% declared default:
+%%% 
+%%%     use provide(createContext(Theme(mode: .Dark)));   // the children's
+%%%     val theme = use context(Theme);                    // the nearest above
 %%% 
 %%% Both are hooks, so they are `use`d, never called for a value; `provide`
 %%% only in a component's body (a `@Component<R>` whose `R` implements
 %%% `@Renderable`), before it renders a child. `use` exists only where there
 %%% is a render tree — a decorator body, a template body and a
-%%% `comptime { … }` have none (`use-outside-render-tree`). A read with no
-%%% provider above it is `context-unbound` at run time.
+%%% `comptime { … }` have none (`use-outside-render-tree`). A read of a type
+%%% with no declared default is refused at build, at the read.
 %%% 
 %%% A component at run time is a lambda over a `RenderScope` (decision 388):
 %%% calling `Card(item)` only makes the lambda, and the render library runs it
@@ -172,36 +186,54 @@ fn frameParent(f: Frame) -> unknown {
 %%% 
 %%% The work is the compiler's: each `use provide(…)` / `use context(…)` is
 %%% lowered where it is written — `provide` makes the children's scope and
-%%% `context` looks the received one up. Neither hook below is ever called:
-%%% the checker refuses every reference to them but a `use`'s operand, and the
-%%% bodies panic.
-% A context of `T`, named by the `val` that declares it.
-% Gives `value` to every component this component renders below it — never
-% to itself or a sibling; the nearest provider wins.
+%%% `context` looks the received one up, the declared default when nothing
+%%% of its type is provided. Neither hook below is ever called: the checker
+%%% refuses every reference to them but a `use`'s operand, and the bodies
+%%% panic.
+% A context of `T`: the value a provider gives, or a type's declared default.
+% A context of `value`'s type. At module level it declares that type's
+% default (decisions 378, 379); inside a component it makes the context a
+% `use provide(…)` gives.
 
-{function, provide, 2, 3}.
+{function, createContext, 1, 3}.
   {label, 2}.
     {line, [{location, "std@context.erl", 1}]}.
-    {func_info, {atom, std@context}, {atom, provide}, 2}.
+    {func_info, {atom, std@context}, {atom, createContext}, 1}.
   {label, 3}.
-    {allocate, 2, 2}.
-    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
+    {allocate, 1, 1}.
+    {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
-    {move, {x, 1}, {y, 1}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@context@@Context}, {y, 0}]}}.
+    {deallocate, 1}.
+    return.
+% Gives `ctx` to every component this component renders below it — never
+% to itself or a sibling; the nearest provider of a type wins.
+
+{function, provide, 1, 5}.
+  {label, 4}.
+    {line, [{location, "std@context.erl", 2}]}.
+    {func_info, {atom, std@context}, {atom, provide}, 1}.
+  {label, 5}.
+    {allocate, 1, 1}.
+    {init_yregs, {list, [{y, 0}]}}.
+    {move, {x, 0}, {y, 0}}.
     {move, {literal, <<"`use provide` / `use context` are lowered where they are written; this body never runs">>}, {x, 0}}.
     {test_heap, 3, 1}.
     {put_tuple2, {x, 0}, {list, [{atom, panic}, {x, 0}]}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
     {move, {atom, ok}, {x, 0}}.
-    {deallocate, 2}.
+    {deallocate, 1}.
     return.
-% The value of `ctx` provided nearest above this body.
+% The value of the context of type `T` provided nearest above this body, or
+% `T`'s declared default: `use context(T)` answers `T`, which the checker
+% reads off the type the argument names (decision 379 (3)).
 
-{function, context, 1, 5}.
-  {label, 4}.
-    {line, [{location, "std@context.erl", 2}]}.
+{function, context, 1, 7}.
+  {label, 6}.
+    {line, [{location, "std@context.erl", 3}]}.
     {func_info, {atom, std@context}, {atom, context}, 1}.
-  {label, 5}.
+  {label, 7}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
@@ -224,128 +256,99 @@ fn frameParent(f: Frame) -> unknown {
 % A program never names these: the compiler imports them under names no
 % source can spell. A `@Component` function answers `{ scope -> … }`; each
 % `return v` of its body answers `rendered(v, <children's scope>)`; `use
-% provide(C, v)` binds `push(<children's scope>, <C's identity>, v)` for the
-% children, `use context(C)` is `find(<received scope>, <C's identity>, "C")`,
+% provide(c)` binds `push(<children's scope>, <T's identity>, c)` for the
+% children (a context is its value at run time: the compiler writes
+% `createContext(v)` as `v`), `use context(T)` is `find(<received scope>, <T's
+% identity>, <T's declared default>)`,
 % a `use` of a hook and an `await` of a component value run the lambda and
 % read `valueOf` of what it answers, and an `await` outside every body runs it
-% with `root()`. A context's identity is the declaration of its `val` (281) —
-% the compiler writes it, never a program.
+% with `root()`. A context's identity is its value's type (379) — the
+% compiler writes it, never a program.
 % One provided value over the frames it was provided in.
 % The children's scope: `value` provided for `key` over `scope`.
 
-{function, push, 3, 7}.
-  {label, 6}.
-    {line, [{location, "std@context.erl", 4}]}.
+{function, push, 3, 9}.
+  {label, 8}.
+    {line, [{location, "std@context.erl", 5}]}.
     {func_info, {atom, std@context}, {atom, push}, 3}.
-  {label, 7}.
+  {label, 9}.
     {allocate, 3, 3}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {move, {x, 2}, {y, 2}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 20}, [{x, 0}, 2, {atom, std@context@@RenderScope}]}.
+    {test, is_tagged_tuple, {f, 22}, [{x, 0}, 2, {atom, std@context@@RenderScope}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-  {label, 20}.
+  {label, 22}.
     {test_heap, 5, 1}.
     {put_tuple2, {x, 0}, {list, [{atom, std@context@@Frame}, {y, 1}, {y, 2}, {x, 0}]}}.
     {test_heap, 3, 1}.
     {put_tuple2, {x, 0}, {list, [{atom, std@context@@RenderScope}, {x, 0}]}}.
     {deallocate, 3}.
     return.
-% The value provided nearest above for `key`; `context-unbound` when no
-% provider of `name` is above.
+% The value provided nearest above for `key`, else `fallback` — the type's
+% declared default (decision 378 (3): no read is unbound).
 % The two `unknown` fields are read through `frameValue` / `frameParent`: wasm boxes a field read as `unknown` only as a function's answer.
 
-{function, find, 3, 9}.
-  {label, 8}.
-    {line, [{location, "std@context.erl", 5}]}.
+{function, find, 3, 11}.
+  {label, 10}.
+    {line, [{location, "std@context.erl", 6}]}.
     {func_info, {atom, std@context}, {atom, find}, 3}.
-  {label, 9}.
-    {allocate, 6, 3}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}]}}.
+  {label, 11}.
+    {allocate, 5, 3}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {move, {x, 2}, {y, 2}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 21}, [{x, 0}, 2, {atom, std@context@@RenderScope}]}.
+    {test, is_tagged_tuple, {f, 23}, [{x, 0}, 2, {atom, std@context@@RenderScope}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-  {label, 21}.
+  {label, 23}.
     {move, {x, 0}, {y, 3}}.
-    {line, [{location, "std@context.erl", 6}]}.
-  {label, 22}.
+    {line, [{location, "std@context.erl", 7}]}.
+  {label, 24}.
     {move, {atom, true}, {x, 0}}.
-    {test, is_eq_exact, {f, 23}, [{x, 0}, {atom, true}]}.
+    {test, is_eq_exact, {f, 25}, [{x, 0}, {atom, true}]}.
     {move, {y, 3}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 25}, [{x, 0}, 4, {atom, std@context@@Frame}]}.
+    {test, is_tagged_tuple, {f, 27}, [{x, 0}, 4, {atom, std@context@@Frame}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 26}}.
-  {label, 25}.
+    {jump, {f, 28}}.
+  {label, 27}.
     {move, {atom, false}, {x, 0}}.
-  {label, 26}.
-    {test, is_eq, {f, 24}, [{x, 0}, {atom, true}]}.
+  {label, 28}.
+    {test, is_eq, {f, 26}, [{x, 0}, {atom, true}]}.
     {move, {y, 3}, {x, 0}}.
     {move, {x, 0}, {y, 4}}.
     {move, {y, 4}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 28}, [{x, 0}, 4, {atom, std@context@@Frame}]}.
+    {test, is_tagged_tuple, {f, 30}, [{x, 0}, 4, {atom, std@context@@Frame}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-  {label, 28}.
-    {test, is_eq_exact, {f, 27}, [{x, 0}, {y, 1}]}.
+  {label, 30}.
+    {test, is_eq_exact, {f, 29}, [{x, 0}, {y, 1}]}.
     {move, {y, 4}, {x, 0}}.
-    {call_last, 1, {f, 17}, 6}.
-  {label, 27}.
-    {move, {y, 4}, {x, 0}}.
-    {call, 1, {f, 19}}.
-    {move, {x, 0}, {y, 3}}.
-    {jump, {f, 29}}.
-  {label, 24}.
-    {move, nil, {x, 0}}.
-    {move, {x, 0}, {y, 5}}.
-    {move, {literal, <<")` (decision 354)">>}, {x, 0}}.
-    {move, {y, 5}, {x, 1}}.
-    {test_heap, 2, 2}.
-    {put_list, {x, 0}, {x, 1}, {x, 0}}.
-    {move, {x, 0}, {y, 5}}.
-    {move, {y, 2}, {x, 0}}.
-    {move, {y, 5}, {x, 1}}.
-    {test_heap, 2, 2}.
-    {put_list, {x, 0}, {x, 1}, {x, 0}}.
-    {move, {x, 0}, {y, 5}}.
-    {move, {literal, <<", ...)` above this `use context(">>}, {x, 0}}.
-    {move, {y, 5}, {x, 1}}.
-    {test_heap, 2, 2}.
-    {put_list, {x, 0}, {x, 1}, {x, 0}}.
-    {move, {x, 0}, {y, 5}}.
-    {move, {y, 2}, {x, 0}}.
-    {move, {y, 5}, {x, 1}}.
-    {test_heap, 2, 2}.
-    {put_list, {x, 0}, {x, 1}, {x, 0}}.
-    {move, {x, 0}, {y, 5}}.
-    {move, {literal, <<"context-unbound: no `use provide(">>}, {x, 0}}.
-    {move, {y, 5}, {x, 1}}.
-    {test_heap, 2, 2}.
-    {put_list, {x, 0}, {x, 1}, {x, 0}}.
-    {move, {x, 0}, {x, 1}}.
-    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
-    {make_fun3, {f, 59}, 0, 0, {x, 0}, {list, []}}.
-    {call_ext, 2, {extfunc, lists, map, 2}}.
-    {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
-    {test_heap, 3, 1}.
-    {put_tuple2, {x, 0}, {list, [{atom, panic}, {x, 0}]}}.
-    {call_ext, 1, {extfunc, erlang, error, 1}}.
+    {call_last, 1, {f, 19}, 5}.
   {label, 29}.
-    {jump, {f, 22}}.
-  {label, 23}.
+    {move, {y, 4}, {x, 0}}.
+    {call, 1, {f, 21}}.
+    {move, {x, 0}, {y, 3}}.
+    {jump, {f, 31}}.
+  {label, 26}.
+    {test_heap, 5, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@context@@Frame}, {y, 1}, {y, 2}, {atom, undefined}]}}.
+    {call_last, 1, {f, 19}, 5}.
+  {label, 31}.
+    {jump, {f, 24}}.
+  {label, 25}.
     {move, {atom, ok}, {x, 0}}.
-    {deallocate, 6}.
+    {deallocate, 5}.
     return.
 % A body's answer: its result over its children's scope.
 
-{function, rendered, 2, 11}.
-  {label, 10}.
-    {line, [{location, "std@context.erl", 6}]}.
+{function, rendered, 2, 13}.
+  {label, 12}.
+    {line, [{location, "std@context.erl", 7}]}.
     {func_info, {atom, std@context}, {atom, rendered}, 2}.
-  {label, 11}.
+  {label, 13}.
     {allocate, 2, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
@@ -356,354 +359,110 @@ fn frameParent(f: Frame) -> unknown {
     return.
 % The result a run answered.
 
-{function, valueOf, 1, 13}.
-  {label, 12}.
-    {line, [{location, "std@context.erl", 7}]}.
+{function, valueOf, 1, 15}.
+  {label, 14}.
+    {line, [{location, "std@context.erl", 8}]}.
     {func_info, {atom, std@context}, {atom, valueOf}, 1}.
-  {label, 13}.
+  {label, 15}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 62}, [{x, 0}, 3, {atom, std@context@@Rendered}]}.
+    {test, is_tagged_tuple, {f, 32}, [{x, 0}, 3, {atom, std@context@@Rendered}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-  {label, 62}.
+  {label, 32}.
     {deallocate, 1}.
     return.
 % The empty scope, for an `await` of a component value outside every body.
 
-{function, root, 0, 15}.
-  {label, 14}.
-    {line, [{location, "std@context.erl", 8}]}.
+{function, root, 0, 17}.
+  {label, 16}.
+    {line, [{location, "std@context.erl", 9}]}.
     {func_info, {atom, std@context}, {atom, root}, 0}.
-  {label, 15}.
+  {label, 17}.
     {allocate, 0, 0}.
     {call_ext_last, 0, {extfunc, std@context@@RenderScope, root, 0}, 0}.
 
-{function, frameValue, 1, 17}.
-  {label, 16}.
-    {line, [{location, "std@context.erl", 9}]}.
-    {func_info, {atom, std@context}, {atom, frameValue}, 1}.
-  {label, 17}.
-    {allocate, 1, 1}.
-    {init_yregs, {list, [{y, 0}]}}.
-    {move, {x, 0}, {y, 0}}.
-    {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 63}, [{x, 0}, 4, {atom, std@context@@Frame}]}.
-    {get_tuple_element, {x, 0}, 2, {x, 0}}.
-  {label, 63}.
-    {deallocate, 1}.
-    return.
-
-{function, frameParent, 1, 19}.
+{function, frameValue, 1, 19}.
   {label, 18}.
     {line, [{location, "std@context.erl", 10}]}.
-    {func_info, {atom, std@context}, {atom, frameParent}, 1}.
+    {func_info, {atom, std@context}, {atom, frameValue}, 1}.
   {label, 19}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 64}, [{x, 0}, 4, {atom, std@context@@Frame}]}.
-    {get_tuple_element, {x, 0}, 3, {x, 0}}.
-  {label, 64}.
+    {test, is_tagged_tuple, {f, 33}, [{x, 0}, 4, {atom, std@context@@Frame}]}.
+    {get_tuple_element, {x, 0}, 2, {x, 0}}.
+  {label, 33}.
     {deallocate, 1}.
     return.
 
-{function, '__bp_priv__frameParent', 1, 66}.
-  {label, 65}.
+{function, frameParent, 1, 21}.
+  {label, 20}.
     {line, [{location, "std@context.erl", 11}]}.
-    {func_info, {atom, std@context}, {atom, '__bp_priv__frameParent'}, 1}.
-  {label, 66}.
-    {call_only, 1, {f, 19}}.
-
-{function, '__bp_priv__frameValue', 1, 68}.
-  {label, 67}.
-    {line, [{location, "std@context.erl", 12}]}.
-    {func_info, {atom, std@context}, {atom, '__bp_priv__frameValue'}, 1}.
-  {label, 68}.
-    {call_only, 1, {f, 17}}.
-
-{function, '__bp_print', 1, 31}.
-  {label, 30}.
-    {line, [{location, "std@context.erl", 6}]}.
-    {func_info, {atom, std@context}, {atom, '__bp_print'}, 1}.
-  {label, 31}.
+    {func_info, {atom, std@context}, {atom, frameParent}, 1}.
+  {label, 21}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
-    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 35}, 0, 0, {x, 0}, {list, []}}.
-    {move, {y, 0}, {x, 1}}.
-    {call_ext, 2, {extfunc, lists, map, 2}}.
-    {move, {x, 0}, {x, 1}}.
-    {move, {literal, <<" ">>}, {x, 0}}.
-    {call_ext, 2, {extfunc, lists, join, 2}}.
-    {test_heap, 2, 1}.
-    {put_list, {x, 0}, nil, {x, 1}}.
-    {move, {literal, <<"~ts~n">>}, {x, 0}}.
-    {call_ext_last, 2, {extfunc, io, format, 2}, 1}.
-
-{function, '-bp_show_top-', 1, 35}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_tagged_tuple, {f, 34}, [{x, 0}, 4, {atom, std@context@@Frame}]}.
+    {get_tuple_element, {x, 0}, 3, {x, 0}}.
   {label, 34}.
-    {line, [{location, "std@context.erl", 6}]}.
-    {func_info, {atom, std@context}, {atom, '-bp_show_top-'}, 1}.
+    {deallocate, 1}.
+    return.
+
+{function, '__bp_priv__frameParent', 1, 36}.
   {label, 35}.
-    {move, {atom, true}, {x, 1}}.
-    {call_only, 2, {f, 33}}.
-
-{function, '-bp_show_elem-', 1, 37}.
+    {line, [{location, "std@context.erl", 12}]}.
+    {func_info, {atom, std@context}, {atom, '__bp_priv__frameParent'}, 1}.
   {label, 36}.
-    {line, [{location, "std@context.erl", 6}]}.
-    {func_info, {atom, std@context}, {atom, '-bp_show_elem-'}, 1}.
+    {call_only, 1, {f, 21}}.
+
+{function, '__bp_priv__frameValue', 1, 38}.
   {label, 37}.
-    {move, {atom, false}, {x, 1}}.
-    {call_only, 2, {f, 33}}.
-
-{function, '__bp_show', 2, 33}.
-  {label, 32}.
-    {line, [{location, "std@context.erl", 6}]}.
-    {func_info, {atom, std@context}, {atom, '__bp_show'}, 2}.
-  {label, 33}.
-    {allocate, 2, 2}.
-    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
-    {move, {x, 0}, {y, 0}}.
-    {move, {x, 1}, {y, 1}}.
-    {move, {y, 0}, {x, 0}}.
-    {test, is_binary, {f, 45}, [{x, 0}]}.
-    {test, is_eq, {f, 44}, [{y, 1}, {atom, true}]}.
-    {move, {y, 0}, {x, 0}}.
-    {deallocate, 2}.
-    return.
-  {label, 44}.
-    {move, {y, 0}, {x, 0}}.
-    {call_ext, 1, {extfunc, unicode, characters_to_list, 1}}.
-    {call_ext_last, 1, {extfunc, io_lib, write_string, 1}, 2}.
-  {label, 45}.
-    {move, {y, 0}, {x, 0}}.
-    {test, is_list, {f, 46}, [{x, 0}]}.
-    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 37}, 0, 0, {x, 0}, {list, []}}.
-    {move, {y, 0}, {x, 1}}.
-    {call_ext, 2, {extfunc, lists, map, 2}}.
-    {move, {x, 0}, {x, 1}}.
-    {move, {literal, <<", ">>}, {x, 0}}.
-    {call_ext, 2, {extfunc, lists, join, 2}}.
-    {test_heap, 6, 1}.
-    {put_list, {integer, 93}, nil, {x, 1}}.
-    {put_list, {x, 0}, {x, 1}, {x, 0}}.
-    {put_list, {integer, 91}, {x, 0}, {x, 0}}.
-    {deallocate, 2}.
-    return.
-  {label, 46}.
-    {move, {y, 0}, {x, 0}}.
-    {test, is_tuple, {f, 48}, [{x, 0}]}.
-    {call_ext, 1, {extfunc, erlang, tuple_size, 1}}.
-    {test, is_lt, {f, 47}, [{integer, 0}, {x, 0}]}.
-    {move, {integer, 1}, {x, 0}}.
-    {move, {y, 0}, {x, 1}}.
-    {call_ext, 2, {extfunc, erlang, element, 2}}.
-    {test, is_atom, {f, 47}, [{x, 0}]}.
-    {test, is_ne_exact, {f, 47}, [{x, 0}, {atom, true}]}.
-    {test, is_ne_exact, {f, 47}, [{x, 0}, {atom, false}]}.
-    {test, is_ne_exact, {f, 47}, [{x, 0}, {atom, undefined}]}.
-    {test, is_eq_exact, {f, 52}, [{x, 0}, {atom, ok}]}.
-    {move, {literal, <<"Ok(">>}, {y, 1}}.
-    {jump, {f, 53}}.
-  {label, 52}.
-    {test, is_eq_exact, {f, 49}, [{x, 0}, {atom, error}]}.
-    {move, {literal, <<"Error(">>}, {y, 1}}.
-  {label, 53}.
-    {move, {integer, 2}, {x, 0}}.
-    {move, {y, 0}, {x, 1}}.
-    {call_ext, 2, {extfunc, erlang, element, 2}}.
-    {move, {atom, false}, {x, 1}}.
-    {call, 2, {f, 33}}.
-    {test_heap, 6, 1}.
-    {put_list, {integer, 41}, nil, {x, 1}}.
-    {put_list, {x, 0}, {x, 1}, {x, 0}}.
-    {put_list, {y, 1}, {x, 0}, {x, 0}}.
-    {deallocate, 2}.
-    return.
-  {label, 47}.
-    {move, {y, 0}, {x, 0}}.
-    {call_ext, 1, {extfunc, erlang, tuple_to_list, 1}}.
-    {move, {x, 0}, {y, 1}}.
-    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 37}, 0, 0, {x, 0}, {list, []}}.
-    {move, {y, 1}, {x, 1}}.
-    {call_ext, 2, {extfunc, lists, map, 2}}.
-    {move, {x, 0}, {x, 1}}.
-    {move, {literal, <<", ">>}, {x, 0}}.
-    {call_ext, 2, {extfunc, lists, join, 2}}.
-    {test_heap, 8, 1}.
-    {put_list, {integer, 41}, nil, {x, 1}}.
-    {put_list, {x, 0}, {x, 1}, {x, 0}}.
-    {put_list, {integer, 40}, {x, 0}, {x, 0}}.
-    {put_list, {integer, 35}, {x, 0}, {x, 0}}.
-    {deallocate, 2}.
-    return.
-  {label, 48}.
-    {move, {y, 0}, {x, 0}}.
-    {test, is_atom, {f, 50}, [{x, 0}]}.
-    {test, is_ne_exact, {f, 50}, [{x, 0}, {atom, true}]}.
-    {test, is_ne_exact, {f, 50}, [{x, 0}, {atom, false}]}.
-    {test, is_ne_exact, {f, 51}, [{x, 0}, {atom, undefined}]}.
-  {label, 49}.
-    {move, {y, 0}, {x, 1}}.
-    {call_last, 2, {f, 39}, 2}.
-  {label, 50}.
-    {move, {y, 0}, {x, 0}}.
-    {test_heap, 2, 1}.
-    {put_list, {x, 0}, nil, {x, 1}}.
-    {move, {literal, <<"~p">>}, {x, 0}}.
-    {call_ext_last, 2, {extfunc, io_lib, format, 2}, 2}.
-  {label, 51}.
-    {move, {literal, <<"null">>}, {x, 0}}.
-    {deallocate, 2}.
-    return.
-
-{function, '__bp_tagged', 2, 39}.
+    {line, [{location, "std@context.erl", 13}]}.
+    {func_info, {atom, std@context}, {atom, '__bp_priv__frameValue'}, 1}.
   {label, 38}.
-    {line, [{location, "std@context.erl", 6}]}.
-    {func_info, {atom, std@context}, {atom, '__bp_tagged'}, 2}.
-  {label, 39}.
-    {allocate, 3, 2}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
-    {move, {x, 1}, {y, 0}}.
-    {move, {x, 0}, {y, 1}}.
-    {move, {y, 1}, {x, 0}}.
-    {call_ext, 1, {extfunc, erlang, atom_to_list, 1}}.
-    {move, {literal, <<"__v__">>}, {x, 1}}.
-    {call_ext, 2, {extfunc, string, split, 2}}.
-    {test, is_nonempty_list, {f, 54}, [{x, 0}]}.
-    {get_list, {x, 0}, {x, 1}, {x, 2}}.
-    {move, {x, 1}, {y, 2}}.
-    {test, is_nonempty_list, {f, 54}, [{x, 2}]}.
-    {move, {y, 2}, {x, 0}}.
-    {call_ext, 1, {extfunc, erlang, list_to_atom, 1}}.
-    {move, {x, 0}, {y, 1}}.
-  {label, 54}.
-    {move, {y, 1}, {x, 0}}.
-    {call_ext, 1, {extfunc, code, ensure_loaded, 1}}.
-    {move, {y, 1}, {x, 0}}.
-    {move, {atom, '__bp_format'}, {x, 1}}.
-    {move, {integer, 1}, {x, 2}}.
-    {call_ext, 3, {extfunc, erlang, function_exported, 3}}.
-    {test, is_eq_exact, {f, 55}, [{x, 0}, {atom, true}]}.
-    {test_heap, 2, 1}.
-    {put_list, {y, 0}, nil, {x, 2}}.
-    {move, {y, 1}, {x, 0}}.
-    {move, {atom, '__bp_format'}, {x, 1}}.
-    {call_ext, 3, {extfunc, erlang, apply, 3}}.
-    {call_last, 1, {f, 41}, 3}.
-  {label, 55}.
-    {test_heap, 2, 1}.
-    {put_list, {y, 0}, nil, {x, 1}}.
-    {move, {literal, <<"~p">>}, {x, 0}}.
-    {call_ext_last, 2, {extfunc, io_lib, format, 2}, 3}.
-
-{function, '__bp_render', 1, 41}.
-  {label, 40}.
-    {line, [{location, "std@context.erl", 6}]}.
-    {func_info, {atom, std@context}, {atom, '__bp_render'}, 1}.
-  {label, 41}.
-    {allocate, 2, 1}.
-    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
-    {move, {x, 0}, {y, 0}}.
-    {move, {integer, 1}, {x, 0}}.
-    {move, {y, 0}, {x, 1}}.
-    {call_ext, 2, {extfunc, erlang, element, 2}}.
-    {test, is_eq_exact, {f, 56}, [{x, 0}, {atom, text}]}.
-    {move, {integer, 2}, {x, 0}}.
-    {move, {y, 0}, {x, 1}}.
-    {call_ext_last, 2, {extfunc, erlang, element, 2}, 2}.
-  {label, 56}.
-    {move, {integer, 3}, {x, 0}}.
-    {move, {y, 0}, {x, 1}}.
-    {call_ext, 2, {extfunc, erlang, element, 2}}.
-    {move, {x, 0}, {y, 1}}.
-    {test, is_eq_exact, {f, 57}, [{x, 0}, nil]}.
-    {move, {integer, 2}, {x, 0}}.
-    {move, {y, 0}, {x, 1}}.
-    {call_ext_last, 2, {extfunc, erlang, element, 2}, 2}.
-  {label, 57}.
-    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 43}, 0, 0, {x, 0}, {list, []}}.
-    {move, {y, 1}, {x, 1}}.
-    {call_ext, 2, {extfunc, lists, map, 2}}.
-    {move, {x, 0}, {x, 1}}.
-    {move, {literal, <<", ">>}, {x, 0}}.
-    {call_ext, 2, {extfunc, lists, join, 2}}.
-    {move, {x, 0}, {y, 1}}.
-    {move, {integer, 2}, {x, 0}}.
-    {move, {y, 0}, {x, 1}}.
-    {call_ext, 2, {extfunc, erlang, element, 2}}.
-    {test_heap, 8, 1}.
-    {put_list, {integer, 41}, nil, {x, 1}}.
-    {put_list, {y, 1}, {x, 1}, {x, 1}}.
-    {put_list, {integer, 40}, {x, 1}, {x, 1}}.
-    {put_list, {x, 0}, {x, 1}, {x, 0}}.
-    {deallocate, 2}.
-    return.
-
-{function, '-bp_render_pair-', 1, 43}.
-  {label, 42}.
-    {line, [{location, "std@context.erl", 6}]}.
-    {func_info, {atom, std@context}, {atom, '-bp_render_pair-'}, 1}.
-  {label, 43}.
-    {allocate, 2, 1}.
-    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
-    {move, {x, 0}, {y, 0}}.
-    {move, {integer, 2}, {x, 0}}.
-    {move, {y, 0}, {x, 1}}.
-    {call_ext, 2, {extfunc, erlang, element, 2}}.
-    {move, {atom, false}, {x, 1}}.
-    {call, 2, {f, 33}}.
-    {move, {x, 0}, {y, 1}}.
-    {move, {integer, 1}, {x, 0}}.
-    {move, {y, 0}, {x, 1}}.
-    {call_ext, 2, {extfunc, erlang, element, 2}}.
-    {test_heap, 6, 1}.
-    {put_list, {y, 1}, nil, {x, 1}}.
-    {put_list, {literal, <<": ">>}, {x, 1}, {x, 1}}.
-    {put_list, {x, 0}, {x, 1}, {x, 0}}.
-    {deallocate, 2}.
-    return.
-
-{function, '-bp_stringify-', 1, 59}.
-  {label, 58}.
-    {line, [{location, "std@context.erl", 6}]}.
-    {func_info, {atom, std@context}, {atom, '-bp_stringify-'}, 1}.
-  {label, 59}.
-    {allocate, 0, 1}.
-    {test, is_binary, {f, 60}, [{x, 0}]}.
-    {deallocate, 0}.
-    return.
-  {label, 60}.
-    {test, is_integer, {f, 61}, [{x, 0}]}.
-    {call_ext_last, 1, {extfunc, erlang, integer_to_binary, 1}, 0}.
-  {label, 61}.
-    {call, 1, {f, 35}}.
-    {call_ext_last, 1, {extfunc, unicode, characters_to_binary, 1}, 0}.
+    {call_only, 1, {f, 19}}.
 ```
 
 ----- BEAM ASSEMBLY -- std@context@@Context.S
 ```erlang
 {module, std@context@@Context}.
-{exports, [{'__bp_format', 1}]}.
+{exports, [{'__bp_get', 2}, {'__bp_format', 1}]}.
 {attributes, []}.
-{labels, 4}.
+{labels, 7}.
 
-{function, '__bp_format', 1, 3}.
+{function, '__bp_get', 2, 3}.
   {label, 2}.
     {line, [{location, "std@context@@Context.erl", 1}]}.
-    {func_info, {atom, std@context@@Context}, {atom, '__bp_format'}, 1}.
+    {func_info, {atom, std@context@@Context}, {atom, '__bp_get'}, 2}.
   {label, 3}.
+    {test, is_eq_exact, {f, 4}, [{x, 1}, {atom, contextValue}]}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {integer, 2}, {x, 0}}.
+    {call_ext_only, 2, {extfunc, erlang, element, 2}}.
+  {label, 4}.
+    {move, {atom, undefined}, {x, 0}}.
+    return.
+
+{function, '__bp_format', 1, 6}.
+  {label, 5}.
+    {line, [{location, "std@context@@Context.erl", 1}]}.
+    {func_info, {atom, std@context@@Context}, {atom, '__bp_format'}, 1}.
+  {label, 6}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, nil, {y, 1}}.
+    {move, {integer, 2}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, element, 2}}.
+    {test_heap, 5, 1}.
+    {put_tuple2, {x, 0}, {list, [{literal, <<"contextValue">>}, {x, 0}]}}.
+    {put_list, {x, 0}, {y, 1}, {y, 1}}.
     {test_heap, 4, 1}.
     {put_tuple2, {x, 0}, {list, [{atom, record}, {literal, <<"Context">>}, {y, 1}]}}.
     {deallocate, 2}.
@@ -719,7 +478,7 @@ fn frameParent(f: Frame) -> unknown {
 
 {function, root, 0, 3}.
   {label, 2}.
-    {line, [{location, "std@context@@RenderScope.erl", 3}]}.
+    {line, [{location, "std@context@@RenderScope.erl", 4}]}.
     {func_info, {atom, std@context@@RenderScope}, {atom, root}, 0}.
   {label, 3}.
     {allocate, 0, 0}.
@@ -730,7 +489,7 @@ fn frameParent(f: Frame) -> unknown {
 
 {function, '__bp_get', 2, 5}.
   {label, 4}.
-    {line, [{location, "std@context@@RenderScope.erl", 4}]}.
+    {line, [{location, "std@context@@RenderScope.erl", 5}]}.
     {func_info, {atom, std@context@@RenderScope}, {atom, '__bp_get'}, 2}.
   {label, 5}.
     {test, is_eq_exact, {f, 6}, [{x, 1}, {atom, frames}]}.
@@ -743,7 +502,7 @@ fn frameParent(f: Frame) -> unknown {
 
 {function, '__bp_format', 1, 8}.
   {label, 7}.
-    {line, [{location, "std@context@@RenderScope.erl", 4}]}.
+    {line, [{location, "std@context@@RenderScope.erl", 5}]}.
     {func_info, {atom, std@context@@RenderScope}, {atom, '__bp_format'}, 1}.
   {label, 8}.
     {allocate, 2, 1}.
@@ -771,7 +530,7 @@ fn frameParent(f: Frame) -> unknown {
 
 {function, '__bp_get', 2, 3}.
   {label, 2}.
-    {line, [{location, "std@context@@Rendered.erl", 4}]}.
+    {line, [{location, "std@context@@Rendered.erl", 5}]}.
     {func_info, {atom, std@context@@Rendered}, {atom, '__bp_get'}, 2}.
   {label, 3}.
     {test, is_eq_exact, {f, 4}, [{x, 1}, {atom, value}]}.
@@ -789,7 +548,7 @@ fn frameParent(f: Frame) -> unknown {
 
 {function, '__bp_format', 1, 7}.
   {label, 6}.
-    {line, [{location, "std@context@@Rendered.erl", 4}]}.
+    {line, [{location, "std@context@@Rendered.erl", 5}]}.
     {func_info, {atom, std@context@@Rendered}, {atom, '__bp_format'}, 1}.
   {label, 7}.
     {allocate, 2, 1}.
@@ -823,7 +582,7 @@ fn frameParent(f: Frame) -> unknown {
 
 {function, '__bp_get', 2, 3}.
   {label, 2}.
-    {line, [{location, "std@context@@Frame.erl", 4}]}.
+    {line, [{location, "std@context@@Frame.erl", 5}]}.
     {func_info, {atom, std@context@@Frame}, {atom, '__bp_get'}, 2}.
   {label, 3}.
     {test, is_eq_exact, {f, 4}, [{x, 1}, {atom, key}]}.
@@ -846,7 +605,7 @@ fn frameParent(f: Frame) -> unknown {
 
 {function, '__bp_format', 1, 8}.
   {label, 7}.
-    {line, [{location, "std@context@@Frame.erl", 4}]}.
+    {line, [{location, "std@context@@Frame.erl", 5}]}.
     {func_info, {atom, std@context@@Frame}, {atom, '__bp_format'}, 1}.
   {label, 8}.
     {allocate, 2, 1}.

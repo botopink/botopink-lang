@@ -504,6 +504,7 @@ pub const Snapshot = struct {
     scopes: Flat(reflectionMod.WrittenName),
     template_value_reads: Flat(ast.Loc),
     declared_values: Flat([]const u8),
+    context_defaults: Flat(reflectionMod.ContextDefault),
     template_reads: usize,
 
     pub fn take(gpa: Allocator, regs: Registries) !Snapshot {
@@ -529,6 +530,7 @@ pub const Snapshot = struct {
             .scopes = try copyFlat(reflectionMod.WrittenName, a, &r.scopes),
             .template_value_reads = try copyFlat(ast.Loc, a, &r.templateValueReads),
             .declared_values = try copyFlat([]const u8, a, &r.declaredValues),
+            .context_defaults = try copyFlat(reflectionMod.ContextDefault, a, &r.contextDefaults),
             .template_reads = r.templateReads.items.len,
             .arena_inst = arena_inst,
         };
@@ -559,6 +561,7 @@ pub const Snapshot = struct {
             .scopes = try diffFlat(reflectionMod.WrittenName, arena, &self.scopes, &r.scopes),
             .template_value_reads = try diffFlat(ast.Loc, arena, &self.template_value_reads, &r.templateValueReads),
             .declared_values = try diffFlat([]const u8, arena, &self.declared_values, &r.declaredValues),
+            .context_defaults = try diffFlat(reflectionMod.ContextDefault, arena, &self.context_defaults, &r.contextDefaults),
         };
     }
 };
@@ -728,6 +731,7 @@ pub fn replay(arena: Allocator, j: Journal, regs: Registries) !void {
     try replayFlat(reflectionMod.WrittenName, r.arena, &r.scopes, j.scopes);
     try replayFlat(ast.Loc, r.arena, &r.templateValueReads, j.template_value_reads);
     try replayFlat([]const u8, r.arena, &r.declaredValues, j.declared_values);
+    try replayFlat(reflectionMod.ContextDefault, r.arena, &r.contextDefaults, j.context_defaults);
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────

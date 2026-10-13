@@ -56,6 +56,9 @@ pub fn isWrapper(name: []const u8) bool {
 pub fn valueArg(name: []const u8) ?usize {
     if (std.mem.endsWith(u8, name, wrapper_prefix ++ "push")) return 2;
     if (std.mem.endsWith(u8, name, wrapper_prefix ++ "rendered")) return 0;
+    // Decision 378 (3) — `find`'s fallback, the type's declared default,
+    // crosses as `push`'s value does.
+    if (std.mem.indexOf(u8, name, wrapper_prefix ++ "find") != null) return 2;
     return null;
 }
 
@@ -149,9 +152,10 @@ const Carry = struct {
             const ta = cc.typeArgs orelse return;
             if (ta.len != 1) return;
             const name = try self.fresh("find");
-            try self.declare(name, &.{ param("s", unknown_ref), param("k", .{ .named = "string" }), param("n", .{ .named = "string" }) }, ta[0], context_lower.find_fn, c.loc);
+            // Decision 378 (3) — the third argument is the type's declared
+            // default, moved through `find`'s `unknown` slot as `push`'s value is.
+            try self.declare(name, &.{ param("s", unknown_ref), param("k", .{ .named = "string" }), param("f", unknown_ref) }, ta[0], context_lower.find_fn, c.loc);
             cc.callee = name;
-            cc.typeArgs = null;
         } else if (std.mem.eql(u8, cc.callee, context_lower.value_fn)) {
             const ta = cc.typeArgs orelse return;
             if (ta.len != 1) return;

@@ -2,16 +2,16 @@
 //// compile time when a call is expanded, with no render tree: `use` there is
 //// refused.
 
-import {context.Context, context.provide, context.context} from "std";
+import {context.createContext, context.provide, context.context} from "std";
 
 type Theme(mode: string)
 
 type Element(text: string) implement @Renderable
 
-pub val ThemeContext = Context<Theme>();
+pub val themeContext = comptime createContext(Theme(mode: "default"));
 
 fn shout(comptime q: @Expr<string>) -> @Expr<string> {
-    val t = use context(ThemeContext);
+    val t = use context(Theme);
     return q;
 }
 

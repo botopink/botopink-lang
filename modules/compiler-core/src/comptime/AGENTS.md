@@ -1156,21 +1156,36 @@ base (`componentBaseParamRemoved`), `@Renderable` (`contextMarkerRemoved`) and
   awaits a component (decision 104); a component called inside a `@Component`
   body is awaited by the transform (`inferComponentCall`).
 
-**Contexts** (decision 354). std's `context` module declares `Context<T>`,
-`provide` and `context`; `noteImportBindings` records the local names a leaf
-import of them binds (`Env.stdContextNames`), and `stdContextCallee` also
-reads a call through the namespace. `checkStdContextCall` refuses a call of
-either hook that is not a `use`'s operand, and a `Context<T>(…)` that is not a
-module-level `val`'s whole initializer (`Env.contextDeclSite`);
-`noteContextDeclaration` refuses a module-level `val` of type `Context<T>` that
-another expression initializes and records the declared ones
-(`Env.declaredContexts`); `inferIdentifierExpr` refuses either hook named as a
-value (`context-hook-without-use`). `noteContextUse` holds `use provide(…)` to a
-component's body (`FnContext.renderable`) before its first render
-(`Env.firstRenderAt`, set by `inferComponentCall`), resolves the context's
-identity (`declaredContextKey`: `declIdentity` of the declaring `val`, local or
-through `Env.importOwners`) and records the use in `Env.contextUses` for the
-lowering, with the `T` it carries.
+**Contexts** (decisions 354, 378, 379). std's `context` module declares
+`Context<T>(contextValue)`, `createContext`, `provide` and `context`;
+`noteImportBindings` records the local names a leaf import of them binds
+(`Env.stdContextNames`), and `stdContextCallee` also reads a call through the
+namespace. `checkStdContextCall` refuses a call of either hook that is not a
+`use`'s operand and a `Context(…)` construction (a context is made by
+`createContext`). `noteContextDeclaration` reads a module-level `val` of type
+`Context<T>` as `T`'s default only when `[comptime] createContext(…)`
+initializes it (`context-not-declared` otherwise), one per type in the
+program (`context-declared-twice`, naming the first): `Env.contextDefaults`,
+published as `Reflection.contextDefaults` (journaled, `analysis_entry.zig`).
+A context's identity is its value's type by its declared name
+(`contextTypeKey`). `contextReadCall` types `context(T)` as `@Component<T>`
+from the type its argument names (any other argument is `context-not-declared`);
+`noteContextUse` holds `use provide(ctx)` to a component's body
+(`FnContext.renderable`) before its first render (`Env.firstRenderAt`, set by
+`inferComponentCall`) and records each use in `Env.contextUses` with its key;
+`resolveContextReads`, once the bodies are inferred, gives each read its
+type's default — this module's `val`, or another analysed module's through a
+hidden import (`Env.contextDefaultImports`, added by `comptime.zig`
+`withImportSourcesNamed`) — or refuses the read (`context-not-declared`,
+question B-17-g's narrow reading). A lifted `comptime` value of a std type
+the module does not import (`Context`) imports it for the backends
+(`Env.liftedStdTypes`). A context is its value at run time: `context_lower.zig`
+writes each `createContext(v)` (`Env.createContextCalls`) and each lifted
+`Context(…)` as `v`, so a value of any type crosses the scope as it does (504;
+wasm's `scope_carry.zig` carries `find`'s fallback in its cell as `push`'s
+value). Cells `modules/context_default`,
+`modules/context_default_imported`, `modules/context_undeclared_type`,
+`modules/context_declared_twice`, `modules/context_val_alias`.
 
 **The render scope** (388). `noteComponentCall` records every call whose value
 is, or may resolve to, a `@Component<R>` (`Env.componentCalls`), the `await`

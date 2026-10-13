@@ -1,0 +1,19 @@
+//// Decision 379 (3) — a read of a type with no declared default is refused
+//// at build, at the read, naming the remedy: `Theme` has no
+//// `createContext(…)` declaration.
+
+import {context.createContext, context.provide, context.context} from "std";
+
+type Theme(mode: string)
+
+type Element(text: string) implement @Renderable
+
+fn Label() -> @Component<Element> {
+    val t = use context(Theme);
+    return Element(text: t.mode);
+}
+
+pub fn main() -> @Task<void> {
+    val l = await Label();
+    @print(l.text);
+}

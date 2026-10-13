@@ -10,8 +10,10 @@
 //! In `body'` the lambda's parameter is the scope the body received, and the
 //! children's scope starts as it:
 //!
-//!   use provide(C, v);   →  val bpScopeKids__N = bpScopePush__(<kids>, "<C's identity>", v);
-//!   use context(C)       →  bpScopeFind__(bpScope__, "<C's identity>", "C")
+//!   use provide(c);      →  val bpScopeKids__N = bpScopePush__(<kids>, "<T's identity>", c);
+//!   use context(T)       →  bpScopeFind__(bpScope__, "<T's identity>", <T's declared default>)
+//!
+//! where a `Context<T>` is its value at run time: `createContext(v)` is `v`.
 //!   use h(…)             →  bpScopeValue__(await (h(…))(bpScope__))    — a hook is part of the body
 //!   await c              →  bpScopeValue__(await (c)(<kids>))          — a child placed in the tree
 //!   return v             →  return bpScopeRendered__(v, <kids>)
@@ -32,9 +34,10 @@
 //!
 //! The `bpScope…__` functions are std's `context.push` / `find` / `rendered`
 //! / `valueOf` / `root`, imported under those names when the module needs
-//! them (the import is added here). A context's identity is `declIdentity` of
-//! the `val` that declares it (281), recorded by the checker in
-//! `Env.contextUses`. A provide binds a fresh `val`, so a `return` after it
+//! them (the import is added here). A context's identity is its value's type
+//! (379), recorded by the checker in `Env.contextUses` with the `val` that
+//! declares the type's default (another module's through a hidden import,
+//! `Env.contextDefaultImports`). A provide binds a fresh `val`, so a `return` after it
 //! answers the scope as it was there (the checker refuses a provide after the
 //! body rendered a component and a `use` after an early return).
 //!
@@ -282,8 +285,11 @@ const Lowering = struct {
     fn lowerProvideStmt(self: *Lowering, stmt: *ast.Stmt, use: envMod.ContextUse) !void {
         const inner = stmt.expr.useHook.kind.inner;
         const loc = stmt.expr.getLoc();
-        const value = inner.call.kind.call.args[1].value;
-        try self.walk(ast.Expr, value);
+        // Decision 379 (2) — `use provide(ctx)`: the children's scope holds
+        // the context's value under its type.
+        const ctx = inner.call.kind.call.args[0].value;
+        try self.walk(ast.Expr, ctx);
+        const value = ctx;
         const f = self.current() orelse return error.ContextLowering;
         const name = try std.fmt.allocPrint(self.arena, kids_prefix ++ "{d}", .{self.kids_count});
         self.kids_count += 1;
@@ -293,12 +299,29 @@ const Lowering = struct {
     }
 
     fn visitExpr(self: *Lowering, e: *ast.Expr) !bool {
+        // Decision 379 — a `Context<T>` is its value at run time: a
+        // `createContext(v)` (`Env.createContextCalls`) and a lifted
+        // `Context(…)` (a `comptime createContext(…)`'s value) are `v`, so a
+        // value of any type crosses the scope as it does (504).
+        if (e.* == .call and e.call.kind == .call) {
+            const cc = e.call.kind.call;
+            const made = self.env.createContextCalls.contains(e.call.loc) or
+                (cc.receiver == null and !cc.is_builtin and std.mem.eql(u8, cc.callee, "Context") and self.env.liftedStdTypes.contains("Context"));
+            if (made and cc.args.len == 1) {
+                e.* = cc.args[0].value.*;
+                try self.walk(ast.Expr, e);
+                return true;
+            }
+        }
         switch (e.*) {
             .useHook => |uh| {
                 if (self.env.contextUses.get(uh.loc)) |use| {
                     if (use.kind == .provide) return error.ContextLowering; // a statement of its own
                     const scope = try self.scopeArg(false, uh.loc);
-                    e.* = (try self.callCarrying(find_fn, &.{ scope, try self.string(use.key, uh.loc), try self.string(use.name, uh.loc) }, try self.typeRefOfType(use.value_type), uh.loc)).*;
+                    // Decision 378 (3) — no read is unbound: the type's
+                    // declared default when nothing of it is provided above.
+                    const fallback = try self.ident(use.default_ref orelse return error.ContextLowering, uh.loc);
+                    e.* = (try self.callCarrying(find_fn, &.{ scope, try self.string(use.key, uh.loc), fallback }, try self.typeRefOfType(use.value_type), uh.loc)).*;
                     return true;
                 }
                 const inner = uh.kind.inner;
@@ -600,7 +623,8 @@ fn implementMethodComponent(env: *Env, program: ast.Program, im: ast.ImplementDe
 /// True when the module holds anything the lowering reaches.
 fn needed(env: *Env, program: ast.Program) bool {
     if (env.contextUses.count() > 0 or env.componentCalls.count() > 0 or
-        env.componentAwaits.count() > 0 or env.componentRuns.count() > 0) return true;
+        env.componentAwaits.count() > 0 or env.componentRuns.count() > 0 or
+        env.createContextCalls.count() > 0 or env.liftedStdTypes.contains("Context")) return true;
     for (program.decls) |d| switch (d) {
         .@"fn" => |f| if (writesComponent(f.returnType)) return true,
         .type_ => |t| for (t.methods) |m| if (writesComponent(m.returnType)) return true,

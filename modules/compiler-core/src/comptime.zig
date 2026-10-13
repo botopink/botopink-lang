@@ -384,8 +384,25 @@ fn withImportTypeAliasesErased(arena: std.mem.Allocator, prog: ast.Program, env:
 /// meeting the other declaration beside it (a key never reads as a basename:
 /// the root package's `config` is not a dependency's `x/config`).
 fn withImportSourcesNamed(arena: std.mem.Allocator, prog: ast.Program, env: *const envMod.Env) !ast.Program {
-    if (env.itemOwners.count() == 0 and env.implicitEnumImports.count() == 0) return prog;
+    if (env.itemOwners.count() == 0 and env.implicitEnumImports.count() == 0 and env.contextDefaultImports.count() == 0 and env.liftedStdTypes.count() == 0) return prog;
     var out: std.ArrayListUnmanaged(ast.DeclKind) = .empty;
+    // Decisions 378, 379 — the `val` another module declares a context
+    // type's default with, read by a `use context(T)` here under a hidden
+    // alias (`Env.contextDefaultImports`).
+    var lit = env.liftedStdTypes.iterator();
+    while (lit.next()) |e| {
+        var segs: std.ArrayListUnmanaged([]const u8) = .empty;
+        var parts = std.mem.splitScalar(u8, e.value_ptr.*, '/');
+        while (parts.next()) |part| try segs.append(arena, part);
+        try segs.append(arena, e.key_ptr.*);
+        const imports = try arena.dupe(ast.ImportPath, &.{.{ .segments = segs.items, .loc = .{ .line = 0, .col = 0 } }});
+        try out.append(arena, .{ .use = .{ .imports = imports, .source = .{ .module = "std" } } });
+    }
+    var cit = env.contextDefaultImports.iterator();
+    while (cit.next()) |e| {
+        const imports = try arena.dupe(ast.ImportPath, &.{.{ .segments = try arena.dupe([]const u8, &.{e.value_ptr.name}), .alias = e.key_ptr.*, .loc = .{ .line = 0, .col = 0 } }});
+        try out.append(arena, .{ .use = .{ .imports = imports, .source = .{ .key = e.value_ptr.module } } });
+    }
     // 144 B-10 — an enum the module wrote by dot-shorthand only, imported
     // from the module that declares it (`Env.implicitEnumImports`).
     var iit = env.implicitEnumImports.iterator();

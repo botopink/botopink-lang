@@ -858,6 +858,7 @@ pub const Journal = struct {
     scopes: MapOps(reflectionMod.WrittenName) = .{},
     template_value_reads: MapOps(ast.Loc) = .{},
     declared_values: MapOps([]const u8) = .{},
+    context_defaults: MapOps(reflectionMod.ContextDefault) = .{},
 };
 
 /// The fields of `Reflection` no journal carries, and why: `arena` (the
@@ -868,7 +869,7 @@ pub const Journal = struct {
 pub const unjournaled_reflection = [_][]const u8{ "arena", "readers", "templateReads", "oracle", "modTree", "srcPaths" };
 
 /// The `Reflection` fields `Journal` carries, by their names there.
-pub const journaled_reflection = [_][]const u8{ "meta", "typedMeta", "decoratorMetaTypes", "assoc", "declared", "templateQueries", "hookFns", "scopes", "templateValueReads", "declaredValues" };
+pub const journaled_reflection = [_][]const u8{ "meta", "typedMeta", "decoratorMetaTypes", "assoc", "declared", "templateQueries", "hookFns", "scopes", "templateValueReads", "declaredValues", "contextDefaults" };
 
 /// The entry of `outputs` (each `.ok`) under `key`, allocated with `gpa`.
 /// `journals` is empty, or one per output.

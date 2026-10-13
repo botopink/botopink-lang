@@ -6,7 +6,7 @@
 //// `Outer` awaits `badge("blue")` in its own body, run with `Outer`'s
 //// children scope.
 
-import {context.Context, context.provide, context.context} from "std";
+import {context.createContext, context.provide, context.context} from "std";
 
 type Styled(className: string) implement @Renderable
 
@@ -14,10 +14,10 @@ type StyledView = @Component<Styled>;
 
 type Sheet(name: string)
 
-pub val SheetContext = Context<Sheet>();
+pub val sheetContext = comptime createContext(Sheet(name: "default"));
 
 fn styledView(c: string) -> @Component<Styled> {
-    val s = use context(SheetContext);
+    val s = use context(Sheet);
     return Styled(className: c + "@" + s.name);
 }
 
@@ -26,13 +26,13 @@ fn badge(c: string) -> StyledView {
 }
 
 fn Render(view: fn() -> StyledView) -> @Component<Styled> {
-    use provide(SheetContext, Sheet(name: "render"));
+    use provide(createContext(Sheet(name: "render")));
     val out = await view();
     return out;
 }
 
 fn Outer() -> @Component<Styled> {
-    use provide(SheetContext, Sheet(name: "outer"));
+    use provide(createContext(Sheet(name: "outer")));
     val b = await badge("blue");
     return b;
 }

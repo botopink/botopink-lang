@@ -1,0 +1,7 @@
+//// The type and its declared default, in one module.
+
+import {context.createContext} from "std";
+
+pub type Theme(mode: string)
+
+pub val themeContext = comptime createContext(Theme(mode: "light"));

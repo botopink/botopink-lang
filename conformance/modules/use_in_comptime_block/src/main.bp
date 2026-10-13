@@ -2,17 +2,17 @@
 //// `comptime { … }` is compile-time evaluation with none. Refused at the
 //// `use`.
 
-import {context.Context, context.provide, context.context} from "std";
+import {context.createContext, context.provide, context.context} from "std";
 
 type Theme(mode: string)
 
 type Element(text: string) implement @Renderable
 
-pub val ThemeContext = Context<Theme>();
+pub val themeContext = comptime createContext(Theme(mode: "default"));
 
 fn Label() -> @Component<Element> {
     val mode = comptime {
-        val t = use context(ThemeContext);
+        val t = use context(Theme);
         break t.mode;
     };
     return Element(text: mode);

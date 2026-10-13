@@ -19,6 +19,18 @@ const hooksMod = @import("hooks.zig");
 const typedMetaMod = @import("typed_meta.zig");
 const modTreeMod = @import("mod_tree.zig");
 
+/// Decisions 378, 379 — the declaration of a context type's default.
+pub const ContextDefault = struct {
+    /// The module that declares it and the `val`'s name.
+    module: []const u8,
+    name: []const u8,
+    /// Where the `createContext(…)` is written, and the file it is in.
+    line: usize,
+    col: usize,
+    /// The type as the declaration's module names it, for a message.
+    typeName: []const u8,
+};
+
 /// One `decl.setMeta(key, value)`.
 pub const MetaEntry = struct {
     /// The decorator's own name (`entity`, never the `orm.entity` an
@@ -159,6 +171,10 @@ pub const Reflection = struct {
     /// `block_eval.termJson` writes it: what a template body's catalogue
     /// answer lifts as the entry's `value`.
     declaredValues: std.StringHashMapUnmanaged([]const u8) = .empty,
+    /// Decisions 378, 379 — a context's type (`ContextDefault.key`) → the
+    /// module-level `val X = createContext(…)` that declares its default, as
+    /// each analysed module published it: one per type in the program.
+    contextDefaults: std.StringHashMapUnmanaged(ContextDefault) = .empty,
     /// Decision 277 — `envMod.declIdentity(module, name)` → each top-level
     /// function of an analysed module with its hook node (`hooks.zig`),
     /// published when the module's analysis ends: an importer's `decl.hooks`

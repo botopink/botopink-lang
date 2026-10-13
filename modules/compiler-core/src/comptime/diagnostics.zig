@@ -158,10 +158,6 @@ pub const yield_break_removed: []const u8 = "yield-break-removed";
 
 // ── RC1, RC6, RC7: contexts and `use` (decision 354) ──────────────────────
 
-/// RC1 — `use context(C)` with no `use provide(C, …)` above it: raised at
-/// run time by the lookup the hidden context map lowers to (decision 354).
-pub const context_unbound: []const u8 = "context-unbound";
-
 /// Decision 354 — `@Context<C>` left the language (parser).
 pub const context_marker_removed: []const u8 = "context-marker-removed";
 
@@ -682,6 +678,10 @@ pub const typeinfo_meta_hooks_pending: []const u8 = "typeinfo-meta-hooks-pending
 /// naming the first. A `comptime` separates them.
 pub const build_and_run: []const u8 = "build-and-run";
 
+/// Decision 379 (1) — a second `createContext(…)` declaration of one type's
+/// default in the program: refused at the second, naming the first.
+pub const context_declared_twice: []const u8 = "context-declared-twice";
+
 // ── Lookup table — every code (skipping aliases & reserved-empties) ─────────
 
 pub const all_codes = [_][]const u8{
@@ -708,7 +708,6 @@ pub const all_codes = [_][]const u8{
     iterator_break_type_mismatch,
     break_label_unbound,
     yield_break_removed,
-    context_unbound,
     context_marker_removed,
     use_outside_render_tree,
     context_provide_outside_component,
@@ -837,6 +836,7 @@ pub const all_codes = [_][]const u8{
     typeinfo_meta_at_build,
     typeinfo_meta_hooks_pending,
     build_and_run,
+    context_declared_twice,
     template_annotation_not_template,
     template_annotation_call_form,
     template_annotation_without_decl,

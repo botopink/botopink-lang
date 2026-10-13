@@ -1,2 +1,2 @@
 botopink-cell 1
-out App: std/context.provide(main.ThemeContext) | Label: std/context.context(main.ThemeContext)
+out App: std/context.provide(main.themeContext) | Label: std/context.context(main.themeContext)

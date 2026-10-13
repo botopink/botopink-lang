@@ -2,16 +2,16 @@
 //// declaration it annotates, with no render tree: `use` there is refused;
 //// what a decorator needs comes from the catalogue (353).
 
-import {context.Context, context.provide, context.context} from "std";
+import {context.createContext, context.provide, context.context} from "std";
 
 type Theme(mode: string)
 
 type Element(text: string) implement @Renderable
 
-pub val ThemeContext = Context<Theme>();
+pub val themeContext = comptime createContext(Theme(mode: "default"));
 
 fn themed(comptime decl: @Decl) {
-    val t = use context(ThemeContext);
+    val t = use context(Theme);
 }
 
 #[themed]

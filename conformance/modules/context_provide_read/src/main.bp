@@ -6,16 +6,16 @@
 //// received. `App` itself does not see its own provide — `Root` provides the
 //// one `App` reads.
 
-import {context.Context, context.provide, context.context} from "std";
+import {context.createContext, context.provide, context.context} from "std";
 
 type Theme(mode: string)
 
 type Element(text: string) implement @Renderable
 
-pub val ThemeContext = Context<Theme>();
+pub val themeContext = comptime createContext(Theme(mode: "default"));
 
 fn themeName() -> @Component<string> {
-    val t = use context(ThemeContext);
+    val t = use context(Theme);
     return t.mode;
 }
 
@@ -30,14 +30,14 @@ fn Page() -> @Component<Element> {
 }
 
 fn App() -> @Component<Element> {
-    val outer = use context(ThemeContext);
-    use provide(ThemeContext, Theme(mode: "dark"));
+    val outer = use context(Theme);
+    use provide(createContext(Theme(mode: "dark")));
     val p = Page();
     return Element(text: outer.mode + " " + p.text);
 }
 
 fn Root() -> @Component<Element> {
-    use provide(ThemeContext, Theme(mode: "light"));
+    use provide(createContext(Theme(mode: "light")));
     val a = App();
     return Element(text: a.text);
 }

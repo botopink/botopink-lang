@@ -1794,22 +1794,31 @@ parameter (`memo(compute, deps)`). A client runtime supplies hook semantics
 through what `f` does; the pure body above is what every backend runs, and what
 the server renders.
 
-**Contexts** (decision 354). What a body reads from above it is a context: a
-declared object, its identity the declaration (281) — `pub val ThemeContext =
-Context<Theme>();` with std's `context.Context`, no default value, and no other
-way to make one (`context-not-declared`: a `Context<T>()` that is not a
-module-level `val`'s whole initializer, a `val` naming another context, a
-context named by a local or a parameter). Two hooks of std's `context` module
-work it, `use`d and nothing else (`context-hook-without-use`):
+**Contexts** (decisions 354, 378, 379). What a body reads from above it is a
+context, named by its value's type. std's `context.createContext(value)` makes
+one; written as a module-level `val`'s initializer it **declares** that type's
+default — `pub val themeContext = comptime createContext(Theme(mode: "light"));`
+— one declaration per type in the program (`context-declared-twice` at the
+second, naming the first), and a module-level `Context<T>` made any other way
+(a `val` naming another context, a `var`) is `context-not-declared`. Two
+contexts over one base type are two types (`type Depth(n: i32)`, `type
+Step(n: i32)`). Two hooks of std's `context` module work it, `use`d and nothing
+else (`context-hook-without-use`):
 
-- `use provide(ThemeContext, value);` in a **component's** body gives `value`
-  to everything that component renders below it — descendants only, never
-  itself or a sibling; the nearest provider wins. In a body whose `R` is not
-  `@Renderable` it is `context-provide-outside-component`, and after the body
-  rendered a component it is `context-provide-after-render` (that child would
-  not see it).
-- `val t = use context(ThemeContext);` reads the value provided nearest above
-  — a `Theme`; with no provider above it is `context-unbound` at run time.
+- `use provide(createContext(value));` in a **component's** body gives the
+  context to everything that component renders below it — descendants only,
+  never itself or a sibling; the nearest provider of a type wins (`use
+  provide(themeContext)` gives the declared default again). In a body whose
+  `R` is not `@Renderable` it is `context-provide-outside-component`, and after
+  the body rendered a component it is `context-provide-after-render` (that
+  child would not see it).
+- `val t = use context(Theme);` reads the context of type `Theme` provided
+  nearest above, else `Theme`'s declared default — no read is unbound. A type
+  with no declared default is `context-not-declared` at the read; the
+  declaration is found in the reading module, or in a module analysed before
+  it — the type's own module included (question B-17-g).
+
+<!-- example: modules/context_default -->
 
 <!-- example: modules/context_provide_read -->
 
@@ -2779,7 +2788,7 @@ a type, a field, a method and a `val`. A node holds only what is written in its
 | Record | Fields |
 |---|---|
 | `HookNode` | `function: Declared<unknown>`, `uses: HookUse[]`, `calls: HookCall[]`, `async: bool` (decision 375), `stage: Stage` (decision 376) |
-| `HookUse` — one `use h(…)` | `hook: ?Declared<unknown>` (`null` over a function value), `annotations: DeclAnnotation[]` (the hook's own), `at: string`, `typeArgs: TypeInfo<unknown>[]` (`use params<BlogParams>()` → `BlogParams`, its fields as the checker spells them), `context: ?Declared<unknown>` (the context object of a `use provide(C, …)` / `use context(C)`, decision 354 (4); `null` for any other hook) |
+| `HookUse` — one `use h(…)` | `hook: ?Declared<unknown>` (`null` over a function value), `annotations: DeclAnnotation[]` (the hook's own), `at: string`, `typeArgs: TypeInfo<unknown>[]` (`use params<BlogParams>()` → `BlogParams`, its fields as the checker spells them), `context: ?Declared<unknown>` (the `val` that declares the type's default of a `use provide(ctx)` / `use context(T)`, decisions 354 (4), 379; `null` for any other hook) |
 | `HookCall` — one call of a `@Component` function | `callee: Declared<unknown>`, `at: string` |
 
 A call a template builds from a tag counts as written. `at` is
@@ -3968,7 +3977,7 @@ no automatic rewriter: each error names the new spelling, from the table below.
 | `-> Element` on a component that uses a hook | `-> @Component<Element>` |
 | `@Component<C, R>` (decision 128's base) | `@Component<R>` (decision 354) |
 | `type T(…) implement @Context<C>` | `type T(…) implement @Renderable` |
-| `val c = use @getContext(T);` | a declared `Context<T>`, `use provide(…)` in the component that renders the reader, `val c = use context(…);` |
+| `val c = use @getContext(T);` | `T`'s default declared with `createContext(…)`, `use provide(createContext(…))` in the component that renders the reader, `val c = use context(T);` |
 
 Decision 354's three rows have a codemod, `scripts/codemod-component-contexts.py`
 (`scripts/AGENTS.md`): it rewrites the first two and reports each `use

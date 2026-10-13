@@ -1,23 +1,27 @@
 ----- SOURCE CODE -- std/context.bp
 ```botopink
-//// Contexts (decision 354) — what a component's body reads from above it,
-//// React's context in botopink's spelling.
+//// Contexts (decisions 354, 378, 379) — what a component's body reads from
+//// above it, React's context in botopink's spelling.
 ////
-//// A context is a declared object, its identity the declaration (decision
-//// 281): `pub val ThemeContext = Context<Theme>();` — no default value, and
-//// no other way to make one (`context-not-declared`). A component provides a
-//// value to everything it renders below it, and a body reads the nearest
-//// value provided above it:
+//// A context is named by its value's type. `createContext(value)` at module
+//// level declares the default of that type — one declaration per type in
+//// the program:
 ////
-////     use provide(ThemeContext, Theme(mode: .Dark));   // the children's
-////     val theme = use context(ThemeContext);           // the nearest above
+////     pub val themeContext = comptime createContext(Theme(mode: .Light));
+////
+//// A component provides a context to everything it renders below it, and a
+//// body reads the nearest one of a type provided above it, else the type's
+//// declared default:
+////
+////     use provide(createContext(Theme(mode: .Dark)));   // the children's
+////     val theme = use context(Theme);                    // the nearest above
 ////
 //// Both are hooks, so they are `use`d, never called for a value; `provide`
 //// only in a component's body (a `@Component<R>` whose `R` implements
 //// `@Renderable`), before it renders a child. `use` exists only where there
 //// is a render tree — a decorator body, a template body and a
-//// `comptime { … }` have none (`use-outside-render-tree`). A read with no
-//// provider above it is `context-unbound` at run time.
+//// `comptime { … }` have none (`use-outside-render-tree`). A read of a type
+//// with no declared default is refused at build, at the read.
 ////
 //// A component at run time is a lambda over a `RenderScope` (decision 388):
 //// calling `Card(item)` only makes the lambda, and the render library runs it
@@ -30,23 +34,33 @@
 ////
 //// The work is the compiler's: each `use provide(…)` / `use context(…)` is
 //// lowered where it is written — `provide` makes the children's scope and
-//// `context` looks the received one up. Neither hook below is ever called:
-//// the checker refuses every reference to them but a `use`'s operand, and the
-//// bodies panic.
+//// `context` looks the received one up, the declared default when nothing
+//// of its type is provided. Neither hook below is ever called: the checker
+//// refuses every reference to them but a `use`'s operand, and the bodies
+//// panic.
 
-// A context of `T`, named by the `val` that declares it.
-pub type Context<T>()
+// A context of `T`: the value a provider gives, or a type's declared default.
+pub type Context<T>(contextValue: T)
 
-// Gives `value` to every component this component renders below it — never
-// to itself or a sibling; the nearest provider wins.
-pub fn provide<T>(ctx: Context<T>, value: T) -> @Component<void> {
+// A context of `value`'s type. At module level it declares that type's
+// default (decisions 378, 379); inside a component it makes the context a
+// `use provide(…)` gives.
+pub fn createContext<T>(value: T) -> Context<T> {
+    return Context(contextValue: value);
+}
+
+// Gives `ctx` to every component this component renders below it — never
+// to itself or a sibling; the nearest provider of a type wins.
+pub fn provide<T>(ctx: Context<T>) -> @Component<void> {
     @panic(
         "`use provide` / `use context` are lowered where they are written; this body never runs",
     );
 }
 
-// The value of `ctx` provided nearest above this body.
-pub fn context<T>(ctx: Context<T>) -> @Component<T> {
+// The value of the context of type `T` provided nearest above this body, or
+// `T`'s declared default: `use context(T)` answers `T`, which the checker
+// reads off the type the argument names (decision 379 (3)).
+pub fn context(comptime t: @Expr<type>) -> @Component<unknown> {
     @panic(
         "`use provide` / `use context` are lowered where they are written; this body never runs",
     );
@@ -74,12 +88,14 @@ pub type Rendered<R>(value: R, scope: RenderScope)
 // A program never names these: the compiler imports them under names no
 // source can spell. A `@Component` function answers `{ scope -> … }`; each
 // `return v` of its body answers `rendered(v, <children's scope>)`; `use
-// provide(C, v)` binds `push(<children's scope>, <C's identity>, v)` for the
-// children, `use context(C)` is `find(<received scope>, <C's identity>, "C")`,
+// provide(c)` binds `push(<children's scope>, <T's identity>, c)` for the
+// children (a context is its value at run time: the compiler writes
+// `createContext(v)` as `v`), `use context(T)` is `find(<received scope>, <T's
+// identity>, <T's declared default>)`,
 // a `use` of a hook and an `await` of a component value run the lambda and
 // read `valueOf` of what it answers, and an `await` outside every body runs it
-// with `root()`. A context's identity is the declaration of its `val` (281) —
-// the compiler writes it, never a program.
+// with `root()`. A context's identity is its value's type (379) — the
+// compiler writes it, never a program.
 
 // One provided value over the frames it was provided in.
 pub type Frame(key: string, value: unknown, parent: unknown)
@@ -91,23 +107,17 @@ pub fn push(scope: RenderScope, key: string, value: unknown) -> RenderScope {
     );
 }
 
-// The value provided nearest above for `key`; `context-unbound` when no
-// provider of `name` is above.
+// The value provided nearest above for `key`, else `fallback` — the type's
+// declared default (decision 378 (3): no read is unbound).
 // The two `unknown` fields are read through `frameValue` / `frameParent`: wasm boxes a field read as `unknown` only as a function's answer.
-pub fn find(scope: RenderScope, key: string, name: string) -> unknown {
+pub fn find(scope: RenderScope, key: string, fallback: unknown) -> unknown {
     var cur = scope.frames;
     loop {
         if (cur is Frame) {
             val f: Frame = cur;
             if (f.key == key) return frameValue(f);
             cur = frameParent(f);
-        } else @panic(
-            "context-unbound: no `use provide("
-                + name
-                + ", ...)` above this `use context("
-                + name
-                + ")` (decision 354)",
-        );
+        } else return frameValue(Frame(key: key, value: fallback, parent: null)); // the default read back as a provided value is
     }
 }
 
@@ -138,27 +148,35 @@ fn frameParent(f: Frame) -> unknown {
 
 ----- JAVASCRIPT -- std/context.js
 ```javascript
-//// Contexts (decision 354) — what a component's body reads from above it,
+//// Contexts (decisions 354, 378, 379) — what a component's body reads from
 
-//// React's context in botopink's spelling.
-
-//// 
-
-//// A context is a declared object, its identity the declaration (decision
-
-//// 281): `pub val ThemeContext = Context<Theme>();` — no default value, and
-
-//// no other way to make one (`context-not-declared`). A component provides a
-
-//// value to everything it renders below it, and a body reads the nearest
-
-//// value provided above it:
+//// above it, React's context in botopink's spelling.
 
 //// 
 
-////     use provide(ThemeContext, Theme(mode: .Dark));   // the children's
+//// A context is named by its value's type. `createContext(value)` at module
 
-////     val theme = use context(ThemeContext);           // the nearest above
+//// level declares the default of that type — one declaration per type in
+
+//// the program:
+
+//// 
+
+////     pub val themeContext = comptime createContext(Theme(mode: .Light));
+
+//// 
+
+//// A component provides a context to everything it renders below it, and a
+
+//// body reads the nearest one of a type provided above it, else the type's
+
+//// declared default:
+
+//// 
+
+////     use provide(createContext(Theme(mode: .Dark)));   // the children's
+
+////     val theme = use context(Theme);                    // the nearest above
 
 //// 
 
@@ -170,9 +188,9 @@ fn frameParent(f: Frame) -> unknown {
 
 //// is a render tree — a decorator body, a template body and a
 
-//// `comptime { … }` have none (`use-outside-render-tree`). A read with no
+//// `comptime { … }` have none (`use-outside-render-tree`). A read of a type
 
-//// provider above it is `context-unbound` at run time.
+//// with no declared default is refused at build, at the read.
 
 //// 
 
@@ -198,31 +216,51 @@ fn frameParent(f: Frame) -> unknown {
 
 //// lowered where it is written — `provide` makes the children's scope and
 
-//// `context` looks the received one up. Neither hook below is ever called:
+//// `context` looks the received one up, the declared default when nothing
 
-//// the checker refuses every reference to them but a `use`'s operand, and the
+//// of its type is provided. Neither hook below is ever called: the checker
 
-//// bodies panic.
+//// refuses every reference to them but a `use`'s operand, and the bodies
 
-// A context of `T`, named by the `val` that declares it.
+//// panic.
+
+// A context of `T`: the value a provider gives, or a type's declared default.
 
 class Context {
+    constructor(contextValue) {
+        this.contextValue = contextValue;
+    }
 }
 Context.prototype.__bp = "Context";
 exports.Context = Context;
 
-// Gives `value` to every component this component renders below it — never
+// A context of `value`'s type. At module level it declares that type's
 
-// to itself or a sibling; the nearest provider wins.
+// default (decisions 378, 379); inside a component it makes the context a
 
-function provide(ctx, value) {
+// `use provide(…)` gives.
+
+function createContext(value) {
+    return new Context(value);
+}
+exports.createContext = createContext;
+
+// Gives `ctx` to every component this component renders below it — never
+
+// to itself or a sibling; the nearest provider of a type wins.
+
+function provide(ctx) {
     (() => { throw new Error("`use provide` / `use context` are lowered where they are written; this body never runs") })();
 }
 exports.provide = provide;
 
-// The value of `ctx` provided nearest above this body.
+// The value of the context of type `T` provided nearest above this body, or
 
-function context(ctx) {
+// `T`'s declared default: `use context(T)` answers `T`, which the checker
+
+// reads off the type the argument names (decision 379 (3)).
+
+function context(t) {
     (() => { throw new Error("`use provide` / `use context` are lowered where they are written; this body never runs") })();
 }
 exports.context = context;
@@ -272,17 +310,21 @@ exports.Rendered = Rendered;
 
 // `return v` of its body answers `rendered(v, <children's scope>)`; `use
 
-// provide(C, v)` binds `push(<children's scope>, <C's identity>, v)` for the
+// provide(c)` binds `push(<children's scope>, <T's identity>, c)` for the
 
-// children, `use context(C)` is `find(<received scope>, <C's identity>, "C")`,
+// children (a context is its value at run time: the compiler writes
+
+// `createContext(v)` as `v`), `use context(T)` is `find(<received scope>, <T's
+
+// identity>, <T's declared default>)`,
 
 // a `use` of a hook and an `await` of a component value run the lambda and
 
 // read `valueOf` of what it answers, and an `await` outside every body runs it
 
-// with `root()`. A context's identity is the declaration of its `val` (281) —
+// with `root()`. A context's identity is its value's type (379) — the
 
-// the compiler writes it, never a program.
+// compiler writes it, never a program.
 
 // One provided value over the frames it was provided in.
 
@@ -303,16 +345,17 @@ function push(scope, key, value) {
 }
 exports.push = push;
 
-// The value provided nearest above for `key`; `context-unbound` when no
+// The value provided nearest above for `key`, else `fallback` — the type's
 
-// provider of `name` is above.
+// declared default (decision 378 (3): no read is unbound).
 
 // The two `unknown` fields are read through `frameValue` / `frameParent`: wasm boxes a field read as `unknown` only as a function's answer.
 
-function find(scope, key, name) {
+function find(scope, key, fallback) {
     let cur = scope.frames;
     while (true) {
-    if (cur instanceof Frame) { const f = cur; if ((f.key === key)) { return frameValue(f); } cur = frameParent(f); } else { (() => { throw new Error((((("context-unbound: no `use provide(" + name) + ", ...)` above this `use context(") + name) + ")` (decision 354)")) })(); }
+    if (cur instanceof Frame) { const f = cur; if ((f.key === key)) { return frameValue(f); } cur = frameParent(f); } else { return frameValue(new Frame(key, fallback, null)); }
+    // the default read back as a provided value is;
 }
 }
 exports.find = find;
@@ -346,20 +389,24 @@ function frameParent(f) {
     return f.parent;
 }
 
-Object.defineProperty(exports, "__bp_priv__", { value: { Context, provide, context, RenderScope, Rendered, Frame, push, find, rendered, valueOf, root, frameValue, frameParent } });
+Object.defineProperty(exports, "__bp_priv__", { value: { Context, createContext, provide, context, RenderScope, Rendered, Frame, push, find, rendered, valueOf, root, frameValue, frameParent } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- std/context.d.ts
 ```typescript
 export declare class Context<T> {
-    constructor();
+    readonly contextValue: T;
+    constructor(contextValue: T);
 }
 
 
-export declare function provide<T>(ctx: Context<T>, value: T): void;
+export declare function createContext<T>(value: T): Context<T>;
 
 
-export declare function context<T>(ctx: Context<T>): T;
+export declare function provide<T>(ctx: Context<T>): void;
+
+
+export declare function context(t: any): unknown;
 
 
 export declare class RenderScope {
@@ -387,7 +434,7 @@ export declare class Frame {
 export declare function push(scope: RenderScope, key: string, value: unknown): RenderScope;
 
 
-export declare function find(scope: RenderScope, key: string, name: string): unknown;
+export declare function find(scope: RenderScope, key: string, fallback: unknown): unknown;
 
 
 export declare function rendered(value: unknown, scope: RenderScope): Rendered<unknown>;

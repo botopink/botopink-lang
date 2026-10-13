@@ -8,13 +8,13 @@
 //// no context (`constant`) registers nothing; one standing on its own
 //// (`alone`) registers itself.
 
-import {context.Context, context.provide, context.context} from "std";
+import {context.createContext, context.provide, context.context} from "std";
 
 type Rule(name: string, text: string) implement @Renderable
 
 type SheetWriter(layer: string, add: fn(layer: string, rule: Rule))
 
-pub val SheetContext = Context<SheetWriter>();
+pub val sheetContext = createContext(SheetWriter(layer: "", add: discard));
 
 fn printed(layer: string, rule: Rule) -> void {
     @print("registered " + layer + " " + rule.name + " " + rule.text);
@@ -23,7 +23,7 @@ fn printed(layer: string, rule: Rule) -> void {
 fn discard(layer: string, rule: Rule) -> void {}
 
 fn computed(name: string, parts: Rule[]) -> @Component<Rule> {
-    val sheet = use context(SheetContext);
+    val sheet = use context(SheetWriter);
     var text = name;
     for (parts) { r ->
         text = text + "+" + r.text;
@@ -34,7 +34,7 @@ fn computed(name: string, parts: Rule[]) -> @Component<Rule> {
 }
 
 fn quiet(view: fn() -> @Component<Rule>) -> @Component<Rule> {
-    use provide(SheetContext, SheetWriter(layer: "", add: discard));
+    use provide(createContext(SheetWriter(layer: "", add: discard)));
     val r = await view();
     return r;
 }
@@ -44,7 +44,7 @@ fn constant(name: string) -> @Component<Rule> {
 }
 
 fn Root() -> @Component<Rule> {
-    use provide(SheetContext, SheetWriter(layer: "components", add: printed));
+    use provide(createContext(SheetWriter(layer: "components", add: printed)));
     val a = await computed("badge", [quiet({ -> computed("pad", []) })]);
     val b = await computed("badge", [quiet({ -> computed("pad", []) })]);
     val c = await constant("tab");

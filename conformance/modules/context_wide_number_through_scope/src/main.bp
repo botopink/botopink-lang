@@ -1,23 +1,24 @@
-//// Decisions 354 and 388 — a value of any type crosses the render scope: an
-//// `f64` and an `i64` provided by `Root` are read below it with `use context`,
+//// Decisions 354, 379 and 388 — a value of any type crosses the render scope:
+//// an `f64` and an `i64` provided by `Root` are read below it with `use
+//// context(f64)` / `use context(i64)`,
 //// and the hooks `rate` and `total` render an `f64` and an `i64` that `Label`
 //// reads with `use` — each one the number it was, on every target.
 
-import {context.Context, context.provide, context.context} from "std";
+import {context.createContext, context.provide, context.context} from "std";
 
 type View(text: string) implement @Renderable
 
-pub val RateContext = Context<f64>();
+pub val rateContext = comptime createContext(0.0);
 
-pub val TotalContext = Context<i64>();
+pub val totalContext = createContext(0l);
 
 fn rate() -> @Component<f64> {
-    val r = use context(RateContext);
+    val r = use context(f64);
     return r * 2.0;
 }
 
 fn total() -> @Component<i64> {
-    val t = use context(TotalContext);
+    val t = use context(i64);
     return t + 1;
 }
 
@@ -29,8 +30,8 @@ fn Label() -> @Component<View> {
 
 fn Root() -> @Component<View> {
     val big: i64 = 9000000000;
-    use provide(RateContext, 1.25);
-    use provide(TotalContext, big);
+    use provide(createContext(1.25));
+    use provide(createContext(big));
     val l = Label();
     return View(text: l.text);
 }

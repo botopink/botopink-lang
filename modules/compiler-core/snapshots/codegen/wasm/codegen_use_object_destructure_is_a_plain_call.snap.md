@@ -1,23 +1,27 @@
 ----- SOURCE CODE -- std/context.bp
 ```botopink
-//// Contexts (decision 354) — what a component's body reads from above it,
-//// React's context in botopink's spelling.
+//// Contexts (decisions 354, 378, 379) — what a component's body reads from
+//// above it, React's context in botopink's spelling.
 ////
-//// A context is a declared object, its identity the declaration (decision
-//// 281): `pub val ThemeContext = Context<Theme>();` — no default value, and
-//// no other way to make one (`context-not-declared`). A component provides a
-//// value to everything it renders below it, and a body reads the nearest
-//// value provided above it:
+//// A context is named by its value's type. `createContext(value)` at module
+//// level declares the default of that type — one declaration per type in
+//// the program:
 ////
-////     use provide(ThemeContext, Theme(mode: .Dark));   // the children's
-////     val theme = use context(ThemeContext);           // the nearest above
+////     pub val themeContext = comptime createContext(Theme(mode: .Light));
+////
+//// A component provides a context to everything it renders below it, and a
+//// body reads the nearest one of a type provided above it, else the type's
+//// declared default:
+////
+////     use provide(createContext(Theme(mode: .Dark)));   // the children's
+////     val theme = use context(Theme);                    // the nearest above
 ////
 //// Both are hooks, so they are `use`d, never called for a value; `provide`
 //// only in a component's body (a `@Component<R>` whose `R` implements
 //// `@Renderable`), before it renders a child. `use` exists only where there
 //// is a render tree — a decorator body, a template body and a
-//// `comptime { … }` have none (`use-outside-render-tree`). A read with no
-//// provider above it is `context-unbound` at run time.
+//// `comptime { … }` have none (`use-outside-render-tree`). A read of a type
+//// with no declared default is refused at build, at the read.
 ////
 //// A component at run time is a lambda over a `RenderScope` (decision 388):
 //// calling `Card(item)` only makes the lambda, and the render library runs it
@@ -30,23 +34,33 @@
 ////
 //// The work is the compiler's: each `use provide(…)` / `use context(…)` is
 //// lowered where it is written — `provide` makes the children's scope and
-//// `context` looks the received one up. Neither hook below is ever called:
-//// the checker refuses every reference to them but a `use`'s operand, and the
-//// bodies panic.
+//// `context` looks the received one up, the declared default when nothing
+//// of its type is provided. Neither hook below is ever called: the checker
+//// refuses every reference to them but a `use`'s operand, and the bodies
+//// panic.
 
-// A context of `T`, named by the `val` that declares it.
-pub type Context<T>()
+// A context of `T`: the value a provider gives, or a type's declared default.
+pub type Context<T>(contextValue: T)
 
-// Gives `value` to every component this component renders below it — never
-// to itself or a sibling; the nearest provider wins.
-pub fn provide<T>(ctx: Context<T>, value: T) -> @Component<void> {
+// A context of `value`'s type. At module level it declares that type's
+// default (decisions 378, 379); inside a component it makes the context a
+// `use provide(…)` gives.
+pub fn createContext<T>(value: T) -> Context<T> {
+    return Context(contextValue: value);
+}
+
+// Gives `ctx` to every component this component renders below it — never
+// to itself or a sibling; the nearest provider of a type wins.
+pub fn provide<T>(ctx: Context<T>) -> @Component<void> {
     @panic(
         "`use provide` / `use context` are lowered where they are written; this body never runs",
     );
 }
 
-// The value of `ctx` provided nearest above this body.
-pub fn context<T>(ctx: Context<T>) -> @Component<T> {
+// The value of the context of type `T` provided nearest above this body, or
+// `T`'s declared default: `use context(T)` answers `T`, which the checker
+// reads off the type the argument names (decision 379 (3)).
+pub fn context(comptime t: @Expr<type>) -> @Component<unknown> {
     @panic(
         "`use provide` / `use context` are lowered where they are written; this body never runs",
     );
@@ -74,12 +88,14 @@ pub type Rendered<R>(value: R, scope: RenderScope)
 // A program never names these: the compiler imports them under names no
 // source can spell. A `@Component` function answers `{ scope -> … }`; each
 // `return v` of its body answers `rendered(v, <children's scope>)`; `use
-// provide(C, v)` binds `push(<children's scope>, <C's identity>, v)` for the
-// children, `use context(C)` is `find(<received scope>, <C's identity>, "C")`,
+// provide(c)` binds `push(<children's scope>, <T's identity>, c)` for the
+// children (a context is its value at run time: the compiler writes
+// `createContext(v)` as `v`), `use context(T)` is `find(<received scope>, <T's
+// identity>, <T's declared default>)`,
 // a `use` of a hook and an `await` of a component value run the lambda and
 // read `valueOf` of what it answers, and an `await` outside every body runs it
-// with `root()`. A context's identity is the declaration of its `val` (281) —
-// the compiler writes it, never a program.
+// with `root()`. A context's identity is its value's type (379) — the
+// compiler writes it, never a program.
 
 // One provided value over the frames it was provided in.
 pub type Frame(key: string, value: unknown, parent: unknown)
@@ -91,23 +107,17 @@ pub fn push(scope: RenderScope, key: string, value: unknown) -> RenderScope {
     );
 }
 
-// The value provided nearest above for `key`; `context-unbound` when no
-// provider of `name` is above.
+// The value provided nearest above for `key`, else `fallback` — the type's
+// declared default (decision 378 (3): no read is unbound).
 // The two `unknown` fields are read through `frameValue` / `frameParent`: wasm boxes a field read as `unknown` only as a function's answer.
-pub fn find(scope: RenderScope, key: string, name: string) -> unknown {
+pub fn find(scope: RenderScope, key: string, fallback: unknown) -> unknown {
     var cur = scope.frames;
     loop {
         if (cur is Frame) {
             val f: Frame = cur;
             if (f.key == key) return frameValue(f);
             cur = frameParent(f);
-        } else @panic(
-            "context-unbound: no `use provide("
-                + name
-                + ", ...)` above this `use context("
-                + name
-                + ")` (decision 354)",
-        );
+        } else return frameValue(Frame(key: key, value: fallback, parent: null)); // the default read back as a provided value is
     }
 }
 
@@ -141,33 +151,35 @@ fn frameParent(f: Frame) -> unknown {
 (module
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
-  (data (i32.const 256) "\56\00\00\00`use provide` / `use context` are lowered where they are written; this body never runs")
-  (data (i32.const 348) "\16\00\00\00R\0bRenderScope\01\06framesi")
-  (data (i32.const 376) "\1c\00\00\00R\05Frame\03\03keys\05valuei\06parenti")
-  (data (i32.const 408) "\21\00\00\00context-unbound: no `use provide(")
-  (data (i32.const 448) "\20\00\00\00, ...)` above this `use context(")
-  (data (i32.const 484) "\11\00\00\00)` (decision 354)")
-  (data (i32.const 508) "\19\00\00\00R\08Rendered\02\05valueG\05scopeT")
-  (data (i32.const 540) "\01\00\00\00i")
-  (global $__heap_ptr (mut i32) (i32.const 548))
-  ;; Contexts (decision 354) — what a component's body reads from above it,
-  ;; React's context in botopink's spelling.
+  (data (i32.const 256) "\18\00\00\00R\07Context\01\0ccontextValueG")
+  (data (i32.const 284) "\01\00\00\00i")
+  (data (i32.const 292) "\56\00\00\00`use provide` / `use context` are lowered where they are written; this body never runs")
+  (data (i32.const 384) "\16\00\00\00R\0bRenderScope\01\06framesi")
+  (data (i32.const 412) "\1c\00\00\00R\05Frame\03\03keys\05valuei\06parenti")
+  (data (i32.const 444) "\19\00\00\00R\08Rendered\02\05valueG\05scopeT")
+  (global $__heap_ptr (mut i32) (i32.const 476))
+  ;; Contexts (decisions 354, 378, 379) — what a component's body reads from
+  ;; above it, React's context in botopink's spelling.
   ;; 
-  ;; A context is a declared object, its identity the declaration (decision
-  ;; 281): `pub val ThemeContext = Context<Theme>();` — no default value, and
-  ;; no other way to make one (`context-not-declared`). A component provides a
-  ;; value to everything it renders below it, and a body reads the nearest
-  ;; value provided above it:
+  ;; A context is named by its value's type. `createContext(value)` at module
+  ;; level declares the default of that type — one declaration per type in
+  ;; the program:
   ;; 
-  ;;     use provide(ThemeContext, Theme(mode: .Dark));   // the children's
-  ;;     val theme = use context(ThemeContext);           // the nearest above
+  ;;     pub val themeContext = comptime createContext(Theme(mode: .Light));
+  ;; 
+  ;; A component provides a context to everything it renders below it, and a
+  ;; body reads the nearest one of a type provided above it, else the type's
+  ;; declared default:
+  ;; 
+  ;;     use provide(createContext(Theme(mode: .Dark)));   // the children's
+  ;;     val theme = use context(Theme);                    // the nearest above
   ;; 
   ;; Both are hooks, so they are `use`d, never called for a value; `provide`
   ;; only in a component's body (a `@Component<R>` whose `R` implements
   ;; `@Renderable`), before it renders a child. `use` exists only where there
   ;; is a render tree — a decorator body, a template body and a
-  ;; `comptime { … }` have none (`use-outside-render-tree`). A read with no
-  ;; provider above it is `context-unbound` at run time.
+  ;; `comptime { … }` have none (`use-outside-render-tree`). A read of a type
+  ;; with no declared default is refused at build, at the read.
   ;; 
   ;; A component at run time is a lambda over a `RenderScope` (decision 388):
   ;; calling `Card(item)` only makes the lambda, and the render library runs it
@@ -180,21 +192,46 @@ fn frameParent(f: Frame) -> unknown {
   ;; 
   ;; The work is the compiler's: each `use provide(…)` / `use context(…)` is
   ;; lowered where it is written — `provide` makes the children's scope and
-  ;; `context` looks the received one up. Neither hook below is ever called:
-  ;; the checker refuses every reference to them but a `use`'s operand, and the
-  ;; bodies panic.
-  ;; A context of `T`, named by the `val` that declares it.
-  ;; Gives `value` to every component this component renders below it — never
-  ;; to itself or a sibling; the nearest provider wins.
-  (func $provide (export "provide") (param $ctx i32) (param $value i32) (result i32)
-    i32.const 256
+  ;; `context` looks the received one up, the declared default when nothing
+  ;; of its type is provided. Neither hook below is ever called: the checker
+  ;; refuses every reference to them but a `use`'s operand, and the bodies
+  ;; panic.
+  ;; A context of `T`: the value a provider gives, or a type's declared default.
+  ;; A context of `value`'s type. At module level it declares that type's
+  ;; default (decisions 378, 379); inside a component it makes the context a
+  ;; `use provide(…)` gives.
+  (func $createContext (export "createContext") (param $value i32) (result i32)
+    (local $__mem0 i32)
+    i32.const 12
+    call $__alloc
+    local.set $__mem0
+    local.get $__mem0
+    i32.const 260
+    i32.store
+    local.get $__mem0
+    i32.const 288
+    i32.store offset=8
+    local.get $__mem0
+    local.get $value
+    i32.store offset=4
+    local.get $__mem0
+    i32.const 4
+    i32.add
+    return
+  )
+  ;; Gives `ctx` to every component this component renders below it — never
+  ;; to itself or a sibling; the nearest provider of a type wins.
+  (func $provide (export "provide") (param $ctx i32) (result i32)
+    i32.const 292
     call $__panic_fail
     unreachable
     i32.const 0
   )
-  ;; The value of `ctx` provided nearest above this body.
-  (func $context (export "context") (param $ctx i32) (result i32)
-    i32.const 256
+  ;; The value of the context of type `T` provided nearest above this body, or
+  ;; `T`'s declared default: `use context(T)` answers `T`, which the checker
+  ;; reads off the type the argument names (decision 379 (3)).
+  (func $context (export "context") (param $t i32) (result i32)
+    i32.const 292
     call $__panic_fail
     unreachable
     i32.const 0
@@ -209,7 +246,7 @@ fn frameParent(f: Frame) -> unknown {
     call $__alloc
     local.set $__mem0
     local.get $__mem0
-    i32.const 352
+    i32.const 388
     i32.store
     local.get $__mem0
     i32.const 0
@@ -227,12 +264,14 @@ fn frameParent(f: Frame) -> unknown {
   ;; A program never names these: the compiler imports them under names no
   ;; source can spell. A `@Component` function answers `{ scope -> … }`; each
   ;; `return v` of its body answers `rendered(v, <children's scope>)`; `use
-  ;; provide(C, v)` binds `push(<children's scope>, <C's identity>, v)` for the
-  ;; children, `use context(C)` is `find(<received scope>, <C's identity>, "C")`,
+  ;; provide(c)` binds `push(<children's scope>, <T's identity>, c)` for the
+  ;; children (a context is its value at run time: the compiler writes
+  ;; `createContext(v)` as `v`), `use context(T)` is `find(<received scope>, <T's
+  ;; identity>, <T's declared default>)`,
   ;; a `use` of a hook and an `await` of a component value run the lambda and
   ;; read `valueOf` of what it answers, and an `await` outside every body runs it
-  ;; with `root()`. A context's identity is the declaration of its `val` (281) —
-  ;; the compiler writes it, never a program.
+  ;; with `root()`. A context's identity is its value's type (379) — the
+  ;; compiler writes it, never a program.
   ;; One provided value over the frames it was provided in.
   ;; The children's scope: `value` provided for `key` over `scope`.
   (func $push (export "push") (param $scope i32) (param $key i32) (param $value i32) (result i32)
@@ -242,14 +281,14 @@ fn frameParent(f: Frame) -> unknown {
     call $__alloc
     local.set $__mem0
     local.get $__mem0
-    i32.const 352
+    i32.const 388
     i32.store
     local.get $__mem0
     i32.const 16
     call $__alloc
     local.set $__mem1
     local.get $__mem1
-    i32.const 380
+    i32.const 416
     i32.store
     local.get $__mem1
     local.get $key
@@ -270,13 +309,14 @@ fn frameParent(f: Frame) -> unknown {
     i32.add
     return
   )
-  ;; The value provided nearest above for `key`; `context-unbound` when no
-  ;; provider of `name` is above.
+  ;; The value provided nearest above for `key`, else `fallback` — the type's
+  ;; declared default (decision 378 (3): no read is unbound).
   ;; The two `unknown` fields are read through `frameValue` / `frameParent`: wasm boxes a field read as `unknown` only as a function's answer.
-  (func $find (export "find") (param $scope i32) (param $key i32) (param $name i32) (result i32)
+  (func $find (export "find") (param $scope i32) (param $key i32) (param $fallback i32) (result i32)
+    (local $__mem0 i32)
     (local $cur i32)
     (local $f i32)
-    (local $__mem0 i32)
+    (local $__mem1 i32)
     local.get $scope
     i32.load ;; .frames
     local.set $cur
@@ -297,10 +337,10 @@ fn frameParent(f: Frame) -> unknown {
     i32.ge_u
     i32.mul
     i32.load
-    i32.const 380
+    i32.const 416
     i32.eq
     i32.and
-    (if
+    (if (result i32)
       (then
     local.get $cur
     local.set $f
@@ -322,21 +362,32 @@ fn frameParent(f: Frame) -> unknown {
     local.get $f
     call $frameParent
     local.set $cur
+    i32.const 0
       )
       (else
-    i32.const 408
-    local.get $name
-    call $__str_concat
-    i32.const 448
-    call $__str_concat
-    local.get $name
-    call $__str_concat
-    i32.const 484
-    call $__str_concat
-    call $__panic_fail
-    unreachable
+    i32.const 16
+    call $__alloc
+    local.set $__mem1
+    local.get $__mem1
+    i32.const 416
+    i32.store
+    local.get $__mem1
+    local.get $key
+    i32.store offset=4
+    local.get $__mem1
+    local.get $fallback
+    i32.store offset=8
+    local.get $__mem1
+    i32.const 0
+    i32.store offset=12
+    local.get $__mem1
+    i32.const 4
+    i32.add
+    call $frameValue
+    return
       )
     )
+    drop
         br $__continue
       )
     )
@@ -349,10 +400,10 @@ fn frameParent(f: Frame) -> unknown {
     call $__alloc
     local.set $__mem0
     local.get $__mem0
-    i32.const 512
+    i32.const 448
     i32.store
     local.get $__mem0
-    i32.const 544
+    i32.const 288
     i32.store offset=12
     local.get $__mem0
     local.get $value
@@ -566,50 +617,6 @@ fn frameParent(f: Frame) -> unknown {
       )
     )
   )
-  (func $__str_concat (param $a i32) (param $b i32) (result i32)
-    (local $base i32) (local $alen i32) (local $blen i32)
-    local.get $a
-    i32.load
-    local.set $alen
-    local.get $b
-    i32.load
-    local.set $blen
-    ;; allocate 4 (length prefix) + alen + blen
-    i32.const 4
-    local.get $alen
-    i32.add
-    local.get $blen
-    i32.add
-    call $__alloc
-    local.set $base
-    ;; store combined length prefix
-    local.get $base
-    local.get $alen
-    local.get $blen
-    i32.add
-    i32.store
-    ;; copy a's bytes: base+4 <- a+4
-    local.get $base
-    i32.const 4
-    i32.add
-    local.get $a
-    i32.const 4
-    i32.add
-    local.get $alen
-    memory.copy
-    ;; copy b's bytes: base+4+alen <- b+4
-    local.get $base
-    i32.const 4
-    i32.add
-    local.get $alen
-    i32.add
-    local.get $b
-    i32.const 4
-    i32.add
-    local.get $blen
-    memory.copy
-    local.get $base
-  )
   (func $__str_eq (param $a i32) (param $b i32) (result i32)
     (local $i i32) (local $alen i32)
     local.get $a
@@ -796,24 +803,41 @@ fn Counter() -> @Component<Element> {
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
   (table funcref (elem $__lambda0 $__lambda1))
-  (data (i32.const 256) "\56\00\00\00`use provide` / `use context` are lowered where they are written; this body never runs")
-  (data (i32.const 348) "\16\00\00\00R\0bRenderScope\01\06framesi")
-  (data (i32.const 376) "\1c\00\00\00R\05Frame\03\03keys\05valuei\06parenti")
-  (data (i32.const 408) "\21\00\00\00context-unbound: no `use provide(")
-  (data (i32.const 448) "\20\00\00\00, ...)` above this `use context(")
-  (data (i32.const 484) "\11\00\00\00)` (decision 354)")
-  (data (i32.const 508) "\19\00\00\00R\08Rendered\02\05valueG\05scopeT")
-  (data (i32.const 540) "\01\00\00\00i")
-  (data (i32.const 548) "\0a\00\00\00R\07Element\00")
-  (global $__heap_ptr (mut i32) (i32.const 564))
-  (func $provide (param $ctx i32) (param $value i32) (result i32)
-    i32.const 256
+  (data (i32.const 256) "\18\00\00\00R\07Context\01\0ccontextValueG")
+  (data (i32.const 284) "\01\00\00\00i")
+  (data (i32.const 292) "\56\00\00\00`use provide` / `use context` are lowered where they are written; this body never runs")
+  (data (i32.const 384) "\16\00\00\00R\0bRenderScope\01\06framesi")
+  (data (i32.const 412) "\1c\00\00\00R\05Frame\03\03keys\05valuei\06parenti")
+  (data (i32.const 444) "\19\00\00\00R\08Rendered\02\05valueG\05scopeT")
+  (data (i32.const 476) "\0a\00\00\00R\07Element\00")
+  (global $__heap_ptr (mut i32) (i32.const 492))
+  (func $createContext (param $value i32) (result i32)
+    (local $__mem0 i32)
+    i32.const 12
+    call $__alloc
+    local.set $__mem0
+    local.get $__mem0
+    i32.const 260
+    i32.store
+    local.get $__mem0
+    i32.const 288
+    i32.store offset=8
+    local.get $__mem0
+    local.get $value
+    i32.store offset=4
+    local.get $__mem0
+    i32.const 4
+    i32.add
+    return
+  )
+  (func $provide (param $ctx i32) (result i32)
+    i32.const 292
     call $__panic_fail
     unreachable
     i32.const 0
   )
-  (func $context (param $ctx i32) (result i32)
-    i32.const 256
+  (func $context (param $t i32) (result i32)
+    i32.const 292
     call $__panic_fail
     unreachable
     i32.const 0
@@ -824,7 +848,7 @@ fn Counter() -> @Component<Element> {
     call $__alloc
     local.set $__mem0
     local.get $__mem0
-    i32.const 352
+    i32.const 388
     i32.store
     local.get $__mem0
     i32.const 0
@@ -841,14 +865,14 @@ fn Counter() -> @Component<Element> {
     call $__alloc
     local.set $__mem0
     local.get $__mem0
-    i32.const 352
+    i32.const 388
     i32.store
     local.get $__mem0
     i32.const 16
     call $__alloc
     local.set $__mem1
     local.get $__mem1
-    i32.const 380
+    i32.const 416
     i32.store
     local.get $__mem1
     local.get $key
@@ -869,10 +893,11 @@ fn Counter() -> @Component<Element> {
     i32.add
     return
   )
-  (func $find (param $scope i32) (param $key i32) (param $name i32) (result i32)
+  (func $find (param $scope i32) (param $key i32) (param $fallback i32) (result i32)
+    (local $__mem0 i32)
     (local $cur i32)
     (local $f i32)
-    (local $__mem0 i32)
+    (local $__mem1 i32)
     local.get $scope
     i32.load ;; .frames
     local.set $cur
@@ -893,10 +918,10 @@ fn Counter() -> @Component<Element> {
     i32.ge_u
     i32.mul
     i32.load
-    i32.const 380
+    i32.const 416
     i32.eq
     i32.and
-    (if
+    (if (result i32)
       (then
     local.get $cur
     local.set $f
@@ -918,21 +943,32 @@ fn Counter() -> @Component<Element> {
     local.get $f
     call $frameParent
     local.set $cur
+    i32.const 0
       )
       (else
-    i32.const 408
-    local.get $name
-    call $__str_concat
-    i32.const 448
-    call $__str_concat
-    local.get $name
-    call $__str_concat
-    i32.const 484
-    call $__str_concat
-    call $__panic_fail
-    unreachable
+    i32.const 16
+    call $__alloc
+    local.set $__mem1
+    local.get $__mem1
+    i32.const 416
+    i32.store
+    local.get $__mem1
+    local.get $key
+    i32.store offset=4
+    local.get $__mem1
+    local.get $fallback
+    i32.store offset=8
+    local.get $__mem1
+    i32.const 0
+    i32.store offset=12
+    local.get $__mem1
+    i32.const 4
+    i32.add
+    call $frameValue
+    return
       )
     )
+    drop
         br $__continue
       )
     )
@@ -944,10 +980,10 @@ fn Counter() -> @Component<Element> {
     call $__alloc
     local.set $__mem0
     local.get $__mem0
-    i32.const 512
+    i32.const 448
     i32.store
     local.get $__mem0
-    i32.const 544
+    i32.const 288
     i32.store offset=12
     local.get $__mem0
     local.get $value
@@ -1090,7 +1126,7 @@ fn Counter() -> @Component<Element> {
     call $__alloc
     local.set $__mem1
     local.get $__mem1
-    i32.const 552
+    i32.const 480
     i32.store
     local.get $__mem1
     i32.const 4
@@ -1278,50 +1314,6 @@ fn Counter() -> @Component<Element> {
         br $loop
       )
     )
-  )
-  (func $__str_concat (param $a i32) (param $b i32) (result i32)
-    (local $base i32) (local $alen i32) (local $blen i32)
-    local.get $a
-    i32.load
-    local.set $alen
-    local.get $b
-    i32.load
-    local.set $blen
-    ;; allocate 4 (length prefix) + alen + blen
-    i32.const 4
-    local.get $alen
-    i32.add
-    local.get $blen
-    i32.add
-    call $__alloc
-    local.set $base
-    ;; store combined length prefix
-    local.get $base
-    local.get $alen
-    local.get $blen
-    i32.add
-    i32.store
-    ;; copy a's bytes: base+4 <- a+4
-    local.get $base
-    i32.const 4
-    i32.add
-    local.get $a
-    i32.const 4
-    i32.add
-    local.get $alen
-    memory.copy
-    ;; copy b's bytes: base+4+alen <- b+4
-    local.get $base
-    i32.const 4
-    i32.add
-    local.get $alen
-    i32.add
-    local.get $b
-    i32.const 4
-    i32.add
-    local.get $blen
-    memory.copy
-    local.get $base
   )
   (func $__str_eq (param $a i32) (param $b i32) (result i32)
     (local $i i32) (local $alen i32)

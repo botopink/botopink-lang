@@ -898,7 +898,25 @@ pub fn collectSupport(env: *Env, prepared: Prepared) Error!Support {
         for (ms, prepared.makers) |*d, m| d.* = m.decl;
         break :makerDecls ms;
     }, fns.items });
-    try fns.appendSlice(arena, try hostCells.hostSupport(env, &env.fnDecls, reached));
+    const hosted = try hostCells.hostSupport(env, &env.fnDecls, reached);
+    try fns.appendSlice(arena, hosted);
+    // A carried std function's record types travel with it (std's
+    // `createContext` builds a `Context`, decision 379).
+    for (hosted) |h| {
+        var hnames: std.StringHashMapUnmanaged(void) = .empty;
+        try readFree(arena, &hnames, h.body, h.params);
+        var hit = hnames.keyIterator();
+        while (hit.next()) |n| {
+            if (types.contains(n.*)) continue;
+            const found = findDeclared(env, n.*) orelse continue;
+            try types.put(arena, n.*, .{ .decl = found.decl, .helpers = found.helpers, .kept = .empty });
+            var decl = found.decl;
+            decl.methods = &.{};
+            decl.implement = &.{};
+            decl.annotations = &.{};
+            try out_types.append(arena, .{ .type_ = decl });
+        }
+    }
     return .{ .fns = fns.items, .types = out_types.items, .located = located.items };
 }
 
@@ -1757,7 +1775,14 @@ const Lifter = struct {
         };
         var sit = env.stdModuleTypes.iterator();
         while (sit.next()) |e| for (e.value_ptr.*) |d| switch (d) {
-            .type_ => |t| if (std.mem.eql(u8, t.name, name)) return name,
+            .type_ => |t| if (std.mem.eql(u8, t.name, name)) {
+                // A std type the module does not import (std's `Context`, a
+                // `comptime createContext(…)`'s value, decision 379) is
+                // imported for the backends by its module.
+                if (env.lookupTypeDef(name) == null or !env.importBound.contains(name))
+                    try env.liftedStdTypes.put(env.arena, name, e.key_ptr.*);
+                return name;
+            },
             else => {},
         };
         const registry = env.typeDeclRegistry orelse return name;

@@ -182,7 +182,7 @@ pub const FnContext = struct {
 
 /// Decision 354 — what a name imported from std's `context` module declares;
 /// decision 388's `RenderScope`, made only by `RenderScope.root()`.
-pub const StdContextName = enum { context_type, provide, context, render_scope };
+pub const StdContextName = enum { context_type, create_context, provide, context, render_scope };
 
 /// Decision 371 — one `d.same(other)` on a `Decorator`: `other` is the
 /// identity (`declIdentity`) of the decorator the argument names, or null when
@@ -218,15 +218,21 @@ pub const StdLeafFn = struct { module: []const u8, name: []const u8 };
 
 pub const HookTarget = struct { ref: hooksMod.DeclRef, type_: ?*T.Type };
 
-/// Decision 354 — one `use provide(ctx, value)` / `use context(ctx)`: which
-/// hook, the context's identity (`declIdentity` of the `val` that declares it
-/// — the run-time key in a `RenderScope`, 388) and the `T` it carries.
+/// Decisions 354, 379 — one `use provide(ctx)` / `use context(T)`: which
+/// hook, the context's identity and the `T` it carries.
 pub const ContextUse = struct {
     kind: enum { provide, read },
+    /// The context's identity: its value's type (379), the run-time key in a
+    /// `RenderScope` (388).
     key: []const u8,
-    /// The context's name as written, for the run-time `context-unbound`.
+    /// The type as written, for a message.
     name: []const u8,
     value_type: *T.Type,
+    /// A read's fallback: the name of the `val` that declares the type's
+    /// default — this module's, or the hidden alias of another module's
+    /// (`Env.contextDefaultImports`). Set once the module's bodies are
+    /// inferred (`infer.zig` `resolveContextReads`).
+    default_ref: ?[]const u8 = null,
 };
 
 /// How `throw` should be type-checked in the current function scope.
@@ -939,12 +945,24 @@ pub const Env = struct {
     /// initializer is being inferred: the one place `Context<T>()` may be
     /// written (a context's identity is its declaration).
     contextDeclSite: ?ast.Loc = null,
-    /// Decision 354 — the module-level `val`s of this module declared
-    /// `= Context<T>()`, by name.
-    declaredContexts: std.StringHashMapUnmanaged(void) = .empty,
     /// Decision 354 — each `use provide(…)` / `use context(…)`, by the
     /// `use`'s location: what the scope lowering makes of it (388 (4)).
     contextUses: std.AutoHashMapUnmanaged(ast.Loc, ContextUse) = .empty,
+    /// Decisions 378, 379 — this module's context defaults by type key
+    /// (`reflection.ContextDefault`).
+    contextDefaults: std.StringHashMapUnmanaged(reflectionMod.ContextDefault) = .empty,
+    /// A read whose type's default another module declares names that `val`
+    /// through a hidden import: alias → the declaring module and `val`
+    /// (`comptime.zig` adds the import for the backends).
+    contextDefaultImports: std.StringArrayHashMapUnmanaged(struct { module: []const u8, name: []const u8 }) = .empty,
+    /// A std type a lifted `comptime` value constructs that the module does
+    /// not import (`block_eval.Lifter.constructorName`): name → its std
+    /// module, imported for the backends (`comptime.zig`).
+    liftedStdTypes: std.StringArrayHashMapUnmanaged([]const u8) = .empty,
+    /// Decision 379 — each `createContext(…)` call, by location: the scope
+    /// lowering writes its argument in its place (a context is its value at
+    /// run time, `context_lower.zig`).
+    createContextCalls: std.AutoHashMapUnmanaged(ast.Loc, void) = .empty,
     /// Decision 277 — the hook node of the top-level function whose body is
     /// being inferred (`hooks.zig`): each `use` and each `@Component` call
     /// written in it, lambdas included. Null outside such a body.
