@@ -436,7 +436,17 @@ the shapes that bound a string and still reached the one body:
 - **a method copy reads its owner's fields by the substitution**
   (`field_subs` / `fieldSub`, set from `GenericMethod.subs` while
   `emitPendingFns` emits it): `self.left == self.right` in
-  `Pair<string>.matched` compared words while `left: A` read as `A`;
+  `Pair<string>.matched` compared words while `left: A` read as `A`. The
+  substitution is deep (`fieldSub` runs `substTypeParams` over the whole written
+  type): `pairs: Array<#(K, V)>` of `Dict<string, f64>`'s copy reads
+  `Array<#(string, f64)>`, so a `forEach` / `filter` binder over it knows its
+  tuple shape `(sf)` and `p._1` is read through its `f64` cell — before, it was
+  read as an `i32` word and converted, and `Dict<string, f64>.at` answered the
+  cell's address (`8976.0` for `1.5`, `modules/dict_float_value`). A copy also
+  types its own `self` (`Emitter.emitMemberFn`: `local_typerefs` `self` is the
+  copy's `Self<string, f64>` under the owner's name), so a call on `self` inside
+  it (`bump`'s `self.at(key)`) specialises by the receiver's arguments too, not
+  only by its own `key: K`;
 - **a constructor of a generic record answers its type arguments**
   (`ctorTypeRef`, `record_generics`): `Pair(left: s, right: "ab").matched()`,
   a local bound to one, an array literal of them (`typeRefOf`'s `arrayLit`

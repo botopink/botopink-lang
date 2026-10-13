@@ -1258,7 +1258,11 @@ A **negative index counts from the end**, on every backend: `xs.at(-1)` is the
 last element and `xs.at(-xs.length)` the first; an index past either end
 (`xs.at(xs.length)`, `xs.at(-xs.length - 1)`) is the absent `?T`. `Array.at`
 and `String.at` — and so `xs[i]` and `s[i]` — read the same way. `Dict.at` is
-by key and has no position to count from.
+by key and has no position to count from. A `Dict`'s value is any type, a float or a 64-bit integer
+included: `insert` keeps the value whole and `at` (and so `d["k"]`) answers it as the `?V` it is — present,
+absent or overwritten — on every target.
+
+<!-- example: modules/dict_float_value -->
 
 Which methods those are comes from two **ambient** behaviors — ambient like
 `Display`, so the syntax finds them with nothing imported:

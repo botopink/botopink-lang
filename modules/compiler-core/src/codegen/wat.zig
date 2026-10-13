@@ -3031,12 +3031,11 @@ const Emitter = struct {
     /// specialisation of one of the owner's methods: the substituted type.
     fn fieldSub(self: *Emitter, record: []const u8, t: ast.TypeRef) ast.TypeRef {
         if (self.field_subs.len == 0 or !std.mem.eql(u8, record, self.field_subs_owner)) return t;
-        const n = switch (t) {
-            .named => |n| n,
-            else => return t,
-        };
-        for (self.field_subs) |sub| if (std.mem.eql(u8, sub.name, n)) return sub.to;
-        return t;
+        // The whole written type, not only a bare parameter: `pairs:
+        // Array<#(K, V)>` reads `Array<#(string, f64)>` in `Dict<string,
+        // f64>`'s copy, so the elements' tuple shape (`(sf)`) is known and a
+        // float element is read through its cell.
+        return substTypeParams(ast.TypeRef, self.reg_arena.allocator(), t, self.field_subs) catch t;
     }
 
     /// Declared type-name of `field` inside `record`, when both are known.
@@ -4901,6 +4900,16 @@ const Emitter = struct {
                     try self.noteParamShape("self", p.typeRef);
                     try self.local_typerefs.put("self", p.typeRef);
                 }
+                // A method copy of a generic type (`Dict<string, f64>.bump`)
+                // writes `self: Self<string, f64>`: the receiver's type
+                // arguments, which a call on `self` inside the copy
+                // specialises by (`self.at(key)` is `Dict_at__K_string__V_f64`,
+                // its `?V` a `?f64`), under the owner's name.
+                if (self.in_spec and self.field_subs.len > 0 and p.typeRef == .generic) if (self.self_type) |st| {
+                    var g = p.typeRef.generic;
+                    g.name = st;
+                    try self.local_typerefs.put("self", .{ .generic = g });
+                };
             } else {
                 const tn = typeRefName(p.typeRef);
                 if (self.resolveRecordName(tn)) |rty|
