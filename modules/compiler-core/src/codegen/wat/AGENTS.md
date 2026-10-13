@@ -898,7 +898,7 @@ grows is garbage.
   value) and its frame are written after they are made — and a `var`'s cell
   (448 (2)).
 - **onze's pages do not build on wasm**: `examples/blog` (`wasi`) is refused
-  in 67 modules — `jhonstart/element` (`the wasm backend walks an array or a
+  in 67 modules — its element library's element module (`the wasm backend walks an array or a
   range; nothing shows this iterable is one`), std's `json` and `io/fs`
   (`fs.readText` has no `#[@External.Wasm]`). The page render above is their
   shape (an element tree rendered to a string); onze is measured when its pages
