@@ -5029,7 +5029,7 @@ const Emitter = struct {
     ///
     ///     (function* () {
     ///         while (true) { …; yield v; …; break; }
-    ///     })()
+    ///     }).call(this)
     ///
     /// `#[@futureGenerator]` is `async function*`. The captured `var`s are the
     /// closure's — JS shares them by reference, so a counter the body
@@ -5071,11 +5071,14 @@ const Emitter = struct {
             .cond = .{ .name = "true" },
             .body = .{ .stmts = body, .indent = base + 1 },
         } };
-        return self.b.call(try self.b.paren(.{ .function = .{
+        const gen = try self.b.paren(.{ .function = .{
             .keyword = shape.keyword(),
             .params = &.{},
             .body = .{ .stmts = try self.guardExprTry(try self.b.stmts(&.{while_stmt}), base), .indent = base },
-        } }), &.{});
+        } });
+        // A generator cannot be an arrow, so it is invoked with the enclosing
+        // method's receiver: `(function* () { … }).call(this)`.
+        return self.b.call(try self.b.member(gen, "call"), &.{.this});
     }
 
     /// `(() => { … })()` — or, when the statements `await` (an expression
