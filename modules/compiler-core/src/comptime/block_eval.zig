@@ -1824,7 +1824,7 @@ const Lifter = struct {
                     return self.refuse("{s}: the value is a record of fields ({s}) no type the block reaches declares", .{ diagnostics.comptime_value_not_liftable, try fieldList(self.arena, fields) });
                 const args = try self.arena.alloc(ast.CallArg, fields.len);
                 for (fields, 0..) |f, i| {
-                    const fv = try self.value(f.value, null, self.nextLoc()) orelse return null;
+                    const fv = try self.value(f.value, try self.fieldHint(name, hint, f.name), self.nextLoc()) orelse return null;
                     args[i] = .{ .label = f.name, .value = fv };
                 }
                 return try self.node(.{ .call = .{ .loc = loc, .kind = .{ .call = .{
@@ -1931,6 +1931,30 @@ const Lifter = struct {
             try env.importedTypeAliases.put(env.arena, alias, name);
         }
         return name;
+    }
+
+    /// The expected type of the field `field` of the record `name` the value
+    /// is lifted as, so an enum's unit value in a field is written back as
+    /// its constructor: the field's declared type when it names an enum, or
+    /// the type argument `hint` gives the type parameter it names
+    /// (`Context<Mode>`'s `value: T` is `Mode` — a `comptime
+    /// createContext(Mode.Light)`, decision 379).
+    fn fieldHint(self: *Lifter, name: []const u8, hint: ?*T.Type, field: []const u8) Error!?*T.Type {
+        const found = findType(self.env, name) orelse return null;
+        if (found.decl.shape != .record) return null;
+        const ref = for (found.decl.shape.record) |d| {
+            if (std.mem.eql(u8, d.name, field)) break d.typeRef;
+        } else return null;
+        const type_name = switch (ref) {
+            .named => |n| n,
+            else => return null,
+        };
+        for (found.decl.genericParams, 0..) |p, i| if (std.mem.eql(u8, p.name, type_name)) return argOf(hint, i);
+        const def = self.env.lookupTypeDef(type_name) orelse return null;
+        if (def != .enum_) return null;
+        const t = try self.arena.create(T.Type);
+        t.* = .{ .named = .{ .name = type_name, .args = &.{} } };
+        return t;
     }
 
     /// The record type a map is: the expected type when its fields are the
