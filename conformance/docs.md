@@ -959,6 +959,12 @@ is a record by its name.
 
 <!-- example: modules/field_key_runtime -->
 
+A generic constructor's type parameter is pinned by the position's written type as by the call's own
+type arguments, so a key resolves there too: `val t: Sort<Book> = Sort(by: .title)` is
+`Sort<Book>(by: .title)`.
+
+<!-- example: modules/field_key_under_annotation -->
+
 ### Spread
 
 `Name(...src, field: value)` copies a record's fields into its constructor

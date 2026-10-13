@@ -14179,7 +14179,7 @@ pub fn inferExprTyped(env: *Env, expr: ast.Expr) InferError!TypedExpr {
         // `.function` reads a FALLIBLE function expectation (decision 147,
         // `inferFunctionExpr`) and clears it before its body.
         .identifier, .collection, .literal, .unaryOp, .binaryOp, .function => {},
-        .call => |c| if (!isLeadingDotCall(c)) {
+        .call => |c| if (!isLeadingDotCall(c) and !isUnappliedGenericCtorCall(env, c)) {
             env.expectedType = null;
         },
         else => env.expectedType = null,
@@ -16336,6 +16336,17 @@ fn destructCovers(env: *Env, pattern: ast.Pattern, subjectType: *T.Type) InferEr
 }
 
 /// `.Circle(…)` — a call chained onto a leading-dot head.
+/// A generic type's constructor called with no written type arguments
+/// (`Sort(by: .title)`): the position's expected type pins its parameters
+/// (`inferCallExprWith`), so `inferExprTyped` hands the expectation on to it.
+fn isUnappliedGenericCtorCall(env: *Env, c: ast.CallExprOf(.untyped)) bool {
+    if (c.kind != .call) return false;
+    const cc = c.kind.call;
+    if (cc.receiver != null or cc.is_builtin or cc.calleeExpr != null or cc.typeArgs != null) return false;
+    const td = env.lookupTypeDef(cc.callee) orelse return false;
+    return td.genericParams().len > 0;
+}
+
 fn isLeadingDotCall(c: ast.CallExprOf(.untyped)) bool {
     if (c.kind != .call) return false;
     const ce = c.kind.call.calleeExpr orelse return false;
@@ -19927,6 +19938,11 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
 /// (decision 267) re-enters with the packed call, and the receiver is not
 /// inferred twice.
 fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typedReceiverIn: ?*ast.TypedExpr) InferError!TypedExpr {
+    // The type the position expects of the call (`val t: Sort<Book> = …`),
+    // read before the receiver and the arguments set their own.
+    const callExpected = env.expectedType;
+    // Only the constructor reads it; its receiver and arguments never inherit it.
+    if (isUnappliedGenericCtorCall(env, c)) env.expectedType = null;
     // R12 (§2) — manual `Result.Ok(...)` / `Result.Error(...)` construction
     // anywhere inside a `#[@result]` body is forbidden by the auto-wrap
     // contract: the @Result type is opaque inside the body and is constructed
@@ -20271,6 +20287,19 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                     const ret = d.func.ret.deref();
                     if (td.genericParams().len == written.len and ret.* == .named and ret.named.args.len == written.len) {
                         for (written, ret.named.args) |w, a| try unifyAt(env, try resolveTypeRef(env, w), a, c.loc);
+                    }
+                };
+                // The position's written type pins them alike when the call
+                // writes none (`val t: Sort<Book> = Sort(by: .title)` is
+                // `Sort<Book>(by: .title)`): the annotation names the type
+                // the constructor answers.
+                if (call.typeArgs == null) if (callExpected) |want| if (env.lookupTypeDef(call.callee)) |td| {
+                    const ret = d.func.ret.deref();
+                    const w = want.deref();
+                    if (td.genericParams().len > 0 and ret.* == .named and w.* == .named and
+                        std.mem.eql(u8, ret.named.name, w.named.name) and ret.named.args.len == w.named.args.len)
+                    {
+                        for (w.named.args, ret.named.args) |wa, a| try unifyAt(env, wa, a, c.loc);
                     }
                 };
                 break :blk d.func.params;

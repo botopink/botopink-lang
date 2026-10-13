@@ -2561,7 +2561,12 @@ six declared cells out of reach in every spelling. So `enumCarriesSectionPath`
 and must keep agreeing) collects every carrier, and `expectedEnumAmong` picks
 the one `env.expectedType` names (through one `?T`). `env.expectedType` is a
 hint and never unified from here: `inferExprTyped` clears it for every node but
-an identifier chain and an array literal, and the sites that know a position's
+an identifier chain, an array literal, a leading-dot call and a generic type's
+constructor called with no type arguments (`isUnappliedGenericCtorCall`: the
+expectation pins its parameters as written type arguments do —
+`val t: Sort<Book> = Sort(by: .title)` is `Sort<Book>(by: .title)`, so a field key
+resolves; `inferCallExprWith` reads it once and clears it before the arguments),
+and the sites that know a position's
 type set it around that sub-expression — a `val`'s annotation (`inferDecl`,
 `inferDeclTyped`, `inferBindingExpr`), a plain call's declared parameters
 (`inferCallExpr`), the body's return target (`inferJumpExpr`) and an expected

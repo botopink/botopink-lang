@@ -1866,6 +1866,16 @@ test "decision 45: a member read off a `?T` names `?.`; `?.` reads it" {
     );
 }
 
+// A generic constructor's type parameters are pinned by the position's
+// written type as by written type arguments: `val b: Box<i64> = Box(v: 1)` is
+// `Box<i64>(v: 1)`, the literal an `i64` (it was `Box<i32>` against `Box<i64>`).
+test "a val's annotation pins a generic constructor's type parameters" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\type Box<T>(v: T)
+        \\fn main() { val b: Box<i64> = Box(v: 1); @print(b.v); }
+    );
+}
+
 // ── 01 R7: decision 2 — a value leaves a function through `return` ───────────
 
 test "decision 2: a fn that can fall off its end is refused; every exit form checks" {

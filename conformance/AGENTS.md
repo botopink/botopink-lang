@@ -272,6 +272,9 @@ on the parent binary) and two pins that held on the parent binary: `modules/opti
 `modules/fn_empty_body_call` (a `fn` written `{}` called between two prints), four targets (wasm took an
 empty body for a bodyless `declare fn` on the parent binary: no `main` emitted, `compilation failed
 UndefinedCall`, and the call refused).
+144 B-22 adds `modules/field_key_under_annotation` — a field key under an annotation
+(`val t: Sort<Book> = Sort(by: .title)`) beside the applied constructor, four targets (refused as an
+unbound `title` on the parent binary).
 `modules/optional_member_default` — `xs.at(k)?.field ?? d` over a present and an absent element, a string
 field, an empty array, an array built by `map` and one passed in, four targets (wasm printed the
 element's address for the `map`-built array on the parent binary).
