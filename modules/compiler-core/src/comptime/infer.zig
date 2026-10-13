@@ -4551,7 +4551,8 @@ const UnexpandedTemplateCall = struct {
         if (V == ast.Expr) if (v == .call and v.call.kind == .call) {
             const c = v.call.kind.call;
             if (!c.is_builtin and c.calleeExpr == null and
-                (if (c.receiver == null) templateFnNamed(self.env, c.callee) != null else templateMethodNamed(self.env, c.callee) != null) and
+                (if (c.receiver == null) templateFnNamed(self.env, c.callee) != null else templateMethodNamed(self.env, c.callee) != null and
+                    !self.env.templateMethodDeclined.contains(v.call.loc)) and
                 !self.env.templateExpansions.contains(v.call.loc))
             {
                 self.found = .{ .callee = c.callee, .loc = v.call.loc };
@@ -19873,6 +19874,7 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
             if (typedReceiver) |rp| if (call.receiver != null and !call.is_builtin and call.calleeExpr == null) if (templateMethodNamed(env, call.callee)) |tfn| {
                 const own = if (nominalName(rp.getType())) |tn| env.hasInherentMethod(tn, call.callee) else false;
                 if (!own and !isStdModuleType(rp.getType())) return inferTemplateMethodCall(env, call, rp, tfn, loc);
+                try env.templateMethodDeclined.put(loc, {});
             };
             // Decision 371 — `d.same(other)` on a `Decorator`.
             if (typedReceiver) |rp| if (!call.is_builtin and call.calleeExpr == null and std.mem.eql(u8, call.callee, "same") and isDecoratorType(rp.getType())) {

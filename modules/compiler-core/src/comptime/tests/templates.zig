@@ -1376,3 +1376,22 @@ test "decision 331: a template body of more variables than a frame holds compile
         \\{"kind":"code","source":"\"qabcde1200\""}
     , replies[0]);
 }
+
+test "infer: a receiver's own method named like a template method of the scope is the type's, owing no expansion (decisions 311 (3), 415 (1))" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\type Greeter(who: string) {
+        \\    pub fn greet(self: Self, word: string) -> string {
+        \\        return word + ", " + self.who;
+        \\    }
+        \\}
+        \\type Visitor(who: string)
+        \\fn greet(comptime self: @Expr<Visitor>, comptime q: @Expr<string>) -> @Expr<string> {
+        \\    return q.build(self.text() + ".who");
+        \\}
+        \\pub fn main() {
+        \\    val g = Greeter(who: "Ana");
+        \\    @print(g.greet("hello"));
+        \\    @print(g.greet "hello");
+        \\}
+    );
+}

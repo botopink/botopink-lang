@@ -866,9 +866,12 @@ own type) to `inferTemplateMethodCall`, which checks the receiver against `R`
 literal with `captureExprArg` and expands the call as `expandTemplateCall`
 does. The comptime module names the receiver parameter `__bp_self`
 (`template_eval.renameTemplateSelf`): the erlang lowering drops a parameter
-named `self`. `refuseUnexpandedTemplateCalls` covers the method form too.
-Cell: `modules/template_method_call` (a local template over a type and over a
-behavior, an imported one over a generic behavior, in a method body).
+named `self`. `refuseUnexpandedTemplateCalls` covers the method form too,
+except a call `inferCallExprWith` resolved to the receiver type's own method
+or a `"std"` namespace's function (`Env.templateMethodDeclined`, by the call's
+location): no expansion is owed there. Cells: `modules/template_method_call`
+(a local template over a type and over a behavior, an imported one over a
+generic behavior, in a method body), `modules/template_method_own_method`.
 
 ## Every `comptime` parameter is an `@Expr<T>` (decision 364)
 

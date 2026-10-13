@@ -816,6 +816,11 @@ pub const Env = struct {
     /// replaces the call. Recorded by inference (post splice + re-check); the
     /// transform pass rewrites the untyped AST from this map.
     templateExpansions: std.AutoHashMap(ast.Loc, *const ast.Expr),
+    /// Decisions 311 (3), 415 (1) — receiver calls named like a template
+    /// method of the scope that inference resolved to something else (a
+    /// method of the receiver's own type, a `"std"` namespace's function):
+    /// no expansion is owed there (`refuseUnexpandedTemplateCalls`).
+    templateMethodDeclined: std.AutoHashMap(ast.Loc, void),
     /// Reference ASTs from `q.custom(tree, code)` (expr-custom): call loc → the
     /// canonical `CustomNode` tree + provenance. Sibling of `templateExpansions`
     /// — the `code` half lives there and reaches codegen; this `ast` half is
@@ -1656,6 +1661,7 @@ pub const Env = struct {
             .variantCtors = std.StringHashMap(*T.Type).init(arena),
             .variantClaims = std.StringHashMap([]const []const u8).init(arena),
             .templateExpansions = std.AutoHashMap(ast.Loc, *const ast.Expr).init(arena),
+            .templateMethodDeclined = std.AutoHashMap(ast.Loc, void).init(arena),
             .srcRewrites = std.AutoHashMap(ast.Loc, *const ast.Expr).init(arena),
             .customAstByLoc = std.AutoHashMap(ast.Loc, CustomAstEntry).init(arena),
             .templateEvalCache = std.StringHashMap(*const ast.Expr).init(arena),
@@ -1753,6 +1759,7 @@ pub const Env = struct {
             .variantCtors = try tmpl.variantCtors.cloneWithAllocator(arena),
             .variantClaims = try tmpl.variantClaims.cloneWithAllocator(arena),
             .templateExpansions = std.AutoHashMap(ast.Loc, *const ast.Expr).init(arena),
+            .templateMethodDeclined = std.AutoHashMap(ast.Loc, void).init(arena),
             .srcRewrites = std.AutoHashMap(ast.Loc, *const ast.Expr).init(arena),
             .customAstByLoc = std.AutoHashMap(ast.Loc, CustomAstEntry).init(arena),
             .templateEvalCache = std.StringHashMap(*const ast.Expr).init(arena),
@@ -1831,6 +1838,7 @@ pub const Env = struct {
         self.variantCtors.deinit();
         self.variantClaims.deinit();
         self.templateExpansions.deinit();
+        self.templateMethodDeclined.deinit();
         self.srcRewrites.deinit();
         self.customAstByLoc.deinit();
         self.templateEvalCache.deinit();
