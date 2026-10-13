@@ -2081,6 +2081,8 @@ refused where it is written, at the label, naming `label:`:
 
 <!-- example: modules/annotation_label_equals -->
 
+<!-- example: modules/annotation_label_equals_decorator -->
+
 A decorator's arguments are typed compile-time values (decision 280), checked
 where they are written, as a call's are:
 
@@ -2619,6 +2621,8 @@ is host code, always:
 
 <!-- example: modules/external_prefixed_fn_refused -->
 
+<!-- example: modules/external_erlang_prefixed_fn_refused -->
+
 <!-- example: modules/external_wasm_prefixed_fn_refused -->
 
 <!-- example: modules/external_wasm_prefixed_op_refused -->
@@ -2626,6 +2630,12 @@ is host code, always:
 <!-- example: modules/external_wasm_prefixed_wasi_refused -->
 
 <!-- example: modules/external_wasm_prefixed_std_refused -->
+
+`op:` and `wasi:` are `@External.Wasm`'s cells alone: written as a prefixed
+string on `@External.Node` or `@External.Erlang`, the refusal names the wasm
+cell to write (`#[@External.Wasm(op: "f64.floor")]`):
+
+<!-- example: modules/external_node_prefixed_op_refused -->
 
 **Case mapping covers all of Unicode** (decision 443) on the four targets —
 `"straße".toUpper()` is `"STRASSE"`, `"É".toLower()` is `"é"`. A wasm program

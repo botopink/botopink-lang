@@ -159,6 +159,15 @@ same fields, `record-spread-type` at the `...`), `record_spread_partial` (a `Typ
 type derived here from an aliased record (`Type.pick(P, .nome)`) or an aliased derived type spread into
 `Pessoa` and `Contato` and through their aliases, on the four targets — red on the parent, whose lineage
 held the alias's name.
+Decision 305 (an annotation speaks botopink, 144 B-02) adds `modules/annotation_label_equals` (`keyed = true`
+on `@BeamMemory.Ets`, `annotation-label-equals` at the label, naming `keyed:`), `modules/external_fn_unbound`
+(a misspelt `fn: <name>` is the unbound-name error at the argument) and `modules/external_prefixed_fn_refused`
+(`@External.Node("fn:mixBody")` refused, naming `fn: mixBody`); its Conformance step adds
+`modules/annotation_label_equals_decorator` (the same refusal on a decorator's `at = .confirm`),
+`modules/external_erlang_prefixed_fn_refused` (`@External.Erlang("fn:mixBody")`, the cell the erlang and beam
+targets read) and `modules/external_node_prefixed_op_refused` (`@External.Node("op:f64.floor")` names the wasm
+cell `#[@External.Wasm(op: "f64.floor")]`) — each red on B-02's parent, which ran the `=` label's program,
+refused `fn: mixBody` beside the prefixed string and passed `"op:f64.floor"` to node as host code.
 Decision 308 (a field key at run time, 144 B-16) adds `modules/field_key_runtime` (`Type.keys(Recipe)` exported
 and imported; a key stored in a `var` and an array, passed, compared, matched by an exhaustive `case` and by
 `|` / `_`, `key.name`, `RecipeKey.of(text)` and `RecipeKey.all()`, on the four targets) and three refusals:
