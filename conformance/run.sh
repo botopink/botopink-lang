@@ -274,12 +274,42 @@ WANT
         grep -E 'test/backed|modules/green' "$st/report.txt" >&2
         missing=1
     fi
+    # An abnormal end of `botopink test --json` is a red naming the suite and the target, whatever
+    # tests printed before it: a stub compiler prints the shapes a wasm trap leaves behind.
+    local fake="$st/fake-botopink" fsuite="$st/fake-suite" shape
+    mkdir -p "$fsuite/test" "$fsuite/modules"
+    printf 'test "a" {\n    assert true;\n}\n\ntest "b" {\n    assert true;\n}\n\ntest "c" {\n    assert true;\n}\n' >"$fsuite/test/trap_mid.bp"
+    cat >"$fake" <<'FAKE'
+#!/usr/bin/env bash
+ok() { printf '{"event":"test","name":"%s","status":"ok"}\n' "$1"; }
+case "$FAKE_SHAPE" in
+    crash)   ok a; ok b; echo '{"event":"module_crashed","module":"trap_mid","exit":134}'; echo '{"event":"summary","passed":0,"failed":1}'; exit 1 ;;
+    nosum)   ok a; ok b; exit 0 ;;
+    fewer)   ok a; ok b; echo '{"event":"summary","passed":2,"failed":0}'; exit 0 ;;
+    exit1)   ok a; ok b; ok c; echo '{"event":"summary","passed":3,"failed":0}'; exit 1 ;;
+    clean)   ok a; ok b; ok c; echo '{"event":"summary","passed":3,"failed":0}'; exit 0 ;;
+esac
+FAKE
+    chmod +x "$fake"
+    for shape in crash nosum fewer exit1 clean; do
+        FAKE_SHAPE=$shape bash "$runner" --suite "$fsuite" --target commonJS --compiler "$fake" --lib-root "$lib_root" --jobs 1 \
+            >"$st/fake-$shape.raw" 2>&1
+        code=$?
+        strip <"$st/fake-$shape.raw" >"$st/fake-$shape.txt"
+        if [ "$shape" = clean ]; then
+            [ $code -eq 0 ] || { echo "self-test: a clean stub run exited $code, expected 0" >&2; missing=1; }
+        else
+            [ $code -eq 1 ] || { echo "self-test: the stub run '$shape' exited $code, expected 1 (an abnormal end passed)" >&2; missing=1; }
+            grep -qE '\[commonJS\] test/trap_mid.bp' "$st/fake-$shape.txt" \
+                || { echo "self-test: the stub run '$shape' did not name the suite and the target:" >&2; sed 's/^/    /' "$st/fake-$shape.txt" >&2; missing=1; }
+        fi
+    done
     if [ $missing -ne 0 ]; then
         echo "self-test: FAILED — the synthetic suite's report was:" >&2
         sed 's/^/    /' "$st/report.txt" >&2
         return 1
     fi
-    echo "self-test: 4 malformed or unbacked narrowings refused, 1 backed one scheduled on its declared targets alone, a red cell named"
+    echo "self-test: 4 malformed or unbacked narrowings refused, 1 backed one scheduled on its declared targets alone, a red cell named, 4 abnormal ends of a run (a trap, no summary, fewer results, a bare non-zero exit) red"
 }
 
 # ── collect the jobs' paths ───────────────────────────────────────────────────
@@ -318,17 +348,35 @@ project() { # <dir>
 # `botopink test --json` in <dir>; one result line per test, keyed <path>::<name>,
 # or one `fail` line for <path> when nothing ran.
 test_project() { # <dir> <path> <target> <out>
-    local dir="$1" path="$2" t="$3" out="$4"
+    local dir="$1" path="$2" t="$3" out="$4" code
     (cd "$dir" && with_timeout 300 "$compiler" test --target "$t" --json ${cold_flag[@]+"${cold_flag[@]}"} >"$dir/o.json" 2>"$dir/e.txt")
+    code=$?
     json_tests <"$dir/o.json" >"$dir/tests.tsv"
     if [ ! -s "$dir/tests.tsv" ]; then
         local why; why="$(strip <"$dir/e.txt" | grep -m1 -E 'error' | tr '\t' ' ')"
-        printf '%s\t%s\t%s\t%s\n' "$t" "$path" fail "does not compile: ${why:-no test ran}" >"$out"
+        if grep -q '"event":"module_crashed"' "$dir/o.json"; then
+            why="the run ended abnormally ($(grep -m1 '"event":"module_crashed"' "$dir/o.json" | sed -n 's/.*"exit":\([0-9]*\).*/exit \1/p'))${why:+: $why}"
+            printf '%s\t%s\t%s\t%s\n' "$t" "$path" fail "${why}" >"$out"
+        else
+            printf '%s\t%s\t%s\t%s\n' "$t" "$path" fail "does not compile: ${why:-no test ran}" >"$out"
+        fi
     else
         : >"$out"
         while IFS=$'\t' read -r name status why; do
             printf '%s\t%s::%s\t%s\t%s\n' "$t" "$path" "$name" "$status" "$why" >>"$out"
         done <"$dir/tests.tsv"
+        # A run that ended abnormally is a red of its own, whatever its printed tests said: a
+        # `module_crashed` record (a wasm trap, a runner that died), a missing summary, a non-zero
+        # exit with no failing test, fewer results than the suite declares.
+        local ran declared problem=""
+        ran="$(wc -l <"$dir/tests.tsv")"
+        declared="$(cd "$dir" && { find src test -name '*.bp' 2>/dev/null | xargs -r cat; } | grep -cE '^[[:space:]]*test[[:space:]]+"')"
+        if grep -q '"event":"module_crashed"' "$dir/o.json"; then problem="the run crashed after $ran of $declared tests (a trap, or a runner that died)"
+        elif ! grep -q '"event":"summary"' "$dir/o.json"; then problem="the run printed no summary after $ran of $declared tests"
+        elif [ "$ran" -lt "$declared" ]; then problem="$ran results for $declared declared tests"
+        elif [ $code -ne 0 ] && ! grep -q "^[^$(printf '\t')]*$(printf '\t')fail" "$dir/tests.tsv"; then problem="botopink test exited $code with every test ok"
+        fi
+        [ -z "$problem" ] || printf '%s\t%s\t%s\t%s\n' "$t" "$path" fail "$problem" >>"$out"
     fi
 }
 

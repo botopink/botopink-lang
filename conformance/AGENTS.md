@@ -1989,6 +1989,13 @@ target), and a green and a red cell. Its report must hold each refusal's line, t
 candidate and the tally `5 passed, 8 failed`. A whole run of the suite (no `--only`) starts with it
 and stops there if it fails — a green run from a runner that no longer refuses says nothing.
 
+**An abnormal end of `botopink test --json` is a red** (`run.sh`'s `test_project`): a `module_crashed`
+record (a wasm trap, a runner that died), no `summary` record, fewer results than the suite declares
+(`test "…"` blocks under `src/` and `test/`), or a non-zero exit with every test `ok` adds one `fail` line
+keyed by the suite, so the report names the suite and the target whatever tests printed before the end.
+The self-test runs a stub compiler through five shapes (crash, no summary, fewer results, bare non-zero
+exit, clean) and each abnormal one must exit 1 naming `[commonJS] test/trap_mid.bp`.
+
 ## Running
 
 ```bash
