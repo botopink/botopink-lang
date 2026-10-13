@@ -52,7 +52,7 @@ test "js: external ---- import binds symbol" {
 // The enum-variant form (`#[@External.Erlang("template")]`) is the only
 // form. Codegen reads `annotations[]` directly looking for `External.<target>`.
 
-test "js: External.<Target> ---- template equivalent to @external(target, template)" {
+test "js: External.<Target> ---- one decl binds a module function per target" {
     try h.assertJsRefusedOnWasm(std.testing.allocator, @src(),
         \\#[@External.Erlang("filename", "dirname"),
         \\  @External.Node("node:path", "dirname")]
@@ -64,9 +64,8 @@ test "js: External.<Target> ---- template equivalent to @external(target, templa
     );
 }
 
-test "js: External.<Target> ---- mixed with @external() in one decl" {
-    // Migration-friendly: a single decl may use the new form for one target
-    // and the legacy form for another while a codebase migrates.
+test "js: External.<Target> ---- one decl binds a global function per target" {
+    // One decl carries one annotation per target; the active backend reads its own.
     try h.assertJsRefusedOnWasm(std.testing.allocator, @src(),
         \\#[@External.Erlang( "math", "floor"),
         \\  @External.Node("Math", "floor")]

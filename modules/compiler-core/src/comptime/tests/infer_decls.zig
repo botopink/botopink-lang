@@ -144,7 +144,7 @@ test "infer: dotIdent resolved from type annotation" {
     );
 }
 
-test "infer: implement block is invisible to the binding list" {
+test "infer: implement block lists with its interface, target and methods" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\val Drawable = behavior {
         \\    fn draw(self: Self);

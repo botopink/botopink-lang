@@ -866,9 +866,8 @@ test "wat: string ---- toUpper and toLower answer" {
 //
 // All four backends print §7's text now — `Point(x: 1, y: 2)`,
 // `Shape.Square(side: 4)`, `Shape.Nothing`, `[Point(x: 1, y: 2)]` — after the
-// three prints of values that never needed an identity. The test's name still
-// says "trap"; its rename is front 07's step 4.
-test "wat: print ---- a record and a variant have no printed form yet, so they trap" {
+// three prints of values that never needed an identity.
+test "wat: print ---- a record and a variant print their names and fields" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\type Point(x: i32, y: i32)
         \\type Shape { Square(side: i32), Nothing }
