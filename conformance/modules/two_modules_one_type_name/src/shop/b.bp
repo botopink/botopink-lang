@@ -1,0 +1,13 @@
+pub type Order(id: i32) {
+    fn label(self: Self) -> string {
+        return "b-${self.id}";
+    }
+
+    fn make(id: i32) -> Order {
+        return Order(id: id + 100);
+    }
+}
+
+pub fn bLabel(id: i32) -> string {
+    return Order.make(id).label();
+}

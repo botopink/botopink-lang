@@ -92,6 +92,14 @@ Leaf modules are single files; folder modules use a `mod.bp` entry point.
 declaring module's subtree. Only `pub` declarations are visible outside their
 module.
 
+A type is its declaring module's. Two modules that each declare `pub type
+Order` keep two types, and each module's `Order(…)`, `Order.make(…)` and
+`o.label()` reach its own (decision 430) — under `botopink run`, and under
+`botopink test`, where every test module of `test/` is a module of its own:
+
+<!-- example: modules/two_modules_one_type_name -->
+<!-- example: test/two_test_modules_one_type_name -->
+
 **`mod` binds the module it declares** (decision 337). In the module that
 declares it, `mod config;` (or `pub mod config;`) binds `config` as a namespace,
 as `import {config};` binds it elsewhere — `config.splitPath(x)`, a type

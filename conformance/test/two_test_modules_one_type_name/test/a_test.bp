@@ -1,0 +1,18 @@
+//// Two test modules each declare `type Order` with a member of one name:
+//// each is its own module's type, so each test reaches its own member
+//// (144 B-10, decision 430).
+
+pub type Order(id: i32) {
+    fn label(self: Self) -> string {
+        return "a-${self.id}";
+    }
+
+    fn make(id: i32) -> Order {
+        return Order(id: id * 10);
+    }
+}
+
+test "a test module's type answers its own members" {
+    assert Order(id: 1).label() == "a-1";
+    assert Order.make(2).id == 20;
+}

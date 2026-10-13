@@ -2109,6 +2109,12 @@ library-built message with quotes and a non-ASCII dash, `stderr` in `output/`, d
 erlang and beam write the message itself, not the term with its bytes as numbers; wasm writes it
 before the trap.
 
+144 B-10 (decision 430, the gaps a library works around) adds `modules/two_modules_one_type_name` —
+two modules each declaring `pub type Order` with members of one name, each reaching its own (erlang
+called into the other module's unit: the link index keys an export by its bare name) — and its test
+twin `test/two_test_modules_one_type_name`, two test modules of one project doing the same under
+`botopink test`.
+
 What cannot be tested from botopink at all, and why: `@typeInfo` / `@makeRecord` / `partial` / `omit`
 / `pick` (they produce types, and asserting on emitted text is the snapshots' job). Struck from this
 list by C-16, each with the cell that covers it: `pub default mod` / `pub default fn`, `@ExprCustom` /

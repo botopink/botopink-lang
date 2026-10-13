@@ -4075,6 +4075,13 @@ const Emitter = struct {
     /// local one. The erlang twin of `beam_asm.zig`'s `typeModuleAtom`.
     fn typeModuleAtom(this: *Emitter, type_name: []const u8) ![]const u8 {
         if (this.imported_types.get(type_name)) |owner| return owner;
+        // A type this file declares is this file's, whatever the link index
+        // says: the index keys an export by its bare name, so two modules that
+        // each declare `type Order` (two test modules, 144 B-10) shared one
+        // entry and one of them called into the other's unit.
+        if (this.type_owner_path.get(type_name)) |path| if (std.mem.eql(u8, path, this.module_name)) {
+            return try crossModule.typeAtom(this.atom_arena.allocator(), this.idOf(this.module_name), type_name);
+        };
         if (this.cross) |xc| if (xc.exports.get(type_name)) |info| switch (info.kind) {
             .record, .@"enum" => if (!std.mem.eql(u8, info.module, this.module_name)) {
                 return try crossModule.typeAtom(this.atom_arena.allocator(), this.idOf(info.module), type_name);

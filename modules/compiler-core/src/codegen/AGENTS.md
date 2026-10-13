@@ -824,7 +824,12 @@ codegen/
   the `-export` form is written into a placeholder and filled once every
   declaration is lowered). `typeCall` is the single site that spells a method
   call: local inside that type's module, `atom:m(Recv, …)` everywhere else,
-  with `typeModuleAtom` answering the owner's atom for an imported type.
+  with `typeModuleAtom` answering the owner's atom for an imported type — and
+  this file's own atom for a type this file declares, before the link index,
+  which keys an export by its bare name: two modules that each declare `pub
+  type Order` would otherwise call into one another's unit
+  (`conformance/modules/two_modules_one_type_name`,
+  `conformance/test/two_test_modules_one_type_name`, 144 B-10).
   A receiver inference left untyped (a behavior's `default fn` records no
   lowering) routes through `method_owners` — `method/arity` → the one local type
   declaring or adopting it; two claimants leave no entry and the bare call
