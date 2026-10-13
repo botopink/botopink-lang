@@ -15083,7 +15083,21 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
             }
             // 00 · 01-checker — the body's return target is the expected type
             // of a returned value (`fn pick() -> Token { return .Color.Red.500; }`).
-            const valPtr: ?*TypedExpr = if (r) |rv| try makeTypedPtr(env, try inferExprTypedExpecting(env, rv.*, env.returnTarget)) else null;
+            // A lambda returned from a fn declared `-> fn(n: i32) -> R` takes its
+            // parameters from that function type, as a `val f: fn(…) -> R = { … }`
+            // does, so `n.toString()` in the body resolves against `i32`.
+            const lambdaTarget: ?*T.Type = if (r) |rv| blk: {
+                if (rv.* != .function or rv.function.kind.syntax != .lambda) break :blk null;
+                // A method sets only `returnWhole`; a fn sets both.
+                const tgt = env.returnWhole orelse env.returnTarget orelse break :blk null;
+                const d = tgt.deref();
+                if (d.* != .func or d.func.params.len != rv.function.kind.params.len) break :blk null;
+                break :blk tgt;
+            } else null;
+            const valPtr: ?*TypedExpr = if (r) |rv| try makeTypedPtr(env, if (lambdaTarget) |tgt|
+                try inferFunctionExprExpected(env, rv.function, rv.function.loc, tgt, false)
+            else
+                try inferExprTypedExpecting(env, rv.*, env.returnTarget)) else null;
             // Decision 432 — a task handed over whole (`taskLowerings`): the
             // body's declared return and the returned value are both a `@Task`.
             if (valPtr) |vp| if (env.returnWhole) |w| {

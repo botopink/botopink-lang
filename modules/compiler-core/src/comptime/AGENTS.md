@@ -2087,6 +2087,13 @@ lambda for this: it keeps the enclosing channel, so its `throw` is the function'
 lowers the arm's throw as a raw `throw`, its backend's row). Cells: `modules/try_in_lambda_without_result`,
 `modules/lambda_result_return_try`.
 
+A lambda written in `return` position (`return { n -> … };`) takes its parameters from the
+function type the enclosing fn or method declares (`inferJumpExpr` reads `returnWhole`, which a
+method sets, before `returnTarget`, which only a fn sets), through `inferFunctionExprExpected`, as a
+`val f: fn(…) -> R = { … }` does: `n.toString()` in the body resolves against `i32` and records
+its instance lowering (a backend without native method dispatch refused the call otherwise);
+conformance cell `task_lambda_method_to_string`.
+
 Because the lambda now UNIFIES its return with the expectation, the expectation a plain call reads
 (`declParamTypes` in `inferCallExpr`) is a fresh instance of the callee's signature —
 `instantiateCtorType` then `instantiateGenericType`, as the arm that types the call does — never the
