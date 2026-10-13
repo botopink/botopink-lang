@@ -1508,6 +1508,15 @@ trap. Five `val assert [..] = …` / `case_list_patterns_*` wasm snapshots moved
 (their text — the length test and the binders — not a RUN LOG; each program
 re-run with prints, answering erlang's values).
 
+**A payload typed by a type parameter takes the subject's argument**
+(`subject_generic`, `substSubjectParam`, `payloadFieldLocal`): a `case` over a
+value written `Maybe<#(i32, i32)>` records the subject's written type, and a
+variant pattern's nested pattern (`.Some(#(a, b))`) is bound from a payload read
+as the argument (`#(i32, i32)`) instead of the bare `T`, so a tuple pattern finds
+its element types (`conformance/modules/case_generic_variant_tuple_payload`; it
+was refused as "does not know the element types of this tuple pattern's
+subject").
+
 The fixtures are `tests/wat.zig`'s `a tuple pattern tests its literals and
 binds its elements`, `` `..` skips the rest and a bool literal in a tuple
 pattern is tested ``, `a type pattern is chosen by the value` and `a list

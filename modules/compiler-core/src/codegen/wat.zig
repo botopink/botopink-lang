@@ -1973,6 +1973,10 @@ const Emitter = struct {
     /// A `case` subject local → the enum its subject is a value of
     /// (`enumOfSubject`), which a bare or dot-shorthand arm name is read in.
     subject_enums: std.StringHashMapUnmanaged([]const u8) = .empty,
+    /// The written type of a generic enum `case` subject (`Maybe<#(i32, i32)>`),
+    /// by the subject's local: what `payloadFieldLocal` binds a payload typed by
+    /// a type parameter (`Some(value: T)`) to.
+    subject_generic: std.StringHashMapUnmanaged(ast.TypeRef) = .empty,
     /// The enum the pattern being tested or bound is read in: set from
     /// `subject_enums` for the WHOLE subject only, so a payload's own
     /// pattern keeps the program-wide lookup.
@@ -2459,6 +2463,7 @@ const Emitter = struct {
         self.unknown_subjects.deinit(self.alloc);
         self.u64_subjects.deinit(self.alloc);
         self.subject_enums.deinit(self.alloc);
+        self.subject_generic.deinit(self.alloc);
         self.behavior_methods.deinit(self.alloc);
         self.behavior_decls.deinit(self.alloc);
         self.ext_by_name.deinit();
@@ -7838,6 +7843,9 @@ const Emitter = struct {
         if (c.subjects.len == 1) if (self.recordTypeOfExpr(c.subjects[0])) |rty| try self.local_types.put(subj_local, rty);
         if (self.enumOfSubject(c.subjects[0])) |en| try self.subject_enums.put(self.alloc, subj_local, en) else _ = self.subject_enums.remove(subj_local);
         try self.noteSubjectShape(subj_local, c.subjects[0]);
+        _ = self.subject_generic.remove(subj_local);
+        if (c.subjects.len == 1) if (self.typeRefOf(c.subjects[0])) |tr| if (tr == .generic and self.enum_generics.contains(tr.generic.name))
+            try self.subject_generic.put(self.alloc, subj_local, tr);
         // `case a, n { 0, "x" -> … }`: every subject in its own local,
         // `<subject local>_<i>`, which the `.multi` pattern's i-th pattern is
         // tested against and binds from. Only the first was lowered, and the
@@ -8814,6 +8822,18 @@ const Emitter = struct {
         };
     }
 
+    /// A payload typed by a type parameter of the subject's enum (`value: T`
+    /// of `Maybe<T>`), read as the argument the subject's written type gives it.
+    fn substSubjectParam(self: *Emitter, subj: []const u8, t: ast.TypeRef) ast.TypeRef {
+        if (t != .named) return t;
+        const sub = self.subject_generic.get(subj) orelse return t;
+        const params = self.enum_generics.get(sub.generic.name) orelse return t;
+        for (params, 0..) |gp, k| {
+            if (std.mem.eql(u8, gp.name, t.named) and k < sub.generic.args.len) return sub.generic.args[k];
+        }
+        return t;
+    }
+
     /// Payload slot `slot` of the variant in `subj`, in a fresh i32 local a
     /// nested pattern is tested against and binds from — carrying the field's
     /// declared shape: a string, a record, and the enum a nested variant
@@ -8826,7 +8846,9 @@ const Emitter = struct {
         try self.emit(.{ .load = .{ .offset = @intCast((slot + 1) * 4) } });
         try self.emit(.{ .local_set = field });
         _ = self.subject_enums.remove(field);
-        if (payloadFieldType(ref, slot)) |t| {
+        if (payloadFieldType(ref, slot)) |t0| {
+            const t = self.substSubjectParam(subj, t0);
+            if (try self.typeRefShape(t)) |sh| if (sh[0] == '(' or sh[0] == '[') try self.print_shape_locals.put(field, sh);
             if (isStringTypeRef(t)) try self.str_locals.put(field, {});
             if (isBoolTypeRef(t)) try self.bool_locals.put(field, {});
             try self.noteTypedBinder(field, t);
