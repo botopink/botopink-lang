@@ -1524,6 +1524,19 @@ to the printer rather than their heap address. The lambda such a fn returns is
 typed from the declared return: `expected_fn`, set at a `return { … }` and at an
 annotated `val f: fn(…) -> … = { … }`, gives `lowerLambdaValue` its parameter
 types, so `{ x -> p + x }` under `-> fn(x: string) -> string` concatenates.
+A lambda written as an argument of a call to a plain fn is typed the same way
+from the parameter's declared function type (`expected_fn` set per argument in
+`lowerPlainCall`), so `{ n -> n.startsWith(p) }` for `gone: fn(name: string) ->
+bool` has a string `n` (cell `lambda_arg_param_type`).
+
+**Three record/array recoveries onze's blog on wasm needed** (cells
+`children_for_walk`, `unwrap_or_record_field`): a record field declared
+`Children` is the `[len][e0]…` blob of the array the program built (the
+coercion is type-level only), so `for (e.children)` walks it (`isChildrenTyped`
+in `isArrayExpr`; the element is an untyped word); and `r.unwrapOr(d)` /
+`o.unwrapOr(d)` answers the record of its default, else the `@Result`'s declared
+ok payload (`recordTypeOfExpr`), so a field read off it never falls to the
+unique-field guess that refuses a name some record declares as a float.
 
 **A pattern in binding position** — `val Circle(r) = s;` / `val Sq(side) = q;`
 — reads each binding off the slot of the declared field at its position (a
