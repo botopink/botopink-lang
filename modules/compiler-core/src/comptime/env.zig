@@ -496,7 +496,16 @@ pub const InstanceLowering = union(enum) {
     /// The name only: a backend that finds a record or enum of that name in
     /// the program asks the value, whose tag names its module (decision 21).
     unplaced_type: []const u8,
+    /// 144 B-10 (decision 430) — `Box.wrap` named without a call: the
+    /// associated fn `wrap` of the named type `Box`, as a function value
+    /// (`apply(1, Box.wrap)`, `val w = Box.wrap;`). Keyed by the member
+    /// read's loc. `arity` is the fn's declared parameter count (no `self`).
+    assoc_fn_value: AssocFnValue,
 };
+
+/// What `InstanceLowering.assoc_fn_value` names: the type that declares the
+/// associated fn, the fn, and its parameter count.
+pub const AssocFnValue = struct { type_name: []const u8, method: []const u8, arity: usize };
 
 /// The numeric type an `InstanceLowering.division` records: a float, or one
 /// of the sized integer types (decision 264).

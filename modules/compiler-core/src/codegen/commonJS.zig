@@ -2218,7 +2218,7 @@ const Emitter = struct {
         const lw = self.lowerings orelse return null;
         const type_name = switch (lw.get(loc) orelse return null) {
             .type_ => |n| n,
-            .prim, .field_of, .sequence_next, .division, .by_value, .unplaced_type => return null,
+            .prim, .field_of, .sequence_next, .division, .by_value, .unplaced_type, .assoc_fn_value => return null,
         };
         if (self.imported_enums.contains(type_name)) return type_name;
         var buf: [256]u8 = undefined;
@@ -5180,7 +5180,7 @@ const Emitter = struct {
                             .bigint => "BigInt",
                             else => break :blk null,
                         },
-                        .type_, .field_of, .sequence_next, .division, .by_value, .unplaced_type => break :blk null,
+                        .type_, .field_of, .sequence_next, .division, .by_value, .unplaced_type, .assoc_fn_value => break :blk null,
                     };
                     const iface = self.local_interfaces.get(iface_name) orelse break :blk null;
                     for (iface.methods) |m| {
@@ -6013,7 +6013,7 @@ const Emitter = struct {
         const il = lw.get(loc) orelse return null;
         const kind = switch (il) {
             .prim => |k| k,
-            .type_, .field_of, .sequence_next, .division, .by_value, .unplaced_type => return null,
+            .type_, .field_of, .sequence_next, .division, .by_value, .unplaced_type, .assoc_fn_value => return null,
         };
         const receiver: jsPrelude.Receiver = switch (kind) {
             .string => .string,

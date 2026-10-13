@@ -3586,7 +3586,7 @@ const Emitter = struct {
                 .ident => |n| nums.get(n) orelse self.num_names.get(n),
                 .identAccess => |ia| if (self.instanceLowering(id.loc, ia.receiver.*)) |il| switch (il) {
                     .prim => .int,
-                    .type_, .field_of, .sequence_next, .division, .by_value, .unplaced_type => null,
+                    .type_, .field_of, .sequence_next, .division, .by_value, .unplaced_type, .assoc_fn_value => null,
                 } else null,
                 else => null,
             },
@@ -6296,6 +6296,9 @@ const Emitter = struct {
                     return;
                 },
                 .identAccess => |ia| {
+                    if (self.instance_lowerings.get(id.loc)) |il| if (il == .assoc_fn_value) {
+                        if (try self.lowerAssocFnValue(il.assoc_fn_value)) return;
+                    };
                     try self.lowerIdentAccess(ia, id.loc, 0);
                     return;
                 },
@@ -7016,7 +7019,7 @@ const Emitter = struct {
                     } else |_| {}
                 },
                 // A field READ never reaches the call path, nor does a `/`.
-                .field_of, .division => {},
+                .field_of, .division, .assoc_fn_value => {},
                 // A method a `behavior` declares, on a value typed by it: the
                 // value answers — its own type's module, or its own table.
                 .by_value => {
@@ -7547,6 +7550,31 @@ const Emitter = struct {
             try self.materializeCallArgs(cc.args, cc.trailing);
             if (try self.tryFileCall(owned, arity, mode, self.num_y)) return true;
         }
+        return false;
+    }
+
+    /// 144 B-10 — `Box.wrap` named without a call: the type's associated fn
+    /// as a fun into x0 — a `make_fun3` over its own entry inside the type's
+    /// unit, the literal `fun 'p@m@@Box':wrap/1` from anywhere else, the file
+    /// module's mangled local for a method the type does not declare itself.
+    /// False when none of them is there, and the caller keeps its own path.
+    fn lowerAssocFnValue(self: *Emitter, af: envMod.AssocFnValue) anyerror!bool {
+        var nbuf: [256]u8 = undefined;
+        const name = try self.methodFnName(&nbuf, af.type_name, af.method);
+        if (self.cur_type) |ct| if (std.mem.eql(u8, ct, af.type_name)) {
+            if (self.fnLabelsFor(name, af.arity)) |labels| {
+                try self.emitMakeFun(labels.entry, 0, &.{});
+                return true;
+            } else |_| {}
+        };
+        if (try self.typeMethodModule(af.type_name, af.method, af.arity)) |owner| {
+            try beamEmitter.writeMoveOp(self.out, .{ .ext_fun = .{ .module = owner, .name = af.method, .arity = af.arity } }, Dst.xr(0));
+            return true;
+        }
+        if (!self.inForeignUnit()) if (self.fnLabelsFor(name, af.arity)) |labels| {
+            try self.emitMakeFun(labels.entry, 0, &.{});
+            return true;
+        } else |_| {};
         return false;
     }
 
@@ -11962,7 +11990,7 @@ const Emitter = struct {
                 }
                 return;
             },
-            .type_, .field_of, .sequence_next, .division, .by_value, .unplaced_type => {},
+            .type_, .field_of, .sequence_next, .division, .by_value, .unplaced_type, .assoc_fn_value => {},
         };
 
         try self.lowerExprIntoX0(ia.receiver.*);

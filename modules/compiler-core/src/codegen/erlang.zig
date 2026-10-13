@@ -4647,7 +4647,7 @@ const Emitter = struct {
                     (if (!this.locals.contains(n)) this.num_names.get(n) else null),
                 .identAccess => if (this.instance_lowerings.get(id.loc)) |il| switch (il) {
                     .prim => .int,
-                    .type_, .field_of, .sequence_next, .division, .by_value, .unplaced_type => null,
+                    .type_, .field_of, .sequence_next, .division, .by_value, .unplaced_type, .assoc_fn_value => null,
                 } else null,
                 else => null,
             },
@@ -6654,7 +6654,7 @@ const Emitter = struct {
         const il = this.instance_lowerings.get(e.call.loc) orelse return null;
         return switch (il) {
             .prim => |k| if (k == .array) name else null,
-            .type_, .field_of, .sequence_next, .division, .by_value, .unplaced_type => null,
+            .type_, .field_of, .sequence_next, .division, .by_value, .unplaced_type, .assoc_fn_value => null,
         };
     }
 
@@ -7860,6 +7860,18 @@ const Emitter = struct {
                     return this.nameRefNode(b, n);
                 },
                 .identAccess => |ia| {
+                    // 144 B-10 — `Box.wrap` named without a call: the type's
+                    // associated fn as a fun, `fun 'p@m@@Box':wrap/1` (local
+                    // inside the type's own module). `Box` was emitted as a
+                    // variable, unbound, and `erlc` refused the module.
+                    if (this.instance_lowerings.get(id.loc)) |il| if (il == .assoc_fn_value) {
+                        const af = il.assoc_fn_value;
+                        if (this.cur_type) |ct| if (std.mem.eql(u8, ct, af.type_name)) {
+                            return .{ .fun_ref = .{ .name = af.method, .arity = af.arity } };
+                        };
+                        if (this.untyped) return .{ .fun_ref = .{ .name = af.method, .arity = af.arity } };
+                        return .{ .fun_ref = .{ .module = try this.typeModuleAtom(af.type_name), .name = af.method, .arity = af.arity } };
+                    };
                     // Qualified enum member: `Order.Lt` → the variant atom.
                     if (ia.receiver.* == .identifier and ia.receiver.*.identifier.kind == .ident and
                         this.enum_names.contains(ia.receiver.*.identifier.kind.ident))
@@ -7892,7 +7904,7 @@ const Emitter = struct {
                                 else => b.remote("erlang", "length", &.{recv}),
                             };
                         },
-                        .type_, .field_of, .sequence_next, .division, .by_value, .unplaced_type => {},
+                        .type_, .field_of, .sequence_next, .division, .by_value, .unplaced_type, .assoc_fn_value => {},
                     };
                     // Same field access on a `Self`-typed receiver inside an
                     // interface instance `default fn` (`self.length`), which
@@ -8771,7 +8783,7 @@ const Emitter = struct {
             else
                 this.typedMethodNode(b, tn, recv, cc),
             // A field READ never reaches the call path, nor does a `/`.
-            .field_of, .division => {},
+            .field_of, .division, .assoc_fn_value => {},
             .sequence_next => return this.sequenceNextNode(b, loc, recv),
             // A method a `behavior` declares, on a value typed by it: no owner
             // module belongs in the call, whatever else the program declares

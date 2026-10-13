@@ -13698,6 +13698,12 @@ fn inferIdentifierExpr(env: *Env, ident: ast.IdentifierExprOf(.untyped), loc: as
                     return error.TypeError;
                 }
             }
+            // 144 B-10 (decision 430) — `Box.wrap` without a call: the
+            // associated fn of a named type as a function value, typed by its
+            // declared signature (instantiated fresh at each read, as a call
+            // through the type is). It was a fresh variable that checked
+            // nothing, and erlang emitted `Box` as an unbound variable.
+            if (application == null) if (try associatedFnValue(env, ia, loc)) |typed| return typed;
             // When receiver is an identifier, check if it's a type name rather than a variable.
             // This handles enum/record/struct constructor access like Color.Red, Option.None
             if (ia.receiver.* == .identifier) {
@@ -16156,6 +16162,36 @@ fn associatedCallReturnType(
         try unifyAt(env, p, ta.value.getType(), ta.value.getLoc());
     }
     return fn_.func.ret;
+}
+
+/// 144 B-10 (decision 430) — `T.f` read without a call, where `T` names a
+/// record, struct or enum and `f` is one of its associated fns (no `self`):
+/// the fn as a value, of its declared signature, and the lowering the
+/// backends without native static members place it by. Null for any other
+/// member read.
+fn associatedFnValue(env: *Env, ia: anytype, loc: ast.Loc) InferError!?TypedExpr {
+    if (ia.optional) return null;
+    if (ia.receiver.* != .identifier or ia.receiver.*.identifier.kind != .ident) return null;
+    const typeName = ia.receiver.*.identifier.kind.ident;
+    if (env.lookupTypeDef(typeName) == null) return null;
+    if (!env.hasInherentMethod(typeName, ia.member)) return null;
+    const params = env.getInherentMethodParams(typeName, ia.member) orelse return null;
+    if (params.len > 0 and std.mem.eql(u8, params[0].name, "self")) return null;
+    const sigRaw = env.getInherentMethodType(typeName, ia.member) orelse return null;
+    var seen = std.AutoHashMap(*T.TypeCell, *T.Type).init(env.arena);
+    defer seen.deinit();
+    const sig = try instantiateType(env, sigRaw, &seen, .allVars);
+    if (sig.deref().* != .func) return null;
+    try env.instanceLowerings.put(loc, .{ .assoc_fn_value = .{ .type_name = typeName, .method = ia.member, .arity = params.len } });
+    const recvTyped = try makeTypedPtr(env, TypedExpr{ .identifier = .{
+        .loc = ia.receiver.*.getLoc(),
+        .type_ = try env.namedType(typeName),
+        .kind = .{ .ident = typeName },
+    } });
+    return TypedExpr{ .identifier = .{ .loc = loc, .type_ = sig, .kind = .{ .identAccess = .{
+        .receiver = recvTyped,
+        .member = ia.member,
+    } } } };
 }
 
 /// A member of a `@Result<R, E>` value is one of its builtin methods, or

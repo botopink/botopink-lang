@@ -2113,7 +2113,10 @@ before the trap.
 two modules each declaring `pub type Order` with members of one name, each reaching its own (erlang
 called into the other module's unit: the link index keys an export by its bare name) — and its test
 twin `test/two_test_modules_one_type_name`, two test modules of one project doing the same under
-`botopink test`.
+`botopink test`. The same step's `modules/associated_fn_as_value` names an associated fn without a
+call — `apply(1, Box.wrap)`, `val w = Box.wrap;`, an imported type's and an enum's — a function value
+of its declared signature (it was a fresh variable to the checker, an unbound variable on erlang, an
+abort on beam, unplaced on wasm).
 
 What cannot be tested from botopink at all, and why: `@typeInfo` / `@makeRecord` / `partial` / `omit`
 / `pick` (they produce types, and asserting on emitted text is the snapshots' job). Struck from this

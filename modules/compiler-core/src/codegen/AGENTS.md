@@ -830,6 +830,12 @@ codegen/
   type Order` would otherwise call into one another's unit
   (`conformance/modules/two_modules_one_type_name`,
   `conformance/test/two_test_modules_one_type_name`, 144 B-10).
+  An associated fn named without a call (`apply(1, Box.wrap)`) carries
+  inference's `InstanceLowering.assoc_fn_value` (the type, the fn, its arity)
+  at the member read: erlang emits `fun 'p@m@@Box':wrap/1` (local inside the
+  type's module), beam the same `ext_fun` literal or a `make_fun3` over the
+  entry, wasm a closure over `Box_wrap`'s trampoline (`lowerFnRef`)
+  (`conformance/modules/associated_fn_as_value`, 144 B-10).
   A receiver inference left untyped (a behavior's `default fn` records no
   lowering) routes through `method_owners` — `method/arity` → the one local type
   declaring or adopting it; two claimants leave no entry and the bare call

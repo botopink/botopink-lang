@@ -559,6 +559,13 @@ A body adds methods:
 
 <!-- example: modules/record_method -->
 
+An associated function — one taking no `self` — named without a call is a
+function value of its declared signature, as a top-level `fn` is: `apply(1,
+Box.wrap)`, `val w = Box.wrap;`, through an imported type or an enum alike
+(decision 430):
+
+<!-- example: modules/associated_fn_as_value -->
+
 `self` is the receiver of a method, and names nothing else: a parameter called
 `self` is written only in a `type`, `behavior`, `implement` or `extend` body.
 A free function that names one is `self-param-outside-type`, refused at the

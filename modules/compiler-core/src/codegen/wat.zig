@@ -9324,7 +9324,7 @@ const Emitter = struct {
         };
         return switch (il) {
             .prim => |k| k,
-            .type_, .field_of, .sequence_next, .division, .by_value, .unplaced_type => null,
+            .type_, .field_of, .sequence_next, .division, .by_value, .unplaced_type, .assoc_fn_value => null,
         };
     }
 
@@ -13936,7 +13936,7 @@ const Emitter = struct {
                 if (impls.len > 0) return null;
                 break :blk self.recordTypeOfExpr(cc.receiver.?.*) orelse return null;
             },
-            .prim, .field_of, .sequence_next, .division => return null,
+            .prim, .field_of, .sequence_next, .division, .assoc_fn_value => return null,
         } else self.recordTypeOfExpr(cc.receiver.?.*) orelse return null;
         const rec = self.ownerAmongTwins(rec0, cc.receiver.?.*);
         const sym = std.fmt.bufPrint(&self.sym_buf, "{s}_{s}", .{ rec, cc.callee }) catch return null;
@@ -14194,6 +14194,14 @@ const Emitter = struct {
     /// `recv.member` — tuple element (`t._0`), qualified enum unit variant
     /// (`Color.Red`), or a named record field (`r.b` / `self.x`).
     fn lowerIdentAccess(self: *Emitter, ia: anytype, loc: ast.Loc) anyerror!void {
+        // 144 B-10 — `Box.wrap` named without a call: the type's associated
+        // fn `Box_wrap` as a closure over its trampoline, as a top-level fn
+        // named as a value is.
+        if (self.instance_lowerings.get(loc)) |il| if (il == .assoc_fn_value) {
+            const af = il.assoc_fn_value;
+            const sym = try std.fmt.allocPrint(self.reg_arena.allocator(), "{s}_{s}", .{ af.type_name, af.method });
+            if (self.fn_sigs.contains(sym)) return self.lowerFnRef(sym, loc);
+        };
         // `xs.length` / `s.length` on a primitive: inference recorded the
         // receiver's family at this loc, and both layouts keep the count in the
         // first word.
