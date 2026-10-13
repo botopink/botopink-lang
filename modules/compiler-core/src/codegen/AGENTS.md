@@ -1814,8 +1814,10 @@ codegen/
   into one module, `import {Policy as APolicy} from "a/p"`) is keyed by the
   alias in every one of these maps, and its atoms spell the declared name
   through `type_declared` (`declaredTypeName`: `'a@p@@Policy'`,
-  `'a@e@@Signal__v__red'`); beam also keeps the alias's link-index entry
-  (`aliased_type_exports`) for `typeMethodModule`. wasm maps the alias to the
+  `'a@e@@Signal__v__red'`); beam also keeps each imported type's link-index
+  entry by the name it is held under (`imported_type_exports`) for
+  `typeMethodModule` and `typeModuleAtom` — the index keys a type by its
+  declared name, which std's `collections.Dict` and a `kit` `Dict` share. wasm maps the alias to the
   linked declaration in `linkTypeRenames` (the mangled `<module>/Policy`, or
   the declared name the first declaration kept); commonJS binds the class
   under the alias in its `require` destructuring. And

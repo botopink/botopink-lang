@@ -1,0 +1,19 @@
+pub type Policy(ms: i32)
+
+pub fn slow() -> Policy {
+    return Policy(ms: 100);
+}
+
+pub fn msOf(p: Policy) -> i32 {
+    return p.ms;
+}
+
+pub fn quick(comptime t: @Expr<string>) -> @Expr<Policy> {
+    return t.build("slow()");
+}
+
+pub fn stamp<T>(comptime decl: @Decl<T>) {
+    decl.addMember("policy", fn(self: T) -> Policy {
+        return Policy(ms: 7);
+    });
+}

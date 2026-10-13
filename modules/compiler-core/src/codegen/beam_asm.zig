@@ -2405,9 +2405,11 @@ const Emitter = struct {
     /// Decision 310 — an imported type's alias that is its identity in this
     /// module → the declared name its atoms spell. The twin of `erlang.zig`'s.
     type_declared: std.StringHashMapUnmanaged([]const u8) = .empty,
-    /// The link index's entry of each type in `type_declared`, by its alias:
-    /// the index keys a type by its declared name, which two modules share.
-    aliased_type_exports: std.StringHashMapUnmanaged(crossModule.ExportInfo) = .empty,
+    /// The link index's entry of each type this module imports by name, by
+    /// the name it is held under (decision 310: an alias in `type_declared`):
+    /// the index keys a type by its declared name, which two modules — std's
+    /// `collections` and another — may share.
+    imported_type_exports: std.StringHashMapUnmanaged(crossModule.ExportInfo) = .empty,
     /// Variant name → the enum that declares it, first declaration winning.
     variant_enum: std.StringHashMap([]const u8),
     /// Enum name → its variants in DECLARATION order, each with the payload
@@ -2673,7 +2675,7 @@ const Emitter = struct {
         self.record_fields.deinit();
         self.type_owner_path.deinit();
         self.type_declared.deinit(self.alloc);
-        self.aliased_type_exports.deinit(self.alloc);
+        self.imported_type_exports.deinit(self.alloc);
         self.variant_enum.deinit();
         {
             var evn_it = self.enum_variant_names.valueIterator();
@@ -3063,12 +3065,10 @@ const Emitter = struct {
                         // Decision 310 — a type kept under its alias is keyed
                         // by it; its atoms spell the declared name.
                         const tname = if (imp.alias) |al| blk: {
-                            if (!std.mem.eql(u8, al, name)) {
-                                try self.type_declared.put(self.alloc, al, name);
-                                try self.aliased_type_exports.put(self.alloc, al, info);
-                            }
+                            if (!std.mem.eql(u8, al, name)) try self.type_declared.put(self.alloc, al, name);
                             break :blk al;
                         } else name;
+                        try self.imported_type_exports.put(self.alloc, tname, info);
                         if (!self.record_fields.contains(tname)) {
                             try self.record_fields.put(tname, try self.alloc.dupe([]const u8, info.fields));
                         }
@@ -3091,9 +3091,9 @@ const Emitter = struct {
                                 const ename = if (imp.alias) |al| blk: {
                                     if (std.mem.eql(u8, al, e.name)) break :blk e.name;
                                     try self.type_declared.put(self.alloc, al, e.name);
-                                    try self.aliased_type_exports.put(self.alloc, al, info);
                                     break :blk al;
                                 } else e.name;
+                                try self.imported_type_exports.put(self.alloc, ename, info);
                                 // An imported enum is an enum a `case` subject
                                 // typed by it names (`enumOfSubject`): without
                                 // it a variant two enums declare (`Item`) took
@@ -7577,7 +7577,7 @@ const Emitter = struct {
         }
         if (self.imported_types.get(type_name)) |owner| return owner;
         const xc = self.cross orelse return null;
-        const info = xc.exports.get(type_name) orelse return null;
+        const info = self.imported_type_exports.get(type_name) orelse xc.exports.get(type_name) orelse return null;
         switch (info.kind) {
             .record, .@"enum" => {},
             else => return null,
@@ -7692,7 +7692,7 @@ const Emitter = struct {
             return try self.typeModuleAtom(type_name);
         }
         const xc = self.cross orelse return null;
-        const info = self.aliased_type_exports.get(type_name) orelse xc.exports.get(type_name) orelse return null;
+        const info = self.imported_type_exports.get(type_name) orelse xc.exports.get(type_name) orelse return null;
         switch (info.kind) {
             .record, .@"enum" => {},
             else => return null,

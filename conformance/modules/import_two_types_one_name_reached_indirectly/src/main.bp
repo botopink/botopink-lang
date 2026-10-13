@@ -1,0 +1,32 @@
+//// Decision 310 — two same-named types of two modules, each under an alias,
+//// stay two types wherever a value of one reaches this module: through a
+//// module namespace's call (`pa.slow()`), an imported template's built code
+//// (`quick("x")` builds `slow()` in `a/p`'s scope), and a member a decorator
+//// of `a/p` adds (`policy()`, which answers `a/p`'s `Policy`). Each is the
+//// alias's type here.
+
+pub mod a;
+pub mod b;
+import {a.p as pa, a.p.Policy as APolicy, a.p.quick, a.p.stamp};
+import {b.p as pb, b.p.Policy as BPolicy};
+
+fn twice(p: APolicy) -> i32 {
+    return p.ms * 2;
+}
+
+fn shout(p: BPolicy) -> string {
+    return p.name + "!";
+}
+
+#[stamp]
+type Job(id: i32)
+
+pub fn main() {
+    val x: APolicy = pa.slow();
+    val y: BPolicy = pb.named();
+    @print(pa.msOf(x));
+    @print(shout(y));
+    @print(pa.msOf(APolicy(ms: 3)));
+    @print(twice(quick("x")));
+    @print(twice(Job(id: 1).policy()));
+}

@@ -2003,14 +2003,19 @@ silently to whichever registered last; `modules/own_type_beside_std_type_import`
 one name under two aliases stay legal: a function is bound by its local name.
 
 **Decision 310 — two imported types of one declared name are two types.** `comptime.zig`
-`contestedTypeNames` finds the declared names two non-std type import items of the module resolve
-to in two different modules (a name the module declares itself is left out: B-23-a's case stays
-refused); `resolveImports` registers each ALIASED item of such a name under its alias
+`contestedTypeNames` finds the declared names two type import items of the module resolve to in
+two different modules — a std leaf (`collections.Dict [as D]`) counts and keeps its declared name,
+so only the other module's aliased item is renamed (a name the module declares itself is left out:
+B-23-a's case stays refused); `resolveImports` registers each ALIASED item of such a name under its alias
 (`Env.renamedTypeImports`, `infer.registerRenamedImportedType` → `type_identity.zig` `renameDecl`:
 the declaration named the alias, printed as declared, its own name in its signatures renamed), binds
 no checker alias, and renames the types of every value it imports from another module
 (`infer.renameImportedType`: a type the owner names that is a renamed import's declaration —
-the owner's own, or one it imported, matched through the `"\x00"` scope — is spelled by the alias).
+the owner's own, or one it imported, matched through the `"\x00"` scope — is spelled by the alias;
+the same rename applies to a module namespace's call (`inferCallExpr`'s namespace branch, a
+namespace-qualified type read by `metaReadType`), a template's hygiene binding (`applyDslHygiene`) and
+`written_names.bindValue`, and `memberRenames` names a decorator member's type by the alias this
+module holds it under, `written_names.renamedAliasOf`, before any hygiene import).
 `noteExplicitTypeNames` notes such an item under its alias, so `import {a.p.Policy as APolicy};
 import {b.p.Policy as BPolicy};` (or one of the two un-aliased) is legal; two un-aliased items stay
 `import-name-collision` (170). The alias stays in the transformed program (it is not in

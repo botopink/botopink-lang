@@ -589,6 +589,22 @@ test "infer: an aliased type's value is not the other same-named type" {
     try std.testing.expect(std.mem.indexOf(u8, err.?, "BPolicy") != null);
 }
 
+// Decision 310 — a value reached through a module namespace's call is the
+// alias's type too.
+test "infer: a namespace call answers the aliased same-named type" {
+    const err = try policyConsumerTypeError(
+        \\import {app.a as pa, app.a.Policy as APolicy};
+        \\import {app.b.Policy as BPolicy, app.b.named};
+        \\pub fn total() -> string {
+        \\    val x: APolicy = pa.slow();
+        \\    return named(BPolicy(name: "n")) + x.ms.toString();
+        \\}
+    , "comptime/two_aliased_types_namespace");
+    defer if (err) |e| std.testing.allocator.free(e);
+    if (err) |e| std.debug.print("unexpected: {s}\n", .{e});
+    try std.testing.expect(err == null);
+}
+
 // Question B-23-a is open: a type of this module beside an aliased import of
 // a same-named type stays `import-name-collision`.
 test "infer: a local type beside an aliased same-named import stays refused" {

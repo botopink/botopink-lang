@@ -1,0 +1,27 @@
+//// Decision 310 — std's `collections.Dict` and another module's `Dict`, each
+//// imported under an alias, are two types: `D` is std's dictionary, `KitDict`
+//// is `kit`'s record, `kit`'s `fresh() -> Dict` answers a `KitDict` here, it
+//// prints as declared, and `is` tests for it.
+
+pub mod kit;
+import {collections.Dict as D} from "std";
+import {kit.Dict as KitDict, kit.fresh};
+
+fn ms(d: KitDict) -> i32 {
+    return d.initialMs;
+}
+
+fn kind(v: unknown) -> string {
+    if (v is KitDict) return "kit";
+    return "other";
+}
+
+pub fn main() {
+    val d: D<string, i32> = D.empty().insert("k", 7);
+    @print(d.size());
+    @print(ms(KitDict(initialMs: 5)));
+    @print(ms(fresh()));
+    @print(KitDict(initialMs: 2));
+    @print(kind(fresh()));
+    @print(kind(7));
+}

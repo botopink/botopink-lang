@@ -450,7 +450,11 @@ Decision 310 (144 B-23) turns `modules/import_two_types_one_name` and
 `modules/import_two_enums_one_name`, on the four targets: two same-named types of two modules, each
 imported under an alias (or one of the two), are two types — each constructs, prints as declared,
 answers its own method and is told apart by `is`, and a function of either module takes and answers
-its own. Each refused (`import-name-collision`) by the parent binary.
+its own. Each refused (`import-name-collision`) by the parent binary. It adds
+`modules/import_two_types_one_name_reached_indirectly` (the alias's type answered through a
+namespace call, an imported template's built code and a decorator's member) and
+`modules/import_std_type_beside_aliased_type` (std's `Dict` beside another module's, each aliased),
+each refused or mistyped by the parent binary.
 `modules/behavior_default_fn_body_checked` and `test/behavior_default_fn_result` (another front's
 finding) — a behavior's `default fn` body is checked (an unbound call is refused at it), and a
 `-> @Result` default fn wraps its `return` and `throw`, its adopted call answering the `@Result`; a

@@ -2767,9 +2767,28 @@ fn contestedTypeNames(
     for (program.decls) |decl| {
         if (decl != .use) continue;
         const u = decl.use;
-        switch (u.source) {
-            .module => |m| if (std.mem.eql(u8, m, "std")) continue,
-            .root, .key => {},
+        const from_std = switch (u.source) {
+            .module => |m| std.mem.eql(u8, m, "std"),
+            .root, .key => false,
+        };
+        if (from_std) {
+            // A std type leaf (`collections.Dict [as D]`) is one of the two:
+            // it keeps its declared name, and the other module's aliased
+            // item is the one held under its alias.
+            for (u.imports) |imp| {
+                if (!imp.isQualified()) continue;
+                const name = imp.leaf();
+                const path = try std.mem.concat(env.arena, u8, &.{ "std/", try imp.prefixPath(env.arena) });
+                const d = (typeDeclRegistry.get(path) orelse continue).get(name) orelse continue;
+                if (d != .type_) continue;
+                const gop = try first.getOrPut(env.arena, name);
+                if (!gop.found_existing) {
+                    gop.value_ptr.* = path;
+                } else if (!std.mem.eql(u8, gop.value_ptr.*, path)) {
+                    try out.put(env.arena, name, {});
+                }
+            }
+            continue;
         }
         const scope = packageScope(typeDeclRegistry, u.source);
         for (u.imports) |imp| {

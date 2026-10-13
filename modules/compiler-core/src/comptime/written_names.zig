@@ -17,6 +17,7 @@
 const std = @import("std");
 const ast = @import("../ast.zig");
 const envMod = @import("env.zig");
+const infer = @import("infer.zig");
 const Env = envMod.Env;
 const reflectionMod = @import("reflection.zig");
 const member_fn = @import("member_fn.zig");
@@ -99,7 +100,9 @@ pub fn bindValue(env: *Env, module: []const u8, name: []const u8) Error!?[]const
         const scope = env.bodyScope;
         env.bodyScope = null;
         defer env.bodyScope = scope;
-        env.bind(alias, ty) catch return error.OutOfMemory;
+        // Decision 310 — its signature names a type this module holds
+        // under an alias.
+        env.bind(alias, try infer.renameImportedType(env, ty, module)) catch return error.OutOfMemory;
     }
     return alias;
 }
@@ -214,9 +217,21 @@ pub fn typeNameTaken(env: *const Env, module: []const u8, name: []const u8) bool
     };
     var it = env.importedTypeDecls.iterator();
     while (it.next()) |e| {
+        // Decision 310 — a type held under its alias does not hold the name.
+        if (env.renamedTypeImports.contains(e.key_ptr.*)) continue;
         if (std.mem.eql(u8, e.value_ptr.name, name) and !std.mem.eql(u8, e.value_ptr.module, module)) return true;
     }
     return false;
+}
+
+/// Decision 310 — the alias this module holds `module`'s type `name` under
+/// (`Env.renamedTypeImports`), or null.
+pub fn renamedAliasOf(env: *const Env, module: []const u8, name: []const u8) ?[]const u8 {
+    var it = env.renamedTypeImports.iterator();
+    while (it.next()) |e| {
+        if (std.mem.eql(u8, e.value_ptr.name, name) and std.mem.eql(u8, e.value_ptr.module, module)) return e.key_ptr.*;
+    }
+    return null;
 }
 
 test "renameArgs: each name the annotation wrote renamed, literals and labels kept" {

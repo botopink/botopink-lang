@@ -5996,6 +5996,11 @@ fn memberRenames(
         for (typeArgs) |ta| if (std.mem.eql(u8, ta.name, n)) continue :next;
         for (out.items) |done| if (std.mem.eql(u8, done.from, n)) continue :next;
         const w = (try r.written(env.arena, owner, n)) orelse continue;
+        // Decision 310 — a type this module holds under an alias is named by it.
+        if (w.isType) if (writtenNames.renamedAliasOf(env, w.module, w.name)) |al| {
+            try out.append(env.arena, .{ .from = n, .to = al });
+            continue;
+        };
         if (w.isType and writtenNames.typeNameTaken(env, w.module, w.name)) {
             const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s}]`'s member `{s}` names `{s}`'s type `{s}`, and this module holds another type declared `{s}`; a type is told apart by its declared name, so one module holds one type of a name", .{ diagnostics.import_name_collision, a.name, c.name, w.module, w.name, w.name });
             return decoratorError(env, a, msg, "Rename this module's own type, or annotate the type from a module that holds no other type of that name (decision 310's gap).");
@@ -6356,8 +6361,11 @@ fn metaReadType(env: *Env, call: anytype, loc: ast.Loc) InferError!MetaReadType 
     const ctorType: ?*T.Type = switch (arg.identifier.kind) {
         .ident => |n| env.lookup(n) orelse env.typeOnlyCtors.get(n),
         .identAccess => |ia| blk: {
-            const exports = env.namespaces.modules.getPtr(ia.receiver.identifier.kind.ident) orelse break :blk null;
-            break :blk exports.get(ia.member);
+            const ns = ia.receiver.identifier.kind.ident;
+            const exports = env.namespaces.modules.getPtr(ns) orelse break :blk null;
+            const exported = exports.get(ia.member) orelse break :blk null;
+            // Decision 310 — renamed as a namespace call's signature is.
+            break :blk if (env.namespaces.paths.get(ns)) |path| try renameImportedType(env, exported, path) else exported;
         },
         else => null,
     };
@@ -9949,7 +9957,8 @@ fn applyDslHygiene(env: *Env, tfn: ast.FnDecl, parsed: *ast.Expr, src: []const u
                 const scope = self.env.bodyScope;
                 self.env.bodyScope = null;
                 defer self.env.bodyScope = scope;
-                try self.env.bind(alias, ty);
+                // Decision 310 — renamed as an imported value's type is.
+                try self.env.bind(alias, try renameImportedType(self.env, ty, self.owner));
             }
             return alias;
         }
@@ -20507,11 +20516,14 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                     // An explicit import wins over a same-named prelude
                     // binding, as a `from "std"` one does.
                     if (env.namespaces.modules.get(ns)) |exports| {
-                        const exported = exports.get(call.callee) orelse {
+                        const exported_ = exports.get(call.callee) orelse {
                             const msg = try std.fmt.allocPrint(env.arena, "module `{s}` has no public `{s}`", .{ ns, call.callee });
                             env.lastError = TypeError.custom(msg, "Check the name against the module's `pub` declarations.").withLoc(loc);
                             return error.TypeError;
                         };
+                        // Decision 310 — its signature names a type this
+                        // module holds under an alias.
+                        const exported = if (env.namespaces.paths.get(ns)) |path| try renameImportedType(env, exported_, path) else exported_;
                         var seen = std.AutoHashMap(*T.TypeCell, *T.Type).init(env.arena);
                         defer seen.deinit();
                         const instantiated = try instantiateType(env, exported, &seen, .allVars);
