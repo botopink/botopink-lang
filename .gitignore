@@ -10,3 +10,5 @@ _memory.md
 # std/snapshots candidates (1.0.10-beta decision 67): a person renames one to record it
 *.snap.new
 erl_crash.dump
+# a cell's build output (`botopink build --out out`) is never tracked
+conformance/modules/*/out/
