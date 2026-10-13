@@ -1452,3 +1452,42 @@ test "infer: template-call-unexpanded ---- the backstop refuses a template call 
     defer std.testing.allocator.free(msg);
     try std.testing.expectEqualStrings("template-call-unexpanded: `shout \"…\"` calls a template function here, where the compiler does not expand it", msg);
 }
+
+test "templates: a raise in another module's template body names the body's file" {
+    // 144 B-23's proposed cell (`template_raise_names_body_file`): the call
+    // site is located in this module, and the message names the call that
+    // raised in the template's own file — `tpl.bp` (`@src().file` of a module
+    // the driver gave no `srcPath`), line 3, column 5.
+    const tpl =
+        \\pub fn shout(comptime t: @Expr<string>) -> @Expr<string> {
+        \\    val s = t.text();
+        \\    @panic("boom " + s);
+        \\    return t.build("\"" + s + "\"");
+        \\}
+    ;
+    const src =
+        \\import {tpl.shout};
+        \\pub fn main() {
+        \\    @print(shout "hi");
+        \\}
+    ;
+    const io = std.testing.io;
+    const build_root = h.buildRootPathFromSrc(io, @src());
+    var session = try comptimeMod.compile(std.testing.allocator, &.{
+        .{ .path = "tpl", .source = tpl },
+        .{ .path = "", .source = src },
+    }, io, build_root, null);
+    defer session.deinit(std.testing.allocator);
+    const outcome = for (session.outputs.items) |o| {
+        if (std.mem.eql(u8, o.name, "main")) break o.outcome;
+    } else return error.TestNoMainOutput;
+    try std.testing.expect(outcome == .typeError);
+    const message = try outcome.typeError.message(std.testing.allocator);
+    defer std.testing.allocator.free(message);
+    if (std.mem.indexOf(u8, message, "raised at tpl.bp:3:5 while `shout` ran the template's body") == null) {
+        std.debug.print("\nexpected the body's file in: {s}\n", .{message});
+        return error.TestUnexpectedResult;
+    }
+    const got = outcome.typeError.loc orelse return error.TestUnexpectedResult;
+    try std.testing.expectEqual([2]usize{ 3, 12 }, [2]usize{ got.line, got.col });
+}

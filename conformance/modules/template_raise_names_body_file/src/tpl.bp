@@ -1,0 +1,5 @@
+pub fn shout(comptime t: @Expr<string>) -> @Expr<string> {
+    val s = t.text();
+    @panic("boom " + s);
+    return t.build("\"" + s + "\"");
+}

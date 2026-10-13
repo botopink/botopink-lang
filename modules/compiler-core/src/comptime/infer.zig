@@ -9562,8 +9562,17 @@ fn expandTemplateCallViaRuntime(
     const numbered = try templateEval.numberBuilds(env.arena, runTfn);
     var extras: templateEval.Extras = .{};
     var tags: std.ArrayListUnmanaged(decoratorEval.DeclHandle) = .empty;
+    // Decision 451 (3) — another module's template: the calls of its body
+    // and of the functions of its module it reaches are located, in that
+    // module's file, which a raise's diagnostic then names
+    // (`srcPathOfModule`).
+    var located: std.ArrayListUnmanaged([]const u8) = .empty;
+    if (!own_template) {
+        try located.append(env.arena, numbered.f.name);
+        for (carried[1..]) |sf| if (std.mem.eql(u8, env.comptimeOwnerOf(sf), owner)) try located.append(env.arena, sf.name);
+    }
     const outcome = while (true) {
-        const run = templateEval.evaluate(env.arena, ctx.io, ctx.build_root, owner, srcPathOfModule(env, owner), numbered.f, runSupport, types, valued, plainArgs, &env.comptimeTraces, &extras) catch {
+        const run = templateEval.evaluate(env.arena, ctx.io, ctx.build_root, owner, srcPathOfModule(env, owner), numbered.f, runSupport, located.items, types, valued, plainArgs, &env.comptimeTraces, &extras) catch {
             env.lastError = TypeError.custom(
                 "the template evaluator failed to run",
                 "Template bodies run on the wasm comptime runtime inside the compiler (decision 434); this failure is the compiler's, not the body's — report it.",
@@ -9658,6 +9667,13 @@ fn expandTemplateCallViaRuntime(
                 msg,
                 "Thrown while evaluating the template function's body at compile time.",
             ).withLoc(loc);
+            return error.TypeError;
+        },
+        // The call that raised is in the template's own file: the call site
+        // is located, the message names the call there.
+        .raised => |failed| {
+            const msg = try std.fmt.allocPrint(env.arena, "{s} — raised at {s}:{d}:{d} while `{s}` ran the template's body", .{ failed.message, srcPathOfModule(env, owner), failed.at.line, failed.at.col, tfn.name });
+            env.lastError = TypeError.custom(msg, "the template's body raised; the call that raised is named in the message").withLoc(loc);
             return error.TypeError;
         },
         // Answered by the loop above.

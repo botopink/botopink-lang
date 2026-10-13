@@ -46,6 +46,7 @@ const etf = @import("./runtime/etf.zig");
 const stages = @import("./runtime/stages.zig");
 const trace = @import("./trace.zig");
 const decoratorSame = @import("./decorator_same.zig");
+const blockEval = @import("./block_eval.zig");
 
 // ── results ───────────────────────────────────────────────────────────────────
 
@@ -87,6 +88,10 @@ pub const Outcome = union(enum) {
         span: ?template.Span,
     },
     err: []const u8,
+    /// The body raised, and the raise left a call of one of the `located`
+    /// functions (decision 451 (3), `erlang.ComptimeModule.located`): the
+    /// text, and where that call starts — the innermost such call.
+    raised: struct { message: []const u8, at: ast.Loc },
     /// Decision 302 — `q.annotate(decl, at)` has no answer yet: run the
     /// annotation written at `span` over the tag and evaluate again.
     need: struct {
@@ -127,6 +132,11 @@ pub fn evaluate(
     /// The functions `tfn`'s body reaches (`infer.decoratorSupport`, decision
     /// 331's "calls included"), compiled into the module beside it.
     support: []const ast.FnDecl,
+    /// Decision 451 (3) — the functions of another module's template whose
+    /// calls are located (`tfn` and the `support` functions of its module),
+    /// by name: a raise that leaves one of their calls is `Outcome.raised` at
+    /// it, in `owner_file`. Empty for the module's own template.
+    located: []const []const u8,
     /// The record and enum types `tfn` and `support` name, with the methods
     /// they call (`block_eval.typesReached`).
     types: []const ast.DeclKind,
@@ -141,7 +151,7 @@ pub fn evaluate(
     var unsupported: erlang.UnsupportedMethod = .{};
     var refused: []const u8 = "";
     const t_module = stages.start();
-    const source = buildModule(arena, owner, tfn, support, types, captures, plainArgs, &unsupported, &refused) catch |err| switch (err) {
+    const source = buildModule(arena, owner, tfn, support, located, types, captures, plainArgs, &unsupported, &refused) catch |err| switch (err) {
         error.UnsupportedMethod => return .{ .err = try unsupportedText(arena, "template", tfn.name, owner_file, unsupported) },
         error.HostCell => return .{ .err = refused },
         else => |e| return e,
@@ -730,7 +740,7 @@ const host_records = [_]erlang.HostRecord{
 /// (`runtime/prelude.zig`), reached by the `-import` `emitComptimeModule`
 /// writes. Nothing here depends on the call site any more — that is what makes
 /// the module's hash a hash of the declaration.
-fn mainForms(b: Ast.Builder, tfn: ast.FnDecl, plans: []const ArgPlan, annotates: bool) EvalError![]const Ast.Form {
+fn mainForms(b: Ast.Builder, tfn: ast.FnDecl, plans: []const ArgPlan, annotates: bool, locating: bool) EvalError![]const Ast.Form {
     const V = Ast.Expr.v;
     const A = Ast.Expr.a;
     const fail_tag = A(preludeMod.template_fail_tag);
@@ -777,9 +787,21 @@ fn mainForms(b: Ast.Builder, tfn: ast.FnDecl, plans: []const ArgPlan, annotates:
             })}),
         },
     };
+    // Decision 451 (3) — a module whose calls are located answers where the
+    // raise left them (`'__bp_raised_at'/0`); the module's own template keeps
+    // the reply it had.
+    const located_error: Ast.Clause = .{
+        .patterns = others[1].patterns,
+        .body = try b.body(&.{try json(b, &.{
+            Ast.field("kind", Ast.str("error")),
+            Ast.field("message", try b.call("__bp_text", &.{try b.tuple(&.{ V("Class"), V("Reason") })})),
+            Ast.field("at", try b.call("__bp_raised_at", &.{})),
+        })}),
+    };
+    const catches = if (locating) &[_]Ast.Clause{ others[0], located_error } else &others;
     const tried: Ast.Expr = .{ .try_catch = .{
         .body = try b.body(&.{try b.remote("json", "encode", &.{try b.call(preludeMod.extras_fn, &.{try b.call("__bp_reply", &.{invoke})})})}),
-        .catches = if (annotates) try std.mem.concat(b.arena, Ast.Clause, &.{ &.{need}, &others }) else try b.arena.dupe(Ast.Clause, &others),
+        .catches = if (annotates) try std.mem.concat(b.arena, Ast.Clause, &.{ &.{need}, catches }) else try b.arena.dupe(Ast.Clause, catches),
     } };
     const reset = try b.call(preludeMod.extras_reset_fn, &.{});
     const main_body = if (annotates) try b.body(&.{ reset, try b.call("__bp_annotateReset", &.{}), tried }) else try b.body(&.{ reset, tried });
@@ -798,6 +820,7 @@ fn buildModule(
     owner: []const u8,
     tfn: ast.FnDecl,
     support: []const ast.FnDecl,
+    located: []const []const u8,
     types: []const ast.DeclKind,
     captures: []const template.CapturedExpr,
     plainArgs: []const template.PlainArg,
@@ -810,7 +833,7 @@ fn buildModule(
     const annotates = decoratorSame.mentionsMethod(tfn, "annotate") or for (support) |f| {
         if (decoratorSame.mentionsMethod(f, "annotate")) break true;
     } else false;
-    const forms = try mainForms(b, tfn, plans, annotates);
+    const forms = try mainForms(b, tfn, plans, annotates, located.len > 0);
     const resident = try preludeMod.templateForms(b);
 
     const all = try arena.alloc(ast.DeclKind, 1 + support.len + types.len);
@@ -836,9 +859,29 @@ fn buildModule(
             .refs = try preludeMod.exportRefs(arena, resident),
         },
         .unsupported_method = unsupported,
+        .located = located,
     };
     const argument = try argumentTerm(arena, plans);
-    const key = try emitKey(arena, "tpl", owner, decls, plans);
+    // The located functions change the code, so they are part of the key, as
+    // a decorator's are (`decorator_eval.buildModule`).
+    var kind: std.ArrayListUnmanaged(u8) = .empty;
+    try kind.appendSlice(arena, "tpl");
+    for (located) |n| {
+        try kind.append(arena, 1);
+        try kind.appendSlice(arena, n);
+    }
+    for (decls) |d| switch (d) {
+        .@"fn" => |f| for (located) |n| {
+            if (std.mem.eql(u8, f.name, n)) {
+                try kind.append(arena, 2);
+                try kind.appendSlice(arena, n);
+                try appendLocs(arena, &kind, f);
+                break;
+            }
+        },
+        else => {},
+    };
+    const key = try emitKey(arena, kind.items, owner, decls, plans);
     const emitted: Emitted = (if (key) |k| cachedEmit(k) else null) orelse blk: {
         const code = erlang.emitComptimeModule(arena, placeholder_module, .{ .decls = decls }, config) catch |err|
             return if (err == error.UnsupportedComptimeMethod) error.UnsupportedMethod else error.EvalFailed;
@@ -1153,6 +1196,9 @@ const Reply = struct {
     value: std.json.Value = .null,
     ast: std.json.Value = .null,
     decl: std.json.Value = .null,
+    /// Decision 451 (3) — `[Line, Col]` of the innermost located call a
+    /// raise left (`'__bp_raised_at'/0`), `[]` when none.
+    at: ?std.json.Value = null,
     /// Decision 426 — `'__bp_extras'/1`: the build answered, the notes given
     /// (latest first).
     build: ?i64 = null,
@@ -1190,7 +1236,9 @@ fn parseOutcomeExtras(arena: std.mem.Allocator, stdout: []const u8, extras: ?*Ex
         .param = reply.param,
         .span = reply.span,
     } };
-    return .{ .err = if (reply.message.len > 0) reply.message else "template evaluation failed" };
+    const message = if (reply.message.len > 0) reply.message else "template evaluation failed";
+    if (blockEval.raisedAt(reply.at)) |at| return .{ .raised = .{ .message = message, .at = at } };
+    return .{ .err = message };
 }
 
 /// Decision 302 — the request `q.annotate(decl, at)` replied with: the tag
@@ -1394,8 +1442,8 @@ test "template module: one module per declaration, the capture as the argument" 
     var refused: []const u8 = "";
     const one = try capture(arena, "alpha");
     const two = try capture(arena, "a much longer literal");
-    const first = try buildModule(arena, "", tfn, &.{}, &.{}, &.{one}, &.{}, &unsupported, &refused);
-    const second = try buildModule(arena, "", tfn, &.{}, &.{}, &.{two}, &.{}, &unsupported, &refused);
+    const first = try buildModule(arena, "", tfn, &.{}, &.{}, &.{}, &.{one}, &.{}, &unsupported, &refused);
+    const second = try buildModule(arena, "", tfn, &.{}, &.{}, &.{}, &.{two}, &.{}, &unsupported, &refused);
 
     // Two call sites with different literals, one module — the difference is
     // entirely in `main/1`'s argument.
@@ -1418,7 +1466,7 @@ test "template module: one module per declaration, the capture as the argument" 
     // same body declared in another module is another module, and one no
     // module owns keeps the compiler's own `bp@comptime`.
     try std.testing.expect(std.mem.startsWith(u8, first.module, "bp@comptime__tpl__shout__"));
-    const owned = try buildModule(arena, "ui/panel", tfn, &.{}, &.{}, &.{one}, &.{}, &unsupported, &refused);
+    const owned = try buildModule(arena, "ui/panel", tfn, &.{}, &.{}, &.{}, &.{one}, &.{}, &unsupported, &refused);
     try std.testing.expect(std.mem.startsWith(u8, owned.module, "bp@comptime@ui@panel__tpl__shout__"));
     try std.testing.expect(std.mem.startsWith(u8, owned.code, "-module(bp@comptime@ui@panel__tpl__shout__"));
     const decoded = try crossModule.decodeAtom(arena, owned.module);
@@ -1426,7 +1474,7 @@ test "template module: one module per declaration, the capture as the argument" 
     try std.testing.expectEqualStrings("comptime/ui/panel", decoded.path);
     try std.testing.expectEqualStrings("tpl", decoded.kind);
     try std.testing.expectEqualStrings("shout", decoded.decl);
-    const elsewhere = try buildModule(arena, "ui/card", tfn, &.{}, &.{}, &.{one}, &.{}, &unsupported, &refused);
+    const elsewhere = try buildModule(arena, "ui/card", tfn, &.{}, &.{}, &.{}, &.{one}, &.{}, &unsupported, &refused);
     try std.testing.expect(!std.mem.eql(u8, owned.module, elsewhere.module));
     // The hash segment is the body's, whoever owns it.
     try std.testing.expectEqualStrings(first.module[first.module.len - 16 ..], owned.module[owned.module.len - 16 ..]);

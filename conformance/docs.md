@@ -150,7 +150,9 @@ section follows, closed by a `---` line, then the markup). A file with no
 separator line is markup only. The file unfolds to a module:
 
 - the header's declarations — `import`, `type`, `pub …`, a private `fn`, a
-  `test`, a decorated declaration — stay at module level, as written;
+  `test`, a decorated declaration — stay at module level, as written (a `test`
+  is found and run by `botopink test` as one in a `.bp` module is,
+  `test/bpp_header_test`);
 - the module's anonymous `pub default fn (props: Props) -> R` — `()` when the
   header declares no `Props` — whose body is the header's statements (`val`,
   `var`, `use`, `if`, an expression statement) in order, so they read `props`;
@@ -173,6 +175,7 @@ line and column — the header's, the markup's and the style section's alike.
 <!-- example: modules/bpp_unfold_without_props -->
 <!-- example: modules/bpp_decorator_last_line -->
 <!-- example: modules/bpp_diagnostics_located -->
+<!-- example: test/bpp_header_test -->
 
 Refused, each at its line: a first line `---` (`the header starts on the first
 line; a .bpp has no opening ---`), a `--- style ---` after the markup, a second
@@ -1823,11 +1826,14 @@ parameters stay (decision 374). A lambda handed to a botopink function takes
 the map, passed by the call that runs it. erlang, beam, commonJS and wasm run
 it — on wasm a value crosses the scope as its own word, typed where it is read
 back by the checker's type the lowering carries (decision 504); a value of any
-type crosses it, an `f64` or an `i64` provided or rendered there included. A
+type crosses it, an `f64` or an `i64` provided or rendered there included —
+and a `?f64` or a `?i64`, with its number or `null`. A
 component reached from a `comptime` evaluation does not take the map yet
 (`language-gaps.md` row 354-comptime).
 
 <!-- example: modules/context_wide_number_through_scope -->
+
+<!-- example: modules/context_optional_wide_number_through_scope -->
 
 **Only a component whose own body awaits is a state machine** (decision 504),
 on every target: it writes `await` or `uses` an asynchronous hook (375 (1)).
@@ -1838,8 +1844,12 @@ pays nothing and a component waiting on the host (`delay`) lets the render go
 on once its task settles (`modules/component_awaits_host_task`). A body that
 keeps a bare `try` and then awaits is one too: the `try` leaves early with the
 error before the wait, and past it the render waits on the host as before.
+A `try … catch` never leaves: the `catch` value stands for the error and the
+body waits on the host the same way.
 
 <!-- example: modules/component_try_then_awaits_host_task -->
+
+<!-- example: modules/component_try_catch_then_awaits_host_task -->
 
 ## Functions
 
@@ -2490,11 +2500,16 @@ A decorator's body runs in its own module wherever it annotates: an imported
 decorator may build a record private to that module. A body that raises is
 refused at the annotation that ran it, and the message names the call that
 raised in the body's own file (``raised at src/deco.bp:3:5 while `#[check]` ran
-the decorator's body``).
+the decorator's body``). A template's body runs the same way: one declared in
+another module whose body raises is refused at the call that expanded it, and
+the message names the call that raised in the template's file (``raised at
+src/tpl.bp:3:5 while `shout` ran the template's body``).
 
 <!-- example: modules/decorator_imported_builds_private_record -->
 
 <!-- example: modules/decorator_raise_names_body_file -->
+
+<!-- example: modules/template_raise_names_body_file -->
 
 A member a decorator adds is written as if by hand: a record update in its body
 (`Point(..self, y: 0)`) copies every field it does not name. A decorator's body

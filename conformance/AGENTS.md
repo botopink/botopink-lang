@@ -327,7 +327,10 @@ no wasm binding), and `modules/component_awaits_host_task` pins 504's rule (a co
 state machine, a sibling that awaits nothing stays direct; red on the parent, whose wasm refused every component),
 `modules/component_try_then_awaits_host_task` the same through a bare `try` (the tail the lowering runs as an inner
 closure waits on the host too; wasm trapped) and `modules/context_wide_number_through_scope` an `f64` and an `i64`
-provided and rendered through the scope (wasm refused them, no word holding one). A
+provided and rendered through the scope (wasm refused them, no word holding one); B-25's Conformance step proposed
+two pins beside them, `modules/context_optional_wide_number_through_scope` (a `?f64` and a `?i64` provided with
+their number and with `null`) and `modules/component_try_catch_then_awaits_host_task` (a `try … catch` then a host
+`await` in a component). A
 component called as a statement outside a body runs nothing now, so `modules/effect_chain`,
 `modules/effect_context_await`, `modules/use_one_base`, `modules/component_result_try_await` and
 `modules/component_hook_and_component` `await` it in `main`, and `modules/component_sync_plain_function` reads
@@ -588,7 +591,11 @@ argument); both `unexpected ','` / a comparison on the parent binary.
 144 B-23 (a comptime body's diagnostic names the body's file) adds
 `modules/decorator_raise_names_body_file` — a decorator declared in `src/deco.bp` whose body
 `@panic`s, refused at the annotation in `src/main.bp` with the message naming
-`src/deco.bp:3:5`; the parent binary named no file.
+`src/deco.bp:3:5`; the parent binary named no file. Its Conformance step's proposal adds
+`modules/template_raise_names_body_file` — a template declared in `src/tpl.bp` whose body `@panic`s, refused at
+the call in `src/main.bp` with the message naming `src/tpl.bp:3:5` (the parent binary named no file) — and B-27's
+the project suite `test/bpp_header_test` (a `test` written in a `.bpp` header, found and run by `botopink test`
+on commonJS, erlang and beam; a pin).
 Decision 255 (2) (`comptime <expr>` is `comptime { break <expr>; }`) adds `modules/comptime_expression_is_block`
 (a module-level shorthand equal to its block form, and the same in a body) and
 `modules/comptime_expression_static_call` (the decision's own `val d: Dict<string, unknown> = comptime
