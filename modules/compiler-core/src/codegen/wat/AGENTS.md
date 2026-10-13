@@ -864,6 +864,46 @@ reached function addresses it. A decoded function's nesting indents its lines
 to column 40 at most (`std_wasm_link.zig` `deeper`): LLVM lowers the case
 tables' `switch`es to hundreds of nested blocks.
 
+## How far a program grows without collection (decision 448, front 144 B-30)
+
+`$__alloc` bumps `$__heap_ptr` and never frees: every value a program makes
+stays in linear memory until the program ends. Measured 2026-10-12, before any
+collector was designed (448: the design follows this), on the compiler at
+`feat`, each program built `--target wasm` (`wasi`) and run by `wasmtime` with
+`-W max-memory-size` bisected to the smallest memory (64 KiB pages) the run
+completes in. The live data of every program below is a few integers: what
+grows is garbage.
+
+| Program | N | Smallest memory | Growth |
+|---|---|---|---|
+| hello world | — | 1 page | — |
+| a loop building one string per iteration (`"item-" + i.toString() + "-" + "payload"`, its length summed) | 10³ · 10⁴ · 10⁵ | 64 KiB · 640 KiB · 6 656 KiB | ~68 bytes per iteration, linear |
+| a request loop: a request line parsed (`split`, a record), a response built (`join`, `toUpper`, concatenation, the length's text), its length summed | 10³ · 10⁴ · 10⁵ | 704 KiB · 6 976 KiB · 70 976 KiB | ~727 bytes per request, linear |
+| the same loop as `@Task`s: `serve(n) -> @Task<i32>` awaiting `handle(i) -> @Task<string>` per request | 10³ · 10⁴ · 10⁵ | 320 KiB · 3 200 KiB · 32 768 KiB | ~335 bytes per request (the task record and its frame included), linear |
+| a page render: ten records of three nodes each (`attrs`, `children`) rendered to HTML by `map` / `join` / concatenation, ~950 bytes of HTML per page | 10² · 10³ · 10⁴ | 1 664 KiB · 16 704 KiB · 171 840 KiB | ~17.6 KiB per page (18 times the HTML it answers), linear |
+
+- **Linear in the work, whatever the live set.** A server answering the
+  request loop's requests reaches wasm32's 4 GiB after ~5.9 million requests,
+  the page render after ~240 000 pages; a host that caps memory lower stops it
+  sooner.
+- **Exhaustion traps today.** At the cap, `memory.grow` answers `-1` and
+  `$__alloc` executes `unreachable` (the request loop under a 32 MiB cap:
+  `wasm trap: wasm 'unreachable' instruction executed` in `__alloc` ←
+  `__str_concat`); decision 448 (4) keeps that, never damaged data.
+- **Values are not written after they are made.** `push` answers a copy with
+  the element appended (`$__arr_push`; quadratic in a loop of pushes, which the
+  page render's ten cards pay), concatenation and every std-wasm function
+  answer fresh blocks: a block never points at a younger one. The exceptions
+  are the language runtime's own records — a `@Task` record (state, waiters,
+  value) and its frame are written after they are made — and a `var`'s cell
+  (448 (2)).
+- **onze's pages do not build on wasm**: `examples/blog` (`wasi`) is refused
+  in 67 modules — `jhonstart/element` (`the wasm backend walks an array or a
+  range; nothing shows this iterable is one`), std's `json` and `io/fs`
+  (`fs.readText` has no `#[@External.Wasm]`). The page render above is their
+  shape (an element tree rendered to a string); onze is measured when its pages
+  build.
+
 ## `Bytes` (decision 346)
 
 A `Bytes` is laid out as a string is — the address of its `u32` byte count, the bytes behind it —
