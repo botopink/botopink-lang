@@ -1,0 +1,20 @@
+//// A lambda written as an argument takes its parameter types from the
+//// declared function type of the parameter it fills: `n` is a string in
+//// `{ n -> n.startsWith(prefix) }` for `gone: fn(name: string) -> bool`,
+//// captured `prefix` included. wasm refused the method call, "no function,
+//// method, variant or function value ... answers it".
+
+pub fn countWhere(xs: string[], gone: fn(name: string) -> bool) -> i32 {
+    var n = 0;
+    for (xs) { x ->
+        if (gone(x)) n = n + 1;
+    }
+    return n;
+}
+
+pub fn main() {
+    val prefix = "a";
+    @print(countWhere(["ab", "ba", "ac"], { n -> n.startsWith(prefix) }));
+    @print(countWhere(["ab", "ba", "ac"], { n -> n.endsWith("a") }));
+    @print(countWhere(["ab", "ba"], { n -> true }));
+}

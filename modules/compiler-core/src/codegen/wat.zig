@@ -9373,6 +9373,13 @@ const Emitter = struct {
                     self.expected_union_array = true;
                 };
                 defer self.expected_union_array = false;
+                // A lambda written as an argument is written against the
+                // parameter's declared function type: `{ n -> n.startsWith(p) }`
+                // for `gone: fn(name: string) -> bool` has a string `n`.
+                if (ptref) |pt| if (pt == .function and arg.value.* == .function) {
+                    self.expected_fn = pt;
+                };
+                defer self.expected_fn = null;
                 if (self.boxesInto(ptref, arg.value.*))
                     try self.lowerBoxedInto(ptref, arg.value.*)
                 else
