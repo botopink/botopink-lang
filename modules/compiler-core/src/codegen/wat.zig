@@ -13598,6 +13598,13 @@ const Emitter = struct {
         return substTypeParams(ast.TypeRef, ar, ret, subs.items) catch ret;
     }
 
+    /// `?T` over a type already in hand.
+    fn optionalOf(self: *Emitter, t: ast.TypeRef) ?ast.TypeRef {
+        const inner = self.reg_arena.allocator().create(ast.TypeRef) catch return null;
+        inner.* = t;
+        return .{ .optional = inner };
+    }
+
     fn typeRefOf(self: *Emitter, e: ast.Expr) ?ast.TypeRef {
         // `o ?? d` over a `?T` answers a `T`, as `o.unwrapOr(d)` did below:
         // a `?u64`'s payload stays a `u64`, which prints, compares and turns
@@ -13642,6 +13649,13 @@ const Emitter = struct {
                     if (self.indexArgs(cc)) |ix| if (!ix.is_slice) if (self.elemTypeRefOf(ix.recv)) |et| if (isUnknownTypeRef(et)) break :blk et;
                     if (cc.receiver) |r| if (cc.args.len <= 1) if (self.elemTypeRefOf(r.*)) |et| if (isUnknownTypeRef(et)) {
                         for ([_][]const u8{ "at", "first", "last", "pop" }) |m| if (std.mem.eql(u8, cc.callee, m)) break :blk et;
+                    };
+                    // The same read off an array of tasks answers a `?@Task<T>`:
+                    // `xs[1] ?? t` and `xs.at(1) ?? t` stay tasks, so `await`
+                    // settles them instead of printing the handle.
+                    if (self.indexArgs(cc)) |ix| if (!ix.is_slice) if (self.elemTypeRefOf(ix.recv)) |et| if (isTaskTypeRef(et)) break :blk self.optionalOf(et);
+                    if (cc.receiver) |r| if (cc.args.len <= 1) if (self.elemTypeRefOf(r.*)) |et| if (isTaskTypeRef(et)) {
+                        for ([_][]const u8{ "at", "first", "last", "pop" }) |m| if (std.mem.eql(u8, cc.callee, m)) break :blk self.optionalOf(et);
                     };
                     // `o.unwrapOr(d)` over a `?T` answers a `T`: a `?u64`'s
                     // payload stays a `u64`, which prints, compares and turns
@@ -13738,6 +13752,13 @@ const Emitter = struct {
                 .arrayLit => |al| blk: {
                     if (al.elems.len == 0) break :blk null;
                     if (self.unionArrayLitTypeRef(al) catch null) |ut| break :blk ut;
+                    // `[double(1), double(2)]`: an array of tasks, so a `for`
+                    // over it binds tasks and `await t` settles each one.
+                    if (self.isTaskExpr(al.elems[0])) if (self.typeRefOf(al.elems[0])) |tt| if (isTaskTypeRef(tt)) {
+                        const inner = self.reg_arena.allocator().create(ast.TypeRef) catch break :blk null;
+                        inner.* = tt;
+                        break :blk .{ .array = inner };
+                    };
                     const first = switch (al.elems[0]) {
                         .call => |c| switch (c.kind) {
                             .call => |fc| fc,

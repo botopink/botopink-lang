@@ -135,7 +135,7 @@ is made and runs to its first `await`; it settles once.
 - **Outside a machine** (an eager `@Component` body) `await` of a task is
   `$__task_block_on`: the ready tasks run until it settles; one still waiting on
   the host traps, on both hosts. `await` of anything that is not a task
-  (`isTaskExpr`) is the identity it always was.
+  (`isTaskExpr`) is the identity it always was. A task is known by its type: `typeRefOf` answers an array literal of task calls as an array of tasks (a `for` binder over it is a task) and an index / `at` / `first` / `last` / `pop` read off an array of tasks as a `?@Task<T>` (`xs[1] ?? t` stays one); conformance cell `task_array_awaited_in_for`.
 - **The scheduler.** `_start` ends with `$__task_finish`: drain the ready queue,
   then `$__task_host_poll` (the `wasi` host's, `task_host_poll_wasi`, over
   `bp_host.wait`) until nothing is pending. On `browser` the poll answers `0` and
