@@ -1519,6 +1519,20 @@ pub fn badarithRefusal(env: *Env, msg: []const u8, e: ast.Expr, raised_at: ?ast.
     };
 }
 
+/// Decisions 451 (3), 456 — the refusal of an unseeded draw at build, as plain
+/// text: the runtime raises `{error,{bp_wat_runtime,<<"an unseeded draw: …">>}}`
+/// and the diagnostic is the binary alone, no Erlang term and no
+/// `the comptime block raised:` prefix, the same on the `comptime` and the
+/// decorator forms. Null when `text` is any other raise.
+pub fn unseededDraw(text: []const u8) ?[]const u8 {
+    const head = "{error,{bp_wat_runtime,<<\"";
+    const tail = "\">>}}";
+    if (!std.mem.startsWith(u8, text, head) or !std.mem.endsWith(u8, text, tail)) return null;
+    const plain = text[head.len .. text.len - tail.len];
+    if (!std.mem.startsWith(u8, plain, "an unseeded draw:")) return null;
+    return plain;
+}
+
 fn clip(text: []const u8) []const u8 {
     return text[0..@min(text.len, 4096)];
 }
@@ -1534,7 +1548,7 @@ fn parseReply(arena: std.mem.Allocator, stdout: []const u8) Error!Outcome {
     }
     const msg = parsed.object.get("message");
     const text = if (msg) |m| (if (m == .string) m.string else "") else "";
-    const message = try std.fmt.allocPrint(arena, "the comptime block raised: {s}", .{text});
+    const message = if (unseededDraw(text)) |plain| plain else try std.fmt.allocPrint(arena, "the comptime block raised: {s}", .{text});
     if (raisedAt(parsed.object.get("at"))) |at| return .{ .raised = .{ .message = message, .at = at } };
     return .{ .err = message };
 }
@@ -2339,4 +2353,11 @@ pub fn typesReached(env: *Env, fns: []const ast.FnDecl, skip: []const []const u8
         try out_types.append(arena, .{ .type_ = decl });
     }
     return .{ .fns = helpers.items, .types = out_types.items };
+}
+
+test "unseededDraw: the Erlang wrapper is dropped, other raises are left alone" {
+    const wrapped = "{error,{bp_wat_runtime,<<\"an unseeded draw: a build has no entropy, call `random.seed` first (decision 451)\">>}}";
+    try std.testing.expectEqualStrings("an unseeded draw: a build has no entropy, call `random.seed` first (decision 451)", unseededDraw(wrapped).?);
+    try std.testing.expect(unseededDraw("{error,badarith}") == null);
+    try std.testing.expect(unseededDraw("{error,{bp_wat_runtime,<<\"integer beyond 64 bits (a bignum)\">>}}") == null);
 }

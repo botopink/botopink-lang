@@ -655,7 +655,7 @@ fn parseOutcome(arena: std.mem.Allocator, stdout: []const u8) EvalError!Outcome 
         .span = if (reply.span) |sp| (if (sp.arg == null) template.Span{ .start = sp.start, .end = sp.end, .line = sp.line } else null) else null,
         .arg = if (reply.span) |sp| sp.arg else null,
     } };
-    const message = if (reply.message.len > 0) reply.message else "decorator evaluation failed";
+    const message = if (blockEval.unseededDraw(reply.message)) |plain| plain else if (reply.message.len > 0) reply.message else "decorator evaluation failed";
     if (blockEval.raisedAt(reply.at)) |at| return .{ .raised = .{ .message = message, .at = at } };
     return .{ .err = message };
 }
