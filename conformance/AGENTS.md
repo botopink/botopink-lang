@@ -2135,6 +2135,9 @@ associated fn's behavior-typed parameter (`expected Styleable, got Prop` before)
 `Decorator` / `Decorator[]` parameter of a decorator in a submodule (`expects Decorator, got fn(Decl)
 -> void` before).
 
+`modules/decorator_lambda_many_locals` pins a decorator lambda with 120 locals on the comptime
+runtime.
+
 What cannot be tested from botopink at all, and why: `@typeInfo` / `@makeRecord` / `partial` / `omit`
 / `pick` (they produce types, and asserting on emitted text is the snapshots' job). Struck from this
 list by C-16, each with the cell that covers it: `pub default mod` / `pub default fn`, `@ExprCustom` /
