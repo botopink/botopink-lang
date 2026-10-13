@@ -13394,6 +13394,36 @@ const Emitter = struct {
         return try substTypeParams(ast.TypeRef, ar, rt, subs.items);
     }
 
+    /// What a function argument answers: a lambda's last expression's type
+    /// (an `async { }` block's value), a value of a written function type
+    /// its declared return.
+    fn fnArgReturn(self: *Emitter, arg: ast.Expr) ?ast.TypeRef {
+        if (thunkTail(arg)) |tail| return self.typeRefOf(tail);
+        const t = self.typeRefOf(arg) orelse return null;
+        return if (t == .function) t.function.returnType.* else null;
+    }
+
+    /// Each type parameter of `gps` the written type `pt` names, bound to the
+    /// concrete type at its place in `at` (a primitive or a record name) —
+    /// one walk over both, nothing bound twice.
+    fn bindByShape(ar: std.mem.Allocator, pt: ast.TypeRef, at: ast.TypeRef, gps: []const ast.GenericParam, subs: *std.ArrayListUnmanaged(TypeSub)) !void {
+        switch (pt) {
+            .named => |n| {
+                if (!isGenericParamName(n, gps, &.{})) return;
+                if (at != .named or isGenericParamName(at.named, gps, &.{})) return;
+                for (subs.items) |sub| if (std.mem.eql(u8, sub.name, n)) return;
+                try subs.append(ar, .{ .name = n, .to = at });
+            },
+            .generic => |g| {
+                if (at != .generic or !std.mem.eql(u8, at.generic.name, g.name) or at.generic.args.len != g.args.len) return;
+                for (g.args, at.generic.args) |pa, aa| try bindByShape(ar, pa, aa, gps, subs);
+            },
+            .array => |inner| if (at == .array) try bindByShape(ar, inner.*, at.array.*, gps, subs),
+            .optional => |inner| if (at == .optional) try bindByShape(ar, inner.*, at.optional.*, gps, subs),
+            else => {},
+        }
+    }
+
     /// `shout` named as a value, a top-level fn of this program: `fn(…) -> R`
     /// from its declaration.
     fn fnRefTypeRef(self: *Emitter, e: ast.Expr) !?ast.TypeRef {
@@ -13574,6 +13604,23 @@ const Emitter = struct {
             if (std.mem.eql(u8, p.name, "self")) continue;
             defer pi += 1;
             if (pi >= cc.args.len) break;
+            // `work: fn() -> @Task<@Result<T, E>>` against `{ -> slow(1, "x") }`
+            // or a parameter of that function type: every type parameter its
+            // answer binds (std's `async.retry`).
+            if (p.typeRef == .function) {
+                if (self.fnArgReturn(cc.args[pi].value.*)) |at| {
+                    const before = subs.items.len;
+                    try bindByShape(ar, p.typeRef.function.returnType.*, at, f.genericParams, &subs);
+                    for (subs.items[before..]) |sub| {
+                        if (sub.to == .named) {
+                            const ty = sub.to.named;
+                            if (std.mem.eql(u8, ty, "string") or std.mem.eql(u8, ty, "bool") or ty[0] == 'f') needed = true;
+                        }
+                    }
+                    if (subs.items.len > before) try params_of.append(ar, p.name);
+                }
+                continue;
+            }
             const bnd = self.bindParam(p.typeRef, cc.args[pi].value.*, &isGenericParamName, f.genericParams, &.{}) orelse
                 (try self.eqBindParam(p.typeRef, cc.args[pi].value.*, f)) orelse continue;
             try params_of.append(ar, p.name);

@@ -206,6 +206,16 @@ nothing to unwind to, a rejected `#[@future]`, and the end of
 `$__bdispatch_<m>_<n>`'s chain, which `lowerBehaviorDispatch`'s refusal makes
 unreachable — plus the generic bodies below.
 
+**What a call binds a type parameter by** (`specializeFor`, `bindParam`, 144 B-25): an argument's value
+shape; an `Array<@Task<T>>` argument's tasks as their values, an `Array<fn() -> @Task<T>>` one by its
+first thunk's answer (std's `async.all`, `runAll`); a function-typed parameter (`work: fn() ->
+@Task<@Result<T, E>>`) by every type parameter the argument's answer binds in one walk
+(`bindByShape`, `fnArgReturn`: a lambda's last expression, or a value of a written function type —
+std's `async.retry` and the `retryFrom` it passes `work` on to). A call through a namespace item
+(`async.delay(…)`, the namespace its receiver) is the plain call to every shape reader and to
+specialisation (`isNamespaceReceiver`). Each was a word read for a string at exit 0
+(`conformance/modules/std_async_on_every_target`, `generic_thunk_result_binds`).
+
 **A generic body traps only where no execution meets it.** A `fn` with type
 parameters, a method of a generic `type` and a lambda lifted out of either are
 emitted once, generic (`Emitter.cur_template`); a call whose arguments bind
