@@ -1,0 +1,1 @@
+{ "name": "component_method_sync", "targets": ["commonJS", "wasm"] }

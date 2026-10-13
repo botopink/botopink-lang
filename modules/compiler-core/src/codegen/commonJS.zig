@@ -2765,6 +2765,14 @@ const Emitter = struct {
 
     /// Decision 375 — a top-level `@Component` function whose hooks node is
     /// synchronous is a plain `function`; every other effect keeps its shape.
+    /// Decision 375, question 04s12-a — a `@Component` method whose body the
+    /// hooks list marks synchronous (`OkData.sync_fns`, `<Type>.<method>`) is
+    /// a plain method, as a top-level function is.
+    fn methodShape(self: *Emitter, type_name: []const u8, m: ast.BehaviorMethod, eff: ?ast.EffectKind) !FnShape {
+        if (eff) |e| if (e == .component and self.sync.syncFn(try std.fmt.allocPrint(self.arena(), "{s}.{s}", .{ type_name, m.name }))) return .{};
+        return effectShape(eff);
+    }
+
     fn fnShape(self: *Emitter, f: ast.FnDecl) FnShape {
         if (f.effect) |e| if (e == .component and self.sync.syncFn(f.name)) return .{};
         return effectShape(f.effect);
@@ -2875,7 +2883,7 @@ const Emitter = struct {
             const has_self = m.params.len > 0 and std.mem.eql(u8, m.params[0].name, "self");
             const params = try self.buildParams(m.params);
             const eff = methodEffect(m);
-            var shape = effectShape(eff);
+            var shape = try self.methodShape(r.name, m, eff);
             const failing = isFailingTask(eff, m.returnType);
             const level: usize = if (failing) 3 else 2;
             const prev_in_generator = self.in_generator;

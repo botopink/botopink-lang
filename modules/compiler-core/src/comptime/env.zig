@@ -205,6 +205,14 @@ pub const DeferredMetaRead = struct {
 /// Decision 375 — the declaration a call or a `use` names, with the call's
 /// type (null for a `use`, whose operand is a hook): only a call whose type
 /// resolved to `@Component<R>` is one commonJS may leave unawaited.
+/// What a `@Component` method's body writes (`Env.methodHooks`).
+pub const MethodHooks = struct {
+    uses: []const hooksMod.Use,
+    calls: []const hooksMod.Builder.PendingCall,
+    dynamicCalls: []const hooksMod.Builder.DynamicCall,
+    is_async: bool,
+};
+
 /// A std function a leaf import binds (`Env.stdLeafFns`).
 pub const StdLeafFn = struct { module: []const u8, name: []const u8 };
 
@@ -948,6 +956,18 @@ pub const Env = struct {
     /// stage, by name (`hooks.StageFacts`); `infer.zig` `markStages` reads it
     /// once every body of the module is inferred.
     stageFacts: std.StringHashMapUnmanaged(hooksMod.StageFacts) = .empty,
+    /// Decision 375 with question 04s12-a's answer — what each `@Component`
+    /// method's body writes, keyed `<Type>.<method>`: marked as a top-level
+    /// function is (`infer.zig` `markHookAsync`), its synchronous ones in
+    /// `syncFns` under that key.
+    methodHooks: std.StringArrayHashMapUnmanaged(MethodHooks) = .empty,
+    /// Each call of a method of a declared type, by location, with the
+    /// method it reaches (`<Type>.<method>`): a call of a synchronous
+    /// `@Component` method is not awaited (`syncCalls`).
+    methodCallTargets: std.AutoHashMapUnmanaged(ast.Loc, []const u8) = .empty,
+    /// A top-level function's call of a `@Component` method of this module
+    /// (`from` the function, `method` its key): followed by `markHookAsync`.
+    methodEdges: std.ArrayListUnmanaged(struct { from: []const u8, method: []const u8 }) = .empty,
     /// Decision 376 — the functions whose stage `markStages` has written
     /// into their node.
     stagesDone: std.StringHashMapUnmanaged(void) = .empty,

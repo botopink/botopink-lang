@@ -8355,6 +8355,21 @@ fn inferTypeMethods(
         const methodEffect = ast.EffectKind.ofMethod(m.returnType, m.body);
         env.fnContext = try contextInfoFromReturn(env, m.returnType, methodEffect, m.name);
         defer env.fnContext = savedFnCtx;
+        // Decision 375, question 04s12-a — a `@Component` method is marked by
+        // its body as a top-level function is (`Env.methodHooks`).
+        var methodBuilder: hooksMod.Builder = .{};
+        const marksMethod = methodEffect != null and methodEffect.? == .component and m.body != null;
+        const savedMethodBuilder = env.hookBuilder;
+        if (marksMethod) env.hookBuilder = &methodBuilder;
+        defer env.hookBuilder = savedMethodBuilder;
+        defer if (marksMethod) {
+            env.methodHooks.put(env.arena, std.fmt.allocPrint(env.arena, "{s}.{s}", .{ typeName, m.name }) catch "", .{
+                .uses = methodBuilder.uses.items,
+                .calls = methodBuilder.calls.items,
+                .dynamicCalls = methodBuilder.dynamicCalls.items,
+                .is_async = methodBuilder.is_async,
+            }) catch {};
+        };
         // An effect annotation on a method is the method's, exactly as on a
         // free fn (decision 8 §9): the body gets the effect's context — a
         // generator method is a generator scope for its `yield`s (decision
@@ -18559,7 +18574,20 @@ fn noteAsyncCall(env: *Env, c: ast.CallExprOf(.untyped), typed: TypedExpr) Infer
         return;
     }
     if (try hookCalleeDecl(env, c) != null) return;
+    try noteMethodCallTarget(env, c, typed);
     try b.dynamicCalls.append(env.arena, .{ .type_ = typed.getType(), .at = c.loc });
+}
+
+/// 04s12-a — a call of a method of a declared type (`menu.render()`): the
+/// method it reaches, `<Type>.<method>`, by the call's location.
+fn noteMethodCallTarget(env: *Env, c: ast.CallExprOf(.untyped), typed: TypedExpr) InferError!void {
+    if (c.kind.call.receiver == null) return;
+    if (typed != .call or typed.call.kind != .call) return;
+    const recv = typed.call.kind.call.receiver orelse return;
+    const d = recv.getType().deref();
+    if (d.* != .named) return;
+    if (!env.hasInherentMethod(d.named.name, c.kind.call.callee)) return;
+    try env.methodCallTargets.put(env.arena, c.loc, try std.fmt.allocPrint(env.arena, "{s}.{s}", .{ d.named.name, c.kind.call.callee }));
 }
 
 /// The top-level function of this module `f` is (methods and lambdas are not).
@@ -18601,6 +18629,13 @@ fn finishHookNode(env: *Env, f: ast.FnDecl, b: *hooksMod.Builder) InferError!voi
             else => false,
         };
         if (!follows) continue;
+        // 04s12-a — a `@Component` method of this module is followed through
+        // its own mark (`markHookAsync`), as a call of a function is.
+        if (env.methodCallTargets.get(dc.at)) |key| if (env.methodHooks.contains(key)) {
+            try env.methodEdges.append(env.arena, .{ .from = f.name, .method = key });
+            try calls.append(env.arena, .{ .callee = null, .at = dc.at });
+            continue;
+        };
         isAsync = true;
         try calls.append(env.arena, .{ .callee = null, .at = dc.at });
     }
@@ -19000,7 +19035,11 @@ fn markHookAsync(env: *Env) InferError!void {
             const reaches = blk: {
                 for (n.uses) |u| if (u.hook) |h| if (try hookTargetAsync(env, h)) break :blk true;
                 for (n.calls) |c| {
-                    const callee = c.callee orelse break :blk true;
+                    const callee = c.callee orelse {
+                        // A `@Component` method of this module: its own mark, below.
+                        if (env.methodCallTargets.get(c.at)) |key| if (env.methodHooks.contains(key)) continue;
+                        break :blk true;
+                    };
                     if (try hookTargetAsync(env, callee)) break :blk true;
                 }
                 break :blk false;
@@ -19011,9 +19050,69 @@ fn markHookAsync(env: *Env) InferError!void {
             }
         }
     }
+    // 04s12-a — each `@Component` method marked as a node is (its body,
+    // the hooks it `use`s and the components it calls); then a function
+    // reaching an asynchronous method is asynchronous, and the nodes are
+    // marked again.
+    var asyncMethods: std.StringHashMapUnmanaged(void) = .empty;
+    var mit = env.methodHooks.iterator();
+    while (mit.next()) |e| {
+        const mh = e.value_ptr.*;
+        const isAsync = mh.is_async or blk: {
+            for (mh.uses) |u| {
+                const h = u.hook orelse break :blk true;
+                if (try hookTargetAsync(env, h)) break :blk true;
+            }
+            for (mh.calls) |pc| {
+                const d = pc.type_.deref();
+                if (d.* != .named or !std.mem.eql(u8, d.named.name, "Component")) continue;
+                const callee = pc.call.callee orelse break :blk true;
+                if (try hookTargetAsync(env, callee)) break :blk true;
+            }
+            for (mh.dynamicCalls) |dc| switch (dc.type_.deref().*) {
+                .named => |n| if (std.mem.eql(u8, n.name, "Component")) break :blk true,
+                .typeVar => break :blk true,
+                else => {},
+            };
+            break :blk false;
+        };
+        if (isAsync) try asyncMethods.put(env.arena, e.key_ptr.*, {});
+    }
+    var reMark = false;
+    for (env.methodEdges.items) |edge| if (asyncMethods.contains(edge.method)) {
+        if (env.hookNodes.getPtr(edge.from)) |n| if (!n.is_async) {
+            n.is_async = true;
+            reMark = true;
+        };
+    };
+    if (reMark) {
+        changed = true;
+        while (changed) {
+            changed = false;
+            var it = env.hookNodes.iterator();
+            while (it.next()) |e| {
+                const n = e.value_ptr;
+                if (n.is_async) continue;
+                const reaches = blk: {
+                    for (n.uses) |u| if (u.hook) |h| if (try hookTargetAsync(env, h)) break :blk true;
+                    for (n.calls) |cl| {
+                        const callee = cl.callee orelse continue;
+                        if (try hookTargetAsync(env, callee)) break :blk true;
+                    }
+                    break :blk false;
+                };
+                if (reaches) {
+                    n.is_async = true;
+                    changed = true;
+                }
+            }
+        }
+    }
     env.syncFns.clearRetainingCapacity();
     var nit = env.hookNodes.iterator();
     while (nit.next()) |e| if (!e.value_ptr.is_async) try env.syncFns.put(env.arena, e.key_ptr.*, {});
+    var mkit = env.methodHooks.iterator();
+    while (mkit.next()) |e| if (!asyncMethods.contains(e.key_ptr.*)) try env.syncFns.put(env.arena, e.key_ptr.*, {});
     env.syncCalls.clearRetainingCapacity();
     var tit = env.hookTargets.iterator();
     while (tit.next()) |e| {
@@ -19024,6 +19123,9 @@ fn markHookAsync(env: *Env) InferError!void {
         }
         if (!try hookTargetAsync(env, t.ref)) try env.syncCalls.put(env.arena, e.key_ptr.*, {});
     }
+    var cit = env.methodCallTargets.iterator();
+    while (cit.next()) |e| if (env.methodHooks.contains(e.value_ptr.*) and !asyncMethods.contains(e.value_ptr.*))
+        try env.syncCalls.put(env.arena, e.key_ptr.*, {});
 }
 
 /// A host function — `declare fn`, an `#[@External…]` binding — or std's
