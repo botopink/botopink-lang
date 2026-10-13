@@ -715,7 +715,6 @@ fn pushAndReturn(comptime value: ast.Expr, comptime verb: []const u8, comptime i
 }
 
 const v_bp: ast.Expr = .{ .member = .{ .object = &v, .name = "__bp" } };
-const v_tag: ast.Expr = .{ .member = .{ .object = &v, .name = "tag" } };
 const keys_k: ast.Expr = .{ .name = "k" };
 
 fn typeofIs(comptime operand: *const ast.Expr, comptime what: []const u8) ast.Expr {
@@ -746,15 +745,24 @@ const bigint_branch: ast.Stmt = .{ .if_ = .{
     .then = &pushAndReturn(.{ .call = .{ .callee = &.{ .name = "String" }, .args = &.{v} } }, "%s", 1),
 } };
 
-/// `v.__bp + "." + v.tag` for a variant, `v.__bp` for a record — the source
+/// `Object.getPrototypeOf(v).tag` — a variant's tag, which its subclass's
+/// prototype carries. Read off the prototype, not the value: a record's own
+/// field named `tag` (`Box(value: 1, tag: "t")`) is no variant, and read as
+/// one it printed `Box.t(…)`.
+const proto_tag: ast.Expr = .{ .member = .{
+    .object = &callOn(&.{ .name = "Object" }, "getPrototypeOf", &.{v}),
+    .name = "tag",
+} };
+
+/// `v.__bp + "." + <tag>` for a variant, `v.__bp` for a record — the source
 /// name of the value's type. The base class of an enum carries `__bp` and each
-/// variant subclass carries `tag`, so a variant inherits both.
+/// variant subclass's prototype carries `tag`, so a variant inherits both.
 const named_title: ast.Expr = .{ .ternary = .{
-    .cond = &typeofIs(&v_tag, "string"),
+    .cond = &typeofIs(&proto_tag, "string"),
     .then = &.{ .binary = .{
         .op = "+",
         .lhs = &.{ .binary = .{ .op = "+", .lhs = &v_bp, .rhs = &.{ .quoted = "." } } },
-        .rhs = &v_tag,
+        .rhs = &proto_tag,
     } },
     .else_ = &v_bp,
 } };

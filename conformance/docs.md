@@ -2654,6 +2654,11 @@ nested inside a container too.
 
 <!-- example: modules/print_value_text -->
 
+A field's name changes nothing: a record with a field called `tag` is a record,
+printed by its type's name and its fields:
+
+<!-- example: modules/record_field_named_tag -->
+
 A `@Result` prints the way the source writes it — `Ok(81)`, `Error("bad")` — at
 the top level and nested in a container or a record, its payload printed as any
 nested value is (a string quoted):
