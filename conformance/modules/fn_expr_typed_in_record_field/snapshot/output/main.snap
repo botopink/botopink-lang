@@ -1,0 +1,5 @@
+botopink-cell 1
+out inc
+out 6
+out 10
+out [2, 30]

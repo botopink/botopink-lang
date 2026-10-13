@@ -1,0 +1,10 @@
+//// Decision 408 — a typed function expression given to a record field is
+//// checked against the field's type: a `string` parameter where
+//// `fn(x: i32) -> i32` is declared is refused at the expression.
+
+type Op(name: string, run: fn(x: i32) -> i32)
+
+pub fn main() {
+    val op = Op(name: "bad", run: fn(x: string) -> i32 { x.length });
+    @print(op.name);
+}

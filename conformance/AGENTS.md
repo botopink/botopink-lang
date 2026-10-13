@@ -1006,7 +1006,19 @@ before one, an `if` / `else` tail, a generic one, a `val` before one, a `return 
 `modules/fn_tail_type_mismatch` (`"a"` where `-> i32` is declared, at the tail),
 `modules/fn_tail_in_void` (an `i32` tail in a body declaring no return, at the tail) and
 `modules/fn_expr_tail_semicolon` (`fn(x: i32) -> i32 { x + 1; }`, at the expression); each red on
-the parent binary.
+the parent binary. B-21's Conformance step adds, red on the group's base: `modules/fn_tail_after_loop_return`
+(a tail after an early `return` from a `for`, a statement `case` and a `while`),
+`modules/fn_tail_if_else_chain` (an `if` / `else if` / `else` tail), `modules/fn_tail_case_arm_block` (a
+tail naming a `case` bound by a `val`, an arm answering a typed function expression with a tail),
+`modules/fn_tail_void_call` (a `void` tail in a function, a `-> void` function, a method and a lambda),
+`modules/method_tail_in_void` (an `i32` tail in a method answering nothing, at the tail),
+`modules/fn_tail_comptime` (tails evaluated by `comptime`), `modules/fn_tail_result` (a tail in a
+`-> @Result<i32, string>` function after a `throw` and a `try`), `modules/fn_expr_typed_in_record_field`
+(a record field's value and an array element beside a lambda), `modules/fn_expr_typed_field_mismatch`
+(refused at the expression), `modules/decorator_member_fn_tail` (a `decl.addMember(name, fn…)` member
+answering its tail) and `modules/lambda_last_statement_semicolon` (a lambda's and an untyped
+`fn(x) { … }`'s `;`-terminated last expression still its value — beam lowered the untyped `fn`
+expression to `undefined` on the base; question B-21-a).
 
 Decision 298 (`01-compiler/130` step 8) — typed meta keyed by its record type — adds, on the four
 targets, `modules/meta_typed` (`decl.setMeta(Entity(…))` read `@typeInfo(City).meta(Entity)`, two

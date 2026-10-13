@@ -1,0 +1,14 @@
+//// Decision 409, question B-21-a (open) — as built, a lambda's and an untyped
+//// `fn(x) { … }`'s last expression written with `;` is still its value
+//// (`{ x -> x + 1; }`, `fn(x) { x * 2; }`); a typed function expression with
+//// `-> R` refuses it (`modules/fn_expr_tail_semicolon`).
+
+pub fn main() {
+    val inc = { x -> x + 1; };
+    @print(inc(1));
+    val dbl = fn(x) {
+        x * 2;
+    };
+    @print(dbl(4));
+    @print([1, 2].map({ n -> n * 3; }));
+}
