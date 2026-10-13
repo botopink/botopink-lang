@@ -680,6 +680,16 @@ fn tupleIndexMember(member: []const u8) ?u32 {
     return n;
 }
 
+/// A number, `null` or a negated number: what `Emitter.simpleTerm` places
+/// without evaluating, whatever the frame holds.
+fn isNumberTerm(e: ast.Expr) bool {
+    return switch (e) {
+        .literal => |lit| lit.kind == .numberLit or lit.kind == .null_,
+        .unaryOp => |un| un.op == .neg and un.expr.* == .literal and un.expr.*.literal.kind == .numberLit,
+        else => false,
+    };
+}
+
 /// Marker kinds emitted by `transform.zig::tryLowerFutureJump`.
 const FutureWrapKindBeam = enum { resolved, rejected };
 
@@ -1118,6 +1128,17 @@ fn countLocalsInExpr(em: *Emitter, e: ast.Expr, count: *u32) void {
                 };
                 for (cc.args) |arg| countLocalsInExpr(em, arg.value.*, count);
                 countCallStaging(em, if (cc.receiver) |r| r.* else null, cc.args, count);
+                // `p.0("abc")`: a function value read out of a tuple is staged
+                // after the arguments (`lowerCall`'s fun-field route), and the
+                // read is an `erlang:element/2` call, so every argument that is
+                // no number parks on the stack — and the read too, before
+                // trailing lambdas.
+                if (!cc.is_builtin and cc.receiver != null and tupleIndexMember(cc.callee) != null) {
+                    for (cc.args) |arg| {
+                        if (!isNumberTerm(arg.value.*)) count.* += 1;
+                    }
+                    if (cc.trailing.len > 0) count.* += 1;
+                }
                 // `@print(a, b, …)` builds its argument list on the stack.
                 if (cc.is_builtin and isPrintBuiltin(cc.callee) and cc.args.len > 1) count.* += 1;
                 // `names.pop()` on a module-level `var` parks the popped pair

@@ -1176,6 +1176,11 @@ any function expression does:
 
 <!-- example: modules/decorator_member_fn_tail -->
 
+A function value is a value like any other: a tuple's element holds one, read by position and
+called after its arguments are evaluated (`p.0("abc")`):
+
+<!-- example: modules/fn_value_in_tuple -->
+
 A lambda's and a function expression's last expression written without `;` is
 its value, as a named function's is (§ fn — function, decision 409):
 `val inc = fn(x: i32) -> i32 { x + 1 };`, `{ x -> x + 1 }`. With `;` a typed

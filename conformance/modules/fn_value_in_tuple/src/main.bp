@@ -1,0 +1,11 @@
+//// A tuple element holds a function value like any other value: it is read
+//// by position and called, its arguments evaluated first.
+
+pub fn main() {
+    val g: fn(s: string) -> i32 = { s -> s.length };
+    val p = #(g, 2);
+    @print(p.0("abc"));
+    @print(p.1);
+    val q = #(1, g);
+    @print(q.1("hello") + p.0("xy"));
+}
