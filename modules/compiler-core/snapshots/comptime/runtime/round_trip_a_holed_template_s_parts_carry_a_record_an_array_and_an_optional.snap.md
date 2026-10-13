@@ -43,7 +43,7 @@ val got = holes """p=${origin} xs=${xs} m=${maybe}""";
   local.get $s1
   drop
   global.get $__lit
-  i32.const 224
+  i32.const 288
   i32.add
   i32.const 0
   call $rt_bin
@@ -62,7 +62,7 @@ val got = holes """p=${origin} xs=${xs} m=${maybe}""";
   local.get $s1
   drop
   global.get $__lit
-  i32.const 224
+  i32.const 288
   i32.add
   i32.const 0
   call $rt_bin
@@ -151,13 +151,13 @@ val got = holes """p=${origin} xs=${xs} m=${maybe}""";
   drop
   local.get $V_Q
   global.get $__lit
-  i32.const 288
+  i32.const 352
   i32.add
   i32.const 2
   call $rt_bin
   local.get $s2
   global.get $__lit
-  i32.const 296
+  i32.const 360
   i32.add
   i32.const 2
   call $rt_bin
@@ -168,7 +168,7 @@ val got = holes """p=${origin} xs=${xs} m=${maybe}""";
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 304
+  i32.const 368
   i32.add
   i32.const 3
   call $rt_bin
@@ -180,7 +180,7 @@ val got = holes """p=${origin} xs=${xs} m=${maybe}""";
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 312
+  i32.const 376
   i32.add
   i32.const 4
   call $rt_bin
@@ -192,7 +192,7 @@ val got = holes """p=${origin} xs=${xs} m=${maybe}""";
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 320
+  i32.const 384
   i32.add
   i32.const 2
   call $rt_bin
@@ -253,7 +253,7 @@ val got = holes """p=${origin} xs=${xs} m=${maybe}""";
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 224
+  i32.const 288
   i32.add
   i32.const 6
   call $rt_bin
@@ -264,7 +264,7 @@ val got = holes """p=${origin} xs=${xs} m=${maybe}""";
   (block $L4
   local.get $s4
   global.get $__lit
-  i32.const 232
+  i32.const 296
   i32.add
   i32.const 4
   call $rt_atom
@@ -273,7 +273,7 @@ val got = holes """p=${origin} xs=${xs} m=${maybe}""";
   br_if $L4
   local.get $s1
   global.get $__lit
-  i32.const 96
+  i32.const 160
   i32.add
   i32.const 4
   call $rt_atom
@@ -334,7 +334,7 @@ val got = holes """p=${origin} xs=${xs} m=${maybe}""";
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 240
+  i32.const 304
   i32.add
   i32.const 4
   call $rt_bin
@@ -345,7 +345,7 @@ val got = holes """p=${origin} xs=${xs} m=${maybe}""";
   (block $L11
   local.get $s1
   global.get $__lit
-  i32.const 232
+  i32.const 296
   i32.add
   i32.const 4
   call $rt_atom
@@ -354,7 +354,7 @@ val got = holes """p=${origin} xs=${xs} m=${maybe}""";
   br_if $L11
   local.get $s2
   global.get $__lit
-  i32.const 248
+  i32.const 312
   i32.add
   i32.const 4
   call $rt_atom
@@ -407,7 +407,7 @@ val got = holes """p=${origin} xs=${xs} m=${maybe}""";
   drop
   local.get $s3
   global.get $__lit
-  i32.const 256
+  i32.const 320
   i32.add
   i32.const 5
   call $rt_atom
@@ -430,7 +430,7 @@ val got = holes """p=${origin} xs=${xs} m=${maybe}""";
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 264
+  i32.const 328
   i32.add
   i32.const 1
   call $rt_bin
@@ -438,7 +438,7 @@ val got = holes """p=${origin} xs=${xs} m=${maybe}""";
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 272
+  i32.const 336
   i32.add
   i32.const 3
   call $rt_atom
@@ -461,7 +461,7 @@ val got = holes """p=${origin} xs=${xs} m=${maybe}""";
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 280
+  i32.const 344
   i32.add
   i32.const 1
   call $rt_bin
@@ -560,7 +560,7 @@ val got = holes """p=${origin} xs=${xs} m=${maybe}""";
   local.get $s1
   i32.const 0
   global.get $__lit
-  i32.const 368
+  i32.const 416
   i32.add
   i32.const 21
   call $rt_atom
@@ -569,7 +569,7 @@ val got = holes """p=${origin} xs=${xs} m=${maybe}""";
   local.get $s1
   i32.const 1
   global.get $__lit
-  i32.const 392
+  i32.const 440
   i32.add
   i32.const 4
   call $rt_bin
@@ -705,7 +705,7 @@ val got = holes """p=${origin} xs=${xs} m=${maybe}""";
   )
   local.get $V_Recv
   global.get $__lit
-  i32.const 400
+  i32.const 448
   i32.add
   i32.const 5
   call $rt_atom
@@ -794,7 +794,7 @@ val got = holes """p=${origin} xs=${xs} m=${maybe}""";
   local.get $s1
   i32.const 0
   global.get $__lit
-  i32.const 368
+  i32.const 416
   i32.add
   i32.const 21
   call $rt_atom
@@ -803,7 +803,7 @@ val got = holes """p=${origin} xs=${xs} m=${maybe}""";
   local.get $s1
   i32.const 1
   global.get $__lit
-  i32.const 416
+  i32.const 464
   i32.add
   i32.const 4
   call $rt_bin
@@ -914,7 +914,7 @@ val got = holes """p=${origin} xs=${xs} m=${maybe}""";
   (block $L18
   (block $L19
   global.get $__lit
-  i32.const 232
+  i32.const 296
   i32.add
   i32.const 4
   call $rt_atom

@@ -1,0 +1,14 @@
+//// The template, in a module of its own: `User` is text of the literal, not a
+//// name of this module; `q.lookup` finds it where the call stands.
+
+import {orm.Table};
+
+pub fn tableOf(comptime q: @Expr<string>) -> @Expr<string> {
+    val decl = q.lookup(q.text()) ?? q.fail("`"
+        + q.text()
+        + "` is not in scope");
+    val t = decl.meta(Table) ?? q.fail("`"
+        + q.text()
+        + "` is not an entity — annotate it with #[entity(…)]");
+    return q.build("\"" + t.schema + "." + t.name + " (" + decl.module + ")\"");
+}

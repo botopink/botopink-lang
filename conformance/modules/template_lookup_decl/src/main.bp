@@ -1,0 +1,41 @@
+//// Decision 415 (2) — in a template body a name of the literal is text, not a
+//// name of the template's module: `q.lookup(name)` resolves it where the call
+//// stands and answers that declaration as a read-only `?@Decl` — `name`, `kind`,
+//// `module`, `fields` —, `null` when nothing of that name is in scope. An
+//// import's alias answers the declaration it names (decision 112).
+
+mod models;
+import {models.User as Person};
+
+type City(name: string, size: i32)
+
+behavior Named {
+    fn name(self: Self) -> string;
+}
+
+fn helper(n: i32) -> i32 {
+    return n;
+}
+
+fn describe(comptime q: @Expr<string>) -> @Expr<string> {
+    val found = q.lookup(q.text());
+    if (found == null) return q.build("\"" + q.text() + ": not in scope\"");
+    val d = found;
+    var kind = "other";
+    if (d.kind == DeclKind.Type) kind = "type";
+    if (d.kind == DeclKind.Behavior) kind = "behavior";
+    if (d.kind == DeclKind.Fn) kind = "fn";
+    var text = d.name + " " + kind + " " + d.module;
+    for (d.fields) { f ->
+        text = text + " " + f.name + ":" + f.typeName;
+    }
+    return q.build("\"" + text + "\"");
+}
+
+pub fn main() {
+    @print(describe "City");
+    @print(describe "Person");
+    @print(describe "Named");
+    @print(describe "helper");
+    @print(describe "Nobody");
+}

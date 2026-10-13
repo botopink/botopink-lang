@@ -22,7 +22,7 @@ val n = conf "cfg-0";
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 224
+  i32.const 288
   i32.add
   i32.const 6
   call $rt_atom

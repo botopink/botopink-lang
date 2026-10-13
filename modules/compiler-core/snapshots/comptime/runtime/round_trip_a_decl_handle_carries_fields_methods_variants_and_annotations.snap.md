@@ -1135,7 +1135,8 @@ val m = describeMode();
 ;;     ],
 ;;     hooks => [],
 ;;     params => [],
-;;     component => undefined
+;;     component => undefined,
+;;     module => <<"">>
 ;; }
 ;; Arg1 = <<"record">>
 ```
@@ -2242,7 +2243,8 @@ val m = describeMode();
 ;;     ],
 ;;     hooks => [],
 ;;     params => [],
-;;     component => undefined
+;;     component => undefined,
+;;     module => <<"">>
 ;; }
 ;; Arg1 = <<"enum">>
 ```

@@ -30,6 +30,17 @@ pub const BindingKind = enum {
     enum_,
     interface,
 
+    /// The `DeclKind` variant a `q.lookup` handle of this kind carries
+    /// (decision 415 (2)).
+    pub fn declKindName(self: BindingKind) []const u8 {
+        return switch (self) {
+            .fn_ => "Fn",
+            .val => "Val",
+            .struct_, .enum_ => "Type",
+            .interface => "Behavior",
+        };
+    }
+
     /// The `std.syntax.BindingKind` variant name for serialization.
     pub fn variantName(self: BindingKind) []const u8 {
         return switch (self) {
@@ -158,7 +169,16 @@ pub const CapturedExpr = struct {
     /// far, in call order: the tag's handle with what its annotation recorded
     /// (`infer.zig` `expandTemplateCallViaRuntime`).
     tagAnswers: []const Term = &.{},
+    /// Decision 415 (2) — the `@Decl` handle of each word of the text the
+    /// call site's scope resolves (`infer.zig` `withLookupHandles`): what
+    /// `q.lookup(word)` answers and `q.bindings()` lists. Empty when none was
+    /// computed; a scope hit then carries its name and kind alone.
+    handles: []const LookupHandle = &.{},
 };
+
+/// One `q.lookup` answer a capture carries: the name the call site spells
+/// and the handle's term (`decorator_eval.handleToTerm`).
+pub const LookupHandle = struct { local: []const u8, term: Term };
 
 // ── second-layer context ──────────────────────────────────────────────────────
 

@@ -21,7 +21,7 @@ val rows = dsl "select id from Item";
   local.set $V_E
   local.get $V_E
   global.get $__lit
-  i32.const 224
+  i32.const 288
   i32.add
   i32.const 2
   call $rt_bin
@@ -51,7 +51,7 @@ val rows = dsl "select id from Item";
   i32.const 4
   call $rt_atom
   global.get $__lit
-  i32.const 232
+  i32.const 296
   i32.add
   i32.const 5
   call $rt_bin
@@ -67,7 +67,7 @@ val rows = dsl "select id from Item";
   local.set $s1
   local.get $s1
   global.get $__lit
-  i32.const 240
+  i32.const 304
   i32.add
   i32.const 5
   call $rt_atom
@@ -77,7 +77,7 @@ val rows = dsl "select id from Item";
   local.set $s1
   local.get $s1
   global.get $__lit
-  i32.const 248
+  i32.const 312
   i32.add
   i32.const 3
   call $rt_atom
@@ -87,7 +87,7 @@ val rows = dsl "select id from Item";
   local.set $s1
   local.get $s1
   global.get $__lit
-  i32.const 256
+  i32.const 320
   i32.add
   i32.const 4
   call $rt_atom
@@ -98,12 +98,12 @@ val rows = dsl "select id from Item";
   local.set $s1
   local.get $s1
   global.get $__lit
-  i32.const 264
+  i32.const 328
   i32.add
   i32.const 5
   call $rt_atom
   global.get $__lit
-  i32.const 272
+  i32.const 336
   i32.add
   i32.const 8
   call $rt_bin
@@ -111,13 +111,13 @@ val rows = dsl "select id from Item";
   local.set $s1
   local.get $s1
   global.get $__lit
-  i32.const 280
+  i32.const 344
   i32.add
   i32.const 3
   call $rt_atom
   local.get $V_E
   global.get $__lit
-  i32.const 288
+  i32.const 352
   i32.add
   i32.const 4
   call $rt_bin
@@ -128,7 +128,7 @@ val rows = dsl "select id from Item";
   local.set $s1
   local.get $s1
   global.get $__lit
-  i32.const 296
+  i32.const 360
   i32.add
   i32.const 8
   call $rt_atom
@@ -157,7 +157,7 @@ val rows = dsl "select id from Item";
   i32.const 4
   call $rt_atom
   global.get $__lit
-  i32.const 304
+  i32.const 368
   i32.add
   i32.const 6
   call $rt_bin
@@ -173,7 +173,7 @@ val rows = dsl "select id from Item";
   local.set $s1
   local.get $s1
   global.get $__lit
-  i32.const 240
+  i32.const 304
   i32.add
   i32.const 5
   call $rt_atom
@@ -183,7 +183,7 @@ val rows = dsl "select id from Item";
   local.set $s1
   local.get $s1
   global.get $__lit
-  i32.const 248
+  i32.const 312
   i32.add
   i32.const 3
   call $rt_atom
@@ -193,7 +193,7 @@ val rows = dsl "select id from Item";
   local.set $s1
   local.get $s1
   global.get $__lit
-  i32.const 256
+  i32.const 320
   i32.add
   i32.const 4
   call $rt_atom
@@ -204,12 +204,12 @@ val rows = dsl "select id from Item";
   local.set $s1
   local.get $s1
   global.get $__lit
-  i32.const 264
+  i32.const 328
   i32.add
   i32.const 5
   call $rt_atom
   global.get $__lit
-  i32.const 312
+  i32.const 376
   i32.add
   i32.const 7
   call $rt_bin
@@ -217,12 +217,12 @@ val rows = dsl "select id from Item";
   local.set $s1
   local.get $s1
   global.get $__lit
-  i32.const 280
+  i32.const 344
   i32.add
   i32.const 3
   call $rt_atom
   global.get $__lit
-  i32.const 320
+  i32.const 112
   i32.add
   i32.const 9
   call $rt_atom
@@ -230,7 +230,7 @@ val rows = dsl "select id from Item";
   local.set $s1
   local.get $s1
   global.get $__lit
-  i32.const 296
+  i32.const 360
   i32.add
   i32.const 8
   call $rt_atom
@@ -292,8 +292,18 @@ val rows = dsl "select id from Item";
 ;;     },
 ;;     bindings => [
 ;;         #{
+;;             kind => 'Type',
 ;;             name => <<"Item">>,
-;;             kind => 'Fn',
+;;             fields => [#{name => <<"id">>, typeName => <<"i32">>, annotations => []}],
+;;             variants => [],
+;;             methods => [],
+;;             returnType => <<"">>,
+;;             annotations => [],
+;;             hooks => [],
+;;             params => [],
+;;             component => undefined,
+;;             module => <<"shapes">>,
+;;             meta => [],
 ;;             identity => <<"shapes@@Item">>,
 ;;             local => <<"Item">>
 ;;         }
@@ -312,10 +322,26 @@ val rows = dsl "select id from Item";
         "kind": "field",
         "label": "property",
         "ref": {
+          "annotations": [],
+          "component": null,
+          "fields": [
+            {
+              "annotations": [],
+              "name": "id",
+              "typeName": "i32"
+            }
+          ],
+          "hooks": [],
           "identity": "shapes@@Item",
-          "kind": "Fn",
+          "kind": "Type",
           "local": "Item",
-          "name": "Item"
+          "meta": [],
+          "methods": [],
+          "module": "shapes",
+          "name": "Item",
+          "params": [],
+          "returnType": "",
+          "variants": []
         },
         "span": {
           "end": 9,

@@ -266,13 +266,22 @@ pub const CustomAstEntry = struct {
 
 /// A compiler-provided template method resolved by inference (expr-templates
 /// F4): `text`/`parts`/`source`/`context`/`lookup`/`bindings`/`fail`/`failAt`
-/// on an `expr` receiver, plus `ref` on a `Binding`. Mirrors `MethodLowering`:
+/// on an `expr` receiver. Mirrors `MethodLowering`:
 /// keyed by the call's source `Loc` and consumed by the call-site expansion
 /// pass (F6). Instances only exist at comptime — no codegen backend ever sees
 /// these calls.
 /// `tagDecl` / `annotate` — decision 302: a tag's `@Decl` and an annotation
 /// run over it (`template_eval.zig` § tag annotations).
-pub const TemplateOp = enum { value, text, parts, source, context, lookup, bindings, build, custom, fail, failAt, ref, tagDecl, annotate };
+/// Decision 426 — a memoized template run's build and notes (`infer.zig`
+/// `BuiltInfo`).
+pub const TemplateBuilt = struct {
+    callee: []const u8 = "",
+    at: ?ast.Loc = null,
+    file: ?[]const u8 = null,
+    notes: []const []const u8 = &.{},
+};
+
+pub const TemplateOp = enum { value, text, parts, source, context, lookup, bindings, build, custom, fail, failAt, tagDecl, annotate, note };
 
 /// Everything the inference-time template evaluator needs to run a template
 /// body in the external eval runtime (expr-templates F6-full). Null in
@@ -1013,6 +1022,12 @@ pub const Env = struct {
     /// texts) → the expanded expression. The expansion is still re-inferred
     /// per call site; only the external evaluation is skipped.
     templateEvalCache: std.StringHashMap(*const ast.Expr),
+    /// Decision 426 — what each memoized expansion's run told
+    /// `finishExpansion` (its build, its notes), by the same key.
+    templateEvalBuilt: std.StringHashMapUnmanaged(TemplateBuilt) = .empty,
+    /// Decision 426 (4) — the `q.note(message)`s of the template call at a
+    /// location: an error at the call carries them (`infer.zig` `unifyAt`).
+    templateNotes: std.AutoHashMapUnmanaged(ast.Loc, []const []const u8) = .empty,
     /// Decision 429 — the last expansion id this module handed out: each
     /// template expansion whose code is parsed from built text takes the
     /// next one (`infer.parseCodeText`), and its nodes carry it in
@@ -2428,15 +2443,11 @@ pub const PendingTypeName = struct {
 };
 
 /// C10 — names the compiler knows without any module declaring them, so the
-/// two-pass registration cannot see them as typedefs:
-///
-/// - `Children` is the markup child list a UI library annotates, coerced by
-///   `childrenCoercion` in `infer.zig`.
-/// - `Binding` is the opaque name `q.lookup` yields inside a template body; it
-///   is the `ref` field of the registered `CustomNode`
-///   (`comptime.zig` `custom_ast_reflection_src`) and is declared by no module.
+/// two-pass registration cannot see them as typedefs: `Children` is the markup
+/// child list a UI library annotates, coerced by `childrenCoercion` in
+/// `infer.zig`.
 fn isCompilerKnownTypeName(name: []const u8) bool {
-    const known = [_][]const u8{ "Children", "Binding" };
+    const known = [_][]const u8{"Children"};
     for (known) |k| if (std.mem.eql(u8, name, k)) return true;
     return false;
 }

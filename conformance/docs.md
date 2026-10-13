@@ -1917,9 +1917,8 @@ imports, aliases and locals. So `e.build("double(" + e.text() + ")")` calls
 the library's `double` even where the consumer declares its own, and
 `shapesdsl "surface(4, 5)"` reaches `area` through the consumer's
 `import {area as surface}`. `e.lookup(name)` resolves at the call site and
-answers the declaration — its own name and its `<package>@<path>@@<Decl>`
-identity, never the alias — which is what hover and go-to-definition inside
-the literal follow.
+answers the declaration — its own name and module, never the alias (below) —,
+which is what hover and go-to-definition inside the literal follow.
 
 **A hole known at build** (decision 355). Each `Interp` part of `q.parts()`
 carries `known` and `value`: `known` is true when the hole's value is known
@@ -1951,6 +1950,59 @@ resolve on every target, as they do on the value of an imported function
 (`built.size.toString()` after `val built = shelf "built"`).
 
 <!-- example: modules/template_answer_method -->
+
+**A call is typed by the code it built** (decision 426). The type of a
+template call is the type of the code the template built for that call,
+computed at build: no free `T` of the signature is left, so `fn data<T>(…) ->
+@Expr<T>` answers `string[]` at one call and `i32` at another. The template's
+answer is a bound the built code fits — `unknown` holds anything, so `->
+@Expr<unknown[]>` keeps the call's `string[]` —, and code outside it is
+refused in the template, at its `build` (`template-build-outside-bound`). The
+call then meets the type expected where it stands as any expression does:
+`val n: i32 = names "cities";` is `type mismatch: expected i32, got string[]`
+at the call. The template never reads the expected type, so what it builds is
+decided by its text; `q.note(message)` gives the reason, attached to an error
+reported at its call (`— note: …`).
+
+<!-- example: modules/template_call_typed_by_expansion -->
+<!-- example: modules/template_call_expected_mismatch -->
+<!-- example: modules/template_build_outside_bound -->
+<!-- example: modules/template_note_on_mismatch -->
+
+**A declaration looked up** (decision 415). In a template body a name of the
+literal is text, not a name of the template's module: `q.lookup(name)` — `name`
+a word of the literal — resolves it where the call stands and answers the
+declaration as a read-only `?@Decl`: `name` (an import's alias answers the
+declaration it names), `kind`, `module`, `fields`, `variants`, `methods`,
+`params`; `null` when nothing of that name is in scope. `q.bindings()` lists
+every declaration a word of the literal names. `setMeta`, `addMeta`,
+`addMember`, `addType` and `wrapWith` on the handle are refused at the call
+(`template-lookup-decl-write`).
+
+<!-- example: modules/template_lookup_decl -->
+<!-- example: modules/template_lookup_decl_write -->
+
+On the handle, `decl.meta(T)` (`?T`) and `decl.metaAll(T)` (`T[]`) answer at
+build what the declaration's decorators recorded, when the record `T` is data —
+each field a string, a number, a `bool`, a variant, an array or an optional of
+those; a field the value left out reads its default. A record with an `@Expr`
+field holds code the program runs, and its read is refused, naming the field
+(`template-lookup-meta-expr-field`); `@typeInfo(X).meta(T)` in a template body
+stays `typeinfo-meta-at-build`.
+
+<!-- example: modules/template_lookup_meta -->
+<!-- example: modules/template_lookup_meta_expr_field -->
+
+The looked-up declaration's decorators run before the template body. A
+declaration of another module carries what its module's decorators recorded;
+in one module the decorators run before the bodies and the `val`s, so a call
+written above the annotated declaration reads its meta — except a decorator
+that reads `.hooks`, which runs after the bodies (decision 372): its meta read
+before it ran is refused at the call's literal (`typeinfo-meta-hooks-pending`).
+
+<!-- example: modules/template_lookup_meta_other_module -->
+<!-- example: modules/template_lookup_meta_same_module -->
+<!-- example: modules/template_lookup_meta_hooks_pending -->
 
 **A template method** (decisions 311 (3), 397 (3), 415 (1)). A template whose
 first parameter is `comptime self: @Expr<R>` and whose second is

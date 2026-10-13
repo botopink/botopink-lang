@@ -100,6 +100,14 @@ pub const Outcome = union(enum) {
 
 pub const EvalError = error{ OutOfMemory, EvalFailed } || std.Io.Writer.Error;
 
+/// What a run answers beside its outcome (decision 426): the index of the
+/// `q.build` whose code the body answered (`numberBuilds`), and the reasons
+/// `q.note(message)` gave, in call order.
+pub const Extras = struct {
+    build: ?usize = null,
+    notes: []const []const u8 = &.{},
+};
+
 /// Longest compiler/runtime diagnostic carried into `Outcome.err`.
 const max_error_detail = 4096;
 
@@ -126,6 +134,8 @@ pub fn evaluate(
     plainArgs: []const template.PlainArg,
     /// Receives what was sent to and returned by the runtime (snapshots); null skips it.
     traces: ?*std.ArrayListUnmanaged(trace.Entry),
+    /// Receives the build index and the notes of the reply; null skips them.
+    extras: ?*Extras,
 ) EvalError!Outcome {
     _ = build_root;
     var unsupported: erlang.UnsupportedMethod = .{};
@@ -162,7 +172,7 @@ pub fn evaluate(
     const t_outcome = stages.start();
     defer stages.stop(.outcome, t_outcome);
     return switch (response) {
-        .ok => |stdout| parseOutcome(arena, stdout),
+        .ok => |stdout| parseOutcomeExtras(arena, stdout, extras),
         .compile_error => |detail| .{ .err = try errorText(arena, "the template module did not compile", detail) },
         .runtime_error => |detail| .{ .err = try errorText(arena, "the template body raised", detail) },
     };
@@ -549,7 +559,7 @@ pub const template_self_name = "__bp_self";
 /// `template_self_name` (the copy is new nodes throughout).
 pub fn renameTemplateSelf(arena: std.mem.Allocator, f: ast.FnDecl) std.mem.Allocator.Error!ast.FnDecl {
     if (!ast.isTemplateMethodSignature(f.params, f.returnType)) return f;
-    var r: RenameSelf = .{ .arena = arena };
+    var r: Rewrite(RenameSelf) = .{ .arena = arena, .hook = .{} };
     var out = f;
     const params = try arena.dupe(ast.Param, f.params);
     params[0].name = template_self_name;
@@ -559,54 +569,106 @@ pub fn renameTemplateSelf(arena: std.mem.Allocator, f: ast.FnDecl) std.mem.Alloc
 }
 
 const RenameSelf = struct {
-    arena: std.mem.Allocator,
-
-    fn clone(self: *RenameSelf, comptime U: type, v: U) std.mem.Allocator.Error!U {
-        if (U == ast.TypeRef or U == ast.Pattern) return v;
-        if (U == ast.Expr) if (v == .identifier and v.identifier.kind == .ident and std.mem.eql(u8, v.identifier.kind.ident, "self")) {
-            var out = v.identifier;
-            out.kind = .{ .ident = template_self_name };
-            return .{ .identifier = out };
-        };
-        switch (@typeInfo(U)) {
-            .@"struct" => |s| {
-                var out: U = v;
-                inline for (s.fields) |fld| {
-                    if (fld.is_comptime) continue;
-                    if (comptime mayHoldExprs(fld.type)) @field(out, fld.name) = try self.clone(fld.type, @field(v, fld.name));
-                }
-                return out;
-            },
-            .@"union" => |u| {
-                if (u.tag_type == null) return v;
-                switch (v) {
-                    inline else => |payload, tag| {
-                        const P = @TypeOf(payload);
-                        if (comptime !mayHoldExprs(P)) return v;
-                        return @unionInit(U, @tagName(tag), try self.clone(P, payload));
-                    },
-                }
-            },
-            .optional => |o| return if (v) |inner| try self.clone(o.child, inner) else null,
-            .pointer => |p| switch (p.size) {
-                .one => {
-                    if (comptime !mayHoldExprs(p.child)) return v;
-                    const n = try self.arena.create(p.child);
-                    n.* = try self.clone(p.child, v.*);
-                    return n;
-                },
-                .slice => {
-                    if (comptime !mayHoldExprs(p.child)) return v;
-                    const out = try self.arena.alloc(p.child, v.len);
-                    for (v, 0..) |e, i| out[i] = try self.clone(p.child, e);
-                    return out;
-                },
-                else => return v,
-            },
-            else => return v,
-        }
+    fn replace(_: *RenameSelf, _: std.mem.Allocator, v: ast.Expr) std.mem.Allocator.Error!?ast.Expr {
+        if (v != .identifier or v.identifier.kind != .ident or !std.mem.eql(u8, v.identifier.kind.ident, "self")) return null;
+        var out = v.identifier;
+        out.kind = .{ .ident = template_self_name };
+        return .{ .identifier = out };
     }
 };
+
+/// Decision 426 (2) — `f` with each `q.build(src)` of its body (`q` one of its
+/// `@Expr` parameters) written `q.build(src, <i>)`, `i` the call's index in
+/// `locs`: the prelude's `build/3` records the index of the build whose code
+/// the body answers, so a built type outside the template's answer is refused
+/// at that `build`. A body with one `build` is left as written: that build is
+/// the one.
+pub fn numberBuilds(arena: std.mem.Allocator, f: ast.FnDecl) std.mem.Allocator.Error!struct { f: ast.FnDecl, locs: []const ast.Loc } {
+    var r: Rewrite(NumberBuilds) = .{ .arena = arena, .hook = .{ .params = f.params } };
+    var out = f;
+    out.body = try r.clone(@TypeOf(f.body), f.body);
+    // One build names itself: the body is run as written.
+    if (r.hook.locs.items.len <= 1) return .{ .f = f, .locs = r.hook.locs.items };
+    return .{ .f = out, .locs = r.hook.locs.items };
+}
+
+const NumberBuilds = struct {
+    params: []const ast.Param,
+    locs: std.ArrayListUnmanaged(ast.Loc) = .empty,
+
+    fn replace(self: *NumberBuilds, arena: std.mem.Allocator, v: ast.Expr) std.mem.Allocator.Error!?ast.Expr {
+        if (v != .call or v.call.kind != .call) return null;
+        const c = v.call.kind.call;
+        if (c.is_builtin or c.args.len != 1 or !std.mem.eql(u8, c.callee, "build")) return null;
+        const r = c.receiver orelse return null;
+        if (r.* != .identifier or r.identifier.kind != .ident) return null;
+        const named = for (self.params) |p| {
+            if (p.typeRef.isExprType() and std.mem.eql(u8, p.name, r.identifier.kind.ident)) break true;
+        } else false;
+        if (!named) return null;
+        const index = self.locs.items.len;
+        try self.locs.append(arena, v.call.loc);
+        const lit = try arena.create(ast.Expr);
+        lit.* = .{ .literal = .{ .loc = v.call.loc, .kind = .{ .numberLit = try std.fmt.allocPrint(arena, "{d}", .{index}) } } };
+        const args = try arena.alloc(ast.CallArg, 2);
+        args[0] = c.args[0];
+        args[1] = .{ .label = null, .value = lit };
+        var out = v;
+        out.call.kind.call.args = args;
+        return out;
+    }
+};
+
+/// A copy of an AST value with the expressions `Hook.replace` answers for
+/// replaced (null keeps walking into the node). New nodes throughout.
+fn Rewrite(comptime Hook: type) type {
+    return struct {
+        arena: std.mem.Allocator,
+        hook: Hook,
+
+        fn clone(self: *@This(), comptime U: type, v: U) std.mem.Allocator.Error!U {
+            if (U == ast.TypeRef or U == ast.Pattern) return v;
+            if (U == ast.Expr) if (try self.hook.replace(self.arena, v)) |r| return r;
+            switch (@typeInfo(U)) {
+                .@"struct" => |s| {
+                    var out: U = v;
+                    inline for (s.fields) |fld| {
+                        if (fld.is_comptime) continue;
+                        if (comptime mayHoldExprs(fld.type)) @field(out, fld.name) = try self.clone(fld.type, @field(v, fld.name));
+                    }
+                    return out;
+                },
+                .@"union" => |u| {
+                    if (u.tag_type == null) return v;
+                    switch (v) {
+                        inline else => |payload, tag| {
+                            const P = @TypeOf(payload);
+                            if (comptime !mayHoldExprs(P)) return v;
+                            return @unionInit(U, @tagName(tag), try self.clone(P, payload));
+                        },
+                    }
+                },
+                .optional => |o| return if (v) |inner| try self.clone(o.child, inner) else null,
+                .pointer => |p| switch (p.size) {
+                    .one => {
+                        if (comptime !mayHoldExprs(p.child)) return v;
+                        const n = try self.arena.create(p.child);
+                        n.* = try self.clone(p.child, v.*);
+                        return n;
+                    },
+                    .slice => {
+                        if (comptime !mayHoldExprs(p.child)) return v;
+                        const out = try self.arena.alloc(p.child, v.len);
+                        for (v, 0..) |e, i| out[i] = try self.clone(p.child, e);
+                        return out;
+                    },
+                    else => return v,
+                },
+                else => return v,
+            }
+        }
+    };
+}
 
 fn mayHoldExprs(comptime U: type) bool {
     return switch (@typeInfo(U)) {
@@ -618,12 +680,11 @@ fn mayHoldExprs(comptime U: type) bool {
 
 /// The type names the template module defines itself (its host enums and
 /// records): never carried from the program (`block_eval.typesReached`'s skip).
-pub const injected_names = [_][]const u8{ "BindingKind", "DeclKind", "Span", "CustomNode", "Binding", "Source", "ExprContext" };
+pub const injected_names = [_][]const u8{ "DeclKind", "Span", "CustomNode", "Source", "ExprContext" };
 
 const host_records = [_]erlang.HostRecord{
     .{ .name = "Span", .fields = &.{ "start", "end", "line" } },
     .{ .name = "CustomNode", .fields = &.{ "kind", "span", "label", "ref", "children" } },
-    .{ .name = "Binding", .fields = &.{ "name", "kind" } },
     .{ .name = "Source", .fields = &.{ "file", "line", "col" } },
     .{ .name = "ExprContext", .fields = &.{ "source", "text", "multiline" } },
 };
@@ -682,10 +743,11 @@ fn mainForms(b: Ast.Builder, tfn: ast.FnDecl, plans: []const ArgPlan, annotates:
         },
     };
     const tried: Ast.Expr = .{ .try_catch = .{
-        .body = try b.body(&.{try b.remote("json", "encode", &.{try b.call("__bp_reply", &.{invoke})})}),
+        .body = try b.body(&.{try b.remote("json", "encode", &.{try b.call(preludeMod.extras_fn, &.{try b.call("__bp_reply", &.{invoke})})})}),
         .catches = if (annotates) try std.mem.concat(b.arena, Ast.Clause, &.{ &.{need}, &others }) else try b.arena.dupe(Ast.Clause, &others),
     } };
-    const main_body = if (annotates) try b.body(&.{ try b.call("__bp_annotateReset", &.{}), tried }) else try b.body(&.{tried});
+    const reset = try b.call(preludeMod.extras_reset_fn, &.{});
+    const main_body = if (annotates) try b.body(&.{ reset, try b.call("__bp_annotateReset", &.{}), tried }) else try b.body(&.{ reset, tried });
     try forms.append(b.arena, .{ .function = .{
         .name = "main",
         .clauses = try b.arena.dupe(Ast.Clause, &.{.{
@@ -729,7 +791,7 @@ fn buildModule(
         },
     };
     const config: erlang.ComptimeModule = .{
-        .host_enums = &.{ "BindingKind", "DeclKind", "Stage" },
+        .host_enums = &.{ "DeclKind", "Stage" },
         .host_records = &host_records,
         .exports = &.{.{ .name = "main", .arity = 1 }},
         .forms = forms,
@@ -872,14 +934,23 @@ pub fn captureToTerm(arena: std.mem.Allocator, cap: *const template.CapturedExpr
     const word_terms = try arena.alloc(Term, words.count());
     for (words.keys(), word_terms) |word, *wt| {
         wt.* = Term.str(word);
+        // Decision 415 (2) — the word's `@Decl` handle, when the call site
+        // computed it.
+        const handle: ?Term = for (cap.handles) |h| {
+            if (std.mem.eql(u8, h.local, word)) break h.term;
+        } else null;
+        if (handle) |t| {
+            try bindings.append(arena, t);
+            continue;
+        }
         const scope = cap.scope orelse continue;
         const e = scope.entries.getPtr(word) orelse continue;
         // Decision 112: `name` is the declaration's own name and
         // `identity` its `<package>@<path>@@<Decl>`; `local` is the name
-        // the scope spells — what `lookup` matches and `ref` splices.
+        // the scope spells — what `lookup` matches.
         const be = try arena.alloc(Term.MapEntry, 4);
         be[0] = Term.field("name", Term.str(e.declName));
-        be[1] = Term.field("kind", Term.atomOf(e.kind.variantName()));
+        be[1] = Term.field("kind", Term.atomOf(e.kind.declKindName()));
         be[2] = Term.field("identity", Term.str(e.identity));
         be[3] = Term.field("local", Term.str(e.name));
         try bindings.append(arena, Term.mapOf(be));
@@ -906,6 +977,23 @@ pub fn captureToTerm(arena: std.mem.Allocator, cap: *const template.CapturedExpr
     entries[5] = Term.field("bindings", Term.listOf(bindings.items));
     entries[6] = Term.field("words", Term.listOf(word_terms));
     return Term.mapOf(entries);
+}
+
+/// Decision 415 (2) — the words of `cap`'s text, in order of first
+/// appearance (decision 237): the names `q.lookup` may ask for.
+pub fn captureWords(arena: std.mem.Allocator, cap: *const template.CapturedExpr) std.mem.Allocator.Error![]const []const u8 {
+    var words: Words = .empty;
+    switch (cap.node.*) {
+        .literal => |lit| switch (lit.kind) {
+            .stringTemplate => |st| for (st.parts) |part| switch (part) {
+                .text => |t| try appendWords(arena, &words, t),
+                .expr => {},
+            },
+            else => try appendWords(arena, &words, cap.text orelse ""),
+        },
+        else => try appendWords(arena, &words, cap.text orelse ""),
+    }
+    return words.keys();
 }
 
 /// Decision 302 — the text the body reads as `q.text()` (a hole as its
@@ -1030,13 +1118,27 @@ const Reply = struct {
     value: std.json.Value = .null,
     ast: std.json.Value = .null,
     decl: std.json.Value = .null,
+    /// Decision 426 — `'__bp_extras'/1`: the build answered, the notes given
+    /// (latest first).
+    build: ?i64 = null,
+    notes: []const []const u8 = &.{},
 };
 
 fn parseOutcome(arena: std.mem.Allocator, stdout: []const u8) EvalError!Outcome {
+    return parseOutcomeExtras(arena, stdout, null);
+}
+
+fn parseOutcomeExtras(arena: std.mem.Allocator, stdout: []const u8, extras: ?*Extras) EvalError!Outcome {
     const reply = std.json.parseFromSliceLeaky(Reply, arena, stdout, .{
         .ignore_unknown_fields = true,
         .allocate = .alloc_always,
     }) catch return .{ .err = try errorText(arena, "the template evaluator returned an unreadable result", stdout) };
+    if (extras) |x| {
+        x.build = if (reply.build) |b| (if (b >= 0) @intCast(b) else null) else null;
+        const notes = try arena.alloc([]const u8, reply.notes.len);
+        for (reply.notes, 0..) |n, i| notes[notes.len - 1 - i] = n;
+        x.notes = notes;
+    }
 
     const kind = reply.kind;
     if (std.mem.eql(u8, kind, "code")) return .{ .code = reply.source };

@@ -43,7 +43,7 @@ fn main() {
   call $rt_int
   local.get $s1
   global.get $__lit
-  i32.const 224
+  i32.const 288
   i32.add
   i32.const 6
   call $rt_atom
@@ -68,7 +68,7 @@ fn main() {
   local.get $s0
   drop
   global.get $__lit
-  i32.const 232
+  i32.const 296
   i32.add
   i32.const 4
   call $rt_atom

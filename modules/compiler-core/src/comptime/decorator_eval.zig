@@ -77,11 +77,26 @@ pub const DeclHandle = struct {
     attrs: []const [2][]const u8 = &.{},
     component: ?*const DeclHandle = null,
     tagMeta: []const TagMeta = &.{},
+    /// Decision 415 (2) — `decl.module`, the path of the module that
+    /// declares it.
+    module: []const u8 = "",
+    /// Decision 415 (2) — a declaration `q.lookup` answered: the typed meta
+    /// its decorators recorded (`d.meta(T)` in the template's body, the
+    /// `meta` key a tag's handle carries too), its identity and the name the
+    /// call site spells it by (what `lookup/2` matches, and what a
+    /// `CustomNode`'s `ref` hands the language server). Null for every other
+    /// handle.
+    lookup: ?Lookup = null,
 
     pub fn isTag(self: DeclHandle) bool {
         return std.mem.eql(u8, self.kind, "Element") or std.mem.eql(u8, self.kind, "Component");
     }
 };
+
+/// What a `q.lookup` handle carries beside a declaration's (decision 415 (2)).
+/// `pending` (372's pattern): a declaration of the module whose `.hooks`
+/// reader has not run yet — its meta is refused where it is read.
+pub const Lookup = struct { identity: []const u8, local: []const u8, meta: []const TagMeta, pending: bool = false };
 
 /// Decision 302 — one typed meta value a tag's annotation recorded: the
 /// record type's declared name, whether it was added (`addMeta`), and the
@@ -538,7 +553,8 @@ pub fn handleToTerm(arena: std.mem.Allocator, handle: DeclHandle) std.mem.Alloca
     }
 
     const tag = handle.isTag();
-    const entries = try arena.alloc(Term.MapEntry, if (tag) 12 else 10);
+    const extra: usize = if (tag) 2 else if (handle.lookup != null) 3 else 0;
+    const entries = try arena.alloc(Term.MapEntry, 11 + extra);
     entries[0] = Term.field("kind", Term.atomOf(handle.kind));
     entries[1] = Term.field("name", Term.str(handle.name));
     entries[2] = Term.field("fields", Term.listOf(fields));
@@ -549,23 +565,38 @@ pub fn handleToTerm(arena: std.mem.Allocator, handle: DeclHandle) std.mem.Alloca
     entries[7] = Term.field("hooks", Term.listOf(handle.hooks));
     entries[8] = Term.field("params", Term.listOf(params));
     entries[9] = Term.field("component", if (handle.component) |c| try handleToTerm(arena, c.*) else Term.undefined_atom);
+    entries[10] = Term.field("module", Term.str(handle.module));
+    if (handle.lookup) |l| if (!tag) {
+        entries[11] = Term.field("meta", if (l.pending)
+            Term.tupleOf(try arena.dupe(Term, &.{ Term.atomOf(preludeMod.meta_pending_tag), Term.str(handle.name) }))
+        else
+            try metaListTerm(arena, l.meta));
+        entries[12] = Term.field("identity", Term.str(l.identity));
+        entries[13] = Term.field("local", Term.str(l.local));
+    };
     if (tag) {
         // `attrs` — `[{<<"id">>, <<"x">>}]`, what `attr/2` reads; `meta` —
         // `[#{type => <<"ClassName">>, value => V}]`, what
         // `'__bp_methodMeta'/2` reads (a method entry's shape).
         const attrs = try arena.alloc(Term, handle.attrs.len);
         for (handle.attrs, 0..) |a, i| attrs[i] = Term.tupleOf(try arena.dupe(Term, &.{ Term.str(a[0]), Term.str(a[1]) }));
-        const metas = try arena.alloc(Term, handle.tagMeta.len);
-        for (handle.tagMeta, 0..) |m, i| {
-            const me = try arena.alloc(Term.MapEntry, 2);
-            me[0] = Term.field("type", Term.str(m.typeName));
-            me[1] = Term.field("value", m.value);
-            metas[i] = Term.mapOf(me);
-        }
-        entries[10] = Term.field("attrs", Term.listOf(attrs));
-        entries[11] = Term.field("meta", Term.listOf(metas));
+        entries[11] = Term.field("attrs", Term.listOf(attrs));
+        entries[12] = Term.field("meta", try metaListTerm(arena, handle.tagMeta));
     }
     return Term.mapOf(entries);
+}
+
+/// `[#{type => <<"ClassName">>, value => V}]`, what `'__bp_methodMeta'/2`
+/// reads (a method entry's shape).
+fn metaListTerm(arena: std.mem.Allocator, metas: []const TagMeta) std.mem.Allocator.Error!Term {
+    const out = try arena.alloc(Term, metas.len);
+    for (metas, 0..) |m, i| {
+        const me = try arena.alloc(Term.MapEntry, 2);
+        me[0] = Term.field("type", Term.str(m.typeName));
+        me[1] = Term.field("value", m.value);
+        out[i] = Term.mapOf(me);
+    }
+    return Term.listOf(out);
 }
 
 /// Question s29-b — a typed meta value (the JSON `'__bp_typedMeta'/2`
@@ -606,6 +637,123 @@ fn shapeTerm(arena: std.mem.Allocator, written: typedMeta.Shape, v: std.json.Val
         },
         .object => Term.undefined_atom,
     };
+}
+
+/// Decision 415 (3) — a typed meta value recorded on a declaration, as the
+/// build-time term a template body reads on a `q.lookup` handle
+/// (`d.meta(T)`): the record's map, each of `fields` from the constructor's
+/// arguments as `typed_meta.render` wrote them (`(name: "users", size: 3)`),
+/// else from the field's default as written (`defaults`, by field), else
+/// `undefined`. A string is a binary, a number a number, a `bool` an atom, a
+/// variant (`.Big`) its atom, an array a list, `null` `undefined`; anything
+/// else (an `@Expr` field's argument) reads `undefined`.
+pub fn metaArgsTerm(arena: std.mem.Allocator, fields: []const []const u8, defaults: []const ?[]const u8, args: []const u8) std.mem.Allocator.Error!Term {
+    const entries = try arena.alloc(Term.MapEntry, fields.len);
+    for (fields, 0..) |f, i| {
+        const written = argText(args, f) orelse (if (i < defaults.len) defaults[i] else null);
+        entries[i] = Term.field(f, if (written) |w| try literalTerm(arena, std.mem.trim(u8, w, " \t\r\n")) else Term.undefined_atom);
+    }
+    return Term.mapOf(entries);
+}
+
+/// The text of the argument labelled `name` in `(a: …, b: …)`, or null.
+fn argText(args: []const u8, name: []const u8) ?[]const u8 {
+    if (args.len < 2 or args[0] != '(') return null;
+    var i: usize = 1;
+    while (i < args.len) {
+        while (i < args.len and (args[i] == ' ' or args[i] == ',')) i += 1;
+        const label_start = i;
+        while (i < args.len and args[i] != ':' and args[i] != ')') i += 1;
+        if (i >= args.len or args[i] != ':') return null;
+        const label = std.mem.trim(u8, args[label_start..i], " ");
+        i += 1;
+        const value_start = i;
+        const end = valueEnd(args, i);
+        if (std.mem.eql(u8, label, name)) return args[value_start..end];
+        i = end;
+        if (i < args.len and args[i] == ')') return null;
+    }
+    return null;
+}
+
+/// Where the value starting at `start` ends: the `,` or `)` at its depth.
+fn valueEnd(s: []const u8, start: usize) usize {
+    var depth: usize = 0;
+    var i = start;
+    while (i < s.len) : (i += 1) {
+        switch (s[i]) {
+            '"' => {
+                i += 1;
+                while (i < s.len and s[i] != '"') : (i += 1) {
+                    if (s[i] == '\\') i += 1;
+                }
+            },
+            '(', '[', '{' => depth += 1,
+            ')', ']', '}' => {
+                if (depth == 0) return i;
+                depth -= 1;
+            },
+            ',' => if (depth == 0) return i,
+            else => {},
+        }
+    }
+    return s.len;
+}
+
+/// A literal as `typed_meta.render` writes one (or a default as written), as
+/// a term; `undefined` for anything else.
+fn literalTerm(arena: std.mem.Allocator, text: []const u8) std.mem.Allocator.Error!Term {
+    if (text.len == 0) return Term.undefined_atom;
+    if (std.mem.eql(u8, text, "true")) return .{ .boolean = true };
+    if (std.mem.eql(u8, text, "false")) return .{ .boolean = false };
+    if (std.mem.eql(u8, text, "null")) return Term.undefined_atom;
+    if (text[0] == '"' and text.len >= 2 and text[text.len - 1] == '"') return Term.str(try unescape(arena, text[1 .. text.len - 1]));
+    if (text[0] == '.' and text.len > 1 and std.ascii.isUpper(text[1])) return Term.atomOf(text[1..]);
+    if (text[0] == '[' and text[text.len - 1] == ']') {
+        var items: std.ArrayListUnmanaged(Term) = .empty;
+        const inner = text[1 .. text.len - 1];
+        var i: usize = 0;
+        while (i < inner.len) {
+            const end = valueEnd(inner, i);
+            const item = std.mem.trim(u8, inner[i..end], " \t\r\n");
+            if (item.len > 0) try items.append(arena, try literalTerm(arena, item));
+            i = end + 1;
+        }
+        return Term.listOf(items.items);
+    }
+    const num = if (text[text.len - 1] == 'f' or text[text.len - 1] == 'd') text[0 .. text.len - 1] else text;
+    if (std.fmt.parseInt(i64, num, 10)) |n| return Term.int(n) else |_| {}
+    if (std.fmt.parseFloat(f64, num)) |x| return .{ .float = x } else |_| {}
+    return Term.undefined_atom;
+}
+
+/// A string literal's content with its escapes resolved.
+fn unescape(arena: std.mem.Allocator, s: []const u8) std.mem.Allocator.Error![]const u8 {
+    if (std.mem.indexOfScalar(u8, s, '\\') == null) return s;
+    var out: std.ArrayListUnmanaged(u8) = .empty;
+    var i: usize = 0;
+    while (i < s.len) : (i += 1) {
+        if (s[i] != '\\' or i + 1 >= s.len) {
+            try out.append(arena, s[i]);
+            continue;
+        }
+        i += 1;
+        switch (s[i]) {
+            'n' => try out.append(arena, '\n'),
+            'r' => try out.append(arena, '\r'),
+            't' => try out.append(arena, '\t'),
+            'u' => if (i + 1 < s.len and s[i + 1] == '{') {
+                const close = std.mem.indexOfScalarPos(u8, s, i, '}') orelse s.len;
+                const cp = std.fmt.parseInt(u21, s[i + 2 .. close], 16) catch 0xFFFD;
+                var buf: [4]u8 = undefined;
+                const n = std.unicode.utf8Encode(cp, &buf) catch 0;
+                try out.appendSlice(arena, buf[0..n]);
+                i = close;
+            } else try out.append(arena, 'u'),
+            else => |c| try out.append(arena, c),
+        }
+    }
+    return out.items;
 }
 
 /// A type reference as the source spells it (`TypeRef.format`) — the same

@@ -36,7 +36,7 @@ val s = shout "hey";
   drop
   local.get $V_Q
   global.get $__lit
-  i32.const 224
+  i32.const 288
   i32.add
   i32.const 1
   call $rt_bin
@@ -45,7 +45,7 @@ val s = shout "hey";
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 232
+  i32.const 296
   i32.add
   i32.const 2
   call $rt_bin

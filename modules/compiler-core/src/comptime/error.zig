@@ -86,6 +86,9 @@ pub const TypeErrorKind = union(enum) {
         /// Where the `@Result` on the `got` side came from (E3.9), filled by
         /// `unify.zig` from `Env.resultOrigins`; the default when unknown.
         origin: ResultOrigin = .{},
+        /// Decision 426 (4) — the reasons a template call's `q.note` gave,
+        /// when the mismatch is at that call.
+        notes: []const []const u8 = &.{},
     },
     /// Identifier not found in scope.
     unboundVariable: []const u8,
@@ -407,6 +410,13 @@ pub const TypeError = struct {
                 if (try resultMismatchHint(gpa, m.expected, m.got, m.origin)) |hint| {
                     defer gpa.free(hint);
                     break :blk std.fmt.allocPrint(gpa, "type mismatch: expected {s}, got {s} — {s}", .{ expected, got, hint });
+                }
+                if (m.notes.len > 0) {
+                    var out: std.ArrayListUnmanaged(u8) = .empty;
+                    errdefer out.deinit(gpa);
+                    try out.print(gpa, "type mismatch: expected {s}, got {s}", .{ expected, got });
+                    for (m.notes) |n| try out.print(gpa, " — note: {s}", .{n});
+                    break :blk out.toOwnedSlice(gpa);
                 }
                 break :blk std.fmt.allocPrint(gpa, "type mismatch: expected {s}, got {s}", .{ expected, got });
             },

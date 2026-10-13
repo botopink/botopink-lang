@@ -60,6 +60,20 @@ pub const code_tag = "__bp_code";
 /// is not a word of the captured text: head ++ Name ++ tail. ASCII only: the
 /// prelude's binary literals carry bytes, not code points.
 pub const lookup_not_a_word_head = "lookup(\"";
+/// Decision 415 (3), 372's pattern — the meta of a looked-up declaration of
+/// the module whose `.hooks` reader has not run yet: `{'__bp_pending', Name}`
+/// in place of the list, refused at its read.
+pub const meta_pending_tag = "__bp_pending";
+/// Decision 426 — `q.build(src, i)` records `i`, the build the body answers
+/// (`template_eval.numberBuilds`), and `q.note(m)` a reason for an error at
+/// the call; `main/1` resets both before the body and `'__bp_extras'/1` adds
+/// them to the reply (`build`, `notes`, latest first).
+pub const build_key = "__bp_build";
+pub const notes_key = "__bp_notes";
+pub const extras_fn = "__bp_extras";
+pub const extras_reset_fn = "__bp_extrasReset";
+pub const meta_pending_head = "typeinfo-meta-hooks-pending: `";
+pub const meta_pending_tail = "` carries a decorator that reads `.hooks`, which records its meta after this read";
 pub const lookup_not_a_word_tail = "\"): not a word of the template's text; a template capture carries only the bindings whose name its text spells";
 /// The process-dictionary key `emit/1` accumulates under.
 pub const emitted_key = "__bp_emitted";
@@ -190,15 +204,36 @@ pub fn templateForms(b: Ast.Builder) Error![]const Ast.Form {
                 }),
             }),
         }),
-        // ref(#{local := Name}) -> {'__bp_code', __bp_text(Name)}.
-        // `Binding.ref()` splices the caller-scope binding back into the
-        // expansion as a bare reference, so `return b.ref();` for a hit on
-        // `greeting` expands to the identifier `greeting`, not to its value.
-        try b.function("ref", &.{try b.map(&.{Ast.exactField("local", V("Name"))})}, &.{}, &.{
-            try b.tuple(&.{ code, try b.call("__bp_text", &.{V("Name")}) }),
-        }),
         try b.function("build", &.{ V("_Capture"), V("Source") }, &.{}, &.{
             try b.tuple(&.{ code, try b.call("__bp_text", &.{V("Source")}) }),
+        }),
+        try b.function("build", &.{ V("_Capture"), V("Source"), V("At") }, &.{}, &.{
+            try b.remote("erlang", "put", &.{ A(build_key), V("At") }),
+            try b.tuple(&.{ code, try b.call("__bp_text", &.{V("Source")}) }),
+        }),
+        try b.function("note", &.{ V("_Capture"), V("Message") }, &.{}, &.{
+            try b.remote("erlang", "put", &.{ A(notes_key), try b.cons(&.{try b.call("__bp_text", &.{V("Message")})}, try b.call("__bp_notes", &.{})) }),
+            A("ok"),
+        }),
+        try b.function("__bp_notes", &.{}, &.{}, &.{
+            try b.caseOf(try b.remote("erlang", "get", &.{A(notes_key)}), &.{
+                try b.clause(&.{A("undefined")}, &.{}, &.{try b.list(&.{})}),
+                try b.clause(&.{V("Notes")}, &.{}, &.{V("Notes")}),
+            }),
+        }),
+        try b.function(extras_reset_fn, &.{}, &.{}, &.{
+            try b.remote("erlang", "erase", &.{A(build_key)}),
+            try b.remote("erlang", "erase", &.{A(notes_key)}),
+        }),
+        try b.function(extras_fn, &.{V("Reply")}, &.{}, &.{
+            try b.match(V("WithBuild"), try b.caseOf(try b.remote("erlang", "get", &.{A(build_key)}), &.{
+                try b.clause(&.{A("undefined")}, &.{}, &.{V("Reply")}),
+                try b.clause(&.{V("At")}, &.{}, &.{try b.remote("maps", "put", &.{ A("build"), V("At"), V("Reply") })}),
+            })),
+            try b.caseOf(try b.call("__bp_notes", &.{}), &.{
+                try b.clause(&.{try b.list(&.{})}, &.{}, &.{V("WithBuild")}),
+                try b.clause(&.{V("Notes")}, &.{}, &.{try b.remote("maps", "put", &.{ A("notes"), V("Notes"), V("WithBuild") })}),
+            }),
         }),
         try b.function("custom", &.{ V("_Capture"), V("Tree"), try b.tuple(&.{ code, V("Source") }) }, &.{}, &.{
             try b.tuple(&.{ A("__bp_custom"), V("Tree"), V("Source") }),
@@ -231,6 +266,7 @@ pub fn templateForms(b: Ast.Builder) Error![]const Ast.Form {
                 Ast.field("hooks", try b.list(&.{})),
                 Ast.field("params", try b.list(&.{})),
                 Ast.field("component", A("undefined")),
+                Ast.field("module", Ast.str("")),
                 Ast.field("attrs", V("Attrs")),
                 Ast.field("meta", try b.list(&.{})),
             }),
@@ -311,14 +347,24 @@ fn tagForms(b: Ast.Builder) Error![]const Ast.Form {
             }),
             try b.clause(&.{ V("_Decl"), V("_Name") }, &.{}, &.{A("undefined")}),
         }),
-        try b.function(method_meta_all_fn, &.{ try b.map(&.{Ast.exactField("meta", V("Metas"))}), V("Type") }, &.{}, &.{
-            .{ .list_comp = .{
-                .element = try b.ptr(V("Value")),
-                .qualifiers = try b.arena.dupe(Ast.ListComp.Qualifier, &.{
-                    .{ .generator = .{ .pattern = try b.map(&.{ Ast.exactField("type", V("T")), Ast.exactField("value", V("Value")) }), .list = V("Metas") } },
-                    .{ .filter = .{ .binop = .{ .op = "=:=", .lhs = try b.ptr(V("T")), .rhs = try b.ptr(V("Type")), .parens = false } } },
-                }),
-            } },
+        try b.functionClauses(method_meta_all_fn, &.{
+            try b.clause(&.{ try b.map(&.{Ast.exactField("meta", try b.tuple(&.{ A(meta_pending_tag), V("Name") }))}), V("_Type") }, &.{}, &.{
+                try b.remote("erlang", "throw", &.{try b.tuple(&.{
+                    A(template_fail_tag),
+                    try b.remote("erlang", "iolist_to_binary", &.{try b.list(&.{ Ast.str(meta_pending_head), V("Name"), Ast.str(meta_pending_tail) })}),
+                    A("null"),
+                    A("null"),
+                })}),
+            }),
+            try b.clause(&.{ try b.map(&.{Ast.exactField("meta", V("Metas"))}), V("Type") }, &.{}, &.{
+                .{ .list_comp = .{
+                    .element = try b.ptr(V("Value")),
+                    .qualifiers = try b.arena.dupe(Ast.ListComp.Qualifier, &.{
+                        .{ .generator = .{ .pattern = try b.map(&.{ Ast.exactField("type", V("T")), Ast.exactField("value", V("Value")) }), .list = V("Metas") } },
+                        .{ .filter = .{ .binop = .{ .op = "=:=", .lhs = try b.ptr(V("T")), .rhs = try b.ptr(V("Type")), .parens = false } } },
+                    }),
+                } },
+            }),
         }),
         try b.function(method_meta_fn, &.{ V("Method"), V("Type") }, &.{}, &.{
             try b.caseOf(try b.call(method_meta_all_fn, &.{ V("Method"), V("Type") }), &.{
@@ -522,8 +568,10 @@ test "prelude: both modules render, export every function and define no main" {
         "text/1",
         "parts/1",
         "lookup/2",
-        "ref/1",
         "build/2",
+        "build/3",
+        "note/2",
+        "'__bp_extras'/1",
         "custom/3",
         "fail/2",
         "failAt/3",

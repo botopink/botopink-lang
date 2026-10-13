@@ -1,0 +1,23 @@
+//// Decision 415 (3) — a template body reads a looked-up declaration's meta at
+//// build when its record is data. A record with an `@Expr` field (decision
+//// 370 (1)) holds code the program runs, so `decl.meta(T)` of it is refused at
+//// the read, naming the field (`template-lookup-meta-expr-field`).
+
+type Check(message: string, rule: @Expr<fn(n: i32) -> bool>)
+
+fn check(comptime decl: @Decl, comptime message: @Expr<string>, comptime rule: @Expr<fn(n: i32) -> bool>) {
+    decl.addMeta(Check(message: message.value, rule: rule));
+}
+
+#[check("positive", { n -> n > 0 })]
+type Amount(n: i32)
+
+fn rules(comptime q: @Expr<string>) -> @Expr<i32> {
+    val decl = q.lookup(q.text()) ?? q.fail("`" + q.text() + "` is not in scope");
+    val found = decl.metaAll(Check);
+    return q.build(found.length.toString());
+}
+
+pub fn main() {
+    @print(rules "Amount");
+}

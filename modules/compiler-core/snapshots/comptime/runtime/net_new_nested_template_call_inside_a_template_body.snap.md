@@ -20,7 +20,7 @@ val s = outer "x";
   local.set $V_Q
   local.get $V_Q
   global.get $__lit
-  i32.const 224
+  i32.const 288
   i32.add
   i32.const 13
   call $rt_bin

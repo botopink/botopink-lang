@@ -24,7 +24,7 @@ val r = need "<Buttom/>";
   local.set $V_T
   local.get $V_T
   global.get $__lit
-  i32.const 224
+  i32.const 288
   i32.add
   i32.const 6
   call $rt_bin
@@ -51,7 +51,7 @@ val r = need "<Buttom/>";
   (block $L6
   local.get $s1
   global.get $__lit
-  i32.const 232
+  i32.const 112
   i32.add
   i32.const 9
   call $rt_atom
@@ -60,7 +60,7 @@ val r = need "<Buttom/>";
   br_if $L6
   local.get $V_T
   global.get $__lit
-  i32.const 248
+  i32.const 296
   i32.add
   i32.const 4
   call $rt_bin
@@ -74,7 +74,7 @@ val r = need "<Buttom/>";
   local.set $s2
   local.get $V_T
   global.get $__lit
-  i32.const 256
+  i32.const 304
   i32.add
   i32.const 17
   call $rt_bin

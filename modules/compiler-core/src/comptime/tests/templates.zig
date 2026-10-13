@@ -169,10 +169,8 @@ test "template: expr methods typecheck and record lowerings" {
         \\    val annotated = template.annotate(tag, sp);
         \\    template.failAt(sp, "bad tag");
         \\    template.fail("no component");
+        \\    template.note("a reason");
         \\    return template;
-        \\}
-        \\pub fn mk<T>(b: Binding) -> @Expr<T> {
-        \\    return b.ref();
         \\}
     );
 
@@ -277,7 +275,7 @@ test "template: context exposes declaration position and scope for second-layer 
         "text => <<\"\\n<Button/>\\n\">>, multiline => true}",
         // Decision 237: only the scope entries the text names — `dsl` and `c`
         // are in scope but not words of `<Button/>`.
-        "bindings => [#{name => <<\"Button\">>, kind => 'Record_', identity => <<\"main@@Button\">>, local => <<\"Button\">>}]",
+        "bindings => [#{name => <<\"Button\">>, kind => 'Type', identity => <<\"main@@Button\">>, local => <<\"Button\">>}]",
         "words => [<<\"Button\">>]",
     };
     for (expected) |needle| {
@@ -613,9 +611,9 @@ test "comptime: round trip ---- an @ExprCustom reference tree names a declaratio
     try std.testing.expectEqual(@as(usize, 1), root.children.len);
     const ref = root.children[0].ref orelse return error.TestExpectedRef;
     try std.testing.expectEqualStrings("Item", ref.name);
-    // `ref.kind` is not asserted: an imported record reads as `Fn` here (the
-    // import binds its constructor) where a local one reads `Record_` — the
-    // scope snapshot's classification, not the round trip (reported to 01).
+    // `ref.kind` is the declaration's (`Type`, decision 415 (2)), read off
+    // the module that declares it.
+    try std.testing.expectEqualStrings("Type", ref.kind);
     try std.testing.expectEqualStrings("shapes@@Item", ref.identity);
     try std.testing.expectEqualStrings("Item", ref.local);
     try std.testing.expectEqual(@as(usize, 7), root.children[0].span.start);
@@ -714,7 +712,7 @@ test "decision 237: the capture's bindings are the scope entries its text names,
                 // A word is identifier-shaped: `9lives` is not one (nor is
                 // `lives` inside it), `_x` is; a repeated word counts once. Not
                 // `unrelated`, `dsl`, `a`, `b`: the text does not spell them.
-                "bindings => [#{name => <<\"Card\">>, kind => 'Record_', identity => <<\"main@@Card\">>, local => <<\"Card\">>}, #{name => <<\"Badge\">>, kind => 'Record_', identity => <<\"main@@Badge\">>, local => <<\"Badge\">>}]",
+                "bindings => [#{name => <<\"Card\">>, kind => 'Type', identity => <<\"main@@Card\">>, local => <<\"Card\">>}, #{name => <<\"Badge\">>, kind => 'Type', identity => <<\"main@@Badge\">>, local => <<\"Badge\">>}]",
                 "words => [<<\"Card\">>, <<\"title\">>, <<\"x\">>, <<\"Badge\">>, <<\"_x\">>]",
             };
             for (expected) |needle| {
@@ -761,7 +759,7 @@ test "decision 237 ---- lookup of a word of the text finds its binding" {
         \\    val count = q.bindings().length;
         \\    val hit = q.lookup("Badge");
         \\    if (hit) { b ->
-        \\        return q.build("\"" + b.name + "/" + b.local + "\"");
+        \\        return q.build("\"" + b.name + "/" + b.module + "\"");
         \\    } else {
         \\        return q.fail("Badge is a word of the text and in scope");
         \\    };
@@ -773,7 +771,7 @@ test "decision 237 ---- lookup of a word of the text finds its binding" {
     const replies = try h.canonicalReplies(std.testing.allocator, arena.allocator(), @src(), &.{.{ .path = "", .source = src }});
     try std.testing.expectEqual(@as(usize, 1), replies.len);
     try std.testing.expectEqualStrings(
-        \\{"kind":"code","source":"\"Badge/Badge\""}
+        \\{"kind":"code","source":"\"Badge/\""}
     , replies[0]);
     try h.assertComptimeAstSingle(std.testing.allocator, @src(), src);
 }
@@ -890,10 +888,11 @@ test "comptime: q.custom executes `code` identically + the tree is retrievable b
     try std.testing.expectEqualStrings("field", leaf.kind);
     try std.testing.expectEqualStrings("property", leaf.label);
     try std.testing.expectEqual(@as(usize, 5), leaf.span.start);
-    // `ref` carries the resolved origin-scope Binding (a `q.lookup` result).
+    // `ref` carries the resolved origin-scope declaration (a `q.lookup`
+    // result, decision 415 (2)).
     try std.testing.expect(leaf.ref != null);
     try std.testing.expectEqualStrings("Item", leaf.ref.?.name);
-    try std.testing.expectEqualStrings("Record_", leaf.ref.?.kind);
+    try std.testing.expectEqualStrings("Type", leaf.ref.?.kind);
 }
 
 test "decision 112: lookup answers the declaration's identity, never the alias" {

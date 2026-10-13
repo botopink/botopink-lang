@@ -30,6 +30,11 @@ fn tag(comptime self: @Expr<Named>, comptime q: @Expr<string>) -> @Expr<string> 
     return q.build("\"[" + q.text() + "] \" + " + self.text() + ".name()");
 }
 
+fn shape(comptime self: @Expr<Greeter>, comptime q: @Expr<string>) -> @Expr<string> {
+    val kind = if (q.context().multiline) "multi" else "single";
+    return q.build(self.text() + ".greet(\"" + kind + "\")");
+}
+
 type Room(host: Greeter) {
     pub fn open(self: Self) -> string {
         return self.host.shout "welcome";
@@ -52,7 +57,9 @@ type Report(db: Memory) {
 pub fn main() {
     val g = Greeter(who: "Ana");
     @print(g.shout "hello");
-    @print(g.tag """vip""");
+    @print(g.shape """
+        vip
+        """);
     @print(Room(host: Greeter(who: "Bia")).open());
     @print(g.tag "guest");
     val mem = Memory(prefix: "m:");

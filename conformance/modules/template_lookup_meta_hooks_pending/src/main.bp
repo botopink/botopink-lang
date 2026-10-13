@@ -1,0 +1,27 @@
+//// Decision 415 (3), by decision 372's pattern — a decorator that reads
+//// `.hooks` runs after its module's bodies, so the meta it records on a
+//// declaration of this module is not there yet when a template call of the
+//// module reads it through `q.lookup`: the read is refused at the call's
+//// literal (`typeinfo-meta-hooks-pending`), as `@typeInfo(X).meta(T)` is.
+
+type Count(uses: i32)
+
+fn graph(comptime decl: @Decl) {
+    decl.setMeta(Count(uses: decl.hooks.length));
+}
+
+#[graph]
+fn page() -> string {
+    return "page";
+}
+
+fn uses(comptime q: @Expr<string>) -> @Expr<i32> {
+    val decl = q.lookup(q.text()) ?? q.fail("`" + q.text() + "` is not in scope");
+    val c = decl.meta(Count) ?? q.fail("`" + q.text() + "` records no count");
+    return q.build(c.uses.toString());
+}
+
+pub fn main() {
+    @print(page());
+    @print(uses "page");
+}

@@ -1,0 +1,3 @@
+//// A type of another module, imported under an alias by the entry point.
+
+pub type User(id: i32, email: string)

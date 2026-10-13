@@ -11,7 +11,7 @@ pub fn ui(comptime q: @Expr<string>) -> @Expr<string> {
     val count = q.bindings().length;
     val hit = q.lookup("Badge");
     if (hit) { b ->
-        return q.build("\"" + b.name + "/" + b.local + "\"");
+        return q.build("\"" + b.name + "/" + b.module + "\"");
     } else {
         return q.fail("Badge is a word of the text and in scope");
     };
@@ -33,7 +33,7 @@ val s = ui "<Card title=\"x\"><Badge/></Card>";
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 224
+  i32.const 288
   i32.add
   i32.const 6
   call $rt_atom
@@ -56,7 +56,7 @@ val s = ui "<Card title=\"x\"><Badge/></Card>";
   drop
   local.get $V_Q
   global.get $__lit
-  i32.const 232
+  i32.const 296
   i32.add
   i32.const 5
   call $rt_bin
@@ -83,7 +83,7 @@ val s = ui "<Card title=\"x\"><Badge/></Card>";
   (block $L8
   local.get $s1
   global.get $__lit
-  i32.const 240
+  i32.const 112
   i32.add
   i32.const 9
   call $rt_atom
@@ -92,7 +92,7 @@ val s = ui "<Card title=\"x\"><Badge/></Card>";
   br_if $L8
   local.get $V_Q
   global.get $__lit
-  i32.const 256
+  i32.const 304
   i32.add
   i32.const 40
   call $rt_bin
@@ -106,12 +106,12 @@ val s = ui "<Card title=\"x\"><Badge/></Card>";
   local.set $s2
   local.get $V_Q
   global.get $__lit
-  i32.const 296
+  i32.const 344
   i32.add
   i32.const 1
   call $rt_bin
   global.get $__lit
-  i32.const 304
+  i32.const 352
   i32.add
   i32.const 4
   call $rt_atom
@@ -123,7 +123,7 @@ val s = ui "<Card title=\"x\"><Badge/></Card>";
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 312
+  i32.const 360
   i32.add
   i32.const 1
   call $rt_bin
@@ -131,9 +131,9 @@ val s = ui "<Card title=\"x\"><Badge/></Card>";
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 320
+  i32.const 368
   i32.add
-  i32.const 5
+  i32.const 6
   call $rt_atom
   local.get $s2
   call $rt_maps_get
@@ -143,7 +143,7 @@ val s = ui "<Card title=\"x\"><Badge/></Card>";
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 296
+  i32.const 344
   i32.add
   i32.const 1
   call $rt_bin
@@ -190,14 +190,34 @@ val s = ui "<Card title=\"x\"><Badge/></Card>";
 ;;     },
 ;;     bindings => [
 ;;         #{
+;;             kind => 'Type',
 ;;             name => <<"Card">>,
-;;             kind => 'Record_',
+;;             fields => [#{name => <<"title">>, typeName => <<"string">>, annotations => []}],
+;;             variants => [],
+;;             methods => [],
+;;             returnType => <<"">>,
+;;             annotations => [],
+;;             hooks => [],
+;;             params => [],
+;;             component => undefined,
+;;             module => <<"">>,
+;;             meta => [],
 ;;             identity => <<"main@@Card">>,
 ;;             local => <<"Card">>
 ;;         },
 ;;         #{
+;;             kind => 'Type',
 ;;             name => <<"Badge">>,
-;;             kind => 'Record_',
+;;             fields => [#{name => <<"n">>, typeName => <<"i32">>, annotations => []}],
+;;             variants => [],
+;;             methods => [],
+;;             returnType => <<"">>,
+;;             annotations => [],
+;;             hooks => [],
+;;             params => [],
+;;             component => undefined,
+;;             module => <<"">>,
+;;             meta => [],
 ;;             identity => <<"main@@Badge">>,
 ;;             local => <<"Badge">>
 ;;         }
@@ -210,7 +230,7 @@ val s = ui "<Card title=\"x\"><Badge/></Card>";
 ```json
 {
   "kind": "code",
-  "source": "\"Badge/Badge\""
+  "source": "\"Badge/\""
 }
 ```
 

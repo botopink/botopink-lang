@@ -842,6 +842,9 @@ pub const all_codes = [_][]const u8{
     template_annotation_without_decl,
     template_annotation_only,
     template_call_unexpanded,
+    template_lookup_decl_write,
+    template_lookup_meta_expr_field,
+    template_build_outside_bound,
 };
 
 test "every reserved code has a stable, non-empty spelling" {
@@ -922,3 +925,18 @@ pub const template_annotation_only: []const u8 = "template-annotation-only";
 /// expand: it would reach a backend as a run-time call of a function that
 /// exists only at build. Refused at the call.
 pub const template_call_unexpanded: []const u8 = "template-call-unexpanded";
+
+/// Decision 415 (2) — `setMeta` / `addMeta` / `addMember` / `addType` /
+/// `wrapWith` on a declaration a template body looked up (`q.lookup`): the
+/// handle is read-only. Refused at the call.
+pub const template_lookup_decl_write: []const u8 = "template-lookup-decl-write";
+
+/// Decision 415 (3) — `d.meta(T)` / `d.metaAll(T)` in a template body where
+/// the record `T` has an `@Expr` field (370 (1)): that field is code the
+/// program runs, not data the build has. Refused at the read, naming it.
+pub const template_lookup_meta_expr_field: []const u8 = "template-lookup-meta-expr-field";
+
+/// Decision 426 (2) — the code a template built is of a type outside the
+/// template's answer (the signature's `-> @Expr<…>`, a bound). Refused at the
+/// template's `build`.
+pub const template_build_outside_bound: []const u8 = "template-build-outside-bound";

@@ -5780,6 +5780,10 @@ fn templateAnnotationCapture(env: *Env, a: ast.Annotation, tfn: ast.FnDecl) Infe
         .scope = env.scopeSnapshot,
         .valueRead = valueRead,
     };
+    // Decision 415 (2) — what `q.lookup` / `q.bindings` answer.
+    if (decoratorSameMod.mentionsMethod(tfn, "lookup") or decoratorSameMod.mentionsMethod(tfn, "bindings")) {
+        cap.* = (try withLookupHandles(env, &.{cap.*}))[0];
+    }
     return cap;
 }
 
@@ -6611,7 +6615,26 @@ fn inferTagMetaRead(env: *Env, call: anytype, recv: *ast.TypedExpr, loc: ast.Loc
         env.lastError = TypeError.custom(msg, "A declaration's typed meta is read `@typeInfo(X).meta(T)` (decision 298); `d.meta(T)` reads what a tag's annotations recorded, on the `@Decl` `q.annotate` answers (decision 302).").withLoc(loc);
         return error.TypeError;
     };
+    // Decision 415 (3) — a template body reads a meta at build when its
+    // record is data: an `@Expr` field is code the program runs.
+    if (env.inTemplateFn) {
+        const mt = try metaReadType(env, call, loc);
+        if (typeDeclAt(env, env.moduleDecls, mt.module, mt.name)) |td| for (td.recordFields()) |f| {
+            if (!f.exprWrapped) continue;
+            const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}({s})` is read while the program compiles, and `{s}`'s field `{s}` is an `@Expr` — code the program runs, not data", .{ diagnostics.template_lookup_meta_expr_field, call.callee, mt.spelled, mt.name, f.name });
+            env.lastError = TypeError.custom(msg, "A template body reads a declaration's meta at build when every field is data — a string, a number, a `bool`, a variant, an array or an optional of those (decision 415 (3)).").withLoc(loc);
+            return error.TypeError;
+        };
+    }
     return metaReadCall(env, call, recv, loc, "a tag's `@Decl`");
+}
+
+/// The `@Decl` methods that write the declaration (decision 216; 316's
+/// `wrapWith`).
+fn isDeclWrite(callee: []const u8) bool {
+    const writes = [_][]const u8{ "setMeta", "addMeta", "addMember", "addType", "wrapWith" };
+    for (writes) |w| if (std.mem.eql(u8, callee, w)) return true;
+    return false;
 }
 
 /// Whether `t` is the `@Decl` handle's type.
@@ -8970,7 +8993,7 @@ fn expandTemplateCall(
         },
     };
 
-    return finishExpansion(env, expansion, retType, loc);
+    return finishExpansionBuilt(env, expansion, retType, loc, .{ .callee = tfn.name });
 }
 
 /// The synthesised type of a `"std"` module or namespace receiver
@@ -9054,7 +9077,22 @@ fn inferTemplateMethodCall(
 /// Splice + re-check the chosen expansion in the caller's environment, verify
 /// a concrete `-> @Expr<T>` bound (an unconstrained generic reveals the type
 /// per call site instead), and record the substitution for the transform pass.
-fn finishExpansion(env: *Env, expansion_in: *const ast.Expr, retType: *T.Type, loc: ast.Loc) InferError!TypedExpr {
+/// What a template run tells `finishExpansion` beside its code (decision
+/// 426): the template's name, the `q.build` whose code the body answered
+/// (`template_eval.numberBuilds`; null when not known — `@code`, a build in a
+/// function the body calls, a body reduced by inspection), the template's
+/// file when it is another module's, and its `q.note`s.
+const BuiltInfo = envMod.TemplateBuilt;
+
+/// Decision 426 — the call is typed by the code the template built for it:
+/// the expansion is inferred in the caller's environment and its type is the
+/// call's, so no free `T` of the signature survives (a bare `-> @Expr<T>`
+/// takes the built type). The signature's answer is a bound the built type
+/// fits (`unknown` holds anything), refused at the template's `build`
+/// otherwise (`template-build-outside-bound`); the call then meets the type
+/// expected where it stands as any expression does, at the call, and the
+/// template's `q.note`s ride an error there (`Env.templateNotes`, `unifyAt`).
+fn finishExpansionBuilt(env: *Env, expansion_in: *const ast.Expr, retType: *T.Type, loc: ast.Loc, built: BuiltInfo) InferError!TypedExpr {
     // 144 B-10 (decisions 192, 207) — the calls the built code makes of this
     // module's functions build their inline parameter types, as the written
     // ones do (`inline_types.zig` ran before the code existed).
@@ -9070,12 +9108,25 @@ fn finishExpansion(env: *Env, expansion_in: *const ast.Expr, retType: *T.Type, l
         (std.mem.eql(u8, rDeref.named.name, "Expr") or std.mem.eql(u8, rDeref.named.name, "CustomExpr")))
     {
         const bound = rDeref.named.args[0];
-        if (bound.deref().* != .typeVar) {
-            try unifyAt(env, bound, typed.getType(), loc);
-        }
+        unifyUnlocated(env, bound, typed.getType()) catch |err| {
+            if (err != error.TypeError) return err;
+            const want = try errorMod.typeLabelAlloc(env.arena, bound);
+            const got = try errorMod.typeLabelAlloc(env.arena, typed.getType());
+            const callee = if (built.callee.len > 0) built.callee else "the template";
+            const at = built.at orelse loc;
+            if (built.file) |file| if (built.at) |b| {
+                const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` built code of type `{s}` at {s}:{d}:{d}, outside its answer `{s}`", .{ diagnostics.template_build_outside_bound, callee, got, file, b.line, b.col, want });
+                env.lastError = TypeError.custom(msg, "A template's answer is a bound its built code fits (decision 426 (2)): build code of that type, or widen the answer.").withLoc(loc);
+                return error.TypeError;
+            };
+            const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` built code of type `{s}`, outside its answer `{s}`", .{ diagnostics.template_build_outside_bound, callee, got, want });
+            env.lastError = TypeError.custom(msg, "A template's answer is a bound its built code fits (decision 426 (2)): build code of that type, or widen the answer.").withLoc(at);
+            return error.TypeError;
+        };
     }
 
     try env.templateExpansions.put(loc, expansion);
+    if (built.notes.len > 0) try env.templateNotes.put(env.arena, loc, built.notes);
     return typed;
 }
 
@@ -9105,6 +9156,125 @@ fn withHoleValues(env: *Env, io: std.Io, captures: []const template.CapturedExpr
         cap.holeValues = values.items;
     }
     return out;
+}
+
+/// Decision 415 (2) — `captures` with the `@Decl` handle of every word of
+/// their text that names a declaration where the call stands: what
+/// `q.lookup(word)` answers and `q.bindings()` lists. A declaration of this
+/// module or an imported one (an alias answers the declaration it names,
+/// decision 112) is reflected as a decorator's handle is — `name`, `kind`,
+/// `module`, `fields`, `variants`, `methods`, `params` — with the typed meta
+/// its decorators recorded (`meta`, read `d.meta(T)`): another module's ran
+/// when that module was analysed, this module's before its bodies.
+fn withLookupHandles(env: *Env, captures: []const template.CapturedExpr) InferError![]const template.CapturedExpr {
+    const out = try env.arena.dupe(template.CapturedExpr, captures);
+    for (out) |*cap| {
+        const scope = cap.scope orelse continue;
+        var handles: std.ArrayListUnmanaged(template.LookupHandle) = .empty;
+        for (try templateEval.captureWords(env.arena, cap)) |word| {
+            const entry = scope.entries.get(word) orelse continue;
+            try handles.append(env.arena, .{ .local = word, .term = try decoratorEval.handleToTerm(env.arena, try lookupHandle(env, entry)) });
+        }
+        cap.handles = handles.items;
+    }
+    return out;
+}
+
+/// The read-only handle `q.lookup` answers for `entry`, a name of the call
+/// site's scope (decision 415 (2)).
+fn lookupHandle(env: *Env, entry: template.ScopeEntry) InferError!decoratorEval.DeclHandle {
+    const own = env.ownDecls.contains(entry.name);
+    const owner: ?envMod.TemplateImport = if (own) .{ .owner = env.modulePath, .name = entry.name } else env.importOwners.get(entry.name);
+    const module = if (owner) |o| o.owner else "";
+    const name = if (owner) |o| o.name else entry.declName;
+    var h: decoratorEval.DeclHandle = .{
+        .kind = entry.kind.declKindName(),
+        .name = name,
+        .fields = &.{},
+        .methods = &.{},
+        .returnType = "",
+        .annotations = &.{},
+        .module = module,
+    };
+    const decl: ?ast.DeclKind = if (own) for (env.moduleDecls) |d| {
+        const n: []const u8 = switch (d) {
+            .@"fn" => |f| f.name,
+            .val => |v| v.name,
+            .type_ => |t| t.name,
+            .behavior => |b| b.name,
+            else => continue,
+        };
+        if (std.mem.eql(u8, n, name)) break d;
+    } else null else if (env.typeDeclRegistry) |reg| if (reg.get(module)) |decls| decls.get(name) else null else null;
+    if (decl) |d| switch (d) {
+        .@"fn" => |f| {
+            h.kind = "Fn";
+            h.returnType = if (f.returnType) |rt| try declTypeName(env.arena, rt) else "";
+            h.annotations = f.annotations;
+            h.params = try paramHandles(env, f.params);
+        },
+        .val => |v| {
+            h.kind = "Val";
+            h.returnType = if (v.typeAnnotation) |tr| try declTypeName(env.arena, tr) else "";
+            h.annotations = v.annotations;
+        },
+        .type_ => |t| {
+            h.kind = "Type";
+            h.annotations = t.annotations;
+            h.methods = t.methods;
+            const fields = try env.arena.alloc(decoratorEval.FieldHandle, t.recordFields().len);
+            for (t.recordFields(), 0..) |fld, i| fields[i] = .{ .name = fld.name, .typeName = try declTypeName(env.arena, fld.typeRef), .annotations = fld.annotations };
+            h.fields = fields;
+            if (t.shape == .enum_) {
+                const vs = t.variants();
+                const secs = t.sections();
+                const names = try env.arena.alloc([]const u8, vs.len + secs.len);
+                for (vs, 0..) |v, i| names[i] = v.name;
+                for (secs, 0..) |sec, i| names[vs.len + i] = sec.name;
+                h.variants = names;
+            }
+        },
+        .behavior => |b| {
+            h.kind = "Behavior";
+            h.annotations = b.annotations;
+            h.methods = b.methods;
+            const fields = try env.arena.alloc(decoratorEval.FieldHandle, b.fields.len);
+            for (b.fields, 0..) |fld, i| fields[i] = .{ .name = fld.name, .typeName = try declTypeName(env.arena, fld.typeRef), .annotations = &.{} };
+            h.fields = fields;
+        },
+        else => {},
+    };
+    var metas: std.ArrayListUnmanaged(decoratorEval.TagMeta) = .empty;
+    if (env.reflection) |r| if (module.len > 0) for (try r.typedMetaOf(env.arena, module, name)) |e| {
+        try metas.append(env.arena, .{ .typeName = e.typeName, .repeat = e.repeat, .value = try lookupMetaTerm(env, e) });
+    };
+    // Decision 372's pattern — a `.hooks` reader of this module records its
+    // meta after the bodies: read before it ran, the meta is refused.
+    const pending = own and !env.hooksReadersRan and blk: {
+        var it = env.hooksReaders.keyIterator();
+        while (it.next()) |k| {
+            if (std.mem.startsWith(u8, k.*, name) and k.len > name.len and k.*[name.len] == 0) break :blk true;
+        }
+        break :blk false;
+    };
+    h.lookup = .{ .identity = entry.identity, .local = entry.name, .meta = metas.items, .pending = pending };
+    h.decoratorIds = try handleDecoratorIds(env, h);
+    return h;
+}
+
+/// A typed meta value of a looked-up declaration as the term the template
+/// body reads (decision 415 (3)): its record's fields from the constructor's
+/// arguments, a field the value left out from its default as written.
+fn lookupMetaTerm(env: *Env, e: reflectionMod.TypedMetaEntry) InferError!decoratorEval.Term {
+    const td = typeDeclAt(env, env.moduleDecls, e.typeModule, e.typeName) orelse typeDeclAt(env, env.moduleDecls, e.typeModule, try std.mem.concat(env.arena, u8, &.{ "\x01", e.typeName }));
+    const fields = if (td) |t| t.recordFields() else &.{};
+    const names = try env.arena.alloc([]const u8, fields.len);
+    const defaults = try env.arena.alloc(?[]const u8, fields.len);
+    for (fields, 0..) |f, i| {
+        names[i] = f.name;
+        defaults[i] = if (f.default) |d| try defaultLexeme(env.arena, d) else null;
+    }
+    return decoratorEval.metaArgsTerm(env.arena, names, defaults, e.args);
 }
 
 /// Run the template body in the node eval runtime and turn the protocol
@@ -9154,7 +9324,7 @@ fn expandTemplateCallViaRuntime(
     stages.stop(.memo_key, t_memo);
     if (memoKey) |key| {
         if (env.templateEvalCache.get(key)) |cached| {
-            return finishExpansion(env, cached, retType, loc);
+            return finishExpansionBuilt(env, cached, retType, loc, env.templateEvalBuilt.get(key) orelse .{ .callee = tfn.name });
         }
     }
 
@@ -9203,6 +9373,11 @@ fn expandTemplateCallViaRuntime(
     const support = try std.mem.concat(env.arena, ast.FnDecl, &.{ carried[1..], reached.fns, hosted });
     const types = try std.mem.concat(env.arena, ast.DeclKind, &.{ reached.types, answered.types });
     var valued = try withHoleValues(env, ctx.io, captures);
+    // Decision 415 (2) — what `q.lookup` / `q.bindings` answer.
+    const looksUp = decoratorSameMod.mentionsMethod(carried[0], "lookup") or decoratorSameMod.mentionsMethod(carried[0], "bindings") or for (support) |f| {
+        if (decoratorSameMod.mentionsMethod(f, "lookup") or decoratorSameMod.mentionsMethod(f, "bindings")) break true;
+    } else false;
+    if (looksUp) valued = try withLookupHandles(env, valued);
     // Decision 302 — a body that calls `q.annotate(decl, at)` reads the typed
     // meta of the tag's `@Decl` (`d.meta(T)`), lowered for the run; each call
     // past the answers so far stops the run with the annotation to apply,
@@ -9210,15 +9385,20 @@ fn expandTemplateCallViaRuntime(
     const annotates = decoratorSameMod.mentionsMethod(carried[0], "annotate") or for (support) |f| {
         if (decoratorSameMod.mentionsMethod(f, "annotate")) break true;
     } else false;
-    const runTfn = if (annotates) try exprParam.eraseMetaReads(env.arena, carried[0]) else carried[0];
-    const runSupport = if (annotates) blk: {
+    const readsMeta = annotates or looksUp;
+    const runTfn = if (readsMeta) try exprParam.eraseMetaReads(env.arena, carried[0]) else carried[0];
+    const runSupport = if (readsMeta) blk: {
         const out = try env.arena.alloc(ast.FnDecl, support.len);
         for (support, 0..) |f, i| out[i] = try exprParam.eraseMetaReads(env.arena, f);
         break :blk out;
     } else support;
+    // Decision 426 (2) — each `q.build` of the body numbered, so the run
+    // names the one whose code it answered.
+    const numbered = try templateEval.numberBuilds(env.arena, runTfn);
+    var extras: templateEval.Extras = .{};
     var tags: std.ArrayListUnmanaged(decoratorEval.DeclHandle) = .empty;
     const outcome = while (true) {
-        const run = templateEval.evaluate(env.arena, ctx.io, ctx.build_root, owner, srcPathOfModule(env, owner), runTfn, runSupport, types, valued, plainArgs, &env.comptimeTraces) catch {
+        const run = templateEval.evaluate(env.arena, ctx.io, ctx.build_root, owner, srcPathOfModule(env, owner), numbered.f, runSupport, types, valued, plainArgs, &env.comptimeTraces, &extras) catch {
             env.lastError = TypeError.custom(
                 "the template evaluator failed to run",
                 "Template bodies run on the wasm comptime runtime inside the compiler (decision 434); this failure is the compiler's, not the body's — report it.",
@@ -9319,10 +9499,17 @@ fn expandTemplateCallViaRuntime(
         .need => unreachable,
     };
 
+    const built: BuiltInfo = .{
+        .callee = tfn.name,
+        .at = if (extras.build) |i| (if (i < numbered.locs.len) numbered.locs[i] else null) else if (numbered.locs.len == 1 and outcome == .code) numbered.locs[0] else null,
+        .file = if (own_template) null else srcPathOfModule(env, owner),
+        .notes = extras.notes,
+    };
     if (memoKey) |key| {
         env.templateEvalCache.put(key, expansion) catch return error.OutOfMemory;
+        try env.templateEvalBuilt.put(env.arena, key, built);
     }
-    return finishExpansion(env, expansion, retType, loc);
+    return finishExpansionBuilt(env, expansion, retType, loc, built);
 }
 
 /// Decision 302 — the most tag annotations one expansion runs.
@@ -10069,6 +10256,12 @@ fn unifyAt(env: *Env, a: *T.Type, b: *T.Type, loc: ast.Loc) InferError!void {
     const tb = b.deref();
     unifyUnlocated(env, a, b) catch |err| {
         if (env.lastError) |*e| {
+            // Decision 426 (4) — a template's `q.note(message)` rides an
+            // error reported at its call.
+            if (env.templateNotes.get(loc)) |notes| switch (e.kind) {
+                .typeMismatch => |*m| m.notes = notes,
+                else => {},
+            };
             // The occurs check answers a type that would contain itself —
             // inside a generic fn, the declared `T` against a `?T` (`return
             // xs[0];` under `-> T`, an index answering `?T`) or a `T[]`. Named
@@ -16981,12 +17174,12 @@ fn unwrapOrDefaultExpected(recv: ?*ast.TypedExpr, callee: []const u8) ?*T.Type {
 /// `text`/`parts`/`lookup`/`fail`/`failAt` on an `expr` receiver, plus
 /// `ref()` on a `Binding`.
 ///
-/// The data model (`Span`, `Part`, `Binding`) lives in `std.syntax`
+/// The data model (`Span`, `Part`, `Decl`) lives in `std.syntax`
 /// (libs/std/src/syntax.bp); these methods are inference-resolved like the
 /// `@Result`/`@Option` builtins — no runtime dispatch table — and recorded in
 /// `env.templateLowerings` (keyed by call loc) for the expansion pass (F6).
 /// Instances only exist at comptime; no codegen backend ever sees these calls.
-/// Returns null when the receiver is not an `expr`/`Binding` or the method is
+/// Returns null when the receiver is not an `expr` or the method is
 /// unknown — the caller falls back to permissive method typing.
 fn inferTemplateMethod(
     env: *Env,
@@ -17048,9 +17241,10 @@ fn inferTemplateMethod(
             op = .context;
             retType = try env.namedType("ExprContext");
         } else if (std.mem.eql(u8, callee, "bindings")) {
-            // Enumerate the origin scope (top-level decls + imports, V1).
+            // Every declaration a word of the text names (decision 237), as
+            // `lookup` answers it (decision 415 (2)).
             op = .bindings;
-            retType = try env.namedTypeArgs("array", &.{try env.namedType("Binding")});
+            retType = try env.namedTypeArgs("array", &.{try env.namedType("Decl")});
         } else if (std.mem.eql(u8, callee, "build")) {
             // Parse source text into an expression carrying the receiver's
             // origin scope + provenance — how a second-layer language emits
@@ -17069,14 +17263,22 @@ fn inferTemplateMethod(
             try unifyArg(env, typedArgs, 1, try env.namedTypeArgs("Expr", &.{r}));
             retType = try env.namedTypeArgs("CustomExpr", &.{r});
         } else if (std.mem.eql(u8, callee, "lookup")) {
+            // Decision 415 (2) — the call site's declaration, a read-only
+            // `?@Decl`.
             op = .lookup;
             try unifyArg(env, typedArgs, 0, try env.namedType("string"));
-            retType = try env.namedTypeArgs("optional", &.{try env.namedType("Binding")});
+            retType = try env.namedTypeArgs("optional", &.{try env.namedType("Decl")});
         } else if (std.mem.eql(u8, callee, "fail")) {
             op = .fail;
             try unifyArg(env, typedArgs, 0, try env.namedType("string"));
             // `fail` never returns — a fresh var unifies with any context.
             retType = try env.freshVar();
+        } else if (std.mem.eql(u8, callee, "note")) {
+            // Decision 426 (4) — a reason attached to an error reported at
+            // the call (`finishExpansion`, `unifyAt`).
+            op = .note;
+            try unifyArg(env, typedArgs, 0, try env.namedType("string"));
+            retType = try env.namedType("void");
         } else if (std.mem.eql(u8, callee, "failAt")) {
             op = .failAt;
             try unifyArg(env, typedArgs, 0, try env.namedType("Span"));
@@ -17098,11 +17300,6 @@ fn inferTemplateMethod(
             try unifyArg(env, typedArgs, 1, try env.namedType("Span"));
             retType = try env.namedType("Decl");
         } else return null;
-    } else if (std.mem.eql(u8, named.name, "Binding")) {
-        if (!std.mem.eql(u8, callee, "ref")) return null;
-        op = .ref;
-        // A spliceable reference: `expr` of a type revealed at expansion.
-        retType = try env.namedTypeArgs("Expr", &.{try env.freshVar()});
     } else return null;
 
     try env.templateLowerings.put(loc, op);
@@ -18737,6 +18934,9 @@ fn noMeta(_: *const anyopaque, _: std.mem.Allocator, _: []const u8, _: []const u
 fn completeHandle(env: *Env, handle: decoratorEval.DeclHandle) InferError!decoratorEval.DeclHandle {
     var h = handle;
     h.decoratorIds = try handleDecoratorIds(env, handle);
+    // Decision 415 (2) — `decl.module`: a declaration of this module, unless
+    // the handle names another's (a `q.lookup` answer).
+    if (h.module.len == 0 and !h.isTag()) h.module = env.modulePath;
     return h;
 }
 
@@ -19469,6 +19669,16 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
             // Decision 298 — `d.meta(T)` / `d.metaAll(T)` on a catalogue entry.
             if (typedReceiver) |rp| if (!call.is_builtin and call.calleeExpr == null and (std.mem.eql(u8, call.callee, "meta") or std.mem.eql(u8, call.callee, "metaAll")) and isDeclaredType(rp.getType())) {
                 return inferDeclaredMetaRead(env, call, rp, loc);
+            };
+            // Decision 415 (2) — a declaration a template body looked up is
+            // read-only: what writes a declaration is refused on it.
+            if (typedReceiver) |rp| if (env.inTemplateFn and !call.is_builtin and call.calleeExpr == null and isDeclHandleType(rp.getType()) and isDeclWrite(call.callee)) {
+                const own = if (currentDeclParam(env)) |dp| std.mem.eql(u8, typedIdentName(rp.*) orelse "", dp) else false;
+                if (!own) {
+                    const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` writes a declaration, and a declaration a template looks up is read-only", .{ diagnostics.template_lookup_decl_write, call.callee });
+                    env.lastError = TypeError.custom(msg, "`q.lookup(name)` answers the call site's declaration to read — `name`, `kind`, `module`, `fields`, `meta(T)` (decision 415 (2)); a decorator on that declaration records what it carries.").withLoc(loc);
+                    return error.TypeError;
+                }
             };
             // Decision 298 — a typed meta value is recorded in the decorator's
             // own body, on its `@Decl` parameter (`typed_meta.collect`).

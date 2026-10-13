@@ -1,0 +1,63 @@
+//// Decision 415 (3) — on a declaration `q.lookup` answered, `decl.meta(T)`
+//// (`?T`) and `decl.metaAll(T)` (`T[]`) are answered at build when the record
+//// `T` is data: what the declaration's decorators recorded, a field the value
+//// left out read as its default. A declaration with no such meta answers
+//// `null` / `[]`, and the template refuses it with `q.fail`.
+
+type Size { Small, Large }
+
+type Table(name: string, rows: i32, cached: bool = false, size: Size = .Small, tags: string[] = [])
+
+type Index(column: string)
+
+fn table(comptime decl: @Decl, comptime name: @Expr<string>, comptime rows: @Expr<i32>) {
+    decl.setMeta(Table(name: name.value, rows: rows.value, size: .Large, tags: ["a", "b"]));
+}
+
+fn index(comptime decl: @Decl, comptime column: @Expr<string>) {
+    decl.addMeta(Index(column: column.value));
+}
+
+#[table("users", 3), index("email"), index("id")]
+type User(id: i32, email: string)
+
+type Plain(x: i32)
+
+fn sql(comptime q: @Expr<string>) -> @Expr<string> {
+    val decl = q.lookup(q.text()) ?? q.fail("`"
+        + q.text()
+        + "` is not in scope");
+    val t = decl.meta(Table) ?? q.fail("`" + q.text() + "` is not an entity");
+    val cached = if (t.cached) "yes" else "no";
+    val size = if (t.size == Size.Large) "large" else "small";
+    var text = t.name
+        + " rows="
+        + t.rows.toString()
+        + " cached="
+        + cached
+        + " size="
+        + size
+        + " tags="
+        + t.tags.join(",");
+    for (decl.metaAll(Index)) { i ->
+        text = text + " index=" + i.column;
+    }
+    return q.build("\"" + text + "\"");
+}
+
+fn entity(comptime q: @Expr<string>) -> @Expr<bool> {
+    val decl = q.lookup(q.text()) ?? q.fail("`"
+        + q.text()
+        + "` is not in scope");
+    val found = if (decl.meta(Table) == null && decl.metaAll(Index).length == 0)
+        "false"
+    else
+        "true";
+    return q.build(found);
+}
+
+pub fn main() {
+    @print(sql "User");
+    @print(entity "User");
+    @print(entity "Plain");
+}

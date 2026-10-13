@@ -1801,7 +1801,8 @@ pub const decl_reflection_src =
     \\    annotations: __Decl__Annotation[],
     \\    hooks: HookNode[],
     \\    params: __Decl__Param[],
-    \\    component: ?Decl) {
+    \\    component: ?Decl,
+    \\    module: string) {
     \\    declare fn attr(self: Self, name: string) -> ?string;
     \\    declare fn fail(self: Self, message: string);
     \\    declare fn failAt(self: Self, span: Span, message: string);
@@ -1818,14 +1819,14 @@ pub const decl_reflection_src =
 /// (`CustomNode(kind: …, span: …, …)`) and hand it to `q.custom`. Like the
 /// `@Decl` cluster this mirrors the surface documented in
 /// `libs/std/src/builtins.d.bp`; registered after `decl_reflection_src` so its
-/// `Span` field type resolves. `Binding` (the `ref` field) is the same opaque
-/// type `q.lookup` yields. Generic — the core never inspects `kind`/`label`.
+/// `Span` field type resolves. `Decl` (the `ref` field) is what `q.lookup`
+/// answers (decision 415 (2)). Generic — the core never inspects `kind`/`label`.
 const custom_ast_reflection_src =
     \\pub type CustomNode(
     \\    kind: string,
     \\    span: Span,
     \\    label: string,
-    \\    ref: ?Binding,
+    \\    ref: ?Decl,
     \\    children: CustomNode[],
     \\)
 ;

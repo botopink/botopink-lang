@@ -465,22 +465,6 @@ pub type Part {
     Interp(hole: Expr<string>, span: Span),
 }
 
-// What kind of top-level declaration a scope lookup resolved to.
-pub type BindingKind {
-    Fn,
-    Val,
-    Record_,
-    Enum,
-    Interface,
-}
-
-// A name resolved in an expression's origin scope (V1: the caller module's
-// top-level declarations + imports — function locals are not visible).
-pub type Binding(
-    name: string,
-    kind: BindingKind,
-)
-
 // Where an expression was written: the declaration position in the origin file.
 // `file` is the module path ("" for main); `line`/`col` point at the template
 // literal's opening quote (1-based).
@@ -511,12 +495,12 @@ pub type ExprContext(
 // `CustomNode`s at the boundary; the core never branches on the contents.
 // `kind`/`label` are opaque tags the lib picks; `span` indexes the
 // `Expr<string>` source text; `ref` optionally ties a node (a queried
-// collection, a column, …) to a caller-scope symbol via a `lookup` result.
+// collection, a column, …) to a caller-scope declaration via a `lookup` result.
 pub type CustomNode(
     kind: string, // lib-chosen tag: "select" / "field" / "predicate" / "literal" …
     span: Span, // offsets into the template's source text
     label: string, // tooling token category: "keyword"/"property"/"string"/"number"/"operator"
-    ref: ?Binding, // optional association to an origin-scope symbol
+    ref: ?Decl, // optional association to an origin-scope declaration
     children: CustomNode[],
 )
 
@@ -534,8 +518,18 @@ pub behavior Expr<E> {
     fn parts(self: Self<E>) -> Part[];
     fn source(self: Self<E>) -> Source;
     fn context(self: Self<E>) -> ExprContext;
-    fn lookup(self: Self<E>, name: string) -> ?Binding;
-    fn bindings(self: Self<E>) -> Binding[];
+    // Decision 415 (2) — the declaration `name` (a word of the text)
+    // resolves to where the call stands, as a read-only `@Decl`: `name`,
+    // `kind`, `module`, `fields`, `meta(T)` / `metaAll(T)` (answered at
+    // build when `T` is data); `null` when nothing of that name is in scope.
+    // `setMeta` / `addMeta` / `addMember` / `addType` / `wrapWith` on it are
+    // refused at the call.
+    fn lookup(self: Self<E>, name: string) -> ?Decl;
+    // Every declaration a word of the text names, as `lookup` answers it.
+    fn bindings(self: Self<E>) -> Decl[];
+    // Decision 426 (1) — `R` is the type the built code infers to where the
+    // call stands: the call's type. The template's answer (`-> @Expr<…>`) is
+    // a bound the built code fits, refused at this `build` otherwise.
     fn build<R>(self: Self<E>, source: string) -> Expr<R>;
     // Pack a reference tree + the executable code into the custom return — a
     // template fn opts into tooling visibility by returning `ExprCustom<T>`.
@@ -546,6 +540,10 @@ pub behavior Expr<E> {
     ) -> ExprCustom<R>;
     fn fail(self: Self<E>, message: string);
     fn failAt(self: Self<E>, span: Span, message: string);
+    // Decision 426 (4) — the template's reason, attached to an error reported
+    // at its call (`note: …`); the template never reads the type expected
+    // there, so what it builds is decided by its text.
+    fn note(self: Self<E>, message: string);
     // Decision 302 — a tag's `@Decl`, built by the template function for a tag
     // of its text: `kind` `DeclKind.Element` or `DeclKind.Component`, `name`
     // the tag's name, `attrs` its static attributes in written order. It
@@ -684,6 +682,9 @@ pub type Method(
 pub behavior Decl<T> {
     val kind: DeclKind;
     val name: string;
+    // Decision 415 (2) — the path of the module that declares it (`main`,
+    // `models`), as a `Declared` entry's `module`.
+    val module: string;
     val fields: Field[];
     val variants: string[];
     val methods: Method[];

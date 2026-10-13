@@ -4,7 +4,7 @@ val greeting = "ola mundo";
 pub fn refer(comptime q: @Expr<string>) -> @Expr<string> {
     val hit = q.lookup("greeting");
     if (hit) { b ->
-        return b.ref();
+        return q.build(b.name);
     } else {
         return q.fail("greeting not found in caller scope");
     };
@@ -18,15 +18,15 @@ fn main() {
 ----- COMPTIME WAT -- template refer
 ```wat
 (func $refer/1 (param $a0 i32) (result i32)
-  (local $s0 i32) (local $s1 i32) (local $V_Hit i32)
+  (local $V_Q i32) (local $s1 i32) (local $s2 i32)
   (block $raise
   (block $L1 (result i32)
   (block $L2
   local.get $a0
-  local.set $s0
-  local.get $s0
+  local.set $V_Q
+  local.get $V_Q
   global.get $__lit
-  i32.const 224
+  i32.const 288
   i32.add
   i32.const 8
   call $rt_bin
@@ -37,7 +37,7 @@ fn main() {
   (block $L4
   (block $L3
   local.get $s1
-  local.set $V_Hit
+  local.set $s2
   br $L4
   )
   local.get $s1
@@ -47,22 +47,22 @@ fn main() {
   )
   local.get $s1
   drop
-  local.get $V_Hit
+  local.get $s2
   local.set $s1
   (block $L5 (result i32)
   (block $L6
   local.get $s1
   global.get $__lit
-  i32.const 232
+  i32.const 112
   i32.add
   i32.const 9
   call $rt_atom
   call $rt_eqx
   i32.eqz
   br_if $L6
-  local.get $s0
+  local.get $V_Q
   global.get $__lit
-  i32.const 248
+  i32.const 296
   i32.add
   i32.const 34
   call $rt_bin
@@ -73,9 +73,18 @@ fn main() {
   )
   (block $L7
   local.get $s1
-  local.set $s0
-  local.get $s0
-  call $bp_comptime_template:ref/1
+  local.set $s2
+  local.get $V_Q
+  global.get $__lit
+  i32.const 336
+  i32.add
+  i32.const 4
+  call $rt_atom
+  local.get $s2
+  call $rt_maps_get
+  call $rt_pending
+  br_if $raise
+  call $bp_comptime_template:build/2
   call $rt_pending
   br_if $raise
   br $L5
@@ -115,8 +124,18 @@ fn main() {
 ;;     },
 ;;     bindings => [
 ;;         #{
-;;             name => <<"greeting">>,
 ;;             kind => 'Val',
+;;             name => <<"greeting">>,
+;;             fields => [],
+;;             variants => [],
+;;             methods => [],
+;;             returnType => <<"">>,
+;;             annotations => [],
+;;             hooks => [],
+;;             params => [],
+;;             component => undefined,
+;;             module => <<"">>,
+;;             meta => [],
 ;;             identity => <<"main@@greeting">>,
 ;;             local => <<"greeting">>
 ;;         }

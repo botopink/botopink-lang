@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: type mismatch: expected string, got string[] — note: rows answers a list — add limit 1 for one row
+at src/main.bp:12:23

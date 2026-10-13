@@ -1770,7 +1770,8 @@ fn main() {
 ;;     annotations => [#{name => <<"describe">>, args => [], decorator => <<"main@@describe">>}],
 ;;     hooks => [],
 ;;     params => [],
-;;     component => undefined
+;;     component => undefined,
+;;     module => <<"">>
 ;; }
 ```
 

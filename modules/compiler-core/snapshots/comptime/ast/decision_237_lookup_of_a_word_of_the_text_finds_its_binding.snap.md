@@ -11,7 +11,7 @@ pub fn ui(comptime q: @Expr<string>) -> @Expr<string> {
     val count = q.bindings().length;
     val hit = q.lookup("Badge");
     if (hit) { b ->
-        return q.build("\"" + b.name + "/" + b.local + "\"");
+        return q.build("\"" + b.name + "/" + b.module + "\"");
     } else {
         return q.fail("Badge is a word of the text and in scope");
     };
@@ -31,7 +31,7 @@ pub type Badge(
 
 pub val unrelated = 1;
 
-pub val s = "Badge/Badge";
+pub val s = "Badge/";
 ```
 
 ----- TYPED AST JSON -- main.json

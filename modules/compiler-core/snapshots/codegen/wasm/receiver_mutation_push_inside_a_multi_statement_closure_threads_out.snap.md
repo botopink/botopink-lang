@@ -821,7 +821,8 @@ fn main() {
 ;;     annotations => [#{name => <<"component">>, args => [], decorator => <<"main@@component">>}],
 ;;     hooks => [],
 ;;     params => [],
-;;     component => undefined
+;;     component => undefined,
+;;     module => <<"">>
 ;; }
 ```
 
