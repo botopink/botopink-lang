@@ -9,6 +9,7 @@
 ///      constructor types for them.
 ///   2. Infer the type of every expression/declaration and bind the result.
 const std = @import("std");
+const inlineTypes = @import("./inline_types.zig");
 const ast = @import("../ast.zig");
 const T = @import("./types.zig");
 const Env = @import("env.zig").Env;
@@ -8959,7 +8960,11 @@ fn expandTemplateCall(
 /// Splice + re-check the chosen expansion in the caller's environment, verify
 /// a concrete `-> @Expr<T>` bound (an unconstrained generic reveals the type
 /// per call site instead), and record the substitution for the transform pass.
-fn finishExpansion(env: *Env, expansion: *const ast.Expr, retType: *T.Type, loc: ast.Loc) InferError!TypedExpr {
+fn finishExpansion(env: *Env, expansion_in: *const ast.Expr, retType: *T.Type, loc: ast.Loc) InferError!TypedExpr {
+    // 144 B-10 (decisions 192, 207) — the calls the built code makes of this
+    // module's functions build their inline parameter types, as the written
+    // ones do (`inline_types.zig` ran before the code existed).
+    const expansion = try inlineTypes.rewriteBuilt(env.arena, expansion_in, &env.fnDecls);
     const typed = try inferExprTyped(env, expansion.*);
 
     // The expansion carries only the executable `code` half (the `ast` tree is

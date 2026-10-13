@@ -148,6 +148,31 @@ fn mayHoldExpr(comptime T: type) bool {
     };
 }
 
+/// 144 B-10 — `e`, code a template built in this module (decisions 192,
+/// 207), with each call of the module's own functions (`fns`, the
+/// declarations `expand` already rewrote) rewritten as `expand` rewrites the
+/// written ones: the pass ran before the code existed. `e` itself when no
+/// function of the module has an inline parameter; else a copy.
+pub fn rewriteBuilt(arena: std.mem.Allocator, e: *const ast.Expr, fns: *const std.StringHashMapUnmanaged(ast.FnDecl)) Error!*const ast.Expr {
+    var ctx = Ctx{ .arena = arena };
+    var it = fns.valueIterator();
+    while (it.next()) |f| for (f.params, 0..) |p, i| {
+        const fields = p.inlineFields orelse continue;
+        if (!ctx.fns.contains(f.name)) try ctx.fns.put(arena, f.name, .{
+            .index = i,
+            .param = p.name,
+            .type_name = try typeNameFor(arena, f.name, p.name),
+            .fields = fields,
+            .params = f.params,
+        });
+    };
+    if (ctx.fns.count() == 0) return e;
+    const copy = try arena.create(ast.Expr);
+    copy.* = e.*;
+    try ctx.walk(ast.Expr, copy);
+    return copy;
+}
+
 /// The record an inline parameter declares, named for its owner.
 pub fn typeNameFor(arena: std.mem.Allocator, owner: []const u8, param: []const u8) Error![]const u8 {
     return std.fmt.allocPrint(arena, "{s}{s}__{s}", .{ ast.inline_type_prefix, owner, param });

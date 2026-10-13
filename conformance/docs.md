@@ -1950,6 +1950,12 @@ resolve on every target, as they do on the value of an imported function
 A template whose second parameter is `comptime decl: @Decl` is written as an
 annotation, `#[f "…"]` — § Template annotations below.
 
+The calls a template function's built code makes of the expanding module's
+functions build an inline parameter type as the written calls do (decisions
+192, 207, 430):
+
+<!-- example: modules/template_builds_inline_props -->
+
 ### Decorators
 
 A decorator is a function whose first parameter is `comptime decl: @Decl`;

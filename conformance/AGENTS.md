@@ -2160,6 +2160,10 @@ associated fn's behavior-typed parameter (`expected Styleable, got Prop` before)
 expected and the module never names `Mode` (commonJS and erlang emitted it unbound, the checker refused
 the payload form `unbound variable 'Mode'`); the transformed program imports the enum
 (`Env.implicitEnumImports`).
+
+`modules/template_builds_inline_props` — a template's built `Greeting(name: "…")` against `props:
+type(…)` in the declaring module (`inline-type-position` before).
+
 `modules/decorator_lambda_many_locals` pins a decorator lambda with 120 locals on the comptime
 runtime.
 
