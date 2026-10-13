@@ -1,0 +1,15 @@
+//// Decision 340 — `Dict.bump(key, by)` on any `Dict` of integers is
+//// `insert(key, (at(key) ?? 0) + by)`: an absent key counts from 0, a present
+//// one adds `by`, the dict it was called on is unchanged, and a negative `by`
+//// counts down.
+
+import {collections.Dict} from "std";
+
+pub fn main() {
+    val empty: Dict<string, i32> = Dict.empty();
+    val once = empty.bump("a", 2);
+    val twice = once.bump("a", 3).bump("b", -4);
+    @print(once.at("a"), once.at("b"));
+    @print(twice.at("a"), twice.at("b"), twice.size());
+    @print(empty.size());
+}

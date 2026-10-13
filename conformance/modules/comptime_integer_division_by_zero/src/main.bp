@@ -1,0 +1,13 @@
+//// Decision 472 — every `badarith` at build reads as Erlang's, located at the
+//// expression: an integer division by zero in a `comptime` is
+//// `comptime-badarith`, naming the expression and `(division by zero)`, the
+//// same on every target — never the raw `{error,badarith}` term.
+
+fn ratio(a: i32, b: i32) -> i32 {
+    return a / b;
+}
+
+pub fn main() {
+    val atBuild = comptime 7 / 0;
+    @print(atBuild, ratio(6, 3));
+}

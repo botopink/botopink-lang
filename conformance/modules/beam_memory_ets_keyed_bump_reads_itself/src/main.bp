@@ -1,0 +1,14 @@
+//// Decision 340 with decision 168 — `counts = counts.bump(k, n)` is atomic only
+//// when neither `k` nor `n` reads the var: an amount computed from the var's
+//// own rows is the read-modify-write two processes can interleave, refused
+//// with the recompose diagnostic, as `insert`'s is.
+
+import {collections.Dict} from "std";
+
+#[@BeamMemory.Ets(keyed: true)]
+var counts: Dict<string, i32> = Dict.empty();
+
+pub fn main() {
+    counts = counts.bump("a", counts.size());
+    @print(counts.at("a"));
+}

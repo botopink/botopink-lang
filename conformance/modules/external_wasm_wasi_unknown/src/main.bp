@@ -1,0 +1,11 @@
+//// Decision 481 — a `wasi:` cell names an adapter that exists: `.RandomF46`
+//// names none, refused at the annotation on every target.
+
+#[@External.Node("Math", "random")]
+#[@External.Erlang("rand", "uniform")]
+#[@External.Wasm(wasi: .RandomF46)]
+pub declare fn draw() -> f64;
+
+pub fn main() {
+    @print(draw() < 1.0);
+}

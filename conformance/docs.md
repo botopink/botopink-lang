@@ -36,8 +36,14 @@ A cell's answer is one `.snap` file per module (decisions 457, 475, 485):
 `snapshot/targets/<target>/<module>.snap` exists only where a target departs from
 it — it refuses the module (a host binding it lacks) or names an abort in its
 runtime's words, and replaces the module's whole answer there. A cell narrowed
-to some targets names them in its `botopink.json` `"targets"`. A `.snap` is a
-record per line, in this order, one spelling per answer:
+to some targets names them in its `botopink.json` `"targets"`, as any project does — never in a
+`targets` file, which `botopink cell check` refuses, naming the manifest field (decision 475 (1)).
+A cell's `{ "path": "deps/<lib>" }` dependency is relative to the cell's own directory, as a
+project's is to its own; every cell found is reported, a cell that cannot run as a red naming it:
+
+<!-- example: modules/local_dependency -->
+
+A `.snap` is a record per line, in this order, one spelling per answer:
 
 ```text
 botopink-cell 1          the format and its version — always line 1
@@ -517,6 +523,11 @@ the functions of the module read the bound value, whatever else they call:
 
 <!-- example: modules/module_val_call_init -->
 
+An initialiser reads the module's earlier `val`s, bound by then — a `_`-prefixed name a program
+writes (`val _c = …`) is a binding like any other, read by name; only `_` itself is a statement:
+
+<!-- example: modules/module_val_reads_module_val -->
+
 `botopink test` and `botopink build` agree on this: the module body runs in both,
 at the same point relative to the program's own code. A backend that cannot run
 it is a gap in that backend, not a different meaning of `val`.
@@ -588,6 +599,22 @@ names the var — measured, two processes writing 20 000 times each to their own
 key finish at `20000` and `20000`; at 10 keys a write is 5× cheaper, at 10 000
 keys 5 000×. Choose `keyed: true` whenever more than one process writes; keep
 the default when the dict is replaced whole.
+
+<!-- example: modules/beam_memory_ets_keyed_bump -->
+
+`bump` is atomic only on integer rows (decision 340): on a keyed `Dict` of `f64` it is refused at
+the write, naming the rows' type. A `bump` whose key or amount reads the var, and the increment
+written out — `counts = counts.insert(k, (counts.at(k) ?? 0) + n)`, which is not recognised as a
+`bump` — are the recompose refusal, as any row computed from the var's own rows is:
+
+<!-- example: modules/beam_memory_ets_keyed_bump_non_integer -->
+<!-- example: modules/beam_memory_ets_keyed_bump_reads_itself -->
+<!-- example: modules/beam_memory_ets_keyed_read_modify_write -->
+
+On any other `Dict`, `bump(key, by)` is `insert(key, (at(key) ?? 0) + by)`, on every target: an
+absent key counts from 0, and the dict it was called on is unchanged:
+
+<!-- example: modules/dict_bump -->
 
 **`PersistentTerm`** — one value per node, written **once, at load**, read
 everywhere for the cost of a function call. A write after load is a
@@ -1136,6 +1163,13 @@ Three shapes do **not** narrow, and each for its own reason:
 * A guard clause narrows a `val` and not a `var`, for the same reason: a `var`
   can be assigned below the guard.
 
+The binder of `if (x) { v -> … }` (and of `x ?? d`, which reads as one) is bound in the then-branch
+alone: a later closure — a `for` body — that binds the same name in its own `if` reads its own
+binding, never the earlier one, whether the earlier optional was present or absent:
+
+<!-- example: modules/if_binding_before_loop_closure -->
+<!-- example: modules/component_loop_await_accumulates -->
+
 ## Expressions
 
 ### Literals
@@ -1268,7 +1302,12 @@ At build, in a `comptime`, `==` compares two values of any depth (it walks an ex
 runtime's stack, so two 2,000,000-deep chains answer `true`), and an arithmetic error reads as Erlang's
 `badarith`, located at the expression: ``error: comptime-badarith: an error occurred when evaluating an
 arithmetic expression — `1.0 / 0.0` (division by zero)``, the same on every target. At run time each target
-keeps its own answer (commonJS and wasm `Infinity`, erlang and beam `badarith`).
+keeps its own answer (commonJS and wasm `Infinity`, erlang and beam `badarith`). An integer division by zero
+at build is the same refusal, naming `7 / 0`:
+
+<!-- example: modules/comptime_deep_structure_equality -->
+<!-- example: modules/comptime_float_division_by_zero -->
+<!-- example: modules/comptime_integer_division_by_zero -->
 
 ### Optionals
 
@@ -2116,6 +2155,14 @@ returned, bound by a `val`, passed as an argument or written as a statement, the
 function answers `Error(e)` on that path and the other arms' value on the rest.
 
 <!-- example: modules/throw_in_case_arm_result -->
+
+A method declared `-> @Result` is a function like any other (decision 304): a record's and an
+enum's method, and a behavior's method dispatched through a parameter typed by the behavior —
+its `default fn` included — answer `Ok(v)` for `return v` and `Error(e)` for `throw e`, and their
+`try` propagates, on every target:
+
+<!-- example: modules/result_method_throw -->
+<!-- example: modules/behavior_method_result_dispatch -->
 
 Three ways to consume a `@Result`, and a fourth for when a failure is a bug:
 
@@ -3066,6 +3113,10 @@ never tried.
 
 <!-- example: modules/decorator_host_cells -->
 
+<!-- example: modules/comptime_host_cell_unavailable -->
+<!-- example: modules/comptime_host_cell_unavailable_erlang_only -->
+<!-- example: modules/comptime_expression_erlang_cell_never_runs -->
+
 Each invocation is independent (decision 343): a decorator's answer depends
 on the declaration it annotates alone, so a body writing a module-level `var`
 — directly or through a function of its module — is refused at the write
@@ -3282,6 +3333,27 @@ declared parameters, in order.
 
 <!-- example: modules/external_wasm_op_and_fn -->
 
+Each cell holds a value of the kind it names (decision 481), and a value of another kind is refused
+at the argument, naming the form to write: `fn: "tanBody"` (a string where an identifier goes),
+`op: floor` (a name where the opcode's text goes), `wasi: "RandomF64"` (a string where an enum
+value goes), `std: hash.contentHash` (a name where std-wasm's string goes):
+
+<!-- example: modules/external_wasm_fn_cell_string -->
+<!-- example: modules/external_wasm_op_cell_not_string -->
+<!-- example: modules/external_wasm_wasi_cell_not_enum -->
+<!-- example: modules/external_wasm_std_cell_not_string -->
+
+A binding is **one** cell, beside `host:` (and `inline:`): a label outside the four and a second
+cell are refused at the argument that writes them. A cell naming what does not exist — an opcode
+the table does not hold, an adapter that is none of the list —, and a `fn:` whose body takes
+other types than the declaration's, are refused at the annotation:
+
+<!-- example: modules/external_wasm_unknown_label -->
+<!-- example: modules/external_wasm_two_cells -->
+<!-- example: modules/external_wasm_op_unknown -->
+<!-- example: modules/external_wasm_wasi_unknown -->
+<!-- example: modules/external_wasm_fn_cell_signature -->
+
 The functions a `std:` binding names, and the std declarations that bind them
 — what a program calls:
 
@@ -3307,6 +3379,8 @@ target, naming the std function to call instead. std's own `hash.contentHash`
 carries one; the same declaration in a program is refused:
 
 <!-- example: modules/external_std_binding_refused -->
+
+<!-- example: modules/external_wasm_std_outside_std -->
 
 **A prefixed string is no binding** (decisions 305, 481). The strings the
 vocabulary was once written as — `"fn:tanBody"`, `"op:f64.floor"`,
@@ -3539,7 +3613,12 @@ branch has the value. `@module()` is declared but no target lowers it, so it is
 A `@panic(message)` aborts the program with a non-zero status, and its message —
 the text it was given, quotes and non-ASCII characters included — reaches stderr
 unchanged on every target; what the runtime writes around it (a stack trace, a
-trap notice) is the runtime's own (`modules/panic_library_message`).
+trap notice) is the runtime's own. An abort writes to stderr alone — a checked
+integer operator's abort as `@panic`'s —, so what the program printed before it
+is its whole stdout, on every target:
+
+<!-- example: modules/panic_library_message -->
+<!-- example: modules/int_overflow_add_i32 -->
 
 ### What `@print` writes
 
@@ -3549,6 +3628,11 @@ fields, a variant names its enum, a container separates its elements with
 nested inside a container too.
 
 <!-- example: modules/print_value_text -->
+
+`@println` writes as `@print` does — its arguments separated by a space, its line ended — on
+every target:
+
+<!-- example: modules/println_every_target -->
 
 A field's name changes nothing: a record with a field called `tag` is a record,
 printed by its type's name and its fields:

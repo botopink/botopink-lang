@@ -2279,6 +2279,22 @@ library-built message with quotes and a non-ASCII dash, `stderr` in `output/`, d
 erlang and beam write the message itself, not the term with its bytes as numbers; wasm writes it
 before the trap.
 
+The Conformance steps of 144 B-13, B-26, B-31 … B-35, B-37 … B-41 (boxes 3, 4) add, each red on its
+step's base and green on the tip unless named a pin: `modules/behavior_method_result_dispatch` (a
+behavior method `-> @Result` through a behavior-typed parameter, its `default fn` included — a pin:
+B-13 changed no code); `modules/dict_bump` (`Dict.bump` on a plain dict, four targets),
+`modules/beam_memory_ets_keyed_bump_non_integer` (a keyed `Dict` of `f64` rows),
+`modules/beam_memory_ets_keyed_bump_reads_itself` (a `bump` whose amount reads the var, the recompose
+refusal) and `modules/beam_memory_ets_keyed_read_modify_write` (the increment written out stays
+refused — a pin) for B-26; `modules/comptime_integer_division_by_zero` (`7 / 0` at build is
+`comptime-badarith`) for B-32; the wasm cell refusals of decision 481 for B-33 —
+`modules/external_wasm_fn_cell_string`, `external_wasm_op_cell_not_string`,
+`external_wasm_wasi_cell_not_enum`, `external_wasm_std_cell_not_string` (a value of another kind, at
+the argument), `external_wasm_unknown_label`, `external_wasm_two_cells` (at the argument),
+`external_wasm_op_unknown`, `external_wasm_wasi_unknown` and `external_wasm_fn_cell_signature` (at
+the annotation); and `modules/if_binding_before_loop_closure` (an explicit `if (x) { v -> … }`
+before a `for` body binding `v` again — the OTP compiler refused beam's `make_fun3` on B-34's base).
+
 144 B-10 (decision 430, the gaps a library works around) adds `modules/two_modules_one_type_name` —
 two modules each declaring `pub type Order` with members of one name, each reaching its own (erlang
 called into the other module's unit: the link index keys an export by its bare name) — and its test
