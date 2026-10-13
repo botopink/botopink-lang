@@ -4998,7 +4998,7 @@ fn checkDecoratorArgs(env: *Env, program: ast.Program, a: ast.Annotation, sig: e
                 if (k > 0) try joined.appendSlice(env.arena, ", ");
                 if (k > 0) try written.appendSlice(env.arena, ", ");
                 try written.appendSlice(env.arena, a.args[i]);
-                if (e.known) try joined.appendSlice(env.arena, (try decoratorArgValue(env, program, e.expr.*, a.args[i], elem, false, 0)).source);
+                if (e.known) try joined.appendSlice(env.arena, (try decoratorArgValue(env, program, e.expr.*, e.lexeme orelse a.args[i], elem, false, 0)).source);
             }
             try joined.append(env.arena, ']');
             try written.append(env.arena, ']');
@@ -5009,7 +5009,7 @@ fn checkDecoratorArgs(env: *Env, program: ast.Program, a: ast.Annotation, sig: e
         if (map.slots[j]) |i| {
             const e = try checkDecoratorArg(env, program, a, i, p, wants[j], use);
             values[j] = if (e.known)
-                try decoratorArgValue(env, program, e.expr.*, a.args[i], wants[j], isType, 0)
+                try decoratorArgValue(env, program, e.expr.*, e.lexeme orelse a.args[i], wants[j], isType, 0)
             else
                 .{ .source = "undefined", .built = false, .absent = true };
             values[j].loc = a.argLoc(i);
@@ -5131,11 +5131,23 @@ fn decoratorArgNotKnownAt(env: *Env, program: ast.Program, e: ast.Expr, depth: u
 /// One argument against its parameter (decision 280 (1), (3), (4)): the
 /// argument as an expression, and whether it is known while the program
 /// compiles (decision 364 (2)).
-const CheckedDecoratorArg = struct { expr: *ast.Expr, known: bool };
+/// `lexeme` is the argument's source when the check rewrote it (a
+/// decorator's name handed over as its identity), else null — the text as
+/// written.
+const CheckedDecoratorArg = struct { expr: *ast.Expr, known: bool, lexeme: ?[]const u8 = null };
 
 fn checkDecoratorArg(env: *Env, program: ast.Program, a: ast.Annotation, i: usize, p: ast.Param, want: ?*T.Type, use: exprParam.Use) InferError!CheckedDecoratorArg {
     const loc = a.argLoc(i) orelse ast.Loc{ .line = 0, .col = 0 };
     const e = try parseDecoratorArg(env, a.args[i], loc);
+    // Decision 268 — a `Decorator` parameter (`comptime marker:
+    // @Expr<Decorator>`) takes a decorator's name, and nothing else: the
+    // argument is handed over as the declaration's identity, what a
+    // `DeclAnnotation.decorator` holds, so `marker.value.same(email)` compares
+    // two identities (decision 371). A `Decorator[]` takes an array literal
+    // of names. 144 B-10: the name was checked as the function it is.
+    if (want) |w| if (try decoratorParamArg(env, e, optionalInner(w) orelse w)) {
+        return .{ .expr = e, .known = true, .lexeme = try defaultLexeme(env.arena, e.*) };
+    };
     const known = try checkDecoratorArgExpr(env, program, a, i, e, p, want, loc, use);
     return .{ .expr = e, .known = known };
 }
@@ -10249,6 +10261,34 @@ fn decoratorArgumentType(env: *Env, e: ast.Expr) InferError!?*T.Type {
 
 /// The builtin type of a decorator's name (`builtins.d.bp`, decision 268).
 const decorator_type_name = "Decorator";
+
+/// Decision 268 — `e`, an argument of a decorator parameter typed `w`, when
+/// `w` is `Decorator` and `e` names a decorator, or `w` is `Decorator[]` and
+/// `e` is an array literal of such names: each name is replaced by its
+/// declaration's identity, the value a `Decorator` is carried as on the
+/// comptime runtime (`decorator_same.zig`). False for anything else, which
+/// then meets the parameter like any argument — the mismatch, since no other
+/// value is a `Decorator`.
+fn decoratorParamArg(env: *Env, e: *ast.Expr, w: *T.Type) InferError!bool {
+    const d = w.deref();
+    if (isDecoratorType(d)) {
+        const id = try decoratorNameId(env, e.*) orelse return false;
+        e.* = .{ .literal = .{ .loc = e.getLoc(), .kind = .{ .stringLit = id } } };
+        return true;
+    }
+    if (d.* != .named or !std.mem.eql(u8, d.named.name, "array") or d.named.args.len != 1 or !isDecoratorType(d.named.args[0])) return false;
+    if (e.* != .collection or e.collection.kind != .arrayLit) return false;
+    const al = e.collection.kind.arrayLit;
+    if (al.elems.len == 0 or al.spread != null or al.spreadExpr != null) return false;
+    const ids = try env.arena.alloc([]const u8, al.elems.len);
+    for (al.elems, ids) |elem, *id| id.* = try decoratorNameId(env, elem) orelse return false;
+    const elems = try env.arena.alloc(ast.Expr, al.elems.len);
+    for (al.elems, ids, elems) |elem, id, *out| out.* = .{ .literal = .{ .loc = elem.getLoc(), .kind = .{ .stringLit = id } } };
+    var lit = al;
+    lit.elems = elems;
+    e.* = .{ .collection = .{ .loc = e.getLoc(), .kind = .{ .arrayLit = lit } } };
+    return true;
+}
 
 fn isDecoratorType(t: *T.Type) bool {
     const d = t.deref();

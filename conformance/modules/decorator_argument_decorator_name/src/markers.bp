@@ -1,0 +1,19 @@
+//// Two markers and a decorator that takes one of them by name.
+
+pub fn email(comptime decl: @Decl) {
+    val _n = decl.name;
+}
+
+pub fn lowercased(comptime decl: @Decl) {
+    val _n = decl.name;
+}
+
+pub fn each(comptime decl: @Decl, comptime marker: @Expr<Decorator>) {
+    val which = if (marker.value.same(email)) "email" else if (marker.value.same(lowercased)) "lowercased" else "other";
+    decl.addMember("pub fn " + decl.name + "Each() -> string { return \"" + which + "\"; }");
+}
+
+pub fn all(comptime decl: @Decl, comptime markers: @Expr<Decorator[]>) {
+    val n = markers.value.filter({ m -> m.same(email) || m.same(lowercased) }).length;
+    decl.addMember("pub fn " + decl.name + "All() -> i32 { return " + n.toString() + "; }");
+}

@@ -2128,6 +2128,10 @@ emitted `new T(v, x)` on commonJS before 144 B-14).
 `modules/method_behavior_parameter_implementer` passes an implementer to a method's and an
 associated fn's behavior-typed parameter (`expected Styleable, got Prop` before).
 
+`modules/decorator_argument_decorator_name` hands a decorator's name, and an array of names, to a
+`Decorator` / `Decorator[]` parameter of a decorator in a submodule (`expects Decorator, got fn(Decl)
+-> void` before).
+
 What cannot be tested from botopink at all, and why: `@typeInfo` / `@makeRecord` / `partial` / `omit`
 / `pick` (they produce types, and asserting on emitted text is the snapshots' job). Struck from this
 list by C-16, each with the cell that covers it: `pub default mod` / `pub default fn`, `@ExprCustom` /

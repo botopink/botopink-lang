@@ -2603,6 +2603,13 @@ it, and it cannot be constructed: `@TypeInfo.all(with: 42)` and
 `@TypeInfo.all(with: someOrdinaryFn)` are the ordinary type mismatch, at the
 argument.
 
+A decorator parameter typed `Decorator` (`comptime marker: @Expr<Decorator>`)
+takes a decorator's name, and one typed `Decorator[]` an array literal of
+names; the body reads each as the declaration's identity and compares it with
+`same` (decision 371):
+
+<!-- example: modules/decorator_argument_decorator_name -->
+
 `@panic`, `@todo` and `@trap` never return: they are declared `-> noreturn`, the
 bottom type, so a call to one stands wherever a value of any type is expected —
 `val x: i32 = @todo();`, `return @panic("…");`, one branch of an `if` whose other
