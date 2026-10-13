@@ -13,8 +13,7 @@ effects (§9), comptime parameters and `@Expr` templates, decorators and `@emit`
 generics and `behavior` dispatch, optionals, closures, primitive methods, and modules. 1.0.10-beta's
 C-16 (`specs/1.0.10-beta/00-compiler-carry-over/README.md`) added front 12's steps 4.2–4.4 — a local
 dependency, `@panic`/`@todo`, "no external target for the active backend" — and a cell per decision
-63–66, plus the runner's tally (decision 59 (b)). 144 B-29 step H moved the suite here from
-`tests/language/` (decision 466) and into one cell shape (decisions 457, 475).
+63–66, plus the runner's tally (decision 59 (b)). Decision 466 put the suite here, in one cell shape (decisions 457, 475).
 
 **Cells describe the language, not today's compiler.** A scenario the compiler gets wrong stays as
 written and is red until the compiler passes it — the suite keeps no list of known failures
@@ -59,35 +58,22 @@ location names (`src/shapes/circle.bp` → `shapes/circle.snap`; `botopink.json:
 `botopink.json.snap`; a std module's location → `std/io/fs.snap`); an unlocated one is `main`'s.
 A departure replaces the module's whole answer on that target (475 (3)).
 
-**Where the old suite went** (144 B-29 step H, `scripts/codemod-conformance-cells.py`). Every
-`run/<n>.bp`, `reject/<n>.bp` and `modules/<n>/` of `tests/language/` is `modules/<n>/` here
-(`reject/smoke`, which shared its name with `run/smoke`, is `modules/smoke_refused`); a test-kind
-project (`modules/<n>/` with a `test/` tree and no `expected.out`) is `test/<n>/`; `test/<n>.bp` is
-`test/<n>.bp`. Each sidecar is a record:
-
-| Old claim | Now |
-|---|---|
-| `run/<n>.out`, `modules/<n>/expected.out` | `out` lines (`no-final-newline` when it did not end in `\n`) in `main.snap` |
-| `run/<n>.exit` (`nonzero`) | `abort` |
-| `run/<n>.<t>.stderr` | `stderr <line 1>` in `main.snap` on that target — in `output/` when the targets that claim it outnumber those that do not, else a departure |
-| `reject/<n>.expect` (line 1 a part of the message, line 2 `<L:C>`) | `refused <the whole error… line>` / `at src/main.bp:<L:C>` in `output/main.snap` — every target refuses |
-| `run/<n>.<t>.expect`, `modules/<n>/<t>.expect` | the same records in `targets/<t>/<module>.snap` (or `output/` when every target refuses alike) |
-| `run/<n>.targets`, a manifest's `"targets"` | the cell manifest's `"targets"` |
-
-A `.expect` named a *part* of the diagnostic; a `refused` record holds the compiler's whole `error…`
-line, so the migration read each refusal off `botopink cell check` and accepted it only where it
-contains the old text at the old location (`codemod-conformance-cells.py accept`); its `audit`
-subcommand checks every old claim against the new snapshots, cell by cell. Single-file cells are
-packages named after the cell. **A cell's package name is its directory's name** (decision 511; a workspace
+**What a cell's answer is made of.** One record per claim, in `snapshot/output/<module>.snap` (every target) and
+`snapshot/targets/<t>/<module>.snap` (a departure): the program's `out` lines (`no-final-newline` when its
+output did not end in `\n`), `abort` when it exits nonzero, `stderr <line 1>` for what it writes to stderr
+(in `output/` when the targets that claim it outnumber those that do not, else a departure), and for a
+refusal `refused <the whole error… line>` / `at src/main.bp:<L:C>`. A cell's `"targets"` is its manifest's.
+A `refused` record holds the compiler's whole `error…` line, read off `botopink cell check`. Single-file
+cells are packages named after the cell. **A cell's package name is its directory's name** (decision 511; a workspace
 member's `name` is required and unique, 512 (1)): `botopink cell check` refuses a manifest with no `name`, or
 whose `name` differs from the directory, located at the manifest and naming the expected name, and
 `botopink cell new` writes it.
-Throughout this file, `run/<n>`, `reject/<n>` and a sidecar name (`.out`, `.exit`, `.<t>.expect`,
-`.<t>.stderr`, `.targets`) are how a cell's history was written; the cell is `modules/<n>`.
+Throughout this file, `modules/<n>` is a cell and `test/<n>` a suite; a sentence about "the parent binary"
+names the compiler a cell was first red on.
 
 1.0.10-beta's `00 · 23-std-purity` step 1 (decision 107, the import tree) adds `modules/import_tree`
 — a dotted path and a braced group over the package's own tree and over std, aliases bound, only the
-leaves in scope, on commonJS/erlang/wasm — and three `reject/` cells: `import_name_collision` (the
+leaves in scope, on commonJS/erlang/wasm — and three refusal cells: `import_name_collision` (the
 second item) and `import_group_modifier` (`*` on a node that opens braces); the third,
 `import_alias_on_type`, is now `modules/import_alias_on_type` — decision 110 made `as` legal on a type
 and a type alias (`01-checker`), and the cell imports `Point as P`, `Pair as Two` and std's
@@ -98,7 +84,7 @@ expression position — an associated call (`P.origin()`) and a unit and a paylo
 `S.Custom(9)`) — which inference renames to the declared type for the backends.
 Step 6 (decision 110 rule 2, 111 through the namespace) adds `modules/import_std_folder_namespace`
 — `import {io} from "std"` and `io.clock.nowMillis()` beside the leaf `io.clock as clock`, on
-commonJS, erlang and beam, refused on wasm by STD-001 (`wasm.expect`) as the leaf form is — and
+commonJS, erlang and beam, refused on wasm by STD-001 (`snapshot/targets/wasm/`) as the leaf form is — and
 `modules/import_std_type_through_module` — `collections.Dict.empty()`, `collections.Set.fromList`,
 `collections.Queue.fromList` after `import {collections}`, beside `collections.lt()` and an alias
 `D`, on all four targets.
@@ -109,11 +95,11 @@ an `@Result` alias typing a function that only passes the value along, on all fo
 `modules/import_type_alias` — a `pub` alias imported like a type, the types its target names with it.
 Decision 137 (`try` / `await` begin an expression) adds `modules/try_start_positions` — a `val`
 initializer, a call argument, an array and a tuple element, an `if` condition, a `case` subject, a
-`for` iterable, `x = …`, a `return` and `try … catch` in an argument, on all four targets — and three `reject/` cells, one per operand
+`for` iterable, `x = …`, a `return` and `try … catch` in an argument, on all four targets — and three refusal cells, one per operand
 shape: `try_operand_of_operator` (`total + try r`), `try_in_parentheses` (`(try r).toString()`) and
 `await_operand_of_unary` (`!await ready()`).
 `residual-checker-3` reads decision 137 onto `if`: an `if` expression is never an operand, and
-three `reject/` cells refuse it as `if-operand` at the `if` — `if_operand_of_operator`
+three refusal cells refuse it as `if-operand` at the `if` — `if_operand_of_operator`
 (`1 + if (c) { 2 } else { 3 }`), `if_in_parentheses` (`(if (c) a else b).v`) and
 `if_operand_of_unary` (`-if (c) 1 else 2`). The same front adds `modules/narrow_in_logical_operands`
 (the right operand of `&&` / `||` and a `while` body read the names the left operand's null test
@@ -126,10 +112,10 @@ behavior's associated fn filled and reordered by label, generic included) and
 `modules/associated_fn_missing_required`; decision 31 (`any` deleted) adds `modules/any_type_removed`
 and `modules/host_unknown_parameter` (`std/erlang`'s host vocabulary typed `unknown` takes an `i32`,
 erlang and beam); C-21 adds `modules/decorator_argument_kind` (the one decorator refusal that had no
-location), and the runner now requires every `reject/` cell's `.expect` to carry its `<L:C>` line —
+location), and the runner now requires every refusal cell's `main.snap` to carry its `<L:C>` line —
 every refusal is located.
 Decision 138 (the empty record is `type Name()`) adds `modules/type_empty_record` — `type Marker()` and
-`type MathOps() { … }` constructed and called on all four targets — and two `reject/` cells,
+`type MathOps() { … }` constructed and called on all four targets — and two refusal cells,
 `type_empty_braces` (`type Marker {}`), `type-without-field-list` where the `()` belongs.
 Decision 329 (a namespace type) made `type MathOps { fn … }` legal when no function takes `self`:
 `modules/namespace_type` (associated functions, a generic one, one calling another, through the type, on
@@ -143,7 +129,7 @@ parameter, told apart from its source by `is` and printed by its own name, on al
 `modules/derived_type_decorated` (a decorator on the `val` sees a type whose fields keep the source's
 annotations, `partial`'s typed `?T`) and `modules/derived_type_imported` (an exported
 `Type.merge` as a parameter type and a constructor, a module deriving from an imported record and
-from an imported derived type), with eleven `reject/derived_type_*` cells — a string field, an
+from an imported derived type), with eleven `modules/derived_type_*` cells — a string field, an
 unknown field, a field named twice, no field, an `omit` leaving none, an enum and a primitive
 source, a field on both sides of a `merge`, the call in a body, a `var`, and the bare `partial(…)`
 (an unbound name); every one red on the parent binary.
@@ -232,7 +218,7 @@ Decision 330 (`?T` read with TypeScript's operators, `01-checker` step 31) adds 
 (`?.[i]`, `?.` flattened, the postfix `!` over a present value, four targets),
 `modules/optional_call_operator` (`f?.(args)`, four targets) and `modules/optional_bang_aborts`
 (`find("b")!` aborts after `found` is printed, its stderr naming `value is null — find("b")! at
-src/main.bp:11:12` on the four targets — the panic text decision 430 prints alike), and six `reject/` cells: `optional_operator_never_null` (`s?.length()`
+src/main.bp:11:12` on the four targets — the panic text decision 430 prints alike), and six refusal cells: `optional_operator_never_null` (`s?.length()`
 with `s: string`), `nullish_never_null` (`s ?? "fallback"`), `bang_never_null` (`n!`) — each
 `optional-operator-never-null` at the operator —, `nullish_beside_logical` (`flag ?? false && true`,
 at the `??`), `optional_has_no_methods` (`.unwrapOr` on a `?string`) and `result_namespace_removed`
@@ -284,34 +270,34 @@ element's address for the `map`-built array on the parent binary).
 Decision 267 (a variadic parameter `..name: T[]`, front 134 step 4) adds `modules/variadic_parameter` (a free
 function with zero, one and three variadic arguments, a generic one, a method, an associated function, `@print`
 with two arguments — four targets), `modules/variadic_parameter_host` (a `declare fn` bound to `Math.max` /
-`lists:max`; wasm refuses it at the first call by `wasm.expect`), `modules/variadic_across_modules` (an
-imported variadic `pub fn`, four targets) and six `reject/` cells: `variadic_not_last`, `variadic_twice`,
+`lists:max`; wasm refuses it at the first call by `snapshot/targets/wasm/`), `modules/variadic_across_modules` (an
+imported variadic `pub fn`, four targets) and six refusal cells: `variadic_not_last`, `variadic_twice`,
 `variadic_default`, `variadic_not_array` (parse refusals at the declaration), `variadic_spread_at_call`
 (`variadic-spread`) and `variadic_label` (`variadic-label`). Every one was
 refused or accepted otherwise by the parent binary. Decision 354 (step 6, contexts — it replaced 269's
-`@getContext(T)`, whose `reject/getcontext_without_use` left) adds `modules/context_provide_read` (a provider
+`@getContext(T)`, whose `getcontext_without_use` refusal cell left) adds `modules/context_provide_read` (a provider
 reaches a component two renders below it; a `@Component` read with `use` reads its caller's map; a body
 does not see its own provide), `modules/context_nearest_wins` (the nearest provider wins, a sibling does not
-see another's) and `modules/context_unbound` (`context-unbound` at run time, `.exit` nonzero and the
+see another's) and `modules/context_unbound` (`context-unbound` at run time, `abort` nonzero and the
 message on stderr) — erlang, beam and commonJS run them, the wasm backend refuses the `use` where it is
-written (`.wasm.expect`, `language-gaps.md`); and the refusals `modules/component_base_parameter`
+written (`snapshot/targets/wasm/`, `language-gaps.md`); and the refusals `modules/component_base_parameter`
 (`@Component<C, R>` at the base), `modules/context_marker_removed`, `modules/renderable_type_argument`,
 `modules/getcontext_removed`, `modules/context_provide_in_hook`, `modules/context_provide_after_render`,
 `modules/context_hook_without_use`, `modules/context_hook_as_value`, `modules/context_not_declared`,
 `modules/context_val_alias`, `modules/context_read_of_parameter`, `modules/use_in_comptime_block`,
 `modules/use_in_decorator_body` and `modules/use_in_template_body` (`use-outside-render-tree`), each red on
-the parent binary. Decision 354 took the base out of the wrapper, so `reject/component_two_bases`,
-`reject/use_two_bases`, `reject/use_owner_mismatch` (decision 96's one base per body) and the arity
-cells `reject/component_one_type_argument` / `reject/context_two_type_arguments` left with it.
+the parent binary. Decision 354 took the base out of the wrapper, so the cells `component_two_bases`,
+`use_two_bases`, `use_owner_mismatch` (decision 96's one base per body), `component_one_type_argument` and
+`context_two_type_arguments` left with it.
 Decisions 352 and 354, as `styled` registers through them (`08-bpp/119` step 1), add
 `modules/context_sheet_registers` — a context whose value holds a writer function, provided at the root; a
 component computed at render reads it at its body's top and hands the writer its rule each time it
 runs; a component run through a function value under a provider that keeps nothing registers nothing,
 one that reads no context registers nothing — and `modules/context_sheet_unbound` (`context-unbound`
-naming the context, `.exit` and the three `.stderr`s); erlang, beam and commonJS run them, wasm refuses
-the first `use` (`.wasm.expect`).
+naming the context, `abort` and the three `stderr` lines); erlang, beam and commonJS run them, wasm refuses
+the first `use` (`snapshot/targets/wasm/`).
 Decision 388 (a `@Component` is a lambda over a `RenderScope`, `01-compiler/134` step 6 box 4b) replaced
-374's capture: `run/context_host_thunk` left with it, and `modules/render_scope_library` holds the scope in
+374's capture: the cell `context_host_thunk` left with it, and `modules/render_scope_library` holds the scope in
 the library instead — a renderer that runs the root with `RenderScope.root()` and each child with the
 scope its parent's `run` answered, hands a host a thunk `{ -> c.run(scope) }` at once and keeps one the
 host runs twice after the render. `modules/component_is_lambda` (a call runs nothing; `itens.map(Card)`
@@ -349,7 +335,7 @@ Decision 357 (the rules of hooks) adds `modules/use_in_if`, `modules/use_in_loop
 and `modules/use_after_early_return` (`use-not-top-level`, naming the construct or the line) and
 `modules/use_conditional_argument` (a condition inside `use provide`'s argument, an `if` that does not
 return before a `use`); `modules/use_after_return` and `modules/generator_loop_use` now meet
-`use-not-top-level`, and `reject/use_inside_branch` / `reject/use_in_closure` left for `use_in_if` /
+`use-not-top-level`, and the cells `use_inside_branch` / `use_in_closure` left for `use_in_if` /
 `use_in_lambda`.
 Decision 277 (`decl.hooks`, `01-checker` step 23) adds `modules/decl_hooks_direct` (a host hook: one node;
 commonJS, erlang and beam — `session` has no wasm binding), `modules/decl_hooks_all_nodes` (four nodes, a
@@ -399,10 +385,10 @@ dotted source was compared byte for byte with the module's `/` path and named no
 below the importer's package had no reading.
 `import_ambiguous_from_package` is the refusal that stays — `import {NotFound} from "site"` names a
 package two of whose modules declare the name, so the use is `ambiguous-import-use`, located, naming
-both, by `<target>.expect`. `transitive_package_import` (front 26 step 3, decision 242) — the
+both, by its snapshot. `transitive_package_import` (front 26 step 3, decision 242) — the
 package declares `starter`, `starter` declares `core`, and `from "core"` in the package is refused
 `unresolved import source "core" — declare it in botopink.json "dependencies"` at the source
-string, by `<target>.expect` on all four targets: only a direct dependency is importable.
+string, by its snapshot on all four targets: only a direct dependency is importable.
 `dependency_imports_undeclared_package` — the same refusal inside a dependency: `starter` imports
 `from "core"` without declaring it (the package declares both), and the build refuses it at
 `deps/starter/src/root.bp:1:21`, as `starter`'s own build does, where it used to compile the
@@ -425,7 +411,7 @@ what `import {app.page.title};` names although the dependency's `site/app/page` 
 full path is read first (it passes on the parent binary; it guards the order of the two readings).
 `import_same_name_twice_unaliased` is the use that cannot tell: `import {app.page.title};
 import {app.blog.page.title};` is `import-name-collision` at the second item, naming both
-modules, by `<target>.expect` — the second import used to replace the first and commonJS answered
+modules, by its snapshot — the second import used to replace the first and commonJS answered
 `app` where erlang and wasm answered `blog`. `import_same_fn_name_std_and_package_aliases` — a package
 and `std/collections` both declare `lt` and `reverse`; one module imports each under an alias and
 calls the four (it passes on the parent binary; it pins the rule).
@@ -452,7 +438,7 @@ cell reads it through `==`. Each was refused by the parent binary.
 Step 4 (row 32) adds `modules/call_of_record_value` (`val g = G(a: "x"); g()` is
 `callee-not-a-function` at `g(`, beside a constructor and a function-typed field that still check)
 and `modules/call_of_imported_record_value` (the same through a sibling's `pub val`, by
-`<target>.expect` on all four); both were accepted by the parent binary.
+its snapshot on all four); both were accepted by the parent binary.
 Step 5 (decision 152) adds `modules/binding_redeclared_in_body` (a second `var n` in one body) and
 `modules/binding_shadows_parameter` (`val x` over the parameter `x`), both `binding-redeclared` at the
 second binding and both accepted by the parent binary. Decision 205 (the body is the whole function)
@@ -512,7 +498,7 @@ targets.
 Step 15 (report L, R3) adds `modules/imported_type_field_closure` (package `a`'s `Client(life:
 Life, …)` with `Life` in a sibling module, imported by package `b` as `Client` alone and called from
 the root, four targets) and `modules/imported_declaration_error_location` (a type error inside the
-dependency's declaration is located at `a/client.bp`, by `<target>.expect`). Both pass on the parent
+dependency's declaration is located at `a/client.bp`, by its snapshot). Both pass on the parent
 binary — the row no longer reproduces at this base, and rakun-metrics' `export_test` passes with its
 `CacheLife` workaround removed — and pin it.
 Step 6 (decision 147) adds `modules/try_in_lambda_without_result` (`[1, 2].forEach({ x -> try
@@ -535,12 +521,12 @@ no import), `modules/mod_namespace_cascade` (`mod geo;` alone reaches `geo.plane
 folder's `mod.bp` re-exports by value and by type — `pub val splitPath = split.splitPath;`, `pub
 type Pair = split.Pair;` — the submodule private, the type `split`'s own), and
 `modules/import_nested_module_namespace` (`import {store.cache};` in a sibling binds `cache`), all
-four targets; four refusals on every target by `<target>.expect` — `private_module_through_namespace`
+four targets; four refusals on every target by its snapshot — `private_module_through_namespace`
 (`geo.plane` through a plain `mod plane;`, `private-module` at `plane`), `redundant_module_import`
 (`import {config};` beside `pub mod config;`), `declaration_named_like_module` (`fn config()` beside
 `mod config;`, `import-name-collision`) and `shorthand_import_one_candidate` (`import {splitPath};`,
 `shorthand-import`, the fix `import {config.splitPath};`) — and `modules/shorthand_import` (no module
-declares the name: `unresolved import`). They are `modules/` cells, not `reject/` ones: each needs a
+declares the name: `unresolved import`). They are `modules/` cells, not refusal ones: each needs a
 second module. The shorthands the suite wrote are their module paths now (`dependency_files_order`,
 `sibling_import_in_a_dependency`); an `import {m};` beside `pub mod m;` is gone (`decl_hooks_imported`,
 `decl_hooks_async_imported`, `decorator_meta_import`, `decorator_same`, `labelled_call_by_label`,
@@ -558,7 +544,7 @@ finding) — `return xs[0];` under `-> T` is the type mismatch naming `T` and `?
 detected`), and the same functions declared `-> ?T` run on four targets.
 Decision 207 (an inline parameter type) adds `modules/inline_param_type` (built from the call's labels in
 any order with a default left out, forwarded, beside an ordinary parameter, four targets), the parser's
-refusals `reject/inline_type_in_{return,field,val_annotation}` (`inline-type-outside-parameter`), the
+refusals `modules/inline_type_in_{return,field,val_annotation}` (`inline-type-outside-parameter`), the
 checker's `modules/inline_type_on_method_param`, `modules/inline_type_twice_on_one_fn`,
 `modules/inline_type_field_named_like_param` (`inline-type-position`), `modules/inline_type_missing_field`
 and `modules/inline_type_unknown_field` (named by the owner, ``the props of `link` ``), and
@@ -567,7 +553,7 @@ the declaring module's own call runs). All sixteen fail on the parent binary.
 Decision 208 (`Ok` / `Error` are never constructors) adds `modules/result_ok_constructor` and
 `modules/result_error_constructor` — `unbound variable` at the name; both pass on the parent binary and
 pin the rule.
-Decision 209 adds `run/integer_literal_fits_f64` (an integer literal under an expected `f64` — a
+Decision 209 adds `modules/integer_literal_fits_f64` (an integer literal under an expected `f64` — a
 `val`, an `f64[]` element, an argument, a return, an arithmetic operand — prints as the float, four
 targets; refused by the parent binary) and `modules/i32_value_never_widens` (an `i32` value passed to an
 `f64` parameter is the mismatch; it passes on the parent binary and pins the half that stays).
@@ -578,7 +564,7 @@ the beam codegen test `is and == read numbers by value …` no longer prints `2.
 Decision 255 (1) (a type application before a member) adds `modules/type_application_static_member` —
 `Dict<string, unknown>.empty()`, `Dict<string, i32>.empty()` chained, `Box<i32>.make(7)`,
 `Opt<string>.None` and `Opt<i32>.Some(3)`, beside `a < b`, `x < y && z > w` and
-`both(a < b, y > x)` that stay comparisons, on all four targets — and four `reject/` cells:
+`both(a < b, y > x)` that stay comparisons, on all four targets — and four refusal cells:
 `type_application_argument_mismatch` (`Box<i32>.make("x")`, at the argument),
 `type_application_argument_count` (`Box<i32, string>`, at the name),
 `type_application_variant_payload_mismatch` (`Opt<i32>.Some("a")`) and
@@ -608,9 +594,9 @@ Dict.empty();` beside its block form), and `modules/comptime_expression_type_mis
 expression's type is the form's, located at `comptime` as the block's is).
 Decisions 266 and 331 (`01-checker` step 21 — every `comptime` runs on the comptime runtime, BEAM or
 WAT by the target, never on the target, and its value is written into the program) give
-`modules/comptime_expression_static_call` all four targets (its `.wasm.expect` is gone: the `Dict` is
+`modules/comptime_expression_static_call` all four targets (its `snapshot/targets/wasm/` departure is gone: the `Dict` is
 written as its constructor) and add `modules/comptime_block_with_loop` (`comptime two()` emits `2`; a
-block with a call and a loop answers `6`; a loop pushing strings answers the array — one `.out` on
+block with a call and a loop answers `6`; a loop pushing strings answers the array — one `snapshot/output/` answer on
 the four targets; the parent binary refused the block on erlang, read `d` unbound on commonJS and
 had no wasm lowering), `modules/comptime_val_after_import` (step 20's finding: a module-level
 `comptime` `val` after an import, dropped on commonJS by the parent binary; a call and a record at
@@ -639,12 +625,12 @@ build, decision 452) and `contentHash` as std-wasm's, for every target; four tar
 `modules/decorator_imported_host_function` (the same through an imported function and an imported
 decorator: the export carries its host and std functions),
 `modules/comptime_host_cell_unavailable` (decisions 434 (4), 452: a host function with neither a `std:` nor a
-`fn:` cell, refused at the call naming both — was `reject/decorator_host_cell_missing`),
+`fn:` cell, refused at the call naming both — was the cell `decorator_host_cell_missing`),
 `modules/comptime_host_cell_unavailable_erlang_only` (decision 452: a host function with an `@External.Erlang`
-cell alone is refused the same way, the cell never run at build — was `reject/comptime_beam_call_not_converted`;
-the former run cell `modules/decorator_erlang_cell_only` is this reject),
+cell alone is refused the same way, the cell never run at build — was the cell `comptime_beam_call_not_converted`;
+`modules/decorator_erlang_cell_only` is this refusal),
 `modules/comptime_erlang_cell_ignored_fn_serves` (decision 452: an Erlang cell beside a `fn:` cell is ignored, the
-`fn:` body answers on the four targets — was `reject/comptime_beam_call_not_converted_fn_after`, decision 439,
+`fn:` body answers on the four targets — was the cell `comptime_beam_call_not_converted_fn_after`, decision 439,
 which no longer applies),
 `modules/external_wasm_std_outside_std` (decision 445: a `std:` cell is std's alone — outside
 `libs/std` it is refused at the annotation on every target, naming the std function to call
@@ -684,7 +670,7 @@ column plus its offset; the parent binary located it at `1:20`).
 (another front's finding) — a program's own `behavior String` adds members to std's `String` (its
 default fns call `slice`, `startsWith`, `length` on `self`, and std's members answer beside them),
 and redeclaring a std member is `behavior-member-redeclared`. `modules/program_primitive_behavior_extends_std`
-is its `run/` twin on all four targets (`botopink test` runs neither wasm nor beam), a
+is its running twin on all four targets, a
 `behavior Number` default beside it; wasm called no program-declared default fn of a primitive
 (it trapped) until `05-wasm`'s `lowerPrimDefault`. Both refused by the parent binary.
 `modules/program_array_behavior_default` does the same for a program's `behavior Array<T>` — defaults
@@ -695,7 +681,7 @@ Decision 206 (`from` names a package — std or a declared dependency — and a
 module of the importing package is imported by its path inside the braces) adds three `modules/`
 cells. `import_own_module_with_from` is the refusal: `import {area, perimeter as around} from
 "geometry";` over the package's own `geometry` is `error[module-import-with-from]` at the source
-string, writing the brace form, by `<target>.expect` on all four targets (it compiled and ran on the
+string, writing the brace form, by its snapshot on all four targets (it compiled and ran on the
 parent binary). `import_bundled_package_beside_own_module` — a package with a module `log` of its own
 imports `{Level, levelName} from "log"` and reaches the dependency `log` (a `deps/log` fixture
 declared by `path` since decision 326 took `log` out of the compiler), and `log.levelName as
@@ -708,14 +694,14 @@ suite's own imports of a module of their package were migrated by
 `scripts/codemod-import-without-from.py`; `method_on_unimported_type` is the case that showed the
 need: its `import {logger} from "log";`, meant for its own `log.bp`, loaded the then-bundled `log`.
 Decision 141 adds `modules/external_template_refused_on_beam` — an `@External.Erlang` template with a
-macro runs on erlang and is a located build error on beam naming the construct (`.beam.expect`); beam
+macro runs on erlang and is a located build error on beam naming the construct (`snapshot/targets/beam/`); beam
 no longer evaluates a template it cannot compile from source at run time.
 Decision 216 (front `130-decorator-outputs`, what a decorator produces) adds, for its first place —
 `decl.addMember(source)`, a member of the annotated type — `modules/decorator_add_member` (an associated
 fn and a method added by a type's decorator and one added by a field's, beside a hand-written
 member) and `modules/decorator_add_member_import` (the members travel with the type: an importer
 calls `City.fromRow(r)` through a plain import and an alias), on all four targets, and three
-`reject/` cells at the annotation: `decorator_add_member_on_fn` (`decorator-member-without-type`),
+refusal cells at the annotation: `decorator_add_member_on_fn` (`decorator-member-without-type`),
 `decorator_add_member_duplicate` (`decorator-member-duplicate`) and `decorator_add_member_not_one`
 (`decorator-member-not-one-fn`), and one where the call is written: `decorator_member_unknown`
 (`unknown-associated-fn` — a type's members are closed, so `City.revisions()` on a type no
@@ -723,14 +709,14 @@ decorator gave it is refused). Its second place — `decl.setMeta(key, value)`, 
 `@typeInfo(X).meta.<decorator>.<key>` — adds `modules/decorator_set_meta` (two decorators' keys on a
 type, a `fn`'s meta, `.name`, a read held in a typed `val` and continued by `.length`) and
 `modules/decorator_meta_import` (meta read through a plain import, an alias and a namespace import),
-on all four targets, and four `reject/` cells: `typeinfo_meta_missing` and
+on all four targets, and four refusal cells: `typeinfo_meta_missing` and
 `typeinfo_unknown_declaration` where the read is written, `decorator_meta_duplicate` and
 `decorator_meta_on_member` at the annotation. Its third place — `decl.addType(name, source)`, an
 associated type named `Owner.Name` — adds `modules/decorator_add_type` (a record `City.Columns` in type
 positions, constructed by its path and returned by an added member, an enum `City.Size` whose
 variants are reached as `City.Size.Large`, both printed under the owner's path) and `modules/decorator_add_type_import` (imported with its
 owner, under an alias too, and `Greeter.Mock` — a double implementing the annotated behavior — passed
-where a `Greeter` is expected), on all four targets, and four `reject/` cells at the annotation:
+where a `Greeter` is expected), on all four targets, and four refusal cells at the annotation:
 `decorator_add_type_duplicate`, `decorator_add_type_not_one`, `decorator_add_type_without_owner`
 and `decorator_add_type_name`. Its fourth place — `@TypeInfo.all(with: d)`, the program's
 declarations carrying `d` — adds `modules/typeinfo_all_registration` (an entry point that imports
@@ -740,10 +726,10 @@ decorator nothing carries answers `[]`), on all four targets, and
 `modules/typeinfo_all_type_also_imported` (catalogued types of a dependency and of a nested module
 of the package, each also imported by the entry point — plain, under an alias, by its path — are
 one declaration reached twice, not decision 170's two types of one name), on all four targets, two project refusals by
-`<target>.expect` — `typeinfo_all_imported` (a module importing the reader, at the import) and
+its snapshot — `typeinfo_all_imported` (a module importing the reader, at the import) and
 `typeinfo_all_private` (a private declaration the query would answer) — `modules/typeinfo_all_spelled_in_string`
 (a module whose string literal only spells `@TypeInfo.all` is no reader: the entry point imports it and
-catalogues its tagged function, on all four targets), and four `reject/` cells
+catalogues its tagged function, on all four targets), and four refusal cells
 where the query is written: `typeinfo_all_mixed`, `typeinfo_all_needs_member`,
 `typeinfo_all_with_ordinary_fn` and `typeinfo_all_arguments` (decision 268: `with:` is declared
 `Decorator | Decorator[]`, so an ordinary function — `typeinfo_all_with_ordinary_fn` — and a literal —
@@ -765,12 +751,12 @@ Decision 253 makes the catalogue the static `@TypeInfo.all` of the builtin type:
 `modules/typeinfo_all_on_function` refuses `@typeInfo.all(…)` (`typeinfo-all-on-function`).
 Decision 356 (a decorator on a `val` runs, and the `val` is catalogued) adds `modules/val_decorator_catalogue`
 (`DeclKind.Val`, the declared type as `returnType` and `returnTypeName`, `setMeta` read by
-`@typeInfo(<val>)`, both `val`s answered by `@TypeInfo.all`, four targets) and five `reject/` cells at the
+`@typeInfo(<val>)`, both `val`s answered by `@TypeInfo.all`, four targets) and five refusal cells at the
 annotation or the query: `val_decorator_on_var` (a decorator on a module `var`, refused until `116-c` is decided), `val_decorator_runs` (`#[mark] pub val one = 1;` fails with the decorator's
 message — the parent binary printed `1`), `val_decorator_add_member` and `val_decorator_add_type`
 (`decorator-member-without-type` / `decorator-type-without-owner`, "the val") and
 `typeinfo_all_val_and_fn` (`typeinfo-all-mixed`: a `val` and a function under one query). Decision 361
-(std's `bpp` annotations; front 116 step 1) adds five `reject/` cells where std's decorators refuse a
+(std's `bpp` annotations; front 116 step 1) adds five refusal cells where std's decorators refuse a
 role's place — `bpp_html_on_val`, `bpp_style_on_val`, `bpp_html_not_template` (a function not
 answering `@ExprCustom<R>`), `bpp_prelude_on_fn`, `bpp_style_prelude_on_fn` — and eight `modules/bpp_*`
 projects over a fixture package `markup` (not jhonstart): `bpp_roles_found` (the key, the roles
@@ -788,7 +774,7 @@ it `""` for a type), and
 The registration and list cells therefore read `name`, `module` and `meta` only. Front 130 adds
 the narrowing (decision 254): `modules/is_fn_narrows_unknown` narrows an `unknown` with `is fn(<params>)
 -> T` and calls through it — a stored factory, a lambda, a top-level fn, a value of another arity,
-a string and a number — on all four targets; `modules/is_fn_wrong_arity_fails` (`.exit nonzero`) is a
+a string and a number — on all four targets; `modules/is_fn_wrong_arity_fails` (`abort`) is a
 resolver narrowing a stored `fn(i32) -> i32` with `is fn() -> Clock` and panicking with the entry's
 name and the expected type (the message is on stderr on every target, wasm's included, which writes it before the trap); and
 `modules/call_unknown_without_narrowing` refuses calling an `unknown` that no test narrowed.
@@ -804,16 +790,16 @@ targets (std's `types.bp`, exported by `root.bp`).
 C-03's beam half adds `modules/std_template_host_fns_across_modules` — std host functions whose
 `@External.Erlang` body is a template (`fs.exists`, `fs.readText`, `os.eol`, `process.platform`,
 `encoding.hexEncode`, `hash.sha256`, `json.quote`, `regex.matches`) called from the program's
-module through a folder namespace and a leaf import, on commonJS, erlang and beam (`.targets`: wasm
+module through a folder namespace and a leaf import, on commonJS, erlang and beam (`"targets"`: wasm
 refuses `io/fs`, decision 241's group 3).
 `01-compiler/05-wasm` step 5 adds a cell per std module family, the commonJS answers on four
 targets: `modules/std_encoding_on_every_target` (base64, base64url, hex, percent and form codecs over
 ASCII to astral text, each decoder's refusal) and `modules/std_querystring_on_every_target` (query and
 form bodies, each refusal); `modules/std_json_on_every_target` (writers, `unquote`, `decode` and its
-accessors, the host round-trip) runs on three and is refused on wasm by name (`.wasm.expect`) until
+accessors, the host round-trip) runs on three and is refused on wasm by name (`snapshot/targets/wasm/`) until
 `decisions-pending.md` 05w-j binds `json.parse` / `stringify` there; `modules/std_unicode_on_every_target`
 (`fromCodepoint`, `codepoints`, `firstCodepoint`, the four normalization forms — std's botopink
-normalizer, decision 333 (A)) has one `.out` for the four targets. Two cells pin the wrong answers wasm gave those families at exit 0, each failing
+normalizer, decision 333 (A)) has one `snapshot/output/` answer for the four targets. Two cells pin the wrong answers wasm gave those families at exit 0, each failing
 on the parent binary: `modules/std_namespace_calls_same_name` (`querystring.parse` and `url.parse`
 through their namespaces — the mangled one's receiver was dropped) and `modules/tuple_optional_element`
 (a `?T` in a tuple — printed, read through `._N`, a generic method's `#(Q<T>, ?T)`, and
@@ -833,7 +819,7 @@ module load — erlang and beam dropped the write), `modules/index_answer_typed_
 `ReferenceError`, beam `{unassigned, …}`) and `modules/is_enum_variant` and
 `modules/renderer_record_field_shapes` (shapes the rows measured, which no longer reproduce — pinned).
 1.0.11's `01-compiler/05-wasm` step 1 adds one cell per primitive-method group wasm trapped on, each
-`.out` shared by four targets: `modules/string_lines_words` (`lines` — `\r\n`, a trailing `\r` kept, `""`
+`snapshot/output/` answer shared by four targets: `modules/string_lines_words` (`lines` — `\r\n`, a trailing `\r` kept, `""`
 one empty line — and `words` over blanks), `modules/array_flat_forms` (`flatten`, `flat`, `flatMap`
 over integers, strings, a local, a parameter and an annotated empty `i32[][]`), `modules/array_windows`
 (`chunked`, `sliding`, `n <= 0`, a slice indexed and measured) and `modules/array_fill` (a value of
@@ -865,7 +851,7 @@ called with labelled and positional arguments, on all four targets (beam built `
 record `#{n => 4}`).
 01-std step 2 adds `modules/std_asserts_on_every_target` — `import {testing.asserts}` and its pure
 assertions on commonJS, erlang and beam — and `modules/std_asserts_host_cell_on_wasm` — `asserts.deepEquals`
-on the same three. wasm refuses both at the import (`.wasm.expect`): `deepEquals` calls `canonical`,
+on the same three. wasm refuses both at the import (`snapshot/targets/wasm/`): `deepEquals` calls `canonical`,
 which has no wasm binding, a function reaching such a cell is refused called or not (decision 146),
 so `testing.asserts` does not build there and the import that links it says so, naming the cell. The same front's `modules/result_field_read` and
 `modules/result_unknown_method` refuse a member of a `@Result` that is not one of its methods
@@ -881,7 +867,7 @@ a parenthesised `if` read with `.v`, nested in another `unwrapOr`, over an unann
 template as the value of an `if` branch), `modules/integer_division_truncates` (F7 — integer `/`
 truncates toward zero on every target, float `/` stays float) and `modules/lexer_error_in_imported_module`
 (F8 — every target refuses the project with `bad string escape` located in the imported module, via
-`<target>.expect`). The erlang float-literal item adds `modules/float_literal_spellings` (`1e3`,
+its snapshot). The erlang float-literal item adds `modules/float_literal_spellings` (`1e3`,
 `2.5E3`, `3e+2`, `5e-1`, `1_000.5` are `f64` on all four targets) and
 `modules/number_literal_erlang_spellings` (`5e-324`, the largest `f64`, an `f64` record field and
 `0xFF + 0b101 + 0o17`, on all four targets — wasm since its float literal is an `f64.const` and its
@@ -892,18 +878,18 @@ parent binary: `modules/task_await_in_if_block` (an `if` block that `await`s wit
 `modules/task_void_return_in_if_block` (a bare `return;` in an `if` block of a `@Task<void>` body — wasm
 emitted a `return` with nothing on the stack), `modules/dependency_files_order` (a dependency whose
 `files` lists every importer before what it imports, `import {a.base};` and `import {leaf.Leaf};`),
-`modules/external_erlang_host_module_missing` (`.targets` `erlang beam`: an `@External.Erlang` module that is
-neither shipped nor in the Erlang code path is a located build error on both, `.erlang.expect` and
-`.beam.expect`),
+`modules/external_erlang_host_module_missing` (`"targets"` `erlang beam`: an `@External.Erlang` module that is
+neither shipped nor in the Erlang code path is a located build error on both, `snapshot/targets/erlang/` and
+`snapshot/targets/beam/`),
 `modules/erlang_host_sidecar_shipped` (a project's `src/sidecars/*.erl` reached by `botopink run` on
-erlang and on beam; `commonJS.expect` / `wasm.expect`), `modules/erlang_sidecar_named_like_a_module` (a
+erlang and on beam; `snapshot/targets/commonJS/` and `snapshot/targets/wasm/`), `modules/erlang_sidecar_named_like_a_module` (a
 sidecar `text.erl` beside the module `text.bp` is shipped — the shipper skipped a basename match),
 `modules/sidecar_called_from_folder_module` (front 26, T16: a sidecar called only from `src/orm/entity.bp`
 is shipped on erlang and beam although the cell's own `libs/orm/` — a library root the walk-up finds —
 carries a package named like the folder; the shipper took that package for the module's owner) and
 `modules/sidecar_named_like_emitted_atom` (front 26, C-25: `src/sidecars/sidecar_named_like_emitted_atom@text.erl`, named
 like the atom `src/text.bp` compiles to, is a located build error on erlang and beam naming both,
-`erlang.expect` / `beam.expect`), `modules/bare_print_call` (`println(x)` is unbound
+`snapshot/targets/erlang/` and `snapshot/targets/beam/`), `modules/bare_print_call` (`println(x)` is unbound
 and the refusal names `@println`), `modules/float_record_field` (an `f64` record field read, compared,
 destructured by name and by constructor, and through a method taking and answering an `f64` — wasm
 narrowed and bit-read it, erlang and beam did not lower `val Pt(y, _) = p`) and
@@ -915,13 +901,13 @@ C-04 across a module boundary adds `modules/default_argument_across_modules` —
 trailing defaulted parameters of a sibling module's and of a path dependency's function, one label
 claiming its parameter, on all four targets — and `modules/default_argument_open_across_modules`: a
 default that names a private function of its module does not travel, so omitting it from another
-module is the arity error, on every target (`<target>.expect`).
+module is the arity error, on every target (its snapshot).
 The rakun rows of `language-gaps.md` (the language-gaps sweep, `front/compiler-gaps-rakun`) add a
 cell each, every one failing on the parent binary: `modules/behavior_method_by_receiver_type` and
 `modules/behavior_method_host_value` (a method a `behavior` declares is the VALUE's, beside another type
 declaring the same name — an implementer's, a host-built one, on an unannotated local; the
-host-built one's `.targets` is `commonJS erlang beam`, wasm having no host vocabulary for it), `modules/behavior_method_imported` (the
-same for an imported behavior; `wasm.expect`), `modules/behavior_value_from_implementer` (an implementer
+host-built one's `"targets"` is `commonJS erlang beam`, wasm having no host vocabulary for it), `modules/behavior_method_imported` (the
+same for an imported behavior; `snapshot/targets/wasm/`), `modules/behavior_value_from_implementer` (an implementer
 converts to its behavior at an annotated `val` and a `var`), `modules/behavior_across_modules` (an
 imported behavior is the same type in its importer; an imported fn-type alias resolves its names in
 its own module), `modules/return_nested_in_if_block` and `modules/return_in_case_arm_statement` (a `return`
@@ -953,7 +939,7 @@ names), `modules/explicit_type_arguments_on_a_method` and
 `modules/explicit_type_argument_on_a_method_disagrees` (decision 8 §1.3 at a method call,
 `ctx.resolve<T>()`), `modules/std_module_imports_std_module` (`querystring` imports `encoding`'s
 percent codec; on four targets since `01-compiler/05-wasm` step 5) and `modules/bodyless_method_without_binding` (a
-bodyless method with no host binding is refused at the call on every target, `.<target>.expect`).
+bodyless method with no host binding is refused at the call on every target, its snapshot).
 The checker rows of `front/checker-rows` add a cell each, every one failing on the parent binary
 (or, where noted, pinning a rule the parent already held): `modules/self_param_free_fn` (`self`
 outside a type or behavior body is `self-param-outside-type`, at the name — jhonstart's
@@ -962,14 +948,14 @@ outside a type or behavior body is `self-param-outside-type`, at the name — jh
 and return), `modules/reserved_word_field_name` and `modules/reserved_word_param_name`
 (`reserved-word-as-name`, naming `from`), `modules/external_wrapper_keeps_refusal` (a wrapper around a
 single-target host call inherits no restriction — refused on commonJS and wasm by
-`.<target>.expect` even though nothing calls it; the parent held this rule, and decision 146
+its snapshot even though nothing calls it; the parent held this rule, and decision 146
 made wasm hold it — `modules/external_wrapper_associated_default` is the same rule on a behavior's
 associated `default fn`, which wasm lowered only when a call reached it),
-`modules/behavior_array_of_implementers` (`Array<Plugin>` of two implementers; `.targets`
+`modules/behavior_array_of_implementers` (`Array<Plugin>` of two implementers; `"targets"`
 `commonJS erlang beam`, wasm answers `a a b b`), `modules/import_from_package_beside_same_name`
 (a project `pub fn attempt` beside another module's `import {match.attempt} from "pkg"`; wasm
 listed, the flat namespace), `modules/host_array_slice_without_start` (commonJS's global `slice`
-patch reads a missing start as 0; `.targets commonJS`), `modules/decorator_calls_imported_function`
+patch reads a missing start as 0; `"targets"` `commonJS`), `modules/decorator_calls_imported_function`
 and `modules/decorator_imported_function_name_conflict` (a decorator carries a function its module
 imports, and two functions of one name reaching one decorator are refused where it is applied),
 and decision 112's three rows — `modules/dsl_hygiene_private_helper`,
@@ -989,16 +975,16 @@ and a `case` over each — the checker half already held; wasm followed),
 expected enum, or every enum carrying the head, sorted — it named the hash walk's first),
 `modules/labelled_call_by_label` (a complete labelled call by label on the associated, imported,
 namespace and `"std"` call paths, and a namespace call filled from its default; the `"std"` path is
-`testing.asserts`, which does not build on wasm — `wasm.expect`, the refusal at the import),
+`testing.asserts`, which does not build on wasm — `snapshot/targets/wasm/`, the refusal at the import),
 `modules/label_on_function_value` (a label in a call of a function value, `label-on-function-value`),
 `modules/behavior_from_host_declare` (a host `declare fn -> Greeter`, here and in a third module,
 meets a `Greeter` parameter of the behavior's module — the checker half already held; wasm refuses
-the host templates by `wasm.expect`), `modules/shorthand_import_several_candidates` (a bare `import {parse};` over two
+the host templates by `snapshot/targets/wasm/`), `modules/shorthand_import_several_candidates` (a bare `import {parse};` over two
 modules declaring `pub fn parse` — decision 337's `shorthand-import` at the item, both candidates
-written, on every target by `<target>.expect`; it was `import_ambiguous_use`, the use refused, and
+written, on every target by its snapshot; it was `import_ambiguous_use`, the use refused, and
 its sibling `import_ambiguous_unused` — the import unread compiled — is gone with the shorthand),
 `modules/std_decorator_through_namespace` (`#[mocks.mock]` after `import {testing.mocks} from "std"`
-gives `Repo` the factory `Repo.mock()` and its stubs answer; wasm refuses the import by `.wasm.expect`),
+gives `Repo` the factory `Repo.mock()` and its stubs answer; wasm refuses the import by `snapshot/targets/wasm/`),
 `modules/std_decorator_unknown_through_handle` (`#[mocks.mokc]` is `unknown-annotation`),
 `modules/std_decorator_leaf_import` (`import {testing.mocks.mock}` is `std-decorator-leaf-import`),
 `modules/pipeline_call_fill` (`lhs |> f(args…)` is `f(lhs, args…)` on every target, and a pipeline takes
@@ -1020,7 +1006,7 @@ behavior, called through a value of the behavior — commonJS, erlang and beam),
 `modules/behavior_method_result_chained` and `modules/behavior_method_result_typed` (a behavior method's
 call answers its declared type, so a primitive method chains on it — commonJS called `length`,
 wasm trapped), `modules/external_template_escaped_quote` (a `\"` in an `@External.Node` template is a
-quote of the JavaScript; `.targets` without wasm), `modules/std_path_relative` (a std module calling an
+quote of the JavaScript; `"targets"` without wasm), `modules/std_path_relative` (a std module calling an
 `Array` `default fn` — commonJS had no prototype method), `modules/if_value_float` (an `f64` value `if`
 outside an `f64` function — wasm refused the module, commonJS printed `0`) and
 `modules/linked_val_name_collision` (a module-level `val` and `var` two linked modules declare, read,
@@ -1044,7 +1030,7 @@ function `rule`, a field key `at: .confirm`, a variant `code: .Mismatch` and the
 key) `modules/decorator_argument_values` (an array keeps its length, defaults, labels, a variant) and
 `modules/decorator_typed_arguments_import` (an imported decorator's `Type.Field<T>` and enum, the
 importer importing neither),
-and 19 `reject/` cells, each at the argument unless named: `decorator_param_not_comptime` (at the
+and 19 refusal cells, each at the argument unless named: `decorator_param_not_comptime` (at the
 parameter), `comptime_default_outside_decorator` (at the default), `decorator_value_not_comptime` (renamed by 364),
 `decorator_arg_unbound_function`, `decorator_arg_function_mismatch`, `decorator_arg_unknown_field`,
 `decorator_arg_label_unknown`, `decorator_variant_case`, `decorator_field_key_{unknown,case,too_many}`,
@@ -1182,19 +1168,19 @@ the whole of what the rule is for), `std_erlang_node` (decision 64),
 `panic_aborts` / `todo_aborts` (front 12 step 4.3), `external_erlang_only` (step 4.4),
 `external_host_record` (a host-backed `declare fn` whose return type names a record — the erlang
 templates deliberately build the pre-decision-21 `#{field => V}` map that an `.erl` sidecar in a
-consumer library still builds, and the boundary adopts it; `.targets` is `commonJS erlang beam`
+consumer library still builds, and the boundary adopts it; `"targets"` is `commonJS erlang beam`
 because wasm has no host vocabulary for these templates — beam compiles the erlang templates at build
 time and adopts the answer with its own `'__bp_adopt'/3`),
 `external_method_*` (host-backed METHODS — a `declare fn` with `#[@External.<Target>(…)]` inside a
 `type` body, lowered as a real method of the type: `modules/external_method_local` — a record's template
 methods naming `$0` and `$1`/`$2`, one called from a bodied method on `self`, the `(module, symbol)`
 form, `inline: true`, an enum's host method — on commonJS, erlang and beam, refused on wasm by
-`.wasm.expect`; `modules/external_method_erlang_only` — bound to Erlang only, refused where it is CALLED on
+`snapshot/targets/wasm/`; `modules/external_method_erlang_only` — bound to Erlang only, refused where it is CALLED on
 commonJS and wasm; `modules/external_method_on_host_record` — a host method on a record the HOST built,
 adopted directly, through `@Result` and through an array, and a lambda-parameter receiver whose
-method shares `name/arity` with a module function (`.targets commonJS erlang beam`, as
+method shares `name/arity` with a module function (`"targets"` `commonJS erlang beam`, as
 `external_host_record`'s); `modules/external_method_imported` — the method on an IMPORTED type,
-answered by its owner, with `wasm.expect`),
+answered by its owner, with `snapshot/targets/wasm/`),
 `string_at` (`05-wasm`: the `String.at` reader, on all four targets),
 `lambda_rebinds_case_binders` (front 24, beam: a lambda's own `case` binder, `val` and `for`
 element are not captured from the enclosing frame — `make_fun3` had read the unassigned y-register
@@ -1206,7 +1192,7 @@ array of strings, from a call, a parameter, an annotated `val`, a `for` element 
 with `try` on it; wasm printed each string as its heap address before, on all four targets),
 `std_default_fn_in_a_std_module` (1.0.10-beta `00 · 02-erlang`: a primitive-interface
 `default fn` — `String.slice`, `Array.slice` — reached INSIDE a `libs/std` module that
-`from "std"` compiled as an ordinary dependency; one `run/` cell and one `test/` cell,
+`from "std"` compiled as an ordinary dependency; one `modules/` cell and one `test/` suite,
 § `std_default_fn_in_a_std_module` below), and the
 singletons (`closure_capture`, `recursion`, `expr_sugar`, `fn_defaults` (with `modules/fn_defaults_values`, the VALUE on all four targets, and `modules/missing_required_argument`, N2 — both 1.0.10-beta's C-04), the two `lambda_*` cells of
 1.0.10-beta's `00 · 04-js` — `lambda_expression_body` (a lambda whose whole body is one expression
@@ -1225,9 +1211,9 @@ declaration sites: a record's own body, a record's `implement` block and an
 enum's body; the fourth, a `behavior`'s `default fn`, cannot be written at all,
 because the checker refuses `effect-on-behavior-method-forbidden`), and
 `effect_chain` (1.0.10-beta front 20,
-decisions 95 and 98: one `test/`, two `run/` and five `reject/` cells; front 20
+decisions 95 and 98: one `test/` suite, two running cells and five refusal cells; front 20
 also adds `modules/use_one_base` to the `use_*` area for
-decision 96 (its `reject/use_two_bases` left with decision 354), `modules/option_unwrap_or` + `modules/option_expect_removed` to
+decision 96 (its `use_two_bases` refusal cell left with decision 354), `modules/option_unwrap_or` + `modules/option_expect_removed` to
 `optional*` for F11, and `modules/external_inline_unread` to `external_*` for F9 — `inline` on
 a variant whose emitter never reads it is refused at the annotation; 1.0.12-beta's front 140 step 2,
 decision 334, adds `modules/external_wasm_host_unknown`, `modules/external_host_on_node`,
@@ -1235,7 +1221,7 @@ decision 334, adds `modules/external_wasm_host_unknown`, `modules/external_host_
 `External.Wasm`'s, `.Wasi` or `.Browser`, one binding per host — with `modules/external_wasm_host_binding`
 (a `.Wasi` and a `.Browser` binding side by side, the `wasi` build lowering the first) and
 `modules/wasm_host_from_manifest` (`"wasm": { "host": "browser" }` leaves a `.Wasi`-only binding
-unbound, `wasm.expect`); its step 6 adds `modules/wasm_host_browser_runs` (a `browser` build run by
+unbound, `snapshot/targets/wasm/`); its step 6 adds `modules/wasm_host_browser_runs` (a `browser` build run by
 `node` through its loader, the `.Browser` binding read) and makes the wasm column two runs — `run.sh`'s
 `exec_run` runs a wasm cell on the `wasi` host (wasmtime) and on the `browser` host (node), and a cell
 whose two exit statuses or stdouts differ fails naming both; a project cell whose botopink.json names
@@ -1245,7 +1231,7 @@ state machine over the scheduler, one adapter list for both hosts) add `modules/
 `raceOf` answers the first thunk to settle, `"b"` on every target and both hosts),
 `modules/task_starts_when_made` (a task runs to its first `await` when made, settles once),
 `modules/task_resumes_in_place` (loops, `if`, `try`, `try … catch`, a method, a generic fn and an
-`async { }` block suspending on a real timer), and two wasm refusals with `wasm.expect` —
+`async { }` block suspending on a real timer), and two wasm refusals with `snapshot/targets/wasm/` —
 `modules/task_await_after_call_refused_on_wasm` (a call before an `await` in its statement) and
 `modules/external_wasm_task_adapter_shape` (an adapter declared off its shape — refused on every
 target since 144 B-23 read every `@External.Wasm` binding in the checker, beside
@@ -1272,7 +1258,7 @@ both values on all four targets. commonJS tested only `instanceof`, so the secti
 fired and the `case` answered `undefined` at exit 0, which is how emilia read 223/2 on commonJS
 against 225/0 on erlang from one source), and `narrowing_*` (the same front's
 `fix/null-narrowing`: which shapes of a null test rebind the name they test —
-§ `narrowing_*` below), and the module-`var` cells of 1.0.10-beta's `00 · 17-beam-memory` (C-05, decisions 28, 38, 41, 43, 51): `modules/module_var` — a module-level `var` written twice through a `fn` prints `2` on all four targets (on erlang it was unbound `Hits` and did not compile, on beam the write was dropped and it printed `0` at exit 0 — C-10 lowered both); `test/beam_memory_noop` — the annotation was a no-op off the BEAM (decision 43; deleted when decision 167 made it a refusal there, `modules/beam_memory_off_beam`); and seven `reject/` cells, one per diagnostic — `val_assign_module` and `val_assign_local` (a `val` is immutable, the hint names `var`), `beam_memory_unknown_member`, `beam_memory_unknown_argument`, `beam_memory_keyed_scalar`, `beam_memory_keyed_list` (decision 51: `keyed` is `Dict`-only) and `beam_memory_on_val`. C-10 (front 17 step 4) adds the per-mode BEAM cells, each a `run/` cell with `.targets` = `erlang beam` (a `test/` cell cannot be narrowed to a target, and on commonJS the modes are one program-wide value): `modules/beam_memory_process_dict` (a value written in `main` is not seen by a process `async.runAll` spawns, and its write does not reach `main` — `[0]` then `5`), `modules/beam_memory_ets` (decision 39's fixture: five processes × three increments print `15`) and `modules/beam_memory_persistent_term` (put at load, read by a spawned process: `[101]`); and the refusals its lowering needs — `modules/beam_memory_pt_write`, `modules/beam_memory_ets_recompose`, `modules/beam_memory_ets_bump_non_integer` (decision 40) and `modules/beam_memory_ets_initialiser` (a seed that is neither a literal nor `comptime`). 1.0.11 front 17 step 1 (decision 168) adds the keyed cells: `modules/beam_memory_ets_keyed` (`.targets` `erlang beam` — two processes writing their own key 20 000 times each print `20000 20000`; the seed's repeated key reads its last value, a key with no row `null`), `modules/beam_memory_ets_keyed_seed` (a seed that is neither `Dict.empty()` nor `Dict.ofEntries([…])` of literals), `modules/beam_memory_ets_keyed_recompose` (a row computed from the var's own rows, decision 40's §5(b) diagnostic) and `modules/beam_memory_ets_keyed_whole_read` (a keyed var named anywhere but as its row read's receiver); none can pass on the parent binary: its seed rule refused `Dict.empty()` with the literal-or-`comptime` message, it refused `keyed: true` on the BEAM, and a `Dict` recompose was exempt. `modules/module_var` passes on erlang, and the three `run/beam_memory_*` cells and `modules/module_var` on beam (step 5). `01-checker` step 12 replaces `modules/variant_name_ambiguous` (an erlang-only emit refusal) with `modules/variant_name_ambiguous` — the checker refuses `.Circle` with no expectation on every target — and adds `modules/variant_leading_dot_expected` (the expected type decides `.Circle`; a qualified constructor is the enum written), `modules/section_path_resolution` (a section leaf's shorthand, a payload section path through the annotated enum, a qualified section value) and `modules/section_leaf_without_expectation`; each fails on the `feat` binary. `modules/template_name_collision` (two modules exporting a template `tag`; the import from `loud` expands `loud`'s — the bare-name registry expanded `quiet`'s at exit 0) is 01 step 12's registry half. `modules/try_catch_null_and_noreturn_narrowing`, `modules/component_call_renders`, `modules/component_call_awaited` (a written `await` of a component call inside a component body — jhonstart's layout chain) and `modules/try_catch_handler_mismatch` are the maintainer's 24-box-1 rows (the guide's page example): `catch null` is a `?T`, a `noreturn` call narrows, a component called in a component body renders; each fails on the `feat` binary. `modules/labelled_arguments_reorder` (a label names the parameter it fills in a complete call — fn, record, method, primitive method, self tail call) and the `modules/labelled_arguments` erlang line's removal are 01's labelled-call row. 01 R7 (decision 2) adds `modules/fn_falls_off_end` and `modules/if_without_else_value`, both accepted by the `feat` binary. C-18's decision 45 adds `modules/member_of_optional` (a member read off a `?T` names `?.`) and moves `test/tuple_labels.bp` §6 T4 to `rs.at(0)?.b` — both targets pass it, the label is carried on commonJS and erlang. Decision 15's annotation grammar (front 17 step 3's recorded row) adds `modules/annotation_unknown_family` (`#[@TotallyMadeUp.Nonsense(whatever: 42)]` on a `var`) and `modules/annotation_family_misspelled` (`#[@BeamMemroy.Ets]` names `@BeamMemory`). Pending 0203-a, answered (b), adds `modules/primitive_method_undeclared` (`s.toUpperCase()` names `toUpper`, the method whose host spelling it is) and `modules/primitive_method_unknown` (`"x".fooBar()`, no near name), and re-spells `test/string_case_conversion` to `toUpper` / `toLower` — its erlang line is gone. `01-checker` step 13 adds the two cells of "a local ends with its body": `modules/local_binding_escapes` (a `val` of one `fn` used by the next is refused at the use, naming `holder`) and `modules/local_shadow_ends_with_body` (a local `p` shadows the module's `pub fn p` only inside its own `fn` — `3` then `p:x`); each was run with the `feat` binary and fails there as the step describes. One scenario group per
+§ `narrowing_*` below), and the module-`var` cells of 1.0.10-beta's `00 · 17-beam-memory` (C-05, decisions 28, 38, 41, 43, 51): `modules/module_var` — a module-level `var` written twice through a `fn` prints `2` on all four targets (on erlang it was unbound `Hits` and did not compile, on beam the write was dropped and it printed `0` at exit 0 — C-10 lowered both); `test/beam_memory_noop` — the annotation was a no-op off the BEAM (decision 43; deleted when decision 167 made it a refusal there, `modules/beam_memory_off_beam`); and seven refusal cells, one per diagnostic — `val_assign_module` and `val_assign_local` (a `val` is immutable, the hint names `var`), `beam_memory_unknown_member`, `beam_memory_unknown_argument`, `beam_memory_keyed_scalar`, `beam_memory_keyed_list` (decision 51: `keyed` is `Dict`-only) and `beam_memory_on_val`. C-10 (front 17 step 4) adds the per-mode BEAM cells, each a `run/` cell with `"targets"` = `erlang beam` (a `test/` cell cannot be narrowed to a target, and on commonJS the modes are one program-wide value): `modules/beam_memory_process_dict` (a value written in `main` is not seen by a process `async.runAll` spawns, and its write does not reach `main` — `[0]` then `5`), `modules/beam_memory_ets` (decision 39's fixture: five processes × three increments print `15`) and `modules/beam_memory_persistent_term` (put at load, read by a spawned process: `[101]`); and the refusals its lowering needs — `modules/beam_memory_pt_write`, `modules/beam_memory_ets_recompose`, `modules/beam_memory_ets_bump_non_integer` (decision 40) and `modules/beam_memory_ets_initialiser` (a seed that is neither a literal nor `comptime`). 1.0.11 front 17 step 1 (decision 168) adds the keyed cells: `modules/beam_memory_ets_keyed` (`"targets"` `erlang beam` — two processes writing their own key 20 000 times each print `20000 20000`; the seed's repeated key reads its last value, a key with no row `null`), `modules/beam_memory_ets_keyed_seed` (a seed that is neither `Dict.empty()` nor `Dict.ofEntries([…])` of literals), `modules/beam_memory_ets_keyed_recompose` (a row computed from the var's own rows, decision 40's §5(b) diagnostic) and `modules/beam_memory_ets_keyed_whole_read` (a keyed var named anywhere but as its row read's receiver); none can pass on the parent binary: its seed rule refused `Dict.empty()` with the literal-or-`comptime` message, it refused `keyed: true` on the BEAM, and a `Dict` recompose was exempt. `modules/module_var` passes on erlang, and the three `run/beam_memory_*` cells and `modules/module_var` on beam (step 5). `01-checker` step 12 replaces `modules/variant_name_ambiguous` (an erlang-only emit refusal) with `modules/variant_name_ambiguous` — the checker refuses `.Circle` with no expectation on every target — and adds `modules/variant_leading_dot_expected` (the expected type decides `.Circle`; a qualified constructor is the enum written), `modules/section_path_resolution` (a section leaf's shorthand, a payload section path through the annotated enum, a qualified section value) and `modules/section_leaf_without_expectation`; each fails on the `feat` binary. `modules/template_name_collision` (two modules exporting a template `tag`; the import from `loud` expands `loud`'s — the bare-name registry expanded `quiet`'s at exit 0) is 01 step 12's registry half. `modules/try_catch_null_and_noreturn_narrowing`, `modules/component_call_renders`, `modules/component_call_awaited` (a written `await` of a component call inside a component body — jhonstart's layout chain) and `modules/try_catch_handler_mismatch` are the maintainer's 24-box-1 rows (the guide's page example): `catch null` is a `?T`, a `noreturn` call narrows, a component called in a component body renders; each fails on the `feat` binary. `modules/labelled_arguments_reorder` (a label names the parameter it fills in a complete call — fn, record, method, primitive method, self tail call) and the `modules/labelled_arguments` erlang line's removal are 01's labelled-call row. 01 R7 (decision 2) adds `modules/fn_falls_off_end` and `modules/if_without_else_value`, both accepted by the `feat` binary. C-18's decision 45 adds `modules/member_of_optional` (a member read off a `?T` names `?.`) and moves `test/tuple_labels.bp` §6 T4 to `rs.at(0)?.b` — both targets pass it, the label is carried on commonJS and erlang. Decision 15's annotation grammar (front 17 step 3's recorded row) adds `modules/annotation_unknown_family` (`#[@TotallyMadeUp.Nonsense(whatever: 42)]` on a `var`) and `modules/annotation_family_misspelled` (`#[@BeamMemroy.Ets]` names `@BeamMemory`). Pending 0203-a, answered (b), adds `modules/primitive_method_undeclared` (`s.toUpperCase()` names `toUpper`, the method whose host spelling it is) and `modules/primitive_method_unknown` (`"x".fooBar()`, no near name), and re-spells `test/string_case_conversion` to `toUpper` / `toLower` — its erlang line is gone. `01-checker` step 13 adds the two cells of "a local ends with its body": `modules/local_binding_escapes` (a `val` of one `fn` used by the next is refused at the use, naming `holder`) and `modules/local_shadow_ends_with_body` (a local `p` shadows the module's `pub fn p` only inside its own `fn` — `3` then `p:x`); each was run with the `feat` binary and fails there as the step describes. One scenario group per
 file: a parse error is the blast radius, so nine `#[@External]` declarations in one file mean one
 unparseable annotation hides the other eight.
 
@@ -1285,7 +1271,7 @@ Each was run with the parent binary and fails there as its row describes.
   `Array.at` past the end — on all four targets. The erlang module did not compile (`element/2`
   is illegal in the print helper's guard once it is the module's own fn) and, before the
   `no_auto_import` directive, read `p.y` through the module's `element/2`.
-- `modules/host_template_binding_inside_while` (language-gaps T14, `.targets` erlang beam — commonJS
+- `modules/host_template_binding_inside_while` (language-gaps T14, `"targets"` erlang beam — commonJS
   and wasm lack `bump`): an `#[@External.Erlang]` template binding `__Loop`, called in a `while`
   body and in a `for` body. Erlang's `while` recursed through a named fun `__Loop`, and the
   template's `__Loop = …` re-matched it — `{badmatch, 1}`.
@@ -1306,14 +1292,14 @@ Each was run with the parent binary and fails there as its row describes.
   arity and by element value (`#(2.0, "a") is #(i32, string)` holds); wasm refused it on the parent
   (`cannot box this value as unknown` for an `unknown[]` element, then no run-time test for a tuple
   type). §11's "erlang stores nothing" is `codegen/tests/control_flow.zig`'s needle (`A = 2.0,`, no
-  box) — no program prints a difference, so it has no `run/` cell.
+  box) — no program prints a difference, so it has no cell.
 - `modules/array_unique` (C-35, decision 217): `unique` keeps each value at its first occurrence over
   integers, strings, floats, bools and an empty receiver. wasm dropped only consecutive duplicates
   on the parent (`[1, 2, 1, 3, 2]`).
 - `modules/case_no_arm_matches_raises`: a `case` no arm matches raises `case_clause`; the value comes
   from an erlang host function answering an atom no variant is (the checker sees the `case` as
   exhaustive). beam answered the subject at exit 0 on the parent; commonJS and wasm refuse the
-  binding (`.commonJS.expect`, `.wasm.expect`).
+  binding (`snapshot/targets/commonJS/`, `snapshot/targets/wasm/`).
 - `modules/lambda_binds_name_of_enclosing_fn` (decision 205): a `forEach` body's `val k` over an outer
   `k`, a lambda parameter `e` over an outer `e`, and a lambda value's parameter `e`; the outer names
   keep their values. erlc refused the module on the parent binary (`K@1` unbound). **Red on wasm**
@@ -1322,14 +1308,14 @@ Each was run with the parent binary and fails there as its row describes.
   declaring the other default itself), called typed, through a default and through a behavior-typed
   parameter. erlc refused the module on the parent binary (`function twice/1 undefined`). **Red on
   beam** until 03's adopted-defaults commit lands and **on wasm** (it traps in `Sq_label`, 05's row).
-- `modules/erlang_host_sidecar_in_a_test` (test kind, narrowed to erlang and beam): a `test/` module that
+- `test/erlang_host_sidecar_in_a_test` (test kind, narrowed to erlang and beam): a `test/` module that
   declares `#[@External.Erlang("lt_greeter", "hello")]` itself and calls it. It imports nothing, so
   its runner loaded no sibling and the call died `{error,undef}` on the parent binary.
 - `modules/list_pattern_spread_alone` (a row `03-beam` measured): `[..all]` as a `case` arm over three
   elements and over `[]`, and `val assert [..every]`, on all four targets. Erlang wrote the pattern
   `[All]`, a one-element list — `case_clause` and "assert pattern did not match" on the parent
   binary. The plain `val [..rest] = xs;` (which erlang also left unbound) is `01-checker` step 13's
-  `run/val_spread_only_list_pattern`, refused by the checker until the backends lower it.
+  `modules/val_spread_only_list_pattern`, refused by the checker until the backends lower it.
 - `modules/captured_var_write_threaded` (decision 148, lg-b): the two lambdas that may write a
   captured `var` — a `forEach` body and a local closure called at statement position — thread the
   write out on all four targets (a pin: green on the parent binary too). Every other lambda's
@@ -1390,7 +1376,7 @@ And `.toString()` after a `?.` chain: `es.at(1)?.key.length().toString()` traps 
 (`unresolved call: toString/0` — the chain loses the receiver's type for the SECOND method), a gap
 of its own.
 
-1.0.10-beta's `00 · 04-js` adds three more `run/` cells, every one of them measured by rakun's front
+1.0.10-beta's `00 · 04-js` adds three more cells, every one of them measured by rakun's front
 05 while it wrote a configuration reader, and every one asserting the VALUE — each defect made
 commonJS answer differently from erlang, or not answer at all, with nothing said about it.
 `self_tail_recursion` (D6) walks 20 000 rounds of a tail-recursive function: commonJS emitted a
@@ -1404,7 +1390,7 @@ that `.length()` is JavaScript's `length` PROPERTY, emitted a CALL on a number.
 `optional_length_method` (D7) is the same rename one layer deeper — `.length()` on a `?string` from
 `.at()`, on a `?string` field reached with `?.`, and on one a `!= null` test has just checked; its
 header names the shape it deliberately leaves out (a field read off a `?Record`, which is
-narrowing's row). It carried `.targets commonJS erlang` until `00 · 05-wasm` fixed wasm's optional
+narrowing's row). It carried `"targets"` `commonJS erlang` until `00 · 05-wasm` fixed wasm's optional
 carrier; the sidecar is gone and the cell runs on all four targets. `comment_in_braced_block` (D9) puts a `//`
 comment inside a braced `if` and inside a condition loop's body: commonJS writes some blocks on one
 line, so the comment ran on and swallowed the closing brace and everything after it, and the module
@@ -1424,7 +1410,7 @@ loop that is a value — a generator whose body is a closed generator scope.
 | `modules/loop_generator_dobros` | decision 105's own example: `2 4 … 18 20`, then the counter the generator left at `10` |
 | `modules/loop_range_inclusive` | `for (1..4)` visits `1 2 3`, `for (1...4)` visits `1 2 3 4`, `for (3...2)` nothing |
 
-The `reject/` cells name one refusal each: `loop_break_value`, `loop_yield_plain_fn`,
+The refusal cells name one refusal each: `loop_break_value`, `loop_yield_plain_fn`,
 `for_over_condition`, `for_future_generator_without_await` (`for-over-stream` since front 24),
 `generator_loop_use`, `generator_loop_await`, `generator_loop_break_outer`, `continue_outside_loop`,
 `yield_label_loop`, plus the parser's `loop_parenthesised` and `loop_condition_parameter`.
@@ -1435,26 +1421,26 @@ The § *Cells* suite of `specs/1.0.10-beta/00-compiler-carry-over/24-effects-by-
 written against its `guide.md`: the return type is the annotation (`@Result`, `@Task`,
 `@Component<C, T>`, `@Iterator`, `@Stream`), only `@Result` fails, `async { }` and the `iter` /
 `stream` loop prefixes. Written before the compiler lands them, so each fails on today's compiler
-until the front's steps do; every header names the decision and the guide row it pins. A `run/`
-cell that awaits prints from inside its one `@Task` / `@Component` body (`run`, or the component
+until the front's steps do; every header names the decision and the guide row it pins. A cell
+that awaits prints from inside its one `@Task` / `@Component` body (`run`, or the component
 `main` calls): commonJS hands a plain caller a Promise (decision 120), the other backends run the
 Task eagerly, and inside one body the order is the same everywhere.
 
 | Group | Cells |
 |---|---|
 | Return and effect mode | `test/effect_return_result`, `modules/task_return_layers` (three layers), `modules/effect_alias_passes_value`; `modules/effect_return_ambiguous_nesting`, `modules/effect_wrapper_behind_alias` |
-| `@Task` and failure | `modules/task_await_no_try`, `modules/task_await_result` (`await t` answers the `@Result`, `try await t`, `try await t catch x`), `modules/task_throw_resolves_error` (`.targets commonJS`: the Promise rejects with the thrown value and resolves with the bare one — decision 432 inverted it, the name is its history), `modules/task_result_rejects` (432 on every target: every way a failing task reaches an `await` reads `Error(e)`), `modules/task_result_caught_by_js` (`.targets commonJS`: a JavaScript `try`/`catch` around a botopink task, and a dropped failing task is no unhandled rejection); `modules/task_throw_without_result`, `modules/task_try_await_without_result` |
+| `@Task` and failure | `modules/task_await_no_try`, `modules/task_await_result` (`await t` answers the `@Result`, `try await t`, `try await t catch x`), `modules/task_throw_resolves_error` (`"targets"` `commonJS`: the Promise rejects with the thrown value and resolves with the bare one — decision 432 inverted it, the name is its history), `modules/task_result_rejects` (432 on every target: every way a failing task reaches an `await` reads `Error(e)`), `modules/task_result_caught_by_js` (`"targets"` `commonJS`: a JavaScript `try`/`catch` around a botopink task, and a dropped failing task is no unhandled rejection); `modules/task_throw_without_result`, `modules/task_try_await_without_result` |
 | Chain and `use` | `modules/component_hook_and_component`, `modules/component_result_try_await`; `modules/component_try_element`, `modules/await_under_result`, `modules/use_under_task`, `modules/use_of_component` |
 | `async { }` | `modules/async_block_all_of`, `modules/async_block_value_type`, `modules/async_block_return`; `modules/async_block_use`, `modules/async_block_conflicting_errors` |
 | Iterators | `modules/iterator_fibonacci`, `modules/iterator_result_item`, `modules/iterator_result_items` (step E4), `modules/iterator_factory`, `test/yield_step_next` and `modules/yield_step_next` (`.next()` by hand on an `@Iterator` and, awaited, on a `@Stream` — the `run/` half reaches beam and wasm, which a `test/` cell cannot, and steps a parameter inside a `while`); `modules/iterator_throw_without_result`, `modules/iter_await`, `modules/iter_mixed_yield_return`, `modules/iterator_error_param_removed` |
 | Streams | `modules/stream_pages` (a simulated http failing mid-way), `modules/stream_loop_no_failure`; `modules/for_await_without_task` |
 | Prefixed loops | `modules/prefixed_loop_forms`, `modules/prefixed_loop_result_item`, `modules/prefixed_loop_break_value`, `modules/prefixed_loop_nearest_scope`, `test/contextual_words`; `modules/prefixed_loop_break_outer` |
-| Host (decisions 126, 431, 490) | `modules/host_node_task_result` (`.targets commonJS`; `result: true`, a rejection is `Error(HostError(…))`), `modules/host_erlang_task_result` (`.targets erlang beam`), `modules/external_result_host_error` (`result: true` on a sync and a `@Task` binding, every way the host fails — an `Error`, another thrown value, an erlang `{error, R}` — `Error(HostError(…))` with the same `name` on every target; wasm binds each by `fn:`), `modules/external_result_erlang_exit` (`.targets erlang beam`: `error`, `throw` and `exit` named `Error`, `Throw`, `Exit`), `modules/external_result_host_method` (`.targets commonJS erlang beam`: a host method, sync and `@Task`, answers the same); the checker's refusals of the flag (decisions 487, 488, 491) — `modules/external_flag_bare_bool_refused`, `modules/external_result_return`, `modules/external_result_task_plain_value`, `modules/external_result_own_host_error`, `modules/external_result_not_bool`, `modules/external_result_on_fn_cell`, `modules/external_result_on_wasm_op_cell` — and the accepted shapes `modules/external_result_return_accepted`; std's types `modules/std_failure_types` |
+| Host (decisions 126, 431, 490) | `modules/host_node_task_result` (`"targets"` `commonJS`; `result: true`, a rejection is `Error(HostError(…))`), `modules/host_erlang_task_result` (`"targets"` `erlang beam`), `modules/external_result_host_error` (`result: true` on a sync and a `@Task` binding, every way the host fails — an `Error`, another thrown value, an erlang `{error, R}` — `Error(HostError(…))` with the same `name` on every target; wasm binds each by `fn:`), `modules/external_result_erlang_exit` (`"targets"` `erlang beam`: `error`, `throw` and `exit` named `Error`, `Throw`, `Exit`), `modules/external_result_host_method` (`"targets"` `commonJS erlang beam`: a host method, sync and `@Task`, answers the same); the checker's refusals of the flag (decisions 487, 488, 491) — `modules/external_flag_bare_bool_refused`, `modules/external_result_return`, `modules/external_result_task_plain_value`, `modules/external_result_own_host_error`, `modules/external_result_not_bool`, `modules/external_result_on_fn_cell`, `modules/external_result_on_wasm_op_cell` — and the accepted shapes `modules/external_result_return_accepted`; std's types `modules/std_failure_types` |
 | The E3.9 hint (a `@Result` used as its `U`, one hint per source) | `modules/result_hint_await` (`try await t`), `modules/result_hint_for_item` (`try r`), `modules/result_hint_inferred_async` (the `await` hint plus the `try` that made the block's value a `@Result`) and `modules/result_hint_inferred_iter` (the `for`-item hint plus the `throw` that made the `iter` items `@Result`s); the two `for` cells carry no location line — the mismatch is reported at the file |
-| Migration (decision 127, guide § 9's "Old names that left") | `effect-annotation-removed`: `reject/effect_annotation_removed_{result,future,use,generator,result_generator,future_generator}`, the three loop forms `…_{generator,result_generator,future_generator}_loop`, and the older `…_{context,iterator,async_generator}`; `effect-type-removed`: `reject/effect_type_removed_{future,future_no_error,use,generator,result_generator,future_generator}` and the older `…_{async_iterator,iterable,iterator_step,yield}`; the arity refusals `modules/component_base_parameter` (`@Component<C, R>`, decision 354), `modules/yield_step_error_param` (`YieldStep<T, E>`); and the existing refusals `modules/loop_condition_parenthesised`, `modules/loop_await_removed`, `modules/component_plain_return` |
+| Migration (decision 127, guide § 9's "Old names that left") | `effect-annotation-removed`: `modules/effect_annotation_removed_{result,future,use,generator,result_generator,future_generator}`, the three loop forms `…_{generator,result_generator,future_generator}_loop`, and the older `…_{context,iterator,async_generator}`; `effect-type-removed`: `modules/effect_type_removed_{future,future_no_error,use,generator,result_generator,future_generator}` and the older `…_{async_iterator,iterable,iterator_step,yield}`; the arity refusals `modules/component_base_parameter` (`@Component<C, R>`, decision 354), `modules/yield_step_error_param` (`YieldStep<T, E>`); and the existing refusals `modules/loop_condition_parenthesised`, `modules/loop_await_removed`, `modules/component_plain_return` |
 
-Every row of guide § 9 has a new-form cell above and an old-form `reject/` cell. Two
-`.expect` first lines are a code's shared tail on purpose: `without-fallible-channel`
+Every row of guide § 9 has a new-form cell above and an old-form refusal cell. Two
+`refused` first lines are a code's shared tail on purpose: `without-fallible-channel`
 (`task_throw_without_result`, `iterator_throw_without_result`) holds both the README's
 `effect-try-without-fallible-channel` and today's `effect-throw-…` for a `throw` (the README's
 open point 2). The alias cells spell the guide's `type Name<T> = …;`, which does not parse at
@@ -1462,12 +1448,12 @@ open point 2). The alias cells spell the guide's `type Name<T> = …;`, which do
 
 ### Decided-against forms and the step-4b forms (1.0.10-beta `00 · 15-language-surface`)
 
-Eight `reject/` cells, one per form the language decided against, each pinning the named kind and
+Eight refusal cells, one per form the language decided against, each pinning the named kind and
 the location of the one site every spelling reaches: `ternary_absent` (`c ? 1 : 2`),
 `bitwise_operator_absent` (`1 << 2`), `char_literal_absent` (`'a'`), `nested_fn_decl` (a `fn` in a
 body), `list_spread_not_last` (`[..a, 3]`), `list_spread_dot_dot_dot` (`[...a]`),
 `implement_clause_for` (`implement A for P` after a bodyless `type P(…)`) and `tuple_literal_label`
-(`#(x: 1, y: 2)`). Two `run/` cells for forms that were parse errors and now run on all four
+(`#(x: 1, y: 2)`). Two cells for forms that were parse errors and now run on all four
 targets: `decorator_negative_argument` (`#[mark(-20)]` — the decorator receives the number) and
 `loop_one_line_body` (a one-statement body in `for (xs) { x -> … }` and in a trailing lambda needs
 no `;` before its `}`).
@@ -1476,8 +1462,8 @@ no `;` before its `}`).
 
 The kind for what a single file cannot express: `pub mod`, `import … from "<module>"`, a folder index
 (`shapes/mod.bp`), a private `mod` leaf, and `from "std"` used from a *user* project rather than from
-inside `libs/std`. The directory **is** the project; the runner copies it whole and compares stdout
-with `expected.out`. A cell that needs a **git** dependency is deliberately out of scope — that is
+inside `libs/std`. The directory **is** the project; the runner copies it whole and compares its stdout
+with `snapshot/output/main.snap`. A cell that needs a **git** dependency is deliberately out of scope — that is
 `zig build test-libs`' job, and this suite must not need the network. A **local** dependency is in
 scope since C-16 (front 12 step 4.2): a second project inside the cell, named by the manifest's
 object-form dependency `"<lib>": { "path": "deps/<lib>" }` (decisions 75/76, the workspaces landing
@@ -1582,7 +1568,7 @@ axes — the field read, the method call and the construction — and every line
 21 puts the ENUM and the enum's module inside a variant's atom, and `variant_enum` answered "which
 enum declares `Circle`" by declaration order — first writer wins, mitigated for a `case` SUBJECT
 only. The first cell is the spelling that always had an answer (the enum is written) and asserts
-six values on every target. The second was an erlang-only `run/` cell the emitter refused; since
+six values on every target. The second was an erlang-only cell the emitter refused; since
 `01-checker` step 12 the checker answers both halves for every target: a leading dot whose position
 expects an enum is that enum's (`modules/variant_leading_dot_expected`), and one whose position
 expects nothing is refused naming both enums (`modules/variant_name_ambiguous`).
@@ -1633,15 +1619,11 @@ from one that is merely absent. A sibling `compile:file/2` refuses now refuses t
 `erlc`'s own diagnostic on `standard_error`, and `halt(1)`s before a single test runs (decision 67 —
 no flag turns it into a warning).
 
-Measured on `fix/std-slice-shim` merged onto `origin/feat` `1f41990c` (this compiler, OTP 29,
-node v25.8.0): `conformance/run.sh` — **547 passed, 42 expected failures, 0 failed**, over
-feat's own 541/42. The +6 accounts for itself exactly: these two cells are the `run/` cell on
-commonJS and erlang and the `test/` cell's two tests on each. Each was shown to red by planting the
-pre-fix behaviour: with `collectPreludeInstanceDefaults` guarded again, the `run/` cell exits 1 with
-empty stdout and the `test/` cell does not compile ("`std/path.erl` does not compile — refusing to
-run the tests of …"); with the `_ -> ok` skip also back, the same cell reports `{error,undef}` and
-says nothing about `std/path`; with only the sibling loader's `std_imports` route removed, it is
-`{error,undef}` again on a module that compiles perfectly.
+Each half was shown red by planting the pre-fix behaviour: with `collectPreludeInstanceDefaults` guarded again, the
+`modules/` cell exits 1 with empty stdout and the `test/` suite does not compile ("`std/path.erl` does not compile — refusing to
+run the tests of …"); with the `_ -> ok` skip also back, the same suite reports `{error,undef}` and says nothing about
+`std/path`; with only the sibling loader's `std_imports` route removed, it is `{error,undef}` again on a module that compiles
+perfectly.
 
 ### `std_fs_walk_root_spellings`
 
@@ -1649,7 +1631,7 @@ says nothing about `std/path`; with only the sibling loader's `std_imports` rout
 prints `fs.walk` of it under nine spellings of the root — `walkroot`, `walkroot/`, `walkroot/.`,
 `path.join(["walkroot", "."])`, `./walkroot`, `walkroot/app/..`, the absolute path with and without a
 trailing `.`, and `walkroot/app/.` — expecting the same relative paths each time, on commonJS, erlang
-and beam; wasm refuses the import (`.wasm.expect`, STD-001: `io/fs` has no wasm binding). The erlang
+and beam; wasm refuses the import (`snapshot/targets/wasm/`, STD-001: `io/fs` has no wasm binding). The erlang
 template cut the root off each full path by its written length while `filename:join/2` had already
 dropped a trailing `.` segment, so a root ending in `/.` answered every path minus its first two
 characters (`app/layout.bp` → `p/layout.bp`) and the read that followed was `enoent`; planting the old
@@ -1670,7 +1652,7 @@ the runtimes' (§ Never pin an erlang exit status). A narrowing (`"targets"`) is
 target has no answer at all, audited on every check — § Narrowing a cell.
 
 **The per-target answers B-00k left waiting** (144 B-29 step H; decisions 441, 443, 444 — each a pin:
-the behaviour landed with B-00e / B-00g and no cell held it, because one `.out` could not hold two
+the behaviour landed with B-00e / B-00g and no cell held it, because one `snapshot/output/` answer could not hold two
 answers): `modules/float_text_at_run_time` (`"${5.0}"`, `1.0e21`, `1.0e-7` print `5.0`, `1.0e21`,
 `1.0e-7` on every target, commonJS since 144 B-78),
 `modules/string_trim_keeps_nbsp` (`trim` keeps a NBSP; commonJS's engine trims it),
@@ -1713,31 +1695,31 @@ four-target cells for numbers wasm answered wrongly at exit 0 — `modules/float
 float's shortest round-trip text, where erlang and beam agree with commonJS), `modules/float_slot_keeps_f64`
 (a float in an array, a tuple, a payload, a record field, a `?f64`, a capture), `modules/i64_full_width`
 (`i64` locals, parameters, fields, `?i64`, `u32`, a literal past `i32`) — and five cells refused on
-wasm by a `.wasm.expect`, each a value wasm has no reader for yet: `modules/optional_index_arithmetic`
+wasm by a snapshot departure, each a value wasm has no reader for yet: `modules/optional_index_arithmetic`
 (`xs[i] + 1`), `modules/i64_in_array_slot`, `modules/fn_value_float_argument`, `modules/generic_field_float`,
 `modules/untyped_array_float_push`.
 
 `front/int-overflow` (decision 264: an integer result outside its type aborts on every target) adds
-eight abort cells, each `.exit` plus `.<target>.stderr` naming `integer overflow: <op> on <type> at
+eight abort cells, each `abort` plus `stderr` naming `integer overflow: <op> on <type> at
 src/main.bp:<L:C>` on commonJS, erlang and beam: `modules/int_overflow_add_i32`, `modules/int_overflow_mul_i64`
 (past `2^63 − 1`; commonJS reaches the bound through `BigInt`, decision 319),
 `modules/int_overflow_negate_i32`, `modules/int_overflow_plus_assign`, `modules/int_division_min_by_minus_one`,
 `modules/int_overflow_sub_u32`, `modules/int_overflow_add_i8` and `modules/int_division_by_zero` (commonJS's
 `integer division by zero`; erlang and beam raise `badarith`, wasm traps) — and
 `modules/int_arith_at_bounds`, every type's bound reached by arithmetic and printed, never an abort. wasm
-traps with no text, so its half is `.exit` alone; `u32` and the narrower types check their own range
+traps with no text, so its half is `abort` alone; `u32` and the narrower types check their own range
 there too (`wat.zig` `emitRangeCheck`).
 
 144 B-00g (decision 443: case mapping over all of Unicode) adds `modules/string_case_unicode` — `é`,
-`ß` → `SS`, `ǆ`, `ﬁ` → `FI`, `İ` → `i̇`, Greek and Cyrillic upper- and lower-cased with one `.out` on
+`ß` → `SS`, `ǆ`, `ﬁ` → `FI`, `İ` → `i̇`, Greek and Cyrillic upper- and lower-cased with one `snapshot/output/` answer on
 the four targets (wasm printed `é` unchanged at exit 0). The one place the targets part, the final
 sigma (a JS engine lowers a word-final `Σ` to `ς`; OTP, and so erlang, beam and wasm, to `σ`), is
-not printed here — one `.out` cannot hold both —; `codegen/tests/wat.zig` pins wasm's.
+not printed here — one `snapshot/output/` answer cannot hold both —; `codegen/tests/wat.zig` pins wasm's.
 
 144 B-00k (the B-00 group's Conformance step, decisions 458, 459) adds four cells, each red on the
 group's parent `239f789f`: `modules/comptime_text_one_answer` (decisions 434 (5), 441, 443 — a text
 computed at comptime is std-wasm's on every target: `5.0`, `1.0e21`, `1.0e-7`, `trim` keeping a NBSP,
-`é` → `É`, `straße` → `STRASSE`, `ΟΔΟΣ` → `οδοσ` — the final sigma that one runtime `.out` cannot
+`é` → `É`, `straße` → `STRASSE`, `ΟΔΟΣ` → `οδοσ` — the final sigma that one runtime `snapshot/output/` answer cannot
 hold; the parent's wat comptime refused the non-ASCII case mapping on commonJS and wasm),
 `modules/comptime_erlang_cell_never_runs_at_build` (decision 452 — `tag`'s Node, Erlang and `fn:` cells
 answer three texts, and the decorator's call prints `Point:fn` on the four targets; the parent's BEAM
@@ -1757,9 +1739,9 @@ below 2^53 and a `BigInt` beyond; decision 320: a string index counts codepoints
 the edge, then a sum past the top that aborts), `modules/int_overflow_sub_i64_min`,
 `modules/int_overflow_add_u64_max` (the `u64` top, `%` and `/` past 2^53, a sum past the top; red on wasm,
 which prints the top as `-1` and traps on `18446744073709551614ul + 1ul`), `modules/i64_dict_key_across_safe_edge`
-(a `Dict` and a `Set` keyed across 2^53; wasm refuses the `i64` element, `.wasm.expect`) and
+(a `Dict` and a `Set` keyed across 2^53; wasm refuses the `i64` element, `snapshot/targets/wasm/`) and
 `modules/string_codepoint_slice_and_code` (a negative `slice` bound, `s[-2]`, `s[4..]` and `charCodeAt`
-over `"a👍bX👍c"`); `modules/wide_literal_past_js_safe_integer` lost its `.commonJS.expect` and answers
+over `"a👍bX👍c"`); `modules/wide_literal_past_js_safe_integer` lost its `snapshot/targets/commonJS/` departure and answers
 on the four targets.
 
 `02/97` step 13 (decision 319, std's half) adds `modules/i64_number_methods_past_js_safe` — `min`, `max`,
@@ -1768,19 +1750,19 @@ on the four targets.
 `modules/string_parse_int_i64_range` (`parseInt` reads −2^63 … 2^63 − 1 and refuses one past either end;
 the parent refused past ±(2^53 − 1)), `modules/integer_conversions_exact` (`toI32`, `toI64`, `toU32`,
 `toU64`, `toF64` at the bounds and past 2^53) and two aborts, `modules/integer_conversion_to_i32_aborts`
-and `modules/integer_conversion_to_f64_inexact_aborts` (`.exit` plus a `.stderr` per target naming the
+and `modules/integer_conversion_to_f64_inexact_aborts` (`abort` plus a `stderr` line per target naming the
 value). They answer on commonJS, erlang and beam, and `string_parse_int_i64_range` on wasm too (144
 B-22: std-wasm's `text` and `number` cells behind `primitives.bp`'s host helpers), and the three
 conversion cells on wasm too since 144 B-22 (`lowerIntConversion`: the range test on the receiver's
 carrier, the abort text built from its digits); B-22 adds `modules/integer_conversion_u64_to_i64_aborts`
 (a `u64` past `i64`'s top read unsigned in the abort) and `modules/async_retry_policy`
 (`async.retry(policy, { -> … })` answering `Ok` and the last `Error`, its pause converted by `toI32()`),
-both red on wasm on the parent. wasm refuses `i64_number_methods_past_js_safe` by `.wasm.expect` — its
+both red on wasm on the parent. wasm refuses `i64_number_methods_past_js_safe` by `snapshot/targets/wasm/` — its
 integer methods are `i32`'s — a `05-wasm` row.
 Its `io` half adds `modules/std_io_i64_canonical` — `fs.stat`'s `size`, kind and `mtime` (the Node
 form reads `statSync` with `bigint: true` and answers the canonical form) and `clock.hours` /
 `clock.add` past 2^53 (`clock`'s `wide` is std's `toI64()` now, no host cell), printed as the same
-digits on commonJS, erlang and beam; wasm refuses `io/fs` by `.wasm.expect`. Its `recent` helper
+digits on commonJS, erlang and beam; wasm refuses `io/fs` by `snapshot/targets/wasm/`. Its `recent` helper
 holds the `l` literal outside the `case` arm: an `l`-suffixed literal inside a `case` arm is
 emitted with its suffix on commonJS, erlang and beam (`s.mtime > 1577836800000l`, a JS
 `SyntaxError`, an `erlc` syntax error, `illegal integer` in the beam assembler) — a compiler row,
@@ -1792,8 +1774,8 @@ negative operands, the comparisons, `toString`, `+=`, unary `-`, `bigint.of` pas
 `bigint.parse` of a numeral and of four non-numerals, `toI64`, `toF64`, hex and `_` literals —
 checked against Python's integers), `modules/bigint_in_containers` (a record field, a `?bigint` field, a
 tuple, an array, `xs[i]`, a fold, an `if` answering a `?bigint`, `==` over each built apart, a number
-pattern and a range), `modules/bigint_to_i64_aborts` (`.exit`, and `toI64: 9223372036854775808 does not
-fit i64` on commonJS, erlang and beam), `modules/bigint_division_by_zero` (`.exit`, commonJS's
+pattern and a range), `modules/bigint_to_i64_aborts` (`abort`, and `toI64: 9223372036854775808 does not
+fit i64` on commonJS, erlang and beam), `modules/bigint_division_by_zero` (`abort`, commonJS's
 `integer division by zero: / on bigint at src/main.bp:10:14`), `modules/bigint_across_modules` (a
 sibling's `pub fn`, `pub` record and `pub val` holding `bigint`s; its `.d.ts` through
 `scripts/tsc-check.sh`), and the refusals `modules/bigint_literal_fraction` (`1.5n`, at the suffix),
@@ -1872,12 +1854,12 @@ meta workspace), OTP 28, node v25.
 |---|---|---|---|
 | commonJS | yes | yes | cells and test suites |
 | erlang | yes | yes | cells and test suites |
-| wasm | yes on the `wasi` host (decision 513: each test unit a `.wat` component under `wasmtime`; a failing `assert` traps the module's run) — not in the `test/` suites' plan | yes, it executes | cells only |
+| wasm | yes on the `wasi` host (decision 513: each test unit a `.wat` component under `wasmtime`; a failing `assert` traps the module's run) | yes, it executes | cells and test suites |
 | beam | yes: every module of the run assembled beside itself (`erlc +from_asm`), each test module's runner run with `erl -pa` (`01 · 03-beam`) | yes: it builds `out/beam/*.S`, assembles each beside itself (`erlc +from_asm -o out/beam`) and runs the entry with `erl -pa out/beam` | cells and test suites |
 
 A cell runs on every target its manifest declares, whatever `run.sh --target` says: `botopink cell
 check` has no target option, and a cell is one job (target `*` in the plan). `--target all` is the
-four targets of the `test/` suites' plan (wasm never: a failing `assert` traps a wasm test run); `--target` also
+four targets of the `test/` suites' plan (`TEST_TARGETS` in `run.sh`: commonJS, erlang, wasm, beam); `--target` also
 takes a comma list (`wasm,beam`) — a subset in canonical order, a name twice or unknown refused —
 which is what the step gate (`scripts/AGENTS.md` § Step gate and full gate) passes for a change that
 reaches those backends only. A machine without `erlc`, `erl` or `wasmtime` fails the run before any
@@ -1891,7 +1873,7 @@ host locale is a backend defect, not a reason to pin a locale in the runner.
 
 A cell's claims apply on every target it reaches, beam included: the assembled program's status is
 read there too (`modules/panic_aborts` and `modules/todo_aborts` abort on beam — the second for a
-different reason, § Notes). A cell that every target refuses (a former `reject/` cell) is built on
+different reason, § Notes). A cell that every target refuses is built on
 all four, and its `refused` line is the same on each.
 
 An erlang/BEAM module atom starts with its package (decision 109 of 1.0.10-beta): a cell's entry
@@ -1911,10 +1893,12 @@ runner in between. `modules/erlang_host_sidecar_shipped` and
 
 ### Narrowing a cell
 
-A cell runs on all four targets, and a project suite under `test/` on commonJS, erlang and beam —
-unless it narrows itself with `"targets"` in its `botopink.json` (decision 475 (1); a cell's
-`targets` file is refused). A narrowing is a claim about the compiler, checked on every run —
-`botopink cell check` for a cell, `run.sh` for a project suite: for each target the cell leaves out,
+A cell runs on all four targets, and a `test/` suite on commonJS, erlang, wasm and beam —
+unless it narrows itself: a cell or a project suite with `"targets"` in its `botopink.json`
+(decision 475 (1); a cell's `targets` file is refused), a single-file suite with one
+`// targets: <t> <t>…` line in the file (seven carry one today, each `commonJS erlang beam`; the form
+is open question B-64-a). A narrowing is a claim about the compiler, checked on every run —
+`botopink cell check` for a cell, `run.sh` for a suite: for each target the cell leaves out,
 `botopink build --target <t>` must **refuse** the program on a host binding —
 
 ```
@@ -1925,8 +1909,7 @@ std-unsupported-on-target: std/<m> has no `#[@External.<Target>]` for target '<t
 — the one reason a program structurally has no row on a target. A target the build accepts, or
 refuses for another reason, fails the run and names the cell: the narrowing was hiding a gap of that
 backend, and a gap is a row of the backend's front, never an entry in `"targets"`. So does a
-narrowing that names an unknown target, a target its kind does not have (wasm, for a test suite),
-the same target twice, or every target of its kind (it narrows nothing — delete the field). No flag,
+narrowing that names an unknown target, the same target twice, or every target of its kind (it narrows nothing — delete the field). No flag,
 list or environment variable turns the audit off (decision 67).
 
 A third refusal stands a narrowing too — decision 167 (amending 43): a module `var` under
@@ -1945,8 +1928,7 @@ the annotation, so it never excuses either. `modules/beam_memory_off_beam` pins 
 A target on which the cell must be refused for a reason that *is the cell's claim* is not narrowed
 away — its refusal is its answer, `snapshot/targets/<t>/<module>.snap`.
 
-The narrowed cells, and what each excluded target lacks (re-derived on every check; the refusal
-lines are in the front's README):
+The narrowed cells whose excluded targets' missing binding is named here (re-derived on every check):
 
 | Cell | Runs on | Excluded — the binding it lacks |
 |---|---|---|
@@ -1969,24 +1951,36 @@ lines are in the front's README):
 | `modules/task_throw_resolves_error` | commonJS | erlang, wasm, beam — `observe` |
 | `modules/task_result_caught_by_js` | commonJS | erlang, wasm, beam — `callFromJs` |
 | `modules/manifest_targets_host_binding` | erlang beam (`"targets"`) | commonJS, wasm — `magnitude` |
-| `test/erlang_host_sidecar_in_a_test` (a project suite) | erlang beam (`"targets"`) | commonJS — `hello` |
+| `test/erlang_host_sidecar_in_a_test` (a project suite) | erlang beam (`"targets"`) | commonJS, wasm — `hello` |
 
-Forty exclusions. No other manifest carries `"targets"`: the field used to be boilerplate
-(`["commonJS", "erlang", "wasm"]` in 33 cells, `["commonJS", "erlang"]` in 14) that the runner
-ignored — honoured as written it would have taken beam away from 33 passing cells — and a project
-that must be refused on a target says so with its departure.
+The other narrowed cells declare their targets in their manifests and are audited the same way:
+`beam_memory_annotations` and `beam_memory_ets_keyed_bump` (erlang beam); `clock_rfc3339_domain`,
+`clock_civil_past_rfc3339_aborts`, `clock_format_past_rfc3339_aborts`, `clock_offset_past_rfc3339_aborts`,
+`decl_hooks_direct`, `external_method_in_type`, `external_returns_record`, `external_template_binding`,
+`fs_stat_mtime_whole_seconds`, `hole_any_call_at_build`, `import_std_groups`, `render_scope_library`,
+`stage_build_and_run`, `stage_comptime_block_in_run`, `stage_imported`, `stage_of_functions` and
+`std_generic_primitives` (commonJS erlang beam); `component_default_fn_sync`, `component_method_sync` and
+`component_sync_plain_function` (commonJS).
+
+The single-file suites `test/bodyless_fn.bp`, `test/external_host.bp`, `test/std_process_import.bp`,
+`test/mocks_handwritten_double.bp`, `test/mocks_decorator_double.bp`, `test/external_markers.bp` and
+`test/module_init.bp` carry `// targets: commonJS erlang beam`, leaving wasm out.
+
+In all, 51 narrowings (43 cells, 1 project suite, 7 single-file suites) and 79 exclusions. No other
+manifest or suite carries a narrowing: a project that must be refused on a target says so with its
+departure.
 
 **The audits prove themselves.** A cell's narrowing is `botopink cell check`'s, and
 `modules/compiler-cli/tests/cli_contract.sh` (§ botopink cell) holds each way it is refused — a
 target the build accepts, a refusal that is not a host binding, `#[@BeamMemory]` used to leave beam
 out, a list that narrows nothing, an unknown target, a target named twice, a field that is not an
-array, a leftover `targets` file, a cell with no manifest. A project suite's narrowing is
+array, a leftover `targets` file, a cell with no manifest. A suite's narrowing is
 `run.sh`'s: `conformance/run.sh --self-test` runs a synthetic suite through the same script
 (`--suite <dir>`) — one narrowing that stands on a host binding, which must be scheduled on its
 declared targets alone, one of each way a narrowing is refused (a target the build accepts, a
-refusal that is not a host binding, a list naming wasm, one that narrows nothing, an unknown
+refusal that is not a host binding, one that narrows nothing, an unknown
 target), and a green and a red cell. Its report must hold each refusal's line, the red cell's
-candidate and the tally `5 passed, 8 failed`. A whole run of the suite (no `--only`) starts with it
+candidate and the tally `5 passed, 9 failed`. A whole run of the suite (no `--only`) starts with it
 and stops there if it fails — a green run from a runner that no longer refuses says nothing.
 
 **An abnormal end of `botopink test --json` is a red** (`run.sh`'s `test_project`): a `module_crashed`
@@ -2046,7 +2040,7 @@ prints the same plan without running it, one line per job (a cell's target is `*
 
 | What | How it runs | Why |
 |---|---|---|
-| a cell's build, every target (the former `run/`, `reject/` and `modules/` alike) | in process: `botopink cell check` calls the CLI's own build (`build.zig`'s pipeline) with its report captured, many cells in one process | a refusal is the exact text `botopink build` prints — a manifest's, a dependency's and a sidecar's included — and no cell's claim is about the `botopink` process itself (its argv, its exit status, its stdout), so none needs one of its own; a cell every target refuses runs no program at all |
+| a cell's build, every target (a cell that runs and one every target refuses alike) | in process: `botopink cell check` calls the CLI's own build (`build.zig`'s pipeline) with its report captured, many cells in one process | a refusal is the exact text `botopink build` prints — a manifest's, a dependency's and a sidecar's included — and no cell's claim is about the `botopink` process itself (its argv, its exit status, its stdout), so none needs one of its own; a cell every target refuses runs no program at all |
 | a narrowed cell's excluded targets | in process, the same build | the audit reads the build's refusal |
 | a cell's program | a process of its runtime: `node`, `erl` (after the in-session compile of every `.erl` / `.S`), `wasmtime`, and `node` for wasm's browser host | compiler-core's snapshot executors (`executeJavaScript`, `executeErlang`, `executeBeamAsm`, `executeWat`) cannot carry a cell's answer: they answer from `.botopinkbuild/runtime-cache/` (a stored result, decision 510), merge stdout and stderr into one log and record a crashed `node` or `erl` program as an empty log (`abort`, `stderr`, `no-final-newline` could not be read), and run one module's text, not a cell's project (its sidecar `.erl`s, its path dependencies, wasm's two hosts) |
 | a `test/` suite | `botopink test --json`, one process per suite and target | the test runner is the path the suite states (decision 457 (2)) |
@@ -2108,20 +2102,16 @@ parent.
 `--no-conformance` (decision 470), run by a front's Conformance step, its landing and the GitHub
 pipeline — and a step of the CI `test` job (ubuntu + macos). A red cell fails the gate.
 
-Recounted on disk after 144 B-29 step H:
+On disk:
 
-```
-$ ls -d modules/*/ | wc -l      # 943 cells: 382 former run/, 405 former reject/, 144 former modules/,
-                                #   4 from test-cli, 4 per-target answers, 4 from examples/
-$ ls test/*.bp | wc -l          # 69 test suites
-$ ls -d test/*/ | wc -l         # 6 project suites
+```text
+$ ls -d modules/*/ | wc -l      # 1318 cells
+$ ls test/*.bp | wc -l          # 71 single-file suites
+$ ls -d test/*/ | wc -l         # 8 project suites
 ```
 
-The reds the move left are green: the four former `reject/` cells whose `.expect` named the text
-under the diagnostic's caret — `case_bare_name_arm`, `case_constant_pattern`,
-`reserved_word_field_name` and `reserved_word_param_name` — state it as a `label` record (decision
-485), and `modules/yamlconf` on wasm and `test/stdlib-tour` on commonJS answer their snapshots
-(§ The claims a cell makes about a target, the examples).
+Refusals whose text sits under the diagnostic's caret — `case_bare_name_arm`, `case_constant_pattern`,
+`reserved_word_field_name` and `reserved_word_param_name` — state it as a `label` record (decision 485).
 
 Decision 146 (a function whose body calls a host function with no binding for the target is
 refused called or not, on every target): `modules/external_wrapper_keeps_refusal` and
@@ -2159,16 +2149,16 @@ single value inside the range cannot tell an arm that matches from one that alwa
 once answered `1` for every `n`, 0 and 10 included, and a probe at 9 read it as right. Decision 53
 legislates numeric endpoints only, so no cell asserts a string bound.
 
-**A `.out` may encode a decision no backend implements yet, and that is the point.** The `.out` is
+**A `snapshot/output/` answer may encode a decision no backend implements yet, and that is the point.** The `snapshot/output/` answer is
 the decision's answer, so when the backends are moved against it **exactly one file per cell** is
-involved and no `.out` is renegotiated in the same commit as an emitter. A cell's header comment
+involved and no `snapshot/output/` answer is renegotiated in the same commit as an emitter. A cell's header comment
 carries the per-backend measurement it was written against.
 
 **Never pin an exit status or a runtime's diagnostic as the point of a line.** `botopink run --target
 erlang` compiles every emitted `.erl` with `erlc` and runs `erl -pa <out>` (decision 56; `beam`
 assembles the `.S` files the same way); a crash is status `1` and the runtime's report goes to
-stderr, which no `.out` sees. node answers `1` and wasmtime `134`. An aborting program is asserted by
-`.exit` = `nonzero` (§ The sidecars of a `run/` cell), never by a number.
+stderr, which no `snapshot/output/` answer sees. node answers `1` and wasmtime `134`. An aborting program is asserted by
+`abort` (§ What a cell's answer is made of), never by a number.
 
 **Four backends agreeing is not evidence.** A decision can make a green cell red: decision 55 once
 turned `for ([1, 2, 3]) { x -> break x * 2; }` → `[2, 4, 6]`, which every backend printed because they
@@ -2197,9 +2187,9 @@ ordering. erlang and BEAM already separate the zeros (`=:=`); commonJS lowers a
 float `==` to `Object.is` and wasm to `$__f64_eq` / `$__f32_eq` (NaN canonicalised,
 then the bits). `modules/f64_equality_total_order` pins the zeros on all four
 targets, with `-0.0` built at run time as `zero() * -1.0`. **The NaN rows are not a
-`run/` cell**: erlang and BEAM never produce a NaN (`z / z` raises `badarith` at run
+cell**: erlang and BEAM never produce a NaN (`z / z` raises `badarith` at run
 time), and § Narrowing a cell lets a cell leave a target out only when the build
-refuses it on a host binding, which a division is not — a `.targets commonJS wasm`
+refuses it on a host binding, which a division is not — a `"targets"` `commonJS wasm`
 would fail the audit. Each backend that has NaN pins that half in a RUN LOG fixture of
 its own: `codegen/tests/commonjs.zig` and `codegen/tests/wat.zig`, `f64 ---- NaN
 equals NaN under ==`.
@@ -2210,11 +2200,11 @@ is never `-0` (`0 * -1`, `-x`, `-4 % 2` and `0 / -3` print `0` and compare equal
 
 **The identity is asserted on three backends and RUN on four.** `botopink test --target wasm` (decision 513) runs
 a `test/` suite on wasm too, and the suite's assertions are the four targets'. `modules/type_identity_equality` is the same
-statement as a `run/`: `Person(name: "a", age: 1) == Vec(name: "a", age: 1)` prints `false` on all
+statement as a cell: `Person(name: "a", age: 1) == Vec(name: "a", age: 1)` prints `false` on all
 four since `13-module-identity` half 3 put the declaration inside the value.
 
 **`use` is tested from botopink since front 19 of 1.0.10-beta**, spelled to decisions 102/104
-(front 21): `test/context_use.bp`, `modules/context_use` and the `reject/use_*.bp` cells declare
+(front 21): `test/context_use.bp`, `modules/context_use` and the `use_*` refusal cells declare
 their own owner type (`type Element(…) implement @Renderable`, decision 354), hooks as
 `fn … -> @Component<T>` and components as `fn … -> @Component<Element>`, and
 pin the binding of `T`, field and positional destructuring, a custom hook composing hooks, a bare
@@ -2225,10 +2215,9 @@ void `use`, an unannotated `fn … -> Element` as an ordinary function, the rule
 module-level `val`, decision 87). A component's caller awaits it:
 `modules/context_use` drives the components from a `#[@future] fn run`, and the `test/` cells await
 them (a `test` body is a future context). `test/use_future_context.bp` is the server component that
-`use`s and `await`s under a `@Component` return. Front 24 (decision 118) deleted
-`reject/use_future_context_duplicate.bp`, `reject/two_effect_markers.bp`,
-`reject/wrapper_without_annotation.bp` and `reject/result_without_wrapper.bp` with the annotation
-rules they pinned — a function has one return, so it has one effect.
+`use`s and `await`s under a `@Component` return. A function has one return, so it has one
+effect (front 24, decision 118): the annotation rules a duplicate-effect or wrapper-without-annotation cell would pin
+are gone.
 `modules/use_tuple_arity` and `modules/use_tuple_of_non_tuple` are front 19 step 3's
 `use-tuple-arity` refusals, located at the binding.
 
@@ -2243,12 +2232,12 @@ rules they pinned — a function has one return, so it has one effect.
   suite.
 - **64** (a wrapper per host-bound std `declare fn`) — `modules/std_erlang_node`: `erlang.node()`
   prints `nonode@nohost` on erlang (C-03's erlang half, `a8db11e4`); commonJS and wasm **refuse** it
-  with `std-unsupported-on-target` (two `.expect` sidecars); beam prints it too since front 17 step 5
+  with `std-unsupported-on-target` (two `snapshot/targets/<t>/` departures); beam prints it too since front 17 step 5
   wired `beam_asm.zig`'s wrapper for a plain `module:symbol` target (C-03's beam half, for
   that form only). The commonJS/wasm diagnostic names the function called, at the call
   (`std/erlang.node`, at `erlang.node()`); a namespace import none of whose unsupported functions is called
   is refused at the import, naming the module and the functions it lacks
-  (`modules/import_std_folder_namespace/wasm.expect`).
+  (`modules/import_std_folder_namespace/snapshot/targets/wasm/`).
 - **65** (the formatter measures width) — **no cell here**, and none can be: the suite runs programs,
   and decision 65 is about the text `botopink format` writes. Its evidence lives in the formatter's
   own tests (`modules/compiler-core/src/format/`, C-12's rows). This suite meets it only as a
@@ -2259,13 +2248,11 @@ rules they pinned — a function has one return, so it has one effect.
   (brace bodies expanded, `import {a, b}` spacing) and `botopink format --check` exits 0 in all four
   `modules/*` roots and in `deps/shapesdsl`. The cells' output did not move. Nothing in this suite
   *calls* `format --check`: the caller is `scripts/format-check.sh`, stage 3 of `scripts/gate.sh`.
-  `conformance` is one of its `TREES`: `test/`, `run/` and `modules/` are canonical — a cell
+  `conformance` is one of its `TREES`: `test/` and `modules/` are canonical — a cell
   is written formatted (`botopink format <file>`), and an unformatted one is a red gate. Two
-  things are outside the walk, both by structure (`format_cmd.zig`), never by a list: every
-  `reject/<n>.bp` beside its `<n>.expect`, and
-  `modules/lexer_error_in_imported_module/src/pattern.bp` — the bad escape the cell exists to
-  refuse — by the second arm (gate-c: a `.bp` under `modules/<cell>/` that the cell's `.expect`
-  files name and that does not lex or parse). A `modules/<cell>/<target>.expect` pins a
+  things are outside the walk, both by structure (`format_cmd.zig`), never by a list: `modules/lexer_error_in_imported_module/src/pattern.bp` — the bad escape the cell exists to
+  refuse — by the second arm (gate-c: a `.bp` under `modules/<cell>/` that the cell's `snapshot`
+  files name and that does not lex or parse). A `modules/<cell>/snapshot/` record pins a
   `<file>:<L>:<C>`: reformatting the file it names moves the pinned line with it, in the same
   change (`modules/decorator_imported_function_name_conflict` pins `src/main.bp:21:3`, the
   `#[tag]` under an `@emit(…)` argument the formatter opens over four lines).
@@ -2276,7 +2263,7 @@ compiler refuses it before any comptime runtime runs, the message names the call
 in the body and the caret is the annotation that ran it.
 
 **`@panic` and `@todo` abort with stdout intact and a non-zero status on all four backends**
-(`modules/panic_aborts`, `modules/todo_aborts`, `.exit` = `nonzero`). On beam a function whose whole
+(`modules/panic_aborts`, `modules/todo_aborts`, `abort`). On beam a function whose whole
 body is `@todo()` is emitted and raises the builtin's own `{todo, <<"not implemented">>}` —
 re-measured by front 12 of 1.0.11-beta (it used to be dropped, and the abort was `undef`).
 A `@panic`'s message reaches stderr unchanged on all four (`modules/panic_library_message`, a
@@ -2340,7 +2327,7 @@ What cannot be tested from botopink at all, and why: `@typeInfo` / `@makeRecord`
 / `pick` (they produce types, and asserting on emitted text is the snapshots' job). Struck from this
 list by C-16, each with the cell that covers it: `pub default mod` / `pub default fn`, `@ExprCustom` /
 `q.custom` and `.d.bp` via `files` (`modules/local_dependency`, a local dependency needs no network);
-"no external target for the active backend" (`modules/external_erlang_only`, a `run/` cell refused on
-two targets through a `.<target>.expect` sidecar each — `botopink run --target <t>` is not
-target-independent, which is what `reject/` lacked); `@panic` / `@todo` (`run/` compares stdout **and**
-the status through `.exit`, so an aborting program is exactly what it can assert).
+"no external target for the active backend" (`modules/external_erlang_only`, a cell refused on
+two targets through a `snapshot/targets/<t>/` departure each — `botopink run --target <t>` is not
+target-independent, which is what a refusal snapshot lacked); `@panic` / `@todo` (a cell compares stdout **and**
+the status through `abort`, so an aborting program is exactly what it can assert).
