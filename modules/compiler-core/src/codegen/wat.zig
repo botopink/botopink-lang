@@ -6097,7 +6097,7 @@ const Emitter = struct {
                     // An enum constructor's value is typed by its enum, so the
                     // name prints by the variant's descriptor.
                     const enum_tr: ?ast.TypeRef = if (self.enumValueOf(lb.value.*)) |en| .{ .named = en } else null;
-                    const bound_tr: ?ast.TypeRef = lb.typeAnnotation orelse self.typeRefOf(lb.value.*) orelse (try self.fnRefTypeRef(lb.value.*)) orelse enum_tr;
+                    const bound_tr: ?ast.TypeRef = lb.typeAnnotation orelse self.typeRefOf(lb.value.*) orelse (try self.fnRefTypeRef(lb.value.*)) orelse enum_tr orelse try self.lambdaTaskTypeRef(lb.value.*);
                     if (bound_tr) |tr| try self.local_typerefs.put(lb.name, tr);
                     // Decision 210 — the composite a `val` holds, for `==`
                     // over the name (`val t = #(P(x: 1), 2)`).
@@ -11506,6 +11506,93 @@ const Emitter = struct {
             },
             .identifier => if (self.typeRefOf(e)) |t| isTaskTypeRef(t) else false,
             else => false,
+        };
+    }
+
+    /// The type of `val f = { n -> async { … } }` written without an
+    /// annotation — `fn(i32) -> @Task<@Result<V, E>>` (`@Task<V>` when the
+    /// block cannot fail) — read off the block, since the checker's type is
+    /// not handed to this backend: `E` is the type of the first `throw`'s
+    /// operand and `V` that of the first `return`'s (`i32` where none says).
+    /// What `isTaskExpr`, `awaitedType` and the `Error(e)` / `Ok(v)` patterns
+    /// of a `case` over the awaited value read, as they do an annotation.
+    fn lambdaTaskTypeRef(self: *Emitter, e: ast.Expr) !?ast.TypeRef {
+        if (e != .function or e.function.kind.syntax != .lambda) return null;
+        const lbody = e.function.kind.body;
+        if (lbody.len == 0) return null;
+        const tail = lbody[lbody.len - 1].expr;
+        const blk: ast.Expr = if (tail == .jump and tail.jump.kind == .@"return")
+            (if (tail.jump.kind.@"return") |rv| rv.* else return null)
+        else
+            tail;
+        if (blk != .function or blk.function.kind.syntax != .asyncBlock) return null;
+        const body = blk.function.kind.body;
+        const ar = self.reg_arena.allocator();
+        // The transform has rewritten a `throw x` to `return __bp_error(x)`
+        // and a `return v` of a failing block to `return __bp_ok(v)`.
+        var ok_v: ?ast.Expr = null;
+        var err_v: ?ast.Expr = null;
+        scanBlockReturns(body, &ok_v, &err_v);
+        const fails = err_v != null or ast.bodyFails(body);
+        const ok_name = if (ok_v) |v| self.operandTypeName(v) else "i32";
+        var task_arg: ast.TypeRef = .{ .named = ok_name };
+        if (fails) {
+            const err_name = if (err_v) |v| self.operandTypeName(v) else "i32";
+            const rargs = try ar.alloc(ast.TypeRef, 2);
+            rargs[0] = .{ .named = ok_name };
+            rargs[1] = .{ .named = err_name };
+            task_arg = .{ .generic = .{ .name = "Result", .args = rargs, .is_builtin = true } };
+        }
+        const targs = try ar.alloc(ast.TypeRef, 1);
+        targs[0] = task_arg;
+        const ret = try ar.create(ast.TypeRef);
+        ret.* = .{ .generic = .{ .name = "Task", .args = targs, .is_builtin = true } };
+        const params = try ar.alloc(ast.TypeRef, e.function.kind.params.len);
+        for (params) |*p| p.* = .{ .named = "i32" };
+        return .{ .function = .{ .params = params, .returnType = ret } };
+    }
+
+    fn operandTypeName(self: *Emitter, v: ast.Expr) []const u8 {
+        if (self.isStringExpr(v)) return "string";
+        if (self.isBoolExpr(v)) return "bool";
+        if (self.wasmTypeOf(v)[0] == 'f') return "f64";
+        return "i32";
+    }
+
+    /// The first value an `async { }` block's `return`s hand over, and the
+    /// first error it fails with: `__bp_ok(v)` / `__bp_error(e)` as the
+    /// transform leaves them, or a bare `return v` / `throw e`. Its own scope
+    /// and the arms of its `if`s, not a nested block or lambda.
+    fn scanBlockReturns(body: []const ast.Stmt, ok_v: *?ast.Expr, err_v: *?ast.Expr) void {
+        for (body) |st| switch (st.expr) {
+            .jump => |j| switch (j.kind) {
+                .@"return" => |v| if (v) |x| {
+                    if (x.* == .call and x.call.kind == .call) {
+                        const cc = x.call.kind.call;
+                        if (cc.is_builtin and cc.args.len == 1 and std.mem.eql(u8, cc.callee, "__bp_error")) {
+                            if (err_v.* == null) err_v.* = cc.args[0].value.*;
+                            continue;
+                        }
+                        if (cc.is_builtin and cc.args.len == 1 and std.mem.eql(u8, cc.callee, "__bp_ok")) {
+                            if (ok_v.* == null) ok_v.* = cc.args[0].value.*;
+                            continue;
+                        }
+                    }
+                    if (ok_v.* == null) ok_v.* = x.*;
+                },
+                .throw_ => |v| if (v) |x| {
+                    if (err_v.* == null) err_v.* = x.*;
+                },
+                else => {},
+            },
+            .branch => |b| switch (b.kind) {
+                .if_ => |i| {
+                    scanBlockReturns(i.then_, ok_v, err_v);
+                    if (i.else_) |els| scanBlockReturns(els, ok_v, err_v);
+                },
+                else => {},
+            },
+            else => {},
         };
     }
 

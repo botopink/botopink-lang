@@ -1764,6 +1764,16 @@ method answers:
 
 <!-- example: modules/task_async_block_in_lambda -->
 
+The lambda's type is the same written or not: bound without an annotation
+(`val failing = { n -> async { throw "inner"; } }`) it is still a function
+answering `@Task<@Result<…>>`, and its `await` reads back as `Error(e)`; a
+lambda a function or method returns takes its parameters from the declared
+`fn(n: i32) -> …`, so `n.toString()` in it resolves:
+
+<!-- example: modules/task_lambda_result_unannotated -->
+
+<!-- example: modules/task_lambda_method_to_string -->
+
 An **await channel** is a `@Task`, `@Component` or `@Stream` return, an
 `async { }` block or a `stream` loop; `await` anywhere else is
 `effect-await-without-task`. An ordinary function that holds a Task either
