@@ -14719,6 +14719,18 @@ fn inferIdentifierExpr(env: *Env, ident: ast.IdentifierExprOf(.untyped), loc: as
                 ).withLoc(loc);
                 return error.TypeError;
             }
+            // Decision 330 — a field read written after a `?.` link
+            // (`p(true)?.me().x`, `a?.b.c`) continues the chain, as a method
+            // there does (`inferResultOptionMethod`) and as TypeScript's does:
+            // it reads the payload, and absent anywhere before it is absent.
+            // It IS the `if` over the chain so far — `if (<chain>) { n -> n.x }
+            // else { null }`, `?X` flattened — recorded for the transform to
+            // splice in (`enumSectionRewrites`), so no backend learns a rule.
+            if (!ia.optional and recvType.* == .named and std.mem.eql(u8, recvType.named.name, "optional") and
+                recvType.named.args.len == 1 and continuesOptionalChain(recvPtr.*))
+            {
+                return inferOptionalChainField(env, ia.receiver, recvPtr, ia.member, loc);
+            }
             // Decision 45 (1.0.5) — a member read off a `?T` is an error
             // naming `?.`: the value may be absent, and a plain `.` used to
             // check and then read a field off `null` (or, through a tuple
@@ -19769,6 +19781,52 @@ fn inferOptionalOperator(env: *Env, call: anytype, loc: ast.Loc) InferError!Type
     }
     try env.indexRewrites.put(loc, rewrite);
     return typed;
+}
+
+/// `<chain>.member` after a `?.` link: the `if` over the chain's optional
+/// with a binder of its own, the member read off the binder, `null` when the
+/// chain is absent. Typed here and recorded under the access's loc; its own
+/// nodes sit at the synthetic column so the transform's splice never meets
+/// the access's loc again. The typed node answered is the access as a `?.`
+/// link over `typedReceiver`.
+fn inferOptionalChainField(env: *Env, receiver: *ast.Expr, typedReceiver: *ast.TypedExpr, member: []const u8, loc: ast.Loc) InferError!TypedExpr {
+    const inner_loc: ast.Loc = .{ .line = loc.line, .col = loc.col + optional_synthetic_col, .expansion = loc.expansion };
+    const binder = if (loc.expansion == 0)
+        try std.fmt.allocPrint(env.arena, "__bp_optf_{d}_{d}", .{ loc.line, loc.col })
+    else
+        try std.fmt.allocPrint(env.arena, "__bp_optf_{d}_{d}_{d}", .{ loc.line, loc.col, loc.expansion });
+    const bound = try env.arena.create(ast.Expr);
+    bound.* = .{ .identifier = .{ .loc = inner_loc, .kind = .{ .ident = binder } } };
+    const read = try env.arena.create(ast.Expr);
+    read.* = .{ .identifier = .{ .loc = inner_loc, .kind = .{ .identAccess = .{ .receiver = bound, .member = member } } } };
+    const absent = try env.arena.create(ast.Expr);
+    absent.* = .{ .literal = .{ .loc = inner_loc, .kind = .null_ } };
+    var then_ = try env.arena.alloc(ast.Stmt, 1);
+    then_[0] = .{ .expr = read.* };
+    var else_ = try env.arena.alloc(ast.Stmt, 1);
+    else_[0] = .{ .expr = absent.* };
+    const rewrite = try env.arena.create(ast.Expr);
+    rewrite.* = .{ .branch = .{ .loc = loc, .kind = .{ .if_ = .{
+        .cond = receiver,
+        .binding = binder,
+        .then_ = then_,
+        .else_ = else_,
+    } } } };
+    const typed = inferExprTyped(env, rewrite.*) catch |err| {
+        // A refusal inside the synthesised read is the written access's.
+        if (env.lastError) |*e| if (e.loc) |*l| if (l.col > optional_synthetic_col) {
+            l.col -= optional_synthetic_col;
+        };
+        return err;
+    };
+    try env.enumSectionRewrites.put(loc, rewrite);
+    // Typed as the `?.` link it reads like, so a link after it continues the
+    // chain too (`p?.me().name.length()`, `continuesOptionalChain`).
+    return TypedExpr{ .identifier = .{ .loc = loc, .type_ = typed.getType(), .kind = .{ .identAccess = .{
+        .receiver = typedReceiver,
+        .member = member,
+        .optional = true,
+    } } } };
 }
 
 /// Where an expression starts: the loc of its leftmost operand (`a` in

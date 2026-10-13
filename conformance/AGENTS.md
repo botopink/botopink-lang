@@ -275,6 +275,9 @@ UndefinedCall`, and the call refused).
 144 B-22 adds `modules/field_key_under_annotation` — a field key under an annotation
 (`val t: Sort<Book> = Sort(by: .title)`) beside the applied constructor, four targets (refused as an
 unbound `title` on the parent binary).
+144 B-22 adds `modules/optional_chain_field_after_call` — a field read after a `?.` method link and
+after a `?.` field link, and a method after the read, present and absent, four targets (refused as a
+member read off an optional on the parent binary).
 `modules/optional_member_default` — `xs.at(k)?.field ?? d` over a present and an absent element, a string
 field, an empty array, an array built by `map` and one passed in, four targets (wasm printed the
 element's address for the `map`-built array on the parent binary).

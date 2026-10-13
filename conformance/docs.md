@@ -1229,6 +1229,12 @@ value — along record fields, and for a primitive's, a record's or an enum's me
 
 <!-- example: modules/optional_enum_method_absent_receiver -->
 
+A field read is a link like a method: one written after a `?.` link — after a method's
+(`p(true)?.me().x`) or a field's (`p(true)?.inner.x`) — reads the payload and continues
+the chain, and so does a method after it (`p(true)?.me().name.length()`):
+
+<!-- example: modules/optional_chain_field_after_call -->
+
 `f?.(args)` over a function answering a plain `T` is a `?T`, a present `0`
 included. The default of `??` may itself be such a call, and a default runs only
 when everything before it is absent:

@@ -1352,6 +1352,12 @@ annotation with the `@Option<T>` diagnostic's text, unless the module declares a
 `inferIdentifierExpr`): `rs.at(0).b` used to check and answer `undefined` / `bad map`, the label
 rewrite never firing on an optional receiver. `x?.field`, narrowing, and the index of C-02
 (`rows[0]?.length`) are the spellings; a METHOD on an optional (`unwrapOr`, …) is not a member read.
+A read written after a `?.` link is not off a `?T` the program holds: it continues the chain
+(decision 330, TypeScript's rule, as a method there does) — `p(true)?.me().x`, `a?.b.c`.
+`inferOptionalChainField` types it as the `if` over the chain so far (`if (<chain>) { n -> n.x }
+else { null }`, binder `__bp_optf_<line>_<col>`), recorded in `enumSectionRewrites` under the
+access's loc for the transform to splice, and answers the access as a `?.` link so a link after it
+continues too (`continuesOptionalChain`).
 
 ## STD-001 names the function called (C-03)
 

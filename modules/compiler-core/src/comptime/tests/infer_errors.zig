@@ -1866,6 +1866,26 @@ test "decision 45: a member read off a `?T` names `?.`; `?.` reads it" {
     );
 }
 
+// Decision 330 — a field read after a `?.` link continues the chain, as a
+// method there does (TypeScript's rule): `p(true)?.me().x` and `a?.b.c` read
+// the payload and answer `?X`; a plain `.` off an optional that no `?.` link
+// produced stays decision 45's refusal (above).
+test "decision 330: a field read after a `?.` link continues the chain, as a method does" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\type In(x: i32)
+        \\type P(x: i32, name: string, inner: In) { fn me(self: Self) -> P { return self; } }
+        \\fn p(b: bool) -> ?P { if (b) return P(x: 1, name: "n", inner: In(x: 2)); return null; }
+        \\fn main() {
+        \\    val a: ?i32 = p(true)?.me().x;
+        \\    val c: ?i32 = p(true)?.inner.x;
+        \\    val n: ?i32 = p(true)?.me().name.length();
+        \\    @print(a ?? 0);
+        \\    @print(c ?? 0);
+        \\    @print(n ?? 0);
+        \\}
+    );
+}
+
 // A generic constructor's type parameters are pinned by the position's
 // written type as by written type arguments: `val b: Box<i64> = Box(v: 1)` is
 // `Box<i64>(v: 1)`, the literal an `i64` (it was `Box<i32>` against `Box<i64>`).
