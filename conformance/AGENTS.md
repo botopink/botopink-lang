@@ -199,6 +199,14 @@ targets (erlang raised `bp_unsupported_method`, beam `unresolved_method`, wasm r
 `modules/optional_call_plain_answers` — `f?.(args)` over a `?fn(…) -> T` answering an integer (a present
 `0` included), a string, a bool and a record, four targets (wasm refused a link answering a plain value on
 the parent binary).
+`modules/optional_float_function_value` — a function taking or answering an `f64` / `i64` bound out of a
+`?fn(…)`, called through `?.()`, held by a typed local and named as a top-level function, four targets
+(wasm refused the float argument as a narrowing to `i32` on the parent binary).
+`modules/optional_if_null_initializer` — an `if` with a `null` arm into a `?T` `val`, `var` and `return`,
+an `else if` chain and a `?f64`, four targets (wasm read an absent value as a present `0` on the parent
+binary).
+`modules/nullish_default_namespace_call` — `a ?? ns.f()` with a std module's and a package module's
+namespace call as the default, four targets.
 `modules/optional_member_default` — `xs.at(k)?.field ?? d` over a present and an absent element, a string
 field, an empty array, an array built by `map` and one passed in, four targets (wasm printed the
 element's address for the `map`-built array on the parent binary).

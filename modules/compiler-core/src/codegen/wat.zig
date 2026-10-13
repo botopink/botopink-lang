@@ -269,6 +269,14 @@ fn memberValType(t: ast.TypeRef) []const u8 {
 
 /// The 8-byte cell a field or an optional of the named type holds its value
 /// in (`Emitter.Cell`): a float or a 64-bit integer; `.none` for a word.
+/// The cell a value of a written type travels in through a function value.
+fn cellOfTypeRef(t: ast.TypeRef) Emitter.Cell {
+    return switch (t) {
+        .named => |n| fieldCellOf(n),
+        else => .none,
+    };
+}
+
 fn fieldCellOf(n: []const u8) Emitter.Cell {
     if (isFloatTypeName(n)) return .f64;
     if (std.mem.eql(u8, n, "i64") or std.mem.eql(u8, n, "u64") or std.mem.eql(u8, n, "u32")) return .i64;
@@ -11378,8 +11386,10 @@ const Emitter = struct {
     // then one 4-byte slot per captured local, copied at creation (a capture is
     // a snapshot — a lambda that assigns an outer local does not change it).
     // Calling a value is `call_indirect` with the cell as the first argument.
-    // Every parameter and the result are `i32` (the carrier every value here
-    // fits, a float excepted).
+    // Every parameter and the result are `i32`: a float or a 64-bit value
+    // travels as the address of its 8-byte cell (`Lifted.param_cell`,
+    // `ret_cell`), when the function type says so on both sides
+    // (`valueCallCells`); a caller that cannot tell refuses the argument.
     //
     // A lambda passed straight to an array method is not lifted: it is inlined
     // (`lowerArrayHof`), which is what lets `forEach` mutate outer locals.
@@ -11429,6 +11439,13 @@ const Emitter = struct {
         origin: ?ast.Loc = null,
         /// Set for a trampoline standing for a top-level fn used as a value.
         fn_ref: ?[]const u8 = null,
+        /// Per parameter: the cell a float or 64-bit argument arrives in —
+        /// the indirect call carries words only, so such an argument is the
+        /// address of its `$__box_f64` / `$__box_i64` cell
+        /// (`valueCallCells`, the caller's half).
+        param_cell: []const Cell = &.{},
+        /// The cell a float or 64-bit answer leaves in, the same way.
+        ret_cell: Cell = .none,
         /// An `async { }` block: its closure answers the task the block's
         /// state machine runs (decision 392).
         async_block: bool = false,
@@ -12150,8 +12167,15 @@ const Emitter = struct {
         // parameter); a call through the slot sets it again.
         const param_known = try ra.alloc(bool, params.len);
         @memset(param_known, true);
+        const param_cell = try ra.alloc(Cell, params.len);
+        @memset(param_cell, .none);
+        var ret_cell: Cell = .none;
         if (expected) |et| if (et == .function) {
             const pts = et.function.params;
+            for (param_cell, 0..) |*pc, i| {
+                if (i < pts.len) pc.* = cellOfTypeRef(pts[i]);
+            }
+            ret_cell = cellOfTypeRef(et.function.returnType.*);
             for (param_str, 0..) |*ps, i| {
                 if (i < pts.len and isStringTypeRef(pts[i])) ps.* = true;
             }
@@ -12172,6 +12196,8 @@ const Emitter = struct {
             .param_str = param_str,
             .param_rec = param_rec,
             .param_known = param_known,
+            .param_cell = param_cell,
+            .ret_cell = ret_cell,
             .loc = loc,
             .template_of = self.cur_template,
             .origin = self.foreign_origin,
@@ -12302,10 +12328,15 @@ const Emitter = struct {
         }
         try self.emit(.{ .local_get = tmp });
         if (self_recv) |rt| try self.emit(.{ .local_get = rt });
-        for (cc.args) |a| try self.lowerCoerced(a.value.*, "i32");
+        const cells = self.valueCallCells(cc);
+        for (cc.args, 0..) |a, i| {
+            const cell: Cell = if (cells) |fc| (if (i < fc.params.len) fc.params[i] else .none) else .none;
+            if (cell != .none) try self.lowerCellWord(a.value.*, cell) else try self.lowerCoerced(a.value.*, "i32");
+        }
         for (cc.trailing) |t| try self.lowerLambdaValue(t.params, t.body, self.call_loc);
         try self.emitIndirect(tmp, cc.args.len + cc.trailing.len + @as(usize, if (self_recv != null) 1 else 0));
         if (closure) |l| try self.syncCaptures(tmp, l.captures, .out_of_env);
+        if (cells) |fc| try self.emitFromCell(fc.ret);
         return true;
     }
 
@@ -12424,6 +12455,42 @@ const Emitter = struct {
         return self.bodyIsString(l.body);
     }
 
+    const FnCells = struct { params: []const Cell, ret: Cell };
+
+    /// The cells a call through a function value passes its float and
+    /// 64-bit arguments in and reads its answer out of: from the lambda the
+    /// closure local holds, else from the function type of the value — a
+    /// local's (a `?fn(…)` binder's included) or the expression's that
+    /// answers it. Null when nothing says; a float argument is then refused.
+    fn valueCallCells(self: *Emitter, cc: anytype) ?FnCells {
+        if (cc.calleeExpr == null and cc.receiver == null) {
+            if (self.closure_locals.get(cc.callee)) |li| {
+                const l = self.lambdas.items[li];
+                if (l.fn_ref == null) return .{ .params = l.param_cell, .ret = l.ret_cell };
+            }
+        }
+        const ft: ast.TypeRef = blk: {
+            if (cc.calleeExpr) |ce| break :blk self.typeRefOf(ce.*) orelse return null;
+            if (cc.receiver != null) return null;
+            break :blk self.local_typerefs.get(self.resolveName(cc.callee)) orelse
+                self.local_typerefs.get(cc.callee) orelse return null;
+        };
+        if (ft != .function) return null;
+        const pts = ft.function.params;
+        const out = self.arena().alloc(Cell, pts.len) catch return null;
+        for (pts, out) |pt, *o| o.* = cellOfTypeRef(pt);
+        return .{ .params = out, .ret = cellOfTypeRef(ft.function.returnType.*) };
+    }
+
+    /// The box of the value on the stack, of a cell's width.
+    fn emitBoxCell(self: *Emitter, cell: Cell) !void {
+        try self.emit(self.builder().helper(switch (cell) {
+            .f64 => .box_f64,
+            .i64 => .box_i64,
+            .none => unreachable,
+        }));
+    }
+
     /// With the environment and `argc` arguments on the stack, call the
     /// function value held in `fnv`.
     fn emitIndirect(self: *Emitter, fnv: []const u8, argc: usize) anyerror!void {
@@ -12522,15 +12589,37 @@ const Emitter = struct {
                 const pn = try std.fmt.allocPrint(ar, "__a{d}", .{i});
                 try params.append(ar, wat.Builder.param(pn, .i32));
                 try self.emit(.{ .local_get = pn });
-                try self.emitConvert("i32", pt);
+                // A float or 64-bit argument arrives in its cell.
+                const cell = Cell.of(pt);
+                try self.emitFromCell(cell);
+                try self.emitConvert(cell.ty(), pt);
             }
             try self.emit(.{ .call = target });
             const outer_loc = self.stmt_loc;
             self.stmt_loc = l.loc;
-            if (sig.result) |r| try self.emitConvert(r, "i32") else try self.emit(zero);
+            if (sig.result) |r| {
+                const cell = Cell.of(r);
+                if (cell != .none) {
+                    try self.emitConvert(r, cell.ty());
+                    try self.emitBoxCell(cell);
+                } else try self.emitConvert(r, "i32");
+            } else try self.emit(zero);
             self.stmt_loc = outer_loc;
         } else {
             for (l.params, 0..) |p, i| {
+                const cell: Cell = if (i < l.param_cell.len) l.param_cell[i] else .none;
+                if (cell != .none) {
+                    // The argument is its cell's address: the parameter is a
+                    // local of the value's width, read out of the cell first.
+                    const pn = try std.fmt.allocPrint(ar, "__cell_{s}", .{p});
+                    try params.append(ar, wat.Builder.param(pn, .i32));
+                    try self.locals.put(pn, "i32");
+                    try self.declareLocal(p, cell.ty());
+                    try self.emit(.{ .local_get = pn });
+                    try self.emitFromCell(cell);
+                    try self.emit(.{ .local_set = p });
+                    continue;
+                }
                 try params.append(ar, wat.Builder.param(p, .i32));
                 try self.locals.put(p, "i32");
                 if (i < l.param_str.len and l.param_str[i]) try self.str_locals.put(p, {});
@@ -12572,10 +12661,16 @@ const Emitter = struct {
             const tail_type: ?[]const u8 = if (l.body.len > 0) self.wasmTypeOf(l.body[l.body.len - 1].expr) else null;
             const tail = try self.emitBody(l.body, true);
             // A closure answers through the indirect call's `i32` word: a
-            // float or an `i64` answer is refused at the lambda.
+            // float or an `i64` answer leaves in its cell when the function
+            // type says so (`ret_cell`), and is refused at the lambda else.
             const outer_loc = self.stmt_loc;
             self.stmt_loc = l.loc;
-            if (tail == .value) if (tail_type) |t| try self.emitConvert(t, "i32");
+            if (tail == .value) if (tail_type) |t| {
+                if (l.ret_cell != .none) {
+                    try self.emitConvert(t, l.ret_cell.ty());
+                    try self.emitBoxCell(l.ret_cell);
+                } else try self.emitConvert(t, "i32");
+            };
             self.stmt_loc = outer_loc;
         }
         const body = self.seal(&c, .{ .value = .i32 });
@@ -14308,12 +14403,80 @@ const Emitter = struct {
     /// union slot, a `?T`'s `$__box_i32` cell otherwise.
     fn lowerBoxedInto(self: *Emitter, target: ?ast.TypeRef, value: ast.Expr) anyerror!void {
         if (target) |t| if (isUnknownTypeRef(t)) return self.lowerAsUnknown(value);
+        if (try self.lowerBoxedIfArms(target, value)) return;
         // A `?f64`'s / `?i64`'s box is the value's own 8-byte cell.
         const cell: Cell = if (target) |t| (if (self.optInfoOfTypeRef(t)) |oi| oi.cell else .none) else .none;
         if (cell != .none or Cell.of(self.wasmTypeOf(value)) != .none)
             return self.lowerCellWord(value, if (cell != .none) cell else Cell.of(self.wasmTypeOf(value)));
         try self.lowerCoerced(value, "i32");
         try self.emit(self.builder().helper(.box_i32));
+    }
+
+    /// `val n: ?i32 = if (c) 3 else null`: each arm goes into the slot on its
+    /// own — a value boxed, `null` the `0` of absence. Boxing the whole `if`
+    /// boxed the `0` of its `null` arm too, so an absent `n` read as a
+    /// present `0`. Only a value-form `if` with an `else`, no binder, and an
+    /// arm answering `null` at some depth takes this path.
+    fn lowerBoxedIfArms(self: *Emitter, target: ?ast.TypeRef, value: ast.Expr) anyerror!bool {
+        if (value != .branch or value.branch.kind != .if_) return false;
+        const i = value.branch.kind.if_;
+        if (i.binding != null) return false;
+        const els = i.else_ orelse return false;
+        if (i.then_.len == 0 or els.len == 0 or !armAnswersNull(value)) return false;
+        try self.lowerCondition(i.cond.*, null);
+
+        var then_c: Capture = .{};
+        self.open(&then_c);
+        var then_names: std.ArrayListUnmanaged([]const u8) = .empty;
+        try self.collectNullTestNames(i.cond.*, true, &then_names);
+        const then_marked = try self.applyNarrowing(then_names.items);
+        try self.lowerBoxedArm(target, i.then_);
+        self.dropNarrowing(then_marked);
+        const then_seq = self.seal(&then_c, .{ .value = .i32 });
+
+        var else_c: Capture = .{};
+        self.open(&else_c);
+        var else_names: std.ArrayListUnmanaged([]const u8) = .empty;
+        try self.collectNullTestNames(i.cond.*, false, &else_names);
+        const else_marked = try self.applyNarrowing(else_names.items);
+        try self.lowerBoxedArm(target, els);
+        self.dropNarrowing(else_marked);
+        const else_seq = self.seal(&else_c, .{ .value = .i32 });
+
+        try self.emit(.{ .@"if" = .{
+            .result = .i32,
+            .then = .{ .seq = then_seq },
+            .@"else" = .{ .seq = else_seq },
+        } });
+        return true;
+    }
+
+    /// One arm of `lowerBoxedIfArms`: its statements, then its tail into the
+    /// slot — `null` as `0`, a value boxed when the slot boxes it.
+    fn lowerBoxedArm(self: *Emitter, target: ?ast.TypeRef, body: []const ast.Stmt) anyerror!void {
+        const scope_mark = self.scopeMark();
+        defer self.scopeRestore(scope_mark);
+        for (body[0 .. body.len - 1]) |stmt| _ = try self.emitStmt(stmt, false);
+        const last = body[body.len - 1].expr;
+        if (isNullLit(last)) {
+            try self.pushZero();
+        } else if (self.boxesInto(target, last)) {
+            try self.lowerBoxedInto(target, last);
+        } else {
+            try self.lowerCoerced(last, "i32");
+        }
+    }
+
+    /// Whether a value-form `if` answers `null` from one of its arms, an
+    /// `else if` chain followed.
+    fn armAnswersNull(e: ast.Expr) bool {
+        if (isNullLit(e)) return true;
+        if (e != .branch or e.branch.kind != .if_) return false;
+        const i = e.branch.kind.if_;
+        if (i.binding != null) return false;
+        const els = i.else_ orelse return false;
+        if (i.then_.len == 0 or els.len == 0) return false;
+        return armAnswersNull(i.then_[i.then_.len - 1].expr) or armAnswersNull(els[els.len - 1].expr);
     }
 
     /// The payload of the boxed optional on the stack: the word its box holds,
@@ -16382,6 +16545,11 @@ const Emitter = struct {
                     }
                     if (self.recordMethodSym(cc, c.loc)) |sym| {
                         if (self.fn_sigs.get(sym)) |sig| break :blk sig.result orelse "i32";
+                    }
+                    // A call through a function value answering a float or a
+                    // 64-bit value: what its cell holds (`valueCallCells`).
+                    if (cc.calleeExpr != null or (cc.receiver == null and self.locals.contains(self.resolveName(cc.callee)))) {
+                        if (self.valueCallCells(cc)) |fc| if (fc.ret != .none) break :blk fc.ret.ty();
                     }
                     if (self.calleeSymbol(cc, c.loc)) |sym| {
                         if (self.fn_sigs.get(sym)) |sig| break :blk sig.result orelse "i32";

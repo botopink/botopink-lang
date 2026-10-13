@@ -1,0 +1,21 @@
+//// Decision 330 — the default of `??` may be a call through a module
+//// namespace: a std module's (`path.basename(…)`) or one of the package's
+//// own (`names.fallback()`). It is a call of that module's function, run
+//// only when the left side is absent — never a method call on the namespace.
+
+import {path} from "std";
+
+mod names;
+
+fn find(key: string) -> ?string {
+    return if (key == "a") "found" else null;
+}
+
+pub fn main() {
+    @print(find("a") ?? path.basename("/srv/data.txt"));
+    @print(find("b") ?? path.basename("/srv/data.txt"));
+    @print((find("b") ?? path.dirname("/srv/data.txt")).length());
+    @print(find("a") ?? names.fallback());
+    val who = find("b") ?? names.fallback();
+    @print(who);
+}

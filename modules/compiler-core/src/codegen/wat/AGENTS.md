@@ -650,7 +650,23 @@ class beside them. What each number is here, and what is refused:
   backstop that turns every slot with no wide reader into a located refusal:
   an `i64` element of an array, an `i64` / float payload of a
   `@Result` (`__bp_ok`), a function value's float or `i64` argument or answer
-  (it was `i32.trunc_f64_s`), an integer method over an `i64` but `toString`.
+  where nothing says the function's type (it was `i32.trunc_f64_s`), an
+  integer method over an `i64` but `toString`.
+- **A function value's float or 64-bit argument and answer travel in a cell.**
+  The indirect call carries words, so the caller passes such an argument as
+  its `$__box_f64` / `$__box_i64` cell and reads such an answer out of one
+  (`valueCallCells`: the lambda the closure local holds, else the function
+  type of the local — a `?fn(…)` binder's included — or of the expression the
+  callee is), and the lambda reads its parameter out of the cell and boxes
+  its answer (`Lifted.param_cell` / `ret_cell`, from the function type it is
+  written against); a top-level function's trampoline does the same from its
+  signature. Both sides read the written function type, so a caller and a
+  callee that know it agree; a caller that does not refuses the argument
+  (`modules/optional_float_function_value`).
+- **An `if` with a `null` arm into a `?T` slot boxes arm by arm**
+  (`lowerBoxedIfArms`): `val n: ?i32 = if (c) 3 else null` boxes the `3` and
+  leaves the `null` arm the `0` of absence — boxing the whole `if` made an
+  absent `n` a present `0` (`modules/optional_if_null_initializer`).
   `Option.map` over or to a cell type is refused at the call.
 - **Arithmetic over a boxed optional is refused** (`lowerBinOp`): `xs[i]`
   answers `?T`, and `[1, 2][0] + 1` added to the box's address (`269`).
