@@ -376,7 +376,10 @@ and std records no snapshot of its own.
 
 `mocks`' ten inline tests are the eight of the retired `repository/onze/test/onze_test.bp`,
 one for `anyString` (the old suite covered it from its example app, not its
-test file), and one that pins `verify`'s failure message with `asserts.throwsWith` —
+test file), and one that pins `verify`'s failure message with the module's own `raisedText` cell
+(`asserts.throwsWith`'s shape; a std module does not import the harness — an import of
+`testing.asserts` links its host-only `canonical` and refuses every wasm program that reaches
+`mocks`) —
 `mocks.verify: <method> - expected exactly <n> matching call(s), got <m>` (Node appends
 the recorded calls). They run on both targets — `botopink test [--target erlang] --filter
 mocks` reads `10 passed, 0 failed`.

@@ -2191,6 +2191,35 @@ test "wat: std-wasm ---- a std: binding, trim and a float's text answer std-wasm
     );
 }
 
+// std's `testing.mocks` links no other std module: its test scaffolding is a
+// private cell of its own, never an import of `testing.asserts`, whose
+// host-only `canonical` the import linked into it — its wasm refusal then named
+// `canonical` at `asserts.bp` instead of its own host cell, and every cell
+// pinning that refusal went red (`conformance/modules/std_decorator_*`). The
+// module is refused on wasm for one of ITS host cells, never a linked one's.
+test "wat: std ---- testing.mocks is refused on wasm for its own host cell, never a linked module's" {
+    var outputs = try codegen.generateWith(std.testing.allocator, &.{.{ .path = "", .source =
+        \\import {testing.mocks} from "std";
+        \\fn main() {
+        \\    @print(0);
+        \\}
+    }}, std.testing.io, h.configs[3], .{ .execute = false });
+    defer {
+        for (outputs.items) |*o| o.result.deinit(std.testing.allocator);
+        outputs.deinit(std.testing.allocator);
+    }
+    for (outputs.items) |o| {
+        if (!std.mem.eql(u8, o.name, "std/testing/mocks")) continue;
+        const d = o.result.diagnostic orelse return error.ExpectedRefusal;
+        const message = d.type.message;
+        try std.testing.expect(std.mem.indexOf(u8, message, "has no `#[@External.<Target>(…)]` for the wasm backend") != null);
+        try std.testing.expect(std.mem.indexOf(u8, message, "which this import links") == null);
+        try std.testing.expect(std.mem.indexOf(u8, message, "`canonical`") == null);
+        return;
+    }
+    return error.ModuleNotEmitted;
+}
+
 // Decision 443 — case mapping over all of Unicode, std-wasm's: OTP's answer
 // where a JS engine's differs. No final sigma (`ΟΔΟΣ` lowers to `οδοσ`; node
 // answers `οδος`), the unconditional full mappings (`ß` → `SS`).

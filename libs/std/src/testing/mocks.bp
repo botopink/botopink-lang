@@ -40,8 +40,6 @@
 ////     `Xxx.Mock` and the factory `Xxx.mock()` (decision 216). The compiler core learns nothing about mocking
 ////     (no lib-specific surface in core); every rule here is botopink.
 
-import {testing.asserts.throwsWith};
-
 // ── host cells (the one mutable seam) ────────────────────────────────────────
 //
 // Node: one lazily created object on `globalThis`. Erlang: the same six tables
@@ -285,6 +283,15 @@ pub fn mock(comptime decl: @Decl) {
     );
 }
 
+// Internal, test scaffolding: the text a body raised, `""` when it answered —
+// the shape of `asserts.throwsWith`'s own cell (`hash.panicText` is the same).
+// A std module does not import the harness: an import of `testing.asserts`
+// links its host-only `canonical` into every program that reaches `mocks`, and
+// the wasm backend refuses each of them.
+#[@External.Node("""(() => { try { ($0)(); return '' } catch (__e) { return __e && __e.message ? __e.message : String(__e) } })()""")]
+#[@External.Erlang("""(fun(__B) -> try __B(), <<>> catch error:{__T, __M} when (__T =:= panic orelse __T =:= todo) andalso (is_binary(__M) orelse is_list(__M)) -> unicode:characters_to_binary(__M); __C:__E -> iolist_to_binary(io_lib:format("~p:~p", [__C, __E])) end end)($0)""")]
+declare fn raisedText(body: fn() -> i32) -> string;
+
 // ── tests ────────────────────────────────────────────────────────────────────
 // The eight tests of the retired `repository/onze/test/onze_test.bp`, re-spelled
 // against this module. They drive the whole surface end to end: `#[mock]`
@@ -385,14 +392,14 @@ test "mocks: verify checks each matcher independently after different-arg calls"
 test "mocks: a verify that fails raises `mocks.verify:` naming the method, the count expected and the count seen" {
     val repo = UserRepo.mock();
     val _1 = repo.find(7);
-    try throwsWith({ ->
+    assert raisedText({ ->
         val _v = verify(repo, times(2)).find(eq(7));
         0;
-    }, "mocks.verify: find - expected exactly 2 matching call(s), got 1");
-    try throwsWith({ ->
+    }).contains("mocks.verify: find - expected exactly 2 matching call(s), got 1");
+    assert raisedText({ ->
         val _v = verify(repo, never()).find(eq(7));
         0;
-    }, "mocks.verify: find - expected exactly 0 matching call(s), got 1");
+    }).contains("mocks.verify: find - expected exactly 0 matching call(s), got 1");
 }
 
 // `anyString()` is the ninth test: the old suite covered it from the example
