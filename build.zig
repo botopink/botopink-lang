@@ -218,7 +218,7 @@ pub fn build(b: *std.Build) void {
         "bigint.zig",     "case_tables.zig", "random.zig",     "wasm.zig",        "env.zig",
         "term.zig",       "term_faces.zig",  "otp.zig",        "otp/erlang.zig",  "otp/lists.zig",
         "otp/maps.zig",   "otp/string.zig",  "otp/binary.zig", "otp/unicode.zig", "otp/math.zig",
-        "otp/io_lib.zig", "otp/json.zig",    "otp/etf.zig",
+        "otp/io_lib.zig", "otp/json.zig",    "otp/etf.zig",    "heap.zig",
     }) |f|
         std_wasm_build.addFileInput(b.path(b.fmt("modules/std-wasm/src/{s}", .{f})));
     // The warning goes to a captured file, not the build's output.

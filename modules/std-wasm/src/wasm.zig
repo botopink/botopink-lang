@@ -688,6 +688,50 @@ fn seededFloat() callconv(.c) f64 {
     return stream.next() orelse bp_random_f64();
 }
 
+// The heap (decisions 448, 449): `heap.zig` over the program's linear
+// memory. Every failure is memory exhausted, and traps (448 (4)): nothing is
+// answered past it.
+
+fn heapInit(start: u32) callconv(.c) u32 {
+    return root.heap.init(start) catch @trap();
+}
+
+fn heapSpawn() callconv(.c) u32 {
+    return root.heap.spawn() catch @trap();
+}
+
+fn heapEnter(h: u32) callconv(.c) u32 {
+    return root.heap.enter(h);
+}
+
+fn heapAlloc(n: u32, layout: u32) callconv(.c) u32 {
+    return root.heap.alloc(n, layout) catch @trap();
+}
+
+fn heapWrite(field: u32, v: u32) callconv(.c) void {
+    root.heap.write(field, v) catch @trap();
+}
+
+fn heapReserve(need: u32, roots: u32, n: u32) callconv(.c) void {
+    root.heap.reserve(need, roots, n) catch @trap();
+}
+
+fn heapCollect(roots: u32, n: u32, full: u32) callconv(.c) void {
+    root.heap.collect(roots, n, full != 0) catch @trap();
+}
+
+fn heapCopy(dst: u32, v: u32) callconv(.c) u32 {
+    return root.heap.copy(dst, v) catch @trap();
+}
+
+fn heapRelease(h: u32) callconv(.c) void {
+    root.heap.release(h);
+}
+
+fn heapUsed(h: u32) callconv(.c) u32 {
+    return root.heap.used(h);
+}
+
 const faces = .{
     .{ "hash.contentHash", contentHash },
     .{ "text.trim", trim },
@@ -762,6 +806,16 @@ const program_faces = .{
     .{ "bigint.toF64", bigToF64 },
     .{ "bigint.toString", bigToString },
     .{ "bigint.parse", bigParse },
+    .{ "heap.init", heapInit },
+    .{ "heap.spawn", heapSpawn },
+    .{ "heap.enter", heapEnter },
+    .{ "heap.alloc", heapAlloc },
+    .{ "heap.write", heapWrite },
+    .{ "heap.reserve", heapReserve },
+    .{ "heap.collect", heapCollect },
+    .{ "heap.copy", heapCopy },
+    .{ "heap.release", heapRelease },
+    .{ "heap.used", heapUsed },
 };
 
 /// The wasm type a `root.Type` crosses as.

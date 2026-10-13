@@ -3,8 +3,9 @@
 > Path: `modules/std-wasm/`
 > Parent: [`../AGENTS.md`](../AGENTS.md)
 
-botopink's wasm runtime in Zig (decisions 434 (2), 440, 441, 442, 450, 454; front 144 B-00a,
-B-00e, B-00g, B-00i): std's host functions, and the Erlang terms with the OTP functions over them.
+botopink's wasm runtime in Zig — std's functions, the stack, the heap (decisions 434 (2), 440, 441,
+442, 447, 448, 449, 450, 454; front 144 B-00a, B-00e, B-00g, B-00i, B-30): std's host functions,
+the Erlang terms with the OTP functions over them, and the heap a process allocates on (`heap.zig`).
 One implementation for two consumers: the comptime
 runtime, on every target (434 (5): a comptime result is std-wasm's answer whatever `--target`
 says), and a `--target wasm` program, into which the codegen transpiles the functions it calls
@@ -44,6 +45,7 @@ std-wasm/
     ├── text.zig   ← the text algorithms behind std's string primitives (case over all of Unicode, titlecase, trim, graphemes, slice, reverse, find, split, replace; and a program's: code point length / offset / slice / `at`, `indexOf` / `lastIndexOf`, `charCodeAt`, `fromCodepoint`, `Split` / `Lines` / `Words`, pad, repeat, replace)
     ├── number.zig ← `shortFloat`: `float_to_binary(F, [short])`, std's `Float.toString` (`NaN`, `Infinity`, `-Infinity` for the values OTP has no float for); `signedText` / `unsignedText`, an integer's digits
     ├── array.zig  ← an array's algorithms over its slot words: `sliceRange`, `chunkCount`, `slidingCount`, `uniqueInto`, `search`
+    ├── heap.zig   ← the heap (decisions 448, 449): a heap per process, `alloc` on the current one, copying collection (minor and major), the write barrier on mutable cells, a message copied between heaps, a heap released whole, exhaustion an error the program face traps on — § The heap
     ├── random.zig ← `io/random`'s seeded stream (decision 451): `Stream`, Mulberry32 as the commonJS sidecar draws it; no draw before a seed
     ├── bigint.zig ← `bigint`'s arithmetic over `u32` limbs (add, sub, mul, divmod, compare, decimal text both ways, `toI64`, `toF64`), tested against `std.math.big.int`
     ├── wasm.zig   ← the program face (`zig build std-wasm`): each export over a program's own strings, arrays and `bigint` blocks, allocating through `env.bp_alloc`; the seeded stream's state a `.bss` `Stream`, an unseeded draw `env.bp_random_f64`; it also exports every `rt_*` function of the term files under its own name
@@ -111,6 +113,8 @@ methods through their `@External.Erlang` cells).
 | `bigint.add(x, y, flip)`, `negate`, `multiply`, `divmod(x, y, rem)`, `compare`, `equalOptional` | decision 332's operators over block addresses (a zero divisor traps) |
 | `bigint.ofI64`, `toI64`, `toF64`, `toString`, `parse` | `BigInt.of`, `toI64()` / `toF64()` (trap past the range / unless exact), the digits, `BigInt.parse`'s numeral (`0` for none) |
 
+| `heap.init(start)`, `spawn`, `enter(h)`, `alloc(n, layout)`, `write(field, v)`, `reserve(need, roots, n)`, `collect(roots, n, full)`, `copy(dst, v)`, `release(h)`, `used(h)` | the heap (§ The heap) — not called by the codegen yet: `alloc` is still `wat_prelude`'s bump (144 B-30 boxes 3–6) |
+
 `text.toUpper` / `text.toLower` (`(string) -> string`, bound by `String.toUpper` / `toLower`)
 map case over all of Unicode (decision 443): the simple mappings of `UnicodeData.txt` and the
 unconditional full ones of `SpecialCasing.txt` (`ß` → `SS`, `ﬁ` → `FI`, `İ` → `i̇`), from
@@ -137,6 +141,71 @@ that reached it: a build has no entropy and never pretends to (cells
 `modules/comptime_random_seeded`, `modules/comptime_random_unseeded`). Each comptime evaluation
 starts from a fresh instance, so its stream is unseeded until its body seeds it, and one
 seed answers the same draws on every build and every target.
+
+## The heap (decisions 448, 449; front 144 B-30)
+
+`heap.zig` is erlang's memory model for a wasm program and for translated BEAM code: a heap per
+process (a `@Task`; a BEAM process), `alloc` on the current process's heap, collection by copying
+the live values, a value copied between heaps as an erlang message is, a heap released whole when its
+process ends, and memory exhausted a trap — never damaged data (448 (4)). It is in `program`, never
+bound by `std:`, and has no comptime face: the comptime keeps its arena (449 (4)). It allocates nothing
+through `env.bp_alloc` — it is what `bp_alloc` becomes (box 3) — and takes its memory from the
+program's linear memory itself (`memory.grow`). Natively (its tests) a buffer stands for that memory.
+It was designed from the measurement in `compiler-core/src/codegen/wat/AGENTS.md` § How far a program
+grows without collection: growth linear in the work, a live set of a few values.
+
+- **The pool.** Every heap's memory comes from one pool over `[start, memory's end)` (`heap.init`:
+  `start` is what the program leaves past its data and its stack): free regions in address order,
+  coalesced when freed, the memory grown when none fits. A heap is a list of *chunks* from the pool; a
+  released heap gives them back.
+- **A block** is one `alloc`: an 8-byte header — the payload's size (bit 0 the remembered flag) and its
+  *layout* — then the payload, 8-aligned and zeroed. A value may point anywhere inside its block (a
+  record's value is its address plus four; a binary's bytes may be another's): each chunk keeps a
+  bitmap of where its blocks start (one bit per 8 bytes), through which an address finds its block.
+- **A layout** names the pointer words, so the collection knows both value representations (450 (4))
+  without guessing: `raw` (0) none; `bitmap(b)` word `i` when bit `i` is set, for the first 31 words;
+  `pointersFrom(k)` (`0x8000_0000 | k`) every word from `k` on. A pointer word holding no address of
+  the heap (`0`, an ordinal, a literal of the data, an atom) is left alone. A block whose layout says
+  less than it holds loses values at a collection, and one that says more rewrites scalars: the
+  caller's layout is the contract.
+- **Generations** (448 (2)). `alloc` bumps in the nursery and never collects or moves anything: a
+  full nursery takes another chunk. A collection runs only at a *collection point* — `reserve(need,
+  roots, n)` (when the nursery has fewer than `need` bytes free) or `collect(roots, n, full)` — whose
+  `roots` are the address of `n` words, every value the caller keeps across it, rewritten in place.
+  A *minor* collection copies what the roots, the remembered blocks and the static cells reach in the
+  young generation into the old one and empties the nursery; a *major* one (when the old generation
+  passes its limit, or `full`) copies everything live into fresh chunks and frees the rest. Both are
+  Cheney's: iterative — the copies are the work list — so no recursion and no stack of their own (447,
+  and `std_wasm_link.zig` refuses recursion).
+- **The write barrier** is `write(field, v)`, the one store into a mutable cell (a `var`'s cell, a
+  task's record): an old block written with a young value is remembered (once, by its flag) and scanned
+  at the next minor collection; a cell outside every heap (a module's data) becomes a root of the heap
+  for good. Every other value is immutable, so an old value never points at a younger one.
+- **Messages** (448 (3)). `copy(dst, v)` copies what `v` reaches on the current heap onto `dst`'s
+  nursery, Cheney's scan over the copies; nothing of `dst` points into the sender's heap after it.
+- **Exhaustion** (448 (4)). When the pool cannot grow (`memory.grow` refused, or past 4 GiB), the
+  operation answers `error.OutOfMemory` before writing what it answers; `wasm.zig`'s faces trap on it
+  (`unreachable`). A collection that cannot get its to-space traps as well — the run ends; it never
+  continues over a half-copied heap.
+
+**The choices 448 leaves to measurement**, each the maintainer's to confirm:
+
+| Choice | Taken | Why |
+|---|---|---|
+| Generations | young and old; a survivor of one minor collection is promoted at once (erlang keeps it young once more, behind a high-water mark) | 448 (2) is generational (the barrier exists for old → young); the measured programs keep a few values live, so promoting at once costs little and keeps one scan |
+| Interior pointers | a start bitmap per chunk (1/64 of the chunk) | a record's value is its address plus four; a binary's bytes and a sub-binary point inside blocks |
+| Header | 8 bytes per block (size, layout) | the layout is the only way the collection tells a pointer from a scalar in the typed layout, which tags nothing |
+| Sizes | nursery 64 KiB, doubled while more than half of it survives, at most 8 MiB; major when the old generation passes max(256 KiB, twice what the last major kept) | the measured garbage per unit of work runs from 68 bytes to 17.6 KiB |
+| Collection points | only where the caller names its roots; `alloc` never collects | a wasm local is invisible to the collector: a value is safe to move only where the caller has written its roots down |
+| Message sharing | not kept (a value reached twice is copied twice), as erlang's default | no forwarding written into the sender's live heap; a value is acyclic but through a mutable cell, and a cycle copied exhausts memory and traps |
+| Cells outside every heap | a root of the heap whose value they hold, for good | a module's `var` in the data is no block a collection could reach |
+
+What remains for 144 B-30: `alloc` out of `wat_prelude` onto `heap.alloc` with each allocation's
+layout, std-wasm's faces allocating with theirs (`layoutOf` for a block like the argument's), the
+codegen's roots at each collection point (task frames, scheduler queues, cells) and its `var` stores
+through `write`; beam-to-wasm's terms on the current process's heap, `test_heap` / `allocate` as
+collection points with their live registers, the atom table outside every process heap; the
+exhaustion trap and a bounded long-running cell.
 
 ## How it is built and served
 

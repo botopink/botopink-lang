@@ -345,11 +345,11 @@ fn main() {
     )
     local.get $sp
   )
-  ;; __std_f386 — from std_wasm.wasm (sha256 d13a98c08300)
-  ;; __std_f387 — from std_wasm.wasm (sha256 c8d3cb27276b)
-  ;; __std_f388 — from std_wasm.wasm (sha256 0314fe5f477f)
-  ;; __std_f389 — from std_wasm.wasm (sha256 c9423096e50e)
-  ;; std:array.slice — from std_wasm.wasm (sha256 c7da1da4f3c1)
+  ;; __std_f416 — from std_wasm.wasm (sha256 d13a98c08300)
+  ;; __std_f417 — from std_wasm.wasm (sha256 eaf687f8b1c6)
+  ;; __std_f418 — from std_wasm.wasm (sha256 0314fe5f477f)
+  ;; __std_f419 — from std_wasm.wasm (sha256 d0f3edd6b423)
+  ;; std:array.slice — from std_wasm.wasm (sha256 0bd2f83307bd)
 )
 ```
 

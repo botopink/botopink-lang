@@ -41,6 +41,7 @@ pub const term = @import("term.zig");
 pub const term_faces = @import("term_faces.zig");
 pub const otp = @import("otp.zig");
 pub const random = @import("random.zig");
+pub const heap = @import("heap.zig");
 
 /// A botopink type an export takes or answers. A `string` crosses as the
 /// program's string (the address of its `u32` length, the bytes behind it) in
@@ -212,6 +213,17 @@ pub const program = [_]Program{
     .{ .name = "bigint.toF64", .params = &.{.i32}, .result = .f64 },
     .{ .name = "bigint.toString", .params = &.{.i32}, .result = .i32 },
     .{ .name = "bigint.parse", .params = &.{.i32}, .result = .i32 },
+    // The heap (decisions 448, 449, `heap.zig`): a heap per process, collected.
+    .{ .name = "heap.init", .params = &.{.i32}, .result = .i32 },
+    .{ .name = "heap.spawn", .params = &.{}, .result = .i32 },
+    .{ .name = "heap.enter", .params = &.{.i32}, .result = .i32 },
+    .{ .name = "heap.alloc", .params = &.{ .i32, .i32 }, .result = .i32 },
+    .{ .name = "heap.write", .params = &.{ .i32, .i32 }, .result = null },
+    .{ .name = "heap.reserve", .params = &.{ .i32, .i32, .i32 }, .result = null },
+    .{ .name = "heap.collect", .params = &.{ .i32, .i32, .i32 }, .result = null },
+    .{ .name = "heap.copy", .params = &.{ .i32, .i32 }, .result = .i32 },
+    .{ .name = "heap.release", .params = &.{.i32}, .result = null },
+    .{ .name = "heap.used", .params = &.{.i32}, .result = .i32 },
 };
 
 /// The export a `std:` cell names, or null when std-wasm has none of that
@@ -267,6 +279,7 @@ test {
     _ = bigint;
     _ = encoding;
     _ = random;
+    _ = heap;
 }
 
 test "find: an export by the name a std: cell gives it" {

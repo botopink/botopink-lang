@@ -579,8 +579,8 @@ fn main() {
   ;; __std_f4 — from std_wasm.wasm (sha256 b4b6f06748d6)
   ;; __std_f57 — from std_wasm.wasm (sha256 abc0c5a2112e)
   ;; __std_f58 — from std_wasm.wasm (sha256 432c7dfb021a)
-  ;; __std_f407 — from std_wasm.wasm (sha256 0a401b24534c)
-  ;; std:number.i32ToString — from std_wasm.wasm (sha256 82625649f903)
+  ;; __std_f437 — from std_wasm.wasm (sha256 0a401b24534c)
+  ;; std:number.i32ToString — from std_wasm.wasm (sha256 33830448e95f)
 )
 ```
 
