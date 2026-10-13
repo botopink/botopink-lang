@@ -1510,10 +1510,13 @@ answers): `modules/float_text_at_run_time` (`"${5.0}"`, `1.0e21`, `1.0e-7` print
 `modules/string_lower_final_sigma` (`ΟΔΟΣ` lowers to `οδοσ`; commonJS's engine to `οδος`) and
 `modules/float_nan_infinity_words` (`Infinity`, `-Infinity`, `NaN` on commonJS and wasm; erlang and
 beam abort, `stderr badarith`). The fifth row, an unseeded `random.float()` reached from a decorator
-body, has no cell: a decorator body cannot reach `io.random` today (`unbound variable
-'__bp_ns_io_random'` on every target, a leaf import `unbound variable`), so the answer decision 451
-gives it cannot be read off the compiler — a row for the front that makes a decorator body reach a
-nested std namespace.
+body, is `modules/decorator_random_float_unseeded` since 144 B-46 made a decorator body reach a nested
+std namespace: refused at build on every target with decision 451's message (434 (5): one comptime, one
+answer — no departure). Each departure is the language's, never a defect recorded (458): commonJS's
+`trim` and final sigma are the JS engine's by decisions 441 and 443, which keep commonJS's text and case
+mapping; erlang's and beam's `badarith` is their arithmetic by decision 444. The float text's one answer
+on commonJS is 144 B-78's, which waits on question B-78-a: were commonJS to keep the engine's text
+(441's last sentence), `float_text_at_run_time` would gain a `snapshot/targets/commonJS/` departure.
 
 **The language half of `test-cli`** (144 B-29 step H): `modules/tail_recursive_sum` (the numeric
 program of `backend_exec.sh`, `0 1 55`, beam included), `modules/record_enum_case_lambda` (its
@@ -1536,7 +1539,8 @@ on wasm prints `1` for the lifted tuple's `bool` (`@print(cfg.debug)`; through `
 cfg.debug` it prints `true`), and `test/stdlib-tour`'s `Set.fromList` of structurally-equal
 records keeps three members on commonJS (and wasm, which no suite reaches) where erlang and beam
 keep two. `generic-loader-binding` (three `from "erika"` forms — a library, not the language) stays
-in botopink-lang's `examples/` until it can move to erika (`../examples/AGENTS.md`).
+in botopink-lang's `examples/` until erika's consumer commit moves it (`../examples/AGENTS.md`: erlang
+and beam reach the library since 144 B-45 and B-50; wasm does not compile it).
 
 `front/gate-wasm-wrong-answers` (`compiler-core/src/codegen/wat/AGENTS.md` § Numbers) adds three
 four-target cells for numbers wasm answered wrongly at exit 0 — `modules/float_shortest_text` (a
