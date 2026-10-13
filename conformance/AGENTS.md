@@ -482,6 +482,10 @@ five fail on the parent binary (`unexpected ','` / a comparison). Through a modu
 i32>.empty()` chained, `shapes.Box<i32>.make(7)`, `shapes.Opt<string>.None` on all four targets —
 and `modules/type_application_through_namespace_mismatch` (`shapes.Box<i32>.make("x")`, at the
 argument); both `unexpected ','` / a comparison on the parent binary.
+144 B-23 (a comptime body's diagnostic names the body's file) adds
+`modules/decorator_raise_names_body_file` — a decorator declared in `src/deco.bp` whose body
+`@panic`s, refused at the annotation in `src/main.bp` with the message naming
+`src/deco.bp:3:5`; the parent binary named no file.
 Decision 255 (2) (`comptime <expr>` is `comptime { break <expr>; }`) adds `modules/comptime_expression_is_block`
 (a module-level shorthand equal to its block form, and the same in a body) and
 `modules/comptime_expression_static_call` (the decision's own `val d: Dict<string, unknown> = comptime

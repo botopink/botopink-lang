@@ -102,6 +102,9 @@ pub fn evaluate(
     /// The module path `tfn` was declared in (`Env.comptimeOwnerOf`); "" when
     /// no module owns it. Named in the module atom (`ownerId`).
     owner: []const u8,
+    /// The display path of `owner`'s file (`src/deco.bp`, `@src().file`):
+    /// a diagnostic located in the body names it.
+    owner_file: []const u8,
     tfn: ast.FnDecl,
     /// The functions `tfn`'s body reaches (`infer.decoratorSupport`, decision
     /// 331's "calls included"), compiled into the module beside it.
@@ -119,7 +122,7 @@ pub fn evaluate(
     var refused: []const u8 = "";
     const t_module = stages.start();
     const source = buildModule(arena, owner, tfn, support, types, captures, plainArgs, &unsupported, &refused) catch |err| switch (err) {
-        error.UnsupportedMethod => return .{ .err = try unsupportedText(arena, "template", tfn.name, unsupported) },
+        error.UnsupportedMethod => return .{ .err = try unsupportedText(arena, "template", tfn.name, owner_file, unsupported) },
         error.HostCell => return .{ .err = refused },
         else => |e| return e,
     };
@@ -269,11 +272,11 @@ fn errorText(arena: std.mem.Allocator, what: []const u8, detail: []const u8) ![]
 }
 
 /// The diagnostic for a body method call nothing answers (`erlang.UnsupportedMethod`).
-fn unsupportedText(arena: std.mem.Allocator, host: []const u8, name: []const u8, m: erlang.UnsupportedMethod) ![]const u8 {
+fn unsupportedText(arena: std.mem.Allocator, host: []const u8, name: []const u8, file: []const u8, m: erlang.UnsupportedMethod) ![]const u8 {
     return std.fmt.allocPrint(
         arena,
-        "the {s} `{s}` calls `.{s}(…)` with {d} argument(s) at {d}:{d}, which no primitive type (string, array, int, float, bool) and no {s} host function provides",
-        .{ host, name, m.callee, m.argc, m.loc.line, m.loc.col, host },
+        "the {s} `{s}` calls `.{s}(…)` with {d} argument(s) at {s}:{d}:{d}, which no primitive type (string, array, int, float, bool) and no {s} host function provides",
+        .{ host, name, m.callee, m.argc, file, m.loc.line, m.loc.col, host },
     );
 }
 

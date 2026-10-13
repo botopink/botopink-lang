@@ -170,6 +170,11 @@ pub const Reflection = struct {
     /// modules an import with no `from` may name, and what a `mod` binds.
     /// Null for a session built without one (a test's lone module).
     modTree: ?*const modTreeMod.Tree = null,
+    /// Module path → the display path of its file (`@src().file`, decision
+    /// 73: `src/deco.bp`), recorded for every module before any is analysed: a
+    /// diagnostic of a decorator or template body run from another module
+    /// names the body's file by it (`infer.zig` `srcPathOfModule`).
+    srcPaths: std.StringHashMapUnmanaged([]const u8) = .empty,
 
     pub fn init(arena: std.mem.Allocator) Reflection {
         return .{ .arena = arena };

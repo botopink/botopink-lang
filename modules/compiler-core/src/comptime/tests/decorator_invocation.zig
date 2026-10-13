@@ -108,6 +108,43 @@ test "decorator invocation: a method nothing answers is the compiler's message, 
     , "unknown-primitive-method: `string` has no method `frobnicate`", .{ 3, 15 });
 }
 
+test "decorator invocation: a raise in another module's decorator body names the body's file" {
+    // 144 B-23 (14-comptime-on-beam step 1's last half): the annotation is
+    // located in this module, and the message names the call that raised in
+    // the decorator's own file — `deco.bp` (`@src().file` of a module the
+    // driver gave no `srcPath`), line 3, column 5.
+    const deco =
+        \\pub fn check(comptime decl: @Decl) {
+        \\    val n = decl.name;
+        \\    @panic("boom " + n);
+        \\}
+    ;
+    const src =
+        \\import {deco.check};
+        \\#[check]
+        \\type A(x: i32)
+    ;
+    const io = std.testing.io;
+    const build_root = h.buildRootPathFromSrc(io, @src());
+    var session = try comptimeMod.compile(std.testing.allocator, &.{
+        .{ .path = "deco", .source = deco },
+        .{ .path = "", .source = src },
+    }, io, build_root, null);
+    defer session.deinit(std.testing.allocator);
+    const outcome = for (session.outputs.items) |o| {
+        if (std.mem.eql(u8, o.name, "main")) break o.outcome;
+    } else return error.TestNoMainOutput;
+    try std.testing.expect(outcome == .typeError);
+    const message = try outcome.typeError.message(std.testing.allocator);
+    defer std.testing.allocator.free(message);
+    if (std.mem.indexOf(u8, message, "raised at deco.bp:3:5 while `#[check]` ran the decorator's body") == null) {
+        std.debug.print("\nexpected the body's file in: {s}\n", .{message});
+        return error.TestUnexpectedResult;
+    }
+    const got = outcome.typeError.loc orelse return error.TestUnexpectedResult;
+    try std.testing.expectEqual([2]usize{ 2, 3 }, [2]usize{ got.line, got.col });
+}
+
 test "decorator invocation: round trip ---- a @Decl handle carries fields, methods, variants and annotations" {
     // Front 14 step 3: the handle reaches the body as `main/1`'s argument (an
     // external term); the body reads every part back and emits it, and the reply

@@ -332,6 +332,13 @@ fn displaySrcPath(arena: std.mem.Allocator, mod: Module) ![]const u8 {
     return std.fmt.allocPrint(arena, "{s}.bp", .{name});
 }
 
+/// Every module's display path in the session's reflection
+/// (`Reflection.srcPaths`), before any module is analysed — a cached
+/// package's modules included, whose analysis does not run.
+fn recordSrcPaths(arena: std.mem.Allocator, reflection: *reflectionMod.Reflection, mods: []const Module) !void {
+    for (mods) |m| try reflection.srcPaths.put(reflection.arena, m.path, try displaySrcPath(arena, m));
+}
+
 /// The builtin `SourceLocation` record as a program declaration. `@src()` is
 /// rewritten into `SourceLocation(file: …, line: …, column: …, fnName: …)`
 /// during inference (`infer.zig`, `inferSrcBuiltin`), and the record itself is
@@ -3517,6 +3524,7 @@ pub fn compileTypesOnly(
     const tree = try arena_alloc.create(mod_tree.Tree);
     tree.* = try mod_tree.build(arena_alloc, all_modules);
     reflection.modTree = tree;
+    try recordSrcPaths(arena_alloc, &reflection, all_modules);
 
     for (all_modules, 0..) |mod, idx| {
         const name: []const u8 = if (mod.path.len > 0) mod.path else "main";
@@ -3833,6 +3841,7 @@ fn compileOnce(
     const tree = try arena_alloc.create(mod_tree.Tree);
     tree.* = try mod_tree.buildWith(arena_alloc, all_modules, if (lb) |l| try l.treeKnown(all_modules) else &.{});
     reflection.modTree = tree;
+    try recordSrcPaths(arena_alloc, reflection, all_modules);
     if (lb) |l| l.plan(all_modules);
 
     for (all_modules, 0..) |mod, idx| {

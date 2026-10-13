@@ -5563,14 +5563,14 @@ fn runDeclDecorators(
             erasedSupport[k] = try exprParam.eraseForRun(env.arena, if (own) try hosts.rewrite(try sameLoweredFn(env, program, sf)) else sf, isDecoratorParams(sf.params));
         }
         const runSupport = if (local) try std.mem.concat(env.arena, ast.FnDecl, &.{ erasedSupport, try hostCells.hostSupport(env, &env.fnDecls, try std.mem.concat(env.arena, ast.FnDecl, &.{ &.{runDfn}, erasedSupport })) }) else erasedSupport;
-        // Decision 451 (3) — the calls of this module's decorator and of the
-        // functions of this module it reaches are located.
+        // Decision 451 (3) — the calls of the decorator and of the functions
+        // of its module it reaches are located: in this module's own file, or
+        // in the decorator's, which the diagnostic then names
+        // (`srcPathOfModule`).
         var located: std.ArrayListUnmanaged([]const u8) = .empty;
-        if (local) {
-            try located.append(env.arena, dfn.name);
-            for (support[0..found.fns.len]) |sf| if (std.mem.eql(u8, env.comptimeOwnerOf(sf), env.modulePath)) try located.append(env.arena, sf.name);
-        }
-        const outcome = decoratorEval.evaluate(env.arena, ctx.io, ctx.build_root, owner, try exprParam.eraseForRun(env.arena, runDfn, true), runSupport, located.items, reached.types, try completeHandle(env, try withMethodMeta(env, handle, memberOwner)), plain, capture, &env.comptimeTraces) catch {
+        try located.append(env.arena, dfn.name);
+        for (support[0..found.fns.len]) |sf| if (std.mem.eql(u8, env.comptimeOwnerOf(sf), owner)) try located.append(env.arena, sf.name);
+        const outcome = decoratorEval.evaluate(env.arena, ctx.io, ctx.build_root, owner, srcPathOfModule(env, owner), try exprParam.eraseForRun(env.arena, runDfn, true), runSupport, located.items, reached.types, try completeHandle(env, try withMethodMeta(env, handle, memberOwner)), plain, capture, &env.comptimeTraces) catch {
             return decoratorError(env, a, "the decorator evaluator failed to run", "Decorator bodies run on the wasm comptime runtime inside the compiler (decision 434); this failure is the compiler's, not the body's — report it.");
         };
         switch (outcome) {
@@ -5701,6 +5701,11 @@ fn runDeclDecorators(
                 }
                 if (tag == .err) {
                     return decoratorError(env, a, failed, "the decorator could not be evaluated");
+                } else if (!local) {
+                    // The call that raised is in the decorator's own file: the
+                    // annotation is located, the message names the call there.
+                    const msg = try std.fmt.allocPrint(env.arena, "{s} — raised at {s}:{d}:{d} while `#[{s}]` ran the decorator's body", .{ failed.message, srcPathOfModule(env, owner), failed.at.line, failed.at.col, a.name });
+                    return decoratorError(env, a, msg, "the decorator's body raised; the call that raised is named in the message");
                 } else {
                     // Decision 451 (3) — located at the call that raised (a
                     // call of this module's decorator or of a function of this
@@ -6702,6 +6707,16 @@ fn defaultLexeme(arena: std.mem.Allocator, e: ast.Expr) InferError![]const u8 {
     var f = formatMod.Formatter.init(arena);
     const doc = f.fmtExpr(e) catch return error.OutOfMemory;
     return formatMod.render(arena, doc, std.math.maxInt(u16)) catch return error.OutOfMemory;
+}
+
+/// The display path of `module`'s file (`@src().file`, `src/deco.bp`): this
+/// module's own, or the one the session recorded when `module` was analysed
+/// (`Reflection.srcPaths`), else `<module>.bp`. A decorator or template body
+/// run from another module is located in that file, so its diagnostic names it.
+fn srcPathOfModule(env: *Env, module: []const u8) []const u8 {
+    if (std.mem.eql(u8, module, env.modulePath) and env.srcPath.len > 0) return env.srcPath;
+    if (env.reflection) |r| if (r.srcPaths.get(module)) |p| return p;
+    return std.fmt.allocPrint(env.arena, "{s}.bp", .{if (module.len > 0) module else "main"}) catch module;
 }
 
 fn decoratorError(env: *Env, a: ast.Annotation, message: []const u8, hint: []const u8) InferError {
@@ -9043,7 +9058,7 @@ fn expandTemplateCallViaRuntime(
     const support = try std.mem.concat(env.arena, ast.FnDecl, &.{ carried[1..], reached.fns, hosted });
     const types = try std.mem.concat(env.arena, ast.DeclKind, &.{ reached.types, answered.types });
     const valued = try withHoleValues(env, ctx.io, captures);
-    const outcome = templateEval.evaluate(env.arena, ctx.io, ctx.build_root, owner, carried[0], support, types, valued, plainArgs, &env.comptimeTraces) catch {
+    const outcome = templateEval.evaluate(env.arena, ctx.io, ctx.build_root, owner, srcPathOfModule(env, owner), carried[0], support, types, valued, plainArgs, &env.comptimeTraces) catch {
         env.lastError = TypeError.custom(
             "the template evaluator failed to run",
             "Template bodies run on the wasm comptime runtime inside the compiler (decision 434); this failure is the compiler's, not the body's — report it.",

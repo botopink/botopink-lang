@@ -651,7 +651,15 @@ recognize → reflect → invoke → apply; marker meaning lives in the lib body
   the decorator is the module's own: its body and the module's helpers it
   reaches are inferred first (`inferFnDecl`), since bodies are not yet checked
   when decorators run, so a type error there (`decl.nope`) is the checker's,
-  located in the body (`reject/decorator_{body,helper}_unknown_field`); `ok`
+  located in the body (`reject/decorator_{body,helper}_unknown_field`). A body that
+  raises is located at the call that raised (decision 451 (3), the decorator's calls
+  and those of its module's functions it reaches): in the module's own decorator at
+  that call; in another module's at the annotation, the message naming the call in
+  the body's file — `raised at src/deco.bp:3:5 while #[check] ran the decorator's
+  body`, the file from `Reflection.srcPaths` (every module's display path, recorded
+  before any is analysed; `infer.srcPathOfModule`) —, as a body method nothing
+  answers names `file:line:col` (`unsupportedText`'s `owner_file`)
+  (`modules/decorator_raise_names_body_file`, 144 B-23); `ok`
   carries the body's outputs in call order (`decorator_eval.Contribution`, one
   tagged map per call on the prelude's list): an `@emit` source goes to
   `env.contributions`, a `decl.addMember(source)` (decision 216 (1)) to
