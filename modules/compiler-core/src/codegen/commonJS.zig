@@ -3110,7 +3110,7 @@ const Emitter = struct {
             } else try self.buildParams(m.params);
             self.self_is_param = recv_first;
             const eff = methodEffect(m);
-            var shape = effectShape(eff);
+            var shape = try self.methodShape(e.name, m, eff);
             const failing = isFailingTask(eff, m.returnType);
             const level: usize = if (failing) 3 else 2;
             const prev_in_generator = self.in_generator;

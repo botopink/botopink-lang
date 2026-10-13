@@ -18663,8 +18663,23 @@ fn noteMethodCallTarget(env: *Env, c: ast.CallExprOf(.untyped), typed: TypedExpr
     const recv = typed.call.kind.call.receiver orelse return;
     const d = recv.getType().deref();
     if (d.* != .named) return;
-    if (!env.hasInherentMethod(d.named.name, c.kind.call.callee)) return;
-    try env.methodCallTargets.put(env.arena, c.loc, try std.fmt.allocPrint(env.arena, "{s}.{s}", .{ d.named.name, c.kind.call.callee }));
+    const callee = c.kind.call.callee;
+    if (env.hasInherentMethod(d.named.name, callee)) {
+        try env.methodCallTargets.put(env.arena, c.loc, try std.fmt.allocPrint(env.arena, "{s}.{s}", .{ d.named.name, callee }));
+        return;
+    }
+    // A behavior's `default fn` the type adopts: its body is the behavior's
+    // (`inferBehaviorDefaultBodies`, keyed `<Behavior>.<method>`).
+    const td = env.lookupTypeDef(d.named.name) orelse return;
+    const implements = switch (td) {
+        .record => |r| r.implements,
+        .struct_ => |st| st.implements,
+        .enum_ => |e| e.implements,
+    };
+    for (implements) |b| {
+        const key = try std.fmt.allocPrint(env.arena, "{s}.{s}", .{ b, callee });
+        if (env.methodHooks.contains(key)) return env.methodCallTargets.put(env.arena, c.loc, key);
+    }
 }
 
 /// The top-level function of this module `f` is (methods and lambdas are not).
@@ -18914,6 +18929,10 @@ fn callOnPureReceiver(c: ast.CallExprOf(.untyped), typed: TypedExpr) bool {
 /// Decision 380 — whether a std function is computed at build: a host one
 /// when it is `any`, a body as its module published it.
 fn stdFoldable(env: *Env, module: []const u8, name: []const u8) InferError!bool {
+    if (env.stdModuleFns.get(module)) |fns| for (fns) |f| if (std.mem.eql(u8, f.name, name)) {
+        if (isHookHost(f)) return hostStage(f) == .any and servedAtBuild(f);
+        break;
+    };
     const r = env.reflection orelse return true;
     const path = try std.fmt.allocPrint(env.arena, "std/{s}", .{module});
     const info = r.hookFns.get(try envMod.declIdentity(env.arena, path, name)) orelse return true;
@@ -18950,9 +18969,27 @@ fn callFoldableOrErr(env: *Env, c: ast.CallExprOf(.untyped)) InferError!bool {
     const call = c.kind.call;
     if (call.is_builtin or call.trailing.len > 0 or call.calleeExpr != null) return false;
     if (stdContextCallee(env, c) != null) return false;
-    if (try hostCallee(env, c)) |h| return try declaredStage(env, h) == .any;
+    if (try hostCallee(env, c)) |h| {
+        if (try declaredStage(env, h) != .any) return false;
+        if (std.mem.eql(u8, h.module, env.modulePath)) if (env.fnDecls.get(h.name)) |f| return servedAtBuild(f);
+        return true;
+    }
     if (try hookCalleeDecl(env, c)) |d| return foldableNow(env, d);
     if (stdCallee(env, c)) |sf| return try stdStage(env, sf.module, sf.name) == .any and try stdFoldable(env, sf.module, sf.name);
+    return false;
+}
+
+/// Decisions 434 (4), 452 — a host function the comptime runtime answers:
+/// one whose `@External.Wasm` binding is a `std:` cell or a `fn:` body (an
+/// `op:` instruction is the wasm target's alone).
+fn servedAtBuild(f: ast.FnDecl) bool {
+    for (f.annotations) |a| {
+        if (!ast.isExternalWasm(a)) continue;
+        for (a.args) |arg| {
+            const inner = if (arg.len >= 2 and arg[0] == '"' and arg[arg.len - 1] == '"') arg[1 .. arg.len - 1] else arg;
+            if (std.mem.startsWith(u8, inner, "std:") or std.mem.startsWith(u8, inner, "fn:")) return true;
+        }
+    }
     return false;
 }
 
@@ -18962,7 +18999,7 @@ fn foldableRef(env: *Env, ref: hooksMod.DeclRef) InferError!bool {
     if (std.mem.eql(u8, ref.module, "std/context")) return false;
     if (std.mem.eql(u8, ref.module, env.modulePath)) {
         const f = env.fnDecls.get(ref.name) orelse return false;
-        if (isHookHost(f)) return hostStage(f) == .any;
+        if (isHookHost(f)) return hostStage(f) == .any and servedAtBuild(f);
         if (!env.stagesDone.contains(ref.name)) return false;
         const n = env.hookNodes.get(ref.name) orelse return false;
         return n.foldable;
@@ -18980,7 +19017,7 @@ fn foldableRef(env: *Env, ref: hooksMod.DeclRef) InferError!bool {
 /// a function declared later is not computed at build (14s8-d's order).
 pub fn foldableNow(env: *Env, ref: hooksMod.DeclRef) InferError!bool {
     if (std.mem.eql(u8, ref.module, env.modulePath)) {
-        if (env.fnDecls.get(ref.name)) |f| if (isHookHost(f)) return hostStage(f) == .any;
+        if (env.fnDecls.get(ref.name)) |f| if (isHookHost(f)) return hostStage(f) == .any and servedAtBuild(f);
         var seen: std.StringHashMapUnmanaged(void) = .empty;
         if (!try factsComplete(env, ref.name, &seen)) return false;
         var visiting: std.StringHashMapUnmanaged(void) = .empty;
