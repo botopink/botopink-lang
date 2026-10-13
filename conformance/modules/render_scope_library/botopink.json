@@ -1,1 +1,1 @@
-{ "name": "render_scope_library" }
+{ "name": "render_scope_library", "targets": ["commonJS", "erlang", "beam"] }

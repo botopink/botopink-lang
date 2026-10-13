@@ -17302,7 +17302,7 @@ fn inferComponentRun(
     }
     try unifyAt(env, try env.namedType("RenderScope"), typedArgs[0].value.getType(), typedArgs[0].value.getLoc());
     const rendered = try env.namedTypeArgs("Rendered", &.{recvTy.named.args[0]});
-    try env.componentRuns.put(env.arena, loc, {});
+    try env.componentRuns.put(env.arena, loc, recvTy.named.args[0]);
     return TypedExpr{ .call = .{ .loc = loc, .type_ = try env.namedTypeArgs("Task", &.{rendered}), .kind = .{ .call = .{
         .receiver = recvPtr,
         .callee = callee,

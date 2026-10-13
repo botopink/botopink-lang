@@ -1,0 +1,28 @@
+//// Decision 504 — a component whose own body awaits is a state machine on
+//// every target: `Slow` waits on a task the host answers (`delay`), and the
+//// render goes on once it settles. `Fast` awaits nothing and stays direct;
+//// `Page` composes both.
+
+import {async.delay} from "std";
+
+type View(text: string) implement @Renderable
+
+fn Slow(n: i32) -> @Component<View> {
+    val v = await delay(5, n * 2);
+    return View(text: "slow " + v.toString());
+}
+
+fn Fast() -> @Component<View> {
+    return View(text: "fast");
+}
+
+fn Page() -> @Component<View> {
+    val a = await Slow(1);
+    val b = await Fast();
+    return View(text: a.text + " " + b.text);
+}
+
+pub fn main() -> @Task<void> {
+    val p = await Page();
+    @print(p.text);
+}

@@ -1806,10 +1806,20 @@ closure reads a local, so the host's call — now, later or twice — keeps ever
 provider above it; a declared component named as such an argument is wrapped
 the same way (`hostNow(Page)` passes `{ -> Page() }`), and a lambda's own
 parameters stay (decision 374). A lambda handed to a botopink function takes
-the map, passed by the call that runs it. erlang, beam and commonJS run it; the
-wasm backend refuses a `use provide` / `use context` where it is written, and
-a component reached from a `comptime` evaluation does not take the map yet
-(`language-gaps.md` row 354-wasm, 354-comptime).
+the map, passed by the call that runs it. erlang, beam, commonJS and wasm run
+it — on wasm a value crosses the scope as its own word, typed where it is read
+back by the checker's type the lowering carries (decision 504); a float or an
+`i64` provided or rendered there is refused where it crosses. A component
+reached from a `comptime` evaluation does not take the map yet
+(`language-gaps.md` row 354-comptime).
+
+**Only a component whose own body awaits is a state machine** (decision 504),
+on every target: it writes `await` or `uses` an asynchronous hook (375 (1)).
+Calling a component runs nothing, so one that composes others stays direct
+even when it receives a component as a value; the render runs a direct
+component in place and waits only on a marked one, so a synchronous component
+pays nothing and a component waiting on the host (`delay`) lets the render go
+on once its task settles (`modules/component_awaits_host_task`).
 
 ## Functions
 

@@ -1040,8 +1040,9 @@ pub const Env = struct {
     /// builds (`failing_task_block`), by the block's location.
     failingTaskBlocks: std.AutoHashMapUnmanaged(ast.Loc, void) = .empty,
     /// Decision 388 (2) — every `c.run(scope)` on a `@Component<R>` value, by
-    /// the call's location: lowered to the call of the lambda `c` is.
-    componentRuns: std.AutoHashMapUnmanaged(ast.Loc, void) = .empty,
+    /// the call's location, with that `R`: lowered to the call of the lambda
+    /// `c` is, its `Rendered<R>` carried for wasm (`context_lower.zig`).
+    componentRuns: std.AutoHashMapUnmanaged(ast.Loc, *T.Type) = .empty,
     /// Decision 388 — every call of a host function (a bodyless `declare fn`,
     /// an `#[@External…]` binding — this module's or an imported one), by
     /// location: a host answering `@Component<R>` answers the host's own

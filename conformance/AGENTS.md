@@ -321,8 +321,10 @@ answers lambdas a tree's runner runs with `Lista`'s scope; generic code keeps th
 `modules/component_alias_answers_value` (a function typed by an alias of `@Component` is no component body, 118:
 it answers the lambda another body made — `styled`'s `-> StyledView`) and
 `modules/render_scope_construction` (`RenderScope(…)` refused, `render-scope-construction`) cover the rest;
-erlang, beam and commonJS run them, and the wasm backend refuses every module the scope lowering reached
-at its first component (`.wasm.expect` on every component cell, `language-gaps.md` row 354-wasm). A
+all four targets run them (on wasm since decision 504: the scope's values typed by the checker's type the lowering
+carries; `decl_hooks_direct` and `render_scope_library` are narrowed to commonJS, erlang and beam, their hosts having
+no wasm binding), and `modules/component_awaits_host_task` pins 504's rule (a component awaiting a host `delay` is a
+state machine, a sibling that awaits nothing stays direct; red on the parent, whose wasm refused every component). A
 component called as a statement outside a body runs nothing now, so `modules/effect_chain`,
 `modules/effect_context_await`, `modules/use_one_base`, `modules/component_result_try_await` and
 `modules/component_hook_and_component` `await` it in `main`, and `modules/component_sync_plain_function` reads
@@ -334,7 +336,7 @@ readers of the other cells read `HookCall.callee` as the `?Declared<unknown>` it
 Decision 375 (`HookNode.async`) adds `modules/decl_hooks_async` (a synchronous `Card` and `Header`, an awaiting
 `Comments`, a page `async` through it with no written `await`, a cycle, a function value) and
 `modules/decl_hooks_async_imported` (an imported node's mark) on the four targets, and
-`modules/component_sync_plain_function` (commonJS only, `.targets` — the host `pending` has only a Node binding:
+`modules/component_sync_plain_function` (commonJS only, `"targets"` — the host `pending` has only a Node binding:
 a call of a synchronous `Card` answers no `Promise`, one of the asynchronous `Post` does); each red on the
 parent binary.
 Decision 357 (the rules of hooks) adds `modules/use_in_if`, `modules/use_in_loop`, `modules/use_in_lambda`

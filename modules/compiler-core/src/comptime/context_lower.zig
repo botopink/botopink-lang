@@ -72,6 +72,9 @@ const Frame = struct {
     /// Each `return v` answers `rendered(v, kids)`; false when the body runs
     /// as an inner closure (a bare `try` in it, `lowerComponentBody`).
     wraps_returns: bool = true,
+    /// The `R` of the `@Component<R>` the body answers, as written — what
+    /// each `rendered(v, kids)` carries (`carry`).
+    renders: ?ast.TypeRef = null,
 };
 
 const Lowering = struct {
@@ -126,6 +129,70 @@ const Lowering = struct {
         return e;
     }
 
+    /// `call` carrying the checker's type of the value that crosses the
+    /// call's `unknown` slot (`carry`).
+    fn callCarrying(self: *Lowering, callee: []const u8, args: []const *ast.Expr, carried: ?ast.TypeRef, loc: ast.Loc) !*ast.Expr {
+        const e = try self.call(callee, args, loc);
+        try self.carry(e, carried);
+        return e;
+    }
+
+    /// Decision 504 — the type a value has where it crosses one of std's
+    /// `unknown` slots (`push`'s and `rendered`'s value, `find`'s and
+    /// `valueOf`'s answer, the `Rendered<R>` a `c.run(scope)` answers),
+    /// written as the call's one type argument. The checker never reads
+    /// these calls (they are made after inference) and erlang, beam and
+    /// commonJS ignore a call's type arguments; wasm, which boxes and unboxes
+    /// only by a static type, moves the value's own word through the slot by
+    /// it. Nothing is written when the type is not resolved: wasm then
+    /// refuses the call.
+    fn carry(self: *Lowering, e: *ast.Expr, carried: ?ast.TypeRef) !void {
+        const t = carried orelse return;
+        const args = try self.arena.alloc(ast.TypeRef, 1);
+        args[0] = t;
+        e.call.kind.call.typeArgs = args;
+    }
+
+    /// The written form of a checker type, for `carry`; null for a type
+    /// variable, a union or a structural record — what nothing names.
+    fn typeRefOfType(self: *Lowering, ty: *T.Type) anyerror!?ast.TypeRef {
+        const d = ty.deref();
+        switch (d.*) {
+            .named => |n| {
+                if (n.args.len == 0) {
+                    if (std.mem.eql(u8, n.name, "array") or std.mem.eql(u8, n.name, "tuple") or std.mem.eql(u8, n.name, "optional")) return null;
+                    return .{ .named = n.name };
+                }
+                const args = try self.arena.alloc(ast.TypeRef, n.args.len);
+                for (n.args, 0..) |a, i| args[i] = (try self.typeRefOfType(a)) orelse return null;
+                if (std.mem.eql(u8, n.name, "array") and args.len == 1) {
+                    const inner = try self.arena.create(ast.TypeRef);
+                    inner.* = args[0];
+                    return .{ .array = inner };
+                }
+                if (std.mem.eql(u8, n.name, "optional") and args.len == 1) {
+                    const inner = try self.arena.create(ast.TypeRef);
+                    inner.* = args[0];
+                    return .{ .optional = inner };
+                }
+                if (std.mem.eql(u8, n.name, "tuple")) {
+                    if (n.labels.len > 0) return .{ .labeledTuple = .{ .elems = args, .labels = n.labels } };
+                    return .{ .tuple_ = args };
+                }
+                const builtin = self.env.lookupTypeDef(n.name) == null and isBuiltinWrapper(n.name);
+                return .{ .generic = .{ .name = n.name, .args = args, .is_builtin = builtin } };
+            },
+            .func => |f| {
+                const params = try self.arena.alloc(ast.TypeRef, f.params.len);
+                for (f.params, 0..) |p, i| params[i] = (try self.typeRefOfType(p)) orelse return null;
+                const ret = try self.arena.create(ast.TypeRef);
+                ret.* = (try self.typeRefOfType(f.ret)) orelse return null;
+                return .{ .function = .{ .params = params, .returnType = ret } };
+            },
+            else => return null,
+        }
+    }
+
     /// `(<callee>)(args)` — the call of a value.
     fn callValue(self: *Lowering, callee: *ast.Expr, args: []const *ast.Expr, loc: ast.Loc) !*ast.Expr {
         const e = try self.arena.create(ast.Expr);
@@ -148,15 +215,36 @@ const Lowering = struct {
         return self.ident(if (renders) f.kids else f.received, loc);
     }
 
-    /// `valueOf(await (c)(scope))` — run a component value, answer its result.
-    fn run(self: *Lowering, c: *ast.Expr, scope: *ast.Expr, awaited: bool, loc: ast.Loc) !ast.Expr {
+    /// `valueOf(await (c)(scope))` — run a component value, answer its
+    /// result, the `R` it renders carried (`carry`).
+    fn run(self: *Lowering, c: *ast.Expr, scope: *ast.Expr, awaited: bool, r: ?*T.Type, loc: ast.Loc) !ast.Expr {
         var ran = try self.callValue(c, &.{scope}, loc);
+        // The run itself answers `Rendered<R>`: wasm reads the lambda's
+        // mark there (decision 504, `codegen/wat/scope_carry.zig`).
+        if (r) |t| try self.carry(ran, try self.renderedOf(t));
         if (awaited) {
             const w = try self.arena.create(ast.Expr);
             w.* = .{ .jump = .{ .loc = loc, .kind = .{ .await_ = ran } } };
             ran = w;
         }
-        return (try self.call(value_fn, &.{ran}, loc)).*;
+        const carried = if (r) |t| try self.typeRefOfType(t) else null;
+        return (try self.callCarrying(value_fn, &.{ran}, carried, loc)).*;
+    }
+
+    /// `Rendered<R>`, written, for the `R` a run renders.
+    fn renderedOf(self: *Lowering, r: *T.Type) !?ast.TypeRef {
+        const rr = (try self.typeRefOfType(r)) orelse return null;
+        const args = try self.arena.alloc(ast.TypeRef, 1);
+        args[0] = rr;
+        return .{ .generic = .{ .name = "Rendered", .args = args, .is_builtin = false } };
+    }
+
+    /// The `R` the hook call `inner` renders, when the checker typed it
+    /// `@Component<R>`.
+    fn hookRenders(self: *Lowering, inner: *const ast.Expr) ?*T.Type {
+        if (inner.* != .call) return null;
+        const ty = self.env.componentCalls.get(inner.call.loc) orelse return null;
+        return componentOf(ty);
     }
 
     /// The `R` a component value of `ty` renders, when `ty` resolved to
@@ -199,7 +287,7 @@ const Lowering = struct {
         const f = self.current() orelse return error.ContextLowering;
         const name = try std.fmt.allocPrint(self.arena, kids_prefix ++ "{d}", .{self.kids_count});
         self.kids_count += 1;
-        const pushed = try self.call(push_fn, &.{ try self.ident(f.kids, loc), try self.string(use.key, loc), value }, loc);
+        const pushed = try self.callCarrying(push_fn, &.{ try self.ident(f.kids, loc), try self.string(use.key, loc), value }, try self.typeRefOfType(use.value_type), loc);
         stmt.expr = .{ .binding = .{ .loc = loc, .kind = .{ .localBind = .{ .name = name, .value = pushed, .mutable = false } } } };
         self.frames.items[self.frames.items.len - 1].?.kids = name;
     }
@@ -210,37 +298,42 @@ const Lowering = struct {
                 if (self.env.contextUses.get(uh.loc)) |use| {
                     if (use.kind == .provide) return error.ContextLowering; // a statement of its own
                     const scope = try self.scopeArg(false, uh.loc);
-                    e.* = (try self.call(find_fn, &.{ scope, try self.string(use.key, uh.loc), try self.string(use.name, uh.loc) }, uh.loc)).*;
+                    e.* = (try self.callCarrying(find_fn, &.{ scope, try self.string(use.key, uh.loc), try self.string(use.name, uh.loc) }, try self.typeRefOfType(use.value_type), uh.loc)).*;
                     return true;
                 }
                 const inner = uh.kind.inner;
                 if (inner.* == .call and inner.call.kind == .call and self.env.hostCalls.contains(inner.call.loc)) return false;
+                const renders = self.hookRenders(inner);
                 try self.walk(ast.Expr, inner);
-                e.* = try self.run(inner, try self.scopeArg(false, uh.loc), !self.syncAt(inner, uh.loc), uh.loc);
+                e.* = try self.run(inner, try self.scopeArg(false, uh.loc), !self.syncAt(inner, uh.loc), renders, uh.loc);
                 return true;
             },
             .jump => |*j| switch (j.kind) {
                 .await_ => |operand| if (self.awaitedComponent(j.loc, operand)) |r| {
                     try self.walk(ast.Expr, operand);
                     const scope = try self.scopeArg(isRenderable(self.env, r), j.loc);
-                    e.* = try self.run(operand, scope, !self.syncAt(operand, null), j.loc);
+                    e.* = try self.run(operand, scope, !self.syncAt(operand, null), r, j.loc);
                     return true;
                 },
                 .@"return" => |value| if (self.current()) |f| if (f.wraps_returns) {
                     if (value) |v| try self.walk(ast.Expr, v);
                     const kids = self.current().?.kids;
                     const v = value orelse try self.nullLit(j.loc);
-                    j.kind = .{ .@"return" = try self.call(rendered_fn, &.{ v, try self.ident(kids, j.loc) }, j.loc) };
+                    j.kind = .{ .@"return" = try self.callCarrying(rendered_fn, &.{ v, try self.ident(kids, j.loc) }, f.renders, j.loc) };
                     return true;
                 },
                 else => {},
             },
-            .call => |*c| if (c.kind == .call and self.env.componentRuns.contains(c.loc)) {
+            .call => |*c| if (c.kind == .call and self.env.componentRuns.get(c.loc) != null) {
                 const cc = c.kind.call;
                 const recv = cc.receiver orelse return false;
+                // The `R` the value renders: the run answers `Rendered<R>`.
+                const renders = self.env.componentRuns.get(c.loc).?;
                 try self.walk(ast.Expr, recv);
                 try self.walk(ast.Expr, cc.args[0].value);
-                e.* = (try self.callValue(recv, &.{cc.args[0].value}, c.loc)).*;
+                const ran = try self.callValue(recv, &.{cc.args[0].value}, c.loc);
+                try self.carry(ran, try self.renderedOf(renders));
+                e.* = ran.*;
                 return true;
             },
             .function => |*f| {
@@ -306,9 +399,9 @@ const Lowering = struct {
     /// body's result: `val bpScopeResult__ = ({ -> rest })(); return
     /// rendered(bpScopeResult__, kids);`. Nothing before the last provide can
     /// leave early (357: no `use` after an early exit).
-    fn lowerComponentBody(self: *Lowering, body: []ast.Stmt, loc: ast.Loc) ![]ast.Stmt {
+    fn lowerComponentBody(self: *Lowering, body: []ast.Stmt, renders: ?ast.TypeRef, loc: ast.Loc) ![]ast.Stmt {
         const inner_closure = hasBareTry(body);
-        try self.frames.append(self.arena, Frame{ .received = scope_param, .kids = scope_param, .wraps_returns = !inner_closure });
+        try self.frames.append(self.arena, Frame{ .received = scope_param, .kids = scope_param, .wraps_returns = !inner_closure, .renders = renders });
         defer _ = self.frames.pop();
         for (body) |*s| try self.walk(ast.Stmt, s);
         const kids = self.current().?.kids;
@@ -329,8 +422,8 @@ const Lowering = struct {
             }
             const out = try self.arena.alloc(ast.Stmt, split + 2);
             @memcpy(out[0..split], body[0..split]);
-            out[split] = .{ .expr = .{ .binding = .{ .loc = loc, .kind = .{ .localBind = .{ .name = result_local, .value = result, .mutable = false } } } } };
-            const ret = try self.call(rendered_fn, &.{ try self.ident(result_local, loc), try self.ident(kids, loc) }, loc);
+            out[split] = .{ .expr = .{ .binding = .{ .loc = loc, .kind = .{ .localBind = .{ .name = result_local, .value = result, .mutable = false, .typeAnnotation = renders } } } } };
+            const ret = try self.callCarrying(rendered_fn, &.{ try self.ident(result_local, loc), try self.ident(kids, loc) }, renders, loc);
             out[split + 1] = .{ .expr = .{ .jump = .{ .loc = loc, .kind = .{ .@"return" = ret } } } };
             break :blk out;
         } else if (body.len > 0 and body[body.len - 1].expr == .jump and body[body.len - 1].expr.jump.kind == .@"return")
@@ -338,7 +431,7 @@ const Lowering = struct {
         else blk: {
             const grown = try self.arena.alloc(ast.Stmt, body.len + 1);
             @memcpy(grown[0..body.len], body);
-            const ret = try self.call(rendered_fn, &.{ try self.nullLit(loc), try self.ident(kids, loc) }, loc);
+            const ret = try self.callCarrying(rendered_fn, &.{ try self.nullLit(loc), try self.ident(kids, loc) }, renders, loc);
             grown[body.len] = .{ .expr = .{ .jump = .{ .loc = loc, .kind = .{ .@"return" = ret } } } };
             break :blk grown;
         };
@@ -370,7 +463,7 @@ fn hasBareTry(body: []const ast.Stmt) bool {
 }
 
 /// Whether `body` holds an `await` outside every lambda.
-fn containsAwait(body: []const ast.Stmt) bool {
+pub fn containsAwait(body: []const ast.Stmt) bool {
     for (body) |*st| if (findJump(ast.Stmt, st, .await_)) return true;
     return false;
 }
@@ -416,7 +509,7 @@ fn mayHoldExpr(comptime N: type) bool {
 
 /// A deep copy of `v`: every node behind a pointer or a slice is copied, and
 /// text (`[]const u8`) is shared, being immutable.
-fn deepCopy(comptime N: type, arena: std.mem.Allocator, v: N) anyerror!N {
+pub fn deepCopy(comptime N: type, arena: std.mem.Allocator, v: N) anyerror!N {
     switch (@typeInfo(N)) {
         .@"struct" => |st| {
             var out: N = v;
@@ -459,6 +552,20 @@ fn isRenderable(env: *Env, r: *T.Type) bool {
     return td.isRenderable();
 }
 
+/// The `R` of a written `@Component<R>`.
+fn writtenRenders(rt: ?ast.TypeRef) ?ast.TypeRef {
+    const r = rt orelse return null;
+    if (!writesComponent(r) or r.generic.args.len < 1) return null;
+    return r.generic.args[0];
+}
+
+/// The builtin wrappers a checker type names without `@` (`Result`, `Task`,
+/// …): written back as builtin generics.
+fn isBuiltinWrapper(name: []const u8) bool {
+    for ([_][]const u8{ "Result", "Task", "Component", "Stream", "Future", "Option" }) |w| if (std.mem.eql(u8, name, w)) return true;
+    return false;
+}
+
 /// True when a written return is `@Component<…>` itself: the body is a
 /// component's, lowered to its lambda. An alias that stands for it (`->
 /// StyledView`) types the function but activates nothing (118): its body is
@@ -474,9 +581,10 @@ fn behaviorNamed(env: *Env, program: ast.Program, name: []const u8) ?ast.Behavio
     return env.importedBehaviorDecls.get(name);
 }
 
-/// True when an `implement` method answers `@Component<R>`: its behavior's
-/// declaration says so (an implement method writes no return).
-fn implementMethodIsComponent(env: *Env, program: ast.Program, im: ast.ImplementDecl, method: []const u8) bool {
+/// The written return of an `implement` method answering `@Component<R>`:
+/// its behavior's declaration says so (an implement method writes no
+/// return). Null for any other method.
+fn implementMethodComponent(env: *Env, program: ast.Program, im: ast.ImplementDecl, method: []const u8) ?ast.TypeRef {
     for (im.interfaces) |iface| {
         const name = switch (iface) {
             .named => |n| n,
@@ -484,9 +592,9 @@ fn implementMethodIsComponent(env: *Env, program: ast.Program, im: ast.Implement
             else => continue,
         };
         const b = behaviorNamed(env, program, name) orelse continue;
-        for (b.methods) |bm| if (std.mem.eql(u8, bm.name, method)) return writesComponent(bm.returnType);
+        for (b.methods) |bm| if (std.mem.eql(u8, bm.name, method)) return if (writesComponent(bm.returnType)) bm.returnType else null;
     }
-    return false;
+    return null;
 }
 
 /// True when the module holds anything the lowering reaches.
@@ -531,7 +639,7 @@ pub fn lower(arena: std.mem.Allocator, program: ast.Program, env_const: *const E
             for (f.params) |*p| if (p.default) |*dv| try low.walk(ast.Expr, dv);
             if (f.body.len == 0) continue;
             if (writesComponent(f.returnType)) {
-                f.body = try low.lowerComponentBody(f.body, f.nameLoc);
+                f.body = try low.lowerComponentBody(f.body, writtenRenders(f.returnType), f.nameLoc);
                 f.returnType = try low.lambdaType();
                 f.effect = null;
             } else try low.lowerPlainBody(f.body);
@@ -546,8 +654,8 @@ pub fn lower(arena: std.mem.Allocator, program: ast.Program, env_const: *const E
         .implement => |*im| {
             const methods = try arena.dupe(ast.ImplementMethod, im.methods);
             for (methods) |*m| {
-                if (implementMethodIsComponent(env, program, im.*, m.name)) {
-                    m.body = try low.lowerComponentBody(m.body, m.loc);
+                if (implementMethodComponent(env, program, im.*, m.name)) |rt| {
+                    m.body = try low.lowerComponentBody(m.body, writtenRenders(rt), m.loc);
                 } else try low.lowerPlainBody(m.body);
             }
             im.methods = methods;
@@ -581,9 +689,10 @@ pub fn lower(arena: std.mem.Allocator, program: ast.Program, env_const: *const E
 /// bodyless declaration too, so its implementations agree).
 fn lowerMethod(low: *Lowering, m: *ast.BehaviorMethod) !void {
     const component = writesComponent(m.returnType);
+    const renders = writtenRenders(m.returnType);
     if (component) m.returnType = try low.lambdaType();
     const body = m.body orelse return;
     if (component) {
-        m.body = try low.lowerComponentBody(body, m.returnTypeLoc);
+        m.body = try low.lowerComponentBody(body, renders, m.returnTypeLoc);
     } else try low.lowerPlainBody(body);
 }

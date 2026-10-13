@@ -1,1 +1,1 @@
-{ "name": "component_default_fn_sync", "targets": ["commonJS", "wasm"] }
+{ "name": "component_default_fn_sync", "targets": ["commonJS"] }

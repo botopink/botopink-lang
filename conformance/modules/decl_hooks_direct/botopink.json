@@ -1,1 +1,1 @@
-{ "name": "decl_hooks_direct" }
+{ "name": "decl_hooks_direct", "targets": ["commonJS", "erlang", "beam"] }

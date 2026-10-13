@@ -15,63 +15,16 @@
 /// statically. See `codegen/AGENTS.md` §wat.
 const std = @import("std");
 const context_lower = @import("../comptime/context_lower.zig");
+const scopeCarry = @import("wat/scope_carry.zig");
 
-/// Decision 388 — one of std's `context` functions the scope lowering calls.
-fn isScopeLoweringFn(name: []const u8) bool {
-    for (context_lower.lowered_fns) |f| if (std.mem.eql(u8, name, f)) return true;
+/// Decision 504 — one of std's `context` functions the scope lowering calls
+/// that answers a value of the scope (`find`, `valueOf`), or takes one
+/// (`push`, `rendered`): called only from `wat/scope_carry.zig`'s wrappers.
+fn isScopeReadFn(name: []const u8) bool {
+    for ([_][]const u8{ context_lower.find_fn, context_lower.value_fn, context_lower.push_fn, context_lower.rendered_fn }) |f| if (std.mem.eql(u8, name, f)) return true;
     return false;
 }
 
-/// Decision 388 — where a module with no component of its own first runs
-/// one (an `await` of an imported component, `RenderScope.root()`): the
-/// first call of the scope lowering's functions, in declaration order.
-fn firstScopeCall(program: ast.Program) ?ast.Loc {
-    for (program.decls) |d| switch (d) {
-        .@"fn" => |f| for (f.body) |*st| if (findScopeCall(ast.Stmt, st)) |l| return l,
-        .@"test" => |t| for (t.body) |*st| if (findScopeCall(ast.Stmt, st)) |l| return l,
-        else => {},
-    };
-    return null;
-}
-
-fn findScopeCall(comptime X: type, ptr: *const X) ?ast.Loc {
-    if (X == ast.Expr) {
-        if (ptr.* == .call and ptr.call.kind == .call and ptr.call.kind.call.receiver == null and isScopeLoweringFn(ptr.call.kind.call.callee)) return ptr.call.loc;
-    }
-    if (X == ast.Loc or X == ast.TypeRef or X == ast.ImportDecl) return null;
-    switch (@typeInfo(X)) {
-        .@"struct" => |st| inline for (st.fields) |f| {
-            if (f.is_comptime) continue;
-            if (comptime holdsExpr(f.type)) if (findScopeCall(f.type, &@field(ptr.*, f.name))) |l| return l;
-        },
-        .@"union" => |u| if (u.tag_type != null) {
-            switch (ptr.*) {
-                inline else => |*payload| if (comptime holdsExpr(@TypeOf(payload.*))) {
-                    if (findScopeCall(@TypeOf(payload.*), payload)) |l| return l;
-                },
-            }
-        },
-        .optional => |o| if (ptr.*) |*inner| return findScopeCall(o.child, inner),
-        .pointer => |p| switch (p.size) {
-            .one => if (comptime holdsExpr(p.child)) return findScopeCall(p.child, ptr.*),
-            .slice => if (comptime holdsExpr(p.child)) {
-                for (ptr.*) |*e| if (findScopeCall(p.child, e)) |l| return l;
-            },
-            else => {},
-        },
-        else => {},
-    }
-    return null;
-}
-
-fn holdsExpr(comptime X: type) bool {
-    return switch (@typeInfo(X)) {
-        .@"struct", .@"union" => X != ast.Loc and X != ast.TypeRef,
-        .optional => |o| holdsExpr(o.child),
-        .pointer => |p| p.child != u8 and @typeInfo(p.child) != .@"fn" and @typeInfo(p.child) != .@"opaque" and holdsExpr(p.child),
-        else => false,
-    };
-}
 const comptimeMod = @import("../comptime.zig");
 const moduleOutput = @import("./moduleOutput.zig");
 const configMod = @import("./config.zig");
@@ -648,10 +601,14 @@ fn displayTypeName(name: []const u8) []const u8 {
 
 /// Whether `f` has no body of its own: a `declare fn` (the parser promotes a
 /// bodyless `fn` with a return type to one), or a bodyless member answering
-/// a value. An empty body written `{}` with no return type is a function that
-/// does nothing (`pub fn main() {}`) — it is emitted, and `_start` calls it.
+/// a value. An empty body written `{}` with no return type, or `-> void`, is
+/// a function that does nothing (`pub fn main() {}`, `fn discard(r: Rule) ->
+/// void {}` named as a value) — it is emitted, and `_start` calls it.
 fn isBodyless(f: ast.FnDecl) bool {
-    return f.isDeclare or (f.body.len == 0 and f.returnType != null);
+    if (f.isDeclare) return true;
+    if (f.body.len > 0) return false;
+    const rt = f.returnType orelse return false;
+    return !(rt == .named and std.mem.eql(u8, rt.named, "void"));
 }
 
 /// Whether `anns` carries an `External.Wasm` cell.
@@ -1167,11 +1124,11 @@ const DataSeg = struct { offset: u32, len: u32, content: []const u8 };
 fn emitWat(
     alloc: std.mem.Allocator,
     module_name: []const u8,
-    own_program: ast.Program,
+    own_program_in: ast.Program,
     comptime_vals: std.StringHashMap([]const u8),
     rewrites: std.AutoHashMap(ast.Loc, []const u8),
     own_instance_lowerings: std.AutoHashMap(ast.Loc, envMod.InstanceLowering),
-    linked: []const Linked,
+    linked_in: []const Linked,
     cross: ?*const CrossModule,
     /// The build's `#[@External.Wasm]` lookup (decision 334's host).
     external_lookup: []const u8,
@@ -1195,6 +1152,12 @@ fn emitWat(
     em.module_name = module_name;
     em.external_lookup = external_lookup;
     em.instance_lowerings = own_instance_lowerings;
+
+    // Decision 504 — every module's render-scope values typed for this
+    // backend (`wat/scope_carry.zig`), before anything reads a declaration.
+    const own_program = try scopeCarry.carry(em.arena(), own_program_in);
+    const linked = try em.arena().dupe(Linked, linked_in);
+    for (linked) |*l| l.program = try scopeCarry.carry(em.arena(), l.program);
 
     // `val x = comptime { … break v; }` was folded by the comptime pass into
     // `comptime_vals["ct_<N>"]`, N counting this module's `val`s and `fn`s in
@@ -1378,7 +1341,6 @@ fn emitWat(
         }
     }
     try em.checkHostBindings(decls.items, owner.items, linked, own_program, module_name);
-    try em.refuseScopeLowering(own_program);
     const program: ast.Program = .{ .decls = decls.items };
     try em.registerTypes(program);
     try em.collectExtensions(program);
@@ -1883,6 +1845,10 @@ const Emitter = struct {
     record_field_typerefs: std.StringHashMap([]const ast.TypeRef),
     /// The declared return type of the fn being emitted.
     cur_ret_typeref: ?ast.TypeRef = null,
+    /// Decision 504 — the function being lowered is one of
+    /// `wat/scope_carry.zig`'s wrappers: its `return` passes the word std's
+    /// `context` answered as it is, typed by the wrapper's declared return.
+    raw_return: bool = false,
     /// The declared function type a lambda about to be lifted is written
     /// against — the enclosing fn's `-> fn(x: string) -> string` at a
     /// `return { x -> … }`, or a `val f: fn(…) -> … = { … }` annotation. Read
@@ -4177,6 +4143,7 @@ const Emitter = struct {
         self.opt_locals.clearRetainingCapacity();
         self.narrowed_opts.clearRetainingCapacity();
         self.cur_ret_typeref = null;
+        self.raw_return = false;
         self.bool_locals.clearRetainingCapacity();
         self.closure_locals.clearRetainingCapacity();
         self.env_slots.clearRetainingCapacity();
@@ -4508,33 +4475,6 @@ const Emitter = struct {
     /// binding outside the vocabulary is refused at its annotation, in a
     /// linked module at the consumer's import (`foreign_origin`). A
     /// `declare fn` with no wasm binding is left to `external_missing`.
-    /// Decision 388 — a `@Component` is a lambda over a `RenderScope`, and
-    /// the scope lowering (`context_lower.zig`) calls std's `context`
-    /// functions through `unknown` slots written after inference, which this
-    /// backend boxes and unboxes only by a static type it reads from
-    /// inference: a module the lowering reached is refused, located at its
-    /// first component or at its first call of the lowering, until the wasm
-    /// lowering of the render scope lands (`language-gaps.md` row 354-wasm).
-    fn refuseScopeLowering(self: *Emitter, own_program: ast.Program) !void {
-        var lowered = false;
-        for (own_program.decls) |d| if (d == .use) for (d.use.imports) |imp| if (imp.alias) |a| {
-            if (isScopeLoweringFn(a)) lowered = true;
-        };
-        if (!lowered) return;
-        var at: ?ast.Loc = null;
-        for (own_program.decls) |d| switch (d) {
-            .@"fn" => |f| if (f.body.len == 1 and f.body[0].expr == .jump and f.body[0].expr.jump.kind == .@"return") {
-                const r = f.body[0].expr.jump.kind.@"return" orelse continue;
-                if (r.* != .function or r.function.kind.params.len != 1) continue;
-                if (!std.mem.eql(u8, r.function.kind.params[0], context_lower.scope_param)) continue;
-                at = f.nameLoc;
-                break;
-            },
-            else => {},
-        };
-        return self.refuse(at orelse firstScopeCall(own_program), "the wasm backend does not lower a component yet: a `@Component` is a lambda over a `RenderScope` (decision 388), lowered on erlang, beam and commonJS", .{});
-    }
-
     fn checkHostBindings(
         self: *Emitter,
         decls: []const ast.DeclKind,
@@ -4798,6 +4738,7 @@ const Emitter = struct {
             try self.local_typerefs.put(sym, p.typeRef);
         }
         self.cur_ret_typeref = f.returnType;
+        self.raw_return = scopeCarry.isWrapper(f.name);
         try self.declareScratch("_try", countTrys(f.body));
         try self.declareScratch("__mem", self.countMems(f.body));
         try self.emitLocalDecls(f.body);
@@ -6071,7 +6012,9 @@ const Emitter = struct {
                         };
                         defer self.expected_union_array = false;
                         defer self.expected_fn = null;
-                        if (self.fn_has_result and self.boxesInto(self.cur_ret_typeref, val.*))
+                        if (self.fn_has_result and self.raw_return)
+                            try self.lowerCoerced(val.*, "i32")
+                        else if (self.fn_has_result and self.boxesInto(self.cur_ret_typeref, val.*))
                             try self.lowerBoxedInto(self.cur_ret_typeref, val.*)
                         else if (self.fn_has_result)
                             try self.lowerCoerced(val.*, self.cur_result)
@@ -6685,16 +6628,14 @@ const Emitter = struct {
                 defer self.call_loc = outer_call;
                 switch (c.kind) {
                     .call => |cc| {
-                        // Decision 388 — a `@Component` is a lambda over a
-                        // `RenderScope`, and std's `context` functions the
-                        // lowering calls (`context_lower.zig`) carry values
-                        // through `unknown` slots written after inference,
-                        // which this backend boxes and unboxes only by a static
-                        // type it reads from inference: refused, located, until
-                        // the wasm lowering of the render scope lands
-                        // (`language-gaps.md` row 354-wasm).
-                        if (cc.receiver == null and isScopeLoweringFn(cc.callee))
-                            return self.refuse(c.loc, "the wasm backend does not lower a component yet: a `@Component` is a lambda over a `RenderScope` (decision 388), lowered on erlang, beam and commonJS", .{});
+                        // Decision 504 — a value read back from the render
+                        // scope is typed by the call that carries it
+                        // (`wat/scope_carry.zig`); one left as the lowering
+                        // wrote it carried no type this backend can hold —
+                        // unresolved, or a float / `i64` no slot here holds
+                        // as a word. Only a carry wrapper calls std's own.
+                        if (cc.receiver == null and !self.raw_return and isScopeReadFn(cc.callee))
+                            return self.refuse(c.loc, "the wasm backend cannot read this value back from a component's render scope: its type is not known here, or it is not one word (a float, an `i64`)", .{});
                         // Static extension dispatch (F6) — resolve to the mangled
                         // linear-memory function `$<target>_<method>` before the
                         // ordinary call-kind handling.
@@ -9307,6 +9248,8 @@ const Emitter = struct {
                     (if (self.generic_methods.contains(generic)) (self.specializeMethod(generic, cc) catch null) else null) orelse generic;
             }
         }
+        // A local named like a function is the function value it holds.
+        if (cc.receiver == null and self.locals.contains(cc.callee)) return null;
         if (self.specializedCallee(cc) catch null) |sym| return sym;
         if (self.fn_sigs.contains(cc.callee)) return cc.callee;
         return null;
@@ -9331,6 +9274,11 @@ const Emitter = struct {
     /// bodyless `declare fn` with no `#[@External.<Target>(…)]` at all. Both
     /// used to lower to `unreachable` "so the module still loads".
     fn lowerPlainCall(self: *Emitter, cc: anytype, loc: ast.Loc) anyerror!void {
+        // A local shadows a function of its name: `val #(n, push) = …;
+        // push(n)` beside std's linked `push` called the function.
+        if (cc.receiver == null and cc.calleeExpr == null and self.locals.contains(cc.callee))
+            if (try self.lowerValueCall(cc)) return;
+        if (cc.receiver == null and scopeCarry.isRun(cc.callee)) return self.lowerRun(cc, false);
         if (cc.receiver == null) _ = try self.adoptPreludeHostFn(cc.callee);
         if (try self.specializedCallee(cc)) |sym| {
             var spec = cc;
@@ -9395,7 +9343,14 @@ const Emitter = struct {
                     self.expected_fn = pt;
                 };
                 defer self.expected_fn = null;
-                if (self.boxesInto(ptref, arg.value.*))
+                // Decision 504 — a value crosses the render scope as its own
+                // word (`wat/scope_carry.zig`): one that is no word has no
+                // slot there.
+                if (scopeCarry.isWrapper(cc.callee)) {
+                    if (!std.mem.eql(u8, self.wasmTypeOf(arg.value.*), "i32"))
+                        return self.refuse(arg.value.getLoc(), "the wasm backend cannot carry this value through a component's render scope: a float or an `i64` is not one word", .{});
+                    try self.lowerCoerced(arg.value.*, "i32");
+                } else if (self.boxesInto(ptref, arg.value.*))
                     try self.lowerBoxedInto(ptref, arg.value.*)
                 else
                     try self.lowerCoerced(arg.value.*, sig.params[base + i]);
@@ -11776,6 +11731,11 @@ const Emitter = struct {
         str: bool,
         record: ?[]const u8,
         arr_elem: ?ElemKind,
+        /// The written type the name had where the lambda was made (a
+        /// parameter's, an annotation's): inside the lambda a field of an
+        /// element of a captured `Rule[]` is typed as outside it.
+        typeref: ?ast.TypeRef = null,
+        bool_: bool = false,
         /// The lambda body assigns it: the environment slot is the variable
         /// while the lambda runs, and a call through a known closure local
         /// copies it in before the call and back out after.
@@ -12031,6 +11991,7 @@ const Emitter = struct {
     /// runs until the task settles (`$__task_block_on`). On anything that
     /// is not a task `await` is the identity it has always been here.
     fn lowerAwait(self: *Emitter, operand: ast.Expr) anyerror!void {
+        if (runCallOf(operand)) |rc| return self.lowerRun(rc.call.kind.call, true);
         if (!self.isTaskExpr(operand)) return self.lowerExpr(operand);
         const vty = self.awaitedType(operand);
         const load: Instr = .{ .load = .{ .ty = vt(vty), .offset = 8 } };
@@ -12045,6 +12006,80 @@ const Emitter = struct {
         self.open(&op_c);
         try self.lowerCoerced(operand, "i32");
         const op_seq = self.seal(&op_c, .{ .value = .i32 });
+        return self.emitSuspension(lo, op_seq, null, load);
+    }
+
+    /// `e` when it is a run's call (`scope_carry.isRun`).
+    fn runCallOf(e: ast.Expr) ?ast.Expr {
+        return switch (e) {
+            .call => |c| switch (c.kind) {
+                .call => |cc| if (cc.receiver == null and scopeCarry.isRun(cc.callee)) e else null,
+                else => null,
+            },
+            .collection => |col| switch (col.kind) {
+                .grouped => |inner| runCallOf(inner.*),
+                else => null,
+            },
+            else => null,
+        };
+    }
+
+    /// Decision 504 — a run of a component value `c` with a scope
+    /// (`bpScopeRaw__run<n>(c, scope)`, `scope_carry.zig`): the lambda is
+    /// called, and its mark (the word behind its closure cell) says what the
+    /// call answered — a direct lambda its `Rendered`, a state machine its
+    /// task. A task is awaited where the run is (`awaited`, in a state
+    /// machine: suspending while it waits), else run until it settles
+    /// (`$__task_block_on`); the word of a direct run is its value, so a
+    /// synchronous component pays nothing and a task's address and a
+    /// `Rendered` are never told apart by their word.
+    fn lowerRun(self: *Emitter, cc: anytype, awaited: bool) anyerror!void {
+        if (cc.args.len != 2) return self.refuse(self.call_loc, "a component run takes the component and the scope", .{});
+        const ra = self.reg_arena.allocator();
+        const k = self.loop_seq;
+        self.loop_seq += 1;
+        const cv = try std.fmt.allocPrint(ra, "__runc{d}", .{k});
+        const mk = try std.fmt.allocPrint(ra, "__runm{d}", .{k});
+        try self.declareLocal(cv, "i32");
+        try self.declareLocal(mk, "i32");
+        const load: Instr = .{ .load = .{ .offset = 8 } };
+        const lo: u32 = if (self.machine) |m| m.next else 0;
+        var op_c: Capture = .{};
+        self.open(&op_c);
+        try self.lowerCoerced(cc.args[0].value.*, "i32");
+        try self.emit(.{ .local_tee = cv });
+        try self.emit(try self.constInt(4));
+        try self.emit(opOf("i32", "sub"));
+        try self.emitC(.{ .load = .{} }, "the lambda's mark: a state machine?");
+        try self.emit(.{ .local_set = mk });
+        try self.emit(.{ .local_get = cv });
+        try self.lowerCoerced(cc.args[1].value.*, "i32");
+        try self.emitIndirect(cv, 1);
+        const op_seq = self.seal(&op_c, .{ .value = .i32 });
+        if (awaited and self.machine != null) return self.emitSuspension(lo, op_seq, mk, load);
+        for (op_seq.lines) |l| try self.cur.?.append(self.arena(), l);
+        const w = try std.fmt.allocPrint(ra, "__runw{d}", .{k});
+        try self.declareLocal(w, "i32");
+        try self.emit(.{ .local_set = w });
+        try self.emit(.{ .local_get = mk });
+        var then_c: Capture = .{};
+        self.open(&then_c);
+        try self.emit(.{ .local_get = w });
+        try self.emit(self.builder().helper(.task_block_on));
+        try self.emitC(load, "the settled value");
+        const then_seq = self.seal(&then_c, .{ .value = .i32 });
+        var else_c: Capture = .{};
+        self.open(&else_c);
+        try self.emit(.{ .local_get = w });
+        const else_seq = self.seal(&else_c, .{ .value = .i32 });
+        try self.emit(.{ .@"if" = .{ .result = .i32, .then = .{ .seq = then_seq }, .@"else" = .{ .seq = else_seq } } });
+    }
+
+    /// The suspension point of an `await` in a state machine over the task
+    /// `op_seq` leaves (`lowerAwait`'s comment). With `mark` (a run, decision
+    /// 504), the word is a task only when the local `mark` is set: otherwise
+    /// it is the value, and nothing suspends.
+    fn emitSuspension(self: *Emitter, lo: u32, op_seq: wat.Seq, mark: ?[]const u8, load: Instr) anyerror!void {
         const k = self.machine.?.next;
         self.machine.?.next += 1;
         const ra = self.reg_arena.allocator();
@@ -12088,8 +12123,22 @@ const Emitter = struct {
         }
         for (op_seq.lines) |l| try self.cur.?.append(self.arena(), l);
         try self.emit(.{ .local_set = aw });
-        try self.emit(.{ .local_get = aw });
-        try self.emit(self.builder().helper(.task_pending));
+        if (mark) |m| {
+            try self.emit(.{ .local_get = m });
+            var p_c: Capture = .{};
+            self.open(&p_c);
+            try self.emit(.{ .local_get = aw });
+            try self.emit(self.builder().helper(.task_pending));
+            const p_seq = self.seal(&p_c, .{ .value = .i32 });
+            var n_c: Capture = .{};
+            self.open(&n_c);
+            try self.emit(zero);
+            const n_seq = self.seal(&n_c, .{ .value = .i32 });
+            try self.emit(.{ .@"if" = .{ .result = .i32, .then = .{ .seq = p_seq }, .@"else" = .{ .seq = n_seq } } });
+        } else {
+            try self.emit(.{ .local_get = aw });
+            try self.emit(self.builder().helper(.task_pending));
+        }
         {
             var sus_c: Capture = .{};
             self.open(&sus_c);
@@ -12109,6 +12158,20 @@ const Emitter = struct {
         }
         const inner = self.seal(&c, .none);
         try self.emit(.{ .block = .{ .kind = .block, .label = label, .body = inner } });
+        if (mark) |m| {
+            try self.emit(.{ .local_get = m });
+            var t_c: Capture = .{};
+            self.open(&t_c);
+            try self.emit(.{ .local_get = aw });
+            try self.emitC(load, "the settled value");
+            const t_seq = self.seal(&t_c, .{ .value = .i32 });
+            var v_c: Capture = .{};
+            self.open(&v_c);
+            try self.emit(.{ .local_get = aw });
+            const v_seq = self.seal(&v_c, .{ .value = .i32 });
+            try self.emit(.{ .@"if" = .{ .result = .i32, .then = .{ .seq = t_seq }, .@"else" = .{ .seq = v_seq } } });
+            return;
+        }
         try self.emit(.{ .local_get = aw });
         try self.emitC(load, "the settled value");
     }
@@ -12524,6 +12587,8 @@ const Emitter = struct {
                 .str = self.str_locals.contains(n),
                 .record = self.local_types.get(n),
                 .arr_elem = self.arr_elem_locals.get(n),
+                .typeref = self.local_typerefs.get(n),
+                .bool_ = self.bool_locals.contains(n),
                 .threaded = bodyAssigns(body, n),
             });
         }
@@ -12578,7 +12643,16 @@ const Emitter = struct {
             .template_of = self.cur_template,
             .origin = self.foreign_origin,
         });
-        try self.emitClosureCell(idx, caps.items);
+        // Decision 504 — a component's lambda (the scope lowering's `{
+        // bpScope__ -> … }`) is a state machine only when its body awaits;
+        // its closure cell carries that mark one word behind it, which a
+        // run reads (`lowerRun`).
+        const mark: ?bool = if (params.len == 1 and std.mem.eql(u8, params[0], context_lower.scope_param))
+            context_lower.containsAwait(body)
+        else
+            null;
+        if (mark) |m| self.lambdas.items[idx].async_block = m;
+        try self.emitClosureCell(idx, caps.items, mark);
     }
 
     fn fieldClosureOf(self: *Emitter, recv: ast.Expr, field: []const u8) ?u32 {
@@ -12595,9 +12669,13 @@ const Emitter = struct {
     }
 
     /// Allocate the environment cell of table slot `idx` and leave its pointer.
-    fn emitClosureCell(self: *Emitter, idx: u32, caps: []const Captured) anyerror!void {
-        const base = try self.allocSlots(@intCast((1 + caps.len) * 4));
-        try self.storeSlotConst(base, 0, idx);
+    /// A component's lambda (`mark` set, decision 504) has one word more,
+    /// behind the pointer: `1` when the lambda is a state machine.
+    fn emitClosureCell(self: *Emitter, idx: u32, caps: []const Captured, mark: ?bool) anyerror!void {
+        const head: u32 = if (mark != null) 4 else 0;
+        const base = try self.allocSlots(@intCast(head + (1 + caps.len) * 4));
+        if (mark) |m| try self.storeSlotConst(base, 0, @intFromBool(m));
+        try self.storeSlotConst(base, head, idx);
         for (caps, 0..) |cp, i| {
             // A float or `i64` capture is a cell of its own (`lowerCellWord`),
             // which the lambda and the syncs write in place.
@@ -12606,9 +12684,13 @@ const Emitter = struct {
             try self.emit(.{ .local_get = cp.name });
             try self.emitConvert(cp.ty, cell.ty());
             if (cell != .none) try self.emit(self.builder().helper(if (cell == .f64) .box_f64 else .box_i64));
-            try self.emitCf(.{ .store = .{ .offset = @intCast((i + 1) * 4) } }, "capture {s}", .{cp.name});
+            try self.emitCf(.{ .store = .{ .offset = @intCast(head + (i + 1) * 4) } }, "capture {s}", .{cp.name});
         }
         try self.loadBase(base);
+        if (head > 0) {
+            try self.emit(try self.constInt(head));
+            try self.emitC(opOf("i32", "add"), "a component's lambda: past its mark");
+        }
     }
 
     /// A top-level fn used as a value: a closure over a trampoline that
@@ -12628,7 +12710,7 @@ const Emitter = struct {
             try self.fn_refs.put(name, i);
             break :blk i;
         };
-        try self.emitClosureCell(idx, &.{});
+        try self.emitClosureCell(idx, &.{}, null);
     }
 
     /// `f(a, b)` where `f` is a local or global holding a function value,
@@ -13018,6 +13100,8 @@ const Emitter = struct {
                 try self.declareLocal(cp.name, cp.ty);
                 if (cp.threaded) try self.env_slots.put(cp.name, @intCast((i + 1) * 4));
                 if (cp.str) try self.str_locals.put(cp.name, {});
+                if (cp.bool_) try self.bool_locals.put(cp.name, {});
+                if (cp.typeref) |t| try self.local_typerefs.put(cp.name, t);
                 if (cp.record) |r| try self.local_types.put(cp.name, r);
                 if (cp.arr_elem) |ek| {
                     try self.arr_locals.put(cp.name, {});
@@ -13310,7 +13394,9 @@ const Emitter = struct {
             .call => |c| switch (c.kind) {
                 .call => |cc| {
                     if (cc.receiver) |r| try self.collectIdents(r.*, out);
-                    if (!cc.is_builtin and cc.receiver == null) try out.append(ra, cc.callee);
+                    // `f(x)(y)`: the called expression's names are read too
+                    // (a component run, `(state(start))(scope)`).
+                    if (cc.calleeExpr) |ce| try self.collectIdents(ce.*, out) else if (!cc.is_builtin and cc.receiver == null) try out.append(ra, cc.callee);
                     for (cc.args) |a| try self.collectIdents(a.value.*, out);
                     for (cc.trailing) |t| for (t.body) |st| try self.collectIdents(st.expr, out);
                 },
