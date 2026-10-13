@@ -11076,6 +11076,11 @@ const Emitter = struct {
             .identifier => |id| switch (id.kind) {
                 .ident => |name| {
                     const labels = self.fnLabelsFor(name, 1) catch {
+                        // The test unit (or a type's unit) reaches the file's
+                        // function as a `call_ext`, as a written `double(x)`
+                        // does; left unresolved, the stage was skipped and
+                        // `3 |> double` answered `3` (`test/expr_sugar.bp`).
+                        if (try self.tryFileCall(name, 1, .non_tail, 0)) return;
                         try beamEmitter.writeComment(self.out, "unresolved pipeline fn: {s}/1", .{name});
                         return;
                     };
@@ -11091,6 +11096,7 @@ const Emitter = struct {
                     try self.placeStaged(&st);
                     const total = cc.args.len + 1;
                     const labels = self.fnLabelsFor(cc.callee, total) catch {
+                        if (try self.tryFileCall(cc.callee, total, .non_tail, 0)) return;
                         try beamEmitter.writeComment(self.out, "unresolved pipeline fn: {s}/{d}", .{ cc.callee, total });
                         return;
                     };

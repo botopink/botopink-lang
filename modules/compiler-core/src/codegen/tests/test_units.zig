@@ -88,3 +88,48 @@ test "every target: a module's production bytes are equal under build and test; 
         try std.testing.expect(saw_main);
     }
 }
+
+// A pipe stage naming the file's function (`3 |> double`) in a test body is a
+// reach from the test unit into the production module, as a written
+// `double(3)` is: a remote call to its reserved export. erlang called it bare
+// (`function double/1 undefined`) and beam skipped the stage, so the
+// assertion saw `3` (`conformance/test/expr_sugar.bp`).
+test "erlang, beam: a pipe stage in a test body reaches the file's function through the production module" {
+    const alloc = std.testing.allocator;
+    const src =
+        \\fn double(x: i32) -> i32 {
+        \\    return x * 2;
+        \\}
+        \\
+        \\fn add(x: i32, y: i32) -> i32 {
+        \\    return x + y;
+        \\}
+        \\
+        \\test "piped" {
+        \\    assert (3 |> add(4) |> double) == 14;
+        \\}
+    ;
+    for (h.configs[1..3]) |base| {
+        var cfg = base;
+        cfg.test_mode = true;
+        cfg.build_root = test_scratch.path(std.testing.io, "codegen/test_units_pipe");
+        const modules = [_]codegen.Module{.{ .path = "main", .source = src }};
+        var out = try codegen.generateWith(alloc, &modules, std.testing.io, cfg, .{ .execute = false });
+        defer {
+            for (out.items) |*o| o.result.deinit(alloc);
+            out.deinit(alloc);
+        }
+        for (out.items) |o| {
+            if (!std.mem.eql(u8, o.name, "main")) continue;
+            if (o.result.failed()) return error.ModuleDidNotCompile;
+            const unit = o.result.test_unit orelse return error.NoTestUnit;
+            for ([_][]const u8{ "__bp_priv__double", "__bp_priv__add" }) |needle| {
+                if (std.mem.indexOf(u8, unit.code, needle) == null) {
+                    std.debug.print("\n=== {s} test unit ===\n{s}\n=== missing: {s} ===\n", .{ @tagName(cfg.targetSource), unit.code, needle });
+                    return error.NeedleNotFound;
+                }
+            }
+            if (std.mem.indexOf(u8, unit.code, "unresolved pipeline fn") != null) return error.UnresolvedStage;
+        }
+    }
+}

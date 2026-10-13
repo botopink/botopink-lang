@@ -8385,7 +8385,14 @@ const Emitter = struct {
         for (items.items[1..]) |stage_expr| {
             if (identName(stage_expr)) |name| {
                 if (!this.locals.contains(name)) {
-                    node = try b.call(name, &.{node});
+                    // In a test unit or a type's unit the file's function is
+                    // the production module's: a remote call (`fileCall`),
+                    // as a written `double(x)` is. Called bare there it was
+                    // `function double/1 undefined` (`test/expr_sugar.bp`).
+                    node = if (this.inForeignUnit() and this.isFileFn(name, 1))
+                        try this.fileCall(b, name, &.{node})
+                    else
+                        try b.call(name, &.{node});
                     continue;
                 }
             }
