@@ -47,6 +47,7 @@ const std = @import("std");
 const ast = @import("../ast.zig");
 const envMod = @import("env.zig");
 const T = @import("types.zig");
+const infer = @import("infer.zig");
 
 const Env = envMod.Env;
 
@@ -159,41 +160,7 @@ const Lowering = struct {
     /// The written form of a checker type, for `carry`; null for a type
     /// variable, a union or a structural record — what nothing names.
     fn typeRefOfType(self: *Lowering, ty: *T.Type) anyerror!?ast.TypeRef {
-        const d = ty.deref();
-        switch (d.*) {
-            .named => |n| {
-                if (n.args.len == 0) {
-                    if (std.mem.eql(u8, n.name, "array") or std.mem.eql(u8, n.name, "tuple") or std.mem.eql(u8, n.name, "optional")) return null;
-                    return .{ .named = n.name };
-                }
-                const args = try self.arena.alloc(ast.TypeRef, n.args.len);
-                for (n.args, 0..) |a, i| args[i] = (try self.typeRefOfType(a)) orelse return null;
-                if (std.mem.eql(u8, n.name, "array") and args.len == 1) {
-                    const inner = try self.arena.create(ast.TypeRef);
-                    inner.* = args[0];
-                    return .{ .array = inner };
-                }
-                if (std.mem.eql(u8, n.name, "optional") and args.len == 1) {
-                    const inner = try self.arena.create(ast.TypeRef);
-                    inner.* = args[0];
-                    return .{ .optional = inner };
-                }
-                if (std.mem.eql(u8, n.name, "tuple")) {
-                    if (n.labels.len > 0) return .{ .labeledTuple = .{ .elems = args, .labels = n.labels } };
-                    return .{ .tuple_ = args };
-                }
-                const builtin = self.env.lookupTypeDef(n.name) == null and isBuiltinWrapper(n.name);
-                return .{ .generic = .{ .name = n.name, .args = args, .is_builtin = builtin } };
-            },
-            .func => |f| {
-                const params = try self.arena.alloc(ast.TypeRef, f.params.len);
-                for (f.params, 0..) |p, i| params[i] = (try self.typeRefOfType(p)) orelse return null;
-                const ret = try self.arena.create(ast.TypeRef);
-                ret.* = (try self.typeRefOfType(f.ret)) orelse return null;
-                return .{ .function = .{ .params = params, .returnType = ret } };
-            },
-            else => return null,
-        }
+        return infer.typeRefOfType(self.arena, self.env, ty);
     }
 
     /// `(<callee>)(args)` — the call of a value.
@@ -605,13 +572,6 @@ fn writtenRenders(rt: ?ast.TypeRef) ?ast.TypeRef {
     const r = rt orelse return null;
     if (!writesComponent(r) or r.generic.args.len < 1) return null;
     return r.generic.args[0];
-}
-
-/// The builtin wrappers a checker type names without `@` (`Result`, `Task`,
-/// …): written back as builtin generics.
-fn isBuiltinWrapper(name: []const u8) bool {
-    for ([_][]const u8{ "Result", "Task", "Component", "Stream", "Future", "Option" }) |w| if (std.mem.eql(u8, name, w)) return true;
-    return false;
 }
 
 /// True when a written return is `@Component<…>` itself: the body is a

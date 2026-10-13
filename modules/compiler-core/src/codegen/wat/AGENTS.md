@@ -1551,19 +1551,6 @@ its element types (`conformance/modules/case_generic_variant_tuple_payload`; it
 was refused as "does not know the element types of this tuple pattern's
 subject").
 
-**A `val` bound to a `case` whose arms disagree holds a union** (decision 150,
-`probeCaseUnion`, then `lowerAsUnknown`): the checker's type is not
-handed to this backend, so the binding of an unannotated `val v = case s { A(r)
--> r * 2; B(t) -> t; }` first binds each arm's pattern into a capture it throws
-away and reads the member of each arm's value (`litMemberName`). Arms that are
-different non-numeric members make a union: the local is typed so
-(`local_typerefs`), and `lowerCase` boxes every arm's value with `lowerAsUnknown`
-(its result a word whatever the function answers), so `case v { i32 { n -> … }
-string { t -> … } }` tests the box. Before, the arms stored bare words and the
-string arm was read as a number (`number 316`;
-`conformance/modules/case_value_union_binding`). Arms that are blocks, a subject
-that is an `unknown` and a `case` in a state machine are not probed.
-
 The fixtures are `tests/wat.zig`'s `a tuple pattern tests its literals and
 binds its elements`, `` `..` skips the rest and a bool literal in a tuple
 pattern is tested ``, `a type pattern is chosen by the value` and `a list
@@ -1586,7 +1573,7 @@ What is typed, and where:
 | a generic enum constructor written where its value is an `unknown` (`val s: unknown = Maybe.Some(value: "abc")`, an `unknown` argument, a return) | `ctor_box = .all`: `lowerEnumCtor` boxes every payload declared as one of the enum's type parameters (`lowerAsUnknown`, by the argument's static type) — `boxesInto` / `isGenericEnumCtor` |
 | the same constructor where a `Name<…>` with an `unknown` / union argument is expected (`innerSize(Maybe.Some(value: "abc"))` over `Maybe<i32 \| string>`) | `ctor_box = .args`: only the parameters whose argument is an `unknown` / union are boxed (`ctorUnionArgs`, `ctorBoxes`) |
 | `bindPayloadName` | a payload declared as a type parameter is typed by `tparamArgOf`: the matching argument of the subject's recorded `Name<…>` type (`lowerCase` records the subject's `typeRefOf` for its `__case_<n>` local), else the `unknown` of an `unknown` subject; a binder of an `unknown` / union is an `unknown` (`local_typerefs`), of a plain type an ordinary typed binder |
-| `case` / `if` in an `unknown` slot (`return case m { … }` in a fn answering `i32 \| string`; `val v = if (c) 2 else "two"`) | the value of each arm goes in on its own: `pending_case_box` → `case_box` read by `lowerArmBody`, and `lowerBoxedIf` with `force` for an `if`; a `val` of an `if` whose arms are values of different kinds (`ifArmsDiffer`) is an `unknown` local |
+| `case` / `if` in an `unknown` slot (`return case m { … }` in a fn answering `i32 \| string`; `val v = if (c) 2 else "two"`) | the value of each arm goes in on its own: `pending_case_box` → `case_box` read by `lowerArmBody`, and `lowerBoxedIf` with `force` for an `if`. Each arm is boxed by the checker's type of that arm when the checker typed the `case` / `if` a union (`InstanceLowering.union_value` at its loc, decision 150 — `unionValueOf`, `unionArmTypes`; `pending_case_arms` → `case_arm_types` → `arm_box_as` → `box_as`, which `lowerAsUnknown` reads before the value's own shape), else by the one type the whole `case` / `if` is boxed as: a block arm's tail a local nothing annotates (`Circle(r) { val d = r * 2; d; }`) is boxed by it, where it was refused ("nothing gives it a static type here"). An unannotated `val` bound to such a `case` / `if` is a local typed by the recorded union (`local_typerefs`), its value boxed arm by arm — whatever the arms' shape (values, blocks, lambda arms), over an `unknown` subject, in a state machine; before the record, a probe re-derived the arms' members in the backend and missed every shape but plain values, and `case v { i32 {…} string {…} }` read a string's address as a number at exit 0 (`conformance/modules/case_value_union_binding`, `conformance/modules/case_if_union_value_shapes`) |
 | `case x { Pat when (v is T) { … v … } }` | `emitGuardChain` narrows `v` in the arm body as `if (v is T)` does in its block (`narrowUnknown`) |
 
 A typed generic value that flows into an `unknown` without being a constructor

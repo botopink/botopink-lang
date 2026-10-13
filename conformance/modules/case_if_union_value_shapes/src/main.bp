@@ -1,0 +1,220 @@
+//// Decision 150 (decision 8 §3.2) — a `case` whose arms disagree, and an
+//// `if` / `else` whose branches do, is the union of their types whatever
+//// shape an arm is written in (a value, a block, a lambda arm, over an
+//// `unknown` subject, inside an `async` body that awaits) and wherever the
+//// value goes (a `val`, a `return` from a function answering the union, an
+//// argument of a parameter of it): each value read back is the member it is.
+
+type Shape {
+    Circle(r: i32),
+    Label(text: string),
+}
+
+fn show(v: i32 | string) -> string {
+    return case v {
+        i32 { n ->
+            "number ${n}";
+        }
+        string { t ->
+            "text ${t}";
+        }
+    };
+}
+
+fn blockArms(s: Shape) -> string {
+    val v = case s {
+        Circle(r) {
+            val d = r * 2;
+            d;
+        }
+        Label(text) {
+            text;
+        }
+    };
+    return case v {
+        i32 { n ->
+            "number ${n}";
+        }
+        string { t ->
+            "text ${t}";
+        }
+    };
+}
+
+fn lambdaArms(u: i32 | string) -> string {
+    val v = case u {
+        i32 { n ->
+            n * 3;
+        }
+        string { t ->
+            t + "!";
+        }
+    };
+    return case v {
+        i32 { n ->
+            "number ${n}";
+        }
+        string { t ->
+            "text ${t}";
+        }
+    };
+}
+
+fn unknownSubject(u: unknown) -> string {
+    val v = case u {
+        i32 { n ->
+            n * 4;
+        }
+        _ -> "other";
+    };
+    return case v {
+        i32 { n ->
+            "number ${n}";
+        }
+        string { t ->
+            "text ${t}";
+        }
+    };
+}
+
+fn pick(s: Shape) -> i32 | string {
+    return case s {
+        Circle(r) -> r * 5;
+        Label(text) -> text;
+    };
+}
+
+fn argument(s: Shape) -> string {
+    return show(case s {
+        Circle(r) -> r * 6;
+        Label(text) -> text;
+    });
+}
+
+fn ifValue(b: bool) -> string {
+    val v = if (b) {
+        val d = 7;
+        d;
+    } else {
+        val t = "seven";
+        t;
+    };
+    return case v {
+        i32 { n ->
+            "number ${n}";
+        }
+        string { t ->
+            "text ${t}";
+        }
+    };
+}
+
+fn ifReturn(b: bool) -> i32 | string {
+    return if (b) 8 else "eight";
+}
+
+fn ifArgument(b: bool) -> string {
+    return show(if (b) 9 else "nine");
+}
+
+fn later(n: i32) -> @Task<i32> {
+    return async {
+        return n;
+    };
+}
+
+fn machine(s: Shape) -> @Task<string> {
+    return async {
+        val k = await later(10);
+        val v = case s {
+            Circle(r) -> r * k;
+            Label(text) -> text;
+        };
+        return case v {
+            i32 { n ->
+                "number ${n}";
+            }
+            string { t ->
+                "text ${t}";
+            }
+        };
+    };
+}
+
+fn run() -> @Task<void> {
+    @print(await machine(Shape.Circle(r: 1)));
+    @print(await machine(Shape.Label(text: "m")));
+}
+
+fn pickBlock(s: Shape) -> i32 | string {
+    return case s {
+        Circle(r) {
+            val d = r * 11;
+            d;
+        }
+        Label(text) {
+            text;
+        }
+    };
+}
+
+fn argumentBlock(s: Shape) -> string {
+    return show(case s {
+        Circle(r) {
+            val d = r * 12;
+            d;
+        }
+        Label(text) {
+            text;
+        }
+    });
+}
+
+fn ifReturnBlock(b: bool) -> i32 | string {
+    return if (b) {
+        val d = 13;
+        d;
+    } else "thirteen";
+}
+
+fn ifArgumentBlock(b: bool) -> string {
+    return show(if (b) {
+        val d = 14;
+        d;
+    } else "fourteen");
+}
+
+fn ifPlainValue(b: bool) -> string {
+    val v = if (b) 15 else "fifteen";
+    return show(v);
+}
+
+pub fn main() {
+    @print(blockArms(Shape.Circle(r: 1)));
+    @print(blockArms(Shape.Label(text: "b")));
+    @print(lambdaArms(1));
+    @print(lambdaArms("l"));
+    @print(unknownSubject(1));
+    @print(unknownSubject("u"));
+    @print(show(pick(Shape.Circle(r: 1))));
+    @print(show(pick(Shape.Label(text: "p"))));
+    @print(argument(Shape.Circle(r: 1)));
+    @print(argument(Shape.Label(text: "a")));
+    @print(ifValue(true));
+    @print(ifValue(false));
+    @print(show(ifReturn(true)));
+    @print(show(ifReturn(false)));
+    @print(ifArgument(true));
+    @print(ifArgument(false));
+    @print(show(pickBlock(Shape.Circle(r: 1))));
+    @print(show(pickBlock(Shape.Label(text: "pb"))));
+    @print(argumentBlock(Shape.Circle(r: 1)));
+    @print(argumentBlock(Shape.Label(text: "ab")));
+    @print(show(ifReturnBlock(true)));
+    @print(show(ifReturnBlock(false)));
+    @print(ifArgumentBlock(true));
+    @print(ifArgumentBlock(false));
+    @print(ifPlainValue(true));
+    @print(ifPlainValue(false));
+    run();
+}

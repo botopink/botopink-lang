@@ -562,7 +562,20 @@ pub const InstanceLowering = union(enum) {
     /// a `@Result` it builds with `throw` / `try` / `return`: on commonJS the
     /// task it makes rejects with the error and resolves with the bare value.
     failing_task_block,
+    /// Decision 150 (decision 8 §3.2) — a `case` or an `if` (keyed by its
+    /// loc) whose arms disagree, so its value is the union of the arms'
+    /// types: the union, and each arm's own type in arm order (`then`, then
+    /// `else`, for an `if`). A backend that boxes a union member by its
+    /// static type (wasm) boxes each arm by its member and types a `val`
+    /// bound to it as the union, whatever the arm's shape.
+    union_value: UnionValue,
 };
+
+/// What `InstanceLowering.union_value` holds: the union as written (its
+/// members those the checker could name; `unknown` when one cannot be
+/// written) and each arm's type, null for an arm that answers no value (a
+/// jump) or whose type cannot be written.
+pub const UnionValue = struct { type_: ast.TypeRef, arms: []const ?ast.TypeRef };
 
 /// What `InstanceLowering.assoc_fn_value` names: the type that declares the
 /// associated fn, the fn, and its parameter count.
@@ -1638,6 +1651,11 @@ pub const Env = struct {
     /// whose branches disagreed. A use the union refuses names it, so the
     /// author sees the widening and not only the refusal.
     unionOrigins: std.AutoHashMapUnmanaged(*T.Type, struct { loc: ast.Loc, kind: []const u8 }) = .empty,
+    /// Decision 150 — each `case` / `if` whose value is the union of its
+    /// arms, by its loc: the union and each arm's type in arm order, read
+    /// into `InstanceLowering.union_value` once the module is inferred
+    /// (`infer.unionValueLowerings`).
+    unionValues: std.AutoHashMapUnmanaged(ast.Loc, struct { type_: *T.Type, arms: []const ?*T.Type }) = .empty,
     /// 01 step 13 — each name a top-level body introduced (it was unbound
     /// before the body), mapped to that body's name, for the diagnostic a
     /// later use outside it gets. Allocated in `arena`.
@@ -2149,7 +2167,7 @@ pub const Env = struct {
         return self.valNames.contains(name);
     }
 
-    pub fn lookupTypeDef(self: *Env, name: []const u8) ?TypeDef {
+    pub fn lookupTypeDef(self: *const Env, name: []const u8) ?TypeDef {
         return self.typeDefs.get(name);
     }
 

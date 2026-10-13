@@ -4666,7 +4666,7 @@ const Emitter = struct {
                     (if (!this.locals.contains(n)) this.num_names.get(n) else null),
                 .identAccess => if (this.instance_lowerings.get(id.loc)) |il| switch (il) {
                     .prim => .int,
-                    .type_, .field_of, .sequence_next, .division, .by_value, .unplaced_type, .assoc_fn_value, .task_await, .task_return, .failing_task_block => null,
+                    .type_, .field_of, .sequence_next, .division, .by_value, .unplaced_type, .assoc_fn_value, .task_await, .task_return, .failing_task_block, .union_value => null,
                 } else null,
                 else => null,
             },
@@ -6701,7 +6701,7 @@ const Emitter = struct {
         const il = this.instance_lowerings.get(e.call.loc) orelse return null;
         return switch (il) {
             .prim => |k| if (k == .array) name else null,
-            .type_, .field_of, .sequence_next, .division, .by_value, .unplaced_type, .assoc_fn_value, .task_await, .task_return, .failing_task_block => null,
+            .type_, .field_of, .sequence_next, .division, .by_value, .unplaced_type, .assoc_fn_value, .task_await, .task_return, .failing_task_block, .union_value => null,
         };
     }
 
@@ -7955,7 +7955,7 @@ const Emitter = struct {
                                 else => b.remote("erlang", "length", &.{recv}),
                             };
                         },
-                        .type_, .field_of, .sequence_next, .division, .by_value, .unplaced_type, .assoc_fn_value, .task_await, .task_return, .failing_task_block => {},
+                        .type_, .field_of, .sequence_next, .division, .by_value, .unplaced_type, .assoc_fn_value, .task_await, .task_return, .failing_task_block, .union_value => {},
                     };
                     // Same field access on a `Self`-typed receiver inside an
                     // interface instance `default fn` (`self.length`), which
@@ -8850,7 +8850,7 @@ const Emitter = struct {
             else
                 this.typedMethodNode(b, tn, recv, cc),
             // A field READ never reaches the call path, nor does a `/`.
-            .field_of, .division, .assoc_fn_value, .task_await, .task_return, .failing_task_block => {},
+            .field_of, .division, .assoc_fn_value, .task_await, .task_return, .failing_task_block, .union_value => {},
             .sequence_next => return this.sequenceNextNode(b, loc, recv),
             // A method a `behavior` declares, on a value typed by it: no owner
             // module belongs in the call, whatever else the program declares

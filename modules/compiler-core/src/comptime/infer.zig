@@ -11464,6 +11464,80 @@ pub fn taskLowerings(env: *const Env, out: *std.AutoHashMap(ast.Loc, envMod.Inst
     }
 }
 
+/// Decision 150 — every `case` / `if` whose value is the union of its arms
+/// (`env.unionValues`), written for the backends as
+/// `InstanceLowering.union_value` at its loc: the union (`unknown` when a
+/// member cannot be written — a type variable, a structural record) and each
+/// arm's type. Read once the module is inferred, so every variable an arm
+/// left open is as resolved as it will be.
+pub fn unionValueLowerings(env: *const Env, arena: std.mem.Allocator, out: *std.AutoHashMap(ast.Loc, envMod.InstanceLowering)) !void {
+    var it = env.unionValues.iterator();
+    while (it.next()) |e| {
+        const u = e.value_ptr.type_.deref();
+        if (u.* != .union_) continue;
+        const members = try arena.alloc(ast.TypeRef, u.union_.len);
+        const named = for (u.union_, 0..) |m, i| {
+            members[i] = (try typeRefOfType(arena, env, m)) orelse break false;
+        } else true;
+        const arms = try arena.alloc(?ast.TypeRef, e.value_ptr.arms.len);
+        for (e.value_ptr.arms, 0..) |a, i| arms[i] = if (a) |t| try typeRefOfType(arena, env, t) else null;
+        const ty: ast.TypeRef = if (named)
+            .{ .generic = .{ .name = ast.union_type_name, .args = members, .is_builtin = false } }
+        else
+            .{ .named = ast.unknown_type_name };
+        const slot = try out.getOrPut(e.key_ptr.*);
+        if (!slot.found_existing) slot.value_ptr.* = .{ .union_value = .{ .type_ = ty, .arms = arms } };
+    }
+}
+
+/// The written form of a checker type; null for a type variable, a union or
+/// a structural record — what nothing names. Shared by the scope lowering's
+/// carried types (`context_lower.zig`, decision 504) and `unionValueLowerings`.
+pub fn typeRefOfType(arena: std.mem.Allocator, env: *const Env, ty: *T.Type) anyerror!?ast.TypeRef {
+    const d = ty.deref();
+    switch (d.*) {
+        .named => |n| {
+            if (n.args.len == 0) {
+                if (std.mem.eql(u8, n.name, "array") or std.mem.eql(u8, n.name, "tuple") or std.mem.eql(u8, n.name, "optional")) return null;
+                return .{ .named = n.name };
+            }
+            const args = try arena.alloc(ast.TypeRef, n.args.len);
+            for (n.args, 0..) |a, i| args[i] = (try typeRefOfType(arena, env, a)) orelse return null;
+            if (std.mem.eql(u8, n.name, "array") and args.len == 1) {
+                const inner = try arena.create(ast.TypeRef);
+                inner.* = args[0];
+                return .{ .array = inner };
+            }
+            if (std.mem.eql(u8, n.name, "optional") and args.len == 1) {
+                const inner = try arena.create(ast.TypeRef);
+                inner.* = args[0];
+                return .{ .optional = inner };
+            }
+            if (std.mem.eql(u8, n.name, "tuple")) {
+                if (n.labels.len > 0) return .{ .labeledTuple = .{ .elems = args, .labels = n.labels } };
+                return .{ .tuple_ = args };
+            }
+            const builtin = env.lookupTypeDef(n.name) == null and isBuiltinWrapperName(n.name);
+            return .{ .generic = .{ .name = n.name, .args = args, .is_builtin = builtin } };
+        },
+        .func => |f| {
+            const params = try arena.alloc(ast.TypeRef, f.params.len);
+            for (f.params, 0..) |p, i| params[i] = (try typeRefOfType(arena, env, p)) orelse return null;
+            const ret = try arena.create(ast.TypeRef);
+            ret.* = (try typeRefOfType(arena, env, f.ret)) orelse return null;
+            return .{ .function = .{ .params = params, .returnType = ret } };
+        },
+        else => return null,
+    }
+}
+
+/// The builtin wrappers a checker type names without `@` (`Result`, `Task`,
+/// …): written back as builtin generics.
+fn isBuiltinWrapperName(name: []const u8) bool {
+    for ([_][]const u8{ "Result", "Task", "Component", "Stream", "Future", "Option" }) |w| if (std.mem.eql(u8, name, w)) return true;
+    return false;
+}
+
 /// True for an `await` whose operand may be a failing task: `taskMayFail`, or
 /// any operand that is not a `@Task` of a settled type nor a `@Component` — a
 /// call through a record's function field is typed by the value it settles
@@ -15884,7 +15958,13 @@ fn inferBranchExpr(env: *Env, b: ast.MakeExpr(.untyped, ast.BranchExprOf(.untype
                 } else {
                     ifType = unionOf(env, &.{ bodyType, elseType }) catch |err| return locateLast(env, err, loc);
                     const u = ifType.deref();
-                    if (u.* == .union_) try env.unionOrigins.put(env.arena, u, .{ .loc = loc, .kind = "if" });
+                    if (u.* == .union_) {
+                        try env.unionOrigins.put(env.arena, u, .{ .loc = loc, .kind = "if" });
+                        const armTypes = try env.arena.alloc(?*T.Type, 2);
+                        armTypes[0] = bodyType;
+                        armTypes[1] = elseType;
+                        try env.unionValues.put(env.arena, loc, .{ .type_ = ifType, .arms = armTypes });
+                    }
                 }
             }
             return TypedExpr{ .branch = .{ .loc = loc, .type_ = ifType, .kind = .{ .if_ = .{
@@ -21878,10 +21958,14 @@ fn sameTypeShape(a: *T.Type, b: *T.Type) bool {
 }
 
 /// C2a — unify the arms that agree; distinct named types become union members.
-fn caseTypeFromArms(env: *Env, arms: []const ast.CaseArmOf(.typed)) InferError!*T.Type {
+/// `armTypes` (one slot per arm) receives each arm's own type, null for an
+/// arm that contributes nothing.
+fn caseTypeFromArms(env: *Env, arms: []const ast.CaseArmOf(.typed), armTypes: []?*T.Type) InferError!*T.Type {
     var members: std.ArrayListUnmanaged(*T.Type) = .empty;
-    for (arms) |arm| {
+    for (arms, 0..) |arm, i| {
+        armTypes[i] = null;
         const t = (try caseArmValueType(env, arm.body)) orelse continue;
+        armTypes[i] = t;
         var merged = false;
         for (members.items) |m| {
             if (caseArmTypesAgree(m, t)) {
@@ -22772,8 +22856,12 @@ fn inferCollectionExpr(env: *Env, col: ast.CollectionExprOf(.untyped), loc: ast.
             // arms of different types make a union (decision 8 §3.2). A jump arm
             // (`return`/`throw`/`break`/`continue`) and a statement arm (`void`, a
             // block without `break <value>`) contribute nothing.
-            const caseType = caseTypeFromArms(env, typedArms) catch |err| return locateLast(env, err, loc);
-            if (caseType.deref().* == .union_) try env.unionOrigins.put(env.arena, caseType.deref(), .{ .loc = loc, .kind = "case" });
+            const armTypes = try env.arena.alloc(?*T.Type, typedArms.len);
+            const caseType = caseTypeFromArms(env, typedArms, armTypes) catch |err| return locateLast(env, err, loc);
+            if (caseType.deref().* == .union_) {
+                try env.unionOrigins.put(env.arena, caseType.deref(), .{ .loc = loc, .kind = "case" });
+                try env.unionValues.put(env.arena, loc, .{ .type_ = caseType, .arms = armTypes });
+            }
             return TypedExpr{ .collection = .{ .loc = loc, .type_ = caseType, .kind = .{ .case = .{
                 .subjects = typedSubjects,
                 .arms = typedArms,

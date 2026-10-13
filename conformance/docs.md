@@ -1127,6 +1127,15 @@ is, whether the union is inferred or written:
 
 <!-- example: modules/array_literal_union_elements -->
 
+A `case` whose arms disagree is the union of their types, and so is an `if` /
+`else` whose branches do — whatever shape an arm is written in (a value, a
+block, a lambda arm, over an `unknown` subject, in an `async` body that
+awaits) and wherever the value goes (a `val`, a `return` from a function
+answering the union, an argument of a parameter of it); each value read back
+is the member it is:
+
+<!-- example: modules/case_if_union_value_shapes -->
+
 `is` tests a type; it does not bind. Read a variant's payload in a `case` arm
 (`Circle(radius) -> …`, below) and an optional with `if (x) { n -> … }`;
 `assert x is Some(v)` is a located error.

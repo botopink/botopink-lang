@@ -2099,6 +2099,19 @@ const Emitter = struct {
     pending_case_box: bool = false,
     /// The current `case`'s `pending_case_box`, read by its arms.
     case_box: bool = false,
+    /// Set with `pending_case_box`: the type each arm's value is boxed by,
+    /// in arm order — the checker's (`InstanceLowering.union_value`), else
+    /// the one type the whole `case` is boxed as. `lowerCase` moves it to
+    /// `case_arm_types`, which the arm call sites read (`caseArmBoxType`).
+    pending_case_arms: ?[]const ?ast.TypeRef = null,
+    case_arm_types: ?[]const ?ast.TypeRef = null,
+    /// The type of the one arm body `lowerArmBody` lowers next (read and
+    /// cleared there).
+    arm_box_as: ?ast.TypeRef = null,
+    /// The checker's type of the value `lowerAsUnknown` boxes next, when the
+    /// value is an arm of a union `case` / `if` (read and cleared there): a
+    /// value nothing in this backend types (`val d = r * 2; d`) is boxed by it.
+    box_as: ?ast.TypeRef = null,
     /// `case` subject locals holding a `u64`: a range pattern orders them unsigned.
     u64_subjects: std.StringHashMapUnmanaged(void) = .empty,
     /// Set for the one arm body a primitive-type arm opens: its binder is the
@@ -3565,6 +3578,8 @@ const Emitter = struct {
     /// else boxed by its static shape — a function value under its arity's
     /// descriptor (decision 254), its payload the closure cell.
     fn lowerAsUnknown(self: *Emitter, value: ast.Expr) anyerror!void {
+        const hint = self.box_as;
+        self.box_as = null;
         // Decision 332 — a union's `bigint` member: the boxes here have no
         // `bigint` kind yet (the checker keeps a `bigint` out of `unknown`).
         if (self.isBigintExpr(value) or self.isOptBigintExpr(value) or self.ifBigintArm(value))
@@ -3575,10 +3590,12 @@ const Emitter = struct {
             try self.lowerCoerced(value, "i32");
             return;
         }
-        if (try self.lowerBoxedIf(.{ .named = ast.unknown_type_name }, value, true)) return;
+        if (try self.lowerBoxedIf(.{ .named = ast.unknown_type_name }, value, true, hint)) return;
         if (isCaseExpr(value)) {
             self.pending_case_box = true;
+            self.pending_case_arms = try self.unionArmTypes(value, value.collection.kind.case.arms.len, hint);
             defer self.pending_case_box = false;
+            defer self.pending_case_arms = null;
             try self.lowerCoerced(value, "i32");
             return;
         }
@@ -3595,7 +3612,18 @@ const Emitter = struct {
             return;
         }
         const Kind = enum { i32_, f64_, bool_, str, arr, tuple };
-        const kind: Kind = if (self.isStringExpr(value))
+        // The checker's type of a union arm decides before the value's own
+        // shape, which a local nothing annotates does not have.
+        const hinted: ?Kind = if (hint) |h| switch (self.elemBoxOfTypeRef(h)) {
+            .as_is => return self.lowerCoerced(value, "i32"),
+            .i32_ => .i32_,
+            .f64_ => .f64_,
+            .bool_ => .bool_,
+            .str => .str,
+            .arr => .arr,
+            .unresolved => null,
+        } else null;
+        const kind: Kind = hinted orelse if (self.isStringExpr(value))
             .str
         else if (self.isBoolExpr(value))
             .bool_
@@ -6177,10 +6205,12 @@ const Emitter = struct {
                     var lb = lb0;
                     lb.name = try self.bindTargetAs(lb0.name, self.bindingLocalType(lb0.typeAnnotation, lb0.value.*));
                     defer self.installShadow(lb0.name, lb.name);
-                    // `val v = if (c) 2 else "two"` is the union of its arms
-                    // (decision 8 §3.2): an `unknown` slot, each arm boxed.
+                    // `val v = if (c) 2 else "two"` / `val v = case s { … }`
+                    // whose arms disagree is the union of its arms (decision
+                    // 150, decision 8 §3.2), as the checker typed it: a union
+                    // slot, each arm boxed.
                     const unknown_ann: ?ast.TypeRef = lb.typeAnnotation orelse
-                        (if (self.ifArmsDiffer(lb.value.*)) ast.TypeRef{ .named = ast.unknown_type_name } else null);
+                        (if (self.unionValueOf(lb.value.*)) |uv| uv.type_ else null);
                     if (unknown_ann) |ta| if (isUnknownTypeRef(ta)) {
                         try self.declareLocal(lb.name, "i32");
                         try self.local_typerefs.put(lb.name, ta);
@@ -6191,15 +6221,6 @@ const Emitter = struct {
                         try self.emit(.{ .local_set = lb.name });
                         return .none;
                     };
-                    if (lb.typeAnnotation == null and lb.value.* == .collection and lb.value.collection.kind == .case) {
-                        if (try self.probeCaseUnion(lb.value.collection.kind.case)) |ut| {
-                            try self.declareLocal(lb.name, "i32");
-                            try self.local_typerefs.put(lb.name, ut);
-                            try self.lowerAsUnknown(lb.value.*);
-                            try self.emit(.{ .local_set = lb.name });
-                            return .none;
-                        }
-                    }
                     try self.declareLocal(lb.name, self.bindingLocalType(lb.typeAnnotation, lb.value.*));
                     // A function NAMED as the value (`val g = greet`) types the
                     // local by its declaration, as a written `fn(…) -> T` does:
@@ -7884,62 +7905,34 @@ const Emitter = struct {
             try self.subject_generic.put(self.alloc, subj_local, tr);
     }
 
-    /// The value an arm answers, when it is a plain expression (no block).
-    fn armPlainValue(body: ast.Expr) ?ast.Expr {
-        if (armLambda(body) != null) return null;
-        if (body == .jump) return null;
-        return body;
+    /// Decision 150 — the checker's record of a `case` / `if` whose value is
+    /// the union of its arms (`InstanceLowering.union_value`, at its loc).
+    fn unionValueOf(self: *Emitter, e: ast.Expr) ?envMod.UnionValue {
+        const loc = switch (e) {
+            .collection => |col| if (col.kind == .case) col.loc else return null,
+            .branch => |br| if (br.kind == .if_) br.loc else return null,
+            else => return null,
+        };
+        const il = self.instance_lowerings.get(loc) orelse return null;
+        return if (il == .union_value) il.union_value else null;
     }
 
-    /// Decision 150 (decision 8 §3.2) — `val v = case s { A(r) -> r * 2; B(t)
-    /// -> t; }`: arms whose values are different non-numeric members make the
-    /// case a union, and the binding holds it as an `unknown` . The checker's type is not handed to
-    /// this backend, so the members are read off each arm's value with its
-    /// pattern's names bound; the probe binds into a capture it throws away
-    /// and leaves the emitter as it found it. Null when the arms agree, a
-    /// member cannot be told, an arm is a block, or the subject is an
-    /// `unknown` (its arms are type tests).
-    fn probeCaseUnion(self: *Emitter, c: anytype) anyerror!?ast.TypeRef {
-        if (c.subjects.len != 1 or c.arms.len < 2 or self.machine != null) return null;
-        const subj_local = try std.fmt.allocPrint(self.arena(), "__case_{d}", .{self.case_depth});
-        if (self.isUnknownExpr(c.subjects[0])) return null;
-        const depth = self.case_depth;
-        defer self.case_depth = depth;
-        try self.noteCaseSubject(c, subj_local);
-        if (self.unknown_subjects.contains(subj_local)) return null;
-        const ar = self.reg_arena.allocator();
-        var members: std.ArrayListUnmanaged(ast.TypeRef) = .empty;
-        var numeric_only = true;
-        for (c.arms) |arm| {
-            const tail = armPlainValue(arm.body) orelse return null;
-            const mark = self.scopeMark();
-            const arm_aliases = try self.aliases.clone();
-            var cap: Capture = .{};
-            self.open(&cap);
-            const prev_hint = self.case_enum_hint;
-            const m = blk: {
-                self.bindPattern(arm.pattern, subj_local) catch |err| {
-                    _ = self.seal(&cap, .none);
-                    self.restoreAliases(arm_aliases);
-                    self.scopeRestore(mark);
-                    return err;
-                };
-                break :blk self.litMemberName(tail);
-            };
-            self.case_enum_hint = prev_hint;
-            _ = self.seal(&cap, .none);
-            self.restoreAliases(arm_aliases);
-            self.scopeRestore(mark);
-            const name = m orelse return null;
-            const numeric = std.mem.eql(u8, name, "i32") or std.mem.eql(u8, name, "f64") or std.mem.eql(u8, name, "i64");
-            if (!numeric) numeric_only = false;
-            const seen = for (members.items) |x| {
-                if (std.mem.eql(u8, x.named, name)) break true;
-            } else false;
-            if (!seen) try members.append(ar, .{ .named = name });
-        }
-        if (members.items.len < 2 or numeric_only) return null;
-        return .{ .generic = .{ .name = ast.union_type_name, .args = members.items, .is_builtin = false } };
+    /// The type each of `n` arms of the `case` / `if` `e` is boxed by: the
+    /// checker's arm types when it typed `e` a union, else `whole` — the one
+    /// type `e` itself is boxed as — for every arm; null when neither is known.
+    fn unionArmTypes(self: *Emitter, e: ast.Expr, n: usize, whole: ?ast.TypeRef) anyerror!?[]const ?ast.TypeRef {
+        if (self.unionValueOf(e)) |uv| if (uv.arms.len == n) return uv.arms;
+        const w = whole orelse return null;
+        if (isUnknownTypeRef(w)) return null;
+        const arms = try self.arena().alloc(?ast.TypeRef, n);
+        @memset(arms, w);
+        return arms;
+    }
+
+    /// The type the current boxed `case`'s arm `idx` goes into its `unknown` by.
+    fn caseArmBoxType(self: *Emitter, idx: usize) ?ast.TypeRef {
+        const arms = self.case_arm_types orelse return null;
+        return if (idx < arms.len) arms[idx] else null;
     }
 
     fn lowerCase(self: *Emitter, c: anytype) anyerror!void {
@@ -7947,6 +7940,10 @@ const Emitter = struct {
         self.case_box = self.pending_case_box;
         self.pending_case_box = false;
         defer self.case_box = prev_case_box;
+        const prev_arm_types = self.case_arm_types;
+        self.case_arm_types = if (self.case_box) self.pending_case_arms else null;
+        self.pending_case_arms = null;
+        defer self.case_arm_types = prev_arm_types;
         if (c.subjects.len == 0 or c.arms.len == 0) {
             try self.emit(zero);
             return;
@@ -8024,6 +8021,7 @@ const Emitter = struct {
             if (arm.guard) |g| {
                 try self.emitGuardChain(arms, subj, idx, g);
             } else {
+                self.arm_box_as = self.caseArmBoxType(idx);
                 try self.lowerArmBody(arm.body, subj);
             }
             self.arm_unbox = null;
@@ -8053,6 +8051,7 @@ const Emitter = struct {
             if (arm.guard) |g| {
                 try self.emitGuardChain(arms, subj, idx, g);
             } else {
+                self.arm_box_as = self.caseArmBoxType(idx);
                 try self.lowerArmBody(arm.body, subj);
             }
             self.restoreAliases(arm_aliases);
@@ -8077,6 +8076,7 @@ const Emitter = struct {
         // §5.3 / §4.1 — `when (v is string)` narrows `v` in the arm body as
         // `if (v is string)` does in its block.
         const unknown_narrowed = try self.narrowUnknown(guard);
+        self.arm_box_as = self.caseArmBoxType(idx);
         try self.lowerArmBody(arms[idx].body, subj);
         self.dropUnknownNarrowing(unknown_narrowed);
         const ok_seq = self.seal(&ok_c, .{ .value = ty });
@@ -8124,8 +8124,13 @@ const Emitter = struct {
         const box = self.case_box;
         self.case_box = false;
         defer self.case_box = box;
+        const box_as = self.arm_box_as;
+        self.arm_box_as = null;
         const lam = armLambda(body) orelse {
-            if (box and body != .jump) try self.lowerAsUnknown(body) else try self.lowerCoerced(body, self.cur_result);
+            if (box and body != .jump) {
+                self.box_as = box_as;
+                try self.lowerAsUnknown(body);
+            } else try self.lowerCoerced(body, self.cur_result);
             return;
         };
         // P1: the single parameter binds the whole matched value — for a
@@ -8165,7 +8170,10 @@ const Emitter = struct {
             .jump => |j| switch (j.kind) {
                 .@"break" => |br| if (br.value) |v| {
                     if (self.yield_target == null) {
-                        if (box) try self.lowerAsUnknown(v.*) else try self.lowerCoerced(v.*, self.cur_result);
+                        if (box) {
+                            self.box_as = box_as;
+                            try self.lowerAsUnknown(v.*);
+                        } else try self.lowerCoerced(v.*, self.cur_result);
                         return;
                     }
                 },
@@ -8181,7 +8189,10 @@ const Emitter = struct {
         }
         if (box) switch (last.expr) {
             .jump, .binding => {},
-            else => return self.lowerAsUnknown(last.expr),
+            else => {
+                self.box_as = box_as;
+                return self.lowerAsUnknown(last.expr);
+            },
         };
         const from = self.wasmTypeOf(last.expr);
         const tail = try self.emitStmt(last, true);
@@ -9114,6 +9125,7 @@ const Emitter = struct {
         if (arms[idx].guard) |g| {
             try self.emitGuardChain(arms, subj, idx, g);
         } else {
+            self.arm_box_as = self.caseArmBoxType(idx);
             try self.lowerArmBody(body, subj);
         }
         self.arm_record = prev_record;
@@ -9823,7 +9835,7 @@ const Emitter = struct {
         };
         return switch (il) {
             .prim => |k| k,
-            .type_, .field_of, .sequence_next, .division, .by_value, .unplaced_type, .assoc_fn_value, .task_await, .task_return, .failing_task_block => null,
+            .type_, .field_of, .sequence_next, .division, .by_value, .unplaced_type, .assoc_fn_value, .task_await, .task_return, .failing_task_block, .union_value => null,
         };
     }
 
@@ -15353,17 +15365,20 @@ const Emitter = struct {
     /// present `0`. Only a value-form `if` with an `else`, no binder, and an
     /// arm answering `null` at some depth takes this path.
     fn lowerBoxedIfArms(self: *Emitter, target: ?ast.TypeRef, value: ast.Expr) anyerror!bool {
-        return self.lowerBoxedIf(target, value, false);
+        return self.lowerBoxedIf(target, value, false, null);
     }
 
     /// `force`: the `if` goes into an `unknown` whatever its arms answer
-    /// (`lowerAsUnknown`), each arm boxed on its own.
-    fn lowerBoxedIf(self: *Emitter, target: ?ast.TypeRef, value: ast.Expr, force: bool) anyerror!bool {
+    /// (`lowerAsUnknown`), each arm boxed on its own — by the checker's type
+    /// of the arm when it typed the `if` a union, else by `whole`, the type
+    /// the `if` itself is boxed as (`unionArmTypes`).
+    fn lowerBoxedIf(self: *Emitter, target: ?ast.TypeRef, value: ast.Expr, force: bool, whole: ?ast.TypeRef) anyerror!bool {
         if (value != .branch or value.branch.kind != .if_) return false;
         const i = value.branch.kind.if_;
         if (i.binding != null) return false;
         const els = i.else_ orelse return false;
         if (i.then_.len == 0 or els.len == 0 or !(force or armAnswersNull(value))) return false;
+        const arm_types = try self.unionArmTypes(value, 2, whole);
         try self.lowerCondition(i.cond.*, null);
 
         var then_c: Capture = .{};
@@ -15371,7 +15386,7 @@ const Emitter = struct {
         var then_names: std.ArrayListUnmanaged([]const u8) = .empty;
         try self.collectNullTestNames(i.cond.*, true, &then_names);
         const then_marked = try self.applyNarrowing(then_names.items);
-        try self.lowerBoxedArm(target, i.then_);
+        try self.lowerBoxedArm(target, i.then_, if (arm_types) |a| a[0] else null);
         self.dropNarrowing(then_marked);
         const then_seq = self.seal(&then_c, .{ .value = .i32 });
 
@@ -15380,7 +15395,7 @@ const Emitter = struct {
         var else_names: std.ArrayListUnmanaged([]const u8) = .empty;
         try self.collectNullTestNames(i.cond.*, false, &else_names);
         const else_marked = try self.applyNarrowing(else_names.items);
-        try self.lowerBoxedArm(target, els);
+        try self.lowerBoxedArm(target, els, if (arm_types) |a| a[1] else null);
         self.dropNarrowing(else_marked);
         const else_seq = self.seal(&else_c, .{ .value = .i32 });
 
@@ -15394,7 +15409,7 @@ const Emitter = struct {
 
     /// One arm of `lowerBoxedIfArms`: its statements, then its tail into the
     /// slot — `null` as `0`, a value boxed when the slot boxes it.
-    fn lowerBoxedArm(self: *Emitter, target: ?ast.TypeRef, body: []const ast.Stmt) anyerror!void {
+    fn lowerBoxedArm(self: *Emitter, target: ?ast.TypeRef, body: []const ast.Stmt, arm_type: ?ast.TypeRef) anyerror!void {
         const scope_mark = self.scopeMark();
         defer self.scopeRestore(scope_mark);
         for (body[0 .. body.len - 1]) |stmt| _ = try self.emitStmt(stmt, false);
@@ -15402,6 +15417,9 @@ const Emitter = struct {
         if (isNullLit(last)) {
             try self.pushZero();
         } else if (self.boxesInto(target, last)) {
+            if (target) |t| if (isUnknownTypeRef(t)) {
+                self.box_as = arm_type;
+            };
             try self.lowerBoxedInto(target, last);
         } else {
             try self.lowerCoerced(last, "i32");
@@ -15465,7 +15483,7 @@ const Emitter = struct {
                 if (impls.len > 0) return null;
                 break :blk self.recordTypeOfExpr(cc.receiver.?.*) orelse return null;
             },
-            .prim, .field_of, .sequence_next, .division, .assoc_fn_value, .task_await, .task_return, .failing_task_block => return null,
+            .prim, .field_of, .sequence_next, .division, .assoc_fn_value, .task_await, .task_return, .failing_task_block, .union_value => return null,
         } else self.recordTypeOfExpr(cc.receiver.?.*) orelse return null;
         const rec = self.ownerAmongTwins(rec0, cc.receiver.?.*);
         const sym = std.fmt.bufPrint(&self.sym_buf, "{s}_{s}", .{ rec, cc.callee }) catch return null;
@@ -15728,30 +15746,6 @@ const Emitter = struct {
         const en = if (receiverName(cc)) |r| (self.enums.getKey(r) orelse return null) else self.enumOfVariant(cc.callee) orelse return null;
         if (!std.mem.eql(u8, en, t.generic.name)) return null;
         for (t.generic.args) |a| if (isUnknownTypeRef(a)) return t.generic.args;
-        return null;
-    }
-
-    /// A value-form `if` whose two arms answer values of different kinds (an
-    /// integer and a string, say): its type is their union, which the checker
-    /// infers and this backend reads off the arms.
-    fn ifArmsDiffer(self: *Emitter, e: ast.Expr) bool {
-        if (e != .branch or e.branch.kind != .if_) return false;
-        const i = e.branch.kind.if_;
-        if (i.binding != null) return false;
-        const els = i.else_ orelse return false;
-        if (i.then_.len == 0 or els.len == 0) return false;
-        const a = self.valueKind(i.then_[i.then_.len - 1].expr) orelse return false;
-        const b = self.valueKind(els[els.len - 1].expr) orelse return false;
-        return a != b;
-    }
-
-    fn valueKind(self: *Emitter, e: ast.Expr) ?u8 {
-        if (isNullLit(e) or e == .jump or e == .binding) return null;
-        if (self.isUnknownExpr(e)) return null;
-        if (self.isStringExpr(e)) return 's';
-        if (self.isBoolExpr(e)) return 'b';
-        if (self.wasmTypeOf(e)[0] == 'f') return 'f';
-        if (self.isKnownInteger(e)) return 'i';
         return null;
     }
 
