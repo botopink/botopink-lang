@@ -369,10 +369,17 @@ library (`repository/snap`, decision 391): `import {assertAs} from "snap"`, and
 primitives it is written over — `@src()` / `SourceLocation`, `io.fs` (`mkdirRecursive` included),
 `path`, `io.env` / `io.os`, and the `String` text methods below.
 
-`mocks`' nine inline tests are the eight of the retired `repository/onze/test/onze_test.bp`
-plus one for `anyString` (the old suite covered it from its example app, not its
-test file). They run on both targets — `botopink test [--target erlang] --filter
-mocks` reads `9 passed, 0 failed`.
+Decision 390 — std's values are verified by its inline literals (`assert … == "…"`,
+`asserts.equals`, `asserts.throwsWith`), not by a `.snap`: the four `__snapshots__/`
+path-rule files that pinned the engine's own file layout went with it to `snap` (391),
+and std records no snapshot of its own.
+
+`mocks`' ten inline tests are the eight of the retired `repository/onze/test/onze_test.bp`,
+one for `anyString` (the old suite covered it from its example app, not its
+test file), and one that pins `verify`'s failure message with `asserts.throwsWith` —
+`mocks.verify: <method> - expected exactly <n> matching call(s), got <m>` (Node appends
+the recorded calls). They run on both targets — `botopink test [--target erlang] --filter
+mocks` reads `10 passed, 0 failed`.
 
 **A consumer writes `#[mocks.mock]`.** A `from "std"` namespace import
 registers the module's decorators under `<handle>.<fn>` (`comptime/infer.zig`

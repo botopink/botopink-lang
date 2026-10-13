@@ -40,6 +40,8 @@
 ////     `Xxx.Mock` and the factory `Xxx.mock()` (decision 216). The compiler core learns nothing about mocking
 ////     (no lib-specific surface in core); every rule here is botopink.
 
+import {testing.asserts.throwsWith};
+
 // ── host cells (the one mutable seam) ────────────────────────────────────────
 //
 // Node: one lazily created object on `globalThis`. Erlang: the same six tables
@@ -378,6 +380,19 @@ test "mocks: verify checks each matcher independently after different-arg calls"
     val _v2 = verify(repo, times(1)).find(eq(9));
     val _v3 = verify(repo, never()).find(eq(99));
     val _v4 = verify(repo, times(3)).find(anyInt());
+}
+
+test "mocks: a verify that fails raises `mocks.verify:` naming the method, the count expected and the count seen" {
+    val repo = UserRepo.mock();
+    val _1 = repo.find(7);
+    try throwsWith({ ->
+        val _v = verify(repo, times(2)).find(eq(7));
+        0;
+    }, "mocks.verify: find - expected exactly 2 matching call(s), got 1");
+    try throwsWith({ ->
+        val _v = verify(repo, never()).find(eq(7));
+        0;
+    }, "mocks.verify: find - expected exactly 0 matching call(s), got 1");
 }
 
 // `anyString()` is the ninth test: the old suite covered it from the example
