@@ -1275,6 +1275,12 @@ pub const Env = struct {
     /// never reads the bare name as a variant of a user enum that declares
     /// one (`type Level { Info, Error }`).
     resultPatternLocs: std.AutoHashMapUnmanaged(ast.Loc, void) = .empty,
+    /// The scope rule (the nearest binding wins): the free calls whose callee
+    /// is a parameter or a local, keyed by the call's loc. The transform
+    /// never takes such a call for the module function of that name, so a
+    /// function with `comptime` parameters hidden by a local keeps every
+    /// argument of the call (`transform.localFnOf`).
+    localCalleeCalls: std.AutoHashMapUnmanaged(ast.Loc, void) = .empty,
     /// Decision 308 — a field key at run time: the expression each written
     /// node means, keyed by the node's own loc — a `.title` against a
     /// `Type.Field<T>` (the `Type.Field<T>` record), a `case` over one (the

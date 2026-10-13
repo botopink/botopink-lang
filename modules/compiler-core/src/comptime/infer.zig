@@ -21058,6 +21058,7 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
             // (`refuseUnexpandedTemplateCalls`).
             const localCallee = env.localBindDepth(call.callee) != null;
             if (localCallee and templateFnNamed(env, call.callee) != null) try env.templateMethodDeclined.put(loc, {});
+            if (localCallee) try env.localCalleeCalls.put(env.arena, loc, {});
             // Decision 110 — `D(…)` for `import {Dict as D}` constructs the
             // declared `Dict`: the name moves at the call (the channel that
             // renames a tuple-label callee), so no backend sees `D`.

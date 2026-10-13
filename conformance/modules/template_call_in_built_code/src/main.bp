@@ -1,0 +1,28 @@
+//// A template's built code may call another template: the call it builds
+//// expands in turn, as one written at the call site does — at a module `val`,
+//// in a function body, and through a chain of templates.
+
+fn inner(comptime q: @Expr<string>) -> @Expr<string> {
+    return q.build("\"inner " + q.text() + "\"");
+}
+
+fn outer(comptime q: @Expr<string>) -> @Expr<string> {
+    return q.build("inner \"" + q.text() + "\"");
+}
+
+fn outerParens(comptime q: @Expr<string>) -> @Expr<string> {
+    return q.build("inner(\"" + q.text() + "\")");
+}
+
+fn outermost(comptime q: @Expr<string>) -> @Expr<string> {
+    return q.build("outer \"" + q.text() + "\" + \"!\"");
+}
+
+val atModule = outer "module";
+
+pub fn main() {
+    @print(atModule);
+    @print(outer "body");
+    @print(outerParens "parens");
+    @print(outermost "chain");
+}

@@ -884,6 +884,13 @@ known at compile time: a local or a non-`comptime` parameter is
 
 <!-- example: modules/comptime_value_or_type_param -->
 
+A function's name follows the scope rule whatever its parameters: a
+parameter or a local named like a function with `comptime` parameters is
+the value a call there calls, and every argument of that call is the
+value's — none of them is taken as a `comptime` one.
+
+<!-- example: modules/comptime_fn_name_shadowed_by_local -->
+
 A field of a generic record may hold a function: read into a local and called, it
 answers what the function answers — an array, a record, an optional, a string,
 through two type parameters or a generic record nested in another:
@@ -2307,11 +2314,14 @@ function's or a type's method body, a destructuring initializer
 (`val #(n, total) = f "…";`), a lambda (one a module-level `val` holds
 included), an argument, a record field's or a
 parameter's default (each call that leaves it out gets the expansion), a
-`case` arm. A call the compiler did not expand is refused where it is
-written (`template-call-unexpanded`), never left to run as a call of a
-function that exists only at build.
+`case` arm, and the code another template builds — a template call in built
+code expands in turn, as one written at the call site does. A call the
+compiler did not expand is refused where it is written
+(`template-call-unexpanded`), never left to run as a call of a function that
+exists only at build.
 
 <!-- example: modules/template_in_module_val_lambda -->
+<!-- example: modules/template_call_in_built_code -->
 
 A template function's name follows the scope rule: the nearest binding wins,
 so a parameter or a local of the name is the value a call there calls

@@ -106,6 +106,10 @@ const Aggregator = struct {
     /// `Env.fieldKeyRewrites` (decision 308): a field key's written node
     /// swapped whole for its run-time form. Both aggregators.
     field_keys: ?*const std.AutoHashMapUnmanaged(ast.Loc, *const ast.Expr) = null,
+    /// `Env.localCalleeCalls`: a free call of a parameter or a local named
+    /// like a module function, never that function (`localFnOf`). Both
+    /// aggregators.
+    local_callee_calls: ?*const std.AutoHashMapUnmanaged(ast.Loc, void) = null,
     /// `Env.namespaces`: `jwt.sign(x)` through a namespace import is written
     /// as the call of an aliased import (`namespaceCall`). Both aggregators.
     namespaces: ?*const envMod.NamespaceImports = null,
@@ -205,6 +209,7 @@ pub fn transform(
     result_patterns: *const std.AutoHashMapUnmanaged(ast.Loc, void),
     namespaces: *const envMod.NamespaceImports,
     field_keys: *const std.AutoHashMapUnmanaged(ast.Loc, *const ast.Expr),
+    local_callee_calls: *const std.AutoHashMapUnmanaged(ast.Loc, void),
 ) !ast.Program {
     var agg = Aggregator.init(allocator, comptime_vals, method_lowerings, template_expansions, src_rewrites, result_jump_lowerings, std_array_lowerings, enum_section_rewrites, index_rewrites, optional_null_cases, ctor_params, default_injections);
     defer agg.deinit(allocator);
@@ -229,6 +234,8 @@ pub fn transform(
     src_agg.namespaces = namespaces;
     agg.field_keys = field_keys;
     src_agg.field_keys = field_keys;
+    agg.local_callee_calls = local_callee_calls;
+    src_agg.local_callee_calls = local_callee_calls;
     defer src_agg.deinit(allocator);
 
     // Phase 1: Scan and specialize.
@@ -487,7 +494,7 @@ fn scanExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), comptime_
                 // A call with a receiver is a method of the receiver's type
                 // (`t.startsWith("?")`), never the module's function that
                 // happens to share the name (`localFnOf`).
-                const fn_decl = localFnOf(fn_decls, call) orelse {
+                const fn_decl = localFnOf(agg, fn_decls, call, c.loc) orelse {
                     for (call.args) |arg| scanExpr(agg, fn_decls, comptime_arrays, arg.value.*) catch return ScanError.OutOfMemory;
                     for (call.trailing) |tl| {
                         for (tl.body) |s| scanExpr(agg, fn_decls, comptime_arrays, s.expr) catch return ScanError.OutOfMemory;
@@ -1044,11 +1051,16 @@ fn rewriteExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
     }
     // Template-call expansion (F6): substitute the expansion recorded by
     // inference, then fall through so the spliced code is rewritten like
-    // ordinary AST (string templates desugar, inner calls lower, …).
-    if (expr_ptr.* == .call and expr_ptr.call.kind == .call) {
-        if (agg.template_expansions.get(expr_ptr.call.loc)) |expansion| {
-            expr_ptr.* = expansion.*;
-        }
+    // ordinary AST (string templates desugar, inner calls lower, …). Code a
+    // template built may itself be a template call (`q.build("inner(…)")`),
+    // which inference expanded under its own loc (`builtCodeOrigin` gives
+    // built code an expansion of its own): substitute until the node is no
+    // expanded call.
+    while (expr_ptr.* == .call and expr_ptr.call.kind == .call) {
+        const loc = expr_ptr.call.loc;
+        const expansion = agg.template_expansions.get(loc) orelse break;
+        expr_ptr.* = expansion.*;
+        if (expr_ptr.* == .call and expr_ptr.call.loc.eql(loc)) break;
     }
     // `@src()` → `SourceLocation(file: …, line: …, column: …, fnName: …)`
     // (decision 73). Only the builtin call at that loc is replaced — the
@@ -1168,7 +1180,7 @@ fn rewriteExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
                     for (expr_ptr.call.kind.call.args) |*arg| rewriteExpr(agg, fn_decls, comptime_arrays, arg.value) catch return ScanError.OutOfMemory;
                 } else {
                     if (c.kind.call.receiver) |r| rewriteExpr(agg, fn_decls, comptime_arrays, r) catch return ScanError.OutOfMemory;
-                    rewriteCall(agg, fn_decls, comptime_arrays, &c.kind.call) catch return ScanError.OutOfMemory;
+                    rewriteCall(agg, fn_decls, comptime_arrays, &c.kind.call, c.loc) catch return ScanError.OutOfMemory;
                 }
             },
             .pipeline => |p| {
@@ -1520,16 +1532,20 @@ fn applyDefaultFill(agg: *Aggregator, fill: envMod.DefaultFill, c: anytype) !voi
 /// `t.startsWith()`, answering `false`. Nor is a template function: every
 /// call of one was replaced by its expansion before it reaches here, so a call
 /// left under its name calls a parameter or a local of that name (the nearest
-/// binding) — its arguments are the value's, none of them comptime.
-fn localFnOf(fn_decls: std.StringHashMap(ast.FnDecl), c: anytype) ?ast.FnDecl {
+/// binding) — its arguments are the value's, none of them comptime. The same
+/// holds for any module function: a call inference resolved to a parameter or
+/// a local of the name (`Env.localCalleeCalls`) is that value's, so a function
+/// with `comptime` parameters hidden by a local keeps the call's arguments.
+fn localFnOf(agg: *const Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), c: anytype, loc: ast.Loc) ?ast.FnDecl {
     if (c.receiver != null) return null;
+    if (agg.local_callee_calls) |locals| if (locals.contains(loc)) return null;
     const f = fn_decls.get(c.callee) orelse return null;
     if (f.returnType) |rt| if (rt.isTemplateReturnType()) return null;
     return f;
 }
 
-fn rewriteCall(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), comptime_arrays: std.StringHashMap([]const ast.TypedExpr), c: anytype) ScanError!void {
-    const fn_decl = localFnOf(fn_decls, c.*) orelse {
+fn rewriteCall(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), comptime_arrays: std.StringHashMap([]const ast.TypedExpr), c: anytype, loc: ast.Loc) ScanError!void {
+    const fn_decl = localFnOf(agg, fn_decls, c.*, loc) orelse {
         // Ctor lookup (F4): a `Config(...)` / `Level.Error(...)` call hits the
         // record / struct / enum-variant constructor binding, not `fn_decls`.
         // Build the qualified key from the receiver when the call shape is
