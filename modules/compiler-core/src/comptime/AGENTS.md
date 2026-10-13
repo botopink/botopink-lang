@@ -1185,7 +1185,18 @@ writes each `createContext(v)` (`Env.createContextCalls`) and each lifted
 wasm's `scope_carry.zig` carries `find`'s fallback in its cell as `push`'s
 value). Cells `modules/context_default`,
 `modules/context_default_imported`, `modules/context_undeclared_type`,
-`modules/context_declared_twice`, `modules/context_val_alias`.
+`modules/context_declared_twice`, `modules/context_val_alias`. Decision 416:
+`contextReadCall` also types `inject(R)` (`@Component<R>`, a record only,
+`inject-not-record`) and `createContext(v, B)` (`Context<B>`, `v`'s type
+implementing `B` by its `implements`, `context-behavior-not-implemented`);
+`noteContextUse` records an `inject` with its fields (`InjectField`: each
+field's key, its default from `Env.ctorParams`), `resolveContextReads` gives
+each field its type's declared default (`contextDefaultRef`) or keeps its own,
+else refuses the field at the `inject`; `context_lower.injectRecord` writes
+`R(f: find(scope, key, <fallback>), …)`. Cells `modules/inject_record`,
+`modules/inject_behavior_keyed`, `modules/inject_test_root_fake`,
+`modules/inject_field_undeclared`, `modules/inject_behavior`,
+`modules/context_behavior_not_implemented`.
 
 **The render scope** (388). `noteComponentCall` records every call whose value
 is, or may resolve to, a `@Component<R>` (`Env.componentCalls`), the `await`

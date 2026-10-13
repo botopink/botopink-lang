@@ -66,6 +66,18 @@ pub fn context(comptime t: @Expr<type>) -> @Component<unknown> {
     );
 }
 
+// Decision 416 — the record `T` built from the contexts of its fields'
+// types: each field the nearest context of its type provided above, else
+// that type's declared default, else the field's own default (`use
+// inject(Deps)`). `T` is a record; a behavior is read with `use context`.
+// `createContext(value, Behavior)` keys a context by the behavior its value
+// implements, so a field typed by the behavior reads it.
+pub fn inject(comptime t: @Expr<type>) -> @Component<unknown> {
+    @panic(
+        "`use inject` is lowered where it is written; this body never runs",
+    );
+}
+
 // ── the render scope (decision 388) ──────────────────────────────────────────
 
 // The scope a component's lambda runs with: the contexts provided above it.
@@ -154,10 +166,11 @@ fn frameParent(f: Frame) -> unknown {
   (data (i32.const 256) "\18\00\00\00R\07Context\01\0ccontextValueG")
   (data (i32.const 284) "\01\00\00\00i")
   (data (i32.const 292) "\56\00\00\00`use provide` / `use context` are lowered where they are written; this body never runs")
-  (data (i32.const 384) "\16\00\00\00R\0bRenderScope\01\06framesi")
-  (data (i32.const 412) "\1c\00\00\00R\05Frame\03\03keys\05valuei\06parenti")
-  (data (i32.const 444) "\19\00\00\00R\08Rendered\02\05valueG\05scopeT")
-  (global $__heap_ptr (mut i32) (i32.const 476))
+  (data (i32.const 384) "\41\00\00\00`use inject` is lowered where it is written; this body never runs")
+  (data (i32.const 456) "\16\00\00\00R\0bRenderScope\01\06framesi")
+  (data (i32.const 484) "\1c\00\00\00R\05Frame\03\03keys\05valuei\06parenti")
+  (data (i32.const 516) "\19\00\00\00R\08Rendered\02\05valueG\05scopeT")
+  (global $__heap_ptr (mut i32) (i32.const 548))
   ;; Contexts (decisions 354, 378, 379) — what a component's body reads from
   ;; above it, React's context in botopink's spelling.
   ;; 
@@ -236,6 +249,18 @@ fn frameParent(f: Frame) -> unknown {
     unreachable
     i32.const 0
   )
+  ;; Decision 416 — the record `T` built from the contexts of its fields'
+  ;; types: each field the nearest context of its type provided above, else
+  ;; that type's declared default, else the field's own default (`use
+  ;; inject(Deps)`). `T` is a record; a behavior is read with `use context`.
+  ;; `createContext(value, Behavior)` keys a context by the behavior its value
+  ;; implements, so a field typed by the behavior reads it.
+  (func $inject (export "inject") (param $t i32) (result i32)
+    i32.const 384
+    call $__panic_fail
+    unreachable
+    i32.const 0
+  )
   ;; ── the render scope (decision 388) ──────────────────────────────────────────
   ;; The scope a component's lambda runs with: the contexts provided above it.
   ;; Opaque — made only by `RenderScope.root()` (`render-scope-construction`);
@@ -246,7 +271,7 @@ fn frameParent(f: Frame) -> unknown {
     call $__alloc
     local.set $__mem0
     local.get $__mem0
-    i32.const 388
+    i32.const 460
     i32.store
     local.get $__mem0
     i32.const 0
@@ -281,14 +306,14 @@ fn frameParent(f: Frame) -> unknown {
     call $__alloc
     local.set $__mem0
     local.get $__mem0
-    i32.const 388
+    i32.const 460
     i32.store
     local.get $__mem0
     i32.const 16
     call $__alloc
     local.set $__mem1
     local.get $__mem1
-    i32.const 416
+    i32.const 488
     i32.store
     local.get $__mem1
     local.get $key
@@ -337,7 +362,7 @@ fn frameParent(f: Frame) -> unknown {
     i32.ge_u
     i32.mul
     i32.load
-    i32.const 416
+    i32.const 488
     i32.eq
     i32.and
     (if (result i32)
@@ -369,7 +394,7 @@ fn frameParent(f: Frame) -> unknown {
     call $__alloc
     local.set $__mem1
     local.get $__mem1
-    i32.const 416
+    i32.const 488
     i32.store
     local.get $__mem1
     local.get $key
@@ -400,7 +425,7 @@ fn frameParent(f: Frame) -> unknown {
     call $__alloc
     local.set $__mem0
     local.get $__mem0
-    i32.const 448
+    i32.const 520
     i32.store
     local.get $__mem0
     i32.const 288
@@ -810,11 +835,12 @@ fn Counter() -> @Component<Element> {
   (data (i32.const 256) "\18\00\00\00R\07Context\01\0ccontextValueG")
   (data (i32.const 284) "\01\00\00\00i")
   (data (i32.const 292) "\56\00\00\00`use provide` / `use context` are lowered where they are written; this body never runs")
-  (data (i32.const 384) "\16\00\00\00R\0bRenderScope\01\06framesi")
-  (data (i32.const 412) "\1c\00\00\00R\05Frame\03\03keys\05valuei\06parenti")
-  (data (i32.const 444) "\19\00\00\00R\08Rendered\02\05valueG\05scopeT")
-  (data (i32.const 476) "\0a\00\00\00R\07Element\00")
-  (global $__heap_ptr (mut i32) (i32.const 492))
+  (data (i32.const 384) "\41\00\00\00`use inject` is lowered where it is written; this body never runs")
+  (data (i32.const 456) "\16\00\00\00R\0bRenderScope\01\06framesi")
+  (data (i32.const 484) "\1c\00\00\00R\05Frame\03\03keys\05valuei\06parenti")
+  (data (i32.const 516) "\19\00\00\00R\08Rendered\02\05valueG\05scopeT")
+  (data (i32.const 548) "\0a\00\00\00R\07Element\00")
+  (global $__heap_ptr (mut i32) (i32.const 564))
   (func $createContext (param $value i32) (result i32)
     (local $__mem0 i32)
     i32.const 12
@@ -846,13 +872,19 @@ fn Counter() -> @Component<Element> {
     unreachable
     i32.const 0
   )
+  (func $inject (param $t i32) (result i32)
+    i32.const 384
+    call $__panic_fail
+    unreachable
+    i32.const 0
+  )
   (func $RenderScope_root (result i32)
     (local $__mem0 i32)
     i32.const 8
     call $__alloc
     local.set $__mem0
     local.get $__mem0
-    i32.const 388
+    i32.const 460
     i32.store
     local.get $__mem0
     i32.const 0
@@ -869,14 +901,14 @@ fn Counter() -> @Component<Element> {
     call $__alloc
     local.set $__mem0
     local.get $__mem0
-    i32.const 388
+    i32.const 460
     i32.store
     local.get $__mem0
     i32.const 16
     call $__alloc
     local.set $__mem1
     local.get $__mem1
-    i32.const 416
+    i32.const 488
     i32.store
     local.get $__mem1
     local.get $key
@@ -922,7 +954,7 @@ fn Counter() -> @Component<Element> {
     i32.ge_u
     i32.mul
     i32.load
-    i32.const 416
+    i32.const 488
     i32.eq
     i32.and
     (if (result i32)
@@ -954,7 +986,7 @@ fn Counter() -> @Component<Element> {
     call $__alloc
     local.set $__mem1
     local.get $__mem1
-    i32.const 416
+    i32.const 488
     i32.store
     local.get $__mem1
     local.get $key
@@ -984,7 +1016,7 @@ fn Counter() -> @Component<Element> {
     call $__alloc
     local.set $__mem0
     local.get $__mem0
-    i32.const 448
+    i32.const 520
     i32.store
     local.get $__mem0
     i32.const 288
@@ -1197,7 +1229,7 @@ fn Counter() -> @Component<Element> {
     call $__alloc
     local.set $__mem1
     local.get $__mem1
-    i32.const 480
+    i32.const 552
     i32.store
     local.get $__mem1
     i32.const 4

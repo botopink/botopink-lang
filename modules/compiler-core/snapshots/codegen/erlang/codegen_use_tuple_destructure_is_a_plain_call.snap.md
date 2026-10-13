@@ -66,6 +66,18 @@ pub fn context(comptime t: @Expr<type>) -> @Component<unknown> {
     );
 }
 
+// Decision 416 — the record `T` built from the contexts of its fields'
+// types: each field the nearest context of its type provided above, else
+// that type's declared default, else the field's own default (`use
+// inject(Deps)`). `T` is a record; a behavior is read with `use context`.
+// `createContext(value, Behavior)` keys a context by the behavior its value
+// implements, so a field typed by the behavior reads it.
+pub fn inject(comptime t: @Expr<type>) -> @Component<unknown> {
+    @panic(
+        "`use inject` is lowered where it is written; this body never runs",
+    );
+}
+
 // ── the render scope (decision 388) ──────────────────────────────────────────
 
 // The scope a component's lambda runs with: the contexts provided above it.
@@ -149,7 +161,7 @@ fn frameParent(f: Frame) -> unknown {
 ----- ERLANG -- std/context.erl
 ```erlang
 -module(std@context).
--export([createContext/1, provide/1, context/1, push/3, find/3, rendered/2, valueOf/1, root/0, '__bp_priv__frameValue'/1, '__bp_priv__frameParent'/1]).
+-export([createContext/1, provide/1, context/1, inject/1, push/3, find/3, rendered/2, valueOf/1, root/0, '__bp_priv__frameValue'/1, '__bp_priv__frameParent'/1]).
 
 %%% Contexts (decisions 354, 378, 379) — what a component's body reads from
 
@@ -255,6 +267,21 @@ provide(Ctx) ->
 
 context(T) ->
     erlang:error({panic, <<"`use provide` / `use context` are lowered where they are written; this body never runs">>}).
+
+% Decision 416 — the record `T` built from the contexts of its fields'
+
+% types: each field the nearest context of its type provided above, else
+
+% that type's declared default, else the field's own default (`use
+
+% inject(Deps)`). `T` is a record; a behavior is read with `use context`.
+
+% `createContext(value, Behavior)` keys a context by the behavior its value
+
+% implements, so a field typed by the behavior reads it.
+
+inject(T) ->
+    erlang:error({panic, <<"`use inject` is lowered where it is written; this body never runs">>}).
 
 % ── the render scope (decision 388) ──────────────────────────────────────────
 

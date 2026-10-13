@@ -140,6 +140,8 @@ fn noteStdContextName(env: *Env, u: ast.ImportDecl, imp: ast.ImportPath, local: 
         .context_type
     else if (std.mem.eql(u8, leaf, "createContext"))
         .create_context
+    else if (std.mem.eql(u8, leaf, "inject"))
+        .inject
     else if (std.mem.eql(u8, leaf, "provide"))
         .provide
     else if (std.mem.eql(u8, leaf, "context"))
@@ -18328,7 +18330,7 @@ fn inferUseHookExpr(env: *Env, uh: ast.UseHookExprOf(.untyped), loc: ast.Loc) In
     try noteContextUse(env, uh.kind.inner.*, valTyped, fc, loc);
     try noteHookUse(env, uh.kind.inner.*, loc);
     // Decision 379 (3) — `use context(T)` answers `T`, the type it names.
-    const srcTy = if (env.contextUses.get(loc)) |cu| (if (cu.kind == .read) cu.value_type else bindingSourceType(valTyped.getType())) else bindingSourceType(valTyped.getType());
+    const srcTy = if (env.contextUses.get(loc)) |cu| (if (cu.kind == .read or cu.kind == .inject) cu.value_type else bindingSourceType(valTyped.getType())) else bindingSourceType(valTyped.getType());
     return TypedExpr{ .useHook = .{ .loc = loc, .type_ = srcTy, .kind = .{ .inner = valPtr } } };
 }
 
@@ -18426,6 +18428,7 @@ fn stdContextCallee(env: *Env, c: ast.CallExprOf(.untyped)) ?envMod.StdContextNa
         if (!std.mem.eql(u8, module, "context")) return null;
         if (std.mem.eql(u8, call.callee, "Context")) return .context_type;
         if (std.mem.eql(u8, call.callee, "createContext")) return .create_context;
+        if (std.mem.eql(u8, call.callee, "inject")) return .inject;
         if (std.mem.eql(u8, call.callee, "provide")) return .provide;
         if (std.mem.eql(u8, call.callee, "context")) return .context;
         if (std.mem.eql(u8, call.callee, "RenderScope")) return .render_scope;
@@ -18450,7 +18453,7 @@ fn checkStdContextCall(env: *Env, c: ast.CallExprOf(.untyped)) InferError!void {
             return error.TypeError;
         },
         .create_context => try env.createContextCalls.put(env.arena, c.loc, {}),
-        .provide, .context => {
+        .provide, .context, .inject => {
             if (env.useOperandLoc) |at| if (std.meta.eql(at, c.loc)) return;
             return refuseContextHookWithoutUse(env, c.kind.call.callee, c.loc);
         },
@@ -18544,7 +18547,7 @@ fn contextTypeKey(env: *Env, t: *T.Type) InferError!?[]const u8 {
 fn noteContextUse(env: *Env, operand: ast.Expr, typed: TypedExpr, fc: envMod.FnContext, loc: ast.Loc) InferError!void {
     if (operand != .call) return;
     const which = stdContextCallee(env, operand.call) orelse return;
-    if (which != .provide and which != .context) return;
+    if (which != .provide and which != .context and which != .inject) return;
     const call = operand.call.kind.call;
     if (which == .provide) {
         const statement = if (env.useStatementLoc) |at| std.meta.eql(at, loc) else false;
@@ -18593,40 +18596,152 @@ fn noteContextUse(env: *Env, operand: ast.Expr, typed: TypedExpr, fc: envMod.FnC
         ).withLoc(arg.getLoc());
         return error.TypeError;
     };
+    var fields: []envMod.InjectField = &.{};
+    if (which == .inject) {
+        // Decision 416 (1) — each field read as the context of its type; the
+        // field's own default where the record declares one.
+        const tn = value_type.deref().named.name;
+        const defs = (env.lookupTypeDef(tn) orelse return).fields() orelse return;
+        const params = env.ctorParams.get(tn) orelse &.{};
+        fields = try env.arena.alloc(envMod.InjectField, defs.len);
+        for (defs, 0..) |fd, i| {
+            var field_default: ?*const ast.Expr = null;
+            for (params) |p| if (std.mem.eql(u8, p.name, fd.name)) {
+                if (p.default) |dv| {
+                    const copy = try env.arena.create(ast.Expr);
+                    copy.* = dv;
+                    field_default = copy;
+                }
+            };
+            fields[i] = .{
+                .name = fd.name,
+                .key = try contextTypeKey(env, fd.type_),
+                .value_type = fd.type_,
+                .type_name = try errorMod.typeLabelAlloc(env.arena, fd.type_),
+                .field_default = field_default,
+            };
+        }
+    }
     try env.contextUses.put(env.arena, loc, .{
-        .kind = if (which == .provide) .provide else .read,
+        .kind = switch (which) {
+            .provide => .provide,
+            .inject => .inject,
+            else => .read,
+        },
         .key = key,
         .name = try errorMod.typeLabelAlloc(env.arena, value_type),
         .value_type = value_type,
+        .fields = fields,
     });
 }
 
-/// `context(T)` — std's read of the context of type `T` — typed as
-/// `@Component<T>` with no argument inferred: `T` is a type, not a value.
-/// Null for any other call, and for an argument that names no type (left to
-/// the ordinary inference, which refuses it).
+/// The name `arg` gives a type a context can be keyed by — a declared type,
+/// an imported one, a primitive or a behavior (416) — or null.
+fn contextTypeName(env: *Env, arg: ast.Expr) ?[]const u8 {
+    if (arg != .identifier or arg.identifier.kind != .ident) return null;
+    const n = arg.identifier.kind.ident;
+    if (env.localBindDepth(n) != null) return null;
+    if (env.lookupTypeDef(n) != null or env.importedTypeDecls.contains(n) or isPrimitiveTypeName(n) or isBehaviorName(env, n)) return n;
+    return null;
+}
+
+/// A `behavior` this module declares or imports.
+fn isBehaviorName(env: *Env, name: []const u8) bool {
+    for (env.moduleDecls) |d| if (d == .behavior and std.mem.eql(u8, d.behavior.name, name)) return true;
+    return env.importedBehaviorDecls.contains(name);
+}
+
+/// Whether the declared type `typeName` implements the behavior `behavior`.
+fn typeImplements(env: *Env, typeName: []const u8, behavior: []const u8) bool {
+    const td = env.lookupTypeDef(typeName) orelse return false;
+    const implements = switch (td) {
+        .record => |r| r.implements,
+        .struct_ => |st| st.implements,
+        .enum_ => |e| e.implements,
+    };
+    for (implements) |b| if (std.mem.eql(u8, b, behavior)) return true;
+    return false;
+}
+
+/// std's `context(T)`, `inject(T)` and the two-argument `createContext(v,
+/// Behavior)`, typed here: their type argument is a type, not a value.
+/// `context(T)` answers `@Component<T>`; `inject(R)` (416) answers
+/// `@Component<R>` for a record `R` (a behavior is refused); `createContext(v,
+/// B)` answers `Context<B>`, `v` checked to implement `B` at the argument.
+/// Null for any other call.
 fn contextReadCall(env: *Env, c: ast.CallExprOf(.untyped)) InferError!?TypedExpr {
-    if (stdContextCallee(env, c) != .context) return null;
+    const which = stdContextCallee(env, c) orelse return null;
     const call = c.kind.call;
-    if (call.args.len != 1) return null;
-    const arg = call.args[0].value.*;
-    const names_type = arg == .identifier and arg.identifier.kind == .ident and env.localBindDepth(arg.identifier.kind.ident) == null and
-        (env.lookupTypeDef(arg.identifier.kind.ident) != null or env.importedTypeDecls.contains(arg.identifier.kind.ident) or isPrimitiveTypeName(arg.identifier.kind.ident));
-    if (!names_type) {
-        env.lastError = TypeError.custom(
-            diagnostics.context_not_declared ++ ": `context(…)` reads a context by its value's type, and this argument names no type (decision 379 (3))",
-            "Name the type: `use context(Theme)` — a context value is given with `use provide(ctx)`, never read back.",
-        ).withLoc(arg.getLoc());
-        return error.TypeError;
+    switch (which) {
+        .context, .inject => {
+            if (call.args.len != 1) return null;
+            const arg = call.args[0].value.*;
+            const tn = contextTypeName(env, arg) orelse {
+                const what = if (which == .context) "`context(…)` reads a context by its value's type" else "`inject(…)` builds a record";
+                const msg = try std.fmt.allocPrint(env.arena, "{s}: {s}, and this argument names no type (decisions 379 (3), 416)", .{ diagnostics.context_not_declared, what });
+                env.lastError = TypeError.custom(msg, "Name the type: `use context(Theme)`, `use inject(Deps)` — a context value is given with `use provide(ctx)`, never read back.").withLoc(arg.getLoc());
+                return error.TypeError;
+            };
+            if (which == .inject) {
+                const fields = if (env.lookupTypeDef(tn)) |td| td.fields() else null;
+                if (isBehaviorName(env, tn) or fields == null) {
+                    const msg = try std.fmt.allocPrint(env.arena, "{s}: `inject({s})` builds a record from the contexts of its fields' types, and `{s}` is no record type (decision 416 (1))", .{ diagnostics.inject_not_record, tn, tn });
+                    env.lastError = TypeError.custom(msg, "Read a behavior's context with `use context(Behavior)`; `inject` takes a record whose fields are what it reads.").withLoc(arg.getLoc());
+                    return error.TypeError;
+                }
+            }
+            const named = try env.namedType(tn);
+            return TypedExpr{ .call = .{ .loc = c.loc, .type_ = try env.namedTypeArgs("Component", &.{named}), .kind = .{ .call = .{
+                .receiver = null,
+                .callee = call.callee,
+                .is_builtin = false,
+                .args = &.{},
+                .trailing = &.{},
+            } } } };
+        },
+        .create_context => {
+            if (call.args.len != 2) return null;
+            const keyArg = call.args[1].value.*;
+            const bn = contextTypeName(env, keyArg) orelse "";
+            if (bn.len == 0 or !isBehaviorName(env, bn)) {
+                const msg = try std.fmt.allocPrint(env.arena, "{s}: `createContext(value, B)` names the behavior the context is provided as, and this argument names no behavior (decision 416 (2))", .{diagnostics.context_behavior_not_implemented});
+                env.lastError = TypeError.custom(msg, "Name a behavior the value implements: `createContext(PgRepository(pool), MyRepository)`.").withLoc(keyArg.getLoc());
+                return error.TypeError;
+            }
+            const value = try inferExprTyped(env, call.args[0].value.*);
+            const vt = value.getType().deref();
+            const implements = vt.* == .named and typeImplements(env, vt.named.name, bn);
+            if (!implements) {
+                const shown = try errorMod.typeLabelAlloc(env.arena, value.getType());
+                const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` does not implement `{s}` (decision 416 (2))", .{ diagnostics.context_behavior_not_implemented, shown, bn });
+                env.lastError = TypeError.custom(msg, "A context keyed by a behavior holds a value of a type that implements it (`type PgRepository(…) implement MyRepository`).").withLoc(call.args[0].value.getLoc());
+                return error.TypeError;
+            }
+            const args = try env.arena.alloc(ast.CallArgOf(.typed), 1);
+            args[0] = .{ .label = null, .value = try makeTypedPtr(env, value) };
+            return TypedExpr{ .call = .{ .loc = c.loc, .type_ = try env.namedTypeArgs("Context", &.{try env.namedType(bn)}), .kind = .{ .call = .{
+                .receiver = null,
+                .callee = call.callee,
+                .is_builtin = false,
+                .args = args,
+                .trailing = &.{},
+            } } } };
+        },
+        else => return null,
     }
-    const named = try env.namedType(arg.identifier.kind.ident);
-    return TypedExpr{ .call = .{ .loc = c.loc, .type_ = try env.namedTypeArgs("Component", &.{named}), .kind = .{ .call = .{
-        .receiver = null,
-        .callee = call.callee,
-        .is_builtin = false,
-        .args = &.{},
-        .trailing = &.{},
-    } } } };
+}
+
+/// The `val` declaring the default of the context keyed `key`: this
+/// module's, or another analysed module's under a hidden import alias.
+fn contextDefaultRef(env: *Env, key: []const u8) InferError!?[]const u8 {
+    if (env.contextDefaults.get(key)) |d| return d.name;
+    const r = env.reflection orelse return null;
+    const d = r.contextDefaults.get(key) orelse return null;
+    var it = env.contextDefaultImports.iterator();
+    while (it.next()) |e| if (std.mem.eql(u8, e.value_ptr.module, d.module) and std.mem.eql(u8, e.value_ptr.name, d.name)) return e.key_ptr.*;
+    const alias = try std.fmt.allocPrint(env.arena, "bpContextDefault__{d}", .{env.contextDefaultImports.count()});
+    try env.contextDefaultImports.put(env.arena, alias, .{ .module = d.module, .name = d.name });
+    return alias;
 }
 
 /// Decisions 378 (3), 379 (3) — each read of this module gets its type's
@@ -18638,6 +18753,19 @@ fn resolveContextReads(env: *Env) InferError!void {
     var it = env.contextUses.iterator();
     while (it.next()) |e| {
         const use = e.value_ptr;
+        if (use.kind == .inject) {
+            for (use.fields) |*f| {
+                if (f.key) |k| if (try contextDefaultRef(env, k)) |ref| {
+                    f.default_ref = ref;
+                    continue;
+                };
+                if (f.field_default != null) continue;
+                const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}.{s}`: `{s}` has no context declared — declare its default with `createContext(…)` (decision 416 (1))", .{ diagnostics.context_not_declared, use.name, f.name, f.type_name });
+                env.lastError = TypeError.custom(msg, "A field `inject` reads is the context of its type provided above, else that type's declared default, else the field's own default.").withLoc(e.key_ptr.*);
+                return error.TypeError;
+            }
+            continue;
+        }
         if (use.kind != .read or use.default_ref != null) continue;
         if (env.contextDefaults.get(use.key)) |d| {
             use.default_ref = d.name;
@@ -18673,7 +18801,7 @@ fn hookCalleeDecl(env: *Env, c: ast.CallExprOf(.untyped)) InferError!?hooksMod.D
     const call = c.kind.call;
     if (call.is_builtin or call.calleeExpr != null) return null;
     if (stdContextCallee(env, c)) |which| return switch (which) {
-        .provide, .context => .{ .module = "std/context", .name = call.callee },
+        .provide, .context, .inject => .{ .module = "std/context", .name = call.callee },
         .context_type, .create_context, .render_scope => null,
     };
     if (call.receiver) |r| {

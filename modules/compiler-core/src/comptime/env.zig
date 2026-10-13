@@ -182,7 +182,7 @@ pub const FnContext = struct {
 
 /// Decision 354 — what a name imported from std's `context` module declares;
 /// decision 388's `RenderScope`, made only by `RenderScope.root()`.
-pub const StdContextName = enum { context_type, create_context, provide, context, render_scope };
+pub const StdContextName = enum { context_type, create_context, provide, context, inject, render_scope };
 
 /// Decision 371 — one `d.same(other)` on a `Decorator`: `other` is the
 /// identity (`declIdentity`) of the decorator the argument names, or null when
@@ -221,7 +221,7 @@ pub const HookTarget = struct { ref: hooksMod.DeclRef, type_: ?*T.Type };
 /// Decisions 354, 379 — one `use provide(ctx)` / `use context(T)`: which
 /// hook, the context's identity and the `T` it carries.
 pub const ContextUse = struct {
-    kind: enum { provide, read },
+    kind: enum { provide, read, inject },
     /// The context's identity: its value's type (379), the run-time key in a
     /// `RenderScope` (388).
     key: []const u8,
@@ -233,6 +233,22 @@ pub const ContextUse = struct {
     /// (`Env.contextDefaultImports`). Set once the module's bodies are
     /// inferred (`infer.zig` `resolveContextReads`).
     default_ref: ?[]const u8 = null,
+    /// Decision 416 — an `inject(R)`'s fields, each read as a context of its
+    /// type (`resolveContextReads` fills their fallbacks).
+    fields: []InjectField = &.{},
+};
+
+/// One field of a record `use inject(R)` builds (decision 416 (1)): read
+/// from the context of its type (`key`; null for a type that keys none),
+/// else that type's declared default (`default_ref`), else the field's own
+/// default (`field_default`).
+pub const InjectField = struct {
+    name: []const u8,
+    key: ?[]const u8,
+    value_type: *T.Type,
+    type_name: []const u8,
+    default_ref: ?[]const u8 = null,
+    field_default: ?*const ast.Expr = null,
 };
 
 /// How `throw` should be type-checked in the current function scope.

@@ -66,6 +66,18 @@ pub fn context(comptime t: @Expr<type>) -> @Component<unknown> {
     );
 }
 
+// Decision 416 — the record `T` built from the contexts of its fields'
+// types: each field the nearest context of its type provided above, else
+// that type's declared default, else the field's own default (`use
+// inject(Deps)`). `T` is a record; a behavior is read with `use context`.
+// `createContext(value, Behavior)` keys a context by the behavior its value
+// implements, so a field typed by the behavior reads it.
+pub fn inject(comptime t: @Expr<type>) -> @Component<unknown> {
+    @panic(
+        "`use inject` is lowered where it is written; this body never runs",
+    );
+}
+
 // ── the render scope (decision 388) ──────────────────────────────────────────
 
 // The scope a component's lambda runs with: the contexts provided above it.
@@ -149,9 +161,9 @@ fn frameParent(f: Frame) -> unknown {
 ----- BEAM ASSEMBLY -- std/context.S
 ```erlang
 {module, std@context}.
-{exports, [{createContext, 1}, {provide, 1}, {context, 1}, {push, 3}, {find, 3}, {rendered, 2}, {valueOf, 1}, {root, 0}, {'__bp_priv__frameParent', 1}, {'__bp_priv__frameValue', 1}]}.
+{exports, [{createContext, 1}, {provide, 1}, {context, 1}, {inject, 1}, {push, 3}, {find, 3}, {rendered, 2}, {valueOf, 1}, {root, 0}, {'__bp_priv__frameParent', 1}, {'__bp_priv__frameValue', 1}]}.
 {attributes, []}.
-{labels, 39}.
+{labels, 41}.
 %%% Contexts (decisions 354, 378, 379) — what a component's body reads from
 %%% above it, React's context in botopink's spelling.
 %%% 
@@ -244,6 +256,28 @@ fn frameParent(f: Frame) -> unknown {
     {move, {atom, ok}, {x, 0}}.
     {deallocate, 1}.
     return.
+% Decision 416 — the record `T` built from the contexts of its fields'
+% types: each field the nearest context of its type provided above, else
+% that type's declared default, else the field's own default (`use
+% inject(Deps)`). `T` is a record; a behavior is read with `use context`.
+% `createContext(value, Behavior)` keys a context by the behavior its value
+% implements, so a field typed by the behavior reads it.
+
+{function, inject, 1, 9}.
+  {label, 8}.
+    {line, [{location, "std@context.erl", 4}]}.
+    {func_info, {atom, std@context}, {atom, inject}, 1}.
+  {label, 9}.
+    {allocate, 1, 1}.
+    {init_yregs, {list, [{y, 0}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {literal, <<"`use inject` is lowered where it is written; this body never runs">>}, {x, 0}}.
+    {test_heap, 3, 1}.
+    {put_tuple2, {x, 0}, {list, [{atom, panic}, {x, 0}]}}.
+    {call_ext, 1, {extfunc, erlang, error, 1}}.
+    {move, {atom, ok}, {x, 0}}.
+    {deallocate, 1}.
+    return.
 % ── the render scope (decision 388) ──────────────────────────────────────────
 % The scope a component's lambda runs with: the contexts provided above it.
 % Opaque — made only by `RenderScope.root()` (`render-scope-construction`);
@@ -267,20 +301,20 @@ fn frameParent(f: Frame) -> unknown {
 % One provided value over the frames it was provided in.
 % The children's scope: `value` provided for `key` over `scope`.
 
-{function, push, 3, 9}.
-  {label, 8}.
-    {line, [{location, "std@context.erl", 5}]}.
+{function, push, 3, 11}.
+  {label, 10}.
+    {line, [{location, "std@context.erl", 6}]}.
     {func_info, {atom, std@context}, {atom, push}, 3}.
-  {label, 9}.
+  {label, 11}.
     {allocate, 3, 3}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {move, {x, 2}, {y, 2}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 22}, [{x, 0}, 2, {atom, std@context@@RenderScope}]}.
+    {test, is_tagged_tuple, {f, 24}, [{x, 0}, 2, {atom, std@context@@RenderScope}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-  {label, 22}.
+  {label, 24}.
     {test_heap, 5, 1}.
     {put_tuple2, {x, 0}, {list, [{atom, std@context@@Frame}, {y, 1}, {y, 2}, {x, 0}]}}.
     {test_heap, 3, 1}.
@@ -291,64 +325,64 @@ fn frameParent(f: Frame) -> unknown {
 % declared default (decision 378 (3): no read is unbound).
 % The two `unknown` fields are read through `frameValue` / `frameParent`: wasm boxes a field read as `unknown` only as a function's answer.
 
-{function, find, 3, 11}.
-  {label, 10}.
-    {line, [{location, "std@context.erl", 6}]}.
+{function, find, 3, 13}.
+  {label, 12}.
+    {line, [{location, "std@context.erl", 7}]}.
     {func_info, {atom, std@context}, {atom, find}, 3}.
-  {label, 11}.
+  {label, 13}.
     {allocate, 5, 3}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {move, {x, 2}, {y, 2}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 23}, [{x, 0}, 2, {atom, std@context@@RenderScope}]}.
+    {test, is_tagged_tuple, {f, 25}, [{x, 0}, 2, {atom, std@context@@RenderScope}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-  {label, 23}.
+  {label, 25}.
     {move, {x, 0}, {y, 3}}.
-    {line, [{location, "std@context.erl", 7}]}.
-  {label, 24}.
+    {line, [{location, "std@context.erl", 8}]}.
+  {label, 26}.
     {move, {atom, true}, {x, 0}}.
-    {test, is_eq_exact, {f, 25}, [{x, 0}, {atom, true}]}.
+    {test, is_eq_exact, {f, 27}, [{x, 0}, {atom, true}]}.
     {move, {y, 3}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 27}, [{x, 0}, 4, {atom, std@context@@Frame}]}.
+    {test, is_tagged_tuple, {f, 29}, [{x, 0}, 4, {atom, std@context@@Frame}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 28}}.
-  {label, 27}.
+    {jump, {f, 30}}.
+  {label, 29}.
     {move, {atom, false}, {x, 0}}.
-  {label, 28}.
-    {test, is_eq, {f, 26}, [{x, 0}, {atom, true}]}.
+  {label, 30}.
+    {test, is_eq, {f, 28}, [{x, 0}, {atom, true}]}.
     {move, {y, 3}, {x, 0}}.
     {move, {x, 0}, {y, 4}}.
     {move, {y, 4}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 30}, [{x, 0}, 4, {atom, std@context@@Frame}]}.
+    {test, is_tagged_tuple, {f, 32}, [{x, 0}, 4, {atom, std@context@@Frame}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-  {label, 30}.
-    {test, is_eq_exact, {f, 29}, [{x, 0}, {y, 1}]}.
+  {label, 32}.
+    {test, is_eq_exact, {f, 31}, [{x, 0}, {y, 1}]}.
     {move, {y, 4}, {x, 0}}.
-    {call_last, 1, {f, 19}, 5}.
-  {label, 29}.
+    {call_last, 1, {f, 21}, 5}.
+  {label, 31}.
     {move, {y, 4}, {x, 0}}.
-    {call, 1, {f, 21}}.
+    {call, 1, {f, 23}}.
     {move, {x, 0}, {y, 3}}.
-    {jump, {f, 31}}.
-  {label, 26}.
+    {jump, {f, 33}}.
+  {label, 28}.
     {test_heap, 5, 0}.
     {put_tuple2, {x, 0}, {list, [{atom, std@context@@Frame}, {y, 1}, {y, 2}, {atom, undefined}]}}.
-    {call_last, 1, {f, 19}, 5}.
-  {label, 31}.
-    {jump, {f, 24}}.
-  {label, 25}.
+    {call_last, 1, {f, 21}, 5}.
+  {label, 33}.
+    {jump, {f, 26}}.
+  {label, 27}.
     {move, {atom, ok}, {x, 0}}.
     {deallocate, 5}.
     return.
 % A body's answer: its result over its children's scope.
 
-{function, rendered, 2, 13}.
-  {label, 12}.
-    {line, [{location, "std@context.erl", 7}]}.
+{function, rendered, 2, 15}.
+  {label, 14}.
+    {line, [{location, "std@context.erl", 8}]}.
     {func_info, {atom, std@context}, {atom, rendered}, 2}.
-  {label, 13}.
+  {label, 15}.
     {allocate, 2, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
@@ -359,73 +393,73 @@ fn frameParent(f: Frame) -> unknown {
     return.
 % The result a run answered.
 
-{function, valueOf, 1, 15}.
-  {label, 14}.
-    {line, [{location, "std@context.erl", 8}]}.
+{function, valueOf, 1, 17}.
+  {label, 16}.
+    {line, [{location, "std@context.erl", 9}]}.
     {func_info, {atom, std@context}, {atom, valueOf}, 1}.
-  {label, 15}.
+  {label, 17}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 32}, [{x, 0}, 3, {atom, std@context@@Rendered}]}.
+    {test, is_tagged_tuple, {f, 34}, [{x, 0}, 3, {atom, std@context@@Rendered}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-  {label, 32}.
+  {label, 34}.
     {deallocate, 1}.
     return.
 % The empty scope, for an `await` of a component value outside every body.
 
-{function, root, 0, 17}.
-  {label, 16}.
-    {line, [{location, "std@context.erl", 9}]}.
+{function, root, 0, 19}.
+  {label, 18}.
+    {line, [{location, "std@context.erl", 10}]}.
     {func_info, {atom, std@context}, {atom, root}, 0}.
-  {label, 17}.
+  {label, 19}.
     {allocate, 0, 0}.
     {call_ext_last, 0, {extfunc, std@context@@RenderScope, root, 0}, 0}.
 
-{function, frameValue, 1, 19}.
-  {label, 18}.
-    {line, [{location, "std@context.erl", 10}]}.
-    {func_info, {atom, std@context}, {atom, frameValue}, 1}.
-  {label, 19}.
-    {allocate, 1, 1}.
-    {init_yregs, {list, [{y, 0}]}}.
-    {move, {x, 0}, {y, 0}}.
-    {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 33}, [{x, 0}, 4, {atom, std@context@@Frame}]}.
-    {get_tuple_element, {x, 0}, 2, {x, 0}}.
-  {label, 33}.
-    {deallocate, 1}.
-    return.
-
-{function, frameParent, 1, 21}.
+{function, frameValue, 1, 21}.
   {label, 20}.
     {line, [{location, "std@context.erl", 11}]}.
-    {func_info, {atom, std@context}, {atom, frameParent}, 1}.
+    {func_info, {atom, std@context}, {atom, frameValue}, 1}.
   {label, 21}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 34}, [{x, 0}, 4, {atom, std@context@@Frame}]}.
-    {get_tuple_element, {x, 0}, 3, {x, 0}}.
-  {label, 34}.
+    {test, is_tagged_tuple, {f, 35}, [{x, 0}, 4, {atom, std@context@@Frame}]}.
+    {get_tuple_element, {x, 0}, 2, {x, 0}}.
+  {label, 35}.
     {deallocate, 1}.
     return.
 
-{function, '__bp_priv__frameParent', 1, 36}.
-  {label, 35}.
+{function, frameParent, 1, 23}.
+  {label, 22}.
     {line, [{location, "std@context.erl", 12}]}.
-    {func_info, {atom, std@context}, {atom, '__bp_priv__frameParent'}, 1}.
+    {func_info, {atom, std@context}, {atom, frameParent}, 1}.
+  {label, 23}.
+    {allocate, 1, 1}.
+    {init_yregs, {list, [{y, 0}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_tagged_tuple, {f, 36}, [{x, 0}, 4, {atom, std@context@@Frame}]}.
+    {get_tuple_element, {x, 0}, 3, {x, 0}}.
   {label, 36}.
-    {call_only, 1, {f, 21}}.
+    {deallocate, 1}.
+    return.
 
-{function, '__bp_priv__frameValue', 1, 38}.
+{function, '__bp_priv__frameParent', 1, 38}.
   {label, 37}.
     {line, [{location, "std@context.erl", 13}]}.
-    {func_info, {atom, std@context}, {atom, '__bp_priv__frameValue'}, 1}.
+    {func_info, {atom, std@context}, {atom, '__bp_priv__frameParent'}, 1}.
   {label, 38}.
-    {call_only, 1, {f, 19}}.
+    {call_only, 1, {f, 23}}.
+
+{function, '__bp_priv__frameValue', 1, 40}.
+  {label, 39}.
+    {line, [{location, "std@context.erl", 14}]}.
+    {func_info, {atom, std@context}, {atom, '__bp_priv__frameValue'}, 1}.
+  {label, 40}.
+    {call_only, 1, {f, 21}}.
 ```
 
 ----- BEAM ASSEMBLY -- std@context@@Context.S
@@ -478,7 +512,7 @@ fn frameParent(f: Frame) -> unknown {
 
 {function, root, 0, 3}.
   {label, 2}.
-    {line, [{location, "std@context@@RenderScope.erl", 4}]}.
+    {line, [{location, "std@context@@RenderScope.erl", 5}]}.
     {func_info, {atom, std@context@@RenderScope}, {atom, root}, 0}.
   {label, 3}.
     {allocate, 0, 0}.
@@ -489,7 +523,7 @@ fn frameParent(f: Frame) -> unknown {
 
 {function, '__bp_get', 2, 5}.
   {label, 4}.
-    {line, [{location, "std@context@@RenderScope.erl", 5}]}.
+    {line, [{location, "std@context@@RenderScope.erl", 6}]}.
     {func_info, {atom, std@context@@RenderScope}, {atom, '__bp_get'}, 2}.
   {label, 5}.
     {test, is_eq_exact, {f, 6}, [{x, 1}, {atom, frames}]}.
@@ -502,7 +536,7 @@ fn frameParent(f: Frame) -> unknown {
 
 {function, '__bp_format', 1, 8}.
   {label, 7}.
-    {line, [{location, "std@context@@RenderScope.erl", 5}]}.
+    {line, [{location, "std@context@@RenderScope.erl", 6}]}.
     {func_info, {atom, std@context@@RenderScope}, {atom, '__bp_format'}, 1}.
   {label, 8}.
     {allocate, 2, 1}.
@@ -530,7 +564,7 @@ fn frameParent(f: Frame) -> unknown {
 
 {function, '__bp_get', 2, 3}.
   {label, 2}.
-    {line, [{location, "std@context@@Rendered.erl", 5}]}.
+    {line, [{location, "std@context@@Rendered.erl", 6}]}.
     {func_info, {atom, std@context@@Rendered}, {atom, '__bp_get'}, 2}.
   {label, 3}.
     {test, is_eq_exact, {f, 4}, [{x, 1}, {atom, value}]}.
@@ -548,7 +582,7 @@ fn frameParent(f: Frame) -> unknown {
 
 {function, '__bp_format', 1, 7}.
   {label, 6}.
-    {line, [{location, "std@context@@Rendered.erl", 5}]}.
+    {line, [{location, "std@context@@Rendered.erl", 6}]}.
     {func_info, {atom, std@context@@Rendered}, {atom, '__bp_format'}, 1}.
   {label, 7}.
     {allocate, 2, 1}.
@@ -582,7 +616,7 @@ fn frameParent(f: Frame) -> unknown {
 
 {function, '__bp_get', 2, 3}.
   {label, 2}.
-    {line, [{location, "std@context@@Frame.erl", 5}]}.
+    {line, [{location, "std@context@@Frame.erl", 6}]}.
     {func_info, {atom, std@context@@Frame}, {atom, '__bp_get'}, 2}.
   {label, 3}.
     {test, is_eq_exact, {f, 4}, [{x, 1}, {atom, key}]}.
@@ -605,7 +639,7 @@ fn frameParent(f: Frame) -> unknown {
 
 {function, '__bp_format', 1, 8}.
   {label, 7}.
-    {line, [{location, "std@context@@Frame.erl", 5}]}.
+    {line, [{location, "std@context@@Frame.erl", 6}]}.
     {func_info, {atom, std@context@@Frame}, {atom, '__bp_format'}, 1}.
   {label, 8}.
     {allocate, 2, 1}.

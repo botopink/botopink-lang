@@ -66,6 +66,18 @@ pub fn context(comptime t: @Expr<type>) -> @Component<unknown> {
     );
 }
 
+// Decision 416 — the record `T` built from the contexts of its fields'
+// types: each field the nearest context of its type provided above, else
+// that type's declared default, else the field's own default (`use
+// inject(Deps)`). `T` is a record; a behavior is read with `use context`.
+// `createContext(value, Behavior)` keys a context by the behavior its value
+// implements, so a field typed by the behavior reads it.
+pub fn inject(comptime t: @Expr<type>) -> @Component<unknown> {
+    @panic(
+        "`use inject` is lowered where it is written; this body never runs",
+    );
+}
+
 // ── the render scope (decision 388) ──────────────────────────────────────────
 
 // The scope a component's lambda runs with: the contexts provided above it.
@@ -265,6 +277,23 @@ function context(t) {
 }
 exports.context = context;
 
+// Decision 416 — the record `T` built from the contexts of its fields'
+
+// types: each field the nearest context of its type provided above, else
+
+// that type's declared default, else the field's own default (`use
+
+// inject(Deps)`). `T` is a record; a behavior is read with `use context`.
+
+// `createContext(value, Behavior)` keys a context by the behavior its value
+
+// implements, so a field typed by the behavior reads it.
+
+function inject(t) {
+    (() => { throw new Error("`use inject` is lowered where it is written; this body never runs") })();
+}
+exports.inject = inject;
+
 // ── the render scope (decision 388) ──────────────────────────────────────────
 
 // The scope a component's lambda runs with: the contexts provided above it.
@@ -389,7 +418,7 @@ function frameParent(f) {
     return f.parent;
 }
 
-Object.defineProperty(exports, "__bp_priv__", { value: { Context, createContext, provide, context, RenderScope, Rendered, Frame, push, find, rendered, valueOf, root, frameValue, frameParent } });
+Object.defineProperty(exports, "__bp_priv__", { value: { Context, createContext, provide, context, inject, RenderScope, Rendered, Frame, push, find, rendered, valueOf, root, frameValue, frameParent } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- std/context.d.ts
@@ -407,6 +436,9 @@ export declare function provide<T>(ctx: Context<T>): void;
 
 
 export declare function context(t: any): unknown;
+
+
+export declare function inject(t: any): unknown;
 
 
 export declare class RenderScope {

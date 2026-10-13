@@ -298,6 +298,27 @@ const Lowering = struct {
         self.frames.items[self.frames.items.len - 1].?.kids = name;
     }
 
+    /// Decision 416 (1) — `use inject(R)` is `R(f: <read of f's type>, …)`:
+    /// each field the nearest context of its type, else that type's declared
+    /// default, else the field's own default (copied where it is written).
+    fn injectRecord(self: *Lowering, use: envMod.ContextUse, loc: ast.Loc) !*ast.Expr {
+        const args = try self.arena.alloc(ast.CallArg, use.fields.len);
+        for (use.fields, 0..) |f, i| {
+            const value: *ast.Expr = if (f.key) |key| blk: {
+                const fallback: *ast.Expr = if (f.default_ref) |ref|
+                    try self.ident(ref, loc)
+                else
+                    try deepCopy(*ast.Expr, self.arena, @constCast(f.field_default orelse return error.ContextLowering));
+                const scope = try self.scopeArg(false, loc);
+                break :blk try self.callCarrying(find_fn, &.{ scope, try self.string(key, loc), fallback }, try self.typeRefOfType(f.value_type), loc);
+            } else try deepCopy(*ast.Expr, self.arena, @constCast(f.field_default orelse return error.ContextLowering));
+            args[i] = .{ .label = f.name, .value = value, .comments = &.{} };
+        }
+        const n = try self.arena.create(ast.Expr);
+        n.* = .{ .call = .{ .loc = loc, .kind = .{ .call = .{ .receiver = null, .callee = use.value_type.deref().named.name, .is_builtin = false, .args = args, .trailing = &.{} } } } };
+        return n;
+    }
+
     fn visitExpr(self: *Lowering, e: *ast.Expr) !bool {
         // Decision 379 — a `Context<T>` is its value at run time: a
         // `createContext(v)` (`Env.createContextCalls`) and a lifted
@@ -307,7 +328,7 @@ const Lowering = struct {
             const cc = e.call.kind.call;
             const made = self.env.createContextCalls.contains(e.call.loc) or
                 (cc.receiver == null and !cc.is_builtin and std.mem.eql(u8, cc.callee, "Context") and self.env.liftedStdTypes.contains("Context"));
-            if (made and cc.args.len == 1) {
+            if (made and cc.args.len >= 1) {
                 e.* = cc.args[0].value.*;
                 try self.walk(ast.Expr, e);
                 return true;
@@ -317,6 +338,10 @@ const Lowering = struct {
             .useHook => |uh| {
                 if (self.env.contextUses.get(uh.loc)) |use| {
                     if (use.kind == .provide) return error.ContextLowering; // a statement of its own
+                    if (use.kind == .inject) {
+                        e.* = (try self.injectRecord(use, uh.loc)).*;
+                        return true;
+                    }
                     const scope = try self.scopeArg(false, uh.loc);
                     // Decision 378 (3) — no read is unbound: the type's
                     // declared default when nothing of it is provided above.

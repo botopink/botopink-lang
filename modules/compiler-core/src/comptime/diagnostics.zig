@@ -682,6 +682,14 @@ pub const build_and_run: []const u8 = "build-and-run";
 /// default in the program: refused at the second, naming the first.
 pub const context_declared_twice: []const u8 = "context-declared-twice";
 
+/// Decision 416 (1) — `use inject(T)` whose `T` is no record type (a
+/// behavior is read with `use context`): refused at the argument.
+pub const inject_not_record: []const u8 = "inject-not-record";
+
+/// Decision 416 (2) — `createContext(value, B)` whose `value` does not
+/// implement `B`, or whose `B` names no behavior: refused at the argument.
+pub const context_behavior_not_implemented: []const u8 = "context-behavior-not-implemented";
+
 // ── Lookup table — every code (skipping aliases & reserved-empties) ─────────
 
 pub const all_codes = [_][]const u8{
@@ -837,6 +845,8 @@ pub const all_codes = [_][]const u8{
     typeinfo_meta_hooks_pending,
     build_and_run,
     context_declared_twice,
+    inject_not_record,
+    context_behavior_not_implemented,
     template_annotation_not_template,
     template_annotation_call_form,
     template_annotation_without_decl,
