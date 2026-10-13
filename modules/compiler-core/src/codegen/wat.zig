@@ -3887,6 +3887,16 @@ const Emitter = struct {
         return if (enumHasPayload(variants)) n else null;
     }
 
+    /// The enum a constructor call builds a value of (`Mode.Slow(n: 3)`,
+    /// `Slow(3)` read in its enum), or null.
+    fn enumValueOf(self: *Emitter, e: ast.Expr) ?[]const u8 {
+        if (e != .call or e.call.kind != .call) return null;
+        const cc = e.call.kind.call;
+        if (self.callKind(cc) != .enum_ctor) return null;
+        if (receiverName(cc)) |rcv| if (self.enums.getKey(rcv)) |k| return k;
+        return self.enumOfVariant(cc.callee);
+    }
+
     fn isTaggedValue(self: *Emitter, e: ast.Expr) bool {
         if (self.recordTypeOfExpr(e)) |rt| return self.records.contains(rt);
         switch (e) {
@@ -3915,6 +3925,14 @@ const Emitter = struct {
                 else => return false,
             },
             .identifier => |id| switch (id.kind) {
+                // A name bound to an enum value with payloads (`val m =
+                // Mode.Slow(n: 3)`): its type names the enum. It printed the
+                // value's address.
+                .ident => {
+                    const en = self.enumOfSubject(e) orelse return false;
+                    const variants = self.enums.get(en) orelse return false;
+                    return enumHasPayload(variants);
+                },
                 .identAccess => |ia| {
                     const ename = switch (ia.receiver.*) {
                         .identifier => |rid| switch (rid.kind) {
@@ -6076,7 +6094,10 @@ const Emitter = struct {
                     // `g()` then answers `greet`'s declared return. Without it the
                     // call of a string-returning function printed the string's
                     // address at exit 0.
-                    const bound_tr: ?ast.TypeRef = lb.typeAnnotation orelse self.typeRefOf(lb.value.*) orelse try self.fnRefTypeRef(lb.value.*);
+                    // An enum constructor's value is typed by its enum, so the
+                    // name prints by the variant's descriptor.
+                    const enum_tr: ?ast.TypeRef = if (self.enumValueOf(lb.value.*)) |en| .{ .named = en } else null;
+                    const bound_tr: ?ast.TypeRef = lb.typeAnnotation orelse self.typeRefOf(lb.value.*) orelse (try self.fnRefTypeRef(lb.value.*)) orelse enum_tr;
                     if (bound_tr) |tr| try self.local_typerefs.put(lb.name, tr);
                     // Decision 210 — the composite a `val` holds, for `==`
                     // over the name (`val t = #(P(x: 1), 2)`).

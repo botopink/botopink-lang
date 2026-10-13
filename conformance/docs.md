@@ -2754,6 +2754,12 @@ printed by its type's name and its fields:
 
 <!-- example: modules/record_field_named_tag -->
 
+A variant with a payload prints as `Enum.Variant(…)` however it reaches
+`@print` — built in place, bound by a `val`, in an array, its enum declared in
+the module or imported:
+
+<!-- example: modules/enum_payload_value_prints -->
+
 A `@Result` prints the way the source writes it — `Ok(81)`, `Error("bad")` — at
 the top level and nested in a container or a record, its payload printed as any
 nested value is (a string quoted):

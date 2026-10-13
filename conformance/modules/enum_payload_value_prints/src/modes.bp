@@ -1,0 +1,5 @@
+pub type Mode {
+    Fast,
+    Slow(n: i32),
+    Named(label: string),
+}

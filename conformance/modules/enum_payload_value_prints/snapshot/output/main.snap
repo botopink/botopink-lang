@@ -1,0 +1,8 @@
+botopink-cell 1
+out Shape.Circle(radius: 2)
+out Shape.Circle(radius: 3)
+out Mode.Slow(n: 2)
+out Mode.Named(label: "x")
+out Mode.Slow(n: 2)
+out Mode.Slow(n: 5)
+out [Mode.Slow(n: 4), Mode.Fast]
