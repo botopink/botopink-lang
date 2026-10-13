@@ -1441,10 +1441,10 @@ fn main() {
   ;; __std_f4 — from std_wasm.wasm (sha256 b4b6f06748d6)
   ;; __std_f57 — from std_wasm.wasm (sha256 abc0c5a2112e)
   ;; __std_f58 — from std_wasm.wasm (sha256 432c7dfb021a)
-  ;; __std_f400 — from std_wasm.wasm (sha256 91fc3314249d)
-  ;; std:array.joinStrings — from std_wasm.wasm (sha256 200388aad3ec)
-  ;; __std_f437 — from std_wasm.wasm (sha256 0a401b24534c)
-  ;; std:number.i32ToString — from std_wasm.wasm (sha256 33830448e95f)
+  ;; __std_f421 — from std_wasm.wasm (sha256 91fc3314249d)
+  ;; std:array.joinStrings — from std_wasm.wasm (sha256 bbec51e68301)
+  ;; __std_f454 — from std_wasm.wasm (sha256 0a401b24534c)
+  ;; std:number.i32ToString — from std_wasm.wasm (sha256 deb28dc60a2b)
 )
 ```
 
