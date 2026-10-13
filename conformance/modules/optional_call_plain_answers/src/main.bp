@@ -1,0 +1,40 @@
+//// Decision 330 — `f?.(args)` over a function answering a plain value is
+//// that value's optional: absent when the optional holding the function is,
+//// the function's answer otherwise — a present `0` included — whatever the
+//// answer's type (an integer, a string, a bool, a record).
+
+type Point(x: i32, y: i32)
+
+fn counter(present: bool) -> ?fn(i32) -> i32 {
+    val f: fn(i32) -> i32 = { n -> n - 5 };
+    return if (present) f else null;
+}
+
+fn greeter(present: bool) -> ?fn(string) -> string {
+    val f: fn(string) -> string = { s -> "hi " + s };
+    return if (present) f else null;
+}
+
+fn checker(present: bool) -> ?fn(i32) -> bool {
+    val f: fn(i32) -> bool = { n -> n == 0 };
+    return if (present) f else null;
+}
+
+fn maker(present: bool) -> ?fn(i32) -> Point {
+    val f: fn(i32) -> Point = { n -> Point(x: n, y: n * 2) };
+    return if (present) f else null;
+}
+
+pub fn main() {
+    @print(counter(true)?.(6) ?? -1);
+    @print(counter(true)?.(5) ?? -1);
+    @print(counter(false)?.(5) ?? -1);
+    @print(counter(true)?.(5));
+    @print(counter(false)?.(5));
+    @print(greeter(true)?.("bo") ?? "nobody");
+    @print(greeter(false)?.("bo") ?? "nobody");
+    @print(checker(true)?.(0) ?? false);
+    @print(checker(false)?.(0) ?? true);
+    @print(maker(true)?.(4)?.y ?? -1);
+    @print(maker(false)?.(4)?.y ?? -1);
+}

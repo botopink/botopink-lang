@@ -9456,7 +9456,9 @@ const Emitter = struct {
     // carrier that may be `0` and read it as a string (`length` loaded a
     // length from address 0, the WASI iovec, at exit 0) or found no receiver
     // type at all (`unresolved call: toString/0`, a trap). A primitive method
-    // whose receiver is such a chain is lowered under the same guard: absent
+    // written with `?.` (`s?.length()` read a length off address 0 for an
+    // absent `s`), or whose receiver is such a chain, is lowered under the
+    // guard: absent
     // stays `0`, present unboxes the receiver, runs the method on it, and
     // boxes a scalar result — so the whole expression is the `?T` the checker
     // typed it as, and prints `null` or its value.
@@ -9523,11 +9525,30 @@ const Emitter = struct {
         return null;
     }
 
-    /// The family `cc`'s receiver has once the chain is present — only for a
-    /// call that continues a `?.` chain and is not itself the `?.` link.
+    /// The family `cc`'s receiver has once the chain is present — for a call
+    /// written with `?.` (`s?.length()`, its receiver the optional itself)
+    /// and for one that continues a `?.` chain.
     fn chainedCallKind(self: *Emitter, cc: anytype, loc: ast.Loc) ?envMod.PrimKind {
-        if (cc.optional or cc.is_builtin) return null;
+        if (cc.is_builtin) return null;
         const recv = cc.receiver orelse return null;
+        if (cc.optional) {
+            if (self.primKindAt(cc, loc)) |k| return k;
+            // A receiver inference recorded no lowering for (`find(k)?.length()`,
+            // `xs.at(i)?.slice(1, 3)`): the family of its optional's payload.
+            const k: envMod.PrimKind = if (self.typeRefOf(recv.*)) |tr| switch (tr) {
+                .optional => |inner| switch (inner.*) {
+                    .named => |n| primKindOfName(n) orelse return null,
+                    .array => .array,
+                    .generic => |g| if (std.mem.eql(u8, g.name, "Array")) .array else return null,
+                    else => return null,
+                },
+                else => return null,
+            } else if (self.optInfoOf(recv.*)) |oi|
+                (if (oi.str) .string else return null)
+            else
+                return null;
+            return if (primCallRes(k, cc) != null) k else null;
+        }
         if (!isOptionalChain(recv.*)) return null;
         if (self.primKindAt(cc, loc)) |k| return k;
         return self.chainPayloadKind(recv.*);
@@ -9574,6 +9595,7 @@ const Emitter = struct {
         payload.* = .{ .identifier = .{ .loc = loc, .kind = .{ .ident = mem } } };
         var link = cc;
         link.receiver = payload;
+        link.optional = false;
         try self.lowerPrimMethod(k, link);
         if (res.boxed) try self.emit(self.builder().helper(.box_i32));
         const else_seq = self.seal(&else_c, .{ .value = .i32 });
@@ -13023,6 +13045,29 @@ const Emitter = struct {
     /// whether it is `x!` (the arm answers the binder itself).
     const OptOperator = struct { cond: *ast.Expr, tail: ast.Expr, bang: bool };
 
+    /// The plain type a decision-330 link answers when its value is no
+    /// optional of its own — `f?.(41)` over a `?fn(i32) -> i32` answers an
+    /// `i32` — read off the link, or off the function type the operand holds.
+    fn optLinkPlainType(self: *Emitter, cond: ast.Expr, tail: ast.Expr) ?ast.TypeRef {
+        if (self.typeRefOf(tail)) |t| return t;
+        if (tail == .call and tail.call.kind == .call and tail.call.kind.call.calleeExpr != null) {
+            if (self.typeRefOf(cond)) |ct| if (ct == .optional and ct.optional.* == .function)
+                return ct.optional.function.returnType.*;
+        }
+        return null;
+    }
+
+    /// The optional a link answering a plain value makes of it: boxed as a
+    /// `?T` of the link's type is (`optInfoOfTypeRef`), so absence stays the
+    /// `0` the other arm answers and a present `0` differs from it.
+    fn optLinkBoxInfo(self: *Emitter, cond: ast.Expr, tail: ast.Expr) ?OptInfo {
+        const t = self.optLinkPlainType(cond, tail) orelse return null;
+        if (t == .optional) return null;
+        const inner = self.arena().create(ast.TypeRef) catch return null;
+        inner.* = t;
+        return self.optInfoOfTypeRef(.{ .optional = inner });
+    }
+
     fn optOperatorParts(e: ast.Expr) ?OptOperator {
         if (e != .branch or e.branch.kind != .if_) return null;
         const i = e.branch.kind.if_;
@@ -13978,7 +14023,7 @@ const Emitter = struct {
     fn optInfoOf(self: *Emitter, e: ast.Expr) ?OptInfo {
         if (self.genericResultOf(e)) |a| return self.optInfoOf(a);
         // `xs?.[k]`: the link's own optional, flattened (decision 330).
-        if (optOperatorParts(e)) |op| if (!op.bang) return self.optInfoOf(op.tail);
+        if (optOperatorParts(e)) |op| if (!op.bang) return self.optInfoOf(op.tail) orelse self.optLinkBoxInfo(op.cond.*, op.tail);
         switch (e) {
             // An `if` with no `else` in value position: absent when the
             // condition is false (its value when false is the language
@@ -17429,21 +17474,24 @@ const Emitter = struct {
 
         // Decision 330 — `recv?.[i]`, `f?.(args)` and `x!` reach every backend
         // as an `if` over the optional with a `__bp_opt_<line>_<col>` binder
-        // (`infer.inferOptionalOperator`). This backend does not know what
-        // such an `if` answers — a boxed payload, a scalar, a string — and
-        // lowered as it stands it printed addresses: refused, located at the
-        // operand, until `05-wasm` types it.
+        // (`infer.inferOptionalOperator`). Lowered as it stands such an `if`
+        // printed addresses: what it answers — a boxed payload, a scalar, a
+        // string — is read off the link first.
+        // `x!` answers the payload the binder holds, and `xs?.[k]` (or a call
+        // answering an optional) the link's own optional — absence is the `0`
+        // both arms agree on. A link answering a plain value (`f?.(41)` over
+        // a `?fn(i32) -> i32`) is boxed as a `?T` of its type is
+        // (`optLinkBoxInfo`); one whose type is not known here is refused.
+        var link_box: ?OptInfo = null;
         if (i.binding) |name| if (std.mem.startsWith(u8, name, "__bp_opt_")) {
-            // `x!` answers the payload the binder holds, and `xs?.[k]` (or a
-            // call answering an optional) the link's own optional — absence
-            // is the `0` both arms agree on. A link answering a plain value
-            // would have to be boxed here, and is refused.
             const supported = if (i.then_.len == 1) blk: {
                 const tail = i.then_[0].expr;
                 if (tail == .identifier and tail.identifier.kind == .ident and std.mem.eql(u8, tail.identifier.kind.ident, name)) break :blk true;
-                break :blk self.optInfoOf(tail) != null;
+                if (self.optInfoOf(tail) != null) break :blk true;
+                link_box = self.optLinkBoxInfo(i.cond.*, tail);
+                break :blk link_box != null;
             } else false;
-            if (!supported) return self.refuse(i.cond.getLoc(), "the wasm backend does not lower `?.()` over a function answering a plain value yet (decision 330)", .{});
+            if (!supported) return self.refuse(i.cond.getLoc(), "the wasm backend does not lower this `?.` link: the type of what it answers is not known here (decision 330)", .{});
         };
 
         // `if (opt) { v -> … }`: the condition is the optional (0 = none), and
@@ -17462,7 +17510,7 @@ const Emitter = struct {
         // whatever the arms answered, so `val m = if (d < 0.0) { 0.0 - d }
         // else { d }` in a function answering nothing was `(if (result i32)`
         // around two `f64`s — invalid code, the module refused.
-        const ty: []const u8 = if (as_stmt) self.cur_result else self.ifValueType(i);
+        const ty: []const u8 = if (as_stmt) self.cur_result else if (link_box != null) "i32" else self.ifValueType(i);
         const own_ty = !std.mem.eql(u8, ty, self.cur_result);
         const result: ?ValType = if (as_stmt) null else vt(ty);
 
@@ -17518,7 +17566,16 @@ const Emitter = struct {
         try self.collectNullTestNames(i.cond.*, true, &then_names);
         const then_marked = try self.applyNarrowing(then_names.items);
         const unknown_narrowed = try self.narrowUnknown(i.cond.*);
-        const then_tail = if (own_ty) try self.emitBranchValue(i.then_, ty) else try self.emitBody(i.then_, !as_stmt);
+        const then_tail: Tail = if (link_box) |bx| blk: {
+            const tail = i.then_[0].expr;
+            if (bx.cell != .none) {
+                try self.lowerCellWord(tail, bx.cell);
+            } else {
+                try self.lowerCoerced(tail, "i32");
+                if (bx.boxed) try self.emit(self.builder().helper(.box_i32));
+            }
+            break :blk .value;
+        } else if (own_ty) try self.emitBranchValue(i.then_, ty) else try self.emitBody(i.then_, !as_stmt);
         self.dropUnknownNarrowing(unknown_narrowed);
         self.dropNarrowing(then_marked);
         if (binder_prev) |bp| try self.restoreBinderFlags(bp);

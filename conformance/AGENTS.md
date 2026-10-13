@@ -180,11 +180,9 @@ Point`, `assoc-type-duplicate` at the type's name); the three were parse errors 
 parent binary.
 Decision 330 (`?T` read with TypeScript's operators, `01-checker` step 31) adds `modules/optional_operators`
 (`?.[i]`, `?.` flattened, the postfix `!` over a present value, four targets),
-`modules/optional_call_operator` (`f?.(args)`; wasm refuses a `?.()` over a function answering a plain
-value by `wasm.expect` — `05-wasm`'s row) and `modules/optional_bang_aborts` (`find("b")!` aborts after
-`found` is printed — `.exit`; commonJS's stderr names `value is null — find("b")! at
-src/main.bp:11:12`; erlang and beam abort with the text as an Erlang binary and wasm without it — the
-backends' rows), and six `reject/` cells: `optional_operator_never_null` (`s?.length()`
+`modules/optional_call_operator` (`f?.(args)`, four targets) and `modules/optional_bang_aborts`
+(`find("b")!` aborts after `found` is printed, its stderr naming `value is null — find("b")! at
+src/main.bp:11:12` on the four targets — the panic text decision 430 prints alike), and six `reject/` cells: `optional_operator_never_null` (`s?.length()`
 with `s: string`), `nullish_never_null` (`s ?? "fallback"`), `bang_never_null` (`n!`) — each
 `optional-operator-never-null` at the operator —, `nullish_beside_logical` (`flag ?? false && true`,
 at the `??`), `optional_has_no_methods` (`.unwrapOr` on a `?string`) and `result_namespace_removed`
@@ -194,6 +192,13 @@ suite's `.unwrapOr` on a `?T` became `??` (`scripts/codemod-optional-operators.p
 index of an index (`rows[1][0]`, `xs[k]` answering `?T`) is `rows[1]?.[0]` (`modules/index_expression`,
 `modules/array_windows`). A method after a `?.` link continues its chain (`e?.key.length()`,
 `modules/optional_chain_method`): the chain runs under the `?.`'s guard.
+`modules/optional_method_absent_receiver` — `recv?.m(args)` with the optional itself as the receiver (a
+local, a call, an array element; `length`, `toUpper`, `contains`, `slice`), absent and present, four
+targets (erlang raised `bp_unsupported_method`, beam `unresolved_method`, wasm read a length off address
+0, and commonJS called `contains` on a string, on the parent binary).
+`modules/optional_call_plain_answers` — `f?.(args)` over a `?fn(…) -> T` answering an integer (a present
+`0` included), a string, a bool and a record, four targets (wasm refused a link answering a plain value on
+the parent binary).
 `modules/optional_member_default` — `xs.at(k)?.field ?? d` over a present and an absent element, a string
 field, an empty array, an array built by `map` and one passed in, four targets (wasm printed the
 element's address for the `map`-built array on the parent binary).

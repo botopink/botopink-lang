@@ -1101,7 +1101,7 @@ fn countLocalsInExpr(em: *Emitter, e: ast.Expr, count: *u32) void {
                 if (cc.receiver) |r| countLocalsInExpr(em, r.*, count);
                 // The present receiver of a method continuing a `?.` chain
                 // (`lowerCall`).
-                if (!cc.is_builtin and !cc.optional) if (cc.receiver) |r| if (isOptionalChain(r.*)) {
+                if (!cc.is_builtin) if (cc.receiver) |r| if (cc.optional or isOptionalChain(r.*)) {
                     count.* += 1;
                 };
                 for (cc.args) |arg| countLocalsInExpr(em, arg.value.*, count);
@@ -6875,13 +6875,14 @@ const Emitter = struct {
             if (mode == .tail) try self.emitReturn();
             return;
         }
-        // `es.at(9)?.key.length()`: `?.` makes the REST of the chain
-        // conditional, so a method whose receiver continues one runs only on
-        // a present value — `undefined` otherwise, as erlang's guarding fun
-        // answers. Only the link written with `?.` carried the guard, and
-        // `length` ran on `undefined`. The present receiver is parked in a
+        // `s?.length()` and `es.at(9)?.key.length()`: `?.` makes the call and
+        // the REST of the chain conditional, so a method written with `?.`, or
+        // whose receiver continues a chain, runs only on a present value —
+        // `undefined` otherwise, as erlang's guarding fun answers. Only the
+        // link written with `?.` carried the guard, and `length` ran on
+        // `undefined`. The present receiver is parked in a
         // slot of its own (`countLocalsInExpr`) and the call reads it by name.
-        if (!cc.optional) if (cc.receiver) |r| if (isOptionalChain(r.*)) {
+        if (cc.receiver) |r| if (cc.optional or isOptionalChain(r.*)) {
             const present_l = self.allocLabel();
             const end_l = self.allocLabel();
             try self.lowerExprIntoX0(r.*);
@@ -6898,6 +6899,7 @@ const Emitter = struct {
             recv.* = .{ .identifier = .{ .loc = .{ .line = 0, .col = 0 }, .kind = .{ .ident = name } } };
             var inner = cc;
             inner.receiver = recv;
+            inner.optional = false;
             try self.lowerCall(inner, .non_tail, loc);
             try beamEmitter.writeLabel(self.out, end_l);
             if (mode == .tail) try self.emitReturn();

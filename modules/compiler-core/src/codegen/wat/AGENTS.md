@@ -648,9 +648,12 @@ class beside them. What each number is here, and what is refused:
   (`optOperatorParts`). `xs?.[k]` answers the link's own optional (`optInfoOf`
   reads the arm), and `x!` its payload (`isStringExpr`, `isBoolExpr`,
   `printShapeOf`, `wasmTypeOf`, `recordTypeOfExpr` read the operand's
-  `OptInfo`). A `?.()` over a function answering a plain value would need its
-  answer boxed and is refused at the operand (`lowerIfExpr`;
-  `modules/optional_call_operator`'s `.wasm.expect`). `o ?? d` reads its shape and
+  `OptInfo`). A `?.()` over a function answering a plain value boxes its
+  answer as a `?T` of that type is (`optLinkBoxInfo`: the link's type, else the
+  return of the `?fn(…) -> T` the operand holds; `lowerIfExpr`), so `?? d` and
+  `@print` read it as any `?T` (`modules/optional_call_operator`,
+  `modules/optional_call_plain_answers`); a link whose type is not known here is
+  refused at the operand. `o ?? d` reads its shape and
   its bool-ness as `o.unwrapOr(d)` does (`nullishParts`):
   `(rs.at(1) ?? #("", ""))._1` printed the string's address. `xs.map({ n -> Y(…) })`
   holds the record its lambda answers (`elemRecordOf`), so `built.at(1)?.id` reads the field
@@ -1083,7 +1086,12 @@ the receiver's family read off the chain (`chainPayloadKind`: the previous
 guarded link's result, a field's declared type, a string). The whole expression
 is the `?T` the checker typed — `optInfoOf` answers it (`chainedCallOpt`) — and
 prints `null` or its value. A float result has no box here and keeps the
-unguarded path. `modules/optional_chain_method` pins it.
+unguarded path. `modules/optional_chain_method` pins it. The link written with
+`?.` itself (`s?.length()`, `find(k)?.contains("x")`, `xs.at(i)?.slice(1, 3)`)
+is lowered the same way (`chainedCallKind`: the plan inference recorded, else
+the family of the receiver's `?T` payload — its type, or a string element's
+`OptInfo`); an absent `s` read a length off address 0
+(`modules/optional_method_absent_receiver`).
 
 A `val c: ?T = …` keeps the VALUE's carrier (`opt_locals` from `optInfoOf` of
 the initializer, not only when unannotated): `cs[1]` over an all-unit enum's

@@ -8307,7 +8307,7 @@ const Emitter = struct {
             .pipeline => |p| this.pipelineNode(b, p),
             .call => |cc| if (cc.is_builtin)
                 this.builtinCallNode(b, cc)
-            else if (!cc.optional and cc.receiver != null and isOptionalChain(cc.receiver.?.*))
+            else if (cc.receiver != null and (cc.optional or isOptionalChain(cc.receiver.?.*)))
                 this.chainedCallNode(b, c.loc, cc)
             else
                 this.plainCallNode(b, c.loc, cc),
@@ -8347,11 +8347,12 @@ const Emitter = struct {
         };
     }
 
-    /// `es.at(9)?.key.length()`: `?.` makes the REST of the chain
-    /// conditional, so a method whose receiver continues one runs only on a
-    /// present value — `(fun(undefined) -> undefined; (R) -> <call on R>
-    /// end)(<receiver>)`. Only the link written with `?.` carried the guard,
-    /// and `length` ran on `undefined` (`bp_unsupported_method`).
+    /// `s?.length()` and `es.at(9)?.key.length()`: `?.` makes the call and
+    /// the REST of the chain conditional, so a method written with `?.`, or
+    /// whose receiver continues a chain, runs only on a present value —
+    /// `(fun(undefined) -> undefined; (R) -> <call on R> end)(<receiver>)`.
+    /// Only the link written with `?.` carried the guard, and `length` ran on
+    /// `undefined` (`bp_unsupported_method`).
     fn chainedCallNode(this: *Emitter, b: Ast.Builder, loc: ast.Loc, cc: anytype) anyerror!Ast.Expr {
         const n = this.try_seq;
         this.try_seq += 1;
@@ -8361,6 +8362,7 @@ const Emitter = struct {
         recv.* = .{ .identifier = .{ .loc = .{ .line = 0, .col = 0 }, .kind = .{ .ident = local } } };
         var inner = cc;
         inner.receiver = recv;
+        inner.optional = false;
         const access = try this.plainCallNode(b, loc, inner);
         return this.optionalAccess(b, Ast.Expr.v(try this.varRef(b, local)), access, cc.receiver.?.*);
     }

@@ -20014,17 +20014,23 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                 // `length` PROPERTY (`TypeError: … is not a function`, exit 1)
                 // where erlang printed the number. Only the RENAME is taken
                 // from the unwrapped type — the call's own type is whatever
-                // the branches below give it.
-                if (env.jsMethodRenames.get(loc) == null and
-                    (std.mem.eql(u8, call.callee, "len") or
-                        std.mem.eql(u8, call.callee, "size") or
-                        std.mem.eql(u8, call.callee, "length")))
-                {
+                // the branches below give it. §A4's prototype rename the
+                // same way: `s?.contains("x")` over a `?string` is JavaScript's
+                // `includes` (`…?.contains is not a function`, exit 1).
+                if (env.jsMethodRenames.get(loc) == null) {
                     if (optionalInner(recvPtr.getType())) |inner| {
                         const innerTy = inner.deref();
                         if (innerTy.* == .named) {
                             if (primKindOfName(innerTy.named.name)) |pk| {
-                                if (pk == .array or pk == .string or pk == .bytes) try env.jsMethodRenames.put(loc, "length");
+                                if ((pk == .array or pk == .string or pk == .bytes) and
+                                    (std.mem.eql(u8, call.callee, "len") or
+                                        std.mem.eql(u8, call.callee, "size") or
+                                        std.mem.eql(u8, call.callee, "length")))
+                                {
+                                    try env.jsMethodRenames.put(loc, "length");
+                                } else if (try primMethodNodeRename(env, innerTy, call.callee)) |rn| {
+                                    try env.jsMethodRenames.put(loc, rn);
+                                }
                             }
                         }
                     }

@@ -2399,7 +2399,10 @@ printed it. The rename now also unwraps one `optional` layer, and ONLY the renam
 else about an optional receiver is treated as a primitive one, so the call's own type is still
 whatever the branches below it give it. `?string` and `?array` are the only families that qualify,
 and `.length` is the same answer for either with or without the `?` — a null value throws on the
-read exactly where it threw on the call.
+read exactly where it threw on the call. §A4's per-call prototype rename (`primMethodNodeRename`,
+`String.contains` ⇒ `includes`) unwraps the same layer, so `s?.contains("x")` over a `?string` is
+`s?.includes("x")` (`…?.contains is not a function`, exit 1, before;
+`modules/optional_method_absent_receiver`).
 
 **The gap this did not close is closed**, by narrowing rather than by this rename: a field read off
 a `?Record` receiver was a fresh variable, because the member-access path finds no `TypeDef` for

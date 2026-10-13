@@ -1,7 +1,5 @@
 //// Decision 330 — `f?.(args)` calls the function an optional holds, and is
-//// absent when the optional is. On commonJS, erlang and beam; wasm refuses a
-//// `?.()` over a function answering a plain value (it would have to box the
-//// answer — `05-wasm`).
+//// absent when the optional is, on every target.
 
 fn adder(present: bool) -> ?fn(i32) -> i32 {
     val add: fn(i32) -> i32 = { n -> n + 1 };
