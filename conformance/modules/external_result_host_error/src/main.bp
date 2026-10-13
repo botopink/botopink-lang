@@ -42,22 +42,22 @@ fn hostError(message: string, name: failure.HostErrorName) -> HostError {
 }
 
 fn doubleBody(n: i32) -> @Result<i32, HostError> {
-    if (n < 0) { throw hostError("negative", failure.HostErrorName.Error); }
+    if (n < 0) throw hostError("negative", failure.HostErrorName.Error);
     return n * 2;
 }
 
 fn thrownBody(n: i32) -> @Result<i32, HostError> {
-    if (n <= 0) { throw hostError("refused", failure.HostErrorName.Throw); }
+    if (n <= 0) throw hostError("refused", failure.HostErrorName.Throw);
     return n;
 }
 
 fn answeredBody(n: i32) -> @Result<i32, HostError> {
-    if (n <= 0) { throw hostError("refused", failure.HostErrorName.Error); }
+    if (n <= 0) throw hostError("refused", failure.HostErrorName.Error);
     return n + 1;
 }
 
 fn laterBody(n: i32) -> @Task<@Result<i32, HostError>> {
-    if (n <= 0) { throw hostError("late", failure.HostErrorName.Error); }
+    if (n <= 0) throw hostError("late", failure.HostErrorName.Error);
     return n * 3;
 }
 

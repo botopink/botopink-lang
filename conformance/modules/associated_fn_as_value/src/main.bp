@@ -17,7 +17,7 @@ type Size {
     Large,
 
     fn of(n: i32) -> Size {
-        return if (n > 9) { Size.Large } else { Size.Small };
+        return if (n > 9) Size.Large else Size.Small;
     }
 
     fn name(self: Self) -> string {

@@ -5,10 +5,20 @@
 
 fn flatten(comptime decl: @Decl) {
     decl.addMember(
-        "pub fn flat(self: Self) -> " + decl.name + " { return " + decl.name + "(..self, y: 0); }",
+        "pub fn flat(self: Self) -> "
+            + decl.name
+            + " { return "
+            + decl.name
+            + "(..self, y: 0); }",
     );
     decl.addMember(
-        "pub fn rebuilt(v: " + decl.name + ", z: i32) -> " + decl.name + " { val __w = " + decl.name + "(..v, z: z); return __w; }",
+        "pub fn rebuilt(v: "
+            + decl.name
+            + ", z: i32) -> "
+            + decl.name
+            + " { val __w = "
+            + decl.name
+            + "(..v, z: z); return __w; }",
     );
 }
 

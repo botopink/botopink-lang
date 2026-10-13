@@ -3,7 +3,9 @@
 //// store `cacheThrough` keeps — wherever the wrapped function is declared.
 
 var hits: i32 = 0;
+
 var keys: i32[] = [];
+
 var values: string[] = [];
 
 /// How many times a `#[counted]` function ran.
@@ -19,7 +21,7 @@ fn noteHit() {
 pub fn counted(comptime decl: @Decl<fn(..) -> string>) {
     decl.wrapWith({ call ->
         noteHit();
-        call.run()
+        call.run();
     });
 }
 

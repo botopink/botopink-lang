@@ -13,9 +13,17 @@ val cities = [
 ];
 
 pub fn main() {
-    @print(of(cities).where({ c -> c.pop >= 5 }).select({ c -> c.name }).toArray().join(", "));
+    @print(of(cities)
+        .where({ c -> c.pop >= 5 })
+        .select({ c -> c.name })
+        .toArray()
+        .join(", "));
     val names = of(cities).select({ c -> c.name }).toArray();
     @print(names.join("/"));
-    @print(of([1, 2, 3, 4]).where({ n -> n % 2 == 0 }).select({ n -> n * n }).toArray().join("-"));
+    @print(of([1, 2, 3, 4])
+        .where({ n -> n % 2 == 0 })
+        .select({ n -> n * n })
+        .toArray()
+        .join("-"));
     @print(of(["a", "b"]).toArray().join("+"));
 }

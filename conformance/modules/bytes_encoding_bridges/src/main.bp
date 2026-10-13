@@ -27,6 +27,9 @@ pub fn main() {
     @print(show(encoding.hexDecodeBytes("00FFab")));
     @print(show(encoding.hexDecodeBytes("abc")));
     @print(show(encoding.hexDecodeBytes("zz")));
-    @print(encoding.base64DecodeBytes(encoding.base64EncodeBytes(raw)).unwrapOr(hi) == raw);
+    @print(encoding
+        .base64DecodeBytes(encoding.base64EncodeBytes(raw))
+        .unwrapOr(hi)
+        == raw);
     @print(encoding.base64Encode("hi") == encoding.base64EncodeBytes(hi));
 }

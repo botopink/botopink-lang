@@ -15,4 +15,6 @@ declare fn later(n: i32) -> @Task<@Result<i32, failure.HostError>>;
 #[@External.Node("Math.abs($0)", result: false), @External.Erlang("abs($0)", result: false)]
 declare fn magnitude(n: i32) -> i32;
 
-pub fn main() { @print("checked"); }
+pub fn main() {
+    @print("checked");
+}
