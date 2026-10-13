@@ -1313,6 +1313,11 @@ at build is the same refusal, naming `7 / 0`:
 <!-- example: modules/comptime_float_division_by_zero -->
 <!-- example: modules/comptime_integer_division_by_zero -->
 
+At run time a float division by zero prints the float's word on commonJS and
+wasm, and erlang and beam abort with `badarith`:
+
+<!-- example: modules/float_nan_infinity_words -->
+
 ### Optionals
 
 `?T` is a `T` or `null`, and it has no methods (decision 330): it is read with
@@ -1752,7 +1757,13 @@ prefixed loop as they lower an `@Iterator` / `@Stream` function, inline.
 
 ### Assert
 
+`assert <condition>;` and `assert <condition>, "<message>";` do nothing when
+the condition holds; when it fails the program aborts, and the abort names the
+message on stderr, on every target.
+
 <!-- example: modules/assert_statement -->
+
+<!-- example: modules/assert_message_aborts -->
 
 `val assert <pattern> = <expr>;` binds the pattern's names and is **fatal** when
 the match fails, so the names below the binding are never unbound. It takes no
@@ -1957,6 +1968,8 @@ bounded by the data, not by the runtime.
 
 <!-- example: modules/self_tail_recursion -->
 
+<!-- example: modules/tail_recursive_sum -->
+
 An expression in the body that reads the parameters — `xs.at(i) ?? 0` — keeps
 the tail call a loop:
 
@@ -1972,6 +1985,11 @@ answer, not the language's:
 * a function that also makes a closure reading one of its own parameters, or
   one with a destructuring or defaulted parameter;
 * a function returning `@Iterator`, `@Stream`, `@Task` or `@Component`.
+
+A function may call one declared after it, so two functions recurse into each
+other in either order:
+
+<!-- example: modules/mutual_recursion_forward_reference -->
 
 `wasm` recurses for every shape, tail call included — about 30 000 frames.
 Measured at 1.0.10-beta, with node's own ceiling for a two-parameter function
@@ -2416,6 +2434,11 @@ build, and a template that reads `q.value` refuses it at the argument
 (`template-value-not-known`) — its parts are read with `q.parts()`.
 
 <!-- example: modules/yamlconf -->
+
+The value a template lifts has the type of what it built, so a label the lifted
+tuple does not have is refused where it is read, located:
+
+<!-- example: modules/yamlconf_unknown_label -->
 
 The code a template builds has two authors, and each name in it resolves in
 the scope of whoever wrote it (decision 112). Text the library writes in
@@ -3415,6 +3438,8 @@ cell to write (`#[@External.Wasm(op: "f64.floor")]`):
 answers OTP's where a JS engine's differs: no final sigma (`"ΟΔΟΣ".toLower()`
 is `"οδοσ"` on wasm, erlang and beam, `"οδος"` on commonJS).
 
+<!-- example: modules/string_lower_final_sigma -->
+
 **A wasm program writes std-wasm's text** (decision 441). Where std-wasm's
 answer differs from a JS engine's, a `--target wasm` program answers
 std-wasm's — the text of erlang, beam and the comptime: a float is OTP's
@@ -3427,6 +3452,10 @@ space stays). A wasm program and its own comptime agree. commonJS writes the
 same text through the helper `@print` shares (`5.0`, `1.0e21`).
 
 <!-- example: modules/float_text_and_trim -->
+
+<!-- example: modules/float_text_at_run_time -->
+
+<!-- example: modules/string_trim_keeps_nbsp -->
 
 **A float written as text keeps its decimal part on every target**, commonJS
 included (144 B-78): in a template hole, through `toString()`, and beside a

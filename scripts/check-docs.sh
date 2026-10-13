@@ -23,8 +23,10 @@
 # that the reference and the suite agree on what exists:
 #
 #   - a `modules/<cell>` reference names a directory holding `botopink.json`
-#     and `src/main.bp`; a `test/<suite>` reference names a `.bp` file or a
-#     directory holding `botopink.json` under `conformance/test/`;
+#     and `src/main.bp`, and a `docs.md` that is not empty — beside each cell
+#     the reference names, the reference text it shows (decision 462); a
+#     `test/<suite>` reference names a `.bp` file or a directory holding
+#     `botopink.json` under `conformance/test/`;
 #   - a ```botopink fence is refused: a program in the reference is a cell, and
 #     a table, a grammar or a layout sample is fenced as ```text;
 #   - a line opening with `<!-- docs-check:` (the directive of the inline
@@ -37,8 +39,9 @@
 #
 # Every run starts with the harness's own contract — a synthetic doc whose
 # lines must get known verdicts (a reference to a cell that exists ✓, to one
-# that does not ✗, to a suite ✓, a ```botopink fence ✗, a `docs-check`
-# comment ✗, an `example:` line with no path ✗). A verdict that differs fails
+# that does not ✗, to a cell whose docs.md is empty ✗, to a suite ✓, a
+# ```botopink fence ✗, a `docs-check` comment ✗, an `example:` line with no
+# path ✗). A verdict that differs fails
 # the run before the docs are judged; `--self-test` runs only it.
 set -uo pipefail
 
@@ -107,7 +110,11 @@ exists() {
     local root="$1" p="$2"
     case "$p" in
         modules/*)
-            [ -f "$root/$p/botopink.json" ] && [ -f "$root/$p/src/main.bp" ] && return 0
+            if [ -f "$root/$p/botopink.json" ] && [ -f "$root/$p/src/main.bp" ]; then
+                [ -s "$root/$p/docs.md" ] && return 0
+                printf 'names a cell whose docs.md is empty or missing: conformance/%s/docs.md quotes the reference text the cell shows (decision 462)' "$p"
+                return 1
+            fi
             printf 'names no cell: conformance/%s has no botopink.json and src/main.bp' "$p" ;;
         test/*)
             { [ -f "$root/$p" ] && [ "${p%.bp}" != "$p" ]; } && return 0
@@ -145,14 +152,19 @@ trap 'rm -rf "$work"' EXIT
 # ── the harness's own contract ──────────────────────────────────────────────
 self_test() {
     local root="$work/self/conformance" doc="$work/self/doc.md" out expected
-    mkdir -p "$root/modules/there/src" "$root/test"
+    mkdir -p "$root/modules/there/src" "$root/modules/bare/src" "$root/test"
     echo '{ "name": "there", "version": "0.0.1", "src": "src/" }' >"$root/modules/there/botopink.json"
     echo 'pub fn main() {}' >"$root/modules/there/src/main.bp"
+    echo '> the reference text' >"$root/modules/there/docs.md"
+    echo '{ "name": "bare", "version": "0.0.1", "src": "src/" }' >"$root/modules/bare/botopink.json"
+    echo 'pub fn main() {}' >"$root/modules/bare/src/main.bp"
+    : >"$root/modules/bare/docs.md"
     echo 'test "t" { assert true; }' >"$root/test/suite.bp"
     cat >"$doc" <<'MD'
 <!-- example: modules/there -->
 <!-- example: modules/gone -->
 <!-- example: test/suite.bp -->
+<!-- example: modules/bare -->
 ```botopink
 fn f() {}
 ```
@@ -167,14 +179,15 @@ MD
     out="$(check "$root" "$doc" doc.md | sed "s/$(printf '\033')\[[0-9;]*m//g" | cut -d' ' -f2)"
     expected='doc.md:2
 doc.md:4
-doc.md:7
-doc.md:8'
-    if [ "$out" != "$expected" ] || [ "$(cat "$tally")" != "3 1 3" ]; then
+doc.md:5
+doc.md:8
+doc.md:9'
+    if [ "$out" != "$expected" ] || [ "$(cat "$tally")" != "4 2 3" ]; then
         printf '%s✗ check-docs.sh: the harness contract failed — refused lines:\n%s\ntally: %s%s\n' \
             "$RED" "$out" "$(cat "$tally")" "$NC" >&2
         return 1
     fi
-    echo "check-docs.sh: harness contract — 6 verdicts as expected"
+    echo "check-docs.sh: harness contract — 7 verdicts as expected"
 }
 
 if [ "$list" -eq 1 ]; then

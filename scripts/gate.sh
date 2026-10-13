@@ -481,10 +481,8 @@ if [ -n "$jobs_total" ]; then
 else
     budget_total="$(pool_default_jobs)"
 fi
-share() { # <percent> — that part of the total, at least 1
-    local n=$(( budget_total * $1 / 100 ))
-    [ "$n" -ge 1 ] || n=1
-    echo "$n"
+share() { # <percent> — that part of the total, at least 1 (pool.sh)
+    pool_share "$budget_total" "$1"
 }
 echo "gate: job budget $budget_total — test-libs $(share 50), test-conformance $(share 30), tsc-check $(share 10)"
 launch 4 zig build test-cli "$opt"

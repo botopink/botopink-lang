@@ -17,6 +17,10 @@
 #                       admitted, so it never waits on other gates forever;
 #                       with no /proc/loadavg nothing waits.
 #   pool_job <dir> <cmd…>   admit, mark the job in flight, run it, unmark.
+#   pool_share <total> <percent>
+#                       that part of a run's one total of jobs, at least 1 —
+#                       how `scripts/gate.sh` hands each side-by-side stage
+#                       its share (§ job budget there; 144 B-29 step G).
 #
 # A caller exports what its jobs need (`export -f`), runs them with
 # `xargs -P "$jobs" bash -c '… pool_job "$inflight" <fn> …'` and keeps its output
@@ -47,6 +51,12 @@ pool_check_jobs() {
     case "$1" in
         ''|*[!0-9]*|0) echo "$2: --jobs must be a positive count (got '$1')" >&2; exit 2 ;;
     esac
+}
+
+pool_share() { # <total> <percent>
+    local n=$(( $1 * $2 / 100 ))
+    [ "$n" -ge 1 ] || n=1
+    echo "$n"
 }
 
 pool_admit() { # <inflight dir>

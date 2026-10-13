@@ -1618,6 +1618,58 @@ expect_code 0 "check of a consumer building a type its dependency's .d.bp declar
 run "$DBP" build --target erlang --out out
 expect_code 0 "build of the same consumer"
 
+# ── the gate's own rules (144 B-29 steps G and J) ────────────────────────────
+# What `scripts/gate.sh` decides before it builds anything, read off the
+# scripts it sources: which gate a branch runs and what a step's files reach
+# (decision 460, `scripts/lib/gate-mode.sh`, run directly), the share of the
+# run's one total of jobs each side-by-side stage gets (`pool_share`,
+# `scripts/lib/pool.sh`), and the `--jobs` argument (decisions 468, 469) —
+# refused before the gate does anything, so no case here starts a gate.
+echo "==> the gate: step or full gate, what a step reaches, one total of jobs (144 B-29 steps G, J)"
+GATE_MODE="$REPO_ROOT/scripts/lib/gate-mode.sh"
+gate_mode_says() { # <want> <label> <branch> <file>…
+  local want="$1" label="$2" got
+  shift 2
+  got="$(bash "$GATE_MODE" "$@" 2>&1)" || true
+  [[ "$got" == "$want" ]] && ok "$label" || fail "$label: got '$got', want '$want'"
+}
+gate_mode_says "mode=step reach_all=0 targets=wasm why=reaches wasm only" \
+  "a front/* branch is the step gate; a wasm emitter file reaches the wasm cells alone" \
+  front/x modules/compiler-core/src/codegen/wat.zig
+gate_mode_says "mode=step reach_all=0 targets=commonJS,beam why=reaches commonJS, beam only" \
+  "two backends' files reach those two, in the canonical order" \
+  front/x modules/compiler-core/src/codegen/beam_asm.zig modules/compiler-core/src/codegen/commonJS.zig
+gate_mode_says "mode=full reach_all=1 targets=none why=shared file: modules/compiler-core/src/codegen.zig (the dispatcher)" \
+  "feat is the full gate; the dispatcher is a shared file and reaches every cell" \
+  feat modules/compiler-core/src/codegen.zig
+gate_mode_says "mode=full reach_all=1 targets=none why=shared file: modules/compiler-core/src/checker.zig" \
+  "any other branch is the full gate; a file the partition does not list reaches every cell" \
+  other modules/compiler-core/src/checker.zig
+gate_mode_says "mode=full reach_all=0 targets=none why=documentation only (no cell reads a *.md)" \
+  "a detached HEAD is the full gate; a *.md outside libs/ reaches no cell" \
+  "" AGENTS.md conformance/docs.md
+gate_mode_says "mode=full reach_all=1 targets=none why=shared file: libs/std/AGENTS.md" \
+  "a *.md under libs/ reaches every cell" \
+  main libs/std/AGENTS.md
+gate_mode_says "mode=step reach_all=1 targets=none why=no changed file to measure" \
+  "a step with no changed file reaches every cell" \
+  front/x
+POOL_SHARES="$(bash -c '. "$1"; for p in 50 30 10; do pool_share 16 "$p"; done; pool_share 1 10' _ "$REPO_ROOT/scripts/lib/pool.sh" | tr '\n' ' ')"
+[[ "$POOL_SHARES" == "8 4 1 1 " ]] && ok "one total of 16 jobs: test-libs 8, test-conformance 4, tsc-check 1; a share is at least 1" || fail "pool_share: got '$POOL_SHARES', want '8 4 1 1 '"
+gate_args() { # <want exit> <want text> <label> <arg>… — `gate.sh` refuses the arguments before it starts
+  local want="$1" text="$2" label="$3"
+  shift 3
+  set +e
+  if have timeout; then OUT="$(cd "$WORK" && timeout 60 bash "$REPO_ROOT/scripts/gate.sh" "$@" 2>&1)"; else OUT="$(cd "$WORK" && bash "$REPO_ROOT/scripts/gate.sh" "$@" 2>&1)"; fi
+  CODE=$?
+  set -e
+  expect_code "$want" "$label"
+  expect_out "$text" "$label: says why"
+}
+gate_args 2 "gate: --jobs must be a positive count (got '0')" "gate.sh --jobs 0 is refused" --jobs 0
+gate_args 2 "gate: --jobs must be a positive count (got 'many')" "gate.sh --jobs=many is refused" --jobs=many
+gate_args 2 "gate: --jobs needs a value" "gate.sh --jobs with no value is refused" --no-conformance --jobs
+
 echo
 if [[ "$failures" -gt 0 ]]; then
   echo "==> cli contract: $failures assertion(s) FAILED" >&2

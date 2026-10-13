@@ -1701,11 +1701,10 @@ refused at the label, `this tuple has no element labeled \`prot\``), and the sui
 `test/stdlib-tour/` (its `test {}` blocks). No gate ran them before: `yamlconf`'s
 `import {conf} from "yamlconf"` is `import {yamlconf.conf}` since decision 337, and
 `stdlib-tour`'s two record tests asserted the identity `==` decision 210 replaced, so they now
-assert structural keys and dedup. Two are red, each a defect the move found: `modules/yamlconf`
-on wasm prints `1` for the lifted tuple's `bool` (`@print(cfg.debug)`; through `val d: bool =
-cfg.debug` it prints `true`), and `test/stdlib-tour`'s `Set.fromList` of structurally-equal
-records keeps three members on commonJS (and wasm, which no suite reaches) where erlang and beam
-keep two. `generic-loader-binding` (three `from "erika"` forms — a library, not the language) moved to erika's
+assert structural keys and dedup. The move found two defects, both fixed since: `modules/yamlconf`
+on wasm printed `1` for the lifted tuple's `bool` (`@print(cfg.debug)`), and `test/stdlib-tour`'s
+`Set.fromList` of structurally-equal records kept three members on commonJS where erlang and beam
+keep two; both answer their snapshots on every target. `generic-loader-binding` (three `from "erika"` forms — a library, not the language) moved to erika's
 `conformance/modules/generic_loader_binding` (rule 10's consumer commit); its three forms answer alike on
 every target since 144 B-45, B-50 and `modules/generic_method_array_join`.
 
@@ -1858,7 +1857,7 @@ the reference names, the cell's `docs.md` quotes the reference text it shows.
   disagreed, the defect is a `1-botopink-lang/144` row and the cell stays red until it lands, or the
   stale text was rewritten. A table, a grammar, a layout sample or a runner's report is ```` ```text ````.
 - `zig build test-docs` (`scripts/check-docs.sh`, the gate's stage 10) checks that every example names
-  a cell (`botopink.json` and `src/main.bp`) or a suite, and refuses an inline ```` ```botopink ````
+  a cell (`botopink.json`, `src/main.bp` and a `docs.md` that is not empty) or a suite, and refuses an inline ```` ```botopink ````
   fence and a `<!-- docs-check: … -->` line.
 - § The manifest schema is kept in sync with
   [`../modules/manifest/src/root.zig`](../modules/manifest/AGENTS.md): a field is documented only when a
@@ -1904,7 +1903,7 @@ template that builds a record's tag spells it (`'external_host_record@main@@Poin
 `#[@External.Erlang("<host>", …)]` a package keeps under `src/sidecars/` (or `src/`) into `out/beam/`,
 beside the `.S` files — the files the erlang build ships into `out/erl/` — and a host module that is
 neither shipped nor on the Erlang code path is the same located refusal on both
-(`run/external_erlang_host_module_missing.{erlang,beam}.expect`). Nothing assembles an `.erl`: the
+(`modules/external_erlang_host_module_missing`). Nothing assembles an `.erl`: the
 entry's `'__bp_load_siblings'/0` compiles and loads every `.erl` beside its own `.beam` before the
 module body runs, so the built program runs wherever `out/beam/` is put on the code path, with no
 runner in between. `modules/erlang_host_sidecar_shipped` and
@@ -2111,20 +2110,19 @@ $ ls test/*.bp | wc -l          # 69 test suites
 $ ls -d test/*/ | wc -l         # 6 project suites
 ```
 
-Every cell and suite green on every target it declares but these, each named for the maintainer:
-four former `reject/` cells — `case_bare_name_arm`, `case_constant_pattern`,
-`reserved_word_field_name` and `reserved_word_param_name` — whose `.expect` named the text under
-the diagnostic's caret (`use _ { n -> … }`, `reserved word \`from\``), which no `.snap` record
-states: their snapshots hold the old claim as written (`refused use _ {`, located) and stay red
-until the maintainer decides how a cell states a diagnostic's label; `modules/yamlconf` on wasm
-and `test/stdlib-tour` on commonJS (§ The claims a cell makes about a target, the examples).
+The reds the move left are green: the four former `reject/` cells whose `.expect` named the text
+under the diagnostic's caret — `case_bare_name_arm`, `case_constant_pattern`,
+`reserved_word_field_name` and `reserved_word_param_name` — state it as a `label` record (decision
+485), and `modules/yamlconf` on wasm and `test/stdlib-tour` on commonJS answer their snapshots
+(§ The claims a cell makes about a target, the examples).
 
-Decision 146 on wasm (a function whose body calls a host function with no binding for the target is
-refused called or not, on every target): `modules/external_wrapper_keeps_refusal` passes on wasm by its
-`.wasm.expect`; `modules/std_asserts_on_every_target` and `modules/labelled_call_by_label` are refused
-there at the import of `testing.asserts` (`.wasm.expect` / `wasm.expect`), and so is
-`modules/std_asserts_host_cell_on_wasm`; `modules/std_decorator_through_namespace` pins the import's STD-001
-line; `modules/external_wrapper_associated_default` runs on four targets.
+Decision 146 (a function whose body calls a host function with no binding for the target is
+refused called or not, on every target): `modules/external_wrapper_keeps_refusal` and
+`modules/external_wrapper_associated_default` are refused on commonJS and wasm by their
+`snapshot/targets/<t>/` departures (`otpRelease` has no binding there); `modules/std_asserts_on_every_target`,
+`modules/labelled_call_by_label` and `modules/std_asserts_host_cell_on_wasm` are refused on wasm at the
+import of `testing.asserts` (a `snapshot/targets/wasm/` departure); `modules/std_decorator_through_namespace`
+pins the import's `std-unsupported-on-target` line on wasm.
 
 ## Notes for whoever writes the next cell
 

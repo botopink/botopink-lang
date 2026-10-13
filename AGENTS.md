@@ -230,8 +230,8 @@ and the comptime runtimes (decisions 170, 337 — `compiler-core/src/comptime/AG
   (or `test/<suite>`) naming the conformance cell that shows it — its `src/`
   and its answer on every target, never an inline fence. Beside each cell, its
   `docs.md` quotes the reference text it shows. `zig build test-docs` checks
-  that every example names a cell and that no ```` ```botopink ```` fence is
-  left inline; a table, a grammar or a layout sample is fenced as ```` ```text ````.
+  that every example names a cell whose `docs.md` is not empty and that no
+  ```` ```botopink ```` fence is left inline; a table, a grammar or a layout sample is fenced as ```` ```text ````.
   `README.md` keeps the tool's own documentation (install, commands, layout) and
   links the reference. A doc claim that the compiler does not yet honour belongs
   in the reference's "Decided, not yet implemented" table, with the front that
@@ -323,9 +323,11 @@ runs, and `scripts/lib/backend-partition-audit.js` audits it on every gate run. 
 budget is 7m30s (decision 265 — the 5-minute target is deferred to the next
 milestone).
 
-One gate with conformance runs at a time per machine: a second one waits for
-the lock, naming the holder's pid, checkout and start time; a `--no-conformance`
-run (the commit hook's) takes no lock (decision 508). A `--staged` run whose
+The gate keeps no lock and no pool (decisions 468, 469, 508): any number of
+runs start at once, and `--jobs <N>` is a run's one total of jobs, split among
+the side-by-side stages (default the machine's); scheduling a machine's gates is
+the meta repository's `scripts/gate.sh` (`scripts/AGENTS.md` § No gate lock, one
+total of jobs). A `--staged` run whose
 working tree, sibling libraries and toolchain were already gated green runs
 stage 1 only (`scripts/AGENTS.md` § Green-tree record).
 

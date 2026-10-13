@@ -34,7 +34,7 @@ scripts/
 ├── codemod-conformance-cells.py ← 144 B-29 step H: `tests/language/` → `conformance/` cells (`migrate`, `accept`, `audit` — § below)
 ├── lib/
 │   ├── gate-mode.sh   ← which gate a checkout runs (`front/*` → step, anything else → full) and what a changed-file list reaches, from the backend partition (sourced by gate.sh; run directly it explains a branch and a file list)
-│   ├── pool.sh        ← the bounded worker pool the shell runners share (sourced by ../conformance/run.sh)
+│   ├── pool.sh        ← the bounded worker pool the shell runners share (sourced by ../conformance/run.sh), and `pool_share`, a stage's part of the gate's one total of jobs (sourced by gate.sh)
 │   └── backend-partition-audit.js ← audits codegen/backend-partition.txt (decision 249): a listed file used by a file of another target fails the gate (stage 3b of gate.sh)
 └── git-hooks/
     ├── pre-commit                 ← tracked hook, enabled by `git config core.hooksPath scripts/git-hooks` (see ../AGENTS.md §Local gate)
@@ -221,7 +221,7 @@ tests against the job lines, `docs: <N> references` against the reference lines.
 stage that ran fewer than its plan fails the gate, green or not — a stage
 cannot be narrowed to win time. The last line is the total,
 `gate: every stage passed — 4m52s wall, 2120 CPU-s (budget 7m30s)`,
-timed from the lock (a wait for another gate is not counted), against
+timed from the gate's start (the gate keeps no lock, § No gate lock), against
 `budget=450` at the top of the script — for 16 idle cores, 7m30s for this
 milestone by decision 265 (the 5-minute target is deferred to the next
 milestone). A run over it prints `gate: over budget`
@@ -416,7 +416,9 @@ pools of about 16 jobs on 16 CPUs, load 4.7 rising to 26 in a cold gate. Now
 `MemAvailable / 768 MiB`), and passes each stage its share through the flag it
 already had: `test-libs` 50 % and `test-conformance` 30 % (`-- --jobs N`),
 `tsc-check.sh` 10 % (`--jobs N`, new, default unchanged) and `test-web` `-j`
-10 %, at least 1 each — 8 / 4 / 1 / 1 on 16 CPUs. `test-docs` had 5 % until 144
+10 %, at least 1 each (`pool_share` of `lib/pool.sh`) — 8 / 4 / 1 / 1 on 16 CPUs.
+`modules/compiler-cli/tests/cli_contract.sh` holds the shares, the `--jobs` refusals and
+`lib/gate-mode.sh`'s answers (§ Step gate and full gate) to their contract. `test-docs` had 5 % until 144
 B-29 step I; it reads files and takes no share. The shares follow the stages' measured CPU-seconds. Each runner keeps its
 own `procs_running` admission; no report changes. `zig build test` already runs
 beside the ReleaseSafe build (§ ahead of the build): it finishes in 1m55 inside
@@ -666,7 +668,7 @@ docs checked are `conformance/docs.md`, every `conformance/modules/*/docs.md` an
 
 | Line | Verdict |
 |---|---|
-| `<!-- example: modules/<cell> -->` | `conformance/modules/<cell>/` holds `botopink.json` and `src/main.bp`, or the line fails: `names no cell` |
+| `<!-- example: modules/<cell> -->` | `conformance/modules/<cell>/` holds `botopink.json` and `src/main.bp`, or the line fails: `names no cell`; and a `docs.md` that is not empty — the reference text the cell shows (decision 462) —, or it fails: `names a cell whose docs.md is empty or missing` |
 | `<!-- example: test/<suite> -->` | `conformance/test/<suite>` is a `.bp` file or a directory holding `botopink.json`, or the line fails: `names no suite` |
 | a ```` ```botopink ```` fence | fails: a program in the reference is a cell; a table, a grammar or a layout sample is ```` ```text ```` |
 | a line opening with `<!-- docs-check:` | fails: the directive of the inline fences this script compiled until 144 B-29 step I |
@@ -675,8 +677,8 @@ docs checked are `conformance/docs.md`, every `conformance/modules/*/docs.md` an
 Every failure is printed `✗ <doc>:<line> <why>`; the exit line is `docs: <N> references — <M>
 missing, <F> refused lines`, and § Stage times holds `N` to the lines `--list` prints
 (`<doc>:<line>\t<path>`, one per reference). Every run starts with the harness's own contract — a
-synthetic suite and doc whose six lines get known verdicts (a reference to a cell that exists ✓, to
-one that does not ✗, to a suite ✓, a ```` ```botopink ```` fence ✗, a `docs-check` line ✗, an
+synthetic suite and doc whose seven lines get known verdicts (a reference to a cell that exists ✓, to
+one that does not ✗, to a cell whose `docs.md` is empty ✗, to a suite ✓, a ```` ```botopink ```` fence ✗, a `docs-check` line ✗, an
 `example:` line with no path ✗); a verdict that differs fails the run before the docs are judged, and
 `--self-test` runs only it. The script reads files and runs no compiler, so it takes no `--jobs`. bash 3.2 clean.
 
