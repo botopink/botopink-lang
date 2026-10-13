@@ -9831,6 +9831,10 @@ const Emitter = struct {
                 .{ "abs", 0, .i32 },      .{ "min", 1, .i32 },      .{ "max", 1, .i32 },
                 .{ "clamp", 2, .i32 },    .{ "isEven", 0, .bool_ }, .{ "isOdd", 0, .bool_ },
                 .{ "toString", 0, .str },
+                // Decision 319's conversions (`lowerIntConversion`); a `u32`
+                // lives in an `i64`.
+                .{ "toI32", 0, .i32 },    .{ "toI64", 0, .i64 },
+                .{ "toU32", 0, .i64 },    .{ "toU64", 0, .i64 },    .{ "toF64", 0, .f64 },
             },
             .float => &.{
                 .{ "abs", 0, .f64 },   .{ "min", 1, .f64 },        .{ "max", 1, .f64 },
@@ -10056,6 +10060,7 @@ const Emitter = struct {
                 }
             },
             .int => {
+                if (intConversionType(name) != null and cc.args.len == 0) return self.lowerIntConversion(recv, name);
                 // An `i64` answers its text in all its digits; its other
                 // methods have no `i64` lowering here, and the narrowing
                 // below refuses them.
@@ -10121,6 +10126,160 @@ const Emitter = struct {
                     "bigint.toF64"));
             },
         }
+    }
+
+    /// Decision 319 — `toI32()`, `toI64()`, `toU32()`, `toU64()` and `toF64()`
+    /// of an integer: the value in the target type's carrier when the type
+    /// holds it, else `<name>: <value> does not fit <type>` (`has no exact
+    /// f64`) on stderr and a trap — never a wrap, a saturation or a rounding.
+    /// The receiver's carrier is an `i32` (`i8` … `i32`) or an `i64` (`u32`,
+    /// `i64`, and a `u64` read unsigned); `u32` answers in an `i64`, as a
+    /// `u32` lives here.
+    fn lowerIntConversion(self: *Emitter, recv: ast.Expr, name: []const u8) anyerror!void {
+        const eq = std.mem.eql;
+        const wide = eq(u8, self.wasmTypeOf(recv), "i64");
+        const unsigned = wide and self.isU64Expr(recv);
+        const from: []const u8 = if (wide) "i64" else "i32";
+        const v = try std.fmt.allocPrint(self.arena(), "__conv{d}", .{self.res_seq});
+        self.res_seq += 1;
+        try self.declareLocal(v, from);
+        try self.lowerCoerced(recv, from);
+        try self.emit(.{ .local_set = v });
+
+        const to_f64 = eq(u8, name, "toF64");
+        const f = if (to_f64 and wide) blk: {
+            const fl = try std.fmt.allocPrint(self.arena(), "__conv{d}", .{self.res_seq});
+            self.res_seq += 1;
+            try self.declareLocal(fl, "f64");
+            break :blk fl;
+        } else "";
+
+        // The test that the value fits, on the stack as an `i32`; none when
+        // every value of the receiver's carrier does.
+        var checked = true;
+        if (eq(u8, name, "toI32")) {
+            if (!wide) {
+                checked = false;
+            } else if (unsigned) {
+                try self.emitRangeTest(v, null, "2147483647", true);
+            } else {
+                try self.emitRangeTest(v, "-2147483648", "2147483647", false);
+            }
+        } else if (eq(u8, name, "toI64")) {
+            if (unsigned) try self.emitRangeTest(v, "0", null, false) else checked = false;
+        } else if (eq(u8, name, "toU32")) {
+            if (!wide) {
+                try self.emit(.{ .local_get = v });
+                try self.emit(zero);
+                try self.emit(opOf("i32", "ge_s"));
+            } else if (unsigned) {
+                try self.emitRangeTest(v, null, "4294967295", true);
+            } else {
+                try self.emitRangeTest(v, "0", "4294967295", false);
+            }
+        } else if (eq(u8, name, "toU64")) {
+            if (!wide) {
+                try self.emit(.{ .local_get = v });
+                try self.emit(zero);
+                try self.emit(opOf("i32", "ge_s"));
+            } else if (unsigned) {
+                checked = false;
+            } else {
+                try self.emitRangeTest(v, "0", null, false);
+            }
+        } else {
+            // `toF64`: an `i32` always converts exactly; an `i64` does when
+            // the `f64` nearest it truncates back to it. The `f64` past the
+            // carrier's top (`2^63`, `2^64`) is a rounding up, never exact,
+            // and is tested first — truncating it would trap.
+            if (!wide) {
+                checked = false;
+            } else {
+                try self.emit(.{ .local_get = v });
+                try self.emit(.{ .convert = if (unsigned) "f64.convert_i64_u" else "f64.convert_i64_s" });
+                try self.emit(.{ .local_set = f });
+                try self.emit(.{ .local_get = f });
+                try self.emit(constOf("f64", if (unsigned) "18446744073709551616.0" else "9223372036854775808.0"));
+                try self.emit(opOf("f64", "lt"));
+                var then_c: Capture = .{};
+                self.open(&then_c);
+                try self.emit(.{ .local_get = f });
+                try self.emit(.{ .convert = if (unsigned) "i64.trunc_f64_u" else "i64.trunc_f64_s" });
+                try self.emit(.{ .local_get = v });
+                try self.emit(opOf("i64", "eq"));
+                const then_seq = self.seal(&then_c, .{ .value = .i32 });
+                var else_c: Capture = .{};
+                self.open(&else_c);
+                try self.emit(zero);
+                const else_seq = self.seal(&else_c, .{ .value = .i32 });
+                try self.emit(.{ .@"if" = .{ .result = .i32, .then = .{ .seq = then_seq }, .@"else" = .{ .seq = else_seq } } });
+            }
+        }
+
+        if (checked) {
+            try self.emit(opOf("i32", "eqz"));
+            var fail_c: Capture = .{};
+            self.open(&fail_c);
+            const head = try self.internString(try std.fmt.allocPrint(self.arena(), "{s}: ", .{name}));
+            const tail_text = if (to_f64)
+                " has no exact f64"
+            else
+                try std.fmt.allocPrint(self.arena(), " does not fit {s}", .{intConversionType(name).?});
+            const tail = try self.internString(tail_text);
+            try self.emit(try self.constInt(head.offset));
+            try self.emit(.{ .local_get = v });
+            try self.emit(try self.stdCall(if (!wide) "number.i32ToString" else if (unsigned) "number.u64ToString" else "number.i64ToString"));
+            try self.emit(self.builder().helper(.str_concat));
+            try self.emit(try self.constInt(tail.offset));
+            try self.emit(self.builder().helper(.str_concat));
+            try self.emit(self.builder().helper(.panic_fail));
+            try self.emit(.@"unreachable");
+            const fail_seq = self.seal(&fail_c, .terminated);
+            try self.emit(.{ .@"if" = .{ .then = .{ .seq = fail_seq } } });
+        }
+
+        // The value in the target's carrier.
+        if (to_f64) {
+            if (wide) {
+                try self.emit(.{ .local_get = f });
+            } else {
+                try self.emit(.{ .local_get = v });
+                try self.emit(.{ .convert = "f64.convert_i32_s" });
+            }
+            return;
+        }
+        try self.emit(.{ .local_get = v });
+        const to_i32 = eq(u8, name, "toI32");
+        if (to_i32 and wide) try self.emit(.{ .convert = "i32.wrap_i64" });
+        if (!to_i32 and !wide) try self.emit(.{ .convert = "i64.extend_i32_s" });
+    }
+
+    /// `v >= lo && v <= hi` over the `i64` local `v` (either bound absent),
+    /// compared unsigned when `unsigned`; an `i32` on the stack.
+    fn emitRangeTest(self: *Emitter, v: []const u8, lo: ?[]const u8, hi: ?[]const u8, unsigned: bool) anyerror!void {
+        if (lo) |l| {
+            try self.emit(.{ .local_get = v });
+            try self.emit(constOf("i64", l));
+            try self.emit(opOf("i64", if (unsigned) "ge_u" else "ge_s"));
+        }
+        if (hi) |h| {
+            try self.emit(.{ .local_get = v });
+            try self.emit(constOf("i64", h));
+            try self.emit(opOf("i64", if (unsigned) "le_u" else "le_s"));
+            if (lo != null) try self.emit(opOf("i32", "and"));
+        }
+    }
+
+    /// The type decision 319's conversion `name` answers (`toU32` → `u32`),
+    /// or null for any other method.
+    fn intConversionType(name: []const u8) ?[]const u8 {
+        const eq = std.mem.eql;
+        if (eq(u8, name, "toI32")) return "i32";
+        if (eq(u8, name, "toI64")) return "i64";
+        if (eq(u8, name, "toU32")) return "u32";
+        if (eq(u8, name, "toU64")) return "u64";
+        if (eq(u8, name, "toF64")) return "f64";
+        return null;
     }
 
     /// Decision 346 — `Bytes`' methods. A `Bytes` is laid out as a string is
@@ -14077,6 +14236,9 @@ const Emitter = struct {
                     // Decision 346 — `Bytes.fromUtf8(s)`, `slice` and `concat`
                     // answer a `Bytes`; `toUtf8` its `@Result<string, string>`.
                     if (self.isBytesFromUtf8(cc)) break :blk .{ .named = "Bytes" };
+                    // Decision 319 — `x.toU64()` is a `u64`, so it prints and
+                    // compares unsigned, and a conversion after it reads it so.
+                    if (cc.receiver != null and cc.args.len == 0) if (intConversionType(cc.callee)) |tn| if (self.primKindAt(cc, c.loc)) |k| if (k == .int) break :blk .{ .named = tn };
                     if (cc.receiver != null) if (self.primKindAt(cc, c.loc)) |k| if (k == .bytes) {
                         if (std.mem.eql(u8, cc.callee, "slice") or std.mem.eql(u8, cc.callee, "concat")) break :blk .{ .named = "Bytes" };
                         if (std.mem.eql(u8, cc.callee, "length")) break :blk .{ .named = "i32" };

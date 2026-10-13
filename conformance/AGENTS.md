@@ -1678,8 +1678,13 @@ the parent refused past ±(2^53 − 1)), `modules/integer_conversions_exact` (`t
 `toU64`, `toF64` at the bounds and past 2^53) and two aborts, `modules/integer_conversion_to_i32_aborts`
 and `modules/integer_conversion_to_f64_inexact_aborts` (`.exit` plus a `.stderr` per target naming the
 value). They answer on commonJS, erlang and beam, and `string_parse_int_i64_range` on wasm too (144
-B-22: std-wasm's `text` and `number` cells behind `primitives.bp`'s host helpers); wasm refuses the
-others by `.wasm.expect` — its integer methods are `i32`'s and the conversions have no row — `05-wasm` rows.
+B-22: std-wasm's `text` and `number` cells behind `primitives.bp`'s host helpers), and the three
+conversion cells on wasm too since 144 B-22 (`lowerIntConversion`: the range test on the receiver's
+carrier, the abort text built from its digits); B-22 adds `modules/integer_conversion_u64_to_i64_aborts`
+(a `u64` past `i64`'s top read unsigned in the abort) and `modules/async_retry_policy`
+(`async.retry(policy, { -> … })` answering `Ok` and the last `Error`, its pause converted by `toI32()`),
+both red on wasm on the parent. wasm refuses `i64_number_methods_past_js_safe` by `.wasm.expect` — its
+integer methods are `i32`'s — a `05-wasm` row.
 Its `io` half adds `modules/std_io_i64_canonical` — `fs.stat`'s `size`, kind and `mtime` (the Node
 form reads `statSync` with `bigint: true` and answers the canonical form) and `clock.hours` /
 `clock.add` past 2^53 (`clock`'s `wide` is std's `toI64()` now, no host cell), printed as the same

@@ -319,6 +319,8 @@ std's, and a library calls it rather than writing its own:
 
 <!-- example: modules/std_generic_primitives -->
 
+<!-- example: modules/async_retry_policy -->
+
 `parseInt` and `parseFloat` answer the same on every target, the wasm one included: every `i64`
 is read, one past either end an `Error`, and a numeral is converted to its nearest `f64`:
 
@@ -1167,6 +1169,8 @@ f64`). `@print` and string interpolation write an integer's digits, whatever
 its size.
 
 <!-- example: modules/integer_conversions_exact -->
+
+<!-- example: modules/integer_conversion_u64_to_i64_aborts -->
 
 `bigint` is an integer of any size (decision 332): `+`, `-`, `*`, `/`, `%`, a
 unary `-`, `+=`, the comparisons and `==` over two `bigint`s answer exactly and

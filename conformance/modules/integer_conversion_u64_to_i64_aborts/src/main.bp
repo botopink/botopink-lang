@@ -1,0 +1,14 @@
+//// Decision 319 — a `u64` past `i64`'s top converts to no `i64`: `toI64()`
+//// aborts naming the value read unsigned, on every target; it never wraps to
+//// `-1`. A value in range converts, and `toU32()` of one that fits too.
+
+fn top(a: u64, b: u64) -> u64 {
+    return a + b;
+}
+
+pub fn main() {
+    @print(top(9223372036854775806ul, 1ul).toI64());
+    @print(top(4294967294ul, 1ul).toU32());
+    @print(top(18446744073709551614ul, 1ul).toI64());
+    @print("unreachable");
+}
