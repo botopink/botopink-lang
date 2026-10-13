@@ -2,27 +2,32 @@
 //// optional wide number crosses the render scope: a `?f64` and a `?i64`
 //// provided by `Root`, once with a value and once `null`, are read below it
 //// with `use context` and narrowed there — each one the number it was, or
-//// absent, on every target.
+//// absent, on every target. A context is named by its value's type (379),
+//// so each optional travels in a type of its own.
 
-import {context.Context, context.provide, context.context} from "std";
+import {context.createContext, context.provide, context.context} from "std";
 
 type View(text: string) implement @Renderable
 
-pub val RateContext = Context<?f64>();
+type Rate(value: ?f64)
 
-pub val TotalContext = Context<?i64>();
+type Total(value: ?i64)
+
+pub val rateContext = createContext(Rate(value: null));
+
+pub val totalContext = createContext(Total(value: null));
 
 fn Label() -> @Component<View> {
-    val r = use context(RateContext);
-    val t = use context(TotalContext);
+    val r = (use context(Rate)).value;
+    val t = (use context(Total)).value;
     val rate = if (r != null) (r * 2.0).toString() else "no rate";
     val total = if (t != null) (t + 1).toString() else "no total";
     return View(text: rate + " " + total);
 }
 
 fn Root(rate: ?f64, total: ?i64) -> @Component<View> {
-    use provide(RateContext, rate);
-    use provide(TotalContext, total);
+    use provide(createContext(Rate(value: rate)));
+    use provide(createContext(Total(value: total)));
     val l = Label();
     return View(text: l.text);
 }
