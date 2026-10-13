@@ -16118,8 +16118,12 @@ fn methodCallReturnType(
     // the return type; arg unification refines method-generic params.
     const rest = fn_.func.params[1..];
     if (typedTrailing.len == 0 and rest.len == typedArgs.len) {
+        // 144 B-10 — an argument meets its parameter as a free function's
+        // does (`unifyArgument`): a behavior-typed parameter takes an
+        // implementer. `sheet.add("c", s)` with `item: Styleable` and a
+        // `Styled` `s` was `expected Styleable, got Styled`.
         for (typedArgs, rest) |ta, p| {
-            try unifyAt(env, p, ta.value.getType(), ta.value.getLoc());
+            try unifyArgument(env, p, ta.value.getType(), ta.value.getLoc());
         }
     } else if (typedTrailing.len == 0) {
         // C-04 — a short call whose omitted parameters take their declared
@@ -16173,7 +16177,7 @@ fn associatedCallReturnType(
         return error.TypeError;
     }
     for (typedArgs, fn_.func.params) |ta, p| {
-        try unifyAt(env, p, ta.value.getType(), ta.value.getLoc());
+        try unifyArgument(env, p, ta.value.getType(), ta.value.getLoc());
     }
     return fn_.func.ret;
 }

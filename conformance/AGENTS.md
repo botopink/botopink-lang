@@ -2125,6 +2125,8 @@ of its declared signature (it was a fresh variable to the checker, an unbound va
 abort on beam, unplaced on wasm). `modules/decorator_member_record_update` pins a record update
 in a member `decl.addMember` adds — `Point(..self, y: 0)`, `Point(..v, z: z)` — on every target (it was
 emitted `new T(v, x)` on commonJS before 144 B-14).
+`modules/method_behavior_parameter_implementer` passes an implementer to a method's and an
+associated fn's behavior-typed parameter (`expected Styleable, got Prop` before).
 
 What cannot be tested from botopink at all, and why: `@typeInfo` / `@makeRecord` / `partial` / `omit`
 / `pick` (they produce types, and asserting on emitted text is the snapshots' job). Struck from this

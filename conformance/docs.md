@@ -647,6 +647,12 @@ own module, and so is every name an imported type alias mentions.
 
 <!-- example: modules/behavior_parameter -->
 
+A method's parameter typed by a behavior takes an implementer as a free
+function's does — through the instance and through the type alike
+(decision 430):
+
+<!-- example: modules/method_behavior_parameter_implementer -->
+
 A `behavior` no type in the program implements is a **runtime boundary**: the
 host builds the value. Such a value carries its own members — a `val` member is
 read off it, and a method is found on it the same way and applied to the
