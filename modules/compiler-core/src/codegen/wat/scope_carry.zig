@@ -24,8 +24,11 @@
 //!   (388): `fn(unknown) -> unknown`, wherever it is written but a host
 //!   declaration (a bodyless `declare fn` answers the host's own value).
 //!
-//! A carried call with no type (the checker left it unresolved) or with a
-//! type that is not one word (a float, an `i64` — no slot here holds one) is
+//! A value whose type is a float or an `i64` (8 bytes, no word) crosses as
+//! the address of its cell, as a function value's does: `push` and `rendered`
+//! keep the type they carry, so the emitter boxes their value argument
+//! (`valueArg`), and a reader's wrapper declared to answer that type loads
+//! the cell. A carried call with no type (the checker left it unresolved) is
 //! left as it is, and the emitter refuses it at the call.
 const std = @import("std");
 const ast = @import("../../ast.zig");
@@ -45,6 +48,15 @@ pub fn isRun(name: []const u8) bool {
 /// the wrappers this pass declares.
 pub fn isWrapper(name: []const u8) bool {
     return std.mem.indexOf(u8, name, wrapper_prefix) != null;
+}
+
+/// The position of the value a `push` / `rendered` wrapper carries into the
+/// scope — the argument the emitter boxes when the call's type argument is a
+/// float or an `i64` — or null for a reader.
+pub fn valueArg(name: []const u8) ?usize {
+    if (std.mem.endsWith(u8, name, wrapper_prefix ++ "push")) return 2;
+    if (std.mem.endsWith(u8, name, wrapper_prefix ++ "rendered")) return 0;
+    return null;
 }
 
 const unknown_ref: ast.TypeRef = .{ .named = ast.unknown_type_name };
@@ -115,7 +127,6 @@ const Carry = struct {
             // A run, `(c)(scope)`, carrying `Rendered<R>`.
             const ta = cc.typeArgs orelse return;
             if (ta.len != 1 or ta[0] != .generic or !std.mem.eql(u8, ta[0].generic.name, "Rendered") or cc.args.len != 1) return;
-            if (!isWord(ta[0].generic.args[0])) return;
             const name = try self.fresh("run");
             try self.declare(name, &.{ param("c", try self.lambdaRef()), param("s", unknown_ref) }, ta[0], null, c.loc);
             const args = try self.arena.alloc(ast.CallArg, 2);
@@ -129,23 +140,21 @@ const Carry = struct {
             if (!self.push_done) try self.declare(name, &.{ param("s", unknown_ref), param("k", .{ .named = "string" }), param("v", unknown_ref) }, unknown_ref, context_lower.push_fn, c.loc);
             self.push_done = true;
             cc.callee = name;
-            cc.typeArgs = null;
         } else if (std.mem.eql(u8, cc.callee, context_lower.rendered_fn)) {
             const name = wrapper_prefix ++ "rendered";
             if (!self.rendered_done) try self.declare(name, &.{ param("v", unknown_ref), param("s", unknown_ref) }, unknown_ref, context_lower.rendered_fn, c.loc);
             self.rendered_done = true;
             cc.callee = name;
-            cc.typeArgs = null;
         } else if (std.mem.eql(u8, cc.callee, context_lower.find_fn)) {
             const ta = cc.typeArgs orelse return;
-            if (ta.len != 1 or !isWord(ta[0])) return;
+            if (ta.len != 1) return;
             const name = try self.fresh("find");
             try self.declare(name, &.{ param("s", unknown_ref), param("k", .{ .named = "string" }), param("n", .{ .named = "string" }) }, ta[0], context_lower.find_fn, c.loc);
             cc.callee = name;
             cc.typeArgs = null;
         } else if (std.mem.eql(u8, cc.callee, context_lower.value_fn)) {
             const ta = cc.typeArgs orelse return;
-            if (ta.len != 1 or !isWord(ta[0])) return;
+            if (ta.len != 1) return;
             const name = try self.fresh("value");
             try self.declare(name, &.{param("r", unknown_ref)}, ta[0], context_lower.value_fn, c.loc);
             cc.callee = name;
@@ -189,17 +198,6 @@ const Carry = struct {
 
 fn isComponentRef(t: ast.TypeRef) bool {
     return t == .generic and t.generic.is_builtin and std.mem.eql(u8, t.generic.name, "Component");
-}
-
-/// Whether a value of `t` is one `i32` word here — what an `unknown` slot of
-/// the scope holds as it is. A float, a 64-bit integer and an optional of
-/// one live in 8-byte cells.
-fn isWord(t: ast.TypeRef) bool {
-    return switch (t) {
-        .named => |n| !(std.mem.eql(u8, n, "f64") or std.mem.eql(u8, n, "f32") or std.mem.eql(u8, n, "i64") or std.mem.eql(u8, n, "u64")),
-        .optional => |inner| isWord(inner.*),
-        else => true,
-    };
 }
 
 /// Whether a value of `N` can reach an `ast.Expr` or an `ast.TypeRef`.

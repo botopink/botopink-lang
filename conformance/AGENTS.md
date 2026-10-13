@@ -324,7 +324,10 @@ it answers the lambda another body made — `styled`'s `-> StyledView`) and
 all four targets run them (on wasm since decision 504: the scope's values typed by the checker's type the lowering
 carries; `decl_hooks_direct` and `render_scope_library` are narrowed to commonJS, erlang and beam, their hosts having
 no wasm binding), and `modules/component_awaits_host_task` pins 504's rule (a component awaiting a host `delay` is a
-state machine, a sibling that awaits nothing stays direct; red on the parent, whose wasm refused every component). A
+state machine, a sibling that awaits nothing stays direct; red on the parent, whose wasm refused every component),
+`modules/component_try_then_awaits_host_task` the same through a bare `try` (the tail the lowering runs as an inner
+closure waits on the host too; wasm trapped) and `modules/context_wide_number_through_scope` an `f64` and an `i64`
+provided and rendered through the scope (wasm refused them, no word holding one). A
 component called as a statement outside a body runs nothing now, so `modules/effect_chain`,
 `modules/effect_context_await`, `modules/use_one_base`, `modules/component_result_try_await` and
 `modules/component_hook_and_component` `await` it in `main`, and `modules/component_sync_plain_function` reads

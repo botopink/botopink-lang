@@ -6020,9 +6020,17 @@ const Emitter = struct {
                         };
                         defer self.expected_union_array = false;
                         defer self.expected_fn = null;
-                        if (self.fn_has_result and self.raw_return)
-                            try self.lowerCoerced(val.*, "i32")
-                        else if (self.fn_has_result and self.boxesInto(self.cur_ret_typeref, val.*))
+                        if (self.fn_has_result and self.raw_return) {
+                            // A carry wrapper (decision 504): the scope's word,
+                            // or — a float or an `i64` — its cell's address,
+                            // loaded as the declared type.
+                            try self.lowerCoerced(val.*, "i32");
+                            const cell = if (self.cur_ret_typeref) |rt| cellOfTypeRef(rt) else .none;
+                            if (cell != .none) {
+                                try self.emitFromCell(cell);
+                                try self.emitConvert(cell.ty(), self.cur_result);
+                            }
+                        } else if (self.fn_has_result and self.boxesInto(self.cur_ret_typeref, val.*))
                             try self.lowerBoxedInto(self.cur_ret_typeref, val.*)
                         else if (self.fn_has_result)
                             try self.lowerCoerced(val.*, self.cur_result)
@@ -9361,12 +9369,22 @@ const Emitter = struct {
                 };
                 defer self.expected_fn = null;
                 // Decision 504 — a value crosses the render scope as its own
-                // word (`wat/scope_carry.zig`): one that is no word has no
-                // slot there.
+                // word (`wat/scope_carry.zig`); a float or an `i64` the call
+                // carries (its type argument, the context's or the body's
+                // type) crosses as the address of its 8-byte cell, as a
+                // function value's does, and its reader's wrapper loads it.
                 if (scopeCarry.isWrapper(cc.callee)) {
-                    if (!std.mem.eql(u8, self.wasmTypeOf(arg.value.*), "i32"))
-                        return self.refuse(arg.value.getLoc(), "the wasm backend cannot carry this value through a component's render scope: a float or an `i64` is not one word", .{});
-                    try self.lowerCoerced(arg.value.*, "i32");
+                    const carries = if (scopeCarry.valueArg(cc.callee)) |va| va == i else false;
+                    const cell: Cell = if (!carries) .none else if (cc.typeArgs) |ta|
+                        (if (ta.len == 1) cellOfTypeRef(ta[0]) else .none)
+                    else
+                        .none;
+                    if (cell != .none)
+                        try self.lowerCellWord(arg.value.*, cell)
+                    else if (!std.mem.eql(u8, self.wasmTypeOf(arg.value.*), "i32"))
+                        return self.refuse(arg.value.getLoc(), "the wasm backend cannot carry this value through a component's render scope: nothing types it here as a float or an `i64`", .{})
+                    else
+                        try self.lowerCoerced(arg.value.*, "i32");
                 } else if (self.boxesInto(ptref, arg.value.*))
                     try self.lowerBoxedInto(ptref, arg.value.*)
                 else
@@ -12007,8 +12025,9 @@ const Emitter = struct {
     /// Outside a state machine (an eager `@Component` body) the scheduler
     /// runs until the task settles (`$__task_block_on`). On anything that
     /// is not a task `await` is the identity it has always been here.
-    fn lowerAwait(self: *Emitter, operand: ast.Expr) anyerror!void {
-        if (runCallOf(operand)) |rc| return self.lowerRun(rc.call.kind.call, true);
+    fn lowerAwait(self: *Emitter, operand_in: ast.Expr) anyerror!void {
+        if (runCallOf(operand_in)) |rc| return self.lowerRun(rc.call.kind.call, true);
+        const operand = innerClosureBlock(operand_in) orelse operand_in;
         if (!self.isTaskExpr(operand)) return self.lowerExpr(operand);
         const vty = self.awaitedType(operand);
         const load: Instr = .{ .load = .{ .ty = vt(vty), .offset = 8 } };
@@ -12024,6 +12043,25 @@ const Emitter = struct {
         try self.lowerCoerced(operand, "i32");
         const op_seq = self.seal(&op_c, .{ .value = .i32 });
         return self.emitSuspension(lo, op_seq, null, load);
+    }
+
+    /// Decision 504 — a component body that keeps a bare `try` runs its
+    /// tail as an inner closure called in place (`context_lower`
+    /// `lowerComponentBody`: `await ({ -> rest })()` when the tail awaits).
+    /// Awaited, that call is an `async { rest }` block: the closure is a
+    /// state machine like the component's lambda around it, so a task the
+    /// host still holds suspends both instead of trapping in
+    /// `$__task_block_on`. A `return` in it leaves the closure, as in an
+    /// async block (`modules/component_try_then_awaits_host_task`).
+    fn innerClosureBlock(e: ast.Expr) ?ast.Expr {
+        if (e != .call or e.call.kind != .call) return null;
+        const cc = e.call.kind.call;
+        const ce = cc.calleeExpr orelse return null;
+        if (cc.receiver != null or cc.args.len != 0 or ce.* != .function) return null;
+        const f = ce.function;
+        if (f.kind.syntax != .lambda or f.kind.params.len != 0) return null;
+        if (!context_lower.containsAwait(f.kind.body)) return null;
+        return .{ .function = .{ .loc = f.loc, .kind = .{ .syntax = .asyncBlock, .params = &.{}, .body = f.kind.body } } };
     }
 
     /// `e` when it is a run's call (`scope_carry.isRun`).

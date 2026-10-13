@@ -1815,10 +1815,12 @@ the same way (`hostNow(Page)` passes `{ -> Page() }`), and a lambda's own
 parameters stay (decision 374). A lambda handed to a botopink function takes
 the map, passed by the call that runs it. erlang, beam, commonJS and wasm run
 it — on wasm a value crosses the scope as its own word, typed where it is read
-back by the checker's type the lowering carries (decision 504); a float or an
-`i64` provided or rendered there is refused where it crosses. A component
-reached from a `comptime` evaluation does not take the map yet
+back by the checker's type the lowering carries (decision 504); a value of any
+type crosses it, an `f64` or an `i64` provided or rendered there included. A
+component reached from a `comptime` evaluation does not take the map yet
 (`language-gaps.md` row 354-comptime).
+
+<!-- example: modules/context_wide_number_through_scope -->
 
 **Only a component whose own body awaits is a state machine** (decision 504),
 on every target: it writes `await` or `uses` an asynchronous hook (375 (1)).
@@ -1826,7 +1828,11 @@ Calling a component runs nothing, so one that composes others stays direct
 even when it receives a component as a value; the render runs a direct
 component in place and waits only on a marked one, so a synchronous component
 pays nothing and a component waiting on the host (`delay`) lets the render go
-on once its task settles (`modules/component_awaits_host_task`).
+on once its task settles (`modules/component_awaits_host_task`). A body that
+keeps a bare `try` and then awaits is one too: the `try` leaves early with the
+error before the wait, and past it the render waits on the host as before.
+
+<!-- example: modules/component_try_then_awaits_host_task -->
 
 ## Functions
 
@@ -2099,6 +2105,12 @@ awaiting a `@Task<T>`, tasks started before either is awaited, an
 `async { }` block that throws:
 
 <!-- example: modules/task_result_rejects -->
+
+A generic function over a thunk answering a task — `work: fn() -> @Task<@Result<T,
+E>>`, std's `async.retry` — binds `T` and `E` from the thunk's answer, in its own
+module or another, and so does the generic it passes the thunk on to:
+
+<!-- example: modules/generic_thunk_result_binds -->
 
 An `async { }` block that throws is that failing task wherever it sits — the
 body of a lambda, a lambda bound inside a function, a method, a lambda a
@@ -3186,6 +3198,13 @@ pollable backs:
 
 The task carries its `T` in one word: a task adapter reached with a float or
 an `i64` value is refused at the call.
+
+std's `async` is bound on these adapters on both hosts, its gates on the
+three over fixed types, and answers as on every other target — its results
+and the order of its answers, never the order of effects between concurrent
+tasks (decision 335 (2)):
+
+<!-- example: modules/std_async_on_every_target -->
 
 Anything else — another label, a second cell, a value of another kind than
 its label names (`fn: "tanBody"`, `op: f64`, `wasi: "delay"`), an opcode the

@@ -1,0 +1,35 @@
+//// Decisions 504 and 121 — a component whose body keeps a bare `try` and then
+//// awaits a task the host answers (`delay`) is a state machine through the
+//// `try`: `load("x")` parses, waits on the host, and answers its value once
+//// the task settles; `load("")` leaves early with the error before it waits.
+
+import {async.delay} from "std";
+
+type View(text: string) implement @Renderable
+
+fn parse(s: string) -> @Result<i32, string> {
+    if (s == "") throw "empty";
+    return 7;
+}
+
+fn load(s: string) -> @Component<@Result<string, string>> {
+    val n = try parse(s);
+    val v = await delay(5, n * 2);
+    return "loaded " + v.toString();
+}
+
+fn Page(s: string) -> @Component<View> {
+    val r = use load(s);
+    val text = case r {
+        Ok(v) -> v;
+        Error(e) -> "error " + e;
+    };
+    return View(text: text);
+}
+
+pub fn main() -> @Task<void> {
+    val a = await Page("x");
+    @print(a.text);
+    val b = await Page("");
+    @print(b.text);
+}
