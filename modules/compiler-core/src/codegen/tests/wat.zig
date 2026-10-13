@@ -1209,18 +1209,14 @@ test "wat: prim method ---- pop shrinks a local array and lastIndexOf searches f
 // Decision 8 §11's box on wasm (`00 · 05-wasm` step 2): a value entering an
 // `unknown` slot carries a header naming what it holds, and `is`, a type arm,
 // `==` and `@print` read it — `conformance/modules/unknown_by_value` pins the
-// answers on four targets. What this pins is the one refusal: a value whose
-// type nothing proves — here a type parameter's slot, which this backend does
-// not monomorphise — is not boxed by a guess. Boxed as the `i32` it is at run
-// time, `v is string` answered `false` for `"abc"` at exit 0 (`-1` where the
-// other backends answer `3`). The guarded arm answers a literal: a field read
-// on that slot (`v.length`) is refused before the module exists — the test
-// below pins that diagnostic. The box itself is refused too, where the value
-// enters the `unknown` slot (`v is string` boxes `v`): it was a run-time
-// trap, and `00 · 110-gate-wasm` makes every lowering that cannot proceed a
-// located build refusal.
-test "wat: unknown ---- a type parameter's slot is refused, not boxed by a guess" {
-    try h.assertWasmRefusedAt(std.testing.allocator,
+// answers on four targets. A payload declared as a type parameter (`value: T`)
+// is not typed by this backend, which does not monomorphise: a constructor
+// written where its value is an `unknown` boxes that payload by its static
+// type, and a `case` over an `unknown` binds it as the `unknown` it is
+// (decision 8 §5.1 P5), so `v is string` answers `true` for `"abc"` and
+// `false` for the `1` of a `Maybe` it reads in the second arm.
+test "wat: unknown ---- a type parameter's slot matched out of an unknown is an unknown" {
+    try h.assertWasmRunLog(std.testing.allocator,
         \\type Maybe<T> {
         \\    Some(value: T),
         \\    None,
@@ -1237,40 +1233,37 @@ test "wat: unknown ---- a type parameter's slot is refused, not boxed by a guess
         \\    @print(innerLength(x));
         \\    val s: unknown = Maybe.Some(value: "abc");
         \\    @print(innerLength(s));
+        \\    val n: unknown = Maybe.Some(value: 5);
+        \\    @print(innerLength(n));
         \\}
-    , "the wasm backend cannot box this value as `unknown`", 7, 36);
+    ,
+        \\-2
+        \\1
+        \\-1
+        \\
+    );
 }
 
-// `00 · 110-gate-wasm` step 2: a field read this backend cannot place — the
-// receiver is a type parameter's slot, which nothing here types — is REFUSED
-// where it is written, as every lowering that cannot proceed now is. It used
-// to write `i32.const 0` with a `;; note` and go on, so the program ran and
-// printed a wrong value at exit 0. commonJS, erlang and beam answer `3`; the
-// wasm snapshot records the diagnostic — the guard's, now: `v is string` boxes
-// the same untyped slot, and that box is refused first (the test above).
-test "wat: unknown ---- a field read on a type parameter's slot is refused" {
-    try h.assertJsExpecting(std.testing.allocator, @src(), &.{
-        .{
-            .path = "",
-            .source =
-            \\type Maybe<T> {
-            \\    Some(value: T),
-            \\    None,
-            \\}
-            \\fn innerLength(b: unknown) -> i32 {
-            \\    return case b {
-            \\        Maybe.Some(value: v) when (v is string) { v.length }
-            \\        Maybe.Some(value: v) { -1 }
-            \\        _ { -2 }
-            \\    };
-            \\}
-            \\fn main() {
-            \\    val s: unknown = Maybe.Some(value: "abc");
-            \\    @print(innerLength(s));
-            \\}
-            ,
-        },
-    }, .refused_on_wasm);
+// The guard's `is` narrows `v` in the arm body as an `if (v is string)` does
+// in its block: `v.length` reads the string the box holds.
+test "wat: unknown ---- a field read on a guard-narrowed type parameter's slot" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\type Maybe<T> {
+        \\    Some(value: T),
+        \\    None,
+        \\}
+        \\fn innerLength(b: unknown) -> i32 {
+        \\    return case b {
+        \\        Maybe.Some(value: v) when (v is string) { v.length }
+        \\        Maybe.Some(value: v) { -1 }
+        \\        _ { -2 }
+        \\    };
+        \\}
+        \\fn main() {
+        \\    val s: unknown = Maybe.Some(value: "abc");
+        \\    @print(innerLength(s));
+        \\}
+    );
 }
 
 // A slice's `end: ?i32` written out as `null` — or an optional that is absent

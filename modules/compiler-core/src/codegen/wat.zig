@@ -2082,6 +2082,19 @@ const Emitter = struct {
     /// The `case` subject locals holding an `unknown` / union value, whose
     /// arms may name a primitive type (`i32 { n -> … }`, §5.2).
     unknown_subjects: std.StringHashMapUnmanaged(void) = .empty,
+    /// Set around a generic enum constructor written where its value is an
+    /// `unknown` (every type-parameter payload goes in boxed) or a
+    /// `Name<…>` whose argument is an `unknown` / union (that parameter's
+    /// payloads go in boxed): a `case` over the value binds them as the
+    /// `unknown` they are (decision 8 §5.1 P5). `lowerEnumCtor` reads and
+    /// clears it.
+    ctor_box: CtorBox = .none,
+    /// Set by `lowerAsUnknown` on a `case` it boxes: each arm's value goes
+    /// into the `unknown` on its own (`lowerArmBody`), as the arms of a
+    /// `case` of different types yield their union (decision 8 §3.2).
+    pending_case_box: bool = false,
+    /// The current `case`'s `pending_case_box`, read by its arms.
+    case_box: bool = false,
     /// `case` subject locals holding a `u64`: a range pattern orders them unsigned.
     u64_subjects: std.StringHashMapUnmanaged(void) = .empty,
     /// Set for the one arm body a primitive-type arm opens: its binder is the
@@ -3540,6 +3553,19 @@ const Emitter = struct {
         // `bigint` kind yet (the checker keeps a `bigint` out of `unknown`).
         if (self.isBigintExpr(value) or self.isOptBigintExpr(value) or self.ifBigintArm(value))
             return self.refuse(value.getLoc(), "the wasm backend has no `bigint` in a union yet", .{});
+        if (value == .call and value.call.kind == .call and self.callKind(value.call.kind.call) == .enum_ctor) {
+            self.ctor_box = .all;
+            defer self.ctor_box = .none;
+            try self.lowerCoerced(value, "i32");
+            return;
+        }
+        if (try self.lowerBoxedIf(.{ .named = ast.unknown_type_name }, value, true)) return;
+        if (isCaseExpr(value)) {
+            self.pending_case_box = true;
+            defer self.pending_case_box = false;
+            try self.lowerCoerced(value, "i32");
+            return;
+        }
         if (isNullLit(value) or self.isUnknownExpr(value) or self.isTaggedValue(value)) {
             try self.lowerCoerced(value, "i32");
             return;
@@ -5194,6 +5220,8 @@ const Emitter = struct {
         };
     }
 
+    const CtorBox = union(enum) { none, all, args: []const ast.TypeRef };
+
     const FoundVariant = struct { variants: []const ast.EnumVariant, tag: u32, variant: ast.EnumVariant };
 
     /// Decision 8 §5.1 P8: a pattern's variant name reaches the backend with
@@ -6124,7 +6152,11 @@ const Emitter = struct {
                     var lb = lb0;
                     lb.name = try self.bindTargetAs(lb0.name, self.bindingLocalType(lb0.typeAnnotation, lb0.value.*));
                     defer self.installShadow(lb0.name, lb.name);
-                    if (lb.typeAnnotation) |ta| if (isUnknownTypeRef(ta)) {
+                    // `val v = if (c) 2 else "two"` is the union of its arms
+                    // (decision 8 §3.2): an `unknown` slot, each arm boxed.
+                    const unknown_ann: ?ast.TypeRef = lb.typeAnnotation orelse
+                        (if (self.ifArmsDiffer(lb.value.*)) ast.TypeRef{ .named = ast.unknown_type_name } else null);
+                    if (unknown_ann) |ta| if (isUnknownTypeRef(ta)) {
                         try self.declareLocal(lb.name, "i32");
                         try self.local_typerefs.put(lb.name, ta);
                         if (self.boxesInto(ta, lb.value.*))
@@ -7763,6 +7795,10 @@ const Emitter = struct {
     }
 
     fn lowerCase(self: *Emitter, c: anytype) anyerror!void {
+        const prev_case_box = self.case_box;
+        self.case_box = self.pending_case_box;
+        self.pending_case_box = false;
+        defer self.case_box = prev_case_box;
         if (c.subjects.len == 0 or c.arms.len == 0) {
             try self.emit(zero);
             return;
@@ -7789,7 +7825,11 @@ const Emitter = struct {
             try self.emit(.{ .local_set = subj_local });
         }
         if (self.isU64Expr(c.subjects[0])) try self.u64_subjects.put(self.alloc, subj_local, {}) else _ = self.u64_subjects.remove(subj_local);
-        if (self.isUnknownExpr(c.subjects[0])) try self.unknown_subjects.put(self.alloc, subj_local, {});
+        // Re-decided per `case`: `__case_<depth>` names repeat across functions.
+        if (self.isUnknownExpr(c.subjects[0])) try self.unknown_subjects.put(self.alloc, subj_local, {}) else _ = self.unknown_subjects.remove(subj_local);
+        if (c.subjects.len == 1) {
+            if (self.typeRefOf(c.subjects[0])) |tr| try self.local_typerefs.put(subj_local, tr) else _ = self.local_typerefs.remove(subj_local);
+        }
         const subj_is_str = self.isStringExpr(c.subjects[0]);
         if (subj_is_str) try self.str_locals.put(subj_local, {});
         if (self.resultShapeOf(c.subjects[0])) |shape| try self.result_subjects.put(subj_local, shape);
@@ -7895,7 +7935,11 @@ const Emitter = struct {
 
         var ok_c: Capture = .{};
         self.open(&ok_c);
+        // §5.3 / §4.1 — `when (v is string)` narrows `v` in the arm body as
+        // `if (v is string)` does in its block.
+        const unknown_narrowed = try self.narrowUnknown(guard);
         try self.lowerArmBody(arms[idx].body, subj);
+        self.dropUnknownNarrowing(unknown_narrowed);
         const ok_seq = self.seal(&ok_c, .{ .value = ty });
 
         var no_c: Capture = .{};
@@ -7935,8 +7979,14 @@ const Emitter = struct {
         // Read once: a `case` nested in the body binds its own arms.
         const record = self.arm_record;
         self.arm_record = null;
+        // The arms of a `case` boxed into an `unknown` (`lowerAsUnknown`):
+        // this arm's value goes in on its own; a `case` nested in the body
+        // is its own (`lowerCase` reads the flag again).
+        const box = self.case_box;
+        self.case_box = false;
+        defer self.case_box = box;
         const lam = armLambda(body) orelse {
-            try self.lowerCoerced(body, self.cur_result);
+            if (box) try self.lowerAsUnknown(body) else try self.lowerCoerced(body, self.cur_result);
             return;
         };
         // P1: the single parameter binds the whole matched value — for a
@@ -7976,7 +8026,7 @@ const Emitter = struct {
             .jump => |j| switch (j.kind) {
                 .@"break" => |br| if (br.value) |v| {
                     if (self.yield_target == null) {
-                        try self.lowerCoerced(v.*, self.cur_result);
+                        if (box) try self.lowerAsUnknown(v.*) else try self.lowerCoerced(v.*, self.cur_result);
                         return;
                     }
                 },
@@ -7990,6 +8040,10 @@ const Emitter = struct {
             },
             else => {},
         }
+        if (box) switch (last.expr) {
+            .jump, .binding => {},
+            else => return self.lowerAsUnknown(last.expr),
+        };
         const from = self.wasmTypeOf(last.expr);
         const tail = try self.emitStmt(last, true);
         if (tail == .value) try self.emitConvert(from, self.cur_result);
@@ -8782,6 +8836,22 @@ const Emitter = struct {
         return field;
     }
 
+    /// The type a payload declared `t` (one of the enum's type parameters)
+    /// stands for in the subject `subj`: the matching argument of its
+    /// recorded `Name<…>` type, or `unknown` for an `unknown` subject.
+    fn tparamArgOf(self: *Emitter, ref: VariantRef, subj: []const u8, t: ast.TypeRef) ?ast.TypeRef {
+        if (ref != .user or t != .named) return null;
+        const en = self.enumOfVariant(ref.user.variant.name) orelse return null;
+        const egens = self.enum_generics.get(en) orelse return null;
+        const idx = for (egens, 0..) |gp, i| {
+            if (std.mem.eql(u8, gp.name, t.named)) break i;
+        } else return null;
+        if (self.local_typerefs.get(subj)) |st| if (st == .generic and std.mem.eql(u8, st.generic.name, en) and st.generic.args.len == egens.len)
+            return st.generic.args[idx];
+        if (self.unknown_subjects.contains(subj)) return .{ .named = ast.unknown_type_name };
+        return null;
+    }
+
     /// Bind `n0` to payload slot `slot` of the variant in `subj`, typed by the
     /// slot's declaration.
     fn bindPayloadName(self: *Emitter, ref: VariantRef, subj: []const u8, slot: usize, n0: []const u8) !void {
@@ -8804,6 +8874,19 @@ const Emitter = struct {
             if (isStringTypeRef(t)) try self.str_locals.put(n, {});
             if (isBoolTypeRef(t)) try self.bool_locals.put(n, {});
         }
+        // The payload of a variant declared as one of the enum's type
+        // parameters is typed by what the subject says it is: the argument of
+        // its `Name<…>` type, else — a subject that is an `unknown` (decision
+        // 8 §5.1 P5) — the `unknown` its slot holds.
+        if (field_ty) |t| if (self.tparamArgOf(ref, subj, t)) |arg| {
+            if (isUnknownTypeRef(arg)) {
+                try self.local_typerefs.put(n, arg);
+            } else if (arg == .named and watType(arg)[0] != 'f' and !std.mem.eql(u8, watType(arg), "i64")) {
+                if (isStringTypeRef(arg)) try self.str_locals.put(n, {});
+                if (isBoolTypeRef(arg)) try self.bool_locals.put(n, {});
+                try self.noteTypedBinder(n, arg);
+            }
+        };
         switch (ref) {
             .result_ok, .result_err => {
                 const shape = self.result_subjects.get(subj) orelse ResultShape{};
@@ -14995,7 +15078,8 @@ const Emitter = struct {
         const t = target orelse return false;
         // An `unknown` / union slot: every value but one that already is one
         // goes in `lowerAsUnknown`'s box (`lowerBoxedInto`).
-        if (isUnknownTypeRef(t)) return !isNullLit(value) and !self.isUnknownExpr(value) and !self.isTaggedValue(value);
+        if (isUnknownTypeRef(t)) return !isNullLit(value) and !self.isUnknownExpr(value) and (!self.isTaggedValue(value) or self.isGenericEnumCtor(value));
+        if (self.ctorUnionArgs(t, value) != null) return true;
         const oi = self.optInfoOfTypeRef(t) orelse return false;
         if (!oi.boxed) return false;
         if (isNullLit(value)) return false;
@@ -15031,6 +15115,11 @@ const Emitter = struct {
     /// union slot, a `?T`'s `$__box_i32` cell otherwise.
     fn lowerBoxedInto(self: *Emitter, target: ?ast.TypeRef, value: ast.Expr) anyerror!void {
         if (target) |t| if (isUnknownTypeRef(t)) return self.lowerAsUnknown(value);
+        if (target) |t| if (self.ctorUnionArgs(t, value)) |args| {
+            self.ctor_box = .{ .args = args };
+            defer self.ctor_box = .none;
+            return self.lowerCoerced(value, "i32");
+        };
         if (try self.lowerBoxedIfArms(target, value)) return;
         // A `?f64`'s / `?i64`'s box is the value's own 8-byte cell.
         const cell: Cell = if (target) |t| (if (self.optInfoOfTypeRef(t)) |oi| oi.cell else .none) else .none;
@@ -15046,11 +15135,17 @@ const Emitter = struct {
     /// present `0`. Only a value-form `if` with an `else`, no binder, and an
     /// arm answering `null` at some depth takes this path.
     fn lowerBoxedIfArms(self: *Emitter, target: ?ast.TypeRef, value: ast.Expr) anyerror!bool {
+        return self.lowerBoxedIf(target, value, false);
+    }
+
+    /// `force`: the `if` goes into an `unknown` whatever its arms answer
+    /// (`lowerAsUnknown`), each arm boxed on its own.
+    fn lowerBoxedIf(self: *Emitter, target: ?ast.TypeRef, value: ast.Expr, force: bool) anyerror!bool {
         if (value != .branch or value.branch.kind != .if_) return false;
         const i = value.branch.kind.if_;
         if (i.binding != null) return false;
         const els = i.else_ orelse return false;
-        if (i.then_.len == 0 or els.len == 0 or !armAnswersNull(value)) return false;
+        if (i.then_.len == 0 or els.len == 0 or !(force or armAnswersNull(value))) return false;
         try self.lowerCondition(i.cond.*, null);
 
         var then_c: Capture = .{};
@@ -15369,10 +15464,73 @@ const Emitter = struct {
         return null;
     }
 
+    /// The type arguments of `t` (`Maybe<i32 | string>`) when `value` is a
+    /// constructor of that generic enum and some argument is an `unknown` /
+    /// union: the payloads of that parameter are boxed (`ctor_box`).
+    fn ctorUnionArgs(self: *Emitter, t: ast.TypeRef, value: ast.Expr) ?[]const ast.TypeRef {
+        if (t != .generic or !self.isGenericEnumCtor(value)) return null;
+        const cc = value.call.kind.call;
+        const en = if (receiverName(cc)) |r| (self.enums.getKey(r) orelse return null) else self.enumOfVariant(cc.callee) orelse return null;
+        if (!std.mem.eql(u8, en, t.generic.name)) return null;
+        for (t.generic.args) |a| if (isUnknownTypeRef(a)) return t.generic.args;
+        return null;
+    }
+
+    /// A value-form `if` whose two arms answer values of different kinds (an
+    /// integer and a string, say): its type is their union, which the checker
+    /// infers and this backend reads off the arms.
+    fn ifArmsDiffer(self: *Emitter, e: ast.Expr) bool {
+        if (e != .branch or e.branch.kind != .if_) return false;
+        const i = e.branch.kind.if_;
+        if (i.binding != null) return false;
+        const els = i.else_ orelse return false;
+        if (i.then_.len == 0 or els.len == 0) return false;
+        const a = self.valueKind(i.then_[i.then_.len - 1].expr) orelse return false;
+        const b = self.valueKind(els[els.len - 1].expr) orelse return false;
+        return a != b;
+    }
+
+    fn valueKind(self: *Emitter, e: ast.Expr) ?u8 {
+        if (isNullLit(e) or e == .jump or e == .binding) return null;
+        if (self.isUnknownExpr(e)) return null;
+        if (self.isStringExpr(e)) return 's';
+        if (self.isBoolExpr(e)) return 'b';
+        if (self.wasmTypeOf(e)[0] == 'f') return 'f';
+        if (self.isKnownInteger(e)) return 'i';
+        return null;
+    }
+
+    fn isCaseExpr(e: ast.Expr) bool {
+        return e == .collection and e.collection.kind == .case;
+    }
+
+    /// Whether `e` is a constructor call of a generic enum: written in an
+    /// `unknown` slot it boxes its type-parameter payloads (`box_ctor_tparams`).
+    fn isGenericEnumCtor(self: *Emitter, e: ast.Expr) bool {
+        if (e != .call or e.call.kind != .call) return false;
+        const cc = e.call.kind.call;
+        if (self.callKind(cc) != .enum_ctor) return false;
+        const en = if (receiverName(cc)) |r| (self.enums.getKey(r) orelse return false) else self.enumOfVariant(cc.callee) orelse return false;
+        return (self.enum_generics.get(en) orelse return false).len > 0;
+    }
+
+    /// Whether a payload declared `t` goes in boxed under `box` (`ctor_box`).
+    fn ctorBoxes(box: CtorBox, egens: []const ast.GenericParam, t: ast.TypeRef) bool {
+        if (box == .none or t != .named) return false;
+        for (egens, 0..) |gp, i| if (std.mem.eql(u8, gp.name, t.named)) return switch (box) {
+            .none => false,
+            .all => true,
+            .args => |args| i < args.len and isUnknownTypeRef(args[i]),
+        };
+        return false;
+    }
+
     /// `Color.Rgb(r: 1, g: 2, b: 3)` → `[tag, r, g, b]`. The tag (variant index)
     /// lives at offset 0; payload fields follow at 4, 8, ...
     fn lowerEnumCtor(self: *Emitter, cc: anytype, tag: u32, variant: ast.EnumVariant) anyerror!void {
         const nslots = 1 + variant.fields.len;
+        const box = self.ctor_box;
+        self.ctor_box = .none;
         const ename = receiverName(cc) orelse self.enumOfVariant(variant.name) orelse "";
         const desc = try self.variantDescriptorAddr(ename, variant);
         const egens = self.enum_generics.get(ename) orelse &.{};
@@ -15390,6 +15548,12 @@ const Emitter = struct {
         for (variant.fields, 0..) |vf, i| {
             const off: u32 = @intCast(tag_header_bytes + (i + 1) * 4);
             if (self.argForField(cc.args, vf.name, i)) |arg| {
+                if (ctorBoxes(box, egens, vf.typeRef)) {
+                    try self.emit(.{ .local_get = base });
+                    try self.lowerAsUnknown(arg.value.*);
+                    try self.emit(.{ .store = .{ .offset = off } });
+                    continue;
+                }
                 // A float's slot holds its cell, which only a payload declared
                 // a float is read as: under a type parameter (`Some(v: T)`) a
                 // binder and the printer took the cell's address for the value.

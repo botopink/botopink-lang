@@ -1519,6 +1519,31 @@ tests no literal in a list pattern and answers a function for a brace arm
 over one (`04-js`); erlang binds `true` (`02-erlang`); beam leaves list
 binders unresolved (`03-beam`).
 
+## A generic payload and a union value in an `unknown` slot (decision 8 §3.2, §5.1 P5, §5.3)
+
+A payload declared as a type parameter (`Some(value: T)`) has no type of its
+own in the backend, which does not monomorphise; `unknown` boxing needs one.
+What is typed, and where:
+
+| Where | What the backend does |
+|---|---|
+| a generic enum constructor written where its value is an `unknown` (`val s: unknown = Maybe.Some(value: "abc")`, an `unknown` argument, a return) | `ctor_box = .all`: `lowerEnumCtor` boxes every payload declared as one of the enum's type parameters (`lowerAsUnknown`, by the argument's static type) — `boxesInto` / `isGenericEnumCtor` |
+| the same constructor where a `Name<…>` with an `unknown` / union argument is expected (`innerSize(Maybe.Some(value: "abc"))` over `Maybe<i32 \| string>`) | `ctor_box = .args`: only the parameters whose argument is an `unknown` / union are boxed (`ctorUnionArgs`, `ctorBoxes`) |
+| `bindPayloadName` | a payload declared as a type parameter is typed by `tparamArgOf`: the matching argument of the subject's recorded `Name<…>` type (`lowerCase` records the subject's `typeRefOf` for its `__case_<n>` local), else the `unknown` of an `unknown` subject; a binder of an `unknown` / union is an `unknown` (`local_typerefs`), of a plain type an ordinary typed binder |
+| `case` / `if` in an `unknown` slot (`return case m { … }` in a fn answering `i32 \| string`; `val v = if (c) 2 else "two"`) | the value of each arm goes in on its own: `pending_case_box` → `case_box` read by `lowerArmBody`, and `lowerBoxedIf` with `force` for an `if`; a `val` of an `if` whose arms are values of different kinds (`ifArmsDiffer`) is an `unknown` local |
+| `case x { Pat when (v is T) { … v … } }` | `emitGuardChain` narrows `v` in the arm body as `if (v is T)` does in its block (`narrowUnknown`) |
+
+A typed generic value that flows into an `unknown` without being a constructor
+there (a `Maybe<i32>` local passed to an `unknown` parameter) keeps its raw
+payload; a `case` over it binds the payload as the `unknown` its subject
+makes it, which it is not — the box of such a value is not rebuilt (a
+`case_exhaustive`-shaped design the specs have not fixed). `unknown_subjects`
+is re-decided on every `case` (`__case_<n>` names repeat across functions; a
+stale entry read a later `case n { i32 { m -> … } }` as a test of an `unknown`).
+Fixtures: `tests/wat.zig`'s `a type parameter's slot matched out of an
+unknown is an unknown` and `a field read on a guard-narrowed type parameter's
+slot`; the cell `conformance/modules/unknown_generic_payload`.
+
 ## A re-binding is a local of its own (decisions 152, 205)
 
 Decision 152 refuses a second binding of one name in one body, and decision 205
