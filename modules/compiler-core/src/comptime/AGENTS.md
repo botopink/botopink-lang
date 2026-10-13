@@ -437,6 +437,14 @@ lifted node) keeps the node's expansion. `modules/template_two_alike_expansions`
 `modules/template_default_arg_two_expansions`,
 `modules/template_built_code_diagnostic_located`.
 
+`recv?.m(args)` over a nominal payload: the written call (typed over the `?T`)
+records no instance lowering of its own, so `inferOptionalOperator` copies the
+`.type_` lowering the synthesised link over the binder recorded (at
+`loc.col + optional_synthetic_col`) to the written call's loc; beam reads that
+loc and, without it, called the variant's atom as a module for an imported enum
+(`undef` `'std@json@@Json__v__str':str/1`). A primitive's lowering is not
+copied (`?.` over it stays the guard). `modules/optional_enum_method_imported`.
+
 Holed templates: each `${…}` part is exposed to the body as a
 `__bp_hole_<param>_<i>` placeholder; `substituteHoles` splices the caller's hole
 AST back after parsing and walks every expression-bearing position (closure/fn

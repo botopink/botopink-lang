@@ -19777,6 +19777,16 @@ fn inferOptionalOperator(env: *Env, call: anytype, loc: ast.Loc) InferError!Type
             old.call.type_ = typed.getType();
             if (old.call.kind == .call) old.call.kind.call.optional = true;
         }
+        // The written call's receiver is the `?T`, so typing it recorded no
+        // instance lowering (the payload `T` owns the method); the synthesised
+        // link over the binder did, at its own loc (a nominal type's alone: a
+        // primitive's is the payload's, and `?.` over it stays the guard). A backend without native
+        // dispatch (beam) reads the written call's loc: carry the link's over,
+        // or an imported enum's `x?.m()` called the variant's atom as a module.
+        const synthLoc: ast.Loc = .{ .line = loc.line, .col = loc.col + optional_synthetic_col, .expansion = loc.expansion };
+        if (env.instanceLowerings.get(loc) == null) {
+            if (env.instanceLowerings.get(synthLoc)) |il| if (il == .type_) try env.instanceLowerings.put(loc, il);
+        }
         return old;
     }
     try env.indexRewrites.put(loc, rewrite);
