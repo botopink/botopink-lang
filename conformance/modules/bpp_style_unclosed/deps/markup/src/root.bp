@@ -7,6 +7,6 @@ pub mod style;
 
 /// A decorator that refuses what it annotates, naming it and its kind.
 pub fn named(comptime decl: @Decl) {
-    val kind = if (decl.kind == DeclKind.Fn) { "a function" } else { "not a function" };
+    val kind = if (decl.kind == DeclKind.Fn) "a function" else "not a function";
     decl.fail("named " + decl.name + " (" + kind + ")");
 }

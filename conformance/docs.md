@@ -3503,6 +3503,20 @@ error: ships nothing: manifest has no "files" — a workspace member that is a l
 An example member (`entry: main.bp`, or `src/main.bp` present) is an
 application; nothing is shipped from it by design.
 
+#### Examples and `-test` members (decisions 75, 390)
+
+Every library is a workspace with a core, a `-test` member and its examples as
+members. An example member carries a `README.md` beside its `botopink.json`
+naming the upstream section it shows and the front that owns it, and reaches its
+library by `{ "workspace": true }`, never by `"git"`. A `-test` member exposes at
+least one helper `pub fn assert<Subject>(loc: SourceLocation, …) -> @Result<void,
+string>`, no more helpers than a consumer uses. `scripts/check-packaging.sh` checks
+the four rules across the library repositories — a README per example, a helper
+per `-test` member, no `"git"` to an ecosystem library from an example, every
+member listed by `botopink-lib-test --list` — and names each path that breaks
+one. The `onze` repository is the orchestrator; the mocking library it held is
+kept as its tagged history, `mocking-lib-final` (decision 507).
+
 #### Refusals
 
 | Manifest | Message |

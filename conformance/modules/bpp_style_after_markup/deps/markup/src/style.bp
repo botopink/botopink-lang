@@ -12,9 +12,7 @@ pub fn sized(size: i32) -> @Component<i32> {
 pub fn css(comptime t: @Expr<string>) -> @ExprCustom<@Component<i32>> {
     val text = t.text();
     val at = text.indexOf("!");
-    if (at >= 0) {
-        t.failAt(Span(at, at + 1, 1), "css: `!` is not a rule");
-    }
+    if (at >= 0) t.failAt(Span(at, at + 1, 1), "css: `!` is not a rule");
     val root = CustomNode(
         kind: "css",
         span: Span(0, 0, 1),

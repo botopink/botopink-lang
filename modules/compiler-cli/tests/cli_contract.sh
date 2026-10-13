@@ -709,6 +709,21 @@ else
 fi
 
 # ── C9 — format / format --check count an unparseable file as an error ──────
+echo "==> format formats a .bpp header as a module and leaves the style section and the markup byte for byte"
+P="$(project bppfmt)"
+printf 'type   Props(title:string)\n   val n=props.title.length();\n--- style ---\n.a   {  color:red }\n---\n<h1>   {props.title}</h1>\n' >"$P/src/Card.bpp"
+run "$P" format --check src/Card.bpp
+expect_code 1 "format --check of a badly indented header"
+run "$P" format src/Card.bpp
+expect_code 0 "format of the .bpp"
+WANT="$(printf 'type Props(title: string)\n\nval n = props.title.length();\n--- style ---\n.a   {  color:red }\n---\n<h1>   {props.title}</h1>')"
+if [[ "$(cat "$P/src/Card.bpp")" == "$WANT" ]]; then ok "the header reformatted, the style section and the markup unchanged"; else fail "the formatted .bpp differs"; sed 's/^/      /' "$P/src/Card.bpp" >&2; fi
+run "$P" format --check src/Card.bpp
+expect_code 0 "format --check of the formatted .bpp"
+printf 'val n = 1;\n---\n<p>   odd    spacing</p>\n' >"$P/src/Bare.bpp"
+run "$P" format --check src/Bare.bpp
+expect_code 0 "format --check passes the markup as written"
+
 echo "==> C9 format and format --check fail on unlexable or unparseable source"
 P="$(project c9)"
 printf 'pub fn main() {\n    print((1);\n}\n' >"$P/src/main.bp"

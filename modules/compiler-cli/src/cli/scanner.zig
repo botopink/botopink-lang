@@ -2,30 +2,24 @@
 /// `.botopink` files and returns them as `botopink.Module` slices.
 const std = @import("std");
 const bp = @import("botopink");
+const manifest = @import("manifest");
 
 const Module = bp.Module;
 
 // ── Extensions ───────────────────────────────────────────────────────────────
 
-const EXTS = [_][]const u8{ ".bp", ".botopink" };
-
+/// A module file of the one list every tool reads (`manifest.isModuleFile`):
+/// declaration modules (`*.d.bp`) are type surface only — embedded by the
+/// compiler separately. A `.bpp` file is a module of a package's `mod` tree,
+/// which the resolver unfolds onto the package `"bpp"` names; a flat scan
+/// (the `test/` suite, the deprecated `src/` walk) has no such package and
+/// holds none.
 fn hasSourceExt(name: []const u8) bool {
-    // Declaration modules (`*.d.bp`) are type surface only — they declare
-    // ambient builtins (bodyless `fn`), use declaration-file syntax the
-    // regular pipeline rejects, and are embedded by the compiler separately.
-    if (std.mem.endsWith(u8, name, ".d.bp")) return false;
-    for (EXTS) |ext| {
-        if (std.mem.endsWith(u8, name, ext)) return true;
-    }
-    return false;
+    return manifest.isModuleFile(name) and !manifest.isBppFile(name);
 }
 
 fn stripExt(name: []const u8) []const u8 {
-    for (EXTS) |ext| {
-        if (std.mem.endsWith(u8, name, ext))
-            return name[0 .. name.len - ext.len];
-    }
-    return name;
+    return manifest.stripSourceExt(name);
 }
 
 // ── Scanner ───────────────────────────────────────────────────────────────────

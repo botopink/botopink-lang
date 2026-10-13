@@ -362,18 +362,19 @@ fn srcHasBpFile(gpa: std.mem.Allocator, io: std.Io, lib_dir: std.Io.Dir) bool {
 
     while (walker.next(io) catch return false) |entry| {
         if (entry.kind != .file) continue;
-        if (std.mem.endsWith(u8, entry.basename, ".bp")) return true;
+        if (manifest.isSourceFile(entry.basename)) return true;
     }
     return false;
 }
 
 // ── Pure helpers ────────────────────────────────────────────────────────────────
 
-/// A runnable `.bp` source file — excludes declaration files (`*.d.bp`), which
-/// carry type surface only and have no executable `test` blocks.
+/// A runnable source file — `manifest.isModuleFile`, the one list every tool
+/// reads (a `.bpp` included: a `test` its header declares runs with the
+/// package's tests) — excluding declaration files (`*.d.bp`), which carry type
+/// surface only and have no executable `test` blocks.
 pub fn isBpSource(name: []const u8) bool {
-    if (std.mem.endsWith(u8, name, ".d.bp")) return false;
-    return std.mem.endsWith(u8, name, ".bp") or std.mem.endsWith(u8, name, ".botopink");
+    return manifest.isModuleFile(name);
 }
 
 /// True when `source` contains a `test` block: the `test` keyword at a word
@@ -412,8 +413,9 @@ fn isSpace(c: u8) bool {
 
 const testing = std.testing;
 
-test "isBpSource accepts .bp, rejects .d.bp" {
+test "isBpSource accepts .bp and .bpp, rejects .d.bp" {
     try testing.expect(isBpSource("erika.bp"));
+    try testing.expect(isBpSource("Card.bpp"));
     try testing.expect(isBpSource("main.botopink"));
     try testing.expect(!isBpSource("primitives.d.bp"));
     try testing.expect(!isBpSource("README.md"));

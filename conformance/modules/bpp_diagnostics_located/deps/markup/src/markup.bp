@@ -7,9 +7,7 @@ import {bpp} from "std";
 pub default fn markup(comptime t: @Expr<string>) -> @ExprCustom<i32> {
     val text = t.text();
     val at = text.indexOf("!");
-    if (at >= 0) {
-        t.failAt(Span(at, at + 1, 1), "markup: `!` is not markup");
-    }
+    if (at >= 0) t.failAt(Span(at, at + 1, 1), "markup: `!` is not markup");
     val root = CustomNode(
         kind: "markup",
         span: Span(0, 0, 1),

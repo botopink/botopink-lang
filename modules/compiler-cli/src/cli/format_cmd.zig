@@ -30,6 +30,8 @@ const bp = @import("botopink");
 const test_scratch = @import("test_scratch");
 const reporter = @import("./reporter.zig");
 const diagnostics = @import("./diagnostics.zig");
+const manifest = @import("manifest");
+const bpp_unfold = @import("./bpp_unfold.zig");
 
 // ── Options ───────────────────────────────────────────────────────────────────
 
@@ -95,22 +97,16 @@ pub fn run(gpa: std.mem.Allocator, io: std.Io, opts: Options) !u8 {
 
 // ── The walk ──────────────────────────────────────────────────────────────────
 
-const EXTS = [_][]const u8{ ".bp", ".botopink" };
-
-/// `.bp` and `.botopink` — which includes every `.d.bp`: a declaration module is
-/// source the project owns and `format` prints it like any other (decision 66).
+/// Every source extension (`manifest.SOURCE_EXTENSIONS`, the one list every
+/// tool reads) — which includes every `.d.bp`: a declaration module is source
+/// the project owns and `format` prints it like any other (decision 66) — and
+/// every `.bpp`, whose header `format` prints as a module (front 116 step 5).
 fn hasSourceExt(name: []const u8) bool {
-    for (EXTS) |ext| {
-        if (std.mem.endsWith(u8, name, ext)) return true;
-    }
-    return false;
+    return manifest.isSourceFile(name);
 }
 
 fn stripExt(name: []const u8) []const u8 {
-    for (EXTS) |ext| {
-        if (std.mem.endsWith(u8, name, ext)) return name[0 .. name.len - ext.len];
-    }
-    return name;
+    return manifest.stripSourceExt(name);
 }
 
 /// The directories the walk does not enter — each one a directory whose
@@ -254,6 +250,7 @@ fn formatFile(
     const arena = arena_instance.allocator();
 
     const source = try std.Io.Dir.cwd().readFileAlloc(io, path, arena, .unlimited);
+    if (manifest.isBppFile(path)) return formatBpp(gpa, io, arena, path, source, check_only);
 
     // Lex and parse.
     var lexer = bp.Lexer.init(source);
@@ -286,6 +283,185 @@ fn formatFile(
     try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = path, .data = formatted });
     reporter.formatChanged(path);
     return .changed;
+}
+
+/// A `.bpp` file (front 116 step 5): its header is formatted as a module —
+/// its declarations at the top, its statements as a function body's, the
+/// decorator of its last line after them — and every byte from its first
+/// separator line on (the style section, the markup) is left as written.
+fn formatBpp(gpa: std.mem.Allocator, io: std.Io, arena: std.mem.Allocator, path: []const u8, source: []const u8, check_only: bool) !FileResult {
+    const secs = switch (bpp_unfold.sections(source)) {
+        .ok => |x| x,
+        .refused => |r| {
+            var aw: std.Io.Writer.Allocating = .init(arena);
+            try diagnostics.renderLocated(&aw.writer, r.message, path, source, r.line, r.col, 1);
+            reporter.print("{s}", .{aw.written()});
+            return .invalid;
+        },
+    };
+    const header = source[0..secs.header_end];
+    const formatted_header = (try formatHeader(gpa, arena, path, source, header)) orelse return .invalid;
+    const formatted = try std.mem.concat(arena, u8, &.{ formatted_header, source[secs.header_end..] });
+    if (std.mem.eql(u8, source, formatted)) {
+        reporter.formatUnchanged(path);
+        return .unchanged;
+    }
+    if (check_only) {
+        reporter.formatChanged(path);
+        return .changed;
+    }
+    try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = path, .data = formatted });
+    reporter.formatChanged(path);
+    return .changed;
+}
+
+const HEADER_FN = "__bppHeader__";
+
+/// The header (`header`, the start of `source`) formatted, ending with one
+/// newline (empty for an empty header); null when it does not lex or parse —
+/// the located diagnostic printed at the file's own line and column.
+fn formatHeader(gpa: std.mem.Allocator, arena: std.mem.Allocator, path: []const u8, source: []const u8, header: []const u8) !?[]const u8 {
+    if (std.mem.trim(u8, header, " \t\r\n").len == 0) return header;
+    var lx = bp.Lexer.init(header);
+    const all = lx.scanAll(arena) catch |err| {
+        diagnostics.printLexError(gpa, &lx, err, source, path);
+        return null;
+    };
+    var toks: std.ArrayListUnmanaged(bp.Token) = .empty;
+    for (all) |t| switch (t.kind) {
+        .endOfFile, .commentNormal, .commentDoc, .commentModule, .newLine => {},
+        else => try toks.append(arena, t),
+    };
+    const its = (try bpp_unfold.items(arena, header, toks.items)) orelse return try refuseHeader(gpa, arena, path, source);
+    // A module of the header: each item with the comments before it, the
+    // declarations first, the statements in a function's body, the last
+    // line's decorator on that function.
+    var decls: std.ArrayListUnmanaged(u8) = .empty;
+    var stmts: std.ArrayListUnmanaged(u8) = .empty;
+    var decorator: []const u8 = "";
+    var cursor: usize = 0;
+    for (its) |it| {
+        const gap = std.mem.trim(u8, header[cursor..it.start], " \t\r\n");
+        const text = header[it.start..it.end];
+        const into = switch (it.kind) {
+            .declaration => &decls,
+            .statement => &stmts,
+            .annotations => blk: {
+                decorator = text;
+                break :blk &stmts;
+            },
+        };
+        // A blank line before the item, as written, is kept.
+        if (into.items.len > 0 and std.mem.count(u8, header[cursor..it.start], "\n") >= 2) try into.append(arena, '\n');
+        if (gap.len > 0) {
+            try into.appendSlice(arena, gap);
+            try into.append(arena, '\n');
+        }
+        if (it.kind != .annotations) {
+            try into.appendSlice(arena, text);
+            try into.append(arena, '\n');
+        }
+        cursor = it.end;
+    }
+    const tail = std.mem.trim(u8, header[cursor..], " \t\r\n");
+    const has_fn = stmts.items.len > 0 or decorator.len > 0 or tail.len > 0;
+    const module = if (has_fn)
+        try std.fmt.allocPrint(arena, "{s}\n{s}\nfn " ++ HEADER_FN ++ "() {{\n{s}{s}\n}}\n", .{ decls.items, decorator, stmts.items, tail })
+    else
+        decls.items;
+    var mlx = bp.Lexer.init(module);
+    const mtoks = mlx.scanAll(arena) catch return try refuseHeader(gpa, arena, path, source);
+    var parser = bp.Parser.init(mtoks);
+    const program = parser.parse(arena) catch return try refuseHeader(gpa, arena, path, source);
+    const body = std.mem.trimEnd(u8, try bp.format.format(arena, program), "\n");
+    if (!has_fn) return try std.mem.concat(arena, u8, &.{ body, "\n" });
+    // Split the formatted module at the function's head.
+    const head = "fn " ++ HEADER_FN ++ "() {";
+    const at = std.mem.indexOf(u8, body, head) orelse return try refuseHeader(gpa, arena, path, source);
+    var before = std.mem.trimEnd(u8, body[0..at], " \t\n");
+    // The decorator's lines, right above the head, move after the statements.
+    var deco_out: []const u8 = "";
+    if (decorator.len > 0) {
+        const nl = std.mem.lastIndexOfScalar(u8, before, '\n');
+        const start = if (nl) |n| n + 1 else 0;
+        deco_out = before[start..];
+        before = std.mem.trimEnd(u8, before[0..start], " \t\n");
+    }
+    var inner = body[at + head.len ..];
+    inner = std.mem.trimStart(u8, inner, "\n");
+    const close = std.mem.lastIndexOfScalar(u8, inner, '}') orelse inner.len;
+    inner = std.mem.trimEnd(u8, inner[0..close], " \t\n");
+    var out: std.ArrayListUnmanaged(u8) = .empty;
+    if (before.len > 0) {
+        try out.appendSlice(arena, before);
+        try out.appendSlice(arena, if (inner.len > 0 or deco_out.len > 0) "\n\n" else "\n");
+    }
+    var lines = std.mem.splitScalar(u8, inner, '\n');
+    while (lines.next()) |line| {
+        if (inner.len == 0) break;
+        const dedented = if (std.mem.startsWith(u8, line, "    ")) line[4..] else line;
+        try out.appendSlice(arena, dedented);
+        try out.append(arena, '\n');
+    }
+    if (deco_out.len > 0) {
+        try out.appendSlice(arena, deco_out);
+        try out.append(arena, '\n');
+    }
+    return out.items;
+}
+
+/// The header does not parse: the file is unfolded as the toolchain reads it,
+/// and the parse error is printed at the file's own line and column.
+fn refuseHeader(gpa: std.mem.Allocator, arena: std.mem.Allocator, path: []const u8, source: []const u8) !?[]const u8 {
+    const spec: bpp_unfold.Spec = .{ .html = .{ .package = "bpp", .path = "", .name = "html" }, .style = .{ .package = "bpp", .path = "", .name = "style" }, .ret = "i32" };
+    const unfolded = switch (try bpp_unfold.unfoldFile(gpa, arena, path, source, spec)) {
+        .ok => |text| text,
+        .refused => |r| {
+            var aw: std.Io.Writer.Allocating = .init(arena);
+            try diagnostics.renderLocated(&aw.writer, r.message, path, source, r.line, r.col, 1);
+            reporter.print("{s}", .{aw.written()});
+            return null;
+        },
+    };
+    defer gpa.free(unfolded);
+    var lx = bp.Lexer.init(unfolded);
+    const toks = lx.scanAll(arena) catch |err| {
+        diagnostics.printLexError(gpa, &lx, err, unfolded, path);
+        return null;
+    };
+    var parser = bp.Parser.init(toks);
+    _ = parser.parse(arena) catch |err| {
+        diagnostics.printParseError(gpa, &parser, err, unfolded, path);
+        return null;
+    };
+    reporter.errMsg(try std.fmt.allocPrint(arena, "{s}: the header could not be formatted as a module", .{path}));
+    return null;
+}
+
+test "bpp format: the header is formatted as a module, the markup and the style section byte for byte" {
+    var arena_inst = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_inst.deinit();
+    const a = arena_inst.allocator();
+    const header =
+        \\import {lib.db.Post};
+        \\type   Props(title:string)
+        \\   val n=props.title.length();
+        \\#[page("/")]
+        \\
+    ;
+    const got = (try formatHeader(std.testing.allocator, a, "Card.bpp", header, header)).?;
+    try std.testing.expectEqualStrings(
+        \\import {lib.db.Post};
+        \\
+        \\type Props(title: string)
+        \\
+        \\val n = props.title.length();
+        \\#[page("/")]
+        \\
+    , got);
+    const again = (try formatHeader(std.testing.allocator, a, "Card.bpp", got, got)).?;
+    try std.testing.expectEqualStrings(got, again);
+    try std.testing.expectEqualStrings("", (try formatHeader(std.testing.allocator, a, "Bare.bpp", "", "")).?);
 }
 
 // ── tests ─────────────────────────────────────────────────────────────────────

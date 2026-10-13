@@ -16,7 +16,8 @@ scripts/
 ├── install.ps1        ← Windows one-liner installer
 ├── release-pack.sh    ← per-target archive + sha256 packer (used by release.yml)
 ├── gate.sh            ← the ordered local gate (staged checks + `zig fmt --check modules`, build, format-check, test, test-bpmp, beam export audit, test-cli, test-libs, test-conformance, test-docs)
-├── format-check.sh    ← `botopink format --check` over the compiler's canonical `.bp` trees (`TREES`) — decision 66's caller
+├── format-check.sh    ← `botopink format --check` over the compiler's canonical `.bp` trees (`TREES`) — decision 66's caller (a `.bpp` header included: `format` formats it as a module)
+├── check-packaging.sh ← the packaging rule across the library repositories (front 98 step 2): a README per example member, an `assert<Subject>(loc: SourceLocation, …)` per `-test` member, no `"git"` to an ecosystem library from an example, every member listed by `botopink-lib-test --list`; each failing path named, exit 1. Not called by `gate.sh` (that call is the gate's)
 ├── test-libs.sh       ← runtime pre-flight + `botopink-lib-test` wrapper: one line per cell and per audited exclusion, one summary line (`zig build test-libs`)
 ├── test-vscode.sh     ← locate the sibling vscode-extension, `npm ci` once, `npm test` (`zig build test-vscode`)
 ├── check-docs.sh      ← every `<!-- example: … -->` of the language reference names a conformance cell (`zig build test-docs`)

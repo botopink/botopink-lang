@@ -5,6 +5,6 @@ pub fn twice(x: i32) -> i32 {
 }
 
 val size = props.title.length();
-val label = if (size > 1) { "long" } else { "short" };
+val label = if (size > 1) "long" else "short";
 ---
 <h1>{props.title}</h1>
