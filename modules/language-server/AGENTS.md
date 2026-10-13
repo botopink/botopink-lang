@@ -115,7 +115,18 @@ resolves the dependency set with the same rules the CLI driver uses:
   A link wins over the walk-up (`tests/project_graph.zig`, decision 483).
   `.d.bp` declaration files are kept
   for go-to-def but excluded from the compile (the CLI drops them too).
-- `mod` / `pub mod` siblings → every `.bp` under the project's `src/`.
+- `mod` / `pub mod` siblings → every source file under the project's `src/`
+  (`manifest.isSourceFile` — the CLI's one list), a `.bpp` read as the module
+  it unfolds to (front 116 step 4): `buildProject` finds the roles of the
+  package the project's `"bpp"` names with the CLI's own `bpp.checkPackage` /
+  `bpp.unfoldSpec` (through `cli_resolver`), and `loadSrcTree` unfolds each
+  `.bpp` with them (`bpp_unfold.unfoldFile`, which remembers its positions); a
+  refused file is a `Problem` at its line. `Resolved.bpp` hands the unfold to
+  the server: an open `.bpp` document is compiled as its unfolded module
+  (`src/bpp_view.zig`, `Server.viewOf`), the cursor of a hover or a definition
+  moved onto it and every diagnostic, hover range and location moved back to
+  the file's line and column (`Server.documentDiagnostics`, `mapLocation`);
+  `tests/bpp.zig` and the `lsp/bpp_*` snapshots pin it.
 - `from "std"` → embedded, expanded inside the compiler.
 - `from "<bundled>"` (decisions 115–117 — every non-std name of
   `comptime.bundled_packages`, generated from `build.zig`'s list) → the

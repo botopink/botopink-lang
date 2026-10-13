@@ -16,6 +16,7 @@ const index_mod = @import("./project_index.zig");
 const graph_mod = @import("./project_graph.zig");
 const compiler_mod = @import("./compiler.zig");
 const manifest = @import("manifest");
+const bpp_view = @import("./bpp_view.zig");
 
 const Lexer = bp.Lexer;
 
@@ -96,6 +97,16 @@ pub const Server = struct {
         return compiler_mod.LspCompiler.init(self.gpa, self.io, self.lspCacheDir(arena, uri, "template"));
     }
 
+    /// `uri`'s document as the server reads it (front 116 step 4): a `.bpp`
+    /// file unfolded onto the package its project's `"bpp"` names, the
+    /// positions mapped both ways (`bpp_view.View`); any other document as it
+    /// is. `arena` owns the view.
+    pub fn viewOf(self: *Server, arena: std.mem.Allocator, uri: []const u8, source: []const u8) !bpp_view.View {
+        if (!manifest.isBppFile(lsp_types.uriToPath(uri))) return .{ .text = source };
+        const resolved = (self.graph.resolve(uri) catch null) orelse return .{ .text = source };
+        return bpp_view.of(arena, uri, source, resolved.bpp);
+    }
+
     /// Build the module list to compile for `uri`: its project dependencies
     /// (`from "<lib>"` packages + `mod` siblings, resolved from `botopink.json`)
     /// followed by the active document LAST, so it can import from every dep.
@@ -128,7 +139,9 @@ pub const Server = struct {
             const dep_std = std.mem.eql(u8, try self.packageName(arena, dep.uri), "std");
             try list.append(arena, .{ .uri = dep.uri, .source = src, .std_member = dep_std });
         }
-        try list.append(arena, .{ .uri = uri, .source = source, .std_member = active_std }); // active doc LAST
+        // The active doc LAST — a `.bpp` one as the module it unfolds to.
+        const view = try bpp_view.of(arena, uri, source, resolved.bpp);
+        try list.append(arena, .{ .uri = uri, .source = view.text, .std_member = active_std });
         return list.toOwnedSlice(arena);
     }
 
@@ -154,7 +167,7 @@ pub const Server = struct {
     /// Compile `uri`'s document together with its project module graph. The
     /// returned `CompileResult` borrows the active `source`/`uri` and the graph
     /// cache (both outlive the call); only the entry array is temporary.
-    fn compileWithGraph(self: *Server, uri: []const u8, source: []const u8) !compiler_mod.CompileResult {
+    pub fn compileWithGraph(self: *Server, uri: []const u8, source: []const u8) !compiler_mod.CompileResult {
         var ea = std.heap.ArenaAllocator.init(self.gpa);
         defer ea.deinit();
         const entries = try self.buildModuleEntries(ea.allocator(), uri, source);
@@ -379,17 +392,24 @@ pub const Server = struct {
         const uri = self.uriFromTextDocument(msg) orelse {
             return messages.writeResponse(self.io, self.gpa, msg.id(), null);
         };
-        const pos = positionFromParams(msg.params()) orelse {
+        const file_pos = positionFromParams(msg.params()) orelse {
             return messages.writeResponse(self.io, self.gpa, msg.id(), null);
         };
 
-        const source = self.files.read(self.gpa, self.io, uri) catch {
+        const document = self.files.read(self.gpa, self.io, uri) catch {
             return messages.writeResponse(self.io, self.gpa, msg.id(), null);
         };
-        defer self.gpa.free(source);
+        defer self.gpa.free(document);
+        var va = std.heap.ArenaAllocator.init(self.gpa);
+        defer va.deinit();
+        // A `.bpp` document is read as its unfolded module, the cursor moved
+        // onto it and any range moved back (front 116 step 4).
+        const view = self.viewOf(va.allocator(), uri, document) catch bpp_view.View{ .text = document };
+        const source = view.text;
+        const pos = view.toView(file_pos);
 
         // Compile to get typed bindings
-        var result = self.compileWithGraph(uri, source) catch {
+        var result = self.compileWithGraph(uri, document) catch {
             return messages.writeResponse(self.io, self.gpa, msg.id(), null);
         };
         defer result.deinit(self.gpa);
@@ -406,13 +426,17 @@ pub const Server = struct {
         // the `CustomNode.ref` resolves to (sublanguage-lsp F3). Tried first
         // because the bound symbol (e.g. a struct) differs from the word under
         // the cursor (e.g. a column name).
-        if (try engine.hoverCustomRef(self.gpa, source, pos, bindings, result.customAstFor(uri))) |h| {
-            defer self.gpa.free(h.contents.value);
+        if (try engine.hoverCustomRef(self.gpa, source, pos, bindings, result.customAstFor(uri))) |found| {
+            defer self.gpa.free(found.contents.value);
+            var h = found;
+            if (h.range) |r| h.range = view.rangeToFile(r);
             return messages.writeResponse(self.io, self.gpa, msg.id(), h);
         }
 
-        if (try engine.hover(self.gpa, source, pos, bindings)) |h| {
-            defer self.gpa.free(h.contents.value);
+        if (try engine.hover(self.gpa, source, pos, bindings)) |found| {
+            defer self.gpa.free(found.contents.value);
+            var h = found;
+            if (h.range) |r| h.range = view.rangeToFile(r);
             try messages.writeResponse(self.io, self.gpa, msg.id(), h);
         } else {
             try messages.writeResponse(self.io, self.gpa, msg.id(), null);
@@ -425,17 +449,22 @@ pub const Server = struct {
         const uri = self.uriFromTextDocument(msg) orelse {
             return messages.writeResponse(self.io, self.gpa, msg.id(), null);
         };
-        const pos = positionFromParams(msg.params()) orelse {
+        const file_pos = positionFromParams(msg.params()) orelse {
             return messages.writeResponse(self.io, self.gpa, msg.id(), null);
         };
 
-        const source = self.files.read(self.gpa, self.io, uri) catch {
+        const document = self.files.read(self.gpa, self.io, uri) catch {
             return messages.writeResponse(self.io, self.gpa, msg.id(), null);
         };
-        defer self.gpa.free(source);
+        defer self.gpa.free(document);
 
         var arena = std.heap.ArenaAllocator.init(self.gpa);
         defer arena.deinit();
+        // A `.bpp` document is read as its unfolded module, the cursor moved
+        // onto it and the answer moved back (front 116 step 4).
+        const view = self.viewOf(arena.allocator(), uri, document) catch bpp_view.View{ .text = document };
+        const source = view.text;
+        const pos = view.toView(file_pos);
 
         var lexer = Lexer.init(source);
         const tokens = lexer.scanAll(arena.allocator()) catch {
@@ -447,7 +476,7 @@ pub const Server = struct {
         // F3). Gated on being inside a string so the common path skips the extra
         // template-expanding compile.
         if (engine.cursorInString(source, lsp_types.positionToOffset(source, pos))) {
-            if (self.compileWithGraph(uri, source)) |res| {
+            if (self.compileWithGraph(uri, document)) |res| {
                 var result = res;
                 defer result.deinit(self.gpa);
                 var ga = std.heap.ArenaAllocator.init(self.gpa);
@@ -455,7 +484,7 @@ pub const Server = struct {
                 const g_others = self.graphOthers(ga.allocator(), uri) catch &.{};
                 if (try engine.definitionCustomRef(self.gpa, uri, source, pos, tokens, result.customAstFor(uri), g_others)) |loc| {
                     defer self.gpa.free(loc.uri);
-                    return messages.writeResponse(self.io, self.gpa, msg.id(), loc);
+                    return messages.writeResponse(self.io, self.gpa, msg.id(), mapLocation(view, uri, loc));
                 }
             } else |_| {}
         }
@@ -469,7 +498,7 @@ pub const Server = struct {
             var ga = std.heap.ArenaAllocator.init(self.gpa);
             defer ga.deinit();
             const g_others = self.graphOthers(ga.allocator(), uri) catch &.{};
-            if (self.compileWithGraph(uri, source)) |res| {
+            if (self.compileWithGraph(uri, document)) |res| {
                 var result = res;
                 defer result.deinit(self.gpa);
                 const bindings = result.bindingsFor(uri);
@@ -477,7 +506,7 @@ pub const Server = struct {
                     switch (td) {
                         .location => |loc| {
                             defer self.gpa.free(loc.uri);
-                            return messages.writeResponse(self.io, self.gpa, msg.id(), loc);
+                            return messages.writeResponse(self.io, self.gpa, msg.id(), mapLocation(view, uri, loc));
                         },
                         .builtin => |bj| {
                             // The method lives in the embedded primitives source;
@@ -487,7 +516,7 @@ pub const Server = struct {
                                 const std_uri = try lsp_types.pathToUri(self.gpa, path);
                                 defer self.gpa.free(std_uri);
                                 const loc = proto.Location{ .uri = std_uri, .range = bj.range };
-                                return messages.writeResponse(self.io, self.gpa, msg.id(), loc);
+                                return messages.writeResponse(self.io, self.gpa, msg.id(), mapLocation(view, uri, loc));
                             }
                         },
                     }
@@ -498,7 +527,7 @@ pub const Server = struct {
         // First try a declaration in the current file.
         if (try engine.definition(self.gpa, uri, source, pos, tokens)) |loc| {
             defer self.gpa.free(loc.uri);
-            return messages.writeResponse(self.io, self.gpa, msg.id(), loc);
+            return messages.writeResponse(self.io, self.gpa, msg.id(), mapLocation(view, uri, loc));
         }
 
         // Project graph (resolved from `botopink.json`) is the source of truth for
@@ -512,7 +541,7 @@ pub const Server = struct {
             if (g_others.len > 0) {
                 if (try engine.definitionInModules(self.gpa, uri, source, pos, tokens, g_others)) |loc| {
                     defer self.gpa.free(loc.uri);
-                    return messages.writeResponse(self.io, self.gpa, msg.id(), loc);
+                    return messages.writeResponse(self.io, self.gpa, msg.id(), mapLocation(view, uri, loc));
                 }
             }
         }
@@ -544,7 +573,7 @@ pub const Server = struct {
 
         if (try engine.definitionInModules(self.gpa, uri, source, pos, tokens, others.items)) |loc| {
             defer self.gpa.free(loc.uri);
-            return messages.writeResponse(self.io, self.gpa, msg.id(), loc);
+            return messages.writeResponse(self.io, self.gpa, msg.id(), mapLocation(view, uri, loc));
         }
 
         // Still unresolved — try the embedded "std" package modules
@@ -556,7 +585,7 @@ pub const Server = struct {
                 const std_uri = try lsp_types.pathToUri(self.gpa, path);
                 defer self.gpa.free(std_uri);
                 const loc = proto.Location{ .uri = std_uri, .range = sd.range };
-                return messages.writeResponse(self.io, self.gpa, msg.id(), loc);
+                return messages.writeResponse(self.io, self.gpa, msg.id(), mapLocation(view, uri, loc));
             }
         }
 
@@ -1076,24 +1105,9 @@ pub const Server = struct {
     fn publishDiagnostics(self: *Server, uri: []const u8, source: []const u8) !void {
         try self.sendProgress("begin", "Compiling...");
 
-        // Compile the document together with its project graph so a file importing
-        // across `mod` siblings / `from "<lib>"` doesn't report false "unbound"
-        // errors. Diagnostics are still filtered to `uri`.
         var ea = std.heap.ArenaAllocator.init(self.gpa);
         defer ea.deinit();
-        const entries = self.buildModuleEntries(ea.allocator(), uri, source) catch &.{};
-
-        var result = try engine.diagnose(self.gpa, self.io, uri, source, self.lspCacheDir(ea.allocator(), uri, "template"), entries);
-        defer result.deinit(self.gpa);
-
-        // The import-source refusals `botopink check` makes (decisions 206,
-        // 242) — the compile above binds a `from` it should refuse.
-        const import_diags = self.importDiagnostics(ea.allocator(), uri, source) catch &.{};
-        defer {
-            for (import_diags) |d| self.gpa.free(d.message);
-            self.gpa.free(import_diags);
-        }
-        const all = try std.mem.concat(ea.allocator(), proto.Diagnostic, &.{ import_diags, result.diagnostics });
+        const all = try self.documentDiagnostics(ea.allocator(), uri, source);
 
         try self.sendDiagnostics(uri, all);
 
@@ -1106,6 +1120,43 @@ pub const Server = struct {
         try self.publishGraphProblems(uri);
 
         try self.sendProgress("end", null);
+    }
+
+    /// The diagnostics `publishDiagnostics` sends for `uri`, in `arena`.
+    ///
+    /// The document is compiled together with its project graph so a file
+    /// importing across `mod` siblings / `from "<lib>"` doesn't report false
+    /// "unbound" errors; the diagnostics are filtered to `uri`. A `.bpp`
+    /// document is compiled as its unfolded module and every diagnostic moved
+    /// back to the file's line and column (front 116 step 4); a file whose
+    /// grammar is refused gets that refusal alone.
+    pub fn documentDiagnostics(self: *Server, arena: std.mem.Allocator, uri: []const u8, source: []const u8) ![]proto.Diagnostic {
+        const view = self.viewOf(arena, uri, source) catch bpp_view.View{ .text = source };
+        if (view.refusal) |r| {
+            const one = try arena.alloc(proto.Diagnostic, 1);
+            one[0] = try bpp_view.refusalDiagnostic(arena, r);
+            return one;
+        }
+        const entries = self.buildModuleEntries(arena, uri, source) catch &.{};
+
+        var result = try engine.diagnose(self.gpa, self.io, uri, view.text, self.lspCacheDir(arena, uri, "template"), entries);
+        defer result.deinit(self.gpa);
+
+        // The import-source refusals `botopink check` makes (decisions 206,
+        // 242) — the compile above binds a `from` it should refuse.
+        const import_diags = self.importDiagnostics(arena, uri, view.text) catch &.{};
+        defer {
+            for (import_diags) |d| self.gpa.free(d.message);
+            self.gpa.free(import_diags);
+        }
+        const all = try arena.alloc(proto.Diagnostic, import_diags.len + result.diagnostics.len);
+        for (import_diags, 0..) |d, i| all[i] = d;
+        for (result.diagnostics, 0..) |d, i| all[import_diags.len + i] = d;
+        for (all) |*d| {
+            d.message = try arena.dupe(u8, d.message);
+            d.range = view.rangeToFile(d.range);
+        }
+        return all;
     }
 
     /// `engine.importDiagnostics` over the open document's project: its `src`
@@ -1408,4 +1459,18 @@ fn jsonStr(val: std.json.Value, key: []const u8) ?[]const u8 {
         .string => |s| s,
         else => null,
     };
+}
+
+/// A definition's answer in the files the editor shows (front 116 step 4): a
+/// location in the open `.bpp` document moved from its unfolded view back to
+/// the file, one in another `.bpp` file of the project moved back through the
+/// unfold the project graph remembered for it.
+fn mapLocation(view: bpp_view.View, uri: []const u8, loc: proto.Location) proto.Location {
+    if (std.mem.eql(u8, loc.uri, uri)) return .{ .uri = loc.uri, .range = view.rangeToFile(loc.range) };
+    const path = lsp_types.uriToPath(loc.uri);
+    if (bpp_view.originOf(path)) |o| {
+        const other: bpp_view.View = .{ .text = o.text, .origin = o };
+        return .{ .uri = loc.uri, .range = other.rangeToFile(loc.range) };
+    }
+    return loc;
 }

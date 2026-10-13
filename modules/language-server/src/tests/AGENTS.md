@@ -36,6 +36,7 @@ tests/
 ├── lifecycle.zig         ← `files.FileCache` didOpen→didChange→didClose
 ├── cross_module.zig      ← project-index requests (references / rename / import-missing)
 ├── project_graph.zig     ← project-graph compile + `ProjectGraph.resolveRoots`
+├── bpp.zig               ← a `.bpp` file: the graph reads it unfolded; an open one's diagnostics, hover and definition at the file's positions (front 116 step 4)
 └── lsp_cache.zig         ← the server's cache under `<cache root>/.botopinkbuild/cache/lsp/` (decision 233)
 ```
 

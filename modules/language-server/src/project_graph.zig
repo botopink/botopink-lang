@@ -28,6 +28,9 @@ const std = @import("std");
 const manifest = @import("manifest");
 const bp = @import("botopink");
 const lsp_types = @import("./lsp_types.zig");
+const cli_resolver = @import("cli_resolver");
+const bpp_unfold = cli_resolver.bpp_unfold_mod;
+const bpp_roles = cli_resolver.bpp_roles;
 /// Test-only: the one way a test spells a path it writes to (per process, so a
 /// second `zig build test` over this checkout cannot empty it mid-test).
 /// `build.zig` gives this module to the test modules alone.
@@ -101,6 +104,10 @@ const CachedProject = struct {
     /// was read (the import-source check then has no set to check against,
     /// exactly as the CLI's resolver with `externals == null`).
     dependency_names: ?[]const []const u8 = null,
+    /// What the project's `.bpp` files unfold onto (front 116 step 4): the
+    /// roles of the package its `"bpp"` names, as the CLI reads them; null
+    /// with no key, or when the package's roles are refused (the CLI names why).
+    bpp: ?bpp_unfold.Spec = null,
 
     fn destroy(self: *CachedProject, gpa: std.mem.Allocator) void {
         self.arena.deinit();
@@ -126,6 +133,9 @@ pub const Resolved = struct {
     /// open document's `from` clauses against (front 26 step 8).
     src_dir: []const u8 = "",
     dependency_names: ?[]const []const u8 = null,
+    /// The project's `.bpp` unfold, borrowed from the cache — the server
+    /// unfolds an open `.bpp` document with it.
+    bpp: ?*const bpp_unfold.Spec = null,
 };
 
 pub const ProjectGraph = struct {
@@ -178,7 +188,7 @@ pub const ProjectGraph = struct {
 
         if (self.cache.get(root)) |cached| {
             self.gpa.free(root);
-            return .{ .deps = cached.deps, .problems = cached.problems, .cache_root = cached.cache_root, .hit = true, .src_dir = cached.src_dir, .dependency_names = cached.dependency_names };
+            return .{ .deps = cached.deps, .problems = cached.problems, .cache_root = cached.cache_root, .hit = true, .src_dir = cached.src_dir, .dependency_names = cached.dependency_names, .bpp = if (cached.bpp) |*b| b else null };
         }
 
         const cp = self.buildProject(root) catch |err| {
@@ -187,7 +197,7 @@ pub const ProjectGraph = struct {
         };
         // `cp.root` is arena-owned; the cache key is a gpa-owned dup.
         try self.cache.put(root, cp);
-        return .{ .deps = cp.deps, .problems = cp.problems, .cache_root = cp.cache_root, .hit = false, .src_dir = cp.src_dir, .dependency_names = cp.dependency_names };
+        return .{ .deps = cp.deps, .problems = cp.problems, .cache_root = cp.cache_root, .hit = false, .src_dir = cp.src_dir, .dependency_names = cp.dependency_names, .bpp = if (cp.bpp) |*b| b else null };
     }
 
     // ── building ──────────────────────────────────────────────────────────────
@@ -262,7 +272,11 @@ pub const ProjectGraph = struct {
                         ));
                         continue;
                     };
+                    const first = deps.items.len;
                     try self.loadLib(a, &deps, &problems, r.dir, r.manifest, dep.name);
+                    if (m.bpp) |name| if (std.mem.eql(u8, name, dep.name)) {
+                        cp.bpp = try bppSpec(a, m, dep.name, r.manifest, deps.items[first..]);
+                    };
                 }
             }
         }
@@ -272,11 +286,31 @@ pub const ProjectGraph = struct {
         const src_dir = try std.fs.path.join(self.gpa, &.{ root, std.mem.trimEnd(u8, src_rel, "/") });
         defer self.gpa.free(src_dir);
         cp.src_dir = try a.dupe(u8, src_dir);
-        try self.loadSrcTree(a, &deps, &problems, src_dir);
+        try self.loadSrcTree(a, &deps, &problems, src_dir, if (cp.bpp) |*b| b else null);
 
         cp.deps = try deps.toOwnedSlice(a);
         cp.problems = try problems.toOwnedSlice(a);
         return cp;
+    }
+
+    /// The roles of the package `pkg` (its modules `mods`, loaded from its
+    /// `files` in order) as the unfold reads them — what `botopink build`
+    /// reads (`bpp.checkPackage`, `bpp.unfoldSpec`); null when they are refused.
+    fn bppSpec(a: std.mem.Allocator, project: manifest.Manifest, pkg: []const u8, lib: manifest.Manifest, mods: []const GraphModule) !?bpp_unfold.Spec {
+        var list: std.ArrayListUnmanaged(bpp_roles.PackageModule) = .empty;
+        for (mods, 0..) |gm, i| {
+            if (i >= lib.files.len) break;
+            const file = lib.files[i];
+            try list.append(a, .{
+                .module = .{ .path = try std.fmt.allocPrint(a, "{s}/{s}", .{ pkg, manifest.stripSourceExt(file) }), .source = gm.source, .declaration = gm.declaration },
+                .file = lsp_types.uriToPath(gm.uri),
+            });
+        }
+        const roles = bpp_roles.checkPackage(a, project, pkg, list.items) catch |e| switch (e) {
+            error.OutOfMemory => return error.OutOfMemory,
+            error.BppRefused => return null,
+        };
+        return try bpp_roles.unfoldSpec(a, pkg, lib.entry orelse "root.bp", roles);
     }
 
     /// Load every `file` the resolved dependency `dep` at `lib_dir` lists as a module.
@@ -368,6 +402,7 @@ pub const ProjectGraph = struct {
         deps: *std.ArrayListUnmanaged(GraphModule),
         problems: *std.ArrayListUnmanaged(Problem),
         src_dir: []const u8,
+        bpp: ?*const bpp_unfold.Spec,
     ) !void {
         const dir = std.Io.Dir.cwd().openDir(self.io, src_dir, .{ .iterate = true, .access_sub_paths = true }) catch return;
         var d = dir;
@@ -378,9 +413,9 @@ pub const ProjectGraph = struct {
 
         while (try walker.next(self.io)) |entry| {
             if (entry.kind != .file) continue;
-            if (!std.mem.endsWith(u8, entry.basename, ".bp")) continue;
+            if (!manifest.isSourceFile(entry.basename)) continue;
             const abs = try std.fs.path.join(a, &.{ src_dir, entry.path });
-            const source = entry.dir.readFileAlloc(self.io, entry.basename, a, .limited(10 * 1024 * 1024)) catch |err| {
+            const read = entry.dir.readFileAlloc(self.io, entry.basename, a, .limited(10 * 1024 * 1024)) catch |err| {
                 try problems.append(a, .{
                     .uri = try lsp_types.pathToUri(a, abs),
                     .message = try std.fmt.allocPrint(
@@ -394,10 +429,31 @@ pub const ProjectGraph = struct {
                 });
                 continue;
             };
+            // A `.bpp` file is the module it unfolds to (front 116), as the
+            // CLI reads it; a refusal is a `Problem` at the file's line.
+            const source = if (manifest.isBppFile(entry.basename)) blk: {
+                const spec = bpp orelse break :blk read;
+                switch (try bpp_unfold.unfoldFile(self.gpa, a, abs, read, spec.*)) {
+                    .ok => |text| {
+                        defer self.gpa.free(text);
+                        break :blk try a.dupe(u8, text);
+                    },
+                    .refused => |r| {
+                        try problems.append(a, .{
+                            .uri = try lsp_types.pathToUri(a, abs),
+                            .message = r.message,
+                            .line = @intCast(r.line -| 1),
+                            .character = @intCast(r.col -| 1),
+                            .length = 1,
+                        });
+                        continue;
+                    },
+                }
+            } else read;
             try deps.append(a, .{
                 .uri = try lsp_types.pathToUri(a, abs),
                 .source = source,
-                .declaration = std.mem.endsWith(u8, entry.basename, ".d.bp"),
+                .declaration = manifest.isDeclarationFile(entry.basename),
             });
         }
     }

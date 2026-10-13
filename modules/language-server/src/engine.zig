@@ -1,6 +1,7 @@
 /// LSP feature implementations: diagnostics, formatting, hover, definition, symbols,
 /// completion, references, and rename.
 const std = @import("std");
+const manifest = @import("manifest");
 const bp = @import("botopink");
 const proto = @import("./protocol.zig");
 const lsp_types = @import("./lsp_types.zig");
@@ -165,11 +166,10 @@ fn logicalPath(a: std.mem.Allocator, src_dir: []const u8, path: []const u8) ?[]c
     const dir = std.mem.trimEnd(u8, src_dir, "/");
     if (dir.len == 0 or !std.mem.startsWith(u8, path, dir) or path.len <= dir.len + 1 or path[dir.len] != '/') return null;
     var rel = path[dir.len + 1 ..];
-    if (std.mem.endsWith(u8, rel, ".d.bp")) {
-        rel = rel[0 .. rel.len - ".d.bp".len];
-    } else if (std.mem.endsWith(u8, rel, ".bp")) {
-        rel = rel[0 .. rel.len - ".bp".len];
-    } else return null;
+    // The one list of source extensions (`manifest.SOURCE_EXTENSIONS`): a
+    // `.bpp` file is a module too (front 116 step 3).
+    if (!manifest.isSourceFile(rel)) return null;
+    rel = manifest.stripSourceExt(rel);
     if (std.mem.endsWith(u8, rel, "/mod")) rel = rel[0 .. rel.len - "/mod".len];
     const out = a.dupe(u8, rel) catch return null;
     std.mem.replaceScalar(u8, out, '\\', '/');
@@ -1579,7 +1579,7 @@ fn modNamespaceModule(tokens: []const Token, others: []const ModuleSource, segs:
     var best: ?ModuleSource = null;
     for (others) |m| {
         const path = lsp_types.uriToPath(m.uri);
-        if (std.mem.endsWith(u8, path, ".bp") and std.mem.endsWith(u8, path[0 .. path.len - ".bp".len], tail)) return m;
+        if (manifest.isModuleFile(path) and !std.mem.endsWith(u8, path, "/mod.bp") and std.mem.endsWith(u8, manifest.stripSourceExt(path), tail)) return m;
         if (std.mem.endsWith(u8, path, "/mod.bp") and std.mem.endsWith(u8, path[0 .. path.len - "/mod.bp".len], tail)) best = m;
     }
     return best;

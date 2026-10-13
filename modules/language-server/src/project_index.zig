@@ -5,6 +5,7 @@
 /// rebuilt lazily: it is populated on first use and invalidated when a
 /// file is saved or a watched file changes.
 const std = @import("std");
+const manifest = @import("manifest");
 const bp = @import("botopink");
 const proto = @import("./protocol.zig");
 const lsp_types = @import("./lsp_types.zig");
@@ -162,7 +163,7 @@ pub const ProjectIndex = struct {
                 continue;
             }
 
-            if (!std.mem.endsWith(u8, name, ".bp")) continue;
+            if (!manifest.isSourceFile(name)) continue;
 
             const file_path = std.fmt.allocPrint(self.gpa, "{s}/{s}", .{ dir_path, name }) catch continue;
             defer self.gpa.free(file_path);
@@ -171,11 +172,7 @@ pub const ProjectIndex = struct {
             defer self.gpa.free(file_uri);
 
             // Module name: filename without .d.bp or .bp extension.
-            const module_name_end = if (std.mem.endsWith(u8, name, ".d.bp"))
-                name.len - 5 // strip ".d.bp"
-            else
-                name.len - 3; // strip ".bp"
-            const module_name = name[0..module_name_end];
+            const module_name = manifest.stripSourceExt(name);
 
             self.module_uris.append(self.gpa, self.gpa.dupe(u8, module_name) catch continue) catch {};
 

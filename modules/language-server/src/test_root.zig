@@ -3,6 +3,8 @@
 comptime {
     _ = @import("./tests/_warmup.zig"); // runs first: lazy-inits stdlib_template
     _ = @import("./tests/messages.zig");
+    _ = @import("./bpp_view.zig");
+    _ = @import("./tests/bpp.zig");
     _ = @import("./tests/diagnostics.zig");
     _ = @import("./tests/formatting.zig");
     _ = @import("./tests/hover.zig");

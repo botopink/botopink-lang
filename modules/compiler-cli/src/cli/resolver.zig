@@ -12,6 +12,10 @@ const std = @import("std");
 const bp = @import("botopink");
 const manifest = @import("manifest");
 const bpp_unfold = @import("./bpp_unfold.zig");
+/// The `.bpp` unfold and roles, for the language server (front 116 step 4):
+/// it reaches the CLI through this module (`cli_resolver`).
+pub const bpp_unfold_mod = bpp_unfold;
+pub const bpp_roles = @import("./bpp.zig");
 /// Test-only: the one way a test spells a path it writes to (per process, so a
 /// second `zig build test` over this checkout cannot empty it mid-test).
 /// `build.zig` gives this module to the test modules alone.

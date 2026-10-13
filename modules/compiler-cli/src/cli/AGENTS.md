@@ -70,6 +70,15 @@ cli/
 
 ## Conventions
 
+- **The std tree and the import grammar** (decisions 106, 107, 110): std is a
+  pure root of modules with two folders, `io/` and `testing/`
+  (`libs/std/AGENTS.md`); an import item is a dotted path whose **leaf** alone
+  enters scope, braces group items under a node, `as` renames a leaf and `*`
+  activates one (`compiler-core/src/parser/AGENTS.md`, `comptime/AGENTS.md`).
+  The CLI meets it where it resolves imports: `resolver.zig` checks that a
+  `from` names a package and that a brace path names a module of the package
+  (`conformance/docs.md` § Imports).
+
 - Project `src/` is loaded through `sources.zig` (explicit module tree); the flat
   `test/` suite dir keeps the deterministic `scanner.zig` walk (sort by path).
 - Every loader fills `Module.srcPath` — the package-root-relative path with its
