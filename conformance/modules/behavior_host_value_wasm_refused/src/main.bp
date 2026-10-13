@@ -1,0 +1,27 @@
+//// A method called on a `behavior` no type of the program implements is
+//// answered by a value the host builds. The wasm backend has nothing to call
+//// when the `declare fn` that builds the value carries no
+//// `#[@External.Wasm(…)]` cell, and says so: the missing host binding is the
+//// refusal, not an unresolved call.
+
+behavior Greeter {
+    val tag: string;
+
+    fn greet(self: Self, who: string) -> string;
+}
+
+#[@External.Node("({ tag: $0, greet: function (who) { return this.tag + ', ' + who; } })")]
+#[@External.Erlang("#{tag => $0, greet => fun(Self, Who) -> iolist_to_binary([maps:get(tag, Self), $,, 32, Who]) end}")]
+declare fn makeGreeter(tag: string) -> Greeter;
+
+fn shout(g: Greeter) -> string {
+    return g.greet("world");
+}
+
+fn greeter() -> Greeter {
+    return makeGreeter("hey");
+}
+
+pub fn main() {
+    @print(shout(greeter()));
+}

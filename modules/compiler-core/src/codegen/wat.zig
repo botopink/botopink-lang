@@ -2197,7 +2197,9 @@ const Emitter = struct {
     /// some target and **none** for wasm: there is no host symbol to call and
     /// none was ever promised. Decision 67 — calling one is refused where it is
     /// written, not lowered to a trap (see `lowerPlainCall`).
-    external_missing: std.StringHashMap(void),
+    /// Each maps to the named type its declaration answers (null when it answers
+    /// none): a behavior value only a host builds (`lowerPlainCall`).
+    external_missing: std.StringHashMap(?[]const u8),
     /// Decision 238 — the `declare fn`s whose `#[@External.Wasm("…")]` reads
     /// as one of the four forms (decisions 238, 440) (`checkHostBindings`), by the name the
     /// module emits them under. Each is registered and emitted like a bodied
@@ -2382,7 +2384,7 @@ const Emitter = struct {
             .fn_refs = std.StringHashMap(u32).init(alloc),
             .iface_assoc = std.StringHashMap(ast.BehaviorMethod).init(alloc),
             .host_fns = std.StringHashMap(void).init(alloc),
-            .external_missing = std.StringHashMap(void).init(alloc),
+            .external_missing = std.StringHashMap(?[]const u8).init(alloc),
             .aliases = std.StringHashMap([]const u8).init(alloc),
             .pattern_locals = std.StringHashMap(void).init(alloc),
             .assoc_emitted = std.StringHashMap(void).init(alloc),
@@ -2549,7 +2551,7 @@ const Emitter = struct {
             // never claimed to: `lowerPlainCall` refuses the call
             // rather than lowering it to a trap.
             if (f.isExternal() and f.externalFor(self.external_lookup) == null)
-                try self.external_missing.put(f.name, {});
+                try self.external_missing.put(f.name, if (f.returnType) |rt| (if (rt == .named) rt.named else null) else null);
             return;
         }
         const has_result = fnHasResult(f);
@@ -9615,6 +9617,22 @@ const Emitter = struct {
                 .result_err => return self.lowerResultOptionOp("__bp_error", cc.args, loc),
                 .user => {},
             };
+        }
+        // A method on a behavior no type of the program implements: the value
+        // is built by the host (`behavior_host_dispatch`), and the `declare fn`
+        // answering that behavior with no wasm cell is what the program lacks.
+        if (cc.receiver != null and !cc.is_builtin and self.cur_template == null and (try self.behaviorImplementers(cc.callee, cc.args.len)).len == 0) {
+            var best: ?[]const u8 = null;
+            var it = self.external_missing.iterator();
+            while (it.next()) |e| {
+                const rt = e.value_ptr.* orelse continue;
+                if (self.records.contains(rt) or self.enums.contains(rt)) continue;
+                if (best == null or std.mem.lessThan(u8, e.key_ptr.*, best.?)) best = e.key_ptr.*;
+            }
+            if (best) |name| {
+                self.missing_external = .{ .name = name, .target = "wasm", .loc = loc };
+                return error.MissingExternalTarget;
+            }
         }
         return self.refuseUnlessTemplate(loc, "the wasm backend cannot resolve the call `{s}/{d}`: no function, method, variant or function value of the module or its imports answers it", .{ cc.callee, cc.args.len });
     }
