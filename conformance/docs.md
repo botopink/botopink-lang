@@ -2064,6 +2064,11 @@ the decorator produces goes to one of four places (decision 216):
 | an associated type | `decl.addType("Columns", "(name: string)")` | `City.Columns` in a type position, `City.Columns(name: "n")`, imported with its owner |
 | the program's catalogue | (every declaration a decorator runs over) | `@TypeInfo.all(with: entity)` at an entry point |
 
+An associated type is named `City.Columns` in every diagnostic, as it is
+written:
+
+<!-- example: modules/assoc_type_named_by_owner_in_diagnostic -->
+
 A member or an associated type from a field's or a method's decorator belongs
 to the type that owns it; a function and a module-level `val` have none
 (`decorator-member-without-type`, `decorator-type-without-owner`). A decorator

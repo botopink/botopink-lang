@@ -2162,7 +2162,8 @@ off a diagnostic again). Everything after that is an ordinary record. The checke
 that writes the fields — the type is not exported), `Env.resolveTypeName` (an inline type the pass
 did not declare: a method's, a behavior member's or a host declaration's parameter), and a left-out
 field without a default named at the call (`missing field `label` of the props of `link``).
-`error.zig` `namedByOwner` spells every `BpInline__f__p` in a message as ``the p of `f` ``.
+`error.zig` `namedByOwner` spells every `BpInline__f__p` in a message as ``the p of `f` ``,
+and `assocTypesShown` every hoisted associated type `Owner__Name` as `Owner.Name` (144 B-19).
 
 ## A record value is not callable (`language-gaps.md` row 32)
 

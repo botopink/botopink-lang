@@ -394,7 +394,7 @@ pub const TypeError = struct {
     /// returned slice. Used by `botopink check` and the language server.
     pub fn message(this: TypeError, gpa: std.mem.Allocator) ![]u8 {
         const raw = try this.rawMessage(gpa);
-        return namedByOwner(gpa, raw);
+        return assocTypesShown(gpa, try namedByOwner(gpa, raw));
     }
 
     fn rawMessage(this: TypeError, gpa: std.mem.Allocator) ![]u8 {
@@ -486,6 +486,72 @@ pub fn namedByOwner(gpa: std.mem.Allocator, raw: []u8) ![]u8 {
         i += 1;
     }
     return out.toOwnedSlice(gpa);
+}
+
+/// Decision 216 (3), 330 (7) — an associated type is named in every
+/// diagnostic as its owner's path, `City.Columns`, never as the top-level
+/// type it is hoisted into (`City__Columns`, `env.assocTypeName`): every word
+/// of capitalised segments joined by `__` is shown joined by `.`. Takes
+/// ownership of `raw`.
+pub fn assocTypesShown(gpa: std.mem.Allocator, raw: []u8) ![]u8 {
+    if (std.mem.indexOf(u8, raw, "__") == null) return raw;
+    var i: usize = 0;
+    while (i < raw.len) {
+        if (!isWordChar(raw[i]) or (i > 0 and isWordChar(raw[i - 1]))) {
+            i += 1;
+            continue;
+        }
+        var j = i;
+        while (j < raw.len and isWordChar(raw[j])) j += 1;
+        if (isAssocTypeWord(raw[i..j])) {
+            // `A__B` → `A.B`: one byte shorter per joint, rewritten in place.
+            var w: usize = i;
+            var r: usize = i;
+            while (r < j) {
+                if (r + 1 < j and raw[r] == '_' and raw[r + 1] == '_') {
+                    raw[w] = '.';
+                    w += 1;
+                    r += 2;
+                    continue;
+                }
+                raw[w] = raw[r];
+                w += 1;
+                r += 1;
+            }
+            const shrink = j - w;
+            if (shrink > 0) {
+                std.mem.copyForwards(u8, raw[w..], raw[j..]);
+                const out = try gpa.realloc(raw, raw.len - shrink);
+                return assocTypesShown(gpa, out);
+            }
+        }
+        i = j;
+    }
+    return raw;
+}
+
+fn isWordChar(c: u8) bool {
+    return std.ascii.isAlphanumeric(c) or c == '_';
+}
+
+/// `Owner__Name` (any depth): two or more segments, each starting with an
+/// uppercase letter, joined by `__`, none holding `_` of its own.
+fn isAssocTypeWord(w: []const u8) bool {
+    var parts = std.mem.splitSequence(u8, w, "__");
+    var n: usize = 0;
+    while (parts.next()) |p| {
+        if (p.len == 0 or !std.ascii.isUpper(p[0])) return false;
+        for (p) |c| if (!std.ascii.isAlphanumeric(c)) return false;
+        n += 1;
+    }
+    return n >= 2;
+}
+
+test "an associated type is shown under its owner's path" {
+    const gpa = std.testing.allocator;
+    const out = try assocTypesShown(gpa, try gpa.dupe(u8, "unknown field 'nope' on type 'City__Columns' (A__B__C, __bp_x, BpInline__x)"));
+    defer gpa.free(out);
+    try std.testing.expectEqualStrings("unknown field 'nope' on type 'City.Columns' (A.B.C, __bp_x, BpInline__x)", out);
 }
 
 /// Build the `nonExhaustive` message: either "requires a wildcard" (open
