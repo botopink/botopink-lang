@@ -2576,6 +2576,11 @@ module's declarations carrying `d`, every module's decorators applied —, not f
 the library that declares the template, so a library's `pub default fn` finds
 the application's `#[theme]`. Such a module is no reader (it may be imported); a
 query written in a function the template only calls still makes its module one.
+A program that declares no `#[theme]` hands such a template an empty catalogue,
+and the template's own refusal is located at the literal it expands:
+
+<!-- example: modules/template_catalogue_no_theme -->
+
 The catalogue's rules hold, refused at the expansion; an entry's `name`,
 `module`, `meta` and `returnTypeName` are answered. Its `value` is the
 declaration's value at build only for a `val` whose initializer is `comptime`
