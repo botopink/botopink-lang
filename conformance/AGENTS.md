@@ -2116,7 +2116,9 @@ twin `test/two_test_modules_one_type_name`, two test modules of one project doin
 `botopink test`. The same step's `modules/associated_fn_as_value` names an associated fn without a
 call — `apply(1, Box.wrap)`, `val w = Box.wrap;`, an imported type's and an enum's — a function value
 of its declared signature (it was a fresh variable to the checker, an unbound variable on erlang, an
-abort on beam, unplaced on wasm).
+abort on beam, unplaced on wasm). `modules/decorator_member_record_update` pins a record update
+in a member `decl.addMember` adds — `Point(..self, y: 0)`, `Point(..v, z: z)` — on every target (it was
+emitted `new T(v, x)` on commonJS before 144 B-14).
 
 What cannot be tested from botopink at all, and why: `@typeInfo` / `@makeRecord` / `partial` / `omit`
 / `pick` (they produce types, and asserting on emitted text is the snapshots' job). Struck from this
