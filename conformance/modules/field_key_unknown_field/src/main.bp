@@ -1,0 +1,13 @@
+//// Decision 308 — `.name` against a `Type.Field<T>` names a field of `T`;
+//// one `T` does not declare is refused at the `.name`.
+
+import {types.Type} from "std";
+
+type Recipe(title: string, servings: i32)
+
+val RecipeKey = Type.keys(Recipe);
+
+pub fn main() {
+    val key: RecipeKey = .titel;
+    @print(key.name);
+}

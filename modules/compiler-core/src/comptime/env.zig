@@ -1183,6 +1183,13 @@ pub const Env = struct {
     /// never reads the bare name as a variant of a user enum that declares
     /// one (`type Level { Info, Error }`).
     resultPatternLocs: std.AutoHashMapUnmanaged(ast.Loc, void) = .empty,
+    /// Decision 308 — a field key at run time: the expression each written
+    /// node means, keyed by the node's own loc — a `.title` against a
+    /// `Type.Field<T>` (the `Type.Field<T>` record), a `case` over one (the
+    /// `case` over its `name`), `K.of(text)` and `K.all()` through an alias
+    /// of one. The transform swaps the node whole (`transform.zig`
+    /// `field_keys`), so no backend learns a node.
+    fieldKeyRewrites: std.AutoHashMapUnmanaged(ast.Loc, *const ast.Expr) = .empty,
     /// Decision 107's namespace form over a module of the program's own
     /// package or a dependency (`import {jwt} from "sec"`, `import {jwt};`):
     /// the bound name, its module's exports, and the calls made through it.

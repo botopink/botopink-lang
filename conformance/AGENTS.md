@@ -159,6 +159,12 @@ same fields, `record-spread-type` at the `...`), `record_spread_partial` (a `Typ
 type derived here from an aliased record (`Type.pick(P, .nome)`) or an aliased derived type spread into
 `Pessoa` and `Contato` and through their aliases, on the four targets — red on the parent, whose lineage
 held the alias's name.
+Decision 308 (a field key at run time, 144 B-16) adds `modules/field_key_runtime` (`Type.keys(Recipe)` exported
+and imported; a key stored in a `var` and an array, passed, compared, matched by an exhaustive `case` and by
+`|` / `_`, `key.name`, `RecipeKey.of(text)` and `RecipeKey.all()`, on the four targets) and three refusals:
+`field_key_case_missing` (a `case` without a field's arm, at the `case`), `field_key_unknown_field` (`.titel`,
+at the `.name`) and `type_keys_outside_val` (`Type.keys` in a body, `derived-type-outside-val`); every one red
+on the parent binary, where `Type.keys` was not answered.
 `modules/derived_type_two_packages` derives over two packages' same-named modules: dependencies `a`
 and `b` each hold `shape` with a record `Box` of different fields, each package's `user` derives
 from its own `Box` (`Type.pick` in `a`, `Type.omit` in `b`) and the project has a `shape` of its

@@ -28,7 +28,7 @@ comptime/
 ├── context_lower.zig  ← decision 388: a `@Component` is a lambda over a `RenderScope`, lowered on the transformed AST
 ├── alias_erase.zig    ← type aliases erased for the backends (reflective `TypeRef` walk; a return alias of a wrapper stays)
 ├── inline_types.zig   ← decision 207: a parameter's inline `type(…)` becomes a record `BpInline__<fn>__<param>` of the module, and a call's field labels its constructor call (`expand`, run by `analyzeSource` after `std_namespace`)
-├── derived_types.zig  ← decision 307: `pub val RecipeTitle = Type.pick(Recipe, .title);` — a module-level `val` over std's `Type.partial` / `required` / `pick` / `omit` / `merge` (the receiver bound to std's `types.Type`) becomes the record declaration it answers, named after the `val`, its annotations on the type and each field the source's (`expand`, run by `analyzeSource` after `nested_types`; an imported source through `comptime.zig` `derivedTypeSource`, by its module's key — the package plus the path, decisions 170 and 337; `modules/derived_type_two_packages`); the `derived-type-*` refusals
+├── derived_types.zig  ← decision 307: `pub val RecipeTitle = Type.pick(Recipe, .title);` — a module-level `val` over std's `Type.partial` / `required` / `pick` / `omit` / `merge` (the receiver bound to std's `types.Type`) becomes the record declaration it answers, named after the `val`, its annotations on the type and each field the source's (`expand`, run by `analyzeSource` after `nested_types`; an imported source through `comptime.zig` `derivedTypeSource`, by its module's key — the package plus the path, decisions 170 and 337; `modules/derived_type_two_packages`); the `derived-type-*` refusals. `pub val RecipeKey = Type.keys(Recipe);` becomes the alias `pub type RecipeKey = Type.Field<Recipe>;` (decision 308, `keysAlias`), and a module importing such an alias gets `import {types.Type__Field} from "std";` (`withFieldKeyImport`) — the record its keys construct
 ├── expr_param.zig     ← decision 364: a non-template function's `comptime x: @Expr<T>` (`Param.exprWrapped`) — `eraseFn` / `eraseProgram` turn `x.value` into `x` for the code that runs (the transformed program and `fn_decls`, `comptime.zig`; a decorator's body and support, `infer.zig` `runDeclDecorators`), and a decorator's `x.fail(m)` into the prelude's `'__bp_failArg'(j, m)`; `useOf` answers whether a body reads a parameter (and its `.value`)
 ├── member_fn.zig      ← decision 370 (2): a decorator's `decl.addMember(name, fn(self: T) -> R { … })` — `collect` (the body's member functions, in `eraseFn`'s order), `boundNames` / `freeNames` / `typeNames`, `render` (the member's source: each read parameter replaced by its argument as written, each type parameter by its binding, `Self` for the owner)
 ├── value_or_type.zig  ← decision 297: `comptime x: @Expr<V | type T>` — the function keeps its value form (`typeRef` = `V`, `Param.typeArgOf` = `T`, `x is type` folded false) and gains a type-form twin `<f>__type` without `x` (`x is type` true); `infer.zig` types a type argument as `V` with `T` bound to it and records the call's rewrite to the twin (`noteTypeArgCall`, `env.typeArgTwins`), `withTwinImports` brings the twin along an import; a `comptime` parameter's argument that reads a run-time value is `comptime-arg-not-known` (280 (0))
@@ -1637,6 +1637,27 @@ whose call rewrite in `transform.zig` then moves the arguments too; the base mus
 path of names, anything else would run once per copied field), so
 `refuseRecordFieldAssign` (the `.fieldAccess` target of the `.assign` walk) reds at the assignment
 and spells that form out, naming the receiver when it is a plain name it can spread.
+
+## a field key at run time (decision 308)
+
+`pub val RecipeKey = Type.keys(Recipe);` is the alias `type RecipeKey = Type.Field<Recipe>;`
+(`derived_types.zig` `keysAlias`). A key's value is std's `Type.Field<T>` record (`name`, `typeName`,
+`annotations`); the checker types each written form through the ordinary expression it means and records
+it in `Env.fieldKeyRewrites` under the written node's loc, which `transform.zig` (`field_keys`) swaps whole
+— the rewrite's own nodes at `ast.field_key_synthetic_col`, so no backend learns a node:
+
+- `.title` where the position expects a `Type.Field<T>` (an annotation, a parameter, `key = .title` on a
+  `var` of that type, the right of `==` / `??`) — `inferFieldKeyLiteral`: `Type__Field("title",
+  "<the field's type>", [])`, an unknown field the `unknown field` error at the `.name`;
+- `case key { .title -> …; .a | .b -> …; _ -> … }` — `inferFieldKeyCase`: exhaustive over `T`'s fields
+  (`not exhaustive: missing field(s) .servings` at the `case`, a field twice `redundantPattern`), run as
+  the `case` over `key.name` with string patterns and a last `_` arm that panics;
+- `K.of(text)` / `K.all()` with `K` an alias of `Type.Field<T>` — `inferFieldKeyStatic`: a `case` over
+  `text` answering each key or `null`, and the array of every key in declaration order.
+
+A module importing such an alias imports std's `Type__Field` (`withFieldKeyImport`), and
+`assoc_types.zig` adds no item a module already imports (`modules/field_key_runtime`,
+`field_key_case_missing`, `field_key_unknown_field`, `type_keys_outside_val`).
 
 ## a spread copies a record's fields (decision 359)
 

@@ -161,7 +161,14 @@ pub fn expand(arena: std.mem.Allocator, program: ast.Program, owners: *const std
         const u = &decls[e.key_ptr.*].use;
         var items: std.ArrayListUnmanaged(ast.ImportPath) = .empty;
         try items.appendSlice(arena, u.imports);
-        try items.appendSlice(arena, e.value_ptr.values());
+        // An item another import of the module already binds (decision 308's
+        // `Type__Field`, `derived_types.withFieldKeyImport`) is not added twice.
+        add: for (e.value_ptr.values()) |item| {
+            for (decls) |other| if (other == .use) for (other.use.imports) |have| {
+                if (std.mem.eql(u8, have.name(), item.name())) continue :add;
+            };
+            try items.append(arena, item);
+        }
         u.imports = try items.toOwnedSlice(arena);
     }
     return .{ .decls = decls };

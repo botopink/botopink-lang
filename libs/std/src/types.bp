@@ -12,7 +12,8 @@
 //// compiler's: bodyless, without `#[@External.<Target>]`, because no target
 //// runs them — the compiler answers `partial`, `required`, `pick`, `omit` and
 //// `merge` with the record declaration they derive, keyed on this `Type`
-//// (`comptime/derived_types.zig`); `keys` is not answered yet.
+//// (`comptime/derived_types.zig`), and `keys` with the alias of `Field<T>`
+//// it names (`pub val RecipeKey = Type.keys(Recipe);` is `Type.Field<Recipe>`).
 ////
 //// `Type` is a namespace type (decision 329): no field list, no value, every
 //// function associated. `Field<T>` is declared in its body, so it is its
@@ -23,17 +24,28 @@
 pub type Type {
     // The field of `T` (decision 308): its name, its type as the source
     // spells it and its annotations. Its values are the fields of `T`'s
-    // declaration; nobody constructs one (`.title` names it). The reflection
-    // record `decl.fields` hands out is still `builtins.d.bp`'s `Field` until
-    // `134` step 2 makes it `Type.Field<unknown>`.
+    // declaration; nobody constructs one (`.title` names it where a
+    // `Type.Field<T>` is expected). A key is also a run-time value: stored,
+    // passed, compared, matched by `case key { .title -> … }` exhaustively
+    // over `T`'s fields. The reflection record `decl.fields` hands out is
+    // still `builtins.d.bp`'s `Field` until `134` step 2 makes it
+    // `Type.Field<unknown>`.
     pub type Field<T>(
         name: string,
         typeName: string,
         annotations: DeclAnnotation[],
-    )
+    ) {
+        // The key named `text`, or `null` when `T` declares no such field.
+        pub declare fn of(text: string) -> ?Type.Field<T>;
 
-    // The field key of `T`: `Type.Field<T>`, one value per field of `T`'s
-    // declaration (`.title`), never a second enum.
+        // Every key of `T`, in declaration order.
+        pub declare fn all() -> Type.Field<T>[];
+    }
+
+    // The field key of `T`: `Type.Field<T>` itself, one value per field of
+    // `T`'s declaration (`.title`), never a second enum nor a copy — bound by a
+    // module-level `val`, the alias `K.of(text)` and `K.all()` are called
+    // through.
     pub declare fn keys<T>(comptime source: @Expr<type T>) -> type;
 
     // Every field `F` of `T` made `?F`.

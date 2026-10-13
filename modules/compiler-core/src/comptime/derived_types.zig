@@ -57,8 +57,9 @@ const infer = @import("infer.zig");
 
 const Error = error{OutOfMemory};
 
-/// The five functions of std's `Type` this pass answers. `Type.keys` answers
-/// `Type.Field<T>` and is not a record derivation.
+/// The five functions of std's `Type` this pass answers with a record.
+/// `Type.keys` answers `Type.Field<T>` — an alias, not a record derivation
+/// (`Ctx.keysAlias`).
 const functions = [_][]const u8{ "partial", "required", "pick", "omit", "merge" };
 
 fn isDeriveFn(name: []const u8) bool {
@@ -144,6 +145,52 @@ const Ctx = struct {
         if (!self.binders.contains(recv.identifier.kind.ident)) return null;
         if (!isDeriveFn(c.callee)) return null;
         return c;
+    }
+
+    /// `Type.keys(…)` with `Type` bound to std's `types.Type` (decision 308):
+    /// the call node.
+    fn keysCall(self: *const Ctx, e: *const ast.Expr) ?CallNode {
+        if (e.* != .call or e.call.kind != .call) return null;
+        const c = e.call.kind.call;
+        if (c.is_builtin or c.calleeExpr != null or !std.mem.eql(u8, c.callee, "keys")) return null;
+        const recv = c.receiver orelse return null;
+        if (recv.* != .identifier or recv.identifier.kind != .ident) return null;
+        if (!self.binders.contains(recv.identifier.kind.ident)) return null;
+        return c;
+    }
+
+    /// `pub val RecipeKey = Type.keys(Recipe);` (decision 308) — the alias
+    /// `pub type RecipeKey = Type.Field<Recipe>;`: the same type, never a copy
+    /// nor an enum. The source is a record as a derivation's is.
+    fn keysAlias(self: *Ctx, v: ast.ValDecl, c: CallNode) (Error || Refusal)!ast.TypeAliasDecl {
+        const loc = v.value.getLoc();
+        for (c.args) |a| if (a.label) |l| {
+            return self.refuse(a.value.getLoc(), "{s}: `Type.keys` takes no labelled argument (`{s}:`)", .{ diagnostics.derived_type_arguments, l }, null);
+        };
+        if (c.trailing.len > 0 or c.args.len != 1) {
+            return self.refuse(loc, "{s}: `Type.keys` takes one record type, {d} given", .{ diagnostics.derived_type_arguments, c.args.len }, null);
+        }
+        const arg = c.args[0].value;
+        if (arg.* != .identifier or arg.identifier.kind != .ident) {
+            return self.refuse(arg.getLoc(), "{s}: `Type.keys` takes a record type by its name", .{diagnostics.derived_type_source_not_record}, "Name a record type, or a derived type bound by its own `val`.");
+        }
+        _ = try self.source("keys", arg, 0);
+        if (v.annotations.len > 0) {
+            return self.refuse(loc, "{s}: `Type.keys` answers `Type.Field<{s}>` itself, not a new type — `{s}` takes no annotation", .{ diagnostics.derived_type_arguments, arg.identifier.kind.ident, v.name }, "Annotate the record whose fields the keys name.");
+        }
+        const args = try self.arena.alloc(ast.TypeRef, 1);
+        args[0] = .{ .named = arg.identifier.kind.ident };
+        const binder = c.receiver.?.identifier.kind.ident;
+        return .{
+            .name = v.name,
+            .isPub = v.isPub,
+            .docComment = v.docComment,
+            .comment = v.comment,
+            .moduleComment = v.moduleComment,
+            .target = .{ .generic = .{ .name = try std.fmt.allocPrint(self.arena, "{s}.Field", .{binder}), .args = args, .is_builtin = false } },
+            .loc = v.nameLoc,
+            .targetLoc = loc,
+        };
     }
 
     fn localDecl(self: *const Ctx, name: []const u8) ?ast.DeclKind {
@@ -329,7 +376,7 @@ const Ctx = struct {
 
     /// A derivation left anywhere but as a module-level `val`'s initializer.
     fn findStray(self: *Ctx, comptime T: type, ptr: *const T) ?ast.Loc {
-        if (T == ast.Expr) if (self.deriveCall(ptr) != null) return ptr.getLoc();
+        if (T == ast.Expr) if (self.deriveCall(ptr) != null or self.keysCall(ptr) != null) return ptr.getLoc();
         if (T == ast.ImportDecl or T == ast.TypeRef) return null;
         switch (@typeInfo(T)) {
             .@"struct" => |s| inline for (s.fields) |fld| {
@@ -387,7 +434,8 @@ fn stdTypeBinder(arena: std.mem.Allocator, decl: ast.ImportDecl, imp: ast.Import
 
 /// Rewrite `program` (the arena-owned parse of one module). A program that
 /// imports no std `Type` is returned untouched.
-pub fn expand(arena: std.mem.Allocator, program: ast.Program, lookup: ?ImportLookup) Error!Result {
+pub fn expand(arena: std.mem.Allocator, program_in: ast.Program, lookup: ?ImportLookup) Error!Result {
+    const program = if (lookup) |lk| try withFieldKeyImport(arena, program_in, lk) else program_in;
     var ctx = Ctx{ .arena = arena, .program = program, .lookup = lookup };
     for (program.decls) |d| {
         if (d != .use) continue;
@@ -395,9 +443,9 @@ pub fn expand(arena: std.mem.Allocator, program: ast.Program, lookup: ?ImportLoo
     }
     if (ctx.binders.count() == 0) return .{ .ok = program };
 
-    // The module-level `val`s a derivation initialises.
+    // The module-level `val`s a derivation (or `Type.keys`) initialises.
     for (program.decls, 0..) |d, i| {
-        if (d != .val or ctx.deriveCall(d.val.value) == null) continue;
+        if (d != .val or (ctx.deriveCall(d.val.value) == null and ctx.keysCall(d.val.value) == null)) continue;
         const v = d.val;
         if (v.mutable or v.typeAnnotation != null) {
             return .{ .refused = TypeError.custom(
@@ -405,12 +453,19 @@ pub fn expand(arena: std.mem.Allocator, program: ast.Program, lookup: ?ImportLoo
                 null,
             ).withLoc(v.value.getLoc()) };
         }
-        try ctx.derived.put(arena, v.name, i);
+        if (ctx.keysCall(v.value) == null) try ctx.derived.put(arena, v.name, i);
     }
 
     var out = try arena.alloc(ast.DeclKind, program.decls.len);
     for (program.decls, 0..) |d, i| {
         out[i] = d;
+        if (d == .val and !d.val.mutable and d.val.typeAnnotation == null) if (ctx.keysCall(d.val.value)) |kc| {
+            out[i] = .{ .typeAlias = ctx.keysAlias(d.val, kc) catch |err| switch (err) {
+                error.Refused => return .{ .refused = ctx.refusal.? },
+                else => |e| return e,
+            } };
+            continue;
+        };
         if (d != .val or !ctx.derived.contains(d.val.name)) continue;
         const v = d.val;
         const ans = ctx.answer(i) catch |err| switch (err) {
@@ -438,6 +493,47 @@ pub fn expand(arena: std.mem.Allocator, program: ast.Program, lookup: ?ImportLoo
         ).withLoc(loc) };
     };
     return .{ .ok = rewritten };
+}
+
+/// The mangled name std's `Type.Field<T>` has in a module (decision 330 (7),
+/// `assoc_types.zig`).
+const field_key_mangled = "Type__Field";
+
+fn isFieldKeyRef(t: ast.TypeRef) bool {
+    return switch (t) {
+        .generic => |g| !g.is_builtin and (std.mem.eql(u8, g.name, field_key_mangled) or std.mem.endsWith(u8, g.name, ".Field")),
+        else => false,
+    };
+}
+
+/// Decision 308 — a module that imports an alias of `Type.Field<T>`
+/// (`import {recipes.RecipeKey};`, `RecipeKey` being `Type.keys(Recipe)`'s
+/// answer) writes keys (`.title`, `RecipeKey.all()`), which construct std's
+/// `Type.Field<T>` record: the module imports it (`import
+/// {types.Type__Field} from "std";`), as a module writing `Type.Field<T>` does
+/// through `assoc_types.zig`, unless an import already binds it.
+fn withFieldKeyImport(arena: std.mem.Allocator, program: ast.Program, lookup: ImportLookup) Error!ast.Program {
+    var need = false;
+    var last_use: ?usize = null;
+    for (program.decls, 0..) |d, i| {
+        if (d != .use) continue;
+        last_use = i;
+        for (d.use.imports) |imp| {
+            if (std.mem.eql(u8, imp.name(), field_key_mangled)) return program;
+            if (need or imp.activate) continue;
+            const found = try lookup.find(lookup.ctx, arena, d.use, imp) orelse continue;
+            if (found == .typeAlias and found.typeAlias.genericParams.len == 0 and isFieldKeyRef(found.typeAlias.target)) need = true;
+        }
+    }
+    if (!need) return program;
+    const at = last_use.? + 1;
+    const decls = try arena.alloc(ast.DeclKind, program.decls.len + 1);
+    @memcpy(decls[0..at], program.decls[0..at]);
+    const items = try arena.alloc(ast.ImportPath, 1);
+    items[0] = .{ .segments = &.{ "types", field_key_mangled } };
+    decls[at] = .{ .use = .{ .imports = items, .source = .{ .module = "std" } } };
+    @memcpy(decls[at + 1 ..], program.decls[at..]);
+    return .{ .decls = decls };
 }
 
 fn parseProgram(arena: std.mem.Allocator, src: []const u8) !ast.Program {
@@ -534,4 +630,28 @@ test "derived types: the refusals are located" {
         try std.testing.expectEqual(cs.line, r.refused.loc.?.line);
         try std.testing.expectEqual(cs.col, r.refused.loc.?.col);
     }
+}
+
+test "derived types: `Type.keys` names `Type.Field<T>` — an alias, not a record (decision 308)" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const program = try parseProgram(arena,
+        \\import {types.Type as Ty} from "std";
+        \\pub type Recipe(title: string, servings: i32)
+        \\pub val RecipeKey = Ty.keys(Recipe);
+    );
+    const out = (try expand(arena, program, null)).ok;
+    const key = out.decls[2].typeAlias;
+    try std.testing.expectEqualStrings("RecipeKey", key.name);
+    try std.testing.expect(key.isPub);
+    try std.testing.expectEqualStrings("Ty.Field", key.target.generic.name);
+    try std.testing.expectEqualStrings("Recipe", key.target.generic.args[0].named);
+
+    const enum_src = try parseProgram(arena,
+        \\import {types.Type} from "std";
+        \\type Fish { Cod, Eel }
+        \\val FishKey = Type.keys(Fish);
+    );
+    try std.testing.expect((try expand(arena, enum_src, null)) == .refused);
 }

@@ -773,8 +773,27 @@ type, a primitive, a record with type parameters, an imported alias
 the wrong number of arguments or a labelled one (`derived-type-arguments`), and
 the call anywhere but as the whole initializer of a module-level `val` without a
 type annotation — a local, a `var`, an argument (`derived-type-outside-val`).
-`Type.keys(T)` (`Type.Field<T>`, decision 308) is not a record derivation and is
-not answered yet.
+
+#### Field keys
+
+`pub val RecipeKey = Type.keys(Recipe);` names `Type.Field<Recipe>` — the same
+type, never a copy nor an enum (decision 308): its values are the fields of
+`Recipe`'s declaration, written `.title` where a `Type.Field<Recipe>` is
+expected (a field `Recipe` does not declare is the `Type.Field<T>` error at the
+`.name`). A key is a value at run time as at compile time:
+
+- stored, passed and compared like any value (`key == .title`);
+- `key.name` is the field's name;
+- `case key { .title -> …; .description | .servings -> … }` is exhaustive over
+  `Recipe`'s fields — a field added to `Recipe` makes a `case` without its arm
+  (and without `_`) an error at the `case`;
+- `RecipeKey.of(text)` is the key named `text`, or `null`; `RecipeKey.all()`
+  every key, in declaration order.
+
+`Type.keys` is bound by a module-level `val` as a derived type is; its argument
+is a record by its name.
+
+<!-- example: modules/field_key_runtime -->
 
 ### Union types, `unknown`, and `is`
 

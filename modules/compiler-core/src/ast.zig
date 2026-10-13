@@ -591,6 +591,11 @@ pub const record_spread_label = "...";
 /// node.
 pub const spread_synthetic_col: usize = 3_000_000;
 
+/// The column the checker adds to a node it synthesises for a field key's
+/// run-time form (decision 308, `infer.inferFieldKey*`): past any written
+/// column and apart from `spread_synthetic_col`'s.
+pub const field_key_synthetic_col: usize = 4_000_000;
+
 /// Helper to get the correct call argument type based on phase
 pub fn CallArgOf(comptime phase: Phase) type {
     return struct {
