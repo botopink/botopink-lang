@@ -1,0 +1,1 @@
+{ "name": "decorator_through_namespace", "dependencies": { "web": { "path": "deps/web" } } }

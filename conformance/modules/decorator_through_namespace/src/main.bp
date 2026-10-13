@@ -1,0 +1,42 @@
+//// Decision 386 — a decorator reached through a namespace import runs,
+//// whatever module declares it: `import {markers} from "web";` registers
+//// `markers`'s decorators under `markers.<name>`, so `#[markers.tag]` runs
+//// `tag` (its meta read back), and `markers.serverOnly` is a `Decorator`
+//// value — `same(markers.serverOnly)` is true for `#[markers.serverOnly]`.
+
+import {markers} from "web";
+
+type Found(names: string);
+
+fn find(comptime decl: @Decl) {
+    var out: string[] = [];
+    decl.annotations.forEach({ a ->
+        if (a.decorator.same(markers.serverOnly)) out.push(a.name);
+    });
+    decl.setMeta(Found(names: out.join(" ")));
+}
+
+#[markers.tag]
+fn Tagged() -> string {
+    return "t";
+}
+
+#[find]
+#[markers.serverOnly]
+fn Marked() -> string {
+    return "m";
+}
+
+#[find]
+#[markers.tag]
+fn NotMarked() -> string {
+    return "n";
+}
+
+pub fn main() {
+    @print(@typeInfo(Tagged).meta(markers.Tag)?.label ?? "none");
+    @print(@typeInfo(Marked).meta(Found)?.names ?? "none");
+    @print(@typeInfo(NotMarked).meta(Found)?.names ?? "none");
+    @print(@typeInfo(NotMarked).meta(markers.Tag)?.label ?? "none");
+    @print(Tagged() + Marked() + NotMarked());
+}

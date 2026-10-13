@@ -2411,6 +2411,21 @@ fn resolveImports(
                                 if (templateRegistry.get(try defaultParamsKey(env.arena, path, fname.*))) |pfn| {
                                     try env.namespaces.params.put(env.arena, try envMod.NamespaceImports.paramsKey(env.arena, local, fname.*), pfn.params);
                                 }
+                                // Decision 386 — the module's body-carrying
+                                // decorators travel with the namespace, under
+                                // `<ns>.<name>` (as a std module's do,
+                                // `infer.registerStdDecorators`): `#[markers.tag]`
+                                // runs `tag` as `#[tag]` imported by name does.
+                                if (decoratorRegistry.get(try comptimeRegistryKey(env.arena, path, fname.*))) |dfn| {
+                                    var support: std.ArrayListUnmanaged(ast.FnDecl) = .empty;
+                                    var si: usize = 0;
+                                    while (decoratorRegistry.get(try decoratorSupportKey(env.arena, path, fname.*, si))) |sf| : (si += 1) {
+                                        try support.append(env.arena, sf);
+                                    }
+                                    const conflict = if (decoratorRegistry.get(try decoratorConflictKey(env.arena, path, fname.*))) |c| c.name else null;
+                                    const qualified = try std.fmt.allocPrint(env.arena, "{s}.{s}", .{ local, fname.* });
+                                    try infer.registerImportedDecorator(env, qualified, dfn, path, support.items, conflict);
+                                }
                             }
                             continue;
                         },

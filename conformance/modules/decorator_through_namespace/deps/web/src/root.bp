@@ -1,0 +1,3 @@
+//// The package root of `web`: one module of decorators.
+
+pub mod markers;

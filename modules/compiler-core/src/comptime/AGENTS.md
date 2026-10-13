@@ -718,6 +718,10 @@ recognize → reflect → invoke → apply; marker meaning lives in the lib body
   `comptime.zig`'s `decorator_registry`; `resolveImports` rehydrates them via
   `infer.registerImportedDecorator`, so `#[name(args)]` in an importing module
   both arg-checks and runs the body (mirror of the template registry path).
+  A namespace import of a module (`import {markers} from "web"`) registers each
+  of the module's decorators under `<ns>.<name>` (decision 386), as a std
+  module's are under `<handle>.<name>` (`registerStdDecorators`): `#[markers.tag]`
+  runs `tag` (`modules/decorator_through_namespace`).
 
 ## The template annotation `#[f "…"]` (decision 311, `01-checker` step 29)
 
