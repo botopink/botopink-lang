@@ -81,6 +81,24 @@ test "decision 255: a type application before a member that is not called" {
     try expectTypeArgNames(ia.receiverTypeArgs, &.{"i32"});
 }
 
+test "decision 255: a type application through a module namespace" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const v = try valueOf(a, "val v = collections.Dict<string, i32>.empty();");
+    const c = v.call.kind.call;
+    try std.testing.expectEqualStrings("empty", c.callee);
+    const recv = c.receiver.?.identifier.kind.identAccess;
+    try std.testing.expectEqualStrings("Dict", recv.member);
+    try std.testing.expectEqualStrings("collections", recv.receiver.identifier.kind.ident);
+    try std.testing.expect(recv.receiverTypeArgs == null);
+    try expectTypeArgNames(c.receiverTypeArgs, &.{ "string", "i32" });
+    const n = try valueOf(a, "val v = a.b.Opt<i32>.None;");
+    try expectTypeArgNames(n.identifier.kind.identAccess.receiverTypeArgs, &.{"i32"});
+    // A value's member (lower case) keeps `<` a comparison.
+    try std.testing.expect((try valueOf(a, "val v = a.b<c>.d;")) == .binaryOp);
+}
+
 test "decision 255: the member's own type arguments sit beside the type's" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -133,6 +151,7 @@ test "decision 255: botopink format prints a type application back" {
         \\    val o = Opt<i32>.None;
         \\    val f = Dict<string, i32>.fold<i32>(0);
         \\    val r = ctx.resolve<Repo>();
+        \\    val n = collections.Dict<string, i32>.empty();
         \\    val c = a < b;
         \\}
     );

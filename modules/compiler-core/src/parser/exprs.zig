@@ -1164,7 +1164,11 @@ fn parsePostfixChainFrom(this: *This, alloc: std.mem.Allocator, base_in: Expr, r
         else
             try this.consumeMemberName();
         // Decision 8 §1.3 — a method name is a name: `ctx.resolve<T>()`.
-        const typeArgs = try parseExplicitTypeArgs(this, alloc, fieldTok, false);
+        // Decision 255 (1) — a type's name reached through a module
+        // namespace takes a type application too
+        // (`collections.Dict<string, i32>.empty()`): the list after an
+        // upper-case member closes on `.` as after a bare type name.
+        const typeArgs = try parseExplicitTypeArgs(this, alloc, fieldTok, isTypeName(fieldTok.lexeme));
         const recvTypeArgs = receiverTypeArgs;
         receiverTypeArgs = null;
         if (this.check(.leftParenthesis)) {
@@ -1191,9 +1195,10 @@ fn parsePostfixChainFrom(this: *This, alloc: std.mem.Allocator, base_in: Expr, r
                 .optional = isOptional,
                 .receiverTypeArgs = recvTypeArgs,
             } } } };
-            // `ctx.resolve<T>` with no `(` after it: the list was read as
-            // types only because a `(` followed — never true here.
-            std.debug.assert(typeArgs == null);
+            // `ns.Type<A>.member`: the list read before a `.` belongs to
+            // the next link, as `Type<A>.member`'s does (decision 255 (1));
+            // a `(` after it took the call branch above.
+            receiverTypeArgs = typeArgs;
         }
     }
     // The chain is complete and the next token would have continued an

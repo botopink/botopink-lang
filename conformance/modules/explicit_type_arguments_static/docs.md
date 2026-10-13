@@ -10,3 +10,5 @@ The reference text this cell shows (from `conformance/docs.md`, § Generics):
 > as type arguments only after a type's name (an upper-case first letter) and
 > only when its `>` is followed by `.` or `(`; anywhere else `<` is a comparison,
 > so `a < b`, `x < y && z > w` and `f(a < b, c > d)` mean what they say.
+> A type's name reached through a module namespace takes them the same way:
+> `collections.Dict<string, i32>.empty()`, `shapes.Box<i32>.make(7)`.

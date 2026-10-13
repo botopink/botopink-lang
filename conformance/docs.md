@@ -662,9 +662,13 @@ constructor takes them before its call (`first<string>([], "none")`,
 `Dict<string, i32>`, and `Slot<i32>.Empty` is that `Slot<i32>`. The list is read
 as type arguments only after a type's name (an upper-case first letter) and
 only when its `>` is followed by `.` or `(`; anywhere else `<` is a comparison,
-so `a < b`, `x < y && z > w` and `f(a < b, c > d)` mean what they say.
+so `a < b`, `x < y && z > w` and `f(a < b, c > d)` mean what they say. A
+type's name reached through a module namespace takes them the same way:
+`collections.Dict<string, i32>.empty()`, `shapes.Box<i32>.make(7)`.
 
 <!-- example: modules/explicit_type_arguments_static -->
+
+<!-- example: modules/type_application_through_namespace -->
 
 Every `comptime` parameter other than `@Decl` is the caller's **expression**,
 `comptime x: @Expr<T>` (decision 364) — a decorator's, a template function's,

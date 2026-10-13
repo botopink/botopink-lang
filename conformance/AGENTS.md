@@ -471,7 +471,11 @@ Decision 255 (1) (a type application before a member) adds `modules/type_applica
 `type_application_argument_count` (`Box<i32, string>`, at the name),
 `type_application_variant_payload_mismatch` (`Opt<i32>.Some("a")`) and
 `type_application_on_a_field` (`Box<i32>.value` — only a unit variant is read without a call). All
-five fail on the parent binary (`unexpected ','` / a comparison).
+five fail on the parent binary (`unexpected ','` / a comparison). Through a module namespace
+(144 B-23) it adds `modules/type_application_through_namespace` — `collections.Dict<string,
+i32>.empty()` chained, `shapes.Box<i32>.make(7)`, `shapes.Opt<string>.None` on all four targets —
+and `modules/type_application_through_namespace_mismatch` (`shapes.Box<i32>.make("x")`, at the
+argument); both `unexpected ','` / a comparison on the parent binary.
 Decision 255 (2) (`comptime <expr>` is `comptime { break <expr>; }`) adds `modules/comptime_expression_is_block`
 (a module-level shorthand equal to its block form, and the same in a body) and
 `modules/comptime_expression_static_call` (the decision's own `val d: Dict<string, unknown> = comptime
