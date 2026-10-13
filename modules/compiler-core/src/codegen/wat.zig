@@ -7791,14 +7791,17 @@ const Emitter = struct {
             break :blk n;
         } else try std.fmt.allocPrint(self.arena(), "__case_{d}", .{self.case_depth});
         self.case_depth += 1;
-        try self.declareLocal(subj_local, "i32");
+        // A single subject keeps the wasm type it has (`i64`, `u64`, `u32`,
+        // `f64`, …): the patterns compare it as that type, never narrowed.
+        const subj_ty: []const u8 = if (c.subjects.len == 1) self.wasmTypeOf(c.subjects[0]) else "i32";
+        try self.declareLocal(subj_local, subj_ty);
         const start_lo = if (self.machine) |m| m.next else 0;
         var start: Capture = .{};
         self.open(&start);
         // A multi-subject `case` lowers each subject once, into its own
         // local below; the first one's is copied into `subj_local` there.
         if (c.subjects.len == 1) {
-            try self.lowerCoerced(c.subjects[0], "i32");
+            try self.lowerCoerced(c.subjects[0], subj_ty);
             try self.emit(.{ .local_set = subj_local });
         }
         if (self.isUnknownExpr(c.subjects[0])) try self.unknown_subjects.put(self.alloc, subj_local, {});
@@ -7967,7 +7970,7 @@ const Emitter = struct {
         };
         if (unbox == null and lam.params.len == 1) {
             const p = lam.params[0];
-            try self.declareLocal(p, "i32");
+            try self.declareLocal(p, self.locals.get(subj) orelse "i32");
             if (self.str_locals.contains(subj)) try self.str_locals.put(p, {});
             if (record orelse self.local_types.get(subj)) |t| try self.local_types.put(p, t);
             try self.emit(.{ .local_get = subj });
@@ -8134,6 +8137,14 @@ const Emitter = struct {
                 }
                 try self.emit(.{ .local_get = subj });
                 const t = numLitType(n);
+                // A subject of another wasm type (`i64`, `u64`, `f64`) is
+                // compared as that type: `5l` is `i64.eq`, never narrowed.
+                const st = self.locals.get(subj) orelse "i32";
+                if (!std.mem.eql(u8, st, "i32")) {
+                    try self.emit(constOf(st, try numeralText(self.arena(), n)));
+                    try self.emit(opOf(st, "eq"));
+                    return;
+                }
                 // the subject local is i32; a float literal is compared as one
                 if (t[0] == 'f') {
                     try self.emit(constOf("f64", n));
@@ -8442,6 +8453,14 @@ const Emitter = struct {
                 }
                 try self.emit(.{ .local_get = subj });
                 const t = numLitType(n);
+                const st = self.locals.get(subj) orelse "i32";
+                if (!std.mem.eql(u8, st, "i32")) {
+                    // `subj <cmp> bound` as the subject's own wasm type; a
+                    // float's comparisons carry no signedness.
+                    try self.emit(constOf(st, try numeralText(self.arena(), n)));
+                    try self.emit(opOf(st, if (st[0] == 'f') cmp[0..2] else cmp));
+                    return;
+                }
                 if (t[0] == 'f') {
                     try self.emit(constOf("f64", n));
                     try self.emit(.{ .convert = "i32.trunc_f64_s" });
@@ -8659,7 +8678,7 @@ const Emitter = struct {
                 try self.bindPattern(sub, local);
             },
             .ident => |n0| if (!isLitPatternName(n0) and !isVariantPath(n0) and self.findVariant(n0) == null) {
-                const n = try self.bindName(n0, "i32");
+                const n = try self.bindName(n0, self.locals.get(subj) orelse "i32");
                 if (self.str_locals.contains(subj)) try self.str_locals.put(n, {});
                 try self.emit(.{ .local_get = subj });
                 try self.emit(.{ .local_set = n });

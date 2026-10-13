@@ -1,0 +1,88 @@
+//// A `case` over an integer compares it as its own width: an `i64` or a `u64` scrutinee takes literal
+//// patterns and guards the way an `i32` or a `u8` does.
+
+fn pickI64(x: i64) -> string {
+    case x {
+        5l -> return "five";
+        7l -> return "seven";
+        _ -> return "other";
+    }
+}
+
+fn pickGuard(x: i64) -> string {
+    case x {
+        n if n > 100l -> return "big";
+        n if n < 0l -> return "negative";
+        _ -> return "small";
+    }
+}
+
+fn pickU64(x: u64) -> string {
+    case x {
+        1ul -> return "one";
+        _ -> return "other";
+    }
+}
+
+fn pickI32(x: i32) -> string {
+    case x {
+        3 -> return "three";
+        _ -> return "other";
+    }
+}
+
+fn pickU32(x: u32) -> string {
+    case x {
+        4u -> return "four";
+        _ -> return "other";
+    }
+}
+
+fn pickU8(x: u8) -> string {
+    case x {
+        9u8 -> return "nine";
+        _ -> return "other";
+    }
+}
+
+fn pickF64(x: f64) -> string {
+    case x {
+        1.5d -> return "one and a half";
+        _ -> return "other";
+    }
+}
+
+fn band(x: i64) -> string {
+    case x {
+        1l...9l -> return "units";
+        10l | 20l -> return "tens";
+        _ -> return "far";
+    }
+}
+
+pub fn main() {
+    @print(band(4l));
+    @print(band(9000000000l));
+    @print(band(20l));
+    @print(pickF64(1.5d));
+    @print(pickF64(2d));
+    @print(pickI64(5l));
+    @print(pickI64(7l));
+    @print(pickI64(8l));
+    @print(pickI64(5000000000l));
+    @print(pickGuard(1000l));
+    @print(pickGuard(-3l));
+    @print(pickGuard(4l));
+    @print(pickU64(1ul));
+    @print(pickU64(2ul));
+    @print(pickI32(3));
+    @print(pickU32(4u));
+    @print(pickU8(9u8));
+    @print(pickU8(1u8));
+    val big = 5000000000l;
+    val label = case big {
+        5000000000l -> "huge";
+        _ -> "no";
+    };
+    @print(label);
+}

@@ -1125,6 +1125,11 @@ it takes no fraction or exponent (`1.5n` is refused at the suffix).
 
 <!-- example: modules/numeric_literal_kinds -->
 
+A `case` over a 64-bit integer (`i64`, `u64`) or a float compares it as its own type: a number pattern, a
+range, an `|` of patterns and a guard see the value whole, on every target.
+
+<!-- example: modules/case_wide_integer_scrutinee -->
+
 <!-- example: modules/integer_literal_never_fits_f64 -->
 
 ### Arrays
