@@ -3120,6 +3120,15 @@ const Emitter = struct {
             },
             .call => |c| switch (c.kind) {
                 .call => |cc| blk: {
+                    // `r.unwrapOr(d)` / `o.unwrapOr(d)`: the payload and the
+                    // default are one type, so the default or the `@Result`'s
+                    // declared ok payload names the record (`val p =
+                    // s.unwrapOr(Parsed(…)); p.value` in `std/json`'s reader
+                    // read `.value` by the unique-field guess and was refused).
+                    if (isUnwrapOr(cc) and cc.args.len == 2) {
+                        if (self.recordTypeOfExpr(cc.args[1].value.*)) |r| break :blk r;
+                        if (self.resultPayloadRecord(cc.args[0].value.*)) |r| break :blk r;
+                    }
                     // `xs.at(i)` / `xs.first()` over an array of records: the
                     // `?Entry` it answers is an `Entry` pointer, and its record
                     // type is what a `?.field` read (and the narrowed name a
