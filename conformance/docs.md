@@ -136,6 +136,55 @@ default reads the file's name as `decl.name`. A second default is
 
 <!-- example: modules/default_fn_import -->
 
+#### A `.bpp` file
+
+A `.bpp` file is another spelling of a module (decisions 198, 199, 212, 213,
+221, 275, 289, 338). The application's `botopink.json` names, in `"bpp"`, the
+dependency whose declarations std's `bpp` annotations mark (decision 361;
+§ The manifest schema); the toolchain reads those marks and knows no library,
+tag or type name.
+
+The **header** runs from the first line to the first separator line: `---`
+(the markup follows, to the end of the file) or `--- style ---` (the style
+section follows, closed by a `---` line, then the markup). A file with no
+separator line is markup only. The file unfolds to a module:
+
+- the header's declarations — `import`, `type`, `pub …`, a private `fn`, a
+  `test`, a decorated declaration — stay at module level, as written;
+- the module's anonymous `pub default fn (props: Props) -> R` — `()` when the
+  header declares no `Props` — whose body is the header's statements (`val`,
+  `var`, `use`, `if`, an expression statement) in order, so they read `props`;
+- `use <style> """<the section>""";` when there is a style section, onto the
+  package's `#[bpp.style]` function, after the statements;
+- `return <html> """<the markup>""";` onto the package's `#[bpp.html]`
+  function: the literal is the bytes after the separator line, to the end of
+  the file;
+- `R` is the `R` of that function's `@ExprCustom<R>`. The imports of the two
+  functions bind no name the header can reach.
+
+A decorator written on the header's last line, before the separator line,
+annotates the unfolded function, whose `decl.name` is the file's name; no
+decorator comes from the file's name. `mod x;` resolves `x.bp`, then
+`x.bpp`, then `x/mod.bp`; the importer names the default function
+(`import {components.Card};`). A diagnostic in the file is reported at its own
+line and column — the header's, the markup's and the style section's alike.
+
+<!-- example: modules/bpp_unfold_props -->
+<!-- example: modules/bpp_unfold_without_props -->
+<!-- example: modules/bpp_decorator_last_line -->
+<!-- example: modules/bpp_diagnostics_located -->
+
+Refused, each at its line: a first line `---` (`the header starts on the first
+line; a .bpp has no opening ---`), a `--- style ---` after the markup, a second
+style section, a style section no `---` line closes, a `"""` in a section (it
+would end the literal), and `X.bp` beside `X.bpp` (one module written twice).
+
+<!-- example: modules/bpp_first_line_separator -->
+<!-- example: modules/bpp_style_after_markup -->
+<!-- example: modules/bpp_second_style_section -->
+<!-- example: modules/bpp_style_unclosed -->
+<!-- example: modules/bpp_beside_bp -->
+
 ### Imports
 
 `from "<name>"` names a **package** — std or a dependency declared in
@@ -2097,6 +2146,13 @@ scope, declared there or imported; a method of the receiver's own type of that
 name is the type's.
 
 <!-- example: modules/template_method_call -->
+
+A template refuses its call with `q.fail(message)`, located at the literal,
+or with `q.failAt(Span(start, end, line), message)`, located at that span of
+its text in the caller's file: on the opening line of a `"""…"""` literal the
+text begins after the three quotes.
+
+<!-- example: modules/template_fail_at_column_on_open_line -->
 
 A template whose second parameter is `comptime decl: @Decl` is written as an
 annotation, `#[f "…"]` — § Template annotations below.

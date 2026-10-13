@@ -16,10 +16,11 @@
 ///
 /// `libs.loadDependencies` runs both checks — every command that compiles a
 /// project (`build`, `run`, `check`, `test`) loads its dependencies through
-/// it. The unfold itself (116 step 2) is not here yet.
+/// it — and hands the roles to the unfold (`unfoldSpec`, `bpp_unfold.zig`).
 const std = @import("std");
 const bp = @import("botopink");
 const manifest = @import("manifest");
+const bpp_unfold = @import("./bpp_unfold.zig");
 
 const Module = bp.Module;
 const ast = bp.ast;
@@ -188,6 +189,122 @@ pub fn styleSectionLine(source: []const u8) ?usize {
         const line = std.mem.trimEnd(u8, raw, " \t\r");
         if (std.mem.eql(u8, line, "---")) return null;
         if (std.mem.eql(u8, line, "--- style ---")) return n;
+    }
+    return null;
+}
+
+/// `X.bp` beside `X.bpp` (front 116): two files of one module — refused at
+/// the `.bpp` file, naming both.
+pub fn refuseTwins(arena: std.mem.Allocator, io: std.Io, files: []const BppFile) Error!void {
+    for (files) |f| {
+        const twin = try std.fmt.allocPrint(arena, "{s}.bp", .{f.file[0 .. f.file.len - manifest.BPP_EXT.len]});
+        std.Io.Dir.cwd().access(io, twin, .{}) catch continue;
+        printAt(f.file, f.source, 1, 1, try std.fmt.allocPrint(arena, "{s} and {s} are one module written twice — keep one of the two files", .{ f.file, twin }));
+        return error.BppRefused;
+    }
+}
+
+/// What the unfold needs of the roles (`bpp_unfold.Spec`), allocated in
+/// `arena`: the `#[bpp.html]` function and the `#[bpp.style]` one, each as
+/// the import that reaches it in package `pkg` (whose entry module is
+/// `entry`, a path under its `src` with its extension), and the `R` of the
+/// html function's `@ExprCustom<R>` (decision 275) — read from its signature;
+/// a name the package declares there is imported under an alias of the
+/// unfold's, so the toolchain spells no type name of its own.
+pub fn unfoldSpec(arena: std.mem.Allocator, pkg: []const u8, entry: []const u8, roles: Roles) Error!bpp_unfold.Spec {
+    const html = roles.html[0];
+    var imports: std.ArrayListUnmanaged(u8) = .empty;
+    const ret = try returnOf(arena, pkg, entry, html, &imports);
+    return .{
+        .html = try targetOf(arena, pkg, entry, html),
+        .style = if (roles.style.len > 0) try targetOf(arena, pkg, entry, roles.style[0]) else null,
+        .ret = ret,
+        .ret_imports = imports.items,
+    };
+}
+
+fn targetOf(arena: std.mem.Allocator, pkg: []const u8, entry: []const u8, m: Marked) Error!bpp_unfold.Target {
+    const prefix_len = pkg.len + 1;
+    const inner = if (m.module.len > prefix_len and std.mem.startsWith(u8, m.module, pkg) and m.module[pkg.len] == '/') m.module[prefix_len..] else m.module;
+    const path: []const u8 = if (std.mem.eql(u8, inner, manifest.stripSourceExt(entry))) "" else blk: {
+        const dotted = try arena.dupe(u8, inner);
+        std.mem.replaceScalar(u8, dotted, '/', '.');
+        break :blk dotted;
+    };
+    return .{ .package = try arena.dupe(u8, pkg), .path = path, .name = try arena.dupe(u8, m.name) };
+}
+
+/// The `R` of `m`'s `-> @ExprCustom<R>`, each name `m`'s module declares or
+/// imports from its own package rewritten to an alias whose import goes to
+/// `imports`. `i32` when the signature cannot be read (std's decorator has
+/// already refused a role function that answers no `@ExprCustom<R>`).
+fn returnOf(arena: std.mem.Allocator, pkg: []const u8, entry: []const u8, m: Marked, imports: *std.ArrayListUnmanaged(u8)) Error![]const u8 {
+    var lx = bp.Lexer.init(m.source);
+    const toks = lx.scanAll(arena) catch return "i32";
+    // The function's name, then its `->`, then `@ExprCustom` `<`.
+    var i: usize = 0;
+    while (i < toks.len and !(toks[i].kind == .identifier and toks[i].line == m.loc.line and std.mem.eql(u8, toks[i].lexeme, m.name))) i += 1;
+    while (i < toks.len and toks[i].kind != .rightArrow) i += 1;
+    if (i + 2 >= toks.len or !std.mem.eql(u8, toks[i + 1].lexeme, "@ExprCustom") or toks[i + 2].kind != .lessThan) return "i32";
+    const first = i + 3;
+    var depth: usize = 1;
+    var j = first;
+    // Where `R` ends: before the `>` closing `@ExprCustom<`, which a `>>`
+    // shares with `R`'s own last `>` (`@ExprCustom<@Component<View>>`).
+    var end: usize = 0;
+    while (j < toks.len) : (j += 1) {
+        switch (toks[j].kind) {
+            .lessThan => depth += 1,
+            .greaterThan => depth -= 1,
+            .greaterThanGreaterThan => {
+                if (depth == 2) end = toks[j].offset + 1;
+                depth -|= 2;
+            },
+            else => {},
+        }
+        if (depth == 0) break;
+    }
+    if (j >= toks.len or j == first) return "i32";
+    if (end == 0) end = toks[j].offset;
+    const program = parse(arena, m.source);
+    var out: std.ArrayListUnmanaged(u8) = .empty;
+    var at = toks[first].offset;
+    for (toks[first..j], 0..) |t, k| {
+        if (t.kind != .identifier) continue;
+        if (k > 0 and toks[first + k - 1].kind == .dot) continue;
+        const path = (if (program) |p| declaringPath(arena, pkg, entry, m, p, t.lexeme) catch null else null) orelse continue;
+        try out.appendSlice(arena, m.source[at..t.offset]);
+        const alias = try std.fmt.allocPrint(arena, "__bppR{s}", .{t.lexeme});
+        try out.appendSlice(arena, alias);
+        at = t.offset + t.lexeme.len;
+        try imports.print(arena, "import {{{s} as {s}}} from \"{s}\";\n", .{ path, alias, pkg });
+    }
+    try out.appendSlice(arena, m.source[at..end]);
+    return out.items;
+}
+
+/// Where `name`, read in `m`'s module, is declared in the package — the
+/// dotted import path (`element.Element`) — when the module declares it
+/// (`type`, an alias, a `behavior`) or imports it from its own package.
+fn declaringPath(arena: std.mem.Allocator, pkg: []const u8, entry: []const u8, m: Marked, program: ast.Program, name: []const u8) !?[]const u8 {
+    for (program.decls) |decl| {
+        const declared = switch (decl) {
+            .type_ => |t| t.name,
+            .typeAlias => |t| t.name,
+            .behavior => |b| b.name,
+            .use => |u| {
+                if (u.source == .module) continue;
+                for (u.imports) |imp| if (std.mem.eql(u8, imp.name(), name)) {
+                    return try std.mem.join(arena, ".", imp.segments);
+                };
+                continue;
+            },
+            else => continue,
+        };
+        if (!std.mem.eql(u8, declared, name)) continue;
+        const t = try targetOf(arena, pkg, entry, .{ .module = m.module, .name = name, .file = m.file, .source = m.source, .loc = m.loc });
+        if (t.path.len == 0) return t.name;
+        return try std.fmt.allocPrint(arena, "{s}.{s}", .{ t.path, name });
     }
     return null;
 }

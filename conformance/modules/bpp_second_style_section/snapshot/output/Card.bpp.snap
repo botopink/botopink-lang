@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: a .bpp has one style section — this `--- style ---` line opens a second one
+at src/Card.bpp:4:1

@@ -271,6 +271,7 @@ pub fn build(b: *std.Build) void {
         .imports = &.{
             .{ .name = "botopink", .module = core_mod },
             .{ .name = "test_scratch", .module = test_scratch_mod },
+            .{ .name = "manifest", .module = manifest_mod },
         },
     });
 

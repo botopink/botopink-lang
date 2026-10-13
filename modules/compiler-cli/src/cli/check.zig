@@ -49,7 +49,19 @@ pub fn run(gpa: std.mem.Allocator, io: std.Io, opts: Options, env_map: libs.EnvM
         return 1;
     };
 
-    var loaded = sources.load(gpa, io, proj, proj.srcDir()) catch return 1;
+    // Resolve declared external libs (generic — `libs/<name>/`), same as `build`,
+    // so `import … from "<lib>"` type-checks. Dependencies compile first,
+    // and load first: a `.bpp` file unfolds onto the package `"bpp"` names
+    // (front 116 step 2, `closure_keys.bpp`).
+    const entry_target: code_cache.EntryTarget = .{ .target = target, .host = proj.wasmHost() };
+    var closure_keys: libs.ClosureKeys = .{ .arena = arena, .target = entry_target };
+    const dep_modules = libs.loadDependenciesWith(gpa, io, proj, env_map, &closure_keys) catch |err| {
+        build_cmd.reportDependencyError(err);
+        return 1;
+    };
+    defer libs.freeModules(gpa, dep_modules);
+
+    var loaded = sources.loadWith(gpa, io, proj, proj.srcDir(), if (closure_keys.bpp) |*b| b else null) catch return 1;
     defer loaded.free(gpa);
     var test_scan = try scanner.scanSourcesWithFiles(gpa, io, "test");
     defer test_scan.free(gpa);
@@ -63,16 +75,6 @@ pub fn run(gpa: std.mem.Allocator, io: std.Io, opts: Options, env_map: libs.EnvM
         reporter.errMsg("no source files found in src/ or test/");
         return 1;
     }
-
-    // Resolve declared external libs (generic — `libs/<name>/`), same as `build`,
-    // so `import … from "<lib>"` type-checks. Dependencies compile first.
-    const entry_target: code_cache.EntryTarget = .{ .target = target, .host = proj.wasmHost() };
-    var closure_keys: libs.ClosureKeys = .{ .arena = arena, .target = entry_target };
-    const dep_modules = libs.loadDependenciesWith(gpa, io, proj, env_map, &closure_keys) catch |err| {
-        build_cmd.reportDependencyError(err);
-        return 1;
-    };
-    defer libs.freeModules(gpa, dep_modules);
 
     // The code cache's level B (144 B-60): the target's entries, as `build`
     // reads and writes them.

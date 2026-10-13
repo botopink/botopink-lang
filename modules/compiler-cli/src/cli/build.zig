@@ -55,18 +55,6 @@ pub fn run(
     // emits for, or nothing is built (decision 228, `otp.zig`).
     if ((target == .erlang or target == .beam) and !try otp.check(arena, io)) return 1;
 
-    // Resolve project source files through the explicit module tree.
-    // (`sources.load` reports resolution errors itself.)
-    var loaded = sources.load(gpa, io, proj, proj.srcDir()) catch return 1;
-    defer loaded.free(gpa);
-    const project_modules = loaded.modules;
-
-    if (project_modules.len == 0) {
-        reporter.errMsg("no source files found in src/");
-        reporter.hintMsg("create a .bp file, e.g. src/main.bp");
-        return 1;
-    }
-
     // Resolve declared external libs from disk (generic — `libs/<name>/`). The
     // core never names a lib; it only sees these as ordinary `Module[]` and
     // resolves `from "<lib>"` through the shared import registry. `std` is the
@@ -78,6 +66,20 @@ pub fn run(
         return 1;
     };
     defer libs.freeModules(gpa, dep_modules);
+
+    // Resolve project source files through the explicit module tree, after
+    // the dependencies: a `.bpp` file unfolds onto the package `"bpp"` names
+    // (front 116 step 2, `closure_keys.bpp`). (`sources.load` reports
+    // resolution errors itself.)
+    var loaded = sources.loadWith(gpa, io, proj, proj.srcDir(), if (closure_keys.bpp) |*b| b else null) catch return 1;
+    defer loaded.free(gpa);
+    const project_modules = loaded.modules;
+
+    if (project_modules.len == 0) {
+        reporter.errMsg("no source files found in src/");
+        reporter.hintMsg("create a .bp file, e.g. src/main.bp");
+        return 1;
+    }
 
     // The code cache's level B (144 B-60): a dependency whose analysis entry
     // reads back under its closure key is not analysed again; the entries

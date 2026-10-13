@@ -300,8 +300,10 @@ pub fn mapSpanToLoc(capture: *const CapturedExpr, span: Span) ast.Loc {
             }
         }
         if (line == 0) {
-            // Still on the literal's own line: content sits after the opening quote.
-            return .{ .line = capture.loc.line, .col = capture.loc.col + 1 + upto, .expansion = capture.loc.expansion };
+            // Still on the literal's own line: content sits after the opening
+            // quote — three of them for a `"""…"""` literal.
+            const open: usize = if (capture.multiline) 3 else 1;
+            return .{ .line = capture.loc.line, .col = capture.loc.col + open + upto, .expansion = capture.loc.expansion };
         }
         return .{ .line = capture.loc.line + line, .col = upto - lineStart + 1, .expansion = capture.loc.expansion };
     }

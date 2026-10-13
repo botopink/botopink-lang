@@ -1,0 +1,5 @@
+val size = 1;
+---
+<div>
+  <p>bang!</p>
+</div>

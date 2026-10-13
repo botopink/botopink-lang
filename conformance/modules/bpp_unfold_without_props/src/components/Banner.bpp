@@ -1,0 +1,3 @@
+val greeting = "hello";
+---
+<p>hello</p>

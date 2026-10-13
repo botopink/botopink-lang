@@ -1,0 +1,15 @@
+//// A fixture package that is not jhonstart (front 116): its default module
+//// holds the markup's unfold target, found by std's `#[bpp.html]` alone.
+
+pub default mod markup;
+
+/// A decorator that refuses what it annotates, naming it and its kind.
+pub fn named(comptime decl: @Decl) {
+    val kind = if (decl.kind == DeclKind.Fn) { "a function" } else { "not a function" };
+    decl.fail("named " + decl.name + " (" + kind + ")");
+}
+
+/// A decorator named like a route file: it refuses what it annotates.
+pub fn page(comptime decl: @Decl) {
+    decl.fail("page applied to " + decl.name);
+}

@@ -11,6 +11,7 @@
 const std = @import("std");
 const bp = @import("botopink");
 const reporter = @import("./reporter.zig");
+const bpp_unfold = @import("./bpp_unfold.zig");
 
 const Module = bp.Module;
 
@@ -23,7 +24,7 @@ pub fn moduleName(m: Module) []const u8 {
 /// `src/<name>/mod.bp` when that file exists under cwd, else `<name>.bp`
 /// (dependency modules live under their library's own directory).
 pub fn fileLabel(arena: std.mem.Allocator, io: std.Io, name: []const u8) []const u8 {
-    const candidates = [_][]const u8{ "src/{s}.bp", "src/{s}/mod.bp", "test/{s}.bp" };
+    const candidates = [_][]const u8{ "src/{s}.bp", "src/{s}.bpp", "src/{s}/mod.bp", "test/{s}.bp" };
     inline for (candidates) |fmt| {
         if (std.fmt.allocPrint(arena, fmt, .{name})) |p| {
             if (std.Io.Dir.cwd().access(io, p, .{})) |_| return p else |_| {}
@@ -57,6 +58,25 @@ pub fn renderLocated(
 /// `renderLocated` under another severity word — `warning` for the checker's
 /// warning channel (decision 57), which renders exactly like an error.
 pub fn renderLocatedAs(
+    w: *std.Io.Writer,
+    severity: []const u8,
+    message: []const u8,
+    file: []const u8,
+    source: []const u8,
+    line: usize,
+    col: usize,
+    span: usize,
+) !void {
+    // A `.bpp` file speaks of itself, not of its unfolded module (front 116):
+    // its own text under the location, its own column.
+    if (bpp_unfold.origin(file)) |o| {
+        const at = o.position(line, col);
+        return renderAt(w, severity, message, file, o.text, at.line, at.col, span);
+    }
+    return renderAt(w, severity, message, file, source, line, col, span);
+}
+
+fn renderAt(
     w: *std.Io.Writer,
     severity: []const u8,
     message: []const u8,
@@ -102,6 +122,20 @@ fn lineText(source: []const u8, line: usize) []const u8 {
         if (n == line) return std.mem.trimEnd(u8, l, "\r");
     }
     return "";
+}
+
+/// The byte offset of 1-based (`line`, `col`) in `source`.
+fn offsetOf(source: []const u8, line: usize, col: usize) usize {
+    var l: usize = 1;
+    var start: usize = 0;
+    for (source, 0..) |c, i| {
+        if (l == line) break;
+        if (c == '\n') {
+            l += 1;
+            start = i + 1;
+        }
+    }
+    return @min(start + (col -| 1), source.len);
 }
 
 fn lineColOf(source: []const u8, offset: usize) struct { line: usize, col: usize } {
@@ -179,7 +213,19 @@ pub fn printLexError(gpa: std.mem.Allocator, lexer: *const bp.Lexer, err: anyerr
     }, source, file);
 }
 
-fn printParseInfo(gpa: std.mem.Allocator, info: bp.print_errors.ParseErrorInfo, source: []const u8, file: []const u8) void {
+fn printParseInfo(gpa: std.mem.Allocator, parsed: bp.print_errors.ParseErrorInfo, unfolded: []const u8, file: []const u8) void {
+    var info = parsed;
+    var source = unfolded;
+    if (bpp_unfold.origin(file)) |o| {
+        // A `.bpp` file's offsets are its own (front 116): its lines are the
+        // unfolded module's, its columns moved back.
+        const lc = lineColOf(unfolded, info.start);
+        const at = o.position(lc.line, lc.col);
+        const start = offsetOf(o.text, at.line, at.col);
+        info.end = start + (info.end -| info.start);
+        info.start = start;
+        source = o.text;
+    }
     var aw: std.Io.Writer.Allocating = .init(gpa);
     defer aw.deinit();
     bp.print_errors.render(&aw.writer, info, source, file) catch {};
@@ -280,7 +326,15 @@ pub fn renderResult(gpa: std.mem.Allocator, io: std.Io, arena: std.mem.Allocator
     return true;
 }
 
-fn renderValidationError(gpa: std.mem.Allocator, ce: anytype, source: []const u8, file: []const u8) void {
+fn renderValidationError(gpa: std.mem.Allocator, err: anytype, unfolded: []const u8, file: []const u8) void {
+    var ce = err;
+    var source = unfolded;
+    if (bpp_unfold.origin(file)) |o| {
+        const at = o.position(ce.loc.line, ce.loc.col);
+        ce.loc.line = at.line;
+        ce.loc.col = at.col;
+        source = o.text;
+    }
     const rendered = ce.renderAlloc(gpa, source, file) catch return;
     defer gpa.free(rendered);
     reporter.print("{s}", .{rendered});

@@ -44,6 +44,65 @@ pub const FILENAME = "botopink.json";
 /// and this module depends on `std` only.
 pub const OTP_RELEASE = "28";
 
+// ── Source files ───────────────────────────────────────────────────────────────
+
+/// Every extension a botopink module is written in — the one list the CLI,
+/// the lib-test runner, the language server and the formatter read (front 116
+/// step 3), so no tool spells `.bp` alone and silently skips a `.bpp`. The
+/// order is the order a name is stripped in: `.d.bp` before `.bp`, which it
+/// ends with.
+pub const SOURCE_EXTENSIONS = [_][]const u8{ DECLARATION_EXT, BPP_EXT, ".botopink", ".bp" };
+/// A declaration-only module (`*.d.bp`): type surface, no code.
+pub const DECLARATION_EXT = ".d.bp";
+/// Another spelling of a module (decisions 198, 212, 361): a header, then the
+/// literal of the package `"bpp"` names — unfolded by the toolchain.
+pub const BPP_EXT = ".bpp";
+/// `mod x;` resolves `x.bp`, then `x.bpp`, then `x/mod.bp` (front 116 step 3).
+pub const MOD_SIBLING_EXTENSIONS = [_][]const u8{ ".bp", BPP_EXT };
+
+/// A file in any of `SOURCE_EXTENSIONS`, declaration modules included.
+pub fn isSourceFile(name: []const u8) bool {
+    for (SOURCE_EXTENSIONS) |ext| {
+        if (std.mem.endsWith(u8, name, ext)) return true;
+    }
+    return false;
+}
+
+/// A module that compiles to code: a source file that is no `*.d.bp`.
+pub fn isModuleFile(name: []const u8) bool {
+    return isSourceFile(name) and !isDeclarationFile(name);
+}
+
+pub fn isDeclarationFile(name: []const u8) bool {
+    return std.mem.endsWith(u8, name, DECLARATION_EXT);
+}
+
+pub fn isBppFile(name: []const u8) bool {
+    return std.mem.endsWith(u8, name, BPP_EXT);
+}
+
+/// `name` without its source extension (`a/b.d.bp` → `a/b`, `Card.bpp` →
+/// `Card`); unchanged when it has none.
+pub fn stripSourceExt(name: []const u8) []const u8 {
+    for (SOURCE_EXTENSIONS) |ext| {
+        if (std.mem.endsWith(u8, name, ext)) return name[0 .. name.len - ext.len];
+    }
+    return name;
+}
+
+test "source extensions: one list, .d.bp before .bp, .bpp a module" {
+    try std.testing.expectEqualStrings("a/b", stripSourceExt("a/b.d.bp"));
+    try std.testing.expectEqualStrings("Card", stripSourceExt("Card.bpp"));
+    try std.testing.expectEqualStrings("main", stripSourceExt("main.bp"));
+    try std.testing.expectEqualStrings("x", stripSourceExt("x.botopink"));
+    try std.testing.expectEqualStrings("notes.txt", stripSourceExt("notes.txt"));
+    try std.testing.expect(isModuleFile("Card.bpp"));
+    try std.testing.expect(isModuleFile("main.bp"));
+    try std.testing.expect(!isModuleFile("types.d.bp"));
+    try std.testing.expect(isSourceFile("types.d.bp"));
+    try std.testing.expect(!isSourceFile("Card.bppx"));
+}
+
 // ── Located errors ─────────────────────────────────────────────────────────────
 
 /// A manifest error with a place: the message, the manifest it is in, the raw

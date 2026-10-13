@@ -19,6 +19,12 @@ decision 67 (the most restrictive behaviour, no knob): every refusal is a
 `Located` error — message, file, line, column, span — rendered in the CLI's
 diagnostic shape, and nothing is parsed and ignored.
 
+It also holds the **one list of source extensions** every tool reads
+(`SOURCE_EXTENSIONS`: `.d.bp`, `.bpp`, `.botopink`, `.bp`; `isModuleFile`,
+`isDeclarationFile`, `isBppFile`, `stripSourceExt`, and
+`MOD_SIBLING_EXTENSIONS` — `mod x;` resolves `x.bp`, then `x.bpp`; front 116
+step 3), so no tool spells `.bp` alone and skips a `.bpp`.
+
 The user-facing schema is [`../../conformance/docs.md`](../../conformance/docs.md) § The manifest schema;
 keep the two in sync — every field and every message there is read or produced
 here.

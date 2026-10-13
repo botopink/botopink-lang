@@ -10,6 +10,8 @@
 /// reached through any `mod` path is reported as orphaned (and not compiled).
 const std = @import("std");
 const bp = @import("botopink");
+const manifest = @import("manifest");
+const bpp_unfold = @import("./bpp_unfold.zig");
 /// Test-only: the one way a test spells a path it writes to (per process, so a
 /// second `zig build test` over this checkout cannot empty it mid-test).
 /// `build.zig` gives this module to the test modules alone.
@@ -28,6 +30,8 @@ pub const Error = error{
     UnexportedImport,
     UnresolvedImportSource,
     ModuleImportWithFrom,
+    /// A `.bpp` file its unfold refuses (`bpp_unfold.Refusal`), located in it.
+    BppRefused,
 } || std.mem.Allocator.Error;
 
 /// Diagnostic detail for a resolution failure. `kind` selects the message; the
@@ -119,6 +123,26 @@ pub fn resolve(
     diag_arena: std.mem.Allocator,
     diag: ?*Diagnostic,
 ) Error!Resolution {
+    return resolveWith(gpa, io, src_dir_path, entry, externals, own, declared, diag_arena, diag, null);
+}
+
+/// `resolve`, with what the package's `.bpp` files unfold onto (front 116
+/// step 2): each `.bpp` the `mod` tree reaches is read as its unfolded module
+/// (`bpp_unfold.unfold`, the file's positions kept — `bpp_unfold.remember`),
+/// and a file the unfold refuses is `Error.BppRefused`, located in it. With
+/// no `bpp`, a `.bpp` is read as it is written.
+pub fn resolveWith(
+    gpa: std.mem.Allocator,
+    io: std.Io,
+    src_dir_path: []const u8,
+    entry: ?[]const u8,
+    externals: ?[]const []const u8,
+    own: []const u8,
+    declared: []const []const u8,
+    diag_arena: std.mem.Allocator,
+    diag: ?*Diagnostic,
+    bpp: ?*const bpp_unfold.Spec,
+) Error!Resolution {
     // Scratch arena for parsing + bookkeeping; only final modules are gpa-owned.
     var scratch = std.heap.ArenaAllocator.init(gpa);
     defer scratch.deinit();
@@ -153,8 +177,22 @@ pub fn resolve(
         }
         try visited.put(sa, item.file, {});
 
-        const source = std.Io.Dir.cwd().readFileAlloc(io, item.file, gpa, .unlimited) catch
+        const read = std.Io.Dir.cwd().readFileAlloc(io, item.file, gpa, .unlimited) catch
             return fail(diag, diag_arena, .{ .kind = Error.ModuleNotFound, .name = item.logical, .declared_in = item.file });
+        const source = if (bpp != null and manifest.isBppFile(item.file)) blk: {
+            defer gpa.free(read);
+            switch (try bpp_unfold.unfoldFile(gpa, sa, item.file, read, bpp.?.*)) {
+                .ok => |text| break :blk text,
+                .refused => |r| return fail(diag, diag_arena, .{
+                    .kind = Error.BppRefused,
+                    .name = r.message,
+                    .file = item.file,
+                    .line = r.line,
+                    .col = r.col,
+                    .source = read,
+                }),
+            }
+        } else read;
 
         const my_idx = modules.items.len;
 
@@ -247,8 +285,17 @@ fn collectChildren(
             else => continue,
         };
 
-        // Candidate paths: sibling `Name.bp` or folder index `Name/mod.bp`.
-        const sibling = try std.fs.path.join(sa, &.{ decl_dir, try concat(sa, m.name, ".bp") });
+        // Candidate paths: sibling `Name.bp`, then `Name.bpp` (front 116 step
+        // 3; the two together are refused before resolution, `bpp.refuseTwins`),
+        // or folder index `Name/mod.bp`.
+        var sibling = try std.fs.path.join(sa, &.{ decl_dir, try concat(sa, m.name, manifest.MOD_SIBLING_EXTENSIONS[0]) });
+        for (manifest.MOD_SIBLING_EXTENSIONS) |ext| {
+            const candidate = try std.fs.path.join(sa, &.{ decl_dir, try concat(sa, m.name, ext) });
+            if (exists(io, candidate)) {
+                sibling = candidate;
+                break;
+            }
+        }
         const folder = try std.fs.path.join(sa, &.{ decl_dir, m.name, "mod.bp" });
         const has_sibling = exists(io, sibling);
         const has_folder = exists(io, folder);
@@ -1155,13 +1202,13 @@ fn exists(io: std.Io, path: []const u8) bool {
     return true;
 }
 
+/// A module file — `manifest.isModuleFile`, the one list every tool reads.
 fn isSource(name: []const u8) bool {
-    if (std.mem.endsWith(u8, name, ".d.bp")) return false;
-    return std.mem.endsWith(u8, name, ".bp") or std.mem.endsWith(u8, name, ".botopink");
+    return manifest.isModuleFile(name);
 }
 
 fn stripBpExt(name: []const u8) []const u8 {
-    for ([_][]const u8{ ".d.bp", ".botopink", ".bp" }) |ext| {
+    for (manifest.SOURCE_EXTENSIONS) |ext| {
         if (std.mem.endsWith(u8, name, ext)) return name[0 .. name.len - ext.len];
     }
     return name;

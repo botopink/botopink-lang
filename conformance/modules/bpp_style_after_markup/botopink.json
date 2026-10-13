@@ -1,0 +1,1 @@
+{ "name": "bpp_style_after_markup", "dependencies": { "markup": { "path": "deps/markup" } }, "bpp": "markup" }

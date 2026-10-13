@@ -335,12 +335,25 @@ pub fn run(
     // emits for, or no test runs (decision 228, `otp.zig`).
     if ((target == .erlang or target == .beam) and !try otp.check(arena, io)) return 1;
 
+    // Resolve declared external libs first — a `.bpp` file unfolds onto the
+    // package `"bpp"` names (front 116 step 2, `closure_keys.bpp`) — (generic — `libs/<name>/`),
+    // same as `build`, so a consumer's tests can `import … from "<lib>"`. Dependency modules are
+    // compiled first (their types/exports must resolve before the project), but
+    // their OWN `test {}` blocks are not run — only the project's are.
+    const entry_target: code_cache.EntryTarget = .{ .target = target };
+    var closure_keys: libs.ClosureKeys = .{ .arena = arena, .target = entry_target };
+    const dep_modules = libs.loadDependenciesWith(gpa, io, proj, env_map, &closure_keys) catch |err| {
+        build_cmd.reportDependencyError(err);
+        return 1;
+    };
+    defer libs.freeModules(gpa, dep_modules);
+
     // Scan source files: `src/` (inline test blocks) plus `test/` (separate
     // `*_test.bp` suites). Test modules come last so `src/` exports are
     // already registered when they compile.
     // `src/` resolves through the explicit module tree; the flat `test/` suite
     // dir is not a package, so it keeps the plain directory scan.
-    var src_loaded = sources.load(gpa, io, proj, proj.srcDir()) catch return 1;
+    var src_loaded = sources.loadWith(gpa, io, proj, proj.srcDir(), if (closure_keys.bpp) |*b| b else null) catch return 1;
     defer src_loaded.free(gpa);
     const src_modules = src_loaded.modules;
     var test_scan = try scanner.scanSourcesWithFiles(gpa, io, "test");
@@ -356,18 +369,6 @@ pub fn run(
         reporter.hintMsg("create a .bp file, e.g. src/main.bp");
         return 1;
     }
-
-    // Resolve declared external libs (generic — `libs/<name>/`), same as `build`,
-    // so a consumer's tests can `import … from "<lib>"`. Dependency modules are
-    // compiled first (their types/exports must resolve before the project), but
-    // their OWN `test {}` blocks are not run — only the project's are.
-    const entry_target: code_cache.EntryTarget = .{ .target = target };
-    var closure_keys: libs.ClosureKeys = .{ .arena = arena, .target = entry_target };
-    const dep_modules = libs.loadDependenciesWith(gpa, io, proj, env_map, &closure_keys) catch |err| {
-        build_cmd.reportDependencyError(err);
-        return 1;
-    };
-    defer libs.freeModules(gpa, dep_modules);
 
     // The code cache's level B (144 B-60): a dependency's analysis and its
     // unit (CODE) are read from its entry when one reads back, as `build`

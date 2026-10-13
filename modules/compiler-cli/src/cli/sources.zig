@@ -13,6 +13,7 @@ const resolver = @import("./resolver.zig");
 const scanner = @import("./scanner.zig");
 const reporter = @import("./reporter.zig");
 const diagnostics = @import("./diagnostics.zig");
+const bpp_unfold = @import("./bpp_unfold.zig");
 
 const Module = bp.Module;
 
@@ -43,6 +44,19 @@ pub fn load(
     proj: config.ProjectConfig,
     src_dir: []const u8,
 ) !Loaded {
+    return loadWith(gpa, io, proj, src_dir, null);
+}
+
+/// `load`, with what the project's `.bpp` files unfold onto (front 116 step
+/// 2, `libs.ClosureKeys.bpp`, filled by `libs.loadDependenciesWith` — so a
+/// command loads its dependencies before its sources).
+pub fn loadWith(
+    gpa: std.mem.Allocator,
+    io: std.Io,
+    proj: config.ProjectConfig,
+    src_dir: []const u8,
+    bpp: ?*const bpp_unfold.Spec,
+) !Loaded {
     var da = std.heap.ArenaAllocator.init(gpa);
     defer da.deinit();
     var diag: resolver.Diagnostic = .{ .kind = resolver.Error.RootNotFound };
@@ -52,7 +66,7 @@ pub fn load(
     // Without them the resolver cannot tell a dependency from a typo.
     const externals = try proj.dependencyNames(da.allocator());
 
-    const res = resolver.resolve(gpa, io, src_dir, proj.entry, externals, proj.name, proj.files, da.allocator(), &diag) catch |err| switch (err) {
+    const res = resolver.resolveWith(gpa, io, src_dir, proj.entry, externals, proj.name, proj.files, da.allocator(), &diag, bpp) catch |err| switch (err) {
         resolver.Error.RootNotFound => {
             // No explicit root yet — fall back to the legacy blind walk so
             // unmigrated packages keep building (deprecated for one release).
@@ -199,6 +213,12 @@ pub fn reportDiag(arena: std.mem.Allocator, diag: resolver.Diagnostic) void {
         },
         resolver.Error.RootNotFound => {
             reporter.errMsg("no module-tree root found (src/main.bp or src/root.bp)");
+        },
+        resolver.Error.BppRefused => {
+            // Front 116 — a `.bpp` file its unfold refuses, at its line.
+            var aw: std.Io.Writer.Allocating = .init(arena);
+            diagnostics.renderLocatedAs(&aw.writer, "error", diag.name, diag.file, diag.source, diag.line, diag.col, 1) catch {};
+            reporter.print("{s}", .{aw.written()});
         },
         else => reporter.errMsg("failed to resolve the module tree"),
     }

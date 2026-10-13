@@ -31,6 +31,7 @@ const otp = @import("./otp.zig");
 const resolver = @import("./resolver.zig");
 const sources = @import("./sources.zig");
 const bpp = @import("./bpp.zig");
+const bpp_unfold = @import("./bpp_unfold.zig");
 const code_cache = @import("./code_cache.zig");
 /// Test-only: the one way a test spells a path it writes to (per process, so a
 /// second `zig build test` over this checkout cannot empty it mid-test).
@@ -284,6 +285,10 @@ pub const ClosureKeys = struct {
     arena: std.mem.Allocator,
     target: code_cache.EntryTarget,
     keys: std.StringHashMapUnmanaged([code_cache.KEY_HEX]u8) = .empty,
+    /// What the project's `.bpp` files unfold onto (front 116 step 2), when
+    /// its manifest names a `"bpp"` package: the roles `checkBppRoles` found,
+    /// in `arena`. `sources.load` hands it to the resolver.
+    bpp: ?bpp_unfold.Spec = null,
 };
 
 /// `loadDependencies`, filling `keys` (when given) with every package's
@@ -323,6 +328,7 @@ pub fn loadDependenciesWith(
     defer bpp_arena.deinit();
     const bpp_files = try bpp.scanBppFiles(bpp_arena.allocator(), io, proj.srcDir());
     if (proj.manifest.bpp == null and bpp_files.len > 0) return bpp.refuseUnnamed(bpp_arena.allocator(), bpp_files);
+    try bpp.refuseTwins(bpp_arena.allocator(), io, bpp_files);
 
     if (proj.dependencies.len == 0) return try modules.toOwnedSlice(gpa);
 
@@ -385,7 +391,11 @@ fn loadClosure(
         error.OutOfMemory => return error.OutOfMemory,
     };
     for (closure.order.items) |pkg| try loadOne(gpa, io, pkg.dir, pkg.manifest, pkg.name, out);
-    if (project.bpp) |name| try checkBppRoles(arena, io, project, closure.packages.get(name).?, out.items, bpp_files);
+    if (project.bpp) |name| {
+        const pkg = closure.packages.get(name).?;
+        const roles = try checkBppRoles(arena, io, project, pkg, out.items, bpp_files);
+        if (keys) |k| k.bpp = try bpp.unfoldSpec(k.arena, name, pkg.manifest.entry orelse "root.bp", roles);
+    }
     // Dependencies come before dependents in `order`, so each package's
     // dependencies have their keys when its own is computed (Merkle). std is
     // no package of the closure: its bytes are inside the compiler key.
@@ -455,7 +465,7 @@ fn checkBppRoles(
     pkg: DepClosure.Package,
     loaded: []const Module,
     bpp_files: []const bpp.BppFile,
-) !void {
+) !bpp.Roles {
     var cwd_buf: [std.fs.max_path_bytes]u8 = undefined;
     const cwd = cwd_buf[0..try std.process.currentPath(io, &cwd_buf)];
     var mods: std.ArrayListUnmanaged(bpp.PackageModule) = .empty;
@@ -469,6 +479,7 @@ fn checkBppRoles(
     }
     const roles = try bpp.checkPackage(arena, project, pkg.name, mods.items);
     try bpp.checkStyleSections(arena, pkg.name, roles, bpp_files);
+    return roles;
 }
 
 /// The packages a build compiles: every dependency the project declares, every
@@ -1123,16 +1134,12 @@ fn renderMissingFile(
 }
 
 fn isDeclFile(name: []const u8) bool {
-    return std.mem.endsWith(u8, name, ".d.bp");
+    return manifest.isDeclarationFile(name);
 }
 
+/// The one list of source extensions (`manifest.SOURCE_EXTENSIONS`).
 fn stripSourceExt(name: []const u8) []const u8 {
-    // Longest match first so `.d.bp` wins over `.bp`.
-    const exts = [_][]const u8{ ".d.bp", ".botopink", ".bp" };
-    for (exts) |ext| {
-        if (std.mem.endsWith(u8, name, ext)) return name[0 .. name.len - ext.len];
-    }
-    return name;
+    return manifest.stripSourceExt(name);
 }
 
 /// Free memory allocated by `loadDependencies`.
