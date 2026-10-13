@@ -235,3 +235,51 @@ test "a raise inside a decorator or a comptime is located at the call that raise
         try std.testing.expect(seen);
     }
 }
+
+// The decorator emit memo (`template_eval.cachedEmit`) is process-wide and
+// keyed by the declarations' formatted source, which drops positions; a
+// located function's module bakes `'__bp_at'(Line, Col, Call)` in. One
+// decorator compiled at two positions in one process — the conformance cell
+// `decorator_random_float_unseeded` walked by C-21 and the first case above,
+// when one test process runs both — must locate each raise at its own build's
+// line, never at the earlier build's.
+test "a raise inside a decorator is located in its own build when an earlier build put the same decorator elsewhere" {
+    const gpa = std.testing.allocator;
+    const io = std.testing.io;
+    const build_root = test_scratch.path(io, "comptime/raise_location_moved");
+    const decorated =
+        \\import {io} from "std";
+        \\
+        \\fn drawn(comptime decl: @Decl) {
+        \\    val x = io.random.float();
+        \\    @emit("pub fn moved() -> string { return \"" + decl.name + " ${x}\"; }");
+        \\}
+        \\
+        \\#[drawn]
+        \\type Point(x: i32, y: i32)
+        \\
+        \\pub fn main() {
+        \\    @print(moved());
+        \\}
+        \\
+    ;
+    const cases = [_]struct { src: []const u8, line: u32 }{
+        .{ .src = "\n\n\n" ++ decorated, .line = 7 },
+        .{ .src = decorated, .line = 4 },
+        .{ .src = "\n" ++ decorated, .line = 5 },
+    };
+    for (cases) |c| {
+        var session = try comptimeMod.compile(gpa, &.{.{ .path = "", .source = c.src }}, io, build_root, null);
+        defer session.deinit(gpa);
+        var seen = false;
+        for (session.outputs.items) |output| switch (output.outcome) {
+            .typeError => |te| {
+                seen = true;
+                try std.testing.expectEqual(c.line, te.loc.?.line);
+                try std.testing.expectEqual(@as(u32, 13), te.loc.?.col);
+            },
+            else => {},
+        };
+        try std.testing.expect(seen);
+    }
+}

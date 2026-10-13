@@ -414,13 +414,26 @@ fn buildModule(
     const argument = try templateEval.argumentTerm(arena, plans);
     // Emitted once per decorator and plan, not once per annotated declaration
     // (`template_eval` § one emit per declaration).
-    // The located functions change the code, so they are part of the key.
+    // The located functions change the code, so they are part of the key —
+    // their names, and where their calls are written (`'__bp_at'(Line, Col,
+    // Call)`, `templateEval.appendLocs`).
     var kind: std.ArrayListUnmanaged(u8) = .empty;
     try kind.appendSlice(arena, if (capture != null) "ann" else "dec");
     for (located) |n| {
         try kind.append(arena, 1);
         try kind.appendSlice(arena, n);
     }
+    for (decls) |d| switch (d) {
+        .@"fn" => |f| for (located) |n| {
+            if (std.mem.eql(u8, f.name, n)) {
+                try kind.append(arena, 2);
+                try kind.appendSlice(arena, n);
+                try templateEval.appendLocs(arena, &kind, f);
+                break;
+            }
+        },
+        else => {},
+    };
     const key = try templateEval.emitKey(arena, kind.items, owner, decls, plans);
     const emitted: templateEval.Emitted = (if (key) |k| templateEval.cachedEmit(k) else null) orelse blk: {
         const code = erlang.emitComptimeModule(arena, placeholder_module, .{ .decls = decls }, config) catch |err|

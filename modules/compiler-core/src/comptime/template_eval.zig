@@ -247,6 +247,41 @@ pub fn emitKey(
     return out.written();
 }
 
+/// Decision 451 (3) — a located function's calls are emitted as
+/// `'__bp_at'(Line, Col, Call)`, so its module text is a function of WHERE
+/// its calls are written, which the formatted source the key holds drops. A
+/// caller that locates functions appends every `ast.Loc` of those declarations
+/// to its `kind` with this: one decorator compiled at another position (an
+/// earlier build of the same text in this process — another test, the
+/// language server after an edit above it, a conformance cell holding the same
+/// decorator) is then another key, never the earlier build's module raising at
+/// the earlier build's lines. Every call site of one declaration in one build
+/// reads the same AST, so the memo still emits it once per build.
+pub fn appendLocs(arena: std.mem.Allocator, out: *std.ArrayListUnmanaged(u8), value: anytype) std.mem.Allocator.Error!void {
+    const T = @TypeOf(value);
+    if (T == ast.Loc) {
+        var buf: [64]u8 = undefined;
+        const text = std.fmt.bufPrint(&buf, "\x01{d}:{d}:{d}", .{ value.line, value.col, value.expansion }) catch unreachable;
+        return out.appendSlice(arena, text);
+    }
+    switch (@typeInfo(T)) {
+        .@"struct" => |s| inline for (s.fields) |f| {
+            if (!f.is_comptime) try appendLocs(arena, out, @field(value, f.name));
+        },
+        .@"union" => |u| if (u.tag_type != null) switch (value) {
+            inline else => |payload| try appendLocs(arena, out, payload),
+        },
+        .optional => if (value) |v| try appendLocs(arena, out, v),
+        .array => for (value) |item| try appendLocs(arena, out, item),
+        .pointer => |p| switch (p.size) {
+            .one => if (@typeInfo(p.child) != .@"opaque" and @typeInfo(p.child) != .@"fn") try appendLocs(arena, out, value.*),
+            .slice => if (p.child != u8) for (value) |item| try appendLocs(arena, out, item),
+            else => {},
+        },
+        else => {},
+    }
+}
+
 /// The module this process emitted under `key`, or null.
 pub fn cachedEmit(key: []const u8) ?Emitted {
     lockRendered();
