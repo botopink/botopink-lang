@@ -1290,7 +1290,7 @@ Task eagerly, and inside one body the order is the same everywhere.
 | Group | Cells |
 |---|---|
 | Return and effect mode | `test/effect_return_result`, `modules/task_return_layers` (three layers), `modules/effect_alias_passes_value`; `modules/effect_return_ambiguous_nesting`, `modules/effect_wrapper_behind_alias` |
-| `@Task` and failure | `modules/task_await_no_try`, `modules/task_await_result` (`await t` answers the `@Result`, `try await t`, `try await t catch x`), `modules/task_throw_resolves_error` (`.targets commonJS`: the Promise resolves with `Error`, never rejects); `modules/task_throw_without_result`, `modules/task_try_await_without_result` |
+| `@Task` and failure | `modules/task_await_no_try`, `modules/task_await_result` (`await t` answers the `@Result`, `try await t`, `try await t catch x`), `modules/task_throw_resolves_error` (`.targets commonJS`: the Promise rejects with the thrown value and resolves with the bare one — decision 432 inverted it, the name is its history), `modules/task_result_rejects` (432 on every target: every way a failing task reaches an `await` reads `Error(e)`), `modules/task_result_caught_by_js` (`.targets commonJS`: a JavaScript `try`/`catch` around a botopink task, and a dropped failing task is no unhandled rejection); `modules/task_throw_without_result`, `modules/task_try_await_without_result` |
 | Chain and `use` | `modules/component_hook_and_component`, `modules/component_result_try_await`; `modules/component_try_element`, `modules/await_under_result`, `modules/use_under_task`, `modules/use_of_component` |
 | `async { }` | `modules/async_block_all_of` (`.targets commonJS erlang beam`: `std/async` has no wasm host), `modules/async_block_value_type`, `modules/async_block_return`; `modules/async_block_use`, `modules/async_block_conflicting_errors` |
 | Iterators | `modules/iterator_fibonacci`, `modules/iterator_result_item`, `modules/iterator_result_items` (step E4), `modules/iterator_factory`, `test/yield_step_next` and `modules/yield_step_next` (`.next()` by hand on an `@Iterator` and, awaited, on a `@Stream` — the `run/` half reaches beam and wasm, which a `test/` cell cannot, and steps a parameter inside a `while`); `modules/iterator_throw_without_result`, `modules/iter_await`, `modules/iter_mixed_yield_return`, `modules/iterator_error_param_removed` |
@@ -1809,10 +1809,11 @@ lines are in the front's README):
 | `modules/host_unknown_parameter` | erlang beam | commonJS, wasm — `std/erlang.element` |
 | `modules/std_template_host_fns_across_modules` | commonJS erlang beam | wasm — `std/io/fs.exists` |
 | `modules/task_throw_resolves_error` | commonJS | erlang, wasm, beam — `observe` |
+| `modules/task_result_caught_by_js` | commonJS | erlang, wasm, beam — `callFromJs` |
 | `modules/manifest_targets_host_binding` | erlang beam (`"targets"`) | commonJS, wasm — `magnitude` |
 | `test/erlang_host_sidecar_in_a_test` (a project suite) | erlang beam (`"targets"`) | commonJS — `hello` |
 
-Thirty-six exclusions. No other manifest carries `"targets"`: the field used to be boilerplate
+Thirty-seven exclusions. No other manifest carries `"targets"`: the field used to be boilerplate
 (`["commonJS", "erlang", "wasm"]` in 33 cells, `["commonJS", "erlang"]` in 14) that the runner
 ignored — honoured as written it would have taken beam away from 33 passing cells — and a project
 that must be refused on a target says so with its departure.

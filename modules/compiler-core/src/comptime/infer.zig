@@ -10926,6 +10926,64 @@ fn tryUnwrapOrError(env: *Env, rawTy: *T.Type, loc: ast.Loc) InferError!*T.Type 
 /// decision 104 has every caller `await` a component: it awaits to `R`
 /// (decision 354). `@Stream<T>` is iterated with `for await`, never awaited
 /// whole. Returns null when `ty` is no Task.
+/// Decision 432 — the `task_await` / `task_return` lowerings of a checked
+/// module, put into `out`: an `await` or a whole-wrapper `return` whose
+/// operand is a `@Task<X>` with `X` a `@Result`, or a type left open (a type
+/// parameter — a failing task may reach generic code). A `@Component`, and a
+/// `@Task` of any other type, records nothing.
+pub fn taskLowerings(env: *const Env, out: *std.AutoHashMap(ast.Loc, envMod.InstanceLowering)) !void {
+    var ait = env.taskAwaits.iterator();
+    while (ait.next()) |e| if (awaitMayFail(e.value_ptr.*)) {
+        const slot = try out.getOrPut(e.key_ptr.*);
+        if (!slot.found_existing) slot.value_ptr.* = .task_await;
+    };
+    var rit = env.taskReturns.iterator();
+    while (rit.next()) |e| if (taskMayFail(e.value_ptr.*)) {
+        const slot = try out.getOrPut(e.key_ptr.*);
+        if (!slot.found_existing) slot.value_ptr.* = .task_return;
+    };
+    var bit = env.failingTaskBlocks.keyIterator();
+    while (bit.next()) |k| {
+        const slot = try out.getOrPut(k.*);
+        if (!slot.found_existing) slot.value_ptr.* = .failing_task_block;
+    }
+}
+
+/// True for an `await` whose operand may be a failing task: `taskMayFail`, or
+/// any operand that is not a `@Task` of a settled type nor a `@Component` — a
+/// call through a record's function field is typed by the value it settles
+/// with (`@Result<…>`) or `unknown`, and the reading leaves a value that is no
+/// failing task as it is.
+fn awaitMayFail(ty: *T.Type) bool {
+    const t = ty.deref();
+    if (t.* == .named and (std.mem.eql(u8, t.named.name, "Task") or std.mem.eql(u8, t.named.name, "Component"))) return taskMayFail(ty);
+    return true;
+}
+
+/// True for a task that may be a failing one: a `@Task<X>` whose `X` is a
+/// `@Result`, `unknown` or not resolved to a named type (a type parameter, an
+/// open variable), and an operand the checker typed `unknown` or left open (a
+/// call through a record's function field answers `unknown`). The reading
+/// (`__bp_await`) leaves every other task as it is, so an open type costs a
+/// call, never a wrong answer.
+fn taskMayFail(ty: *T.Type) bool {
+    const t = ty.deref();
+    switch (t.*) {
+        .typeVar => return true,
+        .named => |n| {
+            if (std.mem.eql(u8, n.name, "unknown")) return true;
+            if (!std.mem.eql(u8, n.name, "Task") or n.args.len < 1) return false;
+        },
+        else => return false,
+    }
+    const x = t.named.args[0].deref();
+    return switch (x.*) {
+        .named => |n| std.mem.eql(u8, n.name, "Result") or std.mem.eql(u8, n.name, "unknown"),
+        .typeVar => true,
+        else => false,
+    };
+}
+
 fn unwrapTaskType(ty: *T.Type) ?*T.Type {
     const t = ty.deref();
     return switch (t.*) {
@@ -14692,6 +14750,15 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
             // 00 · 01-checker — the body's return target is the expected type
             // of a returned value (`fn pick() -> Token { return .Color.Red.500; }`).
             const valPtr: ?*TypedExpr = if (r) |rv| try makeTypedPtr(env, try inferExprTypedExpecting(env, rv.*, env.returnTarget)) else null;
+            // Decision 432 — a task handed over whole (`taskLowerings`): the
+            // body's declared return and the returned value are both a `@Task`.
+            if (valPtr) |vp| if (env.returnWhole) |w| {
+                const wd = w.deref();
+                const vt = vp.getType().deref();
+                if (wd.* == .named and std.mem.eql(u8, wd.named.name, "Task") and
+                    vt.* == .named and std.mem.eql(u8, vt.named.name, "Task"))
+                    try env.taskReturns.put(env.arena, loc, vp.getType());
+            };
             // Decision 119 — inside a body whose return carries a `@Result`
             // layer, a returned plain value is wrapped into `{ok, V}` by the
             // transform pass (`__bp_ok`); a value already a `@Result`, or the
@@ -14975,6 +15042,8 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
                 .typeVar => try env.componentAwaits.put(env.arena, loc, rawTy),
                 else => {},
             }
+            // Decision 432 — read once inference is done (`taskLowerings`).
+            try env.taskAwaits.put(env.arena, loc, rawTy);
             const ty = try markResultSource(env, unwrapTaskType(rawTy) orelse rawTy, .await_);
             return TypedExpr{ .jump = .{ .loc = loc, .type_ = ty, .kind = .{ .await_ = valPtr } } };
         },
@@ -20730,6 +20799,8 @@ fn inferAsyncBlock(env: *Env, func: ast.FunctionExprOf(.untyped), loc: ast.Loc) 
     env.returnBareIsVoid = true;
 
     const bodyTyped = try inferStmtsTyped(env, fk.body);
+    // Decision 432 — the block builds its `@Result`: the task it makes fails.
+    if (errTy != null) try env.failingTaskBlocks.put(env.arena, loc, {});
     return TypedExpr{ .function = .{ .loc = loc, .type_ = taskTy, .kind = .{
         .syntax = .asyncBlock,
         .params = fk.params,

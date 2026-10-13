@@ -3586,7 +3586,7 @@ const Emitter = struct {
                 .ident => |n| nums.get(n) orelse self.num_names.get(n),
                 .identAccess => |ia| if (self.instanceLowering(id.loc, ia.receiver.*)) |il| switch (il) {
                     .prim => .int,
-                    .type_, .field_of, .sequence_next, .division, .by_value, .unplaced_type, .assoc_fn_value => null,
+                    .type_, .field_of, .sequence_next, .division, .by_value, .unplaced_type, .assoc_fn_value, .task_await, .task_return, .failing_task_block => null,
                 } else null,
                 else => null,
             },
@@ -7019,7 +7019,7 @@ const Emitter = struct {
                     } else |_| {}
                 },
                 // A field READ never reaches the call path, nor does a `/`.
-                .field_of, .division, .assoc_fn_value => {},
+                .field_of, .division, .assoc_fn_value, .task_await, .task_return, .failing_task_block => {},
                 // A method a `behavior` declares, on a value typed by it: the
                 // value answers — its own type's module, or its own table.
                 .by_value => {
@@ -11990,7 +11990,7 @@ const Emitter = struct {
                 }
                 return;
             },
-            .type_, .field_of, .sequence_next, .division, .by_value, .unplaced_type, .assoc_fn_value => {},
+            .type_, .field_of, .sequence_next, .division, .by_value, .unplaced_type, .assoc_fn_value, .task_await, .task_return, .failing_task_block => {},
         };
 
         try self.lowerExprIntoX0(ia.receiver.*);

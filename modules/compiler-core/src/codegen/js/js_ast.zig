@@ -498,8 +498,8 @@ pub const TsParam = struct {
 pub const TsMember = union(enum) {
     /// `<modifier> name: T;`
     field: struct { modifier: []const u8 = "", name: []const u8, type: TsType },
-    /// `<modifier>name(params): R;`
-    method: struct { modifier: []const u8 = "", name: []const u8, params: []const TsParam, ret: TsType },
+    /// `<modifier>name(params): R;` — after `/** @throws {E} */` as `func`.
+    method: struct { modifier: []const u8 = "", name: []const u8, params: []const TsParam, ret: TsType, throws: ?TsType = null },
     /// `get name: T;`
     getter: struct { name: []const u8, type: TsType },
     /// `set name(p: T);`
@@ -532,8 +532,9 @@ pub const TsNamespaceItem = union(enum) {
 pub const TsDecl = union(enum) {
     /// `export declare const name: T;`
     const_: struct { name: []const u8, type: TsType },
-    /// `export declare function name(params): R;`
-    func: struct { name: []const u8, params: []const TsParam, ret: TsType },
+    /// `export declare function name(params): R;` — after `/** @throws {E} */`
+    /// when `throws` names the error a failing task rejects with (decision 432).
+    func: struct { name: []const u8, params: []const TsParam, ret: TsType, throws: ?TsType = null },
     /// `export declare class Name { … }` — `declare class` when `exported` is
     /// false: a module-private type a public signature names (`exported`
     /// below).

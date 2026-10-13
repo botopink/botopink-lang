@@ -503,6 +503,23 @@ pub const InstanceLowering = union(enum) {
     /// (`apply(1, Box.wrap)`, `val w = Box.wrap;`). Keyed by the member
     /// read's loc. `arity` is the fn's declared parameter count (no `self`).
     assoc_fn_value: AssocFnValue,
+    /// Decision 432 — an `await` (keyed by its loc) whose operand may be a
+    /// failing task: a `@Task<X>` with `X` a `@Result`, `unknown` or a type the
+    /// checker leaves open (a type parameter), or an operand not typed as a
+    /// `@Task` at all (a call through a record's function field): a failing
+    /// task rejects on commonJS, so the backend reads the settled task back as
+    /// the `@Result` (`__bp_await`, which leaves anything else as it is).
+    /// Never recorded for a `@Component`, nor for a `@Task` of any other type.
+    task_await,
+    /// Decision 432 — a `return t` (keyed by the `return`'s loc) whose operand
+    /// is the whole `@Task<X>` wrapper of its function, `X` as for
+    /// `task_await`: commonJS hands the task over as the value it settles
+    /// with (`__bp_await`), never adopted as it rejects.
+    task_return,
+    /// Decision 432 — an `async { … }` block (keyed by its loc) whose value is
+    /// a `@Result` it builds with `throw` / `try` / `return`: on commonJS the
+    /// task it makes rejects with the error and resolves with the bare value.
+    failing_task_block,
 };
 
 /// What `InstanceLowering.assoc_fn_value` names: the type that declares the
@@ -957,6 +974,15 @@ pub const Env = struct {
     /// type: in a component body it runs the value with the children's scope,
     /// outside every body with `RenderScope.root()` (`context_lower.zig`).
     componentAwaits: std.AutoHashMapUnmanaged(ast.Loc, *T.Type) = .empty,
+    /// Decision 432 — every written `await`, by its location, with its
+    /// operand's type; and every `return` of a whole `@Task` wrapper, by the
+    /// `return`'s location. Read once inference is done
+    /// (`infer.taskLowerings`), when each type is as resolved as it gets.
+    taskAwaits: std.AutoHashMapUnmanaged(ast.Loc, *T.Type) = .empty,
+    taskReturns: std.AutoHashMapUnmanaged(ast.Loc, *T.Type) = .empty,
+    /// Decision 432 — every `async { … }` whose value is a `@Result` its body
+    /// builds (`failing_task_block`), by the block's location.
+    failingTaskBlocks: std.AutoHashMapUnmanaged(ast.Loc, void) = .empty,
     /// Decision 388 (2) — every `c.run(scope)` on a `@Component<R>` value, by
     /// the call's location: lowered to the call of the lambda `c` is.
     componentRuns: std.AutoHashMapUnmanaged(ast.Loc, void) = .empty,

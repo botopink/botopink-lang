@@ -1686,10 +1686,11 @@ in any function, and needs no channel; a host binding answers a `@Result` with
 
 ### Tasks
 
-`@Task<T>` is a value that has not arrived yet, and `await` unwraps it. A Task
-**never fails** (decision 120): if the operation can go wrong, the value is a
-`@Result`, and `await` hands over that `@Result`. To propagate the error,
-combine it with `try`:
+`@Task<T>` is a value that has not arrived yet, and `await` unwraps it. A
+`@Task<T>` **never fails** (decisions 120, 432): if the operation can go wrong,
+the value is a `@Result` — `@Task<@Result<T, E>>` is the task that fails with
+`E` — and `await` hands over that `@Result`. To propagate the error, combine it
+with `try`:
 
 <!-- example: modules/task_result_await -->
 
@@ -1701,6 +1702,13 @@ With `t: @Task<@Result<U, E>>`:
 | `await t` | `@Result<U, E>` | with an await channel |
 | `try await t` | `U` (the error rises) | with an await channel **and** a `@Result` in the return |
 | `try await t catch x` | `U` (or `x`) | with an await channel |
+
+Every way a failing task reaches an `await` reads the same on every target —
+a function or a method that throws, a task handed over whole, generic code
+awaiting a `@Task<T>`, tasks started before either is awaited, an
+`async { }` block that throws:
+
+<!-- example: modules/task_result_rejects -->
 
 An **await channel** is a `@Task`, `@Component` or `@Stream` return, an
 `async { }` block or a `stream` loop; `await` anywhere else is
@@ -1725,11 +1733,18 @@ it waits for nothing, it creates the Task.
 **Per backend.** On commonJS every `@Task` function, and every `@Component`
 one whose hooks node is asynchronous (decision 375), is an `async function`
 and its caller awaits; `async { }` is `(async () => { … })()`.
-**A `throw` in a `@Task<@Result<…>>` does not reject the Promise: it resolves
-with the `Error` value** — JavaScript that consumes a botopink function reads
-the `{ Error: … }` it answers instead of catching a rejection. On erlang and
-beam a `@Task` is eager, `await` is the identity and `async { }` runs the
-block in place.
+**A `@Task<@Result<T, E>>` rejects its Promise with `E` and resolves it with
+the bare `T`** (decision 432) — no `{ ok }` / `{ error }` wrapper: JavaScript
+that awaits a botopink task writes `try { await t } catch (e) { … }`, and the
+`.d.ts` declares `Promise<T>` under `/** @throws {E} */`. A failing task nobody
+awaits is not an unhandled rejection.
+
+<!-- example: modules/task_result_caught_by_js -->
+
+<!-- example: modules/task_throw_resolves_error -->
+
+On erlang and beam a `@Task` is eager, `await` is the identity — a failing
+task's value is `{error, E}` — and `async { }` runs the block in place.
 
 **On wasm a `@Task` behaves as a Promise** (decision 392): a task starts when
 it is made and runs to its first `await`; `await` on a task still pending

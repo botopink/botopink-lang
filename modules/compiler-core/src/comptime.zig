@@ -3598,6 +3598,7 @@ pub fn compileTypesOnly(
                         const slot = try instance_lowerings.getOrPut(e.key_ptr.*);
                         if (!slot.found_existing) slot.value_ptr.* = .{ .division = k };
                     };
+                    try infer.taskLowerings(&succ.env, &instance_lowerings);
                 }
                 if (idx < all_modules.len - 1) {
                     var env = succ.env;
@@ -3933,6 +3934,7 @@ fn compileOnce(
                         const slot = try instance_lowerings.getOrPut(e.key_ptr.*);
                         if (!slot.found_existing) slot.value_ptr.* = .{ .division = k };
                     };
+                    try infer.taskLowerings(&succ.env, &instance_lowerings);
                 }
                 if (idx < all_modules.len - 1) {
                     var env = succ.env;

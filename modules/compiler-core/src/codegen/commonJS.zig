@@ -1835,6 +1835,45 @@ const Emitter = struct {
         return .{ .name = jsPrelude.name(h) };
     }
 
+    /// True when inference recorded the payload-less lowering `tag` at `loc`.
+    fn loweringIs(self: *Emitter, loc: ast.Loc, tag: std.meta.Tag(envMod.InstanceLowering)) bool {
+        const lw = self.lowerings orelse return false;
+        const il = lw.get(loc) orelse return false;
+        return il == tag;
+    }
+
+    /// Decision 432 — the operand of a `return` at `loc`: a whole `@Task`
+    /// that may fail (`task_return`) is handed over as the value it settles
+    /// with (`__bp_await`), so the `async function` returning it does not
+    /// adopt its rejection.
+    fn returnOperand(self: *Emitter, loc: ast.Loc, rp: ast.Expr) anyerror!js.Expr {
+        const value = try self.buildExpr(rp);
+        if (self.loweringIs(loc, .task_return)) return self.b.call(self.helper(.await_task), &.{value});
+        return value;
+    }
+
+    /// Decision 432 — the body of a `-> @Task<@Result<T, E>>` function, built
+    /// one level deeper, as the failing task the function answers:
+    ///
+    ///     return __bp_task((async () => { …body… })());
+    ///
+    /// The body settles with the `{ ok }` / `{ error }` value it builds, as
+    /// every other `@Result` body does; `__bp_task` turns it into a task that
+    /// resolves with the bare value and rejects with the error. The arrow
+    /// keeps the function's `this`. `indent` is the function body's level.
+    fn failingTaskBody(self: *Emitter, body: []const js.Stmt, indent: usize) anyerror![]const js.Stmt {
+        var arrow = try self.b.arrowBlock(&.{}, .{ .stmts = body, .indent = indent });
+        arrow.arrow.is_async = true;
+        const run = try self.b.call(try self.b.paren(arrow), &.{});
+        return self.b.stmts(&.{.{ .return_ = try self.b.call(self.helper(.task), &.{run}) }});
+    }
+
+    /// True for a function whose written return is `@Task<@Result<T, E>>` and
+    /// whose body is the task (decision 432): a failing task.
+    fn isFailingTask(eff: ?ast.EffectKind, ret: ?ast.TypeRef) bool {
+        return eff == .task and isTaskOfResult(ret);
+    }
+
     // ── collectors ────────────────────────────────────────────────────────────
 
     /// `prim-op-annotation` commonJS builtin dispatch collector — mirrors
@@ -2218,7 +2257,7 @@ const Emitter = struct {
         const lw = self.lowerings orelse return null;
         const type_name = switch (lw.get(loc) orelse return null) {
             .type_ => |n| n,
-            .prim, .field_of, .sequence_next, .division, .by_value, .unplaced_type, .assoc_fn_value => return null,
+            .prim, .field_of, .sequence_next, .division, .by_value, .unplaced_type, .assoc_fn_value, .task_await, .task_return, .failing_task_block => return null,
         };
         if (self.imported_enums.contains(type_name)) return type_name;
         var buf: [256]u8 = undefined;
@@ -2335,7 +2374,10 @@ const Emitter = struct {
 
     /// The JS shape a botopink effect asks for — read off the return
     /// (decision 118):
-    ///   `-> @Task<T>`          → `async function` (decision 120)
+    ///   `-> @Task<T>`          → `async function` (decision 120); a
+    ///                            `-> @Task<@Result<T, E>>` fn or method is
+    ///                            then a failing task (`failingTaskBody`,
+    ///                            decision 432)
     ///   `-> @Component<T>`  → `async function`, awaiting or not (decision
     ///                            104: every hook and component answers a
     ///                            Promise and every caller `await`s it)
@@ -2730,7 +2772,9 @@ const Emitter = struct {
 
     fn buildFn(self: *Emitter, f: ast.FnDecl) anyerror!js.Stmt {
         self.try_seq = 0;
-        const shape = self.fnShape(f);
+        var shape = self.fnShape(f);
+        const failing = isFailingTask(f.effect, f.returnType);
+        const level: usize = if (failing) 2 else 1;
         const prev_in_generator = self.in_generator;
         self.in_generator = shape.is_generator;
         defer self.in_generator = prev_in_generator;
@@ -2743,10 +2787,14 @@ const Emitter = struct {
         const slots = try strSlots.analyze(self.arena(), StrSlotCtx{ .em = self }, f.params, f.body);
         self.str_slots = &slots;
         const prev_fn_indent = self.current_indent;
-        self.current_indent = 1;
+        self.current_indent = level;
         var body = try self.withParamSlots(&slots, try self.buildStmts(f.body));
-        body = @constCast(try self.guardExprTry(body, 1));
+        body = @constCast(try self.guardExprTry(body, level));
         self.current_indent = prev_fn_indent;
+        if (failing) {
+            body = @constCast(try self.failingTaskBody(body, 1));
+            shape.is_async = false;
+        }
         const kw = shape.keyword();
         // A plain `function` only: a generator's `return f(…)` resumes an
         // iterator rather than ending one, and an `async` one's answer is a
@@ -2827,13 +2875,19 @@ const Emitter = struct {
             const has_self = m.params.len > 0 and std.mem.eql(u8, m.params[0].name, "self");
             const params = try self.buildParams(m.params);
             const eff = methodEffect(m);
-            const shape = effectShape(eff);
+            var shape = effectShape(eff);
+            const failing = isFailingTask(eff, m.returnType);
+            const level: usize = if (failing) 3 else 2;
             const prev_in_generator = self.in_generator;
             self.in_generator = shape.is_generator;
-            self.current_indent = 2;
+            self.current_indent = level;
             const prev_expr_try = self.expr_try_used;
             self.expr_try_used = false;
-            const body = try self.guardExprTry(try self.buildStmts(m.body orelse &.{}), 2);
+            var body = try self.guardExprTry(try self.buildStmts(m.body orelse &.{}), level);
+            if (failing) {
+                body = try self.failingTaskBody(body, 2);
+                shape.is_async = false;
+            }
             self.expr_try_used = prev_expr_try;
             self.current_indent = 0;
             self.in_generator = prev_in_generator;
@@ -3048,13 +3102,19 @@ const Emitter = struct {
             } else try self.buildParams(m.params);
             self.self_is_param = recv_first;
             const eff = methodEffect(m);
-            const shape = effectShape(eff);
+            var shape = effectShape(eff);
+            const failing = isFailingTask(eff, m.returnType);
+            const level: usize = if (failing) 3 else 2;
             const prev_in_generator = self.in_generator;
             self.in_generator = shape.is_generator;
-            self.current_indent = 2;
+            self.current_indent = level;
             const prev_expr_try = self.expr_try_used;
             self.expr_try_used = false;
-            const body = try self.guardExprTry(try self.buildStmts(m.body orelse &.{}), 2);
+            var body = try self.guardExprTry(try self.buildStmts(m.body orelse &.{}), level);
+            if (failing) {
+                body = try self.failingTaskBody(body, 2);
+                shape.is_async = false;
+            }
             self.expr_try_used = prev_expr_try;
             self.current_indent = 0;
             self.in_generator = prev_in_generator;
@@ -3909,7 +3969,7 @@ const Emitter = struct {
         switch (e) {
             .jump => |j| switch (j.kind) {
                 .@"return" => |r| {
-                    if (self.case_return_throws) return .{ .throw_ = try self.returnThrow(if (r) |rp| try self.buildExpr(rp.*) else .{ .name = "undefined" }) };
+                    if (self.case_return_throws) return .{ .throw_ = try self.returnThrow(if (r) |rp| try self.returnOperand(j.loc, rp.*) else .{ .name = "undefined" }) };
                     const rp = r orelse return .{ .return_ = if (self.case_return_box) try self.returnBox(.{ .name = "undefined" }) else null };
                     if (classifyTry(rp.*)) |form| return self.buildTryStmt(form, .ret);
                     // `return case … { A -> v; B -> return x; }` — an arm that
@@ -3923,8 +3983,8 @@ const Emitter = struct {
                     // `return <gen>` surfaces the generator object and
                     // yields nothing).
                     if (self.in_generator) return .{ .yield_delegate = try self.buildExpr(rp.*) };
-                    if (self.case_return_box) return .{ .return_ = try self.returnBox(try self.buildExpr(rp.*)) };
-                    return .{ .return_ = try self.buildExpr(rp.*) };
+                    if (self.case_return_box) return .{ .return_ = try self.returnBox(try self.returnOperand(j.loc, rp.*)) };
+                    return .{ .return_ = try self.returnOperand(j.loc, rp.*) };
                 },
                 // Decision 122 — `yield try x` / `yield __bp_ok(try x)` in a
                 // sequence whose item is a `@Result`: a failing `try` emits
@@ -4461,7 +4521,7 @@ const Emitter = struct {
                 // function's guard instead (`case_return_throws`).
                 .@"return" => |r| {
                     if (!self.case_return_throws) return error.JumpInValuePosition;
-                    return self.iife(&.{.{ .throw_ = try self.returnThrow(if (r) |rp| try self.buildExpr(rp.*) else .{ .name = "undefined" }) }});
+                    return self.iife(&.{.{ .throw_ = try self.returnThrow(if (r) |rp| try self.returnOperand(j.loc, rp.*) else .{ .name = "undefined" }) }});
                 },
                 .@"break", .@"continue" => return error.JumpInValuePosition,
                 // `throw` leaves by unwinding, which crosses a function
@@ -4486,6 +4546,10 @@ const Emitter = struct {
                     // Decision 375 — no `await` on a call of a synchronous
                     // component (written or spliced by the checker).
                     if (av.* == .call and self.sync.syncCall(av.call.loc)) return self.buildExpr(av.*);
+                    // Decision 432 — a task that may fail is read back as
+                    // the `@Result` it settles with.
+                    if (self.loweringIs(j.loc, .task_await))
+                        return self.b.await_(try self.b.call(self.helper(.await_task), &.{try self.buildExpr(av.*)}));
                     return self.b.await_(try self.buildExpr(av.*));
                 },
                 // Generator `yield` (loop-accumulator yields are lowered at
@@ -4605,7 +4669,13 @@ const Emitter = struct {
             },
 
             .function => |f| {
-                if (f.kind.syntax == .asyncBlock) return self.buildAsyncBlock(f.kind.body);
+                if (f.kind.syntax == .asyncBlock) {
+                    const block = try self.buildAsyncBlock(f.kind.body);
+                    // Decision 432 — a block that builds its `@Result` makes a
+                    // failing task.
+                    if (self.loweringIs(f.loc, .failing_task_block)) return self.b.call(self.helper(.task), &.{block});
+                    return block;
+                }
                 return self.buildArrow(f.kind.params, f.kind.body);
             },
 
@@ -5026,9 +5096,11 @@ const Emitter = struct {
     ///     (async function() { …; return v; })()
     ///
     /// Its `return`s leave the block (they are the function's); a `throw` /
-    /// failing `try` resolves the Promise with the `{ error }` value, never a
-    /// rejection (decision 120). A function boundary: the enclosing loop
-    /// context, generator and test flags do not reach the body.
+    /// failing `try` settles it with the `{ error }` value, which the
+    /// `.function` site turns into a rejection when the block's value is a
+    /// `@Result` (`failing_task_block`, decision 432). A function boundary:
+    /// the enclosing loop context, generator and test flags do not reach the
+    /// body.
     fn buildAsyncBlock(self: *Emitter, body_stmts: []const ast.Stmt) anyerror!js.Expr {
         const base = self.current_indent;
         const prev_ctx = self.loop_ctx;
@@ -5180,7 +5252,7 @@ const Emitter = struct {
                             .bigint => "BigInt",
                             else => break :blk null,
                         },
-                        .type_, .field_of, .sequence_next, .division, .by_value, .unplaced_type, .assoc_fn_value => break :blk null,
+                        .type_, .field_of, .sequence_next, .division, .by_value, .unplaced_type, .assoc_fn_value, .task_await, .task_return, .failing_task_block => break :blk null,
                     };
                     const iface = self.local_interfaces.get(iface_name) orelse break :blk null;
                     for (iface.methods) |m| {
@@ -6013,7 +6085,7 @@ const Emitter = struct {
         const il = lw.get(loc) orelse return null;
         const kind = switch (il) {
             .prim => |k| k,
-            .type_, .field_of, .sequence_next, .division, .by_value, .unplaced_type, .assoc_fn_value => return null,
+            .type_, .field_of, .sequence_next, .division, .by_value, .unplaced_type, .assoc_fn_value, .task_await, .task_return, .failing_task_block => return null,
         };
         const receiver: jsPrelude.Receiver = switch (kind) {
             .string => .string,

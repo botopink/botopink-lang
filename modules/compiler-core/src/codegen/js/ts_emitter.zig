@@ -97,6 +97,14 @@ fn writeMember(w: *Writer, m: Ast.TsMember) Error!void {
     return writeMemberAt(w, m, 1);
 }
 
+/// `/** @throws {E} */` and a newline — the error a failing task rejects
+/// with (decision 432), which a `Promise<T>` cannot name.
+fn writeThrows(w: *Writer, e: Ast.TsType) Error!void {
+    try w.writeAll("/** @throws {");
+    try writeType(w, e);
+    try w.writeAll("} */\n");
+}
+
 fn writeIndent(w: *Writer, depth: usize) Error!void {
     for (0..depth) |_| try w.writeAll("    ");
 }
@@ -112,6 +120,10 @@ fn writeMemberAt(w: *Writer, m: Ast.TsMember, depth: usize) Error!void {
             try w.writeAll(";\n");
         },
         .method => |f| {
+            if (f.throws) |e| {
+                try writeThrows(w, e);
+                try writeIndent(w, depth);
+            }
             try w.writeAll(f.modifier);
             try w.writeAll(f.name);
             try writeParams(w, f.params);
@@ -187,6 +199,7 @@ pub fn writeDecl(w: *Writer, d: Ast.TsDecl) Error!void {
             try w.writeAll(";\n");
         },
         .func => |f| {
+            if (f.throws) |e| try writeThrows(w, e);
             try w.writeAll("export declare function ");
             try w.writeAll(ident(f.name));
             try writeParams(w, f.params);

@@ -9,9 +9,9 @@
 ////               for https URLs, `ssl:start()`).
 ////
 //// `fetch(url) -> @Task<@Result<Response, string>>` is the single GET
-//// surface (decisions 120, 121 of 1.0.10-beta: a Task never fails —
-//// the failure is the `@Result` it carries, so the caller writes
-//// `try await http.fetch(url)` to propagate it). It maps the host binding
+//// surface (decision 432: the task that fails with the message — `await`
+//// answers the `@Result`, so the caller writes `try await http.fetch(url)`
+//// to propagate it). It maps the host binding
 //// `fetchHost` (`result: true`, decisions 431, 490) to the message of its
 //// `HostError` (decision 486): the node template's rejected `fetch` is
 //// `Error(HostError(…))` and a fulfilled one `Ok({ status, body })`; the
@@ -57,9 +57,9 @@ pub type Response(
 #[@External.Erlang("""(fun(__U) -> (catch inets:start()), (catch ssl:start()), case httpc:request(get, {binary_to_list(__U), []}, [], []) of {ok, {{_, __C, _}, _, __B}} -> {ok, #{status => __C, body => iolist_to_binary(__B)}}; {error, __R} -> {error, __R} end end)($0)""", result: true)]
 declare fn fetchHost(url: string) -> @Task<@Result<Response, HostError>>;
 
-// Issue a GET request and resolve with the response, or with the transport
-// failure as `Error(message)` — never a rejection: `fetchHost`'s `HostError`
-// mapped to its message (decision 486).
+// Issue a GET request and resolve with the response, or fail with the
+// transport failure's message (`await` answers `Error(message)`, decision 432):
+// `fetchHost`'s `HostError` mapped to its message (decision 486).
 pub fn fetch(url: string) -> @Task<@Result<Response, string>> {
     val r = await fetchHost(url);
     return case r {

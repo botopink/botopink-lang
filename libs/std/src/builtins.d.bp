@@ -112,13 +112,14 @@ pub type Result<R, E> {
 // `return` in an effect body (decision 119) wraps through every layer:
 // `return v` with `v: U` in `-> @Task<@Result<U, E>>` is a Task holding
 // `Ok(v)`; a value already of a layer's type passes through. `throw e` in a
-// body whose return carries `@Result<U, E>` is that layer's `Error(e)` — it
-// never rejects a Task (decision 120).
+// body whose return carries `@Result<U, E>` is that layer's `Error(e)`.
 
-// `Task<T>` — a value that has not arrived yet; `await` unwraps it. A Task
-// never fails: `await t` on a `@Task<@Result<U, E>>` answers the `@Result`,
-// and `try await t` propagates its error. A function with no await channel
-// consumes a Task through its own functions.
+// `Task<T>` — a value that has not arrived yet; `await` unwraps it. A
+// `@Task<T>` never fails; `@Task<@Result<U, E>>` is the task that fails with
+// `E` (decision 432 — on commonJS its Promise rejects with `E` and resolves
+// with the bare `U`): `await t` answers the `@Result`, and `try await t`
+// propagates its error. A function with no await channel consumes a Task
+// through its own functions.
 pub behavior Task<T> {
     fn map<R>(self: Self<T>, transform: fn(value: T) -> R) -> Task<R>;
     fn then<R>(self: Self<T>, next: fn(value: T) -> Task<R>) -> Task<R>;

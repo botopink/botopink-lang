@@ -446,7 +446,15 @@ const Builder = struct {
             .name = try self.genericName(f.name, f.genericParams),
             .params = try self.params(f.params),
             .ret = try self.fnReturnType(f),
+            .throws = try self.taskError(f.returnType),
         } };
+    }
+
+    /// Decision 432 — `E` of a return written `@Task<@Result<T, E>>`: the
+    /// task rejects with it, and the declaration says so (`@throws`).
+    fn taskError(self: *Builder, rt: ?ast.TypeRef) Error!?js.TsType {
+        const res = taskResultArg(rt orelse return null) orelse return null;
+        return try self.typeRef(res.args[1]);
     }
 
     /// Decision 375 — a synchronous `@Component<R>` function answers `R`.
@@ -481,6 +489,7 @@ const Builder = struct {
                 .name = try self.genericName(m.name, m.genericParams),
                 .params = try self.params(m.params),
                 .ret = try self.returnType(m.returnType),
+                .throws = try self.taskError(m.returnType),
             } });
         }
         return .{ .class = .{ .name = try self.genericName(r.name, r.genericParams), .members = try members.toOwnedSlice(self.b.arena) } };
@@ -553,6 +562,7 @@ const Builder = struct {
                 .name = try self.genericName(m.name, gps.items),
                 .params = try ps.toOwnedSlice(self.b.arena),
                 .ret = try self.returnType(m.returnType),
+                .throws = try self.taskError(m.returnType),
             } });
         }
         const class: js.TsDecl = .{ .class = .{ .name = try self.genericName(e.name, e.genericParams), .members = try members.toOwnedSlice(self.b.arena) } };
@@ -615,6 +625,7 @@ const Builder = struct {
                 .name = try self.genericName(m.name, m.genericParams),
                 .params = try self.params(m.params),
                 .ret = try self.returnType(m.returnType),
+                .throws = try self.taskError(m.returnType),
             } });
         }
         return .{ .interface = .{
@@ -855,6 +866,12 @@ const Builder = struct {
         switch (derefType(ty)) {
             .named => |n| {
                 if (n.args.len == 0) return namedType(n.name);
+                // Decision 432 — a failing task resolves with the bare `T`.
+                if (std.mem.eql(u8, n.name, "Task") and n.args.len == 1) switch (derefType(n.args[0].*)) {
+                    .named => |r| if (std.mem.eql(u8, r.name, "Result") and r.args.len == 2)
+                        return .{ .generic = .{ .name = "Promise", .args = try self.b.types(&.{try self.inferredType(r.args[0].*)}) } },
+                    else => {},
+                };
                 const args = try self.b.arena.alloc(js.TsType, n.args.len);
                 for (n.args, 0..) |a, i| args[i] = try self.inferredType(a.*);
                 return self.applied(n.name, args);
@@ -931,6 +948,9 @@ const Builder = struct {
     /// rest is `applied` over the mapped arguments.
     fn genericTypeRef(self: *Builder, g: anytype) Error!js.TsType {
         if (std.mem.eql(u8, g.name, "Self")) if (self.self_type) |st| return st;
+        // Decision 432 — a failing task resolves with the bare `T`.
+        if (taskResultArg(.{ .generic = g })) |res|
+            return .{ .generic = .{ .name = "Promise", .args = try self.b.types(&.{try self.typeRef(res.args[0])}) } };
         // `@Decl` with no type arguments is the plain name, never `Decl<>`.
         if (g.args.len == 0) return .{ .name = g.name };
         const args = try self.b.arena.alloc(js.TsType, g.args.len);
@@ -988,6 +1008,15 @@ const Builder = struct {
 /// `declare fn` member with an `#[@External.Node(…)]` binding is a real class
 /// member there (`commonJS.hostMethodMember`), so it is declared like any other
 /// method. One without a `node` binding has no member and no declaration.
+/// The `@Result<T, E>` of a type written `@Task<@Result<T, E>>` (decision
+/// 432), or null.
+fn taskResultArg(t: ast.TypeRef) ?@FieldType(ast.TypeRef, "generic") {
+    if (t != .generic or !t.generic.is_builtin or !std.mem.eql(u8, t.generic.name, "Task") or t.generic.args.len != 1) return null;
+    const inner = t.generic.args[0];
+    if (inner != .generic or !inner.generic.is_builtin or !std.mem.eql(u8, inner.generic.name, "Result") or inner.generic.args.len != 2) return null;
+    return inner.generic;
+}
+
 fn declaresHostMember(m: ast.BehaviorMethod) bool {
     return hostMethods.isHostMethod(m) and hostMethods.binds(m, .node);
 }
