@@ -2125,6 +2125,9 @@ of its declared signature (it was a fresh variable to the checker, an unbound va
 abort on beam, unplaced on wasm). `modules/decorator_member_record_update` pins a record update
 in a member `decl.addMember` adds — `Point(..self, y: 0)`, `Point(..v, z: z)` — on every target (it was
 emitted `new T(v, x)` on commonJS before 144 B-14).
+`modules/package_module_namespace` reads a dependency's module through its namespace — a type, a
+constructor, a call, a function value (`unknown type 'shapes.Pt'` before).
+
 `modules/method_behavior_parameter_implementer` passes an implementer to a method's and an
 associated fn's behavior-typed parameter (`expected Styleable, got Prop` before).
 

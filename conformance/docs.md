@@ -147,6 +147,13 @@ fix written (below).
 
 <!-- example: modules/import_module_paths -->
 
+A dependency's module named whole — `import {shapes} from "kit"` for
+`kit`'s `shapes` — is a namespace as a module of the package is: `shapes.Pt`
+written as a type, `shapes.Pt(…)` and `shapes.origin()` called, `shapes.shift`
+a function value (decision 430):
+
+<!-- example: modules/package_module_namespace -->
+
 The shorthand is refused at the item, and the refusal writes the import as it
 is spelled instead: the path of the one module of the package that declares the
 name `pub`, every candidate when several do, `unresolved import` when none does

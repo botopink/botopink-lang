@@ -50,6 +50,8 @@ pub const Result = union(enum) {
     refused: TypeError,
 };
 
+const Foreign = struct { package: []const u8, item: ast.ImportPath };
+
 const Ctx = struct {
     arena: std.mem.Allocator,
     tree: *const mod_tree.Tree,
@@ -69,6 +71,10 @@ const Ctx = struct {
     own: std.StringHashMapUnmanaged(void) = .empty,
     /// Items to add, keyed by the local each binds.
     added: std.StringArrayHashMapUnmanaged(ast.ImportPath) = .empty,
+    /// 144 B-10 — items of a dependency's module (an import item `from
+    /// "<pkg>"` whose whole path names a module of it), keyed the same way;
+    /// each is imported `from` its package.
+    addedForeign: std.StringArrayHashMapUnmanaged(Foreign) = .empty,
     refusal: ?TypeError = null,
     /// The top-level declaration being walked — where a rewrite in a type,
     /// which carries no location of its own, is located.
@@ -80,10 +86,17 @@ const Ctx = struct {
         return error.Refused;
     }
 
+    /// The package `key` belongs to: a dependency's for a module reached
+    /// through `from "<pkg>"`, this module's otherwise.
+    fn packageOf(self: *const Ctx, key: []const u8) []const u8 {
+        if (self.tree.entries.get(key)) |e| return e.package;
+        return self.package;
+    }
+
     /// `key`'s segments in its package, plus `leaf` when given.
     fn segmentsOf(self: *Ctx, key: []const u8, leaf: ?[]const u8) Error![]const []const u8 {
         var out: std.ArrayListUnmanaged([]const u8) = .empty;
-        var it = std.mem.splitScalar(u8, mod_tree.localPath(self.package, key), '/');
+        var it = std.mem.splitScalar(u8, mod_tree.localPath(self.packageOf(key), key), '/');
         while (it.next()) |s| try out.append(self.arena, s);
         if (leaf) |l| try out.append(self.arena, l);
         return out.toOwnedSlice(self.arena);
@@ -92,7 +105,7 @@ const Ctx = struct {
     fn localFor(self: *Ctx, key: []const u8, member: ?[]const u8) Error![]const u8 {
         var out: std.ArrayListUnmanaged(u8) = .empty;
         try out.appendSlice(self.arena, "__bp_ns_");
-        for (mod_tree.localPath(self.package, key)) |c| try out.append(self.arena, if (c == '/') '_' else c);
+        for (mod_tree.localPath(self.package, key)) |c| try out.append(self.arena, if (c == '/' or c == '-' or c == '.') '_' else c);
         if (member) |m| {
             try out.appendSlice(self.arena, "__");
             try out.appendSlice(self.arena, m);
@@ -102,6 +115,14 @@ const Ctx = struct {
 
     fn add(self: *Ctx, local: []const u8, item: ast.ImportPath) Error!void {
         if (!self.added.contains(local)) try self.added.put(self.arena, local, item);
+    }
+
+    /// `add` for an item of the module `key`: an item of a dependency's
+    /// module is imported `from "<pkg>"`, one of this package's as before.
+    fn addOf(self: *Ctx, key: []const u8, local: []const u8, item: ast.ImportPath) Error!void {
+        const pkg = self.packageOf(key);
+        if (std.mem.eql(u8, pkg, self.package)) return self.add(local, item);
+        if (!self.addedForeign.contains(local)) try self.addedForeign.put(self.arena, local, .{ .package = pkg, .item = item });
     }
 
     /// Whether this module is `parent` or inside its subtree.
@@ -147,10 +168,10 @@ const Ctx = struct {
     fn typeLeaf(self: *Ctx, key: []const u8, name: []const u8, loc: ast.Loc) Error![]const u8 {
         if (self.own.contains(name)) {
             const local = try self.localFor(key, name);
-            try self.add(local, .{ .segments = try self.segmentsOf(key, name), .alias = local, .loc = loc });
+            try self.addOf(key, local, .{ .segments = try self.segmentsOf(key, name), .alias = local, .loc = loc });
             return local;
         }
-        try self.add(name, .{ .segments = try self.segmentsOf(key, name), .loc = loc });
+        try self.addOf(key, name, .{ .segments = try self.segmentsOf(key, name), .loc = loc });
         return name;
     }
 
@@ -171,7 +192,7 @@ const Ctx = struct {
         // A `mod` child: the child's namespace.
         if (try self.child(key, a.member, loc)) |sub| {
             const local = try self.localFor(sub, null);
-            try self.add(local, .{ .segments = try self.segmentsOf(sub, null), .alias = local, .loc = loc });
+            try self.addOf(sub, local, .{ .segments = try self.segmentsOf(sub, null), .alias = local, .loc = loc });
             e.* = .{ .identifier = .{ .loc = loc, .kind = .{ .ident = local } } };
             return true;
         }
@@ -185,7 +206,7 @@ const Ctx = struct {
         // called here (a call is a call node with a receiver).
         if (ent.declares(a.member)) {
             const local = try self.localFor(key, a.member);
-            try self.add(local, .{ .segments = try self.segmentsOf(key, a.member), .alias = local, .loc = loc });
+            try self.addOf(key, local, .{ .segments = try self.segmentsOf(key, a.member), .alias = local, .loc = loc });
             e.* = .{ .identifier = .{ .loc = loc, .kind = .{ .ident = local } } };
             return true;
         }
@@ -207,7 +228,7 @@ const Ctx = struct {
         if (try self.tree.reexportOf(self.arena, key, c.callee)) |re| if (!re.isType) {
             const local = try self.localFor(re.owner, null);
             const loc = recv.getLoc();
-            try self.add(local, .{ .segments = try self.segmentsOf(re.owner, null), .alias = local, .loc = loc });
+            try self.addOf(re.owner, local, .{ .segments = try self.segmentsOf(re.owner, null), .alias = local, .loc = loc });
             const r = try self.arena.create(ast.Expr);
             r.* = .{ .identifier = .{ .loc = loc, .kind = .{ .ident = local } } };
             c.receiver = r;
@@ -405,7 +426,17 @@ fn run(ctx: *Ctx, program_in: ast.Program) (Error || Refusal)!Result {
         );
     };
     for (program.decls) |d| switch (d) {
-        .use => |u| {
+        // 144 B-10 — an item `from "<pkg>"` whose whole path names a module
+        // of that dependency binds its namespace as one of this package's
+        // does: `import {shapes} from "kit"`, then `shapes.Pt` as a type and
+        // `shapes.shift` as a value.
+        .use => |u| if (u.source == .module and u.package == null and !u.activationOnly and !std.mem.eql(u8, u.source.module, "std")) {
+            for (u.imports) |imp| {
+                if (imp.activate) continue;
+                const whole = try mod_tree.keyIn(arena, u.source.module, try imp.fullPath(arena));
+                if (ctx.tree.entries.contains(whole)) try ctx.names.put(arena, imp.name(), whole);
+            }
+        } else {
             if (u.source != .root or u.package != null or u.activationOnly) continue;
             for (u.imports) |imp| {
                 if (imp.activate) continue;
@@ -463,16 +494,32 @@ fn run(ctx: *Ctx, program_in: ast.Program) (Error || Refusal)!Result {
     }
     for (ctx.added.values()) |imp| try items.append(arena, imp);
     try items.appendSlice(arena, reexported.items);
-    if (items.items.len == 0) return .{ .ok = program };
-    const decls = try arena.alloc(ast.DeclKind, program.decls.len + 1);
-    decls[0] = .{ .use = .{ .imports = items.items, .source = .root, .ownPackage = ctx.package } };
-    @memcpy(decls[1..], program.decls);
+    // One `use … from "<pkg>"` per dependency whose module was read.
+    var foreign: std.StringArrayHashMapUnmanaged(std.ArrayListUnmanaged(ast.ImportPath)) = .empty;
+    for (ctx.addedForeign.values()) |f| {
+        const gop = try foreign.getOrPut(arena, f.package);
+        if (!gop.found_existing) gop.value_ptr.* = .empty;
+        try gop.value_ptr.append(arena, f.item);
+    }
+    const extra = @as(usize, @intFromBool(items.items.len > 0)) + foreign.count();
+    if (extra == 0) return .{ .ok = program };
+    const decls = try arena.alloc(ast.DeclKind, program.decls.len + extra);
+    var at: usize = 0;
+    if (items.items.len > 0) {
+        decls[at] = .{ .use = .{ .imports = items.items, .source = .root, .ownPackage = ctx.package } };
+        at += 1;
+    }
+    var fit = foreign.iterator();
+    while (fit.next()) |e| : (at += 1) {
+        decls[at] = .{ .use = .{ .imports = e.value_ptr.items, .source = .{ .module = e.key_ptr.* }, .ownPackage = ctx.package } };
+    }
+    @memcpy(decls[extra..], program.decls);
     var out = program;
     out.decls = decls;
     if (program.blankLineBefore.len == program.decls.len) {
         const blanks = try arena.alloc(bool, decls.len);
-        blanks[0] = false;
-        @memcpy(blanks[1..], program.blankLineBefore);
+        @memset(blanks[0..extra], false);
+        @memcpy(blanks[extra..], program.blankLineBefore);
         out.blankLineBefore = blanks;
     }
     return .{ .ok = out };

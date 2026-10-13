@@ -1,0 +1,9 @@
+pub type Pt(x: i32, y: i32)
+
+pub fn origin() -> Pt {
+    return Pt(x: 0, y: 0);
+}
+
+pub fn shift(p: Pt, by: i32) -> Pt {
+    return Pt(x: p.x + by, y: p.y + by);
+}
