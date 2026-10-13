@@ -1,0 +1,13 @@
+//// Decision 379 (1) — one declaration of a type's default in the program,
+//// across its modules: `theme` declares `Theme`'s default, and `dark`, which
+//// imports `Theme` from it, declares a second one — refused at the second,
+//// naming the first.
+
+pub mod theme;
+pub mod dark;
+
+import {theme.Theme};
+
+pub fn main() {
+    @print(Theme(mode: "unreached").mode);
+}

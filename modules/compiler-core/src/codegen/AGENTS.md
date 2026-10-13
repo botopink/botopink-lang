@@ -3405,7 +3405,7 @@ no effect: it lowers as a plain function on every backend (decision 123).
 | `-> @Task<T>` | `async function`; `-> @Task<@Result<T, E>>` is a failing task (decision 432): a function answering `__bp_task((async () => { … })())`, whose body is the `-> @Result` lowering — the Promise rejects with `e` for a `throw` / `Error(e)` and resolves with the bare `T`; an `await` of a task that may fail reads it back through `__bp_await` (`js/AGENTS.md` § Failing tasks) | eager (`@Task<T>` is `T`, `await` is identity) | eager | a task: a resumable state machine over the prelude's scheduler (decision 392, `wat/AGENTS.md` § `@Task` as a state machine) |
 | `-> @Iterator<T>` (yields) | `function*` (`return <iter>` → `yield*`) | eager; a body of only `yield`s → list | eager body | eager body |
 | `-> @Stream<T>` (yields) | `async function*` | eager | eager body | eager body |
-| `-> @Component<T>` | `async function` when its hooks node is asynchronous, a plain `function` when synchronous (decision 375; a method, a lambda and a `default fn` always `async`); `use f()` / a call → `await f()`, no `await` on a synchronous one | plain fun | plain local | plain func |
+| `-> @Component<T>` | `async function` when its hooks node is asynchronous, a plain `function` when synchronous (decision 375; a method — a type's, an enum's, a `default fn` — marked by its own body, a lambda `async` only when its body awaits); `use f()` / a call → `await f()`, no `await` on a synchronous one | plain fun | plain local | plain func |
 
 A sequence whose item is `@Result<U, E>` (decision 122): the transform writes
 `yield v` with `v: U` as `yield __bp_ok(v)` and `throw e` as

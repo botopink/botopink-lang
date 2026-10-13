@@ -1888,14 +1888,20 @@ decision 375 — it writes `await` or `async { … }`, or reaches an asynchronou
 hook, component or host task) is an `async function`, and a `use` or call of
 it is awaited (`await f(x)`); a synchronous one is a plain `function`, and a
 `use` or call of it is not awaited, written or not — `await` stays legal on
-any component, a no-op on a synchronous one. A method, a lambda and a
-`default fn` answering `@Component` are `async function`s (they have no
-node). The prefix is the activation the
+any component, a no-op on a synchronous one. A method answering `@Component`
+— a type's, an enum's, a behavior's `default fn` — is marked by its own body
+as a top-level function is, and a call of a `default fn` follows the adopting
+type's `implement` to the behavior's mark (decision 375, question 04s12-a); a
+lambda is an `async` arrow only when its own body awaits. The prefix is the activation the
 checker validated, not a rename: nothing is turned into `useState`, no
 dependency array is inferred — a function that takes one declares it as a
 parameter (`memo(compute, deps)`). A client runtime supplies hook semantics
 through what `f` does; the pure body above is what every backend runs, and what
 the server renders.
+
+<!-- example: modules/component_method_sync -->
+
+<!-- example: modules/component_default_fn_sync -->
 
 **Contexts** (decisions 354, 378, 379). What a body reads from above it is a
 context, named by its value's type. std's `context.createContext(value)` makes
@@ -1923,6 +1929,18 @@ else (`context-hook-without-use`):
 
 <!-- example: modules/context_default -->
 
+<!-- example: modules/context_nearest_wins -->
+
+<!-- example: modules/context_default_imported -->
+
+<!-- example: modules/context_undeclared_type -->
+
+<!-- example: modules/context_declared_twice -->
+
+<!-- example: modules/context_declared_twice_across_modules -->
+
+<!-- example: modules/context_enum_default -->
+
 **Dependency injection** rides the context tree (decision 416). `val deps = use
 inject(Deps);` builds the record `Deps`, each field the nearest context of its
 field's type provided above, else that type's declared default, else the field's
@@ -1942,33 +1960,55 @@ dependency, so a test's root swaps one.
 
 <!-- example: modules/inject_behavior_keyed -->
 
+<!-- example: modules/inject_test_root_fake -->
+
+<!-- example: modules/inject_field_undeclared -->
+
+<!-- example: modules/inject_behavior -->
+
+<!-- example: modules/inject_not_record_enum -->
+
+<!-- example: modules/inject_default_imported -->
+
+<!-- example: modules/context_behavior_not_implemented -->
+
 <!-- example: modules/context_behavior_implemented_indirectly -->
 
 <!-- example: modules/context_behavior_method_find -->
 
 <!-- example: modules/context_provide_read -->
 
-Every `@Component` function takes a hidden context map (its first parameter,
-after `self` on a method): `provide` makes the map its children receive,
-`context` looks it up, and a call outside every `@Component` body passes the
-empty map (`comptime/context_lower.zig`). A `@Component` lambda written as an
-argument of a host function (a bodyless `declare fn`, an `#[@External…]`
-binding) takes no map: it reads the map of the body it is written in, as a
-closure reads a local, so the host's call — now, later or twice — keeps every
-provider above it; a declared component named as such an argument is wrapped
-the same way (`hostNow(Page)` passes `{ -> Page() }`), and a lambda's own
-parameters stay (decision 374). A lambda handed to a botopink function takes
-the map, passed by the call that runs it. erlang, beam, commonJS and wasm run
-it — on wasm a value crosses the scope as its own word, typed where it is read
-back by the checker's type the lowering carries (decision 504); a value of any
-type crosses it, an `f64` or an `i64` provided or rendered there included —
-and a `?f64` or a `?i64`, with its number or `null`. A
-component reached from a `comptime` evaluation does not take the map yet
-(`language-gaps.md` row 354-comptime).
+A component is a lambda over a render scope (decision 388): `fn C(…) ->
+@Component<R>` answers a function of std's opaque `RenderScope`, and calling
+`C` runs nothing (`itens.map(Card)` answers lambdas, which the render runs with
+the scope of the body that places them). In the body, `use provide(ctx)` makes
+the scope its children receive, `use context(T)` finds `T`'s identity in the
+scope the body received, else `T`'s declared default, and `await c` runs `c`
+with the children's scope. Outside every body — `main`, a test, a plain
+function, a lambda — `await c` runs `c` with `RenderScope.root()`, and
+`c.run(scope)` answers the result and the children's scope, so a render
+library holds the scopes explicitly; `RenderScope(…)` is refused
+(`comptime/context_lower.zig`). A `Context<T>` is its value at run time. A
+lambda written in a body is outside it: it takes the scope of the call that
+runs it. erlang, beam, commonJS and wasm run it — on wasm a value crosses the
+scope as its own word, typed where it is read back by the checker's type the
+lowering carries (decision 504); a value of any type crosses it, an `f64` or
+an `i64` provided or rendered there included — and a `?f64` or a `?i64`, with
+its number or `null`. The comptime runtimes do not run this lowering: a
+`comptime` that reaches a `use` is refused (`language-gaps.md` row
+354-comptime).
 
 <!-- example: modules/context_wide_number_through_scope -->
 
 <!-- example: modules/context_optional_wide_number_through_scope -->
+
+<!-- example: modules/component_is_lambda -->
+
+<!-- example: modules/component_run_root -->
+
+<!-- example: modules/render_scope_library -->
+
+<!-- example: modules/comptime_reaches_use -->
 
 **Only a component whose own body awaits is a state machine** (decision 504),
 on every target: it writes `await` or `uses` an asynchronous hook (375 (1)).
@@ -2223,9 +2263,11 @@ Three ways to consume a `@Result`, and a fourth for when a failure is a bug:
 <!-- example: modules/result_four_ways -->
 
 The value a `@Result` holds is whole whatever its type: an `f64` or an `i64` comes back unchanged
-through `unwrapOr`, a `case` arm's binder, `try`, `try … catch` and `map`:
+through `unwrapOr`, a `case` arm's binder, `try`, `try … catch`, `map` and `flatMap`:
 
 <!-- example: modules/result_wide_payloads -->
+
+<!-- example: modules/result_i64_map_flat_map -->
 
 **`try` and `await` begin an expression.** They stand where an expression
 starts — a statement, a `val` / `var` initializer, the right side of `=`, a
@@ -2439,7 +2481,8 @@ does not import is imported where the value is written.
 An enum value crosses a `comptime` both ways, a leaf under a section included
 (§ Sections of an enum): `comptime name(.Pad.All.4)` passes it in — alone, in
 an array, inside a payload variant — and a `comptime` whose type is the enum
-writes its answer back as the enum's constructor. A section path written in a
+writes its answer back as the enum's constructor, as it writes an enum value in
+a record's field (a generic record's field typed by its parameter included). A section path written in a
 function the `comptime` reaches is resolved where that function is inferred,
 so, as with a template call, the function is declared before the `comptime` —
 otherwise the `comptime` is refused, naming the path. A decorator's argument
@@ -2447,6 +2490,25 @@ otherwise the `comptime` is refused, naming the path. A decorator's argument
 reaches carry the same values.
 
 <!-- example: modules/comptime_section_value -->
+
+<!-- example: modules/comptime_enum_in_record -->
+
+What a `comptime` computes is what the program computes when it runs, one
+answer for every target (decisions 331, 434 (5)): the primitives' methods —
+the integer conversions (`1000.toI64()`), strings, floats, arrays, integer
+division —, a suffixed number literal (`4500000000l` is the `i64` its suffix
+types, lifted back by its digits), a `@Result`'s methods (`unwrapOr`, `isOk`,
+`map`, `flatMap`) and a `@Result` function's own `return` / `throw`, and a
+function named as a value and passed as an argument (`r.flatMap(half)`,
+`xs.map(double)`).
+
+<!-- example: modules/comptime_primitives_at_build -->
+
+<!-- example: modules/comptime_wide_literal -->
+
+<!-- example: modules/comptime_result_methods -->
+
+<!-- example: modules/comptime_function_value_argument -->
 
 A `comptime` whose evaluation raises is refused at the call that raised
 (decision 451 (3)) — the innermost of this module's calls the raise leaves,
@@ -2464,6 +2526,13 @@ lifts a comptime value back into code. `q.value` is the literal's value when
 it has no `${…}` hole (decision 364 (2)); a holed literal is not known at
 build, and a template that reads `q.value` refuses it at the argument
 (`template-value-not-known`) — its parts are read with `q.parts()`.
+
+A `comptime x: @Expr<T>` parameter of a function that is no template is read
+as `x.value` whatever reads it — an operand, or a method's receiver
+(`names.value.split(",")`): each call is specialized with its argument's
+value, and the specialization answers what the function declares.
+
+<!-- example: modules/expr_param_value_receiver -->
 
 <!-- example: modules/yamlconf -->
 
@@ -2504,6 +2573,10 @@ styledProperty "tab-size: 4;"` is emitted as `styledConstant("s_…",
 <!-- example: modules/template_known_at_build -->
 
 <!-- example: modules/hole_known_at_build_raises -->
+
+<!-- example: modules/hole_any_call_at_build -->
+
+<!-- example: modules/hole_any_call_raises -->
 
 A template call expands wherever an expression may stand (decision 425): a
 function's or a type's method body, a destructuring initializer
@@ -2702,6 +2775,14 @@ src/tpl.bp:3:5 while `shout` ran the template's body``).
 <!-- example: modules/decorator_raise_names_body_file -->
 
 <!-- example: modules/template_raise_names_body_file -->
+
+A decorator is reached by its name, an alias or a namespace (decision 386):
+`import {markers} from "web";` registers the module's decorators under
+`markers.<name>`, as std's are, so `#[markers.tag]` runs `tag` as `#[tag]`
+imported by name does, and `markers.serverOnly` is a `Decorator` value
+(`a.decorator.same(markers.serverOnly)`).
+
+<!-- example: modules/decorator_through_namespace -->
 
 A body declared in the annotated module that raises is refused at the call that
 raised (decision 451 (3)) — the innermost of this module's calls the raise
@@ -3000,8 +3081,9 @@ it reaches in another module. A node is `async` when its body writes `await`
 or `async { … }`; when it `use`s an asynchronous hook or calls an asynchronous
 component, written `await` or not; when it calls a host function answering
 `@Task` (or `@Component`, which extends it); or when it calls what the checker
-cannot follow — a function value or a method answering `@Component<R>`, a
-`use` with `hook: null`. A cycle is asynchronous when any node in it is; every
+cannot follow — a function value answering `@Component<R>`, a `use` with
+`hook: null`; a call of a method it resolves (a type's, an enum's, a `default fn`
+through the adopting type's `implement`) follows that method's own mark. A cycle is asynchronous when any node in it is; every
 other node is synchronous (a page may then be rendered without streaming), and
 commonJS emits a synchronous component as a plain `function`. In a decorator body a `Declared`'s `value` is
 `null` (no function of the program runs while it compiles) and its `meta` is
@@ -3028,6 +3110,10 @@ clock read is a `Run` function.
 <!-- example: modules/stage_of_functions -->
 
 <!-- example: modules/stage_build_and_run -->
+
+<!-- example: modules/stage_imported -->
+
+<!-- example: modules/stage_comptime_block_in_run -->
 
 **A decorator that reads `.hooks` runs last** (decision 372, provisional). A
 module's decorators run in two phases: first every decorator that reads no

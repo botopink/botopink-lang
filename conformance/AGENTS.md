@@ -296,6 +296,19 @@ runs; a component run through a function value under a provider that keeps nothi
 one that reads no context registers nothing — and `modules/context_sheet_unbound` (`context-unbound`
 naming the context, `abort` and the three `stderr` lines); erlang, beam and commonJS run them, wasm refuses
 the first `use` (`snapshot/targets/wasm/`).
+Decisions 378 and 379 (a context is named by its value's type and declares its default; 144 B-17) removed
+`context_unbound`, `context_not_declared` and `context_sheet_unbound` (no read is unbound) and added
+`modules/context_default`, `modules/context_default_imported`, `modules/context_undeclared_type` and
+`modules/context_declared_twice`; decision 416 (dependency injection) added `modules/inject_record`,
+`modules/inject_behavior_keyed`, `modules/inject_test_root_fake`, `modules/inject_field_undeclared`,
+`modules/inject_behavior` and `modules/context_behavior_not_implemented`. B-17's Conformance step adds
+`modules/context_declared_twice_across_modules` (the second declaration in another module, refused in it naming
+the first), `modules/context_enum_default` (`comptime createContext(Mode.Light)` — the comptime lift wrote no
+enum value in a record's field, `comptime-value-not-liftable`), `modules/comptime_enum_in_record` (the same lift
+in a record and a generic record), `modules/inject_default_imported` (an `inject` field's default declared in its
+type's own module) and `modules/inject_not_record_enum` (`inject-not-record` for an enum); the first two and the
+last two red on the parent, where std's `context` had no `createContext` or `inject`, `comptime_enum_in_record`
+red on the group's tip.
 Decision 388 (a `@Component` is a lambda over a `RenderScope`, `01-compiler/134` step 6 box 4b) replaced
 374's capture: the cell `context_host_thunk` left with it, and `modules/render_scope_library` holds the scope in
 the library instead — a renderer that runs the root with `RenderScope.root()` and each child with the
