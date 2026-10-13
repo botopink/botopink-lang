@@ -1845,6 +1845,19 @@ pub const Param = struct {
 /// spell it.
 pub const inline_type_name = "type(…)";
 
+/// Decisions 311 (3), 415 (1) — a template method's signature: a template
+/// function (`-> @Expr<…>` / `@ExprCustom<…>`) whose first parameter is
+/// `comptime self: @Expr<R>`, the call site's receiver, and whose second is
+/// `comptime q: @Expr<…>`, the literal. It is called `value.method "…"`.
+pub fn isTemplateMethodSignature(params: []const Param, returnType: ?TypeRef) bool {
+    const rt = returnType orelse return false;
+    if (!rt.isTemplateReturnType() or params.len < 2) return false;
+    const recv = params[0];
+    const q = params[1];
+    return std.mem.eql(u8, recv.name, "self") and recv.modifier == .@"comptime" and recv.typeRef.isExprType() and
+        q.modifier == .@"comptime" and q.typeRef.isExprType();
+}
+
 /// The name `comptime/inline_types.zig` declares an inline parameter type
 /// under: `BpInline__<fn>__<param>` (PascalCase: beam reads a constructor call by its first letter). No source should spell it; a diagnostic
 /// names it by its owner (`ownerOfInlineType`).

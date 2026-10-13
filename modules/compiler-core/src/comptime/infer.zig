@@ -4548,8 +4548,8 @@ const UnexpandedTemplateCall = struct {
         if (self.found != null) return;
         if (V == ast.Expr) if (v == .call and v.call.kind == .call) {
             const c = v.call.kind.call;
-            if (!c.is_builtin and c.receiver == null and c.calleeExpr == null and
-                templateFnNamed(self.env, c.callee) != null and
+            if (!c.is_builtin and c.calleeExpr == null and
+                (if (c.receiver == null) templateFnNamed(self.env, c.callee) != null else templateMethodNamed(self.env, c.callee) != null) and
                 !self.env.templateExpansions.contains(v.call.loc))
             {
                 self.found = .{ .callee = c.callee, .loc = v.call.loc };
@@ -8973,6 +8973,84 @@ fn expandTemplateCall(
     return finishExpansion(env, expansion, retType, loc);
 }
 
+/// The synthesised type of a `"std"` module or namespace receiver
+/// (`bool.negate(x)`), which is no value.
+fn isStdModuleType(t: *T.Type) bool {
+    const d = t.deref();
+    return d.* == .named and std.mem.eql(u8, d.named.name, "#std_module");
+}
+
+/// The template method `name` names (decisions 311 (3), 415 (1)): a template
+/// function of the call site's scope — imported or this module's — whose
+/// first parameter is `comptime self: @Expr<R>`.
+fn templateMethodNamed(env: *Env, name: []const u8) ?ast.FnDecl {
+    const tfn = templateFnNamed(env, name) orelse return null;
+    return if (ast.isTemplateMethodSignature(tfn.params, tfn.returnType)) tfn else null;
+}
+
+/// Decisions 311 (3), 397 (3), 415 (1) — `value.method "…"` calling a template
+/// method: the receiver is the call site's code, captured unevaluated as the
+/// `self` parameter (its text is the expression as written, `self.text()`)
+/// after its type is checked against `R`; every literal is captured as at a
+/// call `f "…"`. The call expands as a template call does.
+fn inferTemplateMethodCall(
+    env: *Env,
+    call: anytype,
+    recv: *ast.TypedExpr,
+    tfn: ast.FnDecl,
+    loc: ast.Loc,
+) InferError!TypedExpr {
+    if (call.args.len + 1 != tfn.params.len) {
+        env.lastError = TypeError.arityMismatch(call.callee, tfn.params.len - 1, call.args.len).withLoc(loc);
+        return error.TypeError;
+    }
+    const raw = env.lookup(call.callee) orelse {
+        env.lastError = try unboundAt(env, call.callee, loc);
+        return error.TypeError;
+    };
+    const instantiated = (try instantiateGenericType(env, raw)).deref();
+    if (instantiated.* != .func or instantiated.func.params.len != tfn.params.len) {
+        env.lastError = TypeError.custom("a template method's type is not a function", "Report it: the template's signature was registered without its parameters.").withLoc(loc);
+        return error.TypeError;
+    }
+    const f = instantiated.func;
+    const recvExpr = call.receiver.?;
+    // The receiver's type fits `R` as an argument does: a behavior accepts an
+    // implementer.
+    const selfType = f.params[0].deref();
+    const want: *T.Type = if (selfType.* == .named and selfType.named.args.len == 1) selfType.named.args[0] else try env.freshVar();
+    try unifyArgument(env, want, recv.getType(), recv.getLoc());
+
+    var captures: std.ArrayListUnmanaged(template.CapturedExpr) = .empty;
+    try captures.append(env.arena, .{
+        .callee = call.callee,
+        .paramIndex = 0,
+        .paramName = tfn.params[0].name,
+        .node = recvExpr,
+        .text = try defaultLexeme(env.arena, recvExpr.*),
+        .multiline = false,
+        .loc = recvExpr.getLoc(),
+        .modulePath = env.modulePath,
+        .scope = env.scopeSnapshot,
+    });
+    for (call.args, 0..) |arg, i| {
+        const pi = i + 1;
+        const typed = try inferExprTyped(env, arg.value.*);
+        const ta: ast.CallArgOf(.typed) = .{ .label = arg.label, .value = try makeTypedPtr(env, typed) };
+        if (!tfn.params[pi].typeRef.isExprType() or tfn.params[pi].modifier != .@"comptime") {
+            env.lastError = TypeError.custom(
+                "a template method takes `comptime` `@Expr` parameters only",
+                "Every parameter of a template method is the call site's code: the receiver (`comptime self: @Expr<R>`) and the literal (`comptime q: @Expr<…>`).",
+            ).withLoc(arg.value.getLoc());
+            return error.TypeError;
+        }
+        try captures.append(env.arena, try captureExprArg(env, call.callee, .{ .paramIndex = pi, .paramName = tfn.params[pi].name }, arg.value, ta, f.params[pi]));
+    }
+    const slice = try captures.toOwnedSlice(env.arena);
+    try env.exprCaptures.put(loc, slice);
+    return expandTemplateCall(env, tfn, slice, &.{}, f.ret, loc);
+}
+
 /// Splice + re-check the chosen expansion in the caller's environment, verify
 /// a concrete `-> @Expr<T>` bound (an unconstrained generic reveals the type
 /// per call site instead), and record the substitution for the transform pass.
@@ -9109,6 +9187,9 @@ fn expandTemplateCallViaRuntime(
         const own = if (i == 0) owner.len == 0 or std.mem.eql(u8, owner, env.modulePath) else if (env.fnDecls.get(f.name)) |g| g.body.ptr == f.body.ptr else false;
         c.* = if (own) try hosts.rewrite(try templateEval.relabelTupleReads(env.arena, &env.tupleLabelReads, f)) else f;
     }
+    // A template method's receiver parameter is no `self` to the backend
+    // that lowers the module (decisions 311 (3), 415 (1)).
+    carried[0] = try templateEval.renameTemplateSelf(env.arena, carried[0]);
     // Decision 353 — the body's `@TypeInfo.all(…)` queries answered for the
     // program this call is compiled in; the module carries the records the
     // answers build.
@@ -19363,6 +19444,13 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                 break :blk try makeTypedPtr(env, try inferExprTyped(env, recvExpr.*));
             } else null;
 
+            // Decisions 311 (3), 415 (1) — `value.method "…"` on a template
+            // method of the call site's scope; a method of the receiver's own
+            // type of that name is the type's.
+            if (typedReceiver) |rp| if (call.receiver != null and !call.is_builtin and call.calleeExpr == null) if (templateMethodNamed(env, call.callee)) |tfn| {
+                const own = if (nominalName(rp.getType())) |tn| env.hasInherentMethod(tn, call.callee) else false;
+                if (!own and !isStdModuleType(rp.getType())) return inferTemplateMethodCall(env, call, rp, tfn, loc);
+            };
             // Decision 371 — `d.same(other)` on a `Decorator`.
             if (typedReceiver) |rp| if (!call.is_builtin and call.calleeExpr == null and std.mem.eql(u8, call.callee, "same") and isDecoratorType(rp.getType())) {
                 return inferDecoratorSame(env, call, rp, loc);

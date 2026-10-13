@@ -452,11 +452,11 @@ pub fn parseFnBody(
     // `parseFnBody` parses a FREE function (a top-level `fn`, `declare fn` or
     // `val name = fn …`); a method's signature goes through `parseSignature`.
     // A free function has no receiver, so a parameter named `self` is refused
-    // at the name — the backends read `self` as a receiver and drop it.
-    if (this.selfParam) |tok| {
-        this.parseError = ParseErrorInfo.fromToken(.selfParamOutsideType, tok);
-        return ParseError.UnexpectedToken;
-    }
+    // at the name — the backends read `self` as a receiver and drop it — once
+    // the return type is read: a template method (decisions 311 (3), 415 (1))
+    // takes the call site's receiver as `comptime self: @Expr<R>`, and never
+    // reaches a backend.
+    const selfTok = this.selfParam;
 
     // The `)` that just closed the parameter list — decision 33 (b)'s
     // diagnostic points at it, because "add `-> void`" means "right here".
@@ -503,6 +503,11 @@ pub fn parseFnBody(
         arrowOmitted = true;
     }
     errdefer if (returnType) |*rt| rt.deinit(alloc);
+
+    if (selfTok) |tok| if (!ast.isTemplateMethodSignature(params, returnType)) {
+        this.parseError = ParseErrorInfo.fromToken(.selfParamOutsideType, tok);
+        return ParseError.UnexpectedToken;
+    };
 
     // Optional generator/iterator label after the return type. Spec §1I
     // (`frente-b-rules-tooling.md`) extends the form from `#[@generator]` to

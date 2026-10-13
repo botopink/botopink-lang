@@ -218,6 +218,10 @@ through `parseSignature`) — refuses it: `self-param-outside-type`
 (`selfParamOutsideType`), at the name. The backends read a parameter called
 `self` as a receiver and dropped it (erlang `twice/1`, commonJS `NaN`), so
 `template_markers.zig` no longer shifts a free function's markers either.
+The one exception, checked once the return type is read, is a template
+method's signature (decisions 311 (3), 415 (1), `ast.isTemplateMethodSignature`):
+`comptime self: @Expr<R>` first, `comptime q: @Expr<…>` second, `-> @Expr<…>`
+— the receiver of `value.method "…"`, which never reaches a backend.
 
 **A keyword where a name is declared** is `reserved-word-as-name`
 (`reservedWordAsName`), with the word in the caret caption: a field

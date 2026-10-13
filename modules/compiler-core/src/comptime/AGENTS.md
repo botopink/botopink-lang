@@ -817,6 +817,23 @@ expansion, at the call (`template-call-unexpanded`). Cells:
 `modules/template_in_lambda`, `modules/template_in_argument`,
 `modules/template_in_field_default`, `modules/template_in_case_arm`.
 
+**A template method (decisions 311 (3), 397 (3), 415 (1)).** A template
+function whose first parameter is `comptime self: @Expr<R>` and second
+`comptime q: @Expr<…>` (`ast.isTemplateMethodSignature`; the parser's
+`self-param-outside-type` refusal lets exactly that signature through) is
+called `value.method "…"`: `inferCallExprWith`, once the receiver is typed,
+sends a method call whose callee is such a template of the call site's scope
+(`templateMethodNamed` — local or imported, never a method of the receiver's
+own type) to `inferTemplateMethodCall`, which checks the receiver against `R`
+(`unifyArgument`, so a behavior accepts an implementer), captures it as the
+`self` capture (`text` the receiver as written, `defaultLexeme`), captures each
+literal with `captureExprArg` and expands the call as `expandTemplateCall`
+does. The comptime module names the receiver parameter `__bp_self`
+(`template_eval.renameTemplateSelf`): the erlang lowering drops a parameter
+named `self`. `refuseUnexpandedTemplateCalls` covers the method form too.
+Cell: `modules/template_method_call` (a local template over a type and over a
+behavior, an imported one over a generic behavior, in a method body).
+
 ## Every `comptime` parameter is an `@Expr<T>` (decision 364)
 
 Every `comptime` parameter other than `@Decl` is written `comptime x:

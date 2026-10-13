@@ -539,6 +539,75 @@ const Relabel = struct {
     }
 };
 
+/// The name a template method's receiver parameter takes in the comptime
+/// module: `self` is a method's receiver to the backends, which drop it from a
+/// function's parameters, so the module names it otherwise.
+pub const template_self_name = "__bp_self";
+
+/// Decisions 311 (3), 415 (1) — `f`, a template method, with its
+/// `comptime self: @Expr<R>` parameter and every bare `self` of its body named
+/// `template_self_name` (the copy is new nodes throughout).
+pub fn renameTemplateSelf(arena: std.mem.Allocator, f: ast.FnDecl) std.mem.Allocator.Error!ast.FnDecl {
+    if (!ast.isTemplateMethodSignature(f.params, f.returnType)) return f;
+    var r: RenameSelf = .{ .arena = arena };
+    var out = f;
+    const params = try arena.dupe(ast.Param, f.params);
+    params[0].name = template_self_name;
+    out.params = params;
+    out.body = try r.clone(@TypeOf(f.body), f.body);
+    return out;
+}
+
+const RenameSelf = struct {
+    arena: std.mem.Allocator,
+
+    fn clone(self: *RenameSelf, comptime U: type, v: U) std.mem.Allocator.Error!U {
+        if (U == ast.TypeRef or U == ast.Pattern) return v;
+        if (U == ast.Expr) if (v == .identifier and v.identifier.kind == .ident and std.mem.eql(u8, v.identifier.kind.ident, "self")) {
+            var out = v.identifier;
+            out.kind = .{ .ident = template_self_name };
+            return .{ .identifier = out };
+        };
+        switch (@typeInfo(U)) {
+            .@"struct" => |s| {
+                var out: U = v;
+                inline for (s.fields) |fld| {
+                    if (fld.is_comptime) continue;
+                    if (comptime mayHoldExprs(fld.type)) @field(out, fld.name) = try self.clone(fld.type, @field(v, fld.name));
+                }
+                return out;
+            },
+            .@"union" => |u| {
+                if (u.tag_type == null) return v;
+                switch (v) {
+                    inline else => |payload, tag| {
+                        const P = @TypeOf(payload);
+                        if (comptime !mayHoldExprs(P)) return v;
+                        return @unionInit(U, @tagName(tag), try self.clone(P, payload));
+                    },
+                }
+            },
+            .optional => |o| return if (v) |inner| try self.clone(o.child, inner) else null,
+            .pointer => |p| switch (p.size) {
+                .one => {
+                    if (comptime !mayHoldExprs(p.child)) return v;
+                    const n = try self.arena.create(p.child);
+                    n.* = try self.clone(p.child, v.*);
+                    return n;
+                },
+                .slice => {
+                    if (comptime !mayHoldExprs(p.child)) return v;
+                    const out = try self.arena.alloc(p.child, v.len);
+                    for (v, 0..) |e, i| out[i] = try self.clone(p.child, e);
+                    return out;
+                },
+                else => return v,
+            },
+            else => return v,
+        }
+    }
+};
+
 fn mayHoldExprs(comptime U: type) bool {
     return switch (@typeInfo(U)) {
         .int, .float, .bool, .@"enum", .void, .comptime_int, .comptime_float, .@"fn", .@"opaque", .null, .undefined => false,
