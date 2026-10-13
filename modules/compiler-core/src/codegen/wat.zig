@@ -14126,8 +14126,11 @@ const Emitter = struct {
                         // actually emits — a `rewrites` entry the comptime pass
                         // left, an interface `default fn`, or a method already
                         // flattened to `Dict_at` by the specialisation pass.
-                        const sym = self.calleeSymbol(cc, c.loc) orelse break :blk null;
-                        break :blk self.fn_ret_typerefs.get(sym);
+                        if (self.calleeSymbol(cc, c.loc)) |sym| if (self.fn_ret_typerefs.get(sym)) |t| break :blk t;
+                        // No method answers it: a function-typed field
+                        // (`op.run(5)`) or a tuple element answers its type's
+                        // return, so `op.run(5).toString()` finds the `i32`.
+                        break :blk self.valueCallTypeRef(cc);
                     }
                     // A function VALUE applied — `adder(3)(4)`, or `f(4)` over
                     // a local bound to one: the call answers the function

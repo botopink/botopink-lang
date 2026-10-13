@@ -1181,9 +1181,12 @@ called after its arguments are evaluated (`p.0("abc")`):
 
 <!-- example: modules/fn_value_in_tuple -->
 
-Each element keeps its own function type, so the one answering a string prints the string:
+Each element keeps its own function type, so the one answering a string prints the string, and a
+function-typed field called on a loop's element answers its declared type (`op.run(5).toString()`):
 
 <!-- example: modules/fn_value_tuple_string_answer -->
+
+<!-- example: modules/fn_field_call_in_for -->
 
 A lambda's and a function expression's last expression written without `;` is
 its value, as a named function's is (§ fn — function, decision 409):

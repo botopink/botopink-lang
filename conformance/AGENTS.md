@@ -1023,7 +1023,8 @@ B-22 adds `modules/fn_value_in_tuple` (a function value read out of a tuple by p
 arguments staged first — beam's frame did not count the stack slot the arguments park in while
 `erlang:element/2` reads the function, `invalid_store` on the base).
 `modules/fn_value_tuple_string_answer` (each element of `#(g, h)` keeps its function type — wasm printed
-the string's address on the base).
+the string's address on the base) and `modules/fn_field_call_in_for` (`op.run(5).toString()` on a
+`for` loop's element — wasm could not resolve `toString/0` on the base).
 
 Decision 298 (`01-compiler/130` step 8) — typed meta keyed by its record type — adds, on the four
 targets, `modules/meta_typed` (`decl.setMeta(Entity(…))` read `@typeInfo(City).meta(Entity)`, two
