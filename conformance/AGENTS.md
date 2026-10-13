@@ -159,6 +159,20 @@ same fields, `record-spread-type` at the `...`), `record_spread_partial` (a `Typ
 type derived here from an aliased record (`Type.pick(P, .nome)`) or an aliased derived type spread into
 `Pessoa` and `Contato` and through their aliases, on the four targets — red on the parent, whose lineage
 held the alias's name.
+Its Conformance step adds `modules/record_spread_across_modules` (types derived in one module from another's
+record, and from an imported derived type, spread in each), `record_spread_nested` (a spread as a field's value,
+as a spread's source, an array element, a lambda's and a function's result; a field path as the source),
+`record_spread_call_source` (a method call, an associated function's call, a chained call, a call answering a
+derived type — each evaluated once), `record_spread_evaluation_order` (a source before the labelled values,
+question B-14-b as built; an overridden labelled value still evaluated), `record_spread_beside_record_update`
+(`..base` and `...src` alike, question B-14-a as built) and the refusals `record_spread_optional`
+(`?Pessoa`), `record_spread_derived_partial` and `record_spread_required` (question B-14-c as built),
+`record_spread_label_twice`, `record_spread_positional_argument` and `record_spread_overridden_label_type`
+(an overridden label's value is typed) — each red on B-14's base, where `...` at an argument's start did not
+parse; `record_spread_nested`, `record_spread_evaluation_order`, `record_spread_optional` and
+`record_spread_overridden_label_type` red on `feat` too, until the fix beside them (an untyped lambda
+parameter as the source, an overridden labelled value dropped unevaluated and untyped, `optional` named for
+`?Pessoa`).
 Decision 305 (an annotation speaks botopink, 144 B-02) adds `modules/annotation_label_equals` (`keyed = true`
 on `@BeamMemory.Ets`, `annotation-label-equals` at the label, naming `keyed:`), `modules/external_fn_unbound`
 (a misspelt `fn: <name>` is the unbound-name error at the argument) and `modules/external_prefixed_fn_refused`

@@ -1,0 +1,11 @@
+//// Decision 359 (3) — beside a spread, a label may override what a spread
+//// supplies, but a field is labelled once: the second label is refused, at
+//// that label.
+
+type Pessoa(nome: string, idade: i32)
+
+pub fn main() {
+    val ana = Pessoa(nome: "Ana", idade: 3);
+    val p = Pessoa(...ana, nome: "Bia", nome: "Caio");
+    @print(p.nome);
+}

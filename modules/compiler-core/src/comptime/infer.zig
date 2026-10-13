@@ -16545,7 +16545,9 @@ fn rewriteRecordUpdate(env: *Env, c: anytype, fields: anytype, loc: ast.Loc) Inf
 /// that is a name or a path of names is read where it stands; any other is
 /// bound once, ahead of the construction, by a `val` in an `if (true) { … }`
 /// block — the expression form every backend lowers — so it is evaluated once
-/// (359 (6)). The rewrite is recorded under the call's loc
+/// (359 (6)). A labelled value a later spread overrides is typed against its
+/// field and, when it is not a name or a plain literal, evaluated once in that
+/// block after the sources, its value dropped. The rewrite is recorded under the call's loc
 /// (`enumSectionRewrites`, spliced by the transform) and typed here.
 fn inferRecordSpread(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferError!TypedExpr {
     const call = c.kind.call;
@@ -16600,7 +16602,10 @@ fn inferRecordSpread(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) Infer
             const srcTy = try inferExpr(env, a.value.*);
             const at = a.spreadLoc orelse a.value.getLoc();
             const srcName = nominalName(srcTy);
-            const own = if (srcName) |n| std.mem.eql(u8, n, recName) else false;
+            // A source inference has not resolved yet (an untyped lambda's
+            // parameter) is the record's own type, as `..base` reads it.
+            const unresolved = srcTy.deref().* == .typeVar and srcTy.deref().typeVar.state == .unbound;
+            const own = unresolved or if (srcName) |n| std.mem.eql(u8, n, recName) else false;
             if (own) {
                 try unifyAt(env, ret, srcTy, a.value.getLoc());
                 for (supplier) |*sp| sp.* = ai;
@@ -16616,7 +16621,10 @@ fn inferRecordSpread(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) Infer
                 if (std.mem.eql(u8, f, recName)) break true;
             } else false else false;
             if (!derived) {
-                const shown = srcName orelse try snapshotMod.typeNameOf(env.arena, srcTy.deref());
+                // A record by its name; any other type — `?Pessoa`, `i32` —
+                // in its source spelling.
+                const isRecord = if (srcName) |n| env.lookupTypeDef(n) != null else false;
+                const shown = if (isRecord) srcName.? else try snapshotMod.typeSignatureOf(env.arena, srcTy.deref());
                 const msg = try std.fmt.allocPrint(env.arena, "{s}: a spread into `{s}` copies a `{s}` or a type derived from it by `Type.pick`, `Type.omit` or `Type.merge` — `{s}` is neither", .{ diagnostics.record_spread_type, recName, recName, shown });
                 env.lastError = TypeError.custom(msg, "Label the fields to copy, or derive the source's type from the record (decision 307).").withLoc(at);
                 return error.TypeError;
@@ -16652,6 +16660,24 @@ fn inferRecordSpread(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) Infer
         labelled[idx] = true;
         supplier[idx] = ai;
     }
+    // A labelled value a later spread overrides supplies no field, yet it is
+    // written: typed against its field here, and evaluated in the
+    // construction below (`overridden`).
+    var overridden: std.ArrayListUnmanaged(*ast.Expr) = .empty;
+    for (call.args, 0..) |a, ai| {
+        const l = a.label orelse continue;
+        if (std.mem.eql(u8, l, ast.record_spread_label)) continue;
+        const idx = for (fields, 0..) |fd, fi| {
+            if (std.mem.eql(u8, fd.name, l)) break fi;
+        } else unreachable;
+        if (supplier[idx] == ai) continue;
+        env.expectedType = params[idx];
+        const argTy = try inferExpr(env, a.value.*);
+        try unifyArgument(env, params[idx], argTy, a.value.getLoc());
+        const pure = isNamePath(a.value.*) or (a.value.* == .literal and a.value.literal.kind != .stringTemplate);
+        if (!pure) try overridden.append(env.arena, a.value);
+    }
+    env.expectedType = null;
     const declared = env.ctorParams.get(recName);
     for (fields, 0..) |fd, fi| {
         if (supplier[fi] != null) continue;
@@ -16682,6 +16708,9 @@ fn inferRecordSpread(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) Infer
             .kind = .{ .localBind = .{ .name = binder, .value = value, .mutable = false } },
         } } });
     }
+    // Each overridden labelled value, evaluated once after the sources, in
+    // the order written; its value is dropped.
+    for (overridden.items) |v| try binds.append(env.arena, .{ .expr = v.* });
     const args = try env.arena.alloc(ast.CallArg, fields.len);
     for (fields, 0..) |fd, fi| {
         const ai = supplier[fi] orelse {

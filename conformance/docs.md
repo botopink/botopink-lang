@@ -20,7 +20,7 @@ A first program:
 | *Syntax changes* | what the 1.0.4-beta surface removed |
 | *Program structure* | modules, a module's default function, imports, std and the libraries |
 | *Bindings* | `val`, `var`, `@BeamMemory`, `fn` |
-| *Types* | primitives, records, enums and their sections, `behavior`, generics, aliases, derived types, unions and `is`, narrowing |
+| *Types* | primitives, records, enums and their sections, `behavior`, generics, aliases, derived types, spread, unions and `is`, narrowing |
 | *Expressions* | literals, numbers, arrays, indexing, operators, optionals, lambdas, `if`, `case`, loops, `assert`, `use` |
 | *Functions* | recursion, inline parameter types, defaults, variadics, effects, results, tasks, iterators and streams |
 | *Comptime* | `comptime`, template functions, decorators, typed meta, template annotations, host bindings |
@@ -958,6 +958,62 @@ expected (a field `Recipe` does not declare is the `Type.Field<T>` error at the
 is a record by its name.
 
 <!-- example: modules/field_key_runtime -->
+
+### Spread
+
+`Name(...src, field: value)` copies a record's fields into its constructor
+(decision 359): `...src` at the start of an argument, any number of them,
+mixed with labels. The arguments apply left to right, the later winning; a
+field no spread and no label supplies takes its default. The spread builds a
+new record — `src` is read, never changed — and `a...b` stays the inclusive
+range.
+
+<!-- example: modules/record_spread -->
+
+The source is any expression whose type is the record itself or a type derived
+from it by `Type.pick`, `Type.omit` or `Type.merge` — a call, a method call, a
+field path, another spread — evaluated once however many fields it supplies.
+The lineage holds across modules and through an import alias: a type derived in
+another module from an imported record, or from an imported derived type, is
+derived from that record.
+
+<!-- example: modules/record_spread_call_source -->
+<!-- example: modules/record_spread_nested -->
+<!-- example: modules/record_spread_across_modules -->
+<!-- example: modules/record_spread_import_alias -->
+
+Every argument is evaluated once. A source that is not a name is evaluated
+before the labelled values, even one written before it (question B-14-b); a
+labelled value a later spread overrides is still evaluated, and typed against
+its field, though the field is the spread's.
+
+<!-- example: modules/record_spread_evaluation_order -->
+<!-- example: modules/record_spread_overridden_label_type -->
+
+Decision 37's update form `Name(..base, field: value)` is accepted beside it and
+builds the same record (question B-14-a).
+
+<!-- example: modules/record_spread_beside_record_update -->
+
+Refused, each at what it is about: a source of another type — a record of the
+same fields, an optional of the record, a type derived from a `Type.partial`
+type, a `Type.required` type (question B-14-c) — `record-spread-type` at the
+`...`, naming both types; a `Type.partial` value, `record-spread-partial` at the
+`...` (a field of it may be null); a field without a default that nothing
+supplies, `record-spread-missing-field` at the call; a label written twice or an
+argument without one, `record-spread-arguments` at it; a spread at any call but
+a record's constructor, `call-spread` at the `...` (decision 267: a function
+call takes no spread).
+
+<!-- example: modules/record_spread_other_type -->
+<!-- example: modules/record_spread_optional -->
+<!-- example: modules/record_spread_derived_partial -->
+<!-- example: modules/record_spread_required -->
+<!-- example: modules/record_spread_partial -->
+<!-- example: modules/record_spread_missing_field -->
+<!-- example: modules/record_spread_label_twice -->
+<!-- example: modules/record_spread_positional_argument -->
+<!-- example: modules/call_spread -->
 
 ### Union types, `unknown`, and `is`
 

@@ -1,0 +1,11 @@
+//// Decision 359 (3) — a labelled value a later spread overrides supplies no
+//// field, but it is an argument like any other: typed against its field,
+//// so a value of another type is refused at the value.
+
+type Pessoa(nome: string, idade: i32)
+
+pub fn main() {
+    val ana = Pessoa(nome: "Ana", idade: 3);
+    val p = Pessoa(nome: 5, ...ana);
+    @print(p.nome);
+}

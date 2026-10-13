@@ -1953,6 +1953,76 @@ test "infer error: record spread ---- at a method call and on an enum variant, `
     , "call-spread", 5, 20);
 }
 
+test "infer error: record spread ---- an optional source is named `?P`, refused at the `...` (decision 359 (2))" {
+    try expectSpreadRefusal(
+        \\type P(a: i32, b: i32)
+        \\fn f(old: ?P) -> P {
+        \\    return P(...old, a: 1);
+        \\}
+    , "record-spread-type", 3, 14);
+    const msg = try typeErrorMessage(std.testing.allocator,
+        \\type P(a: i32, b: i32)
+        \\fn f(old: ?P) -> P {
+        \\    return P(...old, a: 1);
+        \\}
+    );
+    defer std.testing.allocator.free(msg);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "`?P` is neither") != null);
+}
+
+test "infer error: record spread ---- a labelled value a later spread overrides is still typed against its field (decision 359 (3))" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lx = Lexer.init(
+        \\type P(a: string, b: i32)
+        \\fn f(old: P) -> P {
+        \\    return P(a: 5, ...old);
+        \\}
+    );
+    const tokens = try lx.scanAll(alloc);
+    defer lx.deinit(alloc);
+    var p = Parser.init(tokens);
+    var program = try p.parse(alloc);
+    defer program.deinit(alloc);
+    var env = try inferMod.freshEnv(alloc, std.testing.allocator);
+    defer env.deinit();
+    try std.testing.expectError(error.TypeError, inferMod.inferProgram(&env, program));
+    const err = env.lastError orelse return error.TestExpectedEqual;
+    try std.testing.expectEqual(@as(usize, 3), err.loc.?.line);
+    try std.testing.expectEqual(@as(usize, 17), err.loc.?.col);
+}
+
+test "infer: record spread ---- an overridden labelled value is evaluated in the construction, a lambda's untyped parameter is a source (decision 359 (3), (6))" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lx = Lexer.init(
+        \\type P(a: i32, b: i32)
+        \\fn s() -> i32 { return 1; }
+        \\fn ap(p: P, f: fn(P) -> P) -> P { return f(p); }
+        \\fn g(o: P) -> P { return P(a: s(), ...o); }
+        \\fn h(o: P) -> P { return ap(o, { p -> P(...p, a: 2) }); }
+    );
+    const tokens = try lx.scanAll(alloc);
+    defer lx.deinit(alloc);
+    var p = Parser.init(tokens);
+    var program = try p.parse(alloc);
+    defer program.deinit(alloc);
+    var env = try inferMod.freshEnv(alloc, std.testing.allocator);
+    defer env.deinit();
+    _ = try inferMod.inferProgram(&env, program);
+    // `g`'s construction: `if (true) { s(); P(o.a, o.b) }` — `s()` kept.
+    var it = env.enumSectionRewrites.iterator();
+    var found = false;
+    while (it.next()) |e| {
+        if (e.key_ptr.line != 4) continue;
+        const r = e.value_ptr.*.*;
+        if (r == .branch and r.branch.kind == .if_ and r.branch.kind.if_.then_.len == 2) found = true;
+    }
+    try std.testing.expect(found);
+}
+
 // ── decision 346: `Bytes` ─────────────────────────────────────────────────────
 
 test "decision 346: Bytes crosses to and from text through fromUtf8 / toUtf8 alone" {

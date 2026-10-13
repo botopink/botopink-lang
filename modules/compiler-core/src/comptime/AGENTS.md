@@ -1789,9 +1789,16 @@ field the last supplier's value, `src.<field>` read under a loc of its own as ab
 default. A source that is not a name or a path of names is bound once, by a `val
 __bp_spread_<line>_<col>_<exp>` in an `if (true) { …; Name(…) } else { @panic(…) }` block (the
 construction at `ast.spread_synthetic_col` past the call's column), which `transform.zig` splices
-whole in the call's place (`modules/record_spread`, `record_spread_other_type`,
-`record_spread_partial`, `record_spread_missing_field`, `call_spread`, `record_spread_import_alias`). Decision 37's `..base` above
-is untouched.
+whole in the call's place. A labelled value a later spread overrides supplies no field but is still
+typed against it and, unless it is a name path or a plain literal, evaluated in that block after the
+sources, its value dropped (`record_spread_evaluation_order`, `record_spread_overridden_label_type`).
+A source of a type that is no record is named in its source spelling (`?Pessoa`,
+`record_spread_optional`). Cells: `modules/record_spread`, `record_spread_other_type`,
+`record_spread_partial`, `record_spread_missing_field`, `call_spread`, `record_spread_import_alias`,
+and the Conformance step's `record_spread_across_modules`, `record_spread_nested`,
+`record_spread_call_source`, `record_spread_label_twice`, `record_spread_positional_argument`,
+`record_spread_beside_record_update`, `record_spread_derived_partial`, `record_spread_required`.
+Decision 37's `..base` above is untouched.
 
 Only a receiver whose type is a record **this module registered** is refused. Everything else keeps
 assigning, for the reasons 06 C9 left its own fresh var: a receiver still an unresolved type

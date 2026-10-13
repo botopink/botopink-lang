@@ -1,0 +1,3 @@
+//// Decision 359 — the record every spread of this cell builds, exported.
+
+pub type Pessoa(nome: string, email: string, idade: i32 = 30)
