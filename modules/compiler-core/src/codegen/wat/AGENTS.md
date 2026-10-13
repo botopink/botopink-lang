@@ -267,6 +267,14 @@ fixtures moved from a `WASM TEXT` block with that trap to a
 `refused_on_wasm` expectation, which still requires commonJS, erlang and beam to
 compile and fails if wasm ever starts accepting one.
 
+**A bodyless function is a `declare fn`, never an empty body** (`isBodyless`):
+`registerFn` and `emitFn` skip a function with no body of its own — a `declare fn`
+(the parser promotes a bodyless `fn` with a return type to one) or a bodyless member
+answering a value — and emit `fn f() {}`, which does nothing. Reading an empty body
+as bodyless emitted no `pub fn main() {}` for `_start` to call (`compilation failed
+UndefinedCall`) and refused every call of an empty `fn`
+(`conformance/modules/fn_empty_main`, `modules/fn_empty_body_call`).
+
 **A function that reaches such a cell is refused where the call is written,
 called or not** (decision 146 — "an error for whatever has no target"). Every
 bodied function is emitted — `emitDecl` lowers each `fn` and each method, and

@@ -2191,6 +2191,25 @@ test "wat: std-wasm ---- a std: binding, trim and a float's text answer std-wasm
     );
 }
 
+// An empty body is a function that does nothing, not a bodyless `declare fn`:
+// `main` written `{}` is emitted for `_start` to call (it was not — the module
+// failed validation, `UndefinedCall`), and an empty `fn` is called.
+test "wat: fn ---- an empty body is emitted and called, never taken for a declare fn" {
+    try h.assertWasmRunLog(std.testing.allocator,
+        \\fn main() {}
+    , "");
+    try h.assertWasmRunLog(std.testing.allocator,
+        \\fn nothing() {}
+        \\fn main() {
+        \\    nothing();
+        \\    @print("after");
+        \\}
+    ,
+        \\after
+        \\
+    );
+}
+
 // std's `testing.mocks` links no other std module: its test scaffolding is a
 // private cell of its own, never an import of `testing.asserts`, whose
 // host-only `canonical` the import linked into it — its wasm refusal then named

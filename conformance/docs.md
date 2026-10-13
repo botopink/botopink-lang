@@ -615,6 +615,13 @@ the `T` as `return value;` is:
 
 <!-- example: modules/fn_tail_result -->
 
+An empty body is a function that does nothing: `pub fn main() {}` builds and runs, printing
+nothing, and a call of a `fn` written `{}` runs and answers nothing, on every target:
+
+<!-- example: modules/fn_empty_main -->
+
+<!-- example: modules/fn_empty_body_call -->
+
 ## Types
 
 ### Primitives

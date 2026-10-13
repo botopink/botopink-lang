@@ -646,6 +646,14 @@ fn displayTypeName(name: []const u8) []const u8 {
     return name;
 }
 
+/// Whether `f` has no body of its own: a `declare fn` (the parser promotes a
+/// bodyless `fn` with a return type to one), or a bodyless member answering
+/// a value. An empty body written `{}` with no return type is a function that
+/// does nothing (`pub fn main() {}`) — it is emitted, and `_start` calls it.
+fn isBodyless(f: ast.FnDecl) bool {
+    return f.isDeclare or (f.body.len == 0 and f.returnType != null);
+}
+
 /// Whether `anns` carries an `External.Wasm` cell.
 fn hasWasmCell(anns: []const ast.Annotation) bool {
     for (anns) |a| if (ast.isExternalWasm(a)) return true;
@@ -2535,7 +2543,7 @@ const Emitter = struct {
     /// (`specializedCallee`).
     fn registerFn(self: *Emitter, f: ast.FnDecl) !void {
         const ra = self.reg_arena.allocator();
-        if ((f.isHost() or f.isDeclare or f.body.len == 0) and !self.host_bindings.contains(f.name)) {
+        if ((f.isHost() or isBodyless(f)) and !self.host_bindings.contains(f.name)) {
             try self.host_fns.put(f.name, {});
             // Decision 67 — a host-backed `declare fn` that names some
             // other target and no `wasm` one has no symbol here and
@@ -4729,7 +4737,7 @@ const Emitter = struct {
         // body is invalid, so skip it entirely — a call of it is refused
         // (`lowerPlainCall`).
         if (self.host_bindings.get(f.name)) |hb| return self.emitHostBinding(f, hb);
-        if (f.isDeclare or f.body.len == 0) {
+        if (isBodyless(f)) {
             try self.itemCommentF("declare fn {s} — no wasm implementation (host-backed)", .{f.name});
             return;
         }
