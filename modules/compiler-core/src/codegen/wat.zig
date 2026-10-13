@@ -6171,6 +6171,15 @@ const Emitter = struct {
                         try self.emit(.{ .local_set = lb.name });
                         return .none;
                     };
+                    if (lb.typeAnnotation == null and lb.value.* == .collection and lb.value.collection.kind == .case) {
+                        if (try self.probeCaseUnion(lb.value.collection.kind.case)) |ut| {
+                            try self.declareLocal(lb.name, "i32");
+                            try self.local_typerefs.put(lb.name, ut);
+                            try self.lowerAsUnknown(lb.value.*);
+                            try self.emit(.{ .local_set = lb.name });
+                            return .none;
+                        }
+                    }
                     try self.declareLocal(lb.name, self.bindingLocalType(lb.typeAnnotation, lb.value.*));
                     // A function NAMED as the value (`val g = greet`) types the
                     // local by its declaration, as a written `fn(…) -> T` does:
@@ -7799,6 +7808,86 @@ const Emitter = struct {
         };
     }
 
+    /// What the `case` subject staged in `subj_local` is, read off its
+    /// expression: the facts the patterns and the arm binders ask of it.
+    fn noteCaseSubject(self: *Emitter, c: anytype, subj_local: []const u8) anyerror!void {
+        if (self.isU64Expr(c.subjects[0])) try self.u64_subjects.put(self.alloc, subj_local, {}) else _ = self.u64_subjects.remove(subj_local);
+        // Re-decided per `case`: `__case_<depth>` names repeat across functions.
+        if (self.isUnknownExpr(c.subjects[0])) try self.unknown_subjects.put(self.alloc, subj_local, {}) else _ = self.unknown_subjects.remove(subj_local);
+        if (c.subjects.len == 1) {
+            if (self.typeRefOf(c.subjects[0])) |tr| try self.local_typerefs.put(subj_local, tr) else _ = self.local_typerefs.remove(subj_local);
+        }
+        const subj_is_str = self.isStringExpr(c.subjects[0]);
+        if (subj_is_str) try self.str_locals.put(subj_local, {});
+        if (self.resultShapeOf(c.subjects[0])) |shape| try self.result_subjects.put(subj_local, shape);
+        // A record subject: what a catch-all arm's binder reads its fields by
+        // (`_ { o -> o.label }`), a generic record's included.
+        if (c.subjects.len == 1) if (self.recordTypeOfExpr(c.subjects[0])) |rty| try self.local_types.put(subj_local, rty);
+        if (self.enumOfSubject(c.subjects[0])) |en| try self.subject_enums.put(self.alloc, subj_local, en) else _ = self.subject_enums.remove(subj_local);
+        try self.noteSubjectShape(subj_local, c.subjects[0]);
+        _ = self.subject_generic.remove(subj_local);
+        if (c.subjects.len == 1) if (self.typeRefOf(c.subjects[0])) |tr| if (tr == .generic and self.enum_generics.contains(tr.generic.name))
+            try self.subject_generic.put(self.alloc, subj_local, tr);
+    }
+
+    /// The value an arm answers, when it is a plain expression (no block).
+    fn armPlainValue(body: ast.Expr) ?ast.Expr {
+        if (armLambda(body) != null) return null;
+        if (body == .jump) return null;
+        return body;
+    }
+
+    /// Decision 150 (decision 8 §3.2) — `val v = case s { A(r) -> r * 2; B(t)
+    /// -> t; }`: arms whose values are different non-numeric members make the
+    /// case a union, and the binding holds it as an `unknown` . The checker's type is not handed to
+    /// this backend, so the members are read off each arm's value with its
+    /// pattern's names bound; the probe binds into a capture it throws away
+    /// and leaves the emitter as it found it. Null when the arms agree, a
+    /// member cannot be told, an arm is a block, or the subject is an
+    /// `unknown` (its arms are type tests).
+    fn probeCaseUnion(self: *Emitter, c: anytype) anyerror!?ast.TypeRef {
+        if (c.subjects.len != 1 or c.arms.len < 2 or self.machine != null) return null;
+        const subj_local = try std.fmt.allocPrint(self.arena(), "__case_{d}", .{self.case_depth});
+        if (self.isUnknownExpr(c.subjects[0])) return null;
+        const depth = self.case_depth;
+        defer self.case_depth = depth;
+        try self.noteCaseSubject(c, subj_local);
+        if (self.unknown_subjects.contains(subj_local)) return null;
+        const ar = self.reg_arena.allocator();
+        var members: std.ArrayListUnmanaged(ast.TypeRef) = .empty;
+        var numeric_only = true;
+        for (c.arms) |arm| {
+            const tail = armPlainValue(arm.body) orelse return null;
+            const mark = self.scopeMark();
+            const arm_aliases = try self.aliases.clone();
+            var cap: Capture = .{};
+            self.open(&cap);
+            const prev_hint = self.case_enum_hint;
+            const m = blk: {
+                self.bindPattern(arm.pattern, subj_local) catch |err| {
+                    _ = self.seal(&cap, .none);
+                    self.restoreAliases(arm_aliases);
+                    self.scopeRestore(mark);
+                    return err;
+                };
+                break :blk self.litMemberName(tail);
+            };
+            self.case_enum_hint = prev_hint;
+            _ = self.seal(&cap, .none);
+            self.restoreAliases(arm_aliases);
+            self.scopeRestore(mark);
+            const name = m orelse return null;
+            const numeric = std.mem.eql(u8, name, "i32") or std.mem.eql(u8, name, "f64") or std.mem.eql(u8, name, "i64");
+            if (!numeric) numeric_only = false;
+            const seen = for (members.items) |x| {
+                if (std.mem.eql(u8, x.named, name)) break true;
+            } else false;
+            if (!seen) try members.append(ar, .{ .named = name });
+        }
+        if (members.items.len < 2 or numeric_only) return null;
+        return .{ .generic = .{ .name = ast.union_type_name, .args = members.items, .is_builtin = false } };
+    }
+
     fn lowerCase(self: *Emitter, c: anytype) anyerror!void {
         const prev_case_box = self.case_box;
         self.case_box = self.pending_case_box;
@@ -7829,23 +7918,11 @@ const Emitter = struct {
             try self.lowerCoerced(c.subjects[0], subj_ty);
             try self.emit(.{ .local_set = subj_local });
         }
-        if (self.isU64Expr(c.subjects[0])) try self.u64_subjects.put(self.alloc, subj_local, {}) else _ = self.u64_subjects.remove(subj_local);
-        // Re-decided per `case`: `__case_<depth>` names repeat across functions.
-        if (self.isUnknownExpr(c.subjects[0])) try self.unknown_subjects.put(self.alloc, subj_local, {}) else _ = self.unknown_subjects.remove(subj_local);
-        if (c.subjects.len == 1) {
-            if (self.typeRefOf(c.subjects[0])) |tr| try self.local_typerefs.put(subj_local, tr) else _ = self.local_typerefs.remove(subj_local);
-        }
-        const subj_is_str = self.isStringExpr(c.subjects[0]);
-        if (subj_is_str) try self.str_locals.put(subj_local, {});
-        if (self.resultShapeOf(c.subjects[0])) |shape| try self.result_subjects.put(subj_local, shape);
-        // A record subject: what a catch-all arm's binder reads its fields by
-        // (`_ { o -> o.label }`), a generic record's included.
-        if (c.subjects.len == 1) if (self.recordTypeOfExpr(c.subjects[0])) |rty| try self.local_types.put(subj_local, rty);
-        if (self.enumOfSubject(c.subjects[0])) |en| try self.subject_enums.put(self.alloc, subj_local, en) else _ = self.subject_enums.remove(subj_local);
-        try self.noteSubjectShape(subj_local, c.subjects[0]);
-        _ = self.subject_generic.remove(subj_local);
-        if (c.subjects.len == 1) if (self.typeRefOf(c.subjects[0])) |tr| if (tr == .generic and self.enum_generics.contains(tr.generic.name))
-            try self.subject_generic.put(self.alloc, subj_local, tr);
+        try self.noteCaseSubject(c, subj_local);
+        const prev_result = self.cur_result;
+        defer self.cur_result = prev_result;
+        // The arms of a `case` boxed into an `unknown` answer a word.
+        if (self.case_box) self.cur_result = "i32";
         // `case a, n { 0, "x" -> … }`: every subject in its own local,
         // `<subject local>_<i>`, which the `.multi` pattern's i-th pattern is
         // tested against and binds from. Only the first was lowered, and the
@@ -7994,7 +8071,7 @@ const Emitter = struct {
         self.case_box = false;
         defer self.case_box = box;
         const lam = armLambda(body) orelse {
-            if (box) try self.lowerAsUnknown(body) else try self.lowerCoerced(body, self.cur_result);
+            if (box and body != .jump) try self.lowerAsUnknown(body) else try self.lowerCoerced(body, self.cur_result);
             return;
         };
         // P1: the single parameter binds the whole matched value — for a

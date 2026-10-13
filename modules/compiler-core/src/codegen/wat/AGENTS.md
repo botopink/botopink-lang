@@ -1517,6 +1517,19 @@ its element types (`conformance/modules/case_generic_variant_tuple_payload`; it
 was refused as "does not know the element types of this tuple pattern's
 subject").
 
+**A `val` bound to a `case` whose arms disagree holds a union** (decision 150,
+`probeCaseUnion`, then `lowerAsUnknown`): the checker's type is not
+handed to this backend, so the binding of an unannotated `val v = case s { A(r)
+-> r * 2; B(t) -> t; }` first binds each arm's pattern into a capture it throws
+away and reads the member of each arm's value (`litMemberName`). Arms that are
+different non-numeric members make a union: the local is typed so
+(`local_typerefs`), and `lowerCase` boxes every arm's value with `lowerAsUnknown`
+(its result a word whatever the function answers), so `case v { i32 { n -> … }
+string { t -> … } }` tests the box. Before, the arms stored bare words and the
+string arm was read as a number (`number 316`;
+`conformance/modules/case_value_union_binding`). Arms that are blocks, a subject
+that is an `unknown` and a `case` in a state machine are not probed.
+
 The fixtures are `tests/wat.zig`'s `a tuple pattern tests its literals and
 binds its elements`, `` `..` skips the rest and a bool literal in a tuple
 pattern is tested ``, `a type pattern is chosen by the value` and `a list
