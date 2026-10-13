@@ -11,7 +11,12 @@ import {io.clock, math} from "std";
 fn stage(comptime decl: @Decl) {
     var out: string[] = [];
     decl.hooks.forEach({ n ->
-        val s = if (n.stage == Stage.Build) "Build" else if (n.stage == Stage.Run) "Run" else "Any";
+        val s = if (n.stage == Stage.Build)
+            "Build"
+        else if (n.stage == Stage.Run)
+            "Run"
+        else
+            "Any";
         out.push(s);
     });
     decl.setMeta("text", decl.name + ": " + out.join(" "));
