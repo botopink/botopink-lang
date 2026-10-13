@@ -1,7 +1,7 @@
 //// `web/markers` — `tag` records a typed meta value on the declaration it
 //// annotates; `serverOnly` is a marker that reads nothing.
 
-pub type Tag(label: string);
+pub type Tag(label: string)
 
 pub fn tag(comptime decl: @Decl) {
     decl.setMeta(Tag(label: "tagged " + decl.name));

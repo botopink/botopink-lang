@@ -6,7 +6,7 @@
 
 import {markers} from "web";
 
-type Found(names: string);
+type Found(names: string)
 
 fn find(comptime decl: @Decl) {
     var out: string[] = [];
