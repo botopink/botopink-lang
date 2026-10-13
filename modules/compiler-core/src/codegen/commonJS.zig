@@ -3249,6 +3249,11 @@ const Emitter = struct {
                     .{ .function = .{ .params = params, .body = .{ .stmts = body } } },
                 ) });
             }
+            // A `pub` behavior another module imports: `Shape.unit()` there
+            // reads this namespace object through its `require` (144 B-19).
+            if (i.isPub and !isJsGlobalNamespace(jsPrototypeOwner(i.name)) and !isJsGlobalNamespace(i.name)) {
+                if (try self.crossExport(i.name)) |exp| try stmts.append(self.arena(), exp);
+            }
         }
 
         // Instance default fns (`self` receiver) materialize as prototype methods

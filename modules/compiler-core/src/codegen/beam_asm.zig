@@ -750,6 +750,18 @@ fn collectStructExports(
     };
 }
 
+/// An imported behavior's associated `default fn`s (`Emitter.imported_behavior_owners`).
+const ImportedBehavior = struct {
+    owner: []const u8,
+    declared: []const u8,
+    methods: []const crossModule.MethodSig,
+
+    fn declares(self: ImportedBehavior, name: []const u8) bool {
+        for (self.methods) |m| if (std.mem.eql(u8, m.name, name)) return true;
+        return false;
+    }
+};
+
 fn collectImplementExports(
     alloc: std.mem.Allocator,
     exports: *std.ArrayListUnmanaged(ExportEntry),
@@ -2059,6 +2071,14 @@ fn emitBeamAsm(
             .type_ => {},
             .implement => |im| try collectImplementExports(alloc, &exports, &owned_export_names, im),
             .extend => |ex| try collectExtendExports(alloc, &exports, &owned_export_names, ex),
+            // A `pub behavior`'s associated `default fn`s are reached from an
+            // importer as `call_ext owner:'<Behavior>_<fn>'/N`.
+            .behavior => |i| if (i.isPub) for (i.methods) |m| {
+                if (!crossModule.isAssocDefault(m)) continue;
+                const mangled = try std.fmt.allocPrint(alloc, "'{s}_{s}'", .{ i.name, m.name });
+                try owned_export_names.append(alloc, mangled);
+                try exports.append(alloc, .{ .name = mangled, .arity = methodArity(m) });
+            },
             else => {},
         }
     }
@@ -2425,6 +2445,11 @@ const Emitter = struct {
     /// of the 0-arity function it exports. A read is `call_ext owner:name/0`;
     /// the name-keyed index (`crossOwnerOf`) knows no alias.
     imported_val_owners: std.StringHashMapUnmanaged(ImportedFn) = .empty,
+    /// An imported `pub behavior` declaring associated `default fn`s, keyed by
+    /// the name this module binds: the owner's atom, the declared name (the
+    /// mangled `'<Behavior>_<fn>'` prefix) and the fns. `Shape.unit()` is
+    /// `call_ext owner:'Shape_unit'/0`.
+    imported_behavior_owners: std.StringHashMapUnmanaged(ImportedBehavior) = .empty,
     /// Named top-level `val`s of this module — each is a 0-arity function, so a
     /// bare reference is a local call.
     top_vals: std.StringHashMap(void),
@@ -2655,6 +2680,7 @@ const Emitter = struct {
         self.imported_fn_owners.deinit();
         self.lib_handles.deinit();
         self.imported_val_owners.deinit(self.alloc);
+        self.imported_behavior_owners.deinit(self.alloc);
         self.top_vals.deinit();
         self.top_fns.deinit(self.alloc);
         self.entry_stmts.deinit(self.alloc);
@@ -3040,6 +3066,7 @@ const Emitter = struct {
                     },
                     .@"fn" => try self.imported_fn_owners.put(imp.name(), .{ .owner = owner, .exported = name, .arity = info.arity }),
                     .val => try self.imported_val_owners.put(self.alloc, imp.name(), .{ .owner = owner, .exported = name }),
+                    .behavior => try self.imported_behavior_owners.put(self.alloc, imp.name(), .{ .owner = owner, .declared = name, .methods = info.methods }),
                 }
             },
             else => {},
@@ -7155,6 +7182,23 @@ const Emitter = struct {
                         try self.evalTemplate(template, false, exprs[0..cc.args.len], cc.trailing, mode);
                         return;
                     }
+                    // An associated `default fn` of an IMPORTED behavior: the
+                    // owner's exported `'<Behavior>_<fn>'`.
+                    if (self.imported_behavior_owners.get(rn)) |ib| if (ib.declares(cc.callee)) {
+                        try self.materializeCallArgs(cc.args, cc.trailing);
+                        var raw_buf: [256]u8 = undefined;
+                        const raw = std.fmt.bufPrint(&raw_buf, "{s}_{s}", .{ ib.declared, cc.callee }) catch return error.NameTooLong;
+                        var name_buf: [260]u8 = undefined;
+                        const fn_atom = try self.atom_arena.allocator().dupe(u8, try atomName(raw, &name_buf));
+                        try beamEmitter.writeCall(
+                            self.out,
+                            if (mode == .tail) .last else .normal,
+                            cc.args.len + cc.trailing.len,
+                            .{ .ext = .{ .module = ib.owner, .function = fn_atom } },
+                            self.num_y,
+                        );
+                        return;
+                    };
                     if (cc.trailing.len == 0 and self.isInterfaceAssoc(rn, cc.callee)) {
                         var nbuf: [256]u8 = undefined;
                         const mangled = std.fmt.bufPrint(&nbuf, "'{s}_{s}'", .{ rn, cc.callee }) catch return;

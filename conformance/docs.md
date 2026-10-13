@@ -598,6 +598,11 @@ Box.wrap)`, `val w = Box.wrap;`, through an imported type or an enum alike
 
 <!-- example: modules/associated_fn_as_value -->
 
+The record such a value's call answers is read by its field, for a member a
+decorator adds as for one written by hand:
+
+<!-- example: modules/associated_fn_value_answers_record -->
+
 `self` is the receiver of a method, and names nothing else: a parameter called
 `self` is written only in a `type`, `behavior`, `implement` or `extend` body.
 A free function that names one is `self-param-outside-type`, refused at the
@@ -690,6 +695,12 @@ function's does — through the instance and through the type alike
 (decision 430):
 
 <!-- example: modules/method_behavior_parameter_implementer -->
+
+A behavior's associated `default fn` — one taking no `self` — is called
+through the behavior's name, `Shape.unit()`, wherever the behavior is
+imported, under an alias too, as in its own module:
+
+<!-- example: modules/behavior_associated_fn_imported -->
 
 A `behavior` no type in the program implements is a **runtime boundary**: the
 host builds the value. Such a value carries its own members — a `val` member is
@@ -2072,6 +2083,11 @@ name is `unknown-associated-fn` where the call is written.
 <!-- example: modules/associated_fn_unknown -->
 
 <!-- example: modules/decorator_entity_table -->
+
+A decorator's body runs in its own module wherever it annotates: an imported
+decorator may build a record private to that module.
+
+<!-- example: modules/decorator_imported_builds_private_record -->
 
 **An annotation's labelled argument is `label: value`** (decision 305), in every
 annotation — a decorator's (`#[check(…, at: .confirm)]`), `@BeamMemory`'s

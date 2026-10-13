@@ -1909,6 +1909,7 @@ fn emitErlangModule(
         em.local_types.deinit(em.alloc);
         em.default_kinds.deinit(em.alloc);
         em.imported_behaviors.deinit(em.alloc);
+        em.imported_behavior_owners.deinit(em.alloc);
         em.lib_handles.deinit(em.alloc);
         em.imported_vals.deinit(em.alloc);
     }
@@ -2207,6 +2208,20 @@ fn emitErlangModule(
             };
             if (!ext.is_pub or !xc.exportsName(ext.name)) continue;
             for (ext.methods) |m| try exports.append(b.arena, .{ .name = m.name, .arity = m.params.len });
+        }
+        // A `pub behavior` another module imports exports its associated
+        // `default fn`s, the mangled locals `interfaceForms` emits: an
+        // importer's `Shape.unit()` is the remote `owner:shape_unit()`.
+        for (program.decls) |decl| {
+            if (decl != .behavior) continue;
+            const i = decl.behavior;
+            if (!i.isPub or !xc.exportsName(i.name)) continue;
+            for (i.methods) |m| {
+                if (!crossModule.isAssocDefault(m)) continue;
+                var mbuf: [256]u8 = undefined;
+                const mangled = interfaceAssocAtom(&mbuf, i.name, m.name) catch continue;
+                try exports.append(b.arena, .{ .name = try b.arena.dupe(u8, mangled), .arity = m.params.len });
+            }
         }
     }
     // The `-export` form is appended after the declarations are lowered: a
@@ -2870,6 +2885,18 @@ fn isNullableParam(p: ast.Param) bool {
 /// a declaration of the module being emitted — see `instanceDefaultForm`.
 const IfaceDefault = struct { iface: []const u8, method: ast.BehaviorMethod, from_prelude: bool = false };
 
+/// An imported behavior's associated `default fn`s (`Emitter.imported_behavior_owners`).
+const ImportedBehavior = struct {
+    owner: []const u8,
+    declared: []const u8,
+    methods: []const crossModule.MethodSig,
+
+    fn declares(self: ImportedBehavior, name: []const u8) bool {
+        for (self.methods) |m| if (std.mem.eql(u8, m.name, name)) return true;
+        return false;
+    }
+};
+
 /// True when `text` slices into the embedded `primitives.bp` — a declaration
 /// the compiler's std prelude carries into a module's program (its behaviors
 /// are registered from that source), not one the module's own file wrote.
@@ -3472,6 +3499,10 @@ const Emitter = struct {
     /// `behavior` is the only such name: decision 23 gives it no run-time
     /// representation, so it never reaches the cross-module link index.
     imported_behaviors: std.StringHashMapUnmanaged(void) = .empty,
+    /// An imported `pub behavior` declaring associated `default fn`s, by the
+    /// name this module binds: the module that emits them, the behavior's
+    /// declared name (the mangled atom's prefix) and the fns themselves.
+    imported_behavior_owners: std.StringHashMapUnmanaged(ImportedBehavior) = .empty,
     /// The default handle of a non-std library this module imports
     /// (`import {shapes} from "shapes"`), name → the import's `from`. The handle
     /// is a comptime fn with no run-time binding; a member call through it
@@ -4994,6 +5025,16 @@ const Emitter = struct {
                         try self.enum_names.put(name, {});
                         _ = try self.type_owner_path.getOrPutValue(name, info.module);
                     },
+                    // A behavior with associated `default fn`s: a method call
+                    // on a value it types still dispatches through the value,
+                    // and `Shape.unit()` calls into its module
+                    // (`imported_behavior_owners`).
+                    .behavior => {
+                        try self.imported_behaviors.put(self.alloc, imp.name(), {});
+                        if (!std.mem.eql(u8, info.module, self.module_name))
+                            try self.imported_behavior_owners.put(self.alloc, imp.name(), .{ .owner = self.atomOf(info.module), .declared = name, .methods = info.methods });
+                        continue;
+                    },
                     .@"fn", .val => {},
                 }
                 // Names this module calls but never defines: an imported
@@ -5026,6 +5067,7 @@ const Emitter = struct {
                     },
                     // A module-level `pub val`: the owner's 0-arity function.
                     .val => try self.imported_vals.put(self.alloc, imp.name(), .{ .owner = owner, .name = name }),
+                    .behavior => unreachable,
                 }
                 // A method may belong to a type the consumer never names
                 // (`when(...)` answers onze's `OnzeStub`, whose `thenReturn` is
@@ -8717,6 +8759,13 @@ const Emitter = struct {
                 const mname = try interfaceAssocAtom(&mraw, name, cc.callee);
                 return this.fileCall(b, try b.arena.dupe(u8, mname), try this.callArgs(b, null, cc));
             }
+            // An associated `default fn` of an IMPORTED behavior: the mangled
+            // function its own module emits and exports.
+            if (this.imported_behavior_owners.get(name)) |ib| if (ib.declares(cc.callee)) {
+                var mraw: [256]u8 = undefined;
+                const mname = try interfaceAssocAtom(&mraw, ib.declared, cc.callee);
+                return b.remote(ib.owner, try b.arena.dupe(u8, mname), try this.callArgs(b, null, cc));
+            };
             // Any other PascalCase receiver is a module: `List.map(xs, f)` →
             // `list:map(Xs, F)`.
             const mod = try erlangModule(b.arena, name);

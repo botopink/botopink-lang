@@ -2700,6 +2700,13 @@ const Emitter = struct {
                     try self.aliasGlobal(alias, leaf);
                     continue;
                 }
+                // An imported behavior under an alias: `Area.scaled(7)` calls
+                // the associated `default fn` the linked owner defines under
+                // the declared name (`assocSym`).
+                if (try self.importsBehavior(u, imp)) {
+                    try self.import_aliases.put(alias, leaf);
+                    continue;
+                }
                 const sig = self.fn_sigs.get(leaf) orelse continue;
                 try self.import_aliases.put(alias, leaf);
                 try self.fn_sigs.put(alias, sig);
@@ -2718,6 +2725,14 @@ const Emitter = struct {
             },
             else => {},
         };
+    }
+
+    /// Whether an import names a `behavior` with associated `default fn`s
+    /// (the cross-module index's `.behavior` kind).
+    fn importsBehavior(self: *Emitter, u: anytype, imp: anytype) !bool {
+        const c = self.cross orelse return false;
+        const info = c.picked(imp.leaf(), try u.leafSource(imp, self.arena(), false), null) orelse return false;
+        return info.kind == .behavior;
     }
 
     /// The mangled name of the linked function an import names, when its
@@ -2801,6 +2816,14 @@ const Emitter = struct {
             if (m.returnType) |rt| {
                 if (isTaskTypeRef(rt)) try self.task_syms.put(self.alloc, sym, {});
                 try self.fn_ret_typerefs.put(sym, try self.eraseOptTypeParam(owner_tparams, m.genericParams, rt));
+                // An associated fn's parameter types, for its value
+                // (`val m = City.make`, `fnRefTypeRef`): what the local's
+                // function type says the call answers.
+                if (!has_self_param and !needs_self) if (!self.fn_param_typerefs.contains(sym)) {
+                    const ptrefs = try ra.alloc(ast.TypeRef, m.params.len);
+                    for (m.params, 0..) |p, i| ptrefs[i] = p.typeRef;
+                    try self.fn_param_typerefs.put(sym, ptrefs);
+                };
                 if (isStringTypeRef(rt)) try self.str_fns.put(sym, {});
                 if (isBoolTypeRef(rt)) try self.bool_fns.put(sym, {});
                 if (arrayElemOfTypeRef(rt)) |ek| try self.fn_arr_elem.put(sym, ek);
@@ -3100,6 +3123,18 @@ const Emitter = struct {
                             if (cc.receiver != null) if (self.recordMethodSym(cc, c.loc)) |sym| {
                                 const tn = self.fn_return_types.get(sym) orelse break :blk null;
                                 break :blk self.resolveRecordName(tn);
+                            };
+                            // A local holding a function value (`val m =
+                            // City.make; m("y").name`, a parameter typed
+                            // `fn(string) -> City`): the record its function
+                            // type returns. The call's field read took the
+                            // unique-field guess and printed a pointer.
+                            if (cc.receiver == null) if (self.local_typerefs.get(self.resolveName(cc.callee))) |tr| if (tr == .function) {
+                                break :blk switch (tr.function.returnType.*) {
+                                    .named => |n| self.resolveRecordName(n),
+                                    .generic => |g| self.resolveRecordName(g.name),
+                                    else => null,
+                                };
                             };
                             const key = self.assocSym(cc) orelse cc.callee;
                             const tn = self.fn_return_types.get(key) orelse break :blk null;
@@ -12906,6 +12941,12 @@ const Emitter = struct {
         // fn called on the type (`Response.ok(…)`, `Shape.unit()` — which took
         // the variant path and answered `0 ;; unknown variant`).
         if (self.iface_assoc.contains(sym)) return sym;
+        // An imported behavior's alias (`Area.scaled` for `Shape.scaled`).
+        if (self.import_aliases.get(rn)) |declared| {
+            const real = std.fmt.bufPrint(&self.sym_buf, "{s}_{s}", .{ declared, cc.callee }) catch return null;
+            if (self.iface_assoc.contains(real)) return real;
+            _ = std.fmt.bufPrint(&self.sym_buf, "{s}_{s}", .{ rn, cc.callee }) catch return null;
+        }
         if ((self.records.contains(rn) or self.enums.contains(rn)) and self.fn_sigs.contains(sym)) return sym;
         return null;
     }
@@ -13427,15 +13468,29 @@ const Emitter = struct {
     /// `shout` named as a value, a top-level fn of this program: `fn(…) -> R`
     /// from its declaration.
     fn fnRefTypeRef(self: *Emitter, e: ast.Expr) !?ast.TypeRef {
-        const n0 = plainIdentName(e) orelse return null;
-        if (self.locals.contains(n0)) return null;
-        const n = self.import_aliases.get(n0) orelse n0;
+        const n = if (plainIdentName(e)) |n0| blk: {
+            if (self.locals.contains(n0)) return null;
+            break :blk self.import_aliases.get(n0) orelse n0;
+        } else assocValueSym(self, e) orelse return null;
         const ps = self.fn_param_typerefs.get(n) orelse return null;
         const rt = self.fn_ret_typerefs.get(n) orelse return null;
         const ar = self.reg_arena.allocator();
         const ret = try ar.create(ast.TypeRef);
         ret.* = rt;
         return .{ .function = .{ .params = try ar.dupe(ast.TypeRef, ps), .returnType = ret } };
+    }
+
+    /// An associated fn named as a value (`City.make`): the symbol it is
+    /// emitted as (`City_make`), owned by the registration arena; null for
+    /// any other node.
+    fn assocValueSym(self: *Emitter, e: ast.Expr) ?[]const u8 {
+        if (e != .identifier or e.identifier.kind != .identAccess) return null;
+        const ia = e.identifier.kind.identAccess;
+        if (ia.optional or ia.receiver.* != .identifier or ia.receiver.identifier.kind != .ident) return null;
+        const rn = ia.receiver.identifier.kind.ident;
+        if (self.locals.contains(rn) or self.globals.contains(rn)) return null;
+        const sym = std.fmt.allocPrint(self.reg_arena.allocator(), "{s}_{s}", .{ rn, ia.member }) catch return null;
+        return if (self.fn_param_typerefs.contains(sym)) sym else null;
     }
 
     /// The type an argument binds a type parameter to, when its shape says:

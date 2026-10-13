@@ -23,7 +23,12 @@ const ComptimeOutput = comptimeMod.ComptimeOutput;
 /// Which kind of declaration a `pub` symbol comes from. Mirrors the relevant
 /// `ast.Decl` tags; the consumer uses it to pick the right call/construction
 /// lowering (a record name is constructed; a `fn`/`val` is referenced).
-pub const ExportKind = enum { record, @"enum", @"fn", val };
+/// `behavior` is a `pub behavior` declaring a bodied associated `default fn`
+/// (one taking no `self`): `Shape.unit()` in an importer calls into the
+/// behavior's module, so the behavior is reached like a type (144 B-19). A
+/// behavior without one has no run-time representation (decision 23) and is
+/// left out of the index.
+pub const ExportKind = enum { record, @"enum", @"fn", val, behavior };
 
 /// One method a record/enum export declares, with the arity its lowering takes
 /// (the receiver included, as `m.params.len` counts it). The arity is half the
@@ -52,7 +57,8 @@ pub const ExportInfo = struct {
     /// lowered the call to a local `set(C, 5)` that no module defines.
     fn_fields: []const []const u8 = &.{},
     /// The methods a record/enum export declares, name and arity (empty
-    /// otherwise). A consumer calling one on an imported value
+    /// otherwise); for a `behavior` export, its bodied associated `default
+    /// fn`s. A consumer calling one on an imported value
     /// (`stub.thenReturn(v)`) emits no local definition of it: erlang resolves
     /// the owning module from here — and, when two types of the program declare
     /// the same `name/arity`, resolves nothing and dispatches on the value.
@@ -126,6 +132,13 @@ pub const Contested = struct {
         );
     }
 };
+
+/// A behavior's bodied associated `default fn` — no `self` receiver — the one
+/// kind of member a call through the behavior's name reaches (`Shape.unit()`).
+pub fn isAssocDefault(m: ast.BehaviorMethod) bool {
+    if (!m.is_default or m.body == null) return false;
+    return !(m.params.len > 0 and std.mem.eql(u8, m.params[0].name, "self"));
+}
 
 /// Cross-module link info, built once over every module's transformed program.
 /// `exports` maps a `pub` symbol name → its emitting module + shape; `imported`
@@ -1075,6 +1088,22 @@ pub fn buildIn(alloc: std.mem.Allocator, outputs: []ComptimeOutput, packages: Pa
                         (std.mem.eql(u8, rt.named, "f64") or std.mem.eql(u8, rt.named, "f32")) else false,
                 }),
             .val => |v| if (v.isPub) try putExport(alloc, &exports, &owners, v.name, .{ .module = ct.name, .kind = .val, .is_class = false }),
+            .behavior => |i| if (i.isPub) {
+                var n_assoc: usize = 0;
+                for (i.methods) |m| if (isAssocDefault(m)) {
+                    n_assoc += 1;
+                };
+                if (n_assoc > 0) {
+                    const methods = try alloc.alloc(MethodSig, n_assoc);
+                    n_assoc = 0;
+                    for (i.methods) |m| if (isAssocDefault(m)) {
+                        methods[n_assoc] = .{ .name = m.name, .arity = m.params.len };
+                        n_assoc += 1;
+                    };
+                    try method_arrays.append(alloc, methods);
+                    try putExport(alloc, &exports, &owners, i.name, .{ .module = ct.name, .kind = .behavior, .is_class = false, .methods = methods });
+                }
+            },
             // A `pub implement` is emitted as a namespace object; a consumer that
             // stars it (`import { Name* }`) references it as a value (`Name.m(x)`).
             .implement => |im| if (im.isPub) try putExport(alloc, &exports, &owners, im.name, .{ .module = ct.name, .kind = .val, .is_class = false }),
