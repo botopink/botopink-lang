@@ -1741,9 +1741,13 @@ codegen/
   float). Inside a chain proven to be a string,
   an operand that is not itself provably a string (`"value: " + v`, `v: i32`) is
   the segment `('__bp_text'(V))/binary` — `'__bp_text'/1` answers a binary as
-  itself and anything else as its `~p` rendering, emitted once per module when a
-  segment reached it (`needs_text_helper`, `text_helper_form`); a bare `V/binary`
-  raised `badarg`. Binary-literal segments render as plain strings
+  itself and anything else as the text `@print` writes for it at the top level
+  (`unicode:characters_to_binary('__bp_show'(V, true))`, so a template hole of a
+  variant writes `Shape.Circle(radius: 2)`; conformance cell
+  `enum_value_template_hole`), emitted once per module when a segment reached it
+  (`needs_text_helper`, `typed_text_helper_form`, which brings `'__bp_show'/2`
+  and the two it calls; a comptime module keeps `text_helper_form`'s `~p`); a
+  bare `V/binary` raised `badarg`. Binary-literal segments render as plain strings
   (`beam/erl_emitter.zig`), non-simple ones are parenthesised. **beam must render
   the same bytes** (spec 04-beam B3).
 - **`@Result` constructors and patterns** share one tag table (`resultTag`):
@@ -2549,8 +2553,10 @@ codegen/
   string (`isStringExpr`: literal, string local/param, string top-level name,
   `fn … -> string`) — its segments become a list, each rendered by
   `'-bp_stringify-'/1` (a binary is itself, an integer `integer_to_binary`,
-  anything else its `~p` text), flattened by `iolist_to_binary/1`; a non-string
-  operand concatenates as text instead of raising `badarith`. String `+=` too.
+  anything else the text `@print` writes for it — `'-bp_show_top-'` through
+  `unicode:characters_to_binary/1`, so a variant is `Shape.Dot`), flattened by
+  `iolist_to_binary/1`; a non-string operand concatenates as text instead of
+  raising `badarith`. String `+=` too.
 - **Numbers** (`numKind`, `NumKind`, `num_locals`/`count_nums`/`num_names`,
   parity with erlang): an operand is provably numeric when it is a number
   literal, a local/param/module name bound or declared numeric, a primitive

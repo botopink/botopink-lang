@@ -3195,6 +3195,20 @@ const Emitter = struct {
             }
         }
 
+        // A value's text is `@print`'s (docs § What `@print` writes): JavaScript
+        // reads `toString` for a template hole and a `string +`, which wrote
+        // `[object Object]`. A behavior method of that name keeps its own.
+        const has_to_string = for (members.items) |mb| {
+            if (mb.kind == .method and std.mem.eql(u8, mb.name, "toString")) break true;
+        } else false;
+        if (!has_to_string) try members.append(self.arena(), .{
+            .kind = .method,
+            .name = "toString",
+            .body = .{ .stmts = try self.b.stmts(&.{
+                .{ .return_ = try self.b.call(self.helper(.text), &.{.this}) },
+            }), .indent = 1 },
+        });
+
         var out: std.ArrayListUnmanaged(js.Stmt) = .empty;
         try out.append(self.arena(), .{ .class = .{
             .name = e.name,

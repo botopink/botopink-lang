@@ -65,6 +65,12 @@ function __bp_show(v, s, top, a) {
     return "%O";
 }
 
+function __bp_text(v) {
+    const a = [];
+    let i = 0;
+    return __bp_show(v, null, true, a).replace(/%[sO]/g, () => String(a[i++]));
+}
+
 function __bp_print() {
     const a = [];
     const f = Array.from(arguments, (v, i) => __bp_show(v, null, true, a)).join(" ");
@@ -94,6 +100,10 @@ class Shape {
                 return __bp_int((s * s), -2147483648, 2147483647, "* on i32 at main.bp:8:28");
             }
         })();
+    }
+
+    toString() {
+        return __bp_text(this);
     }
 }
 Shape.prototype.__bp = "Shape";

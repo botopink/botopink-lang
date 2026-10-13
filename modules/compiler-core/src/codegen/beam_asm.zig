@@ -8988,6 +8988,10 @@ const Emitter = struct {
 
     fn ensureStringifyHelper(self: *Emitter) anyerror![]const u8 {
         if (self.stringify_helper_name) |n| return n;
+        // Any other value is written as `@print` writes it at the top level
+        // (docs § What `@print` writes): `'-bp_show_top-'`, the print helper's.
+        _ = try self.ensurePrintHelper();
+        const top_l = try self.fnLabelsFor("'-bp_show_top-'", 1);
         const name = try self.alloc.dupe(u8, "'-bp_stringify-'");
         try self.reserveFn(name, 1);
         const labels = try self.fnLabelsFor(name, 1);
@@ -9011,12 +9015,10 @@ const Emitter = struct {
         try beamEmitter.writeTest(self.out, .is_integer, not_int_l, &.{Op.xr(0)});
         try beamEmitter.writeCall(self.out, .last, 1, .{ .ext = .{ .module = "erlang", .function = "integer_to_binary" } }, 0);
         try beamEmitter.writeLabel(self.out, not_int_l);
-        // io_lib:format("~p", [E]) — build the `[E]` cons in x1, format
-        // string in x0, then tail-call `call_ext_last`.
-        try beamEmitter.writeTestHeap(self.out, 2, 1);
-        try beamEmitter.writePutList(self.out, Op.xr(0), Op.nil, Dst.xr(1)); // x1 = [E]
-        try beamEmitter.writeMove(self.out, Term.str("~p"), 0);
-        try beamEmitter.writeCall(self.out, .last, 2, .{ .ext = .{ .module = "io_lib", .function = "format" } }, 0);
+        // unicode:characters_to_binary('-bp_show_top-'(E)) — the chardata
+        // `'__bp_show'/2` answers, as one binary.
+        try beamEmitter.writeCall(self.out, .normal, 1, .{ .local = top_l.entry }, 0);
+        try beamEmitter.writeCall(self.out, .last, 1, .{ .ext = .{ .module = "unicode", .function = "characters_to_binary" } }, 0);
 
         self.out = saved_out;
         try self.deferred_lambdas.append(self.alloc, try buf.toOwnedSlice());
@@ -9488,9 +9490,10 @@ const Emitter = struct {
 
     /// A string `+` chain → one binary: its segments (left to right, empty
     /// literals dropped) become a list, each rendered by `'-bp_stringify-'/1`
-    /// (a binary is itself, an integer `integer_to_binary`, anything else its
-    /// `~p` text — the erlang backend's per-segment `'__bp_text'/1` rule, so a
-    /// non-string operand concatenates as text instead of raising `badarith`),
+    /// (a binary is itself, an integer `integer_to_binary`, anything else the
+    /// text `@print` writes for it — the erlang backend's per-segment
+    /// `'__bp_text'/1` rule, so a non-string operand concatenates as text
+    /// instead of raising `badarith`, and a variant as `Shape.Dot`),
     /// then flattened with `iolist_to_binary/1`.
     fn lowerStringConcat(self: *Emitter, e: ast.Expr) anyerror!void {
         var segs: std.ArrayListUnmanaged(ast.Expr) = .empty;

@@ -1411,6 +1411,23 @@ const text_helper_form: Ast.Form = .{ .function = .{ .name = "__bp_text", .claus
     },
 } } };
 
+/// `'__bp_text'/1` of a typed module: a binary is itself, any other value the
+/// text `@print` writes for it at the top level (docs § What `@print` writes) —
+/// `'__bp_show'(Value, true)` as a binary, so a template hole or a `string +`
+/// of a variant writes `Shape.Circle(radius: 2)`, not the tagged tuple. The
+/// module then carries `'__bp_show'/2` and the two it calls.
+const typed_text_helper_form: Ast.Form = .{ .function = .{ .name = "__bp_text", .clauses = &.{
+    text_helper_form.function.clauses[0],
+    .{
+        .patterns = &.{Ast.Expr.v("Value")},
+        .body = Ast.Body.of(&.{.{ .expr = .{ .call = .{ .module = "unicode", .name = "characters_to_binary", .args = &.{.{ .call = .{
+            .name = "__bp_show",
+            .args = &.{ Ast.Expr.v("Value"), Ast.Expr.a("true") },
+        } }} } } }}),
+        .layout = .inline_,
+    },
+} } };
+
 /// `'__bp_print'/1`: the `@print`/`@println`/`@debug` lowering (cross-backend
 /// semantics decisions 1 and 1a). It takes the argument LIST and prints the
 /// values on one line separated by a space, each as `'__bp_show'/2` renders
@@ -2360,8 +2377,10 @@ fn emitErlangModule(
         if (em.needs_adopt_helper and comptime_module == null) try forms.appendSlice(b.arena, &.{ .blank, adopt_helper_form });
         if (em.needs_index_helper) try forms.appendSlice(b.arena, &.{ .blank, index_helper_form });
         if (em.needs_slice_helper) try forms.appendSlice(b.arena, &.{ .blank, slice_helper_form });
-        if (em.needs_text_helper and comptime_module == null) try forms.appendSlice(b.arena, &.{ .blank, text_helper_form });
-        if (em.needs_print_helper) try forms.appendSlice(b.arena, &.{ .blank, print_helper_form, .blank, show_helper_form, .blank, tagged_helper_form, .blank, render_helper_form });
+        const typed_text = em.needs_text_helper and comptime_module == null;
+        if (typed_text) try forms.appendSlice(b.arena, &.{ .blank, typed_text_helper_form });
+        if (em.needs_print_helper) try forms.appendSlice(b.arena, &.{ .blank, print_helper_form });
+        if (em.needs_print_helper or typed_text) try forms.appendSlice(b.arena, &.{ .blank, show_helper_form, .blank, tagged_helper_form, .blank, render_helper_form });
     }
 
     if (comptime_module) |cm| {
@@ -11189,8 +11208,9 @@ const Emitter = struct {
         if (this.needs_adopt_helper) try forms.appendSlice(b.arena, &.{ .blank, adopt_helper_form });
         if (this.needs_index_helper) try forms.appendSlice(b.arena, &.{ .blank, index_helper_form });
         if (this.needs_slice_helper) try forms.appendSlice(b.arena, &.{ .blank, slice_helper_form });
-        if (this.needs_text_helper) try forms.appendSlice(b.arena, &.{ .blank, text_helper_form });
-        if (this.needs_print_helper) try forms.appendSlice(b.arena, &.{ .blank, print_helper_form, .blank, show_helper_form, .blank, tagged_helper_form, .blank, render_helper_form });
+        if (this.needs_text_helper) try forms.appendSlice(b.arena, &.{ .blank, typed_text_helper_form });
+        if (this.needs_print_helper) try forms.appendSlice(b.arena, &.{ .blank, print_helper_form });
+        if (this.needs_print_helper or this.needs_text_helper) try forms.appendSlice(b.arena, &.{ .blank, show_helper_form, .blank, tagged_helper_form, .blank, render_helper_form });
     }
 
     /// Set the file module's helper state aside for a unit lowered beside it

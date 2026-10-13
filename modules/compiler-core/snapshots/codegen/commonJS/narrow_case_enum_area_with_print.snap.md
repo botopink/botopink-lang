@@ -60,6 +60,12 @@ function __bp_show(v, s, top, a) {
     return "%O";
 }
 
+function __bp_text(v) {
+    const a = [];
+    let i = 0;
+    return __bp_show(v, null, true, a).replace(/%[sO]/g, () => String(a[i++]));
+}
+
 function __bp_print_as(shapes) {
     const a = [];
     const f = Array.from(Array.from(arguments).slice(1), (v, i) => __bp_show(v, shapes[i], true, a)).join(" ");
@@ -73,6 +79,10 @@ class Shape {
 
     static Square(side) {
         return new Shape$Square(side);
+    }
+
+    toString() {
+        return __bp_text(this);
     }
 }
 Shape.prototype.__bp = "Shape";

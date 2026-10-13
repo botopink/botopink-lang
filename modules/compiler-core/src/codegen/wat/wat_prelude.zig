@@ -78,6 +78,7 @@ pub fn items(g: ast.HelperGroup) []const ast.Item {
         .bigint => &.{},
         // Decision 150: a marker, as `bigint` is (`print_shaped_items_unknown`).
         .print_shaped_unknown => &.{},
+        .text_capture => &.{ .{ .global = cap_global }, .{ .func = cap_begin }, .{ .func = cap_end } },
         .print_opt => &.{
             .{ .func = print_null },         .{ .func = print_opt_i32_raw }, .{ .func = print_opt_i32 },
             .{ .func = print_opt_bool_raw }, .{ .func = print_opt_bool },    .{ .func = print_opt_str_raw },
@@ -316,6 +317,58 @@ const write_bytes = ast.Func{
         .{ .indent = 4, .instr = .drop },
     } },
 };
+
+/// `$__write_bytes` of a module with `text_capture`: while `$__cap` holds a
+/// string, the bytes are appended to a copy of it (the heap is a bump, and a
+/// float's text allocates between two writes, so the string cannot grow in
+/// place); otherwise they go to stdout as `write_bytes` sends them.
+const write_bytes_capture = func("__write_bytes", &.{ "p", "n" }, null, i32s(&.{ "c", "l", "q" }), &.{
+    .{ .global_get = "__cap" }, set("c"),
+    get("c"),
+    when(&.{
+        get("c"),  load(0),   set("l"),
+        get("l"),  get("n"),  op("add"),
+        c32(4),    op("add"), call("__alloc"),
+        set("q"),  get("q"),  get("l"),
+        get("n"),  op("add"), store(0),
+        get("q"),  c32(4),    op("add"),
+        get("c"),  c32(4),    op("add"),
+        get("l"),  copy,      get("q"),
+        c32(4),    op("add"), get("l"),
+        op("add"), get("p"),  get("n"),
+        copy,      get("q"),  .{ .global_set = "__cap" },
+        ret,
+    }),
+    c32(0),                     get("p"),
+    store(0),                   c32(4),
+    get("n"),                   store(0),
+    c32(1),                     c32(0),
+    c32(1),                     c32(8),
+    call("fd_write"),           .drop,
+});
+
+/// The string `$__write_bytes` appends to while a capture is open, `0` when
+/// none is.
+const cap_global = ast.Global{ .name = "__cap", .ty = .i32, .mutable = true, .init = "0" };
+
+/// Opens a capture: `$__cap` becomes an empty string; answers the capture it
+/// replaces, which `$__cap_end` restores (a `Display` body's hole nests one).
+const cap_begin = func("__cap_begin", &.{}, .i32, i32s(&.{ "o", "s" }), &.{
+    .{ .global_get = "__cap" }, set("o"),
+    c32(4),                     call("__alloc"),
+    set("s"),                   get("s"),
+    c32(0),                     store(0),
+    get("s"),                   .{ .global_set = "__cap" },
+    get("o"),
+});
+
+/// Closes a capture: answers the string written since `$__cap_begin` and
+/// restores the capture `o` it replaced.
+const cap_end = func("__cap_end", &.{"o"}, .i32, i32s(&.{"s"}), &.{
+    .{ .global_get = "__cap" }, set("s"),
+    get("o"),                   .{ .global_set = "__cap" },
+    get("s"),
+});
 
 const print_nl = ast.Func{
     .name = "__print_nl",
@@ -790,6 +843,15 @@ const print_items = [_]ast.Item{
     .{ .func = print_i32 },
     .{ .func = print_i32_raw },
     .{ .func = memmove },
+};
+/// `print_items` with the capturing `$__write_bytes` — a module that writes a
+/// value's text into a string (`text_capture`).
+pub const print_items_capture = blk: {
+    var out = print_items;
+    for (&out) |*it| if (it.* == .func and std.mem.eql(u8, it.func.name, "__write_bytes")) {
+        it.* = .{ .func = write_bytes_capture };
+    };
+    break :blk out;
 };
 const print_str_items = [_]ast.Item{
     .{ .func = print_str_raw },

@@ -71,6 +71,12 @@ function __bp_show(v, s, top, a) {
     return "%O";
 }
 
+function __bp_text(v) {
+    const a = [];
+    let i = 0;
+    return __bp_show(v, null, true, a).replace(/%[sO]/g, () => String(a[i++]));
+}
+
 function __bp_print() {
     const a = [];
     const f = Array.from(arguments, (v, i) => __bp_show(v, null, true, a)).join(" ");
@@ -84,6 +90,10 @@ function __bp_int(v, lo, hi, what) { if (v >= lo && v <= hi) { return v + 0; } t
 class YieldStep {
     static Yield(value) {
         return new YieldStep$Yield(value);
+    }
+
+    toString() {
+        return __bp_text(this);
     }
 }
 YieldStep.prototype.__bp = "YieldStep";

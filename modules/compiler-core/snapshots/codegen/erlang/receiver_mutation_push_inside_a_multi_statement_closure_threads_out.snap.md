@@ -869,7 +869,7 @@ wireService() ->
 '__bp_int'(_, _, _, What) -> erlang:error({integer_overflow, What}).
 
 '__bp_text'(Value) when erlang:is_binary(Value) -> Value;
-'__bp_text'(Value) -> erlang:iolist_to_binary(io_lib:format(<<"~p">>, [Value])).
+'__bp_text'(Value) -> unicode:characters_to_binary('__bp_show'(Value, true)).
 
 '__bp_print'(Values) ->
     io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).

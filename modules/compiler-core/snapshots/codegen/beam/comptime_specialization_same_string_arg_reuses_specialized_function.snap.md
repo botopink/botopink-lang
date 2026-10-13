@@ -370,10 +370,8 @@ fn main() {
     {test, is_integer, {f, 41}, [{x, 0}]}.
     {call_ext_last, 1, {extfunc, erlang, integer_to_binary, 1}, 0}.
   {label, 41}.
-    {test_heap, 2, 1}.
-    {put_list, {x, 0}, nil, {x, 1}}.
-    {move, {literal, <<"~p">>}, {x, 0}}.
-    {call_ext_last, 2, {extfunc, io_lib, format, 2}, 0}.
+    {call, 1, {f, 15}}.
+    {call_ext_last, 1, {extfunc, unicode, characters_to_binary, 1}, 0}.
 ```
 
 ----- RUN LOG -----

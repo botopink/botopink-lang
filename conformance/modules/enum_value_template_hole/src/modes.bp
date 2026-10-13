@@ -1,0 +1,4 @@
+pub type Mode {
+    Fast,
+    Slow(n: i32),
+}

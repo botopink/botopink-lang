@@ -569,6 +569,12 @@ pub const HelperGroup = enum {
     /// `$__task_gate_new`, `$__task_gate_open`, `$__task_gate_await` and
     /// `$__task_host_cancel` (a wait's timer dropped when its gate opens).
     task_gate,
+    /// A value's text as a string (docs § What `@print` writes): `$__cap_begin`
+    /// points `$__write_bytes` at a fresh string, the value is printed, and
+    /// `$__cap_end` answers what was written — a template hole of an enum.
+    /// A module holding it gets the capturing `$__write_bytes`
+    /// (`print_items_capture`).
+    text_capture,
 
     /// The groups `g`'s functions call into.
     pub fn deps(g: HelperGroup) []const HelperGroup {
@@ -604,6 +610,7 @@ pub const HelperGroup = enum {
             .task_race_of => &.{ .task_race, .arr_new },
             .task_spawn_all => &.{ .task, .arr_new },
             .task_gate => &.{.task_delay},
+            .text_capture => &.{ .print, .alloc },
             else => &.{},
         };
     }
@@ -726,6 +733,8 @@ pub const Helper = enum {
     task_gate_open,
     task_gate_await,
     task_host_cancel,
+    cap_begin,
+    cap_end,
 
     pub fn symbol(h: Helper) []const u8 {
         return switch (h) {
@@ -760,6 +769,7 @@ pub const Helper = enum {
             .task_host_poll => .task_poll,
             .task_host_add, .task_host_settle => .task_host,
             .task_gate_new, .task_gate_open, .task_gate_await, .task_host_cancel => .task_gate,
+            .cap_begin, .cap_end => .text_capture,
             inline else => |t| @field(HelperGroup, @tagName(t)),
         };
     }

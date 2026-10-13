@@ -1567,6 +1567,12 @@ fn emitWat(
                 &prelude.print_shaped_items_unknown);
             continue;
         }
+        // A module that writes a value's text into a string captures its
+        // output (`text_capture`).
+        if (group == .print and em.b.helpers.has(.text_capture)) {
+            try items.appendSlice(ar, &prelude.print_items_capture);
+            continue;
+        }
         if (group == .task_poll and em.b.helpers.has(.task_host) and artifact != .browser) {
             try items.append(ar, .{ .func = prelude.task_host_poll_wasi });
             continue;
@@ -16150,6 +16156,18 @@ const Emitter = struct {
             try self.lowerValue(e);
             return self.emit(try self.stdCall("bigint.toString"));
         }
+        // A value of an enum is written as `@print` writes it (docs § What
+        // `@print` writes): its print, captured into a string. The ordinal's
+        // digits, or a payload variant's address, were written before.
+        if (self.isEnumValueExpr(e)) {
+            const prev = try self.declRes();
+            try self.emit(self.builder().helper(.cap_begin));
+            try self.emit(.{ .local_set = prev });
+            try self.lowerPrintArg(e, false);
+            try self.emit(.{ .local_get = prev });
+            try self.emit(self.builder().helper(.cap_end));
+            return;
+        }
         if (self.optInfoOf(e)) |oi| {
             // none renders as `undefined`, the text the other targets print
             const tmp = try std.fmt.allocPrint(self.arena(), "__opt{d}", .{self.loop_seq});
@@ -16208,6 +16226,18 @@ const Emitter = struct {
         }
         try self.lowerCoerced(e, "i32");
         try self.emit(try self.stdCall("number.i32ToString"));
+    }
+
+    /// Whether `e` is a value of an enum this program declares — a unit
+    /// variant (an all-unit enum's ordinal), a payload variant's cell, a name,
+    /// field or call declared as one, a `?` of an enum with payloads.
+    fn isEnumValueExpr(self: *Emitter, e: ast.Expr) bool {
+        if (self.unitEnumOf(e) != null) return true;
+        if (self.payloadEnumOfName(e) != null or self.optPayloadEnumOf(e) != null) return true;
+        if (self.enumValueOf(e) != null) return true;
+        if (self.namedShapeOf(e)) |ns| if (ns == .variant) return true;
+        const t = self.typeRefOf(e) orelse return false;
+        return t == .named and self.enums.contains(t.named);
     }
 
     /// A `recv.slice(...)` method call. Codegen is untyped, so a `slice` with a

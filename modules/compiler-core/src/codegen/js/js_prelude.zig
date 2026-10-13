@@ -183,16 +183,23 @@ pub const Helper = enum {
     /// a value `f64` (`@print`'s shape `"f"`, a template hole, `toString`, a
     /// `+` with a string) asks for it.
     f64_text,
+    /// `__bp_text(v)`: the text `@print` writes for `v` at the top level, as a
+    /// string — `show`'s format with its `%s` / `%O` verbs filled in. An
+    /// enum's class answers it as its `toString`, so a template hole and a
+    /// `string +` of a variant write `Shape.Circle(radius: 2)`, not
+    /// `[object Object]`.
+    text,
 };
 
 /// Emission order of the helpers a module uses.
-pub const order = [_]Helper{ .assert_fatal, .str_surrogate, .str_count, .string_char_at, .str_length, .str_index_of, .str_last_index_of, .array_at, .range_from, .structural_eq, .f64_text, .show, .print, .print_as, .try_unwrap, .host_fail, .task, .await_task, .host_result, .host_result_task, .host_task, .adopt, .yield_step, .int_check, .wide_norm, .wide_add, .wide_sub, .wide_mul, .wide_div, .wide_mod, .wide_neg, .big_div, .big_mod };
+pub const order = [_]Helper{ .assert_fatal, .str_surrogate, .str_count, .string_char_at, .str_length, .str_index_of, .str_last_index_of, .array_at, .range_from, .structural_eq, .f64_text, .show, .text, .print, .print_as, .try_unwrap, .host_fail, .task, .await_task, .host_result, .host_result_task, .host_task, .adopt, .yield_step, .int_check, .wide_norm, .wide_add, .wide_sub, .wide_mul, .wide_div, .wide_mod, .wide_neg, .big_div, .big_mod };
 
 /// The helpers `h`'s body calls, which a module calling `h` carries too.
 pub fn requires(h: Helper) []const Helper {
     return switch (h) {
         .wide_add, .wide_sub, .wide_mul, .wide_div, .wide_mod, .wide_neg => &.{.wide_norm},
         .show => &.{.f64_text},
+        .text => &.{ .show, .f64_text },
         .host_result => &.{.host_fail},
         .host_result_task => &.{ .host_fail, .task },
         .host_task => &.{.task},
@@ -265,6 +272,7 @@ pub fn name(h: Helper) []const u8 {
         .str_index_of => "__bp_str_index_of",
         .str_last_index_of => "__bp_str_last_index_of",
         .f64_text => "__bp_f64",
+        .text => "__bp_text",
     };
 }
 
@@ -304,6 +312,7 @@ pub fn decl(h: Helper) ast.Stmt {
         .str_index_of => strIndex("__bp_str_index_of", "indexOf"),
         .str_last_index_of => strIndex("__bp_str_last_index_of", "lastIndexOf"),
         .f64_text => f64_text,
+        .text => show_text,
     };
 }
 
@@ -349,6 +358,16 @@ const f64_text: ast.Stmt = hFn("__bp_f64", &.{"v"}, &.{
     hIf("i < 0", &.{hRet("s.indexOf(\".\") < 0 ? s + \".0\" : s")}),
     hConst(.const_, "m", "s.slice(0, i)"),
     hRet("(m.indexOf(\".\") < 0 ? m + \".0\" : m) + \"e\" + s.slice(i + 1).replace(\"+\", \"\")"),
+});
+
+/// `function __bp_text(v) { … }` — see `Helper.text`: `__bp_show`'s top-level
+/// format of `v`, each verb replaced by the value it consumes, in order. The
+/// replacement is computed over the format alone, so a `%s` inside a pushed
+/// string is never read as a verb.
+const show_text: ast.Stmt = hFn("__bp_text", &.{"v"}, &.{
+    hConst(.const_, "a", "[]"),
+    hConst(.let_, "i", "0"),
+    hRet("__bp_show(v, null, true, a).replace(/%[sO]/g, () => String(a[i++]))"),
 });
 
 /// `function __bp_wnorm(v, u, what) { … }` — see `Helper.wide_norm`.

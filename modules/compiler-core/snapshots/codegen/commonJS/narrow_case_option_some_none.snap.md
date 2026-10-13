@@ -60,6 +60,12 @@ function __bp_show(v, s, top, a) {
     return "%O";
 }
 
+function __bp_text(v) {
+    const a = [];
+    let i = 0;
+    return __bp_show(v, null, true, a).replace(/%[sO]/g, () => String(a[i++]));
+}
+
 function __bp_print() {
     const a = [];
     const f = Array.from(arguments, (v, i) => __bp_show(v, null, true, a)).join(" ");
@@ -69,6 +75,10 @@ function __bp_print() {
 class Opt {
     static Some(value) {
         return new Opt$Some(value);
+    }
+
+    toString() {
+        return __bp_text(this);
     }
 }
 Opt.prototype.__bp = "Opt";

@@ -1122,6 +1122,12 @@ array element and as an operand of `+`.
 
 <!-- example: modules/interpolation_single_float_hole -->
 
+A template hole holding a value of an enum writes it as `@print` writes it at
+the top level (§ What `@print` writes) — a variant names its enum, `Shape.Dot`,
+`Shape.Circle(radius: 2)` —, and `string + value` writes the same text.
+
+<!-- example: modules/enum_value_template_hole -->
+
 ### Numeric literals
 
 A number is decimal (`1_000_000`, `1.5`, `2.5e-3`) or hexadecimal, octal and
