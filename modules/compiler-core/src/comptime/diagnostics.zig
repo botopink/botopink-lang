@@ -675,6 +675,13 @@ pub const typeinfo_meta_at_build: []const u8 = "typeinfo-meta-at-build";
 /// that a `.hooks`-reading decorator annotates, before that decorator ran.
 pub const typeinfo_meta_hooks_pending: []const u8 = "typeinfo-meta-hooks-pending";
 
+// ── decision 376 — every function's stage ──────────────────────────────────
+
+/// Decision 376 (2) — a function that reaches a build-only resource and a
+/// run-time one (directly or through its calls): refused at the second,
+/// naming the first. A `comptime` separates them.
+pub const build_and_run: []const u8 = "build-and-run";
+
 // ── Lookup table — every code (skipping aliases & reserved-empties) ─────────
 
 pub const all_codes = [_][]const u8{
@@ -829,6 +836,7 @@ pub const all_codes = [_][]const u8{
     typeinfo_meta_several,
     typeinfo_meta_at_build,
     typeinfo_meta_hooks_pending,
+    build_and_run,
     template_annotation_not_template,
     template_annotation_call_form,
     template_annotation_without_decl,

@@ -265,6 +265,7 @@ fn markStdImports(env: *Env, u: ast.ImportDecl) InferError!bool {
                     return error.TypeError;
                 };
                 try env.bind(imp.name(), ty);
+                try env.stdLeafFns.put(env.arena, imp.name(), .{ .module = mod_name, .name = leaf });
             }
             try checkStdTargetSupport(env, mod_name, leaf, imp.loc);
             continue;
@@ -705,6 +706,8 @@ pub fn inferProgram(env: *Env, program: ast.Program) InferError![]Binding {
     try refuseUnexpandedTemplateCalls(env, program);
     // Decision 375 — the nodes' `async` marks, before a `.hooks` reader reads them.
     try markHookAsync(env);
+    // Decision 376 — every function's stage, before a `.hooks` reader reads it.
+    try markStages(env, program);
     // Decision 372 — the decorators that read `.hooks` run over the bodies.
     try runHooksReaders(env, program);
 
@@ -901,6 +904,8 @@ pub fn inferProgramTyped(env: *Env, program: ast.Program) InferError![]TypedBind
     try refuseUnexpandedTemplateCalls(env, program);
     // Decision 375 — the nodes' `async` marks, before a `.hooks` reader reads them.
     try markHookAsync(env);
+    // Decision 376 — every function's stage, before a `.hooks` reader reads it.
+    try markStages(env, program);
     // Decision 372 — the decorators that read `.hooks` run over the bodies.
     try runHooksReaders(env, program);
 
@@ -4670,7 +4675,7 @@ fn checkTemplateAnnotationHoles(env: *Env, program: ast.Program) InferError!void
 /// (the host targets, `validateExternalAnnotation`), `BeamMemory`
 /// (`validateMemoryAnnotations`) and `Host` (wasm's prelude-backed fns). The
 /// removed effect annotations never reach here — the parser refuses them.
-const builtin_annotation_families = [_][]const u8{ "External", "BeamMemory", "Host" };
+const builtin_annotation_families = [_][]const u8{ "External", "BeamMemory", "Host", "Stage" };
 
 /// Decision 15 gives the annotation grammar to the checker, and front 17 step
 /// 3 recorded the hole: `#[@TotallyMadeUp.Nonsense(whatever: 42)]` parsed,
@@ -4720,6 +4725,15 @@ fn refuseUnknownAnnotationList(env: *Env, anns: []const ast.Annotation) InferErr
         for (builtin_annotation_families) |k| {
             if (std.mem.eql(u8, family, k)) known = true;
         }
+        // Decision 376 (4) — a host function is `Run` unless declared
+        // `#[@Stage.Any]`; no other stage is declared.
+        if (known and std.mem.eql(u8, family, "Stage") and !std.mem.eql(u8, a.name, "Stage.Any")) {
+            const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[@{s}]` — a host function declares only `#[@Stage.Any]`", .{ diagnostics.unknown_annotation, a.name });
+            var e = TypeError.custom(msg, "A host function is `Run` unless it is declared `#[@Stage.Any]` (decision 376 (4)); a function with a body has the stage its body gives.");
+            if (a.loc) |l| e = e.withLoc(l);
+            env.lastError = e;
+            return error.TypeError;
+        }
         if (known or env.decorators.contains(a.name)) continue;
         var near: ?[]const u8 = null;
         for (builtin_annotation_families) |k| {
@@ -4729,7 +4743,7 @@ fn refuseUnknownAnnotationList(env: *Env, anns: []const ast.Annotation) InferErr
             try std.fmt.allocPrint(env.arena, "{s}: `#[@{s}]` names no annotation family — did you mean `@{s}`?", .{ diagnostics.unknown_annotation, a.name, n })
         else
             try std.fmt.allocPrint(env.arena, "{s}: `#[@{s}]` names no annotation family", .{ diagnostics.unknown_annotation, a.name });
-        var e = TypeError.custom(msg, "The builtin annotations are `@External.<Target>`, `@BeamMemory.<Mode>` and `@Host`; an annotation type of your own (`implement @Annotation`) is written without the `@`.");
+        var e = TypeError.custom(msg, "The builtin annotations are `@External.<Target>`, `@BeamMemory.<Mode>`, `@Host` and `@Stage.Any`; an annotation type of your own (`implement @Annotation`) is written without the `@`.");
         if (a.loc) |l| e = e.withLoc(l);
         env.lastError = e;
         return error.TypeError;
@@ -7966,6 +7980,8 @@ fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
     const savedHookBuilder = env.hookBuilder;
     env.hookBuilder = if (recordsHooks) &hookBuilder else null;
     defer env.hookBuilder = savedHookBuilder;
+    // Decision 376 — a read of a `comptime` reflection parameter runs only at build.
+    if (recordsHooks) hookBuilder.build = try hooksMod.buildResource(env.arena, f);
 
     // A `-> @Expr<…>` (or `-> @ExprCustom<…>`) return marks a template
     // function: its body runs at comptime, enabling the `@expr`/`@code`
@@ -13723,6 +13739,7 @@ pub fn inferExprTyped(env: *Env, expr: ast.Expr) InferError!TypedExpr {
             try noteComponentCall(env, c, typedCall);
             try noteHostCall(env, c);
             try noteAsyncCall(env, c, typedCall);
+            try noteStageCall(env, c);
             break :blk inferComponentCall(env, c, try applyReceiverTypeArgs(env, c, try applyExplicitTypeArgs(env, c, typedCall)));
         },
 
@@ -18225,6 +18242,12 @@ fn finishHookNode(env: *Env, f: ast.FnDecl, b: *hooksMod.Builder) InferError!voi
             return hooksMod.before(a.at, z.at);
         }
     }.lt);
+    try env.stageFacts.put(env.arena, f.name, .{
+        .build = b.build,
+        .run = b.run,
+        .calls = b.stageCalls.items,
+        .buildBody = if (isDecoratorParams(f.params)) "decorator" else if (f.returnType) |rt| (if (rt.isTemplateReturnType()) "template" else null) else null,
+    });
     try env.hookNodes.put(env.arena, f.name, .{
         .function = .{
             .module = env.modulePath,
@@ -18254,6 +18277,209 @@ fn hookTargetAsync(env: *Env, ref: hooksMod.DeclRef) InferError!bool {
     if (info.host) return true;
     const n = info.node orelse return true;
     return n.is_async;
+}
+
+// ── decision 376 — every function's stage ───────────────────────────────────
+
+/// A host function's stage: `any` when std (or its library) declares it so
+/// with `#[@Stage.Any]` — a pure primitive —, else `run` (376 (4)).
+fn hostStage(f: ast.FnDecl) hooksMod.Stage {
+    for (f.annotations) |a| if (a.is_builtin and std.mem.eql(u8, a.name, "Stage.Any")) return .any;
+    return .run;
+}
+
+/// The std function a call names — through a namespace (`clock.nowMillis()`
+/// after `import {io.clock} from "std"`) or a leaf import (`nowMillis()`).
+fn stdCallee(env: *Env, c: ast.CallExprOf(.untyped)) ?envMod.StdLeafFn {
+    const call = c.kind.call;
+    if (call.calleeExpr != null) return null;
+    if (call.receiver) |r| {
+        if (r.* != .identifier or r.identifier.kind != .ident) return null;
+        const handle = r.identifier.kind.ident;
+        if (env.localBindDepth(handle) != null) return null;
+        const module = env.stdImports.get(handle) orelse return null;
+        return .{ .module = module, .name = call.callee };
+    }
+    if (env.localBindDepth(call.callee) != null) return null;
+    if (env.ownDecls.contains(call.callee) or env.importOwners.contains(call.callee)) return null;
+    return env.stdLeafFns.get(call.callee);
+}
+
+/// A std function's stage: as its module published it once analysed
+/// (`Reflection.hookFns`), else from its declaration (`stdFnStage`).
+fn stdStage(env: *Env, module: []const u8, name: []const u8) InferError!hooksMod.Stage {
+    if (env.reflection) |r| {
+        const path = try std.fmt.allocPrint(env.arena, "std/{s}", .{module});
+        if (r.hookFns.get(try envMod.declIdentity(env.arena, path, name))) |info| return info.stage;
+    }
+    return stdFnStage(env, module, name, 0);
+}
+
+/// A std function's stage: a host declaration's by `hostStage`, a body's the
+/// stages of the functions of its module it reaches (std's bodies call their
+/// own module's functions by name).
+fn stdFnStage(env: *Env, module: []const u8, name: []const u8, depth: usize) hooksMod.Stage {
+    if (depth > 24) return .any;
+    const fns = env.stdModuleFns.get(module) orelse return .any;
+    const f = for (fns) |g| {
+        if (std.mem.eql(u8, g.name, name)) break g;
+    } else return .any;
+    if (isHookHost(f)) return hostStage(f);
+    var names: std.ArrayListUnmanaged([]const u8) = .empty;
+    ast.collectNames(env.arena, f.body, &names) catch return .any;
+    for (names.items) |n| {
+        if (std.mem.eql(u8, n, name)) continue;
+        for (fns) |g| if (std.mem.eql(u8, g.name, n)) {
+            if (stdFnStage(env, module, n, depth + 1) == .run) return .run;
+            break;
+        };
+    }
+    return .any;
+}
+
+/// The call as a refusal names it: `` `callee(…)` `` / `` `recv.callee(…)` ``.
+fn stageCallText(env: *Env, c: ast.CallExprOf(.untyped)) InferError![]const u8 {
+    const call = c.kind.call;
+    if (call.receiver) |r| if (r.* == .identifier and r.identifier.kind == .ident)
+        return std.fmt.allocPrint(env.arena, "`{s}.{s}(…)`", .{ r.identifier.kind.ident, call.callee });
+    return std.fmt.allocPrint(env.arena, "`{s}(…)`", .{call.callee});
+}
+
+/// Decision 376 — what a call written in the body being recorded says of
+/// its stage: a host function `run` unless declared `#[@Stage.Any]`, a std
+/// function by its declaration, a declaration of the program by its node
+/// (read once every body is inferred, `markStages`); std's `provide` /
+/// `context` are `any` (388: a scope push and a lookup); a method or a
+/// function value is not followed.
+fn noteStageCall(env: *Env, c: ast.CallExprOf(.untyped)) InferError!void {
+    if (c.kind != .call or c.kind.call.is_builtin) return;
+    // A `comptime` is computed at build into a constant: it gives the
+    // function no stage (376 (2)).
+    if (env.comptimeDepth > 0) return;
+    if (stdContextCallee(env, c) != null) return;
+    var run: ?hooksMod.Mark = null;
+    var ref: ?hooksMod.DeclRef = null;
+    if (try hostCallee(env, c)) |h| {
+        if (try declaredStage(env, h) != .run) return;
+        run = .{ .at = c.loc, .what = try std.fmt.allocPrint(env.arena, "{s}, a host function that runs only when the program runs", .{try stageCallText(env, c)}) };
+    } else if (try hookCalleeDecl(env, c)) |d| {
+        ref = d;
+    } else if (stdCallee(env, c)) |sf| {
+        if (try stdStage(env, sf.module, sf.name) != .run) return;
+        run = .{ .at = c.loc, .what = try std.fmt.allocPrint(env.arena, "{s}, a std function that runs only when the program runs", .{try stageCallText(env, c)}) };
+    } else return;
+    const what = try stageCallText(env, c);
+    const b = env.hookBuilder orelse return;
+    if (run) |m| {
+        if (b.run == null or hooksMod.before(m.at, b.run.?.at)) b.run = m;
+        return;
+    }
+    if (ref) |d| try b.stageCalls.append(env.arena, .{ .ref = d, .at = c.loc, .what = what });
+}
+
+/// The stage a host declaration `ref` names declares (own module or
+/// published).
+fn declaredStage(env: *Env, ref: hooksMod.DeclRef) InferError!hooksMod.Stage {
+    if (std.mem.eql(u8, ref.module, env.modulePath)) {
+        const f = env.fnDecls.get(ref.name) orelse return .run;
+        return hostStage(f);
+    }
+    const r = env.reflection orelse return .run;
+    const info = r.hookFns.get(try envMod.declIdentity(env.arena, ref.module, ref.name)) orelse return .run;
+    return info.stage;
+}
+
+const StageAnswer = struct { stage: hooksMod.Stage, why: []const u8 };
+
+/// The stage of the declaration `ref` names: std's `provide` / `context`
+/// `any`; this module's function by its body (`stageOfOwn`); another
+/// module's as it published it.
+fn stageOfRef(env: *Env, ref: hooksMod.DeclRef, visiting: *std.StringHashMapUnmanaged(void)) InferError!StageAnswer {
+    if (std.mem.eql(u8, ref.module, "std/context")) return .{ .stage = .any, .why = "" };
+    if (std.mem.eql(u8, ref.module, env.modulePath)) {
+        const f = env.fnDecls.get(ref.name) orelse return .{ .stage = .any, .why = "" };
+        if (isHookHost(f)) {
+            const st = hostStage(f);
+            return .{ .stage = st, .why = if (st == .run) try std.fmt.allocPrint(env.arena, "it is the host function `{s}`", .{f.name}) else "" };
+        }
+        return stageOfOwn(env, ref.name, visiting);
+    }
+    const r = env.reflection orelse return .{ .stage = .any, .why = "" };
+    const info = r.hookFns.get(try envMod.declIdentity(env.arena, ref.module, ref.name)) orelse return .{ .stage = .any, .why = "" };
+    return .{ .stage = info.stage, .why = info.why };
+}
+
+/// A resource as a function's stage is named by: what it is and where, the
+/// module included (`main:9:12`).
+fn markText(env: *Env, m: hooksMod.Mark) InferError![]const u8 {
+    return std.fmt.allocPrint(env.arena, "{s} at {s}", .{ m.what, try hooksMod.atText(env.arena, env.modulePath, m.at) });
+}
+
+/// Decision 376 (2) — the stage of this module's function `name`: its own
+/// resources joined with its calls' stages (`any + x = x`); `build` and `run`
+/// together are `build-and-run` at the second, naming the first. A cycle
+/// adds nothing to itself.
+fn stageOfOwn(env: *Env, name: []const u8, visiting: *std.StringHashMapUnmanaged(void)) InferError!StageAnswer {
+    const node = env.hookNodes.getPtr(name) orelse return .{ .stage = .any, .why = "" };
+    const facts = env.stageFacts.get(name) orelse return .{ .stage = node.stage, .why = node.why };
+    if (env.stagesDone.contains(name)) return .{ .stage = node.stage, .why = node.why };
+    if (visiting.contains(name)) return .{ .stage = .any, .why = "" };
+    try visiting.put(env.arena, name, {});
+    defer _ = visiting.remove(name);
+    var build = facts.build;
+    var run = facts.run;
+    for (facts.calls) |sc| {
+        const st = try stageOfRef(env, sc.ref, visiting);
+        switch (st.stage) {
+            .any => {},
+            .build => if (build == null or hooksMod.before(sc.at, build.?.at)) {
+                build = .{ .at = sc.at, .what = try std.fmt.allocPrint(env.arena, "{s}, which runs only at build ({s})", .{ sc.what, st.why }), .root = st.why };
+            },
+            .run => if (run == null or hooksMod.before(sc.at, run.?.at)) {
+                run = .{ .at = sc.at, .what = try std.fmt.allocPrint(env.arena, "{s}, which runs only when the program runs ({s})", .{ sc.what, st.why }), .root = st.why };
+            },
+        }
+    }
+    // A decorator's or a template's body runs at build whatever it calls:
+    // `Build`, and no `build-and-run` (what it may reach is 376 (5)'s,
+    // question `b17-a`).
+    if (facts.buildBody != null) {
+        node.stage = .build;
+        node.why = try std.fmt.allocPrint(env.arena, "the {s} `{s}` runs at build", .{ facts.buildBody.?, name });
+        try env.stagesDone.put(env.arena, name, {});
+        return .{ .stage = node.stage, .why = node.why };
+    }
+    if (build) |bm| if (run) |rm| {
+        const first, const second = if (hooksMod.before(bm.at, rm.at)) .{ bm, rm } else .{ rm, bm };
+        return failAt(
+            env,
+            second.at,
+            try std.fmt.allocPrint(env.arena, "{s}: `{s}` would run at build and when the program runs — {s} here, and {s} at {d}:{d}", .{ diagnostics.build_and_run, name, second.what, first.what, first.at.line, first.at.col }),
+            "A function has one stage (decision 376 (2)): compute the build half under `comptime` (`val names = comptime fields(Post);`) or move it to a function of its own.",
+        );
+    };
+    if (run) |m| {
+        node.stage = .run;
+        node.why = m.root orelse try markText(env, m);
+    } else if (build) |m| {
+        node.stage = .build;
+        node.why = m.root orelse try markText(env, m);
+    } else {
+        node.stage = .any;
+        node.why = "";
+    }
+    try env.stagesDone.put(env.arena, name, {});
+    return .{ .stage = node.stage, .why = node.why };
+}
+
+/// Decision 376 — every top-level function's stage, in declaration order
+/// (a refusal names the first function that mixes the two).
+fn markStages(env: *Env, program: ast.Program) InferError!void {
+    var visiting: std.StringHashMapUnmanaged(void) = .empty;
+    for (program.decls) |d| {
+        if (d != .@"fn") continue;
+        _ = try stageOfOwn(env, d.@"fn".name, &visiting);
+    }
 }
 
 /// Decision 375 — mark this module's nodes once its bodies are inferred: a
@@ -18324,6 +18550,8 @@ fn publishHookFns(env: *Env, program: ast.Program) InferError!void {
             .host = host,
             .annotations = try hookAnnotations(env, f.annotations),
             .node = if (host) null else env.hookNodes.get(f.name),
+            .stage = if (host) hostStage(f) else if (env.hookNodes.get(f.name)) |n| n.stage else .any,
+            .why = if (host) (if (hostStage(f) == .run) try std.fmt.allocPrint(r.arena, "it is the host function `{s}`", .{f.name}) else "") else if (env.hookNodes.get(f.name)) |n| n.why else "",
         });
     }
 }
@@ -21417,7 +21645,15 @@ fn foldBodyComptime(env: *Env, ct: ast.ComptimeExprOf(.untyped), typed: TypedExp
     }
     const ctx = env.templateEval orelse return;
     const prepared = try blockEval.prepare(env, ct);
-    const support = try blockEval.collectSupport(env, prepared);
+    var support = try blockEval.collectSupport(env, prepared);
+    // Decision 364 — a reached function's `comptime x: @Expr<T>` holds the
+    // argument's value in `x` where it runs (`expr_param.zig`): `x.value` is
+    // `x` (376's `comptime campos("a,b")`).
+    {
+        const erased = try env.arena.alloc(ast.FnDecl, support.fns.len);
+        for (support.fns, 0..) |f, i| erased[i] = try exprParam.eraseFn(env.arena, f, false);
+        support.fns = erased;
+    }
     if (try blockEval.unexpandedTemplateCall(env, prepared, support)) |msg| {
         env.lastError = TypeError.custom(msg, "A template call is expanded where it is inferred (01-compiler/14 step 8); a `comptime` carries its expansion.").withLoc(loc);
         return error.TypeError;

@@ -1,0 +1,15 @@
+//// One function of each stage, read by `main` through its import.
+
+import {io.clock} from "std";
+
+pub fn pad(n: i32) -> string {
+    return "pad " + n.toString();
+}
+
+pub fn agora() -> i64 {
+    return clock.nowMillis();
+}
+
+pub fn label(comptime x: @Expr<string>) -> string {
+    return x.value + "!";
+}

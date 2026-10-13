@@ -205,6 +205,9 @@ pub const DeferredMetaRead = struct {
 /// Decision 375 — the declaration a call or a `use` names, with the call's
 /// type (null for a `use`, whose operand is a hook): only a call whose type
 /// resolved to `@Component<R>` is one commonJS may leave unawaited.
+/// A std function a leaf import binds (`Env.stdLeafFns`).
+pub const StdLeafFn = struct { module: []const u8, name: []const u8 };
+
 pub const HookTarget = struct { ref: hooksMod.DeclRef, type_: ?*T.Type };
 
 /// Decision 354 — one `use provide(ctx, value)` / `use context(ctx)`: which
@@ -923,6 +926,17 @@ pub const Env = struct {
     /// body has been inferred, by name; published to the session
     /// (`Reflection.hookFns`) when the analysis ends.
     hookNodes: std.StringHashMapUnmanaged(hooksMod.Node) = .empty,
+    /// Decision 376 — what each top-level function's body writes for its
+    /// stage, by name (`hooks.StageFacts`); `infer.zig` `markStages` reads it
+    /// once every body of the module is inferred.
+    stageFacts: std.StringHashMapUnmanaged(hooksMod.StageFacts) = .empty,
+    /// Decision 376 — the functions whose stage `markStages` has written
+    /// into their node.
+    stagesDone: std.StringHashMapUnmanaged(void) = .empty,
+    /// Decision 376 — each local name a std leaf import binds to a function
+    /// (`import {io.clock.nowMillis} from "std"` → `nowMillis`), with the
+    /// std module and the declared name: its stage is that declaration's.
+    stdLeafFns: std.StringHashMapUnmanaged(StdLeafFn) = .empty,
     /// Decision 375 — the declaration each call of a `@Component` function
     /// and each `use` of a declared hook names, by the call's (the `use`'s)
     /// location, wherever it is written: whether the target's node is

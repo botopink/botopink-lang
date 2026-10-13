@@ -2209,7 +2209,7 @@ a type, a field, a method and a `val`. A node holds only what is written in its
 
 | Record | Fields |
 |---|---|
-| `HookNode` | `function: Declared<unknown>`, `uses: HookUse[]`, `calls: HookCall[]`, `async: bool` (decision 375) |
+| `HookNode` | `function: Declared<unknown>`, `uses: HookUse[]`, `calls: HookCall[]`, `async: bool` (decision 375), `stage: Stage` (decision 376) |
 | `HookUse` — one `use h(…)` | `hook: ?Declared<unknown>` (`null` over a function value), `annotations: DeclAnnotation[]` (the hook's own), `at: string`, `typeArgs: TypeInfo<unknown>[]` (`use params<BlogParams>()` → `BlogParams`, its fields as the checker spells them), `context: ?Declared<unknown>` (the context object of a `use provide(C, …)` / `use context(C)`, decision 354 (4); `null` for any other hook) |
 | `HookCall` — one call of a `@Component` function | `callee: Declared<unknown>`, `at: string` |
 
@@ -2231,6 +2231,25 @@ every entry its declaration's decorators set, keyed `<decorator>.<key>`. A
 `DeclAnnotation`'s `decorator` is the `Decorator` its name names — an alias
 (`#[srv]` after `import {serverOnly as srv}`) and a namespace give the
 declaration, never the spelling.
+
+**Every function's stage** (decision 376). `HookNode.stage` is `Stage.Build`,
+`Stage.Run` or `Stage.Any` — every top-level function has one, whether or not
+it is a component. A function is `Build` when it reads what exists only while
+the program compiles — a `comptime` `@Decl` or `@Expr<T>` parameter
+(`names.value`) — and `Run` when it calls a host function, std's included,
+that is not declared `#[@Stage.Any]` (std's `math` is: a pure primitive);
+anything else — arithmetic, strings, records, arrays, `case`, loops, a method,
+std's `provide` / `context` — is `Any`. A call gives the caller the callee's
+stage (`Any` with `Build` is `Build`, `Any` with `Run` is `Run`), across
+modules as each published its functions; a decorator's or a template's body is
+`Build`. A function reaching both is `build-and-run` at the second, naming the
+first. A `comptime` in a body is computed at build into a constant and gives the
+function nothing, so `val names = comptime campos("title,body");` beside a
+clock read is a `Run` function.
+
+<!-- example: modules/stage_of_functions -->
+
+<!-- example: modules/stage_build_and_run -->
 
 **A decorator that reads `.hooks` runs last** (decision 372, provisional). A
 module's decorators run in two phases: first every decorator that reads no

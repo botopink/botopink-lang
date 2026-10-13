@@ -373,7 +373,7 @@ fn buildModule(
         },
     };
     const config: erlang.ComptimeModule = .{
-        .host_enums = &.{"DeclKind"},
+        .host_enums = &.{ "DeclKind", "Stage" },
         // `decl.failAt(Span(start, end, line), msg)` builds the span map.
         // Decision 280 — a field key `.name` reaches the body as the
         // `Type.Field<T>` record a `decl.fields` entry is (`infer.zig`

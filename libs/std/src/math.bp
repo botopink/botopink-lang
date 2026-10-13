@@ -9,7 +9,8 @@
 //// floating-point on the host, and staying in `f64` keeps mixed arithmetic
 //// from running into i32/i64 unification issues in pure-botopink
 //// derivations). Constants live as `pub val`; every host-bound fn carries
-//// `#[@External.<Target>(…)]` per backend.
+//// `#[@External.<Target>(…)]` per backend, and `#[@Stage.Any]`: a pure
+//// primitive runs at build as when the program runs (decision 376 (4)).
 
 // ── constants ────────────────────────────────────────────────────────────────
 
@@ -37,21 +38,25 @@ pub val log10e: f64 = 0.4342944819032518;
 #[@External.Node("Math", "abs")]
 #[@External.Erlang("erlang", "abs")]
 #[@External.Wasm(op: "f64.abs")]
+#[@Stage.Any]
 pub declare fn abs(x: f64) -> f64;
 
 #[@External.Node("Math", "floor")]
 #[@External.Erlang("math", "floor")]
 #[@External.Wasm(op: "f64.floor")]
+#[@Stage.Any]
 pub declare fn floor(x: f64) -> f64;
 
 #[@External.Node("Math", "round")]
 #[@External.Erlang("erlang", "round")]
 #[@External.Wasm(fn: roundHalfUp)]
+#[@Stage.Any]
 pub declare fn round(x: f64) -> f64;
 
 #[@External.Node("Math", "trunc")]
 #[@External.Erlang("erlang", "trunc")]
 #[@External.Wasm(op: "f64.trunc")]
+#[@Stage.Any]
 pub declare fn trunc(x: f64) -> f64;
 
 // `ceil(x) = -floor(-x)` — a pure-botopink derivation that avoids the
@@ -69,11 +74,13 @@ pub fn sign(x: f64) -> f64 {
 #[@External.Node("Math", "min")]
 #[@External.Erlang("erlang", "min")]
 #[@External.Wasm(op: "f64.min")]
+#[@Stage.Any]
 pub declare fn minF(a: f64, b: f64) -> f64;
 
 #[@External.Node("Math", "max")]
 #[@External.Erlang("erlang", "max")]
 #[@External.Wasm(op: "f64.max")]
+#[@Stage.Any]
 pub declare fn maxF(a: f64, b: f64) -> f64;
 
 pub fn clamp(x: f64, lo: f64, hi: f64) -> f64 {
@@ -85,11 +92,13 @@ pub fn clamp(x: f64, lo: f64, hi: f64) -> f64 {
 #[@External.Node("Math", "sqrt")]
 #[@External.Erlang("math", "sqrt")]
 #[@External.Wasm(op: "f64.sqrt")]
+#[@Stage.Any]
 pub declare fn sqrt(x: f64) -> f64;
 
 #[@External.Node(fn: powBody)]
 #[@External.Erlang(fn: powBody)]
 #[@External.Wasm(fn: powBody)]
+#[@Stage.Any]
 pub declare fn pow(x: f64, y: f64) -> f64;
 
 // `cbrt(x)` via `pow(x, 1/3)`, honouring sign for negatives. Pure-botopink;
@@ -104,21 +113,25 @@ pub fn cbrt(x: f64) -> f64 {
 #[@External.Node("Math", "exp")]
 #[@External.Erlang(fn: expBody)]
 #[@External.Wasm(fn: expBody)]
+#[@Stage.Any]
 pub declare fn exp(x: f64) -> f64;
 
 #[@External.Node("Math", "log")]
 #[@External.Erlang(fn: lnBody)]
 #[@External.Wasm(fn: lnBody)]
+#[@Stage.Any]
 pub declare fn ln(x: f64) -> f64;
 
 #[@External.Node("Math", "log2")]
 #[@External.Erlang(fn: log2Body)]
 #[@External.Wasm(fn: log2Body)]
+#[@Stage.Any]
 pub declare fn log2(x: f64) -> f64;
 
 #[@External.Node("Math", "log10")]
 #[@External.Erlang(fn: log10Body)]
 #[@External.Wasm(fn: log10Body)]
+#[@Stage.Any]
 pub declare fn log10(x: f64) -> f64;
 
 // `hypot(x, y) = sqrt(x*x + y*y)` — pure-botopink composition.
@@ -131,51 +144,61 @@ pub fn hypot(x: f64, y: f64) -> f64 {
 #[@External.Node("Math", "sin")]
 #[@External.Erlang(fn: sinBody)]
 #[@External.Wasm(fn: sinBody)]
+#[@Stage.Any]
 pub declare fn sin(x: f64) -> f64;
 
 #[@External.Node("Math", "cos")]
 #[@External.Erlang(fn: cosBody)]
 #[@External.Wasm(fn: cosBody)]
+#[@Stage.Any]
 pub declare fn cos(x: f64) -> f64;
 
 #[@External.Node("Math", "tan")]
 #[@External.Erlang(fn: tanBody)]
 #[@External.Wasm(fn: tanBody)]
+#[@Stage.Any]
 pub declare fn tan(x: f64) -> f64;
 
 #[@External.Node("Math", "asin")]
 #[@External.Erlang(fn: asinBody)]
 #[@External.Wasm(fn: asinBody)]
+#[@Stage.Any]
 pub declare fn asin(x: f64) -> f64;
 
 #[@External.Node("Math", "acos")]
 #[@External.Erlang(fn: acosBody)]
 #[@External.Wasm(fn: acosBody)]
+#[@Stage.Any]
 pub declare fn acos(x: f64) -> f64;
 
 #[@External.Node("Math", "atan")]
 #[@External.Erlang(fn: atanBody)]
 #[@External.Wasm(fn: atanBody)]
+#[@Stage.Any]
 pub declare fn atan(x: f64) -> f64;
 
 #[@External.Node("Math", "atan2")]
 #[@External.Erlang(fn: atan2Body)]
 #[@External.Wasm(fn: atan2Body)]
+#[@Stage.Any]
 pub declare fn atan2(y: f64, x: f64) -> f64;
 
 #[@External.Node("Math", "sinh")]
 #[@External.Erlang(fn: sinhBody)]
 #[@External.Wasm(fn: sinhBody)]
+#[@Stage.Any]
 pub declare fn sinh(x: f64) -> f64;
 
 #[@External.Node("Math", "cosh")]
 #[@External.Erlang(fn: coshBody)]
 #[@External.Wasm(fn: coshBody)]
+#[@Stage.Any]
 pub declare fn cosh(x: f64) -> f64;
 
 #[@External.Node("Math", "tanh")]
 #[@External.Erlang(fn: tanhBody)]
 #[@External.Wasm(fn: tanhBody)]
+#[@Stage.Any]
 pub declare fn tanh(x: f64) -> f64;
 
 // ── the bodies (decisions 238, 263) ────────────────────────────────────────

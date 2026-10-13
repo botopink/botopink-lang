@@ -1744,7 +1744,8 @@ fn isIdentChar(c: u8) bool {
 ///
 /// Decision 277 — `decl.hooks: HookNode[]` (`comptime/hooks.zig`), with
 /// `HookUse`, `HookCall` and the `TypeInfo<T>` a `use`'s type argument is
-/// (`HookNode.async`, decision 375); a
+/// (`HookNode.async`, decision 375) and its stage (`HookNode.stage`,
+/// decision 376); a
 /// `DeclAnnotation` carries the `Decorator` it names.
 ///
 /// T17 — the member records a handle hands out (`DeclAnnotation`, `Param`,
@@ -1788,7 +1789,8 @@ pub const decl_reflection_src =
     \\)
     \\pub type __Decl__Call<A, R>(args: A, run: fn() -> R)
     \\pub type HookCall(callee: ?Declared<unknown>, at: string)
-    \\pub type HookNode(function: Declared<unknown>, uses: HookUse[], calls: HookCall[], async: bool)
+    \\pub type Stage { Build, Run, Any }
+    \\pub type HookNode(function: Declared<unknown>, uses: HookUse[], calls: HookCall[], async: bool, stage: Stage)
     \\pub type Decl(
     \\    kind: DeclKind,
     \\    name: string,

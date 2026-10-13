@@ -660,7 +660,7 @@ fn buildModule(
         },
     };
     const config: erlang.ComptimeModule = .{
-        .host_enums = &.{ "BindingKind", "DeclKind" },
+        .host_enums = &.{ "BindingKind", "DeclKind", "Stage" },
         .host_records = &host_records,
         .exports = &.{.{ .name = "main", .arity = 1 }},
         .forms = forms,

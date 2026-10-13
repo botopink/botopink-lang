@@ -1,0 +1,73 @@
+//// Decision 376 — every function has a stage, read as `HookNode.stage`:
+//// `Build` when it reads what exists only while the program compiles (a
+//// `comptime` parameter's `.value`), `Run` when it reaches a host
+//// function with an effect (std's clock), `Any` otherwise — std's `math`
+//// is a pure primitive, declared `Any`. A call gives the caller the
+//// callee's stage (`Any + Build = Build`, `Any + Run = Run`), and a
+//// `comptime` in a body is computed at build and gives it none.
+
+import {io.clock, math} from "std";
+
+fn stage(comptime decl: @Decl) {
+    var out: string[] = [];
+    decl.hooks.forEach({ n ->
+        val s = if (n.stage == Stage.Build) "Build" else if (n.stage == Stage.Run) "Run" else "Any";
+        out.push(s);
+    });
+    decl.setMeta("text", decl.name + ": " + out.join(" "));
+}
+
+#[stage]
+fn padAll(n: i32) -> string {
+    return "padding: " + (n * 4).toString() + "px;";
+}
+
+#[stage]
+fn agora() -> i64 {
+    return clock.nowMillis();
+}
+
+#[stage]
+fn campos(comptime names: @Expr<string>) -> string {
+    return "[" + names.value + "]";
+}
+
+#[stage]
+fn cabecalho() -> string {
+    val n = comptime campos("title,body");
+    return n + agora().toString();
+}
+
+#[stage]
+fn twice(n: i32) -> string {
+    return padAll(n) + padAll(n);
+}
+
+#[stage]
+fn nomes() -> string {
+    return campos("a,b");
+}
+
+#[stage]
+fn raiz() -> f64 {
+    return math.sqrt(16.0);
+}
+
+#[stage]
+fn depois() -> i64 {
+    return agora() + 1;
+}
+
+pub fn main() {
+    @print(@typeInfo(padAll).meta.stage.text);
+    @print(@typeInfo(agora).meta.stage.text);
+    @print(@typeInfo(campos).meta.stage.text);
+    @print(@typeInfo(cabecalho).meta.stage.text);
+    @print(@typeInfo(twice).meta.stage.text);
+    @print(@typeInfo(nomes).meta.stage.text);
+    @print(@typeInfo(raiz).meta.stage.text);
+    @print(@typeInfo(depois).meta.stage.text);
+    @print(nomes());
+    @print(twice(2));
+    @print(raiz());
+}

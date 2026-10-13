@@ -559,8 +559,14 @@ fn scanExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), comptime_
             else => {},
         },
         .comptime_ => |ct| switch (ct.kind) {
-            .comptimeExpr => |inner| scanExpr(agg, fn_decls, comptime_arrays, inner.*) catch return ScanError.OutOfMemory,
-            .comptimeBlock => |cb| {
+            // A `comptime` computed at build is replaced by its value
+            // (`src_rewrites`): the calls written under it never run in the
+            // program, so they specialize nothing (decision 376's
+            // `comptime campos("a,b")`).
+            .comptimeExpr => |inner| if (agg.src_rewrites.get(ct.loc) == null) {
+                scanExpr(agg, fn_decls, comptime_arrays, inner.*) catch return ScanError.OutOfMemory;
+            },
+            .comptimeBlock => |cb| if (agg.src_rewrites.get(ct.loc) == null) {
                 for (cb.body) |s| scanStmt(agg, fn_decls, comptime_arrays, s) catch return ScanError.OutOfMemory;
             },
             .assert => |a| {

@@ -34,6 +34,11 @@
 //! bodies are inferred (`infer.zig` `markHookAsync`), an imported node read
 //! as its module published it. commonJS runs a synchronous component's
 //! lambda (decision 388) with no `await`, and its body awaits nothing.
+//!
+//! **`stage`** (decision 376) is when the function can run — `Build`, `Run`
+//! or `Any` — from the resources its body reads (`buildResource`, a host
+//! call) and the stages of the declarations it calls, `build-and-run` when
+//! both meet (`infer.zig` `markStages`).
 const std = @import("std");
 const ast = @import("../ast.zig");
 const Term = @import("../codegen/beam/term.zig").Term;
@@ -91,6 +96,58 @@ pub const Call = struct {
     at: ast.Loc,
 };
 
+/// Decision 376 — when a function can run: `build` when it reads what exists
+/// only while the program compiles (a `comptime` `@Decl` / `@Expr<T>` /
+/// `type` parameter's reflection), `run` when it reaches what exists only
+/// when the program runs (a host function std or its library does not
+/// declare `#[@Stage.Any]`), `any` otherwise. Propagated through calls.
+pub const Stage = enum {
+    any,
+    build,
+    run,
+
+    /// The variant of `builtins.d.bp`'s `Stage` a decorator reads.
+    pub fn spelled(s: Stage) []const u8 {
+        return switch (s) {
+            .any => "Any",
+            .build => "Build",
+            .run => "Run",
+        };
+    }
+};
+
+/// What sets a stage, where it is written: a resource (`` `decl` ``, the host
+/// function `` `clock.nowMillis` ``) or a call of a function of that stage.
+pub const Mark = struct {
+    at: ast.Loc,
+    /// The resource or call as a refusal names it.
+    what: []const u8,
+    /// For a call, the resource that gives the callee its stage, where it
+    /// is written — what the caller's stage is then named by.
+    root: ?[]const u8 = null,
+};
+
+/// Decision 376 — a call of a declaration written in a body: its stage is
+/// the callee's, read once every node of the module is recorded.
+pub const StageCall = struct {
+    ref: DeclRef,
+    at: ast.Loc,
+    /// The call as written (`` `campos(…)` ``).
+    what: []const u8,
+};
+
+/// What one function's body writes for its stage (decision 376), kept by
+/// the function's name until the module's stages are computed.
+pub const StageFacts = struct {
+    /// The first resource of each stage written in the body (outside a
+    /// `comptime`), in body order.
+    build: ?Mark = null,
+    run: ?Mark = null,
+    calls: []const StageCall = &.{},
+    /// The function's body runs at build: a decorator's or a template's.
+    buildBody: ?[]const u8 = null,
+};
+
 /// What one function's body writes.
 pub const Node = struct {
     function: DeclRef,
@@ -103,6 +160,10 @@ pub const Node = struct {
     /// reaches an asynchronous node through a `use` or a call (`infer.zig`
     /// `markHookAsync`, a cycle asynchronous when any node in it is).
     is_async: bool = false,
+    /// Decision 376 — the function's stage (`markStages`), and what gives it
+    /// (`""` for `any`), for a refusal in another module.
+    stage: Stage = .any,
+    why: []const u8 = "",
 };
 
 /// A top-level function of a module, as the session knows it.
@@ -115,6 +176,10 @@ pub const FnInfo = struct {
     annotations: []const Annotation,
     /// Null for a host function.
     node: ?Node,
+    /// Decision 376 — the function's stage: a host's by its `#[@Stage.Any]`
+    /// (else `run`), any other's its node's.
+    stage: Stage = .any,
+    why: []const u8 = "",
 };
 
 /// The node being recorded while a top-level function's body is inferred.
@@ -130,6 +195,10 @@ pub const Builder = struct {
     /// place: one that resolves to `@Component<R>` (or stays open) cannot be
     /// followed — an edge with `callee: null` (389) and an asynchronous node.
     dynamicCalls: std.ArrayListUnmanaged(DynamicCall) = .empty,
+    /// Decision 376 — the body's stage resources and calls (`StageFacts`).
+    build: ?Mark = null,
+    run: ?Mark = null,
+    stageCalls: std.ArrayListUnmanaged(StageCall) = .empty,
 
     pub const DynamicCall = struct { type_: *T.Type, at: ast.Loc };
 
@@ -177,6 +246,7 @@ pub fn nodesToTerm(arena: std.mem.Allocator, nodes: []const Node, meta: MetaSour
             Term.field("uses", Term.listOf(uses)),
             Term.field("calls", Term.listOf(calls)),
             Term.field("async", .{ .boolean = n.is_async }),
+            Term.field("stage", Term.atomOf(n.stage.spelled())),
         }));
     }
     return out;
@@ -300,6 +370,80 @@ fn walk(comptime X: type, ptr: *const X, member: []const u8) bool {
     }
     return false;
 }
+
+// ── decision 376 — the resources that run only at build ─────────────────────
+
+/// The first build-only resource `f`'s body writes outside a `comptime`
+/// (decision 376 (1)): a read of a `comptime` parameter — `@Decl` (`decl.*`),
+/// `@Expr<T>` / `@ExprCustom<T>` (`x.value`, `x.fail`, a template's
+/// `q.parts()` / `q.source()`). A `@typeInfo` of a type the body names is
+/// answered at build as a constant (380 (1)) and is no resource.
+pub fn buildResource(arena: std.mem.Allocator, f: ast.FnDecl) !?Mark {
+    var reflected: std.ArrayListUnmanaged([]const u8) = .empty;
+    for (f.params) |p| {
+        if (p.modifier != .@"comptime") continue;
+        const tr = p.typeRef;
+        if (p.exprWrapped or tr.isDeclType() or tr.isTemplateReturnType()) try reflected.append(arena, p.name);
+    }
+    if (reflected.items.len == 0) return null;
+    var w: BuildWalk = .{ .arena = arena, .reflected = reflected.items };
+    for (f.body) |*st| {
+        w.walk(ast.Stmt, st);
+        if (w.found) |m| return m;
+    }
+    return null;
+}
+
+const BuildWalk = struct {
+    arena: std.mem.Allocator,
+    reflected: []const []const u8,
+    found: ?Mark = null,
+
+    fn walk(self: *BuildWalk, comptime X: type, ptr: *const X) void {
+        if (self.found != null) return;
+        if (X == ast.Expr) {
+            switch (ptr.*) {
+                // A `comptime` is computed at build into a constant: what it
+                // reads gives the function no stage.
+                .comptime_ => |c| switch (c.kind) {
+                    .comptimeExpr, .comptimeBlock => return,
+                    else => {},
+                },
+                .identifier => |id| if (id.kind == .ident) for (self.reflected) |n| if (std.mem.eql(u8, n, id.kind.ident)) {
+                    self.found = .{ .at = id.loc, .what = std.fmt.allocPrint(self.arena, "`{s}`, a `comptime` parameter read", .{n}) catch n };
+                    return;
+                },
+                else => {},
+            }
+        }
+        if (X == ast.ImportDecl or X == ast.TypeRef or X == ast.Pattern) return;
+        switch (@typeInfo(X)) {
+            .@"struct" => |s| inline for (s.fields) |f| {
+                if (f.is_comptime) continue;
+                if (comptime mayHoldExpr(f.type)) self.walk(f.type, &@field(ptr.*, f.name));
+            },
+            .@"union" => |u| if (u.tag_type != null) {
+                switch (ptr.*) {
+                    inline else => |*payload| if (comptime mayHoldExpr(@TypeOf(payload.*))) {
+                        self.walk(@TypeOf(payload.*), payload);
+                    },
+                }
+            },
+            .optional => |o| if (ptr.*) |*inner| self.walk(o.child, inner),
+            .pointer => |p| switch (p.size) {
+                .one => if (comptime mayHoldExpr(p.child)) self.walk(p.child, ptr.*),
+                .slice => if (comptime mayHoldExpr(p.child)) {
+                    for (ptr.*) |*e| self.walk(p.child, e);
+                },
+                else => {},
+            },
+            .array => |arr| if (comptime mayHoldExpr(arr.child)) {
+                for (ptr) |*e| self.walk(arr.child, e);
+            },
+            else => {},
+        }
+    }
+};
 
 // ── what a `.hooks` reader may write ─────────────────────────────────────────
 

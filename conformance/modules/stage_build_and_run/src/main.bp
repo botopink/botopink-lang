@@ -1,0 +1,19 @@
+//// Decision 376 (2) — a function reaching a build-only resource and a
+//// run-time one is refused at the second, naming the first: `mixed` calls
+//// `campos` (`Build`: it reads its `comptime` parameter's `.value`) and then
+//// reads std's clock (`Run`).
+
+import {io.clock} from "std";
+
+fn campos(comptime names: @Expr<string>) -> string {
+    return "[" + names.value + "]";
+}
+
+fn mixed() -> string {
+    val n = campos("a,b");
+    return n + clock.nowMillis().toString();
+}
+
+pub fn main() {
+    @print(mixed());
+}

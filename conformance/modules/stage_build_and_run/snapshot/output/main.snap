@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: build-and-run: `mixed` would run at build and when the program runs — `clock.nowMillis(…)`, a std function that runs only when the program runs here, and `campos(…)`, which runs only at build (`names`, a `comptime` parameter read at main:9:18) at 13:13
+at src/main.bp:14:22
