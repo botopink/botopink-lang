@@ -37,7 +37,6 @@ botopink-lang/                 ← language core (this project)
 │   └── wasm3/                 ← vendored wasm3 (C): the wat comptime runtime runs on it, in-process
 ├── libs/                      ← the bundled .bp library — see libs/AGENTS.md
 │   └── std/                   ← standard library, the one package the compiler ships (decision 326)
-├── examples/                  ← generic-loader-binding alone, waiting to move to erika — see examples/AGENTS.md
 ├── conformance/               ← the language reference and its conformance suite (decisions 457, 461, 462, 466, 475):
 │                                docs.md (the reference, the manifest schema included; every example a cell),
 │                                modules/<cell>/ checked by `botopink cell check`, test/ suites by
@@ -169,7 +168,6 @@ does not mirror them. Entry points:
 | Per-process scratch paths for tests | [`modules/test-scratch/AGENTS.md`](modules/test-scratch/AGENTS.md) |
 | `.bp` libraries | [`libs/AGENTS.md`](libs/AGENTS.md) · [`libs/std/AGENTS.md`](libs/std/AGENTS.md) |
 | Conformance suite (the language's cells; the former `tests/language` and `examples/`) | [`conformance/AGENTS.md`](conformance/AGENTS.md) |
-| Examples (one left, waiting to move to erika) | [`examples/AGENTS.md`](examples/AGENTS.md) |
 | Scripts | [`scripts/AGENTS.md`](scripts/AGENTS.md) |
 | `.bp` language reference (user-facing) | [`conformance/docs.md`](conformance/docs.md) — every example a cell of `conformance/modules/` |
 | `botopink.json` schema (user-facing) | [`conformance/docs.md`](conformance/docs.md) § The manifest schema · model: [`modules/manifest/AGENTS.md`](modules/manifest/AGENTS.md) |

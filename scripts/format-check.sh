@@ -4,10 +4,10 @@
 # this is the caller, stage 3 of scripts/gate.sh and a step of CI's `test` job.
 #
 # TREES names the trees the gate holds canonical: every `.bp` and `.d.bp` under
-# each (nested projects included) — `examples` (the project waiting to move to
-# erika, `generic-loader-binding`), `libs/std` (the one library the compiler ships — decision 326:
+# each (nested projects included) — `libs/std` (the one library the compiler ships — decision 326:
 # every other library is a repository of its own, formatted by its own gate), the CLI's and the
-# manifest module's fixtures and `conformance` — every tracked `.bp` of this
+# manifest module's fixtures, `conformance` and erika's consumer cell
+# `generic_loader_binding` (the sibling checkout's, which the move from `examples/` left no gate for) — every tracked `.bp` of this
 # checkout is under one of them. What the walk leaves out is structural —
 # hidden directories, `node_modules`, and a conformance cell's module whose
 # `snapshot/output/<module>.snap` holds a `refused` record: a module every
@@ -37,11 +37,11 @@ bin="zig-out/bin/botopink"
 [ -x "$bin" ] || { echo "format-check: $bin is not built (run: zig build)" >&2; exit 1; }
 
 TREES=(
-    examples
     libs/std
     modules/compiler-cli/tests
     modules/manifest/tests
     conformance
+    ../erika/conformance/modules/generic_loader_binding
 )
 
 status=0

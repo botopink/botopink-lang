@@ -6,7 +6,8 @@
 # A scratch `botopink build --target commonJS --typescript` of the library
 # the compiler ships (`libs/std/` — decision 326: std alone; its `.d.ts` is
 # what a host TypeScript consumer of a botopink build reads), of the project
-# left under `examples/` (`generic-loader-binding`, erika's consumer), of every
+# erika's consumer cell `generic_loader_binding` (the sibling checkout's
+# `conformance/modules/`, the three ways `from "erika"` reaches a library), of every
 # conformance cell
 # (`conformance/modules/<cell>/`, decision 475: each a project with its own
 # manifest) and of every project suite under `conformance/test/`, then
@@ -17,7 +18,7 @@
 # a module `node` cannot parse one of `commonJS.zig` (or of the host template a
 # library wrote); each is fixed there. The run cells execute their module under
 # node; this check reaches the modules nothing runs — the libraries' and the
-# example's — and reads them all the way through.
+# erika cell's — and reads them all the way through.
 #
 # What the walk leaves out is structural, the same reading `botopink cell check`
 # makes of a cell: a cell whose commonJS answer refuses a module (a `refused`
@@ -86,7 +87,7 @@ projects=()
 if [ "$#" -gt 0 ]; then
     projects=("$@")
 else
-    for p in libs/std/ examples/*/ conformance/modules/*/ conformance/test/*/; do
+    for p in libs/std/ ../erika/conformance/modules/generic_loader_binding/ conformance/modules/*/ conformance/test/*/; do
         p="${p%/}"
         [ -f "$p/botopink.json" ] || continue
         refused_on_commonjs "$p" && continue

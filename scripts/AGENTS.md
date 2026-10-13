@@ -167,8 +167,8 @@ install tests) would otherwise act on the committing repository.
 
 `scripts/tsc-check.sh [<project>…]` builds the library the compiler ships
 (`libs/std/` — decision 326: the shared libraries are repositories of their
-own, checked by their own gates), the project left under `examples/`
-(`generic-loader-binding`), every conformance cell (`conformance/modules/<cell>/`, each a project with its own
+own, checked by their own gates), erika's consumer cell
+(`../erika/conformance/modules/generic_loader_binding`, the sibling checkout's), every conformance cell (`conformance/modules/<cell>/`, each a project with its own
 manifest, decision 475) and every `conformance/test/<project>/` with `botopink build --target commonJS
 --typescript` into a scratch directory and runs `tsc --noEmit --strict --lib
 es2022 --module commonjs` over each build's non-empty `.d.ts` files, one `tsc`
@@ -560,9 +560,8 @@ python3 scripts/codemod-component-contexts.py [--write] [--format <botopink>] [-
 
 `scripts/format-check.sh` — stage 3 of `gate.sh` and a step of CI's `test` job:
 `zig-out/bin/botopink format --check <tree>` for every tree in its `TREES`
-array, which names the trees the gate holds canonical: `examples` (the one project left there),
-`libs/std`, `modules/compiler-cli/tests`, `modules/manifest/tests` and
-`conformance` — every tracked `.bp` of the checkout is under one of them.
+array, which names the trees the gate holds canonical: `libs/std`, `modules/compiler-cli/tests`, `modules/manifest/tests` and
+`conformance` and erika's cell `../erika/conformance/modules/generic_loader_binding` — every tracked `.bp` of the checkout is under one of them.
 `format --check` on a directory reaches every `.bp` and `.d.bp` under it
 (nested projects included) and structurally leaves out hidden directories,
 `node_modules`, and a conformance cell's module whose `snapshot/output/<module>.snap`

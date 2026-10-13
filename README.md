@@ -45,7 +45,6 @@ botopink-lang/
 │   └── manifest/          the shared botopink.json model (std only)
 ├── libs/std/              standard library
 ├── conformance/           the language reference (docs.md) and its conformance suite — one cell per behaviour, checked by `botopink cell check`
-├── examples/              generic-loader-binding, the erika consumer (moving to erika's examples/)
 ├── scripts/               installers, release packing, test wrappers
 ├── build.zig              workspace build graph
 └── AGENTS.md              contributor guide
