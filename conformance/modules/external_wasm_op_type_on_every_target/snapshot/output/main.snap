@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: `#[@External.Wasm(op: "f64.floor")]`: `f64.floor` is `(f64) -> f64`, and the declared parameters and return must be exactly those types (on `floorOf`)
+at src/main.bp:8:3

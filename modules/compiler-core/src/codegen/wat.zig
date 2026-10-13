@@ -4487,28 +4487,7 @@ const Emitter = struct {
         self.foreign_origin = if (from < linked.len) linked[from].via else null;
         if (ext.module.len > 0)
             return self.refuse(ann_loc, "`#[@External.Wasm(…)]` on `{s}` takes one cell — `op: \"<opcode>\"`, `fn: <private fn of this module>`, `wasi: .<Adapter>` or `std: \"<module>.<function>\"`", .{f.name});
-        var slots: std.ArrayListUnmanaged(?hostBinding.Slot) = .empty;
-        for (f.params) |p| {
-            if (std.mem.eql(u8, p.name, "self")) continue;
-            try slots.append(ar, slotOf(p.typeRef));
-        }
-        const rslot: ?hostBinding.Slot = if (f.returnType) |rt| slotOf(rt) else null;
-        const result_other = if (f.returnType) |rt| rslot == null and !isNamedTypeRef(rt, "void") else false;
-        // Decision 393 — the shapes an adapter answering `@Task<T>` is
-        // checked by, over the declaration's one type parameter.
-        var shapes: ?[]const hostBinding.Shape = null;
-        var result_shape: hostBinding.Shape = .other;
-        if (f.genericParams.len == 1) {
-            const tp = f.genericParams[0].name;
-            var list: std.ArrayListUnmanaged(hostBinding.Shape) = .empty;
-            for (f.params) |p| {
-                if (std.mem.eql(u8, p.name, "self")) continue;
-                try list.append(ar, taskShapeOf(p.typeRef, tp));
-            }
-            shapes = list.items;
-            if (f.returnType) |rt| result_shape = taskShapeOf(rt, tp);
-        }
-        const parsed = try hostBinding.parse(ar, ext.symbol, .{ .params = slots.items, .result = rslot, .result_other = result_other, .shapes = shapes, .result_shape = result_shape });
+        const parsed = try hostBinding.parse(ar, ext.symbol, try hostBinding.signatureOf(ar, f));
         const binding = switch (parsed) {
             .refused => |r| return self.refuse(ann_loc, "{s} (on `{s}`)", .{ r.message, f.name }),
             .ok => |b| b,
@@ -4544,33 +4523,6 @@ const Emitter = struct {
         return bound;
     }
 
-    /// The shape `t` spells over the type parameter `tp` (decision 393).
-    fn taskShapeOf(t: ast.TypeRef, tp: []const u8) hostBinding.Shape {
-        const isTp = struct {
-            fn f(x: ast.TypeRef, name: []const u8) bool {
-                return x == .named and std.mem.eql(u8, x.named, name);
-            }
-        }.f;
-        switch (t) {
-            .named => |n| {
-                if (std.mem.eql(u8, n, tp)) return .t;
-                if (std.mem.eql(u8, n, "i32")) return .i32;
-                return .other;
-            },
-            else => {},
-        }
-        if (taskValueTypeRef(t)) |inner| {
-            if (isTp(inner, tp)) return .task_t;
-            if (arrayElemRef(inner)) |el| if (isTp(el, tp)) return .task_array_t;
-            return .other;
-        }
-        if (arrayElemRef(t)) |el| {
-            if (taskValueTypeRef(el)) |v| if (isTp(v, tp)) return .array_task_t;
-            if (el == .function and el.function.params.len == 0) if (taskValueTypeRef(el.function.returnType.*)) |v| if (isTp(v, tp)) return .array_thunk_task_t;
-        }
-        return .other;
-    }
-
     /// The element type of `T[]` / `Array<T>`.
     fn arrayElemRef(t: ast.TypeRef) ?ast.TypeRef {
         return switch (t) {
@@ -4604,17 +4556,6 @@ const Emitter = struct {
             if (!std.mem.eql(u8, ty, "i32"))
                 return self.refuse(arg.getLoc(), "`{s}` carries a task's value in one word on wasm: a task answering an `{s}` has no lowering here (decision 393)", .{ cc.callee, ty });
         }
-    }
-
-    /// The numeric slot a written type spells for decision 238's checks;
-    /// null for any other type.
-    fn slotOf(t: ast.TypeRef) ?hostBinding.Slot {
-        return switch (eagerTypeRef(t)) {
-            .named => |n| inline for (.{ "i32", "i64", "f32", "f64", "bool" }) |k| {
-                if (std.mem.eql(u8, n, k)) break @field(hostBinding.Slot, k);
-            } else null,
-            else => null,
-        };
     }
 
     /// A call of the std-wasm function `name` (`text.trim`), which the module

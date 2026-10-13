@@ -4073,8 +4073,8 @@ fn validateExternalInline(env: *Env, program: ast.Program) InferError!void {
 /// `"op:f64.floor"`, `"wasi:delay"`, `"std:…"`) is no binding on any target:
 /// it is refused at the argument, naming the labelled form (one release,
 /// then an unlabelled string is host code with no exception). An opcode's
-/// and an adapter's signature are checked by the wasm backend
-/// (`wat/host_binding.zig`). `f` is the declaration when it is a
+/// and an adapter's signature are checked here too, on every target
+/// (`refuseWasmSignature`). `f` is the declaration when it is a
 /// module-level `declare fn` (`fn:` resolves against `program`'s
 /// functions), null on a method.
 fn checkExternalCells(env: *Env, a: ast.Annotation, name: []const u8, f: ?ast.FnDecl, program: ast.Program) InferError!void {
@@ -4174,6 +4174,23 @@ fn checkExternalCells(env: *Env, a: ast.Annotation, name: []const u8, f: ?ast.Fn
                 .{ arg, name },
             ));
         }
+    }
+    if (wasm) if (f) |fd| if (fd.isDeclare) try refuseWasmSignature(env, a, fd);
+}
+
+/// Decisions 238 and 393 — an `op:` cell's opcode types and a `wasi:`
+/// adapter's signature are checked against the declaration at the annotation
+/// on every target, read by the wasm backend's own reader
+/// (`wat/host_binding.zig` `parse` over `signatureOf`): a binding no wasm
+/// build reaches is refused as a wasm build refuses it, with its message.
+fn refuseWasmSignature(env: *Env, a: ast.Annotation, f: ast.FnDecl) InferError!void {
+    const host: ?ast.WasmHost = if (ast.hostArgIndex(a)) |at| ast.WasmHost.ofArg(a.args[at]) else null;
+    const ext = ast.externalRefOf(a, (host orelse ast.WasmHost.wasi).lookupName()) orelse return;
+    if (ext.module.len > 0) return;
+    if (!std.mem.startsWith(u8, ext.symbol, "op:") and !std.mem.startsWith(u8, ext.symbol, "wasi:")) return;
+    switch (try wasmHostBinding.parse(env.arena, ext.symbol, try wasmHostBinding.signatureOf(env.arena, f))) {
+        .ok => {},
+        .refused => |r| return wasmCellError(env, a.loc, try std.fmt.allocPrint(env.arena, "{s} (on `{s}`)", .{ r.message, f.name })),
     }
 }
 

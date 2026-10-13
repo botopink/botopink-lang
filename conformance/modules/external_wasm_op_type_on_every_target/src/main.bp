@@ -1,0 +1,13 @@
+//// Decision 238 — an `op:` cell's opcode is checked against the declaration
+//// at the annotation, on every target: `f64.floor` is `(f64) -> f64`, so a
+//// declaration over `i32` is refused on erlang, beam and commonJS too, whose
+//// own bindings would run it. Only a wasm build read the binding before.
+
+#[@External.Node("Math", "floor")]
+#[@External.Erlang("erlang", "floor")]
+#[@External.Wasm(op: "f64.floor")]
+pub declare fn floorOf(x: i32) -> i32;
+
+pub fn main() {
+    @print(floorOf(2));
+}

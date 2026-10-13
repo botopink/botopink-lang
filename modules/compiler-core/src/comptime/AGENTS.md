@@ -158,9 +158,13 @@ the backends' (144 B-05).
 value of the wrong kind (`fn: "x"`, `op: f64`, `wasi: "delay"`, `std: x`), a label `External.Wasm` does not take,
 a second cell, an opcode `wat/host_binding.zig` `findOp` does not hold and an adapter it does not list; a `fn:`
 name the module does not bind is the ordinary `unbound variable` at the argument (`moduleBinds`), and one it
-binds is resolved against the module (`codegen/hostFnBinding.zig` `resolve`); `refuseStdBinding` checks `std:`.
+binds is resolved against the module (`codegen/hostFnBinding.zig` `resolve`); `refuseStdBinding` checks `std:`;
+`refuseWasmSignature` reads a module-level `declare fn`'s `op:` / `wasi:` cell with the wasm backend's own reader
+(`wat/host_binding.zig` `parse` over `signatureOf`), so an opcode or an adapter whose types differ from the
+declaration's is refused at the annotation on every target, with the wasm build's message (144 B-23).
 Cells: `modules/external_wasm_prefixed_{fn,op,wasi,std}_refused`, `modules/external_prefixed_fn_refused`,
-`modules/external_fn_unbound`.
+`modules/external_fn_unbound`, `modules/external_wasm_op_type_on_every_target`,
+`modules/external_wasm_adapter_signature_on_every_target`, `modules/external_wasm_task_adapter_shape`.
 
 **The rules of hooks** (decision 357). A `use` stands at the top level of its
 `@Component` body. `Env.useConstruct` names the outermost construct a `use` may

@@ -1088,7 +1088,11 @@ state machine over the scheduler, one adapter list for both hosts) add `modules/
 `modules/task_resumes_in_place` (loops, `if`, `try`, `try … catch`, a method, a generic fn and an
 `async { }` block suspending on a real timer), and two wasm refusals with `wasm.expect` —
 `modules/task_await_after_call_refused_on_wasm` (a call before an `await` in its statement) and
-`modules/external_wasm_task_adapter_shape` (an adapter declared off its shape), and `enum_section_*` (1.0.10-beta's `00 · 01-checker`: which enum a
+`modules/external_wasm_task_adapter_shape` (an adapter declared off its shape — refused on every
+target since 144 B-23 read every `@External.Wasm` binding in the checker, beside
+`modules/external_wasm_op_type_on_every_target` and
+`modules/external_wasm_adapter_signature_on_every_target`, both run by the other targets' own
+bindings on the parent binary), and `enum_section_*` (1.0.10-beta's `00 · 01-checker`: which enum a
 leading-dot section path names — `modules/enum_section_expected_type`, where two enums carry
 `.Color.Red.500` and every spelling is resolved by the type its position expects, and
 `modules/enum_section_ambiguous_path`, where the position expects nothing and the refusal names both

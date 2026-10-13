@@ -134,6 +134,108 @@ pub const Signature = struct {
     result_shape: Shape = .other,
 };
 
+/// The signature `f` declares, as `parse` checks a binding against it: each
+/// parameter's numeric slot (`self` skipped), the return's, and — when `f`
+/// declares one type parameter — the shapes over it (decision 393). The
+/// checker reads every target's `@External.Wasm` with it, the wasm backend
+/// its build's: one reading, so a binding no wasm build reaches is refused
+/// as a wasm build refuses it.
+pub fn signatureOf(alloc: std.mem.Allocator, f: ast.FnDecl) !Signature {
+    var slots: std.ArrayListUnmanaged(?Slot) = .empty;
+    for (f.params) |p| {
+        if (std.mem.eql(u8, p.name, "self")) continue;
+        try slots.append(alloc, slotOf(p.typeRef));
+    }
+    const rslot: ?Slot = if (f.returnType) |rt| slotOf(rt) else null;
+    const result_other = if (f.returnType) |rt| rslot == null and !isVoid(rt) else false;
+    var shapes: ?[]const Shape = null;
+    var result_shape: Shape = .other;
+    if (f.genericParams.len == 1) {
+        const tp = f.genericParams[0].name;
+        var list: std.ArrayListUnmanaged(Shape) = .empty;
+        for (f.params) |p| {
+            if (std.mem.eql(u8, p.name, "self")) continue;
+            try list.append(alloc, shapeOf(p.typeRef, tp));
+        }
+        shapes = list.items;
+        if (f.returnType) |rt| result_shape = shapeOf(rt, tp);
+    }
+    return .{ .params = slots.items, .result = rslot, .result_other = result_other, .shapes = shapes, .result_shape = result_shape };
+}
+
+/// `@Task<T>` / `@Component<T>` read as their `T` — what a binding's slot
+/// is checked by (the backend's `eagerTypeRef`).
+fn eager(t: ast.TypeRef) ast.TypeRef {
+    return switch (t) {
+        .generic => |g| if (g.is_builtin and g.args.len == 1 and (std.mem.eql(u8, g.name, "Task") or std.mem.eql(u8, g.name, "Component")))
+            eager(g.args[0])
+        else
+            t,
+        else => t,
+    };
+}
+
+fn isVoid(t: ast.TypeRef) bool {
+    return switch (eager(t)) {
+        .named => |n| std.mem.eql(u8, n, "void"),
+        .optional => |inner| isVoid(inner.*),
+        else => false,
+    };
+}
+
+/// The numeric slot a written type spells; null for any other type.
+fn slotOf(t: ast.TypeRef) ?Slot {
+    return switch (eager(t)) {
+        .named => |n| inline for (.{ "i32", "i64", "f32", "f64", "bool" }) |k| {
+            if (std.mem.eql(u8, n, k)) break @field(Slot, k);
+        } else null,
+        else => null,
+    };
+}
+
+/// The `T` of a `@Task<T>`.
+fn taskValue(t: ast.TypeRef) ?ast.TypeRef {
+    return switch (t) {
+        .generic => |g| if (g.is_builtin and g.args.len == 1 and std.mem.eql(u8, g.name, "Task")) g.args[0] else null,
+        else => null,
+    };
+}
+
+/// The element type of `T[]` / `Array<T>`.
+fn arrayElem(t: ast.TypeRef) ?ast.TypeRef {
+    return switch (t) {
+        .array => |el| el.*,
+        .generic => |g| if (std.mem.eql(u8, g.name, "Array") and g.args.len == 1) g.args[0] else null,
+        else => null,
+    };
+}
+
+fn isParam(t: ast.TypeRef, tp: []const u8) bool {
+    return t == .named and std.mem.eql(u8, t.named, tp);
+}
+
+/// The shape `t` spells over the type parameter `tp` (decision 393).
+fn shapeOf(t: ast.TypeRef, tp: []const u8) Shape {
+    switch (t) {
+        .named => |n| {
+            if (std.mem.eql(u8, n, tp)) return .t;
+            if (std.mem.eql(u8, n, "i32")) return .i32;
+            return .other;
+        },
+        else => {},
+    }
+    if (taskValue(t)) |inner| {
+        if (isParam(inner, tp)) return .task_t;
+        if (arrayElem(inner)) |el| if (isParam(el, tp)) return .task_array_t;
+        return .other;
+    }
+    if (arrayElem(t)) |el| {
+        if (taskValue(el)) |v| if (isParam(v, tp)) return .array_task_t;
+        if (el == .function and el.function.params.len == 0) if (taskValue(el.function.returnType.*)) |v| if (isParam(v, tp)) return .array_thunk_task_t;
+    }
+    return .other;
+}
+
 /// A refused binding: the message, owned by the caller's allocator.
 pub const Refused = struct { message: []u8 };
 
