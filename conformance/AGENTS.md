@@ -1022,6 +1022,8 @@ expression to `undefined` on the base; question B-21-a).
 B-22 adds `modules/fn_value_in_tuple` (a function value read out of a tuple by position and called, its
 arguments staged first — beam's frame did not count the stack slot the arguments park in while
 `erlang:element/2` reads the function, `invalid_store` on the base).
+`modules/fn_value_tuple_string_answer` (each element of `#(g, h)` keeps its function type — wasm printed
+the string's address on the base).
 
 Decision 298 (`01-compiler/130` step 8) — typed meta keyed by its record type — adds, on the four
 targets, `modules/meta_typed` (`decl.setMeta(Entity(…))` read `@typeInfo(City).meta(Entity)`, two

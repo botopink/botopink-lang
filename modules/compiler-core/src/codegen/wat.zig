@@ -13859,6 +13859,16 @@ const Emitter = struct {
         // call answers the field type's return. Without it a string answered
         // through the field printed as its heap address.
         if (cc.receiver) |r| {
+            // `q.1(7)` over a tuple of function values: the element's type.
+            if (tupleIndex(cc.callee)) |idx| {
+                const rt = self.typeRefOf(r.*) orelse return null;
+                const elems = rt.tupleElems() orelse return null;
+                if (idx >= elems.len) return null;
+                return switch (elems[idx]) {
+                    .function => |f| f.returnType.*,
+                    else => null,
+                };
+            }
             const rty = self.recordTypeOfExpr(r.*) orelse return null;
             if (self.fn_sigs.contains(std.fmt.bufPrint(&self.sym_buf, "{s}_{s}", .{ rty, cc.callee }) catch return null)) return null;
             const ft0 = self.fieldTypeRefIn(rty, cc.callee) orelse return null;
@@ -14161,6 +14171,21 @@ const Emitter = struct {
                     const inner = self.reg_arena.allocator().create(ast.TypeRef) catch break :blk null;
                     inner.* = et;
                     break :blk .{ .array = inner };
+                },
+                // `#(g, h)` of function values: the tuple of their types, so
+                // `q.1(7)` answers `h`'s declared return (`valueCallTypeRef`).
+                // Only when every element types and one is a function — every
+                // other literal keeps answering nothing here.
+                .tupleLit => |tl| blk: {
+                    if (tl.elems.len == 0) break :blk null;
+                    const elems = self.reg_arena.allocator().alloc(ast.TypeRef, tl.elems.len) catch break :blk null;
+                    var any_fn = false;
+                    for (tl.elems, 0..) |el, i| {
+                        elems[i] = self.typeRefOf(el) orelse break :blk null;
+                        if (elems[i] == .function) any_fn = true;
+                    }
+                    if (!any_fn) break :blk null;
+                    break :blk .{ .tuple_ = elems };
                 },
                 else => null,
             },

@@ -1181,6 +1181,10 @@ called after its arguments are evaluated (`p.0("abc")`):
 
 <!-- example: modules/fn_value_in_tuple -->
 
+Each element keeps its own function type, so the one answering a string prints the string:
+
+<!-- example: modules/fn_value_tuple_string_answer -->
+
 A lambda's and a function expression's last expression written without `;` is
 its value, as a named function's is (§ fn — function, decision 409):
 `val inc = fn(x: i32) -> i32 { x + 1 };`, `{ x -> x + 1 }`. With `;` a typed
