@@ -562,12 +562,40 @@ pub fn StmtOf(comptime phase: Phase) type {
         expr: ExprOf(phase),
         /// Number of empty lines before this statement in the source
         emptyLinesBefore: u32 = 0,
+        /// Decision 409 — the last expression of a function body written
+        /// without `;` (`parser.zig` `parseBlockBody`, `markTail`).
+        tail: Tail = .none,
+
+        /// Dumped without `tail` unless it is set, so every body written
+        /// before decision 409 dumps as it always did.
+        pub fn jsonStringify(this: @This(), jws: anytype) !void {
+            try jws.beginObject();
+            try jws.objectField("expr");
+            try jws.write(this.expr);
+            try jws.objectField("emptyLinesBefore");
+            try jws.write(this.emptyLinesBefore);
+            if (this.tail != .none) {
+                try jws.objectField("tail");
+                try jws.write(this.tail);
+            }
+            try jws.endObject();
+        }
 
         pub fn deinit(this: *@This(), allocator: std.mem.Allocator) void {
             this.expr.deinit(allocator);
         }
     };
 }
+
+/// Decision 409 — what a function body's last statement written without `;`
+/// is. `value`: the expression as written — the body's value where the body
+/// answers one from its tail (a lambda, an untyped function expression), and
+/// in a body answering nothing a tail the checker refuses unless it is
+/// `void`. `returned`: the parser wrapped it in `return` because the body's
+/// written return has a value (`fn inc(x: i32) -> i32 { x + 1 }`,
+/// `parser.zig` `returnTail`), so every later pass reads the `return` it
+/// means; the printer writes the value back alone, without `;`.
+pub const Tail = enum { none, value, returned };
 
 /// The label the parser gives a record-update spread argument:
 /// `Ctor(..base, x: 1)` holds `base` as the argument labelled `..`. It is not

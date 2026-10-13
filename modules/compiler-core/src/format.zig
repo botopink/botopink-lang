@@ -551,10 +551,50 @@ pub const Formatter = struct {
                 // Add hardline before each statement after the first
                 try items.append(this.arena, this.hardline());
             }
-            const exprDoc = try this.fmtExpr(s.expr);
-            try items.append(this.arena, try this.terminated(s.expr, exprDoc));
+            try items.append(this.arena, try this.fmtStmt(s));
         }
         return this.concatAll(items.items);
+    }
+
+    /// One statement of a body and what ends it. Decision 409 — a function
+    /// body's tail is printed as written: without `;`, and the `return` the
+    /// parser wrapped a valued tail in left out (`ast.Tail`). The printer
+    /// adds and removes no `;` there.
+    fn fmtStmt(this: *Formatter, s: ast.Stmt) !*const Doc {
+        return switch (s.tail) {
+            .none => this.terminated(s.expr, try this.fmtExpr(s.expr)),
+            .value => this.fmtExpr(s.expr),
+            .returned => this.fmtExpr(tailValue(s)),
+        };
+    }
+
+    /// The expression a tail statement writes: the value of the `return` the
+    /// parser wrapped it in, or the statement itself.
+    fn tailValue(s: ast.Stmt) ast.Expr {
+        if (s.tail == .returned and s.expr == .jump and s.expr.jump.kind == .@"return") {
+            if (s.expr.jump.kind.@"return") |v| return v.*;
+        }
+        return s.expr;
+    }
+
+    /// Decision 409 — a body of one tail statement prints on one line when it
+    /// fits (`fn inc(x: i32) -> i32 { x + 1 }`): the width decides, never the
+    /// source, so a second pass reads the same layout. Null when the body is
+    /// not one tail, or its value needs a line of its own.
+    fn oneLineTailBody(this: *Formatter, stmts: []ast.Stmt) !?[]const u8 {
+        if (stmts.len != 1 or stmts[0].tail == .none) return null;
+        const flat = try render(this.arena, try this.fmtExpr(tailValue(stmts[0])), std.math.maxInt(u32));
+        if (std.mem.indexOfScalar(u8, flat, '\n') != null) return null;
+        return flat;
+    }
+
+    /// A function body (`fn`, method, `fn` expression): `{}` when empty, one
+    /// line when it is one tail that fits (decision 409), else open.
+    fn fmtFnBody(this: *Formatter, stmts: []ast.Stmt) !*const Doc {
+        const open = try this.fmtBody(stmts);
+        const flat = (try this.oneLineTailBody(stmts)) orelse return open;
+        const oneLine = try this.text(try std.fmt.allocPrint(this.arena, "{{ {s} }}", .{flat}));
+        return this.widthChoice(oneLine, open, flat.len + 4);
     }
 
     /// A statement and what ends it: nothing for a comment and for a **braced
@@ -1768,10 +1808,11 @@ pub const Formatter = struct {
                             try this.text(" -> "),
                         });
                     } else try this.text("{ -> ");
+                    // Decision 409 — a `;` written after the value is kept.
                     return this.concatAll(&.{
                         head,
                         try this.text(flat),
-                        try this.text(" }"),
+                        try this.text(if (body[0].tail == .none) "; }" else " }"),
                     });
                 }
             }
@@ -1804,7 +1845,8 @@ pub const Formatter = struct {
                 try this.text(" -> "),
             });
         } else try this.text("{ ");
-        const flat = try this.concatAll(&.{ head, try this.text(flatValue), try this.text(" }") });
+        // Decision 409 — a `;` written after the value is kept.
+        const flat = try this.concatAll(&.{ head, try this.text(flatValue), try this.text(if (body[0].tail == .none) "; }" else " }") });
         const flatText = try render(this.arena, flat, std.math.maxInt(u32));
         // The statement's `;` follows the lambda and is paid for here.
         return this.widthChoice(flat, open, flatText.len + 1);
@@ -1872,11 +1914,18 @@ pub const Formatter = struct {
             try this.text(" "),
         }) else this.nil();
 
+        // Decision 409 — a body of one tail prints on one line when it fits.
+        const oneLine: ?*const Doc = if (try this.oneLineTailBody(body)) |flat|
+            try this.text(try std.fmt.allocPrint(this.arena, "{{ {s} }}", .{flat}))
+        else
+            null;
+
         if (params.len == 0) {
+            const open = try this.surroundBreak("{", inner, "}");
             return this.concatAll(&.{
                 try this.text("fn() "),
                 ret,
-                try this.surroundBreak("{", inner, "}"),
+                if (oneLine) |o| try this.widthChoice(o, try this.forceBreak(open), try docWidth(this.arena, o)) else open,
             });
         }
 
@@ -1888,13 +1937,21 @@ pub const Formatter = struct {
             try this.text(p);
         const paramList = try this.join(paramDocs, try this.text(", "));
 
-        return this.forceBreak(try this.concatAll(&.{
+        const head = try this.concatAll(&.{
             try this.text("fn("),
             paramList,
             try this.text(") "),
             ret,
-            try this.surroundBreak("{", inner, "}"),
-        }));
+        });
+        const openForm = try this.forceBreak(try this.concat(head, try this.surroundBreak("{", inner, "}")));
+        const o = oneLine orelse return openForm;
+        const flat = try this.concat(head, o);
+        return this.widthChoice(flat, openForm, try docWidth(this.arena, flat));
+    }
+
+    /// The width a document prints at when nothing in it breaks.
+    fn docWidth(arena: std.mem.Allocator, doc: *const Doc) !usize {
+        return (try render(arena, doc, std.math.maxInt(u32))).len;
     }
 
     fn fmtCase(this: *Formatter, subjects: []ast.Expr, arms: []ast.CaseArm, trailingComments: []const []const u8) !*const Doc {
@@ -2548,7 +2605,7 @@ pub const Formatter = struct {
             return this.concatAll(&.{
                 sig,
                 try this.text(" "),
-                try this.fmtBody(stmts),
+                try this.fmtFnBody(stmts),
             });
         }
         // Abstract method - add semicolon
@@ -2955,7 +3012,7 @@ pub const Formatter = struct {
                 try this.concat(try this.fmtReturnTypeRef(f.returnType, f.typeGuardParam), labelDoc),
             ),
             try this.text(" "),
-            try this.fmtBody(f.body),
+            try this.fmtFnBody(f.body),
             defaultLine,
         });
     }

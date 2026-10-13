@@ -1270,3 +1270,95 @@ test "format: annotations ---- a comment between blocks and inside an open list 
     try h.assertLossless(std.testing.allocator, src);
     try h.assertAnnotationsKept(std.testing.allocator, src);
 }
+
+// ── decision 409: a body's tail printed as written ─────────────────────────────
+
+test "format: fn ---- a one-tail body stays on one line" {
+    const src =
+        \\fn inc(x: i32) -> i32 { x + 1 }
+        \\
+        \\fn max(a: i32, b: i32) -> i32 { if (a > b) a else b }
+    ;
+    try h.assertFormat(std.testing.allocator, src);
+    try h.assertIdempotent(std.testing.allocator, src);
+}
+
+test "format: fn ---- a tail keeps no `;`, a statement keeps its `;`" {
+    const src =
+        \\fn sign(n: i32) -> i32 {
+        \\    if (n < 0) return -1;
+        \\    n
+        \\}
+        \\
+        \\fn log(x: i32) { @print(x) }
+        \\
+        \\fn semi(x: i32) -> i32 {
+        \\    x + 1;
+        \\}
+        \\
+        \\fn old(x: i32) -> i32 {
+        \\    return x;
+        \\}
+    ;
+    try h.assertFormat(std.testing.allocator, src);
+    try h.assertIdempotent(std.testing.allocator, src);
+}
+
+test "format: fn ---- a one-tail body written open is printed on one line" {
+    try h.assertFormatAs(std.testing.allocator,
+        \\fn inc(x: i32) -> i32 {
+        \\    x + 1
+        \\}
+    ,
+        \\fn inc(x: i32) -> i32 { x + 1 }
+    );
+}
+
+test "format: fn ---- a one-tail body too wide for the line opens" {
+    const src =
+        \\fn describe(first: string, second: string) -> string {
+        \\    first + " and " + second + " and some more text to pass the width"
+        \\}
+    ;
+    try h.assertFormat(std.testing.allocator, src);
+    try h.assertIdempotent(std.testing.allocator, src);
+}
+
+test "format: type ---- a method's tail" {
+    const src =
+        \\type Rect(w: i32, h: i32) {
+        \\    fn area(self: Self) -> i32 { self.w * self.h }
+        \\
+        \\    fn describe(self: Self) -> string {
+        \\        val kind = "rect";
+        \\        kind + " " + self.area().toString()
+        \\    }
+        \\}
+    ;
+    try h.assertFormat(std.testing.allocator, src);
+    try h.assertIdempotent(std.testing.allocator, src);
+}
+
+test "format: fn expression ---- typed in every position, its tail as written" {
+    const src =
+        \\pub fn main() {
+        \\    val inc = fn(x: i32) -> i32 { x + 1 };
+        \\    var half = fn(x: i32) -> i32 {
+        \\        if (x < 0) return 0;
+        \\        x / 2
+        \\    };
+        \\    val words = [1, 2].map(fn(n: i32) -> string { "#" + n.toString() });
+        \\    val semi = fn(x: i32) -> i32 {
+        \\        return x + 1;
+        \\    };
+        \\    val square = { x -> x * x };
+        \\    val kept = { x -> x * x; };
+        \\    val open = { x ->
+        \\        val y = x * 2;
+        \\        y + 1
+        \\    };
+        \\}
+    ;
+    try h.assertFormat(std.testing.allocator, src);
+    try h.assertIdempotent(std.testing.allocator, src);
+}

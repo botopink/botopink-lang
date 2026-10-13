@@ -875,7 +875,8 @@ pub const Env = struct {
     /// locals (`infer.zig` `inferMemberFnCall`). Null outside a decorator.
     decoratorBody: ?[]const ast.Stmt = null,
     /// Decision 370 (2) — the typed function expression `inferMemberFnCall`
-    /// admits; every other typed one is `fn-expr-typed` at it.
+    /// is inferring as a decorator's member: its written signature arrives as
+    /// the expected type (decision 408 types every other one where it stands).
     memberFnAt: ?ast.Loc = null,
     /// Decision 354 (3) — the number of `comptime { … }` / `comptime <expr>`
     /// enclosing the position being inferred; `use` is refused inside one.

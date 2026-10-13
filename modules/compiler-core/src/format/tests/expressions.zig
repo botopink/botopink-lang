@@ -763,7 +763,9 @@ test "format: lambda ---- the one-line form prints for a parameterless lambda ar
 
 test "format: lambda ---- a trailing lambda with one value expression prints on one line (decision 165)" {
     // Arrow or not: `h1 { "my blog" }`. A fitting one-expression body is one
-    // line; the written layout (one line or three) does not matter.
+    // line; the written layout (one line or three) does not matter. The `;`
+    // after the value is kept as written (decision 409: the printer adds and
+    // removes none).
     try h.assertFormatLossless(std.testing.allocator,
         \\fn main() {
         \\    h1 { "my blog" };
@@ -775,9 +777,13 @@ test "format: lambda ---- a trailing lambda with one value expression prints on 
         \\    h1 {
         \\        "my blog";
         \\    };
+        \\    h1 {
+        \\        "my blog"
+        \\    };
         \\}
     ,
         \\fn main() {
+        \\    h1 { "my blog"; };
         \\    h1 { "my blog" };
         \\}
     );
@@ -816,7 +822,7 @@ test "format: lambda ---- a trailing lambda whose one line would pass the width 
         \\fn main() {
         \\    executar {
         \\        aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-        \\            + bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb;
+        \\            + bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
         \\    };
         \\}
     );

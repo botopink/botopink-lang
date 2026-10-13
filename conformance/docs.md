@@ -510,6 +510,24 @@ running off the end would hand out: a `@Result` in any layer has a value (`Ok` o
 `@Task<T>` or `@Component<T>` whose `T` is a value; one whose `T` is `void` falls through as a
 `void` fn does. `@Iterator` and `@Stream` end by running off their body.
 
+A function body's last expression written without `;` is its value (decision 409) — in every
+body: a named `fn`, a method, a function expression and a lambda. `fn inc(x: i32) -> i32 { x + 1 }`;
+an early `return` stays (`fn sign(n: i32) -> i32 { if (n < 0) return -1; n }`), and every `return
+x;` stays valid. With `;` it is a statement, and a body with `-> R` then needs a `return` — `fn
+semi(x: i32) -> i32 { x + 1; }` is refused at `-> i32` as above. A braced `if` / `case` / loop at the
+end is a statement, never the tail. The tail is checked against `-> R` at the expression; in a body
+answering nothing (no `-> R`, or `-> void`), a tail of another type is refused at it.
+`botopink format` neither adds nor removes the tail's missing `;`, and prints a body of one tail on
+one line when it fits:
+
+<!-- example: modules/fn_tail_value -->
+
+<!-- example: modules/method_tail_value -->
+
+<!-- example: modules/fn_tail_type_mismatch -->
+
+<!-- example: modules/fn_tail_in_void -->
+
 ## Types
 
 ### Primitives
@@ -1088,9 +1106,28 @@ An `f64` compares as a total order under `==`, as Java's `Double.compare` does:
 
 A lambda's parameters take the types of the position it is passed to or the
 `val` it is bound to; `fn(a, b) { … }` is the same function written with
-`fn`. The typed form `fn(x: T) -> R { … }` is the member a decorator hands to
-`decl.addMember(name, fn…)` alone (§ Decorators, decision 370 (2)); anywhere
-else it is `fn-expr-typed`.
+`fn`. The braced lambda stays untyped (decision 328): `val inc: fn(x: i32) ->
+i32 = { x -> x + 1 };`. The typed function expression `fn(x: T, …) -> R { … }`
+is legal in every position (decision 408) — a `val`, a `var`, an argument, a
+return and the member a decorator hands to `decl.addMember(name, fn…)` alike;
+every parameter typed or none, and no `-> R` answers nothing. Where the
+position has a type, the written types are checked against it — `val f: fn(x:
+i32) -> i32 = fn(x: string) -> i32 { … };` is refused at the expression; with
+none, the written types are the function's:
+
+<!-- example: modules/fn_expr_typed_anywhere -->
+
+<!-- example: modules/fn_expr_typed_mismatch -->
+
+A lambda's and a function expression's last expression written without `;` is
+its value, as a named function's is (§ fn — function, decision 409):
+`val inc = fn(x: i32) -> i32 { x + 1 };`, `{ x -> x + 1 }`. With `;` a typed
+function expression's last expression is a statement, so one with `-> R` then
+needs a `return`:
+
+<!-- example: modules/fn_expr_tail_value -->
+
+<!-- example: modules/fn_expr_tail_semicolon -->
 
 The pipe operator `|>` is left-associative.
 
@@ -2013,9 +2050,10 @@ them to (`T` is `Signup`, written `Self`). The member reads nothing else of the
 decorator's body: the `@Decl` handle and its locals exist only while the
 program compiles (`decorator-member-captures`). Every parameter is typed
 (`decorator-member-fn-untyped`), the member is written at the call
-(`decorator-member-not-fn`), a `self` is the type the member joins and every
-type parameter it writes is bound (`decorator-member-type`), and a typed
-function expression anywhere else is `fn-expr-typed`. Every other name a
+(`decorator-member-not-fn`), and a `self` is the type the member joins and
+every type parameter it writes is bound (`decorator-member-type`); a typed
+function expression is legal in every other position too (decision 408,
+§ Lambdas and method chains). Every other name a
 member of a decorator declared in another module writes resolves where the
 decorator wrote it (decision 384): its module's types and functions, a private
 helper included, never a same-named declaration of the annotated module — a

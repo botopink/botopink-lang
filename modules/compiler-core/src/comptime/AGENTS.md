@@ -862,9 +862,12 @@ method's, a `declare fn`'s (std's `builtins.d.bp` and `types.bp` included).
 - **Handed on — a typed member (decision 370 (2)).** `decl.addMember(name,
   fn(self: T) -> R { … })`: the parser reads a function expression's
   parameter types and `-> R` (`FunctionExpr.paramTypes` / `.returnType`,
-  dumped only when written; the formatter prints them); the checker admits the
-  typed form only there (`fn-expr-typed` anywhere else, the admitted one named
-  by `Env.memberFnAt`). `infer.zig` `inferMemberFnCall` (reached first in
+  dumped only when written; the formatter prints them); the member is named
+  by `Env.memberFnAt` and arrives with its written signature as the expected
+  type — any other typed function expression is typed where it stands
+  (decision 408, `inferFunctionExprExpected` / `writtenFnType`: the written
+  types are the function's, unified with the position's function type when
+  it has one and refused at the expression naming both). `infer.zig` `inferMemberFnCall` (reached first in
   `inferCallExprWith` for `<@Decl param>.addMember` with two arguments in a
   decorator's body) types the function as the program's code: its written
   signature with the decorator's type parameters in scope, each `exprWrapped`
@@ -1262,6 +1265,22 @@ refused; one whose value layer is `void` / `noreturn` falls through as a `void` 
 `refuseValuelessIf` refuses an `if` without `else` bound by a `val`/`var` (local or module-level).
 Each backend's block-as-value lowering loses its producers: erlang's tail `case`, beam's
 `make_fun3`, commonJS's IIFE, wasm's `;; lambda` (residual-rows R7 names them for the four fronts).
+
+## A body's tail (decision 409)
+
+A function body's last expression written without `;` is its value. The parser marks it
+(`ast.Stmt.tail`, `parser.zig` `parseBlockBody` with `markTail`: a `fn` / method / behavior default
+body, a function expression, a lambda) and, where the written return has a value (`returnTail`:
+not `void` / `noreturn`, not a wrapper whose value layer is `void`, not a generator that yields),
+wraps it in `return` located at the expression (`tail = .returned`) — so this checker, the
+evaluators and every backend read the `return` it means, and `fn bad(x: i32) -> i32 { "a" }` is
+the return's mismatch at the `"a"`; a tail every path of which already leaves (`if (c) return a
+else return b`, `@panic(…)`) is left alone. In a body answering nothing — no `-> R` or `-> void`, a
+`fn`, a type's method (one without `->` whose `return`s carry no value) or a typed function
+expression — a `tail = .value` statement must be `void` (`refuseValueTailInVoid`, at the tail). A
+typed function expression answers its written return: with `-> R` a body that can run off its end
+is refused at the expression (`stmtsMayFallThrough`), and its tail does not type it. A lambda and an
+untyped `fn(x) { … }` keep the value of their last statement as before.
 
 ## Decisions 44 and 45 (C-18)
 

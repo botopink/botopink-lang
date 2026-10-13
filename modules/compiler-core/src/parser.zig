@@ -977,6 +977,10 @@ pub const Parser = struct {
         /// Preserve `//`/`///`/`////` comment tokens as comment-literal statements.
         handleComments: bool = false,
         semicolonPolicy: SemicolonPolicy = .required,
+        /// Decision 409 — a function body: its last statement written without
+        /// `;` (a comment after it aside, a braced `if` / `case` / loop
+        /// excluded) is marked `tail = .value`.
+        markTail: bool = false,
     };
 
     /// Parse `{ stmt; stmt; ... }`. The opening `{` must be the current token.
@@ -1005,6 +1009,10 @@ pub const Parser = struct {
             for (stmts.items) |*s| s.deinit(alloc);
             stmts.deinit(alloc);
         }
+        // Decision 409 — the last statement that is not a comment, and
+        // whether a `;` ended it.
+        var lastStmt: ?usize = null;
+        var lastBare = false;
         while (!this.check(.rightBrace) and !this.check(.endOfFile)) {
             const emptyLinesBefore: u32 = if (opts.trackEmptyLines) blk: {
                 const prevLine = if (this.current > 0) this.tokens[this.current - 1].line else 1;
@@ -1020,6 +1028,7 @@ pub const Parser = struct {
             // here rather than leaked; once appended, `stmts`' own errdefer
             // owns it and this one is discharged.
             errdefer expr.deinit(alloc);
+            var bare = false;
             if (this.isBracedBlockStmt(expr)) {
                 // Decision 29 (c) as decision 60 orders it: a braced `if`,
                 // `loop` or `case` statement ends at its `}`, and the `;` after
@@ -1028,14 +1037,128 @@ pub const Parser = struct {
                 _ = this.match(.semicolon);
             } else switch (opts.semicolonPolicy) {
                 .required => _ = try this.consume(.semicolon),
-                .optional => _ = this.match(.semicolon),
-                .requiredExceptLast => if (!this.match(.semicolon) and !this.check(.rightBrace))
-                    return ParseError.UnexpectedToken,
+                .optional => bare = !this.match(.semicolon),
+                .requiredExceptLast => if (!this.match(.semicolon)) {
+                    if (!this.check(.rightBrace)) return ParseError.UnexpectedToken;
+                    bare = true;
+                },
             }
+            lastStmt = stmts.items.len;
+            lastBare = bare;
             try stmts.append(alloc, .{ .expr = expr, .emptyLinesBefore = emptyLinesBefore });
         }
         _ = try this.consume(.rightBrace);
+        if (opts.markTail and lastBare) {
+            if (lastStmt) |i| if (isTailExpr(stmts.items[i].expr)) {
+                stmts.items[i].tail = .value;
+            };
+        }
         return stmts.toOwnedSlice(alloc);
+    }
+
+    /// Decision 409 — a statement that can be a body's tail: an expression,
+    /// not a `val` / `var` / assignment, a jump, a `use` or a comment.
+    fn isTailExpr(expr: Expr) bool {
+        return switch (expr) {
+            .binding, .jump, .useHook, .loop => false,
+            .literal => |lit| lit.kind != .comment,
+            else => true,
+        };
+    }
+
+    /// Decision 409 — a body whose written return has a value answers its
+    /// tail: the parser wraps it in `return` (`tail = .returned`, located at
+    /// the expression), so the checker, the evaluators and every backend read
+    /// the `return` it means and the printer writes the value back as it was
+    /// written. A tail every path of which already leaves the body (`if (c)
+    /// return a else return b`, `@panic(…)`) is left as it is.
+    pub fn returnTail(alloc: std.mem.Allocator, body: []Stmt, returnType: ?ast.TypeRef) ParseError!void {
+        if (body.len == 0) return;
+        const rt = returnType orelse return;
+        var i = body.len;
+        while (i > 0) : (i -= 1) {
+            const e = body[i - 1].expr;
+            if (e == .literal and e.literal.kind == .comment) continue;
+            break;
+        }
+        if (i == 0) return;
+        const s = &body[i - 1];
+        if (s.tail != .value) return;
+        if (!returnHasValue(rt, body)) return;
+        if (tailLeaves(s.expr)) return;
+        const value = try alloc.create(Expr);
+        value.* = s.expr;
+        s.expr = .{ .jump = .{ .loc = value.getLoc(), .kind = .{ .@"return" = value } } };
+        s.tail = .returned;
+    }
+
+    /// Whether a written return answers a value its tail can be: not `void`
+    /// / `noreturn`, not a wrapper whose value layer is `void`
+    /// (`@Result<void, E>`, `@Task<void>`), not a generator that yields.
+    fn returnHasValue(rt: ast.TypeRef, body: []const Stmt) bool {
+        return switch (rt) {
+            .named => |n| !std.mem.eql(u8, n, "void") and !std.mem.eql(u8, n, "noreturn"),
+            .generic => |g| blk: {
+                if (!g.is_builtin) break :blk true;
+                const eff = ast.EffectKind.fromWrapperName(g.name) orelse break :blk true;
+                switch (eff) {
+                    .iterator, .stream => break :blk !ast.bodyYields(body),
+                    .result, .task, .component => {
+                        if (g.args.len == 0) break :blk true;
+                        break :blk returnHasValue(g.args[0], body);
+                    },
+                }
+            },
+            else => true,
+        };
+    }
+
+    /// A tail no path of which falls through to a value: a jump, an `if` /
+    /// `else` or a `case` whose every branch ends in one, a `noreturn`
+    /// builtin.
+    fn tailLeaves(e: Expr) bool {
+        return switch (e) {
+            .jump => true,
+            .branch => |b| switch (b.kind) {
+                .if_ => |iff| blk: {
+                    const els = iff.else_ orelse break :blk false;
+                    break :blk stmtsLeave(iff.then_) and stmtsLeave(els);
+                },
+                else => false,
+            },
+            .collection => |c| switch (c.kind) {
+                .case => |cs| blk: {
+                    if (cs.arms.len == 0) break :blk false;
+                    for (cs.arms) |arm| {
+                        const leaves = switch (arm.body) {
+                            .function => |f| f.kind.syntax == .lambda and stmtsLeave(f.kind.body),
+                            else => tailLeaves(arm.body),
+                        };
+                        if (!leaves) break :blk false;
+                    }
+                    break :blk true;
+                },
+                .grouped => |g| tailLeaves(g.*),
+                else => false,
+            },
+            .call => |c| switch (c.kind) {
+                .call => |cc| cc.is_builtin and cc.receiver == null and
+                    (std.mem.eql(u8, cc.callee, "panic") or std.mem.eql(u8, cc.callee, "todo") or
+                        std.mem.eql(u8, cc.callee, "trap") or std.mem.eql(u8, cc.callee, "compilerError")),
+                else => false,
+            },
+            else => false,
+        };
+    }
+
+    fn stmtsLeave(stmts: []const Stmt) bool {
+        var n = stmts.len;
+        while (n > 0) : (n -= 1) {
+            const e = stmts[n - 1].expr;
+            if (e == .literal and e.literal.kind == .comment) continue;
+            return tailLeaves(e);
+        }
+        return false;
     }
 
     /// True when `expr`, just parsed as a statement, is a **braced
@@ -1089,6 +1212,7 @@ pub const Parser = struct {
             .trackEmptyLines = true,
             .handleComments = true,
             .semicolonPolicy = .requiredExceptLast,
+            .markTail = true,
         });
     }
 
@@ -1131,14 +1255,16 @@ pub const Parser = struct {
 
     /// Parses `{ stmt; ... }` preserving comment nodes as literal expressions.
     /// Used in fn/method bodies where source comments must be kept.
+    /// Decision 409 — a method's last expression may drop its `;` (its tail).
     pub fn parseMethodBodyStmts(this: *This, alloc: std.mem.Allocator) ParseError![]Stmt {
-        return this.parseBlock(alloc, .{ .handleComments = true });
+        return this.parseBlock(alloc, .{ .handleComments = true, .semicolonPolicy = .requiredExceptLast, .markTail = true });
     }
 
     /// Parses `{ stmt; ... }` without special comment handling.
-    /// Used in implement methods, getters, setters, and interface default bodies.
+    /// Used in getters, setters, and interface default bodies; a method's last
+    /// expression may drop its `;` (decision 409).
     pub fn parseSimpleBodyStmts(this: *This, alloc: std.mem.Allocator) ParseError![]Stmt {
-        return this.parseBlock(alloc, .{});
+        return this.parseBlock(alloc, .{ .semicolonPolicy = .requiredExceptLast, .markTail = true });
     }
 
     pub const parseParamList = decl_grammar.parseParamList;

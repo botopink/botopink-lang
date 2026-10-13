@@ -10,6 +10,13 @@ they are written (decision 370 (2), `FunctionExpr.paramTypes` / `.returnType`):
 `fn(self: T) -> Violation[] { … }` round-trips, an untyped `fn(a, b) { … }` is
 printed as before (`tests/expressions.zig`).
 
+A body's tail (decision 409, `ast.Stmt.tail`) is printed as written: `fmtStmt` adds no `;` after
+it and leaves out the `return` the parser wrapped a valued tail in, and keeps the `;` of a last
+statement written with one — in a one-line lambda too (`{ x -> f(x); }`). A `fn`, a method or a
+function expression whose body is one tail prints on one line when it fits (`fmtFnBody`,
+`oneLineTailBody`: `fn inc(x: i32) -> i32 { x + 1 }`), the width deciding, never the source; a body
+of statements keeps its open layout (`tests/declarations.zig`).
+
 ## Tree
 
 ```text

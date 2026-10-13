@@ -965,10 +965,26 @@ of a decorator in another module, reading only its parameters and locals) and
 `modules/decorator_member_fn_imported_name` (one naming a type and a private helper of the
 decorator's module — decision 384: each resolves there, the user's own same-named helper is not
 captured; it was `decorator-member-fn-imported-name` on the parent binary), and the refusals
-`modules/fn_expr_typed`, `modules/decorator_member_not_fn`, `modules/decorator_member_fn_untyped`,
+`modules/decorator_member_not_fn`, `modules/decorator_member_fn_untyped`,
 `modules/decorator_member_captures` (a local of the decorator's body),
 `modules/decorator_member_captures_handle` (`decl`) and `modules/decorator_member_type` (a field's
 `fn(self: T)`, `T` the field's type), each red on the parent binary.
+
+Decision 408 (144 B-21, `01-checker` step 37) made the typed function expression legal in every
+position — `modules/fn_expr_typed`, its refusal anywhere but `decl.addMember`, is gone — and adds
+`modules/fn_expr_typed_anywhere` (a `val`, a `var` assigned twice, a `map` argument, a `fn`-typed
+parameter's argument, a return, an annotated `val`, one answering nothing — four targets; beam
+lowered every `fn(…) { … }` expression to `undefined` on the parent binary) and
+`modules/fn_expr_typed_mismatch` (a `string` parameter where `fn(x: i32) -> i32` is expected, refused
+at the expression naming both function types). Decision 409 (step 38) — a function body's last
+expression written without `;` is its value — adds `modules/fn_tail_value` (a tail, an early `return`
+before one, an `if` / `else` tail, a generic one, a `val` before one, a `return x;` body beside them),
+`modules/method_tail_value` (a method, an associated function, a generic type's method),
+`modules/fn_expr_tail_value` (typed and untyped function expressions, a lambda) and the refusals
+`modules/fn_tail_type_mismatch` (`"a"` where `-> i32` is declared, at the tail),
+`modules/fn_tail_in_void` (an `i32` tail in a body declaring no return, at the tail) and
+`modules/fn_expr_tail_semicolon` (`fn(x: i32) -> i32 { x + 1; }`, at the expression); each red on
+the parent binary.
 
 Decision 298 (`01-compiler/130` step 8) — typed meta keyed by its record type — adds, on the four
 targets, `modules/meta_typed` (`decl.setMeta(Entity(…))` read `@typeInfo(City).meta(Entity)`, two

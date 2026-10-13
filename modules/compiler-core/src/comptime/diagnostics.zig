@@ -532,10 +532,6 @@ pub const decorator_wrap_generic: []const u8 = "decorator-wrap-generic";
 
 // ── decision 370 (2) — a typed member carrying the parameters' `@Expr`s ─────
 
-/// A typed function expression (`fn(x: T) -> R { … }`) anywhere but the
-/// member a decorator hands to `decl.addMember(name, fn…)`.
-pub const fn_expr_typed: []const u8 = "fn-expr-typed";
-
 /// `decl.addMember(name, f)` whose `f` is not a function expression written at
 /// the call: the member's body is where the parameters' `@Expr`s are spliced.
 pub const decorator_member_not_fn: []const u8 = "decorator-member-not-fn";
@@ -799,7 +795,6 @@ pub const all_codes = [_][]const u8{
     decorator_wrap_not_lambda,
     decorator_wrap_type,
     decorator_wrap_generic,
-    fn_expr_typed,
     decorator_member_not_fn,
     decorator_member_fn_untyped,
     decorator_member_captures,

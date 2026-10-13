@@ -6447,7 +6447,9 @@ const Emitter = struct {
                 return;
             },
             .function => |f| switch (f.kind.syntax) {
-                .lambda => {
+                // A function expression `fn(x) { … }` — typed or not
+                // (decision 408) — is a closure as a lambda is.
+                .lambda, .fnExpr => {
                     try self.lowerLambda(f.kind, self.min_live);
                     return;
                 },
@@ -6456,10 +6458,6 @@ const Emitter = struct {
                 .asyncBlock => {
                     try self.lowerLambda(f.kind, self.min_live);
                     try beamEmitter.writeCallFun(self.out, 0);
-                    return;
-                },
-                .fnExpr => {
-                    try beamEmitter.writeMoveOp(self.out, Op.atom("undefined"), Dst.xr(0));
                     return;
                 },
             },

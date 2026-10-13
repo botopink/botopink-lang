@@ -559,6 +559,7 @@ pub fn parseFnBody(
 
     try refuseDiscardParam(this);
     const body = try this.parseFnBodyInBraces(alloc);
+    try This.returnTail(alloc, body, returnType);
 
     return FnDecl{
         .isPub = isPub,
@@ -723,6 +724,7 @@ pub fn parseMethodDecl(this: *This, alloc: std.mem.Allocator, is_declare: bool, 
 
     try refuseDiscardParam(this);
     const body = try this.parseMethodBodyStmts(alloc);
+    try This.returnTail(alloc, body, returnType);
     return BehaviorMethod{
         .name = name,
         .genericParams = genericParams,
@@ -897,7 +899,10 @@ pub fn parseImplementMethod(this: *This, alloc: std.mem.Allocator) ParseError!Im
     }
 
     try refuseDiscardParam(this);
-    const body = try this.parseSimpleBodyStmts(alloc);
+    // Every statement keeps its `;`: the printer writes no `-> R` here, so a
+    // tail could not read back as the value it was (decision 409 covers a
+    // type's methods and a behavior's default bodies).
+    const body = try this.parseBlock(alloc, .{});
     return ImplementMethod{
         .qualifier = qualifier,
         .name = methodName,
@@ -1836,6 +1841,7 @@ fn parseBehaviorMethod(this: *This, alloc: std.mem.Allocator, is_default: bool) 
     }
     try refuseDiscardParam(this);
     const body = try this.parseSimpleBodyStmts(alloc);
+    try This.returnTail(alloc, body, returnType);
     if (this.check(.comma)) return failAt(this, .memberCommaSeparator, this.peek());
     return BehaviorMethod{
         .name = methodName,

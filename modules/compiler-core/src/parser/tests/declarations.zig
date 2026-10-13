@@ -1150,3 +1150,68 @@ test "parser: a discard param is legal in a bodyless behavior member" {
         \\}
     );
 }
+
+// ── decision 409: a body's last expression without `;` is its tail ────────────
+
+fn parseTailProgram(alloc: Allocator, src: []const u8) !ast.Program {
+    var lx = Lexer.init(src);
+    const tokens = try lx.scanAll(alloc);
+    var p = Parser.init(tokens);
+    return p.parse(alloc);
+}
+
+test "parser: a valued fn's tail becomes its return (decision 409)" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const program = try parseTailProgram(arena.allocator(), "fn inc(x: i32) -> i32 { x + 1 }");
+    const body = program.decls[0].@"fn".body;
+    try std.testing.expectEqual(@as(usize, 1), body.len);
+    try std.testing.expectEqual(ast.Tail.returned, body[0].tail);
+    try std.testing.expect(body[0].expr == .jump and body[0].expr.jump.kind == .@"return");
+    const value = body[0].expr.jump.kind.@"return".?.*;
+    try std.testing.expect(value == .binaryOp);
+    // Located at the expression, so a mismatch points at it.
+    try std.testing.expect(body[0].expr.getLoc().eql(value.getLoc()));
+}
+
+test "parser: a tail with `;` is a statement; a void fn's tail stays as written (decision 409)" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const program = try parseTailProgram(arena.allocator(),
+        \\fn semi(x: i32) -> i32 { x + 1; }
+        \\fn log(x: i32) { @print(x) }
+        \\fn sign(n: i32) -> i32 { if (n < 0) return -1; n }
+        \\fn both(c: bool) -> i32 { if (c) return 1 else return 2 }
+        \\fn braced(c: bool) -> i32 { if (c) { return 1; } else { return 2; } }
+    );
+    try std.testing.expectEqual(ast.Tail.none, program.decls[0].@"fn".body[0].tail);
+    try std.testing.expectEqual(ast.Tail.value, program.decls[1].@"fn".body[0].tail);
+    try std.testing.expect(program.decls[1].@"fn".body[0].expr == .call);
+    const sign = program.decls[2].@"fn".body;
+    try std.testing.expectEqual(ast.Tail.none, sign[0].tail);
+    try std.testing.expectEqual(ast.Tail.returned, sign[1].tail);
+    // Every path of the tail already leaves: it is left as written.
+    try std.testing.expectEqual(ast.Tail.value, program.decls[3].@"fn".body[0].tail);
+    try std.testing.expect(program.decls[3].@"fn".body[0].expr == .branch);
+    // A braced `if` at the end is a statement, never the tail (front 16).
+    try std.testing.expectEqual(ast.Tail.none, program.decls[4].@"fn".body[0].tail);
+}
+
+test "parser: a method's, a function expression's and a lambda's tail (decision 409)" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const program = try parseTailProgram(arena.allocator(),
+        \\type Rect(w: i32, h: i32) {
+        \\    fn area(self: Self) -> i32 { self.w * self.h }
+        \\}
+        \\fn main() { use2(fn(x: i32) -> i32 { x + 1 }, { x -> val y = x; y * y }); }
+    );
+    const methods = program.decls[0].type_.methods;
+    try std.testing.expectEqual(ast.Tail.returned, methods[0].body.?[0].tail);
+    const args = program.decls[1].@"fn".body[0].expr.call.kind.call.args;
+    const fnExpr = args[0].value.*.function.kind.body;
+    try std.testing.expectEqual(ast.Tail.returned, fnExpr[0].tail);
+    const lambda = args[1].value.*.function.kind.body;
+    try std.testing.expectEqual(ast.Tail.none, lambda[0].tail);
+    try std.testing.expectEqual(ast.Tail.value, lambda[1].tail);
+}

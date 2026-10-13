@@ -3730,7 +3730,7 @@ fn inferTestDecl(env: *Env, t: ast.TestDecl) InferError!void {
     env.labelStack.shrinkRetainingCapacity(0);
 
     try refuseRedeclaredBindings(env, t.body, &.{});
-    try inferBodyStmts(env, t.body);
+    _ = try inferBodyStmts(env, t.body);
 }
 
 /// One variant of `pub type External implement Annotation { … }` in
@@ -8107,7 +8107,9 @@ fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
 
     try refuseInlineParamRules(env, f);
     try refuseRedeclaredBindings(env, f.body, try paramNames(env, f.params));
-    try inferBodyStmts(env, f.body);
+    const tailTy = try inferBodyStmts(env, f.body);
+    if (answersNothing(f.returnType) and f.typeGuardParam == null)
+        try refuseValueTailInVoid(env, try std.fmt.allocPrint(env.arena, "`{s}`", .{f.name}), f.body, tailTy);
     try refuseFallingOffTheEnd(env, f, retType);
     if (recordsHooks) try finishHookNode(env, f, &hookBuilder);
 
@@ -8310,8 +8312,10 @@ fn inferTypeMethods(
         defer narrowed.deinit(env.arena);
         try refuseRedeclaredBindings(env, body, try paramNames(env, m.params));
         try noteStatementClosures(env, body);
+        var tailTy: ?*T.Type = null;
         for (body) |stmt| {
             const typed = try inferExprTyped(env, stmt.expr);
+            if (stmt.tail == .value) tailTy = typed.getType();
             try narrowAfterEarlyExit(env, stmt.expr, &narrowed);
             // 06 C9 — the return type of a method that annotates none comes
             // from its body. `registerInherentMethodTypes` stores a signature
@@ -8332,6 +8336,8 @@ fn inferTypeMethods(
             }
         }
         if (narrowed.items.len > 0) try restorePatternBindings(env, narrowed.items);
+        if (answersNothing(m.returnType) and (m.returnType != null or inferredReturn == null))
+            try refuseValueTailInVoid(env, try std.fmt.allocPrint(env.arena, "`{s}.{s}`", .{ typeName, m.name }), body, tailTy);
         if (m.returnType == null) {
             const params = try env.arena.alloc(*T.Type, m.params.len);
             for (m.params, 0..) |p, i| {
@@ -11847,7 +11853,11 @@ fn paramNames(env: *Env, params: []const ast.Param) InferError![]const []const u
     return out;
 }
 
-fn inferBodyStmts(env: *Env, body: []const ast.Stmt) InferError!void {
+/// Infer a body's statements in order. Answers the type of its decision-409
+/// tail (`tail == .value`, the last expression written without `;`) when it
+/// has one, for the caller to judge against what the body answers.
+fn inferBodyStmts(env: *Env, body: []const ast.Stmt) InferError!?*T.Type {
+    var tailTy: ?*T.Type = null;
     try noteStatementClosures(env, body);
     var narrowed: std.ArrayListUnmanaged(PatternBindingSnapshot) = .empty;
     defer narrowed.deinit(env.arena);
@@ -11856,7 +11866,8 @@ fn inferBodyStmts(env: *Env, body: []const ast.Stmt) InferError!void {
     for (body) |stmt| {
         env.statementBlockLoc = statementBlockLocOf(stmt.expr);
         env.useStatementLoc = if (stmt.expr == .useHook) stmt.expr.useHook.loc else null;
-        _ = try inferExpr(env, stmt.expr);
+        const ty = try inferExpr(env, stmt.expr);
+        if (stmt.tail == .value) tailTy = ty;
         env.useStatementLoc = null;
         try narrowAfterEarlyExit(env, stmt.expr, &narrowed);
         // Decision 357 — a `use` after this statement would not run on every call.
@@ -11864,6 +11875,32 @@ fn inferBodyStmts(env: *Env, body: []const ast.Stmt) InferError!void {
             env.earlyExitLine = stmt.expr.getLoc().line;
     }
     if (narrowed.items.len > 0) try restorePatternBindings(env, narrowed.items);
+    return tailTy;
+}
+
+/// Decision 409 — a body that answers nothing (no `-> R`, or `-> void`)
+/// takes no value from its tail: a last expression written without `;` must
+/// be `void` (or never return). Refused at the expression otherwise.
+fn refuseValueTailInVoid(env: *Env, what: []const u8, body: []const ast.Stmt, tailTy: ?*T.Type) InferError!void {
+    const ty = tailTy orelse return;
+    const tailStmt = for (0..body.len) |k| {
+        if (body[body.len - 1 - k].tail == .value) break body[body.len - 1 - k];
+    } else return;
+    const loc = tailStmt.expr.getLoc();
+    const d = ty.deref();
+    if (d.* == .named and (std.mem.eql(u8, d.named.name, "void") or std.mem.eql(u8, d.named.name, "noreturn"))) return;
+    if (d.* == .typeVar) return unifyAt(env, ty, try env.namedType("void"), loc);
+    const rendered = try snapshotMod.typeNameOf(env.arena, ty);
+    const msg = try std.fmt.allocPrint(env.arena, "{s} answers nothing, and its last expression, written without `;`, is a `{s}`", .{ what, rendered });
+    const hint = try std.fmt.allocPrint(env.arena, "A body's last expression without `;` is its value (decision 409): end it with `;` to discard the value, or declare `-> {s}`.", .{rendered});
+    env.lastError = TypeError.custom(msg, hint).withLoc(loc);
+    return error.TypeError;
+}
+
+/// Whether a written return answers nothing: none, or `void`.
+fn answersNothing(rt: ?ast.TypeRef) bool {
+    const t = rt orelse return true;
+    return t == .named and std.mem.eql(u8, t.named, "void");
 }
 
 /// Decision 2 — the location of `stmt` when it is an `@block { … }` written
@@ -20700,8 +20737,11 @@ fn inferFunctionExpr(env: *Env, func: ast.FunctionExprOf(.untyped), loc: ast.Loc
         if (!isResultType(d.func.ret)) break :blk null;
         break :blk e;
     };
+    // Decision 408 — a typed function expression is checked against the
+    // position's function type whatever its return.
+    const typedExpected = if (func.kind.syntax == .fnExpr and func.kind.isTyped()) env.expectedType else null;
     env.expectedType = null;
-    return inferFunctionExprExpected(env, func, loc, fallibleExpected, false);
+    return inferFunctionExprExpected(env, func, loc, typedExpected orelse fallibleExpected, false);
 }
 
 /// Decision 124 — `async { … }`: a closed block worth `@Task<T>`, legal in any
@@ -20829,20 +20869,64 @@ fn inferFunctionExprExpected(
     expected: ?*T.Type,
     params_only: bool,
 ) InferError!TypedExpr {
-    // Decision 370 (2) — a function expression's types are written only on
-    // the member a decorator hands to `decl.addMember(name, fn…)`.
-    if (func.kind.isTyped()) {
-        const admitted = if (env.memberFnAt) |at| at.eql(loc) else false;
-        if (!admitted) {
-            env.lastError = TypeError.custom(
-                diagnostics.fn_expr_typed ++ ": a function expression writes its parameters' types and its return only as the member a decorator hands to `decl.addMember(name, fn(…) -> R { … })`",
-                "Write the lambda's parameters without types (`fn(a, b) { … }`, `{ a, b -> … }`): they take the types of the position it is passed to, or annotate the `val` it is bound to.",
-            ).withLoc(loc);
-            return error.TypeError;
+    // Decision 408 — the typed function expression `fn(x: T, …) -> R { … }`
+    // is legal in every position. The member a decorator hands to
+    // `decl.addMember(name, fn…)` arrives with its written signature as
+    // `expected` (`inferMemberFnCall`); anywhere else the written types are
+    // the function's, checked against the position's when it has one.
+    if (func.kind.syntax == .fnExpr and func.kind.isTyped()) {
+        const member = if (env.memberFnAt) |at| at.eql(loc) else false;
+        if (member) {
+            env.memberFnAt = null;
+            return inferFunctionExprExpectedInner(env, func, loc, expected, false);
         }
-        env.memberFnAt = null;
+        const written = try writtenFnType(env, func);
+        if (expected) |e| {
+            const d = e.deref();
+            if (d.* == .func and d.func.params.len == func.kind.params.len) {
+                const agreed = if (params_only) blk: {
+                    for (d.func.params, written.deref().func.params) |want, got| unifyAt(env, want, got, loc) catch |err| break :blk err;
+                    break :blk {};
+                } else unifyAt(env, e, written, loc);
+                agreed catch |err| {
+                    if (err != error.TypeError) return err;
+                    // Named whole, at the expression: the position's function
+                    // type against the one the expression writes.
+                    const msg = try std.fmt.allocPrint(env.arena, "type mismatch: expected {s}, got {s}", .{
+                        try snapshotMod.typeSignatureOf(env.arena, e),
+                        try snapshotMod.typeSignatureOf(env.arena, written),
+                    });
+                    env.lastError = TypeError.custom(msg, "A function expression's written types are checked against its position's (decision 408): write the types it expects, or leave them out and let the position type it.").withLoc(loc);
+                    return error.TypeError;
+                };
+            }
+        }
+        return inferFunctionExprExpectedInner(env, func, loc, written, false);
     }
     return inferFunctionExprExpectedInner(env, func, loc, expected, params_only);
+}
+
+/// Decision 408 — the type a typed function expression writes: its
+/// parameters' types and its `-> R` (`void` when it writes none), the
+/// enclosing function's type parameters in scope.
+fn writtenFnType(env: *Env, func: ast.FunctionExprOf(.untyped)) InferError!*T.Type {
+    const generics: std.StringHashMap(*T.Type) = if (env.fnGenericMap) |gm| gm.* else std.StringHashMap(*T.Type).init(env.arena);
+    const params = try env.arena.alloc(*T.Type, func.kind.paramTypes.len);
+    for (func.kind.paramTypes, 0..) |pt, i| params[i] = try resolveTypeRefInContext(env, pt, generics);
+    const ret = if (func.kind.returnType) |rt| try resolveTypeRefInContext(env, rt, generics) else try env.namedType("void");
+    return env.funcType(params, ret);
+}
+
+/// Whether a function expression's written `-> R` hands out a value a body
+/// running off its end would not: a written type other than `void` /
+/// `noreturn`, an effect wrapper aside.
+fn writtenReturnHasValue(rt: ?ast.TypeRef) bool {
+    const t = rt orelse return false;
+    return switch (t) {
+        .named => |n| !std.mem.eql(u8, n, "void") and !std.mem.eql(u8, n, "noreturn"),
+        .generic => |g| !(g.is_builtin and ast.EffectKind.fromWrapperName(g.name) != null),
+        else => true,
+    };
 }
 
 fn inferFunctionExprExpectedInner(
@@ -20981,9 +21065,29 @@ fn inferFunctionExprExpectedInner(
     }
     if (!armBlock) try refuseRedeclaredBindings(env, fk.body, fk.params);
     const bodyTyped = try inferStmtsTyped(env, fk.body);
-    // The lambda's return type is its tail expression's type; an explicit
-    // `return expr` tail types as void, so use the returned value's type.
-    const retType = if (bodyTyped.len > 0) blk: {
+    // Decisions 408 / 409 — a typed function expression answers the return it
+    // writes: a tail written without `;` is its value (the parser made it a
+    // `return`), so a body with `-> R` that can run off its end is refused,
+    // and a body answering nothing takes no value from its tail.
+    const typedFn = fk.syntax == .fnExpr and fk.isTyped();
+    const retType = if (typedFn) blk: {
+        const written = expRet orelse try env.namedType("void");
+        if (writtenReturnHasValue(fk.returnType)) {
+            if (stmtsMayFallThrough(env, bodyTyped)) {
+                const rendered = try snapshotMod.typeNameOf(env.arena, written);
+                const msg = try std.fmt.allocPrint(env.arena, "the function expression declares `-> {s}` and its body can reach its end without a `return`", .{rendered});
+                env.lastError = TypeError.custom(msg, "A value leaves a function through `return`, or as its last expression written without `;` (decisions 2, 409).").withLoc(loc);
+                return error.TypeError;
+            }
+        } else if (answersNothing(fk.returnType)) {
+            var tailTy: ?*T.Type = null;
+            for (fk.body, bodyTyped) |s, t| if (s.tail == .value) {
+                tailTy = t.expr.getType();
+            };
+            try refuseValueTailInVoid(env, "the function expression", fk.body, tailTy);
+        }
+        break :blk written;
+    } else if (bodyTyped.len > 0) blk: {
         const tail = bodyTyped[bodyTyped.len - 1].expr;
         // A fallible lambda's `return` / `throw` answer the expected
         // `@Result` (wrapped by the transform); its value is that type.
@@ -20993,7 +21097,7 @@ fn inferFunctionExprExpectedInner(
         }
         break :blk tail.getType();
     } else try env.namedType("void");
-    if (expRet) |er| try unifyAt(env, retType, er, loc);
+    if (!typedFn) if (expRet) |er| try unifyAt(env, retType, er, loc);
     const funcType = try env.funcType(params, retType);
     return TypedExpr{ .function = .{ .loc = loc, .type_ = funcType, .kind = .{
         .syntax = fk.syntax,

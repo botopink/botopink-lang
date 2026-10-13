@@ -1353,6 +1353,7 @@ pub fn parsePrimary(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
                 .trackEmptyLines = true,
                 .handleComments = true,
                 .semicolonPolicy = .optional,
+                .markTail = true,
             });
 
             return Expr{ .function = .{ .loc = locFromToken(braceTok), .kind = .{
@@ -1548,6 +1549,7 @@ pub fn parsePrimary(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
         }
         const returnType: ?ast.TypeRef = if (this.match(.rightArrow)) try this.parseTypeRef(alloc) else null;
         const body = try this.parseFnBodyInBraces(alloc);
+        try This.returnTail(alloc, body, returnType);
         return Expr{ .function = .{ .loc = locFromToken(fnTok), .kind = .{
             .syntax = .fnExpr,
             .params = try params.toOwnedSlice(alloc),
@@ -2175,6 +2177,7 @@ pub fn parseTrailingLambdas(this: *This, alloc: std.mem.Allocator) ParseError![]
             .trackEmptyLines = true,
             .handleComments = true,
             .semicolonPolicy = .requiredExceptLast,
+            .markTail = true,
         });
 
         try lambdas.append(alloc, .{

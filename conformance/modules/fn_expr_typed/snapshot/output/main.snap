@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: fn-expr-typed: a function expression writes its parameters' types and its return only as the member a decorator hands to `decl.addMember(name, fn(…) -> R { … })`
-at src/main.bp:6:15

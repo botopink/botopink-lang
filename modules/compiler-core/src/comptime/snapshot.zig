@@ -853,6 +853,13 @@ pub fn typeNameOf(allocator: std.mem.Allocator, ty: *T.Type) std.mem.Allocator.E
     return typeNameIn(allocator, ty, .{});
 }
 
+/// A type in its source spelling, a function type's signature included
+/// (`fn(i32) -> i32`, where `typeNameOf` names the return alone): for a
+/// diagnostic that compares two function types (decision 408).
+pub fn typeSignatureOf(allocator: std.mem.Allocator, ty: *T.Type) std.mem.Allocator.Error![]const u8 {
+    return typeNameIn(allocator, ty, .{ .mode = .ast });
+}
+
 /// `typeNameOf` with the rendering picked by the caller — see `TypeRender`.
 fn typeNameIn(
     allocator: std.mem.Allocator,
