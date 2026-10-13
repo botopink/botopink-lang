@@ -774,13 +774,138 @@ pub fn prepare(env: *Env, ct: ast.ComptimeExprOf(.untyped)) Error!Prepared {
     return withStdCalls(env, .{ .value = synthFn(value_fn, body), .makers = p.makers.items });
 }
 
+/// `f` with each `@Result` / `@Option` method call inference recorded
+/// (`Env.method_lowerings`, by the call's location) written as the backends'
+/// builtin, `__bp_<domain>_<op>(receiver, args…)`, and each `return v` /
+/// `throw e` of a `@Result` body as `__bp_ok(v)` / `__bp_error(e)`
+/// (`Env.result_jump_lowerings`) — `transform.zig`'s `tryLowerMethodCall`
+/// and `tryLowerResultJump`, applied to the code the comptime runtime runs (a
+/// `comptime "7".parseInt().unwrapOr(0)`). `f` itself when none is reached.
+fn withResultMethods(env: *Env, f: ast.FnDecl) Error!ast.FnDecl {
+    if (env.method_lowerings.count() == 0 and env.result_jump_lowerings.count() == 0) return f;
+    var l: ResultMethods = .{ .arena = env.arena, .map = &env.method_lowerings, .jumps = &env.result_jump_lowerings };
+    const body = try l.clone([]ast.Stmt, f.body);
+    if (!l.changed) return f;
+    var out = f;
+    out.body = body;
+    return out;
+}
+
+const ResultMethods = struct {
+    arena: std.mem.Allocator,
+    map: *const std.AutoHashMap(ast.Loc, envMod.MethodLowering),
+    jumps: *const std.AutoHashMap(ast.Loc, envMod.ResultJumpLowering),
+    changed: bool = false,
+
+    fn wrap(self: *ResultMethods, callee: []const u8, value: *ast.Expr, loc: ast.Loc) Error!*ast.Expr {
+        const args = try self.arena.alloc(ast.CallArg, 1);
+        args[0] = .{ .label = null, .value = value, .comments = &.{} };
+        const e = try self.arena.create(ast.Expr);
+        e.* = .{ .call = .{ .loc = loc, .kind = .{ .call = .{ .receiver = null, .callee = callee, .is_builtin = true, .args = args, .trailing = &.{} } } } };
+        return e;
+    }
+
+    fn clone(self: *ResultMethods, comptime U: type, v: U) Error!U {
+        if (U == ast.TypeRef or U == ast.Pattern) return v;
+        if (U == ast.Expr) if (v == .jump) if (self.jumps.get(v.jump.loc)) |lw| switch (lw) {
+            .wrap_ok => if (v.jump.kind == .@"return") {
+                self.changed = true;
+                const value = if (v.jump.kind.@"return") |r| blk: {
+                    const n = try self.arena.create(ast.Expr);
+                    n.* = try self.clone(ast.Expr, r.*);
+                    break :blk n;
+                } else blk: {
+                    const n = try self.arena.create(ast.Expr);
+                    n.* = .{ .literal = .{ .loc = v.jump.loc, .kind = .null_ } };
+                    break :blk n;
+                };
+                return .{ .jump = .{ .loc = v.jump.loc, .kind = .{ .@"return" = try self.wrap("__bp_ok", value, v.jump.loc) } } };
+            },
+            .wrap_error => if (v.jump.kind == .throw_) if (v.jump.kind.throw_) |t| {
+                self.changed = true;
+                const n = try self.arena.create(ast.Expr);
+                n.* = try self.clone(ast.Expr, t.*);
+                return .{ .jump = .{ .loc = v.jump.loc, .kind = .{ .@"return" = try self.wrap("__bp_error", n, v.jump.loc) } } };
+            },
+            .unwrap_passthrough => if (v.jump.kind == .@"return") if (v.jump.kind.@"return") |r| if (r.* == .jump and r.jump.kind == .try_) if (r.jump.kind.try_) |inner| {
+                self.changed = true;
+                const n = try self.arena.create(ast.Expr);
+                n.* = try self.clone(ast.Expr, inner.*);
+                return .{ .jump = .{ .loc = v.jump.loc, .kind = .{ .@"return" = n } } };
+            },
+            else => {},
+        };
+        if (U == ast.Expr) if (v == .call and v.call.kind == .call) if (v.call.kind.call.receiver) |recv| if (self.map.get(v.call.loc)) |lw| {
+            self.changed = true;
+            const cc = v.call.kind.call;
+            const domain = switch (lw.domain) {
+                .result => "result",
+                .option => "option",
+            };
+            const op = @tagName(lw.op);
+            const args = if (lw.qualified) try self.clone([]ast.CallArg, cc.args) else blk: {
+                const out = try self.arena.alloc(ast.CallArg, cc.args.len + 1);
+                const r = try self.arena.create(ast.Expr);
+                r.* = try self.clone(ast.Expr, recv.*);
+                out[0] = .{ .label = null, .value = r, .comments = &.{} };
+                for (cc.args, 0..) |a, i| out[i + 1] = try self.clone(ast.CallArg, a);
+                break :blk out;
+            };
+            return .{ .call = .{ .loc = v.call.loc, .kind = .{ .call = .{
+                .receiver = null,
+                .callee = try std.fmt.allocPrint(self.arena, "__bp_{s}_{s}", .{ domain, op }),
+                .is_builtin = true,
+                .args = args,
+                .trailing = try self.clone(@TypeOf(cc.trailing), cc.trailing),
+            } } } };
+        };
+        switch (@typeInfo(U)) {
+            .@"struct" => |st| {
+                var out: U = v;
+                inline for (st.fields) |fl| {
+                    if (fl.is_comptime) continue;
+                    if (comptime mayHoldNames(fl.type)) @field(out, fl.name) = try self.clone(fl.type, @field(v, fl.name));
+                }
+                return out;
+            },
+            .@"union" => |u| {
+                if (u.tag_type == null) return v;
+                switch (v) {
+                    inline else => |payload, tag| {
+                        const P = @TypeOf(payload);
+                        if (comptime !mayHoldNames(P)) return v;
+                        return @unionInit(U, @tagName(tag), try self.clone(P, payload));
+                    },
+                }
+            },
+            .optional => |o| return if (v) |inner| try self.clone(o.child, inner) else null,
+            .pointer => |pt| switch (pt.size) {
+                .one => {
+                    if (comptime !mayHoldNames(pt.child)) return v;
+                    const n = try self.arena.create(pt.child);
+                    n.* = try self.clone(pt.child, v.*);
+                    return n;
+                },
+                .slice => {
+                    if (comptime !mayHoldNames(pt.child)) return v;
+                    const out = try self.arena.alloc(pt.child, v.len);
+                    for (v, 0..) |e, i| out[i] = try self.clone(pt.child, e);
+                    return out;
+                },
+                else => return v,
+            },
+            else => return v,
+        }
+    }
+};
+
 /// Decision 341 — `prepared` with its std calls renamed to the functions the
 /// module carries (`host_cells.Writer`): the node loads no std module.
 fn withStdCalls(env: *Env, prepared: Prepared) Error!Prepared {
     var writer = try hostCells.Writer.init(env, env.moduleDecls);
     const makers = try env.arena.dupe(Maker, prepared.makers);
-    for (makers) |*m| m.decl = try writer.rewrite(m.decl);
-    return .{ .value = try writer.rewrite(prepared.value), .makers = makers };
+    for (makers) |*m| m.decl = try writer.rewrite(try withResultMethods(env, m.decl));
+    return .{ .value = try writer.rewrite(try withResultMethods(env, prepared.value)), .makers = makers };
 }
 
 // ── what the module carries ──────────────────────────────────────────────────
@@ -899,6 +1024,7 @@ pub fn collectSupport(env: *Env, prepared: Prepared) Error!Support {
         break :makerDecls ms;
     }, fns.items });
     const hosted = try hostCells.hostSupport(env, &env.fnDecls, reached);
+    for (fns.items) |*f| f.* = try withResultMethods(env, f.*);
     try fns.appendSlice(arena, hosted);
     // A carried std function's record types travel with it (std's
     // `createContext` builds a `Context`, decision 379).

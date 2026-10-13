@@ -7870,7 +7870,11 @@ const Emitter = struct {
         const A = Ast.Expr.a;
         switch (e) {
             .literal => |lit| return switch (lit.kind) {
-                .numberLit => |n| .{ .number = n },
+                // A number's suffix is the checker's (decision 247): the
+                // transform strips it from the program, and a comptime
+                // module (`emitComptimeModule`, built from the parsed body)
+                // is stripped here — `comptime wide(4500000000l)`.
+                .numberLit => |n| .{ .number = try lexerMod.numberBackendText(b.arena, n) },
                 .comment => |c| .{ .comment = commentNode(c) },
                 .stringLit => |str| .{ .lexeme_binary = str },
                 // Desugared to a `+` chain by the transform pass in a typed
@@ -9425,7 +9429,7 @@ const Emitter = struct {
                 }
                 return name;
             },
-            .numberLit => |n| return .{ .number = n },
+            .numberLit => |n| return .{ .number = try lexerMod.numberBackendText(b.arena, n) },
             .stringLit => |str| return .{ .lexeme_binary = str },
             .variant => |v| switch (v.shape) {
                 // `#(a, b)` / `#(0, s)` / `#(a, ..)` (§5.1 P6, P7): a tuple

@@ -1087,6 +1087,11 @@ fn rewriteExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
     if (expr_ptr.* == .comptime_) {
         if (agg.src_rewrites.get(expr_ptr.comptime_.loc)) |rewrite| {
             expr_ptr.* = rewrite.*;
+            // A lifted number carries its type's suffix (`7l`); the backends
+            // read the digits (decision 247), as for a written literal above.
+            if (expr_ptr.* == .literal and expr_ptr.literal.kind == .numberLit) {
+                expr_ptr.literal.kind = .{ .numberLit = lexerMod.numberBackendText(agg.spec_cache.arena, expr_ptr.literal.kind.numberLit) catch return ScanError.OutOfMemory };
+            }
         }
     }
     // `@typeInfo(X).name` / `….meta.<d>.<k>` (decision 216 (2)) → the string

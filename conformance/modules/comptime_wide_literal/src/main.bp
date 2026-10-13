@@ -1,0 +1,20 @@
+//// Decisions 247, 331 — a suffixed number literal under a `comptime` is the
+//// value its suffix types: `4500000000l` is an `i64` the comptime runtime
+//// computes with (the suffix is the checker's, never written into the module
+//// the build runs), and the `i64` the `comptime` answers is lifted into the
+//// program by its digits.
+
+import {context.createContext} from "std";
+
+fn wide(n: i64) -> i64 {
+    return n * 2l;
+}
+
+pub val big = comptime wide(4500000000l);
+
+pub val totalContext = comptime createContext(7l);
+
+pub fn main() {
+    @print(big);
+    @print(comptime wide(3l) + 1l);
+}

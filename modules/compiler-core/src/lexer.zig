@@ -153,6 +153,12 @@ pub fn numberSuffixLowercase(written: []const u8) ?[]const u8 {
 /// from a fixed-width integer without the checker's types (`isBigintText`,
 /// `bigintDigits`).
 pub fn numberBackendText(allocator: std.mem.Allocator, lexeme: []const u8) std.mem.Allocator.Error![]const u8 {
+    // A literal a `comptime` lifts may carry its sign (`-3.0`, `-7l`).
+    if (lexeme.len > 1 and lexeme[0] == '-') {
+        const rest = try numberBackendText(allocator, lexeme[1..]);
+        if (rest.ptr == lexeme[1..].ptr) return lexeme;
+        return std.fmt.allocPrint(allocator, "-{s}", .{rest});
+    }
     const parts = splitNumber(lexeme);
     if (parts.suffix.len == 0) return lexeme;
     if (std.mem.eql(u8, parts.suffix, "n")) return lexeme;
