@@ -63,7 +63,7 @@ behavior Integer extends Number {
     #[@External.Node("""((__v) => { if (__v >= -2147483648 && __v <= 2147483647) { return Number(__v); } throw new Error("integer overflow: toI32: " + __v + " does not fit i32"); })($0)""")]
     fn toI32(self: Self) -> i32;
 
-    #[@External.Erlang("""(fun(__V) when __V >= -(1 bsl 63), __V < (1 bsl 63) -> __V; (__V) -> erlang:error({integer_overflow, <<"toI64: ", (integer_to_binary(__V))/binary, " does not fit i64">>}) end)($0)""")]
+    #[@External.Erlang("""(fun(__V) when __V >= -9223372036854775807 - 1, __V =< 9223372036854775807 -> __V; (__V) -> erlang:error({integer_overflow, <<"toI64: ", (integer_to_binary(__V))/binary, " does not fit i64">>}) end)($0)""")]
     #[@External.Node("""((__v) => { if (__v >= -9223372036854775808n && __v <= 9223372036854775807n) { return (__v >= -9007199254740991n && __v <= 9007199254740991n) ? Number(__v) : __v; } throw new Error("integer overflow: toI64: " + __v + " does not fit i64"); })($0)""")]
     fn toI64(self: Self) -> i64;
 
@@ -171,7 +171,7 @@ behavior BigInt {
 
     // The `i64` equal to the value; past −2^63 … 2^63 − 1 an abort naming
     // the value (decision 264's text, as `Integer.toI64`).
-    #[@External.Erlang("""(fun(__V) when __V >= -(1 bsl 63), __V < (1 bsl 63) -> __V; (__V) -> erlang:error({integer_overflow, <<"toI64: ", (integer_to_binary(__V))/binary, " does not fit i64">>}) end)($0)""")]
+    #[@External.Erlang("""(fun(__V) when __V >= -9223372036854775807 - 1, __V =< 9223372036854775807 -> __V; (__V) -> erlang:error({integer_overflow, <<"toI64: ", (integer_to_binary(__V))/binary, " does not fit i64">>}) end)($0)""")]
     #[@External.Node("""((__v) => { if (__v >= -9223372036854775808n && __v <= 9223372036854775807n) { return (__v >= -9007199254740991n && __v <= 9007199254740991n) ? Number(__v) : __v; } throw new Error("integer overflow: toI64: " + __v + " does not fit i64"); })($0)""")]
     fn toI64(self: Self) -> i64;
 
@@ -604,7 +604,7 @@ declare fn stringIsDigits(s: string) -> bool;
 // The integer `<sign><digits>` spells; the out-of-range `Error`, naming the
 // numeral, past the `i64` range. The Node form reads the digits as a `BigInt`
 // and answers 319's canonical form (a `number` within ±(2^53 − 1)).
-#[@External.Erlang("""(fun(__S) -> __N = binary_to_integer(__S), case (__N >= -(1 bsl 63)) andalso (__N < (1 bsl 63)) of true -> {ok, __N}; false -> {error, <<"parseInt: ", 34, __S/binary, 34, " is out of range">>} end end)($0)""")]
+#[@External.Erlang("""(fun(__S) -> __N = binary_to_integer(__S), case (__N >= -9223372036854775807 - 1) andalso (__N =< 9223372036854775807) of true -> {ok, __N}; false -> {error, <<"parseInt: ", 34, __S/binary, 34, " is out of range">>} end end)($0)""")]
 #[@External.Node("""((__s) => { const __n = BigInt(__s); return (__n >= -9223372036854775808n && __n <= 9223372036854775807n) ? { ok: (__n >= -9007199254740991n && __n <= 9007199254740991n) ? Number(__n) : __n } : { error: 'parseInt: "' + __s + '" is out of range' } })($0)""")]
 #[@External.Wasm(std: "number.toInteger")]
 declare fn stringToInteger(numeral: string) -> @Result<i64, string>;
