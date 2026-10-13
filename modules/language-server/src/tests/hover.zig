@@ -272,6 +272,27 @@ test "hover: a grouped std import binds its aliased leaf" {
     try snap.assertHover(gpa, "hover_import_group_leaf_alias", source, h.pos(1, 8), result);
 }
 
+// Decision 110 rule 2 — a leaf of a std folder (`io.clock`) imported by its
+// dotted path binds the module under its last segment: its functions hover
+// through it.
+test "hover: a std folder leaf imported by its dotted path hovers its function" {
+    const gpa = std.testing.allocator;
+    const source =
+        \\import {io.clock} from "std";
+        \\val t = clock.nowMillis();
+    ;
+    var c = try h.compile(gpa, source);
+    defer c.deinit(gpa);
+    const bindings = c.result.bindingsFor(h.TEST_URI);
+
+    // Cursor on `t` in `val t = …` (line 1, char 4).
+    const result = try engine.hover(gpa, source, h.pos(1, 4), bindings);
+    defer if (result) |hov| gpa.free(hov.contents.value);
+
+    try std.testing.expect(result != null);
+    try snap.assertHover(gpa, "hover_import_folder_leaf", source, h.pos(1, 4), result);
+}
+
 // Decision 110 — `as` on a type leaf binds a checker-local name: the alias
 // hovers as the declared type, and a value annotated through it as that type.
 test "hover: a std type imported under an alias hovers as the declared type" {
