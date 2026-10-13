@@ -2375,11 +2375,19 @@ an `Index[]` —, so a renamed decorator changes no reader, two decorators may
 write one type, and who may read is who sees the type. The values are built at
 build time and written back as their constructors where they are read: each
 field is a string, an integer, a float, a `bool`, a variant of an enum without
-payloads, an array or an optional of those (`decorator-meta-field-type`), and
+payloads, a `Type.Field<T>`, an array, an optional or a tuple of those
+(`decorator-meta-field-type`; a record field is not rebuilt yet), and
 the value is the record's constructor written at the call
 (`decorator-meta-not-record`), in the decorator's own body.
 
 <!-- example: modules/meta_typed_records -->
+
+A tuple is rebuilt as written (`#(1, 9)`) and a `Type.Field<T>` as its key
+(`.pages`): a generic meta record whose one parameter types the key
+(`Sort<T>(by: Type.Field<T>)`) is read with that parameter the annotated
+declaration (`Sort<Book>(by: .pages)`, decision 308).
+
+<!-- example: modules/meta_field_tuple_and_field_key -->
 
 A type is recorded once per declaration with `setMeta` — a second value of it,
 or one added with `addMeta` beside it, is `decorator-meta-twice` at the

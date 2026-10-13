@@ -477,6 +477,15 @@ pub fn decoratorForms(b: Ast.Builder) Error![]const Ast.Form {
                     }),
                 } },
             }),
+            // A tuple field (144 B-19): `{"tuple": [...]}`, its items walked.
+            try b.clause(&.{V("V")}, &.{try b.call("is_tuple", &.{V("V")})}, &.{
+                try b.map(&.{Ast.field("tuple", .{ .list_comp = .{
+                    .element = try b.ptr(try b.call(meta_json_fn, &.{V("X")})),
+                    .qualifiers = try b.arena.dupe(Ast.ListComp.Qualifier, &.{
+                        .{ .generator = .{ .pattern = V("X"), .list = try b.call("tuple_to_list", &.{V("V")}) } },
+                    }),
+                } })}),
+            }),
             try b.clause(&.{V("V")}, &.{}, &.{V("V")}),
         }),
         try b.function("__bp_contribute", &.{V("Item")}, &.{}, &.{

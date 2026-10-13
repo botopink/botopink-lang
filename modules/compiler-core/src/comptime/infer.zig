@@ -6047,11 +6047,18 @@ fn metaFieldShape(env: *Env, own: []const ast.DeclKind, module: []const u8, tr: 
             return .{ .array = p };
         },
         .generic => |g| {
+            // Decision 308 — a `Type.Field<T>`, rebuilt as its `.name`.
+            if (!g.is_builtin and g.args.len == 1 and (std.mem.eql(u8, g.name, "Type__Field") or std.mem.eql(u8, g.name, "Type.Field"))) return .field_key;
             if (g.is_builtin or !std.mem.eql(u8, g.name, "Array") or g.args.len != 1) return null;
             const s = (try metaFieldShape(env, own, module, g.args[0])) orelse return null;
             const p = try env.arena.create(typedMeta.Shape);
             p.* = s;
             return .{ .array = p };
+        },
+        .tuple_ => |elems| {
+            const shapes = try env.arena.alloc(typedMeta.Shape, elems.len);
+            for (elems, 0..) |e, i| shapes[i] = (try metaFieldShape(env, own, module, e)) orelse return null;
+            return .{ .tuple = shapes };
         },
         .optional => |inner| {
             const s = (try metaFieldShape(env, own, module, inner.*)) orelse return null;
@@ -6104,7 +6111,7 @@ fn checkTypedMetaCalls(env: *Env, program: ast.Program) InferError!void {
             for (fields, 0..) |fld, i| {
                 const shape: typedMeta.Shape = if (fld.exprWrapped) .expr else (try metaFieldShape(env, program.decls, target.module, fld.typeRef)) orelse {
                     const msg = try std.fmt.allocPrint(env.arena, "{s}: the field `{s}: {f}` of the meta record `{s}` holds no data the compiler rebuilds where the meta is read", .{ diagnostics.decorator_meta_field_type, fld.name, fld.typeRef, target.decl.name });
-                    env.lastError = TypeError.custom(msg, "A meta field is a string, an integer, a float, a `bool`, a variant of an enum without payloads, an array or an optional of those — or `@Expr<T>`, filled with a decorator parameter (decision 370 (1)).").withLoc(call.value.getLoc());
+                    env.lastError = TypeError.custom(msg, "A meta field is a string, an integer, a float, a `bool`, a variant of an enum without payloads, a `Type.Field<T>`, an array, an optional or a tuple of those — or `@Expr<T>`, filled with a decorator parameter (decision 370 (1)).").withLoc(call.value.getLoc());
                     return error.TypeError;
                 };
                 shapes[i] = .{ .name = fld.name, .shape = shape };
@@ -6426,6 +6433,22 @@ fn inferTypedMetaRead(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedEx
         env.lastError = TypeError.custom(msg, "Read every one with `metaAll(T)`; `decl.addMeta(v)` records a value that repeats (decision 298).").withLoc(loc);
         return error.TypeError;
     }
+    // A generic meta record holding a `Type.Field<P>` of its one parameter
+    // (`Sort<T>(by: Type.Field<T>)`): the key is the annotated declaration's
+    // field, so the constructor is spelled with it (`Sort<Book>(by: .pages)`)
+    // and `.pages` resolves against `Book` (decision 308).
+    const ctor = if (try fieldKeyOwnerParam(env, mt.module, mt.name)) blk: {
+        const arg = info.args[0].value.*;
+        const shown = switch (arg.identifier.kind) {
+            .ident => |n| n,
+            .identAccess => |ia| if (ia.receiver.* == .identifier and ia.receiver.identifier.kind == .ident)
+                try std.fmt.allocPrint(env.arena, "{s}.{s}", .{ ia.receiver.identifier.kind.ident, ia.member })
+            else
+                break :blk mt.spelled,
+            else => break :blk mt.spelled,
+        };
+        break :blk try std.fmt.allocPrint(env.arena, "{s}<{s}>", .{ mt.spelled, shown });
+    } else mt.spelled;
     var text: std.ArrayListUnmanaged(u8) = .empty;
     try text.append(env.arena, '[');
     for (found.items, 0..) |e, i| {
@@ -6436,7 +6459,7 @@ fn inferTypedMetaRead(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedEx
         else
             e.args;
         if (i > 0) try text.appendSlice(env.arena, ", ");
-        try text.print(env.arena, "{s}{s}", .{ mt.spelled, args });
+        try text.print(env.arena, "{s}{s}", .{ ctor, args });
     }
     try text.append(env.arena, ']');
     if (one) try text.appendSlice(env.arena, ".first()");
@@ -6446,6 +6469,30 @@ fn inferTypedMetaRead(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedEx
     const want = try env.namedTypeArgs(if (one) "optional" else "array", &.{mt.instance});
     try unifyAt(env, want, typed.getType(), loc);
     return typed;
+}
+
+/// Whether the meta record `name` of `module` has one type parameter and a
+/// field holding a `Type.Field` of it (directly, in an array or an optional).
+fn fieldKeyOwnerParam(env: *Env, module: []const u8, name: []const u8) InferError!bool {
+    const d = typeDeclAt(env, env.moduleDecls, module, name) orelse return false;
+    if (d.genericParams.len != 1 or !d.isRecord()) return false;
+    const p = d.genericParams[0].name;
+    for (d.recordFields()) |f| if (mentionsFieldKeyOf(f.typeRef, p)) return true;
+    return false;
+}
+
+fn mentionsFieldKeyOf(tr: ast.TypeRef, param: []const u8) bool {
+    return switch (tr) {
+        .generic => |g| blk: {
+            if (g.args.len == 1 and (std.mem.eql(u8, g.name, "Type__Field") or std.mem.eql(u8, g.name, "Type.Field")))
+                break :blk g.args[0] == .named and std.mem.eql(u8, g.args[0].named, param);
+            for (g.args) |a| if (mentionsFieldKeyOf(a, param)) break :blk true;
+            break :blk false;
+        },
+        .array => |inner| mentionsFieldKeyOf(inner.*, param),
+        .optional => |inner| mentionsFieldKeyOf(inner.*, param),
+        else => false,
+    };
 }
 
 /// `@typeInfo(X).meta(T)` / `.metaAll(T)` (decision 298).
@@ -19926,6 +19973,16 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                 const calleeTy = env.lookup(call.callee) orelse break :blk null;
                 if (calleeTy.deref().* != .func) break :blk null;
                 const d = (try instantiateGenericType(env, try instantiateCtorType(env, call.callee, calleeTy))).deref();
+                // A constructor's written type arguments (`Sort<Book>(by:
+                // .pages)`) pin its parameters before the arguments are read,
+                // so a field key resolves against `Book` (decision 308);
+                // `applyExplicitTypeArgs` checks their count after.
+                if (call.typeArgs) |written| if (env.lookupTypeDef(call.callee)) |td| {
+                    const ret = d.func.ret.deref();
+                    if (td.genericParams().len == written.len and ret.* == .named and ret.named.args.len == written.len) {
+                        for (written, ret.named.args) |w, a| try unifyAt(env, try resolveTypeRef(env, w), a, c.loc);
+                    }
+                };
                 break :blk d.func.params;
             };
             // Which parameter each argument lands in. Null is the ordinary

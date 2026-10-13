@@ -335,6 +335,12 @@ pub const Shape = union(enum) {
     /// Decision 370 (1) — an `@Expr<T>` field: the argument as the annotation
     /// wrote it.
     expr,
+    /// A tuple of data (144 B-19), written `#(a, b)`; the reply carries it as
+    /// `{"tuple": [...]}`.
+    tuple: []const Shape,
+    /// A `Type.Field<T>` (decision 308), written `.name` — the read's type
+    /// resolves it; the reply carries the field's record.
+    field_key,
 };
 
 /// One field of a meta record, in declaration order.
@@ -420,6 +426,24 @@ fn value(arena: std.mem.Allocator, out: *std.ArrayListUnmanaged(u8), shape: Shap
         .optional => |inner| {
             if (v == .null) return out.appendSlice(arena, "null");
             try value(arena, out, inner.*, v, lexemes);
+        },
+        .tuple => |items| {
+            if (v != .object) return error.Mismatch;
+            const arr = v.object.get("tuple") orelse return error.Mismatch;
+            if (arr != .array or arr.array.items.len != items.len) return error.Mismatch;
+            try out.appendSlice(arena, "#(");
+            for (items, arr.array.items, 0..) |s, item, i| {
+                if (i > 0) try out.appendSlice(arena, ", ");
+                try value(arena, out, s, item, lexemes);
+            }
+            try out.append(arena, ')');
+        },
+        .field_key => {
+            if (v != .object) return error.Mismatch;
+            const n = v.object.get("name") orelse return error.Mismatch;
+            if (n != .string or n.string.len == 0) return error.Mismatch;
+            for (n.string) |ch| if (!std.ascii.isAlphanumeric(ch) and ch != '_') return error.Mismatch;
+            try out.print(arena, ".{s}", .{n.string});
         },
         .expr => {
             if (v != .object) return error.Mismatch;

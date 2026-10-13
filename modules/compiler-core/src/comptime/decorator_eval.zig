@@ -635,7 +635,25 @@ fn shapeTerm(arena: std.mem.Allocator, written: typedMeta.Shape, v: std.json.Val
             for (arr.items, 0..) |item, i| items[i] = try shapeTerm(arena, inner, item);
             break :blk Term.listOf(items);
         },
-        .object => Term.undefined_atom,
+        .object => |o| blk: {
+            // A tuple (`{"tuple": [...]}`) its items by their shapes; a
+            // `Type.Field<T>` its record, every member as data.
+            if (shape == .tuple) {
+                const arr = o.get("tuple") orelse break :blk Term.undefined_atom;
+                if (arr != .array or arr.array.items.len != shape.tuple.len) break :blk Term.undefined_atom;
+                const items = try arena.alloc(Term, arr.array.items.len);
+                for (arr.array.items, shape.tuple, 0..) |item, s, i| items[i] = try shapeTerm(arena, s, item);
+                break :blk Term.tupleOf(items);
+            }
+            if (shape == .field_key) {
+                const entries = try arena.alloc(Term.MapEntry, o.count());
+                var it = o.iterator();
+                var i: usize = 0;
+                while (it.next()) |e| : (i += 1) entries[i] = Term.field(e.key_ptr.*, try shapeTerm(arena, .string, e.value_ptr.*));
+                break :blk Term.mapOf(entries);
+            }
+            break :blk Term.undefined_atom;
+        },
     };
 }
 
