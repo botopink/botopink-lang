@@ -13,6 +13,9 @@ pub const Diagnostic = union(enum) {
     pub const TypeDiagnostic = struct {
         message: []u8,
         loc: @FieldType(comptimeMod.TypeError, "loc"),
+        /// The error's hint, when it carries one (a `custom` error's): the
+        /// CLI prints it as `= hint:` under the excerpt, as a parse error's.
+        hint: ?[]u8 = null,
     };
 
     /// The owned diagnostic of a `.parseError` or `.typeError` outcome; null
@@ -29,7 +32,14 @@ pub const Diagnostic = union(enum) {
                     break :blk copy;
                 } else null },
             } },
-            .typeError => |te| .{ .type = .{ .message = try te.message(allocator), .loc = te.loc } },
+            .typeError => |te| .{ .type = .{
+                .message = try te.message(allocator),
+                .loc = te.loc,
+                .hint = switch (te.kind) {
+                    .custom => |c| if (c.hint) |h| try allocator.dupe(u8, h) else null,
+                    else => null,
+                },
+            } },
             .ok, .validationError => null,
         };
     }
@@ -43,7 +53,10 @@ pub const Diagnostic = union(enum) {
                     if (i.detail) |d| allocator.free(d);
                 },
             },
-            .type => |t| allocator.free(t.message),
+            .type => |t| {
+                allocator.free(t.message);
+                if (t.hint) |h| allocator.free(h);
+            },
         }
     }
 };

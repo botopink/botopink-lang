@@ -321,7 +321,7 @@ pub fn renderResult(gpa: std.mem.Allocator, io: std.Io, arena: std.mem.Allocator
     const d = o.result.diagnostic orelse return false;
     switch (d) {
         .syntax => |se| printSyntaxError(gpa, se, o.src, file),
-        .type => |t| printTypeError(gpa, t.message, t.loc, o.src, file),
+        .type => |t| printTypeError(gpa, t.message, t.hint, t.loc, o.src, file),
     }
     return true;
 }
@@ -340,12 +340,38 @@ fn renderValidationError(gpa: std.mem.Allocator, err: anytype, unfolded: []const
     reporter.print("{s}", .{rendered});
 }
 
-fn printTypeError(gpa: std.mem.Allocator, msg: []const u8, loc: anytype, source: []const u8, file: []const u8) void {
+/// A type error, located, and its hint when it carries one — the
+/// `= hint:` line a parse error prints (front 26's row: `check` and `build`
+/// printed the message and the box, and dropped the hint).
+fn printTypeError(gpa: std.mem.Allocator, msg: []const u8, hint: ?[]const u8, loc: anytype, source: []const u8, file: []const u8) void {
     if (loc) |l| {
-        printLocated(gpa, msg, file, source, l.line, l.col, 1);
+        var aw: std.Io.Writer.Allocating = .init(gpa);
+        defer aw.deinit();
+        renderLocatedHint(&aw.writer, msg, hint, file, source, l.line, l.col, 1) catch return;
+        reporter.print("{s}", .{aw.written()});
+    } else if (hint) |h| {
+        reporter.print("error: {s}\n --> {s}\n  = hint: {s}\n\n", .{ msg, file, h });
     } else {
         reporter.print("error: {s}\n --> {s}\n\n", .{ msg, file });
     }
+}
+
+/// `renderLocated`, then `= hint: <hint>` under the excerpt when there is one.
+pub fn renderLocatedHint(w: *std.Io.Writer, message: []const u8, hint: ?[]const u8, file: []const u8, source: []const u8, line: usize, col: usize, span: usize) !void {
+    const h = hint orelse return renderLocated(w, message, file, source, line, col, span);
+    var aw: std.Io.Writer.Allocating = .init(std.heap.page_allocator);
+    defer aw.deinit();
+    try renderLocated(&aw.writer, message, file, source, line, col, span);
+    // The box ends with its caret line and a blank line: the hint goes
+    // between them, at the gutter.
+    const text = std.mem.trimEnd(u8, aw.written(), "\n");
+    const at = if (bpp_unfold.origin(file)) |o| o.position(line, col).line else line;
+    const pad = digitWidth(at) + 1;
+    try w.print("{s}\n", .{text});
+    try w.splatByteAll(' ', pad);
+    try w.writeAll("|\n");
+    try w.splatByteAll(' ', pad);
+    try w.print("= hint: {s}\n\n", .{h});
 }
 
 // ── Type diagnostics ──────────────────────────────────────────────────────────
@@ -374,7 +400,11 @@ pub fn renderOutcome(gpa: std.mem.Allocator, io: std.Io, arena: std.mem.Allocato
         .typeError => |te| {
             const msg = te.message(gpa) catch return true;
             defer gpa.free(msg);
-            printTypeError(gpa, msg, te.loc, o.src, fileLabel(arena, io, o.name));
+            const hint: ?[]const u8 = switch (te.kind) {
+                .custom => |c| c.hint,
+                else => null,
+            };
+            printTypeError(gpa, msg, hint, te.loc, o.src, fileLabel(arena, io, o.name));
             return true;
         },
     }
@@ -410,6 +440,23 @@ pub fn reportOrphans(arena: std.mem.Allocator, count: usize) void {
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
+
+test "a type error's hint prints under its excerpt, as a parse error's" {
+    var aw: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer aw.deinit();
+    try renderLocatedHint(&aw.writer, "bad", "do this", "src/x.bp", "pub fn f() {\n  nope()\n}\n", 2, 3, 4);
+    try std.testing.expectEqualStrings(
+        \\error: bad
+        \\ --> src/x.bp:2:3
+        \\  |
+        \\2 |   nope()
+        \\  |   ^^^^
+        \\  |
+        \\  = hint: do this
+        \\
+        \\
+    , aw.written());
+}
 
 test "renderLocated prints file, line, column, excerpt and caret" {
     var aw: std.Io.Writer.Allocating = .init(std.testing.allocator);

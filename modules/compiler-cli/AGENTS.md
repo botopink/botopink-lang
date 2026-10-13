@@ -12,7 +12,9 @@ compiler-cli/
 ├── AGENTS.md            ← you are here
 ├── botopink.json        ← module manifest (`version` drives the auto-tag)
 ├── tests/               ← end-to-end CLI scripts — `zig build test-cli` runs all five
-│   ├── cli_contract.sh      ← the command contract (rows C1–C13, plus the
+│   ├── cli_contract.sh      ← the command contract (rows C1–C13, plus a type
+│   │                          error's `= hint:` under its excerpt from `check`
+│   │                          and `build`, plus the
 │   │                          build-does-not-execute and `new`-scaffold-prints
 │   │                          rows, and a built erlang / beam program loading
 │   │                          its `.erl` sidecar under `erl -pa out/<target>`,

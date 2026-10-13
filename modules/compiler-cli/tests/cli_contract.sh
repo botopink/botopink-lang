@@ -130,6 +130,18 @@ else
   skip "test prints the warning (node not on PATH)"
 fi
 
+echo "==> check and build print a type error's hint under its excerpt"
+P="$(project hint)"
+printf '#[@BeamMemory.PersistentTerm]\nvar version: i32 = 101;\n\npub fn main() {\n    version = 102;\n}\n' >"$P/src/main.bp"
+run "$P" check
+expect_code 1 "check of a PersistentTerm write"
+expect_out "= hint: " "check prints the type error's hint"
+expect_out "#[@BeamMemory.Ets]" "check's hint names the fix"
+run "$P" build
+expect_code 1 "build of a PersistentTerm write"
+expect_out "= hint: " "build prints the type error's hint"
+expect_out "#[@BeamMemory.Ets]" "build's hint names the fix"
+
 # ── build does not execute the program it compiles ───────────────────────────
 # erlang and beam are the targets whose build spawns anything, and it is one
 # `erl` — never running the program: the command's session (`otp.zig`), which
