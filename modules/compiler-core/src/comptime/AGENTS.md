@@ -2060,7 +2060,12 @@ field — whose type is a behavior accepts a value whose type `implement`s it, d
 behavior's `extends` chain (`behaviorReaches`), and everything else goes to `unifyAt`. The same
 `behaviorCoercion` already served `return` of an implementer from a `-> Behavior` fn. The coercion is
 target-first and only widens (implementer → behavior); a record that does not implement the behavior
-reds at the value. Cells: `infer_errors.zig` `behavior-typed field …`.
+reds at the value. Cells: `infer_errors.zig` `behavior-typed field …`. Whether a type implements a
+behavior is one answer, `typeImplementsBehavior` (its own clause or a behavior reaching the target
+through `extends`), which `createContext(value, B)`'s check (416 (2)) asks too
+(`conformance/modules/context_behavior_implemented_indirectly`). An extension block (`Sym implement B
+for T`) makes no `T` a `B` value: it dispatches statically, and no backend dispatches a behavior call on
+a `T` to it.
 
 ## One type of a name per module, and a std namespace yields to it (decision 170)
 

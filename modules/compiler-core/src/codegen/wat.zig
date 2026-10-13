@@ -5965,6 +5965,15 @@ const Emitter = struct {
     /// at run time: inference placed it on a behavior-typed value, named a
     /// type this module declares no record or enum of (the behavior itself),
     /// or placed it nowhere.
+    /// Whether `recv.m(…)` is a method inference dispatches by the value
+    /// (a behavior-typed receiver) while a function `m` of the module or its
+    /// imports is known too: the method wins.
+    fn behaviorMethodShadowsFn(self: *Emitter, cc: anytype, loc: ast.Loc) bool {
+        if (cc.receiver == null or cc.is_builtin or !self.fn_sigs.contains(cc.callee)) return false;
+        const il = self.instance_lowerings.get(loc) orelse return false;
+        return il == .by_value;
+    }
+
     fn dispatchesByValue(self: *Emitter, loc: ast.Loc) bool {
         const il = self.instance_lowerings.get(loc) orelse return true;
         return switch (il) {
@@ -7490,6 +7499,35 @@ const Emitter = struct {
         return name;
     }
 
+    /// The closure a `@Result`'s `map` / `flatMap` applies: the lambda
+    /// written at the call, or — for a function named as a value
+    /// (`r.flatMap(half)`, a local holding one) — the lambda `{ v -> f(v) }`
+    /// calling it.
+    fn resultClosureArg(self: *Emitter, arg: ?*ast.Expr) ?*ast.Expr {
+        if (lambdaArg(arg)) |le| return le;
+        const a = arg orelse return null;
+        const name = plainIdentName(a.*) orelse return null;
+        const ar = self.arena();
+        const loc = a.getLoc();
+        const params = ar.alloc([]const u8, 1) catch return null;
+        params[0] = "__bp_fv";
+        const ref = ar.create(ast.Expr) catch return null;
+        ref.* = .{ .identifier = .{ .loc = loc, .kind = .{ .ident = "__bp_fv" } } };
+        const args = ar.alloc(ast.CallArg, 1) catch return null;
+        args[0] = .{ .label = null, .value = ref };
+        const body = ar.alloc(ast.Stmt, 1) catch return null;
+        body[0] = .{ .expr = .{ .call = .{ .loc = loc, .kind = .{ .call = .{
+            .receiver = null,
+            .callee = name,
+            .is_builtin = false,
+            .args = args,
+            .trailing = &.{},
+        } } } } };
+        const out = ar.create(ast.Expr) catch return null;
+        out.* = .{ .function = .{ .loc = loc, .kind = .{ .syntax = .lambda, .params = params, .body = body } } };
+        return out;
+    }
+
     /// True when `arg` is a literal lambda (`{ x -> ... }`), the only fn form a
     /// higher-order Result/Option op can inline on WASM (there is no first-class
     /// closure value in this backend — `.function` otherwise lowers to `0`).
@@ -7585,7 +7623,7 @@ const Emitter = struct {
 
         if (std.mem.eql(u8, callee, "__bp_result_map") or std.mem.eql(u8, callee, "__bp_result_flatMap")) {
             const is_map = std.mem.eql(u8, callee, "__bp_result_map");
-            const le = lambdaArg(arg1) orelse return self.refuse(loc, "`Result.{s}` on the wasm backend takes a closure written at the call; a function value is not lowered", .{if (is_map) "map" else "flatMap"});
+            const le = self.resultClosureArg(arg1) orelse return self.refuse(loc, "`Result.{s}` on the wasm backend takes a closure written at the call or a function named as a value", .{if (is_map) "map" else "flatMap"});
             const lam = le.function.kind;
             const slot = try self.declRes();
             try self.lowerExpr(recv.*);
@@ -7614,6 +7652,11 @@ const Emitter = struct {
                 try self.declareLocal(lam.params[0], in_cell.ty());
                 try self.emit(.{ .local_set = lam.params[0] });
             } else try self.emit(.drop);
+            // The parameter is the payload's type, so a primitive method on
+            // it (`{ n -> n.toString() }`) finds its family where inference
+            // recorded none.
+            if (lam.params.len > 0) if (self.resultShapeOf(recv.*)) |sh| if (sh.ok) |ok_tr|
+                try self.local_typerefs.put(lam.params[0], ok_tr);
             if (is_map) {
                 // Rewrap the mapped value as a fresh `{ tag: 0, payload }` Result.
                 const out = try self.declRes();
@@ -9439,6 +9482,10 @@ const Emitter = struct {
     /// (`444` for `["a", "b"]`) for an array.
     fn resolvedCallSym(self: *Emitter, cc: anytype, loc: ast.Loc) ?[]const u8 {
         if (self.recordMethodSym(cc, loc)) |sym| return sym;
+        if (self.behaviorMethodShadowsFn(cc, loc)) {
+            const impls = self.behaviorImplementers(cc.callee, cc.args.len) catch return null;
+            if (impls.len > 0) return std.fmt.bufPrint(&self.sym_buf, "{s}_{s}", .{ impls[0], cc.callee }) catch null;
+        }
         if (self.calleeSymbol(cc, loc)) |sym| return sym;
         // A behavior-typed receiver dispatches (`lowerBehaviorDispatch`) to
         // implementers that all answer the method's one declared type, so
@@ -9503,6 +9550,11 @@ const Emitter = struct {
             spec.callee = sym;
             return self.lowerPlainCall(spec, loc);
         }
+        // A behavior method on a behavior-typed value is the value's, even
+        // when a function of the module or its imports shares its name
+        // (`r.find(1)` beside std `context`'s `find`, which the scope lowering
+        // links): that function took the receiver's place and answered `0`.
+        if (self.behaviorMethodShadowsFn(cc, loc)) if (try self.lowerBehaviorDispatch(cc)) return;
         // The ONE body of a generic `fn` holds every type parameter as a word.
         // A float or an `i64` reaching it inside a parameter typed by one
         // (`first(#(1.1, 2))` over `#(A, B)`, `headOf([1.1])` over
@@ -9758,7 +9810,8 @@ const Emitter = struct {
             if (!self.tuple_binders.contains(n)) {
                 if (self.str_locals.contains(self.resolveName(n)) and primCallRes(.string, cc) != null) return .string;
                 // A lambda parameter its declared function type types
-                // (`Lifted.param_tref`).
+                // (`Lifted.param_tref`), or a closure parameter bound to a
+                // `@Result`'s payload (`lowerResultOptionOp`).
                 if (self.local_typerefs.get(n)) |tr| if (tr == .named) if (primKindOfName(tr.named)) |k| if (primCallRes(k, cc) != null) return k;
                 return null;
             }
@@ -16504,6 +16557,23 @@ const Emitter = struct {
 
     /// The cell of the `Ok` payload of the `@Result` `e` answers, when its
     /// shape is known.
+    /// While a closure's tail is read before its body is lowered, its one
+    /// parameter holds `t`'s cell; answers the name to unbind, null when the
+    /// parameter was bound already or `t` is a word.
+    fn bindLambdaParamType(self: *Emitter, lam: anytype, t: ?ast.TypeRef) ?[]const u8 {
+        if (lam.params.len == 0) return null;
+        const cell = resultPayloadCell(t orelse return null);
+        if (cell == .none) return null;
+        const name = lam.params[0];
+        if (self.locals.contains(name)) return null;
+        self.locals.put(name, cell.ty()) catch return null;
+        return name;
+    }
+
+    fn unbindLambdaParamType(self: *Emitter, bound: ?[]const u8) void {
+        if (bound) |n| _ = self.locals.remove(n);
+    }
+
     fn resultOkCell(self: *Emitter, e: ast.Expr) Cell {
         const sh = self.resultShapeOf(e) orelse return .none;
         return resultPayloadCell(sh.ok orelse return .none);
@@ -16534,14 +16604,36 @@ const Emitter = struct {
             .call => |c| switch (c.kind) {
                 .call => |cc| blk: {
                     // `r.map({ v -> … })` answers what the closure's tail holds.
+                    // Its parameter is the receiver's `Ok` payload while the
+                    // tail is read (`{ n -> n * 3l }` over a `@Result<i64, …>`).
                     if (cc.is_builtin and std.mem.eql(u8, cc.callee, "__bp_result_map") and cc.args.len == 2) {
                         const inner = self.resultShapeOf(cc.args[0].value.*) orelse ResultShape{};
-                        const le = lambdaArg(cc.args[1].value) orelse break :blk null;
+                        const le = self.resultClosureArg(cc.args[1].value) orelse break :blk null;
+                        const bound = self.bindLambdaParamType(le.function.kind, inner.ok);
+                        defer self.unbindLambdaParamType(bound);
                         const tail = self.lambdaTailType(le.function.kind.body);
                         var out = inner;
                         out.ok_str = false;
                         out.ok = if (Cell.of(tail) == .f64) .{ .named = "f64" } else if (Cell.of(tail) == .i64) .{ .named = "i64" } else null;
                         break :blk out;
+                    }
+                    // `r.flatMap({ v -> … })` answers the `@Result` its closure's tail does.
+                    if (cc.is_builtin and std.mem.eql(u8, cc.callee, "__bp_result_flatMap") and cc.args.len == 2) {
+                        const inner = self.resultShapeOf(cc.args[0].value.*) orelse ResultShape{};
+                        const le = self.resultClosureArg(cc.args[1].value) orelse break :blk null;
+                        const body = le.function.kind.body;
+                        if (body.len == 0) break :blk null;
+                        const last = body[body.len - 1].expr;
+                        const tail: ast.Expr = switch (last) {
+                            .jump => |j| switch (j.kind) {
+                                .@"return" => |r| (r orelse break :blk null).*,
+                                else => break :blk null,
+                            },
+                            else => last,
+                        };
+                        const bound = self.bindLambdaParamType(le.function.kind, inner.ok);
+                        defer self.unbindLambdaParamType(bound);
+                        break :blk self.resultShapeOf(tail);
                     }
                     // Decision 346 — `b.toUtf8()` answers `@Result<string, string>`.
                     if (cc.receiver != null) if (self.primKindAt(cc, c.loc)) |k| if (k == .bytes)

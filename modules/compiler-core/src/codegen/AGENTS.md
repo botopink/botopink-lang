@@ -788,7 +788,11 @@ codegen/
   `fun(__BpA0…) -> file:one(…) end`; a name declared at two arities stays a
   variable. It was the unbound variable `One`, and `erlc` refused the whole
   module. The beam twin is a `make_fun3` over the function's own entry
-  (`top_fns`), which was `{unresolved_identifier, one}`.
+  (`top_fns`), which was `{unresolved_identifier, one}`. A comptime module
+  (untyped) does the same for a carried function reading another as a value
+  (`r.flatMap(half)` in a function a `comptime` reaches; the block's own
+  function values are its makers', `comptime/block_eval.zig`) —
+  `conformance/modules/comptime_function_value_argument`.
 - **A field of function type of an imported record** (`c.set(5)`):
   `ExportInfo.fn_fields` (`crossModule.zig`) carries which of a `pub` record's
   fields are functions; `collectImportedTypes` registers them like a local

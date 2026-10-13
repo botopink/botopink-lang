@@ -4550,8 +4550,11 @@ const Emitter = struct {
         // erlang has no value for a plain function name, so `One` was an
         // unbound variable and `erlc` refused the whole module. It is the
         // function's fun — `fun one/0`, or, from a type's module, a fun that
-        // calls the file's (exported) function.
-        if (!this.locals.contains(name) and !this.untyped) {
+        // calls the file's (exported) function. A comptime module's (untyped)
+        // carried function reads another as a value the same way
+        // (`r.flatMap(half)` in a function a `comptime` reaches); the block's
+        // own function values are its makers' (`block_eval.zig`).
+        if (!this.locals.contains(name)) {
             if (this.fileFnArity(name)) |arity| {
                 if (!this.inForeignUnit()) return .{ .fun_ref = .{ .name = name, .arity = arity } };
                 const params = try b.arena.alloc(Ast.Expr, arity);

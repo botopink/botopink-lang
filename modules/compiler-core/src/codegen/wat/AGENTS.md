@@ -1430,6 +1430,23 @@ is no longer used for a behavior call — `Array<Request>`'s elements were all
 read as the first literal's type. A lambda written against a declared function
 type also types a record parameter (`Lambda.param_rec`), so `out.tag` reads
 `Out`'s slot. `conformance/modules/behavior_method_dispatch_by_value`.
+A `.by_value` method whose name a function of the module or its imports also
+holds (`r.find(1)` beside std `context`'s `find`, which the scope lowering links)
+dispatches by the value before the function is considered
+(`behaviorMethodShadowsFn`, in `lowerPlainCall` and `resolvedCallSym`): the
+function took the receiver's place and answered `0`.
+`conformance/modules/context_behavior_method_find`.
+
+**A `@Result`'s `map` / `flatMap`** inline their closure (`lowerResultOptionOp`).
+A function named as a value (`r.flatMap(half)`, a local holding one) is the
+closure `{ v -> f(v) }` (`resultClosureArg`). The shape of the call's answer
+(`resultShapeOf`) reads the closure's tail with its parameter bound to the
+receiver's `Ok` payload (`bindLambdaParamType`) — a `map` over an `i64` payload
+was read as a word and printed the cell's address — and a `flatMap` answers its
+closure's tail's shape. Inside the body the parameter carries the payload's type
+(`local_typerefs`), so a primitive method on it (`{ n -> n.toString() }`) finds its
+family where inference recorded no lowering (`primKindAt`).
+`conformance/modules/result_i64_map_flat_map`.
 
 **Every header read is guarded against a value below the heap floor**
 (`emitHeaderLoad`): wasm's `i32.and` does not short-circuit, so `x is T` and a

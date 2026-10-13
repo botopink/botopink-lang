@@ -10541,20 +10541,29 @@ fn warnTupleLabelMismatch(env: *Env, expected: *T.Type, got: *T.Type, loc: ast.L
 }
 
 /// True when `target` names a behavior and `source` is a named type that
-/// declares `implement <target>` — a `MockCounter` returned where the fn
-/// declares `-> Counter`.
+/// implements it ([[typeImplementsBehavior]]) — a `MockCounter` returned where
+/// the fn declares `-> Counter`.
 fn behaviorCoercion(env: *Env, target: *T.Type, source: *T.Type) bool {
     const t = target.deref();
     const s = source.deref();
     if (t.* != .named or s.* != .named) return false;
     if (std.mem.eql(u8, t.named.name, s.named.name)) return false;
-    const td = env.lookupTypeDef(s.named.name) orelse return false;
+    return typeImplementsBehavior(env, s.named.name, t.named.name);
+}
+
+/// The checker's one answer to "does the declared type `typeName` implement
+/// the behavior `behavior`": its own `implement` clause names `behavior` or a
+/// behavior that `extends` it. An extension block (`Sym implement B for T`)
+/// dispatches statically and makes no `T` a `B` value: no backend dispatches a
+/// behavior call on a `T` to it.
+fn typeImplementsBehavior(env: *Env, typeName: []const u8, behavior: []const u8) bool {
+    const td = env.lookupTypeDef(typeName) orelse return false;
     const impls = switch (td) {
         .record => |r| r.implements,
         .struct_ => |st| st.implements,
         .enum_ => |e| e.implements,
     };
-    for (impls) |i| if (behaviorReaches(env, i, t.named.name, 0)) return true;
+    for (impls) |i| if (behaviorReaches(env, i, behavior, 0)) return true;
     return false;
 }
 
@@ -18651,18 +18660,6 @@ fn isBehaviorName(env: *Env, name: []const u8) bool {
     return env.importedBehaviorDecls.contains(name);
 }
 
-/// Whether the declared type `typeName` implements the behavior `behavior`.
-fn typeImplements(env: *Env, typeName: []const u8, behavior: []const u8) bool {
-    const td = env.lookupTypeDef(typeName) orelse return false;
-    const implements = switch (td) {
-        .record => |r| r.implements,
-        .struct_ => |st| st.implements,
-        .enum_ => |e| e.implements,
-    };
-    for (implements) |b| if (std.mem.eql(u8, b, behavior)) return true;
-    return false;
-}
-
 /// std's `context(T)`, `inject(T)` and the two-argument `createContext(v,
 /// Behavior)`, typed here: their type argument is a type, not a value.
 /// `context(T)` answers `@Component<T>`; `inject(R)` (416) answers
@@ -18710,7 +18707,7 @@ fn contextReadCall(env: *Env, c: ast.CallExprOf(.untyped)) InferError!?TypedExpr
             }
             const value = try inferExprTyped(env, call.args[0].value.*);
             const vt = value.getType().deref();
-            const implements = vt.* == .named and typeImplements(env, vt.named.name, bn);
+            const implements = vt.* == .named and typeImplementsBehavior(env, vt.named.name, bn);
             if (!implements) {
                 const shown = try errorMod.typeLabelAlloc(env.arena, value.getType());
                 const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` does not implement `{s}` (decision 416 (2))", .{ diagnostics.context_behavior_not_implemented, shown, bn });

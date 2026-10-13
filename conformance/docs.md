@@ -1922,7 +1922,9 @@ own default — a field with none of the three is `context-not-declared` at the
 record is `inject-not-record` (a behavior is read with `use context(B)`). A
 second argument of `createContext` names the behavior the context is provided
 as — `createContext(PgRepository(pool), Repository)`, the value checked to
-implement it (`context-behavior-not-implemented` at the argument) — so `use
+implement it as a parameter typed `Repository` is, through its own `implement`
+clause or a behavior that `extends` `Repository` (`context-behavior-not-implemented`
+at the argument) — so `use
 context(Repository)` and an `inject` field typed `Repository` read it; its
 declaration is the behavior's default. Providing stays one context per
 dependency, so a test's root swaps one.
@@ -1930,6 +1932,10 @@ dependency, so a test's root swaps one.
 <!-- example: modules/inject_record -->
 
 <!-- example: modules/inject_behavior_keyed -->
+
+<!-- example: modules/context_behavior_implemented_indirectly -->
+
+<!-- example: modules/context_behavior_method_find -->
 
 <!-- example: modules/context_provide_read -->
 
