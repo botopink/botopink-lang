@@ -200,7 +200,11 @@ fn isVariantPath(written: []const u8) bool {
 fn armValueTail(e: ast.Expr) bool {
     return switch (e) {
         .literal, .identifier, .binaryOp, .unaryOp, .call, .useHook, .collection, .branch => true,
-        .function => |f| f.kind.syntax != .asyncBlock,
+        // An `async { … }` block is the value too (decision 432): the task it
+        // makes answers `{error, E}` when the block throws, and a lambda
+        // `{ n -> async { throw "e"; } }` that dropped it for `ok` read back
+        // as a success at its `await`.
+        .function => true,
         else => false,
     };
 }

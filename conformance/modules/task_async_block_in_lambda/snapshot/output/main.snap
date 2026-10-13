@@ -1,0 +1,9 @@
+botopink-cell 1
+out error inner
+out ok 8
+out error negative -4
+out error nested
+out ok 11
+out error method -1
+out ok 12
+out error method lambda

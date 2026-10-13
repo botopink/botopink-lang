@@ -2289,6 +2289,10 @@ codegen/
   (`xs.map({ x -> if (x > 1) { x * 10 } else { x } })` answered `ok,ok,ok`,
   03 handover 01). An explicit `return`, a `yield`/`break` or a loop keeps
   `emitBody`.
+  An `async { }` block is a value tail too (decision 432): `{ n -> async {
+  throw "e"; } }` dropped the task for `ok`, and its `await` read a success
+  where the other targets read `Error("e")`
+  (`modules/task_async_block_in_lambda`).
 - **Variant constructors** (`lowerTaggedTuple`): a labelled argument fills the
   slot of the field it names (`variantDeclOf`, the declared fields), as a record
   constructor's does — `Shape.Rect(height: 2, width: 5)` was built positionally

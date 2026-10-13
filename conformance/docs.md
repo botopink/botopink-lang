@@ -1710,6 +1710,12 @@ awaiting a `@Task<T>`, tasks started before either is awaited, an
 
 <!-- example: modules/task_result_rejects -->
 
+An `async { }` block that throws is that failing task wherever it sits — the
+body of a lambda, a lambda bound inside a function, a method, a lambda a
+method answers:
+
+<!-- example: modules/task_async_block_in_lambda -->
+
 An **await channel** is a `@Task`, `@Component` or `@Stream` return, an
 `async { }` block or a `stream` loop; `await` anywhere else is
 `effect-await-without-task`. An ordinary function that holds a Task either
