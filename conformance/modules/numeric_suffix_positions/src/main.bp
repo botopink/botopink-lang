@@ -2,7 +2,10 @@
 //// in a `case` guard, in a `case` arm body, in a parameter's default, in a
 //// default made of an expression and inside a lambda. The suffix is the
 //// checker's and never reaches a backend (`1577836800000l` in a guard was a
-//// `SyntaxError` in JS and an `erlc` syntax error on Erlang and BEAM).
+//// `SyntaxError` in JS and an `erlc` syntax error on Erlang and BEAM). The
+//// same holds in a method's parameter default (`type`, associated, `implement`,
+//// a `behavior` default fn, a `type` variant's method), a record field default
+//// and a `case` guard inside a method body.
 
 type Stamp(mtime: i64)
 
@@ -21,6 +24,50 @@ fn sum(v: i64 = 2l + 3l) -> i64 {
 
 fn narrow(v: u8 = 9u8) -> u8 {
     return v;
+}
+
+type Box(label: string, size: i64 = 4l) {
+    pub fn grow(self: Self, by: i64 = 6l) -> i64 {
+        return self.size + by;
+    }
+
+    fn make(base: i64 = 8l) -> i64 {
+        return base;
+    }
+}
+
+behavior Scale {
+    default fn by(x: i64, factor: i64 = 10l) -> i64 {
+        return x * factor;
+    }
+}
+
+behavior Tag {
+    fn tag(self: Self, n: i64) -> i64;
+}
+
+type Item(id: i64) implement Tag {
+    fn tag(self: Self, n: i64 = 3l) -> i64 {
+        return self.id + n;
+    }
+}
+
+type Pick(n: u8) {
+    pub fn band(self: Self) -> string {
+        case self.n {
+            v if v > 5u8 -> return "high";
+            _ -> return "low";
+        }
+    }
+}
+
+type Level {
+    Low,
+    High,
+
+    pub fn weight(self: Self, k: i64 = 5l) -> i64 {
+        return k;
+    }
 }
 
 pub fn main() {
@@ -47,5 +94,13 @@ pub fn main() {
     @print(sum());
     @print(narrow());
     @print([1l, 2l].map({ v -> v + 5l }));
+    val box = Box(label: "b");
+    @print(box.size);
+    @print(box.grow());
+    @print(Box.make());
+    @print(Scale.by(2l));
+    @print(Item(id: 1l).tag());
+    @print(Pick(n: 9u8).band());
+    @print(Level.Low.weight());
     @print("sum=${3l + 4l}");
 }

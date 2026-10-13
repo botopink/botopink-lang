@@ -1405,7 +1405,9 @@ literal past the `i32` range with `l`: unsuffixed and with nothing asking it is 
 Decision 247's suffix leaves the program in `transform.zig`'s `rewriteExpr` for every number literal
 (`lexer.numberBackendText`, idempotent), whatever its position: a `case` arm's guard and a fn
 parameter's default are walked there too, so `if s.mtime > 5l` and `v: i64 = 7l` reach no backend with
-their `l` (`modules/numeric_suffix_positions`).
+their `l` (`modules/numeric_suffix_positions`). A method's parameter default, a record field default and
+a guard in a method body need no walk of their own: measured on all four targets, none carries the suffix
+(inference strips them with the rest), and the same cell holds them.
 
 ## `bigint`, an integer of any size (decision 332, front `01-compiler/139`)
 
