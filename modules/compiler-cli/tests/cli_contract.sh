@@ -2,7 +2,7 @@
 # The CLI command contract, end to end (specs/1.0.2-beta/02-cli-gate,
 # command-contract.md rows C1–C13). Each row builds a throwaway project, runs
 # the real `botopink` binary against it and asserts the exit code, the output
-# and what is (or is not) on disk. The flag-parser rows (C8, C10–C12, C14) also
+# and what is (or is not) on disk. The flag-parser rows (C10–C12, C14) also
 # have unit tests in `src/main.zig`; they are repeated here against the binary.
 # One row beyond C1–C13 pins that `build` does not execute the program it
 # compiles (no runtime spawn, no runtime-cache entry — 1.0.4-beta cli-residuals).
@@ -707,6 +707,24 @@ if have node; then
 else
   skip "node not on PATH"
 fi
+
+# ── C8 — `migrate` is no command: the module tree is written by hand ───────
+# s23-i (144 B-56): the tree is explicit, so the scan that derived it from the
+# src/ layout is gone with its command — `migrate` is the unknown-command
+# error, with or without its old flag, and src/ is left as it was.
+echo "==> C8 botopink migrate is an unknown command"
+P="$(project c8)"
+printf '%s' "$MAIN_OK" >"$P/src/main.bp"
+mkdir -p "$P/src/shapes" && printf 'pub fn area() -> i32 {\n    return 1;\n}\n' >"$P/src/shapes/circle.bp"
+before="$(cd "$P" && find src -type f | sort | xargs cat | cksum)"
+run "$P" migrate
+expect_code 1 "migrate"
+expect_out "unknown command: migrate" "migrate is an unknown command"
+run "$P" migrate --dry-run
+expect_code 1 "migrate --dry-run"
+expect_out "unknown command: migrate" "migrate --dry-run is an unknown command"
+after="$(cd "$P" && find src -type f | sort | xargs cat | cksum)"
+[[ "$before" == "$after" ]] && [[ ! -e "$P/src/shapes/mod.bp" ]] && ok "src/ untouched" || fail "migrate wrote into src/"
 
 # ── C9 — format / format --check count an unparseable file as an error ──────
 echo "==> format formats a .bpp header as a module and leaves the style section and the markup byte for byte"
