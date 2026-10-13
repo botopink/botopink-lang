@@ -74,6 +74,18 @@ pub fn eraseForRun(arena: std.mem.Allocator, f: ast.FnDecl, decorator: bool) !as
     return out;
 }
 
+/// Decision 302 — `f`, a template function (or a function it reaches) that
+/// builds a tag's `@Decl`, with each typed meta read `d.meta(T)` /
+/// `d.metaAll(T)` turned into `__bp_methodMeta(d, "T")` /
+/// `__bp_methodMetaAll(d, "T")`, answered by the template prelude from the
+/// handle's `meta` entries (`infer.zig` `inferMethodMetaRead` typed it).
+pub fn eraseMetaReads(arena: std.mem.Allocator, f: ast.FnDecl) !ast.FnDecl {
+    var ctx: Ctx = .{ .arena = arena, .names = &.{}, .indices = &.{}, .failArg = false, .methodMeta = true };
+    var out = f;
+    out.body = try clone([]ast.Stmt, &ctx, f.body);
+    return out;
+}
+
 pub fn eraseFn(arena: std.mem.Allocator, f: ast.FnDecl, decorator: bool) !ast.FnDecl {
     var names: std.ArrayListUnmanaged([]const u8) = .empty;
     var indices: std.ArrayListUnmanaged(usize) = .empty;

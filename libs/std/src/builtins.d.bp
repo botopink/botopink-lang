@@ -545,6 +545,23 @@ pub behavior Expr<E> {
     ) -> ExprCustom<R>;
     fn fail(self: Self<E>, message: string);
     fn failAt(self: Self<E>, span: Span, message: string);
+    // Decision 302 — a tag's `@Decl`, built by the template function for a tag
+    // of its text: `kind` `DeclKind.Element` or `DeclKind.Component`, `name`
+    // the tag's name, `attrs` its static attributes in written order. It
+    // carries no meta until an annotation runs over it.
+    fn tagDecl(
+        self: Self<E>,
+        kind: DeclKind,
+        name: string,
+        attrs: Array<#(string, string)>,
+    ) -> Decl;
+    // Decision 302 — run the annotation written at `at` of the text (`name`
+    // or `name(args)`, one item of a `#[…]`) over `decl`: the name resolves
+    // in the caller's scope to a decorator, its arguments are checked against
+    // the decorator's parameters there, and the answer is `decl` with what
+    // the annotation recorded (`d.meta(T)` / `d.metaAll(T)`) and, for a
+    // component, `decl.component`. A refusal is located at the annotation.
+    fn annotate(self: Self<E>, decl: Decl, at: Span) -> Decl;
 }
 
 // ── Source location (`@src()`) ───────────────────────────────────────────────
@@ -597,6 +614,14 @@ pub type DeclKind {
     // type as written (`""` when none); `setMeta` is legal, `addMember` /
     // `addType` are refused (a `val` owns no type).
     Val,
+    // Decision 302 — a tag a template function hands its annotation
+    // (`q.tagDecl(…)`, `q.annotate(…)` on `Expr<E>`): `Element` a native tag
+    // (`<div>`), `Component` a component tag (`<Card>`, `decl.component` the
+    // component's own `@Decl`). `name` is the tag's name, `decl.attr(n)` a
+    // static attribute; the channel is typed meta (`setMeta` / `addMeta`),
+    // and `addMember` / `addType` are refused.
+    Element,
+    Component,
 }
 
 // One annotation entry on a reflected declaration (`#[name(args…)]`). `args`
@@ -672,6 +697,20 @@ pub behavior Decl<T> {
     // 29, decision 280): a method's `@Decl` carries its parameter list as a
     // `decl.methods` entry does. Empty for any other declaration.
     val params: Param[];
+    // Decision 302 — a component tag's function, as its own `@Decl`; `null`
+    // for an element and for every declaration.
+    val component: ?Decl;
+
+    // Decision 302 — a tag's static attribute `name` as written
+    // (`<div id="x">` → `"x"`), `null` when the tag has none and on every
+    // declaration.
+    fn attr(self: Self, name: string) -> ?string;
+
+    // Decision 302 — `d.meta(T)` (`?T`) / `d.metaAll(T)` (`T[]`): the typed
+    // meta the tag's annotations recorded, read in the template function's
+    // body on the `@Decl` `q.annotate` answered. A declaration's meta is read
+    // `@typeInfo(X).meta(T)`; the checker answers the call (`infer.zig`
+    // `inferTagMetaRead`).
 
     fn fail(self: Self, message: string);
     fn failAt(self: Self, span: Span, message: string);

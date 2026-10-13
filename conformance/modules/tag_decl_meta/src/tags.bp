@@ -1,0 +1,56 @@
+//// A template function that builds a tag's `@Decl`, runs the tag's
+//// annotation over it and reads back what it recorded (decision 302).
+
+pub type ClassName(names: string[])
+
+// One annotation for a tag and a declaration: it records a `ClassName`
+// through `decl` — on an element with the tag's `id` attribute, on a
+// component with the component function's name.
+pub fn cls(comptime decl: @Decl, comptime name: @Expr<string>) {
+    if (decl.kind == DeclKind.Element)
+        decl.addMeta(ClassName(names: [name.value, decl.attr("id") ?? "none"]))
+    else if (decl.kind == DeclKind.Component)
+        decl.addMeta(ClassName(names: [name.value, decl.component?.name ?? "none"]))
+    else
+        decl.addMeta(ClassName(names: [name.value]));
+}
+
+// `markup """<div id="x" #[cls("a")]>hi</div>"""`: one tag, an optional `id`,
+// one annotation; the class names the annotation recorded become `class`. A
+// tag whose name starts upper-case is a component.
+pub fn markup(comptime q: @Expr<string>) -> @Expr<string> {
+    val text = q.text();
+    val name = text.slice(1, text.indexOf(" "));
+    val kind = if ("ABCDEFGHIJKLMNOPQRSTUVWXYZ".contains(name.slice(0, 1)))
+        DeclKind.Component
+    else
+        DeclKind.Element;
+    var attrs: Array<#(string, string)> = [];
+    if (text.contains("id=\"")) {
+        val rest = text.slice(text.indexOf("id=\"") + 4, text.length);
+        attrs = [#("id", rest.slice(0, rest.indexOf("\"")))];
+    }
+    val annStart = text.indexOf("#[") + 2;
+    val annEnd = text.indexOf("]>");
+    val body = text.slice(annEnd + 2, text.indexOf("</"));
+    val tag = q.tagDecl(kind, name, attrs);
+    val d = q.annotate(tag, Span(start: annStart, end: annEnd, line: 1));
+    val classes = d
+        .metaAll(ClassName)
+        .map({ c -> c.names.join(" ") })
+        .join(" ");
+    val shown = if (d.kind == DeclKind.Element) "element" else "component";
+    return @expr(
+        "<"
+            + d.name
+            + " class=\""
+            + classes
+            + "\">"
+            + body
+            + "</"
+            + d.name
+            + "> ("
+            + shown
+            + ")",
+    );
+}

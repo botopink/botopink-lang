@@ -267,7 +267,9 @@ pub const CustomAstEntry = struct {
 /// keyed by the call's source `Loc` and consumed by the call-site expansion
 /// pass (F6). Instances only exist at comptime — no codegen backend ever sees
 /// these calls.
-pub const TemplateOp = enum { value, text, parts, source, context, lookup, bindings, build, custom, fail, failAt, ref };
+/// `tagDecl` / `annotate` — decision 302: a tag's `@Decl` and an annotation
+/// run over it (`template_eval.zig` § tag annotations).
+pub const TemplateOp = enum { value, text, parts, source, context, lookup, bindings, build, custom, fail, failAt, ref, tagDecl, annotate };
 
 /// Everything the inference-time template evaluator needs to run a template
 /// body in the external eval runtime (expr-templates F6-full). Null in
@@ -1325,6 +1327,10 @@ pub const Env = struct {
     /// The names this module declares at top level (types, behaviors, fns,
     /// vals) — what `@typeInfo(Name)` reflects when no import binds `Name`.
     ownDecls: std.StringHashMapUnmanaged(void) = .empty,
+    /// The `type` declarations among them, each with its number of type
+    /// parameters: a type position names one before it is registered
+    /// (`resolveTypeName`, a name a prelude value also holds).
+    ownTypeDecls: std.StringHashMapUnmanaged(usize) = .empty,
     /// Erlang sent to and replies received from the `erl` runtime by every
     /// decorator / template evaluation in this module, in order (snapshots).
     /// Allocated in `arena`.
@@ -2312,6 +2318,16 @@ pub const Env = struct {
             // builders), which no value's type can spell: it holds a space.
             const declBinding = d.* == .named and std.mem.indexOfScalar(u8, d.named.name, ' ') != null;
             if (d.isNamed(name) or d.* == .func or declBinding or self.typeValueNames.contains(name)) return ty;
+            // A `type` of this module whose name a prelude value holds — a
+            // unit variant of a builtin enum (`DeclKind.Element`,
+            // `DeclKind.Field`) — read in its own declaration before it is
+            // registered (`type Element(children: Element[])`): the type.
+            if (self.ownTypeDecls.get(name)) |arity| {
+                if (arity == 0) return self.namedType(name);
+                const args = try self.arena.alloc(*T.Type, arity);
+                for (args) |*a| a.* = try self.freshVar();
+                return self.namedTypeArgs(name, args);
+            }
             // 01 R8 — any other binding is a value, and a value is not a type.
             const e = @import("error.zig").TypeError.custom(
                 try std.fmt.allocPrint(self.arena, "'{s}' is a value, not a type", .{name}),

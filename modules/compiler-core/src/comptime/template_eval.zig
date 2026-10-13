@@ -45,6 +45,7 @@ const preludeMod = @import("./runtime/prelude.zig");
 const etf = @import("./runtime/etf.zig");
 const stages = @import("./runtime/stages.zig");
 const trace = @import("./trace.zig");
+const decoratorSame = @import("./decorator_same.zig");
 
 // ── results ───────────────────────────────────────────────────────────────────
 
@@ -86,6 +87,15 @@ pub const Outcome = union(enum) {
         span: ?template.Span,
     },
     err: []const u8,
+    /// Decision 302 — `q.annotate(decl, at)` has no answer yet: run the
+    /// annotation written at `span` over the tag and evaluate again.
+    need: struct {
+        kind: []const u8,
+        name: []const u8,
+        attrs: []const [2][]const u8,
+        answer: i64,
+        span: template.Span,
+    },
 };
 
 pub const EvalError = error{ OutOfMemory, EvalFailed } || std.Io.Writer.Error;
@@ -555,7 +565,7 @@ const host_records = [_]erlang.HostRecord{
 /// (`runtime/prelude.zig`), reached by the `-import` `emitComptimeModule`
 /// writes. Nothing here depends on the call site any more — that is what makes
 /// the module's hash a hash of the declaration.
-fn mainForms(b: Ast.Builder, tfn: ast.FnDecl, plans: []const ArgPlan) EvalError![]const Ast.Form {
+fn mainForms(b: Ast.Builder, tfn: ast.FnDecl, plans: []const ArgPlan, annotates: bool) EvalError![]const Ast.Form {
     const V = Ast.Expr.v;
     const A = Ast.Expr.a;
     const fail_tag = A(preludeMod.template_fail_tag);
@@ -572,27 +582,41 @@ fn mainForms(b: Ast.Builder, tfn: ast.FnDecl, plans: []const ArgPlan) EvalError!
 
     var forms: std.ArrayListUnmanaged(Ast.Form) = .empty;
 
-    const main_body = try b.body(&.{.{ .try_catch = .{
+    // Decision 302 — a body that calls `q.annotate(decl, at)` counts its
+    // calls from zero, and a call past the answers the capture carries
+    // replies with the annotation to run and where it is written. A body that
+    // calls none keeps the module it had.
+    const need: Ast.Clause = .{
+        .patterns = try b.exprs(&.{try b.exception(A("throw"), try b.tuple(&.{ A(preludeMod.template_need_tag), V("Request"), V("Span") }))}),
+        .body = try b.body(&.{try json(b, &.{
+            Ast.field("kind", Ast.str("need")),
+            Ast.field("decl", try b.call("__bp_json", &.{V("Request")})),
+            Ast.field("span", try b.call("__bp_json", &.{V("Span")})),
+        })}),
+    };
+    const others = [_]Ast.Clause{
+        .{
+            .patterns = try b.exprs(&.{try b.exception(A("throw"), try b.tuple(&.{ fail_tag, V("Message"), V("Param"), V("Span") }))}),
+            .body = try b.body(&.{try json(b, &.{
+                Ast.field("kind", Ast.str("fail")),
+                Ast.field("message", try b.call("__bp_text", &.{V("Message")})),
+                Ast.field("param", V("Param")),
+                Ast.field("span", try b.call("__bp_json", &.{V("Span")})),
+            })}),
+        },
+        .{
+            .patterns = try b.exprs(&.{try b.exception(V("Class"), V("Reason"))}),
+            .body = try b.body(&.{try json(b, &.{
+                Ast.field("kind", Ast.str("error")),
+                Ast.field("message", try b.call("__bp_text", &.{try b.tuple(&.{ V("Class"), V("Reason") })})),
+            })}),
+        },
+    };
+    const tried: Ast.Expr = .{ .try_catch = .{
         .body = try b.body(&.{try b.remote("json", "encode", &.{try b.call("__bp_reply", &.{invoke})})}),
-        .catches = try b.arena.dupe(Ast.Clause, &.{
-            .{
-                .patterns = try b.exprs(&.{try b.exception(A("throw"), try b.tuple(&.{ fail_tag, V("Message"), V("Param"), V("Span") }))}),
-                .body = try b.body(&.{try json(b, &.{
-                    Ast.field("kind", Ast.str("fail")),
-                    Ast.field("message", try b.call("__bp_text", &.{V("Message")})),
-                    Ast.field("param", V("Param")),
-                    Ast.field("span", try b.call("__bp_json", &.{V("Span")})),
-                })}),
-            },
-            .{
-                .patterns = try b.exprs(&.{try b.exception(V("Class"), V("Reason"))}),
-                .body = try b.body(&.{try json(b, &.{
-                    Ast.field("kind", Ast.str("error")),
-                    Ast.field("message", try b.call("__bp_text", &.{try b.tuple(&.{ V("Class"), V("Reason") })})),
-                })}),
-            },
-        }),
-    } }});
+        .catches = if (annotates) try std.mem.concat(b.arena, Ast.Clause, &.{ &.{need}, &others }) else try b.arena.dupe(Ast.Clause, &others),
+    } };
+    const main_body = if (annotates) try b.body(&.{ try b.call("__bp_annotateReset", &.{}), tried }) else try b.body(&.{tried});
     try forms.append(b.arena, .{ .function = .{
         .name = "main",
         .clauses = try b.arena.dupe(Ast.Clause, &.{.{
@@ -617,7 +641,10 @@ fn buildModule(
 ) (EvalError || error{ UnsupportedMethod, HostCell })!Module {
     const b: Ast.Builder = .{ .arena = arena };
     const plans = try argPlans(arena, tfn, captures, plainArgs);
-    const forms = try mainForms(b, tfn, plans);
+    const annotates = decoratorSame.mentionsMethod(tfn, "annotate") or for (support) |f| {
+        if (decoratorSame.mentionsMethod(f, "annotate")) break true;
+    } else false;
+    const forms = try mainForms(b, tfn, plans, annotates);
     const resident = try preludeMod.templateForms(b);
 
     const all = try arena.alloc(ast.DeclKind, 1 + support.len + types.len);
@@ -792,8 +819,16 @@ pub fn captureToTerm(arena: std.mem.Allocator, cap: *const template.CapturedExpr
     // Decision 364 (2) — `q.value`, when the template reads it: the literal's
     // value (it has no hole — the checker refuses the read of a holed one at
     // the argument).
-    const entries = try arena.alloc(Term.MapEntry, if (cap.valueRead) 8 else 7);
-    if (cap.valueRead) entries[7] = Term.field("value", Term.str(text.items));
+    // Decision 302 — the answers `q.annotate` has had so far, in call order
+    // (`expandTemplateCallViaRuntime`); the key only when there is one.
+    const extra: usize = @as(usize, if (cap.valueRead) 1 else 0) + @as(usize, if (cap.tagAnswers.len > 0) 1 else 0);
+    const entries = try arena.alloc(Term.MapEntry, 7 + extra);
+    var next: usize = 7;
+    if (cap.valueRead) {
+        entries[next] = Term.field("value", Term.str(text.items));
+        next += 1;
+    }
+    if (cap.tagAnswers.len > 0) entries[next] = .{ .key = Term.atomOf(preludeMod.annotations_key), .value = Term.listOf(cap.tagAnswers) };
     entries[0] = .{ .key = Term.atomOf("__bp_capture"), .value = Term.str(cap.paramName) };
     entries[1] = Term.field("text", Term.str(text.items));
     entries[2] = Term.field("parts", Term.listOf(parts.items));
@@ -802,6 +837,14 @@ pub fn captureToTerm(arena: std.mem.Allocator, cap: *const template.CapturedExpr
     entries[5] = Term.field("bindings", Term.listOf(bindings.items));
     entries[6] = Term.field("words", Term.listOf(word_terms));
     return Term.mapOf(entries);
+}
+
+/// Decision 302 — the text the body reads as `q.text()` (a hole as its
+/// placeholder), which an annotation's span indexes.
+pub fn captureText(arena: std.mem.Allocator, cap: *const template.CapturedExpr) std.mem.Allocator.Error![]const u8 {
+    const t = try captureToTerm(arena, cap);
+    for (t.map) |e| if (e.key == .atom and std.mem.eql(u8, e.key.atom, "text")) return e.value.binary;
+    return "";
 }
 
 /// `infer.zig`'s memo key of a template call (hole-free captures only; the
@@ -917,6 +960,7 @@ const Reply = struct {
     span: ?template.Span = null,
     value: std.json.Value = .null,
     ast: std.json.Value = .null,
+    decl: std.json.Value = .null,
 };
 
 fn parseOutcome(arena: std.mem.Allocator, stdout: []const u8) EvalError!Outcome {
@@ -934,12 +978,43 @@ fn parseOutcome(arena: std.mem.Allocator, stdout: []const u8) EvalError!Outcome 
             return .{ .err = "`q.custom` received a tree that is not a CustomNode" };
         return .{ .custom = .{ .code = reply.source, .ast = tree } };
     }
+    if (std.mem.eql(u8, kind, "need")) return needOutcome(arena, reply);
     if (std.mem.eql(u8, kind, "fail")) return .{ .fail = .{
         .message = if (reply.message.len > 0) reply.message else "template rejected the input",
         .param = reply.param,
         .span = reply.span,
     } };
     return .{ .err = if (reply.message.len > 0) reply.message else "template evaluation failed" };
+}
+
+/// Decision 302 — the request `q.annotate(decl, at)` replied with: the tag
+/// (`kind`, `name`, `attrs` as `{"$tuple": [n, v]}` pairs, `answer` the index
+/// of the answer it is, -1 for a fresh one) and the annotation's span.
+fn needOutcome(arena: std.mem.Allocator, reply: Reply) EvalError!Outcome {
+    const bad: Outcome = .{ .err = "`q.annotate` received a `Decl` the template did not build with `q.tagDecl`, or a span that is not a `Span`" };
+    const obj = switch (reply.decl) {
+        .object => |o| o,
+        else => return bad,
+    };
+    const span = reply.span orelse return bad;
+    const kind = jsonString(obj.get("kind")) orelse return bad;
+    const name = jsonString(obj.get("name")) orelse return bad;
+    const answer: i64 = if (obj.get("answer")) |a| switch (a) {
+        .integer => |n| n,
+        else => -1,
+    } else -1;
+    var attrs: std.ArrayListUnmanaged([2][]const u8) = .empty;
+    if (obj.get("attrs")) |av| if (av == .array) for (av.array.items) |item| {
+        const pair = switch (item) {
+            .object => |o| o.get("$tuple") orelse return bad,
+            else => return bad,
+        };
+        if (pair != .array or pair.array.items.len != 2) return bad;
+        const n = jsonString(pair.array.items[0]) orelse return bad;
+        const v = jsonString(pair.array.items[1]) orelse return bad;
+        try attrs.append(arena, .{ n, v });
+    };
+    return .{ .need = .{ .kind = kind, .name = name, .attrs = attrs.items, .answer = answer, .span = span } };
 }
 
 fn typedValue(arena: std.mem.Allocator, v: std.json.Value) std.mem.Allocator.Error!TypedValue {

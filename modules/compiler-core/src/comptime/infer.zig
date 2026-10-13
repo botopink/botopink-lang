@@ -26,6 +26,7 @@ const template = @import("template.zig");
 const primOpTemplate = @import("primOpTemplate.zig");
 const builtinsMod = @import("builtins.zig");
 const templateEval = @import("template_eval.zig");
+const preludeMod = @import("runtime/prelude.zig");
 const stages = @import("runtime/stages.zig");
 const decoratorEval = @import("decorator_eval.zig");
 const hostCells = @import("host_cells.zig");
@@ -6538,15 +6539,21 @@ fn isReflectedMethodType(t: *T.Type) bool {
 /// while the program compiles (`expr_param.eraseForRun`). `T` is a record
 /// type written by its declared name (the run looks it up by that name).
 fn inferMethodMetaRead(env: *Env, call: anytype, recv: *ast.TypedExpr, loc: ast.Loc) InferError!TypedExpr {
-    const one = std.mem.eql(u8, call.callee, "meta");
     if (currentDeclParam(env) == null) {
         const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}(T)` on a `decl.methods` entry is read by a decorator's body", .{ diagnostics.typeinfo_meta_type, call.callee });
         env.lastError = TypeError.custom(msg, "A method's typed meta is read while the program compiles, by its owner's decorator (question s29-b).").withLoc(loc);
         return error.TypeError;
     }
+    return metaReadCall(env, call, recv, loc, "a `decl.methods` entry");
+}
+
+/// A typed meta read on a handle the run answers by the record's declared
+/// name (`m.meta(T)` on a method entry, `d.meta(T)` on a tag's `@Decl`).
+fn metaReadCall(env: *Env, call: anytype, recv: *ast.TypedExpr, loc: ast.Loc, on: []const u8) InferError!TypedExpr {
+    const one = std.mem.eql(u8, call.callee, "meta");
     const mt = try metaReadType(env, call, loc);
     if (!std.mem.eql(u8, mt.spelled, mt.name) or mt.generic) {
-        const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}({s})` on a `decl.methods` entry names the record by another name than its declaration's `{s}`, or a generic record", .{ diagnostics.typeinfo_meta_type, call.callee, mt.spelled, mt.name });
+        const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}({s})` on {s} names the record by another name than its declaration's `{s}`, or a generic record", .{ diagnostics.typeinfo_meta_type, call.callee, mt.spelled, on, mt.name });
         env.lastError = TypeError.custom(msg, "Write the meta record as it is declared — `m.meta(Query)` —: the method's values are keyed by that name (question s29-b).").withLoc(call.args[0].value.getLoc());
         return error.TypeError;
     }
@@ -6561,6 +6568,20 @@ fn inferMethodMetaRead(env: *Env, call: anytype, recv: *ast.TypedExpr, loc: ast.
         .args = typedArgs,
         .trailing = &.{},
     } } } };
+}
+
+/// Decision 302 — `d.meta(T)` / `d.metaAll(T)` on a tag's `@Decl`: `?T` /
+/// `T[]`, the typed meta the tag's annotations recorded, read where the
+/// template runs (`expr_param.eraseMetaReads`). On a decorator's own `@Decl`
+/// parameter it is refused: a declaration's meta is read through
+/// `@typeInfo(X).meta(T)`.
+fn inferTagMetaRead(env: *Env, call: anytype, recv: *ast.TypedExpr, loc: ast.Loc) InferError!TypedExpr {
+    if (currentDeclParam(env)) |dp| if (std.mem.eql(u8, typedIdentName(recv.*) orelse "", dp)) {
+        const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}.{s}(T)` reads a tag's meta, and `{s}` is the declaration this decorator annotates", .{ diagnostics.typeinfo_meta_type, dp, call.callee, dp });
+        env.lastError = TypeError.custom(msg, "A declaration's typed meta is read `@typeInfo(X).meta(T)` (decision 298); `d.meta(T)` reads what a tag's annotations recorded, on the `@Decl` `q.annotate` answers (decision 302).").withLoc(loc);
+        return error.TypeError;
+    };
+    return metaReadCall(env, call, recv, loc, "a tag's `@Decl`");
 }
 
 /// Whether `t` is the `@Decl` handle's type.
@@ -6752,6 +6773,7 @@ fn noteOwnDecls(env: *Env, program: ast.Program) InferError!void {
             else => continue,
         };
         try env.ownDecls.put(env.arena, name, {});
+        if (decl == .type_) try env.ownTypeDecls.put(env.arena, name, decl.type_.genericParams.len);
     }
 }
 
@@ -9057,13 +9079,41 @@ fn expandTemplateCallViaRuntime(
     const hosted: []const ast.FnDecl = if (own_template) try hostCells.hostSupport(env, &env.fnDecls, carried) else &.{};
     const support = try std.mem.concat(env.arena, ast.FnDecl, &.{ carried[1..], reached.fns, hosted });
     const types = try std.mem.concat(env.arena, ast.DeclKind, &.{ reached.types, answered.types });
-    const valued = try withHoleValues(env, ctx.io, captures);
-    const outcome = templateEval.evaluate(env.arena, ctx.io, ctx.build_root, owner, srcPathOfModule(env, owner), carried[0], support, types, valued, plainArgs, &env.comptimeTraces) catch {
-        env.lastError = TypeError.custom(
-            "the template evaluator failed to run",
-            "Template bodies run on the wasm comptime runtime inside the compiler (decision 434); this failure is the compiler's, not the body's — report it.",
-        ).withLoc(loc);
-        return error.TypeError;
+    var valued = try withHoleValues(env, ctx.io, captures);
+    // Decision 302 — a body that calls `q.annotate(decl, at)` reads the typed
+    // meta of the tag's `@Decl` (`d.meta(T)`), lowered for the run; each call
+    // past the answers so far stops the run with the annotation to apply,
+    // which runs here, and the body runs again with its answer.
+    const annotates = decoratorSameMod.mentionsMethod(carried[0], "annotate") or for (support) |f| {
+        if (decoratorSameMod.mentionsMethod(f, "annotate")) break true;
+    } else false;
+    const runTfn = if (annotates) try exprParam.eraseMetaReads(env.arena, carried[0]) else carried[0];
+    const runSupport = if (annotates) blk: {
+        const out = try env.arena.alloc(ast.FnDecl, support.len);
+        for (support, 0..) |f, i| out[i] = try exprParam.eraseMetaReads(env.arena, f);
+        break :blk out;
+    } else support;
+    var tags: std.ArrayListUnmanaged(decoratorEval.DeclHandle) = .empty;
+    const outcome = while (true) {
+        const run = templateEval.evaluate(env.arena, ctx.io, ctx.build_root, owner, srcPathOfModule(env, owner), runTfn, runSupport, types, valued, plainArgs, &env.comptimeTraces) catch {
+            env.lastError = TypeError.custom(
+                "the template evaluator failed to run",
+                "Template bodies run on the wasm comptime runtime inside the compiler (decision 434); this failure is the compiler's, not the body's — report it.",
+            ).withLoc(loc);
+            return error.TypeError;
+        };
+        if (run != .need) break run;
+        if (valued.len == 0 or tags.items.len >= max_tag_annotations) {
+            env.lastError = TypeError.custom("the template ran more tag annotations than one expansion may", "A template runs each annotation of its text once per expansion (decision 302).").withLoc(loc);
+            return error.TypeError;
+        }
+        const tagged = try runTagAnnotation(env, ctx, &valued[0], run.need, tags.items);
+        try tags.append(env.arena, tagged);
+        const terms = try env.arena.alloc(decoratorEval.Term, tags.items.len);
+        for (tags.items, 0..) |h, i| terms[i] = try tagAnswerTerm(env.arena, h, i);
+        const next = try env.arena.dupe(template.CapturedExpr, valued);
+        for (next) |*cap| cap.tagAnswers = terms;
+        valued = next;
     };
 
     const expansion: *const ast.Expr = switch (outcome) {
@@ -9142,12 +9192,224 @@ fn expandTemplateCallViaRuntime(
             ).withLoc(loc);
             return error.TypeError;
         },
+        // Answered by the loop above.
+        .need => unreachable,
     };
 
     if (memoKey) |key| {
         env.templateEvalCache.put(key, expansion) catch return error.OutOfMemory;
     }
     return finishExpansion(env, expansion, retType, loc);
+}
+
+/// Decision 302 — the most tag annotations one expansion runs.
+const max_tag_annotations = 4096;
+
+/// The handle a tag annotation's run answered, as the term the template body
+/// reads (`decorator_eval.handleToTerm`), with its index among the answers so
+/// a later `q.annotate` of it runs over it, not over a fresh tag.
+fn tagAnswerTerm(arena: std.mem.Allocator, h: decoratorEval.DeclHandle, index: usize) std.mem.Allocator.Error!decoratorEval.Term {
+    const t = try decoratorEval.handleToTerm(arena, h);
+    const entries = try arena.alloc(decoratorEval.Term.MapEntry, t.map.len + 1);
+    @memcpy(entries[0..t.map.len], t.map);
+    entries[t.map.len] = .{ .key = decoratorEval.Term.atomOf(preludeMod.answer_key), .value = decoratorEval.Term.int(@intCast(index)) };
+    return decoratorEval.Term.mapOf(entries);
+}
+
+/// Decision 302 — run the annotation a template's `q.annotate(decl, at)`
+/// names over the tag: `at` spans `name` or `name(args)` in the capture's
+/// text; the name resolves in the caller's scope to a decorator, its
+/// arguments are checked there as a declaration's annotation's are, and the
+/// body runs over the tag's handle. Its one channel is typed meta: what it
+/// records joins the handle answered (one `setMeta` of a type per tag,
+/// `addMeta` repeats); `addMember`, `addType`, `@emit` and the string
+/// `setMeta` are refused. Every refusal is located at the annotation in the
+/// caller's text.
+fn runTagAnnotation(
+    env: *Env,
+    ctx: envMod.TemplateEvalCtx,
+    cap: *const template.CapturedExpr,
+    need: anytype,
+    answered: []const decoratorEval.DeclHandle,
+) InferError!decoratorEval.DeclHandle {
+    const text = try templateEval.captureText(env.arena, cap);
+    const at = template.mapSpanToLoc(cap, need.span);
+    const refuse = struct {
+        fn f(e: *Env, l: ast.Loc, msg: []const u8, hint: []const u8) InferError {
+            e.lastError = TypeError.custom(msg, hint).withLoc(l);
+            return error.TypeError;
+        }
+    }.f;
+    if (need.span.start > need.span.end or need.span.end > text.len)
+        return refuse(env, cap.loc, "`q.annotate(decl, at)`: `at` is not a span of the template's text", "The span indexes `q.text()`: `Span(start, end, line)` around one annotation `name` or `name(args)`.");
+    const written = std.mem.trim(u8, text[need.span.start..need.span.end], " \t\r\n");
+    const lead = std.mem.indexOf(u8, text[need.span.start..need.span.end], written) orelse 0;
+
+    // `#[<written>]` above a function, so the parser reads it as it reads a
+    // declaration's annotation; each location is then moved onto the text.
+    const src = try std.fmt.allocPrint(env.arena, "#[{s}]\nfn __bp_tagAnnotation() {{}}", .{written});
+    var lx = Lexer.init(src);
+    const tokens = lx.scanAll(env.arena) catch return error.OutOfMemory;
+    var parser = Parser.init(tokens);
+    const parsed = parser.parse(env.arena) catch null;
+    const anns: []const ast.Annotation = if (parsed) |p| (if (p.decls.len == 1 and p.decls[0] == .@"fn") p.decls[0].@"fn".annotations else &.{}) else &.{};
+    if (anns.len != 1 or anns[0].is_builtin or anns[0].template != null) {
+        const msg = try std.fmt.allocPrint(env.arena, "`{s}` is not one tag annotation — `name` or `name(args)`", .{written});
+        return refuse(env, at, msg, "A tag annotation is one item of a `#[…]` (decision 302): a decorator's name and its arguments.");
+    }
+    const Mover = struct {
+        src: []const u8,
+        cap: *const template.CapturedExpr,
+        base: usize,
+        fn move(self: @This(), l: ast.Loc) ast.Loc {
+            var line: usize = 1;
+            var off: usize = 0;
+            while (off < self.src.len and line < l.line) : (off += 1) {
+                if (self.src[off] == '\n') line += 1;
+            }
+            const pos = off + (l.col -| 1);
+            return template.mapSpanToLoc(self.cap, .{ .start = self.base + (pos -| 2), .end = self.base + (pos -| 2), .line = 1 });
+        }
+    };
+    const mover: Mover = .{ .src = src, .cap = cap, .base = need.span.start + lead };
+    var a = anns[0];
+    a.loc = mover.move(a.loc orelse .{ .line = 1, .col = 3 });
+    const argLocs = try env.arena.alloc(ast.Loc, a.argLocs.len);
+    for (a.argLocs, 0..) |l, i| argLocs[i] = mover.move(l);
+    a.argLocs = argLocs;
+
+    const sig = env.decorators.get(a.name) orelse {
+        const msg = try std.fmt.allocPrint(env.arena, "`#[{s}]` names no decorator in this scope — a tag annotation is a function whose first parameter is `comptime decl: @Decl`", .{a.name});
+        return decoratorError(env, a, msg, "The annotation resolves where the template is written (decision 302): import it, or declare it here.");
+    };
+    const dfn = sig.fn_decl orelse {
+        const msg = try std.fmt.allocPrint(env.arena, "`#[{s}]` is a bodyless marker and cannot run over a tag", .{a.name});
+        return decoratorError(env, a, msg, "A tag annotation is a decorator with a body; it records what the template reads through `decl.setMeta` / `decl.addMeta` (decision 302).");
+    };
+    const program: ast.Program = .{ .decls = @constCast(env.moduleDecls) };
+    try checkDecoratorArgs(env, program, a, sig, .{ .name = need.name, .type_ = null });
+
+    // The tag's handle: a fresh one, or the answer the template handed back.
+    const base: decoratorEval.DeclHandle = if (need.answer >= 0 and need.answer < answered.len) answered[@intCast(need.answer)] else blk: {
+        var h: decoratorEval.DeclHandle = .{
+            .kind = need.kind,
+            .name = need.name,
+            .fields = &.{},
+            .methods = &.{},
+            .returnType = "",
+            .annotations = &.{},
+            .attrs = need.attrs,
+        };
+        if (std.mem.eql(u8, need.kind, "Component")) if (env.fnDecls.get(need.name)) |f| {
+            const c = try env.arena.create(decoratorEval.DeclHandle);
+            c.* = .{
+                .kind = "Fn",
+                .name = f.name,
+                .fields = &.{},
+                .methods = &.{},
+                .returnType = if (f.returnType) |rt| try declTypeName(env.arena, rt) else "",
+                .annotations = f.annotations,
+                .params = try paramHandles(env, f.params),
+            };
+            c.* = try completeHandle(env, c.*);
+            h.component = c;
+        };
+        break :blk h;
+    };
+    if (!base.isTag()) {
+        const msg = try std.fmt.allocPrint(env.arena, "`#[{s}]` runs over a tag's `@Decl`, and `q.tagDecl` builds one of kind `DeclKind.Element` or `DeclKind.Component` — not `{s}`", .{ a.name, base.kind });
+        return decoratorError(env, a, msg, "Build the tag's handle with `q.tagDecl(DeclKind.Element, name, attrs)` (decision 302).");
+    }
+
+    // The run — a declaration's annotation's (`runDeclDecorators`).
+    const values: []const envMod.DecoratorArgValue = (if (a.loc) |l| env.decoratorArgValues.get(l) else null) orelse &.{};
+    var plain = try env.arena.alloc(template.PlainArg, values.len);
+    var builtFns: std.ArrayListUnmanaged(ast.FnDecl) = .empty;
+    for (values, 0..) |v, j| {
+        plain[j] = .{ .paramName = sig.params[j].name, .source = v.source, .absent = v.absent };
+        if (!v.built or v.absent) continue;
+        const fname = try std.fmt.allocPrint(env.arena, "__bp_decorator_arg_{d}", .{j + 1});
+        try builtFns.append(env.arena, try builtArgFn(env, fname, v.source));
+        plain[j].call = fname;
+    }
+    const owner = env.comptimeOwnerOf(dfn);
+    const local = std.mem.eql(u8, owner, env.modulePath);
+    const found: Support = if (local)
+        try decoratorSupport(env.arena, env.fnDecls, &env.importedFnSupport, dfn)
+    else
+        .{ .fns = sig.support, .conflict = sig.conflict };
+    if (found.conflict) |c| return decoratorError(env, a, c, "Rename one of the two functions, so each name the decorator reaches is one function.");
+    const carried = try std.mem.concat(env.arena, ast.FnDecl, &.{ &.{dfn}, found.fns, builtFns.items });
+    const reached = try blockEval.typesReached(env, carried, &.{ "DeclKind", "Span", "Decl" });
+    const support = try std.mem.concat(env.arena, ast.FnDecl, &.{ found.fns, reached.fns, builtFns.items });
+    var hosts = try hostCells.Writer.init(env, program.decls);
+    const runDfn = if (local) try hosts.rewrite(try sameLoweredFn(env, program, dfn)) else dfn;
+    const erasedSupport = try env.arena.alloc(ast.FnDecl, support.len);
+    for (support, 0..) |sf, k| {
+        const own = local and k < found.fns.len and std.mem.eql(u8, env.comptimeOwnerOf(sf), env.modulePath);
+        erasedSupport[k] = try exprParam.eraseForRun(env.arena, if (own) try hosts.rewrite(try sameLoweredFn(env, program, sf)) else sf, isDecoratorParams(sf.params));
+    }
+    const runSupport = if (local) try std.mem.concat(env.arena, ast.FnDecl, &.{ erasedSupport, try hostCells.hostSupport(env, &env.fnDecls, try std.mem.concat(env.arena, ast.FnDecl, &.{ &.{runDfn}, erasedSupport })) }) else erasedSupport;
+    var located: std.ArrayListUnmanaged([]const u8) = .empty;
+    try located.append(env.arena, dfn.name);
+    for (support[0..found.fns.len]) |sf| if (std.mem.eql(u8, env.comptimeOwnerOf(sf), owner)) try located.append(env.arena, sf.name);
+    const outcome = decoratorEval.evaluate(env.arena, ctx.io, ctx.build_root, owner, srcPathOfModule(env, owner), try exprParam.eraseForRun(env.arena, runDfn, true), runSupport, located.items, reached.types, try completeHandle(env, base), plain, null, &env.comptimeTraces) catch {
+        return decoratorError(env, a, "the decorator evaluator failed to run", "Decorator bodies run on the wasm comptime runtime inside the compiler (decision 434); this failure is the compiler's, not the body's — report it.");
+    };
+    var metas: std.ArrayListUnmanaged(decoratorEval.TagMeta) = .empty;
+    try metas.appendSlice(env.arena, base.tagMeta);
+    switch (outcome) {
+        .ok => |contributions| for (contributions) |c| switch (c.kind) {
+            .typedMeta => {
+                const r = env.reflection orelse continue;
+                const declName = memberFn.declParamName(dfn) orelse return decoratorError(env, a, "the decorator has no `@Decl` handle", "");
+                const calls = try typedMeta.collect(env.arena, dfn, declName);
+                const types = r.decoratorMetaTypes.get(try reflectionMod.Reflection.decoratorKey(env.arena, owner, dfn.name)) orelse &.{};
+                if (c.index >= calls.len or c.index >= types.len or c.data == null)
+                    return decoratorError(env, a, "the decorator evaluator handed back a typed meta value the body does not record", "Report it: `decl.setMeta(v)` / `decl.addMeta(v)` are numbered in source order.");
+                const mt = types[c.index];
+                const repeat = calls[c.index].repeat;
+                for (metas.items) |m| {
+                    if (!std.mem.eql(u8, m.typeName, mt.name)) continue;
+                    if (repeat and m.repeat) continue;
+                    const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s}]` records a second `{s}` on the tag `{s}`, which holds one", .{ diagnostics.decorator_meta_twice, a.name, mt.name, need.name });
+                    return decoratorError(env, a, msg, "`decl.setMeta(v)` stores one value of its type per tag (decision 302); a value that repeats is recorded with `decl.addMeta(v)` — every one, never mixed with `setMeta` — and read with `metaAll(T)`.");
+                }
+                try metas.append(env.arena, .{ .typeName = mt.name, .repeat = repeat, .value = try decoratorEval.metaValueTerm(env.arena, mt.fields, c.data.?) });
+            },
+            else => {
+                const call = switch (c.kind) {
+                    .emit => "@emit",
+                    .member, .memberFn => "decl.addMember",
+                    .assoc => "decl.addType",
+                    else => "decl.setMeta(key, value)",
+                };
+                const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s}]` on the tag `{s}` calls `{s}`, and an annotation on a tag records typed meta only", .{ diagnostics.tag_annotation_output, a.name, need.name, call });
+                return decoratorError(env, a, msg, "On a tag the annotation's one channel is typed meta (decision 302): `decl.setMeta(v)` / `decl.addMeta(v)`, read back by the template function with `d.meta(T)` / `d.metaAll(T)`.");
+            },
+        },
+        .fail => |fl| {
+            if (fl.arg) |j| if (j < values.len) if (values[j].loc) |l| {
+                env.lastError = TypeError.custom(fl.message, "raised by the annotation via `fail` on this argument").withLoc(l);
+                return error.TypeError;
+            };
+            return decoratorError(env, a, fl.message, "raised by the annotation via `fail`/`failAt`");
+        },
+        .err => |msg| return decoratorError(env, a, msg, "the annotation could not be evaluated"),
+        .raised => |failed| {
+            if (!local) {
+                // The call that raised is in the annotation's own file.
+                const msg = try std.fmt.allocPrint(env.arena, "{s} — raised at {s}:{d}:{d} while `#[{s}]` ran over the tag", .{ failed.message, srcPathOfModule(env, owner), failed.at.line, failed.at.col, a.name });
+                return decoratorError(env, a, msg, "the annotation's body raised; the call that raised is named in the message");
+            }
+            const frame = try std.fmt.allocPrint(env.arena, "raised by this call while `#[{s}]` (at {d}:{d}) ran over the tag", .{ a.name, if (a.loc) |l| l.line else 0, if (a.loc) |l| l.col else 0 });
+            env.lastError = TypeError.custom(failed.message, frame).withLoc(failed.at);
+            return error.TypeError;
+        },
+    }
+    var out = base;
+    out.tagMeta = metas.items;
+    return out;
 }
 
 /// The records a template body's catalogue answer builds (`Declared`,
@@ -16575,6 +16837,21 @@ fn inferTemplateMethod(
             try unifyArg(env, typedArgs, 0, try env.namedType("Span"));
             try unifyArg(env, typedArgs, 1, try env.namedType("string"));
             retType = try env.freshVar();
+        } else if (std.mem.eql(u8, callee, "tagDecl")) {
+            // Decision 302 — a tag's `@Decl`, built by the template.
+            op = .tagDecl;
+            try unifyArg(env, typedArgs, 0, try env.namedType("DeclKind"));
+            try unifyArg(env, typedArgs, 1, try env.namedType("string"));
+            const pair = try env.namedTypeArgs("tuple", &.{ try env.namedType("string"), try env.namedType("string") });
+            try unifyArg(env, typedArgs, 2, try env.namedTypeArgs("array", &.{pair}));
+            retType = try env.namedType("Decl");
+        } else if (std.mem.eql(u8, callee, "annotate")) {
+            // Decision 302 — the annotation written at a span of the text,
+            // run over a tag's `@Decl` (`expandTemplateCallViaRuntime`).
+            op = .annotate;
+            try unifyArg(env, typedArgs, 0, try env.namedType("Decl"));
+            try unifyArg(env, typedArgs, 1, try env.namedType("Span"));
+            retType = try env.namedType("Decl");
         } else return null;
     } else if (std.mem.eql(u8, named.name, "Binding")) {
         if (!std.mem.eql(u8, callee, "ref")) return null;
@@ -18715,6 +18992,11 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
             // recorded, read at build.
             if (typedReceiver) |rp| if (!call.is_builtin and call.calleeExpr == null and (std.mem.eql(u8, call.callee, "meta") or std.mem.eql(u8, call.callee, "metaAll")) and isReflectedMethodType(rp.getType())) {
                 return inferMethodMetaRead(env, call, rp, loc);
+            };
+            // Decision 302 — `d.meta(T)` / `d.metaAll(T)` on a tag's `@Decl`
+            // (`q.annotate`'s answer): what the tag's annotations recorded.
+            if (typedReceiver) |rp| if (!call.is_builtin and call.calleeExpr == null and (std.mem.eql(u8, call.callee, "meta") or std.mem.eql(u8, call.callee, "metaAll")) and isDeclHandleType(rp.getType())) {
+                return inferTagMetaRead(env, call, rp, loc);
             };
             // Decision 298 — `d.meta(T)` / `d.metaAll(T)` on a catalogue entry.
             if (typedReceiver) |rp| if (!call.is_builtin and call.calleeExpr == null and (std.mem.eql(u8, call.callee, "meta") or std.mem.eql(u8, call.callee, "metaAll")) and isDeclaredType(rp.getType())) {

@@ -165,6 +165,8 @@ test "template: expr methods typecheck and record lowerings" {
         \\    val made = template.build("1 + 2");
         \\    val node = CustomNode(kind: "expr", span: sp, label: "number", ref: b, children: []);
         \\    val cu = template.custom(node, made);
+        \\    val tag = template.tagDecl(DeclKind.Element, "div", [#("id", "x")]);
+        \\    val annotated = template.annotate(tag, sp);
         \\    template.failAt(sp, "bad tag");
         \\    template.fail("no component");
         \\    return template;
@@ -174,7 +176,7 @@ test "template: expr methods typecheck and record lowerings" {
         \\}
     );
 
-    try std.testing.expectEqual(@as(usize, 12), env.templateLowerings.count());
+    try std.testing.expectEqual(@as(usize, 14), env.templateLowerings.count());
     var counts = std.enums.EnumArray(envMod.TemplateOp, usize).initFill(0);
     var it = env.templateLowerings.valueIterator();
     while (it.next()) |op| counts.set(op.*, counts.get(op.*) + 1);

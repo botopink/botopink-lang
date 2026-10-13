@@ -154,6 +154,10 @@ pub const CapturedExpr = struct {
     /// the literal's value (a literal without a hole; the checker refuses the
     /// read of a holed one at the argument).
     valueRead: bool = false,
+    /// Decision 302 — what each `q.annotate(decl, at)` of the body answered so
+    /// far, in call order: the tag's handle with what its annotation recorded
+    /// (`infer.zig` `expandTemplateCallViaRuntime`).
+    tagAnswers: []const Term = &.{},
 };
 
 // ── second-layer context ──────────────────────────────────────────────────────

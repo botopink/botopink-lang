@@ -69,7 +69,24 @@ pub const DeclHandle = struct {
     /// run before the owner's), read on a `decl.methods` entry as
     /// `m.meta(T)` / `m.metaAll(T)`.
     methodMeta: []const MethodMeta = &.{},
+    /// Decision 302 — a tag's handle (`kind` `Element` or `Component`): its
+    /// static attributes as written, the component's own handle, and the
+    /// typed meta the tag's annotations recorded so far (`d.meta(T)` in the
+    /// template's body). The keys are written for a tag only, `component`
+    /// for every handle.
+    attrs: []const [2][]const u8 = &.{},
+    component: ?*const DeclHandle = null,
+    tagMeta: []const TagMeta = &.{},
+
+    pub fn isTag(self: DeclHandle) bool {
+        return std.mem.eql(u8, self.kind, "Element") or std.mem.eql(u8, self.kind, "Component");
+    }
 };
+
+/// Decision 302 — one typed meta value a tag's annotation recorded: the
+/// record type's declared name, whether it was added (`addMeta`), and the
+/// value as the map a record is in a body (`metaValueTerm`).
+pub const TagMeta = struct { typeName: []const u8, repeat: bool, value: Term };
 
 /// One typed meta value of a method: the record type's declared name and the
 /// value as the map a record is in the body (`metaValueTerm`).
@@ -520,7 +537,8 @@ pub fn handleToTerm(arena: std.mem.Allocator, handle: DeclHandle) std.mem.Alloca
         params[i] = Term.mapOf(pe);
     }
 
-    const entries = try arena.alloc(Term.MapEntry, 9);
+    const tag = handle.isTag();
+    const entries = try arena.alloc(Term.MapEntry, if (tag) 12 else 10);
     entries[0] = Term.field("kind", Term.atomOf(handle.kind));
     entries[1] = Term.field("name", Term.str(handle.name));
     entries[2] = Term.field("fields", Term.listOf(fields));
@@ -530,6 +548,23 @@ pub fn handleToTerm(arena: std.mem.Allocator, handle: DeclHandle) std.mem.Alloca
     entries[6] = Term.field("annotations", try annotationsToTerm(arena, handle.annotations, handle.decoratorIds));
     entries[7] = Term.field("hooks", Term.listOf(handle.hooks));
     entries[8] = Term.field("params", Term.listOf(params));
+    entries[9] = Term.field("component", if (handle.component) |c| try handleToTerm(arena, c.*) else Term.undefined_atom);
+    if (tag) {
+        // `attrs` — `[{<<"id">>, <<"x">>}]`, what `attr/2` reads; `meta` —
+        // `[#{type => <<"ClassName">>, value => V}]`, what
+        // `'__bp_methodMeta'/2` reads (a method entry's shape).
+        const attrs = try arena.alloc(Term, handle.attrs.len);
+        for (handle.attrs, 0..) |a, i| attrs[i] = Term.tupleOf(try arena.dupe(Term, &.{ Term.str(a[0]), Term.str(a[1]) }));
+        const metas = try arena.alloc(Term, handle.tagMeta.len);
+        for (handle.tagMeta, 0..) |m, i| {
+            const me = try arena.alloc(Term.MapEntry, 2);
+            me[0] = Term.field("type", Term.str(m.typeName));
+            me[1] = Term.field("value", m.value);
+            metas[i] = Term.mapOf(me);
+        }
+        entries[10] = Term.field("attrs", Term.listOf(attrs));
+        entries[11] = Term.field("meta", Term.listOf(metas));
+    }
     return Term.mapOf(entries);
 }
 

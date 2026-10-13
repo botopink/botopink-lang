@@ -29,7 +29,13 @@ pub fn lower(arena: std.mem.Allocator, calls: *const Calls, f: ast.FnDecl) std.m
 /// True when `f`'s body writes a method call named `same` — the functions a
 /// decorator reaches that its run needs typed first.
 pub fn mentionsSame(f: ast.FnDecl) bool {
-    for (f.body) |*s| if (find(ast.Stmt, s)) return true;
+    return mentionsMethod(f, "same");
+}
+
+/// True when `f`'s body writes a method call named `name` (decision 302: a
+/// template that calls `annotate`).
+pub fn mentionsMethod(f: ast.FnDecl, name: []const u8) bool {
+    for (f.body) |*s| if (find(ast.Stmt, s, name)) return true;
     return false;
 }
 
@@ -98,36 +104,36 @@ const Lowering = struct {
     }
 };
 
-fn find(comptime X: type, ptr: *const X) bool {
+fn find(comptime X: type, ptr: *const X, name: []const u8) bool {
     if (X == ast.Expr) {
         if (ptr.* == .call and ptr.call.kind == .call) {
             const c = ptr.call.kind.call;
-            if (!c.is_builtin and c.receiver != null and std.mem.eql(u8, c.callee, "same")) return true;
+            if (!c.is_builtin and c.receiver != null and std.mem.eql(u8, c.callee, name)) return true;
         }
     }
     if (X == ast.TypeRef or X == ast.Pattern or X == ast.ImportDecl) return false;
     switch (@typeInfo(X)) {
         .@"struct" => |s| inline for (s.fields) |f| {
             if (f.is_comptime) continue;
-            if (comptime mayHoldExprs(f.type)) if (find(f.type, &@field(ptr.*, f.name))) return true;
+            if (comptime mayHoldExprs(f.type)) if (find(f.type, &@field(ptr.*, f.name), name)) return true;
         },
         .@"union" => |u| if (u.tag_type != null) {
             switch (ptr.*) {
                 inline else => |*payload| if (comptime mayHoldExprs(@TypeOf(payload.*))) {
-                    if (find(@TypeOf(payload.*), payload)) return true;
+                    if (find(@TypeOf(payload.*), payload, name)) return true;
                 },
             }
         },
-        .optional => |o| if (ptr.*) |*inner| return find(o.child, inner),
+        .optional => |o| if (ptr.*) |*inner| return find(o.child, inner, name),
         .pointer => |p| switch (p.size) {
-            .one => if (comptime mayHoldExprs(p.child)) return find(p.child, ptr.*),
+            .one => if (comptime mayHoldExprs(p.child)) return find(p.child, ptr.*, name),
             .slice => if (comptime mayHoldExprs(p.child)) {
-                for (ptr.*) |*e| if (find(p.child, e)) return true;
+                for (ptr.*) |*e| if (find(p.child, e, name)) return true;
             },
             else => {},
         },
         .array => |arr| if (comptime mayHoldExprs(arr.child)) {
-            for (ptr) |*e| if (find(arr.child, e)) return true;
+            for (ptr) |*e| if (find(arr.child, e, name)) return true;
         },
         else => {},
     }

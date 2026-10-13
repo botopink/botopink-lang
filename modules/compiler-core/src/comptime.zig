@@ -1748,7 +1748,7 @@ fn isIdentChar(c: u8) bool {
 /// `dropReflectionAlias`), so a decorator module that imports a user `Param`
 /// still reads `m.params` of a `@Decl` as the reflection's `Param`.
 pub const decl_reflection_src =
-    \\pub type DeclKind { Type, Behavior, Fn, Method, Field, Val }
+    \\pub type DeclKind { Type, Behavior, Fn, Method, Field, Val, Element, Component }
     \\pub type Span(start: i32, end: i32, line: i32)
     \\pub type SourceLocation(file: string, line: i32, column: i32, fnName: string)
     \\pub behavior Decorator {
@@ -1791,7 +1791,9 @@ pub const decl_reflection_src =
     \\    returnType: string,
     \\    annotations: __Decl__Annotation[],
     \\    hooks: HookNode[],
-    \\    params: __Decl__Param[]) {
+    \\    params: __Decl__Param[],
+    \\    component: ?Decl) {
+    \\    declare fn attr(self: Self, name: string) -> ?string;
     \\    declare fn fail(self: Self, message: string);
     \\    declare fn failAt(self: Self, span: Span, message: string);
     \\    declare fn addMember(self: Self, source: string);

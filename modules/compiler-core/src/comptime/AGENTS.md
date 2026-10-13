@@ -772,6 +772,29 @@ the template's body as a decorator's.
   declared name), which `expr_param.eraseForRun` turns into the prelude's
   `'__bp_methodMeta'/2` / `'__bp_methodMetaAll'/2`; `typed_meta.withMetaHelper`
   skips decorator and template bodies (such a read is no catalogue read).
+- **A tag is a `@Decl`** (decision 302): a template body builds a tag's
+  handle with `q.tagDecl(kind, name, attrs)` (`DeclKind.Element` /
+  `DeclKind.Component`; the template prelude's `tagDecl/4`) and runs the
+  annotation written at a span of its text with `q.annotate(decl, at)`
+  (`annotate/3`). The run is replayed: the N-th `annotate` of a run answers
+  the capture's N-th `'__bp_annotations'` entry (`CapturedExpr.tagAnswers`),
+  and past them throws `'__bp_template_need'`, which `main/1` replies as
+  `{"kind":"need", decl, span}` (`template_eval.Outcome.need`; only a body
+  that writes `annotate` gets the reset and the clause).
+  `expandTemplateCallViaRuntime` then runs `runTagAnnotation` — the span's
+  text parsed as one annotation, located on the caller's text, its name a
+  decorator of the caller's scope, its arguments checked by
+  `checkDecoratorArgs`, the body run by `decorator_eval.evaluate` over the
+  tag's `DeclHandle` (`attrs`, `component` — the component function's own
+  handle —, `tagMeta`) — and evaluates the body again with the answer.
+  Typed meta is the one channel (`decorator-meta-twice` at the second
+  `setMeta` of a type on a tag); `addMember`, `addType`, `@emit` and the
+  string `setMeta` are `tag-annotation-output`. The body reads
+  `d.meta(T)` / `d.metaAll(T)` (`inferTagMetaRead`, refused on a
+  decorator's own `@Decl`), lowered by `expr_param.eraseMetaReads` to the
+  prelude's `'__bp_methodMeta'/2`; `decl.attr(name)` is `attr/2` in both
+  preludes. Cells: `modules/tag_decl_meta`,
+  `modules/tag_annotation_add_member`, `modules/tag_annotation_meta_twice`.
 
 **Decision 425 — a template call expands wherever an expression may stand.**
 Inference expands every template call it types (`Env.templateExpansions` by
@@ -1871,6 +1894,9 @@ type can), a primitive (bound to itself by `registerBuiltins`), and a `val` reco
 `Env.typeValueNames` — `noteTypeValue` marks `val T = i32;` / `val U = T;` when the value is a name
 that is itself a type, and clears the mark when a value shadows it. Any other binding — a value — is
 `'n' is a value, not a type`, located at the `val` (a local)
+— except a name the module declares a `type` of, read in its own declaration before it is
+registered (`type Element(children: Element[])` beside the prelude's unit variant
+`DeclKind.Element`; cell `modules/type_named_like_decl_kind`) —
 or the value (a module `val`), since neither carries its annotation's location. The location is added
 after the fact by `locateTypeRefError`, not through `typeRefLoc`, which would also enter every
 unresolved local annotation into C10's pending list. Cells: `infer_errors.zig` `type position: …`.

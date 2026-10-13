@@ -820,7 +820,8 @@ fn main() {
 ;;     returnType => <<"">>,
 ;;     annotations => [#{name => <<"component">>, args => [], decorator => <<"main@@component">>}],
 ;;     hooks => [],
-;;     params => []
+;;     params => [],
+;;     component => undefined
 ;; }
 ```
 

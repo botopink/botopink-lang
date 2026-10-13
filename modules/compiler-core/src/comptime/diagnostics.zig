@@ -640,6 +640,11 @@ pub const typeinfo_meta_missing: []const u8 = "typeinfo-meta-missing";
 /// refused at the annotation whose decorator recorded the second.
 pub const decorator_meta_twice: []const u8 = "decorator-meta-twice";
 
+/// Decision 302 — an annotation run over a tag (`q.annotate`) that calls
+/// `decl.addMember`, `decl.addType`, `@emit` or the string `decl.setMeta`: on
+/// a tag its one channel is typed meta; refused at the annotation.
+pub const tag_annotation_output: []const u8 = "tag-annotation-output";
+
 /// Decision 298 — `decl.setMeta(v)` / `decl.addMeta(v)` whose value is not a
 /// record type's constructor written at the call (the type is the key, read
 /// where the decorator is declared): refused at the argument.
@@ -821,6 +826,7 @@ pub const all_codes = [_][]const u8{
     typeinfo_unknown_declaration,
     typeinfo_meta_missing,
     decorator_meta_twice,
+    tag_annotation_output,
     decorator_meta_not_record,
     decorator_meta_field_type,
     decorator_meta_expr_arg,

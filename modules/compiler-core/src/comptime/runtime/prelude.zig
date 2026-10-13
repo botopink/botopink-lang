@@ -79,6 +79,19 @@ pub const typed_meta_fn = "__bp_typedMeta";
 pub const method_meta_fn = "__bp_methodMeta";
 pub const method_meta_all_fn = "__bp_methodMetaAll";
 
+/// Decision 302 — what `q.annotate(decl, at)` throws when the call has no
+/// answer yet: `{'__bp_template_need', Request, Span}`, caught by the template's
+/// `main/1`, which replies `{"kind":"need", …}`; the compiler runs the
+/// annotation and evaluates the body again with the answer
+/// (`template_eval.zig` § tag annotations).
+pub const template_need_tag = "__bp_template_need";
+/// The capture key the answers ride under, in call order.
+pub const annotations_key = "__bp_annotations";
+/// The process-dictionary key counting a run's `annotate` calls.
+const annotate_count_key = "__bp_annotate_n";
+/// An answered handle's index among the answers (`Request.answer`).
+pub const answer_key = "__bp_answer";
+
 /// The prelude's walk of a typed meta value before it is encoded
 /// (`'__bp_metaJson'/1`): `undefined` (a comptime `null`) becomes `null`.
 const meta_json_fn = "__bp_metaJson";
@@ -203,6 +216,53 @@ pub fn templateForms(b: Ast.Builder) Error![]const Ast.Form {
         try b.function("code", &.{V("Source")}, &.{}, &.{
             try b.tuple(&.{ code, try b.call("__bp_text", &.{V("Source")}) }),
         }),
+        // Decision 302 — tagDecl(_Capture, Kind, Name, Attrs): a tag's handle,
+        // the keys of a declaration's (`decorator_eval.handleToTerm`) with the
+        // tag's `attrs` and an empty `meta`.
+        try b.function("tagDecl", &.{ V("_Capture"), V("Kind"), V("Name"), V("Attrs") }, &.{}, &.{
+            try b.map(&.{
+                Ast.field("kind", V("Kind")),
+                Ast.field("name", V("Name")),
+                Ast.field("fields", try b.list(&.{})),
+                Ast.field("variants", try b.list(&.{})),
+                Ast.field("methods", try b.list(&.{})),
+                Ast.field("returnType", Ast.str("")),
+                Ast.field("annotations", try b.list(&.{})),
+                Ast.field("hooks", try b.list(&.{})),
+                Ast.field("params", try b.list(&.{})),
+                Ast.field("component", A("undefined")),
+                Ast.field("attrs", V("Attrs")),
+                Ast.field("meta", try b.list(&.{})),
+            }),
+        }),
+        // annotate(Capture, Decl, Span): the run's N-th call answers the N-th
+        // answer the capture carries; past them it throws the request — the
+        // tag (its kind, name, attributes, and the answer it is, -1 for a
+        // fresh one) and the span of the annotation in the text.
+        try b.function("annotate", &.{ V("Capture"), V("Decl"), V("Span") }, &.{}, &.{
+            try b.match(V("N"), try b.caseOf(try b.remote("erlang", "get", &.{A(annotate_count_key)}), &.{
+                try b.clause(&.{A("undefined")}, &.{}, &.{Ast.Expr.r("0")}),
+                try b.clause(&.{V("Seen")}, &.{}, &.{V("Seen")}),
+            })),
+            try b.remote("erlang", "put", &.{ A(annotate_count_key), try b.binop("+", V("N"), Ast.Expr.r("1")) }),
+            try b.match(V("Answers"), try b.remote("maps", "get", &.{ A(annotations_key), V("Capture"), try b.list(&.{}) })),
+            try b.caseOf(try b.binop("<", V("N"), try b.call("length", &.{V("Answers")})), &.{
+                try b.clause(&.{A("true")}, &.{}, &.{try b.remote("lists", "nth", &.{ try b.binop("+", V("N"), Ast.Expr.r("1")), V("Answers") })}),
+                try b.clause(&.{A("false")}, &.{}, &.{
+                    try throw(b, &.{
+                        A(template_need_tag),
+                        try b.map(&.{
+                            Ast.field("kind", try b.remote("maps", "get", &.{ A("kind"), V("Decl") })),
+                            Ast.field("name", try b.remote("maps", "get", &.{ A("name"), V("Decl") })),
+                            Ast.field("attrs", try b.remote("maps", "get", &.{ A("attrs"), V("Decl"), try b.list(&.{}) })),
+                            Ast.field("answer", try b.remote("maps", "get", &.{ A(answer_key), V("Decl"), Ast.Expr.r("-1") })),
+                        }),
+                        V("Span"),
+                    }),
+                }),
+            }),
+        }),
+        try b.function("__bp_annotateReset", &.{}, &.{}, &.{try b.remote("erlang", "erase", &.{A(annotate_count_key)})}),
         try b.functionClauses("__bp_reply", &.{
             try b.clause(&.{try b.tuple(&.{ code, V("Source") })}, &.{}, &.{
                 try b.map(&.{ Ast.field("kind", Ast.str("code")), Ast.field("source", V("Source")) }),
@@ -228,8 +288,45 @@ pub fn templateForms(b: Ast.Builder) Error![]const Ast.Form {
             }),
         }),
     });
+    try forms.appendSlice(b.arena, try tagForms(b));
     try forms.appendSlice(b.arena, &erlang.comptime_helper_forms);
     return forms.items;
+}
+
+/// Decision 302 — the handle's reads a tag adds, in both preludes: `attr/2`
+/// (`decl.attr(name)`, `undefined` on a declaration, whose handle has no
+/// `attrs`) and the typed meta reads `d.meta(T)` / `d.metaAll(T)` become
+/// (`'__bp_methodMeta'/2`, a method entry's shape: `meta =>
+/// [#{type, value}]`).
+fn tagForms(b: Ast.Builder) Error![]const Ast.Form {
+    const V = Ast.Expr.v;
+    const A = Ast.Expr.a;
+    return b.arena.dupe(Ast.Form, &.{
+        try b.functionClauses("attr", &.{
+            try b.clause(&.{ try b.map(&.{Ast.exactField("attrs", V("Attrs"))}), V("Name") }, &.{}, &.{
+                try b.caseOf(try b.remote("lists", "keyfind", &.{ V("Name"), Ast.Expr.r("1"), V("Attrs") }), &.{
+                    try b.clause(&.{try b.tuple(&.{ V("_"), V("Value") })}, &.{}, &.{V("Value")}),
+                    try b.clause(&.{A("false")}, &.{}, &.{A("undefined")}),
+                }),
+            }),
+            try b.clause(&.{ V("_Decl"), V("_Name") }, &.{}, &.{A("undefined")}),
+        }),
+        try b.function(method_meta_all_fn, &.{ try b.map(&.{Ast.exactField("meta", V("Metas"))}), V("Type") }, &.{}, &.{
+            .{ .list_comp = .{
+                .element = try b.ptr(V("Value")),
+                .qualifiers = try b.arena.dupe(Ast.ListComp.Qualifier, &.{
+                    .{ .generator = .{ .pattern = try b.map(&.{ Ast.exactField("type", V("T")), Ast.exactField("value", V("Value")) }), .list = V("Metas") } },
+                    .{ .filter = .{ .binop = .{ .op = "=:=", .lhs = try b.ptr(V("T")), .rhs = try b.ptr(V("Type")), .parens = false } } },
+                }),
+            } },
+        }),
+        try b.function(method_meta_fn, &.{ V("Method"), V("Type") }, &.{}, &.{
+            try b.caseOf(try b.call(method_meta_all_fn, &.{ V("Method"), V("Type") }), &.{
+                try b.clause(&.{try b.cons(&.{V("First")}, V("_"))}, &.{}, &.{V("First")}),
+                try b.clause(&.{try b.list(&.{})}, &.{}, &.{A("undefined")}),
+            }),
+        }),
+    });
 }
 
 /// Decision 311 — the capture API a template annotation's body reads its
@@ -346,25 +443,6 @@ pub fn decoratorForms(b: Ast.Builder) Error![]const Ast.Form {
                 try b.clause(&.{V("Sources")}, &.{}, &.{V("Sources")}),
             }),
         }),
-        // Question s29-b — `m.meta(T)` / `m.metaAll(T)` on a `decl.methods`
-        // entry (`comptime/expr_param.zig` `eraseForRun`): the values of
-        // record type `T` the method's decorators recorded, `undefined` /
-        // `[]` when none.
-        try b.function(method_meta_all_fn, &.{ try b.map(&.{Ast.exactField("meta", V("Metas"))}), V("Type") }, &.{}, &.{
-            .{ .list_comp = .{
-                .element = try b.ptr(V("Value")),
-                .qualifiers = try b.arena.dupe(Ast.ListComp.Qualifier, &.{
-                    .{ .generator = .{ .pattern = try b.map(&.{ Ast.exactField("type", V("T")), Ast.exactField("value", V("Value")) }), .list = V("Metas") } },
-                    .{ .filter = .{ .binop = .{ .op = "=:=", .lhs = try b.ptr(V("T")), .rhs = try b.ptr(V("Type")), .parens = false } } },
-                }),
-            } },
-        }),
-        try b.function(method_meta_fn, &.{ V("Method"), V("Type") }, &.{}, &.{
-            try b.caseOf(try b.call(method_meta_all_fn, &.{ V("Method"), V("Type") }), &.{
-                try b.clause(&.{try b.cons(&.{V("First")}, V("_"))}, &.{}, &.{V("First")}),
-                try b.clause(&.{try b.list(&.{})}, &.{}, &.{A("undefined")}),
-            }),
-        }),
         // Decision 364 (3) — `x.fail(m)` on a decorator parameter
         // (`comptime/expr_param.zig`): the span names the parameter's index
         // after the `@Decl` one, and the checker reports at its argument.
@@ -372,6 +450,11 @@ pub fn decoratorForms(b: Ast.Builder) Error![]const Ast.Form {
             try b.remote("erlang", "throw", &.{try b.tuple(&.{ fail_tag, V("Message"), try b.map(&.{Ast.field("arg", V("Index"))}) })}),
         }),
     });
+    // Question s29-b — `m.meta(T)` / `m.metaAll(T)` on a `decl.methods`
+    // entry (`comptime/expr_param.zig` `eraseForRun`): the values of record
+    // type `T` the method's decorators recorded, `undefined` / `[]` when
+    // none; and decision 302's `decl.attr(name)`.
+    try forms.appendSlice(b.arena, try tagForms(b));
     try forms.appendSlice(b.arena, &erlang.comptime_helper_forms);
     return forms.items;
 }
