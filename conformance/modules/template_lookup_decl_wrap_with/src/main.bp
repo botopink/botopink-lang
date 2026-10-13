@@ -1,0 +1,18 @@
+//// Decision 415 (2) — the declaration `q.lookup` answers is read-only:
+//// `wrapWith` on it, as `setMeta`, is refused at the call
+//// (`template-lookup-decl-write`) — only a decorator wraps the function it
+//// annotates (decision 316).
+
+fn posts() -> string {
+    return "posts";
+}
+
+fn wrapping(comptime q: @Expr<string>) -> @Expr<string> {
+    val decl = q.lookup(q.text()) ?? q.fail("not in scope");
+    decl.wrapWith({ call -> call.run() });
+    return q.build("\"" + decl.name + "\"");
+}
+
+pub fn main() {
+    @print(wrapping "posts");
+}

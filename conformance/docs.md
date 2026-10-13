@@ -2145,7 +2145,16 @@ every declaration a word of the literal names. `setMeta`, `addMeta`,
 (`template-lookup-decl-write`).
 
 <!-- example: modules/template_lookup_decl -->
+<!-- example: modules/template_lookup_decl_members -->
 <!-- example: modules/template_lookup_decl_write -->
+<!-- example: modules/template_lookup_decl_wrap_with -->
+
+`q.bindings()` answers those handles as a `@Decl[]` (question B-18-b) — one per
+declaration, each under its own name and module, an alias's included —, and
+every `@Decl` carries `module`, a decorator's own handle too.
+
+<!-- example: modules/template_bindings_decls -->
+<!-- example: modules/decorator_decl_module -->
 
 On the handle, `decl.meta(T)` (`?T`) and `decl.metaAll(T)` (`T[]`) answer at
 build what the declaration's decorators recorded, when the record `T` is data —
@@ -2181,6 +2190,16 @@ scope, declared there or imported; a method of the receiver's own type of that
 name is the type's.
 
 <!-- example: modules/template_method_call -->
+<!-- example: modules/template_method_own_method -->
+
+A receiver whose type is not `R` and does not implement it is refused at the
+receiver, as an argument would be. The receiver's type imports nothing by
+itself (question B-18-a): a template method declared beside a type and not
+imported where the call stands is no name there, and `value.method "…"` is
+refused as a call of a method the type does not have.
+
+<!-- example: modules/template_method_receiver_mismatch -->
+<!-- example: modules/template_method_not_in_scope -->
 
 A template refuses its call with `q.fail(message)`, located at the literal,
 or with `q.failAt(Span(start, end, line), message)`, located at that span of
@@ -2350,17 +2369,29 @@ decorator's module, never the handle or a local of the body
 
 <!-- example: modules/decorator_wraps_function -->
 
+A call written in the wrapped function's own module, the function taken as a
+value and called later, and its own recursive call each run the wrapper.
+
+<!-- example: modules/decorator_wraps_function_value -->
+
+<!-- example: modules/decorator_wrap_captures -->
+
 A wrapper answering another type than the pattern's `R` is
 `decorator-wrap-type` at the wrapper, in the decorator; `decl.wrapWith` from a
 decorator on anything but a function or a method of a `type` is
 `decorator-wrap-without-function` at the annotation; a wrapper that is no
-lambda written at the call is `decorator-wrap-not-lambda`, and a wrapped
-function (or the type owning a wrapped method) with type parameters
-`decorator-wrap-generic`.
+lambda written at the call is `decorator-wrap-not-lambda`, at the argument
+(question B-11-a), and a wrapped function (or the type owning a wrapped
+method) with type parameters `decorator-wrap-generic`, at the annotation
+(question B-11-b).
 
 <!-- example: modules/decorator_wrap_wrong_return -->
 
 <!-- example: modules/decorator_wrap_outside_function -->
+
+<!-- example: modules/decorator_wrap_not_lambda -->
+
+<!-- example: modules/decorator_wrap_generic -->
 
 <!-- example: modules/decorator_any_params_outside_decl -->
 
@@ -2591,6 +2622,49 @@ declared name. A field's decorator still records no meta
 (`decorator-meta-on-member`).
 
 <!-- example: modules/template_annotation -->
+
+#### A tag is a `@Decl` (decision 302)
+
+A template function hands each annotated tag of its text to the annotation as
+a `@Decl` — the same function shape as a declaration's decorator, named by no
+library. `q.tagDecl(kind, name, attrs)` builds the tag's handle: `kind`
+`DeclKind.Element` (a native tag, `<div>`) or `DeclKind.Component` (a component
+tag, `<Card>`), `name` the tag's name, `attrs` its static attributes in written
+order. `q.annotate(decl, at)` runs the annotation written at the span `at` of
+the text — `name` or `name(args)` — over it (question B-15-a): the name
+resolves in the caller's scope to a decorator, its arguments are checked
+there, and the answer is the handle with what the annotation recorded. In the
+annotation, `decl.attr(name)` is a static attribute as written (`null` when
+the tag has none, and on every declaration) and `decl.component` the
+component's own `@Decl` (`null` on an element). Typed meta is the one channel:
+the template body reads it back by type, `d.meta(T)` (`?T`) and
+`d.metaAll(T)` (`T[]`), so one annotation function serves a tag and a
+declaration alike.
+
+<!-- example: modules/tag_decl_meta -->
+<!-- example: modules/tag_decl_meta_read -->
+
+Refused at the annotation, in the caller's text: `decl.addMember`,
+`decl.addType`, `@emit` and the string `decl.setMeta(key, value)`
+(`tag-annotation-output`); a second `setMeta` of one type on the tag
+(`decorator-meta-twice`); a name the caller's scope does not declare, and one
+that names no decorator. Inside an annotation `decl.meta(T)` is refused
+(question B-15-c): meta is read by the code that consumes it, after every
+annotation ran, so annotations do not depend on their written order.
+
+<!-- example: modules/tag_annotation_add_member -->
+<!-- example: modules/tag_annotation_add_type -->
+<!-- example: modules/tag_annotation_string_meta -->
+<!-- example: modules/tag_annotation_meta_twice -->
+<!-- example: modules/tag_annotation_unknown_name -->
+<!-- example: modules/tag_annotation_not_decorator -->
+<!-- example: modules/tag_annotation_reads_meta -->
+
+A program's own `type` may take the name of a builtin enum's variant —
+`DeclKind.Element`, `DeclKind.Field` — and name itself in its own fields: the
+name in a type position is the program's type.
+
+<!-- example: modules/type_named_like_decl_kind -->
 
 #### Host functions at compile time (decision 341)
 

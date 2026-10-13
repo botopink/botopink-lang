@@ -1,0 +1,7 @@
+//// A decorator that records the module of the declaration it annotates.
+
+pub type Origin(module: string)
+
+pub fn located(comptime decl: @Decl) {
+    decl.setMeta(Origin(module: decl.module));
+}

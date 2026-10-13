@@ -174,6 +174,27 @@ and imported; a key stored in a `var` and an array, passed, compared, matched by
 `field_key_case_missing` (a `case` without a field's arm, at the `case`), `field_key_unknown_field` (`.titel`,
 at the `.name`) and `type_keys_outside_val` (`Type.keys` in a body, `derived-type-outside-val`); every one red
 on the parent binary, where `Type.keys` was not answered.
+Decision 316 (`decl.wrapWith`, 144 B-11) adds `modules/decorator_wraps_function`, `decorator_wrap_wrong_return`,
+`decorator_wrap_outside_function` and `decorator_any_params_outside_decl`; its Conformance step adds
+`modules/decorator_wraps_function_value` (a same-module call, the function as a value and its recursive call each
+run the wrapper, four targets), `decorator_wrap_captures` (a wrapper reading a local of the decorator's body,
+`decorator-member-captures`), `decorator_wrap_not_lambda` (a named function as the wrapper, question B-11-a as
+built) and `decorator_wrap_generic` (a generic function wrapped, question B-11-b as built) — each red on B-11's
+parent, where `wrapWith` was no member of `Decl`.
+Decision 302 (a tag is a `@Decl`, 144 B-15) adds `modules/tag_decl_meta`, `tag_annotation_add_member`,
+`tag_annotation_meta_twice` and `type_named_like_decl_kind`; its Conformance step adds `modules/tag_decl_meta_read`
+(`d.meta(T)` read back, `decl.attr` absent and `decl.component` on an element `null`, four targets),
+`tag_annotation_add_type` and `tag_annotation_string_meta` (`tag-annotation-output`), `tag_annotation_unknown_name`
+and `tag_annotation_not_decorator` (no decorator named, at the annotation) and `tag_annotation_reads_meta`
+(`decl.meta(T)` in an annotation, question B-15-c as built) — each red on B-15's parent, which had no `q.tagDecl`.
+Decisions 311 (3), 415 and 426 (templates, 144 B-18) add `modules/template_method_call`, the `template_lookup_*`
+cells and the `template_call_*` / `template_build_outside_bound` / `template_note_on_mismatch` cells; its
+Conformance step adds `modules/template_lookup_decl_members` (`variants`, `methods`, `params` of a looked-up
+declaration), `template_lookup_decl_wrap_with` (`wrapWith` on it, `template-lookup-decl-write`),
+`template_bindings_decls` and `decorator_decl_module` (`q.bindings()` as `@Decl[]`, `module` on a decorator's own
+handle, question B-18-b as built), `template_method_own_method` (the receiver type's own method of the name wins —
+red on `feat` too, `template-call-unexpanded`, until the fix beside it), `template_method_receiver_mismatch` and
+`template_method_not_in_scope` (question B-18-a as built) — each red on B-18's parent.
 `modules/derived_type_two_packages` derives over two packages' same-named modules: dependencies `a`
 and `b` each hold `shape` with a record `Box` of different fields, each package's `user` derives
 from its own `Box` (`Type.pick` in `a`, `Type.omit` in `b`) and the project has a `shape` of its

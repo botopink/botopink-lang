@@ -1,0 +1,16 @@
+//// Decision 316 — the call value a wrapper receives is typed by the wrapped
+//// function's own signature: a function with type parameters is not wrapped
+//// (question B-11-b, as built) and is refused at the annotation.
+
+fn counted(comptime decl: @Decl<fn(..) -> i32>) {
+    decl.wrapWith({ call -> call.run() });
+}
+
+#[counted]
+pub fn size<T>(xs: T[]) -> i32 {
+    return xs.length;
+}
+
+pub fn main() {
+    @print(size([1, 2, 3]));
+}
