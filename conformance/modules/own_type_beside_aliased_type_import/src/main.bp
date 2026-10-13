@@ -1,0 +1,14 @@
+//// Question B-23-a (open) — a type of this module beside an aliased import
+//// of another module's same-named type is refused at the import, naming
+//// both, as decision 310 left it: whether the two count as two modules'
+//// types is the maintainer's to answer.
+
+pub mod shapes;
+import {shapes.Box as ShapeBox};
+
+pub type Box(v: i32)
+
+pub fn main() {
+    @print(Box(v: 1).v);
+    @print(ShapeBox(w: 2).w);
+}

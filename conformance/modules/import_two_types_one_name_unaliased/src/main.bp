@@ -1,0 +1,13 @@
+//// Decisions 170 and 310 — two same-named types of two modules imported
+//// with no alias bind one name twice: refused at the second item, naming
+//// both. An alias on either makes them two types
+//// (`import_two_types_one_name`).
+
+pub mod a;
+pub mod b;
+import {a.p.Policy};
+import {b.p.Policy};
+
+pub fn main() {
+    @print(Policy(ms: 5).ms);
+}

@@ -304,6 +304,10 @@ constructors are type-scoped).
 
 <!-- example: modules/import_std_type_beside_aliased_type -->
 
+<!-- example: modules/import_two_types_one_name_unaliased -->
+
+<!-- example: modules/own_type_beside_aliased_type_import -->
+
 **The root of std is pure.** One criterion sorts the standard library:
 `io/` is everything that talks to the world outside the process — disk,
 network, clock, entropy, the environment — and a module at the root of std
@@ -854,6 +858,8 @@ type's name reached through a module namespace takes them the same way:
 
 <!-- example: modules/type_application_through_namespace -->
 
+<!-- example: modules/type_application_through_namespace_mismatch -->
+
 Every `comptime` parameter other than `@Decl` is the caller's **expression**,
 `comptime x: @Expr<T>` (decision 364) — a decorator's, a template function's,
 any function's, a method's, a `declare fn`'s: the argument is checked against
@@ -1333,6 +1339,8 @@ No flag turns the check off (decision 67); wrapping arithmetic, where an
 algorithm wants it, is written with an explicit operation.
 
 <!-- example: modules/i64_full_range -->
+
+<!-- example: modules/wide_literal_past_js_safe_integer -->
 
 <!-- example: modules/i64_dict_key_across_safe_edge -->
 
@@ -2421,9 +2429,14 @@ name is `unknown-associated-fn` where the call is written.
 <!-- example: modules/decorator_entity_table -->
 
 A decorator's body runs in its own module wherever it annotates: an imported
-decorator may build a record private to that module.
+decorator may build a record private to that module. A body that raises is
+refused at the annotation that ran it, and the message names the call that
+raised in the body's own file (``raised at src/deco.bp:3:5 while `#[check]` ran
+the decorator's body``).
 
 <!-- example: modules/decorator_imported_builds_private_record -->
+
+<!-- example: modules/decorator_raise_names_body_file -->
 
 A member a decorator adds is written as if by hand: a record update in its body
 (`Point(..self, y: 0)`) copies every field it does not name. A decorator's body
@@ -3023,6 +3036,8 @@ declared parameters, in order.
 
 <!-- example: modules/external_wasm_op_type_on_every_target -->
 
+<!-- example: modules/external_wasm_adapter_signature_on_every_target -->
+
 | Cell | Binds the declaration to |
 |---|---|
 | `op: "<opcode>"` | one numeric wasm instruction, its text a string (`op: "f64.floor"`, `op: "i32.add"`, `op: "f64.lt"`, `op: "f64.convert_i32_s"`); the declared parameter and return types must be exactly the instruction's — a comparison or `eqz` answers `bool` |
@@ -3130,6 +3145,8 @@ table, whatever `T` is — and the compiler makes the pending task the host's
 pollable backs:
 
 <!-- example: modules/task_starts_when_made -->
+
+<!-- example: modules/external_wasm_task_adapter_shape -->
 
 The task carries its `T` in one word: a task adapter reached with a float or
 an `i64` value is refused at the call.

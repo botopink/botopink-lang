@@ -480,7 +480,11 @@ its own. Each refused (`import-name-collision`) by the parent binary. It adds
 `modules/import_two_types_one_name_reached_indirectly` (the alias's type answered through a
 namespace call, an imported template's built code and a decorator's member) and
 `modules/import_std_type_beside_aliased_type` (std's `Dict` beside another module's, each aliased),
-each refused or mistyped by the parent binary.
+each refused or mistyped by the parent binary. B-23's Conformance step pins the two refusals 310
+leaves, each green on the group's base: `modules/import_two_types_one_name_unaliased` (two
+un-aliased items of two modules' `Policy`, decision 170) and
+`modules/own_type_beside_aliased_type_import` (a type of this module beside an aliased same-named
+import, question B-23-a open).
 `modules/behavior_default_fn_body_checked` and `test/behavior_default_fn_result` (another front's
 finding) — a behavior's `default fn` body is checked (an unbound call is refused at it), and a
 `-> @Result` default fn wraps its `return` and `throw`, its adopted call answering the `@Result`; a
