@@ -248,6 +248,29 @@ test "decision 8 N22: a name alone is not an arm" {
     );
 }
 
+// The `pattern -> value` arm is judged too: an unguarded lower-case name is no
+// pattern there either (144 B-22; `conformance/modules/case_bare_name_arrow_arm`).
+test "decision 8 N22: a name alone is not an arrow arm" {
+    try expectParseError(std.testing.allocator,
+        \\error[case-bare-name-arm]: a name alone is not a pattern
+        \\ --> <test>:4:9
+        \\  |
+        \\4 |         k -> k + 1;
+        \\  |         ^ use _ { n -> … } to bind the matched value
+        \\  |
+        \\  = hint: An arm names a type (`i32`), a variant (`.Some(v)`), a literal (`0`), a range (`1...9`) or `_`. To give the matched value a name, bind it in the body: `_ { n -> … }`.
+        \\
+        \\
+    ,
+        \\fn plus(n: i32) -> i32 {
+        \\    return case n {
+        \\        0 -> 0;
+        \\        k -> k + 1;
+        \\    };
+        \\}
+    );
+}
+
 test "decision 8 N22: a constant is not an arm" {
     try expectParseError(std.testing.allocator,
         \\error[case-constant-pattern]: a constant is not a pattern

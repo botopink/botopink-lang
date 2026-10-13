@@ -492,13 +492,17 @@ owes it.
 Five located refusals, all in `print.zig`: `pattern-range-exclusive` (`1..9` —
 `..` is iteration), `pattern-range-missing-end`, `pattern-rest-not-last`,
 `pattern-tuple-label` (a tuple pattern is positional) and, for the
-`Pattern { body }` form only, `case-bare-name-arm` and `case-constant-pattern`
+`Pattern { body }` form, `case-bare-name-arm` and `case-constant-pattern`
 (§5.2's two rewrites). The last two judge a name by shape — a dotted path,
 `true`/`false` and the primitive type names are patterns; an all-upper-case name
 is a constant; any other lower-case name is a variable. `isPrimitiveTypeName`
 mirrors `Env.registerBuiltins` in `comptime/env.zig`, as the language server's
-`isPrimitiveType` does; keep the three in step. The arrow arm is never judged:
-binding the matched value with a bare name is exactly how it is written today.
+`isPrimitiveType` does; keep the three in step. The `pattern -> value` arm is
+judged for `case-bare-name-arm` alone, and only an unguarded single pattern
+(`k -> k + 1`): a guarded name (`x if x > 3 -> 1`) and a name among a
+multi-subject arm's patterns (`Square(side), m -> …`) still bind, and an
+upper-case name there is a variant written bare (`NFKC -> true`), never a
+constant (`conformance/modules/case_bare_name_arrow_arm`).
 
 ### Decision 54 — an optional is matched by `null` and a binder
 

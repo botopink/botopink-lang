@@ -1223,6 +1223,11 @@ A name alone is not a pattern: to give the matched value a name, bind it in the
 body (`_ { n -> … }`). The one exception is the optional, below, where the name
 after the `null` arm *is* the pattern.
 
+The `pattern -> value` arm is no exception: `k -> k + 1` is refused at the arm
+as `k { … }` is.
+
+<!-- example: modules/case_bare_name_arrow_arm -->
+
 The binder of a catch-all arm over a record is that record: its fields read as
 declared, a generic record's too, wherever the `case` stands:
 
