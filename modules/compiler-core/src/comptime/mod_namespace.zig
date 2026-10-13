@@ -268,11 +268,47 @@ const Ctx = struct {
         }
     }
 
+    /// A decorator argument is a lexeme, parsed where the checker reads it
+    /// (`#[each(markers.email)]`, decision 268): a `mod` child named at the
+    /// head of a dotted name in it — outside a string literal — is a read of
+    /// its namespace, so the module gains the item that binds it, as a read
+    /// in a body does (144 B-10 Conformance).
+    fn noteAnnotationArgs(self: *Ctx, a: *const ast.Annotation) Error!void {
+        for (a.args) |lexeme| {
+            var i: usize = 0;
+            var quote: ?u8 = null;
+            while (i < lexeme.len) {
+                const c = lexeme[i];
+                if (quote) |q| {
+                    if (c == '\\') i += 1 else if (c == q) quote = null;
+                    i += 1;
+                    continue;
+                }
+                if (c == '"' or c == '\'') {
+                    quote = c;
+                    i += 1;
+                    continue;
+                }
+                if (!(std.ascii.isAlphabetic(c) or c == '_')) {
+                    i += 1;
+                    continue;
+                }
+                const start = i;
+                while (i < lexeme.len and (std.ascii.isAlphanumeric(lexeme[i]) or lexeme[i] == '_')) i += 1;
+                const after_dot = start > 0 and lexeme[start - 1] == '.';
+                if (after_dot or i >= lexeme.len or lexeme[i] != '.') continue;
+                const name = lexeme[start..i];
+                if (self.modBound.contains(name) and self.names.contains(name)) try self.used.put(self.arena, name, {});
+            }
+        }
+    }
+
     fn walk(self: *Ctx, comptime T: type, ptr: *T) (Error || Refusal)!void {
         if (T == ast.Expr) {
             if (try self.rewrite(ptr)) return;
         }
         if (T == ast.TypeRef) try self.rewriteTypeRef(ptr);
+        if (T == ast.Annotation) try self.noteAnnotationArgs(ptr);
         if (T == ast.ImportDecl) return;
         switch (@typeInfo(T)) {
             .@"struct" => |s| inline for (s.fields) |f| {
@@ -649,6 +685,27 @@ test "mod namespace: `mod` binds the namespace it reads, and the walk reaches a 
     try std.testing.expectEqualStrings("mod1", try imports[1].fullPath(arena));
     try std.testing.expectEqualStrings("mod1/mod2", try imports[2].fullPath(arena));
     try std.testing.expectEqualStrings("__bp_ns_mod1_mod2", imports[2].name());
+}
+
+test "mod namespace: a decorator argument naming `ns.name` reads the namespace, a string in it does not" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const mods = [_]Module{
+        .{ .path = "main", .source =
+        \\pub mod markers;
+        \\pub mod other;
+        \\import {markers.each};
+        \\type Invite(#[each(markers.email)] #[each("other.x")] guests: string)
+        \\pub fn main() {}
+        },
+        .{ .path = "markers", .source = "pub fn each(comptime decl: @Decl, comptime m: @Expr<Decorator>) {}\npub fn email(comptime decl: @Decl) {}\n" },
+        .{ .path = "other", .source = "pub fn x() -> i32 { return 1; }\n" },
+    };
+    const program = (try expandFor(arena, &mods, 0)).ok;
+    const imports = program.decls[0].use.imports;
+    try std.testing.expectEqual(@as(usize, 1), imports.len);
+    try std.testing.expectEqualStrings("markers", try imports[0].fullPath(arena));
 }
 
 test "mod namespace: a private child is refused from outside its parent" {

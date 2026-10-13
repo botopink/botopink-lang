@@ -2352,6 +2352,14 @@ decorator may build a record private to that module.
 
 <!-- example: modules/decorator_imported_builds_private_record -->
 
+A member a decorator adds is written as if by hand: a record update in its body
+(`Point(..self, y: 0)`) copies every field it does not name. A decorator's body
+is an ordinary function body, however many locals a lambda in it holds.
+
+<!-- example: modules/decorator_member_record_update -->
+
+<!-- example: modules/decorator_lambda_many_locals -->
+
 **An annotation's labelled argument is `label: value`** (decision 305), in every
 annotation — a decorator's (`#[check(…, at: .confirm)]`), `@BeamMemory`'s
 (`keyed: true`), `@External`'s (`inline: true`, `fn: powBody`) — as a call's
@@ -3175,6 +3183,13 @@ names; the body reads each as the declaration's identity and compares it with
 `same` (decision 371):
 
 <!-- example: modules/decorator_argument_decorator_name -->
+
+The name is resolved where it is written: through the namespace of the module
+that declares the decorator (`markers.email`, a `mod` child's namespace read in
+an annotation as in a body) and under an import's alias, it is the same
+declaration's identity:
+
+<!-- example: modules/decorator_argument_decorator_alias -->
 
 `@panic`, `@todo` and `@trap` never return: they are declared `-> noreturn`, the
 bottom type, so a call to one stands wherever a value of any type is expected —

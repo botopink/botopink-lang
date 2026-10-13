@@ -2270,6 +2270,11 @@ associated fn's behavior-typed parameter (`expected Styleable, got Prop` before)
 `Decorator` / `Decorator[]` parameter of a decorator in a submodule (`expects Decorator, got fn(Decl)
 -> void` before).
 
+`modules/decorator_argument_decorator_alias` (144 B-10 Conformance) hands the names through the
+declaring module's namespace (`markers.email`, a `mod` child read only in an annotation's argument)
+and under an import's alias (`unbound variable 'markers'` before: the namespace's item was added
+for a read in a body alone).
+
 `modules/dot_shorthand_enum_not_imported` writes `.Top` and `.Two("x")` where a dependency's `Mode` is
 expected and the module never names `Mode` (commonJS and erlang emitted it unbound, the checker refused
 the payload form `unbound variable 'Mode'`); the transformed program imports the enum
