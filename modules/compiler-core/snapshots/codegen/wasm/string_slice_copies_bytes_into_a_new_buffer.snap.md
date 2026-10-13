@@ -11,7 +11,7 @@ fn first3() -> string {
 (module
   (memory (export "memory") 1)
   (data (i32.const 256) "\05\00\00\00hello")
-  (global $__heap_ptr (mut i32) (i32.const 272))
+  (global $__heap_ptr (mut i32) (i32.const 288))
   (func $first3 (result i32)
     (local $s i32)
     i32.const 256
@@ -71,10 +71,21 @@ fn first3() -> string {
     local.get $p
   )
   ;; std-wasm (decision 440): its functions, transpiled from std_wasm.wasm
+  (global $__std_sp (mut i32) (i32.const 288))
+  (func $__std_sp_check (param $sp i32) (result i32)
+    local.get $sp
+    i32.const 272
+    i32.lt_s
+    (if
+      (then unreachable)
+    )
+    local.get $sp
+  )
   ;; __std_f4 — from std_wasm.wasm (sha256 b4b6f06748d6)
-  ;; __std_f278 — from std_wasm.wasm (sha256 5ac39cdc3016)
-  ;; __std_f279 — from std_wasm.wasm (sha256 cda2fb2bf3e4)
-  ;; std:text.slice — from std_wasm.wasm (sha256 5a2b79622902)
+  ;; __std_f263 — from std_wasm.wasm (sha256 7774ddf64350)
+  ;; __std_f265 — from std_wasm.wasm (sha256 5ac39cdc3016)
+  ;; __std_f266 — from std_wasm.wasm (sha256 cda2fb2bf3e4)
+  ;; std:text.slice — from std_wasm.wasm (sha256 49c89fe83b13)
 )
 ```
 

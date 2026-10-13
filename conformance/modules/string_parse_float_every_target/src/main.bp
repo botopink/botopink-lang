@@ -1,0 +1,25 @@
+//// 144 B-22 — `s.parseFloat()` answers the nearest `f64` on every target, wasm included: a sign,
+//// digits, an optional `.` with digits on both sides, an optional exponent; `.5`, `1.`, `NaN` are an
+//// `Error` naming the input, an overflow too, and a numeral too small to tell from zero is `0.0`.
+
+fn parsed(s: string) -> string {
+    return case s.parseFloat() {
+        Ok(f) -> f.toString();
+        Error(reason) -> reason;
+    };
+}
+
+pub fn main() {
+    @print(parsed("1.5"));
+    @print(parsed("-2.5e-1"));
+    @print(parsed("+12.5E1"));
+    @print(parsed("0.1"));
+    @print(parsed("1.7976931348623157e308"));
+    @print(parsed("2.2250738585072014e-308"));
+    @print(parsed("1e-400"));
+    @print(parsed("1e400"));
+    @print(parsed(".5"));
+    @print(parsed("1."));
+    @print(parsed("NaN"));
+    @print("2.5".parseFloat().unwrapOr(0.0) * 2.0);
+}

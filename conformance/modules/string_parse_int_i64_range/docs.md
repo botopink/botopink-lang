@@ -1,1 +1,3 @@
-wasm departs: `parseInt`'s body in std's `primitives.bp` calls `stringSlice0`, which has no wasm binding, so the module is refused (decision 457 (1)). The refusal is located at the program's call that reaches std's code, `s.parseInt()` at 6:19, and says so — never at `primitives.bp`'s line under this file's name.
+# string_parse_int_i64_range
+
+`s.parseInt()` answers `@Result<i64, string>` — an optional `+` / `-` and digits, the whole string; anything else is an `Error` naming the input, and so is an integer past the `i64` range, −2^63 … 2^63 − 1. `parseInt` and `parseFloat` answer the same on every target, the wasm one included.

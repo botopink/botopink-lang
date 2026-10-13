@@ -270,6 +270,13 @@ std's, and a library calls it rather than writing its own:
 
 <!-- example: modules/std_generic_primitives -->
 
+`parseInt` and `parseFloat` answer the same on every target, the wasm one included: every `i64`
+is read, one past either end an `Error`, and a numeral is converted to its nearest `f64`:
+
+<!-- example: modules/string_parse_int_i64_range -->
+
+<!-- example: modules/string_parse_float_every_target -->
+
 **Exact decimals.** std's `decimal` is Java's `BigDecimal` (decision 332): a
 `Decimal` is an unscaled `bigint` and a `scale`, the value `unscaled × 10^-scale`
 (`Decimal(unscaled: 150n, scale: 2)` is `1.50`). `add`, `sub` and `mul` are
@@ -1646,6 +1653,11 @@ function answers `Error(e)` on that path and the other arms' value on the rest.
 Three ways to consume a `@Result`, and a fourth for when a failure is a bug:
 
 <!-- example: modules/result_four_ways -->
+
+The value a `@Result` holds is whole whatever its type: an `f64` or an `i64` comes back unchanged
+through `unwrapOr`, a `case` arm's binder, `try`, `try … catch` and `map`:
+
+<!-- example: modules/result_wide_payloads -->
 
 **`try` and `await` begin an expression.** They stand where an expression
 starts — a statement, a `val` / `var` initializer, the right side of `=`, a

@@ -302,6 +302,83 @@ fn hexDecodeBytes(s: u32) callconv(.c) u32 {
     return out.ptr;
 }
 
+// ── `String.slice`'s and the string numerals' cells (`primitives.bp`) ─────
+
+/// A `?i32` argument: the address of its 4-byte box, or `0` for `null`.
+fn optI32(p: u32) ?i32 {
+    if (p == 0) return null;
+    return @as(*const i32, @ptrFromInt(p)).*;
+}
+
+/// A `@Result`'s `[tag, payload]` pair (tag `0` `Ok`, `1` `Error`) — the
+/// layout the wasm codegen's `__bp_ok` / `__bp_error` build.
+fn resultPair(tag: u32, payload: u32) u32 {
+    const p = bp_alloc(8);
+    @as(*u32, @ptrFromInt(p)).* = tag;
+    @as(*u32, @ptrFromInt(p + 4)).* = payload;
+    return p;
+}
+
+/// An `i64` / `f64` payload's 8-byte cell (`$__box_i64` / `$__box_f64`).
+fn cell(comptime V: type, v: V) u32 {
+    const p = bp_alloc(8);
+    @as(*align(4) V, @ptrFromInt(p)).* = v;
+    return p;
+}
+
+/// `stringSlice0(s, start)` — `s.slice(start)` in code points.
+fn sliceFrom(s: u32, start: i32) callconv(.c) u32 {
+    return fresh(root.text.cpSlice(arg(s), start, std.math.maxInt(i32)));
+}
+
+/// `stringSlice1(s, start, end)` — `s.slice(start, end)` in code points; a
+/// `null` end is open.
+fn sliceBetween(s: u32, start: i32, end: u32) callconv(.c) u32 {
+    return fresh(root.text.cpSlice(arg(s), start, optI32(end) orelse std.math.maxInt(i32)));
+}
+
+/// `stringIsDigits(s)`.
+fn isDigits(s: u32) callconv(.c) i32 {
+    return @intFromBool(root.number.isDigits(arg(s)));
+}
+
+/// `stringToInteger(numeral)` — `Ok` of the `i64`, or the out-of-range
+/// `Error` naming the numeral.
+fn toInteger(s: u32) callconv(.c) u32 {
+    const text = arg(s);
+    if (root.number.integerOf(text)) |v| return resultPair(0, cell(i64, v));
+    return resultPair(1, joinText("parseInt: \"", text, "\" is out of range"));
+}
+
+/// `stringToFloat(text, whole, fraction, exponent)` — `Ok` of the `f64`, or
+/// the overflow `Error` naming `text`.
+fn toFloat(t: u32, w: u32, f: u32, x: u32) callconv(.c) u32 {
+    const text = arg(t);
+    const whole = arg(w);
+    const fraction = arg(f);
+    const exponent = arg(x);
+    const neg = text.len > 0 and text[0] == '-';
+    if (root.number.floatOf(neg, whole, fraction, exponent)) |v| return resultPair(0, cell(f64, v));
+    return resultPair(1, joinText("parseFloat: \"", text, "\" overflows f64"));
+}
+
+/// `stringNumeralRefused(before, text, after)` — `Error(<before><text><after>)`.
+fn numeralRefused(before: u32, t: u32, after: u32) callconv(.c) u32 {
+    return resultPair(1, joinText(arg(before), arg(t), arg(after)));
+}
+
+/// `a`, `b` and `c` one after the other, as a fresh program string. Three
+/// parameters, not a slice of slices: an array of slices whose pointers are
+/// literals' is a relocation in the module's data, which a program cannot
+/// link (`std_wasm_link.zig`).
+fn joinText(a: []const u8, b: []const u8, c: []const u8) u32 {
+    const out = blank(a.len + b.len + c.len);
+    @memcpy(out.bytes[0..a.len], a);
+    @memcpy(out.bytes[a.len..][0..b.len], b);
+    @memcpy(out.bytes[a.len + b.len ..][0..c.len], c);
+    return out.ptr;
+}
+
 // ── integers as text (decision 442 (2)) ─────────────────────────────────────
 
 fn intString(v: i64, unsigned: bool) u32 {
@@ -765,6 +842,12 @@ const faces = .{
     .{ "encoding.base64DecodeBytes", base64DecodeBytes },
     .{ "encoding.hexEncodeBytes", hexEncodeBytes },
     .{ "encoding.hexDecodeBytes", hexDecodeBytes },
+    .{ "text.sliceFrom", sliceFrom },
+    .{ "text.sliceBetween", sliceBetween },
+    .{ "number.isDigits", isDigits },
+    .{ "number.toInteger", toInteger },
+    .{ "number.toFloat", toFloat },
+    .{ "number.numeralRefused", numeralRefused },
 };
 
 const program_faces = .{
@@ -821,7 +904,7 @@ const program_faces = .{
 /// The wasm type a `root.Type` crosses as.
 fn wasmType(t: root.Type) type {
     return switch (t) {
-        .string, .string_array, .opt_string, .bytes, .opt_bytes => u32,
+        .string, .string_array, .opt_string, .bytes, .opt_bytes, .opt_i32, .result_i64, .result_f64, .result_t => u32,
         .f64 => f64,
         .i32, .bool => i32,
         .i64 => i64,

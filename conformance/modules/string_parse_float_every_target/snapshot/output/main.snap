@@ -1,0 +1,13 @@
+botopink-cell 1
+out 1.5
+out -0.25
+out 125.0
+out 0.1
+out 1.7976931348623157e308
+out 2.2250738585072014e-308
+out 0.0
+out parseFloat: "1e400" overflows f64
+out parseFloat: ".5" is not a number
+out parseFloat: "1." is not a number
+out parseFloat: "NaN" is not a number
+out 5.0

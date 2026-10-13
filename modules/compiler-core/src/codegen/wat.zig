@@ -88,6 +88,7 @@ const stdWasmLink = @import("./wat/std_wasm_link.zig");
 const stdWasm = @import("std_wasm");
 const hostFnBinding = @import("./hostFnBinding.zig");
 const lexerMod = @import("../lexer.zig");
+const preludeCache = @import("./prelude_cache.zig");
 
 const CrossModule = crossModule.CrossModule;
 
@@ -4566,17 +4567,29 @@ const Emitter = struct {
     }
 
     /// A written type as a `std:` binding's check spells it (decision 440
-    /// (3), `std_wasm.matches`): a plain name, anything else `another type`.
+    /// (3), `std_wasm.matches`): a plain name, `string[]`, `?string`, `?i32`
+    /// and `@Result<i64 | f64 | T, string>` as `std_wasm.Type` spells them,
+    /// anything else `another type`.
     fn stdSpelling(t: ast.TypeRef) []const u8 {
         return switch (t) {
             .named => |n| n,
             .array => |e| if (std.mem.eql(u8, stdSpelling(e.*), "string")) "string[]" else "another type",
-            .optional => |e| if (std.mem.eql(u8, stdSpelling(e.*), "string"))
-                "?string"
-            else if (std.mem.eql(u8, stdSpelling(e.*), "Bytes"))
-                "?Bytes"
-            else
-                "another type",
+            .optional => |e| blk: {
+                const inner = stdSpelling(e.*);
+                if (std.mem.eql(u8, inner, "string")) break :blk "?string";
+                if (std.mem.eql(u8, inner, "Bytes")) break :blk "?Bytes";
+                if (std.mem.eql(u8, inner, "i32")) break :blk "?i32";
+                break :blk "another type";
+            },
+            .generic => |g| blk: {
+                if (!g.is_builtin or !std.mem.endsWith(u8, g.name, "Result") or g.args.len != 2) break :blk "another type";
+                if (!std.mem.eql(u8, stdSpelling(g.args[1]), "string")) break :blk "another type";
+                const ok = stdSpelling(g.args[0]);
+                if (std.mem.eql(u8, ok, "i64")) break :blk "@Result<i64, string>";
+                if (std.mem.eql(u8, ok, "f64")) break :blk "@Result<f64, string>";
+                if (std.mem.eql(u8, ok, "T")) break :blk "@Result<T, string>";
+                break :blk "another type";
+            },
             else => "another type",
         };
     }
@@ -6852,16 +6865,19 @@ const Emitter = struct {
         try self.emit(.{ .local_get = slot });
         try self.emitC(.{ .load = .{} }, result_tag);
 
-        const ty = vt(self.cur_result);
+        // An `f64` / `i64` payload is its cell's address.
+        const cell = self.resultOkCell(tc.expr.*);
+        const ty = if (cell != .none) vt(cell.ty()) else vt(self.cur_result);
         var then_c: Capture = .{};
         self.open(&then_c);
-        try self.lowerExpr(tc.handler.*);
+        if (cell != .none) try self.lowerCoerced(tc.handler.*, cell.ty()) else try self.lowerExpr(tc.handler.*);
         const then_seq = self.seal(&then_c, .{ .value = ty });
 
         var else_c: Capture = .{};
         self.open(&else_c);
         try self.emit(.{ .local_get = slot });
         try self.emitC(.{ .load = .{ .offset = 4 } }, ok_payload);
+        try self.emitFromCell(cell);
         const else_seq = self.seal(&else_c, .{ .value = ty });
 
         try self.emit(.{ .@"if" = .{
@@ -6909,6 +6925,7 @@ const Emitter = struct {
         try self.emit(.{ .@"if" = .{ .then = .{ .seq = then_seq } } });
         try self.emit(.{ .local_get = slot });
         try self.emitC(.{ .load = .{ .offset = 4 } }, ok_payload);
+        try self.emitFromCell(self.resultOkCell(inner));
     }
 
     /// One `@print` argument. `last` decides whether the trailing newline is
@@ -7423,17 +7440,21 @@ const Emitter = struct {
             // Result constructor (`return v` / `throw e` in a `-> @Result<…>`
             // fn): allocate a fresh `{ tag, payload }` pair (tag 0 = Ok, 1 = Error).
             const tag: u8 = if (std.mem.eql(u8, callee, "__bp_ok")) 0 else 1;
-            // A float or an `i64` does not fit the payload's word, and the
-            // readers (`try`, `unwrapOr`, a `case` arm) take a word.
-            if (Cell.of(self.wasmTypeOf(recv.*)) != .none)
-                return self.refuse(recv.getLoc(), "the wasm backend has no `@Result` holding an `{s}`", .{self.wasmTypeOf(recv.*)});
+            // A float or an `i64` does not fit the payload's word: it is held
+            // in its cell (`resultPayloadCell`), typed by the fn's declared
+            // `@Result`, else by the value.
+            const declared: ?ast.TypeRef = if (self.cur_ret_typeref) |rt|
+                (if (resultShapeOfTypeRef(rt)) |sh| (if (tag == 0) sh.ok else sh.err) else null)
+            else
+                null;
+            const cell = if (declared) |t| resultPayloadCell(t) else Cell.of(self.wasmTypeOf(recv.*));
             const slot = try self.declRes();
             try self.allocResultPair(slot);
             try self.emit(.{ .local_get = slot });
             try self.emit(try self.constInt(tag));
             try self.emitCf(.{ .store = .{} }, "Result tag ({s})", .{if (tag == 0) "Ok" else "Error"});
             try self.emit(.{ .local_get = slot });
-            try self.lowerExpr(recv.*);
+            if (cell != .none) try self.lowerCellWord(recv.*, cell) else try self.lowerExpr(recv.*);
             try self.emitC(.{ .store = .{ .offset = 4 } }, "payload");
             try self.emit(.{ .local_get = slot });
             return;
@@ -7456,11 +7477,20 @@ const Emitter = struct {
 
             var else_c: Capture = .{};
             self.open(&else_c);
-            // Ok: bind the closure param to the payload, then apply it.
+            // Ok: bind the closure param to the payload, then apply it. An
+            // `f64` / `i64` payload is its cell's address, read into a local
+            // of the cell's type.
+            const in_cell = self.resultOkCell(recv.*);
             try self.emit(.{ .local_get = slot });
             try self.emitC(.{ .load = .{ .offset = 4 } }, ok_payload);
-            try self.emit(.{ .local_set = slot });
-            try self.bindLambdaParam(lam, slot);
+            if (in_cell == .none) {
+                try self.emit(.{ .local_set = slot });
+                try self.bindLambdaParam(lam, slot);
+            } else if (lam.params.len > 0) {
+                try self.emitFromCell(in_cell);
+                try self.declareLocal(lam.params[0], in_cell.ty());
+                try self.emit(.{ .local_set = lam.params[0] });
+            } else try self.emit(.drop);
             if (is_map) {
                 // Rewrap the mapped value as a fresh `{ tag: 0, payload }` Result.
                 const out = try self.declRes();
@@ -7469,9 +7499,9 @@ const Emitter = struct {
                 try self.emit(zero);
                 try self.emitC(.{ .store = .{} }, "Ok tag");
                 try self.emit(.{ .local_get = out });
-                if (Cell.of(self.lambdaTailType(lam.body)) != .none)
-                    return self.refuse(loc, "the wasm backend has no `@Result` holding an `{s}`", .{self.lambdaTailType(lam.body)});
+                const out_cell = Cell.of(self.lambdaTailType(lam.body));
                 try self.inlineLambdaBody(lam.body);
+                if (out_cell != .none) try self.emit(self.builder().helper(if (out_cell == .f64) .box_f64 else .box_i64));
                 try self.emitC(.{ .store = .{ .offset = 4 } }, "mapped payload");
                 try self.emit(.{ .local_get = out });
             } else {
@@ -7489,6 +7519,10 @@ const Emitter = struct {
         }
 
         if (std.mem.eql(u8, callee, "__bp_result_unwrapOr")) {
+            // An `f64` / `i64` payload is its cell's address; the default is
+            // the value itself.
+            const cell = self.resultOkCell(recv.*);
+            const ty = vt(cell.ty());
             const slot = try self.declRes();
             try self.lowerExpr(recv.*);
             try self.emit(.{ .local_set = slot });
@@ -7497,17 +7531,20 @@ const Emitter = struct {
 
             var then_c: Capture = .{};
             self.open(&then_c);
-            if (arg1) |d| try self.lowerExpr(d.*) else try self.emit(zero);
-            const then_seq = self.seal(&then_c, .{ .value = .i32 });
+            if (arg1) |d| {
+                if (cell != .none) try self.lowerCoerced(d.*, cell.ty()) else try self.lowerExpr(d.*);
+            } else try self.emit(constOf(cell.ty(), "0"));
+            const then_seq = self.seal(&then_c, .{ .value = ty });
 
             var else_c: Capture = .{};
             self.open(&else_c);
             try self.emit(.{ .local_get = slot });
             try self.emitC(.{ .load = .{ .offset = 4 } }, ok_payload);
-            const else_seq = self.seal(&else_c, .{ .value = .i32 });
+            try self.emitFromCell(cell);
+            const else_seq = self.seal(&else_c, .{ .value = ty });
 
             try self.emit(.{ .@"if" = .{
-                .result = .i32,
+                .result = ty,
                 .then = .{ .seq = then_seq },
                 .@"else" = .{ .seq = else_seq },
             } });
@@ -8388,17 +8425,20 @@ const Emitter = struct {
             // parameter) binds is a local of its own too: `case 5 { n -> … }`
             // under a `val n` wrote the outer `$n`.
             const shadows = self.bound_names.contains(n) or self.isParamLocal(n);
-            if (shadows or (!std.mem.eql(u8, existing, ty) and !self.pattern_locals.contains(n))) {
-                const alias = try std.fmt.allocPrint(self.arena(), "{s}__{d}", .{ n, self.alias_seq });
-                self.alias_seq += 1;
-                try self.declareLocal(alias, ty);
-                try self.aliases.put(n, alias);
-                return alias;
-            }
+            if (shadows or (!std.mem.eql(u8, existing, ty) and !self.pattern_locals.contains(n))) return self.bindAlias(n, ty);
         }
         _ = self.aliases.remove(n);
         try self.declareLocal(n, ty);
         return n;
+    }
+
+    /// A fresh local of type `ty` the name `n` stands for from here on.
+    fn bindAlias(self: *Emitter, n: []const u8, ty: []const u8) ![]const u8 {
+        const alias = try std.fmt.allocPrint(self.arena(), "{s}__{d}", .{ n, self.alias_seq });
+        self.alias_seq += 1;
+        try self.declareLocal(alias, ty);
+        try self.aliases.put(n, alias);
+        return alias;
     }
 
     /// Bind the names a pattern introduces, from the subject held in `subj`.
@@ -8651,8 +8691,19 @@ const Emitter = struct {
     /// slot's declaration.
     fn bindPayloadName(self: *Emitter, ref: VariantRef, subj: []const u8, slot: usize, n0: []const u8) !void {
         const field_ty = payloadFieldType(ref, slot);
-        const ty = if (field_ty) |t| watType(t) else "i32";
-        const n = try self.bindName(n0, ty);
+        // A `@Result` payload is typed by the subject's recorded shape.
+        const result_ty: ?ast.TypeRef = switch (ref) {
+            .result_ok, .result_err => if (self.result_subjects.get(subj)) |sh| (if (ref == .result_ok) sh.ok else sh.err) else null,
+            else => null,
+        };
+        const result_cell = if (result_ty) |t| resultPayloadCell(t) else .none;
+        const ty = if (field_ty) |t| watType(t) else if (result_cell != .none) watType(result_ty.?) else "i32";
+        // `declarePatternLocals` declared the name a word, not knowing the
+        // subject: an `f64` / `i64` payload binds a local of its own type.
+        const n = if (result_cell != .none and !std.mem.eql(u8, self.locals.get(n0) orelse ty, ty))
+            try self.bindAlias(n0, ty)
+        else
+            try self.bindName(n0, ty);
         const local_ty = self.locals.get(n) orelse ty;
         if (field_ty) |t| {
             if (isStringTypeRef(t)) try self.str_locals.put(n, {});
@@ -8663,7 +8714,20 @@ const Emitter = struct {
                 const shape = self.result_subjects.get(subj) orelse ResultShape{};
                 if ((ref == .result_ok and shape.ok_str) or (ref == .result_err and shape.err_str))
                     try self.str_locals.put(n, {});
-                if (if (ref == .result_ok) shape.ok else shape.err) |pt| try self.noteTypedBinder(n, pt);
+                const pt = if (ref == .result_ok) shape.ok else shape.err;
+                if (pt) |t| try self.noteTypedBinder(n, t);
+                // An `f64` / `i64` payload is its cell's address
+                // (`resultPayloadCell`); the binder's own type when the
+                // subject's shape is not recorded.
+                const cell = if (pt) |t| resultPayloadCell(t) else Cell.of(local_ty);
+                if (cell != .none) {
+                    try self.emit(.{ .local_get = subj });
+                    try self.emitC(.{ .load = .{ .offset = 4 } }, "payload cell");
+                    try self.emitFromCell(cell);
+                    try self.emitConvert(cell.ty(), local_ty);
+                    try self.emit(.{ .local_set = n });
+                    return;
+                }
             },
             else => {},
         }
@@ -9138,6 +9202,7 @@ const Emitter = struct {
     /// bodyless `declare fn` with no `#[@External.<Target>(…)]` at all. Both
     /// used to lower to `unreachable` "so the module still loads".
     fn lowerPlainCall(self: *Emitter, cc: anytype, loc: ast.Loc) anyerror!void {
+        if (cc.receiver == null) _ = try self.adoptPreludeHostFn(cc.callee);
         if (try self.specializedCallee(cc)) |sym| {
             var spec = cc;
             spec.callee = sym;
@@ -9235,6 +9300,32 @@ const Emitter = struct {
             };
         }
         return self.refuseUnlessTemplate(loc, "the wasm backend cannot resolve the call `{s}/{d}`: no function, method, variant or function value of the module or its imports answers it", .{ cc.callee, cc.args.len });
+    }
+
+    /// A free host function of std's prelude that a prelude `default fn`'s
+    /// copy calls (`stringSlice0` in `String.parseFloat`): the module declares
+    /// none of it, so the first call adopts it — its signature registered, its
+    /// `#[@External.Wasm(std: "…")]` cell the binding, its wrapper emitted with
+    /// the pending functions. A name the module declares, or a prelude
+    /// function with no `std:` cell, is left to the ordinary resolution.
+    fn adoptPreludeHostFn(self: *Emitter, name: []const u8) !bool {
+        if (self.fn_sigs.contains(name) or self.host_fns.contains(name) or self.generic_fns.contains(name)) return false;
+        const f = preludeCache.freeFn(name) orelse return false;
+        if (!f.isDeclare or f.body.len > 0) return false;
+        const ext = for (f.annotations) |a| {
+            if (ast.isExternalWasm(a)) if (ast.externalRefOf(a, "wasm")) |r| break r;
+        } else return false;
+        const parsed = try hostBinding.parse(self.arena(), ext.symbol, .{ .params = &.{}, .result = null });
+        if (parsed != .ok or parsed.ok != .std_) return false;
+        try self.host_bindings.put(self.alloc, f.name, .{ .binding = parsed.ok });
+        try self.registerFn(f);
+        try self.spec_pending.append(self.alloc, .{
+            .decl = f,
+            .rewrites = self.rewrites,
+            .lowerings = self.instance_lowerings,
+            .renames = self.global_renames,
+        });
+        return true;
     }
 
     // ── primitive instance methods ───────────────────────────────────────────
@@ -15008,6 +15099,21 @@ const Emitter = struct {
         };
     }
 
+    /// The cell a `@Result` payload of type `t` is held in — an `f64` or a
+    /// 64-bit integer does not fit the `[tag, payload]` pair's word, so the
+    /// payload is the address of its 8-byte cell (`$__box_f64` /
+    /// `$__box_i64`), as a `?f64`'s box is; `.none` for a word.
+    fn resultPayloadCell(t: ast.TypeRef) Cell {
+        return Cell.of(watType(t));
+    }
+
+    /// The cell of the `Ok` payload of the `@Result` `e` answers, when its
+    /// shape is known.
+    fn resultOkCell(self: *Emitter, e: ast.Expr) Cell {
+        const sh = self.resultShapeOf(e) orelse return .none;
+        return resultPayloadCell(sh.ok orelse return .none);
+    }
+
     /// The payload type a `try <call>` binds — the `Ok` type of the call's
     /// declared `@Result` — or null for anything else.
     fn tryPayloadTypeRef(self: *Emitter, e: ast.Expr) ?ast.TypeRef {
@@ -15032,11 +15138,32 @@ const Emitter = struct {
             },
             .call => |c| switch (c.kind) {
                 .call => |cc| blk: {
+                    // `r.map({ v -> … })` answers what the closure's tail holds.
+                    if (cc.is_builtin and std.mem.eql(u8, cc.callee, "__bp_result_map") and cc.args.len == 2) {
+                        const inner = self.resultShapeOf(cc.args[0].value.*) orelse ResultShape{};
+                        const le = lambdaArg(cc.args[1].value) orelse break :blk null;
+                        const tail = self.lambdaTailType(le.function.kind.body);
+                        var out = inner;
+                        out.ok_str = false;
+                        out.ok = if (Cell.of(tail) == .f64) .{ .named = "f64" } else if (Cell.of(tail) == .i64) .{ .named = "i64" } else null;
+                        break :blk out;
+                    }
                     // Decision 346 — `b.toUtf8()` answers `@Result<string, string>`.
                     if (cc.receiver != null) if (self.primKindAt(cc, c.loc)) |k| if (k == .bytes)
                         break :blk resultShapeOfTypeRef(self.typeRefOf(e) orelse break :blk null);
-                    const sym = self.calleeSymbol(cc, c.loc) orelse break :blk null;
-                    break :blk self.result_shape_fns.get(sym);
+                    if (self.calleeSymbol(cc, c.loc)) |sym| break :blk self.result_shape_fns.get(sym);
+                    // A primitive's `default fn` (`"1.5".parseFloat()`): its
+                    // copy's declared return.
+                    // Only one declared `-> @Result<…>`: asking materialises
+                    // the copy, and a default the backend lowers natively
+                    // (`xs.slice`) must not be.
+                    if (cc.receiver != null) if (self.primKindAt(cc, c.loc)) |k| if (self.primDefaultOf(k, cc.callee)) |pd| {
+                        if (resultShapeOfTypeRef(pd.method.returnType orelse break :blk null) == null) break :blk null;
+                        const sym = self.ensurePrimDefault(k, pd, cc.receiver.?.*) catch break :blk null;
+                        if (self.result_shape_fns.get(sym)) |sh| break :blk sh;
+                        break :blk resultShapeOfTypeRef(self.fn_ret_typerefs.get(sym) orelse break :blk null);
+                    };
+                    break :blk null;
                 },
                 else => null,
             },
@@ -15996,7 +16123,10 @@ const Emitter = struct {
             },
             .branch => |b| switch (b.kind) {
                 .if_ => |i| if (ifIsStatementForm(i)) "i32" else self.ifValueType(i),
-                .tryCatch => self.cur_result,
+                .tryCatch => |tc| blk: {
+                    const cell = self.resultOkCell(tc.expr.*);
+                    break :blk if (cell != .none) cell.ty() else self.cur_result;
+                },
             },
             .call => |c| switch (c.kind) {
                 .call => |cc| blk: {
@@ -16010,6 +16140,8 @@ const Emitter = struct {
                             break :blk self.blockReturnType(cc.trailing[0].body);
                         // `o.unwrapOr(d)` over a `?f64` answers its `f64`.
                         if (std.mem.eql(u8, cc.callee, "__bp_option_unwrapOr") and cc.args.len > 0) if (self.optInfoOf(cc.args[0].value.*)) |oi| if (oi.cell != .none) break :blk oi.cell.ty();
+                        // `r.unwrapOr(d)` over a `@Result<f64, E>` answers its `f64`.
+                        if (std.mem.eql(u8, cc.callee, "__bp_result_unwrapOr") and cc.args.len > 0) break :blk self.resultOkCell(cc.args[0].value.*).ty();
                         break :blk "i32";
                     }
                     if (self.primKindAt(cc, c.loc)) |k| {
@@ -16032,6 +16164,8 @@ const Emitter = struct {
             // Decision 392 — what the task settles with.
             .jump => |j| switch (j.kind) {
                 .await_ => |a| if (self.isTaskExpr(a.*)) self.awaitedType(a.*) else self.wasmTypeOf(a.*),
+                // `try r` over a `@Result<f64, E>` answers the `f64` its cell holds.
+                .try_ => |v| if (v) |inner| self.resultOkCell(inner.*).ty() else "i32",
                 else => "i32",
             },
             else => "i32",

@@ -555,7 +555,8 @@ behavior String {
 }
 
 // ── string slice arity dispatch ──────────────────────────────────────────────
-// Host helpers behind `default fn slice`. commonJS patches
+// Host helpers behind `default fn slice`; wasm's are std-wasm's
+// (`text.sliceFrom`, `text.sliceBetween`, a `null` end open). commonJS patches
 // `String.prototype.slice` with that body, so the Node templates must not call
 // `.slice` (it would call the patch itself): they normalise the bounds the way
 // native `slice` does and cut with `substring`. Markers are positional on every
@@ -566,10 +567,12 @@ behavior String {
 
 #[@External.Erlang("""(fun(__S, __A) -> __L = unicode:characters_to_list(__S), __N = erlang:length(__L), __B = case __A < 0 of true -> erlang:max(__N + __A, 0); false -> erlang:min(__A, __N) end, unicode:characters_to_binary(lists:nthtail(__B, __L)) end)($0, $1)""")]
 #[@External.Node("""((__s, __a) => { if (__a == null) __a = 0; if (/[\u{D800}-\u{DFFF}\u{10000}-\u{10FFFF}]/u.test(__s)) { const __c = Array.from(__s); const __m = __c.length; const __d = __a < 0 ? Math.max(__m + __a, 0) : Math.min(__a, __m); return Array.from({ length: __m - __d }, (_, __i) => __c[__d + __i]).join(""); } const __n = __s.length; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); return __s.substring(__b); })($0, $1)""")]
+#[@External.Wasm(std: "text.sliceFrom")]
 declare fn stringSlice0(s: string, start: i32) -> string;
 
 #[@External.Erlang("""(fun(__S, __A, __E) -> __L = unicode:characters_to_list(__S), __N = erlang:length(__L), __B = case __A < 0 of true -> erlang:max(__N + __A, 0); false -> erlang:min(__A, __N) end, __F = case __E < 0 of true -> erlang:max(__N + __E, 0); false -> erlang:min(__E, __N) end, unicode:characters_to_binary(lists:sublist(__L, __B + 1, erlang:max(__F - __B, 0))) end)($0, $1, $2)""")]
 #[@External.Node("""((__s, __a, __e) => { if (__a == null) __a = 0; if (/[\u{D800}-\u{DFFF}\u{10000}-\u{10FFFF}]/u.test(__s)) { const __c = Array.from(__s); const __m = __c.length; const __d = __a < 0 ? Math.max(__m + __a, 0) : Math.min(__a, __m); const __g = __e < 0 ? Math.max(__m + __e, 0) : Math.min(__e, __m); return Array.from({ length: Math.max(__g - __d, 0) }, (_, __i) => __c[__d + __i]).join(""); } const __n = __s.length; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); const __f = __e < 0 ? Math.max(__n + __e, 0) : Math.min(__e, __n); return __s.substring(__b, Math.max(__b, __f)); })($0, $1, $2)""")]
+#[@External.Wasm(std: "text.sliceBetween")]
 declare fn stringSlice1(s: string, start: i32, end: ?i32) -> string;
 
 // ── Bytes slice arity dispatch ───────────────────────────────────────────────
@@ -589,11 +592,13 @@ declare fn bytesSlice1(b: Bytes, start: i32, end: ?i32) -> Bytes;
 // Host helpers behind `default fn parseInt` / `parseFloat`. The methods decide
 // in botopink which strings are numerals; these convert, and build the
 // `@Result` and its text — a `default fn` body of this file is emitted as
-// written on commonJS, where `Ok(…)` / `Error(…)` name nothing.
+// written on commonJS, where `Ok(…)` / `Error(…)` name nothing. wasm's and
+// the comptime runtime's are std-wasm's (`number.*`).
 
 // True when `s` is one or more of the digits `0`–`9` and nothing else.
 #[@External.Erlang("""(fun(__S) -> (__S =/= <<>>) andalso lists:all(fun(__C) -> (__C >= 48) andalso (__C =< 57) end, binary_to_list(__S)) end)($0)""")]
 #[@External.Node("""(/^[0-9]+$/.test($0))""")]
+#[@External.Wasm(std: "number.isDigits")]
 declare fn stringIsDigits(s: string) -> bool;
 
 // The integer `<sign><digits>` spells; the out-of-range `Error`, naming the
@@ -601,6 +606,7 @@ declare fn stringIsDigits(s: string) -> bool;
 // and answers 319's canonical form (a `number` within ±(2^53 − 1)).
 #[@External.Erlang("""(fun(__S) -> __N = binary_to_integer(__S), case (__N >= -(1 bsl 63)) andalso (__N < (1 bsl 63)) of true -> {ok, __N}; false -> {error, <<"parseInt: ", 34, __S/binary, 34, " is out of range">>} end end)($0)""")]
 #[@External.Node("""((__s) => { const __n = BigInt(__s); return (__n >= -9223372036854775808n && __n <= 9223372036854775807n) ? { ok: (__n >= -9007199254740991n && __n <= 9007199254740991n) ? Number(__n) : __n } : { error: 'parseInt: "' + __s + '" is out of range' } })($0)""")]
+#[@External.Wasm(std: "number.toInteger")]
 declare fn stringToInteger(numeral: string) -> @Result<i64, string>;
 
 // The `f64` the numeral `text` spells, read from its accepted pieces as
@@ -609,6 +615,7 @@ declare fn stringToInteger(numeral: string) -> @Result<i64, string>;
 // `0.0` on an underflow, which is what `Number` does with `Infinity` and `0`.
 #[@External.Erlang("""(fun(__T, __W, __F, __X) -> __Sign = case __T of <<45, _/binary>> -> <<45>>; _ -> <<>> end, try {ok, binary_to_float(<<__Sign/binary, __W/binary, 46, __F/binary, 101, __X/binary>>)} catch _:_ -> {error, <<"parseFloat: ", 34, __T/binary, 34, " overflows f64">>} end end)($0, $1, $2, $3)""")]
 #[@External.Node("""((__t, __w, __f, __x) => { const __n = Number((__t.startsWith('-') ? '-' : '') + __w + '.' + __f + 'e' + __x); return Number.isFinite(__n) ? { ok: __n } : { error: 'parseFloat: "' + __t + '" overflows f64' } })($0, $1, $2, $3)""")]
+#[@External.Wasm(std: "number.toFloat")]
 declare fn stringToFloat(
     text: string,
     whole: string,
@@ -619,6 +626,7 @@ declare fn stringToFloat(
 // `Error(<before><text><after>)`.
 #[@External.Erlang("""{error, <<($0)/binary, ($1)/binary, ($2)/binary>>}""")]
 #[@External.Node("""({ error: $0 + $1 + $2 })""")]
+#[@External.Wasm(std: "number.numeralRefused")]
 declare fn stringNumeralRefused<T>(
     before: string,
     text: string,

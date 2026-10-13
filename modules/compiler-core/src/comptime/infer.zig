@@ -4304,20 +4304,30 @@ fn refuseStdBinding(env: *Env, a: ast.Annotation, name: []const u8, params: []co
 }
 
 /// A written type as a `std:` cell's check spells it: a plain name as
-/// written (`Self` as `self_ty` spells it), `string[]`, `?string` and `?Bytes` as
-/// std-wasm's types spell them (`std_wasm.Type`), anything else `another
-/// type`.
+/// written (`Self` as `self_ty` spells it), `string[]`, `?string`, `?Bytes`, `?i32`
+/// and `@Result<i64 | f64 | T, string>` as std-wasm's types spell them
+/// (`std_wasm.Type`), anything else `another type`.
 fn spelledType(t: ast.TypeRef, self_ty: ?[]const u8) []const u8 {
     return switch (t) {
         .named => |n| if (std.mem.eql(u8, n, "Self")) (self_ty orelse "Self") else n,
         .array => |e| if (std.mem.eql(u8, spelledType(e.*, self_ty), "string")) "string[]" else "another type",
-        .optional => |e| if (std.mem.eql(u8, spelledType(e.*, self_ty), "string"))
-            "?string"
-        else if (std.mem.eql(u8, spelledType(e.*, self_ty), "Bytes"))
+        .optional => |e| blk: {
+            const inner = spelledType(e.*, self_ty);
+            if (std.mem.eql(u8, inner, "string")) break :blk "?string";
             // Decision 346 — `Bytes`' codecs answer one when the text is one.
-            "?Bytes"
-        else
-            "another type",
+            if (std.mem.eql(u8, inner, "Bytes")) break :blk "?Bytes";
+            if (std.mem.eql(u8, inner, "i32")) break :blk "?i32";
+            break :blk "another type";
+        },
+        .generic => |g| blk: {
+            if (!g.is_builtin or !std.mem.endsWith(u8, g.name, "Result") or g.args.len != 2) break :blk "another type";
+            if (!std.mem.eql(u8, spelledType(g.args[1], self_ty), "string")) break :blk "another type";
+            const ok = spelledType(g.args[0], self_ty);
+            if (std.mem.eql(u8, ok, "i64")) break :blk "@Result<i64, string>";
+            if (std.mem.eql(u8, ok, "f64")) break :blk "@Result<f64, string>";
+            if (std.mem.eql(u8, ok, "T")) break :blk "@Result<T, string>";
+            break :blk "another type";
+        },
         else => "another type",
     };
 }

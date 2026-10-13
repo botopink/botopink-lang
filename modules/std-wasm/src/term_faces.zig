@@ -267,6 +267,62 @@ pub fn rt_std_encoding__hexDecodeBytes(t: T) callconv(.c) term.T {
     return term.binOf(out[0..n]);
 }
 
+// `String.slice`'s and the string numerals' cells (`primitives.bp`): a `?i32`
+// crosses as the integer or `undefined`, a `@Result` as `{ok, V}` /
+// `{error, Bin}` — the erlang target's values.
+
+pub fn rt_std_text__sliceFrom(t: T, a: T) callconv(.c) term.T {
+    const s = string.strArg(t) orelse return &term.nil_cell;
+    const start = intArgI32(a) orelse return &term.nil_cell;
+    return term.binCopy(stdWasm.text.cpSlice(s, start, std.math.maxInt(i32)));
+}
+
+pub fn rt_std_text__sliceBetween(t: T, a: T, e: T) callconv(.c) term.T {
+    const s = string.strArg(t) orelse return &term.nil_cell;
+    const start = intArgI32(a) orelse return &term.nil_cell;
+    const end: i32 = if (e == term.a_undefined) std.math.maxInt(i32) else intArgI32(e) orelse return &term.nil_cell;
+    return term.binCopy(stdWasm.text.cpSlice(s, start, end));
+}
+
+pub fn rt_std_number__isDigits(t: T) callconv(.c) term.T {
+    const s = string.strArg(t) orelse return &term.nil_cell;
+    return term.boolAtom(stdWasm.number.isDigits(s));
+}
+
+/// `a`, `b` and `c` one after the other, as a binary — three parameters, not
+/// a slice of slices, which would be a relocation in the module's data.
+fn joinBin(a: []const u8, b: []const u8, c: []const u8) term.T {
+    const n = a.len + b.len + c.len;
+    const out = term.alloc(n);
+    @memcpy(out[0..a.len], a);
+    @memcpy(out[a.len..][0..b.len], b);
+    @memcpy(out[a.len + b.len ..][0..c.len], c);
+    return term.binOf(out[0..n]);
+}
+
+pub fn rt_std_number__toInteger(t: T) callconv(.c) term.T {
+    const s = string.strArg(t) orelse return &term.nil_cell;
+    if (stdWasm.number.integerOf(s)) |v| return term.tuple(&.{ term.a_ok, term.mkInt(v) });
+    return term.tuple(&.{ term.a_error, joinBin("parseInt: \"", s, "\" is out of range") });
+}
+
+pub fn rt_std_number__toFloat(t: T, w: T, f: T, x: T) callconv(.c) term.T {
+    const text = string.strArg(t) orelse return &term.nil_cell;
+    const whole = string.strArg(w) orelse return &term.nil_cell;
+    const fraction = string.strArg(f) orelse return &term.nil_cell;
+    const exponent = string.strArg(x) orelse return &term.nil_cell;
+    const neg = text.len > 0 and text[0] == '-';
+    if (stdWasm.number.floatOf(neg, whole, fraction, exponent)) |v| return term.tuple(&.{ term.a_ok, term.mkFloat(v) });
+    return term.tuple(&.{ term.a_error, joinBin("parseFloat: \"", text, "\" overflows f64") });
+}
+
+pub fn rt_std_number__numeralRefused(b: T, t: T, a: T) callconv(.c) term.T {
+    const before = string.strArg(b) orelse return &term.nil_cell;
+    const text = string.strArg(t) orelse return &term.nil_cell;
+    const after = string.strArg(a) orelse return &term.nil_cell;
+    return term.tuple(&.{ term.a_error, joinBin(before, text, after) });
+}
+
 comptime {
     // Every function std-wasm implements has its export here, by name.
     for (stdWasm.exports) |e| {

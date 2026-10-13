@@ -1617,9 +1617,9 @@ on the four targets.
 the parent refused past ±(2^53 − 1)), `modules/integer_conversions_exact` (`toI32`, `toI64`, `toU32`,
 `toU64`, `toF64` at the bounds and past 2^53) and two aborts, `modules/integer_conversion_to_i32_aborts`
 and `modules/integer_conversion_to_f64_inexact_aborts` (`.exit` plus a `.stderr` per target naming the
-value). They answer on commonJS, erlang and beam; wasm refuses each by `.wasm.expect` — its integer
-methods are `i32`'s, the conversions have no row, and `parseInt`'s `stringSlice0/2` is unresolved
-(that one's location points into std, so its `.expect` holds line 1 alone) — `05-wasm` rows.
+value). They answer on commonJS, erlang and beam, and `string_parse_int_i64_range` on wasm too (144
+B-22: std-wasm's `text` and `number` cells behind `primitives.bp`'s host helpers); wasm refuses the
+others by `.wasm.expect` — its integer methods are `i32`'s and the conversions have no row — `05-wasm` rows.
 Its `io` half adds `modules/std_io_i64_canonical` — `fs.stat`'s `size`, kind and `mtime` (the Node
 form reads `statSync` with `bigint: true` and answers the canonical form) and `clock.hours` /
 `clock.add` past 2^53 (`clock`'s `wide` is std's `toI64()` now, no host cell), printed as the same

@@ -50,8 +50,14 @@ pub const heap = @import("heap.zig");
 /// comptime); a `string[]` as the program's array (`[n][s0][s1]…`, a list at
 /// comptime); a `?string` as the string or `0` (`undefined` at comptime); a
 /// `Bytes` (decision 346) as a string does — its byte count, the bytes behind
-/// it — and a binary at comptime, a `?Bytes` as a `?string`; a `void` result
-/// as none.
+/// it — and a binary at comptime, a `?Bytes` as a `?string`;
+/// a `?i32` as the address of its 4-byte box or `0` (the integer or
+/// `undefined`); a `@Result<…, string>` as the address of its `[tag,
+/// payload]` pair — tag `0` `Ok`, `1` `Error`, an `i64` / `f64` payload the
+/// address of its 8-byte cell, the `Error` payload a string (`{ok, V}` /
+/// `{error, Bin}` at comptime); `@Result<T, string>` is one only an `Error`
+/// is built through, whatever the declaration's `T`; a `void` result as
+/// none.
 pub const Type = enum {
     string,
     f64,
@@ -63,6 +69,10 @@ pub const Type = enum {
     opt_string,
     bytes,
     opt_bytes,
+    opt_i32,
+    result_i64,
+    result_f64,
+    result_t,
 
     /// The type as botopink spells it.
     pub fn spelling(t: Type) []const u8 {
@@ -71,6 +81,10 @@ pub const Type = enum {
             .opt_string => "?string",
             .bytes => "Bytes",
             .opt_bytes => "?Bytes",
+            .opt_i32 => "?i32",
+            .result_i64 => "@Result<i64, string>",
+            .result_f64 => "@Result<f64, string>",
+            .result_t => "@Result<T, string>",
             else => @tagName(t),
         };
     }
@@ -154,6 +168,12 @@ pub const exports = [_]Export{
     .{ .name = "encoding.base64DecodeBytes", .params = &.{.string}, .result = .opt_bytes, .api = "encoding.base64DecodeBytes" },
     .{ .name = "encoding.hexEncodeBytes", .params = &.{.bytes}, .result = .string, .api = "encoding.hexEncodeBytes" },
     .{ .name = "encoding.hexDecodeBytes", .params = &.{.string}, .result = .opt_bytes, .api = "encoding.hexDecodeBytes" },
+    .{ .name = "text.sliceFrom", .params = &.{ .string, .i32 }, .result = .string, .api = "String.slice" },
+    .{ .name = "text.sliceBetween", .params = &.{ .string, .i32, .opt_i32 }, .result = .string, .api = "String.slice" },
+    .{ .name = "number.isDigits", .params = &.{.string}, .result = .bool, .api = "String.parseInt" },
+    .{ .name = "number.toInteger", .params = &.{.string}, .result = .result_i64, .api = "String.parseInt" },
+    .{ .name = "number.toFloat", .params = &.{ .string, .string, .string, .string }, .result = .result_f64, .api = "String.parseFloat" },
+    .{ .name = "number.numeralRefused", .params = &.{ .string, .string, .string }, .result = .result_t, .api = "String.parseFloat" },
 };
 
 /// A wasm value type a program function takes or answers.

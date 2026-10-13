@@ -1161,16 +1161,26 @@ test "wat: prim method ---- unique over records, flatMap over a scalar and flatt
     , "`flatten` on the wasm backend: nothing shows", 2, 19);
 }
 
-// A prelude `default fn` (`primitives.bp`'s `parseInt`) is copied into the
-// program; a refusal inside its copy was located at the prelude's line under
-// the program's file name. It is located at the program's call that reaches
-// it (`ast.BehaviorMethod.from_prelude`).
-test "wat: prim method ---- a refusal inside a prelude default is located at the program's call" {
-    try h.assertWasmRefusedAt(std.testing.allocator,
+// A prelude `default fn` (`primitives.bp`'s `parseInt`, `parseFloat`) is
+// copied into the program, and the free host helpers its body calls
+// (`stringSlice0`, `stringToFloat`, …) are adopted with their
+// `#[@External.Wasm(std: "…")]` cells (`adoptPreludeHostFn`). Unbound, the
+// copy was refused — located at the program's call that reaches it
+// (`ast.BehaviorMethod.from_prelude`, `foreign_origin`); bound, it answers,
+// an `f64` / `i64` `Ok` held in its cell.
+test "wat: prim method ---- a prelude default's host helpers are std-wasm's, its @Result read whole" {
+    try h.assertWasmRunLog(std.testing.allocator,
         \\fn main() {
         \\    @print("12".parseInt().unwrapOr(0l));
+        \\    @print("-2.5e-1".parseFloat().unwrapOr(0.0));
+        \\    @print("1.".parseFloat().isError());
         \\}
-    , "in another module's code this line reaches", 2, 17);
+    ,
+        \\12
+        \\-0.25
+        \\true
+        \\
+    );
 }
 
 // `Array.pop` and `Array.lastIndexOf` left the trap list: `pop` answers the
@@ -2110,6 +2120,7 @@ test "wat: std-wasm ---- a frame past the stack's end traps, never writes below 
 // directions: a method the table binds carries its cell, and every `std:`
 // cell of the prelude is a row of the table.
 test "wat: std-wasm ---- primitives.bp's std: cells agree with the codegen's table" {
+    const stdWasm = @import("std_wasm");
     const src = @import("std_prelude").primitives;
     for (watCodegen.std_method_exports) |row| {
         var head_buf: [64]u8 = undefined;
@@ -2130,8 +2141,21 @@ test "wat: std-wasm ---- primitives.bp's std: cells agree with the codegen's tab
     var n: usize = 0;
     var it = std.mem.splitSequence(u8, src, "#[@External.Wasm(std: \"");
     _ = it.next();
-    while (it.next()) |rest| : (n += 1) {
+    while (it.next()) |rest| {
         const end = std.mem.indexOfScalar(u8, rest, '"') orelse return error.CellUnreadable;
+        // A free host helper of a `default fn`'s body (`stringSlice0`): a
+        // `declare fn` at the top level, adopted by the call that reaches it
+        // (`adoptPreludeHostFn`), not a method row — std-wasm exports it.
+        const after = rest[end..];
+        const line_end = std.mem.indexOfScalar(u8, after, '\n') orelse return error.CellUnreadable;
+        if (std.mem.startsWith(u8, after[line_end + 1 ..], "declare fn ")) {
+            if (stdWasm.find(rest[0..end]) == null) {
+                std.debug.print("primitives.bp binds `std:{s}` and std-wasm exports no such function\n", .{rest[0..end]});
+                return error.CellNotLowered;
+            }
+            continue;
+        }
+        n += 1;
         var found = false;
         for (watCodegen.std_method_exports) |row| {
             if (std.mem.eql(u8, row.export_name, rest[0..end])) found = true;
