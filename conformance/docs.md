@@ -2272,10 +2272,13 @@ that implements it); `self.text()` is the receiver as written, so the code the
 template builds runs on the receiver where the call stands. The literal is
 captured as at any call. The template method is a name of the call site's
 scope, declared there or imported; a method of the receiver's own type of that
-name is the type's.
+name is the type's — written in its body, or a method of a behavior it
+implements, that behavior's `default fn` included; a value of a behavior has
+the methods the behavior declares.
 
 <!-- example: modules/template_method_call -->
 <!-- example: modules/template_method_own_method -->
+<!-- example: modules/template_method_behavior_method -->
 
 A receiver whose type is not `R` and does not implement it is refused at the
 receiver, as an argument would be. The receiver's type imports nothing by
@@ -2463,7 +2466,8 @@ value and called later, and its own recursive call each run the wrapper.
 
 A wrapper answering another type than the pattern's `R` is
 `decorator-wrap-type` at the wrapper, in the decorator; `decl.wrapWith` from a
-decorator on anything but a function or a method of a `type` is
+decorator on anything but a function or a method of a `type`, or on a
+`declare fn` (it has no body to wrap), is
 `decorator-wrap-without-function` at the annotation; a wrapper that is no
 lambda written at the call is `decorator-wrap-not-lambda`, at the argument
 (question B-11-a), and a wrapped function (or the type owning a wrapped
@@ -2477,6 +2481,10 @@ method) with type parameters `decorator-wrap-generic`, at the annotation
 <!-- example: modules/decorator_wrap_not_lambda -->
 
 <!-- example: modules/decorator_wrap_generic -->
+
+<!-- example: modules/decorator_wrap_declare_fn -->
+
+<!-- example: modules/decorator_wrap_generic_owner -->
 
 <!-- example: modules/decorator_any_params_outside_decl -->
 
@@ -2739,6 +2747,7 @@ annotation ran, so annotations do not depend on their written order.
 
 <!-- example: modules/tag_annotation_add_member -->
 <!-- example: modules/tag_annotation_add_type -->
+<!-- example: modules/tag_annotation_emit -->
 <!-- example: modules/tag_annotation_string_meta -->
 <!-- example: modules/tag_annotation_meta_twice -->
 <!-- example: modules/tag_annotation_unknown_name -->

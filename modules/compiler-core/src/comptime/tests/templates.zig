@@ -1395,3 +1395,30 @@ test "infer: a receiver's own method named like a template method of the scope i
         \\}
     );
 }
+
+test "infer: a behavior method the receiver's type adopts, named like a template method of the scope, is the type's (decisions 311 (3), 415 (1))" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\behavior Waves {
+        \\    fn who(self: Self) -> string;
+        \\    default fn greet(self: Self, word: string) -> string {
+        \\        return word + ", " + self.who();
+        \\    }
+        \\}
+        \\type Waver(name: string) implement Waves {
+        \\    fn who(self: Self) -> string {
+        \\        return self.name;
+        \\    }
+        \\}
+        \\type Visitor(who: string)
+        \\fn greet(comptime self: @Expr<Visitor>, comptime q: @Expr<string>) -> @Expr<string> {
+        \\    return q.build(self.text() + ".who");
+        \\}
+        \\fn wave(w: Waves) -> string {
+        \\    return w.greet "hi";
+        \\}
+        \\pub fn main() {
+        \\    @print(Waver(name: "Ana").greet "hello");
+        \\    @print(wave(Waver(name: "Bia")));
+        \\}
+    );
+}

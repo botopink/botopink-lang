@@ -209,6 +209,12 @@ declaration), `template_lookup_decl_wrap_with` (`wrapWith` on it, `template-look
 handle, question B-18-b as built), `template_method_own_method` (the receiver type's own method of the name wins —
 red on `feat` too, `template-call-unexpanded`, until the fix beside it), `template_method_receiver_mismatch` and
 `template_method_not_in_scope` (question B-18-a as built) — each red on B-18's parent.
+The cells those three Conformance steps proposed: `modules/decorator_wrap_declare_fn` (a `declare fn` wrapped,
+`decorator-wrap-without-function`), `decorator_wrap_generic_owner` (a method of a generic type wrapped,
+`decorator-wrap-generic`), `tag_annotation_emit` (`@emit` in a tag's annotation, `tag-annotation-output`) and
+`template_method_behavior_method` (a method the receiver's type adopts from a behavior, its `default fn` included,
+and a behavior-typed receiver's method, win over a template method of the name — red on `feat` too, until the fix
+beside it).
 `modules/derived_type_two_packages` derives over two packages' same-named modules: dependencies `a`
 and `b` each hold `shape` with a record `Box` of different fields, each package's `user` derives
 from its own `Box` (`Type.pick` in `a`, `Type.omit` in `b`) and the project has a `shape` of its

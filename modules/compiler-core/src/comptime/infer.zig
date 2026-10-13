@@ -12884,6 +12884,40 @@ fn behaviorFoundCallType(
     return try resolveTypeRefInContext(env, rt, gm);
 }
 
+/// Decisions 311 (3), 415 (1) — whether a value of the type `typeName` has a
+/// method `method` of its own, which a template method of the same name never
+/// shadows: one written in the type's body, one a behavior it implements
+/// declares — its `default fn` included, through `extends` — or, for a value
+/// of a behavior, one that behavior declares.
+fn receiverHasMethod(env: *Env, typeName: []const u8, method: []const u8) bool {
+    if (env.hasInherentMethod(typeName, method)) return true;
+    if (behaviorDeclaresSelfMethod(env, typeName, method, 0)) return true;
+    const td = env.lookupTypeDef(typeName) orelse return false;
+    const implements: []const []const u8 = switch (td) {
+        .record => |r| r.implements,
+        .struct_ => |st| st.implements,
+        .enum_ => |e| e.implements,
+    };
+    for (implements) |iface| if (behaviorDeclaresSelfMethod(env, iface, method, 0)) return true;
+    return false;
+}
+
+/// Whether `iface` — or anything it extends — declares `method` as a method
+/// taking `self` (bodyless or a `default fn`); an associated function is
+/// called through the behavior's name, never on a value. `depth` bounds a
+/// cyclic `extends` chain.
+fn behaviorDeclaresSelfMethod(env: *Env, iface: []const u8, method: []const u8, depth: usize) bool {
+    if (depth >= 16) return false;
+    const decl = env.assocInterfaceDecls.get(iface) orelse env.importedBehaviorDecls.get(iface) orelse return false;
+    for (decl.methods) |m| {
+        if (std.mem.eql(u8, m.name, method)) return m.params.len > 0 and std.mem.eql(u8, m.params[0].name, "self");
+    }
+    for (decl.extends) |parent| {
+        if (behaviorDeclaresSelfMethod(env, parent, method, depth + 1)) return true;
+    }
+    return false;
+}
+
 /// Whether `iface` — or anything it extends — declares `member`. `depth` bounds
 /// a cyclic `extends` chain.
 fn behaviorDeclaresMember(env: *Env, iface: []const u8, member: []const u8, depth: usize) bool {
@@ -20126,7 +20160,7 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
             // method of the call site's scope; a method of the receiver's own
             // type of that name is the type's.
             if (typedReceiver) |rp| if (call.receiver != null and !call.is_builtin and call.calleeExpr == null) if (templateMethodNamed(env, call.callee)) |tfn| {
-                const own = if (nominalName(rp.getType())) |tn| env.hasInherentMethod(tn, call.callee) else false;
+                const own = if (nominalName(rp.getType())) |tn| receiverHasMethod(env, tn, call.callee) else false;
                 if (!own and !isStdModuleType(rp.getType())) return inferTemplateMethodCall(env, call, rp, tfn, loc);
                 try env.templateMethodDeclined.put(loc, {});
             };

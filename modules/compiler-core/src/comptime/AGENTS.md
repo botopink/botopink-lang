@@ -870,9 +870,13 @@ does. The comptime module names the receiver parameter `__bp_self`
 named `self`. `refuseUnexpandedTemplateCalls` covers the method form too,
 except a call `inferCallExprWith` resolved to the receiver type's own method
 or a `"std"` namespace's function (`Env.templateMethodDeclined`, by the call's
-location): no expansion is owed there. Cells: `modules/template_method_call`
+location): no expansion is owed there. The receiver's own method is
+`receiverHasMethod`: an inherent one, one a behavior the type implements
+declares (its `default fn` included, through `extends`), or, on a value of a
+behavior, one that behavior declares. Cells: `modules/template_method_call`
 (a local template over a type and over a behavior, an imported one over a
-generic behavior, in a method body), `modules/template_method_own_method`.
+generic behavior, in a method body), `modules/template_method_own_method`,
+`modules/template_method_behavior_method`.
 
 ## Every `comptime` parameter is an `@Expr<T>` (decision 364)
 
