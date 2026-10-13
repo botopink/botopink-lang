@@ -26,10 +26,11 @@ on:
   pull_request:
     branches: [main, feat]
 
-# Cancel a prior run for the same ref so a force-push doesn't pile builds up.
+# A started run finishes (the maintainer, 2026-10-13): with two machines pushing to feat, cancelling the running
+# one left no run finished; GitHub keeps one running and one pending per ref, the newest pending replacing the older.
 concurrency:
   group: test-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   test:
