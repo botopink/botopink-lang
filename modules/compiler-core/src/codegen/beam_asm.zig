@@ -7410,12 +7410,16 @@ const Emitter = struct {
 
         // One of the FILE module's functions, called from inside a type's: the
         // two are separate modules under policy 3.
-        if (self.inForeignUnit() and self.isFileFn(cc.callee, arity)) {
+        // A module-level `val` is a 0-arity function too: `g()` over a `val g
+        // = { -> … }` reads it and applies the fun (below), never answers the
+        // fun itself.
+        const top_val = self.top_vals.contains(cc.callee);
+        if (!top_val and self.inForeignUnit() and self.isFileFn(cc.callee, arity)) {
             try self.materializeCallArgs(cc.args, cc.trailing);
             if (try self.tryFileCall(cc.callee, arity, mode, self.num_y)) return;
         }
         // A top-level function resolves to a reserved label pair → direct call.
-        if (self.fnLabelsFor(cc.callee, arity)) |labels| {
+        if (top_val) {} else if (self.fnLabelsFor(cc.callee, arity)) |labels| {
             try self.materializeCallArgs(cc.args, cc.trailing);
             switch (mode) {
                 .non_tail => try beamEmitter.writeCall(self.out, .normal, arity, .{ .local = labels.entry }, 0),

@@ -1517,10 +1517,15 @@ fn applyDefaultFill(agg: *Aggregator, fill: envMod.DefaultFill, c: anytype) !voi
 /// module marker `startsWith(comptime decl: @Decl, comptime prefix: string)`
 /// had the call's argument stripped as a comptime one, so erlang refused the
 /// module with `PrimOpArgIndexOutOfRange` (no location) and commonJS emitted
-/// `t.startsWith()`, answering `false`.
+/// `t.startsWith()`, answering `false`. Nor is a template function: every
+/// call of one was replaced by its expansion before it reaches here, so a call
+/// left under its name calls a parameter or a local of that name (the nearest
+/// binding) — its arguments are the value's, none of them comptime.
 fn localFnOf(fn_decls: std.StringHashMap(ast.FnDecl), c: anytype) ?ast.FnDecl {
     if (c.receiver != null) return null;
-    return fn_decls.get(c.callee);
+    const f = fn_decls.get(c.callee) orelse return null;
+    if (f.returnType) |rt| if (rt.isTemplateReturnType()) return null;
+    return f;
 }
 
 fn rewriteCall(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), comptime_arrays: std.StringHashMap([]const ast.TypedExpr), c: anytype) ScanError!void {

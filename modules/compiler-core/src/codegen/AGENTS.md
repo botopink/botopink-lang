@@ -814,7 +814,9 @@ codegen/
   node, first thing in `plainCallNode`. Read as a name it was `''(4)`, which
   `erlc` refuses (`test/curried_call.bp`, C-09's backend half). The beam twin
   parks the value in a y-slot (`countLocalsInExpr` reserves it) and
-  `call_fun`s it, as a module-level `val` holding a fun is applied.
+  `call_fun`s it, as a module-level `val` holding a fun is applied — before the
+  0-arity label lookup, so `g()` over `val g = { -> … }` applies the fun the
+  reader answers rather than answering it (`modules/template_in_module_val_lambda`).
   A closure written around such a call captures the names of its callee
   expression too (`collectNamesInExpr` walks `calleeExpr`): a component's
   lambda (decision 388) running `(h(n))(bpScope__)` read `n` as

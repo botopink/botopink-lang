@@ -1,0 +1,19 @@
+//// Decision 425 and the scope rule — the nearest binding wins: a parameter or
+//// a local named like a template function is the value called there, and the
+//// template stays the name's everywhere else.
+
+fn shout(comptime q: @Expr<string>) -> @Expr<string> {
+    return q.build("\"template " + q.text() + "\"");
+}
+
+fn run(shout: fn(string) -> string) -> string {
+    return shout("x");
+}
+
+pub fn main() {
+    @print(shout "before");
+    @print(run({ s -> "param " + s }));
+    val shout: fn(string) -> string = { s -> "local " + s };
+    @print(shout("a"));
+    @print(shout "b");
+}

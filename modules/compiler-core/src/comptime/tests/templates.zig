@@ -1422,3 +1422,33 @@ test "infer: a behavior method the receiver's type adopts, named like a template
         \\}
     );
 }
+
+test "infer: template-call-unexpanded ---- the backstop refuses a template call left without an expansion, and lets a local named like the template through (decision 425)" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var env = try freshTestEnv(alloc);
+    defer env.deinit();
+    const src =
+        \\fn shout(comptime q: @Expr<string>) -> @Expr<string> { return q; }
+        \\fn run(shout: fn(string) -> string) -> string { return shout("x"); }
+        \\pub fn main() { @print(shout "a"); @print(run({ s -> s })); }
+    ;
+    var lx = Lexer.init(src);
+    var p = Parser.init(try lx.scanAll(alloc));
+    const program = try p.parse(alloc);
+    _ = try inferMod.inferProgramTyped(&env, program);
+    // The parameter's call is the parameter's: it owes no expansion.
+    try std.testing.expectEqual(@as(usize, 1), env.templateExpansions.count());
+    try inferMod.refuseUnexpandedTemplateCalls(&env, program);
+    // A template call the compiler did not expand — no program reaches one —
+    // is refused where it is written.
+    env.templateExpansions.clearRetainingCapacity();
+    try std.testing.expectError(error.TypeError, inferMod.refuseUnexpandedTemplateCalls(&env, program));
+    const te = env.lastError.?;
+    try std.testing.expectEqual(@as(usize, 3), te.loc.?.line);
+    try std.testing.expectEqual(@as(usize, 24), te.loc.?.col);
+    const msg = try te.message(std.testing.allocator);
+    defer std.testing.allocator.free(msg);
+    try std.testing.expectEqualStrings("template-call-unexpanded: `shout \"…\"` calls a template function here, where the compiler does not expand it", msg);
+}

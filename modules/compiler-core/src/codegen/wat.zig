@@ -1874,6 +1874,10 @@ const Emitter = struct {
     /// A module-level `val`'s print shape (a tuple or an array), which a function body reads
     /// where `print_shape_locals` (cleared per function) has no entry for the name.
     print_shape_globals: std.StringHashMap([]const u8),
+    /// A module-level `val` written as a lambda (`val g = { x -> … }`): its
+    /// parameters and body, so a call `g(…)` from a function body is judged
+    /// as one through a closure local is (`closureCallIsString`).
+    global_lambdas: std.StringHashMap(GlobalLambda),
     arr_globals: std.StringHashMap(void),
     bool_globals: std.StringHashMap(void),
     /// Every emitted WAT function symbol → its signature.
@@ -2338,6 +2342,7 @@ const Emitter = struct {
             .arr_locals = std.StringHashMap(void).init(alloc),
             .print_shape_locals = std.StringHashMap([]const u8).init(alloc),
             .print_shape_globals = std.StringHashMap([]const u8).init(alloc),
+            .global_lambdas = std.StringHashMap(GlobalLambda).init(alloc),
             .arr_globals = std.StringHashMap(void).init(alloc),
             .bool_globals = std.StringHashMap(void).init(alloc),
             .fn_sigs = std.StringHashMap(FnSig).init(alloc),
@@ -2410,6 +2415,7 @@ const Emitter = struct {
         self.arr_locals.deinit();
         self.print_shape_locals.deinit();
         self.print_shape_globals.deinit();
+        self.global_lambdas.deinit();
         self.arr_globals.deinit();
         self.bool_globals.deinit();
         self.fn_sigs.deinit();
@@ -2598,6 +2604,8 @@ const Emitter = struct {
                 // `val t = #(a, flag)`: a function body reads `t.flag` as a `bool` through the
                 // tuple's shape, which only the initialiser says.
                 if (try self.printShapeOf(v.value.*)) |sh| if (sh[0] == '(') try self.print_shape_globals.put(v.name, sh);
+                if (v.value.* == .function and v.value.function.kind.syntax == .lambda)
+                    try self.global_lambdas.put(v.name, .{ .params = v.value.function.kind.params, .body = v.value.function.kind.body });
                 // `val g = greet` types `g` by `greet`'s declaration (the
                 // local's rule, `.localBind`); a fn declared further down is
                 // typed by `typeFnValueGlobals` once every signature is known.
@@ -9332,6 +9340,15 @@ const Emitter = struct {
                     self.expected_ctor = pt;
                 };
                 defer self.expected_ctor = null;
+                // A lambda passed for a function-typed parameter takes its
+                // parameter types from the declaration, as one bound to an
+                // annotated `val` does: `{ p -> p.nome }` for `fn(Pessoa) ->
+                // Pessoa` reads `Pessoa`'s field, `{ s -> "a" + s }` for
+                // `fn(string) -> string` concatenates.
+                if (ptref) |pt| if (pt == .function and arg.value.* == .function) {
+                    self.expected_fn = pt;
+                };
+                defer self.expected_fn = null;
                 if (ptref) |pt| if (isUnionArrayTypeRef(pt) and isArrayLit(arg.value.*)) {
                     self.expected_union_array = true;
                 };
@@ -12915,6 +12932,8 @@ const Emitter = struct {
 
     const FnCells = struct { params: []const Cell, ret: Cell };
 
+    const GlobalLambda = struct { params: []const []const u8, body: []const ast.Stmt };
+
     /// The cells a call through a function value passes its float and
     /// 64-bit arguments in and reads its answer out of: from the lambda the
     /// closure local holds, else from the function type of the value — a
@@ -15973,7 +15992,15 @@ const Emitter = struct {
                     if (self.genericResultArg(cc)) |a| break :blk self.isStringExpr(a);
                     if (cc.receiver == null and self.locals.contains(cc.callee)) {
                         if (self.closure_locals.get(cc.callee)) |li| break :blk self.closureCallIsString(li, cc);
-                    }
+                    } else if (cc.receiver == null and cc.calleeExpr == null) if (self.global_lambdas.get(cc.callee)) |gl| {
+                        // `g()` over a module-level `val g = { -> "x" }`.
+                        const flags = self.arena().alloc(bool, gl.params.len) catch break :blk false;
+                        for (flags, 0..) |*f, i| f.* = i < cc.args.len and self.isStringExpr(cc.args[i].value.*);
+                        const saved = self.param_shape;
+                        defer self.param_shape = saved;
+                        self.param_shape = .{ .names = gl.params, .str = flags };
+                        break :blk self.bodyIsString(gl.body);
+                    };
                     // `lam.value("e")` over a constructor-stored lambda.
                     // Only a yes: the field's declared type may say more than
                     // the body judged alone (`v.tagOf(e)` over `fn(e: El) -> string`).

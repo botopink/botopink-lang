@@ -464,6 +464,14 @@ record), as does any argument whose type is written (`typeRefOf`) —
 `conformance/modules/generic_field_fn_value_nested`. A function value answering
 an `f64` is still refused (`call_indirect` answers an `i32`).
 
+**A lambda argument is typed by the parameter it is passed for.** A call of a
+module function sets `expected_fn` from the parameter's declared function type
+(`fn_param_typerefs`), so `{ p -> p.nome }` for `fn(Pessoa) -> Pessoa` reads
+`Pessoa`'s field and `{ s -> "a" + s }` for `fn(string) -> string`
+concatenates (`modules/lambda_param_shared_field`). A call of a module-level
+`val` written as a lambda (`global_lambdas`) is judged as a closure local's is
+(`modules/template_in_module_val_lambda`).
+
 **A lambda in such a field is typed where it is used, or is refused.** The field
 says nothing (`T`), so `lowerRecordCtor` leaves the lifted lambda's
 `param_known` false unless the constructor stands where a type is written for

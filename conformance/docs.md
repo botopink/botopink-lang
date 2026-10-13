@@ -1420,6 +1420,13 @@ any function expression does:
 
 <!-- example: modules/fn_expr_typed_field_mismatch -->
 
+A lambda passed for a function's parameter reads its parameters as the
+parameter's function type says: `{ p -> p.nome }` for `fn(Pessoa) -> Pessoa`
+reads `Pessoa`'s `nome` though another record declares a field of the name,
+and `Pessoa(...p, idade: 31)` spreads a `Pessoa`:
+
+<!-- example: modules/lambda_param_shared_field -->
+
 <!-- example: modules/decorator_member_fn_tail -->
 
 A function value is a value like any other: a tuple's element holds one, read by position and
@@ -2285,11 +2292,24 @@ styledProperty "tab-size: 4;"` is emitted as `styledConstant("s_…",
 
 A template call expands wherever an expression may stand (decision 425): a
 function's or a type's method body, a destructuring initializer
-(`val #(n, total) = f "…";`), a lambda, an argument, a record field's or a
+(`val #(n, total) = f "…";`), a lambda (one a module-level `val` holds
+included), an argument, a record field's or a
 parameter's default (each call that leaves it out gets the expansion), a
 `case` arm. A call the compiler did not expand is refused where it is
 written (`template-call-unexpanded`), never left to run as a call of a
 function that exists only at build.
+
+<!-- example: modules/template_in_module_val_lambda -->
+
+A template function's name follows the scope rule: the nearest binding wins,
+so a parameter or a local of the name is the value a call there calls
+(`fn run(shout: fn(string) -> string) { return shout("x"); }`), and the
+template is the name's everywhere else. Named without a call a template
+function is no value — it exists only while the program compiles — and
+`val f = shout;` is refused where the name is read (`template-function-value`).
+
+<!-- example: modules/template_name_shadowed_by_local -->
+<!-- example: modules/template_function_value -->
 
 A template a library exports answers a type of the library's, and the call's
 value is that type wherever it was not imported: its fields and their methods

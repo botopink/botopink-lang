@@ -926,6 +926,11 @@ pub const template_annotation_only: []const u8 = "template-annotation-only";
 /// exists only at build. Refused at the call.
 pub const template_call_unexpanded: []const u8 = "template-call-unexpanded";
 
+/// Decision 425 — a template function named without a call (`val f = shout;`,
+/// an argument): it exists only at build, so it is no value. Refused at the
+/// reference.
+pub const template_function_value: []const u8 = "template-function-value";
+
 /// Decision 415 (2) — `setMeta` / `addMeta` / `addMember` / `addType` /
 /// `wrapWith` on a declaration a template body looked up (`q.lookup`): the
 /// handle is read-only. Refused at the call.

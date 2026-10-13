@@ -4536,7 +4536,7 @@ fn expandTemplateFieldDefaults(env: *Env, program: ast.Program) InferError!void 
 /// a run-time call of a function that is not there. Refused at the call
 /// (`template-call-unexpanded`), never left to run as `undefined`. A
 /// template's or a decorator's own body runs at build and is not walked.
-fn refuseUnexpandedTemplateCalls(env: *Env, program: ast.Program) InferError!void {
+pub fn refuseUnexpandedTemplateCalls(env: *Env, program: ast.Program) InferError!void {
     var finder: UnexpandedTemplateCall = .{ .env = env };
     for (program.decls) |d| {
         if (d == .@"fn") {
@@ -4562,8 +4562,8 @@ const UnexpandedTemplateCall = struct {
         if (V == ast.Expr) if (v == .call and v.call.kind == .call) {
             const c = v.call.kind.call;
             if (!c.is_builtin and c.calleeExpr == null and
-                (if (c.receiver == null) templateFnNamed(self.env, c.callee) != null else templateMethodNamed(self.env, c.callee) != null and
-                    !self.env.templateMethodDeclined.contains(v.call.loc)) and
+                (if (c.receiver == null) templateFnNamed(self.env, c.callee) != null else templateMethodNamed(self.env, c.callee) != null) and
+                !self.env.templateMethodDeclined.contains(v.call.loc) and
                 !self.env.templateExpansions.contains(v.call.loc))
             {
                 self.found = .{ .callee = c.callee, .loc = v.call.loc };
@@ -4587,6 +4587,18 @@ const UnexpandedTemplateCall = struct {
         }
     }
 };
+
+/// A template function's name as a receiver (`qlib.make(5)`, where a library
+/// names its template after itself and the name is also the library's
+/// namespace handle): typed by the template's binding, as before
+/// `template-function-value`, which refuses the name read as a value.
+fn templateNameReceiver(env: *Env, recv: ast.Expr) InferError!?*ast.TypedExpr {
+    if (recv != .identifier or recv.identifier.kind != .ident) return null;
+    const rn = recv.identifier.kind.ident;
+    if (env.localBindDepth(rn) != null or templateFnNamed(env, rn) == null) return null;
+    const ty = env.lookup(rn) orelse return null;
+    return try makeTypedPtr(env, TypedExpr{ .identifier = .{ .loc = recv.identifier.loc, .type_ = ty, .kind = .{ .ident = rn } } });
+}
 
 /// Whether any annotation of `program` is a template annotation `#[f "…"]`.
 fn hasTemplateAnnotation(env: *Env, program: ast.Program) InferError!bool {
@@ -14548,6 +14560,15 @@ fn inferIdentifierExpr(env: *Env, ident: ast.IdentifierExprOf(.untyped), loc: as
                 try refuseKeyedWholeRead(env, name, ty, loc);
                 if (env.localBindDepth(name) == null) if (env.stdContextNames.get(name)) |which| if (which == .provide or which == .context)
                     return refuseContextHookWithoutUse(env, name, loc);
+                // A template function exists only while the program
+                // compiles: named without a call it is no value, refused
+                // where it is read (a local of the name is the local).
+                if (env.localBindDepth(name) == null) if (templateFnNamed(env, name) != null) {
+                    const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` is a template function, which exists only while the program compiles, so it is no value", .{ diagnostics.template_function_value, name });
+                    const hint = try std.fmt.allocPrint(env.arena, "Call it where its code should stand (`{s} \"…\"`); a template call expands there (decision 425).", .{name});
+                    env.lastError = TypeError.custom(msg, hint).withLoc(loc);
+                    return error.TypeError;
+                };
                 // A generic fn referenced as a value (`val f = identity;`,
                 // `xs.map(identity)`) gets its own instantiation — the
                 // scheme's `.generic` vars must never reach `unify`.
@@ -14685,8 +14706,8 @@ fn inferIdentifierExpr(env: *Env, ident: ast.IdentifierExprOf(.untyped), loc: as
             // Optional chaining (`a?.b`): the receiver may be `?T` — resolve the
             // member on the inner `T` and wrap the result back into an optional
             // (already-optional member types are not double-wrapped).
-            const recvTyped = try inferExprTyped(env, ia.receiver.*);
-            const recvPtr = try makeTypedPtr(env, recvTyped);
+            const recvPtr = if (try templateNameReceiver(env, ia.receiver.*)) |tr| tr else try makeTypedPtr(env, try inferExprTyped(env, ia.receiver.*));
+            const recvTyped = recvPtr.*;
             var recvType = recvTyped.getType().deref();
             if (ia.optional) try refuseNeverNull(env, recvType, "?.", loc);
             if (ia.optional) {
@@ -20236,6 +20257,7 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                             } });
                         }
                     }
+                    if (try templateNameReceiver(env, recvExpr.*)) |tr| break :blk tr;
                 }
                 break :blk try makeTypedPtr(env, try inferExprTyped(env, recvExpr.*));
             } else null;
@@ -21029,6 +21051,13 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                 return error.TypeError;
             };
             try refuseAmbiguousVariant(env, call.callee, calleeTypeRaw, loc);
+            // The nearest binding wins: a parameter or a local named like a
+            // module function (a template, one with comptime parameters) is
+            // the value called here, never that function — no expansion, no
+            // capture. A template's name so hidden owes no expansion
+            // (`refuseUnexpandedTemplateCalls`).
+            const localCallee = env.localBindDepth(call.callee) != null;
+            if (localCallee and templateFnNamed(env, call.callee) != null) try env.templateMethodDeclined.put(loc, {});
             // Decision 110 — `D(…)` for `import {Dict as D}` constructs the
             // declared `Dict`: the name moves at the call (the channel that
             // renames a tuple-label callee), so no backend sees `D`.
@@ -21051,15 +21080,15 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                 .func => |f| blk: {
                     // Constrained comptime typeparam args are validated against their
                     // declared constraints; their param slots skip ordinary unification.
-                    const typeparams = env.lookupTypeparams(call.callee);
+                    const typeparams = if (localCallee) null else env.lookupTypeparams(call.callee);
                     if (typeparams) |constraints| try validateTypeparams(env, constraints, typedArgs);
                     // `expr` meta-kind params capture their argument unevaluated
                     // instead of unifying it against `expr T` (expr-templates F4).
-                    const exprParams = env.lookupExprParams(call.callee);
+                    const exprParams = if (localCallee) null else env.lookupExprParams(call.callee);
                     // Decision 311, question s29-a — a template taking the
                     // annotated declaration's `@Decl` is written only as an
                     // annotation, `#[f "…"]`.
-                    if (templateFnNamed(env, call.callee)) |tfn| if (memberFn.isTemplateAnnotation(tfn)) {
+                    if (!localCallee) if (templateFnNamed(env, call.callee)) |tfn| if (memberFn.isTemplateAnnotation(tfn)) {
                         const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` takes the annotated declaration (`comptime {s}: @Decl`), so it is written as an annotation `#[{s} \"…\"]`, never called", .{ diagnostics.template_annotation_only, call.callee, tfn.params[1].name, call.callee });
                         env.lastError = TypeError.custom(msg, "A template called in an expression has no declaration to record on; write the template without the `@Decl` parameter for a call site (decision 311, question s29-a).").withLoc(loc);
                         return error.TypeError;
@@ -21090,7 +21119,7 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                             const filled: ?envMod.DefaultFill = fillBlk: {
                                 if (call.args.len > f.params.len) break :fillBlk null;
                                 if (typeparams != null or exprParams != null) break :fillBlk null;
-                                if (env.templateFns.get(call.callee) != null) break :fillBlk null;
+                                if (!localCallee and env.templateFns.get(call.callee) != null) break :fillBlk null;
                                 const declared = declParamsAst orelse break :fillBlk null;
                                 if (declared.len != f.params.len) break :fillBlk null;
                                 break :fillBlk try recordDefaultFill(env, loc, declared, typedArgs);
@@ -21126,7 +21155,7 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                         // checker typed `y`'s value against `x` and the backends
                         // passed `b` as `a` (a fully-labelled self tail call
                         // assigned its arguments crosswise and never ended).
-                        if (typeparams == null and exprParams == null and env.templateFns.get(call.callee) == null) {
+                        if (typeparams == null and exprParams == null and (localCallee or env.templateFns.get(call.callee) == null)) {
                             if (declParamsAst) |declared| if (declared.len == f.params.len) {
                                 if (try planLabelledCall(env, call.callee, declared, typedArgs, loc)) |plan| {
                                     try env.defaultInjections.put(loc, plan);
@@ -21161,7 +21190,7 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                         }
                         // Look up the template fn before the loop so non-@Expr
                         // params can also be collected as plain arg bindings.
-                        const maybeTfn: ?ast.FnDecl = env.templateFns.get(call.callee);
+                        const maybeTfn: ?ast.FnDecl = if (localCallee) null else env.templateFns.get(call.callee);
                         var captures: std.ArrayListUnmanaged(template.CapturedExpr) = .empty;
                         var plainArgs: std.ArrayListUnmanaged(template.PlainArg) = .empty;
                         for (typedArgs, f.params, 0..) |ta, paramType, i| {

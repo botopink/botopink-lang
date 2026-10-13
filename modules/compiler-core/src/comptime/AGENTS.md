@@ -857,7 +857,16 @@ default holding a template call is inferred once after Pass 2
 shares the node) carries the expansion. `refuseUnexpandedTemplateCalls`
 (`UnexpandedTemplateCall`, a reflective AST walk skipping template and
 decorator bodies) refuses any call of a template function left without an
-expansion, at the call (`template-call-unexpanded`). Cells:
+expansion, at the call (`template-call-unexpanded`; a unit test in
+`tests/templates.zig` pins it — no program reaches it). The nearest binding
+wins: a free call whose callee is a parameter or a local (`Env.localBindDepth`)
+is that value's — no capture, no expansion, recorded in
+`templateMethodDeclined` so the backstop lets it through, and
+`transform.localFnOf` never takes a template for the module function of the
+name. A template function named without a call is refused where it is read
+(`template-function-value`, `inferIdentifierExpr`). Cells:
+`modules/template_name_shadowed_by_local`, `modules/template_function_value`,
+`modules/template_in_module_val_lambda`,
 `modules/template_in_type_method`, `modules/template_destructuring_init`,
 `modules/template_in_lambda`, `modules/template_in_argument`,
 `modules/template_in_field_default`, `modules/template_in_case_arm`.

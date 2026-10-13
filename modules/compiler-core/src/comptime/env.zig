@@ -824,10 +824,11 @@ pub const Env = struct {
     /// replaces the call. Recorded by inference (post splice + re-check); the
     /// transform pass rewrites the untyped AST from this map.
     templateExpansions: std.AutoHashMap(ast.Loc, *const ast.Expr),
-    /// Decisions 311 (3), 415 (1) — receiver calls named like a template
-    /// method of the scope that inference resolved to something else (a
-    /// method of the receiver's own type, a `"std"` namespace's function):
-    /// no expansion is owed there (`refuseUnexpandedTemplateCalls`).
+    /// Decisions 311 (3), 415 (1) — calls named like a template of the scope
+    /// that inference resolved to something else (a method of the receiver's
+    /// own type, a `"std"` namespace's function; for a free call, a parameter
+    /// or a local of that name, the nearest binding): no expansion is owed
+    /// there (`refuseUnexpandedTemplateCalls`).
     templateMethodDeclined: std.AutoHashMap(ast.Loc, void),
     /// Reference ASTs from `q.custom(tree, code)` (expr-custom): call loc → the
     /// canonical `CustomNode` tree + provenance. Sibling of `templateExpansions`

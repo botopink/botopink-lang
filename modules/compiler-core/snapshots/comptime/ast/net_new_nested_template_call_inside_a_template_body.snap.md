@@ -11,7 +11,7 @@ val s = outer "x";
 
 ----- BOTOPINK TRANSFORM CODE -- main.bp
 ```botopink
-pub val s = inner();
+pub val s = inner("deep");
 ```
 
 ----- TYPED AST JSON -- main.json
