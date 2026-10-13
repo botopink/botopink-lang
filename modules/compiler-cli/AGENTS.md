@@ -77,7 +77,11 @@ compiler-cli/
 │   │                          all three, decision 513); `cell check` keeps the store where the cells
 │   │                          live; the member's own module never stored; a changed
 │   │                          byte misses; `--cold` rewrites every entry; two
-│   │                          concurrent writers leave whole entries, nothing staged
+│   │                          concurrent writers leave whole entries, nothing staged.
+│   │                          An inode it compares is pinned by a link of its own
+│   │                          (here, in level_b.sh and test_tooling.sh): ext4 reuses a
+│   │                          freed inode at once, so an entry written twice could land
+│   │                          on the inode it was read at
 │   └── level_b.sh           ← the code cache's level B (144 B-60): over the closure
 │   │                          invariant's fixture, `build --cold`, a build that
 │   │                          writes `.botopinkbuild/analysis/`, one that reads it —

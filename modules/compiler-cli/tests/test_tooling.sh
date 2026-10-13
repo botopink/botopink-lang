@@ -500,6 +500,9 @@ for t in commonJS erlang beam wasm; do
   [[ -n "$lib_entry" ]] || { rm -rf "$UNITWORK"; fail "$t: \`botopink test\` wrote no level B entry for its dependency"; }
   ! find "$UNITWORK" -path "*/.botopinkbuild/analysis/$t/unitapp.bpa" | grep -q . || { rm -rf "$UNITWORK"; fail "$t: the package under test was stored"; }
   entry_inode="$(stat -c %i "$lib_entry" 2>/dev/null || stat -f %i "$lib_entry")"
+  # Pinned by a link of our own: a rewrite can never land on the freed inode
+  # (ext4 reuses one at once) and read as "not written again".
+  ln -f "$lib_entry" "$UNITWORK/.pin-$t"
   set +e
   again="$( cd "$UNITWORK/app" && "$BP_BIN" test --target "$t" 2>&1 )"
   code=$?

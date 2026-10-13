@@ -138,6 +138,14 @@ ok "the changed module compiled and stored beside the old entries"
 
 echo "==> --cold reads nothing and writes what it ran"
 BEFORE="$(inodes)"
+# Pin every entry's inode with a link of our own while the cold run writes:
+# ext4 hands a freed inode number to the next file it creates, so an entry
+# written twice by the cold run (the build's check, then `run`'s compile) can
+# land on the inode it started on, and "another inode" would read as "never
+# rewritten". A pinned inode is never freed, so a rewrite always shows.
+PIN="$WORK/pin"
+mkdir -p "$PIN"
+while read -r ino rel; do ln "$STORE/$rel" "$PIN/$ino"; done <<<"$BEFORE"
 run_in "$WS/one" run --target erlang --cold
 [[ $CODE -eq 0 ]] && grep -q '^hullo one$' <<<"$OUT" || { echo "$OUT" >&2; fail "a cold run"; }
 [[ "$(links "$WS/one/out/erl/lib@root.beam")" -eq 1 ]] || fail "--cold links nothing from the store"
@@ -145,6 +153,7 @@ run_in "$WS/one" run --target erlang --cold
 REWRITTEN="$(join <(echo "$BEFORE" | awk '{print $2, $1}' | sort) <(inodes | awk '{print $2, $1}' | sort) | awk '$2 != $3' | wc -l | tr -d ' ')"
 DEP_NOW="$(find "$WS/one/out/erl" -name '*@*.erl' ! -name 'one@*' | wc -l | tr -d ' ')"
 [[ "$REWRITTEN" -eq "$DEP_NOW" ]] || fail "--cold rewrote every entry of the run's dependencies ($REWRITTEN of $DEP_NOW)"
+chmod -R u+w "$PIN"; rm -rf "$PIN"
 ok "every dependency compiled afresh and its entry written again"
 
 echo "==> two concurrent writers leave one whole entry"

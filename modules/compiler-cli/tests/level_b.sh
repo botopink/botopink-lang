@@ -107,8 +107,16 @@ for variant in commonJS erlang beam wasm wasm.browser; do
 done
 
 # Read, not rewritten: the entry's inode survives a warm build, `check` and
-# `test`; a changed byte of shelf writes a new one.
-inode() { stat -c %i "$1" 2>/dev/null || stat -f %i "$1"; }
+# `test`; a changed byte of shelf writes a new one. Every inode read is pinned
+# by a link of our own, so it is never freed: ext4 hands a freed inode number
+# to the next file it creates, and an entry written again could otherwise land
+# on the inode it was read at — "rewritten" reading as "kept".
+inode() {
+  local i
+  i="$(stat -c %i "$1" 2>/dev/null || stat -f %i "$1")"
+  ln -f "$1" "$WORK/.pin-$i" 2>/dev/null || true
+  echo "$i"
+}
 size() { stat -c %s "$1" 2>/dev/null || stat -f %z "$1"; }
 entry="$ANALYSIS/erlang/shelf.bpa"
 before="$(inode "$entry")"
