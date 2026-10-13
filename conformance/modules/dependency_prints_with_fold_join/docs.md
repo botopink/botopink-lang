@@ -1,5 +1,10 @@
 # dependency_prints_with_fold_join
 
-A cell with a `path` dependency prints like any other, on every target, whether or not it calls the dependency: the
-dependency's functions are linked whole, so a body the backend cannot lower there (`acc.split(c).join("")` inside a
-`fold` lambda) must not stop `main` from running.
+The reference text this cell shows (from `conformance/docs.md`, § Lambdas and method chains):
+
+> A dependency's module holding such a function builds as the
+> program's own does, so a program importing it prints the same whether or not
+> it calls the function:
+
+`strip`'s `residue` chains `split` and `join` on a `fold` accumulator; `main` imports it, calls nothing of it and prints
+`hello` on every target.

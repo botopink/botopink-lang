@@ -53,7 +53,12 @@ stderr <text>            after `abort`: the program's stderr contains <text>
 
 A refusal and program output never share a file, and the header alone is the
 empty answer — a module that compiles and, for `main`, a program that printed
-nothing.
+nothing. A `label` follows its `at` once: one with no `at` before it, a second
+one, or one in a file of program output makes the `.snap` malformed; a label
+that changes, disappears or appears where none is accepted is a different
+answer. An `at` names its file relative to the cell — `src/main.bp`,
+`botopink.json` (the column of the key that is refused), a dependency's module
+under `deps/<lib>/…` — wherever the cell is checked from.
 
 ## Syntax changes
 
@@ -77,6 +82,13 @@ A Botopink program is a sequence of declarations — bindings, functions, types,
 imports, and module declarations. Execution starts at `fn main()`.
 
 <!-- example: modules/hello -->
+
+A package to run declares `fn main` in its entry module: `botopink run` of one
+whose entry module declares none refuses before running anything, located at
+that module and naming the missing `fn main` (decision 517) — the same answer
+on commonJS, erlang, beam and wasm, under the `wasi` and the `browser` host:
+
+<!-- example: modules/run_without_main -->
 
 ### Modules
 
@@ -457,7 +469,12 @@ written, rather than binding nothing in silence.
 
 A keyword is reserved in every position: no binding, parameter or field may
 take its name (`from`, `type`, `case`, …). Writing one where a name is declared
-is `reserved-word-as-name`, which names the word.
+is `reserved-word-as-name`, which names the word, and the label under the caret
+names it too (``reserved word `from` ``):
+
+<!-- example: modules/reserved_word_field_name -->
+
+<!-- example: modules/reserved_word_param_name -->
 
 ### val — immutable binding
 
@@ -738,6 +755,11 @@ positional at run time; a label is a compile-time name, lent by the variable
 used to build it or written in the type:
 
 <!-- example: modules/tuple_label_from_variable -->
+
+A tuple's `bool` element prints `true` / `false`, read by its label or its
+index, a module-level tuple's read inside a function too:
+
+<!-- example: modules/global_tuple_bool_field -->
 
 ### type — enums
 
@@ -1439,6 +1461,16 @@ and `Pessoa(...p, idade: 31)` spreads a `Pessoa`:
 
 <!-- example: modules/decorator_member_fn_tail -->
 
+A lambda handed to `fold` reads its accumulator as the initial value's type:
+over a string, `{ acc, c -> acc.split(c).join("") }` chains string and array
+methods on `acc`. A dependency's module holding such a function builds as the
+program's own does, so a program importing it prints the same whether or not
+it calls the function:
+
+<!-- example: modules/fold_split_join_lambda -->
+
+<!-- example: modules/dependency_prints_with_fold_join -->
+
 A function value is a value like any other: a tuple's element holds one, read by position and
 called after its arguments are evaluated (`p.0("abc")`):
 
@@ -1558,7 +1590,15 @@ pattern, `..` (exclusive) in a `for` and a slice. `1..9` in an arm is
 
 A name alone is not a pattern: to give the matched value a name, bind it in the
 body (`_ { n -> … }`). The one exception is the optional, below, where the name
-after the `null` arm *is* the pattern.
+after the `null` arm *is* the pattern. `n { … }` is `case-bare-name-arm`, the
+label under it naming the binder to write:
+
+<!-- example: modules/case_bare_name_arm -->
+
+A constant is not a pattern either: `MAX { … }` is `case-constant-pattern`, the
+label under it naming the guard to write (`_ when (x == MAX) { … }`):
+
+<!-- example: modules/case_constant_pattern -->
 
 The `pattern -> value` arm is no exception: `k -> k + 1` is refused at the arm
 as `k { … }` is.
@@ -2307,6 +2347,15 @@ reaches carry the same values.
 
 <!-- example: modules/comptime_section_value -->
 
+A `comptime` whose evaluation raises is refused at the call that raised
+(decision 451 (3)) — the innermost of this module's calls the raise leaves,
+`@panic` in a function the `comptime` called — not at the `comptime`
+expression, which the hint names as the frame that ran it:
+
+<!-- example: modules/typeinfo_all_duplicate_at_entry -->
+
+<!-- example: modules/comptime_random_float_unseeded -->
+
 ### Template functions
 
 A function taking `comptime q: @Expr<…>` expands at the call site; `@expr`
@@ -2340,12 +2389,15 @@ is that value, read as data (a record is its fields); for any other hole (a para
 call of a `Run` function or of one that prints) `known` is false and `value` is `null`, and the hole is the program's to
 compute. The rule reads the hole's value, never the literal's text. A hole
 known at build is evaluated as a `comptime` is, and a value that raises there
-is refused at the hole. So a template can write its answer as a constant when
+is refused naming the hole, at the call that raised (§ Compile-time
+evaluation). So a template can write its answer as a constant when
 every hole is known — `styled "${tab4} color: red;"` with `tab4 =
 styledProperty "tab-size: 4;"` is emitted as `styledConstant("s_…",
 ".s_…{tab-size:4;color:red}")` — and leave the holes to the program otherwise:
 
 <!-- example: modules/template_known_at_build -->
+
+<!-- example: modules/hole_known_at_build_raises -->
 
 A template call expands wherever an expression may stand (decision 425): a
 function's or a type's method body, a destructuring initializer
@@ -2377,6 +2429,12 @@ resolve on every target, as they do on the value of an imported function
 (`built.size.toString()` after `val built = shelf "built"`).
 
 <!-- example: modules/template_answer_method -->
+
+A library's default handle is also its namespace: after `import {shapes} from
+"shapes"`, where the package's default module declares the template `shapes`,
+`shapes.twice(21)` calls that module's member `twice`, on every target:
+
+<!-- example: modules/default_handle_member -->
 
 **A call is typed by the code it built** (decision 426). The type of a
 template call is the type of the code the template built for that call,
@@ -2538,6 +2596,23 @@ src/tpl.bp:3:5 while `shout` ran the template's body``).
 <!-- example: modules/decorator_raise_names_body_file -->
 
 <!-- example: modules/template_raise_names_body_file -->
+
+A body declared in the annotated module that raises is refused at the call that
+raised (decision 451 (3)) — the innermost of this module's calls the raise
+leaves, in the body or in a function of the module the body calls — and the
+hint names the annotation that ran the body as its frame (``raised by this call
+while `#[short]` (at 17:3) ran the decorator's body``):
+
+<!-- example: modules/decorator_helper_raise_located -->
+
+<!-- example: modules/decorator_random_float_unseeded -->
+
+A decorator's body reaches the std modules its module imports, a nested
+namespace included (`io.random.seed(7)` after `import {io} from "std"`); a body
+whose run fails is checked with them bound, so its answer is its own error —
+never the namespace read as unbound:
+
+<!-- example: modules/decorator_nested_std_namespace -->
 
 A member a decorator adds is written as if by hand: a record update in its body
 (`Point(..self, y: 0)`) copies every field it does not name. A decorator's body
@@ -3297,7 +3372,9 @@ string in a `+`.
 draws it, so a seed gives the same draws there, in a wasm program and at
 comptime on every target. Before any seed a wasm program's `seededFloat()`
 draws the host's entropy (`.RandomF64`'s); at comptime that draw is refused,
-located — a build has no entropy and never pretends to.
+located at the call that drew it, in a `comptime` expression or a decorator body
+alike (`comptime_random_float_unseeded`, `decorator_random_float_unseeded`) — a
+build has no entropy and never pretends to.
 
 An adapter answering `@Task<T>` (decision 393) is declared over one type
 parameter and checked by **shape** at the annotation — the signature in the
@@ -3546,6 +3623,15 @@ build a fixture project — reads its path from the `BOTOPINK_BIN` environment
 variable: `botopink test` sets it to its own executable for the tests it runs,
 unless the caller already set it.
 
+A module's tests are a unit of their own (decision 513): the module's code is
+the same under `botopink build`, `run` and `test`, and its `test` blocks are
+compiled beside it only under `botopink test` of the package under test — a
+dependency's tests are never compiled or run. A test block reads its module's
+private functions and module-level `val`s as the module's own code does, on
+every target (`botopink test` on wasm runs the `wasi` host):
+
+<!-- example: test/module_init.bp -->
+
 A test body is a **fallible context**: a `try` whose operand is an `Error(e)`
 ends the test as `FAIL <name>  (<e>)  at <file>:<line>` — `e` is the message
 (a non-string `e` is rendered) and the `at` is the test's own line. The
@@ -3574,7 +3660,7 @@ matchers `eq` / `anyInt` / `anyString` pick which call a stub answers, and
 old `onze` library, retired into std (1.0.10-beta front 01-std, decision 71).
 commonJS, erlang and beam — its cells are `pub declare fn` with a Node and an
 Erlang template each (beam reads the Erlang one), so `import {testing.mocks} from "std"`
-is refused on wasm, where `botopink test` does not run.
+is refused on wasm.
 
 <!-- example: test/mocks_handwritten_double.bp -->
 

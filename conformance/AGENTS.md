@@ -596,6 +596,11 @@ argument); both `unexpected ','` / a comparison on the parent binary.
 the call in `src/main.bp` with the message naming `src/tpl.bp:3:5` (the parent binary named no file) — and B-27's
 the project suite `test/bpp_header_test` (a `test` written in a `.bpp` header, found and run by `botopink test`
 on commonJS, erlang and beam; a pin).
+144 B-48 (decision 451 (3): a raise in a body of this module is located at the call that raised) re-records
+`decorator_random_float_unseeded`, `comptime_random_float_unseeded`, `hole_known_at_build_raises` and
+`typeinfo_all_duplicate_at_entry`; its Conformance step adds `modules/decorator_helper_raise_located` — a decorator
+body calling a helper of its module whose `@panic` raises, refused at that `@panic` (8:28), red on B-48's parent,
+which located it at the annotation (17:3).
 Decision 255 (2) (`comptime <expr>` is `comptime { break <expr>; }`) adds `modules/comptime_expression_is_block`
 (a module-level shorthand equal to its block form, and the same in a body) and
 `modules/comptime_expression_static_call` (the decision's own `val d: Dict<string, unknown> = comptime

@@ -2,6 +2,5 @@
 
 The reference text this cell shows (from `conformance/docs.md`, § type — records):
 
-> An anonymous group of values is a tuple, not a type declaration. A tuple is
-> positional at run time; a label is a compile-time name, lent by the variable
-> used to build it or written in the type:
+> A tuple's `bool` element prints `true` / `false`, read by its label or its
+> index, a module-level tuple's read inside a function too:
