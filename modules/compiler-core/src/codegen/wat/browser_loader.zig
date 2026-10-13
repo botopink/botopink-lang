@@ -19,7 +19,9 @@
 //! `_start` the loader drives the module from the event loop — no JSPI: while
 //! a host task is pending it waits for the next answer and hands it to the
 //! module's `__bp_ready(id)`, which settles the task and runs the ready ones,
-//! the same state machines `wasi`'s poll resumes.
+//! the same state machines `wasi`'s poll resumes. `bp_host.drop(id)` clears a
+//! timer that has not fired (a gate that opened before its wait's budget ran
+//! out): it is no longer pending.
 
 const std = @import("std");
 
@@ -88,6 +90,7 @@ const body =
     \\    w();
     \\  }
     \\}
+    \\const hostTimers = new Map();
     \\const bp_host = {
     \\  delay(ms) {
     \\    const id = ++hostSeq;
@@ -95,11 +98,21 @@ const body =
     \\    const end = performance.now() + ms;
     \\    const tick = () => {
     \\      const left = end - performance.now();
-    \\      if (left > 0) setTimeout(tick, Math.ceil(left));
-    \\      else hostAnswer(id);
+    \\      if (left > 0) hostTimers.set(id, setTimeout(tick, Math.ceil(left)));
+    \\      else {
+    \\        hostTimers.delete(id);
+    \\        hostAnswer(id);
+    \\      }
     \\    };
-    \\    setTimeout(tick, ms);
+    \\    hostTimers.set(id, setTimeout(tick, ms));
     \\    return id;
+    \\  },
+    \\  drop(id) {
+    \\    const t = hostTimers.get(id);
+    \\    if (t === undefined) return;
+    \\    clearTimeout(t);
+    \\    hostTimers.delete(id);
+    \\    hostPending--;
     \\  },
     \\};
     \\const { instance } = await WebAssembly.instantiate(bytes, { wasi_snapshot_preview1, bp_host });

@@ -150,6 +150,16 @@ is made and runs to its first `await`; it settles once.
   call (`refuseWideTaskValues`, `lowerCoerced`). The shape readers see an
   awaited adapter as the argument binding its `T` (`taskAdapterProxy`), an
   `async { }` block as its value (`asyncBlockValue`).
+- **Gates** (decision 334, std's `async`; `task_gate`): pending tasks over
+  fixed types. `wasi: .GateNew` `() -> unknown` is a task no host answers;
+  `wasi: .GateOpen` `(unknown) -> void` settles it with `1`, after dropping
+  the timer of each wait still pending on it (`$__task_host_cancel`,
+  `bp_host.drop` — the `browser` loader imports `drop` for it and clears the
+  timeout), so an open gate leaves no timer behind; `wasi: .GateAwait`
+  `(unknown, i32) -> @Task<bool>` races the gate and a `delay` of `0`, the
+  delay kept in the task's `+28` word. An adapter over fixed types that
+  answers a task says so (`Adapter.answers_task`, checked against the
+  declared `@Task`).
 
 ## Where this backend refuses to answer
 

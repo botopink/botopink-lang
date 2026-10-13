@@ -565,6 +565,10 @@ pub const HelperGroup = enum {
     /// `$__print_shaped_raw` with the `U` arm (`print_shaped_raw_unknown`).
     /// It holds no function of its own.
     print_shaped_unknown,
+    /// Decision 334 — std's `async` gates as pending tasks:
+    /// `$__task_gate_new`, `$__task_gate_open`, `$__task_gate_await` and
+    /// `$__task_host_cancel` (a wait's timer dropped when its gate opens).
+    task_gate,
 
     /// The groups `g`'s functions call into.
     pub fn deps(g: HelperGroup) []const HelperGroup {
@@ -599,6 +603,7 @@ pub const HelperGroup = enum {
             .task_race => &.{.task},
             .task_race_of => &.{ .task_race, .arr_new },
             .task_spawn_all => &.{ .task, .arr_new },
+            .task_gate => &.{.task_delay},
             else => &.{},
         };
     }
@@ -717,6 +722,10 @@ pub const Helper = enum {
     task_race,
     task_race_of,
     task_spawn_all,
+    task_gate_new,
+    task_gate_open,
+    task_gate_await,
+    task_host_cancel,
 
     pub fn symbol(h: Helper) []const u8 {
         return switch (h) {
@@ -750,6 +759,7 @@ pub const Helper = enum {
             .task_new, .task_start, .task_pending, .task_listen, .task_wait, .task_settle_i32, .task_settle_i64, .task_settle_f64, .task_wake, .task_enqueue, .task_drain, .task_block_on, .task_finish => .task,
             .task_host_poll => .task_poll,
             .task_host_add, .task_host_settle => .task_host,
+            .task_gate_new, .task_gate_open, .task_gate_await, .task_host_cancel => .task_gate,
             inline else => |t| @field(HelperGroup, @tagName(t)),
         };
     }

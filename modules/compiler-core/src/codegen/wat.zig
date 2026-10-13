@@ -1465,10 +1465,9 @@ fn emitWat(
     // (the `browser` loader answers from the event loop, `__bp_ready`).
     if (em.b.helpers.has(.task_host)) {
         try items.append(ar, .{ .import = prelude.bp_host_delay_import });
-        if (artifact != .browser) {
-            try items.append(ar, .{ .import = prelude.bp_host_wait_import });
-            try items.append(ar, .{ .import = prelude.bp_host_drop_import });
-        }
+        if (artifact != .browser) try items.append(ar, .{ .import = prelude.bp_host_wait_import });
+        // A gate drops a wait's timer (`$__task_host_cancel`), on both hosts.
+        if (artifact != .browser or em.b.helpers.has(.task_gate)) try items.append(ar, .{ .import = prelude.bp_host_drop_import });
     }
 
     var memory_at = items.items.len;
@@ -4645,6 +4644,9 @@ const Emitter = struct {
                     self.uses_table = true;
                     break :blk self.builder().helper(.task_spawn_all);
                 }
+                if (std.mem.eql(u8, ad.name, "gate_new")) break :blk self.builder().helper(.task_gate_new);
+                if (std.mem.eql(u8, ad.name, "gate_open")) break :blk self.builder().helper(.task_gate_open);
+                if (std.mem.eql(u8, ad.name, "gate_await")) break :blk self.builder().helper(.task_gate_await);
                 unreachable; // every listed adapter has its helper (`host_binding.zig` `adapters`)
             },
         };
@@ -13207,11 +13209,26 @@ const Emitter = struct {
     /// The argument whose shape a generic call answers (`generic_result_arg`):
     /// `ident("a")` is a string, `ident(true)` a bool.
     fn genericResultArg(self: *Emitter, cc: anytype) ?ast.Expr {
-        if (cc.receiver != null or cc.is_builtin or cc.calleeExpr != null) return null;
+        if (cc.is_builtin or cc.calleeExpr != null) return null;
+        // A call through a namespace item (`async.delay(5, "x")` after
+        // `import {async} from "std"`) reaches here with the namespace as
+        // its receiver: it answers what the plain call does. Read as a value
+        // receiver it answered nothing, and `"x " + d` added the string's
+        // address as a number.
+        if (cc.receiver != null and !self.isNamespaceReceiver(cc)) return null;
         if (self.taskAdapterProxy(cc)) |p| return p;
         const ix = self.generic_result_arg.get(cc.callee) orelse return null;
         for (cc.args) |a| if (a.label != null) return null;
         return if (ix < cc.args.len) cc.args[ix].value.* else null;
+    }
+
+    /// The receiver of `cc` is a namespace item, not a value: a plain name
+    /// no local, global, type or extension block binds, and the callee is a
+    /// function of the program (`fn_sigs`).
+    fn isNamespaceReceiver(self: *Emitter, cc: anytype) bool {
+        const rn = receiverName(cc) orelse return false;
+        if (self.locals.contains(rn) or self.globals.contains(rn) or self.records.contains(rn) or self.enums.contains(rn) or self.ext_by_name.contains(rn)) return false;
+        return self.fn_sigs.contains(cc.callee);
     }
 
     /// The name of a primitive type's family, when it is one.
@@ -13262,7 +13279,8 @@ const Emitter = struct {
     /// function type has no specialisation (`bindParam` binds names), so the
     /// call keeps the one body and only its result's type is read.
     fn genericRetByFnArg(self: *Emitter, cc: anytype) !?ast.TypeRef {
-        if (cc.receiver != null or cc.is_builtin or cc.calleeExpr != null) return null;
+        if (cc.is_builtin or cc.calleeExpr != null) return null;
+        if (cc.receiver != null and !self.isNamespaceReceiver(cc)) return null;
         const g = self.generic_fns.get(self.import_aliases.get(cc.callee) orelse cc.callee) orelse return null;
         const f = g.decl;
         const rt = f.returnType orelse return null;
@@ -13370,6 +13388,27 @@ const Emitter = struct {
                     .generic => |g| if (g.args.len == 1 and std.mem.eql(u8, g.name, "Array")) g.args[0] else return null,
                     else => unreachable,
                 };
+                // Decision 392 — `Array<@Task<T>>` (started tasks: the shape
+                // readers see each as its value) and `Array<fn() -> @Task<T>>`
+                // (unstarted ones: the first thunk's answer) bind `T` as the
+                // values do; std's `async.all` / `runAll` over strings joined
+                // their addresses as numbers.
+                if (taskValueTypeRef(elem)) |tv| if (tv == .named and isParam(tv.named, a, b)) {
+                    if (!self.isArrayExpr(arg)) return null;
+                    if (self.elemRecordOf(arg)) |r| return .{ .name = tv.named, .ty = r };
+                    return .{ .name = tv.named, .ty = switch (self.elemKindOf(arg)) {
+                        .str => "string",
+                        .f64 => return null,
+                        .i32 => "i32",
+                    } };
+                };
+                if (elem == .function and elem.function.params.len == 0) if (taskValueTypeRef(elem.function.returnType.*)) |tv| if (tv == .named and isParam(tv.named, a, b)) {
+                    if (arg != .collection or arg.collection.kind != .arrayLit) return null;
+                    const elems = arg.collection.kind.arrayLit.elems;
+                    if (elems.len == 0) return null;
+                    const v = taskValueExpr(thunkTail(elems[0]) orelse return null);
+                    return .{ .name = tv.named, .ty = self.concreteTypeOf(v) orelse return null };
+                };
                 const n = switch (elem) {
                     .named => |x| x,
                     else => return null,
@@ -13417,7 +13456,9 @@ const Emitter = struct {
     /// function. Only when it matters: a string, a bool or a float bound, or
     /// a method called on a value of the parameter.
     fn specializedCallee(self: *Emitter, cc: anytype) !?[]const u8 {
-        if (cc.receiver != null or cc.is_builtin or cc.calleeExpr != null) return null;
+        if (cc.is_builtin or cc.calleeExpr != null) return null;
+        // A namespace item's call (`async.all(…)`) is the plain call.
+        if (cc.receiver != null and !self.isNamespaceReceiver(cc)) return null;
         return self.specializeFor(self.import_aliases.get(cc.callee) orelse cc.callee, cc.args);
     }
 

@@ -72,6 +72,7 @@ pub fn items(g: ast.HelperGroup) []const ast.Item {
         },
         .task_poll => &.{.{ .func = task_host_poll }},
         .task_host => &.{ .{ .global = task_hosts_global }, .{ .func = task_host_add }, .{ .func = task_host_settle } },
+        .task_gate => &.{ .{ .func = task_host_cancel }, .{ .func = task_gate_new }, .{ .func = task_gate_open }, .{ .func = task_gate_await } },
         // Decision 442 (2): `bigint`'s arithmetic is std-wasm's; the group
         // only marks a module that prints one in a container (`stdCalls`).
         .bigint => &.{},
@@ -1863,6 +1864,69 @@ const task_spawn_all = func("__task_spawn_all", &.{"fs"}, .i32, i32s(&.{ "n", "i
     get("r"),                                                                  load(32), op("eqz"),
     when(&.{ get("r"), get("out"), store(8), get("r"), call("__task_wake") }), get("r"),
 }));
+
+/// `wasi:gate_new` — a closed gate (decision 334, std's `async` gates): a
+/// pending task no host answers and no state machine runs; `gate_open`
+/// settles it with `1`.
+const task_gate_new = func("__task_gate_new", &.{}, .i32, &.{}, &.{ c32(-1), c32(0), call("__task_new") });
+
+/// `wasi:gate_open` — gate `g` opens: before it settles, the timer of each
+/// wait still pending on it (`gate_await`'s task, its `+28` word) is dropped,
+/// so an open gate leaves no timer behind; then every wait answers `1`.
+/// Opening an open gate changes nothing.
+const task_gate_open = func("__task_gate_open", &.{"g"}, null, i32s(&.{ "n", "r" }), &.{
+    get("g"), load(0), when(&.{ret}),
+    get("g"), load(4), set("n"),
+    loop(&.{
+        get("n"), op("eqz"), brk,
+        get("n"), load(8),   set("r"),
+        get("n"), load(4),   c32(1),
+        op("eq"),
+        when(&.{
+            get("r"),                                                                                   load(0), op("eqz"),
+            when(&.{ get("r"), load(28), when(&.{ get("r"), load(28), call("__task_host_cancel") }) }),
+        }),
+        get("n"), load(0),   set("n"),
+        again,
+    }),
+    get("g"), c32(1),  call("__task_settle_i32"),
+});
+
+/// `wasi:gate_await` — a task answering `1` when gate `g` opens (at once
+/// when it is open), `0` when `ms` milliseconds pass first: it races the gate
+/// and a `delay` of `0`, and keeps that delay in its `+28` word for
+/// `gate_open` to drop.
+const task_gate_await = func("__task_gate_await", &.{ "g", "ms" }, .i32, i32s(&.{ "r", "d" }), &.{
+    c32(-1),  c32(0),               call("__task_new"),                                                     set("r"),
+    get("g"), load(0),              when(&.{ get("r"), c32(1), call("__task_settle_i32"), get("r"), ret }), get("ms"),
+    c32(0),   call("__task_delay"), set("d"),                                                               get("r"),
+    get("d"), store(28),            get("g"),                                                               c32(1),
+    get("r"), c32(0),               call("__task_listen"),                                                  get("d"),
+    c32(1),   get("r"),             c32(0),                                                                 call("__task_listen"),
+    get("r"),
+});
+
+/// Host task `t`'s pollable leaves the pending list and is dropped
+/// (`bp_host.drop`: the pollable's drop on `wasi`, `clearTimeout` on
+/// `browser`); `t` stays pending, and nothing waits on it but a settled race.
+const task_host_cancel = func("__task_host_cancel", &.{"t"}, null, i32s(&.{ "p", "n" }), &.{
+    gget("__task_hosts"), set("n"),
+    loop(&.{
+        get("n"), op("eqz"), brk,
+        get("n"), load(8),   get("t"),
+        op("eq"),
+        when(&.{
+            get("p"),
+            whenElse(&.{ get("p"), get("n"), load(0), store(0) }, &.{ get("n"), load(0), gset("__task_hosts") }),
+            get("n"),
+            load(4),
+            call("bp_host_drop"),
+            ret,
+        }),
+        get("n"), set("p"),  get("n"),
+        load(0),  set("n"),  again,
+    }),
+});
 
 /// The host functions decision 393's adapters reach (`wat_emitter`'s
 /// component adapter on `wasi`, the loader's JavaScript on `browser`).

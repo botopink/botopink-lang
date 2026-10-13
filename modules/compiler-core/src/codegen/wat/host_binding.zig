@@ -32,8 +32,10 @@ const stdWasm = @import("std_wasm");
 const ast = @import("../../ast.zig");
 
 /// A numeric value type a binding's signature may spell, or `bool` — the
-/// `i32` a comparison answers, which a signature writes as `bool`.
-pub const Slot = enum { i32, i64, f32, f64, bool };
+/// `i32` a comparison answers, which a signature writes as `bool` — or
+/// `unknown`: a handle the adapter alone reads (a gate, decision 334), which
+/// no opcode takes.
+pub const Slot = enum { i32, i64, f32, f64, bool, unknown };
 
 /// One opcode: its full text (`f64.floor`), operand types and result.
 pub const Op = struct {
@@ -92,6 +94,9 @@ pub const Adapter = struct {
     /// Set for an adapter answering `@Task<T>`: checked by shape instead of
     /// `params` / `result`.
     task: ?TaskSig = null,
+    /// Set for an adapter over fixed types that answers `@Task<result>` (a
+    /// gate's wait): the declared return is that task, never the bare value.
+    answers_task: bool = false,
     /// What the adapter answers, for `conformance/docs.md`'s table and the diagnostics.
     what: []const u8,
 };
@@ -106,6 +111,9 @@ pub const adapters = [_]Adapter{
     .{ .name = "race", .task = .{ .params = &.{.array_task_t}, .result = .task_t }, .what = "the first of the started tasks to settle (the first settled one in input order when some already are); an empty list traps" },
     .{ .name = "race_of", .task = .{ .params = &.{.array_thunk_task_t}, .result = .task_t }, .what = "each thunk called in order — its task runs to its first `await` — then raced; an empty list traps" },
     .{ .name = "spawn_all", .task = .{ .params = &.{.array_thunk_task_t}, .result = .task_array_t }, .what = "each thunk called in order; the answers in input order once the last has settled" },
+    .{ .name = "gate_new", .result = .unknown, .what = "a closed gate: a pending task no host answers, opened by `gate_open`" },
+    .{ .name = "gate_open", .params = &.{.unknown}, .what = "the gate opened: every task waiting on it answers `true`, and each wait's own timer is dropped; opening an open gate changes nothing" },
+    .{ .name = "gate_await", .params = &.{ .unknown, .i32 }, .result = .bool, .answers_task = true, .what = "a task answering `true` once the gate is open (at once when it is), `false` when the milliseconds pass first on the host's monotonic clock (the `delay` adapter's pollable)" },
 };
 
 pub const Binding = union(enum) {
@@ -132,6 +140,8 @@ pub const Signature = struct {
     /// (decision 393) — null when it declares no type parameter or several.
     shapes: ?[]const Shape = null,
     result_shape: Shape = .other,
+    /// The declared return is a `@Task<…>` (its slot is the task's value).
+    result_task: bool = false,
 };
 
 /// The signature `f` declares, as `parse` checks a binding against it: each
@@ -160,7 +170,8 @@ pub fn signatureOf(alloc: std.mem.Allocator, f: ast.FnDecl) !Signature {
         shapes = list.items;
         if (f.returnType) |rt| result_shape = shapeOf(rt, tp);
     }
-    return .{ .params = slots.items, .result = rslot, .result_other = result_other, .shapes = shapes, .result_shape = result_shape };
+    const result_task = if (f.returnType) |rt| taskValue(rt) != null else false;
+    return .{ .params = slots.items, .result = rslot, .result_other = result_other, .shapes = shapes, .result_shape = result_shape, .result_task = result_task };
 }
 
 /// `@Task<T>` / `@Component<T>` read as their `T` — what a binding's slot
@@ -186,7 +197,7 @@ fn isVoid(t: ast.TypeRef) bool {
 /// The numeric slot a written type spells; null for any other type.
 fn slotOf(t: ast.TypeRef) ?Slot {
     return switch (eager(t)) {
-        .named => |n| inline for (.{ "i32", "i64", "f32", "f64", "bool" }) |k| {
+        .named => |n| inline for (.{ "i32", "i64", "f32", "f64", "bool", "unknown" }) |k| {
             if (std.mem.eql(u8, n, k)) break @field(Slot, k);
         } else null,
         else => null,
@@ -270,10 +281,12 @@ pub fn parse(alloc: std.mem.Allocator, text: []const u8, sig: Signature) !Result
             defer alloc.free(shape);
             return refused(alloc, "`#[@External.Wasm({s})]`: the adapter `{s}` is `{s}` over one type parameter `T`; the declaration's signature differs", .{ shown, value, shape });
         }
-        if (sig.params.len != ad.params.len or !slotsEql(sig.params, ad.params) or !resultEql(sig, ad.result)) {
+        if (sig.params.len != ad.params.len or !slotsEql(sig.params, ad.params) or !resultEql(sig, ad.result) or sig.result_task != ad.answers_task) {
             const takes = try slotsText(alloc, ad.params);
             defer alloc.free(takes);
-            return refused(alloc, "`#[@External.Wasm({s})]`: the adapter `{s}` takes {s} and answers {s}; the declaration's signature differs", .{ shown, value, takes, slotText(ad.result) });
+            const answers = if (ad.answers_task) try std.fmt.allocPrint(alloc, "@Task<{s}>", .{slotText(ad.result)}) else try alloc.dupe(u8, slotText(ad.result));
+            defer alloc.free(answers);
+            return refused(alloc, "`#[@External.Wasm({s})]`: the adapter `{s}` takes {s} and answers {s}; the declaration's signature differs", .{ shown, value, takes, answers });
         }
         return .{ .ok = .{ .wasi = ad } };
     }

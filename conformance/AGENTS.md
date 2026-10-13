@@ -1123,7 +1123,11 @@ state machine over the scheduler, one adapter list for both hosts) add `modules/
 target since 144 B-23 read every `@External.Wasm` binding in the checker, beside
 `modules/external_wasm_op_type_on_every_target` and
 `modules/external_wasm_adapter_signature_on_every_target`, both run by the other targets' own
-bindings on the parent binary), and `enum_section_*` (1.0.10-beta's `00 · 01-checker`: which enum a
+bindings on the parent binary); 144 B-25 (decision 334, `02/97` step 17) binds std's `async` on both
+wasm hosts — `delay`, `race`, `raceOf`, `spawnAll` on the adapters, the gates on `.GateNew`,
+`.GateOpen`, `.GateAwait`, `millisAsFloat` / `wholeMillis` on `op:` — and adds
+`modules/std_async_on_every_target` (every combinator through the `async` namespace, results and answer
+order only, 335 (2)), widening `modules/async_block_all_of` to wasm; and `enum_section_*` (1.0.10-beta's `00 · 01-checker`: which enum a
 leading-dot section path names — `modules/enum_section_expected_type`, where two enums carry
 `.Color.Red.500` and every spelling is resolved by the type its position expects, and
 `modules/enum_section_ambiguous_path`, where the position expects nothing and the refusal names both
@@ -1313,7 +1317,7 @@ Task eagerly, and inside one body the order is the same everywhere.
 | Return and effect mode | `test/effect_return_result`, `modules/task_return_layers` (three layers), `modules/effect_alias_passes_value`; `modules/effect_return_ambiguous_nesting`, `modules/effect_wrapper_behind_alias` |
 | `@Task` and failure | `modules/task_await_no_try`, `modules/task_await_result` (`await t` answers the `@Result`, `try await t`, `try await t catch x`), `modules/task_throw_resolves_error` (`.targets commonJS`: the Promise rejects with the thrown value and resolves with the bare one — decision 432 inverted it, the name is its history), `modules/task_result_rejects` (432 on every target: every way a failing task reaches an `await` reads `Error(e)`), `modules/task_result_caught_by_js` (`.targets commonJS`: a JavaScript `try`/`catch` around a botopink task, and a dropped failing task is no unhandled rejection); `modules/task_throw_without_result`, `modules/task_try_await_without_result` |
 | Chain and `use` | `modules/component_hook_and_component`, `modules/component_result_try_await`; `modules/component_try_element`, `modules/await_under_result`, `modules/use_under_task`, `modules/use_of_component` |
-| `async { }` | `modules/async_block_all_of` (`.targets commonJS erlang beam`: `std/async` has no wasm host), `modules/async_block_value_type`, `modules/async_block_return`; `modules/async_block_use`, `modules/async_block_conflicting_errors` |
+| `async { }` | `modules/async_block_all_of`, `modules/async_block_value_type`, `modules/async_block_return`; `modules/async_block_use`, `modules/async_block_conflicting_errors` |
 | Iterators | `modules/iterator_fibonacci`, `modules/iterator_result_item`, `modules/iterator_result_items` (step E4), `modules/iterator_factory`, `test/yield_step_next` and `modules/yield_step_next` (`.next()` by hand on an `@Iterator` and, awaited, on a `@Stream` — the `run/` half reaches beam and wasm, which a `test/` cell cannot, and steps a parameter inside a `while`); `modules/iterator_throw_without_result`, `modules/iter_await`, `modules/iter_mixed_yield_return`, `modules/iterator_error_param_removed` |
 | Streams | `modules/stream_pages` (a simulated http failing mid-way), `modules/stream_loop_no_failure`; `modules/for_await_without_task` |
 | Prefixed loops | `modules/prefixed_loop_forms`, `modules/prefixed_loop_result_item`, `modules/prefixed_loop_break_value`, `modules/prefixed_loop_nearest_scope`, `test/contextual_words`; `modules/prefixed_loop_break_outer` |
@@ -1814,7 +1818,6 @@ lines are in the front's README):
 
 | Cell | Runs on | Excluded — the binding it lacks |
 |---|---|---|
-| `modules/async_block_all_of` | commonJS erlang beam | wasm — `std/async` |
 | `modules/beam_memory_ets`, `modules/beam_memory_persistent_term` | erlang beam | wasm — `std/async`; commonJS — `#[@BeamMemory]` (decision 167) |
 | `modules/beam_memory_process_dict`, `modules/beam_memory_ets_keyed` | erlang beam | wasm — `std/async`; commonJS — `#[@BeamMemory]` (decision 167) |
 | `modules/behavior_method_host_value` | commonJS erlang beam | wasm — `makeGreeter` |

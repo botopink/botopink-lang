@@ -2658,6 +2658,9 @@ string in a `+`.
 | `.Race` | `(Array<@Task<T>>) -> @Task<T>` | the first of the started tasks to settle — the first settled one in input order when some already are; an empty list traps |
 | `.RaceOf` | `(Array<fn() -> @Task<T>>) -> @Task<T>` | each thunk called in order (its task runs to its first `await`), then raced; an empty list traps |
 | `.SpawnAll` | `(Array<fn() -> @Task<T>>) -> @Task<Array<T>>` | each thunk called in order; the answers in input order once the last has settled |
+| `.GateNew` | `() -> unknown` | a closed gate (std's `async` gates): a pending task no host answers |
+| `.GateOpen` | `(unknown) -> void` | the gate opened: every task waiting on it answers `true`, and each wait's own timer is dropped first, so an open gate leaves no timer behind; opening an open gate changes nothing |
+| `.GateAwait` | `(unknown, i32) -> @Task<bool>` | a task answering `true` once the gate is open (at once when it already is), `false` when the milliseconds pass first on the host's monotonic clock (`.Delay`'s pollable) |
 
 `std/io/random`'s seeded stream is std-wasm's (decision 451), bound by the
 `std:` cells on `seed` and `seededFloat`: Mulberry32 as the commonJS sidecar
