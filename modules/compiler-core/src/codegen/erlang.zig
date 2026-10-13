@@ -25,6 +25,7 @@ const hostMethods = @import("./hostMethods.zig");
 const effectChain = @import("../comptime/effect_chain.zig");
 const erlEmitter = @import("./beam/erl_emitter.zig");
 const Ast = @import("./beam/erl_ast.zig");
+const erlTemplate = @import("./beam/erl_template.zig");
 const Term = @import("./beam/term.zig").Term;
 
 const ModuleOutput = moduleOutput.ModuleOutput;
@@ -5505,6 +5506,63 @@ const Emitter = struct {
         });
     }
 
+    /// A `result: true` binding (decisions 431, 489, 490): its template — or
+    /// its `(module, symbol)` as the call it names — wrapped by
+    /// `erlTemplate.resultWrapBound`, so every call site and the importers'
+    /// wrapper (`externalWrapperForm`) answer `@Result<T, HostError>`. Always a
+    /// template: the wrap has no `module:symbol` form.
+    fn collectResultExternal(this: *Emitter, f: ast.FnDecl) !void {
+        const atoms = try this.hostErrorAtoms();
+        if (ast.externalHasArityBranches(f.annotations, "erlang")) {
+            var branches: std.ArrayList(ast.ArityBranch) = .empty;
+            errdefer branches.deinit(this.alloc);
+            for (f.annotations) |a| {
+                if (!std.mem.startsWith(u8, a.name, "External.") or !std.ascii.eqlIgnoreCase(a.name["External.".len..], "erlang")) continue;
+                for (a.args) |raw| {
+                    const br = ast.parseArityBranchArg(raw) orelse continue;
+                    const inner = try unescapeTemplate(this.alloc, br.template);
+                    defer this.alloc.free(inner);
+                    try branches.append(this.alloc, .{
+                        .argc = br.argc,
+                        .template = try erlTemplate.resultWrapBound(this.alloc, inner, br.argc, atoms),
+                    });
+                }
+            }
+            try this.user_erlang_templates.put(try this.alloc.dupe(u8, f.name), .{
+                .module = "",
+                .symbol = "",
+                .args = null,
+                .arity_branches = try branches.toOwnedSlice(this.alloc),
+            });
+            return;
+        }
+        const ref = f.externalFor("erlang") orelse return this.externals_missing.put(f.name, {});
+        const argc = f.params.len;
+        const inner = if (primOpTemplate.looksLikeTemplate(ref.symbol) or ref.module.len == 0)
+            try unescapeTemplate(this.alloc, ref.symbol)
+        else
+            try erlTemplate.remoteCallTemplate(this.alloc, ref.module, ref.symbol, argc);
+        defer this.alloc.free(inner);
+        try this.user_erlang_templates.put(try this.alloc.dupe(u8, f.name), .{
+            .module = "",
+            .symbol = try erlTemplate.resultWrapBound(this.alloc, inner, argc, atoms),
+            .args = null,
+        });
+    }
+
+    /// The atoms std's `failure.HostError` and its `HostErrorName` variants
+    /// are built with in this build (`crossModule.typeAtom` / `variantAtom`).
+    fn hostErrorAtoms(this: *Emitter) !erlTemplate.HostErrorAtoms {
+        const ar = this.atom_arena.allocator();
+        const id = this.idOf("std/failure");
+        return .{
+            .record = try crossModule.typeAtom(ar, id, "HostError"),
+            .err = try crossModule.variantAtom(ar, id, "HostErrorName", "Error"),
+            .throw = try crossModule.variantAtom(ar, id, "HostErrorName", "Throw"),
+            .exit = try crossModule.variantAtom(ar, id, "HostErrorName", "Exit"),
+        };
+    }
+
     fn collectExternals(this: *Emitter, program: ast.Program) !void {
         for (program.decls) |decl| switch (decl) {
             .@"fn" => |f| {
@@ -5512,6 +5570,10 @@ const Emitter = struct {
                 if (f.returnType) |rt| if (recordNameOfReturn(rt)) |rec| {
                     try this.external_record_returns.put(f.name, rec);
                 };
+                if (ast.externalResultFor(f.annotations, "erlang")) {
+                    try this.collectResultExternal(f);
+                    continue;
+                }
                 // §A2 arity-branched template (`when(argc == N): "<tmpl>"`)
                 // on a top-level declare fn — the existing
                 // interface-method `primAnnotationNode` path already
@@ -10489,7 +10551,15 @@ const Emitter = struct {
             for (patterns, 0..) |pat, i| all[i] = pat;
             break :blk try b.remote(ref.module, ref.symbol, all);
         };
-        const body = if (m.returnType) |rt| if (recordNameOfReturn(rt)) |rec| try this.adoptRecord(b, rec, raw) else raw else raw;
+        // Decisions 431, 489, 490 — a `result: true` method runs its binding
+        // inside `erlTemplate.resultWrap`'s `try`; the parameters are already
+        // bound, so the binding is wrapped as it is.
+        const wrapped: Ast.Expr = if (ast.externalResultFor(m.annotations, "erlang")) .{ .seq = try b.arena.dupe(Ast.Expr, &.{
+            Ast.Expr.r(erlTemplate.result_wrap_head),
+            raw,
+            Ast.Expr.r(try erlTemplate.resultWrapTail(b.arena, try this.hostErrorAtoms())),
+        }) } else raw;
+        const body = if (m.returnType) |rt| if (recordNameOfReturn(rt)) |rec| try this.adoptRecord(b, rec, wrapped) else wrapped else wrapped;
         try out.append(b.arena, .blank);
         try out.append(b.arena, try blockFunction(b, m.name, patterns, try b.body(&.{body})));
         if (unit) |u| try u.exports.append(b.arena, .{ .name = m.name, .arity = m.params.len });

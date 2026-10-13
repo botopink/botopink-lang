@@ -2441,6 +2441,19 @@ pub fn parseArityBranchArg(raw: []const u8) ?ArityBranch {
     return .{ .argc = argc, .template = unquoteAnnotationArg(value) };
 }
 
+/// True when an `External.<target>` annotation in `annotations` writes
+/// `result: true` (decisions 431, 490): the backend answers every way the host
+/// call fails as `Error(HostError(…))`. `target` is the annotation's member
+/// (`node`, `erlang`), compared without case.
+pub fn externalResultFor(annotations: []const Annotation, target: []const u8) bool {
+    for (annotations) |a| {
+        if (!std.mem.startsWith(u8, a.name, "External.")) continue;
+        if (!std.ascii.eqlIgnoreCase(a.name["External.".len..], target)) continue;
+        if (externalFlagSet(a, "result")) return true;
+    }
+    return false;
+}
+
 /// True when `annotations` carry at least one `when($argc == N): "..."` branch
 /// targeting `target`. Used by callers to know whether arity-branch dispatch
 /// is in play and choose the matching branch via `externalArityBranchFor`.

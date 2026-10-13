@@ -2259,6 +2259,16 @@ flag the binding promises no failure. `effect-try-without-fallible-channel`
 names this flag and `try … catch` as the ways out of a `throw` or `try` that
 has no `@Result` channel.
 
+`HostError(message, kind, name, detail)`: `kind` is always `"host"`; `name` is
+the same on every target — a JavaScript `Error` and an erlang `error` raise, or an
+erlang host answering `{error, R}`, are `HostErrorName.Error`, any other thrown
+value and an erlang `throw` are `HostErrorName.Throw`, an erlang `exit` is
+`HostErrorName.Exit`; `message` is the host's text (`e.message`, else
+`String(e)`; the erlang reason by `~tp`); `detail` is the host's stack, which a
+backend may leave empty. An erlang host's `{ok, V}` or plain value is `Ok(V)`.
+
+<!-- example: modules/external_result_host_error -->
+
 One annotation binds the BEAM: `External.Erlang` serves the erlang and the beam
 targets, the same VM and the same OTP calls (decision 437). `@External.Beam` is
 gone; writing it is a located error at the annotation naming the form in force,
@@ -2291,9 +2301,10 @@ A field the host leaves out is the absent value, not an error — a host is not
 asked to fill a record it does not know about.
 
 **A host that answers later** is declared with a `@Task` return (decision 126).
-Declared `-> @Task<@Result<T, E>>`, a rejected Promise (Node) or an
-`{error, R}` (Erlang) becomes `Error(…)`; declared `-> @Task<T>`, a rejection is
-a fatal host failure — that form is for a host that guarantees it does not fail.
+With `result: true` and `-> @Task<@Result<T, HostError>>`, a rejected Promise
+(Node) or a raise or `{error, R}` (Erlang) becomes `Error(HostError(…))`;
+declared `-> @Task<T>`, a rejection is a fatal host failure — that form is for a
+host that guarantees it does not fail.
 
 <!-- example: modules/host_node_task_result -->
 

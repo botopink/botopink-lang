@@ -865,8 +865,9 @@ const TryHead = union(enum) {
     yield_result,
 };
 
-/// True when a return written in source is `@Task<@Result<T, E>>` — a host
-/// function whose rejection is `Error(e)` (decision 126).
+/// True when a return written in source is `@Task<@Result<T, E>>`: a
+/// `result: true` binding's rejection is `Error(HostError(…))` (decisions 431,
+/// 490), a flagless one's `Error(<message>)` (decision 126).
 fn isTaskOfResult(rt: ?ast.TypeRef) bool {
     const t = rt orelse return false;
     if (t != .generic or !t.generic.is_builtin or !std.mem.eql(u8, t.generic.name, "Task")) return false;
@@ -875,11 +876,19 @@ fn isTaskOfResult(rt: ?ast.TypeRef) bool {
     return inner == .generic and inner.generic.is_builtin and std.mem.eql(u8, inner.generic.name, "Result");
 }
 
+/// `T` of a return written `@Result<T, E>`, or null.
+fn resultOkType(rt: ?ast.TypeRef) ?ast.TypeRef {
+    const t = rt orelse return null;
+    if (t != .generic or !t.generic.is_builtin or !std.mem.eql(u8, t.generic.name, "Result")) return null;
+    if (t.generic.args.len == 0) return null;
+    return t.generic.args[0];
+}
+
 /// The record a host declaration's return type names, and the containers the
 /// adoption walks to reach it (`jsPrelude.Helper.adopt`'s path: `a` an array,
 /// `r` an `@Result`'s ok side; `?T` is walked for free, `null` passes). The
 /// commonJS twin of erlang's `recordNameOfReturn`. `@Task` is not looked
-/// through: its answer arrives later, through `__bp_host_task`.
+/// through: its answer arrives later.
 const AdoptTarget = struct { rec: []const u8, path: []const u8 };
 
 fn adoptTargetOf(buf: *[16]u8, t: ast.TypeRef, depth: usize) ?AdoptTarget {
@@ -1543,13 +1552,21 @@ const Emitter = struct {
     /// the propagated one (`guardExprTry`). Saved and restored per function.
     expr_try_used: bool = false,
     /// Host functions of this module declared `-> @Task<@Result<T, E>>`
-    /// (decision 126): every call — and a `pub` template's exported wrapper —
-    /// goes through `__bp_host_task`, so a rejection becomes `Error(e)`.
+    /// without `result: true` (decision 126): every call — and a `pub`
+    /// template's exported wrapper — goes through `__bp_host_task`, so a
+    /// rejection becomes `Error(e)`. Decision 490 retires the conversion; it
+    /// stays while a library binding reads it (a task-catching binding that
+    /// 144 B-07 replaces with `attempt`).
     host_task_externals: std.StringHashMap(void) = undefined,
-    host_task_externals_init: bool = false,
+    /// The `result: true` bindings of this module (decisions 431, 490): each
+    /// is a function of its own (`buildResultBinding`) whose body runs the
+    /// host call through `__bp_host_result` / `__bp_host_result_task`, so a call is a
+    /// plain call and every way the host fails is `Error(HostError(…))`.
+    /// Arena-backed, set up with `host_returns`.
+    result_bindings: std.StringHashMap(void) = undefined,
+    host_returns_init: bool = false,
     /// Every host-backed `declare fn`'s declared return type, by name, for the
-    /// call-site adoption (`adoptHost`). Arena-backed, set up with
-    /// `host_task_externals`.
+    /// call-site adoption (`adoptHost`). Arena-backed.
     host_returns: std.StringHashMap(ast.TypeRef) = undefined,
     /// The innermost `loop` whose body is being built, which is what a
     /// `break` / `continue` / accumulator `yield` binds to. Reset to `.none`
@@ -2027,16 +2044,22 @@ const Emitter = struct {
     /// aliased); without a node target it goes to `externals_missing` (so a
     /// call can fail with a clear error instead of an undefined identifier).
     fn collectExternals(self: *Emitter, program: ast.Program) !void {
-        if (!self.host_task_externals_init) {
+        if (!self.host_returns_init) {
+            self.result_bindings = std.StringHashMap(void).init(self.arena());
             self.host_task_externals = std.StringHashMap(void).init(self.arena());
             self.host_returns = std.StringHashMap(ast.TypeRef).init(self.arena());
-            self.host_task_externals_init = true;
+            self.host_returns_init = true;
         }
         for (program.decls) |decl| switch (decl) {
             .@"fn" => |f| {
                 if (!f.isExternal()) continue;
-                if (isTaskOfResult(f.returnType)) try self.host_task_externals.put(f.name, {});
                 if (f.returnType) |rt| try self.host_returns.put(f.name, rt);
+                // Decisions 431, 490 — its own function, called plainly.
+                if (ast.externalResultFor(f.annotations, "node")) {
+                    try self.result_bindings.put(f.name, {});
+                    continue;
+                }
+                if (isTaskOfResult(f.returnType)) try self.host_task_externals.put(f.name, {});
                 // §A2 arity-branched template: `when(argc == N): "<tmpl>"`.
                 if (ast.externalHasArityBranches(f.annotations, "node")) {
                     var branches: std.ArrayList(ast.ArityBranch) = .empty;
@@ -2344,6 +2367,7 @@ const Emitter = struct {
     /// function plus its `exports.<name>` line.
     fn buildFnItem(self: *Emitter, f: ast.FnDecl) !js.Stmt {
         if (!f.isExternal()) return self.buildFn(f);
+        if (self.host_returns_init and self.result_bindings.contains(f.name)) return self.buildResultBinding(f);
         // §A2 template-form external: no decl alias — the template renders
         // inline at every call site in this module (see `tryUserTemplate`).
         // Emit a one-line doc breadcrumb so the emitted file stays
@@ -2452,16 +2476,111 @@ const Emitter = struct {
             for (names) |n| try args.append(self.arena(), .{ .ident = n });
             break :blk try self.b.call(host, try args.toOwnedSlice(self.arena()));
         };
-        // Decision 126 — a `-> @Task<@Result<T, E>>` host method settles a
-        // rejection as `Error(e)`, as the module-level form does.
-        const adopted = try self.adoptHost(m.returnType, value);
-        const wrapped = if (isTaskOfResult(m.returnType)) try self.b.call(self.helper(.host_task), &.{adopted}) else adopted;
+        // Decisions 431, 490 — a `result: true` host method answers every way
+        // the host fails as `Error(HostError(…))`, as the module-level form does.
+        const wrapped = if (ast.externalResultFor(m.annotations, "node"))
+            try self.wrapResult(m.returnType, value)
+        else if (isTaskOfResult(m.returnType))
+            try self.b.call(self.helper(.host_task), &.{try self.adoptHost(m.returnType, value)})
+        else
+            try self.adoptHost(m.returnType, value);
         return .{
             .kind = if (has_self and !in_enum) .method else .static_method,
             .name = m.name,
             .params = try params.toOwnedSlice(self.arena()),
             .body = .{ .stmts = try self.b.stmts(&.{.{ .return_ = wrapped }}), .indent = 1 },
         };
+    }
+
+    /// A `result: true` binding (decisions 431, 489, 490) as a function of the
+    /// module: `function name(params) { return __bp_host_result(F, () =>
+    /// <binding>); }` — `__bp_host_result_task` for a `@Task` return — where
+    /// `<binding>` is its template over the parameters, or its `(module,
+    /// symbol)` called with them. The arguments are evaluated by the call, so
+    /// only the host's raise is caught. An arity-branched binding tests
+    /// `arguments.length` per branch. Exported when `pub`, like a template's
+    /// wrapper. A template that names a receiver has no function form: the
+    /// declaration is then a comment, as `buildFnItem`'s template note.
+    fn buildResultBinding(self: *Emitter, f: ast.FnDecl) !js.Stmt {
+        const note = js.Stmt{ .comment = .{
+            .text = try std.fmt.allocPrint(self.arena(), "{s}: result: true binding (see annotation)", .{f.name}),
+        } };
+        var names: std.ArrayListUnmanaged([]const u8) = .empty;
+        var params: std.ArrayListUnmanaged(js.Param) = .empty;
+        for (f.params) |p| {
+            if (std.mem.eql(u8, p.name, "self")) continue;
+            try names.append(self.arena(), p.name);
+            try params.append(self.arena(), .{ .pattern = .{ .ident = p.name } });
+        }
+        var holes = ParamHoles{ .b = self.b, .names = names.items };
+        var body: std.ArrayListUnmanaged(js.Stmt) = .empty;
+        if (ast.externalHasArityBranches(f.annotations, "node")) {
+            for (f.annotations) |a| {
+                if (!std.mem.startsWith(u8, a.name, "External.") or !std.ascii.eqlIgnoreCase(a.name["External.".len..], "node")) continue;
+                for (a.args) |raw| {
+                    const br = ast.parseArityBranchArg(raw) orelse continue;
+                    const value = try self.renderParamTemplate(br.template, &holes, br.argc) orelse return note;
+                    try body.append(self.arena(), try self.b.ifStmt(
+                        try self.b.binaryBare("===", try self.b.member(.{ .name = "arguments" }, "length"), .{
+                            .number = try std.fmt.allocPrint(self.arena(), "{d}", .{br.argc}),
+                        }),
+                        .{ .return_ = try self.wrapResult(f.returnType, value) },
+                    ));
+                }
+            }
+        } else {
+            const ref = f.externalFor("node") orelse return .{ .comment = .{
+                .text = try std.fmt.allocPrint(self.arena(), "external fn {s} (no node target)", .{f.name}),
+            } };
+            const value: js.Expr = if (primOpTemplate.looksLikeTemplate(ref.symbol) or ref.module.len == 0)
+                try self.renderParamTemplate(ref.symbol, &holes, names.items.len) orelse return note
+            else blk: {
+                const host = if (isJsGlobalNamespace(ref.module))
+                    try self.b.member(.{ .name = ref.module }, ref.symbol)
+                else
+                    try self.b.member(try self.requireCall(ref.module), ref.symbol);
+                const args = try self.arena().alloc(js.Expr, names.items.len);
+                for (names.items, 0..) |n, i| args[i] = .{ .ident = n };
+                break :blk try self.b.call(host, args);
+            };
+            try body.append(self.arena(), .{ .return_ = try self.wrapResult(f.returnType, value) });
+        }
+        const func: js.Stmt = .{ .function = .{
+            .name = f.name,
+            .params = params.items,
+            .body = .{ .stmts = try body.toOwnedSlice(self.arena()), .layout = .spaced },
+        } };
+        if (!f.isPub) return func;
+        return self.b.group(&.{ func, .{ .expr = try self.b.assign(
+            try self.b.member(.{ .name = "exports" }, f.name),
+            "=",
+            .{ .ident = f.name },
+        ) } });
+    }
+
+    /// `value` — a `result: true` binding's host call — run through
+    /// `__bp_host_result_task(F, () => value)` for a `@Task<@Result<T, HostError>>`
+    /// return, else `__bp_host_result(F, () => value)` with the ok side adopted
+    /// into the record `T` names (`adoptHost`). `F` is std's `failure` module,
+    /// which `HostError` comes from (decisions 431, 489, 490).
+    fn wrapResult(self: *Emitter, ret: ?ast.TypeRef, value: js.Expr) !js.Expr {
+        const task = isTaskOfResult(ret);
+        const inner = if (task) value else try self.adoptHost(resultOkType(ret), value);
+        const failure = try self.requireCall(try std.fmt.allocPrint(self.arena(), "{s}std/failure.js", .{try self.requirePrefix()}));
+        return self.b.call(self.helper(if (task) .host_result_task else .host_result), &.{
+            failure,
+            try self.b.arrowExpr(&.{}, inner),
+        });
+    }
+
+    /// The `./` or `../…` a `require` of an output-root path starts with from
+    /// this module (see `buildUse`).
+    fn requirePrefix(self: *Emitter) ![]const u8 {
+        const depth = std.mem.count(u8, self.module_name, "/");
+        if (depth == 0) return "./";
+        var buf: std.ArrayListUnmanaged(u8) = .empty;
+        for (0..depth) |_| try buf.appendSlice(self.arena(), "../");
+        return buf.toOwnedSlice(self.arena());
     }
 
     /// `function name(params) { return <template>; }` for a `pub` template
@@ -6006,13 +6125,14 @@ const Emitter = struct {
     fn buildCall(self: *Emitter, loc: ast.Loc, cc: anytype) anyerror!js.Expr {
         const raw = try self.buildCallRaw(loc, cc);
         // A host-backed `declare fn` of this module whose return names a record.
-        const out = if (!cc.is_builtin and cc.receiver == null and self.host_task_externals_init and
+        const out = if (!cc.is_builtin and cc.receiver == null and self.host_returns_init and
             (self.user_node_templates.contains(cc.callee) or self.externals.contains(cc.callee)))
             (if (self.host_returns.get(cc.callee)) |rt| try self.adoptHost(rt, raw) else raw)
         else
             raw;
-        // Decision 126 — a host call declared `-> @Task<@Result<T, E>>`.
-        if (!cc.is_builtin and cc.receiver == null and self.host_task_externals_init and
+        // Decision 126 — a host call declared `-> @Task<@Result<T, E>>`
+        // without `result: true`.
+        if (!cc.is_builtin and cc.receiver == null and self.host_returns_init and
             self.host_task_externals.contains(cc.callee))
         {
             return self.b.call(self.helper(.host_task), &.{out});

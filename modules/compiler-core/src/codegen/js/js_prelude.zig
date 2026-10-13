@@ -62,9 +62,27 @@ pub const Helper = enum {
     /// `{ __bp_try: r }` that the enclosing function's guard
     /// (`commonJS.zig` `guardExprTry`) turns back into the propagated Result.
     try_unwrap,
-    /// A host function declared `-> @Task<@Result<T, E>>` (decision 126): its
-    /// Promise resolves with `{ ok: v }`, and a rejection resolves with
-    /// `{ error: <message> }` instead of rejecting.
+    /// A `result: true` binding's failure (decisions 431, 489): what the host
+    /// threw as `{ error: HostError(message, "host", name, detail) }` —
+    /// `__bp_host_fail(F, e)`, `F` std's `failure` module. An `Error` is
+    /// `name: Error` with its `message` and `stack`; any other thrown value is
+    /// `name: Throw` with `String(e)` and no detail.
+    host_fail,
+    /// A sync `result: true` binding (decisions 431, 490):
+    /// `__bp_host_result(F, () => <call>)` answers `{ ok: v }`, or the throw
+    /// through `host_fail`.
+    host_result,
+    /// A `result: true` binding declared `-> @Task<@Result<T, HostError>>`
+    /// (decisions 431, 490): `__bp_host_result_task(F, () => <call>)` — the
+    /// Promise resolves with `{ ok: v }`, and a rejection, or a throw before
+    /// the Promise exists, resolves with `host_fail`'s `{ error: … }`.
+    host_result_task,
+    /// A host function declared `-> @Task<@Result<T, E>>` WITHOUT `result:
+    /// true` (decision 126): its Promise resolves with `{ ok: v }`, and a
+    /// rejection resolves with `{ error: <message> }` instead of rejecting.
+    /// Decision 490 retires it; it stays while a library binding still reads
+    /// it (a library's task-catching binding, which 144 B-07 replaces with
+    /// `attempt`).
     host_task,
     /// A host answer adopted into the record class its declaration names
     /// (`conformance/docs.md` § Host bindings: "a plain object … is adopted into the record
@@ -146,13 +164,14 @@ pub const Helper = enum {
 };
 
 /// Emission order of the helpers a module uses.
-pub const order = [_]Helper{ .assert_fatal, .str_surrogate, .str_count, .string_char_at, .str_length, .str_index_of, .str_last_index_of, .array_at, .range_from, .structural_eq, .f64_text, .show, .print, .print_as, .try_unwrap, .host_task, .adopt, .yield_step, .int_check, .wide_norm, .wide_add, .wide_sub, .wide_mul, .wide_div, .wide_mod, .wide_neg, .big_div, .big_mod };
+pub const order = [_]Helper{ .assert_fatal, .str_surrogate, .str_count, .string_char_at, .str_length, .str_index_of, .str_last_index_of, .array_at, .range_from, .structural_eq, .f64_text, .show, .print, .print_as, .try_unwrap, .host_fail, .host_result, .host_result_task, .host_task, .adopt, .yield_step, .int_check, .wide_norm, .wide_add, .wide_sub, .wide_mul, .wide_div, .wide_mod, .wide_neg, .big_div, .big_mod };
 
 /// The helpers `h`'s body calls, which a module calling `h` carries too.
 pub fn requires(h: Helper) []const Helper {
     return switch (h) {
         .wide_add, .wide_sub, .wide_mul, .wide_div, .wide_mod, .wide_neg => &.{.wide_norm},
         .show => &.{.f64_text},
+        .host_result, .host_result_task => &.{.host_fail},
         .string_char_at, .str_length => &.{.str_surrogate},
         .str_index_of, .str_last_index_of => &.{ .str_surrogate, .str_count },
         else => &.{},
@@ -198,6 +217,9 @@ pub fn name(h: Helper) []const u8 {
         .print_as => "__bp_print_as",
         .structural_eq => "__bp_eq",
         .try_unwrap => "__bp_try",
+        .host_fail => "__bp_host_fail",
+        .host_result => "__bp_host_result",
+        .host_result_task => "__bp_host_result_task",
         .host_task => "__bp_host_task",
         .adopt => "__bp_adopt",
         .yield_step => "__bp_yield_step",
@@ -232,6 +254,9 @@ pub fn decl(h: Helper) ast.Stmt {
         .print_as => print_as,
         .structural_eq => structural_eq,
         .try_unwrap => try_unwrap,
+        .host_fail => host_fail,
+        .host_result => host_result,
+        .host_result_task => host_result_task,
         .host_task => host_task,
         .adopt => adopt,
         .yield_step => yield_step,
@@ -446,6 +471,26 @@ const try_unwrap: ast.Stmt = .{ .function = .{
         .{ .return_ = .{ .member = .{ .object = &r_, .name = "ok" } } },
     }, .layout = .spaced },
 } };
+
+/// `function __bp_host_fail(F, e) { … }` — see `Helper.host_fail`.
+const host_fail: ast.Stmt = hFn("__bp_host_fail", &.{ "F", "e" }, &.{
+    hConst(.const_, "n", "e instanceof Error"),
+    hRet("{ error: new F.HostError(n ? e.message : String(e), \"host\", n ? F.HostErrorName.Error : F.HostErrorName.Throw, (n && typeof e.stack === \"string\") ? e.stack : null) }"),
+});
+
+/// `function __bp_host_result(F, f) { try { return { ok: f() }; } catch (e) { return __bp_host_fail(F, e); } }`
+/// — see `Helper.host_result`.
+const host_result: ast.Stmt = hFn("__bp_host_result", &.{ "F", "f" }, &.{.{ .try_catch = .{
+    .body = .{ .stmts = &.{hRet("{ ok: f() }")}, .indent = 1 },
+    .param = "e",
+    .handler = .{ .stmts = &.{hRet("__bp_host_fail(F, e)")}, .indent = 1 },
+} }});
+
+/// `function __bp_host_result_task(F, f) { return new Promise((r) => r(f())).then((v) => ({ ok: v }), (e) => __bp_host_fail(F, e)); }`
+/// — see `Helper.host_result_task`.
+const host_result_task: ast.Stmt = hFn("__bp_host_result_task", &.{ "F", "f" }, &.{
+    hRet("new Promise((r) => r(f())).then((v) => ({ ok: v }), (e) => __bp_host_fail(F, e))"),
+});
 
 const p_: ast.Expr = .{ .name = "p" };
 const hv: ast.Expr = .{ .name = "v" };

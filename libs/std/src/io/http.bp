@@ -9,14 +9,16 @@
 ////               for https URLs, `ssl:start()`).
 ////
 //// `fetch(url) -> @Task<@Result<Response, string>>` is the single GET
-//// surface (decisions 120, 121 and 126 of 1.0.10-beta: a Task never fails —
+//// surface (decisions 120, 121 of 1.0.10-beta: a Task never fails —
 //// the failure is the `@Result` it carries, so the caller writes
-//// `try await http.fetch(url)` to propagate it). The node template turns a
-//// rejected `fetch` into `Error(message)` and a fulfilled one into
-//// `Ok({ status, body })` — the conversion is the compiler's (decision 126); the erlang template ensures `inets`/`ssl` are
+//// `try await http.fetch(url)` to propagate it). It maps the host binding
+//// `fetchHost` (`result: true`, decisions 431, 490) to the message of its
+//// `HostError` (decision 486): the node template's rejected `fetch` is
+//// `Error(HostError(…))` and a fulfilled one `Ok({ status, body })`; the
+//// erlang template ensures `inets`/`ssl` are
 //// started (idempotent — `{error, {already_started, _}}` is folded back to ok
 //// via `catch`) and lowers to a synchronous `httpc:request/4`, whose
-//// `{error, R}` becomes `Error(<R formatted>)`. Erlang is eager: `@Task<T>` is
+//// `{error, R}` becomes `Error(HostError(<R formatted>, …))`. Erlang is eager: `@Task<T>` is
 //// `T` there, so the caller's `await` is identity on that backend. An HTTP
 //// error status (404, 500) is a RESPONSE, not a failure: it is `Ok` with its
 //// `status`.
@@ -32,27 +34,39 @@
 //// external diagnostic at codegen time, matching the spec wave's
 //// scope.
 
+import {failure, failure.HostError};
+
 pub type Response(
     status: i32,
     body: string,
 )
 
-// Issue a GET request and resolve with the response, or with the transport
-// failure as `Error(message)` — never a rejection (decision 126).
+// The GET as the host answers it, under `result: true` (decisions 431, 490):
+// the response, or every way the host fails as `Error(HostError(…))`.
 //
 // Node: `globalThis.fetch($0)` chained with `.text()` flattens the
-// `Response → Promise<text>` shape into one `{ status, body }`; the compiler
-// turns the Promise of a host fn declared `-> @Task<@Result<T, E>>` into
-// `Ok(value)`, and a rejection anywhere in the chain into `Error(<message>)`
-// (decision 126, `codegen/commonJS.zig` `host_task`).
+// `Response → Promise<text>` shape into one `{ status, body }`; a rejection
+// anywhere in the chain is `Error(HostError(<message>, …))`
+// (`codegen/commonJS.zig` `wrapResult`).
 //
 // Erlang: idempotently start `inets` + `ssl` (caught so a second `fetch`
 // call doesn't bomb on `{already_started, _}`), then call `httpc:request/4`.
 // The OK arm answers `{ok, #{status => Code, body => Body}}`; the error arm
-// `{error, <the reason formatted>}`.
-#[@External.Node("""globalThis.fetch($0).then(__r => __r.text().then(__b => ({ status: __r.status, body: __b })))""")]
-#[@External.Erlang("""(fun(__U) -> (catch inets:start()), (catch ssl:start()), case httpc:request(get, {binary_to_list(__U), []}, [], []) of {ok, {{_, __C, _}, _, __B}} -> {ok, #{status => __C, body => iolist_to_binary(__B)}}; {error, __R} -> {error, iolist_to_binary(io_lib:format("~p", [__R]))} end end)($0)""")]
-pub declare fn fetch(url: string) -> @Task<@Result<Response, string>>;
+// `{error, Reason}`, whose message is the reason formatted (decision 490).
+#[@External.Node("""globalThis.fetch($0).then(__r => __r.text().then(__b => ({ status: __r.status, body: __b })))""", result: true)]
+#[@External.Erlang("""(fun(__U) -> (catch inets:start()), (catch ssl:start()), case httpc:request(get, {binary_to_list(__U), []}, [], []) of {ok, {{_, __C, _}, _, __B}} -> {ok, #{status => __C, body => iolist_to_binary(__B)}}; {error, __R} -> {error, __R} end end)($0)""", result: true)]
+declare fn fetchHost(url: string) -> @Task<@Result<Response, HostError>>;
+
+// Issue a GET request and resolve with the response, or with the transport
+// failure as `Error(message)` — never a rejection: `fetchHost`'s `HostError`
+// mapped to its message (decision 486).
+pub fn fetch(url: string) -> @Task<@Result<Response, string>> {
+    val r = await fetchHost(url);
+    return case r {
+        Ok(resp) -> resp;
+        Error(e) -> throw e.message;
+    };
+}
 
 // ── tests ────────────────────────────────────────────────────────────────────
 // No inline runtime tests: `fetch` needs network access, which the

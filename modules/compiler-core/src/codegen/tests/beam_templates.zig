@@ -16,6 +16,7 @@ const comptimeMod = @import("../../comptime.zig");
 const beamAsm = @import("../beam_asm.zig");
 const primOpTemplate = @import("../../comptime/primOpTemplate.zig");
 const hostFnBinding = @import("../hostFnBinding.zig");
+const erlTemplate = @import("../beam/erl_template.zig");
 
 const Tally = struct {
     lowered: usize = 0,
@@ -118,4 +119,33 @@ test "beam: every Erlang template std and the bundled libraries ship compiles at
     try std.testing.expect(tally.lowered >= 150);
     // std/math binds fifteen functions on Erlang through `fn:`.
     try std.testing.expect(tally.bound >= 15);
+}
+
+test "a result: true binding's wrap lowers for the beam backend (decisions 431, 489, 490)" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const ar = arena.allocator();
+    const atoms: erlTemplate.HostErrorAtoms = .{
+        .record = "std@failure@@HostError",
+        .err = "std@failure@@HostErrorName__v__error",
+        .throw = "std@failure@@HostErrorName__v__throw",
+        .exit = "std@failure@@HostErrorName__v__exit",
+    };
+    const templates = [_][]const u8{
+        "(case $0 > 0 of true -> $0; false -> erlang:error(negative) end)",
+        "(case $0 > 0 of true -> {ok, $0}; false -> {error, refused} end)",
+        try erlTemplate.remoteCallTemplate(ar, "erlang", "abs", 1),
+    };
+    for (templates) |t| {
+        const wrapped = try erlTemplate.resultWrap(ar, t, atoms);
+        const body = try beamAsm.templateBody(ar, wrapped, 1);
+        const text = try beamAsm.templateModuleText(ar, body, false, 1);
+        switch (try beamAsm.lowerTemplateText(ar, text, "bp_tpl_result")) {
+            .ok => {},
+            .refused => |why| {
+                std.debug.print("refused: {s}\n{s}\n", .{ why, text });
+                return error.TestUnexpectedResult;
+            },
+        }
+    }
 }

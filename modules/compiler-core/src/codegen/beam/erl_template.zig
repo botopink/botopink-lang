@@ -48,6 +48,94 @@ pub fn templateBody(alloc: std.mem.Allocator, template_raw: []const u8, argc: us
     return src.toOwnedSlice(alloc);
 }
 
+/// The atoms a `result: true` binding builds std's `failure.HostError` with
+/// (decisions 431, 489): the record's tag and the three `HostErrorName`
+/// variants, as `crossModule.typeAtom` / `variantAtom` render them for the
+/// build.
+pub const HostErrorAtoms = struct {
+    record: []const u8,
+    err: []const u8,
+    throw: []const u8,
+    exit: []const u8,
+};
+
+/// A `result: true` binding's template (decisions 431, 489, 490): `template`
+/// inside a `try … of … catch … end` that answers `@Result<T, HostError>`. An
+/// `{ok, V}` or a plain value is `Ok(V)`; a host that answers `{error, R}`, and
+/// every raise — `error`, `throw`, `exit` — is `Error(HostError(message,
+/// "host", name, detail))`: `message` the reason by `~tp`, `name` the class
+/// (`{error, R}` is `Error`), `detail` the stack by `~tp`. The holes (`$N`) are
+/// left as they are; the caller renders them. Erlang text the reader
+/// (`erl_parse.zig`) and erlc both take. Owned by `alloc`.
+pub fn resultWrap(alloc: std.mem.Allocator, template: []const u8, atoms: HostErrorAtoms) std.mem.Allocator.Error![]u8 {
+    const tail = try resultWrapTail(alloc, atoms);
+    defer alloc.free(tail);
+    return std.mem.concat(alloc, u8, &.{ result_wrap_head, template, tail });
+}
+
+/// What `resultWrap` writes before the template.
+pub const result_wrap_head = "try (";
+
+/// What `resultWrap` writes after the template — for a backend that wraps a
+/// rendered node rather than template text (erlang's host methods). Owned by
+/// `alloc`.
+pub fn resultWrapTail(alloc: std.mem.Allocator, atoms: HostErrorAtoms) std.mem.Allocator.Error![]u8 {
+    return std.fmt.allocPrint(alloc, ") of " ++
+        "{{ok, __BpV}} -> {{ok, __BpV}}; " ++
+        "{{error, __BpR}} -> {{error, {{'{s}', unicode:characters_to_binary(io_lib:format(\"~tp\", [__BpR])), <<\"host\">>, '{s}', undefined}}}}; " ++
+        "__BpV -> {{ok, __BpV}} " ++
+        "catch __BpC:__BpE:__BpS -> {{error, {{'{s}', unicode:characters_to_binary(io_lib:format(\"~tp\", [__BpE])), <<\"host\">>, " ++
+        "case __BpC of error -> '{s}'; throw -> '{s}'; exit -> '{s}' end, " ++
+        "unicode:characters_to_binary(io_lib:format(\"~tp\", [__BpS]))}}}} end", .{
+        atoms.record, atoms.err, atoms.record, atoms.err, atoms.throw, atoms.exit,
+    });
+}
+
+/// `resultWrap` with the arguments bound before the `try`, for a backend that
+/// renders a template inline at the call site (erlang): `(fun(__BpA0, …) ->
+/// <wrapped> end)($0, …)`. A raise while an argument is evaluated is then the
+/// caller's, not the host's, as it is on beam (whose helper takes its
+/// arguments evaluated) and on commonJS; and the `try`'s variables live in the
+/// fun, so two calls in one clause do not share them. `argc` is the call's
+/// argument count. Owned by `alloc`.
+pub fn resultWrapBound(alloc: std.mem.Allocator, template: []const u8, argc: usize, atoms: HostErrorAtoms) anyerror![]u8 {
+    const wrapped = try resultWrap(alloc, template, atoms);
+    defer alloc.free(wrapped);
+    const body = try templateBody(alloc, wrapped, argc);
+    defer alloc.free(body);
+    var out: std.ArrayListUnmanaged(u8) = .empty;
+    errdefer out.deinit(alloc);
+    try out.appendSlice(alloc, "(fun(");
+    for (0..argc) |i| {
+        if (i > 0) try out.appendSlice(alloc, ", ");
+        try out.print(alloc, "__BpA{d}", .{i});
+    }
+    try out.appendSlice(alloc, ") -> ");
+    try out.appendSlice(alloc, body[0 .. body.len - 1]);
+    try out.appendSlice(alloc, " end)(");
+    for (0..argc) |i| {
+        if (i > 0) try out.appendSlice(alloc, ", ");
+        try out.print(alloc, "${d}", .{i});
+    }
+    try out.append(alloc, ')');
+    return out.toOwnedSlice(alloc);
+}
+
+/// A `(module, symbol)` binding as the template it calls —
+/// `'module':'symbol'($0, …)` over `argc` arguments — so a `result: true`
+/// binding of that form is wrapped like a template. Owned by `alloc`.
+pub fn remoteCallTemplate(alloc: std.mem.Allocator, module: []const u8, symbol: []const u8, argc: usize) std.mem.Allocator.Error![]u8 {
+    var out: std.ArrayListUnmanaged(u8) = .empty;
+    errdefer out.deinit(alloc);
+    try out.print(alloc, "'{s}':'{s}'(", .{ module, symbol });
+    for (0..argc) |i| {
+        if (i > 0) try out.appendSlice(alloc, ", ");
+        try out.print(alloc, "${d}", .{i});
+    }
+    try out.append(alloc, ')');
+    return out.toOwnedSlice(alloc);
+}
+
 /// The one-function module a template helper is read from:
 /// `t(__BpSelf, __BpA0, …) -> <body>` over `arity` parameters, the first the
 /// receiver when `has_recv`.

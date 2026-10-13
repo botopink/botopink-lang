@@ -8063,12 +8063,28 @@ const Emitter = struct {
         var exprs: [max_staged]ast.Expr = undefined;
         if (cc.args.len > max_staged) return error.TooManyOperands;
         for (cc.args, 0..) |arg, i| exprs[i] = arg.value.*;
+        // Decisions 431, 489, 490 — a `result: true` binding: its template, or
+        // its `(module, symbol)` as the call it names, inside the `try` that
+        // answers `@Result<T, HostError>` (`erlTemplate.resultWrap`). The
+        // helper takes its arguments evaluated, so a raise there is the
+        // caller's.
+        const result = ast.externalResultFor(f.annotations, "erlang");
         if (ast.externalHasArityBranches(f.annotations, "erlang")) {
             const template = ast.externalArityBranchFor(f.annotations, "erlang", argc) orelse return error.MissingExternalTarget;
+            if (result) return self.evalResultTemplate(template, self_first, exprs[0..cc.args.len], cc.trailing, mode);
             try self.evalTemplate(template, self_first, exprs[0..cc.args.len], cc.trailing, mode);
             return;
         }
         const ref = f.externalFor("erlang") orelse return error.MissingExternalTarget;
+        if (result) {
+            if (ref.module.len > 0 and !primOpTemplate.looksLikeTemplate(ref.symbol)) {
+                if (std.mem.indexOfScalar(u8, ref.symbol, '(') != null) return error.MissingExternalTarget;
+                const call = try erlTemplate.remoteCallTemplate(self.alloc, ref.module, ref.symbol, argc);
+                defer self.alloc.free(call);
+                return self.evalResultTemplate(call, self_first, exprs[0..cc.args.len], cc.trailing, mode);
+            }
+            return self.evalResultTemplate(ref.symbol, self_first, exprs[0..cc.args.len], cc.trailing, mode);
+        }
         if (ref.module.len > 0 and !primOpTemplate.looksLikeTemplate(ref.symbol) and
             std.mem.indexOfScalar(u8, ref.symbol, '(') == null)
         {
@@ -8141,6 +8157,21 @@ const Emitter = struct {
         const refusal = self.template_refusal orelse "the template did not compile";
         self.missing_external.?.refusal = try self.alloc.dupe(u8, refusal);
         return error.TemplateRefused;
+    }
+
+    /// `evalTemplate` over a `result: true` binding's template wrapped by
+    /// `erlTemplate.resultWrap` (decisions 431, 489, 490).
+    fn evalResultTemplate(self: *Emitter, template_raw: []const u8, has_recv: bool, exprs: []const ast.Expr, trailing: anytype, mode: CallMode) anyerror!void {
+        const ar = self.atom_arena.allocator();
+        const id = self.idOf("std/failure");
+        const wrapped = try erlTemplate.resultWrap(self.alloc, template_raw, .{
+            .record = try crossModule.typeAtom(ar, id, "HostError"),
+            .err = try crossModule.variantAtom(ar, id, "HostErrorName", "Error"),
+            .throw = try crossModule.variantAtom(ar, id, "HostErrorName", "Throw"),
+            .exit = try crossModule.variantAtom(ar, id, "HostErrorName", "Exit"),
+        });
+        defer self.alloc.free(wrapped);
+        try self.evalTemplate(wrapped, has_recv, exprs, trailing, mode);
     }
 
     fn freeTemplateFns(self: *Emitter) void {
