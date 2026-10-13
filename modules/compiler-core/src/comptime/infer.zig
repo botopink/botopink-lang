@@ -12719,7 +12719,7 @@ fn behaviorFoundCallType(
 /// a cyclic `extends` chain.
 fn behaviorDeclaresMember(env: *Env, iface: []const u8, member: []const u8, depth: usize) bool {
     if (depth >= 16) return false;
-    const decl = env.assocInterfaceDecls.get(iface) orelse return false;
+    const decl = env.assocInterfaceDecls.get(iface) orelse env.importedBehaviorDecls.get(iface) orelse return false;
     for (decl.methods) |m| {
         if (std.mem.eql(u8, m.name, member)) return true;
     }

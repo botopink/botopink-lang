@@ -47,6 +47,7 @@ comptime/
 ├── reflection.zig     ← decision 216: what decorators record for reflection (`decl.setMeta`, `decl.addType`; decision 298's typed meta), one per compile session
 ├── typeinfo_all.zig   ← decision 216 (4): `@TypeInfo.all(with: d)` — the program's declarations carrying `d`, answered as a `Declared<unknown>[]` (decision 254)
 ├── builtins.zig       ← decision 252: the table of every `@name` builtin the compiler implements, held to `libs/std/src/builtins.d.bp` by its unit tests
+├── adopt_defaults.zig ← 144 B-19: a type implementing a behavior of another module receives a copy of each bodied instance `default fn` it does not write (what the behavior extends included, `comptime.zig` `behaviorsReached`), its locations moved past the module's lines (`first_line`), before the module is checked — so every backend lowers it as the type's own method; a generic behavior is not adopted this way
 ├── assoc_types.zig    ← decision 216 (3): `Owner.Name` (an associated type) rewritten on the parsed program into the declared `Owner__Name`, its import item added
 ├── nested_types.zig   ← decision 330 (7): a type declared in a type's body (`TypeDecl.assocTypes`) hoisted as the top-level `Owner__Name` shown `Owner.Name` (`expand`, run by `analyzeSource` after `value_or_type` and on every embedded std module)
 ├── dsl_hygiene.zig    ← decision 112: a template's built code — the library's names resolve in the library

@@ -724,6 +724,13 @@ imported, under an alias too, as in its own module:
 
 <!-- example: modules/behavior_associated_fn_imported -->
 
+A type implementing a behavior of another module adopts the behavior's
+instance `default fn`s, and those of what it extends, as a type implementing a
+behavior of its own module does; a method of the same name the type writes
+wins:
+
+<!-- example: modules/behavior_default_adopted_across_modules -->
+
 A `behavior` no type in the program implements is a **runtime boundary**: the
 host builds the value. Such a value carries its own members — a `val` member is
 read off it, and a method is found on it the same way and applied to the

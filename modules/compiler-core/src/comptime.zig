@@ -39,6 +39,7 @@ const validation = @import("./comptime/error.zig");
 const diagnostics = @import("./comptime/diagnostics.zig");
 const reflectionMod = @import("./comptime/reflection.zig");
 const assocTypes = @import("./comptime/assoc_types.zig");
+const adoptDefaults = @import("./comptime/adopt_defaults.zig");
 const typeinfoAll = @import("./comptime/typeinfo_all.zig");
 const templateEval = @import("./comptime/template_eval.zig");
 const hostCells = @import("./comptime/host_cells.zig");
@@ -1292,14 +1293,14 @@ fn analyzeMerged(
     // contributions an `@emit` spliced in are imports of this package too.
     const merged = try ast.ImportDecl.withOwnPackage(arena, merged_in, mod.package);
     var owners = try assocOwners(arena, merged, mod.path, typeDeclRegistry, reflection);
-    const program = try assocTypes.expand(arena, merged, &owners);
+    const unadopted = try assocTypes.expand(arena, merged, &owners);
 
-    if (validation.validateComptime(program)) |err_info| {
+    if (validation.validateComptime(unadopted)) |err_info| {
         env.deinit();
         return .{ .validationError = .{ .info = err_info } };
     }
 
-    resolveImports(&env, program, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry) catch |err| switch (err) {
+    resolveImports(&env, unadopted, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry) catch |err| switch (err) {
         error.TypeError => {
             const te = env.lastError orelse validation.TypeError{ .kind = .{ .unboundVariable = "" } };
             env.deinit();
@@ -1308,6 +1309,7 @@ fn analyzeMerged(
         else => return err,
     };
     try written_names.bindRecorded(&env, hygiene);
+    const program = try adoptDefaults.expand(arena, unadopted, try behaviorsReached(arena, &env.importedBehaviorDecls, typeDeclRegistry));
     const bindings = infer.inferProgramTyped(&env, program) catch |err| switch (err) {
         error.TypeError => {
             const te = inline_types.locatedAtCall(env.lastError orelse validation.TypeError{ .kind = .{ .unboundVariable = "" } });
@@ -1374,6 +1376,40 @@ pub fn getStdlibTemplate(gpa: std.mem.Allocator) !*const Env {
         // microsecond init).
         std.atomic.spinLoopHint();
     }
+}
+
+/// The imported behaviors (`Env.importedBehaviorDecls`) and, transitively,
+/// what each `extends` in its own module — a parent the importer never names
+/// (`Shape extends Named`, only `Shape` imported) — for `adopt_defaults.zig`.
+fn behaviorsReached(
+    arena: std.mem.Allocator,
+    imported: *const std.StringHashMapUnmanaged(ast.BehaviorDecl),
+    typeDeclRegistry: *std.StringHashMap(std.StringHashMap(ast.DeclKind)),
+) !*const std.StringHashMapUnmanaged(ast.BehaviorDecl) {
+    const out = try arena.create(std.StringHashMapUnmanaged(ast.BehaviorDecl));
+    out.* = .empty;
+    var pending: std.ArrayListUnmanaged(ast.BehaviorDecl) = .empty;
+    var it = imported.iterator();
+    while (it.next()) |e| {
+        try out.put(arena, e.key_ptr.*, e.value_ptr.*);
+        try pending.append(arena, e.value_ptr.*);
+    }
+    while (pending.pop()) |b| {
+        if (b.extends.len == 0) continue;
+        // The module that declares `b`: its registry holds this declaration.
+        var mit = typeDeclRegistry.iterator();
+        const decls = while (mit.next()) |m| {
+            if (m.value_ptr.get(b.name)) |d| if (d == .behavior and d.behavior.methods.ptr == b.methods.ptr) break m.value_ptr;
+        } else continue;
+        for (b.extends) |parent| {
+            if (out.contains(parent)) continue;
+            const d = decls.get(parent) orelse continue;
+            if (d != .behavior) continue;
+            try out.put(arena, parent, d.behavior);
+            try pending.append(arena, d.behavior);
+        }
+    }
+    return out;
 }
 
 fn analyzeSource(
@@ -1470,18 +1506,18 @@ fn analyzeSource(
     // Decision 216 (3): `Owner.Name` of an imported owner (or of this
     // module's, on a re-analysis) reaches the checker as the declared name.
     var owners = try assocOwners(arena, expanded, mod.path, typeDeclRegistry, reflection);
-    const program = try assocTypes.expand(arena, expanded, &owners);
+    const unadopted = try assocTypes.expand(arena, expanded, &owners);
     // Decision 216 (4): a module reading `@TypeInfo.all` is answered on its
     // re-analysis, after its own decorators ran.
-    const typeinfo_queries = if (skip_invoke) &.{} else try typeinfoAll.collect(arena, program);
+    const typeinfo_queries = if (skip_invoke) &.{} else try typeinfoAll.collect(arena, unadopted);
     env.typeinfoAllPending = typeinfo_queries.len > 0;
 
-    if (validation.validateComptime(program)) |err_info| {
+    if (validation.validateComptime(unadopted)) |err_info| {
         env.deinit();
         return .{ .validationError = .{ .info = err_info } };
     }
 
-    resolveImports(&env, program, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry) catch |err| switch (err) {
+    resolveImports(&env, unadopted, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry) catch |err| switch (err) {
         error.TypeError => {
             const te = env.lastError orelse validation.TypeError{ .kind = .{ .unboundVariable = "" } };
             env.deinit();
@@ -1489,6 +1525,9 @@ fn analyzeSource(
         },
         else => return err,
     };
+    // 144 B-19 — a type adopts the instance defaults of a behavior it
+    // implements from another module (`adopt_defaults.zig`).
+    const program = try adoptDefaults.expand(arena, unadopted, try behaviorsReached(arena, &env.importedBehaviorDecls, typeDeclRegistry));
     // Decisions 341, 434 — a host function a decorator of this module reaches
     // has one of the comptime runtime's three sources; decided when the
     // package is compiled, never at a consumer's build.
