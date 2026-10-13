@@ -83,11 +83,18 @@ refused_on_commonjs() { # <cell dir>
     return 1
 }
 
+# erika's consumer cell: a sibling checkout — `../erika` beside this repository in the
+# meta checkout, `repository/erika` inside it on CI. Neither is an error, never a skip.
+erika_cell=""
+for d in ../erika repository/erika; do
+    [ -d "$d/conformance/modules/generic_loader_binding" ] && { erika_cell="$d/conformance/modules/generic_loader_binding"; break; }
+done
 projects=()
 if [ "$#" -gt 0 ]; then
     projects=("$@")
 else
-    for p in libs/std/ ../erika/conformance/modules/generic_loader_binding/ conformance/modules/*/ conformance/test/*/; do
+    [ -n "$erika_cell" ] || { echo "tsc-check: erika's generic_loader_binding cell not found under ../erika or repository/erika" >&2; exit 1; }
+    for p in libs/std/ "$erika_cell/" conformance/modules/*/ conformance/test/*/; do
         p="${p%/}"
         [ -f "$p/botopink.json" ] || continue
         refused_on_commonjs "$p" && continue

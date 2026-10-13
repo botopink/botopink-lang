@@ -36,12 +36,20 @@ bin="zig-out/bin/botopink"
 [ -x "$bin" ] || bin="$bin.exe"
 [ -x "$bin" ] || { echo "format-check: $bin is not built (run: zig build)" >&2; exit 1; }
 
+# erika's consumer cell: a sibling checkout — `../erika` beside this repository in the
+# meta checkout, `repository/erika` inside it on CI. Neither is an error, never a skip.
+erika_cell=""
+for d in ../erika repository/erika; do
+    [ -d "$d/conformance/modules/generic_loader_binding" ] && { erika_cell="$d/conformance/modules/generic_loader_binding"; break; }
+done
+[ -n "$erika_cell" ] || { echo "format-check: erika's generic_loader_binding cell not found under ../erika or repository/erika" >&2; exit 1; }
+
 TREES=(
     libs/std
     modules/compiler-cli/tests
     modules/manifest/tests
     conformance
-    ../erika/conformance/modules/generic_loader_binding
+    "$erika_cell"
 )
 
 status=0
