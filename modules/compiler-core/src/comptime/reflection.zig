@@ -150,6 +150,15 @@ pub const Reflection = struct {
     templateQueries: std.StringHashMapUnmanaged([]const TemplateQuery) = .empty,
     /// Every answer a template body's query was given in this session.
     templateReads: std.ArrayListUnmanaged(TemplateRead) = .empty,
+    /// Decision 356 — `templateKey(owner, name)` → where that template
+    /// function's body first reads a catalogue entry's `value`: refused at
+    /// an expansion whose answer holds an entry with no build value.
+    templateValueReads: std.StringHashMapUnmanaged(ast.Loc) = .empty,
+    /// Decision 356 — `envMod.declIdentity(module, name)` → the build value
+    /// of a module-level `val` whose initializer is `comptime`, as
+    /// `block_eval.termJson` writes it: what a template body's catalogue
+    /// answer lifts as the entry's `value`.
+    declaredValues: std.StringHashMapUnmanaged([]const u8) = .empty,
     /// Decision 277 — `envMod.declIdentity(module, name)` → each top-level
     /// function of an analysed module with its hook node (`hooks.zig`),
     /// published when the module's analysis ends: an importer's `decl.hooks`

@@ -2991,6 +2991,27 @@ fn addImportedTypeScope(
     }
 }
 
+/// Decision 356 — the build value of each module-level `val` a decorator
+/// annotates whose initializer is `comptime` (`Reflection.declaredValues`):
+/// what a template body's catalogue answer lifts as the entry's `value`.
+/// Recorded for every module, the last one included (it exports nothing).
+fn recordDeclaredValues(path: []const u8, decls: []const ast.DeclKind, succ_env: *const envMod.Env) !void {
+    var env = succ_env.*;
+    const r = env.reflection orelse return;
+    const io = (env.templateEval orelse return).io;
+    for (decls) |d| {
+        if (d != .val) continue;
+        const v = d.val;
+        if (v.value.* != .comptime_) continue;
+        const annotated = for (v.annotations) |a| {
+            if (!a.is_builtin) break true;
+        } else false;
+        if (!annotated) continue;
+        const json = (try blockEval.exportedBuildValue(&env, io, v)) orelse continue;
+        try r.declaredValues.put(r.arena, try envMod.declIdentity(r.arena, path, v.name), try r.arena.dupe(u8, json));
+    }
+}
+
 fn registerExports(
     arena: std.mem.Allocator,
     registry: *std.StringHashMap(std.StringHashMap(*T.Type)),
@@ -3649,6 +3670,7 @@ pub fn compileTypesOnly(
                     };
                     try infer.taskLowerings(&succ.env, &instance_lowerings);
                 }
+                try recordDeclaredValues(mod.path, succ.program.decls, &succ.env);
                 if (idx < all_modules.len - 1) {
                     var env = succ.env;
                     try registerExports(arena_alloc, &registry, &type_decl_registry, &template_registry, &decorator_registry, &extension_registry, &default_dsl, mod.path, succ.bindings, succ.program.decls, &env);
@@ -3985,6 +4007,7 @@ fn compileOnce(
                     };
                     try infer.taskLowerings(&succ.env, &instance_lowerings);
                 }
+                try recordDeclaredValues(mod.path, succ.program.decls, &succ.env);
                 if (idx < all_modules.len - 1) {
                     var env = succ.env;
                     try registerExports(arena_alloc, &registry, &type_decl_registry, &template_registry, &decorator_registry, &extension_registry, &default_dsl, mod.path, succ.bindings, succ.program.decls, &env);

@@ -52,6 +52,7 @@
 const std = @import("std");
 const ast = @import("../ast.zig");
 const envMod = @import("env.zig");
+const typedMeta = @import("typed_meta.zig");
 const reflectionMod = @import("reflection.zig");
 const writtenNames = @import("written_names.zig");
 const diagnostics = @import("diagnostics.zig");
@@ -543,7 +544,13 @@ pub fn plan(
 pub const TemplateAnswer = union(enum) {
     /// The array the template's comptime module builds, and its text (what
     /// `comptime.zig` compares with the session's final catalogue).
-    ok: struct { expr: *const ast.Expr, text: []const u8 },
+    ok: struct {
+        expr: *const ast.Expr,
+        text: []const u8,
+        /// Decision 356 — the first entry with no build value (`value`
+        /// written `null`): a body reading `value` is refused for it.
+        unvalued: ?[]const u8 = null,
+    },
     refused: TypeError,
 };
 
@@ -559,11 +566,12 @@ pub const TemplateAnswer = union(enum) {
 /// at the expansion.
 pub fn answerForTemplate(arena: std.mem.Allocator, reflection: *const reflectionMod.Reflection, q: Resolved, at: ast.Loc) Error!TemplateAnswer {
     const source = reflection.oracle orelse reflection;
-    const text = switch (try templateAnswerText(arena, source, q, at)) {
+    var unvalued: ?[]const u8 = null;
+    const text = switch (try templateAnswerTextOf(arena, source, q, at, &unvalued)) {
         .ok => |t| t,
         .refused => |te| return .{ .refused = te },
     };
-    return .{ .ok = .{ .expr = try parseAnswer(arena, text, q.loc.line), .text = text } };
+    return .{ .ok = .{ .expr = try parseAnswer(arena, text, q.loc.line), .text = text, .unvalued = unvalued } };
 }
 
 pub const AnswerText = union(enum) { ok: []const u8, refused: TypeError };
@@ -571,6 +579,11 @@ pub const AnswerText = union(enum) { ok: []const u8, refused: TypeError };
 /// The text of a template body's answer from `source` — also how
 /// `comptime.zig` re-reads an answer against the final catalogue.
 pub fn templateAnswerText(arena: std.mem.Allocator, source: *const reflectionMod.Reflection, q: Resolved, at: ast.Loc) Error!AnswerText {
+    var unvalued: ?[]const u8 = null;
+    return templateAnswerTextOf(arena, source, q, at, &unvalued);
+}
+
+fn templateAnswerTextOf(arena: std.mem.Allocator, source: *const reflectionMod.Reflection, q: Resolved, at: ast.Loc, unvalued: *?[]const u8) Error!AnswerText {
     const entries = try entriesFor(arena, source, q, null);
     if (try checkEntries(arena, q, entries, null, at)) |te| return .{ .refused = te };
     var text: std.ArrayListUnmanaged(u8) = .empty;
@@ -578,10 +591,73 @@ pub fn templateAnswerText(arena: std.mem.Allocator, source: *const reflectionMod
     for (entries, 0..) |e, i| {
         if (i > 0) try text.appendSlice(arena, ", ");
         // A template body reads no entry's typed meta (`typeinfo-meta-at-build`).
-        try writeEntry(&text, arena, source, q, e, "Declared", "null", "[]");
+        // Decision 356 — a `val` whose initializer is `comptime` carries its
+        // build value, lifted as a literal; any other entry carries none.
+        const value: ?[]const u8 = if (e.kind == .val)
+            if (source.declaredValues.get(try envMod.declIdentity(arena, e.module, e.name))) |json| try buildValueSource(arena, json) else null
+        else
+            null;
+        if (value == null and unvalued.* == null) unvalued.* = e.name;
+        try writeEntry(&text, arena, source, q, e, "Declared", value orelse "null", "[]");
     }
     try text.append(arena, ']');
     return .{ .ok = text.items };
+}
+
+/// Decision 356 — a build value (`block_eval.termJson`'s JSON) as a botopink
+/// literal the template's module reads: a string, a number, a `bool`,
+/// `null`, and an array or a tuple of those. A record or an enum's variant
+/// names a type the template's module may not hold (`language-gaps.md`: a
+/// template body cannot build a private record nor name a variant): null,
+/// no build value.
+fn buildValueSource(arena: std.mem.Allocator, json: []const u8) Error!?[]const u8 {
+    const v = std.json.parseFromSliceLeaky(std.json.Value, arena, json, .{}) catch return null;
+    var out: std.ArrayListUnmanaged(u8) = .empty;
+    if (!try writeBuildValue(arena, &out, v)) return null;
+    return out.items;
+}
+
+fn writeBuildValue(arena: std.mem.Allocator, out: *std.ArrayListUnmanaged(u8), v: std.json.Value) Error!bool {
+    switch (v) {
+        .null => try out.appendSlice(arena, "null"),
+        .bool => |b| try out.appendSlice(arena, if (b) "true" else "false"),
+        .integer => |n| try out.print(arena, "{d}", .{n}),
+        .number_string => |n| try out.appendSlice(arena, n),
+        .string => |str| try typedMeta.writeBpString(arena, out, str),
+        .array => |items| {
+            try out.append(arena, '[');
+            for (items.items, 0..) |item, i| {
+                if (i > 0) try out.appendSlice(arena, ", ");
+                if (!try writeBuildValue(arena, out, item)) return false;
+            }
+            try out.append(arena, ']');
+        },
+        .object => |o| {
+            if (o.count() != 1) return false;
+            if (o.get("float")) |f| {
+                const x: f64 = switch (f) {
+                    .float => |x| x,
+                    .integer => |n| @floatFromInt(n),
+                    else => return false,
+                };
+                if (std.math.isNan(x) or std.math.isInf(x)) return false;
+                const t = try std.fmt.allocPrint(arena, "{d}", .{x});
+                try out.appendSlice(arena, t);
+                if (std.mem.indexOfAny(u8, t, ".e") == null) try out.appendSlice(arena, ".0");
+                return true;
+            }
+            const items = o.get("tuple") orelse return false;
+            if (items != .array) return false;
+            try out.appendSlice(arena, "#(");
+            for (items.array.items, 0..) |item, i| {
+                if (i > 0) try out.appendSlice(arena, ", ");
+                if (!try writeBuildValue(arena, out, item)) return false;
+            }
+            try out.append(arena, ')');
+        },
+        else => return false,
+    }
+    return true;
 }
 
 /// Decision 353 — `f` with each of `answers`' calls (by location) replaced

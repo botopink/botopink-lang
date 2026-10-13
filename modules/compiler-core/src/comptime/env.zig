@@ -878,6 +878,10 @@ pub const Env = struct {
     /// True while inferring the body of a template function (`-> @Expr<…>`).
     /// Gates the `@expr`/`@code` construction builtins.
     inTemplateFn: bool = false,
+    /// The template function whose body is being inferred (`inTemplateFn`),
+    /// for decision 356's read of a catalogue entry's `value`
+    /// (`Reflection.templateValueReads`).
+    currentTemplateFn: ?[]const u8 = null,
     /// Decision 354 (3) — true while inferring a decorator's body (a fn whose
     /// first parameter is `comptime _: @Decl`): compile-time evaluation with
     /// no render tree, where `use` is refused (`use-outside-render-tree`).

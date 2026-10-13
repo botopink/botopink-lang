@@ -1,0 +1,4 @@
+import {theme} from "looks";
+
+#[theme]
+pub val brand = "violet";

@@ -502,6 +502,8 @@ pub const Snapshot = struct {
     template_queries: Flat([]const reflectionMod.TemplateQuery),
     hook_fns: Flat(@FieldType(@FieldType(reflectionMod.Reflection, "hookFns").KV, "value")),
     scopes: Flat(reflectionMod.WrittenName),
+    template_value_reads: Flat(ast.Loc),
+    declared_values: Flat([]const u8),
     template_reads: usize,
 
     pub fn take(gpa: Allocator, regs: Registries) !Snapshot {
@@ -525,6 +527,8 @@ pub const Snapshot = struct {
             .template_queries = try copyFlat([]const reflectionMod.TemplateQuery, a, &r.templateQueries),
             .hook_fns = try copyFlat(@FieldType(@FieldType(reflectionMod.Reflection, "hookFns").KV, "value"), a, &r.hookFns),
             .scopes = try copyFlat(reflectionMod.WrittenName, a, &r.scopes),
+            .template_value_reads = try copyFlat(ast.Loc, a, &r.templateValueReads),
+            .declared_values = try copyFlat([]const u8, a, &r.declaredValues),
             .template_reads = r.templateReads.items.len,
             .arena_inst = arena_inst,
         };
@@ -553,6 +557,8 @@ pub const Snapshot = struct {
             .template_queries = try diffFlat([]const reflectionMod.TemplateQuery, arena, &self.template_queries, &r.templateQueries),
             .hook_fns = try diffFlat(@FieldType(@FieldType(reflectionMod.Reflection, "hookFns").KV, "value"), arena, &self.hook_fns, &r.hookFns),
             .scopes = try diffFlat(reflectionMod.WrittenName, arena, &self.scopes, &r.scopes),
+            .template_value_reads = try diffFlat(ast.Loc, arena, &self.template_value_reads, &r.templateValueReads),
+            .declared_values = try diffFlat([]const u8, arena, &self.declared_values, &r.declaredValues),
         };
     }
 };
@@ -720,6 +726,8 @@ pub fn replay(arena: Allocator, j: Journal, regs: Registries) !void {
     try replayFlat([]const reflectionMod.TemplateQuery, r.arena, &r.templateQueries, j.template_queries);
     try replayFlat(@FieldType(@FieldType(reflectionMod.Reflection, "hookFns").KV, "value"), r.arena, &r.hookFns, j.hook_fns);
     try replayFlat(reflectionMod.WrittenName, r.arena, &r.scopes, j.scopes);
+    try replayFlat(ast.Loc, r.arena, &r.templateValueReads, j.template_value_reads);
+    try replayFlat([]const u8, r.arena, &r.declaredValues, j.declared_values);
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────

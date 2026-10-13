@@ -8014,6 +8014,9 @@ fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
     const savedInTemplate = env.inTemplateFn;
     env.inTemplateFn = if (f.returnType) |rt| rt.isTemplateReturnType() else false;
     defer env.inTemplateFn = savedInTemplate;
+    const savedTemplateFn = env.currentTemplateFn;
+    env.currentTemplateFn = if (env.inTemplateFn) f.name else null;
+    defer env.currentTemplateFn = savedTemplateFn;
     // Decision 354 (3) — a decorator's body is compile-time evaluation with
     // no render tree: `use` there is refused.
     const savedInDecorator = env.inDecoratorFn;
@@ -9750,15 +9753,30 @@ fn answerTemplateQueries(env: *Env, owner: []const u8, tfn: ast.FnDecl, loc: ast
     if (queries.len == 0) return .{ .decl = tfn, .types = &.{} };
     const r = env.reflection.?;
     var answers: std.AutoHashMapUnmanaged(ast.Loc, *const ast.Expr) = .empty;
+    var unvalued: ?[]const u8 = null;
     for (queries) |q| switch (try typeinfoAll.answerForTemplate(env.arena, r, q, loc)) {
         .ok => |a| {
             try answers.put(env.arena, q.loc, a.expr);
             try r.templateReads.append(r.arena, .{ .module = env.modulePath, .loc = loc, .query = q, .text = a.text });
+            if (unvalued == null) unvalued = a.unvalued;
         },
         .refused => |te| {
             env.lastError = te;
             return error.TypeError;
         },
+    };
+    // Decision 356 — the body reads an entry's `value`, and an entry of the
+    // answer is no `val` with a `comptime` initializer: refused at the read
+    // when the template is this module's, else at the expansion naming it.
+    if (unvalued) |entry| if (r.templateValueReads.get(try reflectionMod.Reflection.templateKey(env.arena, owner, tfn.name))) |read| {
+        const mine = std.mem.eql(u8, owner, env.modulePath);
+        // `entry` names the first such entry where the read is another module's.
+        const msg = if (mine)
+            try std.fmt.allocPrint(env.arena, "{s}: a template body reads the catalogue at build, where a declaration of the program is no value", .{diagnostics.typeinfo_all_template_value})
+        else
+            try std.fmt.allocPrint(env.arena, "{s}: the template expanded here reads an entry's `value` (at {s}:{d}:{d}), and `{s}` is no `val` whose initializer is `comptime` — it has no build value", .{ diagnostics.typeinfo_all_template_value, srcPathOfModule(env, owner), read.line, read.col, entry });
+        env.lastError = TypeError.custom(msg, "Only a `val` whose initializer is `comptime` has a value at build (decision 356); read `name`, `module`, `meta` and `returnTypeName` of any other entry.").withLoc(if (mine) read else loc);
+        return error.TypeError;
     };
     var lx = Lexer.init(template_declared_src);
     const tokens = lx.scanAll(env.arena) catch return error.OutOfMemory;
@@ -14501,10 +14519,17 @@ fn inferIdentifierExpr(env: *Env, ident: ast.IdentifierExprOf(.untyped), loc: as
             try refuseUnknownUse(env, recvType, loc, "read a field of");
             try refuseResultMemberAccess(env, recvType, ia.member, false, loc);
             // Decision 353 — a template body's catalogue is answered at build,
-            // where a declaration of the program is no value: its `value` is
-            // refused at the read (`name`, `module`, `meta`, `returnTypeName`
-            // are answered).
-            if (env.inTemplateFn and recvType.* == .named and std.mem.eql(u8, recvType.named.name, "Declared") and std.mem.eql(u8, ia.member, "value")) {
+            // where a declaration of the program is no value; decision 356 —
+            // a `val` with a `comptime` initializer is, its build value. The
+            // read is recorded and refused at an expansion whose answer holds
+            // an entry with no build value (`answerTemplateQueries`).
+            if (env.inTemplateFn and recvType.* == .named and std.mem.eql(u8, recvType.named.name, "Declared") and std.mem.eql(u8, ia.member, "value")) record: {
+                const r = env.reflection orelse break :record;
+                const name = env.currentTemplateFn orelse break :record;
+                const gop = try r.templateValueReads.getOrPut(r.arena, try reflectionMod.Reflection.templateKey(r.arena, env.modulePath, name));
+                if (!gop.found_existing) gop.value_ptr.* = loc;
+            }
+            if (env.inTemplateFn and (env.reflection == null or env.currentTemplateFn == null) and recvType.* == .named and std.mem.eql(u8, recvType.named.name, "Declared") and std.mem.eql(u8, ia.member, "value")) {
                 env.lastError = TypeError.custom(
                     diagnostics.typeinfo_all_template_value ++ ": a template body reads the catalogue at build, where a declaration of the program is no value",
                     "Read `name`, `module`, `meta` and `returnTypeName` of the entry; the declaration's value is the program's, at run time.",

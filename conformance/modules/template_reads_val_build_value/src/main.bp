@@ -1,0 +1,11 @@
+//// Decision 356 — a template body reads the build value of a catalogued
+//// `val` whose initializer is `comptime`: the value the program computed
+//// while it compiled, lifted into the template's module as a literal. The
+//// package's template finds the application's one `#[theme]` and reads it.
+
+pub mod skin;
+import looks from "looks";
+
+pub fn main() {
+    @print(looks "page");
+}
