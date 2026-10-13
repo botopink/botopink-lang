@@ -14,5 +14,5 @@ pub fn main() -> @Task<void> {
     case r {
         Ok(_) -> @print("ok");
         Error(e) -> @print(e);
-    };
+    }
 }

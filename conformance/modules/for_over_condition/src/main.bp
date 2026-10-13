@@ -5,5 +5,5 @@ pub fn main() {
     val running = true;
     for (running) { x ->
         @print(x);
-    };
+    }
 }

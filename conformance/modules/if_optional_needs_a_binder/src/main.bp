@@ -12,5 +12,5 @@
 pub fn main() {
     val ws = ["alpha"];
     val w = ws.at(0);
-    if (w) { @print("truthy"); };
+    if (w) { @print("truthy"); }
 }

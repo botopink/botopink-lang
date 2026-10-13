@@ -9,7 +9,7 @@ pub fn main() {
     var n = 0;
     val s = #[@futureGenerator] loop {
         n = n + 1;
-        if (n > 3) { break; };
+        if (n > 3) { break; }
         yield await tick(n);
     };
 }

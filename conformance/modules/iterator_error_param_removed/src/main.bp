@@ -9,4 +9,4 @@ fn old(n: i32) -> @Iterator<i32, string> {
     yield n;
 }
 
-pub fn main() { for (old(1)) { x -> @print(x); }; }
+pub fn main() { for (old(1)) { x -> @print(x); } }

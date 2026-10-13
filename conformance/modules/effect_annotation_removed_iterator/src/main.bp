@@ -8,9 +8,9 @@
 
 #[@iterator]
 fn upto(n: i32) -> @Iterator<@Result<i32, string>> {
-    if (n < 0) { throw "negative"; };
+    if (n < 0) { throw "negative"; }
     var i = 0;
-    while (i < n) { yield i; i = i + 1; };
+    while (i < n) { yield i; i = i + 1; }
 }
 
-pub fn main() { for (upto(2)) { r -> @print(r.unwrapOr(0)); }; }
+pub fn main() { for (upto(2)) { r -> @print(r.unwrapOr(0)); } }

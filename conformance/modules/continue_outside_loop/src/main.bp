@@ -3,6 +3,6 @@
 
 pub fn main() {
     val n = 1;
-    if (n == 1) { continue; };
+    if (n == 1) { continue; }
     @print(n);
 }

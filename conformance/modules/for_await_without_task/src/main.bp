@@ -11,7 +11,7 @@ fn numbers() -> @Stream<i32> {
 
 fn total() -> i32 {
     var n = 0;
-    for await (numbers()) { x -> n = n + x; };
+    for await (numbers()) { x -> n = n + x; }
     return n;
 }
 

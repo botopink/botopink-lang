@@ -8,12 +8,12 @@
 pub type ParseError { Empty }
 
 fn check(n: i32) -> @Result<i32, string> {
-    if (n < 0) { throw "negative"; };
+    if (n < 0) { throw "negative"; }
     return n;
 }
 
 fn parse(s: string) -> @Result<i32, ParseError> {
-    if (s == "") { throw ParseError.Empty; };
+    if (s == "") { throw ParseError.Empty; }
     return 1;
 }
 

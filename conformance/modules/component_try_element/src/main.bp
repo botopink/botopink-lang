@@ -7,7 +7,7 @@
 type Element(count: i32) implement @Renderable
 
 fn fetchCount(n: i32) -> @Task<@Result<i32, string>> {
-    if (n < 0) { throw "negative"; };
+    if (n < 0) { throw "negative"; }
     return n;
 }
 

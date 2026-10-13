@@ -3,12 +3,12 @@
 
 fn ticks(n: i32) -> @Stream<i32> {
     var i = 0;
-    while (i < n) { yield i; i = i + 1; };
+    while (i < n) { yield i; i = i + 1; }
 }
 
 fn total() -> @Task<i32> {
     var acc = 0;
-    for (ticks(3)) { v -> acc = acc + v; };
+    for (ticks(3)) { v -> acc = acc + v; }
     return acc;
 }
 

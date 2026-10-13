@@ -5,7 +5,7 @@
 //// (`await t`, `try await t catch x`) are `run/task_await_result.bp`.
 
 fn fetchUser(id: i32) -> @Task<@Result<string, string>> {
-    if (id <= 0) { throw "no user"; };
+    if (id <= 0) { throw "no user"; }
     return "user" + id.toString();
 }
 

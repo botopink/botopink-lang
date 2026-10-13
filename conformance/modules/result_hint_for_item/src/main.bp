@@ -13,7 +13,7 @@ fn total(n: i32) -> @Result<i32, string> {
     var acc = 0;
     for (upTo(n)) { r ->
         acc = acc + r;
-    };
+    }
     return acc;
 }
 

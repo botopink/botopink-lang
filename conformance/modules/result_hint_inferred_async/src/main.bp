@@ -6,7 +6,7 @@
 //// `@Result`.
 
 fn parse(s: string) -> @Result<i32, string> {
-    if (s == "") { throw "empty"; };
+    if (s == "") { throw "empty"; }
     return 1;
 }
 

@@ -6,11 +6,11 @@
 
 fn count(xs: string[]) -> i32 {
     val items = iter for (xs) { x ->
-        if (x == "stop") { throw "stopped"; };
+        if (x == "stop") { throw "stopped"; }
         yield 1;
     };
     var acc = 0;
-    for (items) { r -> acc = acc + r; };
+    for (items) { r -> acc = acc + r; }
     return acc;
 }
 

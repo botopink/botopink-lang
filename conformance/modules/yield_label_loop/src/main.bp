@@ -5,7 +5,7 @@
 fn doubled(xs: i32[]) -> @Iterator<i32> :out {
     for :inner (xs) { x ->
         yield :inner x * 2;
-    };
+    }
 }
 
 pub fn main() { @print(1); }

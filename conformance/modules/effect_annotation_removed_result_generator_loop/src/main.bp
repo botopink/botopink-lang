@@ -7,8 +7,8 @@ pub fn main() {
     var n = 0;
     val g = #[@resultGenerator] loop {
         n = n + 1;
-        if (n > 3) { throw "stop"; };
+        if (n > 3) { throw "stop"; }
         yield n;
     };
-    for (g) { r -> @print(r.unwrapOr(0)); };
+    for (g) { r -> @print(r.unwrapOr(0)); }
 }

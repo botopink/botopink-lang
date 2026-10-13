@@ -8,4 +8,4 @@ fn g() -> @Iterator<i32> {
     throw "x";
 }
 
-pub fn main() { for (g()) { x -> @print(x); }; }
+pub fn main() { for (g()) { x -> @print(x); } }

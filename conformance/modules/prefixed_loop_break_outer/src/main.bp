@@ -9,9 +9,9 @@ pub fn main() {
     for :outer ([1, 2, 3]) { x ->
         val g = iter loop {
             n = n + 1;
-            if (n > 2) { break :outer; };
+            if (n > 2) { break :outer; }
             yield n;
         };
-    };
+    }
     @print(n);
 }
