@@ -9303,6 +9303,11 @@ const Emitter = struct {
                 const tr = self.typeRefOf(recv) orelse return null;
                 const k = switch (tr) {
                     .named => |tn| primKindOfName(tn) orelse return null,
+                    // A method answering `Array<T>` / `T[]` (`kit.of(xs)
+                    // .toArray()` through a namespace member, which inference
+                    // records no lowering for): the array's methods.
+                    .array => envMod.PrimKind.array,
+                    .generic => |g| if (std.mem.eql(u8, g.name, "Array")) envMod.PrimKind.array else return null,
                     else => return null,
                 };
                 return if (primCallRes(k, cc) != null) k else null;
@@ -11163,6 +11168,10 @@ const Emitter = struct {
                                     else => .i32,
                                 };
                             }
+                            // A method the array family does not know (a library's
+                            // `toArray()` answering `Array<string>`) answers its
+                            // declared element, not the receiver's.
+                            if (primCallRes(.array, cc) == null) if (self.typeRefOf(e)) |t| if (arrayElemOfTypeRef(t)) |ek| break :blk ek;
                             break :blk self.elemKindOf(recv);
                         },
                         else => break :blk .i32,
@@ -11170,6 +11179,7 @@ const Emitter = struct {
                     // `xs[a..b]` keeps the elements of `xs`
                     if (self.indexArgs(cc)) |ix| break :blk if (ix.is_slice) self.elemKindOf(ix.recv) else .i32;
                     if (cc.is_builtin) break :blk .i32;
+                    if (cc.receiver != null) if (self.typeRefOf(e)) |t| if (arrayElemOfTypeRef(t)) |k| if (k != .i32) break :blk k;
                     if (self.resolvedCallSym(cc, c.loc)) |sym| break :blk self.fn_arr_elem.get(sym) orelse .i32;
                     if (self.valueCallTypeRef(cc)) |t| if (arrayElemOfTypeRef(t)) |k| break :blk k;
                     break :blk self.fn_arr_elem.get(cc.callee) orelse .i32;
@@ -13388,6 +13398,112 @@ const Emitter = struct {
         };
     }
 
+    /// The element a generic record method hands its lambda: the receiver's
+    /// first type argument when it names a concrete type, else what the
+    /// receiver was built from — a generic fn over `Array<T>` (`of(rows)`) is
+    /// its argument's element, and a method answering the owner's own
+    /// parameter (`where`, `orderBy`) keeps its receiver's.
+    fn recvElemName(self: *Emitter, recv: ast.Expr) ?[]const u8 {
+        if (self.typeRefOf(recv)) |tr| if (tr == .generic and tr.generic.args.len >= 1 and tr.generic.args[0] == .named) {
+            const n = tr.generic.args[0].named;
+            if (primKindOfName(n) != null or self.records.contains(n)) return n;
+        };
+        const c = switch (recv) {
+            .call => |c| c,
+            else => return null,
+        };
+        const cc = switch (c.kind) {
+            .call => |cc| cc,
+            else => return null,
+        };
+        if (cc.receiver) |r| {
+            const sym = self.recordMethodSym(cc, c.loc) orelse return null;
+            const ret = self.fn_ret_typerefs.get(sym) orelse return null;
+            const rec = self.recordTypeOfExpr(r.*) orelse return null;
+            const gps = self.record_generics.get(rec) orelse return null;
+            if (ret != .generic or ret.generic.args.len == 0 or ret.generic.args[0] != .named or gps.len == 0) return null;
+            if (!std.mem.eql(u8, ret.generic.args[0].named, gps[0].name)) return null;
+            return self.recvElemName(r.*);
+        }
+        const g = self.generic_fns.get(self.import_aliases.get(cc.callee) orelse cc.callee) orelse return null;
+        if (cc.args.len == 0 or g.decl.params.len == 0) return null;
+        const pt = g.decl.params[0].typeRef;
+        const inner: ast.TypeRef = switch (pt) {
+            .array => |i| i.*,
+            .generic => |gg| if (std.mem.eql(u8, gg.name, "Array") and gg.args.len == 1) gg.args[0] else return null,
+            else => return null,
+        };
+        if (inner != .named or !isGenericParamName(inner.named, g.decl.genericParams, &.{})) return null;
+        const arg = cc.args[0].value.*;
+        if (self.elemRecordOf(arg)) |r| return r;
+        if (self.elemKindOf(arg) == .str) return "string";
+        return null;
+    }
+
+    /// A generic method's declared return, with the type parameters the call
+    /// binds written in: the owner's from the receiver's type arguments
+    /// (`Query<string>.toArray()` answers `Array<string>`), the method's own
+    /// from the tail of a lambda argument whose declared function type returns
+    /// one (`q.select({ c -> c.name })` over `select<U>(selector: fn(T) -> U)
+    /// -> Query<U>` answers `Query<string>`). Inference records neither, so a
+    /// chain through such a method lost its element type — a library's
+    /// `.toArray().join(…)` read its strings as integers.
+    fn bindMethodRet(self: *Emitter, sym: []const u8, cc: anytype, ret: ast.TypeRef) ast.TypeRef {
+        const ar = self.reg_arena.allocator();
+        var subs: std.ArrayListUnmanaged(TypeSub) = .empty;
+        if (self.typeRefOf(cc.receiver.?.*)) |rt| if (rt == .generic) {
+            if (self.record_generics.get(rt.generic.name)) |gps| if (gps.len == rt.generic.args.len) {
+                for (gps, rt.generic.args) |gp, arg| {
+                    if (arg == .named and std.mem.eql(u8, arg.named, gp.name)) continue;
+                    subs.append(ar, .{ .name = gp.name, .to = arg }) catch return ret;
+                }
+            };
+        };
+        const generic = if (std.mem.indexOf(u8, sym, "__")) |i| sym[0..i] else sym;
+        const elem_name = self.recvElemName(cc.receiver.?.*);
+        if (self.generic_methods.get(generic)) |gm| {
+            var pi: usize = 0;
+            for (gm.method.params) |p| {
+                if (std.mem.eql(u8, p.name, "self")) continue;
+                defer pi += 1;
+                const pt = p.typeRef;
+                if (pt != .function or pt.function.returnType.* != .named) continue;
+                const un = pt.function.returnType.named;
+                if (primKindOfName(un) != null or self.records.contains(un) or self.enums.contains(un)) continue;
+                const lam = lambdaAt(cc, pi) orelse continue;
+                if (lam.body.len == 0) continue;
+                const last = lam.body[lam.body.len - 1].expr;
+                const v = switch (last) {
+                    .jump => |j| switch (j.kind) {
+                        .@"return" => |r| if (r) |x| x.* else continue,
+                        else => continue,
+                    },
+                    else => last,
+                };
+                // The lambda's parameter is the receiver's element while its
+                // tail is asked about.
+                const held: HeldElemParam = if (lam.params.len > 0) .{
+                    .name = lam.params[0],
+                    .prev_type = self.local_types.get(lam.params[0]),
+                    .prev_str = self.str_locals.contains(lam.params[0]),
+                    .prev_local = self.locals.get(lam.params[0]),
+                    .prev_alias = self.aliases.get(lam.params[0]),
+                } else .{};
+                defer self.releaseElemParam(held);
+                if (held.name) |hp| if (elem_name) |en| {
+                    _ = self.aliases.remove(hp);
+                    if (self.records.contains(en)) self.local_types.put(hp, en) catch {};
+                    if (std.mem.eql(u8, en, "string")) self.str_locals.put(hp, {}) catch {};
+                    self.locals.put(hp, if (en.len > 0 and en[0] == 'f') "f64" else "i32") catch {};
+                };
+                const to: []const u8 = if (self.isStringExpr(v)) "string" else if (self.isBoolExpr(v)) "bool" else if (self.wasmTypeOf(v)[0] == 'f') "f64" else if (self.recordTypeOfExpr(v)) |r| r else continue;
+                subs.append(ar, .{ .name = un, .to = .{ .named = to } }) catch return ret;
+            }
+        }
+        if (subs.items.len == 0) return ret;
+        return substTypeParams(ast.TypeRef, ar, ret, subs.items) catch ret;
+    }
+
     fn typeRefOf(self: *Emitter, e: ast.Expr) ?ast.TypeRef {
         // `o ?? d` over a `?T` answers a `T`, as `o.unwrapOr(d)` did below:
         // a `?u64`'s payload stays a `u64`, which prints, compares and turns
@@ -13495,7 +13611,7 @@ const Emitter = struct {
                     // "boxed" and loaded through the payload as an address.
                     if (cc.receiver != null) {
                         if (self.recordMethodSym(cc, c.loc)) |sym| {
-                            if (self.fn_ret_typerefs.get(sym)) |t| break :blk t;
+                            if (self.fn_ret_typerefs.get(sym)) |t| break :blk self.bindMethodRet(sym, cc, t);
                         }
                         // The same question one step lower: the symbol the call
                         // actually emits — a `rewrites` entry the comptime pass

@@ -3063,6 +3063,14 @@ first three are now enforced by the model, not by discipline:
   declared `TypeRef`s (`typeRefOf`: params, return types, annotations, record
   fields, tuple elements); an `__bp_option_*` receiver of unknown type is
   taken as boxed unless its default is a string, record or array.
+- **A generic method's return is bound at the call** (`bindMethodRet`, `recvElemName`): the owner's type
+  parameters from the receiver's type arguments (`Seq<string>.toArray()` is `Array<string>`) and the method's
+  own from the tail of a lambda argument whose declared function type returns one (`select<U>(f: fn(T) -> U)
+  -> Seq<U>`), the lambda's parameter bound to the receiver's element while the tail is asked about
+  (a generic fn over `Array<T>` gives its argument's element; `where`-like methods keep the receiver's).
+  `typeRefOf` and `elemKindOf` read it, so `xs.select(…).toArray().join(…)` joins strings and not their
+  addresses; `primKindAt` takes a chain link answering `Array<T>` / `T[]` as an array
+  (`conformance/modules/generic_method_array_join`).
 
 | Backend | `null` / none | present `?T` |
 |---|---|---|

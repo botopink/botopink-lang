@@ -1550,7 +1550,8 @@ cfg.debug` it prints `true`), and `test/stdlib-tour`'s `Set.fromList` of structu
 records keeps three members on commonJS (and wasm, which no suite reaches) where erlang and beam
 keep two. `generic-loader-binding` (three `from "erika"` forms — a library, not the language) stays
 in botopink-lang's `examples/` until erika's consumer commit moves it (`../examples/AGENTS.md`: erlang
-and beam reach the library since 144 B-45 and B-50; wasm does not compile it).
+and beam reach the library since 144 B-45 and B-50, and wasm since the generic method's element type is read off
+its receiver and its lambda: `modules/generic_method_array_join`).
 
 `front/gate-wasm-wrong-answers` (`compiler-core/src/codegen/wat/AGENTS.md` § Numbers) adds three
 four-target cells for numbers wasm answered wrongly at exit 0 — `modules/float_shortest_text` (a
