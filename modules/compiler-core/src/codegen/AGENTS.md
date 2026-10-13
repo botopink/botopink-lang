@@ -645,6 +645,14 @@ codegen/
   continues its chain, so it is written `?.` (`isOptEnumCall`):
   `find(0)?.str().length()` read `.length` off `undefined`
   (`modules/optional_enum_method_absent_receiver`).
+  An enum the module never names (`import {find}` whose `?Val` answer is
+  called `b?.str()`, `b!.str()`, `(b ?? d).str()`) is found in the export
+  index by its type name (`enumMethodOwner`), required under
+  `__bp_enum_<Type>` from its owner module (`reached_enums`,
+  `reachedEnumRequires`) and called through that binding
+  (`modules/optional_enum_method_unimported`); without it the call stayed a
+  member call, `b?.str is not a function`. A type name two modules declare is
+  contested and stays the member call.
 - **User interface `default fn`s**: an interface that is not a JS global owns
   no constructor, so its instance defaults are copied as class methods into
   every local record that implements it and does not define the method

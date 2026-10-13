@@ -610,6 +610,7 @@ fn emitProgramOptsX(
     // and module-level `val`s among them — in one hidden export, which the
     // test unit destructures. Not enumerable, so no `Object.assign` of the
     // module's exports copies it.
+    try items.insertSlice(arena_alloc, 0, try em.reachedEnumRequires());
     const bound = try boundNames(arena_alloc, items.items);
     if (try privExportSource(arena_alloc, bound)) |line| try items.append(arena_alloc, .{ .runtime = line });
 
@@ -1189,6 +1190,8 @@ const tc_label = "__bp_tc";
 
 /// The parameter `optEnumCall`'s guard binds the receiver of `recv?.m()` to.
 const opt_recv_param = "__bp_recv";
+/// The binding a module requires an enum it never names under.
+const reached_enum_prefix = "__bp_enum_";
 
 /// True when a built JS statement list holds an `await` outside any nested
 /// function — what an IIFE wrapped around it has to be `async` for (an `await`
@@ -1634,6 +1637,11 @@ const Emitter = struct {
     /// fields. `variant_fields` keeps one of the two lists, so neither says
     /// which field a positional pattern reads (`payloadSlots`).
     variant_contested: std.StringHashMapUnmanaged(void) = .empty,
+    /// Enums whose method a call reaches while the module never names the type
+    /// (`import {find}` whose `?Val` answer is called `b?.str()`): type name →
+    /// the module that emits it, in the order reached. The module requires each
+    /// under `reached_enum_prefix ++ <type>` (`reachedEnumRequires`).
+    reached_enums: std.StringArrayHashMapUnmanaged([]const u8) = .empty,
     /// Every payload-less variant name declared by an enum in this module
     /// (`Nothing`, `X3xl`). It says "this bare name is a variant, not a
     /// binding" — nothing more. The JS class the variant's singleton is an
@@ -2262,7 +2270,36 @@ const Emitter = struct {
         if (self.imported_enums.contains(type_name)) return type_name;
         var buf: [256]u8 = undefined;
         const key = std.fmt.bufPrint(&buf, "{s}.{s}", .{ type_name, method }) catch return null;
-        return if (self.enum_recv_methods.contains(key)) type_name else null;
+        if (self.enum_recv_methods.contains(key)) return type_name;
+        // An enum the module never names (a dependency's `find` answers `?Val`):
+        // its owner is found in the export index and required under an alias.
+        const xc = self.cross orelse return null;
+        const info = xc.picked(type_name, null, null) orelse return null;
+        if (info.kind != .@"enum") return null;
+        const has = for (info.methods) |m| {
+            if (std.mem.eql(u8, m.name, method)) break true;
+        } else false;
+        if (!has) return null;
+        try self.reached_enums.put(self.arena(), type_name, info.module);
+        return try std.fmt.allocPrint(self.arena(), reached_enum_prefix ++ "{s}", .{type_name});
+    }
+
+    /// `const { <Type>: __bp_enum_<Type> } = require("<owner>.js");` for each
+    /// enum `reached_enums` holds.
+    fn reachedEnumRequires(self: *Emitter) ![]const js.Item {
+        const depth = std.mem.count(u8, self.module_name, "/");
+        var prefix: std.ArrayListUnmanaged(u8) = .empty;
+        if (depth == 0) try prefix.appendSlice(self.arena(), "./") else for (0..depth) |_| try prefix.appendSlice(self.arena(), "../");
+        var out: std.ArrayListUnmanaged(js.Item) = .empty;
+        for (self.reached_enums.keys(), self.reached_enums.values()) |name, module| {
+            const props = try self.arena().alloc(js.ObjectPattern.Prop, 1);
+            props[0] = .{ .key = name, .bind = try std.fmt.allocPrint(self.arena(), reached_enum_prefix ++ "{s}", .{name}) };
+            try out.append(self.arena(), .{ .stmt = .{ .decl = .{
+                .pattern = .{ .object = .{ .props = props } },
+                .value = try self.requireCall(try std.fmt.allocPrint(self.arena(), "{s}{s}.js", .{ prefix.items, module })),
+            } } });
+        }
+        return out.items;
     }
 
     /// `exports.<name> = <name>;` for a `pub` record or enum. Always emitted,
