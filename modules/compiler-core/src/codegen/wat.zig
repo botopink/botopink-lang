@@ -7723,6 +7723,9 @@ const Emitter = struct {
         const subj_is_str = self.isStringExpr(c.subjects[0]);
         if (subj_is_str) try self.str_locals.put(subj_local, {});
         if (self.resultShapeOf(c.subjects[0])) |shape| try self.result_subjects.put(subj_local, shape);
+        // A record subject: what a catch-all arm's binder reads its fields by
+        // (`_ { o -> o.label }`), a generic record's included.
+        if (c.subjects.len == 1) if (self.recordTypeOfExpr(c.subjects[0])) |rty| try self.local_types.put(subj_local, rty);
         if (self.enumOfSubject(c.subjects[0])) |en| try self.subject_enums.put(self.alloc, subj_local, en) else _ = self.subject_enums.remove(subj_local);
         try self.noteSubjectShape(subj_local, c.subjects[0]);
         // `case a, n { 0, "x" -> … }`: every subject in its own local,
@@ -14976,10 +14979,22 @@ const Emitter = struct {
                 // this, `@print(case x { 0 -> "zero"; … })` went through
                 // `$__print_i32` and printed the *pointer* (`256`).
                 .case => |c| blk: {
+                    // A catch-all arm's binder over a record subject reads
+                    // the record's fields (`_ { o -> o.label; }`): typed by
+                    // the subject while its arm is asked, as `lowerArmBody`
+                    // binds it.
+                    const subj_rec: ?[]const u8 = if (c.subjects.len == 1) self.recordTypeOfExpr(c.subjects[0]) else null;
                     var any = false;
                     for (c.arms) |arm| {
                         if (self.exprTail(arm.body) == .terminated) continue;
-                        if (!self.armIsString(arm.body)) break :blk false;
+                        const binder: ?[]const u8 = if (subj_rec != null and arm.pattern == .wildcard) (if (armLambda(arm.body)) |lam| (if (lam.params.len == 1) lam.params[0] else null) else null) else null;
+                        const prev: ?[]const u8 = if (binder) |n| self.local_types.get(n) else null;
+                        if (binder) |n| self.local_types.put(n, subj_rec.?) catch {};
+                        const is_str = self.armIsString(arm.body);
+                        if (binder) |n| {
+                            if (prev) |t| self.local_types.put(n, t) catch {} else _ = self.local_types.remove(n);
+                        }
+                        if (!is_str) break :blk false;
                         any = true;
                     }
                     break :blk any;

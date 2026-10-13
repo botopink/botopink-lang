@@ -1180,6 +1180,11 @@ A name alone is not a pattern: to give the matched value a name, bind it in the
 body (`_ { n -> … }`). The one exception is the optional, below, where the name
 after the `null` arm *is* the pattern.
 
+The binder of a catch-all arm over a record is that record: its fields read as
+declared, a generic record's too, wherever the `case` stands:
+
+<!-- example: modules/case_catch_all_binder_record -->
+
 #### An optional is matched by `null` and a binder
 
 A `?T` has exactly one pattern form — `null` for the absent value, then a name
