@@ -1,0 +1,51 @@
+//// Decision 247 — a suffixed literal is the same literal wherever it stands:
+//// in a `case` guard, in a `case` arm body, in a parameter's default, in a
+//// default made of an expression and inside a lambda. The suffix is the
+//// checker's and never reaches a backend (`1577836800000l` in a guard was a
+//// `SyntaxError` in JS and an `erlc` syntax error on Erlang and BEAM).
+
+type Stamp(mtime: i64)
+
+fn stat(n: i64) -> @Result<Stamp, string> {
+    if (n < 0) throw "negative";
+    return Stamp(mtime: n);
+}
+
+fn offset(v: i64 = 7l) -> i64 {
+    return v;
+}
+
+fn sum(v: i64 = 2l + 3l) -> i64 {
+    return v;
+}
+
+fn narrow(v: u8 = 9u8) -> u8 {
+    return v;
+}
+
+pub fn main() {
+    val stamp = stat(1577836900000l);
+    case stamp {
+        Ok(s) if s.mtime > 1577836800000l -> @print("after");
+        Ok(_) -> @print("before");
+        Error(e) -> @print(e);
+    }
+    case 3u8 {
+        n if n > 2u8 -> @print("big");
+        _ -> @print("small");
+    }
+    case 2l {
+        n if n == 2l && n < 9l -> @print("two");
+        _ -> @print("other");
+    }
+    val grown = case 1l {
+        1l -> 10l + 1l;
+        _ -> 0l;
+    };
+    @print(grown);
+    @print(offset());
+    @print(sum());
+    @print(narrow());
+    @print([1l, 2l].map({ v -> v + 5l }));
+    @print("sum=${3l + 4l}");
+}

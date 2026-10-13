@@ -281,6 +281,12 @@ pub fn transform(
     for (out_decls.items) |*decl| {
         if (decl.* == .@"fn") {
             const fn_decl = &decl.@"fn";
+            // A parameter's default is injected into a call that omits it as
+            // this very node, so it is walked once here (a suffixed literal
+            // loses its suffix: `v: i64 = 7l`).
+            for (fn_decl.params) |*prm| {
+                if (prm.default) |*d| rewriteExpr(&agg, fn_decls, comptime_arrays, d) catch return error.OutOfMemory;
+            }
             for (fn_decl.body) |*stmt| {
                 rewriteStmt(&agg, fn_decls, comptime_arrays, stmt) catch return error.OutOfMemory;
             }
@@ -1000,6 +1006,14 @@ fn rewriteExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
             if (rewrite.* == .literal and rewrite.literal.kind == .numberLit) expr_ptr.* = rewrite.*;
         }
     }
+    // Decision 247 — whatever position the literal sits in (a `case` guard, a
+    // parameter's default, a template hole), the suffix leaves the program
+    // before a backend prints it. Inference strips the ones it types; this
+    // is the one place that covers the rest. Idempotent.
+    if (expr_ptr.* == .literal and expr_ptr.literal.kind == .numberLit) {
+        const text = expr_ptr.literal.kind.numberLit;
+        expr_ptr.literal.kind = .{ .numberLit = lexerMod.numberBackendText(agg.spec_cache.arena, text) catch return ScanError.OutOfMemory };
+    }
     // Decision 110 rule 1 — an imported type's `as` alias in expression
     // position (`D` in `D.empty()`, a bare `P`): inference recorded the
     // declared name under the alias's loc. Only a plain name replaces a plain
@@ -1221,6 +1235,9 @@ fn rewriteExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
                     boolLiteralArm(agg, arm) catch return ScanError.OutOfMemory;
                     try qualifyResultPattern(agg, &arm.pattern, arm.patternLoc);
                     try stripPatternSuffixes(agg, &arm.pattern);
+                    // The guard is an expression like the body: a suffixed
+                    // literal in it (`if s.mtime > 5l`) loses its suffix here.
+                    if (arm.guard) |*g| rewriteExpr(agg, fn_decls, comptime_arrays, g) catch return ScanError.OutOfMemory;
                     rewriteExpr(agg, fn_decls, comptime_arrays, &arm.body) catch return ScanError.OutOfMemory;
                 }
             },

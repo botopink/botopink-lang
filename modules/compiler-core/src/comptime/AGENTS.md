@@ -1402,6 +1402,11 @@ the literal does (`isIntegerLiteralOperand`): `value >= -9007199254740991` over 
 `i32`, which the range check then refused (validation's `vSafeInt`). `modules/i64_full_width` writes its
 literal past the `i32` range with `l`: unsuffixed and with nothing asking it is an `i32` (247).
 
+Decision 247's suffix leaves the program in `transform.zig`'s `rewriteExpr` for every number literal
+(`lexer.numberBackendText`, idempotent), whatever its position: a `case` arm's guard and a fn
+parameter's default are walked there too, so `if s.mtime > 5l` and `v: i64 = 7l` reach no backend with
+their `l` (`modules/numeric_suffix_positions`).
+
 ## `bigint`, an integer of any size (decision 332, front `01-compiler/139`)
 
 `bigint` is a primitive (`Env.registerBuiltins`, `scalar_type_names`), its literal suffixed `n`
