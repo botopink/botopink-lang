@@ -400,9 +400,9 @@ pub fn transform(
             .isPub = false,
             .name = spec_fn.name,
             .annotations = &.{},
-            .genericParams = &.{},
+            .genericParams = spec_fn.generic_params,
             .params = try params.toOwnedSlice(allocator),
-            .returnType = null,
+            .returnType = spec_fn.return_type,
             .body = try body_copy.toOwnedSlice(allocator),
         } };
         try filtered.append(allocator, spec_decl);
