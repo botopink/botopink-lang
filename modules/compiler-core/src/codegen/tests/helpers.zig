@@ -739,6 +739,27 @@ pub fn assertStdModuleRefusedAt(allocator: Allocator, src: []const u8, needle: [
     return assertRefusedAtIn(allocator, configs[0], src, true, needle, line, col);
 }
 
+/// Compiles `modules` as std's own (`Module.std_member`) for the JS backend and
+/// asserts none of them is refused — a std module checked beside its siblings.
+pub fn assertStdModulesCompile(allocator: Allocator, modules: []const struct { path: []const u8, source: []const u8 }) !void {
+    const io = std.testing.io;
+    var list: std.ArrayList(Module) = .empty;
+    defer list.deinit(allocator);
+    for (modules) |m| try list.append(allocator, .{ .path = m.path, .source = m.source, .std_member = true });
+    var outputs = try codegen.generateWith(allocator, list.items, io, configs[0], .{ .execute = false });
+    defer {
+        for (outputs.items) |*o| o.result.deinit(allocator);
+        outputs.deinit(allocator);
+    }
+    for (outputs.items) |o| if (o.result.diagnostic) |d| switch (d) {
+        .type => |t| {
+            std.debug.print("\n=== module `{s}` refused: {s}\n", .{ o.name, t.message });
+            return error.ModuleRefused;
+        },
+        .syntax => return error.ModuleRefused,
+    };
+}
+
 fn assertRefusedAt(allocator: Allocator, cfg: config.Config, src: []const u8, needle: []const u8, line: usize, col: usize) !void {
     return assertRefusedAtIn(allocator, cfg, src, false, needle, line, col);
 }

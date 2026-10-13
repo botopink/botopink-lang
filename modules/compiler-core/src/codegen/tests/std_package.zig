@@ -272,3 +272,18 @@ test "js: std package ---- a root module importing a group under io from std is 
         },
     }, .expect_compile_error);
 }
+
+// Decision 488 — inside std a module imports its sibling `failure` by path
+// (no `from`): that `HostError` is std's, so `result: true` on it is accepted
+// (std's `io/http` binds `fetchHost` this way).
+test "js: std package ---- a std module imports failure.HostError by path for result: true" {
+    try h.assertStdModulesCompile(std.testing.allocator, &.{
+        .{ .path = "failure", .source = "pub type HostError(message: string)\n" },
+        .{ .path = "io/probe", .source =
+        \\import {failure, failure.HostError};
+        \\
+        \\#[@External.Node("JSON.parse($0)", result: true)]
+        \\declare fn probeHost(s: string) -> @Task<@Result<i32, HostError>>;
+        },
+    });
+}

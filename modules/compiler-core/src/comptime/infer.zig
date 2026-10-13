@@ -3939,8 +3939,13 @@ fn isStdHostError(env: *Env, t: ast.TypeRef, program: ast.Program) bool {
     };
     for (program.decls) |d| switch (d) {
         .use => |u| {
-            const pkg = u.source.packageName() orelse continue;
-            if (!std.mem.eql(u8, pkg, "std")) continue;
+            // Inside std a module imports its sibling by path, without `from`
+            // (`import {failure.HostError};`): that source is std itself.
+            const from_std = if (u.source.packageName()) |pkg|
+                std.mem.eql(u8, pkg, "std")
+            else
+                env.inStd and u.source == .root;
+            if (!from_std) continue;
             for (u.imports) |imp| {
                 if (!std.mem.eql(u8, imp.name(), n)) continue;
                 const segs = imp.segments;
