@@ -93,7 +93,7 @@ pub fn push(scope: RenderScope, key: string, value: unknown) -> RenderScope {
 
 // The value provided nearest above for `key`; `context-unbound` when no
 // provider of `name` is above.
-// LANGUAGE GAP: the wasm backend does not lower a component — the two `unknown` fields are read through `frameValue` / `frameParent`, since wasm boxes a field read as `unknown` only as a function's answer.
+// The two `unknown` fields are read through `frameValue` / `frameParent`: wasm boxes a field read as `unknown` only as a function's answer.
 pub fn find(scope: RenderScope, key: string, name: string) -> unknown {
     var cur = scope.frames;
     loop {
@@ -272,7 +272,7 @@ fn frameParent(f: Frame) -> unknown {
   )
   ;; The value provided nearest above for `key`; `context-unbound` when no
   ;; provider of `name` is above.
-  ;; LANGUAGE GAP: the wasm backend does not lower a component — the two `unknown` fields are read through `frameValue` / `frameParent`, since wasm boxes a field read as `unknown` only as a function's answer.
+  ;; The two `unknown` fields are read through `frameValue` / `frameParent`: wasm boxes a field read as `unknown` only as a function's answer.
   (func $find (export "find") (param $scope i32) (param $key i32) (param $name i32) (result i32)
     (local $cur i32)
     (local $f i32)
