@@ -133,7 +133,7 @@ from an imported derived type), with eleven `modules/derived_type_*` cells — a
 unknown field, a field named twice, no field, an `omit` leaving none, an enum and a primitive
 source, a field on both sides of a `merge`, the call in a body, a `var`, and the bare `partial(…)`
 (an unbound name); every one red on the parent binary.
-Decision 359 (a spread copies a record's fields, 144 B-14) adds `modules/record_spread` (`...src` beside
+Decision 359 (a spread copies a record's fields, 144 B-14) adds `modules/record_spread` (`..src` beside
 labels, several spreads left to right with the later winning, a `Type.pick` / `omit` / `merge` source, a
 field left to its default, a call as the source evaluated once, a trailing comma, a generic record — four
 targets, the source printed unchanged) and four refusals: `record_spread_other_type` (a record of the
@@ -151,7 +151,7 @@ as a spread's source, an array element, a lambda's and a function's result; a fi
 `record_spread_call_source` (a method call, an associated function's call, a chained call, a call answering a
 derived type — each evaluated once), `record_spread_evaluation_order` (a source before the labelled values,
 question B-14-b as built; an overridden labelled value still evaluated), `record_spread_beside_record_update`
-(`..base` and `...src` alike, question B-14-a as built) and the refusals `record_spread_optional`
+(`..base` written in both orders, question B-14-a as built) and the refusals `record_spread_optional`
 (`?Pessoa`), `record_spread_derived_partial` and `record_spread_required` (question B-14-c as built),
 `record_spread_label_twice`, `record_spread_positional_argument` and `record_spread_overridden_label_type`
 (an overridden label's value is typed) — each red on B-14's base, where `...` at an argument's start did not

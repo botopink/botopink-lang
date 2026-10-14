@@ -139,6 +139,12 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .caretCaption = "write `..`",
             .hint = "An array literal spreads with two dots, and the spread comes last: `[1, 2, ..rest]`.",
         },
+        .spreadDotDotDot => .{
+            .code = "spread-dot-dot-dot",
+            .message = "`...` is the inclusive range, not a spread",
+            .caretCaption = "write `..`",
+            .hint = "A record's construction spreads with two dots: `Pessoa(..old, nome: \"Ana\")` (decision 529). `a...b` is the inclusive range, with a left operand.",
+        },
         .implementClauseFor => .{
             .code = "implement-clause-for",
             .message = "`for` in a type's `implement` clause",

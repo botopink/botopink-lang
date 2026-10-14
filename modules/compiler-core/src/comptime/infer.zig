@@ -17067,7 +17067,7 @@ fn inferRecordSpread(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) Infer
     for (call.args, 0..) |a, ai| {
         const lbl = a.label orelse {
             const msg = try std.fmt.allocPrint(env.arena, "{s}: beside a spread, every argument of `{s}` names its field", .{ diagnostics.record_spread_arguments, recName });
-            env.lastError = TypeError.custom(msg, "Write `Name(...src, field: value)`.").withLoc(a.value.getLoc());
+            env.lastError = TypeError.custom(msg, "Write `Name(..src, field: value)`.").withLoc(a.value.getLoc());
             return error.TypeError;
         };
         if (std.mem.eql(u8, lbl, ast.record_spread_label)) {
@@ -20607,7 +20607,7 @@ fn packVariadicCall(env: *Env, c: ast.CallExprOf(.untyped), params: []const ast.
     const v = params[fixed];
     for (call.args, 0..) |a, i| {
         const label = a.label orelse continue;
-        if (std.mem.eql(u8, label, "..")) {
+        if (std.mem.eql(u8, label, "..") or std.mem.eql(u8, label, ast.record_spread_label)) {
             const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` is variadic, and a call passes its arguments one by one — there is no spread at a call", .{ diagnostics.variadic_spread, call.callee });
             const hint = try std.fmt.allocPrint(env.arena, "Write the arguments after the fixed ones (`{s}(a, b, c)`); a function that takes an existing array declares `{s}: T[]`, not `..{s}` (decision 267).", .{ call.callee, v.name, v.name });
             env.lastError = TypeError.custom(msg, hint).withLoc(a.value.getLoc());
@@ -20784,10 +20784,14 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                 env.lastError = TypeError.custom(msg, hint).withLoc(loc);
                 return error.TypeError;
             }
-            // Decision 359 — a record spread (`Pessoa(...old, nome: n)`):
+            // Decision 359 — a record spread (`Pessoa(..old, nome: n)`):
             // the complete constructor call it means, or `call-spread` at a
             // call that constructs no record.
             for (call.args) |a| if (a.label) |l| if (std.mem.eql(u8, l, ast.record_spread_label)) {
+                // A variadic callee refuses the spread by its own rule (267).
+                if (call.receiver == null and !call.variadicPacked and !call.is_builtin and call.calleeExpr == null) {
+                    if (variadicCalleeParams(env, call, null)) |vps| _ = try packVariadicCall(env, c, vps, loc); // always refuses: the spread
+                }
                 return inferRecordSpread(env, c, loc);
             };
             // Decision 110 — `D.empty()` for `import {Dict as D}` is

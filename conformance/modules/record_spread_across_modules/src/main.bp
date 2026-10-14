@@ -16,12 +16,12 @@ val SoEmail = Type.pick(Cadastro, .email);
 pub fn main() {
     val c = Contato(email: "ana@a");
     @print(completar(c, "Ana"));
-    @print(Pessoa(...c, nome: "Bia", idade: 41));
+    @print(Pessoa(..c, nome: "Bia", idade: 41));
     val cad = Cadastro(nome: "Caio", email: "caio@a");
-    @print(Pessoa(...cad));
+    @print(Pessoa(..cad));
     val f = Ficha(nome: "Duda", email: "duda@a", idade: 50, nota: "ok");
-    @print(Pessoa(...f, idade: 51));
+    @print(Pessoa(..f, idade: 51));
     val e = SoEmail(email: "edu@a");
-    @print(Pessoa(...e, nome: "Edu"));
-    @print(Cadastro(...e, nome: "Edu"));
+    @print(Pessoa(..e, nome: "Edu"));
+    @print(Cadastro(..e, nome: "Edu"));
 }

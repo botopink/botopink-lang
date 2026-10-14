@@ -1,14 +1,14 @@
-//// Decision 359 beside decision 37 — `Name(...src, f: v)` and the update
-//// form `Name(..base, f: v)` both build a new record with the labelled
-//// fields replaced and the rest read from the source; both are accepted, and
-//// they build the same record (question B-14-a as built).
+//// Decisions 359, 37, 529 (3) — `Name(..src, f: v)`, the one spelling of a
+//// record's spread, builds a new record with the labelled fields replaced and
+//// the rest read from the source, whatever order the labels are written in
+//// (question B-14-a as built).
 
 type Pessoa(nome: string, idade: i32)
 
 pub fn main() {
     val ana = Pessoa(nome: "Ana", idade: 3);
-    val a = Pessoa(...ana, nome: "Bia");
-    val b = Pessoa(..ana, nome: "Bia");
+    val a = Pessoa(..ana, nome: "Bia");
+    val b = Pessoa(..ana, idade: 3, nome: "Bia");
     @print(a);
     @print(b);
     @print(a == b);

@@ -10,6 +10,6 @@ fn achar(nome: string) -> ?Pessoa {
 
 pub fn main() {
     val talvez = achar("Ana");
-    val p = Pessoa(...talvez, idade: 4);
+    val p = Pessoa(..talvez, idade: 4);
     @print(p.nome);
 }

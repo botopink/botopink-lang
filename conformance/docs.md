@@ -1077,8 +1077,8 @@ type arguments, so a key resolves there too: `val t: Sort<Book> = Sort(by: .titl
 
 ### Spread
 
-`Name(...src, field: value)` copies a record's fields into its constructor
-(decision 359): `...src` at the start of an argument, any number of them,
+`Name(..src, field: value)` copies a record's fields into its constructor
+(decision 359): `..src` at the start of an argument, any number of them,
 mixed with labels. The arguments apply left to right, the later winning; a
 field no spread and no label supplies takes its default. The spread builds a
 new record — `src` is read, never changed — and `a...b` stays the inclusive
@@ -1106,19 +1106,22 @@ its field, though the field is the spread's.
 <!-- example: modules/record_spread_evaluation_order -->
 <!-- example: modules/record_spread_overridden_label_type -->
 
-Decision 37's update form `Name(..base, field: value)` is accepted beside it and
-builds the same record (question B-14-a).
+Decision 37's update form `Name(..base, field: value)` is this spread: one
+spelling, `..`, builds the record (question B-14-a). `...` is only the inclusive
+range `a...b`: a spread written `Name(...src)` is refused at the `...`
+(`spread-dot-dot-dot`, decision 529 (3)), and `botopink format` writes `..`.
 
 <!-- example: modules/record_spread_beside_record_update -->
+<!-- example: modules/record_spread_dot_dot_dot -->
 
 Refused, each at what it is about: a source of another type — a record of the
 same fields, an optional of the record, a type derived from a `Type.partial`
 type, a `Type.required` type (question B-14-c) — `record-spread-type` at the
-`...`, naming both types; a `Type.partial` value, `record-spread-partial` at the
-`...` (a field of it may be null); a field without a default that nothing
+`..`, naming both types; a `Type.partial` value, `record-spread-partial` at the
+`..` (a field of it may be null); a field without a default that nothing
 supplies, `record-spread-missing-field` at the call; a label written twice or an
 argument without one, `record-spread-arguments` at it; a spread at any call but
-a record's constructor, `call-spread` at the `...` (decision 267: a function
+a record's constructor, `call-spread` at the `..` (decision 267: a function
 call takes no spread).
 
 <!-- example: modules/record_spread_other_type -->
@@ -1557,7 +1560,7 @@ any function expression does:
 A lambda passed for a function's parameter reads its parameters as the
 parameter's function type says: `{ p -> p.nome }` for `fn(Pessoa) -> Pessoa`
 reads `Pessoa`'s `nome` though another record declares a field of the name,
-and `Pessoa(...p, idade: 31)` spreads a `Pessoa`:
+and `Pessoa(..p, idade: 31)` spreads a `Pessoa`:
 
 <!-- example: modules/lambda_param_shared_field -->
 

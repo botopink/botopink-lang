@@ -440,6 +440,14 @@ test "surface R10: a three-dot spread is refused at the dots" {
     try expectErrorAt("fn f(a: i32[]) -> i32[] { return [1, ...a]; }", .listSpreadDotDotDot, 1, 38);
 }
 
+test "decision 529 (3): a record spread written with three dots is refused at the dots, `..` parses" {
+    try expectErrorAt("fn f(o: P) -> P { return P(...o, a: 1); }", .spreadDotDotDot, 1, 28);
+    try expectErrorAt("fn f(o: P) -> P { return P(a: 1, ...o); }", .spreadDotDotDot, 1, 34);
+    try assertParser(std.testing.allocator, @src(),
+        \\fn f(o: P) -> P { return P(..o, a: 1); }
+    );
+}
+
 test "surface R10: the spread forms that parse still parse" {
     try assertParser(std.testing.allocator, @src(),
         \\fn f(a: i32[]) -> i32[] {

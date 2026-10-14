@@ -9,6 +9,6 @@ val PessoaPatch = Type.partial(Pessoa);
 
 pub fn main() {
     val patch = PessoaPatch(nome: "Ana", idade: null);
-    val p = Pessoa(...patch, idade: 3);
+    val p = Pessoa(..patch, idade: 3);
     @print(p.nome);
 }

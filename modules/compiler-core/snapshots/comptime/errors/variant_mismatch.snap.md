@@ -7,11 +7,10 @@ val alice = Subject.Person(name: "Alice", age: 30);
 val dog = Subject.Animal(..alice);
 
 ----- ERROR
-error: type mismatch
-  ┌─ main.bp:6:28
+error: call-spread: `this call` constructs no record — a spread copies a record's fields into its constructor, and a function call takes none
+  ┌─ main.bp:6:26
   │
 6 │ val dog = Subject.Animal(..alice);
-  │                            ^
+  │                          ^
 
-  expected: string
-  found:    Subject
+  hint: Pass the arguments one by one; a function that takes an existing array declares `values: T[]` (decision 267).

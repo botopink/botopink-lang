@@ -13,6 +13,6 @@ val SoNome = Type.pick(Patch, .nome);
 
 pub fn main() {
     val n = SoNome(nome: "Ana");
-    val p = Pessoa(...n, idade: 3);
+    val p = Pessoa(..n, idade: 3);
     @print(p.idade);
 }

@@ -15,6 +15,6 @@ pub fn main() {
     val ana = Pessoa(nome: "Ana", idade: 30);
     val sp = Cidade(nome: "Sao Paulo", uf: "SP");
     @print(aplicar(ana, { p -> Pessoa(nome: p.nome + "!", idade: p.idade) }));
-    @print(aplicar(ana, { p -> Pessoa(...p, idade: 31) }));
+    @print(aplicar(ana, { p -> Pessoa(..p, idade: 31) }));
     @print(sp.nome);
 }

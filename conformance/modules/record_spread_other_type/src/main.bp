@@ -8,6 +8,6 @@ type Animal(nome: string, idade: i32)
 
 pub fn main() {
     val rex = Animal(nome: "Rex", idade: 3);
-    val p = Pessoa(...rex, nome: "Ana");
+    val p = Pessoa(..rex, nome: "Ana");
     @print(p.nome);
 }

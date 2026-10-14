@@ -27,29 +27,29 @@ fn fonte() -> Pessoa {
 pub fn main() {
     val old = Pessoa(nome: "Bia", email: "bia@a", telefone: "2", idade: 20);
     // A new record; the source unchanged.
-    val ana = Pessoa(...old, nome: "Ana");
+    val ana = Pessoa(..old, nome: "Ana");
     @print(ana);
     @print(old);
     // Several spreads and labels mix, left to right, the later winning.
     val contato = Contato(email: "c@a", telefone: "3");
-    @print(Pessoa(...old, ...contato, nome: "Caio"));
-    @print(Pessoa(...contato, ...old));
-    @print(Pessoa(nome: "Zé", ...old));
+    @print(Pessoa(..old, ..contato, nome: "Caio"));
+    @print(Pessoa(..contato, ..old));
+    @print(Pessoa(nome: "Zé", ..old));
     // A derived source supplies its fields; the rest are labelled or default.
-    @print(Pessoa(...contato, nome: "Duda"));
+    @print(Pessoa(..contato, nome: "Duda"));
     val semNome = SemNome(email: "s@a", telefone: "4", idade: 50);
-    @print(Pessoa(...semNome, nome: "Edu"));
+    @print(Pessoa(..semNome, nome: "Edu"));
     val ficha = Ficha(nome: "Fê", email: "f@a", telefone: "5", idade: 60, nota: "ok");
-    @print(Pessoa(...ficha, idade: 61));
+    @print(Pessoa(..ficha, idade: 61));
     // Any expression is a source, evaluated once.
-    @print(Pessoa(...fonte(), email: "novo@a"));
-    val p = Pessoa(...fonte(), nome: "Gil");
+    @print(Pessoa(..fonte(), email: "novo@a"));
+    val p = Pessoa(..fonte(), nome: "Gil");
     @print(p.nome);
     @print(p.idade);
     // A trailing comma, and a generic record.
     val b = Box(value: 3, tag: "t");
     val b2 = Box(
-        ...b,
+        ..b,
         value: 4,
     );
     @print(b2.value);

@@ -13,6 +13,6 @@ val Full = Type.required(Patch);
 
 pub fn main() {
     val f = Full(nome: "Ana", idade: 3);
-    val p = Pessoa(...f);
+    val p = Pessoa(..f);
     @print(p.idade);
 }

@@ -200,7 +200,7 @@ pub const builtin_arguments: []const u8 = "builtin-arguments";
 pub const variadic_spread: []const u8 = "variadic-spread";
 /// Decision 267 — a label on a variadic argument, or a trailing lambda.
 pub const variadic_label: []const u8 = "variadic-label";
-/// Decision 359 — a record spread (`...src`) at a call that is no record's
+/// Decision 359 — a record spread (`..src`) at a call that is no record's
 /// constructor: a plain function call takes no spread (267).
 pub const call_spread: []const u8 = "call-spread";
 /// Decision 359 (2) — a record spread whose source is neither the record's

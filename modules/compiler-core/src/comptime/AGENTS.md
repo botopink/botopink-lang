@@ -1912,16 +1912,22 @@ A module importing such an alias imports std's `Type__Field` (`withFieldKeyImpor
 
 ## a spread copies a record's fields (decision 359)
 
-`Pessoa(...old, nome: "Ana")` — the parser reads `...src` at the start of a call argument as the
-argument labelled `ast.record_spread_label`, the `...` token on `CallArg.spreadLoc`; the formatter
+Since decision 529 (3) the parser no longer produces the argument labelled `ast.spread_arg_label` (decision 37's older
+`..base` update): `..src` is the record spread below, so the label's handling in `infer.zig` (`rewriteRecordUpdate`, the
+`".."` branches of the call paths) is residue, no source reaches it. A variadic callee refuses the spread by 267's
+`variadic-spread` before `inferRecordSpread` runs.
+
+`Pessoa(..old, nome: "Ana")` (decision 529 (3): `..` is the one spelling; `...` is only the inclusive range and
+`...src` is `spread-dot-dot-dot` at the parser) — the parser reads `..src` at the start of a call argument as the
+argument labelled `ast.record_spread_label`, the `..` token on `CallArg.spreadLoc`; the formatter
 prints it back. `inferRecordSpread` (intercepted in `inferCallExpr` before the arguments are
 inferred) judges it: the callee is a record's constructor (an import alias of one included) or the
-call is `call-spread` at the `...` (267: a function call takes no spread); each source is a value of
+call is `call-spread` at the `..` (267: a function call takes no spread); each source is a value of
 the record's own type or of a type whose lineage names it (`Env.derivedTypes`, filled from
 `TypeDecl.derivedFrom` / `derivedPartial`, which `derived_types.zig` computes: `pick`, `omit` and
 `merge` carry their sources' — by declared name, so a source named through an import alias
 (`Pessoa as P`) records `Pessoa` — `partial` and `required` carry none), else `record-spread-type`, and
-a `Type.partial` value is `record-spread-partial`, both at the `...`; the arguments apply left to
+a `Type.partial` value is `record-spread-partial`, both at the `..`; the arguments apply left to
 right, the later winning; a field no spread and no label supplies takes its default or is
 `record-spread-missing-field` at the call; a label written twice or an unlabelled argument is
 `record-spread-arguments`. It records the complete positional call in `enumSectionRewrites` — each

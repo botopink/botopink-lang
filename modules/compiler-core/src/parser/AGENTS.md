@@ -79,6 +79,9 @@ parser/
 │                     backend's handler lowering is the fatal path; the checker reads `fatal` to tell
 │                     the two forms apart. The formatter therefore re-prints the desugared `catch` —
 │                     the honest AST (an optional handler) waits for the formatter front
+│                     A record's spread is `..src` at the start of a call argument (`parseCallArgs`, the argument labelled
+│                     `ast.record_spread_label`, decisions 359 and 529 (3)); `...src` there is the parse error
+│                     `spread-dot-dot-dot` at the `...` — `...` is only the inclusive range `a...b`
 ├── tests.zig      ← barrel: aggregates tests/<feature>.zig for test_root.zig
 └── tests/         ← parser tests, split by feature
     ├── helpers.zig       ← shared harness (`assertParser`/`expectParseError`/`expectErrorAt(src, kind, line, col)`/…)

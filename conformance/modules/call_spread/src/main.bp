@@ -9,5 +9,5 @@ fn soma(a: i32, b: i32) -> i32 {
 
 pub fn main() {
     val par = Par(a: 1, b: 2);
-    @print(soma(...par));
+    @print(soma(..par));
 }

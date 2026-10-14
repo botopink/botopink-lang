@@ -17,8 +17,8 @@ fn faz() -> Pessoa {
 }
 
 pub fn main() {
-    val p = Pessoa(nome: diz("n"), ...faz());
+    val p = Pessoa(nome: diz("n"), ..faz());
     @print(p);
-    val q = Pessoa(...faz(), nome: diz("m"));
+    val q = Pessoa(..faz(), nome: diz("m"));
     @print(q);
 }

@@ -1621,8 +1621,8 @@ pub const Formatter = struct {
                 if (std.mem.eql(u8, lbl, ast.spread_arg_label))
                     try this.concat(try this.text(".."), try this.fmtExpr(a.value.*))
                 else if (std.mem.eql(u8, lbl, ast.record_spread_label))
-                    // Decision 359 — a record spread, printed `...src`.
-                    try this.concat(try this.text("..."), try this.fmtExpr(a.value.*))
+                    // Decisions 359, 529 (3) — a record spread, printed `..src`.
+                    try this.concat(try this.text(".."), try this.fmtExpr(a.value.*))
                 else
                     try this.concatAll(&.{
                         try this.text(lbl),

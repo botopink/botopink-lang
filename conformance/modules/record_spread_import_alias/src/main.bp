@@ -15,11 +15,11 @@ val SoNome = Type.pick(P, .nome);
 val SoEmail = Type.pick(C, .email);
 
 fn completa(c: C, nome: string) -> Pessoa {
-    return Pessoa(...c, nome: nome);
+    return Pessoa(..c, nome: nome);
 }
 
 fn pelaAlias(c: C) -> P {
-    return P(...c, nome: "Bia", idade: 41);
+    return P(..c, nome: "Bia", idade: 41);
 }
 
 pub fn main() {
@@ -28,10 +28,10 @@ pub fn main() {
     @print(pelaAlias(c));
     @print(c);
     val n = SoNome(nome: "Caio");
-    @print(Pessoa(...n, email: "caio@a", telefone: "2"));
-    @print(P(...n, ...c));
+    @print(Pessoa(..n, email: "caio@a", telefone: "2"));
+    @print(P(..n, ..c));
     val e = SoEmail(email: "duda@a");
-    @print(Contato(...e, telefone: "3"));
-    @print(C(...e, telefone: "4"));
-    @print(Pessoa(...e, nome: "Duda", telefone: "5"));
+    @print(Contato(..e, telefone: "3"));
+    @print(C(..e, telefone: "4"));
+    @print(Pessoa(..e, nome: "Duda", telefone: "5"));
 }

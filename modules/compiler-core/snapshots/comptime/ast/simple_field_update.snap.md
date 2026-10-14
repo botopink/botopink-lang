@@ -53,16 +53,13 @@ val bob = Person(..alice, name: "Bob", age: 25);
         "ast": "call",
         "params": [
           {
-            "name": "..",
-            "value": "Person"
-          },
-          {
-            "name": "name",
             "value": "string"
           },
           {
-            "name": "age",
             "value": "i32"
+          },
+          {
+            "value": "string"
           }
         ],
         "return_type": "Person"

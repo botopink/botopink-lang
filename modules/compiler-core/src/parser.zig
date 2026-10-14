@@ -322,6 +322,9 @@ pub const ParseErrorType = enum {
     /// `[...a, 3]` — `...` is a pattern's inclusive range; the spread of an
     /// array literal is `..` (front 15 step 3). Located at the `...`.
     listSpreadDotDotDot,
+    /// `Pessoa(...old, nome: n)` — `...` is only the inclusive range `a...b`;
+    /// a record's spread is `..` (decision 529 (3)). Located at the `...`.
+    spreadDotDotDot,
     /// `type P(x: i32)` followed by `implement A for P { … }`: the `implement`
     /// was read as the bodyless type's own clause, whose receiver is the type
     /// itself, so `for` has nothing to name (front 15 step 3). Located at the

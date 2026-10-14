@@ -10,6 +10,6 @@ val Contato = Type.pick(Pessoa, .email);
 
 pub fn main() {
     val c = Contato(email: "c@a");
-    val p = Pessoa(...c, idade: 3);
+    val p = Pessoa(..c, idade: 3);
     @print(p.email);
 }

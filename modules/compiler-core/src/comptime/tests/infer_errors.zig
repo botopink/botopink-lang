@@ -1961,15 +1961,15 @@ test "infer error: record spread ---- a label written twice, an argument without
     try expectSpreadRefusal(
         \\type P(a: i32, b: i32)
         \\fn f(old: P) -> P {
-        \\    return P(...old, a: 1, a: 2);
+        \\    return P(..old, a: 1, a: 2);
         \\}
-    , "record-spread-arguments", 3, 28);
+    , "record-spread-arguments", 3, 27);
     try expectSpreadRefusal(
         \\type P(a: i32, b: i32)
         \\fn f(old: P) -> P {
-        \\    return P(...old, 1);
+        \\    return P(..old, 1);
         \\}
-    , "record-spread-arguments", 3, 22);
+    , "record-spread-arguments", 3, 21);
 }
 
 test "infer error: record spread ---- at a method call and on an enum variant, `call-spread` (decision 359)" {
@@ -1978,7 +1978,7 @@ test "infer error: record spread ---- at a method call and on an enum variant, `
         \\    fn sum(self: Self, x: i32) -> i32 { return self.a + x; }
         \\}
         \\fn f(old: P) -> i32 {
-        \\    return old.sum(...old);
+        \\    return old.sum(..old);
         \\}
     , "call-spread", 5, 20);
 }
@@ -1987,13 +1987,13 @@ test "infer error: record spread ---- an optional source is named `?P`, refused 
     try expectSpreadRefusal(
         \\type P(a: i32, b: i32)
         \\fn f(old: ?P) -> P {
-        \\    return P(...old, a: 1);
+        \\    return P(..old, a: 1);
         \\}
     , "record-spread-type", 3, 14);
     const msg = try typeErrorMessage(std.testing.allocator,
         \\type P(a: i32, b: i32)
         \\fn f(old: ?P) -> P {
-        \\    return P(...old, a: 1);
+        \\    return P(..old, a: 1);
         \\}
     );
     defer std.testing.allocator.free(msg);
@@ -2007,7 +2007,7 @@ test "infer error: record spread ---- a labelled value a later spread overrides 
     var lx = Lexer.init(
         \\type P(a: string, b: i32)
         \\fn f(old: P) -> P {
-        \\    return P(a: 5, ...old);
+        \\    return P(a: 5, ..old);
         \\}
     );
     const tokens = try lx.scanAll(alloc);
@@ -2031,8 +2031,8 @@ test "infer: record spread ---- an overridden labelled value is evaluated in the
         \\type P(a: i32, b: i32)
         \\fn s() -> i32 { return 1; }
         \\fn ap(p: P, f: fn(P) -> P) -> P { return f(p); }
-        \\fn g(o: P) -> P { return P(a: s(), ...o); }
-        \\fn h(o: P) -> P { return ap(o, { p -> P(...p, a: 2) }); }
+        \\fn g(o: P) -> P { return P(a: s(), ..o); }
+        \\fn h(o: P) -> P { return ap(o, { p -> P(..p, a: 2) }); }
     );
     const tokens = try lx.scanAll(alloc);
     defer lx.deinit(alloc);

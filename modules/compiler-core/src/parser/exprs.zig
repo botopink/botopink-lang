@@ -2120,25 +2120,20 @@ pub fn parseCallArgs(this: *This, alloc: std.mem.Allocator) ParseError![]CallArg
             try argComments.append(alloc, try alloc.dupe(u8, commentText(cTok.lexeme)));
         }
 
-        // Decision 359 — a record spread, `Pessoa(...old, nome: n)`: `...` at
-        // the start of an argument (an inclusive range `a...b` has its left
-        // operand first, so the two never meet).
+        // Decisions 359, 529 (3) — a record spread, `Pessoa(..old, nome: n)`:
+        // `..` at the start of an argument (an exclusive range `a..b` has its
+        // left operand first, so the two never meet). `...` is only the
+        // inclusive range: as a spread it is refused, naming `..`.
         if (this.check(.dotDotDot)) {
+            this.parseError = ParseErrorInfo.fromToken(.spreadDotDotDot, this.peek());
+            return ParseError.UnexpectedToken;
+        }
+        if (this.check(.dotDot)) {
             const dotsTok = this.advance();
             const valExpr = try this.parseExpr(alloc);
             const valPtr = try this.boxExpr(alloc, valExpr);
             const commentsSlice = try argComments.toOwnedSlice(alloc);
             try args.append(alloc, .{ .label = ast.record_spread_label, .value = valPtr, .comments = commentsSlice, .spreadLoc = locFromToken(dotsTok) });
-            if (!this.match(.comma)) break;
-            continue;
-        }
-
-        // Spread argument used by record/variant update calls, e.g. `Ctor(..base, x: 1)`.
-        if (this.match(.dotDot)) {
-            const valExpr = try this.parseExpr(alloc);
-            const valPtr = try this.boxExpr(alloc, valExpr);
-            const commentsSlice = try argComments.toOwnedSlice(alloc);
-            try args.append(alloc, .{ .label = ast.spread_arg_label, .value = valPtr, .comments = commentsSlice });
             if (!this.match(.comma)) break;
             continue;
         }

@@ -610,10 +610,10 @@ pub const Tail = enum { none, value, returned };
 pub const spread_arg_label = "..";
 
 /// Decision 359 — the label the parser gives a record spread argument:
-/// `Pessoa(...old, nome: "Ana")` holds `old` as the argument labelled `...`,
-/// the `...` token's place on `CallArg.spreadLoc`. Like `spread_arg_label` it
+/// `Pessoa(..old, nome: "Ana")` holds `old` as the argument labelled `...`,
+/// the `..` token's place on `CallArg.spreadLoc`. Like `spread_arg_label` it
 /// is not an identifier, so no source writes it as a label; the formatter
-/// prints it back as `...old`. Inference (`infer.inferRecordSpread`) builds
+/// prints it back as `..old`. Inference (`infer.inferRecordSpread`) builds
 /// the complete constructor call it means, and refuses it anywhere but a
 /// record's constructor (`call-spread`).
 pub const record_spread_label = "...";
@@ -653,7 +653,7 @@ pub fn CallArgOf(comptime phase: Phase) type {
         /// comma before its `)`; the formatter opens the list on it and on
         /// nothing else. Dumped only when set; the typed phase never copies it.
         trailingComma: bool = false,
-        /// Decision 359 — where the `...` of a record spread argument
+        /// Decision 359 — where the `..` of a record spread argument
         /// (`record_spread_label`) is written: its refusals are located
         /// there. Null on every other argument; left out of the dump.
         spreadLoc: ?Loc = null,

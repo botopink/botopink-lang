@@ -6,6 +6,6 @@ type Pessoa(nome: string, idade: i32)
 
 pub fn main() {
     val ana = Pessoa(nome: "Ana", idade: 3);
-    val p = Pessoa(...ana, nome: "Bia", nome: "Caio");
+    val p = Pessoa(..ana, nome: "Bia", nome: "Caio");
     @print(p.nome);
 }
