@@ -22,7 +22,20 @@ declare fn linkTo(target: string, link: string) -> void;
 fn walked(root: string) -> string {
     return case fs.walk(root) {
         Ok(found) -> found.join(",");
-        Error(reason) -> ["error", reason].join(" ");
+        Error(e) -> ["error", refusal(e)].join(" ");
+    };
+}
+
+// The message of an `Other` (a dangling link is one, decision 178), else the variant's name.
+fn refusal(e: fs.FsError) -> string {
+    return case e {
+        fs.FsError.Other(path, message) -> message;
+        fs.FsError.NotFound(path) -> "NotFound";
+        fs.FsError.PermissionDenied(path) -> "PermissionDenied";
+        fs.FsError.IsDirectory(path) -> "IsDirectory";
+        fs.FsError.NotDirectory(path) -> "NotDirectory";
+        fs.FsError.AlreadyExists(path) -> "AlreadyExists";
+        fs.FsError.InvalidUtf8(path, offset) -> "InvalidUtf8";
     };
 }
 

@@ -1972,6 +1972,39 @@ module body runs, so the built program runs wherever `out/beam/` is put on the c
 runner in between. `modules/erlang_host_sidecar_shipped` and
 `modules/erlang_sidecar_named_like_a_module` pin it (`hello, sidecar`, `HELLO, SIDECAR`).
 
+### `io.fs` (decisions 538, 540)
+
+`io.fs` was redesigned on Rust's, Java's, Erlang's and Node's common shape (144 fs-a): every function that
+can fail answers `@Result<…, FsError>`, the same OS error the same `FsError` variant on every target, and a
+`File` handle joins the whole-file shortcuts. Its cells run on commonJS, erlang and beam and are narrowed
+away from wasm (the `wasi:filesystem` bindings are front 164's; the table above names `utf8Offset`, the first
+host cell a body of `std/io/fs` calls with no binding):
+
+- `modules/fs_error_variants` — six of the seven variants (`PermissionDenied` is std's own test, which
+  reaches it as a user who is not root): `NotFound`, `IsDirectory`, `NotDirectory`, `AlreadyExists`,
+  `InvalidUtf8` and `Other` (a dangling link under `walk`, decision 178's text its `message`), met through
+  `readText`, `list`, `mkdir`, `rm`, `copy`, `stat`, `open`, `create`, `writeText` and `walk`, each with the
+  path the caller wrote.
+- `modules/fs_read_text_not_utf8` — `readText` of valid text (a four-byte sequence, U+10FFFF, U+FFFE, a byte
+  order mark) and of sixteen byte strings that are not UTF-8 (a stray continuation, an overlong form, a
+  surrogate, past U+10FFFF, a sequence cut short), the same `InvalidUtf8` offset on every target, the bytes
+  still readable.
+- `modules/fs_whole_file_shortcuts` — `writeBytes` / `readBytes` keep every byte, `appendText` creates and
+  adds, `copy`, `rm`, `removeTree` (a missing path is `Ok`), `mkdirRecursive`, `stat`, `list`, `walk`, `glob`.
+- `modules/fs_file_handle` — `create` / `open`, `path`, `size`, `read(n)`, `bytes`, `text`, `hash` (the whole
+  file whatever the position), `write`, a file opened for reading refusing `write` and one created for writing
+  refusing `read`, `close` twice, `create` truncating. Written without `defer` (539): `close` is called by hand.
+- `modules/fs_file_streams` — `chunks(size)` and `lines()`: `\n` and `\r\n` stripped, an empty line, a last line
+  with no terminator, an empty file, `lines` after `read`, and a line that is not UTF-8 ending the stream with
+  `InvalidUtf8` at its offset in what the call read.
+
+Found while writing them, each a defect of another front and not recorded as a departure (458):
+`Bytes.length` read as a property is `string:length` on erlang and beam (a `badarg` on bytes that are not UTF-8,
+a grapheme count on those that are) — the cells and std write `b.length()`; and a field read on a type the
+module does not declare (`asset.path` in std, `Asset` being the compiler's record) is the dynamic
+`'__bp_field'/2`, which the beam backend answers with the whole record — std reads `Asset`'s fields through a
+host cell (`assetPath`, `assetHandle`).
+
 ### Narrowing a cell
 
 A cell runs on all four targets, and a `test/` suite on commonJS, erlang, wasm and beam —
@@ -2031,7 +2064,8 @@ The narrowed cells whose excluded targets' missing binding is named here (re-der
 | `modules/host_erlang_task_result` | erlang beam | commonJS, wasm — `hostDouble` |
 | `modules/host_node_task_result` | commonJS | erlang, wasm, beam — `hostDouble` |
 | `modules/host_unknown_parameter` | erlang beam | commonJS, wasm — `std/erlang.element` |
-| `modules/std_template_host_fns_across_modules`, `modules/import_std_groups`, `modules/fs_stat_mtime_whole_seconds` | commonJS erlang beam | wasm — `stat` |
+| `modules/std_template_host_fns_across_modules`, `modules/import_std_groups`, `modules/fs_stat_mtime_whole_seconds` | commonJS erlang beam | wasm — `utf8Offset` (the first host cell a body of `std/io/fs` calls with no wasm binding; decision 540) |
+| `modules/fs_error_variants`, `modules/fs_whole_file_shortcuts`, `modules/fs_read_text_not_utf8`, `modules/fs_file_handle`, `modules/fs_file_streams` | commonJS erlang beam | wasm — `utf8Offset` (the same; front 164 binds `wasi:filesystem`) |
 | `modules/clock_rfc3339_domain`, `modules/clock_civil_past_rfc3339_aborts`, `modules/clock_format_past_rfc3339_aborts`, `modules/clock_offset_past_rfc3339_aborts`, `modules/hole_any_call_at_build`, `modules/std_generic_primitives`, `modules/stage_build_and_run`, `modules/stage_comptime_block_in_run`, `modules/stage_imported`, `modules/stage_of_functions` | commonJS erlang beam | wasm — `systemTimeWithUnit` |
 | `modules/decl_hooks_direct` | commonJS erlang beam | wasm — `session` |
 | `modules/render_scope_library` | commonJS erlang beam | wasm — `hostStash` |
@@ -2051,7 +2085,7 @@ The narrowed cells whose excluded targets' missing binding is named here (re-der
 | `test/mocks_handwritten_double` (a project suite) | commonJS erlang beam (`"targets"`) | wasm — `pushMatcher`, `std/testing/mocks.invoke` |
 | `test/module_init` (a project suite) | commonJS erlang beam (`"targets"`) | wasm — `mark` |
 
-In all, 52 narrowings (44 cells, 8 project suites) and 80 exclusions. No other
+In all, 57 narrowings (49 cells, 8 project suites) and 85 exclusions. No other
 manifest or suite carries a narrowing: a project that must be refused on a target says so with its
 departure.
 

@@ -1,0 +1,25 @@
+botopink-cell 1
+out chunk 61620d0a
+out chunk 0ac3a764
+out chunk 0a6c6173
+out chunk 74
+out end of chunks
+out chunk 61620d0a0ac3a7640a6c617374
+out end of chunks
+out line [ab]
+out line []
+out line [çd]
+out line [last]
+out end of lines
+out 6162
+out line []
+out line []
+out line [çd]
+out line [last]
+out end of lines
+out end of chunks
+out end of lines
+out line [ok]
+out line [fine]
+out error InvalidUtf8 bad.txt 8
+out end of lines

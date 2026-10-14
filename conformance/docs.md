@@ -426,6 +426,54 @@ commonJS, erlang and beam.
 
 <!-- example: modules/fs_stat_mtime_whole_seconds -->
 
+### The file system, `io.fs`
+
+Every `io.fs` function that can fail answers `@Result<…, FsError>` (decision 540) — never a `string`
+error — and `FsError` is std's, the same on every target:
+
+```text
+pub type FsError {
+    NotFound(path), PermissionDenied(path), IsDirectory(path), NotDirectory(path),
+    AlreadyExists(path), InvalidUtf8(path, offset: i64), Other(path, message),
+}
+```
+
+The same OS error is the same variant on every target (`ENOENT` on commonJS, `enoent` on erlang and
+beam: `NotFound`), whichever function met it. `path` is the path the caller wrote (for `copy`, the
+source; for `walk`, the root); `Other.message` is the host's text; a dangling link under `walk` is an
+`Other` whose message names it. `exists` stays a `bool`: it cannot fail.
+
+<!-- example: modules/fs_error_variants -->
+
+**The whole-file shortcuts.** `readBytes`, `readText`, `writeBytes`, `writeText` (creating or
+truncating), `appendText` (creating), `stat` (`size: i64`, `mtime: i64`, `isDir: bool`) and the directory
+functions (`exists`, `list`, `mkdir`, `mkdirRecursive`, `rm`, `removeTree`, `copy`, `walk`, `glob`).
+`readText` is UTF-8 checked on every target: bytes that are not UTF-8 are `InvalidUtf8(path, offset)`,
+`offset` the byte where the first invalid sequence starts — never node's silent U+FFFD, nor erlang's
+unchecked binary.
+
+<!-- example: modules/fs_whole_file_shortcuts -->
+
+<!-- example: modules/fs_read_text_not_utf8 -->
+
+**The handle.** `open(path)` (reading) and `create(path)` (writing, creating or truncating) answer a
+`File`, a `Closeable` the writer closes — `val f = try fs.open(p); defer f.close();` — and nothing checks
+that it is. Its calls are `path()`, `size()`, `read(n)` (up to `n` bytes, empty at the end), `bytes()` and
+`text()` (the rest from the position), `hash()` (the SHA-256 of the whole file, lowercase hex),
+`write(b)` and `close()`; each that can fail answers `@Result<…, FsError>`.
+
+<!-- example: modules/fs_file_handle -->
+
+`chunks(size = 65536)` and `lines()` are `@Stream<@Result<…, FsError>>`: the rest of the file in pieces of
+at most `size` bytes, or line by line with `\n` and `\r\n` stripped. An error ends the stream; a line that
+is not UTF-8 is `InvalidUtf8`.
+
+<!-- example: modules/fs_file_streams -->
+
+The `io.fs` functions have a host binding on commonJS, erlang and beam; the `wasi:filesystem` bindings
+of wasm are not written yet (a build for wasm refuses a program that calls them, naming the host cell
+that has no binding).
+
 A library is imported the same way, under the name `botopink.json` declares it
 in `dependencies`:
 

@@ -1,0 +1,59 @@
+//// Decision 540 (2) — `readText` is UTF-8 checked, the same on every target: a file whose bytes
+//// are not UTF-8 is `InvalidUtf8(path, offset)` — never node's silent U+FFFD, nor erlang's
+//// unchecked binary — and `offset` is the byte where the first invalid sequence starts. The
+//// bytes are still there for `readBytes`. A byte order mark is text (U+FEFF), and so are the
+//// last code point (U+10FFFF) and the two non-characters U+FFFE / U+FFFF.
+
+import {io.fs, encoding} from "std";
+
+fn probe(hex: string) {
+    val bytes = encoding.hexDecodeBytes(hex).unwrapOr(Bytes.fromUtf8(""));
+    fs.writeBytes("sample.bin", bytes);
+    val kept = fs.readBytes("sample.bin").unwrapOr(Bytes.fromUtf8(""));
+    val back = encoding.hexEncodeBytes(kept);
+    case fs.readText("sample.bin") {
+        Ok(text) -> @print(hex
+            + ": ok text="
+            + encoding.hexEncodeBytes(Bytes.fromUtf8(text))
+            + " bytes="
+            + back);
+        Error(e) -> case e {
+            fs.FsError.InvalidUtf8(path, offset) -> @print(hex
+                + ": InvalidUtf8 "
+                + path
+                + " "
+                + offset.toString()
+                + " bytes="
+                + back);
+            fs.FsError.NotFound(path) -> @print(hex + ": NotFound");
+            fs.FsError.PermissionDenied(path) -> @print(hex
+                + ": PermissionDenied");
+            fs.FsError.IsDirectory(path) -> @print(hex + ": IsDirectory");
+            fs.FsError.NotDirectory(path) -> @print(hex + ": NotDirectory");
+            fs.FsError.AlreadyExists(path) -> @print(hex + ": AlreadyExists");
+            fs.FsError.Other(path, message) -> @print(hex
+                + ": Other "
+                + message);
+        };
+    }
+}
+
+pub fn main() {
+    probe("");
+    probe("68c3a9");
+    probe("f0908080");
+    probe("f48fbfbf");
+    probe("efbfbe");
+    probe("efbbbf61");
+    probe("ff");
+    probe("6162c3");
+    probe("c0af");
+    probe("e080af");
+    probe("eda080");
+    probe("f4908080");
+    probe("e282");
+    probe("61e28228");
+    probe("f08080");
+    probe("80");
+    fs.rm("sample.bin");
+}
