@@ -78,6 +78,8 @@ fn attemptOnWasm<T>(f: fn() -> T) -> @Result<T, Failure> {
 // The task the thunk started — or the `Failure` it raised before its first
 // `await` — and then its value.
 fn attemptTaskOnWasm<T>(f: fn() -> @Task<T>) -> @Task<@Result<T, Failure>> {
-    val t: @Task<T> = try attemptOnWasm(f);
-    return await t;
+    case caught(f) {
+        Ok(t) -> return await t;
+        Error(m) -> throw Failure(message: m, kind: "panic");
+    }
 }

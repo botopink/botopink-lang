@@ -2366,6 +2366,12 @@ module or another, and so does the generic it passes the thunk on to:
 
 <!-- example: modules/generic_thunk_result_binds -->
 
+An `await` may sit in an arm of a `case`, in a branch of an `if` or in a `case` nested in
+an arm, in a generic function as in a plain one: the task suspends there and resumes into
+the arm, with the same answer on every target:
+
+<!-- example: modules/task_await_in_case_arm -->
+
 An `async { }` block that throws is that failing task wherever it sits — the
 body of a lambda, a lambda bound inside a function, a method, a lambda a
 method answers:

@@ -253,7 +253,7 @@ here so a later row that removes one knows what it is removing:
 | `buildExpr` `val assert … catch` | bind `_match`, test the pattern, run the handler (decision 8 §9) | **yes** |
 | `buildIfExpr` | an `if` **used as a value** — decision 2 keeps `if` an expression; a branch that `await`s makes it `await (async () => { … })()` through `iife` (`AwaitScan`), because `await` does not parse in a plain arrow (`modules/task_await_in_if_block`) | **yes** |
 | `buildGeneratorLoop` | `iter loop { … }` / `stream loop { … }` (and `iter for` / `iter while`, written as the prefixed `loop`) — a `function*` / `async function*` IIFE around `while (true)` invoked `.call(this)` (a generator cannot be an arrow, so the method's `this` (`self`) is handed in; `conformance/modules/loop_keeps_self`) (decisions 105, 125; every other loop is a statement) | **yes** |
-| `buildCase` | a `case` used as a value: `const _s = …` and one statement per arm | **yes** |
+| `buildCase` | a `case` used as a value: `const _s = …` and one statement per arm; an arm that `await`s makes it `await (async () => { … })()` (`AwaitScan`, `modules/task_await_in_case_arm`) | **yes** |
 | `@block { body }` | a **block as a value** — what its `return`s carry, or a whole statement | **yes**: the tail form is refused by the checker (`block-tail-value`) |
 
 So the checker row that enforces decision 2 (a block is not a value) reaches

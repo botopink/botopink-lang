@@ -188,6 +188,13 @@ is made and runs to its first `await`; it settles once.
   t` (`adoptTask`). Because an operand evaluated before an `await` in the same
   statement runs again on re-entry, a call there is refused
   (`checkAwaitOrder`).
+- **An `await` in a `case` arm** (a generic function as a plain one, a `return await t` arm, an
+  `if` branch, a `case` nested in an arm) needs nothing beyond the guard above: each arm is a statement
+  of the machine, its `await` index inside the range of the `case` statement, and the `case` subject is
+  kept in its `__case_<d>_<n>` local, so re-entry skips the subject and lands in the arm. Conformance
+  cell `task_await_in_case_arm`; std's `failure.attemptTask` on wasm is that shape. A `case` arm that
+  is a `{ … }` block holding an `await` is refused by the checker on every target
+  (`effect-await-without-task`), so no backend meets it.
 - **Outside a machine** (a plain function, a direct component lambda) `await`
   of a task is `$__task_block_on`: the ready tasks run until it settles; one
   still waiting on the host traps, on both hosts. A component lambda whose body

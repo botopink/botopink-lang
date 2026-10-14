@@ -7183,10 +7183,15 @@ const Emitter = struct {
             self.case_ok_wrap = prev_wrap;
         }
         const stmts = try self.buildCaseStmts(subjects, arms, base + 1);
-        return self.b.call(
-            try self.b.paren(try self.b.arrowBlock(&.{}, .{ .stmts = stmts, .indent = base })),
-            &.{},
-        );
+        // An arm that `await`s cannot sit in a plain arrow: the `case` is then
+        // `await (async () => { … })()`, legal because only an async body
+        // writes `await`.
+        var arrow = try self.b.arrowBlock(&.{}, .{ .stmts = stmts, .indent = base });
+        if (AwaitScan.stmts(stmts)) {
+            arrow.arrow.is_async = true;
+            return self.b.await_(try self.b.call(try self.b.paren(arrow), &.{}));
+        }
+        return self.b.call(try self.b.paren(arrow), &.{});
     }
 
     /// `return case … { … }` where an arm returns from the function itself
