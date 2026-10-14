@@ -22,7 +22,7 @@ A first program:
 | *Bindings* | `val`, `var`, `@BeamMemory`, `fn` |
 | *Types* | primitives, records, enums and their sections, `behavior`, generics, aliases, derived types, spread, unions and `is`, narrowing |
 | *Expressions* | literals, numbers, arrays, indexing, operators, optionals, lambdas, blocks, `if`, `case`, loops, `assert`, `use` |
-| *Functions* | recursion, inline parameter types, defaults, variadics, effects, results, tasks, iterators and streams |
+| *Functions* | recursion, inline parameter types, defaults, variadics, record parameters, effects, results, tasks, iterators and streams |
 | *Comptime* | `comptime`, template functions, decorators, typed meta, template annotations, host bindings |
 | *Builtins* | the builtins, what `@print` writes, a value's own type, `@src()` |
 | *Tests* | `test` blocks, mocks |
@@ -2293,6 +2293,41 @@ parameter (`function total(label, ...values)`) and the call with the arguments
 one by one, so a host function bound by `#[@External.Node(…)]` receives them as
 JavaScript does (`Math.max(3, 9, 4)`), and `#[@External.Erlang(…)]` one list
 (`lists:max([3, 9, 4])`).
+
+### A record parameter
+
+`..props: R` with `R` a record type (or one derived by `Type.pick`, `Type.omit`
+or `Type.merge`, decision 307) makes `R`'s fields the function's parameters from
+outside (decision 529 (2)): a call passes them by label, a field with a default
+may be left out, and the body reads them as the record `props`. The record
+parameter sits beside other parameters, which a call passes as it always did —
+by position or by label. It is told from a variadic `..values: T[]` by its type:
+a record type against an array.
+
+<!-- example: modules/record_param -->
+<!-- example: modules/record_param_across_modules -->
+
+A spread (`Card(..p, featured: true)`) is legal only into a record parameter,
+`p` of its type or of one derived from it (decision 359's rule); the later
+supplier of a field wins, as in a record's construction, and a function of plain
+parameters takes no spread (`call-spread`).
+
+Refused: a second record parameter (`record-param-twice`, at its `..`), a type
+that is no record (`record-param-not-record`, at the type), a name that is both a
+parameter and a field of the record (`record-param-clash`, at the parameter), a
+record parameter beside a variadic (`record-param-variadic`, at the variadic) and
+a default on it (`record-param-default`, at the `=`), all at the declaration; at
+a call, a label that names neither a parameter nor a field
+(`record-param-label`, at the label) and a spread of a value that is not of
+the record's type or one derived from it (`record-spread-type`, at the `..`).
+
+<!-- example: modules/record_param_twice -->
+<!-- example: modules/record_param_not_record -->
+<!-- example: modules/record_param_clash -->
+<!-- example: modules/record_param_variadic -->
+<!-- example: modules/record_param_default -->
+<!-- example: modules/record_param_unknown_label -->
+<!-- example: modules/record_param_spread_other_type -->
 
 ### Effects
 

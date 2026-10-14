@@ -133,6 +133,16 @@ from an imported derived type), with eleven `modules/derived_type_*` cells — a
 unknown field, a field named twice, no field, an `omit` leaving none, an enum and a primitive
 source, a field on both sides of a `merge`, the call in a body, a `var`, and the bare `partial(…)`
 (an unbound name); every one red on the parent binary.
+Decision 529 (2) (a record parameter `..props: R`) adds `modules/record_param` (a component-like function with
+`..props: R` beside another parameter, called by label, by position for the other parameter and by a spread of the
+record's own type and of a `Type.pick` type, a default left out; the same answer on commonJS, erlang, beam and wasm), `record_param_across_modules` (declared in one module, called from another)
+and seven refusals, each at the declaration or the call that breaks one rule: `record_param_twice` (a second
+record parameter), `record_param_not_record` (an enum as `R`), `record_param_clash` (a parameter named as a
+field), `record_param_variadic` (beside a variadic), `record_param_default` (a default, a parse error at the `=`),
+`record_param_unknown_label` (a label that is no parameter and no field), `record_param_spread_other_type` (a
+spread of another record's value, `record-spread-type`); a spread into a function of plain parameters is
+`call_spread`'s.
+
 Decision 359 (a spread copies a record's fields, 144 B-14) adds `modules/record_spread` (`..src` beside
 labels, several spreads left to right with the later winning, a `Type.pick` / `omit` / `merge` source, a
 field left to its default, a call as the source evaluated once, a trailing comma, a generic record — four

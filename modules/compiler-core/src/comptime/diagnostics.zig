@@ -214,6 +214,18 @@ pub const record_spread_missing_field: []const u8 = "record-spread-missing-field
 /// Decision 359 — a field labelled twice, or an unlabelled argument, beside a
 /// record spread.
 pub const record_spread_arguments: []const u8 = "record-spread-arguments";
+/// Decision 529 (2) — a second `..props: R` record parameter in one function.
+pub const record_param_twice: []const u8 = "record-param-twice";
+/// Decision 529 (2) — a record parameter's type that is no record.
+pub const record_param_not_record: []const u8 = "record-param-not-record";
+/// Decision 529 (2) — a name that is both a parameter and a field of the
+/// record parameter's type.
+pub const record_param_clash: []const u8 = "record-param-clash";
+/// Decision 529 (2) — a record parameter beside a variadic one.
+pub const record_param_variadic: []const u8 = "record-param-variadic";
+/// Decision 529 (2) — a call label that names neither a parameter nor a field
+/// of the record parameter's type, or an argument without a parameter.
+pub const record_param_label: []const u8 = "record-param-label";
 /// Decision 525 — a block `{ … }` (no `->`) handed where a function is
 /// expected: a trailing `f(x) { … }`, an argument of a function-typed
 /// parameter. Refused at the block.
@@ -754,6 +766,11 @@ pub const all_codes = [_][]const u8{
     record_spread_partial,
     record_spread_missing_field,
     record_spread_arguments,
+    record_param_twice,
+    record_param_not_record,
+    record_param_clash,
+    record_param_variadic,
+    record_param_label,
     variadic_label,
     use_of_non_context_fn,
     use_without_context_effect,

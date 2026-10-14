@@ -1946,6 +1946,29 @@ and the Conformance step's `record_spread_across_modules`, `record_spread_nested
 `record_spread_beside_record_update`, `record_spread_derived_partial`, `record_spread_required`.
 Decision 37's `..base` above is untouched.
 
+## a record parameter `..props: R` (decision 529 (2))
+
+`fn Card(..props: CardProps, onClick: fn() -> void)` — the parser reads `..name: T` with `T` a named
+non-primitive type as `Param.recordParam` (an array stays the variadic of 267, `..v: i32` the
+parser's `variadic-not-array`). The parameter is an ordinary parameter of type `R` for every pass and
+backend: only the call changes. `checkRecordParams` (`inferFnDecl`) refuses at the declaration a
+second record parameter (`record-param-twice`, at its `..`), an `R` that is no record
+(`record-param-not-record`, at the type), a name that is both a parameter and a field of `R`
+(`record-param-clash`, at the parameter) and a variadic beside it (`record-param-variadic`, at the
+variadic). `packRecordParamCall` (intercepted in `inferCallExprWith` ahead of the record spread, for a
+plain call whose callee `calleeParams` answers with a record parameter) gathers the labels naming a
+field of `R` and the `..src` spread into one construction `R(…)` at `loc + ast.record_param_synthetic_col`,
+the argument labelled with the record parameter's name, keeps the other arguments (a positional one
+past the record parameter labelled with its parameter), marks the call `recordPacked` and records it
+under the call's loc in `indexRewrites` — the transform splices it like a variadic's packed call. The
+construction then runs the record's own rules (359: the later supplier wins, `record-spread-missing-field`,
+`record-spread-type` / `record-spread-partial` at the `..`; defaults from `R`'s fields); a label that
+names neither is `record-param-label` at the label. A plain function takes no spread (`call-spread`).
+Not reached: a method or an associated function with a record parameter, a tag (529 (1), (4), (5)).
+Cells: `record_param`, `record_param_twice`, `record_param_not_record`, `record_param_clash`,
+`record_param_variadic`, `record_param_default`, `record_param_unknown_label`,
+`record_param_spread_other_type`.
+
 Only a receiver whose type is a record **this module registered** is refused. Everything else keeps
 assigning, for the reasons 06 C9 left its own fresh var: a receiver still an unresolved type
 variable is an inference gap, and a named type the env cannot open — an imported record, a wrapper,

@@ -8000,6 +8000,7 @@ fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
     }
     try refuseWasmHostTwice(env, f);
     for (f.annotations) |a| try refuseStdBinding(env, a, f.name, f.params, f.returnType, null);
+    try checkRecordParams(env, f);
 
     // Build generic map.
     var genericMap = std.StringHashMap(*T.Type).init(env.arena);
@@ -20646,6 +20647,164 @@ fn packVariadicCall(env: *Env, c: ast.CallExprOf(.untyped), params: []const ast.
     return out;
 }
 
+/// Decision 529 (2) — the name a `..props: R` parameter's type is declared
+/// under (`R`, or `Props` of `Props<T>`); null when the type is no name.
+fn recordParamTypeName(p: ast.Param) ?[]const u8 {
+    return switch (p.typeRef) {
+        .named => |n| n,
+        .generic => |g| g.name,
+        else => null,
+    };
+}
+
+/// Decision 529 (2) — the fields of the record a `..props: R` parameter names,
+/// or null when `R` is no record (an enum, an unknown name).
+fn recordParamFields(env: *Env, p: ast.Param) ?[]const envMod.FieldDef {
+    const raw = recordParamTypeName(p) orelse return null;
+    const name = env.importedTypeAliases.get(raw) orelse raw;
+    if (env.namespaceTypes.contains(name)) return null;
+    const td = env.lookupTypeDef(name) orelse return null;
+    return switch (td) {
+        .record => |r| r.fields,
+        .struct_ => |st| st.fields,
+        .enum_ => null,
+    };
+}
+
+/// Decision 529 (2) — the declaration's rules for `..props: R`: at most one per
+/// function, `R` a record, no name that is both a parameter and a field of
+/// `R`, and no variadic beside it. Each is refused at the declaration.
+fn checkRecordParams(env: *Env, f: ast.FnDecl) InferError!void {
+    var first: ?usize = null;
+    for (f.params, 0..) |p, i| {
+        if (!p.recordParam) continue;
+        if (first) |fi| {
+            const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` already takes `..{s}` as its record parameter — a function has at most one", .{ diagnostics.record_param_twice, f.name, f.params[fi].name });
+            env.lastError = TypeError.custom(msg, "Declare the second one as an ordinary parameter `name: R`, or merge the two records (`Type.merge`, decision 307).").withLoc(p.loc);
+            return error.TypeError;
+        }
+        first = i;
+    }
+    const k = first orelse return;
+    const rp = f.params[k];
+    const fields = recordParamFields(env, rp) orelse {
+        const shown = recordParamTypeName(rp) orelse "this type";
+        const msg = try std.fmt.allocPrint(env.arena, "{s}: `..{s}: {s}` — `{s}` is no record type, and only a record's fields can be a function's parameters from outside", .{ diagnostics.record_param_not_record, rp.name, shown, shown });
+        env.lastError = TypeError.custom(msg, "Write a record type (or one derived by `Type.pick` / `Type.omit` / `Type.merge`, decision 307); a rest of positional values is `..values: T[]` (decision 267).").withLoc(rp.typeLoc);
+        return error.TypeError;
+    };
+    for (f.params, 0..) |p, i| {
+        if (i == k) continue;
+        if (p.variadic) {
+            const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` takes both `..{s}: R` and the variadic `..{s}` — a record parameter and a variadic do not share a function", .{ diagnostics.record_param_variadic, f.name, rp.name, p.name });
+            env.lastError = TypeError.custom(msg, "Pass the values in an array parameter `name: T[]`, or move them into a field of the record.").withLoc(p.loc);
+            return error.TypeError;
+        }
+        for (fields) |fd| if (std.mem.eql(u8, fd.name, p.name)) {
+            const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` is both a parameter of `{s}` and a field of `{s}`, the type of `..{s}`", .{ diagnostics.record_param_clash, p.name, f.name, recordParamTypeName(rp).?, rp.name });
+            env.lastError = TypeError.custom(msg, "A call passes both by label, so one name cannot stand for two: rename the parameter or the field.").withLoc(p.loc);
+            return error.TypeError;
+        };
+    }
+}
+
+/// Decision 529 (2) — the parameters of a plain call's callee when one of them
+/// is a record parameter `..props: R`; null for every other callee.
+fn recordParamCalleeParams(env: *Env, call: anytype) ?[]const ast.Param {
+    if (call.recordPacked or call.is_builtin or call.receiver != null or call.calleeExpr != null) return null;
+    const ps = calleeParams(env, call.callee) orelse return null;
+    for (ps) |p| if (p.recordParam) return ps;
+    return null;
+}
+
+/// Decision 529 (2) — a call of a function with a record parameter
+/// (`Card(title: "a", featured: true, onClick: f)`, `Card(..p, featured: true)`):
+/// the labels that name a field of `R` and the spread are gathered into one
+/// record construction `R(…)`, the argument of the record parameter (labelled
+/// with its name); the other arguments stay. The rewritten call is typed and
+/// recorded for the transform under the call's loc; the construction goes
+/// through the record's own rules (359: the later supplier wins, a missing
+/// field without a default, the spread's source type). A label naming neither
+/// a parameter nor a field is `record-param-label` at the label.
+fn packRecordParamCall(env: *Env, c: ast.CallExprOf(.untyped), params: []const ast.Param, loc: ast.Loc) InferError!ast.CallExprOf(.untyped) {
+    const call = c.kind.call;
+    var k: usize = 0;
+    for (params, 0..) |p, i| if (p.recordParam) {
+        k = i;
+    };
+    const rp = params[k];
+    const fields = recordParamFields(env, rp) orelse {
+        const shown = recordParamTypeName(rp) orelse "this type";
+        const msg = try std.fmt.allocPrint(env.arena, "{s}: `..{s}: {s}` — `{s}` is no record type here", .{ diagnostics.record_param_not_record, rp.name, shown, shown });
+        env.lastError = TypeError.custom(msg, "The record parameter's type must be a record visible where the function is called.").withLoc(loc);
+        return error.TypeError;
+    };
+    const recName = recordParamTypeName(rp).?;
+    var outer: std.ArrayListUnmanaged(ast.CallArg) = .empty;
+    var inner: std.ArrayListUnmanaged(ast.CallArg) = .empty;
+    var pos: usize = 0;
+    for (call.args) |a| {
+        const label = a.label orelse {
+            // The record parameter takes no positional argument: positions
+            // count the other parameters.
+            var j: usize = 0;
+            var seen: usize = 0;
+            while (j < params.len) : (j += 1) {
+                if (j == k) continue;
+                if (seen == pos) break;
+                seen += 1;
+            }
+            pos += 1;
+            if (j > k and j < params.len) {
+                var labelled = a;
+                labelled.label = params[j].name;
+                try outer.append(env.arena, labelled);
+            } else try outer.append(env.arena, a);
+            continue;
+        };
+        if (std.mem.eql(u8, label, ast.record_spread_label)) {
+            try inner.append(env.arena, a);
+            continue;
+        }
+        const isParam = for (params, 0..) |p, i| {
+            if (i != k and std.mem.eql(u8, p.name, label)) break true;
+        } else false;
+        if (isParam) {
+            try outer.append(env.arena, a);
+            continue;
+        }
+        const isField = for (fields) |fd| {
+            if (std.mem.eql(u8, fd.name, label)) break true;
+        } else false;
+        if (isField) {
+            try inner.append(env.arena, a);
+            continue;
+        }
+        const vloc = a.value.getLoc();
+        const labelCol = if (vloc.col > label.len + 2) vloc.col - label.len - 2 else vloc.col;
+        const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` names neither a parameter of `{s}` nor a field of `{s}`, the type of `..{s}`", .{ diagnostics.record_param_label, label, call.callee, recName, rp.name });
+        env.lastError = TypeError.custom(msg, "A call passes the record parameter's fields and the other parameters by label.").withLoc(.{ .line = vloc.line, .col = labelCol, .expansion = vloc.expansion });
+        return error.TypeError;
+    }
+    const innerLoc: ast.Loc = .{ .line = loc.line, .col = loc.col + ast.record_param_synthetic_col, .expansion = loc.expansion };
+    const record = try env.arena.create(ast.Expr);
+    record.* = .{ .call = .{ .loc = innerLoc, .kind = .{ .call = .{
+        .receiver = null,
+        .callee = recName,
+        .is_builtin = false,
+        .args = try inner.toOwnedSlice(env.arena),
+        .trailing = &.{},
+    } } } };
+    try outer.append(env.arena, .{ .label = rp.name, .value = record });
+    var out = c;
+    out.kind.call.args = try outer.toOwnedSlice(env.arena);
+    out.kind.call.recordPacked = true;
+    const spliced = try env.arena.create(ast.Expr);
+    spliced.* = .{ .call = out };
+    try env.indexRewrites.put(loc, spliced);
+    return out;
+}
+
 fn markPacked(c: ast.CallExprOf(.untyped), args: []ast.CallArgOf(.untyped)) ast.CallExprOf(.untyped) {
     var out = c;
     out.kind.call.args = args;
@@ -20783,6 +20942,13 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                 );
                 env.lastError = TypeError.custom(msg, hint).withLoc(loc);
                 return error.TypeError;
+            }
+            // Decision 529 (2) — a callee with a record parameter `..props: R`
+            // takes its fields by label or by a spread: gathered into the
+            // record argument before anything else reads the arguments.
+            if (recordParamCalleeParams(env, call)) |rps| {
+                const packedCall = try packRecordParamCall(env, c, rps, loc);
+                return inferCallExprWith(env, packedCall, loc, typedReceiverIn);
             }
             // Decision 359 — a record spread (`Pessoa(..old, nome: n)`):
             // the complete constructor call it means, or `call-spread` at a

@@ -1147,6 +1147,12 @@ fn rewriteExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
                 // Decision 267 — the call with its variadic arguments packed
                 // into one array literal, as inference typed it.
                 expr_ptr.* = rewrite.*;
+            } else if (rewrite.* == .call and rewrite.call.kind == .call and rewrite.call.kind.call.recordPacked and
+                !expr_ptr.call.kind.call.recordPacked)
+            {
+                // Decision 529 (2) — the call with its field labels and spread
+                // gathered into the record argument, as inference typed it.
+                expr_ptr.* = rewrite.*;
             }
         }
     }

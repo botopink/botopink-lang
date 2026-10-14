@@ -1,0 +1,12 @@
+//// Decision 529 (2) — a call's label names a parameter of the function or a
+//// field of its record parameter's type; any other is refused at the label.
+
+type CardProps(title: string)
+
+fn Card(..props: CardProps, suffix: string) -> string {
+    return "${props.title}${suffix}";
+}
+
+pub fn main() {
+    @print(Card(title: "a", suffix: "!", color: "red"));
+}
