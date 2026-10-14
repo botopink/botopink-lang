@@ -1606,6 +1606,24 @@ asks the question its position has:
 Not reached: a `case` arm's leading-dot pattern is resolved against the subject by the backends,
 and wasm's `findVariant` still takes the first enum declaring the name (05-wasm).
 
+## An import of a refused module names it (`import-of-failed-module`)
+
+A module the build refused (a lex, parse, validation or type error, a `@TypeInfo.all` reader
+refusal) registers no exports, so its importers used to read every name they took from it as
+`unbound variable`, at its first use, and their own importers the same, transitively — the one real
+error buried under one line per importer. `compileOnce` and `compileTypesOnly` record each refused
+module in `Reflection.failedModules`; `resolveImports` records in `Env.failedImports` an item that
+binds nothing while a refused module is one its source admits (the passes and the scope the value
+scan uses), and a namespace item (`import {shapes};`, `mod shapes;`) whose module was refused; and
+`unboundAt` turns a use of such a name into `import-of-failed-module` **at the import item**, naming
+the module (`` `area` comes from `shapes`, which failed to check — its own errors are reported
+there ``) — one wording for a name and a namespace, since a refused module exports nothing and
+`import {components.Card};` cannot tell the two apart. The refused module keeps its own error. Nothing real is hidden: an importer reports one error, its first, as before; a name
+missing from a module that checked reaches none of this and stays `unbound variable` (the resolver's
+`imported symbol is not exported` catches it first in a build). Pinned by
+`conformance/modules/import_of_failed_module` and `tests/infer_decls.zig`'s `import of a failed
+module` tests.
+
 ## A local ends with its body (01 step 13)
 
 `Env.bindings` is one flat table, and a body's parameters and locals used to stay in it: a `val` of

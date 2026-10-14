@@ -200,6 +200,12 @@ pub const Reflection = struct {
     /// diagnostic of a decorator or template body run from another module
     /// names the body's file by it (`infer.zig` `srcPathOfModule`).
     srcPaths: std.StringHashMapUnmanaged([]const u8) = .empty,
+    /// The module paths this session analysed and refused (a lex, parse,
+    /// validation or type error): an importer's use of a name such a module
+    /// would have exported is `import-of-failed-module`, naming the module,
+    /// never `unbound variable` (`comptime.zig` `resolveImports`,
+    /// `infer.unboundAt`).
+    failedModules: std.StringHashMapUnmanaged(void) = .empty,
 
     pub fn init(arena: std.mem.Allocator) Reflection {
         return .{ .arena = arena };

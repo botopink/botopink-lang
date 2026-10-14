@@ -886,6 +886,14 @@ its snapshot). The erlang float-literal item adds `modules/float_literal_spellin
 `modules/number_literal_erlang_spellings` (`5e-324`, the largest `f64`, an `f64` record field and
 `0xFF + 0b101 + 0o17`, on all four targets — wasm since its float literal is an `f64.const` and its
 radix literal a decimal `i32.const`).
+144's cascading-diagnostic row adds `modules/import_of_failed_module` (`shapes.bp` holds a type error,
+`main` imports `area` from it): `shapes.snap` claims the type error and `main.snap` the one
+`import-of-failed-module` refusal at the import item, naming `shapes` (`` `area` comes from `shapes`,
+which failed to check ``) — the parent binary refused
+`main` with `unbound variable 'area'` at the use, and an importer of `main` would have done the same.
+The importer snapshots of `lexer_error_in_imported_module`, `imported_declaration_error_location`
+(`b/b` and `main`), `bpp_decorator_last_line` and `bpp_diagnostics_located` moved with it — each
+claimed the cascade's `unbound variable`; the refused module's own snapshot is unchanged.
 The backend and runtime rows of `00` (`front/codegen-rows`) add a cell each, every one failing on the
 parent binary: `modules/task_await_in_if_block` (an `if` block that `await`s without returning, inside a
 `@Task` body — commonJS lowered it into a plain arrow and the module did not load),

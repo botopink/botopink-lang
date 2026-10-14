@@ -317,6 +317,10 @@ pub const behavior_member_redeclared: []const u8 = "behavior-member-redeclared";
 /// declarations (`00 · 01-std`: the refusal of a duplicate `pub` name belongs
 /// to the consumer's unqualified use).
 pub const ambiguous_import_use: []const u8 = "ambiguous-import-use";
+/// A use of an imported name whose module was refused earlier in the build:
+/// the name is not unbound, its module did not check. Located at the import
+/// item, naming the module — the module's own error is reported there.
+pub const import_of_failed_module: []const u8 = "import-of-failed-module";
 /// `import {testing.mocks.mock} from "std"` — a std decorator imported as a
 /// leaf: the code it emits reaches its module through the annotation's handle,
 /// so it is imported through the module (`#[mocks.mock]`).

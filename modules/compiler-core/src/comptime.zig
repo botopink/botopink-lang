@@ -2556,6 +2556,11 @@ fn resolveImports(
                                 }
                             }
                             continue;
+                        } else if (failedModule(env, path)) |failed| {
+                            // The namespace's module was refused: a use of
+                            // it names that module, not an unbound name.
+                            try env.failedImports.put(env.arena, local, .{ .module = failed, .loc = imp.loc });
+                            continue;
                         },
                         .root => {},
                     };
@@ -2732,6 +2737,24 @@ fn resolveImports(
                             }
                         }
                     }
+                    // Nothing analysed declares the name, and a module the
+                    // item may name was refused earlier in the build: the name
+                    // is not missing, its module did not check. A use of it is
+                    // `import-of-failed-module` (`infer.unboundAt`), never
+                    // `unbound variable` — which buried the one real error
+                    // under one per importer, transitively. A name missing
+                    // from a module that DID check reaches none of this.
+                    if (!bound_type_decl and !bound_behavior and !bound_value and owner.len == 0) failed: {
+                        for ([3]u2{ 0, 1, 2 }) |pass| {
+                            var fit = (env.reflection orelse break :failed).failedModules.keyIterator();
+                            while (fit.next()) |k| {
+                                if (isStdPkgPath(k.*)) continue;
+                                if (!leaf_src.admits(k.*, pass) or outOfScope(scope, k.*)) continue;
+                                try env.failedImports.put(env.arena, local, .{ .module = k.*, .loc = imp.loc });
+                                break :failed;
+                            }
+                        }
+                    }
                     // Imported template fns (`-> @Expr<…>`) carry their decl
                     // across modules so call sites here can expand them.
                     // One local name is one declaration. Two imports that each
@@ -2826,6 +2849,14 @@ fn resolveImports(
             else => {},
         }
     }
+}
+
+/// The module `path` names when the build refused it earlier (its key in
+/// `Reflection.failedModules`), else null.
+fn failedModule(env: *const envMod.Env, path: []const u8) ?[]const u8 {
+    const r = env.reflection orelse return null;
+    if (isStdPkgPath(path)) return null;
+    return if (r.failedModules.getKey(path)) |k| k else null;
 }
 
 /// Decision 310 — the declared names two type import items of `program`
@@ -3796,6 +3827,7 @@ pub fn compileTypesOnly(
         const name: []const u8 = if (mod.path.len > 0) mod.path else "main";
         if (reader_refusals.get(idx)) |te| {
             try session.outputs.append(allocator, .{ .name = name, .src = mod.source, .srcPath = mod.srcPath, .outcome = .{ .typeError = te } });
+            try reflection.failedModules.put(arena_alloc, mod.path, {});
             continue;
         }
         const analysis = try analyzeModule(arena_alloc, mod, &registry, &type_decl_registry, &template_registry, &decorator_registry, &extension_registry, eval_ctx, true, null, &reflection);
@@ -3965,6 +3997,7 @@ pub fn compileTypesOnly(
                 });
             },
         }
+        if (session.outputs.items[session.outputs.items.len - 1].outcome != .ok) try reflection.failedModules.put(arena_alloc, mod.path, {});
     }
 
     return session;
@@ -4132,6 +4165,7 @@ fn compileOnce(
         };
         if (reader_refusals.get(idx)) |te| {
             try session.outputs.append(allocator, .{ .name = name, .src = mod.source, .srcPath = mod.srcPath, .outcome = .{ .typeError = te } });
+            try reflection.failedModules.put(arena_alloc, mod.path, {});
             if (lb) |l| l.abandon(mod);
             continue;
         }
@@ -4293,6 +4327,8 @@ fn compileOnce(
                 });
             },
         }
+        // A refused module exports nothing: its importers name it (`import-of-failed-module`).
+        if (session.outputs.items[session.outputs.items.len - 1].outcome != .ok) try reflection.failedModules.put(arena_alloc, mod.path, {});
         if (lb) |l| try l.end(mod, idx, session.outputs.items[session.outputs.items.len - 1], regs, if (snapshot) |*sn| sn else null, tree);
     }
 

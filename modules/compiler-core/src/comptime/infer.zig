@@ -1320,6 +1320,22 @@ fn locatedAt(err: TypeError, loc: ast.Loc) TypeError {
 /// already inferred (`Env.closedLocals`), the message names that body: the
 /// name existed, in another function, and a local ends with its body.
 fn unboundAt(env: *Env, name: []const u8, loc: ast.Loc) InferError!TypeError {
+    // An import whose module was refused earlier in the build: the name is
+    // not unbound — its module did not check, and that module's own error is
+    // the one to fix. Located at the import item, so every use of the item
+    // answers the same line.
+    if (env.failedImports.get(name)) |f| {
+        // One wording for a name the module declares and for the module
+        // itself as a namespace: a refused module exports nothing, so
+        // `import {components.Card};` cannot tell the two apart.
+        const msg = try std.fmt.allocPrint(
+            env.arena,
+            "{s}: `{s}` comes from `{s}`, which failed to check — its own errors are reported there",
+            .{ diagnostics.import_of_failed_module, name, f.module },
+        );
+        const hint = try std.fmt.allocPrint(env.arena, "Fix the errors reported in `{s}`; this module is checked against it once it checks.", .{f.module});
+        return TypeError.custom(msg, hint).withLoc(f.loc);
+    }
     if (env.namespaces.ambiguous.get(name)) |owners| {
         var names: std.ArrayListUnmanaged(u8) = .empty;
         for (owners, 0..) |o, i| {

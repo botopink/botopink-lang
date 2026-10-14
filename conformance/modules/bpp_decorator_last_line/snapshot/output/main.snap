@@ -1,3 +1,3 @@
 botopink-cell 1
-refused error: unbound variable 'Card'
-at src/main.bp:10:12
+refused error: import-of-failed-module: `Card` comes from `components/Card`, which failed to check — its own errors are reported there
+at src/main.bp:7:9

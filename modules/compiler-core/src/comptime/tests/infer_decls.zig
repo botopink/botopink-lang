@@ -368,6 +368,95 @@ fn consumerTypeError(path: []const u8, consumer: []const u8, comptime scratch: [
     return error.ConsumerNotCompiled;
 }
 
+/// The message of `path`'s type error in a build of `modules`, null when it checked.
+fn moduleTypeError(modules: []const Module, path: []const u8, comptime scratch: []const u8) !?[]u8 {
+    const io = std.testing.io;
+    var session = try comptimeMod.compile(std.testing.allocator, modules, io, test_scratch.path(io, scratch), null);
+    defer session.deinit(std.testing.allocator);
+    for (session.outputs.items) |out| {
+        if (!std.mem.eql(u8, out.name, path)) continue;
+        return switch (out.outcome) {
+            .ok => null,
+            .typeError => |te| blk: {
+                const msg = try te.message(std.testing.allocator);
+                errdefer std.testing.allocator.free(msg);
+                const loc = te.loc orelse return error.UnlocatedError;
+                const located = try std.fmt.allocPrint(std.testing.allocator, "{d}:{d} {s}", .{ loc.line, loc.col, msg });
+                std.testing.allocator.free(msg);
+                break :blk located;
+            },
+            else => error.ModuleDidNotReachInference,
+        };
+    }
+    return error.ModuleNotCompiled;
+}
+
+// A module that fails to check exports nothing. Its importers used to read
+// every name they took from it as `unbound variable`, each at its first use and
+// transitively — the one real error (`shapes`') buried under one per importer.
+// A use of such a name is `import-of-failed-module` at the import item, naming
+// the module the item names: `user` names `shapes` (a namespace), `main` names
+// `user`, and `shapes` keeps its own error.
+test "infer: import of a failed module ---- the importer names the module, not an unbound name" {
+    const modules = [_]Module{
+        .{ .path = "shapes", .source =
+        \\pub fn area(side: i32) -> i32 {
+        \\    val label: string = side * side;
+        \\    return side * side;
+        \\}
+        },
+        .{ .path = "user", .source =
+        \\import {shapes};
+        \\pub fn describe(n: i32) -> string {
+        \\    return "area ${shapes.area(n)}";
+        \\}
+        },
+        .{ .path = "main", .source =
+        \\import {user.describe};
+        \\pub fn main() {
+        \\    @print(describe(2));
+        \\}
+        },
+    };
+    const scratch = "comptime/import_of_failed_module";
+    const shapes = (try moduleTypeError(&modules, "shapes", scratch)).?;
+    defer std.testing.allocator.free(shapes);
+    try std.testing.expectEqualStrings("2:30 type mismatch: expected string, got i32", shapes);
+    const user = (try moduleTypeError(&modules, "user", scratch)).?;
+    defer std.testing.allocator.free(user);
+    try std.testing.expectEqualStrings("1:9 import-of-failed-module: `shapes` comes from `shapes`, which failed to check — its own errors are reported there", user);
+    const main = (try moduleTypeError(&modules, "main", scratch)).?;
+    defer std.testing.allocator.free(main);
+    try std.testing.expectEqualStrings("1:9 import-of-failed-module: `describe` comes from `user`, which failed to check — its own errors are reported there", main);
+}
+
+// The rule never hides a real error: a name the named module does not declare,
+// where that module checked, stays `unbound variable` at the use — even beside
+// a refused module elsewhere in the build.
+test "infer: import of a failed module ---- a name missing from a module that checked stays unbound" {
+    const modules = [_]Module{
+        .{ .path = "broken", .source =
+        \\pub fn f() -> i32 {
+        \\    return "x";
+        \\}
+        },
+        .{ .path = "shapes", .source =
+        \\pub fn area(side: i32) -> i32 {
+        \\    return side * side;
+        \\}
+        },
+        .{ .path = "main", .source =
+        \\import {shapes.perimeter};
+        \\pub fn main() {
+        \\    @print(perimeter(2));
+        \\}
+        },
+    };
+    const main = (try moduleTypeError(&modules, "main", "comptime/import_of_failed_module_missing")).?;
+    defer std.testing.allocator.free(main);
+    try std.testing.expectEqualStrings("3:12 unbound variable 'perimeter'", main);
+}
+
 // An import that names its module says which declaration a name is. The
 // dotted spelling of a nested module path (`app.not_found.NotFound`, decision
 // 206's brace form; `from "app.not_found"` before it) used to be compared byte

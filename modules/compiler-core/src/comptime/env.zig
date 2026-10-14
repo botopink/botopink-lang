@@ -356,6 +356,12 @@ pub const NamespaceImports = struct {
 };
 
 /// One name of a template's library bound in the consumer (`Env.templateImports`).
+/// `Env.failedImports` — the refused module an import item names, and the item.
+pub const FailedImport = struct {
+    module: []const u8,
+    loc: ast.Loc,
+};
+
 pub const TemplateImport = struct {
     /// The module path the template was declared in.
     owner: []const u8,
@@ -1666,6 +1672,13 @@ pub const Env = struct {
     /// the module that declares it and its declared name: what a template's
     /// `lookup` answers for it (`infer.buildScopeSnapshot`).
     importOwners: std.StringHashMapUnmanaged(TemplateImport) = .empty,
+    /// An imported name (or namespace), by the name it is bound under, whose
+    /// import reaches no declaration only because the module it names was
+    /// refused earlier in the build (`Reflection.failedModules`): the module
+    /// and the import item. `infer.unboundAt` refuses a use of it as
+    /// `import-of-failed-module` at the item — the module's own error is the
+    /// one to fix, and `unbound variable` would hide it.
+    failedImports: std.StringHashMapUnmanaged(FailedImport) = .empty,
     /// Decisions 384, 385 — every module's exports the build analysed so far,
     /// by module path (`comptime.zig`'s registry), private functions and
     /// values of a module that shares them under `templatePrivateKey`
