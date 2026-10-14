@@ -2036,6 +2036,7 @@ The narrowed cells whose excluded targets' missing binding is named here (re-der
 | `modules/decl_hooks_direct` | commonJS erlang beam | wasm — `session` |
 | `modules/render_scope_library` | commonJS erlang beam | wasm — `hostStash` |
 | `modules/std_failure_attempt_host` | commonJS erlang beam | wasm — `raiseError` |
+| `modules/std_failure_attempt_crash` | erlang beam (`"targets"`) | commonJS, wasm — `shapeNamed` |
 | `modules/component_default_fn_sync`, `modules/component_method_sync`, `modules/component_sync_plain_function` | commonJS | erlang, wasm, beam — `pending` |
 | `modules/task_failure_rejects` | commonJS | erlang, wasm, beam — `observe` |
 | `modules/task_result_caught_by_js` | commonJS | erlang, wasm, beam — `callFromJs` |
@@ -2442,3 +2443,6 @@ Decision 545 (`import-of-failed-module` names the failed module's file at its en
 cells that quote it — `import_of_failed_module`, `imported_declaration_error_location` (`b/b` and `main`),
 `lexer_error_in_imported_module`, `bpp_decorator_last_line` and `bpp_diagnostics_located`: each importer's snapshot
 ends `(src/shapes.bp)`, the path the failed module's own refusal is printed at (`Reflection.srcPaths`).
+Decision 546 adds `modules/std_failure_attempt_crash` — a `case` no arm matches under `attempt` answers `crash` on
+erlang and beam, where a raise of a binding outside std is `host` (`modules/std_failure_attempt_host`); the cell is
+narrowed to erlang and beam, commonJS and wasm lacking the host binding it calls.

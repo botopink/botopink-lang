@@ -5570,6 +5570,24 @@ const Emitter = struct {
         return unescapeTemplate(this.alloc, s);
     }
 
+    /// Decision 546 (527 (1)) — whether this module's bindings without `result:
+    /// true` have their raise marked `host`: any module outside std (a library's
+    /// or the program's). std's bindings are audited one by one (495), so the
+    /// wrapper's cost never reaches its hot loops; a raise of one is `crash`.
+    /// A comptime module never reaches a host.
+    fn marksHost(this: *const Emitter) bool {
+        if (this.untyped) return false;
+        return !std.mem.eql(u8, this.idOf(this.module_name).package, crossModule.EMBEDDED_PACKAGE);
+    }
+
+    /// `template` (owned by `this.alloc`, markers `$0…`) inside the `try` that marks
+    /// its raise `host` when `marksHost`, else as it is.
+    fn hostMarked(this: *Emitter, template: []const u8, argc: usize) ![]const u8 {
+        if (!this.marksHost()) return template;
+        defer this.alloc.free(template);
+        return erlTemplate.hostMarkBound(this.alloc, template, argc);
+    }
+
     /// `dupeTemplate` into `alloc` — an arena for a template rendered once.
     fn unescapeTemplate(alloc: std.mem.Allocator, s: []const u8) ![]const u8 {
         if (std.mem.indexOf(u8, s, "\\\"") == null) return alloc.dupe(u8, s);
@@ -5711,7 +5729,7 @@ const Emitter = struct {
                             const b = ast.parseArityBranchArg(raw) orelse continue;
                             try branches.append(this.alloc, .{
                                 .argc = b.argc,
-                                .template = try this.dupeTemplate(b.template),
+                                .template = try this.hostMarked(try this.dupeTemplate(b.template), b.argc),
                             });
                         }
                     }
@@ -5734,7 +5752,18 @@ const Emitter = struct {
                     if (primOpTemplate.looksLikeTemplate(ref.symbol) or ref.module.len == 0) {
                         try this.user_erlang_templates.put(try this.alloc.dupe(u8, f.name), .{
                             .module = "",
-                            .symbol = try this.dupeTemplate(ref.symbol),
+                            .symbol = try this.hostMarked(try this.dupeTemplate(ref.symbol), f.params.len),
+                            .args = null,
+                        });
+                        continue;
+                    }
+                    // Decision 546 — a marked binding is a template: the
+                    // `module:symbol` call inside the `try` that marks its raise.
+                    if (this.marksHost()) {
+                        const call = try erlTemplate.hostCallTemplate(this.alloc, ref.module, ref.symbol, f.params.len, false);
+                        try this.user_erlang_templates.put(try this.alloc.dupe(u8, f.name), .{
+                            .module = "",
+                            .symbol = try this.hostMarked(call, f.params.len),
                             .args = null,
                         });
                         continue;
@@ -10843,6 +10872,10 @@ const Emitter = struct {
             Ast.Expr.r(erlTemplate.result_wrap_head),
             raw,
             Ast.Expr.r(try erlTemplate.resultWrapTail(b.arena, try this.hostErrorAtoms())),
+        }) } else if (this.marksHost()) .{ .seq = try b.arena.dupe(Ast.Expr, &.{
+            Ast.Expr.r(erlTemplate.host_mark_head),
+            raw,
+            Ast.Expr.r(erlTemplate.host_mark_tail),
         }) } else raw;
         const body = if (m.returnType) |rt| if (recordNameOfReturn(rt)) |rec| try this.adoptRecord(b, rec, wrapped) else wrapped else wrapped;
         try out.append(b.arena, .blank);

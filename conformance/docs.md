@@ -2587,8 +2587,9 @@ host binding without `result: true` are defects, never in a signature. std's
 `failure.attempt(f)` runs `f` and answers `@Result<T, Failure>`: `Ok` of its
 value, or `Error(Failure(message, kind))` for the crash it caught — `kind` is
 `"panic"` for the program's own abort, its message the text the program wrote,
-and `"host"` for a host raise, its message the host's text (a JavaScript
-`Error`'s `message`, the erlang reason by `~tp`). The program goes on after a
+`"host"` for a host raise, its message the host's text (a JavaScript
+`Error`'s `message`, the erlang reason by `~tp`), and `"crash"` for a raise nothing
+marked (on erlang and beam: a `case` no arm matches, a std binding's raise). The program goes on after a
 contained crash. A failing `assert` is a `panic` whose message names the
 asserted condition and where it failed (decision 527 (2)):
 
@@ -2603,9 +2604,13 @@ catch it:
 
 A host raise answers `host` where a host raises — commonJS, erlang and beam;
 wasm never imitates one (527 (0)). On erlang and beam its message is the reason
-printed by `~tp` without the stack, whatever the class (527 (4)):
+printed by `~tp` without the stack, whatever the class (527 (4)), and only a binding
+declared outside std without `result: true` — a library's or the program's — marks its
+raise `host` (546): std's bindings are audited one by one (495), so a raise of one that
+the audit did not list is a `crash`, as is any raise nothing marked:
 
 <!-- example: modules/std_failure_attempt_host -->
+<!-- example: modules/std_failure_attempt_crash -->
 
 On wasm `attempt` runs the thunk under wasm exception
 handling (decision 518): a program reaching it raises its aborts as an

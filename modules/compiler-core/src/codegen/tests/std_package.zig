@@ -99,7 +99,9 @@ test "erlang: std package ---- a std math import and the OTP math module in one 
     , "2.0\n4.0\n", &.{
         // the std module reached by its atom, and OTP's own `math` beside it
         "std@math:ceil(1.2)",
-        "math:sqrt(16.0)",
+        // OTP's `math:sqrt/1` through the program's own binding, whose raise
+        // is marked `host` (decision 546): the call sits inside the wrapper.
+        "(math:sqrt(__BpA0))",
     });
 }
 

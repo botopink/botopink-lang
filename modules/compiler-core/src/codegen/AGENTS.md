@@ -2947,6 +2947,19 @@ first three are now enforced by the model, not by discipline:
   nonzero literal divisor emit nothing. Never the bare `badarith`, which
   `attempt` would read as `host`. wasm's `i32.div_s` traps, and a trap is no
   exception (decision 518).
+- **A host raise is marked `host` on erlang and beam, outside std** (decision 546, 527 (1)): the
+  call of a binding without `result: true` declared in a module that is not std's — a library's or the
+  program's, a `declare fn` or a host method — runs inside `try (<template>) catch … end`
+  (`beam/erl_template.zig` `hostMark` / `hostMarkBound`, the `resultWrap` pattern): a raise that is
+  not already a botopink abort (`{panic|todo|integer_overflow|bp_host, _}`, `{bp_assert, …}`) or the
+  emitter's own control-flow throw (`'__bp_break'`, `'__bp_cond_break'`, `'__bp_cond_continue'`,
+  `'__bp_try'`, `'__bp_gen_stop'`, `'__bp_gen_end'`) is re-raised `erlang:error({bp_host, Text})`,
+  `Text` the reason by `~tp`. erlang: `collectExternals` stores the marked template (a
+  `module:symbol` binding becomes a template, `hostMarked` / `marksHost`), the arguments bound before
+  the `try` (`hostMarkBound`); beam: `lowerHostCall` → `evalHostTemplate` (`marksHost` reads
+  `module_path`). std's own bindings are not wrapped (495 audits each), so a raise of one that is not
+  listed is a `crash`; commonJS wraps nothing. `std/failure`'s Erlang forms read `{bp_host, M}` as
+  `host` and any other non-abort raise as `crash`.
 - **`assert cond[, msg]` is always fatal** (decision 4 of the 1.0.2-beta
   semantics decisions): a false condition writes
   `assertion failed: <condition>[: <msg>] at <file>:<line>:<col>` (decision

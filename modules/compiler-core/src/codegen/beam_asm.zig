@@ -2568,6 +2568,10 @@ const Emitter = struct {
     /// `declare fn`s with an `#[@External.<Target>]` annotation, from this
     /// module and from the prelude (`stringSlice1`), by name.
     externals: std.StringHashMap(ast.FnDecl),
+    /// The names among `externals` that the prelude (`primitives.bp`) declares: std's bindings (decision 546).
+    prelude_externals: std.StringHashMap(void),
+    /// Whether the bare call being lowered names a binding whose raise is marked `host` (`externalMarks`).
+    host_marked: bool = false,
     /// Bodied instance `default fn`s of the primitive interfaces
     /// (`"Array.fold"`), emitted on demand as `'<Iface>_<method>'(Self, …)`.
     iface_defaults: std.StringHashMap(IfaceDefault),
@@ -2649,6 +2653,7 @@ const Emitter = struct {
             .top_vals = std.StringHashMap(void).init(alloc),
             .prelude_arena = std.heap.ArenaAllocator.init(alloc),
             .externals = std.StringHashMap(ast.FnDecl).init(alloc),
+            .prelude_externals = std.StringHashMap(void).init(alloc),
             .iface_defaults = std.StringHashMap(IfaceDefault).init(alloc),
             .assoc_host_templates = std.StringHashMap([]const u8).init(alloc),
             .self_returns = std.StringHashMap(void).init(alloc),
@@ -2741,6 +2746,7 @@ const Emitter = struct {
         if (self.join_helper_name) |n| self.alloc.free(n);
         self.freeTemplateFns();
         self.externals.deinit();
+        self.prelude_externals.deinit();
         self.iface_defaults.deinit();
         self.assoc_host_templates.deinit();
         self.needed_defaults.deinit(self.alloc);
@@ -2791,13 +2797,13 @@ const Emitter = struct {
             else => {},
         };
         // The program's own declarations win; the prelude fills the rest.
-        try self.collectDefaultsAndExternals(program.decls);
-        try self.collectDefaultsAndExternals(prim_program.decls);
+        try self.collectDefaultsAndExternals(program.decls, false);
+        try self.collectDefaultsAndExternals(prim_program.decls, true);
     }
 
     /// Index the bodied instance `default fn`s and the `-> Self` methods of
     /// every interface in `decls`, and every host-backed `declare fn`.
-    fn collectDefaultsAndExternals(self: *Emitter, decls: []const ast.DeclKind) !void {
+    fn collectDefaultsAndExternals(self: *Emitter, decls: []const ast.DeclKind, from_prelude: bool) !void {
         const arena = self.prelude_arena.allocator();
         for (decls) |decl| switch (decl) {
             .behavior => |i| for (i.methods) |m| {
@@ -2820,6 +2826,8 @@ const Emitter = struct {
             },
             .@"fn" => |f| if (f.isExternal() and f.body.len == 0 and !self.externals.contains(f.name)) {
                 try self.externals.put(f.name, f);
+                // Decision 546 — the prelude's bindings are std's.
+                if (from_prelude) try self.prelude_externals.put(f.name, {});
             },
             else => {},
         };
@@ -7643,6 +7651,10 @@ const Emitter = struct {
 
         // A host-backed `declare fn` lowers to its host target.
         if (self.externalDeclFor(cc.callee)) |f| {
+            // Decision 546 — the wrapper marking a host raise belongs to the
+            // binding's declaring module, not to the call site's.
+            self.host_marked = self.externalMarks(cc.callee);
+            defer self.host_marked = false;
             try self.lowerExternalCall(f, cc, mode, loc);
             return;
         }
@@ -8444,7 +8456,7 @@ const Emitter = struct {
         if (ast.externalHasArityBranches(f.annotations, "erlang")) {
             const template = ast.externalArityBranchFor(f.annotations, "erlang", argc) orelse return error.MissingExternalTarget;
             if (result) return self.evalResultTemplate(template, self_first, exprs[0..cc.args.len], cc.trailing, mode);
-            try self.evalTemplate(template, self_first, exprs[0..cc.args.len], cc.trailing, mode);
+            try self.evalHostTemplate(template, self_first, exprs[0..cc.args.len], cc.trailing, mode);
             return;
         }
         const ref = f.externalFor("erlang") orelse return error.MissingExternalTarget;
@@ -8460,6 +8472,13 @@ const Emitter = struct {
         if (ref.module.len > 0 and !primOpTemplate.looksLikeTemplate(ref.symbol) and
             std.mem.indexOfScalar(u8, ref.symbol, '(') == null)
         {
+            // Decision 546 — outside std the call is a template, so the `try`
+            // that marks its raise `host` can wrap it.
+            if (self.marksHost()) {
+                const call = try erlTemplate.hostCallTemplate(self.alloc, ref.module, ref.symbol, argc - @intFromBool(self_first), self_first);
+                defer self.alloc.free(call);
+                return self.evalHostTemplate(call, self_first, exprs[0..cc.args.len], cc.trailing, mode);
+            }
             try self.materializeCallArgs(cc.args, cc.trailing);
             try beamEmitter.writeCall(
                 self.out,
@@ -8475,7 +8494,47 @@ const Emitter = struct {
         // (`user_erlang_templates` — the module is not prefixed). A `(` with
         // no marker names no shape either backend lowers.
         if (ref.module.len > 0 and !primOpTemplate.looksLikeTemplate(ref.symbol)) return error.MissingExternalTarget;
-        try self.evalTemplate(ref.symbol, self_first, exprs[0..cc.args.len], cc.trailing, mode);
+        try self.evalHostTemplate(ref.symbol, self_first, exprs[0..cc.args.len], cc.trailing, mode);
+    }
+
+    /// Decision 546 (527 (1)) — whether the binding a bare call names has its
+    /// raise marked `host`: a binding without `result: true` declared outside
+    /// std (a library's or the program's); std's bindings and the prelude's
+    /// (`primitives.bp`) are audited one by one (495), so they are not (see
+    /// `erlang.zig` `marksHost`). Decided by where the binding is declared.
+    fn externalMarks(self: *const Emitter, name: []const u8) bool {
+        if (self.externals.contains(name)) {
+            return !self.prelude_externals.contains(name) and
+                !std.mem.eql(u8, self.idOf(self.module_path).package, crossModule.EMBEDDED_PACKAGE);
+        }
+        for (self.all_outputs) |*other| {
+            const ok = switch (other.outcome) {
+                .ok => |*o| o,
+                else => continue,
+            };
+            for (ok.transformed.decls) |d| switch (d) {
+                .@"fn" => |f| if (std.mem.eql(u8, f.name, name) and isHostDeclare(f))
+                    return !std.mem.eql(u8, self.idOf(other.name).package, crossModule.EMBEDDED_PACKAGE),
+                else => {},
+            };
+        }
+        return false;
+    }
+
+    /// `host_marked` while the bare call of such a binding is lowered.
+    fn marksHost(self: *const Emitter) bool {
+        return self.host_marked;
+    }
+
+    /// `evalTemplate` over a binding without `result: true`: outside std the
+    /// template runs inside `erlTemplate.hostMark`'s `try`, so its raise is
+    /// marked `host` (the helper takes its arguments evaluated, so a raise there
+    /// is the caller's).
+    fn evalHostTemplate(self: *Emitter, template_raw: []const u8, has_recv: bool, exprs: []const ast.Expr, trailing: anytype, mode: CallMode) anyerror!void {
+        if (!self.marksHost()) return self.evalTemplate(template_raw, has_recv, exprs, trailing, mode);
+        const marked = try erlTemplate.hostMark(self.alloc, template_raw);
+        defer self.alloc.free(marked);
+        try self.evalTemplate(marked, has_recv, exprs, trailing, mode);
     }
 
     /// The host-backed `declare fn` a bare call names — this module's (or the

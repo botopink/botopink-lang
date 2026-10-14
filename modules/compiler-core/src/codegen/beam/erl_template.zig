@@ -101,6 +101,12 @@ pub fn resultWrapTail(alloc: std.mem.Allocator, atoms: HostErrorAtoms) std.mem.A
 pub fn resultWrapBound(alloc: std.mem.Allocator, template: []const u8, argc: usize, atoms: HostErrorAtoms) anyerror![]u8 {
     const wrapped = try resultWrap(alloc, template, atoms);
     defer alloc.free(wrapped);
+    return boundOver(alloc, wrapped, argc);
+}
+
+/// `wrapped`, a template already inside its `try`, as the fun applied to the
+/// call's arguments that `resultWrapBound` and `hostMarkBound` write.
+fn boundOver(alloc: std.mem.Allocator, wrapped: []const u8, argc: usize) anyerror![]u8 {
     const body = try templateBody(alloc, wrapped, argc);
     defer alloc.free(body);
     var out: std.ArrayListUnmanaged(u8) = .empty;
@@ -121,6 +127,43 @@ pub fn resultWrapBound(alloc: std.mem.Allocator, template: []const u8, argc: usi
     return out.toOwnedSlice(alloc);
 }
 
+/// What `hostMark` writes before the template (the same `try (` as `resultWrap`).
+pub const host_mark_head = result_wrap_head;
+
+/// Decision 546 (527 (1)) — what `hostMark` writes after the template: a raise
+/// of the binding that is not already a botopink abort is re-raised marked
+/// `{bp_host, Text}`, `Text` the reason by `~tp` without the stack (527 (4),
+/// 489's rule) whatever the class (`error`, `throw`, `exit`). The program's own
+/// aborts that cross the binding — a `{panic, _}`, `{todo, _}`,
+/// `{integer_overflow, _}` or `{bp_assert, …}` of a callback it runs, an
+/// already marked host raise — and the control-flow throws the emitter writes
+/// (`'__bp_break'`, `{'__bp_cond_break' | '__bp_cond_continue' | '__bp_try' |
+/// '__bp_gen_stop', _}`, `{'__bp_gen_end', _, _, _}`) pass through unchanged.
+pub const host_mark_tail =
+    ") catch " ++
+    "error:{__BpT, __BpM} when __BpT =:= panic orelse __BpT =:= todo orelse __BpT =:= integer_overflow orelse __BpT =:= bp_host -> erlang:error({__BpT, __BpM}); " ++
+    "error:{bp_assert, __BpA, __BpB, __BpD} -> erlang:error({bp_assert, __BpA, __BpB, __BpD}); " ++
+    "error:{bp_assert, __BpA, __BpB} -> erlang:error({bp_assert, __BpA, __BpB}); " ++
+    "throw:'__bp_break' -> erlang:throw('__bp_break'); " ++
+    "throw:{__BpT, __BpM} when __BpT =:= '__bp_cond_break' orelse __BpT =:= '__bp_cond_continue' orelse __BpT =:= '__bp_try' orelse __BpT =:= '__bp_gen_stop' -> erlang:throw({__BpT, __BpM}); " ++
+    "throw:{'__bp_gen_end', __BpA, __BpB, __BpD} -> erlang:throw({'__bp_gen_end', __BpA, __BpB, __BpD}); " ++
+    "__BpC:__BpE -> erlang:error({bp_host, unicode:characters_to_binary(io_lib:format(\"~tp\", [__BpE]))}) end";
+
+/// A binding without `result: true` outside std (decision 546): `template` in
+/// `try … catch … end` marking its raise `host`. The holes (`$N`) are left as
+/// they are; the caller renders them. Owned by `alloc`.
+pub fn hostMark(alloc: std.mem.Allocator, template: []const u8) std.mem.Allocator.Error![]u8 {
+    return std.mem.concat(alloc, u8, &.{ host_mark_head, template, host_mark_tail });
+}
+
+/// `hostMark` with the arguments bound before the `try`, as `resultWrapBound`
+/// does: a raise while an argument is evaluated is the caller's. Owned by `alloc`.
+pub fn hostMarkBound(alloc: std.mem.Allocator, template: []const u8, argc: usize) anyerror![]u8 {
+    const wrapped = try hostMark(alloc, template);
+    defer alloc.free(wrapped);
+    return boundOver(alloc, wrapped, argc);
+}
+
 /// A `(module, symbol)` binding as the template it calls —
 /// `'module':'symbol'($0, …)` over `argc` arguments — so a `result: true`
 /// binding of that form is wrapped like a template. Owned by `alloc`.
@@ -134,6 +177,39 @@ pub fn remoteCallTemplate(alloc: std.mem.Allocator, module: []const u8, symbol: 
     }
     try out.append(alloc, ')');
     return out.toOwnedSlice(alloc);
+}
+
+/// A `(module, symbol)` binding without `result: true` as the template it
+/// calls (decision 546), so `hostMark` can wrap it: `module:symbol($0, …)` over
+/// `argc` arguments, the receiver first (`primOpTemplate.receiver_marker`) for a
+/// method whose host function takes it. An atom that needs no quotes is written
+/// without, as the direct call was: the build's sidecar scan reads the `module:`
+/// qualifiers of the emitted text and sees only the unquoted ones. Owned by `alloc`.
+pub fn hostCallTemplate(alloc: std.mem.Allocator, module: []const u8, symbol: []const u8, argc: usize, has_recv: bool) std.mem.Allocator.Error![]u8 {
+    var out: std.ArrayListUnmanaged(u8) = .empty;
+    errdefer out.deinit(alloc);
+    try appendAtom(alloc, &out, module);
+    try out.append(alloc, ':');
+    try appendAtom(alloc, &out, symbol);
+    try out.append(alloc, '(');
+    if (has_recv) try out.appendSlice(alloc, primOpTemplate.receiver_marker);
+    for (0..argc) |i| {
+        if (i > 0 or has_recv) try out.appendSlice(alloc, ", ");
+        try out.print(alloc, "${d}", .{i});
+    }
+    try out.append(alloc, ')');
+    return out.toOwnedSlice(alloc);
+}
+
+/// `atom` as Erlang source: bare when it is `[a-z][a-zA-Z0-9_@]*`, else quoted.
+fn appendAtom(alloc: std.mem.Allocator, out: *std.ArrayListUnmanaged(u8), atom: []const u8) std.mem.Allocator.Error!void {
+    const plain = atom.len > 0 and std.ascii.isLower(atom[0]) and for (atom) |c| {
+        if (!std.ascii.isAlphanumeric(c) and c != '_' and c != '@') break false;
+    } else true;
+    if (plain) return out.appendSlice(alloc, atom);
+    try out.append(alloc, '\'');
+    try out.appendSlice(alloc, atom);
+    try out.append(alloc, '\'');
 }
 
 /// The one-function module a template helper is read from:
