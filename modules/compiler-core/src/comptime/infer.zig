@@ -8488,6 +8488,8 @@ fn inferTypeMethods(
         try noteStatementClosures(env, body);
         var tailTy: ?*T.Type = null;
         for (body) |stmt| {
+            const deferFrame = if (stmt.deferred) enterDefer(env) else null;
+            defer if (deferFrame) |f| leaveDefer(env, f);
             const typed = try inferExprTyped(env, stmt.expr);
             if (stmt.tail == .value) tailTy = typed.getType();
             try narrowAfterEarlyExit(env, stmt.expr, &narrowed);
@@ -12743,6 +12745,8 @@ fn inferBodyStmts(env: *Env, body: []const ast.Stmt) InferError!?*T.Type {
     for (body) |stmt| {
         env.statementBlockLoc = statementBlockLocOf(stmt.expr);
         env.useStatementLoc = if (stmt.expr == .useHook) stmt.expr.useHook.loc else null;
+        const deferFrame = if (stmt.deferred) enterDefer(env) else null;
+        defer if (deferFrame) |f| leaveDefer(env, f);
         const ty = try inferExpr(env, stmt.expr);
         if (stmt.tail == .value) tailTy = ty;
         env.useStatementLoc = null;
@@ -12800,6 +12804,8 @@ fn inferStmtsTyped(env: *Env, stmts: []const ast.Stmt) InferError![]TypedStmt {
     defer env.statementBlockLoc = savedStatementBlock;
     for (stmts, 0..) |s, i| {
         env.statementBlockLoc = statementBlockLocOf(s.expr);
+        const deferFrame = if (s.deferred) enterDefer(env) else null;
+        defer if (deferFrame) |f| leaveDefer(env, f);
         out[i] = .{ .expr = try inferExprTyped(env, s.expr), .tail = s.tail, .deferred = s.deferred };
         try narrowAfterEarlyExit(env, s.expr, &narrowed);
     }
@@ -15696,8 +15702,92 @@ fn valuePassesThrough(env: *Env, vt: *T.Type) bool {
         ast.EffectKind.fromWrapperName(v.named.name) != null;
 }
 
+/// Decision 539 — what `enterDefer` saves, for `leaveDefer`.
+const DeferFrame = struct {
+    active: bool,
+    lambda: u32,
+    async_: u32,
+    generator: u32,
+    floor: usize,
+    loopDepth: u32,
+    breakScope: @TypeOf(@as(Env, undefined).breakScope),
+};
+
+/// Decision 539 — the statement `defer <expr>;` is inferred as a path of its
+/// own: no loop and no label outside it is a target, and `return`, `yield`
+/// and `await` are refused (`refuseInDefer`). Its value is discarded.
+fn enterDefer(env: *Env) DeferFrame {
+    const f: DeferFrame = .{
+        .active = env.deferActive,
+        .lambda = env.deferLambdaDepth,
+        .async_ = env.deferAsyncDepth,
+        .generator = env.deferGeneratorDepth,
+        .floor = env.deferLabelFloor,
+        .loopDepth = env.loopDepth,
+        .breakScope = env.breakScope,
+    };
+    env.deferActive = true;
+    env.deferLambdaDepth = env.lambdaDepth;
+    env.deferAsyncDepth = env.asyncBlockDepth;
+    env.deferGeneratorDepth = env.generatorLoopDepth;
+    env.deferLabelFloor = env.labelStack.items.len;
+    env.loopDepth = 0;
+    env.breakScope = .none;
+    return f;
+}
+
+fn leaveDefer(env: *Env, f: DeferFrame) void {
+    env.deferActive = f.active;
+    env.deferLambdaDepth = f.lambda;
+    env.deferAsyncDepth = f.async_;
+    env.deferGeneratorDepth = f.generator;
+    env.deferLabelFloor = f.floor;
+    env.loopDepth = f.loopDepth;
+    env.breakScope = f.breakScope;
+}
+
+/// Whether the position being inferred is the body of a `defer` itself, and
+/// not a function, async block or generator loop nested in it.
+fn inDeferBody(env: *const Env) bool {
+    return env.deferActive and env.lambdaDepth == env.deferLambdaDepth and
+        env.asyncBlockDepth == env.deferAsyncDepth and
+        env.generatorLoopDepth == env.deferGeneratorDepth;
+}
+
+/// Decision 539 (5) — the jumps a `defer` body cannot make: they would leave
+/// the path the deferred code runs on. `throw` and `try` are not named.
+fn refuseInDefer(env: *Env, kind: anytype, loc: ast.Loc) InferError!void {
+    const Hint = "A `defer` runs when its block ends, whichever way it ends; its body cannot choose another way out. Do that before the `defer` or after the block.";
+    const code: []const u8, const what: []const u8 = switch (kind) {
+        .@"return" => .{ diagnostics.defer_return, "`return`" },
+        .@"continue" => if (env.loopDepth == 0) .{ diagnostics.defer_continue, "`continue`" } else return,
+        .yield => .{ diagnostics.defer_yield, "`yield`" },
+        .await_ => .{ diagnostics.defer_await, "`await`" },
+        .@"break" => |b| blk: {
+            if (b.label) |lbl| {
+                var i = env.labelStack.items.len;
+                while (i > 0) : (i -= 1) {
+                    if (std.mem.eql(u8, env.labelStack.items[i - 1], lbl)) break;
+                } else return;
+                if (i - 1 >= env.deferLabelFloor) return;
+            } else if (env.loopDepth > 0) return else if (b.value != null) {
+                const generator = env.starFn != null and env.starFn.?.allowsYield;
+                if (!generator or env.breakScope == .valueBlock) return;
+            }
+            break :blk .{ diagnostics.defer_break, "`break`" };
+        },
+        else => return,
+    };
+    env.lastError = TypeError.custom(
+        try std.fmt.allocPrint(env.arena, "{s}: {s} inside a `defer` leaves the path the deferred code runs on", .{ code, what }),
+        Hint,
+    ).withLoc(loc);
+    return error.TypeError;
+}
+
 /// Infer type for jump expressions (return, throw, try, break, continue, yield)
 fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)), loc: ast.Loc) InferError!TypedExpr {
+    if (inDeferBody(env)) try refuseInDefer(env, j.kind, loc);
     return switch (j.kind) {
         .@"return" => |r| {
             // R11 (§2) — `return Result.Ok(<r>);` / `return Result.Error(<e>);`

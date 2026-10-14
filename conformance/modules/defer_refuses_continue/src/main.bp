@@ -1,0 +1,6 @@
+pub fn main() {
+    for ([1, 2]) { i ->
+        defer { continue; }
+        @print(i);
+    }
+}

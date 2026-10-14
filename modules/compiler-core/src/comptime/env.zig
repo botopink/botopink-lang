@@ -1258,6 +1258,17 @@ pub const Env = struct {
     /// needs a loop. `yield` and `break <value>` do not read it (decision
     /// 105): they feed the nearest generator scope through every loop.
     loopDepth: u32 = 0,
+    /// Decision 539 — true while a `defer` body is inferred; the four depths
+    /// below are the nesting the body began at, so a nested function, async
+    /// block or generator loop (which are other paths) is told from the body
+    /// itself (`inferDefer`).
+    deferActive: bool = false,
+    deferLambdaDepth: u32 = 0,
+    deferAsyncDepth: u32 = 0,
+    deferGeneratorDepth: u32 = 0,
+    /// The label stack's length at the `defer`: a label below it names a loop
+    /// outside the body.
+    deferLabelFloor: usize = 0,
     /// Decision 105 / decision 2 — what the nearest enclosing construct does
     /// with a `break`. `.loop` inside a loop body, `.valueBlock` inside a
     /// `comptime { … }` block or a `case` arm's block (where `break <value>`

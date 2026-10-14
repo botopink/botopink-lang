@@ -91,6 +91,16 @@ pub const break_value_outside_generator: []const u8 = "break-value-outside-gener
 pub const break_outside_loop: []const u8 = "break-outside-loop";
 /// `continue` with no enclosing loop.
 pub const continue_outside_loop: []const u8 = "continue-outside-loop";
+/// Decision 539 — a `defer` body that would leave the path it runs on: `return`.
+pub const defer_return: []const u8 = "defer-return";
+/// … `break` out of the deferred body (a loop wholly inside it may break).
+pub const defer_break: []const u8 = "defer-break";
+/// … `continue` out of the deferred body.
+pub const defer_continue: []const u8 = "defer-continue";
+/// … `yield`.
+pub const defer_yield: []const u8 = "defer-yield";
+/// … `await`.
+pub const defer_await: []const u8 = "defer-await";
 /// `for (cond) { x -> … }` over a `bool` — a condition is a `while`.
 pub const for_over_condition: []const u8 = "for-over-condition";
 /// `for` (not `for await`) over a `@Stream`.
@@ -807,6 +817,11 @@ pub const all_codes = [_][]const u8{
     break_value_outside_generator,
     break_outside_loop,
     continue_outside_loop,
+    defer_return,
+    defer_break,
+    defer_continue,
+    defer_yield,
+    defer_await,
     for_over_condition,
     for_over_stream,
     for_await_expects_stream,
