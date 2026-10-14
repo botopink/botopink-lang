@@ -11499,6 +11499,68 @@ pub fn unionValueLowerings(env: *const Env, arena: std.mem.Allocator, out: *std.
     }
 }
 
+/// 144 B-78 (decision 521) — `ty` is written as text at `loc` (`env.textValues`).
+fn noteTextValue(env: *Env, loc: ast.Loc, ty: *T.Type) !void {
+    const slot = try env.textValues.getOrPut(loc);
+    if (!slot.found_existing) slot.value_ptr.* = .empty;
+    try slot.value_ptr.append(env.arena, ty);
+}
+
+fn isPrintBuiltin(name: []const u8) bool {
+    for ([_][]const u8{ "print", "println", "debug" }) |b| if (std.mem.eql(u8, name, b)) return true;
+    return false;
+}
+
+/// Where a float sits in `ty`, as commonJS's print shapes read it: `f` a
+/// float, `?` dropped (an optional prints its payload), `[`… an array, `#(`…`)`
+/// a tuple, `_` anything else. Two readings of one value agree when their
+/// texts are equal.
+fn textShapeOf(out: *std.ArrayListUnmanaged(u8), arena: std.mem.Allocator, ty: *T.Type) !void {
+    const d = ty.deref();
+    if (d.* != .named) return out.append(arena, '_');
+    const n = d.named;
+    if (n.args.len == 0) return out.append(arena, if (std.mem.eql(u8, n.name, "f64") or std.mem.eql(u8, n.name, "f32")) 'f' else '_');
+    if (std.mem.eql(u8, n.name, "optional") and n.args.len == 1) return textShapeOf(out, arena, n.args[0]);
+    if (std.mem.eql(u8, n.name, "array") and n.args.len == 1) {
+        try out.append(arena, '[');
+        return textShapeOf(out, arena, n.args[0]);
+    }
+    if (std.mem.eql(u8, n.name, "tuple")) {
+        try out.appendSlice(arena, "#(");
+        for (n.args) |a| try textShapeOf(out, arena, a);
+        return out.append(arena, ')');
+    }
+    return out.append(arena, '_');
+}
+
+/// 144 B-78 (decision 521) — every value written as text whose type holds a
+/// float, as `InstanceLowering.text_value` at its loc plus
+/// `ast.text_synthetic_col`: commonJS writes that float through `__bp_f64`
+/// where its own reading of the tree cannot type it (an imported record's
+/// field, a generic method's answer). A loc inferred more than once records
+/// only when every reading agrees — one JS body serves them all.
+pub fn textValueLowerings(env: *const Env, arena: std.mem.Allocator, out: *std.AutoHashMap(ast.Loc, envMod.InstanceLowering)) !void {
+    var it = env.textValues.iterator();
+    while (it.next()) |e| {
+        const tys = e.value_ptr.items;
+        if (tys.len == 0) continue;
+        var first: std.ArrayListUnmanaged(u8) = .empty;
+        try textShapeOf(&first, arena, tys[0]);
+        if (std.mem.indexOfScalar(u8, first.items, 'f') == null) continue;
+        const agree = for (tys[1..]) |t| {
+            var other: std.ArrayListUnmanaged(u8) = .empty;
+            try textShapeOf(&other, arena, t);
+            if (!std.mem.eql(u8, first.items, other.items)) break false;
+        } else true;
+        if (!agree) continue;
+        const ref = (try typeRefOfType(arena, env, tys[0])) orelse continue;
+        var key = e.key_ptr.*;
+        key.col += ast.text_synthetic_col;
+        const slot = try out.getOrPut(key);
+        if (!slot.found_existing) slot.value_ptr.* = .{ .text_value = ref };
+    }
+}
+
 /// The written form of a checker type; null for a type variable, a union or
 /// a structural record — what nothing names. Shared by the scope lowering's
 /// carried types (`context_lower.zig`, decision 504) and `unionValueLowerings`.
@@ -15204,7 +15266,12 @@ fn inferBinaryOpExpr(env: *Env, binop: ast.BinOpExprOf(.untyped), loc: ast.Loc) 
             // nothing has established that it is either.
             try refuseUnknownUse(env, lhsTy, binop.lhs.getLoc(), "do arithmetic on");
             try refuseUnknownUse(env, rhsTy, binop.rhs.getLoc(), "do arithmetic on");
-            if (lhsTy.isNamed("string") or rhsTy.isNamed("string")) break :blk try env.namedType("string");
+            if (lhsTy.isNamed("string") or rhsTy.isNamed("string")) {
+                // 144 B-78 — the other side is written as text.
+                if (!lhsTy.isNamed("string")) try noteTextValue(env, binop.lhs.getLoc(), lhsTy);
+                if (!rhsTy.isNamed("string")) try noteTextValue(env, binop.rhs.getLoc(), rhsTy);
+                break :blk try env.namedType("string");
+            }
             // Numeric promotion: float wins over int
             if (isFloatType(lhsTy) and isIntType(rhsTy)) break :blk lhsTy;
             if (isIntType(lhsTy) and isFloatType(rhsTy)) break :blk rhsTy;
@@ -20920,6 +20987,10 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                     }
                 }
                 const retType = try inferBuiltinCallReturnType(env, call.callee, typedArgs, typedTrailing, loc);
+                // 144 B-78 — each argument `@print` writes is written as text.
+                if (call.is_builtin and isPrintBuiltin(call.callee)) for (typedArgs) |a| {
+                    try noteTextValue(env, a.value.getLoc(), a.value.getType());
+                };
                 return TypedExpr{ .call = .{ .loc = loc, .type_ = retType, .kind = .{ .call = .{
                     .receiver = null,
                     .callee = call.callee,

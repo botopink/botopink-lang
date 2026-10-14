@@ -9,3 +9,11 @@ out -0.5
 out v=5.0
 out 5.0
 out a5.0b
+out 1.0
+out x=1.0
+out x=1.0
+out 2.0
+out [1.0, 2.5]
+out Pt(x: 1.0, n: 3)
+out 3.0
+out a=3.0

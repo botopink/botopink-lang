@@ -785,7 +785,9 @@ class beside them. What each number is here, and what is refused:
   `x` (Ryu), in fixed notation or as `D.DDDeE` when that is shorter (`5.0`,
   `0.30000000000000004`, `1.0e21`, `5.0e-324`, `1.152921504606847e18`), and
   `NaN`, `Infinity`, `-Infinity` for the values only a wasm program's
-  arithmetic makes. commonJS keeps the JS engine's (`5`, `1e+21`). It was
+  arithmetic makes; from 2^53 on always `D.DDDeE` (`9.007199254740992e15`), as
+  OTP writes it. commonJS writes the same text through its `__bp_f64` port
+  (decision 521). It was
   V8's `BignumDtoa` transcribed over 40-limb bignums (commonJS's text), and
   before that six fraction digits that trapped past `2^31`.
 - **A float in a 4-byte slot is the address of its `f64` cell**

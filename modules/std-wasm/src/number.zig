@@ -6,8 +6,9 @@ const std = @import("std");
 const bigint = @import("bigint.zig");
 
 /// `float_to_binary(F, [short])`: the shortest digits that round-trip, written
-/// in fixed notation or as `D.DDDeE`, whichever is shorter (fixed on a tie);
-/// always one digit after the point at least. A value OTP has no float for —
+/// in fixed notation or as `D.DDDeE`, whichever is shorter (fixed on a tie),
+/// and as `D.DDDeE` always from 2^53 on, as OTP does; always one digit after
+/// the point at least. A value OTP has no float for —
 /// `NaN`, `Infinity`, `-Infinity`, which only a `--target wasm` program's
 /// arithmetic makes (erlang and beam raise `badarith` at the operation, and so
 /// does the comptime runtime) — is written as those words, the one text such a
@@ -103,7 +104,10 @@ pub fn shortFloat(f: f64, buf: []u8) []const u8 {
             fl += nd - p;
         }
     }
-    const pick = if (fl <= sl) fbuf[0..fl] else sbuf[0..sl];
+    // OTP writes a float at or past 2^53 — an integer the `f64` no longer
+    // holds every neighbour of — in scientific form even where the fixed one
+    // is shorter (`9007199254740992.0` is `9.007199254740992e15`).
+    const pick = if (fl <= sl and @abs(f) < 9007199254740992.0) fbuf[0..fl] else sbuf[0..sl];
     @memcpy(buf[0..pick.len], pick);
     return buf[0..pick.len];
 }
@@ -457,6 +461,9 @@ test "shortFloat: the shortest form, fixed on a tie" {
         .{ 1.2345678901234567e19, "1.2345678901234567e19" }, .{ -0.0, "-0.0" },                                     .{ 2.0e-10, "2.0e-10" },
         .{ 1.5, "1.5" },                                     .{ 100.0, "100.0" },                                   .{ 5.0e-324, "5.0e-324" },
         .{ -2.5e-7, "-2.5e-7" },                             .{ 1.7976931348623157e308, "1.7976931348623157e308" },
+        // From 2^53 on, scientific even where fixed is shorter (OTP 28).
+        .{ 9007199254740991.0, "9007199254740991.0" },
+        .{ 9007199254740992.0, "9.007199254740992e15" },     .{ -9007199254740992.0, "-9.007199254740992e15" },     .{ 12345678901234567.0, "1.2345678901234568e16" },
     };
     for (cases) |c| {
         var buf: [64]u8 = undefined;

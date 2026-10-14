@@ -635,7 +635,7 @@ fn insertHelpers(em: *Emitter, arena_alloc: std.mem.Allocator, items: *std.Array
     var at = start;
     for (jsPrelude.order) |hp| {
         if (!em.helpers.contains(hp)) continue;
-        try items.insert(arena_alloc, at, .{ .stmt = jsPrelude.decl(hp) });
+        try items.insert(arena_alloc, at, .{ .stmt = try jsPrelude.declIn(arena_alloc, hp) });
         at += 1;
     }
     // Decision 210 — the per-type equalities the module's `==` asked
@@ -2256,7 +2256,7 @@ const Emitter = struct {
         const lw = self.lowerings orelse return null;
         const type_name = switch (lw.get(loc) orelse return null) {
             .type_ => |n| n,
-            .prim, .field_of, .sequence_next, .division, .by_value, .unplaced_type, .assoc_fn_value, .task_await, .task_return, .failing_task_block, .union_value => return null,
+            .prim, .field_of, .sequence_next, .division, .by_value, .unplaced_type, .assoc_fn_value, .task_await, .task_return, .failing_task_block, .union_value, .text_value => return null,
         };
         if (self.imported_enums.contains(type_name)) return type_name;
         var buf: [256]u8 = undefined;
@@ -2942,8 +2942,43 @@ const Emitter = struct {
             .members = try members.toOwnedSlice(self.arena()),
         } };
         const marker = try self.protoName(r.name, r.printedName());
-        if (!r.isPub) return self.b.group(&.{ class, marker });
-        return self.b.group(&.{ class, marker, try self.pubExport(r.name) });
+        var out: std.ArrayListUnmanaged(js.Stmt) = .empty;
+        try out.appendSlice(self.arena(), &.{ class, marker });
+        if (try self.protoShapes(r.name, r.recordFields())) |shapes| try out.append(self.arena(), shapes);
+        if (r.isPub) try out.append(self.arena(), try self.pubExport(r.name));
+        return self.b.group(out.items);
+    }
+
+    /// True when the print shape `sh` places a float somewhere (`"f"`).
+    fn shapeHoldsFloat(sh: js.Expr) bool {
+        return switch (sh) {
+            .quoted => |q| std.mem.eql(u8, q, "f"),
+            .array => |a| for (a.elems) |el| {
+                if (shapeHoldsFloat(el)) break true;
+            } else false,
+            else => false,
+        };
+    }
+
+    /// `<Class>.prototype.__bp_s = { x: "f" };` — the print shape of each
+    /// field whose declared type holds a float (144 B-78, decision 521), which
+    /// `__bp_show` hands each field's value: JavaScript has one number type,
+    /// so `Pt(x: 1.0)` printed `Pt(x: 1)`. On the prototype, as `__bp` is, so
+    /// a value carries it into any module that prints it. Null when no
+    /// field holds a float.
+    fn protoShapes(self: *Emitter, class_name: []const u8, fields: anytype) !?js.Stmt {
+        var props: std.ArrayListUnmanaged(js.Object.Prop) = .empty;
+        for (fields) |f| {
+            const sh = (try self.typeShape(f.typeRef)) orelse continue;
+            if (!shapeHoldsFloat(sh)) continue;
+            try props.append(self.arena(), .{ .kv = .{ .key = f.name, .value = sh } });
+        }
+        if (props.items.len == 0) return null;
+        return .{ .expr = try self.b.assign(
+            try self.b.member(try self.b.member(.{ .name = class_name }, "prototype"), "__bp_s"),
+            "=",
+            .{ .object = .{ .props = props.items } },
+        ) };
     }
 
     /// The instance `default fn`s of a local interface (and the interfaces it
@@ -3102,6 +3137,7 @@ const Emitter = struct {
                 "=",
                 .{ .quoted = v.name },
             ) });
+            if (try self.protoShapes(class_name, v.fields)) |shapes| try tail.append(self.arena(), shapes);
         }
 
         // The payload-less singletons, after every subclass exists.
@@ -5201,7 +5237,7 @@ const Emitter = struct {
         var shaped = false;
         for (cc.args, 0..) |a, i| {
             args[i + 1] = try self.buildExpr(a.value.*);
-            shapes[i] = (try self.printShape(a.value.*)) orelse .null_;
+            shapes[i] = (try self.printShape(a.value.*)) orelse (try self.textShape(a.value.*)) orelse .null_;
             if (shapes[i] != .null_) shaped = true;
         }
         _ = self.helper(.show);
@@ -5304,7 +5340,7 @@ const Emitter = struct {
                             .bigint => "BigInt",
                             else => break :blk null,
                         },
-                        .type_, .field_of, .sequence_next, .division, .by_value, .unplaced_type, .assoc_fn_value, .task_await, .task_return, .failing_task_block, .union_value => break :blk null,
+                        .type_, .field_of, .sequence_next, .division, .by_value, .unplaced_type, .assoc_fn_value, .task_await, .task_return, .failing_task_block, .union_value, .text_value => break :blk null,
                     };
                     const iface = self.local_interfaces.get(iface_name) orelse break :blk null;
                     for (iface.methods) |m| {
@@ -5385,15 +5421,38 @@ const Emitter = struct {
     /// other an `f64` (`printShape`): the float goes through `__bp_f64`, so
     /// `"${5.0}"` is `5.0` as on erlang, beam and wasm. Null for any other `+`.
     fn floatConcat(self: *Emitter, bin: anytype) anyerror!?js.Expr {
-        const l_str = try self.isStringTyped(bin.lhs.*);
-        const r_str = try self.isStringTyped(bin.rhs.*);
+        // The checker records a float side only where the other is a
+        // `string` (`InstanceLowering.text_value`); else this backend's own
+        // reading decides.
+        const l_txt = try self.isFloatText(bin.lhs.*);
+        const r_txt = try self.isFloatText(bin.rhs.*);
+        const l_str = if (l_txt or r_txt) r_txt else try self.isStringTyped(bin.lhs.*);
+        const r_str = if (l_txt or r_txt) l_txt else try self.isStringTyped(bin.rhs.*);
         if (l_str == r_str) return null;
         const float_side = if (l_str) bin.rhs.* else bin.lhs.*;
-        if (!try self.isFloatShaped(float_side)) return null;
+        if (!(l_txt or r_txt) and !try self.isFloatShaped(float_side)) return null;
         const lhs = try self.buildExpr(bin.lhs.*);
         const rhs = try self.buildExpr(bin.rhs.*);
         const text = try self.b.call(self.helper(.f64_text), &.{if (l_str) rhs else lhs});
         return try self.b.binary("+", if (l_str) lhs else text, if (l_str) text else rhs);
+    }
+
+    /// The print shape of a value written as text, from the type the checker
+    /// recorded for it (`InstanceLowering.text_value`, 144 B-78): what this
+    /// backend's own reading of the tree cannot type — an imported record's
+    /// `f64` field, an `f64` out of a generic method. Null when none.
+    fn textShape(self: *Emitter, e: ast.Expr) anyerror!?js.Expr {
+        const lw = self.lowerings orelse return null;
+        var key = e.getLoc();
+        key.col += ast.text_synthetic_col;
+        const il = lw.get(key) orelse return null;
+        if (il != .text_value) return null;
+        return self.typeShape(il.text_value);
+    }
+
+    fn isFloatText(self: *Emitter, e: ast.Expr) anyerror!bool {
+        const sh = (try self.textShape(e)) orelse return false;
+        return sh == .quoted and std.mem.eql(u8, sh.quoted, "f");
     }
 
     fn isStringTyped(self: *Emitter, e: ast.Expr) anyerror!bool {
@@ -6137,7 +6196,7 @@ const Emitter = struct {
         const il = lw.get(loc) orelse return null;
         const kind = switch (il) {
             .prim => |k| k,
-            .type_, .field_of, .sequence_next, .division, .by_value, .unplaced_type, .assoc_fn_value, .task_await, .task_return, .failing_task_block, .union_value => return null,
+            .type_, .field_of, .sequence_next, .division, .by_value, .unplaced_type, .assoc_fn_value, .task_await, .task_return, .failing_task_block, .union_value, .text_value => return null,
         };
         const receiver: jsPrelude.Receiver = switch (kind) {
             .string => .string,

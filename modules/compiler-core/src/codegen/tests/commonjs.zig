@@ -4,6 +4,8 @@
 
 const std = @import("std");
 const h = @import("helpers.zig");
+const stdWasm = @import("std_wasm");
+const jsPrelude = @import("../js/js_prelude.zig");
 
 // A `default fn` of a primitive behavior (`behavior String`, std's
 // `primitives.bp` or a program's own) becomes a prototype patch
@@ -139,6 +141,8 @@ test "js: f64 text ---- a template hole, toString and a string + keep the decima
         \\    @print(1.0e-7);
         \\    @print(7);
         \\    @print("${7}");
+        \\    @print(1000.0, 1.0e20, 0.00001, 1200.0);
+        \\    @print("${9007199254740992.0}", 9007199254740991.0);
         \\}
     ,
         \\5.0
@@ -152,6 +156,126 @@ test "js: f64 text ---- a template hole, toString and a string + keep the decima
         \\1.0e-7
         \\7
         \\7
+        \\1.0e3 1.0e20 1.0e-5 1.2e3
+        \\9.007199254740992e15 9007199254740991.0
+        \\
+    );
+}
+
+// Decision 521: `__bp_f64` is std-wasm's `number.shortFloat` ported, so the two
+// answer one text — every float below, drawn from its bits, is printed by node
+// and compared with std-wasm's own answer for it.
+test "js: f64 text ---- __bp_f64 answers std-wasm's shortFloat" {
+    const gpa = std.testing.allocator;
+    var src: std.ArrayListUnmanaged(u8) = .empty;
+    defer src.deinit(gpa);
+    var want: std.ArrayListUnmanaged(u8) = .empty;
+    defer want.deinit(gpa);
+    try src.appendSlice(gpa, "pub fn main() {\n");
+    var prng = std.Random.DefaultPrng.init(521);
+    const r = prng.random();
+    var n: usize = 0;
+    while (n < 400) {
+        // Every exponent equally likely, then a few round values.
+        const f: f64 = if (n < 360) @bitCast(r.int(u64)) else std.math.pow(f64, 10.0, @floatFromInt(@as(i32, @intCast(n)) - 380));
+        if (!std.math.isFinite(f)) continue;
+        var buf: [64]u8 = undefined;
+        const text = stdWasm.number.shortFloat(f, &buf);
+        try src.print(gpa, "    @print({s});\n", .{text});
+        try want.print(gpa, "{s}\n", .{text});
+        n += 1;
+    }
+    try src.appendSlice(gpa, "}\n");
+    try h.assertJsRunLog(gpa, src.items, want.items);
+}
+
+// Decision 521: `trim` removes std-wasm's whitespace (space, tab, LF, CR, VT,
+// FF) and keeps a no-break space or an em space, which the engine's strips.
+test "js: trim ---- std-wasm's whitespace set, a NBSP stays" {
+    try h.assertJsRunLog(
+        std.testing.allocator,
+        \\pub fn main() {
+        \\    @print("[" + "\u{a0}x\u{a0} ".trim() + "]");
+        \\    @print("[" + " \t\n\r\u{b}\u{c}x\u{2003}\t ".trim() + "]");
+        \\    @print("[" + "\u{a0} x ".trimStart() + "]");
+        \\    @print("[" + " x \u{a0}".trimEnd() + "]");
+        \\}
+    ,
+        "[\u{a0}x\u{a0}]\n[x\u{2003}]\n[\u{a0} x ]\n[ x \u{a0}]\n",
+    );
+}
+
+// Decisions 443, 521: `toUpper` / `toLower` are std-wasm's case mapping on
+// this backend too — its table written into the helper. Every code point the
+// table maps, mapped by node, against std-wasm's own `text.caseInto`.
+test "js: case mapping ---- toUpper and toLower answer std-wasm's text" {
+    const gpa = std.testing.allocator;
+    var arena_state = std.heap.ArenaAllocator.init(gpa);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var src: std.ArrayListUnmanaged(u8) = .empty;
+    var want: std.ArrayListUnmanaged(u8) = .empty;
+    try src.appendSlice(arena, "pub fn main() {\n");
+    for ([_]stdWasm.text.Case{ .upper, .lower }) |case| {
+        // Every code point that maps under `case`, in runs of 64.
+        var word: std.ArrayListUnmanaged(u8) = .empty;
+        var cp: u21 = 0;
+        while (cp < jsPrelude.case_limit) : (cp += 1) {
+            if (cp >= 0xD800 and cp <= 0xDFFF) continue;
+            var m: [3]u21 = undefined;
+            const mapped = stdWasm.text.mapCodepoint(&m, cp, case);
+            if (mapped.len == 1 and mapped[0] == cp) continue;
+            var b: [4]u8 = undefined;
+            const len = try std.unicode.utf8Encode(cp, &b);
+            try word.appendSlice(arena, b[0..len]);
+            if (word.items.len < 64 * 3) continue;
+            try flushCase(arena, &src, &want, word.items, case);
+            word = .empty;
+        }
+        if (word.items.len > 0) try flushCase(arena, &src, &want, word.items, case);
+    }
+    try src.appendSlice(arena, "    @print(\"ΟΔΟΣ\".toLower());\n}\n");
+    try want.appendSlice(arena, "οδοσ\n");
+    try h.assertJsRunLog(gpa, src.items, want.items);
+}
+
+fn flushCase(arena: std.mem.Allocator, src: *std.ArrayListUnmanaged(u8), want: *std.ArrayListUnmanaged(u8), word: []const u8, case: stdWasm.text.Case) !void {
+    try src.print(arena, "    @print(\"{s}\".{s}());\n", .{ word, if (case == .upper) "toUpper" else "toLower" });
+    const out = try arena.alloc(u8, stdWasm.text.caseLength(word, case, false));
+    stdWasm.text.caseInto(out, word, case, false);
+    try want.print(arena, "{s}\n", .{out});
+}
+
+// `jsPrelude.caseTable` reads the code points below `case_limit`: no case
+// mapping of std-wasm's tables lies past it.
+test "js: case mapping ---- no code point past the table's limit maps" {
+    var cp: u21 = jsPrelude.case_limit;
+    while (cp <= 0x10FFFF) : (cp += 1) {
+        for ([_]stdWasm.text.Case{ .upper, .lower }) |case| {
+            var m: [3]u21 = undefined;
+            const mapped = stdWasm.text.mapCodepoint(&m, cp, case);
+            try std.testing.expect(mapped.len == 1 and mapped[0] == cp);
+        }
+    }
+}
+
+// 144 B-78: a record's or a variant's `f64` field prints with its decimal
+// part — the class carries each float field's print shape (`__bp_s`).
+test "js: f64 text ---- a record's and a variant's float field" {
+    try h.assertJsRunLog(std.testing.allocator,
+        \\type Pt(x: f64, n: i32, ys: f64[])
+        \\type Shape {
+        \\    Circle(r: f64),
+        \\    Dot,
+        \\}
+        \\
+        \\pub fn main() {
+        \\    @print(Pt(x: 1.0, n: 3, ys: [2.0]));
+        \\    @print([Shape.Circle(r: 2.0), Shape.Dot]);
+        \\}
+    ,
+        \\Pt(x: 1.0, n: 3, ys: [2.0])
+        \\[Shape.Circle(r: 2.0), Shape.Dot]
         \\
     );
 }

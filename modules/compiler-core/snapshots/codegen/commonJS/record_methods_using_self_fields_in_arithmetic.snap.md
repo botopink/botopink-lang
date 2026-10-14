@@ -29,6 +29,7 @@ class Vec2 {
     }
 }
 Vec2.prototype.__bp = "Vec2";
+Vec2.prototype.__bp_s = { x: "f", y: "f" };
 
 Object.defineProperty(exports, "__bp_priv__", { value: { Vec2 } });
 ```

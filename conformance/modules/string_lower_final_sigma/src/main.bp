@@ -1,8 +1,7 @@
-//// Decision 443 (144 B-00g; its cell waited on B-00k for decision 457's
-//// per-target answer, 144 B-29 step H): where the JS engine and OTP map case
-//// differently, std-wasm answers OTP's — a word-final `Σ` lowers to `σ` on
-//// wasm, erlang and beam. commonJS keeps the engine's mapping (`ς`) and
-//// departs.
+//// Decisions 443, 521: where the JS engine and OTP map case differently,
+//// std-wasm answers OTP's on every target — a word-final `Σ` lowers to `σ`.
+//// commonJS maps case through its helper (std-wasm's table), never the
+//// engine's `toLowerCase`, which answers `ς`.
 
 pub fn main() {
     @print("ΟΔΟΣ".toLower());

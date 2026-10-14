@@ -42,8 +42,8 @@ std-wasm/
     ├── root.zig   ← the package: `exports` (each function by its `std:` name, its botopink types), `program` (the wasm codegen's own calls, by wasm types), `find`, `matches`, `signatureText`, `names`, `erlang_module`; re-exports the files below
     ├── hash.zig   ← `hash.contentHash`
     ├── case_tables.zig ← GENERATED (`zig build gen-unicode`): the case mappings as `switch`es (decision 443)
-    ├── text.zig   ← the text algorithms behind std's string primitives (case over all of Unicode, titlecase, trim, graphemes, slice, reverse, find, split, replace; and a program's: code point length / offset / slice / `at`, `indexOf` / `lastIndexOf`, `charCodeAt`, `fromCodepoint`, `Split` / `Lines` / `Words`, pad, repeat, replace)
-    ├── number.zig ← `shortFloat`: `float_to_binary(F, [short])`, std's `Float.toString` (`NaN`, `Infinity`, `-Infinity` for the values OTP has no float for); `signedText` / `unsignedText`, an integer's digits; `isDigits`, `integerOf` and `floatOf`, what `String.parseInt` / `parseFloat`'s host helpers convert (`number.isDigits`, `number.toInteger`, `number.toFloat`, `number.numeralRefused`; `floatOf` correctly rounded over `bigint`'s limbs by hand — `std.fmt.parseFloat`'s slow path holds a table of slices)
+    ├── text.zig   ← the text algorithms behind std's string primitives (commonJS's `__bp_trim` and case helpers answer the same set and table, decision 521) (case over all of Unicode, titlecase, trim, graphemes, slice, reverse, find, split, replace; and a program's: code point length / offset / slice / `at`, `indexOf` / `lastIndexOf`, `charCodeAt`, `fromCodepoint`, `Split` / `Lines` / `Words`, pad, repeat, replace)
+    ├── number.zig ← `shortFloat`: `float_to_binary(F, [short])` — fixed or `D.DDDeE` whichever is shorter, `D.DDDeE` from 2^53 on as OTP writes it —, std's `Float.toString`, and the text commonJS's `__bp_f64` ports (decision 521) (`NaN`, `Infinity`, `-Infinity` for the values OTP has no float for); `signedText` / `unsignedText`, an integer's digits; `isDigits`, `integerOf` and `floatOf`, what `String.parseInt` / `parseFloat`'s host helpers convert (`number.isDigits`, `number.toInteger`, `number.toFloat`, `number.numeralRefused`; `floatOf` correctly rounded over `bigint`'s limbs by hand — `std.fmt.parseFloat`'s slow path holds a table of slices)
     ├── array.zig  ← an array's algorithms over its slot words: `sliceRange`, `chunkCount`, `slidingCount`, `uniqueInto`, `search`
     ├── heap.zig   ← the heap (decisions 448, 449): a heap per process, `alloc` on the current one, copying collection (minor and major), the write barrier on mutable cells, a message copied between heaps, a heap released whole, exhaustion an error the program face traps on — § The heap
     ├── random.zig ← `io/random`'s seeded stream (decision 451): `Stream`, Mulberry32 as the commonJS sidecar draws it; no draw before a seed
@@ -122,7 +122,8 @@ unconditional full ones of `SpecialCasing.txt` (`ß` → `SS`, `ﬁ` → `FI`, `
 (`libs/std/tools/unicode-gen`), as `switch`es: code, not data, so a program links the tables
 only where it maps case. They answer OTP's (`string:uppercase` / `lowercase` / `titlecase`):
 no conditional mapping — no final sigma, where a JS engine lowers a word-final `Σ` to `ς`
-(`"ΟΔΟΣ".toLower()` is `"οδοσ"` on wasm, erlang and beam, `"οδος"` on commonJS) — and no
+(`"ΟΔΟΣ".toLower()` is `"οδοσ"` on every target, commonJS through its helper over this table,
+decision 521) — and no
 language rule. Measured 2026-10-11 code point by code point against OTP 28 (all of U+0000 …
 U+10FFFF, upper, lower and title): equal everywhere but the 56 letters Unicode 17 added that
 OTP 28's Unicode 16 tables lack (U+A7CE … U+A7D5, U+16EA0 … U+16ED3), which std-wasm maps as

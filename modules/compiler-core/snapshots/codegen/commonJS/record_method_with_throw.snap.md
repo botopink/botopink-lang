@@ -29,6 +29,7 @@ class Invoice {
     }
 }
 Invoice.prototype.__bp = "Invoice";
+Invoice.prototype.__bp_s = { subtotal: "f", taxRate: "f" };
 
 Object.defineProperty(exports, "__bp_priv__", { value: { Invoice } });
 ```

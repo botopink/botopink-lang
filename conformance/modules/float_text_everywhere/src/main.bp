@@ -1,8 +1,15 @@
 //// An `f64` written as text keeps its decimal part on every target (decision
-//// 8 § 7, the numbers' text): in a template hole, through `toString()`, and
-//// beside a string in a `+`. commonJS has one number type, so it spells the
-//// float through the helper `@print` shares (144 B-78); before it, `"${5.0}"`
-//// was `5` there.
+//// 8 § 7, the numbers' text; decision 521): in a template hole, through
+//// `toString()`, beside a string in a `+` and through `@print`. commonJS has
+//// one number type, so it spells the float through `__bp_f64` wherever the
+//// checker types it `f64` — an imported record's field and an `f64` a
+//// generic method answers included — and a record carries its float fields'
+//// shape when it prints. Before it, `"${5.0}"` was `5` there, `p.x` of an
+//// imported `Pt` printed `1`, and `Dict<string, f64>.bump`'s `3.0` printed `3`.
+
+pub mod geo;
+import {geo.Pt, geo.origin};
+import {collections.Dict} from "std";
 
 pub fn main() {
     val five = 5.0;
@@ -16,4 +23,17 @@ pub fn main() {
     @print("v=${five}");
     @print(five.toString());
     @print("a" + five + "b");
+
+    val p = Pt(x: 1.0, n: 3);
+    @print(p.x);
+    @print("x=${p.x}");
+    @print("x=" + p.x);
+    @print(origin().x);
+    @print([p.x, 2.5]);
+    @print(p);
+
+    val counts: Dict<string, f64> = Dict.empty();
+    val bumped = counts.bump("a", 3.0);
+    @print(bumped.at("a"));
+    @print("a=${bumped.at("a") ?? 0.0}");
 }

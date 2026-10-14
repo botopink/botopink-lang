@@ -569,6 +569,12 @@ pub const InstanceLowering = union(enum) {
     /// static type (wasm) boxes each arm by its member and types a `val`
     /// bound to it as the union, whatever the arm's shape.
     union_value: UnionValue,
+    /// 144 B-78 (decision 521) — a value written as text whose type holds a
+    /// float (`env.textValues`), keyed by the operand's loc plus
+    /// `ast.text_synthetic_col` (the operand's own loc may key another
+    /// lowering — a field read, a call): the type as written. commonJS has one
+    /// number type, so it reads here that `"${p.x}"` writes an `f64`.
+    text_value: ast.TypeRef,
 };
 
 /// What `InstanceLowering.union_value` holds: the union as written (its
@@ -1401,6 +1407,14 @@ pub const Env = struct {
     /// inference is done (the operands may be type variables when the operator
     /// is met) and turned into `InstanceLowering.division` entries.
     divisions: std.AutoHashMap(ast.Loc, *T.Type),
+    /// 144 B-78 (decision 521) — every value written as text: the operand of a
+    /// `+` whose other side is a `string` (a string template's holes are one),
+    /// and each argument of `@print` / `@println` / `@debug`, keyed by the
+    /// operand's loc, with each type inferred there (a body inferred twice —
+    /// a behavior's default per implementer — records twice). Read once
+    /// inference is done and turned into `InstanceLowering.text_value`
+    /// entries (`infer.textValueLowerings`) where every reading names a float.
+    textValues: std.AutoHashMap(ast.Loc, std.ArrayListUnmanaged(*T.Type)),
     /// Stdlib modules implicitly required via array method dispatch; used by
     /// the compile session to prepend synthetic imports for the codegen.
     implicitStdModules: std.StringHashMap(void),
@@ -1777,6 +1791,7 @@ pub const Env = struct {
             .stdArrayLowerings = std.AutoHashMap(ast.Loc, StdArrayLowering).init(arena),
             .instanceLowerings = std.AutoHashMap(ast.Loc, InstanceLowering).init(arena),
             .divisions = std.AutoHashMap(ast.Loc, *T.Type).init(arena),
+            .textValues = std.AutoHashMap(ast.Loc, std.ArrayListUnmanaged(*T.Type)).init(arena),
             .implicitStdModules = std.StringHashMap(void).init(arena),
             .decorators = std.StringHashMap(DecoratorSig).init(arena),
             .stdlibFnDecls = std.StringHashMap(ast.FnDecl).init(arena),
@@ -1877,6 +1892,7 @@ pub const Env = struct {
             .stdArrayLowerings = std.AutoHashMap(ast.Loc, StdArrayLowering).init(arena),
             .instanceLowerings = std.AutoHashMap(ast.Loc, InstanceLowering).init(arena),
             .divisions = std.AutoHashMap(ast.Loc, *T.Type).init(arena),
+            .textValues = std.AutoHashMap(ast.Loc, std.ArrayListUnmanaged(*T.Type)).init(arena),
             .implicitStdModules = std.StringHashMap(void).init(arena),
             .decorators = try tmpl.decorators.cloneWithAllocator(arena),
             .stdlibFnDecls = try tmpl.stdlibFnDecls.cloneWithAllocator(arena),
@@ -1946,6 +1962,7 @@ pub const Env = struct {
         self.stdArrayLowerings.deinit();
         self.instanceLowerings.deinit();
         self.divisions.deinit();
+        self.textValues.deinit();
         self.implicitStdModules.deinit();
         self.decorators.deinit();
         self.stdlibFnDecls.deinit();

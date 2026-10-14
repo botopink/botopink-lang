@@ -3606,22 +3606,25 @@ cell to write (`#[@External.Wasm(op: "f64.floor")]`):
 <!-- example: modules/external_node_prefixed_op_refused -->
 
 **Case mapping covers all of Unicode** (decision 443) on the four targets —
-`"straße".toUpper()` is `"STRASSE"`, `"É".toLower()` is `"é"`. A wasm program
-answers OTP's where a JS engine's differs: no final sigma (`"ΟΔΟΣ".toLower()`
-is `"οδοσ"` on wasm, erlang and beam, `"οδος"` on commonJS).
+`"straße".toUpper()` is `"STRASSE"`, `"É".toLower()` is `"é"`. Every target
+answers OTP's where a JS engine's differs (decision 521): no final sigma
+(`"ΟΔΟΣ".toLower()` is `"οδοσ"`, where a JS engine answers `"οδος"`).
 
 <!-- example: modules/string_lower_final_sigma -->
 
-**A wasm program writes std-wasm's text** (decision 441). Where std-wasm's
-answer differs from a JS engine's, a `--target wasm` program answers
-std-wasm's — the text of erlang, beam and the comptime: a float is OTP's
+**Every target writes std-wasm's text** (decisions 441, 521). Where std-wasm's
+answer differs from a JS engine's, a program answers std-wasm's on every
+target — the text of erlang, beam and the comptime: a float is OTP's
 `float_to_binary(F, [short])`, the shortest digits that read back as the same
-`f64`, in fixed notation or as `D.DDDeE` when that is shorter (`"${5.0}"` and
-`5.0.toString()` are `5.0`, `1e21` is `1.0e21`, `0.000001` is `1.0e-6`; `NaN`,
-`Infinity`, `-Infinity`, which only a wasm program's arithmetic makes, are
+`f64`, in fixed notation or as `D.DDDeE` when that is shorter, and as
+`D.DDDeE` from 2^53 on (`"${5.0}"` and `5.0.toString()` are `5.0`, `1000.0`
+is `1.0e3`, `1e21` is `1.0e21`, `0.000001` is `1.0e-6`,
+`9007199254740992.0` is `9.007199254740992e15`; `NaN`, `Infinity`,
+`-Infinity`, which only a wasm or commonJS program's arithmetic makes, are
 those words), and `trim` removes space, tab, LF, CR, VT and FF (a no-break
 space stays). A wasm program and its own comptime agree. commonJS writes the
-same text through the helper `@print` shares (`5.0`, `1.0e21`).
+same text through its helpers, never the JS engine's number text, `trim` or
+case mapping.
 
 <!-- example: modules/float_text_and_trim -->
 
@@ -3630,8 +3633,10 @@ same text through the helper `@print` shares (`5.0`, `1.0e21`).
 <!-- example: modules/string_trim_keeps_nbsp -->
 
 **A float written as text keeps its decimal part on every target**, commonJS
-included (144 B-78): in a template hole, through `toString()`, and beside a
-string in a `+`.
+included (decision 521): in a template hole, through `toString()`, beside a
+string in a `+` and through `@print` — an imported record's `f64` field and an
+`f64` a generic method answers included, and a record's `f64` field when the
+record prints.
 
 <!-- example: modules/float_text_everywhere -->
 

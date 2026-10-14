@@ -286,9 +286,9 @@ behavior String {
     fn split(self: Self, sep: string) -> string[];
 
     // Over all of Unicode on every target (decision 443): the full mappings
-    // (`"ß"` is `"SS"`). On wasm std-wasm's, which answers OTP's where a JS
-    // engine differs: no final sigma (`"ΟΔΟΣ".toLower()` is `"οδοσ"`, commonJS
-    // `"οδος"`).
+    // (`"ß"` is `"SS"`). std-wasm's, which answers OTP's where a JS engine
+    // differs: no final sigma (`"ΟΔΟΣ".toLower()` is `"οδοσ"`) — commonJS maps
+    // through its helper over std-wasm's table, not this binding (decision 521).
     #[@External.Erlang("string", "uppercase")]
     #[@External.Node("toUpperCase")]
     #[@External.Wasm(std: "text.toUpper")]
@@ -316,8 +316,8 @@ behavior String {
     #[@External.Wasm(std: "text.endsWith")]
     fn endsWith(self: Self, suffix: string) -> bool;
 
-    // On wasm, std-wasm's set (decision 441): space, tab, LF, CR, VT, FF —
-    // a no-break space stays.
+    // std-wasm's set on every target (441, 521): space, tab, LF, CR, VT, FF —
+    // a no-break space stays; commonJS trims through its helper, not this one.
     #[@External.Erlang("string", "trim")]
     #[@External.Node("trim")]
     #[@External.Wasm(std: "text.trim")]

@@ -18,6 +18,7 @@
 
 const std = @import("std");
 const ast = @import("js_ast.zig");
+const stdWasm = @import("std_wasm");
 
 pub const Helper = enum {
     /// `assert cond, msg` outside test mode: always fatal, naming the message
@@ -170,12 +171,31 @@ pub const Helper = enum {
     str_index_of,
     /// `String.lastIndexOf(sub)`: the codepoint index of the last match, `-1`.
     str_last_index_of,
-    /// The text of an `f64` (decision 8 § 7, the numbers' text): always a
-    /// decimal part, `5.0`, `-0.5`, `1.0e21`, `1.0e-7` — what erlang, beam and
-    /// wasm answer. JavaScript has one number type, so a call site that types
-    /// a value `f64` (`@print`'s shape `"f"`, a template hole, `toString`, a
-    /// `+` with a string) asks for it.
+    /// The text of an `f64` (decision 8 § 7, the numbers' text; decision 521):
+    /// std-wasm's `number.shortFloat` — OTP's `float_to_binary(F, [short])`,
+    /// the shortest digits that read back, fixed or `D.DDDeE` whichever is
+    /// shorter (`5.0`, `-0.5`, `1.0e3`, `1.0e21`, `1.0e-7`) — what erlang,
+    /// beam and wasm answer. JavaScript has one number type, so a call site
+    /// that types a value `f64` (`@print`'s shape `"f"`, a template hole,
+    /// `toString`, a `+` with a string) asks for it.
     f64_text,
+    /// `String.trim` / `trimStart` / `trimEnd` (decision 521): std-wasm's
+    /// whitespace set — space, tab, LF, CR, VT, FF (`text.isWhite`) — where
+    /// the engine's also strips a no-break space and the other Unicode
+    /// spaces.
+    str_trim,
+    str_trim_start,
+    str_trim_end,
+    /// `String.toUpper` / `toLower` (decisions 443, 521): std-wasm's case
+    /// mapping, its table (`text.mapCodepoint`) written into the helper —
+    /// the simple mappings and the unconditional full ones, no final sigma
+    /// (`"ΟΔΟΣ".toLower()` is `"οδοσ"`, where the engine answers `"οδος"`).
+    str_upper,
+    str_lower,
+    /// `__bp_case_map(t)`: a case table's text as a `Map` from a code point
+    /// to its mapping; `__bp_case(s, m)`: `s` mapped through it.
+    case_map,
+    case_apply,
     /// `__bp_text(v)`: the text `@print` writes for `v` at the top level, as a
     /// string — `show`'s format with its `%s` / `%O` verbs filled in. An
     /// enum's class answers it as its `toString`, so a template hole and a
@@ -185,7 +205,7 @@ pub const Helper = enum {
 };
 
 /// Emission order of the helpers a module uses.
-pub const order = [_]Helper{ .assert_fatal, .str_surrogate, .str_count, .string_char_at, .str_length, .str_index_of, .str_last_index_of, .array_at, .range_from, .structural_eq, .f64_text, .show, .text, .print, .print_as, .try_unwrap, .host_fail, .task, .await_task, .host_result, .host_result_task, .adopt, .yield_step, .int_check, .wide_norm, .wide_add, .wide_sub, .wide_mul, .wide_div, .wide_mod, .wide_neg, .big_div, .big_mod };
+pub const order = [_]Helper{ .assert_fatal, .str_surrogate, .str_count, .string_char_at, .str_length, .str_index_of, .str_last_index_of, .array_at, .range_from, .structural_eq, .f64_text, .str_trim, .str_trim_start, .str_trim_end, .case_map, .case_apply, .str_upper, .str_lower, .show, .text, .print, .print_as, .try_unwrap, .host_fail, .task, .await_task, .host_result, .host_result_task, .adopt, .yield_step, .int_check, .wide_norm, .wide_add, .wide_sub, .wide_mul, .wide_div, .wide_mod, .wide_neg, .big_div, .big_mod };
 
 /// The helpers `h`'s body calls, which a module calling `h` carries too.
 pub fn requires(h: Helper) []const Helper {
@@ -196,6 +216,7 @@ pub fn requires(h: Helper) []const Helper {
         .host_result => &.{.host_fail},
         .host_result_task => &.{ .host_fail, .task },
         .string_char_at, .str_length => &.{.str_surrogate},
+        .str_upper, .str_lower => &.{ .case_map, .case_apply },
         .str_index_of, .str_last_index_of => &.{ .str_surrogate, .str_count },
         else => &.{},
     };
@@ -224,6 +245,12 @@ pub fn forMethod(receiver: Receiver, method: []const u8, argc: usize) ?Helper {
         if (argc == 0 and std.mem.eql(u8, method, "length")) return .str_length;
         if (argc == 1 and std.mem.eql(u8, method, "indexOf")) return .str_index_of;
         if (argc == 1 and std.mem.eql(u8, method, "lastIndexOf")) return .str_last_index_of;
+        // Decision 521 — std-wasm's text, never the engine's.
+        if (argc == 0 and std.mem.eql(u8, method, "trim")) return .str_trim;
+        if (argc == 0 and std.mem.eql(u8, method, "trimStart")) return .str_trim_start;
+        if (argc == 0 and std.mem.eql(u8, method, "trimEnd")) return .str_trim_end;
+        if (argc == 0 and std.mem.eql(u8, method, "toUpper")) return .str_upper;
+        if (argc == 0 and std.mem.eql(u8, method, "toLower")) return .str_lower;
     }
     return null;
 }
@@ -263,6 +290,13 @@ pub fn name(h: Helper) []const u8 {
         .str_index_of => "__bp_str_index_of",
         .str_last_index_of => "__bp_str_last_index_of",
         .f64_text => "__bp_f64",
+        .str_trim => "__bp_trim",
+        .str_trim_start => "__bp_trim_start",
+        .str_trim_end => "__bp_trim_end",
+        .str_upper => "__bp_upper",
+        .str_lower => "__bp_lower",
+        .case_map => "__bp_case_map",
+        .case_apply => "__bp_case",
         .text => "__bp_text",
     };
 }
@@ -302,9 +336,161 @@ pub fn decl(h: Helper) ast.Stmt {
         .str_index_of => strIndex("__bp_str_index_of", "indexOf"),
         .str_last_index_of => strIndex("__bp_str_last_index_of", "lastIndexOf"),
         .f64_text => f64_text,
+        .str_trim => str_trim_fn,
+        .str_trim_start => str_trim_start_fn,
+        .str_trim_end => str_trim_end_fn,
+        // The table is built by `declIn`; this form is only its shape.
+        .str_upper => upper_static,
+        .str_lower => lower_static,
+        .case_map => case_map,
+        .case_apply => case_apply,
         .text => show_text,
     };
 }
+
+/// The helper's declaration, with what is built at run time — a case
+/// helper's table — allocated in `arena`.
+pub fn declIn(arena: std.mem.Allocator, h: Helper) !ast.Stmt {
+    return switch (h) {
+        .str_upper => caseFn(arena, "__bp_upper", try caseTable(arena, .upper)),
+        .str_lower => caseFn(arena, "__bp_lower", try caseTable(arena, .lower)),
+        else => decl(h),
+    };
+}
+
+/// `function <name>(s) { return __bp_case(s, <name>.m ??= __bp_case_map("<table>")); }`
+/// — the table decoded once, on the first call. `decl`'s form has an empty
+/// table; `declIn` writes the real one.
+fn caseFnStatic(comptime fn_name: []const u8) ast.Stmt {
+    return hFn(fn_name, &.{"s"}, &.{hRet("__bp_case(s, " ++ fn_name ++ ".m ??= __bp_case_map(\"\"))")});
+}
+
+fn caseFn(arena: std.mem.Allocator, comptime fn_name: []const u8, table: []const u8) !ast.Stmt {
+    const parts = try arena.alloc(ast.HostPart, 1);
+    parts[0] = .{ .text = try std.fmt.allocPrint(arena, "__bp_case(s, {s}.m ??= __bp_case_map(\"{s}\"))", .{ fn_name, table }) };
+    const body = try arena.alloc(ast.Stmt, 1);
+    body[0] = .{ .return_ = .{ .host = parts } };
+    return .{ .function = .{
+        .name = fn_name,
+        .params = &.{.{ .pattern = .{ .name = "s" } }},
+        .body = .{ .stmts = body },
+    } };
+}
+
+/// The text of std-wasm's case table for `case` (`text.mapCodepoint`), as
+/// `__bp_case_map` reads it: space-separated entries, numbers in base 36 —
+/// `a,n,k,d` maps the `n` code points `a`, `a + k`, … each to itself plus
+/// `d` (a simple mapping), `!a,x,y…` maps `a` to the code points `x`, `y`, …
+/// (a full one). No code point at or past `case_limit` maps (pinned by a
+/// test in `codegen/tests/js_prelude.zig`).
+pub fn caseTable(arena: std.mem.Allocator, case: stdWasm.text.Case) ![]const u8 {
+    var out: std.ArrayListUnmanaged(u8) = .empty;
+    const covered = try arena.alloc(bool, case_limit);
+    @memset(covered, false);
+    var cp: u21 = 0;
+    while (cp < case_limit) : (cp += 1) {
+        if (covered[cp]) continue;
+        const d = simpleDelta(cp, case) orelse continue;
+        const step: u21 = if (cp + 1 < case_limit and simpleDelta(cp + 1, case) == d) 1 else 2;
+        var count: u21 = 1;
+        covered[cp] = true;
+        while (cp + count * step < case_limit) : (count += 1) {
+            const at = cp + count * step;
+            if (covered[at] or simpleDelta(at, case) != d) break;
+            covered[at] = true;
+        }
+        if (out.items.len > 0) try out.append(arena, ' ');
+        try writeBase36(&out, arena, cp);
+        try out.append(arena, ',');
+        try writeBase36(&out, arena, count);
+        try out.append(arena, ',');
+        try writeBase36(&out, arena, step);
+        try out.append(arena, ',');
+        try writeBase36(&out, arena, d);
+    }
+    cp = 0;
+    while (cp < case_limit) : (cp += 1) {
+        var m: [3]u21 = undefined;
+        const mapped = stdWasm.text.mapCodepoint(&m, cp, case);
+        if (mapped.len < 2) continue;
+        if (out.items.len > 0) try out.append(arena, ' ');
+        try out.append(arena, '!');
+        try writeBase36(&out, arena, cp);
+        for (mapped) |x| {
+            try out.append(arena, ',');
+            try writeBase36(&out, arena, x);
+        }
+    }
+    return out.items;
+}
+
+/// The code points `caseTable` reads: every case mapping of Unicode is below.
+pub const case_limit: u21 = 0x20000;
+
+/// `cp`'s simple mapping under `case` as a distance, null when `cp` maps to
+/// itself or has a full mapping.
+fn simpleDelta(cp: u21, case: stdWasm.text.Case) ?i32 {
+    var m: [3]u21 = undefined;
+    const mapped = stdWasm.text.mapCodepoint(&m, cp, case);
+    if (mapped.len != 1 or mapped[0] == cp) return null;
+    return @as(i32, mapped[0]) - @as(i32, cp);
+}
+
+fn writeBase36(out: *std.ArrayListUnmanaged(u8), arena: std.mem.Allocator, value: i64) !void {
+    if (value < 0) try out.append(arena, '-');
+    var x: u64 = @abs(value);
+    var tmp: [16]u8 = undefined;
+    var k: usize = 0;
+    while (true) {
+        const digit: u8 = @intCast(x % 36);
+        tmp[k] = if (digit < 10) '0' + digit else 'a' + digit - 10;
+        k += 1;
+        x /= 36;
+        if (x == 0) break;
+    }
+    while (k > 0) {
+        k -= 1;
+        try out.append(arena, tmp[k]);
+    }
+}
+
+/// `function __bp_trim(s) { … }` and its two one-ended forms — see
+/// `Helper.str_trim`: std-wasm's `text.isWhite` set.
+const str_trim_fn: ast.Stmt = hFn("__bp_trim", &.{"s"}, &.{hRet("s.replace(/^[ \\t\\n\\r\\v\\f]+|[ \\t\\n\\r\\v\\f]+$/g, \"\")")});
+const str_trim_start_fn: ast.Stmt = hFn("__bp_trim_start", &.{"s"}, &.{hRet("s.replace(/^[ \\t\\n\\r\\v\\f]+/, \"\")")});
+const str_trim_end_fn: ast.Stmt = hFn("__bp_trim_end", &.{"s"}, &.{hRet("s.replace(/[ \\t\\n\\r\\v\\f]+$/, \"\")")});
+const upper_static: ast.Stmt = caseFnStatic("__bp_upper");
+const lower_static: ast.Stmt = caseFnStatic("__bp_lower");
+
+/// `function __bp_case_map(t) { … }` — see `Helper.case_map`.
+const case_map: ast.Stmt = hFn("__bp_case_map", &.{"t"}, &.{
+    hConst(.const_, "m", "new Map()"),
+    .{ .for_of = .{
+        .pattern = .{ .name = "e" },
+        .iter = hx("t.split(\" \")"),
+        .body = .{ .stmts = &.{
+            hConst(.const_, "p", "e.replace(\"!\", \"\").split(\",\").map((x) => parseInt(x, 36))"),
+            hIf("e[0] === \"!\"", &.{ .{ .expr = hx("m.set(p[0], String.fromCodePoint(...p.slice(1)))") }, .continue_ }),
+            .{ .expr = hx("for (let i = 0; i < p[1]; i += 1) m.set(p[0] + i * p[2], String.fromCodePoint(p[0] + i * p[2] + p[3]))") },
+        }, .layout = .indented, .indent = 1 },
+    } },
+    hRet("m"),
+});
+
+/// `function __bp_case(s, m) { … }` — see `Helper.case_apply`: each code
+/// point of `s` through `m`, one with no entry kept as it is.
+const case_apply: ast.Stmt = hFn("__bp_case", &.{ "s", "m" }, &.{
+    hConst(.let_, "o", "\"\""),
+    .{ .for_of = .{
+        .pattern = .{ .name = "c" },
+        .iter = hx("s"),
+        .body = .{ .stmts = &.{
+            hConst(.const_, "r", "m.get(c.codePointAt(0))"),
+            .{ .expr = hx("o += (r === undefined) ? c : r") },
+        }, .layout = .indented, .indent = 1 },
+    } },
+    hRet("o"),
+});
 
 // ── host-text builders ───────────────────────────────────────────────────────
 // The 64-bit and codepoint helpers are a few statements each over JavaScript
@@ -337,17 +523,24 @@ fn hFn(comptime fn_name: []const u8, comptime param_names: []const []const u8, c
     return .{ .function = .{ .name = fn_name, .params = &ps, .body = .{ .stmts = body } } };
 }
 
-/// `function __bp_f64(v) { … }` — see `Helper.f64_text`: JavaScript's shortest
-/// text with a decimal part added where it has none (`5` → `5.0`, `1e+21` →
-/// `1.0e21`, `1e-7` → `1.0e-7`); `-0` keeps its sign; `NaN` and the infinities
-/// are `String(v)`'s.
+/// `function __bp_f64(v) { … }` — see `Helper.f64_text`, a port of std-wasm's
+/// `number.shortFloat`: the shortest digits (`toExponential()` with no
+/// argument), written fixed or as `D.DDDeE`, whichever is shorter (fixed on a
+/// tie) and `D.DDDeE` from 2^53 on, always a digit after the point; `-0.0`,
+/// and `NaN`, `Infinity`, `-Infinity` as those words.
 const f64_text: ast.Stmt = hFn("__bp_f64", &.{"v"}, &.{
-    hIf("!Number.isFinite(v)", &.{hRet("String(v)")}),
-    hConst(.const_, "s", "Object.is(v, -0) ? \"-0\" : String(v)"),
-    hConst(.const_, "i", "s.indexOf(\"e\")"),
-    hIf("i < 0", &.{hRet("s.indexOf(\".\") < 0 ? s + \".0\" : s")}),
-    hConst(.const_, "m", "s.slice(0, i)"),
-    hRet("(m.indexOf(\".\") < 0 ? m + \".0\" : m) + \"e\" + s.slice(i + 1).replace(\"+\", \"\")"),
+    hIf("Number.isNaN(v)", &.{hRet("\"NaN\"")}),
+    hIf("!Number.isFinite(v)", &.{hRet("(v < 0) ? \"-Infinity\" : \"Infinity\"")}),
+    hIf("v === 0", &.{hRet("Object.is(v, -0) ? \"-0.0\" : \"0.0\"")}),
+    hConst(.const_, "t", "Math.abs(v).toExponential()"),
+    hConst(.const_, "i", "t.indexOf(\"e\")"),
+    hConst(.const_, "d", "t.slice(0, i).replace(\".\", \"\")"),
+    hConst(.const_, "e", "Number(t.slice(i + 1))"),
+    hConst(.const_, "g", "(v < 0) ? \"-\" : \"\""),
+    hConst(.const_, "x", "g + d[0] + \".\" + ((d.length > 1) ? d.slice(1) : \"0\") + \"e\" + e"),
+    hConst(.const_, "p", "e + 1"),
+    hConst(.const_, "f", "g + ((p <= 0) ? \"0.\" + \"0\".repeat(-p) + d : (p >= d.length) ? d + \"0\".repeat(p - d.length) + \".0\" : d.slice(0, p) + \".\" + d.slice(p))"),
+    hRet("((f.length <= x.length) && (Math.abs(v) < 9007199254740992)) ? f : x"),
 });
 
 /// `function __bp_text(v) { … }` — see `Helper.text`: `__bp_show`'s top-level
@@ -807,7 +1000,9 @@ const named_title: ast.Expr = .{ .ternary = .{
     .else_ = &v_bp,
 } };
 
-/// `"(" + k.map((n) => n + ": " + __bp_show(v[n], null, false, a)).join(", ") + ")"`
+/// `"(" + k.map((n) => n + ": " + __bp_show(v[n], v.__bp_s?.[n], false, a)).join(", ") + ")"`
+/// — each field with the print shape its class declares (`__bp_s`, a float
+/// field's `"f"`; 144 B-78).
 const named_fields: ast.Expr = .{ .binary = .{
     .op = "+",
     .lhs = &.{ .binary = .{
@@ -820,7 +1015,7 @@ const named_fields: ast.Expr = .{ .binary = .{
                 .lhs = &.{ .binary = .{ .op = "+", .lhs = &.{ .name = "n" }, .rhs = &.{ .quoted = ": " } } },
                 .rhs = &.{ .call = .{ .callee = &.{ .name = "__bp_show" }, .args = &.{
                     .{ .index = .{ .object = &v, .index = &.{ .name = "n" } } },
-                    null_,
+                    hx("v.__bp_s?.[n]"),
                     .{ .name = "false" },
                     args_a,
                 } } },

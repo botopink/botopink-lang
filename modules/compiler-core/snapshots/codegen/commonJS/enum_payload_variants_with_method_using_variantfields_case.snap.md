@@ -18,12 +18,18 @@ val Shape = type {
 ----- JAVASCRIPT -- main.js
 ```javascript
 function __bp_f64(v) {
-    if (!Number.isFinite(v)) { return String(v); }
-    const s = Object.is(v, -0) ? "-0" : String(v);
-    const i = s.indexOf("e");
-    if (i < 0) { return s.indexOf(".") < 0 ? s + ".0" : s; }
-    const m = s.slice(0, i);
-    return (m.indexOf(".") < 0 ? m + ".0" : m) + "e" + s.slice(i + 1).replace("+", "");
+    if (Number.isNaN(v)) { return "NaN"; }
+    if (!Number.isFinite(v)) { return (v < 0) ? "-Infinity" : "Infinity"; }
+    if (v === 0) { return Object.is(v, -0) ? "-0.0" : "0.0"; }
+    const t = Math.abs(v).toExponential();
+    const i = t.indexOf("e");
+    const d = t.slice(0, i).replace(".", "");
+    const e = Number(t.slice(i + 1));
+    const g = (v < 0) ? "-" : "";
+    const x = g + d[0] + "." + ((d.length > 1) ? d.slice(1) : "0") + "e" + e;
+    const p = e + 1;
+    const f = g + ((p <= 0) ? "0." + "0".repeat(-p) + d : (p >= d.length) ? d + "0".repeat(p - d.length) + ".0" : d.slice(0, p) + "." + d.slice(p));
+    return ((f.length <= x.length) && (Math.abs(v) < 9007199254740992)) ? f : x;
 }
 
 function __bp_show(v, s, top, a) {
@@ -55,7 +61,7 @@ function __bp_show(v, s, top, a) {
             return "%s";
         }
         const k = Object.keys(v);
-        return (((typeof Object.getPrototypeOf(v).tag === "string") ? ((v.__bp + ".") + Object.getPrototypeOf(v).tag) : v.__bp) + ((k.length === 0) ? "" : (("(" + k.map((n) => ((n + ": ") + __bp_show(v[n], null, false, a))).join(", ")) + ")")));
+        return (((typeof Object.getPrototypeOf(v).tag === "string") ? ((v.__bp + ".") + Object.getPrototypeOf(v).tag) : v.__bp) + ((k.length === 0) ? "" : (("(" + k.map((n) => ((n + ": ") + __bp_show(v[n], v.__bp_s?.[n], false, a))).join(", ")) + ")")));
     }
     if ((v === undefined)) return "null";
     a.push(v);
@@ -112,6 +118,7 @@ class Shape$Circle extends Shape {
     }
 }
 Shape$Circle.prototype.tag = "Circle";
+Shape$Circle.prototype.__bp_s = { radius: "f" };
 class Shape$Square extends Shape {
     constructor(side) {
         super();
@@ -119,6 +126,7 @@ class Shape$Square extends Shape {
     }
 }
 Shape$Square.prototype.tag = "Square";
+Shape$Square.prototype.__bp_s = { side: "f" };
 class Shape$Triangle extends Shape {
     constructor(base, height) {
         super();
@@ -127,6 +135,7 @@ class Shape$Triangle extends Shape {
     }
 }
 Shape$Triangle.prototype.tag = "Triangle";
+Shape$Triangle.prototype.__bp_s = { base: "f", height: "f" };
 
 Object.defineProperty(exports, "__bp_priv__", { value: { Shape, Shape$Circle, Shape$Square, Shape$Triangle } });
 ```

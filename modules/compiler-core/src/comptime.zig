@@ -3788,6 +3788,7 @@ pub fn compileTypesOnly(
                     };
                     try infer.taskLowerings(&succ.env, &instance_lowerings);
                     try infer.unionValueLowerings(&succ.env, arena_alloc, &instance_lowerings);
+                    try infer.textValueLowerings(&succ.env, arena_alloc, &instance_lowerings);
                 }
                 try recordDeclaredValues(mod.path, succ.program.decls, &succ.env);
                 if (idx < all_modules.len - 1) {
@@ -4127,6 +4128,7 @@ fn compileOnce(
                     };
                     try infer.taskLowerings(&succ.env, &instance_lowerings);
                     try infer.unionValueLowerings(&succ.env, arena_alloc, &instance_lowerings);
+                    try infer.textValueLowerings(&succ.env, arena_alloc, &instance_lowerings);
                 }
                 try recordDeclaredValues(mod.path, succ.program.decls, &succ.env);
                 if (idx < all_modules.len - 1) {

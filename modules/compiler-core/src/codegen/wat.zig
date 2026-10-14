@@ -10009,7 +10009,7 @@ const Emitter = struct {
         };
         return switch (il) {
             .prim => |k| k,
-            .type_, .field_of, .sequence_next, .division, .by_value, .unplaced_type, .assoc_fn_value, .task_await, .task_return, .failing_task_block, .union_value => null,
+            .type_, .field_of, .sequence_next, .division, .by_value, .unplaced_type, .assoc_fn_value, .task_await, .task_return, .failing_task_block, .union_value, .text_value => null,
         };
     }
 
@@ -15674,7 +15674,7 @@ const Emitter = struct {
                 if (impls.len > 0) return null;
                 break :blk self.recordTypeOfExpr(cc.receiver.?.*) orelse return null;
             },
-            .prim, .field_of, .sequence_next, .division, .assoc_fn_value, .task_await, .task_return, .failing_task_block, .union_value => return null,
+            .prim, .field_of, .sequence_next, .division, .assoc_fn_value, .task_await, .task_return, .failing_task_block, .union_value, .text_value => return null,
         } else self.recordTypeOfExpr(cc.receiver.?.*) orelse return null;
         const rec = self.ownerAmongTwins(rec0, cc.receiver.?.*);
         const sym = std.fmt.bufPrint(&self.sym_buf, "{s}_{s}", .{ rec, cc.callee }) catch return null;

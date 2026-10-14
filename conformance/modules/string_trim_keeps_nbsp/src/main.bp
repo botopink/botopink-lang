@@ -1,8 +1,7 @@
-//// Decision 441 (144 B-00e; its cell waited on B-00k for decision 457's
-//// per-target answer, 144 B-29 step H): `trim` removes std-wasm's whitespace
-//// set — space, tab, LF, CR, VT, FF — and a NBSP (U+00A0) stays, on wasm,
-//// erlang and beam. commonJS's `trim` is the JS engine's, which removes the
-//// NBSP too, and departs.
+//// Decisions 441, 521: `trim` removes std-wasm's whitespace set — space, tab,
+//// LF, CR, VT, FF — and a NBSP (U+00A0) stays, on every target. commonJS
+//// trims through its helper, never the JS engine's `trim`, which removes the
+//// NBSP too.
 
 pub fn main() {
     val s = "\u{a0}x\u{a0} ";
