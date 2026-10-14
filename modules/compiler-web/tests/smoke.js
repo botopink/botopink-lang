@@ -28,7 +28,7 @@ function assert(cond, what) {
 }
 
 const PLAIN = `
-fn greet(name: string): string {
+fn greet(name: string) -> string {
   "hello, " + name
 }
 
