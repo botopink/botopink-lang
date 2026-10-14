@@ -1642,6 +1642,14 @@ argument list or a literal after its opening bracket with a trailing comma, and 
 `if` with a brace-less branch before that branch. Formatting is a function of the
 content only: a hand-broken list that fits is joined.
 
+`botopink format` is applied, never checked (decision 524): no gate fails on a file
+that is not canonical — each repository's commit hook formats the commit's `.bp`
+files as they are staged, and the editor formats on save. A rule of the language is
+an error of the parser or the checker; the formatter changes layout and synonyms
+only. A `;` after the closing brace of a block-shaped statement — an `if`, a loop
+or a `case` in statement position — is one of them: the parser accepts it, and
+`botopink format` removes it.
+
 ### If / else
 
 <!-- example: modules/if_expression -->
@@ -4597,7 +4605,6 @@ closes it, or says that it has none yet. Every row below was re-derived by
 | A decorator's output goes to one of the four places of § Decorators; **module-level `@emit` is gone** (decision 216), refused by name with the four places in its message | `@emit(source)` still compiles, splicing loose declarations into the module: the libraries' sites move to the four places first | `01-compiler/130-decorator-outputs` steps 5–6 |
 | `@embed` in a decorator's or a template's body reads a path its `comptime` parameter passes — a decorator annotating the application's declarations reads the application's file (decisions 342, 519) | `error[comptime-arg-not-known]` at the argument: the body runs on the comptime runtime, which reads no file | 144 B-12 |
 | A file `@embed` reads in a dependency joins the dependency's closure key (decision 519, 144 B-60) | a file under the package's `src` tree is in the key; one beside it (`assets/`) is not, so an entry read back can carry a stale copy | 144 B-12 / B-60 |
-| A block-shaped statement ends itself: **no** `;` after the closing brace of an `if`, a loop or a `case` in statement position | the `;` is **optional** there: the parser accepts both, `botopink format` prints none, and the compiler's own trees are migrated — a library or a `conformance` cell that still writes it compiles | 1.0.10-beta C-13, in decision 132's order: each library drops the `;` (`botopink format`), then `conformance`, then the parser refuses it (`blockStatementSemicolon`) |
 
 A row leaves this table when the compiler accepts the form, and the form is then
 taught in the section that owns it: union types, the `unknown` type and its

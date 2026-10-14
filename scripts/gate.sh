@@ -17,11 +17,7 @@
 #   2. zig build           the CLI, the LSP and the runners link, built
 #                           -Doptimize=ReleaseSafe — the shipped mode, and the
 #                           binaries every later stage runs (§ build mode)
-#   3. format-check.sh      `botopink format --check` over the compiler's own
-#                           `.bp` trees (decision 66 — the scan has a caller);
-#                           the trees, every one canonical, are named in
-#                           scripts/format-check.sh
-#   3b. backend partition   codegen/backend-partition.txt audited
+#   3. backend partition    codegen/backend-partition.txt audited
 #                           (scripts/lib/backend-partition-audit.js, decision 249)
 #   4. zig build test       compiler-core + language-server + CLI +
 #                           lib-test-runner unit suites
@@ -57,6 +53,10 @@
 #                           compiler) and modules/compiler-web/tests/smoke.js
 #                           under node — CI's step, so its red is the gate's
 #                           (decision 231); default build mode, as CI runs it
+#
+# No stage checks `botopink format` (decision 524): the formatter is applied,
+# never checked — the commit hook formats the commit's staged source files
+# (scripts/git-hooks/lib/format-staged.sh) before it runs this gate.
 #
 # Usage:
 #   scripts/gate.sh [--cold] [--staged] [--no-conformance] [--jobs <N>]
@@ -351,7 +351,7 @@ if [ "$staged" -eq 1 ] && [ "$cold" -eq 0 ] && [ -f "$green_record" ] &&
 fi
 
 # ── § build mode ─────────────────────────────────────────────────────────────
-# The binaries stages 3 and 4b–10 run are built `-Doptimize=ReleaseSafe` — the
+# The binaries stages 4b–12 run are built `-Doptimize=ReleaseSafe` — the
 # mode `release.yml` ships — so the gate runs the compiler a user installs.
 # ReleaseSafe keeps every runtime safety check (bounds, overflow, `unreachable`,
 # `std.debug.assert`); what it drops is Debug's allocator, whose leak report
@@ -413,10 +413,6 @@ launch 3 bash scripts/beam_export_audit.sh
 stage "zig build ($opt)"
 timed "$tdir/build.time" zig build "$opt" || fail "zig build $opt"
 pass "zig build — $(stage_time "$tdir/build.time")"
-
-stage "botopink format --check (scripts/format-check.sh)"
-timed "$tdir/format.time" bash scripts/format-check.sh || fail "scripts/format-check.sh (the tree and its files are named above; run: zig-out/bin/botopink format <tree>, in a reformat-only commit)"
-pass "botopink format --check — $(stage_time "$tdir/format.time")"
 
 stage "backend partition audit (scripts/lib/backend-partition-audit.js)"
 node scripts/lib/backend-partition-audit.js || fail "scripts/lib/backend-partition-audit.js (the list modules/compiler-core/src/codegen/backend-partition.txt is wrong where it names)"

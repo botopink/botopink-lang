@@ -27,7 +27,7 @@ resolver (`BOTOPINK_LIB_ROOTS`, then `repository/botopink-lang/libs`,
 through the install store; without it, `from "routing"` is
 `unresolved import source "routing" — declare it in botopink.json "dependencies"`.
 A new shared package is born as a repository under the same rule — nothing in
-this directory, `build.zig` or `scripts/format-check.sh` registers it.
+this directory or `build.zig` registers it.
 
 ## Tree
 

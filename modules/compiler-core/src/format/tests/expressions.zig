@@ -1330,9 +1330,8 @@ test "format: C-12 ---- a tuple and a behavior literal break like an argument li
 
 // ── C-13: no `;` after a braced block statement (decision 29 (c)) ─────────────
 //
-// The parser accepts the `;` as optional (decision 60's order), so the printer
-// picks the side the decision took: a braced `if`, loop or `case` statement
-// ends at its `}`. What ends in `}` is decided from the printed text, as the
+// The parser accepts the `;` for good and the printer removes it (decision 524:
+// C-13 is formatting): a braced `if`, loop or `case` statement ends at its `}`. What ends in `}` is decided from the printed text, as the
 // parser decides from the last token — a brace-less `if`, a binding or a
 // `return` whose value is braced, and `a ?? b` all keep their `;`.
 

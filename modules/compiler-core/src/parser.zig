@@ -1042,8 +1042,9 @@ pub const Parser = struct {
             if (this.isBracedBlockStmt(expr)) {
                 // Decision 29 (c) as decision 60 orders it: a braced `if`,
                 // `loop` or `case` statement ends at its `}`, and the `;` after
-                // it is optional while the sources migrate — accepted, never
-                // required, whatever the block's policy.
+                // it is accepted, never required, whatever the block's policy —
+                // for good: C-13 is formatting (decision 524), and
+                // `botopink format` removes the `;`.
                 // In a block used as a value it is the tail either way: the
                 // `;` there means nothing (decision 525).
                 _ = this.match(.semicolon);

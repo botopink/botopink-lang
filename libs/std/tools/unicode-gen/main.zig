@@ -41,8 +41,8 @@ const std = @import("std");
 const leaf_arms = 64;
 
 /// `botopink format`'s line width (`format.zig` `LINE_WIDTH`): the generated
-/// file is written at the formatter's canonical form, which
-/// `scripts/format-check.sh` holds it to.
+/// file is written at the formatter's canonical form, the one the commit
+/// hook applies (decision 524).
 const format_width = 80;
 
 const data_files = [_][]const u8{

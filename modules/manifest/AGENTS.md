@@ -37,7 +37,7 @@ manifest/
 ├── src/
 │   └── root.zig         ← the whole module: model, parser, workspaces, discovery, resolution + unit tests
 └── tests/fixtures/      ← on-disk fixtures the unit tests read (cwd = modules/manifest); their `.bp` files are
-    │                       canonical — `modules/manifest/tests` is one of `scripts/format-check.sh`'s `TREES`
+    │                       canonical — the commit hook formats each one staged (decision 524)
     ├── workspace/       ← a good workspace: two library members, one library member without files, one example
     ├── bad/<case>/      ← one refused manifest per located error (nested-workspace, duplicate-member, otp-member, …)
     ├── otp/             ← a workspace pinning "otp": one member inheriting it, one repeating it

@@ -1,8 +1,8 @@
 # Push/PR CI for botopink-lang — `scripts/gate.sh`, the repository's one gate
 # (decisions 466, 470, 477): the same command the commit hook runs with
 # `--no-conformance`, here WITH conformance and `--cold`, so a push to `feat`
-# runs every stage the gate declares — `zig fmt`, the build, the format check,
-# the unit suites, test-bpmp, the beam export audit, test-cli, test-libs over
+# runs every stage the gate declares — `zig fmt`, the build, the backend
+# partition audit, the unit suites, test-bpmp, the beam export audit, test-cli, test-libs over
 # the sibling libraries checked out under `repository/`, the conformance suite
 # (`conformance/`, every cell on every target it declares), test-docs (every
 # reference of `conformance/docs.md` names a cell), tsc-check and test-web.

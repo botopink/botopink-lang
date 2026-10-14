@@ -8,9 +8,16 @@
 #
 # The relative path resolves against the committing checkout's root, so each
 # worktree runs the hook its own tree tracks.
+#
+# It first applies `botopink format` to the commit's staged source files
+# (decision 524 — lib/format-staged.sh: the staged version, into the index),
+# then runs the gate.
 set -euo pipefail
 
 echo "── pre-commit ──"
+# shellcheck source=lib/format-staged.sh
+. "$(git rev-parse --show-toplevel)/scripts/git-hooks/lib/format-staged.sh"
+formatStaged
 # shellcheck source=lib/runner-standalone.sh
 . "$(git rev-parse --show-toplevel)/scripts/git-hooks/lib/runner-standalone.sh"
 runStandaloneGate

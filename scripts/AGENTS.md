@@ -15,8 +15,7 @@ scripts/
 ├── install.sh         ← POSIX one-liner installer
 ├── install.ps1        ← Windows one-liner installer
 ├── release-pack.sh    ← per-target archive + sha256 packer (used by release.yml)
-├── gate.sh            ← the ordered local gate (staged checks + `zig fmt --check modules`, build, format-check, test, test-bpmp, beam export audit, test-cli, test-libs, test-conformance, test-docs)
-├── format-check.sh    ← `botopink format --check` over the compiler's canonical `.bp` trees (`TREES`) — decision 66's caller (a `.bpp` header included: `format` formats it as a module)
+├── gate.sh            ← the ordered local gate (staged checks + `zig fmt --check modules`, build, backend partition audit, test, test-bpmp, beam export audit, test-cli, test-libs, test-conformance, test-docs)
 ├── check-packaging.sh ← the packaging rule across the library repositories (front 98 step 2): a README per example member, an `assert<Subject>(loc: SourceLocation, …)` per `-test` member, no `"git"` to an ecosystem library from an example, every member listed by `botopink-lib-test --list`; each failing path named, exit 1. Not called by `gate.sh` (that call is the gate's)
 ├── test-libs.sh       ← runtime pre-flight + `botopink-lib-test` wrapper: one line per cell and per audited exclusion, one summary line (`zig build test-libs`)
 ├── test-vscode.sh     ← locate the sibling vscode-extension, `npm ci` once, `npm test` (`zig build test-vscode`)
@@ -35,11 +34,13 @@ scripts/
 ├── lib/
 │   ├── gate-mode.sh   ← which gate a checkout runs (`front/*` → step, anything else → full) and what a changed-file list reaches, from the backend partition (sourced by gate.sh; run directly it explains a branch and a file list)
 │   ├── pool.sh        ← the bounded worker pool the shell runners share (sourced by ../conformance/run.sh), and `pool_share`, a stage's part of the gate's one total of jobs (sourced by gate.sh)
-│   └── backend-partition-audit.js ← audits codegen/backend-partition.txt (decision 249): a listed file used by a file of another target fails the gate (stage 3b of gate.sh)
+│   └── backend-partition-audit.js ← audits codegen/backend-partition.txt (decision 249): a listed file used by a file of another target fails the gate (stage 3 of gate.sh)
 └── git-hooks/
     ├── pre-commit                 ← tracked hook, enabled by `git config core.hooksPath scripts/git-hooks` (see ../AGENTS.md §Local gate)
     ├── pre-merge-commit           ← the same gate for a merge that commits by itself (git runs this hook there, not pre-commit)
-    └── lib/runner-standalone.sh   ← the hook's runner → `gate.sh --staged --no-conformance`
+    └── lib/
+        ├── format-staged.sh       ← `formatStaged`: `botopink format` applied to the commit's staged source files, into the index (decision 524; pre-commit only)
+        └── runner-standalone.sh   ← the hook's runner → `gate.sh --staged --no-conformance`
 ```
 
 ## Installers — contract
@@ -145,9 +146,8 @@ whole-tree check is the stage; the staged one is a commit's fast path), then the
 read from `modules/manifest/src/root.zig` because nothing is built yet — another release,
 or an `erl` that does not answer, stops the gate there with the compiler's message,
 `` botopink emits Erlang for OTP 28, and `erl` on PATH is OTP 29 — install OTP 28 and put it
-on PATH ``), `zig build -Doptimize=ReleaseSafe` (§ Build mode), `scripts/format-check.sh` (`botopink
-format --check` over the compiler's canonical `.bp` trees — decision 66's
-caller), `zig build test` (`--cold` deletes
+on PATH ``), `zig build -Doptimize=ReleaseSafe` (§ Build mode), the backend partition audit
+(`lib/backend-partition-audit.js`), `zig build test` (`--cold` deletes
 `modules/compiler-core/.botopinkbuild/runtime-cache` first, and every
 `.botopinkbuild/cache/` under this checkout and each sibling library repository
 — the code cache of the dependencies' compiled modules, the cell durations,
@@ -194,7 +194,7 @@ reaches the former single-file cells too: 474 projects and 854 modules, every on
 
 ### Build mode
 
-The binaries stages 3 and 4b–12 run are built `-Doptimize=ReleaseSafe`, the
+The binaries stages 4b–12 run are built `-Doptimize=ReleaseSafe`, the
 mode `release.yml` ships: the gate runs the compiler a user installs. Every
 `zig build` the gate starts passes the same `$opt`, so no stage reinstalls a
 Debug `zig-out/bin/*` over the one the others are running; stage 4's unit-test
@@ -251,7 +251,7 @@ reaches the wasm cells and the `check` jobs; editing `comptime/infer.zig` reache
 everything. The erlang target owns no file: `codegen/erlang.zig` lowers every
 comptime body on every target, so it is shared (the list says why for each
 emitter file it leaves shared). The list is audited on every gate run
-(`lib/backend-partition-audit.js`, stage 3b) — a listed file imported and used by a
+(`lib/backend-partition-audit.js`, stage 3) — a listed file imported and used by a
 file that is neither listed under the same target nor the list's `dispatcher`
 (`codegen.zig`) fails the gate. The full gate runs everything at every landing, so a
 wrong line can delay a red to the landing, never land one.
@@ -313,7 +313,7 @@ in the full gate too), so a reach of `wasm`/`beam` alone skips stage 8 and a rea
 their counts (§ Stage times, the plan, the budget) are read with the same `--target`, so
 a narrowed stage is held to its narrowed plan; the conformance cells (target `*`: `botopink
 cell check` runs each on every target it declares) and the restriction audits stay in every plan. Every stage that is not a cell set — formatting,
-the OTP release, the build, `botopink format --check`, `zig build test`, `test-bpmp`,
+the OTP release, the build, the backend partition audit, `zig build test`, `test-bpmp`,
 the beam export audit, `test-cli`, `test-docs`, `tsc-check`, `test-web` — runs in both
 modes. Only the full gate writes the green-tree record (§ Green-tree record): a step
 gate ran a subset, and a later `--staged` run on `feat` over the same bytes must not
@@ -480,7 +480,7 @@ and `modules/compiler-core/src/codegen/backend-partition.txt`, and exits 1 namin
 fault: a line that is not `<target> <path>`, a path listed twice, a name that is no target, a
 listed file or `dispatcher` that is not a compiler source, or a listed file imported **and used**
 by a `.zig` that is neither listed under the same target nor the dispatcher (`_ = @import(…)` is
-not a use). `gate.sh` runs it as stage 3b; the step gate's reach (`lib/gate-mode.sh`) and the code
+not a use). `gate.sh` runs it as stage 3; the step gate's reach (`lib/gate-mode.sh`) and the code
 cache's fingerprint trust the list because of it.
 
 ## codemod-import-without-from.py
@@ -559,35 +559,13 @@ python3 scripts/codemod-component-contexts.py [--write] [--format <botopink>] [-
 - With `--format`, each `.bp` / `.d.bp` it changed that `format --check` accepted before
   is formatted after. Without `--write` it only reports.
 
-## format-check.sh
-
-`scripts/format-check.sh` — stage 3 of `gate.sh` and a step of CI's `test` job:
-`zig-out/bin/botopink format --check <tree>` for every tree in its `TREES`
-array, which names the trees the gate holds canonical: `libs/std`, `modules/compiler-cli/tests`, `modules/manifest/tests` and
-`conformance` and erika's cell `../erika/conformance/modules/generic_loader_binding` — every tracked `.bp` of the checkout is under one of them.
-`format --check` on a directory reaches every `.bp` and `.d.bp` under it
-(nested projects included) and structurally leaves out hidden directories,
-`node_modules`, and a conformance cell's module whose `snapshot/output/<module>.snap`
-holds a `refused` record — every target refuses it, it is written to be refused
-(`modules/compiler-cli/src/cli/format_cmd.zig`) — under `conformance`, every former
-`reject/` cell and `modules/lexer_error_in_imported_module/src/pattern.bp` (178 files,
-each of which `format --check` would otherwise rewrite or fail to parse); a module only
-some targets refuse (a departure) is reached;
-the list is not a skip list and there is no other way to exempt a file
-(decision 67). A tree that is red is a red gate, fixed by `botopink format
-<tree>` in a reformat-only commit; a tree the printer cannot round-trip is a
-formatter defect (`01-compiler/16-formatter`), fixed in the printer. A reformat
-carries what quotes the text it moves, in the same commit: `libs/std`'s source
-is quoted verbatim by the `std_package_*` codegen snapshots and by two LSP
-snapshots (`definition_std_module_member`, `completion_array_methods`), and a
-cell's `.snap` pins an `at <file>:<L>:<C>` the reformat of that file can move. Exit `0` when every listed tree is canonical;
-`1` naming the tree and the files, with the `Unchanged` lines filtered out.
-
 ## git-hooks/
 
-`git-hooks/pre-commit` is self-contained: it sources
-`git-hooks/lib/runner-standalone.sh`, which runs `gate.sh --staged --no-conformance` of the
-committing checkout. `git-hooks/pre-merge-commit` runs the same: `git merge`
+`git-hooks/pre-commit` is self-contained. It first sources `git-hooks/lib/format-staged.sh`
+and runs `formatStaged` — `botopink format` applied to the commit (decision 524; § format-staged.sh
+below) — then sources `git-hooks/lib/runner-standalone.sh`, which runs `gate.sh --staged
+--no-conformance` of the committing checkout. `git-hooks/pre-merge-commit` runs the same gate, and
+formats nothing (each side's blobs were formatted when they were committed): `git merge`
 runs `pre-merge-commit`, **not** `pre-commit`, when a merge needs no conflict
 resolution and records its commit itself, so without it an auto-merge was
 never gated unless its author amended it (a merge that stops on a conflict is
@@ -595,6 +573,37 @@ committed with `git commit`, which runs `pre-commit`). Nothing installs them; a
 clone enables both with `git config core.hooksPath scripts/git-hooks` (the
 relative path resolves against the checkout's root, so every worktree runs its
 own tracked hooks).
+
+### format-staged.sh
+
+`botopink format` is applied, never checked (decision 524, amending 66): no stage of `gate.sh`
+fails on a file that is not canonical, and the commit hook formats what the commit records.
+`formatStaged` formats **the version entering the commit** and never pulls in an unstaged change:
+
+1. the staged source files (`git diff --cached --diff-filter=ACMR` over `*.bp`, `*.bpp`,
+   `*.botopink` — `.d.bp` included) are checked out of the index (`git checkout-index --prefix`)
+   into a scratch tree, with the `snapshot/output/` files of every directory above them;
+2. `botopink format .` walks the scratch tree — the walk of the checkout, so decision 67's
+   structural exemptions hold there too (a hidden directory, `node_modules`, a conformance cell's
+   module whose `snapshot/output/<module>.snap` holds a `refused` record);
+3. a staged file the formatter changed is written as a blob (`git hash-object -w`) and replaces
+   the staged one in the index (`git update-index --cacheinfo`, its mode kept) — the committing
+   index, `GIT_INDEX_FILE`, so `git commit -a` and `git commit <path>` are formatted too (under
+   `git commit <path>` the real index git writes beside the committed one, `index.lock`, takes the
+   blob as well, so the index matches the commit);
+4. the working-tree file takes the formatted text only when it holds exactly the staged text; a
+   file with unstaged changes keeps them, untouched, and the commit records the formatted staged
+   version.
+
+The formatter is this checkout's own build (`zig build -Doptimize=ReleaseSafe`, the gate's stage 2,
+which the gate then finds cached), so a commit that changes the printer formats its sources with the
+printer it commits. A file the formatter cannot parse is committed as written, its diagnostic
+printed; a build that fails formats nothing (the gate's stage 2 then reports it). Nothing is built
+when no source file is staged. A reformat moves what quotes the text it moves: `libs/std`'s source
+is quoted verbatim by the `std_package_*` codegen snapshots and by two LSP snapshots
+(`definition_std_module_member`, `completion_array_methods`), and a cell's `.snap` pins an
+`at <file>:<L>:<C>` — write such a file formatted (`botopink format <file>`) before recording
+what quotes it. `git commit --no-verify` skips the formatting with the gate.
 
 ## test-libs.sh
 

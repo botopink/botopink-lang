@@ -284,7 +284,7 @@ gate's time goes):
 
 1. `--staged`: conflict markers and `zig fmt --check` on staged files, and a staged snapshot candidate (`*.snap.new`, `*.snap.md.new` — `git add -f` gets past `.gitignore`) is refused; then, on every run, `zig fmt --check modules` — a `.zig` file red anywhere in the tree fails the gate, staged or not;
 2. `zig build -Doptimize=ReleaseSafe` — the mode `release.yml` ships, and the binaries every later stage runs (every `zig build` of the gate passes the same flag; stage 4's unit tests stay Debug);
-3. `scripts/format-check.sh` (`botopink format --check` over the compiler's canonical `.bp` trees — decision 66's caller; `TREES` in the script names them, and every tracked `.bp` is under one or structurally exempt);
+3. `node scripts/lib/backend-partition-audit.js` (the backend partition, `codegen/backend-partition.txt`, audited — decision 249); no stage checks `botopink format` (decision 524: it is applied by the commit hook, never checked);
 4. `zig build test` (compiler-core, language-server, CLI and lib-test-runner unit suites; `--cold` deletes `modules/compiler-core/.botopinkbuild/runtime-cache` and every `.botopinkbuild/cache/` of this checkout and each sibling library repository first, naming each — required for the run that decides a merge);
 5. `zig build test-bpmp` (the package manager's unit suite);
 6. `scripts/beam_export_audit.sh` (every beam snapshot module assembles with every function exported);
@@ -332,7 +332,13 @@ working tree, sibling libraries and toolchain were already gated green runs
 stage 1 only (`scripts/AGENTS.md` § Green-tree record).
 
 `scripts/git-hooks/pre-commit` is the tracked pre-commit hook, self-contained in
-every checkout (standalone clone or meta submodule): it sources
+every checkout (standalone clone or meta submodule). It first applies `botopink
+format` to the commit (decision 524 — `scripts/git-hooks/lib/format-staged.sh`):
+each staged `.bp` / `.d.bp` / `.bpp` is formatted **as staged** — its index blob,
+never the working tree — by this checkout's own build, and the result replaces it
+in the index; the working-tree file takes it too when it holds no unstaged change,
+and otherwise keeps its unstaged changes untouched. A file the formatter cannot
+parse is committed as written; formatting never fails the hook. It then sources
 `scripts/git-hooks/lib/runner-standalone.sh`, which runs `scripts/gate.sh
 --staged --no-conformance`. `scripts/git-hooks/pre-merge-commit` runs the same for a merge that
 commits by itself — git runs that hook there, not `pre-commit`, so an

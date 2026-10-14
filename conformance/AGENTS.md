@@ -2165,7 +2165,7 @@ row is pinned by a cell that passes on every target its kind has:
 |---|---|---|---|
 | a module-level `var` | absent | `var` and `pub var`, with or without a `#[@BeamMemory.<member>]` above it; a `val` assigned anywhere is a located error naming `var` (decision 38) | `modules/module_var`, `modules/beam_memory_off_beam`, `modules/val_assign_module` |
 | §5.1 `Pattern { body }` arms, §5.3b section arms | `06 N22` | parse, check and run | `test/case_arms.bp`, `test/case_sections.bp` |
-| a block-shaped statement not last in its block (`if (1 > 0) { … }` then `@print("b");`) | decision 29 — "the `;` goes" | parses and runs since C-13 made the `;` after a braced block optional; the formatter writes no `;` there | every cell `botopink format` rewrote (FC-4) |
+| a block-shaped statement not last in its block (`if (1 > 0) { … }` then `@print("b");`) | decision 29 — "the `;` goes" | parses and runs: the parser accepts a `;` after a braced block statement and `botopink format` removes it (C-13, decision 524) | every cell `botopink format` rewrote (FC-4) |
 | `adder(3)(4)` — calling the result of a call | "make it parse" (14) | parses, checks and runs | `test/curried_call.bp` |
 | `#(a: i32, b: string)[]` — an array of labeled tuples | "make it parse" (14) | parses, checks and runs, with `@Result<i32, string>[]` and `(i32 \| string)[]` | `test/type_suffix.bp` |
 | `??` | deliberately absent (14) | parses and runs (decision 28); `catch` is `@Result`-only, so nothing else gives an optional a default | `test/nullish_default.bp` |
@@ -2281,9 +2281,10 @@ are gone.
   red (`mod_tree`, `std_import`, `two_modules`) are **formatted**: `botopink format` inside each
   (brace bodies expanded, `import {a, b}` spacing) and `botopink format --check` exits 0 in all four
   `modules/*` roots and in `deps/shapesdsl`. The cells' output did not move. Nothing in this suite
-  *calls* `format --check`: the caller is `scripts/format-check.sh`, stage 3 of `scripts/gate.sh`.
-  `conformance` is one of its `TREES`: `test/` and `modules/` are canonical — a cell
-  is written formatted (`botopink format <file>`), and an unformatted one is a red gate. Two
+  *calls* `format --check`, and no gate stage does (decision 524, amending 66): the commit hook
+  formats each staged `.bp` (`scripts/git-hooks/lib/format-staged.sh`), so `test/` and `modules/`
+  are committed canonical — a cell is written formatted (`botopink format <file>`) before its
+  snapshot is recorded, since the hook's reformat would move a pinned `<file>:<L>:<C>`. Two
   things are outside the walk, both by structure (`format_cmd.zig`), never by a list: `modules/lexer_error_in_imported_module/src/pattern.bp` — the bad escape the cell exists to
   refuse — by the second arm (gate-c: a `.bp` under `modules/<cell>/` that the cell's `snapshot`
   files name and that does not lex or parse). A `modules/<cell>/snapshot/` record pins a

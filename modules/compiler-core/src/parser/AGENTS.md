@@ -170,18 +170,19 @@ not copy the loop.** The semicolon policy is per block and is what each copy
 already applied — they are recorded above rather than unified, because
 tightening one would refuse a program that compiles today.
 
-**A braced block statement's `;` is optional in every block** (C-13 — decision 29
-(c), ordered by decision 60). After a statement, `Parser.isBracedBlockStmt` asks
+**A braced block statement's `;` is accepted in every block** (C-13 — decision 29
+(c), ordered by decision 60; decision 524). After a statement, `Parser.isBracedBlockStmt` asks
 whether it is an `if` (not `a ?? b`'s desugaring), a loop or a `case` **and** the
 token that ended it is its `}`; if so the `;` is matched, never required,
 whatever the block's policy — `parseBlockBody`, `parseBlockExpr` and the
 pre-decision-8 `case` arm block (`1 -> { … }`) alike. The test is the closing
 brace, not the keyword: `if (c) return x;` keeps its `;`, and so does a binding or
 a `return` whose value is braced, since the statement there is the binding.
-`format.zig` prints no `;` after exactly these statements. The `;` stays accepted
-until every tree has migrated — rejecting it (`blockStatementSemicolon`, front
-15's parked patch) would refuse the sibling libraries and `conformance`, which
-still write it.
+`format.zig` prints no `;` after exactly these statements. **C-13 is formatting,
+never a refusal** (decision 524): the parser accepts the `;` for good and `botopink
+format` removes it — the commit hook applies the formatter, so a committed tree
+does not keep it. There is no `blockStatementSemicolon` error; the refusal front
+15 parked is withdrawn.
 
 ## The `if` condition and its binder (C-08)
 

@@ -478,9 +478,9 @@ gone, not aliased (decision 127).
 
 - Stable, additive signatures — renames force snapshot churn.
 - `.d.bp` files stay declarative (no bodies).
-- **Every `.bp` and `.d.bp` of `libs/std` is at the formatter's canonical form,
-  and `scripts/format-check.sh` holds it there** (`libs/std` is one of its
-  `TREES`: an edit here is followed by `botopink format libs/std`). The
+- **Every `.bp` and `.d.bp` of `libs/std` is at the formatter's canonical form**,
+  and the commit hook keeps it there (decision 524: it formats each staged file;
+  an edit here is written formatted with `botopink format <file>`). The
   `std_package_*` codegen snapshots and two LSP snapshots
   (`definition_std_module_member`, `completion_array_methods`) quote this source
   verbatim, so a change of layout in `src/collections.bp` or in a signature of

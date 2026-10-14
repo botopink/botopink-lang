@@ -4,8 +4,8 @@
 //// (`requiredExceptLast`). `for (xs) { x -> @print(x) };` was a parse error
 //// (`this token cannot appear here`) while `{ x -> @print(x); }` compiled.
 //// Specified by 15 as `loop (xs) { … }`; decision 105 renamed the collection
-//// loop to `for`, which is the spelling here. The `;` AFTER the loop's `}` is
-//// decision 29's (C-13) and stays until that lands.
+//// loop to `for`, which is the spelling here. A `;` AFTER the loop's `}` is
+//// accepted and removed by `botopink format` (C-13, decision 524).
 
 fn f(x: i32) -> i32 {
     return x + 1;
