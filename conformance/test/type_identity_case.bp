@@ -10,10 +10,10 @@ type Vec(name: string, age: i32)
 fn nameOf(v: Person | Vec) -> string {
     return case v {
         Person {
-            "person";
+            "person"
         }
         Vec {
-            "vec";
+            "vec"
         }
     };
 }

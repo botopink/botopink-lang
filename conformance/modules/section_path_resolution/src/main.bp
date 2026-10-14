@@ -38,10 +38,10 @@ pub type Token {
 fn breakName(b: Token.Layout.Break) -> string {
     return case b {
         .Zeta {
-            "zeta";
+            "zeta"
         }
         .Eta {
-            "eta";
+            "eta"
         }
     };
 }
@@ -51,15 +51,15 @@ fn colorOf(t: Token) -> string {
         Color(inner) {
             case inner {
                 .Hex(v) {
-                    v;
+                    v
                 }
                 .Red {
-                    "red";
+                    "red"
                 }
             }
         }
         _ {
-            "other";
+            "other"
         }
     };
 }
@@ -67,10 +67,10 @@ fn colorOf(t: Token) -> string {
 fn textOf(t: Token.Text) -> string {
     return case t {
         .Bold {
-            "bold";
+            "bold"
         }
         .Italic {
-            "italic";
+            "italic"
         }
     };
 }

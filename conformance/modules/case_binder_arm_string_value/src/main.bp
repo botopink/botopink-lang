@@ -10,29 +10,29 @@ pub fn main() {
     val d = D(name: "a", age: 320);
     val s = case d.age {
         3 {
-            "three";
+            "three"
         }
         _ { n ->
-            "max " + n.toString();
+            "max " + n.toString()
         }
     };
     @print(s);
     val x = 3;
     val t = case x {
         3 {
-            "three";
+            "three"
         }
         _ { n ->
-            "max " + n.toString();
+            "max " + n.toString()
         }
     };
     @print(t);
     @print(case d.age {
         3 {
-            "three";
+            "three"
         }
         _ { n ->
-            "age " + n.toString();
+            "age " + n.toString()
         }
     });
 }

@@ -10,13 +10,13 @@ type Order {
 fn toInt(o: Order) -> i32 {
     return case o {
         .Lt {
-            -1;
+            -1
         }
         .Eq {
-            0;
+            0
         }
         .Gt {
-            1;
+            1
         }
     };
 }
@@ -24,13 +24,13 @@ fn toInt(o: Order) -> i32 {
 fn describe(n: i32) -> string {
     return case n {
         0 {
-            "zero";
+            "zero"
         }
         1...9 {
-            "digit";
+            "digit"
         }
         _ { v ->
-            "big " + v.toString();
+            "big " + v.toString()
         }
     };
 }
@@ -38,10 +38,10 @@ fn describe(n: i32) -> string {
 fn yesNo(b: bool) -> string {
     return case b {
         true {
-            "yes";
+            "yes"
         }
         false {
-            "no";
+            "no"
         }
     };
 }
@@ -49,13 +49,13 @@ fn yesNo(b: bool) -> string {
 fn code(s: string) -> i32 {
     return case s {
         "a" {
-            1;
+            1
         }
         "b" {
-            2;
+            2
         }
         _ {
-            0;
+            0
         }
     };
 }
@@ -64,7 +64,7 @@ fn doubledPlusOne(n: i32) -> i32 {
     return case n {
         i32 { m ->
             val d = m * 2;
-            d + 1;
+            d + 1
         }
     };
 }
@@ -103,13 +103,13 @@ test "§5.1 case is an expression bound to a val" {
     val o = Order.Eq;
     val label = case o {
         .Lt {
-            "less";
+            "less"
         }
         .Eq {
-            "equal";
+            "equal"
         }
         .Gt {
-            "greater";
+            "greater"
         }
     };
     assert label == "equal";

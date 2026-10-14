@@ -12,7 +12,7 @@ fn named(b: Box<i32>) -> string {
     return case b {
         Box(value: 3, ..) -> "three";
         _ { o ->
-            o.label;
+            o.label
         }
     };
 }
@@ -24,21 +24,21 @@ pub fn main() {
     val s = case b {
         Box(value: 3, ..) -> "three";
         _ { o ->
-            o.label + "!";
+            o.label + "!"
         }
     };
     @print(s);
     @print(case b {
         Box(value: 3, ..) -> 0;
         _ { o ->
-            o.value + 1;
+            o.value + 1
         }
     });
     val p = Pt(x: 5, label: "pt");
     @print(case p {
         Pt(x: 3, ..) -> "three";
         _ { o ->
-            o.label;
+            o.label
         }
     });
 }

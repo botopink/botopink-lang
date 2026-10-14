@@ -33,10 +33,10 @@ fn positions(n: i32) -> @Result<i32, string> {
     if (try positive(n)) total = total + 1;
     val word = case try parse(n) {
         0 {
-            "zero";
+            "zero"
         }
         _ {
-            "more";
+            "more"
         }
     };
     @print(word);

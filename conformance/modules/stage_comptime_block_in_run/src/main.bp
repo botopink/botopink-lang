@@ -18,7 +18,7 @@ fn cabecalho() -> string {
 fn campos2() -> string {
     val n = comptime {
         val fs = campos("x,y,z");
-        break fs + "|";
+        fs + "|"
     };
     val ok = if (clock.nowMillis() > 0) "ok" else "no";
     return n + " " + ok;

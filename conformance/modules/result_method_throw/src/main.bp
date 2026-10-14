@@ -43,10 +43,10 @@ fn checkLength(body: string, limit: i32) -> @Result<string, string> {
 fn describe(r: @Result<string, string>) -> string {
     return case r {
         Ok(v) {
-            "ok " + v;
+            "ok " + v
         }
         Error(e) {
-            "error " + e;
+            "error " + e
         }
     };
 }

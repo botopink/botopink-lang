@@ -1,3 +1,2 @@
 botopink-cell 1
-refused error: block-tail-value: an `@block` used as a value has no valued `return` — its tail expression is not its value
-at src/main.bp:8:13
+out 3 40 big

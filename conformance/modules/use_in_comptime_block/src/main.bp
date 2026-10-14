@@ -13,7 +13,7 @@ pub val themeContext = comptime createContext(Theme(mode: "default"));
 fn Label() -> @Component<Element> {
     val mode = comptime {
         val t = use context(Theme);
-        break t.mode;
+        t.mode
     };
     return Element(text: mode);
 }

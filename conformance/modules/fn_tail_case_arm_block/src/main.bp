@@ -6,11 +6,11 @@
 fn classify(n: i32) -> string {
     val label = case n {
         0 {
-            "zero";
+            "zero"
         }
         _ {
             val sign = if (n < 0) "neg" else "pos";
-            sign + n.toString();
+            sign + n.toString()
         }
     };
     label
@@ -19,10 +19,10 @@ fn classify(n: i32) -> string {
 fn pick(n: i32) -> fn(x: i32) -> i32 {
     val f = case n {
         1 {
-            fn(x: i32) -> i32 { x + 1 };
+            fn(x: i32) -> i32 { x + 1 }
         }
         _ {
-            { x -> x * n };
+            { x -> x * n }
         }
     };
     f

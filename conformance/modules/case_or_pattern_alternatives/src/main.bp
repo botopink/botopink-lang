@@ -77,7 +77,7 @@ fn pair(p: #(i32, i32)) -> string {
 fn mixed(n: i32) -> string {
     return case n {
         0 | 7 { k ->
-            "zero or seven: " + k.toString();
+            "zero or seven: " + k.toString()
         }
         _ -> "else";
     };

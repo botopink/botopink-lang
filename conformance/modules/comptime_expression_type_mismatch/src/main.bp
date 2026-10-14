@@ -1,4 +1,4 @@
-//// Decision 255 (2) — `comptime <expr>` is the block that breaks with
+//// Decision 255 (2) — `comptime <expr>` is the block whose tail is
 //// `<expr>`, so its type is the expression's: a `string` under an expected
 //// `i32` is the mismatch, located at `comptime` as the block form's is.
 

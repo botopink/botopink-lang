@@ -33,10 +33,10 @@ fn make(class: string) -> Tag {
 fn leafClass(n: Node) -> string {
     return case n {
         .Leaf(c) {
-            c;
+            c
         }
         .Empty {
-            "none";
+            "none"
         }
     };
 }

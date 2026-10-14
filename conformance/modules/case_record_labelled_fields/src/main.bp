@@ -21,7 +21,7 @@ type Pair(a: i32, b: i32)
 fn show(d: Dog) -> string {
     return case d {
         Dog(name: n, breed: b, age: a) {
-            n + "/" + b + "/" + "${a ?? 0}";
+            n + "/" + b + "/" + "${a ?? 0}"
         }
     };
 }
@@ -29,7 +29,7 @@ fn show(d: Dog) -> string {
 fn swapped(d: Dog) -> string {
     return case d {
         Dog(age: a, breed: b, name: n) {
-            n + " " + b + " " + "${a ?? 0}";
+            n + " " + b + " " + "${a ?? 0}"
         }
     };
 }
@@ -37,7 +37,7 @@ fn swapped(d: Dog) -> string {
 fn breedOf(d: Dog) -> string {
     return case d {
         Dog(breed: b, ..) {
-            b;
+            b
         }
     };
 }
@@ -45,7 +45,7 @@ fn breedOf(d: Dog) -> string {
 fn positional(d: Dog) -> string {
     return case d {
         Dog(n, b, a) {
-            n + "-" + b + "-" + "${a ?? 0}";
+            n + "-" + b + "-" + "${a ?? 0}"
         }
     };
 }
@@ -53,13 +53,13 @@ fn positional(d: Dog) -> string {
 fn pet(p: Dog | Cat) -> string {
     return case p {
         Dog(name: n, breed: b, ..) {
-            "dog " + n + " " + b;
+            "dog " + n + " " + b
         }
         Cat(lives: l, name: n) {
-            "cat " + n + " " + l.toString();
+            "cat " + n + " " + l.toString()
         }
         _ {
-            "?";
+            "?"
         }
     };
 }
@@ -67,7 +67,7 @@ fn pet(p: Dog | Cat) -> string {
 fn owner(o: Owner) -> string {
     return case o {
         Owner(dog: Dog(breed: b, name: n, ..), who: w) {
-            w + ":" + n + "/" + b;
+            w + ":" + n + "/" + b
         }
     };
 }
@@ -75,13 +75,13 @@ fn owner(o: Owner) -> string {
 fn pairs(p: Pair) -> string {
     return case p {
         Pair(b: 0, a: x) {
-            "b0 " + x.toString();
+            "b0 " + x.toString()
         }
         Pair(b: y, a: 0) {
-            "a0 " + y.toString();
+            "a0 " + y.toString()
         }
         _ {
-            "other";
+            "other"
         }
     };
 }
@@ -89,10 +89,10 @@ fn pairs(p: Pair) -> string {
 fn guarded(d: Dog) -> string {
     return case d {
         Dog(breed: b, ..) when (b == "lab") {
-            "lab!";
+            "lab!"
         }
         _ {
-            "no";
+            "no"
         }
     };
 }

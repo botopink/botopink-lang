@@ -14,10 +14,10 @@ type CatB(name: string, owner: ?string)
 fn describe(p: DogB | CatB) -> string {
     return case p {
         DogB { d ->
-            "dog " + d.name + " " + d.age.toString() + " " + d.tags.join(",");
+            "dog " + d.name + " " + d.age.toString() + " " + d.tags.join(",")
         }
         CatB { c ->
-            "cat " + c.name + " " + (c.owner ?? "stray");
+            "cat " + c.name + " " + (c.owner ?? "stray")
         }
     };
 }
@@ -25,10 +25,10 @@ fn describe(p: DogB | CatB) -> string {
 fn guarded(p: DogB | CatB) -> string {
     return case p {
         DogB when (p is DogB) { d ->
-            "guarded " + d.name;
+            "guarded " + d.name
         }
         _ {
-            "other";
+            "other"
         }
     };
 }

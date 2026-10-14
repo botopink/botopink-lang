@@ -22,7 +22,7 @@ fn returnedBlock(v: Value) -> @Result<i32, string> {
     return case v {
         Num(n) {
             val k = g(n);
-            k + 1;
+            k + 1
         }
         Text(s) {
             val m = "y" + s;

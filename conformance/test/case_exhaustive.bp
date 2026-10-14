@@ -10,10 +10,10 @@ type Maybe<T> {
 fn size(v: i32 | string) -> i32 {
     return case v {
         i32 { n ->
-            n;
+            n
         }
         string { s ->
-            s.length;
+            s.length
         }
     };
 }
@@ -21,10 +21,10 @@ fn size(v: i32 | string) -> i32 {
 fn orNone(m: Maybe<i32>) -> i32 | string {
     return case m {
         .Some(value: n) {
-            n;
+            n
         }
         .None {
-            "none";
+            "none"
         }
     };
 }
@@ -32,7 +32,7 @@ fn orNone(m: Maybe<i32>) -> i32 | string {
 fn wholeType(n: i32) -> i32 {
     return case n {
         i32 { m ->
-            m + 1;
+            m + 1
         }
     };
 }
@@ -40,10 +40,10 @@ fn wholeType(n: i32) -> i32 {
 fn innerSize(m: Maybe<i32 | string>) -> i32 {
     return case m {
         .Some(value: v) {
-            size(v);
+            size(v)
         }
         .None {
-            0;
+            0
         }
     };
 }

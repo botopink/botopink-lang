@@ -15,10 +15,10 @@ type Maybe<T> {
 fn area(s: Shape) -> i32 {
     return case s {
         Shape.Circle(r) {
-            r * r * 3;
+            r * r * 3
         }
         Shape.Rect(width: w, height: h) {
-            w * h;
+            w * h
         }
     };
 }
@@ -26,10 +26,10 @@ fn area(s: Shape) -> i32 {
 fn width(s: Shape) -> i32 {
     return case s {
         .Rect(width: w, ..) {
-            w;
+            w
         }
         .Circle(..) {
-            0;
+            0
         }
     };
 }
@@ -37,10 +37,10 @@ fn width(s: Shape) -> i32 {
 fn firstOfRect(s: Shape) -> i32 {
     return case s {
         .Rect(w, ..) {
-            w;
+            w
         }
         .Circle(r) {
-            r;
+            r
         }
     };
 }
@@ -48,10 +48,10 @@ fn firstOfRect(s: Shape) -> i32 {
 fn textLength(m: Maybe<string>) -> i32 {
     return case m {
         .Some(v) {
-            v.length;
+            v.length
         }
         .None {
-            0;
+            0
         }
     };
 }
@@ -59,10 +59,10 @@ fn textLength(m: Maybe<string>) -> i32 {
 fn labelOrDefault(m: Maybe<string>) -> string {
     return case m {
         Maybe.Some(value: v) {
-            v;
+            v
         }
         Maybe.None {
-            "default";
+            "default"
         }
     };
 }
@@ -70,10 +70,10 @@ fn labelOrDefault(m: Maybe<string>) -> string {
 fn sumPair(m: Maybe<#(i32, i32)>) -> i32 {
     return case m {
         .Some(#(a, b)) {
-            a + b;
+            a + b
         }
         .None {
-            -1;
+            -1
         }
     };
 }

@@ -1822,11 +1822,21 @@ plain `toString()` and `Decimal.parse`, on all four targets — and two aborts,
 `modules/decimal_div_rounding_necessary_aborts` and `modules/decimal_div_by_zero_aborts` (wasm traps
 with no text: `abort` alone there). The parent refused the import (`unknown "std" module`).
 
-`front/block-backends` (decision 2: an `@block`'s `return` is the block's value) adds
-`modules/block_return_is_block_value` — `val x = @block { return 3; }`, a branch's `return`, a string,
-an `f64`, a `case` arm's `return`, a nested `@block`, a block inside a `for` and a statement block
-ending in `return;`, on all four targets. The parent returned from the enclosing function on beam
-and wasm and, from a block inside a loop, on erlang.
+Decision 525 (blocks: a `{` without `->` is a block, never a closure; `@block` removed) turns the
+`@block` cells into blocks' cells: `modules/block_tail_value` (a block's value is its tail),
+`modules/block_return_leaves_function` (a `return` in a block leaves the enclosing function — from
+the block, a `case` arm at its end, a nested block, a block in a `for` body, a statement block),
+`modules/block_for_return_leaves_function`, `modules/block_partial_return`,
+`modules/block_reassigns_enclosing_var` and `modules/block_value_reassigns_enclosing_var` (a plain
+reassignment on every target, from the body, an `if` / `else` at its end and a loop), on all four
+targets; and its refusals, each located: `modules/block_builtin_removed` (`removed-block-builtin`),
+`modules/block_trailing_not_function` and `modules/block_argument_not_function`
+(`block-not-function`, "missing `->`?"), `modules/block_void_value_refused` (`block-void-value`),
+`modules/comptime_block_break_value` (`block-break-value`) and `modules/case_arm_no_value`
+(`case-arm-no-value`). `modules/async_block_tail_value` and `modules/async_block_tail_case` pin an
+`async { … }` block's tail as its task's value: the parent dropped it (commonJS printed `null`,
+erlang raised `case_clause` on a `case` at the end). The cells whose `comptime { …; break v; }` or
+value `case` arm ended in `;` are rewritten in the new spelling, their answers unchanged.
 
 `fix-js-gaps` (gaps `libs/validation` met) adds `modules/imported_variant_positional_payload` —
 `Circle(r)`, `Rect(w, h)`, `Two(l, r)` and a `val assert Circle(r)` over enums of a sibling module, on

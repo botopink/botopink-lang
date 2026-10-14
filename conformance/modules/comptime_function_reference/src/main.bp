@@ -20,7 +20,7 @@ pub fn main() {
         d = d.insert("two", two);
         d = d.insert("three", three);
         d = d.insert("four", { -> two() + two() });
-        break d;
+        d
     };
     for (fs.keys()) { k ->
         val f = fs[k];

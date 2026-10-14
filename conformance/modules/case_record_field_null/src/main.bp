@@ -15,10 +15,10 @@ type Flag(on: bool, n: i32)
 fn describe(b: Box) -> string {
     return case b {
         Box(label: null, n: k) {
-            "empty " + k.toString();
+            "empty " + k.toString()
         }
         Box(label: l, n: k) {
-            "full " + k.toString();
+            "full " + k.toString()
         }
     };
 }
@@ -26,10 +26,10 @@ fn describe(b: Box) -> string {
 fn positional(b: Box) -> string {
     return case b {
         Box(null, _) {
-            "none";
+            "none"
         }
         Box(l, _) {
-            "some";
+            "some"
         }
     };
 }
@@ -37,13 +37,13 @@ fn positional(b: Box) -> string {
 fn literal(b: Box) -> string {
     return case b {
         Box(label: "x", n: 2) {
-            "x2";
+            "x2"
         }
         Box(label: null, n: 0) {
-            "null0";
+            "null0"
         }
         _ {
-            "other";
+            "other"
         }
     };
 }
@@ -51,10 +51,10 @@ fn literal(b: Box) -> string {
 fn hits(c: Count) -> string {
     return case c {
         Count(hits: null, name: n) {
-            n + " never";
+            n + " never"
         }
         Count(hits: h, name: n) {
-            n + " " + (h ?? 0).toString();
+            n + " " + (h ?? 0).toString()
         }
     };
 }
@@ -62,10 +62,10 @@ fn hits(c: Count) -> string {
 fn flag(f: Flag) -> string {
     return case f {
         Flag(on: true, n: k) {
-            "on " + k.toString();
+            "on " + k.toString()
         }
         Flag(on: false, n: k) {
-            "off " + k.toString();
+            "off " + k.toString()
         }
     };
 }

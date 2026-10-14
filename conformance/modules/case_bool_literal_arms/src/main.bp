@@ -7,10 +7,10 @@
 fn braces(b: bool) -> string {
     return case b {
         true {
-            "yes";
+            "yes"
         }
         false {
-            "no";
+            "no"
         }
     };
 }
@@ -25,13 +25,13 @@ fn arrows(b: bool) -> string {
 fn guarded(b: bool, n: i32) -> string {
     return case b {
         true when (n > 1) {
-            "many";
+            "many"
         }
         true {
-            "one";
+            "one"
         }
         false {
-            "none";
+            "none"
         }
     };
 }

@@ -8,10 +8,10 @@
 fn size(v: i32 | string) -> i32 {
     return case v {
         i32 { n ->
-            n;
+            n
         }
         string { s ->
-            s.length;
+            s.length
         }
     };
 }

@@ -46,10 +46,10 @@ fn contains<T>(xs: T[], x: T) -> bool {
 fn someIs<T>(m: Maybe<T>, x: T) -> bool {
     return case m {
         Maybe.Some(value: v) {
-            v == x;
+            v == x
         }
         Maybe.None {
-            false;
+            false
         }
     };
 }

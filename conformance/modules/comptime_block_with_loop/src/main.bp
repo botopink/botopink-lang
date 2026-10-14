@@ -22,7 +22,7 @@ pub fn main() {
         for ([1, 2, 3]) { b ->
             d = add(d, b);
         }
-        break d;
+        d
     };
     @print(d);
     val words = comptime {
@@ -30,7 +30,7 @@ pub fn main() {
         for (["a", "bc", "def"]) { w ->
             out.push(w + w.length().toString());
         }
-        break out;
+        out
     };
     @print(words);
 }

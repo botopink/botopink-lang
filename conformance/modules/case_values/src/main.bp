@@ -8,13 +8,13 @@ type Shape {
 fn describe(s: Shape) -> string {
     return case s {
         .Circle(r) when (r == 0) {
-            "a point";
+            "a point"
         }
         .Circle(r) {
-            "circle " + r.toString();
+            "circle " + r.toString()
         }
         .Rect(width: w, height: h) {
-            "rect " + w.toString() + "x" + h.toString();
+            "rect " + w.toString() + "x" + h.toString()
         }
     };
 }

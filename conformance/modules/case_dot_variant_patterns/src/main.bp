@@ -6,10 +6,10 @@ type Shape {
 fn describe(s: Shape) -> i32 {
     return case s {
         .Rect(width: w, ..) {
-            w;
+            w
         }
         .Circle(r) {
-            r;
+            r
         }
     };
 }

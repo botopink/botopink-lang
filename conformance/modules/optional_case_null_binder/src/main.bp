@@ -2,10 +2,10 @@ pub fn main() {
     val x: ?i32 = 5;
     val a = case x {
         null {
-            "absent";
+            "absent"
         }
         v {
-            "present " + v.toString();
+            "present " + v.toString()
         }
     };
     @print(a);

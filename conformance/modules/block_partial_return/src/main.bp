@@ -1,17 +1,16 @@
-//// 01-compiler/01-checker row "a partially returning `@block`" (decision 2) —
-//// every path of an `@block` used as a value leaves through `return`: here the
-//// false path runs off the end, its tail `4` no value, so the block is
-//// `block-tail-value` at the block. The parent binary checked it and printed
-//// `null` on commonJS, `4` on erlang, `0` on wasm on the fall-through path.
+//// Decision 525 — a block that returns on some paths: its `return` leaves
+//// the enclosing function, and its tail is its value on the path that runs
+//// off its end. `@block` refused the same body as `block-tail-value`.
 
 fn pick(c: bool) -> i32 {
-    val a = @block{
+    val a = {
         if (c) return 3;
-        4;
+        4
     };
-    return a;
+    return a * 10;
 }
 
 pub fn main() {
+    @print(pick(true));
     @print(pick(false));
 }

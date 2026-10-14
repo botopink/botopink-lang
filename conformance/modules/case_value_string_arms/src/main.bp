@@ -19,10 +19,10 @@ pub fn main() {
 
     val braced = case x {
         5 {
-            "five";
+            "five"
         }
         _ {
-            "other";
+            "other"
         }
     };
     @print(braced);
@@ -36,10 +36,10 @@ pub fn main() {
     val y = 7;
     val other = case y {
         5 {
-            "five";
+            "five"
         }
         _ {
-            "other";
+            "other"
         }
     };
     @print(other);

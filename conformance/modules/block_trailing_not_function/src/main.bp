@@ -1,0 +1,9 @@
+//// Decision 525 — a trailing `{` without `->` is a block, never a closure; a
+//// trailing position expects a function, so it is refused at the block with
+//// the hint "missing `->`?". A trailing lambda with no parameter is written
+//// `f(x) { -> … }`.
+
+pub fn main() {
+    val xs = [1, 2];
+    xs.forEach { @print("each") };
+}

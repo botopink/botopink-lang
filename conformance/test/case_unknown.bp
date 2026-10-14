@@ -10,16 +10,16 @@ type Maybe<T> {
 fn describe(x: unknown) -> string {
     return case x {
         i32 { n ->
-            "number " + n.toString();
+            "number " + n.toString()
         }
         string when (x == "") {
-            "empty text";
+            "empty text"
         }
         string { s ->
-            "text " + s;
+            "text " + s
         }
         _ {
-            "other";
+            "other"
         }
     };
 }
@@ -27,13 +27,13 @@ fn describe(x: unknown) -> string {
 fn innerLength(b: unknown) -> i32 {
     return case b {
         Maybe.Some(value: v) when (v is string) {
-            v.length;
+            v.length
         }
         Maybe.Some(value: v) {
-            -1;
+            -1
         }
         _ {
-            -2;
+            -2
         }
     };
 }

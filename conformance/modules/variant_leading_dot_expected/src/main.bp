@@ -20,10 +20,10 @@ pub type Hole {
 pub fn holeOf(h: Hole) -> string {
     return case h {
         .Circle {
-            "hole-circle";
+            "hole-circle"
         }
         .Round(r) {
-            "hole-round";
+            "hole-round"
         }
     };
 }
@@ -31,10 +31,10 @@ pub fn holeOf(h: Hole) -> string {
 pub fn shapeOf(s: Shape) -> string {
     return case s {
         .Circle {
-            "shape-circle";
+            "shape-circle"
         }
         .Round(r) {
-            "shape-round";
+            "shape-round"
         }
     };
 }

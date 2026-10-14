@@ -16,10 +16,10 @@ fn mark(x: string, suffix: string) -> string {
 fn pick(m: Mode) -> fn(item: string) -> string {
     val g = case m {
         Mark(suffix) {
-            { item -> mark(item, suffix) };
+            { item -> mark(item, suffix) }
         }
         Same {
-            { item -> item };
+            { item -> item }
         }
     };
     return g;

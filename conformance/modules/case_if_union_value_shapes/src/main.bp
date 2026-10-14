@@ -13,10 +13,10 @@ type Shape {
 fn show(v: i32 | string) -> string {
     return case v {
         i32 { n ->
-            "number ${n}";
+            "number ${n}"
         }
         string { t ->
-            "text ${t}";
+            "text ${t}"
         }
     };
 }
@@ -25,18 +25,18 @@ fn blockArms(s: Shape) -> string {
     val v = case s {
         Circle(r) {
             val d = r * 2;
-            d;
+            d
         }
         Label(text) {
-            text;
+            text
         }
     };
     return case v {
         i32 { n ->
-            "number ${n}";
+            "number ${n}"
         }
         string { t ->
-            "text ${t}";
+            "text ${t}"
         }
     };
 }
@@ -44,18 +44,18 @@ fn blockArms(s: Shape) -> string {
 fn lambdaArms(u: i32 | string) -> string {
     val v = case u {
         i32 { n ->
-            n * 3;
+            n * 3
         }
         string { t ->
-            t + "!";
+            t + "!"
         }
     };
     return case v {
         i32 { n ->
-            "number ${n}";
+            "number ${n}"
         }
         string { t ->
-            "text ${t}";
+            "text ${t}"
         }
     };
 }
@@ -63,16 +63,16 @@ fn lambdaArms(u: i32 | string) -> string {
 fn unknownSubject(u: unknown) -> string {
     val v = case u {
         i32 { n ->
-            n * 4;
+            n * 4
         }
         _ -> "other";
     };
     return case v {
         i32 { n ->
-            "number ${n}";
+            "number ${n}"
         }
         string { t ->
-            "text ${t}";
+            "text ${t}"
         }
     };
 }
@@ -101,10 +101,10 @@ fn ifValue(b: bool) -> string {
     };
     return case v {
         i32 { n ->
-            "number ${n}";
+            "number ${n}"
         }
         string { t ->
-            "text ${t}";
+            "text ${t}"
         }
     };
 }
@@ -132,10 +132,10 @@ fn machine(s: Shape) -> @Task<string> {
         };
         return case v {
             i32 { n ->
-                "number ${n}";
+                "number ${n}"
             }
             string { t ->
-                "text ${t}";
+                "text ${t}"
             }
         };
     };
@@ -150,10 +150,10 @@ fn pickBlock(s: Shape) -> i32 | string {
     return case s {
         Circle(r) {
             val d = r * 11;
-            d;
+            d
         }
         Label(text) {
-            text;
+            text
         }
     };
 }
@@ -162,10 +162,10 @@ fn argumentBlock(s: Shape) -> string {
     return show(case s {
         Circle(r) {
             val d = r * 12;
-            d;
+            d
         }
         Label(text) {
-            text;
+            text
         }
     });
 }

@@ -9,13 +9,13 @@ type Shape {
 fn sign(x: i32) -> string {
     return case x {
         i32 when (x > 0) {
-            "positive";
+            "positive"
         }
         i32 when (x < 0) {
-            "negative";
+            "negative"
         }
         _ {
-            "zero";
+            "zero"
         }
     };
 }
@@ -23,13 +23,13 @@ fn sign(x: i32) -> string {
 fn kind(s: Shape) -> string {
     return case s {
         .Rect(width: w, height: h) when (w == h) {
-            "square";
+            "square"
         }
         .Rect(..) {
-            "rect";
+            "rect"
         }
         .Circle(..) {
-            "circle";
+            "circle"
         }
     };
 }
@@ -37,10 +37,10 @@ fn kind(s: Shape) -> string {
 fn bucket(n: i32) -> string {
     return case n {
         _ when (n % 2 == 0) { v ->
-            "even " + v.toString();
+            "even " + v.toString()
         }
         _ { v ->
-            "odd " + v.toString();
+            "odd " + v.toString()
         }
     };
 }

@@ -1,0 +1,7 @@
+//// Decision 525 — `@block` is removed: refused at the builtin, located, its
+//// fix the block `{ … }` (`modules/block_tail_value`).
+
+pub fn main() {
+    val a = @block { 1 + 2 };
+    @print(a);
+}

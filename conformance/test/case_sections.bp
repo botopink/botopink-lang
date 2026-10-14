@@ -16,13 +16,13 @@ type Token {
 fn kind(t: Token) -> string {
     return case t {
         Text(inner) {
-            "text";
+            "text"
         }
         Color(inner) {
-            "color";
+            "color"
         }
         Hover(inner) {
-            "hover";
+            "hover"
         }
     };
 }

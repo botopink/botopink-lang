@@ -14,10 +14,10 @@ declare fn shapeNamed(name: string) -> Shape;
 fn area(s: Shape) -> i32 {
     return case s {
         Dot {
-            0;
+            0
         }
         Circle(r) {
-            r * r;
+            r * r
         }
     };
 }

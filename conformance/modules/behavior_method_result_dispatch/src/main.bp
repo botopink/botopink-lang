@@ -31,10 +31,10 @@ type Layered(inner: Memory) implement KeyValueStore {
 fn describe(r: @Result<string, string>) -> string {
     return case r {
         Ok(v) {
-            "ok " + v;
+            "ok " + v
         }
         Error(e) {
-            "error " + e;
+            "error " + e
         }
     };
 }

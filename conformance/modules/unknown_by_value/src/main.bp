@@ -15,16 +15,16 @@
 fn describe(x: unknown) -> string {
     return case x {
         i32 { n ->
-            "number " + n.toString();
+            "number " + n.toString()
         }
         string when (x == "") {
-            "empty text";
+            "empty text"
         }
         string { s ->
-            "text " + s;
+            "text " + s
         }
         _ {
-            "other";
+            "other"
         }
     };
 }

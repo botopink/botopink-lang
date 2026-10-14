@@ -21,7 +21,7 @@ A first program:
 | *Program structure* | modules, a module's default function, imports, std and the libraries |
 | *Bindings* | `val`, `var`, `@BeamMemory`, `fn` |
 | *Types* | primitives, records, enums and their sections, `behavior`, generics, aliases, derived types, spread, unions and `is`, narrowing |
-| *Expressions* | literals, numbers, arrays, indexing, operators, optionals, lambdas, `if`, `case`, loops, `assert`, `use` |
+| *Expressions* | literals, numbers, arrays, indexing, operators, optionals, lambdas, blocks, `if`, `case`, loops, `assert`, `use` |
 | *Functions* | recursion, inline parameter types, defaults, variadics, effects, results, tasks, iterators and streams |
 | *Comptime* | `comptime`, template functions, decorators, typed meta, template annotations, host bindings |
 | *Builtins* | the builtins, what `@print` writes, a value's own type, `@src()` |
@@ -631,8 +631,8 @@ belongs to the module version that created it and dies with it on reload.
 
 <!-- example: modules/fn_declaration -->
 
-A value leaves a function through `return`: a block is a statement, not a value, so a `fn` whose
-return type has a value must end every path with `return` (or `@panic` / `@todo`) —
+A value leaves a function through `return` or its tail (below), so a `fn` whose return type has a
+value must end every path with one of them (or `@panic` / `@todo`) —
 `fn f() -> i32 { val x = 1; }` is refused at `-> i32`. An effect return is judged by what
 running off the end would hand out: a `@Result` in any layer has a value (`Ok` or `Error`), so
 `-> @Result<void, E>` and `-> @Task<@Result<void, E>>` end with the empty `return;`, and so does a
@@ -1561,6 +1561,60 @@ as above:
 
 The pipe operator `|>` is left-associative.
 
+### Blocks
+
+A `{` followed by parameters and `->` (or `->` alone) is a lambda; a `{` without `->` is a
+**block** — a scope of the enclosing function, never a closure (decision 525). A block used as a
+value answers its last expression written without `;` (decision 409), as a function and a lambda
+do; a braced `if` / `case` at its end is that expression too:
+
+<!-- example: modules/block_tail_value -->
+
+A `return` in a block leaves the enclosing function — from its own statements, from a `case` arm or
+a nested block in it, from a `for` inside it — and the block's tail is its value on every other
+path:
+
+<!-- example: modules/block_return_leaves_function -->
+
+<!-- example: modules/block_for_return_leaves_function -->
+
+<!-- example: modules/block_partial_return -->
+
+A `var` of the enclosing function reassigned in a block is a plain reassignment, seen after the
+block on every target, whether the block's value is used or not:
+
+<!-- example: modules/block_reassigns_enclosing_var -->
+
+<!-- example: modules/block_value_reassigns_enclosing_var -->
+
+The same rule reads every block used as a value: a `case` arm `p { … }`, `comptime { … }` and
+`async { … }` answer their last expression written without `;`. An arm of a `case` used as a value
+whose last expression ends with `;` answers nothing, refused at the arm beside arms that answer a
+value; `break <value>` gives a block no value, refused at the `break`:
+
+<!-- example: modules/case_arm_no_value -->
+
+<!-- example: modules/comptime_block_break_value -->
+
+A block handed where a function is expected is refused at the block, with the hint "expected a
+function, got a block's value — missing `->`?"; a trailing lambda follows the same rule, so one
+with no parameter is written `f(x) { -> … }`. A block whose value is `void` handed where
+`unknown` is expected is refused. `@block` is removed, refused at the builtin, its fix the block
+`{ … }`:
+
+<!-- example: modules/block_trailing_not_function -->
+
+<!-- example: modules/block_argument_not_function -->
+
+<!-- example: modules/block_void_value_refused -->
+
+<!-- example: modules/block_builtin_removed -->
+
+`botopink format` migrates the older spellings: a trailing lambda without `->` gains it, the last
+`;` of a `case` arm used as a value is dropped, and `comptime { …; break v; }` becomes the tail
+`v`. It prints a block of one tail on one line when it fits (`{ 1 + 2 }`), as it prints a function
+body.
+
 ### Line width
 
 `botopink format` keeps lines within 80 columns where a break exists, and every
@@ -1626,6 +1680,8 @@ take one section instead of the whole enum:
 
 An arm may also be written as a block, `<pattern> { … }`. A block arm takes an
 optional `when (…)` guard, and a pattern may be a literal, a type (`i32`) or `_`.
+The arm is a block (§ Blocks): used as a value it answers its last expression
+written without `;`.
 
 <!-- example: modules/case_type_guard_arms -->
 
@@ -2399,8 +2455,8 @@ an unknown member:
 
 A task's value is read by `await`, and a failing task is read one way: `try await … catch`,
 or `case` on `await`'s `@Result`. Every composition of a task — recover, map, bind, map the
-error — is an `async { }` block, itself a `@Task` (decision 375): `val safe = async { val v =
-try await load() catch 0; return v; };` is a `@Task<i32>`.
+error — is an `async { }` block, itself a `@Task` (decision 375): `val safe = async { try await
+load() catch 0 };` is a `@Task<i32>`.
 
 <!-- example: modules/task_compose_by_async_block -->
 
@@ -2415,11 +2471,17 @@ it waits for nothing, it creates the Task.
 
 <!-- example: modules/async_block_both -->
 
-- `return v` **leaves the block** with `v`, not the enclosing function — the
-  block behaves like a closure called in place;
+<!-- example: modules/async_block_tail_value -->
+
+<!-- example: modules/async_block_tail_case -->
+
+- its value is its last expression written without `;` (decision 525, § Blocks),
+  a braced `case` / `if` at its end included, and `return v` **leaves the
+  block** with `v`, not the enclosing function — the block is a task of its
+  own;
 - it is **closed**: inside a `@Component` function an `async { }` cannot `use`,
   and `break :outer` / `continue :outer` across its border are refused;
-- `T` comes from its `return`s. A body with `throw` or `try` makes the value
+- `T` comes from its tail and its `return`s. A body with `throw` or `try` makes the value
   `@Result<U, E>` on its own, `E` coming from those `throw` / `try`; two
   different error types are `gen-infer-conflicting-errors`, asking for an
   annotation: `val x: @Task<@Result<User, string>> = async { … };`.
@@ -3784,7 +3846,6 @@ decorator or template body runs, never at run time):
 | `@panic` | `panic(message: string = "panic") -> noreturn` | the declaration |
 | `@todo` | `todo(message: string = "not implemented") -> noreturn` | the declaration |
 | `@trap` | `trap() -> noreturn` | the declaration |
-| `@block` | `block<T>(body: fn() -> T) -> T` — `@block { … }`, its value what its `return`s carry | the declaration |
 | `@module` | `module() -> module` | refused at every call (`builtin-not-lowered`) |
 | `@embed` | `embed(comptime path: @Expr<string>) -> Asset` — a `Build` builtin, computed where it is written (§ `@embed` and `Asset`) | its own rule (`embed-arguments`, `comptime-arg-not-known`, `embed-path-absolute`, `embed-path-outside-package`, `embed-file-missing`) |
 | `@field` | `field<T, F>(obj: T, comptime name: @Expr<string>) -> F` — COMPTIME-ONLY name | the declaration |

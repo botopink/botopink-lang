@@ -1,0 +1,13 @@
+//// Decision 525 — `comptime { … }` is a block: its value is its last
+//// expression written without `;`, and `break <value>` no longer gives it —
+//// refused at the `break`. `botopink format` writes `break v;` back as the
+//// tail `v`.
+
+val result = comptime {
+    val x = 10;
+    break x * 2;
+};
+
+pub fn main() {
+    @print(result);
+}

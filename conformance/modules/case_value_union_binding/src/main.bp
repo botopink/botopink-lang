@@ -10,10 +10,10 @@ fn describe(s: Shape) -> string {
     };
     return case v {
         i32 { n ->
-            "number ${n}";
+            "number ${n}"
         }
         string { t ->
-            "text ${t}";
+            "text ${t}"
         }
     };
 }

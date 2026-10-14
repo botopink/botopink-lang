@@ -1,13 +1,13 @@
 fn bucket(n: i32) -> string {
     return case n {
         1...9 {
-            "digit";
+            "digit"
         }
         _ when (n < 0) {
-            "negative";
+            "negative"
         }
         _ {
-            "other";
+            "other"
         }
     };
 }

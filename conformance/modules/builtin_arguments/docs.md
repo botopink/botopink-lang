@@ -8,7 +8,6 @@ The reference text this cell shows (from `conformance/docs.md`, § Builtins):
 > | `@panic` | `panic(message: string = "panic") -> noreturn` | the declaration |
 > | `@todo` | `todo(message: string = "not implemented") -> noreturn` | the declaration |
 > | `@trap` | `trap() -> noreturn` | the declaration |
-> | `@block` | `block<T>(body: fn() -> T) -> T` — `@block { … }`, its value what its `return`s carry | the declaration |
 > | `@module` | `module() -> module` | refused at every call (`builtin-not-lowered`) |
 > | `@field` | `field<T, F>(obj: T, comptime name: @Expr<string>) -> F` — COMPTIME-ONLY name | the declaration |
 > | `@src` | `src() -> SourceLocation` — COMPTIME-ONLY (§ `@src()` and `SourceLocation`) | its own rule (`src-takes-no-arguments`) |
