@@ -55,10 +55,17 @@
 //! is among them (449 (3): beam-to-wasm's `test_heap` / `allocate`, their
 //! live registers; the codegen's task frames, scheduler queues and cells).
 //!
-//! **Messages** (448 (3)). `copy(dst, v)` copies what `v` reaches in the
-//! current heap into `dst`'s nursery, as erlang copies a message: the
-//! sharing inside the value is not kept (a value reached twice is copied
-//! twice) and nothing of `dst` points into the sender's heap after it.
+//! **Messages** (448 (3), decision 522). `copy(dst, v)` copies what `v`
+//! reaches in the current heap into `dst`'s nursery, as erlang copies a
+//! message: the sharing inside the value is not kept (a value reached twice
+//! is copied twice) and nothing of `dst` points into the sender's heap after
+//! it. A value is acyclic but through a mutable cell (`allocCell`: a `var`'s, a
+//! task's record), so before copying anything the copy walks what `v`
+//! reaches, marking each mutable cell while the walk is below it: reaching a
+//! marked cell again is a cycle, answered `error.Cycle` with nothing written
+//! — the caller raises it, located at the send (`message contains a cycle`),
+//! never an exhausted memory and a trap (522 5′). A cell reached twice on
+//! two paths (shared, no cycle) is no cycle: it is copied twice.
 //!
 //! **Exhaustion** (448 (4)). When the pool cannot grow (the host refuses
 //! `memory.grow`, or memory would pass 4 GiB) the operation answers
@@ -69,6 +76,10 @@ const std = @import("std");
 const builtin = @import("builtin");
 
 pub const Error = error{OutOfMemory};
+
+/// What a message copy answers besides `Error`: the value holds a cycle
+/// (decision 522 5′).
+pub const CopyError = error{ OutOfMemory, Cycle };
 
 const is_wasm = builtin.cpu.arch.isWasm();
 const page: u32 = 65536;
@@ -389,6 +400,16 @@ fn freeList(first: u32) void {
     }
 }
 
+// The header's size word: the payload's size, a multiple of 8, and three
+// flags below it.
+/// An old block written with a young value, scanned at the next minor
+/// collection (the write barrier).
+const remembered_flag: u32 = 1;
+/// A mutable cell (`allocCell`): what a message copy marks while it is below it.
+const mutable_flag: u32 = 2;
+/// The mark itself, set only while a message copy's walk is below the cell.
+const walking_flag: u32 = 4;
+
 /// `n` fresh, zeroed bytes of layout `layout` on heap `h`'s nursery. Never
 /// collects, never moves a value.
 pub fn allocOn(h: u32, n: u32, layout: u32) Error!u32 {
@@ -409,6 +430,20 @@ pub fn allocOn(h: u32, n: u32, layout: u32) Error!u32 {
 /// `alloc` on the current heap.
 pub fn alloc(n: u32, layout: u32) Error!u32 {
     return allocOn(current, n, layout);
+}
+
+/// A mutable cell of `n` bytes, layout `layout`, on heap `h`: a block the
+/// program writes after making it (a `var`'s cell, a task's record) — through
+/// `write`, the barrier — and the only kind of block a cycle can pass
+/// through, so a message copy marks it (decision 522 5′).
+pub fn allocCellOn(h: u32, n: u32, layout: u32) Error!u32 {
+    const p = try allocOn(h, n, layout);
+    word(p - 8).* |= mutable_flag;
+    return p;
+}
+
+pub fn allocCell(n: u32, layout: u32) Error!u32 {
+    return allocCellOn(current, n, layout);
 }
 
 /// The layout of the block that holds `v` on `h`, or `raw` when `v` is no
@@ -453,9 +488,9 @@ pub fn writeOn(h: u32, field: u32, v: u32) Error!void {
     if (c != 0) {
         if (chunkOf(p.young_first, v) != 0) {
             const b = blockOf(c, field);
-            if (word(b).* & 1 == 0) {
+            if (word(b).* & remembered_flag == 0) {
                 try arrPush(&p.remembered, b);
-                word(b).* |= 1;
+                word(b).* |= remembered_flag;
             }
         }
         word(field).* = v;
@@ -543,7 +578,8 @@ const Gc = struct {
         const size = sizeOf(b);
         const nb = try g.place(8 + size);
         @memcpy(ptr(nb)[0 .. 8 + size], ptr(b)[0 .. 8 + size]);
-        word(nb).* = size;
+        // The copy is not remembered (it is scanned as a copy); a cell stays one.
+        word(nb).* = size | (word(b).* & mutable_flag);
         word(b).* = nb + 8;
         word(b + 4).* = forwarded;
         g.copied += 8 + size;
@@ -649,7 +685,7 @@ fn minor(h: u32, roots: u32, n: u32) Error!void {
         var i: u32 = 0;
         while (i < len) : (i += 1) {
             const b = word(p.remembered + 8 + i * 4).*;
-            word(b).* &= ~@as(u32, 1);
+            word(b).* &= ~remembered_flag;
             try g.scanBlock(b);
         }
         word(p.remembered + 4).* = 0;
@@ -703,13 +739,15 @@ fn freshNursery(p: *Heap) Error!void {
 /// `v` copied from the current heap into `dst`'s nursery, as erlang copies a
 /// message (448 (3)): every block `v` reaches on the current heap, the
 /// sharing inside it not kept. A value that is no address of the current
-/// heap is answered as it is.
-pub fn copy(dst: u32, v: u32) Error!u32 {
+/// heap is answered as it is. A value holding a cycle answers `error.Cycle`
+/// before anything is written (decision 522 5′).
+pub fn copy(dst: u32, v: u32) CopyError!u32 {
     return copyBetween(current, dst, v);
 }
 
-pub fn copyBetween(src: u32, dst: u32, v: u32) Error!u32 {
+pub fn copyBetween(src: u32, dst: u32, v: u32) CopyError!u32 {
     if (src == dst) return v;
+    if (try cyclic(src, v)) return error.Cycle;
     const d = heap(dst);
     const start_c = d.young_last;
     const start_a = chunk(start_c).top;
@@ -740,17 +778,92 @@ pub fn copyBetween(src: u32, dst: u32, v: u32) Error!u32 {
     return out;
 }
 
+/// The header of the block of `src` that holds `v`, or 0 when `v` is no
+/// value of `src`.
+fn blockIn(src: u32, v: u32) u32 {
+    const s = heap(src);
+    const c = chunkOf(s.young_first, v) | chunkOf(s.old_first, v);
+    if (c == 0) return 0;
+    return blockOf(c, v);
+}
+
 /// One block of `src` holding `v`, copied whole onto `dst`; `v`'s offset in
 /// it kept. `v` itself when it is no value of `src`.
 fn dup(src: u32, dst: u32, v: u32) Error!u32 {
-    const s = heap(src);
-    const c = chunkOf(s.young_first, v) | chunkOf(s.old_first, v);
-    if (c == 0) return v;
-    const b = blockOf(c, v);
+    const b = blockIn(src, v);
+    if (b == 0) return v;
     const size = sizeOf(b);
     const nv = try allocOn(dst, size, word(b + 4).*);
     @memcpy(ptr(nv)[0..size], ptr(b + 8)[0..size]);
+    // The receiver's copy of a cell is a cell of its own.
+    word(nv - 8).* |= word(b).* & mutable_flag;
     return nv +% (v -% (b + 8));
+}
+
+/// The next pointer word of block `b` at or past word `from` holding a value
+/// of `src`: its index, or the block's word count when none is left.
+fn nextPointer(src: u32, b: u32, from: u32) u32 {
+    const layout = word(b + 4).*;
+    const words = sizeOf(b) / 4;
+    if (layout == raw) return words;
+    var i = from;
+    if (layout & 0x8000_0000 != 0) i = @max(i, layout & 0x7FFF_FFFF);
+    while (i < words) : (i += 1) {
+        if (isPointer(layout, i) and blockIn(src, word(b + 8 + i * 4).*) != 0) return i;
+    }
+    return words;
+}
+
+/// Whether what `v` reaches on `src` holds a cycle (decision 522 5′). A walk
+/// in depth over the blocks the copy would copy, its path an explicit stack
+/// of `(header, next word)` pairs on the pool — no recursion (447); each
+/// mutable cell is marked while the walk is below it, and a marked cell
+/// reached again is a cycle. Only a cell is marked: an immutable value points
+/// only at older ones, so every cycle passes through a cell; a cell reached
+/// again once the walk has left it (shared, no cycle) is walked again, as the
+/// copy copies it again. Every mark is cleared before it answers.
+fn cyclic(src: u32, v: u32) Error!bool {
+    const first = blockIn(src, v);
+    if (first == 0) return false;
+    var path: u32 = 0;
+    // Whatever ends the walk — its answer or the pool running out — the
+    // cells still on the path lose their marks, and the path is freed.
+    defer if (path != 0) {
+        unmarkPath(path);
+        arrFree(path);
+    };
+    var b = first;
+    // Enter `b`; then, repeatedly, step to the next child of the top block or
+    // leave it.
+    enter: while (true) {
+        const mark = word(b).* & mutable_flag != 0;
+        if (mark and word(b).* & walking_flag != 0) return true;
+        try arrPush(&path, b);
+        try arrPush(&path, 0);
+        if (mark) word(b).* |= walking_flag;
+        while (true) {
+            const len = word(path + 4).*;
+            if (len == 0) return false;
+            const top = word(path + 8 + (len - 2) * 4).*;
+            const at = path + 8 + (len - 1) * 4;
+            const i = nextPointer(src, top, word(at).*);
+            if (i < sizeOf(top) / 4) {
+                word(at).* = i + 1;
+                b = blockIn(src, word(top + 8 + i * 4).*);
+                continue :enter;
+            }
+            word(path + 4).* = len - 2;
+            word(top).* &= ~walking_flag;
+        }
+    }
+}
+
+/// Clears the mark of every block on a walk's path (`(header, next word)`
+/// pairs).
+fn unmarkPath(path: u32) void {
+    const len = word(path + 4).*;
+    var k: u32 = 0;
+    while (k + 1 < len) : (k += 2) word(word(path + 8 + k * 4).*).* &= ~walking_flag;
 }
 
 // ── tests ────────────────────────────────────────────────────────────────────
@@ -924,6 +1037,84 @@ test "heap: a message is copied whole onto the receiver's heap, nothing of the s
     try testing.expectEqual(@as(u32, 0), used(c));
 }
 
+test "heap: a message holding a cycle through a cell answers Cycle, writes nothing, leaves no mark" {
+    try testMemory(4 * 1024 * 1024);
+    defer testDone();
+    const a = current;
+    const b = try spawn();
+    // A `var`'s cell holding a closure that captures the cell: `[desc][cell]`.
+    const c = try allocCell(4, pointersFrom(0));
+    const k = try alloc(8, bitmap(0b10));
+    word(k + 4).* = c;
+    try write(c, k);
+    // Sent inside an array.
+    const arr = try alloc(8, pointersFrom(1));
+    word(arr).* = 1;
+    word(arr + 4).* = k;
+    try testing.expectError(error.Cycle, copy(b, arr));
+    try testing.expectEqual(@as(u32, 0), used(b));
+    try testing.expectEqual(@as(u32, 0), word(c - 8).* & walking_flag);
+    // A cell holding itself.
+    const self = try allocCell(4, pointersFrom(0));
+    try write(self, self);
+    try testing.expectError(error.Cycle, copyBetween(a, b, self));
+    try testing.expectEqual(@as(u32, 0), used(b));
+    // Broken, the same value copies.
+    try write(c, 7);
+    const got = try copy(b, arr);
+    try testing.expect(chunkOf(heap(b).young_first, got) != 0);
+    const k2 = word(got + 4).*;
+    const c2 = word(k2 + 4).*;
+    try testing.expect(c2 != c and chunkOf(heap(b).young_first, c2) != 0);
+    try testing.expectEqual(@as(u32, 7), word(c2).*);
+    // The receiver's copy of a cell is a cell.
+    try testing.expect(word(c2 - 8).* & mutable_flag != 0);
+}
+
+test "heap: a cell reached on two paths is shared, no cycle: copied twice" {
+    try testMemory(4 * 1024 * 1024);
+    defer testDone();
+    const b = try spawn();
+    const c = try allocCell(4, pointersFrom(0));
+    try write(c, try testString(current, "inside"));
+    const arr = try alloc(12, pointersFrom(1));
+    word(arr).* = 2;
+    word(arr + 4).* = c;
+    word(arr + 8).* = c;
+    const got = try copy(b, arr);
+    try testing.expect(word(got + 4).* != word(got + 8).*);
+    try testing.expectEqualStrings("inside", testText(word(word(got + 8).*).*));
+    try testing.expectEqual(@as(u32, 0), word(c - 8).* & walking_flag);
+}
+
+test "heap: a cycle at the end of a long chain is found without recursion; a collection keeps a cell a cell" {
+    try testMemory(16 * 1024 * 1024);
+    defer testDone();
+    const b = try spawn();
+    const roots = try testRoots(2);
+    // A cell, promoted by a collection: still a cell.
+    const c = try allocCell(4, pointersFrom(0));
+    word(roots).* = c;
+    try collect(roots, 1, false);
+    const old_c = word(roots).*;
+    try testing.expect(word(old_c - 8).* & mutable_flag != 0);
+    // Fifty thousand cons cells `[head][tail]` down to the cell.
+    var list: u32 = old_c;
+    var i: u32 = 0;
+    while (i < 50_000) : (i += 1) {
+        const n = try alloc(8, bitmap(0b11));
+        word(n).* = try testString(current, "x");
+        word(n + 4).* = list;
+        list = n;
+    }
+    try testing.expect(!(try cyclic(current, list)));
+    // The cell closes the loop onto the list's head.
+    try write(old_c, list);
+    try testing.expectError(error.Cycle, copy(b, list));
+    try testing.expectEqual(@as(u32, 0), used(b));
+    try testing.expectEqual(@as(u32, 0), word(old_c - 8).* & walking_flag);
+}
+
 test "heap: memory exhausted answers OutOfMemory before anything is written" {
     try testMemory(1024 * 1024);
     defer testDone();
@@ -997,6 +1188,8 @@ test "heap: property — every collection keeps exactly the graph the roots reac
     var cell_slot: std.AutoHashMapUnmanaged(u32, Kid) = .empty;
     defer cell_slot.deinit(gpa);
     var root_ids: [n_roots]?u32 = .{null} ** n_roots;
+    var cycles: u32 = 0;
+    var sent: u32 = 0;
 
     var step: u32 = 0;
     while (step < 4000) : (step += 1) {
@@ -1032,7 +1225,7 @@ test "heap: property — every collection keeps exactly the graph the roots reac
         } else if (op < 66) {
             // A cell, rooted.
             const id: u32 = @intCast(model.items.len);
-            const p = try alloc(8, bitmap(0b10));
+            const p = try allocCell(8, bitmap(0b10));
             word(p).* = id;
             try model.append(gpa, .{ .kids = &.{}, .cell = true });
             const r = rnd.uintLessThan(u32, n_roots);
@@ -1058,18 +1251,61 @@ test "heap: property — every collection keeps exactly the graph the roots reac
             try collect(roots, n_roots, true);
             try checkGraph(roots, n_roots, &root_ids, model.items, &cell_slot);
         } else {
-            // A message: a rooted node copied to another heap and checked
-            // there, the receiver then released.
+            // A message: a rooted value copied to another heap and checked
+            // there — or, when the model reaches a cycle from it (only a
+            // cell can close one), refused with nothing written — the
+            // receiver then released.
             const r = rnd.uintLessThan(u32, n_roots);
             const id = root_ids[r] orelse continue;
-            if (model.items[id].cell) continue;
             const other = try spawn();
-            const got = try copy(other, word(roots + r * 4).*);
-            try checkNode(got, id, model.items, &cell_slot, other);
+            if (try modelCyclic(id, model.items, &cell_slot)) {
+                try testing.expectError(error.Cycle, copy(other, word(roots + r * 4).*));
+                try testing.expectEqual(@as(u32, 0), used(other));
+                cycles += 1;
+            } else {
+                const got = try copy(other, word(roots + r * 4).*);
+                try checkNode(got, id, model.items, &cell_slot, other);
+                sent += 1;
+            }
             release(other);
         }
     }
     try testing.expect(heap(h).minors > 50 and heap(h).majors > 5);
+    try testing.expect(cycles > 0 and sent > 0);
+}
+
+/// Whether the model reaches a cycle from node `start` (a walk in depth with
+/// the path's nodes marked).
+fn modelCyclic(start: u32, model: anytype, cells: anytype) !bool {
+    const gpa = testing.allocator;
+    const State = enum { on_path, done };
+    var state: std.AutoHashMapUnmanaged(u32, State) = .empty;
+    defer state.deinit(gpa);
+    var stack: std.ArrayList([2]u32) = .empty;
+    defer stack.deinit(gpa);
+    try stack.append(gpa, .{ start, 0 });
+    try state.put(gpa, start, .on_path);
+    while (stack.items.len > 0) {
+        const top = &stack.items[stack.items.len - 1];
+        const id = top[0];
+        const m = model[id];
+        const kid: ?u32 = if (m.cell)
+            (if (top[1] == 0) (if (cells.get(id)) |k| k.id else null) else null)
+        else if (top[1] < m.kids.len) m.kids[top[1]].id else null;
+        if (kid) |k| {
+            top[1] += 1;
+            if (state.get(k)) |st| {
+                if (st == .on_path) return true;
+                continue;
+            }
+            try state.put(gpa, k, .on_path);
+            try stack.append(gpa, .{ k, 0 });
+            continue;
+        }
+        try state.put(gpa, id, .done);
+        _ = stack.pop();
+    }
+    return false;
 }
 
 /// Walks the graph from the roots (iteratively) against the model.

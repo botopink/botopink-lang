@@ -797,8 +797,29 @@ fn heapCollect(roots: u32, n: u32, full: u32) callconv(.c) void {
     root.heap.collect(roots, n, full != 0) catch @trap();
 }
 
+fn heapCell(n: u32, layout: u32) callconv(.c) u32 {
+    return root.heap.allocCell(n, layout) catch @trap();
+}
+
+/// Whether the last `heap.copy` met a cycle (decision 522 5′).
+var copy_cycle: u32 = 0;
+
+/// A message copied: the copy, or `0` with `heap.cycle()` answering `1` when
+/// the value holds a cycle — the caller raises `message contains a cycle`
+/// located at its send; memory exhausted traps.
 fn heapCopy(dst: u32, v: u32) callconv(.c) u32 {
-    return root.heap.copy(dst, v) catch @trap();
+    copy_cycle = 0;
+    return root.heap.copy(dst, v) catch |e| switch (e) {
+        error.Cycle => {
+            copy_cycle = 1;
+            return 0;
+        },
+        error.OutOfMemory => @trap(),
+    };
+}
+
+fn heapCycle() callconv(.c) u32 {
+    return copy_cycle;
 }
 
 fn heapRelease(h: u32) callconv(.c) void {
@@ -896,7 +917,9 @@ const program_faces = .{
     .{ "heap.write", heapWrite },
     .{ "heap.reserve", heapReserve },
     .{ "heap.collect", heapCollect },
+    .{ "heap.cell", heapCell },
     .{ "heap.copy", heapCopy },
+    .{ "heap.cycle", heapCycle },
     .{ "heap.release", heapRelease },
     .{ "heap.used", heapUsed },
 };

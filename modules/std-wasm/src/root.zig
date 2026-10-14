@@ -241,7 +241,9 @@ pub const program = [_]Program{
     .{ .name = "heap.write", .params = &.{ .i32, .i32 }, .result = null },
     .{ .name = "heap.reserve", .params = &.{ .i32, .i32, .i32 }, .result = null },
     .{ .name = "heap.collect", .params = &.{ .i32, .i32, .i32 }, .result = null },
+    .{ .name = "heap.cell", .params = &.{ .i32, .i32 }, .result = .i32 },
     .{ .name = "heap.copy", .params = &.{ .i32, .i32 }, .result = .i32 },
+    .{ .name = "heap.cycle", .params = &.{}, .result = .i32 },
     .{ .name = "heap.release", .params = &.{.i32}, .result = null },
     .{ .name = "heap.used", .params = &.{.i32}, .result = .i32 },
 };

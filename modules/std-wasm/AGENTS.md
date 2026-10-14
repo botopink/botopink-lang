@@ -45,7 +45,7 @@ std-wasm/
     ├── text.zig   ← the text algorithms behind std's string primitives (commonJS's `__bp_trim` and case helpers answer the same set and table, decision 521) (case over all of Unicode, titlecase, trim, graphemes, slice, reverse, find, split, replace; and a program's: code point length / offset / slice / `at`, `indexOf` / `lastIndexOf`, `charCodeAt`, `fromCodepoint`, `Split` / `Lines` / `Words`, pad, repeat, replace)
     ├── number.zig ← `shortFloat`: `float_to_binary(F, [short])` — fixed or `D.DDDeE` whichever is shorter, `D.DDDeE` from 2^53 on as OTP writes it —, std's `Float.toString`, and the text commonJS's `__bp_f64` ports (decision 521) (`NaN`, `Infinity`, `-Infinity` for the values OTP has no float for); `signedText` / `unsignedText`, an integer's digits; `isDigits`, `integerOf` and `floatOf`, what `String.parseInt` / `parseFloat`'s host helpers convert (`number.isDigits`, `number.toInteger`, `number.toFloat`, `number.numeralRefused`; `floatOf` correctly rounded over `bigint`'s limbs by hand — `std.fmt.parseFloat`'s slow path holds a table of slices)
     ├── array.zig  ← an array's algorithms over its slot words: `sliceRange`, `chunkCount`, `slidingCount`, `uniqueInto`, `search`
-    ├── heap.zig   ← the heap (decisions 448, 449): a heap per process, `alloc` on the current one, copying collection (minor and major), the write barrier on mutable cells, a message copied between heaps, a heap released whole, exhaustion an error the program face traps on — § The heap
+    ├── heap.zig   ← the heap (decisions 448, 449): a heap per process, `alloc` on the current one, copying collection (minor and major), the write barrier on mutable cells, a message copied between heaps (a cycle refused, decision 522), a heap released whole, exhaustion an error the program face traps on — § The heap
     ├── random.zig ← `io/random`'s seeded stream (decision 451): `Stream`, Mulberry32 as the commonJS sidecar draws it; no draw before a seed
     ├── bigint.zig ← `bigint`'s arithmetic over `u32` limbs (add, sub, mul, divmod, compare, decimal text both ways, `toI64`, `toF64`), tested against `std.math.big.int`
     ├── wasm.zig   ← the program face (`zig build std-wasm`): each export over a program's own strings, arrays and `bigint` blocks, allocating through `env.bp_alloc`; the seeded stream's state a `.bss` `Stream`, an unseeded draw `env.bp_random_f64`; it also exports every `rt_*` function of the term files under its own name
@@ -113,7 +113,7 @@ methods through their `@External.Erlang` cells).
 | `bigint.add(x, y, flip)`, `negate`, `multiply`, `divmod(x, y, rem)`, `compare`, `equalOptional` | decision 332's operators over block addresses (a zero divisor traps) |
 | `bigint.ofI64`, `toI64`, `toF64`, `toString`, `parse` | `BigInt.of`, `toI64()` / `toF64()` (trap past the range / unless exact), the digits, `BigInt.parse`'s numeral (`0` for none) |
 
-| `heap.init(start)`, `spawn`, `enter(h)`, `alloc(n, layout)`, `write(field, v)`, `reserve(need, roots, n)`, `collect(roots, n, full)`, `copy(dst, v)`, `release(h)`, `used(h)` | the heap (§ The heap) — not called by the codegen yet: `alloc` is still `wat_prelude`'s bump (144 B-30 boxes 3–6) |
+| `heap.init(start)`, `spawn`, `enter(h)`, `alloc(n, layout)`, `cell(n, layout)`, `write(field, v)`, `reserve(need, roots, n)`, `collect(roots, n, full)`, `copy(dst, v)`, `cycle()`, `release(h)`, `used(h)` | the heap (§ The heap) — not called by the codegen yet: `alloc` is still `wat_prelude`'s bump (144 B-30 boxes 3–6). `copy` answers `0` and `cycle()` `1` when the message holds a cycle (decision 522 5′): the caller raises `message contains a cycle` located at its send |
 
 `text.toUpper` / `text.toLower` (`(string) -> string`, bound by `String.toUpper` / `toLower`)
 map case over all of Unicode (decision 443): the simple mappings of `UnicodeData.txt` and the
@@ -143,7 +143,7 @@ that reached it: a build has no entropy and never pretends to (cells
 starts from a fresh instance, so its stream is unseeded until its body seeds it, and one
 seed answers the same draws on every build and every target.
 
-## The heap (decisions 448, 449; front 144 B-30)
+## The heap (decisions 448, 449, 522; front 144 B-30)
 
 `heap.zig` is erlang's memory model for a wasm program and for translated BEAM code: a heap per
 process (a `@Task`; a BEAM process), `alloc` on the current process's heap, collection by copying
@@ -181,15 +181,24 @@ grows without collection: growth linear in the work, a live set of a few values.
 - **The write barrier** is `write(field, v)`, the one store into a mutable cell (a `var`'s cell, a
   task's record): an old block written with a young value is remembered (once, by its flag) and scanned
   at the next minor collection; a cell outside every heap (a module's data) becomes a root of the heap
-  for good. Every other value is immutable, so an old value never points at a younger one.
-- **Messages** (448 (3)). `copy(dst, v)` copies what `v` reaches on the current heap onto `dst`'s
-  nursery, Cheney's scan over the copies; nothing of `dst` points into the sender's heap after it.
+  for good. Every other value is immutable, so an old value never points at a younger one. A mutable
+  cell is allocated as one (`cell(n, layout)`, `allocCell`): a flag of its header, kept by every
+  collection and by a message copy.
+- **Messages** (448 (3), decision 522). `copy(dst, v)` copies what `v` reaches on the current heap onto
+  `dst`'s nursery, Cheney's scan over the copies; nothing of `dst` points into the sender's heap after it.
+  The sharing inside the value is not kept, as erlang's message copy. Before copying anything it walks
+  what `v` reaches in depth (`cyclic`: an explicit path on the pool, no recursion), marking each mutable
+  cell while the walk is below it: a marked cell reached again is a cycle — `error.Cycle`, nothing
+  written, every mark cleared; the caller raises `message contains a cycle` located at its send (522 5′),
+  never an exhausted memory and a trap. A cell reached again on another path (shared, no cycle) is walked
+  and copied again. Only a cell is marked: an immutable value points only at older ones, so every cycle
+  passes through a cell.
 - **Exhaustion** (448 (4)). When the pool cannot grow (`memory.grow` refused, or past 4 GiB), the
   operation answers `error.OutOfMemory` before writing what it answers; `wasm.zig`'s faces trap on it
   (`unreachable`). A collection that cannot get its to-space traps as well — the run ends; it never
   continues over a half-copied heap.
 
-**The choices 448 leaves to measurement**, each the maintainer's to confirm:
+**The choices 448 leaves to measurement**, confirmed as built by decision 522 (its point 5 changed):
 
 | Choice | Taken | Why |
 |---|---|---|
@@ -198,7 +207,7 @@ grows without collection: growth linear in the work, a live set of a few values.
 | Header | 8 bytes per block (size, layout) | the layout is the only way the collection tells a pointer from a scalar in the typed layout, which tags nothing |
 | Sizes | nursery 64 KiB, doubled while more than half of it survives, at most 8 MiB; major when the old generation passes max(256 KiB, twice what the last major kept) | the measured garbage per unit of work runs from 68 bytes to 17.6 KiB |
 | Collection points | only where the caller names its roots; `alloc` never collects | a wasm local is invisible to the collector: a value is safe to move only where the caller has written its roots down |
-| Message sharing | not kept (a value reached twice is copied twice), as erlang's default | no forwarding written into the sender's live heap; a value is acyclic but through a mutable cell, and a cycle copied exhausts memory and traps |
+| Message sharing | not kept (a value reached twice is copied twice), as erlang's default; a cycle is detected and refused (`error.Cycle`), never copied (522 5′) | no forwarding written into the sender's live heap; a value is acyclic but through a mutable cell, so the walk marks only cells |
 | Cells outside every heap | a root of the heap whose value they hold, for good | a module's `var` in the data is no block a collection could reach |
 
 What remains for 144 B-30: `alloc` out of `wat_prelude` onto `heap.alloc` with each allocation's
