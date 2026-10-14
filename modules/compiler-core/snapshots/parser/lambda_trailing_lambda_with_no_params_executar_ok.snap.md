@@ -56,7 +56,8 @@
                                 },
                                 "emptyLinesBefore": 0
                               }
-                            ]
+                            ],
+                            "isBlock": true
                           }
                         ]
                       }

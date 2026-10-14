@@ -8616,8 +8616,7 @@ fn refuseFallingOffTheEnd(env: *Env, f: ast.FnDecl, retType: *T.Type) InferError
 /// way, a `loop { }` (left only by `break` or `return`), or a call to a
 /// `noreturn` builtin. Conservative the right way: anything it cannot read is
 /// "may fall through" only where the statement plainly has no exit. Read on
-/// either phase: a fn's parsed body, and a typed `@block` body (decision 2's
-/// value-position block, `inferBuiltinCallReturnType`).
+/// either phase: a fn's parsed body, and a typed one.
 fn stmtsMayFallThrough(env: *Env, stmts: anytype) bool {
     // A trailing comment is kept as a statement by the parser and is not one.
     var n = stmts.len;
@@ -10602,6 +10601,7 @@ fn behaviorReaches(env: *Env, from: []const u8, to: []const u8, depth: usize) bo
 /// is `unifyAt`. Target-first, like `unifyAt`: the coercion only ever widens
 /// an implementer into the behavior, never the reverse.
 fn unifyArgument(env: *Env, param: *T.Type, arg: *T.Type, loc: ast.Loc) InferError!void {
+    if (env.blockLocs.contains(loc)) try refuseBlockAt(env, param, arg, loc);
     if (behaviorCoercion(env, param, arg)) return;
     try unifyAt(env, param, arg, loc);
 }
@@ -10632,38 +10632,6 @@ fn inferBuiltinCallReturnType(
     loc: ast.Loc,
 ) InferError!*T.Type {
     try checkBuiltinArguments(env, callee, typedArgs, typedTrailing, loc);
-    // `@block { … }` — the value of the block is what its `return`s carry
-    // (C1: those returns target the block, not the enclosing fn). A tail
-    // expression is never its value (decision 2): a block with no valued
-    // `return` is `void`, legal only as a whole statement — in value position
-    // it is `block-tail-value`, located at the block.
-    if (std.mem.eql(u8, callee, "block") and typedTrailing.len >= 1 and env.lastTrailingReturnTargets.len >= 1) {
-        const target = env.lastTrailingReturnTargets[0];
-        const td = target.deref();
-        const asStatement = if (env.statementBlockLoc) |sl| sl.eql(loc) else false;
-        if (td.* == .typeVar and td.typeVar.state == .unbound) {
-            if (!asStatement) {
-                env.lastError = TypeError.custom(
-                    try std.fmt.allocPrint(env.arena, "{s}: an `@block` used as a value has no valued `return` — its tail expression is not its value", .{diagnostics.block_tail_value}),
-                    "Write `return <value>;` as the block's last statement, or use the block as a statement.",
-                ).withLoc(loc);
-                return error.TypeError;
-            }
-            return env.namedType("void");
-        }
-        // A valued `return` on some paths and none on the fall-through
-        // (`@block { if (c) return 3; 4 }`): every path of a value-position
-        // block leaves through `return` (decision 2) — the tail is no value,
-        // so the fall-through path has none. Refused like the tail form.
-        if (!asStatement and stmtsMayFallThrough(env, typedTrailing[0].body)) {
-            env.lastError = TypeError.custom(
-                try std.fmt.allocPrint(env.arena, "{s}: an `@block` used as a value can reach its end without a `return` — every path must `return` a value", .{diagnostics.block_tail_value}),
-                "End every path of the block with `return <value>;` (or `throw` / `@panic(…)`), or use the block as a statement.",
-            ).withLoc(loc);
-            return error.TypeError;
-        }
-        return target;
-    }
     // ── `@Expr` construction builtins (expr-templates) ───────────────────────
     // Construction is explicit: `@expr(value)` lifts a comptime value as code
     // and `@code(text)` parses generated source text. Both only make sense
@@ -12769,14 +12737,11 @@ fn answersNothing(rt: ?ast.TypeRef) bool {
     return t == .named and std.mem.eql(u8, t.named, "void");
 }
 
-/// Decision 2 — the location of `stmt` when it is an `@block { … }` written
-/// as a whole statement (its value discarded), else null.
+/// Decision 525 — the location of `stmt` when it is a `case` or a block `{ … }`
+/// written as a whole statement (its value discarded), else null.
 fn statementBlockLocOf(stmt: ast.Expr) ?ast.Loc {
-    if (stmt != .call or stmt.call.kind != .call) return null;
-    const c = stmt.call.kind.call;
-    if (!c.is_builtin or c.receiver != null or c.calleeExpr != null) return null;
-    if (!std.mem.eql(u8, c.callee, "block")) return null;
-    return stmt.call.loc;
+    if (stmt != .collection or stmt.collection.kind != .case) return null;
+    return stmt.collection.loc;
 }
 
 fn inferStmtsTyped(env: *Env, stmts: []const ast.Stmt) InferError![]TypedStmt {
@@ -12792,7 +12757,7 @@ fn inferStmtsTyped(env: *Env, stmts: []const ast.Stmt) InferError![]TypedStmt {
     defer env.statementBlockLoc = savedStatementBlock;
     for (stmts, 0..) |s, i| {
         env.statementBlockLoc = statementBlockLocOf(s.expr);
-        out[i] = .{ .expr = try inferExprTyped(env, s.expr) };
+        out[i] = .{ .expr = try inferExprTyped(env, s.expr), .tail = s.tail };
         try narrowAfterEarlyExit(env, s.expr, &narrowed);
     }
     if (narrowed.items.len > 0) try restorePatternBindings(env, narrowed.items);
@@ -12802,8 +12767,8 @@ fn inferStmtsTyped(env: *Env, stmts: []const ast.Stmt) InferError![]TypedStmt {
 /// Convert a slice of untyped trailing lambdas to typed ones (arena-allocated).
 fn inferTrailingLambdasTyped(env: *Env, trailing: []const ast.TrailingLambda) InferError![]ast.TrailingLambdaOf(.typed) {
     const out = try env.arena.alloc(ast.TrailingLambdaOf(.typed), trailing.len);
-    // C1 — a trailing lambda's `return`s belong to the lambda (an `@block`,
-    // a `use memo { -> return … }`), never to the enclosing fn.
+    // C1 — a trailing lambda's `return`s belong to the lambda (a
+    // `use memo { -> return … }`), never to the enclosing fn.
     const savedReturnTarget = env.returnTarget;
     const savedReturnBareIsVoid = env.returnBareIsVoid;
     const savedReturnWhole = env.returnWhole;
@@ -12813,6 +12778,15 @@ fn inferTrailingLambdasTyped(env: *Env, trailing: []const ast.TrailingLambda) In
         env.returnWhole = savedReturnWhole;
     }
     env.returnWhole = null;
+    for (trailing) |tl| if (tl.isBlock) {
+        // Decision 525 — a trailing `{` without `->` is a block, and a trailing
+        // position expects a function.
+        env.lastError = TypeError.custom(
+            diagnostics.block_not_function ++ ": expected a function, got a block's value — missing `->`?",
+            "A `{` without `->` is a block, never a closure (decision 525): a trailing lambda with no parameter is written `f(x) { -> … }`.",
+        ).withLoc(tl.loc);
+        return error.TypeError;
+    };
     const targets = try env.arena.alloc(*T.Type, trailing.len);
     for (trailing, 0..) |tl, i| {
         targets[i] = try env.freshVar();
@@ -12824,7 +12798,6 @@ fn inferTrailingLambdasTyped(env: *Env, trailing: []const ast.TrailingLambda) In
             .body = try inferStmtsTyped(env, tl.body),
         };
     }
-    env.lastTrailingReturnTargets = targets;
     return out;
 }
 
@@ -22131,15 +22104,49 @@ fn caseArmValueType(env: *Env, body: ast.TypedExpr) InferError!?*T.Type {
             }
         }
         if (found) |f| return f;
+        // Decision 525 — the arm is a block: its value is its tail, the last
+        // expression written without `;`.
         const stmts = body.function.kind.body;
-        if (stmts.len == 0) return null;
-        const tail = stmts[stmts.len - 1].expr;
+        const last = lastNonComment(stmts) orelse return null;
+        const tail = last.expr;
         // §3.2 — an arm whose body jumps (`return`/`throw`/`continue`) does not
         // contribute to the `case`'s type.
         if (tail == .jump) return null;
+        if (last.tail == .none) return null;
         return nonVoid(tail.getType());
     }
     return nonVoid(body.getType());
+}
+
+/// The last statement of a body that is not a comment, or null.
+fn lastNonComment(stmts: []const ast.TypedStmt) ?ast.TypedStmt {
+    var n = stmts.len;
+    while (n > 0) : (n -= 1) {
+        const e = stmts[n - 1].expr;
+        if (e == .literal and e.literal.kind == .comment) continue;
+        return stmts[n - 1];
+    }
+    return null;
+}
+
+/// Decision 525 — whether an arm of a `case` used as a value answers nothing:
+/// a block arm whose last statement is no tail (written with `;`, or a
+/// binding) and does not leave (a jump, a `noreturn` call), or whose tail is
+/// `void`. A `break <value>` arm answers its value.
+fn armAnswersNothing(body: ast.TypedExpr) bool {
+    if (body == .jump) return false;
+    if (body == .function and body.function.kind.syntax == .lambda) {
+        for (body.function.kind.body) |stmt| {
+            if (stmt.expr == .jump and stmt.expr.jump.kind == .@"break" and stmt.expr.jump.kind.@"break".value != null) return false;
+        }
+        const last = lastNonComment(body.function.kind.body) orelse return true;
+        if (last.expr == .jump) return false;
+        const d = last.expr.getType().deref();
+        if (d.isNamed("noreturn")) return false;
+        if (last.tail == .none) return true;
+        return d.isNamed("void");
+    }
+    return body.getType().deref().isNamed("void");
 }
 
 /// The type, unless it is `void` — a statement arm contributes nothing.
@@ -22279,6 +22286,70 @@ fn sameTypeShape(a: *T.Type, b: *T.Type) bool {
         },
         // Two distinct variables are not the same member: nothing has said so.
         .typeVar => false,
+    };
+}
+
+/// Decision 525 — what a block refuses before its body is typed: a position
+/// that expects a function (the block is no closure — "missing `->`?"), and
+/// a `break <value>` meant as its value (its value is its tail).
+fn refuseBlockShape(env: *Env, c: anytype, expected: ?*T.Type, loc: ast.Loc) InferError!void {
+    if (expected) |want| if (want.deref().* == .func) return refuseBlockAt(env, want, want, loc);
+    const body = c.arms[0].body.function.kind.body;
+    if (blockBreakValue(body)) |at| return refuseBlockBreak(env, at);
+}
+
+/// A block handed to a parameter of type `param`: refused where `param` is a
+/// function, and where it is `unknown` and the block answers `void`.
+fn refuseBlockAt(env: *Env, param: *T.Type, arg: *T.Type, loc: ast.Loc) InferError!void {
+    const p = param.deref();
+    if (p.* == .func) {
+        env.lastError = TypeError.custom(
+            diagnostics.block_not_function ++ ": expected a function, got a block's value — missing `->`?",
+            "A `{` without `->` is a block, never a closure (decision 525): a lambda with no parameter is written `{ -> … }`.",
+        ).withLoc(loc);
+        return error.TypeError;
+    }
+    if (p.isNamed("unknown") and arg.deref().isNamed("void")) {
+        env.lastError = TypeError.custom(
+            diagnostics.block_void_value ++ ": a block whose value is `void` is handed where a value is expected",
+            "A block's value is its last expression written without `;` (decision 525).",
+        ).withLoc(loc);
+        return error.TypeError;
+    }
+}
+
+fn refuseBlockBreak(env: *Env, at: ast.Loc) InferError!void {
+    env.lastError = TypeError.custom(
+        diagnostics.block_break_value ++ ": a block's value is its last expression — `break <value>` does not give it",
+        "Write the value as the block's last expression, without `;` (decision 525): `comptime { val x = 10; x * 2 }`.",
+    ).withLoc(at);
+    return error.TypeError;
+}
+
+/// Decision 525 — the first written `break <value>` (no label) that would
+/// leave the block `body` belongs to — in its own statements and its `if`
+/// branches; a loop, a closure, a `case` arm's block and a nested block are
+/// scopes of their own. The tail the parser wrapped in the block's `break`
+/// (`comptime { … }`, `tail = .returned`) is the block's value, not one.
+fn blockBreakValue(body: []const ast.Stmt) ?ast.Loc {
+    for (body) |st| {
+        if (st.tail == .returned) continue;
+        if (exprBreakValue(st.expr)) |l| return l;
+    }
+    return null;
+}
+
+fn exprBreakValue(e: ast.Expr) ?ast.Loc {
+    return switch (e) {
+        .jump => |j| switch (j.kind) {
+            .@"break" => |b| if (b.label == null and b.value != null) j.loc else null,
+            else => null,
+        },
+        .branch => |b| switch (b.kind) {
+            .if_ => |i| blockBreakValue(i.then_) orelse (if (i.else_) |els| blockBreakValue(els) else null),
+            else => null,
+        },
+        else => null,
     };
 }
 
@@ -23075,6 +23146,13 @@ fn inferCollectionExpr(env: *Env, col: ast.CollectionExprOf(.untyped), loc: ast.
         },
 
         .case => |c| {
+            // Decision 525 — a block `{ … }` lands as `case true { _ { … } }`.
+            const blockExpected = env.expectedType;
+            if (c.isBlock) {
+                try refuseBlockShape(env, c, blockExpected, loc);
+                env.expectedType = null;
+            }
+            const asStatement = if (env.statementBlockLoc) |sl| sl.eql(loc) else false;
             const typedSubjects = try env.arena.alloc(ast.TypedExpr, c.subjects.len);
             for (c.subjects, 0..) |subj, i| {
                 typedSubjects[i] = try inferExprTyped(env, subj);
@@ -23183,6 +23261,28 @@ fn inferCollectionExpr(env: *Env, col: ast.CollectionExprOf(.untyped), loc: ast.
             // block without `break <value>`) contribute nothing.
             const armTypes = try env.arena.alloc(?*T.Type, typedArms.len);
             const caseType = caseTypeFromArms(env, typedArms, armTypes) catch |err| return locateLast(env, err, loc);
+            // Decision 525 — a `case` used as a value answers a value from
+            // every arm that does not leave: an arm whose last expression is
+            // written with `;` answers nothing.
+            if (!asStatement and !c.isBlock and !caseType.deref().isNamed("void")) {
+                for (typedArms, 0..) |arm, i| if (armAnswersNothing(arm.body)) {
+                    env.lastError = TypeError.custom(
+                        diagnostics.case_arm_no_value ++ ": this arm of a `case` used as a value answers nothing",
+                        "An arm's value is its last expression written without `;` (decision 525): drop the `;`, or end the arm with a `return` / `throw`.",
+                    ).withLoc(c.arms[i].patternLoc);
+                    return error.TypeError;
+                };
+            }
+            if (c.isBlock) {
+                try env.blockLocs.put(env.arena, loc, {});
+                if (caseType.deref().isNamed("void")) if (blockExpected) |want| if (want.deref().isNamed("unknown")) {
+                    env.lastError = TypeError.custom(
+                        diagnostics.block_void_value ++ ": a block whose value is `void` is handed where a value is expected",
+                        "A block's value is its last expression written without `;` (decision 525).",
+                    ).withLoc(loc);
+                    return error.TypeError;
+                };
+            }
             if (caseType.deref().* == .union_) {
                 try env.unionOrigins.put(env.arena, caseType.deref(), .{ .loc = loc, .kind = "case" });
                 try env.unionValues.put(env.arena, loc, .{ .type_ = caseType, .arms = armTypes });
@@ -23348,6 +23448,9 @@ fn inferComptimeExpr(env: *Env, ct: ast.ComptimeExprOf(.untyped), loc: ast.Loc) 
         },
 
         .comptimeBlock => |cb| {
+            // Decision 525 — the block's value is its tail (the parser wrapped
+            // it in the block's `break`); a written `break <value>` is refused.
+            if (blockBreakValue(cb.body)) |at| try refuseBlockBreak(env, at);
             const prevBreakScope = env.breakScope;
             env.breakScope = .valueBlock;
             defer env.breakScope = prevBreakScope;

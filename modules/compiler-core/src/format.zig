@@ -96,6 +96,17 @@ const DOC_ALIGN_TO_MARK: Doc = .alignToMark;
 /// All `Doc` nodes are allocated in the provided arena; free the arena when done.
 pub const Formatter = struct {
     arena: std.mem.Allocator,
+    /// Decision 525 — set by a printer whose body's last statement is the
+    /// body's value (a lambda, a `case` arm, a block, `comptime { … }`,
+    /// `async { … }`) for the `fmtStmtSeq` it calls next; consumed there.
+    nextSeqIsValue: bool = false,
+    /// Decision 525 — the statement `fmtStmt` prints is its body's value.
+    stmtIsValue: bool = false,
+    /// Decision 525 — the `case` `fmtCase` prints next is a statement (its
+    /// value discarded); consumed there. A `case` anywhere else is used as a
+    /// value, and `botopink format` writes each arm's last expression as the
+    /// arm's tail (without `;`).
+    nextCaseIsStatement: bool = false,
 
     pub fn init(arena: std.mem.Allocator) Formatter {
         return .{ .arena = arena };
@@ -518,6 +529,18 @@ pub const Formatter = struct {
     fn fmtStmtSeq(this: *Formatter, stmts: []ast.Stmt) !*const Doc {
         var items: std.ArrayList(*const Doc) = .empty;
         defer items.deinit(this.arena);
+        // Decision 525 — the last statement (comments aside) of a body whose
+        // value it is.
+        const isValueSeq = this.nextSeqIsValue;
+        this.nextSeqIsValue = false;
+        const valueIdx: ?usize = if (!isValueSeq) null else blk: {
+            var n = stmts.len;
+            while (n > 0) : (n -= 1) {
+                const e = stmts[n - 1].expr;
+                if (!(e == .literal and e.literal.kind == .comment)) break :blk n - 1;
+            }
+            break :blk null;
+        };
         // The source position of the trailing comment the statement before
         // ended with, or of its last continuation line (`CommentChain`).
         var chain: CommentChain = .{};
@@ -551,6 +574,7 @@ pub const Formatter = struct {
                 // Add hardline before each statement after the first
                 try items.append(this.arena, this.hardline());
             }
+            this.stmtIsValue = valueIdx != null and valueIdx.? == i;
             try items.append(this.arena, try this.fmtStmt(s));
         }
         return this.concatAll(items.items);
@@ -561,6 +585,9 @@ pub const Formatter = struct {
     /// parser wrapped a valued tail in left out (`ast.Tail`). The printer
     /// adds and removes no `;` there.
     fn fmtStmt(this: *Formatter, s: ast.Stmt) !*const Doc {
+        const isValue = this.stmtIsValue;
+        this.stmtIsValue = false;
+        if (!isValue and s.expr == .collection and s.expr.collection.kind == .case) this.nextCaseIsStatement = true;
         return switch (s.tail) {
             .none => this.terminated(s.expr, try this.fmtExpr(s.expr)),
             .value => this.fmtExpr(s.expr),
@@ -573,6 +600,11 @@ pub const Formatter = struct {
     fn tailValue(s: ast.Stmt) ast.Expr {
         if (s.tail == .returned and s.expr == .jump and s.expr.jump.kind == .@"return") {
             if (s.expr.jump.kind.@"return") |v| return v.*;
+        }
+        // Decision 525 — `comptime { … }`'s tail, which the parser wrapped in
+        // the block's `break`.
+        if (s.tail == .returned and s.expr == .jump and s.expr.jump.kind == .@"break") {
+            if (s.expr.jump.kind.@"break".value) |v| return v.*;
         }
         return s.expr;
     }
@@ -872,10 +904,7 @@ pub const Formatter = struct {
                 .fnExpr => try this.fmtFnExpr(func.kind.params, func.kind.body, func.kind.paramTypes, func.kind.returnType),
                 // `async { … }` (decision 124): the block's statements, one per
                 // line, like any body.
-                .asyncBlock => if (func.kind.body.len == 0)
-                    try this.text("async {}")
-                else
-                    try this.surroundBreak("async {", try this.fmtStmtSeq(func.kind.body), "}"),
+                .asyncBlock => try this.concat(try this.text("async "), try this.fmtBlock(func.kind.body)),
             },
             .call => |c| switch (c.kind) {
                 .call => |cc| try this.fmtCall(cc),
@@ -960,7 +989,7 @@ pub const Formatter = struct {
                         try this.text(")"),
                     });
                 },
-                .case => |c| try this.fmtCase(c.subjects, c.arms, c.trailingComments),
+                .case => |c| try this.fmtCase(c),
                 .arrayLit => |al| blk: {
                     // Build items interleaving elements and comments.
                     // Elements on the same source line as the previous element (and with no preceding
@@ -1176,15 +1205,20 @@ pub const Formatter = struct {
                 .comptimeExpr => |e| this.concat(try this.text("comptime "), try this.fmtExpr(e.*)),
 
                 .comptimeBlock => |cb| blk: {
-                    var items = try this.arena.alloc(*const Doc, cb.body.len);
-                    for (cb.body, 0..) |s, i| {
-                        items[i] = try this.terminated(s.expr, try this.fmtExpr(s.expr));
+                    // Decision 525 — the block's value is its tail; a written
+                    // last `break v;` (the removed spelling) is printed as the
+                    // tail `v`.
+                    const body = try this.arena.dupe(ast.Stmt, cb.body);
+                    var n = body.len;
+                    while (n > 0) : (n -= 1) {
+                        const e = body[n - 1].expr;
+                        if (e == .literal and e.literal.kind == .comment) continue;
+                        if (body[n - 1].tail == .none and e == .jump and e.jump.kind == .@"break" and
+                            e.jump.kind.@"break".label == null and e.jump.kind.@"break".value != null)
+                            body[n - 1].tail = .returned;
+                        break;
                     }
-                    const inner = try this.join(items, this.hardline());
-                    break :blk this.concat(
-                        try this.text("comptime "),
-                        try this.surroundBreak("{", inner, "}"),
-                    );
+                    break :blk this.concat(try this.text("comptime "), try this.fmtBlock(body));
                 },
 
                 .assert => |a| blk: {
@@ -1748,18 +1782,8 @@ pub const Formatter = struct {
         try parts.append(this.arena, callee);
         // Only emit () if there are actual args when trailing lambdas present
         if (c.args.len > 0) try parts.append(this.arena, argsDoc);
-        // Add space before trailing lambda:
-        // - Always add space if lambda has params (e.g. "fn { a -> ... }")
-        // - For parameterless lambdas: only add space for non-builtin calls
-        //   (e.g., "executar { ... }" has space, but "@block{ ... }" does not)
-        const needs_space = if (c.trailing.len > 0) blk: {
-            if (c.trailing[0].params.len > 0) break :blk true;
-            // Parameterless lambda: no space only for builtins
-            break :blk !is_builtin;
-        } else false;
-        if (needs_space) {
-            try parts.append(this.arena, try this.text(" "));
-        }
+        // A space before the trailing lambda (`f(x) { -> … }`, `@name { -> … }`).
+        try parts.append(this.arena, try this.text(" "));
 
         for (c.trailing, 0..) |tl, ti| {
             if (ti > 0) try parts.append(this.arena, try this.text(" "));
@@ -1837,8 +1861,12 @@ pub const Formatter = struct {
     /// — and the open form otherwise (or when the body is a binding, a jump, a
     /// comment, or needs a line of its own). The choice is the width's, never the
     /// source's, so a second pass reads the same layout.
+    /// Decision 525 — a trailing `{` without `->` is a block, so a trailing
+    /// lambda with no parameter keeps its arrow (`f(x) { -> … }`); one written
+    /// without it (`TrailingLambda.isBlock`, which the checker refuses) is
+    /// written back with it — `botopink format` migrates the old spelling.
     fn fmtTrailingLambda(this: *Formatter, params: []const []const u8, body: []ast.Stmt) !*const Doc {
-        const open = try this.fmtLambda(params, body, false);
+        const open = try this.fmtLambda(params, body, true);
         if (body.len != 1) return open;
         const inlineValue = switch (body[0].expr) {
             .binding, .jump => false,
@@ -1856,7 +1884,7 @@ pub const Formatter = struct {
                 try this.join(paramDocs, try this.text(", ")),
                 try this.text(" -> "),
             });
-        } else try this.text("{ ");
+        } else try this.text("{ -> ");
         // Decision 409 — a `;` written after the value is kept.
         const flat = try this.concatAll(&.{ head, try this.text(flatValue), try this.text(if (body[0].tail == .none) "; }" else " }") });
         const flatText = try render(this.arena, flat, std.math.maxInt(u32));
@@ -1885,6 +1913,8 @@ pub const Formatter = struct {
             });
         }
 
+        // A lambda's (and a `case` arm's) last statement is its value.
+        this.nextSeqIsValue = true;
         const inner = try this.fmtStmtSeq(body);
 
         if (params.len == 0 and !arrow_when_empty) {
@@ -1966,7 +1996,33 @@ pub const Formatter = struct {
         return (try render(arena, doc, std.math.maxInt(u32))).len;
     }
 
-    fn fmtCase(this: *Formatter, subjects: []ast.Expr, arms: []ast.CaseArm, trailingComments: []const []const u8) !*const Doc {
+    /// Decision 525 — a statement a block's tail can be: an expression, not a
+    /// binding, a jump, a `use`, a loop or a comment (the parser's
+    /// `isTailExpr`).
+    fn isTailable(e: ast.Expr) bool {
+        return switch (e) {
+            .binding, .jump, .useHook, .loop => false,
+            .literal => |lit| lit.kind != .comment,
+            else => true,
+        };
+    }
+
+    /// Decision 525 — a block `{ … }` (`case.isBlock`, `comptime { … }`,
+    /// `async { … }`): printed as a function body is — `{}` when empty, one
+    /// line when it is one tail that fits, else one statement per line.
+    fn fmtBlock(this: *Formatter, body: []ast.Stmt) !*const Doc {
+        this.nextSeqIsValue = true;
+        defer this.nextSeqIsValue = false;
+        return this.fmtFnBody(body);
+    }
+
+    fn fmtCase(this: *Formatter, c: anytype) !*const Doc {
+        const isStatement = this.nextCaseIsStatement;
+        this.nextCaseIsStatement = false;
+        if (c.isBlock) return this.fmtBlock(c.arms[0].body.function.kind.body);
+        const subjects = c.subjects;
+        const arms = c.arms;
+        const trailingComments = c.trailingComments;
         var armParts: std.ArrayList(*const Doc) = .empty;
         defer armParts.deinit(this.arena);
         for (arms, 0..) |arm, i| {
@@ -1990,12 +2046,30 @@ pub const Formatter = struct {
                 try this.fmtExpr(g),
                 try this.text(if (isBlockArm) ")" else ""),
             }) else this.nil();
+            // Decision 525 — an arm of a `case` used as a value answers its
+            // tail: `botopink format` writes its last expression without `;`.
+            const armBody: []ast.Stmt = if (!isBlockArm) &.{} else blk: {
+                const body = arm.body.function.kind.body;
+                if (isStatement) break :blk body;
+                var n = body.len;
+                while (n > 0) : (n -= 1) {
+                    const e = body[n - 1].expr;
+                    if (e == .literal and e.literal.kind == .comment) continue;
+                    if (body[n - 1].tail == .none and isTailable(e)) {
+                        const copy = try this.arena.dupe(ast.Stmt, body);
+                        copy[n - 1].tail = .value;
+                        break :blk copy;
+                    }
+                    break;
+                }
+                break :blk body;
+            };
             try armParts.append(this.arena, try this.concatAll(&.{
                 try this.fmtPattern(arm.pattern),
                 guardDoc,
                 if (isBlockArm) try this.text(" ") else try this.text(" -> "),
                 if (isBlockArm)
-                    try this.fmtLambda(arm.body.function.kind.params, arm.body.function.kind.body, false)
+                    try this.fmtLambda(arm.body.function.kind.params, armBody, false)
                 else
                     try this.fmtExpr(arm.body),
                 if (isBlockArm) this.nil() else try this.text(";"),

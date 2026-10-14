@@ -2,10 +2,13 @@
 ```botopink
 fn main() -> string {
     val input = 42;
-    val status = @block{
+    val status = {
         val calculo = input * 2;
-        if (calculo > 100) return "Alto";
-        return "Baixo";
+        if (calculo > 100) {
+            "Alto"
+        } else {
+            "Baixo"
+        }
     };
     return status;
 }
@@ -16,7 +19,7 @@ fn main() -> string {
 {module, test@main}.
 {exports, [{'_botopink_main', 0}, {main, 1}, {'__bp_priv__main', 0}]}.
 {attributes, []}.
-{labels, 14}.
+{labels, 15}.
 
 {function, main, 0, 3}.
   {label, 2}.
@@ -27,6 +30,7 @@ fn main() -> string {
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
     {move, {integer, 42}, {x, 0}}.
     {move, {x, 0}, {y, 0}}.
+    {move, {atom, true}, {x, 0}}.
     {gc_bif, '*', {f, 0}, 0, [{y, 0}, {integer, 2}], {x, 0}}.
     {test, is_ge, {f, 9}, [{x, 0}, {integer, -2147483648}]}.
     {test, is_ge, {f, 9}, [{integer, 2147483647}, {x, 0}]}.
@@ -38,9 +42,10 @@ fn main() -> string {
     {move, {x, 0}, {y, 1}}.
     {test, is_lt, {f, 11}, [{integer, 100}, {y, 1}]}.
     {move, {literal, <<"Alto">>}, {x, 0}}.
-    {jump, {f, 8}}.
+    {jump, {f, 12}}.
   {label, 11}.
     {move, {literal, <<"Baixo">>}, {x, 0}}.
+  {label, 12}.
     {jump, {f, 8}}.
   {label, 8}.
     {move, {x, 0}, {y, 2}}.
@@ -66,11 +71,11 @@ fn main() -> string {
   {label, 7}.
     {call_only, 0, {f, 5}}.
 
-{function, '__bp_priv__main', 0, 13}.
-  {label, 12}.
+{function, '__bp_priv__main', 0, 14}.
+  {label, 13}.
     {line, [{location, "test@main.erl", 4}]}.
     {func_info, {atom, test@main}, {atom, '__bp_priv__main'}, 0}.
-  {label, 13}.
+  {label, 14}.
     {call_only, 0, {f, 3}}.
 ```
 

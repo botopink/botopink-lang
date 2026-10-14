@@ -1,9 +1,7 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 val greeting = "hi";
-val msg = comptime {
-    break greeting;
-};
+val msg = comptime { greeting };
 fn main() {
     @print(msg);
 }
@@ -11,9 +9,9 @@ fn main() {
 
 ----- ERROR
 error comptime: expression cannot be evaluated at compile time
- ┌─ main.bp:3:11
+ ┌─ main.bp:2:22
   │
-3 │     break greeting;
-  │           ^^^^^^^^
+2 │ val msg = comptime { greeting };
+  │                      ^^^^^^^^
 
   'greeting' is a runtime identifier

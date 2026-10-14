@@ -11,7 +11,7 @@ test "format: lambda ---- trailing no params" {
     try h.assertFormatLossless(std.testing.allocator,
         \\behavior Test {
         \\    default fn run() {
-        \\        executar { ok };
+        \\        executar { -> ok };
         \\    }
         \\}
     );
@@ -31,7 +31,7 @@ test "format: lambda ---- two trailing blocks second labeled" {
     try h.assertFormatLossless(std.testing.allocator,
         \\behavior Test {
         \\    default fn run() {
-        \\        executar { ok } erro: { fail };
+        \\        executar { -> ok } erro: { -> fail };
         \\    }
         \\}
     );
@@ -316,10 +316,107 @@ test "format: negation ---- simple" {
 test "format: negation ---- block" {
     try h.assertFormat(std.testing.allocator,
         \\fn main() {
-        \\    !@block{
+        \\    !{
         \\        123;
-        \\        x;
+        \\        x
         \\    };
+        \\}
+    );
+}
+
+test "format: block ---- one tail on one line, statements open (decision 525)" {
+    try h.assertFormat(std.testing.allocator,
+        \\fn main() {
+        \\    val a = { 1 + 2 };
+        \\    val b = {
+        \\        val x = 4;
+        \\        x * 10
+        \\    };
+        \\    {
+        \\        @print(b);
+        \\    }
+        \\    val c = comptime { 2 * 3 };
+        \\    val t = async { a + c };
+        \\}
+    );
+}
+
+test "format: block ---- a trailing lambda without `->` gains it (decision 525)" {
+    try h.assertFormatAs(std.testing.allocator,
+        \\fn main() {
+        \\    xs.forEach { @print("x"); };
+        \\    xs.each {
+        \\        val y = 1;
+        \\        @print(y);
+        \\    };
+        \\}
+    ,
+        \\fn main() {
+        \\    xs.forEach { -> @print("x"); };
+        \\    xs.each { ->
+        \\        val y = 1;
+        \\        @print(y);
+        \\    };
+        \\}
+    );
+}
+
+test "format: block ---- `comptime { break v; }` becomes its tail (decision 525)" {
+    try h.assertFormatAs(std.testing.allocator,
+        \\val r = comptime {
+        \\    val x = 10;
+        \\    break x * 2;
+        \\};
+    ,
+        \\val r = comptime {
+        \\    val x = 10;
+        \\    x * 2
+        \\};
+    );
+}
+
+test "format: block ---- the last `;` of a value `case` arm is dropped (decision 525)" {
+    try h.assertFormatAs(std.testing.allocator,
+        \\fn f(n: i32) -> string {
+        \\    val v = case n {
+        \\        0 {
+        \\            "zero";
+        \\        }
+        \\        _ {
+        \\            val k = n * 2;
+        \\            k.toString();
+        \\        }
+        \\    };
+        \\    case n {
+        \\        1 {
+        \\            @print("one");
+        \\        }
+        \\        _ {
+        \\            @print(v);
+        \\        }
+        \\    }
+        \\    return v;
+        \\}
+    ,
+        \\fn f(n: i32) -> string {
+        \\    val v = case n {
+        \\        0 {
+        \\            "zero"
+        \\        }
+        \\        _ {
+        \\            val k = n * 2;
+        \\            k.toString()
+        \\        }
+        \\    };
+        \\    case n {
+        \\        1 {
+        \\            @print("one");
+        \\        }
+        \\        _ {
+        \\            @print(v);
+        \\        }
+        \\    }
+        \\    return v;
         \\}
     );
 }
@@ -762,34 +859,34 @@ test "format: lambda ---- the one-line form prints for a parameterless lambda ar
 }
 
 test "format: lambda ---- a trailing lambda with one value expression prints on one line (decision 165)" {
-    // Arrow or not: `h1 { "my blog" }`. A fitting one-expression body is one
+    // `h1 { -> "my blog" }` (decision 525: the arrow is kept). A fitting one-expression body is one
     // line; the written layout (one line or three) does not matter. The `;`
     // after the value is kept as written (decision 409: the printer adds and
     // removes none).
     try h.assertFormatLossless(std.testing.allocator,
         \\fn main() {
-        \\    h1 { "my blog" };
+        \\    h1 { -> "my blog" };
         \\    calcular(fator: 2) { a, b -> a + b };
         \\}
     );
     try h.assertFormatAs(std.testing.allocator,
         \\fn main() {
-        \\    h1 {
+        \\    h1 { ->
         \\        "my blog";
         \\    };
-        \\    h1 {
+        \\    h1 { ->
         \\        "my blog"
         \\    };
         \\}
     ,
         \\fn main() {
-        \\    h1 { "my blog"; };
-        \\    h1 { "my blog" };
+        \\    h1 { -> "my blog"; };
+        \\    h1 { -> "my blog" };
         \\}
     );
     try h.assertIdempotent(std.testing.allocator,
         \\fn main() {
-        \\    h1 {
+        \\    h1 { ->
         \\        "my blog";
         \\    };
         \\}
@@ -800,10 +897,10 @@ test "format: lambda ---- a trailing lambda keeps the open form when it holds mo
     // Several statements, a binding, a jump: not one value expression.
     try h.assertFormatLossless(std.testing.allocator,
         \\fn main() {
-        \\    executar {
+        \\    executar { ->
         \\        val a = 1;
         \\    };
-        \\    executar {
+        \\    executar { ->
         \\        ok;
         \\        fail;
         \\    };
@@ -814,13 +911,13 @@ test "format: lambda ---- a trailing lambda keeps the open form when it holds mo
 test "format: lambda ---- a trailing lambda whose one line would pass the width opens" {
     const src =
         \\fn main() {
-        \\    executar { aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa + bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb };
+        \\    executar { -> aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa + bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb };
         \\}
     ;
     try h.assertIdempotent(std.testing.allocator, src);
     try h.assertFormatAs(std.testing.allocator, src,
         \\fn main() {
-        \\    executar {
+        \\    executar { ->
         \\        aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
         \\            + bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
         \\    };

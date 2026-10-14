@@ -1,20 +1,14 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val result = comptime {
-    val x = 10;
-    break x * 2;
-};
+val t = comptime { 2 + 22 };
 fn main() {
-    @print(result);
+    @print(t);
 }
 ```
 
 ----- COMPTIME VALUES -- main
 ```text
-ct_0: val result = comptime {
-          val x = 10;
-          break x * 2;
-      } → 20
+ct_0: val t = comptime { 2 + 22 } → 24
 ```
 
 ----- WASM TEXT -- main.wat
@@ -23,9 +17,9 @@ ct_0: val result = comptime {
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
   (global $__heap_ptr (mut i32) (i32.const 256))
-  (global $result i32 (i32.const 20))
+  (global $t i32 (i32.const 24))
   (func $main
-    global.get $result
+    global.get $t
     call $__print_i32
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")
@@ -216,5 +210,5 @@ ct_0: val result = comptime {
 
 ----- RUN LOG -----
 ```logs
-20
+24
 ```

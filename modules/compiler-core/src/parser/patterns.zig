@@ -156,14 +156,24 @@ pub fn parseCaseExpr(this: *This, alloc: std.mem.Allocator) ParseError!Collectio
                     for (blockStmts.items) |*s| s.deinit(alloc);
                     blockStmts.deinit(alloc);
                 }
+                // Decision 525 — `p -> { … }` is a block: its last expression
+                // written without `;` is the arm's value.
+                var lastBare = false;
                 while (!this.check(.rightBrace) and !this.check(.endOfFile)) {
                     const e = try this.parseExpr(alloc);
                     // A braced `if`/loop/`case` ends at its `}` (decision 29 (c));
                     // the `;` after it is optional (`Parser.isBracedBlockStmt`).
-                    if (this.isBracedBlockStmt(e)) _ = this.match(.semicolon) else _ = try this.consume(.semicolon);
+                    if (this.isBracedBlockStmt(e)) {
+                        _ = this.match(.semicolon);
+                        lastBare = true;
+                    } else if (!this.match(.semicolon)) {
+                        if (!this.check(.rightBrace)) return ParseError.UnexpectedToken;
+                        lastBare = true;
+                    } else lastBare = false;
                     try blockStmts.append(alloc, .{ .expr = e });
                 }
                 _ = try this.consume(.rightBrace);
+                This.markBlockTail(blockStmts.items, lastBare);
                 var emptyParams: std.ArrayList([]const u8) = .empty;
                 break :blk2 Expr{ .function = .{ .loc = locFromToken(braceTok), .kind = .{
                     .syntax = .lambda,

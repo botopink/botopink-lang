@@ -680,6 +680,18 @@ pub fn TrailingLambdaOf(comptime phase: Phase) type {
         /// Parameter names (types are inferred). Empty when the lambda takes no params.
         params: []const []const u8,
         body: []StmtOf(phase),
+        /// Decision 525 — written without `->` (`f(x) { … }`): a block, never
+        /// a closure. The checker refuses it where the call expects a
+        /// function (every trailing position does), with the hint "missing
+        /// `->`?"; `botopink format` writes it back as `{ -> … }`. Dumped only
+        /// when set.
+        isBlock: bool = false,
+        /// The `{` it opens with. Left out of the dump.
+        loc: Loc = .{ .line = 0, .col = 0 },
+
+        pub fn jsonStringify(this: @This(), jws: anytype) !void {
+            return stringifyOmitting(this, jws, &.{"loc"}, &.{"isBlock"});
+        }
 
         pub fn deinit(this: *@This(), allocator: std.mem.Allocator) void {
             allocator.free(this.params);
@@ -1338,6 +1350,19 @@ pub fn CollectionExprOf(comptime phase: Phase) type {
             arms: []CaseArmOf(phase),
             /// Comments appearing after the last arm, before closing `}`
             trailingComments: []const []const u8 = &.{},
+            /// Decision 525 — a block `{ … }` (no `->`): a scope, never a
+            /// closure. The parser lands it as `case true { _ { … } }` — one
+            /// arm whose body is the block's statements — so every pass reads
+            /// what a `case` arm's block already means: its `return` leaves
+            /// the enclosing function, a `var` it reassigns is the function's,
+            /// and its value is its tail (the last expression written without
+            /// `;`). The printer writes it back as `{ … }`; the checker names
+            /// it a block. Dumped only when set.
+            isBlock: bool = false,
+
+            pub fn jsonStringify(this: @This(), jws: anytype) !void {
+                return stringifyOmitting(this, jws, &.{}, &.{"isBlock"});
+            }
         },
         /// `(expr)` ---- grouped expression (parentheses for precedence)
         grouped: *ExprOf(phase),
@@ -3682,6 +3707,9 @@ fn exprFindJump(e: Expr, comptime pred: fn (JumpExpr) bool) ?Loc {
         .collection => |col| switch (col.kind) {
             .grouped => |inner| exprFindJump(inner.*, pred),
             .case => |c| blk: {
+                // Decision 525 — a block `{ … }` is a scope of the enclosing
+                // function: every jump in it is the function's.
+                if (c.isBlock) break :blk bodyFindJump(c.arms[0].body.function.kind.body, pred);
                 for (c.subjects) |x| if (exprFindJump(x, pred)) |l| break :blk l;
                 for (c.arms) |arm| {
                     // A braced arm is parsed as a lambda, but it is the
@@ -3709,10 +3737,6 @@ fn exprFindJump(e: Expr, comptime pred: fn (JumpExpr) bool) ?Loc {
             .call => |cc| blk: {
                 if (cc.receiver) |r| if (exprFindJump(r.*, pred)) |l| break :blk l;
                 for (cc.args) |a| if (exprFindJump(a.value.*, pred)) |l| break :blk l;
-                // A `@block { … }`'s `return` is the block's value, not the
-                // enclosing function's.
-                if (cc.is_builtin and std.mem.eql(u8, cc.callee, "block") and cc.trailing.len > 0)
-                    break :blk if (pred == isReturnJump or pred == isEarlyExitJump) null else bodyFindJump(cc.trailing[0].body, pred);
                 break :blk null;
             },
             else => null,

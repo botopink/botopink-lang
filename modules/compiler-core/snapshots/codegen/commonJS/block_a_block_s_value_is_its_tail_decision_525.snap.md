@@ -2,10 +2,13 @@
 ```botopink
 fn main() -> string {
     val input = 42;
-    val status = @block{
+    val status = {
         val calculo = input * 2;
-        if (calculo > 100) return "Alto";
-        return "Baixo";
+        if (calculo > 100) {
+            "Alto"
+        } else {
+            "Baixo"
+        }
     };
     return status;
 }
@@ -17,7 +20,13 @@ function __bp_int(v, lo, hi, what) { if (v >= lo && v <= hi) { return v + 0; } t
 
 function main() {
     const input = 42;
-    const status = (() => {const calculo = __bp_int((input * 2), -2147483648, 2147483647, "* on i32 at main.bp:4:29"); if ((calculo > 100)) { return "Alto"; } return "Baixo";})();
+    const status = (() => {
+        const _s = true;
+        {
+            const calculo = __bp_int((input * 2), -2147483648, 2147483647, "* on i32 at main.bp:4:29");
+            return (() => { if ((calculo > 100)) { return "Alto"; } else { return "Baixo"; } })();
+        }
+    })();
     return status;
 }
 

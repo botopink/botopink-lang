@@ -119,10 +119,13 @@ block that reads something between the `{` and its first statement — a prologu
 |---|---|---|
 | fn / `test` body, `fn (…) { … }` expression | — (`parseFnBodyInBraces`) | `requiredExceptLast`, `markTail` |
 | a type's method, a behavior's default body | — (`parseMethodBodyStmts`, `parseSimpleBodyStmts`) | `requiredExceptLast`, `markTail` (was `required`; decision 409) — an `implement` method keeps `required`: the printer writes no `-> R` there |
-| `if` else-branch, `case` arm | — (`parseStmtListInBraces`) | `requiredExceptLast` |
+| `if` else-branch | — (`parseStmtListInBraces`) | `requiredExceptLast` |
 | `if` then-branch | `{ x -> ` or `{ _ -> ` — the branch's value binding | `requiredExceptLast` |
-| lambda `{ a, b -> … }` | the parameter list | `optional`, `markTail` |
-| trailing lambda `f { a -> … }` | an optional `label:` and the parameter list | `requiredExceptLast` (was `required` — the one block whose last statement could not drop its `;`; front 15 step 4b), `markTail` |
+| lambda `{ a, b -> … }`, `{ -> … }` | the parameter list | `optional`, `markTail` |
+| block `{ … }` (no `->`, decision 525) | — (`parseBlockValueBody`) | `requiredExceptLast`, `markTail`, `bracedTail` |
+| `comptime { … }`, `async { … }` | — | `requiredExceptLast`, `markTail`, `bracedTail`; the tail wrapped in the block's `break` / `return` (`jumpTail`) |
+| `case` arm `p { … }` / `p -> { … }` | an optional `n ->` binder (`parseLambdaBody`) | `optional` / `requiredExceptLast`, the tail marked (`markBlockTail`), a braced `if` / `case` at the end included |
+| trailing lambda `f { a -> … }`, `f { -> … }` | an optional `label:` and the parameter list; neither parameters nor `->` is a block (`TrailingLambda.isBlock`, refused by the checker) | `requiredExceptLast` (was `required` — the one block whose last statement could not drop its `;`; front 15 step 4b), `markTail` |
 | `for (…) { x -> … }` body | the one binder (`parseLoopBody`) | `requiredExceptLast` (was `required`; front 15 step 4b, with the trailing lambda) |
 | `while (…) { … }`, `loop { … }`, `iter loop { … }` body | — (`parseLoopBody`; a binder is refused) | `requiredExceptLast` (the same `parseLoopBody`) |
 
@@ -134,6 +137,23 @@ body's written return has a value — a `fn`, a type's method, a behavior's
 default body, a function expression — so every later pass reads the `return`;
 the printer writes the value back without `return` and without `;`
 (`format.zig` `fmtStmt`). `Stmt.tail` is dumped only when set.
+
+## Blocks (decision 525)
+
+In every position a `{` followed by parameters and `->` (or `->` alone) is a lambda
+(`exprs.lambdaHeadAt`), and a `{` without `->` is a **block** — a scope, never a closure.
+`parsePrimary` reads one through `parseBlockValueBody` and lands it as
+`case true { _ { body } }` with `isBlock` set (`exprs.makeBlockExpr`): a `case` arm's block is
+already a scope of the enclosing function on every pass (its `return` leaves the function, a `var`
+it reassigns is the function's), so the checker and the four backends read a block as they read an
+arm, and the printer writes it back as `{ … }`. A block used as a value answers its last expression
+written without `;` (`markTail`), a braced `if` / `case` at its end included (`bracedTail`: the `;`
+after a braced statement means nothing there, decision 29 (c)) — the same tail a `case` arm marks
+(`markBlockTail`), `comptime { … }` (its tail wrapped in the block's `break`, which the evaluators
+read, `jumpTail`) and `async { … }` (its tail wrapped in `return`, which leaves the `async` block).
+A trailing `{` without `->` is a block too (`TrailingLambda.isBlock`, located at its `{`): the
+checker refuses it where the call expects a function, and `botopink format` writes it back as
+`{ -> … }`. `@block` is a parse error, `removed-block-builtin`, at the builtin.
 
 **Where a `use` may stand** is not the parser's rule: decision 357's rules of
 hooks (`use-not-top-level`) are the checker's (`comptime/AGENTS.md`), which
@@ -470,7 +490,7 @@ optional guard:
 
 | Form | Body |
 |---|---|
-| `Pattern { body }` — decision 8 §5.1 | a lambda body: `{ n -> … }` binds the whole matched value (P1), the last expression is the arm's value (P3), and the arm takes no `;` (P2) |
+| `Pattern { body }` — decision 8 §5.1 | a lambda body: `{ n -> … }` binds the whole matched value (P1), the last expression written without `;` is the arm's value (P3, decision 525 — `markBlockTail`), and the arm takes no `;` (P2) |
 | `pattern -> value;` — pre-decision-8 | unchanged; `libs/std` and the libraries are written this way, and 12 step 3 / 13 migrate them. A `{` after the `->` whose head is a lambda's (`->`, or `a, b ->` — `exprs.lambdaHeadAt`, the one test `parsePrimary`'s lambda arm uses) is the arm's VALUE, a lambda literal, wrapped as the one statement of a parameterless arm body (`A(x) -> { item -> f(item) }`, `language-gaps.md` row 28); any other `{` is the block arm body |
 
 The guard is `when (…)` (§5.3) or the older `if <expr>`. `when` is **not** a
@@ -540,11 +560,12 @@ the refusals above has to point at the arm. It is left out of the AST dump
 `format.zig` writes an arm back in the form its body carries: a lambda body is
 decision 8's `Pattern [when (…)] { body }` (no arrow, no `;`, the binder kept),
 anything else the older `pattern [if …] -> value;`. The pre-decision-8 block arm
-`x -> { 1; }` is a parameterless lambda too, so it comes back as `x { 1 }` —
-the same AST, decision 8's spelling; no library writes one today. Two residuals
-for the formatter pass: a lambda body's last expression is still written with a
-trailing `;`, which §5.1 P3 does not want, and a `case` whose arms carry
-comments still loses their position.
+`x -> { 1; }` is a parameterless lambda too, so it comes back as `x { 1; }` —
+the same AST, decision 8's spelling. In a `case` used as a value (any `case`
+that is not a whole statement, `Formatter.nextCaseIsStatement`) the arm's last
+expression is written without `;`, its tail (decision 525) — the migration of
+the arms written before the rule. One residual for the formatter pass: a `case`
+whose arms carry comments still loses their position.
 
 ## Type guards (`-> x is T`)
 

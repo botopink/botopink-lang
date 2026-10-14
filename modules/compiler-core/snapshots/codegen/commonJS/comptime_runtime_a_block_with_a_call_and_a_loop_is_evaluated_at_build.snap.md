@@ -14,7 +14,7 @@ fn main() {
     val d = comptime {
         var d = 0;
         for ([1, 2, 3]) { b -> d = add(d, b); }
-        break d;
+        d
     };
     @print(d);
 }

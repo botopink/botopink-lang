@@ -1,8 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val n = comptime {
-    break 2 + 3 * 4;
-};
+val n = comptime { 2 + 3 * 4 };
 fn main() {
     @print(n);
 }
@@ -10,9 +8,7 @@ fn main() {
 
 ----- COMPTIME VALUES -- main
 ```text
-ct_0: val n = comptime {
-          break 2 + 3 * 4;
-      } → 14
+ct_0: val n = comptime { 2 + 3 * 4 } → 14
 ```
 
 ----- BEAM ASSEMBLY -- main.S

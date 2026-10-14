@@ -25,11 +25,9 @@ test "format: val ---- comptime string concat" {
     );
 }
 
-test "format: val ---- comptime block with break" {
+test "format: val ---- comptime block with a tail" {
     try h.assertFormat(std.testing.allocator,
-        \\val hash = comptime {
-        \\    break 6364 + 11;
-        \\};
+        \\val hash = comptime { 6364 + 11 };
     );
 }
 
@@ -295,9 +293,9 @@ test "format: let ---- simple" {
 test "format: let ---- block value" {
     try h.assertFormat(std.testing.allocator,
         \\fn main() {
-        \\    val x = @block{
+        \\    val x = {
         \\        1;
-        \\        2;
+        \\        2
         \\    };
         \\    null;
         \\}

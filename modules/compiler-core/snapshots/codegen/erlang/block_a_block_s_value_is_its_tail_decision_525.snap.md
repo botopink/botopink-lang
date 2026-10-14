@@ -2,10 +2,13 @@
 ```botopink
 fn main() -> string {
     val input = 42;
-    val status = @block{
+    val status = {
         val calculo = input * 2;
-        if (calculo > 100) return "Alto";
-        return "Baixo";
+        if (calculo > 100) {
+            "Alto"
+        } else {
+            "Baixo"
+        }
     };
     return status;
 }
@@ -19,15 +22,16 @@ fn main() -> string {
 
 main() ->
     Input = 42,
-    Status = (fun() ->
-        Calculo = '__bp_int'((Input * 2), -2147483648, 2147483647, <<"integer overflow: * on i32 at main.bp:4:29">>),
-        case (Calculo > 100) of
-            true ->
-                <<"Alto">>;
-            _ ->
-                <<"Baixo">>
-        end
-    end)(),
+    Status = case true of
+        _ ->
+            Calculo = '__bp_int'((Input * 2), -2147483648, 2147483647, <<"integer overflow: * on i32 at main.bp:4:29">>),
+            case (Calculo > 100) of
+                true ->
+                    <<"Alto">>;
+                false ->
+                    <<"Baixo">>
+            end
+    end,
     Status.
 
 -compile({inline,['__bp_int'/4]}).

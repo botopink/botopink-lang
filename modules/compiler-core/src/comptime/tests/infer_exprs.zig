@@ -50,7 +50,7 @@ test "infer: binary operators" {
 
 test "infer: local binding inside comptime" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val hash = comptime { break 6364 + 11; };
+        \\val hash = comptime { 6364 + 11 };
     );
 }
 

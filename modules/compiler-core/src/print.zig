@@ -394,6 +394,12 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .caretCaption = "write `behavior`",
             .hint = "`behavior Printable { fn print(self: Self) -> string; }`; a delegate is `declare fn`.",
         },
+        .removedBlockBuiltin => .{
+            .code = "removed-block-builtin",
+            .message = "`@block` was removed (decision 525)",
+            .caretCaption = "write the block `{ … }`",
+            .hint = "A `{` without `->` is a block: `val x = { val a = 1; a + 2 };` — its value is its last expression written without `;`, and a `return` in it leaves the enclosing function.",
+        },
         .removedRecordLiteral => .{
             .code = "removed-record-literal",
             .message = "anonymous records are tuples in 1.0.3",

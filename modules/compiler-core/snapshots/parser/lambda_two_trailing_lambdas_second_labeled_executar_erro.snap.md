@@ -56,7 +56,8 @@
                                 },
                                 "emptyLinesBefore": 0
                               }
-                            ]
+                            ],
+                            "isBlock": true
                           },
                           {
                             "label": "erro",
@@ -76,7 +77,8 @@
                                 },
                                 "emptyLinesBefore": 0
                               }
-                            ]
+                            ],
+                            "isBlock": true
                           }
                         ]
                       }

@@ -2,10 +2,13 @@
 ```botopink
 fn main() -> string {
     val input = 42;
-    val status = @block{
+    val status = {
         val calculo = input * 2;
-        if (calculo > 100) return "Alto";
-        return "Baixo";
+        if (calculo > 100) {
+            "Alto"
+        } else {
+            "Baixo"
+        }
     };
     return status;
 }
@@ -21,11 +24,12 @@ fn main() -> string {
   (func $main (result i32)
     (local $input i32)
     (local $status i32)
+    (local $__case_0 i32)
     (local $calculo i32)
-    (local $__blk0 i32)
     i32.const 42
     local.set $input
-    (block $__blkend0
+    i32.const 1
+    local.set $__case_0
     local.get $input
     i32.const 2
     call $__i32_mul_chk
@@ -36,19 +40,11 @@ fn main() -> string {
     (if (result i32)
       (then
     i32.const 256
-    local.set $__blk0
-    br $__blkend0
       )
       (else
-        i32.const 0
+    i32.const 264
       )
     )
-    drop
-    i32.const 264
-    local.set $__blk0
-    br $__blkend0
-    )
-    local.get $__blk0
     local.set $status
     local.get $status
     return

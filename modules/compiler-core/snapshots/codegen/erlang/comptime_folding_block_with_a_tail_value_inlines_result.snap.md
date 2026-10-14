@@ -1,8 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val t = comptime {
-    break 2 + 22;
-};
+val t = comptime { 2 + 22 };
 fn main() {
     @print(t);
 }
@@ -10,9 +8,7 @@ fn main() {
 
 ----- COMPTIME VALUES -- main
 ```text
-ct_0: val t = comptime {
-          break 2 + 22;
-      } → 24
+ct_0: val t = comptime { 2 + 22 } → 24
 ```
 
 ----- ERLANG -- main.erl

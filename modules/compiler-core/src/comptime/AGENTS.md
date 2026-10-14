@@ -1233,12 +1233,8 @@ the value:
 - an effect body → the wrapper's value layer (decision 119): `@Result<R, E>` → `R`,
   `@Task<T>` → `T` and `@Component<T>` → `T` — `U` when that `T` is `@Result<U, E>`;
 - a lambda → its expected return type, else a fresh var shared by its `return`s; a trailing
-  lambda (`@block { … }`, `use memo { -> … }`) owns its `return`s too, and `@block` is typed as the
-  value they carry — never by its tail (decision 2): an `@block` with no valued `return` is `void`,
-  legal only as a whole statement (`env.statementBlockLoc`); in value position it is
-  `block-tail-value` at the block, and so is one whose `return`s cover only some paths (a body
-  that can run off its end — `stmtsMayFallThrough`, read on the typed body;
-  `modules/block_partial_return`);
+  lambda (`use memo { -> … }`) owns its `return`s too. A block `{ … }` (decision 525) owns none:
+  it is a `case` arm's block (`keepReturnTarget`), its `return` the function's;
 - no declared return type, a template fn (`-> @Expr<…>`), a sequence body (`@Iterator` /
   `@Stream` that yields: `return <expr>` is `iter-mixed-yield-return` there, decision 123) → unchecked.
 
@@ -1364,7 +1360,7 @@ refusal).
 
 ## Decision 2 is enforced (01 R7)
 
-A block is a statement and a value leaves a body through `return` (or a value block's `break`).
+A value leaves a function body through `return` or its tail (decision 409).
 `refuseFallingOffTheEnd` (after `inferFnDecl`'s body) refuses a plain `fn` whose written return type
 has a value and whose body can reach its end — `stmtsMayFallThrough` / `exprMayFallThrough`: the
 last statement is not a `return`/`throw`/`break`, an `if`/`else` or `case` every branch of which
@@ -1393,6 +1389,33 @@ expression — a `tail = .value` statement must be `void` (`refuseValueTailInVoi
 typed function expression answers its written return: with `-> R` a body that can run off its end
 is refused at the expression (`stmtsMayFallThrough`), and its tail does not type it. A lambda and an
 untyped `fn(x) { … }` keep the value of their last statement as before.
+
+## Blocks (decision 525)
+
+A `{` without `->` is a block, never a closure. The parser lands it as `case true { _ { … } }`
+flagged `isBlock` (`parser/AGENTS.md` § Blocks), so it is typed as a `case` arm's block: its
+`return` keeps the enclosing function's target (`keepReturnTarget`), and its value is its tail.
+`inferStmtsTyped` keeps each statement's `tail`, which `caseArmValueType` reads: an arm's value is
+its last statement when it is a tail (`tail == .value`), a top-level `break <value>` still winning;
+an arm whose last statement is written with `;` contributes nothing. The refusals, each located:
+
+- `case-arm-no-value` — a `case` used as a value (not a whole statement: `env.statementBlockLoc`,
+  set per statement by `statementBlockLocOf` for a `case` or a block) whose type is not `void`, one
+  of whose arms answers nothing (`armAnswersNothing`: no tail, a `void` tail; a jump or a
+  `noreturn` last statement leaves instead) — at the arm's pattern;
+- `block-not-function` — a block handed where a function is expected: a trailing `{` without `->`
+  (`TrailingLambda.isBlock`, refused in `inferTrailingLambdasTyped` at its `{`), a block whose
+  position's expected type is a function (`refuseBlockShape`), and a block argument of a
+  function-typed parameter (`unifyArgument` reads `env.blockLocs`, the blocks inferred so far);
+- `block-void-value` — a block whose value is `void` handed where `unknown` is expected (the
+  position's expectation, or `unifyArgument`);
+- `block-break-value` — a written `break <value>` meant as a block's value: in a block's own
+  statements and `if` branches (`blockBreakValue`; a loop, a closure and a `case` arm's block are
+  scopes of their own), and in `comptime { … }`, whose tail the parser wrapped in the block's
+  `break` (`tail = .returned`, skipped).
+
+`@block` is a parse error (`removed-block-builtin`), and `builtins.d.bp` no longer declares it.
+`await`, `yield`, `break` and `continue` in a block are judged as in a `case` arm's block.
 
 ## Decisions 44 and 45 (C-18)
 
@@ -1908,12 +1931,15 @@ That is R8 / types-as-values A1's ground, not decision 37's.
 ## `case` and `comptime` block types (06 C2)
 
 A `case` is typed from its arms (`caseTypeFromArms`): arms that agree unify, arms of different
-types make a union (decision 8 §3.2). A jump arm and a `void` arm contribute nothing.
+types make a union (decision 8 §3.2). A jump arm and a `void` arm contribute nothing; in a `case`
+used as a value, an arm that answers nothing beside arms that answer a value is `case-arm-no-value`
+(§ Blocks).
 
 **An arm body is a lambda BODY, not a lambda value** (decision 8 §5.1 P3). `Pattern { body }` lands
 as the same lambda node the older block arm produced, so `caseArmValueType` reads it as one: a
-top-level `break <value>` names the arm's value and wins, and otherwise the body's **tail
-expression** is the value (a jump tail contributes nothing, §3.2). Before this only the `break` half
+top-level `break <value>` names the arm's value and wins, and otherwise the body's **tail** — its
+last expression written without `;` (decision 525) — is the value (a jump tail contributes nothing,
+§3.2). Before this only the `break` half
 was read, and only for a 0-parameter lambda — `0 { "zero" }` contributed nothing at all and the
 `case` typed `void`, while `_ { n -> … }` was unified against a `function`. `isArmBodyLambda` is the
 0-**or**-1-parameter test, so both forms keep the enclosing fn's return target
@@ -1938,7 +1964,8 @@ variant payload binding takes the variant field's type instantiated against the 
 args (`variantPayloadTypes`; `@Result<R, E>` `Ok` → R, `Err`/`Error` → E; `?T` `Some` → T); list
 elements take the element type and the spread the array type; an OR pattern unifies a name across
 its alternatives. An unknown subject type leaves the bindings fresh. A `comptime { … }` block is
-typed as its `break <value>`, `void` without one.
+typed as its tail (decision 525), which the parser wrapped in the block's `break`, `void` without
+one.
 
 A section of an enum-shaped `type` is a type named by its path (06 N28, decision 8 §5.3b):
 `Token.Text`, `Token.Text.Size` resolve in type position through `Env.resolveTypeName`, which

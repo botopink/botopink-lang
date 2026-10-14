@@ -1213,15 +1213,16 @@ pub const Env = struct {
     /// The generic-param map of the fn body being inferred, so annotations
     /// inside the body resolve `T` to the fn's own generic var.
     fnGenericMap: ?*std.StringHashMap(*T.Type) = null,
-    /// C1 — the return targets of the trailing lambdas inferred last, read by
-    /// `@block` to type the block as the value its `return`s carry.
-    lastTrailingReturnTargets: []*T.Type = &.{},
-    /// Decision 2 — where the statement being inferred is an `@block { … }`
-    /// written as a whole statement (its value discarded). Set by the
-    /// statement loops (`inferStmtsTyped`, `inferBodyStmts`) per statement
-    /// and restored after it; the `@block` arm reads it to tell a statement
-    /// block from one in value position, which needs a valued `return`.
+    /// Decision 525 — where the statement being inferred is a `case` or a
+    /// block `{ … }` written as a whole statement (its value discarded). Set
+    /// by the statement loops (`inferStmtsTyped`, `inferBodyStmts`) per
+    /// statement and restored after it; the `case` arm reads it to tell a
+    /// statement from a value, whose every arm answers one.
     statementBlockLoc: ?ast.Loc = null,
+    /// Decision 525 — the locations of the blocks `{ … }` inferred so far: an
+    /// argument at one is a block's value (`unifyArgument` refuses it where a
+    /// function is expected).
+    blockLocs: std.AutoHashMapUnmanaged(ast.Loc, void) = .empty,
     /// Decision 297 — the functions a call of this module passed a type to
     /// (`pick(User)` → `pick__type()`, `value_or_type.zig`): an import of one
     /// brings its type form along (`value_or_type.withTwinImports`).

@@ -88,7 +88,8 @@
                                             }
                                           }
                                         },
-                                        "emptyLinesBefore": 0
+                                        "emptyLinesBefore": 0,
+                                        "tail": "value"
                                       }
                                     ]
                                   }
@@ -155,7 +156,8 @@
                                             }
                                           }
                                         },
-                                        "emptyLinesBefore": 0
+                                        "emptyLinesBefore": 0,
+                                        "tail": "value"
                                       }
                                     ]
                                   }
@@ -220,7 +222,8 @@
                                             }
                                           }
                                         },
-                                        "emptyLinesBefore": 0
+                                        "emptyLinesBefore": 0,
+                                        "tail": "value"
                                       }
                                     ]
                                   }

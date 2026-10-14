@@ -49,7 +49,6 @@ pub const table = [_]Builtin{
     .{ .name = "panic", .signature = "panic(message: string = \"panic\") -> noreturn", .held = .declaration },
     .{ .name = "todo", .signature = "todo(message: string = \"not implemented\") -> noreturn", .held = .declaration },
     .{ .name = "trap", .signature = "trap() -> noreturn", .held = .declaration },
-    .{ .name = "block", .signature = "block<T>(body: fn() -> T) -> T", .held = .declaration },
     .{ .name = "module", .signature = "module() -> module", .held = .declaration },
     // ── build (decision 519: a `Build` builtin, computed where written) ──
     .{ .name = "embed", .signature = "embed(comptime path: string) -> Asset", .held = .own_rule },

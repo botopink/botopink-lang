@@ -2481,7 +2481,7 @@ test "decision 331: a capturing lambda, a resource and an unknown record are ref
     try std.testing.expectEqualStrings("a\\\"\\$\\\\", elems[1].literal.kind.stringLit);
 }
 
-test "a block's own break becomes the value function's return; a loop's stays" {
+test "a block's tail becomes the value function's return; a loop's break stays" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
@@ -2491,8 +2491,7 @@ test "a block's own break becomes the value function's return; a loop's stays" {
         \\val x = comptime {
         \\    var d = 0;
         \\    for ([1, 2]) { b -> if (b > 1) { break; } }
-        \\    if (d > 0) { break 1; }
-        \\    break d;
+        \\    d
         \\};
     );
     var p = parserMod.Parser.init(try lx.scanAll(arena));
@@ -2501,8 +2500,7 @@ test "a block's own break becomes the value function's return; a loop's stays" {
     try std.testing.expect(body[1].expr == .loop);
     const inner = body[1].expr.loop.body[0].expr.branch.kind.if_.then_[0].expr;
     try std.testing.expect(inner.jump.kind == .@"break");
-    try std.testing.expect(body[2].expr.branch.kind.if_.then_[0].expr.jump.kind == .@"return");
-    try std.testing.expect(body[3].expr.jump.kind == .@"return");
+    try std.testing.expect(body[2].expr.jump.kind == .@"return");
 }
 
 // ── the types a decorator module carries ─────────────────────────────────────

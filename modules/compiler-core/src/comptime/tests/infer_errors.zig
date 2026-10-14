@@ -855,10 +855,10 @@ test "infer error: return ---- a result fn returns a value that is not R" {
     );
 }
 
-test "infer error: return ---- an @block value flows to the fn's return" {
+test "infer error: return ---- a block's value flows to the fn's return" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\fn f() -> i32 {
-        \\    val s = @block{ return "x"; };
+        \\    val s = { "x" };
         \\    return s;
         \\}
     );
@@ -898,9 +898,9 @@ test "infer error: case ---- its arms' type does not match the annotation" {
     );
 }
 
-test "infer: comptime block ---- its value is the break value" {
+test "infer: comptime block ---- its value is its tail" {
     try h.assertInfersOk(std.testing.allocator,
-        \\val h = comptime { break 1; };
+        \\val h = comptime { 1 };
         \\val z: i32 = h;
     );
 }

@@ -1,6 +1,6 @@
 ----- SOURCE CODE
 fn f() -> i32 {
-    val s = @block{ return "x"; };
+    val s = { "x" };
     return s;
 }
 

@@ -2,7 +2,7 @@
 ```botopink
 val result = comptime {
     val x = 10;
-    break x * 2;
+    x * 2
 };
 fn main() {
     @print(result);
@@ -13,7 +13,7 @@ fn main() {
 ```text
 ct_0: val result = comptime {
           val x = 10;
-          break x * 2;
+          x * 2
       } → 20
 ```
 

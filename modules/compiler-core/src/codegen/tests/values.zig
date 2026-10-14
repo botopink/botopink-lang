@@ -331,14 +331,17 @@ test "js: self ---- field access in method" {
     );
 }
 
-test "js: block ---- @block builtin" {
+test "js: block ---- a block's value is its tail (decision 525)" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() -> string {
         \\    val input = 42;
-        \\    val status = @block{
+        \\    val status = {
         \\        val calculo = input * 2;
-        \\        if (calculo > 100) return "Alto";
-        \\        return "Baixo";
+        \\        if (calculo > 100) {
+        \\            "Alto"
+        \\        } else {
+        \\            "Baixo"
+        \\        }
         \\    };
         \\    return status;
         \\}

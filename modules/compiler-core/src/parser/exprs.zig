@@ -23,6 +23,7 @@ const ParamModifier = parser.ParamModifier;
 const CallArg = parser.CallArg;
 const TrailingLambda = parser.TrailingLambda;
 const Pattern = parser.Pattern;
+const CaseArm = parser.CaseArm;
 const ParamDestruct = parser.ParamDestruct;
 const Token = parser.Token;
 const TokenKind = parser.TokenKind;
@@ -71,7 +72,16 @@ fn parseAsyncBlockAhead(this: *This, alloc: std.mem.Allocator) ParseError!?Expr 
     if (!(this.check(.identifier) and std.mem.eql(u8, this.peek().lexeme, "async") and
         this.peekAt(1).kind == .leftBrace)) return null;
     const asyncTok = this.advance();
-    const body = try this.parseFnBodyInBraces(alloc);
+    // Decision 525 — the block's value is its tail; a `return` leaves the
+    // block (a task of its own), so the tail is the block's `return`.
+    const body = try this.parseBlock(alloc, .{
+        .trackEmptyLines = true,
+        .handleComments = true,
+        .semicolonPolicy = .requiredExceptLast,
+        .markTail = true,
+        .bracedTail = true,
+    });
+    try This.jumpTail(alloc, body, .@"return");
     const block = Expr{ .function = .{ .loc = locFromToken(asyncTok), .kind = .{
         .syntax = .asyncBlock,
         .params = try alloc.alloc([]const u8, 0),
@@ -258,7 +268,16 @@ pub fn parseExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
     if (this.check(.@"comptime")) {
         const comptimeTok = this.advance();
         if (this.check(.leftBrace)) {
-            const body = try this.parseStmtListInBraces(alloc);
+            // Decision 525 — `comptime { … }` is a block: its value is its
+            // tail, which the evaluators read as the block's `break`.
+            const body = try this.parseBlock(alloc, .{
+                .trackEmptyLines = true,
+                .handleComments = true,
+                .semicolonPolicy = .requiredExceptLast,
+                .markTail = true,
+                .bracedTail = true,
+            });
+            try This.jumpTail(alloc, body, .@"break");
             return Expr{ .comptime_ = .{ .loc = locFromToken(comptimeTok), .kind = .{ .comptimeBlock = .{ .body = body } } } };
         } else {
             const inner = try this.parseBinaryExpr(alloc, prec.equality);
@@ -1320,8 +1339,8 @@ pub fn parsePrimary(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
         return Expr{ .unaryOp = .{ .loc = locFromToken(opTok), .op = .neg, .expr = operandPtr } };
     }
 
-    // { params? -> body } ---- lambda expression (standalone or trailing)
-    // Note: regular block expressions are only via @block builtin
+    // { params? -> body } ---- lambda expression (standalone or trailing);
+    // a `{` without `->` is a block (decision 525).
     if (this.check(.leftBrace)) {
         const braceTok = this.advance();
 
@@ -1362,8 +1381,7 @@ pub fn parsePrimary(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
                 .body = body,
             } } };
         } else {
-            // { } without -> is not allowed (use @block builtin instead)
-            return ParseError.UnexpectedToken;
+            return parseBlockValueBody(this, alloc, braceTok);
         }
     }
 
@@ -1393,6 +1411,12 @@ pub fn parsePrimary(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
             _ = this.advance();
             const member = this.advance();
             callee = try std.fmt.allocPrint(alloc, "{s}.{s}", .{ callee, member.lexeme });
+        }
+
+        // Decision 525 — `@block` is removed: a block is `{ … }`.
+        if (std.mem.eql(u8, callee, "block")) {
+            this.parseError = ParseErrorInfo.fromTokenSpan(.removedBlockBuiltin, nameTok, nameTok.lexeme.len);
+            return ParseError.UnexpectedToken;
         }
 
         // Check for @name{ ... } syntax (trailing lambda with no args)
@@ -1924,32 +1948,46 @@ pub fn parseArrayLitExpr(this: *This, alloc: std.mem.Allocator) ParseError!Colle
     };
 }
 
-/// Parses a block expression: `{ stmt; stmt; ... }`
-pub fn parseBlockExpr(this: *This, alloc: std.mem.Allocator) ParseError!CollectionExpr {
-    const braceTok = try this.consume(.leftBrace);
+/// Decision 525 — a block `{ … }`: the `{` (already consumed, `braceTok`)
+/// is followed by no `->`. Its last expression written without `;` — a
+/// braced `if` / `case` included — is its value (decision 409's tail).
+pub fn parseBlockValueBody(this: *This, alloc: std.mem.Allocator, braceTok: Token) ParseError!Expr {
+    const body = try this.parseBlockBody(alloc, .{
+        .trackEmptyLines = true,
+        .handleComments = true,
+        .semicolonPolicy = .requiredExceptLast,
+        .markTail = true,
+        .bracedTail = true,
+    });
+    return makeBlockExpr(alloc, locFromToken(braceTok), body);
+}
 
-    var stmts: std.ArrayList(Stmt) = .empty;
-    errdefer {
-        for (stmts.items) |*s| s.deinit(alloc);
-        stmts.deinit(alloc);
-    }
-
-    while (!this.check(.rightBrace) and !this.check(.endOfFile)) {
-        if (try this.tryParseCommentStmt(alloc, &stmts, 0)) continue;
-        const expr = try this.parseExpr(alloc);
-        if (this.isBracedBlockStmt(expr)) _ = this.match(.semicolon) else _ = try this.consume(.semicolon);
-        try stmts.append(alloc, .{ .expr = expr });
-    }
-    _ = try this.consume(.rightBrace);
-
-    return .{
-        .loc = locFromToken(braceTok),
-        .kind = .{
-            .block = .{
-                .body = try stmts.toOwnedSlice(alloc),
-            },
-        },
+/// Decision 525 — the node a block lands as: `case true { _ { body } }`,
+/// flagged `isBlock` (`ast.CollectionExpr`'s `case`). A `case` arm's block is
+/// already a scope of the enclosing function on every pass — its `return`
+/// leaves the function, a `var` it reassigns is the function's — and its value
+/// is its tail, which is what a block means. Owns `body`.
+pub fn makeBlockExpr(alloc: std.mem.Allocator, loc: Loc, body: []Stmt) ParseError!Expr {
+    const subjects = try alloc.alloc(Expr, 1);
+    errdefer alloc.free(subjects);
+    subjects[0] = .{ .identifier = .{ .loc = loc, .kind = .{ .ident = "true" } } };
+    const arms = try alloc.alloc(CaseArm, 1);
+    errdefer alloc.free(arms);
+    arms[0] = .{
+        .pattern = .wildcard,
+        .body = .{ .function = .{ .loc = loc, .kind = .{
+            .syntax = .lambda,
+            .params = try alloc.alloc([]const u8, 0),
+            .body = body,
+        } } },
+        .patternLoc = loc,
     };
+    return .{ .collection = .{ .loc = loc, .kind = .{ .case = .{
+        .subjects = subjects,
+        .arms = arms,
+        .trailingComments = try alloc.alloc([]const u8, 0),
+        .isBlock = true,
+    } } } };
 }
 
 /// Returns true if the current token is any kind of comment.
@@ -2036,12 +2074,18 @@ pub fn parseLambdaBody(this: *This, alloc: std.mem.Allocator) ParseError!Functio
         for (stmts.items) |*s| s.deinit(alloc);
         stmts.deinit(alloc);
     }
+    // Decision 525 — the arm is a block used as a value: its last expression
+    // written without `;` (a braced `if` / `case` included) is its value.
+    var lastBare = false;
     while (!this.check(.rightBrace) and !this.check(.endOfFile)) {
         const expr = try this.parseExpr(alloc);
-        _ = this.match(.semicolon);
+        // A braced `if` / `case` is the tail with or without its `;`.
+        const braced = this.isBracedBlockStmt(expr);
+        lastBare = !this.match(.semicolon) or braced;
         try stmts.append(alloc, .{ .expr = expr });
     }
     _ = try this.consume(.rightBrace);
+    This.markBlockTail(stmts.items, lastBare);
 
     return .{
         .loc = locFromToken(startTok),
@@ -2148,7 +2192,7 @@ pub fn parseTrailingLambdas(this: *This, alloc: std.mem.Allocator) ParseError![]
             break :lbl lbl;
         } else null;
 
-        _ = try this.consume(.leftBrace);
+        const braceTok = try this.consume(.leftBrace);
 
         // Detect params
         var paramList: std.ArrayList([]const u8) = .empty;
@@ -2160,10 +2204,11 @@ pub fn parseTrailingLambdas(this: *This, alloc: std.mem.Allocator) ParseError![]
                 try paramList.append(alloc, (try this.consume(.identifier)).lexeme);
             }
             _ = try this.consume(.rightArrow);
-        } else if (this.check(.rightArrow)) {
-            // `{ -> body }` — explicit no-param lambda; consume the arrow.
-            _ = this.advance();
         }
+        // Decision 525 — `{ -> body }` is the lambda with no parameter; a `{`
+        // with neither parameters nor `->` is a block, which the checker
+        // refuses here: a trailing position expects a function.
+        const isBlock = paramList.items.len == 0 and !this.match(.rightArrow);
 
         // The shared block body — the `{`, the optional label and the
         // `a, b ->` parameter list are this block's prologue. The semicolon
@@ -2184,6 +2229,8 @@ pub fn parseTrailingLambdas(this: *This, alloc: std.mem.Allocator) ParseError![]
             .label = label,
             .params = try paramList.toOwnedSlice(alloc),
             .body = body,
+            .isBlock = isBlock,
+            .loc = locFromToken(braceTok),
         });
     }
 

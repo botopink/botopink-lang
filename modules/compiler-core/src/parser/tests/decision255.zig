@@ -178,7 +178,7 @@ test "decision 255: comptime <expr> and the block that breaks with it both parse
     // output — the checker types the two alike instead.
     const short = try valueOf(a, "val v = comptime Dict.empty();");
     try std.testing.expectEqualStrings("empty", short.comptime_.kind.comptimeExpr.call.kind.call.callee);
-    const long = try valueOf(a, "val v = comptime { break Dict.empty(); };");
+    const long = try valueOf(a, "val v = comptime { Dict.empty() };");
     try std.testing.expectEqual(@as(usize, 1), long.comptime_.kind.comptimeBlock.body.len);
 }
 
@@ -188,9 +188,7 @@ test "decision 255: botopink format prints comptime <expr> back as written" {
         \\
         \\pub fn main() {
         \\    val d: Dict<string, unknown> = comptime Dict.empty();
-        \\    val b = comptime {
-        \\        break 3 * 4;
-        \\    };
+        \\    val b = comptime { 3 * 4 };
         \\}
     );
 }

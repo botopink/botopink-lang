@@ -357,12 +357,6 @@ pub type External implement Annotation {
 // `@trap()` stops the program at once, with no message.
 pub declare fn trap() -> noreturn;
 
-// `@block { … }` — a block that is an expression: its value is what its
-// `return`s carry (they target the block, not the enclosing fn). A tail
-// expression is not its value: an `@block` used as a value with no valued
-// `return` is refused (`block-tail-value`).
-pub declare fn block<T>(body: fn() -> T) -> T;
-
 // `@field(obj, "name")` — the field `name` of `obj`, the name known at
 // compile time: typed as that field when `obj` is a known non-generic record,
 // otherwise left open. COMPTIME-ONLY name.

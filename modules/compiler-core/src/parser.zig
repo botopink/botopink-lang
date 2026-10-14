@@ -197,6 +197,9 @@ pub const ParseErrorType = enum {
     removedKeywordInterface,
     /// `record { x: 1 }` — anonymous records are tuples in 1.0.3.
     removedRecordLiteral,
+    /// Decision 525 — `@block { … }` / `@block(…)`: the builtin is removed; a
+    /// block is written `{ … }`.
+    removedBlockBuiltin,
     /// `loop (…) { … }` — decision 105: `loop` takes no parenthesis; a
     /// collection is `for (xs) { x -> … }`, a condition `while (cond) { … }`.
     removedLoopParenthesised,
@@ -981,6 +984,13 @@ pub const Parser = struct {
         /// `;` (a comment after it aside, a braced `if` / `case` / loop
         /// excluded) is marked `tail = .value`.
         markTail: bool = false,
+        /// Decision 525 — a block used as a value (a bare `{ … }`, a `case`
+        /// arm, `comptime { … }`, `async { … }`): a braced `if` / `case` at
+        /// its end is its last expression too, so it is marked the tail — the
+        /// `;` after a braced statement is optional and means nothing
+        /// (decision 29 (c)). A function body keeps decision 409's reading (a
+        /// braced statement is never its tail).
+        bracedTail: bool = false,
     };
 
     /// Parse `{ stmt; stmt; ... }`. The opening `{` must be the current token.
@@ -1034,7 +1044,10 @@ pub const Parser = struct {
                 // `loop` or `case` statement ends at its `}`, and the `;` after
                 // it is optional while the sources migrate — accepted, never
                 // required, whatever the block's policy.
+                // In a block used as a value it is the tail either way: the
+                // `;` there means nothing (decision 525).
                 _ = this.match(.semicolon);
+                bare = opts.bracedTail;
             } else switch (opts.semicolonPolicy) {
                 .required => _ = try this.consume(.semicolon),
                 .optional => bare = !this.match(.semicolon),
@@ -1054,6 +1067,14 @@ pub const Parser = struct {
             };
         }
         return stmts.toOwnedSlice(alloc);
+    }
+
+    /// Decision 525 — mark a block's tail: its last statement, when it was
+    /// written without `;` (`lastBare`) and is an expression (`isTailExpr`).
+    pub fn markBlockTail(stmts: []Stmt, lastBare: bool) void {
+        if (!lastBare or stmts.len == 0) return;
+        const s = &stmts[stmts.len - 1];
+        if (isTailExpr(s.expr)) s.tail = .value;
     }
 
     /// Decision 409 — a statement that can be a body's tail: an expression,
@@ -1089,6 +1110,32 @@ pub const Parser = struct {
         const value = try alloc.create(Expr);
         value.* = s.expr;
         s.expr = .{ .jump = .{ .loc = value.getLoc(), .kind = .{ .@"return" = value } } };
+        s.tail = .returned;
+    }
+
+    /// Decision 525 — a block whose value leaves it through a jump of its
+    /// own: `async { … }`'s `return` (the block is a task of its own) and
+    /// `comptime { … }`'s `break` (what its evaluators read). Its tail is
+    /// wrapped in that jump (`tail = .returned`, located at the expression),
+    /// as `returnTail` does for a function body, and the printer writes the
+    /// value back alone. A tail every path of which already leaves is left.
+    pub fn jumpTail(alloc: std.mem.Allocator, body: []Stmt, comptime kind: enum { @"return", @"break" }) ParseError!void {
+        var i = body.len;
+        while (i > 0) : (i -= 1) {
+            const e = body[i - 1].expr;
+            if (e == .literal and e.literal.kind == .comment) continue;
+            break;
+        }
+        if (i == 0) return;
+        const s = &body[i - 1];
+        if (s.tail != .value) return;
+        if (tailLeaves(s.expr)) return;
+        const value = try alloc.create(Expr);
+        value.* = s.expr;
+        s.expr = .{ .jump = .{ .loc = value.getLoc(), .kind = switch (kind) {
+            .@"return" => .{ .@"return" = value },
+            .@"break" => .{ .@"break" = .{ .label = null, .value = value } },
+        } } };
         s.tail = .returned;
     }
 
@@ -2023,7 +2070,7 @@ pub const Parser = struct {
 
     // ── lambda / call helpers ─────────────────────────────────────────────────
 
-    pub const parseBlockExpr = exprs.parseBlockExpr;
+    pub const parseBlockValueBody = exprs.parseBlockValueBody;
 
     pub const isComment = exprs.isComment;
 

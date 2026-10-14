@@ -23,11 +23,9 @@ test "js: comptime folding ---- integer addition folds to literal" {
     );
 }
 
-test "js: comptime folding ---- block with break value inlines result" {
+test "js: comptime folding ---- block with a tail value inlines result" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val t = comptime {
-        \\    break 2 + 22;
-        \\};
+        \\val t = comptime { 2 + 22 };
         \\fn main() {
         \\    @print(t);
         \\}
@@ -36,9 +34,7 @@ test "js: comptime folding ---- block with break value inlines result" {
 
 test "js: comptime folding ---- float multiplication folds to literal" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val pi2 = comptime {
-        \\    break 3.14 * 2.0;
-        \\};
+        \\val pi2 = comptime { 3.14 * 2.0 };
         \\fn main() {
         \\    @print(pi2);
         \\}
@@ -47,9 +43,7 @@ test "js: comptime folding ---- float multiplication folds to literal" {
 
 test "js: comptime folding ---- multiplication binds tighter than addition" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val n = comptime {
-        \\    break 2 + 3 * 4;
-        \\};
+        \\val n = comptime { 2 + 3 * 4 };
         \\fn main() {
         \\    @print(n);
         \\}
@@ -62,9 +56,7 @@ test "js: comptime folding ---- multiplication binds tighter than addition" {
 test "js: comptime validation ---- runtime identifier inside comptime raises error" {
     try h.assertJsError(std.testing.allocator, @src(),
         \\val greeting = "hi";
-        \\val msg = comptime {
-        \\    break greeting;
-        \\};
+        \\val msg = comptime { greeting };
         \\fn main() {
         \\    @print(msg);
         \\}
@@ -289,14 +281,14 @@ test "js: comptime basic ---- comptime val and plain function coexist" {
 }
 
 // A `comptime { … }` block has its own scope: a local `val` is declared,
-// folded, and visible to the `break` expression (`comptime/error.zig`
+// folded, and visible to the block's tail (decision 525; `comptime/error.zig`
 // `validateBody` + `comptime/eval.zig` `Scope`), as `conformance/docs.md` ("Compile-time
 // evaluation") shows. Folds to `20`.
-test "js: comptime ---- block with break" {
+test "js: comptime ---- block with a tail" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\val result = comptime {
         \\    val x = 10;
-        \\    break x * 2;
+        \\    x * 2
         \\};
         \\fn main() {
         \\    @print(result);
@@ -486,7 +478,7 @@ test "js: comptime runtime ---- a block with a call and a loop is evaluated at b
         \\    val d = comptime {
         \\        var d = 0;
         \\        for ([1, 2, 3]) { b -> d = add(d, b); }
-        \\        break d;
+        \\        d
         \\    };
         \\    @print(d);
         \\}

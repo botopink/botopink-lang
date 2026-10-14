@@ -224,7 +224,13 @@ fn valueOf(arena: std.mem.Allocator, scope: *Scope, te: ast.TypedExpr) EvalError
                 for (cs.subjects) |subj| {
                     _ = try valueOf(arena, scope, subj);
                     for (cs.arms) |arm| {
-                        if (arm.pattern == .wildcard or arm.pattern == .ident) return valueOf(arena, scope, arm.body);
+                        if (arm.pattern == .wildcard or arm.pattern == .ident) {
+                            // An arm's block (a block `{ … }` among them,
+                            // decision 525) answers its last expression.
+                            if (arm.body == .function and arm.body.function.kind.syntax == .lambda and arm.body.function.kind.params.len == 0)
+                                return armValue(arena, scope, arm.body.function.kind.body);
+                            return valueOf(arena, scope, arm.body);
+                        }
                     }
                 }
                 return .null_;
@@ -239,7 +245,7 @@ fn valueOf(arena: std.mem.Allocator, scope: *Scope, te: ast.TypedExpr) EvalError
         .branch => |br| switch (br.kind) {
             .if_ => |i| {
                 const cond = try valueOf(arena, scope, i.cond.*);
-                return blockValue(arena, scope, if (truthy(cond)) i.then_ else i.else_ orelse &.{});
+                return armValue(arena, scope, if (truthy(cond)) i.then_ else i.else_ orelse &.{});
             },
             else => return .null_,
         },
@@ -343,6 +349,18 @@ fn compare(lhs: Value, rhs: Value) ?std.math.Order {
 /// carrying one, else `null`.
 fn blockValue(arena: std.mem.Allocator, parent: *Scope, body: []const ast.TypedStmt) EvalError!Value {
     return (try blockResult(arena, parent, body)) orelse .null_;
+}
+
+/// The value of an `if` branch or a block used as a value: a `break` /
+/// `return` its statements reach, else its last expression (decision 525's
+/// tail), else `null`.
+fn armValue(arena: std.mem.Allocator, parent: *Scope, body: []const ast.TypedStmt) EvalError!Value {
+    var scope: Scope = .{ .parent = parent };
+    for (body, 0..) |stmt, i| {
+        if (i + 1 == body.len and stmt.expr != .binding and stmt.expr != .jump) return valueOf(arena, &scope, stmt.expr);
+        if (try execStmt(arena, &scope, stmt.expr)) |v| return v;
+    }
+    return .null_;
 }
 
 /// `null` when the body produced no `break`/`return` value (so an enclosing

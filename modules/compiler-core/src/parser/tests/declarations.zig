@@ -444,9 +444,7 @@ test "parser: val top-level constant ---- comptime string concat" {
 
 test "parser: val top-level constant ---- comptime block" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\val hash = comptime {
-        \\    break 6364 + 11;
-        \\};
+        \\val hash = comptime { 6364 + 11 };
     );
 }
 

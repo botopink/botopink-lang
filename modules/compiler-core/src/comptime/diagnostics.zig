@@ -214,10 +214,20 @@ pub const record_spread_missing_field: []const u8 = "record-spread-missing-field
 /// Decision 359 — a field labelled twice, or an unlabelled argument, beside a
 /// record spread.
 pub const record_spread_arguments: []const u8 = "record-spread-arguments";
-/// Decision 2 — an `@block { … }` in value position whose body has no valued
-/// `return` (`val a = @block { 1 + 2 };`): a tail expression is never the
-/// block's value. A statement `@block { … };` stays legal.
-pub const block_tail_value: []const u8 = "block-tail-value";
+/// Decision 525 — a block `{ … }` (no `->`) handed where a function is
+/// expected: a trailing `f(x) { … }`, an argument of a function-typed
+/// parameter. Refused at the block.
+pub const block_not_function: []const u8 = "block-not-function";
+/// Decision 525 — a block whose value is `void` handed where `unknown` is
+/// expected (`@print({ f(); })`). Refused at the block.
+pub const block_void_value: []const u8 = "block-void-value";
+/// Decision 525 — a `break <value>` that gives a block (a bare `{ … }`,
+/// `comptime { … }`) its value: the block's value is its tail.
+pub const block_break_value: []const u8 = "block-break-value";
+/// Decision 525 — an arm of a `case` used as a value that answers nothing (its
+/// last expression written with `;`, or a statement) beside arms that answer
+/// a value. Refused at the arm.
+pub const case_arm_no_value: []const u8 = "case-arm-no-value";
 /// A module-level `fn` / `val` / `var` named like a primitive type
 /// (`pub fn string()`): it took the type's name in its module
 /// (`language-gaps.md` row "A function named like a primitive type shadows
@@ -787,7 +797,10 @@ pub const all_codes = [_][]const u8{
     type_alias_name_taken,
     callee_not_a_function,
     binding_redeclared,
-    block_tail_value,
+    block_not_function,
+    block_void_value,
+    block_break_value,
+    case_arm_no_value,
     primitive_type_name_taken,
     comptime_arg_not_known,
     comptime_value_not_liftable,
