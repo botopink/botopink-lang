@@ -1765,11 +1765,6 @@ const Tail = enum { value, none, terminated };
 /// here and `funcNode` hands the list to the model.
 const LocalDecl = struct { name: []const u8, ty: []const u8 };
 
-/// An `@block` being lowered whose body returns (`Emitter.block_ret`): the
-/// local its value lands in, of type `ty`, and the label of the wasm block a
-/// `return` branches out of.
-const BlockRet = struct { local: []const u8, label: []const u8, ty: []const u8 };
-
 /// A detached instruction sink. Lowering a nested body (a function body, an
 /// `if` arm, a `loop` body) redirects `Emitter.cur` into one of these and
 /// `seal`s it into a `wat_ast.Seq` with the stack effect the context expects —
@@ -1781,34 +1776,17 @@ const Capture = struct {
     saved: ?*std.ArrayListUnmanaged(Line) = null,
 };
 
-/// True when an `@block`'s body holds a `return` of its own scope — the
-/// block's value, never the enclosing function's (`ast.exprReturns`).
-fn blockBodyReturns(body: []const ast.Stmt) bool {
-    for (body) |stmt| if (ast.exprReturns(stmt.expr)) return true;
-    return false;
-}
-
-/// The first value an `@block`'s body returns in its own scope (the borders of
-/// `ast.exprReturns`: a closure and a nested `@block` return for themselves, a
-/// braced `case` arm does not) — what the block answers, for the classifiers
-/// that read a value's shape off its expression (`genericResultOf`). A
-/// `return` written directly in `body` comes first: its operands are read in
-/// the block's own scope, while one inside a loop reads the loop's binder,
-/// which no classifier knows outside the loop — `return s` from a `for` over
-/// strings made the block's `"[" + hit + "]"` print an address
-/// (`modules/block_for_return_is_block_value`).
+/// The first value an `async { … }` block's body returns in its own scope (the
+/// borders of `ast.exprReturns`: a closure returns for itself, a braced `case`
+/// arm does not) — what the block's task answers, for the classifiers that read
+/// a value's shape off its expression (`asyncBlockValue`). A `return` written
+/// directly in `body` comes first: its operands are read in the block's own
+/// scope, while one inside a loop reads the loop's binder, which no classifier
+/// knows outside the loop.
 fn blockReturnValue(body: []const ast.Stmt) ?ast.Expr {
     for (body) |st| if (st.expr == .jump and st.expr.jump.kind == .@"return") if (st.expr.jump.kind.@"return") |v| return v.*;
     for (body) |st| if (blockReturnValueOf(st.expr)) |v| return v;
     return null;
-}
-
-/// `e`'s returned value when `e` is an `@block` whose body returns.
-fn blockResultOf(e: ast.Expr) ?ast.Expr {
-    if (e != .call or e.call.kind != .call) return null;
-    const cc = e.call.kind.call;
-    if (!cc.is_builtin or !std.mem.eql(u8, cc.callee, "block") or cc.trailing.len == 0) return null;
-    return blockReturnValue(cc.trailing[0].body);
 }
 
 fn blockReturnValueOf(e: ast.Expr) ?ast.Expr {
@@ -2001,10 +1979,6 @@ const Emitter = struct {
     /// a `break <v>` inside it pushes `v` and branches here, out of every
     /// loop between. Null outside one.
     gen_end: ?[]const u8 = null,
-    /// The innermost `@block { … }` with a `return` of its own being lowered
-    /// in this function (`lowerBlockWithReturn`): its `return` stores into
-    /// `local` and branches to `label`, never leaving the function.
-    block_ret: ?BlockRet = null,
     /// How many loops enclose the code being lowered: `break`/`continue`
     /// branch only inside one.
     loop_depth: u32 = 0,
@@ -4344,7 +4318,6 @@ const Emitter = struct {
         self.loop_seq = 0;
         self.yield_target = null;
         self.gen_end = null;
-        self.block_ret = null;
         self.loop_depth = 0;
         self.tail_self = null;
         self.tail_self_used = false;
@@ -5562,7 +5535,7 @@ const Emitter = struct {
 
     /// Walk a body and *register* every local it binds (no output — see
     /// `declareLocal`). Recurses through every nested statement list — if/else
-    /// branches, loop bodies, `@block { … }` trailing bodies — because a `val`
+    /// branches, loop bodies, `case` arm blocks — because a `val`
     /// bound inside one of those is still a function-level WAT local, and
     /// missing it used to produce a `local.set` against an undeclared name.
     fn emitLocalDecls(self: *Emitter, body: []const ast.Stmt) anyerror!void {
@@ -6230,7 +6203,7 @@ const Emitter = struct {
         const outer_loc = self.stmt_loc;
         self.stmt_loc = stmt.expr.getLoc();
         defer self.stmt_loc = outer_loc;
-        const tail = try self.emitStmtRaw(stmt, keep_value);
+        const tail = try self.emitStmtRaw(stmt);
         // Normalise to what the context asked for: a value where one is
         // required, nothing where one is not. `.terminated` needs neither.
         if (keep_value and tail == .none) {
@@ -6244,15 +6217,11 @@ const Emitter = struct {
         return tail;
     }
 
-    fn emitStmtRaw(self: *Emitter, stmt: ast.Stmt, keep_value: bool) anyerror!Tail {
+    fn emitStmtRaw(self: *Emitter, stmt: ast.Stmt) anyerror!Tail {
         switch (stmt.expr) {
             .jump => |j| switch (j.kind) {
                 .@"return" => |r0| {
                     const r = try self.adoptTask(r0);
-                    if (self.block_ret) |br| {
-                        try self.emitBlockReturn(br, if (r) |val| val.* else null);
-                        return .terminated;
-                    }
                     if (r) |val| if (try self.lowerSelfTailCall(val.*)) return .terminated;
                     if (r) |val| {
                         // Coerce to the *declared* result: `fn area(…) -> f64`
@@ -6663,23 +6632,6 @@ const Emitter = struct {
                     }
                 },
             },
-            // `@block { … }` is transparent: its trailing body is inlined, so
-            // the enclosing statement's value requirement passes straight in.
-            .call => |c| switch (c.kind) {
-                .call => |cc| {
-                    if (cc.is_builtin and std.mem.eql(u8, cc.callee, "block")) {
-                        if (cc.trailing.len == 0) return .none;
-                        if (blockBodyReturns(cc.trailing[0].body)) return self.lowerBlockWithReturn(cc.trailing[0].body, keep_value);
-                        return self.emitBody(cc.trailing[0].body, keep_value);
-                    }
-                    try self.lowerExpr(stmt.expr);
-                    return self.exprTail(stmt.expr);
-                },
-                else => {
-                    try self.lowerExpr(stmt.expr);
-                    return self.exprTail(stmt.expr);
-                },
-            },
             else => {
                 try self.lowerExpr(stmt.expr);
                 return self.exprTail(stmt.expr);
@@ -6704,11 +6656,6 @@ const Emitter = struct {
                 .call => |cc| blk: {
                     if (cc.is_builtin) {
                         if (isVoidBuiltinCall(cc)) break :blk .none;
-                        if (std.mem.eql(u8, cc.callee, "block")) {
-                            if (cc.trailing.len == 0) break :blk .none;
-                            if (blockBodyReturns(cc.trailing[0].body)) break :blk .value;
-                            break :blk self.bodyTail(cc.trailing[0].body);
-                        }
                         break :blk .value;
                     }
                     if (self.primKindAt(cc, c.loc)) |k| {
@@ -7013,10 +6960,6 @@ const Emitter = struct {
             .jump => |j| switch (j.kind) {
                 .@"return" => |r0| {
                     const r = try self.adoptTask(r0);
-                    if (self.block_ret) |br| {
-                        try self.emitBlockReturn(br, if (r) |val| val.* else null);
-                        return;
-                    }
                     if (r) |val| if (try self.lowerSelfTailCall(val.*)) return;
                     if (r) |val| try self.lowerExpr(val.*) else if (self.fn_has_result) try self.pushZero();
                     try self.emit(.@"return");
@@ -7521,15 +7464,6 @@ const Emitter = struct {
             try self.lowerIsCall(cc);
             return;
         }
-        if (std.mem.eql(u8, cc.callee, "block")) {
-            if (cc.trailing.len > 0) {
-                const body = cc.trailing[0].body;
-                if (blockBodyReturns(body)) {
-                    _ = try self.lowerBlockWithReturn(body, true);
-                } else _ = try self.emitBody(body, true);
-            }
-            return;
-        }
         if (std.mem.eql(u8, cc.callee, "print") or std.mem.eql(u8, cc.callee, "println")) {
             // `@println` is `@print`: both end the line on every target.
             // Marks the print helper group even for `@print()` with no
@@ -8017,7 +7951,6 @@ const Emitter = struct {
     /// identifiers, a comparison, `!x`, `&&`/`||`, or a call to a fn declared
     /// `-> bool`.
     fn isBoolExpr(self: *Emitter, e: ast.Expr) bool {
-        if (blockResultOf(e)) |a| return self.isBoolExpr(a);
         if (asyncBlockValue(e)) |a| return self.isBoolExpr(a);
         // `o ?? d` reads as `o.unwrapOr(d)`; `x!` answers its payload.
         if (nullishParts(e)) |nu| return self.isBoolExpr(nu.dflt);
@@ -14756,12 +14689,11 @@ const Emitter = struct {
     }
 
     /// `e` itself when it is a generic call answering its argument's shape
-    /// (`genericResultArg`), that argument — and when it is an `@block` whose
-    /// body returns, the first value it returns (`blockReturnValue`).
+    /// (`genericResultArg`), that argument.
     fn genericResultOf(self: *Emitter, e: ast.Expr) ?ast.Expr {
         return switch (e) {
             .call => |c| switch (c.kind) {
-                .call => |cc| blockResultOf(e) orelse self.genericResultArg(cc),
+                .call => |cc| self.genericResultArg(cc),
                 else => null,
             },
             // A task's value is read off the task (decision 392).
@@ -16555,7 +16487,6 @@ const Emitter = struct {
     /// result, or a `+` chain over such operands. Drives string `==`, `+` and
     /// `@print`, none of which may go through the numeric path.
     fn isStringExpr(self: *Emitter, e: ast.Expr) bool {
-        if (blockResultOf(e)) |a| return self.isStringExpr(a);
         if (asyncBlockValue(e)) |a| return self.isStringExpr(a);
         if (optOperatorParts(e)) |op| if (op.bang) return if (self.optInfoOf(op.cond.*)) |oi| oi.str else false;
         return switch (e) {
@@ -16603,6 +16534,9 @@ const Emitter = struct {
                     var any = false;
                     for (c.arms) |arm| {
                         if (self.exprTail(arm.body) == .terminated) continue;
+                        // An arm's block that ends in a `return` / `throw`
+                        // answers nothing to the `case` (decision 525).
+                        if (armLambda(arm.body)) |lam| if (lam.body.len > 0 and self.bodyTail(lam.body) == .terminated) continue;
                         const binder: ?[]const u8 = if (subj_rec != null and arm.pattern == .wildcard) (if (armLambda(arm.body)) |lam| (if (lam.params.len == 1) lam.params[0] else null) else null) else null;
                         const prev: ?[]const u8 = if (binder) |n| self.local_types.get(n) else null;
                         if (binder) |n| self.local_types.put(n, subj_rec.?) catch {};
@@ -17181,91 +17115,6 @@ const Emitter = struct {
         try self.emit(.{ .local_get = tgt });
     }
 
-    /// `@block { … }` whose body holds a `return` of its own (decision 2): the
-    /// body is inlined in a wasm block, and each `return` stores its value in
-    /// the block's local and branches out (`emitBlockReturn`) — a `return`
-    /// opcode would leave the ENCLOSING function. The value is the local:
-    ///
-    ///     (block $__blkend<n> Body…)  [local.get $__blk<n>]
-    ///
-    /// A body that runs off its end leaves the local at its zero (a statement
-    /// block's value; the checker refuses a valueless tail in value position,
-    /// `block-tail-value`).
-    fn lowerBlockWithReturn(self: *Emitter, body: []const ast.Stmt, keep_value: bool) anyerror!Tail {
-        const ra = self.reg_arena.allocator();
-        const n = self.loop_seq;
-        self.loop_seq += 1;
-        const ty = self.blockReturnType(body);
-        const local = try std.fmt.allocPrint(ra, "__blk{d}", .{n});
-        const label = try std.fmt.allocPrint(ra, "__blkend{d}", .{n});
-        try self.declareLocal(local, ty);
-        const saved = self.block_ret;
-        self.block_ret = .{ .local = local, .label = label, .ty = ty };
-        var c: Capture = .{};
-        self.open(&c);
-        {
-            defer self.block_ret = saved;
-            _ = try self.emitBody(body, false);
-        }
-        const seq = self.seal(&c, .none);
-        try self.emit(.{ .block = .{ .kind = .block, .label = label, .body = seq } });
-        if (!keep_value) return .none;
-        try self.emit(.{ .local_get = local });
-        return .value;
-    }
-
-    /// A `return` of an `@block`'s body: its value (zero for a bare one) into
-    /// the block's local, then out of the block.
-    fn emitBlockReturn(self: *Emitter, br: BlockRet, value: ?ast.Expr) anyerror!void {
-        if (value) |v| try self.lowerCoerced(v, br.ty) else try self.emit(constOf(br.ty, "0"));
-        try self.emit(.{ .local_set = br.local });
-        try self.emit(.{ .br = br.label });
-    }
-
-    /// The wasm type an `@block`'s `return`s carry: their values' types met
-    /// (`unifyNum`), `i32` when none carries one.
-    fn blockReturnType(self: *Emitter, body: []const ast.Stmt) []const u8 {
-        var ty: ?[]const u8 = null;
-        self.blockReturnTypeIn(body, &ty);
-        return ty orelse "i32";
-    }
-
-    fn blockReturnTypeIn(self: *Emitter, body: []const ast.Stmt, ty: *?[]const u8) void {
-        for (body) |st| self.blockReturnTypeOf(st.expr, ty);
-    }
-
-    /// The borders of `ast.exprReturns`: a closure and a nested `@block` hold
-    /// `return`s of their own, a braced `case` arm does not.
-    fn blockReturnTypeOf(self: *Emitter, e: ast.Expr, ty: *?[]const u8) void {
-        switch (e) {
-            .jump => |j| switch (j.kind) {
-                .@"return" => |r| if (r) |v| {
-                    const t = self.wasmTypeOf(v.*);
-                    ty.* = if (ty.*) |prev| self.unifyNum(prev, t) else t;
-                },
-                else => {},
-            },
-            .branch => |b| switch (b.kind) {
-                .if_ => |i| {
-                    self.blockReturnTypeIn(i.then_, ty);
-                    if (i.else_) |els| self.blockReturnTypeIn(els, ty);
-                },
-                .tryCatch => {},
-            },
-            .loop => |lp| if (lp.generator == null) self.blockReturnTypeIn(lp.body, ty),
-            .collection => |col| switch (col.kind) {
-                .case => |c| for (c.arms) |arm| {
-                    if (arm.body == .function and arm.body.function.kind.syntax == .lambda)
-                        self.blockReturnTypeIn(arm.body.function.kind.body, ty)
-                    else
-                        self.blockReturnTypeOf(arm.body, ty);
-                },
-                else => {},
-            },
-            else => {},
-        }
-    }
-
     /// `break <v>` in a generator scope: append `v`, then end the scope —
     /// branch out of the annotated loop's block, or, in a generator fn,
     /// return what the body collected.
@@ -17315,14 +17164,11 @@ const Emitter = struct {
             .collection => |col| switch (col.kind) {
                 .grouped => |inner| exprHasYield(inner.*),
                 .case => |c| blk: {
+                    // Decision 525 — a block `{ … }` runs its body in place.
+                    if (c.isBlock) break :blk bodyHasYield(c.arms[0].body.function.kind.body);
                     for (c.arms) |arm| if (exprHasYield(arm.body)) break :blk true;
                     break :blk false;
                 },
-                else => false,
-            },
-            .call => |c| switch (c.kind) {
-                .call => |cc| cc.is_builtin and std.mem.eql(u8, cc.callee, "block") and
-                    cc.trailing.len > 0 and bodyHasYield(cc.trailing[0].body),
                 else => false,
             },
             else => false,
@@ -17342,13 +17188,11 @@ const Emitter = struct {
             .collection => |col| switch (col.kind) {
                 .grouped => |inner| exprYields(inner.*),
                 .case => |c| blk: {
+                    // Decision 525 — a block `{ … }` runs its body in place.
+                    if (c.isBlock) break :blk bodyYields(c.arms[0].body.function.kind.body);
                     for (c.arms) |arm| if (exprYields(arm.body)) break :blk true;
                     break :blk false;
                 },
-                else => false,
-            },
-            .call => |c| switch (c.kind) {
-                .call => |cc| cc.is_builtin and std.mem.eql(u8, cc.callee, "block") and cc.trailing.len > 0 and bodyYields(cc.trailing[0].body),
                 else => false,
             },
             else => false,
@@ -17843,9 +17687,6 @@ const Emitter = struct {
                         break :blk if (!ix.is_slice and self.isArrayExpr(ix.recv) and
                             self.elemKindOf(ix.recv) == .f64) "f64" else "i32";
                     if (cc.is_builtin) {
-                        // An `@block` whose body returns answers what its `return`s carry.
-                        if (std.mem.eql(u8, cc.callee, "block") and cc.trailing.len > 0 and blockBodyReturns(cc.trailing[0].body))
-                            break :blk self.blockReturnType(cc.trailing[0].body);
                         // `o.unwrapOr(d)` over a `?f64` answers its `f64`.
                         if (std.mem.eql(u8, cc.callee, "__bp_option_unwrapOr") and cc.args.len > 0) if (self.optInfoOf(cc.args[0].value.*)) |oi| if (oi.cell != .none) break :blk oi.cell.ty();
                         // `r.unwrapOr(d)` over a `@Result<f64, E>` answers its `f64`.
@@ -19265,7 +19106,7 @@ const Emitter = struct {
         for (body[0 .. body.len - 1]) |stmt| _ = try self.emitStmt(stmt, false);
         const last = body[body.len - 1];
         const from = self.wasmTypeOf(last.expr);
-        const tail = try self.emitStmtRaw(last, true);
+        const tail = try self.emitStmtRaw(last);
         switch (tail) {
             .none => {
                 try self.emit(constOf(ty, "0"));

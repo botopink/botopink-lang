@@ -1774,25 +1774,16 @@ record a tested arm names when the arm names one (`arm_record`, set by
 `emitArmChain`, read and cleared by `lowerArmBody` so a nested `case` binds its
 own), else the subject's type: over a `DogB | CatB` union it took the subject's,
 which a union has none of, and `d.name` printed an address
-(`modules/case_record_union_binder`). `@block { … }` is inlined by `lowerBuiltin`,
-and a bare `{ 1 + 2 }` in value position does not parse at all ("this token cannot
-appear here"). So decision 2's enforcement leaves nothing dead here.
+(`modules/case_record_union_binder`). A block `{ … }` (decision 525; `@block`
+is removed) is a `case true { _ { … } }` (`ast.CollectionExpr.case.isBlock`),
+lowered as any `case`; `exprYields` / `exprHasYield` read its body in place, and
+the `case` string classifier skips an arm whose block ends in a `return` /
+`throw` (`bodyTail(…) == .terminated`), so a block whose tail is a `case` with a
+returning arm concatenates as a string (`modules/block_return_leaves_function`).
 
-**An `@block`'s `return` is the block's value** (decision 2): a body that holds a
-`return` of its own scope (`ast.exprReturns`) is lowered by `lowerBlockWithReturn`
-into `(block $__blkend<n> …)`, each `return` storing into the local `$__blk<n>` and
-branching out (`emitBlockReturn`, `Emitter.block_ret`; `resetFnState` clears it,
-so a lifted lambda's `return` stays its own). Inlined as before, the `return`
-opcode left the ENCLOSING function: `val x = @block { return 3; }` ended `main`
-before its first `@print`. The local's type is what the `return`s carry
-(`blockReturnType`), and `genericResultOf` / `isStringExpr` / `isBoolExpr` read
-the block's shape off its first returned value (`blockReturnValue`; a
-`return` written directly in the body first, since one inside a `for` reads the
-loop's binder, which no classifier knows outside the loop), so
-`val label = @block { …return "high"; }` concatenates as a string, and so does
-`@block { for (xs) { s -> if (s != "a") return s; } return "none"; }`
-(`modules/block_for_return_is_block_value`). A body with
-no `return` is inlined unchanged. Cell: `modules/block_return_is_block_value`.
+`blockReturnValue` reads an `async { … }` block's first returned value (its
+tail is the block's `return`, decision 525) for `asyncBlockValue`, the shape the
+classifiers read a task's value with.
 
 ## Methods, binders and the module body (`00 · 05-wasm`, the rows no step named)
 
