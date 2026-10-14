@@ -1,0 +1,31 @@
+//// Decision 527 (3) — an integer `/` or `%` by zero is a `panic`, the text
+//// `integer division by zero: <op> on <type> at <file>:<line>:<col>`: erlang
+//// and beam raise it marked, as commonJS does — never a bare `badarith` read
+//// as a host raise. `attempt` contains it and the program goes on.
+////
+//// On wasm the division traps (decision 518): a trap is no exception, so
+//// `attempt` does not catch it and the program ends at the first one.
+
+import {failure, failure.Failure} from "std";
+
+fn div(a: i32, b: i32) -> i32 {
+    return a / b;
+}
+
+fn rem(a: i32, b: i32) -> i32 {
+    return a % b;
+}
+
+fn show(r: @Result<i32, Failure>) {
+    case r {
+        Ok(v) -> @print("Ok " + v.toString());
+        Error(f) -> @print("Error " + f.kind + ": " + f.message);
+    }
+}
+
+pub fn main() {
+    show(failure.attempt({ -> div(7, 2) }));
+    show(failure.attempt({ -> div(7, 0) }));
+    show(failure.attempt({ -> rem(7, 0) }));
+    @print("after");
+}

@@ -2405,7 +2405,25 @@ value, or `Error(Failure(message, kind))` for the crash it caught — `kind` is
 `"panic"` for the program's own abort, its message the text the program wrote,
 and `"host"` for a host raise, its message the host's text (a JavaScript
 `Error`'s `message`, the erlang reason by `~tp`). The program goes on after a
-contained crash. On wasm `attempt` runs the thunk under wasm exception
+contained crash. A failing `assert` is a `panic` whose message names the
+asserted condition and where it failed (decision 527 (2)):
+
+<!-- example: modules/assert_failure_is_panic -->
+
+An integer `/` or `%` by zero is a `panic` too, `integer division by zero: <op>
+on <type> at <file>:<line>:<col>`, on commonJS, erlang and beam (527 (3)); on
+wasm the division traps, and a trap is no exception, so `attempt` does not
+catch it:
+
+<!-- example: modules/int_division_by_zero_is_panic -->
+
+A host raise answers `host` where a host raises — commonJS, erlang and beam;
+wasm never imitates one (527 (0)). On erlang and beam its message is the reason
+printed by `~tp` without the stack, whatever the class (527 (4)):
+
+<!-- example: modules/std_failure_attempt_host -->
+
+On wasm `attempt` runs the thunk under wasm exception
 handling (decision 518): a program reaching it raises its aborts as an
 exception, which `attempt` catches as `panic`; a trap is no exception and
 ends the program.

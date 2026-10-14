@@ -1,0 +1,5 @@
+botopink-cell 1
+out Ok 3
+out Error panic: integer division by zero: / on i32 at src/main.bp:12:14
+out Error panic: integer division by zero: % on i32 at src/main.bp:16:14
+out after

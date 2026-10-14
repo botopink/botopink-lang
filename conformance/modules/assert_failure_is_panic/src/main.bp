@@ -1,0 +1,31 @@
+//// Decision 527 (2) — a failing `assert` is a `panic` whose message names the
+//// asserted condition as written and where it failed, the same on every
+//// target: `assertion failed: <condition> at <file>:<line>:<col>`, the
+//// program's message after the condition when it wrote one. `attempt`
+//// contains it like any panic; the program goes on.
+
+import {failure, failure.Failure} from "std";
+
+fn positive(x: i32) -> i32 {
+    assert x > 0;
+    return x;
+}
+
+fn named(x: i32, s: string) -> i32 {
+    assert x > 0 && s != "a\"b", "x must be positive";
+    return x;
+}
+
+fn show(r: @Result<i32, Failure>) {
+    case r {
+        Ok(v) -> @print("Ok " + v.toString());
+        Error(f) -> @print("Error " + f.kind + ": " + f.message);
+    }
+}
+
+pub fn main() {
+    show(failure.attempt({ -> positive(3) }));
+    show(failure.attempt({ -> positive(0) }));
+    show(failure.attempt({ -> named(0, "z") }));
+    @print("after");
+}

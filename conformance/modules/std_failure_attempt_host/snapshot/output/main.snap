@@ -1,0 +1,6 @@
+botopink-cell 1
+out Error host: boom
+out Error host: refused
+out Error host: gone
+out Error host: {bad_input,7}
+out after
