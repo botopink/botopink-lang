@@ -857,10 +857,6 @@ const cond_continue_signal = "__bp_cond_continue";
 const gen_end_signal = "__bp_gen_end";
 /// The throw of a `try` with no rest to nest (`tryThrowCase`).
 const try_throw_signal = "__bp_try";
-/// The throw of a `return` an `@block`'s fun cannot answer as its last
-/// expression — one in a loop or a discarded statement of the block
-/// (`returnNode`); the block's own guard catches it (`builtinCallNode`).
-const block_return_signal = "__bp_block";
 /// The throw of a bare `break` at a generator fn's own level (`genStopThrow`).
 const gen_stop_signal = "__bp_gen_stop";
 
@@ -3098,17 +3094,6 @@ const Emitter = struct {
     /// `earlyReturnIfExpr` does not reach (`if (a) { …; if (b) return x; }`):
     /// that `return` throws to the function's guard like one in a loop.
     in_nested_return: bool = false,
-    /// Set while an `@block`'s body is lowered: a `return` that cannot be the
-    /// fun's last expression throws `{'__bp_block', V}` to the block's guard,
-    /// never to the function's (`returnNode`), and the flag records that the
-    /// guard is needed. A lambda resets it — its `return` is its own.
-    block_guard: ?*bool = null,
-    /// Set while the body of an `@block` that reassigns `var`s of the
-    /// enclosing function is lowered: those names. Every `return` of the block
-    /// answers `{V, Group}` — the value and the names at their versions there —
-    /// and the call site rebinds the group from it (`valueBlockExpr`). A
-    /// lambda resets it, as it resets `block_guard`.
-    block_group: ?[]const []const u8 = null,
     /// 06 C13 — the host-backed fn whose `#[@External.Erlang(…)]` is missing,
     /// filled at the throw site so `codegenEmit` can turn
     /// `error.MissingExternalTarget` into a located diagnostic naming it.
@@ -3424,7 +3409,7 @@ const Emitter = struct {
     /// `prim-op-annotation` builtin dispatch: top-level `fn` callees from
     /// `builtins.d.bp` carrying `#[@External.Erlang(…)]` annotations, keyed by
     /// callee name (`todo`, `panic`, …). `builtinAnnotationNode` consults
-    /// this map before the hardcoded `@todo`/`@panic`/`@block`/`@print`
+    /// this map before the hardcoded `@todo`/`@panic`/`@print`
     /// switches in `if (cc.is_builtin)`.
     builtin_erlang_dispatch: std.StringHashMap(PrimErlangCall),
     /// Parent-interface edges parsed from `primitives.bp`:
@@ -3725,7 +3710,7 @@ const Emitter = struct {
 
     /// A `@builtin(...)` call rendered from its `#[@External.Erlang(…)]` template,
     /// or null when no template is registered (the caller falls through to
-    /// `@block`, the `__bp_*` ops and the plain call).
+    /// the `__bp_*` ops and the plain call).
     fn builtinAnnotationNode(this: *Emitter, b: Ast.Builder, callee: []const u8, cc: anytype) anyerror!?Ast.Expr {
         const call = this.builtin_erlang_dispatch.get(callee) orelse return null;
         const template = templateFor(call, cc) orelse return null;
@@ -6642,16 +6627,6 @@ const Emitter = struct {
                 else => return null,
             },
             .call => {
-                // A statement `@block { … }` that reassigns outer variables
-                // answers them, and the statement rebinds them:
-                // `Acc@2 = (fun() -> Acc@1 = …, Acc@1 end)()` — a fun cannot
-                // rebind what it captured, so `Acc@1` was unbound after it.
-                if (statementBlockBody(stmt.expr)) |body| {
-                    if (!hasReturn(body)) {
-                        try this.collectMutations(b.arena, body, &.{}, &names);
-                        if (names.items.len > 0) return try this.mutatingBlockExpr(b, body, names.items);
-                    }
-                }
                 // `emit(x)` on a closure that reassigns outer variables rebinds
                 // them from what it answers: `Tokens@2 = Emit(X, Tokens@1)`.
                 if (this.closureMutation(stmt.expr)) |cm| {
@@ -6952,16 +6927,8 @@ const Emitter = struct {
     /// and a `throw` in a `@Result` fn (a `return` of `{error, E}` after the
     /// transform) inside an `if` inside a `while` bound the loop's variables
     /// in one arm only — erlc's `variable unsafe in 'case'`.
-    fn returnNode(this: *Emitter, b: Ast.Builder, raw_value: Ast.Expr) anyerror!Ast.Expr {
-        const value = if (this.block_group) |names|
-            try b.tuple(&.{ raw_value, try this.varGroupExpr(b, names) })
-        else
-            raw_value;
+    fn returnNode(this: *Emitter, b: Ast.Builder, value: Ast.Expr) anyerror!Ast.Expr {
         if (!this.returnThrows()) return value;
-        if (this.block_guard) |used| {
-            used.* = true;
-            return b.remote("erlang", "throw", &.{try b.tuple(&.{ Ast.Expr.a(block_return_signal), value })});
-        }
         this.try_throw_used = true;
         return b.remote("erlang", "throw", &.{try b.tuple(&.{ Ast.Expr.a(try_throw_signal), value })});
     }
@@ -6988,25 +6955,7 @@ const Emitter = struct {
     /// Whether a `return` here throws to the function's guard (`returnNode`).
     fn returnThrows(this: *const Emitter) bool {
         if (!this.in_loop_body and !this.in_nested_return) return false;
-        // Inside an `@block` the `return` is the block's, whose guard is
-        // always there to catch it.
-        if (this.block_guard != null) return true;
         return this.fn_guarded and this.gen_scope == null and !this.in_test_body;
-    }
-
-    /// `try Body catch throw:{'__bp_block', V} -> V end` — the guard of an
-    /// `@block`'s fun whose `return` threw (`returnNode`).
-    fn guardBlockReturn(this: *Emitter, b: Ast.Builder, body: Ast.Body) anyerror!Ast.Body {
-        _ = this;
-        const r_var = Ast.Expr.v("__BpBlockR");
-        return b.body(&.{.{ .try_catch = .{
-            .body = body,
-            .catches = try b.arena.dupe(Ast.Clause, &.{try b.clause(
-                &.{try b.exception(Ast.Expr.a("throw"), try b.tuple(&.{ Ast.Expr.a(block_return_signal), r_var }))},
-                &.{},
-                &.{r_var},
-            )}),
-        } }});
     }
 
     /// `try Body catch throw:{'__bp_try', E} -> E end` — the guard of a
@@ -7053,12 +7002,6 @@ const Emitter = struct {
         const saved_nested_return = this.in_nested_return;
         this.in_nested_return = false;
         defer this.in_nested_return = saved_nested_return;
-        const saved_block_guard = this.block_guard;
-        this.block_guard = null;
-        defer this.block_guard = saved_block_guard;
-        const saved_block_group = this.block_group;
-        this.block_group = null;
-        defer this.block_group = saved_block_group;
         // Its body answers the group, not a value a thrown `return` could be:
         // a `return` inside a loop in it keeps the old shape.
         const saved_guarded = this.fn_guarded;
@@ -7078,80 +7021,6 @@ const Emitter = struct {
         const target = Ast.Expr.v(try this.arenaVar(b, name));
         this.addLocal(name);
         return b.match(target, .{ .fun = .{ .params = fun_params, .body = fun_body } });
-    }
-
-    /// The body of a statement `@block { … }` (a trailing block, no
-    /// parameters), or null.
-    fn statementBlockBody(e: ast.Expr) ?[]const ast.Stmt {
-        if (e != .call or e.call.kind != .call) return null;
-        const cc = e.call.kind.call;
-        if (!cc.is_builtin or !std.mem.eql(u8, cc.callee, "block")) return null;
-        if (cc.args.len != 0 or cc.trailing.len != 1 or cc.trailing[0].params.len != 0) return null;
-        return cc.trailing[0].body;
-    }
-
-    /// Whether `body` holds a `return` of its own — in a branch or a loop of
-    /// it, not in a lambda, whose `return` is the lambda's.
-    fn hasReturn(body: []const ast.Stmt) bool {
-        for (body) |stmt| switch (stmt.expr) {
-            .jump => |j| if (j.kind == .@"return") return true,
-            .branch => |br| switch (br.kind) {
-                .if_ => |i| {
-                    if (hasReturn(i.then_)) return true;
-                    if (i.else_) |els| if (hasReturn(els)) return true;
-                },
-                else => {},
-            },
-            .loop => |lp| if (hasReturn(lp.body)) return true,
-            else => {},
-        };
-        return false;
-    }
-
-    /// `Group@new = (fun() -> Body, Group end)()` — a statement `@block` whose
-    /// body reassigns `names` of the enclosing function and has no `return`
-    /// (the statement discards the block's value, so the fun answers the
-    /// reassigned variables instead).
-    fn mutatingBlockExpr(this: *Emitter, b: Ast.Builder, body: []const ast.Stmt, names: []const []const u8) anyerror!Ast.Expr {
-        const saved_in_loop = this.in_loop_body;
-        this.in_loop_body = false;
-        defer this.in_loop_body = saved_in_loop;
-        const saved_nested_return = this.in_nested_return;
-        this.in_nested_return = false;
-        defer this.in_nested_return = saved_nested_return;
-        const saved_block_guard = this.block_guard;
-        this.block_guard = null;
-        defer this.block_guard = saved_block_guard;
-        const saved_block_group = this.block_group;
-        this.block_group = null;
-        defer this.block_group = saved_block_group;
-        var snapshot = try this.var_current.clone();
-        defer snapshot.deinit();
-        const fun_body = try this.armWithGroup(b, body, names, this.indent + 1);
-        try this.restoreVersions(&snapshot);
-        const call = try b.applyParen(.{ .fun = .{ .params = &.{}, .body = fun_body } }, &.{});
-        return try b.match(try this.bindVarGroupExpr(b, names), call);
-    }
-
-    /// `element(1, {_, Group@new} = (fun() -> …, {V, Group} end)())` — an
-    /// `@block` whose body reassigns `names` of the enclosing function, its
-    /// value used or not. A fun cannot rebind what it captured, so `Acc@1`
-    /// bound inside it was unbound after it (`erlc` refused the module): every
-    /// `return` answers the value with the group at its versions there
-    /// (`returnNode` under `block_group`), and the match rebinds the group
-    /// outside. The block's state (`in_loop_body`, `in_nested_return`,
-    /// `block_guard`) is the caller's, already set.
-    fn valueBlockExpr(this: *Emitter, b: Ast.Builder, body: []const ast.Stmt, names: []const []const u8, guard_used: *bool) anyerror!Ast.Expr {
-        this.block_group = names;
-        var snapshot = try this.var_current.clone();
-        defer snapshot.deinit();
-        const raw_body = try this.bodyNode(b, body, 0, this.indent + 1);
-        this.block_group = null;
-        try this.restoreVersions(&snapshot);
-        const fun_body = if (guard_used.*) try this.guardBlockReturn(b, raw_body) else raw_body;
-        const call = try b.applyParen(.{ .fun = .{ .params = &.{}, .body = fun_body } }, &.{});
-        const bound = try b.match(try b.tuple(&.{ Ast.Expr.v("_"), try this.bindVarGroupExpr(b, names) }), call);
-        return b.remote("erlang", "element", &.{ .{ .number = "1" }, bound });
     }
 
     const ForEachLambda = struct {
@@ -8083,12 +7952,6 @@ const Emitter = struct {
                 const saved_nested_return = this.in_nested_return;
                 this.in_nested_return = false;
                 defer this.in_nested_return = saved_nested_return;
-                const saved_block_guard = this.block_guard;
-                this.block_guard = null;
-                defer this.block_guard = saved_block_guard;
-                const saved_block_group = this.block_group;
-                this.block_group = null;
-                defer this.block_group = saved_block_group;
                 // A `fun` is a function of its own: a `return` (or a `try`)
                 // thrown from a loop inside it is caught by ITS guard, not by
                 // the enclosing function's.
@@ -8161,7 +8024,15 @@ const Emitter = struct {
                     for (tl.elems, 0..) |elem, i| items[i] = try this.exprNode(b, elem);
                     return .{ .tuple = items };
                 },
-                .case => |c| return this.caseNode(b, c.subjects, c.arms),
+                .case => |c| {
+                    // Decision 525 — a `case` used as a value (a block `{ … }`
+                    // among them) whose arms reassign variables of the
+                    // function answers them beside its value.
+                    var names: std.ArrayListUnmanaged([]const u8) = .empty;
+                    try this.collectMutations(b.arena, &.{.{ .expr = e }}, &.{}, &names);
+                    if (names.items.len > 0) return this.mutatingCaseExprAs(b, c.subjects, c.arms, names.items, true, false);
+                    return this.caseNode(b, c.subjects, c.arms);
+                },
                 // `a..b` is half-open `[a, b)` (parity with wasm + `Array.range`),
                 // but erlang's `lists:seq/2` is inclusive — so the upper bound is
                 // `b - 1`; `a...b` (decision 105) is `b` itself; an open range
@@ -8499,7 +8370,7 @@ const Emitter = struct {
     }
 
     /// `@name(...)`: the builtin's `#[@External.Erlang(…)]` template when it has
-    /// one (`todo`/`panic`/`print`/`println`/`debug`), `@block`, the lowered
+    /// one (`todo`/`panic`/`print`/`println`/`debug`), the lowered
     /// `__bp_*` result/option ops, else a local call.
     fn builtinCallNode(this: *Emitter, b: Ast.Builder, cc: anytype) anyerror!Ast.Expr {
         // `@print(a, b)` → `'__bp_print'([A, B])`: the helper picks `~ts` for a
@@ -8510,43 +8381,6 @@ const Emitter = struct {
             return b.call("__bp_print", &.{try b.list(try this.callArgs(b, null, cc))});
         }
         if (try this.builtinAnnotationNode(b, cc.callee, cc)) |node| return node;
-        if (std.mem.eql(u8, cc.callee, "block")) {
-            // `@block { … }` (or `@block(fn)`) is an immediately-applied fun, so
-            // the body runs and its value is the call's value. Its `return` is
-            // the block's (decision 2): the fun's last expression, or — from a
-            // loop or a discarded statement of the body, enclosing loops of the
-            // function aside — a throw its own guard answers (`returnNode`).
-            const saved_in_loop = this.in_loop_body;
-            this.in_loop_body = false;
-            defer this.in_loop_body = saved_in_loop;
-            const saved_nested_return = this.in_nested_return;
-            this.in_nested_return = false;
-            defer this.in_nested_return = saved_nested_return;
-            const saved_block_guard = this.block_guard;
-            var guard_used = false;
-            this.block_guard = &guard_used;
-            defer this.block_guard = saved_block_guard;
-            const saved_block_group = this.block_group;
-            this.block_group = null;
-            defer this.block_group = saved_block_group;
-            if (cc.args.len == 0 and cc.trailing.len == 1 and cc.trailing[0].params.len == 0) {
-                var names: std.ArrayListUnmanaged([]const u8) = .empty;
-                try this.collectMutations(b.arena, cc.trailing[0].body, &.{}, &names);
-                if (names.items.len > 0) return this.valueBlockExpr(b, cc.trailing[0].body, names.items, &guard_used);
-            }
-            const raw_body: Ast.Body = if (cc.args.len == 1) blk: {
-                const arg = cc.args[0].value;
-                if (arg.* != .function) return error.InvalidArgs;
-                this.indent += 1;
-                defer this.indent -= 1;
-                break :blk try b.body(&.{try this.exprNode(b, arg.*)});
-            } else if (cc.trailing.len == 1 and cc.trailing[0].params.len == 0)
-                try this.bodyNode(b, cc.trailing[0].body, 0, this.indent + 1)
-            else
-                return error.InvalidArgs;
-            const body = if (guard_used) try this.guardBlockReturn(b, raw_body) else raw_body;
-            return b.applyParen(.{ .fun = .{ .params = &.{}, .body = body } }, &.{});
-        }
         if (std.mem.eql(u8, cc.callee, ast.is_builtin_name) and cc.isType != null) return this.isTestNode(b, cc);
         if (std.mem.eql(u8, cc.callee, ast.index_builtin_name)) return this.indexNode(b, cc);
         if (std.mem.startsWith(u8, cc.callee, "__bp_")) return this.resultOptionNode(b, cc.callee, cc.args);
@@ -9185,6 +9019,15 @@ const Emitter = struct {
     /// and the statement rebinds the group, as `mutatingIfExpr` does for an
     /// `if`. An arm that writes none of them answers the versions it found.
     fn mutatingCaseExpr(this: *Emitter, b: Ast.Builder, subjects: []ast.Expr, arms: []ast.CaseArm, names: []const []const u8) anyerror!Ast.Expr {
+        return this.mutatingCaseExprAs(b, subjects, arms, names, false, false);
+    }
+
+    /// `mutatingCaseExpr`, and — `as_value` — its value form (decision 525):
+    /// `element(1, {_, Group'} = case Subject of Pat -> Body…, {V, Group}; … end)`,
+    /// every arm answering its value beside the group (`armWithValueGroup`);
+    /// with `raw_value` the bare `case` whose clauses answer `{V, Group}`, for
+    /// an enclosing arm that ends with it.
+    fn mutatingCaseExprAs(this: *Emitter, b: Ast.Builder, subjects: []ast.Expr, arms: []ast.CaseArm, names: []const []const u8, as_value: bool, raw_value: bool) anyerror!Ast.Expr {
         const subject: Ast.Expr = if (subjects.len == 1)
             try this.exprNode(b, subjects[0])
         else blk: {
@@ -9214,7 +9057,10 @@ const Emitter = struct {
                     arm.body.function.kind.body
                 else
                     try b.arena.dupe(ast.Stmt, &.{.{ .expr = arm.body }});
-                const body = try this.armWithGroup(b, stmts, names, body_indent);
+                const body = if (as_value or raw_value)
+                    try this.armWithValueGroup(b, stmts, names, body_indent)
+                else
+                    try this.armWithGroup(b, stmts, names, body_indent);
                 try clauses.append(b.arena, .{
                     .patterns = try b.exprs(&.{pattern}),
                     .guards = extras.guards.items,
@@ -9223,9 +9069,84 @@ const Emitter = struct {
                 try this.restoreVersions(&snapshot);
             }
         }
+        const raw = try b.caseOf(subject, clauses.items);
+        if (raw_value) return raw;
         // The group's fresh versions are only known once every arm was built.
         const target = try this.bindVarGroupExpr(b, names);
-        return b.match(target, try b.caseOf(subject, clauses.items));
+        if (!as_value) return b.match(target, raw);
+        const bound = try b.match(try b.tuple(&.{ Ast.Expr.v("_"), target }), raw);
+        return b.remote("erlang", "element", &.{ .{ .number = "1" }, bound });
+    }
+
+    /// An arm body of a `case` used as a value whose arms reassign `names`:
+    /// its statements, its last expression bound to a fresh variable, then
+    /// `{V, Group}` at the post-arm versions (decision 525).
+    fn armWithValueGroup(this: *Emitter, b: Ast.Builder, body: []const ast.Stmt, names: []const []const u8, indent: usize) anyerror!Ast.Body {
+        var stmts: std.ArrayListUnmanaged(Ast.Stmt) = .empty;
+        const last = lastRealStmt(body) orelse {
+            try stmts.append(b.arena, .{ .expr = try b.tuple(&.{ Ast.Expr.a("ok"), try this.varGroupExpr(b, names) }) });
+            return .{ .stmts = stmts.items };
+        };
+        // A tail `if` / `else` or `case` answers `{V, Group}` from each of its
+        // own arms: the statements before it, then it.
+        const tail = body[last].expr;
+        const nestedIf = tail == .branch and tail.branch.kind == .if_ and tail.branch.kind.if_.else_ != null;
+        const nestedCase = tail == .collection and tail.collection.kind == .case;
+        if (nestedIf or nestedCase) {
+            if (lastRealStmt(body[0..last]) != null)
+                try stmts.appendSlice(b.arena, (try this.bodyNode(b, body[0..last], 0, indent)).stmts);
+            const nested = if (nestedIf)
+                try this.ifValueGroupExpr(b, tail.branch.kind.if_, names)
+            else
+                try this.mutatingCaseExprAs(b, tail.collection.kind.case.subjects, tail.collection.kind.case.arms, names, false, true);
+            try stmts.append(b.arena, .{ .expr = nested });
+            return .{ .stmts = stmts.items };
+        }
+        var value: Ast.Expr = Ast.Expr.a("ok");
+        try stmts.appendSlice(b.arena, (try this.bodyNode(b, body, 0, indent)).stmts);
+        var k = stmts.items.len;
+        while (k > 0) {
+            k -= 1;
+            if (stmts.items[k] != .expr) continue;
+            this.cond_loop_vars += 1;
+            const v = Ast.Expr.v(try std.fmt.allocPrint(b.arena, "__BpArmV{d}", .{this.cond_loop_vars}));
+            stmts.items[k] = .{ .expr = try b.match(v, stmts.items[k].expr) };
+            value = v;
+            break;
+        }
+        try stmts.append(b.arena, .{ .expr = try b.tuple(&.{ value, try this.varGroupExpr(b, names) }) });
+        return .{ .stmts = stmts.items };
+    }
+
+    /// `case Cond of true -> Then…, {V, Group}; _ -> Else…, {V', Group'} end` —
+    /// an `if` / `else` at the end of an arm of a `case` used as a value whose
+    /// arms reassign `names` (decision 525); the binding form matches
+    /// `undefined` first, as `mutatingIfExpr` does.
+    fn ifValueGroupExpr(this: *Emitter, b: Ast.Builder, if_node: anytype, names: []const []const u8) anyerror!Ast.Expr {
+        var snapshot = try this.var_current.clone();
+        defer snapshot.deinit();
+        var clauses: std.ArrayListUnmanaged(Ast.Clause) = .empty;
+        const arm_indent = this.indent + 2;
+        const els = if_node.else_.?;
+        if (if_node.binding) |name| {
+            const subject = try this.exprNode(b, if_node.cond.*);
+            try clauses.append(b.arena, .{ .patterns = try b.exprs(&.{Ast.Expr.a("undefined")}), .body = try this.armWithValueGroup(b, els, names, arm_indent) });
+            try this.restoreVersions(&snapshot);
+            const bound = Ast.Expr.v(try this.patternBindVar(b, name));
+            try clauses.append(b.arena, .{ .patterns = try b.exprs(&.{bound}), .body = try this.armWithValueGroup(b, if_node.then_, names, arm_indent) });
+            try this.restoreVersions(&snapshot);
+            return b.caseOf(subject, clauses.items);
+        }
+        const subject = try this.condNode(b, if_node.cond.*);
+        const narrowing = try this.isNarrowing(b, if_node.cond.*);
+        try clauses.append(b.arena, .{
+            .patterns = try b.exprs(&.{Ast.Expr.a("true")}),
+            .body = try withNarrowing(b, narrowing, try this.armWithValueGroup(b, if_node.then_, names, arm_indent)),
+        });
+        try this.restoreVersions(&snapshot);
+        try clauses.append(b.arena, .{ .patterns = try b.exprs(&.{Ast.Expr.v("_")}), .body = try this.armWithValueGroup(b, els, names, arm_indent) });
+        try this.restoreVersions(&snapshot);
+        return b.caseOf(subject, clauses.items);
     }
 
     /// One erlang clause for one arm pattern.

@@ -772,11 +772,9 @@ codegen/
   `guardLoopCall`, which `bodyPropagates` now asks for on any `return`. beam
   throws it as `{'__bp_return', V}` (`return_throw_signal`), apart from a
   failing `try`'s `'__bp_try'`, because the call site answers the two
-  differently (`answerLoopThrow`): a `try` always answers the function, a
-  `return` answers the `@block` of the call site's frame (`inBlockExit`,
-  decision 2) when there is one — `val found = @block { for (xs) { x -> if
-  (x > limit) return x; } return -1; }` answered `7` from the function where
-  it means `700` (`modules/block_for_return_is_block_value`).
+  differently (`answerLoopThrow`): a `try` answers the function's `@Result`, a
+  `return` the function's value — from a block `{ … }` too, a scope of the
+  function (decision 525, `modules/block_for_return_leaves_function`).
 - **A `@Result`/`@Option` op's fun names nothing a program writes**
   (`resultOptionNode`): `(fun(__BpR) -> case __BpR of {ok, __BpV<n>} -> …)`,
   the payload numbered per function (`opt_seq`, reset with `try_seq`) because a
@@ -1283,7 +1281,7 @@ codegen/
   a leading-dot enum shorthand (`.Black`) is the variant atom.
 - **Calls are `erl_ast` nodes** (`callNode`): pipelines apply inside out
   (`pipelineNode`); builtins (`builtinCallNode`) render their `#[@External.Erlang(…)]`
-  template, `@block` as an applied `fun`, or the `__bp_*` result/option ops
+  template, or the `__bp_*` result/option ops
   (`resultOptionNode`, inline `fun`+`case`); `plainCallNode` does receiver dispatch
   (std module, activated extension, enum constructor tuple, imported/local
   associated fn, mangled interface assoc, module-qualified call, primitive
@@ -1295,32 +1293,16 @@ codegen/
   to be) or an `apply` of a variable (a fn-typed local); a state that cannot
   happen (an unknown `__bp_*` op, an empty OR pattern) is an emit error, never an
   empty `raw`.
-- **A block as a value has no lowering of its own** (decision 2, C-09's R7 — measured in
-  1.0.11-beta `01-compiler/02-erlang` step 10). The one site that takes a block in value position
-  is `@block`'s applied `fun` (`builtinCallNode`), and it is genuine: `val a = @block { return 3; }`
-  and a body whose every path returns (the fixture `js: block ---- @block builtin`, snapshot
-  `block_block_builtin`) are values, and `@block { … };` as a statement scopes the body. The shape
-  decision 2 refuses — `val a = @block { 1 + 2 };`, which `botopink check` still accepts and erlang
-  prints as `3` — goes through the same `fun`, whose last expression is its value by Erlang's own
-  rule; no `case` is built for it, and no erlang snapshot holds one. When the checker refuses the
-  tail form (01's row, the same box as `04-js` step 1), nothing in `erlang.zig` is deleted and the
-  erlang snapshots do not move. A value `if` / `case` whose arm is a block (`val s = if (c) { "a" }
-  else { "b" }`, `conformance/docs.md` § If / else) is a `case` whose arms end in their value — legal, not R7's.
-  The block's `return` is the BLOCK's: entering the fun resets `in_loop_body` / `in_nested_return`
-  and sets `block_guard`, so a `return` the fun cannot answer as its last expression (in a loop or
-  a discarded statement of the body) throws `{'__bp_block', V}` to the block's own guard
-  (`guardBlockReturn`), never `'__bp_try'` to the function's — `@block { if (x == 2) { return
-  100; } return x; }` inside a `for` answered from the enclosing function (`modules/block_return_is_block_value`).
-  A lambda resets `block_guard`. A statement `@block` with no `return` of its own that reassigns
-  an enclosing `var` (`acc = acc + 5;`) answers the reassigned variables and the statement rebinds
-  them (`mutatingBlockExpr`: `Acc@2 = (fun() -> Acc@1 = …, Acc@1 end)()`;
-  `modules/block_reassigns_enclosing_var`). The same block with a `return` in it, or in value
-  position, sets `block_group` while its body is lowered: every `return` answers `{V, Group}` (the
-  value, the names at their versions there — thrown to the block's guard or the fun's last
-  expression alike) and the call site rebinds the group (`valueBlockExpr`:
-  `element(1, {_, Acc@2} = (fun() -> …, {V, Acc@1} end)())`;
-  `modules/block_value_reassigns_enclosing_var`, a `for`'s `return` in `tests/erlang.zig`). A lambda
-  resets `block_group`.
+- **A block `{ … }` is a `case`** (decision 525; `@block` is removed): the parser lands it as
+  `case true { _ { … } }` (`ast.CollectionExpr.case.isBlock`), lowered as any `case` — its `return`
+  is the function's, its value its tail. A `case` used as a value whose arms reassign variables of
+  the function answers them beside its value: `element(1, {_, Group@new} = case … of … ->
+  …, {V, Group} end)` (`mutatingCaseExprAs` with `as_value`, `armWithValueGroup`; an `if` / `else`
+  or a `case` at an arm's end answers `{V, Group}` from each of its own arms, `ifValueGroupExpr`),
+  as a statement `case` answers the group alone (`mutatingCaseExpr`;
+  `modules/block_value_reassigns_enclosing_var`, `modules/block_reassigns_enclosing_var`). A value
+  `if` / `case` whose arm is a block (`val s = if (c) { "a" } else { "b" }`, `conformance/docs.md`
+  § If / else) is a `case` whose arms end in their value.
 - **Mutation through branches and loops** (`mutatingExpr`): a statement-level
   `if` / `for (xs) { x -> … }` / `xs.forEach({ x -> … })` that reassigns variables
   bound before it (looking through nested `if`/`loop`/`forEach`) returns the new
@@ -2378,8 +2360,9 @@ codegen/
   [`beam/AGENTS.md`](beam/AGENTS.md#closure-values-make_fun3--every-build-site-classified):
   every one is a real fun — four feed a `lists:*` higher-order call, four are a
   written lambda or a loop body — and **none** is a block as a value, because
-  `@block { … }` runs in the current frame on this backend and the `case`-arm
-  block that did build a throwaway closure was removed by `ae813cc8`. The
+  a block `{ … }` and a `case` arm's block run in the current frame on this
+  backend (the `case`-arm block that did build a throwaway closure was removed
+  by `ae813cc8`). The
   13 `make_fun3` hits `grep` finds in `beam_asm.zig` are all comments.
   Scope matters because a `case` binder's y-register is written only on the
   arm that binds it: capturing an enclosing `v` a lambda's own `Ok(v)` shadows

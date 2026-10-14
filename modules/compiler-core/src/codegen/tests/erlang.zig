@@ -108,15 +108,15 @@ test "erlang: true and false inside a tuple pattern are matched, not bound" {
     try h.assertErlangRunLog(std.testing.allocator,
         \\fn tag(t: #(bool, i32)) -> string {
         \\    return case t {
-        \\        #(true, n) { "yes " + n.toString(); }
-        \\        #(false, n) { "no " + n.toString(); }
+        \\        #(true, n) { "yes " + n.toString() }
+        \\        #(false, n) { "no " + n.toString() }
         \\    };
         \\}
         \\
         \\fn first(t: #(bool, i32, i32)) -> i32 {
         \\    return case t {
-        \\        #(false, ..) { 0; }
-        \\        #(true, n, ..) { n; }
+        \\        #(false, ..) { 0 }
+        \\        #(true, n, ..) { n }
         \\    };
         \\}
         \\
@@ -138,16 +138,16 @@ test "erlang: a record's constructor pattern carries the record's own tag" {
         \\
         \\fn f(p: Point) -> i32 {
         \\    return case p {
-        \\        Point(x: 0, y: y) { y; }
-        \\        Point(x: x, y: _) { x; }
+        \\        Point(x: 0, y: y) { y }
+        \\        Point(x: x, y: _) { x }
         \\    };
         \\}
         \\
         \\fn onAxis(p: Point) -> string {
         \\    return case p {
-        \\        Point(x: 0, ..) { "on y"; }
-        \\        Point(y: 0, ..) { "on x"; }
-        \\        _ { "off"; }
+        \\        Point(x: 0, ..) { "on y" }
+        \\        Point(y: 0, ..) { "on x" }
+        \\        _ { "off" }
         \\    };
         \\}
         \\
@@ -224,25 +224,29 @@ test "erlang: a list pattern that is a spread alone binds the whole list" {
     , "all 3\nall 0\n[4, 5]\n", &.{"Every = case"});
 }
 
-test "erlang: an `@block` reassigning an enclosing `var` answers it with every `return`" {
-    // The block is a fun, which cannot rebind what it captured: `Seen@1` bound
-    // inside it was unbound after it, and `erlc` refused the module. Every
-    // `return` of the block answers `{V, Group}` — here the one thrown out of
-    // the `for` to the block's guard, and the one at the body's end — and the
-    // call site rebinds the group (`valueBlockExpr`). The loop's `return` is
-    // pinned here rather than in `modules/block_value_reassigns_enclosing_var`: beam
-    // answers it from the function (an open 03-beam row).
+test "erlang: a block reassigning an enclosing `var` answers it beside its value" {
+    // Decision 525 — a block is a scope of the function, its value its tail.
+    // On erlang it is a `case` used as a value, whose clauses cannot rebind
+    // what the function bound: every arm answers `{V, Group}` and the match
+    // rebinds the group (`mutatingCaseExprAs`), also from an `if` / `else` at
+    // the block's end (`ifValueGroupExpr`).
     try h.assertErlangRunLog(std.testing.allocator,
         \\fn firstOver(xs: i32[], limit: i32) -> i32 {
         \\    var seen = 0;
-        \\    val found = @block {
+        \\    var hit = -1;
+        \\    val found = {
         \\        for (xs) { x ->
         \\            seen = seen + 1;
-        \\            if (x > limit) {
-        \\                return x;
-        \\            };
-        \\        };
-        \\        return -1;
+        \\            if (hit < 0 && x > limit) {
+        \\                hit = x;
+        \\            }
+        \\        }
+        \\        if (hit < 0) {
+        \\            seen = seen * 10;
+        \\            hit
+        \\        } else {
+        \\            hit
+        \\        }
         \\    };
         \\    return found * 100 + seen;
         \\}
@@ -251,7 +255,7 @@ test "erlang: an `@block` reassigning an enclosing `var` answers it with every `
         \\    @print(firstOver([1, 7, 3], 5));
         \\    @print(firstOver([1, 2], 5));
         \\}
-    , "702\n-98\n", &.{"erlang:element(1, {_, Seen@"});
+    , "703\n-80\n", &.{"erlang:element(1, {_, "});
 }
 
 test "erlang: a library's field read is its closure's alone, whatever its consumer declares" {
