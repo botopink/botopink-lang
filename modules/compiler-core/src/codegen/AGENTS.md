@@ -1033,6 +1033,11 @@ codegen/
   one clause of an earlier `case` is "unsafe" in a later one. A version bound
   inside a `case`/`fun` and read after it is left as an Erlang compile error
   (unsafe/unbound) rather than silently wrong.
+- **A postfix `x!` left as a call is a `case`.** The checker rewrites `x!` into
+  `x ?? @panic(…)` (decision 330 (5)), so a typed body never brings
+  `ast.non_null_builtin_name` (`"!"`) here; a body lowered untyped — a
+  decorator's or a template's (`decl.owner!.name`, decision 526) — does, and
+  `nonNullNode` emits `case X of undefined -> erlang:error(<<"value is null — x!">>); V -> V end`.
 - **An index expression dispatches on the receiver at run time.** Decision 30's
   `xs[0]`, `d["k"]`, `s[0]` and the slice `xs[0..2]` are **one** AST node — the
   builtin call `[]` over `(receiver, index)` (`ast.index_builtin_name`), the

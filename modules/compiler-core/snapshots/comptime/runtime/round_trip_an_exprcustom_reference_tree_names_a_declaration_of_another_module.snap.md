@@ -303,6 +303,7 @@ val rows = dsl "select id from Item";
 ;;             params => [],
 ;;             component => undefined,
 ;;             module => <<"shapes">>,
+;;             owner => undefined,
 ;;             meta => [],
 ;;             identity => <<"shapes@@Item">>,
 ;;             local => <<"Item">>
@@ -339,6 +340,7 @@ val rows = dsl "select id from Item";
           "methods": [],
           "module": "shapes",
           "name": "Item",
+          "owner": null,
           "params": [],
           "returnType": "",
           "variants": []

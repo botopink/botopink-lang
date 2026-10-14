@@ -135,6 +135,7 @@ fn main() {
 ;;             params => [],
 ;;             component => undefined,
 ;;             module => <<"">>,
+;;             owner => undefined,
 ;;             meta => [],
 ;;             identity => <<"main@@greeting">>,
 ;;             local => <<"greeting">>

@@ -5661,7 +5661,7 @@ fn runDeclDecorators(
         var located: std.ArrayListUnmanaged([]const u8) = .empty;
         try located.append(env.arena, dfn.name);
         for (support[0..found.fns.len]) |sf| if (std.mem.eql(u8, env.comptimeOwnerOf(sf), owner)) try located.append(env.arena, sf.name);
-        const outcome = decoratorEval.evaluate(env.arena, ctx.io, ctx.build_root, owner, srcPathOfModule(env, owner), try exprParam.eraseForRun(env.arena, runDfn, true), runSupport, located.items, reached.types, try completeHandle(env, try withMethodMeta(env, handle, memberOwner)), plain, capture, &env.comptimeTraces) catch {
+        const outcome = decoratorEval.evaluate(env.arena, ctx.io, ctx.build_root, owner, srcPathOfModule(env, owner), try exprParam.eraseForRun(env.arena, runDfn, true), runSupport, located.items, reached.types, try completeHandle(env, try withOwner(env, try withMethodMeta(env, handle, memberOwner), if (declared == null) memberOwner else null)), plain, capture, &env.comptimeTraces) catch {
             return decoratorError(env, a, "the decorator evaluator failed to run", "Decorator bodies run on the wasm comptime runtime inside the compiler (decision 434); this failure is the compiler's, not the body's — report it.");
         };
         switch (outcome) {
@@ -20101,6 +20101,22 @@ fn hookMetaOf(ctx: *const anyopaque, arena: std.mem.Allocator, module: []const u
 
 fn noMeta(_: *const anyopaque, _: std.mem.Allocator, _: []const u8, _: []const u8) anyerror![]const hooksMod.MetaPair {
     return &.{};
+}
+
+/// Decision 526 — `decl.owner` of a member's handle: the `Declared<unknown>`
+/// of the type or behavior `owner` of this module that holds the annotated
+/// method or field, its meta what the reflection holds so far (a member's
+/// decorators run before its owner's). Null `owner` — a top-level
+/// declaration — leaves the handle's `null`.
+fn withOwner(env: *Env, handle: decoratorEval.DeclHandle, owner: ?[]const u8) InferError!decoratorEval.DeclHandle {
+    const name = owner orelse return handle;
+    const source: hooksMod.MetaSource = if (env.reflection) |r|
+        .{ .ctx = r, .metaOf = hookMetaOf }
+    else
+        .{ .ctx = env, .metaOf = noMeta };
+    var h = handle;
+    h.owner = hooksMod.declaredTerm(env.arena, .{ .module = env.modulePath, .name = name }, source) catch return error.OutOfMemory;
+    return h;
 }
 
 /// The handle a decorator body reads, completed with the decorators its

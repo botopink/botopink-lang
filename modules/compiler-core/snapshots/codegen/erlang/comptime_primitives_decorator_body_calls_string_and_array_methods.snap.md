@@ -1771,7 +1771,8 @@ fn main() {
 ;;     hooks => [],
 ;;     params => [],
 ;;     component => undefined,
-;;     module => <<"">>
+;;     module => <<"">>,
+;;     owner => undefined
 ;; }
 ```
 

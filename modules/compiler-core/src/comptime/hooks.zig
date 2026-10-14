@@ -309,7 +309,7 @@ pub fn annotationsTerm(arena: std.mem.Allocator, anns: []const Annotation) !Term
 /// `Declared<unknown>`: the declaration's name, module, meta and return type.
 /// Its `value` is `null` in a decorator body — the program's functions do not
 /// run while it compiles (decision 364 (3)).
-fn declaredTerm(arena: std.mem.Allocator, d: DeclRef, meta: MetaSource) !Term {
+pub fn declaredTerm(arena: std.mem.Allocator, d: DeclRef, meta: MetaSource) !Term {
     return Term.mapOf(try arena.dupe(Term.MapEntry, &.{
         Term.field("name", Term.str(d.name)),
         Term.field("module", Term.str(if (d.module.len == 0) "main" else d.module)),

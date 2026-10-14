@@ -80,6 +80,11 @@ pub const DeclHandle = struct {
     /// Decision 415 (2) — `decl.module`, the path of the module that
     /// declares it.
     module: []const u8 = "",
+    /// Decision 526 — `decl.owner`: the `Declared<unknown>` term of the type
+    /// or behavior that holds an annotated method or field (`hooks.zig`
+    /// `declaredTerm`, built by the checker, `infer.zig` `runDeclDecorators`);
+    /// null — `undefined` in the term — for every other handle.
+    owner: ?Term = null,
     /// Decision 415 (2) — a declaration `q.lookup` answered: the typed meta
     /// its decorators recorded (`d.meta(T)` in the template's body, the
     /// `meta` key a tag's handle carries too), its identity and the name the
@@ -567,7 +572,7 @@ pub fn handleToTerm(arena: std.mem.Allocator, handle: DeclHandle) std.mem.Alloca
 
     const tag = handle.isTag();
     const extra: usize = if (tag) 2 else if (handle.lookup != null) 3 else 0;
-    const entries = try arena.alloc(Term.MapEntry, 11 + extra);
+    const entries = try arena.alloc(Term.MapEntry, 12 + extra);
     entries[0] = Term.field("kind", Term.atomOf(handle.kind));
     entries[1] = Term.field("name", Term.str(handle.name));
     entries[2] = Term.field("fields", Term.listOf(fields));
@@ -579,13 +584,14 @@ pub fn handleToTerm(arena: std.mem.Allocator, handle: DeclHandle) std.mem.Alloca
     entries[8] = Term.field("params", Term.listOf(params));
     entries[9] = Term.field("component", if (handle.component) |c| try handleToTerm(arena, c.*) else Term.undefined_atom);
     entries[10] = Term.field("module", Term.str(handle.module));
+    entries[11] = Term.field("owner", handle.owner orelse Term.undefined_atom);
     if (handle.lookup) |l| if (!tag) {
-        entries[11] = Term.field("meta", if (l.pending)
+        entries[12] = Term.field("meta", if (l.pending)
             Term.tupleOf(try arena.dupe(Term, &.{ Term.atomOf(preludeMod.meta_pending_tag), Term.str(handle.name) }))
         else
             try metaListTerm(arena, l.meta));
-        entries[12] = Term.field("identity", Term.str(l.identity));
-        entries[13] = Term.field("local", Term.str(l.local));
+        entries[13] = Term.field("identity", Term.str(l.identity));
+        entries[14] = Term.field("local", Term.str(l.local));
     };
     if (tag) {
         // `attrs` — `[{<<"id">>, <<"x">>}]`, what `attr/2` reads; `meta` —
@@ -593,8 +599,8 @@ pub fn handleToTerm(arena: std.mem.Allocator, handle: DeclHandle) std.mem.Alloca
         // `'__bp_methodMeta'/2` reads (a method entry's shape).
         const attrs = try arena.alloc(Term, handle.attrs.len);
         for (handle.attrs, 0..) |a, i| attrs[i] = Term.tupleOf(try arena.dupe(Term, &.{ Term.str(a[0]), Term.str(a[1]) }));
-        entries[11] = Term.field("attrs", Term.listOf(attrs));
-        entries[12] = Term.field("meta", try metaListTerm(arena, handle.tagMeta));
+        entries[12] = Term.field("attrs", Term.listOf(attrs));
+        entries[13] = Term.field("meta", try metaListTerm(arena, handle.tagMeta));
     }
     return Term.mapOf(entries);
 }

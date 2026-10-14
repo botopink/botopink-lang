@@ -733,6 +733,13 @@ pub behavior Decl<T> {
     // Decision 415 (2) — the path of the module that declares it (`main`,
     // `models`), as a `Declared` entry's `module`.
     val module: string;
+    // Decision 526 — a member's owner: the `Declared<unknown>` of the type or
+    // behavior that holds the annotated method or field (`decl.owner!.name`,
+    // its `value` `null` as in every decorator body); `null` for a
+    // module-level declaration. A registration a member's decorator emits is
+    // named through it (`decl.owner!.name + "_" + decl.name`), so two
+    // same-named members of two types never collide.
+    val owner: ?Declared<unknown>;
     val fields: Field[];
     val variants: string[];
     val methods: Method[];

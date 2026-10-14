@@ -201,6 +201,7 @@ val s = ui "<Card title=\"x\"><Badge/></Card>";
 ;;             params => [],
 ;;             component => undefined,
 ;;             module => <<"">>,
+;;             owner => undefined,
 ;;             meta => [],
 ;;             identity => <<"main@@Card">>,
 ;;             local => <<"Card">>
@@ -217,6 +218,7 @@ val s = ui "<Card title=\"x\"><Badge/></Card>";
 ;;             params => [],
 ;;             component => undefined,
 ;;             module => <<"">>,
+;;             owner => undefined,
 ;;             meta => [],
 ;;             identity => <<"main@@Badge">>,
 ;;             local => <<"Badge">>

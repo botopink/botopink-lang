@@ -1919,7 +1919,8 @@ pub const decl_reflection_src =
     \\    hooks: HookNode[],
     \\    params: __Decl__Param[],
     \\    component: ?Decl,
-    \\    module: string) {
+    \\    module: string,
+    \\    owner: ?Declared<unknown>) {
     \\    declare fn attr(self: Self, name: string) -> ?string;
     \\    declare fn fail(self: Self, message: string);
     \\    declare fn failAt(self: Self, span: Span, message: string);

@@ -267,6 +267,7 @@ pub fn templateForms(b: Ast.Builder) Error![]const Ast.Form {
                 Ast.field("params", try b.list(&.{})),
                 Ast.field("component", A("undefined")),
                 Ast.field("module", Ast.str("")),
+                Ast.field("owner", A("undefined")),
                 Ast.field("attrs", V("Attrs")),
                 Ast.field("meta", try b.list(&.{})),
             }),

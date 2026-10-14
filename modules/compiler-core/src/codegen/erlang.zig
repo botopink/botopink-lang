@@ -8398,6 +8398,7 @@ const Emitter = struct {
         if (try this.builtinAnnotationNode(b, cc.callee, cc)) |node| return node;
         if (std.mem.eql(u8, cc.callee, ast.is_builtin_name) and cc.isType != null) return this.isTestNode(b, cc);
         if (std.mem.eql(u8, cc.callee, ast.index_builtin_name)) return this.indexNode(b, cc);
+        if (std.mem.eql(u8, cc.callee, ast.non_null_builtin_name)) return this.nonNullNode(b, cc);
         if (std.mem.startsWith(u8, cc.callee, "__bp_")) return this.resultOptionNode(b, cc.callee, cc.args);
         return b.call(cc.callee, try this.callArgs(b, null, cc));
     }
@@ -8431,6 +8432,22 @@ const Emitter = struct {
         }
         this.needs_index_helper = true;
         return b.call("__bp_index", &.{ recv, try this.exprNode(b, index) });
+    }
+
+    /// Decision 330 (5) — the postfix `x!` still a call here: a body lowered
+    /// untyped (a decorator's, a template's — `decl.owner!.name`, decision
+    /// 526), which the checker's rewrite into `x ?? @panic(…)` never reached.
+    /// `case X of undefined -> erlang:error(…); V -> V end`.
+    fn nonNullNode(this: *Emitter, b: Ast.Builder, cc: anytype) anyerror!Ast.Expr {
+        if (cc.args.len != 1) return error.InvalidArgs;
+        const operand = try this.exprNode(b, cc.args[0].value.*);
+        const bound = Ast.Expr.v(try this.freshPatternVar(b));
+        return b.caseOf(operand, &.{
+            try b.clause(&.{Ast.Expr.a("undefined")}, &.{}, &.{
+                try b.remote("erlang", "error", &.{Ast.str("value is null — x!")}),
+            }),
+            try b.clause(&.{bound}, &.{}, &.{bound}),
+        });
     }
 
     /// A user-level call: receiver dispatch (std module, extension, enum
