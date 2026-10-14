@@ -1,3 +1,3 @@
 botopink-cell 1
-refused error: `#[@External.Wasm(wasi: .RandomF46)]`: `.RandomF46` is not a WASI adapter — the adapters are listed in conformance/docs.md § Host bindings (.RandomF64, .Delay, .Race, .RaceOf, .SpawnAll, .GateNew, .GateOpen, .GateAwait) (on `draw`)
+refused error: `#[@External.Wasm(wasi: .RandomF46)]`: `.RandomF46` is not a WASI adapter — the adapters are listed in conformance/docs.md § Host bindings (.RandomF64, .Delay, .Race, .RaceOf, .SpawnAll, .GateNew, .GateOpen, .GateAwait, .Attempt) (on `draw`)
 at src/main.bp:6:3
