@@ -493,7 +493,7 @@ val Element = type() implement @Renderable
 fn state(initial: i32) -> @Component<i32> {
     return initial;
 }
-fn memo() -> @Component<i32> {
+fn memo(f: fn() -> i32) -> @Component<i32> {
     return 0;
 }
 fn Counter() -> @Component<Element> {
@@ -519,7 +519,7 @@ function state(initial) {
 };
 }
 
-function memo() {
+function memo(f) {
     return (bpScope__) => {
     return bpScopeRendered__(0, bpScope__);
 };

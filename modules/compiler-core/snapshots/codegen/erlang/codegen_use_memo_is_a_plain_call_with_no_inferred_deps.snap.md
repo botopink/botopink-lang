@@ -449,7 +449,7 @@ val Element = type() implement @Renderable
 fn state(initial: i32) -> @Component<i32> {
     return initial;
 }
-fn memo() -> @Component<i32> {
+fn memo(f: fn() -> i32) -> @Component<i32> {
     return 0;
 }
 fn Counter() -> @Component<Element> {
@@ -462,7 +462,7 @@ fn Counter() -> @Component<Element> {
 ----- ERLANG -- main.erl
 ```erlang
 -module(test@main).
--export(['__bp_priv__state'/1, '__bp_priv__memo'/0, '__bp_priv__Counter'/0]).
+-export(['__bp_priv__state'/1, '__bp_priv__memo'/1, '__bp_priv__Counter'/0]).
 
 %% import bpScopePush__, bpScopeFind__, bpScopeRendered__, bpScopeValue__, bpScopeRoot__
 
@@ -473,7 +473,7 @@ state(Initial) ->
         std@context:rendered(Initial, BpScope__)
     end.
 
-memo() ->
+memo(F) ->
     fun(BpScope__) ->
         std@context:rendered(0, BpScope__)
     end.
@@ -493,7 +493,7 @@ memo() ->
 
 '__bp_priv__state'(A0) -> state(A0).
 
-'__bp_priv__memo'() -> memo().
+'__bp_priv__memo'(A0) -> memo(A0).
 
 '__bp_priv__Counter'() -> 'Counter'().
 ```

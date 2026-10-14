@@ -1837,6 +1837,10 @@ targets; and its refusals, each located: `modules/block_builtin_removed` (`remov
 `async { … }` block's tail as its task's value: the parent dropped it (commonJS printed `null`,
 erlang raised `case_clause` on a `case` at the end). The cells whose `comptime { …; break v; }` or
 value `case` arm ended in `;` are rewritten in the new spelling, their answers unchanged.
+`modules/trailing_lambda_call` pins the trailing lambda as the call's last argument (decision 525): a method's and a plain
+function's, with one parameter and with none (`b.run { -> 10 }`, `twice { -> 4 }`, `apply(3) { k -> k * 3 }`), on all four
+targets — the parent refused the parameters as unbound and the plain function's lambda as an arity error, and wasm and beam
+lowered a method's trailing lambda wrong.
 
 `fix-js-gaps` (gaps `libs/validation` met) adds `modules/imported_variant_positional_payload` —
 `Circle(r)`, `Rect(w, h)`, `Two(l, r)` and a `val assert Circle(r)` over enums of a sibling module, on

@@ -680,7 +680,7 @@ val Element = type() implement @Renderable
 fn state(initial: i32) -> @Component<i32> {
     return initial;
 }
-fn memo() -> @Component<i32> {
+fn memo(f: fn() -> i32) -> @Component<i32> {
     return 0;
 }
 fn Counter() -> @Component<Element> {
@@ -693,7 +693,7 @@ fn Counter() -> @Component<Element> {
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
 {module, test@main}.
-{exports, [{'__bp_priv__Counter', 0}, {'__bp_priv__memo', 0}, {'__bp_priv__state', 1}]}.
+{exports, [{'__bp_priv__Counter', 0}, {'__bp_priv__memo', 1}, {'__bp_priv__state', 1}]}.
 {attributes, []}.
 {labels, 28}.
 
@@ -710,15 +710,17 @@ fn Counter() -> @Component<Element> {
     {deallocate, 1}.
     return.
 
-{function, memo, 0, 5}.
+{function, memo, 1, 5}.
   {label, 4}.
     {line, [{location, "test@main.erl", 2}]}.
-    {func_info, {atom, test@main}, {atom, memo}, 0}.
+    {func_info, {atom, test@main}, {atom, memo}, 1}.
   {label, 5}.
-    {allocate, 0, 0}.
+    {allocate, 1, 1}.
+    {init_yregs, {list, [{y, 0}]}}.
+    {move, {x, 0}, {y, 0}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
     {make_fun3, {f, 11}, 0, 0, {x, 0}, {list, []}}.
-    {deallocate, 0}.
+    {deallocate, 1}.
     return.
 
 {function, 'Counter', 0, 7}.
@@ -739,12 +741,12 @@ fn Counter() -> @Component<Element> {
   {label, 23}.
     {call_only, 0, {f, 7}}.
 
-{function, '__bp_priv__memo', 0, 25}.
+{function, '__bp_priv__memo', 1, 25}.
   {label, 24}.
     {line, [{location, "test@main.erl", 5}]}.
-    {func_info, {atom, test@main}, {atom, '__bp_priv__memo'}, 0}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__memo'}, 1}.
   {label, 25}.
-    {call_only, 0, {f, 5}}.
+    {call_only, 1, {f, 5}}.
 
 {function, '__bp_priv__state', 1, 27}.
   {label, 26}.
@@ -766,10 +768,10 @@ fn Counter() -> @Component<Element> {
     {move, {y, 0}, {x, 1}}.
     {call_ext_last, 2, {extfunc, std@context, rendered, 2}, 2}.
 
-{function, '-memo/0-fun-1-', 1, 11}.
+{function, '-memo/1-fun-1-', 1, 11}.
   {label, 10}.
     {line, [{location, "test@main.erl", 3}]}.
-    {func_info, {atom, test@main}, {atom, '-memo/0-fun-1-'}, 1}.
+    {func_info, {atom, test@main}, {atom, '-memo/1-fun-1-'}, 1}.
   {label, 11}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
@@ -831,9 +833,7 @@ fn Counter() -> @Component<Element> {
     {make_fun3, {f, 19}, 0, 0, {x, 0}, {list, [{y, 2}, {y, 0}]}}.
     {move, {x, 0}, {x, 1}}.
     {move, {x, 1}, {x, 0}}.
-    %% unresolved_call: memo/1
-    {move, {literal, {unresolved_call, memo, 1}}, {x, 0}}.
-    {call_ext, 1, {extfunc, erlang, error, 1}}.
+    {call, 1, {f, 5}}.
     {move, {x, 0}, {y, 4}}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 4}, {x, 1}}.

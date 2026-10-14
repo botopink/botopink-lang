@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn calc(factor: i32) -> i32 {
+fn calc(factor: i32, f: fn(i32, i32) -> i32) -> i32 {
     @todo();
 }
 fn main() {
@@ -13,24 +13,25 @@ fn main() {
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
 {module, test@main}.
-{exports, [{'_botopink_main', 0}, {main, 1}, {'__bp_priv__calc', 1}, {'__bp_priv__main', 0}]}.
+{exports, [{'_botopink_main', 0}, {main, 1}, {'__bp_priv__calc', 2}, {'__bp_priv__main', 0}]}.
 {attributes, []}.
 {labels, 16}.
 
-{function, calc, 1, 3}.
+{function, calc, 2, 3}.
   {label, 2}.
     {line, [{location, "test@main.erl", 1}]}.
-    {func_info, {atom, test@main}, {atom, calc}, 1}.
+    {func_info, {atom, test@main}, {atom, calc}, 2}.
   {label, 3}.
-    {allocate, 1, 1}.
-    {init_yregs, {list, [{y, 0}]}}.
+    {allocate, 2, 2}.
+    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
+    {move, {x, 1}, {y, 1}}.
     {move, {literal, <<"not implemented">>}, {x, 0}}.
     {test_heap, 3, 1}.
     {put_tuple2, {x, 0}, {list, [{atom, todo}, {x, 0}]}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
     {move, {atom, ok}, {x, 0}}.
-    {deallocate, 1}.
+    {deallocate, 2}.
     return.
 
 {function, main, 0, 5}.
@@ -44,9 +45,7 @@ fn main() {
     {make_fun3, {f, 11}, 0, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {x, 1}}.
     {move, {integer, 2}, {x, 0}}.
-    %% unresolved_call: calc/2
-    {move, {literal, {unresolved_call, calc, 2}}, {x, 0}}.
-    {call_ext, 1, {extfunc, erlang, error, 1}}.
+    {call, 2, {f, 3}}.
     {move, {x, 0}, {y, 0}}.
     {move, {atom, ok}, {x, 0}}.
     {deallocate, 1}.
@@ -70,12 +69,12 @@ fn main() {
   {label, 9}.
     {call_only, 0, {f, 7}}.
 
-{function, '__bp_priv__calc', 1, 13}.
+{function, '__bp_priv__calc', 2, 13}.
   {label, 12}.
     {line, [{location, "test@main.erl", 5}]}.
-    {func_info, {atom, test@main}, {atom, '__bp_priv__calc'}, 1}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__calc'}, 2}.
   {label, 13}.
-    {call_only, 1, {f, 3}}.
+    {call_only, 2, {f, 3}}.
 
 {function, '__bp_priv__main', 0, 15}.
   {label, 14}.

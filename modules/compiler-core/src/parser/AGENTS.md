@@ -154,6 +154,8 @@ read, `jumpTail`) and `async { … }` (its tail wrapped in `return`, which leave
 A trailing `{` without `->` is a block too (`TrailingLambda.isBlock`, located at its `{`): the
 checker refuses it where the call expects a function, and `botopink format` writes it back as
 `{ -> … }`. `@block` is a parse error, `removed-block-builtin`, at the builtin.
+A trailing lambda stays a `TrailingLambda` in the parser's tree (the formatter prints it as written); the checker
+lowers it to the call's last argument (`ast.lowerTrailingLambdas`, `comptime/AGENTS.md`).
 
 **Where a `use` may stand** is not the parser's rule: decision 357's rules of
 hooks (`use-not-top-level`) are the checker's (`comptime/AGENTS.md`), which

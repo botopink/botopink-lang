@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn run() {
+fn run(f: fn(i32) -> string) {
     @todo();
 }
 fn main() {
@@ -12,7 +12,7 @@ fn main() {
 
 ----- JAVASCRIPT -- main.js
 ```javascript
-function run() {
+function run(f) {
     (() => { throw Object.defineProperty(new Error("not implemented"), '__bp_panic', { value: true }) })();
 }
 

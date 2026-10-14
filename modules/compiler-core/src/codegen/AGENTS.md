@@ -2727,7 +2727,8 @@ first three are now enforced by the model, not by discipline:
     made with, and a capture it only reads is that snapshot too;
   - **shapes with no lowering anywhere** — `List.map(xs, f)` and
     `List.map(xs) { … }` (`call_qualified_module_call_resolves_arity`,
-    `call_qualified_module_call_with_trailing_lambda_arity`): `List` is
+    `call_qualified_module_call_with_trailing_lambda_arity`, whose trailing lambda is the call's last
+    argument since decision 525 — `ast.lowerTrailingLambdas`, no backend meets one): `List` is
     declared nowhere, `libs/std` included. commonJS emits `List.map(…)` against
     an unbound `List`, erlang `list:map/2` and beam `call_ext list:map/2` (no
     such module; `lists` is not what the source names), wasm traps

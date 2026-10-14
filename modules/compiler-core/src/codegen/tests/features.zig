@@ -278,7 +278,7 @@ test "codegen ---- use memo is a plain call with no inferred deps" {
         \\fn state(initial: i32) -> @Component<i32> {
         \\    return initial;
         \\}
-        \\fn memo() -> @Component<i32> {
+        \\fn memo(f: fn() -> i32) -> @Component<i32> {
         \\    return 0;
         \\}
         \\fn Counter() -> @Component<Element> {
@@ -295,7 +295,7 @@ test "codegen ---- use effect void hook is a plain call" {
         \\fn cleanup() {
         \\    0;
         \\}
-        \\fn effect() -> @Component<i32> {
+        \\fn effect(f: fn()) -> @Component<i32> {
         \\    return 0;
         \\}
         \\fn Widget() -> @Component<Element> {

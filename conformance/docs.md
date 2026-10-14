@@ -1610,6 +1610,12 @@ with no parameter is written `f(x) { -> … }`. A block whose value is `void` ha
 
 <!-- example: modules/block_builtin_removed -->
 
+A trailing lambda is the call's last argument: it fills the parameter after the written arguments, of
+a method or of a plain function, with parameters (`f(3) { n -> n * 3 }`) or with none (`b.run { -> 10 }`,
+`twice { -> 4 }`), and the parameter is checked and bound as any lambda argument's is:
+
+<!-- example: modules/trailing_lambda_call -->
+
 `botopink format` migrates the older spellings: a trailing lambda without `->` gains it, the last
 `;` of a `case` arm used as a value is dropped, and `comptime { …; break v; }` becomes the tail
 `v`. It prints a block of one tail on one line when it fits (`{ 1 + 2 }`), as it prints a function

@@ -20625,10 +20625,20 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
     return inferCallExprWith(env, c, loc, null);
 }
 
+/// Decision 525 — a trailing lambda is a call argument (`ast.lowerTrailingLambdas`);
+/// null when the call has none to lower.
+fn lowerTrailingLambdas(env: *Env, c: ast.CallExprOf(.untyped)) InferError!?ast.CallExprOf(.untyped) {
+    if (c.kind != .call) return null;
+    var out = c;
+    if (!try ast.lowerTrailingLambdas(env.arena, &out.kind.call)) return null;
+    return out;
+}
+
 /// `inferCallExpr` with the receiver already typed — the variadic packing
 /// (decision 267) re-enters with the packed call, and the receiver is not
 /// inferred twice.
 fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typedReceiverIn: ?*ast.TypedExpr) InferError!TypedExpr {
+    if (try lowerTrailingLambdas(env, c)) |lowered| return inferCallExprWith(env, lowered, loc, typedReceiverIn);
     // The type the position expects of the call (`val t: Sort<Book> = …`),
     // read before the receiver and the arguments set their own.
     const callExpected = env.expectedType;

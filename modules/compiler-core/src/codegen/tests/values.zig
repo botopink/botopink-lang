@@ -215,7 +215,7 @@ test "js: val ---- optional annotation with null" {
 
 test "js: call ---- trailing lambda block" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn run() {
+        \\fn run(f: fn(i32) -> string) {
         \\    @todo();
         \\}
         \\fn main() {
@@ -228,7 +228,7 @@ test "js: call ---- trailing lambda block" {
 
 test "js: call ---- trailing lambda with multiple params" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn calc(factor: i32) -> i32 {
+        \\fn calc(factor: i32, f: fn(i32, i32) -> i32) -> i32 {
         \\    @todo();
         \\}
         \\fn main() {

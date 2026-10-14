@@ -493,7 +493,7 @@ val Element = type() implement @Renderable
 fn cleanup() {
     0;
 }
-fn effect() -> @Component<i32> {
+fn effect(f: fn()) -> @Component<i32> {
     return 0;
 }
 fn Widget() -> @Component<Element> {
@@ -514,7 +514,7 @@ function cleanup() {
     0;
 }
 
-function effect() {
+function effect(f) {
     return (bpScope__) => {
     return bpScopeRendered__(0, bpScope__);
 };

@@ -816,7 +816,7 @@ val Element = type() implement @Renderable
 fn state(initial: i32) -> @Component<i32> {
     return initial;
 }
-fn memo() -> @Component<i32> {
+fn memo(f: fn() -> i32) -> @Component<i32> {
     return 0;
 }
 fn Counter() -> @Component<Element> {
@@ -1070,7 +1070,7 @@ fn Counter() -> @Component<Element> {
     i32.add ;; a component's lambda: past its mark
     return
   )
-  (func $memo (result i32)
+  (func $memo (param $f i32) (result i32)
     (local $__mem0 i32)
     i32.const 8
     call $__alloc
@@ -1200,6 +1200,7 @@ fn Counter() -> @Component<Element> {
     local.get $__mem0
     i32.load offset=4
     local.set $setCount
+    i32.const 0 ;; missing argument
     call $memo
     local.tee $__runc1
     i32.const 4

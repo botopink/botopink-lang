@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn calc(factor: i32) -> i32 {
+fn calc(factor: i32, f: fn(i32, i32) -> i32) -> i32 {
     @todo();
 }
 fn main() {
@@ -12,7 +12,7 @@ fn main() {
 
 ----- JAVASCRIPT -- main.js
 ```javascript
-function calc(factor) {
+function calc(factor, f) {
     (() => { throw Object.defineProperty(new Error("not implemented"), '__bp_panic', { value: true }) })();
 }
 

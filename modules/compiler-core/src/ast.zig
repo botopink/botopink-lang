@@ -4275,6 +4275,32 @@ pub const TypedStmt = StmtOf(.typed);
 
 /// Untyped call argument
 pub const CallArg = CallArgOf(.untyped);
+
+/// Decision 525 — a trailing lambda is the argument after the written ones:
+/// `f(x) { n -> … }` is `f(x, { n -> … })` and a method's `b.run { -> 10 }` is
+/// `b.run({ -> 10 })`, so the parameter it fills is checked, bound and lowered
+/// as any lambda argument's is, on every backend. `call` is the untyped call
+/// payload (`.call.kind.call`); only a plain trailing lambda (unlabelled, not a
+/// block) of a non-builtin call is lowered, and either all of them or none.
+/// True when it lowered.
+pub fn lowerTrailingLambdas(arena: std.mem.Allocator, call: anytype) std.mem.Allocator.Error!bool {
+    if (call.is_builtin or call.trailing.len == 0) return false;
+    for (call.trailing) |tl| if (tl.label != null or tl.isBlock) return false;
+    const args = try arena.alloc(CallArg, call.args.len + call.trailing.len);
+    @memcpy(args[0..call.args.len], call.args);
+    for (call.trailing, 0..) |tl, i| {
+        const lambda = try arena.create(Expr);
+        lambda.* = .{ .function = .{ .loc = tl.loc, .kind = .{
+            .syntax = .lambda,
+            .params = tl.params,
+            .body = tl.body,
+        } } };
+        args[call.args.len + i] = .{ .label = null, .value = lambda };
+    }
+    call.args = args;
+    call.trailing = &.{};
+    return true;
+}
 /// Typed call argument
 pub const TypedCallArg = CallArgOf(.typed);
 

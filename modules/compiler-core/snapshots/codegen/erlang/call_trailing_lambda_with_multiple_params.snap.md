@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn calc(factor: i32) -> i32 {
+fn calc(factor: i32, f: fn(i32, i32) -> i32) -> i32 {
     @todo();
 }
 fn main() {
@@ -14,9 +14,9 @@ fn main() {
 ```erlang
 -module(test@main).
 -export(['_botopink_main'/0, main/1]).
--export(['__bp_priv__calc'/1, '__bp_priv__main'/0]).
+-export(['__bp_priv__calc'/2, '__bp_priv__main'/0]).
 
-calc(Factor) ->
+calc(Factor, F) ->
     erlang:error({todo, <<"not implemented">>}).
 
 main() ->
@@ -31,7 +31,7 @@ main() ->
 main(_Args) ->
     '_botopink_main'().
 
-'__bp_priv__calc'(A0) -> calc(A0).
+'__bp_priv__calc'(A0, A1) -> calc(A0, A1).
 
 '__bp_priv__main'() -> main().
 ```

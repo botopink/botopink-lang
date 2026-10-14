@@ -680,7 +680,7 @@ val Element = type() implement @Renderable
 fn cleanup() {
     0;
 }
-fn effect() -> @Component<i32> {
+fn effect(f: fn()) -> @Component<i32> {
     return 0;
 }
 fn Widget() -> @Component<Element> {
@@ -692,7 +692,7 @@ fn Widget() -> @Component<Element> {
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
 {module, test@main}.
-{exports, [{'__bp_priv__Widget', 0}, {'__bp_priv__cleanup', 0}, {'__bp_priv__effect', 0}]}.
+{exports, [{'__bp_priv__Widget', 0}, {'__bp_priv__cleanup', 0}, {'__bp_priv__effect', 1}]}.
 {attributes, []}.
 {labels, 20}.
 
@@ -707,15 +707,17 @@ fn Widget() -> @Component<Element> {
     {deallocate, 0}.
     return.
 
-{function, effect, 0, 5}.
+{function, effect, 1, 5}.
   {label, 4}.
     {line, [{location, "test@main.erl", 2}]}.
-    {func_info, {atom, test@main}, {atom, effect}, 0}.
+    {func_info, {atom, test@main}, {atom, effect}, 1}.
   {label, 5}.
-    {allocate, 0, 0}.
+    {allocate, 1, 1}.
+    {init_yregs, {list, [{y, 0}]}}.
+    {move, {x, 0}, {y, 0}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
     {make_fun3, {f, 9}, 0, 0, {x, 0}, {list, []}}.
-    {deallocate, 0}.
+    {deallocate, 1}.
     return.
 
 {function, 'Widget', 0, 7}.
@@ -743,17 +745,17 @@ fn Widget() -> @Component<Element> {
   {label, 17}.
     {call_only, 0, {f, 3}}.
 
-{function, '__bp_priv__effect', 0, 19}.
+{function, '__bp_priv__effect', 1, 19}.
   {label, 18}.
     {line, [{location, "test@main.erl", 6}]}.
-    {func_info, {atom, test@main}, {atom, '__bp_priv__effect'}, 0}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__effect'}, 1}.
   {label, 19}.
-    {call_only, 0, {f, 5}}.
+    {call_only, 1, {f, 5}}.
 
-{function, '-effect/0-fun-0-', 1, 9}.
+{function, '-effect/1-fun-0-', 1, 9}.
   {label, 8}.
     {line, [{location, "test@main.erl", 3}]}.
-    {func_info, {atom, test@main}, {atom, '-effect/0-fun-0-'}, 1}.
+    {func_info, {atom, test@main}, {atom, '-effect/1-fun-0-'}, 1}.
   {label, 9}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
@@ -784,9 +786,7 @@ fn Widget() -> @Component<Element> {
     {make_fun3, {f, 13}, 0, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {x, 1}}.
     {move, {x, 1}, {x, 0}}.
-    %% unresolved_call: effect/1
-    {move, {literal, {unresolved_call, effect, 1}}, {x, 0}}.
-    {call_ext, 1, {extfunc, erlang, error, 1}}.
+    {call, 1, {f, 5}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.

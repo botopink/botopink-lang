@@ -449,7 +449,7 @@ val Element = type() implement @Renderable
 fn cleanup() {
     0;
 }
-fn effect() -> @Component<i32> {
+fn effect(f: fn()) -> @Component<i32> {
     return 0;
 }
 fn Widget() -> @Component<Element> {
@@ -461,7 +461,7 @@ fn Widget() -> @Component<Element> {
 ----- ERLANG -- main.erl
 ```erlang
 -module(test@main).
--export(['__bp_priv__cleanup'/0, '__bp_priv__effect'/0, '__bp_priv__Widget'/0]).
+-export(['__bp_priv__cleanup'/0, '__bp_priv__effect'/1, '__bp_priv__Widget'/0]).
 
 %% import bpScopePush__, bpScopeFind__, bpScopeRendered__, bpScopeValue__, bpScopeRoot__
 
@@ -470,7 +470,7 @@ fn Widget() -> @Component<Element> {
 cleanup() ->
     0.
 
-effect() ->
+effect(F) ->
     fun(BpScope__) ->
         std@context:rendered(0, BpScope__)
     end.
@@ -485,7 +485,7 @@ effect() ->
 
 '__bp_priv__cleanup'() -> cleanup().
 
-'__bp_priv__effect'() -> effect().
+'__bp_priv__effect'(A0) -> effect(A0).
 
 '__bp_priv__Widget'() -> 'Widget'().
 ```

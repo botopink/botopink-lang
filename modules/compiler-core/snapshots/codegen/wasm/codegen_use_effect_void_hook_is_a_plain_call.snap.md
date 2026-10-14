@@ -816,7 +816,7 @@ val Element = type() implement @Renderable
 fn cleanup() {
     0;
 }
-fn effect() -> @Component<i32> {
+fn effect(f: fn()) -> @Component<i32> {
     return 0;
 }
 fn Widget() -> @Component<Element> {
@@ -1053,7 +1053,7 @@ fn Widget() -> @Component<Element> {
   (func $cleanup (result i32)
     i32.const 0
   )
-  (func $effect (result i32)
+  (func $effect (param $f i32) (result i32)
     (local $__mem0 i32)
     i32.const 8
     call $__alloc
@@ -1118,6 +1118,7 @@ fn Widget() -> @Component<Element> {
     (local $__runc0 i32)
     (local $__runm0 i32)
     (local $__runw0 i32)
+    i32.const 0 ;; missing argument
     call $effect
     local.tee $__runc0
     i32.const 4

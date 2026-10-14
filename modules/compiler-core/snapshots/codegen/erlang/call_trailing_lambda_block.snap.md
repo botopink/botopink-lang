@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn run() {
+fn run(f: fn(i32) -> string) {
     @todo();
 }
 fn main() {
@@ -14,9 +14,9 @@ fn main() {
 ```erlang
 -module(test@main).
 -export(['_botopink_main'/0, main/1]).
--export(['__bp_priv__run'/0, '__bp_priv__main'/0]).
+-export(['__bp_priv__run'/1, '__bp_priv__main'/0]).
 
-run() ->
+run(F) ->
     erlang:error({todo, <<"not implemented">>}).
 
 main() ->
@@ -31,7 +31,7 @@ main() ->
 main(_Args) ->
     '_botopink_main'().
 
-'__bp_priv__run'() -> run().
+'__bp_priv__run'(A0) -> run(A0).
 
 '__bp_priv__main'() -> main().
 ```

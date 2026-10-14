@@ -99,10 +99,10 @@ type Pipeline(
     {move, {x, 0}, {x, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
     {make_fun3, {f, 6}, 0, 0, {x, 0}, {list, []}}.
-    {move, {x, 0}, {x, 2}}.
-    {move, {x, 1}, {x, 0}}.
-    {move, {x, 2}, {x, 1}}.
-    {call_ext_last, 2, {extfunc, list, each, 2}, 1}.
+    {move, {x, 1}, {x, 2}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {x, 2}, {x, 0}}.
+    {call_ext_last, 2, {extfunc, test@main@@List, each, 2}, 1}.
 
 {function, '__bp_get', 2, 8}.
   {label, 7}.

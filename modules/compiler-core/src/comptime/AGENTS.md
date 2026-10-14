@@ -1403,6 +1403,12 @@ an arm whose last statement is written with `;` contributes nothing. The refusal
   set per statement by `statementBlockLocOf` for a `case` or a block) whose type is not `void`, one
   of whose arms answers nothing (`armAnswersNothing`: no tail, a `void` tail; a jump or a
   `noreturn` last statement leaves instead) — at the arm's pattern;
+- **A trailing lambda is the call's last argument** (decision 525, `ast.lowerTrailingLambdas`): `f(x) { n -> … }` is
+  `f(x, { n -> … })` and `b.run { -> 10 }` is `b.run({ -> 10 })`, so the parameter it fills is checked and bound as
+  a lambda argument's is (`lowerTrailingLambdas` at the head of `inferCallExprWith`) and `transform.zig`'s
+  `rewriteExpr` lowers the program the same way, so no backend meets a trailing lambda on a non-builtin call. A
+  labelled trailing lambda (`erro: { … }`) and a block are left as written (`inferTrailingLambdasTyped`); cell
+  `modules/trailing_lambda_call`;
 - `block-not-function` — a block handed where a function is expected: a trailing `{` without `->`
   (`TrailingLambda.isBlock`, refused in `inferTrailingLambdasTyped` at its `{`), a block whose
   position's expected type is a function (`refuseBlockShape`), and a block argument of a

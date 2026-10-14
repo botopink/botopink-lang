@@ -1201,6 +1201,11 @@ fn rewriteExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
             c.args = grown;
         };
     }
+    // Decision 525 — a trailing lambda is the call's last argument from here
+    // on, the shape inference checked, so no backend meets a trailing lambda.
+    if (expr_ptr.* == .call and expr_ptr.call.kind == .call) {
+        _ = ast.lowerTrailingLambdas(agg.spec_cache.arena, &expr_ptr.call.kind.call) catch return ScanError.OutOfMemory;
+    }
     switch (expr_ptr.*) {
         .call => |*c| switch (c.kind) {
             .call => {
