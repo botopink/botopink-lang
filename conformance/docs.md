@@ -4358,6 +4358,17 @@ UTF-8 are `error[embed-text-not-utf8]` at the call, and an `Asset` whose bytes
 are not known where the call is checked — a parameter, a function's answer — is
 `error[embed-text-not-at-build]`.
 
+`a.open()` is the `File` of std's file system over the embedded copy (decision 538): the same
+`read`, `bytes`, `text`, `chunks`, `lines`, `hash` and `size` as a file on disk, a fallible one answering
+`@Result<…, FsError>`, `close` a no-op, and no `@Result` around the `File` itself — the build proved the
+file exists. Code that takes a `File` reads one on disk (`fs.open`) and an embedded one alike. The call
+hands the `Asset` to std's `io.fs`, so the module that writes it imports `io.fs`; without the import it is
+`error[embed-open-needs-fs]`, at the call.
+
+<!-- example: modules/fs_asset_opens_as_file -->
+
+<!-- example: modules/embed_open_without_fs_import -->
+
 `@embed` is a `Build` builtin (decision 376): a call whose path is known at
 build — a literal, a constant `val`, a `comptime`, an `Any` call of those — is
 computed where it is written, in a body or in a module-level `val`, with no

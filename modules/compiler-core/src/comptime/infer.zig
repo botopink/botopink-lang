@@ -11501,6 +11501,51 @@ fn inferAssetText(env: *Env, call: anytype, rp: *ast.TypedExpr, loc: ast.Loc) In
     return TypedExpr{ .literal = .{ .loc = loc, .type_ = try env.namedType("string"), .kind = .{ .stringLit = lit.literal.kind.stringLit } } };
 }
 
+/// Decision 538 — `a.open()` on an `Asset`: the `File` of std's `io.fs` over
+/// the embedded bytes, with no `@Result` (the build proved the file exists).
+/// `File` is a std type, and an `Asset` is the compiler's: the call is
+/// rewritten, like `@embed`, into `<fs>.openAsset(a)` where `<fs>` is the name
+/// this module gave std's `io.fs` (`import {io.fs} from "std"`), so the module
+/// that opens an `Asset` is one that imports the file system.
+fn inferAssetOpen(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedExpr {
+    if (call.args.len != 0 or call.trailing.len != 0) {
+        env.lastError = TypeError.custom(
+            diagnostics.embed_arguments ++ ": `open()` takes no argument",
+            "Write `a.open()` — the `File` over the bytes of the `Asset`.",
+        ).withLoc(loc);
+        return error.TypeError;
+    }
+    var fs_name: ?[]const u8 = null;
+    var it = env.stdImports.iterator();
+    while (it.next()) |e| {
+        if (std.mem.eql(u8, e.value_ptr.*, "io/fs")) {
+            // The shortest name when several bind the module: the same one on every run.
+            if (fs_name == null or e.key_ptr.*.len < fs_name.?.len or (e.key_ptr.*.len == fs_name.?.len and std.mem.lessThan(u8, e.key_ptr.*, fs_name.?))) fs_name = e.key_ptr.*;
+        }
+    }
+    const fs = fs_name orelse {
+        env.lastError = TypeError.custom(
+            diagnostics.embed_open_needs_fs ++ ": `open()` hands the `Asset` to std's file system, which this module does not import",
+            "Add `import {io.fs} from \"std\";` — the `File` an `Asset` opens as is std's.",
+        ).withLoc(loc);
+        return error.TypeError;
+    };
+    const receiver = try env.arena.create(ast.Expr);
+    receiver.* = .{ .identifier = .{ .loc = loc, .kind = .{ .ident = fs } } };
+    const args = try env.arena.alloc(ast.CallArgOf(.untyped), 1);
+    args[0] = .{ .label = null, .value = call.receiver.? };
+    const rewrite = try env.arena.create(ast.Expr);
+    rewrite.* = .{ .call = .{ .loc = loc, .kind = .{ .call = .{
+        .receiver = receiver,
+        .callee = "openAsset",
+        .is_builtin = false,
+        .args = args,
+        .trailing = &.{},
+    } } } };
+    try env.srcRewrites.put(loc, rewrite);
+    return inferExprTyped(env, rewrite.*);
+}
+
 /// Whether `ty` is the builtin `Asset` (decision 519).
 fn isAssetType(ty: *T.Type) bool {
     const d = ty.deref();
@@ -21229,6 +21274,11 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
             // Decision 519 — `a.text()` on an `Asset`, computed at build.
             if (typedReceiver) |rp| if (!call.is_builtin and call.calleeExpr == null and std.mem.eql(u8, call.callee, "text") and isAssetType(rp.getType())) {
                 return inferAssetText(env, call, rp, loc);
+            };
+            // Decision 538 — `a.open()` on an `Asset`: the `File` std's `io.fs`
+            // opens over its bytes (`fs.openAsset(a)`).
+            if (typedReceiver) |rp| if (!call.is_builtin and call.calleeExpr == null and std.mem.eql(u8, call.callee, "open") and isAssetType(rp.getType())) {
+                return inferAssetOpen(env, call, loc);
             };
             // Decision 371 — `d.same(other)` on a `Decorator`.
             if (typedReceiver) |rp| if (!call.is_builtin and call.calleeExpr == null and std.mem.eql(u8, call.callee, "same") and isDecoratorType(rp.getType())) {

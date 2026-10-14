@@ -1094,6 +1094,13 @@ fn rewriteExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
                 expr_ptr.* = rewrite.*;
             };
         }
+        // Decision 538 — `a.open()` on an `Asset` → `<fs>.openAsset(a)`, the call
+        // inference wrote (`infer.zig` `inferAssetOpen`).
+        if (std.mem.eql(u8, callee, "open")) {
+            if (agg.src_rewrites.get(expr_ptr.call.loc)) |rewrite| if (rewrite.* == .call) {
+                expr_ptr.* = rewrite.*;
+            };
+        }
     }
     // A `comptime <expr>` / `comptime { … }` inference folded (decision 266,
     // `infer.zig` `foldBodyComptime`) → its value; the walk carries on over

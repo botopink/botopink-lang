@@ -1,0 +1,1 @@
+{ "name": "fs_asset_opens_as_file", "targets": ["commonJS", "erlang", "beam"] }

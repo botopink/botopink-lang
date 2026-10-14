@@ -288,6 +288,9 @@ pub const embed_text_not_utf8: []const u8 = "embed-text-not-utf8";
 pub const embed_text_not_at_build: []const u8 = "embed-text-not-at-build";
 /// Decision 519 — `@embed` takes one argument, the path.
 pub const embed_arguments: []const u8 = "embed-arguments";
+/// Decision 538 — `a.open()` on an `Asset` hands it to std's file system: the
+/// module that writes it imports `io.fs`.
+pub const embed_open_needs_fs: []const u8 = "embed-open-needs-fs";
 /// Decision 346 — `Bytes` widened to `unknown`: erlang and beam hold `Bytes`
 /// and `string` alike (a binary), so no run-time test tells them apart.
 pub const bytes_widened: []const u8 = "bytes-widened";
@@ -850,6 +853,7 @@ pub const all_codes = [_][]const u8{
     embed_text_not_utf8,
     embed_text_not_at_build,
     embed_arguments,
+    embed_open_needs_fs,
     bytes_widened,
     bytes_type_test,
     comptime_host_cell_unavailable,

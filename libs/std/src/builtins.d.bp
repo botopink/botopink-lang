@@ -628,6 +628,10 @@ pub type SourceLocation(
 //   size    — the number of bytes (`i64`, decision 538).
 //   hash    — the SHA-256 of the bytes, 64 lowercase hex digits.
 //
+// `open()` — the `File` of std's `io.fs` over the bytes (decision 538), no `@Result`:
+// the call is rewritten into `fs.openAsset(a)`, so the module imports `io.fs`
+// (`embed-open-needs-fs`). No `declare fn` here: `File` is std's type.
+//
 // `text()` — the bytes as UTF-8 text, computed at build: bytes that are not
 // UTF-8 are a located build error (`embed-text-not-utf8`), and an `Asset`
 // whose bytes are not known where the call is checked (a parameter, a
