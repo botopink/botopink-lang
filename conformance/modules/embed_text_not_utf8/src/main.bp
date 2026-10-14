@@ -1,0 +1,8 @@
+//// Decision 519 — `text()` reads the bytes as UTF-8 at build: bytes that are not UTF-8 are a
+//// build error, located at the call. Their `bytes` stay readable.
+
+pub fn main() {
+    val a = @embed("assets/latin.bin");
+    @print(a.bytes.length());
+    @print(a.text());
+}

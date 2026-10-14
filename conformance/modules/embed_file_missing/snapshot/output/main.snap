@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: embed-file-missing: `@embed("assets/missing.txt")` names no file of the package
+at src/main.bp:5:13

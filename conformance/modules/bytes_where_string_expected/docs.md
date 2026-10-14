@@ -16,5 +16,7 @@ The reference text this cell shows (from `conformance/docs.md`, § Primitives):
 > `==` and `!=` compare the bytes; `Bytes` takes no other operator (`+` and a string
 > template do not read it as text). A host binding takes and answers `Bytes` as its
 > target holds it. `Bytes` does not widen to `unknown` (so `@print` does not take it),
-> `is` does not test it — erlang holds it and a `string` alike — and a `comptime`
-> does not compute one yet.
+> and `is` does not test it — erlang holds it and a `string` alike. A `Bytes` value
+> may exist at build (decision 520): a `comptime` computes one, and the artifact
+> carries it as a build constant — an Erlang binary, a `Uint8Array` on commonJS, a
+> wasm data segment (`@embed`'s `Asset.bytes`, § `@embed` and `Asset`).

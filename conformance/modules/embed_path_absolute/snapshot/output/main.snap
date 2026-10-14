@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: embed-path-absolute: `@embed("/etc/hostname")` names an absolute path
+at src/main.bp:5:20

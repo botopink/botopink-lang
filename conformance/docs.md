@@ -716,10 +716,13 @@ an absent end is the length — `b[1..3]`, `b[2..]`), and `a.concat(b)` joins tw
 `==` and `!=` compare the bytes; `Bytes` takes no other operator (`+` and a string
 template do not read it as text). A host binding takes and answers `Bytes` as its
 target holds it. `Bytes` does not widen to `unknown` (so `@print` does not take it),
-`is` does not test it — erlang holds it and a `string` alike — and a `comptime`
-does not compute one yet.
+and `is` does not test it — erlang holds it and a `string` alike. A `Bytes` value
+may exist at build (decision 520): a `comptime` computes one, and the artifact
+carries it as a build constant — an Erlang binary, a `Uint8Array` on commonJS, a
+wasm data segment (`@embed`'s `Asset.bytes`, § `@embed` and `Asset`).
 
 <!-- example: modules/bytes_round_trip -->
+<!-- example: modules/bytes_comptime -->
 
 std's `encoding` bridges `Bytes` and text losslessly: `base64EncodeBytes(b)` and
 `hexEncodeBytes(b)` answer the text of the bytes as they are, and
@@ -3783,6 +3786,7 @@ decorator or template body runs, never at run time):
 | `@trap` | `trap() -> noreturn` | the declaration |
 | `@block` | `block<T>(body: fn() -> T) -> T` — `@block { … }`, its value what its `return`s carry | the declaration |
 | `@module` | `module() -> module` | refused at every call (`builtin-not-lowered`) |
+| `@embed` | `embed(comptime path: @Expr<string>) -> Asset` — a `Build` builtin, computed where it is written (§ `@embed` and `Asset`) | its own rule (`embed-arguments`, `comptime-arg-not-known`, `embed-path-absolute`, `embed-path-outside-package`, `embed-file-missing`) |
 | `@field` | `field<T, F>(obj: T, comptime name: @Expr<string>) -> F` — COMPTIME-ONLY name | the declaration |
 | `@src` | `src() -> SourceLocation` — COMPTIME-ONLY (§ `@src()` and `SourceLocation`) | its own rule (`src-takes-no-arguments`) |
 | `@typeInfo` | `typeInfo<T>(comptime _: @Expr<type>) -> TypeInfo<T>` — COMPTIME-ONLY (§ Decorators) | its own rule (`typeinfo-unknown-declaration`, `typeinfo-unknown-member`) |
@@ -3921,6 +3925,55 @@ time — every backend emits the same code it emits for the constructor call
 `error[src-takes-no-arguments]`). It is a value like any other: `@src().line`
 reads a field in place. Its consumer is the test contract — `std/testing/asserts`
 messages and the `snap` library's paths are computed from the caller's `@src()`.
+
+### `@embed` and `Asset`
+
+<!-- example: modules/embed_text_file -->
+
+`@embed(path)` is the file `path` names, read while the program is built
+(decision 519), as an `Asset` — a builtin record like `SourceLocation`, with no
+import:
+
+| Field | Value |
+|---|---|
+| `path` | the path as written |
+| `bytes` | the file's bytes (`Bytes`) |
+| `size` | the number of bytes (`i32`) |
+| `hash` | the SHA-256 of the bytes, 64 lowercase hex digits |
+
+`a.text()` is the bytes as UTF-8 text, computed at build: bytes that are not
+UTF-8 are `error[embed-text-not-utf8]` at the call, and an `Asset` whose bytes
+are not known where the call is checked — a parameter, a function's answer — is
+`error[embed-text-not-at-build]`.
+
+`@embed` is a `Build` builtin (decision 376): a call whose path is known at
+build — a literal, a constant `val`, a `comptime`, an `Any` call of those — is
+computed where it is written, in a body or in a module-level `val`, with no
+`comptime` (decision 380 (1) extended to `Build` calls; a `comptime` written
+stays legal). The artifact carries the bytes on every target — an Erlang
+binary, a JS `Uint8Array`, a wasm data segment — and the program never reads
+the file when it runs, so a file that is not text embeds byte for byte:
+
+<!-- example: modules/embed_binary_file -->
+
+The path is relative to the `botopink.json` of the package that writes it; a
+path passed on through a `comptime` parameter is read in the caller's package —
+the function takes the caller's `Asset`, read where the call is written:
+
+<!-- example: modules/embed_through_comptime_param -->
+
+An absolute path is `error[embed-path-absolute]` and a path with a `..` segment
+`error[embed-path-outside-package]`, at the argument; a path that names no file
+of the package is `error[embed-file-missing]`, at the call; a path not known at
+build — a parameter, a local — is `error[comptime-arg-not-known]`, at the
+argument. The compiler that runs in a browser (`compiler-web`) is handed no
+reader: every `@embed` there is `error[embed-no-reader]`, at the call.
+
+<!-- example: modules/embed_path_absolute -->
+<!-- example: modules/embed_path_outside_package -->
+<!-- example: modules/embed_file_missing -->
+<!-- example: modules/embed_path_not_known -->
+<!-- example: modules/embed_text_not_utf8 -->
 
 ## Tests
 
@@ -4481,6 +4534,8 @@ closes it, or says that it has none yet. Every row below was re-derived by
 | Rule | Today | Closes with |
 |---|---|---|
 | A decorator's output goes to one of the four places of § Decorators; **module-level `@emit` is gone** (decision 216), refused by name with the four places in its message | `@emit(source)` still compiles, splicing loose declarations into the module: the libraries' sites move to the four places first | `01-compiler/130-decorator-outputs` steps 5–6 |
+| `@embed` in a decorator's or a template's body reads a path its `comptime` parameter passes — a decorator annotating the application's declarations reads the application's file (decisions 342, 519) | `error[comptime-arg-not-known]` at the argument: the body runs on the comptime runtime, which reads no file | 144 B-12 |
+| A file `@embed` reads in a dependency joins the dependency's closure key (decision 519, 144 B-60) | a file under the package's `src` tree is in the key; one beside it (`assets/`) is not, so an entry read back can carry a stale copy | 144 B-12 / B-60 |
 | A block-shaped statement ends itself: **no** `;` after the closing brace of an `if`, a loop or a `case` in statement position | the `;` is **optional** there: the parser accepts both, `botopink format` prints none, and the compiler's own trees are migrated — a library or a `conformance` cell that still writes it compiles | 1.0.10-beta C-13, in decision 132's order: each library drops the `;` (`botopink format`), then `conformance`, then the parser refuses it (`blockStatementSemicolon`) |
 
 A row leaves this table when the compiler accepts the form, and the form is then

@@ -1,5 +1,6 @@
-//// Decision 346 — a `comptime` does not compute `Bytes` yet: no compile-time value lifts
-//// into a byte sequence.
+//// Decision 520 — a `Bytes` value may exist at build: a `comptime` computes one, and the
+//// artifact carries it as a build constant (an Erlang binary, a `Uint8Array` on commonJS, a
+//// wasm data segment).
 
 pub fn main() {
     val b = comptime Bytes.fromUtf8("a");

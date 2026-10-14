@@ -1,0 +1,17 @@
+//// Decision 519 — `@embed` of a file that is not text: the `Asset`'s `bytes` are the file's,
+//// every byte as it is (a zero, a byte past 0x7f), carried in the artifact as a build
+//// constant — an Erlang binary, a `Uint8Array` on commonJS, a wasm data segment (decision
+//// 520: a `Bytes` value exists at build). The parent binary knew no `@embed`.
+
+import {encoding} from "std";
+
+pub fn main() {
+    val pixel = @embed("assets/pixel.bin");
+    val b = pixel.bytes;
+    @print(pixel.size);
+    @print(encoding.hexEncodeBytes(b));
+    @print(pixel.hash);
+    @print(b.slice(1, 4).toUtf8().unwrapOr("?"));
+    @print(b.slice(0, 1).toUtf8().isError());
+    @print(b[8..] == b.slice(8, 10));
+}

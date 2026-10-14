@@ -1493,6 +1493,16 @@ at `361d255d` — the cell was written against the array `"dependencies"` of `85
 object form when the workspaces manifest (`aa80e30b`) started refusing the array. A dependency ships
 only what `files` lists — `root.bp` included, or the handle never reaches the consumer.
 
+The `embed_*` cells (decision 519, 144 B-12) carry the files their program embeds beside their
+`botopink.json` (`assets/…`; the copy `cell check` builds is the whole directory, so the files
+travel with it): `modules/embed_text_file` and `modules/embed_binary_file` (an `Asset`'s path, size,
+SHA-256 and bytes on the four targets, a file with a zero byte and bytes past 0x7f included),
+`modules/embed_through_comptime_param` (a local dependency and the project each hold an
+`assets/note.txt`: the path a `comptime` parameter passes is read in the caller's package, the
+library's own `@embed` in the library's), and the refusals `embed_path_absolute`,
+`embed_path_outside_package`, `embed_file_missing`, `embed_path_not_known` and `embed_text_not_utf8`.
+`modules/bytes_comptime` answers `1` since decision 520 (a `Bytes` value exists at build).
+
 `modules/package_variant_identity` is the second local-dependency cell, and it is here because the
 defect it pins is **invisible in one package**: the value is built in the consumer and the `case`
 that reads it lives in the dependency. commonJS tested a payload-less arm with `instanceof` whenever

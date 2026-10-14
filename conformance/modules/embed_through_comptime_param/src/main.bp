@@ -1,0 +1,13 @@
+//// Decision 519 — the path of `@embed` resolves against the `botopink.json` of the package
+//// that writes it; a path passed on through a `comptime` parameter resolves in the caller's
+//// package. Both packages hold an `assets/note.txt`: `load("assets/note.txt")`, written
+//// here, reads this package's; the library's own `@embed("assets/note.txt")` reads the
+//// library's. The parent binary knew no `@embed`.
+
+import {loader.load, loader.own} from "loader";
+
+pub fn main() {
+    @print(load("assets/note.txt").bytes.toUtf8().unwrapOr("?"));
+    @print(own().bytes.toUtf8().unwrapOr("?"));
+    @print(load("assets/note.txt").path);
+}
