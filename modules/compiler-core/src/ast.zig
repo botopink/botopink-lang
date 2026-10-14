@@ -624,6 +624,12 @@ pub const record_spread_label = "...";
 /// node.
 pub const spread_synthetic_col: usize = 3_000_000;
 
+/// The column the checker adds to the loc of the record construction it
+/// builds for a call's `..props: R` argument (decision 529 (2),
+/// `infer.packRecordParamCall`): past any written column and apart from the
+/// other synthetic columns.
+pub const record_param_synthetic_col: usize = 6_000_000;
+
 /// The column the checker adds to a node it synthesises for a field key's
 /// run-time form (decision 308, `infer.inferFieldKey*`): past any written
 /// column and apart from `spread_synthetic_col`'s.
@@ -1223,9 +1229,15 @@ pub fn CallExprOf(comptime phase: Phase) type {
             /// False on every call the parser builds, and then left out of the
             /// AST dump.
             variadicPacked: bool = false,
+            /// Decision 529 (2) — the call's field labels and spread were
+            /// gathered into the record argument of the callee's `..props: R`
+            /// parameter (`infer.packRecordParamCall`); set on the rewritten
+            /// call so it is not packed again. False on every call the parser
+            /// builds, and then left out of the AST dump.
+            recordPacked: bool = false,
 
             pub fn jsonStringify(this: @This(), jws: anytype) !void {
-                return stringifyOmitting(this, jws, &.{}, &.{ "isType", "calleeExpr", "typeArgs", "receiverTypeArgs", "variadicPacked" });
+                return stringifyOmitting(this, jws, &.{}, &.{ "isType", "calleeExpr", "typeArgs", "receiverTypeArgs", "variadicPacked", "recordPacked" });
             }
         },
         /// `expr |> fn1 |> fn2` — pipeline operator, left-associative chain
@@ -1867,6 +1879,13 @@ pub const Param = struct {
     /// last, a second one, a default on it and a type that is not `T[]`.
     /// Dumped only when set.
     variadic: bool = false,
+    /// Decision 529 (2) — `..props: R`, `R` a record type: `R`'s fields are the
+    /// function's parameters from outside (a call passes them by label or by
+    /// a spread) and the body reads `props` as the record. The parser sets it
+    /// on a `..name: T` whose `T` is a named type (not a primitive, not an
+    /// array); `typeRef` stays `R`. The checker refuses a second one, a name
+    /// clash and an `R` that is no record. Dumped only when set.
+    recordParam: bool = false,
     /// Decision 364 — `comptime x: @Expr<T>` on a function that is not a
     /// template (a decorator, any other function, a method, a `declare fn`):
     /// the parser keeps `T` in `typeRef`, so every rule that reads a
@@ -1903,6 +1922,10 @@ pub const Param = struct {
         }
         if (this.variadic) {
             try jws.objectField("variadic");
+            try jws.write(true);
+        }
+        if (this.recordParam) {
+            try jws.objectField("recordParam");
             try jws.write(true);
         }
         if (this.exprWrapped) {

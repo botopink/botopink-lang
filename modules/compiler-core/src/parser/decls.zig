@@ -5,6 +5,7 @@ const std = @import("std");
 const parser = @import("../parser.zig");
 const ast = @import("../ast.zig");
 const token = @import("../lexer/token.zig");
+const patterns = @import("patterns.zig");
 
 const This = parser.Parser;
 const ParseError = parser.ParseError;
@@ -1303,7 +1304,15 @@ pub fn parseParam(this: *This, alloc: std.mem.Allocator) ParseError!Param {
     // their fallback for a missing trailing positional / named arg (see
     // infer.zig arity check; call-site auto-injection is gated behind the
     // `fn-param-default-expansion` follow-up spec).
-    if (variadic) try checkVariadicParam(this, alloc, typeRef, typeTok);
+    // Decision 529 (2) — `..props: R`: told from a variadic by the type, a
+    // named record-like type against an array.
+    const recordParam = variadic and modifier == .none and isRecordParamType(typeRef);
+    if (variadic and !recordParam) try checkVariadicParam(this, alloc, typeRef, typeTok);
+    if (recordParam and this.check(.equal)) {
+        typeRef.deinit(alloc);
+        this.parseError = ParseErrorInfo.fromToken(.recordParamDefault, this.peek());
+        return ParseError.UnexpectedToken;
+    }
     var defaultExpr: ?Expr = null;
     if (this.match(.equal)) {
         defaultExpr = try this.parseBinaryExpr(alloc, prec.equality);
@@ -1315,7 +1324,8 @@ pub fn parseParam(this: *This, alloc: std.mem.Allocator) ParseError!Param {
         .default = defaultExpr,
         .typeLoc = parser.Parser.locFromToken(typeTok),
         .loc = parser.Parser.locFromToken(startTok),
-        .variadic = variadic,
+        .variadic = variadic and !recordParam,
+        .recordParam = recordParam,
     };
 }
 
@@ -1325,6 +1335,18 @@ fn matchVariadic(this: *This) bool {
     if (!this.check(.dotDot)) return false;
     this.lastVariadicTok = this.advance();
     return true;
+}
+
+/// Decision 529 (2) — the type of a `..props: R` record parameter: a named
+/// type that is no primitive (`R`, `Props<T>`); whether it is a record is the
+/// checker's. An array stays a variadic's, anything else (`i32`, `?R`) keeps
+/// 267's `variadic-not-array`.
+fn isRecordParamType(typeRef: ast.TypeRef) bool {
+    return switch (typeRef) {
+        .named => |n| !patterns.isPrimitiveTypeName(n) and !std.mem.eql(u8, n, "Self"),
+        .generic => |g| !g.is_builtin,
+        else => false,
+    };
 }
 
 /// Decision 267 — a variadic's type is written `T[]` and it takes no

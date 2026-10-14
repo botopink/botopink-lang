@@ -153,6 +153,9 @@ pub const ParseErrorType = enum {
     /// Decision 267 — a variadic parameter whose type is not written `T[]`.
     /// Located at the type.
     variadicNotArray,
+    /// Decision 529 (2) — a default on a record parameter (`..props: R = …`).
+    /// Located at the `=`.
+    recordParamDefault,
     /// Decision 244 — the same rule on a field list: a record type's field
     /// (`type Port(number: i32 = 80, host: string)`), a variant's payload or
     /// an inline parameter type, without a default, after one with a default.

@@ -1060,6 +1060,18 @@ test "format: a variadic parameter keeps its `..`" {
     );
 }
 
+// ── decision 529 (2): a record parameter ────────────────────────────────────
+
+test "format: a record parameter keeps its `..`" {
+    try h.assertFormat(std.testing.allocator,
+        \\type CardProps(title: string, featured: bool = false)
+        \\
+        \\fn Card(..props: CardProps, onClick: fn()) -> string {
+        \\    return props.title;
+        \\}
+    );
+}
+
 // Decision 311 (`01-checker` step 29, `16-formatter` step 9) — the template
 // annotation `#[f "…"]` prints as written, the literal untouched: a one-line
 // literal with a hole, a `"""…"""` literal across lines, on a method, on a

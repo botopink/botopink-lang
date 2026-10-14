@@ -377,6 +377,12 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .caretCaption = "not `T[]`",
             .hint = "Write the element type followed by `[]` — `..values: unknown[]`, `..rest: string[]` (decision 267): each argument is a `T`, the body reads a `T[]`.",
         },
+        .recordParamDefault => .{
+            .code = "record-param-default",
+            .message = "a record parameter takes no default",
+            .caretCaption = "default on a record parameter",
+            .hint = "A record parameter's fields are the function's parameters from outside (decision 529 (2)): give the defaults to the fields of its record type, and remove the `= …`.",
+        },
         .retiredAnnotationBlock => .{
             .message = "the `@[…]` annotation block was retired",
             .caretCaption = "write `#[…]` instead",

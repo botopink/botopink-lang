@@ -402,7 +402,7 @@ pub const Formatter = struct {
         else
             this.nil();
         // Decision 267 — a variadic parameter keeps its `..`.
-        const nameDoc = if (p.variadic) try this.text(try std.mem.concat(this.arena, u8, &.{ "..", p.name })) else try this.text(p.name);
+        const nameDoc = if (p.variadic or p.recordParam) try this.text(try std.mem.concat(this.arena, u8, &.{ "..", p.name })) else try this.text(p.name);
         return switch (p.modifier) {
             .none => this.concatAll(&.{
                 nameDoc,
