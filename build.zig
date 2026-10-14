@@ -387,13 +387,17 @@ pub fn build(b: *std.Build) void {
     // HARD RULE: the compiler core must name no specific NON-std library. Fail
     // the build if any framework name leaks into `modules/compiler-core/src`.
     // `std` is the one allowed exception (deliberately absent from the
-    // alternation). Extend the pattern as frameworks are added. `grep` exits 1
+    // alternation). The libraries are `rakun` (one repository, a workspace of
+    // packages — front 165) and `query` (the former erika, outside rakun):
+    // `rakun` anywhere, any case; `query` as a package — the import source
+    // `"query"` or the handle `import query` — since the word itself is the
+    // catalogue's own vocabulary (`@TypeInfo.all`'s queries). `grep` exits 1
     // when nothing matches, so `!` turns "clean" into success; a match → exit 0
     // → `!` → failure. This file lives outside the scanned tree, so it may name
     // the forbidden tokens. Runs as part of `zig build test`.
     const lib_agnostic_gate = b.addSystemCommand(&.{
-        "sh",                                                             "-c",
-        "! grep -riIE 'rakun|jhonstart|erika' modules/compiler-core/src",
+        "sh",                                                                                                                  "-c",
+        "! grep -riIE 'rakun' modules/compiler-core/src && ! grep -rIE '\"query\"|import query\\b' modules/compiler-core/src",
     });
     lib_agnostic_gate.has_side_effects = true; // never cache — always re-scan
     test_step.dependOn(&lib_agnostic_gate.step);

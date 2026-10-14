@@ -1,0 +1,9 @@
+//// A dependency that contributes a declaration: it annotates it with
+//// `core`'s `#[m]`, and no module of the program imports it.
+
+import {m} from "core";
+
+#[m]
+pub fn service() -> string {
+    return "plugin service";
+}

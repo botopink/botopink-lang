@@ -1,0 +1,4 @@
+botopink-cell 1
+out extra/root helper role=helper extra helper
+out main local role=local main local
+out plugin/root service role=service plugin service

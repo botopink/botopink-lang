@@ -109,13 +109,13 @@ test "format: multiple statements with import and types" {
 
 test "format: import ---- package handle with named items" {
     try h.assertFormat(std.testing.allocator,
-        \\import query, {of} from "query";
+        \\import sql, {of} from "sql";
     );
 }
 
 test "format: import ---- package handle alone" {
     try h.assertFormat(std.testing.allocator,
         \\import html from "web";
-        \\import query;
+        \\import sql;
     );
 }

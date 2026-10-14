@@ -76,7 +76,9 @@ zig build test-web      # the browser build's smoke test under node (modules/com
 no flag turns any off):
 
 - the **lib-agnostic gate** — it fails if `modules/compiler-core/src` names a
-  non-std library (`rakun|jhonstart|erika`);
+  non-std library: `rakun` in any case, and `query` as a package (the import
+  source `"query"` or the handle `import query` — the word alone is the
+  catalogue's own vocabulary);
 - the **labelled-cells gate** — it fails if a `.bp` under `libs/` writes a
   prefixed binding string (`"fn:…"`, `"op:…"`, `"wasi:…"`): a binding cell is
   the labelled argument `fn: name`, `op: "…"`, `wasi: .X` (decision 305);

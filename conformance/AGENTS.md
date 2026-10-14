@@ -767,7 +767,10 @@ accepts a decorator with arguments, a single decorator and a list of them); deci
 reader's default fn, `typeinfo-all-imported` at the handle) and `modules/typeinfo_all_template_value`
 (a template body reading an entry's `value`); decision 235's list form adds
 `modules/typeinfo_all_list` (two decorators in one `with:`, declaration order kept, a type carrying two
-of them answered once with both decorators' meta) and `modules/typeinfo_all_list_twice`. Decision 248
+of them answered once with both decorators' meta) and `modules/typeinfo_all_list_twice`; the catalogue's
+reach (144 B-86) adds `modules/typeinfo_all_dependency_declarations` (a dependency's `#[m]` declaration and its
+own dependency's, imported by no module of the program, listed beside the package's own by module path, the
+same answer when the dependencies are read back from the code cache). Decision 248
 names the one reflection builtin `@typeInfo` (the structural `TypeInfo` answer of a bare
 `@typeInfo(T)` folded in): `modules/typeinfo_lowercase` and `modules/typeinfo_all_lowercase` refuse
 the lowercase `@typeinfo(…)` / `@typeinfo.all(…)` where it is written (`typeinfo-lowercase`).
