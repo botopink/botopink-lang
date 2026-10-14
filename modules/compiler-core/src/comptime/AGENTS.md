@@ -1625,8 +1625,8 @@ module in `Reflection.failedModules`; `resolveImports` records in `Env.failedImp
 binds nothing while a refused module is one its source admits (the passes and the scope the value
 scan uses), and a namespace item (`import {shapes};`, `mod shapes;`) whose module was refused; and
 `unboundAt` turns a use of such a name into `import-of-failed-module` **at the import item**, naming
-the module (`` `area` comes from `shapes`, which failed to check — its own errors are reported
-there ``) — one wording for a name and a namespace, since a refused module exports nothing and
+the module and its file (`` `area` comes from `shapes`, which failed to check — its own errors are reported
+there (src/shapes.bp) ``, the path `Reflection.srcPaths` holds; decision 545) — one wording for a name and a namespace, since a refused module exports nothing and
 `import {components.Card};` cannot tell the two apart. The refused module keeps its own error. Nothing real is hidden: an importer reports one error, its first, as before; a name
 missing from a module that checked reaches none of this and stays `unbound variable` (the resolver's
 `imported symbol is not exported` catches it first in a build). Pinned by

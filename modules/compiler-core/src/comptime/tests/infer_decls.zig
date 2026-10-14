@@ -424,10 +424,10 @@ test "infer: import of a failed module ---- the importer names the module, not a
     try std.testing.expectEqualStrings("2:30 type mismatch: expected string, got i32", shapes);
     const user = (try moduleTypeError(&modules, "user", scratch)).?;
     defer std.testing.allocator.free(user);
-    try std.testing.expectEqualStrings("1:9 import-of-failed-module: `shapes` comes from `shapes`, which failed to check — its own errors are reported there", user);
+    try std.testing.expectEqualStrings("1:9 import-of-failed-module: `shapes` comes from `shapes`, which failed to check — its own errors are reported there (shapes.bp)", user);
     const main = (try moduleTypeError(&modules, "main", scratch)).?;
     defer std.testing.allocator.free(main);
-    try std.testing.expectEqualStrings("1:9 import-of-failed-module: `describe` comes from `user`, which failed to check — its own errors are reported there", main);
+    try std.testing.expectEqualStrings("1:9 import-of-failed-module: `describe` comes from `user`, which failed to check — its own errors are reported there (user.bp)", main);
 }
 
 // The rule never hides a real error: a name the named module does not declare,

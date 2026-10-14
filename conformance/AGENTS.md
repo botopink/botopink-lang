@@ -2437,3 +2437,8 @@ Decision 530's cell `modules/template_hole_prints_every_value` (a template hole 
 targets): erlang and beam already answered it, commonJS since 530, wasm since front 164 s2 — a hole that is no
 string, number or boolean writes its value's printed text through the capture (`codegen/wat/AGENTS.md`
 § `text_capture`), where it wrote the value's address (an optional's absence wrote `undefined`).
+
+Decision 545 (`import-of-failed-module` names the failed module's file at its end, in parentheses) moves the five
+cells that quote it — `import_of_failed_module`, `imported_declaration_error_location` (`b/b` and `main`),
+`lexer_error_in_imported_module`, `bpp_decorator_last_line` and `bpp_diagnostics_located`: each importer's snapshot
+ends `(src/shapes.bp)`, the path the failed module's own refusal is printed at (`Reflection.srcPaths`).

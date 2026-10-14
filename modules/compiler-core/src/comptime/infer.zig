@@ -1330,8 +1330,8 @@ fn unboundAt(env: *Env, name: []const u8, loc: ast.Loc) InferError!TypeError {
         // `import {components.Card};` cannot tell the two apart.
         const msg = try std.fmt.allocPrint(
             env.arena,
-            "{s}: `{s}` comes from `{s}`, which failed to check — its own errors are reported there",
-            .{ diagnostics.import_of_failed_module, name, f.module },
+            "{s}: `{s}` comes from `{s}`, which failed to check — its own errors are reported there ({s})",
+            .{ diagnostics.import_of_failed_module, name, f.module, srcPathOfModule(env, f.module) },
         );
         const hint = try std.fmt.allocPrint(env.arena, "Fix the errors reported in `{s}`; this module is checked against it once it checks.", .{f.module});
         return TypeError.custom(msg, hint).withLoc(f.loc);
