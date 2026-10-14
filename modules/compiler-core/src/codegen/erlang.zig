@@ -1947,7 +1947,15 @@ fn emitErlangModule(
     // emission: the reached bodies are lowered from it and borrow its strings.
     try em.collectPreludeInstanceDefaults();
     defer em.atom_arena.deinit();
-    defer em.type_units.deinit(alloc);
+    // A unit still listed here was never handed to the result (an error left
+    // the emission early): its atom and code are the emitter's to free.
+    defer {
+        for (em.type_units.items) |u| {
+            alloc.free(u.atom);
+            alloc.free(u.code);
+        }
+        em.type_units.deinit(alloc);
+    }
     defer em.file_exports_needed.deinit(alloc);
     defer {
         var fit = em.file_fns.keyIterator();
@@ -2429,9 +2437,16 @@ fn emitErlangModule(
 
     // Policy 3: the per-type modules, rendered when their unit closed.
     const units = try alloc.alloc(moduleOutput.Unit, em.type_units.items.len);
-    errdefer alloc.free(units);
     for (em.type_units.items, 0..) |u, i| units[i] = .{ .atom = u.atom, .code = u.code };
     em.type_units.items.len = 0;
+    // The units now belong to `units`: a later refusal frees them with it.
+    errdefer {
+        for (units) |u| {
+            alloc.free(u.atom);
+            alloc.free(u.code);
+        }
+        alloc.free(units);
+    }
     // Decision 513 (1): the module's test unit, under `botopink test` of the
     // package that declares it — lowered after the production module, whose
     // exports it reaches.

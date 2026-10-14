@@ -59,6 +59,12 @@ contains/omits given substrings — used by the disk-lib namespace test in
 `features.zig` (`import {Lib} from "Lib"` → `const Lib = require(...)`).
 Golden outputs live in `modules/compiler-core/snapshots/codegen/<target>/<slug>.snap.md` (`commonJS`, `erlang`, `beam`, `wasm`), comptime validation errors in `codegen/errors/<target>/`.
 
+`externals.zig` also holds **`a refused module frees the type units it rendered`**:
+the erlang backend refuses a module (a node-only template) after a `type`'s own
+module was rendered, and `testing.allocator` fails the test on a byte the refusal
+left behind (`botopink cell check` takes one cell after another in one process, and
+a `commonJS`-only cell reaches the erlang backend and is refused there each time).
+
 `externals.zig` closes with the one test here that has no fixture of its own:
 **`no prelude template calls the method it patches`** lexes and parses the
 prelude the compiler EMBEDS (`@import("std_prelude").primitives`, not the file

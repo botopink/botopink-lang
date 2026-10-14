@@ -115,6 +115,46 @@ test "js: external ---- net-new: no target for the active backend errors" {
     try std.testing.expect(diag.type.loc != null);
 }
 
+// A module the erlang backend refuses after a `type`'s own module was rendered
+// (the type's unit sits in the emitter, the refusal arrives from a later call)
+// returns every byte it took: `botopink cell check` checks a share of cells in
+// one process, and a cell that only declares a node template reaches the
+// erlang backend and is refused there, once per cell. `testing.allocator`
+// fails the test on a byte the refusal left behind.
+test "erlang: external ---- a refused module frees the type units it rendered" {
+    const io = std.testing.io;
+    const src =
+        \\type Account(id: i32) {
+        \\    fn load(self: Self, n: i32) -> i32 {
+        \\        return self.id + n;
+        \\    }
+        \\}
+        \\
+        \\#[@External.Node("""globalThis.nodeOnly($0)""")]
+        \\declare fn nodeOnly(n: i32) -> i32;
+        \\
+        \\fn main() {
+        \\    val acc = Account(id: 10);
+        \\    @print(nodeOnly(acc.load(5)));
+        \\}
+    ;
+    // configs[1] is the erlang target.
+    var outputs = try codegen.generateWith(
+        std.testing.allocator,
+        &.{.{ .path = "", .source = src }},
+        io,
+        h.configs[1],
+        .{ .execute = false },
+    );
+    defer {
+        for (outputs.items) |*o| o.result.deinit(std.testing.allocator);
+        outputs.deinit(std.testing.allocator);
+    }
+    try std.testing.expectEqual(@as(usize, 1), outputs.items.len);
+    const diag = outputs.items[0].result.diagnostic orelse return error.TestExpectedDiagnostic;
+    try std.testing.expect(std.mem.indexOf(u8, diag.type.message, "nodeOnly") != null);
+}
+
 // §A2: a chained host-call template (`Buffer.from($0).toString('base64')`)
 // renders verbatim at the call site — no aliasing, no receiver-stripping.
 // The 2-arg `#\[@External\.node("<template>")]` form is detected by the `$`
