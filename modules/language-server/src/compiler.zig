@@ -37,12 +37,18 @@ pub const LspCompiler = struct {
     ) !CompileResult {
         var mods = try self.gpa.alloc(Module, modules.len);
         defer self.gpa.free(mods);
+        // Decision 519 — `@embed` reads the disk: each module's package is
+        // the directory of the nearest `botopink.json` above its file.
+        var roots = std.heap.ArenaAllocator.init(self.gpa);
+        defer roots.deinit();
 
         for (modules, 0..) |entry, i| {
+            const path = lsp_types.uriToPath(entry.uri);
             mods[i] = .{
-                .path = lsp_types.uriToPath(entry.uri),
+                .path = path,
                 .source = entry.source,
                 .std_member = entry.std_member,
+                .files = if (try packageRoot(roots.allocator(), self.io, path)) |root| bp.PackageFiles.disk(self.io, root) else null,
             };
         }
 
@@ -54,6 +60,17 @@ pub const LspCompiler = struct {
         return .{ .session = session, .modules = modules };
     }
 };
+
+/// The directory of the nearest `botopink.json` above the file `path`, or
+/// null when none is (an unsaved buffer, a file outside every package).
+fn packageRoot(arena: std.mem.Allocator, io: std.Io, path: []const u8) !?[]const u8 {
+    var dir = std.fs.path.dirname(path) orelse return null;
+    while (true) {
+        const manifest_path = try std.fs.path.join(arena, &.{ dir, "botopink.json" });
+        if (std.Io.Dir.cwd().access(io, manifest_path, .{})) |_| return dir else |_| {}
+        dir = std.fs.path.dirname(dir) orelse return null;
+    }
+}
 
 /// (uri, source) pair passed to compilation.
 pub const ModuleEntry = struct {

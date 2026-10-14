@@ -79,6 +79,15 @@ source → lex → parse → infer (HM) → transform (specialize) → codegen �
   `file` is `Module.srcPath` (package-relative, set by the CLI loaders) or
   `<name>.bp`; `fnName` is `env.currentFnName`. An unrecognised `@name(…)` is
   `unknown-builtin` now, not a silent `void`.
+- **`@embed(path)`** (decision 519) is a `Build` builtin answering the prelude
+  record `Asset(path, bytes, size, hash)`: `infer.zig` `inferEmbedBuiltin`
+  reads the file through the module's reader (`Module.files`, a
+  `PackageFiles` the CLI and the language server hand — `compiler-web` none,
+  so `embed-no-reader`) and rewrites the call into the constructor, its bytes a
+  `bytesLit` every backend embeds; `comptime.zig` `withAssetDecl` prepends the
+  record. A path through a `comptime` parameter is read at each call, in the
+  caller's package, and passed as a hidden last parameter
+  (`comptime/embed.zig`).
 - **Bundled packages** (1.0.10-beta decisions 115–117): `build.zig`'s
   `bundled_packages` constant (`std` and the libraries under `libs/` the
   compiler ships) is the ONE list of their names; it generates

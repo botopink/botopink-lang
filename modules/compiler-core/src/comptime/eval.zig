@@ -172,6 +172,7 @@ fn valueOf(arena: std.mem.Allocator, scope: *Scope, te: ast.TypedExpr) EvalError
         .literal => |lit| return switch (lit.kind) {
             .numberLit => |n| numberValue(n),
             .stringLit => |s| .{ .string = s },
+            .bytesLit => error.UnsupportedComptimeValue,
             .null_, .comment => .null_,
             .stringTemplate => unreachable,
         },

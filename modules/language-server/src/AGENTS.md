@@ -15,7 +15,7 @@ src/
 ├── messages.zig       ← frame parser/writer (Content-Length protocol)
 ├── protocol.zig       ← LSP + JSON-RPC serializable types
 ├── engine.zig         ← LSP feature implementations; `importDiagnostics` = `check`'s import-source refusals (206/242) via `cli_resolver`
-├── compiler.zig       ← thin wrapper around compiler-core (`LspCompiler`, `CompileResult`; `diagnosticsFor` maps errors to Error, checker warnings to Warning; a `ModuleEntry` of a package named `std` is `std_member`, so std's own `std:` cells are no error in the editor — decision 445, `server.zig` `buildModuleEntries`)
+├── compiler.zig       ← thin wrapper around compiler-core (`LspCompiler`, `CompileResult`; `diagnosticsFor` maps errors to Error, checker warnings to Warning; a `ModuleEntry` of a package named `std` is `std_member`, so std's own `std:` cells are no error in the editor — decision 445, `server.zig` `buildModuleEntries`; each module is handed the disk reader `@embed` reads through, rooted at the nearest `botopink.json` above its file — `packageRoot`, decision 519 — none for a file outside every package)
 ├── files.zig          ← in-memory cache for open document contents
 ├── feedback.zig       ← tracks active diagnostics → clears stale editor feedback
 ├── lsp_types.zig      ← position/offset, URI ↔ path helpers

@@ -110,6 +110,10 @@ const Aggregator = struct {
     /// like a module function, never that function (`localFnOf`). Both
     /// aggregators.
     local_callee_calls: ?*const std.AutoHashMapUnmanaged(ast.Loc, void) = null,
+    /// Decision 519 — the `Asset` arguments a call of a function reading
+    /// `@embed(p.value)` passes for its `__embed_<p>` parameters
+    /// (`Env.embedCallArgs`), appended after the call's own.
+    embed_call_args: ?*const std.AutoHashMapUnmanaged(ast.Loc, []const ast.CallArg) = null,
     /// `Env.namespaces`: `jwt.sign(x)` through a namespace import is written
     /// as the call of an aliased import (`namespaceCall`). Both aggregators.
     namespaces: ?*const envMod.NamespaceImports = null,
@@ -210,6 +214,7 @@ pub fn transform(
     namespaces: *const envMod.NamespaceImports,
     field_keys: *const std.AutoHashMapUnmanaged(ast.Loc, *const ast.Expr),
     local_callee_calls: *const std.AutoHashMapUnmanaged(ast.Loc, void),
+    embed_call_args: *const std.AutoHashMapUnmanaged(ast.Loc, []const ast.CallArg),
 ) !ast.Program {
     var agg = Aggregator.init(allocator, comptime_vals, method_lowerings, template_expansions, src_rewrites, result_jump_lowerings, std_array_lowerings, enum_section_rewrites, index_rewrites, optional_null_cases, ctor_params, default_injections);
     defer agg.deinit(allocator);
@@ -236,6 +241,8 @@ pub fn transform(
     src_agg.field_keys = field_keys;
     agg.local_callee_calls = local_callee_calls;
     src_agg.local_callee_calls = local_callee_calls;
+    agg.embed_call_args = embed_call_args;
+    src_agg.embed_call_args = embed_call_args;
     defer src_agg.deinit(allocator);
 
     // Phase 1: Scan and specialize.
@@ -1080,6 +1087,13 @@ fn rewriteExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
         if (std.mem.eql(u8, callee, "meta") or std.mem.eql(u8, callee, "metaAll")) {
             if (agg.src_rewrites.get(expr_ptr.call.loc)) |rewrite| expr_ptr.* = rewrite.*;
         }
+        // Decision 519 — `a.text()` on an `Asset` → the string literal
+        // inference computed at build.
+        if (std.mem.eql(u8, callee, "text")) {
+            if (agg.src_rewrites.get(expr_ptr.call.loc)) |rewrite| if (rewrite.* == .literal) {
+                expr_ptr.* = rewrite.*;
+            };
+        }
     }
     // A `comptime <expr>` / `comptime { … }` inference folded (decision 266,
     // `infer.zig` `foldBodyComptime`) → its value; the walk carries on over
@@ -1175,6 +1189,17 @@ fn rewriteExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
         if (agg.default_injections.get(expr_ptr.call.loc)) |fill| {
             applyDefaultFill(agg, fill, &expr_ptr.call.kind.call) catch return ScanError.OutOfMemory;
         }
+        // Decision 519 — the `Asset`s the callee's `__embed_<p>` parameters
+        // take, after every argument of its own (a trailing default filled
+        // first, so the `Asset` lands in its parameter's place).
+        if (agg.embed_call_args) |eca| if (eca.get(expr_ptr.call.loc)) |extra| {
+            const c = &expr_ptr.call.kind.call;
+            if (localFnOf(agg, fn_decls, c.*, expr_ptr.call.loc)) |f| expandTrailingDefaults(agg, f, c) catch return ScanError.OutOfMemory;
+            const grown = agg.spec_cache.arena.alloc(ast.CallArg, c.args.len + extra.len) catch return ScanError.OutOfMemory;
+            @memcpy(grown[0..c.args.len], c.args);
+            @memcpy(grown[c.args.len..], extra);
+            c.args = grown;
+        };
     }
     switch (expr_ptr.*) {
         .call => |*c| switch (c.kind) {

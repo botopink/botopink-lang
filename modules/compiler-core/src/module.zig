@@ -1,3 +1,5 @@
+const std = @import("std");
+
 /// A source module for multi-module codegen.
 /// `path` is the module identifier used in `import {X} from "path"` declarations.
 /// `source` is the botopink source text.
@@ -33,6 +35,44 @@ pub const Module = struct {
     /// on the modules of a root package named `std` — `libs/std` built,
     /// checked or tested as itself.
     std_member: bool = false,
+    /// Decision 519 — the reader `@embed` reads the package's files through:
+    /// the directory of the package's `botopink.json` and the function that
+    /// reads a file under it. The CLI and the language server hand
+    /// `PackageFiles.disk(io, <package dir>)`; a compiler with no file system
+    /// (`compiler-web`) hands none, and every `@embed` is a located refusal
+    /// (`embed-no-reader`).
+    files: ?PackageFiles = null,
+};
+
+/// Decision 519 — the files of one package, as `@embed` reads them: `root` is
+/// the directory of the package's `botopink.json`, and `read` answers the
+/// bytes of `rel` (a relative path the checker already proved stays inside the
+/// package: no absolute path, no `..`) under it, allocated with `arena`.
+pub const PackageFiles = struct {
+    root: []const u8,
+    io: std.Io,
+    read: *const fn (io: std.Io, arena: std.mem.Allocator, root: []const u8, rel: []const u8) ReadError![]const u8,
+
+    pub const ReadError = error{ FileNotFound, Unreadable, OutOfMemory };
+
+    /// The package at `root` on disk — the CLI's and the language server's.
+    pub fn disk(io: std.Io, root: []const u8) PackageFiles {
+        return .{ .root = root, .io = io, .read = readDisk };
+    }
+
+    /// The bytes of `rel` under the package's root.
+    pub fn readFile(self: PackageFiles, arena: std.mem.Allocator, rel: []const u8) ReadError![]const u8 {
+        return self.read(self.io, arena, self.root, rel);
+    }
+
+    fn readDisk(io: std.Io, arena: std.mem.Allocator, root: []const u8, rel: []const u8) ReadError![]const u8 {
+        const path = std.fs.path.join(arena, &.{ root, rel }) catch return error.OutOfMemory;
+        return std.Io.Dir.cwd().readFileAlloc(io, path, arena, .unlimited) catch |err| switch (err) {
+            error.FileNotFound, error.IsDir, error.NotDir => error.FileNotFound,
+            error.OutOfMemory => error.OutOfMemory,
+            else => error.Unreadable,
+        };
+    }
 };
 
 /// A package's declared `targets`, by name — no allocation, so a `Module`

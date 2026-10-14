@@ -914,6 +914,34 @@ pub const Env = struct {
     /// does for the record, so every backend builds and matches `Yield(value)`
     /// / `Done` through the enum path it already has.
     usesYieldStep: bool = false,
+    /// Decision 519 — the reader `@embed` reads this module's package
+    /// through (`Module.files`); null in a compiler with no file system, where
+    /// every `@embed` is refused at the call (`embed-no-reader`).
+    packageFiles: ?@import("../module.zig").PackageFiles = null,
+    /// Decision 519 — true once the module wrote `@embed`: `comptime.zig`
+    /// prepends the private `Asset` record (`withAssetDecl`) as it does
+    /// `SourceLocation`.
+    usesAsset: bool = false,
+    /// Decision 519 — the bytes of every `Asset` known at build, keyed by the
+    /// type node its `@embed` answered (fresh per call, so a `val` bound to it
+    /// carries the same node): what `a.text()` reads at build.
+    assetTypes: std.AutoHashMapUnmanaged(*const T.Type, []const u8) = .empty,
+    /// Decision 519 — each `@embed` call's `Asset(…)` constructor (the same
+    /// node `srcRewrites` holds under the call's loc), which a `comptime`'s
+    /// module carries in place of the builtin (`block_eval.Rewrites`).
+    embedRewrites: std.AutoHashMapUnmanaged(ast.Loc, *const ast.Expr) = .empty,
+    /// Decision 519 — the functions of this module whose `@embed` reads a
+    /// `comptime` parameter's value, with those parameters: each is emitted
+    /// with one more parameter per name, `__embed_<p>: Asset`
+    /// (`comptime.zig` `withEmbedParams`).
+    embedParamFns: std.StringHashMapUnmanaged([]const []const u8) = .empty,
+    /// Decision 519 — the `Asset` arguments a call of such a function passes
+    /// (read in the caller's package), keyed by the call's loc: the transform
+    /// appends them after the call's own (`transform.zig`).
+    embedCallArgs: std.AutoHashMapUnmanaged(ast.Loc, []const ast.CallArg) = .empty,
+    /// Decision 519 — `embed.embedParams` of each function a call of this
+    /// module named, read once.
+    embedParamsSeen: std.StringHashMapUnmanaged([]const []const u8) = .empty,
     /// E3.9 — where a `@Result` value came from, keyed by the (fresh) type
     /// node inference gave it: an `await`, a `for` item, or the `try` /
     /// `throw` that made an `async { }` block's value or an `iter` / `stream`

@@ -2076,7 +2076,6 @@ test "decision 346: Bytes crosses to and from text through fromUtf8 / toUtf8 alo
         .{ .src = "pub fn main() { val b = Bytes.fromUtf8(\"a\"); @print(\"${b}\"); }", .want = "`Bytes` is no text to join" },
         .{ .src = "pub fn main() { val b = Bytes.fromUtf8(\"a\"); @print(b < b); }", .want = "`Bytes` takes no `<`" },
         .{ .src = "fn f(v: string | Bytes) -> bool { return v is Bytes; }\npub fn main() { @print(f(\"a\")); }", .want = "bytes-type-test" },
-        .{ .src = "pub fn main() { val b = comptime Bytes.fromUtf8(\"a\"); @print(b.length()); }", .want = "comptime-bytes" },
         .{ .src = "pub fn main() { val b = Bytes.fromText(\"a\"); @print(b.length()); }", .want = "`Bytes` has no associated function `fromText`" },
     };
     for (cases) |c| {

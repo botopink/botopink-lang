@@ -492,6 +492,60 @@ const source_location_decl_src =
     \\type SourceLocation(file: string, line: i32, column: i32, fnName: string)
 ;
 
+/// Decision 519 — the builtin `Asset` record as a program declaration, when
+/// the module wrote `@embed` (`env.usesAsset`): the same splice
+/// `withSourceLocationDecl` makes for `SourceLocation`, so every backend builds
+/// the constructor `@embed` was rewritten into through its record path. A
+/// module declaring its own `Asset` keeps it.
+fn withAssetDecl(arena: std.mem.Allocator, prog: ast.Program, env: *const envMod.Env) !ast.Program {
+    if (!env.usesAsset) return prog;
+    for (prog.decls) |d| switch (d) {
+        .type_ => |t| if (std.mem.eql(u8, t.name, "Asset")) return prog,
+        else => {},
+    };
+    var lx = Lexer.init(asset_decl_src);
+    const tokens = try lx.scanAll(arena);
+    var p = Parser.init(tokens);
+    const decl_prog = try p.parse(arena);
+    if (decl_prog.decls.len != 1) return prog;
+    const new_decls = try arena.alloc(ast.DeclKind, 1 + prog.decls.len);
+    new_decls[0] = decl_prog.decls[0];
+    @memcpy(new_decls[1..], prog.decls);
+    return ast.Program{ .decls = new_decls };
+}
+
+/// Decision 519 — each function whose `@embed` reads a `comptime`
+/// parameter's value (`env.embedParamFns`) takes one more parameter per such
+/// `p`, `__embed_<p>: Asset`, last — its specialisations (`<name>_$<n>`)
+/// too: the `Asset` each call passes, read in the caller's package
+/// (`Env.embedCallArgs`).
+fn withEmbedParams(arena: std.mem.Allocator, prog: ast.Program, env: *const envMod.Env) !ast.Program {
+    if (env.embedParamFns.count() == 0) return prog;
+    const decls = try arena.dupe(ast.DeclKind, prog.decls);
+    for (decls) |*d| switch (d.*) {
+        .@"fn" => |*f| {
+            const base = if (std.mem.indexOf(u8, f.name, "_$")) |at| f.name[0..at] else f.name;
+            const names = env.embedParamFns.get(base) orelse continue;
+            const params = try arena.alloc(ast.Param, f.params.len + names.len);
+            @memcpy(params[0..f.params.len], f.params);
+            for (names, params[f.params.len..]) |n, *p| p.* = .{
+                .name = try embedMod.hiddenName(arena, n),
+                .typeRef = .{ .named = "Asset" },
+                .typeName = "Asset",
+            };
+            f.params = params;
+            try embedMod.readHiddenParams(arena, f.body, f.params, names);
+        },
+        else => {},
+    };
+    return .{ .decls = decls };
+}
+
+/// The declaration `withAssetDecl` splices (`embed.decl_src`). Keep it in
+/// sync with the `decl_reflection_src` entry.
+const asset_decl_src = embedMod.decl_src;
+const embedMod = @import("comptime/embed.zig");
+
 /// The prelude enum `YieldStep<T>` as a program declaration, when the module
 /// referenced it (`env.usesYieldStep` — an annotation or a `.next()` on a
 /// sequence): the same splice `withSourceLocationDecl` makes for the record, so
@@ -1296,9 +1350,11 @@ fn analyzeMerged(
     env.reflection = reflection;
     if (typeinfo_plan) |pl| env.typeinfoAll = pl.rewrites;
     env.srcPath = try displaySrcPath(arena, mod);
+    env.packageFiles = mod.files;
     // The prelude registration may have named `SourceLocation`; only the
     // program's own references count (`withSourceLocationDecl`).
     env.usesSourceLocation = false;
+    env.usesAsset = false;
     env.usesYieldStep = false;
     env.templateEval = templateEvalCtx;
     env.skipDecoratorInvoke = true;
@@ -1451,9 +1507,11 @@ fn analyzeSource(
     env.inStd = mod.std_member;
     // `@src().file` (decision 73): the package-relative display path.
     env.srcPath = try displaySrcPath(arena, mod);
+    env.packageFiles = mod.files;
     // The prelude registration may have named `SourceLocation`; only the
     // program's own references count (`withSourceLocationDecl`).
     env.usesSourceLocation = false;
+    env.usesAsset = false;
     env.usesYieldStep = false;
     // Runtime-backed template expansion (F6-full) — null in tooling paths.
     env.templateEval = templateEvalCtx;
@@ -1815,6 +1873,9 @@ pub const decl_reflection_src =
     \\pub type DeclKind { Type, Behavior, Fn, Method, Field, Val, Element, Component }
     \\pub type Span(start: i32, end: i32, line: i32)
     \\pub type SourceLocation(file: string, line: i32, column: i32, fnName: string)
+    \\pub type Asset(path: string, bytes: Bytes, size: i32, hash: string) {
+    \\    declare fn text(self: Self) -> string;
+    \\}
     \\pub behavior Decorator {
     \\    fn same(self: Self, other: Decorator) -> bool;
     \\}
@@ -3864,13 +3925,15 @@ pub fn compileTypesOnly(
                         &succ.env.namespaces,
                         &succ.env.fieldKeyRewrites,
                         &succ.env.localCalleeCalls,
+                        &succ.env.embedCallArgs,
                     ) catch break :blk_t program_for_transform;
                     const hygienic = withTemplateHygiene(arena_alloc, t, &succ.env, sharesPrivates(arena_alloc, program_for_transform.decls, &succ.env) catch true) catch break :blk_t t;
                     const with_assoc = withUsedAssocInterfaces(arena_alloc, hygienic, &succ.env) catch break :blk_t hygienic;
                     const with_enums = withSynthesisedEnumDecls(arena_alloc, with_assoc, &succ.env) catch with_assoc;
                     const with_src = withSourceLocationDecl(arena_alloc, with_enums, &succ.env) catch with_enums;
                     const with_step = withYieldStepDecl(arena_alloc, with_src, &succ.env) catch with_src;
-                    const erased = alias_erase.erase(arena_alloc, with_step, &succ.env.typeAliases) catch with_step;
+                    const with_asset = withEmbedParams(arena_alloc, withAssetDecl(arena_alloc, with_step, &succ.env) catch with_step, &succ.env) catch with_step;
+                    const erased = alias_erase.erase(arena_alloc, with_asset, &succ.env.typeAliases) catch with_asset;
                     break :blk_t withImportSourcesNamed(arena_alloc, withImportTypeAliasesErased(arena_alloc, erased, &succ.env) catch erased, &succ.env) catch erased;
                 };
 
@@ -4196,11 +4259,11 @@ fn compileOnce(
                     @memcpy(new_decls[synth.items.len..], succ.program.decls);
                     break :blk ast.Program{ .decls = new_decls };
                 };
-                const transformed = try value_or_type.withTwinImports(arena_alloc, try withImportSourcesNamed(arena_alloc, try withImportTypeAliasesErased(arena_alloc, try alias_erase.erase(arena_alloc, try withYieldStepDecl(arena_alloc, try withDeclaredDecls(arena_alloc, try withSourceLocationDecl(arena_alloc, try withSynthesisedEnumDecls(
+                const transformed = try value_or_type.withTwinImports(arena_alloc, try withImportSourcesNamed(arena_alloc, try withImportTypeAliasesErased(arena_alloc, try alias_erase.erase(arena_alloc, try withEmbedParams(arena_alloc, try withAssetDecl(arena_alloc, try withYieldStepDecl(arena_alloc, try withDeclaredDecls(arena_alloc, try withSourceLocationDecl(arena_alloc, try withSynthesisedEnumDecls(
                     arena_alloc,
-                    try withUsedAssocInterfaces(arena_alloc, try withTemplateHygiene(arena_alloc, try context_lower.lower(arena_alloc, try transform.transform(arena_alloc, try expr_param.eraseProgram(arena_alloc, program_for_transform, infer.isDecoratorParams), fn_decls, comptime_arrays, ct.comptime_vals, &succ.env.method_lowerings, &succ.env.templateExpansions, &succ.env.srcRewrites, &succ.env.result_jump_lowerings, &succ.env.stdArrayLowerings, &succ.env.enumSectionRewrites, &succ.env.indexRewrites, &succ.env.optionalNullCases, succ.env.ctorParams, &succ.env.defaultInjections, &succ.env.resultPatternLocs, &succ.env.namespaces, &succ.env.fieldKeyRewrites, &succ.env.localCalleeCalls), &succ.env), &succ.env, try sharesPrivates(arena_alloc, program_for_transform.decls, &succ.env)), &succ.env),
+                    try withUsedAssocInterfaces(arena_alloc, try withTemplateHygiene(arena_alloc, try context_lower.lower(arena_alloc, try transform.transform(arena_alloc, try expr_param.eraseProgram(arena_alloc, program_for_transform, infer.isDecoratorParams), fn_decls, comptime_arrays, ct.comptime_vals, &succ.env.method_lowerings, &succ.env.templateExpansions, &succ.env.srcRewrites, &succ.env.result_jump_lowerings, &succ.env.stdArrayLowerings, &succ.env.enumSectionRewrites, &succ.env.indexRewrites, &succ.env.optionalNullCases, succ.env.ctorParams, &succ.env.defaultInjections, &succ.env.resultPatternLocs, &succ.env.namespaces, &succ.env.fieldKeyRewrites, &succ.env.localCalleeCalls, &succ.env.embedCallArgs), &succ.env), &succ.env, try sharesPrivates(arena_alloc, program_for_transform.decls, &succ.env)), &succ.env),
                     &succ.env,
-                ), &succ.env), &succ.env), &succ.env), &succ.env.typeAliases), &succ.env), &succ.env), &succ.env.typeArgTwins);
+                ), &succ.env), &succ.env), &succ.env), &succ.env), &succ.env), &succ.env.typeAliases), &succ.env), &succ.env), &succ.env.typeArgTwins);
 
                 var type_ids = std.StringHashMap(usize).init(arena_alloc);
                 for (succ.bindings) |b| {

@@ -133,6 +133,13 @@ const NATIVE_DECORATOR_REPLY = `----- COMPTIME REPLY -- decorator describe
   assert(typeof broken.modules[0].diagnostic === "string" && broken.modules[0].diagnostic.includes("main.bp:"), "the diagnostic is rendered and located");
   assert(broken.modules[0].code === "", "a failed module has no artifact");
 
+  // Decision 519: the page's compiler is handed no reader — `@embed` is a
+  // located refusal, never a read.
+  compiler.reset();
+  compiler.addSource("main", 'pub fn main() {\n    @print(@embed("assets/logo.png").size);\n}\n');
+  const embed = compiler.compile("commonJS");
+  assert(embed.status === 1 && String(embed.modules[0].diagnostic).includes("embed-no-reader") && String(embed.modules[0].diagnostic).includes("main.bp:2:12"), `@embed is refused in the page, located (${embed.modules[0].diagnostic})`);
+
   // The decorator + template program: on every target its comptime runs on
   // the wasm runtime (decision 434) — lowered by the compiler, run by the
   // page's engine through `bp_host` — and answers what the native compiler

@@ -87,6 +87,12 @@ cli/
   `scanner.zig` the scan dir plus the entry (`test/color_test.bp`), `libs.zig`
   `<manifest.src>/<file>` relative to the dependency's own root. It is gpa-owned
   like `path`/`source`; every `freeModules`/`free` releases it.
+- Every module carries the reader `@embed` reads its package through
+  (`Module.files = bp.PackageFiles.disk(io, <package dir>)`, decision 519):
+  `sources.zig` hands the project's modules `proj.dir`, `test_cmd.zig` and
+  `check.zig` the `test/` modules the same, and `libs.zig` `loadOne` a
+  dependency's modules its directory — gpa-owned there, released with the
+  module wherever `srcPath` is.
 - Errors, warnings, and hints go through `reporter.zig` so output style stays
   consistent (`error: …` / `warning: …` / `hint: …`).
 

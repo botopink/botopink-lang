@@ -589,6 +589,58 @@ test "level B: an unchanged library is not analysed again, its file rewritten wi
     try testing.expect(!std.mem.eql(u8, whole, try std.Io.Dir.cwd().readFileAlloc(io, shelf_entry, arena, .unlimited)));
 }
 
+test "level B: a file a library's `@embed` reads under its `src` is in the library's key — a changed byte of it, a new key, the library analysed again and its new bytes emitted (decision 519)" {
+    var arena_inst = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_inst.deinit();
+    const arena = arena_inst.allocator();
+    const io = testing.io;
+    const gpa = testing.allocator;
+    const cwd = std.Io.Dir.cwd();
+    test_scratch.remove(io, "level-b-embed");
+    defer test_scratch.remove(io, "level-b-embed");
+    const dir = test_scratch.path(io, "level-b-embed");
+    const files = [_][2][]const u8{
+        .{ "banner/botopink.json", "{ \"name\": \"banner\", \"version\": \"0.0.1\", \"src\": \"src/\", \"entry\": \"root.bp\", \"files\": [\"root.bp\", \"banner.bp\"] }" },
+        .{ "banner/src/root.bp", "pub mod banner;\n" },
+        .{ "banner/src/banner.bp", "pub fn line() -> string {\n    return @embed(\"src/line.txt\").text();\n}\n" },
+        .{ "banner/src/line.txt", "first edition" },
+        .{ "app/botopink.json", "{ \"name\": \"app\", \"version\": \"0.0.1\", \"src\": \"src/\", \"entry\": \"main.bp\", \"dependencies\": { \"banner\": { \"path\": \"../banner\" } } }" },
+        .{ "app/src/main.bp", "import {banner.line} from \"banner\";\n\npub fn main() {\n    @print(line());\n}\n" },
+    };
+    for (files) |f| {
+        const path = try std.fs.path.join(arena, &.{ dir, f[0] });
+        try cwd.createDirPath(io, std.fs.path.dirname(path).?);
+        try cwd.writeFile(io, .{ .sub_path = path, .data = f[1] });
+    }
+    const app_dir = try std.fs.path.join(arena, &.{ dir, "app" });
+    const root = try std.fs.path.join(arena, &.{ dir, "cache" });
+    const erl: Variant = .{ .label = "erlang", .target = .erlang };
+    const emitted = struct {
+        fn has(outputs: []const codegen.ModuleOutput, text: []const u8) bool {
+            for (outputs) |o| if (std.mem.indexOf(u8, o.name, "banner") != null and std.mem.indexOf(u8, o.result.js, text) != null) return true;
+            return false;
+        }
+    };
+
+    var fx = try Fixture.loadAt(gpa, arena, io, app_dir, entryTarget(erl));
+    defer fx.free(gpa);
+    var first = try invoke(gpa, io, &fx, erl, root, fx.keys);
+    defer first.deinit(gpa);
+    try testing.expect(emitted.has(first.outputs.items, "first edition"));
+    try testing.expect(first.stats.entries_staged >= 1);
+
+    // The embedded file changes, nothing else of the library does.
+    try cwd.writeFile(io, .{ .sub_path = try std.fs.path.join(arena, &.{ dir, "banner", "src", "line.txt" }), .data = "second edition" });
+    var changed_fx = try Fixture.loadAt(gpa, arena, io, app_dir, entryTarget(erl));
+    defer changed_fx.free(gpa);
+    try testing.expect(!std.mem.eql(u8, &fx.keys.get("banner").?, &changed_fx.keys.get("banner").?));
+    var changed = try invoke(gpa, io, &changed_fx, erl, root, changed_fx.keys);
+    defer changed.deinit(gpa);
+    try testing.expectEqual(@as(usize, 1), changed.stats.entries_staged);
+    try testing.expect(emitted.has(changed.outputs.items, "second edition"));
+    try testing.expect(!emitted.has(changed.outputs.items, "first edition"));
+}
+
 /// The compiler's part of the key on `target` over a checkout at `checkout`:
 /// what `build.zig` embeds as `build_stamp.partition_hash_<target>` (decision
 /// 249, `code_cache.compilerKey`), computed by the same function.

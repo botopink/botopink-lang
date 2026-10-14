@@ -18,6 +18,7 @@ const TypeError = @import("error.zig").TypeError;
 const errorMod = @import("error.zig");
 const evalMod = @import("eval.zig");
 const blockEval = @import("block_eval.zig");
+const embedMod = @import("embed.zig");
 const diagnostics = @import("diagnostics.zig");
 const reflectionMod = @import("reflection.zig");
 const hooksMod = @import("hooks.zig");
@@ -11315,6 +11316,217 @@ fn inferSrcBuiltin(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedExpr 
     return inferExprTyped(env, rewrite.*);
 }
 
+/// Decision 519 — `@embed(path)`: the file `path` names in the package that
+/// wrote it, read at build through the module's reader (`Env.packageFiles`)
+/// and rewritten, like `@src()`, into the private record's constructor
+/// `Asset(path: …, bytes: …, size: …, hash: …)` (`embed.asset`) — every
+/// backend embeds the bytes, and the program never reads the file. A `Build`
+/// builtin: the path is known at build (a literal, a constant `val`, a
+/// `comptime`, an `Any` call of those — `blockEval.knownAtBuild`), else the
+/// argument is refused (`comptime-arg-not-known`). An absolute path, one with
+/// a `..` segment, a missing file and a compiler with no reader are refused.
+fn inferEmbedBuiltin(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedExpr {
+    if (call.args.len != 1 or call.trailing.len != 0 or (call.args[0].label != null and !std.mem.eql(u8, call.args[0].label.?, "path"))) {
+        env.lastError = TypeError.custom(
+            diagnostics.embed_arguments ++ ": `@embed` takes one argument, the path",
+            "Write `@embed(\"assets/logo.png\")` — the path of a file of the package, relative to its `botopink.json`.",
+        ).withLoc(loc);
+        return error.TypeError;
+    }
+    const arg = call.args[0].value;
+    const argLoc = arg.getLoc();
+    // A `comptime` parameter's value: the path is each caller's, read where
+    // the call is written (`noteEmbedCall`); the body reads the `Asset` the
+    // call passes (`embed.zig` § a path through a `comptime` parameter).
+    if (embedMod.paramOfArg(arg.*, env.currentParams)) |param| {
+        if (isDecoratorParams(env.currentParams) or env.inTemplateFn) {
+            env.lastError = TypeError.custom(
+                diagnostics.comptime_arg_not_known ++ ": `@embed` reads a `comptime` parameter of a body that runs at build",
+                "A decorator's or a template's body runs at build on the comptime runtime, which reads no file yet: pass the `Asset` itself, `@embed(\"…\")` written where the path is known.",
+            ).withLoc(argLoc);
+            return error.TypeError;
+        }
+        const names = env.embedParamFns.get(env.currentFnName) orelse &.{};
+        const known = for (names) |n| {
+            if (std.mem.eql(u8, n, param)) break true;
+        } else false;
+        if (!known) {
+            const grown = try env.arena.alloc([]const u8, names.len + 1);
+            @memcpy(grown[0..names.len], names);
+            grown[names.len] = param;
+            try env.embedParamFns.put(env.arena, env.currentFnName, grown);
+        }
+        env.usesAsset = true;
+        const read = try env.arena.create(ast.Expr);
+        read.* = .{ .identifier = .{ .loc = loc, .kind = .{ .ident = try embedMod.hiddenName(env.arena, param) } } };
+        try env.srcRewrites.put(loc, read);
+        return TypedExpr{ .call = .{ .loc = loc, .type_ = try env.namedType("Asset"), .kind = .{ .call = .{
+            .receiver = null,
+            .callee = "embed",
+            .is_builtin = true,
+            .args = &.{},
+            .trailing = &.{},
+        } } } };
+    }
+    const path = try embedPathValue(env, arg) orelse {
+        env.lastError = TypeError.custom(
+            diagnostics.comptime_arg_not_known ++ ": the path of `@embed` is not known at build",
+            "`@embed` reads its file while the program compiles (decision 519): pass a literal, a constant `val`, a `comptime` value or a `comptime` parameter's value.",
+        ).withLoc(argLoc);
+        return error.TypeError;
+    };
+    const rewrite = try embedRead(env, path, argLoc, loc);
+    try env.srcRewrites.put(loc, rewrite);
+    try env.embedRewrites.put(env.arena, loc, rewrite);
+    var typed = try inferExprTyped(env, rewrite.*);
+    // A fresh type node per call: a `val` bound to it carries the node, and
+    // `a.text()` finds the bytes by it (`Env.assetTypes`).
+    const fresh = try env.arena.create(T.Type);
+    fresh.* = typed.getType().deref().*;
+    switch (typed) {
+        inline else => |*e| e.type_ = fresh,
+    }
+    try env.assetTypes.put(env.arena, fresh, rewrite.call.kind.call.args[1].value.literal.kind.bytesLit);
+    return typed;
+}
+
+/// Decision 519 — the `Asset(…)` constructor of the file `path` of this
+/// module's package, read now, located at `loc`: an absolute path or one with
+/// a `..` segment is refused at `argLoc`, a compiler with no reader and a
+/// missing file at `loc`.
+fn embedRead(env: *Env, path: []const u8, argLoc: ast.Loc, loc: ast.Loc) InferError!*ast.Expr {
+    if (embedMod.checkPath(path)) |refusal| {
+        env.lastError = switch (refusal) {
+            .absolute => TypeError.custom(
+                try std.fmt.allocPrint(env.arena, "{s}: `@embed(\"{s}\")` names an absolute path", .{ diagnostics.embed_path_absolute, path }),
+                "A path of `@embed` is relative to the `botopink.json` of the package that writes it (decision 519).",
+            ),
+            .outside_package => TypeError.custom(
+                try std.fmt.allocPrint(env.arena, "{s}: `@embed(\"{s}\")` leaves the package", .{ diagnostics.embed_path_outside_package, path }),
+                "A path of `@embed` names a file of the package that writes it: no `..` segment (decision 519).",
+            ),
+        }.withLoc(argLoc);
+        return error.TypeError;
+    }
+    const files = env.packageFiles orelse {
+        env.lastError = TypeError.custom(
+            try std.fmt.allocPrint(env.arena, "{s}: `@embed(\"{s}\")` cannot be read — this compiler reads no file", .{ diagnostics.embed_no_reader, path }),
+            "The compiler that runs in a browser is handed no reader (decision 519): build the program with the `botopink` CLI.",
+        ).withLoc(loc);
+        return error.TypeError;
+    };
+    const bytes = files.readFile(env.arena, path) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        error.FileNotFound, error.Unreadable => {
+            env.lastError = TypeError.custom(
+                try std.fmt.allocPrint(env.arena, "{s}: `@embed(\"{s}\")` names no file of the package", .{ diagnostics.embed_file_missing, path }),
+                "The path is relative to the `botopink.json` of the package that writes it (decision 519).",
+            ).withLoc(loc);
+            return error.TypeError;
+        },
+    };
+    env.usesAsset = true;
+    return embedMod.asset(env.arena, loc, try blockEval.stringLexeme(env.arena, path), bytes);
+}
+
+/// Decision 519 — a call of a function whose `@embed` reads a `comptime`
+/// parameter's value (`embed.embedParams`, this module's or an imported
+/// one's): the path the call passes is read here, in the caller's package,
+/// and the `Asset` is the call's argument for `__embed_<p>`
+/// (`Env.embedCallArgs`, appended by the transform).
+fn noteEmbedCall(env: *Env, call: anytype, declParams: ?[]const ast.Param, argParamIndex: ?[]const usize, loc: ast.Loc) InferError!void {
+    const callee: ast.FnDecl = if (env.fnDecls.get(call.callee)) |f| f else if (env.importedFnSupport.get(call.callee)) |closure|
+        (if (closure.len > 0) closure[0] else return)
+    else
+        return;
+    const names = env.embedParamsSeen.get(call.callee) orelse names: {
+        const found = try embedMod.embedParams(env.arena, callee);
+        try env.embedParamsSeen.put(env.arena, call.callee, found);
+        break :names found;
+    };
+    if (names.len == 0) return;
+    const params = declParams orelse callee.params;
+    const extra = try env.arena.alloc(ast.CallArg, names.len);
+    for (names, extra) |name, *out| {
+        const pi = for (params, 0..) |p, i| {
+            if (std.mem.eql(u8, p.name, name)) break i;
+        } else return;
+        const ai: usize = if (argParamIndex) |slots| for (slots, 0..) |s, i| {
+            if (s == pi) break i;
+        } else return else pi;
+        if (ai >= call.args.len) return;
+        const arg = call.args[ai].value;
+        const argLoc = arg.getLoc();
+        const path = try embedPathValue(env, arg) orelse {
+            env.lastError = TypeError.custom(
+                try std.fmt.allocPrint(env.arena, "{s}: the path `{s}` passes to `@embed` is not known at build", .{ diagnostics.comptime_arg_not_known, name }),
+                "`@embed` reads its file while the program compiles (decision 519): pass a literal, a constant `val` or a `comptime` value.",
+            ).withLoc(argLoc);
+            return error.TypeError;
+        };
+        out.* = .{ .label = null, .value = try embedRead(env, path, argLoc, argLoc) };
+    }
+    try env.embedCallArgs.put(env.arena, loc, extra);
+}
+
+/// Decision 519 — the value of `@embed`'s argument at build, or null when it
+/// is not known there. A string literal is read as written; anything else
+/// known at build (`blockEval.knownAtBuild`) is evaluated as a hole's value is.
+fn embedPathValue(env: *Env, arg: *const ast.Expr) InferError!?[]const u8 {
+    if (arg.* == .literal and arg.literal.kind == .stringLit) {
+        return try templateEval.lexemeBytes(env.arena, arg.literal.kind.stringLit);
+    }
+    if (!blockEval.knownAtBuild(env, arg, 0)) return null;
+    const io = if (env.templateEval) |ctx| ctx.io else if (env.packageFiles) |f| f.io else return null;
+    return switch (try blockEval.holeValue(env, io, arg)) {
+        .build => |t| switch (t) {
+            .binary => |b| b,
+            else => null,
+        },
+        else => null,
+    };
+}
+
+/// Decision 519 — `a.text()` on an `Asset`: computed at build, rewritten into
+/// the string literal of the bytes (`srcRewrites`, under the call's loc);
+/// bytes that are not UTF-8 are refused at the call. The bytes are those of
+/// the `@embed` whose type node the receiver carries (`Env.assetTypes`): an
+/// `@embed` call, a `val` bound to one. Any other `Asset` (a parameter, a
+/// function's answer) is not known where the call is checked, and refused.
+fn inferAssetText(env: *Env, call: anytype, rp: *ast.TypedExpr, loc: ast.Loc) InferError!TypedExpr {
+    if (call.args.len != 0 or call.trailing.len != 0) {
+        env.lastError = TypeError.custom(
+            diagnostics.embed_arguments ++ ": `text()` takes no argument",
+            "Write `a.text()` — the bytes of the `Asset` as UTF-8 text.",
+        ).withLoc(loc);
+        return error.TypeError;
+    }
+    const bytes = env.assetTypes.get(rp.getType().deref()) orelse {
+        env.lastError = TypeError.custom(
+            diagnostics.embed_text_not_at_build ++ ": `text()` reads an `Asset` whose bytes are not known here",
+            "`text()` is computed at build (decision 519): call it on an `@embed(…)`, or on a `val` bound to one.",
+        ).withLoc(loc);
+        return error.TypeError;
+    };
+    if (!std.unicode.utf8ValidateSlice(bytes)) {
+        env.lastError = TypeError.custom(
+            diagnostics.embed_text_not_utf8 ++ ": `text()` reads bytes that are not UTF-8",
+            "The file is not UTF-8 text (decision 519): read its bytes with `.bytes`.",
+        ).withLoc(loc);
+        return error.TypeError;
+    }
+    const lit = try env.arena.create(ast.Expr);
+    lit.* = .{ .literal = .{ .loc = loc, .kind = .{ .stringLit = try blockEval.stringLexeme(env.arena, bytes) } } };
+    try env.srcRewrites.put(loc, lit);
+    return TypedExpr{ .literal = .{ .loc = loc, .type_ = try env.namedType("string"), .kind = .{ .stringLit = lit.literal.kind.stringLit } } };
+}
+
+/// Whether `ty` is the builtin `Asset` (decision 519).
+fn isAssetType(ty: *T.Type) bool {
+    const d = ty.deref();
+    return d.* == .named and std.mem.eql(u8, d.named.name, "Asset");
+}
+
 /// Evaluate `@makeRecord(fields)` at inference time when `fields` is a literal
 /// array of RecordField values. Extracts field names and type names from the
 /// untyped AST, looks up the types, and creates a synthetic record type.
@@ -14600,6 +14812,8 @@ fn checkNumberPattern(env: *Env, text: []const u8, subjectType: *T.Type) InferEr
 fn inferLiteralExpr(env: *Env, lit: ast.LiteralExprOf(.untyped), loc: ast.Loc) InferError!TypedExpr {
     return switch (lit.kind) {
         .stringLit => |s| TypedExpr{ .literal = .{ .loc = loc, .type_ = try env.namedType("string"), .kind = .{ .stringLit = s } } },
+        // Decisions 519, 520 — a `Bytes` build constant (never written).
+        .bytesLit => |b| TypedExpr{ .literal = .{ .loc = loc, .type_ = try env.namedType("Bytes"), .kind = .{ .bytesLit = b } } },
         .stringTemplate => |t| {
             // Desugar `"a ${x} b"` into the concatenation chain `"a " + x + " b"`
             // (same semantics as written-out string `+`, incl. coercion). The
@@ -20634,6 +20848,9 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
             if (call.is_builtin and std.mem.eql(u8, call.callee, "src")) {
                 return inferSrcBuiltin(env, call, loc);
             }
+            if (call.is_builtin and std.mem.eql(u8, call.callee, "embed")) {
+                return inferEmbedBuiltin(env, call, loc);
+            }
             // A hand-written `SourceLocation(file: …, …)` needs the record
             // declaration spliced in exactly like the rewrite does.
             if (call.receiver == null and !call.is_builtin and std.mem.eql(u8, call.callee, source_location_type_name)) {
@@ -20688,6 +20905,10 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                 const own = if (nominalName(rp.getType())) |tn| receiverHasMethod(env, tn, call.callee) else false;
                 if (!own and !isStdModuleType(rp.getType())) return inferTemplateMethodCall(env, call, rp, tfn, loc);
                 try env.templateMethodDeclined.put(loc, {});
+            };
+            // Decision 519 — `a.text()` on an `Asset`, computed at build.
+            if (typedReceiver) |rp| if (!call.is_builtin and call.calleeExpr == null and std.mem.eql(u8, call.callee, "text") and isAssetType(rp.getType())) {
+                return inferAssetText(env, call, rp, loc);
             };
             // Decision 371 — `d.same(other)` on a `Decorator`.
             if (typedReceiver) |rp| if (!call.is_builtin and call.calleeExpr == null and std.mem.eql(u8, call.callee, "same") and isDecoratorType(rp.getType())) {
@@ -20872,6 +21093,7 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                 typedArgs[i] = .{ .label = arg.label, .value = try makeTypedPtr(env, val) };
             }
             if (typeArgAt) |ti| try noteTypeArgCall(env, c, ti, loc);
+            if (call.receiver == null and !call.is_builtin and call.calleeExpr == null) try noteEmbedCall(env, call, declParamsAst, argParamIndex, loc);
             const typedTrailing = try inferTrailingLambdasTyped(env, call.trailing);
 
             // 01 handover 15 — `adder(3)(4)`: what is called is the result of
@@ -23016,15 +23238,6 @@ fn foldBodyComptime(env: *Env, ct: ast.ComptimeExprOf(.untyped), typed: TypedExp
         env.lastError = TypeError.custom(
             diagnostics.comptime_bigint ++ ": a `bigint` is not computed at compile time yet",
             "The compile-time evaluator holds a 64-bit integer (decision 332, front 01-compiler/139): compute the `bigint` when the program runs — drop the `comptime`.",
-        ).withLoc(loc);
-        return error.TypeError;
-    }
-    // Decision 346 — nor `Bytes`: the comptime runtimes hold it as a binary,
-    // which the lift writes back as a `string` literal.
-    if (unifyMod.mentionsBytes(typed.getType())) {
-        env.lastError = TypeError.custom(
-            diagnostics.comptime_bytes ++ ": `Bytes` is not computed at compile time yet",
-            "No compile-time value lifts into a byte sequence yet (decision 346): compute the `Bytes` when the program runs — drop the `comptime`.",
         ).withLoc(loc);
         return error.TypeError;
     }

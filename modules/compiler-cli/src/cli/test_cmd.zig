@@ -358,6 +358,8 @@ pub fn run(
     const src_modules = src_loaded.modules;
     var test_scan = try scanner.scanSourcesWithFiles(gpa, io, "test");
     defer test_scan.free(gpa);
+    // Decision 519 — a test module's `@embed` reads the package's files.
+    for (test_scan.modules) |*m| m.files = bp.PackageFiles.disk(io, proj.dir);
     const test_modules = test_scan.modules;
 
     // The flat `test/` directory is not a package, so it never reached the

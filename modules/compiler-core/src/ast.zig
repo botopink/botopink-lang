@@ -440,6 +440,11 @@ pub fn LiteralExprOf(comptime phase: Phase) type {
         },
         /// A number literal, e.g. `0`
         numberLit: []const u8,
+        /// A `Bytes` build constant (decisions 519, 520): the raw bytes, never
+        /// written in source — `@embed`'s `Asset.bytes` and a `comptime`'s
+        /// lifted `Bytes`. Every target embeds it (an Erlang binary, a JS
+        /// `Uint8Array`, a wasm data segment).
+        bytesLit: []const u8,
         /// `null` literal
         null_,
         /// A comment treated as an expression: `//` normal, `///` doc, or `////` module.
@@ -467,7 +472,7 @@ pub fn LiteralExprOf(comptime phase: Phase) type {
 
         pub fn deinit(this: *@This(), allocator: std.mem.Allocator) void {
             switch (this.*) {
-                .stringLit, .numberLit, .null_ => {},
+                .stringLit, .numberLit, .bytesLit, .null_ => {},
                 .stringTemplate => |t| {
                     for (t.parts) |*p| switch (p.*) {
                         .text => {},

@@ -699,6 +699,18 @@ pub const Formatter = struct {
                     break :blk this.concat(doc, try this.text(quote));
                 },
                 .numberLit => |n| this.text(n),
+                // Decisions 519, 520 — a `Bytes` build constant is never
+                // written; shown as its bytes (`<<104, 105>>`).
+                .bytesLit => |bytes| blk: {
+                    var out: std.ArrayListUnmanaged(u8) = .empty;
+                    try out.appendSlice(this.arena, "<<");
+                    for (bytes, 0..) |byte, i| {
+                        if (i > 0) try out.appendSlice(this.arena, ", ");
+                        try out.print(this.arena, "{d}", .{byte});
+                    }
+                    try out.appendSlice(this.arena, ">>");
+                    break :blk this.text(out.items);
+                },
                 .null_ => this.text("null"),
                 .comment => |c| blk: {
                     const prefix = switch (c.kind) {

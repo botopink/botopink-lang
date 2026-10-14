@@ -199,7 +199,7 @@ fn Walk(comptime Ctx: type) type {
                         .expr => |x| try self.expr(x),
                         .text => {},
                     },
-                    .stringLit, .numberLit, .null_, .comment => {},
+                    .stringLit, .numberLit, .bytesLit, .null_, .comment => {},
                 },
                 .identifier => |id| switch (id.kind) {
                     .ident, .dotIdent => {},

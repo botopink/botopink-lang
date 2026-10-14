@@ -1117,7 +1117,9 @@ as text. `Bytes.fromUtf8(s)` is the string's own address (`isBytesFromUtf8`; bot
 `Ok` once std-wasm's `bytes.isUtf8` accepts it, else the `Error` text the other targets write
 (`lowerBytesMethod`). `typeRefOf` / `resultShapeOf` answer `Bytes` and `@Result<string, string>`
 for those calls. `==` / `!=` read inference's `prim = .bytes` at the operator and compare through
-`$__str_eq`. `stdSpelling` spells `?Bytes` for `encoding`'s decoders' `std:` cells.
+`$__str_eq`. `stdSpelling` spells `?Bytes` for `encoding`'s decoders' `std:` cells. A `Bytes`
+build constant (decisions 519, 520: `@embed`'s `Asset.bytes`, a `comptime`'s lifted `Bytes` — the
+AST's `bytesLit`) is a data segment of its raw bytes in the string layout (`internString`).
 
 ## `bigint` — the runtime library (decision 332, front `01-compiler/139` step 4)
 

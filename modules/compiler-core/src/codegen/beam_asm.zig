@@ -562,7 +562,7 @@ fn topValIsCached(v: ast.ValDecl) bool {
 fn exprCanHaveEffect(e: ast.Expr) bool {
     return switch (e) {
         .literal => |lit| switch (lit.kind) {
-            .stringLit, .numberLit, .null_, .comment => false,
+            .stringLit, .numberLit, .bytesLit, .null_, .comment => false,
             .stringTemplate => |t| for (t.parts) |p| {
                 if (p == .expr and exprCanHaveEffect(p.expr.*)) break true;
             } else false,
@@ -6413,6 +6413,12 @@ const Emitter = struct {
                 },
                 .stringLit => |s| {
                     try self.emitStringLiteral(s, 0);
+                    return;
+                },
+                // Decisions 519, 520 — a `Bytes` build constant is a binary
+                // literal of its raw bytes.
+                .bytesLit => |bytes| {
+                    try beamEmitter.writeMove(self.out, Term.str(bytes), 0);
                     return;
                 },
                 .comment => return,

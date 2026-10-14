@@ -540,7 +540,7 @@ pub fn identInExpr(expr: anytype, name: []const u8) bool {
             },
         },
         .literal => |lit| switch (lit.kind) {
-            .stringLit, .numberLit, .null_, .comment => false,
+            .stringLit, .numberLit, .bytesLit, .null_, .comment => false,
             .stringTemplate => |t| blk: {
                 for (t.parts) |p| switch (p) {
                     .text => {},

@@ -240,9 +240,22 @@ pub const bigint_widened: []const u8 = "bigint-widened";
 /// Decision 332 (question 139-a) — `is` / a type pattern over a `bigint`, or
 /// testing for one: its type is static.
 pub const bigint_type_test: []const u8 = "bigint-type-test";
-/// Decision 346 — a `comptime` whose value is (or holds) `Bytes`: no
-/// compile-time value lifts into a byte sequence yet.
-pub const comptime_bytes: []const u8 = "comptime-bytes";
+/// Decision 519 — `@embed`'s path is absolute: a package's files are named
+/// relative to its `botopink.json`.
+pub const embed_path_absolute: []const u8 = "embed-path-absolute";
+/// Decision 519 — `@embed`'s path leaves the package (a `..` segment).
+pub const embed_path_outside_package: []const u8 = "embed-path-outside-package";
+/// Decision 519 — the file `@embed` names is not in the package.
+pub const embed_file_missing: []const u8 = "embed-file-missing";
+/// Decision 519 — `@embed` in a compiler handed no reader (`compiler-web`).
+pub const embed_no_reader: []const u8 = "embed-no-reader";
+/// Decision 519 — `a.text()` over bytes that are not UTF-8.
+pub const embed_text_not_utf8: []const u8 = "embed-text-not-utf8";
+/// Decision 519 — `a.text()` over an `Asset` whose bytes are not known where
+/// the call is checked (a parameter, a function's answer).
+pub const embed_text_not_at_build: []const u8 = "embed-text-not-at-build";
+/// Decision 519 — `@embed` takes one argument, the path.
+pub const embed_arguments: []const u8 = "embed-arguments";
 /// Decision 346 — `Bytes` widened to `unknown`: erlang and beam hold `Bytes`
 /// and `string` alike (a binary), so no run-time test tells them apart.
 pub const bytes_widened: []const u8 = "bytes-widened";
@@ -781,7 +794,13 @@ pub const all_codes = [_][]const u8{
     comptime_bigint,
     bigint_widened,
     bigint_type_test,
-    comptime_bytes,
+    embed_path_absolute,
+    embed_path_outside_package,
+    embed_file_missing,
+    embed_no_reader,
+    embed_text_not_utf8,
+    embed_text_not_at_build,
+    embed_arguments,
     bytes_widened,
     bytes_type_test,
     comptime_host_cell_unavailable,

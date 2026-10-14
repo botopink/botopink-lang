@@ -8,6 +8,7 @@ pub const format = @import("./format.zig");
 pub const print_errors = @import("./print.zig");
 pub const Module = @import("./module.zig").Module;
 pub const Targets = @import("./module.zig").Targets;
+pub const PackageFiles = @import("./module.zig").PackageFiles;
 pub const comptime_pipeline = @import("./comptime.zig");
 /// The OTP release check every `erl` / `erlc` / `escript` spawn goes through (decision 228).
 pub const otp = @import("./otp.zig");

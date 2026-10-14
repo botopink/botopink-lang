@@ -298,7 +298,7 @@ pub fn moduleHasInit(program: ast.Program) bool {
 fn initialiserCanHaveEffect(e: ast.Expr) bool {
     return switch (e) {
         .literal => |lit| switch (lit.kind) {
-            .stringLit, .numberLit, .null_, .comment => false,
+            .stringLit, .numberLit, .bytesLit, .null_, .comment => false,
             // A hole splices an expression into the template at run time.
             .stringTemplate => |t| for (t.parts) |p| {
                 if (p == .expr and initialiserCanHaveEffect(p.expr.*)) break true;
@@ -7880,6 +7880,9 @@ const Emitter = struct {
                 .numberLit => |n| .{ .number = try lexerMod.numberBackendText(b.arena, n) },
                 .comment => |c| .{ .comment = commentNode(c) },
                 .stringLit => |str| .{ .lexeme_binary = str },
+                // Decisions 519, 520 — a `Bytes` build constant is a binary
+                // of its raw bytes.
+                .bytesLit => |bytes| .{ .term = Term.str(bytes) },
                 // Desugared to a `+` chain by the transform pass in a typed
                 // module. A comptime module is emitted from the AST as
                 // written (01-compiler/14 step 8): each hole is its text

@@ -74,6 +74,7 @@ pub fn loadWith(
             for (mods) |*m| {
                 m.targets = bp.Targets.of(proj.manifest.targets);
                 m.std_member = isStd(proj);
+                m.files = bp.PackageFiles.disk(io, proj.dir);
             }
             if (mods.len > 0) {
                 reporter.warnMsg("no module-tree root (src/main.bp or src/root.bp) — using the deprecated implicit src/ scan");
@@ -92,9 +93,11 @@ pub fn loadWith(
     }
     // Decision 341 — the package's declared targets decide which host cells
     // its decorators need (`Module.targets`).
+    // Decision 519 — `@embed` reads the package's files from disk.
     for (res.modules) |*m| {
         m.targets = bp.Targets.of(proj.manifest.targets);
         m.std_member = isStd(proj);
+        m.files = bp.PackageFiles.disk(io, proj.dir);
     }
     return .{ .modules = res.modules, .orphans = res.orphans };
 }

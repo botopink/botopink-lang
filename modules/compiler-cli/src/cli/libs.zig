@@ -309,6 +309,7 @@ pub fn loadDependenciesWith(
             gpa.free(m.path);
             gpa.free(m.source);
             gpa.free(m.srcPath);
+            if (m.files) |f| gpa.free(f.root);
         }
         modules.deinit(gpa);
     }
@@ -743,7 +744,10 @@ fn loadOne(
         // of the path so `freeModules` owns it with it.
         // Decision 341: the dependency's declared targets decide which host
         // cells its decorators need.
-        try out.append(gpa, .{ .path = mod_path, .source = source, .declaration = isDeclFile(file), .srcPath = src_path, .package = mod_path[0..dep.len], .targets = bp.Targets.of(m.targets) });
+        // Decision 519 — `@embed` in the dependency reads its own files.
+        const root = try gpa.dupe(u8, dir);
+        errdefer gpa.free(root);
+        try out.append(gpa, .{ .path = mod_path, .source = source, .declaration = isDeclFile(file), .srcPath = src_path, .package = mod_path[0..dep.len], .targets = bp.Targets.of(m.targets), .files = bp.PackageFiles.disk(io, root) });
         try file_paths.append(arena, try std.fs.path.relative(arena, cwd, null, cwd, file_path));
     }
     try checkImportSources(arena, dep, m, file_paths.items, out.items[first..]);
@@ -807,6 +811,7 @@ test "loadOne: a dependency importing a package it does not declare is refused a
             gpa.free(mod.path);
             gpa.free(mod.source);
             gpa.free(mod.srcPath);
+            if (mod.files) |f| gpa.free(f.root);
         }
         out.deinit(gpa);
     }
@@ -1148,6 +1153,7 @@ pub fn freeModules(gpa: std.mem.Allocator, modules: []Module) void {
         gpa.free(m.path);
         gpa.free(m.source);
         gpa.free(m.srcPath);
+        if (m.files) |f| gpa.free(f.root);
     }
     gpa.free(modules);
 }
@@ -2413,6 +2419,7 @@ fn closureOf(arena: std.mem.Allocator, io: std.Io, comptime root: []const u8, te
             gpa.free(mod.path);
             gpa.free(mod.source);
             gpa.free(mod.srcPath);
+            if (mod.files) |f| gpa.free(f.root);
         }
         out.deinit(gpa);
     }
@@ -2508,6 +2515,7 @@ test "loadDependencies: a dependency named like the project or a member of its w
             gpa.free(mod.path);
             gpa.free(mod.source);
             gpa.free(mod.srcPath);
+            if (mod.files) |f| gpa.free(f.root);
         }
         out.deinit(gpa);
     }
@@ -2578,6 +2586,7 @@ test "loadOne: std resolves from the bundled root, rakun from the sibling root; 
             gpa.free(m.path);
             gpa.free(m.source);
             gpa.free(m.srcPath);
+            if (m.files) |f| gpa.free(f.root);
         }
         out.deinit(gpa);
     }
@@ -2615,6 +2624,7 @@ test "loadOne: a workspace member resolves by its manifest name through the umbr
             gpa.free(m.path);
             gpa.free(m.source);
             gpa.free(m.srcPath);
+            if (m.files) |f| gpa.free(f.root);
         }
         out.deinit(gpa);
     }
@@ -2644,6 +2654,7 @@ test "loadOne: a files entry that does not exist is LibFileNotFound, located in 
             gpa.free(m.path);
             gpa.free(m.source);
             gpa.free(m.srcPath);
+            if (m.files) |f| gpa.free(f.root);
         }
         out.deinit(gpa);
     }
@@ -2787,6 +2798,7 @@ fn kitXSource(arena: std.mem.Allocator, io: std.Io, project: []const u8, env_roo
             gpa.free(mod.path);
             gpa.free(mod.source);
             gpa.free(mod.srcPath);
+            if (mod.files) |f| gpa.free(f.root);
         }
         out.deinit(gpa);
     }

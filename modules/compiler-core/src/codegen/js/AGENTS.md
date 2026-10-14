@@ -388,7 +388,9 @@ A `Bytes` is a `Uint8Array` (`jsPrototypeOwner("Bytes")`, a global namespace): `
 is `new TextEncoder().encode(s)`, `length()` the native property (inference's rename), and
 `toUtf8`, `concat` and `slice` prototype patches of std's `behavior Bytes` — `slice` replaces
 the native one, so its Node templates cut with `subarray` and copy. `==` is `__bp_eq`, which compares
-two `Uint8Array`s index by index (same constructor, `Object.keys`).
+two `Uint8Array`s index by index (same constructor, `Object.keys`). A `Bytes` build constant
+(decisions 519, 520: `@embed`'s `Asset.bytes`, a `comptime`'s lifted `Bytes` — the AST's `bytesLit`)
+is `new Uint8Array([…])` of its bytes.
 
 ## String indices count codepoints (decision 320)
 

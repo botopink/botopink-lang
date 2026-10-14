@@ -2985,6 +2985,11 @@ first three are now enforced by the model, not by discipline:
   that spells a tuple, labeled or not (`typeRefShape` over a parameter, a fn
   result or an annotation; `ast.TypeRef.tupleElems`); nested strings print quoted with the source escapes
   (`$__print_quoted_raw`). A flat integer or float array keeps `$__print_arr_*`.
+- **A `Bytes` build constant** (`bytesLit`, decisions 519, 520 — `@embed`'s
+  `Asset.bytes`, a `comptime`'s lifted `Bytes`; never written in source) holds
+  raw bytes: an Erlang binary of them on erlang and beam (`Term.str`, each byte
+  past 0x7f `\x{HH}`), `new Uint8Array([…])` on commonJS, a data segment in the
+  string layout on wasm (`internString`).
 - **String literals are unescaped at interning** (`literalBytes`): the lexer keeps
   `\"`, `\\`, `\n`, `\r`, `\t`, `\0`, `\$`, `\u{…}` verbatim, and the data segment
   holds the bytes they stand for, so `@print("q\"t")` writes `q"t` like commonJS

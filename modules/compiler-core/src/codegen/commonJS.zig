@@ -4438,6 +4438,13 @@ const Emitter = struct {
         switch (e) {
             .literal => |lit| switch (lit.kind) {
                 .stringLit => |s| return .{ .lexeme_string = s },
+                // Decisions 519, 520 — a `Bytes` build constant is a
+                // `Uint8Array` of its bytes.
+                .bytesLit => |bytes| {
+                    const elems = try self.b.arena.alloc(js.Expr, bytes.len);
+                    for (bytes, elems) |byte, *el| el.* = .{ .number = try std.fmt.allocPrint(self.b.arena, "{d}", .{byte}) };
+                    return self.b.new_(.{ .name = "Uint8Array" }, &.{try self.b.array(elems)});
+                },
                 // Desugared to a `+` chain by the transform pass; never reaches codegen.
                 .stringTemplate => unreachable,
                 .numberLit => |n| return .{ .number = try self.numberLiteral(n) },

@@ -372,6 +372,12 @@ pub declare fn field<T, F>(obj: T, comptime name: @Expr<string>) -> F;
 // the section below). COMPTIME-ONLY: rewritten into the constructor call.
 pub declare fn src() -> SourceLocation;
 
+// `@embed("path")` — the file at `path` as an `Asset` (decision 519; the
+// section below). A `Build` builtin: the path is known at build — a literal, a
+// constant, a `comptime` parameter's value — and the call is computed where it
+// is written; the artifact carries the bytes on every target.
+pub declare fn embed(comptime path: @Expr<string>) -> Asset;
+
 // `@module()` — declared, and refused at every call (`builtin-not-lowered`):
 // no target lowers a module value.
 pub declare fn module() -> module;
@@ -609,6 +615,37 @@ pub type SourceLocation(
     column: i32,
     fnName: string,
 )
+
+// ── Embedded file (`@embed`) ───────────────────────────────────────────────────
+// A file of the package read at build (decision 519), as a value. The checker
+// rewrites `@embed("assets/logo.png")` into the constructor call
+// `Asset(path: "…", bytes: <the bytes>, size: N, hash: "…")`, so every backend
+// lowers it through its record path and the artifact carries the bytes — an
+// Erlang binary, a JS `Uint8Array`, a wasm data segment; the program never
+// reads the file at run time.
+//
+//   path    — the path as written, relative to the `botopink.json` of the
+//             package that wrote it (a path passed through a `comptime`
+//             parameter: the caller's package). No absolute path, no `..`.
+//   bytes   — the file's bytes (`Bytes`, decision 346).
+//   size    — the number of bytes.
+//   hash    — the SHA-256 of the bytes, 64 lowercase hex digits.
+//
+// `text()` — the bytes as UTF-8 text, computed at build: bytes that are not
+// UTF-8 are a located build error (`embed-text-not-utf8`), and an `Asset`
+// whose bytes are not known where the call is checked (a parameter, a
+// function's answer) is refused (`embed-text-not-at-build`).
+//
+// The declaration the checker registers is the one in `comptime.zig`'s
+// `decl_reflection_src`; keep the two in sync.
+pub type Asset(
+    path: string,
+    bytes: Bytes,
+    size: i32,
+    hash: string,
+) {
+    declare fn text(self: Self) -> string;
+}
 
 // ── Decl reflection model (annotation processors) ────────────────────────────
 // Read-only reflection of the declaration a decorator is attached to. A decorator

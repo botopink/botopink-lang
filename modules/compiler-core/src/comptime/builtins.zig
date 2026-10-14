@@ -51,6 +51,8 @@ pub const table = [_]Builtin{
     .{ .name = "trap", .signature = "trap() -> noreturn", .held = .declaration },
     .{ .name = "block", .signature = "block<T>(body: fn() -> T) -> T", .held = .declaration },
     .{ .name = "module", .signature = "module() -> module", .held = .declaration },
+    // ── build (decision 519: a `Build` builtin, computed where written) ──
+    .{ .name = "embed", .signature = "embed(comptime path: string) -> Asset", .held = .own_rule },
     // ── comptime only ──
     .{ .name = "field", .signature = "field<T, F>(obj: T, comptime name: string) -> F", .held = .declaration, .comptime_only = true },
     .{ .name = "src", .signature = "src() -> SourceLocation", .held = .own_rule, .comptime_only = true },

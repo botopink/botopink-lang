@@ -30,6 +30,7 @@
 /// block does not import) is a stub at compile time: calling it in the block
 /// raises; lifting it writes the function.
 const std = @import("std");
+const embedMod = @import("embed.zig");
 const ast = @import("../ast.zig");
 const T = @import("./types.zig");
 const envMod = @import("./env.zig");
@@ -329,13 +330,17 @@ pub const SectionRewrites = std.AutoHashMap(ast.Loc, *const ast.Expr);
 pub const Rewrites = struct {
     sections: *const SectionRewrites,
     index: *const SectionRewrites,
+    /// Decision 519 — each `@embed` call's `Asset(…)` constructor.
+    embeds: *const std.AutoHashMapUnmanaged(ast.Loc, *const ast.Expr) = &empty_embeds,
+
+    const empty_embeds: std.AutoHashMapUnmanaged(ast.Loc, *const ast.Expr) = .empty;
 
     pub fn of(env: *const Env) Rewrites {
-        return .{ .sections = &env.enumSectionRewrites, .index = &env.indexRewrites };
+        return .{ .sections = &env.enumSectionRewrites, .index = &env.indexRewrites, .embeds = &env.embedRewrites };
     }
 
     fn empty(self: Rewrites) bool {
-        return self.sections.count() == 0 and self.index.count() == 0;
+        return self.sections.count() == 0 and self.index.count() == 0 and self.embeds.count() == 0;
     }
 };
 
@@ -357,6 +362,10 @@ fn sectionRewrite(rw: Rewrites, e: ast.Expr) ?ast.Expr {
             else => {},
         },
         .call => |c| if (c.kind == .call) {
+            // Decision 519 — `@embed(…)` is the `Asset` its read built.
+            if (c.kind.call.is_builtin and std.mem.eql(u8, c.kind.call.callee, "embed")) {
+                if (rw.embeds.get(c.loc)) |r| return r.*;
+            }
             if (!c.kind.call.is_builtin and (c.kind.call.calleeExpr != null or isPathReceiver(c.kind.call.receiver))) {
                 if (rw.index.get(c.loc)) |r| if (r.* != .jump) return r.*;
             }
@@ -1347,7 +1356,13 @@ const FoundType = struct { decl: ast.TypeDecl, helpers: []const ast.FnDecl };
 /// where both are written on the same line, so a step that finds two answers
 /// none of them.
 fn findType(env: *Env, name: []const u8) ?FoundType {
-    const found = findDeclared(env, name) orelse return sectionType(env, name);
+    const found = findDeclared(env, name) orelse {
+        // Decision 519 — the builtin `Asset` record an `@embed` built.
+        if (env.usesAsset and std.mem.eql(u8, name, "Asset")) {
+            return .{ .decl = embedMod.typeDecl(env.arena) catch return null, .helpers = &.{} };
+        }
+        return sectionType(env, name);
+    };
     return .{ .decl = withSectionWrappers(env.arena, found.decl) catch return null, .helpers = found.helpers };
 }
 
@@ -1801,7 +1816,12 @@ const Lifter = struct {
                 try text.appendSlice(self.arena, numericSuffix(hint, true));
                 return try self.node(.{ .literal = .{ .loc = loc, .kind = .{ .numberLit = text.items } } });
             },
-            .string => |s| return try self.node(.{ .literal = .{ .loc = loc, .kind = .{ .stringLit = try stringLexeme(self.arena, s) } } }),
+            // Decision 520 — a `Bytes` value is a build constant: the binary
+            // the runtime holds is lifted into the bytes it spells.
+            .string => |s| if (isBytesHint(hint))
+                return try self.node(.{ .literal = .{ .loc = loc, .kind = .{ .bytesLit = try self.arena.dupe(u8, s) } } })
+            else
+                return try self.node(.{ .literal = .{ .loc = loc, .kind = .{ .stringLit = try stringLexeme(self.arena, s) } } }),
             .list => |items| {
                 const elem_hint = argOf(hint, 0);
                 const elems = try self.arena.alloc(ast.Expr, items.len);
@@ -2059,7 +2079,7 @@ fn numericSuffix(hint: ?*T.Type, floating: bool) []const u8 {
 }
 
 /// A string's bytes as a string literal's lexeme (escapes written back).
-fn stringLexeme(arena: std.mem.Allocator, s: []const u8) Error![]const u8 {
+pub fn stringLexeme(arena: std.mem.Allocator, s: []const u8) Error![]const u8 {
     var out: std.ArrayListUnmanaged(u8) = .empty;
     for (s) |c| switch (c) {
         '\\' => try out.appendSlice(arena, "\\\\"),
@@ -2072,6 +2092,12 @@ fn stringLexeme(arena: std.mem.Allocator, s: []const u8) Error![]const u8 {
         else => if (c < 0x20) try out.print(arena, "\\u{{{x}}}", .{c}) else try out.append(arena, c),
     };
     return out.items;
+}
+
+/// Whether the type a lifted value is read under is `Bytes` (decision 520).
+fn isBytesHint(hint: ?*T.Type) bool {
+    const h = (hint orelse return false).deref();
+    return h.* == .named and std.mem.eql(u8, h.named.name, "Bytes");
 }
 
 /// `value` as the expression the program is emitted with, typed `ty` (the

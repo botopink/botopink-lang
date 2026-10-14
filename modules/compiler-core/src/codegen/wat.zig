@@ -6824,6 +6824,12 @@ const Emitter = struct {
                     const seg = try self.internString(try self.literalBytes(s));
                     try self.emit(try self.constInt(seg.offset));
                 },
+                // Decisions 519, 520 — a `Bytes` build constant is a data
+                // segment laid out as a string's (its `u32` length, the bytes).
+                .bytesLit => |bytes| {
+                    const seg = try self.internString(bytes);
+                    try self.emit(try self.constInt(seg.offset));
+                },
                 // Desugared to a `+` chain by the transform pass; never reaches codegen.
                 .stringTemplate => unreachable,
                 .comment => {},
