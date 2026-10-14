@@ -245,29 +245,80 @@ test "decision 137: `try` / `await` parse wherever an expression begins" {
     );
 }
 
-test "decision 137: `try` takes the whole expression after it" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-    const src = "fn f() -> @Result<i32, string> { val n = try a + b; return n; }";
+/// The first statement of `fn f() { <stmt> }` parsed; `check` reads it.
+fn firstStmt(alloc: std.mem.Allocator, stmt: []const u8) !ast.Expr {
+    const src = try std.fmt.allocPrint(alloc, "fn f() -> @Result<i32, string> {{ {s} }}", .{stmt});
     var lx = Lexer.init(src);
     const tokens = try lx.scanAll(alloc);
     var p = Parser.initWithSource(tokens, src);
     const program = try p.parse(alloc);
-    const bind = program.decls[0].@"fn".body[0].expr.binding.kind.localBind;
-    const inner = bind.value.jump.kind.try_.?;
-    try std.testing.expect(inner.* == .binaryOp);
+    return program.decls[0].@"fn".body[0].expr;
 }
 
-test "decision 137: `try` / `await` as an operand is `try-await-operand`, at the keyword" {
-    try expectErrorAt("fn f() -> @Result<i32, string> { return t + try r(); }", .tryAwaitOperand, 1, 45);
-    try expectErrorAt("fn f() -> @Result<i32, string> { val x = -try r(); return x; }", .tryAwaitOperand, 1, 43);
-    try expectErrorAt("fn f() -> @Result<i32, string> { return (try r()).length; }", .tryAwaitOperand, 1, 42);
-    try expectErrorAt("fn f() -> @Result<i32, string> { return (try r() catch 0) == 1; }", .tryAwaitOperand, 1, 42);
-    try expectErrorAt("fn f() -> @Task<bool> { return !await r(); }", .tryAwaitOperand, 1, 33);
-    try expectErrorAt("fn f() -> @Task<i32> { return x ?? await r(); }", .tryAwaitOperand, 1, 36);
-    try expectErrorAt("fn f() -> @Task<bool> { if (a && await r()) { return true; } return false; }", .tryAwaitOperand, 1, 34);
-    try expectErrorAt("fn f() -> @Task<i32> { return xs[try r()]; }", .tryAwaitOperand, 1, 34);
+fn bindValue(e: ast.Expr) ast.Expr {
+    return e.binding.kind.localBind.value.*;
+}
+
+test "decision 537: `try` and `await` are prefix operators binding as the unary `-` does" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    // `try a + b` is `(try a) + b`.
+    const sum = bindValue(try firstStmt(alloc, "val n = try a() + b;"));
+    try std.testing.expect(sum == .binaryOp);
+    try std.testing.expect(sum.binaryOp.lhs.* == .jump);
+    try std.testing.expect(sum.binaryOp.lhs.jump.kind == .try_);
+    // `await t * 2` is `(await t) * 2`; `await x + await y` is a sum of two awaits.
+    const prod = bindValue(try firstStmt(alloc, "val n = await t * 2;"));
+    try std.testing.expect(prod == .binaryOp);
+    try std.testing.expect(prod.binaryOp.lhs.jump.kind == .await_);
+    const two = bindValue(try firstStmt(alloc, "val n = await x + await y;"));
+    try std.testing.expect(two.binaryOp.lhs.jump.kind == .await_);
+    try std.testing.expect(two.binaryOp.rhs.jump.kind == .await_);
+    // Postfix binds tighter: `await t.x` is `await (t.x)`, `await f()` is `await (f())`.
+    const member = bindValue(try firstStmt(alloc, "val n = await t.x;"));
+    try std.testing.expect(member.jump.kind.await_.* == .identifier);
+    const call = bindValue(try firstStmt(alloc, "val n = await f();"));
+    try std.testing.expect(call.jump.kind.await_.* == .call);
+    // `try await t` is `try (await t)`.
+    const both = bindValue(try firstStmt(alloc, "val n = try await t;"));
+    try std.testing.expect(both.jump.kind.try_.?.*.jump.kind == .await_);
+}
+
+test "decision 537: `catch` is infix with the lowest precedence" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    // `try await t catch 0 * 2` is `(try await t) catch (0 * 2)`.
+    const fallback = bindValue(try firstStmt(alloc, "val n = try await t catch 0 * 2;"));
+    try std.testing.expect(fallback.branch.kind == .tryCatch);
+    try std.testing.expect(fallback.branch.kind.tryCatch.tryKeyword);
+    try std.testing.expect(fallback.branch.kind.tryCatch.expr.jump.kind == .await_);
+    try std.testing.expect(fallback.branch.kind.tryCatch.handler.* == .binaryOp);
+    // `try await t + 1 catch 0` is `((try await t) + 1) catch 0`.
+    const whole = bindValue(try firstStmt(alloc, "val n = try await t + 1 catch 0;"));
+    try std.testing.expect(whole.branch.kind == .tryCatch);
+    try std.testing.expect(whole.branch.kind.tryCatch.expr.* == .binaryOp);
+    // Parentheses group: `(try await t catch 0) * 2` doubles the result.
+    const grouped = bindValue(try firstStmt(alloc, "val n = (try await t catch 0) * 2;"));
+    try std.testing.expect(grouped == .binaryOp);
+    try std.testing.expect(grouped.binaryOp.lhs.* == .collection);
+}
+
+test "decision 537: `try` and `await` stand as an operand, no refusal remains" {
+    try expectParses(
+        \\fn f() -> @Task<@Result<i32, string>> {
+        \\    val a = total + try r();
+        \\    val b = -try r();
+        \\    val c = (try r()).length;
+        \\    val d = (try r() catch 0) == 1;
+        \\    val e = !await r();
+        \\    val g = x ?? await r();
+        \\    if (a && await r()) { return 1; }
+        \\    val h = xs[try r()];
+        \\    return (try await t catch 0) * 2;
+        \\}
+    );
 }
 
 test "an `if` expression as an operand is `if-operand`, at the `if` (decision 137's reading)" {

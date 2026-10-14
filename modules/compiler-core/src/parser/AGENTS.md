@@ -622,7 +622,6 @@ reaches**, never per arm:
 | `[..a, 3]` | `listSpreadNotLast` | `parseArrayLitExpr`, at the element after the spread (the kind existed; nothing raised it) |
 | `[...a]` | `listSpreadDotDotDot` | `parseArrayLitExpr`, at the `...` |
 | `type P(…)` then `implement A for P { … }` | `implementClauseFor` | `types.zig` `parseImplementClause`, at the `for` — the bodyless type took `implement A` as its clause |
-| `total + try r`, `-try x`, `(try r).len`, `!await t` | `tryAwaitOperand` | `parsePrimary`'s `try` / `await` arm and the group's `(` — at the keyword (decision 137; § *`try` and `await` begin an expression*) |
 | `1 + if (c) { 2 } else { 3 }`, `-if (c) 1 else 2`, `(if (c) a else b).v` | `ifOperand` | `parsePrimary`'s `if` arm and the group's `(` — at the `if` (decision 137's reading applied to `if`; § *`try` and `await` begin an expression*) |
 | `fn m(self: Self) { … }` inside an enum section's braces | `sectionBodyMethod` | `decls.zig`'s section body loop (`parseEnumItem`), at the `fn` — decision 151: a section holds leaves and nested sections, a method is the enum's |
 | `type(…)` as a return, a field's or a `val`'s type | `inlineTypeOutsideParameter` | `types.zig` `parseBaseTypeRefArm`, at the `type` — decision 207: an inline type is a parameter's whole type, read by `decls.zig` `parseParam` into `Param.inlineFields` before `parseTypeRef` is reached |
@@ -643,34 +642,29 @@ in `print.zig` (`removedErrorUnion` and `patternRangeExclusive` are the
 models), the check at the one site its every spelling reaches, and an R10 case.
 `grep -c unexpectedToken` over `src/parser/**` does not grow.
 
-## `try` and `await` begin an expression (decision 137)
+## `try` and `await` are prefix operators; `catch` is infix (decision 537)
 
-`try` / `await` are read in one place, `parseExpr`'s prefix arms: the keyword,
-then a whole `parseExpr` (so `try a + b` is `try (a + b)` and `try await f()`
-is `try (await f())`), then an optional `catch` handler. Every position that
-calls `parseExpr` is therefore a position where they may stand — a statement, a
-`val` / `var` initializer, `x = …`, a `return` / `yield` / `break` / `throw`
-operand, a call argument, an array / tuple / record-literal element. Four
-positions the construct delimits read at a precedence level instead of through
-`parseExpr`; they go through `parseExprAtStart`, which hands a leading
-`try` / `await` to `parseExpr` (with `noTrailingLambda` set, so
-`case try g() { … }` leaves the `{` to the `case`) and anything else to
-`parseBinaryExpr`: the `if` / `while` condition, the `case` subjects, the
-right side of `x.f =` / `x.f +=`; `parseForExpr` does the same for its
-iterable.
+`parsePrimary` reads `try` and `await` the way it reads a unary `-`: the keyword, then the next
+primary with its postfix chain (`.`, `()`, `[]`) as the operand — postfix binds tighter, so
+`await t.x` is `await (t.x)` and `await f()` is `await (f())`; an `if` / `case` operand is a whole
+expression of its own (`parseExpr`). So `await t * 2` is `(await t) * 2`, `await x + await y` is
+`(await x) + (await y)`, `try load() + 1` is `(try load()) + 1`, `try await t` is `try (await t)`.
+They stand in every operand position — under a binary operator, a unary `-` / `!`, `??`, an index
+`[…]`, a range bound, a group — and in every position an expression begins; there is no
+`try-await-operand` refusal (decision 137's is withdrawn).
 
-Everywhere else an operand is read — under a binary operator, a unary `-` /
-`!`, `??`, an index `[…]`, a range bound — the keyword reaches `parsePrimary`,
-which refuses it as `tryAwaitOperand` (`try-await-operand`, at the keyword,
-fix-it "bind it first: `val x = try …;`"). A group `(…)` refuses it too, right
-after its `(`: a group exists to become an operand, so `(try r).length` and
-`(try r catch 0) == 1` are the operand form. Pinned by
-`tests/effect_rejections.zig` ("decision 137: …") and the
-`conformance/modules/{try_operand_of_operator,try_in_parentheses,await_operand_of_unary}`
-cells.
+`catch` is the infix operator of the lowest precedence (`wrapCatch`, applied where an expression
+ends — `parseExpr`'s two exits and `parseExprAtStart`): its left side is the whole expression
+before it, its right side (`parseExpr`) the fallback. `try await t catch 0 * 2` is
+`(try await t) catch (0 * 2)`, `try await t + 1 catch 0` is `((try await t) + 1) catch 0`, and
+`(try await t catch 0) * 2` doubles the result. `parseExprAtStart` — the `if` / `while` condition,
+the `case` subjects, the right side of `x.f =` / `x.f +=` — hands a leading `try` / `await` to
+`parseBinaryExpr` (with `noTrailingLambda` set, so `case try g() { … }` leaves the `{` to the
+`case`) and then to `wrapCatch`. Pinned by `tests/effect_rejections.zig` ("decision 537: …") and
+the cells `try_await_prefix_operators`, `await_postfix_binds_tighter`, `catch_lowest_precedence`.
 
-`try e catch h` and the tail form `e catch h` (`wrapCatch`, legal where a `try` is not — inside
-parentheses, and so as an operand) build the same `tryCatch` node; the `try` arm sets
+`try e catch h` and the tail form `e catch h` (`wrapCatch`) build the same `tryCatch` node: a left
+side that is itself a `try e` is unwrapped to `e` and sets
 `tryCatch.tryKeyword`, which is source layout for the formatter alone (it prints `try ` only where
 it was written) and is left out of the AST dump. The record-update spread of `parseCallArgs` —
 `Ctor(..base, x: 1)` — is the argument labelled `ast.spread_arg_label` (`..`), which no source can

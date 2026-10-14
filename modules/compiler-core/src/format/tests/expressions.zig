@@ -1471,8 +1471,8 @@ test "format: record spread ---- `..src` prints as written, beside labels and ra
 }
 
 test "format: catch ---- the tail form gains no `try`" {
-    // `(e catch h)` is legal, alone and as an operand; with a `try` it is
-    // `try-await-operand` (decision 137).
+    // `(e catch h)` is legal, alone and as an operand, and prints back without
+    // a `try` it was never written with (decision 537).
     const src =
         \\fn f() -> i32 {
         \\    assert (parse(7) catch -1) == 7;

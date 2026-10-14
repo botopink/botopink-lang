@@ -296,10 +296,6 @@ pub const ParseErrorType = enum {
     /// declaration without a body says what it answers, even when the answer
     /// is nothing.
     bodylessFnNeedsReturnType,
-    /// `total + try r`, `-try x`, `(try x).len`, `!await ok()` — `try` and
-    /// `await` begin an expression and are never an operand (decision 137).
-    /// Located at the keyword.
-    tryAwaitOperand,
     /// `1 + if (c) { 2 } else { 3 }`, `-if (…) …`, `(if (c) a else b).v` —
     /// an `if` expression begins an expression and is never an operand, by
     /// decision 137's reading of `try` / `await`. Located at the `if`.
@@ -1847,13 +1843,21 @@ pub const Parser = struct {
     }
 
     /// If `noTailCatch` is false and the next token is `catch`, wraps `expr` in a tryCatch node.
-    /// Otherwise returns `expr` unchanged. Used to apply `catch` as a tail operator.
+    /// Otherwise returns `expr` unchanged. `catch` is the infix operator of the lowest precedence
+    /// (decision 537): its left side is the whole expression before it, its right side the fallback.
+    /// A left side that is itself a `try e` is the `try e catch h` form: one node over `e`, with
+    /// `tryKeyword` set (the printer writes the keyword back).
     pub fn wrapCatch(this: *This, alloc: std.mem.Allocator, expr: Expr) ParseError!Expr {
         if (!this.noTailCatch and this.match(.@"catch")) {
             const catchTok = this.tokens[this.current - 1];
             const handler = try this.parseExpr(alloc);
-            const exprPtr = try this.boxExpr(alloc, expr);
             const handlerPtr = try this.boxExpr(alloc, handler);
+            if (expr == .jump and expr.jump.kind == .try_) {
+                if (expr.jump.kind.try_) |inner| {
+                    return Expr{ .branch = .{ .loc = expr.jump.loc, .kind = .{ .tryCatch = .{ .expr = inner, .handler = handlerPtr, .tryKeyword = true } } } };
+                }
+            }
+            const exprPtr = try this.boxExpr(alloc, expr);
             return Expr{ .branch = .{ .loc = locFromToken(catchTok), .kind = .{ .tryCatch = .{ .expr = exprPtr, .handler = handlerPtr } } } };
         }
         return expr;

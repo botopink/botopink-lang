@@ -147,29 +147,8 @@ pub fn parseExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
         return Expr{ .useHook = .{ .loc = loc, .kind = .{ .inner = innerPtr } } };
     }
 
-    // try expr [catch handler]
-    if (this.check(.@"try")) {
-        const tryTok = this.advance();
-        const savedNoTailCatch = this.noTailCatch;
-        this.noTailCatch = true;
-        const inner = try this.parseExpr(alloc);
-        this.noTailCatch = savedNoTailCatch;
-        const innerPtr = try this.boxExpr(alloc, inner);
-        if (this.match(.@"catch")) {
-            const handler = try this.parseExpr(alloc);
-            const handlerPtr = try this.boxExpr(alloc, handler);
-            return Expr{ .branch = .{ .loc = locFromToken(tryTok), .kind = .{ .tryCatch = .{ .expr = innerPtr, .handler = handlerPtr, .tryKeyword = true } } } };
-        }
-        return Expr{ .jump = .{ .loc = locFromToken(tryTok), .kind = .{ .try_ = innerPtr } } };
-    }
-
-    // await expr — suspend on a `@Future`; result is the resolved value (like `try`).
-    if (this.check(.await)) {
-        const awaitTok = this.advance();
-        const inner = try this.parseExpr(alloc);
-        const innerPtr = try this.boxExpr(alloc, inner);
-        return Expr{ .jump = .{ .loc = locFromToken(awaitTok), .kind = .{ .await_ = innerPtr } } };
-    }
+    // `try` / `await` are prefix operators (decision 537): `parsePrimary` reads
+    // them, binding as the unary `-` does, and `catch` is the infix `wrapCatch`.
 
     // if (cond) { [binding ->] stmt; } [else { stmt; }]
     // OR: if (cond) expr [else expr]
@@ -609,12 +588,13 @@ pub fn parseExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
 /// `parsePrimary` refuses the two keywords.
 pub fn parseExprAtStart(this: *This, alloc: std.mem.Allocator, comptime level: usize) ParseError!Expr {
     if (this.check(.@"try") or this.check(.await)) {
-        // An operand never takes a trailing lambda; neither does this form,
-        // so `case try parse(s) { … }` leaves the `{` to the `case`.
+        // The expression may end in `catch` (`if (try f() catch false)`); an
+        // operand never takes a trailing lambda, so `case try parse(s) { … }`
+        // leaves the `{` to the `case`.
         const saved = this.noTrailingLambda;
         this.noTrailingLambda = true;
         defer this.noTrailingLambda = saved;
-        return this.parseExpr(alloc);
+        return this.wrapCatch(alloc, try this.parseBinaryExpr(alloc, level));
     }
     return this.parseBinaryExpr(alloc, level);
 }
@@ -1317,14 +1297,21 @@ pub fn parsePrimary(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
 
     if (try parseAsyncBlockAhead(this, alloc)) |blk| return blk;
 
-    // `try` / `await` begin an expression and take everything after it
-    // (`parseExpr`); they are never an operand (decision 137). Reaching one
-    // here means an operator, a unary prefix or a chain would take it as its
-    // operand — `total + try r`, `-try x`, `!await ok()` — refused by name,
-    // with the binding that replaces it.
+    // `try` / `await` are prefix operators binding as the unary `-` does
+    // (decision 537): the operand is the next primary with its postfix chain
+    // (`await t.x` is `await (t.x)`), so `await t * 2` is `(await t) * 2`. An
+    // `if` / `case` operand is a whole expression of its own.
     if (this.check(.@"try") or this.check(.await)) {
-        this.parseError = ParseErrorInfo.fromToken(.tryAwaitOperand, this.peek());
-        return ParseError.UnexpectedToken;
+        const kwTok = this.advance();
+        const operand = if (this.check(.@"if") or this.check(.case))
+            try this.parseExpr(alloc)
+        else
+            try this.parsePrimary(alloc);
+        const operandPtr = try this.boxExpr(alloc, operand);
+        return Expr{ .jump = .{ .loc = locFromToken(kwTok), .kind = if (kwTok.kind == .@"try")
+            .{ .try_ = operandPtr }
+        else
+            .{ .await_ = operandPtr } } };
     }
     // An `if` expression begins an expression too (`parseExpr`), and is never
     // an operand for the same reason: `1 + if (c) { 2 } else { 3 }`.
@@ -1701,12 +1688,6 @@ pub fn parsePrimary(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
     // (decision 14).
     if (this.check(.leftParenthesis)) {
         const parenTok = this.advance();
-        // A group exists to become an operand (`(try x).len`, `(await t) + 1`):
-        // `try` / `await` inside one is the operand form decision 137 refuses.
-        if (this.check(.@"try") or this.check(.await)) {
-            this.parseError = ParseErrorInfo.fromToken(.tryAwaitOperand, this.peek());
-            return ParseError.UnexpectedToken;
-        }
         // …and so is an `if` inside one: `(if (c) a else b).v`.
         if (this.check(.@"if")) {
             this.parseError = ParseErrorInfo.fromToken(.ifOperand, this.peek());

@@ -2,12 +2,9 @@
 
 The reference text this cell shows (from `conformance/docs.md`, § Results):
 
-> **`try` and `await` begin an expression.** They stand where an expression
-> starts — a statement, a `val` / `var` initializer, the right side of `=`, a
-> `return` / `yield` / `break` / `throw` operand, a call argument, an element of
-> an array, tuple or record literal, an `if` / `while` condition, a `case`
-> subject, a `for` iterable — and take the whole expression after them:
-> `try a + b` is `try (a + b)`, and `try await f()` is `try (await f())`. Neither
-> is ever the operand of an operator, of a unary `-` / `!`, of parentheses or of
-> a `.` chain; `total + try r`, `-try x` and `(try r).length` are
-> `try-await-operand`, and the fix is to bind the value first:
+> **`try` and `await` are prefix operators**, binding as the unary `-` does (decision 537).
+> They stand wherever an operand does: `await t * 2` is `(await t) * 2`, `await x + await y` is
+> `(await x) + (await y)`, `try load() + 1` is `(try load()) + 1`, and `total + try r`, `-try x`,
+> `(try r).length` and `!await t` each have one reading. Postfix (`.`, `()`, `[]`) binds tighter than
+> the prefixes, as `-t.x` is `-(t.x)`: `await t.x` is `await (t.x)` and `await f()` is
+> `await (f())`. `try await f()` is `try (await f())`. There is no `try-await-operand` refusal:

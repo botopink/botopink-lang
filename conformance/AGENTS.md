@@ -93,11 +93,15 @@ commonJS, erlang and beam, refused on wasm by STD-001 (`snapshot/targets/wasm/`)
 Front 24's type aliases (decision 118 rule 1) add `modules/type_alias` — `Id`, `Pair<A, B>`, `Ids` and
 an `@Result` alias typing a function that only passes the value along, on all four targets — and
 `modules/import_type_alias` — a `pub` alias imported like a type, the types its target names with it.
-Decision 137 (`try` / `await` begin an expression) adds `modules/try_start_positions` — a `val`
+Decision 137 (`try` / `await` begin an expression) added `modules/try_start_positions` — a `val`
 initializer, a call argument, an array and a tuple element, an `if` condition, a `case` subject, a
 `for` iterable, `x = …`, a `return` and `try … catch` in an argument, on all four targets — and three refusal cells, one per operand
-shape: `try_operand_of_operator` (`total + try r`), `try_in_parentheses` (`(try r).toString()`) and
-`await_operand_of_unary` (`!await ready()`).
+shape; decision 537 withdrew the refusal (`try` and `await` are prefix operators binding as the unary `-` does, `catch`
+an infix operator of the lowest precedence) and those three became `modules/try_await_prefix_operators` (`total + try r`,
+`try r + 1`, `-try r`, `(try r).toString()`, `await t * 2`, `await x + await y`, `!await ready()`),
+`modules/await_postfix_binds_tighter` (`await box.task`, `await make(3)`, `await box.again()` — postfix binds tighter)
+and `modules/catch_lowest_precedence` (`try await t catch 7 * 2`, `(try await t catch 7) * 2`, 523's
+`async { (try await t catch 0) * 2 }`).
 `residual-checker-3` reads decision 137 onto `if`: an `if` expression is never an operand, and
 three refusal cells refuse it as `if-operand` at the `if` — `if_operand_of_operator`
 (`1 + if (c) { 2 } else { 3 }`), `if_in_parentheses` (`(if (c) a else b).v`) and
