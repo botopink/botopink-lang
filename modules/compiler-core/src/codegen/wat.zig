@@ -1670,6 +1670,10 @@ fn emitWatPass(
     }
     if (plan.skip.count() > 0) try reach.dropCallers(ar, &items, plan.skip);
 
+    // WasmGC (front 164 s2, decision 544) — a module declaring GC types needs
+    // the host's GC (`wasmtime run -W gc=y`), whatever its bindings name.
+    if (wat.typesOf(.{ .items = items.items }).len > 0) em.needs.insert(.gc);
+
     // Decision 518 — the host features the program needs, for the runner:
     // the custom section `botopink.needs`, the needs' names (`exceptions`,
     // `http`) one per line. A program needing none carries no section.
@@ -13034,7 +13038,7 @@ const Emitter = struct {
         try step.append(ar, .{ .instr = self.builder().helper(switch (ty) {
             .i64 => .task_settle_i64,
             .f64, .f32 => .task_settle_f64,
-            .i32 => .task_settle_i32,
+            else => .task_settle_i32,
         }) });
         try self.item(.{ .func = try self.builder().func(.{
             .name = step_name,

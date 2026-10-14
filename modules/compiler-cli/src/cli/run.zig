@@ -128,7 +128,7 @@ pub fn programArgv(
 /// reports the missing file itself).
 pub fn wasmtimeFlags(arena: std.mem.Allocator, io: std.Io, path: []const u8) ![]const []const u8 {
     const text = std.Io.Dir.cwd().readFileAlloc(io, path, arena, .unlimited) catch return &.{};
-    var buf: [4][]const u8 = undefined;
+    var buf: [bp.codegen.wasmNeeds.max_args][]const u8 = undefined;
     return arena.dupe([]const u8, bp.codegen.wasmNeeds.wasmtimeArgs(bp.codegen.wasmNeeds.needsOfText(text), &buf));
 }
 

@@ -973,9 +973,9 @@ pub fn executeWat(allocator: std.mem.Allocator, wat_code: []const u8, wasm_binar
     // end their own lines.
     // Decision 518 — the host is handed only the features the module's
     // `botopink.needs` section names (`-W exceptions=y` …); none, no flag.
-    var flag_buf: [4][]const u8 = undefined;
+    var flag_buf: [wasmNeeds.max_args][]const u8 = undefined;
     const flags = wasmNeeds.wasmtimeArgs(if (wasm_binary) |b| wasmNeeds.needsOf(b) else wasmNeeds.needsOfText(wat_code), &flag_buf);
-    var argv_buf: [8][]const u8 = undefined;
+    var argv_buf: [3 + wasmNeeds.max_args][]const u8 = undefined;
     argv_buf[0] = "wasmtime";
     argv_buf[1] = "run";
     for (flags, 0..) |f, i| argv_buf[2 + i] = f;

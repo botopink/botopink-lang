@@ -40,7 +40,7 @@ pub fn encodeModule(alloc: std.mem.Allocator, m: ast.Module) Error![]u8 {
     defer arena_state.deinit();
     const ar = arena_state.allocator();
 
-    var e: Encoder = .{ .ar = ar, .m = m };
+    var e: Encoder = .{ .ar = ar, .m = m, .defs = ast.typesOf(m) };
     try e.index();
 
     // Every type the module names is known only once the bodies are encoded
@@ -64,15 +64,32 @@ pub fn encodeModule(alloc: std.mem.Allocator, m: ast.Module) Error![]u8 {
     try out.appendSlice(alloc, &.{ 0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00 });
 
     var sec: Bytes = .empty;
-    // type
-    try uleb(ar, &sec, e.types.items.len);
+    // type: the module's GC types first, one `rec` group (WasmGC, decision
+    // 544) — type `k` of the group is type index `k` —, then one function
+    // type per distinct signature.
+    try uleb(ar, &sec, e.types.items.len + @intFromBool(e.defs.len > 0));
+    if (e.defs.len > 0) {
+        try sec.append(ar, 0x4E);
+        try uleb(ar, &sec, e.defs.len);
+        for (e.defs) |d| switch (d.kind) {
+            .@"struct" => |fields| {
+                try sec.append(ar, 0x5F);
+                try uleb(ar, &sec, fields.len);
+                for (fields) |f| try fieldType(ar, &sec, f);
+            },
+            .array => |f| {
+                try sec.append(ar, 0x5E);
+                try fieldType(ar, &sec, f);
+            },
+        };
+    }
     for (e.types.items) |t| {
         try sec.append(ar, 0x60);
         try uleb(ar, &sec, t.params.len);
-        for (t.params) |p| try sec.append(ar, valType(p));
+        for (t.params) |p| try valTypeInto(ar, &sec, p);
         if (t.result) |r| {
             try sec.append(ar, 1);
-            try sec.append(ar, valType(r));
+            try valTypeInto(ar, &sec, r);
         } else try sec.append(ar, 0);
     }
     try section(alloc, &out, 1, sec.items);
@@ -147,9 +164,13 @@ pub fn encodeModule(alloc: std.mem.Allocator, m: ast.Module) Error![]u8 {
         try uleb(ar, &sec, e.globals.items.len);
         for (m.items) |it| switch (it) {
             .global => |g| {
-                try sec.append(ar, valType(g.ty));
+                try valTypeInto(ar, &sec, g.ty);
                 try sec.append(ar, @intFromBool(g.mutable));
-                try constInstr(ar, &sec, g.ty, g.init);
+                // A reference global starts null (WasmGC).
+                if (g.ty.isRef()) {
+                    try sec.append(ar, 0xD0);
+                    try heapType(ar, &sec, g.ty);
+                } else try constInstr(ar, &sec, g.ty, g.init);
                 try sec.append(ar, 0x0B);
             },
             else => {},
@@ -216,6 +237,14 @@ pub fn encodeModule(alloc: std.mem.Allocator, m: ast.Module) Error![]u8 {
         try section(alloc, &out, 9, sec.items);
     }
 
+    // data count — a passive segment is named by index in the code
+    // (`array.new_data`), which the format reads before the data section.
+    if (e.n_passive > 0) {
+        sec = .empty;
+        try uleb(ar, &sec, e.n_data);
+        try section(alloc, &out, 12, sec.items);
+    }
+
     // code
     if (n_funcs > 0) {
         sec = .empty;
@@ -233,10 +262,14 @@ pub fn encodeModule(alloc: std.mem.Allocator, m: ast.Module) Error![]u8 {
         try uleb(ar, &sec, e.n_data);
         for (m.items) |it| switch (it) {
             .data => |d| {
-                try sec.append(ar, 0x00);
-                try sec.append(ar, 0x41);
-                try sleb(ar, &sec, @as(i64, @as(i32, @bitCast(d.offset))));
-                try sec.append(ar, 0x0B);
+                if (d.passive != null) {
+                    try sec.append(ar, 0x01);
+                } else {
+                    try sec.append(ar, 0x00);
+                    try sec.append(ar, 0x41);
+                    try sleb(ar, &sec, @as(i64, @as(i32, @bitCast(d.offset))));
+                    try sec.append(ar, 0x0B);
+                }
                 if (d.len_prefix) |len| {
                     try uleb(ar, &sec, 4 + d.bytes.len);
                     var prefix: [4]u8 = undefined;
@@ -274,6 +307,9 @@ pub const Bytes = std.ArrayListUnmanaged(u8);
 pub const Encoder = struct {
     ar: std.mem.Allocator,
     m: ast.Module,
+    /// The module's GC types (its `rec` group): type indices `0 ..
+    /// defs.len`; the function types follow.
+    defs: []const ast.TypeDef = &.{},
     types: std.ArrayListUnmanaged(ast.FuncType) = .empty,
     /// Every callable symbol by index: imports first, then definitions.
     funcs: std.ArrayListUnmanaged([]const u8) = .empty,
@@ -282,6 +318,9 @@ pub const Encoder = struct {
     tags: std.ArrayListUnmanaged([]const u8) = .empty,
     n_imports: usize = 0,
     n_data: usize = 0,
+    /// The passive data segments, by data index (`array.new_data`).
+    data_names: std.ArrayListUnmanaged(?[]const u8) = .empty,
+    n_passive: usize = 0,
     memory: ?ast.Memory = null,
     table: ?[]const []const u8 = null,
     start: ?[]const u8 = null,
@@ -300,18 +339,27 @@ pub const Encoder = struct {
             .memory => |mem| e.memory = mem,
             .table => |names| e.table = names,
             .start => |s| e.start = s,
-            .data => e.n_data += 1,
+            .data => |d| {
+                e.n_data += 1;
+                try e.data_names.append(e.ar, d.passive);
+                if (d.passive != null) e.n_passive += 1;
+            },
             .tag => |t| try e.tags.append(e.ar, t.name),
-            .import, .comment, .custom => {},
+            .import, .comment, .custom, .types => {},
         };
     }
 
     pub fn typeIndex(e: *Encoder, t: ast.FuncType) Error!usize {
         for (e.types.items, 0..) |have, i| {
-            if (sameType(have, t)) return i;
+            if (sameType(have, t)) return e.defs.len + i;
         }
         try e.types.append(e.ar, t);
-        return e.types.items.len - 1;
+        return e.defs.len + e.types.items.len - 1;
+    }
+
+    fn dataIndex(e: *Encoder, sym: []const u8) Error!usize {
+        for (e.data_names.items, 0..) |n, i| if (n) |x| if (std.mem.eql(u8, x, sym)) return i;
+        return error.UnknownName;
     }
 
     pub fn funcIndex(e: *Encoder, sym: []const u8) Error!usize {
@@ -353,7 +401,7 @@ pub const Encoder = struct {
             var j = i + 1;
             while (j < decl.items.len and decl.items[j] == decl.items[i]) j += 1;
             try uleb(e.ar, &b, j - i);
-            try b.append(e.ar, valType(decl.items[i]));
+            try valTypeInto(e.ar, &b, decl.items[i]);
             i = j;
         }
 
@@ -399,7 +447,15 @@ const Body = struct {
     }
 
     fn blockType(c: *Body, r: ?ast.ValType) Error!void {
-        try c.out.append(c.e.ar, if (r) |t| valType(t) else 0x40);
+        if (r) |t| return valTypeInto(c.e.ar, c.out, t);
+        try c.out.append(c.e.ar, 0x40);
+    }
+
+    /// `0xFB <op>` and its unsigned immediates.
+    fn gc(c: *Body, op: u32, imms: []const usize) Error!void {
+        try c.out.append(c.e.ar, 0xFB);
+        try uleb(c.e.ar, c.out, op);
+        for (imms) |x| try uleb(c.e.ar, c.out, x);
     }
 
     fn instr(c: *Body, i: ast.Instr) Error!void {
@@ -440,6 +496,7 @@ const Body = struct {
                         .i64 => 0x29,
                         .f32 => 0x2A,
                         .f64 => 0x2B,
+                        else => return error.UnknownOp,
                     },
                     .byte => switch (m.ty) {
                         .i32 => 0x2D - s_,
@@ -465,6 +522,7 @@ const Body = struct {
                         .i64 => 0x37,
                         .f32 => 0x38,
                         .f64 => 0x39,
+                        else => return error.UnknownOp,
                     },
                     .byte => switch (m.ty) {
                         .i32 => 0x3A,
@@ -519,6 +577,46 @@ const Body = struct {
                 try o.append(ar, 0x08);
                 try uleb(ar, o, try c.e.tagIndex(t));
             },
+            // WasmGC (decision 544): the `0xFB` prefix and its opcode, then
+            // the immediates.
+            .struct_new => |k| try c.gc(0, &.{k}),
+            .struct_new_default => |k| try c.gc(1, &.{k}),
+            .struct_get => |r| try c.gc(switch (r.ext) {
+                .none => 2,
+                .s => 3,
+                .u => 4,
+            }, &.{ r.ty, r.field }),
+            .struct_set => |r| try c.gc(5, &.{ r.ty, r.field }),
+            .array_new => |k| try c.gc(6, &.{k}),
+            .array_new_default => |k| try c.gc(7, &.{k}),
+            .array_new_fixed => |a| try c.gc(8, &.{ a.ty, a.n }),
+            .array_new_data => |a| try c.gc(9, &.{ a.ty, try c.e.dataIndex(a.data) }),
+            .array_get => |a| try c.gc(switch (a.ext) {
+                .none => 11,
+                .s => 12,
+                .u => 13,
+            }, &.{a.ty}),
+            .array_set => |k| try c.gc(14, &.{k}),
+            .array_len => try c.gc(15, &.{}),
+            .array_fill => |k| try c.gc(16, &.{k}),
+            .array_copy => |a| try c.gc(17, &.{ a.dst, a.src }),
+            .ref_test => |t| {
+                try c.gc(21, &.{});
+                try heapType(ar, o, t);
+            },
+            .ref_cast => |t| {
+                try c.gc(23, &.{});
+                try heapType(ar, o, t);
+            },
+            .ref_i31 => try c.gc(28, &.{}),
+            .i31_get => |signed| try c.gc(if (signed) 29 else 30, &.{}),
+            .ref_null => |t| {
+                try o.append(ar, 0xD0);
+                try heapType(ar, o, t);
+            },
+            .ref_is_null => try o.append(ar, 0xD1),
+            .ref_eq => try o.append(ar, 0xD3),
+            .ref_as_non_null => try o.append(ar, 0xD4),
             .@"if" => |n| {
                 try o.append(ar, 0x04);
                 try c.blockType(n.result);
@@ -609,13 +707,49 @@ pub fn name(ar: std.mem.Allocator, out: *Bytes, s: []const u8) Error!void {
     try out.appendSlice(ar, s);
 }
 
+/// A value type's one byte: a number, a packed storage type or an
+/// abstract reference. A `(ref null $t)` is more than one byte —
+/// `valTypeInto` writes it.
 pub fn valType(t: ast.ValType) u8 {
     return switch (t) {
         .i32 => 0x7F,
         .i64 => 0x7E,
         .f32 => 0x7D,
         .f64 => 0x7C,
+        .i8 => 0x78,
+        .i16 => 0x77,
+        .anyref => 0x6E,
+        .eqref => 0x6D,
+        .i31ref => 0x6C,
+        .structref => 0x6B,
+        .arrayref => 0x6A,
+        .funcref => 0x70,
+        .externref => 0x6F,
+        _ => unreachable,
     };
+}
+
+/// A value or storage type: its byte, or `0x63` and the type index for a
+/// `(ref null $t)`.
+pub fn valTypeInto(ar: std.mem.Allocator, out: *Bytes, t: ast.ValType) Error!void {
+    if (t.defIndex()) |k| {
+        try out.append(ar, 0x63);
+        return sleb(ar, out, k);
+    }
+    try out.append(ar, valType(t));
+}
+
+/// The heap type a reference type points into: the abstract one's byte, or
+/// the module type's index (an `s33`).
+fn heapType(ar: std.mem.Allocator, out: *Bytes, t: ast.ValType) Error!void {
+    if (t.defIndex()) |k| return sleb(ar, out, k);
+    try out.append(ar, valType(t));
+}
+
+/// A GC field: its storage type, then `0x01` when mutable.
+fn fieldType(ar: std.mem.Allocator, out: *Bytes, f: ast.Field) Error!void {
+    try valTypeInto(ar, out, f.ty);
+    try out.append(ar, @intFromBool(f.mutable));
 }
 
 fn memArg(ar: std.mem.Allocator, out: *Bytes, m: ast.MemArg) Error!void {
@@ -624,8 +758,8 @@ fn memArg(ar: std.mem.Allocator, out: *Bytes, m: ast.MemArg) Error!void {
         .half => 1,
         .word => 2,
         .full => switch (m.ty) {
-            .i32, .f32 => 2,
             .i64, .f64 => 3,
+            else => 2,
         },
     };
     try out.append(ar, log2_align);
@@ -679,6 +813,7 @@ pub fn constInstr(ar: std.mem.Allocator, out: *Bytes, ty: ast.ValType, text: []c
             std.mem.writeInt(u64, &b, @bitCast(f), .little);
             try out.appendSlice(ar, &b);
         },
+        else => return error.BadNumeral,
     }
 }
 
@@ -942,4 +1077,95 @@ test "a name nothing declares is refused, not guessed" {
         } },
     } }} };
     try std.testing.expectError(error.UnknownOp, encodeModule(alloc, bad_op));
+}
+
+/// The GC module both emitters' tests render (WasmGC, decision 544): a
+/// string-like `i8` array and a struct holding an `i32` and a reference to
+/// one, built from a passive segment and read back — `f` answers `9`.
+pub const gc_test_module: ast.Module = .{ .items = &.{
+    .{ .types = &.{
+        .{ .name = "str", .kind = .{ .array = .{ .ty = .i8, .mutable = true } } },
+        .{ .name = "pt", .kind = .{ .@"struct" = &.{
+            .{ .name = "x", .ty = .i32 },
+            .{ .name = "s", .ty = ast.ValType.def(0) },
+        } } },
+    } },
+    .{ .data = .{ .offset = 0, .len_prefix = null, .bytes = "hi", .passive = "hi" } },
+    .{ .func = .{
+        .name = "f",
+        .exports = &.{"f"},
+        .result = .i32,
+        .locals = &.{&.{.{ .name = "p", .ty = ast.ValType.def(1) }}},
+        .body = .{ .stack = .{ .value = .i32 }, .lines = &.{
+            .{ .instr = .{ .@"const" = .{ .ty = .i32, .text = "7" } } },
+            .{ .instr = .{ .@"const" = .{ .ty = .i32, .text = "0" } } },
+            .{ .instr = .{ .@"const" = .{ .ty = .i32, .text = "2" } } },
+            .{ .instr = .{ .array_new_data = .{ .ty = 0, .data = "hi" } } },
+            .{ .instr = .{ .struct_new = 1 } },
+            .{ .instr = .{ .local_set = "p" } },
+            .{ .instr = .{ .local_get = "p" } },
+            .{ .instr = .{ .struct_get = .{ .ty = 1, .field = 1 } } },
+            .{ .instr = .array_len },
+            .{ .instr = .{ .local_get = "p" } },
+            .{ .instr = .{ .struct_get = .{ .ty = 1, .field = 0 } } },
+            .{ .instr = .{ .op = .{ .ty = .i32, .name = "add" } } },
+        } },
+    } },
+} };
+
+test "GC types and instructions encode: the rec group first, a passive segment counted (decision 544)" {
+    const alloc = std.testing.allocator;
+    const bytes = try encodeModule(alloc, gc_test_module);
+    defer alloc.free(bytes);
+    // The bytes `wasmtime run -W gc=y --invoke f` answers `9` for.
+    const want = [_]u8{
+        0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00,
+        // type: rec { array (mut i8), struct (i32, (ref null 0)) }, () -> i32
+        0x01, 0x11, 0x02, 0x4E, 0x02, 0x5E, 0x78, 0x01,
+        0x5F, 0x02, 0x7F, 0x00, 0x63, 0x00, 0x00, 0x60,
+        0x00, 0x01, 0x7F,
+        // function: one, type 2 (after the group's two)
+        0x03, 0x02, 0x01, 0x02,
+        // export "f"
+        0x07,
+        0x05, 0x01, 0x01, 'f',  0x00, 0x00,
+        // data count: 1
+        0x0C, 0x01,
+        0x01,
+        // code: one local (ref null 1); array.new_data 0 0, struct.new 1,
+        // struct.get 1 1, array.len, struct.get 1 0, i32.add
+        0x0A, 0x25, 0x01, 0x23, 0x01, 0x01, 0x63,
+        0x01, 0x41, 0x07, 0x41, 0x00, 0x41, 0x02, 0xFB,
+        0x09, 0x00, 0x00, 0xFB, 0x00, 0x01, 0x21, 0x00,
+        0x20, 0x00, 0xFB, 0x02, 0x01, 0x01, 0xFB, 0x0F,
+        0x20, 0x00, 0xFB, 0x02, 0x01, 0x00, 0x6A, 0x0B,
+        // data: passive "hi"
+        0x0B, 0x05, 0x01, 0x01, 0x02, 'h',  'i',
+    };
+    try std.testing.expectEqualSlices(u8, &want, bytes);
+}
+
+test "a GC type nothing declares, a missing segment and a packed local are refused (decision 544)" {
+    const alloc = std.testing.allocator;
+    const no_type: ast.Module = .{ .items = &.{.{ .func = .{
+        .name = "f",
+        .body = .{ .lines = &.{ .{ .instr = .{ .struct_new_default = 0 } }, .{ .instr = .drop } } },
+    } }} };
+    try std.testing.expectError(error.UndefinedType, encodeModule(alloc, no_type));
+    const no_data: ast.Module = .{ .items = &.{
+        gc_test_module.items[0],
+        gc_test_module.items[2],
+    } };
+    try std.testing.expectError(error.UndefinedData, encodeModule(alloc, no_data));
+    const packed_local: ast.Module = .{ .items = &.{.{ .func = .{
+        .name = "f",
+        .locals = &.{&.{.{ .name = "b", .ty = .i8 }}},
+    } }} };
+    try std.testing.expectError(error.PackedValue, encodeModule(alloc, packed_local));
+    // A struct instruction on an array type.
+    const wrong_kind: ast.Module = .{ .items = &.{
+        gc_test_module.items[0],
+        .{ .func = .{ .name = "f", .body = .{ .lines = &.{ .{ .instr = .{ .struct_new_default = 0 } }, .{ .instr = .drop } } } } },
+    } };
+    try std.testing.expectError(error.UndefinedType, encodeModule(alloc, wrong_kind));
 }

@@ -492,6 +492,7 @@ pub fn findOp(text: []const u8) ?Op {
             if (listed(&float_binary, name)) return .{ .text = text, .params = two, .result = ty };
             if (listed(&float_compare, name)) return .{ .text = text, .params = two, .result = .i32, .yields_bool = true };
         },
+        else => {},
     }
     return null;
 }
@@ -502,6 +503,7 @@ fn oneOf(t: wat.ValType) []const wat.ValType {
         .i64 => &.{.i64},
         .f32 => &.{.f32},
         .f64 => &.{.f64},
+        else => &.{},
     };
 }
 
@@ -511,6 +513,7 @@ fn twoOf(t: wat.ValType) []const wat.ValType {
         .i64 => &.{ .i64, .i64 },
         .f32 => &.{ .f32, .f32 },
         .f64 => &.{ .f64, .f64 },
+        else => &.{},
     };
 }
 

@@ -318,8 +318,10 @@ pub behavior Annotation {
 // .Attempt, needs: [.Exceptions])]`. The compiler gathers the needs of every
 // binding a program reaches into the `.wasm`'s `botopink.needs` custom
 // section, and the runner hands the host only the matching flags (wasmtime's
-// `-W exceptions=y` for `Exceptions`, `-S http` for `Http`; node runs
-// exceptions by default): a program reaching none runs with no flag. `needs`
+// `-W exceptions=y` for `Exceptions`, `-S http` for `Http`, `-W gc=y` for
+// `Gc`; node runs exceptions and GC by default): a program reaching none runs
+// with no flag. `Gc` is also every program's that emits WasmGC types — the
+// compiler adds it to such a module itself (front 164, decision 544). `needs`
 // is no configuration — no annotation of a program turns a feature on or off
 // (decision 67). Written on another variant, or naming a value outside
 // `WasmNeed`, it is refused at the annotation (`comptime/infer.zig`
@@ -328,6 +330,7 @@ pub behavior Annotation {
 pub type WasmNeed {
     Exceptions,
     Http,
+    Gc,
 }
 
 pub type External implement Annotation {

@@ -1,6 +1,6 @@
 //! Decision 518 — the host features a wasm program needs, as the program
 //! carries them: the custom section `botopink.needs`, the needs' names
-//! (`ast.WasmNeed`: `exceptions`, `http`) one per line, which `wat.zig` writes
+//! (`ast.WasmNeed`: `exceptions`, `http`, `gc`) one per line, which `wat.zig` writes
 //! from the `needs:` of the bindings the program reaches and links. The
 //! runners read it back — `needsOf` from the binary (`codegen/runtime.zig`'s
 //! RUN LOG), `needsOfText` from a `wasi` build's component text
@@ -14,9 +14,13 @@ const ast = @import("../../ast.zig");
 const Need = ast.WasmNeed;
 const Needs = ast.WasmNeeds;
 
+/// The most flags `wasmtimeArgs` answers: two per need.
+pub const max_args = 2 * std.enums.values(Need).len;
+
 /// `wasmtime run`'s flags for `needs`, in a fixed order: `-W exceptions=y`
-/// for `exceptions`, `-S http` for `http`.
-pub fn wasmtimeArgs(needs: Needs, buf: *[4][]const u8) []const []const u8 {
+/// for `exceptions`, `-S http` for `http`, `-W gc=y` for `gc` (WasmGC, front
+/// 164 s2 — every program that emits GC types).
+pub fn wasmtimeArgs(needs: Needs, buf: *[max_args][]const u8) []const []const u8 {
     var n: usize = 0;
     if (needs.contains(.exceptions)) {
         buf[n] = "-W";
@@ -26,6 +30,11 @@ pub fn wasmtimeArgs(needs: Needs, buf: *[4][]const u8) []const []const u8 {
     if (needs.contains(.http)) {
         buf[n] = "-S";
         buf[n + 1] = "http";
+        n += 2;
+    }
+    if (needs.contains(.gc)) {
+        buf[n] = "-W";
+        buf[n + 1] = "gc=y";
         n += 2;
     }
     return buf[0..n];
@@ -115,7 +124,13 @@ test "needs: the section read back from the binary and from the text" {
     const got = needsOfText(text);
     try std.testing.expect(got.contains(.exceptions) and got.contains(.http));
     try std.testing.expectEqual(@as(usize, 0), needsOfText("(module)").count());
-    var buf: [4][]const u8 = undefined;
+    var buf: [max_args][]const u8 = undefined;
     try std.testing.expectEqual(@as(usize, 4), wasmtimeArgs(got, &buf).len);
+    var all = Needs.initFull();
+    const flags = wasmtimeArgs(all, &buf);
+    try std.testing.expectEqual(@as(usize, 6), flags.len);
+    try std.testing.expectEqualStrings("gc=y", flags[5]);
+    all.remove(.gc);
+    try std.testing.expectEqual(@as(usize, 4), wasmtimeArgs(all, &buf).len);
     try std.testing.expectEqual(@as(usize, 0), wasmtimeArgs(Needs.initEmpty(), &buf).len);
 }

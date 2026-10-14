@@ -23,7 +23,8 @@ pub const Error = Writer.Error || ast.Invalid;
 pub fn renderModule(w: *Writer, m: ast.Module) Error!void {
     try ast.validateModule(m);
     try w.writeAll("(module\n");
-    for (m.items) |it| try renderItem(w, it);
+    const defs = ast.typesOf(m);
+    for (m.items) |it| try renderItem(w, defs, it);
     try w.writeAll(")\n");
 }
 
@@ -85,7 +86,8 @@ pub fn renderComponent(alloc: std.mem.Allocator, w: *Writer, module: ast.Module)
     try w.writeAll(component_imports);
     if (has_host) try w.writeAll(component_host_imports);
     try w.writeAll("  (core module $main\n");
-    for (m.items) |it| try renderItem(w, it);
+    const defs = ast.typesOf(m);
+    for (m.items) |it| try renderItem(w, defs, it);
     try w.writeAll("  )\n");
     try w.writeAll(component_adapter_head);
     if (has_host) try w.writeAll(component_host_shim);
@@ -352,9 +354,10 @@ const component_run_export =
 ;
 
 /// One top-level form, in the module's two-space item column.
-fn renderItem(w: *Writer, it: ast.Item) Error!void {
+fn renderItem(w: *Writer, defs: Defs, it: ast.Item) Error!void {
     switch (it) {
-        .import => |im| try import(w, im),
+        .types => |types| try recGroup(w, types),
+        .import => |im| try import(w, defs, im),
         .memory => |mem| try memory(w, mem),
         .start => |name| try w.print("  (start ${s})\n", .{name}),
         .table => |names| {
@@ -363,14 +366,14 @@ fn renderItem(w: *Writer, it: ast.Item) Error!void {
             try w.writeAll("))\n");
         },
         .data => |d| try dataSegment(w, d),
-        .global => |g| try global(w, g),
-        .func => |f| try func(w, f),
+        .global => |g| try global(w, defs, g),
+        .func => |f| try func(w, defs, f),
         .comment => |text| try w.print("  ;; {s}\n", .{text}),
         .tag => |t| {
             try w.print("  (tag ${s}", .{t.name});
             if (t.params.len > 0) {
                 try w.writeAll(" (param");
-                for (t.params) |p| try w.print(" {s}", .{p.text()});
+                for (t.params) |p| try typeText(w, defs, p, " ");
                 try w.writeAll(")");
             }
             try w.writeAll(")\n");
@@ -388,14 +391,14 @@ fn renderItem(w: *Writer, it: ast.Item) Error!void {
 
 // ── forms ────────────────────────────────────────────────────────────────────
 
-fn import(w: *Writer, im: ast.Import) Error!void {
+fn import(w: *Writer, defs: Defs, im: ast.Import) Error!void {
     try w.print("  (import \"{s}\" \"{s}\" (func ${s}", .{ im.module, im.name, im.func });
     if (im.type.params.len > 0) {
         try w.writeAll(" (param");
-        for (im.type.params) |p| try w.print(" {s}", .{p.text()});
+        for (im.type.params) |p| try typeText(w, defs, p, " ");
         try w.writeAll(")");
     }
-    if (im.type.result) |r| try w.print(" (result {s})", .{r.text()});
+    if (im.type.result) |r| try resultText(w, defs, r);
     try w.writeAll("))\n");
 }
 
@@ -407,21 +410,31 @@ fn memory(w: *Writer, mem: ast.Memory) Error!void {
     try w.writeAll(")\n");
 }
 
-fn global(w: *Writer, g: ast.Global) Error!void {
+fn global(w: *Writer, defs: Defs, g: ast.Global) Error!void {
     try w.print("  (global ${s}", .{g.name});
     for (g.exports) |e| try w.print(" (export \"{s}\")", .{e});
-    if (g.mutable)
-        try w.print(" (mut {s})", .{g.ty.text()})
-    else
-        try w.print(" {s}", .{g.ty.text()});
-    try w.print(" ({s}.const {s}))\n", .{ g.ty.text(), g.init });
+    if (g.mutable) {
+        try w.writeAll(" (mut");
+        try typeText(w, defs, g.ty, " ");
+        try w.writeAll(")");
+    } else try typeText(w, defs, g.ty, " ");
+    // A reference global starts null (WasmGC); a number at its numeral.
+    if (g.ty.isRef()) {
+        try w.writeAll(" (ref.null");
+        try heapText(w, defs, g.ty);
+        try w.writeAll("))\n");
+    } else try w.print(" ({s}.const {s}))\n", .{ g.ty.text(), g.init });
 }
 
-fn func(w: *Writer, f: ast.Func) Error!void {
+fn func(w: *Writer, defs: Defs, f: ast.Func) Error!void {
     try w.print("  (func ${s}", .{f.name});
     for (f.exports) |e| try w.print(" (export \"{s}\")", .{e});
-    for (f.params) |p| try w.print(" (param ${s} {s})", .{ p.name, p.ty.text() });
-    if (f.result) |r| try w.print(" (result {s})", .{r.text()});
+    for (f.params) |p| {
+        try w.print(" (param ${s}", .{p.name});
+        try typeText(w, defs, p.ty, " ");
+        try w.writeAll(")");
+    }
+    if (f.result) |r| try resultText(w, defs, r);
     try w.writeAll("\n");
     // `(local …)` lives between the signature and the first instruction — the
     // only place WAT accepts it, and the reason locals are a field of the
@@ -430,11 +443,94 @@ fn func(w: *Writer, f: ast.Func) Error!void {
         try w.writeAll("    ");
         for (group, 0..) |l, i| {
             if (i > 0) try w.writeAll(" ");
-            try w.print("(local ${s} {s})", .{ l.name, l.ty.text() });
+            try w.print("(local ${s}", .{l.name});
+            try typeText(w, defs, l.ty, " ");
+            try w.writeAll(")");
         }
         try w.writeAll("\n");
     }
-    try seq(w, f.body);
+    try seq(w, defs, f.body);
+    try w.writeAll("  )\n");
+}
+
+// ── GC types (WasmGC, decision 544) ─────────────────────────────────────────
+
+/// The module's GC types, by index — what spells a `(ref null $t)`.
+const Defs = []const ast.TypeDef;
+
+/// A value or storage type, after `sep`: its keyword, or `(ref null $t)`.
+fn typeText(w: *Writer, defs: Defs, t: ast.ValType, sep: []const u8) Error!void {
+    try w.writeAll(sep);
+    if (t.defIndex()) |k| {
+        if (k >= defs.len) return error.UndefinedType;
+        return w.print("(ref null ${s})", .{defs[k].name});
+    }
+    try w.writeAll(t.text());
+}
+
+fn resultText(w: *Writer, defs: Defs, t: ast.ValType) Error!void {
+    try w.writeAll(" (result");
+    try typeText(w, defs, t, " ");
+    try w.writeAll(")");
+}
+
+/// A heap type after a space: `any`, `eq`, … or `$t`.
+fn heapText(w: *Writer, defs: Defs, t: ast.ValType) Error!void {
+    if (t.defIndex()) |k| {
+        if (k >= defs.len) return error.UndefinedType;
+        return w.print(" ${s}", .{defs[k].name});
+    }
+    try w.print(" {s}", .{t.heapText() orelse return error.UndefinedType});
+}
+
+fn typeName(defs: Defs, k: u16) Error![]const u8 {
+    if (k >= defs.len) return error.UndefinedType;
+    return defs[k].name;
+}
+
+/// `$f` for a named field, its index otherwise.
+fn fieldText(w: *Writer, defs: Defs, r: ast.FieldRef) Error!void {
+    const fields = switch (defs[r.ty].kind) {
+        .@"struct" => |f| f,
+        .array => return error.UndefinedType,
+    };
+    if (fields[r.field].name) |n| return w.print(" ${s}", .{n});
+    try w.print(" {d}", .{r.field});
+}
+
+fn fieldType(w: *Writer, defs: Defs, f: ast.Field) Error!void {
+    if (f.mutable) {
+        try w.writeAll("(mut");
+        try typeText(w, defs, f.ty, " ");
+        try w.writeAll(")");
+    } else try typeText(w, defs, f.ty, "");
+}
+
+/// `(rec (type $a (struct (field $x i32) …)) (type $s (array (mut i8))) …)`.
+fn recGroup(w: *Writer, types: []const ast.TypeDef) Error!void {
+    try w.writeAll("  (rec\n");
+    for (types) |t| {
+        try w.print("    (type ${s} ", .{t.name});
+        switch (t.kind) {
+            .@"struct" => |fields| {
+                try w.writeAll("(struct");
+                for (fields) |f| {
+                    try w.writeAll(" (field");
+                    if (f.name) |n| try w.print(" ${s}", .{n});
+                    try w.writeAll(" ");
+                    try fieldType(w, types, f);
+                    try w.writeAll(")");
+                }
+                try w.writeAll(")");
+            },
+            .array => |f| {
+                try w.writeAll("(array ");
+                try fieldType(w, types, f);
+                try w.writeAll(")");
+            },
+        }
+        try w.writeAll(")\n");
+    }
     try w.writeAll("  )\n");
 }
 
@@ -442,7 +538,10 @@ fn func(w: *Writer, f: ast.Func) Error!void {
 /// every string carries, then the bytes; a raw segment (no prefix) is its
 /// bytes alone.
 fn dataSegment(w: *Writer, d: ast.DataSegment) Error!void {
-    try w.print("  (data (i32.const {d}) \"", .{d.offset});
+    if (d.passive) |n|
+        try w.print("  (data ${s} \"", .{n})
+    else
+        try w.print("  (data (i32.const {d}) \"", .{d.offset});
     if (d.len_prefix) |len| {
         const prefix = [4]u8{ @truncate(len), @truncate(len >> 8), @truncate(len >> 16), @truncate(len >> 24) };
         for (prefix) |c| try w.print("\\{x:0>2}", .{c});
@@ -466,18 +565,18 @@ fn dataSegment(w: *Writer, d: ast.DataSegment) Error!void {
 
 // ── instructions ─────────────────────────────────────────────────────────────
 
-fn seq(w: *Writer, s: ast.Seq) Error!void {
-    for (s.lines) |l| try line(w, l);
+fn seq(w: *Writer, defs: Defs, s: ast.Seq) Error!void {
+    for (s.lines) |l| try line(w, defs, l);
 }
 
 fn indent(w: *Writer, n: u8) Error!void {
     for (0..n) |_| try w.writeAll(" ");
 }
 
-fn line(w: *Writer, l: ast.Line) Error!void {
+fn line(w: *Writer, defs: Defs, l: ast.Line) Error!void {
     switch (l.instr) {
-        .@"if" => |n| return ifForm(w, l.indent, n),
-        .block => |b| return blockForm(w, l.indent, b),
+        .@"if" => |n| return ifForm(w, defs, l.indent, n),
+        .block => |b| return blockForm(w, defs, l.indent, b),
         .comment => |text| {
             try indent(w, l.indent);
             return w.print(";; {s}\n", .{text});
@@ -486,59 +585,59 @@ fn line(w: *Writer, l: ast.Line) Error!void {
     }
     try indent(w, l.indent);
     if (l.folded) try w.writeAll("(");
-    try instr(w, l.instr);
+    try instr(w, defs, l.instr);
     if (l.folded) try w.writeAll(")");
     if (l.comment) |c| try w.print(" ;; {s}", .{c});
     try w.writeAll("\n");
 }
 
-fn ifForm(w: *Writer, col: u8, n: ast.If) Error!void {
+fn ifForm(w: *Writer, defs: Defs, col: u8, n: ast.If) Error!void {
     try indent(w, col);
     try w.writeAll("(if");
     if (n.label) |l| try w.print(" ${s}", .{l});
-    if (n.result) |r| try w.print(" (result {s})", .{r.text()});
+    if (n.result) |r| try resultText(w, defs, r);
     try w.writeAll("\n");
-    try arm(w, col + 2, "then", n.then);
-    if (n.@"else") |e| try arm(w, col + 2, "else", e);
+    try arm(w, defs, col + 2, "then", n.then);
+    if (n.@"else") |e| try arm(w, defs, col + 2, "else", e);
     try indent(w, col);
     try w.writeAll(")\n");
 }
 
-fn arm(w: *Writer, col: u8, keyword: []const u8, a: ast.If.Arm) Error!void {
+fn arm(w: *Writer, defs: Defs, col: u8, keyword: []const u8, a: ast.If.Arm) Error!void {
     try indent(w, col);
     try w.print("({s}", .{keyword});
     switch (a.layout) {
         .inline_ => {
             for (a.seq.lines) |l| {
                 try w.writeAll(" ");
-                try instr(w, l.instr);
+                try instr(w, defs, l.instr);
             }
             try w.writeAll(")\n");
         },
         .block => {
             try w.writeAll("\n");
-            try seq(w, a.seq);
+            try seq(w, defs, a.seq);
             try indent(w, col);
             try w.writeAll(")\n");
         },
     }
 }
 
-fn blockForm(w: *Writer, col: u8, b: ast.Block) Error!void {
+fn blockForm(w: *Writer, defs: Defs, col: u8, b: ast.Block) Error!void {
     try indent(w, col);
     try w.print("({s}", .{@tagName(b.kind)});
     if (b.label) |l| try w.print(" ${s}", .{l});
-    if (b.result) |r| try w.print(" (result {s})", .{r.text()});
+    if (b.result) |r| try resultText(w, defs, r);
     for (b.catches) |c| try w.print(" (catch ${s} ${s})", .{ c.tag, c.label });
     try w.writeAll("\n");
-    try seq(w, b.body);
+    try seq(w, defs, b.body);
     try indent(w, col);
     try w.writeAll(")\n");
 }
 
 /// The instruction itself, with no indentation, comment or newline — so an
 /// inline `if` arm can put several on one line.
-fn instr(w: *Writer, i: ast.Instr) Error!void {
+fn instr(w: *Writer, defs: Defs, i: ast.Instr) Error!void {
     switch (i) {
         .@"const" => |c| try w.print("{s}.const {s}", .{ c.ty.text(), c.text }),
         .local_get => |n| try w.print("local.get ${s}", .{n}),
@@ -563,10 +662,10 @@ fn instr(w: *Writer, i: ast.Instr) Error!void {
             try w.writeAll("call_indirect");
             if (t.params.len > 0) {
                 try w.writeAll(" (param");
-                for (t.params) |p| try w.print(" {s}", .{p.text()});
+                for (t.params) |p| try typeText(w, defs, p, " ");
                 try w.writeAll(")");
             }
-            if (t.result) |r| try w.print(" (result {s})", .{r.text()});
+            if (t.result) |r| try resultText(w, defs, r);
         },
         .br => |l| try w.print("br ${s}", .{l}),
         .br_if => |l| try w.print("br_if ${s}", .{l}),
@@ -585,9 +684,55 @@ fn instr(w: *Writer, i: ast.Instr) Error!void {
         .memory_grow => try w.writeAll("memory.grow"),
         .throw => |t| try w.print("throw ${s}", .{t}),
         .comment => |text| try w.print(";; {s}", .{text}),
+        .struct_new => |k| try w.print("struct.new ${s}", .{try typeName(defs, k)}),
+        .struct_new_default => |k| try w.print("struct.new_default ${s}", .{try typeName(defs, k)}),
+        .struct_get => |r| {
+            try w.print("struct.get{s} ${s}", .{ extText(r.ext), try typeName(defs, r.ty) });
+            try fieldText(w, defs, r);
+        },
+        .struct_set => |r| {
+            try w.print("struct.set ${s}", .{try typeName(defs, r.ty)});
+            try fieldText(w, defs, r);
+        },
+        .array_new => |k| try w.print("array.new ${s}", .{try typeName(defs, k)}),
+        .array_new_default => |k| try w.print("array.new_default ${s}", .{try typeName(defs, k)}),
+        .array_new_fixed => |a| try w.print("array.new_fixed ${s} {d}", .{ try typeName(defs, a.ty), a.n }),
+        .array_new_data => |a| try w.print("array.new_data ${s} ${s}", .{ try typeName(defs, a.ty), a.data }),
+        .array_get => |a| try w.print("array.get{s} ${s}", .{ extText(a.ext), try typeName(defs, a.ty) }),
+        .array_set => |k| try w.print("array.set ${s}", .{try typeName(defs, k)}),
+        .array_len => try w.writeAll("array.len"),
+        .array_copy => |a| try w.print("array.copy ${s} ${s}", .{ try typeName(defs, a.dst), try typeName(defs, a.src) }),
+        .array_fill => |k| try w.print("array.fill ${s}", .{try typeName(defs, k)}),
+        .ref_null => |t| {
+            try w.writeAll("ref.null");
+            try heapText(w, defs, t);
+        },
+        .ref_is_null => try w.writeAll("ref.is_null"),
+        .ref_eq => try w.writeAll("ref.eq"),
+        .ref_as_non_null => try w.writeAll("ref.as_non_null"),
+        .ref_test => |t| {
+            try w.writeAll("ref.test (ref null");
+            try heapText(w, defs, t);
+            try w.writeAll(")");
+        },
+        .ref_cast => |t| {
+            try w.writeAll("ref.cast (ref null");
+            try heapText(w, defs, t);
+            try w.writeAll(")");
+        },
+        .ref_i31 => try w.writeAll("ref.i31"),
+        .i31_get => |signed| try w.writeAll(if (signed) "i31.get_s" else "i31.get_u"),
         // Structured forms own their own lines; `line`/`arm` never reach here.
         .@"if", .block => unreachable,
     }
+}
+
+fn extText(e: ast.Ext) []const u8 {
+    return switch (e) {
+        .none => "",
+        .s => "_s",
+        .u => "_u",
+    };
 }
 
 // ── tests ────────────────────────────────────────────────────────────────────
@@ -885,4 +1030,35 @@ test {
     // The `browser` host's loader (decision 334) — a sibling this file's
     // tests carry, as `codegen/tests.zig` carries this one.
     _ = @import("browser_loader.zig");
+}
+
+test "GC types render as one rec group, a reference by its type's name (decision 544)" {
+    const alloc = std.testing.allocator;
+    const out = try renderToString(alloc, @import("wasm_binary_emitter.zig").gc_test_module);
+    defer alloc.free(out);
+    try std.testing.expectEqualStrings(
+        \\(module
+        \\  (rec
+        \\    (type $str (array (mut i8)))
+        \\    (type $pt (struct (field $x i32) (field $s (ref null $str))))
+        \\  )
+        \\  (data $hi "hi")
+        \\  (func $f (export "f") (result i32)
+        \\    (local $p (ref null $pt))
+        \\    i32.const 7
+        \\    i32.const 0
+        \\    i32.const 2
+        \\    array.new_data $str $hi
+        \\    struct.new $pt
+        \\    local.set $p
+        \\    local.get $p
+        \\    struct.get $pt $s
+        \\    array.len
+        \\    local.get $p
+        \\    struct.get $pt $x
+        \\    i32.add
+        \\  )
+        \\)
+        \\
+    , out);
 }

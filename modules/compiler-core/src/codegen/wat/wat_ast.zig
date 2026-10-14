@@ -35,14 +35,93 @@ const std = @import("std");
 
 // ── types ────────────────────────────────────────────────────────────────────
 
-pub const ValType = enum {
+pub const ValType = enum(u16) {
     i32,
     i64,
     f32,
     f64,
+    /// Packed storage types — a GC struct field or array element only
+    /// (`(array (mut i8))`, a string's bytes); never a local, a parameter or
+    /// a stack value (front 164 s2, decision 544).
+    i8,
+    i16,
+    /// The abstract reference types (WasmGC, decision 544), every one
+    /// nullable: `anyref` (an `unknown`), `eqref`, `i31ref`, `structref`,
+    /// `arrayref`, `funcref`, `externref`.
+    anyref,
+    eqref,
+    i31ref,
+    structref,
+    arrayref,
+    funcref,
+    externref,
+    /// `(ref null $t)` — a nullable reference to the module's type `t`
+    /// (`def(k)`: the `k`-th type of the module's `(rec …)` group, `Item.types`).
+    _,
 
+    /// The first value a `def(k)` takes.
+    pub const def_base: u16 = 64;
+
+    /// `(ref null $t)` for the `k`-th type the module declares.
+    pub fn def(k: u16) ValType {
+        return @enumFromInt(def_base + k);
+    }
+
+    /// The index of the module type a `(ref null $t)` names, null for every
+    /// other value type.
+    pub fn defIndex(t: ValType) ?u16 {
+        const n = @intFromEnum(t);
+        return if (n >= def_base) n - def_base else null;
+    }
+
+    /// Whether `t` is a reference (abstract or to a module type).
+    pub fn isRef(t: ValType) bool {
+        return switch (t) {
+            .i32, .i64, .f32, .f64, .i8, .i16 => false,
+            else => true,
+        };
+    }
+
+    /// Whether `t` is a packed storage type (`i8` / `i16`).
+    pub fn isPacked(t: ValType) bool {
+        return t == .i8 or t == .i16;
+    }
+
+    /// The spelling of a value type that names no module type. A
+    /// `(ref null $t)` needs the module's type names: `wat_emitter.zig`
+    /// spells it with them (`typeText`).
     pub fn text(t: ValType) []const u8 {
-        return @tagName(t);
+        return switch (t) {
+            .i32 => "i32",
+            .i64 => "i64",
+            .f32 => "f32",
+            .f64 => "f64",
+            .i8 => "i8",
+            .i16 => "i16",
+            .anyref => "anyref",
+            .eqref => "eqref",
+            .i31ref => "i31ref",
+            .structref => "structref",
+            .arrayref => "arrayref",
+            .funcref => "funcref",
+            .externref => "externref",
+            _ => "ref",
+        };
+    }
+
+    /// The heap type a reference type points into, spelled for `ref.null`
+    /// / `ref.test` (`any`, `eq`, …); null for a module type and a number.
+    pub fn heapText(t: ValType) ?[]const u8 {
+        return switch (t) {
+            .anyref => "any",
+            .eqref => "eq",
+            .i31ref => "i31",
+            .structref => "struct",
+            .arrayref => "array",
+            .funcref => "func",
+            .externref => "extern",
+            else => null,
+        };
     }
 
     /// The value type spelled `s` (`"i32"`, `"f64"`, …). `i32` for anything
@@ -55,6 +134,44 @@ pub const ValType = enum {
         return .i32;
     }
 };
+
+// ── GC types (WasmGC, decision 544) ──────────────────────────────────────────
+
+/// One field of a GC struct, or the element of a GC array: its storage type
+/// (a value type, or packed `i8` / `i16`) and whether it can be set.
+pub const Field = struct {
+    /// `(field $name …)` — a struct field's name, for the text; the binary
+    /// addresses it by index.
+    name: ?[]const u8 = null,
+    ty: ValType,
+    mutable: bool = false,
+};
+
+/// `(type $name (struct …))` / `(type $name (array …))` — a type of the
+/// module's one `(rec …)` group (`Item.types`). Every type is final and
+/// declares no supertype; the group makes two types of the same structure
+/// two distinct types (`ref.test` tells them apart).
+pub const TypeDef = struct {
+    name: []const u8,
+    kind: Kind,
+
+    pub const Kind = union(enum) {
+        @"struct": []const Field,
+        array: Field,
+    };
+};
+
+/// A struct field addressed by an instruction: the struct type and the
+/// field's index; `ext` the sign extension a packed field's read takes.
+pub const FieldRef = struct {
+    ty: u16,
+    field: u32,
+    ext: Ext = .none,
+};
+
+/// A packed read's extension: `none` for an unpacked field (`struct.get`),
+/// `s` / `u` for `…_s` / `…_u`.
+pub const Ext = enum { none, s, u };
 
 /// What an instruction sequence leaves on the operand stack.
 ///   * `.none`       — nothing was pushed (a void call, a store, a binding).
@@ -158,6 +275,55 @@ pub const Instr = union(enum) {
     block: Block,
     /// A `;; text` line of its own.
     comment: []const u8,
+
+    // ── GC (WasmGC, decision 544) — every type an index into `Item.types` ──
+    /// `struct.new $t` — the fields from the stack, in order.
+    struct_new: u16,
+    /// `struct.new_default $t` — every field zero / null.
+    struct_new_default: u16,
+    /// `struct.get[_s|_u] $t $f`.
+    struct_get: FieldRef,
+    /// `struct.set $t $f`.
+    struct_set: FieldRef,
+    /// `array.new $t` — `(init, len)`.
+    array_new: u16,
+    /// `array.new_default $t` — `(len)`.
+    array_new_default: u16,
+    /// `array.new_fixed $t n` — the `n` elements from the stack.
+    array_new_fixed: ArrayFixed,
+    /// `array.new_data $t $seg` — `(offset, len)` into a passive segment.
+    array_new_data: ArrayData,
+    /// `array.get[_s|_u] $t` — `(array, index)`.
+    array_get: ArrayGet,
+    /// `array.set $t` — `(array, index, value)`.
+    array_set: u16,
+    /// `array.len` — `(array)`.
+    array_len,
+    /// `array.copy $dst $src` — `(dst, dst_off, src, src_off, len)`.
+    array_copy: ArrayCopy,
+    /// `array.fill $t` — `(array, offset, value, len)`.
+    array_fill: u16,
+    /// `ref.null <heap>` — `heap` an abstract reference type or `def(k)`.
+    ref_null: ValType,
+    ref_is_null,
+    /// `ref.eq` — two `eqref`s, the same object (or both null).
+    ref_eq,
+    ref_as_non_null,
+    /// `ref.test (ref null <heap>)` — `1` when the reference is of the type
+    /// (a null passes).
+    ref_test: ValType,
+    /// `ref.cast (ref null <heap>)` — the reference as the type, a trap
+    /// when it is of another.
+    ref_cast: ValType,
+    /// `ref.i31` — an `i32`'s low 31 bits as an `i31ref`.
+    ref_i31,
+    /// `i31.get_s` (true) / `i31.get_u` (false).
+    i31_get: bool,
+
+    pub const ArrayFixed = struct { ty: u16, n: u32 };
+    pub const ArrayData = struct { ty: u16, data: []const u8 };
+    pub const ArrayGet = struct { ty: u16, ext: Ext = .none };
+    pub const ArrayCopy = struct { dst: u16, src: u16 };
 
     pub const Const = struct { ty: ValType, text: []const u8 };
     pub const Op = struct { ty: ValType, name: []const u8 };
@@ -295,12 +461,20 @@ pub const DataSegment = struct {
     offset: u32,
     len_prefix: ?u32,
     bytes: []const u8,
+    /// A passive segment's name (`(data $name "…")`): no offset, never in
+    /// memory — the bytes an `array.new_data` reads (a string literal, WasmGC).
+    passive: ?[]const u8 = null,
 };
 
 /// A top-level form. The module renders its items in order, so the backend
 /// owns the layout of the module (imports, memory, start, data, globals, the
 /// lowered functions, the runtime helpers) and the emitter owns the text.
 pub const Item = union(enum) {
+    /// `(rec (type $a …) (type $b …) …)` — the module's GC types, one group
+    /// (decision 544); at most one per module, before any other item that
+    /// names one. `ValType.def(k)` and every GC instruction's type is an
+    /// index into it.
+    types: []const TypeDef,
     import: Import,
     memory: Memory,
     /// `(tag $name (param …))` — an exception tag (decision 518).
@@ -354,6 +528,14 @@ pub const Invalid = error{
     UndefinedCall,
     /// A `throw` or a `catch` naming a tag the module does not declare.
     UndefinedTag,
+    /// A GC instruction or a value type naming a type index past the
+    /// module's `(rec …)` group, or a struct field past its type's fields; a
+    /// struct instruction on an array type or the reverse.
+    UndefinedType,
+    /// An `array.new_data` naming no passive data segment.
+    UndefinedData,
+    /// A packed storage type (`i8` / `i16`) outside a field.
+    PackedValue,
 };
 
 /// The export name a host calls a module's start function by (decision 334).
@@ -430,13 +612,108 @@ pub fn declaresCall(m: Module, name: []const u8) bool {
 /// Check every function in the module, and that every `call` names something
 /// the module declares. `wat_emitter.renderModule` runs this before writing.
 pub fn validateModule(m: Module) Invalid!void {
+    const defs = typesOf(m);
+    for (defs) |d| switch (d.kind) {
+        .@"struct" => |fields| for (fields) |f| try checkStorage(defs, f.ty),
+        .array => |f| try checkStorage(defs, f.ty),
+    };
     for (m.items) |it| switch (it) {
         .func => |f| {
             try validateFunc(f);
             try checkCalls(m, f.body);
+            for (f.params) |p| try checkValue(defs, p.ty);
+            if (f.result) |r| try checkValue(defs, r);
+            for (f.locals) |group| for (group) |l| try checkValue(defs, l.ty);
+            try checkGc(m, defs, f.body);
         },
         .table => |names| for (names) |n| {
             if (!declaresCall(m, n)) return error.UndefinedCall;
+        },
+        .global => |g| try checkValue(defs, g.ty),
+        .import => |im| {
+            for (im.type.params) |p| try checkValue(defs, p);
+            if (im.type.result) |r| try checkValue(defs, r);
+        },
+        else => {},
+    };
+}
+
+/// The module's GC types — its `(rec …)` group — or none.
+pub fn typesOf(m: Module) []const TypeDef {
+    for (m.items) |it| switch (it) {
+        .types => |t| return t,
+        else => {},
+    };
+    return &.{};
+}
+
+/// A value a local, a parameter, a result, a global or a block holds: no
+/// packed type, and a module type the group declares.
+fn checkValue(defs: []const TypeDef, t: ValType) Invalid!void {
+    if (t.isPacked()) return error.PackedValue;
+    try checkStorage(defs, t);
+}
+
+fn checkStorage(defs: []const TypeDef, t: ValType) Invalid!void {
+    if (t.defIndex()) |k| if (k >= defs.len) return error.UndefinedType;
+}
+
+fn structFields(defs: []const TypeDef, k: u16) Invalid![]const Field {
+    if (k >= defs.len) return error.UndefinedType;
+    return switch (defs[k].kind) {
+        .@"struct" => |f| f,
+        .array => error.UndefinedType,
+    };
+}
+
+fn arrayElem(defs: []const TypeDef, k: u16) Invalid!Field {
+    if (k >= defs.len) return error.UndefinedType;
+    return switch (defs[k].kind) {
+        .array => |f| f,
+        .@"struct" => error.UndefinedType,
+    };
+}
+
+/// Whether the module declares a passive data segment `name`.
+pub fn declaresData(m: Module, name: []const u8) bool {
+    for (m.items) |it| switch (it) {
+        .data => |d| if (d.passive) |n| if (std.mem.eql(u8, n, name)) return true,
+        else => {},
+    };
+    return false;
+}
+
+fn checkGc(m: Module, defs: []const TypeDef, s: Seq) Invalid!void {
+    for (s.lines) |l| switch (l.instr) {
+        .struct_new, .struct_new_default => |k| _ = try structFields(defs, k),
+        .struct_get, .struct_set => |r| {
+            const fields = try structFields(defs, r.ty);
+            if (r.field >= fields.len) return error.UndefinedType;
+        },
+        .array_new, .array_new_default, .array_set, .array_fill => |k| _ = try arrayElem(defs, k),
+        .array_new_fixed => |a| _ = try arrayElem(defs, a.ty),
+        .array_get => |a| _ = try arrayElem(defs, a.ty),
+        .array_copy => |a| {
+            _ = try arrayElem(defs, a.dst);
+            _ = try arrayElem(defs, a.src);
+        },
+        .array_new_data => |a| {
+            _ = try arrayElem(defs, a.ty);
+            if (!declaresData(m, a.data)) return error.UndefinedData;
+        },
+        .ref_null, .ref_test, .ref_cast => |t| try checkValue(defs, t),
+        .@"if" => |n| {
+            if (n.result) |r| try checkValue(defs, r);
+            try checkGc(m, defs, n.then.seq);
+            if (n.@"else") |e| try checkGc(m, defs, e.seq);
+        },
+        .block => |b| {
+            if (b.result) |r| try checkValue(defs, r);
+            try checkGc(m, defs, b.body);
+        },
+        .call_indirect => |t| {
+            for (t.params) |p| try checkValue(defs, p);
+            if (t.result) |r| try checkValue(defs, r);
         },
         else => {},
     };

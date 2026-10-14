@@ -2311,15 +2311,20 @@ pub const ExternalLookup = struct {
 /// `#[@External.Wasm(…, needs: [.Exceptions])]`. The compiler gathers the
 /// needs of every binding a program reaches into the `.wasm`'s
 /// `botopink.needs` custom section, and the runner hands the host only the
-/// matching flags (`wasmtime run -W exceptions=y`, `-S http`).
+/// matching flags (`wasmtime run -W exceptions=y`, `-S http`, `-W gc=y`).
+/// `gc` (front 164 s2, decision 544) is also every program's that emits GC
+/// types: the wasm codegen adds it whenever the module declares one.
 pub const WasmNeed = enum {
     exceptions,
     http,
+    gc,
 
-    /// The written value of one item — `.Exceptions` / `.Http` —, or null.
+    /// The written value of one item — `.Exceptions` / `.Http` / `.Gc` —,
+    /// or null.
     pub fn ofItem(item: []const u8) ?WasmNeed {
         if (std.mem.eql(u8, item, ".Exceptions")) return .exceptions;
         if (std.mem.eql(u8, item, ".Http")) return .http;
+        if (std.mem.eql(u8, item, ".Gc")) return .gc;
         return null;
     }
 
@@ -2328,6 +2333,7 @@ pub const WasmNeed = enum {
         return switch (self) {
             .exceptions => "Exceptions",
             .http => "Http",
+            .gc => "Gc",
         };
     }
 };

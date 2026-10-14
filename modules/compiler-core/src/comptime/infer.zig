@@ -4011,7 +4011,7 @@ fn refuseHostArg(env: *Env, a: ast.Annotation) InferError!void {
 
 /// Decision 518 — `needs:` lists the host features a wasm binding needs, so
 /// it is `External.Wasm`'s alone, and each item is a value of std's closed
-/// enum `WasmNeed` (`.Exceptions`, `.Http`; `ast.WasmNeed`). Written on
+/// enum `WasmNeed` (`.Exceptions`, `.Http`, `.Gc`; `ast.WasmNeed`). Written on
 /// another variant, as no list, or naming a value outside the enum, it is
 /// refused at the annotation (decision 516's reading: on every target).
 fn refuseNeedsArg(env: *Env, a: ast.Annotation) InferError!void {
@@ -4029,9 +4029,9 @@ fn refuseNeedsArg(env: *Env, a: ast.Annotation) InferError!void {
             if (ast.WasmNeed.ofItem(item) != null) continue;
             e = TypeError.custom(try std.fmt.allocPrint(
                 env.arena,
-                "`External.Wasm`'s `needs` names `{s}`, which is no `WasmNeed` — the needs are `.Exceptions` and `.Http` (decision 518)",
+                "`External.Wasm`'s `needs` names `{s}`, which is no `WasmNeed` — the needs are `.Exceptions`, `.Http` and `.Gc` (decision 518)",
                 .{item},
-            ), "A need is a value of std's closed enum `WasmNeed { Exceptions, Http }`: `needs: [.Exceptions]`. A host feature outside it is no binding's to ask for.");
+            ), "A need is a value of std's closed enum `WasmNeed { Exceptions, Http, Gc }`: `needs: [.Exceptions]`. A host feature outside it is no binding's to ask for.");
             break;
         } else return;
     } else {
@@ -4039,7 +4039,7 @@ fn refuseNeedsArg(env: *Env, a: ast.Annotation) InferError!void {
             env.arena,
             "`External.Wasm`'s `needs` is a list of `WasmNeed` values, got `{s}`",
             .{a.args[at]},
-        ), "Write `needs: [.Exceptions]` or `needs: [.Http]` — a list, each item `.Exceptions` or `.Http` (decision 518).");
+        ), "Write `needs: [.Exceptions]` or `needs: [.Http]` — a list, each item `.Exceptions`, `.Http` or `.Gc` (decision 518).");
     }
     if (a.loc) |l| e = e.withLoc(l);
     env.lastError = e;
