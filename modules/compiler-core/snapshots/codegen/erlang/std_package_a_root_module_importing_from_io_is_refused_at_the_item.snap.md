@@ -912,12 +912,6 @@ pub type FileStat(
     isDir: bool,
 )
 
-// Anything with something to give back after use (a file, a socket): closed by
-// the writer with `defer` — nothing checks that it is (decision 539 (6)).
-pub behavior Closeable {
-    fn close(self: Self);
-}
-
 // Read the whole file as bytes.
 // Node: `readFileSync($0)` copied into a plain `Uint8Array`.
 // Erlang: `file:read_file/1`.
@@ -1887,12 +1881,6 @@ test "fs answers PermissionDenied for an OS permission error" {
 
 %% type FileStat: size, mtime, isDir
 
-% Anything with something to give back after use (a file, a socket): closed by
-
-% the writer with `defer` — nothing checks that it is (decision 539 (6)).
-
-%% behavior Closeable
-
 % Read the whole file as bytes.
 
 % Node: `readFileSync($0)` copied into a plain `Uint8Array`.
@@ -2212,7 +2200,7 @@ exists(Path) ->
 fsError(Path, Raw) ->
     Bar = (fun(__S, __X) -> case __X of <<>> -> 0; _ -> case binary:match(__S, __X) of nomatch -> -1; {__P, _} -> erlang:length(unicode:characters_to_list(binary:part(__S, 0, __P))) end end end)(Raw, <<"|">>),
     Kind = string_slice(Raw, 0, Bar),
-    Message = string_slice(Raw, '__bp_int'((Bar + 1), -2147483648, 2147483647, <<"integer overflow: + on i32 at src/io/fs.bp:306:33">>), undefined),
+    Message = string_slice(Raw, '__bp_int'((Bar + 1), -2147483648, 2147483647, <<"integer overflow: + on i32 at src/io/fs.bp:300:33">>), undefined),
     case (Kind =:= <<"notfound">>) of
         true ->
             {std@io@fs@@FsError__v__notfound, Path};
@@ -2786,11 +2774,11 @@ lines(Self) ->
                 Offset = (fun(__B) -> case unicode:characters_to_binary(__B, utf8, utf8) of __S when is_binary(__S) -> -1; {error, __G, _} -> byte_size(__G); {incomplete, __G, _} -> byte_size(__G) end end)(Line),
                 case (Offset >= 0) of
                     true ->
-                        erlang:throw({'__bp_gen_end', __BpGen2, ok, {error, {std@io@fs@@FsError__v__invalidutf8, erlang:element(2, Self), '__bp_int'((Consumed@1 + Offset), -9223372036854775808, 9223372036854775807, <<"integer overflow: + on i64 at src/io/fs.bp:481:21">>)}}});
+                        erlang:throw({'__bp_gen_end', __BpGen2, ok, {error, {std@io@fs@@FsError__v__invalidutf8, erlang:element(2, Self), '__bp_int'((Consumed@1 + Offset), -9223372036854775808, 9223372036854775807, <<"integer overflow: + on i64 at src/io/fs.bp:475:21">>)}}});
                     _ -> ok
                 end,
                 Width = byte_size(Raw),
-                Consumed@2 = '__bp_int'((Consumed@1 + (fun(__V) when __V >= -9223372036854775807 - 1, __V =< 9223372036854775807 -> __V; (__V) -> erlang:error({integer_overflow, <<"toI64: ", (integer_to_binary(__V))/binary, " does not fit i64">>}) end)(Width)), -9223372036854775808, 9223372036854775807, <<"integer overflow: + on i64 at src/io/fs.bp:483:33">>),
+                Consumed@2 = '__bp_int'((Consumed@1 + (fun(__V) when __V >= -9223372036854775807 - 1, __V =< 9223372036854775807 -> __V; (__V) -> erlang:error({integer_overflow, <<"toI64: ", (integer_to_binary(__V))/binary, " does not fit i64">>}) end)(Width)), -9223372036854775808, 9223372036854775807, <<"integer overflow: + on i64 at src/io/fs.bp:477:33">>),
                 erlang:put(__BpGen2, [{ok, (fun(__BpR) -> case __BpR of {ok, __BpV0} -> __BpV0; _ -> (<<"">>) end end)((fun(__B) -> case unicode:characters_to_binary(__B) of __S when is_binary(__S) -> {ok, __S}; _ -> {error, <<"Bytes.toUtf8: not valid UTF-8">>} end end)(Line))} | erlang:get(__BpGen2)]),
                 __BpLoop(Consumed@2)
             end)(Consumed)

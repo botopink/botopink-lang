@@ -2282,12 +2282,6 @@ pub type FileStat(
     isDir: bool,
 )
 
-// Anything with something to give back after use (a file, a socket): closed by
-// the writer with `defer` — nothing checks that it is (decision 539 (6)).
-pub behavior Closeable {
-    fn close(self: Self);
-}
-
 // Read the whole file as bytes.
 // Node: `readFileSync($0)` copied into a plain `Uint8Array`.
 // Erlang: `file:read_file/1`.
@@ -3212,8 +3206,6 @@ test "fs answers PermissionDenied for an OS permission error" {
 %%% (front 164: `wasi:filesystem` behind `needs: [.Filesystem]`).
 % The error of every `io.fs` function (decision 540). `path` is the path the
 % caller wrote (for `copy`, the source; for `walk`, the root).
-% Anything with something to give back after use (a file, a socket): closed by
-% the writer with `defer` — nothing checks that it is (decision 539 (6)).
 % Read the whole file as bytes.
 % Node: `readFileSync($0)` copied into a plain `Uint8Array`.
 % Erlang: `file:read_file/1`.
@@ -3374,7 +3366,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     {test, is_ge, {f, 86}, [{integer, 2147483647}, {x, 0}]}.
     {jump, {f, 87}}.
   {label, 86}.
-    {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/io/fs.bp:306:33">>}}, {x, 0}}.
+    {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/io/fs.bp:300:33">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
   {label, 87}.
     {move, {x, 0}, {x, 1}}.
@@ -9059,7 +9051,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     {test, is_ge, {f, 239}, [{integer, 9223372036854775807}, {x, 0}]}.
     {jump, {f, 240}}.
   {label, 239}.
-    {move, {literal, {integer_overflow, <<"integer overflow: + on i64 at src/io/fs.bp:481:21">>}}, {x, 0}}.
+    {move, {literal, {integer_overflow, <<"integer overflow: + on i64 at src/io/fs.bp:475:21">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
   {label, 240}.
     {test_heap, 4, 2}.
@@ -9081,7 +9073,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     {test, is_ge, {f, 253}, [{integer, 9223372036854775807}, {x, 0}]}.
     {jump, {f, 254}}.
   {label, 253}.
-    {move, {literal, {integer_overflow, <<"integer overflow: + on i64 at src/io/fs.bp:483:33">>}}, {x, 0}}.
+    {move, {literal, {integer_overflow, <<"integer overflow: + on i64 at src/io/fs.bp:477:33">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
   {label, 254}.
     {move, {x, 0}, {y, 2}}.

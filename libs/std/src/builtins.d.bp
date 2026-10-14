@@ -172,6 +172,18 @@ pub behavior Display {
     fn display(self: Self) -> string;
 }
 
+// ── closeable (decisions 539 (6), 540) ───────────────────────────────────────
+//
+// Anything with something to give back after use (a file, a socket): closed by
+// the writer with `defer` — nothing checks that it is, and the compiler names
+// no std type and holds no error tied to one. A plain behavior for generic
+// code, ambient as `Display` is: `io.fs`'s `File` writes `implement Closeable`
+// and a program takes `c: Closeable` with no import.
+
+pub behavior Closeable {
+    fn close(self: Self);
+}
+
 // ── index / slice (decision 63, amended) ─────────────────────────────────────
 //
 // An index expression has NO typing rule of its own: `xs[0]` IS `xs.at(0)`,

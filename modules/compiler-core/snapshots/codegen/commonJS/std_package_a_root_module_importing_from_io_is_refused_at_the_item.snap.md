@@ -1042,12 +1042,6 @@ pub type FileStat(
     isDir: bool,
 )
 
-// Anything with something to give back after use (a file, a socket): closed by
-// the writer with `defer` — nothing checks that it is (decision 539 (6)).
-pub behavior Closeable {
-    fn close(self: Self);
-}
-
 // Read the whole file as bytes.
 // Node: `readFileSync($0)` copied into a plain `Uint8Array`.
 // Erlang: `file:read_file/1`.
@@ -2315,13 +2309,6 @@ class FileStat {
 FileStat.prototype.__bp = "FileStat";
 exports.FileStat = FileStat;
 
-// Anything with something to give back after use (a file, a socket): closed by
-
-// the writer with `defer` — nothing checks that it is (decision 539 (6)).
-
-// behavior Closeable
-//   fn close(...)
-
 // Read the whole file as bytes.
 
 // Node: `readFileSync($0)` copied into a plain `Uint8Array`.
@@ -2642,7 +2629,7 @@ function fsError(path, raw) {
     let raw$sp = null;
     const bar = ((raw$sp ??= __bp_has_surrogate(raw)) ? __bp_str_index_of(raw, "|") : raw.indexOf("|"));
     const kind = raw.slice(0, bar);
-    const message = raw.slice(__bp_int((bar + 1), -2147483648, 2147483647, "+ on i32 at src/io/fs.bp:306:33"), null);
+    const message = raw.slice(__bp_int((bar + 1), -2147483648, 2147483647, "+ on i32 at src/io/fs.bp:300:33"), null);
     if ((kind === "notfound")) { return FsError.NotFound(path); }
     if ((kind === "denied")) { return FsError.PermissionDenied(path); }
     if ((kind === "isdir")) { return FsError.IsDirectory(path); }
@@ -2888,9 +2875,9 @@ class File {
     if ((raw.length === 0)) { break; }
     const line = ((__b) => { let __n = __b.length; if (__n > 0 && __b[__n - 1] === 10) { __n--; if (__n > 0 && __b[__n - 1] === 13) __n-- } return __b.subarray(0, __n) })(raw);
     const offset = ((__b) => { const __n = __b.length; let __i = 0; while (__i < __n) { const __c = __b[__i]; if (__c < 128) { __i++; continue } let __k; if (__c >= 194 && __c <= 223) __k = 1; else if (__c >= 224 && __c <= 239) __k = 2; else if (__c >= 240 && __c <= 244) __k = 3; else return __i; if (__i + __k >= __n) return __i; let __lo = 128, __hi = 191; if (__c === 224) __lo = 160; else if (__c === 237) __hi = 159; else if (__c === 240) __lo = 144; else if (__c === 244) __hi = 143; const __d = __b[__i + 1]; if (__d < __lo || __d > __hi) return __i; for (let __j = 2; __j <= __k; __j++) { const __e = __b[__i + __j]; if (__e < 128 || __e > 191) return __i } __i += __k + 1 } return -1 })(line);
-    if ((offset >= 0)) { yield ({ error: FsError.InvalidUtf8(this.location, __bp_wadd(consumed, offset, 0, "+ on i64 at src/io/fs.bp:481:21")) }); return; }
+    if ((offset >= 0)) { yield ({ error: FsError.InvalidUtf8(this.location, __bp_wadd(consumed, offset, 0, "+ on i64 at src/io/fs.bp:475:21")) }); return; }
     const width = raw.length;
-    consumed = __bp_wadd(consumed, width.toI64(), 0, "+ on i64 at src/io/fs.bp:483:33");
+    consumed = __bp_wadd(consumed, width.toI64(), 0, "+ on i64 at src/io/fs.bp:477:33");
     yield ({ ok: ((_r) => "error" in _r ? ("") : _r.ok)(line.toUtf8()) });
 }
     }
@@ -3149,11 +3136,6 @@ export declare class FileStat {
     readonly mtime: number | bigint;
     readonly isDir: boolean;
     constructor(size: number | bigint, mtime: number | bigint, isDir: boolean);
-}
-
-
-export declare interface Closeable {
-    close(): void;
 }
 
 

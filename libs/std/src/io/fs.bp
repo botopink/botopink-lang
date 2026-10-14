@@ -45,12 +45,6 @@ pub type FileStat(
     isDir: bool,
 )
 
-// Anything with something to give back after use (a file, a socket): closed by
-// the writer with `defer` — nothing checks that it is (decision 539 (6)).
-pub behavior Closeable {
-    fn close(self: Self);
-}
-
 // Read the whole file as bytes.
 // Node: `readFileSync($0)` copied into a plain `Uint8Array`.
 // Erlang: `file:read_file/1`.

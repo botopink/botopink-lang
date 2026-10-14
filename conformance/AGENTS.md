@@ -1993,7 +1993,7 @@ host cell a body of `std/io/fs` calls with no binding):
   adds, `copy`, `rm`, `removeTree` (a missing path is `Ok`), `mkdirRecursive`, `stat`, `list`, `walk`, `glob`.
 - `modules/fs_file_handle` — `create` / `open`, `path`, `size`, `read(n)`, `bytes`, `text`, `hash` (the whole
   file whatever the position), `write`, a file opened for reading refusing `write` and one created for writing
-  refusing `read`, `close` twice, `create` truncating. Written without `defer` (539): `close` is called by hand.
+  refusing `read`, `close` twice, `create` truncating. Written without `defer`: `close` is called by hand; `modules/fs_file_defer_close` is the same handle closed with `defer` (539) on every exit of a block, a program type that writes `implement Closeable`, a closed file refusing a read.
 - `modules/fs_file_streams` — `chunks(size)` and `lines()`: `\n` and `\r\n` stripped, an empty line, a last line
   with no terminator, an empty file, `lines` after `read`, and a line that is not UTF-8 ending the stream with
   `InvalidUtf8` at its offset in what the call read.
@@ -2088,7 +2088,7 @@ The narrowed cells whose excluded targets' missing binding is named here (re-der
 | `test/mocks_handwritten_double` (a project suite) | commonJS erlang beam (`"targets"`) | wasm — `pushMatcher`, `std/testing/mocks.invoke` |
 | `test/module_init` (a project suite) | commonJS erlang beam (`"targets"`) | wasm — `mark` |
 
-In all, 58 narrowings (50 cells, 8 project suites) and 86 exclusions. No other
+In all, 59 narrowings (51 cells, 8 project suites) and 87 exclusions. No other
 manifest or suite carries a narrowing: a project that must be refused on a target says so with its
 departure.
 
