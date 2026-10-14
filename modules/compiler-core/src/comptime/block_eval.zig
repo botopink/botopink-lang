@@ -1677,18 +1677,30 @@ pub fn evaluate(
 /// runtime's `{error,badarith}`.
 const badarith_raised = "the comptime block raised: {error,badarith}";
 
-/// Decision 472 — the refusal for an arithmetic error at build, when `msg` is
-/// `evaluate`'s text for one: `comptime-badarith: an error occurred when
+/// What `parseReply` makes of a division or remainder by zero in a comptime
+/// module (decision 533): the plain cause, the Erlang term and the
+/// `the comptime block raised:` prefix dropped, as for an unseeded draw.
+pub const division_by_zero_raised = erlang.division_by_zero_text;
+
+/// The reply text of the refusal a comptime module's `/` or `%` raises on a zero
+/// divisor (`erlang.zig`'s `'__bp_cdz'/1`).
+const division_by_zero_term = "{error,{bp_wat_runtime,<<\"" ++ erlang.division_by_zero_text ++ "\">>}}";
+
+/// Decision 472, 533 — the refusal for an arithmetic error at build, when `msg`
+/// is `evaluate`'s text for one: `comptime-badarith: an error occurred when
 /// evaluating an arithmetic expression — \`<e>\`` (and `(division by zero)`
-/// when `e` is a division). `loc` is where `e` starts, the place of a raise no
-/// call located (the frames of a located one, decision 532, are the caller's).
-/// Null when `msg` is anything else.
+/// when the raise was a division or a remainder by zero, whatever its place in
+/// `e`: alone, inside a larger expression, or in a function `e` calls).
+/// `loc` is where `e` starts, the place of a raise no call located (the
+/// frames of a located one, decision 532, are the caller's). Null when `msg`
+/// is anything else.
 pub fn badarithRefusal(env: *Env, msg: []const u8, e: ast.Expr) Error!?struct { message: []const u8, loc: ast.Loc } {
-    if (!std.mem.eql(u8, msg, badarith_raised)) return null;
+    const by_zero = std.mem.eql(u8, msg, division_by_zero_raised);
+    if (!by_zero and !std.mem.eql(u8, msg, badarith_raised)) return null;
     var f = formatMod.Formatter.init(env.arena);
     const doc = f.fmtExpr(e) catch return null;
     const text = formatMod.render(env.arena, doc, std.math.maxInt(u16)) catch return null;
-    const cause: []const u8 = if (e == .binaryOp and e.binaryOp.op == .div) " (division by zero)" else "";
+    const cause: []const u8 = if (by_zero or (e == .binaryOp and e.binaryOp.op == .div)) " (division by zero)" else "";
     var at = e;
     while (at == .binaryOp) at = at.binaryOp.lhs.*;
     return .{
@@ -1731,6 +1743,12 @@ pub fn unseededDraw(text: []const u8) ?[]const u8 {
     return plain;
 }
 
+/// Decision 533 — the plain cause of a comptime module's division by zero
+/// (`division_by_zero_raised`) when `text` is the reply of one, else null.
+pub fn divisionByZero(text: []const u8) ?[]const u8 {
+    return if (std.mem.eql(u8, text, division_by_zero_term)) division_by_zero_raised else null;
+}
+
 fn clip(text: []const u8) []const u8 {
     return text[0..@min(text.len, 4096)];
 }
@@ -1746,7 +1764,7 @@ fn parseReply(arena: std.mem.Allocator, stdout: []const u8) Error!Outcome {
     }
     const msg = parsed.object.get("message");
     const text = if (msg) |m| (if (m == .string) m.string else "") else "";
-    const message = if (unseededDraw(text)) |plain| plain else try std.fmt.allocPrint(arena, "the comptime block raised: {s}", .{text});
+    const message = if (unseededDraw(text) orelse divisionByZero(text)) |plain| plain else try std.fmt.allocPrint(arena, "the comptime block raised: {s}", .{text});
     const frames = try framesOf(arena, parsed.object.get("frames"));
     if (frames.len > 0) return .{ .raised = .{ .message = message, .frames = frames } };
     return .{ .err = message };
@@ -2620,6 +2638,12 @@ test "unseededDraw: the Erlang wrapper is dropped, other raises are left alone" 
     try std.testing.expectEqualStrings("an unseeded draw: a build has no entropy, call `random.seed` first (decision 451)", unseededDraw(wrapped).?);
     try std.testing.expect(unseededDraw("{error,badarith}") == null);
     try std.testing.expect(unseededDraw("{error,{bp_wat_runtime,<<\"integer beyond 64 bits (a bignum)\">>}}") == null);
+}
+
+test "divisionByZero: the cause is read from the reply of a comptime module's zero divisor alone" {
+    try std.testing.expectEqualStrings("division by zero", divisionByZero("{error,{bp_wat_runtime,<<\"division by zero\">>}}").?);
+    try std.testing.expect(divisionByZero("{error,badarith}") == null);
+    try std.testing.expect(divisionByZero("{error,{bp_wat_runtime,<<\"an unseeded draw: x\">>}}") == null);
 }
 
 test "framesOf: the frames of a reply, innermost first, a malformed one dropped" {

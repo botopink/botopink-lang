@@ -1239,7 +1239,7 @@ fn parseOutcomeExtras(arena: std.mem.Allocator, stdout: []const u8, extras: ?*Ex
         .param = reply.param,
         .span = reply.span,
     } };
-    const message = if (reply.message.len > 0) reply.message else "template evaluation failed";
+    const message = if (blockEval.divisionByZero(reply.message)) |plain| plain else if (reply.message.len > 0) reply.message else "template evaluation failed";
     const frames = try blockEval.framesOf(arena, reply.frames);
     if (frames.len > 0) return .{ .raised = .{ .message = message, .frames = frames } };
     return .{ .err = message };

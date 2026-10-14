@@ -2462,3 +2462,8 @@ lines, innermost first, after `at` and `label`; `compiler-cli/src/cli/cell_snap.
 and `hole_any_call_raises` (the template's use, `23:16`, and the hole, `25:25`: a call of an expansion takes the
 frame of the template's use), the three `*_unseeded` cells (the `comptime` or the annotation that ran the build is
 the last frame).
+Decision 533 (every division and remainder by zero at build reads `(division by zero)`, located at the operator)
+adds `modules/comptime_remainder_by_zero`, `comptime_nested_division_by_zero` and
+`comptime_division_by_zero_in_helper`, and moves `comptime_float_division_by_zero`,
+`comptime_integer_division_by_zero` and `hole_any_call_raises` from the expression's first token to the operator
+(`hole_any_call_raises` gains the cause too).

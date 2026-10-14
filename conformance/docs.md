@@ -1377,14 +1377,23 @@ literal with a `.` or an exponent is a float (`2.5`, `1e3`, `5e-324`).
 
 At build, in a `comptime`, `==` compares two values of any depth (it walks an explicit work list, never the
 runtime's stack, so two 2,000,000-deep chains answer `true`), and an arithmetic error reads as Erlang's
-`badarith`, located at the expression: ``error: comptime-badarith: an error occurred when evaluating an
-arithmetic expression — `1.0 / 0.0` (division by zero)``, the same on every target. At run time each target
-keeps its own answer (commonJS and wasm `Infinity`, erlang and beam `badarith`). An integer division by zero
-at build is the same refusal, naming `7 / 0`:
+`badarith`: ``error: comptime-badarith: an error occurred when evaluating an arithmetic expression — `1.0 / 0.0`
+(division by zero)``, the same on every target. Every division and remainder by zero reads so — `/` and `%`,
+integer and float, alone, inside a larger expression, or in a function the `comptime` calls — and is located at
+the operator that divides, never at the whole expression. At run time each target keeps its own answer
+(commonJS and wasm `Infinity`, erlang and beam `badarith`). An integer division by zero at build is the same
+refusal, naming `7 / 0`:
 
 <!-- example: modules/comptime_deep_structure_equality -->
 <!-- example: modules/comptime_float_division_by_zero -->
 <!-- example: modules/comptime_integer_division_by_zero -->
+
+A remainder by zero, a division by zero inside a larger expression and one in a function the `comptime`
+calls are the same refusal, at the `%` or the `/` that divides:
+
+<!-- example: modules/comptime_remainder_by_zero -->
+<!-- example: modules/comptime_nested_division_by_zero -->
+<!-- example: modules/comptime_division_by_zero_in_helper -->
 
 At run time a float division by zero prints the float's word on commonJS and
 wasm, and erlang and beam abort with `badarith`:

@@ -949,6 +949,29 @@ const nz_helper_form: Ast.Form = .{ .function = .{ .name = "__bp_nz", .clauses =
     },
 } } };
 
+/// Decision 533 — `'__bp_cdz'(B)`: a comptime module's divisor, or, when it is
+/// `0` (integer or float), the build-time refusal `{bp_wat_runtime,
+/// <<"division by zero">>}` that `comptime/block_eval.zig` reads as
+/// `comptime-badarith … (division by zero)`. An untyped body has no
+/// `'__bp_nz'/2` (no inference ran to give the operator a type), and the bare
+/// `badarith` of `div` / `rem` / `/` says nothing of its cause.
+const cdz_helper_form: Ast.Form = .{ .function = .{ .name = "__bp_cdz", .clauses = &.{
+    .{
+        .patterns = &.{Ast.Expr.v("B")},
+        .guards = &.{.{ .binop = .{ .op = "==", .lhs = &Ast.Expr.v("B"), .rhs = &Ast.Expr{ .number = "0" }, .parens = false } }},
+        .body = Ast.Body.of(&.{.{ .expr = .{ .call = .{ .module = "erlang", .name = "error", .args = &.{.{ .tuple = &.{ Ast.Expr.a("bp_wat_runtime"), .{ .lexeme_binary = division_by_zero_text } } }} } } }}),
+        .layout = .inline_,
+    },
+    .{
+        .patterns = &.{Ast.Expr.v("B")},
+        .body = Ast.Body.of(&.{.{ .expr = Ast.Expr.v("B") }}),
+        .layout = .inline_,
+    },
+} } };
+
+/// The text `cdz_helper_form` raises with and `block_eval.divisionByZero` reads.
+pub const division_by_zero_text = "division by zero";
+
 /// `'__bp_len'/2`: `.len`/`.length`/`.size` on a receiver of unknown type — a
 /// list's length, a binary's length, else the map field. Every comptime module
 /// carries it; a typed module emits it when inference recorded no lowering for
@@ -2434,6 +2457,7 @@ fn emitErlangModule(
         if (em.needs_add_helper and comptime_module == null) try forms.appendSlice(b.arena, &.{ .blank, add_helper_form });
         if (em.needs_int_helper) try forms.appendSlice(b.arena, &.{ .blank, int_inline_form, int_helper_form });
         if (em.needs_nz_helper) try forms.appendSlice(b.arena, &.{ .blank, nz_inline_form, nz_helper_form });
+        if (em.needs_cdz_helper) try forms.appendSlice(b.arena, &.{ .blank, cdz_helper_form });
         if (em.needs_len_helper and comptime_module == null) try forms.appendSlice(b.arena, &.{ .blank, len_helper_form });
         if (em.needs_field_helper and comptime_module == null) try forms.appendSlice(b.arena, &.{ .blank, field_helper_form });
         if (em.needs_method_helper and comptime_module == null) try forms.appendSlice(b.arena, &.{ .blank, method_helper_form });
@@ -3497,6 +3521,9 @@ const Emitter = struct {
     /// An integer `/` or `%` checked its divisor (decision 527 (3)): the
     /// module defines `'__bp_nz'/2` (`nz_helper_form`).
     needs_nz_helper: bool = false,
+    /// Decision 533 — a comptime module's `/` or `%` was lowered: the module
+    /// defines `'__bp_cdz'/1` (`cdz_helper_form`).
+    needs_cdz_helper: bool = false,
     /// §A5 annotation-driven prim-method dispatch: `<Iface>.<method>` →
     /// `(host module, host symbol, ordered arg names)` parsed from
     /// `#[@External.Erlang("mod", "sym(args)")]` on a primitive interface method.
@@ -4827,7 +4854,8 @@ const Emitter = struct {
     /// inference never resolved, an untyped (comptime) body and a nonzero
     /// literal divisor stay as they are.
     fn nonZeroDivisor(this: *Emitter, b: Ast.Builder, node: Ast.Expr, divisor: ast.Expr, loc: ast.Loc, op: []const u8) !Ast.Expr {
-        if (this.untyped) return node;
+        // A comptime module's divisor goes through `'__bp_cdz'/1` (decision 533).
+        if (this.untyped) return b.call("__bp_cdz", &.{node});
         const k = this.divisionKind(loc) orelse return node;
         if (!k.isInt()) return node;
         if (divisor == .literal and divisor.literal.kind == .numberLit) {
@@ -8219,6 +8247,13 @@ const Emitter = struct {
                     .div, .mod => try this.nonZeroDivisor(b, rhs_node, bin.rhs.*, bin.loc, arithSymbol(bin.op)),
                     else => rhs_node,
                 });
+                // Decision 533 — a comptime module's `/` and `%` raise the
+                // build-time refusal on a zero divisor, located at the
+                // operator that divides (a frame, decision 532).
+                if (this.untyped and (bin.op == .div or bin.op == .mod)) {
+                    this.needs_cdz_helper = true;
+                    return if (this.locating_file) |file| this.framed(b, file, bin.loc, node) else node;
+                }
                 return switch (bin.op) {
                     // `rem` answers a value smaller than its divisor, never
                     // outside the type, and raises `badarith` on `0` itself.

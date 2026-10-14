@@ -882,7 +882,7 @@ fn parseOutcome(arena: std.mem.Allocator, stdout: []const u8) EvalError!Outcome 
         .span = if (reply.span) |sp| (if (sp.arg == null) template.Span{ .start = sp.start, .end = sp.end, .line = sp.line } else null) else null,
         .arg = if (reply.span) |sp| sp.arg else null,
     } };
-    const message = if (blockEval.unseededDraw(reply.message)) |plain| plain else if (reply.message.len > 0) reply.message else "decorator evaluation failed";
+    const message = if (blockEval.unseededDraw(reply.message) orelse blockEval.divisionByZero(reply.message)) |plain| plain else if (reply.message.len > 0) reply.message else "decorator evaluation failed";
     const frames = try blockEval.framesOf(arena, reply.frames);
     if (frames.len > 0) return .{ .raised = .{ .message = message, .frames = frames } };
     return .{ .err = message };

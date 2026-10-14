@@ -1,0 +1,12 @@
+//// Decision 533 — a division by zero that a function called at build performs
+//// reads `(division by zero)` and is located at the operator that divides,
+//// in the function's body.
+
+fn ratio(a: i32, b: i32) -> i32 {
+    return a / b;
+}
+
+pub fn main() {
+    val atBuild = comptime ratio(6, 0);
+    @print(atBuild);
+}
