@@ -119,11 +119,11 @@ pub type Result<R, E> {
 // `E` (decision 432 — on commonJS its Promise rejects with `E` and resolves
 // with the bare `U`): `await t` answers the `@Result`, and `try await t`
 // propagates its error. A function with no await channel consumes a Task
-// through its own functions.
-pub behavior Task<T> {
-    fn map<R>(self: Self<T>, transform: fn(value: T) -> R) -> Task<R>;
-    fn then<R>(self: Self<T>, next: fn(value: T) -> Task<R>) -> Task<R>;
-}
+// through its own functions. A task has no methods (decision 523): its value
+// is read by `await`, a failure by `try await … catch` or `case` on `await`'s
+// `@Result`, and every composition — map, bind, recover, map the error — is an
+// `async { … }` block (`async { (try await t catch 0) * 2 }`).
+pub behavior Task<T> {}
 
 // ── sequences (decisions 122, 123, 125) ──────────────────────────────────────
 //

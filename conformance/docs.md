@@ -2388,6 +2388,19 @@ lambda a function or method returns takes its parameters from the declared
 
 <!-- example: modules/task_lambda_method_to_string -->
 
+**A `@Task` has no methods** (decision 523). `map`, `then`, `mapError` and `catch` are
+withdrawn from `@Task<T>` and from `@Task<@Result<T, E>>`, so a call to one is refused as
+an unknown member:
+
+<!-- example: modules/task_method_refused -->
+
+A task's value is read by `await`, and a failing task is read one way: `try await … catch`,
+or `case` on `await`'s `@Result`. Every composition of a task — recover, map, bind, map the
+error — is an `async { }` block, itself a `@Task` (decision 375): `val safe = async { val v =
+try await load() catch 0; return v; };` is a `@Task<i32>`.
+
+<!-- example: modules/task_compose_by_async_block -->
+
 An **await channel** is a `@Task`, `@Component` or `@Stream` return, an
 `async { }` block or a `stream` loop; `await` anywhere else is
 `effect-await-without-task`. An ordinary function that holds a Task either
@@ -2419,7 +2432,7 @@ awaits is not an unhandled rejection.
 
 <!-- example: modules/task_result_caught_by_js -->
 
-<!-- example: modules/task_throw_resolves_error -->
+<!-- example: modules/task_failure_rejects -->
 
 On erlang and beam a `@Task` is eager, `await` is the identity — a failing
 task's value is `{error, E}` — and `async { }` runs the block in place.

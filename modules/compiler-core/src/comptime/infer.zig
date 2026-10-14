@@ -21101,6 +21101,18 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
             // it: the lowering is recorded per call site for every backend.
             if (typedReceiver) |recvPtr| {
                 if (try inferSequenceNext(env, recvPtr, call.callee, typedArgs, typedTrailing, loc)) |te| return te;
+                // Decision 523 — `map`, `then`, `mapError` and `catch` are
+                // withdrawn from a task: its value is read by `await`, and
+                // every composition of it is an `async { … }` block.
+                const taskRecv = recvPtr.getType().deref();
+                if (taskRecv.* == .named and std.mem.eql(u8, taskRecv.named.name, "Task") and
+                    (std.mem.eql(u8, call.callee, "map") or std.mem.eql(u8, call.callee, "then") or
+                        std.mem.eql(u8, call.callee, "mapError") or std.mem.eql(u8, call.callee, "catch")))
+                {
+                    var err = TypeError.unknownMethod(try errorMod.typeLabelAlloc(env.arena, taskRecv), call.callee);
+                    env.lastError = err.withLoc(loc);
+                    return error.TypeError;
+                }
             }
 
             // Static extension dispatch (F6): `obj.method(args)` resolved via
