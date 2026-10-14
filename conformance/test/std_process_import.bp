@@ -5,8 +5,6 @@
 //// dropped out of the count (found by rakun front 74 and std front 01). The
 //// runner now reads `globalThis.process`. Erlang passed either way.
 
-// wasm refuses this suite on a host binding: std/io/process has no wasm binding (STD-001).
-// targets: commonJS erlang beam
 
 import {io.process} from "std";
 

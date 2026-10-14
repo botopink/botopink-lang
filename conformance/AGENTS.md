@@ -2013,11 +2013,7 @@ The narrowed cells whose excluded targets' missing binding is named here (re-der
 | `test/mocks_handwritten_double.bp` | commonJS erlang beam | wasm — `pushMatcher`, `std/testing/mocks.invoke` |
 | `test/module_init.bp` | commonJS erlang beam | wasm — `mark` |
 
-`test/std_process_import.bp` carries `// targets: commonJS erlang beam` too, but wasm builds and runs it
-green (its `std/io/process` import is never used): that exclusion is not stood on a host binding and the
-audit refuses it — a row of the wasm backend's front, not a narrowing.
-
-In all, 53 narrowings (44 cells, 1 project suite, 8 single-file suites) and 81 exclusions. No other
+In all, 52 narrowings (44 cells, 1 project suite, 7 single-file suites) and 80 exclusions. No other
 manifest or suite carries a narrowing: a project that must be refused on a target says so with its
 departure.
 
