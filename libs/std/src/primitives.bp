@@ -988,7 +988,7 @@ behavior Array<T> {
     default fn unique(self: Self<T>) -> Self<T> {
         var out: T[] = [];
         self.forEach({ x ->
-            if (!out.any({ y -> y == x })) out = out.append([x]);
+            if (!out.any({ y -> y == x })) out = out.append([x])
         });
         return out;
     }

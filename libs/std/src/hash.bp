@@ -589,7 +589,7 @@ fn utf8Of(s: string) -> Array<i32> {
     val parts: Array<Array<i32>> = s
         .chars()
         .map({ c ->
-            utf8Bytes(c.charCodeAt(0));
+            utf8Bytes(c.charCodeAt(0))
         });
     return parts.flatten();
 }

@@ -15,7 +15,7 @@ fn schema(comptime decl: @Decl) {
             f.name
                 + ": "
                 + f.typeName
-                + f.annotations.map({ a -> " #" + a.name }).join("");
+                + f.annotations.map({ a -> " #" + a.name }).join("")
         })
         .join(", ");
     @emit(

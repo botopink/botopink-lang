@@ -26,7 +26,7 @@ pub fn main() {
     @print(
         run({ ->
             hits = hits + 1;
-            1;
+            1
         }, 0),
     );
     @print(hits);

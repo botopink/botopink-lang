@@ -9,12 +9,12 @@ pub fn main() {
     val k = 5;
     [1].forEach({ e ->
         val k = "l";
-        @print(k);
+        @print(k)
     });
     @print(k);
     val e = 10;
     [1, 2].forEach({ e ->
-        @print(e);
+        @print(e)
     });
     val twice = { e -> e * 2 };
     @print(twice(3));

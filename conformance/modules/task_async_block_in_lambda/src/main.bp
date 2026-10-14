@@ -19,7 +19,7 @@ type Worker(id: i32) {
             async {
                 if (n < 0) throw "method lambda";
                 return n + 10;
-            };
+            }
         };
     }
 }
@@ -35,7 +35,7 @@ fn nested() -> @Task<@Result<i32, string>> {
     val inner: fn() -> @Task<@Result<i32, string>> = { ->
         async {
             throw "nested";
-        };
+        }
     };
     return inner();
 }
@@ -44,14 +44,14 @@ fn run() -> @Task<void> {
     val failing: fn(n: i32) -> @Task<@Result<i32, string>> = { n ->
         async {
             throw "inner";
-        };
+        }
     };
     show(await failing(1));
     val maybe: fn(n: i32) -> @Task<@Result<i32, string>> = { n ->
         async {
             if (n < 0) throw "negative " + n.toString();
             return n * 2;
-        };
+        }
     };
     show(await maybe(4));
     show(await maybe(-4));

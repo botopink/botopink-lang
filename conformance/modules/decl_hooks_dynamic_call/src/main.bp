@@ -25,12 +25,12 @@ fn graph(comptime decl: @Decl) {
         n.calls.forEach({ c ->
             val k = c.callee;
             val name = if (k == null) "null" else k.name;
-            calls.push(name + "@" + c.at);
+            calls.push(name + "@" + c.at)
         });
         val mark = if (n.async) "~" else "";
         nodes.push(
             n.function.name + mark + "(calls: [" + calls.join(", ") + "])",
-        );
+        )
     });
     decl.setMeta("nodes", nodes.join(" "));
 }

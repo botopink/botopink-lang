@@ -31,7 +31,7 @@ pub fn main() {
     }
     val blocks = xs.map({ b ->
         val n = b.id + 100;
-        Brk(..b, id: n);
+        Brk(..b, id: n)
     });
     for (blocks) { b ->
         @print(show(b));

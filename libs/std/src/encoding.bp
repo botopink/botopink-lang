@@ -260,7 +260,7 @@ fn percentEncodeBody(s: string) -> string {
                     .map(
                         { b -> "%" + upperHexDigit(b / 16) + upperHexDigit(b % 16) },
                     )
-                    .join("");
+                    .join("")
         })
         .join("");
 }
@@ -349,7 +349,7 @@ fn utf8Of(s: string) -> Array<i32> {
     val parts: Array<Array<i32>> = s
         .chars()
         .map({ c ->
-            utf8Bytes(c.charCodeAt(0));
+            utf8Bytes(c.charCodeAt(0))
         });
     return parts.flatten();
 }

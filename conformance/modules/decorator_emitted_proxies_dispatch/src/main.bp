@@ -24,7 +24,7 @@ fn proxied(comptime decl: @Decl) {
                 + "\");\n        return \"sec \" + self.inner."
                 + m.name
                 + "();\n    }",
-        );
+        )
     });
     @emit(
         "pub type "

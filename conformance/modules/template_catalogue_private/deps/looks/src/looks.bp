@@ -30,7 +30,7 @@ pub default fn looks(comptime e: @Expr<string>) -> @Expr<string> {
                     + " -> "
                     + t.returnTypeName
                     + " "
-                    + t.meta.map({ m -> m.key + "=" + m.value }).join(",");
+                    + t.meta.map({ m -> m.key + "=" + m.value }).join(",")
             })
             .join("");
     return @expr(

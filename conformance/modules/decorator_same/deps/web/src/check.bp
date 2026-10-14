@@ -14,7 +14,7 @@ pub fn check(comptime decl: @Decl) {
             "check"
         else
             "other";
-        out.push(a.name + "=" + which);
+        out.push(a.name + "=" + which)
     });
     decl.setMeta("ids", out.join(" "));
 }

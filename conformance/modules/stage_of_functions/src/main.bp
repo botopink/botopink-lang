@@ -17,7 +17,7 @@ fn stage(comptime decl: @Decl) {
             "Run"
         else
             "Any";
-        out.push(s);
+        out.push(s)
     });
     decl.setMeta("text", decl.name + ": " + out.join(" "));
 }

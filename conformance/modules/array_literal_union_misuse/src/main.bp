@@ -5,5 +5,5 @@
 
 pub fn main() {
     val xs = [1, "a"];
-    xs.forEach({ x -> @print(x + 1); });
+    xs.forEach({ x -> @print(x + 1) });
 }

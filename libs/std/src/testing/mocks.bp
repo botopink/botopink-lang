@@ -227,7 +227,7 @@ pub fn verify<T>(mock: T, spec: i32) -> T {
 pub fn mock(comptime decl: @Decl) {
     var q = "";
     decl.annotations.forEach({ a ->
-        if (a.name.endsWith(".mock")) q = a.name.slice(0, a.name.length() - 4);
+        if (a.name.endsWith(".mock")) q = a.name.slice(0, a.name.length() - 4)
     });
     var methods = "";
     decl.methods.forEach({ m ->
@@ -394,11 +394,11 @@ test "mocks: a verify that fails raises `mocks.verify:` naming the method, the c
     val _1 = repo.find(7);
     assert raisedText({ ->
         val _v = verify(repo, times(2)).find(eq(7));
-        0;
+        0
     }).contains("mocks.verify: find - expected exactly 2 matching call(s), got 1");
     assert raisedText({ ->
         val _v = verify(repo, never()).find(eq(7));
-        0;
+        0
     }).contains("mocks.verify: find - expected exactly 0 matching call(s), got 1");
 }
 

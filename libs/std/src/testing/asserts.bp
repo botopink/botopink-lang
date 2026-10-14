@@ -562,13 +562,13 @@ test "asserts: lessThan fails on a greater value" {
 test "asserts: throws catches a panicking body" {
     try throws({ ->
         explode();
-        0;
+        0
     });
 }
 
 test "asserts: throws fails when the body completes" {
     val r = throws({ ->
-        0;
+        0
     });
     try isError(r);
     try equals(errorText(r), "asserts.throws: body did not raise");
@@ -577,7 +577,7 @@ test "asserts: throws fails when the body completes" {
 test "asserts: throwsWith checks the message" {
     try throwsWith({ ->
         explode();
-        0;
+        0
     }, "on fire");
 }
 
@@ -589,17 +589,17 @@ fn quoteRaiser() -> i32 {
 test "asserts: throwsWith matches a needle with a quote or a backslash on every target" {
     try throwsWith({ ->
         quoteRaiser();
-        0;
+        0
     }, "withHeader(\"Set-Cookie\"");
     try throwsWith({ ->
         quoteRaiser();
-        0;
+        0
     }, "v) \\ twice");
     // The raised text itself, not a rendering of it: the escaped spelling
     // `\"` is not in the message.
     val escaped = throwsWith({ ->
         quoteRaiser();
-        0;
+        0
     }, "withHeader(\\\"");
     try equals(
         errorText(escaped),
@@ -609,7 +609,7 @@ test "asserts: throwsWith matches a needle with a quote or a backslash on every 
 
 test "asserts: throwsWith fails when the body completes" {
     val r = throwsWith({ ->
-        0;
+        0
     }, "anything");
     try isError(r);
     try equals(errorText(r), "asserts.throwsWith: body did not raise");
@@ -618,7 +618,7 @@ test "asserts: throwsWith fails when the body completes" {
 test "asserts: throwsWith fails on a message without the needle" {
     val r = throwsWith({ ->
         explode();
-        0;
+        0
     }, "not in the message");
     try isError(r);
     try equals(

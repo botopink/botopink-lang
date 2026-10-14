@@ -11,7 +11,7 @@ type Found(names: string)
 fn find(comptime decl: @Decl) {
     var out: string[] = [];
     decl.annotations.forEach({ a ->
-        if (a.decorator.same(markers.serverOnly)) out.push(a.name);
+        if (a.decorator.same(markers.serverOnly)) out.push(a.name)
     });
     decl.setMeta(Found(names: out.join(" ")));
 }

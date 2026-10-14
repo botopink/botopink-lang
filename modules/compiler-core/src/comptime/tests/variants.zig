@@ -139,7 +139,7 @@ test "infer ast: case ---- OR patterns with block arm body" {
         \\    0 | 2 | 4 -> "even";
         \\    _      -> {
         \\        val value = "odd";
-        \\        break value;
+        \\        value
         \\    };
         \\};
     );

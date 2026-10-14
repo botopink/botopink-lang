@@ -20,8 +20,8 @@ fn contexts(comptime decl: @Decl) {
             val c = u.context;
             val hook = if (h == null) "null" else h.module + "." + h.name;
             val ctx = if (c == null) "-" else c.module + "." + c.name;
-            out.push(n.function.name + ": " + hook + "(" + ctx + ")");
-        });
+            out.push(n.function.name + ": " + hook + "(" + ctx + ")")
+        })
     });
     decl.setMeta("uses", out.join(" | "));
 }

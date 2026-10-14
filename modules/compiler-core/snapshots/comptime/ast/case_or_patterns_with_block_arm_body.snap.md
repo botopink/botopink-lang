@@ -4,7 +4,7 @@ val parity = case 5 {
     0 | 2 | 4 -> "even";
     _      -> {
         val value = "odd";
-        break value;
+        value
     };
 };
 ```
@@ -28,10 +28,10 @@ val parity = case 5 {
               "return_type": "string"
             },
             {
-              "return_type": "void"
+              "return_type": "string"
             }
           ],
-          "return_type": "void"
+          "return_type": "string"
         }
       ],
       "return_type": "string"

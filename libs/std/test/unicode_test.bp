@@ -30,7 +30,7 @@ fn column(field: string) -> string {
         .split(" ")
         .filter({ h -> h != "" })
         .map({ h ->
-            unicode.codepoints(h).fold(0, { acc, c -> acc * 16 + hexDigit(c) });
+            unicode.codepoints(h).fold(0, { acc, c -> acc * 16 + hexDigit(c) })
         });
     return cps.map({ c -> unicode.fromCodepoint(c) }).join("");
 }
@@ -50,7 +50,7 @@ fn mismatch(
 ) -> string {
     val expected = cols.at(want) ?? "";
     val bad = indices.filter({ i ->
-        unicode.normalize(cols.at(i) ?? "", form) != expected;
+        unicode.normalize(cols.at(i) ?? "", form) != expected
     });
     if (bad.length == 0) return "";
     val i = bad.at(0) ?? 0;

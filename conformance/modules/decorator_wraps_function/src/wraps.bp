@@ -21,7 +21,7 @@ fn noteHit() {
 pub fn counted(comptime decl: @Decl<fn(..) -> string>) {
     decl.wrapWith({ call ->
         noteHit();
-        call.run();
+        call.run()
     });
 }
 

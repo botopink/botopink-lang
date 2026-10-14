@@ -23,7 +23,7 @@ type Worker(id: i32) {
         return { n ->
             async {
                 return self.id + n;
-            };
+            }
         };
     }
 }

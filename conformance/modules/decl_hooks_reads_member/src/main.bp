@@ -13,9 +13,9 @@ fn graph(comptime decl: @Decl) {
         var uses: string[] = [];
         n.uses.forEach({ u ->
             val h = u.hook;
-            uses.push(if (h == null) "null" else h.name);
+            uses.push(if (h == null) "null" else h.name)
         });
-        nodes.push(n.function.name + "(uses: [" + uses.join(", ") + "])");
+        nodes.push(n.function.name + "(uses: [" + uses.join(", ") + "])")
     });
     decl.setMeta("nodes", nodes.join(" "));
 }

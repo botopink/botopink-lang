@@ -20,12 +20,12 @@ fn args(comptime decl: @Decl) {
                 );
                 tas.push(
                     t.module + "." + t.name + "(" + fields.join(", ") + ")",
-                );
+                )
             });
             val h = u.hook;
             val name = if (h == null) "null" else h.name;
-            out.push(name + "<" + tas.join(", ") + ">");
-        });
+            out.push(name + "<" + tas.join(", ") + ">")
+        })
     });
     decl.setMeta("uses", out.join(" "));
 }

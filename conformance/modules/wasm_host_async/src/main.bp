@@ -38,7 +38,7 @@ fn run() -> @Task<void> {
                 async {
                     await delay(30, 0);
                     "a";
-                };
+                }
             },
             { -> delay(10, "b") },
         ],

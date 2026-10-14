@@ -4,11 +4,11 @@
 //// `-> R` refuses it (`modules/fn_expr_tail_semicolon`).
 
 pub fn main() {
-    val inc = { x -> x + 1; };
+    val inc = { x -> x + 1 };
     @print(inc(1));
     val dbl = fn(x) {
         x * 2;
     };
     @print(dbl(4));
-    @print([1, 2].map({ n -> n * 3; }));
+    @print([1, 2].map({ n -> n * 3 }));
 }

@@ -8,7 +8,7 @@ type Worker(id: i32) {
             async {
                 if (n < 0) throw "negative " + n.toString();
                 return n + 10;
-            };
+            }
         };
     }
 }

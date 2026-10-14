@@ -375,6 +375,56 @@ test "format: block ---- `comptime { break v; }` becomes its tail (decision 525)
     );
 }
 
+test "format: block ---- a `case` arm's last `break v;` becomes its tail (decision 541)" {
+    try h.assertFormatAs(std.testing.allocator,
+        \\fn f(n: i32) -> i32 {
+        \\    val v = case n {
+        \\        0 {
+        \\            break 10;
+        \\        }
+        \\        _ {
+        \\            20
+        \\        }
+        \\    };
+        \\    return v;
+        \\}
+    ,
+        \\fn f(n: i32) -> i32 {
+        \\    val v = case n {
+        \\        0 {
+        \\            10
+        \\        }
+        \\        _ {
+        \\            20
+        \\        }
+        \\    };
+        \\    return v;
+        \\}
+    );
+}
+
+test "format: lambda ---- the last `;` of a lambda's expression is dropped, once (decision 541)" {
+    try h.assertFormatAs(std.testing.allocator,
+        \\fn f(xs: i32[]) {
+        \\    xs.forEach({ x -> g(x); });
+        \\    val inc = { x -> x + 1; };
+        \\    xs.each { x ->
+        \\        val y = x * 2;
+        \\        g(y);
+        \\    };
+        \\}
+    ,
+        \\fn f(xs: i32[]) {
+        \\    xs.forEach({ x -> g(x) });
+        \\    val inc = { x -> x + 1 };
+        \\    xs.each { x ->
+        \\        val y = x * 2;
+        \\        g(y)
+        \\    };
+        \\}
+    );
+}
+
 test "format: block ---- the last `;` of a value `case` arm is dropped (decision 525)" {
     try h.assertFormatAs(std.testing.allocator,
         \\fn f(n: i32) -> string {

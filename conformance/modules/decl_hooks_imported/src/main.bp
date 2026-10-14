@@ -17,13 +17,13 @@ fn graph(comptime decl: @Decl) {
             var anns: string[] = [];
             u.annotations.forEach({ a -> anns.push("#[" + a.name + "]") });
             val name = if (h == null) "null" else h.module + "." + h.name;
-            uses.push(name + anns.join(""));
+            uses.push(name + anns.join(""))
         });
         var calls: string[] = [];
         n.calls.forEach({ c ->
             val k = c.callee;
             val name = if (k == null) "null" else k.module + "." + k.name;
-            calls.push(name + "@" + c.at);
+            calls.push(name + "@" + c.at)
         });
         nodes.push(
             n.function.module
@@ -34,7 +34,7 @@ fn graph(comptime decl: @Decl) {
                 + "], calls: ["
                 + calls.join(", ")
                 + "])",
-        );
+        )
     });
     decl.setMeta("nodes", nodes.join(" "));
 }

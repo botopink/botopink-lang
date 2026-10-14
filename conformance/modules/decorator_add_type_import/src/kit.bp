@@ -15,7 +15,7 @@ pub fn double(comptime decl: @Decl) {
             "pub fn "
                 + m.name
                 + "(self: Self) -> string { return self.reply; }",
-        );
+        )
     });
     decl.addType(
         "Mock",

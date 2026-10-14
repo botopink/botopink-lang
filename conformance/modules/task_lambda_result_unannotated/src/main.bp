@@ -14,7 +14,7 @@ fn run() -> @Task<void> {
     val failing = { n ->
         async {
             throw "inner";
-        };
+        }
     };
     show(await failing(1));
     val r = await failing(2);
@@ -26,7 +26,7 @@ fn run() -> @Task<void> {
         async {
             if (n < 0) throw "negative";
             return n * 2;
-        };
+        }
     };
     show(await maybe(4));
     show(await maybe(-4));

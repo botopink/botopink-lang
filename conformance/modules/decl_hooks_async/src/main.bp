@@ -15,7 +15,7 @@ fn graph(comptime decl: @Decl) {
     var nodes: string[] = [];
     decl.hooks.forEach({ n ->
         val mark = if (n.async) "async" else "sync";
-        nodes.push(n.function.name + ": " + mark);
+        nodes.push(n.function.name + ": " + mark)
     });
     decl.setMeta("nodes", nodes.join(", "));
 }

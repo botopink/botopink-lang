@@ -350,7 +350,7 @@ test "js: case ---- OR patterns with block arm body" {
         \\    0 | 2 | 4 -> "even";
         \\    _      -> {
         \\        val value = "odd";
-        \\        break value;
+        \\        value
         \\    };
         \\};
     );
@@ -420,8 +420,7 @@ test "js: case ---- written variant path, arm value and whole-value binder" {
 //     were read by position, so `h` and `w` came out swapped (P4);
 //   * `.Some(#(a, b))` — a nested payload pattern bound nothing at all, and the
 //     arm ran with `a` and `b` undeclared.
-// The `break` form is used because a `case` value whose arms are blocks does not
-// type-check yet (01 step 4). No snapshot, for the reason the fixture above it
+// The arm's value is its tail (decision 541). No snapshot, for the reason the fixture above it
 // gives.
 test "js: case ---- type-test, tuple, range, labelled and nested arms" {
     const src =
@@ -429,38 +428,38 @@ test "js: case ---- type-test, tuple, range, labelled and nested arms" {
         \\type Maybe<T> { Some(value: T), None }
         \\fn sign(x: i32) -> string {
         \\    return case x {
-        \\        i32 when (x > 0) { break "positive"; }
-        \\        _ { break "zero"; }
+        \\        i32 when (x > 0) { "positive" }
+        \\        _ { "zero" }
         \\    };
         \\}
         \\fn pair(t: #(i32, string)) -> string {
         \\    return case t {
-        \\        #(0, s) { break s; }
-        \\        #(a, b) { break b + "!"; }
+        \\        #(0, s) { s }
+        \\        #(a, b) { b + "!" }
         \\    };
         \\}
         \\fn digit(n: i32) -> string {
         \\    return case n {
-        \\        1...5 { break "low"; }
-        \\        _ { break "high"; }
+        \\        1...5 { "low" }
+        \\        _ { "high" }
         \\    };
         \\}
         \\fn labels(s: Shape) -> i32 {
         \\    return case s {
-        \\        .Rect(height: h, width: w) { break w * 10 + h; }
-        \\        _ { break 0; }
+        \\        .Rect(height: h, width: w) { w * 10 + h }
+        \\        _ { 0 }
         \\    };
         \\}
         \\fn nested(m: Maybe<#(i32, i32)>) -> i32 {
         \\    return case m {
-        \\        .Some(#(a, b)) { break a + b; }
-        \\        _ { break -1; }
+        \\        .Some(#(a, b)) { a + b }
+        \\        _ { -1 }
         \\    };
         \\}
         \\fn rest(s: Shape) -> i32 {
         \\    return case s {
-        \\        .Rect(width: w, ..) { break w; }
-        \\        _ { break 0; }
+        \\        .Rect(width: w, ..) { w }
+        \\        _ { 0 }
         \\    };
         \\}
         \\fn main() {
@@ -665,10 +664,10 @@ test "js: case ---- nested case in fn body" {
         \\fn process(x: i32) -> string {
         \\    return case (x) {
         \\        0 -> {
-        \\            break case (x) {
+        \\            case (x) {
         \\                0 -> "zero";
         \\                _ -> "other";
-        \\            };
+        \\            }
         \\        };
         \\        _ -> "non-zero";
         \\    };

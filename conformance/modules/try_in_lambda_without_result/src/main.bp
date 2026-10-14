@@ -10,7 +10,7 @@ fn bad(x: i32) -> @Result<i32, string> {
 
 fn run() -> @Result<i32, string> {
     [1, 2].forEach({ x ->
-        try bad(x);
+        try bad(x)
     });
     return 2;
 }

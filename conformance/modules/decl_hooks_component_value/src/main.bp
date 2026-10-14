@@ -23,13 +23,13 @@ fn graph(comptime decl: @Decl) {
         var uses: string[] = [];
         n.uses.forEach({ u ->
             val h = u.hook;
-            uses.push(if (h == null) "null" else h.name);
+            uses.push(if (h == null) "null" else h.name)
         });
         var calls: string[] = [];
         n.calls.forEach({ c ->
             val k = c.callee;
             val name = if (k == null) "null" else k.name;
-            calls.push(name + "@" + c.at);
+            calls.push(name + "@" + c.at)
         });
         val mark = if (n.async) "~" else "";
         nodes.push(
@@ -40,7 +40,7 @@ fn graph(comptime decl: @Decl) {
                 + "], calls: ["
                 + calls.join(", ")
                 + "])",
-        );
+        )
     });
     decl.setMeta("nodes", nodes.join(" "));
 }

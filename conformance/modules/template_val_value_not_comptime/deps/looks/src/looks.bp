@@ -13,7 +13,7 @@ pub default fn looks(comptime e: @Expr<string>) -> @Expr<string> {
     val shown = themes
         .map({ t ->
             val v = t.value;
-            if (v is string) v else "?";
+            if (v is string) v else "?"
         })
         .join("");
     return @expr(e.text() + ": " + shown);

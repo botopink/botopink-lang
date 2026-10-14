@@ -246,7 +246,7 @@ fn wide(comptime decl: @Decl) {
             + v117
             + v118
             + v119;
-        out.push(all.length.toString());
+        out.push(all.length.toString())
     });
     decl.addMember("pub fn widths() -> string { return \""
         + out.join(",")

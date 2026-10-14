@@ -11,7 +11,7 @@ pub fn main() {
     var n = 0;
     val r = run({ ->
         n = n + 1;
-        1;
+        1
     }, 0);
     @print(n);
 }

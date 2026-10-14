@@ -1130,7 +1130,7 @@ test "json.quote round-trips through parse and unquote" {
         "plain text",
     ];
     val trips = table.filter({ s ->
-        parse(quote(s)).isOk() && unquote(quote(s)).unwrapOr("<err>") == s;
+        parse(quote(s)).isOk() && unquote(quote(s)).unwrapOr("<err>") == s
     });
     assert trips.length == table.length;
 }
@@ -1440,7 +1440,7 @@ test "json.decode and string.parseFloat answer the same f64 for a numeral" {
         "1e-99999999999999999999",
     ];
     val disagree = numerals.filter({ s ->
-        !decodesTo(s, Json.Num(value: s.parseFloat().unwrapOr(0.0 - 1.0)));
+        !decodesTo(s, Json.Num(value: s.parseFloat().unwrapOr(0.0 - 1.0)))
     });
     assert disagree.join(" ") == "";
     assert "1.7976931348623159e308".parseFloat().isError();

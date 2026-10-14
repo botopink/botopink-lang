@@ -3,10 +3,10 @@
 fn process(x: i32) -> string {
     return case (x) {
         0 -> {
-            break case (x) {
+            case (x) {
                 0 -> "zero";
                 _ -> "other";
-            };
+            }
         };
         _ -> "non-zero";
     };

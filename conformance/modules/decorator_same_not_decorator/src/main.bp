@@ -9,7 +9,7 @@ fn serverOnly(comptime decl: @Decl) {
 
 fn check(comptime decl: @Decl) {
     decl.annotations.forEach({ a ->
-        if (a.decorator.same("serverOnly")) decl.fail("server only");
+        if (a.decorator.same("serverOnly")) decl.fail("server only")
     });
 }
 

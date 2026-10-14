@@ -6,7 +6,7 @@ fn serverOnly(comptime decl: @Decl) {
 fn clientOnly(comptime decl: @Decl) {
     decl.annotations.forEach({ a ->
         if (a.decorator.same(serverOnly))
-            decl.fail("`" + decl.name + "` runs on the server");
+            decl.fail("`" + decl.name + "` runs on the server")
     });
 }
 

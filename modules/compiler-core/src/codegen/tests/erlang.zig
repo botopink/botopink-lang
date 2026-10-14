@@ -17,7 +17,7 @@ test "erlang: a prelude default fn body ignores what inference recorded at the p
     // was the same lookup). The program is built so its call lands exactly
     // there, wherever `primitives.bp` keeps that line.
     const alloc = std.testing.allocator;
-    const marker = "out = out.append([x]);";
+    const marker = "out = out.append([x])";
     const at = std.mem.indexOf(u8, prelude.primitives, marker) orelse return error.PreludeMarkerMoved;
     const line_start = if (std.mem.lastIndexOfScalar(u8, prelude.primitives[0..at], '\n')) |nl| nl + 1 else 0;
     const line = std.mem.count(u8, prelude.primitives[0..at], "\n") + 1;

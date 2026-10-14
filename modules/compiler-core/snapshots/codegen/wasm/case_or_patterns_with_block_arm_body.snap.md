@@ -4,7 +4,7 @@ val parity = case 5 {
     0 | 2 | 4 -> "even";
     _      -> {
         val value = "odd";
-        break value;
+        value
     };
 };
 ```
