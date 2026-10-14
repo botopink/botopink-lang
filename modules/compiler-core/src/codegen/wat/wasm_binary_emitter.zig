@@ -2,7 +2,7 @@
 //!
 //! `wat_emitter.zig` writes the text a snapshot records; this file writes the
 //! bytes an engine instantiates (`WebAssembly.instantiate` in the browser build,
-//! wasm3 on the comptime path, `wasmtime` for the RUN LOG). Both render the same
+//! wasmtime embedded on the comptime path, the `wasmtime` CLI for the RUN LOG). Both render the same
 //! `Module`, so the text and the binary can only disagree through one of the two
 //! emitters, never through the lowering; there is no text re-parse anywhere.
 //!

@@ -33,7 +33,6 @@ modules/
 ├── manifest/                ← the shared `botopink.json` model (packages, workspaces, dependencies)
 │   ├── src/                 ← root.zig — parser, workspace expansion, discovery, resolution
 │   └── tests/fixtures/      ← the manifests its unit tests read
-├── wasm3/                   ← vendored wasm3 (C, v0.5.0): the wat comptime runtime's engine, in-process
 ├── std-wasm/                ← botopink's wasm runtime in Zig — std's functions, the stack, the heap: the comptime runtime's and a `--target wasm` program's (decisions 434, 440, 448, 449)
 │   └── src/                 ← root.zig (`exports`, by `std:` name) + hash / text / number / array / bigint / random + heap.zig (a heap per process, collected) + wasm.zig (the program face, `zig build std-wasm`) + term.zig / term_faces.zig / otp.zig / otp/ (the Erlang terms and the OTP functions)
 ├── beam-to-wasm/            ← a standalone utility: any `.beam` set translated to wasm whole, standalone, unused by botopink (decisions 434, 438, 452)
@@ -64,7 +63,6 @@ modules/
 | `std-wasm/` | library (its tables: `exports`, `program`, the OTP table; `heap`, the heap per process) and `std_wasm.wasm` (a side module compiler-core embeds: the wasm codegen transpiles its `std:` exports into a program, the comptime runtime links its `rt_*` term library, `zig build std-wasm`) | `std` only | [link](std-wasm/AGENTS.md) |
 | `beam-to-wasm/` | library (`translateSet` / `translate`: `.beam` files → wasm functions over std-wasm's terms, a call between the modules given followed, an OTP call bound by std-wasm's OTP table; `refusalReaching`), imported by no other module (its own tests alone, `build.zig`) | `std` and `std-wasm` — nothing else, `build.zig` `requireStandalone` | [link](beam-to-wasm/AGENTS.md) |
 | `test-shard/` | the compiler-core test binary's runner (`build.zig` `.test_runner`), run as `-Dtest-shards` processes | `std` only | [link](test-shard/AGENTS.md) |
-| `wasm3/` | C sources linked into every native artifact that imports `compiler-core` (`link`), headers for its `@cImport` (`exposeHeaders`) | libc | [link](wasm3/AGENTS.md) |
 | `bpmp/` | `bpmp` executable | `manifest` only (spawns `botopink`) | [link](bpmp/AGENTS.md) |
 | `../../vscode-extension/` | VS Code `.vsix` extension (sibling project) | `language-server` (runtime) | [link](../../vscode-extension/AGENTS.md) |
 
@@ -110,3 +108,6 @@ the std modules). The lib-test-runner's unit tests run under the workspace
 - Comptime evaluation (templates, decorators, `comptime`) runs on compiler-core's
   wasm runtime, in-process, for every target (decision 434,
   `compiler-core/src/comptime/runtime/`); the CLI and the LSP share that pipeline.
+  Its engine is wasmtime (decision 543), no module here: its prebuilt C API is
+  the root `build.zig.zon`'s dependency, linked by `build.zig` `linkWasmtime`
+  into every native artifact that imports `compiler-core`.

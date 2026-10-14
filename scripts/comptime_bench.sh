@@ -14,7 +14,7 @@
 #        (`modules/compiler-core/src/comptime/runtime/stages.zig`): the
 #        compiler appends `<stage> TAB <ns>` per timed stage, and the table
 #        sums them. Modules travel to the runtime in-frame (BEAM, cmd 4) or
-#        in-process (wasm3), so there is nothing on disk to time separately.
+#        in-process (wasmtime), so there is nothing on disk to time separately.
 #
 # Nothing is written inside a repository: every project is generated into a
 # `mktemp -d` and deleted unless `--keep` is given.

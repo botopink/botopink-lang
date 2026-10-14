@@ -73,8 +73,7 @@ pub fn build(ar: std.mem.Allocator) Error![]u8 {
     var items: std.ArrayListUnmanaged(wat.Item) = .empty;
     try items.append(ar, .{ .memory = .{ .@"export" = "memory", .min_pages = @intCast((@as(u64, linked.end) + 65535) / 65536) } });
     // Slot 0 traps (no fun has index 0); the lowered program's closures
-    // follow it (`link.zig` sizes the table). An empty table or element
-    // segment is one wasm3 refuses to allocate ("memory allocation failed").
+    // follow it (`link.zig` sizes the table), so the table is never empty.
     try items.append(ar, .{ .table = try ar.dupe([]const u8, &.{no_fun}) });
     // The stack pointer is the first global (`link.zig` reads the stack top
     // from global 0).

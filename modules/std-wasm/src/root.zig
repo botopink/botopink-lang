@@ -18,7 +18,7 @@
 //! caller (`compiler-core/src/codegen/wat/std_wasm_link.zig`):
 //!
 //! - **a `--target wasm` program** links the `std:` exports it calls;
-//! - **the comptime runtime** (wasm3 in-process,
+//! - **the comptime runtime** (wasmtime in-process, decision 543,
 //!   `compiler-core/src/comptime/runtime/wat/runtime_module.zig`) links every
 //!   `rt_*` export — the terms, the OTP functions, the comptime faces — once
 //!   per process; a comptime module's calls resolve to them.

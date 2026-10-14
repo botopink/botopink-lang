@@ -20,6 +20,7 @@ botopink-lang/                 ← language core (this project)
 ├── AGENTS.md                  ← you are here
 ├── README.md                  ← public-facing intro
 ├── build.zig                  ← workspace build graph
+├── build.zig.zon              ← the one fetched input: wasmtime's C API per release target, pinned by hash (decision 543)
 ├── .github/workflows/         ← test.yml (push/PR) + release.yml (tags)
 ├── modules/                   ← all Zig packages — see modules/AGENTS.md
 │   ├── bpmp/                  ← `bpmp` package + toolchain manager
@@ -33,8 +34,7 @@ botopink-lang/                 ← language core (this project)
 │   ├── std-wasm/              ← botopink's wasm runtime in Zig: std's host functions (bound by `std:` cells), the Erlang terms with the OTP functions, and the heap per process (`heap.zig`, decisions 448, 449), compiled to `std_wasm.wasm` — a `--target wasm` program's and the comptime runtime's (decisions 434, 440, 450)
 │   ├── beam-to-wasm/          ← a standalone utility: any `.beam` set translated to wasm whole, module by module (std + std-wasm only); no part of the compiler or any botopink build (decisions 434, 438, 452)
 │   ├── test-scratch/          ← `test_scratch` — per-process scratch paths; the test modules only
-│   ├── test-shard/            ← the compiler-core test runner: the suite split across processes (`-Dtest-shards`)
-│   └── wasm3/                 ← vendored wasm3 (C): the wat comptime runtime runs on it, in-process
+│   └── test-shard/            ← the compiler-core test runner: the suite split across processes (`-Dtest-shards`)
 ├── libs/                      ← the bundled .bp library — see libs/AGENTS.md
 │   └── std/                   ← standard library, the one package the compiler ships (decision 326)
 ├── conformance/               ← the language reference and its conformance suite (decisions 457, 461, 462, 466, 475):
@@ -91,8 +91,11 @@ no flag turns any off):
   [`modules/test-scratch/AGENTS.md`](modules/test-scratch/AGENTS.md).
 
 Comptime runs on wasm only (decision 434): every target's decorator, template
-and `comptime` evaluation runs on the wat runtime, wasm3 inside the compiler, so
-compiling spawns no `erl` and building the compiler runs no `erlc`. `erl` / `erlc`
+and `comptime` evaluation runs on the wat runtime, wasmtime inside the compiler
+(decision 543: its C API, a prebuilt library per release target that `zig build`
+fetches through `build.zig.zon` — no cargo; an artifact linking it on ELF is
+linked by LLD), so compiling spawns no `erl` and building the compiler runs no
+`erlc`. `erl` / `erlc`
 (OTP 28+) are needed for the erlang and beam **targets' own** tests: the codegen
 snapshot RUN LOGs and the beam export audit under `zig build test` and the gate,
 and `botopink build/run/test --target erlang|beam` (and so `test-cli`,
@@ -361,10 +364,12 @@ Do not use `--no-verify`.
 - **One runtime, wasm, in-process** (decision 434): a comptime module is the
   Erlang text `codegen/erlang.zig`'s untyped mode writes, parsed, lowered to
   wasm and linked into std-wasm's term library (`comptime/runtime/wat/`,
-  `modules/std-wasm`, decoded from `std_wasm.wasm` once per process), run on
-  wasm3 (`persistent_wat.zig`). No child process, no pipe, no file; a runaway
-  body is a runaway wasm3 call on the compiler's thread (limit 1 of
-  `comptime/runtime/AGENTS.md` § Limits) — wrap manual runs in `timeout`.
+  `modules/std-wasm`, decoded from `std_wasm.wasm` once per process), compiled
+  and run by wasmtime (`persistent_wat.zig`, decision 543), the compiled module
+  kept under `.botopinkbuild/build/comptime/` (`comptime/runtime/AGENTS.md`
+  § Start-up). No child process, no pipe; a runaway body is a runaway wasmtime
+  call (limit 1 of `comptime/runtime/AGENTS.md` § Limits) — wrap manual runs in
+  `timeout`.
 - **A body's `io:format`** goes to a buffer in the module's own memory, never to
   the compiler's stdout.
 - **Host functions** reached at build answer by std-wasm (`modules/std-wasm`) —
