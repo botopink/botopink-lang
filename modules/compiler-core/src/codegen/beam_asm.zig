@@ -416,13 +416,6 @@ fn stmtIsReturn(stmt: ast.Stmt) bool {
     };
 }
 
-/// True when an `@block`'s body holds a `return` of its own scope — the
-/// block's value, never the enclosing function's (`ast.exprReturns`).
-fn blockBodyReturns(body: []const ast.Stmt) bool {
-    for (body) |stmt| if (ast.exprReturns(stmt.expr)) return true;
-    return false;
-}
-
 /// A loop's labels, and the buffer (the frame) it is emitted into: a
 /// condition loop, or a `for` walked in the frame (`lowerInFrameFor`).
 /// `break` jumps to `exit`, `continue` to `top`. No loop has a value
@@ -434,14 +427,6 @@ const CondLoop = struct { top: u32, exit: u32, out: *std.Io.Writer };
 /// (reversed at `exit`), and the label a `break <v>` jumps to once `v` is
 /// pushed.
 const GenLoop = struct { acc: u32, exit: u32, out: *std.Io.Writer };
-
-/// An `@block { … }` whose body holds a `return` of its own
-/// (`ast.exprReturns`), being emitted into a frame: the block runs in that
-/// frame, and its `return` leaves the BLOCK — the value into `x0`, then a jump
-/// to `exit`, where the block's value is read. `gen_exit` is the annotated
-/// loop open when the block began, so a generator scope opened inside the
-/// block keeps its own bare `return`.
-const BlockExit = struct { exit: u32, out: *std.Io.Writer, gen_exit: ?u32 };
 
 /// The throw a bare `break` in a loop's fun ends the loop with
 /// (`guardLoopBreak` catches it at the loop's call site).
@@ -836,9 +821,8 @@ fn destructYSlots(pattern: ast.ParamDestruct) u32 {
 const try_throw_signal = "__bp_try";
 
 /// The throw of a `return` inside a loop's fun (`emitLoopReturn`). Apart from
-/// `try_throw_signal` because the two leave different scopes: a failing `try`
-/// always answers the function, a `return` answers the `@block` the loop's
-/// call site sits in when there is one (decision 2), the function otherwise.
+/// `try_throw_signal` because the two are answered apart: a failing `try`
+/// answers the function's `@Result`, a `return` the function's value.
 const return_throw_signal = "__bp_return";
 
 /// True when `body` holds a propagating `try` (a bare `try`, not
@@ -883,7 +867,15 @@ fn exprPropagates(e: ast.Expr) bool {
             .grouped => |x| exprPropagates(x.*),
             .case => |c| blk: {
                 for (c.subjects) |x| if (exprPropagates(x)) break :blk true;
-                for (c.arms) |arm| if (exprPropagates(arm.body)) break :blk true;
+                // A braced arm is the function's block (decision 525): its
+                // `return` and its `try` are the function's.
+                for (c.arms) |arm| {
+                    const hit = if (arm.body == .function and arm.body.function.kind.syntax == .lambda)
+                        bodyPropagates(arm.body.function.kind.body)
+                    else
+                        exprPropagates(arm.body);
+                    if (hit) break :blk true;
+                }
                 break :blk false;
             },
             .arrayLit => |al| blk: {
@@ -1148,10 +1140,6 @@ fn countLocalsInExpr(em: *Emitter, e: ast.Expr, count: *u32) void {
                 if (!cc.is_builtin and std.mem.eql(u8, cc.callee, "pop") and cc.args.len == 0) if (cc.receiver) |r| {
                     if (r.* == .identifier and r.identifier.kind == .ident and em.module_vars.contains(r.identifier.kind.ident)) count.* += 2;
                 };
-                // `@block { … }` runs its statements in this frame.
-                if (cc.is_builtin and std.mem.eql(u8, cc.callee, "block")) {
-                    for (cc.trailing) |t| countLocalsRec(em, t.body, count);
-                }
                 // Calling a module-level `val` that holds a fun parks the fun
                 // on the stack while the arguments are staged (`lowerCall`).
                 if (!cc.is_builtin and cc.receiver == null and (em.top_vals.contains(cc.callee) or
@@ -2363,9 +2351,6 @@ const Emitter = struct {
     cond_loop: ?CondLoop = null,
     /// The annotated `loop` whose body is being emitted (decision 105).
     gen_loop: ?GenLoop = null,
-    /// The innermost `@block { … }` with a `return` of its own being emitted
-    /// in this frame (`lowerBlockWithReturn`).
-    block_exit: ?BlockExit = null,
     /// Static extension dispatch (F6): call-site loc → activated extension symbol.
     rewrites: std.AutoHashMap(ast.Loc, []const u8),
     /// Primitive (Array/String/Bool/numeric) receiver method lowering, keyed by
@@ -5726,10 +5711,6 @@ const Emitter = struct {
         switch (stmt.expr) {
             .jump => |j| switch (j.kind) {
                 .@"return" => |r| {
-                    if (self.inBlockExit()) |be| {
-                        try self.emitBlockReturn(be, if (r) |val| val.* else null);
-                        return;
-                    }
                     if (r == null) if (self.inGenLoop()) |gl| {
                         try beamEmitter.writeJump(self.out, gl.exit);
                         return;
@@ -6488,10 +6469,6 @@ const Emitter = struct {
             },
             .jump => |j| switch (j.kind) {
                 .@"return" => |r| {
-                    if (self.inBlockExit()) |be| {
-                        try self.emitBlockReturn(be, if (r) |val| val.* else null);
-                        return;
-                    }
                     if (self.in_loop_lambda and self.inGenLoop() == null) {
                         try self.emitLoopReturn(if (r) |val| val.* else null);
                         return;
@@ -9233,17 +9210,6 @@ const Emitter = struct {
             if (mode == .tail) try self.emitReturn();
             return;
         }
-        if (std.mem.eql(u8, cc.callee, "block")) {
-            if (cc.trailing.len > 0) {
-                const body = cc.trailing[0].body;
-                if (blockBodyReturns(body)) {
-                    try self.lowerBlockWithReturn(body, mode);
-                    return;
-                }
-                for (body) |stmt| try self.emitStmt(stmt);
-            }
-            return;
-        }
         if (std.mem.startsWith(u8, cc.callee, "__bp_")) {
             try self.lowerResultOptionOp(cc.callee, cc.args);
             if (mode == .tail) try self.emitReturn();
@@ -11712,11 +11678,8 @@ const Emitter = struct {
 
     /// `return v` inside a loop's fun (`in_loop_lambda`): a return there only
     /// leaves the fun, so the value is thrown as `{'__bp_return', V}` and the
-    /// loop's call site (`guardLoopCall`) answers it as the value of the
-    /// `@block` it sits in, or of the function. `firstUnder(12, 10)` answered
-    /// `12` where commonJS and wasm answer `8`; a `for` inside an `@block`
-    /// answered the function where it means the block
-    /// (`modules/block_for_return_is_block_value`).
+    /// loop's call site (`guardLoopCall`) answers it as the function's value.
+    /// `firstUnder(12, 10)` answered `12` where commonJS and wasm answer `8`.
     fn emitLoopReturn(self: *Emitter, value: ?ast.Expr) anyerror!void {
         if (value) |v| try self.lowerExprIntoX0(v) else try beamEmitter.writeMoveOp(self.out, Op.atom("undefined"), Dst.xr(0));
         try beamEmitter.writeTestHeap(self.out, 3, 1);
@@ -11729,9 +11692,7 @@ const Emitter = struct {
     /// `{'__bp_return', V}` (`emitLoopReturn`) — inside a catch section of this
     /// frame (`tag` is its y-slot): the thrown `E` is this function's return
     /// value, or — when this frame is itself a loop's fun — thrown on to the
-    /// next call site. A thrown `V` is the same, except that an `@block` of
-    /// this frame (`inBlockExit`) takes it as the block's value. Any other
-    /// raise is re-raised.
+    /// next call site. A thrown `V` is the same. Any other raise is re-raised.
     fn guardLoopCall(self: *Emitter, tag: u32, call: anytype) anyerror!void {
         const caught = self.allocLabel();
         const ret = self.allocLabel();
@@ -11745,59 +11706,13 @@ const Emitter = struct {
         try beamEmitter.writeTryCase(self.out, tag);
         try beamEmitter.writeTest(self.out, .is_eq_exact, other, &.{ Op.xr(0), Op.atom("throw") });
         try beamEmitter.writeTest(self.out, .is_tagged_tuple, ret, &.{ Op.xr(1), .{ .untagged = 2 }, Op.atom(try_throw_signal) });
-        try self.answerLoopThrow(null);
+        try self.answerLoopThrow();
         try beamEmitter.writeLabel(self.out, ret);
         try beamEmitter.writeTest(self.out, .is_tagged_tuple, other, &.{ Op.xr(1), .{ .untagged = 2 }, Op.atom(return_throw_signal) });
-        try self.answerLoopThrow(self.inBlockExit());
+        try self.answerLoopThrow();
         try beamEmitter.writeLabel(self.out, other);
         try beamEmitter.writeBif(self.out, "raise", 0, &.{ Op.xr(2), Op.xr(1) }, Dst.xr(0));
         try beamEmitter.writeLabel(self.out, done);
-    }
-
-    /// The `@block` whose `return` the statement being emitted leaves: the
-    /// innermost one of this frame, unless an annotated loop opened inside it
-    /// (that loop's bare `return` ends its generator scope).
-    fn inBlockExit(self: *const Emitter) ?BlockExit {
-        const be = self.block_exit orelse return null;
-        if (be.out != self.out) return null;
-        if (self.inGenLoop()) |gl| if (be.gen_exit != gl.exit) return null;
-        return be;
-    }
-
-    /// `@block { … }` whose body holds a `return` of its own (decision 2): the
-    /// body runs in this frame, and every `return` in it moves its value into
-    /// `x0` and jumps to `Exit` (`emitBlockReturn`) — it never leaves the
-    /// enclosing function. A body that can run off its end answers `ok` (a
-    /// statement block's value; the checker refuses a valueless tail in value
-    /// position, `block-tail-value`).
-    ///
-    ///     Body…  [move ok x0]  {label, Exit}  [return, in tail position]
-    fn lowerBlockWithReturn(self: *Emitter, body: []const ast.Stmt, mode: CallMode) anyerror!void {
-        const exit = self.allocLabel();
-        const saved = self.block_exit;
-        self.block_exit = .{
-            .exit = exit,
-            .out = self.out,
-            .gen_exit = if (self.inGenLoop()) |gl| gl.exit else null,
-        };
-        for (body) |stmt| try self.emitStmt(stmt);
-        self.block_exit = saved;
-        if (body.len == 0 or !stmtIsReturn(body[body.len - 1])) {
-            try beamEmitter.writeMoveOp(self.out, Op.atom("ok"), Dst.xr(0));
-        }
-        try beamEmitter.writeLabel(self.out, exit);
-        if (mode == .tail) try self.emitReturn();
-    }
-
-    /// A `return` of an `@block`'s body: its value (`ok` for a bare one) into
-    /// `x0`, then the block's exit.
-    fn emitBlockReturn(self: *Emitter, be: BlockExit, value: ?ast.Expr) anyerror!void {
-        if (value) |v| {
-            try self.lowerExprIntoX0(v);
-        } else {
-            try beamEmitter.writeMoveOp(self.out, Op.atom("ok"), Dst.xr(0));
-        }
-        try beamEmitter.writeJump(self.out, be.exit);
     }
 
     /// The annotated loop whose body is being emitted into the current frame.
@@ -12016,13 +11931,9 @@ const Emitter = struct {
     }
 
     /// The `{Signal, V}` in `x1` a loop's fun threw, answered at its call site:
-    /// `V` is the `@block`'s value when `block` is one of this frame, thrown on
-    /// whole from a loop's fun, and this function's value otherwise.
-    fn answerLoopThrow(self: *Emitter, block: ?BlockExit) anyerror!void {
-        if (block) |be| {
-            try beamEmitter.writeGetTupleElement(self.out, Op.xr(1), 1, Dst.xr(0));
-            try beamEmitter.writeJump(self.out, be.exit);
-        } else if (self.in_loop_lambda) {
+    /// thrown on whole from a loop's fun, and this function's value otherwise.
+    fn answerLoopThrow(self: *Emitter) anyerror!void {
+        if (self.in_loop_lambda) {
             try beamEmitter.writeMoveOp(self.out, Op.xr(1), Dst.xr(0));
             try beamEmitter.writeCall(self.out, .only, 1, .{ .ext = .{ .module = "erlang", .function = "throw" } }, 0);
         } else {

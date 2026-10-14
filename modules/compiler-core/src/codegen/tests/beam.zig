@@ -75,15 +75,15 @@ test "beam: a number in a list pattern is a test of that element" {
 // ── a lambda a `case` arm answers ────────────────────────────────────────────
 
 test "beam: a lambda literal that ends a case arm is the arm's value" {
-    // `_ { { x -> x * n }; }` — the arm block's last statement is a lambda,
-    // so it is the value the `case` answers (a statement-position block does
-    // not parse). It ran as a statement, the arm answered `ok`, and applying
-    // it was `{badfun, ok}` (`modules/case_arm_lambda_value`).
+    // `_ { { x -> x * n } }` — the arm block's tail is a lambda, so it is the
+    // value the `case` answers (decision 525). It ran as a statement, the arm
+    // answered `ok`, and applying it was `{badfun, ok}`
+    // (`modules/case_arm_lambda_value`).
     try h.assertBeamRunLog(std.testing.allocator,
         \\fn scaleBy(n: i32) -> fn(x: i32) -> i32 {
         \\    val f = case n {
         \\        _ {
-        \\            { x -> x * n };
+        \\            { x -> x * n }
         \\        }
         \\    };
         \\    return f;
@@ -336,14 +336,14 @@ test "beam: case ---- true and false inside a tuple pattern are matched, not bou
     try h.assertBeamRunLog(std.testing.allocator,
         \\fn tag(t: #(bool, i32)) -> string {
         \\    return case t {
-        \\        #(true, n) { "yes " + n.toString(); }
-        \\        #(false, n) { "no " + n.toString(); }
+        \\        #(true, n) { "yes " + n.toString() }
+        \\        #(false, n) { "no " + n.toString() }
         \\    };
         \\}
         \\fn first(t: #(bool, i32, i32)) -> i32 {
         \\    return case t {
-        \\        #(false, ..) { 0; }
-        \\        #(true, n, ..) { n; }
+        \\        #(false, ..) { 0 }
+        \\        #(true, n, ..) { n }
         \\    };
         \\}
         \\fn main() {
@@ -360,15 +360,15 @@ test "beam: case ---- a record's constructor pattern tests the record's own tag"
         \\type Point(x: i32, y: i32)
         \\fn f(p: Point) -> i32 {
         \\    return case p {
-        \\        Point(x: 0, y: y) { y; }
-        \\        Point(x: x, y: _) { x; }
+        \\        Point(x: 0, y: y) { y }
+        \\        Point(x: x, y: _) { x }
         \\    };
         \\}
         \\fn onAxis(p: Point) -> string {
         \\    return case p {
-        \\        Point(x: 0, ..) { "on y"; }
-        \\        Point(y: 0, ..) { "on x"; }
-        \\        _ { "off"; }
+        \\        Point(x: 0, ..) { "on y" }
+        \\        Point(y: 0, ..) { "on x" }
+        \\        _ { "off" }
         \\    };
         \\}
         \\fn main() {

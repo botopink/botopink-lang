@@ -167,16 +167,12 @@ helper's own writer, and four through `emitMakeFun` (which prefixes the
 **None of the eight is a block as a value**, so decision 2's R7 has no producer
 to remove on this backend. Two reasons, both checkable:
 
-- `@block { … }` already runs its statements **in the current frame** here — the
-  `"block"` arm of `lowerBuiltinCall`, with `countLocalsRec` reserving the block's
-  locals in the enclosing frame. A body holding a `return` of its own scope
-  (`ast.exprReturns`) goes through `lowerBlockWithReturn`: each `return` moves
-  its value into `x0` and jumps to the block's exit label (`emitBlockReturn`,
-  `Emitter.block_exit`), so it is the block's value and never the enclosing
-  function's `return.` (decision 2; `modules/block_return_is_block_value`). commonJS
-  wraps the same form in an IIFE, which is
-  the one block-as-value site front 04 found in its twin sweep (11 text hits / 10
-  build sites / 1 block-as-value).
+- a block `{ … }` (decision 525; `@block` is removed) reaches this backend as a
+  `case true { _ { … } }` (`ast.CollectionExpr.case.isBlock`) and runs its
+  statements **in the current frame**, as every `case` arm's block does: its
+  `return` is the enclosing function's, thrown to the loop's call site from a
+  loop's fun (`exprPropagates` reads a braced arm's body for it,
+  `modules/block_return_leaves_function`).
 - beam's other block-as-value producer was **already removed**, by this front's
   `ae813cc8`: a `case` arm written `Pattern { body }` reaches the backend as a
   lambda (`ast.Expr.function`, `.lambda`), and lowering it as an expression used
