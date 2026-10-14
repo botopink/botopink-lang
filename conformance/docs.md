@@ -535,7 +535,8 @@ build refuses — a syntax error, a type error — exports nothing, and the erro
 fix is its own. An importer that uses a name it takes from it is refused once,
 at the import item, naming the module and its file (`import-of-failed-module`:
 `` `area` comes from `shapes`, which failed to check — its own errors are reported
-there (src/shapes.bp) ``), never as an `unbound variable` at the use; the importer's importers name the importer the
+there (src/shapes.bp) ``) — the file is the label the module's own errors are printed at, `a/client.bp` for a
+dependency's module —, never as an `unbound variable` at the use; the importer's importers name the importer the
 same way, so every line of the report leads to the one real error. A name the
 named module does not declare, where that module checked, is still refused as
 missing:
@@ -3203,6 +3204,11 @@ use, the one line the expansion has in the file.
 <!-- example: modules/decorator_raise_names_body_file -->
 
 <!-- example: modules/template_raise_names_body_file -->
+
+A template declared in the module that uses it is located the same way: its body's raising call is refused in
+that module's own file, and the use is its `called from` line.
+
+<!-- example: modules/template_own_raise_located -->
 
 A decorator is reached by its name, an alias or a namespace (decision 386):
 `import {markers} from "web";` registers the module's decorators under

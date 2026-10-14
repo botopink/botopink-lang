@@ -1452,6 +1452,8 @@ codegen/
   starts (`callStart`: the receiver chain's root of a method call); each frame is kept in the process
   dictionary with its reason (`frames_push_form`, `frames_read_form` in `comptime_helper_forms`) and the
   evaluator replies `'__bp_frames'(Reason)`, innermost first.
+  A call's frame is pushed only once its receiver and arguments are evaluated (`hoistOperands`: `case {Operands} of
+  {Vars} -> try Call(Vars) …`), so `foo(1 / 0)` frames no `foo`.
   A comptime module's `/` and `%` are frames too, at the operator (decision 533), their divisor through `'__bp_cdz'/1`.
   `primErlangDispatchCount` exposes the size of the
   prelude's dispatch table for a regression test.

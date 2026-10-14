@@ -15,22 +15,78 @@ fn main() {
 ----- COMPTIME WAT -- template conf
 ```wat
 (func $conf/1 (param $a0 i32) (result i32)
-  (local $s0 i32) (local $s1 i32) (local $V_Debug i32)
+  (local $s0 i32) (local $s1 i32) (local $s2 i32) (local $s3 i32)
   (block $raise
   (block $L1 (result i32)
   (block $L2
   local.get $a0
   local.set $s0
+  (block $L3 (result i32)
+  (block $L4
   local.get $s0
   call $bp_comptime_template:text/1
   call $rt_pending
-  br_if $raise
+  br_if $L4
+  br $L3
+  )
+  call $rt_class
   local.set $s0
-  (block $L4
-  (block $L3
+  call $rt_reason
+  local.set $s1
+  call $rt_clear
+  (block $L5 (result i32)
+  (block $L6
+  local.get $s0
+  global.get $__lit
+  i32.const 72
+  i32.add
+  i32.const 5
+  call $rt_atom
+  call $rt_eqx
+  i32.eqz
+  br_if $L6
+  local.get $s1
+  local.set $s2
+  global.get $__lit
+  i32.const 296
+  i32.add
+  i32.const 7
+  call $rt_bin
+  i64.const 2
+  call $rt_int
+  i64.const 13
+  call $rt_int
+  local.get $s2
+  call $bp_comptime_template:__bp_push/4
+  call $rt_pending
+  br_if $raise
+  drop
+  global.get $__lit
+  i32.const 72
+  i32.add
+  i32.const 5
+  call $rt_atom
+  local.get $s2
+  call $rt_raise
+  drop
+  br $raise
+  call $rt_nil
+  br $L5
+  )
+  local.get $s0
+  local.get $s1
+  call $rt_raise
+  drop
+  br $raise
+  )
+  br $L3
+  )
+  local.set $s0
+  (block $L8
+  (block $L7
   local.get $s0
   local.set $s1
-  br $L4
+  br $L8
   )
   local.get $s0
   call $rt_badmatch
@@ -43,7 +99,7 @@ fn main() {
   call $rt_int
   local.get $s1
   global.get $__lit
-  i32.const 288
+  i32.const 304
   i32.add
   i32.const 6
   call $rt_atom
@@ -54,11 +110,11 @@ fn main() {
   call $rt_pending
   br_if $raise
   local.set $s0
-  (block $L6
-  (block $L5
+  (block $L10
+  (block $L9
   local.get $s0
   local.set $s1
-  br $L6
+  br $L10
   )
   local.get $s0
   call $rt_badmatch
@@ -68,16 +124,16 @@ fn main() {
   local.get $s0
   drop
   global.get $__lit
-  i32.const 296
+  i32.const 312
   i32.add
   i32.const 4
   call $rt_atom
   local.set $s0
-  (block $L8
-  (block $L7
+  (block $L12
+  (block $L11
   local.get $s0
-  local.set $V_Debug
-  br $L8
+  local.set $s2
+  br $L12
   )
   local.get $s0
   call $rt_badmatch
@@ -86,23 +142,109 @@ fn main() {
   )
   local.get $s0
   drop
-  i32.const 2
+  i32.const 1
   call $rt_tuple
   local.set $s0
   local.get $s0
   i32.const 0
+  i32.const 2
+  call $rt_tuple
+  local.set $s3
+  local.get $s3
+  i32.const 0
   local.get $s1
   call $rt_tset
   drop
-  local.get $s0
+  local.get $s3
   i32.const 1
-  local.get $V_Debug
+  local.get $s2
+  call $rt_tset
+  drop
+  local.get $s3
   call $rt_tset
   drop
   local.get $s0
+  local.set $s0
+  (block $L13 (result i32)
+  (block $L14
+  local.get $s0
+  call $rt_tuple_arity
+  i32.const 1
+  i32.ne
+  br_if $L14
+  local.get $s0
+  i32.const 0
+  call $rt_elem
+  local.set $s1
+  local.get $s1
+  local.set $s1
+  (block $L15 (result i32)
+  (block $L16
+  local.get $s1
   call $bp_comptime_template:expr/1
   call $rt_pending
+  br_if $L16
+  br $L15
+  )
+  call $rt_class
+  local.set $s1
+  call $rt_reason
+  local.set $s2
+  call $rt_clear
+  (block $L17 (result i32)
+  (block $L18
+  local.get $s1
+  global.get $__lit
+  i32.const 72
+  i32.add
+  i32.const 5
+  call $rt_atom
+  call $rt_eqx
+  i32.eqz
+  br_if $L18
+  local.get $s2
+  local.set $s3
+  global.get $__lit
+  i32.const 296
+  i32.add
+  i32.const 7
+  call $rt_bin
+  i64.const 5
+  call $rt_int
+  i64.const 12
+  call $rt_int
+  local.get $s3
+  call $bp_comptime_template:__bp_push/4
+  call $rt_pending
   br_if $raise
+  drop
+  global.get $__lit
+  i32.const 72
+  i32.add
+  i32.const 5
+  call $rt_atom
+  local.get $s3
+  call $rt_raise
+  drop
+  br $raise
+  call $rt_nil
+  br $L17
+  )
+  local.get $s1
+  local.get $s2
+  call $rt_raise
+  drop
+  br $raise
+  )
+  br $L15
+  )
+  br $L13
+  )
+  local.get $s0
+  call $rt_case_clause
+  drop
+  br $raise
+  )
   br $L1
   )
   call $rt_function_clause

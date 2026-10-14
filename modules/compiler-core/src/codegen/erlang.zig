@@ -8621,6 +8621,60 @@ const Emitter = struct {
     /// throw (a `break`, a typed `throw`) crosses it untouched; the frames of a
     /// raise are read back by `'__bp_frames'/1`.
     fn framed(this: *Emitter, b: Ast.Builder, file: []const u8, at: ast.Loc, node: Ast.Expr) !Ast.Expr {
+        // Decision 532 — the frame is the call's own: its receiver and its
+        // arguments are evaluated before the `try` (`case {A1, …} of {V1, …}
+        // -> try Call(V1, …) …`), so a raise there is not framed as this call
+        // (`foo(1 / 0)` never entered `foo`).
+        const hoisted = try this.hoistOperands(b, node);
+        if (hoisted.subject) |subject| {
+            const inner = try this.frameOf(b, file, at, hoisted.node);
+            return b.caseOf(subject, &.{try b.clause(&.{hoisted.pattern}, &.{}, &.{inner})});
+        }
+        return this.frameOf(b, file, at, node);
+    }
+
+    const Hoisted = struct { subject: ?Ast.Expr = null, pattern: Ast.Expr = undefined, node: Ast.Expr = undefined };
+
+    /// `node` when it is a call or an apply with an operand that is more than a
+    /// variable or a literal: the tuple of operands, the tuple of variables
+    /// that match it, and the call over those variables.
+    fn hoistOperands(this: *Emitter, b: Ast.Builder, node: Ast.Expr) !Hoisted {
+        const args: []const Ast.Expr = switch (node) {
+            .call => |c| c.args,
+            .apply => |a| a.args,
+            else => return .{},
+        };
+        const extra: usize = if (node == .apply) 1 else 0;
+        var any = false;
+        for (args) |a| any = any or !isPlainOperand(a);
+        if (node == .apply and !isPlainOperand(node.apply.fun.*)) any = true;
+        if (!any) return .{};
+        const total = args.len + extra;
+        const subject = try b.arena.alloc(Ast.Expr, total);
+        const pattern = try b.arena.alloc(Ast.Expr, total);
+        const seq = this.frame_seq;
+        this.frame_seq += 1;
+        for (0..total) |i| {
+            subject[i] = if (extra == 1 and i == 0) node.apply.fun.* else args[i - extra];
+            pattern[i] = Ast.Expr.v(try std.fmt.allocPrint(b.arena, "__BpA{d}_{d}", .{ seq, i }));
+        }
+        const call_args = pattern[extra..];
+        const rebuilt: Ast.Expr = switch (node) {
+            .call => |c| .{ .call = .{ .module = c.module, .name = c.name, .args = call_args } },
+            .apply => .{ .apply = .{ .fun = try b.ptr(pattern[0]), .args = call_args } },
+            else => unreachable,
+        };
+        return .{ .subject = try b.tuple(subject), .pattern = try b.tuple(pattern), .node = rebuilt };
+    }
+
+    fn isPlainOperand(e: Ast.Expr) bool {
+        return switch (e) {
+            .variable, .term, .atom, .lexeme_binary, .number, .string => true,
+            else => false,
+        };
+    }
+
+    fn frameOf(this: *Emitter, b: Ast.Builder, file: []const u8, at: ast.Loc, node: Ast.Expr) !Ast.Expr {
         // A variable of its own per frame: a name a clause bound stays bound
         // for the clauses after it in the same function, where the second
         // `catch` would compare instead of bind.

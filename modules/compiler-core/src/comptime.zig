@@ -337,7 +337,14 @@ fn displaySrcPath(arena: std.mem.Allocator, mod: Module) ![]const u8 {
 /// (`Reflection.srcPaths`), before any module is analysed — a cached
 /// package's modules included, whose analysis does not run.
 fn recordSrcPaths(arena: std.mem.Allocator, reflection: *reflectionMod.Reflection, mods: []const Module) !void {
-    for (mods) |m| try reflection.srcPaths.put(reflection.arena, m.path, try displaySrcPath(arena, m));
+    for (mods) |m| {
+        const shown = try displaySrcPath(arena, m);
+        try reflection.srcPaths.put(reflection.arena, m.path, shown);
+        // A dependency's module is labelled by its module path, as its own
+        // diagnostics are (decision 545), not by its package-relative file.
+        const label = if (m.package.len > 0) try std.fmt.allocPrint(arena, "{s}.bp", .{m.path}) else shown;
+        try reflection.diagLabels.put(reflection.arena, m.path, label);
+    }
 }
 
 /// The builtin `SourceLocation` record as a program declaration. `@src()` is

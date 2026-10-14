@@ -2322,6 +2322,13 @@ pub const Env = struct {
         return std.fmt.allocPrint(self.arena, "{s}.bp", .{if (module.len > 0) module else "main"}) catch module;
     }
 
+    /// The label `module`'s own diagnostics print (decision 545): `srcPathOf`
+    /// for a program module, the module path plus `.bp` for a dependency's.
+    pub fn diagLabelOf(self: *Env, module: []const u8) []const u8 {
+        if (self.reflection) |r| if (r.diagLabels.get(module)) |p| return p;
+        return self.srcPathOf(module);
+    }
+
     /// The file `decl`'s calls are located in (decision 532): the file of the
     /// module it was declared in; this module's when nothing recorded it.
     pub fn srcPathOfDecl(self: *Env, decl: ast.FnDecl) []const u8 {

@@ -19,14 +19,14 @@ val page = html """<p>${name}</p>""";
 ----- COMPTIME WAT -- template html
 ```wat
 (func $html/1 (param $a0 i32) (result i32)
-  (local $V_Q i32) (local $s1 i32) (local $s2 i32)
+  (local $s0 i32) (local $s1 i32) (local $s2 i32) (local $V___BpF0 i32)
   (block $raise
   (block $L1 (result i32)
   (block $L2
   local.get $a0
-  local.set $V_Q
+  local.set $s0
   global.get $__lit
-  i32.const 288
+  i32.const 296
   i32.add
   i32.const 2
   call $rt_bin
@@ -53,19 +53,75 @@ val page = html """<p>${name}</p>""";
   local.get $s1
   call $rt_make_fun
   local.get $s2
-  local.get $V_Q
+  (block $L5 (result i32)
+  (block $L6
+  local.get $s0
   call $bp_comptime_template:parts/1
   call $rt_pending
+  br_if $L6
+  br $L5
+  )
+  call $rt_class
+  local.set $s1
+  call $rt_reason
+  local.set $s2
+  call $rt_clear
+  (block $L7 (result i32)
+  (block $L8
+  local.get $s1
+  global.get $__lit
+  i32.const 72
+  i32.add
+  i32.const 5
+  call $rt_atom
+  call $rt_eqx
+  i32.eqz
+  br_if $L8
+  local.get $s2
+  local.set $V___BpF0
+  global.get $__lit
+  i32.const 360
+  i32.add
+  i32.const 7
+  call $rt_bin
+  i64.const 3
+  call $rt_int
+  i64.const 10
+  call $rt_int
+  local.get $V___BpF0
+  call $bp_comptime_template:__bp_push/4
+  call $rt_pending
   br_if $raise
+  drop
+  global.get $__lit
+  i32.const 72
+  i32.add
+  i32.const 5
+  call $rt_atom
+  local.get $V___BpF0
+  call $rt_raise
+  drop
+  br $raise
+  call $rt_nil
+  br $L7
+  )
+  local.get $s1
+  local.get $s2
+  call $rt_raise
+  drop
+  br $raise
+  )
+  br $L5
+  )
   call $rt_lists_foldl
   call $rt_pending
   br_if $raise
   local.set $s1
-  (block $L6
-  (block $L5
+  (block $L10
+  (block $L9
   local.get $s1
   local.set $s2
-  br $L6
+  br $L10
   )
   local.get $s1
   call $rt_badmatch
@@ -74,11 +130,67 @@ val page = html """<p>${name}</p>""";
   )
   local.get $s1
   drop
-  local.get $V_Q
+  (block $L11 (result i32)
+  (block $L12
+  local.get $s0
   local.get $s2
   call $bp_comptime_template:build/2
   call $rt_pending
+  br_if $L12
+  br $L11
+  )
+  call $rt_class
+  local.set $s0
+  call $rt_reason
+  local.set $s1
+  call $rt_clear
+  (block $L13 (result i32)
+  (block $L14
+  local.get $s0
+  global.get $__lit
+  i32.const 72
+  i32.add
+  i32.const 5
+  call $rt_atom
+  call $rt_eqx
+  i32.eqz
+  br_if $L14
+  local.get $s1
+  local.set $s2
+  global.get $__lit
+  i32.const 360
+  i32.add
+  i32.const 7
+  call $rt_bin
+  i64.const 11
+  call $rt_int
+  i64.const 12
+  call $rt_int
+  local.get $s2
+  call $bp_comptime_template:__bp_push/4
+  call $rt_pending
   br_if $raise
+  drop
+  global.get $__lit
+  i32.const 72
+  i32.add
+  i32.const 5
+  call $rt_atom
+  local.get $s2
+  call $rt_raise
+  drop
+  br $raise
+  call $rt_nil
+  br $L13
+  )
+  local.get $s0
+  local.get $s1
+  call $rt_raise
+  drop
+  br $raise
+  )
+  br $L11
+  )
   br $L1
   )
   call $rt_function_clause
@@ -109,7 +221,7 @@ val page = html """<p>${name}</p>""";
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 296
+  i32.const 304
   i32.add
   i32.const 4
   call $rt_bin
@@ -120,7 +232,7 @@ val page = html """<p>${name}</p>""";
   (block $L4
   local.get $s2
   global.get $__lit
-  i32.const 304
+  i32.const 312
   i32.add
   i32.const 4
   call $rt_atom
@@ -129,7 +241,7 @@ val page = html """<p>${name}</p>""";
   br_if $L4
   local.get $s1
   global.get $__lit
-  i32.const 312
+  i32.const 320
   i32.add
   i32.const 4
   call $rt_bin
@@ -137,7 +249,7 @@ val page = html """<p>${name}</p>""";
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 320
+  i32.const 328
   i32.add
   i32.const 4
   call $rt_atom
@@ -149,7 +261,7 @@ val page = html """<p>${name}</p>""";
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 328
+  i32.const 336
   i32.add
   i32.const 1
   call $rt_bin
@@ -206,7 +318,7 @@ val page = html """<p>${name}</p>""";
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 336
+  i32.const 344
   i32.add
   i32.const 6
   call $rt_bin
@@ -217,7 +329,7 @@ val page = html """<p>${name}</p>""";
   (block $L11
   local.get $s1
   global.get $__lit
-  i32.const 304
+  i32.const 312
   i32.add
   i32.const 4
   call $rt_atom
@@ -226,7 +338,7 @@ val page = html """<p>${name}</p>""";
   br_if $L11
   local.get $s2
   global.get $__lit
-  i32.const 344
+  i32.const 352
   i32.add
   i32.const 3
   call $rt_bin
@@ -234,7 +346,7 @@ val page = html """<p>${name}</p>""";
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 160
+  i32.const 168
   i32.add
   i32.const 4
   call $rt_atom

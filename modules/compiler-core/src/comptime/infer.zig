@@ -1332,7 +1332,7 @@ fn unboundAt(env: *Env, name: []const u8, loc: ast.Loc) InferError!TypeError {
         const msg = try std.fmt.allocPrint(
             env.arena,
             "{s}: `{s}` comes from `{s}`, which failed to check — its own errors are reported there ({s})",
-            .{ diagnostics.import_of_failed_module, name, f.module, srcPathOfModule(env, f.module) },
+            .{ diagnostics.import_of_failed_module, name, f.module, env.diagLabelOf(f.module) },
         );
         const hint = try std.fmt.allocPrint(env.arena, "Fix the errors reported in `{s}`; this module is checked against it once it checks.", .{f.module});
         return TypeError.custom(msg, hint).withLoc(f.loc);
@@ -9610,11 +9610,11 @@ fn expandTemplateCallViaRuntime(
     const numbered = try templateEval.numberBuilds(env.arena, runTfn);
     var extras: templateEval.Extras = .{};
     var tags: std.ArrayListUnmanaged(decoratorEval.DeclHandle) = .empty;
-    // Decision 451 (3) — another module's template: the calls of its body
-    // and of the functions of its module it reaches are located, in that
-    // module's file, which a raise's diagnostic then names
-    // (`srcPathOfModule`).
-    const located: []const erlang.Located = if (own_template) &.{} else try locatedFns(env, numbered.f, srcPathOfModule(env, owner), carried[1..]);
+    // Decisions 451 (3), 532 — the calls of a template's body and of the
+    // functions of its module it reaches are located, in that module's file
+    // (the using module's own for a template it declares), which a raise's
+    // diagnostic then names (`srcPathOfModule`).
+    const located: []const erlang.Located = try locatedFns(env, numbered.f, srcPathOfModule(env, if (owner.len > 0) owner else env.modulePath), carried[1..]);
     const outcome = while (true) {
         const run = templateEval.evaluate(env.arena, ctx.io, ctx.build_root, owner, srcPathOfModule(env, owner), numbered.f, runSupport, located, types, valued, plainArgs, &env.comptimeTraces, &extras) catch {
             env.lastError = TypeError.custom(

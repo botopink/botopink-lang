@@ -2480,7 +2480,8 @@ string, number or boolean writes its value's printed text through the capture (`
 Decision 545 (`import-of-failed-module` names the failed module's file at its end, in parentheses) moves the five
 cells that quote it — `import_of_failed_module`, `imported_declaration_error_location` (`b/b` and `main`),
 `lexer_error_in_imported_module`, `bpp_decorator_last_line` and `bpp_diagnostics_located`: each importer's snapshot
-ends `(src/shapes.bp)`, the path the failed module's own refusal is printed at (`Reflection.srcPaths`).
+ends `(src/shapes.bp)`, the label the failed module's own refusal is printed at (`Reflection.diagLabels`); a
+dependency's module is labelled by its module path, `(a/client.bp)` and `(b/b.bp)` in `imported_declaration_error_location`.
 Decision 546 adds `modules/std_failure_attempt_crash` — a `case` no arm matches under `attempt` answers `crash` on
 erlang and beam, where a raise of a binding outside std is `host` (`modules/std_failure_attempt_host`); the cell is
 narrowed to erlang and beam, commonJS and wasm lacking the host binding it calls.
@@ -2504,3 +2505,9 @@ adds `modules/comptime_remainder_by_zero`, `comptime_nested_division_by_zero` an
 `comptime_division_by_zero_in_helper`, and moves `comptime_float_division_by_zero`,
 `comptime_integer_division_by_zero` and `hole_any_call_raises` from the expression's first token to the operator
 (`hole_any_call_raises` gains the cause too).
+Decision 545's file is the label the failed module's own diagnostics print, so `imported_declaration_error_location`
+answers `(a/client.bp)` and `(b/b.bp)` (a dependency's module is labelled by its module path), a program module's cells
+unchanged. Decision 532 is finished by `modules/template_own_raise_located` (a template its own module declares is
+located at the raising call in that module's file, the use as `from`) and by a call's frame being pushed only after its
+receiver and arguments are evaluated: `hole_any_call_raises` loses its `from src/main.bp:47:12` (`(a / b).toString()`
+was never entered).

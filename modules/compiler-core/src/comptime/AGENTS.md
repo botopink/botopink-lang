@@ -703,7 +703,8 @@ recognize → reflect → invoke → apply; marker meaning lives in the lib body
   (decisions 451 (3), 532): the comptime module frames every call of the decorator and of the
   functions it carries, whichever module wrote them (`erlang.ComptimeModule.located`: name and file;
   `infer.locatedFns`; the file from `Env.srcPathOf`, the session's `Reflection.srcPaths`, recorded
-  before any module is analysed) — `try Call catch error:R -> '__bp_push'(File, Line, Col, R),
+  before any module is analysed; a template the using module declares is located in that module's own file,
+  with its use as the last `from`) — `try Call catch error:R -> '__bp_push'(File, Line, Col, R),
   erlang:raise(error, R, []) end`, the frames kept in the process dictionary with the reason they
   belong to and replied by `'__bp_frames'(Reason)` (`Outcome.raised.frames`, innermost first) —, and
   `infer.raisedFrom` / `block_eval.raisedError` build the `TypeError`: `origin` the innermost call
@@ -1642,7 +1643,7 @@ binds nothing while a refused module is one its source admits (the passes and th
 scan uses), and a namespace item (`import {shapes};`, `mod shapes;`) whose module was refused; and
 `unboundAt` turns a use of such a name into `import-of-failed-module` **at the import item**, naming
 the module and its file (`` `area` comes from `shapes`, which failed to check — its own errors are reported
-there (src/shapes.bp) ``, the path `Reflection.srcPaths` holds; decision 545) — one wording for a name and a namespace, since a refused module exports nothing and
+there (src/shapes.bp) ``, the label the failed module's own diagnostics print, `Reflection.diagLabels`: `src/shapes.bp` for a program module, `a/client.bp` for a dependency's; decision 545) — one wording for a name and a namespace, since a refused module exports nothing and
 `import {components.Card};` cannot tell the two apart. The refused module keeps its own error. Nothing real is hidden: an importer reports one error, its first, as before; a name
 missing from a module that checked reaches none of this and stays `unbound variable` (the resolver's
 `imported symbol is not exported` catches it first in a build). Pinned by
