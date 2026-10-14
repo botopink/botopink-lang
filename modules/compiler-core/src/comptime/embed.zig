@@ -12,7 +12,7 @@ const Parser = @import("../parser.zig").Parser;
 /// `withAssetDecl`) and a `comptime`'s module carries (`block_eval`): the four
 /// fields of the `decl_reflection_src` entry. `text()` is computed at build,
 /// so no backend calls it.
-pub const decl_src = "type Asset(path: string, bytes: Bytes, size: i32, hash: string)";
+pub const decl_src = "type Asset(path: string, bytes: Bytes, size: i64, hash: string)";
 
 /// `decl_src` parsed.
 pub fn typeDecl(arena: std.mem.Allocator) !ast.TypeDecl {

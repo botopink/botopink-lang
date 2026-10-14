@@ -4167,8 +4167,13 @@ import:
 |---|---|
 | `path` | the path as written |
 | `bytes` | the file's bytes (`Bytes`) |
-| `size` | the number of bytes (`i32`) |
+| `size` | the number of bytes (`i64`, as a file's size is) |
 | `hash` | the SHA-256 of the bytes, 64 lowercase hex digits |
+
+`size` is an `i64` (decision 538), as `stat`'s and a `File`'s are: it binds to an `i64` without a
+conversion and sums past the `i32` range.
+
+<!-- example: modules/embed_size_i64 -->
 
 `a.text()` is the bytes as UTF-8 text, computed at build: bytes that are not
 UTF-8 are `error[embed-text-not-utf8]` at the call, and an `Asset` whose bytes

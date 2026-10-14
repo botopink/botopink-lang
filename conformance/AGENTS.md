@@ -2392,3 +2392,7 @@ list by C-16, each with the cell that covers it: `pub default mod` / `pub defaul
 two targets through a `snapshot/targets/<t>/` departure each — `botopink run --target <t>` is not
 target-independent, which is what a refusal snapshot lacked); `@panic` / `@todo` (a cell compares stdout **and**
 the status through `abort`, so an aborting program is exactly what it can assert).
+
+`modules/embed_size_i64` (decision 538, 144 B-12-c) — `Asset.size` binds to an `i64` and sums past the `i32`
+range (`expected i64, got i32` on the parent); `hash` stays the SHA-256 in lowercase hex. `Asset.open()` (an
+`Asset` read as fs-a's `File`) waits for that `File` (decision 540): it has no cell here yet.

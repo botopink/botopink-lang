@@ -622,7 +622,7 @@ pub type SourceLocation(
 //             package that wrote it (a path passed through a `comptime`
 //             parameter: the caller's package). No absolute path, no `..`.
 //   bytes   — the file's bytes (`Bytes`, decision 346).
-//   size    — the number of bytes.
+//   size    — the number of bytes (`i64`, decision 538).
 //   hash    — the SHA-256 of the bytes, 64 lowercase hex digits.
 //
 // `text()` — the bytes as UTF-8 text, computed at build: bytes that are not
@@ -635,7 +635,7 @@ pub type SourceLocation(
 pub type Asset(
     path: string,
     bytes: Bytes,
-    size: i32,
+    size: i64,
     hash: string,
 ) {
     declare fn text(self: Self) -> string;
