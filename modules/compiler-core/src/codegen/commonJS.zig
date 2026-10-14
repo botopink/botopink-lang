@@ -6773,26 +6773,6 @@ const Emitter = struct {
             return self.renderTemplate(template, cc, cc.args.len, error.PrimOpRecvInBuiltinTemplate);
         }
 
-        if (std.mem.eql(u8, cc.callee, "block")) {
-            // `@block` can be called as `@block(arg)` or `@block { body }`.
-            if (cc.args.len == 1) {
-                const arg = cc.args[0].value;
-                if (arg.* != .function) return error.InvalidArgs;
-                return self.buildExpr(arg.*);
-            }
-            if (cc.trailing.len == 1 and cc.trailing[0].params.len == 0) {
-                // `@block { body }` — a trailing lambda with no params.
-                return self.b.call(
-                    try self.b.paren(try self.b.arrowBlock(&.{}, .{
-                        .stmts = try self.buildStmts(cc.trailing[0].body),
-                        .layout = .tight,
-                    })),
-                    &.{},
-                );
-            }
-            return error.InvalidArgs;
-        }
-
         if (std.mem.startsWith(u8, cc.callee, "__bp_")) {
             return self.buildResultOptionOp(cc.callee, cc.args);
         }
@@ -6920,8 +6900,11 @@ const Emitter = struct {
             .pattern = .{ .ident = l.params[0] },
             .value = .{ .name = "_s" },
         } });
+        // Decision 525 — an `if` / `try … catch` at the end of an arm (a
+        // block's tail) is its value too, unless it jumps out of the arrow.
         const tail_is_value = !armBreakValue(l.body) and
-            l.body.len > 0 and isArmValueExpr(l.body[l.body.len - 1].expr);
+            l.body.len > 0 and (isArmValueExpr(l.body[l.body.len - 1].expr) or
+            (l.body[l.body.len - 1].expr == .branch and !exprJumps(l.body[l.body.len - 1].expr, false, false)));
         for (l.body, 0..) |st, i| {
             const br: ?ast.Expr = switch (st.expr) {
                 .jump => |j| switch (j.kind) {
