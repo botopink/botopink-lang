@@ -423,13 +423,29 @@ fn stmtIsReturn(stmt: ast.Stmt) bool {
 /// condition loop, or a `for` walked in the frame (`lowerInFrameFor`).
 /// `break` jumps to `exit`, `continue` to `top`. No loop has a value
 /// (decision 105).
-const CondLoop = struct { top: u32, exit: u32, out: *std.Io.Writer };
+const CondLoop = struct { top: u32, exit: u32, out: *std.Io.Writer, defer_floor: usize = 0 };
 
 /// A generator scope being emitted into a frame (decision 105) — a generator
 /// fn's body or an annotated `loop`: the y-slot its items are consed onto
 /// (reversed at `exit`), and the label a `break <v>` jumps to once `v` is
 /// pushed.
-const GenLoop = struct { acc: u32, exit: u32, out: *std.Io.Writer };
+const GenLoop = struct { acc: u32, exit: u32, out: *std.Io.Writer, defer_floor: usize = 0 };
+
+/// Decision 539 — a `defer` the frame being emitted has not yet run: the
+/// statement, the catch tag of the `try` region that covers the rest of its
+/// block, the y-slots it parks `x0` and a caught exception in, the slot its
+/// own locals start at, and the register names as they were at the `defer`.
+const DeferEntry = struct {
+    out: *std.Io.Writer,
+    stmt: ast.Stmt,
+    tag: u32,
+    /// `stash`: x0 across the deferred code; `stash + 1`: the caught reason;
+    /// `stash + 2`: the raw stack.
+    stash: u32,
+    locals_base: u32,
+    catch_label: u32,
+    regs: std.StringHashMap(Reg),
+};
 
 /// The throw a bare `break` in a loop's fun ends the loop with
 /// (`guardLoopBreak` catches it at the loop's call site).
@@ -977,7 +993,11 @@ fn patternYSlots(p: ast.Pattern) u32 {
 /// (the emitter saves/restores `next_y`), so their bindings are intentionally
 /// not counted here.
 fn countLocalsRec(em: *Emitter, body: []const ast.Stmt, count: *u32) void {
-    for (body) |stmt| countLocalsInExpr(em, stmt.expr, count);
+    for (body) |stmt| {
+        // Decision 539 — a `defer` takes its catch tag and three parking slots.
+        if (stmt.deferred) count.* += 4;
+        countLocalsInExpr(em, stmt.expr, count);
+    }
 }
 
 /// The y-slots one `case` arm takes in this frame. An or-pattern arm is
@@ -2354,6 +2374,9 @@ const Emitter = struct {
     cond_loop: ?CondLoop = null,
     /// The annotated `loop` whose body is being emitted (decision 105).
     gen_loop: ?GenLoop = null,
+    /// Decision 539 — the `defer`s not yet run, outermost first. The frame
+    /// being emitted owns the entries on top whose `out` is its buffer.
+    defer_stack: std.ArrayListUnmanaged(DeferEntry) = .empty,
     /// Static extension dispatch (F6): call-site loc → activated extension symbol.
     rewrites: std.AutoHashMap(ast.Loc, []const u8),
     /// Primitive (Array/String/Bool/numeric) receiver method lowering, keyed by
@@ -2657,6 +2680,8 @@ const Emitter = struct {
         self.reg_map.deinit();
         for (self.deferred_lambdas.items) |s| self.alloc.free(s);
         self.deferred_lambdas.deinit(self.alloc);
+        for (self.defer_stack.items) |*e| e.regs.deinit();
+        self.defer_stack.deinit(self.alloc);
         self.ext_by_name.deinit();
         var rf = self.record_fields.valueIterator();
         while (rf.next()) |names| self.alloc.free(names.*);
@@ -4586,9 +4611,166 @@ const Emitter = struct {
         try self.emitReturn();
     }
 
+    // ── defer (decision 539) ─────────────────────────────────────────────────
+    //
+    // `defer e;` covers the REST of its block with a `try` region:
+    //
+    //     {'try', Tag, Catch}  <the rest>  {try_end, Tag}  <e>  {jump, End}
+    //     {label, Catch}  {try_case, Tag}  <park reason, stack>  <e>  <restore>  raise
+    //     {label, End}
+    //
+    // so a raise leaving the rest runs `e` and goes on. Every other way out
+    // of the rest — `return`, a tail call, `throw`, a loop jump — is emitted
+    // with the pending defers first (`runDefersForExit`): it ends each
+    // region (`try_end`) and writes the deferred code inline, innermost
+    // first. The entries belong to the frame whose buffer they were pushed
+    // into; a lambda writes to another buffer, so it never sees them.
+
+    /// Index of the first pending defer of the frame being emitted.
+    fn frameDeferFloor(self: *const Emitter) usize {
+        var k = self.defer_stack.items.len;
+        while (k > 0 and self.defer_stack.items[k - 1].out == self.out) k -= 1;
+        return k;
+    }
+
+    fn hasFrameDefers(self: *const Emitter) bool {
+        return self.defer_stack.items.len > self.frameDeferFloor();
+    }
+
+    /// A body whose last statement leaves control on its own — `return`,
+    /// `throw`, `break`, `continue`, or an `if`/`else` of which every branch
+    /// does — so its end is not reachable. (`yield` is not one: in a
+    /// generator it pushes and goes on.)
+    fn endsInJump(body: []const ast.Stmt) bool {
+        if (body.len == 0) return false;
+        return switch (body[body.len - 1].expr) {
+            .jump => |j| switch (j.kind) {
+                .@"return", .throw_, .@"break", .@"continue" => true,
+                else => false,
+            },
+            .branch => |b| switch (b.kind) {
+                .if_ => |i| if (i.else_) |els| endsInJump(i.then_) and endsInJump(els) else false,
+                else => false,
+            },
+            else => false,
+        };
+    }
+
+    /// `defer e;` met in a block: open the region covering the rest of it.
+    fn pushDefer(self: *Emitter, stmt: ast.Stmt) anyerror!void {
+        var plain = stmt;
+        plain.deferred = false;
+        // The catch tags of nested regions must descend (`bad_try_catch_nesting`):
+        // they are the frame's top slots, one per open `defer`, which
+        // `countLocalsRec` reserved beside the three slots parked from the
+        // bottom.
+        const depth: u32 = @intCast(self.defer_stack.items.len - self.frameDeferFloor());
+        const tag = self.num_y - 1 - depth;
+        const stash = self.next_y;
+        self.next_y += 3;
+        const locals_base = self.next_y;
+        self.next_y += self.precountLocalsInExpr(stmt.expr);
+        const catch_label = self.allocLabel();
+        try self.defer_stack.append(self.alloc, .{
+            .out = self.out,
+            .stmt = plain,
+            .tag = tag,
+            .stash = stash,
+            .locals_base = locals_base,
+            .catch_label = catch_label,
+            .regs = try self.reg_map.clone(),
+        });
+        try beamEmitter.writeTry(self.out, tag, catch_label);
+    }
+
+    /// The deferred code of entry `idx`, written here: the entries from
+    /// `idx` up are hidden while it is lowered (a `throw` in it leaves past
+    /// the ones below only), the names are the ones of the `defer`, and its
+    /// locals take the slots reserved for it.
+    fn writeDeferBody(self: *Emitter, idx: usize) anyerror!void {
+        const entry = self.defer_stack.items[idx];
+        var hidden: std.ArrayListUnmanaged(DeferEntry) = .empty;
+        defer hidden.deinit(self.alloc);
+        try hidden.appendSlice(self.alloc, self.defer_stack.items[idx..]);
+        self.defer_stack.shrinkRetainingCapacity(idx);
+        const saved_regs = self.reg_map;
+        const saved_next_y = self.next_y;
+        self.reg_map = try entry.regs.clone();
+        self.next_y = entry.locals_base;
+        defer {
+            self.reg_map.deinit();
+            self.reg_map = saved_regs;
+            self.next_y = saved_next_y;
+            self.defer_stack.appendSliceAssumeCapacity(hidden.items);
+        }
+        try self.emitStmt(entry.stmt);
+    }
+
+    /// The pending defers of this frame from the top down to `floor`, run
+    /// before control leaves the region they cover (`return`, a loop jump).
+    /// `x0_live`: `x0` holds a value that must survive them.
+    fn runDefersForExit(self: *Emitter, floor: usize, x0_live: bool) anyerror!void {
+        var k = self.defer_stack.items.len;
+        while (k > floor) {
+            k -= 1;
+            const e = self.defer_stack.items[k];
+            if (e.out != self.out) break;
+            if (x0_live) try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(e.stash));
+            try beamEmitter.writeTryEnd(self.out, e.tag);
+            try self.writeDeferBody(k);
+            if (x0_live) try beamEmitter.writeMoveOp(self.out, Op.yr(e.stash), Dst.xr(0));
+        }
+    }
+
+    /// A statement list of a block: the defers it pushes end with it.
+    fn emitStmtList(self: *Emitter, body: []const ast.Stmt) anyerror!void {
+        const mark = self.defer_stack.items.len;
+        for (body) |stmt| try self.emitStmt(stmt);
+        try self.closeDefers(mark, !endsInJump(body), false);
+    }
+
+    /// The end of a block: the defers it pushed (above `mark`) run in
+    /// reverse order. `falls`: the block's end is reachable, so each one
+    /// ends its region and runs on the normal path; the handler for a raise
+    /// is written either way.
+    fn closeDefers(self: *Emitter, mark: usize, falls: bool, x0_live: bool) anyerror!void {
+        while (self.defer_stack.items.len > mark) {
+            const k = self.defer_stack.items.len - 1;
+            const e = self.defer_stack.items[k];
+            const end_label = self.allocLabel();
+            if (falls) {
+                if (x0_live) try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(e.stash));
+                try beamEmitter.writeTryEnd(self.out, e.tag);
+                try self.writeDeferBody(k);
+                if (x0_live) try beamEmitter.writeMoveOp(self.out, Op.yr(e.stash), Dst.xr(0));
+                try beamEmitter.writeJump(self.out, end_label);
+            }
+            try beamEmitter.writeLabel(self.out, e.catch_label);
+            try beamEmitter.writeTryCase(self.out, e.tag);
+            try beamEmitter.writeMoveOp(self.out, Op.xr(1), Dst.yr(e.stash + 1));
+            try beamEmitter.writeMoveOp(self.out, Op.xr(2), Dst.yr(e.stash + 2));
+            try self.writeDeferBody(k);
+            try beamEmitter.writeMoveOp(self.out, Op.yr(e.stash + 1), Dst.xr(1));
+            try beamEmitter.writeMoveOp(self.out, Op.yr(e.stash + 2), Dst.xr(2));
+            try beamEmitter.writeBif(self.out, "raise", 0, &.{ Op.xr(2), Op.xr(1) }, Dst.xr(0));
+            if (falls) try beamEmitter.writeLabel(self.out, end_label);
+            var popped = self.defer_stack.pop().?;
+            popped.regs.deinit();
+        }
+    }
+
+    /// `erlang:throw/1` with the value in `x0`. A tail call would drop the
+    /// frame and the regions with it, so under pending defers it is a
+    /// call: the raise reaches their handlers.
+    fn writeThrowCall(self: *Emitter) !void {
+        const kind: beamEmitter.CallKind = if (self.hasFrameDefers()) .normal else .only;
+        try beamEmitter.writeCall(self.out, kind, 1, .{ .ext = .{ .module = "erlang", .function = "throw" } }, 0);
+    }
+
     /// Emit `return.`, preceded by `{deallocate, N}.` when the current function
     /// owns a y-stack frame.
     fn emitReturn(self: *Emitter) !void {
+        try self.runDefersForExit(self.frameDeferFloor(), true);
         try beamEmitter.writeDeallocate(self.out, self.num_y);
         try beamEmitter.writeReturn(self.out);
     }
@@ -5698,9 +5880,11 @@ const Emitter = struct {
     // ── body ─────────────────────────────────────────────────────────────────
 
     fn emitBody(self: *Emitter, body: []const ast.Stmt) !void {
+        const mark = self.defer_stack.items.len;
         for (body) |stmt| {
             try self.emitStmt(stmt);
         }
+        try self.closeDefers(mark, !bodyExits(body), false);
         // BEAM functions must end with an exit instruction. When the source
         // didn't write an explicit `return`, fall back to returning the atom
         // `ok` so the frame is balanced (deallocate + return).
@@ -5711,11 +5895,15 @@ const Emitter = struct {
     }
 
     fn emitStmt(self: *Emitter, stmt: ast.Stmt) anyerror!void {
+        if (stmt.deferred) return self.pushDefer(stmt);
         switch (stmt.expr) {
             .jump => |j| switch (j.kind) {
                 .@"return" => |r| {
                     if (r == null) if (self.inGenLoop()) |gl| {
-                        try beamEmitter.writeJump(self.out, gl.exit);
+                        {
+                            try self.runDefersForExit(gl.defer_floor, false);
+                            try beamEmitter.writeJump(self.out, gl.exit);
+                        }
                         return;
                     };
                     if (self.in_loop_lambda and self.inGenLoop() == null) {
@@ -5736,15 +5924,16 @@ const Emitter = struct {
                                 },
                                 .rejected => {
                                     try self.lowerExprIntoX0(inner_arg);
-                                    try beamEmitter.writeCall(self.out, .only, 1, .{ .ext = .{ .module = "erlang", .function = "throw" } }, 0);
+                                    try self.writeThrowCall();
                                 },
                             }
                             return;
                         }
                         // Tail-call detection: `return call(...)` becomes
                         // `{call_last, ...}` / `{call_only, ...}`, which encode
-                        // deallocate + return atomically.
-                        switch (val.*) {
+                        // deallocate + return atomically — unless a `defer`
+                        // is pending: it runs after the call (decision 539).
+                        if (!self.hasFrameDefers()) switch (val.*) {
                             .call => |c| switch (c.kind) {
                                 .call => |cc| {
                                     try self.lowerCall(cc, .tail, c.loc);
@@ -5753,7 +5942,7 @@ const Emitter = struct {
                                 else => {},
                             },
                             else => {},
-                        }
+                        };
                         try self.lowerExprIntoX0(val.*);
                     }
                     try self.emitReturn();
@@ -5764,24 +5953,33 @@ const Emitter = struct {
                     } else {
                         try beamEmitter.writeMoveOp(self.out, Op.atom("undef"), Dst.xr(0));
                     }
-                    try beamEmitter.writeCall(self.out, .only, 1, .{ .ext = .{ .module = "erlang", .function = "throw" } }, 0);
+                    try self.writeThrowCall();
                 },
                 .@"break" => |br| {
                     // `break <v>` in an annotated loop pushes `v` and ends it
                     // from any loop depth (decision 105).
                     if (br.value) |v| if (self.inGenLoop()) |gl| {
                         try self.genPush(gl, v.*);
-                        try beamEmitter.writeJump(self.out, gl.exit);
+                        {
+                            try self.runDefersForExit(gl.defer_floor, false);
+                            try beamEmitter.writeJump(self.out, gl.exit);
+                        }
                         return;
                     };
                     if (self.inCondLoop()) |cl| {
-                        try beamEmitter.writeJump(self.out, cl.exit);
+                        {
+                            try self.runDefersForExit(cl.defer_floor, false);
+                            try beamEmitter.writeJump(self.out, cl.exit);
+                        }
                         return;
                     }
                     // A bare `break` with no loop to leave, in a generator
                     // fn's body, ends the generator.
                     if (br.value == null) if (self.inGenLoop()) |gl| {
-                        try beamEmitter.writeJump(self.out, gl.exit);
+                        {
+                            try self.runDefersForExit(gl.defer_floor, false);
+                            try beamEmitter.writeJump(self.out, gl.exit);
+                        }
                         return;
                     };
                     if (br.value) |v| {
@@ -5800,7 +5998,7 @@ const Emitter = struct {
                     if (self.in_loop_lambda and br.value == null) {
                         try beamEmitter.writeTestHeap(self.out, 3, 1);
                         try beamEmitter.writePutTuple2(self.out, Dst.xr(0), &.{ Op.atom(break_throw_signal), Op.xr(0) });
-                        try beamEmitter.writeCall(self.out, .only, 1, .{ .ext = .{ .module = "erlang", .function = "throw" } }, 0);
+                        try self.writeThrowCall();
                         return;
                     }
                     if (self.in_loop_lambda) try self.emitReturn();
@@ -5817,7 +6015,10 @@ const Emitter = struct {
                 },
                 .@"continue" => {
                     if (self.inCondLoop()) |cl| {
-                        try beamEmitter.writeJump(self.out, cl.top);
+                        {
+                            try self.runDefersForExit(cl.defer_floor, false);
+                            try beamEmitter.writeJump(self.out, cl.top);
+                        }
                         return;
                     }
                     if (self.fold_group) |names| {
@@ -6201,7 +6402,7 @@ const Emitter = struct {
         };
 
         // then branch (cond true).
-        for (i.then_) |s| try self.emitStmt(s);
+        try self.emitStmtList(i.then_);
         if (narrowed) |nw| try self.reg_map.put(nw.name, nw.saved);
         const then_returns = i.then_.len > 0 and (stmtIsReturn(i.then_[i.then_.len - 1]) or
             (self.inCondLoop() != null and stmtIsLoopJump(i.then_[i.then_.len - 1])));
@@ -6214,7 +6415,7 @@ const Emitter = struct {
         // else branch.
         try beamEmitter.writeLabel(self.out, else_label);
         if (i.else_) |els| {
-            for (els) |s| try self.emitStmt(s);
+            try self.emitStmtList(els);
         }
         // A bare `if` with no else is a *statement*: when the condition is
         // false, control must fall through to whatever follows (the next
@@ -6482,7 +6683,7 @@ const Emitter = struct {
                 },
                 .throw_ => |val| {
                     if (val) |v| try self.lowerExprIntoX0(v.*);
-                    try beamEmitter.writeCall(self.out, .only, 1, .{ .ext = .{ .module = "erlang", .function = "throw" } }, 0);
+                    try self.writeThrowCall();
                     return;
                 },
                 // `await e` is eager: the value of `e`.
@@ -6705,7 +6906,20 @@ const Emitter = struct {
     /// false when the last statement was an explicit jump (`return`/`throw`/…)
     /// that transferred control on its own.
     fn emitValueBody(self: *Emitter, body: []const ast.Stmt) anyerror!bool {
+        const mark = self.defer_stack.items.len;
+        const fell = try self.emitValueBodyStmts(body);
+        // Decision 539 — the value waits in `x0` while the block's defers run.
+        try self.closeDefers(mark, fell, true);
+        return fell;
+    }
+
+    fn emitValueBodyStmts(self: *Emitter, body: []const ast.Stmt) anyerror!bool {
         if (body.len == 0) {
+            try beamEmitter.writeMoveOp(self.out, Op.atom("undefined"), Dst.xr(0));
+            return true;
+        }
+        if (body[body.len - 1].deferred) {
+            for (body) |stmt| try self.emitStmt(stmt);
             try beamEmitter.writeMoveOp(self.out, Op.atom("undefined"), Dst.xr(0));
             return true;
         }
@@ -10427,6 +10641,13 @@ const Emitter = struct {
     /// (an explicit `return`/`throw`), so the caller skips the dead
     /// `{jump, end}`.
     fn lowerArmBody(self: *Emitter, body: ast.Expr) anyerror!bool {
+        const mark = self.defer_stack.items.len;
+        const exited = try self.lowerArmBodyStmts(body);
+        try self.closeDefers(mark, !exited, true);
+        return exited;
+    }
+
+    fn lowerArmBodyStmts(self: *Emitter, body: ast.Expr) anyerror!bool {
         const blk = armBlock(body) orelse {
             try self.lowerExprIntoX0(body);
             return false;
@@ -10443,7 +10664,7 @@ const Emitter = struct {
                 try self.emitStmt(stmt);
                 return true;
             }
-            if (i + 1 == stmts.len and armValueTail(stmt.expr)) {
+            if (i + 1 == stmts.len and !stmt.deferred and armValueTail(stmt.expr)) {
                 try self.lowerExprIntoX0(stmt.expr);
                 // `_ { out.push(x); }` — a push that is the arm's value
                 // still rebinds `out` (the grown list is the value), as it
@@ -11010,10 +11231,12 @@ const Emitter = struct {
     fn emitLambdaBody(self: *Emitter, body: []const ast.Stmt) anyerror!void {
         if (body.len > 0) {
             const last = body[body.len - 1].expr;
-            if (armValueTail(last)) {
+            if (!body[body.len - 1].deferred and armValueTail(last)) {
+                const mark = self.defer_stack.items.len;
                 for (body[0 .. body.len - 1]) |stmt| try self.emitStmt(stmt);
                 try self.lowerExprIntoX0(last);
                 try self.emitReturn();
+                try self.closeDefers(mark, false, false);
                 return;
             }
         }
@@ -11549,7 +11772,7 @@ const Emitter = struct {
                 try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(y));
             }
         }
-        for (body) |stmt| try self.emitStmt(stmt);
+        try self.emitStmtList(body);
         if (!bodyExits(body)) {
             try self.emitGroupIntoX0(names);
             try self.emitReturn();
@@ -11678,9 +11901,9 @@ const Emitter = struct {
             try beamEmitter.writeTest(self.out, .is_eq_exact, exit, &.{ Op.xr(0), Op.atom("true") });
         }
         const saved = self.cond_loop;
-        self.cond_loop = .{ .top = top, .exit = exit, .out = self.out };
+        self.cond_loop = .{ .top = top, .exit = exit, .out = self.out, .defer_floor = self.defer_stack.items.len };
         defer self.cond_loop = saved;
-        for (lp.body) |stmt| try self.emitStmt(stmt);
+        try self.emitStmtList(lp.body);
         if (!(lp.body.len > 0 and stmtIsLoopJump(lp.body[lp.body.len - 1]))) {
             try beamEmitter.writeJump(self.out, top);
         }
@@ -11696,7 +11919,10 @@ const Emitter = struct {
         if (self.inGenLoop()) |gl| {
             try beamEmitter.writeTestHeap(self.out, 2, @max(self.min_live, 1));
             try beamEmitter.writePutList(self.out, Op.xr(0), Op.yr(gl.acc), Dst.yr(gl.acc));
-            try beamEmitter.writeJump(self.out, gl.exit);
+            {
+                try self.runDefersForExit(gl.defer_floor, false);
+                try beamEmitter.writeJump(self.out, gl.exit);
+            }
             return;
         }
         // Decision 74 — inside a `test` body the `Error` ends the test:
@@ -11716,7 +11942,7 @@ const Emitter = struct {
         if (self.in_loop_lambda) {
             try beamEmitter.writeTestHeap(self.out, 3, 1);
             try beamEmitter.writePutTuple2(self.out, Dst.xr(0), &.{ Op.atom(try_throw_signal), Op.xr(0) });
-            try beamEmitter.writeCall(self.out, .only, 1, .{ .ext = .{ .module = "erlang", .function = "throw" } }, 0);
+            try self.writeThrowCall();
             return;
         }
         try self.emitReturn();
@@ -11730,7 +11956,7 @@ const Emitter = struct {
         if (value) |v| try self.lowerExprIntoX0(v) else try beamEmitter.writeMoveOp(self.out, Op.atom("undefined"), Dst.xr(0));
         try beamEmitter.writeTestHeap(self.out, 3, 1);
         try beamEmitter.writePutTuple2(self.out, Dst.xr(0), &.{ Op.atom(return_throw_signal), Op.xr(0) });
-        try beamEmitter.writeCall(self.out, .only, 1, .{ .ext = .{ .module = "erlang", .function = "throw" } }, 0);
+        try self.writeThrowCall();
     }
 
     /// Emit `call` — a `lists:foreach` / `map` / `foldl` over a loop fun whose
@@ -11785,10 +12011,10 @@ const Emitter = struct {
         const exit = self.allocLabel();
         try beamEmitter.writeMoveOp(self.out, Op.nil, Dst.yr(acc));
         const saved = self.gen_loop;
-        self.gen_loop = .{ .acc = acc, .exit = exit, .out = self.out };
+        self.gen_loop = .{ .acc = acc, .exit = exit, .out = self.out, .defer_floor = self.defer_stack.items.len };
         {
             defer self.gen_loop = saved;
-            for (body) |stmt| try self.emitStmt(stmt);
+            try self.emitStmtList(body);
         }
         try beamEmitter.writeLabel(self.out, exit);
         try beamEmitter.writeMoveOp(self.out, Op.yr(acc), Dst.xr(0));
@@ -11814,7 +12040,7 @@ const Emitter = struct {
         const exit = self.allocLabel();
         try beamEmitter.writeMoveOp(self.out, Op.nil, Dst.yr(acc));
         const saved = self.gen_loop;
-        self.gen_loop = .{ .acc = acc, .exit = exit, .out = self.out };
+        self.gen_loop = .{ .acc = acc, .exit = exit, .out = self.out, .defer_floor = self.defer_stack.items.len };
         {
             defer self.gen_loop = saved;
             try self.lowerConditionLoop(lp);
@@ -11853,9 +12079,9 @@ const Emitter = struct {
             if (prev) |r| self.reg_map.put(lp.params[0], r) catch {} else _ = self.reg_map.remove(lp.params[0]);
         }
         const saved = self.cond_loop;
-        self.cond_loop = .{ .top = top, .exit = exit, .out = self.out };
+        self.cond_loop = .{ .top = top, .exit = exit, .out = self.out, .defer_floor = self.defer_stack.items.len };
         defer self.cond_loop = saved;
-        for (lp.body) |stmt| try self.emitStmt(stmt);
+        try self.emitStmtList(lp.body);
         if (!(lp.body.len > 0 and stmtIsLoopJump(lp.body[lp.body.len - 1]))) {
             try beamEmitter.writeJump(self.out, top);
         }
@@ -11981,7 +12207,7 @@ const Emitter = struct {
     fn answerLoopThrow(self: *Emitter) anyerror!void {
         if (self.in_loop_lambda) {
             try beamEmitter.writeMoveOp(self.out, Op.xr(1), Dst.xr(0));
-            try beamEmitter.writeCall(self.out, .only, 1, .{ .ext = .{ .module = "erlang", .function = "throw" } }, 0);
+            try self.writeThrowCall();
         } else {
             try beamEmitter.writeGetTupleElement(self.out, Op.xr(1), 1, Dst.xr(0));
             try self.emitReturn();
