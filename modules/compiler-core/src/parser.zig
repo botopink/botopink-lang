@@ -2134,6 +2134,27 @@ pub const Parser = struct {
         }
     }
 
+    /// The source text of tokens `first`..`end` (exclusive), comments
+    /// included — what a construct quotes as written (decision 527 (2): the
+    /// condition a failed `assert` names). Empty when the range is empty, or
+    /// the tokens are not one span of the source this parser reads.
+    pub fn sourceSpan(this: *This, first: usize, end: usize) []const u8 {
+        if (end <= first or end > this.tokens.len) return "";
+        const a = this.tokens[first];
+        const z = this.tokens[end - 1];
+        if (this.source) |src| {
+            const stop = z.offset + z.lexeme.len;
+            if (z.offset >= a.offset and stop <= src.len and
+                std.mem.eql(u8, src[a.offset..][0..a.lexeme.len], a.lexeme))
+                return src[a.offset..stop];
+            return "";
+        }
+        const begin = @intFromPtr(a.lexeme.ptr);
+        const stop = @intFromPtr(z.lexeme.ptr) + z.lexeme.len;
+        if (stop < begin or stop - begin > 4096) return "";
+        return a.lexeme.ptr[0 .. stop - begin];
+    }
+
     pub fn peek(this: *This) Token {
         return this.tokens[this.current];
     }

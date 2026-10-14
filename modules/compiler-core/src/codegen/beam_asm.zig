@@ -329,6 +329,7 @@ const test_runner_body =
     \\        T0 = erlang:monotonic_time(millisecond),
     \\        Outcome = try Fun(), ok
     \\            catch
+    \\                error:{bp_assert, Msg, ALoc, _} -> {fail, Msg, ALoc};
     \\                error:{bp_assert, Msg, ALoc} -> {fail, Msg, ALoc};
     \\                Class:Reason -> {fail, {Class, Reason}, Loc}
     \\            end,
@@ -6567,7 +6568,7 @@ const Emitter = struct {
                 }
                 try beamEmitter.writeMoveOp(self.out, Op.atom("ok"), Dst.xr(0));
             },
-            .assert => |a| try self.lowerAssert(a.condition.*, if (a.message) |m| m.* else null, ct.loc),
+            .assert => |a| try self.lowerAssert(a.condition.*, if (a.message) |m| m.* else null, a.text, ct.loc),
             // `assert Pat = e catch h` → `case e { Pat -> e; _ -> h }`; the
             // pattern's bindings stay visible to the statements after it.
             .assertPattern => |ap| {
@@ -6601,10 +6602,10 @@ const Emitter = struct {
     }
 
     /// `assert cond[, msg]` — always fatal (semantics decision 4): when `cond`
-    /// is not `true`, raise `erlang:error({bp_assert, Msg, <<"<mod>.bp:<line>">>})`,
-    /// the same term the erlang backend's test runner catches. The statement's
-    /// value is `ok`.
-    fn lowerAssert(self: *Emitter, cond: ast.Expr, message: ?ast.Expr, loc: ast.Loc) anyerror!void {
+    /// is not `true`, raise `erlang:error({bp_assert, Msg, <<"<mod>.bp:<line>">>,
+    /// Panic})`, the same term the erlang backend raises and its test runner
+    /// catches. The statement's value is `ok`.
+    fn lowerAssert(self: *Emitter, cond: ast.Expr, message: ?ast.Expr, text: []const u8, loc: ast.Loc) anyerror!void {
         const fail_l = self.allocLabel();
         const ok_l = self.allocLabel();
         if (!try self.lowerComparisonAsTest(cond, fail_l)) {
@@ -6623,13 +6624,23 @@ const Emitter = struct {
         var where_buf: [512]u8 = undefined;
         // The package-relative source path when the driver knows it (what
         // erlang's `srcFile` names), else the module atom's file.
-        const where = if (self.src_path.len > 0)
-            std.fmt.bufPrint(&where_buf, "{s}:{d}", .{ self.src_path, loc.line }) catch "?"
-        else
-            std.fmt.bufPrint(&where_buf, "{s}.bp:{d}", .{ self.module_name, loc.line }) catch "?";
+        const file = if (self.src_path.len > 0) self.src_path else try std.fmt.allocPrint(self.atom_arena.allocator(), "{s}.bp", .{self.module_name});
+        const where = std.fmt.bufPrint(&where_buf, "{s}:{d}", .{ file, loc.line }) catch "?";
         try beamEmitter.writeMove(self.out, Term.str(where), scratch + 1);
-        try beamEmitter.writeTestHeap(self.out, 4, scratch + 2);
-        try beamEmitter.writePutTuple2(self.out, Dst.xr(0), &.{ Op.atom("bp_assert"), Op.xr(scratch), Op.xr(scratch + 1) });
+        // Decision 527 (2) — the panic's text, `assertion failed: <condition>
+        // [: Msg] at <file:line:col>`: an iolist `[Pre, Msg, Post]` when the
+        // program wrote a message, as the erlang backend builds it.
+        const head = try ast.assertHead(self.atom_arena.allocator(), text);
+        const at = try ast.assertWhere(self.atom_arena.allocator(), file, loc);
+        if (message != null) {
+            try beamEmitter.writeTestHeap(self.out, 4 + 5, scratch + 2);
+            try beamEmitter.writePutList(self.out, Op.xr(scratch), .{ .term = Term.listOf(&.{Term.str(try std.fmt.allocPrint(self.atom_arena.allocator(), " at {s}", .{at}))}) }, Dst.xr(scratch + 2));
+            try beamEmitter.writePutList(self.out, .{ .term = Term.str(try std.fmt.allocPrint(self.atom_arena.allocator(), "{s}: ", .{head})) }, Op.xr(scratch + 2), Dst.xr(scratch + 2));
+        } else {
+            try beamEmitter.writeMove(self.out, Term.str(try std.fmt.allocPrint(self.atom_arena.allocator(), "{s} at {s}", .{ head, at })), scratch + 2);
+            try beamEmitter.writeTestHeap(self.out, 5, scratch + 3);
+        }
+        try beamEmitter.writePutTuple2(self.out, Dst.xr(0), &.{ Op.atom("bp_assert"), Op.xr(scratch), Op.xr(scratch + 1), Op.xr(scratch + 2) });
         try beamEmitter.writeCall(self.out, .normal, 1, .{ .ext = .{ .module = "erlang", .function = "error" } }, 0);
         try beamEmitter.writeLabel(self.out, ok_l);
         try beamEmitter.writeMoveOp(self.out, Op.atom("ok"), Dst.xr(0));
@@ -6773,6 +6784,34 @@ const Emitter = struct {
         try beamEmitter.writeLabel(self.out, ok_l);
     }
 
+    /// Decision 527 (3) — before an integer `/` or `%`, its divisor tested
+    /// against `0`: there `erlang:error({panic, <<"integer division by zero:
+    /// <op> on <type> at <file:line:col>">>})`, the term the erlang backend's
+    /// `'__bp_nz'/2` raises, never the bare `badarith` of `div` / `rem`. A
+    /// float operator, one whose type was never resolved and a nonzero literal
+    /// divisor emit nothing.
+    fn emitDivisorCheck(self: *Emitter, divisor: Op, divisor_expr: ast.Expr, loc: ast.Loc, op: []const u8) !void {
+        const k = self.divisionKind(loc) orelse return;
+        if (!k.isInt()) return;
+        if (divisor_expr == .literal and divisor_expr.literal.kind == .numberLit) {
+            const n = std.fmt.parseInt(i128, divisor_expr.literal.kind.numberLit, 0) catch null;
+            if (n) |v| if (v != 0) return;
+        }
+        const fail_l = self.allocLabel();
+        const ok_l = self.allocLabel();
+        try beamEmitter.writeTest(self.out, .is_ne_exact, fail_l, &.{ divisor, Op.num("0") });
+        try beamEmitter.writeJump(self.out, ok_l);
+        try beamEmitter.writeLabel(self.out, fail_l);
+        var what_buf: [640]u8 = undefined;
+        const file = if (self.src_path.len > 0) self.src_path else self.module_name;
+        const what = std.fmt.bufPrint(&what_buf, "integer division by zero: {s} on {s} at {s}{s}:{d}:{d}", .{
+            op, @tagName(k), file, if (self.src_path.len > 0) "" else ".bp", loc.line, loc.col,
+        }) catch "integer division by zero";
+        try beamEmitter.writeMove(self.out, Term.tupleOf(&[_]Term{ Term.atomOf("panic"), Term.str(what) }), 0);
+        try beamEmitter.writeCall(self.out, .normal, 1, .{ .ext = .{ .module = "erlang", .function = "error" } }, 0);
+        try beamEmitter.writeLabel(self.out, ok_l);
+    }
+
     /// The source spelling of an arithmetic operator, as an abort names it.
     fn arithSymbol(op: anytype) []const u8 {
         return switch (op) {
@@ -6804,6 +6843,7 @@ const Emitter = struct {
             else => unreachable,
         };
         const st = try self.stageOperands(&.{ bin.lhs.*, bin.rhs.* }, &[_]ast.TrailingLambda{});
+        if (bin.op == .div or bin.op == .mod) try self.emitDivisorCheck(st.ops[1], bin.rhs.*, bin.loc, arithSymbol(bin.op));
         try beamEmitter.writeGcBif(self.out, bif, @max(self.min_live, st.x_top), st.slice(), Dst.xr(dest));
         // `rem` answers a value smaller than its divisor, never outside the
         // type, and raises `badarith` on `0` itself.

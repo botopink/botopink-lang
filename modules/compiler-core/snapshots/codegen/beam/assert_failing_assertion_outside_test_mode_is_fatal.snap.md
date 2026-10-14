@@ -30,8 +30,10 @@ fn main() {
     {move, {literal, <<"boom">>}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"test@main.bp:3">>}, {x, 2}}.
-    {test_heap, 4, 3}.
-    {put_tuple2, {x, 0}, {list, [{atom, bp_assert}, {x, 1}, {x, 2}]}}.
+    {test_heap, 9, 3}.
+    {put_list, {x, 1}, {literal, [<<" at test@main.bp:3:5">>]}, {x, 3}}.
+    {put_list, {literal, <<"assertion failed: 1 == 2: ">>}, {x, 3}, {x, 3}}.
+    {put_tuple2, {x, 0}, {list, [{atom, bp_assert}, {x, 1}, {x, 2}, {x, 3}]}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
   {label, 37}.
     {move, {atom, ok}, {x, 0}}.

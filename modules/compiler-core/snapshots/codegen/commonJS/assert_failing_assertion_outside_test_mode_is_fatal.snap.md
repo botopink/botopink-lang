@@ -9,7 +9,9 @@ fn main() {
 
 ----- JAVASCRIPT -- main.js
 ```javascript
-function __bp_assert_fatal(cond, msg, loc) { if (!cond) { throw Object.defineProperty(new Error((msg ?? "assertion failed") + " at " + loc), "__bp_panic", { value: msg ?? "assertion failed" }); } }
+function __bp_assert_fatal(cond, msg, head, where) {
+    if (!cond) { const m = head + (msg == null ? "" : ": " + msg) + " at " + where; throw Object.defineProperty(new Error(m), "__bp_panic", { value: m }); }
+}
 
 function __bp_f64(v) {
     if (Number.isNaN(v)) { return "NaN"; }
@@ -70,7 +72,7 @@ function __bp_print() {
 
 function main() {
     __bp_print("before");
-    __bp_assert_fatal((1 === 2), "boom", "main.bp:3");
+    __bp_assert_fatal((1 === 2), "boom", "assertion failed: 1 == 2", "main.bp:3:5");
     __bp_print("after");
 }
 

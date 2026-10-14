@@ -1448,6 +1448,16 @@ pub fn ComptimeExprOf(comptime phase: Phase) type {
             condition: *ExprOf(phase),
             /// Optional error message displayed when assertion fails
             message: ?*ExprOf(phase) = null,
+            /// The condition as the source wrote it (a slice of the source,
+            /// never owned), which a failed assert's panic names (decision
+            /// 527 (2)): `assertion failed: x > 0 at src/main.bp:12:5`.
+            /// Empty when the parser had no source span for it. Left out of
+            /// the AST dump.
+            text: []const u8 = "",
+
+            pub fn jsonStringify(this: @This(), jws: anytype) !void {
+                return stringifyOmitting(this, jws, &.{"text"}, &.{});
+            }
         },
         /// `assert Pattern = expr catch handler` ---- pattern assertion with error handling
         assertPattern: struct {
@@ -1657,6 +1667,48 @@ fn freeTypeRefs(allocator: std.mem.Allocator, refs: ?[]TypeRef) void {
     const list = refs orelse return;
     for (list) |*t| t.deinit(allocator);
     allocator.free(list);
+}
+
+/// Decision 527 (2) — a failed `assert`'s panic message, the same on every
+/// target: `assertion failed: <condition> at <where>`, and with the
+/// program's message `assertion failed: <condition>: <message> at <where>`.
+/// `assertHead` is the part before the message, `assertion failed:
+/// <condition>` (`assertion failed` when the parser kept no text), the
+/// condition's source text with each run of whitespace — a condition written
+/// over several lines — folded to one space. `where` is `<file>:<line>:<col>`
+/// of the `assert` keyword (`assertWhere`).
+pub fn assertHead(alloc: std.mem.Allocator, text: []const u8) ![]const u8 {
+    var buf: std.ArrayListUnmanaged(u8) = .empty;
+    errdefer buf.deinit(alloc);
+    try buf.appendSlice(alloc, "assertion failed");
+    const trimmed = std.mem.trim(u8, text, " \t\r\n");
+    if (trimmed.len > 0) {
+        try buf.appendSlice(alloc, ": ");
+        var space = false;
+        for (trimmed) |c| {
+            if (c == ' ' or c == '\t' or c == '\r' or c == '\n') {
+                space = true;
+                continue;
+            }
+            if (space) try buf.append(alloc, ' ');
+            space = false;
+            try buf.append(alloc, c);
+        }
+    }
+    return buf.toOwnedSlice(alloc);
+}
+
+/// `<file>:<line>:<col>` — where a failed assert's panic says it failed.
+pub fn assertWhere(alloc: std.mem.Allocator, file: []const u8, loc: Loc) ![]const u8 {
+    return std.fmt.allocPrint(alloc, "{s}:{d}:{d}", .{ file, loc.line, loc.col });
+}
+
+/// The whole message of an assert without one of its own:
+/// `assertion failed: <condition> at <where>`.
+pub fn assertPanicText(alloc: std.mem.Allocator, text: []const u8, where: []const u8) ![]const u8 {
+    const head = try assertHead(alloc, text);
+    defer alloc.free(head);
+    return std.fmt.allocPrint(alloc, "{s} at {s}", .{ head, where });
 }
 
 fn stringifyOmitting(value: anytype, jws: anytype, comptime omitAlways: []const []const u8, comptime omitIfEmpty: []const []const u8) !void {

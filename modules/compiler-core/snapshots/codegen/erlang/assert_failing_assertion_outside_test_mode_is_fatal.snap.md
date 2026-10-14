@@ -15,7 +15,7 @@ fn main() {
 
 main() ->
     '__bp_print'([<<"before">>]),
-    case ((1 =:= 2)) of true -> ok; _ -> erlang:error({bp_assert, <<"boom">>, <<"main.bp:3">>}) end,
+    case ((1 =:= 2)) of true -> ok; _ -> _AssertMsg0 = <<"boom">>, erlang:error({bp_assert, _AssertMsg0, <<"main.bp:3">>, [<<"assertion failed: 1 == 2: ">>, _AssertMsg0, <<" at main.bp:3:5">>]}) end,
     '__bp_print'([<<"after">>]).
 
 '__bp_print'(Values) ->

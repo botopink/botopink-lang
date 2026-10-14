@@ -349,7 +349,7 @@ pub fn codegenEmit(
                 // the bare error name that would abort the whole build.
                 var missing: ?moduleOutput.MissingExternal = null;
                 var refused: ?Emitter.Refusal = null;
-                const emitted = emitWat(alloc, ct.name, ok.transformed, ok.comptime_vals, ok.dispatch_rewrites, ok.instance_lowerings, linked.items, &scope.cross, external_lookup, artifact, &missing, &refused) catch |err| {
+                const emitted = emitWat(alloc, ct.name, ct.srcPath, ok.transformed, ok.comptime_vals, ok.dispatch_rewrites, ok.instance_lowerings, linked.items, &scope.cross, external_lookup, artifact, &missing, &refused) catch |err| {
                     // A construct this backend cannot lower reaches the
                     // driver the same way: located, naming the construct,
                     // failing only this module.
@@ -384,7 +384,7 @@ pub fn codegenEmit(
                     if (try testProgram(unit_arena.allocator(), ok.transformed, if (ct.srcPath.len > 0) ct.srcPath else try std.fmt.allocPrint(unit_arena.allocator(), "{s}.bp", .{ct.name}))) |tp| {
                         var unit_missing: ?moduleOutput.MissingExternal = null;
                         var unit_refused: ?Emitter.Refusal = null;
-                        const unit = emitWat(alloc, ct.name, tp, ok.comptime_vals, ok.dispatch_rewrites, ok.instance_lowerings, linked.items, &scope.cross, external_lookup, artifact, &unit_missing, &unit_refused) catch |err| {
+                        const unit = emitWat(alloc, ct.name, ct.srcPath, tp, ok.comptime_vals, ok.dispatch_rewrites, ok.instance_lowerings, linked.items, &scope.cross, external_lookup, artifact, &unit_missing, &unit_refused) catch |err| {
                             const diagnostic: moduleOutput.Diagnostic = if (unit_missing) |me|
                                 try me.diagnostic(alloc)
                             else if (unit_refused) |r|
@@ -1144,6 +1144,7 @@ const Plan = struct {
 fn emitWat(
     alloc: std.mem.Allocator,
     module_name: []const u8,
+    src_path: []const u8,
     own_program_in: ast.Program,
     comptime_vals: std.StringHashMap([]const u8),
     rewrites: std.AutoHashMap(ast.Loc, []const u8),
@@ -1157,8 +1158,8 @@ fn emitWat(
 ) !Emitted {
     var plan: Plan = .{};
     defer plan.deinit(alloc);
-    return emitWatPass(alloc, module_name, own_program_in, comptime_vals, rewrites, own_instance_lowerings, linked_in, cross, external_lookup, artifact, missing, refused, &plan) catch |err| switch (err) {
-        error.Replan => emitWatPass(alloc, module_name, own_program_in, comptime_vals, rewrites, own_instance_lowerings, linked_in, cross, external_lookup, artifact, missing, refused, &plan),
+    return emitWatPass(alloc, module_name, src_path, own_program_in, comptime_vals, rewrites, own_instance_lowerings, linked_in, cross, external_lookup, artifact, missing, refused, &plan) catch |err| switch (err) {
+        error.Replan => emitWatPass(alloc, module_name, src_path, own_program_in, comptime_vals, rewrites, own_instance_lowerings, linked_in, cross, external_lookup, artifact, missing, refused, &plan),
         else => |e| e,
     };
 }
@@ -1166,6 +1167,9 @@ fn emitWat(
 fn emitWatPass(
     alloc: std.mem.Allocator,
     module_name: []const u8,
+    /// The module's package-relative source path (`src/main.bp`), what a
+    /// failed assert's panic names (decision 527 (2)); empty when unknown.
+    src_path: []const u8,
     own_program_in: ast.Program,
     comptime_vals: std.StringHashMap([]const u8),
     rewrites: std.AutoHashMap(ast.Loc, []const u8),
@@ -1193,6 +1197,7 @@ fn emitWatPass(
         em.refusal = null;
     };
     em.module_name = module_name;
+    em.src_path = src_path;
     em.external_lookup = external_lookup;
     em.instance_lowerings = own_instance_lowerings;
 
@@ -2261,6 +2266,10 @@ const Emitter = struct {
     /// (`checkHostBindings`); written into the `botopink.needs` custom
     /// section, which the runner reads for the host's flags.
     needs: ast.WasmNeeds = .initEmpty(),
+    /// The module's package-relative source path (`src/main.bp`), what a
+    /// failed assert's panic names (decision 527 (2)); empty when unknown —
+    /// then `<module>.bp`.
+    src_path: []const u8 = "",
     /// `needs` holds `.exceptions`: an abort is raised as the tag
     /// `$__bp_panic` (`panic_raise`), which `attempt` catches, and
     /// `_botopink_main` catches what escapes.
@@ -7013,18 +7022,33 @@ const Emitter = struct {
     /// `try expr catch handler` → load the tag; Ok yields `[ptr+4]`, Error runs
     /// the handler. Leaves the resulting value on the stack.
     /// `assert cond[, msg]` — always fatal (decision 4 of the 1.0.2-beta
-    /// semantics decisions): when `cond` is false the module writes
-    /// `<module>.bp:<line>: assertion failed[: <msg>]` to stderr and traps.
+    /// semantics decisions), a panic (decision 527 (2)) whose message is
+    /// `assertion failed: <condition>[: <msg>] at <file:line:col>`, as on
+    /// every target: raised as `$__bp_panic` when the program reaches
+    /// `attempt` (decision 518), else written to stderr before the trap.
     fn lowerAssert(self: *Emitter, a: anytype, loc: ast.Loc) anyerror!void {
         try self.lowerCoerced(a.condition.*, "i32");
         try self.emit(opOf("i32", "eqz"));
         var then_c: Capture = .{};
         self.open(&then_c);
-        const file = if (self.module_name.len > 0) self.module_name else "main";
-        const where = try self.internString(try std.fmt.allocPrint(self.arena(), "{s}.bp:{d}", .{ file, loc.line }));
-        try self.emit(try self.constInt(where.offset));
-        if (a.message) |m| try self.lowerCoerced(m.*, "i32") else try self.emit(zero);
-        try self.emit(self.builder().helper(.assert_fail));
+        const file = if (self.src_path.len > 0) self.src_path else try std.fmt.allocPrint(self.arena(), "{s}.bp", .{if (self.module_name.len > 0) self.module_name else "main"});
+        const head = try ast.assertHead(self.arena(), a.text);
+        const at = try ast.assertWhere(self.arena(), file, loc);
+        if (a.message) |m| {
+            try self.emit(try self.constInt((try self.internString(try std.fmt.allocPrint(self.arena(), "{s}: ", .{head}))).offset));
+            try self.lowerCoerced(m.*, "i32");
+            try self.emit(self.builder().helper(.str_concat));
+            try self.emit(try self.constInt((try self.internString(try std.fmt.allocPrint(self.arena(), " at {s}", .{at}))).offset));
+            try self.emit(self.builder().helper(.str_concat));
+        } else {
+            try self.emit(try self.constInt((try self.internString(try std.fmt.allocPrint(self.arena(), "{s} at {s}", .{ head, at }))).offset));
+        }
+        if (self.exceptions) {
+            try self.emit(one);
+            try self.emit(self.builder().helper(.panic_raise));
+        } else {
+            try self.emit(self.builder().helper(.panic_fail));
+        }
         try self.emit(.@"unreachable");
         const then_seq = self.seal(&then_c, .terminated);
         try self.emit(.{ .@"if" = .{ .then = .{ .seq = then_seq } } });

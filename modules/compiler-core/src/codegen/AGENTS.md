@@ -387,10 +387,15 @@ codegen/
   patches`, which walks the embedded prelude. Pinned end to end by
   `conformance/modules/string_char_code_after_slice`.
 - **`assert`** (semantics decision 4): outside test mode it is always fatal —
-  `__bp_assert_fatal(cond, msg, "<file>:<line>")`, a prelude helper that
-  throws `Error("<msg> at <file>:<line>")` (`"assertion failed"` without a
-  message), so node exits non-zero naming both. Test mode is unchanged: the
-  `__bp_assert` harness helper throws for the runner to catch per test.
+  `__bp_assert_fatal(cond, msg, head, where)`, a prelude helper that throws
+  a `__bp_panic`-marked `Error` whose text is `assertion failed: <condition>
+  [: <msg>] at <file>:<line>:<col>` (decision 527 (2); `head` is `assertion
+  failed: <condition>` from the parser's `assert.text`, `ast.assertHead`), so
+  node exits non-zero naming both and `failure.attempt` reads a `panic`. Erlang
+  and beam raise `{bp_assert, Msg, "<file>:<line>", Panic}` (Panic the same
+  text, an iolist when the program wrote a message); the test runner still
+  reports `Msg` at `<file>:<line>`. The test-mode `__bp_assert` harness helper
+  throws for the runner to catch per test, carrying the same mark.
   `<file>` — in the `TEST`, `FAIL` and assert locations of commonJS and
   erlang — is the driver's package-relative path (`ComptimeOutput.srcPath`,
   `src/main.bp`, the file `@src().file` names), else `<module>.bp` (the
@@ -2916,10 +2921,20 @@ first three are now enforced by the model, not by discipline:
   (`i64ToString` / `u64ToString` by its carrier), a float through
   `number.floatToString` (the same digits `$__print_f64` writes), a bool as
   `true`/`false` — the rule erlang's E2 fix follows (`integer_to_binary/1`).
+- **An integer `/` or `%` by zero on erlang and beam** (decision 527 (3)) raises
+  the marked panic `{panic, <<"integer division by zero: <op> on <type> at
+  <file>:<line>:<col>">>}`, commonJS's text: erlang through `'__bp_nz'/2` on
+  the divisor (`nonZeroDivisor`), beam by a `is_ne_exact` test before the
+  `div` / `rem` (`emitDivisorCheck`); a float operator, an untyped body and a
+  nonzero literal divisor emit nothing. Never the bare `badarith`, which
+  `attempt` would read as `host`. wasm's `i32.div_s` traps, and a trap is no
+  exception (decision 518).
 - **`assert cond[, msg]` is always fatal** (decision 4 of the 1.0.2-beta
   semantics decisions): a false condition writes
-  `<module>.bp:<line>: assertion failed[: <msg>]` to stderr
-  (`$__assert_fail` over `$__write_err`, fd 2) and traps. The harness records
+  `assertion failed: <condition>[: <msg>] at <file>:<line>:<col>` (decision
+  527 (2), `<file>` the package-relative path) to stderr (`$__panic_fail`
+  over `$__write_err`, fd 2) and traps; under `attempt` (decision 518) it is
+  raised as `$__bp_panic` (`panic_raise`) instead. The harness records
   both as the `RUNTIME TRAP (wasmtime):` block. It used to lower to nothing.
 - **`throw` inside a fn returning `@Result`** returns an Error Result
   (`lowerThrow`) — the transform rewrites the common forms into

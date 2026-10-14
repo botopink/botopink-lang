@@ -374,12 +374,29 @@ pub fn emitProgramOpts(
     return emitted.code;
 }
 
+/// `"…"` holding `text` as it is — any bytes, a quote, a backslash or a
+/// newline escaped (a `.quoted` node is written verbatim).
+fn escapedString(arena: std.mem.Allocator, text: []const u8) !js.Expr {
+    var out: std.ArrayListUnmanaged(u8) = .empty;
+    for (text) |c| switch (c) {
+        '"' => try out.appendSlice(arena, "\\\""),
+        '\\' => try out.appendSlice(arena, "\\\\"),
+        '\n' => try out.appendSlice(arena, "\\n"),
+        '\r' => try out.appendSlice(arena, "\\r"),
+        '\t' => try out.appendSlice(arena, "\\t"),
+        0...8, 11, 12, 14...31, 127 => try out.print(arena, "\\x{x:0>2}", .{c}),
+        else => try out.append(arena, c),
+    };
+    return .{ .quoted = out.items };
+}
+
 /// The test-mode preamble: a throwing assert helper the runner can catch.
 const assert_helper_source =
-    \\function __bp_assert(cond, msg, loc) {
+    \\function __bp_assert(cond, msg, loc, head, where) {
     \\    if (!cond) {
     \\        const e = new Error(msg || "assertion failed");
     \\        e.__bp_assert_loc = loc;
+    \\        e.__bp_panic = head + (msg == null ? "" : ": " + msg) + " at " + where;
     \\        throw e;
     \\    }
     \\}
@@ -4843,22 +4860,30 @@ const Emitter = struct {
                 },
                 .assert => |a| {
                     const cond = try self.buildExpr(a.condition.*);
+                    // Decision 527 (2): the panic a failed assert raises names
+                    // the condition as written and `file:line:col`.
+                    const head = try escapedString(self.arena(), try ast.assertHead(self.arena(), a.text));
+                    const where = try escapedString(self.arena(), try ast.assertWhere(self.arena(), self.src_file, ct.loc));
                     if (self.test_mode) {
                         // Throwing helper — the test runner catches per test,
-                        // records the failure, and continues.
+                        // records the failure (its message and `file:line`),
+                        // and continues; the mark is the panic's text.
                         return self.b.call(.{ .name = "__bp_assert" }, &.{
                             cond,
                             if (a.message) |msg| try self.buildExpr(msg.*) else .null_,
                             .{ .quoted = try std.fmt.allocPrint(self.arena(), "{s}:{d}", .{ self.src_file, ct.loc.line }) },
+                            head,
+                            where,
                         });
                     }
-                    // Outside test mode an `assert` is always fatal and names
-                    // its message and `file:line` (semantics decision 4) — never
-                    // `console.assert`, which prints and carries on.
+                    // Outside test mode an `assert` is always fatal (semantics
+                    // decision 4) — never `console.assert`, which prints and
+                    // carries on.
                     return self.b.call(self.helper(.assert_fatal), &.{
                         cond,
                         if (a.message) |msg| try self.buildExpr(msg.*) else .null_,
-                        .{ .quoted = try std.fmt.allocPrint(self.arena(), "{s}:{d}", .{ self.src_file, ct.loc.line }) },
+                        head,
+                        where,
                     });
                 },
                 .assertPattern => |ap| {

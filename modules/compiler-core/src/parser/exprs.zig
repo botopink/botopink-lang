@@ -342,14 +342,16 @@ pub fn parseExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
     // assert condition [,"message"]
     if (this.check(.assert)) {
         const assertTok = this.advance();
+        const condFirst = this.current;
         const condition = try this.parseExpr(alloc);
         const conditionPtr = try this.boxExpr(alloc, condition);
+        const text = this.sourceSpan(condFirst, this.current);
         var message: ?*Expr = null;
         if (this.match(.comma)) {
             const msgExpr = try this.parseExpr(alloc);
             message = try this.boxExpr(alloc, msgExpr);
         }
-        return Expr{ .comptime_ = .{ .loc = locFromToken(assertTok), .kind = .{ .assert = .{ .condition = conditionPtr, .message = message } } } };
+        return Expr{ .comptime_ = .{ .loc = locFromToken(assertTok), .kind = .{ .assert = .{ .condition = conditionPtr, .message = message, .text = text } } } };
     }
 
     // The three loop keywords (decision 105).

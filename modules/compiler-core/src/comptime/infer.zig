@@ -23533,6 +23533,7 @@ fn inferComptimeExpr(env: *Env, ct: ast.ComptimeExprOf(.untyped), loc: ast.Loc) 
             return TypedExpr{ .comptime_ = .{ .loc = loc, .type_ = try env.namedType("void"), .kind = .{ .assert = .{
                 .condition = condPtr,
                 .message = msgPtr,
+                .text = a.text,
             } } } };
         },
 

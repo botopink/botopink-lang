@@ -21,8 +21,9 @@ const ast = @import("js_ast.zig");
 const stdWasm = @import("std_wasm");
 
 pub const Helper = enum {
-    /// `assert cond, msg` outside test mode: always fatal, naming the message
-    /// and the `file:line` (cross-backend semantics decision 4).
+    /// `assert cond, msg` outside test mode: always fatal (cross-backend
+    /// semantics decision 4), a panic naming the condition, the message and
+    /// the `file:line:col` (decision 527 (2)).
     assert_fatal,
     /// `String.at(i) -> ?string`: the character, or `null` out of range.
     /// Named `string_char_at` for the native JS method it wraps — the
@@ -660,41 +661,17 @@ fn strIndex(comptime fn_name: []const u8, comptime native: []const u8) ast.Stmt 
 
 // ── the helpers ──────────────────────────────────────────────────────────────
 
-const cond: ast.Expr = .{ .name = "cond" };
-const msg: ast.Expr = .{ .name = "msg" };
-const loc: ast.Expr = .{ .name = "loc" };
-
-/// `function __bp_assert_fatal(cond, msg, loc) { if (!cond) { throw Object.defineProperty(new Error((msg ?? "assertion failed") + " at " + loc), "__bp_panic", { value: msg ?? "assertion failed" }); } }`
-/// — the mark carries the message alone, which std's `failure.attempt` reads
-/// as the `Failure`'s message (an abort, kind `panic`).
-const assert_fatal: ast.Stmt = .{ .function = .{
-    .name = "__bp_assert_fatal",
-    .params = &.{ .{ .pattern = .{ .name = "cond" } }, .{ .pattern = .{ .name = "msg" } }, .{ .pattern = .{ .name = "loc" } } },
-    .body = .{ .stmts = &.{.{ .if_ = .{
-        .cond = .{ .unary = .{ .op = "!", .operand = &cond, .parens = false } },
-        .then = &.{ .block = .{ .stmts = &.{.{ .throw_ = .{ .call = .{
-            .callee = &.{ .member = .{ .object = &.{ .name = "Object" }, .name = "defineProperty" } },
-            .args = &.{
-                .{ .new_ = .{
-                    .callee = &.{ .name = "Error" },
-                    .args = &.{.{ .binary = .{
-                        .op = "+",
-                        .lhs = &.{ .binary = .{
-                            .op = "+",
-                            .lhs = &.{ .binary = .{ .op = "??", .lhs = &msg, .rhs = &.{ .quoted = "assertion failed" } } },
-                            .rhs = &.{ .quoted = " at " },
-                            .parens = false,
-                        } },
-                        .rhs = &loc,
-                        .parens = false,
-                    } }},
-                } },
-                .{ .quoted = "__bp_panic" },
-                hx("{ value: msg ?? \"assertion failed\" }"),
-            },
-        } } }}, .layout = .spaced } },
-    } }}, .layout = .spaced },
-} };
+/// `function __bp_assert_fatal(cond, msg, head, where) { if (!cond) { const m = head + (msg == null ? "" : ": " + msg) + " at " + where; throw Object.defineProperty(new Error(m), "__bp_panic", { value: m }); } }`
+/// — decision 527 (2): the panic names the asserted condition (`head`,
+/// `assertion failed: x > 0`), the program's message when it wrote one, and
+/// where (`src/main.bp:12:5`); the mark carries that text, which std's
+/// `failure.attempt` reads as the `Failure`'s message (kind `panic`).
+const assert_fatal: ast.Stmt = hFn("__bp_assert_fatal", &.{ "cond", "msg", "head", "where" }, &.{
+    hIf("!cond", &.{
+        hConst(.const_, "m", "head + (msg == null ? \"\" : \": \" + msg) + \" at \" + where"),
+        .{ .throw_ = hx("Object.defineProperty(new Error(m), \"__bp_panic\", { value: m })") },
+    }),
+});
 
 const r_: ast.Expr = .{ .name = "r" };
 
@@ -1423,7 +1400,7 @@ test "js_prelude: a failed assert throws with its message and location" {
     defer aw.deinit();
     try @import("js_emitter.zig").writeStmt(&aw.writer, decl(.assert_fatal), 0);
     try std.testing.expectEqualStrings(
-        "function __bp_assert_fatal(cond, msg, loc) { if (!cond) { throw Object.defineProperty(new Error((msg ?? \"assertion failed\") + \" at \" + loc), \"__bp_panic\", { value: msg ?? \"assertion failed\" }); } }",
+        "function __bp_assert_fatal(cond, msg, head, where) {\n    if (!cond) { const m = head + (msg == null ? \"\" : \": \" + msg) + \" at \" + where; throw Object.defineProperty(new Error(m), \"__bp_panic\", { value: m }); }\n}",
         aw.written(),
     );
 }

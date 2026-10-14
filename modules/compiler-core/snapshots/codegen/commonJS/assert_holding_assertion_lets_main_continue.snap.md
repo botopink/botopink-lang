@@ -8,7 +8,9 @@ fn main() {
 
 ----- JAVASCRIPT -- main.js
 ```javascript
-function __bp_assert_fatal(cond, msg, loc) { if (!cond) { throw Object.defineProperty(new Error((msg ?? "assertion failed") + " at " + loc), "__bp_panic", { value: msg ?? "assertion failed" }); } }
+function __bp_assert_fatal(cond, msg, head, where) {
+    if (!cond) { const m = head + (msg == null ? "" : ": " + msg) + " at " + where; throw Object.defineProperty(new Error(m), "__bp_panic", { value: m }); }
+}
 
 function __bp_f64(v) {
     if (Number.isNaN(v)) { return "NaN"; }
@@ -70,7 +72,7 @@ function __bp_print() {
 function __bp_int(v, lo, hi, what) { if (v >= lo && v <= hi) { return v + 0; } throw Object.defineProperty(new Error((Number.isFinite(v) ? "integer overflow: " : "integer division by zero: ") + what), "__bp_panic", { value: true }); }
 
 function main() {
-    __bp_assert_fatal((__bp_int((1 + 1), -2147483648, 2147483647, "+ on i32 at main.bp:2:14") === 2), "arithmetic", "main.bp:2");
+    __bp_assert_fatal((__bp_int((1 + 1), -2147483648, 2147483647, "+ on i32 at main.bp:2:14") === 2), "arithmetic", "assertion failed: 1 + 1 == 2", "main.bp:2:5");
     __bp_print("after");
 }
 

@@ -921,6 +921,26 @@ const int_helper_form: Ast.Form = .{ .function = .{ .name = "__bp_int", .clauses
     },
 } } };
 
+/// Decision 527 (3) — `'__bp_nz'(B, What)`: an integer `/` or `%`'s divisor,
+/// or, when it is `0`, the panic `{panic, What}` (`integer division by zero:
+/// <op> on <type> at <file:line:col>`, commonJS's text) — never the bare
+/// `badarith` erlang's `div` / `rem` raise, which `attempt` would not read as
+/// the program's own abort.
+const nz_inline_form: Ast.Form = .{ .inline_fns = &.{.{ .name = "__bp_nz", .arity = 2 }} };
+
+const nz_helper_form: Ast.Form = .{ .function = .{ .name = "__bp_nz", .clauses = &.{
+    .{
+        .patterns = &.{ .{ .number = "0" }, Ast.Expr.v("What") },
+        .body = Ast.Body.of(&.{.{ .expr = .{ .call = .{ .module = "erlang", .name = "error", .args = &.{.{ .tuple = &.{ Ast.Expr.a("panic"), Ast.Expr.v("What") } }} } } }}),
+        .layout = .inline_,
+    },
+    .{
+        .patterns = &.{ Ast.Expr.v("B"), Ast.Expr.v("_") },
+        .body = Ast.Body.of(&.{.{ .expr = Ast.Expr.v("B") }}),
+        .layout = .inline_,
+    },
+} } };
+
 /// `'__bp_len'/2`: `.len`/`.length`/`.size` on a receiver of unknown type — a
 /// list's length, a binary's length, else the map field. Every comptime module
 /// carries it; a typed module emits it when inference recorded no lowering for
@@ -2375,6 +2395,7 @@ fn emitErlangModule(
     if (!listing_only) {
         if (em.needs_add_helper and comptime_module == null) try forms.appendSlice(b.arena, &.{ .blank, add_helper_form });
         if (em.needs_int_helper) try forms.appendSlice(b.arena, &.{ .blank, int_inline_form, int_helper_form });
+        if (em.needs_nz_helper) try forms.appendSlice(b.arena, &.{ .blank, nz_inline_form, nz_helper_form });
         if (em.needs_len_helper and comptime_module == null) try forms.appendSlice(b.arena, &.{ .blank, len_helper_form });
         if (em.needs_field_helper and comptime_module == null) try forms.appendSlice(b.arena, &.{ .blank, field_helper_form });
         if (em.needs_method_helper and comptime_module == null) try forms.appendSlice(b.arena, &.{ .blank, method_helper_form });
@@ -2487,6 +2508,7 @@ const SavedUnitState = struct {
     needs_slice_helper: bool,
     needs_add_helper: bool,
     needs_int_helper: bool,
+    needs_nz_helper: bool,
     bif_shadows: []const Ast.FnRef,
     prim_shims: @FieldType(Emitter, "prim_shims"),
     needed_instance_defaults: @FieldType(Emitter, "needed_instance_defaults"),
@@ -2609,6 +2631,10 @@ fn testRunnerForms(b: Ast.Builder, forms: *Forms, tests: []const Ast.Expr, impor
     const outcome = try b.match(V("Outcome"), .{ .try_catch = .{
         .body = try b.body(&.{ .{ .apply = .{ .fun = try b.ptr(V("Fun")) } }, A("ok") }),
         .catches = try b.arena.dupe(Ast.Clause, &.{
+            .{
+                .patterns = try b.exprs(&.{try b.exception(A("error"), try b.tuple(&.{ A("bp_assert"), V("Msg"), V("ALoc"), V("_") }))}),
+                .body = try b.body(&.{try b.tuple(&.{ A("fail"), V("Msg"), V("ALoc") })}),
+            },
             .{
                 .patterns = try b.exprs(&.{try b.exception(A("error"), try b.tuple(&.{ A("bp_assert"), V("Msg"), V("ALoc") }))}),
                 .body = try b.body(&.{try b.tuple(&.{ A("fail"), V("Msg"), V("ALoc") })}),
@@ -3413,6 +3439,9 @@ const Emitter = struct {
     /// Set when an integer operator was range-checked (`intChecked`, decision
     /// 264): the module defines `'__bp_int'/4` (`int_helper_form`).
     needs_int_helper: bool = false,
+    /// An integer `/` or `%` checked its divisor (decision 527 (3)): the
+    /// module defines `'__bp_nz'/2` (`nz_helper_form`).
+    needs_nz_helper: bool = false,
     /// §A5 annotation-driven prim-method dispatch: `<Iface>.<method>` →
     /// `(host module, host symbol, ordered arg names)` parsed from
     /// `#[@External.Erlang("mod", "sym(args)")]` on a primitive interface method.
@@ -4729,6 +4758,24 @@ const Emitter = struct {
             .{ .number = try std.fmt.allocPrint(b.arena, "{d}", .{r.hi}) },
             .{ .lexeme_binary = what },
         });
+    }
+
+    /// Decision 527 (3) — an integer `/` or `%`'s divisor `node` through
+    /// `'__bp_nz'/2`, which raises the panic `integer division by zero: <op>
+    /// on <type> at <file:line:col>` on `0`. A float operator, one whose type
+    /// inference never resolved, an untyped (comptime) body and a nonzero
+    /// literal divisor stay as they are.
+    fn nonZeroDivisor(this: *Emitter, b: Ast.Builder, node: Ast.Expr, divisor: ast.Expr, loc: ast.Loc, op: []const u8) !Ast.Expr {
+        if (this.untyped) return node;
+        const k = this.divisionKind(loc) orelse return node;
+        if (!k.isInt()) return node;
+        if (divisor == .literal and divisor.literal.kind == .numberLit) {
+            const n = std.fmt.parseInt(i128, divisor.literal.kind.numberLit, 0) catch null;
+            if (n) |v| if (v != 0) return node;
+        }
+        this.needs_nz_helper = true;
+        const what = try std.fmt.allocPrint(b.arena, "integer division by zero: {s} on {s} at {s}:{d}:{d}", .{ op, @tagName(k), try this.srcFile(b.arena), loc.line, loc.col });
+        return b.call("__bp_nz", &.{ node, .{ .lexeme_binary = what } });
     }
 
     fn combineNum(a: ?NumKind, b: ?NumKind) ?NumKind {
@@ -7936,7 +7983,11 @@ const Emitter = struct {
                     .@"and" => "andalso",
                     .@"or" => "orelse",
                 };
-                const node = try b.binop(op, try this.exprNode(b, bin.lhs.*), try this.exprNode(b, bin.rhs.*));
+                const rhs_node = try this.exprNode(b, bin.rhs.*);
+                const node = try b.binop(op, try this.exprNode(b, bin.lhs.*), switch (bin.op) {
+                    .div, .mod => try this.nonZeroDivisor(b, rhs_node, bin.rhs.*, bin.loc, arithSymbol(bin.op)),
+                    else => rhs_node,
+                });
                 return switch (bin.op) {
                     // `rem` answers a value smaller than its divisor, never
                     // outside the type, and raises `badarith` on `0` itself.
@@ -8974,15 +9025,40 @@ const Emitter = struct {
             .assert => |a| {
                 const cond = try b.paren(try this.exprNode(b, a.condition.*));
                 // Always fatal, with the message and the `file:line` (semantics
-                // decision 4): a failed assert raises `{bp_assert, Msg, Where}`.
-                // The test runner catches it per test and continues; outside
-                // test mode nothing does. `true = (Cond)` dropped both.
-                const message = if (a.message) |msg| try this.exprNode(b, msg.*) else Ast.str("assertion failed");
-                const where: Ast.Expr = .{ .lexeme_binary = try std.fmt.allocPrint(b.arena, "{s}:{d}", .{ try this.srcFile(b.arena), ct.loc.line }) };
-                const raise = try b.remote("erlang", "error", &.{try b.tuple(&.{ A("bp_assert"), message, where })});
+                // decision 4): a failed assert raises `{bp_assert, Msg, Where,
+                // Panic}`. The test runner catches it per test and reports
+                // `Msg` at `Where`; outside test mode nothing does. `Panic` is
+                // the panic's text (decision 527 (2)) — `assertion failed:
+                // <condition>[: Msg] at <file:line:col>`, an iolist when the
+                // program wrote a message — which std's `failure.attempt`
+                // reads. `true = (Cond)` dropped both.
+                const file = try this.srcFile(b.arena);
+                const where: Ast.Expr = .{ .lexeme_binary = try std.fmt.allocPrint(b.arena, "{s}:{d}", .{ file, ct.loc.line }) };
+                const head = try ast.assertHead(b.arena, a.text);
+                const at = try ast.assertWhere(b.arena, file, ct.loc);
+                var fail_body: []const Ast.Expr = undefined;
+                if (a.message) |msg| {
+                    const n = this.try_seq;
+                    this.try_seq += 1;
+                    const m = V(try std.fmt.allocPrint(b.arena, "_AssertMsg{d}", .{n}));
+                    const panic = try b.list(&.{
+                        Ast.str(try std.fmt.allocPrint(b.arena, "{s}: ", .{head})),
+                        m,
+                        Ast.str(try std.fmt.allocPrint(b.arena, " at {s}", .{at})),
+                    });
+                    fail_body = try b.arena.dupe(Ast.Expr, &.{
+                        try b.match(m, try this.exprNode(b, msg.*)),
+                        try b.remote("erlang", "error", &.{try b.tuple(&.{ A("bp_assert"), m, where, panic })}),
+                    });
+                } else {
+                    const panic = Ast.str(try std.fmt.allocPrint(b.arena, "{s} at {s}", .{ head, at }));
+                    fail_body = try b.arena.dupe(Ast.Expr, &.{
+                        try b.remote("erlang", "error", &.{try b.tuple(&.{ A("bp_assert"), Ast.str("assertion failed"), where, panic })}),
+                    });
+                }
                 return b.caseInline(cond, &.{
                     try b.clause(&.{A("true")}, &.{}, &.{A("ok")}),
-                    try b.clause(&.{V("_")}, &.{}, &.{raise}),
+                    try b.clause(&.{V("_")}, &.{}, fail_body),
                 });
             },
             // `case E of Pat -> E; _ -> Handler end`.
@@ -11097,6 +11173,7 @@ const Emitter = struct {
             .needs_slice_helper = this.needs_slice_helper,
             .needs_add_helper = this.needs_add_helper,
             .needs_int_helper = this.needs_int_helper,
+            .needs_nz_helper = this.needs_nz_helper,
             .prim_shims = this.prim_shims,
             .needed_instance_defaults = this.needed_instance_defaults,
             .forms = .empty,
@@ -11114,6 +11191,7 @@ const Emitter = struct {
         this.needs_slice_helper = false;
         this.needs_add_helper = false;
         this.needs_int_helper = false;
+        this.needs_nz_helper = false;
         this.prim_shims = .empty;
         this.needed_instance_defaults = .empty;
         return saved;
@@ -11165,6 +11243,7 @@ const Emitter = struct {
         }
         if (this.needs_add_helper) try forms.appendSlice(b.arena, &.{ .blank, add_helper_form });
         if (this.needs_int_helper) try forms.appendSlice(b.arena, &.{ .blank, int_inline_form, int_helper_form });
+        if (this.needs_nz_helper) try forms.appendSlice(b.arena, &.{ .blank, nz_inline_form, nz_helper_form });
         if (this.needs_len_helper) try forms.appendSlice(b.arena, &.{ .blank, len_helper_form });
         if (this.needs_field_helper) try forms.appendSlice(b.arena, &.{ .blank, field_helper_form });
         if (this.needs_method_helper) try forms.appendSlice(b.arena, &.{ .blank, method_helper_form });
@@ -11192,6 +11271,7 @@ const Emitter = struct {
             .needs_slice_helper = this.needs_slice_helper,
             .needs_add_helper = this.needs_add_helper,
             .needs_int_helper = this.needs_int_helper,
+            .needs_nz_helper = this.needs_nz_helper,
             .prim_shims = this.prim_shims,
             .needed_instance_defaults = this.needed_instance_defaults,
             .forms = .empty,
@@ -11208,6 +11288,7 @@ const Emitter = struct {
         this.needs_slice_helper = false;
         this.needs_add_helper = false;
         this.needs_int_helper = false;
+        this.needs_nz_helper = false;
         this.prim_shims = .empty;
         this.needed_instance_defaults = .empty;
         return saved;
@@ -11334,6 +11415,7 @@ const Emitter = struct {
         this.needs_slice_helper = unit.needs_slice_helper;
         this.needs_add_helper = unit.needs_add_helper;
         this.needs_int_helper = unit.needs_int_helper;
+        this.needs_nz_helper = unit.needs_nz_helper;
         this.prim_shims = unit.prim_shims;
         this.needed_instance_defaults = unit.needed_instance_defaults;
     }

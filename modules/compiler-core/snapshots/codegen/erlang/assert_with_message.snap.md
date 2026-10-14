@@ -11,7 +11,7 @@ fn f() {
 -export(['__bp_priv__f'/0]).
 
 f() ->
-    case (false) of true -> ok; _ -> erlang:error({bp_assert, <<"error message">>, <<"main.bp:2">>}) end.
+    case (false) of true -> ok; _ -> _AssertMsg0 = <<"error message">>, erlang:error({bp_assert, _AssertMsg0, <<"main.bp:2">>, [<<"assertion failed: false: ">>, _AssertMsg0, <<" at main.bp:2:5">>]}) end.
 
 '__bp_priv__f'() -> f().
 ```

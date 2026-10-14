@@ -28,21 +28,22 @@ Object.defineProperty(exports, "__bp_priv__", { value: { add } });
 ----- JAVASCRIPT TEST UNIT -- __test__/main.js
 ```javascript
 const { add } = require("../main.js").__bp_priv__;
-function __bp_assert(cond, msg, loc) {
+function __bp_assert(cond, msg, loc, head, where) {
     if (!cond) {
         const e = new Error(msg || "assertion failed");
         e.__bp_assert_loc = loc;
+        e.__bp_panic = head + (msg == null ? "" : ": " + msg) + " at " + where;
         throw e;
     }
 }
 
 async function __bp_test_0() {
     const r = add(2, 3);
-    __bp_assert((r === 5), null, "main.bp:7");
+    __bp_assert((r === 5), null, "main.bp:7", "assertion failed: r == 5", "main.bp:7:5");
 }
 
 async function __bp_test_1() {
-    __bp_assert(true, null, "main.bp:11");
+    __bp_assert(true, null, "main.bp:11", "assertion failed: true", "main.bp:11:5");
 }
 
 const __bp_tests = [

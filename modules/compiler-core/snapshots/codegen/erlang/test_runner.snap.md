@@ -38,10 +38,10 @@ add(A, B) ->
 
 '__bp_test_0'() ->
     R = test@main:'__bp_priv__add'(2, 3),
-    case ((R =:= 5)) of true -> ok; _ -> erlang:error({bp_assert, <<"assertion failed">>, <<"main.bp:7">>}) end.
+    case ((R =:= 5)) of true -> ok; _ -> erlang:error({bp_assert, <<"assertion failed">>, <<"main.bp:7">>, <<"assertion failed: r == 5 at main.bp:7:5">>}) end.
 
 '__bp_test_1'() ->
-    case (true) of true -> ok; _ -> erlang:error({bp_assert, <<"assertion failed">>, <<"main.bp:11">>}) end.
+    case (true) of true -> ok; _ -> erlang:error({bp_assert, <<"assertion failed">>, <<"main.bp:11">>, <<"assertion failed: true at main.bp:11:5">>}) end.
 
 '__bp_run_one'({Name, Fun, Loc}) ->
     %% §T `----- RUN LOG -----` envelope (v0.beta.20 frente-b spec):
@@ -60,6 +60,8 @@ add(A, B) ->
         Fun(),
         ok
     catch
+        error:{bp_assert, Msg, ALoc, _} ->
+            {fail, Msg, ALoc};
         error:{bp_assert, Msg, ALoc} ->
             {fail, Msg, ALoc};
         Class:Reason ->

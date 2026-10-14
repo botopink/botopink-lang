@@ -10,16 +10,15 @@ fn f() {
 (module
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
-  (data (i32.const 256) "\09\00\00\00main.bp:2")
-  (global $__heap_ptr (mut i32) (i32.const 272))
+  (data (i32.const 256) "\25\00\00\00assertion failed: true at main.bp:2:5")
+  (global $__heap_ptr (mut i32) (i32.const 300))
   (func $f
     i32.const 1
     i32.eqz
     (if
       (then
     i32.const 256
-    i32.const 0
-    call $__assert_fail
+    call $__panic_fail
     unreachable
       )
     )
@@ -257,6 +256,20 @@ fn f() {
         call $__write_err
       )
     )
+    i32.const 188
+    i32.const 10
+    i32.store8
+    i32.const 188
+    i32.const 1
+    call $__write_err
+  )
+  (func $__panic_fail (param $msg i32)
+    local.get $msg
+    i32.const 4
+    i32.add
+    local.get $msg
+    i32.load
+    call $__write_err
     i32.const 188
     i32.const 10
     i32.store8

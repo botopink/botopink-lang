@@ -89,6 +89,8 @@ helper() ->
         Fun(),
         ok
     catch
+        error:{bp_assert, Msg, ALoc, _} ->
+            {fail, Msg, ALoc};
         error:{bp_assert, Msg, ALoc} ->
             {fail, Msg, ALoc};
         Class:Reason ->

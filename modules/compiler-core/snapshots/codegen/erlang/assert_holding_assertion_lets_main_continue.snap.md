@@ -13,7 +13,7 @@ fn main() {
 -export(['__bp_priv__main'/0]).
 
 main() ->
-    case (('__bp_int'((1 + 1), -2147483648, 2147483647, <<"integer overflow: + on i32 at main.bp:2:14">>) =:= 2)) of true -> ok; _ -> erlang:error({bp_assert, <<"arithmetic">>, <<"main.bp:2">>}) end,
+    case (('__bp_int'((1 + 1), -2147483648, 2147483647, <<"integer overflow: + on i32 at main.bp:2:14">>) =:= 2)) of true -> ok; _ -> _AssertMsg0 = <<"arithmetic">>, erlang:error({bp_assert, _AssertMsg0, <<"main.bp:2">>, [<<"assertion failed: 1 + 1 == 2: ">>, _AssertMsg0, <<" at main.bp:2:5">>]}) end,
     '__bp_print'([<<"after">>]).
 
 -compile({inline,['__bp_int'/4]}).

@@ -11,7 +11,7 @@ fn f() {
 -export(['__bp_priv__f'/0]).
 
 f() ->
-    case (([] =:= [])) of true -> ok; _ -> erlang:error({bp_assert, <<"assertion failed">>, <<"main.bp:2">>}) end.
+    case (([] =:= [])) of true -> ok; _ -> erlang:error({bp_assert, <<"assertion failed">>, <<"main.bp:2">>, <<"assertion failed: [] == [] at main.bp:2:5">>}) end.
 
 '__bp_priv__f'() -> f().
 ```

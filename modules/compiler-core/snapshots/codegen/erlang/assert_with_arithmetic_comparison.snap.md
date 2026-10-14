@@ -11,7 +11,7 @@ fn f() {
 -export(['__bp_priv__f'/0]).
 
 f() ->
-    case (((1.0 + 2.0) =:= 3.0)) of true -> ok; _ -> erlang:error({bp_assert, <<"assertion failed">>, <<"main.bp:2">>}) end.
+    case (((1.0 + 2.0) =:= 3.0)) of true -> ok; _ -> erlang:error({bp_assert, <<"assertion failed">>, <<"main.bp:2">>, <<"assertion failed: 1.0 + 2.0 == 3.0 at main.bp:2:5">>}) end.
 
 '__bp_priv__f'() -> f().
 ```

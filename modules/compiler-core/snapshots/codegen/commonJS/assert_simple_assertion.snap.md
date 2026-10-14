@@ -7,10 +7,12 @@ fn f() {
 
 ----- JAVASCRIPT -- main.js
 ```javascript
-function __bp_assert_fatal(cond, msg, loc) { if (!cond) { throw Object.defineProperty(new Error((msg ?? "assertion failed") + " at " + loc), "__bp_panic", { value: msg ?? "assertion failed" }); } }
+function __bp_assert_fatal(cond, msg, head, where) {
+    if (!cond) { const m = head + (msg == null ? "" : ": " + msg) + " at " + where; throw Object.defineProperty(new Error(m), "__bp_panic", { value: m }); }
+}
 
 function f() {
-    __bp_assert_fatal(true, null, "main.bp:2");
+    __bp_assert_fatal(true, null, "assertion failed: true", "main.bp:2:5");
 }
 
 Object.defineProperty(exports, "__bp_priv__", { value: { f } });
