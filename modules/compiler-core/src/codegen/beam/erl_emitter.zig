@@ -628,10 +628,18 @@ pub fn writeExpr(w: *Writer, e: Ast.Expr, indent: usize) Error!void {
             try w.writeAll("try\n");
             try writeBody(w, tc.body, indent + 1);
             try w.writeByte('\n');
-            try writeIndent(w, indent);
-            try w.writeAll("catch\n");
-            try writeClauses(w, tc.catches, indent + 1);
-            try w.writeByte('\n');
+            if (tc.catches.len > 0) {
+                try writeIndent(w, indent);
+                try w.writeAll("catch\n");
+                try writeClauses(w, tc.catches, indent + 1);
+                try w.writeByte('\n');
+            }
+            if (tc.after) |after| {
+                try writeIndent(w, indent);
+                try w.writeAll("after\n");
+                try writeBody(w, after, indent + 1);
+                try w.writeByte('\n');
+            }
             try writeIndent(w, indent);
             try w.writeAll("end");
         },

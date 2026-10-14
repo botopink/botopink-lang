@@ -1914,6 +1914,7 @@ fn emitErlangModule(
     defer em.std_imports.deinit();
     defer em.locals.deinit();
     defer em.mutable_locals.deinit(alloc);
+    defer em.defer_watches.deinit(alloc);
     defer em.mutating_closures.deinit(alloc);
     defer em.hoisted_steps.deinit(alloc);
     defer {
@@ -3103,10 +3104,23 @@ const GenScope = struct {
     names: []const []const u8,
 };
 
+const DeferWatch = struct {
+    /// The Erlang variable holding the `defer`'s reference.
+    ref: []const u8,
+    names: []const []const u8,
+};
+
 const Emitter = struct {
     cv: std.StringHashMap([]const u8),
     indent: usize = 0,
     try_seq: usize = 0,
+    /// Decision 539 — numbers a `defer`'s reference variable (`__BpDeferRef<n>`).
+    defer_seq: usize = 0,
+    /// The `defer`s whose deferred expression reads a `var` the rest of its
+    /// block reassigns: the body being lowered puts the latest values in the
+    /// process dictionary under the `defer`'s reference after each
+    /// reassignment (`deferPuts`), and the `after` reads them back.
+    defer_watches: std.ArrayListUnmanaged(DeferWatch) = .empty,
     /// Numbers the payload variable of a `@Result`/`@Option` op's fun
     /// (`__BpV<n>`, `resultOptionNode`); reset per function like `try_seq`.
     opt_seq: usize = 0,
@@ -6358,10 +6372,24 @@ const Emitter = struct {
         // The body's tail (last value) keys off the last *real* statement, so
         // trailing comments never become the tail.
         const last_real = lastRealStmt(body);
+        const seen = try this.deferSeen(b);
         var i = start;
         while (i < body.len) : (i += 1) {
+            try this.deferPuts(b, seen, &stmts);
             const stmt = body[i];
             const is_last = if (last_real) |lr| (i == lr) else (i == body.len - 1);
+
+            // Decision 539 — `defer e;` wraps the REST of the body:
+            // `try <rest> after <e> end`, the body's last statement, so `e`
+            // runs on every way out (the value, a thrown `return`, a
+            // propagated `{error, E}` is the value, a raise) and a `defer`
+            // not reached is not run. `e` is lowered first: it reads the
+            // names as they are at the `defer`.
+            if (stmt.deferred) {
+                try this.deferPuts(b, seen, &stmts);
+                try this.deferTry(b, body, i, indent, &stmts);
+                break;
+            }
 
             // `[val name =] try inner` (no catch) at this position.
             const prop: ?struct { inner: ast.Expr, head: TryHead } = switch (stmt.expr) {
@@ -6457,7 +6485,125 @@ const Emitter = struct {
                 try stmts.append(b.arena, .{ .expr = try this.stmtExpr(b, stmt) });
             }
         }
+        try this.deferPuts(b, seen, &stmts);
         return .{ .stmts = stmts.items };
+    }
+
+    /// The versions the watched names (`defer_watches`) have now.
+    fn deferSeen(this: *Emitter, b: Ast.Builder) anyerror![][]u32 {
+        const seen = try b.arena.alloc([]u32, this.defer_watches.items.len);
+        for (this.defer_watches.items, 0..) |w, k| {
+            seen[k] = try b.arena.alloc(u32, w.names.len);
+            for (w.names, 0..) |n, j| seen[k][j] = this.var_current.get(n) orelse 0;
+        }
+        return seen;
+    }
+
+    /// Decision 539 — after a statement that reassigned a name a `defer`
+    /// reads, `erlang:put(Ref, {Names…})`: the `after` has no view of the
+    /// bindings of the try body, so the latest values travel in the process
+    /// dictionary.
+    fn deferPuts(this: *Emitter, b: Ast.Builder, seen: [][]u32, stmts: *std.ArrayListUnmanaged(Ast.Stmt)) anyerror!void {
+        for (this.defer_watches.items, 0..) |w, k| {
+            if (k >= seen.len) break;
+            var changed = false;
+            for (w.names, 0..) |n, j| {
+                const now = this.var_current.get(n) orelse 0;
+                if (now != seen[k][j]) {
+                    seen[k][j] = now;
+                    changed = true;
+                }
+            }
+            if (changed) try stmts.append(b.arena, .{ .expr = try this.deferPutExpr(b, w) });
+        }
+    }
+
+    fn deferPutExpr(this: *Emitter, b: Ast.Builder, w: DeferWatch) anyerror!Ast.Expr {
+        const vals = try b.arena.alloc(Ast.Expr, w.names.len);
+        for (w.names, 0..) |n, j| vals[j] = Ast.Expr.v(try this.varRef(b, n));
+        return b.remote("erlang", "put", &.{ Ast.Expr.v(w.ref), try b.tuple(vals) });
+    }
+
+    /// `defer e;` at `body[i]` — `try <rest> after <e> end` (decision 539),
+    /// the body's last statement. `e` is lowered first, in a scope of its own:
+    /// it reads the names as they are at the `defer`, and what it rebinds is
+    /// not visible to the rest. A `var` it reads that the rest reassigns is
+    /// read back from the process dictionary (`deferPuts`).
+    fn deferTry(this: *Emitter, b: Ast.Builder, body: []const ast.Stmt, i: usize, indent: usize, stmts: *std.ArrayListUnmanaged(Ast.Stmt)) anyerror!void {
+        const stmt = body[i];
+        var mutated: std.ArrayListUnmanaged([]const u8) = .empty;
+        try this.collectMutations(b.arena, body[i + 1 ..], &.{}, &mutated);
+        var watched: std.ArrayListUnmanaged([]const u8) = .empty;
+        for (mutated.items) |n| {
+            if (this.locals.contains(n) and ast.exprMentions(stmt.expr, n)) try watched.append(b.arena, n);
+        }
+        var ref: ?[]const u8 = null;
+        var scope = try this.saveLocalScope();
+        var after: std.ArrayListUnmanaged(Ast.Stmt) = .empty;
+        if (watched.items.len > 0) {
+            this.defer_seq += 1;
+            const r = try std.fmt.allocPrint(b.arena, "__BpDeferRef{d}", .{this.defer_seq});
+            ref = r;
+            const w: DeferWatch = .{ .ref = r, .names = watched.items };
+            try stmts.append(b.arena, .{ .expr = try b.match(Ast.Expr.v(r), try b.remote("erlang", "make_ref", &.{})) });
+            try stmts.append(b.arena, .{ .expr = try this.deferPutExpr(b, w) });
+            const pats = try b.arena.alloc(Ast.Expr, watched.items.len);
+            for (watched.items, 0..) |n, j| {
+                const version = (this.var_next.get(n) orelse 0) + 1;
+                try this.var_next.put(n, version);
+                try this.var_current.put(n, version);
+                pats[j] = Ast.Expr.v(try this.versionedVar(b, n, version));
+            }
+            try after.append(b.arena, .{ .expr = try b.match(try b.tuple(pats), try b.remote("erlang", "erase", &.{Ast.Expr.v(r)})) });
+        }
+        try this.hoistSequenceSteps(b, stmt.expr, &after);
+        if (try this.mutatingExpr(b, stmt)) |mutation| {
+            try after.append(b.arena, .{ .expr = mutation });
+        } else {
+            try after.append(b.arena, .{ .expr = try this.stmtExpr(b, stmt) });
+        }
+        this.restoreLocalScope(&scope);
+        if (ref) |r| try this.defer_watches.append(this.alloc, .{ .ref = r, .names = watched.items });
+        var rest = try this.bodyNode(b, body, i + 1, indent + 1);
+        if (ref != null) _ = this.defer_watches.pop();
+        // A `try` binds nothing for the code after it. Where the block goes
+        // on after the rest (it is not the function's own statement
+        // sequence), what the rest reassigned travels out in the try's value:
+        // `{Value, {Names…}} = try … after … end`.
+        const carry = mutated.items.len > 0 and body.ptr != this.fn_top_body.ptr;
+        var value_var: []const u8 = "";
+        if (carry) {
+            this.defer_seq += 1;
+            value_var = try std.fmt.allocPrint(b.arena, "__BpDeferV{d}", .{this.defer_seq});
+            const inner_var = try std.fmt.allocPrint(b.arena, "__BpDeferI{d}", .{this.defer_seq});
+            const group = try this.varGroupExpr(b, mutated.items);
+            var items: std.ArrayListUnmanaged(Ast.Stmt) = .empty;
+            var last: ?usize = null;
+            for (rest.stmts, 0..) |st, k| if (st == .expr) {
+                last = k;
+            };
+            for (rest.stmts, 0..) |st, k| {
+                if (last != null and k == last.?) {
+                    try items.append(b.arena, .{ .expr = try b.match(Ast.Expr.v(inner_var), st.expr) });
+                } else try items.append(b.arena, st);
+            }
+            const value: Ast.Expr = if (last != null) Ast.Expr.v(inner_var) else Ast.Expr.a("ok");
+            try items.append(b.arena, .{ .expr = try b.tuple(&.{ value, group }) });
+            rest = .{ .stmts = items.items };
+        }
+        const rest_body: Ast.Body = if (rest.stmts.len == 0) .{ .stmts = try b.arena.dupe(Ast.Stmt, &.{.{ .expr = Ast.Expr.a("ok") }}) } else rest;
+        const try_expr: Ast.Expr = .{ .try_catch = .{
+            .body = rest_body,
+            .catches = &.{},
+            .after = .{ .stmts = after.items },
+        } };
+        if (!carry) {
+            try stmts.append(b.arena, .{ .expr = try_expr });
+            return;
+        }
+        const pattern = try b.tuple(&.{ Ast.Expr.v(value_var), try this.bindVarGroupExpr(b, mutated.items) });
+        try stmts.append(b.arena, .{ .expr = try b.match(pattern, try_expr) });
+        try stmts.append(b.arena, .{ .expr = Ast.Expr.v(value_var) });
     }
 
     /// The `val assert` at `stmt` whose pattern binds at least one name, or

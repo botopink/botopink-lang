@@ -189,6 +189,9 @@ pub const TryCatch = struct {
     body: Body,
     /// Catch clauses; the pattern is written as `Class:Reason[:Stack]`.
     catches: []const Clause,
+    /// `after` body — runs on every way out (decision 539, `defer`). With no
+    /// `catches` the `catch` part is not written.
+    after: ?Body = null,
 };
 
 pub const Clause = struct {
