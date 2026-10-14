@@ -1,5 +1,7 @@
 pub fn nums() -> @Iterator<i32> {
-    defer { yield 9; }
+    defer {
+        yield 9;
+    }
     yield 1;
 }
 

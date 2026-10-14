@@ -904,3 +904,12 @@ is read off the same way — `Field.typeRef` is `T`, `Field.exprWrapped` set,
 dumped and printed back alike. That
 `comptime x: T` without `@Expr` is an error is the checker's
 (`comptime-param-not-expr`, `../comptime/AGENTS.md`).
+
+## `defer` (decision 539)
+
+`defer <expr>;` is a statement of a block — `parseBlockBody` (every list of statements) matches the keyword before
+`parseExpr` and sets `Stmt.deferred`, which `ast.StmtOf.jsonStringify` dumps only when true, so no parser snapshot
+moves. `defer { … }` is `defer` over a block expression. A deferred statement never carries a `tail` (it answers no
+value, even written last without `;`: `parseBlockBody` and `markBlockTail` skip it). `defer` in expression position or at
+module level is a parse error. `parser/tests/decision539.zig` pins the flag, the missing tail, the dump and the
+error.

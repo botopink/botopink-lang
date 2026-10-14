@@ -214,3 +214,15 @@ snapshots carry.
 - Use `writeBinaryFromBytes` for runtime data (handles, comptime values) and
   `writeBinaryFromLexeme` only for string literal lexemes straight from the parser.
 - Tests are inline in each file and aggregated by `../tests.zig`.
+
+## `defer` (decision 539)
+
+`erl_ast.TryCatch.after` is the `after` body of `try … after … end`; with no `catches` the emitter writes no `catch`.
+`erlang.zig` lowers a `defer` in `bodyNode` (`deferTry`): the deferred statement is lowered first, in a local scope of
+its own (it reads the names as they are at the `defer`, and what it rebinds is not seen by the rest), then the rest of
+the body is the `try` body, the body's last statement. A `var` the deferred expression reads and the rest reassigns
+travels in the process dictionary under a `make_ref()` (`DeferWatch`, `deferPuts`: `erlang:put` after each statement
+that changed a watched name, `erlang:erase` as the first statement of the `after`). Where the body is not the function's own
+sequence (a block statement followed by more code), the names the rest reassigns come out of the `try` in its value —
+`{Value, {Names…}} = try … end` — because a `try` binds nothing for the code after it. `beam_asm.zig` (the `.S`
+target) lowers it differently, see `../AGENTS.md` § `defer`.

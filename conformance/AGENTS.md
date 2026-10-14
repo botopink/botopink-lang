@@ -1873,6 +1873,18 @@ function's, with one parameter and with none (`b.run { -> 10 }`, `twice { -> 4 }
 targets — the parent refused the parameters as unbound and the plain function's lambda as an arity error, and wasm and beam
 lowered a method's trailing lambda wrong.
 
+Decision 539 (`defer`) adds nine cells on all four targets and five refusals. `modules/defer_block_end_reverse_order`
+(the end of the block, reverse order), `modules/defer_scope_is_block` (a bare block runs its own), `modules/defer_reads_latest_value`
+(the expression is evaluated when it runs), `modules/defer_return_value_before_defers` (`return n` is computed before a defer
+that changes `n`), `modules/defer_in_loop_break_continue` (the end of the round, `continue`, `break`),
+`modules/defer_try_and_throw_propagate` (a propagating `try` and a `throw` out of a `@Result` fn),
+`modules/defer_panic_attempt_catches` (a panic `attempt` catches; wasm runs with exceptions on, decision 518),
+`modules/defer_async_after_awaits` (a `@Task` body: after its awaits) and `modules/defer_stream_consumer_stops` (a `@Stream`: the
+consumer's `break` and the end of the stream both end in the same two lines, so a lazy producer and an eager one answer alike);
+the refusals, each located at the jump, are `modules/defer_refuses_return` (`defer-return`), `defer_refuses_break`
+(`defer-break`), `defer_refuses_continue` (`defer-continue`), `defer_refuses_yield` (`defer-yield`) and `defer_refuses_await`
+(`defer-await`). `throw` and `try` in a defer body are not refused (539 (5) names neither).
+
 `fix-js-gaps` (gaps `libs/validation` met) adds `modules/imported_variant_positional_payload` —
 `Circle(r)`, `Rect(w, h)`, `Two(l, r)` and a `val assert Circle(r)` over enums of a sibling module, on
 all four targets (commonJS read a property named after the binding and died on `undefined`).

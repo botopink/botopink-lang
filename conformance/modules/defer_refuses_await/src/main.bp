@@ -1,5 +1,7 @@
 pub fn f() -> @Task<i32> {
-    defer { await (async { 1 }); }
+    defer {
+        await (async { 1 });
+    }
     return 2;
 }
 

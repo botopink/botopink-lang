@@ -450,3 +450,14 @@ lengths that do not collide (`"bravos"`, `"deltaaaa"`) 583 → 662 ms (+14 %).
 After: 631 ms (+7 %) and 625 ms (+7 %). Two further best-of-three rounds on a
 loaded machine gave +7 % / +15 % and +9 % / +11 % — the margin left is the
 one cache probe per call of `reads` (≈2 ns) plus the slot test per read.
+
+## `defer` (decision 539)
+
+`js_ast.Stmt.try_finally` (`TryFinally { body, finalizer }`, `try { … } finally { … }`) is the node a `defer` lowers to
+(`js_emitter.zig`; the name scans in `commonJS.zig` open it like `try_catch`). `commonJS.zig`'s `buildStmts` meets a
+deferred statement and lowers the REST of the block as the `try` body and the statement as the `finally`; `foldDefers`
+does the same for the lists built one JS statement per statement (a lambda body, an `if` branch, a `case` arm's block,
+a primitive-extension method body), and a deferred last statement is never the list's value. JS gives the rest for
+free: `return f()` evaluates `f()` before `finally`, a `break` / `continue` across the `try` runs it, a
+`-> @Result` `throw` / `try` is a `return` through it, an `async` body runs it after its awaits, a `for await` `break`
+calls the iterator's `return()`.

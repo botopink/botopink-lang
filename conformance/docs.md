@@ -1695,6 +1695,50 @@ a method or of a plain function, with parameters (`f(3) { n -> n * 3 }`) or with
 
 <!-- example: modules/trailing_lambda_call -->
 
+`defer <expr>;` runs `<expr>` when the block it is written in ends (decision 539) — block scope, as in
+Zig and Swift. Several run in reverse order, and each runs on every exit of the block: the end,
+`return`, `break`, `continue`, a propagating `try`, a `throw`, a panic `attempt` catches:
+
+<!-- example: modules/defer_block_end_reverse_order -->
+
+<!-- example: modules/defer_scope_is_block -->
+
+<!-- example: modules/defer_in_loop_break_continue -->
+
+<!-- example: modules/defer_try_and_throw_propagate -->
+
+<!-- example: modules/defer_panic_attempt_catches -->
+
+The deferred expression is evaluated when it runs, not when `defer` is written (`var f = open("a");
+defer f.close(); f = open("b");` closes `b`), and a `return <expr>`'s value is computed before the
+block's defers run:
+
+<!-- example: modules/defer_reads_latest_value -->
+
+<!-- example: modules/defer_return_value_before_defers -->
+
+In an `async` body a `defer` runs when the task's body ends, after its awaits; in a `@Stream` when
+the stream ends or its consumer stops (a `break` in `for await`):
+
+<!-- example: modules/defer_async_after_awaits -->
+
+<!-- example: modules/defer_stream_consumer_stops -->
+
+Its body cannot leave the path it runs on: `return`, a `break` or `continue` that leaves it, `yield`
+and `await` in it are refused, located (a loop wholly inside the body may `break`). The value of the
+deferred expression is discarded, and the compiler checks nothing about what is deferred: a value
+that is never closed compiles (decision 539 (6)).
+
+<!-- example: modules/defer_refuses_return -->
+
+<!-- example: modules/defer_refuses_break -->
+
+<!-- example: modules/defer_refuses_continue -->
+
+<!-- example: modules/defer_refuses_yield -->
+
+<!-- example: modules/defer_refuses_await -->
+
 `botopink format` migrates the older spellings: a trailing lambda without `->` gains it, the last
 `;` of a `case` arm used as a value is dropped, and `comptime { …; break v; }` and a `case` arm's last
 `break v;` become the tail `v`. It prints a block of one tail on one line when it fits (`{ 1 + 2 }`), as it prints a function

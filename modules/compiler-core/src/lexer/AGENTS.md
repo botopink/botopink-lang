@@ -143,3 +143,8 @@ now, `42` and `.`, where it used to be one float — write `42.0`. Asserted in
 the `n` (every other suffix leaves): the backends read a `bigint` literal by its text
 (`isBigintText`, `bigintDigits`) — commonJS writes it as JavaScript's own, erlang and beam strip the
 `n` (`beam/erl_emitter.zig` `bigintNumeralDigits`), wasm interns its limbs.
+
+## `defer` (decision 539)
+
+`defer` is a keyword (`TokenKind.@"defer"`, `keywordOrIdent`; the language server's keyword list names it too).
+It begins a statement of a block and nothing else: anywhere else it is the ordinary unexpected-token parse error.

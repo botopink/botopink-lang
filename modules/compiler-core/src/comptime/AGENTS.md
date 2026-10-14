@@ -2842,3 +2842,16 @@ Cells: `modules/variadic_parameter`, `modules/variadic_parameter_host`,
 type that is not an integer (`isIntType`; an unresolved type variable passes), located at the method
 name: "`Dict.bump` counts integers alone — the values of this `Dict` are a `f64`". The keyed-var write
 (`checkKeyedWrite`) keeps its own message for a `keyed: true` var. Cell: `modules/dict_bump_non_integer`.
+
+## `defer` (decision 539)
+
+A deferred statement is inferred as a path of its own (`enterDefer` / `leaveDefer`, the three sites that infer a
+statement list: `inferBodyStmts`, `inferStmtsTyped` and a method body): `Env.deferActive` with the nesting it began
+at (`deferLambdaDepth`, `deferAsyncDepth`, `deferGeneratorDepth`, `deferLabelFloor`), `loopDepth` and `breakScope` reset,
+so a nested function, `async` block or generator loop — other paths — is not "the body" (`inDeferBody`).
+`refuseInDefer`, the first thing `inferJumpExpr` does in the body, refuses what would leave the path the deferred code
+runs on, located at the jump: `defer-return`, `defer-break` / `defer-continue` (only when the jump leaves the body: a loop
+wholly inside it may break, a label naming a loop outside it is refused), `defer-yield` and `defer-await`. `throw` and a
+propagating `try` are not refused (decision 539 (5) names neither), and the deferred value is discarded, never checked:
+no `Closeable` rule exists (539 (6)). `Stmt.deferred` is copied onto the typed statement. Cells
+`defer_refuses_return` / `_break` / `_continue` / `_yield` / `_await`.

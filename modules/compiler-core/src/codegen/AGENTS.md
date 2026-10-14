@@ -3590,3 +3590,41 @@ array's elements as its arguments (`unpackVariadic`), before any other call
 arm — so a host function bound by `#[@External.Node(…)]` receives them one by
 one (`Math.max(3, 9, 4)`). The `.d.ts` writes `...values: T[]`
 (`typescript.zig` `params` / `delegate`, `TsParam.rest`).
+
+## `defer` (decision 539)
+
+A deferred statement (`Stmt.deferred`) runs when the block it is written in ends, on every exit of the block. Each
+backend lowers the REST of the block under it, so the order is reversed and a `defer` not reached is not run; the
+deferred expression is lowered where it runs (it reads the latest value of a `var`), and a `return <expr>`'s value is
+computed before it.
+
+- **commonJS** — `try { rest } finally { deferred }` (`js_ast.Stmt.try_finally`; `buildStmts`, `foldDefers`).
+- **erlang** — `try rest after deferred end` as the body's last statement (`erlang.zig` `deferTry`; `beam/AGENTS.md`).
+- **beam (`beam_asm.zig`)** — a statement-sequential emitter with explicit exits, so a `defer` opens a `try` region
+  over the rest of its block and every other exit writes the pending defers inline. `defer_stack` holds the entries of
+  the frame being emitted (`DeferEntry.out` is the frame's buffer; a lambda writes to another one, so it never sees
+  them). `pushDefer` (from `emitStmt`) opens the region: `{'try', Tag, Catch}`, the tag the frame's top slot minus the
+  number of open regions (BEAM wants nested tags to descend, `bad_try_catch_nesting`), three slots parked from the
+  bottom (`x0`, the caught reason and stack), the slots of the deferred code's own locals reserved, and the register names
+  of the `defer` kept (`writeDeferBody` lowers it under them). `closeDefers` ends a block: the normal path
+  (`try_end`, the code), then the handler (`try_case`, park, the code, restore, `raise`). `runDefersForExit` writes
+  `try_end` and the code for the entries above a floor before `emitReturn`, a loop `jump` (the floor is the
+  loop's `defer_floor`) and the generator exit; a tail call becomes a call and `erlang:throw/1` a plain call under pending
+  defers (`writeThrowCall`: a tail call drops the frame and its regions). `countLocalsRec` adds four slots per deferred
+  statement. Every statement list (`emitBody`, `emitStmtList`, `emitValueBody`, `lowerArmBody`, `emitLambdaBody`)
+  closes its own defers.
+- **wasm (`wat.zig`)** — `defer_stack` holds the statements; `emitBody` / `emitStmtsFrom` push them and
+  `closeDefers` writes them at the end of the block, `runDefers(floor)` before `return`, a `Result` error `return`
+  (`lowerThrow`, `lowerTryPropagate`), `emitGenEnd`, `break` and `continue` (the floor is the loop's
+  `defer_loop_floor`, set by `emitIterationBody`); the deferred code is stack-neutral, so the value waiting beneath it
+  survives, and a self tail call is not one under a pending defer. With exceptions on (decision 518,
+  `Emitter.exceptions`) the rest of a block that can name its value type (a statement list, or the function's own
+  body) sits in a `try_table` region (`emitDeferRegion`: `catch $__bp_panic` into a block whose handler parks the
+  message, writes the code, and `throw`s it again); the deferred code is written outside the region on both paths. A
+  `defer` in another list (a lambda inlined by a higher-order call, an `if` branch that answers a typed value) is a
+  refusal located at it, never a silent wrong order.
+
+Cells: `defer_block_end_reverse_order`, `defer_scope_is_block`, `defer_reads_latest_value`,
+`defer_return_value_before_defers`, `defer_in_loop_break_continue`, `defer_try_and_throw_propagate`,
+`defer_panic_attempt_catches`, `defer_async_after_awaits`, `defer_stream_consumer_stops`, and the five refusals
+(`comptime/AGENTS.md` § `defer`).
