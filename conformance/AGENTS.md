@@ -2432,7 +2432,8 @@ host binding in a test file.
 range (`expected i64, got i32` on the parent); `hash` stays the SHA-256 in lowercase hex. `Asset.open()` (an
 `Asset` read as fs-a's `File`) waits for that `File` (decision 540): it has no cell here yet.
 
-Decision 530's cell (a template hole of a record, an array, a tuple, `null`, an optional, an enum, a `Display`
-type and a parameter, written as the `@print` beside it) is not in this suite: erlang and beam already answered it,
-commonJS does since 530; wasm writes an address there until front 164 s2 lands, so the cell waits in that front's
-`examples/` (a defect is never a departure).
+Decision 530's cell `modules/template_hole_prints_every_value` (a template hole of a record, an array, a tuple,
+`null`, an optional, an enum, a `Display` type and a parameter, written as the `@print` beside it, on the four
+targets): erlang and beam already answered it, commonJS since 530, wasm since front 164 s2 — a hole that is no
+string, number or boolean writes its value's printed text through the capture (`codegen/wat/AGENTS.md`
+§ `text_capture`), where it wrote the value's address (an optional's absence wrote `undefined`).

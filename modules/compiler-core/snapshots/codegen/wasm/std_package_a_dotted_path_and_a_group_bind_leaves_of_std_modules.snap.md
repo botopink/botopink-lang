@@ -582,6 +582,7 @@ test "order case over Order" {
 ----- WASM TEXT -- std/collections.wat
 ```wasm
 (module
+  (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
   (table funcref (elem))
   (data (i32.const 256) "\02\00\00\00: ")
@@ -594,7 +595,7 @@ test "order case over Order" {
   (data (i32.const 328) "\00\00\00\00")
   (data (i32.const 332) "\0d\00\00\00R\03Set\01\05itemsG")
   (data (i32.const 352) "\0f\00\00\00R\05Queue\01\05itemsG")
-  (global $__heap_ptr (mut i32) (i32.const 448))
+  (global $__heap_ptr (mut i32) (i32.const 416))
   ;; std/collections — the four collection types, one namespace each (decision
   ;; 106): `Dict<K, V>`, `Set<T>`, `Queue<T>` and `Order`. Was the four modules
   ;; `dict`, `sets`, `queue` and `order`; the type is the namespace now, so a
@@ -1446,6 +1447,8 @@ test "order case over Order" {
   ;; One key or value of `Dict.display`: a string quoted, anything else as it
   ;; interpolates.
   (func $shown (param $x i32) (result i32)
+    (local $_res0 i32)
+    (local $_res1 i32)
     unreachable ;; unknown: no static type to box this value by (a type parameter's slot?)
     call $__unknown_kind
     i32.const 115
@@ -1453,8 +1456,12 @@ test "order case over Order" {
     (if (result i32)
       (then
     i32.const 320
+    call $__cap_begin
+    local.set $_res0
     local.get $x
-    call $__std_number_i32ToString
+    call $__print_i32_raw
+    local.get $_res0
+    call $__cap_end
     call $__str_concat
     i32.const 320
     call $__str_concat
@@ -1466,8 +1473,12 @@ test "order case over Order" {
     )
     drop
     i32.const 328
+    call $__cap_begin
+    local.set $_res1
     local.get $x
-    call $__std_number_i32ToString
+    call $__print_i32_raw
+    local.get $_res1
+    call $__cap_end
     call $__str_concat
     return
   )
@@ -2242,6 +2253,228 @@ test "order case over Order" {
     local.get $r
     return
   )
+  ;; Scratch layout below the data section (which starts at 256):
+  ;;   0..8  WASI iovec   8  newline byte
+  ;;  16..32 bool text   64..128 i32 digits
+  (func $__write_bytes (param $p i32) (param $n i32)
+    (local $c i32) (local $l i32) (local $q i32)
+    global.get $__cap
+    local.set $c
+    local.get $c
+    (if
+      (then
+        local.get $c
+        i32.load
+        local.set $l
+        local.get $l
+        local.get $n
+        i32.add
+        i32.const 4
+        i32.add
+        call $__alloc
+        local.set $q
+        local.get $q
+        local.get $l
+        local.get $n
+        i32.add
+        i32.store
+        local.get $q
+        i32.const 4
+        i32.add
+        local.get $c
+        i32.const 4
+        i32.add
+        local.get $l
+        memory.copy
+        local.get $q
+        i32.const 4
+        i32.add
+        local.get $l
+        i32.add
+        local.get $p
+        local.get $n
+        memory.copy
+        local.get $q
+        global.set $__cap
+        return
+      )
+    )
+    i32.const 0
+    local.get $p
+    i32.store
+    i32.const 4
+    local.get $n
+    i32.store
+    i32.const 1
+    i32.const 0
+    i32.const 1
+    i32.const 8
+    call $fd_write
+    drop
+  )
+  (func $__print_nl
+    i32.const 8
+    i32.const 10
+    i32.store8
+    i32.const 8
+    i32.const 1
+    call $__write_bytes
+  )
+  ;; separator between the arguments of a multi-argument `@print`
+  (func $__print_sp
+    i32.const 8
+    i32.const 32
+    i32.store8
+    i32.const 8
+    i32.const 1
+    call $__write_bytes
+  )
+  (func $__print_i32 (param $n i32)
+    local.get $n
+    call $__print_i32_raw
+    call $__print_nl
+  )
+  (func $__print_i32_raw (param $n i32)
+    (local $buf i32) (local $len i32) (local $neg i32) (local $d i32)
+    (local $i i32) (local $j i32) (local $tmp i32)
+    i32.const 64
+    local.set $buf
+    local.get $n
+    i32.const 0
+    i32.lt_s
+    (if
+      (then
+        i32.const 1
+        local.set $neg
+        i32.const 0
+        local.get $n
+        i32.sub
+        local.set $n
+      )
+    )
+    (block $done
+      (loop $digits
+        local.get $n
+        i32.const 10
+        i32.rem_u
+        i32.const 48
+        i32.add
+        local.set $d
+        local.get $buf
+        local.get $len
+        i32.add
+        local.get $d
+        i32.store8
+        local.get $len
+        i32.const 1
+        i32.add
+        local.set $len
+        local.get $n
+        i32.const 10
+        i32.div_u
+        local.set $n
+        local.get $n
+        i32.const 0
+        i32.gt_u
+        br_if $digits
+      )
+    )
+    ;; reverse
+    i32.const 0
+    local.set $i
+    local.get $len
+    i32.const 1
+    i32.sub
+    local.set $j
+    (block $rdone
+      (loop $rev
+        local.get $i
+        local.get $j
+        i32.ge_u
+        br_if $rdone
+        local.get $buf
+        local.get $i
+        i32.add
+        i32.load8_u
+        local.set $tmp
+        local.get $buf
+        local.get $i
+        i32.add
+        local.get $buf
+        local.get $j
+        i32.add
+        i32.load8_u
+        i32.store8
+        local.get $buf
+        local.get $j
+        i32.add
+        local.get $tmp
+        i32.store8
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        local.get $j
+        i32.const 1
+        i32.sub
+        local.set $j
+        br $rev
+      )
+    )
+    ;; add neg sign + newline
+    ;; shift the digits one byte right to make room for '-'
+    ;; (dst = buf+1, NOT buf+len: the latter moved them `len`
+    ;;  bytes and printed -12 as -21)
+    local.get $neg
+    (if
+      (then
+        local.get $buf
+        i32.const 1
+        i32.add
+        local.get $buf
+        local.get $len
+        call $__memmove
+        local.get $buf
+        i32.const 45
+        i32.store8
+        local.get $len
+        i32.const 1
+        i32.add
+        local.set $len
+      )
+    )
+    local.get $buf
+    local.get $len
+    call $__write_bytes
+  )
+  (func $__memmove (param $dst i32) (param $src i32) (param $len i32)
+    (local $i i32)
+    local.get $len
+    i32.const 1
+    i32.sub
+    local.set $i
+    (block $done
+      (loop $loop
+        local.get $i
+        i32.const 0
+        i32.lt_s
+        br_if $done
+        local.get $dst
+        local.get $i
+        i32.add
+        local.get $src
+        local.get $i
+        i32.add
+        i32.load8_u
+        i32.store8
+        local.get $i
+        i32.const 1
+        i32.sub
+        local.set $i
+        br $loop
+      )
+    )
+  )
   (func $__str_concat (param $a i32) (param $b i32) (result i32)
     (local $base i32) (local $alen i32) (local $blen i32)
     local.get $a
@@ -2796,8 +3029,31 @@ test "order case over Order" {
     )
     local.get $r
   )
+  (global $__cap (mut i32) (i32.const 0))
+  (func $__cap_begin (result i32)
+    (local $o i32) (local $s i32)
+    global.get $__cap
+    local.set $o
+    i32.const 4
+    call $__alloc
+    local.set $s
+    local.get $s
+    i32.const 0
+    i32.store
+    local.get $s
+    global.set $__cap
+    local.get $o
+  )
+  (func $__cap_end (param $o i32) (result i32)
+    (local $s i32)
+    global.get $__cap
+    local.set $s
+    local.get $o
+    global.set $__cap
+    local.get $s
+  )
   ;; std-wasm (decision 440): its functions, transpiled from std_wasm.wasm
-  (global $__std_sp (mut i32) (i32.const 448))
+  (global $__std_sp (mut i32) (i32.const 416))
   (func $__std_sp_check (param $sp i32) (result i32)
     local.get $sp
     i32.const 376
@@ -2807,19 +3063,14 @@ test "order case over Order" {
     )
     local.get $sp
   )
-  ;; __std_f4 — from std_wasm.wasm (sha256 b4b6f06748d6)
-  ;; __std_f58 — from std_wasm.wasm (sha256 3fe867e565e7)
-  ;; __std_f59 — from std_wasm.wasm (sha256 432c7dfb021a)
   ;; __std_f429 — from std_wasm.wasm (sha256 91fc3314249d)
   ;; __std_f441 — from std_wasm.wasm (sha256 d13a98c08300)
   ;; __std_f442 — from std_wasm.wasm (sha256 3192e2e42294)
   ;; __std_f443 — from std_wasm.wasm (sha256 0314fe5f477f)
   ;; __std_f444 — from std_wasm.wasm (sha256 83a8841c1a5e)
   ;; std:array.joinStrings — from std_wasm.wasm (sha256 337b368ca812)
-  ;; __std_f462 — from std_wasm.wasm (sha256 fbcbd5636368)
   ;; std:array.concat — from std_wasm.wasm (sha256 2730cfa39de4)
   ;; std:array.slice — from std_wasm.wasm (sha256 27ec3c9971dd)
-  ;; std:number.i32ToString — from std_wasm.wasm (sha256 276a02556224)
 )
 ```
 
@@ -2855,7 +3106,7 @@ fn main() {
   (data (i32.const 332) "\0d\00\00\00R\03Set\01\05itemsG")
   (data (i32.const 352) "\0f\00\00\00R\05Queue\01\05itemsG")
   (data (i32.const 372) "\01\00\00\00a")
-  (global $__heap_ptr (mut i32) (i32.const 448))
+  (global $__heap_ptr (mut i32) (i32.const 416))
   (func $Dict_display (param $self i32) (result i32)
     (local $__mem0 i32)
     (local $parts i32)
@@ -3680,6 +3931,8 @@ fn main() {
     return
   )
   (func $shown (param $x i32) (result i32)
+    (local $_res0 i32)
+    (local $_res1 i32)
     unreachable ;; unknown: no static type to box this value by (a type parameter's slot?)
     call $__unknown_kind
     i32.const 115
@@ -3687,8 +3940,12 @@ fn main() {
     (if (result i32)
       (then
     i32.const 320
+    call $__cap_begin
+    local.set $_res0
     local.get $x
-    call $__std_number_i32ToString
+    call $__print_i32_raw
+    local.get $_res0
+    call $__cap_end
     call $__str_concat
     i32.const 320
     call $__str_concat
@@ -3700,8 +3957,12 @@ fn main() {
     )
     drop
     i32.const 328
+    call $__cap_begin
+    local.set $_res1
     local.get $x
-    call $__std_number_i32ToString
+    call $__print_i32_raw
+    local.get $_res1
+    call $__cap_end
     call $__str_concat
     return
   )
@@ -4587,6 +4848,48 @@ fn main() {
   ;;   0..8  WASI iovec   8  newline byte
   ;;  16..32 bool text   64..128 i32 digits
   (func $__write_bytes (param $p i32) (param $n i32)
+    (local $c i32) (local $l i32) (local $q i32)
+    global.get $__cap
+    local.set $c
+    local.get $c
+    (if
+      (then
+        local.get $c
+        i32.load
+        local.set $l
+        local.get $l
+        local.get $n
+        i32.add
+        i32.const 4
+        i32.add
+        call $__alloc
+        local.set $q
+        local.get $q
+        local.get $l
+        local.get $n
+        i32.add
+        i32.store
+        local.get $q
+        i32.const 4
+        i32.add
+        local.get $c
+        i32.const 4
+        i32.add
+        local.get $l
+        memory.copy
+        local.get $q
+        i32.const 4
+        i32.add
+        local.get $l
+        i32.add
+        local.get $p
+        local.get $n
+        memory.copy
+        local.get $q
+        global.set $__cap
+        return
+      )
+    )
     i32.const 0
     local.get $p
     i32.store
@@ -5317,8 +5620,31 @@ fn main() {
     )
     local.get $r
   )
+  (global $__cap (mut i32) (i32.const 0))
+  (func $__cap_begin (result i32)
+    (local $o i32) (local $s i32)
+    global.get $__cap
+    local.set $o
+    i32.const 4
+    call $__alloc
+    local.set $s
+    local.get $s
+    i32.const 0
+    i32.store
+    local.get $s
+    global.set $__cap
+    local.get $o
+  )
+  (func $__cap_end (param $o i32) (result i32)
+    (local $s i32)
+    global.get $__cap
+    local.set $s
+    local.get $o
+    global.set $__cap
+    local.get $s
+  )
   ;; std-wasm (decision 440): its functions, transpiled from std_wasm.wasm
-  (global $__std_sp (mut i32) (i32.const 448))
+  (global $__std_sp (mut i32) (i32.const 416))
   (func $__std_sp_check (param $sp i32) (result i32)
     local.get $sp
     i32.const 384
@@ -5328,19 +5654,14 @@ fn main() {
     )
     local.get $sp
   )
-  ;; __std_f4 — from std_wasm.wasm (sha256 b4b6f06748d6)
-  ;; __std_f58 — from std_wasm.wasm (sha256 3fe867e565e7)
-  ;; __std_f59 — from std_wasm.wasm (sha256 432c7dfb021a)
   ;; __std_f429 — from std_wasm.wasm (sha256 91fc3314249d)
   ;; __std_f441 — from std_wasm.wasm (sha256 d13a98c08300)
   ;; __std_f442 — from std_wasm.wasm (sha256 3192e2e42294)
   ;; __std_f443 — from std_wasm.wasm (sha256 0314fe5f477f)
   ;; __std_f444 — from std_wasm.wasm (sha256 83a8841c1a5e)
   ;; std:array.joinStrings — from std_wasm.wasm (sha256 337b368ca812)
-  ;; __std_f462 — from std_wasm.wasm (sha256 fbcbd5636368)
   ;; std:array.concat — from std_wasm.wasm (sha256 2730cfa39de4)
   ;; std:array.slice — from std_wasm.wasm (sha256 27ec3c9971dd)
-  ;; std:number.i32ToString — from std_wasm.wasm (sha256 276a02556224)
 )
 ```
 

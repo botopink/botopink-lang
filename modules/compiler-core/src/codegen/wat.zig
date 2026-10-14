@@ -17145,45 +17145,10 @@ const Emitter = struct {
         // A value of an enum is written as `@print` writes it (docs § What
         // `@print` writes): its print, captured into a string. The ordinal's
         // digits, or a payload variant's address, were written before.
-        if (self.isEnumValueExpr(e)) {
-            const prev = try self.declRes();
-            try self.emit(self.builder().helper(.cap_begin));
-            try self.emit(.{ .local_set = prev });
-            try self.lowerPrintArg(e, false);
-            try self.emit(.{ .local_get = prev });
-            try self.emit(self.builder().helper(.cap_end));
-            return;
-        }
-        if (self.optInfoOf(e)) |oi| {
-            // none renders as `undefined`, the text the other targets print
-            const tmp = try std.fmt.allocPrint(self.arena(), "__opt{d}", .{self.loop_seq});
-            self.loop_seq += 1;
-            try self.declareLocal(tmp, "i32");
-            try self.lowerCoerced(e, "i32");
-            try self.emit(.{ .local_tee = tmp });
-            try self.emit(opOf("i32", "eqz"));
-            const undef = try self.internString("undefined");
-            var then_c: Capture = .{};
-            self.open(&then_c);
-            try self.emit(try self.constInt(undef.offset));
-            const then_seq = self.seal(&then_c, .{ .value = .i32 });
-            var else_c: Capture = .{};
-            self.open(&else_c);
-            try self.emit(.{ .local_get = tmp });
-            if (oi.cell == .f64) {
-                try self.emit(.{ .load = .{ .ty = .f64 } });
-                try self.emit(try self.stdCall("number.floatToString"));
-            } else if (oi.cell == .i64) {
-                try self.emit(.{ .load = .{ .ty = .i64 } });
-                try self.emit(try self.stdCall("number.i64ToString"));
-            } else if (oi.boxed) {
-                try self.emit(.{ .load = .{} });
-                try self.emit(try self.stdCall("number.i32ToString"));
-            }
-            const else_seq = self.seal(&else_c, .{ .value = .i32 });
-            try self.emit(.{ .@"if" = .{ .result = .i32, .then = .{ .seq = then_seq }, .@"else" = .{ .seq = else_seq } } });
-            return;
-        }
+        if (self.isEnumValueExpr(e)) return self.lowerCapturedPrint(e);
+        // Decision 530 — an optional writes `@print`'s text: `null` when
+        // absent (`undefined` was written), its value otherwise.
+        if (self.optInfoOf(e) != null) return self.lowerCapturedPrint(e);
         if (self.isStringExpr(e)) return self.lowerValue(e);
         if (self.isBoolExpr(e)) {
             try self.lowerCoerced(e, "i32");
@@ -17210,8 +17175,23 @@ const Emitter = struct {
             try self.emit(try self.stdCall(if (self.isU64Expr(e)) "number.u64ToString" else "number.i64ToString"));
             return;
         }
+        // Decision 530 — a record, an array, a tuple, `null`: the text
+        // `@print` writes, captured into a string; the value's address was
+        // written before.
+        if (!self.isKnownInteger(e)) return self.lowerCapturedPrint(e);
         try self.lowerCoerced(e, "i32");
         try self.emit(try self.stdCall("number.i32ToString"));
+    }
+
+    /// `e`'s printed text as a string (`text_capture`): what `@print(e)`
+    /// would write, appended to the capture instead of written out.
+    fn lowerCapturedPrint(self: *Emitter, e: ast.Expr) anyerror!void {
+        const prev = try self.declRes();
+        try self.emit(self.builder().helper(.cap_begin));
+        try self.emit(.{ .local_set = prev });
+        try self.lowerPrintArg(e, false);
+        try self.emit(.{ .local_get = prev });
+        try self.emit(self.builder().helper(.cap_end));
     }
 
     /// Whether `e` is a value of an enum this program declares — a unit

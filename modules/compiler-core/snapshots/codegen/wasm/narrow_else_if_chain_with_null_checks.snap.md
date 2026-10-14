@@ -18,13 +18,12 @@ fn main() {
   (memory (export "memory") 1)
   (data (i32.const 256) "\04\00\00\00zero")
   (data (i32.const 264) "\09\00\00\00nonzero: ")
-  (data (i32.const 280) "\09\00\00\00undefined")
-  (data (i32.const 296) "\04\00\00\00null")
-  (global $__heap_ptr (mut i32) (i32.const 368))
+  (data (i32.const 280) "\04\00\00\00null")
+  (global $__heap_ptr (mut i32) (i32.const 288))
   (func $classify (param $x i32) (result i32)
     (local $__opt0 i32)
     (local $__opt1 i32)
-    (local $__opt2 i32)
+    (local $_res0 i32)
     local.get $x
     local.tee $__opt0
     (if (result i32)
@@ -61,24 +60,17 @@ fn main() {
     (if (result i32)
       (then
     i32.const 264
+    call $__cap_begin
+    local.set $_res0
     local.get $x
-    local.tee $__opt2
-    i32.eqz
-    (if (result i32)
-      (then
-    i32.const 280
-      )
-      (else
-    local.get $__opt2
-    i32.load
-    call $__std_number_i32ToString
-      )
-    )
+    call $__print_opt_i32_raw
+    local.get $_res0
+    call $__cap_end
     call $__str_concat
     return
       )
       (else
-    i32.const 296
+    i32.const 280
     return
       )
     )
@@ -102,6 +94,48 @@ fn main() {
   ;;   0..8  WASI iovec   8  newline byte
   ;;  16..32 bool text   64..128 i32 digits
   (func $__write_bytes (param $p i32) (param $n i32)
+    (local $c i32) (local $l i32) (local $q i32)
+    global.get $__cap
+    local.set $c
+    local.get $c
+    (if
+      (then
+        local.get $c
+        i32.load
+        local.set $l
+        local.get $l
+        local.get $n
+        i32.add
+        i32.const 4
+        i32.add
+        call $__alloc
+        local.set $q
+        local.get $q
+        local.get $l
+        local.get $n
+        i32.add
+        i32.store
+        local.get $q
+        i32.const 4
+        i32.add
+        local.get $c
+        i32.const 4
+        i32.add
+        local.get $l
+        memory.copy
+        local.get $q
+        i32.const 4
+        i32.add
+        local.get $l
+        i32.add
+        local.get $p
+        local.get $n
+        memory.copy
+        local.get $q
+        global.set $__cap
+        return
+      )
+    )
     i32.const 0
     local.get $p
     i32.store
@@ -300,6 +334,37 @@ fn main() {
     call $__print_str_raw
     call $__print_nl
   )
+  (func $__print_bool (param $b i32)
+    local.get $b
+    call $__print_bool_raw
+    call $__print_nl
+  )
+  (func $__print_bool_raw (param $b i32)
+    local.get $b
+    (if
+      (then
+        ;; "true" as a little-endian i32
+        i32.const 16
+        i32.const 1702195828
+        i32.store
+        i32.const 16
+        i32.const 4
+        call $__write_bytes
+      )
+      (else
+        ;; "fals" + 'e'
+        i32.const 16
+        i32.const 1936482662
+        i32.store
+        i32.const 16
+        i32.const 101
+        i32.store8 offset=4
+        i32.const 16
+        i32.const 5
+        call $__write_bytes
+      )
+    )
+  )
   (func $__str_concat (param $a i32) (param $b i32) (result i32)
     (local $base i32) (local $alen i32) (local $blen i32)
     local.get $a
@@ -402,22 +467,93 @@ fn main() {
     i32.store
     local.get $p
   )
-  ;; std-wasm (decision 440): its functions, transpiled from std_wasm.wasm
-  (global $__std_sp (mut i32) (i32.const 368))
-  (func $__std_sp_check (param $sp i32) (result i32)
-    local.get $sp
-    i32.const 304
-    i32.lt_s
-    (if
-      (then unreachable)
-    )
-    local.get $sp
+  (func $__print_null
+    i32.const 176
+    i32.const 1819047278
+    i32.store
+    i32.const 176
+    i32.const 4
+    call $__write_bytes
   )
-  ;; __std_f4 — from std_wasm.wasm (sha256 b4b6f06748d6)
-  ;; __std_f58 — from std_wasm.wasm (sha256 3fe867e565e7)
-  ;; __std_f59 — from std_wasm.wasm (sha256 432c7dfb021a)
-  ;; __std_f462 — from std_wasm.wasm (sha256 fbcbd5636368)
-  ;; std:number.i32ToString — from std_wasm.wasm (sha256 276a02556224)
+  (func $__print_opt_i32_raw (param $p i32)
+    local.get $p
+    i32.eqz
+    (if
+      (then
+        call $__print_null
+      )
+      (else
+        local.get $p
+        i32.load
+        call $__print_i32_raw
+      )
+    )
+  )
+  (func $__print_opt_i32 (param $p i32)
+    local.get $p
+    call $__print_opt_i32_raw
+    call $__print_nl
+  )
+  (func $__print_opt_bool_raw (param $p i32)
+    local.get $p
+    i32.eqz
+    (if
+      (then
+        call $__print_null
+      )
+      (else
+        local.get $p
+        i32.load
+        call $__print_bool_raw
+      )
+    )
+  )
+  (func $__print_opt_bool (param $p i32)
+    local.get $p
+    call $__print_opt_bool_raw
+    call $__print_nl
+  )
+  (func $__print_opt_str_raw (param $s i32)
+    local.get $s
+    i32.eqz
+    (if
+      (then
+        call $__print_null
+      )
+      (else
+        local.get $s
+        call $__print_str_raw
+      )
+    )
+  )
+  (func $__print_opt_str (param $s i32)
+    local.get $s
+    call $__print_opt_str_raw
+    call $__print_nl
+  )
+  (global $__cap (mut i32) (i32.const 0))
+  (func $__cap_begin (result i32)
+    (local $o i32) (local $s i32)
+    global.get $__cap
+    local.set $o
+    i32.const 4
+    call $__alloc
+    local.set $s
+    local.get $s
+    i32.const 0
+    i32.store
+    local.get $s
+    global.set $__cap
+    local.get $o
+  )
+  (func $__cap_end (param $o i32) (result i32)
+    (local $s i32)
+    global.get $__cap
+    local.set $s
+    local.get $o
+    global.set $__cap
+    local.get $s
+  )
 )
 ```
 

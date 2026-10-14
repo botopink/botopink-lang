@@ -22,10 +22,11 @@ fn main() {
   (data (i32.const 268) "\07\00\00\00value: ")
   (data (i32.const 280) "\12\00\00\00V\08Opt.Some\01\05valuei")
   (data (i32.const 304) "\0b\00\00\00V\08Opt.None\00")
-  (global $__heap_ptr (mut i32) (i32.const 384))
+  (global $__heap_ptr (mut i32) (i32.const 320))
   (func $describe (param $opt i32) (result i32)
     (local $v i32)
     (local $__case_0 i32)
+    (local $_res0 i32)
     local.get $opt
     local.set $__case_0
     local.get $__case_0
@@ -47,8 +48,12 @@ fn main() {
     i32.load offset=4
     local.set $v
     i32.const 268
+    call $__cap_begin
+    local.set $_res0
     local.get $v
-    call $__std_number_i32ToString
+    call $__print_i32_raw
+    local.get $_res0
+    call $__cap_end
     call $__str_concat
       )
       (else
@@ -101,6 +106,48 @@ fn main() {
   ;;   0..8  WASI iovec   8  newline byte
   ;;  16..32 bool text   64..128 i32 digits
   (func $__write_bytes (param $p i32) (param $n i32)
+    (local $c i32) (local $l i32) (local $q i32)
+    global.get $__cap
+    local.set $c
+    local.get $c
+    (if
+      (then
+        local.get $c
+        i32.load
+        local.set $l
+        local.get $l
+        local.get $n
+        i32.add
+        i32.const 4
+        i32.add
+        call $__alloc
+        local.set $q
+        local.get $q
+        local.get $l
+        local.get $n
+        i32.add
+        i32.store
+        local.get $q
+        i32.const 4
+        i32.add
+        local.get $c
+        i32.const 4
+        i32.add
+        local.get $l
+        memory.copy
+        local.get $q
+        i32.const 4
+        i32.add
+        local.get $l
+        i32.add
+        local.get $p
+        local.get $n
+        memory.copy
+        local.get $q
+        global.set $__cap
+        return
+      )
+    )
     i32.const 0
     local.get $p
     i32.store
@@ -391,22 +438,29 @@ fn main() {
     global.set $__heap_ptr
     local.get $p
   )
-  ;; std-wasm (decision 440): its functions, transpiled from std_wasm.wasm
-  (global $__std_sp (mut i32) (i32.const 384))
-  (func $__std_sp_check (param $sp i32) (result i32)
-    local.get $sp
-    i32.const 320
-    i32.lt_s
-    (if
-      (then unreachable)
-    )
-    local.get $sp
+  (global $__cap (mut i32) (i32.const 0))
+  (func $__cap_begin (result i32)
+    (local $o i32) (local $s i32)
+    global.get $__cap
+    local.set $o
+    i32.const 4
+    call $__alloc
+    local.set $s
+    local.get $s
+    i32.const 0
+    i32.store
+    local.get $s
+    global.set $__cap
+    local.get $o
   )
-  ;; __std_f4 — from std_wasm.wasm (sha256 b4b6f06748d6)
-  ;; __std_f58 — from std_wasm.wasm (sha256 3fe867e565e7)
-  ;; __std_f59 — from std_wasm.wasm (sha256 432c7dfb021a)
-  ;; __std_f462 — from std_wasm.wasm (sha256 fbcbd5636368)
-  ;; std:number.i32ToString — from std_wasm.wasm (sha256 276a02556224)
+  (func $__cap_end (param $o i32) (result i32)
+    (local $s i32)
+    global.get $__cap
+    local.set $s
+    local.get $o
+    global.set $__cap
+    local.get $s
+  )
 )
 ```
 
