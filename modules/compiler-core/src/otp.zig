@@ -21,21 +21,65 @@ pub const RELEASE = @import("manifest").OTP_RELEASE;
 pub const PROBE_EVAL = "io:format(\"~s\",[erlang:system_info(otp_release)]),halt().";
 
 /// The `-eval` text of a VM that runs a program, around the erlang expression
-/// `call` that starts it, then `halt()`. An abort by `@panic` is the term
-/// `{panic, Msg}`, one by a checked integer operator `{integer_overflow, Msg}`
-/// (`Msg` a UTF-8 binary in both), which `erl` would print as a boot
-/// failure with `Msg`'s bytes as numbers once one is outside ASCII; the eval
-/// catches it and writes `Msg` itself to stderr, unchanged, one line, status 1
-/// — the text the program raised, on erlang and beam as on commonJS and wasm
-/// (decision 430, 144 B-41). Any other failure (`badarith`, a failed match, an exit) is written to stderr as `Class:Reason`, one line, status 1: `erl`'s own report goes to stdout, where it leaks into the program's output and races the halt.
+/// `call` that starts it, then `halt()`. An uncaught abort writes to stderr one
+/// line, `<kind>: <message>`, status 1 — the `Failure` std's `attempt` would
+/// have caught (decision 535, 527), never `erl`'s own report of the raw
+/// `Class:Reason` term (it goes to stdout, where it leaks into the program's
+/// output and races the halt; and prints a UTF-8 message's bytes as numbers
+/// once one is outside ASCII):
+///
+/// - `panic: <message>` — an `@panic` / `@todo` (`{panic, Msg}`, `{todo, Msg}`),
+///   a checked integer operator or a division by zero (`{integer_overflow, Msg}`,
+///   `{panic, Msg}`), a failed `assert` (`{bp_assert, …, Panic}`): `Msg` the
+///   text the program raised, a UTF-8 binary or an iolist;
+/// - `host: <message>` — a host raise marked by the wrapper of a binding outside
+///   std (`{bp_host, Msg}`, decision 546), `Msg` the reason by `~tp`;
+/// - `crash: <reason>` — anything else (a failing match, `badarith`, an exit, a
+///   std binding's raise): the reason by `~tp`, without the class.
+///
 /// `botopink run` (`compiler-cli/src/cli/otp.zig` `mainEval`) and the
 /// compiler-core tests that run an abort (`codegen/runtime.zig`
 /// `executeAborting`) both use it.
 pub fn guardedEval(arena: std.mem.Allocator, call: []const u8) ![]const u8 {
     return std.fmt.allocPrint(arena,
-        \\try {s} catch error:{{Tag, Msg}} when (Tag =:= panic orelse Tag =:= integer_overflow) andalso is_binary(Msg) -> io:setopts(standard_error, [{{encoding, unicode}}]), io:format(standard_error, "~ts~n", [Msg]), halt(1); Class:Reason -> io:setopts(standard_error, [{{encoding, unicode}}]), io:format(standard_error, "~ts~n", [io_lib:format("~p:~tp", [Class, Reason])]), halt(1) end, halt().
+        \\try {s} catch
+        \\error:{{Tag, Msg}} when (Tag =:= panic orelse Tag =:= todo orelse Tag =:= integer_overflow) andalso (is_binary(Msg) orelse is_list(Msg)) -> io:setopts(standard_error, [{{encoding, unicode}}]), io:format(standard_error, "panic: ~ts~n", [Msg]), halt(1);
+        \\error:{{bp_assert, _, _, Msg}} -> io:setopts(standard_error, [{{encoding, unicode}}]), io:format(standard_error, "panic: ~ts~n", [Msg]), halt(1);
+        \\error:{{bp_assert, Msg, _}} when is_binary(Msg) -> io:setopts(standard_error, [{{encoding, unicode}}]), io:format(standard_error, "panic: ~ts~n", [Msg]), halt(1);
+        \\error:{{bp_host, Msg}} when is_binary(Msg) -> io:setopts(standard_error, [{{encoding, unicode}}]), io:format(standard_error, "host: ~ts~n", [Msg]), halt(1);
+        \\_:Reason -> io:setopts(standard_error, [{{encoding, unicode}}]), io:format(standard_error, "crash: ~ts~n", [io_lib:format("~tp", [Reason])]), halt(1) end, halt().
     , .{call});
 }
+
+/// The JavaScript a node VM that runs a program loads first (`--import`, a
+/// `data:` URL of `node_abort_import`): an uncaught abort — a throw out of
+/// `main`, a rejected promise nobody awaited — writes one line to stderr,
+/// `<kind>: <message>`, and exits 1: the `Failure` std's `attempt` answers
+/// for the same raise (decision 535; `libs/std/src/failure.bp`'s Node form
+/// reads the same marks), not node's own report, a stack trace. `panic` is an
+/// `@panic`, `@todo`, `x!`, an overflow, a division by zero or a failed
+/// `assert` (the `__bp_panic` mark the backend puts on each, whose value is
+/// the message when it is a string); anything else is `host`, its message an
+/// `Error`'s `message`, else `String(e)`.
+pub const node_abort_source =
+    "import{writeSync}from\"node:fs\";" ++
+    "const k=(e)=>e!=null&&e.__bp_panic!=null?[\"panic\",typeof e.__bp_panic===\"string\"?e.__bp_panic:e.message]:" ++
+    "e!=null&&typeof e.__bp_assert_loc===\"string\"?[\"panic\",e.message]:" ++
+    "[\"host\",e instanceof Error?e.message:String(e)];" ++
+    "const a=(e)=>{const[x,m]=k(e);writeSync(2,x+\": \"+m+\"\\n\");process.exit(1)};" ++
+    "process.on(\"uncaughtException\",a);process.on(\"unhandledRejection\",a);";
+
+/// `node_abort_source` as the `data:` URL `node --import` takes: every byte
+/// outside `[A-Za-z0-9]` percent-encoded.
+pub const node_abort_import: []const u8 = blk: {
+    const prefix = "data:text/javascript,";
+    var out: []const u8 = prefix;
+    for (node_abort_source) |c| {
+        const plain = std.ascii.isAlphanumeric(c);
+        out = out ++ (if (plain) &[_]u8{c} else &[_]u8{ '%', "0123456789ABCDEF"[c >> 4], "0123456789ABCDEF"[c & 15] });
+    }
+    break :blk out;
+};
 
 /// Every `erl` the compiler starts gets these emulator flags: an idle
 /// scheduler (normal, dirty CPU, dirty IO) does not busy-wait before it
@@ -152,7 +196,7 @@ test "otp: the release the compiler emits for passes, another one and a silent e
     );
 }
 
-test "otp: an abort by @panic writes its message to stderr unchanged, outside ASCII too" {
+test "otp: an abort by @panic writes panic: and its message unchanged, outside ASCII too" {
     const io = std.testing.io;
     var arena_inst = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_inst.deinit();
@@ -161,11 +205,11 @@ test "otp: an abort by @panic writes its message to stderr unchanged, outside AS
     const res = std.process.run(arena, io, .{
         .argv = &([_][]const u8{"erl"} ++ QUIET_FLAGS ++ [_][]const u8{ "-noshell", "-eval", eval }),
     }) catch return;
-    try std.testing.expectEqualStrings("lib: '--gutter' is in no known namespace \xe2\x80\x94 a prefix\n", res.stderr);
+    try std.testing.expectEqualStrings("panic: lib: '--gutter' is in no known namespace \xe2\x80\x94 a prefix\n", res.stderr);
     try std.testing.expectEqual(@as(u8, 1), res.term.exited);
 }
 
-test "otp: an integer overflow abort writes its message to stderr, no error report" {
+test "otp: an integer overflow abort writes panic: and its message, no error report" {
     const io = std.testing.io;
     var arena_inst = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_inst.deinit();
@@ -174,12 +218,12 @@ test "otp: an integer overflow abort writes its message to stderr, no error repo
     const res = std.process.run(arena, io, .{
         .argv = &([_][]const u8{"erl"} ++ QUIET_FLAGS ++ [_][]const u8{ "-noshell", "-eval", eval }),
     }) catch return;
-    try std.testing.expectEqualStrings("integer overflow: + on i32 at src/main.bp:6:14\n", res.stderr);
+    try std.testing.expectEqualStrings("panic: integer overflow: + on i32 at src/main.bp:6:14\n", res.stderr);
     try std.testing.expectEqualStrings("", res.stdout);
     try std.testing.expectEqual(@as(u8, 1), res.term.exited);
 }
 
-test "otp: any other abort writes one stderr line and nothing to stdout" {
+test "otp: any other abort writes crash: and the reason, one stderr line and nothing to stdout" {
     const io = std.testing.io;
     var arena_inst = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_inst.deinit();
@@ -188,7 +232,28 @@ test "otp: any other abort writes one stderr line and nothing to stdout" {
     const res = std.process.run(arena, io, .{
         .argv = &([_][]const u8{"erl"} ++ QUIET_FLAGS ++ [_][]const u8{ "-noshell", "-eval", eval }),
     }) catch return;
-    try std.testing.expectEqualStrings("error:badarith\n", res.stderr);
+    try std.testing.expectEqualStrings("crash: badarith\n", res.stderr);
     try std.testing.expectEqualStrings("", res.stdout);
     try std.testing.expectEqual(@as(u8, 1), res.term.exited);
+}
+
+test "otp: a marked host raise writes host: and its text; a failed assert and a todo write panic:" {
+    const io = std.testing.io;
+    var arena_inst = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_inst.deinit();
+    const arena = arena_inst.allocator();
+    const cases = [_][2][]const u8{
+        .{ "erlang:error({bp_host, <<\"boom\">>})", "host: boom\n" },
+        .{ "erlang:error({bp_assert, <<\"assertion failed\">>, <<\"m.bp:3\">>, [<<\"assertion failed: x at m.bp:3:5\">>]})", "panic: assertion failed: x at m.bp:3:5\n" },
+        .{ "erlang:error({todo, <<\"later\">>})", "panic: later\n" },
+        .{ "erlang:error({case_clause, 'Square'})", "crash: {case_clause,'Square'}\n" },
+    };
+    for (cases) |c| {
+        const eval = try guardedEval(arena, c[0]);
+        const res = std.process.run(arena, io, .{
+            .argv = &([_][]const u8{"erl"} ++ QUIET_FLAGS ++ [_][]const u8{ "-noshell", "-eval", eval }),
+        }) catch return;
+        try std.testing.expectEqualStrings(c[1], res.stderr);
+        try std.testing.expectEqual(@as(u8, 1), res.term.exited);
+    }
 }

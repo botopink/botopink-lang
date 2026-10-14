@@ -860,9 +860,22 @@ pub fn assertWasmRunLogModules(allocator: Allocator, modules: []const Module, ex
 /// runtime's own frame around it (decision 430, 144 B-41). A target whose tool
 /// is missing is skipped.
 pub fn assertAbortWritesEveryBackend(allocator: Allocator, src: []const u8, needle: []const u8) !void {
+    return abortWrites(allocator, src, needle, true);
+}
+
+/// `assertAbortWritesEveryBackend` over commonJS, erlang and beam alone: the
+/// `<kind>: <message>` line an uncaught abort writes there (decision 535, the
+/// `Failure` an `attempt` would answer); wasm writes the message alone until
+/// its codegen does.
+pub fn assertAbortWritesFailure(allocator: Allocator, src: []const u8, needle: []const u8) !void {
+    return abortWrites(allocator, src, needle, false);
+}
+
+fn abortWrites(allocator: Allocator, src: []const u8, needle: []const u8, with_wasm: bool) !void {
     const io = std.testing.io;
     for (configs) |cfg| {
         const wasm = cfg.targetSource == .wasm;
+        if (wasm and !with_wasm) continue;
         var outputs = if (wasm)
             try generate(allocator, &.{.{ .path = "", .source = src }}, io, cfg)
         else

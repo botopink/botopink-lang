@@ -2036,6 +2036,7 @@ The narrowed cells whose excluded targets' missing binding is named here (re-der
 | `modules/decl_hooks_direct` | commonJS erlang beam | wasm — `session` |
 | `modules/render_scope_library` | commonJS erlang beam | wasm — `hostStash` |
 | `modules/std_failure_attempt_host` | commonJS erlang beam | wasm — `raiseError` |
+| `modules/abort_text_host` | commonJS erlang beam | wasm — `explode` |
 | `modules/std_failure_attempt_crash` | erlang beam (`"targets"`) | commonJS, wasm — `shapeNamed` |
 | `modules/component_default_fn_sync`, `modules/component_method_sync`, `modules/component_sync_plain_function` | commonJS | erlang, wasm, beam — `pending` |
 | `modules/task_failure_rejects` | commonJS | erlang, wasm, beam — `observe` |
@@ -2446,3 +2447,9 @@ ends `(src/shapes.bp)`, the path the failed module's own refusal is printed at (
 Decision 546 adds `modules/std_failure_attempt_crash` — a `case` no arm matches under `attempt` answers `crash` on
 erlang and beam, where a raise of a binding outside std is `host` (`modules/std_failure_attempt_host`); the cell is
 narrowed to erlang and beam, commonJS and wasm lacking the host binding it calls.
+Decision 535 (an uncaught abort writes the `Failure` an `attempt` would answer, `<kind>: <message>`) adds
+`modules/abort_text_host` (an uncaught host raise writes `host: boom` on commonJS, erlang and beam) and tightens
+`case_no_arm_matches_raises` and `float_nan_infinity_words` to the whole text of their erlang and beam aborts
+(`crash: {case_clause,'Square'}`, `crash: badarith`). The `panic:` text of an uncaught abort is claimed by
+`modules/compiler-core/src/codegen/tests/builtins.zig` on commonJS, erlang and beam; wasm writes the message alone
+until its codegen writes the `Failure` (front 164).

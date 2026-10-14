@@ -4183,6 +4183,17 @@ is its whole stdout, on every target:
 <!-- example: modules/panic_library_message -->
 <!-- example: modules/int_overflow_add_i32 -->
 
+What an uncaught abort writes is the `Failure` an `attempt` would have answered
+(decisions 535, 527), one line, `<kind>: <message>`, on every target: `panic: <message>` for
+`@panic`, `@todo`, a failed `assert`, an overflow or a division by zero, `host: <message>` for a raise of a
+host binding without `result: true`, `crash: <reason>` for any raise nothing marked — a `case` no arm
+matches, `badarith`. Never the runtime's raw `Class:Reason` term. A target that does not abort where
+another does (a float division by zero: commonJS and wasm answer `Infinity`) declares that departure; the
+text of an abort is not one:
+
+<!-- example: modules/abort_text_host -->
+<!-- example: modules/case_no_arm_matches_raises -->
+
 ### What `@print` writes
 
 A value prints the way the source writes it. A record names its type and its

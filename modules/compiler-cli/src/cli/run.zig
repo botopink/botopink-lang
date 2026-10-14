@@ -111,7 +111,9 @@ pub fn programArgv(
     // flag. A `browser` build is `node <module>.mjs`, its loader (node runs
     // exceptions by default).
     switch (target) {
-        .commonJS => try argv.append(arena, "node"),
+        // An uncaught abort writes the `Failure` an `attempt` would answer
+        // (decision 535): `--import` loads the guard before the program.
+        .commonJS => try argv.appendSlice(arena, &.{ "node", "--import", bp.otp.node_abort_import }),
         .wasm => if (browser) try argv.append(arena, "node") else {
             try argv.appendSlice(arena, &.{ "wasmtime", "run" });
             try argv.appendSlice(arena, try wasmtimeFlags(arena, io, entry_path));

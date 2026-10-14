@@ -187,6 +187,44 @@ test "every backend: builtin ---- @panic message reaches stderr unchanged" {
     , "lib: '--gutter' is in no known namespace — a prefix\n");
 }
 
+// Decision 535: an uncaught abort writes the `Failure` an `attempt` would have
+// answered, `<kind>: <message>`, never the runtime's raw term.
+test "every backend but wasm: builtin ---- an uncaught @panic writes panic: <message>" {
+    try h.assertAbortWritesFailure(std.testing.allocator,
+        \\fn main() {
+        \\    @print("before");
+        \\    @panic("boom — 2");
+        \\}
+    , "panic: boom — 2\n");
+}
+
+test "every backend but wasm: builtin ---- an uncaught @todo writes panic: <message>" {
+    try h.assertAbortWritesFailure(std.testing.allocator,
+        \\fn main() {
+        \\    @todo("later");
+        \\}
+    , "panic: later\n");
+}
+
+test "every backend but wasm: builtin ---- an uncaught integer division by zero writes panic: <message>" {
+    try h.assertAbortWritesFailure(std.testing.allocator,
+        \\fn div(a: i32, b: i32) -> i32 {
+        \\    return a / b;
+        \\}
+        \\fn main() {
+        \\    @print(div(1, 0));
+        \\}
+    , "panic: integer division by zero: / on i32 at ");
+}
+
+test "every backend but wasm: builtin ---- an uncaught failed assert writes panic: <message>" {
+    try h.assertAbortWritesFailure(std.testing.allocator,
+        \\fn main() {
+        \\    assert 1 > 2, "never";
+        \\}
+    , "panic: assertion failed: 1 > 2: never at ");
+}
+
 test "js: builtin ---- @print single argument" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {

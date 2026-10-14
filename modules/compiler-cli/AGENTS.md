@@ -663,7 +663,7 @@ finds it as it would alone; the copy's manifest has its relative `path` dependen
 `manifest.sink` (where `Located.print` writes: a manifest's, a dependency's and
 a sidecar's refusals) pointed at a buffer, so a refusal is read off exactly the
 text `botopink build` prints — and runs the built program (`run.programArgv`: `node`,
-`erl` after the in-session compile of every `.erl` / `.S`, `wasmtime`), its
+`erl` after the in-session compile of every `.erl` / `.S`, `wasmtime`; `node --import <data: URL>` so an uncaught abort writes the `Failure` text, decision 535, `bp.otp.node_abort_import`), its
 stdout, stderr and exit status captured, on every declared target. Then, per
 module and target, the accepted answer is `snapshot/targets/<t>/<m>.snap` when
 it exists, else `snapshot/output/<m>.snap`, else empty, and it is compared with

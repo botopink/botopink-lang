@@ -915,7 +915,7 @@ pub fn executeAborting(allocator: std.mem.Allocator, backend: AbortBackend, code
     defer arena_inst.deinit();
     const arena = arena_inst.allocator();
     const argv: []const []const u8 = switch (backend) {
-        .commonJS => &.{ "node", basename },
+        .commonJS => &.{ "node", "--import", otp.node_abort_import, basename },
         .erlang, .beam => &([_][]const u8{"erl"} ++ otp.QUIET_FLAGS ++ [_][]const u8{
             "-noshell",
             "-pa",
