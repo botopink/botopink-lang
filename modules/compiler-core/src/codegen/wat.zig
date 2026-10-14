@@ -37,6 +37,7 @@ const watEmitter = @import("./wat/wat_emitter.zig");
 const wasmBinary = @import("./wat/wasm_binary_emitter.zig");
 const prelude = @import("./wat/wat_prelude.zig");
 const wasmNeeds = @import("./wat/needs.zig");
+const reach = @import("./wat/reach.zig");
 const hostBinding = @import("./wat/host_binding.zig");
 const stdWasmLink = @import("./wat/std_wasm_link.zig");
 const stdWasm = @import("std_wasm");
@@ -1122,7 +1123,47 @@ fn declName(d: ast.DeclKind) ?[]const u8 {
 
 const DataSeg = struct { offset: u32, len: u32, content: []const u8 };
 
+/// Decision 518 (2) — a second pass over the same program when the first one
+/// found the module reaches fewer host features than its bindings name: the
+/// needs it reaches, and the unreached bindings that asked for the rest.
+const Plan = struct {
+    forced: ?ast.WasmNeeds = null,
+    skip: std.StringHashMapUnmanaged(void) = .empty,
+
+    fn deinit(self: *Plan, alloc: std.mem.Allocator) void {
+        var it = self.skip.keyIterator();
+        while (it.next()) |k| alloc.free(k.*);
+        self.skip.deinit(alloc);
+    }
+};
+
+/// The module for the program: lowered once; when the functions it reaches ask
+/// for fewer `needs:` than every binding it links names, lowered again without
+/// the bindings nothing reaches, so the module carries (and the runner enables)
+/// only what the program uses.
 fn emitWat(
+    alloc: std.mem.Allocator,
+    module_name: []const u8,
+    own_program_in: ast.Program,
+    comptime_vals: std.StringHashMap([]const u8),
+    rewrites: std.AutoHashMap(ast.Loc, []const u8),
+    own_instance_lowerings: std.AutoHashMap(ast.Loc, envMod.InstanceLowering),
+    linked_in: []const Linked,
+    cross: ?*const CrossModule,
+    external_lookup: []const u8,
+    artifact: Artifact,
+    missing: ?*?moduleOutput.MissingExternal,
+    refused: ?*?Emitter.Refusal,
+) !Emitted {
+    var plan: Plan = .{};
+    defer plan.deinit(alloc);
+    return emitWatPass(alloc, module_name, own_program_in, comptime_vals, rewrites, own_instance_lowerings, linked_in, cross, external_lookup, artifact, missing, refused, &plan) catch |err| switch (err) {
+        error.Replan => emitWatPass(alloc, module_name, own_program_in, comptime_vals, rewrites, own_instance_lowerings, linked_in, cross, external_lookup, artifact, missing, refused, &plan),
+        else => |e| e,
+    };
+}
+
+fn emitWatPass(
     alloc: std.mem.Allocator,
     module_name: []const u8,
     own_program_in: ast.Program,
@@ -1139,6 +1180,7 @@ fn emitWat(
     /// Set when the emit fails with `error.WasmLoweringRefused`: the slot
     /// takes the message's ownership.
     refused: ?*?Emitter.Refusal,
+    plan: *Plan,
 ) !Emitted {
     var em = Emitter.init(alloc, comptime_vals, rewrites);
     defer em.deinit();
@@ -1342,6 +1384,10 @@ fn emitWat(
         }
     }
     try em.checkHostBindings(decls.items, owner.items, linked, own_program, module_name);
+    if (plan.forced) |f| {
+        em.needs = f;
+        em.skip_wrappers = &plan.skip;
+    }
     em.exceptions = em.needs.contains(.exceptions);
     const program: ast.Program = .{ .decls = decls.items };
     try em.registerTypes(program);
@@ -1592,6 +1638,28 @@ fn emitWat(
             o.* = .{ .symbol = sym, .label = try alloc.dupe(u8, f.label), .hash = f.hash };
         }
     }
+
+    // Decision 518 (2) — the host features are those of the bindings the
+    // program REACHES. A first pass that finds fewer than the bindings name
+    // asks for a second one without the unreached bindings; the second drops
+    // what only they were called from (nothing reachable calls them).
+    if (plan.forced == null and em.wrapper_needs.count() > 0) {
+        var live = try reach.reached(alloc, items.items, em.task_edges.items);
+        defer live.deinit(alloc);
+        var reached_needs = ast.WasmNeeds.initEmpty();
+        var wn = em.wrapper_needs.iterator();
+        while (wn.next()) |e| if (live.contains(e.key_ptr.*)) reached_needs.setUnion(e.value_ptr.*);
+        if (!reached_needs.eql(em.needs)) {
+            wn = em.wrapper_needs.iterator();
+            while (wn.next()) |e| {
+                if (live.contains(e.key_ptr.*) or e.value_ptr.subsetOf(reached_needs)) continue;
+                try plan.skip.put(alloc, try alloc.dupe(u8, e.key_ptr.*), {});
+            }
+            plan.forced = reached_needs;
+            return error.Replan;
+        }
+    }
+    if (plan.skip.count() > 0) try reach.dropCallers(ar, &items, plan.skip);
 
     // Decision 518 — the host features the program needs, for the runner:
     // the custom section `botopink.needs`, the needs' names (`exceptions`,
@@ -2249,6 +2317,10 @@ const Emitter = struct {
     /// module emits them under. Each is registered and emitted like a bodied
     /// `fn` (`registerFn`, `emitHostBinding`).
     host_bindings: std.StringHashMapUnmanaged(HostBound) = .empty,
+    /// Decision 518 (2): the `needs:` of each emitted binding wrapper, by its
+    /// symbol, and (second pass) the wrappers not to emit.
+    wrapper_needs: std.StringHashMapUnmanaged(ast.WasmNeeds) = .empty,
+    skip_wrappers: ?*const std.StringHashMapUnmanaged(void) = null,
     /// Decision 440 — the std-wasm functions the module calls, by their
     /// `std:` name (`text.trim`): a `std:` binding's, a primitive method's.
     /// `emitWat` transpiles them into the module (`std_wasm_link.zig`).
@@ -2261,6 +2333,8 @@ const Emitter = struct {
     /// The step function of every state machine, by its `kind` — the index
     /// `$__task_resume` dispatches on (`taskResumeFunc`).
     task_kinds: std.ArrayListUnmanaged([]const u8) = .empty,
+    /// The function that starts each task kind and its step (`reach.zig`).
+    task_edges: std.ArrayListUnmanaged(reach.Edge) = .empty,
     /// The symbols whose call answers a task (`@Task<T>`): every function
     /// declaring the return, each specialisation, each bound adapter.
     task_syms: std.StringHashMapUnmanaged(void) = .empty,
@@ -2524,9 +2598,11 @@ const Emitter = struct {
         self.host_fns.deinit();
         self.external_missing.deinit();
         self.host_bindings.deinit(self.alloc);
+        self.wrapper_needs.deinit(self.alloc);
         self.host_generic_decls.deinit(self.alloc);
         self.std_exports.deinit(self.alloc);
         self.task_kinds.deinit(self.alloc);
+        self.task_edges.deinit(self.alloc);
         self.task_syms.deinit(self.alloc);
         self.aliases.deinit();
         self.pattern_locals.deinit();
@@ -4751,6 +4827,10 @@ const Emitter = struct {
     /// order: `op:` applies the instruction to them, `fn:` calls the private
     /// fn, `wasi:` calls the adapter's prelude helper.
     fn emitHostBinding(self: *Emitter, f: ast.FnDecl, hb: HostBound) !void {
+        // Decision 518 (2): a binding the first pass found nothing reaching,
+        // whose needs the program does not otherwise ask for, is not emitted.
+        if (self.skip_wrappers) |skip| if (skip.contains(f.name)) return;
+        if (hb.needs.count() > 0) try self.wrapper_needs.put(self.alloc, f.name, hb.needs);
         const ar = self.arena();
         const sig = self.fn_sigs.get(f.name).?;
         var params: std.ArrayListUnmanaged(wat.Param) = .empty;
@@ -12734,6 +12814,7 @@ const Emitter = struct {
         const body_name = try std.fmt.allocPrint(ar, "{s}__body", .{f.name});
         const step_name = try std.fmt.allocPrint(ar, "{s}__step", .{f.name});
         try self.task_kinds.append(self.alloc, step_name);
+        try self.task_edges.append(self.alloc, .{ .from = f.name, .to = step_name });
 
         var saves: std.ArrayListUnmanaged(wat.Line) = .empty;
         var restores: std.ArrayListUnmanaged(wat.Line) = .empty;

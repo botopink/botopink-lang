@@ -2679,3 +2679,43 @@ test "wat: decision 330 ---- recv?.m() over a record's or an all-unit enum's met
         \\}
     , "0\n-1\n0\n-1\n");
 }
+
+/// The host features the wasm build of `src` (the module with the empty path)
+/// asks for — its binary's `botopink.needs` section (decision 518).
+fn wasmNeedsOfSource(allocator: Allocator, src: []const u8) !bpAst.WasmNeeds {
+    var outputs = try h.generate(allocator, &.{.{ .path = "", .source = src }}, std.testing.io, h.configs[3]);
+    defer {
+        for (outputs.items) |*o| o.result.deinit(allocator);
+        outputs.deinit(allocator);
+    }
+    for (outputs.items) |o| {
+        if (!std.mem.eql(u8, o.name, "") and !std.mem.eql(u8, o.name, "main")) continue;
+        return codegen.wasmNeeds.needsOf(o.result.wasm orelse return error.ModuleDidNotCompile);
+    }
+    return error.ModuleDidNotCompile;
+}
+
+// Decision 518 (2) — the compiler gathers the `needs` of what the program
+// REACHES: `std/failure` linked and `attempt` never called asks for no
+// exception handling, and the module carries no `botopink.needs` section.
+test "wat: needs ---- std/failure linked and attempt never called asks for nothing" {
+    const needs = try wasmNeedsOfSource(std.testing.allocator,
+        \\import {failure} from "std";
+        \\fn main() {
+        \\    @print("no attempt");
+        \\}
+    );
+    try std.testing.expectEqual(@as(usize, 0), needs.count());
+}
+
+// ... and a call of `attempt` asks for `Exceptions`.
+test "wat: needs ---- a call of attempt asks for Exceptions" {
+    const needs = try wasmNeedsOfSource(std.testing.allocator,
+        \\import {failure} from "std";
+        \\fn main() {
+        \\    val r = failure.attempt({ -> 6 * 7 });
+        \\    @print("done");
+        \\}
+    );
+    try std.testing.expect(needs.contains(.exceptions));
+}
