@@ -11,6 +11,11 @@
 //!                                       caret, as printed (absent when the
 //!                                       caret has none; `hint` lines are not
 //!                                       claimed)
+//!     from <file>:<line>:<col>        one `called from` line of a raise at
+//!                                       build (decision 532), innermost
+//!                                       first, down to the program's call,
+//!                                       annotation or `comptime`; after
+//!                                       `at` and `label`, one per line
 //!     out <text>                      one line the program printed (`out`
 //!                                       alone for an empty line)
 //!     no-final-newline                the last `out` line ended without `\n`
@@ -19,7 +24,7 @@
 //!     stderr <text>                   with `abort`: the program's stderr
 //!                                       contains this text
 //!
-//! The records come in that order — refusals (`refused`, `at`, `label`), then the output, then `abort`,
+//! The records come in that order — refusals (`refused`, `at`, `label`, `from`), then the output, then `abort`,
 //! then the `stderr` claims — and a file has exactly one spelling: it parses
 //! only when rendering what it parsed gives back its bytes. A refusal and an
 //! output never share a file (a refused module does not run). An empty answer
@@ -46,6 +51,10 @@ pub const Refusal = struct {
     at: ?[]const u8 = null,
     /// The text printed beside the caret under `at`, when there is one.
     label: ?[]const u8 = null,
+    /// The `called from <file>:<line>:<col>` lines under the diagnostic
+    /// (decision 532): the calls a raise at build crossed after the one `at`
+    /// names, innermost first.
+    from: []const []const u8 = &.{},
 };
 
 /// One module's answer.
@@ -109,6 +118,15 @@ pub fn parse(arena: std.mem.Allocator, text: []const u8, why: *Malformed) ParseE
             if (phase != 0 or refusals.items.len == 0 or refusals.items[refusals.items.len - 1].at == null or refusals.items[refusals.items.len - 1].label != null)
                 return fail(why, n, "`label` follows its `at` line");
             refusals.items[refusals.items.len - 1].label = r;
+        } else if (std.mem.eql(u8, word, "from")) {
+            const r = rest orelse return fail(why, n, "`from` names `<file>:<line>:<col>`");
+            if (phase != 0 or refusals.items.len == 0 or refusals.items[refusals.items.len - 1].at == null)
+                return fail(why, n, "`from` follows its `at` line");
+            const last = &refusals.items[refusals.items.len - 1];
+            var grown: std.ArrayListUnmanaged([]const u8) = .empty;
+            try grown.appendSlice(arena, last.from);
+            try grown.append(arena, r);
+            last.from = grown.items;
         } else if (std.mem.eql(u8, word, "out")) {
             if (refusals.items.len > 0) return fail(why, n, "a refused module prints nothing");
             if (phase > 1) return fail(why, n, "`out` comes before `no-final-newline`, `abort` and `stderr`");
@@ -133,7 +151,7 @@ pub fn parse(arena: std.mem.Allocator, text: []const u8, why: *Malformed) ParseE
             if (!abort) return fail(why, n, "`stderr` names an abort: it follows `abort`");
             phase = 4;
             try stderr.append(arena, r);
-        } else return fail(why, n, "unknown record (refused, at, label, out, no-final-newline, abort, stderr)");
+        } else return fail(why, n, "unknown record (refused, at, label, from, out, no-final-newline, abort, stderr)");
     }
     const snap: Snap = .{ .refusals = refusals.items, .stdout = stdout.items, .abort = abort, .stderr = stderr.items };
     // One spelling: whatever the rules above let through must render back.
@@ -155,6 +173,7 @@ pub fn render(arena: std.mem.Allocator, snap: Snap) ![]u8 {
         try out.print(arena, "refused {s}\n", .{r.message});
         if (r.at) |at| try out.print(arena, "at {s}\n", .{at});
         if (r.label) |l| try out.print(arena, "label {s}\n", .{l});
+        for (r.from) |f| try out.print(arena, "from {s}\n", .{f});
     }
     if (snap.stdout.len > 0) {
         const ends = snap.stdout[snap.stdout.len - 1] == '\n';
@@ -180,6 +199,8 @@ pub fn matches(expected: Snap, observed: Snap, observed_stderr: []const u8) bool
         if (e.at) |at| if (!std.mem.eql(u8, at, o.at.?)) return false;
         if ((e.label == null) != (o.label == null)) return false;
         if (e.label) |l| if (!std.mem.eql(u8, l, o.label.?)) return false;
+        if (e.from.len != o.from.len) return false;
+        for (e.from, o.from) |ef, of| if (!std.mem.eql(u8, ef, of)) return false;
     }
     if (!std.mem.eql(u8, expected.stdout, observed.stdout)) return false;
     if (expected.abort != observed.abort) return false;
@@ -303,6 +324,25 @@ test "a label follows its `at`, round-trips, and is compared" {
     try testing.expect(!matches(accepted, .{ .refusals = &.{.{ .message = "error: no", .at = "src/main.bp:1:2" }} }, ""));
     // a label that appears where none is accepted
     try testing.expect(!matches(.{ .refusals = &.{.{ .message = "error: no", .at = "src/main.bp:1:2" }} }, accepted, ""));
+}
+
+test "a from record follows its at, round-trips, and is compared (decision 532)" {
+    var a = std.heap.ArenaAllocator.init(testing.allocator);
+    defer a.deinit();
+    const ar = a.allocator();
+    const back = try roundTrip(ar, .{ .refusals = &.{.{ .message = "error: boom", .at = "src/lib.bp:3:5", .from = &.{ "src/main.bp:9:3", "src/main.bp:12:1" } }} });
+    try testing.expectEqual(@as(usize, 2), back.refusals[0].from.len);
+    try testing.expectEqualStrings("src/main.bp:12:1", back.refusals[0].from[1]);
+    const accepted: Snap = .{ .refusals = &.{.{ .message = "error: boom", .at = "src/lib.bp:3:5", .from = &.{"src/main.bp:9:3"} }} };
+    try testing.expect(matches(accepted, accepted, ""));
+    // a call that changes, one that disappears, one that appears
+    try testing.expect(!matches(accepted, .{ .refusals = &.{.{ .message = "error: boom", .at = "src/lib.bp:3:5", .from = &.{"src/main.bp:9:4"} }} }, ""));
+    try testing.expect(!matches(accepted, .{ .refusals = &.{.{ .message = "error: boom", .at = "src/lib.bp:3:5" }} }, ""));
+    try testing.expect(!matches(.{ .refusals = &.{.{ .message = "error: boom", .at = "src/lib.bp:3:5" }} }, accepted, ""));
+    // `from` follows `at`
+    var why: Malformed = .{};
+    try testing.expectError(error.Malformed, parse(ar, "botopink-cell 1\nrefused error: x\nfrom a:1:1\n", &why));
+    try testing.expectEqual(@as(usize, 3), why.line);
 }
 
 test "the header alone is the empty answer" {

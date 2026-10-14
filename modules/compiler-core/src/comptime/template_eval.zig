@@ -88,10 +88,11 @@ pub const Outcome = union(enum) {
         span: ?template.Span,
     },
     err: []const u8,
-    /// The body raised, and the raise left a call of one of the `located`
-    /// functions (decision 451 (3), `erlang.ComptimeModule.located`): the
-    /// text, and where that call starts — the innermost such call.
-    raised: struct { message: []const u8, at: ast.Loc },
+    /// The body raised, and the raise crossed calls of the `located`
+    /// functions (decisions 451 (3), 532, `erlang.ComptimeModule.located`):
+    /// the text, and the calls it crossed, innermost first, each with the
+    /// file it is written in.
+    raised: struct { message: []const u8, frames: []const blockEval.Frame },
     /// Decision 302 — `q.annotate(decl, at)` has no answer yet: run the
     /// annotation written at `span` over the tag and evaluate again.
     need: struct {
@@ -136,7 +137,7 @@ pub fn evaluate(
     /// calls are located (`tfn` and the `support` functions of its module),
     /// by name: a raise that leaves one of their calls is `Outcome.raised` at
     /// it, in `owner_file`. Empty for the module's own template.
-    located: []const []const u8,
+    located: []const erlang.Located,
     /// The record and enum types `tfn` and `support` name, with the methods
     /// they call (`block_eval.typesReached`).
     types: []const ast.DeclKind,
@@ -257,8 +258,8 @@ pub fn emitKey(
     return out.written();
 }
 
-/// Decision 451 (3) — a located function's calls are emitted as
-/// `'__bp_at'(Line, Col, Call)`, so its module text is a function of WHERE
+/// Decisions 451 (3), 532 — a located function's calls are emitted as frames
+/// (`erlang.zig` `framed`: their file, line and column), so its module text is a function of WHERE
 /// its calls are written, which the formatted source the key holds drops. A
 /// caller that locates functions appends every `ast.Loc` of those declarations
 /// to its `kind` with this: one decorator compiled at another position (an
@@ -787,15 +788,15 @@ fn mainForms(b: Ast.Builder, tfn: ast.FnDecl, plans: []const ArgPlan, annotates:
             })}),
         },
     };
-    // Decision 451 (3) — a module whose calls are located answers where the
-    // raise left them (`'__bp_raised_at'/0`); the module's own template keeps
+    // Decisions 451 (3), 532 — a module whose calls are located answers the
+    // calls the raise crossed (`'__bp_frames'/1`); the module's own template keeps
     // the reply it had.
     const located_error: Ast.Clause = .{
         .patterns = others[1].patterns,
         .body = try b.body(&.{try json(b, &.{
             Ast.field("kind", Ast.str("error")),
             Ast.field("message", try b.call("__bp_text", &.{try b.tuple(&.{ V("Class"), V("Reason") })})),
-            Ast.field("at", try b.call("__bp_raised_at", &.{})),
+            Ast.field("frames", try b.call("__bp_frames", &.{V("Reason")})),
         })}),
     };
     const catches = if (locating) &[_]Ast.Clause{ others[0], located_error } else &others;
@@ -820,7 +821,7 @@ fn buildModule(
     owner: []const u8,
     tfn: ast.FnDecl,
     support: []const ast.FnDecl,
-    located: []const []const u8,
+    located: []const erlang.Located,
     types: []const ast.DeclKind,
     captures: []const template.CapturedExpr,
     plainArgs: []const template.PlainArg,
@@ -868,13 +869,15 @@ fn buildModule(
     try kind.appendSlice(arena, "tpl");
     for (located) |n| {
         try kind.append(arena, 1);
-        try kind.appendSlice(arena, n);
+        try kind.appendSlice(arena, n.name);
+        try kind.append(arena, 3);
+        try kind.appendSlice(arena, n.file);
     }
     for (decls) |d| switch (d) {
         .@"fn" => |f| for (located) |n| {
-            if (std.mem.eql(u8, f.name, n)) {
+            if (std.mem.eql(u8, f.name, n.name)) {
                 try kind.append(arena, 2);
-                try kind.appendSlice(arena, n);
+                try kind.appendSlice(arena, n.name);
                 try appendLocs(arena, &kind, f);
                 break;
             }
@@ -1196,9 +1199,9 @@ const Reply = struct {
     value: std.json.Value = .null,
     ast: std.json.Value = .null,
     decl: std.json.Value = .null,
-    /// Decision 451 (3) — `[Line, Col]` of the innermost located call a
-    /// raise left (`'__bp_raised_at'/0`), `[]` when none.
-    at: ?std.json.Value = null,
+    /// Decision 532 — `[[File, Line, Col], …]`, the located calls a raise
+    /// crossed (`'__bp_frames'/1`), innermost first, `[]` when none.
+    frames: ?std.json.Value = null,
     /// Decision 426 — `'__bp_extras'/1`: the build answered, the notes given
     /// (latest first).
     build: ?i64 = null,
@@ -1237,7 +1240,8 @@ fn parseOutcomeExtras(arena: std.mem.Allocator, stdout: []const u8, extras: ?*Ex
         .span = reply.span,
     } };
     const message = if (reply.message.len > 0) reply.message else "template evaluation failed";
-    if (blockEval.raisedAt(reply.at)) |at| return .{ .raised = .{ .message = message, .at = at } };
+    const frames = try blockEval.framesOf(arena, reply.frames);
+    if (frames.len > 0) return .{ .raised = .{ .message = message, .frames = frames } };
     return .{ .err = message };
 }
 

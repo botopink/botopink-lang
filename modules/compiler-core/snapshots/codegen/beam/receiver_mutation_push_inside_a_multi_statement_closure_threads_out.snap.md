@@ -41,12 +41,12 @@ fn main() {
 ----- COMPTIME WAT -- decorator component
 ```wat
 (func $component/1 (param $a0 i32) (result i32)
-  (local $V_Decl i32) (local $s1 i32) (local $s2 i32)
+  (local $s0 i32) (local $s1 i32) (local $s2 i32)
   (block $raise
   (block $L1 (result i32)
   (block $L2
   local.get $a0
-  local.set $V_Decl
+  local.set $s0
   call $rt_nil
   local.set $s1
   (block $L4
@@ -72,11 +72,11 @@ fn main() {
   call $rt_make_fun
   local.get $s2
   global.get $__lit
-  i32.const 224
+  i32.const 232
   i32.add
   i32.const 6
   call $rt_atom
-  local.get $V_Decl
+  local.get $s0
   call $rt_maps_get
   call $rt_pending
   br_if $raise
@@ -100,7 +100,7 @@ fn main() {
   (block $L7 (result i32)
   (block $L8
   global.get $__lit
-  i32.const 232
+  i32.const 240
   i32.add
   i32.const 11
   call $rt_bin
@@ -109,7 +109,7 @@ fn main() {
   i32.add
   i32.const 4
   call $rt_atom
-  local.get $V_Decl
+  local.get $s0
   call $rt_maps_get
   call $rt_pending
   br_if $L8
@@ -117,7 +117,7 @@ fn main() {
   call $rt_pending
   br_if $L8
   global.get $__lit
-  i32.const 248
+  i32.const 256
   i32.add
   i32.const 23
   call $rt_bin
@@ -129,7 +129,7 @@ fn main() {
   i32.add
   i32.const 4
   call $rt_atom
-  local.get $V_Decl
+  local.get $s0
   call $rt_maps_get
   call $rt_pending
   br_if $L8
@@ -137,7 +137,7 @@ fn main() {
   call $rt_pending
   br_if $L8
   global.get $__lit
-  i32.const 272
+  i32.const 280
   i32.add
   i32.const 1
   call $rt_bin
@@ -148,7 +148,7 @@ fn main() {
   (block $L10
   local.get $s2
   global.get $__lit
-  i32.const 280
+  i32.const 288
   i32.add
   i32.const 2
   call $rt_bin
@@ -157,16 +157,63 @@ fn main() {
   br_if $L10
   br $L9
   )
-  i32.const 13
-  i32.const 86
-  call $rt_raised_at
+  call $rt_class
+  local.set $s0
+  call $rt_reason
+  local.set $s1
+  call $rt_clear
+  (block $L11 (result i32)
+  (block $L12
+  local.get $s0
+  global.get $__lit
+  i32.const 104
+  i32.add
+  i32.const 5
+  call $rt_atom
+  call $rt_eqx
+  i32.eqz
+  br_if $L12
+  local.get $s1
+  local.set $s2
+  global.get $__lit
+  i32.const 152
+  i32.add
+  i32.const 7
+  call $rt_bin
+  i64.const 13
+  call $rt_int
+  i64.const 86
+  call $rt_int
+  local.get $s2
+  call $bp_comptime_decorator:__bp_push/4
+  call $rt_pending
+  br_if $L8
+  drop
+  global.get $__lit
+  i32.const 104
+  i32.add
+  i32.const 5
+  call $rt_atom
+  local.get $s2
+  call $rt_raise
+  drop
   br $L8
+  call $rt_nil
+  br $L11
+  )
+  local.get $s0
+  local.get $s1
+  call $rt_raise
+  drop
+  br $L8
+  )
+  br $L9
   )
   call $bp_comptime_decorator:__bp_add/2
   call $rt_pending
   br_if $L8
   global.get $__lit
-  i32.const 288
+  i32.const 296
   i32.add
   i32.const 5
   call $rt_bin
@@ -178,10 +225,57 @@ fn main() {
   br_if $L8
   br $L7
   )
-  i32.const 13
+  call $rt_class
+  local.set $s0
+  call $rt_reason
+  local.set $s1
+  call $rt_clear
+  (block $L13 (result i32)
+  (block $L14
+  local.get $s0
+  global.get $__lit
+  i32.const 104
+  i32.add
   i32.const 5
-  call $rt_raised_at
+  call $rt_atom
+  call $rt_eqx
+  i32.eqz
+  br_if $L14
+  local.get $s1
+  local.set $s2
+  global.get $__lit
+  i32.const 152
+  i32.add
+  i32.const 7
+  call $rt_bin
+  i64.const 13
+  call $rt_int
+  i64.const 5
+  call $rt_int
+  local.get $s2
+  call $bp_comptime_decorator:__bp_push/4
+  call $rt_pending
+  br_if $raise
+  drop
+  global.get $__lit
+  i32.const 104
+  i32.add
+  i32.const 5
+  call $rt_atom
+  local.get $s2
+  call $rt_raise
+  drop
   br $raise
+  call $rt_nil
+  br $L13
+  )
+  local.get $s0
+  local.get $s1
+  call $rt_raise
+  drop
+  br $raise
+  )
+  br $L7
   )
   br $L1
   )
@@ -217,7 +311,7 @@ fn main() {
   i32.const 0
   call $rt_bin
   global.get $__lit
-  i32.const 152
+  i32.const 160
   i32.add
   i32.const 11
   call $rt_atom
@@ -264,7 +358,7 @@ fn main() {
   i32.eqz
   br_if $L6
   global.get $__lit
-  i32.const 168
+  i32.const 176
   i32.add
   i32.const 5
   call $rt_bin
@@ -273,7 +367,7 @@ fn main() {
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 176
+  i32.const 184
   i32.add
   i32.const 1
   call $rt_bin
@@ -285,7 +379,7 @@ fn main() {
   (block $L7
   local.get $s2
   global.get $__lit
-  i32.const 184
+  i32.const 192
   i32.add
   i32.const 5
   call $rt_atom
@@ -293,12 +387,12 @@ fn main() {
   i32.eqz
   br_if $L7
   global.get $__lit
-  i32.const 192
+  i32.const 200
   i32.add
   i32.const 4
   call $rt_bin
   global.get $__lit
-  i32.const 200
+  i32.const 208
   i32.add
   i32.const 8
   call $rt_atom
@@ -310,7 +404,7 @@ fn main() {
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 208
+  i32.const 216
   i32.add
   i32.const 2
   call $rt_bin
@@ -351,7 +445,7 @@ fn main() {
   call $rt_pending
   br_if $L11
   global.get $__lit
-  i32.const 216
+  i32.const 224
   i32.add
   i32.const 2
   call $rt_bin
@@ -367,17 +461,64 @@ fn main() {
   br_if $L11
   br $L10
   )
-  i32.const 11
-  i32.const 9
-  call $rt_raised_at
+  call $rt_class
+  local.set $s0
+  call $rt_reason
+  local.set $s1
+  call $rt_clear
+  (block $L12 (result i32)
+  (block $L13
+  local.get $s0
+  global.get $__lit
+  i32.const 104
+  i32.add
+  i32.const 5
+  call $rt_atom
+  call $rt_eqx
+  i32.eqz
+  br_if $L13
+  local.get $s1
+  local.set $s2
+  global.get $__lit
+  i32.const 152
+  i32.add
+  i32.const 7
+  call $rt_bin
+  i64.const 11
+  call $rt_int
+  i64.const 9
+  call $rt_int
+  local.get $s2
+  call $bp_comptime_decorator:__bp_push/4
+  call $rt_pending
+  br_if $raise
+  drop
+  global.get $__lit
+  i32.const 104
+  i32.add
+  i32.const 5
+  call $rt_atom
+  local.get $s2
+  call $rt_raise
+  drop
+  br $raise
+  call $rt_nil
+  br $L12
+  )
+  local.get $s0
+  local.get $s1
+  call $rt_raise
+  drop
   br $raise
   )
+  br $L10
+  )
   local.set $s0
-  (block $L13
-  (block $L12
+  (block $L15
+  (block $L14
   local.get $s0
   local.set $s1
-  br $L13
+  br $L15
   )
   local.get $s0
   call $rt_badmatch
@@ -399,12 +540,12 @@ fn main() {
 )
 
 (func $fun2:component/1 (param $self i32) (param $a0 i32) (param $a1 i32) (result i32)
-  (local $V_A i32) (local $V_ValKey i32) (local $t1 i32)
+  (local $s0 i32) (local $V_ValKey i32) (local $t1 i32) (local $t3 i32) (local $V___BpF0 i32)
   (block $raise
   (block $L1 (result i32)
   (block $L2
   local.get $a0
-  local.set $V_A
+  local.set $s0
   local.get $a1
   local.set $V_ValKey
   global.get $__lit
@@ -412,7 +553,7 @@ fn main() {
   i32.add
   i32.const 4
   call $rt_atom
-  local.get $V_A
+  local.get $s0
   call $rt_maps_get
   call $rt_pending
   br_if $raise
@@ -442,7 +583,7 @@ fn main() {
   i32.add
   i32.const 4
   call $rt_atom
-  local.get $V_A
+  local.get $s0
   call $rt_maps_get
   call $rt_pending
   br_if $L6
@@ -456,14 +597,61 @@ fn main() {
   br_if $L6
   br $L5
   )
+  call $rt_class
+  local.set $s0
+  call $rt_reason
+  local.set $t3
+  call $rt_clear
+  (block $L7 (result i32)
+  (block $L8
+  local.get $s0
+  global.get $__lit
+  i32.const 104
+  i32.add
   i32.const 5
-  i32.const 72
-  call $rt_raised_at
+  call $rt_atom
+  call $rt_eqx
+  i32.eqz
+  br_if $L8
+  local.get $t3
+  local.set $V___BpF0
+  global.get $__lit
+  i32.const 152
+  i32.add
+  i32.const 7
+  call $rt_bin
+  i64.const 5
+  call $rt_int
+  i64.const 72
+  call $rt_int
+  local.get $V___BpF0
+  call $bp_comptime_decorator:__bp_push/4
+  call $rt_pending
+  br_if $raise
+  drop
+  global.get $__lit
+  i32.const 104
+  i32.add
+  i32.const 5
+  call $rt_atom
+  local.get $V___BpF0
+  call $rt_raise
+  drop
   br $raise
+  call $rt_nil
+  br $L7
+  )
+  local.get $s0
+  local.get $t3
+  call $rt_raise
+  drop
+  br $raise
+  )
+  br $L5
   )
   br $L3
   )
-  (block $L7
+  (block $L9
   local.get $V_ValKey
   br $L3
   )
@@ -539,7 +727,7 @@ fn main() {
   local.get $s1
   i32.const 0
   global.get $__lit
-  i32.const 320
+  i32.const 344
   i32.add
   i32.const 21
   call $rt_atom
@@ -548,7 +736,7 @@ fn main() {
   local.get $s1
   i32.const 1
   global.get $__lit
-  i32.const 344
+  i32.const 368
   i32.add
   i32.const 4
   call $rt_bin
@@ -762,7 +950,7 @@ fn main() {
   local.get $s1
   i32.const 0
   global.get $__lit
-  i32.const 320
+  i32.const 344
   i32.add
   i32.const 21
   call $rt_atom
@@ -771,7 +959,7 @@ fn main() {
   local.get $s1
   i32.const 1
   global.get $__lit
-  i32.const 352
+  i32.const 376
   i32.add
   i32.const 4
   call $rt_bin

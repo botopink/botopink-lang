@@ -223,14 +223,50 @@ pub const TypeErrorKind = union(enum) {
 };
 
 /// A type error with its source location.
+/// Decision 532 — one call of the chain a raise at build crossed: the file it
+/// is written in, and where it starts there.
+pub const Frame = struct { file: []const u8, loc: Loc };
+
 pub const TypeError = struct {
     kind: TypeErrorKind,
     /// Source location of the triggering expression, if known.
     loc: ?Loc = null,
+    /// Decision 532 — a raise at build whose innermost call is written in
+    /// another file than the module's own (a library's helper, a decorator's
+    /// body): that call, which the report is located at. `loc` stays the first
+    /// call in the module's own file, where a tool that shows one file puts it.
+    origin: ?Frame = null,
+    /// Decision 532 — the calls the raise crossed after the innermost one (the
+    /// `origin` or the one at `loc`), innermost first, down to the program's
+    /// call, annotation or `comptime`: the report's `called from` lines.
+    frames: []const Frame = &.{},
 
     pub fn withLoc(this: TypeError, loc: Loc) TypeError {
         var t = this;
         t.loc = loc;
+        return t;
+    }
+
+    /// A raise at build located by `frames`, innermost first (decision 532):
+    /// `own` is the module's file. The innermost call that is written in `own`
+    /// is `loc`; when the innermost of all is not, it is `origin` and the
+    /// report is located there. Needs at least one frame in `own` or none.
+    pub fn withRaise(this: TypeError, own: []const u8, all: []const Frame) TypeError {
+        var t = this;
+        if (all.len == 0) return t;
+        for (all) |f| {
+            if (f.file.len == 0 or std.mem.eql(u8, f.file, own)) {
+                t.loc = f.loc;
+                break;
+            }
+        }
+        const first = all[0];
+        if (first.file.len == 0 or std.mem.eql(u8, first.file, own)) {
+            t.origin = null;
+        } else {
+            t.origin = first;
+        }
+        t.frames = all[1..];
         return t;
     }
 
@@ -976,4 +1012,25 @@ fn validateComptimeExpr(expr: ast.Expr, scope: ?*const CtScope) ?ComptimeError {
         },
         else => return ComptimeError{ .ident = @tagName(expr), .loc = expr.getLoc() },
     }
+}
+
+test "withRaise: located at the innermost call, in its own file; the rest are called-from lines" {
+    const all = [_]Frame{
+        .{ .file = "src/lib.bp", .loc = .{ .line = 3, .col = 5 } },
+        .{ .file = "src/main.bp", .loc = .{ .line = 9, .col = 1 } },
+        .{ .file = "src/main.bp", .loc = .{ .line = 12, .col = 7 } },
+    };
+    // The innermost call is in another file: it is the origin, `loc` the first
+    // call of the module's own file, `frames` everything after the innermost.
+    const foreign = TypeError.custom("boom", "h").withRaise("src/main.bp", &all);
+    try std.testing.expectEqualStrings("src/lib.bp", foreign.origin.?.file);
+    try std.testing.expectEqual(@as(usize, 9), foreign.loc.?.line);
+    try std.testing.expectEqual(@as(usize, 2), foreign.frames.len);
+    // The innermost call is in the module's own file: it is `loc`, no origin.
+    const own = TypeError.custom("boom", "h").withRaise("src/main.bp", all[1..]);
+    try std.testing.expect(own.origin == null);
+    try std.testing.expectEqual(@as(usize, 9), own.loc.?.line);
+    try std.testing.expectEqual(@as(usize, 1), own.frames.len);
+    // No frame: the error is as it was.
+    try std.testing.expect(TypeError.custom("boom", "h").withRaise("src/main.bp", &.{}).loc == null);
 }

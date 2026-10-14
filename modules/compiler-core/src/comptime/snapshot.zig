@@ -1288,6 +1288,14 @@ pub fn renderTypeErrorBody(
             }
         },
     }
+    // Decision 532 — a raise at build: where the innermost call is written when
+    // it is not in this file, then the calls it crossed.
+    if (err.origin) |o| {
+        try out.appendSlice(allocator, try std.fmt.allocPrint(tmp, "\n  raised at {s}:{d}:{d}\n", .{ o.file, o.loc.line, o.loc.col }));
+    }
+    for (err.frames) |f| {
+        try out.appendSlice(allocator, try std.fmt.allocPrint(tmp, "  called from {s}:{d}:{d}\n", .{ f.file, f.loc.line, f.loc.col }));
+    }
 
     return try out.toOwnedSlice(allocator);
 }

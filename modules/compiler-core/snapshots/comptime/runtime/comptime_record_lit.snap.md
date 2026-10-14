@@ -438,7 +438,7 @@ val f = comptime RecordField(name: "x", typeName: "i32");
 )
 
 (func $__bp_ct_value/0 (result i32)
-  (local $s0 i32)
+  (local $s0 i32) (local $t4 i32) (local $V___BpF0 i32)
   (block $raise
   (block $L1 (result i32)
   (block $L2
@@ -473,10 +473,57 @@ val f = comptime RecordField(name: "x", typeName: "i32");
   call $rt_map_put
   br $L3
   )
-  i32.const 2
-  i32.const 18
-  call $rt_raised_at
+  call $rt_class
+  local.set $s0
+  call $rt_reason
+  local.set $t4
+  call $rt_clear
+  (block $L5 (result i32)
+  (block $L6
+  local.get $s0
+  global.get $__lit
+  i32.const 16
+  i32.add
+  i32.const 5
+  call $rt_atom
+  call $rt_eqx
+  i32.eqz
+  br_if $L6
+  local.get $t4
+  local.set $V___BpF0
+  global.get $__lit
+  i32.const 160
+  i32.add
+  i32.const 7
+  call $rt_bin
+  i64.const 2
+  call $rt_int
+  i64.const 18
+  call $rt_int
+  local.get $V___BpF0
+  call $bp_comptime_decorator:__bp_push/4
+  call $rt_pending
+  br_if $raise
+  drop
+  global.get $__lit
+  i32.const 16
+  i32.add
+  i32.const 5
+  call $rt_atom
+  local.get $V___BpF0
+  call $rt_raise
+  drop
   br $raise
+  call $rt_nil
+  br $L5
+  )
+  local.get $s0
+  local.get $t4
+  call $rt_raise
+  drop
+  br $raise
+  )
+  br $L3
   )
   br $L1
   )

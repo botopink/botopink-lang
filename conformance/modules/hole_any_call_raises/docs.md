@@ -14,7 +14,8 @@ The reference text this cell shows (from `conformance/docs.md`, § Template func
 > compute. The rule reads the hole's value, never the literal's text. A hole
 > known at build is evaluated as a `comptime` is, and a value that raises there
 > is refused naming the hole, at the call that raised (§ Compile-time
-> evaluation). So a template can write its answer as a constant when
+> evaluation), with a `called from` line for each call of the chain down to
+> the hole (decision 532). So a template can write its answer as a constant when
 > every hole is known — `styled "${tab4} color: red;"` with `tab4 =
 > styledProperty "tab-size: 4;"` is emitted as `styledConstant("s_…",
 > ".s_…{tab-size:4;color:red}")` — and leave the holes to the program otherwise:

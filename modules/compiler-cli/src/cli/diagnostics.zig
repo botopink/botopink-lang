@@ -321,7 +321,7 @@ pub fn renderResult(gpa: std.mem.Allocator, io: std.Io, arena: std.mem.Allocator
     const d = o.result.diagnostic orelse return false;
     switch (d) {
         .syntax => |se| printSyntaxError(gpa, se, o.src, file),
-        .type => |t| printTypeError(gpa, t.message, t.hint, t.loc, o.src, file),
+        .type => |t| printTypeError(gpa, io, t.message, t.hint, t.loc, t.origin, t.frames, o.src, file),
     }
     return true;
 }
@@ -342,12 +342,41 @@ fn renderValidationError(gpa: std.mem.Allocator, err: anytype, unfolded: []const
 
 /// A type error, located, and its hint when it carries one — the
 /// `= hint:` line a parse error prints (front 26's row: `check` and `build`
-/// printed the message and the box, and dropped the hint).
-fn printTypeError(gpa: std.mem.Allocator, msg: []const u8, hint: ?[]const u8, loc: anytype, source: []const u8, file: []const u8) void {
-    if (loc) |l| {
+/// printed the message and the box, and dropped the hint). A raise at build
+/// (decision 532) is located at its innermost call, in the file that call is
+/// written in (`origin`, when it is not `file`), and every other call of the
+/// chain is a `= called from <file>:<line>:<col>` line under the excerpt.
+fn printTypeError(gpa: std.mem.Allocator, io: std.Io, msg: []const u8, hint: ?[]const u8, loc: anytype, origin: anytype, frames: anytype, source: []const u8, file: []const u8) void {
+    var calls: std.ArrayListUnmanaged([]const u8) = .empty;
+    defer {
+        for (calls.items) |c| gpa.free(c);
+        calls.deinit(gpa);
+    }
+    for (frames) |f| {
+        const line = std.fmt.allocPrint(gpa, "called from {s}:{d}:{d}", .{ f.file, f.loc.line, f.loc.col }) catch return;
+        calls.append(gpa, line) catch {
+            gpa.free(line);
+            return;
+        };
+    }
+    if (origin) |o| {
+        // Located in another file than the module's own: its excerpt when the
+        // file can be read, the place alone when it cannot.
+        const text: ?[]u8 = std.Io.Dir.cwd().readFileAlloc(io, o.file, gpa, .limited(8 * 1024 * 1024)) catch null;
+        defer if (text) |t| gpa.free(t);
         var aw: std.Io.Writer.Allocating = .init(gpa);
         defer aw.deinit();
-        renderLocatedHint(&aw.writer, msg, hint, file, source, l.line, l.col, 1) catch return;
+        if (text) |t| {
+            renderLocatedNotes(&aw.writer, msg, hint, calls.items, o.file, t, o.loc.line, o.loc.col, 1) catch return;
+        } else {
+            aw.writer.print("error: {s}\n --> {s}:{d}:{d}\n", .{ msg, o.file, o.loc.line, o.loc.col }) catch return;
+            writeNotes(&aw.writer, 2, hint, calls.items) catch return;
+        }
+        reporter.print("{s}", .{aw.written()});
+    } else if (loc) |l| {
+        var aw: std.Io.Writer.Allocating = .init(gpa);
+        defer aw.deinit();
+        renderLocatedNotes(&aw.writer, msg, hint, calls.items, file, source, l.line, l.col, 1) catch return;
         reporter.print("{s}", .{aw.written()});
     } else if (hint) |h| {
         reporter.print("error: {s}\n --> {s}\n  = hint: {s}\n\n", .{ msg, file, h });
@@ -358,20 +387,39 @@ fn printTypeError(gpa: std.mem.Allocator, msg: []const u8, hint: ?[]const u8, lo
 
 /// `renderLocated`, then `= hint: <hint>` under the excerpt when there is one.
 pub fn renderLocatedHint(w: *std.Io.Writer, message: []const u8, hint: ?[]const u8, file: []const u8, source: []const u8, line: usize, col: usize, span: usize) !void {
-    const h = hint orelse return renderLocated(w, message, file, source, line, col, span);
+    return renderLocatedNotes(w, message, hint, &.{}, file, source, line, col, span);
+}
+
+/// `renderLocated`, then under the excerpt the `= hint: <hint>` line when there
+/// is a hint and a `= <call>` line for each of `calls` (`called from …`,
+/// decision 532).
+pub fn renderLocatedNotes(w: *std.Io.Writer, message: []const u8, hint: ?[]const u8, calls: []const []const u8, file: []const u8, source: []const u8, line: usize, col: usize, span: usize) !void {
+    if (hint == null and calls.len == 0) return renderLocated(w, message, file, source, line, col, span);
     var aw: std.Io.Writer.Allocating = .init(std.heap.page_allocator);
     defer aw.deinit();
     try renderLocated(&aw.writer, message, file, source, line, col, span);
-    // The box ends with its caret line and a blank line: the hint goes
+    // The box ends with its caret line and a blank line: the notes go
     // between them, at the gutter.
     const text = std.mem.trimEnd(u8, aw.written(), "\n");
     const at = if (bpp_unfold.origin(file)) |o| o.position(line, col).line else line;
-    const pad = digitWidth(at) + 1;
     try w.print("{s}\n", .{text});
+    try writeNotes(w, digitWidth(at) + 1, hint, calls);
+}
+
+/// The gutter bar and the `= …` lines under an excerpt, then the blank line
+/// that ends a diagnostic.
+fn writeNotes(w: *std.Io.Writer, pad: usize, hint: ?[]const u8, calls: []const []const u8) !void {
     try w.splatByteAll(' ', pad);
     try w.writeAll("|\n");
-    try w.splatByteAll(' ', pad);
-    try w.print("= hint: {s}\n\n", .{h});
+    if (hint) |h| {
+        try w.splatByteAll(' ', pad);
+        try w.print("= hint: {s}\n", .{h});
+    }
+    for (calls) |c| {
+        try w.splatByteAll(' ', pad);
+        try w.print("= {s}\n", .{c});
+    }
+    try w.writeAll("\n");
 }
 
 // ── Type diagnostics ──────────────────────────────────────────────────────────
@@ -404,7 +452,7 @@ pub fn renderOutcome(gpa: std.mem.Allocator, io: std.Io, arena: std.mem.Allocato
                 .custom => |c| c.hint,
                 else => null,
             };
-            printTypeError(gpa, msg, hint, te.loc, o.src, fileLabel(arena, io, o.name));
+            printTypeError(gpa, io, msg, hint, te.loc, te.origin, te.frames, o.src, fileLabel(arena, io, o.name));
             return true;
         },
     }
@@ -456,6 +504,30 @@ test "a type error's hint prints under its excerpt, as a parse error's" {
         \\
         \\
     , aw.written());
+}
+
+test "a raise at build prints its called-from lines under the excerpt, after the hint (decision 532)" {
+    var aw: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer aw.deinit();
+    try renderLocatedNotes(&aw.writer, "boom", "the body raised", &.{ "called from src/main.bp:9:3", "called from src/main.bp:12:1" }, "src/deco.bp", "pub fn check() {\n  @panic(\"x\")\n}\n", 2, 3, 1);
+    try std.testing.expectEqualStrings(
+        \\error: boom
+        \\ --> src/deco.bp:2:3
+        \\  |
+        \\2 |   @panic("x")
+        \\  |   ^
+        \\  |
+        \\  = hint: the body raised
+        \\  = called from src/main.bp:9:3
+        \\  = called from src/main.bp:12:1
+        \\
+        \\
+    , aw.written());
+    // no hint: the gutter bar, then the calls
+    var bare: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer bare.deinit();
+    try renderLocatedNotes(&bare.writer, "boom", null, &.{"called from src/main.bp:9:3"}, "src/deco.bp", "pub fn check() {\n  @panic(\"x\")\n}\n", 2, 3, 1);
+    try std.testing.expect(std.mem.indexOf(u8, bare.written(), "  |\n  = called from src/main.bp:9:3\n\n") != null);
 }
 
 test "renderLocated prints file, line, column, excerpt and caret" {

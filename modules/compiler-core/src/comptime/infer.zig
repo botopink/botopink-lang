@@ -35,6 +35,7 @@ const hostCells = @import("host_cells.zig");
 const stdWasm = @import("std_wasm");
 const wasmHostBinding = @import("../codegen/wat/host_binding.zig");
 const hostFnBinding = @import("../codegen/hostFnBinding.zig");
+const erlang = @import("../codegen/erlang.zig");
 const decoratorSameMod = @import("decorator_same.zig");
 const dslHygiene = @import("dsl_hygiene.zig");
 const specializeMod = @import("specialize.zig");
@@ -5658,10 +5659,8 @@ fn runDeclDecorators(
         // of its module it reaches are located: in this module's own file, or
         // in the decorator's, which the diagnostic then names
         // (`srcPathOfModule`).
-        var located: std.ArrayListUnmanaged([]const u8) = .empty;
-        try located.append(env.arena, dfn.name);
-        for (support[0..found.fns.len]) |sf| if (std.mem.eql(u8, env.comptimeOwnerOf(sf), owner)) try located.append(env.arena, sf.name);
-        const outcome = decoratorEval.evaluate(env.arena, ctx.io, ctx.build_root, owner, srcPathOfModule(env, owner), try exprParam.eraseForRun(env.arena, runDfn, true), runSupport, located.items, reached.types, try completeHandle(env, try withOwner(env, try withMethodMeta(env, handle, memberOwner), if (declared == null) memberOwner else null)), plain, capture, &env.comptimeTraces) catch {
+        const located = try locatedFns(env, dfn, srcPathOfModule(env, owner), support[0..found.fns.len]);
+        const outcome = decoratorEval.evaluate(env.arena, ctx.io, ctx.build_root, owner, srcPathOfModule(env, owner), try exprParam.eraseForRun(env.arena, runDfn, true), runSupport, located, reached.types, try completeHandle(env, try withOwner(env, try withMethodMeta(env, handle, memberOwner), if (declared == null) memberOwner else null)), plain, capture, &env.comptimeTraces) catch {
             return decoratorError(env, a, "the decorator evaluator failed to run", "Decorator bodies run on the wasm comptime runtime inside the compiler (decision 434); this failure is the compiler's, not the body's — report it.");
         };
         switch (outcome) {
@@ -5792,18 +5791,11 @@ fn runDeclDecorators(
                 }
                 if (tag == .err) {
                     return decoratorError(env, a, failed, "the decorator could not be evaluated");
-                } else if (!local) {
-                    // The call that raised is in the decorator's own file: the
-                    // annotation is located, the message names the call there.
-                    const msg = try std.fmt.allocPrint(env.arena, "{s} — raised at {s}:{d}:{d} while `#[{s}]` ran the decorator's body", .{ failed.message, srcPathOfModule(env, owner), failed.at.line, failed.at.col, a.name });
-                    return decoratorError(env, a, msg, "the decorator's body raised; the call that raised is named in the message");
                 } else {
-                    // Decision 451 (3) — located at the call that raised (a
-                    // call of this module's decorator or of a function of this
-                    // module it reaches); the annotation is the frame that ran it.
-                    const frame = try std.fmt.allocPrint(env.arena, "raised by this call while `#[{s}]` (at {d}:{d}) ran the decorator's body", .{ a.name, if (a.loc) |l| l.line else 0, if (a.loc) |l| l.col else 0 });
-                    env.lastError = TypeError.custom(failed.message, frame).withLoc(failed.at);
-                    return error.TypeError;
+                    // Decisions 451 (3), 532 — located at the call that raised,
+                    // in its own file (this module's, or the decorator's); the
+                    // annotation is the last frame that ran it.
+                    return raisedFrom(env, failed.message, "the decorator's body raised; each call of the chain is a `called from` line, down to the annotation", failed.frames, a.loc orelse .{ .line = 1, .col = 1 });
                 }
             },
         }
@@ -6903,9 +6895,27 @@ fn defaultLexeme(arena: std.mem.Allocator, e: ast.Expr) InferError![]const u8 {
 /// (`Reflection.srcPaths`), else `<module>.bp`. A decorator or template body
 /// run from another module is located in that file, so its diagnostic names it.
 fn srcPathOfModule(env: *Env, module: []const u8) []const u8 {
-    if (std.mem.eql(u8, module, env.modulePath) and env.srcPath.len > 0) return env.srcPath;
-    if (env.reflection) |r| if (r.srcPaths.get(module)) |p| return p;
-    return std.fmt.allocPrint(env.arena, "{s}.bp", .{if (module.len > 0) module else "main"}) catch module;
+    return env.srcPathOf(module);
+}
+
+/// Decisions 451 (3), 532 — the functions of a decorator's or template's run
+/// whose calls are located: `head` (the body) in `head_file`, and the
+/// functions it reaches (`support`), each in the file of the module it was
+/// written in — the library's helper in the library's file.
+fn locatedFns(env: *Env, head: ast.FnDecl, head_file: []const u8, support: []const ast.FnDecl) InferError![]const erlang.Located {
+    var out: std.ArrayListUnmanaged(erlang.Located) = .empty;
+    try out.append(env.arena, .{ .name = head.name, .file = head_file });
+    for (support) |sf| try out.append(env.arena, .{ .name = sf.name, .file = env.srcPathOfDecl(sf) });
+    return out.items;
+}
+
+/// Decision 532 — the refusal of a decorator or template body that raised: the
+/// message of the raise, located at the call that raised, in its own file,
+/// with a `called from` line for every call of the chain down to `entry`, the
+/// annotation or the template's use in this module.
+fn raisedFrom(env: *Env, message: []const u8, hint: []const u8, frames: []const blockEval.Frame, entry: ast.Loc) InferError {
+    env.lastError = blockEval.raisedError(env, message, hint, frames, entry) catch return error.OutOfMemory;
+    return error.TypeError;
 }
 
 fn decoratorError(env: *Env, a: ast.Annotation, message: []const u8, hint: []const u8) InferError {
@@ -9346,10 +9356,12 @@ fn withHoleValues(env: *Env, io: std.Io, captures: []const template.CapturedExpr
                 .render => try values.append(env.arena, null),
                 .build => |t| try values.append(env.arena, t),
                 .refused => |r| {
-                    env.lastError = TypeError.custom(
-                        try std.fmt.allocPrint(env.arena, "this hole is known at build (decision 355) and its value raised there: {s}", .{r.message}),
-                        "A hole whose value is a literal, a `comptime` or a `val` known at build is evaluated while the program compiles, as a `comptime` is (decision 331).",
-                    ).withLoc(r.loc);
+                    const message = try std.fmt.allocPrint(env.arena, "this hole is known at build (decision 355) and its value raised there: {s}", .{r.message});
+                    const hint = "A hole whose value is a literal, a `comptime` or a `val` known at build is evaluated while the program compiles, as a `comptime` is (decision 331).";
+                    env.lastError = if (r.frames.len > 0)
+                        try blockEval.raisedError(env, message, hint, r.frames, hole.getLoc())
+                    else
+                        TypeError.custom(message, hint).withLoc(r.loc);
                     return error.TypeError;
                 },
             },
@@ -9602,13 +9614,9 @@ fn expandTemplateCallViaRuntime(
     // and of the functions of its module it reaches are located, in that
     // module's file, which a raise's diagnostic then names
     // (`srcPathOfModule`).
-    var located: std.ArrayListUnmanaged([]const u8) = .empty;
-    if (!own_template) {
-        try located.append(env.arena, numbered.f.name);
-        for (carried[1..]) |sf| if (std.mem.eql(u8, env.comptimeOwnerOf(sf), owner)) try located.append(env.arena, sf.name);
-    }
+    const located: []const erlang.Located = if (own_template) &.{} else try locatedFns(env, numbered.f, srcPathOfModule(env, owner), carried[1..]);
     const outcome = while (true) {
-        const run = templateEval.evaluate(env.arena, ctx.io, ctx.build_root, owner, srcPathOfModule(env, owner), numbered.f, runSupport, located.items, types, valued, plainArgs, &env.comptimeTraces, &extras) catch {
+        const run = templateEval.evaluate(env.arena, ctx.io, ctx.build_root, owner, srcPathOfModule(env, owner), numbered.f, runSupport, located, types, valued, plainArgs, &env.comptimeTraces, &extras) catch {
             env.lastError = TypeError.custom(
                 "the template evaluator failed to run",
                 "Template bodies run on the wasm comptime runtime inside the compiler (decision 434); this failure is the compiler's, not the body's — report it.",
@@ -9705,13 +9713,9 @@ fn expandTemplateCallViaRuntime(
             ).withLoc(loc);
             return error.TypeError;
         },
-        // The call that raised is in the template's own file: the call site
-        // is located, the message names the call there.
-        .raised => |failed| {
-            const msg = try std.fmt.allocPrint(env.arena, "{s} — raised at {s}:{d}:{d} while `{s}` ran the template's body", .{ failed.message, srcPathOfModule(env, owner), failed.at.line, failed.at.col, tfn.name });
-            env.lastError = TypeError.custom(msg, "the template's body raised; the call that raised is named in the message").withLoc(loc);
-            return error.TypeError;
-        },
+        // Decision 532 — located at the call that raised, in the template's
+        // own file; the call that expanded it is the last frame.
+        .raised => |failed| return raisedFrom(env, failed.message, "the template's body raised; each call of the chain is a `called from` line, down to the call that expanded it", failed.frames, loc),
         // Answered by the loop above.
         .need => unreachable,
     };
@@ -9877,10 +9881,8 @@ fn runTagAnnotation(
         erasedSupport[k] = try exprParam.eraseForRun(env.arena, if (own) try hosts.rewrite(try sameLoweredFn(env, program, sf)) else sf, isDecoratorParams(sf.params));
     }
     const runSupport = if (local) try std.mem.concat(env.arena, ast.FnDecl, &.{ erasedSupport, try hostCells.hostSupport(env, &env.fnDecls, try std.mem.concat(env.arena, ast.FnDecl, &.{ &.{runDfn}, erasedSupport })) }) else erasedSupport;
-    var located: std.ArrayListUnmanaged([]const u8) = .empty;
-    try located.append(env.arena, dfn.name);
-    for (support[0..found.fns.len]) |sf| if (std.mem.eql(u8, env.comptimeOwnerOf(sf), owner)) try located.append(env.arena, sf.name);
-    const outcome = decoratorEval.evaluate(env.arena, ctx.io, ctx.build_root, owner, srcPathOfModule(env, owner), try exprParam.eraseForRun(env.arena, runDfn, true), runSupport, located.items, reached.types, try completeHandle(env, base), plain, null, &env.comptimeTraces) catch {
+    const located = try locatedFns(env, dfn, srcPathOfModule(env, owner), support[0..found.fns.len]);
+    const outcome = decoratorEval.evaluate(env.arena, ctx.io, ctx.build_root, owner, srcPathOfModule(env, owner), try exprParam.eraseForRun(env.arena, runDfn, true), runSupport, located, reached.types, try completeHandle(env, base), plain, null, &env.comptimeTraces) catch {
         return decoratorError(env, a, "the decorator evaluator failed to run", "Decorator bodies run on the wasm comptime runtime inside the compiler (decision 434); this failure is the compiler's, not the body's — report it.");
     };
     var metas: std.ArrayListUnmanaged(decoratorEval.TagMeta) = .empty;
@@ -9923,16 +9925,7 @@ fn runTagAnnotation(
             return decoratorError(env, a, fl.message, "raised by the annotation via `fail`/`failAt`");
         },
         .err => |msg| return decoratorError(env, a, msg, "the annotation could not be evaluated"),
-        .raised => |failed| {
-            if (!local) {
-                // The call that raised is in the annotation's own file.
-                const msg = try std.fmt.allocPrint(env.arena, "{s} — raised at {s}:{d}:{d} while `#[{s}]` ran over the tag", .{ failed.message, srcPathOfModule(env, owner), failed.at.line, failed.at.col, a.name });
-                return decoratorError(env, a, msg, "the annotation's body raised; the call that raised is named in the message");
-            }
-            const frame = try std.fmt.allocPrint(env.arena, "raised by this call while `#[{s}]` (at {d}:{d}) ran over the tag", .{ a.name, if (a.loc) |l| l.line else 0, if (a.loc) |l| l.col else 0 });
-            env.lastError = TypeError.custom(failed.message, frame).withLoc(failed.at);
-            return error.TypeError;
-        },
+        .raised => |failed| return raisedFrom(env, failed.message, "the annotation's body raised; each call of the chain is a `called from` line, down to the annotation", failed.frames, a.loc orelse .{ .line = 1, .col = 1 }),
     }
     var out = base;
     out.tagMeta = metas.items;
@@ -23786,22 +23779,22 @@ fn foldBodyComptime(env: *Env, ct: ast.ComptimeExprOf(.untyped), typed: TypedExp
     const value = switch (outcome) {
         .value => |v| v,
         .err => |msg| {
-            if (try blockEval.badarithRefusal(env, msg, ct.kind.comptimeExpr.*, null)) |r| {
+            if (try blockEval.badarithRefusal(env, msg, ct.kind.comptimeExpr.*)) |r| {
                 env.lastError = TypeError.custom(r.message, "Raised while the `comptime` ran at build time (decisions 331, 472): an arithmetic error reads as Erlang's `badarith`, whatever the target.").withLoc(r.loc);
                 return error.TypeError;
             }
             env.lastError = TypeError.custom(msg, "Raised while the `comptime` ran at build time (decision 331).").withLoc(loc);
             return error.TypeError;
         },
-        // Decision 451 (3) — located at the call that raised; the `comptime`
-        // expression is the frame that ran it.
+        // Decisions 451 (3), 532 — located at the call that raised, in its own
+        // file; every call of the chain is a `called from`, down to the
+        // `comptime` that ran it.
         .raised => |r| {
-            if (try blockEval.badarithRefusal(env, r.message, ct.kind.comptimeExpr.*, r.at)) |br| {
-                env.lastError = TypeError.custom(br.message, "Raised while the `comptime` ran at build time (decisions 331, 472): an arithmetic error reads as Erlang's `badarith`, whatever the target.").withLoc(br.loc);
+            if (try blockEval.badarithRefusal(env, r.message, ct.kind.comptimeExpr.*)) |br| {
+                env.lastError = try blockEval.raisedError(env, br.message, "Raised while the `comptime` ran at build time (decisions 331, 472): an arithmetic error reads as Erlang's `badarith`, whatever the target.", r.frames, loc);
                 return error.TypeError;
             }
-            const frame = try std.fmt.allocPrint(env.arena, "raised by this call while the `comptime` expression at {d}:{d} ran at build time (decisions 331, 451)", .{ loc.line, loc.col });
-            env.lastError = TypeError.custom(r.message, frame).withLoc(r.at);
+            env.lastError = try blockEval.raisedError(env, r.message, "Raised while the `comptime` ran at build time (decisions 331, 451, 532).", r.frames, loc);
             return error.TypeError;
         },
     };

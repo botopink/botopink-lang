@@ -2313,6 +2313,22 @@ pub const Env = struct {
         if (!gop.found_existing) gop.value_ptr.* = owner;
     }
 
+    /// The file `module` is written in, as a diagnostic names it: this module's
+    /// own `srcPath`, else the session's (`Reflection.srcPaths`), else
+    /// `<module>.bp`.
+    pub fn srcPathOf(self: *Env, module: []const u8) []const u8 {
+        if (std.mem.eql(u8, module, self.modulePath) and self.srcPath.len > 0) return self.srcPath;
+        if (self.reflection) |r| if (r.srcPaths.get(module)) |p| return p;
+        return std.fmt.allocPrint(self.arena, "{s}.bp", .{if (module.len > 0) module else "main"}) catch module;
+    }
+
+    /// The file `decl`'s calls are located in (decision 532): the file of the
+    /// module it was declared in; this module's when nothing recorded it.
+    pub fn srcPathOfDecl(self: *Env, decl: ast.FnDecl) []const u8 {
+        const owner = self.comptimeOwnerOf(decl);
+        return self.srcPathOf(if (owner.len > 0) owner else self.modulePath);
+    }
+
     /// The module path `decl` was declared in, or "" when nothing recorded it
     /// (the compiler's own tests evaluate a declaration no module owns).
     pub fn comptimeOwnerOf(self: *const Env, decl: ast.FnDecl) []const u8 {

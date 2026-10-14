@@ -161,10 +161,11 @@ pub const Outcome = union(enum) {
     fail: struct { message: []const u8, span: ?template.Span, arg: ?usize = null },
     /// The evaluator itself failed (module did not compile, body raised, …).
     err: []const u8,
-    /// The body raised, and the raise left a call of one of the `located`
-    /// functions (decision 451 (3), `erlang.ComptimeModule.located`): the
-    /// text, and where that call starts — the innermost such call.
-    raised: struct { message: []const u8, at: ast.Loc },
+    /// The body raised, and the raise crossed calls of the `located`
+    /// functions (decisions 451 (3), 532, `erlang.ComptimeModule.located`):
+    /// the text, and the calls it crossed, innermost first, each with the file
+    /// it is written in.
+    raised: struct { message: []const u8, frames: []const blockEval.Frame },
 };
 
 pub const EvalError = error{ OutOfMemory, EvalFailed } || std.Io.Writer.Error;
@@ -185,10 +186,10 @@ pub fn evaluate(
     /// The functions of `dfn`'s module its body reaches
     /// (`infer.decoratorSupport`), compiled into the module beside it.
     support: []const ast.FnDecl,
-    /// Decision 451 (3) — `dfn` and the `support` functions whose calls are
-    /// located (the module being compiled's own), by name: a raise that
-    /// leaves one of their calls is `Outcome.raised` at it.
-    located: []const []const u8,
+    /// Decisions 451 (3), 532 — `dfn` and the `support` functions whose calls
+    /// are located, by name, with the file each is written in: a raise that
+    /// crosses one of their calls is `Outcome.raised` with its frames.
+    located: []const erlang.Located,
     /// The record and enum types `dfn` and `support` name, with the methods
     /// they call (`block_eval.typesReached`): a package record an imported
     /// helper constructs travels into the module beside the helper.
@@ -323,7 +324,7 @@ fn mainForms(b: Ast.Builder, dfn: ast.FnDecl, plans: []const templateEval.ArgPla
             .body = try b.body(&.{try encode(b, &.{
                 Ast.field("kind", Ast.str("error")),
                 Ast.field("message", try b.call("__bp_text", &.{try b.tuple(&.{ V("Class"), V("Reason") })})),
-                Ast.field("at", try b.call("__bp_raised_at", &.{})),
+                Ast.field("frames", try b.call("__bp_frames", &.{V("Reason")})),
             })}),
         },
     };
@@ -360,7 +361,7 @@ fn buildModule(
     owner: []const u8,
     dfn: ast.FnDecl,
     support: []const ast.FnDecl,
-    located: []const []const u8,
+    located: []const erlang.Located,
     types: []const ast.DeclKind,
     handle: DeclHandle,
     plainArgs: []const template.PlainArg,
@@ -420,19 +421,21 @@ fn buildModule(
     // Emitted once per decorator and plan, not once per annotated declaration
     // (`template_eval` § one emit per declaration).
     // The located functions change the code, so they are part of the key —
-    // their names, and where their calls are written (`'__bp_at'(Line, Col,
-    // Call)`, `templateEval.appendLocs`).
+    // their names, files, and where their calls are written (`framed`,
+    // `templateEval.appendLocs`).
     var kind: std.ArrayListUnmanaged(u8) = .empty;
     try kind.appendSlice(arena, if (capture != null) "ann" else "dec");
     for (located) |n| {
         try kind.append(arena, 1);
-        try kind.appendSlice(arena, n);
+        try kind.appendSlice(arena, n.name);
+        try kind.append(arena, 3);
+        try kind.appendSlice(arena, n.file);
     }
     for (decls) |d| switch (d) {
         .@"fn" => |f| for (located) |n| {
-            if (std.mem.eql(u8, f.name, n)) {
+            if (std.mem.eql(u8, f.name, n.name)) {
                 try kind.append(arena, 2);
-                try kind.appendSlice(arena, n);
+                try kind.appendSlice(arena, n.name);
                 try templateEval.appendLocs(arena, &kind, f);
                 break;
             }
@@ -845,8 +848,9 @@ const Reply = struct {
     contributions: []const ReplyItem = &.{},
     message: []const u8 = "",
     span: ?ReplySpan = null,
-    /// `[Line, Col]` of the innermost located call an error left, `[]` when none.
-    at: ?std.json.Value = null,
+    /// `[[File, Line, Col], …]`, the located calls an error crossed (innermost
+    /// first), `[]` when none (decision 532).
+    frames: ?std.json.Value = null,
 };
 
 /// A `fail`'s span: `decl.failAt`'s `Span(start, end, line)`, or `x.fail`'s
@@ -879,7 +883,8 @@ fn parseOutcome(arena: std.mem.Allocator, stdout: []const u8) EvalError!Outcome 
         .arg = if (reply.span) |sp| sp.arg else null,
     } };
     const message = if (blockEval.unseededDraw(reply.message)) |plain| plain else if (reply.message.len > 0) reply.message else "decorator evaluation failed";
-    if (blockEval.raisedAt(reply.at)) |at| return .{ .raised = .{ .message = message, .at = at } };
+    const frames = try blockEval.framesOf(arena, reply.frames);
+    if (frames.len > 0) return .{ .raised = .{ .message = message, .frames = frames } };
     return .{ .err = message };
 }
 

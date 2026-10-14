@@ -109,10 +109,10 @@ test "decorator invocation: a method nothing answers is the compiler's message, 
 }
 
 test "decorator invocation: a raise in another module's decorator body names the body's file" {
-    // 144 B-23 (14-comptime-on-beam step 1's last half): the annotation is
-    // located in this module, and the message names the call that raised in
-    // the decorator's own file — `deco.bp` (`@src().file` of a module the
-    // driver gave no `srcPath`), line 3, column 5.
+    // 144 B-23 (14-comptime-on-beam step 1's last half), decision 532: the
+    // refusal is located at the call that raised, in the decorator's own file
+    // — `deco.bp` (`@src().file` of a module the driver gave no `srcPath`),
+    // line 3, column 5 —, and the annotation is the `called from` line.
     const deco =
         \\pub fn check(comptime decl: @Decl) {
         \\    val n = decl.name;
@@ -137,10 +137,16 @@ test "decorator invocation: a raise in another module's decorator body names the
     try std.testing.expect(outcome == .typeError);
     const message = try outcome.typeError.message(std.testing.allocator);
     defer std.testing.allocator.free(message);
-    if (std.mem.indexOf(u8, message, "raised at deco.bp:3:5 while `#[check]` ran the decorator's body") == null) {
-        std.debug.print("\nexpected the body's file in: {s}\n", .{message});
-        return error.TestUnexpectedResult;
-    }
+    try std.testing.expectEqualStrings("{error,{panic,<<\"boom A\">>}}", message);
+    // Decision 532: located at the call that raised, in the decorator's own
+    // file; the annotation that ran the body is the one `called from` line,
+    // and `loc` stays the annotation, the first call in this module's file.
+    const origin = outcome.typeError.origin orelse return error.TestUnexpectedResult;
+    try std.testing.expectEqualStrings("deco.bp", origin.file);
+    try std.testing.expectEqual([2]usize{ 3, 5 }, [2]usize{ origin.loc.line, origin.loc.col });
+    try std.testing.expectEqual(@as(usize, 1), outcome.typeError.frames.len);
+    try std.testing.expectEqualStrings("main.bp", outcome.typeError.frames[0].file);
+    try std.testing.expectEqual([2]usize{ 2, 3 }, [2]usize{ outcome.typeError.frames[0].loc.line, outcome.typeError.frames[0].loc.col });
     const got = outcome.typeError.loc orelse return error.TestUnexpectedResult;
     try std.testing.expectEqual([2]usize{ 2, 3 }, [2]usize{ got.line, got.col });
 }

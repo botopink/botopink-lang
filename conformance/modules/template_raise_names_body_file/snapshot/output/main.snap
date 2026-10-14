@@ -1,3 +1,1 @@
 botopink-cell 1
-refused error: {error,{panic,<<"boom hi">>}} — raised at src/tpl.bp:3:5 while `shout` ran the template's body
-at src/main.bp:11:12

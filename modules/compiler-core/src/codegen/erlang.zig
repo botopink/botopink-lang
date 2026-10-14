@@ -768,6 +768,10 @@ pub fn codegenEmit(
     return results;
 }
 
+/// A function of a comptime module whose calls are located, and the file it is
+/// written in (`ComptimeModule.located`).
+pub const Located = struct { name: []const u8, file: []const u8 };
+
 /// Shape of a standalone module evaluated at compile time (decorator / template
 /// bodies run in the persistent `erl`). The body decls are lowered by the same
 /// emitter as regular modules — only the host glue differs.
@@ -802,15 +806,19 @@ pub const ComptimeModule = struct {
     /// Only honoured on the compilable (non-`listing`) emit, where `forms`
     /// carries every host function.
     unsupported_method: ?*UnsupportedMethod = null,
-    /// Decision 451 (3) — the functions whose calls are located: each call
-    /// their bodies write lowers to `'__bp_at'(Line, Col, Call)`, where
-    /// `Line:Col` is where the call starts in the source (its receiver
-    /// chain's root for a method call). The comptime runtime records the
-    /// innermost such call a raise leaves (`comptime/runtime/wat/lower.zig`),
-    /// and the evaluator reports the raise there. The evaluators name the
-    /// functions of the module being compiled: a call in another module's
-    /// function is located at the call of this module that reached it.
-    located: []const []const u8 = &.{},
+    /// Decisions 451 (3), 532 — the functions whose calls are located: each call
+    /// their bodies write lowers to `try Call catch error:R -> '__bp_push'(File,
+    /// Line, Col, R), erlang:raise(error, R, []) end`, where `File` is the
+    /// function's own file (`Located.file`) and `Line:Col` is where the call
+    /// starts in it (its receiver chain's root for a method call). A raise
+    /// leaves one frame per call it crosses in the process dictionary
+    /// (`frames_push_form`, `frames_read_form`), and the evaluator replies with them
+    /// (`'__bp_frames'/1`), innermost first: the diagnostic is located at the
+    /// first, in its own file, and every other is a `called from` line. A
+    /// comptime module's `/` and `%` are frames too, at the operator (decision
+    /// 533). The evaluators name every function of the module they carry, of
+    /// whichever module it was written in.
+    located: []const Located = &.{},
 
     /// A module the generated one imports its host glue from, with the forms
     /// that module defines. `refs` is derived from `forms`, so nothing can be
@@ -1690,6 +1698,33 @@ const tagged_helper_form: Ast.Form = .{ .function = .{ .name = "__bp_tagged", .c
     }),
 }} } };
 
+/// Decision 532 — `'__bp_push'(File, Line, Col, Reason)`: one frame of the chain
+/// `Reason`'s raise is crossing, kept in the process dictionary (`'__bp_frames'`)
+/// with the reason it belongs to; a frame of another reason starts a chain.
+const frames_push_form: Ast.Form = .{ .function = .{ .name = "__bp_push", .clauses = &.{.{
+    .patterns = &.{ Ast.Expr.v("File"), Ast.Expr.v("Line"), Ast.Expr.v("Col"), Ast.Expr.v("Reason") },
+    .body = Ast.Body.of(&.{.{ .expr = Ast.Expr.r(
+        \\case erlang:get('__bp_frames') of
+        \\        {Reason, Frames} -> erlang:put('__bp_frames', {Reason, [[File, Line, Col] | Frames]});
+        \\        _ -> erlang:put('__bp_frames', {Reason, [[File, Line, Col]]})
+        \\    end
+    ) }}),
+    .layout = .inline_,
+}} } };
+
+/// Decision 532 — `'__bp_frames'(Reason)`: the frames `Reason`'s raise crossed,
+/// innermost first, each `[File, Line, Col]`, `[]` when none.
+const frames_read_form: Ast.Form = .{ .function = .{ .name = "__bp_frames", .clauses = &.{.{
+    .patterns = &.{Ast.Expr.v("Reason")},
+    .body = Ast.Body.of(&.{.{ .expr = Ast.Expr.r(
+        \\case erlang:get('__bp_frames') of
+        \\        {Reason, Frames} -> lists:reverse(Frames);
+        \\        _ -> []
+        \\    end
+    ) }}),
+    .layout = .inline_,
+}} } };
+
 /// Helpers every comptime module carries. Bodies are untyped (no inference ran
 /// over them), so type-directed lowerings dispatch at runtime — `+` →
 /// `'__bp_add'/2` (binary concat for strings, arithmetic otherwise),
@@ -1700,6 +1735,8 @@ pub const comptime_helper_forms = [_]Ast.Form{
     add_helper_form,
     len_helper_form,
     text_helper_form,
+    frames_push_form,
+    frames_read_form,
     .{
         .function = .{
             .name = "__bp_json",
@@ -2305,10 +2342,10 @@ fn emitErlangModule(
                 !v.isStatement()) try em.topValForms(b, &forms, v),
             .@"fn" => |f| {
                 if (!f.isExternal()) {
-                    em.locating = for (em.located) |n| {
-                        if (std.mem.eql(u8, n, f.name)) break true;
-                    } else false;
-                    defer em.locating = false;
+                    em.locating_file = for (em.located) |n| {
+                        if (std.mem.eql(u8, n.name, f.name)) break n.file;
+                    } else null;
+                    defer em.locating_file = null;
                     try em.fnForms(b, &forms, f);
                     continue;
                 }
@@ -3424,9 +3461,13 @@ const Emitter = struct {
     /// Comptime modules only: `ComptimeModule.unsupported_method`.
     unsupported_method: ?*UnsupportedMethod = null,
     /// `ComptimeModule.located`, and whether the function being lowered is
-    /// one of them: its calls are wrapped in `'__bp_at'/3`.
-    located: []const []const u8 = &.{},
-    locating: bool = false,
+    /// one of them: its calls are framed (`framed`).
+    located: []const Located = &.{},
+    /// The file of the located function being lowered, null for any other.
+    locating_file: ?[]const u8 = null,
+    /// Decision 532 — how many frames (`framed`) this module lowered: the
+    /// variable of each is its own.
+    frame_seq: usize = 0,
     /// Locals that may hold `undefined` (null): a parameter declared `?T` or
     /// defaulted to `null`. `if (x)` on one is a null test, not a boolean test.
     /// Reset per function alongside `locals`.
@@ -8477,11 +8518,12 @@ const Emitter = struct {
 
             .call => |c| {
                 const node = try this.callNode(b, c);
-                if (!this.locating) return node;
+                const file = this.locating_file orelse return node;
                 const at = callStart(e);
-                // A call a template expansion wrote has no place in the file.
+                // A call a template expansion wrote has no place in the file:
+                // the carrying side gives it the template's use (decision 532).
                 if (at.expansion != 0) return node;
-                return b.call("__bp_at", &.{ Ast.Expr.t(Term.int(@intCast(at.line))), Ast.Expr.t(Term.int(@intCast(at.col))), node });
+                return this.framed(b, file, at, node);
             },
             .binding => |bind| return this.bindingNode(b, bind),
             // `use` is a transparent prefix: lower the wrapped call (any binding
@@ -8538,6 +8580,35 @@ const Emitter = struct {
     /// Where the call `e` starts in the source: its callee for a plain call,
     /// the root of its receiver chain for a method call (`io.random.float()`
     /// starts at `io`, not at `float`, the token a method call is keyed by).
+    /// Decision 532 — `node`, a call (or an operator) written at `at` in `file`,
+    /// as a frame of the chain a raise leaves: `try Node catch error:R ->
+    /// '__bp_push'(File, Line, Col, R), erlang:raise(error, R, []) end`. A
+    /// throw (a `break`, a typed `throw`) crosses it untouched; the frames of a
+    /// raise are read back by `'__bp_frames'/1`.
+    fn framed(this: *Emitter, b: Ast.Builder, file: []const u8, at: ast.Loc, node: Ast.Expr) !Ast.Expr {
+        // A variable of its own per frame: a name a clause bound stays bound
+        // for the clauses after it in the same function, where the second
+        // `catch` would compare instead of bind.
+        const reason = Ast.Expr.v(try std.fmt.allocPrint(b.arena, "__BpF{d}", .{this.frame_seq}));
+        this.frame_seq += 1;
+        return .{ .try_catch = .{
+            .body = try b.body(&.{node}),
+            .catches = try b.arena.dupe(Ast.Clause, &.{try b.clause(
+                &.{try b.exception(Ast.Expr.a("error"), reason)},
+                &.{},
+                &.{
+                    try b.call("__bp_push", &.{
+                        .{ .lexeme_binary = file },
+                        Ast.Expr.t(Term.int(@intCast(at.line))),
+                        Ast.Expr.t(Term.int(@intCast(at.col))),
+                        reason,
+                    }),
+                    try b.remote("erlang", "raise", &.{ Ast.Expr.a("error"), reason, .{ .list = &.{} } }),
+                },
+            )}),
+        } };
+    }
+
     fn callStart(e: ast.Expr) ast.Loc {
         var at = e;
         while (true) switch (at) {

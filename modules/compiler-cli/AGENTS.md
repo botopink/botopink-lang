@@ -719,6 +719,8 @@ refused <message line>          the compiler refuses the module: its `error…` 
 at <file>:<line>:<col>          … and where, when the diagnostic is located
 label <text>                    after `at`: the label printed beside the caret, as printed (decision 485);
                                 absent when the caret has none; the `hint` lines are not claimed
+from <file>:<line>:<col>        after `at` and `label`: one `called from` line of a raise at build (decision 532),
+                                innermost first, down to the program's call, annotation or `comptime`
 out <text>                      one line the program printed (`out` alone: an empty line)
 no-final-newline                the last `out` line ended without `\n`
 abort                           the program exits non-zero (the number is never pinned)
@@ -732,7 +734,7 @@ abort                                   at src/main.bp:7:15
 stderr integer overflow: + on i32 at src/main.bp:6:14
 ```
 
-The records come in that order (`refused`, `at`, `label`); a `label` belongs to a refusal and follows its `at`
+The records come in that order (`refused`, `at`, `label`, `from`); a `from` follows its `at`, read off the `= called from …` lines under the first `-->` of the refusal; a `label` belongs to a refusal and follows its `at`
 (anywhere else it is a malformed `.snap`, located); a changed or vanished label is a red, a candidate
 beside the accepted file like any other difference. A refusal and an output never share a file;
 a record's text is never empty; a file parses only when rendering what it

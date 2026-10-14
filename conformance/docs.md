@@ -54,6 +54,8 @@ refused <message line>   the compiler refuses the module: its `error…` line
 at <file>:<line>:<col>   … and where, when the diagnostic is located
 label <text>             after `at`: the label printed beside the caret, exactly as printed;
                          absent when the caret has none (the `hint` lines are not claimed)
+from <file>:<line>:<col> after `at` and `label`: one `called from` line of a raise at build,
+                         innermost first, down to the program's call, annotation or `comptime`
 out <text>               one line the program printed (`out` alone: an empty line)
 no-final-newline         the last `out` line ended without a newline
 abort                    the program exits non-zero (the status is never pinned)
@@ -65,7 +67,7 @@ empty answer — a module that compiles and, for `main`, a program that printed
 nothing. A `label` follows its `at` once: one with no `at` before it, a second
 one, or one in a file of program output makes the `.snap` malformed; a label
 that changes, disappears or appears where none is accepted is a different
-answer. An `at` names its file relative to the cell — `src/main.bp`,
+answer, and so is a `from` line that does. An `at` names its file relative to the cell — `src/main.bp`,
 `botopink.json` (the column of the key that is refused), a dependency's module
 under `deps/<lib>/…` — wherever the cell is checked from.
 
@@ -2920,7 +2922,8 @@ call of a `Run` function or of one that prints) `known` is false and `value` is 
 compute. The rule reads the hole's value, never the literal's text. A hole
 known at build is evaluated as a `comptime` is, and a value that raises there
 is refused naming the hole, at the call that raised (§ Compile-time
-evaluation). So a template can write its answer as a constant when
+evaluation), with a `called from` line for each call of the chain down to the
+hole (decision 532). So a template can write its answer as a constant when
 every hole is known — `styled "${tab4} color: red;"` with `tab4 =
 styledProperty "tab-size: 4;"` is emitted as `styledConstant("s_…",
 ".s_…{tab-size:4;color:red}")` — and leave the holes to the program otherwise:
@@ -3127,12 +3130,14 @@ two same-named members of two types never collide.
 
 A decorator's body runs in its own module wherever it annotates: an imported
 decorator may build a record private to that module. A body that raises is
-refused at the annotation that ran it, and the message names the call that
-raised in the body's own file (``raised at src/deco.bp:3:5 while `#[check]` ran
-the decorator's body``). A template's body runs the same way: one declared in
-another module whose body raises is refused at the call that expanded it, and
-the message names the call that raised in the template's file (``raised at
-src/tpl.bp:3:5 while `shout` ran the template's body``).
+refused at the call that raised, in the file that call is written in
+(`src/deco.bp:3:5`), and every call of the chain is a `called from <file>:<line>:<column>`
+line under it, innermost first, down to the annotation that ran the body
+(decision 532). A template's body runs the same way: one declared in another
+module whose body raises is refused at the call that raised, in the template's
+file (`src/tpl.bp:3:5`), with the call that expanded it as the `called from`
+line. A call inside a template's expansion takes the place of the template's
+use, the one line the expansion has in the file.
 
 <!-- example: modules/decorator_imported_builds_private_record -->
 
@@ -3149,10 +3154,10 @@ imported by name does, and `markers.serverOnly` is a `Decorator` value
 <!-- example: modules/decorator_through_namespace -->
 
 A body declared in the annotated module that raises is refused at the call that
-raised (decision 451 (3)) — the innermost of this module's calls the raise
-leaves, in the body or in a function of the module the body calls — and the
-hint names the annotation that ran the body as its frame (``raised by this call
-while `#[short]` (at 17:3) ran the decorator's body``):
+raised (decisions 451 (3), 532) — the innermost call the raise leaves, in the
+body or in a function the body calls, of this module or another — and each call
+of the chain is a `called from` line, down to the annotation that ran the body
+(``called from src/main.bp:13:13``, ``called from src/main.bp:17:3``):
 
 <!-- example: modules/decorator_helper_raise_located -->
 

@@ -16,7 +16,18 @@ pub const Diagnostic = union(enum) {
         /// The error's hint, when it carries one (a `custom` error's): the
         /// CLI prints it as `= hint:` under the excerpt, as a parse error's.
         hint: ?[]u8 = null,
+        /// Decision 532 — a raise at build whose innermost call is written in
+        /// another file: that call, which the report is located at (`loc` is
+        /// then the first call in this module's own file).
+        origin: ?Frame = null,
+        /// Decision 532 — the calls the raise crossed after the innermost one,
+        /// innermost first, down to the program's call, annotation or
+        /// `comptime`: the report's `called from` lines.
+        frames: []Frame = &.{},
     };
+
+    /// One call of a raise's chain: the file it is written in, and where.
+    pub const Frame = struct { file: []u8, loc: @import("../ast.zig").Loc };
 
     /// The owned diagnostic of a `.parseError` or `.typeError` outcome; null
     /// for any other outcome.
@@ -39,6 +50,12 @@ pub const Diagnostic = union(enum) {
                     .custom => |c| if (c.hint) |h| try allocator.dupe(u8, h) else null,
                     else => null,
                 },
+                .origin = if (te.origin) |o| .{ .file = try allocator.dupe(u8, o.file), .loc = o.loc } else null,
+                .frames = blk: {
+                    const out = try allocator.alloc(Frame, te.frames.len);
+                    for (te.frames, 0..) |f, i| out[i] = .{ .file = try allocator.dupe(u8, f.file), .loc = f.loc };
+                    break :blk out;
+                },
             } },
             .ok, .validationError => null,
         };
@@ -56,6 +73,9 @@ pub const Diagnostic = union(enum) {
             .type => |t| {
                 allocator.free(t.message);
                 if (t.hint) |h| allocator.free(h);
+                if (t.origin) |o| allocator.free(o.file);
+                for (t.frames) |f| allocator.free(f.file);
+                if (t.frames.len > 0) allocator.free(t.frames);
             },
         }
     }

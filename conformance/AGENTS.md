@@ -49,9 +49,9 @@ conformance/
 | `test/<project>/` | a whole project with a `test/` tree, run by `botopink test --target <t> --json`; results keyed `test/<project>::<test>`; `"targets"` in its `botopink.json` narrows it (§ Narrowing a cell) | every test reports `ok` |
 
 A cell's `.snap` (`compiler-cli/src/cli/cell_snap.zig`, decision 475 (2)): `botopink-cell 1`, then
-`refused <the compiler's error… line>` / `at <file>:<line>:<col>` / `label <text>` (decision 485: the text the
+`refused <the compiler's error… line>` / `at <file>:<line>:<col>` / `label <text>` / `from <file>:<line>:<col>` (decision 485: the text the
 compiler prints beside the caret, as printed — absent when the caret has none, refused in an output file;
-the `hint` lines are not claimed) for a refused module, or `out <line>`
+the `hint` lines are not claimed; decision 532: a `from` per `called from` line of a raise at build, innermost first) for a refused module, or `out <line>`
 (`out` alone for an empty line), `no-final-newline`, `abort` (the exit status never pinned) and
 `stderr <text>` (with `abort`: the stderr contains the text). A refusal is filed under the module its
 location names (`src/shapes/circle.bp` → `shapes/circle.snap`; `botopink.json:1:3` →
@@ -2453,3 +2453,12 @@ Decision 535 (an uncaught abort writes the `Failure` an `attempt` would answer, 
 (`crash: {case_clause,'Square'}`, `crash: badarith`). The `panic:` text of an uncaught abort is claimed by
 `modules/compiler-core/src/codegen/tests/builtins.zig` on commonJS, erlang and beam; wasm writes the message alone
 until its codegen writes the `Failure` (front 164).
+Decision 532 (a raise at build is located at the call that raised, in its own file, with the calls that led to it)
+moves `decorator_raise_names_body_file` and `template_raise_names_body_file` — the refusal is now `deco.snap` /
+`tpl.snap` (`at src/deco.bp:3:5`, `from src/main.bp:9:3`), `main.snap` holds the header alone, the message no longer
+ends with `— raised at … while … ran the body` — and adds the `from <file>:<line>:<col>` record (`called from`
+lines, innermost first, after `at` and `label`; `compiler-cli/src/cli/cell_snap.zig`) to
+`decorator_helper_raise_located` (`from src/main.bp:13:13`, `from src/main.bp:17:3`), `hole_known_at_build_raises`
+and `hole_any_call_raises` (the template's use, `23:16`, and the hole, `25:25`: a call of an expansion takes the
+frame of the template's use), the three `*_unseeded` cells (the `comptime` or the annotation that ran the build is
+the last frame).

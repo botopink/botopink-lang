@@ -1110,6 +1110,14 @@ pub fn refusalsOf(a: std.mem.Allocator, text: []const u8) !std.StringArrayHashMa
             if (open) try flat.append(a, .{ .message = line });
         } else if (std.mem.startsWith(u8, line, "warning")) {
             open = false;
+        } else if (open and std.mem.startsWith(u8, std.mem.trimStart(u8, line, " "), "= called from ")) {
+            // Decision 532 — a `called from` line of the open refusal.
+            const t = std.mem.trimStart(u8, line, " ");
+            const last = &flat.items[flat.items.len - 1];
+            var grown: std.ArrayListUnmanaged([]const u8) = .empty;
+            try grown.appendSlice(a, last.from);
+            try grown.append(a, t["= called from ".len..]);
+            last.from = grown.items;
         } else if (open and flat.items[flat.items.len - 1].at == null) {
             const t = std.mem.trimStart(u8, line, " ");
             if (std.mem.startsWith(u8, t, "--> ")) flat.items[flat.items.len - 1].at = t["--> ".len..];
@@ -1363,6 +1371,31 @@ test "refusalsOf reads the label beside the caret, and none when the caret stand
     const got = (try refusalsOf(a, text)).get("main").?;
     try testing.expectEqualStrings("use _ { n -> … } to bind the matched value", got.refusals[0].label.?);
     try testing.expect(got.refusals[1].label == null);
+}
+
+test "refusalsOf reads the called-from lines of a raise at build under the refusal (decision 532)" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const text =
+        \\error: {error,{panic,<<"boom">>}}
+        \\ --> src/deco.bp:3:5
+        \\  |
+        \\3 |     @panic("boom");
+        \\  |     ^
+        \\  |
+        \\  = hint: the decorator's body raised
+        \\  = called from src/main.bp:9:3
+        \\  = called from src/main.bp:12:1
+        \\
+    ;
+    const got = try refusalsOf(a, text);
+    try testing.expect(got.get("main") == null);
+    const deco = got.get("deco").?;
+    try testing.expectEqualStrings("src/deco.bp:3:5", deco.refusals[0].at.?);
+    try testing.expectEqual(@as(usize, 2), deco.refusals[0].from.len);
+    try testing.expectEqualStrings("src/main.bp:9:3", deco.refusals[0].from[0]);
+    try testing.expectEqualStrings("src/main.bp:12:1", deco.refusals[0].from[1]);
 }
 
 test "moduleOf reads the module off a location" {

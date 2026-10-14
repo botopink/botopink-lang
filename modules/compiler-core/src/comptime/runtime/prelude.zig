@@ -617,10 +617,16 @@ test "prelude: exportRefs de-duplicates a multi-clause function" {
     const arena = arena_state.allocator();
 
     const refs = try exportRefs(arena, &erlang.comptime_helper_forms);
-    // `'__bp_json'/1` has five clauses and `'__bp_add'/2` two; four refs.
-    try std.testing.expectEqual(@as(usize, 4), refs.len);
+    // `'__bp_json'/1` has five clauses and `'__bp_add'/2` two; six refs, the
+    // two frame helpers (`'__bp_push'/4`, `'__bp_frames'/1`, decision 532)
+    // among them.
+    try std.testing.expectEqual(@as(usize, 6), refs.len);
     try std.testing.expectEqualStrings("__bp_add", refs[0].name);
     try std.testing.expectEqual(@as(usize, 2), refs[0].arity);
-    try std.testing.expectEqualStrings("__bp_json", refs[3].name);
-    try std.testing.expectEqual(@as(usize, 1), refs[3].arity);
+    try std.testing.expectEqualStrings("__bp_push", refs[3].name);
+    try std.testing.expectEqual(@as(usize, 4), refs[3].arity);
+    try std.testing.expectEqualStrings("__bp_frames", refs[4].name);
+    try std.testing.expectEqual(@as(usize, 1), refs[4].arity);
+    try std.testing.expectEqualStrings("__bp_json", refs[5].name);
+    try std.testing.expectEqual(@as(usize, 1), refs[5].arity);
 }

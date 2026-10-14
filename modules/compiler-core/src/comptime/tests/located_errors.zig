@@ -128,12 +128,13 @@ test "an embedded std module that does not parse is located at its libs/std/src 
 // Decision 451 (3) — a raise inside a decorator body or a `comptime` body is
 // located at the call that raised (`io.random.float()`, a `@panic` in a
 // function the body calls), not at the annotation or the `comptime`
-// expression that ran it; the frame is named in the hint.
+// expression that ran it; the calls of the chain are the `called from` lines
+// (decision 532), the last one the annotation or the `comptime`.
 test "a raise inside a decorator or a comptime is located at the call that raised" {
     const gpa = std.testing.allocator;
     const io = std.testing.io;
     const build_root = test_scratch.path(io, "comptime/raise_location");
-    const cases = [_]struct { src: []const u8, line: u32, col: u32, frame: []const u8 }{
+    const cases = [_]struct { src: []const u8, line: u32, col: u32, entry: [2]u32 }{
         .{
             .src =
             \\import {io} from "std";
@@ -153,7 +154,7 @@ test "a raise inside a decorator or a comptime is located at the call that raise
             ,
             .line = 4,
             .col = 13,
-            .frame = "while `#[drawn]` (at 8:3) ran the decorator's body",
+            .entry = .{ 8, 3 },
         },
         .{
             .src =
@@ -167,7 +168,7 @@ test "a raise inside a decorator or a comptime is located at the call that raise
             ,
             .line = 4,
             .col = 28,
-            .frame = "while the `comptime` expression at 4:19 ran at build time",
+            .entry = .{ 4, 19 },
         },
         // Any raise, not only a std refusal: a `@panic` in a function of this
         // module the body calls is located at the `@panic`, not at the call
@@ -196,7 +197,7 @@ test "a raise inside a decorator or a comptime is located at the call that raise
             ,
             .line = 3,
             .col = 9,
-            .frame = "while `#[sized]` (at 13:3) ran the decorator's body",
+            .entry = .{ 13, 3 },
         },
         .{
             .src =
@@ -215,7 +216,7 @@ test "a raise inside a decorator or a comptime is located at the call that raise
             ,
             .line = 3,
             .col = 9,
-            .frame = "while the `comptime` expression at 9:19 ran at build time",
+            .entry = .{ 9, 19 },
         },
     };
     for (cases) |c| {
@@ -228,7 +229,11 @@ test "a raise inside a decorator or a comptime is located at the call that raise
                 const loc = te.loc.?;
                 try std.testing.expectEqual(c.line, loc.line);
                 try std.testing.expectEqual(c.col, loc.col);
-                try std.testing.expect(std.mem.indexOf(u8, te.kind.custom.hint.?, c.frame) != null);
+                // Decision 532: the program's frame that ran the build — the
+                // annotation, the `comptime` — is the last `called from` line.
+                try std.testing.expect(te.frames.len >= 1);
+                const last = te.frames[te.frames.len - 1];
+                try std.testing.expectEqual(c.entry, [2]u32{ @intCast(last.loc.line), @intCast(last.loc.col) });
             },
             else => {},
         };
@@ -238,7 +243,7 @@ test "a raise inside a decorator or a comptime is located at the call that raise
 
 // The decorator emit memo (`template_eval.cachedEmit`) is process-wide and
 // keyed by the declarations' formatted source, which drops positions; a
-// located function's module bakes `'__bp_at'(Line, Col, Call)` in. One
+// located function's module bakes its frames (`'__bp_push'(File, Line, Col, R)`) in. One
 // decorator compiled at two positions in one process — the conformance cell
 // `decorator_random_float_unseeded` walked by C-21 and the first case above,
 // when one test process runs both — must locate each raise at its own build's

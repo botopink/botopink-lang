@@ -1446,10 +1446,13 @@ codegen/
   methods (`length`, `abs`, `floor`) dispatch on the receiver too. A call nothing
   answers is recorded in `unsupported_method` (when set, compilable emit only)
   and the emit fails with `error.UnsupportedComptimeMethod`; the evaluators turn
-  it into a located diagnostic. `located` (decision 451 (3)) names the functions whose
-  calls are wrapped in `'__bp_at'(Line, Col, Call)` — `Line:Col` where the call starts
-  (`callStart`: the receiver chain's root of a method call); the comptime runtime records
-  the innermost one a raise leaves (`comptime/runtime/wat/lower.zig`). `primErlangDispatchCount` exposes the size of the
+  it into a located diagnostic. `located` (decisions 451 (3), 532; `Located{name, file}`) names the functions whose
+  calls are frames (`framed`: `try Call catch error:R -> '__bp_push'(File, Line, Col, R),
+  erlang:raise(error, R, []) end`) — `File` the function's own file, `Line:Col` where the call
+  starts (`callStart`: the receiver chain's root of a method call); each frame is kept in the process
+  dictionary with its reason (`frames_push_form`, `frames_read_form` in `comptime_helper_forms`) and the
+  evaluator replies `'__bp_frames'(Reason)`, innermost first.
+  `primErlangDispatchCount` exposes the size of the
   prelude's dispatch table for a regression test.
   **A typed module uses the same shims** where inference recorded no lowering
   for a value-receiver call (a method on `Array.range(0, 5)`'s result, a local

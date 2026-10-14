@@ -448,7 +448,7 @@ fn main() {
 )
 
 (func $__bp_ct_value/0 (result i32)
-  (local $s0 i32)
+  (local $s0 i32) (local $s1 i32) (local $s2 i32)
   (block $raise
   (block $L1 (result i32)
   (block $L2
@@ -490,38 +490,179 @@ fn main() {
   br_if $L6
   br $L5
   )
-  i32.const 8
-  i32.const 50
-  call $rt_raised_at
+  call $rt_class
+  local.set $s0
+  call $rt_reason
+  local.set $s1
+  call $rt_clear
+  (block $L7 (result i32)
+  (block $L8
+  local.get $s0
+  global.get $__lit
+  i32.const 16
+  i32.add
+  i32.const 5
+  call $rt_atom
+  call $rt_eqx
+  i32.eqz
+  br_if $L8
+  local.get $s1
+  local.set $s2
+  global.get $__lit
+  i32.const 160
+  i32.add
+  i32.const 7
+  call $rt_bin
+  i64.const 8
+  call $rt_int
+  i64.const 50
+  call $rt_int
+  local.get $s2
+  call $bp_comptime_decorator:__bp_push/4
+  call $rt_pending
+  br_if $L4
+  drop
+  global.get $__lit
+  i32.const 16
+  i32.add
+  i32.const 5
+  call $rt_atom
+  local.get $s2
+  call $rt_raise
+  drop
   br $L4
+  call $rt_nil
+  br $L7
+  )
+  local.get $s0
+  local.get $s1
+  call $rt_raise
+  drop
+  br $L4
+  )
+  br $L5
   )
   call $rt_map_put
   local.set $s0
   local.get $s0
   global.get $__lit
-  i32.const 160
+  i32.const 168
   i32.add
   i32.const 5
   call $rt_atom
-  (block $L7 (result i32)
-  (block $L8
+  (block $L9 (result i32)
+  (block $L10
   call $__bp_fn_1/0
   call $rt_pending
-  br_if $L8
-  br $L7
+  br_if $L10
+  br $L9
   )
-  i32.const 8
-  i32.const 62
-  call $rt_raised_at
+  call $rt_class
+  local.set $s0
+  call $rt_reason
+  local.set $s1
+  call $rt_clear
+  (block $L11 (result i32)
+  (block $L12
+  local.get $s0
+  global.get $__lit
+  i32.const 16
+  i32.add
+  i32.const 5
+  call $rt_atom
+  call $rt_eqx
+  i32.eqz
+  br_if $L12
+  local.get $s1
+  local.set $s2
+  global.get $__lit
+  i32.const 160
+  i32.add
+  i32.const 7
+  call $rt_bin
+  i64.const 8
+  call $rt_int
+  i64.const 62
+  call $rt_int
+  local.get $s2
+  call $bp_comptime_decorator:__bp_push/4
+  call $rt_pending
+  br_if $L4
+  drop
+  global.get $__lit
+  i32.const 16
+  i32.add
+  i32.const 5
+  call $rt_atom
+  local.get $s2
+  call $rt_raise
+  drop
   br $L4
+  call $rt_nil
+  br $L11
+  )
+  local.get $s0
+  local.get $s1
+  call $rt_raise
+  drop
+  br $L4
+  )
+  br $L9
   )
   call $rt_map_put
   br $L3
   )
-  i32.const 8
-  i32.const 23
-  call $rt_raised_at
+  call $rt_class
+  local.set $s0
+  call $rt_reason
+  local.set $s1
+  call $rt_clear
+  (block $L13 (result i32)
+  (block $L14
+  local.get $s0
+  global.get $__lit
+  i32.const 16
+  i32.add
+  i32.const 5
+  call $rt_atom
+  call $rt_eqx
+  i32.eqz
+  br_if $L14
+  local.get $s1
+  local.set $s2
+  global.get $__lit
+  i32.const 160
+  i32.add
+  i32.const 7
+  call $rt_bin
+  i64.const 8
+  call $rt_int
+  i64.const 23
+  call $rt_int
+  local.get $s2
+  call $bp_comptime_decorator:__bp_push/4
+  call $rt_pending
+  br_if $raise
+  drop
+  global.get $__lit
+  i32.const 16
+  i32.add
+  i32.const 5
+  call $rt_atom
+  local.get $s2
+  call $rt_raise
+  drop
   br $raise
+  call $rt_nil
+  br $L13
+  )
+  local.get $s0
+  local.get $s1
+  call $rt_raise
+  drop
+  br $raise
+  )
+  br $L3
   )
   br $L1
   )
@@ -731,6 +872,7 @@ fn main() {
 )
 
 (func $fun2:__bp_fn_0/0 (param $self i32) (result i32)
+  (local $t1 i32) (local $t2 i32) (local $V___BpF3 i32)
   (block $raise
   (block $L1 (result i32)
   (block $L2
@@ -741,10 +883,57 @@ fn main() {
   br_if $L4
   br $L3
   )
-  i32.const 8
-  i32.const 50
-  call $rt_raised_at
+  call $rt_class
+  local.set $t1
+  call $rt_reason
+  local.set $t2
+  call $rt_clear
+  (block $L5 (result i32)
+  (block $L6
+  local.get $t1
+  global.get $__lit
+  i32.const 16
+  i32.add
+  i32.const 5
+  call $rt_atom
+  call $rt_eqx
+  i32.eqz
+  br_if $L6
+  local.get $t2
+  local.set $V___BpF3
+  global.get $__lit
+  i32.const 160
+  i32.add
+  i32.const 7
+  call $rt_bin
+  i64.const 8
+  call $rt_int
+  i64.const 50
+  call $rt_int
+  local.get $V___BpF3
+  call $bp_comptime_decorator:__bp_push/4
+  call $rt_pending
+  br_if $raise
+  drop
+  global.get $__lit
+  i32.const 16
+  i32.add
+  i32.const 5
+  call $rt_atom
+  local.get $V___BpF3
+  call $rt_raise
+  drop
   br $raise
+  call $rt_nil
+  br $L5
+  )
+  local.get $t1
+  local.get $t2
+  call $rt_raise
+  drop
+  br $raise
+  )
+  br $L3
   )
   br $L1
   )
@@ -782,6 +971,7 @@ fn main() {
 )
 
 (func $fun3:__bp_fn_1/0 (param $self i32) (result i32)
+  (local $t1 i32) (local $t2 i32) (local $V___BpF4 i32)
   (block $raise
   (block $L1 (result i32)
   (block $L2
@@ -792,10 +982,57 @@ fn main() {
   br_if $L4
   br $L3
   )
-  i32.const 8
-  i32.const 67
-  call $rt_raised_at
+  call $rt_class
+  local.set $t1
+  call $rt_reason
+  local.set $t2
+  call $rt_clear
+  (block $L5 (result i32)
+  (block $L6
+  local.get $t1
+  global.get $__lit
+  i32.const 16
+  i32.add
+  i32.const 5
+  call $rt_atom
+  call $rt_eqx
+  i32.eqz
+  br_if $L6
+  local.get $t2
+  local.set $V___BpF4
+  global.get $__lit
+  i32.const 160
+  i32.add
+  i32.const 7
+  call $rt_bin
+  i64.const 8
+  call $rt_int
+  i64.const 67
+  call $rt_int
+  local.get $V___BpF4
+  call $bp_comptime_decorator:__bp_push/4
+  call $rt_pending
+  br_if $raise
+  drop
+  global.get $__lit
+  i32.const 16
+  i32.add
+  i32.const 5
+  call $rt_atom
+  local.get $V___BpF4
+  call $rt_raise
+  drop
   br $raise
+  call $rt_nil
+  br $L5
+  )
+  local.get $t1
+  local.get $t2
+  call $rt_raise
+  drop
+  br $raise
+  )
+  br $L3
   )
   i64.const 2
   call $rt_int
