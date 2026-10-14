@@ -18,6 +18,7 @@ test {
     _ = @import("tests/beam_memory.zig");
     _ = @import("tests/wat.zig");
     _ = @import("tests/dts_skips_templates.zig");
+    _ = @import("tests/dts_compiler_types.zig");
     _ = @import("tests/runtime_scratch.zig");
     _ = @import("runtime.zig");
     _ = @import("snapshot.zig");

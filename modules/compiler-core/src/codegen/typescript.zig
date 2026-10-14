@@ -144,6 +144,7 @@ const Builder = struct {
             pass_start = decls.items.len;
         }
         try self.programImports(decls, &bound, &named, program_decls);
+        try self.stdTypeImports(decls, &bound, &named);
         if (added) try decls.append(self.b.arena, .export_none);
     }
 
@@ -183,6 +184,51 @@ const Builder = struct {
             }
         }
         if (imports.items.len > 0) try decls.insertSlice(self.b.arena, 0, imports.items);
+    }
+
+    /// A signature may name a `pub type` of a std module that this module
+    /// never imports by name: `pub val c = comptime createContext("")` is
+    /// inferred `Context<string>`, and `Context` is in the module's source
+    /// only as the type of `createContext`'s answer. The `.js` needs nothing
+    /// of it; the `.d.ts` named it and bound nothing (`Cannot find name
+    /// 'Context'`). Each such name is imported from the std module that
+    /// declares it (`std/context`), as a type the owner's `.d.ts` exports.
+    /// `Set` stays out: TypeScript's own `Set` is the name a signature means.
+    fn stdTypeImports(self: *Builder, decls: *std.ArrayListUnmanaged(js.TsDecl), bound: *std.StringHashMapUnmanaged(void), named: *const std.StringHashMapUnmanaged(void)) Error!void {
+        const prefix = try self.requirePrefix();
+        var imports: std.ArrayListUnmanaged(js.TsDecl) = .empty;
+        var it = named.keyIterator();
+        while (it.next()) |k| {
+            const name = k.*;
+            if (bound.contains(name) or std.mem.eql(u8, name, "Set")) continue;
+            const owner = stdTypeOwner(name) orelse continue;
+            if (std.mem.eql(u8, owner, self.module_name)) continue;
+            if (!try self.noteImportName(name)) continue;
+            const names = try self.b.arena.alloc([]const u8, 1);
+            names[0] = name;
+            try imports.append(self.b.arena, .{ .import = .{
+                .names = names,
+                .source = try std.fmt.allocPrint(self.b.arena, "{s}{s}", .{ prefix, owner }),
+            } });
+            try bound.put(self.b.arena, name, {});
+        }
+        if (imports.items.len > 0) try decls.insertSlice(self.b.arena, 0, imports.items);
+    }
+
+    /// The std module (`std/context`) whose source declares `pub type <name>`
+    /// at the start of a line, or null.
+    fn stdTypeOwner(name: []const u8) ?[]const u8 {
+        for (comptimeMod.std_pkg_modules) |spm| {
+            var lines = std.mem.splitScalar(u8, spm.source, '\n');
+            while (lines.next()) |line| {
+                if (!std.mem.startsWith(u8, line, "pub type ")) continue;
+                const rest = line["pub type ".len..];
+                if (!std.mem.startsWith(u8, rest, name)) continue;
+                if (rest.len == name.len) return spm.path;
+                if (std.mem.indexOfScalar(u8, "<( {", rest[name.len]) != null) return spm.path;
+            }
+        }
+        return null;
     }
 
     /// The comptime reflection records a signature names (`__Decl__Annotation`
@@ -525,10 +571,19 @@ const Builder = struct {
         }
         for (e.variants()) |v| {
             if (v.fields.len == 0) {
+                // A `static` cannot name the class's type parameters (TS2302),
+                // and a field has no generics of its own to declare: the
+                // singleton is the enum at `any`, assignable to every `E<T>`.
+                var singleton = enum_type;
+                if (e.genericParams.len > 0) {
+                    const any_args = try self.b.arena.alloc(js.TsType, e.genericParams.len);
+                    for (any_args) |*a| a.* = .{ .name = "any" };
+                    singleton = .{ .generic = .{ .name = e.name, .args = any_args } };
+                }
                 try members.append(self.b.arena, .{ .field = .{
                     .modifier = "static readonly ",
                     .name = v.name,
-                    .type = enum_type,
+                    .type = singleton,
                 } });
                 continue;
             }
@@ -825,6 +880,11 @@ const Builder = struct {
         if (std.mem.eql(u8, name, "char")) return "string";
         // The checker's type of a call that never returns (`@panic`).
         if (std.mem.eql(u8, name, "noreturn")) return "never";
+        // Decision 346 — `Bytes` is a `Uint8Array` (`commonJS.jsPrototypeOwner`).
+        if (std.mem.eql(u8, name, "Bytes")) return "Uint8Array";
+        // The compiler-known markup child list is an array at run time (the
+        // coercion is type-level only, `comptime/env.zig`).
+        if (std.mem.eql(u8, name, "Children")) return "any[]";
         return null;
     }
 
@@ -835,11 +895,23 @@ const Builder = struct {
     fn namedType(name: []const u8) js.TsType {
         if (name.len == 0) return .{ .name = "any" };
         if (isWideInteger(name)) return wide_integer;
+        if (std.mem.eql(u8, name, "Asset")) return asset_type;
         return .{ .name = primitiveTsName(name) orelse name };
     }
 
     /// Decision 319 — `i64`, `isize`, `u64` and `usize` cross to JavaScript as
     /// a number within ±(2^53 − 1) and a `BigInt` beyond.
+    /// Decision 519 — `Asset`, the answer of `@embed`, is a prelude record the
+    /// checker registers (`builtins.d.bp`), so no module declares it: it is
+    /// its own shape, `bytes` a `Uint8Array`, `text()` a method.
+    const asset_type: js.TsType = .{ .object = .{ .fields = &.{
+        .{ .name = "path", .type = .{ .name = "string" } },
+        .{ .name = "bytes", .type = .{ .name = "Uint8Array" } },
+        .{ .name = "size", .type = .{ .name = "number" } },
+        .{ .name = "hash", .type = .{ .name = "string" } },
+        .{ .name = "text", .type = .{ .func = .{ .params = &.{}, .ret = &.{ .name = "string" } } } },
+    }, .sep = "; " } };
+
     const wide_integer: js.TsType = .{ .union_ = &.{ .{ .name = "number" }, .{ .name = "bigint" } } };
 
     fn isWideInteger(name: []const u8) bool {
