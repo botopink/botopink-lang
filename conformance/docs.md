@@ -38,6 +38,9 @@ it — it refuses the module (a host binding it lacks) or names an abort in its
 runtime's words, and replaces the module's whole answer there. A cell narrowed
 to some targets names them in its `botopink.json` `"targets"`, as any project does — never in a
 `targets` file, which `botopink cell check` refuses, naming the manifest field (decision 475 (1)).
+A `test/` suite that narrows its targets is a project suite the same way — its own directory with a
+`botopink.json` naming `"targets"` (decision 536); a single test file declares no narrowing, and a
+`// targets:` line in it is a comment: the manifest is the one place for a restriction.
 A cell's `{ "path": "deps/<lib>" }` dependency is relative to the cell's own directory, as a
 project's is to its own; every cell found is reported, a cell that cannot run as a red naming it:
 
@@ -4226,7 +4229,7 @@ dependency's tests are never compiled or run. A test block reads its module's
 private functions and module-level `val`s as the module's own code does, on
 every target (`botopink test` on wasm runs the `wasi` host):
 
-<!-- example: test/module_init.bp -->
+<!-- example: test/module_init -->
 
 A test body is a **fallible context**: a `try` whose operand is an `Error(e)`
 ends the test as `FAIL <name>  (<e>)  at <file>:<line>` — `e` is the message
@@ -4258,7 +4261,7 @@ commonJS, erlang and beam — its cells are `pub declare fn` with a Node and an
 Erlang template each (beam reads the Erlang one), so `import {testing.mocks} from "std"`
 is refused on wasm.
 
-<!-- example: test/mocks_handwritten_double.bp -->
+<!-- example: test/mocks_handwritten_double -->
 
 `#[mocks.mock]` writes that double for you — it reflects the annotated
 `behavior`'s methods through `@Decl` and gives the behavior the associated
@@ -4271,7 +4274,7 @@ A name through the handle that is not one of the module's decorators is
 (`import {testing.mocks.mock}`) is `error[std-decorator-leaf-import]`: the code
 it adds would have no handle to name the runtime by.
 
-<!-- example: test/mocks_decorator_double.bp -->
+<!-- example: test/mocks_decorator_double -->
 
 Two more limits carried over from the old library: a matched `thenThrow` is a
 host throw, not an `@Result`, so the caller catches it with `asserts.throws`

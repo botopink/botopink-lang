@@ -12,8 +12,7 @@
 //// to a bare LOCAL call `greet(G, <<"ana">>)`, which no module defines —
 //// `erlc` refused the whole file with `function greet/2 undefined`.
 
-// wasm refuses this suite on a host binding: `makeGreeter` builds the value and has no `#[@External.Wasm]` binding.
-// targets: commonJS erlang beam
+// wasm refuses this suite on a host binding: `makeGreeter` builds the value and has no `#[@External.Wasm]` binding. Its `botopink.json` narrows `"targets"` to the three that bind it.
 
 behavior Greeter {
     val tag: string;

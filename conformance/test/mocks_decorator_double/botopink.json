@@ -1,0 +1,1 @@
+{ "name": "mocks_decorator_double", "version": "0.0.1", "targets": ["commonJS", "erlang", "beam"] }

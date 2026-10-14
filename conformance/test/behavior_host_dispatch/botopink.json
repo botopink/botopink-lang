@@ -1,0 +1,1 @@
+{ "name": "behavior_host_dispatch", "version": "0.0.1", "targets": ["commonJS", "erlang", "beam"] }

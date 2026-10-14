@@ -14,8 +14,7 @@
 //// was never evaluated at all (`Warning: function '_registered'/0 is unused`).
 //// A library whose model is module-load self-registration had no way to work.
 
-// wasm refuses this suite on a host binding: `mark` has no `#[@External.Wasm]` binding.
-// targets: commonJS erlang beam
+// wasm refuses this suite on a host binding: `mark` has no `#[@External.Wasm]` binding. Its `botopink.json` narrows `"targets"` to the three that bind it.
 
 #[@External.Node("(globalThis.__bpMarks = globalThis.__bpMarks || [], globalThis.__bpMarks.push($0), globalThis.__bpMarks.length)")]
 #[@External.Erlang("(begin erlang:put(bp_marks, (case erlang:get(bp_marks) of undefined -> []; L -> L end) ++ [$0]), erlang:length(erlang:get(bp_marks)) end)")]

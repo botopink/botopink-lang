@@ -45,7 +45,7 @@ conformance/
 | Path | Kind | Passes when |
 |---|---|---|
 | `modules/<cell>/` | a cell: `botopink cell check <cell>` builds and runs it in process on every target its manifest declares (`modules/compiler-cli/AGENTS.md` § Cells) | every module's answer on every target is its accepted snapshot — `snapshot/targets/<t>/<m>.snap` where it exists, else `snapshot/output/<m>.snap`, else empty — and every target its `"targets"` leaves out refuses it on a host binding (§ Narrowing a cell) |
-| `test/<area>_<group>.bp` | `test "…" { … assert … }` blocks, run by `botopink test --target <t> --json` in a scratch project on commonJS, erlang, wasm and beam (a `// targets: <t> …` line in the file narrows it to the targets named, each excluded one audited as a project suite's is: `botopink test --target <t>` must refuse it on a host binding) | every test reports `ok` |
+| `test/<area>_<group>.bp` | `test "…" { … assert … }` blocks, run by `botopink test --target <t> --json` in a scratch project on commonJS, erlang, wasm and beam (a single file declares no narrowing, decision 536: a suite that narrows its targets is a project suite below) | every test reports `ok` |
 | `test/<project>/` | a whole project with a `test/` tree, run by `botopink test --target <t> --json`; results keyed `test/<project>::<test>`; `"targets"` in its `botopink.json` narrows it (§ Narrowing a cell) | every test reports `ok` |
 
 A cell's `.snap` (`compiler-cli/src/cli/cell_snap.zig`, decision 475 (2)): `botopink-cell 1`, then
@@ -1951,9 +1951,10 @@ runner in between. `modules/erlang_host_sidecar_shipped` and
 
 A cell runs on all four targets, and a `test/` suite on commonJS, erlang, wasm and beam —
 unless it narrows itself: a cell or a project suite with `"targets"` in its `botopink.json`
-(decision 475 (1); a cell's `targets` file is refused), a single-file suite with one
-`// targets: <t> <t>…` line in the file (eight carry one today, each `commonJS erlang beam`; the form
-is open question B-64-a). A narrowing is a claim about the compiler, checked on every run —
+(decisions 475 (1), 536; a cell's `targets` file is refused). A single file declares no narrowing — a
+`// targets:` line in it is a comment (decision 536: one place for a restriction, the manifest; the
+compiler reads no configuration from a comment) — so a `test/` suite that narrows is a directory with a
+`botopink.json` and its test files under `test/`. A narrowing is a claim about the compiler, checked on every run —
 `botopink cell check` for a cell, `run.sh` for a suite: for each target the cell leaves out,
 `botopink build --target <t>` must **refuse** the program on a host binding —
 
@@ -2015,15 +2016,15 @@ The narrowed cells whose excluded targets' missing binding is named here (re-der
 | `modules/task_result_caught_by_js` | commonJS | erlang, wasm, beam — `callFromJs` |
 | `modules/manifest_targets_host_binding` | erlang beam (`"targets"`) | commonJS, wasm — `magnitude` |
 | `test/erlang_host_sidecar_in_a_test` (a project suite) | erlang beam (`"targets"`) | commonJS, wasm — `hello` |
-| `test/behavior_host_dispatch.bp` | commonJS erlang beam | wasm — `makeGreeter` |
-| `test/bodyless_fn.bp` | commonJS erlang beam | wasm — `hostMin` |
-| `test/external_host.bp` | commonJS erlang beam | wasm — `hostMax` |
-| `test/external_markers.bp` | commonJS erlang beam | wasm — `biggest` |
-| `test/mocks_decorator_double.bp` | commonJS erlang beam | wasm — `pushMatcher`, `std/testing/mocks.newMock` |
-| `test/mocks_handwritten_double.bp` | commonJS erlang beam | wasm — `pushMatcher`, `std/testing/mocks.invoke` |
-| `test/module_init.bp` | commonJS erlang beam | wasm — `mark` |
+| `test/behavior_host_dispatch` (a project suite) | commonJS erlang beam (`"targets"`) | wasm — `makeGreeter` |
+| `test/bodyless_fn` (a project suite) | commonJS erlang beam (`"targets"`) | wasm — `hostMin` |
+| `test/external_host` (a project suite) | commonJS erlang beam (`"targets"`) | wasm — `hostMax` |
+| `test/external_markers` (a project suite) | commonJS erlang beam (`"targets"`) | wasm — `biggest` |
+| `test/mocks_decorator_double` (a project suite) | commonJS erlang beam (`"targets"`) | wasm — `pushMatcher`, `std/testing/mocks.newMock` |
+| `test/mocks_handwritten_double` (a project suite) | commonJS erlang beam (`"targets"`) | wasm — `pushMatcher`, `std/testing/mocks.invoke` |
+| `test/module_init` (a project suite) | commonJS erlang beam (`"targets"`) | wasm — `mark` |
 
-In all, 52 narrowings (44 cells, 1 project suite, 7 single-file suites) and 80 exclusions. No other
+In all, 52 narrowings (44 cells, 8 project suites) and 80 exclusions. No other
 manifest or suite carries a narrowing: a project that must be refused on a target says so with its
 departure.
 
@@ -2163,8 +2164,8 @@ On disk:
 
 ```text
 $ ls -d modules/*/ | wc -l      # 1318 cells
-$ ls test/*.bp | wc -l          # 71 single-file suites
-$ ls -d test/*/ | wc -l         # 8 project suites
+$ ls test/*.bp | wc -l          # 64 single-file suites
+$ ls -d test/*/ | wc -l         # 15 project suites
 ```
 
 Refusals whose text sits under the diagnostic's caret — `case_bare_name_arm`, `case_constant_pattern`,
@@ -2193,7 +2194,7 @@ row is pinned by a cell that passes on every target its kind has:
 | `#(a: i32, b: string)[]` — an array of labeled tuples | "make it parse" (14) | parses, checks and runs, with `@Result<i32, string>[]` and `(i32 \| string)[]` | `test/type_suffix.bp` |
 | `??` | deliberately absent (14) | parses and runs (decision 28); `catch` is `@Result`-only, so nothing else gives an optional a default | `test/nullish_default.bp` |
 | `xs[0]`, `xs[0..2]`, `d["k"]` — an index expression | "no index expression in the grammar" | parses, checks and runs (decisions 30, 63, 139) | `modules/index_expression`, `modules/index_dict`, `modules/index_past_the_end_is_null`, `modules/index_negative_from_end` |
-| a bodyless `fn` with `-> void` | no rule | parses and runs (decision 33); without a return type it is `bodyless-fn-needs-return-type` | `test/bodyless_fn.bp`, `modules/bodyless_fn_no_return_type` |
+| a bodyless `fn` with `-> void` | no rule | parses and runs (decision 33); without a return type it is `bodyless-fn-needs-return-type` | `test/bodyless_fn`, `modules/bodyless_fn_no_return_type` |
 | a method on a parenthesised expression or a number literal — `(a == b).toString()`, `("ab").length`, `42.toString()` | open | one production; `42.toString()` prints `42` on all four targets (commonJS once wrote `42.toString()` into the program, which node reads as a float) | `test/paren_receiver.bp`, `modules/method_on_number_literal` |
 
 **The range pattern — decision 53.** `...` is inclusive in a pattern; `..` is exclusive in a slice
@@ -2392,6 +2393,15 @@ list by C-16, each with the cell that covers it: `pub default mod` / `pub defaul
 two targets through a `snapshot/targets/<t>/` departure each — `botopink run --target <t>` is not
 target-independent, which is what a refusal snapshot lacked); `@panic` / `@todo` (a cell compares stdout **and**
 the status through `abort`, so an aborting program is exactly what it can assert).
+
+Decision 536 (144 B-64-a): a `// targets:` line in a single-file `test/` suite is a comment — the runner
+reads a project suite's `botopink.json` `"targets"` alone — and the seven suites that carried one
+(`behavior_host_dispatch`, `bodyless_fn`, `external_host`, `external_markers`, `mocks_decorator_double`,
+`mocks_handwritten_double`, `module_init`) are project suites, each `test/<name>/botopink.json` naming
+`"targets": ["commonJS", "erlang", "beam"]` and its file under `test/<name>/test/`. `run.sh --self-test`
+proves a single file's `// targets:` line narrows nothing (`comment_is_no_narrowing`), and an excluded
+target's audit builds the suite and then compiles its tests for that target, since these suites carry the
+host binding in a test file.
 
 `modules/embed_size_i64` (decision 538, 144 B-12-c) — `Asset.size` binds to an `i64` and sums past the `i32`
 range (`expected i64, got i32` on the parent); `hash` stays the SHA-256 in lowercase hex. `Asset.open()` (an

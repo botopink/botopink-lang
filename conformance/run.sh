@@ -236,6 +236,9 @@ pub fn one() -> i32 {
     return 1;
 }
 BP
+    # Decision 536: a single file declares no narrowing — a `// targets:` line in it is a comment, and
+    # the file runs on every target.
+    printf '// targets: commonJS\n\ntest "one" {\n    assert 1 == 1;\n}\n' >"$suite/test/comment_is_no_narrowing.bp"
     # A cell answering its snapshot, and one that does not: `botopink cell check`
     # runs each, and the red one names its candidate.
     for c in green red; do
@@ -264,12 +267,12 @@ BP
 [*] modules/red — botopink cell check: exit 1
     candidate modules/red/snapshot/output/main.snap.new
 narrowings: 2 exclusions audited
-by target: commonJS 1/2 · erlang 2/3 · wasm 0/2 · beam 1/3 · * 1/4
-conformance: 5 passed, 9 failed
+by target: commonJS 2/3 · erlang 3/4 · wasm 1/3 · beam 2/4 · * 1/4
+conformance: 9 passed, 9 failed
 WANT
     # The backed suite ran where it said and nowhere else, and the green cell
     # passed: no line may name them.
-    if grep -qE 'test/backed|modules/green' "$st/report.txt"; then
+    if grep -qE 'test/backed|modules/green|comment_is_no_narrowing' "$st/report.txt"; then
         echo "self-test: a narrowing that stands on a host binding, or a green cell, was reported:" >&2
         grep -E 'test/backed|modules/green' "$st/report.txt" >&2
         missing=1
@@ -466,19 +469,20 @@ audit_one() { # <path> <excluded target> <the file that narrows>
     rm -rf "$dir"
     export BOTOPINK_LIB_ROOTS="$lib_root"
     local code
-    case "$path" in
-        # A single-file suite carries its host binding in the test file: the refusal
-        # shows when the suite is compiled for the target, so it is `test` that is run.
-        *.bp)
-            project "$dir"
-            cp "$here/$path" "$dir/test/$(basename "$path")"
-            (cd "$dir" && with_timeout 300 "$compiler" test --target "$t" ${cold_flag[@]+"${cold_flag[@]}"} >"$dir/o.txt" 2>"$dir/e.txt")
-            code=$? ;;
-        *)
-            cp -R "$here/$path" "$dir"
-            (cd "$dir" && with_timeout 300 "$compiler" build --target "$t" ${cold_flag[@]+"${cold_flag[@]}"} >"$dir/o.txt" 2>"$dir/e.txt")
-            code=$? ;;
-    esac
+    cp -R "$here/$path" "$dir"
+    code=0
+    # A suite with sources is built; one that is only test files (decision 536's narrowed single files)
+    # has nothing to build. A host binding its test files carry shows when the tests are compiled for the target.
+    if [ -n "$(find "$dir/src" -name '*.bp' 2>/dev/null | head -n 1)" ]; then
+        (cd "$dir" && with_timeout 300 "$compiler" build --target "$t" ${cold_flag[@]+"${cold_flag[@]}"} >"$dir/o.txt" 2>"$dir/e.txt")
+        code=$?
+    else
+        : >"$dir/o.txt"; : >"$dir/e.txt"
+    fi
+    if [ $code -eq 0 ]; then
+        (cd "$dir" && with_timeout 300 "$compiler" test --target "$t" ${cold_flag[@]+"${cold_flag[@]}"} >"$dir/o.txt" 2>"$dir/e.txt")
+        code=$?
+    fi
     quiet <"$dir/o.txt" >"$dir/all.txt"; quiet <"$dir/e.txt" >>"$dir/all.txt"
     if [ $code -eq 0 ]; then
         printf '%s\t%s\t%s\t%s\n' "$t" "$path" fail "excluded by $by, but \`botopink build --target $t\` accepts the suite — a narrowing stands on a host-binding refusal: let it run on $t, and a red there is a row of that backend's front" >"$out"
@@ -524,12 +528,7 @@ node -e '
     const ok = Array.isArray(m.targets) && m.targets.every((t) => typeof t === "string" && /^[A-Za-z]+$/.test(t));
     console.log(`test/${d}\t${ok ? m.targets.join(" ") : "!"}`);
   }
-  // A single-file suite narrows itself with one `// targets: <t> <t>…` line.
-  for (const f of dirs) {
-    if (!f.endsWith(".bp")) continue;
-    const m = /^\/\/ targets:[ \t]*(.*)$/m.exec(fs.readFileSync(path.join(root, "test", f), "utf8"));
-    if (m) console.log(`test/${f}\t${/^([A-Za-z]+[ \t]*)*$/.test(m[1]) ? m[1].trim().split(/[ \t]+/).join(" ") : "!"}`);
-  }' "$here" >"$work/manifest-targets"
+' "$here" >"$work/manifest-targets"
 
 # Schedule <suite> under the narrowing <declared…> written in <by>: a run job on
 # each target of the run the suite keeps, an audit job on each one it excludes —
@@ -570,7 +569,8 @@ for f in "${files[@]}"; do
         modules/*) printf '%s\t*\trun\n' "$f" >>"$jobs_list" ;;
         test/*.bp|test/*)
             declared="$(awk -F '\t' -v c="$f" '$1 == c { print $2 }' "$work/manifest-targets")"
-            case "$f" in *.bp) narrow_by="$f \`// targets:\` line"; narrow_bad="$f's \`// targets:\` line is not a list of target names" ;; *) narrow_by="$f/botopink.json \"targets\""; narrow_bad="$f/botopink.json is not JSON, or its \"targets\" is not an array of target names" ;; esac
+            # Only a project suite narrows (decision 536): its manifest's "targets"; a single file declares nothing.
+            case "$f" in *.bp) narrow_by=""; narrow_bad="" ;; *) narrow_by="$f/botopink.json \"targets\""; narrow_bad="$f/botopink.json is not JSON, or its \"targets\" is not an array of target names" ;; esac
             if [ "$declared" = "!" ]; then
                 printf '*\t%s\tfail\t%s\n' "$f" "$narrow_bad" >"$work/r-narrowing-$(printf '%s' "$f" | tr '/.' '__')"
             elif [ -n "$declared" ]; then

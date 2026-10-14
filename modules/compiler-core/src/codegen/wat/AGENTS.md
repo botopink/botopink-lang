@@ -398,8 +398,8 @@ UndefinedCall`) and refused every call of an empty `fn`
 `g.greet("ana")` over `behavior Greeter` that no type of the program implements has no function
 to call — the value comes from a `declare fn` answering `Greeter` (`external_missing` maps each
 such function to the named type it answers). When one of them has no wasm cell, the call is refused
-as that function's missing `#[@External.Wasm(…)]`, not as an unresolved call, so a `// targets:`
-narrowing (`conformance/test/behavior_host_dispatch.bp`) stands on a host binding as the runner's
+as that function's missing `#[@External.Wasm(…)]`, not as an unresolved call, so a `"targets"`
+narrowing (`conformance/test/behavior_host_dispatch/`) stands on a host binding as the runner's
 audit requires (`conformance/modules/behavior_host_value_wasm_refused`).
 
 **A function that reaches such a cell is refused where the call is written,

@@ -2,8 +2,7 @@
 //// expands to the whole declared parameter list, and the keyword form
 //// (`module:` / `method:`) carries a template instead of a bare symbol.
 
-// wasm refuses this suite on a host binding: `biggest` has no `#[@External.Wasm]` binding.
-// targets: commonJS erlang beam
+// wasm refuses this suite on a host binding: `biggest` has no `#[@External.Wasm]` binding. Its `botopink.json` narrows `"targets"` to the three that bind it.
 
 #[@External.Node("Math.max($args)")]
 #[@External.Erlang(module: "erlang", method: "max($args)")]

@@ -2,8 +2,7 @@
 //// backend, positional `$0`/`$1` markers over the declared parameters
 //// (decision 5's numbering), and the same answer from every host.
 
-// wasm refuses this suite on a host binding: `hostMax` has no `#[@External.Wasm]` binding.
-// targets: commonJS erlang beam
+// wasm refuses this suite on a host binding: `hostMax` has no `#[@External.Wasm]` binding. Its `botopink.json` narrows `"targets"` to the three that bind it.
 
 #[@External.Node("Math.max($0, $1)")]
 #[@External.Erlang("erlang", "max")]
