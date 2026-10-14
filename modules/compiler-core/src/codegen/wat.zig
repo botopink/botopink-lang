@@ -1991,6 +1991,19 @@ const Emitter = struct {
     /// How many loops enclose the code being lowered: `break`/`continue`
     /// branch only inside one.
     loop_depth: u32 = 0,
+    /// Decision 539 — the `defer`s of the function being emitted that have
+    /// not run yet, outermost first: a `return`, a `break`, a `continue` or
+    /// the end of their block writes each one's statement in place.
+    defer_stack: std.ArrayListUnmanaged(ast.Stmt) = .empty,
+    /// `defer_stack`'s length where the innermost loop began: a `break` or a
+    /// `continue` runs the entries above it.
+    defer_loop_floor: usize = 0,
+    /// The function body `renderBody` lowers, whose value type is
+    /// `cur_result` — the one block with a value that can sit in a
+    /// `try_table` region.
+    defer_fn_body: ?[]const ast.Stmt = null,
+    /// Numbers a `defer`'s region labels and its parked exception.
+    defer_seq: u32 = 0,
     /// The function being emitted, when its body returns a call to itself in
     /// tail position (00 · 05-wasm step 9): `return f(args)` re-binds the
     /// parameters and branches to `$__tail`, the loop the body is wrapped in,
@@ -2517,6 +2530,7 @@ const Emitter = struct {
     fn deinit(self: *Emitter) void {
         self.locals.deinit();
         self.pending_locals.deinit(self.alloc);
+        self.defer_stack.deinit(self.alloc);
         self.str_locals.deinit();
         self.bool_locals.deinit();
         self.str_fns.deinit();
@@ -4332,6 +4346,9 @@ const Emitter = struct {
         self.yield_target = null;
         self.gen_end = null;
         self.loop_depth = 0;
+        self.defer_stack.clearRetainingCapacity();
+        self.defer_loop_floor = 0;
+        self.defer_fn_body = null;
         self.tail_self = null;
         self.tail_self_used = false;
     }
@@ -4598,6 +4615,7 @@ const Emitter = struct {
             self.wasmTypeOf(body[body.len - 1].expr)
         else
             null;
+        self.defer_fn_body = body;
         const tail = try self.emitBody(body, self.fn_has_result);
         if (self.fn_has_result and tail == .none) try self.pushZero();
         // An implicit tail value has to meet the declared `(result …)` too.
@@ -6200,11 +6218,132 @@ const Emitter = struct {
             }
             return .none;
         }
-        for (body[0 .. body.len - 1]) |stmt| _ = try self.emitStmt(stmt, false);
-        return self.emitStmt(body[body.len - 1], keep_value);
+        const mark = self.defer_stack.items.len;
+        // Only the function's own body has a value type a region can name.
+        const value_ty: ?[]const u8 = if (keep_value and self.defer_fn_body != null and
+            self.defer_fn_body.?.ptr == body.ptr and self.defer_fn_body.?.len == body.len) self.cur_result else null;
+        const tail = try self.emitStmtsFrom(body, 0, keep_value, value_ty, true);
+        try self.closeDefers(mark, tail);
+        return tail;
+    }
+
+    /// `body[start..]`: every statement but the last for effect, the last as
+    /// `emitBody` says. A `defer` is not lowered here: it joins `defer_stack`
+    /// and the rest of the list runs under it (`emitDeferRegion` when a panic
+    /// can reach it).
+    fn emitStmtsFrom(self: *Emitter, body: []const ast.Stmt, start: usize, keep_value: bool, value_ty: ?[]const u8, regions: bool) anyerror!Tail {
+        var tail: Tail = .none;
+        var i = start;
+        while (i < body.len) : (i += 1) {
+            const stmt = body[i];
+            const is_last = i + 1 == body.len;
+            if (stmt.deferred) {
+                var plain = stmt;
+                plain.deferred = false;
+                try self.defer_stack.append(self.alloc, plain);
+                if (regions and self.exceptions and (!keep_value or value_ty != null))
+                    return self.emitDeferRegion(body, i + 1, keep_value, value_ty);
+                tail = .none;
+                if (is_last and keep_value) {
+                    try self.pushZero();
+                    tail = .value;
+                }
+                continue;
+            }
+            tail = try self.emitStmt(stmt, is_last and keep_value);
+        }
+        return tail;
+    }
+
+    /// The statement of `defer_stack[idx]`, written here. The entries from
+    /// `idx` up are out of sight while it is lowered (a `throw` in it leaves
+    /// past the ones below only). It is stack-neutral, so a value waiting
+    /// beneath it survives.
+    fn writeDefer(self: *Emitter, idx: usize) anyerror!void {
+        const stmt = self.defer_stack.items[idx];
+        var hidden: std.ArrayListUnmanaged(ast.Stmt) = .empty;
+        defer hidden.deinit(self.alloc);
+        try hidden.appendSlice(self.alloc, self.defer_stack.items[idx..]);
+        self.defer_stack.shrinkRetainingCapacity(idx);
+        defer self.defer_stack.appendSliceAssumeCapacity(hidden.items);
+        _ = try self.emitStmtNormalised(stmt, false);
+    }
+
+    /// A way out of the function or the loop: every pending defer above
+    /// `floor`, innermost first. They stay pending for the paths that do not
+    /// leave.
+    fn runDefers(self: *Emitter, floor: usize) anyerror!void {
+        var k = self.defer_stack.items.len;
+        while (k > floor) {
+            k -= 1;
+            try self.writeDefer(k);
+        }
+    }
+
+    /// The end of a block: the defers it pushed (above `mark`) run, last
+    /// first, unless the block already left.
+    fn closeDefers(self: *Emitter, mark: usize, tail: Tail) anyerror!void {
+        while (self.defer_stack.items.len > mark) {
+            if (tail != .terminated) try self.writeDefer(self.defer_stack.items.len - 1);
+            _ = self.defer_stack.pop();
+        }
+    }
+
+    /// The rest of a block under a `defer` a panic can reach (decision 518):
+    ///
+    ///     (block $done (result T)
+    ///       (block $h (result i32)
+    ///         (try_table (result T) (catch $__bp_panic $h) <the rest>)
+    ///         <deferred>  (br $done))
+    ///       (local.set $exc)  <deferred>  (local.get $exc)  (throw $__bp_panic))
+    ///
+    /// The deferred code is written outside the region on both paths, so a
+    /// panic in it is not caught twice. The `defer` is the top entry.
+    fn emitDeferRegion(self: *Emitter, body: []const ast.Stmt, start: usize, keep_value: bool, value_ty: ?[]const u8) anyerror!Tail {
+        const ar = self.arena();
+        const idx = self.defer_stack.items.len - 1;
+        self.defer_seq += 1;
+        const handler = try std.fmt.allocPrint(ar, "__defer_h{d}", .{self.defer_seq});
+        const done = try std.fmt.allocPrint(ar, "__defer_done{d}", .{self.defer_seq});
+        const exc = try std.fmt.allocPrint(ar, "__defer_exc{d}", .{self.defer_seq});
+        try self.declareLocal(exc, "i32");
+        const result: ?wat.ValType = if (keep_value) vt(value_ty.?) else null;
+
+        var rest_c: Capture = .{};
+        self.open(&rest_c);
+        const rest_tail = try self.emitStmtsFrom(body, start, keep_value, value_ty, true);
+        const rest_seq = self.seal(&rest_c, stackOf(rest_tail, if (value_ty) |t| t else "i32"));
+
+        var normal_c: Capture = .{};
+        self.open(&normal_c);
+        try self.emit(.{ .block = .{
+            .kind = .try_table,
+            .result = result,
+            .catches = try ar.dupe(wat.Block.Catch, &.{.{ .tag = prelude.panic_tag.name, .label = handler }}),
+            .body = rest_seq,
+        } });
+        try self.writeDefer(idx);
+        try self.emit(.{ .br = done });
+        const normal_seq = self.seal(&normal_c, .terminated);
+
+        var caught_c: Capture = .{};
+        self.open(&caught_c);
+        try self.emit(.{ .block = .{ .kind = .block, .label = handler, .result = .i32, .body = normal_seq } });
+        try self.emit(.{ .local_set = exc });
+        try self.writeDefer(idx);
+        try self.emit(.{ .local_get = exc });
+        try self.emit(.{ .throw = prelude.panic_tag.name });
+        const caught_seq = self.seal(&caught_c, .terminated);
+
+        try self.emit(.{ .block = .{ .kind = .block, .label = done, .result = result, .body = caught_seq } });
+        _ = self.defer_stack.pop();
+        return if (keep_value) .value else .none;
     }
 
     fn emitStmt(self: *Emitter, stmt: ast.Stmt, keep_value: bool) anyerror!Tail {
+        // Decision 539 — a `defer` is lowered by the statement lists that
+        // keep `defer_stack` (`emitStmtsFrom`); this one is another list.
+        if (stmt.deferred) return self.refuse(stmt.expr.getLoc(), "a `defer` in this position is not lowered by the wasm backend yet", .{});
         // Decision 392 — a statement of a state machine runs under its
         // resume guard. The one whose value a body answers is not guarded:
         // re-entering never reaches it before the resume index.
@@ -6277,6 +6416,9 @@ const Emitter = struct {
                         // validation ("expected i32 but nothing on stack").
                         try self.pushZero();
                     }
+                    // Decision 539 — the value is computed; the defers run
+                    // before the function is left.
+                    try self.runDefers(0);
                     try self.emit(.@"return");
                     return .terminated;
                 },
@@ -6307,6 +6449,7 @@ const Emitter = struct {
                         return .value;
                     }
                     if (self.loop_depth > 0) {
+                        try self.runDefers(self.defer_loop_floor);
                         try self.emit(.{ .br = break_label });
                         return .terminated;
                     }
@@ -6331,6 +6474,7 @@ const Emitter = struct {
                 },
                 .@"continue" => {
                     if (self.loop_depth > 0) {
+                        try self.runDefers(self.defer_loop_floor);
                         try self.emit(.{ .br = next_label });
                         return .terminated;
                     }
@@ -6975,6 +7119,7 @@ const Emitter = struct {
                     const r = try self.adoptTask(r0);
                     if (r) |val| if (try self.lowerSelfTailCall(val.*)) return;
                     if (r) |val| try self.lowerExpr(val.*) else if (self.fn_has_result) try self.pushZero();
+                    try self.runDefers(0);
                     try self.emit(.@"return");
                 },
                 .throw_ => |val| try self.lowerThrow(val),
@@ -6989,6 +7134,7 @@ const Emitter = struct {
                             try self.emitGenBreak(v.*);
                         } else try self.lowerExpr(v.*);
                     } else if (self.loop_depth > 0) {
+                        try self.runDefers(self.defer_loop_floor);
                         try self.emit(.{ .br = break_label });
                     } else if (self.yield_target != null) {
                         // Decision 103 — see the statement-position arm above.
@@ -7000,10 +7146,10 @@ const Emitter = struct {
                         if (self.yield_target != null) try self.emitYield(v.*) else try self.lowerExpr(v.*);
                     }
                 },
-                .@"continue" => if (self.loop_depth > 0)
-                    try self.emit(.{ .br = next_label })
-                else
-                    return self.refuse(e.getLoc(), "`continue` outside a loop", .{}),
+                .@"continue" => if (self.loop_depth > 0) {
+                    try self.runDefers(self.defer_loop_floor);
+                    try self.emit(.{ .br = next_label });
+                } else return self.refuse(e.getLoc(), "`continue` outside a loop", .{}),
             },
             .comptime_ => |ct| switch (ct.kind) {
                 .assert => |a| try self.lowerAssert(a, ct.loc),
@@ -7134,6 +7280,7 @@ const Emitter = struct {
             if (val) |v| try self.lowerCoerced(v.*, "i32") else try self.emit(zero);
             try self.emitC(.{ .store = .{ .offset = 4 } }, "payload");
             try self.emit(.{ .local_get = slot });
+            try self.runDefers(0);
             try self.emit(.@"return");
             return;
         }
@@ -7202,10 +7349,12 @@ const Emitter = struct {
             } else {
                 try self.emitC(.{ .local_get = tgt }, "everything the body yielded");
                 try self.emitConvert("i32", self.cur_result);
+                try self.runDefers(0);
                 try self.emit(.@"return");
             }
         } else {
             try self.emit(.{ .local_get = slot });
+            try self.runDefers(0);
             try self.emitC(.@"return", "propagate Error");
         }
         const then_seq = self.seal(&then_c, .terminated);
@@ -8250,8 +8399,16 @@ const Emitter = struct {
         return .{ .params = k.params, .body = k.body };
     }
 
-    /// The arm's value, coerced to the case's result type.
+    /// The arm's value, coerced to the case's result type. A block arm's
+    /// `defer`s run after its value (decision 539; a panic in the arm skips
+    /// them, the value type of an arm not being named here).
     fn lowerArmBody(self: *Emitter, body: ast.Expr, subj: []const u8) anyerror!void {
+        const mark = self.defer_stack.items.len;
+        try self.lowerArmBodyStmts(body, subj);
+        try self.closeDefers(mark, .value);
+    }
+
+    fn lowerArmBodyStmts(self: *Emitter, body: ast.Expr, subj: []const u8) anyerror!void {
         const scope_mark = self.scopeMark();
         defer self.scopeRestore(scope_mark);
         const unbox = self.arm_unbox;
@@ -8303,7 +8460,7 @@ const Emitter = struct {
             try self.emit(constOf(self.cur_result, "0"));
             return;
         }
-        for (lam.body[0 .. lam.body.len - 1]) |s| _ = try self.emitStmt(s, false);
+        _ = try self.emitStmtsFrom(lam.body[0 .. lam.body.len - 1], 0, false, null, false);
         const last = lam.body[lam.body.len - 1];
         // P3: the last expression is the value; an explicit `break v` carries
         // it instead — the shape the pre-decision-8 block arm is written with.
@@ -17214,6 +17371,7 @@ const Emitter = struct {
         }
         try self.emitC(.{ .local_get = self.yield_target.? }, "everything the body yielded");
         try self.emitConvert("i32", self.cur_result);
+        try self.runDefers(0);
         try self.emit(.@"return");
     }
 
@@ -17444,13 +17602,21 @@ const Emitter = struct {
         defer self.scopeRestore(scope_mark);
         self.loop_depth += 1;
         defer self.loop_depth -= 1;
+        // Decision 539 — a `break` or a `continue` leaves the iteration with
+        // the defers it pushed run; the end of the body runs them too.
+        const saved_floor = self.defer_loop_floor;
+        self.defer_loop_floor = self.defer_stack.items.len;
+        defer self.defer_loop_floor = saved_floor;
+        const mark = self.defer_stack.items.len;
         if (!bodyContinues(body)) {
-            for (body) |stmt| _ = try self.emitStmt(stmt, false);
+            const tail = try self.emitStmtsFrom(body, 0, false, null, true);
+            try self.closeDefers(mark, tail);
             return;
         }
         var c: Capture = .{};
         self.open(&c);
-        for (body) |stmt| _ = try self.emitStmt(stmt, false);
+        const tail = try self.emitStmtsFrom(body, 0, false, null, true);
+        try self.closeDefers(mark, tail);
         const seq = self.seal(&c, .none);
         try self.emitAt(8, .{ .block = .{ .kind = .block, .label = next_label, .body = seq } });
     }
@@ -17554,6 +17720,8 @@ const Emitter = struct {
     /// function being emitted; false leaves the `return` to its ordinary path.
     fn lowerSelfTailCall(self: *Emitter, val: ast.Expr) anyerror!bool {
         const ts = self.tail_self orelse return false;
+        // Decision 539 — a pending `defer` runs after the call, so it is one.
+        if (self.defer_stack.items.len > 0) return false;
         if (!isSelfTailCall(val, ts.name, ts.syms.len)) return false;
         const call_expr = switch (val) {
             .collection => |col| switch (col.kind) {
