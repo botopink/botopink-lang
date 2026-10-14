@@ -458,6 +458,12 @@ pub fn writeStmt(w: *Writer, s: Ast.Stmt, indent: usize) Error!void {
             try w.writeAll(") ");
             try writeBlock(w, tc.handler);
         },
+        .try_finally => |tf| {
+            try w.writeAll("try ");
+            try writeBlock(w, tf.body);
+            try w.writeAll(" finally ");
+            try writeBlock(w, tf.finalizer);
+        },
         .function => |f| try writeFunctionDecl(w, f, indent),
         .class => |c| try writeClass(w, c, indent),
         .comment => |c| try writeComment(w, c),

@@ -313,6 +313,14 @@ pub const Stmt = union(enum) {
     /// expression-position `try` uses it (`commonJS.zig` `guardExprTry`); a
     /// botopink `try` never lowers to JS exceptions otherwise.
     try_catch: TryCatch,
+    /// `try { … } finally { … }` — a botopink `defer` (decision 539): the
+    /// rest of the block is the body, the deferred statement the finalizer.
+    try_finally: TryFinally,
+};
+
+pub const TryFinally = struct {
+    body: Block,
+    finalizer: Block,
 };
 
 pub const TryCatch = struct {

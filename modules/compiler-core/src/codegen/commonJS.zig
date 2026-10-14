@@ -1252,6 +1252,7 @@ const AwaitScan = struct {
             .block => |b| stmts(b.stmts),
             .group => |g| stmts(g),
             .try_catch => |tc| stmts(tc.body.stmts) or stmts(tc.handler.stmts),
+            .try_finally => |tf| stmts(tf.body.stmts) or stmts(tf.finalizer.stmts),
             else => false,
         };
     }
@@ -1421,6 +1422,7 @@ const NameScan = struct {
             },
             .group => |g| s.stmts(g, c),
             .try_catch => |tc| s.stmts(tc.body.stmts, c) or s.stmts(tc.handler.stmts, c),
+            .try_finally => |tf| s.stmts(tf.body.stmts, c) or s.stmts(tf.finalizer.stmts, c),
         };
     }
 
@@ -3484,7 +3486,11 @@ const Emitter = struct {
                 }
                 const prev_unchecked = self.unchecked_default;
                 self.unchecked_default = .{ .primitive = .{ .receiver = prototypeReceiver(owner), .behavior = i } };
-                for (body_src) |s| try body.append(self.arena(), try self.buildStmt(s));
+                {
+                    const built = try self.arena().alloc(js.Stmt, body_src.len);
+                    for (body_src, 0..) |s, bi| built[bi] = try self.buildStmt(s);
+                    try body.appendSlice(self.arena(), try self.foldDefers(body_src, built));
+                }
                 self.unchecked_default = prev_unchecked;
                 self.current_indent = prev;
                 try stmts.append(self.arena(), try self.prototypeAssign(owner, m.name, .{
@@ -4019,7 +4025,19 @@ const Emitter = struct {
     fn buildStmts(self: *Emitter, body: []const ast.Stmt) anyerror![]const js.Stmt {
         var out: std.ArrayListUnmanaged(js.Stmt) = .empty;
         try out.ensureTotalCapacity(self.arena(), body.len);
-        for (body) |s| {
+        for (body, 0..) |s, i| {
+            // Decision 539 — `defer e;` wraps the REST of its block:
+            // `try { rest } finally { e }`, so the deferred statement runs on
+            // every exit of the block and a `defer` not reached is not run.
+            if (s.deferred) {
+                const rest = try self.buildStmts(body[i + 1 ..]);
+                const fin = try self.buildStmt(s);
+                try out.append(self.arena(), .{ .try_finally = .{
+                    .body = .{ .stmts = rest, .indent = self.current_indent },
+                    .finalizer = .{ .stmts = try self.b.stmts(&.{fin}), .indent = self.current_indent },
+                } });
+                break;
+            }
             // `val assert P = e [catch h];` — decision 8 § 9 binds `P`'s names
             // for the statements after it, so it needs more than one JS
             // statement and cannot go through `buildStmt`.
@@ -4030,6 +4048,26 @@ const Emitter = struct {
             try out.append(self.arena(), try self.buildStmt(s));
         }
         return out.toOwnedSlice(self.arena());
+    }
+
+    /// Decision 539 — the lowering of a statement list built one JS statement
+    /// per botopink statement (`built[i]` is `body[i]`): from the first
+    /// `defer`, the rest of the list is a `try { rest } finally { deferred }`
+    /// (see `buildStmts`, which does the same while it builds).
+    fn foldDefers(self: *Emitter, body: []const ast.Stmt, built: []const js.Stmt) anyerror![]const js.Stmt {
+        if (body.len != built.len) return built;
+        for (body, 0..) |s, i| {
+            if (!s.deferred) continue;
+            var out: std.ArrayListUnmanaged(js.Stmt) = .empty;
+            try out.appendSlice(self.arena(), built[0..i]);
+            const rest = try self.foldDefers(body[i + 1 ..], built[i + 1 ..]);
+            try out.append(self.arena(), .{ .try_finally = .{
+                .body = .{ .stmts = rest, .indent = self.current_indent },
+                .finalizer = .{ .stmts = try self.b.stmts(&.{built[i]}), .indent = self.current_indent },
+            } });
+            return out.toOwnedSlice(self.arena());
+        }
+        return built;
     }
 
     /// The `val assert` at `stmt` whose pattern binds at least one name, or
@@ -4190,12 +4228,12 @@ const Emitter = struct {
     fn buildLambdaBody(self: *Emitter, body: []const ast.Stmt) ![]const js.Stmt {
         const out = try self.arena().alloc(js.Stmt, body.len);
         for (body, 0..) |st, i| {
-            out[i] = if (i == body.len - 1)
+            out[i] = if (i == body.len - 1 and !st.deferred)
                 try self.buildLambdaTail(st)
             else
                 try self.buildStmt(st);
         }
-        return out;
+        return self.foldDefers(body, out);
     }
 
     /// The lambda's LAST statement is its return position, so every expression
@@ -5210,8 +5248,9 @@ const Emitter = struct {
         if (body.len == 0) return &.{};
         const out = try self.arena().alloc(js.Stmt, body.len);
         for (body[0 .. body.len - 1], 0..) |st, i| out[i] = try self.buildStmt(st);
-        out[body.len - 1] = try self.buildIfLast(body[body.len - 1]);
-        return out;
+        const last = body[body.len - 1];
+        out[body.len - 1] = if (last.deferred) try self.buildStmt(last) else try self.buildIfLast(last);
+        return self.foldDefers(body, out);
     }
 
     /// `for (xs) { x -> … }` iterates the ITEM: the one binder is the
@@ -7100,8 +7139,9 @@ const Emitter = struct {
         // Decision 525 — an `if` / `try … catch` at the end of an arm (a
         // block's tail) is its value too, unless it jumps out of the arrow.
         const tail_is_value = !armBreakValue(l.body) and
-            l.body.len > 0 and (isArmValueExpr(l.body[l.body.len - 1].expr) or
+            l.body.len > 0 and !l.body[l.body.len - 1].deferred and (isArmValueExpr(l.body[l.body.len - 1].expr) or
             (l.body[l.body.len - 1].expr == .branch and !exprJumps(l.body[l.body.len - 1].expr, false, false)));
+        var armOut: std.ArrayListUnmanaged(js.Stmt) = .empty;
         for (l.body, 0..) |st, i| {
             const br: ?ast.Expr = switch (st.expr) {
                 .jump => |j| switch (j.kind) {
@@ -7111,24 +7151,32 @@ const Emitter = struct {
                 else => null,
             };
             if (br) |val| {
-                try out.append(self.arena(), try self.armReturn(val));
+                try armOut.append(self.arena(), try self.armReturn(val));
             } else if (tail_is_value and i + 1 == l.body.len) {
-                try out.append(self.arena(), try self.armReturn(st.expr));
+                try armOut.append(self.arena(), try self.armReturn(st.expr));
             } else {
-                try out.append(self.arena(), try self.buildStmt(st));
+                try armOut.append(self.arena(), try self.buildStmt(st));
             }
         }
+        try out.appendSlice(self.arena(), try self.foldDefers(l.body, armOut.items));
         // The arms are sibling `if`s over `_s`, not an `else if` chain: an arm
         // whose block ends in a statement that answers nothing (a `for`, an
         // assignment, an `if` without `else`) has to leave the `case` itself,
         // or the next arm's test runs and a `_` arm runs too.
-        const leaves = if (out.items.len == 0) false else switch (out.items[out.items.len - 1]) {
-            .return_, .throw_, .yield_delegate => true,
-            else => false,
-        };
+        const leaves = out.items.len > 0 and stmtLeaves(out.items[out.items.len - 1]);
         if (!leaves) try out.append(self.arena(), .{ .return_ = null });
         self.current_indent = indent;
         return out.toOwnedSlice(self.arena());
+    }
+
+    /// Whether a built statement ends by leaving its function (a `defer`'s
+    /// `try … finally` leaves when its body does).
+    fn stmtLeaves(s: js.Stmt) bool {
+        return switch (s) {
+            .return_, .throw_, .yield_delegate => true,
+            .try_finally => |tf| tf.body.stmts.len > 0 and stmtLeaves(tf.body.stmts[tf.body.stmts.len - 1]),
+            else => false,
+        };
     }
 
     /// The test an arm's pattern becomes over the `case` subject `_s`, or null
