@@ -1050,7 +1050,9 @@ pub const Parser = struct {
                 // In a block used as a value it is the tail either way: the
                 // `;` there means nothing (decision 525).
                 _ = this.match(.semicolon);
-                bare = opts.bracedTail;
+                // Decision 541 (4) — a block `{ … }` ending a function body is
+                // its tail, as a block used as a value is anywhere.
+                bare = opts.bracedTail or isValueBlockExpr(expr);
             } else switch (opts.semicolonPolicy) {
                 .required => _ = try this.consume(.semicolon),
                 .optional => bare = !this.match(.semicolon),
@@ -1072,6 +1074,11 @@ pub const Parser = struct {
         return stmts.toOwnedSlice(alloc);
     }
 
+    /// Decision 541 (4) — a block `{ … }` (`case true { _ { … } }`, `isBlock`).
+    fn isValueBlockExpr(expr: Expr) bool {
+        return expr == .collection and expr.collection.kind == .case and expr.collection.kind.case.isBlock;
+    }
+
     /// Decision 525 — mark a block's tail: its last statement, when it was
     /// written without `;` (`lastBare`) and is an expression (`isTailExpr`).
     pub fn markBlockTail(stmts: []Stmt, lastBare: bool) void {
@@ -1084,7 +1091,9 @@ pub const Parser = struct {
     /// not a `val` / `var` / assignment, a jump, a `use` or a comment.
     fn isTailExpr(expr: Expr) bool {
         return switch (expr) {
-            .binding, .jump, .useHook, .loop => false,
+            // `try e` and `await e` are values (decision 537), not jumps.
+            .jump => |j| j.kind == .try_ or j.kind == .await_,
+            .binding, .useHook, .loop => false,
             .literal => |lit| lit.kind != .comment,
             else => true,
         };

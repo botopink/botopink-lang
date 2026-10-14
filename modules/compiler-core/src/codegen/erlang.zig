@@ -4563,6 +4563,12 @@ const Emitter = struct {
                 },
                 else => {},
             },
+            // Decision 541 (2) — a `case` arm's block and a block `{ … }` are
+            // scopes of the enclosing function: their `break` leaves its loop.
+            .collection => |c| if (c.kind == .case) for (c.kind.case.arms) |arm| {
+                if (arm.body == .function and hasBareBreak(arm.body.function.kind.body)) return true;
+                if (arm.body == .jump and arm.body.jump.kind == .@"break" and arm.body.jump.kind.@"break".value == null) return true;
+            },
             else => {},
         };
         return false;
@@ -6921,6 +6927,15 @@ const Emitter = struct {
                     if (i.else_) |els| if (hasJump(els, kind)) return true;
                 },
                 else => {},
+            },
+            // Decision 541 (2) — a `case` arm's block and a block `{ … }` are
+            // scopes of the enclosing function: their jumps are the loop's.
+            .collection => |c| if (c.kind == .case) for (c.kind.case.arms) |arm| {
+                if (arm.body == .function and hasJump(arm.body.function.kind.body, kind)) return true;
+                if (arm.body == .jump and arm.body.jump.kind == kind) switch (arm.body.jump.kind) {
+                    .@"break" => |brk| if (brk.value == null) return true,
+                    else => return true,
+                };
             },
             else => {},
         };

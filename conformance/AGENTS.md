@@ -1134,9 +1134,10 @@ tail naming a `case` bound by a `val`, an arm answering a typed function express
 `-> @Result<i32, string>` function after a `throw` and a `try`), `modules/fn_expr_typed_in_record_field`
 (a record field's value and an array element beside a lambda), `modules/fn_expr_typed_field_mismatch`
 (refused at the expression), `modules/decorator_member_fn_tail` (a `decl.addMember(name, fn…)` member
-answering its tail) and `modules/lambda_last_statement_semicolon` (a lambda's and an untyped
-`fn(x) { … }`'s `;`-terminated last expression still its value — beam lowered the untyped `fn`
-expression to `undefined` on the base; question B-21-a).
+answering its tail) and `modules/lambda_last_statement_semicolon` (decision 541 (1): a lambda answers its last
+expression written without `;`, one with `;` answers nothing and stands where `fn(i32) -> void` is expected; an
+untyped `fn(x) { … }` keeps the value of its last statement — beam lowered the untyped `fn` expression to
+`undefined` on the base), with its refusal `modules/lambda_semicolon_not_a_value` (`fn(i32) -> i32` expected, at the lambda).
 B-22 adds `modules/fn_value_in_tuple` (a function value read out of a tuple by position and called, its
 arguments staged first — beam's frame did not count the stack slot the arguments park in while
 `erlang:element/2` reads the function, `invalid_store` on the base).
@@ -1862,6 +1863,11 @@ targets; and its refusals, each located: `modules/block_builtin_removed` (`remov
 `async { … }` block's tail as its task's value: the parent dropped it (commonJS printed `null`,
 erlang raised `case_clause` on a `case` at the end). The cells whose `comptime { …; break v; }` or
 value `case` arm ended in `;` are rewritten in the new spelling, their answers unchanged.
+Decision 541 adds `modules/case_arm_break_value_removed` (a `case` arm's `break <value>`, `block-break-value` at the `break`)
+and the cells of a block as a scope of the enclosing function: `modules/block_await_reaches_function` (an `await` in a block and
+in an arm's block), `modules/block_yield_reaches_generator` (a `yield` in a block, an arm and a value block),
+`modules/block_break_reaches_loop` (a bare `break` in a block and in an arm of a `while`) and
+`modules/block_ends_function_body_is_tail` (a block ending a function body is its tail); all four targets.
 `modules/trailing_lambda_call` pins the trailing lambda as the call's last argument (decision 525): a method's and a plain
 function's, with one parameter and with none (`b.run { -> 10 }`, `twice { -> 4 }`, `apply(3) { k -> k * 3 }`), on all four
 targets — the parent refused the parameters as unbound and the plain function's lambda as an arity error, and wasm and beam

@@ -577,6 +577,13 @@ codegen/
   lambda's single parameter is `const v = _s;` at the top of the arm — the only
   scope where the subject is in hand. The checker types it as the subject
   narrowed by the arm's pattern.
+- **A `case` arm's block is no closure** (decision 541 (2)). A statement `case` whose arms hold a bare
+  `break` / `continue` of the enclosing loop answers `{ __bp_break: true }` / `{ __bp_continue: true }` from its
+  arrow (`case_jump_box`, `armLoopJumps`), and the statements after the call do the native jump
+  (`caseStmtWithReturns`, `loopJumpStmt`) — through an enclosing `case`'s box when it sits in one. A `case`
+  whose arms `yield` inside a generator is a `function*` called in place and delegated to: `(yield*
+  (function* () { … }).call(this))` (`YieldScan`; `async function*` when the arms also `await`), its value the
+  delegate's. An arm ending in `await e` returns it (`isArmValueExpr`).
 - **A lambda's last statement is a return position** (`buildLambdaTail`): a JS
   arrow block does not auto-return, so every expression form `buildExpr` gives a
   value to is `return`ed there — the same rule `buildIfLast` applies one level
@@ -1635,7 +1642,8 @@ codegen/
   - `a..b` → `lists:seq(A, B - 1)`, `a...b` → `lists:seq(A, B)`.
   A value-less `break` in a `lists:foreach` is `erlang:throw('__bp_break')` and
   its loop is wrapped in the `try … catch throw:'__bp_break' -> ok end` that ends
-  it (`loopBreakCatch`, `hasBareBreak`).
+  it (`loopBreakCatch`, `hasBareBreak`); `hasBareBreak` and `hasJump` read into a `case` arm's block and a
+  block `{ … }` (decision 541 (2): their `break` / `continue` are the enclosing loop's).
 - **Module-level `val`s** (`topValForms`): erlang has no module-level storage, so a
   NAMED `val` is always a 0-arity function and a bare reference to it is the call
   `name()` (`top_vals`); a lambda-valued one applies what it answers,
@@ -2231,7 +2239,9 @@ codegen/
   answers the fun: a statement-position block does not parse, so `{ … -> … }`
   there is always one). It ran as a statement and the arm answered `ok`, which
   the caller then applied (`{badfun, ok}`). `emitLambdaBody` shares the rule,
-  so a lambda's own last-statement lambda is its value too.
+  so a lambda's own last-statement lambda is its value too. `await e` / `try e` are values (`armValueTail`);
+  a bare `break` in an arm leaves the enclosing loop, and an arm ending in `yield` does not end the arm
+  (decision 541 (2)) — `lowerArmBody`.
 - **Case patterns** (`emitPatternArm`, `emitSubPattern`, decision 8 §5; C-06's
   and C-07 D4's beam halves): every shape the `.fields`/`.binding` arms never
   read — a range, a tuple, `..`, labels, a literal or nested payload, a

@@ -205,6 +205,8 @@ fn armValueTail(e: ast.Expr) bool {
         // `{ n -> async { throw "e"; } }` that dropped it for `ok` read back
         // as a success at its `await`.
         .function => true,
+        // `await e` and `try e` are values (decisions 537, 541 (2)).
+        .jump => |j| j.kind == .await_ or j.kind == .try_,
         else => false,
     };
 }
@@ -10434,10 +10436,12 @@ const Emitter = struct {
             if (stmt.expr == .jump and stmt.expr.jump.kind == .@"break") {
                 if (stmt.expr.jump.kind.@"break".value) |v| {
                     try self.lowerExprIntoX0(v.*);
-                } else {
-                    try beamEmitter.writeMoveOp(self.out, Op.atom("ok"), Dst.xr(0));
+                    return false;
                 }
-                return false;
+                // Decision 541 (2) — a bare `break` in an arm's block leaves
+                // the enclosing loop: the arm is no scope of its own.
+                try self.emitStmt(stmt);
+                return true;
             }
             if (i + 1 == stmts.len and armValueTail(stmt.expr)) {
                 try self.lowerExprIntoX0(stmt.expr);
@@ -10452,7 +10456,9 @@ const Emitter = struct {
             }
             try self.emitStmt(stmt);
         }
-        if (bodyExits(stmts)) return true;
+        // A `yield` ends no arm (decision 541 (2)): the `case` goes on to its end.
+        const ends_in_yield = stmts.len > 0 and stmts[stmts.len - 1].expr == .jump and stmts[stmts.len - 1].expr.jump.kind == .yield;
+        if (!ends_in_yield and bodyExits(stmts)) return true;
         try beamEmitter.writeMoveOp(self.out, Op.atom("ok"), Dst.xr(0));
         return false;
     }

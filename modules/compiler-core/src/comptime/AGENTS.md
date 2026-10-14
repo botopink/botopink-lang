@@ -231,13 +231,14 @@ signature label or the prefixed loop's) — a plain loop's label is `yield-label
 `yield-label-unbound`. `break <value>` is the same jump with an end: it emits the
 value and ends the nearest generator scope (its value unifies with the scope's
 `iterItem`, the completion channel `C` of the old RI2/RI3 is gone — decision 103);
-outside one it is the value of a `comptime` block or a `case` arm's block
-(`env.breakScope == .valueBlock`, decision 2) or `break-value-outside-generator`.
+outside one it is `break-value-outside-generator` — and a `comptime` block's value is its tail
+(the `break` the parser wraps it in, `env.breakScope == .valueBlock`); a `case` arm's block takes none
+(`env.breakScope == .armBlock`, `block-break-value`, decision 541 (3)).
 A bare `break` leaves the nearest loop, ends the generator scope at loop depth 0
 (`iterator_jump_lowerings .wrap_done_void`), and is `break-outside-loop` with
 nothing to leave; `continue` with no loop is `continue-outside-loop`. A lambda
-body restarts `loopDepth` at 0 and `breakScope` at `.none` (a `case` arm's block
-keeps `.valueBlock`).
+body restarts `loopDepth` at 0 and `breakScope` at `.none`; a `case` arm's block (and so a block
+`{ … }`) restarts nothing — a bare `break` / `continue` in it reaches the enclosing loop (decision 541 (2)).
 
 `inEffectContext(env, kind)` fires the sequence-only rejections (RI1,
 `iter-mixed-yield-return`). `resultVariantCallName` /
@@ -1388,7 +1389,11 @@ else return b`, `@panic(…)`) is left alone. In a body answering nothing — no
 expression — a `tail = .value` statement must be `void` (`refuseValueTailInVoid`, at the tail). A
 typed function expression answers its written return: with `-> R` a body that can run off its end
 is refused at the expression (`stmtsMayFallThrough`), and its tail does not type it. A lambda and an
-untyped `fn(x) { … }` keep the value of their last statement as before.
+untyped `fn(x) { … }` keep the value of their last statement as before — except that a lambda
+whose last expression statement is written with `;` answers nothing (decision 541 (1)):
+`discardUnwrittenTail` appends a typed bare `return` after it, so every backend reads a lambda that ends in a
+statement, and the lambda's type is `void` (`{ x -> bump(x); }` stands where `fn(i32) -> void` is expected and is
+refused, at the lambda, where `fn(i32) -> i32` is); a last expression already `void` / `noreturn` needs nothing.
 
 ## Blocks (decision 525)
 
@@ -1416,12 +1421,16 @@ an arm whose last statement is written with `;` contributes nothing. The refusal
 - `block-void-value` — a block whose value is `void` handed where `unknown` is expected (the
   position's expectation, or `unifyArgument`);
 - `block-break-value` — a written `break <value>` meant as a block's value: in a block's own
-  statements and `if` branches (`blockBreakValue`; a loop, a closure and a `case` arm's block are
-  scopes of their own), and in `comptime { … }`, whose tail the parser wrapped in the block's
-  `break` (`tail = .returned`, skipped).
+  statements and `if` branches (`blockBreakValue`; a loop and a closure are scopes of their own),
+  in `comptime { … }`, whose tail the parser wrapped in the block's `break` (`tail = .returned`,
+  skipped), and in a `case` arm's block (decision 541 (3): `BreakScope.armBlock`, refused where the
+  `break` is typed; a generator scope's `break <value>` is the generator's and stays).
 
 `@block` is a parse error (`removed-block-builtin`), and `builtins.d.bp` no longer declares it.
-`await`, `yield`, `break` and `continue` in a block are judged as in a `case` arm's block.
+`await`, `yield`, `break` and `continue` in a block or a `case` arm's block reach the enclosing function or
+loop (decision 541 (2)): `inferFunctionExprExpectedInner` keeps `starFn`, the label stack, `loopDepth`,
+`asyncBlockDepth` and `inferredErrorScope` for an arm's block (`env.keepReturnTarget`), as it keeps the return
+target. `try e` and `await e` are values, so a block or an arm may end in one (`valueJump`).
 
 ## Decisions 44 and 45 (C-18)
 

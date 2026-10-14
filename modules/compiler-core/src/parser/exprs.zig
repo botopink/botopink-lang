@@ -1362,6 +1362,10 @@ pub fn parsePrimary(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
                 .handleComments = true,
                 .semicolonPolicy = .optional,
                 .markTail = true,
+                // Decision 541 (1) — a lambda answers its last expression
+                // written without `;`; a braced `if` / `case` at its end is
+                // that expression (its `;` means nothing, decision 29 (c)).
+                .bracedTail = true,
             });
 
             return Expr{ .function = .{ .loc = locFromToken(braceTok), .kind = .{

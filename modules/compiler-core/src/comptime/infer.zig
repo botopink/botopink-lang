@@ -15978,6 +15978,12 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
                     if (ctx.?.iterItem) |item| try unifyItem(env, item, typedPtr.getType(), loc);
                     return TypedExpr{ .jump = .{ .loc = loc, .type_ = try env.namedType("void"), .kind = .{ .@"break" = .{ .label = b.label, .value = typedPtr } } } };
                 }
+                if (b.label == null and env.breakScope == .armBlock) {
+                    // Decision 541 (3) — a `case` arm's `break <value>` is
+                    // removed, as `comptime`'s was: the arm's value is its tail.
+                    try refuseBlockBreak(env, loc);
+                    unreachable;
+                }
                 if (b.label == null and env.breakScope == .valueBlock) {
                     const typedPtr = try makeTypedPtr(env, try inferExprTyped(env, expr.*));
                     return TypedExpr{ .jump = .{ .loc = loc, .type_ = try env.namedType("void"), .kind = .{ .@"break" = .{ .label = null, .value = typedPtr } } } };
@@ -22341,6 +22347,7 @@ fn inferCaseArmBody(
 /// contributes nothing: a jump arm, a `void` arm, a block arm without a
 /// top-level `break <value>` (decision 2: a block's value comes from `break`).
 fn caseArmValueType(env: *Env, body: ast.TypedExpr) InferError!?*T.Type {
+    _ = env;
     if (body == .jump) return null;
     // Decision 8 §5.1 P3 — `Pattern { body }` lands as the same lambda node the
     // older block arm produced, and the body **is** a lambda body: its last
@@ -22348,20 +22355,6 @@ fn caseArmValueType(env: *Env, body: ast.TypedExpr) InferError!?*T.Type {
     // `0 { "zero" }` contributed nothing at all and the `case` typed `void`,
     // while `_ { n -> … }` was unified as a `function`.
     if (body == .function and body.function.kind.syntax == .lambda) {
-        var found: ?*T.Type = null;
-        for (body.function.kind.body) |stmt| {
-            const e = stmt.expr;
-            if (e != .jump) continue;
-            switch (e.jump.kind) {
-                // A `break <value>` names the arm's value explicitly and wins
-                // over the tail; that is the block arm's own rule (06 C2a).
-                .@"break" => |b| if (b.value) |v| {
-                    if (found) |f| try unifyAt(env, f, v.getType(), v.getLoc()) else found = v.getType();
-                },
-                else => {},
-            }
-        }
-        if (found) |f| return f;
         // Decision 525 — the arm is a block: its value is its tail, the last
         // expression written without `;`.
         const stmts = body.function.kind.body;
@@ -22369,11 +22362,17 @@ fn caseArmValueType(env: *Env, body: ast.TypedExpr) InferError!?*T.Type {
         const tail = last.expr;
         // §3.2 — an arm whose body jumps (`return`/`throw`/`continue`) does not
         // contribute to the `case`'s type.
-        if (tail == .jump) return null;
+        if (tail == .jump and !valueJump(tail)) return null;
         if (last.tail == .none) return null;
         return nonVoid(tail.getType());
     }
     return nonVoid(body.getType());
+}
+
+/// `try e` and `await e` are jumps in the tree and values in the language: a
+/// block's tail may be one.
+fn valueJump(e: ast.TypedExpr) bool {
+    return e == .jump and (e.jump.kind == .try_ or e.jump.kind == .await_);
 }
 
 /// The last statement of a body that is not a comment, or null.
@@ -22394,11 +22393,8 @@ fn lastNonComment(stmts: []const ast.TypedStmt) ?ast.TypedStmt {
 fn armAnswersNothing(body: ast.TypedExpr) bool {
     if (body == .jump) return false;
     if (body == .function and body.function.kind.syntax == .lambda) {
-        for (body.function.kind.body) |stmt| {
-            if (stmt.expr == .jump and stmt.expr.jump.kind == .@"break" and stmt.expr.jump.kind.@"break".value != null) return false;
-        }
         const last = lastNonComment(body.function.kind.body) orelse return true;
-        if (last.expr == .jump) return false;
+        if (last.expr == .jump and !valueJump(last.expr)) return false;
         const d = last.expr.getType().deref();
         if (d.isNamed("noreturn")) return false;
         if (last.tail == .none) return true;
@@ -23134,6 +23130,40 @@ fn writtenReturnHasValue(rt: ?ast.TypeRef) bool {
     };
 }
 
+/// Decision 541 (1) — a lambda whose last expression statement is written
+/// with `;` answers nothing. Its value is discarded by a typed bare `return`
+/// after it, so every backend reads a lambda that ends in a statement; a last
+/// expression that is already `void` / `noreturn` (or not yet known) needs
+/// nothing, and a binding, a jump, a loop and a `use` are statements anyway.
+fn discardUnwrittenTail(env: *Env, body: []const ast.Stmt, typed: []ast.TypedStmt) InferError![]ast.TypedStmt {
+    var i = body.len;
+    while (i > 0) : (i -= 1) {
+        const e = body[i - 1].expr;
+        if (e == .literal and e.literal.kind == .comment) continue;
+        break;
+    }
+    if (i == 0) return typed;
+    const s = body[i - 1];
+    if (s.tail != .none) return typed;
+    const tailable = switch (s.expr) {
+        .jump => |j| j.kind == .try_ or j.kind == .await_,
+        .binding, .useHook, .loop => false,
+        .literal => |lit| lit.kind != .comment,
+        else => true,
+    };
+    if (!tailable) return typed;
+    const d = typed[i - 1].expr.getType().deref();
+    if (d.isNamed("void") or d.isNamed("noreturn") or d.isUnbound()) return typed;
+    const out = try env.arena.alloc(ast.TypedStmt, typed.len + 1);
+    @memcpy(out[0..typed.len], typed);
+    out[typed.len] = .{ .expr = .{ .jump = .{
+        .loc = s.expr.getLoc(),
+        .type_ = try env.namedType("void"),
+        .kind = .{ .@"return" = null },
+    } } };
+    return out;
+}
+
 fn inferFunctionExprExpectedInner(
     env: *Env,
     func: ast.FunctionExprOf(.untyped),
@@ -23198,14 +23228,19 @@ fn inferFunctionExprExpectedInner(
         env.starFn = prevStarFn;
         env.labelStack.shrinkRetainingCapacity(prevLabelsLen);
     }
-    env.labelStack.shrinkRetainingCapacity(0);
     // A lambda body is another function: no loop of the enclosing body is
     // left by a `break` inside it (decision 105), and only a `case` arm's
-    // block keeps the value-block scope it was opened in.
+    // block keeps the value-block scope it was opened in. A `case` arm's block
+    // (and so a block `{ … }`) is no function (decision 541 (2)): the labels,
+    // the loops and the generator / task scope of the enclosing function are
+    // its own.
     const prevLoopDepth = env.loopDepth;
     const prevBreakScope = env.breakScope;
-    env.loopDepth = 0;
-    if (env.breakScope != .valueBlock) env.breakScope = .none;
+    if (!armBlock) {
+        env.labelStack.shrinkRetainingCapacity(0);
+        env.loopDepth = 0;
+        if (env.breakScope != .valueBlock) env.breakScope = .none;
+    }
     defer {
         env.loopDepth = prevLoopDepth;
         env.breakScope = prevBreakScope;
@@ -23214,15 +23249,17 @@ fn inferFunctionExprExpectedInner(
     const fk = func.kind;
     // A lambda inside an `async { }` block is its own function again.
     const prevAsyncDepth = env.asyncBlockDepth;
-    env.asyncBlockDepth = 0;
+    if (!armBlock) env.asyncBlockDepth = 0;
     defer env.asyncBlockDepth = prevAsyncDepth;
     const prevInferredErrLambda = env.inferredErrorScope;
-    env.inferredErrorScope = false;
+    if (!armBlock) env.inferredErrorScope = false;
     defer env.inferredErrorScope = prevInferredErrLambda;
     // Anonymous function expressions never carry an effect annotation, so the
     // async/generator context is always cleared inside them. (The deprecated
-    // `*fn(...)` anonymous-generator form was removed in v0.beta.19.)
-    env.starFn = null;
+    // `*fn(...)` anonymous-generator form was removed in v0.beta.19.) A
+    // `case` arm's block keeps it: `await` / `yield` reach the enclosing
+    // function (decision 541 (2)).
+    if (!armBlock) env.starFn = null;
 
     // Pull expected param/return types out of `expected`, but only when it is a
     // function type whose arity matches this lambda. This lets `val f: fn(A, B)
@@ -23269,7 +23306,11 @@ fn inferFunctionExprExpectedInner(
         }
     }
     if (!armBlock) try refuseRedeclaredBindings(env, fk.body, fk.params);
-    const bodyTyped = try inferStmtsTyped(env, fk.body);
+    var bodyTyped = try inferStmtsTyped(env, fk.body);
+    // Decision 541 (1) — a lambda answers its last expression written without
+    // `;`: with one, the expression is a statement and the lambda answers
+    // nothing.
+    if (fk.syntax == .lambda and !keep) bodyTyped = try discardUnwrittenTail(env, fk.body, bodyTyped);
     // Decisions 408 / 409 — a typed function expression answers the return it
     // writes: a tail written without `;` is its value (the parser made it a
     // `return`), so a body with `-> R` that can run off its end is refused,
@@ -23302,7 +23343,11 @@ fn inferFunctionExprExpectedInner(
         }
         break :blk tail.getType();
     } else try env.namedType("void");
-    if (!typedFn) if (expRet) |er| try unifyAt(env, retType, er, loc);
+    if (!typedFn) if (expRet) |er| {
+        // A lambda whose last expression ends with `;` answers nothing: say
+        // what the position expected, then what the lambda answers.
+        if (bodyTyped.len != fk.body.len) try unifyAt(env, er, retType, loc) else try unifyAt(env, retType, er, loc);
+    };
     const funcType = try env.funcType(params, retType);
     return TypedExpr{ .function = .{ .loc = loc, .type_ = funcType, .kind = .{
         .syntax = fk.syntax,
@@ -23446,9 +23491,11 @@ fn inferCollectionExpr(env: *Env, col: ast.CollectionExprOf(.untyped), loc: ast.
             // Decision 357 — an arm runs on some calls only: no `use` in it.
             const prevUseConstruct = enterUseConstruct(env, "a `case` arm");
             defer env.useConstruct = prevUseConstruct;
-            // An arm's block takes `break <value>` as its value (decision 2).
+            // An arm's block is a scope of the enclosing function: a bare
+            // `break` reaches the enclosing loop, `break <value>` is refused
+            // (decision 541 (3)).
             const prevBreakScope = env.breakScope;
-            env.breakScope = .valueBlock;
+            env.breakScope = .armBlock;
             defer env.breakScope = prevBreakScope;
             for (c.arms, 0..) |arm, i| {
                 var snapshots: std.ArrayListUnmanaged(PatternBindingSnapshot) = .empty;

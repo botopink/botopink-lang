@@ -1,0 +1,30 @@
+//// Decision 541 (2) — a block is a scope, never a closure: an `await` in a
+//// block `{ … }` or in a `case` arm's block waits for the enclosing task, and
+//// the block's value is the awaited one.
+
+fn double(n: i32) -> @Task<i32> {
+    return n * 2;
+}
+
+fn viaBlock(n: i32) -> @Task<i32> {
+    val v = { await double(n) };
+    return v + 1;
+}
+
+fn viaCase(n: i32) -> @Task<i32> {
+    val v = case n {
+        1 { await double(n) }
+        _ { 0 }
+    };
+    return v + 1;
+}
+
+fn run() -> @Task<void> {
+    @print(await viaBlock(4));
+    @print(await viaCase(1));
+    @print(await viaCase(2));
+}
+
+pub fn main() {
+    run();
+}

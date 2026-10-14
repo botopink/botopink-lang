@@ -1261,6 +1261,65 @@ const AwaitScan = struct {
     }
 };
 
+/// True when a built JS statement list holds a `yield` outside any nested
+/// function — what a `case` arm feeding the enclosing generator needs its
+/// IIFE to be a generator for (decision 541 (2)).
+const YieldScan = struct {
+    fn expr(e: js.Expr) bool {
+        return switch (e) {
+            .yield_ => true,
+            .member => |m| expr(m.object.*),
+            .index => |ix| expr(ix.object.*) or expr(ix.index.*),
+            .call, .new_ => |cl| expr(cl.callee.*) or exprs(cl.args),
+            .binary => |b| expr(b.lhs.*) or expr(b.rhs.*),
+            .unary => |u| expr(u.operand.*),
+            .ternary => |t| expr(t.cond.*) or expr(t.then.*) or expr(t.else_.*),
+            .assign => |a| expr(a.target.*) or expr(a.value.*),
+            .paren => |p| expr(p.*),
+            .await_ => |a| expr(a.*),
+            .array => |a| exprs(a.elems),
+            .object => |o| blk: {
+                for (o.props) |pr| switch (pr) {
+                    .kv => |kv| if (expr(kv.value)) break :blk true,
+                    else => {},
+                };
+                break :blk false;
+            },
+            .host => |parts| blk: {
+                for (parts) |pt| switch (pt) {
+                    .text => {},
+                    .expr => |x| if (expr(x)) break :blk true,
+                };
+                break :blk false;
+            },
+            else => false,
+        };
+    }
+    fn exprs(xs: []const js.Expr) bool {
+        for (xs) |x| if (expr(x)) return true;
+        return false;
+    }
+    fn stmt(st: js.Stmt) bool {
+        return switch (st) {
+            .expr, .throw_ => |e| expr(e),
+            .yield_delegate => true,
+            .decl => |d| expr(d.value),
+            .return_ => |e| if (e) |v| expr(v) else false,
+            .if_ => |i| expr(i.cond) or stmt(i.then.*) or (if (i.else_) |el| stmt(el.*) else false),
+            .for_of => |f| expr(f.iter) or stmts(f.body.stmts),
+            .while_ => |wh| expr(wh.cond) or stmts(wh.body.stmts),
+            .block => |b| stmts(b.stmts),
+            .group => |g| stmts(g),
+            .try_catch => |tc| stmts(tc.body.stmts) or stmts(tc.handler.stmts),
+            else => false,
+        };
+    }
+    fn stmts(list: []const js.Stmt) bool {
+        for (list) |st| if (stmt(st)) return true;
+        return false;
+    }
+};
+
 /// Walks a built JS subtree looking for a reference to one of `names`.
 /// `closure_only` counts a hit only when it sits inside a nested function,
 /// arrow, class or object method: that is the shape where reassigning a
@@ -1599,6 +1658,13 @@ const Emitter = struct {
     /// `{ __bp_return: true, value }`, which the statement after the call
     /// returns. Reset by every nested function, like `case_ok_wrap`.
     case_return_box: bool = false,
+    /// Set while the arms of a `case` used as a STATEMENT are lowered inside
+    /// the arrow function a `case` becomes and an arm holds a `break` /
+    /// `continue` of the enclosing loop (decision 541 (2): a block is no
+    /// closure): the jump answers `{ __bp_break: true }` / `{ __bp_continue:
+    /// true }`, which the statement after the call turns back into the native
+    /// jump. Reset by every nested function, like `case_return_box`.
+    case_jump_box: bool = false,
     /// Set while the arms of a `case` used as a VALUE are lowered inside the
     /// IIFE it becomes (`buildCaseValue`): a `return` there is the enclosing
     /// function's — a `throw` in a `-> @Result` fn's arm is the transform's
@@ -4055,14 +4121,14 @@ const Emitter = struct {
                 .tryCatch => {},
             },
             .loop => |lp| return try self.buildLoopStmt(lp),
-            .collection => |col| if (col.kind == .case and !self.in_generator) {
+            .collection => |col| if (col.kind == .case) {
                 if (try self.caseStmtWithReturns(col.kind.case)) |st| return st;
             },
             .jump => |j| switch (j.kind) {
                 .@"break" => |br| return self.buildBreakStmt(br, false),
                 .throw_ => |r| return .{ .throw_ = try self.buildExpr((r orelse return error.ThrowWithoutOperand).*) },
                 .@"continue" => return switch (self.loop_ctx) {
-                    .none => error.JumpOutsideLoop,
+                    .none => if (self.case_jump_box) try self.jumpBox("__bp_continue") else error.JumpOutsideLoop,
                     .stmt => js.Stmt.continue_,
                 },
                 else => {},
@@ -4197,27 +4263,88 @@ const Emitter = struct {
     /// arrow: the function ran on past it. Null when no arm returns.
     fn caseStmtWithReturns(self: *Emitter, c: anytype) anyerror!?js.Stmt {
         var any_returns = false;
+        var any_jumps = false;
         for (c.arms) |arm| {
             if (armReturns(arm.body)) any_returns = true;
+            if (armLoopJumps(arm.body)) any_jumps = true;
         }
-        if (!any_returns) return null;
+        // A generator keeps the lowering it has always had unless an arm
+        // jumps out of the IIFE (decision 541 (2)).
+        if (self.in_generator and !any_jumps) return null;
+        if (!any_returns and !any_jumps) return null;
         const n = self.try_seq;
         self.try_seq += 1;
         const name = try std.fmt.allocPrint(self.arena(), "_case{d}", .{n});
         const prev_box = self.case_return_box;
+        const prev_jump_box = self.case_jump_box;
         const prev_throws = self.case_return_throws;
         self.case_return_box = true;
+        self.case_jump_box = any_jumps;
         self.case_return_throws = false;
         const call = try self.buildCase(c.subjects, c.arms);
         self.case_return_box = prev_box;
+        self.case_jump_box = prev_jump_box;
         self.case_return_throws = prev_throws;
         const temp: js.Expr = .{ .name = name };
-        const cond = try self.b.binaryBare("&&", temp, try self.b.member(temp, "__bp_return"));
-        const ret: js.Stmt = .{ .return_ = if (self.case_return_box) try self.returnBox(try self.b.member(temp, "value")) else try self.b.member(temp, "value") };
-        return try self.b.group(&.{
-            .{ .decl = .{ .pattern = .{ .name = name }, .value = call } },
-            try self.b.ifStmt(cond, ret),
-        });
+        var items: std.ArrayListUnmanaged(js.Stmt) = .empty;
+        try items.append(self.arena(), .{ .decl = .{ .pattern = .{ .name = name }, .value = call } });
+        if (any_returns) {
+            const cond = try self.b.binaryBare("&&", temp, try self.b.member(temp, "__bp_return"));
+            const ret: js.Stmt = .{ .return_ = if (self.case_return_box) try self.returnBox(try self.b.member(temp, "value")) else try self.b.member(temp, "value") };
+            try items.append(self.arena(), try self.b.ifStmt(cond, ret));
+        }
+        if (any_jumps) {
+            const brk = try self.b.binaryBare("&&", temp, try self.b.member(temp, "__bp_break"));
+            try items.append(self.arena(), try self.b.ifStmt(brk, try self.loopJumpStmt(false)));
+            const cont = try self.b.binaryBare("&&", temp, try self.b.member(temp, "__bp_continue"));
+            try items.append(self.arena(), try self.b.ifStmt(cont, try self.loopJumpStmt(true)));
+        }
+        return try self.b.group(items.items);
+    }
+
+    /// `return { <key>: true };` — a `break` / `continue` of the enclosing
+    /// loop leaving the arrow a `case` became (`case_jump_box`).
+    fn jumpBox(self: *Emitter, key: []const u8) anyerror!js.Stmt {
+        return .{ .return_ = try self.b.paren(try self.b.object(&.{.{ .kv = .{ .key = key, .value = .{ .name = "true" } } }})) };
+    }
+
+    /// The `break` / `continue` the statement after a `case` call performs:
+    /// native in a loop, the box of the enclosing `case` arrow otherwise.
+    fn loopJumpStmt(self: *Emitter, is_continue: bool) anyerror!js.Stmt {
+        return switch (self.loop_ctx) {
+            .stmt => if (is_continue) js.Stmt.continue_ else js.Stmt.break_,
+            .none => if (self.case_jump_box) try self.jumpBox(if (is_continue) "__bp_continue" else "__bp_break") else if (!is_continue and self.in_generator) js.Stmt{ .return_ = null } else error.JumpOutsideLoop,
+        };
+    }
+
+    /// True when a `case` arm holds a `break` / `continue` of the enclosing
+    /// loop (decision 541 (2)): its block is no closure.
+    fn armLoopJumps(body: ast.Expr) bool {
+        return switch (body) {
+            .jump => |j| (j.kind == .@"break" and j.kind.@"break".value == null) or j.kind == .@"continue",
+            .function => |f| f.kind.syntax == .lambda and loopJumpStmts(f.kind.body),
+            else => false,
+        };
+    }
+
+    fn loopJumpStmts(stmts: []const ast.Stmt) bool {
+        for (stmts) |st| if (loopJumpExpr(st.expr)) return true;
+        return false;
+    }
+
+    fn loopJumpExpr(e: ast.Expr) bool {
+        return switch (e) {
+            .jump => |j| (j.kind == .@"break" and j.kind.@"break".value == null) or j.kind == .@"continue",
+            .branch => |br| switch (br.kind) {
+                .if_ => |i| loopJumpStmts(i.then_) or (if (i.else_) |els| loopJumpStmts(els) else false),
+                .tryCatch => false,
+            },
+            .collection => |col| if (col.kind == .case) blk: {
+                for (col.kind.case.arms) |arm| if (armLoopJumps(arm.body)) break :blk true;
+                break :blk false;
+            } else false,
+            else => false,
+        };
     }
 
     /// `(params) => { body }` with implicit tail return.
@@ -4229,7 +4356,9 @@ const Emitter = struct {
         const prev_wrap = self.case_ok_wrap;
         const prev_in_test = self.in_test_body;
         const prev_box = self.case_return_box;
+        const prev_jump_box = self.case_jump_box;
         const prev_throws = self.case_return_throws;
+        self.case_jump_box = false;
         self.in_generator = false;
         self.loop_ctx = .none;
         self.case_ok_wrap = false;
@@ -4242,6 +4371,7 @@ const Emitter = struct {
             self.case_ok_wrap = prev_wrap;
             self.in_test_body = prev_in_test;
             self.case_return_box = prev_box;
+            self.case_jump_box = prev_jump_box;
             self.case_return_throws = prev_throws;
         }
         const ps = try self.arena().alloc(js.Param, params.len);
@@ -5139,7 +5269,7 @@ const Emitter = struct {
     fn buildBreakStmt(self: *Emitter, br: anytype, is_last: bool) anyerror!js.Stmt {
         _ = is_last;
         const val = br.value orelse return switch (self.loop_ctx) {
-            .none => if (self.in_generator) js.Stmt{ .return_ = null } else error.JumpOutsideLoop,
+            .none => if (self.case_jump_box) try self.jumpBox("__bp_break") else if (self.in_generator) js.Stmt{ .return_ = null } else error.JumpOutsideLoop,
             .stmt => js.Stmt.break_,
         };
         if (!self.in_generator) return error.JumpOutsideLoop;
@@ -5175,6 +5305,9 @@ const Emitter = struct {
         const prev_box_g = self.case_return_box;
         self.case_return_box = false;
         defer self.case_return_box = prev_box_g;
+        const prev_jbox_g = self.case_jump_box;
+        self.case_jump_box = false;
+        defer self.case_jump_box = prev_jbox_g;
         const prev_throws_g = self.case_return_throws;
         self.case_return_throws = false;
         defer self.case_return_throws = prev_throws_g;
@@ -5242,6 +5375,9 @@ const Emitter = struct {
         const prev_box_f = self.case_return_box;
         self.case_return_box = false;
         defer self.case_return_box = prev_box_f;
+        const prev_jbox_f = self.case_jump_box;
+        self.case_jump_box = false;
+        defer self.case_jump_box = prev_jbox_f;
         const prev_throws_f = self.case_return_throws;
         self.case_return_throws = false;
         defer self.case_return_throws = prev_throws_f;
@@ -6935,7 +7071,9 @@ const Emitter = struct {
     fn isArmValueExpr(e: ast.Expr) bool {
         return switch (e) {
             .literal, .identifier, .binaryOp, .unaryOp, .call, .collection, .function => true,
-            .jump, .branch, .loop, .binding, .useHook, .comptime_ => false,
+            // `await e` is a value (decision 537, 541 (2)).
+            .jump => |j| j.kind == .await_,
+            .branch, .loop, .binding, .useHook, .comptime_ => false,
         };
     }
 
@@ -7291,6 +7429,26 @@ const Emitter = struct {
             self.case_ok_wrap = prev_wrap;
         }
         const stmts = try self.buildCaseStmts(subjects, arms, base + 1);
+        // Decision 541 (2) — an arm that `yield`s feeds the enclosing generator:
+        // the `case` is a generator of its own, delegated to, and its value is
+        // the delegate's.
+        if (self.in_generator and YieldScan.stmts(stmts)) {
+            const kw: []const u8 = if (AwaitScan.stmts(stmts)) "async function*" else "function*";
+            const gen = try self.b.paren(.{ .function = .{
+                .keyword = kw,
+                .params = &.{},
+                .body = .{ .stmts = stmts, .indent = base },
+            } });
+            const delegated = try self.b.call(try self.b.member(gen, "call"), &.{.this});
+            const parts = try self.arena().alloc(js.HostPart, 2);
+            parts[0] = .{ .text = "(yield* " };
+            parts[1] = .{ .expr = delegated };
+            const closed = try self.arena().alloc(js.HostPart, 3);
+            closed[0] = parts[0];
+            closed[1] = parts[1];
+            closed[2] = .{ .text = ")" };
+            return .{ .host = closed };
+        }
         // An arm that `await`s cannot sit in a plain arrow: the `case` is then
         // `await (async () => { … })()`, legal because only an async body
         // writes `await`.

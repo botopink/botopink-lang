@@ -121,11 +121,11 @@ block that reads something between the `{` and its first statement — a prologu
 
 | Block | Prologue | Policy |
 |---|---|---|
-| fn / `test` body, `fn (…) { … }` expression | — (`parseFnBodyInBraces`) | `requiredExceptLast`, `markTail` |
+| fn / `test` body, `fn (…) { … }` expression | — (`parseFnBodyInBraces`) | `requiredExceptLast`, `markTail`; a block `{ … }` ending the body is its tail (decision 541 (4), `isValueBlockExpr`) |
 | a type's method, a behavior's default body | — (`parseMethodBodyStmts`, `parseSimpleBodyStmts`) | `requiredExceptLast`, `markTail` (was `required`; decision 409) — an `implement` method keeps `required`: the printer writes no `-> R` there |
 | `if` else-branch | — (`parseStmtListInBraces`) | `requiredExceptLast` |
 | `if` then-branch | `{ x -> ` or `{ _ -> ` — the branch's value binding | `requiredExceptLast` |
-| lambda `{ a, b -> … }`, `{ -> … }` | the parameter list | `optional`, `markTail` |
+| lambda `{ a, b -> … }`, `{ -> … }` | the parameter list | `optional`, `markTail`, `bracedTail` (decision 541 (1): a lambda answers its last expression written without `;`; one with `;` is a statement and the lambda answers nothing — the checker's `discardUnwrittenTail`) |
 | block `{ … }` (no `->`, decision 525) | — (`parseBlockValueBody`) | `requiredExceptLast`, `markTail`, `bracedTail` |
 | `comptime { … }`, `async { … }` | — | `requiredExceptLast`, `markTail`, `bracedTail`; the tail wrapped in the block's `break` / `return` (`jumpTail`) |
 | `case` arm `p { … }` / `p -> { … }` | an optional `n ->` binder (`parseLambdaBody`) | `optional` / `requiredExceptLast`, the tail marked (`markBlockTail`), a braced `if` / `case` at the end included |
@@ -134,8 +134,9 @@ block that reads something between the `{` and its first statement — a prologu
 | `while (…) { … }`, `loop { … }`, `iter loop { … }` body | — (`parseLoopBody`; a binder is refused) | `requiredExceptLast` (the same `parseLoopBody`) |
 
 **A body's tail (decision 409).** `markTail` marks a function body's last
-statement written without `;` — not a comment, a binding, a jump, a `use` or a
-braced `if` / `case` / loop — `Stmt.tail = .value`. `Parser.returnTail` then
+statement written without `;` — not a comment, a binding, a `return` / `throw` / `break` /
+`continue` / `yield`, a `use` or a braced `if` / `case` / loop (a value `try e` and `await e` are
+tails, decision 537) — `Stmt.tail = .value`. `Parser.returnTail` then
 wraps it in `return` (located at the expression, `tail = .returned`) when the
 body's written return has a value — a `fn`, a type's method, a behavior's
 default body, a function expression — so every later pass reads the `return`;

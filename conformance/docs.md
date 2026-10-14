@@ -1612,11 +1612,16 @@ needs a `return`:
 
 <!-- example: modules/fn_expr_tail_semicolon -->
 
-A braced lambda's and an untyped `fn(x) { … }`'s last expression written with `;` is still its
-value (`{ x -> x + 1; }`, `fn(x) { x * 2; }`); a typed function expression with `-> R` refuses it
-as above:
+A lambda answers its last expression written without `;` (decision 541): `{ x -> x + 1 }`
+answers `x + 1`. With `;` the expression is a statement and the lambda answers nothing, so it stands
+where a function returning `void` is expected even though its last call answers a value, and where
+a function returning a value is expected it is refused, at the lambda. (An untyped `fn(x) { … }`
+keeps the value of its last statement, `;` or not; a typed function expression with `-> R` refuses
+a `;`-terminated last expression, as above.)
 
 <!-- example: modules/lambda_last_statement_semicolon -->
+
+<!-- example: modules/lambda_semicolon_not_a_value -->
 
 The pipe operator `|>` is left-associative.
 
@@ -1649,11 +1654,26 @@ block on every target, whether the block's value is used or not:
 The same rule reads every block used as a value: a `case` arm `p { … }`, `comptime { … }` and
 `async { … }` answer their last expression written without `;`. An arm of a `case` used as a value
 whose last expression ends with `;` answers nothing, refused at the arm beside arms that answer a
-value; `break <value>` gives a block no value, refused at the `break`:
+value; `break <value>` gives a block no value — in `comptime { … }` and in a `case` arm alike
+(decision 541) — refused at the `break`:
 
 <!-- example: modules/case_arm_no_value -->
 
 <!-- example: modules/comptime_block_break_value -->
+
+<!-- example: modules/case_arm_break_value_removed -->
+
+A block is a scope of the enclosing function, never a closure (decision 541): an `await` in a block
+or in a `case` arm's block waits for the enclosing task, a `yield` feeds the enclosing generator, and
+a bare `break` leaves the enclosing loop. A block that ends a function body is its tail:
+
+<!-- example: modules/block_await_reaches_function -->
+
+<!-- example: modules/block_yield_reaches_generator -->
+
+<!-- example: modules/block_break_reaches_loop -->
+
+<!-- example: modules/block_ends_function_body_is_tail -->
 
 A block handed where a function is expected is refused at the block, with the hint "expected a
 function, got a block's value — missing `->`?"; a trailing lambda follows the same rule, so one
@@ -1676,8 +1696,8 @@ a method or of a plain function, with parameters (`f(3) { n -> n * 3 }`) or with
 <!-- example: modules/trailing_lambda_call -->
 
 `botopink format` migrates the older spellings: a trailing lambda without `->` gains it, the last
-`;` of a `case` arm used as a value is dropped, and `comptime { …; break v; }` becomes the tail
-`v`. It prints a block of one tail on one line when it fits (`{ 1 + 2 }`), as it prints a function
+`;` of a `case` arm used as a value is dropped, and `comptime { …; break v; }` and a `case` arm's last
+`break v;` become the tail `v`. It prints a block of one tail on one line when it fits (`{ 1 + 2 }`), as it prints a function
 body.
 
 ### Line width

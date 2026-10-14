@@ -427,3 +427,38 @@ test "decision 316 — `fn(..) -> R` is `@Decl<…>`'s pattern alone, refused an
     try std.testing.expect(pattern.function.anyParams);
     try std.testing.expectEqual(@as(usize, 0), pattern.function.params.len);
 }
+
+fn lambdaBody(e: ast.Expr) []ast.Stmt {
+    return e.binding.kind.localBind.value.function.kind.body;
+}
+
+test "decision 541: a lambda's tail is its last expression written without `;`" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const bare = lambdaBody(try firstStmt(alloc, "val f = { x -> x + 1 };"));
+    try std.testing.expect(bare[0].tail == .value);
+    const semi = lambdaBody(try firstStmt(alloc, "val f = { x -> x + 1; };"));
+    try std.testing.expect(semi[0].tail == .none);
+    // A braced `if` at the end is the tail whatever follows it (decision 29 (c)).
+    const braced = lambdaBody(try firstStmt(alloc, "val f = { x -> if (x > 1) { 1 } else { 2 } };"));
+    try std.testing.expect(braced[0].tail == .value);
+    // `await e` and `try e` are values, so a lambda may end in one.
+    const awaited = lambdaBody(try firstStmt(alloc, "val f = { x -> await g(x) };"));
+    try std.testing.expect(awaited[0].tail == .value);
+}
+
+test "decision 541: a block ending a function body is its tail" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src = "fn f() -> i32 { { 41 + 1 } }";
+    var lx = Lexer.init(src);
+    const tokens = try lx.scanAll(alloc);
+    var p = Parser.initWithSource(tokens, src);
+    const program = try p.parse(alloc);
+    const body = program.decls[0].@"fn".body;
+    // The tail is wrapped in the `return` the written `-> i32` asks for.
+    try std.testing.expect(body[0].tail == .returned);
+    try std.testing.expect(body[0].expr.jump.kind.@"return".?.* == .collection);
+}

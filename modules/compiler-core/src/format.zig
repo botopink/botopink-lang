@@ -1818,8 +1818,7 @@ pub const Formatter = struct {
     /// `calcular(fator: 2) { a, b -> a + b }`, while `{ -> 42 }` and
     /// `{ n -> n * 2 }` in argument position both parse. Printing the one-line
     /// form there would emit text this compiler refuses.
-    fn fmtLambdaAt(this: *Formatter, lambdaLine: usize, params: []const []const u8, bodyAsWritten: []ast.Stmt, arrow_when_empty: bool) !*const Doc {
-        const body = try this.lambdaTailMigrated(bodyAsWritten);
+    fn fmtLambdaAt(this: *Formatter, lambdaLine: usize, params: []const []const u8, body: []ast.Stmt, arrow_when_empty: bool) !*const Doc {
         if (arrow_when_empty and body.len == 1 and body[0].expr.getLoc().line == lambdaLine) {
             const inlineValue = switch (body[0].expr) {
                 .binding, .jump => false,
@@ -1866,8 +1865,7 @@ pub const Formatter = struct {
     /// lambda with no parameter keeps its arrow (`f(x) { -> … }`); one written
     /// without it (`TrailingLambda.isBlock`, which the checker refuses) is
     /// written back with it — `botopink format` migrates the old spelling.
-    fn fmtTrailingLambda(this: *Formatter, params: []const []const u8, bodyAsWritten: []ast.Stmt) !*const Doc {
-        const body = try this.lambdaTailMigrated(bodyAsWritten);
+    fn fmtTrailingLambda(this: *Formatter, params: []const []const u8, body: []ast.Stmt) !*const Doc {
         const open = try this.fmtLambda(params, body, true);
         if (body.len != 1) return open;
         const inlineValue = switch (body[0].expr) {
@@ -1892,25 +1890,6 @@ pub const Formatter = struct {
         const flatText = try render(this.arena, flat, std.math.maxInt(u32));
         // The statement's `;` follows the lambda and is paid for here.
         return this.widthChoice(flat, open, flatText.len + 1);
-    }
-
-    /// Decision 541 (1) — the migration: a lambda answers its last expression
-    /// written without `;`, so the `;` of every existing lambda's last
-    /// expression statement is removed (printed as the tail it always was), and
-    /// no program changes meaning when the rule takes effect.
-    fn lambdaTailMigrated(this: *Formatter, body: []ast.Stmt) ![]ast.Stmt {
-        var n = body.len;
-        while (n > 0) : (n -= 1) {
-            const e = body[n - 1].expr;
-            if (e == .literal and e.literal.kind == .comment) continue;
-            if (body[n - 1].tail == .none and isTailable(e)) {
-                const copy = try this.arena.dupe(ast.Stmt, body);
-                copy[n - 1].tail = .value;
-                return copy;
-            }
-            break;
-        }
-        return body;
     }
 
     fn fmtLambda(this: *Formatter, params: []const []const u8, body: []ast.Stmt, arrow_when_empty: bool) !*const Doc {

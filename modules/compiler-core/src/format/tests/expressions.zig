@@ -403,24 +403,11 @@ test "format: block ---- a `case` arm's last `break v;` becomes its tail (decisi
     );
 }
 
-test "format: lambda ---- the last `;` of a lambda's expression is dropped, once (decision 541)" {
-    try h.assertFormatAs(std.testing.allocator,
+test "format: lambda ---- a `;` after the last expression is kept (decision 541)" {
+    try h.assertFormat(std.testing.allocator,
         \\fn f(xs: i32[]) {
         \\    xs.forEach({ x -> g(x); });
-        \\    val inc = { x -> x + 1; };
-        \\    xs.each { x ->
-        \\        val y = x * 2;
-        \\        g(y);
-        \\    };
-        \\}
-    ,
-        \\fn f(xs: i32[]) {
-        \\    xs.forEach({ x -> g(x) });
         \\    val inc = { x -> x + 1 };
-        \\    xs.each { x ->
-        \\        val y = x * 2;
-        \\        g(y)
-        \\    };
         \\}
     );
 }

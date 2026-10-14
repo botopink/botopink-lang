@@ -779,11 +779,14 @@ pub const DecoratorSig = struct {
 ///                            the error is the last item and the sequence ends
 pub const ResultJumpLowering = enum { wrap_ok, wrap_error, unwrap_passthrough, yield_ok, break_error };
 
-/// What the nearest enclosing construct does with a `break` (decision 105 and
-/// decision 2): a loop leaves it; a `comptime { … }` block and a `case` arm's
-/// block take `break <value>` as their value; nothing else takes a bare
-/// `break`, and a `break <value>` anywhere else needs a generator scope.
-pub const BreakScope = enum { none, loop, valueBlock };
+/// What the nearest enclosing construct does with a `break` (decision 105):
+/// a loop leaves it; a `comptime { … }` block takes the `break` the parser
+/// wrapped its tail in (`valueBlock`); a `case` arm's block is a scope of the
+/// enclosing function, so a bare `break` reaches the enclosing loop and
+/// `break <value>` is refused (`armBlock`, decision 541 (3)); nothing else
+/// takes a bare `break`, and a `break <value>` anywhere else needs a generator
+/// scope.
+pub const BreakScope = enum { none, loop, valueBlock, armBlock };
 
 /// Decision 359 — a derived type's lineage (`Env.derivedTypes`).
 pub const DerivedLineage = struct {

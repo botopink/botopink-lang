@@ -1,14 +1,26 @@
-//// Decision 409, question B-21-a (open) — as built, a lambda's and an untyped
-//// `fn(x) { … }`'s last expression written with `;` is still its value
-//// (`{ x -> x + 1; }`, `fn(x) { x * 2; }`); a typed function expression with
-//// `-> R` refuses it (`modules/fn_expr_tail_semicolon`).
+//// Decision 541 (1) — a lambda answers its last expression written without
+//// `;`: `{ x -> x + 1 }` answers `x + 1`. With `;` the expression is a
+//// statement and the lambda answers nothing, so it stands where a function
+//// returning `void` is expected even though its last call answers a value.
+//// (A function expression `fn(x) { … }` keeps its last statement's value,
+//// decision 409.)
+
+fn bump(n: i32) -> i32 {
+    @print(n);
+    return n + 1;
+}
+
+fn each(xs: i32[], f: fn(i32) -> void) {
+    for (xs) { x -> f(x); }
+}
 
 pub fn main() {
     val inc = { x -> x + 1 };
     @print(inc(1));
+    @print([1, 2].map({ n -> n * 3 }));
+    each([7, 8], { x -> bump(x); });
     val dbl = fn(x) {
         x * 2;
     };
     @print(dbl(4));
-    @print([1, 2].map({ n -> n * 3 }));
 }
