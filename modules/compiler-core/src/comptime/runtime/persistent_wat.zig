@@ -1,38 +1,36 @@
 //! The wat comptime runtime's executor: a linked module (`wat/program.zig`)
-//! run **in-process** on wasm3 — no child process, no pipe, no file.
+//! run **in-process** on the host's engine — no child process, no pipe, no
+//! file (decision 543).
 //!
-//! One evaluation is one fresh wasm3 runtime (its own linear memory, so the
-//! body's arena never outlives it): `bp_init` starts the arena past the
-//! module's literals, `rt_alloc` makes room for the ETF argument the evaluator
-//! encoded with `etf.zig`, and
-//! `bp_main(ptr, len)` answers the reply binary — the JSON `main/1` encoded —
-//! or 0 with an exception pending, whose `~p` text (`rt_describe`) is the
-//! runtime error. A trap of the engine (a stack overflow, an out-of-bounds
-//! access) is a runtime error carrying wasm3's message.
+//! **One interface, two engines.** The contract is `bp_host.run_module`'s
+//! (`modules/compiler-web/glue.js`): compile and instantiate the linked
+//! module — it imports nothing: its host functions (`env.bp_term_alloc`,
+//! `env.bp_term_static`, `env.bp_call<N>`) are bound when it is linked
+//! (`wat/runtime_module.zig`), so an import is the engine's refusal —, run
+//! the export sequence (`bp_init` starts the arena past the literals,
+//! `rt_alloc` makes room for the ETF argument the evaluator encoded with
+//! `etf.zig`, the argument written into the module's memory, `bp_main(ptr,
+//! len)` → the reply binary, or 0 with an exception pending whose `~p` text,
+//! `rt_describe(rt_class(), rt_reason())`, is the runtime error), read the
+//! answer out of the module's memory (`rt_bin_ptr` / `rt_bin_len`); a trap is
+//! a runtime error carrying the engine's message, a module the engine refuses
+//! a compile error. Every answer is std-wasm's, never the engine's (434 (5)).
 //!
-//! On a wasm host (the browser build, front 18 step 5) there is no wasm3: the
-//! executor is the page's engine, reached through three host imports the JS
-//! glue serves (`modules/compiler-web/glue.js`): `bp_host.run_module(wasm,
-//! arg) → status` instantiates the linked bytes and runs the same export
-//! sequence as here, keeping the answer on the JS side;
-//! `bp_host.result_len()` and `bp_host.result_copy(dst)` bring it back into
-//! the compiler's memory. Status 0 is the reply, 1 a runtime error (the
-//! exception's `Class:Reason`, or the engine's trap message), 2 the engine
-//! refusing the module.
+//! - **Natively** (`botopink`, `botopink-lsp`) the engine is wasmtime,
+//!   embedded through its C API (`Wasmtime` below; the library `build.zig`
+//!   links, pinned by `build.zig.zon`).
+//! - **On a wasm host** (the browser build, `modules/compiler-web`) it is the
+//!   page's `WebAssembly`, reached through three host imports the JS glue
+//!   serves: `bp_host.run_module(wasm, arg) → status` runs the sequence above
+//!   and keeps the answer on the JS side; `bp_host.result_len()` and
+//!   `bp_host.result_copy(dst)` bring it back into the compiler's memory.
+//!   Status 0 is the reply, 1 a runtime error, 2 the engine refusing the
+//!   module (`Page` below).
 const std = @import("std");
 const builtin = @import("builtin");
 const stages = @import("stages.zig");
 
-const c = if (builtin.cpu.arch.isWasm()) struct {} else @cImport({
-    @cInclude("wasm3.h");
-});
-
-/// The browser build's engine (see the file comment).
-const host = if (builtin.cpu.arch.isWasm()) struct {
-    extern "bp_host" fn run_module(wasm_ptr: [*]const u8, wasm_len: usize, arg_ptr: [*]const u8, arg_len: usize) u32;
-    extern "bp_host" fn result_len() usize;
-    extern "bp_host" fn result_copy(dst: [*]u8) void;
-} else struct {};
+const is_wasm = builtin.cpu.arch.isWasm();
 
 pub const Response = union(enum) {
     /// The reply bytes (`main`'s JSON).
@@ -49,266 +47,421 @@ pub const Response = union(enum) {
     }
 };
 
-/// Interpreter stack per evaluation. Erlang loops are recursion and the
-/// lowering has no tail calls, so a body's depth is its iteration count.
-const stack_bytes: u32 = 8 * 1024 * 1024;
-
 pub const Error = std.mem.Allocator.Error;
+
+/// The engine this build runs a comptime module on.
+const Engine = if (is_wasm) Page else Wasmtime;
 
 /// Run the linked module `wasm` with the ETF argument `arg`. `key` is the
 /// module's content key — its atom, the hash of the Erlang text `wasm` was
-/// lowered from (`wat/program.zig` caches the bytes under the same key): an
-/// evaluation of a module this process has already instantiated reuses that
-/// instance (`Kept`), reset to the state its load left.
-pub fn evalWithArg(alloc: std.mem.Allocator, key: []const u8, wasm: []const u8, arg: []const u8) Error!Response {
-    if (comptime builtin.cpu.arch.isWasm()) return evalHost(alloc, wasm, arg) else return evalNative(alloc, key, wasm, arg);
+/// lowered from (`wat/program.zig` caches the bytes under the same key): the
+/// native engine compiles a module once per process and keeps the compiled
+/// code under it.
+pub fn evalWithArg(alloc: std.mem.Allocator, io: std.Io, key: []const u8, wasm: []const u8, arg: []const u8) Error!Response {
+    return Engine.run(alloc, io, key, wasm, arg);
 }
 
-fn evalHost(alloc: std.mem.Allocator, wasm: []const u8, arg: []const u8) Error!Response {
-    const status = host.run_module(wasm.ptr, wasm.len, arg.ptr, arg.len);
-    const text = try alloc.alloc(u8, host.result_len());
-    host.result_copy(text.ptr);
-    return switch (status) {
-        0 => .{ .ok = text },
-        2 => .{ .compile_error = text },
-        else => .{ .runtime_error = text },
-    };
+/// The directory of the compiled-module cache (`Wasmtime.compiled`): set once
+/// by a command that knows its cache root (`runtime.useCompiledCache`), null
+/// for any other compilation (the language server's, a test's) — those keep
+/// their compiled modules in the process only.
+pub var compiled_dir: ?[]const u8 = null;
+/// `--cold`: read no compiled module from `compiled_dir`, write what compiled.
+pub var compiled_cold: bool = false;
+
+/// Stop every body running now (a trap, `interrupt`), whatever thread runs
+/// it. Signal-safe. A no-op on the page's engine.
+pub fn interrupt() void {
+    if (comptime !is_wasm) Wasmtime.interrupt();
 }
 
-// ── the kept instances ───────────────────────────────────────────────────────
-//
-// A fresh wasm3 environment, runtime, parse and load per evaluation, and the
-// lazy compile of every function the body reaches on its first call, were the
-// largest per-evaluation cost left (front 14 step 2: 0.34 ms instance + 0.37 ms
-// run of an N=200 build's 1.1 ms/eval). Every call site of one declaration
-// runs the same module, so the instance is kept, keyed by the module's content
-// key, and reset before each evaluation to the exact state `m3_LoadModule`
-// left: linear memory resized to its load-time page count and overwritten with
-// the bytes it held then (data segments, the runtime's statics, zeros), every
-// global set back to its load-time value. What survives is what is a function
-// of the bytes alone: the parsed module and its compiled code. An evaluation
-// therefore starts where a fresh instance would — a body cannot see what a
-// previous call site left — and an instance an engine trap interrupted is
-// dropped, never reused. The cache lives in this process only (decision 229:
-// no runtime survives a build), bounded by `max_kept`, the oldest dropped first.
+// ── the page's engine (`modules/compiler-web`) ───────────────────────────────
 
-const wasm3_env = if (builtin.cpu.arch.isWasm()) struct {} else @cImport({
-    @cInclude("m3_env.h");
-});
+const Page = struct {
+    const host = if (is_wasm) struct {
+        extern "bp_host" fn run_module(wasm_ptr: [*]const u8, wasm_len: usize, arg_ptr: [*]const u8, arg_len: usize) u32;
+        extern "bp_host" fn result_len() usize;
+        extern "bp_host" fn result_copy(dst: [*]u8) void;
+    } else struct {};
 
-/// Instances kept at once. One per declaration a build evaluates; a build with
-/// more evaluates the extra ones on instances it re-creates.
-const max_kept = 16;
-
-const Kept = struct {
-    key: []u8,
-    /// wasm3 reads a function's body from the module bytes when it first
-    /// compiles it, so the instance owns its copy.
-    wasm: []u8,
-    env: c.IM3Environment,
-    runtime: c.IM3Runtime,
-    /// Linear memory as `m3_LoadModule` left it.
-    memory: []u8,
-    /// Every global's value as `m3_LoadModule` left it.
-    globals: []i64,
-
-    fn create(key: []const u8, wasm: []const u8, alloc: std.mem.Allocator, failure: *?[]u8) Error!?*Kept {
-        const k = try kept_alloc.create(Kept);
-        k.* = .{ .key = &.{}, .wasm = &.{}, .env = null, .runtime = null, .memory = &.{}, .globals = &.{} };
-        errdefer k.destroy();
-        k.key = try kept_alloc.dupe(u8, key);
-        k.wasm = try kept_alloc.dupe(u8, wasm);
-        k.env = c.m3_NewEnvironment() orelse return error.OutOfMemory;
-        k.runtime = c.m3_NewRuntime(k.env, stack_bytes, null) orelse return error.OutOfMemory;
-
-        var module: c.IM3Module = null;
-        if (c.m3_ParseModule(k.env, &module, k.wasm.ptr, @intCast(k.wasm.len))) |err| {
-            failure.* = try std.fmt.allocPrint(alloc, "wasm3 could not parse the module: {s}", .{std.mem.span(err)});
-            k.destroy();
-            return null;
-        }
-        if (c.m3_LoadModule(k.runtime, module)) |err| {
-            c.m3_FreeModule(module);
-            failure.* = try std.fmt.allocPrint(alloc, "wasm3 could not load the module: {s}", .{std.mem.span(err)});
-            k.destroy();
-            return null;
-        }
-        var size: u32 = 0;
-        if (c.m3_GetMemory(k.runtime, &size, 0)) |p| k.memory = try kept_alloc.dupe(u8, p[0..size]);
-        const m: *wasm3_env.M3Module = @ptrCast(@alignCast(module));
-        k.globals = try kept_alloc.alloc(i64, m.numGlobals);
-        for (k.globals, 0..) |*g, i| g.* = m.globals[i].unnamed_0.intValue;
-        return k;
-    }
-
-    /// Back to the state `m3_LoadModule` left (see the section comment).
-    fn reset(k: *Kept) bool {
-        const rt: *wasm3_env.M3Runtime = @ptrCast(@alignCast(k.runtime));
-        const pages: u32 = @intCast(k.memory.len / 65536);
-        if (rt.memory.numPages != pages and wasm3_env.ResizeMemory(rt, pages) != null) return false;
-        var size: u32 = 0;
-        const p = c.m3_GetMemory(k.runtime, &size, 0);
-        if (size != k.memory.len) return false;
-        if (p) |mem| @memcpy(mem[0..size], k.memory);
-        const m: *wasm3_env.M3Module = @ptrCast(@alignCast(rt.modules));
-        if (m.numGlobals != k.globals.len) return false;
-        for (k.globals, 0..) |g, i| m.globals[i].unnamed_0.intValue = g;
-        c.m3_ResetErrorInfo(k.runtime);
-        return true;
-    }
-
-    fn destroy(k: *Kept) void {
-        // The runtime frees the modules loaded into it.
-        if (k.runtime != null) c.m3_FreeRuntime(k.runtime);
-        if (k.env != null) c.m3_FreeEnvironment(k.env);
-        kept_alloc.free(k.globals);
-        kept_alloc.free(k.memory);
-        kept_alloc.free(k.wasm);
-        kept_alloc.free(k.key);
-        kept_alloc.destroy(k);
+    fn run(alloc: std.mem.Allocator, io: std.Io, key: []const u8, wasm: []const u8, arg: []const u8) Error!Response {
+        _ = io;
+        _ = key;
+        const status = host.run_module(wasm.ptr, wasm.len, arg.ptr, arg.len);
+        const text = try alloc.alloc(u8, host.result_len());
+        host.result_copy(text.ptr);
+        return switch (status) {
+            0 => .{ .ok = text },
+            2 => .{ .compile_error = text },
+            else => .{ .runtime_error = text },
+        };
     }
 };
 
-const kept_alloc = std.heap.page_allocator;
-var kept_lock: std.atomic.Value(u8) = .init(0);
-/// Oldest first. An instance in use is out of the list, so two threads never
-/// share one: the second evaluation of a module in flight builds its own.
-var kept: std.ArrayListUnmanaged(*Kept) = .empty;
+// ── the export sequence, over any instance ───────────────────────────────────
 
-fn lockKept() void {
-    while (kept_lock.cmpxchgWeak(0, 1, .acquire, .monotonic)) |_| std.atomic.spinLoopHint();
-}
-
-fn unlockKept() void {
-    kept_lock.store(0, .release);
-}
-
-/// The kept instance of `key` taken out of the list, or null.
-fn take(key: []const u8, wasm: []const u8) ?*Kept {
-    lockKept();
-    defer unlockKept();
-    for (kept.items, 0..) |k, i| {
-        if (!std.mem.eql(u8, k.key, key)) continue;
-        _ = kept.orderedRemove(i);
-        // The same key is the same bytes; a length that differs is a key
-        // reused for other bytes (a test), and the instance is not this one.
-        if (k.wasm.len == wasm.len) return k;
-        k.destroy();
-        return null;
-    }
-    return null;
-}
-
-/// Put `k` back as the newest instance, dropping the oldest past `max_kept`
-/// (or `k` itself, when the list cannot grow).
-fn keep(k: *Kept) void {
-    lockKept();
-    defer unlockKept();
-    for (kept.items) |other| if (std.mem.eql(u8, other.key, k.key)) {
-        // Another thread kept the same module while this one ran.
-        k.destroy();
-        return;
-    };
-    if (kept.items.len >= max_kept) kept.orderedRemove(0).destroy();
-    kept.append(kept_alloc, k) catch k.destroy();
-}
-
-fn evalNative(alloc: std.mem.Allocator, key: []const u8, wasm: []const u8, arg: []const u8) Error!Response {
-    const t_instance = stages.start();
-    const k: *Kept = blk: {
-        if (take(key, wasm)) |k| {
-            if (k.reset()) break :blk k;
-            k.destroy();
-        }
-        var failure: ?[]u8 = null;
-        break :blk try Kept.create(key, wasm, alloc, &failure) orelse return .{ .compile_error = failure.? };
-    };
-    stages.stop(.instance, t_instance);
-    const t_run = stages.start();
-    defer stages.stop(.run, t_run);
-
-    var vm: Vm = .{ .alloc = alloc, .runtime = k.runtime };
-    const response = run(&vm, arg) catch |e| {
-        k.destroy();
-        return switch (e) {
-            error.Trap => vm.trapped(error.Trap),
-            error.OutOfMemory => error.OutOfMemory,
-        };
-    };
-    // An engine trap leaves the interpreter mid-call (`binary` answers one as
-    // text): such an instance is never reused.
-    if (vm.last.len == 0) keep(k) else k.destroy();
-    return response;
-}
-
-fn run(vm: *Vm, arg: []const u8) (Error || error{Trap})!Response {
-    const alloc = vm.alloc;
-    _ = try vm.call("bp_init", &.{});
-    const ptr = try vm.call("rt_alloc", &.{@intCast(arg.len)});
-    const mem = vm.memory() orelse return .{ .runtime_error = try alloc.dupe(u8, "wasm3: the module has no memory") };
-    if (@as(usize, ptr) + arg.len > mem.len) return .{ .runtime_error = try alloc.dupe(u8, "wasm3: the argument does not fit the module's memory") };
+/// `bp_host.run_module`'s sequence (the file comment) over an instance that
+/// can `call(name, args) error{Trap}!u32`, answer its `memory() ?[]u8` and
+/// say why it `trapped`. The page's engine runs the same sequence in
+/// `glue.js` `runComptime`.
+fn runSequence(inst: anytype, alloc: std.mem.Allocator, arg: []const u8) (Error || error{Trap})!Response {
+    _ = try inst.call("bp_init", &.{});
+    const ptr = try inst.call("rt_alloc", &.{@intCast(arg.len)});
+    const mem = inst.memory() orelse return .{ .runtime_error = try alloc.dupe(u8, "the module has no memory") };
+    if (@as(usize, ptr) + arg.len > mem.len) return .{ .runtime_error = try alloc.dupe(u8, "the argument does not fit the module's memory") };
     @memcpy(mem[ptr..][0..arg.len], arg);
 
-    const reply = try vm.call("bp_main", &.{ ptr, @intCast(arg.len) });
-    const pending = try vm.call("rt_pending", &.{});
+    const reply = try inst.call("bp_main", &.{ ptr, @intCast(arg.len) });
+    const pending = try inst.call("rt_pending", &.{});
     if (reply == 0 or pending != 0) {
-        const class = try vm.call("rt_class", &.{});
-        const reason = try vm.call("rt_reason", &.{});
-        const text = try vm.call("rt_describe", &.{ class, reason });
-        return .{ .runtime_error = try vm.binary(text) };
+        const class = try inst.call("rt_class", &.{});
+        const reason = try inst.call("rt_reason", &.{});
+        const text = try inst.call("rt_describe", &.{ class, reason });
+        return .{ .runtime_error = try binary(inst, alloc, text) };
     }
-    return .{ .ok = try vm.binary(reply) };
+    return .{ .ok = try binary(inst, alloc, reply) };
 }
 
-const Vm = struct {
-    alloc: std.mem.Allocator,
-    runtime: if (builtin.cpu.arch.isWasm()) void else c.IM3Runtime,
-    /// wasm3's message for the last failed call.
-    last: []const u8 = "",
+/// The bytes of binary term `t`, copied out of the module's memory.
+fn binary(inst: anytype, alloc: std.mem.Allocator, t: u32) (Error || error{Trap})![]u8 {
+    const p = try inst.call("rt_bin_ptr", &.{t});
+    const n = try inst.call("rt_bin_len", &.{t});
+    const mem = inst.memory() orelse return alloc.dupe(u8, "the module has no memory");
+    if (@as(usize, p) + n > mem.len) return alloc.dupe(u8, "the reply lies outside the module's memory");
+    return alloc.dupe(u8, mem[p..][0..n]);
+}
 
-    fn call(vm: *Vm, name: [*:0]const u8, args: []const u32) error{Trap}!u32 {
-        var f: c.IM3Function = null;
-        if (c.m3_FindFunction(&f, vm.runtime, name)) |err| {
-            vm.last = std.mem.span(err);
-            return error.Trap;
+// ── wasmtime (the native compiler) ───────────────────────────────────────────
+//
+// One engine per process, its configuration fixed here (decision 67: no
+// flag): exception handling on (decision 518 — the engine runs what a wasm
+// program runs), epoch interruption on (`interrupt`; there is no budget,
+// 380 (2): a store's deadline is the next tick, which only `interrupt`
+// gives), a wasm stack of `wasm_stack` bytes. A module is compiled once per
+// process and kept under its key (`Compiled`, at most `max_compiled`, the
+// oldest dropped first; a compiled module is immutable and shared by every
+// thread). Every evaluation instantiates it in a store of its own, so a body
+// never sees what a previous call site left and an instance a trap
+// interrupted is simply dropped. Nothing outlives the process (decision 229).
+
+const c = if (is_wasm) struct {} else @cImport({
+    @cInclude("wasmtime.h");
+});
+
+/// The wasm stack a body runs on. Erlang loops are recursion and the lowering
+/// has no tail calls, so a body's depth is its iteration count: the bound is
+/// wasm3's 8 MiB value stack measured in wasmtime's frames, with room.
+const wasm_stack: usize = 64 * 1024 * 1024;
+/// The native stack of the thread a body runs on: the wasm stack and the
+/// host's own frames under it.
+const thread_stack: usize = wasm_stack + 16 * 1024 * 1024;
+
+/// Compiled modules kept at once. A build with more distinct comptime
+/// modules than this compiles the extra ones again when they recur.
+const max_compiled = 64;
+
+const Wasmtime = struct {
+    var engine: ?*c.wasm_engine_t = null;
+    var engine_lock: std.atomic.Value(u8) = .init(0);
+
+    const Compiled = struct {
+        key: []u8,
+        len: usize,
+        module: *c.wasmtime_module_t,
+
+        fn destroy(m: *Compiled) void {
+            c.wasmtime_module_delete(m.module);
+            kept_alloc.free(m.key);
+            kept_alloc.destroy(m);
         }
-        var ptrs: [4]?*const anyopaque = .{null} ** 4;
-        var vals: [4]u32 = undefined;
-        for (args, 0..) |a, i| {
-            vals[i] = a;
-            ptrs[i] = &vals[i];
-        }
-        if (c.m3_Call(f, @intCast(args.len), @ptrCast(&ptrs))) |err| {
-            vm.last = std.mem.span(err);
-            return error.Trap;
-        }
-        if (c.m3_GetRetCount(f) == 0) return 0;
-        var out: u32 = 0;
-        var outs: [1]?*const anyopaque = .{&out};
-        if (c.m3_GetResults(f, 1, @ptrCast(&outs))) |err| {
-            vm.last = std.mem.span(err);
-            return error.Trap;
-        }
-        return out;
+    };
+
+    const kept_alloc = std.heap.page_allocator;
+    var kept_lock: std.atomic.Value(u8) = .init(0);
+    /// Oldest first.
+    var kept: std.ArrayListUnmanaged(*Compiled) = .empty;
+
+    fn lock(l: *std.atomic.Value(u8)) void {
+        while (l.cmpxchgWeak(0, 1, .acquire, .monotonic)) |_| std.atomic.spinLoopHint();
     }
 
-    fn memory(vm: *Vm) ?[]u8 {
-        var size: u32 = 0;
-        const p = c.m3_GetMemory(vm.runtime, &size, 0) orelse return null;
-        return p[0..size];
+    fn unlock(l: *std.atomic.Value(u8)) void {
+        l.store(0, .release);
     }
 
-    /// The bytes of binary term `t`.
-    fn binary(vm: *Vm, t: u32) Error![]u8 {
-        const p = vm.call("rt_bin_ptr", &.{t}) catch return vm.alloc.dupe(u8, "wasm3: could not read the reply");
-        const n = vm.call("rt_bin_len", &.{t}) catch return vm.alloc.dupe(u8, "wasm3: could not read the reply");
-        const mem = vm.memory() orelse return vm.alloc.dupe(u8, "wasm3: the module has no memory");
-        if (@as(usize, p) + n > mem.len) return vm.alloc.dupe(u8, "wasm3: the reply lies outside the module's memory");
-        return vm.alloc.dupe(u8, mem[p..][0..n]);
+    fn theEngine() Error!*c.wasm_engine_t {
+        lock(&engine_lock);
+        defer unlock(&engine_lock);
+        if (engine) |e| return e;
+        const config = c.wasm_config_new() orelse return error.OutOfMemory;
+        c.wasmtime_config_wasm_exceptions_set(config, true);
+        c.wasmtime_config_epoch_interruption_set(config, true);
+        c.wasmtime_config_max_wasm_stack_set(config, wasm_stack);
+        // The engine refuses a wasm stack past its fibers' stacks, which no
+        // call here uses (every call is synchronous).
+        c.wasmtime_config_async_stack_size_set(config, wasm_stack + 1024 * 1024);
+        // Takes `config`.
+        engine = c.wasm_engine_new_with_config(config) orelse return error.OutOfMemory;
+        return engine.?;
     }
 
-    fn trapped(vm: *Vm, _: error{Trap}) Error!Response {
-        return .{ .runtime_error = try std.fmt.allocPrint(vm.alloc, "wasm3: {s}", .{vm.last}) };
+    fn interrupt() void {
+        if (@atomicLoad(?*c.wasm_engine_t, &engine, .acquire)) |e| c.wasmtime_engine_increment_epoch(e);
+    }
+
+    /// The compiled module of `key`, compiled now when no thread kept it;
+    /// null with `failure` set when the engine refuses the bytes.
+    fn compiled(alloc: std.mem.Allocator, io: std.Io, key: []const u8, wasm: []const u8, failure: *?[]u8) Error!?*c.wasmtime_module_t {
+        {
+            lock(&kept_lock);
+            defer unlock(&kept_lock);
+            for (kept.items, 0..) |m, i| {
+                if (!std.mem.eql(u8, m.key, key)) continue;
+                // The same key is the same bytes; a length that differs is a
+                // key reused for other bytes (a test), and the module is not
+                // this one.
+                if (m.len == wasm.len) {
+                    // Newest last.
+                    _ = kept.orderedRemove(i);
+                    kept.appendAssumeCapacity(m);
+                    return c.wasmtime_module_clone(m.module);
+                }
+                kept.orderedRemove(i).destroy();
+                break;
+            }
+        }
+        const eng = try theEngine();
+        var module: ?*c.wasmtime_module_t = null;
+        const file = if (compiled_dir) |dir| try cachedPath(alloc, dir, wasm) else null;
+        if (file) |path| if (!compiled_cold) {
+            // A file the engine refuses (another wasmtime, a torn write) is
+            // compiled again and written over.
+            if (c.wasmtime_module_deserialize_file(eng, path.ptr, &module)) |err| c.wasmtime_error_delete(err);
+        };
+        if (module == null) {
+            if (c.wasmtime_module_new(eng, wasm.ptr, wasm.len, &module)) |err| {
+                failure.* = try errorText(alloc, "wasmtime could not compile the module: ", err);
+                return null;
+            }
+            if (file) |path| writeCompiled(alloc, io, path, module.?);
+        }
+        // The linked module imports nothing (the file comment).
+        var imports: c.wasm_importtype_vec_t = undefined;
+        c.wasmtime_module_imports(module, &imports);
+        defer c.wasm_importtype_vec_delete(&imports);
+        if (imports.size > 0) {
+            const imp = imports.data[0];
+            const m = c.wasm_importtype_module(imp);
+            const n = c.wasm_importtype_name(imp);
+            c.wasmtime_module_delete(module);
+            failure.* = try std.fmt.allocPrint(alloc, "the module imports {s}.{s}: a comptime module's host functions are bound when it is linked, the engine serves no import", .{ m.*.data[0..m.*.size], n.*.data[0..n.*.size] });
+            return null;
+        }
+        keep(key, wasm.len, module.?);
+        return module.?;
+    }
+
+    /// `<compiled_dir>/<sha256 of the bytes>.cwasm`: the compiled form of
+    /// exactly these bytes, whichever module key names them.
+    fn cachedPath(alloc: std.mem.Allocator, dir: []const u8, wasm: []const u8) Error![:0]u8 {
+        var digest: [32]u8 = undefined;
+        std.crypto.hash.sha2.Sha256.hash(wasm, &digest, .{});
+        const hex = std.fmt.bytesToHex(digest, .lower);
+        return std.fmt.allocPrintSentinel(alloc, "{s}/{s}.cwasm", .{ dir, hex }, 0);
+    }
+
+    /// Write `module`'s compiled form to `path`: staged under a name no
+    /// other writer uses, then renamed over it (no lock: a reader sees a
+    /// whole file or none). A write that fails costs a compile next time.
+    fn writeCompiled(alloc: std.mem.Allocator, io: std.Io, path: []const u8, module: *c.wasmtime_module_t) void {
+        var bytes: c.wasm_byte_vec_t = undefined;
+        if (c.wasmtime_module_serialize(module, &bytes)) |err| {
+            c.wasmtime_error_delete(err);
+            return;
+        }
+        defer c.wasm_byte_vec_delete(&bytes);
+        const cwd = std.Io.Dir.cwd();
+        if (std.fs.path.dirname(path)) |d| cwd.createDirPath(io, d) catch return;
+        var rand: [8]u8 = undefined;
+        io.random(&rand);
+        const tmp = std.fmt.allocPrint(alloc, "{s}.{x}.tmp", .{ path, std.mem.readInt(u64, &rand, .little) }) catch return;
+        cwd.writeFile(io, .{ .sub_path = tmp, .data = bytes.data[0..bytes.size] }) catch {
+            cwd.deleteFile(io, tmp) catch {};
+            return;
+        };
+        std.Io.Dir.rename(cwd, tmp, cwd, path, io) catch cwd.deleteFile(io, tmp) catch {};
+    }
+
+    /// Keep a clone of `module` under `key`, dropping the oldest past
+    /// `max_compiled`. A failure to keep it costs a recompile, nothing else.
+    fn keep(key: []const u8, len: usize, module: *c.wasmtime_module_t) void {
+        const m = kept_alloc.create(Compiled) catch return;
+        m.* = .{
+            .key = kept_alloc.dupe(u8, key) catch {
+                kept_alloc.destroy(m);
+                return;
+            },
+            .len = len,
+            .module = c.wasmtime_module_clone(module) orelse {
+                kept_alloc.free(m.key);
+                kept_alloc.destroy(m);
+                return;
+            },
+        };
+        lock(&kept_lock);
+        defer unlock(&kept_lock);
+        for (kept.items) |other| if (std.mem.eql(u8, other.key, key)) {
+            // Another thread kept the same module meanwhile.
+            m.destroy();
+            return;
+        };
+        if (kept.items.len >= max_compiled) kept.orderedRemove(0).destroy();
+        kept.ensureTotalCapacity(kept_alloc, max_compiled) catch {
+            m.destroy();
+            return;
+        };
+        kept.appendAssumeCapacity(m);
+    }
+
+    fn run(alloc: std.mem.Allocator, io: std.Io, key: []const u8, wasm: []const u8, arg: []const u8) Error!Response {
+        const t_instance = stages.start();
+        var failure: ?[]u8 = null;
+        const module = try compiled(alloc, io, key, wasm, &failure) orelse return .{ .compile_error = failure.? };
+        defer c.wasmtime_module_delete(module);
+        stages.stop(.instance, t_instance);
+        const t_run = stages.start();
+        defer stages.stop(.run, t_run);
+
+        // The body runs on a thread of its own, whose stack holds the wasm
+        // stack (`wasm_stack`) whatever the calling thread's is.
+        var job: Job = .{ .alloc = alloc, .module = module, .arg = arg };
+        const thread = std.Thread.spawn(.{ .stack_size = thread_stack }, Job.work, .{&job}) catch {
+            job.work();
+            return job.out;
+        };
+        thread.join();
+        return job.out;
+    }
+
+    const Job = struct {
+        alloc: std.mem.Allocator,
+        module: *c.wasmtime_module_t,
+        arg: []const u8,
+        out: Error!Response = error.OutOfMemory,
+
+        fn work(job: *Job) void {
+            job.out = job.instantiateAndRun();
+        }
+
+        fn instantiateAndRun(job: *Job) Error!Response {
+            const alloc = job.alloc;
+            const store = c.wasmtime_store_new(try theEngine(), null, null) orelse return error.OutOfMemory;
+            defer c.wasmtime_store_delete(store);
+            const ctx = c.wasmtime_store_context(store).?;
+            // Only `interrupt` moves the epoch: a body runs to its end (380 (2)).
+            c.wasmtime_context_set_epoch_deadline(ctx, 1);
+            var inst: Instance = .{ .alloc = alloc, .ctx = ctx, .instance = undefined };
+            var trap: ?*c.wasm_trap_t = null;
+            if (c.wasmtime_instance_new(ctx, job.module, null, 0, &inst.instance, &trap)) |err|
+                return .{ .compile_error = try errorText(alloc, "wasmtime could not instantiate the module: ", err) };
+            if (trap) |t| return .{ .runtime_error = try trapText(alloc, t) };
+            return runSequence(&inst, alloc, job.arg) catch |e| switch (e) {
+                error.Trap => .{ .runtime_error = inst.last orelse try alloc.dupe(u8, "wasmtime: the call failed") },
+                error.OutOfMemory => error.OutOfMemory,
+            };
+        }
+    };
+
+    const Instance = struct {
+        alloc: std.mem.Allocator,
+        ctx: *c.wasmtime_context_t,
+        instance: c.wasmtime_instance_t,
+        /// The engine's message for the call that failed.
+        last: ?[]u8 = null,
+
+        fn call(inst: *Instance, name: []const u8, args: []const u32) error{Trap}!u32 {
+            var item: c.wasmtime_extern_t = undefined;
+            if (!c.wasmtime_instance_export_get(inst.ctx, &inst.instance, name.ptr, name.len, &item) or item.kind != c.WASMTIME_EXTERN_FUNC)
+                return inst.fail(std.fmt.allocPrint(inst.alloc, "wasmtime: the module exports no function {s}", .{name}));
+            var vals: [4]c.wasmtime_val_t = undefined;
+            for (args, 0..) |a, i| {
+                vals[i].kind = c.WASMTIME_I32;
+                vals[i].of.i32 = @bitCast(a);
+            }
+            var results: [1]c.wasmtime_val_t = undefined;
+            var trap: ?*c.wasm_trap_t = null;
+            const nresults = funcResults(inst.ctx, &item.of.func);
+            if (c.wasmtime_func_call(inst.ctx, &item.of.func, &vals, args.len, &results, nresults, &trap)) |err|
+                return inst.fail(errorText(inst.alloc, "wasmtime: ", err));
+            if (trap) |t| return inst.fail(trapText(inst.alloc, t));
+            if (nresults == 0) return 0;
+            return @bitCast(results[0].of.i32);
+        }
+
+        fn fail(inst: *Instance, text: Error![]u8) error{Trap} {
+            inst.last = text catch null;
+            return error.Trap;
+        }
+
+        fn memory(inst: *Instance) ?[]u8 {
+            var item: c.wasmtime_extern_t = undefined;
+            if (!c.wasmtime_instance_export_get(inst.ctx, &inst.instance, "memory", "memory".len, &item) or item.kind != c.WASMTIME_EXTERN_MEMORY) return null;
+            const p = c.wasmtime_memory_data(inst.ctx, &item.of.memory);
+            const n = c.wasmtime_memory_data_size(inst.ctx, &item.of.memory);
+            return p[0..n];
+        }
+    };
+
+    /// How many results `f` answers (0 or 1: every export the sequence calls
+    /// answers at most one `i32`).
+    fn funcResults(ctx: *c.wasmtime_context_t, f: *const c.wasmtime_func_t) usize {
+        const ty = c.wasmtime_func_type(ctx, f);
+        defer c.wasm_functype_delete(ty);
+        return c.wasm_functype_results(ty).*.size;
+    }
+
+    /// `prefix` and the engine's message; takes `err`.
+    fn errorText(alloc: std.mem.Allocator, prefix: []const u8, err: *c.wasmtime_error_t) Error![]u8 {
+        defer c.wasmtime_error_delete(err);
+        var msg: c.wasm_name_t = undefined;
+        c.wasmtime_error_message(err, &msg);
+        defer c.wasm_byte_vec_delete(&msg);
+        return std.fmt.allocPrint(alloc, "{s}{s}", .{ prefix, msg.data[0..msg.size] });
+    }
+
+    /// A trap as one line, `wasmtime: <what>`: its code's name when it has
+    /// one, else the first line of its message (the engine's backtrace is
+    /// never part of an answer). Takes `trap`.
+    fn trapText(alloc: std.mem.Allocator, trap: *c.wasm_trap_t) Error![]u8 {
+        defer c.wasm_trap_delete(trap);
+        var code: c.wasmtime_trap_code_t = undefined;
+        if (c.wasmtime_trap_code(trap, &code)) if (trapName(code)) |name|
+            return std.fmt.allocPrint(alloc, "wasmtime: {s}", .{name});
+        var msg: c.wasm_message_t = undefined;
+        c.wasm_trap_message(trap, &msg);
+        defer c.wasm_byte_vec_delete(&msg);
+        var text: []const u8 = msg.data[0..msg.size];
+        if (std.mem.indexOfScalar(u8, text, 0)) |z| text = text[0..z];
+        if (std.mem.indexOfScalar(u8, text, '\n')) |nl| text = text[0..nl];
+        return std.fmt.allocPrint(alloc, "wasmtime: {s}", .{text});
+    }
+
+    fn trapName(code: c.wasmtime_trap_code_t) ?[]const u8 {
+        return switch (code) {
+            c.WASMTIME_TRAP_CODE_STACK_OVERFLOW => "call stack exhausted",
+            c.WASMTIME_TRAP_CODE_MEMORY_OUT_OF_BOUNDS => "out of bounds memory access",
+            c.WASMTIME_TRAP_CODE_HEAP_MISALIGNED => "misaligned memory access",
+            c.WASMTIME_TRAP_CODE_TABLE_OUT_OF_BOUNDS => "undefined element: out of bounds table access",
+            c.WASMTIME_TRAP_CODE_INDIRECT_CALL_TO_NULL => "uninitialized element",
+            c.WASMTIME_TRAP_CODE_BAD_SIGNATURE => "indirect call type mismatch",
+            c.WASMTIME_TRAP_CODE_INTEGER_OVERFLOW => "integer overflow",
+            c.WASMTIME_TRAP_CODE_INTEGER_DIVISION_BY_ZERO => "integer divide by zero",
+            c.WASMTIME_TRAP_CODE_BAD_CONVERSION_TO_INTEGER => "invalid conversion to integer",
+            c.WASMTIME_TRAP_CODE_UNREACHABLE_CODE_REACHED => "unreachable",
+            c.WASMTIME_TRAP_CODE_INTERRUPT => "interrupted",
+            c.WASMTIME_TRAP_CODE_UNHANDLED_TAG => "uncaught exception",
+            else => null,
+        };
     }
 };
 
@@ -329,7 +482,7 @@ fn runSource(alloc: std.mem.Allocator, module: []const u8, code: []const u8, arg
     };
     var arena_state = std.heap.ArenaAllocator.init(alloc);
     defer arena_state.deinit();
-    return evalWithArg(alloc, module, ok.wasm, try etf.encode(arena_state.allocator(), arg));
+    return evalWithArg(alloc, std.testing.io, module, ok.wasm, try etf.encode(arena_state.allocator(), arg));
 }
 
 test "a module importing the template prelude runs in-process and answers its JSON" {
@@ -380,20 +533,20 @@ test "a body's prints are captured in the module, never written to the compiler'
     try std.testing.expectEqualStrings("{\"value\":7}", r.ok);
 }
 
-// ── the kept instances ───────────────────────────────────────────────────────
+// ── the compiled modules ─────────────────────────────────────────────────────
 
-/// How many kept instances `key` has (0 or 1).
+/// How many compiled modules `key` has kept (0 or 1).
 fn keptCount(key: []const u8) usize {
-    lockKept();
-    defer unlockKept();
+    Wasmtime.lock(&Wasmtime.kept_lock);
+    defer Wasmtime.unlock(&Wasmtime.kept_lock);
     var n: usize = 0;
-    for (kept.items) |k| {
-        if (std.mem.eql(u8, k.key, key)) n += 1;
+    for (Wasmtime.kept.items) |m| {
+        if (std.mem.eql(u8, m.key, key)) n += 1;
     }
     return n;
 }
 
-test "a kept instance starts every evaluation from the state its load left" {
+test "the compiled module is kept; every evaluation starts from a fresh instance" {
     const alloc = std.testing.allocator;
     const module = "bp@wat_test_kept";
     // The process dictionary and a large list: the first evaluation writes the
@@ -412,23 +565,13 @@ test "a kept instance starts every evaluation from the state its load left" {
     try std.testing.expectEqualStrings("{\"before\":\"undefined\",\"n\":200000}", first.ok);
     try std.testing.expectEqual(@as(usize, 1), keptCount(module));
 
-    // The first evaluation grew memory past its load-time size; the reset puts
-    // back the load-time size and bytes.
-    const k = take(module, (try program.build(module, code)).ok.wasm).?;
-    try std.testing.expect(c.m3_GetMemorySize(k.runtime) > k.memory.len);
-    try std.testing.expect(k.reset());
-    var size: u32 = 0;
-    const mem = c.m3_GetMemory(k.runtime, &size, 0).?;
-    try std.testing.expectEqualSlices(u8, k.memory, mem[0..size]);
-    keep(k);
-
     const second = try runSource(alloc, module, code, Term.tupleOf(&.{.{ .integer = 3 }}));
     defer alloc.free(second.payload());
     try std.testing.expectEqualStrings("{\"before\":\"undefined\",\"n\":3}", second.ok);
     try std.testing.expectEqual(@as(usize, 1), keptCount(module));
 }
 
-test "an exception keeps the instance; an engine trap drops it, and the next evaluation answers" {
+test "an exception and an engine trap are runtime errors, and the next evaluation answers" {
     const alloc = std.testing.allocator;
     const module = "bp@wat_test_kept_trap";
     const code =
@@ -443,19 +586,70 @@ test "an exception keeps the instance; an engine trap drops it, and the next eva
     const raised = try runSource(alloc, module, code, Term.tupleOf(&.{.{ .integer = -1 }}));
     defer alloc.free(raised.payload());
     try std.testing.expect(raised == .runtime_error);
-    try std.testing.expectEqual(@as(usize, 1), keptCount(module));
 
-    // The interpreter's stack runs out mid-call: a trap, not an exception.
+    // The wasm stack runs out mid-call: a trap, not an exception.
     const trapped = try runSource(alloc, module, code, Term.tupleOf(&.{.{ .integer = 100_000_000 }}));
     defer alloc.free(trapped.payload());
-    try std.testing.expect(trapped == .runtime_error);
-    try std.testing.expect(std.mem.startsWith(u8, trapped.runtime_error, "wasm3: "));
-    try std.testing.expectEqual(@as(usize, 0), keptCount(module));
+    try std.testing.expectEqualStrings("wasmtime: call stack exhausted", trapped.runtime_error);
 
-    const after = try runSource(alloc, module, code, Term.tupleOf(&.{.{ .integer = 5 }}));
-    defer alloc.free(after.payload());
-    try std.testing.expectEqualStrings("{\"depth\":5}", after.ok);
+    // Deep, but within the wasm stack: what wasm3's 8 MiB stack reached.
+    const deep = try runSource(alloc, module, code, Term.tupleOf(&.{.{ .integer = 100_000 }}));
+    defer alloc.free(deep.payload());
+    try std.testing.expectEqualStrings("{\"depth\":100000}", deep.ok);
     try std.testing.expectEqual(@as(usize, 1), keptCount(module));
+}
+
+/// `text` (the wat text format) compiled by the engine's own reader.
+fn watBytes(text: []const u8) !c.wasm_byte_vec_t {
+    var out: c.wasm_byte_vec_t = undefined;
+    if (c.wasmtime_wat2wasm(text.ptr, text.len, &out)) |err| {
+        const msg = try Wasmtime.errorText(std.testing.allocator, "", err);
+        defer std.testing.allocator.free(msg);
+        std.debug.print("\nwat: {s}\n", .{msg});
+        return error.TestUnexpectedResult;
+    }
+    return out;
+}
+
+test "the engine runs wasm exception handling (decision 518): a throw caught by a try_table" {
+    const alloc = std.testing.allocator;
+    // The export sequence's functions, with `bp_main` answering the binary
+    // its `try_table` caught: `$t`'s payload is the reply term.
+    var bytes = try watBytes(
+        \\(module
+        \\  (memory (export "memory") 1)
+        \\  (data (i32.const 64) "caught")
+        \\  (tag $t (param i32))
+        \\  (func (export "bp_init"))
+        \\  (func (export "rt_alloc") (param i32) (result i32) (i32.const 128))
+        \\  (func (export "rt_pending") (result i32) (i32.const 0))
+        \\  (func (export "rt_class") (result i32) (i32.const 0))
+        \\  (func (export "rt_reason") (result i32) (i32.const 0))
+        \\  (func (export "rt_describe") (param i32 i32) (result i32) (i32.const 0))
+        \\  (func (export "rt_bin_ptr") (param i32) (result i32) (local.get 0))
+        \\  (func (export "rt_bin_len") (param i32) (result i32) (i32.const 6))
+        \\  (func $raise (throw $t (i32.const 64)))
+        \\  (func (export "bp_main") (param i32 i32) (result i32)
+        \\    (block $h (result i32)
+        \\      (try_table (catch $t $h) (call $raise))
+        \\      (i32.const 0))))
+    );
+    defer c.wasm_byte_vec_delete(&bytes);
+    const r = try evalWithArg(alloc, std.testing.io, "bp@wat_test_exceptions", bytes.data[0..bytes.size], "x");
+    defer alloc.free(r.payload());
+    try std.testing.expectEqualStrings("caught", r.ok);
+}
+
+test "a module that imports anything is refused by the engine, naming the import" {
+    const alloc = std.testing.allocator;
+    var bytes = try watBytes(
+        \\(module (import "env" "bp_elsewhere" (func)) (memory (export "memory") 1))
+    );
+    defer c.wasm_byte_vec_delete(&bytes);
+    const r = try evalWithArg(alloc, std.testing.io, "bp@wat_test_imports", bytes.data[0..bytes.size], "");
+    defer alloc.free(r.payload());
+    try std.testing.expect(r == .compile_error);
+    try std.testing.expect(std.mem.indexOf(u8, r.compile_error, "env.bp_elsewhere") != null);
 }
 
 // ── the limits (`AGENTS.md` § Limits): each pinned where it raises ──────────

@@ -87,6 +87,8 @@ pub fn run(
     var level_b: analysis_store.Cache = undefined;
     try level_b.init(gpa, io, analysis_store.root(proj), entry_target, closure_keys.keys);
     defer level_b.deinit();
+    // The compiled comptime modules beside it (decision 543).
+    try bp.comptime_runtime.useCompiledCache(analysis_store.root(proj), code_cache.cold);
 
     // Compile dependency modules ahead of project modules (their types/decorators
     // must resolve before the project that imports them).

@@ -12,3 +12,5 @@ _memory.md
 erl_crash.dump
 # a cell's build output (`botopink build --out out`) is never tracked
 conformance/modules/*/out/
+# the packages `build.zig.zon` fetches (wasmtime's C API), unpacked by zig
+zig-pkg/

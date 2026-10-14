@@ -64,6 +64,8 @@ jobs:
           echo "zigtarget: ${{ matrix.zigtarget }}"
           echo "zig:       $(zig version)"
 
+      # `zig build` fetches the one input `build.zig.zon` pins for the target:
+      # wasmtime's prebuilt C API, the comptime runtime's engine (decision 543).
       - name: Cross-build (ReleaseSafe)
         shell: bash
         run: |

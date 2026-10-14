@@ -38,9 +38,9 @@ tell from a real one.
   touching a source rebuilds nothing, so the installed binary keeps its old
   mtime, and "binary older than a source" would refuse a current binary with no
   command that fixes it.
-- **The file set** (`ROOTS`, `SKIP_DIRS`): `build.zig`, the `src/` trees of
-  compiler-cli, compiler-core, manifest, lib-test-runner and this module,
-  `modules/wasm3`, and `libs/` — every regular file except `*.md`, skipping
+- **The file set** (`ROOTS`, `SKIP_DIRS`): `build.zig`, `build.zig.zon` (the
+  wasmtime library it pins), the `src/` trees of compiler-cli, compiler-core,
+  manifest, lib-test-runner and this module, and `libs/` — every regular file except `*.md`, skipping
   hidden directories and `tests`, `test`, `snapshots`, `out`, `zig-out`,
   `node_modules`. Sorted, each hashed as `<path> NUL <bytes> NUL`.
 

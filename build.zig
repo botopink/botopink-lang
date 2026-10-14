@@ -9,7 +9,6 @@
 ///   zig build test-libs → compiles and tests every visible `.bp` library per target
 ///   zig build run      → builds and runs the botopink CLI
 const std = @import("std");
-const wasm3 = @import("modules/wasm3/build.zig");
 const source_stamp = @import("modules/source-stamp/src/root.zig");
 
 pub fn build(b: *std.Build) void {
@@ -293,9 +292,10 @@ pub fn build(b: *std.Build) void {
         // program and into the comptime runtime.
         mod.addAnonymousImport("std_wasm.wasm", .{ .root_source_file = std_wasm_bin });
     }
-    // wasm3 runs it in-process on every native build (`persistent_wat.zig`).
-    wasm3.exposeHeaders(b, core_mod);
-    wasm3.exposeHeaders(b, core_test_mod);
+    // wasmtime runs it in-process on every native build (`persistent_wat.zig`,
+    // decision 543): its C API's headers, from the library this target links.
+    exposeWasmtimeHeaders(b, core_mod, target);
+    exposeWasmtimeHeaders(b, core_test_mod, target);
 
     // The compiler-core suite runs as SHARDS: one test binary, `test_shards`
     // processes side by side, each running the tests whose index is its own
@@ -314,7 +314,7 @@ pub fn build(b: *std.Build) void {
         .filters = test_filters,
         .test_runner = .{ .path = b.path("modules/test-shard/runner.zig"), .mode = .server },
     });
-    wasm3.link(b, core_tests);
+    linkWasmtime(b, core_tests);
 
     const default_shards: u32 = @intCast(std.math.clamp(std.Thread.getCpuCount() catch 1, 1, 8));
     const test_shards = b.option(u32, "test-shards", "Processes the compiler-core suite is split across (default: CPUs, at most 8)") orelse default_shards;
@@ -426,7 +426,7 @@ pub fn build(b: *std.Build) void {
     });
 
     const lsp_tests = b.addTest(.{ .root_module = lsp_test_mod, .filters = test_filters });
-    wasm3.link(b, lsp_tests);
+    linkWasmtime(b, lsp_tests);
 
     const run_lsp_tests = b.addRunArtifact(lsp_tests);
     run_lsp_tests.setCwd(b.path("modules/language-server"));
@@ -450,7 +450,7 @@ pub fn build(b: *std.Build) void {
     });
 
     const cli_tests = b.addTest(.{ .root_module = cli_test_mod, .filters = test_filters });
-    wasm3.link(b, cli_tests);
+    linkWasmtime(b, cli_tests);
 
     const run_cli_tests = b.addRunArtifact(cli_tests);
     run_cli_tests.setCwd(b.path("modules/compiler-cli"));
@@ -474,7 +474,7 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
-    wasm3.link(b, cli_exe);
+    linkWasmtime(b, cli_exe);
     b.installArtifact(cli_exe);
 
     // ── language-server (botopink-lsp executable) ─────────────────────────────
@@ -493,7 +493,7 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
-    wasm3.link(b, lsp_exe);
+    linkWasmtime(b, lsp_exe);
     b.installArtifact(lsp_exe);
 
     // ── lib-test-runner (botopink-lib-test executable) ────────────────────────
@@ -960,4 +960,70 @@ fn stdSidecarFiles(b: *std.Build) []const []const u8 {
 fn stdSrcExists(b: *std.Build, rel: []const u8) bool {
     b.build_root.handle.access(b.graph.io, b.fmt("libs/std/src/{s}", .{rel}), .{}) catch return false;
     return true;
+}
+
+// ── wasmtime, the comptime runtime's engine (decision 543) ──────────────────
+
+/// The `build.zig.zon` dependency holding wasmtime's prebuilt C API for
+/// `target` — one per release target (`release.yml`'s five), each lazy, so a
+/// build fetches only its own. Null while the lazy fetch is pending (zig then
+/// fetches it and runs the build again); a target outside the five panics,
+/// naming them: the native compiler has no comptime engine there.
+fn wasmtimeDependency(b: *std.Build, target: std.Build.ResolvedTarget) ?*std.Build.Dependency {
+    const t = target.result;
+    const name: []const u8 = @as(?[]const u8, switch (t.os.tag) {
+        .linux => switch (t.cpu.arch) {
+            .x86_64 => @as(?[]const u8, "wasmtime_linux_x86_64"),
+            .aarch64 => "wasmtime_linux_aarch64",
+            else => null,
+        },
+        .macos => switch (t.cpu.arch) {
+            .x86_64 => "wasmtime_macos_x86_64",
+            .aarch64 => "wasmtime_macos_aarch64",
+            else => null,
+        },
+        .windows => if (t.cpu.arch == .x86_64) "wasmtime_windows_x86_64" else null,
+        else => null,
+    }) orelse std.debug.panic(
+        "wasmtime: no prebuilt C API pinned for {s}-{s} — build.zig.zon pins linux-{{x86_64,aarch64}}, macos-{{x86_64,aarch64}}, windows-x86_64 (decision 543)",
+        .{ @tagName(t.cpu.arch), @tagName(t.os.tag) },
+    );
+    return b.lazyDependency(name, .{});
+}
+
+/// wasmtime's C API headers on `mod`'s include path (`@cImport` resolution
+/// is module-scoped): compiler-core's `persistent_wat.zig` translates them.
+fn exposeWasmtimeHeaders(b: *std.Build, mod: *std.Build.Module, target: std.Build.ResolvedTarget) void {
+    const dep = wasmtimeDependency(b, target) orelse return;
+    mod.addIncludePath(dep.path("include"));
+}
+
+/// Link wasmtime's static library into an artifact whose root module imports
+/// compiler-core, with the system libraries a Rust static library needs on
+/// its target.
+fn linkWasmtime(b: *std.Build, compile: *std.Build.Step.Compile) void {
+    const root = compile.root_module;
+    const target = root.resolved_target.?;
+    const dep = wasmtimeDependency(b, target) orelse return;
+    root.addObjectFile(dep.path("lib/libwasmtime.a"));
+    // wasmtime's object holds more sections than an ELF header counts (the
+    // extended numbering), which zig 0.16's own ELF linker cannot read: an
+    // artifact linking it is linked by LLD, and so compiled by LLVM.
+    if (target.result.ofmt == .elf) {
+        compile.use_llvm = true;
+        compile.use_lld = true;
+    }
+    root.link_libc = true;
+    switch (target.result.os.tag) {
+        // libSystem carries everything it calls, `_Unwind_*` included.
+        .macos => {},
+        // Rust's standard library unwinds through libunwind's `_Unwind_*`
+        // (zig builds its bundled one); on Windows it calls these DLLs too.
+        .windows => {
+            root.linkSystemLibrary("unwind", .{});
+            for ([_][]const u8{ "kernel32", "advapi32", "ntdll", "userenv", "bcrypt", "ole32", "shell32", "ws2_32" }) |lib|
+                root.linkSystemLibrary(lib, .{});
+        },
+        else => root.linkSystemLibrary("unwind", .{}),
+    }
 }

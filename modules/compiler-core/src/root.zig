@@ -10,6 +10,9 @@ pub const Module = @import("./module.zig").Module;
 pub const Targets = @import("./module.zig").Targets;
 pub const PackageFiles = @import("./module.zig").PackageFiles;
 pub const comptime_pipeline = @import("./comptime.zig");
+/// The comptime runtime's entry: `useCompiledCache`, the compiled-module cache
+/// a command keeps under its cache root (decision 543).
+pub const comptime_runtime = @import("./comptime/runtime/runtime.zig");
 /// The OTP release check every `erl` / `erlc` / `escript` spawn goes through (decision 228).
 pub const otp = @import("./otp.zig");
 /// The code cache's level B entry format (144 B-60): the container, and the

@@ -32,12 +32,12 @@ const std = @import("std");
 /// What the binaries are built from, relative to the checkout root.
 pub const ROOTS = [_][]const u8{
     "build.zig",
+    "build.zig.zon",
     "modules/compiler-cli/src",
     "modules/compiler-core/src",
     "modules/manifest/src",
     "modules/lib-test-runner/src",
     "modules/source-stamp/src",
-    "modules/wasm3",
     "libs",
 };
 

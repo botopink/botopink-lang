@@ -5,8 +5,9 @@
 //! template and `comptime` evaluation — `erlang`, `beam`, `commonJS`, `wasm`,
 //! and a compilation that names no target (the language server's type pass) —
 //! runs on the wat runtime: the generated module lowered to wasm and linked
-//! into the term library (`wat/program.zig`), run in-process on wasm3
-//! (`persistent_wat.zig`) — or on the page's engine in the browser build. A
+//! into the term library (`wat/program.zig`), run in-process on wasmtime
+//! (`persistent_wat.zig`, decision 543) — or on the page's engine in the
+//! browser build. A
 //! compile spawns no `erl`; there is no other runtime to select, so nothing
 //! here is configured per target or per thread.
 const std = @import("std");
@@ -37,7 +38,6 @@ pub const EvalError = error{ OutOfMemory, EvalFailed };
 /// argument `arg`. `host` names the evaluator (`template`, `decorator`,
 /// `comptime`) in a listing.
 pub fn evalWithArg(arena: std.mem.Allocator, io: std.Io, host: []const u8, module: []const u8, code: []const u8, arg: []const u8) EvalError!Response {
-    _ = io;
     _ = host;
     const t_lower = stages.start();
     const built = try watProgram.build(module, code);
@@ -46,12 +46,28 @@ pub fn evalWithArg(arena: std.mem.Allocator, io: std.Io, host: []const u8, modul
         .ok => |o| o,
         .refused => |why| return .{ .compile_error = try arena.dupe(u8, why) },
     };
-    return switch (try persistent_wat.evalWithArg(arena, module, ok.wasm, arg)) {
+    return switch (try persistent_wat.evalWithArg(arena, io, module, ok.wasm, arg)) {
         .ok => |b| .{ .ok = b },
         .compile_error => |b| .{ .compile_error = b },
         .runtime_error => |b| .{ .runtime_error = b },
     };
 }
+
+/// Decision 543 — keep the compiled comptime modules under `root` (a cache
+/// root, decision 225: `<root>/.botopinkbuild/build/comptime/`, B-77's
+/// place), so a later build loads a module's compiled code instead of
+/// compiling it; `cold` (`--cold`) reads none and writes what compiled. Set
+/// once per process, by the command that knows its cache root
+/// (`compiler-cli` `build`, `check`, `test`); without it a compilation keeps
+/// its compiled modules in the process only. A no-op on the browser build.
+pub fn useCompiledCache(root: []const u8, cold: bool) std.mem.Allocator.Error!void {
+    if (comptime builtin.cpu.arch.isWasm()) return;
+    persistent_wat.compiled_dir = try std.fs.path.join(std.heap.page_allocator, &.{ root, compiled_cache_dir });
+    persistent_wat.compiled_cold = cold;
+}
+
+/// The compiled-module cache's directory under a cache root.
+pub const compiled_cache_dir = ".botopinkbuild/build/comptime";
 
 // ── what a snapshot shows of an evaluation ───────────────────────────────────
 

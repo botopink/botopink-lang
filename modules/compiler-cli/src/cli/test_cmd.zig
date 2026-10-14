@@ -380,6 +380,8 @@ pub fn run(
     var level_b: analysis_store.Cache = undefined;
     try level_b.init(gpa, io, analysis_store.root(proj), entry_target, closure_keys.keys);
     defer level_b.deinit();
+    // The compiled comptime modules beside it (decision 543).
+    try bp.comptime_runtime.useCompiledCache(analysis_store.root(proj), code_cache.cold);
 
     // A dependency's `.d.bp` modules are kept, as `build` and `run` keep them
     // (decisions 514, 515): one module set under every command, so one level B

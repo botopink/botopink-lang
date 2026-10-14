@@ -7,8 +7,8 @@
 //! with `O_APPEND` so each line is one `write`. Unset (or empty), `start`
 //! answers 0 and `stop` returns at once: nothing is opened, read or written,
 //! and no answer of the compiler depends on it. The variable is read once per
-//! process. Not available in the browser build (no libc there): every call is
-//! a no-op on `wasm32`.
+//! process. Not available in the browser build (no libc there) nor on Windows
+//! (no POSIX `open`): every call is a no-op on `wasm32` and Windows.
 //!
 //! The stages, in the order one evaluation meets them:
 //!
@@ -18,7 +18,7 @@
 //! | `module` | the evaluator's `buildModule` (emit memo key, emit or memo hit, argument plan) |
 //! | `encode` | the argument as external term format (`etf.encode`) |
 //! | `lower` | the module's runtime program: `wat/program.zig` (a cache hit after the first) |
-//! | `instance` | wat: the module's wasm3 instance (`persistent_wat.zig`: environment, runtime, parse, load — or the reset of a kept one) |
+//! | `instance` | wat: the module's compiled code (`persistent_wat.zig`: compiled, read from the compiled-module cache, or kept in the process) |
 //! | `run` | wat: `bp_init`, the argument's copy, `bp_main` and the reply's read-back |
 //! | `listing` | the trace listing of the evaluation (`runtime.listingOf` + its argument comment) |
 //! | `outcome` | the reply parsed into the evaluator's outcome |
@@ -29,7 +29,9 @@ pub const env_name = "BOTOPINK_COMPTIME_STAGES";
 
 pub const Stage = enum { memo_key, module, encode, lower, instance, run, listing, outcome };
 
-const supported = !builtin.cpu.arch.isWasm() and builtin.link_libc;
+/// POSIX `open` / `write` (Windows' C library has no `fd_t` of that shape:
+/// the clock is off there).
+const supported = !builtin.cpu.arch.isWasm() and builtin.os.tag != .windows and builtin.link_libc;
 
 /// -2 not read yet, -1 off, otherwise the open file.
 var fd: std.atomic.Value(i32) = .init(-2);
