@@ -632,6 +632,11 @@ absent key counts from 0, and the dict it was called on is unchanged:
 
 <!-- example: modules/dict_bump -->
 
+`bump` exists for an integer `V` alone (decisions 340, 534): on a `Dict` whose `V` is not an integer
+type the call is refused, located at the call:
+
+<!-- example: modules/dict_bump_non_integer -->
+
 **`PersistentTerm`** — one value per node, written **once, at load**, read
 everywhere for the cost of a function call. A write after load is a
 compile-time error whose hint points to `#[@BeamMemory.Ets]`: at run time

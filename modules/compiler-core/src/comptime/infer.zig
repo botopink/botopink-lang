@@ -21091,6 +21091,20 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                 if (!own and !isStdModuleType(rp.getType())) return inferTemplateMethodCall(env, call, rp, tfn, loc);
                 try env.templateMethodDeclined.put(loc, {});
             };
+            // Decision 534 — `Dict.bump(key, by)` exists for an integer `V` alone
+            // (340): on a `Dict` whose `V` is a concrete type that is not an
+            // integer the call is refused, located at the call.
+            if (typedReceiver) |rp| if (!call.is_builtin and call.calleeExpr == null and call.args.len == 2 and std.mem.eql(u8, call.callee, "bump") and typeIsDict(rp.getType())) {
+                if (keyedValueType(rp.getType())) |vt| {
+                    const v = vt.deref();
+                    if (v.* != .typeVar and !isIntType(v)) return failAt(
+                        env,
+                        loc,
+                        try std.fmt.allocPrint(env.arena, "`Dict.bump` counts integers alone — the values of this `Dict` are {s}", .{try describeForKeyed(env, v)}),
+                        "Declare the `Dict` with integer values, or write the row whole with `insert(key, value)`.",
+                    );
+                }
+            };
             // Decision 519 — `a.text()` on an `Asset`, computed at build.
             if (typedReceiver) |rp| if (!call.is_builtin and call.calleeExpr == null and std.mem.eql(u8, call.callee, "text") and isAssetType(rp.getType())) {
                 return inferAssetText(env, call, rp, loc);

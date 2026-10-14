@@ -5,7 +5,7 @@
 //// checker types it `f64` — an imported record's field and an `f64` a
 //// generic method answers included — and a record carries its float fields'
 //// shape when it prints. Before it, `"${5.0}"` was `5` there, `p.x` of an
-//// imported `Pt` printed `1`, and `Dict<string, f64>.bump`'s `3.0` printed `3`.
+//// imported `Pt` printed `1`, and `Dict<string, f64>.insert`'s `3.0` printed `3`.
 
 pub mod geo;
 import {geo.Pt, geo.origin};
@@ -33,7 +33,7 @@ pub fn main() {
     @print(p);
 
     val counts: Dict<string, f64> = Dict.empty();
-    val bumped = counts.bump("a", 3.0);
-    @print(bumped.at("a"));
-    @print("a=${bumped.at("a") ?? 0.0}");
+    val stored = counts.insert("a", 3.0);
+    @print(stored.at("a"));
+    @print("a=${stored.at("a") ?? 0.0}");
 }

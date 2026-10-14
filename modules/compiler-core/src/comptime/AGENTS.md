@@ -2826,3 +2826,10 @@ index channel's `variadicPacked` arm), so erlang, beam and wasm read one list /
 array argument; commonJS writes it back as a rest call (`codegen/AGENTS.md`).
 Cells: `modules/variadic_parameter`, `modules/variadic_parameter_host`,
 `modules/variadic_spread_at_call`, `modules/variadic_label`.
+
+## `Dict.bump` on a non-integer `V` (decision 534)
+
+`inferCallExprWith` refuses `d.bump(k, by)` on a receiver typed `Dict<K, V>` whose `V` is a concrete
+type that is not an integer (`isIntType`; an unresolved type variable passes), located at the method
+name: "`Dict.bump` counts integers alone — the values of this `Dict` are a `f64`". The keyed-var write
+(`checkKeyedWrite`) keeps its own message for a `keyed: true` var. Cell: `modules/dict_bump_non_integer`.
