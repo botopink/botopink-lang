@@ -26,11 +26,13 @@ on:
   pull_request:
     branches: [main, feat]
 
-# A started run finishes (the maintainer, 2026-10-13): with two machines pushing to feat, cancelling the running
-# one left no run finished; GitHub keeps one running and one pending per ref, the newest pending replacing the older.
+# Every commit pushed to feat runs to the end (decision 528): with two machines pushing, one group per ref left
+# no run finished; a group per commit queues past the concurrent-job limit and cancels none.
 concurrency:
-  group: test-${{ github.ref }}
-  cancel-in-progress: false
+  # decision 528: a push to feat runs in a group of its own commit, so every commit has its verdict;
+  # a pull request keeps one group and cancels its older runs
+  group: test-${{ github.ref }}-${{ github.event_name == 'push' && github.sha || 'pr' }}
+  cancel-in-progress: ${{ github.event_name != 'push' }}
 
 jobs:
   test:
