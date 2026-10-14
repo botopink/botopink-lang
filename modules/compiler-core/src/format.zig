@@ -588,6 +588,8 @@ pub const Formatter = struct {
         const isValue = this.stmtIsValue;
         this.stmtIsValue = false;
         if (!isValue and s.expr == .collection and s.expr.collection.kind == .case) this.nextCaseIsStatement = true;
+        // Decision 539 — `defer ` heads the statement it marks.
+        if (s.deferred) return this.concat(try this.text("defer "), try this.terminated(s.expr, try this.fmtExpr(s.expr)));
         return switch (s.tail) {
             .none => this.terminated(s.expr, try this.fmtExpr(s.expr)),
             .value => this.fmtExpr(s.expr),

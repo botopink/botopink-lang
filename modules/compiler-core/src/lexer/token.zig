@@ -85,6 +85,7 @@ pub const TokenKind = enum {
     await,
     case,
     default,
+    @"defer",
     derive,
     @"else",
     /// `record`, `enum`, `interface`: NOT produced by the lexer since 1.0.3 —

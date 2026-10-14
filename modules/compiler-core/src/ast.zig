@@ -570,9 +570,13 @@ pub fn StmtOf(comptime phase: Phase) type {
         /// Decision 409 — the last expression of a function body written
         /// without `;` (`parser.zig` `parseBlockBody`, `markTail`).
         tail: Tail = .none,
+        /// Decision 539 — `defer <expr>;`: the statement's `expr` runs when
+        /// the block it is written in ends, on every exit. It answers no
+        /// value, so a deferred statement never carries a `tail`.
+        deferred: bool = false,
 
-        /// Dumped without `tail` unless it is set, so every body written
-        /// before decision 409 dumps as it always did.
+        /// Dumped without `tail` or `deferred` unless set, so every body
+        /// written before decisions 409 and 539 dumps as it always did.
         pub fn jsonStringify(this: @This(), jws: anytype) !void {
             try jws.beginObject();
             try jws.objectField("expr");
@@ -582,6 +586,10 @@ pub fn StmtOf(comptime phase: Phase) type {
             if (this.tail != .none) {
                 try jws.objectField("tail");
                 try jws.write(this.tail);
+            }
+            if (this.deferred) {
+                try jws.objectField("deferred");
+                try jws.write(true);
             }
             try jws.endObject();
         }

@@ -12800,7 +12800,7 @@ fn inferStmtsTyped(env: *Env, stmts: []const ast.Stmt) InferError![]TypedStmt {
     defer env.statementBlockLoc = savedStatementBlock;
     for (stmts, 0..) |s, i| {
         env.statementBlockLoc = statementBlockLocOf(s.expr);
-        out[i] = .{ .expr = try inferExprTyped(env, s.expr), .tail = s.tail };
+        out[i] = .{ .expr = try inferExprTyped(env, s.expr), .tail = s.tail, .deferred = s.deferred };
         try narrowAfterEarlyExit(env, s.expr, &narrowed);
     }
     if (narrowed.items.len > 0) try restorePatternBindings(env, narrowed.items);

@@ -1034,6 +1034,9 @@ pub const Parser = struct {
 
             if (opts.handleComments and try this.tryParseCommentStmt(alloc, &stmts, emptyLinesBefore)) continue;
 
+            // Decision 539 — `defer <expr>;` marks the statement; `defer { … }`
+            // is `defer` over a block expression.
+            const isDeferred = this.match(.@"defer");
             var expr = try this.parseExpr(alloc);
             // The statement is parsed before the separator is checked, so a
             // semicolon-policy failure leaves it owned by nobody. It is freed
@@ -1063,11 +1066,11 @@ pub const Parser = struct {
             }
             lastStmt = stmts.items.len;
             lastBare = bare;
-            try stmts.append(alloc, .{ .expr = expr, .emptyLinesBefore = emptyLinesBefore });
+            try stmts.append(alloc, .{ .expr = expr, .emptyLinesBefore = emptyLinesBefore, .deferred = isDeferred });
         }
         _ = try this.consume(.rightBrace);
         if (opts.markTail and lastBare) {
-            if (lastStmt) |i| if (isTailExpr(stmts.items[i].expr)) {
+            if (lastStmt) |i| if (!stmts.items[i].deferred and isTailExpr(stmts.items[i].expr)) {
                 stmts.items[i].tail = .value;
             };
         }
@@ -1084,7 +1087,7 @@ pub const Parser = struct {
     pub fn markBlockTail(stmts: []Stmt, lastBare: bool) void {
         if (!lastBare or stmts.len == 0) return;
         const s = &stmts[stmts.len - 1];
-        if (isTailExpr(s.expr)) s.tail = .value;
+        if (!s.deferred and isTailExpr(s.expr)) s.tail = .value;
     }
 
     /// Decision 409 — a statement that can be a body's tail: an expression,

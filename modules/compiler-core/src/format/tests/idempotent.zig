@@ -151,3 +151,15 @@ test "format: idempotent ---- a one-line lambda wider than the line" {
         \\}
     );
 }
+
+test "format: idempotent ---- defer statement and block (decision 539)" {
+    try h.assertIdempotent(std.testing.allocator,
+        \\fn f() {
+        \\    defer @print("a");
+        \\    defer {
+        \\        @print("b");
+        \\    }
+        \\    @print("c");
+        \\}
+    );
+}

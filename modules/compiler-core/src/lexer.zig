@@ -908,6 +908,7 @@ pub const Lexer = struct {
         if (std.mem.eql(u8, text, "case")) return .case;
         // 'const' is not a surface keyword in botopink; use 'val' instead.
         if (std.mem.eql(u8, text, "default")) return .default;
+        if (std.mem.eql(u8, text, "defer")) return .@"defer";
         if (std.mem.eql(u8, text, "else")) return .@"else";
         if (std.mem.eql(u8, text, "extend")) return .extend;
         if (std.mem.eql(u8, text, "extends")) return .extends;

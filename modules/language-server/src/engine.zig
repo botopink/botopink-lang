@@ -2389,13 +2389,13 @@ pub fn prepareRename(
 /// now, so no declaration can be named after it and none can be renamed to it.
 fn isKeyword(name: []const u8) bool {
     const keywords = [_][]const u8{
-        "as",        "assert",   "await",    "behavior", "break",   "case",
-        "catch",     "comptime", "continue", "declare",  "default", "else",
-        "extend",    "extends",  "fn",       "for",      "from",    "if",
-        "implement", "import",   "is",       "loop",     "mod",     "null",
-        "pub",       "return",   "Self",     "syntax",   "test",    "throw",
-        "try",       "type",     "unknown",  "use",      "val",     "var",
-        "while",     "yield",
+        "as",    "assert",    "await",    "behavior", "break",   "case",
+        "catch", "comptime",  "continue", "declare",  "default", "defer",
+        "else",  "extend",    "extends",  "fn",       "for",     "from",
+        "if",    "implement", "import",   "is",       "loop",    "mod",
+        "null",  "pub",       "return",   "Self",     "syntax",  "test",
+        "throw", "try",       "type",     "unknown",  "use",     "val",
+        "var",   "while",     "yield",
         // Not lexer keywords, but not renameable identifiers either.
            "true",     "false",
     };
