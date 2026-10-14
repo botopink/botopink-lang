@@ -153,6 +153,8 @@ default reads the file's name as `decl.name`. A second default is
 `default-twice`; `pub default nope;` naming no function is `default-unknown`.
 
 <!-- example: modules/default_fn_import -->
+<!-- example: modules/default_named_twice -->
+<!-- example: modules/default_unknown -->
 
 #### A `.bpp` file
 
@@ -310,6 +312,8 @@ calls `io/fs`'s `readText` — only the modules the program reaches are imported
 and a module namespace reaches its types, so `import {collections} from "std"`
 allows `collections.Dict.empty()` beside `collections.lt()` (decision 111's
 constructors are type-scoped).
+
+<!-- example: modules/import_group_modifier -->
 
 <!-- example: modules/import_tree_group -->
 
@@ -492,6 +496,7 @@ names it too (``reserved word `from` ``):
 <!-- example: modules/reserved_word_field_name -->
 
 <!-- example: modules/reserved_word_param_name -->
+<!-- example: modules/reserved_word_as_binding_name -->
 
 ### val — immutable binding
 
@@ -642,6 +647,10 @@ belongs to the module version that created it and dies with it on reload.
 
 <!-- example: modules/fn_declaration -->
 
+A declaration with no body says what it answers: `fn f(x: string);` with no `-> R` is `bodyless-fn-needs-return-type`, whose label suggests `-> void` or a body.
+
+<!-- example: modules/bodyless_fn_no_return_type -->
+
 A value leaves a function through `return` or its tail (below), so a `fn` whose return type has a
 value must end every path with one of them (or `@panic` / `@todo`) —
 `fn f() -> i32 { val x = 1; }` is refused at `-> i32`. An effect return is judged by what
@@ -780,16 +789,21 @@ decorator adds as for one written by hand:
 A free function that names one is `self-param-outside-type`, refused at the
 name.
 
+<!-- example: modules/self_param_free_fn -->
+
 The field list is always written. A record with no fields is `type Name()`,
 and with members `type Name() { … }`; braces holding variants declare an enum,
 and braces holding only associated functions (none taking `self`) declare a
 **namespace type** (decision 329) — `type Name { fn make() -> i32 { … } }`,
 called `Name.make()`, with no value: `Name()` is `namespace-type-construction`
 and a `self` function in it `namespace-type-self`. A `type` declared in a type's
-body is its associated type, named `Owner.Name` (decision 330). `type Name {}` is
+body is its associated type, named `Owner.Name` (decision 330), so a name the body already gives a member is `assoc-type-duplicate`, refused at the type's name. `type Name {}` is
 `type-without-field-list`, refused where the `()` belongs:
 
 <!-- example: modules/record_empty -->
+<!-- example: modules/assoc_type_named_like_member -->
+<!-- example: modules/namespace_type_self -->
+<!-- example: modules/type_empty_braces -->
 
 An anonymous group of values is a tuple, not a type declaration. A tuple is
 positional at run time; a label is a compile-time name, lent by the variable
@@ -820,6 +834,10 @@ A section is itself a type (`Token.Color`), and a leaf is reached by its path:
 
 <!-- example: modules/enum_sections -->
 
+A section holds variants and nested sections, not methods: a `fn` inside a section's braces is `section-body-method`, refused at the `fn` — declare it in the enum's own body.
+
+<!-- example: modules/section_body_method -->
+
 A variant name is declared once per level of the body (`enum-variant-duplicate`
 at the second). The same name at two levels is two members, told apart by the
 path and by the position's expected type: with `Layout { Break { After } }`
@@ -827,6 +845,8 @@ beside `After(inner: Token[])`, `Token.After(…)` — and `.After(…)` where a
 `Token` is expected — is the payload variant, `.After` where a
 `Token.Layout.Break` is expected is the leaf, and a `case` over a `Token` matches
 the top-level `After` while one over the section matches the leaf.
+
+<!-- example: modules/enum_variant_duplicate -->
 
 **Which enum a leading-dot path names is decided by the type the position
 expects.** More than one enum can carry the same path, so the answer is read
@@ -1242,6 +1262,15 @@ digits (`1e`) are refused at the suffix. A number pattern matches a subject of
 its own type. `n` makes an integer literal a `bigint` of any size (§ Numbers);
 it takes no fraction or exponent (`1.5n` is refused at the suffix).
 
+Each of those refusals has its own name, located at the suffix or the exponent: an upper-case suffix is `number-suffix-uppercase`, letters that are no suffix `number-suffix-unknown`, an exponent without digits `number-exponent-without-digits`, an integer suffix on a literal with a fraction or an exponent (`1.5l`, `1.5n`), which is floating and takes `f` or `d` only, `number-suffix-integer-on-float`, and a floating suffix on a hexadecimal, octal or binary literal, which is an integer, `number-suffix-float-on-radix`.
+
+<!-- example: modules/bigint_literal_fraction -->
+<!-- example: modules/number_exponent_without_digits -->
+<!-- example: modules/number_suffix_float_on_radix -->
+<!-- example: modules/number_suffix_integer_on_float -->
+<!-- example: modules/number_suffix_unknown -->
+<!-- example: modules/number_suffix_uppercase -->
+
 <!-- example: modules/numeric_literal_kinds -->
 
 A `case` over a 64-bit integer (`i64`, `u64`) or a float compares it as its own type: a number pattern, a
@@ -1357,10 +1386,12 @@ name!                 // the value; null aborts: value is null — name! at src/
 Five rules hold them: an operator over a value that is never `null` is a compile
 error (`s?.length()` with `s: string`, and the left side of `??`); `?.` flattens —
 a member answering `?U` read through `?.` is `?U`, never `??U`; `??` beside `&&`
-or `||` takes parentheses (`(a ?? false) && b`); `x!` is checked at run time, a
+or `||` takes parentheses (`(a ?? false) && b`; `nullish-beside-logical`); `x!` is checked at run time, a
 program error like `@panic`, alike on every target; and `map`, `flatMap` and
 `unwrapOr` belong to `@Result` alone (`r.unwrapOr(0)`) — there is no `result`
 namespace.
+
+<!-- example: modules/nullish_beside_logical -->
 
 A `?.` makes the rest of its chain conditional: at the first absent link the whole
 chain is absent, and a member or a method after the link runs only on a present
@@ -1677,6 +1708,10 @@ the condition is false and is refused at the `if`. It stands where an expression
 never an operand: `1 + if (c) { 2 } else { 3 }`, `-if (c) 1 else 2` and `(if (c) a else b).v` are
 `error[if-operand]` at the `if`; bind it first (`val x = if (c) { 2 } else { 3 }; 1 + x`).
 
+<!-- example: modules/if_in_parentheses -->
+<!-- example: modules/if_operand_of_operator -->
+<!-- example: modules/if_operand_of_unary -->
+
 A condition is a whole expression, `&&` and `||` included — the grammar's own
 parentheses close it, so nothing has to be bound to a `val` first:
 
@@ -1728,6 +1763,11 @@ pattern, `..` (exclusive) in a `for` and a slice. `1..9` in an arm is
 `error[pattern-range-exclusive]`, naming `...`; an open end is a guard.
 
 <!-- example: modules/case_range_and_guard -->
+
+A tuple pattern is positional, as a tuple literal is: a label in one (`#(name: n, ..)`) is `pattern-tuple-label`, refused at the label — match by position.
+
+<!-- example: modules/case_tuple_label -->
+<!-- example: modules/pattern_range_exclusive -->
 
 A name alone is not a pattern: to give the matched value a name, bind it in the
 body (`_ { n -> … }`). The one exception is the optional, below, where the name
@@ -1792,6 +1832,13 @@ next round, in all three. `for` binds the item only — the index is
 `for (0..xs.length) { i -> … }`. The parentheses stay (`while (cond) {`), as
 they do on `if`: without them `while x {` could not tell the body from a record
 literal. `loop (…)` is an error naming `for` and `while`.
+
+`loop (xs) { x -> … }` and `loop (cond)` are `removed-loop-parenthesised`, naming `for` and `while`. `while` and `loop` bind nothing, so a binder on one is `loop-binds-nothing`, refused at the binder. `loop await` does not exist either: a stream is walked with `for await`, and the parser refuses the `await` after `loop`, located at it.
+
+<!-- example: modules/loop_await_removed -->
+<!-- example: modules/loop_condition_parameter -->
+<!-- example: modules/loop_condition_parenthesised -->
+<!-- example: modules/loop_parenthesised -->
 
 A range `a..b` excludes its end and `a...b` includes it: `for (1..4)` visits
 `1 2 3`, `for (1...4)` visits `1 2 3 4`. A range is not a value — there is no
@@ -2169,7 +2216,11 @@ parameter itself. One parameter of a function may have an inline type, and none
 of its fields is named like another parameter. It is a top-level `fn`'s only — a
 return, a field, a `val` annotation and a method's parameter refuse it — and it
 is not exported: a call from another module that writes its fields is refused.
-A diagnostic names it by its owner: ``the props of `link` ``.
+A diagnostic names it by its owner: ``the props of `link` ``. An inline type written anywhere but a parameter's type is `inline-type-outside-parameter`, refused at the type.
+
+<!-- example: modules/inline_type_in_field -->
+<!-- example: modules/inline_type_in_return -->
+<!-- example: modules/inline_type_in_val_annotation -->
 
 ### Parameters with defaults
 
@@ -2183,7 +2234,12 @@ is where `"hello".slice(1)` gets its open end from (`slice(self, start: i32,
 end: ?i32 = null)`). Wherever it is declared, **a default is trailing**: a
 parameter or field with a default is followed only by others with defaults
 (`fn lead(a: i32 = 1, b: i32)` and `type Port(number: i32 = 80, host: string)`
-are refused at `b` and `host`).
+are refused at `b` and `host`; the diagnostic is `fn-param-default-trailing-only` for a function's or a method's parameters and `field-default-trailing-only` for a record's fields and a variant's payload).
+
+<!-- example: modules/fn_param_default_not_trailing -->
+<!-- example: modules/method_param_default_not_trailing -->
+<!-- example: modules/record_field_default_not_trailing -->
+<!-- example: modules/variant_payload_default_not_trailing -->
 
 <!-- example: modules/parameter_defaults_record -->
 
@@ -2223,6 +2279,10 @@ on one is `variadic-label`, and there is no spread at a call — a function that
 takes an existing array declares `values: T[]`, not `..values`:
 
 <!-- example: modules/variadic_spread_at_call -->
+<!-- example: modules/variadic_default -->
+<!-- example: modules/variadic_not_array -->
+<!-- example: modules/variadic_not_last -->
+<!-- example: modules/variadic_twice -->
 
 The checker packs the arguments into one array, so erlang and beam receive one
 list argument and wasm one array; commonJS writes the function with a rest
@@ -2369,6 +2429,9 @@ a `.` chain; `total + try r`, `-try x` and `(try r).length` are
 `try-await-operand`, and the fix is to bind the value first:
 
 <!-- example: modules/result_try_each_operand -->
+<!-- example: modules/await_operand_of_unary -->
+<!-- example: modules/try_in_parentheses -->
+<!-- example: modules/try_operand_of_operator -->
 
 A `throw` or a propagating `try` needs a `@Result` in some layer of the
 enclosing function's return (`@Result<T, E>`, `@Task<@Result<T, E>>`,
@@ -3451,6 +3514,10 @@ A binding may also be a template, where `$0`, `$1`, … are the declared
 parameters — on a method, `self` is `$0`:
 
 <!-- example: modules/external_template_binding -->
+
+`$stringify(…)` is no marker of the language: a template is host code, and the conversion is written in the host's own terms. It is refused as `template-stringify-marker`, located at the template (decisions 164, 239).
+
+<!-- example: modules/template_stringify_marker -->
 
 **A host function that operates on a value of one type is a method of that
 type.** It is declared inside the type's body with `declare fn`, `self` first,
@@ -4600,6 +4667,29 @@ annotation (on a loop it suggests `iter` / `stream`), `effect-type-removed` for
 a wrapper name, `iterator-error-param-removed` for `@Iterator<T, E>`. There is
 no automatic rewriter: each error names the new spelling, from the table below.
 
+<!-- example: modules/effect_annotation_removed_async_generator -->
+<!-- example: modules/effect_annotation_removed_context -->
+<!-- example: modules/effect_annotation_removed_future -->
+<!-- example: modules/effect_annotation_removed_future_generator -->
+<!-- example: modules/effect_annotation_removed_future_generator_loop -->
+<!-- example: modules/effect_annotation_removed_generator -->
+<!-- example: modules/effect_annotation_removed_generator_loop -->
+<!-- example: modules/effect_annotation_removed_iterator -->
+<!-- example: modules/effect_annotation_removed_result -->
+<!-- example: modules/effect_annotation_removed_result_generator -->
+<!-- example: modules/effect_annotation_removed_result_generator_loop -->
+<!-- example: modules/effect_annotation_removed_use -->
+<!-- example: modules/effect_type_removed_async_iterator -->
+<!-- example: modules/effect_type_removed_future -->
+<!-- example: modules/effect_type_removed_future_generator -->
+<!-- example: modules/effect_type_removed_future_no_error -->
+<!-- example: modules/effect_type_removed_generator -->
+<!-- example: modules/effect_type_removed_iterable -->
+<!-- example: modules/effect_type_removed_iterator_step -->
+<!-- example: modules/effect_type_removed_result_generator -->
+<!-- example: modules/effect_type_removed_use -->
+<!-- example: modules/effect_type_removed_yield -->
+
 | Old | Now |
 |---|---|
 | `#[@result] fn f() -> @Result<T, E>` | `fn f() -> @Result<T, E>` |
@@ -4628,6 +4718,12 @@ Decision 354's three rows have a codemod, `scripts/codemod-component-contexts.py
 (`scripts/AGENTS.md`): it rewrites the first two and reports each `use
 @getContext(T)` at its line — which component provides the context is the
 author's choice.
+
+Decision 354 leaves one wrapper, `@Component<R>`, and `@Renderable` as a bare marker: `@Component<C, R>` is a type-arity error (`generic-arg-count-exceeded`) naming `@Component<R>`, located on the base; `@Renderable<T>` is the same error at the `<`, naming `@Renderable`; and the owner marker `@Context<C>` is `context-marker-removed`, naming `implement @Renderable`.
+
+<!-- example: modules/component_base_parameter -->
+<!-- example: modules/context_marker_removed -->
+<!-- example: modules/renderable_type_argument -->
 
 Four changes are not a rename and are reviewed by hand:
 
@@ -4695,3 +4791,24 @@ These forms are **deliberately absent**, so that none reads as unfinished work:
 | `[...a]` | `error[list-spread-dot-dot-dot]` — `...` is a pattern's inclusive range; an array spreads with `..` |
 | `implement A for P { … }` after a bodyless `type P(…)` | `error[implement-clause-for]` — the type's own clause is `type P(…) implement A { … }` |
 | `#(x: 1, y: 2)` | `error[tuple-literal-label]` — a tuple literal is positional, `#(1, 2)`; labels belong to the tuple type, `#(x: i32, y: i32)` |
+
+<!-- example: modules/tuple_literal_label -->
+
+<!-- example: modules/implement_clause_for -->
+
+<!-- example: modules/list_spread_dot_dot_dot -->
+
+<!-- example: modules/list_spread_not_last -->
+
+<!-- example: modules/nested_fn_decl -->
+
+<!-- example: modules/char_literal_absent -->
+
+<!-- example: modules/bitwise_operator_absent -->
+
+<!-- example: modules/ternary_absent -->
+
+<!-- example: modules/variant_payload_without_name -->
+
+
+<!-- example: modules/assert_is_pattern -->
