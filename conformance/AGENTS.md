@@ -1942,7 +1942,7 @@ runner in between. `modules/erlang_host_sidecar_shipped` and
 A cell runs on all four targets, and a `test/` suite on commonJS, erlang, wasm and beam —
 unless it narrows itself: a cell or a project suite with `"targets"` in its `botopink.json`
 (decision 475 (1); a cell's `targets` file is refused), a single-file suite with one
-`// targets: <t> <t>…` line in the file (seven carry one today, each `commonJS erlang beam`; the form
+`// targets: <t> <t>…` line in the file (eight carry one today, each `commonJS erlang beam`; the form
 is open question B-64-a). A narrowing is a claim about the compiler, checked on every run —
 `botopink cell check` for a cell, `run.sh` for a suite: for each target the cell leaves out,
 `botopink build --target <t>` must **refuse** the program on a host binding —
@@ -1978,14 +1978,16 @@ The narrowed cells whose excluded targets' missing binding is named here (re-der
 
 | Cell | Runs on | Excluded — the binding it lacks |
 |---|---|---|
-| `modules/beam_memory_ets`, `modules/beam_memory_persistent_term` | erlang beam | wasm — `std/async`; commonJS — `#[@BeamMemory]` (decision 167) |
-| `modules/beam_memory_process_dict`, `modules/beam_memory_ets_keyed` | erlang beam | wasm — `std/async`; commonJS — `#[@BeamMemory]` (decision 167) |
+| `modules/beam_memory_ets`, `modules/beam_memory_persistent_term` | erlang beam | wasm, commonJS — `#[@BeamMemory]` (decision 167) |
+| `modules/beam_memory_process_dict`, `modules/beam_memory_ets_keyed` | erlang beam | wasm, commonJS — `#[@BeamMemory]` (decision 167) |
+| `modules/beam_memory_annotations`, `modules/beam_memory_ets_keyed_bump` | erlang beam | wasm, commonJS — `#[@BeamMemory]` (decision 167) |
 | `modules/behavior_method_host_value` | commonJS erlang beam | wasm — `makeGreeter` |
 | `modules/external_erlang_host_module_missing` | erlang beam (each refuses it: `output/main.snap`) | commonJS, wasm — `total` |
-| `modules/external_host_record` | commonJS erlang beam | wasm — `hostPoint` |
+| `modules/external_host_record`, `modules/external_returns_record` | commonJS erlang beam | wasm — `hostPoint` |
 | `modules/external_result_erlang_exit` | erlang beam | commonJS, wasm — `host` |
-| `modules/external_result_host_method` | commonJS erlang beam | wasm — `Meter.plus` |
+| `modules/external_result_host_method`, `modules/external_method_in_type` | commonJS erlang beam | wasm — `Meter.plus` |
 | `modules/external_method_on_host_record` | commonJS erlang beam | wasm — `Pair.at` |
+| `modules/external_template_binding` | commonJS erlang beam | wasm — `shout` |
 | `modules/external_template_escaped_quote` | commonJS erlang beam | wasm — `say` |
 | `modules/external_template_refused_on_beam` | erlang beam | commonJS, wasm — `moduleNamed` |
 | `modules/host_array_slice_without_start` | commonJS | erlang, wasm, beam — `copyAll` |
@@ -1993,26 +1995,29 @@ The narrowed cells whose excluded targets' missing binding is named here (re-der
 | `modules/host_erlang_task_result` | erlang beam | commonJS, wasm — `hostDouble` |
 | `modules/host_node_task_result` | commonJS | erlang, wasm, beam — `hostDouble` |
 | `modules/host_unknown_parameter` | erlang beam | commonJS, wasm — `std/erlang.element` |
-| `modules/std_template_host_fns_across_modules` | commonJS erlang beam | wasm — `std/io/fs.exists` |
+| `modules/std_template_host_fns_across_modules`, `modules/import_std_groups`, `modules/fs_stat_mtime_whole_seconds` | commonJS erlang beam | wasm — `stat` |
+| `modules/clock_rfc3339_domain`, `modules/clock_civil_past_rfc3339_aborts`, `modules/clock_format_past_rfc3339_aborts`, `modules/clock_offset_past_rfc3339_aborts`, `modules/hole_any_call_at_build`, `modules/std_generic_primitives`, `modules/stage_build_and_run`, `modules/stage_comptime_block_in_run`, `modules/stage_imported`, `modules/stage_of_functions` | commonJS erlang beam | wasm — `systemTimeWithUnit` |
+| `modules/decl_hooks_direct` | commonJS erlang beam | wasm — `session` |
+| `modules/render_scope_library` | commonJS erlang beam | wasm — `hostStash` |
+| `modules/std_failure_attempt_host` | commonJS erlang beam | wasm — `raiseError` |
+| `modules/component_default_fn_sync`, `modules/component_method_sync`, `modules/component_sync_plain_function` | commonJS | erlang, wasm, beam — `pending` |
 | `modules/task_failure_rejects` | commonJS | erlang, wasm, beam — `observe` |
 | `modules/task_result_caught_by_js` | commonJS | erlang, wasm, beam — `callFromJs` |
 | `modules/manifest_targets_host_binding` | erlang beam (`"targets"`) | commonJS, wasm — `magnitude` |
 | `test/erlang_host_sidecar_in_a_test` (a project suite) | erlang beam (`"targets"`) | commonJS, wasm — `hello` |
+| `test/behavior_host_dispatch.bp` | commonJS erlang beam | wasm — `makeGreeter` |
+| `test/bodyless_fn.bp` | commonJS erlang beam | wasm — `hostMin` |
+| `test/external_host.bp` | commonJS erlang beam | wasm — `hostMax` |
+| `test/external_markers.bp` | commonJS erlang beam | wasm — `biggest` |
+| `test/mocks_decorator_double.bp` | commonJS erlang beam | wasm — `pushMatcher`, `std/testing/mocks.newMock` |
+| `test/mocks_handwritten_double.bp` | commonJS erlang beam | wasm — `pushMatcher`, `std/testing/mocks.invoke` |
+| `test/module_init.bp` | commonJS erlang beam | wasm — `mark` |
 
-The other narrowed cells declare their targets in their manifests and are audited the same way:
-`beam_memory_annotations` and `beam_memory_ets_keyed_bump` (erlang beam); `clock_rfc3339_domain`,
-`clock_civil_past_rfc3339_aborts`, `clock_format_past_rfc3339_aborts`, `clock_offset_past_rfc3339_aborts`,
-`decl_hooks_direct`, `external_method_in_type`, `external_returns_record`, `external_template_binding`,
-`fs_stat_mtime_whole_seconds`, `hole_any_call_at_build`, `import_std_groups`, `render_scope_library`,
-`stage_build_and_run`, `stage_comptime_block_in_run`, `stage_imported`, `stage_of_functions` and
-`std_generic_primitives` (commonJS erlang beam); `component_default_fn_sync`, `component_method_sync` and
-`component_sync_plain_function` (commonJS).
+`test/std_process_import.bp` carries `// targets: commonJS erlang beam` too, but wasm builds and runs it
+green (its `std/io/process` import is never used): that exclusion is not stood on a host binding and the
+audit refuses it — a row of the wasm backend's front, not a narrowing.
 
-The single-file suites `test/bodyless_fn.bp`, `test/external_host.bp`, `test/std_process_import.bp`,
-`test/mocks_handwritten_double.bp`, `test/mocks_decorator_double.bp`, `test/external_markers.bp` and
-`test/module_init.bp` carry `// targets: commonJS erlang beam`, leaving wasm out.
-
-In all, 51 narrowings (43 cells, 1 project suite, 7 single-file suites) and 79 exclusions. No other
+In all, 53 narrowings (44 cells, 1 project suite, 8 single-file suites) and 81 exclusions. No other
 manifest or suite carries a narrowing: a project that must be refused on a target says so with its
 departure.
 
