@@ -903,11 +903,12 @@ const Builder = struct {
     /// a number within ±(2^53 − 1) and a `BigInt` beyond.
     /// Decision 519 — `Asset`, the answer of `@embed`, is a prelude record the
     /// checker registers (`builtins.d.bp`), so no module declares it: it is
-    /// its own shape, `bytes` a `Uint8Array`, `text()` a method.
+    /// its own shape, `bytes` a `Uint8Array`, `size` an `i64` (decision 538: a number
+    /// within ±(2^53 − 1), a `BigInt` beyond), `text()` a method.
     const asset_type: js.TsType = .{ .object = .{ .fields = &.{
         .{ .name = "path", .type = .{ .name = "string" } },
         .{ .name = "bytes", .type = .{ .name = "Uint8Array" } },
-        .{ .name = "size", .type = .{ .name = "number" } },
+        .{ .name = "size", .type = wide_integer },
         .{ .name = "hash", .type = .{ .name = "string" } },
         .{ .name = "text", .type = .{ .func = .{ .params = &.{}, .ret = &.{ .name = "string" } } } },
     }, .sep = "; " } };
