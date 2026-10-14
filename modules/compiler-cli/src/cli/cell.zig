@@ -282,6 +282,7 @@ const Pool = struct {
         const last = @min(first + pool.share, pool.cells.len);
         const share = pool.cells[first..last];
         const a = std.heap.page_allocator;
+        var report: []const u8 = "";
         if (pool.runChild(share)) |res| {
             pool.slots[first].err = res.err;
             for (share, first..) |cell, i| {
@@ -290,10 +291,11 @@ const Pool = struct {
                     pool.slots[i].ok = sec.ok;
                 }
             }
+            report = res.out;
         } else |_| {}
         for (share, first..) |cell, i| {
             const slot = &pool.slots[i];
-            if (slot.out.len == 0 and share.len > 1) {
+            if (needsAlone(report, pool.ctx.rel(cell), share.len)) {
                 if (pool.runChild(&.{cell})) |res| {
                     slot.err = res.err;
                     if (sectionOf(pool.ctx, res.out, cell)) |sec| {
@@ -343,6 +345,15 @@ const Pool = struct {
         return .{ .out = body[0..cut], .err = res.stderr, .exit_ok = exit_ok };
     }
 };
+
+/// Whether `want` goes back to be checked in a process of its own after its
+/// share's worker printed `report` (empty when the worker could not run): the
+/// share held more than one cell and the report has no verdict line naming it
+/// — the worker died on that cell or before it. A cell with a verdict, `FAIL`
+/// included, is never checked again.
+fn needsAlone(report: []const u8, want: []const u8, share_len: usize) bool {
+    return share_len > 1 and sectionFor(report, want) == null;
+}
 
 /// The verdict line `line` gives `want` (a cell as printed): `.ok` for
 /// `ok   <want>`, `.fail` for `FAIL <want>` alone or followed by ` — …`.
@@ -1427,6 +1438,19 @@ test "a worker's report is cut into each cell's section by its verdict line" {
     // A cell no verdict line names has no section: the parent reports it.
     try testing.expect(sectionFor(out, "cells/c") == null);
     try testing.expect(sectionFor(out, "cells") == null);
+}
+
+test "a share whose worker died keeps the verdicts it printed and sends each other cell back alone" {
+    // A report cut short after two of four cells: the third has no verdict
+    // line (the process died on it) and the fourth was never reached.
+    const wants = [_][]const u8{ "a/one", "a/two", "a/three", "a/four" };
+    const cut = "ok   a/one\nFAIL a/two\n  expected 1\n";
+    const expect = [_]bool{ false, false, true, true };
+    for (wants, expect) |w, e| try std.testing.expectEqual(e, needsAlone(cut, w, wants.len));
+    // No report at all (the worker could not run): every cell goes back.
+    for (wants) |w| try std.testing.expect(needsAlone("", w, wants.len));
+    // A share of one cell is never rerun: it already ran alone.
+    try std.testing.expect(!needsAlone("", "a/one", 1));
 }
 
 test "a share is about two per job, at least one cell and at most MAX_SHARE" {
