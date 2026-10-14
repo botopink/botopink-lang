@@ -15,6 +15,7 @@
 //! | `env.__memory_base` | the constant address the program places std-wasm's data at (`global.get` → `i32.const`) |
 //! | `env.__stack_pointer` | the program's global `$__std_sp`, the top of a stack region placed after the data |
 //! | `env.bp_alloc` | `$__alloc`, the program's bump allocator |
+//! | `env.bp_term_alloc`, `env.bp_term_static` | nothing: a term's allocation, which no program function reaches (the comptime runtime's arena, translated code's process heap) |
 //! | `env.bp_random_f64` | `$__wasi_random_f64`, the host's entropy (decision 451 (2)) |
 //!
 //! The stack is sized from the code: each function's frame (its prologue
@@ -70,10 +71,13 @@ pub const random_import = "__wasi_random_f64";
 /// to it is refused, naming it).
 pub const Binding = struct { import: []const u8, to: []const u8 };
 
-/// A program's bindings. The term library's fun calls (`bp_call<N>`) are the
-/// comptime runtime's; a program reaches no function that makes one.
+/// A program's bindings. The term library's allocations (`bp_term_alloc`,
+/// `bp_term_static`) and fun calls (`bp_call<N>`) are the comptime runtime's
+/// and translated code's; a program reaches no function that makes one.
 pub const program_bindings = [_]Binding{
     .{ .import = "bp_alloc", .to = "__alloc" },
+    .{ .import = "bp_term_alloc", .to = "" },
+    .{ .import = "bp_term_static", .to = "" },
     .{ .import = "bp_random_f64", .to = random_import },
     .{ .import = "bp_call0", .to = "" },
     .{ .import = "bp_call1", .to = "" },
@@ -294,7 +298,7 @@ fn read(ar: std.mem.Allocator, bytes: []const u8, bindings: []const Binding, dia
                             const ti = try s.u32_();
                             const bound = for (bindings) |fb| {
                                 if (std.mem.eql(u8, field, fb.import)) break if (fb.to.len > 0) fb.to else try std.fmt.allocPrint(ar, "{s}{s}", .{ unbound_prefix, field });
-                            } else return unsupported(diag, "a function import other than `env.bp_alloc`, `env.bp_random_f64` and `env.bp_call0` … `bp_call4`");
+                            } else return unsupported(diag, "a function import other than `env.bp_alloc`, `env.bp_term_alloc`, `env.bp_term_static`, `env.bp_random_f64` and `env.bp_call0` … `bp_call4`");
                             try func_imports.append(ar, bound);
                             try func_import_types.append(ar, ti);
                         },

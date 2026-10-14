@@ -446,6 +446,17 @@ pub fn allocCell(n: u32, layout: u32) Error!u32 {
     return allocCellOn(current, n, layout);
 }
 
+/// `n` zeroed bytes outside every heap, never moved or freed: what every
+/// process shares by address (an interned atom, decision 449 (3)). Nothing
+/// a collection reaches through it: it holds no value of a heap.
+pub fn allocStatic(n: u32) Error!u32 {
+    if (n > 0x7000_0000) return error.OutOfMemory;
+    const size = std.mem.alignForward(u32, @max(n, 16), 16);
+    const a = try poolAlloc(size);
+    @memset(ptr(a)[0..size], 0);
+    return a;
+}
+
 /// The layout of the block that holds `v` on `h`, or `raw` when `v` is no
 /// value of `h` — what a function answering a block like its argument's
 /// (`array.reverse`) allocates with.

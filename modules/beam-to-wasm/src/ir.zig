@@ -1,13 +1,26 @@
 //! What a translation answers: wasm functions as a small structured
-//! instruction tree over the comptime runtime's term ABI (every value an
-//! `i32` term; a raise recorded by the runtime and answered by returning 0,
-//! the caller testing `rt_pending`). The host (compiler-core's wat comptime
-//! runtime) maps each node onto its own wasm model and links the functions
-//! into the program that calls them.
+//! instruction tree over std-wasm's term ABI (every value an `i32` term; a
+//! raise recorded by the runtime and answered by returning 0, the caller
+//! testing `rt_pending`). The host maps each node onto its own wasm model and
+//! links the functions into the program that calls them.
+//!
+//! **Memory** (decision 449 (3)). Terms live on the current process's heap
+//! (std-wasm's `heap.zig`): the host binds the term library's
+//! `env.bp_term_alloc` to `heap.alloc` and `env.bp_term_static` (an atom) to
+//! `heap.static`, and calls `heap.termRoots` once the process's heap is
+//! current. A collection runs only at a `collect` node — `test_heap` and
+//! `allocate_heap*`, BEAM's own collection points — whose roots are the live
+//! x registers it names and the process's root stack: every y register of
+//! every frame lives there (`frame_push` … `frame_pop`), never in a wasm
+//! local, so a term a caller keeps across a call that collects is moved
+//! with it. An x register is live across no call (BEAM's convention), so a
+//! callee's collection moves none the caller still reads.
 const std = @import("std");
 
-/// A BEAM register as a wasm local of the function: `x<N>` (the first
-/// `arity` are the parameters) and `y<N>`.
+/// A BEAM register: `x<N>` a wasm local of the function (the first `arity`
+/// are the parameters); `y<N>` word `N` of the function's frame on the
+/// process's root stack (`frame_push`), which a collection reads and
+/// rewrites.
 pub const Reg = union(enum) {
     x: u32,
     y: u32,
@@ -49,6 +62,33 @@ pub const Instr = union(enum) {
     drop,
     ret,
     trap,
+    /// The function's entry, in a function that pushes a frame: the root
+    /// stack's depth kept for `frame_restore`.
+    frame_save,
+    /// A raise leaving the function: the root stack back to the depth
+    /// `frame_save` kept — the frames this call pushed popped.
+    frame_restore,
+    /// `allocate*`: a frame of `n` y registers pushed on the process's root
+    /// stack, zeroed (a collection reads every word of it).
+    frame_push: u32,
+    /// `deallocate`, and a tail call's: the frame of `n` y registers popped.
+    frame_pop: u32,
+    /// A collection point (`test_heap`, `allocate_heap*`): `heap.reserve`
+    /// of `need` bytes, its roots x0…x<live - 1> (the host stores them in
+    /// a root area beside the root stack and loads them back after) and the
+    /// whole root stack.
+    collect: Collect,
+};
+
+/// A collection point's operands.
+pub const Collect = struct {
+    /// Bytes the instructions up to the next collection point may allocate
+    /// (BEAM's need by kind, `lower.needBytes`): a collection runs first when
+    /// the nursery has less room — `alloc` itself never collects, it takes
+    /// another chunk.
+    need: u32,
+    /// The x registers live across it.
+    live: u32,
 };
 
 pub const Call = struct {
@@ -71,7 +111,7 @@ pub const Function = struct {
     name: []const u8,
     arity: u32,
     /// Locals `x0…x<x_regs - 1>` (the first `arity` the parameters) and
-    /// `y0…y<y_regs - 1>`, plus `pc`.
+    /// `pc`; `y_regs` the most y registers a frame of it holds.
     x_regs: u32,
     y_regs: u32,
     body: []const Instr,

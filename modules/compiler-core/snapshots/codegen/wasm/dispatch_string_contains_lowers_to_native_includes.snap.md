@@ -298,9 +298,9 @@ fn main() {
   )
   ;; __std_f21 — from std_wasm.wasm (sha256 61b86fc4b3a0)
   ;; __std_f23 — from std_wasm.wasm (sha256 2448159130cb)
-  ;; __std_f90 — from std_wasm.wasm (sha256 92db5f8bc6ab)
-  ;; __std_f121 — from std_wasm.wasm (sha256 8ac53018d5fb)
-  ;; std:text.contains — from std_wasm.wasm (sha256 38f885ba726e)
+  ;; __std_f91 — from std_wasm.wasm (sha256 18a947e25763)
+  ;; __std_f122 — from std_wasm.wasm (sha256 889c7b5ca2dc)
+  ;; std:text.contains — from std_wasm.wasm (sha256 8f31d2bebba0)
 )
 ```
 

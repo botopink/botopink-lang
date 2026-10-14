@@ -92,9 +92,9 @@ val list1 = [1, ..[]];
     )
     local.get $sp
   )
-  ;; __std_f437 — from std_wasm.wasm (sha256 d13a98c08300)
-  ;; __std_f440 — from std_wasm.wasm (sha256 3cb1935999ea)
-  ;; std:array.concat — from std_wasm.wasm (sha256 fefcd0c78230)
+  ;; __std_f441 — from std_wasm.wasm (sha256 d13a98c08300)
+  ;; __std_f444 — from std_wasm.wasm (sha256 83a8841c1a5e)
+  ;; std:array.concat — from std_wasm.wasm (sha256 2730cfa39de4)
 )
 ```
 

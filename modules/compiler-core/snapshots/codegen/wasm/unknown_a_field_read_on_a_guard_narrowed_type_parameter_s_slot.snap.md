@@ -741,8 +741,8 @@ fn main() {
     local.get $r
   )
   ;; std-wasm (decision 440): its functions, transpiled from std_wasm.wasm
-  ;; __std_f265 — from std_wasm.wasm (sha256 5ac39cdc3016)
-  ;; std:text.length — from std_wasm.wasm (sha256 5a17b89b2a1a)
+  ;; __std_f266 — from std_wasm.wasm (sha256 5ac39cdc3016)
+  ;; std:text.length — from std_wasm.wasm (sha256 c0e18ad79cad)
 )
 ```
 

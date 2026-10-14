@@ -156,10 +156,14 @@ test "translate: a cell the compiler assembled, one function over the measured s
     try std.testing.expectEqualStrings("t/1", f.name);
     try std.testing.expectEqual(@as(u32, 1), f.arity);
     try std.testing.expectEqual(@as(u32, 2), f.y_regs);
-    // pc = entry label 2, then the raise block, then the raised answer.
-    try std.testing.expectEqual(ir.Instr{ .i32_const = 2 }, f.body[0]);
-    try std.testing.expectEqualStrings("raise", f.body[2].block.label);
-    try std.testing.expect(f.body[2].block.body[0].block.loop);
+    // The root stack's depth kept (it pushes a frame for its y registers),
+    // pc = entry label 2, then the raise block, the depth restored, then the
+    // raised answer.
+    try std.testing.expectEqual(ir.Instr.frame_save, f.body[0]);
+    try std.testing.expectEqual(ir.Instr{ .i32_const = 2 }, f.body[1]);
+    try std.testing.expectEqualStrings("raise", f.body[3].block.label);
+    try std.testing.expect(f.body[3].block.body[0].block.loop);
+    try std.testing.expectEqual(ir.Instr.frame_restore, f.body[4]);
 }
 
 /// Every runtime call and translated-function call a body makes, in order.
@@ -275,6 +279,44 @@ test "translateSet: erlc's modules, whole — a call between them followed, loca
     const mi = (try refusalReaching(ar, set, "greeting", "module_info/1")).?;
     try std.testing.expectEqualStrings("greeting", mi.module);
     try std.testing.expectEqualStrings("module_info/1", mi.function);
+}
+
+/// The memory nodes of a body (decision 449 (3)) and the calls among them, in
+/// order: `save`, `push N`, `collect N/L`, `pop N`, `restore`, `call f`.
+fn memoryNodes(ar: std.mem.Allocator, body: []const ir.Instr, out: *std.ArrayListUnmanaged([]const u8)) !void {
+    for (body) |i| switch (i) {
+        .frame_save => try out.append(ar, "save"),
+        .frame_restore => try out.append(ar, "restore"),
+        .frame_push => |n| try out.append(ar, try std.fmt.allocPrint(ar, "push {d}", .{n})),
+        .frame_pop => |n| try out.append(ar, try std.fmt.allocPrint(ar, "pop {d}", .{n})),
+        .collect => |c| try out.append(ar, try std.fmt.allocPrint(ar, "collect {d}/{d}", .{ c.need, c.live })),
+        .call => |c| try out.append(ar, try std.fmt.allocPrint(ar, "call {s}", .{c.function})),
+        .block => |b| try memoryNodes(ar, b.body, out),
+        else => {},
+    };
+}
+
+fn expectMemory(ar: std.mem.Allocator, f: ir.Function, want: []const []const u8) !void {
+    var got: std.ArrayListUnmanaged([]const u8) = .empty;
+    try memoryNodes(ar, f.body, &got);
+    errdefer for (got.items) |c| std.debug.print("  {s}\n", .{c});
+    try std.testing.expectEqual(want.len, got.items.len);
+    for (want, got.items) |w, g| try std.testing.expectEqualStrings(w, g);
+}
+
+test "translate: y registers on the process's root stack, test_heap and allocate_heap collection points with their live registers" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const ar = arena_state.allocator();
+    const set = (try translateSet(ar, &.{ @embedFile("testdata/erlc/greeting.beam"), @embedFile("testdata/erlc/greeting_text.beam") })).ok;
+    // `{allocate,2,2}`, `{test_heap,2,1}` after `string:uppercase/1`, and the
+    // tail call's `{call_last,2,{f,6},2}` popping the frame before it calls.
+    try expectMemory(ar, set[0].find("shout_all/2").?.*, &.{ "save", "push 2", "collect 32/1", "pop 2", "call shout_all/2", "restore" });
+    // `{allocate,0,1}` … `{call_ext_last,1,{extfunc,lists,reverse,1},0}`: a
+    // frame of no y register, popped by nothing.
+    try expectMemory(ar, set[0].find("shout_all/1").?.*, &.{ "save", "push 0", "call shout_all/2", "restore" });
+    // A function that pushes no frame keeps no depth.
+    try expectMemory(ar, set[0].find("count/2").?.*, &.{"call count/2"});
 }
 
 test "translateSet: a module not given is a call nothing serves, refused where it is made" {

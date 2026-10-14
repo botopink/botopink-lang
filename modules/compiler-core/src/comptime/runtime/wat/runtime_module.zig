@@ -8,7 +8,8 @@
 //!
 //! | std-wasm imports | the comptime binds |
 //! |---|---|
-//! | `env.bp_alloc` | `$__bp_arena_alloc` — the comptime's arena: a bump pointer from `rt_init(start)` on, grown by `memory.grow`, never freed (decision 450 (5), 449 (4)) |
+//! | `env.bp_term_alloc`, `env.bp_term_static` | `$__bp_arena_alloc` — the comptime's arena: a bump pointer from `rt_init(start)` on, grown by `memory.grow`, never freed (decision 450 (5), 449 (4)); a term's layout is a collection's, and the arena collects nothing (`$__bp_arena_alloc_as` drops it) |
+//! | `env.bp_alloc` | nothing: a program face's allocation, which no runtime export reaches |
 //! | `env.bp_call0` … `bp_call4` | `$__bp_call<N>` — a `call_indirect` through the module's table, where the lowered program's closures are |
 //! | `env.bp_random_f64` | nothing: the build has no entropy (decision 451), and no comptime face reaches it |
 //! | `env.memory`, `__memory_base`, `__stack_pointer` | the module's memory; std-wasm's data at `data_base`; a stack of `stack_bytes` after it |
@@ -35,6 +36,8 @@ pub const stack_bytes: u32 = 1 << 20;
 pub const data_base: u32 = 1024;
 
 const arena_alloc = "__bp_arena_alloc";
+/// `$__bp_arena_alloc_as(n, layout)`: a term's allocation, the layout dropped.
+const arena_alloc_as = "__bp_arena_alloc_as";
 const arena = "__bp_arena";
 const arena_end = "__bp_arena_end";
 /// Table slot 0: a fun index that names no fun traps.
@@ -42,7 +45,9 @@ const no_fun = "__bp_no_fun";
 
 /// What std-wasm's imports are bound to at comptime.
 const bindings = [_]swl.Binding{
-    .{ .import = "bp_alloc", .to = arena_alloc },
+    .{ .import = "bp_alloc", .to = "" },
+    .{ .import = "bp_term_alloc", .to = arena_alloc_as },
+    .{ .import = "bp_term_static", .to = arena_alloc },
     .{ .import = "bp_random_f64", .to = "" },
     .{ .import = "bp_call0", .to = "__bp_call0" },
     .{ .import = "bp_call1", .to = "__bp_call1" },
@@ -78,6 +83,7 @@ pub fn build(ar: std.mem.Allocator) Error![]u8 {
     try items.append(ar, .{ .global = .{ .name = arena_end, .ty = .i32, .mutable = true, .init = "0" } });
     try items.append(ar, .{ .global = .{ .name = "__heap_base", .exports = &.{"__heap_base"}, .ty = .i32, .init = try std.fmt.allocPrint(ar, "{d}", .{linked.end}) } });
     try items.append(ar, .{ .func = try arenaAlloc(ar) });
+    try items.append(ar, .{ .func = try arenaAllocAs(ar) });
     try items.append(ar, .{ .func = try rtInit(ar) });
     try items.append(ar, .{ .func = try rtAlloc(ar) });
     for (0..5) |n| try items.append(ar, .{ .func = try callN(ar, n) });
@@ -101,6 +107,17 @@ fn params(ar: std.mem.Allocator, names: []const []const u8) ![]const wat.Param {
     const out = try ar.alloc(wat.Param, names.len);
     for (out, names) |*p, n| p.* = .{ .name = n, .ty = .i32 };
     return out;
+}
+
+/// `$__bp_arena_alloc_as(n, layout)`: `$__bp_arena_alloc(n)` — the arena
+/// is freed whole when the evaluation ends and collects nothing, so a term's
+/// layout (`env.bp_term_alloc`) has no reader here.
+fn arenaAllocAs(ar: std.mem.Allocator) !wat.Func {
+    const body = try ar.dupe(wat.Line, &.{
+        line(.{ .local_get = "n" }),
+        line(.{ .call = arena_alloc }),
+    });
+    return .{ .name = arena_alloc_as, .params = try params(ar, &.{ "n", "layout" }), .result = .i32, .body = .{ .lines = body, .stack = .{ .value = .i32 } } };
 }
 
 /// `$__bp_arena_alloc(n)`: `n` bytes rounded up to 8, 8-aligned, from the

@@ -267,11 +267,11 @@ fn main() {
     local.get $sp
   )
   ;; __std_f4 — from std_wasm.wasm (sha256 b4b6f06748d6)
-  ;; __std_f263 — from std_wasm.wasm (sha256 7774ddf64350)
-  ;; __std_f265 — from std_wasm.wasm (sha256 5ac39cdc3016)
-  ;; __std_f266 — from std_wasm.wasm (sha256 cda2fb2bf3e4)
-  ;; std:text.slice — from std_wasm.wasm (sha256 49c89fe83b13)
-  ;; std:text.length — from std_wasm.wasm (sha256 5a17b89b2a1a)
+  ;; __std_f264 — from std_wasm.wasm (sha256 fb869a9b574e)
+  ;; __std_f266 — from std_wasm.wasm (sha256 5ac39cdc3016)
+  ;; __std_f267 — from std_wasm.wasm (sha256 cda2fb2bf3e4)
+  ;; std:text.slice — from std_wasm.wasm (sha256 2274e2b5ad65)
+  ;; std:text.length — from std_wasm.wasm (sha256 c0e18ad79cad)
 )
 ```
 

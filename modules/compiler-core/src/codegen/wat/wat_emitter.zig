@@ -402,7 +402,9 @@ fn import(w: *Writer, im: ast.Import) Error!void {
 fn memory(w: *Writer, mem: ast.Memory) Error!void {
     try w.writeAll("  (memory");
     if (mem.@"export") |e| try w.print(" (export \"{s}\")", .{e});
-    try w.print(" {d})\n", .{mem.min_pages});
+    try w.print(" {d}", .{mem.min_pages});
+    if (mem.max_pages) |max| try w.print(" {d}", .{max});
+    try w.writeAll(")\n");
 }
 
 fn global(w: *Writer, g: ast.Global) Error!void {

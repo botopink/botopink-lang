@@ -26,9 +26,14 @@ Each in its own file, both compiled into the one `std_wasm.wasm`:
 
 The pure algorithms (`text`, `number`, `array`, `bigint`, `hash`, `random`) know neither layout:
 each face turns its values into slices and back. Allocation is the caller's in both (decision
-450 (5)): every fresh value comes from `env.bp_alloc` — a program's `$__alloc`, the comptime's
-arena (`compiler-core/src/comptime/runtime/wat/runtime_module.zig`), later a process's heap in
-translated code (449, B-30). A term fun is called back through the caller's table
+450 (5)): a program face's value comes from `env.bp_alloc` — a program's `$__alloc`; a term from
+`env.bp_term_alloc(n, layout)` — the comptime's arena
+(`compiler-core/src/comptime/runtime/wat/runtime_module.zig`), which drops the layout, or the
+current process's heap in translated code (`heap.alloc`, 449 (3)) — with the layout of its cell
+kind (`term.cellLayout`: each pointer field of the cell on wasm32, a term array
+`pointersFrom(0)`, bytes `raw`; a comptime assertion holds the cells' words to it); and an atom,
+interned and compared by address, with a copy of its name, from `env.bp_term_static(n)` —
+outside every process's heap (`heap.static`), never moved. A term fun is called back through the caller's table
 (`env.bp_call0` … `bp_call4`), so the module holds no function table; and no `var` starts as a
 pointer, no `switch` answers a string and no table holds slices — any of those is a relocation in
 the module's data (`__wasm_apply_data_relocs`), which `std_wasm_link.zig` refuses.
@@ -49,8 +54,8 @@ std-wasm/
     ├── random.zig ← `io/random`'s seeded stream (decision 451): `Stream`, Mulberry32 as the commonJS sidecar draws it; no draw before a seed
     ├── bigint.zig ← `bigint`'s arithmetic over `u32` limbs (add, sub, mul, divmod, compare, decimal text both ways, `toI64`, `toF64`), tested against `std.math.big.int`
     ├── wasm.zig   ← the program face (`zig build std-wasm`): each export over a program's own strings, arrays and `bigint` blocks, allocating through `env.bp_alloc`; the seeded stream's state a `.bss` `Stream`, an unseeded draw `env.bp_random_f64`; it also exports every `rt_*` function of the term files under its own name
-    ├── env.zig    ← what std-wasm imports from its caller: `bp_alloc`, `bp_random_f64`, `bp_call0` … `bp_call4`
-    ├── term.zig   ← the Erlang terms (decision 450): cells, atoms (`atomRank`), numbers, binaries, lists, tuples, funs (`applyFun` through `env.bp_call<N>`), exceptions (`pending`, class, reason, and where the last raise was — `rt_raised_at` / `rt_raised_at_term`, decision 451 (3)), type tests (`Kind`), term order and equality (`compare`: iterative, an explicit work list, never the runtime's stack — decision 471), maps, the operators, the binary builder; `rt_reset`
+    ├── env.zig    ← what std-wasm imports from its caller: `bp_alloc` (a program face's value), `bp_term_alloc(n, layout)` and `bp_term_static(n)` (a term's, an atom's), `bp_random_f64`, `bp_call0` … `bp_call4`
+    ├── term.zig   ← the Erlang terms (decision 450): cells (each allocated with its layout, `cellLayout`), atoms (`atomRank`; outside every heap, their names copied), numbers, binaries, lists, tuples, funs (`applyFun` through `env.bp_call<N>`), exceptions (`pending`, class, reason, and where the last raise was — `rt_raised_at` / `rt_raised_at_term`, decision 451 (3)), type tests (`Kind`), term order and equality (`compare`: iterative, an explicit work list, never the runtime's stack — decision 471), maps, the operators, the binary builder; `rt_reset`
     ├── term_faces.zig ← each `exports` entry's comptime face over terms, `rt_std_<symbol>` (a comptime `@compileError` refuses an entry without one)
     ├── otp.zig    ← the OTP table (`table`: `module:name/arity` → its `rt_*` export, `Bif`), the term files (`files`), `isRuntimeExport`
     └── otp/       ← the OTP functions and BIFs over terms: `erlang.zig` (BIFs, the process dictionary, `apply/2`), `lists.zig`, `maps.zig`, `string.zig`, `binary.zig`, `unicode.zig`, `math.zig`, `io_lib.zig` (`io_lib:format`, `io:format`, `rt_printed`, `rt_describe`), `json.zig` (`json:encode`), `etf.zig` (the ETF argument, `rt_etf_decode`)
@@ -113,7 +118,7 @@ methods through their `@External.Erlang` cells).
 | `bigint.add(x, y, flip)`, `negate`, `multiply`, `divmod(x, y, rem)`, `compare`, `equalOptional` | decision 332's operators over block addresses (a zero divisor traps) |
 | `bigint.ofI64`, `toI64`, `toF64`, `toString`, `parse` | `BigInt.of`, `toI64()` / `toF64()` (trap past the range / unless exact), the digits, `BigInt.parse`'s numeral (`0` for none) |
 
-| `heap.init(start)`, `spawn`, `enter(h)`, `alloc(n, layout)`, `cell(n, layout)`, `write(field, v)`, `reserve(need, roots, n)`, `collect(roots, n, full)`, `copy(dst, v)`, `cycle()`, `release(h)`, `used(h)` | the heap (§ The heap) — not called by the codegen yet: `alloc` is still `wat_prelude`'s bump (144 B-30 boxes 3–6). `copy` answers `0` and `cycle()` `1` when the message holds a cycle (decision 522 5′): the caller raises `message contains a cycle` located at its send |
+| `heap.init(start)`, `spawn`, `enter(h)`, `alloc(n, layout)`, `cell(n, layout)`, `static(n)`, `write(field, v)`, `reserve(need, roots, n)`, `collect(roots, n, full)`, `copy(dst, v)`, `cycle()`, `release(h)`, `used(h)`, `termRoots()` | the heap (§ The heap) — not called by the codegen yet: `alloc` is still `wat_prelude`'s bump (144 B-30 box 3). `copy` answers `0` and `cycle()` `1` when the message holds a cycle (decision 522 5′): the caller raises `message contains a cycle` located at its send. `static` is memory outside every heap (an atom); `termRoots` makes the term library's statics (`term.rootCells`: the process dictionary, the pending exception, the printed text) roots of the current heap — what a host running translated BEAM code calls once its process's heap is current |
 
 `text.toUpper` / `text.toLower` (`(string) -> string`, bound by `String.toUpper` / `toLower`)
 map case over all of Unicode (decision 443): the simple mappings of `UnicodeData.txt` and the
@@ -210,20 +215,30 @@ grows without collection: growth linear in the work, a live set of a few values.
 | Message sharing | not kept (a value reached twice is copied twice), as erlang's default; a cycle is detected and refused (`error.Cycle`), never copied (522 5′) | no forwarding written into the sender's live heap; a value is acyclic but through a mutable cell, so the walk marks only cells |
 | Cells outside every heap | a root of the heap whose value they hold, for good | a module's `var` in the data is no block a collection could reach |
 
+**Translated BEAM code's terms** (449 (3), 450 (4)) allocate on the current process's heap with
+their cells' layouts (`term.cellLayout`), an atom outside every heap (`heap.static`), the term
+library's statics roots for good (`heap.termRoots`); beam-to-wasm names its collection points
+(`modules/beam-to-wasm/AGENTS.md` § Memory). `codegen/tests/wat.zig` links the term library onto a
+heap as such a host does, collects it minor and major under garbage, and compares every kept term
+(a decoded nested term, a list of them, a binary a builder made on the heap, the process
+dictionary's) with a fresh one after it moved; and, on a memory capped at 16 pages, the same run
+traps (`unreachable`) when the memory runs out, never answering a damaged term (448 (4)).
+
 What remains for 144 B-30: `alloc` out of `wat_prelude` onto `heap.alloc` with each allocation's
-layout, std-wasm's faces allocating with theirs (`layoutOf` for a block like the argument's), the
-codegen's roots at each collection point (task frames, scheduler queues, cells) and its `var` stores
-through `write`; beam-to-wasm's terms on the current process's heap, `test_heap` / `allocate` as
-collection points with their live registers, the atom table outside every process heap; the
-exhaustion trap and a bounded long-running cell.
+layout, std-wasm's faces allocating with theirs, the codegen's roots at each collection point (task
+frames, scheduler queues, cells) and its `var` stores through `write`; a bounded long-running cell;
+the located `message contains a cycle` at a send — each waits on a choice no decision fixes yet:
+what layout a word typed by a type parameter has (the backend does not monomorphise), where a
+`@Task`'s record lives and how a value reaches another task's heap, and which code may collect
+(a wasm local is invisible to a collection).
 
 ## How it is built and served
 
 - **Into the comptime runtime** (decision 450 (3)) — the one wasm runtime: `std_wasm.wasm`'s
   runtime exports (`rt_*`: `term.zig`, `term_faces.zig`, `otp/*.zig`) are decoded by
   `std_wasm_link.zig` once per process and emitted into one standalone module
-  (`compiler-core/src/comptime/runtime/wat/runtime_module.zig`: `env.bp_alloc` bound to the
-  comptime's arena, `env.bp_call<N>` to a `call_indirect` through the module's table, a 1 MiB
+  (`compiler-core/src/comptime/runtime/wat/runtime_module.zig`: `env.bp_term_alloc` and
+  `env.bp_term_static` bound to the comptime's arena, `env.bp_call<N>` to a `call_indirect` through the module's table, a 1 MiB
   stack, recursion allowed — each frame still checked against the stack's floor), into which each
   lowered comptime program is spliced (`link.zig`). There is no other build of the terms:
   `bp_wat_rt.wasm` is gone. It serves std-wasm three ways:

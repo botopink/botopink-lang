@@ -290,10 +290,13 @@ pub const Arg = union(enum) {
     list: []const Arg,
     /// `{fr, N}` — a float register.
     fr: u32,
-    /// `{alloc, [...]}` — `test_heap`'s and `allocate_heap`'s need; nothing
-    /// to do on a runtime whose terms live on its own arena.
-    alloc,
+    /// `{alloc, [{words, W}, {floats, F}, {funs, N}]}` — `test_heap`'s and
+    /// `allocate_heap`'s need, by kind (a plain `u` need is words alone).
+    alloc: Alloc,
 };
+
+/// A heap need by kind, as `{alloc, …}` lists it.
+pub const Alloc = struct { words: u32 = 0, floats: u32 = 0, funs: u32 = 0 };
 
 pub const Instr = struct { op: Op, args: []const Arg };
 
@@ -357,10 +360,20 @@ fn arg(arena: std.mem.Allocator, r: *Reader) Error!Arg {
                 return .{ .list = items };
             },
             2 => return .{ .fr = std.math.cast(u32, try count(r)) orelse return error.BadBeam }, // {fr, N}
-            3 => { // {alloc, [{Kind, N}…]}: a `u` count of `u` pairs
+            3 => { // {alloc, [{Kind, N}…]}: a `u` count of `u` pairs (kind 0 words, 1 floats, 2 funs)
                 const n = try count(r);
-                for (0..n * 2) |_| _ = try count(r);
-                return .alloc;
+                var need: Alloc = .{};
+                for (0..n) |_| {
+                    const kind = try count(r);
+                    const k = std.math.cast(u32, try count(r)) orelse return error.BadBeam;
+                    switch (kind) {
+                        0 => need.words += k,
+                        1 => need.floats += k,
+                        2 => need.funs += k,
+                        else => return error.BadBeam,
+                    }
+                }
+                return .{ .alloc = need };
             },
             4 => return .{ .literal = std.math.cast(u32, try count(r)) orelse return error.BadBeam }, // {literal, N}
             5 => { // {tr, Reg, Type}: a register and its type's index in `Type`
@@ -476,7 +489,10 @@ test "extended terms: a typed register, a float register, an allocation list" {
     var r: Reader = .{ .bytes = &.{ 0x57, 0x13, 0x00, 0x27, 0x20, 0x37, 0x10, 0x00, 0x30 } };
     try std.testing.expectEqual(Arg{ .x = 1 }, try arg(ar, &r));
     try std.testing.expectEqual(Arg{ .fr = 2 }, try arg(ar, &r));
-    try std.testing.expectEqual(Arg.alloc, try arg(ar, &r));
+    try std.testing.expectEqual(Arg{ .alloc = .{ .words = 3 } }, try arg(ar, &r));
+    // {alloc, [{words, 3}, {floats, 2}, {funs, 1}]}.
+    r = .{ .bytes = &.{ 0x37, 0x30, 0x00, 0x30, 0x10, 0x20, 0x20, 0x10 } };
+    try std.testing.expectEqual(Arg{ .alloc = .{ .words = 3, .floats = 2, .funs = 1 } }, try arg(ar, &r));
 }
 
 test "genop: the table is OTP's numbering" {

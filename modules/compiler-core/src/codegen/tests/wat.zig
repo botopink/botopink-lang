@@ -2719,3 +2719,204 @@ test "wat: needs ---- a call of attempt asks for Exceptions" {
     );
     try std.testing.expect(needs.contains(.exceptions));
 }
+
+// Decisions 449 (3), 450 (4) — the Erlang terms translated BEAM code computes
+// over, allocated on a process's heap (std-wasm's `heap.zig`) with the layout
+// each cell kind has (`term.cellLayout`), survive its collections: a module
+// links the term library with `env.bp_term_alloc` bound to `heap.alloc` and
+// `env.bp_term_static` (an atom) to `heap.static`, as a host running
+// translated code does; it decodes a nested term (a tuple, lists, a map,
+// binaries, atoms, an integer past 32 bits, a float) many times over as
+// garbage, keeps one in a root, one list of them growing and dropped, one
+// binary whose bytes a builder made on the heap and one in the process
+// dictionary (`heap.termRoots`), collects minor and major, then compares each
+// kept term with a fresh decode (`rt_eqx`): a word a layout mislabels moves
+// under it or is rewritten, and the comparison traps. The kept term must have
+// moved: a collection that copied nothing would prove nothing.
+const heap_etf = [_]u8{
+    131, 104, 8,   97,  1,   109, 0,   0,   0,   2,   97,  98,  108, 0,   0,   0,   3,   119, 3,   102,
+    111, 111, 70,  64,  4,   0,   0,   0,   0,   0,   0,   104, 3,   119, 6,   110, 101, 115, 116, 101,
+    100, 107, 0,   3,   1,   2,   3,   116, 0,   0,   0,   2,   97,  7,   108, 0,   0,   0,   1,   119,
+    3,   98,  97,  114, 106, 119, 1,   107, 109, 0,   0,   0,   1,   118, 106, 98,  255, 254, 238, 144,
+    110, 6,   0,   0,   0,   0,   0,   0,   1,   109, 0,   0,   0,   20,  98,  121, 116, 101, 115, 32,
+    97,  110, 100, 32,  109, 111, 114, 101, 32,  98,  121, 116, 101, 115, 108, 0,   0,   0,   12,  109,
+    0,   0,   0,   1,   120, 109, 0,   0,   0,   1,   120, 109, 0,   0,   0,   1,   120, 109, 0,   0,
+    0,   1,   120, 109, 0,   0,   0,   1,   120, 109, 0,   0,   0,   1,   120, 109, 0,   0,   0,   1,
+    120, 109, 0,   0,   0,   1,   120, 109, 0,   0,   0,   1,   120, 109, 0,   0,   0,   1,   120, 109,
+    0,   0,   0,   1,   120, 109, 0,   0,   0,   1,   120, 106, 107, 0,   5,   99,  104, 97,  114, 115,
+};
+
+const HeapRun = enum { kept, exhaust };
+
+/// The module `HeapRun` names, encoded: the term library and the heap linked
+/// from `std_wasm.wasm`, a `_start` driving them.
+fn termHeapModule(ar: Allocator, run: HeapRun) ![]u8 {
+    const link = @import("../wat/std_wasm_link.zig");
+    const ast = @import("../wat/wat_ast.zig");
+    const binary = @import("../wat/wasm_binary_emitter.zig");
+    const wanted = [_][]const u8{
+        "heap.init",     "heap.alloc",    "heap.static", "heap.collect", "heap.termRoots",
+        "rt_reset",      "rt_etf_decode", "rt_eqx",      "rt_atom",      "rt_erlang_put",
+        "rt_erlang_get", "rt_cons",       "rt_nil",      "rt_hd",        "rt_bin",
+        "rt_bb_new",     "rt_bb_bin",     "rt_bb_end",
+    };
+    const bindings = [_]link.Binding{
+        .{ .import = "bp_alloc", .to = "" },
+        .{ .import = "bp_term_alloc", .to = "__std_heap_alloc" },
+        .{ .import = "bp_term_static", .to = "__std_heap_static" },
+        .{ .import = "bp_random_f64", .to = "" },
+        .{ .import = "bp_call0", .to = "" },
+        .{ .import = "bp_call1", .to = "" },
+        .{ .import = "bp_call2", .to = "" },
+        .{ .import = "bp_call3", .to = "" },
+        .{ .import = "bp_call4", .to = "" },
+    };
+    var diag: link.Diag = .{};
+    const l = link.linkWith(ar, link.module_bytes, &wanted, 1024, .{ .bindings = &bindings, .fixed_stack = 64 * 1024, .export_wanted = true }, &diag) catch |err| {
+        std.debug.print("std-wasm: {s}\n", .{diag.message});
+        return err;
+    };
+    // A runtime function whose body another's equals is folded into it and
+    // named by the first: `rt_hd` is the function its export names.
+    var rt_hd: []const u8 = "rt_hd";
+    for (l.items) |it| if (it == .func) for (it.func.exports) |e| {
+        if (std.mem.eql(u8, e, "rt_hd")) rt_hd = it.func.name;
+    };
+    // Scratch below the data: the roots, the term's bytes, an atom's name, a binary's.
+    const roots: u32 = 128;
+    const etf_at: u32 = 256;
+    const key_at: u32 = 512;
+    const hello_at: u32 = 520;
+    const pages: u32 = @intCast((l.end + 65535) / 65536);
+
+    const L = struct {
+        ar: Allocator,
+        fn c(s: @This(), v: i64) ast.Instr {
+            return .{ .@"const" = .{ .ty = .i32, .text = std.fmt.allocPrint(s.ar, "{d}", .{v}) catch unreachable } };
+        }
+        fn op(_: @This(), name: []const u8) ast.Instr {
+            return .{ .op = .{ .ty = .i32, .name = name } };
+        }
+        fn seq(s: @This(), instrs: []const ast.Instr) ast.Seq {
+            const lines = s.ar.alloc(ast.Line, instrs.len) catch unreachable;
+            for (lines, instrs) |*ln, i| ln.* = .{ .instr = i };
+            return .{ .lines = lines, .stack = .none };
+        }
+        fn when(s: @This(), then: []const ast.Instr) ast.Instr {
+            return .{ .@"if" = .{ .then = .{ .seq = s.seq(then) } } };
+        }
+    };
+    const b: L = .{ .ar = ar };
+    var fresh_buf: [3]ast.Instr = .{ b.c(etf_at), b.c(heap_etf.len), .{ .call = "rt_etf_decode" } };
+    const fresh: []const ast.Instr = &fresh_buf;
+    // A binary whose bytes a builder made on the heap: "hello heap" twice.
+    const built: []const ast.Instr = &.{
+        .{ .call = "rt_bb_new" }, .{ .local_set = "bb" },
+        .{ .local_get = "bb" },   b.c(hello_at),
+        b.c(10),                  .{ .call = "rt_bin" },
+        .{ .call = "rt_bb_bin" }, .drop,
+        .{ .local_get = "bb" },   b.c(hello_at),
+        b.c(10),                  .{ .call = "rt_bin" },
+        .{ .call = "rt_bb_bin" }, .drop,
+        .{ .local_get = "bb" },   .{ .call = "rt_bb_end" },
+    };
+    // A damaged value is told from memory exhausted by its trap.
+    const damaged: []const ast.Instr = &.{ b.c(1), b.c(0), b.op("div_s"), .drop };
+
+    var start: std.ArrayListUnmanaged(ast.Instr) = .empty;
+    try start.appendSlice(ar, &.{ b.c(l.end), .{ .call = "__std_heap_init" }, .drop, .{ .call = "rt_reset" }, .{ .call = "__std_heap_termRoots" } });
+    // The process dictionary holds one: `put(key, T)`.
+    try start.appendSlice(ar, &.{ b.c(key_at), b.c(3), .{ .call = "rt_atom" }, .{ .local_set = "key" }, .{ .local_get = "key" } });
+    try start.appendSlice(ar, fresh);
+    try start.appendSlice(ar, &.{ .{ .call = "rt_erlang_put" }, .drop });
+    // Root 0: one decode, kept throughout; root 1: a list of them; root 2: a built binary.
+    try start.append(ar, b.c(roots));
+    try start.appendSlice(ar, fresh);
+    try start.appendSlice(ar, &.{ .{ .store = .{} }, b.c(roots + 4), .{ .call = "rt_nil" }, .{ .store = .{} }, b.c(roots + 8) });
+    try start.appendSlice(ar, built);
+    try start.append(ar, .{ .store = .{} });
+    // Root 0's address before any collection.
+    try start.appendSlice(ar, &.{ b.c(roots + 12), b.c(roots), .{ .load = .{} }, .{ .store = .{} } });
+
+    var body: std.ArrayListUnmanaged(ast.Instr) = .empty;
+    try body.appendSlice(ar, fresh);
+    try body.appendSlice(ar, &.{ .drop, b.c(roots + 4) });
+    try body.appendSlice(ar, fresh);
+    try body.appendSlice(ar, &.{ b.c(roots + 4), .{ .load = .{} }, .{ .call = "rt_cons" }, .{ .store = .{} } });
+    if (run == .exhaust) {
+        // Every list kept, until the memory runs out; its newest element
+        // checked every twentieth turn.
+        var check: std.ArrayListUnmanaged(ast.Instr) = .empty;
+        try check.appendSlice(ar, &.{ b.c(roots + 4), .{ .load = .{} }, .{ .call = rt_hd } });
+        try check.appendSlice(ar, fresh);
+        try check.appendSlice(ar, &.{ .{ .call = "rt_eqx" }, b.op("eqz"), b.when(damaged) });
+        try body.appendSlice(ar, &.{ .{ .local_get = "i" }, b.c(20), b.op("rem_u"), b.op("eqz"), b.when(check.items) });
+    } else {
+        try body.appendSlice(ar, &.{ .{ .local_get = "i" }, b.c(10), b.op("rem_u"), b.op("eqz"), b.when(&.{ b.c(roots + 4), .{ .call = "rt_nil" }, .{ .store = .{} } }) });
+    }
+    // A minor collection every 50 turns, a major one every 300.
+    try body.appendSlice(ar, &.{
+        .{ .local_get = "i" },                                                                                                            b.c(50),                                       b.op("rem_u"), b.op("eqz"),
+        b.when(&.{ b.c(roots), b.c(3), .{ .local_get = "i" }, b.c(300), b.op("rem_u"), b.op("eqz"), .{ .call = "__std_heap_collect" } }), .{ .local_get = "i" },                         b.c(1),        b.op("add"),
+        .{ .local_tee = "i" },                                                                                                            b.c(if (run == .exhaust) 1_000_000 else 2003), b.op("lt_u"),  .{ .br_if = "turn" },
+    });
+    try start.append(ar, .{ .block = .{ .kind = .loop, .label = "turn", .body = b.seq(body.items) } });
+    // Memory never ran out: the exhaustion run says so by a damaged answer's trap.
+    if (run == .exhaust) try start.appendSlice(ar, damaged);
+    // Root 0 moved, and each kept term equals a fresh decode.
+    try start.appendSlice(ar, &.{ b.c(roots), .{ .load = .{} }, b.c(roots + 12), .{ .load = .{} }, b.op("eq"), b.when(&.{.@"unreachable"}) });
+    try start.appendSlice(ar, &.{ b.c(roots), .{ .load = .{} } });
+    try start.appendSlice(ar, fresh);
+    try start.appendSlice(ar, &.{ .{ .call = "rt_eqx" }, b.op("eqz"), b.when(&.{.@"unreachable"}) });
+    try start.appendSlice(ar, &.{ .{ .local_get = "key" }, .{ .call = "rt_erlang_get" } });
+    try start.appendSlice(ar, fresh);
+    try start.appendSlice(ar, &.{ .{ .call = "rt_eqx" }, b.op("eqz"), b.when(&.{.@"unreachable"}) });
+    try start.appendSlice(ar, &.{ b.c(roots + 4), .{ .load = .{} }, .{ .call = rt_hd } });
+    try start.appendSlice(ar, fresh);
+    try start.appendSlice(ar, &.{ .{ .call = "rt_eqx" }, b.op("eqz"), b.when(&.{.@"unreachable"}) });
+    try start.appendSlice(ar, &.{ b.c(roots + 8), .{ .load = .{} } });
+    try start.appendSlice(ar, built);
+    try start.appendSlice(ar, &.{ .{ .call = "rt_eqx" }, b.op("eqz"), b.when(&.{.@"unreachable"}) });
+
+    var items: std.ArrayListUnmanaged(ast.Item) = .empty;
+    try items.append(ar, .{ .memory = .{ .@"export" = "memory", .min_pages = pages, .max_pages = if (run == .exhaust) pages + 16 else null } });
+    try items.appendSlice(ar, l.items);
+    try items.append(ar, .{ .data = .{ .offset = etf_at, .len_prefix = null, .bytes = &heap_etf } });
+    try items.append(ar, .{ .data = .{ .offset = key_at, .len_prefix = null, .bytes = "key" } });
+    try items.append(ar, .{ .data = .{ .offset = hello_at, .len_prefix = null, .bytes = "hello heap" } });
+    try items.append(ar, .{ .func = .{
+        .name = "_start",
+        .exports = &.{"_start"},
+        .locals = &.{&.{ .{ .name = "i", .ty = .i32 }, .{ .name = "key", .ty = .i32 }, .{ .name = "bb", .ty = .i32 } }},
+        .body = b.seq(start.items),
+    } });
+    const m: ast.Module = .{ .items = items.items };
+    try ast.validateModule(m);
+    return binary.encodeModule(ar, m);
+}
+
+test "wat: std-wasm ---- translated code's terms on a process heap survive its collections" {
+    const runtime = @import("../runtime.zig");
+    const a = std.testing.allocator;
+    var arena = std.heap.ArenaAllocator.init(a);
+    defer arena.deinit();
+    const kept = try runtime.executeWat(a, "", try termHeapModule(arena.allocator(), .kept), "main", std.testing.io);
+    defer a.free(kept);
+    try std.testing.expectEqualStrings("", kept);
+}
+
+// Decision 448 (4), 144 B-30 box 5 — a run that exhausts memory traps, never
+// answers with damaged data: the same terms kept on a heap whose memory may
+// grow 16 pages, collected as they grow, their newest checked as it goes,
+// until `memory.grow` is refused — `unreachable` (the heap's face), never the
+// damaged-value trap (`integer divide by zero`).
+test "wat: std-wasm ---- a heap that exhausts its memory traps, never answers with damaged data" {
+    const runtime = @import("../runtime.zig");
+    const a = std.testing.allocator;
+    var arena = std.heap.ArenaAllocator.init(a);
+    defer arena.deinit();
+    const out = try runtime.executeWat(a, "", try termHeapModule(arena.allocator(), .exhaust), "main", std.testing.io);
+    defer a.free(out);
+    try std.testing.expect(std.mem.indexOf(u8, out, "unreachable") != null);
+    try std.testing.expect(std.mem.indexOf(u8, out, "divide by zero") == null);
+}

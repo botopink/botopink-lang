@@ -797,6 +797,20 @@ fn heapCollect(roots: u32, n: u32, full: u32) callconv(.c) void {
     root.heap.collect(roots, n, full != 0) catch @trap();
 }
 
+fn heapStatic(n: u32) callconv(.c) u32 {
+    return root.heap.allocStatic(n) catch @trap();
+}
+
+/// The term library's statics (`term.rootCells`) made roots of the current
+/// heap for good — what a host running translated BEAM code calls once its
+/// process's heap is current and `rt_reset` has run (decision 449 (3)).
+fn heapTermRoots() callconv(.c) void {
+    for (root.term.rootCells()) |static| {
+        const addr: u32 = @intCast(static);
+        root.heap.write(addr, @as(*const u32, @ptrFromInt(addr)).*) catch @trap();
+    }
+}
+
 fn heapCell(n: u32, layout: u32) callconv(.c) u32 {
     return root.heap.allocCell(n, layout) catch @trap();
 }
@@ -918,6 +932,8 @@ const program_faces = .{
     .{ "heap.reserve", heapReserve },
     .{ "heap.collect", heapCollect },
     .{ "heap.cell", heapCell },
+    .{ "heap.static", heapStatic },
+    .{ "heap.termRoots", heapTermRoots },
     .{ "heap.copy", heapCopy },
     .{ "heap.cycle", heapCycle },
     .{ "heap.release", heapRelease },

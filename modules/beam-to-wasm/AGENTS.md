@@ -85,9 +85,8 @@ beam-to-wasm/
   `select_tuple_arity` arm) sets the local `pc` and branches to `$dispatch`. A call that leaves an
   exception pending (`rt_pending`) branches to `$raise`, and the function answers 0 — its caller
   tests `rt_pending` in turn, the convention of the comptime runtime's own lowering.
-- **Registers** are locals `x<N>` (the first `arity` the parameters) and `y<N>`; the frame and
-  heap opcodes and `line` have nothing to do (a y register is a local of the call; terms live on
-  the runtime's arena).
+- **Registers**: `x<N>` a local (the first `arity` the parameters); `y<N>` a word of the function's
+  frame on the process's root stack (§ Memory); `line` and `init_yregs` have nothing to do.
 - **The runtime ABI** (`lower.runtime`): terms (`rt_nil`, `rt_atom`, `rt_bin`, `rt_int`,
   `rt_cons`, `rt_hd`, `rt_tl`, `rt_tuple`, `rt_tset`, `rt_elem`, `rt_tuple_arity`), tests (`rt_is`
   with `runtime.Kind`, `rt_eq`, `rt_eqx`, `rt_cmp`), the binary builder (`rt_bb_new`, `rt_bb_bin`,
@@ -95,6 +94,28 @@ beam-to-wasm/
   `rt_function_clause`, `rt_badmatch`, `rt_case_clause`, `rt_if_clause`) and the operators.
   Each is std-wasm's (`modules/std-wasm/src/term.zig`), checked at compile time.
 - **Output**: `ir.Module{ name, functions }` per file, for the caller to emit.
+
+## Memory (decisions 448, 449 (3), 450 (5); 144 B-30)
+
+Translated code's terms live on the current process's heap (std-wasm's `heap.zig`), collected by
+copying; the host emitting the IR binds the term library's `env.bp_term_alloc(n, layout)` to
+`heap.alloc` (each cell with its layout, `term.cellLayout`), `env.bp_term_static` (an atom) to
+`heap.static`, and calls `heap.termRoots` once the process's heap is current (`ir.zig` § Memory).
+
+- **A collection runs only at a collection point**: `test_heap Need Live` and `allocate_heap*
+  StackNeed Need Live` lower to `collect{ need, live }` — `heap.reserve` of `need` bytes
+  (`lower.needBytes`: a word 16 bytes, a float 24, a fun 32, the cells' sizes with their block
+  headers; `{alloc, [{words, W}, {floats, F}, {funs, N}]}` decoded by kind), its roots x0 …
+  x<Live − 1> (the host stores them beside the root stack, then loads them back) and the whole root
+  stack. `alloc` itself never collects.
+- **Every y register lives on the root stack**, never in a wasm local: `allocate*` pushes a frame of
+  StackNeed words, zeroed (`frame_push`); `deallocate` pops it, and `call_last` / `call_ext_last`
+  pop their `Dealloc` frame before the call — its y registers are dead once the arguments are in
+  the x registers, so an Erlang loop's frames do not pile up. A function that pushes a frame keeps
+  the stack's depth at its entry (`frame_save`) and a raise leaving it restores it
+  (`frame_restore`). So a term a caller keeps across a call whose callee collects is a root and is
+  moved with it; an x register is live across no call (BEAM's convention), and an `rt_*` call never
+  collects.
 
 ## The opcodes converted
 
@@ -159,12 +180,13 @@ comptime modules):**
 ## Tests
 
 `zig build test` runs `src/root.zig`'s tests: the chunk reader on a measured cell, each compact-term
-tag and value width, the extended `literal` / `list` / `tr` / `fr` / `alloc` terms, every `genop`
+tag and value width, the extended `literal` / `list` / `tr` / `fr` / `alloc` terms (`alloc` by kind), every `genop`
 opcode decoding (and its table matching OTP's numbering), the two cells translated (one function,
 its BIF calls, `put_list` conses, `is_binary`, literals materialised), an opcode outside the
 converted ones refusing the function, by name and located, a file that is not BEAM; and `erlc`'s two modules translated as a set (`translateSet`: compact atoms, a stored
 `LitT`, `StrT`, the call from `greeting` into `greeting_text`, local and tail calls, `get_list`,
-`gc_bif` `+`, `is_eq_exact`, `bs_create_bin`), the `module_info` functions refused only where
+`gc_bif` `+`, `is_eq_exact`, `bs_create_bin`; `shout_all/2`'s frame pushed, its `test_heap`
+a collection point of its one live register, its tail call popping the frame first), the `module_info` functions refused only where
 reached, a module left out of the set refused where the call is made, an OTP function std-wasm's
 table lacks (`erlang:get_module_info/1`) refused where it is reached, two files of one module. Nothing else runs it: compiler-core no longer holds a consumer
 of this module (decision 452). Regenerate the fixture with `erlc +deterministic greeting.erl greeting_text.erl` in `src/testdata/erlc/`.

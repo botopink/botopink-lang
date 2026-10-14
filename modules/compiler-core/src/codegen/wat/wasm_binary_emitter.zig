@@ -120,8 +120,9 @@ pub fn encodeModule(alloc: std.mem.Allocator, m: ast.Module) Error![]u8 {
     if (e.memory) |mem| {
         sec = .empty;
         try uleb(ar, &sec, 1);
-        try sec.append(ar, 0x00);
+        try sec.append(ar, if (mem.max_pages != null) 0x01 else 0x00);
         try uleb(ar, &sec, mem.min_pages);
+        if (mem.max_pages) |max| try uleb(ar, &sec, max);
         try section(alloc, &out, 5, sec.items);
     }
 

@@ -281,6 +281,9 @@ pub const Memory = struct {
     /// `(export "…")` on the memory itself.
     @"export": ?[]const u8 = null,
     min_pages: u32 = 1,
+    /// The most pages it may grow to (`memory.grow` past it answers `-1`);
+    /// none, the engine's limit.
+    max_pages: ?u32 = null,
 };
 
 /// `(data (i32.const offset) "…")`. The emitter writes `len_prefix` as four

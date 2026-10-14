@@ -9,10 +9,13 @@
 //! call that leaves an exception pending (`rt_pending`) branches there, and
 //! the function answers 0 — its caller tests `rt_pending` in turn.
 //!
-//! The registers are locals (`x<N>`, `y<N>`); the frame and heap opcodes
-//! (`allocate*`, `init_yregs`, `test_heap`, `deallocate`) and `line` have
-//! nothing to do — a y register is a local of the call, and the runtime's
-//! terms live on its own arena. A call reaches a function of this module
+//! The x registers are locals (`x<N>`); the y registers are a frame on the
+//! process's root stack (decision 449 (3), `ir` § Memory): `allocate*` pushes
+//! it (`frame_push`), `deallocate` and a tail call pop it (`frame_pop`), and
+//! a raise leaving the function restores the depth its entry kept
+//! (`frame_save` / `frame_restore`). `test_heap` and `allocate_heap*` are the
+//! collection points (`collect`), their live-register count the x roots;
+//! `init_yregs` and `line` have nothing to do. A call reaches a function of this module
 //! (`call`, `call_last`, `call_only`: by its entry label), a function another
 //! module of the set exports (`call_ext*` naming it), an operator
 //! (`runtime.operators`) or an OTP function std-wasm serves (`Bif`); a tail
@@ -293,10 +296,18 @@ pub const Lowerer = struct {
         try loop_body.appendSlice(l.ar, segments.items[segments.items.len - 1].items);
         try loop_body.append(l.ar, .trap);
 
+        // A function that pushes a frame keeps the root stack's depth, which
+        // a raise leaving it restores.
+        const frames = for (s.instrs) |ins| switch (ins.op) {
+            .allocate, .allocate_zero, .allocate_heap, .allocate_heap_zero => break true,
+            else => {},
+        } else false;
         var body: std.ArrayListUnmanaged(ir.Instr) = .empty;
+        if (frames) try body.append(l.ar, .frame_save);
         try body.appendSlice(l.ar, &.{ .{ .i32_const = @intCast(s.entry) }, .set_pc });
         const loop_items = try l.ar.dupe(ir.Instr, &.{.{ .block = .{ .label = "dispatch", .loop = true, .body = loop_body.items } }});
         try body.append(l.ar, .{ .block = .{ .label = "raise", .body = loop_items } });
+        if (frames) try body.append(l.ar, .frame_restore);
         try body.appendSlice(l.ar, &.{ .{ .i32_const = 0 }, .ret });
         return .{ .name = s.name, .arity = s.arity, .x_regs = regs.x, .y_regs = regs.y, .body = body.items };
     }
@@ -419,6 +430,32 @@ pub const Lowerer = struct {
         try seg.appendSlice(l.ar, &.{ .{ .set = .{ .x = 0 } }, .{ .rt = runtime.pending }, .{ .br_if = "raise" } });
     }
 
+    /// The bytes BEAM's heap need `a` stands for on std-wasm's terms — a
+    /// word of a cons or a tuple 16 bytes, a float 24, a fun 32 (each cell
+    /// with its block header): what `heap.reserve` asks room for.
+    fn needBytes(l: *Lowerer, a: code.Arg) Error!u32 {
+        const need: code.Alloc = switch (a) {
+            .u, .i => .{ .words = try l.count(a) },
+            .alloc => |n| n,
+            else => return l.refuse("a heap need that is no count", .{}),
+        };
+        return std.math.cast(u32, @as(u64, need.words) * 16 + @as(u64, need.floats) * 24 + @as(u64, need.funs) * 32) orelse l.refuse("a heap need out of range", .{});
+    }
+
+    /// A collection point: `need` from operand `need_arg`, x0…x<live - 1> live.
+    fn collect(l: *Lowerer, seg: *std.ArrayListUnmanaged(ir.Instr), need_arg: code.Arg, live_arg: code.Arg, regs: *Regs) Error!void {
+        const live = try l.count(live_arg);
+        regs.x = @max(regs.x, live);
+        try seg.append(l.ar, .{ .collect = .{ .need = try l.needBytes(need_arg), .live = live } });
+    }
+
+    /// A tail call's frame, popped before the call: its y registers are dead
+    /// once the arguments are in the x registers.
+    fn popBeforeTail(l: *Lowerer, seg: *std.ArrayListUnmanaged(ir.Instr), dealloc: code.Arg) Error!void {
+        const n = try l.count(dealloc);
+        if (n > 0) try seg.append(l.ar, .{ .frame_pop = n });
+    }
+
     fn ret(l: *Lowerer, seg: *std.ArrayListUnmanaged(ir.Instr)) Error!void {
         try seg.appendSlice(l.ar, &.{ .{ .get = .{ .x = 0 } }, .ret });
     }
@@ -519,7 +556,16 @@ pub const Lowerer = struct {
         for (ins.args) |a| regs.note(a);
         switch (ins.op) {
             .func_info => try seg.appendSlice(l.ar, &.{ .{ .rt = runtime.function_clause }, .drop, .{ .br = "raise" } }),
-            .allocate, .allocate_heap, .allocate_zero, .allocate_heap_zero, .test_heap, .deallocate, .init_yregs, .line, .executable_line => {},
+            .init_yregs, .line, .executable_line => {},
+            // allocate StackNeed Live; allocate_heap StackNeed HeapNeed Live.
+            .allocate, .allocate_zero => try seg.append(l.ar, .{ .frame_push = try l.count(ins.args[0]) }),
+            .allocate_heap, .allocate_heap_zero => {
+                try seg.append(l.ar, .{ .frame_push = try l.count(ins.args[0]) });
+                try l.collect(seg, ins.args[1], ins.args[2], regs);
+            },
+            // test_heap HeapNeed Live.
+            .test_heap => try l.collect(seg, ins.args[0], ins.args[1], regs),
+            .deallocate => try seg.append(l.ar, .{ .frame_pop = try l.count(ins.args[0]) }),
             .init => {
                 try seg.append(l.ar, .{ .rt = runtime.nil });
                 try l.set(seg, ins.args[0]);
@@ -638,11 +684,13 @@ pub const Lowerer = struct {
             },
             .jump => try l.jump(seg, ins.args[0]),
             .call, .call_last, .call_only => {
+                if (ins.op == .call_last) try l.popBeforeTail(seg, ins.args[2]);
                 try l.callTarget(seg, try l.local(ins.args[1]), try l.count(ins.args[0]), regs);
                 if (ins.op != .call) try l.ret(seg);
             },
             .call_ext, .call_ext_last, .call_ext_only => {
                 const imp = try l.import(ins.args[1]);
+                if (ins.op == .call_ext_last) try l.popBeforeTail(seg, ins.args[2]);
                 try l.callTarget(seg, (try l.target(imp)).?, try l.count(ins.args[0]), regs);
                 if (ins.op != .call_ext) try l.ret(seg);
             },

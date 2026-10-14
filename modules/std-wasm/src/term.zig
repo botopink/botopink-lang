@@ -21,7 +21,7 @@
 //! `{case_clause, V}`, …) so the reply a body produces does not depend on the
 //! runtime that ran it.
 //!
-//! Nothing here allocates on its own: every cell comes from `caller.bp_alloc`,
+//! Nothing here allocates on its own: every cell comes from `caller.bp_term_alloc`,
 //! the caller's (decision 450 (5)), and a fun is called back through the
 //! caller's table (`caller.bp_call0` … `bp_call4`). The module holds no function
 //! table and no pointer in its data, so `std_wasm_link.zig` decodes it.
@@ -79,30 +79,76 @@ pub fn as(comptime S: type, t: T) *S {
 
 // ── allocation: the caller's ────────────────────────────────────────────────
 
-/// `n` fresh bytes, 8-aligned (a cell holds an `i64` or an `f64`). Allocation
-/// is the caller's (decision 450 (5)): on wasm the term library imports
-/// `caller.bp_alloc`, which the comptime runtime binds to its arena (freed whole
-/// when the evaluation ends, 449 (4)) and translated code will bind to the
-/// current process's heap (B-30); natively (the unit tests) a page arena.
+/// `n` fresh bytes, 8-aligned (a cell holds an `i64` or an `f64`), holding no
+/// term (a binary's bytes, an index table). Allocation is the caller's
+/// (decision 450 (5)): on wasm the term library imports
+/// `caller.bp_term_alloc(n, layout)`, which the comptime runtime binds to its
+/// arena (freed whole when the evaluation ends, 449 (4)) and translated code
+/// binds to the current process's heap (`heap.alloc`, 449 (3)) — the layout
+/// names the words a collection treats as terms (`cellLayout`); natively (the
+/// unit tests) a page arena.
 pub fn alloc(n: usize) [*]u8 {
+    return allocAs(n, stdWasm.heap.raw);
+}
+
+/// `n` fresh bytes of `layout` (a `heap.zig` layout).
+fn allocAs(n: usize, layout: u32) [*]u8 {
     const size = std.mem.alignForward(usize, n, 8);
-    if (builtin.cpu.arch.isWasm()) return @ptrFromInt(caller.bp_alloc(@intCast(size)));
+    if (builtin.cpu.arch.isWasm()) return @ptrFromInt(caller.bp_term_alloc(@intCast(size), layout));
+    return (native_arena.allocator().alignedAlloc(u8, .@"8", @max(size, 8)) catch @panic("term: out of memory")).ptr;
+}
+
+/// `n` bytes outside every process's heap, never moved or freed: an atom —
+/// interned, so compared by its address, and shared by every process
+/// (`caller.bp_term_static`: the comptime's arena, translated code's
+/// `heap.static`).
+fn allocStatic(n: usize) [*]u8 {
+    const size = std.mem.alignForward(usize, n, 8);
+    if (builtin.cpu.arch.isWasm()) return @ptrFromInt(caller.bp_term_static(@intCast(size)));
     return (native_arena.allocator().alignedAlloc(u8, .@"8", @max(size, 8)) catch @panic("term: out of memory")).ptr;
 }
 
 var native_arena: std.heap.ArenaAllocator = .init(std.heap.page_allocator);
 
-fn create(comptime S: type) *S {
-    return @ptrCast(@alignCast(alloc(@sizeOf(S))));
+/// The layout of a cell `S` on wasm32: each pointer field (a term, a term
+/// array, a binary's bytes) a word a collection follows; every other field
+/// (the header, an arity, a length, an `i64`, an `f64`) left as it is.
+pub fn cellLayout(comptime S: type) u32 {
+    var bits: u32 = 0;
+    inline for (@typeInfo(S).@"struct".fields) |f| {
+        const info = @typeInfo(f.type);
+        const is_ptr = info == .pointer or (info == .optional and @typeInfo(info.optional.child) == .pointer);
+        if (is_ptr) bits |= @as(u32, 1) << @intCast(@offsetOf(S, f.name) / @sizeOf(usize));
+    }
+    return stdWasm.heap.bitmap(bits);
 }
 
+comptime {
+    // The word each pointer field sits at on wasm32, as `cellLayout` reads it.
+    if (builtin.cpu.arch.isWasm()) {
+        std.debug.assert(cellLayout(Cons) == 0b110);
+        std.debug.assert(cellLayout(Bin) == 0b100);
+        std.debug.assert(cellLayout(Tuple) == 0b100);
+        std.debug.assert(cellLayout(Map) == 0b1100);
+        std.debug.assert(cellLayout(Fun) == 0b1000);
+        std.debug.assert(cellLayout(Builder) == 0b1000);
+        std.debug.assert(cellLayout(Int) == 0 and cellLayout(Float) == 0);
+    }
+}
+
+fn create(comptime S: type) *S {
+    return @ptrCast(@alignCast(allocAs(@sizeOf(S), cellLayout(S))));
+}
+
+/// `n` term words (a tuple's items, a map's keys or values, a list's
+/// elements gathered): every word a term.
 pub fn allocTerms(n: usize) [*]T {
-    return @ptrCast(@alignCast(alloc(@max(n, 1) * @sizeOf(T))));
+    return @ptrCast(@alignCast(allocAs(@max(n, 1) * @sizeOf(T), stdWasm.heap.pointersFrom(0))));
 }
 
 /// Start an evaluation's terms: the atom table, the process dictionary, the
 /// printed text and any pending exception are cleared. Where its terms live
-/// is the caller's (`caller.bp_alloc`): the comptime runtime's `rt_init(start)`
+/// is the caller's (`caller.bp_term_alloc`): the comptime runtime's `rt_init(start)`
 /// sets its arena, then calls this.
 pub fn rt_reset() callconv(.c) void {
     atoms = .{null} ** atom_buckets;
@@ -217,8 +263,13 @@ pub fn internAtom(ptr: [*]const u8, len: usize) T {
     while (it) |a| : (it = a.next) {
         if (a.len == len and std.mem.eql(u8, a.ptr[0..a.len], bytes)) return @ptrCast(a);
     }
-    const a = create(Atom);
-    a.* = .{ .hdr = .{ .tag = .atom }, .len = @intCast(len), .ptr = ptr, .next = atoms[b], .rank = atomRank(bytes) };
+    // The atom and a copy of its name, outside every process's heap: the
+    // name may be a binary's bytes on one.
+    const mem = allocStatic(@sizeOf(Atom) + len);
+    const a: *Atom = @ptrCast(@alignCast(mem));
+    const name = mem + @sizeOf(Atom);
+    @memcpy(name[0..len], bytes);
+    a.* = .{ .hdr = .{ .tag = .atom }, .len = @intCast(len), .ptr = name, .next = atoms[b], .rank = atomRank(bytes) };
     atoms[b] = a;
     atom_count += 1;
     return @ptrCast(a);
@@ -453,6 +504,15 @@ pub var pending: bool = false;
 // relocation in the module's data, which `std_wasm_link.zig` refuses.
 var p_class: T = undefined;
 var p_reason: T = undefined;
+
+/// The addresses of the term library's statics that hold a term — the
+/// process dictionary, the pending exception, the printed text: in
+/// translated code the roots a process's heap keeps for good
+/// (`heap.termRoots`, decision 449 (3)). An atom lives outside every heap
+/// (`allocStatic`), so the atom table is none of them.
+pub fn rootCells() [4]usize {
+    return .{ @intFromPtr(&erlang.pdict), @intFromPtr(&p_class), @intFromPtr(&p_reason), @intFromPtr(&io_lib.printed) };
+}
 
 fn raise(class: T, reason: T) void {
     if (pending) return;
