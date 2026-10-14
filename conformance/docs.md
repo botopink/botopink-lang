@@ -2483,6 +2483,12 @@ it waits for nothing, it creates the Task.
 
 <!-- example: modules/async_block_tail_case -->
 
+<!-- example: modules/await_result_print -->
+
+An awaited `@Result` is the value it is: `@print` of `await f(x)` answers
+`Ok(21)` or `Error("negative")` on every target, for a generic `f`, a plain one
+and an `async { }` block that fails.
+
 - its value is its last expression written without `;` (decision 525, § Blocks),
   a braced `case` / `if` at its end included, and `return v` **leaves the
   block** with `v`, not the enclosing function — the block is a task of its

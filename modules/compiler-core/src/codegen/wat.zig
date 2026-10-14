@@ -6357,7 +6357,7 @@ const Emitter = struct {
                     // An enum constructor's value is typed by its enum, so the
                     // name prints by the variant's descriptor.
                     const enum_tr: ?ast.TypeRef = if (self.enumValueOf(lb.value.*)) |en| .{ .named = en } else null;
-                    const bound_tr: ?ast.TypeRef = lb.typeAnnotation orelse self.typeRefOf(lb.value.*) orelse (try self.fnRefTypeRef(lb.value.*)) orelse enum_tr orelse try self.lambdaTaskTypeRef(lb.value.*);
+                    const bound_tr: ?ast.TypeRef = lb.typeAnnotation orelse (try self.failingAsyncTypeRef(lb.value.*)) orelse self.typeRefOf(lb.value.*) orelse (try self.fnRefTypeRef(lb.value.*)) orelse enum_tr orelse try self.lambdaTaskTypeRef(lb.value.*);
                     if (bound_tr) |tr| try self.local_typerefs.put(lb.name, tr);
                     // Decision 210 — the composite a `val` holds, for `==`
                     // over the name (`val t = #(P(x: 1), 2)`).
@@ -12330,6 +12330,26 @@ const Emitter = struct {
         else
             tail;
         if (blk != .function or blk.function.kind.syntax != .asyncBlock) return null;
+        const task = (try self.asyncBlockTaskType(blk, false)) orelse return null;
+        const ar = self.reg_arena.allocator();
+        const ret = try ar.create(ast.TypeRef);
+        ret.* = task;
+        const params = try ar.alloc(ast.TypeRef, e.function.kind.params.len);
+        for (params) |*p| p.* = .{ .named = "i32" };
+        return .{ .function = .{ .params = params, .returnType = ret } };
+    }
+
+    /// `val t = async { … throw e … }`: the block's `@Task<@Result<V, E>>`,
+    /// so `await t` types its answer and `@print` / `Error(e)` read it (a
+    /// block that cannot fail keeps the untyped task).
+    fn failingAsyncTypeRef(self: *Emitter, e: ast.Expr) !?ast.TypeRef {
+        if (e != .function or e.function.kind.syntax != .asyncBlock) return null;
+        return self.asyncBlockTaskType(e, true);
+    }
+
+    /// The `@Task<V>` (`@Task<@Result<V, E>>` when the block fails) of the
+    /// `async { }` block `blk`, read off its `return`s and `throw`s.
+    fn asyncBlockTaskType(self: *Emitter, blk: ast.Expr, only_failing: bool) !?ast.TypeRef {
         const body = blk.function.kind.body;
         const ar = self.reg_arena.allocator();
         // The transform has rewritten a `throw x` to `return __bp_error(x)`
@@ -12339,6 +12359,7 @@ const Emitter = struct {
         scanBlockReturns(body, &ok_v, &err_v);
         const fails = err_v != null or ast.bodyFails(body);
         const ok_name = if (ok_v) |v| self.operandTypeName(v) else "i32";
+        if (only_failing and !fails) return null;
         var task_arg: ast.TypeRef = .{ .named = ok_name };
         if (fails) {
             const err_name = if (err_v) |v| self.operandTypeName(v) else "i32";
@@ -12349,11 +12370,7 @@ const Emitter = struct {
         }
         const targs = try ar.alloc(ast.TypeRef, 1);
         targs[0] = task_arg;
-        const ret = try ar.create(ast.TypeRef);
-        ret.* = .{ .generic = .{ .name = "Task", .args = targs, .is_builtin = true } };
-        const params = try ar.alloc(ast.TypeRef, e.function.kind.params.len);
-        for (params) |*p| p.* = .{ .named = "i32" };
-        return .{ .function = .{ .params = params, .returnType = ret } };
+        return .{ .generic = .{ .name = "Task", .args = targs, .is_builtin = true } };
     }
 
     fn operandTypeName(self: *Emitter, v: ast.Expr) []const u8 {
@@ -14362,6 +14379,37 @@ const Emitter = struct {
         return try substTypeParams(ast.TypeRef, ar, rt, subs.items);
     }
 
+    /// `await f(args)` of a generic `f` whose declared answer `v` names a
+    /// type parameter inside a generic type (`@Result<T, string>`): `v` with
+    /// each parameter a plain-`T` argument binds written in. Null when the
+    /// call is no generic call, or nothing binds.
+    fn bindAwaitedGeneric(self: *Emitter, call: ast.Expr, v: ast.TypeRef) ?ast.TypeRef {
+        const cc = switch (call) {
+            .call => |c| switch (c.kind) {
+                .call => |x| x,
+                else => return null,
+            },
+            else => return null,
+        };
+        if (cc.is_builtin or cc.calleeExpr != null or cc.receiver != null) return null;
+        const callee = self.import_aliases.get(cc.callee) orelse cc.callee;
+        const f = if (self.generic_fns.get(callee)) |g| g.decl else return null;
+        const ar = self.reg_arena.allocator();
+        var subs: std.ArrayListUnmanaged(TypeSub) = .empty;
+        var pi: usize = 0;
+        for (f.params) |p| {
+            if (std.mem.eql(u8, p.name, "self")) continue;
+            defer pi += 1;
+            if (pi >= cc.args.len) break;
+            if (p.typeRef != .named or !isGenericParamName(p.typeRef.named, f.genericParams, &.{})) continue;
+            const arg = cc.args[pi].value.*;
+            const to: ast.TypeRef = if (self.concreteTypeOf(arg)) |c| .{ .named = c } else (self.typeRefOf(arg) orelse continue);
+            subs.append(ar, .{ .name = p.typeRef.named, .to = to }) catch return null;
+        }
+        if (subs.items.len == 0) return null;
+        return substTypeParams(ast.TypeRef, ar, v, subs.items) catch null;
+    }
+
     /// What a function argument answers: a lambda's last expression's type
     /// (an `async { }` block's value), a value of a written function type
     /// its declared return.
@@ -15160,6 +15208,10 @@ const Emitter = struct {
                 .await_ => |a| blk: {
                     const inner = self.typeRefOf(a.*);
                     if (inner) |t| if (taskValueTypeRef(t)) |v| {
+                        // `await twice(21)` over `-> @Task<@Result<T, string>>`:
+                        // the answer with `T` bound by the arguments, so
+                        // `@print` and a `case` binder see `@Result<i32, string>`.
+                        if (v == .generic) if (self.bindAwaitedGeneric(a.*, v)) |bound| break :blk bound;
                         if (v != .named or self.namesConcreteType(v.named)) break :blk v;
                         if (self.genericResultOf(a.*)) |pr| break :blk self.typeRefOf(pr);
                         break :blk null;
