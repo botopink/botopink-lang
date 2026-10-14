@@ -790,7 +790,7 @@ pub fn prepare(env: *Env, ct: ast.ComptimeExprOf(.untyped)) Error!Prepared {
 /// (`Env.result_jump_lowerings`) — `transform.zig`'s `tryLowerMethodCall`
 /// and `tryLowerResultJump`, applied to the code the comptime runtime runs (a
 /// `comptime "7".parseInt().unwrapOr(0)`). `f` itself when none is reached.
-fn withResultMethods(env: *Env, f: ast.FnDecl) Error!ast.FnDecl {
+pub fn withResultMethods(env: *Env, f: ast.FnDecl) Error!ast.FnDecl {
     if (env.method_lowerings.count() == 0 and env.result_jump_lowerings.count() == 0) return f;
     var l: ResultMethods = .{ .arena = env.arena, .map = &env.method_lowerings, .jumps = &env.result_jump_lowerings };
     const body = try l.clone([]ast.Stmt, f.body);

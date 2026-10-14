@@ -22,7 +22,10 @@
 //!   `@External.Wasm(std: "<module>.<function>")` cell names (decision 440 (3),
 //!   `stdCell`, `servedByStdWasm`; there is no match by name) —, else the
 //!   botopink function its `@External.Wasm(fn: …)` binding names (`callOf`);
-//!   none → refused naming both (`comptime-host-cell-unavailable`).
+//!   none → refused naming both (`comptime-host-cell-unavailable`). One
+//!   adapter has a form at build: `wasi: .Attempt` (decisions 518, 543,
+//!   `attemptAtBuild`), so `attempt` answers in a comptime body as in a wasm
+//!   program.
 //!   `@External.Erlang` never runs at build: the cell binds the erlang and
 //!   beam targets only, and nothing in botopink calls beam-to-wasm (452).
 //!   `@External.Node` never serves: there is no Node at comptime.
@@ -443,6 +446,10 @@ pub fn forRuntime(arena: std.mem.Allocator, decls: []const ast.DeclKind) Error!S
         };
         // Its `@External.Wasm(fn: …)` cell.
         const b = wasmBinding(f) orelse return .{ .refused = try unavailable(arena, f) };
+        if (isAttemptAdapter(b.text)) {
+            d.* = .{ .@"fn" = try attemptAtBuild(arena, f) };
+            continue;
+        }
         if (!std.mem.startsWith(u8, b.text, "fn:")) return .{ .refused = try unavailable(arena, f) };
         d.* = .{ .@"fn" = try callOf(arena, f, b.text["fn:".len..]) };
     }
@@ -490,6 +497,35 @@ fn servedByStdWasm(arena: std.mem.Allocator, f: ast.FnDecl, e: stdWasm.Export) E
     return out;
 }
 
+/// Decisions 518, 543 — `wasi: .Attempt` (std's `failure.caught`, under
+/// `attempt` and `attemptTask`) runs at build as in a wasm program: the thunk
+/// called, an abort it raises caught — `{ok, Value}`, or `{error, Message}`
+/// with the abort's text. A comptime module is Erlang lowered to wasm, its
+/// aborts the Erlang errors the untyped emitter raises: `{panic, M}` and
+/// `{todo, M}` (`@panic`, `@todo`) and a failed assert's `{bp_assert, Msg,
+/// Where, Panic}` (its panic text, decision 527 (2)); any other raise goes on,
+/// as a trap goes on through a wasm `try_table`.
+pub fn isAttemptAdapter(text: []const u8) bool {
+    return std.mem.eql(u8, text, "wasi:attempt");
+}
+
+const attempt_at_build =
+    "\"(fun(__F) -> try {ok, __F()} catch " ++
+    "error:{__T, __M} when __T =:= panic orelse __T =:= todo -> {error, unicode:characters_to_binary(__M)}; " ++
+    "error:{bp_assert, _, _, __M} -> {error, unicode:characters_to_binary(__M)} end end)($0)\"";
+
+/// `f` (a `wasi: .Attempt` binding) with its one cell the comptime's form,
+/// `attempt_at_build`, which the comptime module writes inline.
+fn attemptAtBuild(arena: std.mem.Allocator, f: ast.FnDecl) Error!ast.FnDecl {
+    const args = try arena.alloc([]const u8, 1);
+    args[0] = attempt_at_build;
+    const ann = try arena.alloc(ast.Annotation, 1);
+    ann[0] = .{ .name = "External.Erlang", .args = args, .is_builtin = true };
+    var out = f;
+    out.annotations = ann;
+    return out;
+}
+
 /// `fn <f>(<params>) { return <target>(<params>); }` — a host function bound
 /// to a botopink function, as the wat runtime runs it.
 fn callOf(arena: std.mem.Allocator, f: ast.FnDecl, target: []const u8) Error!ast.FnDecl {
@@ -528,7 +564,7 @@ pub fn unservedReason(arena: std.mem.Allocator, f: ast.FnDecl) Error!?[]const u8
         .ok => return null,
         .unknown => |name| return try noStdExport(arena, f, name),
     };
-    if (wasmBinding(f)) |b| if (std.mem.startsWith(u8, b.text, "fn:")) return null;
+    if (wasmBinding(f)) |b| if (std.mem.startsWith(u8, b.text, "fn:") or isAttemptAdapter(b.text)) return null;
     return try unavailable(arena, f);
 }
 

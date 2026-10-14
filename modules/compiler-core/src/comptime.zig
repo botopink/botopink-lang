@@ -3648,7 +3648,17 @@ pub fn registerStdlib(env: *Env, gpa: std.mem.Allocator) anyerror!void {
         };
         const program = try assocTypes.expand(env.arena, try nested_types.expand(env.arena, parsed_std), &std_owners);
         const bindings = try infer.inferProgramTyped(&env2, program);
-        try carried_modules.append(env.arena, .{ .name = mod_name, .decls = program.decls });
+        // A carried function runs in a comptime module as every backend runs
+        // it: its `@Result` / `@Option` method calls and each `return v` /
+        // `throw e` of a `@Result` body written as the builtins its module's
+        // inference recorded (`block_eval.withResultMethods`) — without them a
+        // `throw` of std's escaped as an Erlang throw (`failure.attempt` at
+        // build, decision 543).
+        const carried_decls = try env.arena.dupe(ast.DeclKind, program.decls);
+        for (carried_decls) |*d| if (d.* == .@"fn") {
+            d.* = .{ .@"fn" = try blockEval.withResultMethods(&env2, d.@"fn") };
+        };
+        try carried_modules.append(env.arena, .{ .name = mod_name, .decls = carried_decls });
 
         // Collect the module's public type declarations so `import {…} from
         // "std"` can register them into the importing env (type export —

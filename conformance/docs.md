@@ -2545,6 +2545,13 @@ ends the program.
 
 <!-- example: modules/std_failure_attempt -->
 
+`attempt` answers the same at build: a `comptime` body, a template or a
+decorator that calls it gets `Ok` of the thunk's value, or
+`Error(Failure(message, "panic"))` for the abort the thunk raised — as a wasm
+program does, on every target (decisions 518, 543).
+
+<!-- example: modules/comptime_attempt_at_build -->
+
 `failure.attemptTask(f)` is its `@Task` form: it awaits the task `f` answers,
 and is `Error(Failure)` when that task crashed. A task that fails with its own
 `E` did not crash — its `@Result` is the value.
@@ -3514,13 +3521,15 @@ name in a type position is the program's type.
 
 A body that runs at build — a decorator's, a template's, a `comptime` — may
 call a host function: it travels into the comptime module. Comptime runs on
-one runtime, wasm (wasm3 inside the compiler), whatever the build's target
-(decision 434): a compile starts no `erl`. A host function reached there
+one runtime, wasm (wasmtime inside the compiler, the page's engine in the
+browser build), whatever the build's target (decisions 434, 543): a compile
+starts no `erl`. A host function reached there
 answers by the first of two cells it has: its std-wasm implementation
 (std's own host functions, written in Zig and compiled to wasm — the
 function its `@External.Wasm(std: "<module>.<function>")` cell names, below),
 or the botopink function its `@External.Wasm(fn: …)` binding names (an `op:`
-or `wasi:` binding does not run there). A std function is served by std-wasm
+or `wasi:` binding does not run there, but `wasi: .Attempt`, which runs as
+`attempt` answers in a wasm program). A std function is served by std-wasm
 only where its `std:` cell says so; there is no match by name.
 `@External.Node` never serves: there is no Node at compile time. An
 `@External.Erlang` cell never runs at build either (decision 452): it binds

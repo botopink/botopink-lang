@@ -1608,10 +1608,14 @@ fn emitWatPass(
     // placed after the module's own, its stack after the data, the heap
     // after both.
     var std_funcs: []moduleOutput.StdFunc = &.{};
-    errdefer for (std_funcs) |f| {
-        alloc.free(f.symbol);
-        alloc.free(f.label);
-    };
+    // A replan (`error.Replan`, below) leaves this pass's list too.
+    errdefer {
+        for (std_funcs) |f| {
+            alloc.free(f.symbol);
+            alloc.free(f.label);
+        }
+        if (std_funcs.len > 0) alloc.free(std_funcs);
+    }
     if (em.std_exports.count() > 0) {
         var diag: stdWasmLink.Diag = .{};
         const linked_std = stdWasmLink.link(ar, em.std_exports.keys(), @intCast(em.next_data_offset), &diag) catch |err| switch (err) {
