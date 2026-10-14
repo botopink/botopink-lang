@@ -162,6 +162,29 @@ test "js: f64 text ---- a template hole, toString and a string + keep the decima
     );
 }
 
+// Decision 530: a template hole writes the text `@print` writes for every value. JavaScript's
+// coercion wrote `[object Object]` for a record and `1,2,3` for an array; a record, an array, a
+// tuple (a JS array, told by its static shape) and a float inside them now go through
+// `__bp_text`.
+test "js: template hole ---- a record, an array and a tuple are written as @print writes them" {
+    try h.assertJsRunLog(std.testing.allocator,
+        \\type Point(x: i32, y: i32)
+        \\
+        \\pub fn main() {
+        \\    val p = Point(x: 1, y: 2);
+        \\    val xs = [1, 2, 3];
+        \\    val t = #(1, "a");
+        \\    val fs = [1.5, 2.0];
+        \\    @print("${p} ${xs} ${t} ${fs}");
+        \\    @print("p=" + p);
+        \\}
+    ,
+        \\Point(x: 1, y: 2) [1, 2, 3] #(1, "a") [1.5, 2.0]
+        \\p=Point(x: 1, y: 2)
+        \\
+    );
+}
+
 // Decision 521: `__bp_f64` is std-wasm's `number.shortFloat` ported, so the two
 // answer one text — every float below, drawn from its bits, is printed by node
 // and compared with std-wasm's own answer for it.

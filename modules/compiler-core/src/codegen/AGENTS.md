@@ -128,6 +128,13 @@ codegen/
   `Shape.Nothing`, a type implementing `Display` its own `display()` (nested
   too), anything else `util.inspect`. §7 supersedes decision 1a's no-spaces
   text.
+  **A template hole and a `string +` operand are written by the same text**
+  (decision 530): the checker records an operand that is not a scalar — a
+  record, an enum, an array, a tuple, an optional of one — under
+  `ast.text_hole_col` (`infer.noteTextHole`, `textValueLowerings`), and
+  `holeConcat` writes it `__bp_text(v, shape)`, `shape` the static print shape
+  `typeShape` reads off the recorded type (a tuple, a float). A type variable
+  keeps JavaScript's coercion (a `bigint` or a float there would lose its text).
   A botopink value is told from a host object by the `__bp` marker its
   prototype carries (decision 5) — never by a `constructor` test, so a `Map` or
   a `@Result`'s `{ ok }` keeps `console.log`'s own text. The name comes from

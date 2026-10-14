@@ -197,11 +197,13 @@ pub const Helper = enum {
     /// to its mapping; `__bp_case(s, m)`: `s` mapped through it.
     case_map,
     case_apply,
-    /// `__bp_text(v)`: the text `@print` writes for `v` at the top level, as a
-    /// string — `show`'s format with its `%s` / `%O` verbs filled in. An
-    /// enum's class answers it as its `toString`, so a template hole and a
-    /// `string +` of a variant write `Shape.Circle(radius: 2)`, not
-    /// `[object Object]`.
+    /// `__bp_text(v, s)`: the text `@print` writes for `v` at the top level, as a
+    /// string — `show`'s format with its `%s` / `%O` verbs filled in, `s` the
+    /// static print shape (a tuple, a float) or nothing. An enum's class answers
+    /// it as its `toString`, and a template hole or a `string +` of any other
+    /// composite value is written through it (decision 530), so each writes
+    /// `Shape.Circle(radius: 2)` / `Point(x: 1, y: 2)` / `[1, 2, 3]`, not
+    /// `[object Object]` / `1,2,3`.
     text,
 };
 
@@ -548,10 +550,10 @@ const f64_text: ast.Stmt = hFn("__bp_f64", &.{"v"}, &.{
 /// format of `v`, each verb replaced by the value it consumes, in order. The
 /// replacement is computed over the format alone, so a `%s` inside a pushed
 /// string is never read as a verb.
-const show_text: ast.Stmt = hFn("__bp_text", &.{"v"}, &.{
+const show_text: ast.Stmt = hFn("__bp_text", &.{ "v", "s" }, &.{
     hConst(.const_, "a", "[]"),
     hConst(.let_, "i", "0"),
-    hRet("__bp_show(v, null, true, a).replace(/%[sO]/g, () => String(a[i++]))"),
+    hRet("__bp_show(v, s == null ? null : s, true, a).replace(/%[sO]/g, () => String(a[i++]))"),
 });
 
 /// `function __bp_wnorm(v, u, what) { … }` — see `Helper.wide_norm`.

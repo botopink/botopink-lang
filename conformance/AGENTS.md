@@ -2163,7 +2163,7 @@ pipeline — and a step of the CI `test` job (ubuntu + macos). A red cell fails 
 On disk:
 
 ```text
-$ ls -d modules/*/ | wc -l      # 1318 cells
+$ ls -d modules/*/ | wc -l      # 1382 cells
 $ ls test/*.bp | wc -l          # 64 single-file suites
 $ ls -d test/*/ | wc -l         # 15 project suites
 ```
@@ -2406,3 +2406,9 @@ host binding in a test file.
 `modules/embed_size_i64` (decision 538, 144 B-12-c) — `Asset.size` binds to an `i64` and sums past the `i32`
 range (`expected i64, got i32` on the parent); `hash` stays the SHA-256 in lowercase hex. `Asset.open()` (an
 `Asset` read as fs-a's `File`) waits for that `File` (decision 540): it has no cell here yet.
+
+`modules/template_hole_prints_every_value` (decision 530, 144 B-53-a) — a template hole of a record, a nested
+record, an array of numbers and of strings, a tuple, `null`, an optional, an enum, a `Display` type and a parameter
+is written as the `@print` beside it writes it. erlang and beam already did; commonJS wrote `[object Object]`
+and `1,2,3`; wasm writes the value's address (`9060`) and `undefined` for `null` — front 164's, so the cell is
+red on wasm until that lands.

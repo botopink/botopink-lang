@@ -11703,6 +11703,30 @@ fn noteTextValue(env: *Env, loc: ast.Loc, ty: *T.Type) !void {
     try slot.value_ptr.append(env.arena, ty);
 }
 
+/// Decision 530 — a template hole (a `string +` operand) holding a value whose text
+/// JavaScript's coercion would not write as `@print` does is recorded under
+/// `ast.text_hole_col`, and `textValueLowerings` turns it into the lowering commonJS
+/// reads to write the value through the text helper.
+fn noteTextHole(env: *Env, loc: ast.Loc, ty: *T.Type) !void {
+    if (!textHoleNeedsHelper(ty)) return;
+    var key = loc;
+    key.col += ast.text_hole_col;
+    try noteTextValue(env, key, ty);
+}
+
+/// Whether `ty` is written as text by the helper: a named type that is not a scalar
+/// (`string`, a number, `bool`) — a record, an enum, an array, a tuple, a generic type, or
+/// an optional of one. A type variable and anything the checker cannot name keep JavaScript's reading.
+fn textHoleNeedsHelper(ty: *T.Type) bool {
+    const d = ty.deref();
+    if (d.* != .named) return false;
+    // An optional is written as its payload is: `null` is JavaScript's own text for it.
+    if (std.mem.eql(u8, d.named.name, "optional") and d.named.args.len == 1) return textHoleNeedsHelper(d.named.args[0]);
+    const scalars = [_][]const u8{ "string", "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "isize", "usize", "f32", "f64", "bool", "bigint", "decimal", "void" };
+    for (scalars) |s| if (std.mem.eql(u8, d.named.name, s)) return false;
+    return true;
+}
+
 fn isPrintBuiltin(name: []const u8) bool {
     for ([_][]const u8{ "print", "println", "debug" }) |b| if (std.mem.eql(u8, name, b)) return true;
     return false;
@@ -11741,9 +11765,11 @@ pub fn textValueLowerings(env: *const Env, arena: std.mem.Allocator, out: *std.A
     while (it.next()) |e| {
         const tys = e.value_ptr.items;
         if (tys.len == 0) continue;
+        // Decision 530 — a hole the text helper writes: recorded as it is keyed.
+        const is_hole = e.key_ptr.col >= ast.text_hole_col;
         var first: std.ArrayListUnmanaged(u8) = .empty;
         try textShapeOf(&first, arena, tys[0]);
-        if (std.mem.indexOfScalar(u8, first.items, 'f') == null) continue;
+        if (!is_hole and std.mem.indexOfScalar(u8, first.items, 'f') == null) continue;
         const agree = for (tys[1..]) |t| {
             var other: std.ArrayListUnmanaged(u8) = .empty;
             try textShapeOf(&other, arena, t);
@@ -11752,7 +11778,7 @@ pub fn textValueLowerings(env: *const Env, arena: std.mem.Allocator, out: *std.A
         if (!agree) continue;
         const ref = (try typeRefOfType(arena, env, tys[0])) orelse continue;
         var key = e.key_ptr.*;
-        key.col += ast.text_synthetic_col;
+        if (!is_hole) key.col += ast.text_synthetic_col;
         const slot = try out.getOrPut(key);
         if (!slot.found_existing) slot.value_ptr.* = .{ .text_value = ref };
     }
@@ -15472,8 +15498,14 @@ fn inferBinaryOpExpr(env: *Env, binop: ast.BinOpExprOf(.untyped), loc: ast.Loc) 
             try refuseUnknownUse(env, rhsTy, binop.rhs.getLoc(), "do arithmetic on");
             if (lhsTy.isNamed("string") or rhsTy.isNamed("string")) {
                 // 144 B-78 — the other side is written as text.
-                if (!lhsTy.isNamed("string")) try noteTextValue(env, binop.lhs.getLoc(), lhsTy);
-                if (!rhsTy.isNamed("string")) try noteTextValue(env, binop.rhs.getLoc(), rhsTy);
+                if (!lhsTy.isNamed("string")) {
+                    try noteTextValue(env, binop.lhs.getLoc(), lhsTy);
+                    try noteTextHole(env, binop.lhs.getLoc(), lhsTy);
+                }
+                if (!rhsTy.isNamed("string")) {
+                    try noteTextValue(env, binop.rhs.getLoc(), rhsTy);
+                    try noteTextHole(env, binop.rhs.getLoc(), rhsTy);
+                }
                 break :blk try env.namedType("string");
             }
             // Numeric promotion: float wins over int

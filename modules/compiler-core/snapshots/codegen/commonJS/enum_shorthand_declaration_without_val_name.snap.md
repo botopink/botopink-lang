@@ -61,10 +61,10 @@ function __bp_show(v, s, top, a) {
     return "%O";
 }
 
-function __bp_text(v) {
+function __bp_text(v, s) {
     const a = [];
     let i = 0;
-    return __bp_show(v, null, true, a).replace(/%[sO]/g, () => String(a[i++]));
+    return __bp_show(v, s == null ? null : s, true, a).replace(/%[sO]/g, () => String(a[i++]));
 }
 
 class Direction {

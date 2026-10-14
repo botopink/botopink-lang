@@ -4525,6 +4525,10 @@ const Emitter = struct {
                 // The numbers' text — a `string + f64` (and every template hole,
                 // which inference desugars to one) writes the float with its
                 // decimal part, through the helper `@print` shares.
+                // Decision 530 — and every other composite value a hole holds (a
+                // record, an array, a tuple, an optional) is written through the
+                // text helper `@print` shares.
+                if (bin.op == .add) if (try self.holeConcat(bin)) |cat| return cat;
                 if (bin.op == .add) if (try self.floatConcat(bin)) |cat| return cat;
                 // Decision 264 — an integer result outside its type aborts.
                 if (self.intKindAt(bin.loc)) |k| switch (bin.op) {
@@ -5447,6 +5451,36 @@ const Emitter = struct {
             }
         }
         return found;
+    }
+
+    /// The type the checker recorded for a `string +` operand the text helper writes
+    /// (decision 530, `ast.text_hole_col`), or null.
+    fn holeType(self: *Emitter, e: ast.Expr) ?ast.TypeRef {
+        const lw = self.lowerings orelse return null;
+        var key = e.getLoc();
+        key.col += ast.text_hole_col;
+        const il = lw.get(key) orelse return null;
+        return if (il == .text_value) il.text_value else null;
+    }
+
+    /// Decision 530 — `s + v` / `v + s` where the checker says `v` is a composite value
+    /// (a record, an array, a tuple, an optional, an enum): `v` is written by
+    /// `__bp_text(v, shape)`, the text `@print` writes for it, not by JavaScript's
+    /// coercion (`[object Object]`, `1,2,3`). Null for any other `+`.
+    fn holeConcat(self: *Emitter, bin: anytype) anyerror!?js.Expr {
+        const l_ty = self.holeType(bin.lhs.*);
+        const r_ty = self.holeType(bin.rhs.*);
+        if (l_ty == null and r_ty == null) return null;
+        const lhs = try self.buildExpr(bin.lhs.*);
+        const rhs = try self.buildExpr(bin.rhs.*);
+        const lhs_out = if (l_ty) |t| try self.holeText(lhs, t) else lhs;
+        const rhs_out = if (r_ty) |t| try self.holeText(rhs, t) else rhs;
+        return try self.b.binary("+", lhs_out, rhs_out);
+    }
+
+    fn holeText(self: *Emitter, value: js.Expr, ty: ast.TypeRef) anyerror!js.Expr {
+        if (try self.typeShape(ty)) |shape| return self.b.call(self.helper(.text), &.{ value, shape });
+        return self.b.call(self.helper(.text), &.{value});
     }
 
     /// `s + f` / `f + s` where one operand is statically a `string` and the

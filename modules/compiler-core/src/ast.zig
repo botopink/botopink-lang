@@ -641,6 +641,13 @@ pub const field_key_synthetic_col: usize = 4_000_000;
 /// (a field read, a call) keeps its key.
 pub const text_synthetic_col: usize = 5_000_000;
 
+/// The column added to a `string +` operand's loc (a template hole is one) to key the
+/// `text_value` lowering that says the operand is a value the text helper writes
+/// (decision 530; `infer.textValueLowerings`): a record, an array, a tuple, an optional or an
+/// enum, whose text JavaScript's own coercion would not write as `@print` does. Apart from
+/// `text_synthetic_col`'s, which keys the float reading.
+pub const text_hole_col: usize = 7_000_000;
+
 /// Helper to get the correct call argument type based on phase
 pub fn CallArgOf(comptime phase: Phase) type {
     return struct {
