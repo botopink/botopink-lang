@@ -706,7 +706,7 @@ pub fn build(b: *std.Build) void {
     // `zig build test-analysis-equivalence` — level B's guard 2 (144 B-60):
     // a few cells of rakun, rakun-bpp and rakun-stylesheet built `--cold`, writing
     // `.botopinkbuild/analysis/` and reading it, compared byte for byte on
-    // every target their suites declare (`analysis_equivalence.sh`); also a
+    // every target their features declare (`conformance/<package>/<feature>/<cell>`, decision 548; `analysis_equivalence.sh`); also a
     // `test-cli` script, this step runs it alone.
     const analysis_equivalence_run = cliScript(b, "analysis_equivalence.sh");
     const analysis_equivalence_step = b.step("test-analysis-equivalence", "Build real libraries' consumers cold, writing and reading level B, and compare their output");

@@ -3,7 +3,8 @@
 # cache's level B must answer what analysing answers. For a few conformance
 # cells of rakun's packages `rakun`, `rakun-bpp` and `rakun-stylesheet` — each a
 # consumer of its package — every cell is built three times on every target its
-# suite declares (`conformance/<package>/botopink.json`'s `targets`):
+# feature's manifest declares (`conformance/<package>/<feature>/botopink.json`'s
+# `targets`; the package's first listed cell decides):
 #   • `--cold`  — reads nothing;
 #   • warm      — the first cell of a target writes the package's entry into
 #                 an emptied `.botopinkbuild/analysis/<target>/`, the cells
@@ -44,12 +45,14 @@ fi
 # The workspace repository the packages live in.
 WORKSPACE=rakun
 
-# package:cell,cell,… — a few cells each (`conformance/<package>/<cell>`),
-# enough to read one entry under several consumers.
+# package:feature/cell,feature/cell,… — a few cells each
+# (`conformance/<package>/<feature>/<cell>`, decision 548: a feature directory
+# is the workspace of its cells), enough to read one entry under several
+# consumers.
 PACKAGES=(
-  "rakun-bpp:counter_ssr,link_props"
-  "rakun:scopes,provides"
-  "rakun-stylesheet:alpha,bg-color"
+  "rakun-bpp:components/counter_ssr,client-navigation/link_props"
+  "rakun:container/scopes,container/provides"
+  "rakun-stylesheet:color/alpha,color/bg-color"
 )
 
 # The siblings' directory: the first ancestor holding `repository/<lib>`.
@@ -110,13 +113,15 @@ for spec in "${PACKAGES[@]}"; do
 for w in json.load(open(sys.argv[1])).get("workspaces", []):
     os.makedirs(os.path.join(sys.argv[2], w.split("*")[0]), exist_ok=True)' "$L/botopink.json" "$L"
   copy_tree "$from/$WORKSPACE/modules" "$L/modules"
-  cp "$from/$WORKSPACE/conformance/$lib/botopink.json" "$C/"
   for c in "${cells[@]}"; do
     [[ -d "$from/$WORKSPACE/conformance/$lib/$c" ]] || { fail "$lib: no conformance cell $c"; continue; }
+    mkdir -p "$C/$(dirname "$c")"
+    cp "$from/$WORKSPACE/conformance/$lib/$(dirname "$c")/botopink.json" "$C/$(dirname "$c")/"
     copy_tree "$from/$WORKSPACE/conformance/$lib/$c" "$C/$c"
   done
-  ANALYSIS="$C/.botopinkbuild/analysis"
-  targets="$(python3 -c 'import json,sys; print(" ".join(json.load(open(sys.argv[1]))["targets"]))' "$C/botopink.json")"
+  first="$(dirname "${cells[0]}")"
+  ANALYSIS="$C/$first/.botopinkbuild/analysis"
+  targets="$(python3 -c 'import json,sys; print(" ".join(json.load(open(sys.argv[1]))["targets"]))' "$C/$first/botopink.json")"
 
   for target in $targets; do
     flags=()

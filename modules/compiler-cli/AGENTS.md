@@ -99,7 +99,7 @@ compiler-cli/
 │   └── analysis_equivalence.sh ← level B over real libraries (144 B-60, guard 2,
 │   │                          `test-analysis-equivalence`): two conformance cells
 │   │                          each of rakun's packages `rakun`, `rakun-bpp` and
-│   │                          `rakun-stylesheet` (`conformance/<package>/`) — the checkout's
+│   │                          `rakun-stylesheet` (`conformance/<package>/<feature>/<cell>`, decision 548) — the checkout's
 │   │                          sibling, the first ancestor's `repository/rakun`,
 │   │                          copied to scratch with the other siblings linked —
 │   │                          built `--cold`, writing the library's entry and
