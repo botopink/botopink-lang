@@ -1427,7 +1427,17 @@ superseding decision 55's value `break`): `break <v>` belongs to a generator
 scope and ends it — `emitGenBreak` appends `v` and branches out of the
 `iter` loop's `$__gen{n}` block, or returns a generator fn's array; a bare
 `break` at a generator fn's own level ends it the same way (`emitGenEnd`,
-decision 103).
+decision 103); a bare `return` in a generator fn does the same from any arm
+(`conformance/modules/case_arm_return_in_yielding_arm`).
+
+**A loop's label is read** (front 164 s2c): `wat.zig`'s `loop_stack` holds the
+loops being lowered with their labels (`for :outer (…)`). A labelled loop gets two
+extra blocks: `$__lbrk_<label>` around its `$__break` block and `$__lnext_<label>`
+around one iteration's body, and `emitLoopJump` sends `break :label` /
+`continue :label` there — out of every loop between, running the defers of each
+iteration crossed (`LoopFrame.floor`); a bare jump, or a label no loop carries,
+still branches to the innermost `$__break` / `$__next`. A `case` arm's block is no
+closure, so its jumps take the same `br`. `conformance/modules/block_jump_label_*`.
 
 **A range pattern tests both ends** ([decision 53](../../../../../../../specs/1.0.5-beta/decisions-taken.md)):
 `1...9` arrives as a `.variant` whose `shape` is `.range` with the two bounds in

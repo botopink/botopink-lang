@@ -2285,6 +2285,10 @@ const Emitter = struct {
     /// `defer_stack`'s length where the innermost loop began: a `break` or a
     /// `continue` runs the entries above it.
     defer_loop_floor: usize = 0,
+    /// The loops being lowered, innermost last, with their labels
+    /// (`for :outer (...)`): a labelled `break`/`continue` branches to the
+    /// named loop's own blocks, out of every loop between (164 s2c).
+    loop_stack: std.ArrayListUnmanaged(LoopFrame) = .empty,
     /// The function body `renderBody` lowers, whose value type is
     /// `cur_result` — the one block with a value that can sit in a
     /// `try_table` region.
@@ -5378,7 +5382,7 @@ const Emitter = struct {
         try self.emitAt(8, .{ .array_get = .{ .ty = ti } });
         if (cls == .any) try self.gcUnbox(er);
         try self.emitAt(8, .{ .local_set = elem });
-        try self.emitIterationBody(lp.body);
+        try self.emitIterationBody(lp.body, lp.label);
         try self.emitAt(8, .{ .local_get = cur });
         try self.emitAt(8, one);
         try self.emitAt(8, opOf(.i32, "add"));
@@ -5386,7 +5390,7 @@ const Emitter = struct {
         try self.emitAt(8, .{ .br = continue_label });
         const loop_seq = self.seal(&loop_c, .terminated);
 
-        try self.emitLoopBlock(loop_seq);
+        try self.emitLoopBlock(loop_seq, lp.label);
         if (result) |r| try self.emit(.{ .local_get = r }) else try self.emit(zero);
     }
 
@@ -6905,6 +6909,7 @@ const Emitter = struct {
         self.loop_depth = 0;
         self.defer_stack.clearRetainingCapacity();
         self.defer_loop_floor = 0;
+        self.loop_stack.clearRetainingCapacity();
         self.defer_fn_body = null;
         self.tail_self = null;
         self.tail_self_used = false;
@@ -9153,6 +9158,12 @@ const Emitter = struct {
         switch (stmt.expr) {
             .jump => |j| switch (j.kind) {
                 .@"return" => |r0| {
+                    // A bare `return` in a generator fn ends the generator
+                    // with what it yielded so far, from any arm (164 s2c).
+                    if (r0 == null and self.yield_target != null and self.gen_end == null) {
+                        try self.emitGenEnd();
+                        return .terminated;
+                    }
                     const r = try self.adoptTask(r0);
                     if (r) |val| if (try self.lowerSelfTailCall(val.*)) return .terminated;
                     if (r) |val| {
@@ -9229,8 +9240,7 @@ const Emitter = struct {
                         return .value;
                     }
                     if (self.loop_depth > 0) {
-                        try self.runDefers(self.defer_loop_floor);
-                        try self.emit(.{ .br = break_label });
+                        try self.emitLoopJump(br.label, true);
                         return .terminated;
                     }
                     // Decision 103: a bare `break` at a generator body's own
@@ -9252,10 +9262,9 @@ const Emitter = struct {
                     }
                     return .none;
                 },
-                .@"continue" => {
+                .@"continue" => |cj| {
                     if (self.loop_depth > 0) {
-                        try self.runDefers(self.defer_loop_floor);
-                        try self.emit(.{ .br = next_label });
+                        try self.emitLoopJump(cj.label, false);
                         return .terminated;
                     }
                     return .none;
@@ -9922,6 +9931,10 @@ const Emitter = struct {
             },
             .jump => |j| switch (j.kind) {
                 .@"return" => |r0| {
+                    if (r0 == null and self.yield_target != null and self.gen_end == null) {
+                        try self.emitGenEnd();
+                        return;
+                    }
                     const r = try self.adoptTask(r0);
                     if (r) |val| if (try self.lowerSelfTailCall(val.*)) return;
                     if (r) |val| try self.lowerExpr(val.*) else if (self.fn_has_result) try self.pushZero();
@@ -9940,8 +9953,7 @@ const Emitter = struct {
                             try self.emitGenBreak(v.*);
                         } else try self.lowerExpr(v.*);
                     } else if (self.loop_depth > 0) {
-                        try self.runDefers(self.defer_loop_floor);
-                        try self.emit(.{ .br = break_label });
+                        try self.emitLoopJump(br.label, true);
                     } else if (self.yield_target != null) {
                         // Decision 103 — see the statement-position arm above.
                         try self.emitGenEnd();
@@ -9952,9 +9964,8 @@ const Emitter = struct {
                         if (self.yield_target != null) try self.emitYield(v.*) else try self.lowerExpr(v.*);
                     }
                 },
-                .@"continue" => if (self.loop_depth > 0) {
-                    try self.runDefers(self.defer_loop_floor);
-                    try self.emit(.{ .br = next_label });
+                .@"continue" => |cj| if (self.loop_depth > 0) {
+                    try self.emitLoopJump(cj.label, false);
                 } else return self.refuse(e.getLoc(), "`continue` outside a loop", .{}),
             },
             .comptime_ => |ct| switch (ct.kind) {
@@ -14685,7 +14696,7 @@ const Emitter = struct {
         try self.emitAt(8, .{ .local_set = cur });
         try self.emitAt(8, .{ .br = continue_label });
         const loop_seq = self.seal(&loop_c, .terminated);
-        try self.emitLoopBlock(loop_seq);
+        try self.emitLoopBlock(loop_seq, null);
 
         switch (hof) {
             for_each => {},
@@ -20402,7 +20413,7 @@ const Emitter = struct {
         switch (lp.iter.*) {
             .collection => |col| switch (col.kind) {
                 .range => |r| {
-                    try self.lowerRangeLoop(lp.params, lp.body, r, result);
+                    try self.lowerRangeLoop(lp.params, lp.body, r, result, lp.label);
                     return;
                 },
                 else => {},
@@ -20687,7 +20698,7 @@ const Emitter = struct {
         try self.emitAt(8, .{ .load = .{ .offset = 4 } });
         if (elem_kind == .f64) try self.emitAt(8, .{ .load = .{ .ty = .f64 } });
         try self.emitAt(8, .{ .local_set = elem });
-        try self.emitIterationBody(lp.body);
+        try self.emitIterationBody(lp.body, lp.label);
         try self.emitAt(8, .{ .local_get = cur });
         try self.emitAt(8, one);
         try self.emitAt(8, opOf(.i32, "add"));
@@ -20695,14 +20706,14 @@ const Emitter = struct {
         try self.emitAt(8, .{ .br = continue_label });
         const loop_seq = self.seal(&loop_c, .terminated);
 
-        try self.emitLoopBlock(loop_seq);
+        try self.emitLoopBlock(loop_seq, lp.label);
         if (result) |r| try self.emit(.{ .local_get = r }) else try self.emit(zero);
     }
 
     /// One iteration's statements. A body that `continue`s is wrapped in
     /// `(block $__next …)` so the jump lands on the step; `loop_depth` lets
     /// `break`/`continue` branch at all.
-    fn emitIterationBody(self: *Emitter, body: []const ast.Stmt) anyerror!void {
+    fn emitIterationBody(self: *Emitter, body: []const ast.Stmt, label: ?[]const u8) anyerror!void {
         const scope_mark = self.scopeMark();
         defer self.scopeRestore(scope_mark);
         self.loop_depth += 1;
@@ -20712,6 +20723,20 @@ const Emitter = struct {
         const saved_floor = self.defer_loop_floor;
         self.defer_loop_floor = self.defer_stack.items.len;
         defer self.defer_loop_floor = saved_floor;
+        try self.loop_stack.append(self.arena(), .{ .label = label, .floor = self.defer_stack.items.len });
+        defer _ = self.loop_stack.pop();
+        // A labelled loop's iteration sits in `(block $__lnext_<label> ...)`, so
+        // a `continue :label` from an inner loop reaches its step.
+        var wrap: Capture = .{};
+        if (label != null) self.open(&wrap);
+        try self.emitIterationInner(body);
+        if (label) |l| {
+            const seq = self.seal(&wrap, .none);
+            try self.emitAt(8, .{ .block = .{ .kind = .block, .label = try self.loopLabel("__lnext_", l), .body = seq } });
+        }
+    }
+
+    fn emitIterationInner(self: *Emitter, body: []const ast.Stmt) anyerror!void {
         const mark = self.defer_stack.items.len;
         if (!bodyContinues(body)) {
             const tail = try self.emitStmtsFrom(body, 0, false, null, true);
@@ -20724,6 +20749,33 @@ const Emitter = struct {
         try self.closeDefers(mark, tail);
         const seq = self.seal(&c, .none);
         try self.emitAt(8, .{ .block = .{ .kind = .block, .label = next_label, .body = seq } });
+    }
+
+    const LoopFrame = struct { label: ?[]const u8, floor: usize };
+
+    fn loopLabel(self: *Emitter, prefix: []const u8, label: []const u8) ![]const u8 {
+        return std.fmt.allocPrint(self.reg_arena.allocator(), "{s}{s}", .{ prefix, label });
+    }
+
+    /// `break` / `continue`, bare or labelled: a bare one (or a label no
+    /// enclosing loop carries) leaves the innermost loop; `:label` branches to
+    /// the named loop's own blocks, out of every loop between, the defers of
+    /// every iteration crossed run first.
+    fn emitLoopJump(self: *Emitter, label: ?[]const u8, is_break: bool) anyerror!void {
+        if (label) |l| {
+            var i = self.loop_stack.items.len;
+            while (i > 0) {
+                i -= 1;
+                const fr = self.loop_stack.items[i];
+                if (fr.label) |fl| if (std.mem.eql(u8, fl, l)) {
+                    try self.runDefers(fr.floor);
+                    try self.emit(.{ .br = try self.loopLabel(if (is_break) "__lbrk_" else "__lnext_", l) });
+                    return;
+                };
+            }
+        }
+        try self.runDefers(self.defer_loop_floor);
+        try self.emit(.{ .br = if (is_break) break_label else next_label });
     }
 
     fn bodyContinues(body: []const ast.Stmt) bool {
@@ -20881,7 +20933,17 @@ const Emitter = struct {
     /// to the step.
     const next_label = "__next";
 
-    fn emitLoopBlock(self: *Emitter, body: Seq) !void {
+    fn emitLoopBlock(self: *Emitter, body: Seq, label: ?[]const u8) !void {
+        var outer_c: Capture = .{};
+        if (label != null) self.open(&outer_c);
+        try self.emitLoopBlockPlain(body);
+        if (label) |l| {
+            const seq = self.seal(&outer_c, .none);
+            try self.emit(.{ .block = .{ .kind = .block, .label = try self.loopLabel("__lbrk_", l), .body = seq } });
+        }
+    }
+
+    fn emitLoopBlockPlain(self: *Emitter, body: Seq) !void {
         var block_c: Capture = .{};
         self.open(&block_c);
         try self.emitAt(6, .{ .block = .{
@@ -20921,15 +20983,15 @@ const Emitter = struct {
         }
         try self.emitAt(8, opOf(.i32, "eqz"));
         try self.emitAt(8, .{ .br_if = break_label });
-        try self.emitIterationBody(lp.body);
+        try self.emitIterationBody(lp.body, lp.label);
         try self.emitAt(8, .{ .br = continue_label });
         const loop_seq = self.seal(&loop_c, .terminated);
 
-        try self.emitLoopBlock(loop_seq);
+        try self.emitLoopBlock(loop_seq, lp.label);
         if (result) |res| try self.emit(.{ .local_get = res }) else try self.emit(zero);
     }
 
-    fn lowerRangeLoop(self: *Emitter, params: []const []const u8, body: []const ast.Stmt, r: anytype, result: ?[]const u8) anyerror!void {
+    fn lowerRangeLoop(self: *Emitter, params: []const []const u8, body: []const ast.Stmt, r: anytype, result: ?[]const u8, label: ?[]const u8) anyerror!void {
         const scope_mark = self.scopeMark();
         defer self.scopeRestore(scope_mark);
         const param0 = if (params.len > 0) params[0] else "__i";
@@ -20954,7 +21016,7 @@ const Emitter = struct {
             try self.emitAt(8, .{ .br_if = break_label });
         }
 
-        try self.emitIterationBody(body);
+        try self.emitIterationBody(body, label);
 
         try self.emitAt(8, .{ .local_get = param });
         try self.emitAt(8, one);
@@ -20963,7 +21025,7 @@ const Emitter = struct {
         try self.emitAt(8, .{ .br = continue_label });
         const loop_seq = self.seal(&loop_c, .terminated);
 
-        try self.emitLoopBlock(loop_seq);
+        try self.emitLoopBlock(loop_seq, label);
         if (result) |res| try self.emit(.{ .local_get = res }) else try self.emit(zero);
     }
 
