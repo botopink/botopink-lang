@@ -1256,10 +1256,7 @@ fn countLocalsInExpr(em: *Emitter, e: ast.Expr, count: *u32) void {
             // …and one that `continue`s a labelled loop whose fun encloses it.
             if (lp.generator == null and !lp.condition) for (em.label_funs.items) |lf| {
                 if (lp.label != null and std.mem.eql(u8, lp.label.?, lf.label)) continue;
-                if (ast.bodyJumpsLabel(lp.body, lf.label, .@"continue")) {
-                    count.* += 1;
-                    break;
-                }
+                if (ast.bodyJumpsLabel(lp.body, lf.label, .@"continue")) count.* += 1;
             };
             // An annotated loop (decision 105) runs in this frame with its
             // item accumulator, and so does every `for` inside it that yields.
@@ -12336,59 +12333,73 @@ const Emitter = struct {
     /// `break` (`guardLoopBreak`). Each takes a tag slot `countLocalsInExpr`
     /// reserves.
     fn emitLoopCall(self: *Emitter, body: []const ast.Stmt, label: ?[]const u8, call: anytype) anyerror!void {
-        const Guarded = struct {
-            inner: @TypeOf(call),
-            body: []const ast.Stmt,
-            fn emit(g: @This(), em: *Emitter) anyerror!void {
-                if (bodyPropagates(g.body)) {
-                    const tag = em.next_y;
-                    em.next_y += 1;
-                    try em.guardLoopCall(tag, g.inner);
-                } else try g.inner.emit(em);
-            }
-        };
-        const guarded: Guarded = .{ .inner = call, .body = body };
-        const Bare = struct {
-            inner: Guarded,
-            body: []const ast.Stmt,
-            fn emit(g: @This(), em: *Emitter) anyerror!void {
-                if (bodyBreaksBare(g.body)) {
-                    const tag = em.next_y;
-                    em.next_y += 1;
-                    try em.guardLoopBreak(tag, g.inner);
-                } else try g.inner.emit(em);
-            }
-        };
-        const bare: Bare = .{ .inner = guarded, .body = body };
-        const Cont = struct {
-            inner: Bare,
-            lf_label: []const u8,
-            fn emit(g: @This(), em: *Emitter) anyerror!void {
-                const tag = em.next_y;
-                em.next_y += 1;
-                try em.guardLabelContinue(tag, g.lf_label, g.inner);
-            }
-        };
+        // The guards nest, and OTP wants an inner catch tag in a lower Y
+        // register than the enclosing one: the slots are reserved together and
+        // dealt from the top, outermost guard first.
+        var conts: std.ArrayListUnmanaged([]const u8) = .empty;
+        defer conts.deinit(self.alloc);
         for (self.label_funs.items) |lf| {
             if (label != null and std.mem.eql(u8, label.?, lf.label)) continue;
             if (lf.out != self.out or !ast.bodyJumpsLabel(body, lf.label, .@"continue")) continue;
-            const cont: Cont = .{ .inner = bare, .lf_label = lf.label };
-            if (label) |l| if (ast.bodyBreaksLabel(body, l)) {
-                const tag = self.next_y;
-                self.next_y += 1;
-                try self.guardLabelBreak(tag, l, cont);
-                return;
-            };
-            try cont.emit(self);
-            return;
+            try conts.append(self.alloc, lf.label);
         }
-        if (label) |l| if (ast.bodyBreaksLabel(body, l)) {
-            const tag = self.next_y;
-            self.next_y += 1;
-            try self.guardLabelBreak(tag, l, bare);
-            return;
+        const brk_label: ?[]const u8 = if (label) |l| (if (ast.bodyBreaksLabel(body, l)) l else null) else null;
+        const n: u32 = @as(u32, @intCast(conts.items.len)) + @intFromBool(brk_label != null) +
+            @intFromBool(bodyBreaksBare(body)) + @intFromBool(bodyPropagates(body));
+        var top: u32 = self.next_y + n;
+        self.next_y += n;
+
+        const Guarded = struct {
+            inner: @TypeOf(call),
+            body: []const ast.Stmt,
+            top: *u32,
+            fn emit(g: @This(), em: *Emitter) anyerror!void {
+                if (bodyPropagates(g.body)) {
+                    g.top.* -= 1;
+                    try em.guardLoopCall(g.top.*, g.inner);
+                } else try g.inner.emit(em);
+            }
         };
-        try bare.emit(self);
+        const guarded: Guarded = .{ .inner = call, .body = body, .top = &top };
+        const Bare = struct {
+            inner: Guarded,
+            body: []const ast.Stmt,
+            top: *u32,
+            fn emit(g: @This(), em: *Emitter) anyerror!void {
+                if (bodyBreaksBare(g.body)) {
+                    g.top.* -= 1;
+                    try em.guardLoopBreak(g.top.*, g.inner);
+                } else try g.inner.emit(em);
+            }
+        };
+        const bare: Bare = .{ .inner = guarded, .body = body, .top = &top };
+        const Brk = struct {
+            inner: Bare,
+            label: ?[]const u8,
+            top: *u32,
+            fn emit(g: @This(), em: *Emitter) anyerror!void {
+                if (g.label) |l| {
+                    g.top.* -= 1;
+                    try em.guardLabelBreak(g.top.*, l, g.inner);
+                } else try g.inner.emit(em);
+            }
+        };
+        const brk: Brk = .{ .inner = bare, .label = brk_label, .top = &top };
+        // One guard per enclosing labelled loop this loop continues from this
+        // frame, outside the break guard: a guard's catch returns the round,
+        // so no other section may still be open there.
+        const Cont = struct {
+            inner: Brk,
+            labels: []const []const u8,
+            top: *u32,
+            fn emit(g: @This(), em: *Emitter) anyerror!void {
+                if (g.labels.len == 0) return g.inner.emit(em);
+                g.top.* -= 1;
+                try em.guardLabelContinue(g.top.*, g.labels[0], @This(){ .inner = g.inner, .labels = g.labels[1..], .top = g.top });
+            }
+        };
+        const cont: Cont = .{ .inner = brk, .labels = conts.items, .top = &top };
+        try cont.emit(self);
     }
 
     /// The label of a loop that a `break :label` of its body leaves, else null.
@@ -12454,7 +12465,20 @@ const Emitter = struct {
             i -= 1;
             const lf = self.label_funs.items[i];
             if (!std.mem.eql(u8, lf.label, label)) continue;
-            if (lf.out == self.out) return false;
+            if (lf.out == self.out) {
+                // Written in the labelled loop's own fun: its plain `continue`
+                // ends the round, unless an in-frame `while` of this fun sits
+                // between (its `continue` is the `while`'s): the round ends
+                // here, answering the fold's group.
+                if (self.inCondLoop() == null) return false;
+                if (self.fold_group) |names| {
+                    try self.emitGroupIntoX0(names);
+                } else {
+                    try beamEmitter.writeMoveOp(self.out, Op.atom("ok"), Dst.xr(0));
+                }
+                try self.emitReturn();
+                return true;
+            }
             if (lf.names.len > 0) try self.emitGroupIntoX0(lf.names) else try beamEmitter.writeMoveOp(self.out, Op.atom("ok"), Dst.xr(0));
             try beamEmitter.writeTestHeap(self.out, 4, 1);
             try beamEmitter.writePutTuple2(self.out, Dst.xr(0), &.{ Op.atom(label_continue_signal), Op.atom(label), Op.xr(0) });

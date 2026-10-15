@@ -1660,7 +1660,9 @@ codegen/
     around the loop's call (`guardLabelBreak`), and restarted by `throw({'__bp_label_continue', 'outer', Group})`, caught
     around the nested loop's call inside the labelled loop's own fun (`guardLabelContinue`) and answered as the round's
     result. The names a fold threads travel in the nested funs' environments (`closureEnv`) so the throw can read them.
-    A `continue :outer` of a fun-walked loop written under an in-frame `while` inside it is not lowered.
+    A `continue :outer` written under an in-frame `while` inside the fun-walked loop ends the round there (`lowerLabelContinue`,
+    `inCondLoop`), and one inner loop that continues several enclosing labels gets one guard per label, outside its break guard
+    (`emitLoopCall`) (`modules/block_jump_label_continue_nested_shapes`).
   - **A generator scope** — a `@Iterator` / `@Stream`
     fn or method (whose effect `methodEffect` reads off the annotations), or an
     annotated `loop` — is eager: its items are pushed onto a list held in the
