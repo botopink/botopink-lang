@@ -11,6 +11,10 @@ fn main() {
 ----- WASM TEXT -- main.wat
 ```wasm
 (module
+  (rec
+    (type $str (array (mut i8)))
+    (type $arr_i32 (array (mut i32)))
+  )
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
   (global $__heap_ptr (mut i32) (i32.const 256))
@@ -19,31 +23,19 @@ fn main() {
     (local $__mem1 i32)
     (local $x i32)
     (local $first i32)
-    (local $__iter0 i32)
+    (local $__iter0 (ref null $arr_i32))
     (local $__idx0 i32)
     (local $__len0 i32)
-    (local $__iter1 i32)
+    (local $__iter1 (ref null $arr_i32))
     (local $__idx1 i32)
     (local $__len1 i32)
-    i32.const 16
-    call $__alloc
-    local.set $__mem0
-    local.get $__mem0
-    i32.const 3
-    i32.store
-    local.get $__mem0
     i32.const 1
-    i32.store offset=4
-    local.get $__mem0
     i32.const 2
-    i32.store offset=8
-    local.get $__mem0
     i32.const 3
-    i32.store offset=12
-    local.get $__mem0
+    array.new_fixed $arr_i32 3
     local.set $__iter0
     local.get $__iter0
-    i32.load ;; element count
+    array.len
     local.set $__len0
     i32.const 0
     local.set $__idx0
@@ -55,10 +47,7 @@ fn main() {
         br_if $__break
         local.get $__iter0
         local.get $__idx0
-        i32.const 4
-        i32.mul
-        i32.add
-        i32.load offset=4
+        array.get $arr_i32
         local.set $x
     local.get $x
     call $__print_i32
@@ -73,25 +62,13 @@ fn main() {
     drop
     i32.const 0
     local.set $first
-    i32.const 16
-    call $__alloc
-    local.set $__mem1
-    local.get $__mem1
-    i32.const 3
-    i32.store
-    local.get $__mem1
     i32.const 1
-    i32.store offset=4
-    local.get $__mem1
     i32.const 2
-    i32.store offset=8
-    local.get $__mem1
     i32.const 3
-    i32.store offset=12
-    local.get $__mem1
+    array.new_fixed $arr_i32 3
     local.set $__iter1
     local.get $__iter1
-    i32.load ;; element count
+    array.len
     local.set $__len1
     i32.const 0
     local.set $__idx1
@@ -103,10 +80,7 @@ fn main() {
         br_if $__break
         local.get $__iter1
         local.get $__idx1
-        i32.const 4
-        i32.mul
-        i32.add
-        i32.load offset=4
+        array.get $arr_i32
         local.set $x
     local.get $x
     i32.const 2
@@ -319,54 +293,6 @@ fn main() {
       )
     )
   )
-  (func $__alloc (param $n i32) (result i32)
-    (local $p i32) (local $e i32)
-    global.get $__heap_ptr
-    local.set $p
-    local.get $p
-    local.get $n
-    i32.add
-    i32.const 3
-    i32.add
-    i32.const -4
-    i32.and
-    local.set $e
-    local.get $e
-    local.get $p
-    i32.lt_u
-    (if
-      (then
-        unreachable
-      )
-    )
-    local.get $e
-    memory.size
-    i32.const 16
-    i32.shl
-    i32.gt_u
-    (if
-      (then
-        local.get $e
-        i32.const 65535
-        i32.add
-        i32.const 16
-        i32.shr_u
-        memory.size
-        i32.sub
-        memory.grow
-        i32.const -1
-        i32.eq
-        (if
-          (then
-            unreachable
-          )
-        )
-      )
-    )
-    local.get $e
-    global.set $__heap_ptr
-    local.get $p
-  )
   (func $__i32_add_chk (param $a i32) (param $b i32) (result i32)
     (local $r i64)
     local.get $a
@@ -511,6 +437,7 @@ fn main() {
     )
     local.get $r
   )
+  (@custom "botopink.needs" "gc\0a")
 )
 ```
 

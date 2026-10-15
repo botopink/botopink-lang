@@ -16,73 +16,19 @@ pub type App(
 ----- WASM TEXT -- http.wat
 ```wasm
 (module
+  (rec
+    (type $str (array (mut i8)))
+    (type $rec_Response (struct (field $f0 (mut (ref null $str)))))
+  )
   (memory (export "memory") 1)
-  (data (i32.const 256) "\11\00\00\00R\08Response\01\04bodys")
-  (global $__heap_ptr (mut i32) (i32.const 280))
-  (func $Response_ok (param $body i32) (result i32)
+  (global $__heap_ptr (mut i32) (i32.const 256))
+  (func $Response_ok (param $body (ref null $str)) (result (ref null $rec_Response))
     (local $__mem0 i32)
-    i32.const 8
-    call $__alloc
-    local.set $__mem0
-    local.get $__mem0
-    i32.const 260
-    i32.store
-    local.get $__mem0
     local.get $body
-    i32.store offset=4
-    local.get $__mem0
-    i32.const 4
-    i32.add
+    struct.new $rec_Response
     return
   )
-  (func $__alloc (param $n i32) (result i32)
-    (local $p i32) (local $e i32)
-    global.get $__heap_ptr
-    local.set $p
-    local.get $p
-    local.get $n
-    i32.add
-    i32.const 3
-    i32.add
-    i32.const -4
-    i32.and
-    local.set $e
-    local.get $e
-    local.get $p
-    i32.lt_u
-    (if
-      (then
-        unreachable
-      )
-    )
-    local.get $e
-    memory.size
-    i32.const 16
-    i32.shl
-    i32.gt_u
-    (if
-      (then
-        local.get $e
-        i32.const 65535
-        i32.add
-        i32.const 16
-        i32.shr_u
-        memory.size
-        i32.sub
-        memory.grow
-        i32.const -1
-        i32.eq
-        (if
-          (then
-            unreachable
-          )
-        )
-      )
-    )
-    local.get $e
-    global.set $__heap_ptr
-    local.get $p
-  )
+  (@custom "botopink.needs" "gc\0a")
 )
 ```
 
@@ -105,57 +51,36 @@ fn main() {
 ----- WASM TEXT -- main.wat
 ```wasm
 (module
+  (rec
+    (type $str (array (mut i8)))
+    (type $rec_Response (struct (field $f0 (mut (ref null $str)))))
+    (type $rec_App (struct (field $f0 (mut i32)) (field $f1 (mut (ref null $str)))))
+  )
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
-  (data (i32.const 256) "\11\00\00\00R\08Response\01\04bodys")
-  (data (i32.const 280) "\02\00\00\00hi")
-  (data (i32.const 288) "\12\00\00\00R\03App\02\04porti\04paths")
-  (data (i32.const 312) "\01\00\00\00/")
-  (global $__heap_ptr (mut i32) (i32.const 320))
-  (func $Response_ok (param $body i32) (result i32)
+  (global $__heap_ptr (mut i32) (i32.const 256))
+  (func $Response_ok (param $body (ref null $str)) (result (ref null $rec_Response))
     (local $__mem0 i32)
-    i32.const 8
-    call $__alloc
-    local.set $__mem0
-    local.get $__mem0
-    i32.const 260
-    i32.store
-    local.get $__mem0
     local.get $body
-    i32.store offset=4
-    local.get $__mem0
-    i32.const 4
-    i32.add
+    struct.new $rec_Response
     return
   )
   (func $main
     (local $__mem0 i32)
-    (local $r i32)
-    (local $a i32)
-    i32.const 280
+    (local $r (ref null $rec_Response))
+    (local $a (ref null $rec_App))
+    global.get $__s0
     call $Response_ok
     local.set $r
     local.get $r
-    i32.load ;; .body
+    struct.get $rec_Response $f0
     call $__print_str
-    i32.const 12
-    call $__alloc
-    local.set $__mem0
-    local.get $__mem0
-    i32.const 292
-    i32.store
-    local.get $__mem0
     i32.const 8080
-    i32.store offset=4
-    local.get $__mem0
-    i32.const 312
-    i32.store offset=8
-    local.get $__mem0
-    i32.const 4
-    i32.add
+    global.get $__s1
+    struct.new $rec_App
     local.set $a
     local.get $a
-    i32.load ;; .port
+    struct.get $rec_App $f0
     call $__print_i32
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")
@@ -341,24 +266,43 @@ fn main() {
       )
     )
   )
-  (func $__print_str_raw (param $s i32)
+  (func $__print_str_raw (param $s (ref null $str))
+    (local $n i32) (local $p i32) (local $i i32) (local $top i32)
     local.get $s
-    i32.const 256
-    i32.lt_u
-    (if
-      (then
-        ;; a pointer below the data floor is not a string
-        unreachable
+    array.len
+    local.set $n
+    global.get $__heap_ptr
+    local.set $top
+    local.get $n
+    call $__alloc
+    local.set $p
+    (block $brk
+      (loop $cont
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $brk
+        local.get $p
+        local.get $i
+        i32.add
+        local.get $s
+        local.get $i
+        array.get_u $str
+        i32.store8
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $cont
       )
     )
-    local.get $s
-    i32.const 4
-    i32.add
-    local.get $s
-    i32.load
+    local.get $p
+    local.get $n
     call $__write_bytes
+    local.get $top
+    global.set $__heap_ptr
   )
-  (func $__print_str (param $s i32)
+  (func $__print_str (param $s (ref null $str))
     local.get $s
     call $__print_str_raw
     call $__print_nl
@@ -411,6 +355,22 @@ fn main() {
     global.set $__heap_ptr
     local.get $p
   )
+  (data $__d0 "hi")
+  (global $__s0 (mut (ref null $str)) (ref.null $str))
+  (data $__d1 "/")
+  (global $__s1 (mut (ref null $str)) (ref.null $str))
+  (start $__init_strs)
+  (func $__init_strs
+    i32.const 0
+    i32.const 2
+    array.new_data $str $__d0
+    global.set $__s0
+    i32.const 0
+    i32.const 1
+    array.new_data $str $__d1
+    global.set $__s1
+  )
+  (@custom "botopink.needs" "gc\0a")
 )
 ```
 

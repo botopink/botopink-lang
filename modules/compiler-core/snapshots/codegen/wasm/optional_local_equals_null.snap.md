@@ -17,12 +17,11 @@ fn main() {
   (memory (export "memory") 1)
   (global $__heap_ptr (mut i32) (i32.const 256))
   (func $main
-    (local $x i32)
-    i32.const 0
+    (local $x anyref)
+    ref.null any
     local.set $x
     local.get $x
-    i32.const 0
-    i32.eq
+    ref.is_null
     (if
       (then
     i32.const 1
@@ -217,6 +216,7 @@ fn main() {
       )
     )
   )
+  (@custom "botopink.needs" "gc\0a")
 )
 ```
 

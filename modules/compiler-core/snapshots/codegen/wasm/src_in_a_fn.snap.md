@@ -12,55 +12,40 @@ fn main() {
 ----- WASM TEXT -- main.wat
 ```wasm
 (module
+  (rec
+    (type $str (array (mut i8)))
+    (type $rec_SourceLocation (struct (field $f0 (mut (ref null $str))) (field $f1 (mut i32)) (field $f2 (mut i32)) (field $f3 (mut (ref null $str)))))
+  )
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
-  (data (i32.const 256) "\2d\00\00\00R\0eSourceLocation\04\04files\04linei\06columni\06fnNames")
-  (data (i32.const 308) "\07\00\00\00main.bp")
-  (data (i32.const 320) "\06\00\00\00locate")
-  (global $__heap_ptr (mut i32) (i32.const 332))
-  (func $locate (result i32)
+  (global $__heap_ptr (mut i32) (i32.const 256))
+  (func $locate (result (ref null $rec_SourceLocation))
     (local $__mem0 i32)
-    i32.const 20
-    call $__alloc
-    local.set $__mem0
-    local.get $__mem0
-    i32.const 260
-    i32.store
-    local.get $__mem0
-    i32.const 308
-    i32.store offset=4
-    local.get $__mem0
+    global.get $__s0
     i32.const 2
-    i32.store offset=8
-    local.get $__mem0
     i32.const 12
-    i32.store offset=12
-    local.get $__mem0
-    i32.const 320
-    i32.store offset=16
-    local.get $__mem0
-    i32.const 4
-    i32.add
+    global.get $__s1
+    struct.new $rec_SourceLocation
     return
   )
   (func $main
-    (local $loc i32)
+    (local $loc (ref null $rec_SourceLocation))
     call $locate
     local.set $loc
     local.get $loc
-    i32.load ;; .file
+    struct.get $rec_SourceLocation $f0
     call $__print_str_raw
     call $__print_sp
     local.get $loc
-    i32.load offset=4 ;; .line
+    struct.get $rec_SourceLocation $f1
     call $__print_i32_raw
     call $__print_sp
     local.get $loc
-    i32.load offset=8 ;; .column
+    struct.get $rec_SourceLocation $f2
     call $__print_i32_raw
     call $__print_sp
     local.get $loc
-    i32.load offset=12 ;; .fnName
+    struct.get $rec_SourceLocation $f3
     call $__print_str
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")
@@ -246,24 +231,43 @@ fn main() {
       )
     )
   )
-  (func $__print_str_raw (param $s i32)
+  (func $__print_str_raw (param $s (ref null $str))
+    (local $n i32) (local $p i32) (local $i i32) (local $top i32)
     local.get $s
-    i32.const 256
-    i32.lt_u
-    (if
-      (then
-        ;; a pointer below the data floor is not a string
-        unreachable
+    array.len
+    local.set $n
+    global.get $__heap_ptr
+    local.set $top
+    local.get $n
+    call $__alloc
+    local.set $p
+    (block $brk
+      (loop $cont
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $brk
+        local.get $p
+        local.get $i
+        i32.add
+        local.get $s
+        local.get $i
+        array.get_u $str
+        i32.store8
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $cont
       )
     )
-    local.get $s
-    i32.const 4
-    i32.add
-    local.get $s
-    i32.load
+    local.get $p
+    local.get $n
     call $__write_bytes
+    local.get $top
+    global.set $__heap_ptr
   )
-  (func $__print_str (param $s i32)
+  (func $__print_str (param $s (ref null $str))
     local.get $s
     call $__print_str_raw
     call $__print_nl
@@ -316,6 +320,22 @@ fn main() {
     global.set $__heap_ptr
     local.get $p
   )
+  (data $__d0 "main.bp")
+  (global $__s0 (mut (ref null $str)) (ref.null $str))
+  (data $__d1 "locate")
+  (global $__s1 (mut (ref null $str)) (ref.null $str))
+  (start $__init_strs)
+  (func $__init_strs
+    i32.const 0
+    i32.const 7
+    array.new_data $str $__d0
+    global.set $__s0
+    i32.const 0
+    i32.const 6
+    array.new_data $str $__d1
+    global.set $__s1
+  )
+  (@custom "botopink.needs" "gc\0a")
 )
 ```
 

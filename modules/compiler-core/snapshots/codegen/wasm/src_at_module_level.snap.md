@@ -10,55 +10,40 @@ fn main() {
 ----- WASM TEXT -- main.wat
 ```wasm
 (module
+  (rec
+    (type $str (array (mut i8)))
+    (type $rec_SourceLocation (struct (field $f0 (mut (ref null $str))) (field $f1 (mut i32)) (field $f2 (mut i32)) (field $f3 (mut (ref null $str)))))
+  )
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
-  (start $__init_globals)
-  (data (i32.const 256) "\00\00\00\00")
-  (data (i32.const 260) "\2d\00\00\00R\0eSourceLocation\04\04files\04linei\06columni\06fnNames")
-  (data (i32.const 312) "\07\00\00\00main.bp")
-  (global $__heap_ptr (mut i32) (i32.const 324))
-  (global $top (mut i32) (i32.const 0))
+  (start $__init_strs)
+  (global $__heap_ptr (mut i32) (i32.const 256))
+  (global $top (mut (ref null $rec_SourceLocation)) (ref.null $rec_SourceLocation))
   (func $main
     global.get $top
-    i32.load ;; .file
+    struct.get $rec_SourceLocation $f0
     call $__print_str_raw
     call $__print_sp
     global.get $top
-    i32.load offset=4 ;; .line
+    struct.get $rec_SourceLocation $f1
     call $__print_i32_raw
     call $__print_sp
     global.get $top
-    i32.load offset=8 ;; .column
+    struct.get $rec_SourceLocation $f2
     call $__print_i32
     global.get $top
-    i32.load offset=12 ;; .fnName
-    i32.const 256
+    struct.get $rec_SourceLocation $f3
+    global.get $__s0
     call $__str_eq
     call $__print_bool
   )
   (func $__init_globals
     (local $__mem0 i32)
-    i32.const 20
-    call $__alloc
-    local.set $__mem0
-    local.get $__mem0
-    i32.const 264
-    i32.store
-    local.get $__mem0
-    i32.const 312
-    i32.store offset=4
-    local.get $__mem0
+    global.get $__s1
     i32.const 1
-    i32.store offset=8
-    local.get $__mem0
     i32.const 11
-    i32.store offset=12
-    local.get $__mem0
-    i32.const 256
-    i32.store offset=16
-    local.get $__mem0
-    i32.const 4
-    i32.add
+    global.get $__s0
+    struct.new $rec_SourceLocation
     global.set $top
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")
@@ -244,24 +229,43 @@ fn main() {
       )
     )
   )
-  (func $__print_str_raw (param $s i32)
+  (func $__print_str_raw (param $s (ref null $str))
+    (local $n i32) (local $p i32) (local $i i32) (local $top i32)
     local.get $s
-    i32.const 256
-    i32.lt_u
-    (if
-      (then
-        ;; a pointer below the data floor is not a string
-        unreachable
+    array.len
+    local.set $n
+    global.get $__heap_ptr
+    local.set $top
+    local.get $n
+    call $__alloc
+    local.set $p
+    (block $brk
+      (loop $cont
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $brk
+        local.get $p
+        local.get $i
+        i32.add
+        local.get $s
+        local.get $i
+        array.get_u $str
+        i32.store8
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $cont
       )
     )
-    local.get $s
-    i32.const 4
-    i32.add
-    local.get $s
-    i32.load
+    local.get $p
+    local.get $n
     call $__write_bytes
+    local.get $top
+    global.set $__heap_ptr
   )
-  (func $__print_str (param $s i32)
+  (func $__print_str (param $s (ref null $str))
     local.get $s
     call $__print_str_raw
     call $__print_nl
@@ -297,41 +301,62 @@ fn main() {
       )
     )
   )
-  (func $__str_eq (param $a i32) (param $b i32) (result i32)
-    (local $i i32) (local $alen i32)
+  (func $__str_eq (param $a (ref null $str)) (param $b (ref null $str)) (result i32)
+    (local $i i32) (local $n i32) (local $an i32) (local $bn i32)
     local.get $a
-    i32.load
-    local.set $alen
-    local.get $alen
+    ref.is_null
+    local.set $an
     local.get $b
-    i32.load
+    ref.is_null
+    local.set $bn
+    local.get $an
+    local.get $bn
+    i32.or
+    (if
+      (then
+        local.get $an
+        local.get $bn
+        i32.and
+        return
+      )
+    )
+    local.get $a
+    array.len
+    local.set $n
+    local.get $n
+    local.get $b
+    array.len
     i32.ne
     (if
-      (then i32.const 0 return)
+      (then
+        i32.const 0
+        return
+      )
     )
-    (block $done
-      (loop $cmp
+    (block $brk
+      (loop $cont
         local.get $i
-        local.get $alen
+        local.get $n
         i32.ge_u
-        br_if $done
+        br_if $brk
         local.get $a
         local.get $i
-        i32.add
-        i32.load8_u offset=4
+        array.get_u $str
         local.get $b
         local.get $i
-        i32.add
-        i32.load8_u offset=4
+        array.get_u $str
         i32.ne
         (if
-          (then i32.const 0 return)
+          (then
+            i32.const 0
+            return
+          )
         )
         local.get $i
         i32.const 1
         i32.add
         local.set $i
-        br $cmp
+        br $cont
       )
     )
     i32.const 1
@@ -384,6 +409,22 @@ fn main() {
     global.set $__heap_ptr
     local.get $p
   )
+  (data $__d0 "")
+  (global $__s0 (mut (ref null $str)) (ref.null $str))
+  (data $__d1 "main.bp")
+  (global $__s1 (mut (ref null $str)) (ref.null $str))
+  (func $__init_strs
+    i32.const 0
+    i32.const 0
+    array.new_data $str $__d0
+    global.set $__s0
+    i32.const 0
+    i32.const 7
+    array.new_data $str $__d1
+    global.set $__s1
+    call $__init_globals
+  )
+  (@custom "botopink.needs" "gc\0a")
 )
 ```
 

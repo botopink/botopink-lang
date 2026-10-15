@@ -12,10 +12,22 @@ fn allThree(a: bool, b: bool, c: bool) -> bool {
   (global $__heap_ptr (mut i32) (i32.const 256))
   (func $allThree (param $a i32) (param $b i32) (param $c i32) (result i32)
     local.get $a
+    (if (result i32)
+      (then
     local.get $b
-    i32.and
+      )
+      (else
+    i32.const 0
+      )
+    )
+    (if (result i32)
+      (then
     local.get $c
-    i32.and
+      )
+      (else
+    i32.const 0
+      )
+    )
     return
   )
 )

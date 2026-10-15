@@ -15,13 +15,17 @@ fn main() {
 ----- WASM TEXT -- main.wat
 ```wasm
 (module
+  (rec
+    (type $str (array (mut i8)))
+    (type $arr_i32 (array (mut i32)))
+  )
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
   (global $__heap_ptr (mut i32) (i32.const 256))
-  (func $find (param $arr i32) (result i32)
+  (func $find (param $arr (ref null $arr_i32)) (result i32)
     (local $found i32)
     (local $x i32)
-    (local $__iter0 i32)
+    (local $__iter0 (ref null $arr_i32))
     (local $__idx0 i32)
     (local $__len0 i32)
     i32.const 0
@@ -29,7 +33,7 @@ fn main() {
     local.get $arr
     local.set $__iter0
     local.get $__iter0
-    i32.load ;; element count
+    array.len
     local.set $__len0
     i32.const 0
     local.set $__idx0
@@ -41,10 +45,7 @@ fn main() {
         br_if $__break
         local.get $__iter0
         local.get $__idx0
-        i32.const 4
-        i32.mul
-        i32.add
-        i32.load offset=4
+        array.get $arr_i32
         local.set $x
     local.get $x
     i32.const 10
@@ -74,25 +75,11 @@ fn main() {
   )
   (func $main
     (local $__mem0 i32)
-    i32.const 20
-    call $__alloc
-    local.set $__mem0
-    local.get $__mem0
-    i32.const 4
-    i32.store
-    local.get $__mem0
     i32.const 5
-    i32.store offset=4
-    local.get $__mem0
     i32.const 8
-    i32.store offset=8
-    local.get $__mem0
     i32.const 15
-    i32.store offset=12
-    local.get $__mem0
     i32.const 20
-    i32.store offset=16
-    local.get $__mem0
+    array.new_fixed $arr_i32 4
     call $find
     call $__print_i32
   )
@@ -279,54 +266,7 @@ fn main() {
       )
     )
   )
-  (func $__alloc (param $n i32) (result i32)
-    (local $p i32) (local $e i32)
-    global.get $__heap_ptr
-    local.set $p
-    local.get $p
-    local.get $n
-    i32.add
-    i32.const 3
-    i32.add
-    i32.const -4
-    i32.and
-    local.set $e
-    local.get $e
-    local.get $p
-    i32.lt_u
-    (if
-      (then
-        unreachable
-      )
-    )
-    local.get $e
-    memory.size
-    i32.const 16
-    i32.shl
-    i32.gt_u
-    (if
-      (then
-        local.get $e
-        i32.const 65535
-        i32.add
-        i32.const 16
-        i32.shr_u
-        memory.size
-        i32.sub
-        memory.grow
-        i32.const -1
-        i32.eq
-        (if
-          (then
-            unreachable
-          )
-        )
-      )
-    )
-    local.get $e
-    global.set $__heap_ptr
-    local.get $p
-  )
+  (@custom "botopink.needs" "gc\0a")
 )
 ```
 

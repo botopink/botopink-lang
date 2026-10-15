@@ -16,8 +16,14 @@ fn main() {
   (global $__heap_ptr (mut i32) (i32.const 256))
   (func $both (param $a i32) (param $b i32) (result i32)
     local.get $a
+    (if (result i32)
+      (then
     local.get $b
-    i32.and
+      )
+      (else
+    i32.const 0
+      )
+    )
     return
   )
   (func $main

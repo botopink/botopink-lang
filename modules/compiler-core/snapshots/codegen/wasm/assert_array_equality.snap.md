@@ -8,55 +8,39 @@ fn f() {
 ----- WASM TEXT -- main.wat
 ```wasm
 (module
+  (rec
+    (type $str (array (mut i8)))
+    (type $arr_i32 (array (mut i32)))
+  )
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
-  (data (i32.const 256) "\29\00\00\00assertion failed: [] == [] at main.bp:2:5")
-  (global $__heap_ptr (mut i32) (i32.const 304))
+  (global $__heap_ptr (mut i32) (i32.const 256))
   (func $f
-    (local $__mem0 i32)
-    (local $__mem1 i32)
-    i32.const 4
-    call $__alloc
-    local.set $__mem0
-    local.get $__mem0
-    i32.const 0
-    i32.store
-    local.get $__mem0
-    i32.const 4
-    call $__alloc
-    local.set $__mem1
-    local.get $__mem1
-    i32.const 0
-    i32.store
-    local.get $__mem1
+    array.new_fixed $arr_i32 0
+    array.new_fixed $arr_i32 0
     call $__eq_Array_i32
     i32.eqz
     (if
       (then
-    i32.const 256
+    global.get $__s0
     call $__panic_fail
     unreachable
       )
     )
   )
-  (func $__eq_Array_i32 (param $a i32) (param $b i32) (result i32)
-    (local $n i32) (local $i i32)
+  (func $__eq_Array_i32 (param $a (ref null $arr_i32)) (param $b (ref null $arr_i32)) (result i32)
+    (local $n i32)
+    (local $i i32)
     local.get $a
+    array.len
     local.get $b
-    i32.eq
-    (if
-      (then i32.const 1 return)
-    )
-    local.get $a
-    i32.load
-    local.get $b
-    i32.load
+    array.len
     i32.ne
     (if
       (then i32.const 0 return)
     )
     local.get $a
-    i32.load
+    array.len
     local.set $n
     (block $brk
     (loop $cont
@@ -65,21 +49,11 @@ fn f() {
     i32.ge_u
     br_if $brk
     local.get $a
-    i32.const 4
-    i32.add
     local.get $i
-    i32.const 4
-    i32.mul
-    i32.add
-    i32.load
+    array.get $arr_i32
     local.get $b
-    i32.const 4
-    i32.add
     local.get $i
-    i32.const 4
-    i32.mul
-    i32.add
-    i32.load
+    array.get $arr_i32
     i32.eq
     i32.eqz
     (if
@@ -382,12 +356,38 @@ fn f() {
     i32.const 1
     call $__write_err
   )
-  (func $__panic_fail (param $msg i32)
+  (func $__panic_fail (param $msg (ref null $str))
+    (local $n i32) (local $p i32) (local $i i32) (local $top i32)
     local.get $msg
-    i32.const 4
-    i32.add
-    local.get $msg
-    i32.load
+    array.len
+    local.set $n
+    global.get $__heap_ptr
+    local.set $top
+    local.get $n
+    call $__alloc
+    local.set $p
+    (block $brk
+      (loop $cont
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $brk
+        local.get $p
+        local.get $i
+        i32.add
+        local.get $msg
+        local.get $i
+        array.get_u $str
+        i32.store8
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $cont
+      )
+    )
+    local.get $p
+    local.get $n
     call $__write_err
     i32.const 188
     i32.const 10
@@ -395,7 +395,19 @@ fn f() {
     i32.const 188
     i32.const 1
     call $__write_err
+    local.get $top
+    global.set $__heap_ptr
   )
+  (data $__d0 "assertion failed: [] == [] at main.bp:2:5")
+  (global $__s0 (mut (ref null $str)) (ref.null $str))
+  (start $__init_strs)
+  (func $__init_strs
+    i32.const 0
+    i32.const 41
+    array.new_data $str $__d0
+    global.set $__s0
+  )
+  (@custom "botopink.needs" "gc\0a")
 )
 ```
 

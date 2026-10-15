@@ -21,45 +21,38 @@ fn main() {
 ----- WASM TEXT -- main.wat
 ```wasm
 (module
+  (rec
+    (type $str (array (mut i8)))
+    (type $var_Shape_Circle (struct (field $f0 (mut i32))))
+    (type $var_Shape_Rect (struct (field $f0 (mut i32)) (field $f1 (mut i32))))
+  )
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
-  (data (i32.const 256) "\17\00\00\00V\0cShape.Circle\01\06radiusi")
-  (data (i32.const 284) "\1c\00\00\00V\nShape.Rect\02\05widthi\06heighti")
-  (global $__heap_ptr (mut i32) (i32.const 316))
+  (global $__heap_ptr (mut i32) (i32.const 256))
   (func $main (result i32)
     (local $__mem0 i32)
     (local $__mem1 i32)
-    (local $c i32)
+    (local $c anyref)
     (local $r i32)
-    (local $q i32)
-    (local $__case_0 i32)
-    (local $__case_1 i32)
-    i32.const 12
-    call $__alloc
-    local.set $__mem0
-    local.get $__mem0
-    i32.const 260
-    i32.store
-    local.get $__mem0
-    i32.const 0
-    i32.store offset=4
-    local.get $__mem0
+    (local $q anyref)
+    (local $__case_0 anyref)
+    (local $__case_1 anyref)
     i32.const 7
-    i32.store offset=8
-    local.get $__mem0
-    i32.const 4
-    i32.add
+    struct.new $var_Shape_Circle
     local.set $c
     local.get $c
     local.set $__case_0
     local.get $__case_0
-    i32.load ;; variant tag
-    i32.const 0 ;; Circle
-    i32.eq
+    ref.test (ref null $var_Shape_Circle)
+    local.get $__case_0
+    ref.is_null
+    i32.eqz
+    i32.and
     (if (result i32)
       (then
     local.get $__case_0
-    i32.load offset=4
+    ref.cast (ref null $var_Shape_Circle)
+    struct.get $var_Shape_Circle $f0
     local.set $r
     local.get $r
     call $__print_i32
@@ -72,35 +65,23 @@ fn main() {
       )
     )
     drop
-    i32.const 16
-    call $__alloc
-    local.set $__mem1
-    local.get $__mem1
-    i32.const 288
-    i32.store
-    local.get $__mem1
-    i32.const 1
-    i32.store offset=4
-    local.get $__mem1
     i32.const 2
-    i32.store offset=8
-    local.get $__mem1
     i32.const 5
-    i32.store offset=12
-    local.get $__mem1
-    i32.const 4
-    i32.add
+    struct.new $var_Shape_Rect
     local.set $q
     local.get $q
     local.set $__case_1
     local.get $__case_1
-    i32.load ;; variant tag
-    i32.const 0 ;; Circle
-    i32.eq
+    ref.test (ref null $var_Shape_Circle)
+    local.get $__case_1
+    ref.is_null
+    i32.eqz
+    i32.and
     (if (result i32)
       (then
     local.get $__case_1
-    i32.load offset=4
+    ref.cast (ref null $var_Shape_Circle)
+    struct.get $var_Shape_Circle $f0
     local.set $r
     local.get $r
     call $__print_i32
@@ -297,54 +278,7 @@ fn main() {
       )
     )
   )
-  (func $__alloc (param $n i32) (result i32)
-    (local $p i32) (local $e i32)
-    global.get $__heap_ptr
-    local.set $p
-    local.get $p
-    local.get $n
-    i32.add
-    i32.const 3
-    i32.add
-    i32.const -4
-    i32.and
-    local.set $e
-    local.get $e
-    local.get $p
-    i32.lt_u
-    (if
-      (then
-        unreachable
-      )
-    )
-    local.get $e
-    memory.size
-    i32.const 16
-    i32.shl
-    i32.gt_u
-    (if
-      (then
-        local.get $e
-        i32.const 65535
-        i32.add
-        i32.const 16
-        i32.shr_u
-        memory.size
-        i32.sub
-        memory.grow
-        i32.const -1
-        i32.eq
-        (if
-          (then
-            unreachable
-          )
-        )
-      )
-    )
-    local.get $e
-    global.set $__heap_ptr
-    local.get $p
-  )
+  (@custom "botopink.needs" "gc\0a")
 )
 ```
 

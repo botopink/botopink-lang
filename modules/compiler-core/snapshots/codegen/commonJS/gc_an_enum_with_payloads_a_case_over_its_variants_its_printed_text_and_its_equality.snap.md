@@ -1,0 +1,221 @@
+----- SOURCE CODE -- main.bp
+```botopink
+type Shape {
+    Circle(r: i32),
+    Rect(w: i32, h: i32),
+    Dot,
+}
+
+fn area(s: Shape) -> i32 {
+    return case s {
+        Circle(r) -> r * r * 3;
+        Rect(w, h) -> w * h;
+        Dot -> 0;
+    };
+}
+
+fn name(s: Shape) -> string {
+    return case s {
+        Circle -> "circle";
+        Rect -> "rect";
+        Dot -> "dot";
+    };
+}
+
+pub fn main() {
+    val a = Shape.Circle(r: 2);
+    val b = Shape.Rect(w: 3, h: 4);
+    @print(area(a));
+    @print(area(b));
+    @print(area(Shape.Dot));
+    @print(name(b));
+    @print(a);
+    @print(b);
+    @print(Shape.Dot);
+    @print(a == Shape.Circle(r: 2));
+    @print(a == b);
+}
+```
+
+----- JAVASCRIPT -- main.js
+```javascript
+function __bp_f64(v) {
+    if (Number.isNaN(v)) { return "NaN"; }
+    if (!Number.isFinite(v)) { return (v < 0) ? "-Infinity" : "Infinity"; }
+    if (v === 0) { return Object.is(v, -0) ? "-0.0" : "0.0"; }
+    const t = Math.abs(v).toExponential();
+    const i = t.indexOf("e");
+    const d = t.slice(0, i).replace(".", "");
+    const e = Number(t.slice(i + 1));
+    const g = (v < 0) ? "-" : "";
+    const x = g + d[0] + "." + ((d.length > 1) ? d.slice(1) : "0") + "e" + e;
+    const p = e + 1;
+    const f = g + ((p <= 0) ? "0." + "0".repeat(-p) + d : (p >= d.length) ? d + "0".repeat(p - d.length) + ".0" : d.slice(0, p) + "." + d.slice(p));
+    return ((f.length <= x.length) && (Math.abs(v) < 9007199254740992)) ? f : x;
+}
+
+function __bp_show(v, s, top, a) {
+    if ((typeof v === "string")) {
+        a.push(top ? v : (("\"" + Array.from(v, (c) => ((c === "\"") || (c === "\\")) ? ("\\" + c) : (c === "\n") ? "\\n" : (c === "\r") ? "\\r" : (c === "\t") ? "\\t" : c).join("")) + "\""));
+        return "%s";
+    }
+    if ((typeof v === "bigint")) {
+        a.push(String(v));
+        return "%s";
+    }
+    if (((typeof v === "number") && (s === "f"))) {
+        a.push(__bp_f64(v));
+        return "%s";
+    }
+    if (Array.isArray(v)) {
+        const t = ((s != null) && (s[0] === "#"));
+        return (((t ? "#(" : "[") + v.map((e, i) => __bp_show(e, (s == null) ? null : t ? s[i + 1] : s[1], false, a)).join(", ")) + (t ? ")" : "]"));
+    }
+    if ((((typeof v === "object") && (v != null)) && (typeof v.__bp !== "string"))) {
+        const k = Object.keys(v);
+        if (((k.length === 1) && ((k[0] === "ok") || (k[0] === "error")))) {
+            return ((((k[0] === "ok") ? "Ok(" : "Error(") + __bp_show(v[k[0]], null, false, a)) + ")");
+        }
+    }
+    if (((v != null) && (typeof v.__bp === "string"))) {
+        if ((typeof v.display === "function")) {
+            a.push(v.display());
+            return "%s";
+        }
+        const k = Object.keys(v);
+        return (((typeof Object.getPrototypeOf(v).tag === "string") ? ((v.__bp + ".") + Object.getPrototypeOf(v).tag) : v.__bp) + ((k.length === 0) ? "" : (("(" + k.map((n) => ((n + ": ") + __bp_show(v[n], v.__bp_s?.[n], false, a))).join(", ")) + ")")));
+    }
+    if ((v === undefined)) return "null";
+    a.push(v);
+    return "%O";
+}
+
+function __bp_text(v, s) {
+    const a = [];
+    let i = 0;
+    return __bp_show(v, s == null ? null : s, true, a).replace(/%[sO]/g, () => String(a[i++]));
+}
+
+function __bp_print() {
+    const a = [];
+    const f = Array.from(arguments, (v, i) => __bp_show(v, null, true, a)).join(" ");
+    console.log.apply(console, [f, ...a]);
+}
+
+function __bp_int(v, lo, hi, what) { if (v >= lo && v <= hi) { return v + 0; } throw Object.defineProperty(new Error((Number.isFinite(v) ? "integer overflow: " : "integer division by zero: ") + what), "__bp_panic", { value: true }); }
+
+function __bp_eq_Shape(a, b) {
+    if (a === b) return true;
+    if (a.tag !== b.tag) return false;
+    if (a.tag === "Circle") return a.r === b.r;
+    if (a.tag === "Rect") return a.w === b.w && a.h === b.h;
+    return true;
+}
+
+class Shape {
+    static Circle(r) {
+        return new Shape$Circle(r);
+    }
+
+    static Rect(w, h) {
+        return new Shape$Rect(w, h);
+    }
+
+    toString() {
+        return __bp_text(this);
+    }
+}
+Shape.prototype.__bp = "Shape";
+class Shape$Circle extends Shape {
+    constructor(r) {
+        super();
+        this.r = r;
+    }
+}
+Shape$Circle.prototype.tag = "Circle";
+class Shape$Rect extends Shape {
+    constructor(w, h) {
+        super();
+        this.w = w;
+        this.h = h;
+    }
+}
+Shape$Rect.prototype.tag = "Rect";
+class Shape$Dot extends Shape {
+}
+Shape$Dot.prototype.tag = "Dot";
+Shape.Dot = new Shape$Dot();
+
+function area(s) {
+    return (() => {
+        const _s = s;
+        if (_s.tag === "Circle") {
+            const { r } = _s;
+            return __bp_int((__bp_int((r * r), -2147483648, 2147483647, "* on i32 at main.bp:9:24") * 3), -2147483648, 2147483647, "* on i32 at main.bp:9:28");
+        }
+        if (_s.tag === "Rect") {
+            const { w, h } = _s;
+            return __bp_int((w * h), -2147483648, 2147483647, "* on i32 at main.bp:10:25");
+        }
+        if (_s.tag === "Dot") return 0;
+        throw new Error("case_clause");
+    })();
+}
+
+function name(s) {
+    return (() => {
+        const _s = s;
+        if (_s.tag === "Circle") return "circle";
+        if (_s.tag === "Rect") return "rect";
+        if (_s.tag === "Dot") return "dot";
+        throw new Error("case_clause");
+    })();
+}
+
+function main() {
+    const a = Shape.Circle(2);
+    const b = Shape.Rect(3, 4);
+    __bp_print(area(a));
+    __bp_print(area(b));
+    __bp_print(area(Shape.Dot));
+    __bp_print(name(b));
+    __bp_print(a);
+    __bp_print(b);
+    __bp_print(Shape.Dot);
+    __bp_print(__bp_eq_Shape(a, Shape.Circle(2)));
+    __bp_print(__bp_eq_Shape(a, b));
+}
+exports.main = main;
+
+function _botopink_main() {
+    main();
+}
+if (require.main === module) _botopink_main();
+
+Object.defineProperty(exports, "__bp_priv__", { value: { Shape, Shape$Circle, Shape$Rect, Shape$Dot, area, name, main } });
+```
+
+----- TYPESCRIPT TYPEDEF -- main.d.ts
+```typescript
+
+
+
+
+
+
+export declare function main(): void;
+
+```
+
+----- RUN LOG -----
+```logs
+12
+12
+0
+rect
+Shape.Circle(r: 2)
+Shape.Rect(w: 3, h: 4)
+Shape.Dot
+true
+false
+```

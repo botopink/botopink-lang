@@ -9,43 +9,170 @@ fn main() {
 ----- WASM TEXT -- main.wat
 ```wasm
 (module
+  (rec
+    (type $str (array (mut i8)))
+    (type $arr_i32 (array (mut i32)))
+  )
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
-  (global $__heap_ptr (mut i32) (i32.const 288))
+  (global $__heap_ptr (mut i32) (i32.const 256))
   (func $main
     (local $__mem0 i32)
-    (local $xs i32)
-    i32.const 24
-    call $__alloc
-    local.set $__mem0
-    local.get $__mem0
-    i32.const 5
-    i32.store
-    local.get $__mem0
+    (local $xs (ref null $arr_i32))
     i32.const 1
-    i32.store offset=4
-    local.get $__mem0
     i32.const 2
-    i32.store offset=8
-    local.get $__mem0
     i32.const 3
-    i32.store offset=12
-    local.get $__mem0
     i32.const 4
-    i32.store offset=16
-    local.get $__mem0
     i32.const 5
-    i32.store offset=20
-    local.get $__mem0
+    array.new_fixed $arr_i32 5
     local.set $xs
     local.get $xs
     i32.const 1
     i32.const 4
-    call $__std_array_slice
-    call $__print_arr_i32
+    call $__arr_slice_i32
+    call $__pr0
+    call $__print_nl
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")
     (call $main)
+  )
+  (func $__pr1 (param $v i32)
+    local.get $v
+    call $__print_i32_raw
+  )
+  (func $__pr0 (param $v (ref null $arr_i32))
+    (local $n i32)
+    (local $i i32)
+    global.get $__s0
+    call $__print_str_raw
+    local.get $v
+    array.len
+    local.set $n
+    (block $brk
+    (loop $cont
+    local.get $i
+    local.get $n
+    i32.ge_u
+    br_if $brk
+    local.get $i
+    (if
+      (then
+    global.get $__s1
+    call $__print_str_raw
+      )
+    )
+    local.get $v
+    local.get $i
+    array.get $arr_i32
+    call $__pr1
+    local.get $i
+    i32.const 1
+    i32.add
+    local.set $i
+    br $cont
+    )
+    )
+    global.get $__s2
+    call $__print_str_raw
+  )
+  (func $__arr_slice_i32 (param $xs (ref null $arr_i32)) (param $a i32) (param $b i32) (result (ref null $arr_i32))
+    (local $len i32)
+    (local $from i32)
+    (local $to i32)
+    (local $n i32)
+    (local $r (ref null $arr_i32))
+    local.get $xs
+    array.len
+    local.set $len
+    local.get $a
+    i32.const 0
+    i32.lt_s
+    (if
+      (then
+    local.get $len
+    local.get $a
+    i32.add
+    local.set $from
+    local.get $from
+    i32.const 0
+    i32.lt_s
+    (if
+      (then
+    i32.const 0
+    local.set $from
+      )
+    )
+      )
+      (else
+    local.get $a
+    local.set $from
+    local.get $from
+    local.get $len
+    i32.gt_s
+    (if
+      (then
+    local.get $len
+    local.set $from
+      )
+    )
+      )
+    )
+    local.get $b
+    i32.const 0
+    i32.lt_s
+    (if
+      (then
+    local.get $len
+    local.get $b
+    i32.add
+    local.set $to
+    local.get $to
+    i32.const 0
+    i32.lt_s
+    (if
+      (then
+    i32.const 0
+    local.set $to
+      )
+    )
+      )
+      (else
+    local.get $b
+    local.set $to
+    local.get $to
+    local.get $len
+    i32.gt_s
+    (if
+      (then
+    local.get $len
+    local.set $to
+      )
+    )
+      )
+    )
+    local.get $to
+    local.get $from
+    i32.sub
+    local.set $n
+    local.get $n
+    i32.const 0
+    i32.lt_s
+    (if
+      (then
+    i32.const 0
+    local.set $n
+      )
+    )
+    local.get $n
+    array.new_default $arr_i32
+    local.set $r
+    local.get $r
+    i32.const 0
+    local.get $xs
+    local.get $from
+    local.get $n
+    array.copy $arr_i32 $arr_i32
+    local.get $r
   )
   ;; Scratch layout below the data section (which starts at 256):
   ;;   0..8  WASI iovec   8  newline byte
@@ -227,6 +354,47 @@ fn main() {
       )
     )
   )
+  (func $__print_str_raw (param $s (ref null $str))
+    (local $n i32) (local $p i32) (local $i i32) (local $top i32)
+    local.get $s
+    array.len
+    local.set $n
+    global.get $__heap_ptr
+    local.set $top
+    local.get $n
+    call $__alloc
+    local.set $p
+    (block $brk
+      (loop $cont
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $brk
+        local.get $p
+        local.get $i
+        i32.add
+        local.get $s
+        local.get $i
+        array.get_u $str
+        i32.store8
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $cont
+      )
+    )
+    local.get $p
+    local.get $n
+    call $__write_bytes
+    local.get $top
+    global.set $__heap_ptr
+  )
+  (func $__print_str (param $s (ref null $str))
+    local.get $s
+    call $__print_str_raw
+    call $__print_nl
+  )
   (func $__alloc (param $n i32) (result i32)
     (local $p i32) (local $e i32)
     global.get $__heap_ptr
@@ -275,81 +443,28 @@ fn main() {
     global.set $__heap_ptr
     local.get $p
   )
-  (func $__print_arr_i32_raw (param $xs i32)
-    (local $n i32) (local $i i32)
-    i32.const 8
-    i32.const 91
-    i32.store8
-    i32.const 8
+  (data $__d0 "[")
+  (global $__s0 (mut (ref null $str)) (ref.null $str))
+  (data $__d1 ", ")
+  (global $__s1 (mut (ref null $str)) (ref.null $str))
+  (data $__d2 "]")
+  (global $__s2 (mut (ref null $str)) (ref.null $str))
+  (start $__init_strs)
+  (func $__init_strs
+    i32.const 0
     i32.const 1
-    call $__write_bytes
-    local.get $xs
-    i32.load
-    local.set $n
-    (block $brk
-      (loop $cont
-        local.get $i
-        local.get $n
-        i32.ge_u
-        br_if $brk
-        local.get $i
-        (if
-          (then
-            i32.const 8
-            i32.const 44
-            i32.store8
-            i32.const 8
-            i32.const 32
-            i32.store8 offset=1
-            i32.const 8
-            i32.const 2
-            call $__write_bytes
-          )
-        )
-        local.get $xs
-        i32.const 4
-        i32.add
-        local.get $i
-        i32.const 4
-        i32.mul
-        i32.add
-        i32.load
-        call $__print_i32_raw
-        local.get $i
-        i32.const 1
-        i32.add
-        local.set $i
-        br $cont
-      )
-    )
-    i32.const 8
-    i32.const 93
-    i32.store8
-    i32.const 8
+    array.new_data $str $__d0
+    global.set $__s0
+    i32.const 0
+    i32.const 2
+    array.new_data $str $__d1
+    global.set $__s1
+    i32.const 0
     i32.const 1
-    call $__write_bytes
+    array.new_data $str $__d2
+    global.set $__s2
   )
-  (func $__print_arr_i32 (param $xs i32)
-    local.get $xs
-    call $__print_arr_i32_raw
-    call $__print_nl
-  )
-  ;; std-wasm (decision 440): its functions, transpiled from std_wasm.wasm
-  (global $__std_sp (mut i32) (i32.const 288))
-  (func $__std_sp_check (param $sp i32) (result i32)
-    local.get $sp
-    i32.const 256
-    i32.lt_s
-    (if
-      (then unreachable)
-    )
-    local.get $sp
-  )
-  ;; __std_f441 — from std_wasm.wasm (sha256 d13a98c08300)
-  ;; __std_f442 — from std_wasm.wasm (sha256 3192e2e42294)
-  ;; __std_f443 — from std_wasm.wasm (sha256 0314fe5f477f)
-  ;; __std_f444 — from std_wasm.wasm (sha256 83a8841c1a5e)
-  ;; std:array.slice — from std_wasm.wasm (sha256 27ec3c9971dd)
+  (@custom "botopink.needs" "gc\0a")
 )
 ```
 

@@ -47,6 +47,8 @@ pub const Repr = union(enum) {
         /// A `Bytes` value.
         bytes,
         bigint,
+        /// A `@Result<A, E>`: its tag and its payload.
+        result,
 
         pub fn eql(a: Kind, b: Kind) bool {
             if (std.meta.activeTag(a) != std.meta.activeTag(b)) return false;
@@ -99,6 +101,11 @@ pub const Repr = union(enum) {
         return r == .ref and r.ref == .str;
     }
 
+    /// Whether the value is a reference to an array.
+    pub fn isArrRef(r: Repr) bool {
+        return r == .ref and r.ref == .arr;
+    }
+
     pub fn eql(a: Repr, b: Repr) bool {
         if (std.meta.activeTag(a) != std.meta.activeTag(b)) return false;
         return switch (a) {
@@ -135,6 +142,7 @@ pub const Repr = union(enum) {
                 .unknown => "unknown",
                 .bytes => "Bytes",
                 .bigint => "bigint",
+                .result => "@Result",
             },
         };
     }

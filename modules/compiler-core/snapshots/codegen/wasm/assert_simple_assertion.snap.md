@@ -8,16 +8,18 @@ fn f() {
 ----- WASM TEXT -- main.wat
 ```wasm
 (module
+  (rec
+    (type $str (array (mut i8)))
+  )
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
-  (data (i32.const 256) "\25\00\00\00assertion failed: true at main.bp:2:5")
-  (global $__heap_ptr (mut i32) (i32.const 300))
+  (global $__heap_ptr (mut i32) (i32.const 256))
   (func $f
     i32.const 1
     i32.eqz
     (if
       (then
-    i32.const 256
+    global.get $__s0
     call $__panic_fail
     unreachable
       )
@@ -203,6 +205,54 @@ fn f() {
       )
     )
   )
+  (func $__alloc (param $n i32) (result i32)
+    (local $p i32) (local $e i32)
+    global.get $__heap_ptr
+    local.set $p
+    local.get $p
+    local.get $n
+    i32.add
+    i32.const 3
+    i32.add
+    i32.const -4
+    i32.and
+    local.set $e
+    local.get $e
+    local.get $p
+    i32.lt_u
+    (if
+      (then
+        unreachable
+      )
+    )
+    local.get $e
+    memory.size
+    i32.const 16
+    i32.shl
+    i32.gt_u
+    (if
+      (then
+        local.get $e
+        i32.const 65535
+        i32.add
+        i32.const 16
+        i32.shr_u
+        memory.size
+        i32.sub
+        memory.grow
+        i32.const -1
+        i32.eq
+        (if
+          (then
+            unreachable
+          )
+        )
+      )
+    )
+    local.get $e
+    global.set $__heap_ptr
+    local.get $p
+  )
   (func $__write_err (param $p i32) (param $n i32)
     i32.const 0
     local.get $p
@@ -263,12 +313,38 @@ fn f() {
     i32.const 1
     call $__write_err
   )
-  (func $__panic_fail (param $msg i32)
+  (func $__panic_fail (param $msg (ref null $str))
+    (local $n i32) (local $p i32) (local $i i32) (local $top i32)
     local.get $msg
-    i32.const 4
-    i32.add
-    local.get $msg
-    i32.load
+    array.len
+    local.set $n
+    global.get $__heap_ptr
+    local.set $top
+    local.get $n
+    call $__alloc
+    local.set $p
+    (block $brk
+      (loop $cont
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $brk
+        local.get $p
+        local.get $i
+        i32.add
+        local.get $msg
+        local.get $i
+        array.get_u $str
+        i32.store8
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $cont
+      )
+    )
+    local.get $p
+    local.get $n
     call $__write_err
     i32.const 188
     i32.const 10
@@ -276,7 +352,19 @@ fn f() {
     i32.const 188
     i32.const 1
     call $__write_err
+    local.get $top
+    global.set $__heap_ptr
   )
+  (data $__d0 "assertion failed: true at main.bp:2:5")
+  (global $__s0 (mut (ref null $str)) (ref.null $str))
+  (start $__init_strs)
+  (func $__init_strs
+    i32.const 0
+    i32.const 37
+    array.new_data $str $__d0
+    global.set $__s0
+  )
+  (@custom "botopink.needs" "gc\0a")
 )
 ```
 

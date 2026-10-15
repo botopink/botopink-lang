@@ -30,6 +30,8 @@ pub const Error = error{
 pub const Diag = struct {
     func: []const u8 = "",
     what: []const u8 = "",
+    /// The name the failing instruction names (a call's callee), when it names one.
+    detail: []const u8 = "",
 };
 
 /// Checks every function of `m` whose name `skip` does not answer true for.
@@ -108,7 +110,11 @@ const FuncCtx = struct {
     /// an empty stack and leaving `expect`.
     fn checkSeq(self: *FuncCtx, seq: ast.Seq, expect: ?ValType) Error!void {
         var st: Stack = .{ .fc = self };
-        for (seq.lines) |line| try self.step(&st, line.instr);
+        for (seq.lines) |line| self.step(&st, line.instr) catch |e| {
+            // The instruction that failed, for the diagnostic.
+            if (self.diag.detail.len == 0) self.diag.detail = @tagName(line.instr);
+            return e;
+        };
         if (expect) |want| try st.pop(want);
         if (!st.poly and st.items.items.len != 0) return self.fail("a value left on the stack");
     }
@@ -151,7 +157,10 @@ const FuncCtx = struct {
                 try st.pop(.i32);
             },
             .call => |n| {
-                const ft = self.mod.funcs.get(n) orelse return self.fail("a call to no function");
+                const ft = self.mod.funcs.get(n) orelse {
+                    self.diag.detail = n;
+                    return self.fail("a call to no function");
+                };
                 try self.callType(st, ft);
             },
             .call_indirect => |ft| {

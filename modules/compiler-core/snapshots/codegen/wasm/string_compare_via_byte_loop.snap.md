@@ -20,7 +20,24 @@ fn sameWord() -> bool {
     return
   )
   (func $__str_eq (param $a (ref null $str)) (param $b (ref null $str)) (result i32)
-    (local $i i32) (local $n i32)
+    (local $i i32) (local $n i32) (local $an i32) (local $bn i32)
+    local.get $a
+    ref.is_null
+    local.set $an
+    local.get $b
+    ref.is_null
+    local.set $bn
+    local.get $an
+    local.get $bn
+    i32.or
+    (if
+      (then
+        local.get $an
+        local.get $bn
+        i32.and
+        return
+      )
+    )
     local.get $a
     array.len
     local.set $n

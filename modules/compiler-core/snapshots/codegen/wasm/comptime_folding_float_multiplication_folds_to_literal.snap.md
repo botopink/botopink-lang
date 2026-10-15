@@ -14,6 +14,9 @@ ct_0: val pi2 = comptime { 3.14 * 2.0 } → 6.28
 ----- WASM TEXT -- main.wat
 ```wasm
 (module
+  (rec
+    (type $str (array (mut i8)))
+  )
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
   (global $__heap_ptr (mut i32) (i32.const 8816))
@@ -300,6 +303,7 @@ ct_0: val pi2 = comptime { 3.14 * 2.0 } → 6.28
   ;; __std_f525 — from std_wasm.wasm (sha256 4c40dff46753)
   ;; __std_f526 — from std_wasm.wasm (sha256 4d190b081720)
   ;; __std_f527 — from std_wasm.wasm (sha256 94fc71de7e06)
+  (@custom "botopink.needs" "gc\0a")
 )
 ```
 

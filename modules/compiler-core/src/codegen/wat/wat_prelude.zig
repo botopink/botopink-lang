@@ -2134,10 +2134,11 @@ const gc_str_concat = typedFunc("__str_concat", &.{ pref("a"), pref("b") }, gc_s
 });
 
 /// `a == b` over GC strings, byte by byte.
-const gc_str_eq = typedFunc("__str_eq", &.{ pref("a"), pref("b") }, .i32, i32s(&.{ "i", "n" }), &.{
-    get("a"), str_len,                 set("n"),
-    get("n"), get("b"),                str_len,
-    op("ne"), when(&.{ c32(0), ret }),
+const gc_str_eq = typedFunc("__str_eq", &.{ pref("a"), pref("b") }, .i32, i32s(&.{ "i", "n", "an", "bn" }), &.{
+    // An absent string (an optional field, `null`) equals only another one.
+    get("a"),  .ref_is_null, set("an"), get("b"),                                         .ref_is_null, set("bn"),
+    get("an"), get("bn"),    op("or"),  when(&.{ get("an"), get("bn"), op("and"), ret }), get("a"),     str_len,
+    set("n"),  get("n"),     get("b"),  str_len,                                          op("ne"),     when(&.{ c32(0), ret }),
     loop(&.{
         get("i"), get("n"), op("ge_u"), brk,
         get("a"), get("i"), str_get,    get("b"),
@@ -2221,6 +2222,41 @@ const lin_to_gc_str = typedFunc("__lin_to_gc_str", &.{p32("p")}, gc_str_ref, &.{
     get("r"),
 });
 
+/// `"text"` — a GC string nested in a container, quoted with the source
+/// escapes `\"`, `\\`, `\n`, `\r`, `\t`, as `$__print_quoted_raw` does.
+const gc_print_quoted_raw = typedFunc("__print_quoted_raw", &.{pref("s")}, null, &.{ l32("n"), l32("i"), l32("ch"), l32("e") }, &(putByte('"') ++ [_]Instr{call("__write_bytes")} ++ [_]Instr{
+    get("s"), str_len, set("n"),
+    loop(&([_]Instr{
+        get("i"), get("n"),                        op("ge_u"), brk,
+        get("s"), get("i"),                        str_get,    set("ch"),
+        c32(0),   set("e"),                        get("ch"),  c32('"'),
+        op("eq"), get("ch"),                       c32('\\'),  op("eq"),
+        op("or"), when(&.{ get("ch"), set("e") }), get("ch"),  c32('\n'),
+        op("eq"), when(&.{ c32('n'), set("e") }),  get("ch"),  c32('\r'),
+        op("eq"), when(&.{ c32('r'), set("e") }),  get("ch"),  c32('\t'),
+        op("eq"), when(&.{ c32('t'), set("e") }),  get("e"),   whenElse(&(putByte('\\') ++ [_]Instr{call("__write_bytes")} ++ putLocalByte("e")), &putLocalByte("ch")),
+        get("i"), c32(1),                          op("add"),  set("i"),
+        again,
+    })),
+} ++ putByte('"') ++ [_]Instr{call("__write_bytes")}));
+
+/// `@panic(msg)` over a GC string: the message and a newline on stderr.
+const gc_panic_fail = typedFunc("__panic_fail", &.{pref("msg")}, null, i32s(&.{ "n", "p", "i", "top" }), &.{
+    get("msg"),              str_len,                 set("n"),
+    .{ .global_get = heap }, set("top"),              get("n"),
+    call("__alloc"),         set("p"),
+    loop(&.{
+        get("i"), get("n"),  op("ge_u"), brk,
+        get("p"), get("i"),  op("add"),  get("msg"),
+        get("i"), str_get,   store8(0),  get("i"),
+        c32(1),   op("add"), set("i"),   again,
+    }),
+    get("p"),                get("n"),                call("__write_err"),
+    c32(188),                c32(10),                 store8(0),
+    c32(188),                c32(1),                  call("__write_err"),
+    get("top"),              .{ .global_set = heap },
+});
+
 /// The GC form of group `g` (front 164 s2): its own items when it moves no
 /// string, its GC functions when it does, null when it has none yet — a
 /// module that needs such a group is lowered in linear memory. `capture`: the
@@ -2234,6 +2270,14 @@ pub fn gcItems(g: ast.HelperGroup, capture: bool) ?[]const ast.Item {
         .str_eq => &.{.{ .func = gc_str_eq }},
         .text_capture => &.{ .{ .global = gc_cap_global }, .{ .func = gc_cap_begin }, .{ .func = gc_cap_end } },
         .std_marshal => items(.std_marshal),
+        // The shape walker and the tagged printer are generated per module
+        // (`wat.zig`'s `gcPrinter`); the quoted string is the one shared piece.
+        .print_shaped => &.{.{ .func = gc_print_quoted_raw }},
+        .panic_fail => &.{.{ .func = gc_panic_fail }},
+        .assert_fail => items(g),
+        // `$__print_tagged_raw` is generated, and asks no module's `display`
+        // hook: a record's own `display` is called by its printer.
+        .display_of => &.{},
         .print_bool, .alloc, .i32_abs, .i32_min, .i32_max, .print_i64, .int_chk, .i32_range_chk, .i64_range_chk, .print_u64, .u64_chk => items(g),
         else => null,
     };
@@ -2243,7 +2287,7 @@ pub fn gcItems(g: ast.HelperGroup, capture: bool) ?[]const ast.Item {
 /// arena.
 pub fn gcDeps(g: ast.HelperGroup) []const ast.HelperGroup {
     return switch (g) {
-        .print_str, .print_f64, .text_capture => &.{.alloc},
+        .print_str, .print_f64, .text_capture, .panic_fail => &.{.alloc},
         else => &.{},
     };
 }

@@ -12,26 +12,27 @@ type Vec2(
 ----- WASM TEXT -- main.wat
 ```wasm
 (module
+  (rec
+    (type $str (array (mut i8)))
+    (type $rec_Vec2 (struct (field $f0 (mut f64)) (field $f1 (mut f64))))
+  )
   (memory (export "memory") 1)
   (global $__heap_ptr (mut i32) (i32.const 256))
-  (func $Vec2_dot (param $self i32) (param $other i32) (result f64)
+  (func $Vec2_dot (param $self (ref null $rec_Vec2)) (param $other (ref null $rec_Vec2)) (result f64)
     local.get $self
-    i32.load ;; .x
-    f64.load
+    struct.get $rec_Vec2 $f0
     local.get $other
-    i32.load ;; .x
-    f64.load
+    struct.get $rec_Vec2 $f0
     f64.mul
     local.get $self
-    i32.load offset=4 ;; .y
-    f64.load
+    struct.get $rec_Vec2 $f1
     local.get $other
-    i32.load offset=4 ;; .y
-    f64.load
+    struct.get $rec_Vec2 $f1
     f64.mul
     f64.add
     return
   )
+  (@custom "botopink.needs" "gc\0a")
 )
 ```
 

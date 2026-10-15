@@ -13,42 +13,53 @@ fn main() {
 ----- WASM TEXT -- main.wat
 ```wasm
 (module
+  (rec
+    (type $str (array (mut i8)))
+  )
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
-  (data (i32.const 256) "\06\00\00\00nobody")
-  (data (i32.const 268) "\06\00\00\00hello ")
-  (data (i32.const 280) "\05\00\00\00world")
-  (global $__heap_ptr (mut i32) (i32.const 292))
-  (func $greet (param $x i32) (result i32)
-    (local $_res0 i32)
+  (global $__heap_ptr (mut i32) (i32.const 256))
+  (func $greet (param $x (ref null $str)) (result (ref null $str))
+    (local $__gc0 (ref null $str))
+    (local $__gc1 (ref null $str))
     local.get $x
-    i32.const 0
-    i32.eq
-    (if (result i32)
+    ref.is_null
+    (if (result (ref null $str))
       (then
-    i32.const 256
+    global.get $__s0
     return
       )
       (else
-        i32.const 0
+        ref.null $str
       )
     )
     drop
-    i32.const 268
+    global.get $__s1
     call $__cap_begin
-    local.set $_res0
+    local.set $__gc0
     local.get $x
-    call $__print_opt_str_raw
-    local.get $_res0
+    local.tee $__gc1
+    ref.is_null
+    (if
+      (then
+    global.get $__s2
+    call $__print_str_raw
+      )
+      (else
+    local.get $__gc1
+    call $__print_str_raw
+      )
+    )
+    local.get $__gc0
     call $__cap_end
     call $__str_concat
     return
   )
   (func $main
-    i32.const 280
+    global.get $__s3
     call $greet
     call $__print_str
-    i32.const 0
+    ref.null $str
     call $greet
     call $__print_str
   )
@@ -59,43 +70,50 @@ fn main() {
   ;;   0..8  WASI iovec   8  newline byte
   ;;  16..32 bool text   64..128 i32 digits
   (func $__write_bytes (param $p i32) (param $n i32)
-    (local $c i32) (local $l i32) (local $q i32)
+    (local $c (ref null $str)) (local $q (ref null $str)) (local $l i32) (local $i i32)
     global.get $__cap
     local.set $c
     local.get $c
+    ref.is_null
+    i32.eqz
     (if
       (then
         local.get $c
-        i32.load
+        array.len
         local.set $l
         local.get $l
         local.get $n
         i32.add
-        i32.const 4
-        i32.add
-        call $__alloc
+        array.new_default $str
         local.set $q
         local.get $q
-        local.get $l
-        local.get $n
-        i32.add
-        i32.store
-        local.get $q
-        i32.const 4
-        i32.add
+        i32.const 0
         local.get $c
-        i32.const 4
-        i32.add
+        i32.const 0
         local.get $l
-        memory.copy
-        local.get $q
-        i32.const 4
-        i32.add
-        local.get $l
-        i32.add
-        local.get $p
-        local.get $n
-        memory.copy
+        array.copy $str $str
+        (block $brk
+          (loop $cont
+            local.get $i
+            local.get $n
+            i32.ge_u
+            br_if $brk
+            local.get $q
+            local.get $l
+            local.get $i
+            i32.add
+            local.get $p
+            local.get $i
+            i32.add
+            i32.load8_u
+            array.set $str
+            local.get $i
+            i32.const 1
+            i32.add
+            local.set $i
+            br $cont
+          )
+        )
         local.get $q
         global.set $__cap
         return
@@ -277,102 +295,73 @@ fn main() {
       )
     )
   )
-  (func $__print_str_raw (param $s i32)
+  (func $__print_str_raw (param $s (ref null $str))
+    (local $n i32) (local $p i32) (local $i i32) (local $top i32)
     local.get $s
-    i32.const 256
-    i32.lt_u
-    (if
-      (then
-        ;; a pointer below the data floor is not a string
-        unreachable
+    array.len
+    local.set $n
+    global.get $__heap_ptr
+    local.set $top
+    local.get $n
+    call $__alloc
+    local.set $p
+    (block $brk
+      (loop $cont
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $brk
+        local.get $p
+        local.get $i
+        i32.add
+        local.get $s
+        local.get $i
+        array.get_u $str
+        i32.store8
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $cont
       )
     )
-    local.get $s
-    i32.const 4
-    i32.add
-    local.get $s
-    i32.load
+    local.get $p
+    local.get $n
     call $__write_bytes
+    local.get $top
+    global.set $__heap_ptr
   )
-  (func $__print_str (param $s i32)
+  (func $__print_str (param $s (ref null $str))
     local.get $s
     call $__print_str_raw
     call $__print_nl
   )
-  (func $__print_bool (param $b i32)
-    local.get $b
-    call $__print_bool_raw
-    call $__print_nl
-  )
-  (func $__print_bool_raw (param $b i32)
-    local.get $b
-    (if
-      (then
-        ;; "true" as a little-endian i32
-        i32.const 16
-        i32.const 1702195828
-        i32.store
-        i32.const 16
-        i32.const 4
-        call $__write_bytes
-      )
-      (else
-        ;; "fals" + 'e'
-        i32.const 16
-        i32.const 1936482662
-        i32.store
-        i32.const 16
-        i32.const 101
-        i32.store8 offset=4
-        i32.const 16
-        i32.const 5
-        call $__write_bytes
-      )
-    )
-  )
-  (func $__str_concat (param $a i32) (param $b i32) (result i32)
-    (local $base i32) (local $alen i32) (local $blen i32)
+  (func $__str_concat (param $a (ref null $str)) (param $b (ref null $str)) (result (ref null $str))
+    (local $r (ref null $str)) (local $alen i32) (local $blen i32)
     local.get $a
-    i32.load
+    array.len
     local.set $alen
     local.get $b
-    i32.load
+    array.len
     local.set $blen
-    ;; allocate 4 (length prefix) + alen + blen
-    i32.const 4
-    local.get $alen
-    i32.add
-    local.get $blen
-    i32.add
-    call $__alloc
-    local.set $base
-    ;; store combined length prefix
-    local.get $base
     local.get $alen
     local.get $blen
     i32.add
-    i32.store
-    ;; copy a's bytes: base+4 <- a+4
-    local.get $base
-    i32.const 4
-    i32.add
+    array.new_default $str
+    local.set $r
+    local.get $r
+    i32.const 0
     local.get $a
-    i32.const 4
-    i32.add
+    i32.const 0
     local.get $alen
-    memory.copy
-    ;; copy b's bytes: base+4+alen <- b+4
-    local.get $base
-    i32.const 4
-    i32.add
+    array.copy $str $str
+    local.get $r
     local.get $alen
-    i32.add
     local.get $b
-    i32.const 4
-    i32.add
+    i32.const 0
     local.get $blen
-    memory.copy
-    local.get $base
+    array.copy $str $str
+    local.get $r
   )
   (func $__alloc (param $n i32) (result i32)
     (local $p i32) (local $e i32)
@@ -422,93 +411,52 @@ fn main() {
     global.set $__heap_ptr
     local.get $p
   )
-  (func $__print_null
-    i32.const 176
-    i32.const 1819047278
-    i32.store
-    i32.const 176
-    i32.const 4
-    call $__write_bytes
-  )
-  (func $__print_opt_i32_raw (param $p i32)
-    local.get $p
-    i32.eqz
-    (if
-      (then
-        call $__print_null
-      )
-      (else
-        local.get $p
-        i32.load
-        call $__print_i32_raw
-      )
-    )
-  )
-  (func $__print_opt_i32 (param $p i32)
-    local.get $p
-    call $__print_opt_i32_raw
-    call $__print_nl
-  )
-  (func $__print_opt_bool_raw (param $p i32)
-    local.get $p
-    i32.eqz
-    (if
-      (then
-        call $__print_null
-      )
-      (else
-        local.get $p
-        i32.load
-        call $__print_bool_raw
-      )
-    )
-  )
-  (func $__print_opt_bool (param $p i32)
-    local.get $p
-    call $__print_opt_bool_raw
-    call $__print_nl
-  )
-  (func $__print_opt_str_raw (param $s i32)
-    local.get $s
-    i32.eqz
-    (if
-      (then
-        call $__print_null
-      )
-      (else
-        local.get $s
-        call $__print_str_raw
-      )
-    )
-  )
-  (func $__print_opt_str (param $s i32)
-    local.get $s
-    call $__print_opt_str_raw
-    call $__print_nl
-  )
-  (global $__cap (mut i32) (i32.const 0))
-  (func $__cap_begin (result i32)
-    (local $o i32) (local $s i32)
+  (global $__cap (mut (ref null $str)) (ref.null $str))
+  (func $__cap_begin (result (ref null $str))
+    (local $o (ref null $str))
     global.get $__cap
     local.set $o
-    i32.const 4
-    call $__alloc
-    local.set $s
-    local.get $s
     i32.const 0
-    i32.store
-    local.get $s
+    array.new_default $str
     global.set $__cap
     local.get $o
   )
-  (func $__cap_end (param $o i32) (result i32)
-    (local $s i32)
+  (func $__cap_end (param $o (ref null $str)) (result (ref null $str))
+    (local $s (ref null $str))
     global.get $__cap
     local.set $s
     local.get $o
     global.set $__cap
     local.get $s
   )
+  (data $__d0 "nobody")
+  (global $__s0 (mut (ref null $str)) (ref.null $str))
+  (data $__d1 "hello ")
+  (global $__s1 (mut (ref null $str)) (ref.null $str))
+  (data $__d2 "null")
+  (global $__s2 (mut (ref null $str)) (ref.null $str))
+  (data $__d3 "world")
+  (global $__s3 (mut (ref null $str)) (ref.null $str))
+  (start $__init_strs)
+  (func $__init_strs
+    i32.const 0
+    i32.const 6
+    array.new_data $str $__d0
+    global.set $__s0
+    i32.const 0
+    i32.const 6
+    array.new_data $str $__d1
+    global.set $__s1
+    i32.const 0
+    i32.const 4
+    array.new_data $str $__d2
+    global.set $__s2
+    i32.const 0
+    i32.const 5
+    array.new_data $str $__d3
+    global.set $__s3
+  )
+  (@custom "botopink.needs" "gc\0a")
 )
 ```
 

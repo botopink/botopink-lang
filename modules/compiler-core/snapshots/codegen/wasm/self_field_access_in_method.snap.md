@@ -12,13 +12,17 @@ val Point = type(
 ----- WASM TEXT -- main.wat
 ```wasm
 (module
+  (rec
+    (type $str (array (mut i8)))
+    (type $rec_Point (struct (field $f0 (mut i32)) (field $f1 (mut i32))))
+  )
   (memory (export "memory") 1)
   (global $__heap_ptr (mut i32) (i32.const 256))
-  (func $Point_sum (param $self i32) (result i32)
+  (func $Point_sum (param $self (ref null $rec_Point)) (result i32)
     local.get $self
-    i32.load ;; .x
+    struct.get $rec_Point $f0
     local.get $self
-    i32.load offset=4 ;; .y
+    struct.get $rec_Point $f1
     call $__i32_add_chk
     return
   )
@@ -166,6 +170,7 @@ val Point = type(
     )
     local.get $r
   )
+  (@custom "botopink.needs" "gc\0a")
 )
 ```
 

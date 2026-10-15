@@ -15,42 +15,63 @@ fn big(sh: Shape) -> string {
 ----- WASM TEXT -- main.wat
 ```wasm
 (module
+  (rec
+    (type $str (array (mut i8)))
+    (type $var_Shape_Circle (struct (field $f0 (mut i32))))
+  )
   (memory (export "memory") 1)
-  (data (i32.const 256) "\0a\00\00\00big circle")
-  (data (i32.const 272) "\05\00\00\00other")
-  (global $__heap_ptr (mut i32) (i32.const 284))
-  (func $big (param $sh i32) (result i32)
+  (global $__heap_ptr (mut i32) (i32.const 256))
+  (func $big (param $sh anyref) (result (ref null $str))
     (local $r i32)
-    (local $__case_0 i32)
+    (local $__case_0 anyref)
     local.get $sh
     local.set $__case_0
     local.get $__case_0
-    i32.load ;; variant tag
-    i32.const 0 ;; Circle
-    i32.eq
-    (if (result i32)
+    ref.test (ref null $var_Shape_Circle)
+    local.get $__case_0
+    ref.is_null
+    i32.eqz
+    i32.and
+    (if (result (ref null $str))
       (then
     local.get $__case_0
-    i32.load offset=4
+    ref.cast (ref null $var_Shape_Circle)
+    struct.get $var_Shape_Circle $f0
     local.set $r
     local.get $r
     i32.const 10
     i32.gt_s
-    (if (result i32)
+    (if (result (ref null $str))
       (then
-    i32.const 256
+    global.get $__s0
       )
       (else
-    i32.const 272
+    global.get $__s1
       )
     )
       )
       (else
-    i32.const 272
+    global.get $__s1
       )
     )
     return
   )
+  (data $__d0 "big circle")
+  (global $__s0 (mut (ref null $str)) (ref.null $str))
+  (data $__d1 "other")
+  (global $__s1 (mut (ref null $str)) (ref.null $str))
+  (start $__init_strs)
+  (func $__init_strs
+    i32.const 0
+    i32.const 10
+    array.new_data $str $__d0
+    global.set $__s0
+    i32.const 0
+    i32.const 5
+    array.new_data $str $__d1
+    global.set $__s1
+  )
+  (@custom "botopink.needs" "gc\0a")
 )
 ```
 

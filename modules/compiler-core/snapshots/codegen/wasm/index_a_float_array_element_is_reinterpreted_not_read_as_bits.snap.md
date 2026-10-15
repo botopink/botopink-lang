@@ -10,39 +10,95 @@ fn main() {
 ----- WASM TEXT -- main.wat
 ```wasm
 (module
+  (rec
+    (type $str (array (mut i8)))
+    (type $arr_f64 (array (mut f64)))
+    (type $box_f64 (struct (field $v f64)))
+  )
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
   (global $__heap_ptr (mut i32) (i32.const 8816))
   (func $main
     (local $__mem0 i32)
-    (local $fs i32)
-    i32.const 12
-    call $__alloc
-    local.set $__mem0
-    local.get $__mem0
-    i32.const 2
-    i32.store
-    local.get $__mem0
+    (local $fs (ref null $arr_f64))
+    (local $__gc0 anyref)
+    (local $__gc1 anyref)
     f64.const 1.5
-    call $__box_f64
-    i32.store offset=4
-    local.get $__mem0
     f64.const 2.5
-    call $__box_f64
-    i32.store offset=8
-    local.get $__mem0
+    array.new_fixed $arr_f64 2
     local.set $fs
     local.get $fs
     i32.const 0
-    call $__arr_at
-    call $__print_opt_f64
+    call $__arr_at_opt_f64
+    local.tee $__gc0
+    ref.is_null
+    (if
+      (then
+    global.get $__s0
+    call $__print_str_raw
+      )
+      (else
+    local.get $__gc0
+    ref.cast (ref null $box_f64)
+    struct.get $box_f64 $v
+    call $__print_f64_raw
+      )
+    )
+    call $__print_nl
     local.get $fs
     i32.const 0
-    call $__arr_at
-    call $__print_opt_f64
+    call $__arr_at_opt_f64
+    local.tee $__gc1
+    ref.is_null
+    (if
+      (then
+    global.get $__s0
+    call $__print_str_raw
+      )
+      (else
+    local.get $__gc1
+    ref.cast (ref null $box_f64)
+    struct.get $box_f64 $v
+    call $__print_f64_raw
+      )
+    )
+    call $__print_nl
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")
     (call $main)
+  )
+  (func $__arr_at_opt_f64 (param $xs (ref null $arr_f64)) (param $i i32) (result anyref)
+    local.get $i
+    i32.const 0
+    i32.lt_s
+    (if
+      (then
+    local.get $i
+    local.get $xs
+    array.len
+    i32.add
+    local.set $i
+      )
+    )
+    local.get $i
+    i32.const 0
+    i32.lt_s
+    local.get $i
+    local.get $xs
+    array.len
+    i32.ge_s
+    i32.or
+    (if (result anyref)
+      (then
+    ref.null any
+      )
+      (else
+    local.get $xs
+    local.get $i
+    array.get $arr_f64
+    struct.new $box_f64
+      )
+    )
   )
   ;; Scratch layout below the data section (which starts at 256):
   ;;   0..8  WASI iovec   8  newline byte
@@ -224,58 +280,46 @@ fn main() {
       )
     )
   )
-  (func $__print_str_raw (param $s i32)
+  (func $__print_str_raw (param $s (ref null $str))
+    (local $n i32) (local $p i32) (local $i i32) (local $top i32)
     local.get $s
-    i32.const 256
-    i32.lt_u
-    (if
-      (then
-        ;; a pointer below the data floor is not a string
-        unreachable
+    array.len
+    local.set $n
+    global.get $__heap_ptr
+    local.set $top
+    local.get $n
+    call $__alloc
+    local.set $p
+    (block $brk
+      (loop $cont
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $brk
+        local.get $p
+        local.get $i
+        i32.add
+        local.get $s
+        local.get $i
+        array.get_u $str
+        i32.store8
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $cont
       )
     )
-    local.get $s
-    i32.const 4
-    i32.add
-    local.get $s
-    i32.load
+    local.get $p
+    local.get $n
     call $__write_bytes
+    local.get $top
+    global.set $__heap_ptr
   )
-  (func $__print_str (param $s i32)
+  (func $__print_str (param $s (ref null $str))
     local.get $s
     call $__print_str_raw
     call $__print_nl
-  )
-  (func $__print_bool (param $b i32)
-    local.get $b
-    call $__print_bool_raw
-    call $__print_nl
-  )
-  (func $__print_bool_raw (param $b i32)
-    local.get $b
-    (if
-      (then
-        ;; "true" as a little-endian i32
-        i32.const 16
-        i32.const 1702195828
-        i32.store
-        i32.const 16
-        i32.const 4
-        call $__write_bytes
-      )
-      (else
-        ;; "fals" + 'e'
-        i32.const 16
-        i32.const 1936482662
-        i32.store
-        i32.const 16
-        i32.const 101
-        i32.store8 offset=4
-        i32.const 16
-        i32.const 5
-        call $__write_bytes
-      )
-    )
   )
   (func $__print_f64 (param $x f64)
     local.get $x
@@ -283,7 +327,9 @@ fn main() {
     call $__print_nl
   )
   (func $__print_f64_raw (param $x f64)
-    (local $s i32)
+    (local $s i32) (local $top i32)
+    global.get $__heap_ptr
+    local.set $top
     local.get $x
     call $__std_number_floatToString
     local.set $s
@@ -293,41 +339,8 @@ fn main() {
     local.get $s
     i32.load
     call $__write_bytes
-  )
-  (func $__arr_at (param $xs i32) (param $i i32) (result i32)
-    local.get $i
-    i32.const 0
-    i32.lt_s
-    (if
-      (then
-        local.get $i
-        local.get $xs
-        i32.load
-        i32.add
-        local.set $i
-      )
-    )
-    local.get $i
-    i32.const 0
-    i32.lt_s
-    local.get $i
-    local.get $xs
-    i32.load
-    i32.ge_s
-    i32.or
-    (if (result i32)
-      (then i32.const 0)
-      (else
-        local.get $xs
-        local.get $i
-        i32.const 1
-        i32.add
-        i32.const 4
-        i32.mul
-        i32.add
-        i32.load
-      )
-    )
+    local.get $top
+    global.set $__heap_ptr
   )
   (func $__alloc (param $n i32) (result i32)
     (local $p i32) (local $e i32)
@@ -377,98 +390,6 @@ fn main() {
     global.set $__heap_ptr
     local.get $p
   )
-  (func $__print_null
-    i32.const 176
-    i32.const 1819047278
-    i32.store
-    i32.const 176
-    i32.const 4
-    call $__write_bytes
-  )
-  (func $__print_opt_i32_raw (param $p i32)
-    local.get $p
-    i32.eqz
-    (if
-      (then
-        call $__print_null
-      )
-      (else
-        local.get $p
-        i32.load
-        call $__print_i32_raw
-      )
-    )
-  )
-  (func $__print_opt_i32 (param $p i32)
-    local.get $p
-    call $__print_opt_i32_raw
-    call $__print_nl
-  )
-  (func $__print_opt_bool_raw (param $p i32)
-    local.get $p
-    i32.eqz
-    (if
-      (then
-        call $__print_null
-      )
-      (else
-        local.get $p
-        i32.load
-        call $__print_bool_raw
-      )
-    )
-  )
-  (func $__print_opt_bool (param $p i32)
-    local.get $p
-    call $__print_opt_bool_raw
-    call $__print_nl
-  )
-  (func $__print_opt_str_raw (param $s i32)
-    local.get $s
-    i32.eqz
-    (if
-      (then
-        call $__print_null
-      )
-      (else
-        local.get $s
-        call $__print_str_raw
-      )
-    )
-  )
-  (func $__print_opt_str (param $s i32)
-    local.get $s
-    call $__print_opt_str_raw
-    call $__print_nl
-  )
-  (func $__print_opt_f64_raw (param $p i32)
-    local.get $p
-    i32.eqz
-    (if
-      (then
-        call $__print_null
-      )
-      (else
-        local.get $p
-        f64.load
-        call $__print_f64_raw
-      )
-    )
-  )
-  (func $__print_opt_f64 (param $p i32)
-    local.get $p
-    call $__print_opt_f64_raw
-    call $__print_nl
-  )
-  (func $__box_f64 (param $x f64) (result i32)
-    (local $p i32)
-    i32.const 8
-    call $__alloc
-    local.tee $p
-    local.get $x
-    f64.store
-    local.get $p
-  )
   ;; std-wasm (decision 440): its functions, transpiled from std_wasm.wasm
   (global $__std_sp (mut i32) (i32.const 8816))
   (func $__std_sp_check (param $sp i32) (result i32)
@@ -495,6 +416,16 @@ fn main() {
   ;; __std_f525 — from std_wasm.wasm (sha256 4c40dff46753)
   ;; __std_f526 — from std_wasm.wasm (sha256 4d190b081720)
   ;; __std_f527 — from std_wasm.wasm (sha256 94fc71de7e06)
+  (data $__d0 "null")
+  (global $__s0 (mut (ref null $str)) (ref.null $str))
+  (start $__init_strs)
+  (func $__init_strs
+    i32.const 0
+    i32.const 4
+    array.new_data $str $__d0
+    global.set $__s0
+  )
+  (@custom "botopink.needs" "gc\0a")
 )
 ```
 

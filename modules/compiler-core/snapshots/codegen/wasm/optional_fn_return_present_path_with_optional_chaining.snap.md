@@ -16,52 +16,62 @@ fn main() {
 ----- WASM TEXT -- main.wat
 ```wasm
 (module
+  (rec
+    (type $str (array (mut i8)))
+    (type $rec_R (struct (field $f0 (mut i32))))
+    (type $box_i32 (struct (field $v i32)))
+  )
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
-  (data (i32.const 256) "\0a\00\00\00R\01R\01\04kindi")
-  (global $__heap_ptr (mut i32) (i32.const 272))
-  (func $choose (param $present i32) (result i32)
+  (global $__heap_ptr (mut i32) (i32.const 256))
+  (func $choose (param $present i32) (result (ref null $rec_R))
     (local $__mem0 i32)
     local.get $present
-    (if (result i32)
+    (if (result (ref null $rec_R))
       (then
-    i32.const 8
-    call $__alloc
-    local.set $__mem0
-    local.get $__mem0
-    i32.const 260
-    i32.store
-    local.get $__mem0
     i32.const 7
-    i32.store offset=4
-    local.get $__mem0
-    i32.const 4
-    i32.add
+    struct.new $rec_R
     return
       )
       (else
-    i32.const 0
+    ref.null $rec_R
     return
       )
     )
   )
   (func $main
     (local $__mem0 i32)
+    (local $__gc0 anyref)
+    (local $__gc1 (ref null $rec_R))
     i32.const 1
     call $choose
-    local.tee $__mem0
-    i32.eqz
-    (if (result i32)
+    local.tee $__gc1
+    ref.is_null
+    (if (result anyref)
       (then
-        i32.const 0 ;; ?.kind on null
+    ref.null any
       )
       (else
-        local.get $__mem0
-        i32.load ;; ?.kind
-        call $__box_i32
+    local.get $__gc1
+    struct.get $rec_R $f0
+    struct.new $box_i32
       )
     )
-    call $__print_opt_i32
+    local.tee $__gc0
+    ref.is_null
+    (if
+      (then
+    global.get $__s0
+    call $__print_str_raw
+      )
+      (else
+    local.get $__gc0
+    ref.cast (ref null $box_i32)
+    struct.get $box_i32 $v
+    call $__print_i32_raw
+      )
+    )
+    call $__print_nl
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")
     (call $main)
@@ -246,58 +256,46 @@ fn main() {
       )
     )
   )
-  (func $__print_str_raw (param $s i32)
+  (func $__print_str_raw (param $s (ref null $str))
+    (local $n i32) (local $p i32) (local $i i32) (local $top i32)
     local.get $s
-    i32.const 256
-    i32.lt_u
-    (if
-      (then
-        ;; a pointer below the data floor is not a string
-        unreachable
+    array.len
+    local.set $n
+    global.get $__heap_ptr
+    local.set $top
+    local.get $n
+    call $__alloc
+    local.set $p
+    (block $brk
+      (loop $cont
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $brk
+        local.get $p
+        local.get $i
+        i32.add
+        local.get $s
+        local.get $i
+        array.get_u $str
+        i32.store8
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $cont
       )
     )
-    local.get $s
-    i32.const 4
-    i32.add
-    local.get $s
-    i32.load
+    local.get $p
+    local.get $n
     call $__write_bytes
+    local.get $top
+    global.set $__heap_ptr
   )
-  (func $__print_str (param $s i32)
+  (func $__print_str (param $s (ref null $str))
     local.get $s
     call $__print_str_raw
     call $__print_nl
-  )
-  (func $__print_bool (param $b i32)
-    local.get $b
-    call $__print_bool_raw
-    call $__print_nl
-  )
-  (func $__print_bool_raw (param $b i32)
-    local.get $b
-    (if
-      (then
-        ;; "true" as a little-endian i32
-        i32.const 16
-        i32.const 1702195828
-        i32.store
-        i32.const 16
-        i32.const 4
-        call $__write_bytes
-      )
-      (else
-        ;; "fals" + 'e'
-        i32.const 16
-        i32.const 1936482662
-        i32.store
-        i32.const 16
-        i32.const 101
-        i32.store8 offset=4
-        i32.const 16
-        i32.const 5
-        call $__write_bytes
-      )
-    )
   )
   (func $__alloc (param $n i32) (result i32)
     (local $p i32) (local $e i32)
@@ -347,80 +345,16 @@ fn main() {
     global.set $__heap_ptr
     local.get $p
   )
-  (func $__box_i32 (param $v i32) (result i32)
-    (local $p i32)
+  (data $__d0 "null")
+  (global $__s0 (mut (ref null $str)) (ref.null $str))
+  (start $__init_strs)
+  (func $__init_strs
+    i32.const 0
     i32.const 4
-    call $__alloc
-    local.set $p
-    local.get $p
-    local.get $v
-    i32.store
-    local.get $p
+    array.new_data $str $__d0
+    global.set $__s0
   )
-  (func $__print_null
-    i32.const 176
-    i32.const 1819047278
-    i32.store
-    i32.const 176
-    i32.const 4
-    call $__write_bytes
-  )
-  (func $__print_opt_i32_raw (param $p i32)
-    local.get $p
-    i32.eqz
-    (if
-      (then
-        call $__print_null
-      )
-      (else
-        local.get $p
-        i32.load
-        call $__print_i32_raw
-      )
-    )
-  )
-  (func $__print_opt_i32 (param $p i32)
-    local.get $p
-    call $__print_opt_i32_raw
-    call $__print_nl
-  )
-  (func $__print_opt_bool_raw (param $p i32)
-    local.get $p
-    i32.eqz
-    (if
-      (then
-        call $__print_null
-      )
-      (else
-        local.get $p
-        i32.load
-        call $__print_bool_raw
-      )
-    )
-  )
-  (func $__print_opt_bool (param $p i32)
-    local.get $p
-    call $__print_opt_bool_raw
-    call $__print_nl
-  )
-  (func $__print_opt_str_raw (param $s i32)
-    local.get $s
-    i32.eqz
-    (if
-      (then
-        call $__print_null
-      )
-      (else
-        local.get $s
-        call $__print_str_raw
-      )
-    )
-  )
-  (func $__print_opt_str (param $s i32)
-    local.get $s
-    call $__print_opt_str_raw
-    call $__print_nl
-  )
+  (@custom "botopink.needs" "gc\0a")
 )
 ```
 

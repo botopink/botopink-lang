@@ -2946,3 +2946,392 @@ test "wat: std-wasm ---- a heap that exhausts its memory traps, never answers wi
     try std.testing.expect(std.mem.indexOf(u8, out, "unreachable") != null);
     try std.testing.expect(std.mem.indexOf(u8, out, "divide by zero") == null);
 }
+
+// ── front 164 s2 P2: the shapes a WasmGC module holds as references ──────────────
+//
+// Each program is lowered with records, variants, arrays, tuples, optionals and
+// `@Result`s as GC types (`(rec`), and its RUN LOG is the language's own answer.
+
+test "wat: gc ---- a record, its fields, a nested record and its structural equality" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\type Point(x: i32, y: i32)
+        \\type Person(name: string, age: i32, tall: bool, h: f64, home: Point)
+        \\
+        \\fn sum(p: Point) -> i32 {
+        \\    return p.x + p.y;
+        \\}
+        \\
+        \\fn greet(p: Person) -> string {
+        \\    return "hi " + p.name;
+        \\}
+        \\
+        \\pub fn main() {
+        \\    val p = Point(x: 1, y: 2);
+        \\    @print(sum(p));
+        \\    @print(p);
+        \\    val q = Person(name: "Ana", age: 30, tall: true, h: 1.75, home: p);
+        \\    @print(greet(q));
+        \\    @print(q);
+        \\    @print(q.home.y);
+        \\    @print(q.h);
+        \\    @print(q.tall);
+        \\    @print(p == Point(x: 1, y: 2));
+        \\    @print(p == Point(x: 1, y: 3));
+        \\}
+    );
+}
+
+test "wat: gc ---- a record's methods answering a number, a string and a record" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\type Counter(n: i32, label: string) {
+        \\    pub fn bump(self: Self) -> i32 {
+        \\        return self.n + 1;
+        \\    }
+        \\    pub fn name(self: Self) -> string {
+        \\        return self.label + "!";
+        \\    }
+        \\    pub fn scaled(self: Self, k: i32) -> i32 {
+        \\        return self.n * k;
+        \\    }
+        \\    pub fn twice(self: Self) -> Counter {
+        \\        return Counter(n: self.n * 2, label: self.label);
+        \\    }
+        \\}
+        \\
+        \\pub fn main() {
+        \\    val c = Counter(n: 4, label: "ctr");
+        \\    @print(c.bump());
+        \\    @print(c.name());
+        \\    @print(c.scaled(3));
+        \\    @print(c.twice());
+        \\    @print(c.twice().twice().n);
+        \\}
+    );
+}
+
+test "wat: gc ---- an enum with payloads, a case over its variants, its printed text and its equality" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\type Shape {
+        \\    Circle(r: i32),
+        \\    Rect(w: i32, h: i32),
+        \\    Dot,
+        \\}
+        \\
+        \\fn area(s: Shape) -> i32 {
+        \\    return case s {
+        \\        Circle(r) -> r * r * 3;
+        \\        Rect(w, h) -> w * h;
+        \\        Dot -> 0;
+        \\    };
+        \\}
+        \\
+        \\fn name(s: Shape) -> string {
+        \\    return case s {
+        \\        Circle -> "circle";
+        \\        Rect -> "rect";
+        \\        Dot -> "dot";
+        \\    };
+        \\}
+        \\
+        \\pub fn main() {
+        \\    val a = Shape.Circle(r: 2);
+        \\    val b = Shape.Rect(w: 3, h: 4);
+        \\    @print(area(a));
+        \\    @print(area(b));
+        \\    @print(area(Shape.Dot));
+        \\    @print(name(b));
+        \\    @print(a);
+        \\    @print(b);
+        \\    @print(Shape.Dot);
+        \\    @print(a == Shape.Circle(r: 2));
+        \\    @print(a == b);
+        \\}
+    );
+}
+
+test "wat: gc ---- an enum with float payloads inside a record, an all-unit enum field" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\type Shape {
+        \\    Circle(radius: f64),
+        \\    Square(side: f64),
+        \\}
+        \\
+        \\type Color { Red, Green, Blue }
+        \\
+        \\type Item(shape: Shape, color: Color, label: string)
+        \\
+        \\fn area(shape: Shape) -> f64 {
+        \\    return case shape {
+        \\        Circle(radius) -> radius * radius * 3.14;
+        \\        Square(side) -> side * side;
+        \\    };
+        \\}
+        \\
+        \\fn warm(c: Color) -> bool {
+        \\    return case c {
+        \\        Red -> true;
+        \\        Green -> false;
+        \\        Blue -> false;
+        \\    };
+        \\}
+        \\
+        \\pub fn main() {
+        \\    @print(area(Shape.Square(side: 2.0)));
+        \\    @print(area(Shape.Circle(radius: 1.0)));
+        \\    val it = Item(shape: Shape.Square(side: 3.0), color: Color.Green, label: "x");
+        \\    @print(it);
+        \\    @print(warm(it.color));
+        \\    @print(it.color);
+        \\    @print(area(it.shape));
+        \\}
+    );
+}
+
+test "wat: gc ---- arrays: a literal, an index, a loop, push, length and equality" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\fn total(xs: i32[]) -> i32 {
+        \\    var sum = 0;
+        \\    for (xs) { x -> sum = sum + x; }
+        \\    return sum;
+        \\}
+        \\
+        \\fn longest(names: string[]) -> i32 {
+        \\    var best = 0;
+        \\    for (names) { n -> if (n.length() > best) { best = n.length(); } }
+        \\    return best;
+        \\}
+        \\
+        \\pub fn main() {
+        \\    val xs = [3, 1, 2];
+        \\    @print(xs);
+        \\    @print(total(xs));
+        \\    @print(xs[1]);
+        \\    @print(xs.length);
+        \\    @print(xs.length());
+        \\    var ys = [10, 20];
+        \\    ys.push(30);
+        \\    @print(ys);
+        \\    val names = ["ann", "bobby"];
+        \\    @print(names);
+        \\    @print(longest(names));
+        \\    @print(names[1]);
+        \\    val fs = [1.5, 2.5];
+        \\    @print(fs);
+        \\    @print(xs == [3, 1, 2]);
+        \\    @print(xs == ys);
+        \\    val e: i32[] = [];
+        \\    @print(e.length());
+        \\    @print(e);
+        \\}
+    );
+}
+
+test "wat: gc ---- arrays: the operations that were std-wasm's, now the module's" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\pub fn main() {
+        \\    val xs = [3, 1, 2];
+        \\    @print(xs.reverse());
+        \\    @print(xs.slice(1));
+        \\    @print(xs.slice(0, 2));
+        \\    @print(xs.take(2));
+        \\    @print(xs.drop(1));
+        \\    @print(xs.rest());
+        \\    @print(xs.append([9, 8]));
+        \\    @print(xs.prepend(7));
+        \\    @print(xs.indexOf(2));
+        \\    @print(xs.indexOf(5));
+        \\    @print(xs.lastIndexOf(1));
+        \\    @print(xs.contains(1));
+        \\    @print(xs.contains(8));
+        \\    @print(xs.join("-"));
+        \\    val ws = ["a", "b", "c"];
+        \\    @print(ws.reverse());
+        \\    @print(ws.join(", "));
+        \\    @print(ws.indexOf("c"));
+        \\    @print(ws.contains("z"));
+        \\    val ns = [-5, 0, 123];
+        \\    @print(ns.join("|"));
+        \\    val fs = [1.5, 2.5];
+        \\    @print(fs.reverse());
+        \\    @print(fs.indexOf(2.5));
+        \\}
+    );
+}
+
+test "wat: gc ---- tuples: their elements, their printed text, an array of them and of records" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\type Pair(a: i32, b: string)
+        \\
+        \\pub fn main() {
+        \\    val t = #(1, "x", 2.5, true);
+        \\    @print(t);
+        \\    @print(t.0);
+        \\    @print(t.1);
+        \\    @print(t._2);
+        \\    @print(t._3);
+        \\    val u = #(1, "x", 2.5, true);
+        \\    @print(t == u);
+        \\    val rs = [Pair(a: 1, b: "p"), Pair(a: 2, b: "q")];
+        \\    @print(rs);
+        \\    for (rs) { r -> @print(r.b); }
+        \\    val ts = [#(1, "a"), #(2, "b")];
+        \\    @print(ts);
+        \\    @print(ts[0]);
+        \\}
+    );
+}
+
+test "wat: gc ---- optionals: at, null, a boxed scalar, ??, a narrowing binding and null compares" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\type Box(n: ?i32, s: ?string)
+        \\
+        \\fn first(xs: i32[]) -> ?i32 {
+        \\    return xs.at(0);
+        \\}
+        \\
+        \\fn pick(flag: bool) -> ?i32 {
+        \\    if (flag) {
+        \\        return 5;
+        \\    }
+        \\    return null;
+        \\}
+        \\
+        \\fn show(o: ?i32) -> i32 {
+        \\    return o ?? -1;
+        \\}
+        \\
+        \\pub fn main() {
+        \\    val xs = [7, 8];
+        \\    @print(xs.at(1));
+        \\    @print(xs.at(5));
+        \\    @print(first(xs));
+        \\    @print(pick(true));
+        \\    @print(pick(false));
+        \\    @print(show(pick(true)));
+        \\    @print(show(pick(false)));
+        \\    val b = Box(n: 3, s: "x");
+        \\    @print(b);
+        \\    val c = Box(n: null, s: null);
+        \\    @print(c);
+        \\    if (b.n) { v -> @print(v + 1); }
+        \\    val words = ["a", "b"];
+        \\    @print(words.at(0));
+        \\    @print(words.at(9));
+        \\    @print(words[1] ?? "z");
+        \\    @print(xs[0]);
+        \\    @print(b.n == null);
+        \\    @print(c.n == null);
+        \\}
+    );
+}
+
+test "wat: gc ---- optionals: a field read through ?. and an optional record field" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\type User(name: string, age: i32, next: ?User)
+        \\
+        \\fn nameOf(u: ?User) -> ?string {
+        \\    return u?.name;
+        \\}
+        \\
+        \\fn ageOf(u: ?User) -> ?i32 {
+        \\    return u?.age;
+        \\}
+        \\
+        \\pub fn main() {
+        \\    val a = User(name: "ann", age: 3, next: null);
+        \\    val b = User(name: "bob", age: 4, next: a);
+        \\    @print(nameOf(a));
+        \\    @print(nameOf(null));
+        \\    @print(ageOf(b));
+        \\    @print(b.next?.name);
+        \\    @print(a.next?.name);
+        \\    @print(b.next?.age ?? 0);
+        \\    @print(a == b);
+        \\    @print(b.next == a);
+        \\}
+    );
+}
+
+test "wat: gc ---- a @Result: its constructors, a case over it, try and unwrapOr" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\fn half(n: i32) -> @Result<i32, string> {
+        \\    if (n % 2 == 0) {
+        \\        return n / 2;
+        \\    }
+        \\    throw "odd";
+        \\}
+        \\
+        \\fn twice(n: i32) -> @Result<i32, string> {
+        \\    val h = try half(n);
+        \\    return try half(h);
+        \\}
+        \\
+        \\fn show(r: @Result<i32, string>) -> string {
+        \\    return case r {
+        \\        Ok(v) -> "ok " + v;
+        \\        Error(e) -> "err " + e;
+        \\    };
+        \\}
+        \\
+        \\pub fn main() {
+        \\    @print(half(4));
+        \\    @print(half(3));
+        \\    @print(twice(8));
+        \\    @print(twice(6));
+        \\    @print(show(half(10)));
+        \\    @print(show(half(7)));
+        \\    @print(half(6).unwrapOr(0));
+        \\    @print(half(5).unwrapOr(0));
+        \\    @print(half(6).isOk());
+        \\}
+    );
+}
+
+test "wat: gc ---- Bytes, and the string arrays and optional strings std-wasm answers" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\pub fn main() {
+        \\    val b = Bytes.fromUtf8("hello");
+        \\    @print(b.length());
+        \\    @print(b.slice(1, 3).length());
+        \\    val c = b.concat(Bytes.fromUtf8("!"));
+        \\    @print(c.length());
+        \\    @print(b == Bytes.fromUtf8("hello"));
+        \\    val r = b.toUtf8();
+        \\    @print(r);
+        \\    val parts = "a,b,c".split(",");
+        \\    @print(parts);
+        \\    @print("hello".at(1));
+        \\    @print("hello".at(9));
+        \\}
+    );
+}
+
+test "wat: gc ---- assert and panic messages, a folded comptime string val" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\val GREETING = comptime "hi";
+        \\
+        \\fn check(n: i32) -> i32 {
+        \\    assert n > 0, "n must be positive";
+        \\    return n;
+        \\}
+        \\
+        \\pub fn main() {
+        \\    @print(GREETING);
+        \\    @print(check(3));
+        \\    if (check(1) < 0) {
+        \\        @panic("negative");
+        \\    }
+        \\    @print("done");
+        \\}
+    );
+}
+
+test "wat: gc ---- a linked module no function of the program names does not keep it in linear memory" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\import {collections} from "std";
+        \\
+        \\pub fn main() {
+        \\    @print("x");
+        \\}
+    );
+}

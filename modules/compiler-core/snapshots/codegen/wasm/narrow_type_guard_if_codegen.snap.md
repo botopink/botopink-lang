@@ -12,19 +12,24 @@ fn main() {
 ----- WASM TEXT -- main.wat
 ```wasm
 (module
+  (rec
+    (type $str (array (mut i8)))
+  )
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
-  (data (i32.const 256) "\05\00\00\00hello")
-  (global $__heap_ptr (mut i32) (i32.const 268))
-  (func $isString (param $x i32) (result i32)
+  (global $__heap_ptr (mut i32) (i32.const 256))
+  (func $isString (param $x (ref null $str)) (result i32)
     (local $s i32)
-    (local $__opt0 i32)
+    (local $__opt0 (ref null $str))
+    (local $s__0 (ref null $str))
     local.get $x
     local.tee $__opt0
+    ref.is_null
+    i32.eqz
     (if (result i32)
       (then
     local.get $__opt0
-    local.set $s
+    local.set $s__0
     i32.const 1
     return
       )
@@ -37,7 +42,7 @@ fn main() {
     return
   )
   (func $main
-    i32.const 256
+    global.get $__s0
     call $isString
     call $__print_bool
   )
@@ -255,6 +260,16 @@ fn main() {
       )
     )
   )
+  (data $__d0 "hello")
+  (global $__s0 (mut (ref null $str)) (ref.null $str))
+  (start $__init_strs)
+  (func $__init_strs
+    i32.const 0
+    i32.const 5
+    array.new_data $str $__d0
+    global.set $__s0
+  )
+  (@custom "botopink.needs" "gc\0a")
 )
 ```
 

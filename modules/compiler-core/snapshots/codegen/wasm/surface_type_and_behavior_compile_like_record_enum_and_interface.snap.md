@@ -29,42 +29,50 @@ fn main() {
 ----- WASM TEXT -- main.wat
 ```wasm
 (module
+  (rec
+    (type $str (array (mut i8)))
+    (type $rec_Square (struct (field $f0 (mut i32))))
+    (type $var_Size_Small (struct))
+    (type $var_Size_Large (struct (field $f0 (mut i32))))
+  )
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
-  (data (i32.const 256) "\0f\00\00\00R\06Square\01\04sidei")
-  (data (i32.const 276) "\10\00\00\00V\nSize.Large\01\01ni")
-  (data (i32.const 296) "\0d\00\00\00V\nSize.Small\00")
-  (global $__heap_ptr (mut i32) (i32.const 316))
-  (func $Square_area (param $self i32) (result i32)
+  (global $__heap_ptr (mut i32) (i32.const 256))
+  (func $Square_area (param $self (ref null $rec_Square)) (result i32)
     local.get $self
-    i32.load ;; .side
+    struct.get $rec_Square $f0
     local.get $self
-    i32.load ;; .side
+    struct.get $rec_Square $f0
     call $__i32_mul_chk
     return
   )
-  (func $weight (param $s i32) (result i32)
+  (func $weight (param $s anyref) (result i32)
     (local $n i32)
-    (local $__case_0 i32)
+    (local $__case_0 anyref)
     local.get $s
     local.set $__case_0
     local.get $__case_0
-    i32.load ;; variant tag
-    i32.const 0 ;; Small
-    i32.eq
+    ref.test (ref null $var_Size_Small)
+    local.get $__case_0
+    ref.is_null
+    i32.eqz
+    i32.and
     (if (result i32)
       (then
     i32.const 1
       )
       (else
     local.get $__case_0
-    i32.load ;; variant tag
-    i32.const 1 ;; Large
-    i32.eq
+    ref.test (ref null $var_Size_Large)
+    local.get $__case_0
+    ref.is_null
+    i32.eqz
+    i32.and
     (if (result i32)
       (then
     local.get $__case_0
-    i32.load offset=4
+    ref.cast (ref null $var_Size_Large)
+    struct.get $var_Size_Large $f0
     local.set $n
     local.get $n
       )
@@ -79,52 +87,17 @@ fn main() {
   (func $main
     (local $__mem0 i32)
     (local $__mem1 i32)
-    (local $sq i32)
-    (local $__mem2 i32)
-    i32.const 8
-    call $__alloc
-    local.set $__mem0
-    local.get $__mem0
-    i32.const 260
-    i32.store
-    local.get $__mem0
+    (local $sq (ref null $rec_Square))
     i32.const 3
-    i32.store offset=4
-    local.get $__mem0
-    i32.const 4
-    i32.add
+    struct.new $rec_Square
     local.set $sq
     local.get $sq
     call $Square_area
     call $__print_i32
-    i32.const 12
-    call $__alloc
-    local.set $__mem1
-    local.get $__mem1
-    i32.const 280
-    i32.store
-    local.get $__mem1
-    i32.const 1
-    i32.store offset=4
-    local.get $__mem1
     i32.const 5
-    i32.store offset=8
-    local.get $__mem1
-    i32.const 4
-    i32.add
+    struct.new $var_Size_Large
     call $weight
-    i32.const 8
-    call $__alloc
-    local.set $__mem2
-    local.get $__mem2
-    i32.const 300
-    i32.store
-    local.get $__mem2
-    i32.const 0
-    i32.store offset=4
-    local.get $__mem2
-    i32.const 4
-    i32.add
+    struct.new $var_Size_Small
     call $weight
     call $__i32_add_chk
     call $__print_i32
@@ -312,54 +285,6 @@ fn main() {
       )
     )
   )
-  (func $__alloc (param $n i32) (result i32)
-    (local $p i32) (local $e i32)
-    global.get $__heap_ptr
-    local.set $p
-    local.get $p
-    local.get $n
-    i32.add
-    i32.const 3
-    i32.add
-    i32.const -4
-    i32.and
-    local.set $e
-    local.get $e
-    local.get $p
-    i32.lt_u
-    (if
-      (then
-        unreachable
-      )
-    )
-    local.get $e
-    memory.size
-    i32.const 16
-    i32.shl
-    i32.gt_u
-    (if
-      (then
-        local.get $e
-        i32.const 65535
-        i32.add
-        i32.const 16
-        i32.shr_u
-        memory.size
-        i32.sub
-        memory.grow
-        i32.const -1
-        i32.eq
-        (if
-          (then
-            unreachable
-          )
-        )
-      )
-    )
-    local.get $e
-    global.set $__heap_ptr
-    local.get $p
-  )
   (func $__i32_add_chk (param $a i32) (param $b i32) (result i32)
     (local $r i64)
     local.get $a
@@ -504,6 +429,7 @@ fn main() {
     )
     local.get $r
   )
+  (@custom "botopink.needs" "gc\0a")
 )
 ```
 

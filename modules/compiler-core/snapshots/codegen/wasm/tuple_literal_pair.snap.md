@@ -6,73 +6,33 @@ val pair = #(1, "hello");
 ----- WASM TEXT -- main.wat
 ```wasm
 (module
+  (rec
+    (type $str (array (mut i8)))
+    (type $arr_any (array (mut anyref)))
+    (type $box_i32 (struct (field $v i32)))
+  )
   (memory (export "memory") 1)
-  (start $__init_globals)
-  (data (i32.const 256) "\05\00\00\00hello")
-  (global $__heap_ptr (mut i32) (i32.const 268))
-  (global $pair (mut i32) (i32.const 0))
+  (start $__init_strs)
+  (global $__heap_ptr (mut i32) (i32.const 256))
+  (global $pair (mut (ref null $arr_any)) (ref.null $arr_any))
   (func $__init_globals
     (local $__mem0 i32)
-    i32.const 8
-    call $__alloc
-    local.set $__mem0
-    local.get $__mem0
     i32.const 1
-    i32.store
-    local.get $__mem0
-    i32.const 256
-    i32.store offset=4
-    local.get $__mem0
+    struct.new $box_i32
+    global.get $__s0
+    array.new_fixed $arr_any 2
     global.set $pair
   )
-  (func $__alloc (param $n i32) (result i32)
-    (local $p i32) (local $e i32)
-    global.get $__heap_ptr
-    local.set $p
-    local.get $p
-    local.get $n
-    i32.add
-    i32.const 3
-    i32.add
-    i32.const -4
-    i32.and
-    local.set $e
-    local.get $e
-    local.get $p
-    i32.lt_u
-    (if
-      (then
-        unreachable
-      )
-    )
-    local.get $e
-    memory.size
-    i32.const 16
-    i32.shl
-    i32.gt_u
-    (if
-      (then
-        local.get $e
-        i32.const 65535
-        i32.add
-        i32.const 16
-        i32.shr_u
-        memory.size
-        i32.sub
-        memory.grow
-        i32.const -1
-        i32.eq
-        (if
-          (then
-            unreachable
-          )
-        )
-      )
-    )
-    local.get $e
-    global.set $__heap_ptr
-    local.get $p
+  (data $__d0 "hello")
+  (global $__s0 (mut (ref null $str)) (ref.null $str))
+  (func $__init_strs
+    i32.const 0
+    i32.const 5
+    array.new_data $str $__d0
+    global.set $__s0
+    call $__init_globals
   )
+  (@custom "botopink.needs" "gc\0a")
 )
 ```
 
