@@ -803,6 +803,17 @@ target — at the `"bpp"` key `bpp_html_missing`,
 `bpp_prelude_holds_declaration` and `bpp_role_not_pub`, at the `.bpp` file `bpp_file_without_key`
 (line 1) and `bpp_style_section_without_style` (its `--- style ---` line). Every one was red on the
 parent binary.
+Decision 561 (a name between backticks is an identifier, 144 B-27) adds one cell per name position, each
+the same answer on commonJS, erlang, beam and wasm: `backtick_name_binding` (`` `not-found` `` beside
+`not - found`, a keyword `` `fn` ``, UTF-8 and spaces), `backtick_name_parameter` (by position, by label,
+a lambda's), `backtick_name_function` (a keyword `` `if` ``, recursion, a function value),
+`backtick_name_type` (a record with a method, an enum and its variants, matched and printed as written),
+`backtick_name_field`, `backtick_name_module_segment` (`` mod `my-utils`; `` and a nested
+`` `report-pages`.`not-found` ``), `backtick_name_import_item` (an item and an alias each way) and
+`backtick_name_in_diagnostic` (the backtick form in a refusal); `bpp_not_found_aliased` and
+`bpp_not_found_unaliased` import `not-found.bpp` over the `markup` fixture with and without an alias;
+`backtick_name_empty` and `backtick_name_line_break` are the two lexer refusals. Every one was red on the
+parent binary.
 Decision 254 types the answer `Declared<unknown>[]` whatever the program declares:
 `modules/typeinfo_all_unknown_value` catalogues two functions of different signatures in one answer
 (each naming its declared return type, `returnTypeName` — decision 256; `modules/typeinfo_all_list` reads

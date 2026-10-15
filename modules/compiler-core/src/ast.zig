@@ -87,13 +87,10 @@ pub const ImportPath = struct {
         return joinSegments(alloc, this.segments);
     }
 
-    /// The item as written, segments joined with `.` — for a diagnostic.
+    /// The item as written, segments joined with `.` — for a diagnostic (a
+    /// backtick segment keeps its backticks, decision 561).
     pub fn dotted(this: ImportPath, alloc: std.mem.Allocator) ![]const u8 {
-        const out = try joinSegments(alloc, this.segments);
-        for (@constCast(out)) |*c| {
-            if (c.* == '/') c.* = '.';
-        }
-        return out;
+        return std.mem.join(alloc, ".", this.segments);
     }
 
     /// True when two items name the same thing: same path, same activation.
@@ -108,12 +105,22 @@ pub const ImportPath = struct {
     }
 };
 
+/// Decision 561 — a backtick identifier's name keeps its backticks
+/// (`` `not-found` ``); as a module path segment it spells the file name
+/// without them.
+pub const isBacktickName = @import("lexer.zig").isBacktickName;
+pub const unquotedName = @import("lexer.zig").unquotedName;
+
+/// The segments of a module path joined with `/`, each the file name it
+/// spells: a backtick segment without its backticks (decision 561,
+/// `` pages.`not-found` `` → `pages/not-found`).
 fn joinSegments(alloc: std.mem.Allocator, segs: []const []const u8) ![]const u8 {
     var total: usize = 0;
-    for (segs, 0..) |s, i| total += s.len + @as(usize, if (i > 0) 1 else 0);
+    for (segs, 0..) |s, i| total += unquotedName(s).len + @as(usize, if (i > 0) 1 else 0);
     const out = try alloc.alloc(u8, total);
     var at: usize = 0;
-    for (segs, 0..) |s, i| {
+    for (segs, 0..) |seg, i| {
+        const s = unquotedName(seg);
         if (i > 0) {
             out[at] = '/';
             at += 1;

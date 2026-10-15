@@ -643,3 +643,29 @@ test "hover: a tuple index carries the type of its position" {
     try std.testing.expect(std.mem.indexOf(u8, result.?.contents.value, "void") == null);
     try snap.assertHover(gpa, "hover_val_tuple_index", source, h.pos(1, 4), result);
 }
+
+// ── Decision 561 — a backtick name is one name ────────────────────────────────
+
+test "hover: a backtick name is hovered whole" {
+    const gpa = std.testing.allocator;
+    const source =
+        \\val `not-found` = 42;
+        \\val `count` = 1;
+    ;
+
+    var c = try h.compile(gpa, source);
+    defer c.deinit(gpa);
+    const bindings = c.bindings() orelse return error.CompileFailed;
+
+    // Inside the backticks, past the `-`.
+    const result = try engine.hover(gpa, source, h.pos(0, 10), bindings);
+    defer if (result) |hov| gpa.free(hov.contents.value);
+    const hov = result orelse return error.NoHover;
+    try std.testing.expect(std.mem.indexOf(u8, hov.contents.value, "`not-found`") != null);
+    try std.testing.expect(std.mem.indexOf(u8, hov.contents.value, "i32") != null);
+
+    // `count` between backticks is the binding `count`.
+    const plain = try engine.hover(gpa, source, h.pos(1, 6), bindings);
+    defer if (plain) |p| gpa.free(p.contents.value);
+    try std.testing.expect(plain != null);
+}

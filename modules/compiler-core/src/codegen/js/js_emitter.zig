@@ -49,6 +49,48 @@ pub fn ident(name: []const u8) []const u8 {
     return name;
 }
 
+/// Decision 561 — a name that holds a backtick identifier (`` `not-found` ``,
+/// also inside a name the codegen composed around one, `Owner_`x y``) is no
+/// JS identifier: every byte but a letter, a digit and `_` is written `$` and
+/// two hex digits (`$60not$2dfound$60`). Only such a name holds a backtick,
+/// and its `$` is escaped too, so the escaped name meets no other name of the
+/// module and two names escape alike only when they are one name.
+fn hasBacktick(name: []const u8) bool {
+    return std.mem.indexOfScalar(u8, name, '`') != null;
+}
+
+/// Write `name` as a JS name: a backtick identifier escaped (`hasBacktick`),
+/// any other name as it is.
+pub fn writeName(w: *Writer, name: []const u8) Error!void {
+    if (!hasBacktick(name)) return w.writeAll(name);
+    for (name) |c| {
+        if (std.ascii.isAlphanumeric(c) or c == '_') try w.writeByte(c) else try w.print("${x:0>2}", .{c});
+    }
+}
+
+/// Write `name` as a property key (an object literal's, a destructuring
+/// pattern's, a method's): a backtick identifier is the string of its name
+/// (`"`x pos`"`), so the property keeps the botopink name — `Object.keys`
+/// answers it, and a printed record shows it as written; any other name as it
+/// is.
+pub fn writeKey(w: *Writer, name: []const u8) Error!void {
+    if (!hasBacktick(name)) return w.writeAll(name);
+    try w.writeByte('"');
+    for (name) |c| switch (c) {
+        '"' => try w.writeAll("\\\""),
+        '\\' => try w.writeAll("\\\\"),
+        else => try w.writeByte(c),
+    };
+    try w.writeByte('"');
+}
+
+/// Write `name` as a JS binding: the reserved-word rename (`ident`), or the
+/// escape of a backtick identifier.
+pub fn writeIdent(w: *Writer, name: []const u8) Error!void {
+    if (hasBacktick(name)) return writeName(w, name);
+    return w.writeAll(ident(name));
+}
+
 /// True when `ident` renamed the name (so an object shorthand `{ name }` would
 /// bind the wrong thing and has to become `{ name: name_ }`).
 fn isRenamed(name: []const u8) bool {
@@ -108,8 +150,8 @@ pub fn writeExpr(w: *Writer, e: Ast.Expr, indent: usize) Error!void {
         },
         .number => |n| try w.writeAll(n),
         .null_ => try w.writeAll("null"),
-        .ident => |n| try w.writeAll(ident(n)),
-        .name => |n| try w.writeAll(n),
+        .ident => |n| try writeIdent(w, n),
+        .name => |n| try writeName(w, n),
         .this => try w.writeAll("this"),
         .member => |m| {
             // A number literal takes parentheses before a `.`: `42.toString()`
@@ -120,8 +162,16 @@ pub fn writeExpr(w: *Writer, e: Ast.Expr, indent: usize) Error!void {
             if (paren_number) try w.writeByte('(');
             try writeExpr(w, m.object.*, indent);
             if (paren_number) try w.writeByte(')');
-            try w.writeAll(if (m.optional) "?." else ".");
-            try w.writeAll(m.name);
+            if (hasBacktick(m.name)) {
+                // A backtick property is read by its string (`writeKey`).
+                if (m.optional) try w.writeAll("?.");
+                try w.writeByte('[');
+                try writeKey(w, m.name);
+                try w.writeByte(']');
+            } else {
+                try w.writeAll(if (m.optional) "?." else ".");
+                try w.writeAll(m.name);
+            }
         },
         .index => |ix| {
             try writeExpr(w, ix.object.*, indent);
@@ -248,7 +298,7 @@ fn writeArray(w: *Writer, arr: Ast.Array, indent: usize) Error!void {
 fn writeSpread(w: *Writer, sp: Ast.Spread, indent: usize) Error!void {
     try w.writeAll("...");
     switch (sp) {
-        .name => |n| try w.writeAll(n),
+        .name => |n| try writeName(w, n),
         .expr => |e| try writeExpr(w, e.*, indent),
     }
 }
@@ -284,11 +334,17 @@ fn writeObject(w: *Writer, obj: Ast.Object, indent: usize) Error!void {
 fn writeProp(w: *Writer, p: Ast.Object.Prop, indent: usize) Error!void {
     switch (p) {
         .kv => |kv| {
-            try w.writeAll(kv.key);
+            try writeKey(w, kv.key);
             try w.writeAll(": ");
             try writeExpr(w, kv.value, indent);
         },
         .shorthand => |name| {
+            if (hasBacktick(name)) {
+                try writeKey(w, name);
+                try w.writeAll(": ");
+                try writeName(w, name);
+                return;
+            }
             try w.writeAll(name);
             if (isRenamed(name)) {
                 try w.writeAll(": ");
@@ -296,7 +352,7 @@ fn writeProp(w: *Writer, p: Ast.Object.Prop, indent: usize) Error!void {
             }
         },
         .method => |m| {
-            try w.writeAll(m.name);
+            try writeKey(w, m.name);
             try writeParams(w, m.params, indent);
             try w.writeByte(' ');
             try writeBlock(w, m.body);
@@ -326,23 +382,29 @@ fn writeParam(w: *Writer, p: Ast.Param, indent: usize) Error!void {
 
 pub fn writePattern(w: *Writer, pat: Ast.Pattern, indent: usize) Error!void {
     switch (pat) {
-        .ident => |n| try w.writeAll(ident(n)),
-        .name => |n| try w.writeAll(n),
+        .ident => |n| try writeIdent(w, n),
+        .name => |n| try writeName(w, n),
         .object => |o| {
             try w.writeAll("{ ");
             for (o.props, 0..) |p, i| {
                 if (i > 0) try w.writeAll(", ");
                 if (p.nested) |n| {
-                    try w.writeAll(p.key);
+                    try writeKey(w, p.key);
                     try w.writeAll(": ");
                     try writePattern(w, n.*, indent);
                 } else if (p.bind) |b| {
-                    try w.writeAll(p.key);
+                    try writeKey(w, p.key);
                     try w.writeAll(": ");
-                    try w.writeAll(b);
+                    try writeName(w, b);
                 } else {
                     // Shorthand, unless the key is a reserved word: then the
                     // binding has to be renamed and spelled out.
+                    if (hasBacktick(p.key)) {
+                        try writeKey(w, p.key);
+                        try w.writeAll(": ");
+                        try writeName(w, p.key);
+                        continue;
+                    }
                     try w.writeAll(p.key);
                     if (isRenamed(p.key)) {
                         try w.writeAll(": ");
@@ -374,7 +436,7 @@ pub fn writePattern(w: *Writer, pat: Ast.Pattern, indent: usize) Error!void {
 fn writeRest(w: *Writer, r: Ast.Rest) Error!void {
     try w.writeAll("...");
     switch (r) {
-        .binding => |n| try w.writeAll(ident(n)),
+        .binding => |n| try writeIdent(w, n),
     }
 }
 
@@ -582,7 +644,7 @@ fn writeInlineComment(w: *Writer, c: Ast.Comment) Error!void {
 fn writeFunctionDecl(w: *Writer, f: Ast.FunctionDecl, indent: usize) Error!void {
     try w.writeAll(f.keyword);
     try w.writeByte(' ');
-    try w.writeAll(ident(f.name));
+    try writeIdent(w, f.name);
     try writeParams(w, f.params, indent);
     try w.writeByte(' ');
     try writeBlock(w, f.body);
@@ -590,10 +652,10 @@ fn writeFunctionDecl(w: *Writer, f: Ast.FunctionDecl, indent: usize) Error!void 
 
 fn writeClass(w: *Writer, c: Ast.Class, indent: usize) Error!void {
     try w.writeAll("class ");
-    try w.writeAll(c.name);
+    try writeName(w, c.name);
     if (c.extends) |base| {
         try w.writeAll(" extends ");
-        try w.writeAll(base);
+        try writeName(w, base);
     }
     try w.writeAll(" {\n");
     if (c.ctor) |ctor| {
@@ -618,7 +680,7 @@ fn writeClass(w: *Writer, c: Ast.Class, indent: usize) Error!void {
         // JS fixes the order of a method's modifiers: `static async *name`.
         if (m.is_async) try w.writeAll("async ");
         if (m.is_generator) try w.writeByte('*');
-        try w.writeAll(m.name);
+        try writeKey(w, m.name);
         try writeParams(w, m.params, indent);
         try w.writeByte(' ');
         try writeBlock(w, m.body);
@@ -688,6 +750,14 @@ test "js_emitter: reserved words are renamed once, in the emitter" {
     // A property position accepts a reserved word, so it is never renamed.
     const obj = Ast.Expr.id("x");
     try expectExpr("x.delete", .{ .member = .{ .object = &obj, .name = "delete" } });
+}
+
+test "js_emitter: a backtick name is an escaped binding and a string key" {
+    try expectExpr("$60not$2dfound$60", Ast.Expr.id("`not-found`"));
+    try expectExpr("$60fn$60", Ast.Expr.id("`fn`"));
+    const obj = Ast.Expr.id("p");
+    try expectExpr("p[\"`x pos`\"]", .{ .member = .{ .object = &obj, .name = "`x pos`" } });
+    try expectExpr("p?.[\"`x pos`\"]", .{ .member = .{ .object = &obj, .name = "`x pos`", .optional = true } });
 }
 
 test "js_emitter: string literals keep validated escapes and escape raw bytes" {

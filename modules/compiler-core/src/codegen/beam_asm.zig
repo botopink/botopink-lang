@@ -3207,6 +3207,26 @@ const Emitter = struct {
     }
 
     /// The tag of a variant whose enum the site already names.
+    /// Whether `name` reads as a type: PascalCase, or — a backtick name having
+    /// no case to read (decision 561, `` `Color kind` ``) — a type this module
+    /// can name.
+    fn typeLike(self: *const Emitter, name: []const u8) bool {
+        if (name.len > 0 and std.ascii.isUpper(name[0])) return true;
+        if (!lexerMod.isBacktickName(name)) return false;
+        return self.type_owner_path.contains(name) or self.record_fields.contains(name) or
+            self.enum_names.contains(name) or self.imported_types.contains(name) or self.enum_variant_names.contains(name);
+    }
+
+    /// Whether `variant`, called on the type `enum_name`, reads as a variant:
+    /// PascalCase, or a backtick name the enum declares (decision 561).
+    fn variantLike(self: *const Emitter, enum_name: []const u8, variant: []const u8) bool {
+        if (variant.len > 0 and std.ascii.isUpper(variant[0])) return true;
+        if (!lexerMod.isBacktickName(variant)) return false;
+        const shapes = self.enum_variant_names.get(enum_name) orelse return self.variant_enum.contains(variant);
+        for (shapes) |v| if (std.mem.eql(u8, v.name, variant)) return true;
+        return false;
+    }
+
     fn qualifiedVariantTagOf(self: *Emitter, enum_name: []const u8, variant: []const u8) ?[]const u8 {
         return self.variantTagAtom(enum_name, variant) catch null;
     }
@@ -7488,14 +7508,14 @@ const Emitter = struct {
                 // tagged tuple rather than the unresolved-method-call path.
                 const isSynthesisedTypeRecv = rn.len >= 3 and rn[0] == '_' and rn[1] == '_' and std.ascii.isUpper(rn[2]);
                 if (rn.len > 0 and rn.len <= 128 and
-                    (std.ascii.isUpper(rn[0]) or isSynthesisedTypeRecv) and !self.reg_map.contains(rn))
+                    (self.typeLike(rn) or isSynthesisedTypeRecv) and !self.reg_map.contains(rn))
                 {
                     // `Type.Variant(…)` — a PascalCase callee on a PascalCase
                     // type receiver is an enum variant constructor, not a module
                     // call → tagged tuple `{Variant, payload…}` (matches the tag
                     // tested by `is_tagged_tuple`). A lowercase callee (`List.map`)
                     // is a module-qualified remote call.
-                    if (cc.callee.len > 0 and std.ascii.isUpper(cc.callee[0])) {
+                    if (self.variantLike(rn, cc.callee)) {
                         try self.lowerTaggedTuple(self.qualifiedVariantTagOf(rn, cc.callee) orelse cc.callee, cc.args, self.variantDeclOf(rn, cc.callee));
                         if (mode == .tail) try self.emitReturn();
                         return;
@@ -7787,7 +7807,11 @@ const Emitter = struct {
         // below take it.
         const names_imported_fn = self.imported_fn_owners.contains(cc.callee) or
             self.crossOwnerOf(cc.callee, .@"fn") != null;
-        if (cc.callee.len > 0 and std.ascii.isUpper(cc.callee[0]) and !names_imported_fn) {
+        // A backtick type name (decision 561, `` `my point` ``) has no case to
+        // read: it is a constructor when it names a known record, and never
+        // takes the label-keyed fallback a function's labelled call would.
+        const pascal = cc.callee.len > 0 and std.ascii.isUpper(cc.callee[0]);
+        if ((pascal or lexerMod.isBacktickName(cc.callee)) and !names_imported_fn) {
             if (self.record_fields.get(cc.callee)) |fields| {
                 try self.lowerRecordConstruct(cc.args, fields, cc.callee);
                 if (mode == .tail) try self.emitReturn();
@@ -7795,7 +7819,7 @@ const Emitter = struct {
             }
             // No registered shape (e.g. an inferred/anonymous record) but all
             // args are labeled — fall back to label-keyed construction.
-            if (allNamed(cc.args)) {
+            if (pascal and allNamed(cc.args)) {
                 try self.lowerRecordConstruct(cc.args, null, null);
                 if (mode == .tail) try self.emitReturn();
                 return;
@@ -12592,7 +12616,7 @@ const Emitter = struct {
         // map (the receiver name alone tells the codegen this is a type).
         if (ia.receiver.* == .identifier and ia.receiver.*.identifier.kind == .ident) {
             const rn = ia.receiver.*.identifier.kind.ident;
-            const isPascal = rn.len > 0 and std.ascii.isUpper(rn[0]);
+            const isPascal = self.typeLike(rn);
             const isSynth = rn.len >= 3 and rn[0] == '_' and rn[1] == '_' and std.ascii.isUpper(rn[2]);
             if ((isPascal or isSynth) and !self.reg_map.contains(rn) and self.cv.get(rn) == null) {
                 const tag = self.qualifiedVariantTagOf(rn, ia.member) orelse ia.member;

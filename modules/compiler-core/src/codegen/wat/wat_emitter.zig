@@ -17,6 +17,36 @@ const Writer = std.Io.Writer;
 
 pub const Error = Writer.Error || ast.Invalid;
 
+// ── identifiers ──────────────────────────────────────────────────────────────
+
+/// `{f}` formatter for the text after a `$`. A name that holds a backtick
+/// identifier (decision 561 — `` `add one` ``, also inside a name the codegen
+/// composed around one) is escaped: every byte that is no WAT `idchar`, and
+/// `\` itself, becomes `\` and two hex digits (`` $`add\20one` ``). Only such
+/// a name holds a backtick, so the escaped name meets no other name of the
+/// module, and two names escape alike only when they are one name. Any other
+/// name is written as it is.
+pub fn id(name: []const u8) IdFormatter {
+    return .{ .name = name };
+}
+
+pub const IdFormatter = struct {
+    name: []const u8,
+
+    pub fn format(self: IdFormatter, w: *Writer) Writer.Error!void {
+        if (std.mem.indexOfScalar(u8, self.name, '`') == null) return w.writeAll(self.name);
+        for (self.name) |c| {
+            if (c != '\\' and isIdChar(c)) try w.writeByte(c) else try w.print("\\{x:0>2}", .{c});
+        }
+    }
+};
+
+/// The WAT text format's `idchar`.
+fn isIdChar(c: u8) bool {
+    if (std.ascii.isAlphanumeric(c)) return true;
+    return std.mem.indexOfScalar(u8, "!#$%&'*+-./:<=>?@\\^_`|~", c) != null;
+}
+
 // ── entry points ─────────────────────────────────────────────────────────────
 
 /// Render a whole `(module …)` form.
@@ -359,10 +389,10 @@ fn renderItem(w: *Writer, defs: Defs, it: ast.Item) Error!void {
         .types => |types| try recGroup(w, types),
         .import => |im| try import(w, defs, im),
         .memory => |mem| try memory(w, mem),
-        .start => |name| try w.print("  (start ${s})\n", .{name}),
+        .start => |name| try w.print("  (start ${f})\n", .{id(name)}),
         .table => |names| {
             try w.writeAll("  (table funcref (elem");
-            for (names) |n| try w.print(" ${s}", .{n});
+            for (names) |n| try w.print(" ${f}", .{id(n)});
             try w.writeAll("))\n");
         },
         .data => |d| try dataSegment(w, d),
@@ -370,7 +400,7 @@ fn renderItem(w: *Writer, defs: Defs, it: ast.Item) Error!void {
         .func => |f| try func(w, defs, f),
         .comment => |text| try w.print("  ;; {s}\n", .{text}),
         .tag => |t| {
-            try w.print("  (tag ${s}", .{t.name});
+            try w.print("  (tag ${f}", .{id(t.name)});
             if (t.params.len > 0) {
                 try w.writeAll(" (param");
                 for (t.params) |p| try typeText(w, defs, p, " ");
@@ -392,7 +422,7 @@ fn renderItem(w: *Writer, defs: Defs, it: ast.Item) Error!void {
 // ── forms ────────────────────────────────────────────────────────────────────
 
 fn import(w: *Writer, defs: Defs, im: ast.Import) Error!void {
-    try w.print("  (import \"{s}\" \"{s}\" (func ${s}", .{ im.module, im.name, im.func });
+    try w.print("  (import \"{s}\" \"{s}\" (func ${f}", .{ im.module, im.name, id(im.func) });
     if (im.type.params.len > 0) {
         try w.writeAll(" (param");
         for (im.type.params) |p| try typeText(w, defs, p, " ");
@@ -411,7 +441,7 @@ fn memory(w: *Writer, mem: ast.Memory) Error!void {
 }
 
 fn global(w: *Writer, defs: Defs, g: ast.Global) Error!void {
-    try w.print("  (global ${s}", .{g.name});
+    try w.print("  (global ${f}", .{id(g.name)});
     for (g.exports) |e| try w.print(" (export \"{s}\")", .{e});
     if (g.mutable) {
         try w.writeAll(" (mut");
@@ -427,10 +457,10 @@ fn global(w: *Writer, defs: Defs, g: ast.Global) Error!void {
 }
 
 fn func(w: *Writer, defs: Defs, f: ast.Func) Error!void {
-    try w.print("  (func ${s}", .{f.name});
+    try w.print("  (func ${f}", .{id(f.name)});
     for (f.exports) |e| try w.print(" (export \"{s}\")", .{e});
     for (f.params) |p| {
-        try w.print(" (param ${s}", .{p.name});
+        try w.print(" (param ${f}", .{id(p.name)});
         try typeText(w, defs, p.ty, " ");
         try w.writeAll(")");
     }
@@ -443,7 +473,7 @@ fn func(w: *Writer, defs: Defs, f: ast.Func) Error!void {
         try w.writeAll("    ");
         for (group, 0..) |l, i| {
             if (i > 0) try w.writeAll(" ");
-            try w.print("(local ${s}", .{l.name});
+            try w.print("(local ${f}", .{id(l.name)});
             try typeText(w, defs, l.ty, " ");
             try w.writeAll(")");
         }
@@ -463,7 +493,7 @@ fn typeText(w: *Writer, defs: Defs, t: ast.ValType, sep: []const u8) Error!void 
     try w.writeAll(sep);
     if (t.defIndex()) |k| {
         if (k >= defs.len) return error.UndefinedType;
-        return w.print("(ref null ${s})", .{defs[k].name});
+        return w.print("(ref null ${f})", .{id(defs[k].name)});
     }
     try w.writeAll(t.text());
 }
@@ -478,7 +508,7 @@ fn resultText(w: *Writer, defs: Defs, t: ast.ValType) Error!void {
 fn heapText(w: *Writer, defs: Defs, t: ast.ValType) Error!void {
     if (t.defIndex()) |k| {
         if (k >= defs.len) return error.UndefinedType;
-        return w.print(" ${s}", .{defs[k].name});
+        return w.print(" ${f}", .{id(defs[k].name)});
     }
     try w.print(" {s}", .{t.heapText() orelse return error.UndefinedType});
 }
@@ -494,7 +524,7 @@ fn fieldText(w: *Writer, defs: Defs, r: ast.FieldRef) Error!void {
         .@"struct" => |f| f,
         .array => return error.UndefinedType,
     };
-    if (fields[r.field].name) |n| return w.print(" ${s}", .{n});
+    if (fields[r.field].name) |n| return w.print(" ${f}", .{id(n)});
     try w.print(" {d}", .{r.field});
 }
 
@@ -510,19 +540,19 @@ fn fieldType(w: *Writer, defs: Defs, f: ast.Field) Error!void {
 fn recGroup(w: *Writer, types: []const ast.TypeDef) Error!void {
     try w.writeAll("  (rec\n");
     for (types) |t| {
-        try w.print("    (type ${s} ", .{t.name});
+        try w.print("    (type ${f} ", .{id(t.name)});
         const sub = !t.final or t.super != null;
         if (sub) {
             try w.writeAll("(sub ");
             if (t.final) try w.writeAll("final ");
-            if (t.super) |k| try w.print("${s} ", .{types[k].name});
+            if (t.super) |k| try w.print("${f} ", .{id(types[k].name)});
         }
         switch (t.kind) {
             .@"struct" => |fields| {
                 try w.writeAll("(struct");
                 for (fields) |f| {
                     try w.writeAll(" (field");
-                    if (f.name) |n| try w.print(" ${s}", .{n});
+                    if (f.name) |n| try w.print(" ${f}", .{id(n)});
                     try w.writeAll(" ");
                     try fieldType(w, types, f);
                     try w.writeAll(")");
@@ -546,7 +576,7 @@ fn recGroup(w: *Writer, types: []const ast.TypeDef) Error!void {
 /// bytes alone.
 fn dataSegment(w: *Writer, d: ast.DataSegment) Error!void {
     if (d.passive) |n|
-        try w.print("  (data ${s} \"", .{n})
+        try w.print("  (data ${f} \"", .{id(n)})
     else
         try w.print("  (data (i32.const {d}) \"", .{d.offset});
     if (d.len_prefix) |len| {
@@ -601,7 +631,7 @@ fn line(w: *Writer, defs: Defs, l: ast.Line) Error!void {
 fn ifForm(w: *Writer, defs: Defs, col: u8, n: ast.If) Error!void {
     try indent(w, col);
     try w.writeAll("(if");
-    if (n.label) |l| try w.print(" ${s}", .{l});
+    if (n.label) |l| try w.print(" ${f}", .{id(l)});
     if (n.result) |r| try resultText(w, defs, r);
     try w.writeAll("\n");
     try arm(w, defs, col + 2, "then", n.then);
@@ -633,9 +663,9 @@ fn arm(w: *Writer, defs: Defs, col: u8, keyword: []const u8, a: ast.If.Arm) Erro
 fn blockForm(w: *Writer, defs: Defs, col: u8, b: ast.Block) Error!void {
     try indent(w, col);
     try w.print("({s}", .{@tagName(b.kind)});
-    if (b.label) |l| try w.print(" ${s}", .{l});
+    if (b.label) |l| try w.print(" ${f}", .{id(l)});
     if (b.result) |r| try resultText(w, defs, r);
-    for (b.catches) |c| try w.print(" (catch ${s} ${s})", .{ c.tag, c.label });
+    for (b.catches) |c| try w.print(" (catch ${f} ${f})", .{ id(c.tag), id(c.label) });
     try w.writeAll("\n");
     try seq(w, defs, b.body);
     try indent(w, col);
@@ -647,11 +677,11 @@ fn blockForm(w: *Writer, defs: Defs, col: u8, b: ast.Block) Error!void {
 fn instr(w: *Writer, defs: Defs, i: ast.Instr) Error!void {
     switch (i) {
         .@"const" => |c| try w.print("{s}.const {s}", .{ c.ty.text(), c.text }),
-        .local_get => |n| try w.print("local.get ${s}", .{n}),
-        .local_set => |n| try w.print("local.set ${s}", .{n}),
-        .local_tee => |n| try w.print("local.tee ${s}", .{n}),
-        .global_get => |n| try w.print("global.get ${s}", .{n}),
-        .global_set => |n| try w.print("global.set ${s}", .{n}),
+        .local_get => |n| try w.print("local.get ${f}", .{id(n)}),
+        .local_set => |n| try w.print("local.set ${f}", .{id(n)}),
+        .local_tee => |n| try w.print("local.tee ${f}", .{id(n)}),
+        .global_get => |n| try w.print("global.get ${f}", .{id(n)}),
+        .global_set => |n| try w.print("global.set ${f}", .{id(n)}),
         .op => |o| try w.print("{s}.{s}", .{ o.ty.text(), o.name }),
         .convert => |o| try w.writeAll(o),
         .load => |m| {
@@ -664,7 +694,7 @@ fn instr(w: *Writer, defs: Defs, i: ast.Instr) Error!void {
             if (m.width.bits()) |b| try w.print("{d}", .{b});
             if (m.offset != 0) try w.print(" offset={d}", .{m.offset});
         },
-        .call => |n| try w.print("call ${s}", .{n}),
+        .call => |n| try w.print("call ${f}", .{id(n)}),
         .call_indirect => |t| {
             try w.writeAll("call_indirect");
             if (t.params.len > 0) {
@@ -674,8 +704,8 @@ fn instr(w: *Writer, defs: Defs, i: ast.Instr) Error!void {
             }
             if (t.result) |r| try resultText(w, defs, r);
         },
-        .br => |l| try w.print("br ${s}", .{l}),
-        .br_if => |l| try w.print("br_if ${s}", .{l}),
+        .br => |l| try w.print("br ${f}", .{id(l)}),
+        .br_if => |l| try w.print("br_if ${f}", .{id(l)}),
         .drop => try w.writeAll("drop"),
         .@"return" => try w.writeAll("return"),
         .@"unreachable" => try w.writeAll("unreachable"),
@@ -684,32 +714,32 @@ fn instr(w: *Writer, defs: Defs, i: ast.Instr) Error!void {
         .select => try w.writeAll("select"),
         .br_table => |t| {
             try w.writeAll("br_table");
-            for (t.labels) |l| try w.print(" ${s}", .{l});
-            try w.print(" ${s}", .{t.default});
+            for (t.labels) |l| try w.print(" ${f}", .{id(l)});
+            try w.print(" ${f}", .{id(t.default)});
         },
         .memory_size => try w.writeAll("memory.size"),
         .memory_grow => try w.writeAll("memory.grow"),
-        .throw => |t| try w.print("throw ${s}", .{t}),
+        .throw => |t| try w.print("throw ${f}", .{id(t)}),
         .comment => |text| try w.print(";; {s}", .{text}),
-        .struct_new => |k| try w.print("struct.new ${s}", .{try typeName(defs, k)}),
-        .struct_new_default => |k| try w.print("struct.new_default ${s}", .{try typeName(defs, k)}),
+        .struct_new => |k| try w.print("struct.new ${f}", .{id(try typeName(defs, k))}),
+        .struct_new_default => |k| try w.print("struct.new_default ${f}", .{id(try typeName(defs, k))}),
         .struct_get => |r| {
-            try w.print("struct.get{s} ${s}", .{ extText(r.ext), try typeName(defs, r.ty) });
+            try w.print("struct.get{s} ${f}", .{ extText(r.ext), id(try typeName(defs, r.ty)) });
             try fieldText(w, defs, r);
         },
         .struct_set => |r| {
-            try w.print("struct.set ${s}", .{try typeName(defs, r.ty)});
+            try w.print("struct.set ${f}", .{id(try typeName(defs, r.ty))});
             try fieldText(w, defs, r);
         },
-        .array_new => |k| try w.print("array.new ${s}", .{try typeName(defs, k)}),
-        .array_new_default => |k| try w.print("array.new_default ${s}", .{try typeName(defs, k)}),
-        .array_new_fixed => |a| try w.print("array.new_fixed ${s} {d}", .{ try typeName(defs, a.ty), a.n }),
-        .array_new_data => |a| try w.print("array.new_data ${s} ${s}", .{ try typeName(defs, a.ty), a.data }),
-        .array_get => |a| try w.print("array.get{s} ${s}", .{ extText(a.ext), try typeName(defs, a.ty) }),
-        .array_set => |k| try w.print("array.set ${s}", .{try typeName(defs, k)}),
+        .array_new => |k| try w.print("array.new ${f}", .{id(try typeName(defs, k))}),
+        .array_new_default => |k| try w.print("array.new_default ${f}", .{id(try typeName(defs, k))}),
+        .array_new_fixed => |a| try w.print("array.new_fixed ${f} {d}", .{ id(try typeName(defs, a.ty)), a.n }),
+        .array_new_data => |a| try w.print("array.new_data ${f} ${f}", .{ id(try typeName(defs, a.ty)), id(a.data) }),
+        .array_get => |a| try w.print("array.get{s} ${f}", .{ extText(a.ext), id(try typeName(defs, a.ty)) }),
+        .array_set => |k| try w.print("array.set ${f}", .{id(try typeName(defs, k))}),
         .array_len => try w.writeAll("array.len"),
-        .array_copy => |a| try w.print("array.copy ${s} ${s}", .{ try typeName(defs, a.dst), try typeName(defs, a.src) }),
-        .array_fill => |k| try w.print("array.fill ${s}", .{try typeName(defs, k)}),
+        .array_copy => |a| try w.print("array.copy ${f} ${f}", .{ id(try typeName(defs, a.dst)), id(try typeName(defs, a.src)) }),
+        .array_fill => |k| try w.print("array.fill ${f}", .{id(try typeName(defs, k))}),
         .ref_null => |t| {
             try w.writeAll("ref.null");
             try heapText(w, defs, t);
@@ -749,6 +779,13 @@ fn renderToString(alloc: std.mem.Allocator, m: ast.Module) ![]u8 {
     errdefer aw.deinit();
     try renderModule(&aw.writer, m);
     return aw.toOwnedSlice();
+}
+
+test "wat_emitter: a backtick name is escaped to WAT idchars" {
+    var aw: Writer.Allocating = .init(std.testing.allocator);
+    defer aw.deinit();
+    try aw.writer.print("${f} ${f} ${f}", .{ id("`add one`"), id("`a\\b`"), id("plain_name") });
+    try std.testing.expectEqualStrings("$`add\\20one` $`a\\5cb` $plain_name", aw.written());
 }
 
 test "a module renders imports, data, globals and functions in item order" {

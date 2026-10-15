@@ -8,6 +8,8 @@ Aggregated by the sibling barrel `../tests.zig` for `test_root.zig`; shared
 harness lives in `helpers.zig`.
 
 When adding a test file here, register it in `../tests.zig` or it will not run.
+`backtick.zig` prints decision 561's backtick names back in every name position, and writes a
+backtick name that is a plain identifier (`` `double` ``) plain.
 `declarations.zig` ends with front 17's rows: a module-level `var` keeps its
 keyword and its `#[@BeamMemory.…]` annotation, and a labelled annotation
 argument keeps its label (`assertFormat` + `assertIdempotent`). The last row is the type

@@ -2970,6 +2970,15 @@ fn isModuleRef(name: []const u8) bool {
     return name.len >= 3 and name[0] == '_' and name[1] == '_' and std.ascii.isUpper(name[2]);
 }
 
+/// `isModuleRef`, or — a backtick name having no case to read (decision 561,
+/// `` `Shape kind` ``) — a type this module can name.
+fn isTypeRefIn(this: anytype, name: []const u8) bool {
+    if (isModuleRef(name)) return true;
+    if (!lexerMod.isBacktickName(name)) return false;
+    return this.enum_names.contains(name) or this.record_fields.contains(name) or
+        this.type_owner_path.contains(name) or this.imported_types.contains(name);
+}
+
 /// The OUTER enum of a synthesised inner enum's F1 mangling:
 /// `__Token__Color` → `Token`, `__Token__Color__Shade` → `Token`. Null for
 /// every other name.
@@ -8702,6 +8711,10 @@ const Emitter = struct {
     /// (`if (end)` where `end: i32 = null`) becomes the null test the botopink
     /// truthiness rule means: `(End =/= undefined)`. Every other condition
     /// already evaluates to a boolean and is emitted unchanged.
+    fn isTypeRef(this: *const Emitter, name: []const u8) bool {
+        return isTypeRefIn(this, name);
+    }
+
     fn condNode(this: *Emitter, b: Ast.Builder, cond: ast.Expr) anyerror!Ast.Expr {
         const node = try this.exprNode(b, cond);
         if (cond != .identifier or cond.identifier.kind != .ident) return node;
@@ -9109,7 +9122,7 @@ const Emitter = struct {
             } };
         }
 
-        const mod_name: ?[]const u8 = if (recv.* == .identifier and recv.identifier.kind == .ident and isModuleRef(recv.identifier.kind.ident))
+        const mod_name: ?[]const u8 = if (recv.* == .identifier and recv.identifier.kind == .ident and this.isTypeRef(recv.identifier.kind.ident))
             recv.identifier.kind.ident
         else
             null;

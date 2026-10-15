@@ -3,6 +3,7 @@
 //! discovers every test.
 
 test {
+    _ = @import("tests/backtick.zig");
     _ = @import("tests/basics.zig");
     _ = @import("tests/errors.zig");
     _ = @import("tests/keywords.zig");

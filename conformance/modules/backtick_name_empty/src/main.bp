@@ -1,0 +1,7 @@
+//// Decision 561 — an empty backtick identifier names nothing: refused at the
+//// lexer, at its opening backtick.
+
+pub fn main() {
+    val `` = 1;
+    @print(1);
+}

@@ -722,16 +722,17 @@ fn boundNames(arena_alloc: std.mem.Allocator, items: []const js.Item) ![]const [
     return names.items;
 }
 
-/// `{ a, b }` over `names`.
+/// `{ a, b }` over `names` (a backtick identifier escaped, `jsEmitter.writeName`).
 fn nameList(arena_alloc: std.mem.Allocator, names: []const []const u8) ![]const u8 {
-    var text: std.ArrayListUnmanaged(u8) = .empty;
-    try text.appendSlice(arena_alloc, "{ ");
+    var aw: std.Io.Writer.Allocating = .init(arena_alloc);
+    const w = &aw.writer;
+    w.writeAll("{ ") catch return error.OutOfMemory;
     for (names, 0..) |n, i| {
-        if (i > 0) try text.appendSlice(arena_alloc, ", ");
-        try text.appendSlice(arena_alloc, n);
+        if (i > 0) w.writeAll(", ") catch return error.OutOfMemory;
+        jsEmitter.writeName(w, n) catch return error.OutOfMemory;
     }
-    try text.appendSlice(arena_alloc, " }");
-    return text.items;
+    w.writeAll(" }") catch return error.OutOfMemory;
+    return aw.written();
 }
 
 /// `Object.defineProperty(exports, "__bp_priv__", { value: { a, b } });` over

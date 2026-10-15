@@ -1,0 +1,9 @@
+pub fn `area of`(side: i32) -> i32 {
+    return side * side;
+}
+
+pub fn perimeter(side: i32) -> i32 {
+    return side * 4;
+}
+
+pub type `Unit square`(side: i32)

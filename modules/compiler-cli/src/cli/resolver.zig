@@ -294,16 +294,18 @@ fn collectChildren(
 
         // Candidate paths: sibling `Name.bp`, then `Name.bpp` (front 116 step
         // 3; the two together are refused before resolution, `bpp.refuseTwins`),
-        // or folder index `Name/mod.bp`.
-        var sibling = try std.fs.path.join(sa, &.{ decl_dir, try concat(sa, m.name, manifest.MOD_SIBLING_EXTENSIONS[0]) });
+        // or folder index `Name/mod.bp`. A backtick name (decision 561) names
+        // the file its text spells: `` mod `not-found`; `` → `not-found.bpp`.
+        const file_name = bp.ast.unquotedName(m.name);
+        var sibling = try std.fs.path.join(sa, &.{ decl_dir, try concat(sa, file_name, manifest.MOD_SIBLING_EXTENSIONS[0]) });
         for (manifest.MOD_SIBLING_EXTENSIONS) |ext| {
-            const candidate = try std.fs.path.join(sa, &.{ decl_dir, try concat(sa, m.name, ext) });
+            const candidate = try std.fs.path.join(sa, &.{ decl_dir, try concat(sa, file_name, ext) });
             if (exists(io, candidate)) {
                 sibling = candidate;
                 break;
             }
         }
-        const folder = try std.fs.path.join(sa, &.{ decl_dir, m.name, "mod.bp" });
+        const folder = try std.fs.path.join(sa, &.{ decl_dir, file_name, "mod.bp" });
         const has_sibling = exists(io, sibling);
         const has_folder = exists(io, folder);
 
@@ -317,9 +319,9 @@ fn collectChildren(
         // Logical path: top-level mods (declared in the root module) are bare
         // names; deeper mods nest under the parent's logical path.
         const logical = if (std.mem.eql(u8, parent_logical, root_logical))
-            try sa.dupe(u8, m.name)
+            try sa.dupe(u8, file_name)
         else
-            try std.fs.path.join(sa, &.{ parent_logical, m.name });
+            try std.fs.path.join(sa, &.{ parent_logical, file_name });
 
         try work.append(sa, .{
             .logical = logical,
@@ -522,8 +524,9 @@ fn namespaceEdges(sa: std.mem.Allocator, path: []const u8, refs: ModuleRefs, pat
     for (refs.chains) |chain| {
         var key: ?[]const u8 = null;
         for (refs.mods) |m| if (std.mem.eql(u8, m, chain[0])) {
-            const nested = try std.fmt.allocPrint(sa, "{s}/{s}", .{ path, m });
-            if (paths.contains(nested)) key = nested else if (std.mem.indexOfScalar(u8, path, '/') == null and paths.contains(m)) key = m;
+            const file = bp.ast.unquotedName(m);
+            const nested = try std.fmt.allocPrint(sa, "{s}/{s}", .{ path, file });
+            if (paths.contains(nested)) key = nested else if (std.mem.indexOfScalar(u8, path, '/') == null and paths.contains(file)) key = file;
         };
         if (key == null) for (refs.bindings) |b| if (std.mem.eql(u8, b.local, chain[0]) and paths.contains(b.path)) {
             key = b.path;
@@ -531,7 +534,7 @@ fn namespaceEdges(sa: std.mem.Allocator, path: []const u8, refs: ModuleRefs, pat
         var at = key orelse continue;
         try out.append(sa, .{ .from = null, .symbol = at });
         for (chain[1..]) |seg| {
-            const next = try std.fmt.allocPrint(sa, "{s}/{s}", .{ at, seg });
+            const next = try std.fmt.allocPrint(sa, "{s}/{s}", .{ at, bp.ast.unquotedName(seg) });
             if (!paths.contains(next)) break;
             try out.append(sa, .{ .from = null, .symbol = next });
             at = next;
@@ -560,9 +563,9 @@ fn importOwner(analysis: Analysis, ref: ImportRef) ?usize {
     // into — `text.shout(x)` — so it is that module the importer follows.
     var whole_buf: [512]u8 = undefined;
     const whole = if (ref.from) |from|
-        std.fmt.bufPrint(&whole_buf, "{s}/{s}", .{ from, ref.symbol }) catch ref.symbol
+        std.fmt.bufPrint(&whole_buf, "{s}/{s}", .{ from, bp.ast.unquotedName(ref.symbol) }) catch ref.symbol
     else
-        ref.symbol;
+        bp.ast.unquotedName(ref.symbol);
     // A `from "…"` clause names a package — std, a bundled package or a
     // dependency (decision 206: never a module of this package, which is
     // `checkImportSources`' refusal): the import depends on nothing in this
@@ -784,7 +787,7 @@ fn checkImportResolution(
             // A leaf that is itself a module of the tree (`import {shapes.circle};`
             // binds the namespace `circle`) is not an export of `shapes`.
             var sub_buf: [512]u8 = undefined;
-            const sub = std.fmt.bufPrint(&sub_buf, "{s}/{s}", .{ from, ref.symbol }) catch null;
+            const sub = std.fmt.bufPrint(&sub_buf, "{s}/{s}", .{ from, bp.ast.unquotedName(ref.symbol) }) catch null;
             if (sub != null and analysis.paths.contains(sub.?)) continue;
             if (!symbolInList(analysis.exports[target], ref.symbol)) {
                 return fail(diag, diag_arena, .{

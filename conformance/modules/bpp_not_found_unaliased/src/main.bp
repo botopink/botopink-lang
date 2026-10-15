@@ -1,0 +1,9 @@
+//// Decision 561 — `not-found.bpp` imported without an alias: the bound name
+//// is `` `not-found` `` (an alias is optional, amending decisions 289 and 213).
+
+pub mod pages;
+import {pages.`not-found`, pages.`not-found`.Props};
+
+pub fn main() {
+    @print(`not-found`(Props(path: "/missing")));
+}

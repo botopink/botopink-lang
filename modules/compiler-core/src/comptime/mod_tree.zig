@@ -172,8 +172,11 @@ pub fn localPath(package: []const u8, key: []const u8) []const u8 {
     return key;
 }
 
-/// The key of the module `local` names in `package` (`theme` in `a` → `a/theme`).
-pub fn keyIn(arena: std.mem.Allocator, package: []const u8, local: []const u8) ![]const u8 {
+/// The key of the module `local` names in `package` (`theme` in `a` → `a/theme`;
+/// a backtick segment names its file, `` `not-found` `` → `a/not-found`,
+/// decision 561).
+pub fn keyIn(arena: std.mem.Allocator, package: []const u8, local_name: []const u8) ![]const u8 {
+    const local = ast.unquotedName(local_name);
     if (package.len == 0) return local;
     return std.fmt.allocPrint(arena, "{s}/{s}", .{ package, local });
 }
@@ -264,11 +267,14 @@ pub fn buildWith(arena: std.mem.Allocator, modules: []const Module, known: []con
             .mod => |md| {
                 // A child of a module nests under it; a child of the package
                 // root (a top-level module itself) is a top-level module.
-                const nested = try std.fmt.allocPrint(arena, "{s}/{s}", .{ m.path, md.name });
+                // A backtick name (decision 561) keys the module by the file
+                // name it spells (`` `not-found` `` → `pages/not-found`).
+                const file = ast.unquotedName(md.name);
+                const nested = try std.fmt.allocPrint(arena, "{s}/{s}", .{ m.path, file });
                 const key = if (tree.entries.contains(nested))
                     nested
-                else if (std.mem.indexOfScalar(u8, local, '/') == null and tree.entries.contains(try keyIn(arena, m.package, md.name)))
-                    try keyIn(arena, m.package, md.name)
+                else if (std.mem.indexOfScalar(u8, local, '/') == null and tree.entries.contains(try keyIn(arena, m.package, file)))
+                    try keyIn(arena, m.package, file)
                 else
                     continue;
                 try children.append(arena, .{ .name = md.name, .key = key, .isPub = md.isPub, .loc = md.loc });

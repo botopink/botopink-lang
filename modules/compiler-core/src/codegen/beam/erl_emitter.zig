@@ -100,14 +100,36 @@ pub const AtomFormatter = struct {
 };
 
 /// Erlang variable for a botopink name: first byte uppercased (`decl` → `Decl`).
+/// A backtick identifier (decision 561, `` `not-found` ``) is `Bt@@` and its
+/// text, every byte but a letter, a digit and `_` written `@x` and two hex
+/// digits (`Bt@@not@x2dfound`): no plain name holds `@@` (a version suffix is
+/// `@<digits>`), so the variable meets no other one of the module.
 pub fn writeVar(w: *Writer, name: []const u8) Writer.Error!void {
     if (name.len == 0) return;
+    if (isBacktickName(name)) return writeBacktickVar(w, name);
     try w.writeByte(std.ascii.toUpper(name[0]));
     try w.writeAll(name[1..]);
 }
 
+fn isBacktickName(name: []const u8) bool {
+    return name.len >= 3 and name[0] == '`' and name[name.len - 1] == '`';
+}
+
+fn writeBacktickVar(w: *Writer, name: []const u8) Writer.Error!void {
+    try w.writeAll("Bt@@");
+    for (name[1 .. name.len - 1]) |c| {
+        if (std.ascii.isAlphanumeric(c) or c == '_') try w.writeByte(c) else try w.print("@x{x:0>2}", .{c});
+    }
+}
+
 /// Heap-allocated variable name (see `writeVar`). Caller owns the result.
 pub fn varName(alloc: std.mem.Allocator, name: []const u8) std.mem.Allocator.Error![]u8 {
+    if (isBacktickName(name)) {
+        var aw: std.Io.Writer.Allocating = .init(alloc);
+        errdefer aw.deinit();
+        writeBacktickVar(&aw.writer, name) catch return error.OutOfMemory;
+        return aw.toOwnedSlice();
+    }
     const buf = try alloc.dupe(u8, name);
     if (buf.len > 0) buf[0] = std.ascii.toUpper(buf[0]);
     return buf;
@@ -859,6 +881,18 @@ test "erl_emitter: variables" {
     const v = try varName(std.testing.allocator, "path");
     defer std.testing.allocator.free(v);
     try std.testing.expectEqualStrings("Path", v);
+}
+
+test "erl_emitter: a backtick name is a variable no plain name spells" {
+    var aw: Writer.Allocating = .init(std.testing.allocator);
+    defer aw.deinit();
+    try writeVar(&aw.writer, "`not-found`");
+    try std.testing.expectEqualStrings("Bt@@not@x2dfound", aw.written());
+    const v = try varName(std.testing.allocator, "`fn`");
+    defer std.testing.allocator.free(v);
+    try std.testing.expectEqualStrings("Bt@@fn", v);
+    var buf: [64]u8 = undefined;
+    try std.testing.expectEqualStrings("'`add one`'", try atomText("`add one`", &buf));
 }
 
 test "erl_emitter: binaries from raw bytes escape everything non-printable" {

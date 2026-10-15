@@ -17,6 +17,11 @@ pub const LexicalErrorType = enum {
     InvalidUnicodeEscape,
     /// The === operator does not exist in botopink
     InvalidTripleEqual,
+    /// `` `` `` — a backtick identifier names nothing (decision 561)
+    EmptyBacktickIdentifier,
+    /// A line break (or the end of the file) before a backtick identifier's
+    /// closing backtick (decision 561)
+    UnclosedBacktickIdentifier,
 };
 
 pub const InvalidUnicodeEscapeKind = enum {
@@ -466,6 +471,9 @@ pub const Lexer = struct {
                 }
             },
 
+            // ── `` `name` `` — a backtick identifier (decision 561) ─────────
+            '`' => try self.scanBacktickIdentifier(allocator),
+
             // ── strings ───────────────────────────────────────────────────────
             '"' => {
                 // Check for multiline string (""")
@@ -811,6 +819,48 @@ pub const Lexer = struct {
         try self.addToken(keywordOrIdent(text), allocator);
     }
 
+    /// Decision 561 — `` `text` `` is an identifier whose name is the text
+    /// between the backticks: any bytes but a backtick and a line break, a
+    /// keyword included. A text that is already a plain identifier (`` `count` ``)
+    /// is that identifier: the token is its bare text, located at it, so the
+    /// two spellings are one name. Any other text keeps its backticks in the
+    /// lexeme (`` `not-found` ``, `` `fn` ``), so it never meets a plain name
+    /// (`not - found`, the keyword `fn`) and every diagnostic prints it as
+    /// written. An empty `` `` `` and a line break before the closing backtick
+    /// are refused here.
+    fn scanBacktickIdentifier(self: *Lexer, allocator: std.mem.Allocator) LexerError!void {
+        while (!self.isAtEnd() and self.peek() != '`' and self.peek() != '\n' and self.peek() != '\r') _ = self.advance();
+        if (self.isAtEnd() or self.peek() != '`') {
+            self.lexError = .{ .kind = .UnclosedBacktickIdentifier, .start = self.start, .end = self.current };
+            return LexerError.LexicalError;
+        }
+        _ = self.advance(); // closing '`'
+        const inner = self.source[self.start + 1 .. self.current - 1];
+        if (inner.len == 0) {
+            self.lexError = .{ .kind = .EmptyBacktickIdentifier, .start = self.start, .end = self.current };
+            return LexerError.LexicalError;
+        }
+        if (isPlainIdentifier(inner)) {
+            try self.tokens.append(allocator, .{
+                .kind = .identifier,
+                .lexeme = inner,
+                .line = self.tokenLine,
+                .col = self.start + 1 - self.tokenLineStart + 1,
+                .offset = self.start + 1,
+            });
+            return;
+        }
+        try self.addToken(.identifier, allocator);
+    }
+
+    /// Whether `text` lexes as one `identifier` token by itself: a letter or
+    /// `_` followed by letters, digits and `_`, and no keyword.
+    pub fn isPlainIdentifier(text: []const u8) bool {
+        if (text.len == 0 or !isAlpha(text[0])) return false;
+        for (text[1..]) |c| if (!isAlphaNumeric(c)) return false;
+        return keywordOrIdent(text) == .identifier;
+    }
+
     // ── primitives ────────────────────────────────────────────────────────────
 
     fn advance(self: *Lexer) u8 {
@@ -951,6 +1001,20 @@ pub const Lexer = struct {
     }
 };
 
+// ── Backtick identifiers (decision 561) ───────────────────────────────────────
+
+/// Whether `name` is a backtick identifier's name (`` `not-found` ``): one that
+/// is no plain identifier, kept with its backticks by the lexer.
+pub fn isBacktickName(name: []const u8) bool {
+    return name.len >= 3 and name[0] == '`' and name[name.len - 1] == '`';
+}
+
+/// The text a name spells without its backticks — a module path segment's
+/// file name (`` `not-found` `` → `not-found`); `name` itself otherwise.
+pub fn unquotedName(name: []const u8) []const u8 {
+    return if (isBacktickName(name)) name[1 .. name.len - 1] else name;
+}
+
 // ── Public diagnostic helpers ─────────────────────────────────────────────────
 
 /// Returns true if the TokenKind is a reserved word that cannot be
@@ -991,6 +1055,8 @@ pub fn lexicalErrorMessage(err: LexicalError) []const u8 {
             .MissingCloseBrace => "Missing closing '}' in unicode escape",
         },
         .InvalidTripleEqual => "The === operator does not exist in botopink ---- use == instead",
+        .EmptyBacktickIdentifier => "A backtick identifier names nothing ---- write a name between the backticks",
+        .UnclosedBacktickIdentifier => "A backtick identifier ends at its closing backtick on the same line",
     };
 }
 

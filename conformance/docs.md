@@ -193,13 +193,20 @@ A decorator written on the header's last line, before the separator line,
 annotates the unfolded function, whose `decl.name` is the file's name; no
 decorator comes from the file's name. `mod x;` resolves `x.bp`, then
 `x.bpp`, then `x/mod.bp`; the importer names the default function
-(`import {components.Card};`). A diagnostic in the file is reported at its own
+(`import {components.Card};`). A file whose name is no identifier is declared
+and imported by it between backticks (decision 561, § Bindings): `` pub mod
+`not-found`; `` resolves `not-found.bpp`, `` import {pages.`not-found` as
+NotFound}; `` binds its default function as `NotFound`, and without an alias
+(`` import {pages.`not-found`}; ``) the bound name is `` `not-found` `` — an
+alias is optional. A diagnostic in the file is reported at its own
 line and column — the header's, the markup's and the style section's alike.
 
 <!-- example: modules/bpp_unfold_props -->
 <!-- example: modules/bpp_unfold_without_props -->
 <!-- example: modules/bpp_decorator_last_line -->
 <!-- example: modules/bpp_diagnostics_located -->
+<!-- example: modules/bpp_not_found_aliased -->
+<!-- example: modules/bpp_not_found_unaliased -->
 <!-- example: test/bpp_header_test -->
 
 Refused, each at its line: a first line `---` (`the header starts on the first
@@ -563,6 +570,34 @@ names it too (``reserved word `from` ``):
 
 <!-- example: modules/reserved_word_param_name -->
 <!-- example: modules/reserved_word_as_binding_name -->
+
+A name written between backticks is an identifier, anywhere a name goes
+(decision 561, Kotlin's escaped identifier): `` `text` `` names the text between
+the backticks — any characters but a backtick and a line break, a keyword
+included — as a binding, a parameter, a function, a type, a variant, a field, a
+module path's segment, an import item and its alias. `` `not-found` `` and
+`not-found` never meet: the plain spelling stays `not - found`. A name that is
+already an identifier means the same written either way — `` `count` `` is
+`count`, and `botopink format` writes it `count`. A diagnostic prints such a
+name as written, between its backticks; each backend gives it a name of its own
+that meets no other name of the module (erlang a quoted atom, commonJS and wasm
+an escaped name), and a printed value spells it as written.
+
+<!-- example: modules/backtick_name_binding -->
+<!-- example: modules/backtick_name_parameter -->
+<!-- example: modules/backtick_name_function -->
+<!-- example: modules/backtick_name_type -->
+<!-- example: modules/backtick_name_field -->
+<!-- example: modules/backtick_name_module_segment -->
+<!-- example: modules/backtick_name_import_item -->
+<!-- example: modules/backtick_name_in_diagnostic -->
+
+An empty `` `` `` is refused at the lexer (`empty backtick identifier`), and so
+is a line break before the closing backtick (`unclosed backtick identifier`),
+each at the opening backtick.
+
+<!-- example: modules/backtick_name_empty -->
+<!-- example: modules/backtick_name_line_break -->
 
 ### val — immutable binding
 

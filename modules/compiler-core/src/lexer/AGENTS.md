@@ -14,6 +14,7 @@ lexer/
 ├── tests.zig      ← barrel importing every tests/<feature>.zig
 └── tests/         ← lexer tests, split by feature
     ├── helpers.zig    ← placeholder harness module (no helpers defined)
+    ├── backtick.zig   ← decision 561's backtick identifiers
     ├── basics.zig     ← empty/whitespace/identifier/number basics
     ├── recognizes.zig ← single-token recognition
     ├── tokenizes.zig  ← multi-token sequences
@@ -52,6 +53,23 @@ line.
 Usage: `var l = Lexer.init(source); const tokens = try l.scanAll(alloc);
 defer l.deinit(alloc);` — `scanAll` returns `[]const Token` owned by the lexer.
 `Lexer.init` does **not** store an allocator.
+
+## A name between backticks is an identifier (decision 561)
+
+`` `text` `` lexes as an `identifier` whose name is the text between the
+backticks — any bytes but a backtick and a line break (`\n`, `\r`), a keyword
+included (`scanBacktickIdentifier`). A text that is a plain identifier
+(`Lexer.isPlainIdentifier`: `` `count` ``) is that identifier: the token is the
+bare text, located at it, so `source[offset..offset + lexeme.len]` still holds
+and the two spellings are one name. Any other text keeps its backticks in the
+lexeme (`` `not-found` ``, `` `fn` ``): it never meets a plain name or a keyword,
+and every diagnostic prints it as written. `isBacktickName` tells such a name,
+`unquotedName` strips the backticks where a module path segment names its file
+(`ast.unquotedName`, `ImportPath.prefixPath` / `fullPath`). An empty `` `` `` is
+`EmptyBacktickIdentifier`, a line break or the end of the file before the
+closing backtick `UnclosedBacktickIdentifier`, both located at the opening
+backtick. Each backend spells such a name its own way (`codegen/js`,
+`codegen/beam`, `codegen/wat` AGENTS).
 
 ## `...` is its own token (decision 8 §5.2, 06 N22)
 

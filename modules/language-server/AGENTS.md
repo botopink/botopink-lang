@@ -49,7 +49,9 @@ The server handles `initialize` / `shutdown`, `didOpen` / `didChange` /
   caller unwraps — the `await` value (`T` of `@Task<T>`, `T` of
   `@Component<T>`, the whole `@Result<U, E>` of a `@Task<@Result<U, E>>`) or
   the `for` / `for await` item; driven by the return, so an `@Iterator` factory
-  shows it too),
+  shows it too; the name under the cursor is `engine.identSpanAt`'s, which reads
+  a backtick identifier whole, decision 561 — `` `not-found` `` with its
+  backticks, `` `count` `` as `count`),
   `definition` (same-file, cross-module, embedded `std` modules, plus type-aware
   member access — see below),
   `typeDefinition`,

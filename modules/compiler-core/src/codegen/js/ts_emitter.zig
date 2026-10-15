@@ -7,7 +7,8 @@
 
 const std = @import("std");
 const Ast = @import("js_ast.zig");
-const js_ident = @import("js_emitter.zig").ident;
+const jsEmitter = @import("js_emitter.zig");
+const js_ident = jsEmitter.ident;
 
 const Writer = std.Io.Writer;
 
@@ -19,18 +20,60 @@ pub fn ident(name: []const u8) []const u8 {
     return js_ident(name);
 }
 
+/// Decision 561 — a name holding a backtick identifier. As a binding it is
+/// the JS emitter's escaped name (`jsEmitter.writeIdent`), as a property the
+/// string of its name (`jsEmitter.writeKey`), as the commonJS module exports
+/// it: an exported declaration is declared under the escaped name and
+/// exported under the string (`export { $60f$60 as "`f`" };`), and an import
+/// reads it back the same way.
+fn hasBacktick(name: []const u8) bool {
+    return std.mem.indexOfScalar(u8, name, '`') != null;
+}
+
+/// `export declare <kind> ` — without `export` for a backtick name, which
+/// `writeExportAs` exports after the declaration.
+fn writeDeclHead(w: *Writer, exported: bool, name: []const u8, kind: []const u8) Error!void {
+    if (exported and !hasBacktick(name)) try w.writeAll("export ");
+    try w.writeAll("declare ");
+    try w.writeAll(kind);
+    try w.writeByte(' ');
+    try jsEmitter.writeIdent(w, name);
+}
+
+fn writeExportAs(w: *Writer, exported: bool, name: []const u8) Error!void {
+    if (!exported or !hasBacktick(name)) return;
+    try w.writeAll("export { ");
+    try jsEmitter.writeName(w, name);
+    try w.writeAll(" as ");
+    try jsEmitter.writeKey(w, name);
+    try w.writeAll(" };\n");
+}
+
+/// One item of `import { … }`: `name` or `name as local`.
+fn writeImportItem(w: *Writer, item: []const u8) Error!void {
+    const at = std.mem.indexOf(u8, item, " as ");
+    const imported = if (at) |i| item[0..i] else item;
+    const local = if (at) |i| item[i + 4 ..] else item;
+    if (!hasBacktick(imported) and !hasBacktick(local)) return w.writeAll(item);
+    try jsEmitter.writeKey(w, imported);
+    if (at != null or hasBacktick(imported)) {
+        try w.writeAll(" as ");
+        try jsEmitter.writeIdent(w, local);
+    }
+}
+
 // ── types ────────────────────────────────────────────────────────────────────
 
 pub fn writeType(w: *Writer, t: Ast.TsType) Error!void {
     switch (t) {
-        .name => |n| try w.writeAll(n),
+        .name => |n| try jsEmitter.writeName(w, n),
         .literal => |n| {
             try w.writeByte('"');
             try w.writeAll(n);
             try w.writeByte('"');
         },
         .generic => |g| {
-            try w.writeAll(g.name);
+            try jsEmitter.writeName(w, g.name);
             try w.writeByte('<');
             for (g.args, 0..) |a, i| {
                 if (i > 0) try w.writeAll(", ");
@@ -68,7 +111,7 @@ pub fn writeType(w: *Writer, t: Ast.TsType) Error!void {
             try w.writeAll("{ ");
             for (o.fields, 0..) |f, i| {
                 if (i > 0) try w.writeAll(o.sep);
-                try w.writeAll(f.name);
+                try jsEmitter.writeKey(w, f.name);
                 try w.writeAll(": ");
                 try writeType(w, f.type);
             }
@@ -83,7 +126,7 @@ fn writeParams(w: *Writer, params: []const Ast.TsParam) Error!void {
         if (i > 0) try w.writeAll(", ");
         if (p.rest) try w.writeAll("...");
         if (p.name) |n| {
-            try w.writeAll(ident(n));
+            try jsEmitter.writeIdent(w, n);
             try w.writeAll(": ");
         }
         try writeType(w, p.type);
@@ -114,7 +157,7 @@ fn writeMemberAt(w: *Writer, m: Ast.TsMember, depth: usize) Error!void {
     switch (m) {
         .field => |f| {
             try w.writeAll(f.modifier);
-            try w.writeAll(f.name);
+            try jsEmitter.writeKey(w, f.name);
             try w.writeAll(": ");
             try writeType(w, f.type);
             try w.writeAll(";\n");
@@ -125,7 +168,7 @@ fn writeMemberAt(w: *Writer, m: Ast.TsMember, depth: usize) Error!void {
                 try writeIndent(w, depth);
             }
             try w.writeAll(f.modifier);
-            try w.writeAll(f.name);
+            try jsEmitter.writeKey(w, f.name);
             try writeParams(w, f.params);
             try w.writeAll(": ");
             try writeType(w, f.ret);
@@ -133,14 +176,14 @@ fn writeMemberAt(w: *Writer, m: Ast.TsMember, depth: usize) Error!void {
         },
         .getter => |g| {
             try w.writeAll("get ");
-            try w.writeAll(g.name);
+            try jsEmitter.writeKey(w, g.name);
             try w.writeAll(": ");
             try writeType(w, g.type);
             try w.writeAll(";\n");
         },
         .setter => |s| {
             try w.writeAll("set ");
-            try w.writeAll(s.name);
+            try jsEmitter.writeKey(w, s.name);
             try writeParams(w, s.params);
             try w.writeAll(";\n");
         },
@@ -150,7 +193,7 @@ fn writeMemberAt(w: *Writer, m: Ast.TsMember, depth: usize) Error!void {
             try w.writeAll(";\n");
         },
         .enum_member => |e| {
-            try w.writeAll(e.name);
+            try jsEmitter.writeKey(w, e.name);
             try w.writeAll(" = \"");
             try w.writeAll(e.value);
             try w.writeAll("\",\n");
@@ -168,7 +211,7 @@ fn writeNamespaceItems(w: *Writer, items: []const Ast.TsNamespaceItem, depth: us
         .interface => |i| {
             try writeIndent(w, depth);
             try w.writeAll("interface ");
-            try w.writeAll(ident(i.name));
+            try jsEmitter.writeIdent(w, i.name);
             try w.writeAll(" {\n");
             for (i.members) |m| try writeMemberAt(w, m, depth + 1);
             try writeIndent(w, depth);
@@ -177,7 +220,7 @@ fn writeNamespaceItems(w: *Writer, items: []const Ast.TsNamespaceItem, depth: us
         .namespace => |ns| {
             try writeIndent(w, depth);
             try w.writeAll("namespace ");
-            try w.writeAll(ident(ns.name));
+            try jsEmitter.writeIdent(w, ns.name);
             try w.writeAll(" {\n");
             try writeNamespaceItems(w, ns.items, depth + 1);
             try writeIndent(w, depth);
@@ -192,68 +235,68 @@ pub fn writeDecl(w: *Writer, d: Ast.TsDecl) Error!void {
     switch (d) {
         .none => {},
         .const_ => |c| {
-            try w.writeAll("export declare const ");
-            try w.writeAll(ident(c.name));
+            try writeDeclHead(w, true, c.name, "const");
             try w.writeAll(": ");
             try writeType(w, c.type);
             try w.writeAll(";\n");
+            try writeExportAs(w, true, c.name);
         },
         .func => |f| {
             if (f.throws) |e| try writeThrows(w, e);
-            try w.writeAll("export declare function ");
-            try w.writeAll(ident(f.name));
+            try writeDeclHead(w, true, f.name, "function");
             try writeParams(w, f.params);
             try w.writeAll(": ");
             try writeType(w, f.ret);
             try w.writeAll(";\n");
+            try writeExportAs(w, true, f.name);
         },
         .class => |c| {
-            try w.writeAll(if (c.exported) "export declare class " else "declare class ");
-            try w.writeAll(ident(c.name));
+            try writeDeclHead(w, c.exported, c.name, "class");
             try w.writeAll(" {\n");
             for (c.members) |m| try writeMember(w, m);
             try w.writeAll("}\n");
+            try writeExportAs(w, c.exported, c.name);
         },
         .interface => |i| {
-            try w.writeAll(if (i.exported) "export declare interface " else "declare interface ");
-            try w.writeAll(ident(i.name));
+            try writeDeclHead(w, i.exported, i.name, "interface");
             if (i.extends.len > 0) {
                 try w.writeAll(" extends ");
                 for (i.extends, 0..) |ext, j| {
                     if (j > 0) try w.writeAll(", ");
-                    try w.writeAll(ext);
+                    try jsEmitter.writeName(w, ext);
                 }
             }
             try w.writeAll(" {\n");
             for (i.members) |m| try writeMember(w, m);
             try w.writeAll("}\n");
+            try writeExportAs(w, i.exported, i.name);
         },
         .enum_ => |e| {
-            try w.writeAll("export declare enum ");
-            try w.writeAll(ident(e.name));
+            try writeDeclHead(w, true, e.name, "enum");
             try w.writeAll(" {\n");
             for (e.members) |m| try writeMember(w, m);
             try w.writeAll("}\n");
+            try writeExportAs(w, true, e.name);
         },
         .type_alias => |t| {
-            try w.writeAll(if (t.exported) "export declare type " else "declare type ");
-            try w.writeAll(t.name);
+            try writeDeclHead(w, t.exported, t.name, "type");
             try w.writeAll(" = ");
             try writeType(w, t.type);
             try w.writeAll(";\n");
+            try writeExportAs(w, t.exported, t.name);
         },
         .namespace_ => |ns| {
-            try w.writeAll(if (ns.exported) "export declare namespace " else "declare namespace ");
-            try w.writeAll(ident(ns.name));
+            try writeDeclHead(w, ns.exported, ns.name, "namespace");
             try w.writeAll(" {\n");
             try writeNamespaceItems(w, ns.items, 1);
             try w.writeAll("}\n");
+            try writeExportAs(w, ns.exported, ns.name);
         },
         .import => |i| {
             try w.writeAll("import { ");
             for (i.names, 0..) |n, j| {
                 if (j > 0) try w.writeAll(", ");
-                try w.writeAll(n);
+                try writeImportItem(w, n);
             }
             try w.writeAll(" } from \"");
             try w.writeAll(i.source);
@@ -261,7 +304,7 @@ pub fn writeDecl(w: *Writer, d: Ast.TsDecl) Error!void {
         },
         .import_namespace => |i| {
             try w.writeAll("import * as ");
-            try w.writeAll(ident(i.name));
+            try jsEmitter.writeIdent(w, i.name);
             try w.writeAll(" from \"");
             try w.writeAll(i.source);
             try w.writeAll("\";\n");

@@ -1133,6 +1133,24 @@ fn identSpanAt(source: []const u8, pos: proto.Position) ?IdentSpan {
     const offset = lsp_types.positionToOffset(source, pos);
     var i: usize = 0;
     while (i < source.len) {
+        if (source[i] == '`') {
+            // Decision 561 — a backtick identifier is one name, its span the
+            // backticks included (`` `not-found` ``), or the bare text when
+            // that is a plain identifier (`` `count` `` is `count`). A
+            // backtick no other one closes on its line is skipped.
+            const close = std.mem.indexOfAnyPos(u8, source, i + 1, "`\n") orelse source.len;
+            if (close < source.len and source[close] == '`' and close > i + 1) {
+                const start = i;
+                i = close + 1;
+                if (offset >= start and offset < i) {
+                    if (bp.Lexer.isPlainIdentifier(source[start + 1 .. close])) return .{ .start = start + 1, .end = close };
+                    return .{ .start = start, .end = i };
+                }
+                continue;
+            }
+            i += 1;
+            continue;
+        }
         if (!isIdentStart(source[i])) {
             i += 1;
             continue;
