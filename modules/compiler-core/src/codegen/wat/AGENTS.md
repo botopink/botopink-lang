@@ -1088,7 +1088,7 @@ of the model, `call` of another leaf by its `$<module>.<function>`. A leaf names
 reference is `(ref null …)`. A `(type …)` or `(rec …)` form is refused at the declaration, and so is
 anything the model has no node for (a memory instruction, a numeric local or label, a flat
 `block … end`): a located error, `modules/std-wasm/wat/<file>:<line>:<col>: <message>`. Today's
-leaves: `text.length` and `text.charCodeAt` (`text.wat`); the unit test `std_leaves: every leaf
+leaves: `text.length`, `text.charCodeAt`, `text.byteLength`, `text.byteAt`, `text.byteSlice` and `text.fromCodepoint` (`text.wat`); the unit test `std_leaves: every leaf
 reads` reads each against the codegen's type names.
 
 ## What stays in `wat_prelude` (decision 442, front 144 B-00g)

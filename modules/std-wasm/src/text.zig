@@ -369,6 +369,22 @@ pub fn charCodeAt(s: []const u8, i: i32) i32 {
     return -1;
 }
 
+/// The byte at byte index `i` (not a code point's), `-1` for a negative `i` or
+/// one past the end — `text.byteAt`.
+pub fn byteAt(s: []const u8, i: i32) i32 {
+    if (i < 0 or i >= s.len) return -1;
+    return s[@intCast(i)];
+}
+
+/// The bytes `a` to `b`, each clamped to `0..s.len`, an end before the start
+/// the start — `text.byteSlice`.
+pub fn byteSlice(s: []const u8, a: i32, b: i32) []const u8 {
+    const n: i64 = @intCast(s.len);
+    const from = std.math.clamp(@as(i64, a), 0, n);
+    const to = @max(from, std.math.clamp(@as(i64, b), 0, n));
+    return s[@intCast(from)..@intCast(to)];
+}
+
 /// The UTF-8 bytes of the Unicode scalar value `cp` into `out`
 /// (`out.len >= 4`), or null for a value that is none — negative, a
 /// surrogate (U+D800..U+DFFF), past U+10FFFF.
@@ -719,6 +735,17 @@ test "charCodeAt: decoded code points, -1 outside" {
     try std.testing.expectEqual(@as(i32, 0x20AC), charCodeAt("€", 0));
     try std.testing.expectEqual(@as(i32, -1), charCodeAt("ab", 2));
     try std.testing.expectEqual(@as(i32, -1), charCodeAt("ab", -1));
+}
+
+test "byteAt and byteSlice: bytes, not code points; clamped" {
+    try std.testing.expectEqual(@as(i32, 0xC3), byteAt("é", 0));
+    try std.testing.expectEqual(@as(i32, 0xA9), byteAt("é", 1));
+    try std.testing.expectEqual(@as(i32, -1), byteAt("é", 2));
+    try std.testing.expectEqual(@as(i32, -1), byteAt("é", -1));
+    try std.testing.expectEqualStrings("é", byteSlice("aéb", 1, 3));
+    try std.testing.expectEqualStrings("aéb", byteSlice("aéb", -5, 99));
+    try std.testing.expectEqualStrings("", byteSlice("aéb", 3, 1));
+    try std.testing.expectEqualStrings("", byteSlice("aéb", 9, 12));
 }
 
 test "encodeCodepoint: one to four bytes, no scalar value refused" {

@@ -55,6 +55,74 @@ test "wat: front 164 s3 ---- a std: cell naming a .wat leaf is the leaf, read in
     try std.testing.expectEqualStrings("9\n0\n233\n26412\n-1\n-1\n128512\n", o.result.run_output orelse "");
 }
 
+// Front 164 s3 P1-a — `text.byteLength`, `text.byteAt`, `text.byteSlice` and
+// `text.fromCodepoint` are `.wat` leaves too. No String method is bound to
+// them yet and a `std:` cell is std's alone (decision 445), so the program is
+// a module of std's own declaring them.
+test "wat: front 164 s3 ---- the byte leaves and fromCodepoint answer in a GC module" {
+    const io = std.testing.io;
+    const alloc = std.testing.allocator;
+    var outputs = try h.generate(alloc, &.{.{ .path = "", .std_member = true, .source =
+        \\#[@External.Wasm(std: "text.byteLength")]
+        \\declare fn byteLength(s: string) -> i32;
+        \\#[@External.Wasm(std: "text.byteAt")]
+        \\declare fn byteAt(s: string, i: i32) -> i32;
+        \\#[@External.Wasm(std: "text.byteSlice")]
+        \\declare fn byteSlice(s: string, a: i32, b: i32) -> string;
+        \\#[@External.Wasm(std: "text.fromCodepoint")]
+        \\declare fn fromCodepoint(cp: i32) -> string;
+        \\fn main() {
+        \\    val s = "aé日😀";
+        \\    @print(byteLength(s));
+        \\    @print(byteLength(""));
+        \\    @print(byteAt(s, 1));
+        \\    @print(byteAt(s, 2));
+        \\    @print(byteAt(s, 10));
+        \\    @print(byteAt(s, 11));
+        \\    @print(byteAt(s, -1));
+        \\    @print(byteSlice(s, 1, 3));
+        \\    @print(byteSlice(s, 3, 6));
+        \\    @print(byteSlice(s, -4, 1));
+        \\    @print(byteSlice(s, 3, 1).length());
+        \\    @print(byteSlice(s, 6, 99));
+        \\    @print(byteSlice(s, 50, 99).length());
+        \\    @print(fromCodepoint(97));
+        \\    @print(fromCodepoint(233));
+        \\    @print(fromCodepoint(26085));
+        \\    @print(fromCodepoint(128512));
+        \\    @print(byteLength(fromCodepoint(128512)));
+        \\    @print(byteLength(fromCodepoint(127)));
+        \\    @print(byteLength(fromCodepoint(128)));
+        \\    @print(byteLength(fromCodepoint(2047)));
+        \\    @print(byteLength(fromCodepoint(2048)));
+        \\    @print(byteLength(fromCodepoint(65535)));
+        \\    @print(byteLength(fromCodepoint(65536)));
+        \\    @print(byteLength(fromCodepoint(1114111)));
+        \\}
+    }}, io, h.configs[3]);
+    defer {
+        for (outputs.items) |*o| o.result.deinit(alloc);
+        outputs.deinit(alloc);
+    }
+    const o = for (outputs.items) |o| {
+        if (std.mem.eql(u8, o.name, "") or std.mem.eql(u8, o.name, "main")) break o;
+    } else return error.ModuleDidNotCompile;
+    if (o.result.diagnostic) |d| switch (d) {
+        .type => |t| std.debug.print("\n=== refused: {s}\n", .{t.message}),
+        .syntax => {},
+    };
+    const wat_text = o.result.js;
+    for ([_][]const u8{ "byteLength", "byteAt", "byteSlice", "fromCodepoint" }) |leaf| {
+        var buf: [64]u8 = undefined;
+        try std.testing.expect(std.mem.indexOf(u8, wat_text, try std.fmt.bufPrint(&buf, "(func $__std_text_{s} ", .{leaf})) != null);
+    }
+    try std.testing.expect(std.mem.indexOf(u8, wat_text, "__gc_to_lin_str") == null);
+    try std.testing.expectEqualStrings(
+        "10\n0\n195\n169\n-1\n-1\n-1\né\n日\na\n0\n😀\n0\na\né\n日\n😀\n4\n1\n2\n2\n3\n3\n4\n4\n",
+        o.result.run_output orelse "",
+    );
+}
+
 test "wat: record construct two fields" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\type Point(x: i32, y: i32)

@@ -23,7 +23,21 @@ is `(func $<module>.<function> …)` over the codegen's GC types, named and neve
 (`codegen/wat/wat_reader.zig`, `std_leaves.zig`) into a WasmGC program that calls it, under the same
 `std:` cell. A `std:` name that is a leaf and still an export of `root.exports` is the leaf's in a
 WasmGC module and the export's in linear memory and at comptime, until nothing uses the export.
-Today's leaves: `text.length`, `text.charCodeAt` (`wat/text.wat`).
+Today's leaves (`wat/text.wat`):
+
+| Leaf | Signature over the codegen's types | Answers |
+|---|---|---|
+| `text.length` | `($str) -> i32` | the code points |
+| `text.charCodeAt` | `($str, i32) -> i32` | the code point at a code-point index, `-1` outside |
+| `text.byteLength` | `($str) -> i32` | the UTF-8 bytes |
+| `text.byteAt` | `($str, i32) -> i32` | the byte at a byte index, `-1` for a negative index or one past the end |
+| `text.byteSlice` | `($str, i32, i32) -> $str` | the bytes `a` to `b`, each clamped to `0..length`, an end before the start the start |
+| `text.fromCodepoint` | `(i32) -> $str` | the one to four UTF-8 bytes of a scalar value; a value that is none traps |
+
+`text.byteLength`, `text.byteAt` and `text.byteSlice` have no `.bp` binding yet (a later piece of 164 s3
+binds them); each has a twin export of the same name and types in `wasm.zig` / `root.exports` /
+`term_faces.zig`, so a module that falls back to linear memory still builds. The twins go when nothing
+uses the exports (s3 P6). `text.fromCodepoint` is a leaf and keeps its export.
 
 ## Two value representations (decision 450 (4))
 

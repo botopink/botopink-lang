@@ -121,6 +121,22 @@ fn length(s: u32) callconv(.c) i32 {
     return @intCast(root.text.cpLength(arg(s)));
 }
 
+/// `text.byteLength` — the UTF-8 bytes (the linear-memory twin of the `.wat`
+/// leaf, front 164 s3).
+fn byteLength(s: u32) callconv(.c) i32 {
+    return @intCast(arg(s).len);
+}
+
+/// `text.byteAt` — the byte at a byte index, `-1` outside (twin of the leaf).
+fn byteAt(s: u32, i: i32) callconv(.c) i32 {
+    return root.text.byteAt(arg(s), i);
+}
+
+/// `text.byteSlice` — the bytes `a` to `b`, clamped (twin of the leaf).
+fn byteSlice(s: u32, a: i32, b: i32) callconv(.c) u32 {
+    return fresh(root.text.byteSlice(arg(s), a, b));
+}
+
 /// `String.split`.
 fn split(s: u32, sep: u32) callconv(.c) u32 {
     return piecesArray(root.text.Split.init(arg(s), arg(sep)));
@@ -862,6 +878,9 @@ const faces = .{
     .{ "text.lastIndexOf", lastIndexOf },
     .{ "text.at", at },
     .{ "text.charCodeAt", charCodeAt },
+    .{ "text.byteLength", byteLength },
+    .{ "text.byteAt", byteAt },
+    .{ "text.byteSlice", byteSlice },
     .{ "text.padStart", padStart },
     .{ "text.padEnd", padEnd },
     .{ "text.repeat", repeat },

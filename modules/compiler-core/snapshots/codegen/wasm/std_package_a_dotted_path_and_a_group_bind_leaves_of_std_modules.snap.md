@@ -3166,14 +3166,14 @@ test "order case over Order" {
     )
     local.get $sp
   )
-  ;; __std_f429 — from std_wasm.wasm (sha256 91fc3314249d)
-  ;; __std_f441 — from std_wasm.wasm (sha256 d13a98c08300)
-  ;; __std_f442 — from std_wasm.wasm (sha256 3192e2e42294)
-  ;; __std_f443 — from std_wasm.wasm (sha256 0314fe5f477f)
-  ;; __std_f444 — from std_wasm.wasm (sha256 83a8841c1a5e)
-  ;; std:array.joinStrings — from std_wasm.wasm (sha256 337b368ca812)
-  ;; std:array.concat — from std_wasm.wasm (sha256 2730cfa39de4)
-  ;; std:array.slice — from std_wasm.wasm (sha256 27ec3c9971dd)
+  ;; __std_f433 — from std_wasm.wasm (sha256 91fc3314249d)
+  ;; __std_f445 — from std_wasm.wasm (sha256 d13a98c08300)
+  ;; __std_f446 — from std_wasm.wasm (sha256 659eed3cf104)
+  ;; __std_f447 — from std_wasm.wasm (sha256 0314fe5f477f)
+  ;; __std_f448 — from std_wasm.wasm (sha256 7b6ca0e01ee7)
+  ;; std:array.joinStrings — from std_wasm.wasm (sha256 065d1c70efea)
+  ;; std:array.concat — from std_wasm.wasm (sha256 3a3e9bf0ab95)
+  ;; std:array.slice — from std_wasm.wasm (sha256 1e19bfacbc48)
 )
 ```
 

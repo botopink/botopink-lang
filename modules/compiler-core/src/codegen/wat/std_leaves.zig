@@ -160,6 +160,8 @@ test "std_leaves: every leaf reads against the codegen's GC types" {
     }
     try std.testing.expect(count > 0);
     try std.testing.expect(find("text.length") != null);
+    for ([_][]const u8{ "text.length", "text.charCodeAt", "text.byteLength", "text.byteAt", "text.byteSlice", "text.fromCodepoint" }) |n|
+        try std.testing.expect(find(n) != null);
     try std.testing.expect(find("text.sha256") == null);
     try std.testing.expectEqualStrings("__std_text_charCodeAt", try symbol(ar, "text.charCodeAt"));
     try std.testing.expect(!isSymbol("__std_text_split"));

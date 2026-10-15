@@ -168,3 +168,236 @@
     )
   )
   i32.const -1)
+
+
+;; `text.byteLength` — the UTF-8 bytes of `s`, not its code points.
+(func $text.byteLength (param $s (ref null $str)) (result i32)
+  local.get $s
+  array.len)
+
+;; `text.byteAt` — the byte at byte index `i`, `-1` for a negative `i` or one
+;; past the end (the unsigned comparison covers both).
+(func $text.byteAt (param $s (ref null $str)) (param $i i32) (result i32)
+  local.get $i
+  local.get $s
+  array.len
+  i32.ge_u
+  (if
+    (then
+      i32.const -1
+      return
+    )
+  )
+  local.get $s
+  local.get $i
+  array.get_u $str)
+
+;; `text.byteSlice` — the bytes `a` to `b`, each bound clamped to `0..length`
+;; and an end before the start the start: a new string, the bytes copied as
+;; they are (a cut inside a sequence is the caller's).
+(func $text.byteSlice (param $s (ref null $str)) (param $a i32) (param $b i32) (result (ref null $str))
+  (local $len i32)
+  (local $out (ref null $str))
+  local.get $s
+  array.len
+  local.set $len
+  ;; a = min(max(a, 0), len)
+  local.get $a
+  i32.const 0
+  local.get $a
+  i32.const 0
+  i32.gt_s
+  select
+  local.set $a
+  local.get $a
+  local.get $len
+  local.get $a
+  local.get $len
+  i32.lt_s
+  select
+  local.set $a
+  ;; b = min(max(b, 0), len)
+  local.get $b
+  i32.const 0
+  local.get $b
+  i32.const 0
+  i32.gt_s
+  select
+  local.set $b
+  local.get $b
+  local.get $len
+  local.get $b
+  local.get $len
+  i32.lt_s
+  select
+  local.set $b
+  ;; b = max(b, a)
+  local.get $b
+  local.get $a
+  local.get $b
+  local.get $a
+  i32.gt_s
+  select
+  local.set $b
+  ;; the copy: b - a bytes from a
+  local.get $b
+  local.get $a
+  i32.sub
+  local.set $len
+  local.get $len
+  array.new_default $str
+  local.set $out
+  local.get $out
+  i32.const 0
+  local.get $s
+  local.get $a
+  local.get $len
+  array.copy $str $str
+  local.get $out)
+
+;; `text.fromCodepoint` — the UTF-8 of the Unicode scalar value `cp`, one to
+;; four bytes. A value that is none (negative, a surrogate U+D800..U+DFFF,
+;; past U+10FFFF) traps, as erlang's `<<Cp/utf8>>` raises and the Node cell
+;; throws (decision 262).
+(func $text.fromCodepoint (param $cp i32) (result (ref null $str))
+  (local $out (ref null $str))
+  local.get $cp
+  i32.const 0x10FFFF
+  i32.gt_u
+  (if
+    (then
+      unreachable
+    )
+  )
+  local.get $cp
+  i32.const 0xD800
+  i32.sub
+  i32.const 0x800
+  i32.lt_u
+  (if
+    (then
+      unreachable
+    )
+  )
+  local.get $cp
+  i32.const 0x80
+  i32.lt_u
+  (if
+    (then
+      i32.const 1
+      array.new_default $str
+      local.set $out
+      local.get $out
+      i32.const 0
+      local.get $cp
+      array.set $str
+      local.get $out
+      return
+    )
+  )
+  local.get $cp
+  i32.const 0x800
+  i32.lt_u
+  (if
+    (then
+      i32.const 2
+      array.new_default $str
+      local.set $out
+      local.get $out
+      i32.const 0
+      local.get $cp
+      i32.const 6
+      i32.shr_u
+      i32.const 0xC0
+      i32.or
+      array.set $str
+      local.get $out
+      i32.const 1
+      local.get $cp
+      i32.const 0x3F
+      i32.and
+      i32.const 0x80
+      i32.or
+      array.set $str
+      local.get $out
+      return
+    )
+  )
+  local.get $cp
+  i32.const 0x10000
+  i32.lt_u
+  (if
+    (then
+      i32.const 3
+      array.new_default $str
+      local.set $out
+      local.get $out
+      i32.const 0
+      local.get $cp
+      i32.const 12
+      i32.shr_u
+      i32.const 0xE0
+      i32.or
+      array.set $str
+      local.get $out
+      i32.const 1
+      local.get $cp
+      i32.const 6
+      i32.shr_u
+      i32.const 0x3F
+      i32.and
+      i32.const 0x80
+      i32.or
+      array.set $str
+      local.get $out
+      i32.const 2
+      local.get $cp
+      i32.const 0x3F
+      i32.and
+      i32.const 0x80
+      i32.or
+      array.set $str
+      local.get $out
+      return
+    )
+  )
+  i32.const 4
+  array.new_default $str
+  local.set $out
+  local.get $out
+  i32.const 0
+  local.get $cp
+  i32.const 18
+  i32.shr_u
+  i32.const 0xF0
+  i32.or
+  array.set $str
+  local.get $out
+  i32.const 1
+  local.get $cp
+  i32.const 12
+  i32.shr_u
+  i32.const 0x3F
+  i32.and
+  i32.const 0x80
+  i32.or
+  array.set $str
+  local.get $out
+  i32.const 2
+  local.get $cp
+  i32.const 6
+  i32.shr_u
+  i32.const 0x3F
+  i32.and
+  i32.const 0x80
+  i32.or
+  array.set $str
+  local.get $out
+  i32.const 3
+  local.get $cp
+  i32.const 0x3F
+  i32.and
+  i32.const 0x80
+  i32.or
+  array.set $str
+  local.get $out)

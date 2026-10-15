@@ -145,6 +145,24 @@ pub fn rt_std_text__charCodeAt(t: T, i: T) callconv(.c) term.T {
     return term.mkInt(stdWasm.text.charCodeAt(s, k));
 }
 
+pub fn rt_std_text__byteLength(t: T) callconv(.c) term.T {
+    const s = string.strArg(t) orelse return &term.nil_cell;
+    return term.mkInt(@intCast(s.len));
+}
+
+pub fn rt_std_text__byteAt(t: T, i: T) callconv(.c) term.T {
+    const s = string.strArg(t) orelse return &term.nil_cell;
+    const k = intArgI32(i) orelse return &term.nil_cell;
+    return term.mkInt(stdWasm.text.byteAt(s, k));
+}
+
+pub fn rt_std_text__byteSlice(t: T, a: T, b: T) callconv(.c) term.T {
+    const s = string.strArg(t) orelse return &term.nil_cell;
+    const from = intArgI32(a) orelse return &term.nil_cell;
+    const to = intArgI32(b) orelse return &term.nil_cell;
+    return term.binCopy(stdWasm.text.byteSlice(s, from, to));
+}
+
 fn padTerm(t: T, w: T, p: T, start: bool) term.T {
     const s = string.strArg(t) orelse return &term.nil_cell;
     const width = intArgI32(w) orelse return &term.nil_cell;
