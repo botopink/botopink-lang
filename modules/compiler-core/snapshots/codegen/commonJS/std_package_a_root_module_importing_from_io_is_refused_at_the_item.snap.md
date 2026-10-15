@@ -2243,12 +2243,20 @@ class FsError$NotFound extends FsError {
         super();
         this.path = path;
     }
+
+    get $0() {
+        return this.path;
+    }
 }
 FsError$NotFound.prototype.tag = "NotFound";
 class FsError$PermissionDenied extends FsError {
     constructor(path) {
         super();
         this.path = path;
+    }
+
+    get $0() {
+        return this.path;
     }
 }
 FsError$PermissionDenied.prototype.tag = "PermissionDenied";
@@ -2257,6 +2265,10 @@ class FsError$IsDirectory extends FsError {
         super();
         this.path = path;
     }
+
+    get $0() {
+        return this.path;
+    }
 }
 FsError$IsDirectory.prototype.tag = "IsDirectory";
 class FsError$NotDirectory extends FsError {
@@ -2264,12 +2276,20 @@ class FsError$NotDirectory extends FsError {
         super();
         this.path = path;
     }
+
+    get $0() {
+        return this.path;
+    }
 }
 FsError$NotDirectory.prototype.tag = "NotDirectory";
 class FsError$AlreadyExists extends FsError {
     constructor(path) {
         super();
         this.path = path;
+    }
+
+    get $0() {
+        return this.path;
     }
 }
 FsError$AlreadyExists.prototype.tag = "AlreadyExists";
@@ -2279,6 +2299,14 @@ class FsError$InvalidUtf8 extends FsError {
         this.path = path;
         this.offset = offset;
     }
+
+    get $0() {
+        return this.path;
+    }
+
+    get $1() {
+        return this.offset;
+    }
 }
 FsError$InvalidUtf8.prototype.tag = "InvalidUtf8";
 class FsError$Other extends FsError {
@@ -2286,6 +2314,14 @@ class FsError$Other extends FsError {
         super();
         this.path = path;
         this.message = message;
+    }
+
+    get $0() {
+        return this.path;
+    }
+
+    get $1() {
+        return this.message;
     }
 }
 FsError$Other.prototype.tag = "Other";

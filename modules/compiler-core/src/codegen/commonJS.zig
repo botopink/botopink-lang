@@ -3237,7 +3237,13 @@ const Emitter = struct {
     /// answers exactly the payload fields. Empty for every other variant.
     fn positionalGetters(self: *Emitter, v: ast.EnumVariant) ![]const js.Class.ClassMember {
         if (v.fields.len == 0 or !self.variantReadsByPosition(v.name)) return &.{};
-        if (v.fields.len > positional_keys.len) return error.TooManyPositionalFields;
+        if (v.fields.len > positional_keys.len) {
+            // Only a name actually contested is an error; a library's
+            // variant with that many fields is read by label.
+            if (self.variant_contested.contains(v.name)) return error.TooManyPositionalFields;
+            if (self.cross) |xc| if (xc.variantFields(v.name) == .contested) return error.TooManyPositionalFields;
+            return &.{};
+        }
         const getters = try self.arena().alloc(js.Class.ClassMember, v.fields.len);
         for (v.fields, 0..) |f, i| getters[i] = .{
             .kind = .getter,
@@ -7488,7 +7494,12 @@ const Emitter = struct {
     fn variantReadsByPosition(self: *Emitter, name: []const u8) bool {
         if (self.variant_contested.contains(name)) return true;
         const xc = self.cross orelse return false;
-        return xc.variantFields(name) == .contested;
+        // A library's closure cannot see the sibling package (or the consumer)
+        // that declares the same variant name with other fields, yet that
+        // consumer reads the variant by position (`payloadSlots`, its closure
+        // sees both): every payload variant a library exports carries the
+        // getters (B-93), whatever its closure says of the name.
+        return xc.exports_every_pub or xc.variantFields(name) == .contested;
     }
 
     /// `return <body>;` for a matched arm, gated by the arm's guard when

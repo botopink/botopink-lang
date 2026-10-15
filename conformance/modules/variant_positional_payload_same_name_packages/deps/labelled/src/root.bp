@@ -1,0 +1,10 @@
+//// One of two packages declaring a variant named `Text`, its field labelled `value`.
+
+pub type Node {
+    Text(value: string),
+    Break,
+}
+
+pub fn makeNode(s: string) -> Node {
+    return Node.Text(s);
+}

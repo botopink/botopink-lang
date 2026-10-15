@@ -1629,6 +1629,9 @@ expects nothing is refused naming both enums (`modules/variant_name_ambiguous`).
 with a different field and a third matches both positionally (commonJS printed `null`; beam bound
 the whole value, `03-beam`'s row).
 
+`modules/variant_positional_payload_same_name_packages` — the same across two dependency packages, each declaring
+`Text` with another field (commonJS read `$0` off a class that carried none).
+
 `modules/variant_payload_wildcard_and_nested` — `Rect(w, _)`, `Rect(_, h)`, `Circle(_)` and a variant
 nested in another's payload (`Two(Rect(w, _), _)`, `Two(Circle(r), Rect(_, h))`) in one module, on
 all four targets (wasm bound `w` to 0 and answered the nested arms wrong at exit 0, `05-wasm`'s rows).

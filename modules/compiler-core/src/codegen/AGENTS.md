@@ -215,7 +215,10 @@ codegen/
   (`Tag.Item(label)`, `Count.Item(count)`) reads by position: each class of
   such a variant carries `get $0() { return this.label; }` getters
   (`positionalGetters`) and the pattern reads `$<i>` — the matched value says
-  which field. `Ok` / `Err` / `Error` naming no local variant stay a
+  which field. A library's closure cannot see a sibling package declaring the
+  same name, so every payload variant a library package exports (a scope with
+  `exports_every_pub`) carries the getters whatever its closure says; the
+  consumer's closure sees both and reads `$<i>` (144 B-93). `Ok` / `Err` / `Error` naming no local variant stay a
   `@Result`'s key. A payload-less variant arm tests `_s.tag === "Name"` —
   always, in every module.
 - **A variant's identity is its `tag`, never its class.** A payload-less arm
