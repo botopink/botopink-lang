@@ -161,16 +161,18 @@ fn frameParent(f: Frame) -> unknown {
 ----- WASM TEXT -- std/context.wat
 ```wasm
 (module
+  (rec
+    (type $str (array (mut i8)))
+    (type $rec_Context (struct (field $f0 (mut anyref))))
+    (type $closure (sub (struct (field $idx i32) (field $mark i32))))
+    (type $rec_RenderScope (struct (field $f0 (mut anyref))))
+    (type $rec_Frame (struct (field $f0 (mut (ref null $str))) (field $f1 (mut anyref)) (field $f2 (mut anyref))))
+    (type $box_i32 (struct (field $v i32)))
+    (type $rec_Rendered (struct (field $f0 (mut anyref)) (field $f1 (mut (ref null $rec_RenderScope)))))
+  )
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
-  (data (i32.const 256) "\18\00\00\00R\07Context\01\0ccontextValueG")
-  (data (i32.const 284) "\01\00\00\00i")
-  (data (i32.const 292) "\56\00\00\00`use provide` / `use context` are lowered where they are written; this body never runs")
-  (data (i32.const 384) "\41\00\00\00`use inject` is lowered where it is written; this body never runs")
-  (data (i32.const 456) "\16\00\00\00R\0bRenderScope\01\06framesi")
-  (data (i32.const 484) "\1c\00\00\00R\05Frame\03\03keys\05valuei\06parenti")
-  (data (i32.const 516) "\19\00\00\00R\08Rendered\02\05valueG\05scopeT")
-  (global $__heap_ptr (mut i32) (i32.const 548))
+  (global $__heap_ptr (mut i32) (i32.const 256))
   ;; Contexts (decisions 354, 378, 379) — what a component's body reads from
   ;; above it, React's context in botopink's spelling.
   ;; 
@@ -213,41 +215,28 @@ fn frameParent(f: Frame) -> unknown {
   ;; A context of `value`'s type. At module level it declares that type's
   ;; default (decisions 378, 379); inside a component it makes the context a
   ;; `use provide(…)` gives.
-  (func $createContext (export "createContext") (param $value i32) (result i32)
+  (func $createContext (export "createContext") (param $value anyref) (result (ref null $rec_Context))
     (local $__mem0 i32)
-    i32.const 12
-    call $__alloc
-    local.set $__mem0
-    local.get $__mem0
-    i32.const 260
-    i32.store
-    local.get $__mem0
-    i32.const 288
-    i32.store offset=8
-    local.get $__mem0
     local.get $value
-    i32.store offset=4
-    local.get $__mem0
-    i32.const 4
-    i32.add
+    struct.new $rec_Context
     return
   )
   ;; Gives `ctx` to every component this component renders below it — never
   ;; to itself or a sibling; the nearest provider of a type wins.
-  (func $provide (export "provide") (param $ctx i32) (result i32)
-    i32.const 292
+  (func $provide (export "provide") (param $ctx (ref null $rec_Context)) (result (ref null $closure))
+    global.get $__s0
     call $__panic_fail
     unreachable
-    i32.const 0
+    ref.null $closure
   )
   ;; The value of the context of type `T` provided nearest above this body, or
   ;; `T`'s declared default: `use context(T)` answers `T`, which the checker
   ;; reads off the type the argument names (decision 379 (3)).
-  (func $context (export "context") (param $t i32) (result i32)
-    i32.const 292
+  (func $context (export "context") (param $t i32) (result (ref null $closure))
+    global.get $__s0
     call $__panic_fail
     unreachable
-    i32.const 0
+    ref.null $closure
   )
   ;; Decision 416 — the record `T` built from the contexts of its fields'
   ;; types: each field the nearest context of its type provided above, else
@@ -255,30 +244,20 @@ fn frameParent(f: Frame) -> unknown {
   ;; inject(Deps)`). `T` is a record; a behavior is read with `use context`.
   ;; `createContext(value, Behavior)` keys a context by the behavior its value
   ;; implements, so a field typed by the behavior reads it.
-  (func $inject (export "inject") (param $t i32) (result i32)
-    i32.const 384
+  (func $inject (export "inject") (param $t i32) (result (ref null $closure))
+    global.get $__s1
     call $__panic_fail
     unreachable
-    i32.const 0
+    ref.null $closure
   )
   ;; ── the render scope (decision 388) ──────────────────────────────────────────
   ;; The scope a component's lambda runs with: the contexts provided above it.
   ;; Opaque — made only by `RenderScope.root()` (`render-scope-construction`);
   ;; every other scope is one a component's `run` answered.
-  (func $RenderScope_root (result i32)
+  (func $RenderScope_root (result (ref null $rec_RenderScope))
     (local $__mem0 i32)
-    i32.const 8
-    call $__alloc
-    local.set $__mem0
-    local.get $__mem0
-    i32.const 460
-    i32.store
-    local.get $__mem0
-    i32.const 0
-    i32.store offset=4
-    local.get $__mem0
-    i32.const 4
-    i32.add
+    ref.null any
+    struct.new $rec_RenderScope
     return
   )
   ;; What `c.run(scope)` answers: the component body's result and the scope its
@@ -299,51 +278,27 @@ fn frameParent(f: Frame) -> unknown {
   ;; compiler writes it, never a program.
   ;; One provided value over the frames it was provided in.
   ;; The children's scope: `value` provided for `key` over `scope`.
-  (func $push (export "push") (param $scope i32) (param $key i32) (param $value i32) (result i32)
+  (func $push (export "push") (param $scope (ref null $rec_RenderScope)) (param $key (ref null $str)) (param $value anyref) (result (ref null $rec_RenderScope))
     (local $__mem0 i32)
     (local $__mem1 i32)
-    i32.const 8
-    call $__alloc
-    local.set $__mem0
-    local.get $__mem0
-    i32.const 460
-    i32.store
-    local.get $__mem0
-    i32.const 16
-    call $__alloc
-    local.set $__mem1
-    local.get $__mem1
-    i32.const 488
-    i32.store
-    local.get $__mem1
     local.get $key
-    i32.store offset=4
-    local.get $__mem1
     local.get $value
-    i32.store offset=8
-    local.get $__mem1
     local.get $scope
-    i32.load ;; .frames
-    i32.store offset=12
-    local.get $__mem1
-    i32.const 4
-    i32.add
-    i32.store offset=4
-    local.get $__mem0
-    i32.const 4
-    i32.add
+    struct.get $rec_RenderScope $f0
+    struct.new $rec_Frame
+    struct.new $rec_RenderScope
     return
   )
   ;; The value provided nearest above for `key`, else `fallback` — the type's
   ;; declared default (decision 378 (3): no read is unbound).
   ;; The two `unknown` fields are read through `frameValue` / `frameParent`: wasm boxes a field read as `unknown` only as a function's answer.
-  (func $find (export "find") (param $scope i32) (param $key i32) (param $fallback i32) (result i32)
+  (func $find (export "find") (param $scope (ref null $rec_RenderScope)) (param $key (ref null $str)) (param $fallback anyref) (result anyref)
     (local $__mem0 i32)
-    (local $cur i32)
-    (local $f i32)
-    (local $__mem1 i32)
+    (local $cur anyref)
+    (local $f (ref null $rec_Frame))
+    (local $__gc0 anyref)
     local.get $scope
-    i32.load ;; .frames
+    struct.get $rec_RenderScope $f0
     local.set $cur
     (block $__break
       (loop $__continue
@@ -351,36 +306,30 @@ fn frameParent(f: Frame) -> unknown {
         i32.eqz
         br_if $__break
     local.get $cur
-    local.tee $__mem0
-    i32.const 256
-    i32.ge_u
-    local.get $__mem0
-    i32.const 4
-    i32.sub
-    local.get $__mem0
-    i32.const 256
-    i32.ge_u
-    i32.mul
-    i32.load
-    i32.const 488
-    i32.eq
+    local.set $__gc0
+    local.get $__gc0
+    ref.test (ref null $rec_Frame)
+    local.get $__gc0
+    ref.is_null
+    i32.eqz
     i32.and
     (if (result i32)
       (then
     local.get $cur
+    ref.cast (ref null $rec_Frame)
     local.set $f
     local.get $f
-    i32.load
+    struct.get $rec_Frame $f0
     local.get $key
     call $__str_eq
-    (if (result i32)
+    (if (result anyref)
       (then
     local.get $f
     call $frameValue
     return
       )
       (else
-        i32.const 0
+        ref.null any
       )
     )
     drop
@@ -390,24 +339,10 @@ fn frameParent(f: Frame) -> unknown {
     i32.const 0
       )
       (else
-    i32.const 16
-    call $__alloc
-    local.set $__mem1
-    local.get $__mem1
-    i32.const 488
-    i32.store
-    local.get $__mem1
     local.get $key
-    i32.store offset=4
-    local.get $__mem1
     local.get $fallback
-    i32.store offset=8
-    local.get $__mem1
-    i32.const 0
-    i32.store offset=12
-    local.get $__mem1
-    i32.const 4
-    i32.add
+    ref.null any
+    struct.new $rec_Frame
     call $frameValue
     return
       )
@@ -417,49 +352,35 @@ fn frameParent(f: Frame) -> unknown {
       )
     )
     i32.const 0
+    struct.new $box_i32
   )
   ;; A body's answer: its result over its children's scope.
-  (func $rendered (export "rendered") (param $value i32) (param $scope i32) (result i32)
+  (func $rendered (export "rendered") (param $value anyref) (param $scope (ref null $rec_RenderScope)) (result (ref null $rec_Rendered))
     (local $__mem0 i32)
-    i32.const 16
-    call $__alloc
-    local.set $__mem0
-    local.get $__mem0
-    i32.const 520
-    i32.store
-    local.get $__mem0
-    i32.const 288
-    i32.store offset=12
-    local.get $__mem0
     local.get $value
-    i32.store offset=4
-    local.get $__mem0
     local.get $scope
-    i32.store offset=8
-    local.get $__mem0
-    i32.const 4
-    i32.add
+    struct.new $rec_Rendered
     return
   )
   ;; The result a run answered.
-  (func $valueOf (export "valueOf") (param $r i32) (result i32)
+  (func $valueOf (export "valueOf") (param $r (ref null $rec_Rendered)) (result anyref)
     local.get $r
-    i32.load ;; .value
+    struct.get $rec_Rendered $f0
     return
   )
   ;; The empty scope, for an `await` of a component value outside every body.
-  (func $root (export "root") (result i32)
+  (func $root (export "root") (result (ref null $rec_RenderScope))
     call $RenderScope_root
     return
   )
-  (func $frameValue (param $f i32) (result i32)
+  (func $frameValue (param $f (ref null $rec_Frame)) (result anyref)
     local.get $f
-    i32.load offset=4 ;; .value
+    struct.get $rec_Frame $f1
     return
   )
-  (func $frameParent (param $f i32) (result i32)
+  (func $frameParent (param $f (ref null $rec_Frame)) (result anyref)
     local.get $f
-    i32.load offset=8 ;; .parent
+    struct.get $rec_Frame $f2
     return
   )
   ;; Scratch layout below the data section (which starts at 256):
@@ -642,41 +563,62 @@ fn frameParent(f: Frame) -> unknown {
       )
     )
   )
-  (func $__str_eq (param $a i32) (param $b i32) (result i32)
-    (local $i i32) (local $alen i32)
+  (func $__str_eq (param $a (ref null $str)) (param $b (ref null $str)) (result i32)
+    (local $i i32) (local $n i32) (local $an i32) (local $bn i32)
     local.get $a
-    i32.load
-    local.set $alen
-    local.get $alen
+    ref.is_null
+    local.set $an
     local.get $b
-    i32.load
+    ref.is_null
+    local.set $bn
+    local.get $an
+    local.get $bn
+    i32.or
+    (if
+      (then
+        local.get $an
+        local.get $bn
+        i32.and
+        return
+      )
+    )
+    local.get $a
+    array.len
+    local.set $n
+    local.get $n
+    local.get $b
+    array.len
     i32.ne
     (if
-      (then i32.const 0 return)
+      (then
+        i32.const 0
+        return
+      )
     )
-    (block $done
-      (loop $cmp
+    (block $brk
+      (loop $cont
         local.get $i
-        local.get $alen
+        local.get $n
         i32.ge_u
-        br_if $done
+        br_if $brk
         local.get $a
         local.get $i
-        i32.add
-        i32.load8_u offset=4
+        array.get_u $str
         local.get $b
         local.get $i
-        i32.add
-        i32.load8_u offset=4
+        array.get_u $str
         i32.ne
         (if
-          (then i32.const 0 return)
+          (then
+            i32.const 0
+            return
+          )
         )
         local.get $i
         i32.const 1
         i32.add
         local.set $i
-        br $cmp
+        br $cont
       )
     )
     i32.const 1
@@ -789,7 +731,8 @@ fn frameParent(f: Frame) -> unknown {
     i32.const 1
     call $__write_err
   )
-  (func $__panic_fail (param $msg i32)
+  (func $__panic_fail (param $msg (ref null $str))
+    (local $n i32) (local $p i32) (local $i i32) (local $top i32)
     i32.const 188
     i64.const 9071397899755888
     i64.store
@@ -797,10 +740,35 @@ fn frameParent(f: Frame) -> unknown {
     i32.const 7
     call $__write_err
     local.get $msg
-    i32.const 4
-    i32.add
-    local.get $msg
-    i32.load
+    array.len
+    local.set $n
+    global.get $__heap_ptr
+    local.set $top
+    local.get $n
+    call $__alloc
+    local.set $p
+    (block $brk
+      (loop $cont
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $brk
+        local.get $p
+        local.get $i
+        i32.add
+        local.get $msg
+        local.get $i
+        array.get_u $str
+        i32.store8
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $cont
+      )
+    )
+    local.get $p
+    local.get $n
     call $__write_err
     i32.const 188
     i32.const 10
@@ -808,7 +776,25 @@ fn frameParent(f: Frame) -> unknown {
     i32.const 188
     i32.const 1
     call $__write_err
+    local.get $top
+    global.set $__heap_ptr
   )
+  (data $__d0 "`use provide` / `use context` are lowered where they are written; this body never runs")
+  (global $__s0 (mut (ref null $str)) (ref.null $str))
+  (data $__d1 "`use inject` is lowered where it is written; this body never runs")
+  (global $__s1 (mut (ref null $str)) (ref.null $str))
+  (start $__init_strs)
+  (func $__init_strs
+    i32.const 0
+    i32.const 86
+    array.new_data $str $__d0
+    global.set $__s0
+    i32.const 0
+    i32.const 65
+    array.new_data $str $__d1
+    global.set $__s1
+  )
+  (@custom "botopink.needs" "gc\0a")
 )
 ```
 

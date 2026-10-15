@@ -27,65 +27,51 @@ fn main() {
 ----- WASM TEXT -- main.wat
 ```wasm
 (module
+  (rec
+    (type $str (array (mut i8)))
+    (type $rec_Person (struct (field $f0 (mut (ref null $str))) (field $f1 (mut i32))))
+    (type $rec_Vec (struct (field $f0 (mut (ref null $str))) (field $f1 (mut i32))))
+    (type $var_Shape_Circle (struct (field $f0 (mut i32))))
+    (type $var_Shape_Dot (struct))
+  )
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
-  (data (i32.const 256) "\14\00\00\00R\06Person\02\04names\03agei")
-  (data (i32.const 280) "\06\00\00\00person")
-  (data (i32.const 292) "\11\00\00\00R\03Vec\02\04names\03agei")
-  (data (i32.const 316) "\03\00\00\00vec")
-  (data (i32.const 324) "\03\00\00\00Ana")
-  (data (i32.const 332) "\17\00\00\00V\0cShape.Circle\01\06radiusi")
-  (data (i32.const 360) "\0c\00\00\00V\tShape.Dot\00")
-  (global $__heap_ptr (mut i32) (i32.const 376))
-  (func $nameOf (param $v i32) (result i32)
+  (global $__heap_ptr (mut i32) (i32.const 256))
+  (func $nameOf (param $v anyref) (result (ref null $str))
     (local $Person i32)
     (local $Vec i32)
-    (local $__case_0 i32)
+    (local $__case_0 anyref)
+    (local $Person__0 anyref)
+    (local $Vec__1 anyref)
     local.get $v
     local.set $__case_0
     local.get $__case_0
-    i32.const 256
-    i32.ge_u
+    ref.test (ref null $rec_Person)
     local.get $__case_0
-    i32.const 4
-    i32.sub
-    local.get $__case_0
-    i32.const 256
-    i32.ge_u
-    i32.mul
-    i32.load
-    i32.const 260
-    i32.eq
+    ref.is_null
+    i32.eqz
     i32.and
-    (if (result i32)
+    (if (result (ref null $str))
       (then
     local.get $__case_0
-    local.set $Person
-    i32.const 280
+    local.set $Person__0
+    global.get $__s0
       )
       (else
     local.get $__case_0
-    i32.const 256
-    i32.ge_u
+    ref.test (ref null $rec_Vec)
     local.get $__case_0
-    i32.const 4
-    i32.sub
-    local.get $__case_0
-    i32.const 256
-    i32.ge_u
-    i32.mul
-    i32.load
-    i32.const 296
-    i32.eq
+    ref.is_null
+    i32.eqz
     i32.and
-    (if (result i32)
+    (if (result (ref null $str))
       (then
     local.get $__case_0
-    local.set $Vec
-    i32.const 316
+    local.set $Vec__1
+    global.get $__s1
       )
       (else
-    i32.const 0
+    ref.null $str
       )
     )
       )
@@ -97,177 +83,72 @@ fn main() {
     (local $__mem1 i32)
     (local $__mem2 i32)
     (local $__mem3 i32)
-    (local $u i32)
-    (local $s i32)
-    (local $d i32)
-    (local $__mem4 i32)
-    (local $__mem5 i32)
-    (local $__mem6 i32)
-    (local $__mem7 i32)
-    (local $__mem8 i32)
-    i32.const 12
-    call $__alloc
-    local.set $__mem0
-    local.get $__mem0
-    i32.const 296
-    i32.store
-    local.get $__mem0
-    i32.const 324
-    i32.store offset=4
-    local.get $__mem0
+    (local $u anyref)
+    (local $s anyref)
+    (local $d anyref)
+    (local $__gc0 anyref)
+    (local $__gc1 anyref)
+    (local $__gc2 anyref)
+    (local $__gc3 anyref)
+    global.get $__s2
     i32.const 30
-    i32.store offset=8
-    local.get $__mem0
-    i32.const 4
-    i32.add
+    struct.new $rec_Vec
     local.set $u
     local.get $u
-    local.tee $__mem1
-    i32.const 256
-    i32.ge_u
-    local.get $__mem1
-    i32.const 4
-    i32.sub
-    local.get $__mem1
-    i32.const 256
-    i32.ge_u
-    i32.mul
-    i32.load
-    i32.const 296
-    i32.eq
+    local.set $__gc0
+    local.get $__gc0
+    ref.test (ref null $rec_Vec)
+    local.get $__gc0
+    ref.is_null
+    i32.eqz
     i32.and
     call $__print_bool
     local.get $u
-    local.tee $__mem2
-    i32.const 256
-    i32.ge_u
-    local.get $__mem2
-    i32.const 4
-    i32.sub
-    local.get $__mem2
-    i32.const 256
-    i32.ge_u
-    i32.mul
-    i32.load
-    i32.const 260
-    i32.eq
+    local.set $__gc1
+    local.get $__gc1
+    ref.test (ref null $rec_Person)
+    local.get $__gc1
+    ref.is_null
+    i32.eqz
     i32.and
     call $__print_bool
-    i32.const 12
-    call $__alloc
-    local.set $__mem3
-    local.get $__mem3
-    i32.const 336
-    i32.store
-    local.get $__mem3
-    i32.const 1
-    i32.store offset=4
-    local.get $__mem3
     i32.const 4
-    i32.store offset=8
-    local.get $__mem3
-    i32.const 4
-    i32.add
+    struct.new $var_Shape_Circle
     local.set $s
     local.get $s
-    local.tee $__mem4
-    i32.const 256
-    i32.ge_u
-    local.get $__mem4
-    i32.const 4
-    i32.sub
-    local.get $__mem4
-    i32.const 256
-    i32.ge_u
-    i32.mul
-    i32.load
-    i32.const 364
-    i32.eq
-    local.get $__mem4
-    i32.const 4
-    i32.sub
-    local.get $__mem4
-    i32.const 256
-    i32.ge_u
-    i32.mul
-    i32.load
-    i32.const 336
-    i32.eq
+    local.set $__gc2
+    local.get $__gc2
+    ref.test (ref null $var_Shape_Dot)
+    local.get $__gc2
+    ref.test (ref null $var_Shape_Circle)
     i32.or
+    local.get $__gc2
+    ref.is_null
+    i32.eqz
     i32.and
     call $__print_bool
-    i32.const 8
-    call $__alloc
-    local.set $__mem5
-    local.get $__mem5
-    i32.const 364
-    i32.store
-    local.get $__mem5
-    i32.const 0
-    i32.store offset=4
-    local.get $__mem5
-    i32.const 4
-    i32.add
+    struct.new $var_Shape_Dot
     local.set $d
     local.get $d
-    local.tee $__mem6
-    i32.const 256
-    i32.ge_u
-    local.get $__mem6
-    i32.const 4
-    i32.sub
-    local.get $__mem6
-    i32.const 256
-    i32.ge_u
-    i32.mul
-    i32.load
-    i32.const 364
-    i32.eq
-    local.get $__mem6
-    i32.const 4
-    i32.sub
-    local.get $__mem6
-    i32.const 256
-    i32.ge_u
-    i32.mul
-    i32.load
-    i32.const 336
-    i32.eq
+    local.set $__gc3
+    local.get $__gc3
+    ref.test (ref null $var_Shape_Dot)
+    local.get $__gc3
+    ref.test (ref null $var_Shape_Circle)
     i32.or
+    local.get $__gc3
+    ref.is_null
+    i32.eqz
     i32.and
     call $__print_bool
-    i32.const 12
-    call $__alloc
-    local.set $__mem7
-    local.get $__mem7
-    i32.const 260
-    i32.store
-    local.get $__mem7
-    i32.const 324
-    i32.store offset=4
-    local.get $__mem7
+    global.get $__s2
     i32.const 30
-    i32.store offset=8
-    local.get $__mem7
-    i32.const 4
-    i32.add
+    struct.new $rec_Person
     call $nameOf
     call $__print_str
-    i32.const 12
-    call $__alloc
-    local.set $__mem8
-    local.get $__mem8
-    i32.const 296
-    i32.store
-    local.get $__mem8
-    i32.const 324
-    i32.store offset=4
-    local.get $__mem8
+    global.get $__s2
     i32.const 30
-    i32.store offset=8
-    local.get $__mem8
-    i32.const 4
-    i32.add
+    struct.new $rec_Vec
     call $nameOf
     call $__print_str
   )
@@ -454,24 +335,43 @@ fn main() {
       )
     )
   )
-  (func $__print_str_raw (param $s i32)
+  (func $__print_str_raw (param $s (ref null $str))
+    (local $n i32) (local $p i32) (local $i i32) (local $top i32)
     local.get $s
-    i32.const 256
-    i32.lt_u
-    (if
-      (then
-        ;; a pointer below the data floor is not a string
-        unreachable
+    array.len
+    local.set $n
+    global.get $__heap_ptr
+    local.set $top
+    local.get $n
+    call $__alloc
+    local.set $p
+    (block $brk
+      (loop $cont
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $brk
+        local.get $p
+        local.get $i
+        i32.add
+        local.get $s
+        local.get $i
+        array.get_u $str
+        i32.store8
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $cont
       )
     )
-    local.get $s
-    i32.const 4
-    i32.add
-    local.get $s
-    i32.load
+    local.get $p
+    local.get $n
     call $__write_bytes
+    local.get $top
+    global.set $__heap_ptr
   )
-  (func $__print_str (param $s i32)
+  (func $__print_str (param $s (ref null $str))
     local.get $s
     call $__print_str_raw
     call $__print_nl
@@ -555,6 +455,28 @@ fn main() {
     global.set $__heap_ptr
     local.get $p
   )
+  (data $__d0 "person")
+  (global $__s0 (mut (ref null $str)) (ref.null $str))
+  (data $__d1 "vec")
+  (global $__s1 (mut (ref null $str)) (ref.null $str))
+  (data $__d2 "Ana")
+  (global $__s2 (mut (ref null $str)) (ref.null $str))
+  (start $__init_strs)
+  (func $__init_strs
+    i32.const 0
+    i32.const 6
+    array.new_data $str $__d0
+    global.set $__s0
+    i32.const 0
+    i32.const 3
+    array.new_data $str $__d1
+    global.set $__s1
+    i32.const 0
+    i32.const 3
+    array.new_data $str $__d2
+    global.set $__s2
+  )
+  (@custom "botopink.needs" "gc\0a")
 )
 ```
 

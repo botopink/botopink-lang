@@ -2179,6 +2179,8 @@ const Emitter = struct {
     /// is `ValType.def(position + 1)`; its fields are built once the module is
     /// lowered (`gcBuildTypes`).
     gc_types: std.ArrayListUnmanaged(GcTy) = .empty,
+    /// The environment type of the lifted lambda being emitted (`.gc`).
+    gc_env_ty: u16 = 0,
     /// The GC printers of a `.gc` module (`gcPrinter`): the shapes (and
     /// declarations) printed, in the order asked — a printer's symbol is
     /// `__pr<position>` — and the functions written for them.
@@ -4721,6 +4723,12 @@ const Emitter = struct {
         /// The box of an all-unit enum's ordinal in a type parameter's slot,
         /// one per enum, a subtype of `$box_i32`: it prints by the enum's names.
         ebox: []const u8,
+        /// A function value (front 164 s2 P3): the open struct every closure
+        /// is, its table index and its component mark (decision 504).
+        closure,
+        /// The environment of lifted lambda `n`: a subtype of `closure`
+        /// holding the lambda's captures, each typed as the local it copies.
+        env: u32,
 
         /// A `bool` has a box of its own, so an `unknown` holding one prints
         /// and compares as a `bool` (front 164 s2 P2b).
@@ -4733,8 +4741,9 @@ const Emitter = struct {
                 .variant => |v| std.mem.eql(u8, v.en, b.variant.en) and std.mem.eql(u8, v.name, b.variant.name),
                 .arr => |e| e == b.arr,
                 .box => |k| k == b.box,
-                .result => true,
+                .result, .closure => true,
                 .ebox => |n| std.mem.eql(u8, n, b.ebox),
+                .env => |n| n == b.env,
             };
         }
     };
@@ -4747,6 +4756,7 @@ const Emitter = struct {
         // `$box_bool` and an enum's box are subtypes of `$box_i32`, declared
         // before them.
         if ((t == .box and t.box == .bool) or t == .ebox) _ = self.gcTyIndex(.{ .box = .i32 });
+        if (t == .env) _ = self.gcTyIndex(.closure);
         self.gc_types.append(self.alloc, t) catch {
             self.gcGap("out of memory");
             return 0;
@@ -4775,6 +4785,7 @@ const Emitter = struct {
                     .arr => |e| self.gcTy(.{ .arr = e }),
                     .tuple => self.gcTy(.{ .arr = .any }),
                     .result => self.gcTy(.result),
+                    .closure => self.gcTy(.closure),
                     // A payload enum's value: a struct of one of its variants'
                     // types, tested by `ref.test`; an `unknown`: anything.
                     .enum_, .unknown => .anyref,
@@ -4887,7 +4898,13 @@ const Emitter = struct {
             error.OutOfMemory => return error.OutOfMemory,
             else => {
                 self.gcGap("typecheck");
-                if (gc_debug) std.debug.print("GCTC {s} :: {s} {s} ({s})\n", .{ diag.func, diag.what, diag.detail, @errorName(err) });
+                if (gc_debug) std.debug.print("GCTC {s} :: {s} {s} got {d} want {d} ({s})\n", .{ diag.func, diag.what, diag.detail, diag.got, diag.want, @errorName(err) });
+                if (gc_debug and std.c.getenv("GCDUMP") != null) {
+                    var dump: std.Io.Writer.Allocating = .init(self.alloc);
+                    defer dump.deinit();
+                    watEmitter.renderModule(&dump.writer, .{ .items = items.items }) catch {};
+                    std.debug.print("{s}\n", .{dump.written()});
+                }
                 return error.GcFallback;
             },
         };
@@ -4959,6 +4976,7 @@ const Emitter = struct {
                 return .{ .ref = .unknown };
             },
             .tuple_, .labeledTuple => return .{ .ref = .tuple },
+            .function => return .{ .ref = .closure },
             else => return null,
         }
     }
@@ -5031,6 +5049,24 @@ const Emitter = struct {
                     fs[0] = .{ .name = "v", .ty = .i32 };
                     try defs.append(ar, .{ .name = try std.fmt.allocPrint(ar, "ebox_{s}", .{en}), .kind = .{ .@"struct" = fs }, .super = self.gcTyIndex(.{ .box = .i32 }) });
                 },
+                .closure => {
+                    const fs = try ar.alloc(wat.Field, 2);
+                    fs[0] = .{ .name = "idx", .ty = .i32 };
+                    fs[1] = .{ .name = "mark", .ty = .i32 };
+                    try defs.append(ar, .{ .name = "closure", .kind = .{ .@"struct" = fs }, .final = false });
+                },
+                .env => |li| {
+                    const caps = self.lambdas.items[li].captures;
+                    const fs = try ar.alloc(wat.Field, 2 + caps.len);
+                    fs[0] = .{ .name = "idx", .ty = .i32 };
+                    fs[1] = .{ .name = "mark", .ty = .i32 };
+                    for (caps, 0..) |cp, k| fs[2 + k] = .{
+                        .name = try std.fmt.allocPrint(ar, "c{d}", .{k}),
+                        .ty = self.vtOf(cp.ty),
+                        .mutable = true,
+                    };
+                    try defs.append(ar, .{ .name = try std.fmt.allocPrint(ar, "env{d}", .{li}), .kind = .{ .@"struct" = fs }, .super = self.gcTyIndex(.closure) });
+                },
                 .result => {
                     const fs = try ar.alloc(wat.Field, 2);
                     fs[0] = .{ .name = "tag", .ty = .i32, .mutable = true };
@@ -5070,9 +5106,21 @@ const Emitter = struct {
     /// their declaration's type is the local's.
     fn gcReprOfExpr(self: *Emitter, e: ast.Expr) ?Repr {
         switch (e) {
+            .function => |f| if (f.kind.syntax != .asyncBlock) return .{ .ref = .closure },
             .identifier => |id| switch (id.kind) {
-                .ident => return null,
+                .ident => |n0| {
+                    // A top-level fn named as a value (front 164 s2 P3).
+                    const n = self.resolveName(n0);
+                    if (!self.locals.contains(n) and !self.globals.contains(n) and self.fn_sigs.contains(n0)) return .{ .ref = .closure };
+                    return null;
+                },
                 .identAccess => |ia| {
+                    // `Box.wrap` named without a call (144 B-10).
+                    if (self.instance_lowerings.get(id.loc)) |il| if (il == .assoc_fn_value) {
+                        const af = il.assoc_fn_value;
+                        const sym = std.fmt.allocPrint(self.reg_arena.allocator(), "{s}_{s}", .{ af.type_name, af.method }) catch return null;
+                        if (self.fn_sigs.contains(sym)) return .{ .ref = .closure };
+                    };
                     if (ia.optional) {
                         if (self.optInfoOf(e)) |oi| if (self.gcOptPayload(oi)) |pr| return gcOptRepr(pr);
                         return null;
@@ -5112,6 +5160,10 @@ const Emitter = struct {
                     }
                     if (cc.is_builtin and (std.mem.eql(u8, cc.callee, "__bp_ok") or std.mem.eql(u8, cc.callee, "__bp_error")))
                         return .{ .ref = .result };
+                    // A call through a function value answers its declared type.
+                    if (!cc.is_builtin and (cc.calleeExpr != null or (cc.receiver == null and self.locals.contains(self.resolveName(cc.callee))))) {
+                        if (self.gcValueCallRepr(cc)) |r| if (r.isRef()) return r;
+                    }
                     // `xs.map(f)`: an array of the class of what `f` answers
                     // (`gcMapTail`, what `gcArrayHof` builds).
                     if (cc.receiver) |recv| if (std.mem.eql(u8, cc.callee, "map") and cc.args.len == 1) if (lambdaAt(cc, 0)) |lam| {
@@ -5580,7 +5632,7 @@ const Emitter = struct {
 
     /// `try r`: an `Error` leaves the function with `r` itself, an `Ok` is its payload.
     fn gcTryPropagate(self: *Emitter, inner: ast.Expr) anyerror!void {
-        if (self.yield_target != null) return self.gcFail("a try inside a sequence");
+        if (self.yield_target != null and !(self.gen_repr.isArrRef() and self.gen_repr.ref.arr == .any)) return self.gcFail("a try inside a sequence of words");
         const sh = self.resultShapeOf(inner) orelse return self.gcFail("a try over a @Result of no known shape");
         const pr = self.reprOf(sh.ok orelse return self.gcFail("a @Result of no known Ok type"));
         const rr: Repr = .{ .ref = .result };
@@ -5592,9 +5644,19 @@ const Emitter = struct {
         try self.emit(.{ .struct_get = .{ .ty = rti, .field = 0 } });
         var then_c: Capture = .{};
         self.open(&then_c);
-        try self.emit(.{ .local_get = slot });
-        try self.runDefers(0);
-        try self.emitC(.@"return", "propagate Error");
+        if (self.yield_target) |tgt| {
+            // Decision 122 — in a sequence whose item is a `@Result`, a
+            // failing `try` emits the Error as the last item and ends.
+            try self.emit(.{ .local_get = tgt });
+            try self.emit(.{ .local_get = slot });
+            try self.emit(.{ .call = try self.gcArrPush(.any) });
+            try self.emit(.{ .local_set = tgt });
+            try self.emitGenEnd();
+        } else {
+            try self.emit(.{ .local_get = slot });
+            try self.runDefers(0);
+            try self.emitC(.@"return", "propagate Error");
+        }
         const then_seq = self.seal(&then_c, .terminated);
         try self.emit(.{ .@"if" = .{ .then = .{ .seq = then_seq } } });
         try self.emit(.{ .local_get = slot });
@@ -5976,11 +6038,10 @@ const Emitter = struct {
             return;
         }
         if (value == .branch and value.branch.kind == .if_) return self.gcFail("an if boxed as an unknown");
-        if (self.fnValueArity(value) != null) return self.gcFail("a function value as an unknown");
         if (self.typeRefOf(value)) |tr| if (tr == .named and std.mem.eql(u8, tr.named, "Bytes")) return self.gcFail("Bytes as an unknown");
         if (value == .literal and value.literal.kind == .bytesLit) return self.gcFail("Bytes as an unknown");
         const as_is = (value == .call and value.call.kind == .call and self.callKind(value.call.kind.call) == .enum_ctor) or
-            self.isUnknownExpr(value) or self.isTaggedValue(value);
+            self.isUnknownExpr(value) or self.isTaggedValue(value) or self.gcIsUnknownRepr(value);
         const Kind = enum { i32_, f64_, bool_, str, ref };
         const hinted: ?Kind = if (as_is) .ref else if (hint) |h| switch (self.elemBoxOfTypeRef(h)) {
             .as_is => .ref,
@@ -5998,6 +6059,8 @@ const Emitter = struct {
         else if (self.wasmTypeOf(value).isFloat())
             .f64_
         else if (self.isArrayExpr(value) or isTupleLit(value) or self.typeRefIsTuple(value))
+            .ref
+        else if (self.fnValueArity(value) != null)
             .ref
         else if (self.isKnownInteger(value))
             .i32_
@@ -6025,10 +6088,18 @@ const Emitter = struct {
             .ref => {
                 var r = self.wasmTypeOf(value);
                 if (!r.isRef()) r = self.gcReprOfExpr(value) orelse return self.gcFail("a value of no GC reference as an unknown");
-                if (r == .ref and (r.ref == .bytes or r.ref == .closure or r.ref == .task or r.ref == .cell or r.ref == .bigint)) return self.gcFail("a value with no unknown form");
+                if (r == .ref and (r.ref == .bytes or r.ref == .task or r.ref == .cell or r.ref == .bigint)) return self.gcFail("a value with no unknown form");
                 try self.lowerCoerced(value, r);
             },
         }
+    }
+
+    /// A value already an `unknown` in a GC module (a record's `unknown`
+    /// field read, a call answering one): boxed as it is.
+    fn gcIsUnknownRepr(self: *Emitter, value: ast.Expr) bool {
+        if (self.mode != .gc) return false;
+        const r = self.wasmTypeOf(value);
+        return r == .ref and r.ref == .unknown;
     }
 
     // ── optionals in a GC module (front 164 s2 P2) ──────────────────────
@@ -7748,7 +7819,7 @@ const Emitter = struct {
             const label = try std.fmt.allocPrint(ar, "{s}{s}: ", .{ if (i > 0) ", " else "", fname });
             try self.gcPutStr(label);
             const gen: ?[]const ast.GenericParam = if (variant == null) self.record_generics.get(rec) else self.enum_generics.get(rec);
-            const fsh = if (gen != null and mentionsGeneric(trefs[i], gen.?)) try self.gcErasedShape(gen.?, trefs[i]) else if (variant == null) blk: {
+            const fsh = if (gen != null and mentionsGeneric(trefs[i], gen.?)) try self.gcErasedShape(gen.?, trefs[i]) else if (isUnknownTypeRef(trefs[i])) try ar.dupe(u8, "U") else if (variant == null) blk: {
                 const wide: ?u8 = switch (trefs[i]) {
                     .named => |n| i64CellCode(n),
                     else => null,
@@ -8187,7 +8258,9 @@ const Emitter = struct {
         if (self.fn_has_result and tail == .none) try self.pushZero();
         // An implicit tail value has to meet the declared `(result …)` too.
         if (self.fn_has_result and tail == .value) {
-            if (tail_type) |t| try self.emitConvert(t, self.cur_result);
+            // A tail that cannot return (`@panic`) leaves the stack polymorphic.
+            const no_return = self.mode == .gc and body.len > 0 and isNoReturnCall(body[body.len - 1].expr);
+            if (tail_type) |t| if (!no_return) try self.emitConvert(t, self.cur_result);
         }
         // `emitBody` normalises: with a result the tail is a value (or the
         // body terminated), without one it is nothing (or terminated).
@@ -9415,7 +9488,11 @@ const Emitter = struct {
                         if (lb.typeAnnotation == null) if (self.optInfoOf(lb.value.*)) |oi| if (oi.cell != .none) try self.opt_locals.put(lb.name, oi);
                         if (self.recordTypeOfExpr(lb.value.*)) |rty| {
                             try self.local_types.put(lb.name, rty);
-                        }
+                        } else if (self.mode == .gc) if (lb.typeAnnotation) |ta| {
+                            // A downcast (`val f: Frame = cur` over an
+                            // `unknown` a test proved): the annotation names it.
+                            if (ta == .named) if (self.resolveRecordName(ta.named)) |rty| try self.local_types.put(lb.name, rty);
+                        };
                         if (self.isStringExpr(lb.value.*)) try self.str_locals.put(lb.name, {});
                         if (self.isBoolExpr(lb.value.*)) try self.bool_locals.put(lb.name, {});
                         try self.noteArrayLocal(lb.name, lb.value.*);
@@ -10346,7 +10423,7 @@ const Emitter = struct {
                         };
                         defer self.expected_union_array = false;
                         defer self.expected_fn = null;
-                        if (self.fn_has_result and self.raw_return) {
+                        if (self.fn_has_result and self.raw_return and self.mode == .linear) {
                             // A carry wrapper (decision 504): the scope's word,
                             // or — a float or an `i64` — its cell's address,
                             // loaded as the declared type.
@@ -10451,12 +10528,13 @@ const Emitter = struct {
                     const unknown_ann: ?ast.TypeRef = lb.typeAnnotation orelse
                         (if (self.unionValueOf(lb.value.*)) |uv| uv.type_ else null);
                     if (unknown_ann) |ta| if (isUnknownTypeRef(ta)) {
-                        try self.declareLocal(lb.name, .i32);
+                        const unk: Repr = if (self.mode == .gc) .{ .ref = .unknown } else .i32;
+                        try self.declareLocal(lb.name, unk);
                         try self.local_typerefs.put(lb.name, ta);
                         if (self.boxesInto(ta, lb.value.*))
                             try self.lowerAsUnknown(lb.value.*)
                         else
-                            try self.lowerCoerced(lb.value.*, .i32);
+                            try self.lowerCoerced(lb.value.*, unk);
                         try self.emit(.{ .local_set = lb.name });
                         return .none;
                     };
@@ -11141,8 +11219,17 @@ const Emitter = struct {
             },
             .function => |f| if (f.kind.syntax == .asyncBlock)
                 try self.lowerAsyncBlock(f.kind.body)
-            else
-                try self.lowerLambdaValue(f.kind.params, f.kind.body, e.getLoc()),
+            else {
+                // A typed function expression (`fn(x: i32) -> i32 { … }`)
+                // is written against its own function type (decision 408).
+                if (self.mode == .gc and self.expected_fn == null and f.kind.syntax == .fnExpr and f.kind.paramTypes.len == f.kind.params.len) if (f.kind.returnType) |rt| {
+                    const ra = self.reg_arena.allocator();
+                    const ret = try ra.create(ast.TypeRef);
+                    ret.* = rt;
+                    self.expected_fn = .{ .function = .{ .params = try ra.dupe(ast.TypeRef, f.kind.paramTypes), .returnType = ret } };
+                };
+                try self.lowerLambdaValue(f.kind.params, f.kind.body, e.getLoc());
+            },
             .loop => |lp| try self.lowerLoop(lp),
             else => return self.refuse(e.getLoc(), "the wasm backend has no lowering for a `{s}` expression", .{@tagName(e)}),
         }
@@ -11355,10 +11442,18 @@ const Emitter = struct {
         const rty = self.recordTypeOfExpr(fa.receiver.*) orelse return self.gcFail("a field written on a receiver of no known record");
         const off = self.fieldOffsetIn(rty, fa.field) orelse return self.gcFail("a field the record does not declare");
         const ft = self.fieldTypeRefIn(rty, fa.field) orelse return self.gcFail("a field with no type");
-        if (self.gcGenericFieldDecl(rty, fa.field) != null) return self.gcFail("a write of a generic record's type parameter field");
-        const fr = self.reprOf(ft);
         const rrepr: Repr = .{ .ref = .{ .record = rty } };
         const ref: wat.FieldRef = .{ .ty = self.gcTyIndex(.{ .record = rty }), .field = off / 4 };
+        // A field of a generic record that mentions its type parameters: the
+        // value goes in as a constructor's argument does (erased, boxed).
+        if (self.gcGenericFieldDecl(rty, fa.field)) |efr| {
+            if (op != .assign) return self.gcFail("a compound write of a generic record's type parameter field");
+            try self.lowerCoerced(fa.receiver.*, rrepr);
+            try self.gcGenericArg(ft, self.record_generics.get(rty).?, efr, value);
+            try self.emit(.{ .struct_set = ref });
+            return;
+        }
+        const fr = self.reprOf(ft);
         switch (op) {
             .assign => {
                 try self.lowerCoerced(fa.receiver.*, rrepr);
@@ -14278,7 +14373,7 @@ const Emitter = struct {
                 // carries (its type argument, the context's or the body's
                 // type) crosses as the address of its 8-byte cell, as a
                 // function value's does, and its reader's wrapper loads it.
-                if (scopeCarry.isWrapper(cc.callee)) {
+                if (scopeCarry.isWrapper(cc.callee) and self.mode == .linear) {
                     const carries = if (scopeCarry.valueArg(cc.callee)) |va| va == i else false;
                     const cell: Cell = if (!carries) .none else if (cc.typeArgs) |ta|
                         (if (ta.len == 1) cellOfTypeRef(ta[0]) else .none)
@@ -17050,6 +17145,18 @@ const Emitter = struct {
         /// An `async { }` block: its closure answers the task the block's
         /// state machine runs (decision 392).
         async_block: bool = false,
+        /// The lambda's index in `lambdas` and in the function table.
+        idx: u32 = 0,
+        /// A `.gc` module (front 164 s2 P3) — per parameter, the type the
+        /// declared function type the lambda is written against gives it.
+        param_ft: []const ?ast.TypeRef = &.{},
+        /// The type that function type answers.
+        ret_ft: ?ast.TypeRef = null,
+        /// Per parameter, the repr of the argument a call through a closure
+        /// local passed (a parameter nothing declared takes it).
+        param_seen: []?Repr = &.{},
+        /// The repr a call through a closure local read the answer as.
+        ret_seen: ?Repr = null,
     };
 
     // ── decision 392: an asynchronous function is a state machine ───────────
@@ -17339,6 +17446,7 @@ const Emitter = struct {
     /// `Rendered` are never told apart by their word.
     fn lowerRun(self: *Emitter, cc: anytype, awaited: bool) anyerror!void {
         if (cc.args.len != 2) return self.refuse(self.call_loc, "a component run takes the component and the scope", .{});
+        if (self.mode == .gc) return self.gcRun(cc);
         const ra = self.reg_arena.allocator();
         const k = self.loop_seq;
         self.loop_seq += 1;
@@ -17377,6 +17485,22 @@ const Emitter = struct {
         try self.emit(.{ .local_get = w });
         const else_seq = self.seal(&else_c, .{ .value = .i32 });
         try self.emit(.{ .@"if" = .{ .result = .i32, .then = .{ .seq = then_seq }, .@"else" = .{ .seq = else_seq } } });
+    }
+
+    /// A component's run in a GC module: the lambda is called with the
+    /// scope and answers what the run wrapper declares. A component that
+    /// awaits is a state machine, which has no GC form (`gcEmitLifted`).
+    fn gcRun(self: *Emitter, cc: anytype) anyerror!void {
+        const sig = self.fn_sigs.get(cc.callee) orelse return self.gcFail("a component run of no signature");
+        const cv = try std.fmt.allocPrint(self.reg_arena.allocator(), "__runc{d}", .{self.loop_seq});
+        self.loop_seq += 1;
+        try self.declareLocal(cv, .{ .ref = .closure });
+        try self.lowerCoerced(cc.args[0].value.*, .{ .ref = .closure });
+        try self.emit(.{ .local_set = cv });
+        try self.emit(.{ .local_get = cv });
+        try self.lowerCoerced(cc.args[1].value.*, .{ .ref = .unknown });
+        try self.gcEmitIndirect(cv, 1);
+        try self.emitConvert(.{ .ref = .unknown }, sig.result orelse .i32);
     }
 
     /// The suspension point of an `await` in a state machine over the task
@@ -17879,6 +18003,7 @@ const Emitter = struct {
     /// 392): the call answers the block's task, started and run to its first
     /// `await`.
     fn lowerAsyncBlock(self: *Emitter, body: []const ast.Stmt) anyerror!void {
+        if (self.mode == .gc) return self.gcFail("an async block");
         const idx = self.lambdas.items.len;
         const slot = try std.fmt.allocPrint(self.reg_arena.allocator(), "__async{d}", .{idx});
         try self.declareLocal(slot, .i32);
@@ -17930,8 +18055,17 @@ const Emitter = struct {
         const param_cell = try ra.alloc(Cell, params.len);
         @memset(param_cell, .none);
         var ret_cell: Cell = .none;
+        const param_ft = try ra.alloc(?ast.TypeRef, params.len);
+        @memset(param_ft, null);
+        const param_seen = try ra.alloc(?Repr, params.len);
+        @memset(param_seen, null);
+        var ret_ft: ?ast.TypeRef = null;
         if (expected) |et| if (et == .function) {
             const pts = et.function.params;
+            for (param_ft, 0..) |*pf, i| {
+                if (i < pts.len) pf.* = pts[i];
+            }
+            ret_ft = et.function.returnType.*;
             for (param_cell, 0..) |*pc, i| {
                 if (i < pts.len) pc.* = cellOfTypeRef(pts[i]);
             }
@@ -17951,6 +18085,9 @@ const Emitter = struct {
         if (expected_params) |eps| for (param_str, 0..) |*ps, i| {
             if (i < eps.len and isStringTypeRef(eps[i].typeRef)) ps.* = true;
         };
+        if (expected_params) |eps| for (param_ft, 0..) |*pf, i| {
+            if (pf.* == null and i < eps.len) pf.* = eps[i].typeRef;
+        };
         try self.lambdas.append(self.alloc, .{
             .name = try std.fmt.allocPrint(ra, "__lambda{d}", .{idx}),
             .params = params,
@@ -17965,6 +18102,10 @@ const Emitter = struct {
             .loc = loc,
             .template_of = self.cur_template,
             .origin = self.foreign_origin,
+            .idx = idx,
+            .param_ft = param_ft,
+            .ret_ft = ret_ft,
+            .param_seen = param_seen,
         });
         // Decision 504 — a component's lambda (the scope lowering's `{
         // bpScope__ -> … }`) is a state machine only when its body awaits;
@@ -17995,6 +18136,7 @@ const Emitter = struct {
     /// A component's lambda (`mark` set, decision 504) has one word more,
     /// behind the pointer: `1` when the lambda is a state machine.
     fn emitClosureCell(self: *Emitter, idx: u32, caps: []const Captured, mark: ?bool) anyerror!void {
+        if (self.mode == .gc) return self.gcClosureNew(idx, caps, mark);
         const head: u32 = if (mark != null) 4 else 0;
         const base = try self.allocSlots(@intCast(head + (1 + caps.len) * 4));
         if (mark) |m| try self.storeSlotConst(base, 0, @intFromBool(m));
@@ -18016,6 +18158,408 @@ const Emitter = struct {
         }
     }
 
+    // ── function values in a GC module (front 164 s2 P3) ─────────────────────
+    //
+    // A function value is a reference to `$closure {idx, mark}` or to one of
+    // its subtypes, the environment struct of the lambda that made it:
+    // `$env<n> {idx, mark, c0, c1, …}`, one typed field per captured local
+    // (copied when the value is made; a capture the lambda assigns is a field
+    // the lambda writes in place and a call through a known closure local
+    // copies in and out, as in linear memory). `idx` is the lambda's slot in
+    // the function table, `mark` a component's (decision 504: `1` when it is a
+    // state machine).
+    //
+    // A lifted lambda is two functions. `$__lambda<n>__b(env, a0, …)` is the
+    // body, typed like any function: the environment as its own struct, each
+    // parameter as the repr the declared function type (or the argument a call
+    // passed) gives it, the answer as the declared one. `$__lambda<n>` is what
+    // the table holds: `(closure, anyref…) -> anyref`, which casts the closure
+    // to its environment, unboxes each argument by the body's parameter repr,
+    // calls the body and boxes the answer (a scalar in its box, a reference as
+    // it is). So `call_indirect` carries one signature per arity and a call
+    // site needs no knowledge of the callee but its declared function type.
+
+    /// `(closure, anyref × argc) -> anyref`.
+    fn gcClosureSig(self: *Emitter, argc: usize) !wat.FuncType {
+        const params = try self.arena().alloc(ValType, argc + 1);
+        params[0] = self.gcTy(.closure);
+        for (params[1..]) |*p| p.* = .anyref;
+        return .{ .params = params, .result = .anyref };
+    }
+
+    const GcCalleeType = struct { ft: ast.TypeRef, gps: ?[]const ast.GenericParam };
+
+    /// The function type of a call's callee, when the program declares it,
+    /// and the generic parameters of the record it is a field of.
+    fn gcCalleeFnType(self: *Emitter, cc: anytype) ?GcCalleeType {
+        var gps: ?[]const ast.GenericParam = null;
+        const t0: ast.TypeRef = blk: {
+            if (cc.calleeExpr) |ce| break :blk self.typeRefOf(ce.*) orelse return null;
+            if (cc.receiver) |recv| {
+                const rty = self.recordTypeOfExpr(recv.*) orelse return null;
+                gps = self.record_generics.get(rty);
+                break :blk self.fieldTypeRefIn(rty, cc.callee) orelse return null;
+            }
+            break :blk self.local_typerefs.get(self.resolveName(cc.callee)) orelse
+                self.local_typerefs.get(cc.callee) orelse
+                self.global_typerefs.get(self.resolveName(cc.callee)) orelse return null;
+        };
+        var t = eagerTypeRef(t0);
+        if (t == .optional) t = eagerTypeRef(t.optional.*);
+        if (t != .function) return null;
+        return .{ .ft = t, .gps = gps };
+    }
+
+    /// The repr a written type has in a function value's signature: a
+    /// generic record's type parameters are erased, a name nothing declares
+    /// (a type parameter out of scope) has none.
+    fn gcSigRepr(self: *Emitter, t: ast.TypeRef, gps: ?[]const ast.GenericParam) ?Repr {
+        if (gps) |g| return self.gcErasedRepr(g, t);
+        switch (eagerTypeRef(t)) {
+            .named => |n| {
+                if (isScalarName(n) or std.mem.eql(u8, n, "bool") or std.mem.eql(u8, n, "string") or std.mem.eql(u8, n, "unknown") or std.mem.eql(u8, n, "Bytes")) return self.reprOf(t);
+                const name = if (std.mem.eql(u8, n, "Self")) (self.self_type orelse self.sig_owner orelse return null) else n;
+                if (self.records.contains(name) or self.enums.contains(name)) return self.reprOf(t);
+                if (isGenericParamName(n, self.owner_tparams, self.fn_tparams)) return self.reprOf(t);
+                // `void`, `unit`: the word a unit answer is.
+                if (std.mem.eql(u8, n, "void") or std.mem.eql(u8, n, "unit")) return .i32;
+                return null;
+            },
+            else => return self.reprOf(t),
+        }
+    }
+
+    /// The repr a call through a function value answers: the declared
+    /// function type's, else the lambda a known closure local holds.
+    fn gcValueCallRepr(self: *Emitter, cc: anytype) ?Repr {
+        if (self.gcCalleeFnType(cc)) |d| return self.gcSigRepr(d.ft.function.returnType.*, d.gps);
+        if (cc.calleeExpr == null and cc.receiver == null and self.locals.contains(cc.callee)) {
+            if (self.closure_locals.get(cc.callee)) |li| {
+                const l = self.lambdas.items[li];
+                if (l.fn_ref) |target| {
+                    const sig = self.fn_sigs.get(target) orelse return null;
+                    return sig.result orelse .i32;
+                }
+                if (l.ret_ft) |rt| return self.gcSigRepr(rt, null);
+                if (self.closureCallIsString(li, cc)) return Repr.string;
+                return self.lambdaTailType(l.body);
+            }
+        }
+        return null;
+    }
+
+    /// The value of repr `from` on the stack is a function value: an
+    /// `unknown` is cast.
+    fn gcAsClosure(self: *Emitter, from: Repr) !void {
+        if (from == .ref and from.ref == .closure) return;
+        if (from == .ref and from.ref == .unknown) return self.emit(.{ .ref_cast = self.gcTy(.closure) });
+        return self.gcFail("a function value of another shape");
+    }
+
+    /// `call_indirect` of the function value in the local `fnv`, its
+    /// arguments boxed on the stack under the environment.
+    fn gcEmitIndirect(self: *Emitter, fnv: []const u8, argc: usize) anyerror!void {
+        self.uses_table = true;
+        try self.emit(.{ .local_get = fnv });
+        try self.emitC(.{ .struct_get = .{ .ty = self.gcTyIndex(.closure), .field = 0 } }, "table index");
+        try self.emit(.{ .call_indirect = try self.gcClosureSig(argc) });
+    }
+
+    /// `f(a, b)` through a function value in a GC module.
+    fn gcValueCall(self: *Emitter, cc: anytype) anyerror!bool {
+        const Slot = union(enum) { field: struct { rty: []const u8, idx: u32 }, tuple: u32 };
+        const slot: ?Slot = blk: {
+            if (cc.calleeExpr != null) break :blk null;
+            const recv = cc.receiver orelse break :blk null;
+            if (self.recordTypeOfExpr(recv.*)) |rty| {
+                if (self.fieldOffsetIn(rty, cc.callee)) |off| break :blk .{ .field = .{ .rty = rty, .idx = off / 4 } };
+            }
+            if (tupleIndex(cc.callee)) |idx| break :blk .{ .tuple = idx };
+            break :blk null;
+        };
+        const is_value = if (cc.calleeExpr != null) true else if (cc.receiver != null) slot != null else (self.locals.contains(cc.callee) or self.globals.contains(cc.callee));
+        if (!is_value) return false;
+        const ra = self.reg_arena.allocator();
+        const tmp = try std.fmt.allocPrint(ra, "__fnv{d}", .{self.loop_seq});
+        self.loop_seq += 1;
+        try self.declareLocal(tmp, .{ .ref = .closure });
+        const clo: Repr = .{ .ref = .closure };
+        if (cc.calleeExpr) |ce| {
+            try self.lowerCoerced(ce.*, clo);
+        } else if (cc.receiver) |recv| switch (slot.?) {
+            .field => |f| {
+                if (self.self_method_fields.contains(try std.fmt.allocPrint(ra, "{s}.{s}", .{ f.rty, cc.callee }))) return self.gcFail("a behavior literal's self method");
+                try self.lowerCoerced(recv.*, .{ .ref = .{ .record = f.rty } });
+                try self.emit(.{ .struct_get = .{ .ty = self.gcTyIndex(.{ .record = f.rty }), .field = f.idx } });
+                if (self.gcGenericFieldDecl(f.rty, cc.callee) != null) try self.gcAsClosure(.{ .ref = .unknown });
+            },
+            .tuple => |idx| {
+                try self.lowerCoerced(recv.*, .{ .ref = .tuple });
+                try self.emit(try self.constInt(idx));
+                try self.emit(.{ .array_get = .{ .ty = self.gcTyIndex(.{ .arr = .any }) } });
+                try self.gcAsClosure(.{ .ref = .unknown });
+            },
+        } else if (self.locals.contains(cc.callee)) {
+            const n = self.resolveName(cc.callee);
+            try self.emit(.{ .local_get = n });
+            try self.gcAsClosure(self.locals.get(n) orelse return self.gcFail("a function value local of no repr"));
+        } else {
+            try self.emit(.{ .global_get = self.globalName(cc.callee) });
+            try self.gcAsClosure(self.global_types.get(cc.callee) orelse return self.gcFail("a function value global of no repr"));
+        }
+        try self.emit(.{ .local_set = tmp });
+        const li: ?u32 = if (cc.calleeExpr == null and cc.receiver == null and self.locals.contains(cc.callee))
+            self.closure_locals.get(cc.callee)
+        else if (cc.calleeExpr == null and cc.receiver != null)
+            self.fieldClosureOf(cc.receiver.?.*, cc.callee)
+        else
+            null;
+        const decl = self.gcCalleeFnType(cc);
+        if (li) |i| {
+            const l = self.lambdas.items[i];
+            for (cc.args, 0..) |a, k| {
+                if (k < l.param_str.len and self.isStringExpr(a.value.*)) l.param_str[k] = true;
+                if (k < l.param_known.len) l.param_known[k] = true;
+            }
+            if (l.fn_ref == null) try self.gcSyncCaptures(tmp, l, .into_env);
+        }
+        try self.emit(.{ .local_get = tmp });
+        for (cc.args, 0..) |a, k| {
+            const pdecl: ?ast.TypeRef = if (decl) |d| (if (k < d.ft.function.params.len) d.ft.function.params[k] else null) else null;
+            const pr: Repr = if (pdecl) |pt| (self.gcSigRepr(pt, decl.?.gps) orelse return self.gcFail("an argument against a parameter of no repr")) else self.wasmTypeOf(a.value.*);
+            self.expected_fn = if (pdecl) |pt| (if (pt == .function and a.value.* == .function) pt else null) else null;
+            defer self.expected_fn = null;
+            if (pdecl == null) if (li) |i| {
+                const seen = self.lambdas.items[i].param_seen;
+                if (k < seen.len) {
+                    if (seen[k]) |have| {
+                        if (!self.sameVal(have, pr)) return self.gcFail("a closure called with arguments of two reprs");
+                    } else seen[k] = pr;
+                }
+            };
+            try self.lowerCoerced(a.value.*, pr);
+            try self.gcBox(pr);
+        }
+        for (cc.trailing) |t| {
+            self.expected_fn = if (decl) |d| (if (d.ft.function.params.len == cc.args.len + 1) d.ft.function.params[cc.args.len] else null) else null;
+            defer self.expected_fn = null;
+            try self.lowerLambdaValue(t.params, t.body, self.call_loc);
+        }
+        try self.gcEmitIndirect(tmp, cc.args.len + cc.trailing.len);
+        if (li) |i| {
+            const l = self.lambdas.items[i];
+            if (l.fn_ref == null) try self.gcSyncCaptures(tmp, l, .out_of_env);
+        }
+        const rr = self.gcValueCallRepr(cc) orelse return self.gcFail("a call through a function value of no known result");
+        if (li) |i| if (decl == null) {
+            self.lambdas.items[i].ret_seen = rr;
+        };
+        try self.gcUnbox(rr);
+        return true;
+    }
+
+    /// Around a call through a closure local (`syncCaptures`) in a GC module:
+    /// the environment's fields.
+    fn gcSyncCaptures(self: *Emitter, env: []const u8, l: Lifted, dir: enum { into_env, out_of_env }) anyerror!void {
+        const ety = self.gcTyIndex(.{ .env = l.idx });
+        for (l.captures, 0..) |cp, i| {
+            if (!cp.threaded) continue;
+            if (!self.locals.contains(cp.name)) continue;
+            const f: wat.FieldRef = .{ .ty = ety, .field = @intCast(2 + i) };
+            try self.emit(.{ .local_get = env });
+            try self.emit(.{ .ref_cast = ValType.def(ety) });
+            switch (dir) {
+                .into_env => {
+                    try self.emit(.{ .local_get = cp.name });
+                    try self.emitCf(.{ .struct_set = f }, "sync {s} into env", .{cp.name});
+                },
+                .out_of_env => {
+                    try self.emitCf(.{ .struct_get = f }, "sync {s} from env", .{cp.name});
+                    try self.emit(.{ .local_set = cp.name });
+                },
+            }
+        }
+    }
+
+    /// The closure a lambda value is, in a GC module: a struct of its
+    /// environment type holding the table index, the mark and the captures.
+    fn gcClosureNew(self: *Emitter, idx: u32, caps: []const Captured, mark: ?bool) anyerror!void {
+        try self.emit(try self.constInt(idx));
+        try self.emit(try self.constInt(@intFromBool(mark orelse false)));
+        for (caps) |cp| try self.emitCf(.{ .local_get = cp.name }, "capture {s}", .{cp.name});
+        try self.emit(.{ .struct_new = self.gcTyIndex(.{ .env = idx }) });
+    }
+
+    /// The lifted lambda `l` in a GC module: the typed body and the table's
+    /// wrapper over it.
+    fn gcEmitLifted(self: *Emitter, l: Lifted) anyerror!void {
+        if (l.async_block) return self.gcFail("an async block");
+        if (l.fn_ref) |target| return self.gcFnRefWrapper(l, target);
+        self.resetFnState(null);
+        const outer_template = self.cur_template;
+        self.cur_template = l.template_of;
+        defer self.cur_template = outer_template;
+        const outer_origin = self.foreign_origin;
+        self.foreign_origin = l.origin;
+        defer self.foreign_origin = outer_origin;
+        const ar = self.arena();
+        const ety = self.gcTyIndex(.{ .env = l.idx });
+        const env_vt = ValType.def(ety);
+        self.gc_env_ty = ety;
+        var params: std.ArrayListUnmanaged(wat.Param) = .empty;
+        var reprs: std.ArrayListUnmanaged(Repr) = .empty;
+        try params.append(ar, wat.Builder.param("__env", env_vt));
+        try self.locals.put("__env", .{ .ref = .closure });
+        var c: Capture = .{};
+        self.open(&c);
+        for (l.params, 0..) |p, i| {
+            const ft: ?ast.TypeRef = if (i < l.param_ft.len) l.param_ft[i] else null;
+            var r: Repr = undefined;
+            if (ft) |t| {
+                r = self.gcSigRepr(t, null) orelse return self.gcFail("a lambda parameter of a type with no repr");
+                try self.noteTypedBinder(p, t);
+            } else if (i < l.param_seen.len and l.param_seen[i] != null) {
+                r = l.param_seen[i].?;
+                if (r == .ref and r.ref == .record) try self.local_types.put(p, r.ref.record);
+                if (r.isStr()) try self.str_locals.put(p, {});
+                if (r == .ref and r.ref != .record and !r.isStr() and r.ref != .unknown and r.ref != .closure) return self.gcFail("a lambda parameter of a reference with no declared type");
+            } else if (i < l.param_str.len and l.param_str[i]) {
+                r = Repr.string;
+                try self.str_locals.put(p, {});
+            } else if (i < l.param_rec.len and l.param_rec[i] != null) {
+                r = .{ .ref = .{ .record = l.param_rec[i].? } };
+                try self.local_types.put(p, l.param_rec[i].?);
+            } else if (i < l.param_tref.len and l.param_tref[i] != null) {
+                r = self.reprOf(l.param_tref[i].?);
+            } else {
+                // Nothing types the parameter: its word is a guess, and a
+                // wrong one would trap at the cast, so a body that reads it
+                // keeps its module in linear memory.
+                var reads = false;
+                for (l.body) |st| {
+                    var names: std.ArrayListUnmanaged([]const u8) = .empty;
+                    try self.collectIdents(st.expr, &names);
+                    for (names.items) |n| if (std.mem.eql(u8, n, p)) {
+                        reads = true;
+                    };
+                }
+                if (reads) return self.gcFail("a lambda parameter nothing types");
+                r = .i32;
+            }
+            if (i < l.param_tref.len) if (l.param_tref[i]) |t| try self.local_typerefs.put(p, t);
+            try self.locals.put(p, r);
+            try params.append(ar, wat.Builder.param(p, self.vtOf(r)));
+            try reprs.append(ar, r);
+        }
+        // A parameter the body reads that nothing typed (as in linear memory).
+        var read: std.ArrayListUnmanaged([]const u8) = .empty;
+        for (l.body) |st| try self.collectIdents(st.expr, &read);
+        for (l.params, 0..) |p, i| {
+            if (i < l.param_known.len and !l.param_known[i]) for (read.items) |n| {
+                if (!std.mem.eql(u8, n, p)) continue;
+                try self.refuseUnlessTemplate(l.loc, "lambda parameter `{s}`: nothing gives it a type the wasm backend can see", .{p});
+                break;
+            };
+        }
+        for (l.captures, 0..) |cp, i| {
+            try self.declareLocal(cp.name, cp.ty);
+            if (cp.threaded) try self.env_slots.put(cp.name, @intCast(2 + i));
+            if (cp.str) try self.str_locals.put(cp.name, {});
+            if (cp.bool_) try self.bool_locals.put(cp.name, {});
+            if (cp.typeref) |t| try self.local_typerefs.put(cp.name, t);
+            if (cp.record) |r| try self.local_types.put(cp.name, r);
+            if (cp.arr_elem) |ek| {
+                try self.arr_locals.put(cp.name, {});
+                try self.arr_elem_locals.put(cp.name, ek);
+            }
+            try self.emit(.{ .local_get = "__env" });
+            try self.emit(.{ .struct_get = .{ .ty = ety, .field = @intCast(2 + i) } });
+            try self.emit(.{ .local_set = cp.name });
+        }
+        try self.declareScratch("_try", countTrys(l.body));
+        try self.declareScratch("__mem", self.countMems(l.body));
+        try self.emitLocalDecls(l.body);
+        const tail_type: ?Repr = if (l.body.len > 0) self.lambdaTailType(l.body) else null;
+        const ret: Repr = if (l.ret_ft) |rt|
+            (self.gcSigRepr(rt, null) orelse return self.gcFail("a lambda answer of a type with no repr"))
+        else if (l.ret_seen) |rs|
+            rs
+        else
+            tail_type orelse .i32;
+        if (l.ret_seen) |rs| if (!self.sameVal(rs, ret)) return self.gcFail("a closure called for an answer its body does not give");
+        self.cur_result = ret;
+        self.fn_has_result = true;
+        self.cur_ret_typeref = l.ret_ft;
+        const tail = try self.emitBody(l.body, true);
+        const outer_loc = self.stmt_loc;
+        self.stmt_loc = l.loc;
+        if (tail == .value) if (tail_type) |t| try self.gcConvertTail(t, ret);
+        self.stmt_loc = outer_loc;
+        const body = self.seal(&c, if (tail == .terminated) .terminated else .{ .value = self.vtOf(ret) });
+        const bname = try std.fmt.allocPrint(ar, "{s}__b", .{l.name});
+        try self.item(.{ .func = try self.builder().func(.{
+            .name = bname,
+            .params = params.items,
+            .result = self.vtOf(ret),
+            .locals = try self.localLines(),
+            .body = body,
+        }) });
+        // The table's wrapper.
+        var wparams: std.ArrayListUnmanaged(wat.Param) = .empty;
+        try wparams.append(ar, wat.Builder.param("__env", self.gcTy(.closure)));
+        var wc: Capture = .{};
+        self.open(&wc);
+        try self.emit(.{ .local_get = "__env" });
+        try self.emit(.{ .ref_cast = env_vt });
+        for (reprs.items, 0..) |r, i| {
+            const pn = try std.fmt.allocPrint(ar, "__a{d}", .{i});
+            try wparams.append(ar, wat.Builder.param(pn, .anyref));
+            try self.emit(.{ .local_get = pn });
+            try self.gcUnbox(r);
+        }
+        try self.emit(.{ .call = bname });
+        try self.gcBox(ret);
+        const wbody = self.seal(&wc, .{ .value = .anyref });
+        try self.item(.{ .func = try self.builder().func(.{
+            .name = l.name,
+            .params = wparams.items,
+            .result = .anyref,
+            .body = wbody,
+        }) });
+    }
+
+    /// The trampoline of a top-level fn used as a value, in a GC module.
+    fn gcFnRefWrapper(self: *Emitter, l: Lifted, target: []const u8) anyerror!void {
+        const sig = self.fn_sigs.get(target) orelse return self.gcFail("a function value of a function with no signature");
+        const ar = self.arena();
+        var params: std.ArrayListUnmanaged(wat.Param) = .empty;
+        try params.append(ar, wat.Builder.param("__env", self.gcTy(.closure)));
+        var c: Capture = .{};
+        self.open(&c);
+        for (sig.params, 0..) |pr, i| {
+            const pn = try std.fmt.allocPrint(ar, "__a{d}", .{i});
+            try params.append(ar, wat.Builder.param(pn, .anyref));
+            try self.emit(.{ .local_get = pn });
+            try self.gcUnbox(pr);
+        }
+        try self.emit(.{ .call = target });
+        if (sig.result) |r| try self.gcBox(r) else try self.emit(.{ .ref_null = .anyref });
+        const body = self.seal(&c, .{ .value = .anyref });
+        try self.item(.{ .func = try self.builder().func(.{
+            .name = l.name,
+            .params = params.items,
+            .result = .anyref,
+            .body = body,
+        }) });
+    }
+
+    /// The tail of a lifted lambda's body, converted to the repr it answers;
+    /// a lossy conversion falls back to linear memory rather than refusing.
+    fn gcConvertTail(self: *Emitter, from: Repr, to: Repr) anyerror!void {
+        if (lossyConversion(from, to)) return self.gcFail("a closure whose answer is narrowed");
+        try self.emitConvert(from, to);
+    }
+
     /// A top-level fn used as a value: a closure over a trampoline that
     /// forwards its arguments.
     fn lowerFnRef(self: *Emitter, name: []const u8, loc: ?ast.Loc) anyerror!void {
@@ -18029,6 +18573,7 @@ const Emitter = struct {
                 .body = &.{},
                 .captures = &.{},
                 .fn_ref = name,
+                .idx = i,
             });
             try self.fn_refs.put(name, i);
             break :blk i;
@@ -18044,6 +18589,7 @@ const Emitter = struct {
     /// into the unresolved path and trapped (`;; unresolved call: _1/1`), which is
     /// the whole of what "wasm has no function values" ever meant.
     fn lowerValueCall(self: *Emitter, cc: anytype) anyerror!bool {
+        if (self.mode == .gc) return self.gcValueCall(cc);
         // The slot the function value sits in, for a call through a receiver.
         const slotOffset = struct {
             fn f(em: *Emitter, recv: ast.Expr, member: []const u8) ?u32 {
@@ -18155,6 +18701,13 @@ const Emitter = struct {
     fn writeBackCapture(self: *Emitter, name: []const u8) anyerror!void {
         const off = self.env_slots.get(name) orelse return;
         const ty = self.locals.get(name) orelse return;
+        if (self.mode == .gc) {
+            // The environment struct's field `off`, written in place.
+            try self.emit(.{ .local_get = "__env" });
+            try self.emit(.{ .local_get = name });
+            try self.emitCf(.{ .struct_set = .{ .ty = self.gc_env_ty, .field = off } }, "write {s} back to env", .{name});
+            return;
+        }
         const cell = Cell.of(ty);
         try self.emit(.{ .local_get = "__env" });
         if (cell != .none) try self.emit(.{ .load = .{ .offset = off } });
@@ -18352,6 +18905,7 @@ const Emitter = struct {
     }
 
     fn emitLifted(self: *Emitter, l: Lifted) anyerror!void {
+        if (self.mode == .gc) return self.gcEmitLifted(l);
         self.resetFnState(.i32);
         const outer_template = self.cur_template;
         self.cur_template = l.template_of;
@@ -20730,7 +21284,10 @@ const Emitter = struct {
             const ftref: ast.TypeRef = if (i < trefs.len) trefs[i] else return self.gcFail("a record field with no type");
             const fr = if (gps) |g| self.gcErasedRepr(g, ftref) else self.reprOf(ftref);
             if (self.argForField(cc.args, fname, i)) |arg| {
-                if (ftref == .function) return self.gcFail("a closure field");
+                // A lambda stored in a function-typed field is written
+                // against the declared type.
+                if (ftref == .function and arg.value.* == .function) self.expected_fn = ftref;
+                defer self.expected_fn = null;
                 if (gps) |g| if (mentionsGeneric(ftref, g)) {
                     try self.gcGenericArg(ftref, g, fr, arg.value.*);
                     continue;
@@ -20826,7 +21383,7 @@ const Emitter = struct {
             return;
         }
         if (vr.isRef() and fr.isRef()) {
-            if (vr.eql(fr) or (fr.ref == .unknown and vr.ref != .unknown and vr.ref != .bytes and vr.ref != .closure and vr.ref != .task and vr.ref != .cell and vr.ref != .bigint)) {
+            if (vr.eql(fr) or (fr.ref == .unknown and vr.ref != .unknown and vr.ref != .bytes and vr.ref != .task and vr.ref != .cell and vr.ref != .bigint)) {
                 // A reference slot of a type parameter: the value prints by
                 // what it is — a string quoted, a record or variant by its
                 // printer —, an array or a tuple only when its shape has no
@@ -20869,7 +21426,6 @@ const Emitter = struct {
         if (sh.len != 1) return self.gcFail("a generic argument of a composite shape");
         switch (sh[0]) {
             'i' => {
-                if (self.fnValueArity(value) != null) return self.gcFail("a function value in a type parameter's slot");
                 try self.lowerCoerced(value, .i32);
                 try self.gcBox(.i32);
             },
@@ -21016,7 +21572,10 @@ const Emitter = struct {
             for (variant.fields, 0..) |vf, i| {
                 const fr = if (gps) |g| self.gcErasedRepr(g, vf.typeRef) else self.reprOf(vf.typeRef);
                 if (self.argForField(cc.args, vf.name, i)) |arg| {
-                    if (vf.typeRef == .function) return self.gcFail("a closure payload");
+                    // A lambda stored in a function-typed payload is written
+                    // against the declared type.
+                    if (vf.typeRef == .function and arg.value.* == .function) self.expected_fn = vf.typeRef;
+                    defer self.expected_fn = null;
                     if (gps) |g| if (mentionsGeneric(vf.typeRef, g)) {
                         try self.gcGenericArg(vf.typeRef, g, fr, arg.value.*);
                         continue;
@@ -23017,7 +23576,7 @@ const Emitter = struct {
         // An `unknown` read as the type a test proved it (`if (x is Frame) { val f: Frame = x }`)
         // is a downcast: a cast that traps where the test was wrong.
         if (self.mode == .gc and from == .ref and from.ref == .unknown and to == .ref) switch (to.ref) {
-            .record, .str, .bytes, .arr, .tuple, .result => {
+            .record, .str, .bytes, .arr, .tuple, .result, .closure => {
                 try self.emit(.{ .ref_cast = self.vtOf(to) });
                 return;
             },
@@ -23614,14 +24173,17 @@ const Emitter = struct {
         if (self.records.get(name)) |fields| {
             const trefs = self.record_field_typerefs.get(name) orelse &.{};
             const gps = self.record_generics.get(name) orelse &.{};
-            if (gps.len > 0) return self.gcFail("a generic record");
+            if (gps.len > 0 and !(t == .generic and t.generic.args.len == gps.len)) return self.gcFail("a generic record compared with its arguments unknown");
             const ti = self.gcTyIndex(.{ .record = name });
             for (fields, 0..) |_, i| {
                 const ft: ast.TypeRef = if (i < trefs.len) self.eqFieldType(t, gps, trefs[i]) else return self.gcFail("a field with no type");
-                try self.emit(.{ .local_get = "a" });
-                try self.emit(.{ .struct_get = .{ .ty = ti, .field = @intCast(i) } });
-                try self.emit(.{ .local_get = "b" });
-                try self.emit(.{ .struct_get = .{ .ty = ti, .field = @intCast(i) } });
+                const erased: ?Repr = if (gps.len > 0 and mentionsGeneric(trefs[i], gps)) self.gcErasedRepr(gps, trefs[i]) else null;
+                if (erased != null and trefs[i] != .named) return self.gcFail("a generic record's composite field");
+                for ([_][]const u8{ "a", "b" }) |x| {
+                    try self.emit(.{ .local_get = x });
+                    try self.emit(.{ .struct_get = .{ .ty = ti, .field = @intCast(i) } });
+                    if (erased) |e| try self.emitConvert(e, self.reprOf(ft));
+                }
                 try self.gcEqValues(ft);
                 try self.emit(opOf(.i32, "eqz"));
                 try self.eqReturnIf(zero);
@@ -23629,7 +24191,8 @@ const Emitter = struct {
             try self.emit(one);
         } else {
             const variants = self.enums.get(name) orelse return self.gcFail("an equality over a type with no struct");
-            if (self.enum_generics.contains(name)) return self.gcFail("a generic enum");
+            const egps = self.enum_generics.get(name) orelse &.{};
+            if (egps.len > 0 and !(t == .generic and t.generic.args.len == egps.len)) return self.gcFail("a generic enum compared with its arguments unknown");
             for (variants) |v| {
                 const ti = self.gcTyIndex(.{ .variant = .{ .en = name, .name = v.name } });
                 const vv = ValType.def(ti);
@@ -23640,13 +24203,16 @@ const Emitter = struct {
                 try self.emit(opOf(.i32, "eqz"));
                 try self.eqReturnIf(zero);
                 for (v.fields, 0..) |f, i| {
-                    try self.emit(.{ .local_get = "a" });
-                    try self.emit(.{ .ref_cast = vv });
-                    try self.emit(.{ .struct_get = .{ .ty = ti, .field = @intCast(i) } });
-                    try self.emit(.{ .local_get = "b" });
-                    try self.emit(.{ .ref_cast = vv });
-                    try self.emit(.{ .struct_get = .{ .ty = ti, .field = @intCast(i) } });
-                    try self.gcEqValues(f.typeRef);
+                    const ft: ast.TypeRef = self.eqFieldType(t, egps, f.typeRef);
+                    const erased: ?Repr = if (egps.len > 0 and mentionsGeneric(f.typeRef, egps)) self.gcErasedRepr(egps, f.typeRef) else null;
+                    if (erased != null and f.typeRef != .named) return self.gcFail("a generic enum's composite payload");
+                    for ([_][]const u8{ "a", "b" }) |x| {
+                        try self.emit(.{ .local_get = x });
+                        try self.emit(.{ .ref_cast = vv });
+                        try self.emit(.{ .struct_get = .{ .ty = ti, .field = @intCast(i) } });
+                        if (erased) |e| try self.emitConvert(e, self.reprOf(ft));
+                    }
+                    try self.gcEqValues(ft);
                     try self.emit(opOf(.i32, "eqz"));
                     try self.eqReturnIf(zero);
                 }

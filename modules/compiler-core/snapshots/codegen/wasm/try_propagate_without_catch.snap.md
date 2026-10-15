@@ -13,45 +13,45 @@ fn process() -> @Result<i32, string> {
 ----- WASM TEXT -- main.wat
 ```wasm
 (module
+  (rec
+    (type $str (array (mut i8)))
+    (type $result (struct (field $tag (mut i32)) (field $payload (mut anyref))))
+    (type $box_i32 (struct (field $v i32)))
+  )
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
-  (data (i32.const 256) "\0f\00\00\00not implemented")
-  (global $__heap_ptr (mut i32) (i32.const 276))
-  (func $fetch (result i32)
-    i32.const 256
+  (global $__heap_ptr (mut i32) (i32.const 256))
+  (func $fetch (result (ref null $result))
+    global.get $__s0
     call $__panic_fail
     unreachable
-    i32.const 0
+    ref.null $result
   )
-  (func $process (result i32)
+  (func $process (result (ref null $result))
     (local $_try0 i32)
     (local $r i32)
-    (local $_res0 i32)
+    (local $__gc0 (ref null $result))
     call $fetch
-    local.set $_try0
-    local.get $_try0
-    i32.load ;; Result tag (0 = Ok, non-zero = Error)
+    local.set $__gc0
+    local.get $__gc0
+    struct.get $result $tag
     (if
       (then
-    local.get $_try0
+    local.get $__gc0
     return ;; propagate Error
       )
     )
-    local.get $_try0
-    i32.load offset=4 ;; Ok payload
+    local.get $__gc0
+    struct.get $result $payload
+    ref.cast (ref null $box_i32)
+    struct.get $box_i32 $v
     local.set $r
     local.get $r
     call $__print_i32
-    i32.const 8
-    call $__alloc
-    local.set $_res0
-    local.get $_res0
     i32.const 0
-    i32.store ;; Result tag (Ok)
-    local.get $_res0
     local.get $r
-    i32.store offset=4 ;; payload
-    local.get $_res0
+    struct.new $box_i32
+    struct.new $result
     return
   )
   ;; Scratch layout below the data section (which starts at 256):
@@ -342,7 +342,8 @@ fn process() -> @Result<i32, string> {
     i32.const 1
     call $__write_err
   )
-  (func $__panic_fail (param $msg i32)
+  (func $__panic_fail (param $msg (ref null $str))
+    (local $n i32) (local $p i32) (local $i i32) (local $top i32)
     i32.const 188
     i64.const 9071397899755888
     i64.store
@@ -350,10 +351,35 @@ fn process() -> @Result<i32, string> {
     i32.const 7
     call $__write_err
     local.get $msg
-    i32.const 4
-    i32.add
-    local.get $msg
-    i32.load
+    array.len
+    local.set $n
+    global.get $__heap_ptr
+    local.set $top
+    local.get $n
+    call $__alloc
+    local.set $p
+    (block $brk
+      (loop $cont
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $brk
+        local.get $p
+        local.get $i
+        i32.add
+        local.get $msg
+        local.get $i
+        array.get_u $str
+        i32.store8
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $cont
+      )
+    )
+    local.get $p
+    local.get $n
     call $__write_err
     i32.const 188
     i32.const 10
@@ -361,7 +387,19 @@ fn process() -> @Result<i32, string> {
     i32.const 188
     i32.const 1
     call $__write_err
+    local.get $top
+    global.set $__heap_ptr
   )
+  (data $__d0 "not implemented")
+  (global $__s0 (mut (ref null $str)) (ref.null $str))
+  (start $__init_strs)
+  (func $__init_strs
+    i32.const 0
+    i32.const 15
+    array.new_data $str $__d0
+    global.set $__s0
+  )
+  (@custom "botopink.needs" "gc\0a")
 )
 ```
 

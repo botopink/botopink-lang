@@ -16,26 +16,33 @@ type Pipeline(
 ----- WASM TEXT -- main.wat
 ```wasm
 (module
+  (rec
+    (type $str (array (mut i8)))
+    (type $arr_i32 (array (mut i32)))
+    (type $box_i32 (struct (field $v i32)))
+    (type $closure (sub (struct (field $idx i32) (field $mark i32))))
+    (type $rec_Pipeline (struct (field $f0 (mut (ref null $arr_i32)))))
+  )
   (memory (export "memory") 1)
   (table funcref (elem))
   (global $__heap_ptr (mut i32) (i32.const 256))
-  (func $List_map (param $items i32) (param $f i32) (result i32)
-    (local $__iter1 i32)
+  (func $List_map (param $items (ref null $arr_i32)) (param $f (ref null $closure)) (result (ref null $arr_i32))
+    (local $__iter1 (ref null $arr_i32))
     (local $__idx1 i32)
     (local $__len1 i32)
     (local $__acc1 i32)
-    (local $__out1 i32)
     (local $__hof0_0 i32)
-    (local $__fnv2 i32)
+    (local $__out1 (ref null $arr_i32))
+    (local $__fnv2 (ref null $closure))
     local.get $items
     local.set $__iter1
     local.get $__iter1
-    i32.load ;; element count
+    array.len
     local.set $__len1
     i32.const 0
     local.set $__idx1
     local.get $__len1
-    call $__arr_new
+    array.new_default $arr_i32
     local.set $__out1
     i32.const 0
     local.set $__acc1
@@ -47,24 +54,21 @@ type Pipeline(
         br_if $__break
         local.get $__iter1
         local.get $__idx1
-        i32.const 4
-        i32.mul
-        i32.add
-        i32.load offset=4
+        array.get $arr_i32
         local.set $__hof0_0
     local.get $__out1
     local.get $__idx1
-    i32.const 4
-    i32.mul
-    i32.add
     local.get $f
     local.set $__fnv2
     local.get $__fnv2
     local.get $__hof0_0
+    struct.new $box_i32
     local.get $__fnv2
-    i32.load ;; table index
-    call_indirect (param i32 i32) (result i32)
-    i32.store offset=4
+    struct.get $closure $idx ;; table index
+    call_indirect (param (ref null $closure) anyref) (result anyref)
+    ref.cast (ref null $box_i32)
+    struct.get $box_i32 $v
+    array.set $arr_i32
         local.get $__idx1
         i32.const 1
         i32.add
@@ -75,75 +79,14 @@ type Pipeline(
     local.get $__out1
     return
   )
-  (func $Pipeline_run (param $self i32) (param $f i32) (result i32)
+  (func $Pipeline_run (param $self (ref null $rec_Pipeline)) (param $f (ref null $closure)) (result (ref null $arr_i32))
     local.get $self
-    i32.load ;; .items
+    struct.get $rec_Pipeline $f0
     local.get $f
     call $List_map
     return
   )
-  (func $__alloc (param $n i32) (result i32)
-    (local $p i32) (local $e i32)
-    global.get $__heap_ptr
-    local.set $p
-    local.get $p
-    local.get $n
-    i32.add
-    i32.const 3
-    i32.add
-    i32.const -4
-    i32.and
-    local.set $e
-    local.get $e
-    local.get $p
-    i32.lt_u
-    (if
-      (then
-        unreachable
-      )
-    )
-    local.get $e
-    memory.size
-    i32.const 16
-    i32.shl
-    i32.gt_u
-    (if
-      (then
-        local.get $e
-        i32.const 65535
-        i32.add
-        i32.const 16
-        i32.shr_u
-        memory.size
-        i32.sub
-        memory.grow
-        i32.const -1
-        i32.eq
-        (if
-          (then
-            unreachable
-          )
-        )
-      )
-    )
-    local.get $e
-    global.set $__heap_ptr
-    local.get $p
-  )
-  (func $__arr_new (param $n i32) (result i32)
-    (local $p i32)
-    local.get $n
-    i32.const 1
-    i32.add
-    i32.const 4
-    i32.mul
-    call $__alloc
-    local.set $p
-    local.get $p
-    local.get $n
-    i32.store
-    local.get $p
-  )
+  (@custom "botopink.needs" "gc\0a")
 )
 ```
 

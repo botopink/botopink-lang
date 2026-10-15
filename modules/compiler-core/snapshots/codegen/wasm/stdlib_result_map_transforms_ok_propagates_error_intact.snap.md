@@ -9,51 +9,46 @@ fn main() {
 ----- WASM TEXT -- main.wat
 ```wasm
 (module
+  (rec
+    (type $str (array (mut i8)))
+    (type $result (struct (field $tag (mut i32)) (field $payload (mut anyref))))
+    (type $box_i32 (struct (field $v i32)))
+  )
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
-  (data (i32.const 256) "\0f\00\00\00not implemented")
-  (data (i32.const 276) "\02\00\00\0042")
-  (data (i32.const 284) "\2a\00\00\00integer overflow: + on i32 at main.bp:3:41")
-  (global $__heap_ptr (mut i32) (i32.const 332))
-  (func $parseAge (param $s i32) (result i32)
-    i32.const 256
+  (global $__heap_ptr (mut i32) (i32.const 256))
+  (func $parseAge (param $s (ref null $str)) (result (ref null $result))
+    global.get $__s0
     call $__panic_fail
     unreachable
-    i32.const 0
+    ref.null $result
   )
   (func $main
-    (local $r i32)
-    (local $_res0 i32)
+    (local $r (ref null $result))
+    (local $__gc0 (ref null $result))
     (local $n i32)
-    (local $_res1 i32)
-    i32.const 276
+    global.get $__s1
     call $parseAge
-    local.set $_res0
-    local.get $_res0
-    i32.load ;; Result tag (0 = Ok, non-zero = Error)
-    (if (result i32)
+    local.set $__gc0
+    local.get $__gc0
+    struct.get $result $tag
+    (if (result (ref null $result))
       (then
-    local.get $_res0 ;; Error — propagate unchanged
+    local.get $__gc0
       )
       (else
-    local.get $_res0
-    i32.load offset=4 ;; Ok payload
-    local.set $_res0
-    local.get $_res0
+    local.get $__gc0
+    struct.get $result $payload
+    ref.cast (ref null $box_i32)
+    struct.get $box_i32 $v
     local.set $n
-    i32.const 8
-    call $__alloc
-    local.set $_res1
-    local.get $_res1
     i32.const 0
-    i32.store ;; Ok tag
-    local.get $_res1
     local.get $n
     i32.const 1
-    i32.const 284
+    global.get $__s2
     call $__i32_add_chk
-    i32.store offset=4 ;; mapped payload
-    local.get $_res1
+    struct.new $box_i32
+    struct.new $result
       )
     )
     local.set $r
@@ -349,7 +344,8 @@ fn main() {
     i32.const 1
     call $__write_err
   )
-  (func $__panic_fail (param $msg i32)
+  (func $__panic_fail (param $msg (ref null $str))
+    (local $n i32) (local $p i32) (local $i i32) (local $top i32)
     i32.const 188
     i64.const 9071397899755888
     i64.store
@@ -357,10 +353,35 @@ fn main() {
     i32.const 7
     call $__write_err
     local.get $msg
-    i32.const 4
-    i32.add
-    local.get $msg
-    i32.load
+    array.len
+    local.set $n
+    global.get $__heap_ptr
+    local.set $top
+    local.get $n
+    call $__alloc
+    local.set $p
+    (block $brk
+      (loop $cont
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $brk
+        local.get $p
+        local.get $i
+        i32.add
+        local.get $msg
+        local.get $i
+        array.get_u $str
+        i32.store8
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $cont
+      )
+    )
+    local.get $p
+    local.get $n
     call $__write_err
     i32.const 188
     i32.const 10
@@ -368,8 +389,10 @@ fn main() {
     i32.const 188
     i32.const 1
     call $__write_err
+    local.get $top
+    global.set $__heap_ptr
   )
-  (func $__i32_add_chk (param $a i32) (param $b i32) (param $site i32) (result i32)
+  (func $__i32_add_chk (param $a i32) (param $b i32) (param $site (ref null $str)) (result i32)
     (local $r i64)
     local.get $a
     i64.extend_i32_s
@@ -392,7 +415,7 @@ fn main() {
     local.get $r
     i32.wrap_i64
   )
-  (func $__i32_sub_chk (param $a i32) (param $b i32) (param $site i32) (result i32)
+  (func $__i32_sub_chk (param $a i32) (param $b i32) (param $site (ref null $str)) (result i32)
     (local $r i64)
     local.get $a
     i64.extend_i32_s
@@ -415,7 +438,7 @@ fn main() {
     local.get $r
     i32.wrap_i64
   )
-  (func $__i32_mul_chk (param $a i32) (param $b i32) (param $site i32) (result i32)
+  (func $__i32_mul_chk (param $a i32) (param $b i32) (param $site (ref null $str)) (result i32)
     (local $r i64)
     local.get $a
     i64.extend_i32_s
@@ -438,7 +461,7 @@ fn main() {
     local.get $r
     i32.wrap_i64
   )
-  (func $__i64_add_chk (param $a i64) (param $b i64) (param $site i32) (result i64)
+  (func $__i64_add_chk (param $a i64) (param $b i64) (param $site (ref null $str)) (result i64)
     (local $r i64)
     local.get $a
     local.get $b
@@ -462,7 +485,7 @@ fn main() {
     )
     local.get $r
   )
-  (func $__i64_sub_chk (param $a i64) (param $b i64) (param $site i32) (result i64)
+  (func $__i64_sub_chk (param $a i64) (param $b i64) (param $site (ref null $str)) (result i64)
     (local $r i64)
     local.get $a
     local.get $b
@@ -486,7 +509,7 @@ fn main() {
     )
     local.get $r
   )
-  (func $__i64_mul_chk (param $a i64) (param $b i64) (param $site i32) (result i64)
+  (func $__i64_mul_chk (param $a i64) (param $b i64) (param $site (ref null $str)) (result i64)
     (local $r i64)
     local.get $a
     i64.const -1
@@ -527,11 +550,33 @@ fn main() {
     )
     local.get $r
   )
-  (func $__chk_fail (param $site i32)
+  (func $__chk_fail (param $site (ref null $str))
     local.get $site
     call $__panic_fail
     unreachable
   )
+  (data $__d0 "not implemented")
+  (global $__s0 (mut (ref null $str)) (ref.null $str))
+  (data $__d1 "42")
+  (global $__s1 (mut (ref null $str)) (ref.null $str))
+  (data $__d2 "integer overflow: + on i32 at main.bp:3:41")
+  (global $__s2 (mut (ref null $str)) (ref.null $str))
+  (start $__init_strs)
+  (func $__init_strs
+    i32.const 0
+    i32.const 15
+    array.new_data $str $__d0
+    global.set $__s0
+    i32.const 0
+    i32.const 2
+    array.new_data $str $__d1
+    global.set $__s1
+    i32.const 0
+    i32.const 42
+    array.new_data $str $__d2
+    global.set $__s2
+  )
+  (@custom "botopink.needs" "gc\0a")
 )
 ```
 

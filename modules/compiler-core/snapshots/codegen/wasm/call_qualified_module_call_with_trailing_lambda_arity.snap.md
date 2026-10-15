@@ -18,79 +18,41 @@ type Pipeline(
 ----- WASM TEXT -- main.wat
 ```wasm
 (module
+  (rec
+    (type $str (array (mut i8)))
+    (type $arr_i32 (array (mut i32)))
+    (type $closure (sub (struct (field $idx i32) (field $mark i32))))
+    (type $rec_Pipeline (struct (field $f0 (mut (ref null $arr_i32)))))
+    (type $env0 (sub final $closure (struct (field $idx i32) (field $mark i32))))
+    (type $box_i32 (struct (field $v i32)))
+  )
   (memory (export "memory") 1)
   (table funcref (elem $__lambda0))
   (global $__heap_ptr (mut i32) (i32.const 256))
-  (func $List_each (param $items i32) (param $f i32) (result i32)
+  (func $List_each (param $items (ref null $arr_i32)) (param $f (ref null $closure)) (result (ref null $arr_i32))
     local.get $items
     return
   )
-  (func $Pipeline_doubled (param $self i32) (result i32)
-    (local $__mem0 i32)
+  (func $Pipeline_doubled (param $self (ref null $rec_Pipeline)) (result (ref null $arr_i32))
     local.get $self
-    i32.load ;; .items
-    i32.const 4
-    call $__alloc
-    local.set $__mem0
-    local.get $__mem0
+    struct.get $rec_Pipeline $f0
     i32.const 0
-    i32.store
-    local.get $__mem0
+    i32.const 0
+    struct.new $env0
     call $List_each
     return
   )
-  (func $__lambda0 (param $__env i32) (result i32)
+  (func $__lambda0__b (param $__env (ref null $env0)) (result i32)
     i32.const 2
     return
   )
-  (func $__alloc (param $n i32) (result i32)
-    (local $p i32) (local $e i32)
-    global.get $__heap_ptr
-    local.set $p
-    local.get $p
-    local.get $n
-    i32.add
-    i32.const 3
-    i32.add
-    i32.const -4
-    i32.and
-    local.set $e
-    local.get $e
-    local.get $p
-    i32.lt_u
-    (if
-      (then
-        unreachable
-      )
-    )
-    local.get $e
-    memory.size
-    i32.const 16
-    i32.shl
-    i32.gt_u
-    (if
-      (then
-        local.get $e
-        i32.const 65535
-        i32.add
-        i32.const 16
-        i32.shr_u
-        memory.size
-        i32.sub
-        memory.grow
-        i32.const -1
-        i32.eq
-        (if
-          (then
-            unreachable
-          )
-        )
-      )
-    )
-    local.get $e
-    global.set $__heap_ptr
-    local.get $p
+  (func $__lambda0 (param $__env (ref null $closure)) (result anyref)
+    local.get $__env
+    ref.cast (ref null $env0)
+    call $__lambda0__b
+    struct.new $box_i32
   )
+  (@custom "botopink.needs" "gc\0a")
 )
 ```
 

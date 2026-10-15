@@ -32,6 +32,9 @@ pub const Diag = struct {
     what: []const u8 = "",
     /// The name the failing instruction names (a call's callee), when it names one.
     detail: []const u8 = "",
+    /// The two types a mismatch compared (`ValType` as numbers), for the debug trace.
+    got: u16 = 0,
+    want: u16 = 0,
 };
 
 /// Checks every function of `m` whose name `skip` does not answer true for.
@@ -161,6 +164,7 @@ const FuncCtx = struct {
                     self.diag.detail = n;
                     return self.fail("a call to no function");
                 };
+                self.diag.detail = n;
                 try self.callType(st, ft);
             },
             .call_indirect => |ft| {
@@ -426,7 +430,11 @@ const Stack = struct {
 
     fn pop(st: *Stack, want: ValType) Error!void {
         const got = try st.popSlot() orelse return;
-        if (!subtype(st.fc.mod.types, got, want)) return st.fc.fail("a value of another type");
+        if (!subtype(st.fc.mod.types, got, want)) {
+            st.fc.diag.got = @intFromEnum(got);
+            st.fc.diag.want = @intFromEnum(want);
+            return st.fc.fail("a value of another type");
+        }
     }
 
     fn popAny(st: *Stack) Error!void {

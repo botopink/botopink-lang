@@ -582,22 +582,21 @@ test "order case over Order" {
 ----- WASM TEXT -- std/collections.wat
 ```wasm
 (module
+  (rec
+    (type $str (array (mut i8)))
+    (type $arr_any (array (mut anyref)))
+    (type $rec_Dict (struct (field $f0 (mut (ref null $arr_any)))))
+    (type $box_i32 (sub (struct (field $v i32))))
+    (type $box_bool (sub final $box_i32 (struct (field $v i32))))
+    (type $box_f64 (struct (field $v f64)))
+    (type $closure (sub (struct (field $idx i32) (field $mark i32))))
+    (type $rec_Set (struct (field $f0 (mut (ref null $arr_any)))))
+    (type $rec_Queue (struct (field $f0 (mut (ref null $arr_any)))))
+  )
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
   (table funcref (elem))
-  (data (i32.const 256) "\02\00\00\00: ")
-  (data (i32.const 264) "\05\00\00\00Dict(")
-  (data (i32.const 276) "\02\00\00\00, ")
-  (data (i32.const 284) "\01\00\00\00)")
-  (data (i32.const 292) "\0e\00\00\00R\04Dict\01\05pairsG")
-  (data (i32.const 312) "\02\00\00\00[i")
-  (data (i32.const 320) "\36\00\00\00integer overflow: + on i32 at src/collections.bp:81:53")
-  (data (i32.const 380) "\01\00\00\00\"")
-  (data (i32.const 388) "\00\00\00\00")
-  (data (i32.const 392) "\0d\00\00\00R\03Set\01\05itemsG")
-  (data (i32.const 412) "\0f\00\00\00R\05Queue\01\05itemsG")
-  (data (i32.const 432) "\37\00\00\00integer overflow: - on i32 at src/collections.bp:540:15")
-  (global $__heap_ptr (mut i32) (i32.const 528))
+  (global $__heap_ptr (mut i32) (i32.const 256))
   ;; std/collections — the four collection types, one namespace each (decision
   ;; 106): `Dict<K, V>`, `Set<T>`, `Queue<T>` and `Order`. Was the four modules
   ;; `dict`, `sets`, `queue` and `order`; the type is the namespace now, so a
@@ -623,27 +622,21 @@ test "order case over Order" {
   ;; expression has no typing rule of its own and rewrites to `d.at("k")`. The
   ;; reader was spelled `lookup` until that amendment gave every indexable type
   ;; one method name.
-  (func $Dict_display (param $self i32) (result i32)
+  (func $Dict_display (param $self (ref null $rec_Dict)) (result (ref null $str))
     (local $__mem0 i32)
-    (local $parts i32)
-    (local $__iter0 i32)
+    (local $parts (ref null $arr_any))
+    (local $__iter0 (ref null $arr_any))
     (local $__idx0 i32)
     (local $__len0 i32)
     (local $__acc0 i32)
-    (local $p i32)
-    i32.const 4
-    call $__alloc
-    local.set $__mem0
-    local.get $__mem0
-    i32.const 0
-    i32.store
-    local.get $__mem0
+    (local $p (ref null $arr_any))
+    array.new_fixed $arr_any 0
     local.set $parts
     local.get $self
-    i32.load ;; .pairs
+    struct.get $rec_Dict $f0
     local.set $__iter0
     local.get $__iter0
-    i32.load ;; element count
+    array.len
     local.set $__len0
     i32.const 0
     local.set $__idx0
@@ -657,22 +650,22 @@ test "order case over Order" {
         br_if $__break
         local.get $__iter0
         local.get $__idx0
-        i32.const 4
-        i32.mul
-        i32.add
-        i32.load offset=4
+        array.get $arr_any
+    ref.cast (ref null $arr_any)
         local.set $p
     local.get $parts
     local.get $p
-    i32.load
+    i32.const 0
+    array.get $arr_any
     call $shown
-    i32.const 256
+    global.get $__s0
     call $__str_concat
     local.get $p
-    i32.load offset=4
+    i32.const 1
+    array.get $arr_any
     call $shown
     call $__str_concat
-    call $__arr_push
+    call $__arr_push_any
     local.set $parts
         local.get $__idx0
         i32.const 1
@@ -681,29 +674,29 @@ test "order case over Order" {
         br $__continue
       )
     )
-    i32.const 264
+    global.get $__s1
     local.get $parts
-    i32.const 276
-    call $__std_array_joinStrings
+    global.get $__s2
+    call $__arr_join_any
     call $__str_concat
-    i32.const 284
+    global.get $__s3
     call $__str_concat
     return
   )
-  (func $Dict_at (param $self i32) (param $key i32) (result i32)
-    (local $found i32)
-    (local $__iter0 i32)
+  (func $Dict_at (param $self (ref null $rec_Dict)) (param $key anyref) (result anyref)
+    (local $found anyref)
+    (local $__iter0 (ref null $arr_any))
     (local $__idx0 i32)
     (local $__len0 i32)
     (local $__acc0 i32)
-    (local $p i32)
-    i32.const 0
+    (local $p (ref null $arr_any))
+    ref.null any
     local.set $found
     local.get $self
-    i32.load ;; .pairs
+    struct.get $rec_Dict $f0
     local.set $__iter0
     local.get $__iter0
-    i32.load ;; element count
+    array.len
     local.set $__len0
     i32.const 0
     local.set $__idx0
@@ -717,20 +710,19 @@ test "order case over Order" {
         br_if $__break
         local.get $__iter0
         local.get $__idx0
-        i32.const 4
-        i32.mul
-        i32.add
-        i32.load offset=4
+        array.get $arr_any
+    ref.cast (ref null $arr_any)
         local.set $p
     local.get $p
-    i32.load
+    i32.const 0
+    array.get $arr_any
     local.get $key
-    i32.eq
+    call $__unk_eq
     (if (result i32)
       (then
     local.get $p
-    i32.load offset=4
-    call $__box_i32
+    i32.const 1
+    array.get $arr_any
     local.set $found
     i32.const 0
       )
@@ -749,23 +741,23 @@ test "order case over Order" {
     local.get $found
     return
   )
-  (func $Dict_hasKey (param $self i32) (param $key i32) (result i32)
-    (local $__iter0 i32)
+  (func $Dict_hasKey (param $self (ref null $rec_Dict)) (param $key anyref) (result i32)
+    (local $__iter0 (ref null $arr_any))
     (local $__idx0 i32)
     (local $__len0 i32)
     (local $__acc0 i32)
-    (local $__out0 i32)
-    (local $p i32)
+    (local $p (ref null $arr_any))
+    (local $__out0 (ref null $arr_any))
     local.get $self
-    i32.load ;; .pairs
+    struct.get $rec_Dict $f0
     local.set $__iter0
     local.get $__iter0
-    i32.load ;; element count
+    array.len
     local.set $__len0
     i32.const 0
     local.set $__idx0
     local.get $__len0
-    call $__arr_new
+    array.new_default $arr_any
     local.set $__out0
     i32.const 0
     local.set $__acc0
@@ -777,29 +769,22 @@ test "order case over Order" {
         br_if $__break
         local.get $__iter0
         local.get $__idx0
-        i32.const 4
-        i32.mul
-        i32.add
-        i32.load offset=4
+        array.get $arr_any
+    ref.cast (ref null $arr_any)
         local.set $p
     local.get $p
-    i32.load
+    i32.const 0
+    array.get $arr_any
     local.get $key
-    i32.eq
+    call $__unk_eq
     (if
       (then
     local.get $__out0
     local.get $__acc0
-    i32.const 4
-    i32.mul
-    i32.add
     local.get $__iter0
     local.get $__idx0
-    i32.const 4
-    i32.mul
-    i32.add
-    i32.load offset=4
-    i32.store offset=4
+    array.get $arr_any
+    array.set $arr_any
     local.get $__acc0
     i32.const 1
     i32.add
@@ -814,46 +799,46 @@ test "order case over Order" {
       )
     )
     local.get $__out0
+    i32.const 0
     local.get $__acc0
-    i32.store ;; kept count
-    local.get $__out0
+    call $__arr_slice_any
     i32.const 0
-    call $__arr_at_box
-    i32.const 0
-    i32.ne
+    call $__arr_at_opt_any
+    ref.is_null
+    i32.eqz
     return
   )
-  (func $Dict_size (param $self i32) (result i32)
+  (func $Dict_size (param $self (ref null $rec_Dict)) (result i32)
     local.get $self
-    i32.load ;; .pairs
-    i32.load ;; .length
+    struct.get $rec_Dict $f0
+    array.len
     return
   )
-  (func $Dict_isEmpty (param $self i32) (result i32)
+  (func $Dict_isEmpty (param $self (ref null $rec_Dict)) (result i32)
     local.get $self
-    i32.load ;; .pairs
-    i32.load ;; .length
+    struct.get $rec_Dict $f0
+    array.len
     i32.const 0
     i32.eq
     return
   )
-  (func $Dict_keys (param $self i32) (result i32)
-    (local $__iter0 i32)
+  (func $Dict_keys (param $self (ref null $rec_Dict)) (result (ref null $arr_any))
+    (local $__iter0 (ref null $arr_any))
     (local $__idx0 i32)
     (local $__len0 i32)
     (local $__acc0 i32)
-    (local $__out0 i32)
-    (local $p i32)
+    (local $p (ref null $arr_any))
+    (local $__out0 (ref null $arr_any))
     local.get $self
-    i32.load ;; .pairs
+    struct.get $rec_Dict $f0
     local.set $__iter0
     local.get $__iter0
-    i32.load ;; element count
+    array.len
     local.set $__len0
     i32.const 0
     local.set $__idx0
     local.get $__len0
-    call $__arr_new
+    array.new_default $arr_any
     local.set $__out0
     i32.const 0
     local.set $__acc0
@@ -865,19 +850,15 @@ test "order case over Order" {
         br_if $__break
         local.get $__iter0
         local.get $__idx0
-        i32.const 4
-        i32.mul
-        i32.add
-        i32.load offset=4
+        array.get $arr_any
+    ref.cast (ref null $arr_any)
         local.set $p
     local.get $__out0
     local.get $__idx0
-    i32.const 4
-    i32.mul
-    i32.add
     local.get $p
-    i32.load
-    i32.store offset=4
+    i32.const 0
+    array.get $arr_any
+    array.set $arr_any
         local.get $__idx0
         i32.const 1
         i32.add
@@ -888,23 +869,23 @@ test "order case over Order" {
     local.get $__out0
     return
   )
-  (func $Dict_values (param $self i32) (result i32)
-    (local $__iter0 i32)
+  (func $Dict_values (param $self (ref null $rec_Dict)) (result (ref null $arr_any))
+    (local $__iter0 (ref null $arr_any))
     (local $__idx0 i32)
     (local $__len0 i32)
     (local $__acc0 i32)
-    (local $__out0 i32)
-    (local $p i32)
+    (local $p (ref null $arr_any))
+    (local $__out0 (ref null $arr_any))
     local.get $self
-    i32.load ;; .pairs
+    struct.get $rec_Dict $f0
     local.set $__iter0
     local.get $__iter0
-    i32.load ;; element count
+    array.len
     local.set $__len0
     i32.const 0
     local.set $__idx0
     local.get $__len0
-    call $__arr_new
+    array.new_default $arr_any
     local.set $__out0
     i32.const 0
     local.set $__acc0
@@ -916,19 +897,15 @@ test "order case over Order" {
         br_if $__break
         local.get $__iter0
         local.get $__idx0
-        i32.const 4
-        i32.mul
-        i32.add
-        i32.load offset=4
+        array.get $arr_any
+    ref.cast (ref null $arr_any)
         local.set $p
     local.get $__out0
     local.get $__idx0
-    i32.const 4
-    i32.mul
-    i32.add
     local.get $p
-    i32.load offset=4
-    i32.store offset=4
+    i32.const 1
+    array.get $arr_any
+    array.set $arr_any
         local.get $__idx0
         i32.const 1
         i32.add
@@ -939,27 +916,27 @@ test "order case over Order" {
     local.get $__out0
     return
   )
-  (func $Dict_insert (param $self i32) (param $key i32) (param $value i32) (result i32)
+  (func $Dict_insert (param $self (ref null $rec_Dict)) (param $key anyref) (param $value anyref) (result (ref null $rec_Dict))
     (local $__mem0 i32)
     (local $__mem1 i32)
     (local $__mem2 i32)
-    (local $filtered i32)
-    (local $__iter0 i32)
+    (local $filtered (ref null $arr_any))
+    (local $__iter0 (ref null $arr_any))
     (local $__idx0 i32)
     (local $__len0 i32)
     (local $__acc0 i32)
-    (local $__out0 i32)
-    (local $p i32)
+    (local $p (ref null $arr_any))
+    (local $__out0 (ref null $arr_any))
     local.get $self
-    i32.load ;; .pairs
+    struct.get $rec_Dict $f0
     local.set $__iter0
     local.get $__iter0
-    i32.load ;; element count
+    array.len
     local.set $__len0
     i32.const 0
     local.set $__idx0
     local.get $__len0
-    call $__arr_new
+    array.new_default $arr_any
     local.set $__out0
     i32.const 0
     local.set $__acc0
@@ -971,29 +948,23 @@ test "order case over Order" {
         br_if $__break
         local.get $__iter0
         local.get $__idx0
-        i32.const 4
-        i32.mul
-        i32.add
-        i32.load offset=4
+        array.get $arr_any
+    ref.cast (ref null $arr_any)
         local.set $p
     local.get $p
-    i32.load
+    i32.const 0
+    array.get $arr_any
     local.get $key
-    i32.ne
+    call $__unk_eq
+    i32.eqz
     (if
       (then
     local.get $__out0
     local.get $__acc0
-    i32.const 4
-    i32.mul
-    i32.add
     local.get $__iter0
     local.get $__idx0
-    i32.const 4
-    i32.mul
-    i32.add
-    i32.load offset=4
-    i32.store offset=4
+    array.get $arr_any
+    array.set $arr_any
     local.get $__acc0
     i32.const 1
     i32.add
@@ -1008,60 +979,35 @@ test "order case over Order" {
       )
     )
     local.get $__out0
+    i32.const 0
     local.get $__acc0
-    i32.store ;; kept count
-    local.get $__out0
+    call $__arr_slice_any
     local.set $filtered
-    i32.const 12
-    call $__alloc
-    local.set $__mem0
-    local.get $__mem0
-    i32.const 296
-    i32.store
-    local.get $__mem0
-    i32.const 316
-    i32.store offset=8
-    local.get $__mem0
     local.get $filtered
-    i32.const 8
-    call $__alloc
-    local.set $__mem1
-    local.get $__mem1
-    i32.const 1
-    i32.store
-    local.get $__mem1
-    i32.const 8
-    call $__alloc
-    local.set $__mem2
-    local.get $__mem2
     local.get $key
-    i32.store
-    local.get $__mem2
     local.get $value
-    i32.store offset=4
-    local.get $__mem2
-    i32.store offset=4
-    local.get $__mem1
-    call $__std_array_concat
-    i32.store offset=4
-    local.get $__mem0
-    i32.const 4
-    i32.add
+    array.new_fixed $arr_any 2
+    array.new_fixed $arr_any 1
+    call $__arr_concat_any
+    struct.new $rec_Dict
     return
   )
-  (func $Dict_bump (param $self i32) (param $key i32) (param $by i32) (result i32)
+  (func $Dict_bump (param $self (ref null $rec_Dict)) (param $key anyref) (param $by anyref) (result (ref null $rec_Dict))
     (local $__bp_nullish i32)
-    (local $__opt0 i32)
+    (local $__opt0 anyref)
     local.get $self
     local.get $key
     local.get $self
     local.get $key
     call $Dict_at
     local.tee $__opt0
+    ref.is_null
+    i32.eqz
     (if (result i32)
       (then
     local.get $__opt0
-    i32.load ;; optional payload
+    ref.cast (ref null $box_i32)
+    struct.get $box_i32 $v
     local.set $__bp_nullish
     local.get $__bp_nullish
       )
@@ -1070,39 +1016,32 @@ test "order case over Order" {
       )
     )
     local.get $by
-    i32.const 320
+    ref.cast (ref null $box_i32)
+    struct.get $box_i32 $v
+    global.get $__s4
     call $__i32_add_chk
+    struct.new $box_i32
     call $Dict_insert
     return
   )
-  (func $Dict_delete (param $self i32) (param $key i32) (result i32)
+  (func $Dict_delete (param $self (ref null $rec_Dict)) (param $key anyref) (result (ref null $rec_Dict))
     (local $__mem0 i32)
-    (local $__iter0 i32)
+    (local $__iter0 (ref null $arr_any))
     (local $__idx0 i32)
     (local $__len0 i32)
     (local $__acc0 i32)
-    (local $__out0 i32)
-    (local $p i32)
-    i32.const 12
-    call $__alloc
-    local.set $__mem0
-    local.get $__mem0
-    i32.const 296
-    i32.store
-    local.get $__mem0
-    i32.const 316
-    i32.store offset=8
-    local.get $__mem0
+    (local $p (ref null $arr_any))
+    (local $__out0 (ref null $arr_any))
     local.get $self
-    i32.load ;; .pairs
+    struct.get $rec_Dict $f0
     local.set $__iter0
     local.get $__iter0
-    i32.load ;; element count
+    array.len
     local.set $__len0
     i32.const 0
     local.set $__idx0
     local.get $__len0
-    call $__arr_new
+    array.new_default $arr_any
     local.set $__out0
     i32.const 0
     local.set $__acc0
@@ -1114,29 +1053,23 @@ test "order case over Order" {
         br_if $__break
         local.get $__iter0
         local.get $__idx0
-        i32.const 4
-        i32.mul
-        i32.add
-        i32.load offset=4
+        array.get $arr_any
+    ref.cast (ref null $arr_any)
         local.set $p
     local.get $p
-    i32.load
+    i32.const 0
+    array.get $arr_any
     local.get $key
-    i32.ne
+    call $__unk_eq
+    i32.eqz
     (if
       (then
     local.get $__out0
     local.get $__acc0
-    i32.const 4
-    i32.mul
-    i32.add
     local.get $__iter0
     local.get $__idx0
-    i32.const 4
-    i32.mul
-    i32.add
-    i32.load offset=4
-    i32.store offset=4
+    array.get $arr_any
+    array.set $arr_any
     local.get $__acc0
     i32.const 1
     i32.add
@@ -1151,29 +1084,26 @@ test "order case over Order" {
       )
     )
     local.get $__out0
+    i32.const 0
     local.get $__acc0
-    i32.store ;; kept count
-    local.get $__out0
-    i32.store offset=4
-    local.get $__mem0
-    i32.const 4
-    i32.add
+    call $__arr_slice_any
+    struct.new $rec_Dict
     return
   )
-  (func $Dict_merge (param $self i32) (param $other i32) (result i32)
-    (local $out i32)
-    (local $__iter0 i32)
+  (func $Dict_merge (param $self (ref null $rec_Dict)) (param $other (ref null $rec_Dict)) (result (ref null $rec_Dict))
+    (local $out (ref null $rec_Dict))
+    (local $__iter0 (ref null $arr_any))
     (local $__idx0 i32)
     (local $__len0 i32)
     (local $__acc0 i32)
-    (local $p i32)
+    (local $p (ref null $arr_any))
     local.get $self
     local.set $out
     local.get $other
-    i32.load ;; .pairs
+    struct.get $rec_Dict $f0
     local.set $__iter0
     local.get $__iter0
-    i32.load ;; element count
+    array.len
     local.set $__len0
     i32.const 0
     local.set $__idx0
@@ -1187,16 +1117,16 @@ test "order case over Order" {
         br_if $__break
         local.get $__iter0
         local.get $__idx0
-        i32.const 4
-        i32.mul
-        i32.add
-        i32.load offset=4
+        array.get $arr_any
+    ref.cast (ref null $arr_any)
         local.set $p
     local.get $out
     local.get $p
-    i32.load
+    i32.const 0
+    array.get $arr_any
     local.get $p
-    i32.load offset=4
+    i32.const 1
+    array.get $arr_any
     call $Dict_insert
     local.set $out
         local.get $__idx0
@@ -1209,21 +1139,21 @@ test "order case over Order" {
     local.get $out
     return
   )
-  (func $Dict_fold (param $self i32) (param $initial i32) (param $f i32) (result i32)
-    (local $acc i32)
-    (local $__iter0 i32)
+  (func $Dict_fold (param $self (ref null $rec_Dict)) (param $initial anyref) (param $f (ref null $closure)) (result anyref)
+    (local $acc anyref)
+    (local $__iter0 (ref null $arr_any))
     (local $__idx0 i32)
     (local $__len0 i32)
     (local $__acc0 i32)
-    (local $p i32)
-    (local $__fnv1 i32)
+    (local $p (ref null $arr_any))
+    (local $__fnv1 (ref null $closure))
     local.get $initial
     local.set $acc
     local.get $self
-    i32.load ;; .pairs
+    struct.get $rec_Dict $f0
     local.set $__iter0
     local.get $__iter0
-    i32.load ;; element count
+    array.len
     local.set $__len0
     i32.const 0
     local.set $__idx0
@@ -1237,22 +1167,22 @@ test "order case over Order" {
         br_if $__break
         local.get $__iter0
         local.get $__idx0
-        i32.const 4
-        i32.mul
-        i32.add
-        i32.load offset=4
+        array.get $arr_any
+    ref.cast (ref null $arr_any)
         local.set $p
     local.get $f
     local.set $__fnv1
     local.get $__fnv1
     local.get $acc
     local.get $p
-    i32.load
+    i32.const 0
+    array.get $arr_any
     local.get $p
-    i32.load offset=4
+    i32.const 1
+    array.get $arr_any
     local.get $__fnv1
-    i32.load ;; table index
-    call_indirect (param i32 i32 i32 i32) (result i32)
+    struct.get $closure $idx ;; table index
+    call_indirect (param (ref null $closure) anyref anyref anyref) (result anyref)
     local.set $acc
         local.get $__idx0
         i32.const 1
@@ -1264,30 +1194,23 @@ test "order case over Order" {
     local.get $acc
     return
   )
-  (func $Dict_mapValues (param $self i32) (param $f i32) (result i32)
+  (func $Dict_mapValues (param $self (ref null $rec_Dict)) (param $f (ref null $closure)) (result (ref null $rec_Dict))
     (local $__mem0 i32)
     (local $__mem1 i32)
-    (local $out i32)
-    (local $__iter0 i32)
+    (local $out (ref null $arr_any))
+    (local $__iter0 (ref null $arr_any))
     (local $__idx0 i32)
     (local $__len0 i32)
     (local $__acc0 i32)
-    (local $p i32)
-    (local $__fnv1 i32)
-    (local $__mem2 i32)
-    i32.const 4
-    call $__alloc
-    local.set $__mem0
-    local.get $__mem0
-    i32.const 0
-    i32.store
-    local.get $__mem0
+    (local $p (ref null $arr_any))
+    (local $__fnv1 (ref null $closure))
+    array.new_fixed $arr_any 0
     local.set $out
     local.get $self
-    i32.load ;; .pairs
+    struct.get $rec_Dict $f0
     local.set $__iter0
     local.get $__iter0
-    i32.load ;; element count
+    array.len
     local.set $__len0
     i32.const 0
     local.set $__idx0
@@ -1301,31 +1224,24 @@ test "order case over Order" {
         br_if $__break
         local.get $__iter0
         local.get $__idx0
-        i32.const 4
-        i32.mul
-        i32.add
-        i32.load offset=4
+        array.get $arr_any
+    ref.cast (ref null $arr_any)
         local.set $p
     local.get $out
-    i32.const 8
-    call $__alloc
-    local.set $__mem1
-    local.get $__mem1
     local.get $p
-    i32.load
-    i32.store
-    local.get $__mem1
+    i32.const 0
+    array.get $arr_any
     local.get $f
     local.set $__fnv1
     local.get $__fnv1
     local.get $p
-    i32.load offset=4
+    i32.const 1
+    array.get $arr_any
     local.get $__fnv1
-    i32.load ;; table index
-    call_indirect (param i32 i32) (result i32)
-    i32.store offset=4
-    local.get $__mem1
-    call $__arr_push
+    struct.get $closure $idx ;; table index
+    call_indirect (param (ref null $closure) anyref) (result anyref)
+    array.new_fixed $arr_any 2
+    call $__arr_push_any
     local.set $out
         local.get $__idx0
         i32.const 1
@@ -1334,84 +1250,35 @@ test "order case over Order" {
         br $__continue
       )
     )
-    i32.const 12
-    call $__alloc
-    local.set $__mem2
-    local.get $__mem2
-    i32.const 296
-    i32.store
-    local.get $__mem2
-    i32.const 316
-    i32.store offset=8
-    local.get $__mem2
     local.get $out
-    i32.store offset=4
-    local.get $__mem2
-    i32.const 4
-    i32.add
+    struct.new $rec_Dict
     return
   )
-  (func $Dict_empty (result i32)
+  (func $Dict_empty (result (ref null $rec_Dict))
     (local $__mem0 i32)
     (local $__mem1 i32)
-    i32.const 12
-    call $__alloc
-    local.set $__mem0
-    local.get $__mem0
-    i32.const 296
-    i32.store
-    local.get $__mem0
-    i32.const 316
-    i32.store offset=8
-    local.get $__mem0
-    i32.const 4
-    call $__alloc
-    local.set $__mem1
-    local.get $__mem1
     i32.const 0
-    i32.store
-    local.get $__mem1
-    i32.store offset=4
-    local.get $__mem0
-    i32.const 4
-    i32.add
+    array.new_default $arr_any
+    struct.new $rec_Dict
     return
   )
-  (func $Dict_ofEntries (param $entries i32) (result i32)
+  (func $Dict_ofEntries (param $entries (ref null $arr_any)) (result (ref null $rec_Dict))
     (local $__mem0 i32)
     (local $__mem1 i32)
-    (local $out i32)
-    (local $__iter0 i32)
+    (local $out (ref null $rec_Dict))
+    (local $__iter0 (ref null $arr_any))
     (local $__idx0 i32)
     (local $__len0 i32)
     (local $__acc0 i32)
-    (local $e i32)
-    i32.const 12
-    call $__alloc
-    local.set $__mem0
-    local.get $__mem0
-    i32.const 296
-    i32.store
-    local.get $__mem0
-    i32.const 316
-    i32.store offset=8
-    local.get $__mem0
-    i32.const 4
-    call $__alloc
-    local.set $__mem1
-    local.get $__mem1
+    (local $e (ref null $arr_any))
     i32.const 0
-    i32.store
-    local.get $__mem1
-    i32.store offset=4
-    local.get $__mem0
-    i32.const 4
-    i32.add
+    array.new_default $arr_any
+    struct.new $rec_Dict
     local.set $out
     local.get $entries
     local.set $__iter0
     local.get $__iter0
-    i32.load ;; element count
+    array.len
     local.set $__len0
     i32.const 0
     local.set $__idx0
@@ -1425,16 +1292,16 @@ test "order case over Order" {
         br_if $__break
         local.get $__iter0
         local.get $__idx0
-        i32.const 4
-        i32.mul
-        i32.add
-        i32.load offset=4
+        array.get $arr_any
+    ref.cast (ref null $arr_any)
         local.set $e
     local.get $out
     local.get $e
-    i32.load
+    i32.const 0
+    array.get $arr_any
     local.get $e
-    i32.load offset=4
+    i32.const 1
+    array.get $arr_any
     call $Dict_insert
     local.set $out
         local.get $__idx0
@@ -1449,38 +1316,46 @@ test "order case over Order" {
   )
   ;; One key or value of `Dict.display`: a string quoted, anything else as it
   ;; interpolates.
-  (func $shown (param $x i32) (result i32)
-    (local $_res0 i32)
-    (local $_res1 i32)
-    unreachable ;; unknown: no static type to box this value by (a type parameter's slot?)
-    call $__unknown_kind
-    i32.const 115
-    i32.eq
-    (if (result i32)
-      (then
-    i32.const 380
-    call $__cap_begin
-    local.set $_res0
+  (func $shown (param $x anyref) (result (ref null $str))
+    (local $__gc0 anyref)
+    (local $__gc1 (ref null $str))
+    (local $__gc2 (ref null $str))
     local.get $x
+    local.tee $__gc0
+    ref.test (ref null $str)
+    local.get $__gc0
+    ref.is_null
+    i32.eqz
+    i32.and
+    (if (result (ref null $str))
+      (then
+    global.get $__s5
+    call $__cap_begin
+    local.set $__gc1
+    local.get $x
+    ref.cast (ref null $box_i32)
+    struct.get $box_i32 $v
     call $__print_i32_raw
-    local.get $_res0
+    local.get $__gc1
     call $__cap_end
     call $__str_concat
-    i32.const 380
+    global.get $__s5
     call $__str_concat
     return
       )
       (else
-        i32.const 0
+        ref.null $str
       )
     )
     drop
-    i32.const 388
+    global.get $__s6
     call $__cap_begin
-    local.set $_res1
+    local.set $__gc2
     local.get $x
+    ref.cast (ref null $box_i32)
+    struct.get $box_i32 $v
     call $__print_i32_raw
-    local.get $_res1
+    local.get $__gc2
     call $__cap_end
     call $__str_concat
     return
@@ -1496,17 +1371,17 @@ test "order case over Order" {
   ;; Instance operations are `self`-methods on the record; `empty`/`fromList`
   ;; are type-scoped constructors (`Set.empty()`, `Set.fromList(xs)`). API
   ;; naming note: `new`/`set` are keyword tokens — the constructor is `empty`.
-  (func $Set_contains (param $self i32) (param $x i32) (result i32)
-    (local $__iter0 i32)
+  (func $Set_contains (param $self (ref null $rec_Set)) (param $x anyref) (result i32)
+    (local $__iter0 (ref null $arr_any))
     (local $__idx0 i32)
     (local $__len0 i32)
     (local $__acc0 i32)
-    (local $y i32)
+    (local $y anyref)
     local.get $self
-    i32.load ;; .items
+    struct.get $rec_Set $f0
     local.set $__iter0
     local.get $__iter0
-    i32.load ;; element count
+    array.len
     local.set $__len0
     i32.const 0
     local.set $__idx0
@@ -1520,14 +1395,11 @@ test "order case over Order" {
         br_if $__break
         local.get $__iter0
         local.get $__idx0
-        i32.const 4
-        i32.mul
-        i32.add
-        i32.load offset=4
+        array.get $arr_any
         local.set $y
     local.get $y
     local.get $x
-    i32.eq
+    call $__unk_eq
     (if
       (then
     i32.const 1
@@ -1544,38 +1416,38 @@ test "order case over Order" {
     local.get $__acc0
     return
   )
-  (func $Set_size (param $self i32) (result i32)
+  (func $Set_size (param $self (ref null $rec_Set)) (result i32)
     local.get $self
-    i32.load ;; .items
-    i32.load ;; .length
+    struct.get $rec_Set $f0
+    array.len
     return
   )
-  (func $Set_isEmpty (param $self i32) (result i32)
+  (func $Set_isEmpty (param $self (ref null $rec_Set)) (result i32)
     local.get $self
-    i32.load ;; .items
-    i32.load ;; .length
+    struct.get $rec_Set $f0
+    array.len
     i32.const 0
     i32.eq
     return
   )
-  (func $Set_toList (param $self i32) (result i32)
+  (func $Set_toList (param $self (ref null $rec_Set)) (result (ref null $arr_any))
     local.get $self
-    i32.load ;; .items
+    struct.get $rec_Set $f0
     return
   )
-  (func $Set_insert (param $self i32) (param $x i32) (result i32)
+  (func $Set_insert (param $self (ref null $rec_Set)) (param $x anyref) (result (ref null $rec_Set))
     (local $__mem0 i32)
     (local $__mem1 i32)
-    (local $__iter0 i32)
+    (local $__iter0 (ref null $arr_any))
     (local $__idx0 i32)
     (local $__len0 i32)
     (local $__acc0 i32)
-    (local $y i32)
+    (local $y anyref)
     local.get $self
-    i32.load ;; .items
+    struct.get $rec_Set $f0
     local.set $__iter0
     local.get $__iter0
-    i32.load ;; element count
+    array.len
     local.set $__len0
     i32.const 0
     local.set $__idx0
@@ -1589,14 +1461,11 @@ test "order case over Order" {
         br_if $__break
         local.get $__iter0
         local.get $__idx0
-        i32.const 4
-        i32.mul
-        i32.add
-        i32.load offset=4
+        array.get $arr_any
         local.set $y
     local.get $y
     local.get $x
-    i32.eq
+    call $__unk_eq
     (if
       (then
     i32.const 1
@@ -1611,70 +1480,39 @@ test "order case over Order" {
       )
     )
     local.get $__acc0
-    (if (result i32)
+    (if (result (ref null $rec_Set))
       (then
     local.get $self
       )
       (else
-    i32.const 12
-    call $__alloc
-    local.set $__mem0
-    local.get $__mem0
-    i32.const 396
-    i32.store
-    local.get $__mem0
-    i32.const 316
-    i32.store offset=8
-    local.get $__mem0
     local.get $self
-    i32.load ;; .items
-    i32.const 8
-    call $__alloc
-    local.set $__mem1
-    local.get $__mem1
-    i32.const 1
-    i32.store
-    local.get $__mem1
+    struct.get $rec_Set $f0
     local.get $x
-    i32.store offset=4
-    local.get $__mem1
-    call $__std_array_concat
-    i32.store offset=4
-    local.get $__mem0
-    i32.const 4
-    i32.add
+    array.new_fixed $arr_any 1
+    call $__arr_concat_any
+    struct.new $rec_Set
       )
     )
     return
   )
-  (func $Set_delete (param $self i32) (param $x i32) (result i32)
+  (func $Set_delete (param $self (ref null $rec_Set)) (param $x anyref) (result (ref null $rec_Set))
     (local $__mem0 i32)
-    (local $__iter0 i32)
+    (local $__iter0 (ref null $arr_any))
     (local $__idx0 i32)
     (local $__len0 i32)
     (local $__acc0 i32)
-    (local $__out0 i32)
-    (local $item i32)
-    i32.const 12
-    call $__alloc
-    local.set $__mem0
-    local.get $__mem0
-    i32.const 396
-    i32.store
-    local.get $__mem0
-    i32.const 316
-    i32.store offset=8
-    local.get $__mem0
+    (local $item anyref)
+    (local $__out0 (ref null $arr_any))
     local.get $self
-    i32.load ;; .items
+    struct.get $rec_Set $f0
     local.set $__iter0
     local.get $__iter0
-    i32.load ;; element count
+    array.len
     local.set $__len0
     i32.const 0
     local.set $__idx0
     local.get $__len0
-    call $__arr_new
+    array.new_default $arr_any
     local.set $__out0
     i32.const 0
     local.set $__acc0
@@ -1686,28 +1524,20 @@ test "order case over Order" {
         br_if $__break
         local.get $__iter0
         local.get $__idx0
-        i32.const 4
-        i32.mul
-        i32.add
-        i32.load offset=4
+        array.get $arr_any
         local.set $item
     local.get $item
     local.get $x
-    i32.ne
+    call $__unk_eq
+    i32.eqz
     (if
       (then
     local.get $__out0
     local.get $__acc0
-    i32.const 4
-    i32.mul
-    i32.add
     local.get $__iter0
     local.get $__idx0
-    i32.const 4
-    i32.mul
-    i32.add
-    i32.load offset=4
-    i32.store offset=4
+    array.get $arr_any
+    array.set $arr_any
     local.get $__acc0
     i32.const 1
     i32.add
@@ -1722,68 +1552,42 @@ test "order case over Order" {
       )
     )
     local.get $__out0
+    i32.const 0
     local.get $__acc0
-    i32.store ;; kept count
-    local.get $__out0
-    i32.store offset=4
-    local.get $__mem0
-    i32.const 4
-    i32.add
+    call $__arr_slice_any
+    struct.new $rec_Set
     return
   )
-  (func $Set_union (param $self i32) (param $other i32) (result i32)
+  (func $Set_union (param $self (ref null $rec_Set)) (param $other (ref null $rec_Set)) (result (ref null $rec_Set))
     (local $__mem0 i32)
-    i32.const 12
-    call $__alloc
-    local.set $__mem0
-    local.get $__mem0
-    i32.const 396
-    i32.store
-    local.get $__mem0
-    i32.const 316
-    i32.store offset=8
-    local.get $__mem0
     local.get $self
-    i32.load ;; .items
+    struct.get $rec_Set $f0
     local.get $other
     local.get $self
     call $Set_difference
-    i32.load ;; .items
-    call $__std_array_concat
-    i32.store offset=4
-    local.get $__mem0
-    i32.const 4
-    i32.add
+    struct.get $rec_Set $f0
+    call $__arr_concat_any
+    struct.new $rec_Set
     return
   )
-  (func $Set_intersection (param $self i32) (param $other i32) (result i32)
+  (func $Set_intersection (param $self (ref null $rec_Set)) (param $other (ref null $rec_Set)) (result (ref null $rec_Set))
     (local $__mem0 i32)
-    (local $__iter0 i32)
+    (local $__iter0 (ref null $arr_any))
     (local $__idx0 i32)
     (local $__len0 i32)
     (local $__acc0 i32)
-    (local $__out0 i32)
-    (local $x i32)
-    i32.const 12
-    call $__alloc
-    local.set $__mem0
-    local.get $__mem0
-    i32.const 396
-    i32.store
-    local.get $__mem0
-    i32.const 316
-    i32.store offset=8
-    local.get $__mem0
+    (local $x anyref)
+    (local $__out0 (ref null $arr_any))
     local.get $self
-    i32.load ;; .items
+    struct.get $rec_Set $f0
     local.set $__iter0
     local.get $__iter0
-    i32.load ;; element count
+    array.len
     local.set $__len0
     i32.const 0
     local.set $__idx0
     local.get $__len0
-    call $__arr_new
+    array.new_default $arr_any
     local.set $__out0
     i32.const 0
     local.set $__acc0
@@ -1795,10 +1599,7 @@ test "order case over Order" {
         br_if $__break
         local.get $__iter0
         local.get $__idx0
-        i32.const 4
-        i32.mul
-        i32.add
-        i32.load offset=4
+        array.get $arr_any
         local.set $x
     local.get $other
     local.get $x
@@ -1807,16 +1608,10 @@ test "order case over Order" {
       (then
     local.get $__out0
     local.get $__acc0
-    i32.const 4
-    i32.mul
-    i32.add
     local.get $__iter0
     local.get $__idx0
-    i32.const 4
-    i32.mul
-    i32.add
-    i32.load offset=4
-    i32.store offset=4
+    array.get $arr_any
+    array.set $arr_any
     local.get $__acc0
     i32.const 1
     i32.add
@@ -1831,43 +1626,30 @@ test "order case over Order" {
       )
     )
     local.get $__out0
+    i32.const 0
     local.get $__acc0
-    i32.store ;; kept count
-    local.get $__out0
-    i32.store offset=4
-    local.get $__mem0
-    i32.const 4
-    i32.add
+    call $__arr_slice_any
+    struct.new $rec_Set
     return
   )
-  (func $Set_difference (param $self i32) (param $other i32) (result i32)
+  (func $Set_difference (param $self (ref null $rec_Set)) (param $other (ref null $rec_Set)) (result (ref null $rec_Set))
     (local $__mem0 i32)
-    (local $__iter0 i32)
+    (local $__iter0 (ref null $arr_any))
     (local $__idx0 i32)
     (local $__len0 i32)
     (local $__acc0 i32)
-    (local $__out0 i32)
-    (local $x i32)
-    i32.const 12
-    call $__alloc
-    local.set $__mem0
-    local.get $__mem0
-    i32.const 396
-    i32.store
-    local.get $__mem0
-    i32.const 316
-    i32.store offset=8
-    local.get $__mem0
+    (local $x anyref)
+    (local $__out0 (ref null $arr_any))
     local.get $self
-    i32.load ;; .items
+    struct.get $rec_Set $f0
     local.set $__iter0
     local.get $__iter0
-    i32.load ;; element count
+    array.len
     local.set $__len0
     i32.const 0
     local.set $__idx0
     local.get $__len0
-    call $__arr_new
+    array.new_default $arr_any
     local.set $__out0
     i32.const 0
     local.set $__acc0
@@ -1879,10 +1661,7 @@ test "order case over Order" {
         br_if $__break
         local.get $__iter0
         local.get $__idx0
-        i32.const 4
-        i32.mul
-        i32.add
-        i32.load offset=4
+        array.get $arr_any
         local.set $x
     local.get $other
     local.get $x
@@ -1892,16 +1671,10 @@ test "order case over Order" {
       (then
     local.get $__out0
     local.get $__acc0
-    i32.const 4
-    i32.mul
-    i32.add
     local.get $__iter0
     local.get $__idx0
-    i32.const 4
-    i32.mul
-    i32.add
-    i32.load offset=4
-    i32.store offset=4
+    array.get $arr_any
+    array.set $arr_any
     local.get $__acc0
     i32.const 1
     i32.add
@@ -1916,76 +1689,37 @@ test "order case over Order" {
       )
     )
     local.get $__out0
-    local.get $__acc0
-    i32.store ;; kept count
-    local.get $__out0
-    i32.store offset=4
-    local.get $__mem0
-    i32.const 4
-    i32.add
-    return
-  )
-  (func $Set_empty (result i32)
-    (local $__mem0 i32)
-    (local $__mem1 i32)
-    i32.const 12
-    call $__alloc
-    local.set $__mem0
-    local.get $__mem0
-    i32.const 396
-    i32.store
-    local.get $__mem0
-    i32.const 316
-    i32.store offset=8
-    local.get $__mem0
-    i32.const 4
-    call $__alloc
-    local.set $__mem1
-    local.get $__mem1
     i32.const 0
-    i32.store
-    local.get $__mem1
-    i32.store offset=4
-    local.get $__mem0
-    i32.const 4
-    i32.add
+    local.get $__acc0
+    call $__arr_slice_any
+    struct.new $rec_Set
     return
   )
-  (func $Set_fromList (param $xs i32) (result i32)
+  (func $Set_empty (result (ref null $rec_Set))
     (local $__mem0 i32)
     (local $__mem1 i32)
-    (local $out i32)
-    (local $__iter0 i32)
+    i32.const 0
+    array.new_default $arr_any
+    struct.new $rec_Set
+    return
+  )
+  (func $Set_fromList (param $xs (ref null $arr_any)) (result (ref null $rec_Set))
+    (local $__mem0 i32)
+    (local $__mem1 i32)
+    (local $out (ref null $rec_Set))
+    (local $__iter0 (ref null $arr_any))
     (local $__idx0 i32)
     (local $__len0 i32)
     (local $__acc0 i32)
-    (local $x i32)
-    i32.const 12
-    call $__alloc
-    local.set $__mem0
-    local.get $__mem0
-    i32.const 396
-    i32.store
-    local.get $__mem0
-    i32.const 316
-    i32.store offset=8
-    local.get $__mem0
-    i32.const 4
-    call $__alloc
-    local.set $__mem1
-    local.get $__mem1
+    (local $x anyref)
     i32.const 0
-    i32.store
-    local.get $__mem1
-    i32.store offset=4
-    local.get $__mem0
-    i32.const 4
-    i32.add
+    array.new_default $arr_any
+    struct.new $rec_Set
     local.set $out
     local.get $xs
     local.set $__iter0
     local.get $__iter0
-    i32.load ;; element count
+    array.len
     local.set $__len0
     i32.const 0
     local.set $__idx0
@@ -1999,10 +1733,7 @@ test "order case over Order" {
         br_if $__break
         local.get $__iter0
         local.get $__idx0
-        i32.const 4
-        i32.mul
-        i32.add
-        i32.load offset=4
+        array.get $arr_any
         local.set $x
     local.get $out
     local.get $x
@@ -2029,151 +1760,79 @@ test "order case over Order" {
   ;; `dequeue` returns `#(Queue<T>, ?T)` (the updated queue + the removed front
   ;; item). API naming note: `new` is a keyword token —
   ;; the constructor is `empty`.
-  (func $Queue_size (param $self i32) (result i32)
+  (func $Queue_size (param $self (ref null $rec_Queue)) (result i32)
     local.get $self
-    i32.load ;; .items
-    i32.load ;; .length
+    struct.get $rec_Queue $f0
+    array.len
     return
   )
-  (func $Queue_isEmpty (param $self i32) (result i32)
+  (func $Queue_isEmpty (param $self (ref null $rec_Queue)) (result i32)
     local.get $self
-    i32.load ;; .items
-    i32.load ;; .length
+    struct.get $rec_Queue $f0
+    array.len
     i32.const 0
     i32.eq
     return
   )
-  (func $Queue_enqueue (param $self i32) (param $item i32) (result i32)
+  (func $Queue_enqueue (param $self (ref null $rec_Queue)) (param $item anyref) (result (ref null $rec_Queue))
     (local $__mem0 i32)
     (local $__mem1 i32)
-    i32.const 12
-    call $__alloc
-    local.set $__mem0
-    local.get $__mem0
-    i32.const 416
-    i32.store
-    local.get $__mem0
-    i32.const 316
-    i32.store offset=8
-    local.get $__mem0
     local.get $self
-    i32.load ;; .items
-    i32.const 8
-    call $__alloc
-    local.set $__mem1
-    local.get $__mem1
-    i32.const 1
-    i32.store
-    local.get $__mem1
+    struct.get $rec_Queue $f0
     local.get $item
-    i32.store offset=4
-    local.get $__mem1
-    call $__std_array_concat
-    i32.store offset=4
-    local.get $__mem0
-    i32.const 4
-    i32.add
+    array.new_fixed $arr_any 1
+    call $__arr_concat_any
+    struct.new $rec_Queue
     return
   )
-  (func $Queue_dequeue (param $self i32) (result i32)
+  (func $Queue_dequeue (param $self (ref null $rec_Queue)) (result (ref null $arr_any))
     (local $__mem0 i32)
     (local $__mem1 i32)
-    (local $head i32)
-    (local $rest i32)
+    (local $head anyref)
+    (local $rest (ref null $arr_any))
     local.get $self
-    i32.load ;; .items
+    struct.get $rec_Queue $f0
     i32.const 0
-    call $__arr_at_box
+    call $__arr_at_opt_any
     local.set $head
     local.get $self
-    i32.load ;; .items
+    struct.get $rec_Queue $f0
     i32.const 1
     local.get $self
-    i32.load ;; .items
-    i32.load ;; .length
-    call $__std_array_slice
+    struct.get $rec_Queue $f0
+    array.len
+    call $__arr_slice_any
     local.set $rest
-    i32.const 8
-    call $__alloc
-    local.set $__mem0
-    local.get $__mem0
-    i32.const 12
-    call $__alloc
-    local.set $__mem1
-    local.get $__mem1
-    i32.const 416
-    i32.store
-    local.get $__mem1
-    i32.const 316
-    i32.store offset=8
-    local.get $__mem1
     local.get $rest
-    i32.store offset=4
-    local.get $__mem1
-    i32.const 4
-    i32.add
-    i32.store
-    local.get $__mem0
+    struct.new $rec_Queue
     local.get $head
-    i32.store offset=4
-    local.get $__mem0
+    array.new_fixed $arr_any 2
     return
   )
-  (func $Queue_peek (param $self i32) (result i32)
+  (func $Queue_peek (param $self (ref null $rec_Queue)) (result anyref)
     local.get $self
-    i32.load ;; .items
+    struct.get $rec_Queue $f0
     i32.const 0
-    call $__arr_at_box
+    call $__arr_at_opt_any
     return
   )
-  (func $Queue_toList (param $self i32) (result i32)
+  (func $Queue_toList (param $self (ref null $rec_Queue)) (result (ref null $arr_any))
     local.get $self
-    i32.load ;; .items
+    struct.get $rec_Queue $f0
     return
   )
-  (func $Queue_empty (result i32)
+  (func $Queue_empty (result (ref null $rec_Queue))
     (local $__mem0 i32)
     (local $__mem1 i32)
-    i32.const 12
-    call $__alloc
-    local.set $__mem0
-    local.get $__mem0
-    i32.const 416
-    i32.store
-    local.get $__mem0
-    i32.const 316
-    i32.store offset=8
-    local.get $__mem0
-    i32.const 4
-    call $__alloc
-    local.set $__mem1
-    local.get $__mem1
     i32.const 0
-    i32.store
-    local.get $__mem1
-    i32.store offset=4
-    local.get $__mem0
-    i32.const 4
-    i32.add
+    array.new_default $arr_any
+    struct.new $rec_Queue
     return
   )
-  (func $Queue_fromList (param $xs i32) (result i32)
+  (func $Queue_fromList (param $xs (ref null $arr_any)) (result (ref null $rec_Queue))
     (local $__mem0 i32)
-    i32.const 12
-    call $__alloc
-    local.set $__mem0
-    local.get $__mem0
-    i32.const 416
-    i32.store
-    local.get $__mem0
-    i32.const 316
-    i32.store offset=8
-    local.get $__mem0
     local.get $xs
-    i32.store offset=4
-    local.get $__mem0
-    i32.const 4
-    i32.add
+    struct.new $rec_Queue
     return
   )
   ;; ── empty-collection boundary (B1) ──
@@ -2206,7 +1865,7 @@ test "order case over Order" {
       (then
     i32.const 0
     i32.const 1
-    i32.const 432
+    global.get $__s7
     call $__i32_sub_chk
       )
       (else
@@ -2257,47 +1916,383 @@ test "order case over Order" {
     local.get $r
     return
   )
+  (func $__arr_push_any (param $xs (ref null $arr_any)) (param $x anyref) (result (ref null $arr_any))
+    (local $n i32)
+    (local $r (ref null $arr_any))
+    local.get $xs
+    array.len
+    local.set $n
+    local.get $n
+    i32.const 1
+    i32.add
+    array.new_default $arr_any
+    local.set $r
+    local.get $r
+    i32.const 0
+    local.get $xs
+    i32.const 0
+    local.get $n
+    array.copy $arr_any $arr_any
+    local.get $r
+    local.get $n
+    local.get $x
+    array.set $arr_any
+    local.get $r
+  )
+  (func $__arr_join_any (param $xs (ref null $arr_any)) (param $sep (ref null $str)) (result (ref null $str))
+    (local $n i32)
+    (local $i i32)
+    (local $acc (ref null $str))
+    local.get $xs
+    array.len
+    local.set $n
+    i32.const 0
+    array.new_default $str
+    local.set $acc
+    (block $brk
+    (loop $cont
+    local.get $i
+    local.get $n
+    i32.ge_u
+    br_if $brk
+    local.get $i
+    (if
+      (then
+    local.get $acc
+    local.get $sep
+    call $__str_concat
+    local.set $acc
+      )
+    )
+    local.get $acc
+    local.get $xs
+    local.get $i
+    array.get $arr_any
+    ref.cast (ref null $str)
+    call $__str_concat
+    local.set $acc
+    local.get $i
+    i32.const 1
+    i32.add
+    local.set $i
+    br $cont
+    )
+    )
+    local.get $acc
+  )
+  (func $__unk_is_num (param $v anyref) (result i32)
+    local.get $v
+    ref.is_null
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    local.get $v
+    ref.test (ref null $box_i32)
+    local.get $v
+    ref.test (ref null $box_bool)
+    i32.eqz
+    i32.and
+    local.get $v
+    ref.test (ref null $box_f64)
+    i32.or
+  )
+  (func $__unk_as_f64 (param $v anyref) (result f64)
+    local.get $v
+    ref.test (ref null $box_i32)
+    (if
+      (then
+    local.get $v
+    ref.cast (ref null $box_i32)
+    struct.get $box_i32 $v
+    f64.convert_i32_s
+    return
+      )
+    )
+    local.get $v
+    ref.cast (ref null $box_f64)
+    struct.get $box_f64 $v
+  )
+  (func $__unk_eq (param $a anyref) (param $b anyref) (result i32)
+    local.get $a
+    call $__unk_is_num
+    local.get $b
+    call $__unk_is_num
+    i32.and
+    (if
+      (then
+    local.get $a
+    call $__unk_as_f64
+    local.get $b
+    call $__unk_as_f64
+    f64.eq
+    return
+      )
+    )
+    local.get $a
+    ref.test (ref null $str)
+    local.get $a
+    ref.is_null
+    i32.eqz
+    i32.and
+    local.get $b
+    ref.test (ref null $str)
+    i32.and
+    local.get $b
+    ref.is_null
+    i32.eqz
+    i32.and
+    (if
+      (then
+    local.get $a
+    ref.cast (ref null $str)
+    local.get $b
+    ref.cast (ref null $str)
+    call $__str_eq
+    return
+      )
+    )
+    local.get $a
+    ref.test (ref null $box_bool)
+    local.get $a
+    ref.is_null
+    i32.eqz
+    i32.and
+    local.get $b
+    ref.test (ref null $box_bool)
+    i32.and
+    local.get $b
+    ref.is_null
+    i32.eqz
+    i32.and
+    (if
+      (then
+    local.get $a
+    ref.cast (ref null $box_i32)
+    struct.get $box_i32 $v
+    local.get $b
+    ref.cast (ref null $box_i32)
+    struct.get $box_i32 $v
+    i32.eq
+    return
+      )
+    )
+    local.get $a
+    ref.cast (ref null eq)
+    local.get $b
+    ref.cast (ref null eq)
+    ref.eq
+  )
+  (func $__arr_slice_any (param $xs (ref null $arr_any)) (param $a i32) (param $b i32) (result (ref null $arr_any))
+    (local $len i32)
+    (local $from i32)
+    (local $to i32)
+    (local $n i32)
+    (local $r (ref null $arr_any))
+    local.get $xs
+    array.len
+    local.set $len
+    local.get $a
+    i32.const 0
+    i32.lt_s
+    (if
+      (then
+    local.get $len
+    local.get $a
+    i32.add
+    local.set $from
+    local.get $from
+    i32.const 0
+    i32.lt_s
+    (if
+      (then
+    i32.const 0
+    local.set $from
+      )
+    )
+      )
+      (else
+    local.get $a
+    local.set $from
+    local.get $from
+    local.get $len
+    i32.gt_s
+    (if
+      (then
+    local.get $len
+    local.set $from
+      )
+    )
+      )
+    )
+    local.get $b
+    i32.const 0
+    i32.lt_s
+    (if
+      (then
+    local.get $len
+    local.get $b
+    i32.add
+    local.set $to
+    local.get $to
+    i32.const 0
+    i32.lt_s
+    (if
+      (then
+    i32.const 0
+    local.set $to
+      )
+    )
+      )
+      (else
+    local.get $b
+    local.set $to
+    local.get $to
+    local.get $len
+    i32.gt_s
+    (if
+      (then
+    local.get $len
+    local.set $to
+      )
+    )
+      )
+    )
+    local.get $to
+    local.get $from
+    i32.sub
+    local.set $n
+    local.get $n
+    i32.const 0
+    i32.lt_s
+    (if
+      (then
+    i32.const 0
+    local.set $n
+      )
+    )
+    local.get $n
+    array.new_default $arr_any
+    local.set $r
+    local.get $r
+    i32.const 0
+    local.get $xs
+    local.get $from
+    local.get $n
+    array.copy $arr_any $arr_any
+    local.get $r
+  )
+  (func $__arr_at_opt_any (param $xs (ref null $arr_any)) (param $i i32) (result anyref)
+    local.get $i
+    i32.const 0
+    i32.lt_s
+    (if
+      (then
+    local.get $i
+    local.get $xs
+    array.len
+    i32.add
+    local.set $i
+      )
+    )
+    local.get $i
+    i32.const 0
+    i32.lt_s
+    local.get $i
+    local.get $xs
+    array.len
+    i32.ge_s
+    i32.or
+    (if (result anyref)
+      (then
+    ref.null any
+      )
+      (else
+    local.get $xs
+    local.get $i
+    array.get $arr_any
+      )
+    )
+  )
+  (func $__arr_concat_any (param $xs (ref null $arr_any)) (param $ys (ref null $arr_any)) (result (ref null $arr_any))
+    (local $la i32)
+    (local $lb i32)
+    (local $r (ref null $arr_any))
+    local.get $xs
+    array.len
+    local.set $la
+    local.get $ys
+    array.len
+    local.set $lb
+    local.get $la
+    local.get $lb
+    i32.add
+    array.new_default $arr_any
+    local.set $r
+    local.get $r
+    i32.const 0
+    local.get $xs
+    i32.const 0
+    local.get $la
+    array.copy $arr_any $arr_any
+    local.get $r
+    local.get $la
+    local.get $ys
+    i32.const 0
+    local.get $lb
+    array.copy $arr_any $arr_any
+    local.get $r
+  )
   ;; Scratch layout below the data section (which starts at 256):
   ;;   0..8  WASI iovec   8  newline byte
   ;;  16..32 bool text   64..128 i32 digits
   (func $__write_bytes (param $p i32) (param $n i32)
-    (local $c i32) (local $l i32) (local $q i32)
+    (local $c (ref null $str)) (local $q (ref null $str)) (local $l i32) (local $i i32)
     global.get $__cap
     local.set $c
     local.get $c
+    ref.is_null
+    i32.eqz
     (if
       (then
         local.get $c
-        i32.load
+        array.len
         local.set $l
         local.get $l
         local.get $n
         i32.add
-        i32.const 4
-        i32.add
-        call $__alloc
+        array.new_default $str
         local.set $q
         local.get $q
-        local.get $l
-        local.get $n
-        i32.add
-        i32.store
-        local.get $q
-        i32.const 4
-        i32.add
+        i32.const 0
         local.get $c
-        i32.const 4
-        i32.add
+        i32.const 0
         local.get $l
-        memory.copy
-        local.get $q
-        i32.const 4
-        i32.add
-        local.get $l
-        i32.add
-        local.get $p
-        local.get $n
-        memory.copy
+        array.copy $str $str
+        (block $brk
+          (loop $cont
+            local.get $i
+            local.get $n
+            i32.ge_u
+            br_if $brk
+            local.get $q
+            local.get $l
+            local.get $i
+            i32.add
+            local.get $p
+            local.get $i
+            i32.add
+            i32.load8_u
+            array.set $str
+            local.get $i
+            i32.const 1
+            i32.add
+            local.set $i
+            br $cont
+          )
+        )
         local.get $q
         global.set $__cap
         return
@@ -2479,85 +2474,89 @@ test "order case over Order" {
       )
     )
   )
-  (func $__str_concat (param $a i32) (param $b i32) (result i32)
-    (local $base i32) (local $alen i32) (local $blen i32)
+  (func $__str_concat (param $a (ref null $str)) (param $b (ref null $str)) (result (ref null $str))
+    (local $r (ref null $str)) (local $alen i32) (local $blen i32)
     local.get $a
-    i32.load
+    array.len
     local.set $alen
     local.get $b
-    i32.load
+    array.len
     local.set $blen
-    ;; allocate 4 (length prefix) + alen + blen
-    i32.const 4
-    local.get $alen
-    i32.add
-    local.get $blen
-    i32.add
-    call $__alloc
-    local.set $base
-    ;; store combined length prefix
-    local.get $base
     local.get $alen
     local.get $blen
     i32.add
-    i32.store
-    ;; copy a's bytes: base+4 <- a+4
-    local.get $base
-    i32.const 4
-    i32.add
+    array.new_default $str
+    local.set $r
+    local.get $r
+    i32.const 0
     local.get $a
-    i32.const 4
-    i32.add
+    i32.const 0
     local.get $alen
-    memory.copy
-    ;; copy b's bytes: base+4+alen <- b+4
-    local.get $base
-    i32.const 4
-    i32.add
+    array.copy $str $str
+    local.get $r
     local.get $alen
-    i32.add
     local.get $b
-    i32.const 4
-    i32.add
+    i32.const 0
     local.get $blen
-    memory.copy
-    local.get $base
+    array.copy $str $str
+    local.get $r
   )
-  (func $__str_eq (param $a i32) (param $b i32) (result i32)
-    (local $i i32) (local $alen i32)
+  (func $__str_eq (param $a (ref null $str)) (param $b (ref null $str)) (result i32)
+    (local $i i32) (local $n i32) (local $an i32) (local $bn i32)
     local.get $a
-    i32.load
-    local.set $alen
-    local.get $alen
+    ref.is_null
+    local.set $an
     local.get $b
-    i32.load
+    ref.is_null
+    local.set $bn
+    local.get $an
+    local.get $bn
+    i32.or
+    (if
+      (then
+        local.get $an
+        local.get $bn
+        i32.and
+        return
+      )
+    )
+    local.get $a
+    array.len
+    local.set $n
+    local.get $n
+    local.get $b
+    array.len
     i32.ne
     (if
-      (then i32.const 0 return)
+      (then
+        i32.const 0
+        return
+      )
     )
-    (block $done
-      (loop $cmp
+    (block $brk
+      (loop $cont
         local.get $i
-        local.get $alen
+        local.get $n
         i32.ge_u
-        br_if $done
+        br_if $brk
         local.get $a
         local.get $i
-        i32.add
-        i32.load8_u offset=4
+        array.get_u $str
         local.get $b
         local.get $i
-        i32.add
-        i32.load8_u offset=4
+        array.get_u $str
         i32.ne
         (if
-          (then i32.const 0 return)
+          (then
+            i32.const 0
+            return
+          )
         )
         local.get $i
         i32.const 1
         i32.add
         local.set $i
-        br $cmp
+        br $cont
       )
     )
     i32.const 1
@@ -2609,98 +2608,6 @@ test "order case over Order" {
     local.get $e
     global.set $__heap_ptr
     local.get $p
-  )
-  (func $__arr_new (param $n i32) (result i32)
-    (local $p i32)
-    local.get $n
-    i32.const 1
-    i32.add
-    i32.const 4
-    i32.mul
-    call $__alloc
-    local.set $p
-    local.get $p
-    local.get $n
-    i32.store
-    local.get $p
-  )
-  (func $__arr_push (param $xs i32) (param $x i32) (result i32)
-    (local $n i32) (local $p i32)
-    local.get $xs
-    i32.load
-    local.set $n
-    local.get $n
-    i32.const 1
-    i32.add
-    call $__arr_new
-    local.set $p
-    local.get $p
-    i32.const 4
-    i32.add
-    local.get $xs
-    i32.const 4
-    i32.add
-    local.get $n
-    i32.const 4
-    i32.mul
-    memory.copy
-    local.get $p
-    i32.const 4
-    i32.add
-    local.get $n
-    i32.const 4
-    i32.mul
-    i32.add
-    local.get $x
-    i32.store
-    local.get $p
-  )
-  (func $__box_i32 (param $v i32) (result i32)
-    (local $p i32)
-    i32.const 4
-    call $__alloc
-    local.set $p
-    local.get $p
-    local.get $v
-    i32.store
-    local.get $p
-  )
-  (func $__arr_at_box (param $xs i32) (param $i i32) (result i32)
-    local.get $i
-    i32.const 0
-    i32.lt_s
-    (if
-      (then
-        local.get $i
-        local.get $xs
-        i32.load
-        i32.add
-        local.set $i
-      )
-    )
-    local.get $i
-    i32.const 0
-    i32.lt_s
-    local.get $i
-    local.get $xs
-    i32.load
-    i32.ge_s
-    i32.or
-    (if
-      (then
-        i32.const 0
-        return
-      )
-    )
-    local.get $xs
-    i32.const 4
-    i32.add
-    local.get $i
-    i32.const 4
-    i32.mul
-    i32.add
-    i32.load
-    call $__box_i32
   )
   (func $__write_err (param $p i32) (param $n i32)
     i32.const 0
@@ -2762,7 +2669,8 @@ test "order case over Order" {
     i32.const 1
     call $__write_err
   )
-  (func $__panic_fail (param $msg i32)
+  (func $__panic_fail (param $msg (ref null $str))
+    (local $n i32) (local $p i32) (local $i i32) (local $top i32)
     i32.const 188
     i64.const 9071397899755888
     i64.store
@@ -2770,10 +2678,35 @@ test "order case over Order" {
     i32.const 7
     call $__write_err
     local.get $msg
-    i32.const 4
-    i32.add
-    local.get $msg
-    i32.load
+    array.len
+    local.set $n
+    global.get $__heap_ptr
+    local.set $top
+    local.get $n
+    call $__alloc
+    local.set $p
+    (block $brk
+      (loop $cont
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $brk
+        local.get $p
+        local.get $i
+        i32.add
+        local.get $msg
+        local.get $i
+        array.get_u $str
+        i32.store8
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $cont
+      )
+    )
+    local.get $p
+    local.get $n
     call $__write_err
     i32.const 188
     i32.const 10
@@ -2781,195 +2714,10 @@ test "order case over Order" {
     i32.const 188
     i32.const 1
     call $__write_err
+    local.get $top
+    global.set $__heap_ptr
   )
-  (func $__unknown_kind (param $v i32) (result i32)
-    (local $d i32)
-    local.get $v
-    i32.const 256
-    i32.lt_u
-    (if
-      (then
-        i32.const 0
-        return
-      )
-    )
-    local.get $v
-    i32.const 4
-    i32.sub
-    i32.load
-    local.set $d
-    local.get $d
-    i32.load8_u
-    i32.const 80
-    i32.ne
-    (if
-      (then
-        local.get $d
-        i32.load8_u
-        return
-      )
-    )
-    local.get $d
-    i32.load8_u offset=2
-  )
-  (func $__unknown_int_in (param $v i32) (param $lo i32) (param $hi i32) (result i32)
-    (local $k i32) (local $x f64)
-    local.get $v
-    call $__unknown_kind
-    local.set $k
-    local.get $k
-    i32.const 105
-    i32.eq
-    (if
-      (then
-        local.get $v
-        i32.load
-        local.get $lo
-        i32.ge_s
-        local.get $v
-        i32.load
-        local.get $hi
-        i32.le_s
-        i32.and
-        return
-      )
-    )
-    local.get $k
-    i32.const 102
-    i32.ne
-    (if
-      (then
-        i32.const 0
-        return
-      )
-    )
-    local.get $v
-    f64.load
-    local.set $x
-    local.get $x
-    f64.floor
-    local.get $x
-    f64.ne
-    (if
-      (then
-        i32.const 0
-        return
-      )
-    )
-    local.get $x
-    local.get $lo
-    f64.convert_i32_s
-    f64.ge
-    local.get $x
-    local.get $hi
-    f64.convert_i32_s
-    f64.le
-    i32.and
-  )
-  (func $__unknown_as_i32 (param $v i32) (result i32)
-    local.get $v
-    call $__unknown_kind
-    i32.const 102
-    i32.eq
-    (if
-      (then
-        local.get $v
-        f64.load
-        i32.trunc_f64_s
-        return
-      )
-    )
-    local.get $v
-    i32.load
-  )
-  (func $__unknown_as_f64 (param $v i32) (result f64)
-    local.get $v
-    call $__unknown_kind
-    i32.const 105
-    i32.eq
-    (if
-      (then
-        local.get $v
-        i32.load
-        f64.convert_i32_s
-        return
-      )
-    )
-    local.get $v
-    f64.load
-  )
-  (func $__unknown_eq (param $a i32) (param $b i32) (result i32)
-    (local $ka i32) (local $kb i32)
-    local.get $a
-    call $__unknown_kind
-    local.set $ka
-    local.get $b
-    call $__unknown_kind
-    local.set $kb
-    local.get $ka
-    i32.const 105
-    i32.eq
-    local.get $ka
-    i32.const 102
-    i32.eq
-    i32.or
-    local.get $kb
-    i32.const 105
-    i32.eq
-    local.get $kb
-    i32.const 102
-    i32.eq
-    i32.or
-    i32.and
-    (if
-      (then
-        local.get $a
-        call $__unknown_as_f64
-        local.get $b
-        call $__unknown_as_f64
-        f64.eq
-        return
-      )
-    )
-    local.get $ka
-    i32.const 115
-    i32.eq
-    local.get $kb
-    i32.const 115
-    i32.eq
-    i32.and
-    (if
-      (then
-        local.get $a
-        i32.load
-        local.get $b
-        i32.load
-        call $__str_eq
-        return
-      )
-    )
-    local.get $ka
-    i32.const 98
-    i32.eq
-    local.get $kb
-    i32.const 98
-    i32.eq
-    i32.and
-    (if
-      (then
-        local.get $a
-        i32.load
-        local.get $b
-        i32.load
-        i32.eq
-        return
-      )
-    )
-    local.get $a
-    local.get $b
-    i32.eq
-  )
-  (func $__i32_add_chk (param $a i32) (param $b i32) (param $site i32) (result i32)
+  (func $__i32_add_chk (param $a i32) (param $b i32) (param $site (ref null $str)) (result i32)
     (local $r i64)
     local.get $a
     i64.extend_i32_s
@@ -2992,7 +2740,7 @@ test "order case over Order" {
     local.get $r
     i32.wrap_i64
   )
-  (func $__i32_sub_chk (param $a i32) (param $b i32) (param $site i32) (result i32)
+  (func $__i32_sub_chk (param $a i32) (param $b i32) (param $site (ref null $str)) (result i32)
     (local $r i64)
     local.get $a
     i64.extend_i32_s
@@ -3015,7 +2763,7 @@ test "order case over Order" {
     local.get $r
     i32.wrap_i64
   )
-  (func $__i32_mul_chk (param $a i32) (param $b i32) (param $site i32) (result i32)
+  (func $__i32_mul_chk (param $a i32) (param $b i32) (param $site (ref null $str)) (result i32)
     (local $r i64)
     local.get $a
     i64.extend_i32_s
@@ -3038,7 +2786,7 @@ test "order case over Order" {
     local.get $r
     i32.wrap_i64
   )
-  (func $__i64_add_chk (param $a i64) (param $b i64) (param $site i32) (result i64)
+  (func $__i64_add_chk (param $a i64) (param $b i64) (param $site (ref null $str)) (result i64)
     (local $r i64)
     local.get $a
     local.get $b
@@ -3062,7 +2810,7 @@ test "order case over Order" {
     )
     local.get $r
   )
-  (func $__i64_sub_chk (param $a i64) (param $b i64) (param $site i32) (result i64)
+  (func $__i64_sub_chk (param $a i64) (param $b i64) (param $site (ref null $str)) (result i64)
     (local $r i64)
     local.get $a
     local.get $b
@@ -3086,7 +2834,7 @@ test "order case over Order" {
     )
     local.get $r
   )
-  (func $__i64_mul_chk (param $a i64) (param $b i64) (param $site i32) (result i64)
+  (func $__i64_mul_chk (param $a i64) (param $b i64) (param $site (ref null $str)) (result i64)
     (local $r i64)
     local.get $a
     i64.const -1
@@ -3127,53 +2875,81 @@ test "order case over Order" {
     )
     local.get $r
   )
-  (global $__cap (mut i32) (i32.const 0))
-  (func $__cap_begin (result i32)
-    (local $o i32) (local $s i32)
+  (global $__cap (mut (ref null $str)) (ref.null $str))
+  (func $__cap_begin (result (ref null $str))
+    (local $o (ref null $str))
     global.get $__cap
     local.set $o
-    i32.const 4
-    call $__alloc
-    local.set $s
-    local.get $s
     i32.const 0
-    i32.store
-    local.get $s
+    array.new_default $str
     global.set $__cap
     local.get $o
   )
-  (func $__cap_end (param $o i32) (result i32)
-    (local $s i32)
+  (func $__cap_end (param $o (ref null $str)) (result (ref null $str))
+    (local $s (ref null $str))
     global.get $__cap
     local.set $s
     local.get $o
     global.set $__cap
     local.get $s
   )
-  (func $__chk_fail (param $site i32)
+  (func $__chk_fail (param $site (ref null $str))
     local.get $site
     call $__panic_fail
     unreachable
   )
-  ;; std-wasm (decision 440): its functions, transpiled from std_wasm.wasm
-  (global $__std_sp (mut i32) (i32.const 528))
-  (func $__std_sp_check (param $sp i32) (result i32)
-    local.get $sp
-    i32.const 496
-    i32.lt_s
-    (if
-      (then unreachable)
-    )
-    local.get $sp
+  (data $__d0 ": ")
+  (global $__s0 (mut (ref null $str)) (ref.null $str))
+  (data $__d1 "Dict(")
+  (global $__s1 (mut (ref null $str)) (ref.null $str))
+  (data $__d2 ", ")
+  (global $__s2 (mut (ref null $str)) (ref.null $str))
+  (data $__d3 ")")
+  (global $__s3 (mut (ref null $str)) (ref.null $str))
+  (data $__d4 "integer overflow: + on i32 at src/collections.bp:81:53")
+  (global $__s4 (mut (ref null $str)) (ref.null $str))
+  (data $__d5 "\"")
+  (global $__s5 (mut (ref null $str)) (ref.null $str))
+  (data $__d6 "")
+  (global $__s6 (mut (ref null $str)) (ref.null $str))
+  (data $__d7 "integer overflow: - on i32 at src/collections.bp:540:15")
+  (global $__s7 (mut (ref null $str)) (ref.null $str))
+  (start $__init_strs)
+  (func $__init_strs
+    i32.const 0
+    i32.const 2
+    array.new_data $str $__d0
+    global.set $__s0
+    i32.const 0
+    i32.const 5
+    array.new_data $str $__d1
+    global.set $__s1
+    i32.const 0
+    i32.const 2
+    array.new_data $str $__d2
+    global.set $__s2
+    i32.const 0
+    i32.const 1
+    array.new_data $str $__d3
+    global.set $__s3
+    i32.const 0
+    i32.const 54
+    array.new_data $str $__d4
+    global.set $__s4
+    i32.const 0
+    i32.const 1
+    array.new_data $str $__d5
+    global.set $__s5
+    i32.const 0
+    i32.const 0
+    array.new_data $str $__d6
+    global.set $__s6
+    i32.const 0
+    i32.const 55
+    array.new_data $str $__d7
+    global.set $__s7
   )
-  ;; __std_f433 — from std_wasm.wasm (sha256 91fc3314249d)
-  ;; __std_f445 — from std_wasm.wasm (sha256 d13a98c08300)
-  ;; __std_f446 — from std_wasm.wasm (sha256 659eed3cf104)
-  ;; __std_f447 — from std_wasm.wasm (sha256 0314fe5f477f)
-  ;; __std_f448 — from std_wasm.wasm (sha256 7b6ca0e01ee7)
-  ;; std:array.joinStrings — from std_wasm.wasm (sha256 065d1c70efea)
-  ;; std:array.concat — from std_wasm.wasm (sha256 3a3e9bf0ab95)
-  ;; std:array.slice — from std_wasm.wasm (sha256 1e19bfacbc48)
+  (@custom "botopink.needs" "gc\0a")
 )
 ```
 
@@ -3202,6 +2978,7 @@ fn main() {
     (type $box_i32 (sub (struct (field $v i32))))
     (type $box_bool (sub final $box_i32 (struct (field $v i32))))
     (type $box_f64 (struct (field $v f64)))
+    (type $closure (sub (struct (field $idx i32) (field $mark i32))))
   )
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
@@ -3724,11 +3501,120 @@ fn main() {
     local.get $out
     return
   )
-  (func $Dict_fold (param $self (ref null $rec_Dict)) (param $initial anyref) (param $f i32) (result anyref)
-    unreachable ;; unreached here; no GC form yet
+  (func $Dict_fold (param $self (ref null $rec_Dict)) (param $initial anyref) (param $f (ref null $closure)) (result anyref)
+    (local $acc anyref)
+    (local $__iter0 (ref null $arr_any))
+    (local $__idx0 i32)
+    (local $__len0 i32)
+    (local $__acc0 i32)
+    (local $p (ref null $arr_any))
+    (local $__fnv1 (ref null $closure))
+    local.get $initial
+    local.set $acc
+    local.get $self
+    struct.get $rec_Dict $f0
+    local.set $__iter0
+    local.get $__iter0
+    array.len
+    local.set $__len0
+    i32.const 0
+    local.set $__idx0
+    i32.const 0
+    local.set $__acc0
+    (block $__break
+      (loop $__continue
+        local.get $__idx0
+        local.get $__len0
+        i32.ge_s
+        br_if $__break
+        local.get $__iter0
+        local.get $__idx0
+        array.get $arr_any
+    ref.cast (ref null $arr_any)
+        local.set $p
+    local.get $f
+    local.set $__fnv1
+    local.get $__fnv1
+    local.get $acc
+    local.get $p
+    i32.const 0
+    array.get $arr_any
+    local.get $p
+    i32.const 1
+    array.get $arr_any
+    local.get $__fnv1
+    struct.get $closure $idx ;; table index
+    call_indirect (param (ref null $closure) anyref anyref anyref) (result anyref)
+    local.set $acc
+        local.get $__idx0
+        i32.const 1
+        i32.add
+        local.set $__idx0
+        br $__continue
+      )
+    )
+    local.get $acc
+    return
   )
-  (func $Dict_mapValues (param $self (ref null $rec_Dict)) (param $f i32) (result (ref null $rec_Dict))
-    unreachable ;; unreached here; no GC form yet
+  (func $Dict_mapValues (param $self (ref null $rec_Dict)) (param $f (ref null $closure)) (result (ref null $rec_Dict))
+    (local $__mem0 i32)
+    (local $__mem1 i32)
+    (local $out (ref null $arr_any))
+    (local $__iter0 (ref null $arr_any))
+    (local $__idx0 i32)
+    (local $__len0 i32)
+    (local $__acc0 i32)
+    (local $p (ref null $arr_any))
+    (local $__fnv1 (ref null $closure))
+    array.new_fixed $arr_any 0
+    local.set $out
+    local.get $self
+    struct.get $rec_Dict $f0
+    local.set $__iter0
+    local.get $__iter0
+    array.len
+    local.set $__len0
+    i32.const 0
+    local.set $__idx0
+    i32.const 0
+    local.set $__acc0
+    (block $__break
+      (loop $__continue
+        local.get $__idx0
+        local.get $__len0
+        i32.ge_s
+        br_if $__break
+        local.get $__iter0
+        local.get $__idx0
+        array.get $arr_any
+    ref.cast (ref null $arr_any)
+        local.set $p
+    local.get $out
+    local.get $p
+    i32.const 0
+    array.get $arr_any
+    local.get $f
+    local.set $__fnv1
+    local.get $__fnv1
+    local.get $p
+    i32.const 1
+    array.get $arr_any
+    local.get $__fnv1
+    struct.get $closure $idx ;; table index
+    call_indirect (param (ref null $closure) anyref) (result anyref)
+    array.new_fixed $arr_any 2
+    call $__arr_push_any
+    local.set $out
+        local.get $__idx0
+        i32.const 1
+        i32.add
+        local.set $__idx0
+        br $__continue
+      )
+    )
+    local.get $out
+    struct.new $rec_Dict
+    return
   )
   (func $Dict_empty (result (ref null $rec_Dict))
     (local $__mem0 i32)
@@ -3794,7 +3680,7 @@ fn main() {
     (local $__gc0 anyref)
     (local $__gc1 (ref null $str))
     (local $__gc2 (ref null $str))
-    unreachable ;; unknown: no static type to box this value by (a type parameter's slot?)
+    local.get $x
     local.tee $__gc0
     ref.test (ref null $str)
     local.get $__gc0
