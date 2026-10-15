@@ -1104,8 +1104,19 @@ fn countLocalsInExpr(em: *Emitter, e: ast.Expr, count: *u32) void {
             .arrayLit => |al| {
                 // One slot for the cons accumulator `lowerArrayLit` parks on
                 // the stack while each element is evaluated.
+                // Elements are lowered one after another and each frees its
+                // slots once its value sits in `{x, 0}` (`lowerListOf` rewinds
+                // `next_y`), so the frame needs the widest element, not their
+                // sum: a literal table of a thousand records otherwise asks for
+                // more than the 1024 y-registers the loader allows.
                 if (al.elems.len > 0) count.* += 1;
-                for (al.elems) |el| countLocalsInExpr(em, el, count);
+                var widest: u32 = 0;
+                for (al.elems) |el| {
+                    var own: u32 = 0;
+                    countLocalsInExpr(em, el, &own);
+                    widest = @max(widest, own);
+                }
+                count.* += widest;
                 if (al.spreadExpr) |se| countLocalsInExpr(em, se.*, count);
             },
             .tupleLit => |tl| {
@@ -10608,7 +10619,11 @@ const Emitter = struct {
             while (i > 0) {
                 i -= 1;
                 try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(acc_y));
+                const elem_y = self.next_y;
                 try self.lowerExprIntoX0(al.elems[i]);
+                // The element's value is in `{x, 0}`; its stack slots are free
+                // for the next one (see `countLocalsInExpr`'s `arrayLit`).
+                self.next_y = elem_y;
                 // `{x, 0}` holds the element and `{x, scratch}` the reloaded
                 // tail — both must survive the cons allocation.
                 try beamEmitter.writeMoveOp(self.out, Op.yr(acc_y), Dst.xr(scratch));

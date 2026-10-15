@@ -2045,6 +2045,15 @@ codegen/
   its own elements and `list[3]` read past the end — at exit 0
   (`modules/array_spread_literal`). Both are the tail `lowerListOf` conses onto.
 
+- **A literal table keeps one element's stack slots, not all of them**
+  (`lowerListOf`, `countLocalsInExpr`'s `.arrayLit` arm): elements are lowered
+  one after another and `lowerListOf` rewinds `next_y` once an element's value
+  sits in `{x, 0}`, so the frame counts the accumulator plus the widest element.
+  Summing them asked a table of ~1100 records for 2202 y-registers and the OTP
+  validator refused the function (`An implementation limit was reached`,
+  `{test_heap,3,0}`; the loader's cap is 1024). Pinned by `tests/beam.zig`'s
+  `a literal table of 1100 nested records assembles`.
+
 - **A method on an untyped receiver that one type of the file declares**
   (`soleOwnTypeOfMethod`, `programMethodDeclarers`; `lowerCall`): inference
   records no lowering for a lambda parameter typed through a generic

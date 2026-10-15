@@ -541,3 +541,41 @@ const bytes_log = "6\né\ntrue\ncd\ntrue\n";
 test "beam: decision 346 ---- Bytes is a binary, its methods std's templates" {
     try h.assertBeamRunLog(std.testing.allocator, bytes_src, bytes_log, &.{});
 }
+
+// ── a module-level literal table past the loader's 1024 y-registers ──────────
+
+test "beam: a literal table of 1100 nested records assembles (144 B-89)" {
+    // Every element used to ask the frame for its own stack slots, so a table
+    // of a thousand records allocated more than 1024 y-registers and the OTP
+    // validator refused the function (`An implementation limit was reached`,
+    // `{test_heap,3,0}`). The elements are lowered one after another, so the
+    // frame holds the widest one, not their sum.
+    const a = std.testing.allocator;
+    var src: std.ArrayList(u8) = .empty;
+    defer src.deinit(a);
+    try src.appendSlice(a,
+        \\type Inner { V0(n: i32), V1(n: i32), V2(n: i32) }
+        \\type Tok { Pad(i: Inner) }
+        \\
+        \\fn table() -> Tok[] {
+        \\    val out: Tok[] = [
+        \\
+    );
+    var i: usize = 0;
+    while (i < 1100) : (i += 1) {
+        const row = try std.fmt.allocPrint(a, "        .Pad(.V{d}({d})),\n", .{ i % 3, i });
+        defer a.free(row);
+        try src.appendSlice(a, row);
+    }
+    try src.appendSlice(a,
+        \\    ];
+        \\    return out;
+        \\}
+        \\
+        \\pub fn main() {
+        \\    @print(table().length);
+        \\}
+        \\
+    );
+    try h.assertBeamRunLog(a, src.items, "1100\n", &.{});
+}
