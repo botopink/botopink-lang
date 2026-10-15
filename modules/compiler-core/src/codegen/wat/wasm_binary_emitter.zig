@@ -71,17 +71,28 @@ pub fn encodeModule(alloc: std.mem.Allocator, m: ast.Module) Error![]u8 {
     if (e.defs.len > 0) {
         try sec.append(ar, 0x4E);
         try uleb(ar, &sec, e.defs.len);
-        for (e.defs) |d| switch (d.kind) {
-            .@"struct" => |fields| {
-                try sec.append(ar, 0x5F);
-                try uleb(ar, &sec, fields.len);
-                for (fields) |f| try fieldType(ar, &sec, f);
-            },
-            .array => |f| {
-                try sec.append(ar, 0x5E);
-                try fieldType(ar, &sec, f);
-            },
-        };
+        for (e.defs) |d| {
+            // `sub` / `sub final` and the supertype, when the type has one
+            // or is open.
+            if (!d.final or d.super != null) {
+                try sec.append(ar, if (d.final) 0x4F else 0x50);
+                if (d.super) |k| {
+                    try uleb(ar, &sec, 1);
+                    try uleb(ar, &sec, k);
+                } else try uleb(ar, &sec, 0);
+            }
+            switch (d.kind) {
+                .@"struct" => |fields| {
+                    try sec.append(ar, 0x5F);
+                    try uleb(ar, &sec, fields.len);
+                    for (fields) |f| try fieldType(ar, &sec, f);
+                },
+                .array => |f| {
+                    try sec.append(ar, 0x5E);
+                    try fieldType(ar, &sec, f);
+                },
+            }
+        }
     }
     for (e.types.items) |t| {
         try sec.append(ar, 0x60);

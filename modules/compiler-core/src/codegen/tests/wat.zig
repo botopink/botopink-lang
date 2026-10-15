@@ -3356,3 +3356,130 @@ test "wat: gc ---- a linked module no function of the program names does not kee
         \\}
     );
 }
+
+// ── front 164 s2 P2b: unknown, generic declarations, the array operations, generators ──
+//
+// Each program is lowered as a WasmGC module (`(rec`), its RUN LOG the language's own answer.
+
+test "wat: gc ---- an unknown boxed by its value, its is tests, narrowing, equality, printing and a union array" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\fn describe(x: unknown) -> string {
+        \\    return case x {
+        \\        i32 { n ->
+        \\            "number " + n.toString()
+        \\        }
+        \\        string { s ->
+        \\            "text " + s
+        \\        }
+        \\        _ {
+        \\            "other"
+        \\        }
+        \\    };
+        \\}
+        \\
+        \\fn show(x: unknown) -> string {
+        \\    if (x is i32) return "i32";
+        \\    if (x is f64) return "f64";
+        \\    if (x is string) return "string";
+        \\    if (x is bool) return "bool";
+        \\    return "other";
+        \\}
+        \\
+        \\pub fn main() {
+        \\    @print(describe(3));
+        \\    @print(describe("a"));
+        \\    @print(describe(true));
+        \\    @print(show(1), show(2.5), show("s"), show(false));
+        \\    val two: unknown = 2.0;
+        \\    @print(two == 2, two == 3);
+        \\    val t: unknown = "hi";
+        \\    @print(t == "hi", t);
+        \\    val b: unknown = true;
+        \\    @print(b);
+        \\    @print(300 is i8, 100 is i8, 2 is f64);
+        \\    val xs = [1, "a", true];
+        \\    @print(xs);
+        \\}
+    );
+}
+
+test "wat: gc ---- a generic record and enum as one struct per declaration, boxed at construction and unboxed at the read" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\type Box<T>(value: T) {
+        \\    pub fn get(self: Self<T>) -> T {
+        \\        return self.value;
+        \\    }
+        \\}
+        \\
+        \\type Maybe<T> {
+        \\    Some(value: T),
+        \\    None,
+        \\}
+        \\
+        \\fn orZero(m: Maybe<i32>) -> i32 {
+        \\    return case m {
+        \\        Maybe.Some(value: v) -> v;
+        \\        Maybe.None -> 0;
+        \\    };
+        \\}
+        \\
+        \\fn ident<T>(x: T) -> T {
+        \\    return x;
+        \\}
+        \\
+        \\pub fn main() {
+        \\    val b = Box(value: 41);
+        \\    @print(b.value + 1);
+        \\    @print(b.get());
+        \\    @print(Box(value: "s"));
+        \\    @print(Box(value: true));
+        \\    @print(orZero(Maybe.Some(value: 7)), orZero(Maybe.None));
+        \\    @print(Maybe.Some(value: "x"));
+        \\    @print(ident(3) + 1);
+        \\}
+    );
+}
+
+test "wat: gc ---- unique, flatten, chunked, sliding, zip and the array walks with a closure written at the call" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\pub fn main() {
+        \\    val xs = [3, 1, 3, 2, 1];
+        \\    @print(xs.unique());
+        \\    @print(["a", "b", "a"].unique());
+        \\    @print([[1, 2], [3]].flatten());
+        \\    @print(xs.chunked(2));
+        \\    @print(xs.sliding(3));
+        \\    @print(xs.map({ x -> x * 2 }));
+        \\    @print(xs.filter({ x -> x > 1 }));
+        \\    @print(xs.fold(0, { acc, x -> acc + x }));
+        \\    @print(xs.any({ x -> x == 2 }), xs.all({ x -> x > 0 }), xs.count({ x -> x == 3 }));
+        \\    @print(["a", "bb"].map({ s -> s.length() }));
+        \\    @print(xs.zip(["a", "b"]));
+        \\}
+    );
+}
+
+test "wat: gc ---- an iterator fn collecting its yields, and a Result's map and flatMap" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\fn evens(n: i32) -> @Iterator<i32> {
+        \\    var i = 0;
+        \\    while (i < n) {
+        \\        if (i % 2 == 0) yield i;
+        \\        i = i + 1;
+        \\    }
+        \\}
+        \\
+        \\fn parse(s: string) -> @Result<i32, string> {
+        \\    if (s == "") throw "empty";
+        \\    return s.length();
+        \\}
+        \\
+        \\pub fn main() {
+        \\    for (evens(7)) { v -> @print(v); }
+        \\    @print(parse("abc").map({ n -> n * 10 }).unwrapOr(-1));
+        \\    @print(parse("").map({ n -> n * 10 }).unwrapOr(-1));
+        \\    @print(parse("ab").flatMap({ n -> parse("xyz") }).unwrapOr(-1));
+        \\    @print(parse("ab").flatMap({ n -> parse("") }).isError());
+        \\}
+    );
+}

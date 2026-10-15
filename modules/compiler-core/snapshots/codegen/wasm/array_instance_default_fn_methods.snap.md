@@ -12,50 +12,41 @@ fn main() {
 ----- WASM TEXT -- main.wat
 ```wasm
 (module
+  (rec
+    (type $str (array (mut i8)))
+    (type $arr_i32 (array (mut i32)))
+  )
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
-  (data (i32.const 256) "\01\00\00\00,")
-  (global $__heap_ptr (mut i32) (i32.const 352))
+  (global $__heap_ptr (mut i32) (i32.const 256))
   (func $main
     (local $__mem0 i32)
-    (local $xs i32)
-    (local $__iter0 i32)
+    (local $xs (ref null $arr_i32))
+    (local $__iter0 (ref null $arr_i32))
     (local $__idx0 i32)
     (local $__len0 i32)
     (local $__acc0 i32)
     (local $x i32)
     (local $a i32)
-    (local $__iter1 i32)
+    (local $__iter1 (ref null $arr_i32))
     (local $__idx1 i32)
     (local $__len1 i32)
     (local $__acc1 i32)
-    i32.const 16
-    call $__alloc
-    local.set $__mem0
-    local.get $__mem0
-    i32.const 3
-    i32.store
-    local.get $__mem0
     i32.const 1
-    i32.store offset=4
-    local.get $__mem0
     i32.const 2
-    i32.store offset=8
-    local.get $__mem0
     i32.const 3
-    i32.store offset=12
-    local.get $__mem0
+    array.new_fixed $arr_i32 3
     local.set $xs
     local.get $xs
     i32.const 0
-    call $__std_array_prepend
-    i32.const 256
-    call $__std_array_joinInts
+    call $__arr_prepend_i32
+    global.get $__s0
+    call $__arr_join_i32
     call $__print_str
     local.get $xs
     local.set $__iter0
     local.get $__iter0
-    i32.load ;; element count
+    array.len
     local.set $__len0
     i32.const 0
     local.set $__idx0
@@ -69,10 +60,7 @@ fn main() {
         br_if $__break
         local.get $__iter0
         local.get $__idx0
-        i32.const 4
-        i32.mul
-        i32.add
-        i32.load offset=4
+        array.get $arr_i32
         local.set $x
         local.get $__acc0
         local.set $a
@@ -90,13 +78,13 @@ fn main() {
     local.get $__acc0
     call $__print_i32
     local.get $xs
-    i32.load ;; element count
+    array.len
     i32.eqz
     call $__print_bool
     local.get $xs
     local.set $__iter1
     local.get $__iter1
-    i32.load ;; element count
+    array.len
     local.set $__len1
     i32.const 0
     local.set $__idx1
@@ -110,10 +98,7 @@ fn main() {
         br_if $__break
         local.get $__iter1
         local.get $__idx1
-        i32.const 4
-        i32.mul
-        i32.add
-        i32.load offset=4
+        array.get $arr_i32
         local.set $x
     local.get $x
     i32.const 0
@@ -137,6 +122,159 @@ fn main() {
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")
     (call $main)
+  )
+  (func $__arr_prepend_i32 (param $xs (ref null $arr_i32)) (param $x i32) (result (ref null $arr_i32))
+    (local $n i32)
+    (local $r (ref null $arr_i32))
+    local.get $xs
+    array.len
+    local.set $n
+    local.get $n
+    i32.const 1
+    i32.add
+    array.new_default $arr_i32
+    local.set $r
+    local.get $r
+    i32.const 0
+    local.get $x
+    array.set $arr_i32
+    local.get $r
+    i32.const 1
+    local.get $xs
+    i32.const 0
+    local.get $n
+    array.copy $arr_i32 $arr_i32
+    local.get $r
+  )
+  (func $__i32_to_str (param $v i32) (result (ref null $str))
+    (local $neg i32)
+    (local $x i64)
+    (local $t i64)
+    (local $len i32)
+    (local $i i32)
+    (local $r (ref null $str))
+    local.get $v
+    i32.const 0
+    i32.lt_s
+    local.set $neg
+    local.get $v
+    i64.extend_i32_s
+    local.set $x
+    local.get $neg
+    (if
+      (then
+    i64.const 0
+    local.get $x
+    i64.sub
+    local.set $x
+      )
+    )
+    i32.const 1
+    local.set $len
+    local.get $x
+    local.set $t
+    (block $brk
+    (loop $cont
+    local.get $t
+    i64.const 10
+    i64.lt_u
+    br_if $brk
+    local.get $t
+    i64.const 10
+    i64.div_u
+    local.set $t
+    local.get $len
+    i32.const 1
+    i32.add
+    local.set $len
+    br $cont
+    )
+    )
+    local.get $len
+    local.get $neg
+    i32.add
+    local.set $len
+    local.get $len
+    array.new_default $str
+    local.set $r
+    local.get $len
+    local.set $i
+    (block $brk
+    (loop $cont
+    local.get $i
+    i32.const 1
+    i32.sub
+    local.set $i
+    local.get $r
+    local.get $i
+    local.get $x
+    i64.const 10
+    i64.rem_u
+    i32.wrap_i64
+    i32.const 48
+    i32.add
+    array.set $str
+    local.get $x
+    i64.const 10
+    i64.div_u
+    local.set $x
+    local.get $x
+    i64.eqz
+    br_if $brk
+    br $cont
+    )
+    )
+    local.get $neg
+    (if
+      (then
+    local.get $r
+    i32.const 0
+    i32.const 45
+    array.set $str
+      )
+    )
+    local.get $r
+  )
+  (func $__arr_join_i32 (param $xs (ref null $arr_i32)) (param $sep (ref null $str)) (result (ref null $str))
+    (local $n i32)
+    (local $i i32)
+    (local $acc (ref null $str))
+    local.get $xs
+    array.len
+    local.set $n
+    i32.const 0
+    array.new_default $str
+    local.set $acc
+    (block $brk
+    (loop $cont
+    local.get $i
+    local.get $n
+    i32.ge_u
+    br_if $brk
+    local.get $i
+    (if
+      (then
+    local.get $acc
+    local.get $sep
+    call $__str_concat
+    local.set $acc
+      )
+    )
+    local.get $acc
+    local.get $xs
+    local.get $i
+    array.get $arr_i32
+    call $__i32_to_str
+    call $__str_concat
+    local.set $acc
+    local.get $i
+    i32.const 1
+    i32.add
+    local.set $i
+    br $cont
+    )
+    )
+    local.get $acc
   )
   ;; Scratch layout below the data section (which starts at 256):
   ;;   0..8  WASI iovec   8  newline byte
@@ -318,24 +456,43 @@ fn main() {
       )
     )
   )
-  (func $__print_str_raw (param $s i32)
+  (func $__print_str_raw (param $s (ref null $str))
+    (local $n i32) (local $p i32) (local $i i32) (local $top i32)
     local.get $s
-    i32.const 256
-    i32.lt_u
-    (if
-      (then
-        ;; a pointer below the data floor is not a string
-        unreachable
+    array.len
+    local.set $n
+    global.get $__heap_ptr
+    local.set $top
+    local.get $n
+    call $__alloc
+    local.set $p
+    (block $brk
+      (loop $cont
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $brk
+        local.get $p
+        local.get $i
+        i32.add
+        local.get $s
+        local.get $i
+        array.get_u $str
+        i32.store8
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $cont
       )
     )
-    local.get $s
-    i32.const 4
-    i32.add
-    local.get $s
-    i32.load
+    local.get $p
+    local.get $n
     call $__write_bytes
+    local.get $top
+    global.set $__heap_ptr
   )
-  (func $__print_str (param $s i32)
+  (func $__print_str (param $s (ref null $str))
     local.get $s
     call $__print_str_raw
     call $__print_nl
@@ -370,6 +527,33 @@ fn main() {
         call $__write_bytes
       )
     )
+  )
+  (func $__str_concat (param $a (ref null $str)) (param $b (ref null $str)) (result (ref null $str))
+    (local $r (ref null $str)) (local $alen i32) (local $blen i32)
+    local.get $a
+    array.len
+    local.set $alen
+    local.get $b
+    array.len
+    local.set $blen
+    local.get $alen
+    local.get $blen
+    i32.add
+    array.new_default $str
+    local.set $r
+    local.get $r
+    i32.const 0
+    local.get $a
+    i32.const 0
+    local.get $alen
+    array.copy $str $str
+    local.get $r
+    local.get $alen
+    local.get $b
+    i32.const 0
+    local.get $blen
+    array.copy $str $str
+    local.get $r
   )
   (func $__alloc (param $n i32) (result i32)
     (local $p i32) (local $e i32)
@@ -563,27 +747,16 @@ fn main() {
     )
     local.get $r
   )
-  ;; std-wasm (decision 440): its functions, transpiled from std_wasm.wasm
-  (global $__std_sp (mut i32) (i32.const 352))
-  (func $__std_sp_check (param $sp i32) (result i32)
-    local.get $sp
-    i32.const 264
-    i32.lt_s
-    (if
-      (then unreachable)
-    )
-    local.get $sp
+  (data $__d0 ",")
+  (global $__s0 (mut (ref null $str)) (ref.null $str))
+  (start $__init_strs)
+  (func $__init_strs
+    i32.const 0
+    i32.const 1
+    array.new_data $str $__d0
+    global.set $__s0
   )
-  ;; __std_f4 — from std_wasm.wasm (sha256 b4b6f06748d6)
-  ;; __std_f58 — from std_wasm.wasm (sha256 3fe867e565e7)
-  ;; __std_f59 — from std_wasm.wasm (sha256 432c7dfb021a)
-  ;; __std_f429 — from std_wasm.wasm (sha256 91fc3314249d)
-  ;; __std_f441 — from std_wasm.wasm (sha256 d13a98c08300)
-  ;; __std_f444 — from std_wasm.wasm (sha256 83a8841c1a5e)
-  ;; std:array.joinStrings — from std_wasm.wasm (sha256 337b368ca812)
-  ;; std:array.joinInts — from std_wasm.wasm (sha256 a12bc7260ac2)
-  ;; __std_f462 — from std_wasm.wasm (sha256 fbcbd5636368)
-  ;; std:array.prepend — from std_wasm.wasm (sha256 121c52b11d4e)
+  (@custom "botopink.needs" "gc\0a")
 )
 ```
 

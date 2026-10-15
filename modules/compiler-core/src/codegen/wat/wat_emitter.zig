@@ -511,6 +511,12 @@ fn recGroup(w: *Writer, types: []const ast.TypeDef) Error!void {
     try w.writeAll("  (rec\n");
     for (types) |t| {
         try w.print("    (type ${s} ", .{t.name});
+        const sub = !t.final or t.super != null;
+        if (sub) {
+            try w.writeAll("(sub ");
+            if (t.final) try w.writeAll("final ");
+            if (t.super) |k| try w.print("${s} ", .{types[k].name});
+        }
         switch (t.kind) {
             .@"struct" => |fields| {
                 try w.writeAll("(struct");
@@ -529,6 +535,7 @@ fn recGroup(w: *Writer, types: []const ast.TypeDef) Error!void {
                 try w.writeAll(")");
             },
         }
+        if (sub) try w.writeAll(")");
         try w.writeAll(")\n");
     }
     try w.writeAll("  )\n");

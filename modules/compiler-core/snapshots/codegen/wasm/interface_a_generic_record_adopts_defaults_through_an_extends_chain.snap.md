@@ -32,25 +32,30 @@ fn main() {
 ----- WASM TEXT -- main.wat
 ```wasm
 (module
+  (rec
+    (type $str (array (mut i8)))
+    (type $rec_Bag (struct (field $f0 (mut (ref null $arr_any)))))
+    (type $arr_any (array (mut anyref)))
+    (type $arr_i32 (array (mut i32)))
+    (type $box_i32 (struct (field $v i32)))
+  )
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
-  (data (i32.const 256) "\0d\00\00\00R\03Bag\01\05itemsG")
-  (data (i32.const 276) "\02\00\00\00[i")
-  (global $__heap_ptr (mut i32) (i32.const 284))
-  (func $Bag_size (param $self i32) (result i32)
+  (global $__heap_ptr (mut i32) (i32.const 256))
+  (func $Bag_size (param $self (ref null $rec_Bag)) (result i32)
     local.get $self
-    i32.load ;; .items
-    i32.load ;; .length
+    struct.get $rec_Bag $f0
+    array.len
     return
   )
-  (func $Bag_twiceSize (param $self i32) (result i32)
+  (func $Bag_twiceSize (param $self (ref null $rec_Bag)) (result i32)
     local.get $self
     call $Bag_size
     i32.const 2
     call $__i32_mul_chk
     return
   )
-  (func $Bag_isEmpty (param $self i32) (result i32)
+  (func $Bag_isEmpty (param $self (ref null $rec_Bag)) (result i32)
     local.get $self
     call $Bag_size
     i32.const 0
@@ -64,87 +69,73 @@ fn main() {
     (local $__mem3 i32)
     (local $__mem4 i32)
     (local $__mem5 i32)
-    i32.const 12
-    call $__alloc
-    local.set $__mem0
-    local.get $__mem0
-    i32.const 260
-    i32.store
-    local.get $__mem0
-    i32.const 280
-    i32.store offset=8
-    local.get $__mem0
-    i32.const 4
-    call $__alloc
-    local.set $__mem1
-    local.get $__mem1
     i32.const 0
-    i32.store
-    local.get $__mem1
-    i32.store offset=4
-    local.get $__mem0
-    i32.const 4
-    i32.add
-    call $Bag_isEmpty
+    array.new_default $arr_any
+    struct.new $rec_Bag
+    call $Bag_isEmpty__T_i32
     call $__print_bool
-    i32.const 12
-    call $__alloc
-    local.set $__mem2
-    local.get $__mem2
-    i32.const 260
-    i32.store
-    local.get $__mem2
-    i32.const 280
-    i32.store offset=8
-    local.get $__mem2
-    i32.const 8
-    call $__alloc
-    local.set $__mem3
-    local.get $__mem3
     i32.const 1
-    i32.store
-    local.get $__mem3
-    i32.const 1
-    i32.store offset=4
-    local.get $__mem3
-    i32.store offset=4
-    local.get $__mem2
-    i32.const 4
-    i32.add
-    call $Bag_isEmpty
+    array.new_fixed $arr_i32 1
+    call $__arr_box_i32
+    struct.new $rec_Bag
+    call $Bag_isEmpty__T_i32
     call $__print_bool
-    i32.const 12
-    call $__alloc
-    local.set $__mem4
-    local.get $__mem4
-    i32.const 260
-    i32.store
-    local.get $__mem4
-    i32.const 280
-    i32.store offset=8
-    local.get $__mem4
-    i32.const 12
-    call $__alloc
-    local.set $__mem5
-    local.get $__mem5
-    i32.const 2
-    i32.store
-    local.get $__mem5
     i32.const 1
-    i32.store offset=4
-    local.get $__mem5
     i32.const 2
-    i32.store offset=8
-    local.get $__mem5
-    i32.store offset=4
-    local.get $__mem4
-    i32.const 4
-    i32.add
-    call $Bag_twiceSize
+    array.new_fixed $arr_i32 2
+    call $__arr_box_i32
+    struct.new $rec_Bag
+    call $Bag_twiceSize__T_i32
     call $__print_i32
+  )
+  (func $Bag_isEmpty__T_i32 (param $self (ref null $rec_Bag)) (result i32)
+    local.get $self
+    call $Bag_size
+    i32.const 0
+    i32.eq
+    return
+  )
+  (func $Bag_twiceSize__T_i32 (param $self (ref null $rec_Bag)) (result i32)
+    local.get $self
+    call $Bag_size
+    i32.const 2
+    call $__i32_mul_chk
+    return
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")
     (call $main)
+  )
+  (func $__arr_box_i32 (param $xs (ref null $arr_i32)) (result (ref null $arr_any))
+    (local $n i32)
+    (local $i i32)
+    (local $r (ref null $arr_any))
+    local.get $xs
+    array.len
+    local.set $n
+    local.get $n
+    array.new_default $arr_any
+    local.set $r
+    (block $brk
+    (loop $cont
+    local.get $i
+    local.get $n
+    i32.ge_u
+    br_if $brk
+    local.get $r
+    local.get $i
+    local.get $xs
+    local.get $i
+    array.get $arr_i32
+    struct.new $box_i32
+    array.set $arr_any
+    local.get $i
+    i32.const 1
+    i32.add
+    local.set $i
+    br $cont
+    )
+    )
+    local.get $r
   )
   ;; Scratch layout below the data section (which starts at 256):
   ;;   0..8  WASI iovec   8  newline byte
@@ -357,54 +348,6 @@ fn main() {
       )
     )
   )
-  (func $__alloc (param $n i32) (result i32)
-    (local $p i32) (local $e i32)
-    global.get $__heap_ptr
-    local.set $p
-    local.get $p
-    local.get $n
-    i32.add
-    i32.const 3
-    i32.add
-    i32.const -4
-    i32.and
-    local.set $e
-    local.get $e
-    local.get $p
-    i32.lt_u
-    (if
-      (then
-        unreachable
-      )
-    )
-    local.get $e
-    memory.size
-    i32.const 16
-    i32.shl
-    i32.gt_u
-    (if
-      (then
-        local.get $e
-        i32.const 65535
-        i32.add
-        i32.const 16
-        i32.shr_u
-        memory.size
-        i32.sub
-        memory.grow
-        i32.const -1
-        i32.eq
-        (if
-          (then
-            unreachable
-          )
-        )
-      )
-    )
-    local.get $e
-    global.set $__heap_ptr
-    local.get $p
-  )
   (func $__i32_add_chk (param $a i32) (param $b i32) (result i32)
     (local $r i64)
     local.get $a
@@ -549,6 +492,7 @@ fn main() {
     )
     local.get $r
   )
+  (@custom "botopink.needs" "gc\0a")
 )
 ```
 

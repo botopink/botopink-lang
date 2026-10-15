@@ -154,6 +154,12 @@ pub const Field = struct {
 pub const TypeDef = struct {
     name: []const u8,
     kind: Kind,
+    /// The type this one is a subtype of (`(sub $super …)`): an earlier
+    /// type of the group.
+    super: ?u16 = null,
+    /// Whether no type may name this one its supertype; a type declared
+    /// without `sub` is final.
+    final: bool = true,
 
     pub const Kind = union(enum) {
         @"struct": []const Field,
@@ -613,10 +619,14 @@ pub fn declaresCall(m: Module, name: []const u8) bool {
 /// the module declares. `wat_emitter.renderModule` runs this before writing.
 pub fn validateModule(m: Module) Invalid!void {
     const defs = typesOf(m);
-    for (defs) |d| switch (d.kind) {
-        .@"struct" => |fields| for (fields) |f| try checkStorage(defs, f.ty),
-        .array => |f| try checkStorage(defs, f.ty),
-    };
+    for (defs, 0..) |d, i| {
+        switch (d.kind) {
+            .@"struct" => |fields| for (fields) |f| try checkStorage(defs, f.ty),
+            .array => |f| try checkStorage(defs, f.ty),
+        }
+        // A supertype is an earlier type of the group, and not final.
+        if (d.super) |k| if (k >= i or defs[k].final) return error.UndefinedType;
+    }
     for (m.items) |it| switch (it) {
         .func => |f| {
             try validateFunc(f);

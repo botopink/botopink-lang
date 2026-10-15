@@ -32,14 +32,18 @@ fn main() {
 ----- WASM TEXT -- main.wat
 ```wasm
 (module
+  (rec
+    (type $str (array (mut i8)))
+    (type $arr_i32 (array (mut i32)))
+    (type $rec_Box (struct (field $f0 (mut (ref null $arr_i32)))))
+    (type $box_i32 (struct (field $v i32)))
+  )
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
-  (data (i32.const 256) "\03\00\00\00box")
-  (data (i32.const 264) "\0d\00\00\00R\03Box\01\05itemsi")
-  (global $__heap_ptr (mut i32) (i32.const 284))
-  (func $Box_total (param $self i32) (result i32)
+  (global $__heap_ptr (mut i32) (i32.const 256))
+  (func $Box_total (param $self (ref null $rec_Box)) (result i32)
     (local $sum i32)
-    (local $__iter0 i32)
+    (local $__iter0 (ref null $arr_i32))
     (local $__idx0 i32)
     (local $__len0 i32)
     (local $__acc0 i32)
@@ -47,10 +51,10 @@ fn main() {
     i32.const 0
     local.set $sum
     local.get $self
-    i32.load ;; .items
+    struct.get $rec_Box $f0
     local.set $__iter0
     local.get $__iter0
-    i32.load ;; element count
+    array.len
     local.set $__len0
     i32.const 0
     local.set $__idx0
@@ -64,10 +68,7 @@ fn main() {
         br_if $__break
         local.get $__iter0
         local.get $__idx0
-        i32.const 4
-        i32.mul
-        i32.add
-        i32.load offset=4
+        array.get $arr_i32
         local.set $n
     local.get $sum
     local.get $n
@@ -83,31 +84,31 @@ fn main() {
     local.get $sum
     return
   )
-  (func $Box_isBig (param $self i32) (result i32)
+  (func $Box_isBig (param $self (ref null $rec_Box)) (result i32)
     local.get $self
-    i32.load ;; .items
-    i32.load ;; .length
+    struct.get $rec_Box $f0
+    array.len
     i32.const 1
     i32.gt_s
     return
   )
-  (func $Box_doubled (param $self i32) (result i32)
-    (local $__iter0 i32)
+  (func $Box_doubled (param $self (ref null $rec_Box)) (result (ref null $arr_i32))
+    (local $__iter0 (ref null $arr_i32))
     (local $__idx0 i32)
     (local $__len0 i32)
     (local $__acc0 i32)
-    (local $__out0 i32)
     (local $n i32)
+    (local $__out0 (ref null $arr_i32))
     local.get $self
-    i32.load ;; .items
+    struct.get $rec_Box $f0
     local.set $__iter0
     local.get $__iter0
-    i32.load ;; element count
+    array.len
     local.set $__len0
     i32.const 0
     local.set $__idx0
     local.get $__len0
-    call $__arr_new
+    array.new_default $arr_i32
     local.set $__out0
     i32.const 0
     local.set $__acc0
@@ -119,20 +120,14 @@ fn main() {
         br_if $__break
         local.get $__iter0
         local.get $__idx0
-        i32.const 4
-        i32.mul
-        i32.add
-        i32.load offset=4
+        array.get $arr_i32
         local.set $n
     local.get $__out0
     local.get $__idx0
-    i32.const 4
-    i32.mul
-    i32.add
     local.get $n
     i32.const 2
     call $__i32_mul_chk
-    i32.store offset=4
+    array.set $arr_i32
         local.get $__idx0
         i32.const 1
         i32.add
@@ -143,8 +138,8 @@ fn main() {
     local.get $__out0
     return
   )
-  (func $Box_label (param $self i32) (result i32)
-    i32.const 256
+  (func $Box_label (param $self (ref null $rec_Box)) (result (ref null $str))
+    global.get $__s0
     return
   )
   (func $main
@@ -153,36 +148,29 @@ fn main() {
     (local $__mem2 i32)
     (local $__mem3 i32)
     (local $seen i32)
-    (local $b i32)
-    (local $h i32)
-    (local $acc i32)
-    (local $__iter0 i32)
+    (local $b (ref null $rec_Box))
+    (local $h anyref)
+    (local $acc anyref)
+    (local $__iter0 (ref null $arr_i32))
     (local $__idx0 i32)
     (local $__len0 i32)
     (local $__acc0 i32)
     (local $n i32)
-    (local $__iter1 i32)
+    (local $__gc0 anyref)
+    (local $__gc1 anyref)
+    (local $__iter1 (ref null $arr_i32))
     (local $__idx1 i32)
     (local $__len1 i32)
     (local $__acc1 i32)
+    (local $__gc2 anyref)
     i32.const 0
     local.set $seen
-    i32.const 12
-    call $__alloc
-    local.set $__mem0
-    local.get $__mem0
-    i32.const 2
-    i32.store
-    local.get $__mem0
     i32.const 1
-    i32.store offset=4
-    local.get $__mem0
     i32.const 2
-    i32.store offset=8
-    local.get $__mem0
+    array.new_fixed $arr_i32 2
     local.set $__iter0
     local.get $__iter0
-    i32.load ;; element count
+    array.len
     local.set $__len0
     i32.const 0
     local.set $__idx0
@@ -196,10 +184,7 @@ fn main() {
         br_if $__break
         local.get $__iter0
         local.get $__idx0
-        i32.const 4
-        i32.mul
-        i32.add
-        i32.load offset=4
+        array.get $arr_i32
         local.set $n
     local.get $n
     local.set $seen
@@ -212,61 +197,59 @@ fn main() {
     )
     local.get $seen
     call $__print_i32
-    i32.const 8
-    call $__alloc
-    local.set $__mem1
-    local.get $__mem1
-    i32.const 268
-    i32.store
-    local.get $__mem1
-    i32.const 12
-    call $__alloc
-    local.set $__mem2
-    local.get $__mem2
-    i32.const 2
-    i32.store
-    local.get $__mem2
     i32.const 3
-    i32.store offset=4
-    local.get $__mem2
     i32.const 4
-    i32.store offset=8
-    local.get $__mem2
-    i32.store offset=4
-    local.get $__mem1
-    i32.const 4
-    i32.add
+    array.new_fixed $arr_i32 2
+    struct.new $rec_Box
     local.set $b
     local.get $b
     call $Box_total
     call $__print_i32
-    i32.const 0
+    ref.null any
     local.set $h
     local.get $h
-    call $__print_opt_i32
+    local.tee $__gc0
+    ref.is_null
+    (if
+      (then
+    global.get $__s1
+    call $__print_str_raw
+      )
+      (else
+    local.get $__gc0
+    ref.cast (ref null $box_i32)
+    struct.get $box_i32 $v
+    call $__print_i32_raw
+      )
+    )
+    call $__print_nl
     i32.const 5
-    call $__box_i32
+    struct.new $box_i32
     local.set $h
     local.get $h
-    call $__print_opt_i32
-    i32.const 0
+    local.tee $__gc1
+    ref.is_null
+    (if
+      (then
+    global.get $__s1
+    call $__print_str_raw
+      )
+      (else
+    local.get $__gc1
+    ref.cast (ref null $box_i32)
+    struct.get $box_i32 $v
+    call $__print_i32_raw
+      )
+    )
+    call $__print_nl
+    ref.null any
     local.set $acc
-    i32.const 12
-    call $__alloc
-    local.set $__mem3
-    local.get $__mem3
-    i32.const 2
-    i32.store
-    local.get $__mem3
     i32.const 7
-    i32.store offset=4
-    local.get $__mem3
     i32.const 8
-    i32.store offset=8
-    local.get $__mem3
+    array.new_fixed $arr_i32 2
     local.set $__iter1
     local.get $__iter1
-    i32.load ;; element count
+    array.len
     local.set $__len1
     i32.const 0
     local.set $__idx1
@@ -280,13 +263,10 @@ fn main() {
         br_if $__break
         local.get $__iter1
         local.get $__idx1
-        i32.const 4
-        i32.mul
-        i32.add
-        i32.load offset=4
+        array.get $arr_i32
         local.set $n
     local.get $n
-    call $__box_i32
+    struct.new $box_i32
     local.set $acc
         local.get $__idx1
         i32.const 1
@@ -296,19 +276,73 @@ fn main() {
       )
     )
     local.get $acc
-    call $__print_opt_i32
+    local.tee $__gc2
+    ref.is_null
+    (if
+      (then
+    global.get $__s1
+    call $__print_str_raw
+      )
+      (else
+    local.get $__gc2
+    ref.cast (ref null $box_i32)
+    struct.get $box_i32 $v
+    call $__print_i32_raw
+      )
+    )
+    call $__print_nl
     local.get $b
     call $Box_isBig
     call $__print_bool
     local.get $b
     call $Box_doubled
-    call $__print_arr_i32
+    call $__pr0
+    call $__print_nl
     local.get $b
     call $Box_label
     call $__print_str
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")
     (call $main)
+  )
+  (func $__pr1 (param $v i32)
+    local.get $v
+    call $__print_i32_raw
+  )
+  (func $__pr0 (param $v (ref null $arr_i32))
+    (local $n i32)
+    (local $i i32)
+    global.get $__s2
+    call $__print_str_raw
+    local.get $v
+    array.len
+    local.set $n
+    (block $brk
+    (loop $cont
+    local.get $i
+    local.get $n
+    i32.ge_u
+    br_if $brk
+    local.get $i
+    (if
+      (then
+    global.get $__s3
+    call $__print_str_raw
+      )
+    )
+    local.get $v
+    local.get $i
+    array.get $arr_i32
+    call $__pr1
+    local.get $i
+    i32.const 1
+    i32.add
+    local.set $i
+    br $cont
+    )
+    )
+    global.get $__s4
+    call $__print_str_raw
   )
   ;; Scratch layout below the data section (which starts at 256):
   ;;   0..8  WASI iovec   8  newline byte
@@ -490,24 +524,43 @@ fn main() {
       )
     )
   )
-  (func $__print_str_raw (param $s i32)
+  (func $__print_str_raw (param $s (ref null $str))
+    (local $n i32) (local $p i32) (local $i i32) (local $top i32)
     local.get $s
-    i32.const 256
-    i32.lt_u
-    (if
-      (then
-        ;; a pointer below the data floor is not a string
-        unreachable
+    array.len
+    local.set $n
+    global.get $__heap_ptr
+    local.set $top
+    local.get $n
+    call $__alloc
+    local.set $p
+    (block $brk
+      (loop $cont
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $brk
+        local.get $p
+        local.get $i
+        i32.add
+        local.get $s
+        local.get $i
+        array.get_u $str
+        i32.store8
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $cont
       )
     )
-    local.get $s
-    i32.const 4
-    i32.add
-    local.get $s
-    i32.load
+    local.get $p
+    local.get $n
     call $__write_bytes
+    local.get $top
+    global.set $__heap_ptr
   )
-  (func $__print_str (param $s i32)
+  (func $__print_str (param $s (ref null $str))
     local.get $s
     call $__print_str_raw
     call $__print_nl
@@ -590,153 +643,6 @@ fn main() {
     local.get $e
     global.set $__heap_ptr
     local.get $p
-  )
-  (func $__arr_new (param $n i32) (result i32)
-    (local $p i32)
-    local.get $n
-    i32.const 1
-    i32.add
-    i32.const 4
-    i32.mul
-    call $__alloc
-    local.set $p
-    local.get $p
-    local.get $n
-    i32.store
-    local.get $p
-  )
-  (func $__print_arr_i32_raw (param $xs i32)
-    (local $n i32) (local $i i32)
-    i32.const 8
-    i32.const 91
-    i32.store8
-    i32.const 8
-    i32.const 1
-    call $__write_bytes
-    local.get $xs
-    i32.load
-    local.set $n
-    (block $brk
-      (loop $cont
-        local.get $i
-        local.get $n
-        i32.ge_u
-        br_if $brk
-        local.get $i
-        (if
-          (then
-            i32.const 8
-            i32.const 44
-            i32.store8
-            i32.const 8
-            i32.const 32
-            i32.store8 offset=1
-            i32.const 8
-            i32.const 2
-            call $__write_bytes
-          )
-        )
-        local.get $xs
-        i32.const 4
-        i32.add
-        local.get $i
-        i32.const 4
-        i32.mul
-        i32.add
-        i32.load
-        call $__print_i32_raw
-        local.get $i
-        i32.const 1
-        i32.add
-        local.set $i
-        br $cont
-      )
-    )
-    i32.const 8
-    i32.const 93
-    i32.store8
-    i32.const 8
-    i32.const 1
-    call $__write_bytes
-  )
-  (func $__print_arr_i32 (param $xs i32)
-    local.get $xs
-    call $__print_arr_i32_raw
-    call $__print_nl
-  )
-  (func $__box_i32 (param $v i32) (result i32)
-    (local $p i32)
-    i32.const 4
-    call $__alloc
-    local.set $p
-    local.get $p
-    local.get $v
-    i32.store
-    local.get $p
-  )
-  (func $__print_null
-    i32.const 176
-    i32.const 1819047278
-    i32.store
-    i32.const 176
-    i32.const 4
-    call $__write_bytes
-  )
-  (func $__print_opt_i32_raw (param $p i32)
-    local.get $p
-    i32.eqz
-    (if
-      (then
-        call $__print_null
-      )
-      (else
-        local.get $p
-        i32.load
-        call $__print_i32_raw
-      )
-    )
-  )
-  (func $__print_opt_i32 (param $p i32)
-    local.get $p
-    call $__print_opt_i32_raw
-    call $__print_nl
-  )
-  (func $__print_opt_bool_raw (param $p i32)
-    local.get $p
-    i32.eqz
-    (if
-      (then
-        call $__print_null
-      )
-      (else
-        local.get $p
-        i32.load
-        call $__print_bool_raw
-      )
-    )
-  )
-  (func $__print_opt_bool (param $p i32)
-    local.get $p
-    call $__print_opt_bool_raw
-    call $__print_nl
-  )
-  (func $__print_opt_str_raw (param $s i32)
-    local.get $s
-    i32.eqz
-    (if
-      (then
-        call $__print_null
-      )
-      (else
-        local.get $s
-        call $__print_str_raw
-      )
-    )
-  )
-  (func $__print_opt_str (param $s i32)
-    local.get $s
-    call $__print_opt_str_raw
-    call $__print_nl
   )
   (func $__i32_add_chk (param $a i32) (param $b i32) (result i32)
     (local $r i64)
@@ -882,6 +788,40 @@ fn main() {
     )
     local.get $r
   )
+  (data $__d0 "box")
+  (global $__s0 (mut (ref null $str)) (ref.null $str))
+  (data $__d1 "null")
+  (global $__s1 (mut (ref null $str)) (ref.null $str))
+  (data $__d2 "[")
+  (global $__s2 (mut (ref null $str)) (ref.null $str))
+  (data $__d3 ", ")
+  (global $__s3 (mut (ref null $str)) (ref.null $str))
+  (data $__d4 "]")
+  (global $__s4 (mut (ref null $str)) (ref.null $str))
+  (start $__init_strs)
+  (func $__init_strs
+    i32.const 0
+    i32.const 3
+    array.new_data $str $__d0
+    global.set $__s0
+    i32.const 0
+    i32.const 4
+    array.new_data $str $__d1
+    global.set $__s1
+    i32.const 0
+    i32.const 1
+    array.new_data $str $__d2
+    global.set $__s2
+    i32.const 0
+    i32.const 2
+    array.new_data $str $__d3
+    global.set $__s3
+    i32.const 0
+    i32.const 1
+    array.new_data $str $__d4
+    global.set $__s4
+  )
+  (@custom "botopink.needs" "gc\0a")
 )
 ```
 

@@ -1686,7 +1686,11 @@ fn emitWatPass(
         em.instance_lowerings = if (from < linked.len) linked[from].instance_lowerings else own_instance_lowerings;
         em.global_renames = if (val_maps.len > 0) &val_maps[from] else null;
         em.foreign_origin = if (from < linked.len) linked[from].via else null;
+        const before = em.items.items.len;
         try em.emitDecl(decl);
+        // Front 164 s2 P2b — the functions a linked module's declarations
+        // brought (`finishGc` may stub one nothing reaches).
+        if (em.mode == .gc and from < linked.len) for (em.items.items[before..]) |it| if (it == .func) try em.gc_linked_fns.put(em.alloc, it.func.name, {});
     }
     em.foreign_origin = null;
     em.global_renames = null;
@@ -1775,6 +1779,8 @@ fn emitWatPass(
     // Front 164 s2 P2 — the printers a GC module's values asked for.
     if (em.mode == .gc) {
         if (em.gc_tagged_used) try em.gcTaggedPrinter();
+        // After the tagged printer, whose declarations' printers may ask for it.
+        if (em.gc_ebox_used) try em.gcEboxPrinter();
         try items.appendSlice(ar, em.gc_pr_funcs.items);
     }
     const program_hi = items.items.len;
@@ -2156,6 +2162,12 @@ const Emitter = struct {
     gc_pr_funcs: std.ArrayListUnmanaged(Item) = .empty,
     /// Whether `__print_tagged_raw` (the dispatch over the declared types) is called.
     gc_tagged_used: bool = false,
+    /// Front 164 s2 P2b — `$__print_ebox` (the printer of an all-unit enum's
+    /// box by its names) is asked for.
+    gc_ebox_used: bool = false,
+    /// Front 164 s2 P2b — the functions a linked module's declarations
+    /// brought into a GC module.
+    gc_linked_fns: std.StringHashMapUnmanaged(void) = .empty,
     /// The helper functions a GC module's arrays asked for (`gcArrAt`, …), by symbol.
     gc_helpers: std.StringHashMapUnmanaged(void) = .empty,
     /// The functions that move values between GC memory and std-wasm's linear
@@ -2297,6 +2309,9 @@ const Emitter = struct {
     /// a `break <v>` inside it pushes `v` and branches here, out of every
     /// loop between. Null outside one.
     gen_end: ?[]const u8 = null,
+    /// Front 164 s2 P2b — in a GC module, the array the current generator
+    /// scope collects into (`yield_target`) is of this repr.
+    gen_repr: Repr = .i32,
     /// How many loops enclose the code being lowered: `break`/`continue`
     /// branch only inside one.
     loop_depth: u32 = 0,
@@ -2880,6 +2895,7 @@ const Emitter = struct {
         self.gc_types.deinit(self.alloc);
         self.gc_printers.deinit(self.alloc);
         self.gc_pr_funcs.deinit(self.alloc);
+        self.gc_linked_fns.deinit(self.alloc);
         self.gc_helpers.deinit(self.alloc);
         self.gc_marshal_funcs.deinit(self.alloc);
         self.enums.deinit();
@@ -2998,6 +3014,11 @@ const Emitter = struct {
             return;
         }
         const has_result = fnHasResult(f);
+        // A type parameter is an `unknown` in a GC module (`gcReprOfType`):
+        // the signature is the one the body is lowered under.
+        const saved_tparams = self.fn_tparams;
+        if (self.mode == .gc) self.fn_tparams = f.genericParams;
+        defer self.fn_tparams = saved_tparams;
         var params: std.ArrayListUnmanaged(Repr) = .empty;
         var ptrefs: std.ArrayListUnmanaged(ast.TypeRef) = .empty;
         for (f.params) |p| {
@@ -3245,9 +3266,19 @@ const Emitter = struct {
         const ra = self.reg_arena.allocator();
         self.sig_owner = owner;
         defer self.sig_owner = null;
+        // A GC module types a type parameter `unknown` (`gcReprOfType`): the
+        // signature is the one the body is lowered under.
+        const saved_owner = self.owner_tparams;
+        const saved_fn = self.fn_tparams;
+        defer {
+            self.owner_tparams = saved_owner;
+            self.fn_tparams = saved_fn;
+        }
+        if (self.mode == .gc) self.owner_tparams = owner_tparams;
         for (methods) |m| {
             const body = m.body orelse continue;
             if (m.is_declare or m.isExternal() or m.isHost()) continue;
+            if (self.mode == .gc) self.fn_tparams = m.genericParams;
             const sym = try std.fmt.allocPrint(ra, "{s}_{s}", .{ owner, m.name });
             var has_self_param = false;
             for (m.params) |p| {
@@ -3945,6 +3976,7 @@ const Emitter = struct {
 
     /// With an `unknown` value on the stack, leave whether it holds `pt`.
     fn emitPrimTest(self: *Emitter, pt: PrimTest) anyerror!void {
+        if (self.mode == .gc) return self.gcPrimTest(pt);
         const b = self.builder();
         switch (pt) {
             .int => |r| {
@@ -4039,6 +4071,7 @@ const Emitter = struct {
         // `bigint` kind yet (the checker keeps a `bigint` out of `unknown`).
         if (self.isBigintExpr(value) or self.isOptBigintExpr(value) or self.ifBigintArm(value))
             return self.refuse(value.getLoc(), "the wasm backend has no `bigint` in a union yet", .{});
+        if (self.mode == .gc) return self.gcAsUnknown(value, hint);
         if (value == .call and value.call.kind == .call and self.callKind(value.call.kind.call) == .enum_ctor) {
             self.ctor_box = .all;
             defer self.ctor_box = .none;
@@ -4656,8 +4689,13 @@ const Emitter = struct {
         box: Box,
         /// A `@Result`: its tag (0 = Ok, 1 = Error) and its payload in an `anyref`.
         result,
+        /// The box of an all-unit enum's ordinal in a type parameter's slot,
+        /// one per enum, a subtype of `$box_i32`: it prints by the enum's names.
+        ebox: []const u8,
 
-        const Box = enum { i32, i64, f64 };
+        /// A `bool` has a box of its own, so an `unknown` holding one prints
+        /// and compares as a `bool` (front 164 s2 P2b).
+        const Box = enum { i32, i64, f64, bool };
 
         fn eql(a: GcTy, b: GcTy) bool {
             if (std.meta.activeTag(a) != std.meta.activeTag(b)) return false;
@@ -4667,6 +4705,7 @@ const Emitter = struct {
                 .arr => |e| e == b.arr,
                 .box => |k| k == b.box,
                 .result => true,
+                .ebox => |n| std.mem.eql(u8, n, b.ebox),
             };
         }
     };
@@ -4676,6 +4715,9 @@ const Emitter = struct {
     fn gcTyIndex(self: *Emitter, t: GcTy) u16 {
         self.gc_str_used = true;
         for (self.gc_types.items, 0..) |x, i| if (x.eql(t)) return @intCast(i + 1);
+        // `$box_bool` and an enum's box are subtypes of `$box_i32`, declared
+        // before them.
+        if ((t == .box and t.box == .bool) or t == .ebox) _ = self.gcTyIndex(.{ .box = .i32 });
         self.gc_types.append(self.alloc, t) catch {
             self.gcGap("out of memory");
             return 0;
@@ -4700,13 +4742,7 @@ const Emitter = struct {
                         self.gc_str_used = true;
                         break :blk prelude.gc_str_ref;
                     },
-                    .record => |n| blk: {
-                        if (self.record_generics.contains(n)) {
-                            self.gcGap("a generic record");
-                            break :blk .anyref;
-                        }
-                        break :blk self.gcTy(.{ .record = n });
-                    },
+                    .record => |n| self.gcTy(.{ .record = n }),
                     .arr => |e| self.gcTy(.{ .arr = e }),
                     .tuple => self.gcTy(.{ .arr = .any }),
                     .result => self.gcTy(.result),
@@ -4774,10 +4810,24 @@ const Emitter = struct {
     /// that fails either is lowered in linear memory.
     fn finishGc(self: *Emitter, items: *std.ArrayListUnmanaged(Item), program_lo: usize, program_hi: usize) !void {
         const ar = self.arena();
-        for (items.items[program_lo..program_hi]) |it| if (it == .func and touchesMemory(it.func.body)) {
-            self.gcGap("touchesMemory");
-            if (gc_debug) std.debug.print("GCFN {s}\n", .{it.func.name});
-            return error.GcFallback;
+        // A function a linked module brought that touches linear memory and
+        // that nothing reaches (a linked type's method no call names — std's
+        // `Dict.fold` over a closure) is a stub that traps: the rest of the
+        // module keeps its GC form (front 164 s2 P2b). A reached one, or one
+        // of the module's own, sends the module to linear memory.
+        var live: ?std.StringHashMapUnmanaged(void) = null;
+        defer if (live) |*l| l.deinit(self.alloc);
+        for (items.items[program_lo..program_hi]) |*it| if (it.* == .func and touchesMemory(it.func.body)) {
+            if (live == null) live = try reach.reached(self.alloc, items.items, self.task_edges.items);
+            if (it.func.exports.len > 0 or live.?.contains(it.func.name) or !self.gc_linked_fns.contains(it.func.name)) {
+                self.gcGap("touchesMemory");
+                if (gc_debug) std.debug.print("GCFN {s}\n", .{it.func.name});
+                return error.GcFallback;
+            }
+            const stub = try ar.alloc(Line, 1);
+            stub[0] = .{ .instr = .@"unreachable", .comment = "unreached here; no GC form yet" };
+            it.func.body = .{ .lines = stub, .stack = .terminated };
+            it.func.locals = &.{};
         };
         if (self.gc_strs.count() > 0) {
             var body: std.ArrayListUnmanaged(Line) = .empty;
@@ -4841,6 +4891,7 @@ const Emitter = struct {
     /// scalar and for a type with no GC form here.
     fn gcReprOfType(self: *Emitter, t0: ast.TypeRef) ?Repr {
         const t = eagerTypeRef(t0);
+        if (isUnknownTypeRef(t)) return .{ .ref = .unknown };
         switch (t) {
             .named => |n| {
                 if (isScalarName(n) or std.mem.eql(u8, n, "bool")) return null;
@@ -4860,8 +4911,17 @@ const Emitter = struct {
                 if (resultShapeOfTypeRef(t) != null) return .{ .ref = .result };
                 if (g.args.len == 1 and !g.is_builtin and std.mem.eql(u8, g.name, "Array"))
                     return .{ .ref = .{ .arr = self.gcElemOf(g.args[0]) } };
-                if (!g.is_builtin and self.records.contains(g.name)) return .{ .ref = .{ .record = g.name } };
-                if (!g.is_builtin and self.enums.contains(g.name)) return .{ .ref = .{ .enum_ = g.name } };
+                // An iterator or a stream runs eagerly here: the array of
+                // what it yields (`arrayElemOfTypeRef`).
+                if (g.args.len == 1 and g.is_builtin and (std.mem.eql(u8, g.name, "Iterator") or std.mem.eql(u8, g.name, "Stream")))
+                    return .{ .ref = .{ .arr = self.gcElemOf(g.args[0]) } };
+                // `Self<K, V>`: the generic type the method belongs to.
+                const gname = if (std.mem.eql(u8, g.name, "Self")) (self.self_type orelse self.sig_owner orelse return null) else g.name;
+                if (!g.is_builtin and self.records.contains(gname)) return .{ .ref = .{ .record = gname } };
+                if (!g.is_builtin) if (self.enums.get(gname)) |vs| {
+                    if (!enumHasPayload(vs)) return null;
+                    return .{ .ref = .{ .enum_ = gname } };
+                };
                 return null;
             },
             .optional => |inner| {
@@ -4897,9 +4957,10 @@ const Emitter = struct {
                 .record => |n| {
                     const trefs = self.record_field_typerefs.get(n) orelse &.{};
                     const fs = try ar.alloc(wat.Field, trefs.len);
+                    const gps = self.record_generics.get(n);
                     for (trefs, fs, 0..) |tr, *f, k| f.* = .{
                         .name = try std.fmt.allocPrint(ar, "f{d}", .{k}),
-                        .ty = self.vtOf(self.reprOf(tr)),
+                        .ty = self.vtOf(if (gps) |g| self.gcErasedRepr(g, tr) else self.reprOf(tr)),
                         .mutable = true,
                     };
                     try defs.append(ar, .{ .name = try std.fmt.allocPrint(ar, "rec_{s}", .{n}), .kind = .{ .@"struct" = fs } });
@@ -4916,9 +4977,10 @@ const Emitter = struct {
                         return error.GcFallback;
                     };
                     const fs = try ar.alloc(wat.Field, found.fields.len);
+                    const gps = self.enum_generics.get(v.en);
                     for (found.fields, fs, 0..) |vf, *f, k| f.* = .{
                         .name = try std.fmt.allocPrint(ar, "f{d}", .{k}),
-                        .ty = self.vtOf(self.reprOf(vf.typeRef)),
+                        .ty = self.vtOf(if (gps) |g| self.gcErasedRepr(g, vf.typeRef) else self.reprOf(vf.typeRef)),
                         .mutable = true,
                     };
                     try defs.append(ar, .{ .name = try std.fmt.allocPrint(ar, "var_{s}_{s}", .{ v.en, v.name }), .kind = .{ .@"struct" = fs } });
@@ -4935,6 +4997,11 @@ const Emitter = struct {
                         .any => ValType.anyref,
                     }, .mutable = true } },
                 }),
+                .ebox => |en| {
+                    const fs = try ar.alloc(wat.Field, 1);
+                    fs[0] = .{ .name = "v", .ty = .i32 };
+                    try defs.append(ar, .{ .name = try std.fmt.allocPrint(ar, "ebox_{s}", .{en}), .kind = .{ .@"struct" = fs }, .super = self.gcTyIndex(.{ .box = .i32 }) });
+                },
                 .result => {
                     const fs = try ar.alloc(wat.Field, 2);
                     fs[0] = .{ .name = "tag", .ty = .i32, .mutable = true };
@@ -4942,9 +5009,17 @@ const Emitter = struct {
                     try defs.append(ar, .{ .name = "result", .kind = .{ .@"struct" = fs } });
                 },
                 .box => |b| {
+                    // `$box_bool` is a subtype of `$box_i32` (a reader of a
+                    // word takes either); `$box_i32` is open when it exists.
+                    var super: ?u16 = null;
+                    var final = true;
+                    if (b == .bool) super = self.gcTyIndex(.{ .box = .i32 });
+                    if (b == .i32) final = for (self.gc_types.items) |x| {
+                        if ((x == .box and x.box == .bool) or x == .ebox) break false;
+                    } else true;
                     const fs = try ar.alloc(wat.Field, 1);
                     fs[0] = .{ .name = "v", .ty = switch (b) {
-                        .i32 => ValType.i32,
+                        .i32, .bool => ValType.i32,
                         .i64 => ValType.i64,
                         .f64 => ValType.f64,
                     } };
@@ -4952,7 +5027,8 @@ const Emitter = struct {
                         .i32 => "box_i32",
                         .i64 => "box_i64",
                         .f64 => "box_f64",
-                    }, .kind = .{ .@"struct" = fs } });
+                        .bool => "box_bool",
+                    }, .kind = .{ .@"struct" = fs }, .super = super, .final = final });
                 },
             }
         }
@@ -4981,9 +5057,20 @@ const Emitter = struct {
                         };
                     }
                     const rty = self.recordTypeOfExpr(ia.receiver.*) orelse return null;
+                    // A generic record's field that is no bare type
+                    // parameter's slot is its erased repr (`T[]` an `anyref`
+                    // array) whatever the receiver's arguments.
+                    if (self.gcGenericFieldDecl(rty, ia.member)) |dr| if (!(dr == .ref and dr.ref == .unknown)) return dr;
                     const ft = self.fieldTypeRefIn(rty, ia.member) orelse return null;
                     const r = self.reprOf(ft);
-                    return if (r == .i32) null else r;
+                    if (r != .i32) return r;
+                    // A type parameter's slot: the receiver's type argument
+                    // (`route.data` of a `Route<string, Post>`).
+                    if (self.gcGenericFieldDecl(rty, ia.member) != null) if (self.typeRefOf(e)) |t| {
+                        const r2 = self.reprOf(t);
+                        if (r2 != .i32) return r2;
+                    };
+                    return null;
                 },
                 else => {},
             },
@@ -4996,9 +5083,14 @@ const Emitter = struct {
                     }
                     if (cc.is_builtin and (std.mem.eql(u8, cc.callee, "__bp_ok") or std.mem.eql(u8, cc.callee, "__bp_error")))
                         return .{ .ref = .result };
+                    // `xs.map(f)`: an array of the class of what `f` answers
+                    // (`gcMapTail`, what `gcArrayHof` builds).
+                    if (cc.receiver) |recv| if (std.mem.eql(u8, cc.callee, "map") and cc.args.len == 1) if (lambdaAt(cc, 0)) |lam| {
+                        if (self.wasmTypeOf(recv.*).isArrRef()) return .{ .ref = .{ .arr = gcElemClassOf(self.gcMapTail(lam, recv.*)) } };
+                    };
                     // `xs.reverse()` and the like answer an array of the receiver's class.
                     if (cc.receiver) |recv| if (self.primKindAt(cc, c.loc)) |k| if (k == .array) {
-                        for ([_][]const u8{ "reverse", "rest", "take", "drop", "slice", "append", "prepend", "fill", "toList" }) |m| {
+                        for ([_][]const u8{ "reverse", "rest", "take", "drop", "slice", "append", "prepend", "fill", "toList", "filter", "unique" }) |m| {
                             if (std.mem.eql(u8, cc.callee, m)) {
                                 const rr = self.wasmTypeOf(recv.*);
                                 if (rr.isArrRef()) return rr;
@@ -5020,6 +5112,8 @@ const Emitter = struct {
                         if (self.gc_want) |w| if (w.isArrRef()) return w;
                         return null;
                     }
+                    // A union array (`[1, "a"]`): its elements' boxes.
+                    if ((self.unionArrayLitTypeRef(al) catch null) != null) return .{ .ref = .{ .arr = .any } };
                     const er = self.gcArrayLitElem(al) orelse return null;
                     return .{ .ref = .{ .arr = gcElemClassOf(er) } };
                 },
@@ -5042,7 +5136,8 @@ const Emitter = struct {
     /// The box kind a scalar of `r` travels in through an `anyref` slot.
     fn gcBoxKind(r: Repr) ?GcTy.Box {
         return switch (r) {
-            .i32, .bool => .i32,
+            .i32 => .i32,
+            .bool => .bool,
             .i64 => .i64,
             .f64 => .f64,
             else => null,
@@ -5056,9 +5151,12 @@ const Emitter = struct {
     }
 
     /// The `anyref` on the stack is a value of `r`: a scalar unboxed, a
-    /// reference cast to its type (an `anyref` kind stays).
+    /// reference cast to its type (an `anyref` kind stays). A `bool` is read
+    /// through `$box_i32`, which `$box_bool` is a subtype of: a word boxed as
+    /// either reads back.
     fn gcUnbox(self: *Emitter, r: Repr) !void {
-        if (gcBoxKind(r)) |bk| {
+        if (gcBoxKind(r)) |bk0| {
+            const bk: GcTy.Box = if (bk0 == .bool) .i32 else bk0;
             const k = self.gcTyIndex(.{ .box = bk });
             try self.emit(.{ .ref_cast = ValType.def(k) });
             try self.emit(.{ .struct_get = .{ .ty = k, .field = 0 } });
@@ -5132,6 +5230,7 @@ const Emitter = struct {
             '[' => .{ .ref = .{ .arr = gcShapeClass(x[1..]) } },
             '(' => .{ .ref = .tuple },
             'R' => .{ .ref = .result },
+            'U' => .{ .ref = .unknown },
             else => null,
         };
     }
@@ -5261,7 +5360,14 @@ const Emitter = struct {
     fn gcArrayLit(self: *Emitter, al: anytype) anyerror!void {
         const union_elems = self.expected_union_array or (try self.unionArrayLitTypeRef(al)) != null;
         self.expected_union_array = false;
-        if (union_elems) return self.gcFail("an array of a union");
+        // Decision 150 — each element of a union array goes in as the
+        // `unknown` it is (`gcAsUnknown`), in an `anyref` array.
+        if (union_elems) {
+            if (al.spreadExpr != null or al.spread != null) return self.gcFail("a spread into an array of a union");
+            for (al.elems) |el| try self.lowerAsUnknown(el);
+            try self.emit(.{ .array_new_fixed = .{ .ty = self.gcTyIndex(.{ .arr = .any }), .n = @intCast(al.elems.len) } });
+            return;
+        }
         var cls: Repr.Elem = undefined;
         var er: Repr = .i32;
         if (al.elems.len == 0) {
@@ -5477,7 +5583,6 @@ const Emitter = struct {
         };
         const ar = self.arena();
         if (self.records.contains(name)) {
-            if (self.record_generics.contains(name)) return &.{};
             const only = try ar.alloc(ValType, 1);
             only[0] = self.gcTy(.{ .record = name });
             return only;
@@ -5496,7 +5601,7 @@ const Emitter = struct {
                 break :blk found orelse return &.{};
             };
             const vs = self.enums.get(en) orelse return &.{};
-            if (!enumHasPayload(vs) or self.enum_generics.contains(en)) return &.{};
+            if (!enumHasPayload(vs)) return &.{};
             for (vs) |v| if (std.mem.eql(u8, v.name, vname)) {
                 const only = try ar.alloc(ValType, 1);
                 only[0] = self.gcTy(.{ .variant = .{ .en = en, .name = vname } });
@@ -5505,7 +5610,7 @@ const Emitter = struct {
             return &.{};
         }
         const variants = self.enums.get(name) orelse return &.{};
-        if (!enumHasPayload(variants) or self.enum_generics.contains(name)) return &.{};
+        if (!enumHasPayload(variants)) return &.{};
         const out = try ar.alloc(ValType, variants.len);
         for (variants, out) |v, *o| o.* = self.gcTy(.{ .variant = .{ .en = name, .name = v.name } });
         return out;
@@ -5523,6 +5628,378 @@ const Emitter = struct {
         try self.emit(.ref_is_null);
         try self.emit(opOf(.i32, "eqz"));
         try self.emit(opOf(.i32, "and"));
+    }
+
+    // ── `unknown` in a GC module (front 164 s2 P2b) ─────────────────────
+    //
+    // An `unknown` is an `anyref`: a value that is a reference goes in as it
+    // is (a string, an array, a tuple, a record, a variant), a scalar in its
+    // box (`$box_i32`, `$box_f64`, `$box_bool` — a subtype of `$box_i32`).
+    // The readers ask the value's type with `ref.test`, as the linear
+    // readers ask the descriptor behind the pointer.
+
+    /// A generated helper `name(params…) -> result` whose body is `body`.
+    fn gcHelperFunc(self: *Emitter, name: []const u8, params: []const wat.Param, result: ?ValType, locals: []const wat.Local, body: Seq) !void {
+        try self.gc_pr_funcs.append(self.alloc, .{ .func = try self.builder().func(.{
+            .name = name,
+            .params = params,
+            .result = result,
+            .locals = try self.gcLocals(locals),
+            .body = body,
+        }) });
+    }
+
+    /// `if (<cond on the stack>) { <then>; return }`.
+    fn gcWhenReturn(self: *Emitter, then: []const Instr) !void {
+        var t: Capture = .{};
+        self.open(&t);
+        for (then) |in| try self.emit(in);
+        try self.emit(.@"return");
+        const seq = self.seal(&t, .terminated);
+        try self.emit(.{ .@"if" = .{ .then = .{ .seq = seq } } });
+    }
+
+    fn gcBoxVt(self: *Emitter, b: GcTy.Box) ValType {
+        return ValType.def(self.gcTyIndex(.{ .box = b }));
+    }
+
+    /// `__unk_is_num(v)`: whether the `unknown` `v` holds a number — a boxed
+    /// `i32` that is no `bool`, or an `f64`.
+    fn gcUnkIsNum(self: *Emitter) anyerror![]const u8 {
+        const name = "__unk_is_num";
+        if (!try self.gcHelperOnce(name)) return name;
+        const bi = self.gcBoxVt(.i32);
+        const bb = self.gcBoxVt(.bool);
+        const bf = self.gcBoxVt(.f64);
+        var c: Capture = .{};
+        self.open(&c);
+        try self.emit(.{ .local_get = "v" });
+        try self.emit(.ref_is_null);
+        try self.gcWhenReturn(&.{zero});
+        try self.emit(.{ .local_get = "v" });
+        try self.emit(.{ .ref_test = bi });
+        try self.emit(.{ .local_get = "v" });
+        try self.emit(.{ .ref_test = bb });
+        try self.emit(opOf(.i32, "eqz"));
+        try self.emit(opOf(.i32, "and"));
+        try self.emit(.{ .local_get = "v" });
+        try self.emit(.{ .ref_test = bf });
+        try self.emit(opOf(.i32, "or"));
+        try self.gcHelperFunc(name, &.{wat.Builder.param("v", .anyref)}, .i32, &.{}, self.seal(&c, .{ .value = .i32 }));
+        return name;
+    }
+
+    /// `__unk_int_in(v, lo, hi)`: `v is <an integer type>` by value (decision
+    /// 8 §4.1) — a boxed `i32` inside `lo..=hi`, or a boxed `f64` that is a
+    /// whole number inside it.
+    fn gcUnkIntIn(self: *Emitter) anyerror![]const u8 {
+        const name = "__unk_int_in";
+        if (!try self.gcHelperOnce(name)) return name;
+        const bi = self.gcBoxVt(.i32);
+        const bb = self.gcBoxVt(.bool);
+        const bf = self.gcBoxVt(.f64);
+        const bik = bi.defIndex().?;
+        const bfk = bf.defIndex().?;
+        var c: Capture = .{};
+        self.open(&c);
+        try self.emit(.{ .local_get = "v" });
+        try self.emit(.ref_is_null);
+        try self.gcWhenReturn(&.{zero});
+        try self.emit(.{ .local_get = "v" });
+        try self.emit(.{ .ref_test = bb });
+        try self.gcWhenReturn(&.{zero});
+        try self.emit(.{ .local_get = "v" });
+        try self.emit(.{ .ref_test = bi });
+        try self.gcWhenReturn(&.{
+            .{ .local_get = "v" },                         .{ .ref_cast = bi },
+            .{ .struct_get = .{ .ty = bik, .field = 0 } }, .{ .local_tee = "k" },
+            .{ .local_get = "lo" },                        opOf(.i32, "ge_s"),
+            .{ .local_get = "k" },                         .{ .local_get = "hi" },
+            opOf(.i32, "le_s"),                            opOf(.i32, "and"),
+        });
+        try self.emit(.{ .local_get = "v" });
+        try self.emit(.{ .ref_test = bf });
+        try self.emit(opOf(.i32, "eqz"));
+        try self.gcWhenReturn(&.{zero});
+        try self.emit(.{ .local_get = "v" });
+        try self.emit(.{ .ref_cast = bf });
+        try self.emit(.{ .struct_get = .{ .ty = bfk, .field = 0 } });
+        try self.emit(.{ .local_tee = "x" });
+        try self.emit(opOf(.f64, "floor"));
+        try self.emit(.{ .local_get = "x" });
+        try self.emit(opOf(.f64, "ne"));
+        try self.gcWhenReturn(&.{zero});
+        try self.emit(.{ .local_get = "x" });
+        try self.emit(.{ .local_get = "lo" });
+        try self.emit(.{ .convert = "f64.convert_i32_s" });
+        try self.emit(opOf(.f64, "ge"));
+        try self.emit(.{ .local_get = "x" });
+        try self.emit(.{ .local_get = "hi" });
+        try self.emit(.{ .convert = "f64.convert_i32_s" });
+        try self.emit(opOf(.f64, "le"));
+        try self.emit(opOf(.i32, "and"));
+        try self.gcHelperFunc(name, &.{ wat.Builder.param("v", .anyref), wat.Builder.param("lo", .i32), wat.Builder.param("hi", .i32) }, .i32, &.{ .{ .name = "k", .ty = .i32 }, .{ .name = "x", .ty = .f64 } }, self.seal(&c, .{ .value = .i32 }));
+        return name;
+    }
+
+    /// `__unk_as_i32(v)` / `__unk_as_f64(v)`: the number an `unknown` a test
+    /// proved holds, as an `i32` (a whole `f64` converted) or an `f64`.
+    fn gcUnkAsNum(self: *Emitter, float: bool) anyerror![]const u8 {
+        const name: []const u8 = if (float) "__unk_as_f64" else "__unk_as_i32";
+        if (!try self.gcHelperOnce(name)) return name;
+        const bi = self.gcBoxVt(.i32);
+        const bf = self.gcBoxVt(.f64);
+        const bik = bi.defIndex().?;
+        const bfk = bf.defIndex().?;
+        var c: Capture = .{};
+        self.open(&c);
+        if (float) {
+            try self.emit(.{ .local_get = "v" });
+            try self.emit(.{ .ref_test = bi });
+            try self.gcWhenReturn(&.{ .{ .local_get = "v" }, .{ .ref_cast = bi }, .{ .struct_get = .{ .ty = bik, .field = 0 } }, .{ .convert = "f64.convert_i32_s" } });
+            try self.emit(.{ .local_get = "v" });
+            try self.emit(.{ .ref_cast = bf });
+            try self.emit(.{ .struct_get = .{ .ty = bfk, .field = 0 } });
+        } else {
+            try self.emit(.{ .local_get = "v" });
+            try self.emit(.{ .ref_test = bf });
+            try self.gcWhenReturn(&.{ .{ .local_get = "v" }, .{ .ref_cast = bf }, .{ .struct_get = .{ .ty = bfk, .field = 0 } }, .{ .convert = "i32.trunc_f64_s" } });
+            try self.emit(.{ .local_get = "v" });
+            try self.emit(.{ .ref_cast = bi });
+            try self.emit(.{ .struct_get = .{ .ty = bik, .field = 0 } });
+        }
+        const rt: ValType = if (float) .f64 else .i32;
+        try self.gcHelperFunc(name, &.{wat.Builder.param("v", .anyref)}, rt, &.{}, self.seal(&c, .{ .value = rt }));
+        return name;
+    }
+
+    /// `__unk_eq(a, b)`: `a == b` with an `unknown` operand (decision 8 §2.3):
+    /// two numbers by value (`2.0 == 2`), two strings by content, two bools by
+    /// value, anything else by identity.
+    fn gcUnkEq(self: *Emitter) anyerror![]const u8 {
+        const name = "__unk_eq";
+        if (!try self.gcHelperOnce(name)) return name;
+        const num = try self.gcUnkIsNum();
+        const asf = try self.gcUnkAsNum(true);
+        const bb = self.gcBoxVt(.bool);
+        const bik = self.gcTyIndex(.{ .box = .i32 });
+        const bi = ValType.def(bik);
+        const str = prelude.gc_str_ref;
+        self.gc_str_used = true;
+        var c: Capture = .{};
+        self.open(&c);
+        try self.emit(.{ .local_get = "a" });
+        try self.emit(.{ .call = num });
+        try self.emit(.{ .local_get = "b" });
+        try self.emit(.{ .call = num });
+        try self.emit(opOf(.i32, "and"));
+        try self.gcWhenReturn(&.{ .{ .local_get = "a" }, .{ .call = asf }, .{ .local_get = "b" }, .{ .call = asf }, opOf(.f64, "eq") });
+        for ([_]ValType{ str, bb }, 0..) |vt, i| {
+            try self.emit(.{ .local_get = "a" });
+            try self.emit(.{ .ref_test = vt });
+            try self.emit(.{ .local_get = "a" });
+            try self.emit(.ref_is_null);
+            try self.emit(opOf(.i32, "eqz"));
+            try self.emit(opOf(.i32, "and"));
+            try self.emit(.{ .local_get = "b" });
+            try self.emit(.{ .ref_test = vt });
+            try self.emit(opOf(.i32, "and"));
+            try self.emit(.{ .local_get = "b" });
+            try self.emit(.ref_is_null);
+            try self.emit(opOf(.i32, "eqz"));
+            try self.emit(opOf(.i32, "and"));
+            if (i == 0) {
+                try self.gcWhenReturn(&.{ .{ .local_get = "a" }, .{ .ref_cast = str }, .{ .local_get = "b" }, .{ .ref_cast = str }, self.builder().helper(.str_eq) });
+            } else {
+                try self.gcWhenReturn(&.{ .{ .local_get = "a" }, .{ .ref_cast = bi }, .{ .struct_get = .{ .ty = bik, .field = 0 } }, .{ .local_get = "b" }, .{ .ref_cast = bi }, .{ .struct_get = .{ .ty = bik, .field = 0 } }, opOf(.i32, "eq") });
+            }
+        }
+        try self.emit(.{ .local_get = "a" });
+        try self.emit(.{ .ref_cast = .eqref });
+        try self.emit(.{ .local_get = "b" });
+        try self.emit(.{ .ref_cast = .eqref });
+        try self.emit(.ref_eq);
+        try self.gcHelperFunc(name, &.{ wat.Builder.param("a", .anyref), wat.Builder.param("b", .anyref) }, .i32, &.{}, self.seal(&c, .{ .value = .i32 }));
+        return name;
+    }
+
+    /// `__unk_print_raw(v)`: an `unknown` printed by what it holds (decision 8
+    /// §7) — `null`, a number, a bool, a string's text, a record or a variant
+    /// by its printer; an array or a tuple has no printed form here and traps,
+    /// as in linear memory. `quoted`: `__unk_print_q`, the form inside a
+    /// container, where a string is quoted.
+    fn gcUnkPrint(self: *Emitter, quoted: bool) anyerror![]const u8 {
+        const name: []const u8 = if (quoted) "__unk_print_q" else "__unk_print_raw";
+        if (!try self.gcHelperOnce(name)) return name;
+        const b = self.builder();
+        const bb = self.gcBoxVt(.bool);
+        const bi = self.gcBoxVt(.i32);
+        const bf = self.gcBoxVt(.f64);
+        const bl = self.gcBoxVt(.i64);
+        const str = prelude.gc_str_ref;
+        self.gc_str_used = true;
+        self.gc_tagged_used = true;
+        var c: Capture = .{};
+        self.open(&c);
+        var nul: Capture = .{};
+        self.open(&nul);
+        try self.gcPutStr("null");
+        try self.emit(.@"return");
+        const nul_seq = self.seal(&nul, .terminated);
+        try self.emit(.{ .local_get = "v" });
+        try self.emit(.ref_is_null);
+        try self.emit(.{ .@"if" = .{ .then = .{ .seq = nul_seq } } });
+        // An all-unit enum's box (a `$box_i32` too) by its names first.
+        self.gc_ebox_used = true;
+        try self.emit(.{ .local_get = "v" });
+        try self.emit(.{ .call = "__print_ebox" });
+        try self.gcWhenReturn(&.{});
+        const Arm = struct { vt: ValType, print: Instr };
+        const arms = [_]Arm{
+            .{ .vt = bb, .print = b.helper(.print_bool_raw) },
+            .{ .vt = bi, .print = b.helper(.print_i32_raw) },
+            .{ .vt = bf, .print = b.helper(.print_f64_raw) },
+            .{ .vt = bl, .print = b.helper(.print_i64_raw) },
+            .{ .vt = str, .print = b.helper(if (quoted) .print_quoted_raw else .print_str_raw) },
+        };
+        for (arms) |a| {
+            try self.emit(.{ .local_get = "v" });
+            try self.emit(.{ .ref_test = a.vt });
+            if (a.vt.defIndex() != null and a.vt != str) {
+                const k = a.vt.defIndex().?;
+                try self.gcWhenReturn(&.{ .{ .local_get = "v" }, .{ .ref_cast = a.vt }, .{ .struct_get = .{ .ty = k, .field = 0 } }, a.print });
+            } else try self.gcWhenReturn(&.{ .{ .local_get = "v" }, .{ .ref_cast = a.vt }, a.print });
+        }
+        try self.emit(.{ .local_get = "v" });
+        try self.emit(.{ .call = "__print_tagged_raw" });
+        try self.gcHelperFunc(name, &.{wat.Builder.param("v", .anyref)}, null, &.{}, self.seal(&c, .none));
+        return name;
+    }
+
+    /// With an `unknown` on the stack, leave whether it holds `pt` (by value
+    /// for a number, `emitPrimTest`'s GC form).
+    fn gcPrimTest(self: *Emitter, pt: PrimTest) anyerror!void {
+        switch (pt) {
+            .int => |r| {
+                try self.emit(try self.constInt(r.lo));
+                try self.emit(try self.constInt(r.hi));
+                try self.emit(.{ .call = try self.gcUnkIntIn() });
+            },
+            .float => try self.emit(.{ .call = try self.gcUnkIsNum() }),
+            .bool_, .string => {
+                const t = try self.gcTemp(.{ .ref = .unknown });
+                try self.emit(.{ .local_tee = t });
+                try self.emit(.{ .ref_test = if (pt == .bool_) self.gcBoxVt(.bool) else prelude.gc_str_ref });
+                if (pt == .string) self.gc_str_used = true;
+                try self.emit(.{ .local_get = t });
+                try self.emit(.ref_is_null);
+                try self.emit(opOf(.i32, "eqz"));
+                try self.emit(opOf(.i32, "and"));
+            },
+        }
+    }
+
+    /// The repr of the payload a test of `pt` proved an `unknown` holds.
+    fn unkPayloadRepr(self: *Emitter, pt: PrimTest) Repr {
+        return switch (pt) {
+            .int => .i32,
+            .float => .f64,
+            .bool_ => if (self.mode == .gc) .bool else .i32,
+            .string => if (self.mode == .gc) Repr.string else .i32,
+        };
+    }
+
+    /// With an `unknown` a test of `pt` proved on the stack, leave its payload.
+    fn emitUnkPayload(self: *Emitter, pt: PrimTest) anyerror!void {
+        const b = self.builder();
+        if (self.mode == .gc) return switch (pt) {
+            .int => self.emit(.{ .call = try self.gcUnkAsNum(false) }),
+            .float => self.emit(.{ .call = try self.gcUnkAsNum(true) }),
+            .bool_ => self.gcUnbox(.bool),
+            .string => {
+                self.gc_str_used = true;
+                try self.emit(.{ .ref_cast = prelude.gc_str_ref });
+            },
+        };
+        switch (pt) {
+            .int => try self.emit(b.helper(.unknown_as_i32)),
+            .float => try self.emit(b.helper(.unknown_as_f64)),
+            .bool_, .string => try self.emitC(.{ .load = .{} }, "unknown: the proven payload"),
+        }
+    }
+
+    /// `lowerAsUnknown` in a GC module: the value as the `anyref` an
+    /// `unknown` slot holds — a reference as it is, a scalar boxed by its
+    /// static shape (or the checker's type of a union arm, `hint`).
+    fn gcAsUnknown(self: *Emitter, value: ast.Expr, hint: ?ast.TypeRef) anyerror!void {
+        if (isNullLit(value)) {
+            try self.emit(.{ .ref_null = .anyref });
+            return;
+        }
+        if (try self.lowerBoxedIf(.{ .named = ast.unknown_type_name }, value, true, hint)) return;
+        if (isCaseExpr(value)) {
+            self.pending_case_box = true;
+            self.pending_case_arms = try self.unionArmTypes(value, value.collection.kind.case.arms.len, hint);
+            defer self.pending_case_box = false;
+            defer self.pending_case_arms = null;
+            // `lowerCase` answers the `unknown` its arms were boxed into.
+            try self.lowerValue(value);
+            return;
+        }
+        if (value == .branch and value.branch.kind == .if_) return self.gcFail("an if boxed as an unknown");
+        if (self.fnValueArity(value) != null) return self.gcFail("a function value as an unknown");
+        if (self.typeRefOf(value)) |tr| if (tr == .named and std.mem.eql(u8, tr.named, "Bytes")) return self.gcFail("Bytes as an unknown");
+        if (value == .literal and value.literal.kind == .bytesLit) return self.gcFail("Bytes as an unknown");
+        const as_is = (value == .call and value.call.kind == .call and self.callKind(value.call.kind.call) == .enum_ctor) or
+            self.isUnknownExpr(value) or self.isTaggedValue(value);
+        const Kind = enum { i32_, f64_, bool_, str, ref };
+        const hinted: ?Kind = if (as_is) .ref else if (hint) |h| switch (self.elemBoxOfTypeRef(h)) {
+            .as_is => .ref,
+            .i32_ => .i32_,
+            .f64_ => .f64_,
+            .bool_ => .bool_,
+            .str => .str,
+            .arr => .ref,
+            .unresolved => null,
+        } else null;
+        const kind: Kind = hinted orelse if (self.isStringExpr(value))
+            .str
+        else if (self.isBoolExpr(value))
+            .bool_
+        else if (self.wasmTypeOf(value).isFloat())
+            .f64_
+        else if (self.isArrayExpr(value) or isTupleLit(value) or self.typeRefIsTuple(value))
+            .ref
+        else if (self.isKnownInteger(value))
+            .i32_
+        else {
+            if (self.cur_template != null)
+                return self.refuseUnlessTemplate(value.getLoc(), "unknown: no static type to box this value by (a type parameter's slot?)", .{});
+            if (value == .call and value.call.kind == .call and self.external_missing.contains(value.call.kind.call.callee))
+                return self.gcFail("a missing host binding as an unknown");
+            return self.refuse(value.getLoc(), "the wasm backend cannot box this value as `unknown`: nothing gives it a static type here", .{});
+        };
+        switch (kind) {
+            .i32_ => {
+                try self.lowerCoerced(value, .i32);
+                try self.gcBox(.i32);
+            },
+            .f64_ => {
+                try self.lowerCoerced(value, .f64);
+                try self.gcBox(.f64);
+            },
+            .bool_ => {
+                try self.lowerCoerced(value, .bool);
+                try self.gcBox(.bool);
+            },
+            .str => try self.lowerCoerced(value, Repr.string),
+            .ref => {
+                var r = self.wasmTypeOf(value);
+                if (!r.isRef()) r = self.gcReprOfExpr(value) orelse return self.gcFail("a value of no GC reference as an unknown");
+                if (r == .ref and (r.ref == .bytes or r.ref == .closure or r.ref == .task or r.ref == .cell or r.ref == .bigint)) return self.gcFail("a value with no unknown form");
+                try self.lowerCoerced(value, r);
+            },
+        }
     }
 
     // ── optionals in a GC module (front 164 s2 P2) ──────────────────────
@@ -6309,7 +6786,426 @@ const Emitter = struct {
             try self.emit(.{ .call = try self.gcArrOp("join", cls) });
             return true;
         }
+        // Front 164 s2 P2b — what std-wasm's `array.*` answered over the
+        // words, over a GC array.
+        if (eq(u8, name, "unique") and cc.args.len == 0) {
+            // std-wasm's modes: `0` the word, `1` a float by its bits, `2` a
+            // string's content; anything else is refused where it is written.
+            const mode = (try self.uniqueMode(recv)) orelse return false;
+            const want: Repr.Elem = switch (mode) {
+                0 => .i32,
+                1 => .f64,
+                else => .any,
+            };
+            if (want != cls or (cls == .any and !er.isStr())) return false;
+            try self.lowerCoerced(recv, ar);
+            try self.emit(.{ .call = try self.gcArrUnique(cls) });
+            return true;
+        }
+        if ((eq(u8, name, "flatten") or eq(u8, name, "flat")) and cc.args.len == 0) {
+            const sh = (try self.printShapeOf(recv)) orelse return false;
+            if (!(sh.len >= 3 and sh[0] == '[' and sh[1] == '[') or cls != .any) return false;
+            try self.lowerCoerced(recv, ar);
+            try self.emit(.{ .call = try self.gcArrFlatten(gcShapeClass(sh[2..])) });
+            return true;
+        }
+        // `xs.zip(ys)`: an `anyref` array of `#(x, y)` tuples, as many as the
+        // shorter array — of words, floats or strings, the elements the
+        // tuple's print shape (`[(XY)`, `elemKindOf`) names.
+        if (eq(u8, name, "zip") and cc.args.len == 1) {
+            const other = callArg(cc, 0).?;
+            const br = self.wasmTypeOf(other);
+            if (!br.isArrRef()) return false;
+            if (cls == .any and !er.isStr()) return false;
+            if (br.ref.arr == .any) {
+                const oer = self.gcElemRepr(other) orelse return false;
+                if (!oer.isStr()) return false;
+            }
+            try self.lowerCoerced(recv, ar);
+            try self.lowerCoerced(other, br);
+            try self.emit(.{ .call = try self.gcArrZip(cls, br.ref.arr) });
+            return true;
+        }
+        if ((eq(u8, name, "chunked") or eq(u8, name, "sliding")) and cc.args.len == 1) {
+            try self.lowerCoerced(recv, ar);
+            try self.lowerCoerced(callArg(cc, 0).?, .i32);
+            try self.emit(.{ .call = try self.gcArrWindows(eq(u8, name, "chunked"), cls) });
+            return true;
+        }
         return false;
+    }
+
+    /// `__arr_zip_<a>_<b>(xs, ys)`: `#(xs[i], ys[i])` for each `i` both have,
+    /// each element in its box (std-wasm's `array.zip`).
+    fn gcArrZip(self: *Emitter, a: Repr.Elem, b: Repr.Elem) anyerror![]const u8 {
+        const name = try std.fmt.allocPrint(self.arena(), "__arr_zip_{s}_{s}", .{ gcClsSuffix(a), gcClsSuffix(b) });
+        if (!try self.gcHelperOnce(name)) return name;
+        const ta = self.gcTyIndex(.{ .arr = a });
+        const tb = self.gcTyIndex(.{ .arr = b });
+        const oi = self.gcTyIndex(.{ .arr = .any });
+        const P = wat.Builder.param;
+        var c: Capture = .{};
+        self.open(&c);
+        try self.emit(lget("xs"));
+        try self.emit(.array_len);
+        try self.emit(lset("n"));
+        var shorter: Capture = .{};
+        self.open(&shorter);
+        try self.emit(lget("ys"));
+        try self.emit(.array_len);
+        try self.emit(lset("n"));
+        const shorter_seq = self.seal(&shorter, .none);
+        try self.emit(lget("ys"));
+        try self.emit(.array_len);
+        try self.emit(lget("n"));
+        try self.emit(opOf(.i32, "lt_u"));
+        try self.emit(.{ .@"if" = .{ .then = .{ .seq = shorter_seq } } });
+        try self.emit(lget("n"));
+        try self.emit(.{ .array_new_default = oi });
+        try self.emit(lset("r"));
+        var body: Capture = .{};
+        self.open(&body);
+        try self.emit(lget("i"));
+        try self.emit(lget("n"));
+        try self.emit(opOf(.i32, "ge_u"));
+        try self.emit(.{ .br_if = "brk" });
+        try self.emit(lget("r"));
+        try self.emit(lget("i"));
+        try self.emit(lget("xs"));
+        try self.emit(lget("i"));
+        try self.emit(.{ .array_get = .{ .ty = ta } });
+        if (a != .any) try self.gcBox(if (a == .f64) .f64 else .i32);
+        try self.emit(lget("ys"));
+        try self.emit(lget("i"));
+        try self.emit(.{ .array_get = .{ .ty = tb } });
+        if (b != .any) try self.gcBox(if (b == .f64) .f64 else .i32);
+        try self.emit(.{ .array_new_fixed = .{ .ty = oi, .n = 2 } });
+        try self.emit(.{ .array_set = oi });
+        try self.emit(lget("i"));
+        try self.emit(one);
+        try self.emit(opOf(.i32, "add"));
+        try self.emit(lset("i"));
+        try self.emit(.{ .br = "cont" });
+        const loop_seq = self.seal(&body, .terminated);
+        try self.gcLoop(loop_seq);
+        try self.emit(lget("r"));
+        try self.gcFinishFn(name, &.{ P("xs", ValType.def(ta)), P("ys", ValType.def(tb)) }, ValType.def(oi), &.{
+            .{ .name = "n", .ty = .i32 }, .{ .name = "i", .ty = .i32 }, .{ .name = "r", .ty = ValType.def(oi) },
+        }, &c);
+        return name;
+    }
+
+    /// `__arr_box_<class>(xs)`: the `anyref` array of the elements of the
+    /// word or float array `xs`, each in its box.
+    fn gcArrBox(self: *Emitter, cls: Repr.Elem) anyerror![]const u8 {
+        const name = try std.fmt.allocPrint(self.arena(), "__arr_box_{s}", .{gcClsSuffix(cls)});
+        if (!try self.gcHelperOnce(name)) return name;
+        const ti = self.gcTyIndex(.{ .arr = cls });
+        const oi = self.gcTyIndex(.{ .arr = .any });
+        const P = wat.Builder.param;
+        var c: Capture = .{};
+        self.open(&c);
+        try self.emit(lget("xs"));
+        try self.emit(.array_len);
+        try self.emit(lset("n"));
+        try self.emit(lget("n"));
+        try self.emit(.{ .array_new_default = oi });
+        try self.emit(lset("r"));
+        var body: Capture = .{};
+        self.open(&body);
+        try self.emit(lget("i"));
+        try self.emit(lget("n"));
+        try self.emit(opOf(.i32, "ge_u"));
+        try self.emit(.{ .br_if = "brk" });
+        try self.emit(lget("r"));
+        try self.emit(lget("i"));
+        try self.emit(lget("xs"));
+        try self.emit(lget("i"));
+        try self.emit(.{ .array_get = .{ .ty = ti } });
+        try self.gcBox(if (cls == .f64) .f64 else .i32);
+        try self.emit(.{ .array_set = oi });
+        try self.emit(lget("i"));
+        try self.emit(one);
+        try self.emit(opOf(.i32, "add"));
+        try self.emit(lset("i"));
+        try self.emit(.{ .br = "cont" });
+        const loop_seq = self.seal(&body, .terminated);
+        try self.gcLoop(loop_seq);
+        try self.emit(lget("r"));
+        try self.gcFinishFn(name, &.{P("xs", ValType.def(ti))}, ValType.def(oi), &.{
+            .{ .name = "n", .ty = .i32 }, .{ .name = "i", .ty = .i32 }, .{ .name = "r", .ty = ValType.def(oi) },
+        }, &c);
+        return name;
+    }
+
+    /// `__arr_unique_<class>(xs)`: each element kept at its first occurrence,
+    /// in order (decision 217) — a word by its value, a float by its bits, a
+    /// string by its content (std-wasm's `array.unique`).
+    fn gcArrUnique(self: *Emitter, cls: Repr.Elem) anyerror![]const u8 {
+        const name = try std.fmt.allocPrint(self.arena(), "__arr_unique_{s}", .{gcClsSuffix(cls)});
+        if (!try self.gcHelperOnce(name)) return name;
+        const ti = self.gcTyIndex(.{ .arr = cls });
+        const at = ValType.def(ti);
+        const ev = gcElemVt(cls);
+        const P = wat.Builder.param;
+        var c: Capture = .{};
+        self.open(&c);
+        try self.emit(lget("xs"));
+        try self.emit(.array_len);
+        try self.emit(lset("n"));
+        try self.emit(lget("n"));
+        try self.emit(.{ .array_new_default = ti });
+        try self.emit(lset("out"));
+        // for i in 0..n: x = xs[i]; seen = any out[j] == x for j < k
+        var outer: Capture = .{};
+        self.open(&outer);
+        try self.emit(lget("i"));
+        try self.emit(lget("n"));
+        try self.emit(opOf(.i32, "ge_u"));
+        try self.emit(.{ .br_if = "brk" });
+        try self.emit(lget("xs"));
+        try self.emit(lget("i"));
+        try self.emit(.{ .array_get = .{ .ty = ti } });
+        try self.emit(lset("x"));
+        try self.emit(zero);
+        try self.emit(lset("j"));
+        // The inner search, as a block of its own: `$found` when seen.
+        var inner: Capture = .{};
+        self.open(&inner);
+        try self.emit(lget("j"));
+        try self.emit(lget("k"));
+        try self.emit(opOf(.i32, "ge_u"));
+        try self.emit(.{ .br_if = "miss" });
+        try self.emit(lget("out"));
+        try self.emit(lget("j"));
+        try self.emit(.{ .array_get = .{ .ty = ti } });
+        try self.emit(lget("x"));
+        switch (cls) {
+            .i32 => try self.emit(opOf(.i32, "eq")),
+            .f64 => {
+                try self.emit(lset("y"));
+                try self.emit(.{ .convert = "i64.reinterpret_f64" });
+                try self.emit(lget("y"));
+                try self.emit(.{ .convert = "i64.reinterpret_f64" });
+                try self.emit(opOf(.i64, "eq"));
+            },
+            .any => {
+                try self.emit(.{ .ref_cast = prelude.gc_str_ref });
+                try self.emit(lset("y"));
+                try self.emit(.{ .ref_cast = prelude.gc_str_ref });
+                try self.emit(lget("y"));
+                try self.emit(self.builder().helper(.str_eq));
+            },
+        }
+        try self.emit(.{ .br_if = "found" });
+        try self.emit(lget("j"));
+        try self.emit(one);
+        try self.emit(opOf(.i32, "add"));
+        try self.emit(lset("j"));
+        try self.emit(.{ .br = "scan" });
+        const inner_seq = self.seal(&inner, .terminated);
+        var miss: Capture = .{};
+        self.open(&miss);
+        try self.emit(.{ .block = .{ .kind = .loop, .label = "scan", .body = inner_seq } });
+        const miss_body = self.seal(&miss, .none);
+        // block $found { block $miss { loop $scan … } ; out[k] = x; k += 1 }
+        var found: Capture = .{};
+        self.open(&found);
+        try self.emit(.{ .block = .{ .kind = .block, .label = "miss", .body = miss_body } });
+        try self.emit(lget("out"));
+        try self.emit(lget("k"));
+        try self.emit(lget("x"));
+        try self.emit(.{ .array_set = ti });
+        try self.emit(lget("k"));
+        try self.emit(one);
+        try self.emit(opOf(.i32, "add"));
+        try self.emit(lset("k"));
+        const found_body = self.seal(&found, .none);
+        try self.emit(.{ .block = .{ .kind = .block, .label = "found", .body = found_body } });
+        try self.emit(lget("i"));
+        try self.emit(one);
+        try self.emit(opOf(.i32, "add"));
+        try self.emit(lset("i"));
+        try self.emit(.{ .br = "cont" });
+        const outer_seq = self.seal(&outer, .terminated);
+        try self.gcLoop(outer_seq);
+        try self.emit(lget("out"));
+        try self.emit(zero);
+        try self.emit(lget("k"));
+        try self.emit(.{ .call = try self.gcArrOp("slice", cls) });
+        const yt: ValType = switch (cls) {
+            .i32 => .i32,
+            .f64 => .f64,
+            .any => prelude.gc_str_ref,
+        };
+        try self.gcFinishFn(name, &.{P("xs", at)}, at, &.{
+            .{ .name = "n", .ty = .i32 }, .{ .name = "i", .ty = .i32 }, .{ .name = "j", .ty = .i32 }, .{ .name = "k", .ty = .i32 },
+            .{ .name = "x", .ty = ev },   .{ .name = "y", .ty = yt },   .{ .name = "out", .ty = at },
+        }, &c);
+        return name;
+    }
+
+    /// `__arr_flatten_<class>(xs)`: the elements of every inner array of
+    /// `xs` (an `anyref` array of arrays of `class`), in order.
+    fn gcArrFlatten(self: *Emitter, cls: Repr.Elem) anyerror![]const u8 {
+        const name = try std.fmt.allocPrint(self.arena(), "__arr_flatten_{s}", .{gcClsSuffix(cls)});
+        if (!try self.gcHelperOnce(name)) return name;
+        const oi = self.gcTyIndex(.{ .arr = .any });
+        const ti = self.gcTyIndex(.{ .arr = cls });
+        const at = ValType.def(ti);
+        const P = wat.Builder.param;
+        var c: Capture = .{};
+        self.open(&c);
+        try self.emit(lget("xs"));
+        try self.emit(.array_len);
+        try self.emit(lset("n"));
+        for (0..2) |pass| {
+            // Pass 0 counts the elements; pass 1 copies them.
+            try self.emit(zero);
+            try self.emit(lset("i"));
+            var body: Capture = .{};
+            self.open(&body);
+            try self.emit(lget("i"));
+            try self.emit(lget("n"));
+            try self.emit(opOf(.i32, "ge_u"));
+            try self.emit(.{ .br_if = "brk" });
+            try self.emit(lget("xs"));
+            try self.emit(lget("i"));
+            try self.emit(.{ .array_get = .{ .ty = oi } });
+            try self.emit(.{ .ref_cast = at });
+            try self.emit(lset("a"));
+            if (pass == 0) {
+                try self.emit(lget("t"));
+                try self.emit(lget("a"));
+                try self.emit(.array_len);
+                try self.emit(opOf(.i32, "add"));
+                try self.emit(lset("t"));
+            } else {
+                try self.emit(lget("r"));
+                try self.emit(lget("o"));
+                try self.emit(lget("a"));
+                try self.emit(zero);
+                try self.emit(lget("a"));
+                try self.emit(.array_len);
+                try self.emit(.{ .array_copy = .{ .dst = ti, .src = ti } });
+                try self.emit(lget("o"));
+                try self.emit(lget("a"));
+                try self.emit(.array_len);
+                try self.emit(opOf(.i32, "add"));
+                try self.emit(lset("o"));
+            }
+            try self.emit(lget("i"));
+            try self.emit(one);
+            try self.emit(opOf(.i32, "add"));
+            try self.emit(lset("i"));
+            try self.emit(.{ .br = "cont" });
+            const loop_seq = self.seal(&body, .terminated);
+            try self.gcLoop(loop_seq);
+            if (pass == 0) {
+                try self.emit(lget("t"));
+                try self.emit(.{ .array_new_default = ti });
+                try self.emit(lset("r"));
+            }
+        }
+        try self.emit(lget("r"));
+        try self.gcFinishFn(name, &.{P("xs", ValType.def(oi))}, at, &.{
+            .{ .name = "n", .ty = .i32 }, .{ .name = "i", .ty = .i32 }, .{ .name = "t", .ty = .i32 }, .{ .name = "o", .ty = .i32 },
+            .{ .name = "a", .ty = at },   .{ .name = "r", .ty = at },
+        }, &c);
+        return name;
+    }
+
+    /// `__arr_chunked_<class>(xs, m)` / `__arr_sliding_<class>(xs, m)`: an
+    /// `anyref` array of slices of `xs` — consecutive ones of `m`, the last
+    /// shorter (`ceil(n / m)` of them), or one of `m` per start offset
+    /// (`n - m + 1`); none for `m <= 0` (std-wasm's `chunkCount` /
+    /// `slidingCount`, each slice `xs.slice(from, from + m)`).
+    fn gcArrWindows(self: *Emitter, chunked: bool, cls: Repr.Elem) anyerror![]const u8 {
+        const name = try std.fmt.allocPrint(self.arena(), "__arr_{s}_{s}", .{ if (chunked) "chunked" else "sliding", gcClsSuffix(cls) });
+        if (!try self.gcHelperOnce(name)) return name;
+        const oi = self.gcTyIndex(.{ .arr = .any });
+        const ti = self.gcTyIndex(.{ .arr = cls });
+        const at = ValType.def(ti);
+        const P = wat.Builder.param;
+        const slice = try self.gcArrOp("slice", cls);
+        var c: Capture = .{};
+        self.open(&c);
+        try self.emit(lget("xs"));
+        try self.emit(.array_len);
+        try self.emit(lset("n"));
+        // cnt = 0 when m <= 0
+        var some: Capture = .{};
+        self.open(&some);
+        if (chunked) {
+            try self.emit(lget("n"));
+            try self.emit(lget("m"));
+            try self.emit(opOf(.i32, "div_u"));
+            try self.emit(lget("n"));
+            try self.emit(lget("m"));
+            try self.emit(opOf(.i32, "rem_u"));
+            try self.emit(zero);
+            try self.emit(opOf(.i32, "ne"));
+            try self.emit(opOf(.i32, "add"));
+            try self.emit(lset("cnt"));
+        } else {
+            try self.emit(lget("n"));
+            try self.emit(lget("m"));
+            try self.emit(opOf(.i32, "sub"));
+            try self.emit(one);
+            try self.emit(opOf(.i32, "add"));
+            try self.emit(lset("cnt"));
+            var neg: Capture = .{};
+            self.open(&neg);
+            try self.emit(zero);
+            try self.emit(lset("cnt"));
+            const neg_seq = self.seal(&neg, .none);
+            try self.emit(lget("cnt"));
+            try self.emit(zero);
+            try self.emit(opOf(.i32, "lt_s"));
+            try self.emit(.{ .@"if" = .{ .then = .{ .seq = neg_seq } } });
+        }
+        const some_seq = self.seal(&some, .none);
+        try self.emit(lget("m"));
+        try self.emit(zero);
+        try self.emit(opOf(.i32, "gt_s"));
+        try self.emit(.{ .@"if" = .{ .then = .{ .seq = some_seq } } });
+        try self.emit(lget("cnt"));
+        try self.emit(.{ .array_new_default = oi });
+        try self.emit(lset("r"));
+        var body: Capture = .{};
+        self.open(&body);
+        try self.emit(lget("k"));
+        try self.emit(lget("cnt"));
+        try self.emit(opOf(.i32, "ge_u"));
+        try self.emit(.{ .br_if = "brk" });
+        try self.emit(lget("k"));
+        if (chunked) {
+            try self.emit(lget("m"));
+            try self.emit(opOf(.i32, "mul"));
+        }
+        try self.emit(lset("from"));
+        try self.emit(lget("r"));
+        try self.emit(lget("k"));
+        try self.emit(lget("xs"));
+        try self.emit(lget("from"));
+        try self.emit(lget("from"));
+        try self.emit(lget("m"));
+        try self.emit(opOf(.i32, "add"));
+        try self.emit(.{ .call = slice });
+        try self.emit(.{ .array_set = oi });
+        try self.emit(lget("k"));
+        try self.emit(one);
+        try self.emit(opOf(.i32, "add"));
+        try self.emit(lset("k"));
+        try self.emit(.{ .br = "cont" });
+        const loop_seq = self.seal(&body, .terminated);
+        try self.gcLoop(loop_seq);
+        try self.emit(lget("r"));
+        try self.gcFinishFn(name, &.{ P("xs", at), P("m", .i32) }, ValType.def(oi), &.{
+            .{ .name = "n", .ty = .i32 },            .{ .name = "cnt", .ty = .i32 }, .{ .name = "k", .ty = .i32 }, .{ .name = "from", .ty = .i32 },
+            .{ .name = "r", .ty = ValType.def(oi) },
+        }, &c);
+        return name;
     }
 
     // ── the std-wasm boundary (front 164 s2 P2, until s3) ───────────────
@@ -6519,7 +7415,7 @@ const Emitter = struct {
                 self.gc_str_used = true;
                 return prelude.gc_str_ref;
             },
-            'T' => return .anyref,
+            'T', 'U' => return .anyref,
             '[' => return self.gcTy(.{ .arr = gcShapeClass(sh[1..]) }),
             '(' => return self.gcTy(.{ .arr = .any }),
             '?' => return if (gcShapeIsScalar(sh[1..])) .anyref else self.gcShapeVt(sh[1..]),
@@ -6623,6 +7519,12 @@ const Emitter = struct {
                 self.gc_tagged_used = true;
                 try self.emit(get_v);
                 try self.emit(.{ .call = "__print_tagged_raw" });
+            },
+            // A union's (or `unknown`'s) slot: printed by what it holds, a
+            // string quoted.
+            'U' => {
+                try self.emit(get_v);
+                try self.emit(.{ .call = try self.gcUnkPrint(true) });
             },
             'E' => {
                 // An all-unit enum: the ordinal picks one of the names.
@@ -6776,7 +7678,6 @@ const Emitter = struct {
             const found: ast.EnumVariant = for (variants) |ev| {
                 if (std.mem.eql(u8, ev.name, vn)) break ev;
             } else return self.gcFail("a variant of no enum");
-            if (self.enum_generics.contains(rec)) return self.gcFail("a generic enum");
             const names = try ar.alloc([]const u8, found.fields.len);
             const tr = try ar.alloc(ast.TypeRef, found.fields.len);
             for (found.fields, 0..) |f, i| {
@@ -6788,7 +7689,6 @@ const Emitter = struct {
             shown = try std.fmt.allocPrint(ar, "{s}.{s}", .{ self.printed_names.get(rec) orelse displayTypeName(rec), vn });
             ty = .{ .variant = .{ .en = rec, .name = vn } };
         } else {
-            if (self.record_generics.contains(rec)) return self.gcFail("a generic record");
             fnames = self.records.get(rec) orelse return self.gcFail("a record of no declaration");
             trefs = self.record_field_typerefs.get(rec) orelse &.{};
             shown = self.printed_names.get(rec) orelse displayTypeName(rec);
@@ -6801,6 +7701,10 @@ const Emitter = struct {
         // `display(self) -> string` answers its own text (decision 8 §7).
         if (variant == null) {
             const dsym = try std.fmt.allocPrint(ar, "{s}_display", .{rec});
+            // A generic record's `display` is its one body, which linear
+            // memory reaches only through a call that binds its type
+            // parameters (`refuseUnboundTemplateCalls`): not printed here.
+            if (self.record_generics.contains(rec) and self.fn_sigs.contains(dsym)) return self.gcFail("a generic record's display");
             if (self.fn_sigs.get(dsym)) |sig| if (sig.params.len == 1 and sig.result != null and sig.result.?.isStr()) {
                 try self.emit(get_v);
                 try self.emit(.{ .call = dsym });
@@ -6812,10 +7716,10 @@ const Emitter = struct {
         if (fnames.len > 0) try self.gcPutStr("(");
         for (fnames, 0..) |fname, i| {
             if (i >= trefs.len) return self.gcFail("a field with no type");
-            if (isGenericField(trefs[i], self.record_generics.get(rec) orelse &.{})) return self.gcFail("a generic field");
             const label = try std.fmt.allocPrint(ar, "{s}{s}: ", .{ if (i > 0) ", " else "", fname });
             try self.gcPutStr(label);
-            const fsh = if (variant == null) blk: {
+            const gen: ?[]const ast.GenericParam = if (variant == null) self.record_generics.get(rec) else self.enum_generics.get(rec);
+            const fsh = if (gen != null and mentionsGeneric(trefs[i], gen.?)) try self.gcErasedShape(gen.?, trefs[i]) else if (variant == null) blk: {
                 const wide: ?u8 = switch (trefs[i]) {
                     .named => |n| i64CellCode(n),
                     else => null,
@@ -6836,6 +7740,53 @@ const Emitter = struct {
             .body = body,
         }) });
         return sym;
+    }
+
+    /// `__print_ebox(v: anyref) -> i32`: when `v` is an all-unit enum's box
+    /// (`GcTy.ebox`), its variant's name written and `1`; else `0`.
+    fn gcEboxPrinter(self: *Emitter) anyerror!void {
+        var c: Capture = .{};
+        self.open(&c);
+        var i: usize = 0;
+        while (i < self.gc_types.items.len) : (i += 1) {
+            const t = self.gc_types.items[i];
+            if (t != .ebox) continue;
+            const k: u16 = @intCast(i + 1);
+            const vt = ValType.def(k);
+            const px = try self.gcPrinter(try self.unitEnumShape(t.ebox));
+            var hit: Capture = .{};
+            self.open(&hit);
+            try self.emit(.{ .local_get = "v" });
+            try self.emit(.{ .ref_cast = vt });
+            try self.emit(.{ .struct_get = .{ .ty = k, .field = 0 } });
+            try self.emit(.{ .call = px });
+            try self.emit(one);
+            try self.emit(.@"return");
+            const hit_seq = self.seal(&hit, .terminated);
+            try self.emit(.{ .local_get = "v" });
+            try self.emit(.{ .ref_test = vt });
+            try self.emit(.{ .local_get = "v" });
+            try self.emit(.ref_is_null);
+            try self.emit(opOf(.i32, "eqz"));
+            try self.emit(opOf(.i32, "and"));
+            try self.emit(.{ .@"if" = .{ .then = .{ .seq = hit_seq } } });
+        }
+        try self.emit(zero);
+        const body = self.seal(&c, .{ .value = .i32 });
+        try self.gc_pr_funcs.append(self.alloc, .{ .func = try self.builder().func(.{
+            .name = "__print_ebox",
+            .params = &.{wat.Builder.param("v", .anyref)},
+            .result = .i32,
+            .body = body,
+        }) });
+    }
+
+    /// The all-unit enum `e`'s type names, when its written type is one.
+    fn unitEnumOfTypeRef(self: *Emitter, e: ast.Expr) ?[]const u8 {
+        const t = self.typeRefOf(e) orelse return null;
+        if (t != .named) return null;
+        if (!self.enums.contains(t.named) or !self.isAllUnitEnum(t.named)) return null;
+        return t.named;
     }
 
     /// `__print_tagged_raw(v: anyref)`: the text of a value of any declared
@@ -7224,16 +8175,27 @@ const Emitter = struct {
         var c: Capture = .{};
         self.open(&c);
         const tgt = "__yield_fn";
-        try self.declareLocal(tgt, .i32);
-        try self.emit(zero);
-        try self.emit(self.builder().helper(.arr_new));
-        try self.emit(.{ .local_set = tgt });
+        if (self.mode == .gc) {
+            // A generator fn answers the array of what it yields: of its
+            // declared result's class.
+            if (!self.cur_result.isArrRef()) return self.gcFail("a generator fn of no array result");
+            self.gen_repr = self.cur_result;
+            try self.declareLocal(tgt, self.gen_repr);
+            try self.emit(zero);
+            try self.emit(.{ .array_new_default = self.gcTyIndex(.{ .arr = self.gen_repr.ref.arr }) });
+            try self.emit(.{ .local_set = tgt });
+        } else {
+            try self.declareLocal(tgt, .i32);
+            try self.emit(zero);
+            try self.emit(self.builder().helper(.arr_new));
+            try self.emit(.{ .local_set = tgt });
+        }
         self.yield_target = tgt;
         defer self.yield_target = null;
         const tail = try self.emitBody(body, false);
         if (tail != .terminated) {
             try self.emitC(.{ .local_get = tgt }, "everything the body yielded");
-            try self.emitConvert(.i32, self.cur_result);
+            try self.emitConvert(if (self.mode == .gc) self.gen_repr else .i32, self.cur_result);
         }
         return self.seal(&c, if (tail == .terminated) .terminated else .{ .value = self.vtOf(self.cur_result) });
     }
@@ -7854,7 +8816,9 @@ const Emitter = struct {
                 try self.noteParamShape(sym, p.typeRef);
                 // In a copy the written type is concrete (`ys: i32[]` for
                 // `Self<T>`): `primKindAt` reads it for a method on the param.
-                if (self.in_spec) try self.local_typerefs.put(sym, p.typeRef);
+                // A GC module reads a generic body's parameter by its written
+                // type too (`entries: Array<#(K, V)>`'s elements are tuples).
+                if (self.in_spec or self.mode == .gc) try self.local_typerefs.put(sym, p.typeRef);
             }
         }
         try self.declareScratch("_try", countTrys(body));
@@ -8326,7 +9290,7 @@ const Emitter = struct {
                         // whatever the value's own shape.
                         if (lb.typeAnnotation) |ta| if (isUnknownTypeRef(ta)) {
                             try self.local_typerefs.put(lb.name, ta);
-                            try self.declareLocal(lb.name, .i32);
+                            try self.declareLocal(lb.name, if (self.mode == .gc) .{ .ref = .unknown } else .i32);
                             try self.declareNestedLocals(lb.value.*);
                             continue;
                         };
@@ -10278,6 +11242,7 @@ const Emitter = struct {
         const rty = self.recordTypeOfExpr(fa.receiver.*) orelse return self.gcFail("a field written on a receiver of no known record");
         const off = self.fieldOffsetIn(rty, fa.field) orelse return self.gcFail("a field the record does not declare");
         const ft = self.fieldTypeRefIn(rty, fa.field) orelse return self.gcFail("a field with no type");
+        if (self.gcGenericFieldDecl(rty, fa.field) != null) return self.gcFail("a write of a generic record's type parameter field");
         const fr = self.reprOf(ft);
         const rrepr: Repr = .{ .ref = .{ .record = rty } };
         const ref: wat.FieldRef = .{ .ty = self.gcTyIndex(.{ .record = rty }), .field = off / 4 };
@@ -10451,6 +11416,12 @@ const Emitter = struct {
         }
         // An `unknown` / union value prints by what its box says it holds.
         if (self.isUnknownExpr(arg)) {
+            if (self.mode == .gc) {
+                try self.lowerCoerced(arg, .{ .ref = .unknown });
+                try self.emit(.{ .call = try self.gcUnkPrint(false) });
+                if (last) try self.emit(self.builder().helper(.print_nl));
+                return;
+            }
             try self.lowerCoerced(arg, .i32);
             try self.emit(self.builder().helper(if (last) .print_unknown else .print_unknown_raw));
             return;
@@ -10910,6 +11881,69 @@ const Emitter = struct {
         return self.emitStmt(last, true);
     }
 
+    /// `r.map(f)` / `r.flatMap(f)` over a GC `@Result` (front 164 s2 P2b):
+    /// an Error goes through as it is; an Ok binds the closure's parameter to
+    /// its payload, unboxed by the receiver's Ok type, and the closure's body,
+    /// inlined, answers the payload of a new Ok (`map`) or the `@Result`
+    /// itself (`flatMap`).
+    fn gcResultMap(self: *Emitter, recv: ast.Expr, lam: anytype, is_map: bool) anyerror!void {
+        const rr: Repr = .{ .ref = .result };
+        const rvt = self.vtOf(rr);
+        const rti = self.gcTyIndex(.result);
+        const sh = self.resultShapeOf(recv) orelse return self.gcFail("a map over a @Result of no known shape");
+        const ok_tr = sh.ok orelse return self.gcFail("a map over a @Result of no known Ok type");
+        const okr = self.reprOf(ok_tr);
+        const slot = try self.gcTemp(rr);
+        try self.lowerCoerced(recv, rr);
+        try self.emit(.{ .local_set = slot });
+
+        var err_c: Capture = .{};
+        self.open(&err_c);
+        try self.emit(.{ .local_get = slot });
+        const err_seq = self.seal(&err_c, .{ .value = rvt });
+
+        var ok_c: Capture = .{};
+        self.open(&ok_c);
+        {
+            const scope_mark = self.scopeMark();
+            defer self.scopeRestore(scope_mark);
+            if (lam.params.len > 0) {
+                const p = lam.params[0];
+                try self.declareLocal(p, okr);
+                try self.local_typerefs.put(p, ok_tr);
+                if (okr.isStr()) try self.str_locals.put(p, {});
+                if (okr == .bool) try self.bool_locals.put(p, {});
+                try self.emit(.{ .local_get = slot });
+                try self.emit(.{ .struct_get = .{ .ty = rti, .field = 1 } });
+                try self.gcUnbox(okr);
+                try self.emit(.{ .local_set = p });
+            }
+            const body = lam.body;
+            if (body.len == 0) return self.gcFail("a map closure with no body");
+            for (body[0 .. body.len - 1]) |st| _ = try self.emitStmt(st, false);
+            const last = body[body.len - 1].expr;
+            const tail: ast.Expr = switch (last) {
+                .jump => |j| switch (j.kind) {
+                    .@"return" => |r| if (r) |v| v.* else return self.gcFail("a map closure answering nothing"),
+                    else => return self.gcFail("a map closure ending in a jump"),
+                },
+                else => last,
+            };
+            if (is_map) {
+                const outr = self.wasmTypeOf(tail);
+                try self.emit(zero);
+                try self.lowerCoerced(tail, outr);
+                try self.gcBox(outr);
+                try self.emit(.{ .struct_new = rti });
+            } else try self.lowerCoerced(tail, rr);
+        }
+        const ok_seq = self.seal(&ok_c, .{ .value = rvt });
+
+        try self.emit(.{ .local_get = slot });
+        try self.emit(.{ .struct_get = .{ .ty = rti, .field = 0 } });
+        try self.emit(.{ .@"if" = .{ .result = rvt, .then = .{ .seq = err_seq }, .@"else" = .{ .seq = ok_seq } } });
+    }
+
     /// Lower a `__bp_<domain>_<op>(receiver, arg?)` Result/Option method op.
     /// A `@Result` is a pointer to two `i32` slots — `[ptr]` is the tag (0 = Ok,
     /// non-zero = Error), `[ptr+4]` the payload — matching `try`/`catch`. A
@@ -10969,6 +12003,7 @@ const Emitter = struct {
             const is_map = std.mem.eql(u8, callee, "__bp_result_map");
             const le = self.resultClosureArg(arg1) orelse return self.refuse(loc, "`Result.{s}` on the wasm backend takes a closure written at the call or a function named as a value", .{if (is_map) "map" else "flatMap"});
             const lam = le.function.kind;
+            if (self.mode == .gc) return self.gcResultMap(recv.*, lam, is_map);
             const slot = try self.declRes();
             try self.lowerExpr(recv.*);
             try self.emit(.{ .local_set = slot });
@@ -11306,7 +12341,7 @@ const Emitter = struct {
         const prev_result = self.cur_result;
         defer self.cur_result = prev_result;
         // The arms of a `case` boxed into an `unknown` answer a word.
-        if (self.case_box) self.cur_result = .i32;
+        if (self.case_box) self.cur_result = if (self.mode == .gc) .{ .ref = .unknown } else .i32;
         // In a GC module a `case` whose every arm answers a string answers a
         // string (front 164 s2): its arms are coerced to it, not to the word
         // the enclosing function answers.
@@ -11492,14 +12527,9 @@ const Emitter = struct {
         // proved.
         if (unbox) |pt| if (lam.params.len == 1) {
             const p = lam.params[0];
-            const b = self.builder();
-            try self.declareLocal(p, if (pt == .float) .f64 else .i32);
+            try self.declareLocal(p, self.unkPayloadRepr(pt));
             try self.emit(.{ .local_get = subj });
-            switch (pt) {
-                .int => try self.emit(b.helper(.unknown_as_i32)),
-                .float => try self.emit(b.helper(.unknown_as_f64)),
-                .bool_, .string => try self.emitC(.{ .load = .{} }, "unknown: the proven payload"),
-            }
+            try self.emitUnkPayload(pt);
             try self.emit(.{ .local_set = p });
             if (pt == .string) try self.str_locals.put(p, {});
             if (pt == .bool_) try self.bool_locals.put(p, {});
@@ -12094,7 +13124,6 @@ const Emitter = struct {
     /// null (and a gap) when the enum is generic or no enum declares it.
     fn gcVariantTy(self: *Emitter, fv: FoundVariant) anyerror!u16 {
         const en = self.enumNameOfVariants(fv.variants) orelse return self.gcFail("a variant of no enum");
-        if (self.enum_generics.contains(en)) return self.gcFail("a generic enum");
         return self.gcTyIndex(.{ .variant = .{ .en = en, .name = fv.variant.name } });
     }
 
@@ -12410,9 +13439,12 @@ const Emitter = struct {
         self.case_depth += 1;
         if (self.mode == .gc) {
             const ft = payloadFieldType(ref, slot) orelse return self.gcFail("a payload of no declared type");
-            try self.declareLocal(field, self.reprOf(ft));
+            const er = self.gcPayloadDeclRepr(ref, ft);
+            const fr = self.gcPayloadRepr(ref, subj, ft, er);
+            try self.declareLocal(field, fr);
             try self.emit(.{ .local_get = subj });
             try self.gcLoadPayload(ref, slot);
+            try self.emitConvert(er, fr);
         } else {
             try self.declareLocal(field, .i32);
             try self.emit(.{ .local_get = subj });
@@ -12430,6 +13462,25 @@ const Emitter = struct {
             if (self.enums.contains(tn)) try self.subject_enums.put(self.alloc, field, tn);
         }
         return field;
+    }
+
+    /// The repr a payload declared `t` of the variant `ref` has in its
+    /// struct: erased when the enum is generic (`gcErasedRepr`).
+    fn gcPayloadDeclRepr(self: *Emitter, ref: VariantRef, t: ast.TypeRef) Repr {
+        if (ref == .user) if (self.enumNameOfVariants(ref.user.variants)) |en| if (self.enum_generics.get(en)) |gps|
+            return self.gcErasedRepr(gps, t);
+        return self.reprOf(t);
+    }
+
+    /// The repr a payload declared `t` binds as: a type parameter's slot
+    /// (`er` an `unknown`) as the subject's type argument when it is known
+    /// (`tparamArgOf`), else as declared.
+    fn gcPayloadRepr(self: *Emitter, ref: VariantRef, subj: []const u8, t: ast.TypeRef, er: Repr) Repr {
+        if (!(er == .ref and er.ref == .unknown)) return er;
+        if (eagerTypeRef(t) != .named) return er;
+        if (self.tparamArgOf(ref, subj, t)) |arg| return self.reprOf(arg);
+        const r = self.reprOf(t);
+        return r;
     }
 
     /// Front 164 s2 P2 — with the subject (an `anyref`) on the stack, the
@@ -12472,7 +13523,7 @@ const Emitter = struct {
         };
         const result_cell = if (result_ty) |t| resultPayloadCell(t) else .none;
         if (self.mode == .gc and field_ty == null and result_ty == null) return self.gcFail("a payload of no declared type");
-        const ty = if (field_ty) |t| self.reprOf(t) else if (self.mode == .gc) self.reprOf(result_ty.?) else if (result_cell != .none) watType(result_ty.?) else Repr.i32;
+        const ty = if (field_ty) |t| (if (self.mode == .gc) self.gcPayloadRepr(ref, subj, t, self.gcPayloadDeclRepr(ref, t)) else self.reprOf(t)) else if (self.mode == .gc) self.reprOf(result_ty.?) else if (result_cell != .none) watType(result_ty.?) else Repr.i32;
         // `declarePatternLocals` declared the name a word, not knowing the
         // subject: an `f64` / `i64` payload binds a local of its own type.
         const n = if (result_cell != .none and !self.sameVal(self.locals.get(n0) orelse ty, ty))
@@ -12534,6 +13585,7 @@ const Emitter = struct {
         if (self.mode == .gc) {
             try self.emit(.{ .local_get = subj });
             try self.gcLoadPayload(ref, slot);
+            try self.emitConvert(self.gcPayloadDeclRepr(ref, field_ty.?), ty);
             try self.emitConvert(ty, local_ty);
             try self.emit(.{ .local_set = n });
             return;
@@ -12559,7 +13611,6 @@ const Emitter = struct {
             return;
         }
         if (self.mode == .gc) {
-            if (self.enum_generics.contains(ename)) return self.gcFail("a generic enum");
             try self.emit(.{ .struct_new = self.gcTyIndex(.{ .variant = .{ .en = ename, .name = vname } }) });
             return;
         }
@@ -12821,7 +13872,7 @@ const Emitter = struct {
         const union_elems = self.expected_union_array or (try self.unionArrayLitTypeRef(al)) != null;
         self.expected_union_array = false;
         if (union_elems) {
-            self.builder().helpers.require(.print_shaped_unknown);
+            if (self.mode != .gc) self.builder().helpers.require(.print_shaped_unknown);
             const ubase = try self.allocSlots(total);
             try self.storeSlotConst(ubase, 0, @intCast(al.elems.len));
             for (al.elems, 0..) |el, i| {
@@ -14629,6 +15680,7 @@ const Emitter = struct {
     /// `[len][e0][e1]…` blob with the lambda's parameters bound to locals and
     /// its body inlined per element. `hof` is `lowerArrayMethod`'s `Hof`.
     fn lowerArrayHof(self: *Emitter, hof: u8, recv: ast.Expr, lam: LambdaView, init_expr: ?ast.Expr) anyerror!void {
+        if (self.mode == .gc) return self.gcArrayHof(hof, recv, lam, init_expr);
         const scope_mark = self.scopeMark();
         defer self.scopeRestore(scope_mark);
         const map = 0;
@@ -14844,6 +15896,276 @@ const Emitter = struct {
         }
     }
 
+    /// An inlined lambda body in a GC module: its statements, then its tail
+    /// (a trailing `return`'s value) coerced to `want`, or as the value it
+    /// is; answers the repr left on the stack.
+    fn gcInlineTail(self: *Emitter, body: []const ast.Stmt, want: ?Repr) anyerror!Repr {
+        if (body.len == 0) return self.gcFail("an inlined lambda with no body");
+        for (body[0 .. body.len - 1]) |st| _ = try self.emitStmt(st, false);
+        const last = body[body.len - 1].expr;
+        const tail: ast.Expr = switch (last) {
+            .jump => |j| switch (j.kind) {
+                .@"return" => |r| if (r) |v| v.* else return self.gcFail("an inlined lambda answering nothing"),
+                else => return self.gcFail("an inlined lambda ending in a jump"),
+            },
+            .binding => return self.gcFail("an inlined lambda ending in a binding"),
+            else => last,
+        };
+        const r = want orelse self.wasmTypeOf(tail);
+        try self.lowerCoerced(tail, r);
+        return r;
+    }
+
+    /// What the closure `lam` of `recv.map(lam)` answers for one element of
+    /// the GC array `recv`: its tail's repr with the parameter bound as the
+    /// walk binds it (`gcArrayHof`), a `bool` told from the word it is.
+    fn gcMapTail(self: *Emitter, lam: LambdaView, recv: ast.Expr) Repr {
+        const ar = self.wasmTypeOf(recv);
+        const er: Repr = if (!ar.isArrRef()) .i32 else switch (ar.ref.arr) {
+            .any => self.gcElemRepr(recv) orelse .i32,
+            .f64 => .f64,
+            .i32 => .i32,
+        };
+        if (lam.params.len == 0) return self.lambdaTailType(lam.body);
+        const p = lam.params[0];
+        const prev_local = self.locals.get(p);
+        const prev_tref = self.local_typerefs.get(p);
+        const prev_type = self.local_types.get(p);
+        const prev_alias = self.aliases.get(p);
+        const prev_str = self.str_locals.contains(p);
+        defer {
+            if (prev_local) |t| self.locals.put(p, t) catch {} else _ = self.locals.remove(p);
+            if (prev_tref) |t| self.local_typerefs.put(p, t) catch {} else _ = self.local_typerefs.remove(p);
+            if (prev_type) |t| self.local_types.put(p, t) catch {} else _ = self.local_types.remove(p);
+            if (prev_alias) |a| self.aliases.put(p, a) catch {};
+            if (!prev_str) _ = self.str_locals.remove(p);
+        }
+        _ = self.aliases.remove(p);
+        self.locals.put(p, er) catch {};
+        if (self.elemTypeRefOf(recv)) |et| self.local_typerefs.put(p, et) catch {} else _ = self.local_typerefs.remove(p);
+        if (self.elemRecordOf(recv)) |r| self.local_types.put(p, r) catch {};
+        if (self.elemKindOf(recv) == .str) self.str_locals.put(p, {}) catch {};
+        var t = self.lambdaTailType(lam.body);
+        if (t == .i32) {
+            const last = if (lam.body.len > 0) lam.body[lam.body.len - 1].expr else return t;
+            const v = switch (last) {
+                .jump => |j| switch (j.kind) {
+                    .@"return" => |r| if (r) |x| x.* else return t,
+                    else => return t,
+                },
+                else => last,
+            };
+            if (self.isBoolExpr(v)) t = .bool;
+        }
+        return t;
+    }
+
+    /// `xs.map / filter / forEach / all / any / count / findIndex / fold` with
+    /// a closure written at the call, over a GC array (front 164 s2 P2b): the
+    /// closure's body inlined into a walk of the elements, as
+    /// `lowerArrayHof` does over the words. `map` answers an array of the
+    /// class of what the body answers; `filter` the kept elements.
+    fn gcArrayHof(self: *Emitter, hof: u8, recv: ast.Expr, lam: LambdaView, init_expr: ?ast.Expr) anyerror!void {
+        const scope_mark = self.scopeMark();
+        defer self.scopeRestore(scope_mark);
+        const map = 0;
+        const filter = 1;
+        const for_each = 2;
+        const all = 3;
+        const any = 4;
+        const count = 5;
+        const find_index = 6;
+        const fold = 7;
+        const ar = self.wasmTypeOf(recv);
+        if (!ar.isArrRef()) return self.gcFail("a walk over a value of no known array type");
+        const cls = ar.ref.arr;
+        const elem_bool = try self.elemIsBool(recv);
+        const er: Repr = switch (cls) {
+            .any => self.gcElemRepr(recv) orelse return self.gcFail("a walk over an array of no known element type"),
+            .f64 => .f64,
+            .i32 => if (elem_bool) .bool else .i32,
+        };
+        if (gcElemClassOf(er) != cls) return self.gcFail("an array whose elements disagree with its class");
+        const ti = self.gcTyIndex(.{ .arr = cls });
+
+        const ra = self.reg_arena.allocator();
+        const n = self.loop_seq;
+        self.loop_seq += 1;
+        const base = try std.fmt.allocPrint(ra, "__iter{d}", .{n});
+        const cur = try std.fmt.allocPrint(ra, "__idx{d}", .{n});
+        const len = try std.fmt.allocPrint(ra, "__len{d}", .{n});
+        const acc = try std.fmt.allocPrint(ra, "__acc{d}", .{n});
+        const out = try std.fmt.allocPrint(ra, "__out{d}", .{n});
+        try self.declareLocal(base, ar);
+        try self.declareLocal(cur, .i32);
+        try self.declareLocal(len, .i32);
+
+        const acc_param0: ?[]const u8 = if (hof == fold and lam.params.len > 0) lam.params[0] else null;
+        const elem_param0: ?[]const u8 = if (hof == fold)
+            (if (lam.params.len > 1) lam.params[1] else null)
+        else if (lam.params.len > 0) lam.params[0] else null;
+        const acc_ty: Repr = if (hof == fold) (if (init_expr) |i| self.wasmTypeOf(i) else .i32) else .i32;
+        const acc_param: ?[]const u8 = if (acc_param0) |p| try self.bindTargetAs(p, acc_ty) else null;
+        const elem_param: ?[]const u8 = if (elem_param0) |p| try self.bindTargetAs(p, er) else null;
+        try self.declareLocal(acc, acc_ty);
+        if (elem_param) |p| {
+            try self.declareLocal(p, er);
+            try self.noteElemShape(p, recv);
+            if (self.elemKindOf(recv) == .str) try self.str_locals.put(p, {});
+            if (elem_bool) try self.bool_locals.put(p, {});
+            if (self.elemTypeRefOf(recv)) |et| try self.noteTypedBinder(p, et);
+            if (self.elemTypeRefOf(recv)) |et| if (et == .generic and self.record_generics.contains(et.generic.name)) try self.local_typerefs.put(p, et);
+            if (self.elemTypeRefOf(recv)) |et| if (isUnknownTypeRef(et)) try self.local_typerefs.put(p, et);
+            if (self.elemRecordOf(recv)) |r| try self.local_types.put(p, r);
+        }
+        if (acc_param) |p| {
+            try self.declareLocal(p, acc_ty);
+            if (init_expr) |i| if (self.isStringExpr(i)) try self.str_locals.put(p, {});
+        }
+
+        try self.lowerCoerced(recv, ar);
+        try self.emit(.{ .local_set = base });
+        if (elem_param0) |p| self.installShadow(p, elem_param.?);
+        if (acc_param0) |p| self.installShadow(p, acc_param.?);
+        try self.emit(.{ .local_get = base });
+        try self.emit(.array_len);
+        try self.emit(.{ .local_set = len });
+        try self.emit(zero);
+        try self.emit(.{ .local_set = cur });
+        // `map`'s out array is of the class of what the body answers.
+        var out_cls: Repr.Elem = cls;
+        var tail_ty: Repr = .i32;
+        if (hof == map) {
+            tail_ty = self.gcMapTail(lam, recv);
+            out_cls = gcElemClassOf(tail_ty);
+        }
+        const oti = self.gcTyIndex(.{ .arr = out_cls });
+        switch (hof) {
+            map, filter => {
+                try self.declareLocal(out, .{ .ref = .{ .arr = out_cls } });
+                try self.emit(.{ .local_get = len });
+                try self.emit(.{ .array_new_default = oti });
+                try self.emit(.{ .local_set = out });
+                try self.emit(zero);
+                try self.emit(.{ .local_set = acc });
+            },
+            fold => {
+                try self.lowerCoerced(init_expr.?, acc_ty);
+                try self.emit(.{ .local_set = acc });
+            },
+            all => {
+                try self.emit(one);
+                try self.emit(.{ .local_set = acc });
+            },
+            find_index => {
+                try self.emit(try self.constInt(-1));
+                try self.emit(.{ .local_set = acc });
+            },
+            else => {
+                try self.emit(zero);
+                try self.emit(.{ .local_set = acc });
+            },
+        }
+
+        var loop_c: Capture = .{};
+        self.open(&loop_c);
+        try self.emitAt(8, .{ .local_get = cur });
+        try self.emitAt(8, .{ .local_get = len });
+        try self.emitAt(8, opOf(.i32, "ge_s"));
+        try self.emitAt(8, .{ .br_if = break_label });
+        if (hof == find_index) {
+            try self.emitAt(8, .{ .local_get = acc });
+            try self.emitAt(8, try self.constInt(-1));
+            try self.emitAt(8, opOf(.i32, "ne"));
+            try self.emitAt(8, .{ .br_if = break_label });
+        }
+        if (elem_param) |p| {
+            try self.emitAt(8, .{ .local_get = base });
+            try self.emitAt(8, .{ .local_get = cur });
+            try self.emitAt(8, .{ .array_get = .{ .ty = ti } });
+            if (cls == .any) try self.gcUnbox(er);
+            try self.emitAt(8, .{ .local_set = p });
+        }
+        if (acc_param) |p| {
+            try self.emitAt(8, .{ .local_get = acc });
+            try self.emitAt(8, .{ .local_set = p });
+        }
+        switch (hof) {
+            for_each => for (lam.body) |stmt| {
+                _ = try self.emitStmt(stmt, false);
+            },
+            map => {
+                try self.emit(.{ .local_get = out });
+                try self.emit(.{ .local_get = cur });
+                const r = try self.gcInlineTail(lam.body, tail_ty);
+                if (out_cls == .any) try self.gcBox(r);
+                try self.emit(.{ .array_set = oti });
+            },
+            fold => {
+                _ = try self.gcInlineTail(lam.body, acc_ty);
+                try self.emit(.{ .local_set = acc });
+            },
+            else => {
+                _ = try self.gcInlineTail(lam.body, .i32);
+                var then_c: Capture = .{};
+                self.open(&then_c);
+                switch (hof) {
+                    filter => {
+                        try self.emit(.{ .local_get = out });
+                        try self.emit(.{ .local_get = acc });
+                        try self.emit(.{ .local_get = base });
+                        try self.emit(.{ .local_get = cur });
+                        try self.emit(.{ .array_get = .{ .ty = ti } });
+                        try self.emit(.{ .array_set = ti });
+                        try self.emit(.{ .local_get = acc });
+                        try self.emit(one);
+                        try self.emit(opOf(.i32, "add"));
+                        try self.emit(.{ .local_set = acc });
+                    },
+                    all => {
+                        try self.emit(zero);
+                        try self.emit(.{ .local_set = acc });
+                    },
+                    any => {
+                        try self.emit(one);
+                        try self.emit(.{ .local_set = acc });
+                    },
+                    count => {
+                        try self.emit(.{ .local_get = acc });
+                        try self.emit(one);
+                        try self.emit(opOf(.i32, "add"));
+                        try self.emit(.{ .local_set = acc });
+                    },
+                    else => {
+                        try self.emit(.{ .local_get = cur });
+                        try self.emit(.{ .local_set = acc });
+                    },
+                }
+                const then_seq = self.seal(&then_c, .none);
+                if (hof == all) try self.emit(opOf(.i32, "eqz"));
+                try self.emit(.{ .@"if" = .{ .then = .{ .seq = then_seq } } });
+            },
+        }
+        try self.emitAt(8, .{ .local_get = cur });
+        try self.emitAt(8, one);
+        try self.emitAt(8, opOf(.i32, "add"));
+        try self.emitAt(8, .{ .local_set = cur });
+        try self.emitAt(8, .{ .br = continue_label });
+        const loop_seq = self.seal(&loop_c, .terminated);
+        try self.emitLoopBlock(loop_seq, null);
+        switch (hof) {
+            for_each => {},
+            map => try self.emit(.{ .local_get = out }),
+            filter => {
+                try self.emit(.{ .local_get = out });
+                try self.emit(zero);
+                try self.emit(.{ .local_get = acc });
+                try self.emit(.{ .call = try self.gcArrOp("slice", cls) });
+            },
+            else => try self.emit(.{ .local_get = acc }),
+        }
+    }
+
     /// The wasm type an inlined lambda body leaves (its tail, or the value of a
     /// trailing `return`).
     fn lambdaTailType(self: *Emitter, body: []const ast.Stmt) Repr {
@@ -15052,7 +16374,7 @@ const Emitter = struct {
                 },
                 .arrayLit => |al| if (al.elems.len > 0) {
                     if ((try self.unionArrayLitTypeRef(al)) != null) {
-                        self.builder().helpers.require(.print_shaped_unknown);
+                        if (self.mode != .gc) self.builder().helpers.require(.print_shaped_unknown);
                         return "[U";
                     }
                     if (try self.printShapeOf(al.elems[0])) |inner| return try std.fmt.allocPrint(self.arena(), "[{s}", .{inner});
@@ -15192,7 +16514,7 @@ const Emitter = struct {
     fn arrayTypeShape(self: *Emitter, elem: ast.TypeRef) anyerror!?[]const u8 {
         // A union's (or `unknown`'s) slot is a box that names what it holds.
         if (isUnknownTypeRef(elem)) {
-            self.builder().helpers.require(.print_shaped_unknown);
+            if (self.mode != .gc) self.builder().helpers.require(.print_shaped_unknown);
             return "[U";
         }
         if (try self.typeRefShape(elem)) |inner| return try std.fmt.allocPrint(self.arena(), "[{s}", .{inner});
@@ -18061,6 +19383,10 @@ const Emitter = struct {
             if (bnd.tref != null or (self.records.contains(bnd.ty) and comparesValues(ast.FnDecl, f))) needed = true;
         }
         if (subs.items.len == 0) return null;
+        // A GC module's one body holds a type parameter as an `unknown`, its
+        // arrays of one `anyref` arrays: a call that binds the parameters
+        // calls a copy written in its arguments' types (front 164 s2 P2b).
+        if (self.mode == .gc) needed = true;
         if (!needed and !callsMethodOn(ast.FnDecl, f, params_of.items)) return null;
         return try self.specCopy(target, g, subs.items);
     }
@@ -18925,7 +20251,14 @@ const Emitter = struct {
     fn lowerBoxedInto(self: *Emitter, target: ?ast.TypeRef, value: ast.Expr) anyerror!void {
         if (self.mode == .gc) {
             const t = target orelse return self.gcFail("a box into no declared type");
-            if (isUnknownTypeRef(t) or self.ctorUnionArgs(t, value) != null) return self.gcFail("a value boxed as an unknown or a union");
+            if (isUnknownTypeRef(t)) return self.lowerAsUnknown(value);
+            // A generic constructor over a union argument: its payloads are
+            // boxed whatever the slot (`gcGenericArg`).
+            if (self.ctorUnionArgs(t, value) != null) {
+                const vr = self.wasmTypeOf(value);
+                if (!vr.isRef()) return self.gcFail("a union constructor of no reference");
+                return self.lowerCoerced(value, vr);
+            }
             if (value == .branch and armAnswersNull(value)) return self.gcFail("an if answering null into an optional");
             const oi = self.optInfoOfTypeRef(t) orelse return self.gcFail("a box into a type that is no optional");
             const pr = self.gcOptPayload(oi) orelse return self.gcFail("an optional of no known payload");
@@ -18977,7 +20310,8 @@ const Emitter = struct {
         const then_marked = try self.applyNarrowing(then_names.items);
         try self.lowerBoxedArm(target, i.then_, if (arm_types) |a| a[0] else null);
         self.dropNarrowing(then_marked);
-        const then_seq = self.seal(&then_c, .{ .value = .i32 });
+        const rty: ValType = if (self.mode == .gc) .anyref else .i32;
+        const then_seq = self.seal(&then_c, .{ .value = rty });
 
         var else_c: Capture = .{};
         self.open(&else_c);
@@ -18986,10 +20320,10 @@ const Emitter = struct {
         const else_marked = try self.applyNarrowing(else_names.items);
         try self.lowerBoxedArm(target, els, if (arm_types) |a| a[1] else null);
         self.dropNarrowing(else_marked);
-        const else_seq = self.seal(&else_c, .{ .value = .i32 });
+        const else_seq = self.seal(&else_c, .{ .value = rty });
 
         try self.emit(.{ .@"if" = .{
-            .result = .i32,
+            .result = rty,
             .then = .{ .seq = then_seq },
             .@"else" = .{ .seq = else_seq },
         } });
@@ -19024,14 +20358,14 @@ const Emitter = struct {
 
     fn boxedLastStmt(self: *Emitter, target: ?ast.TypeRef, last: ast.Expr, arm_type: ?ast.TypeRef) anyerror!void {
         if (isNullLit(last)) {
-            try self.pushZero();
+            if (self.mode == .gc) try self.emit(.{ .ref_null = .anyref }) else try self.pushZero();
         } else if (self.boxesInto(target, last)) {
             if (target) |t| if (isUnknownTypeRef(t)) {
                 self.box_as = arm_type;
             };
             try self.lowerBoxedInto(target, last);
         } else {
-            try self.lowerCoerced(last, .i32);
+            try self.lowerCoerced(last, if (self.mode == .gc) .{ .ref = .unknown } else .i32);
         }
     }
 
@@ -19165,6 +20499,7 @@ const Emitter = struct {
             if (self.records.contains(bnd.ty) and comparesValues(ast.BehaviorMethod, m)) needed = true;
         }
         if (subs.items.len == 0) return null;
+        if (self.mode == .gc) needed = true;
         if (!needed and !callsMethodOn(ast.BehaviorMethod, m, params_of.items)) return null;
         var name: std.ArrayListUnmanaged(u8) = .empty;
         try name.appendSlice(ar, m.name);
@@ -19276,17 +20611,161 @@ const Emitter = struct {
     /// no argument names is the neutral value of its type.
     fn gcRecordCtor(self: *Emitter, cc: anytype, fields: []const []const u8) anyerror!void {
         self.expected_ctor = null;
-        if (self.record_generics.contains(cc.callee)) return self.gcFail("a generic record");
+        const gps = self.record_generics.get(cc.callee);
         const trefs = self.record_field_typerefs.get(cc.callee) orelse return self.gcFail("a record with no field types");
         for (fields, 0..) |fname, i| {
             const ftref: ast.TypeRef = if (i < trefs.len) trefs[i] else return self.gcFail("a record field with no type");
-            const fr = self.reprOf(ftref);
+            const fr = if (gps) |g| self.gcErasedRepr(g, ftref) else self.reprOf(ftref);
             if (self.argForField(cc.args, fname, i)) |arg| {
                 if (ftref == .function) return self.gcFail("a closure field");
+                if (gps) |g| if (mentionsGeneric(ftref, g)) {
+                    try self.gcGenericArg(ftref, g, fr, arg.value.*);
+                    continue;
+                };
                 if (self.boxesInto(ftref, arg.value.*)) try self.lowerBoxedInto(ftref, arg.value.*) else try self.lowerCoerced(arg.value.*, fr);
-            } else try self.emit(self.zeroOf(fr));
+            } else {
+                // A generic field with no argument: linear memory prints its
+                // word by `i` (`genericShapes`), which an `anyref` cannot.
+                if (gps) |g| if (mentionsGeneric(ftref, g)) return self.gcFail("a generic field with no argument");
+                try self.emit(self.zeroOf(fr));
+            }
         }
         try self.emit(.{ .struct_new = self.gcTyIndex(.{ .record = cc.callee }) });
+    }
+
+    /// The repr a field (or payload) of a generic declaration whose type
+    /// parameters are `gps` is declared as: every type parameter erased to
+    /// `unknown` — one struct type per declaration, never per instantiation
+    /// (front 164 s2 P2b). `T` and `?T` are an `anyref`, `T[]` an `anyref`
+    /// array, `#(K, V)` a tuple.
+    fn gcErasedRepr(self: *Emitter, gps: []const ast.GenericParam, t: ast.TypeRef) Repr {
+        const saved_owner = self.owner_tparams;
+        const saved_fn = self.fn_tparams;
+        self.owner_tparams = gps;
+        self.fn_tparams = &.{};
+        defer {
+            self.owner_tparams = saved_owner;
+            self.fn_tparams = saved_fn;
+        }
+        if (mentionsGeneric(t, gps)) switch (eagerTypeRef(t)) {
+            .named, .optional => return .{ .ref = .unknown },
+            .array => return .{ .ref = .{ .arr = .any } },
+            .generic => |g| if (g.args.len == 1 and std.mem.eql(u8, g.name, "Array")) return .{ .ref = .{ .arr = .any } },
+            else => {},
+        };
+        return self.reprOf(t);
+    }
+
+    /// The erased repr (`gcErasedRepr`) field `member` of `rec` is declared
+    /// as, when `rec` is a generic record and the field names one of its
+    /// type parameters; null otherwise.
+    fn gcGenericFieldDecl(self: *Emitter, rec: []const u8, member: []const u8) ?Repr {
+        const gps = self.record_generics.get(rec) orelse return null;
+        const fields = self.records.get(rec) orelse return null;
+        const trefs = self.record_field_typerefs.get(rec) orelse return null;
+        for (fields, 0..) |f, i| if (std.mem.eql(u8, f, member) and i < trefs.len) {
+            if (!mentionsGeneric(trefs[i], gps)) return null;
+            return self.gcErasedRepr(gps, trefs[i]);
+        };
+        return null;
+    }
+
+    /// The print shape of a field of a generic declaration declared `t`: a
+    /// type parameter's slot printed by what it holds (`U`), so the value
+    /// built into it must print the same way (`gcGenericArg`).
+    fn gcErasedShape(self: *Emitter, gps: []const ast.GenericParam, t: ast.TypeRef) anyerror![]const u8 {
+        if (!mentionsGeneric(t, gps)) return self.fieldShape(t);
+        return switch (eagerTypeRef(t)) {
+            .named, .optional => "U",
+            .array => |inner| try std.fmt.allocPrint(self.arena(), "[{s}", .{try self.gcErasedShape(gps, inner.*)}),
+            .generic => |g| if (g.args.len == 1 and std.mem.eql(u8, g.name, "Array"))
+                try std.fmt.allocPrint(self.arena(), "[{s}", .{try self.gcErasedShape(gps, g.args[0])})
+            else
+                self.gcFail("a generic field of a generic type"),
+            .tuple_ => |elems| blk: {
+                var out: std.ArrayListUnmanaged(u8) = .empty;
+                try out.append(self.arena(), '(');
+                for (elems) |el| try out.appendSlice(self.arena(), try self.gcErasedShape(gps, el));
+                try out.append(self.arena(), ')');
+                break :blk out.items;
+            },
+            else => self.gcFail("a generic field of no GC shape"),
+        };
+    }
+
+    /// The argument `value` of a field (or payload) of a generic declaration
+    /// declared `ft` (repr `fr`, `gcErasedRepr`): a value already of that repr
+    /// as it is; a scalar into a type parameter's slot boxed by its print
+    /// shape, which the slot's printer (`U`) answers the same way. A value
+    /// whose text the slot would not print as linear memory does (a float, an
+    /// all-unit enum's ordinal, an array of words) is refused here.
+    fn gcGenericArg(self: *Emitter, ft: ast.TypeRef, gps: []const ast.GenericParam, fr: Repr, value: ast.Expr) anyerror!void {
+        _ = gps;
+        const vr = self.wasmTypeOf(value);
+        if (isNullLit(value)) {
+            if (!fr.isRef()) return self.gcFail("a null into a generic field");
+            try self.emit(self.zeroOf(fr));
+            return;
+        }
+        if (isEmptyArrayLit(value) and fr.isArrRef()) {
+            try self.emit(zero);
+            try self.emit(.{ .array_new_default = self.gcTyIndex(.{ .arr = fr.ref.arr }) });
+            return;
+        }
+        if (vr.isRef() and fr.isRef()) {
+            if (vr.eql(fr) or (fr.ref == .unknown and vr.ref != .unknown and vr.ref != .bytes and vr.ref != .closure and vr.ref != .task and vr.ref != .cell and vr.ref != .bigint)) {
+                // A reference slot of a type parameter: the value prints by
+                // what it is — a string quoted, a record or variant by its
+                // printer —, an array or a tuple only when its shape has no
+                // word the slot could not name.
+                if (fr.ref == .unknown and (vr.ref == .arr or vr.ref == .tuple)) return self.gcFail("an array or tuple in a type parameter's slot");
+                if (fr.ref == .arr or fr.ref == .tuple) {
+                    const sh = (try self.printShapeOf(value)) orelse return self.gcFail("a generic container of no print shape");
+                    // Each element prints by its box (`U`): a bool, an
+                    // all-unit enum's ordinal or a `u64` would not.
+                    for (sh) |ch| if (std.mem.indexOfScalar(u8, "sifl[()TU?!", ch) == null) return self.gcFail("a generic container holding words");
+                }
+                try self.lowerCoerced(value, vr);
+                return;
+            }
+            // An array of words or floats into a type parameter's array
+            // (`Q(items: [7])` over `items: Array<T>`): its elements boxed
+            // into an `anyref` array, which print by their boxes as their
+            // words did by `i` / `f`.
+            if (vr.isArrRef() and fr.isArrRef() and fr.ref.arr == .any and vr.ref.arr != .any) {
+                // A literal only: a named array shares its elements with
+                // whoever else holds it, and the boxed copy would not.
+                if (!(value == .collection and value.collection.kind == .arrayLit)) return self.gcFail("a named array of words into a generic array");
+                const sh = (try self.printShapeOf(value)) orelse return self.gcFail("a generic array of no print shape");
+                if (!(std.mem.eql(u8, sh, "[i") or std.mem.eql(u8, sh, "[f"))) return self.gcFail("a generic array of words with no box");
+                try self.lowerCoerced(value, vr);
+                try self.emit(.{ .call = try self.gcArrBox(vr.ref.arr) });
+                return;
+            }
+            return self.gcFail("a generic field of another shape");
+        }
+        if (!(fr == .ref and fr.ref == .unknown)) return self.gcFail("a scalar into a generic container field");
+        if (eagerTypeRef(ft) == .optional) return self.gcFail("a scalar into a generic optional field");
+        // An all-unit enum's ordinal: in its enum's box, which prints by name.
+        if (self.unitEnumOf(value) orelse self.unitEnumOfTypeRef(value)) |en| {
+            try self.lowerCoerced(value, .i32);
+            try self.emit(.{ .struct_new = self.gcTyIndex(.{ .ebox = en }) });
+            return;
+        }
+        const sh = try self.valueShapeOf(value);
+        if (sh.len != 1) return self.gcFail("a generic argument of a composite shape");
+        switch (sh[0]) {
+            'i' => {
+                if (self.fnValueArity(value) != null) return self.gcFail("a function value in a type parameter's slot");
+                try self.lowerCoerced(value, .i32);
+                try self.gcBox(.i32);
+            },
+            'b' => {
+                try self.lowerCoerced(value, .bool);
+                try self.gcBox(.bool);
+            },
+            else => return self.gcFail("a generic argument with no box"),
+        }
     }
 
     fn lowerRecordCtor(self: *Emitter, cc: anytype, fields: []const []const u8) anyerror!void {
@@ -19414,13 +20893,26 @@ const Emitter = struct {
         self.ctor_box = .none;
         const ename = receiverName(cc) orelse self.enumOfVariant(variant.name) orelse "";
         if (self.mode == .gc) {
-            if (box != .none or ename.len == 0 or self.enum_generics.contains(ename)) return self.gcFail("a boxed or generic variant");
+            if (ename.len == 0) return self.gcFail("a variant of no enum");
+            // A generic enum's payloads are erased (`gcErasedRepr`): the
+            // variant's struct is one per declaration, a type parameter's
+            // payload an `anyref` — boxed here whatever slot the value goes
+            // into, so `ctor_box` asks nothing more of it.
+            const gps = self.enum_generics.get(ename);
+            if (box != .none and gps == null) return self.gcFail("a boxed variant");
             for (variant.fields, 0..) |vf, i| {
-                const fr = self.reprOf(vf.typeRef);
+                const fr = if (gps) |g| self.gcErasedRepr(g, vf.typeRef) else self.reprOf(vf.typeRef);
                 if (self.argForField(cc.args, vf.name, i)) |arg| {
                     if (vf.typeRef == .function) return self.gcFail("a closure payload");
+                    if (gps) |g| if (mentionsGeneric(vf.typeRef, g)) {
+                        try self.gcGenericArg(vf.typeRef, g, fr, arg.value.*);
+                        continue;
+                    };
                     if (self.boxesInto(vf.typeRef, arg.value.*)) try self.lowerBoxedInto(vf.typeRef, arg.value.*) else try self.lowerCoerced(arg.value.*, fr);
-                } else try self.emit(self.zeroOf(fr));
+                } else {
+                    if (gps) |g| if (mentionsGeneric(vf.typeRef, g)) return self.gcFail("a generic payload with no argument");
+                    try self.emit(self.zeroOf(fr));
+                }
             }
             try self.emit(.{ .struct_new = self.gcTyIndex(.{ .variant = .{ .en = ename, .name = variant.name } }) });
             return;
@@ -19556,6 +21048,12 @@ const Emitter = struct {
             if (ia.optional) return self.gcOptionalField(ia, rty);
             try self.lowerCoerced(ia.receiver.*, .{ .ref = .{ .record = rty } });
             try self.emit(.{ .struct_get = .{ .ty = self.gcTyIndex(.{ .record = rty }), .field = off / 4 } });
+            // A type parameter's slot of a generic record: read as the
+            // receiver's type argument where it is known (unboxed, cast).
+            if (self.gcGenericFieldDecl(rty, ia.member)) |dr| if (dr == .ref and dr.ref == .unknown) {
+                const want = self.wasmTypeOf(.{ .identifier = .{ .loc = loc, .kind = .{ .identAccess = ia } } });
+                if (!(want == .ref and want.ref == .unknown)) try self.gcUnbox(want);
+            };
             return;
         }
         // Named record-field access — two-level resolution:
@@ -20270,6 +21768,21 @@ const Emitter = struct {
                         var out = inner;
                         out.ok_str = false;
                         out.ok = if (Cell.of(tail) == .f64) .{ .named = "f64" } else if (Cell.of(tail) == .i64) .{ .named = "i64" } else null;
+                        // A GC module reads the mapped payload by its type
+                        // (`gcResultMap` boxes it by what the body answers).
+                        if (self.mode == .gc and out.ok == null) out.ok = switch (tail) {
+                            .bool => .{ .named = "bool" },
+                            .i32 => .{ .named = "i32" },
+                            .ref => |k| switch (k) {
+                                .str => blk2: {
+                                    out.ok_str = true;
+                                    break :blk2 .{ .named = "string" };
+                                },
+                                .record => |n| .{ .named = n },
+                                else => null,
+                            },
+                            else => null,
+                        };
                         break :blk out;
                     }
                     // `r.flatMap({ v -> … })` answers the `@Result` its closure's tail does.
@@ -20601,10 +22114,26 @@ const Emitter = struct {
         self.loop_seq += 1;
         const tgt = try std.fmt.allocPrint(ra, "__yield{d}", .{n});
         const label = try std.fmt.allocPrint(ra, "__gen{d}", .{n});
-        try self.declareLocal(tgt, .i32);
-        try self.emit(zero);
-        try self.emit(self.builder().helper(.arr_new));
-        try self.emit(.{ .local_set = tgt });
+        const saved_repr = self.gen_repr;
+        defer self.gen_repr = saved_repr;
+        if (self.mode == .gc) {
+            // The array of what the body yields, of the class its yields
+            // have (`yieldElemKind`, which the loop's value is read by).
+            self.gen_repr = .{ .ref = .{ .arr = switch (self.yieldElemKind(lp.body)) {
+                .i32 => .i32,
+                .f64 => .f64,
+                .str => .any,
+            } } };
+            try self.declareLocal(tgt, self.gen_repr);
+            try self.emit(zero);
+            try self.emit(.{ .array_new_default = self.gcTyIndex(.{ .arr = self.gen_repr.ref.arr }) });
+            try self.emit(.{ .local_set = tgt });
+        } else {
+            try self.declareLocal(tgt, .i32);
+            try self.emit(zero);
+            try self.emit(self.builder().helper(.arr_new));
+            try self.emit(.{ .local_set = tgt });
+        }
         const saved_target = self.yield_target;
         const saved_end = self.gen_end;
         self.yield_target = tgt;
@@ -20642,7 +22171,7 @@ const Emitter = struct {
             return;
         }
         try self.emitC(.{ .local_get = self.yield_target.? }, "everything the body yielded");
-        try self.emitConvert(.i32, self.cur_result);
+        try self.emitConvert(if (self.mode == .gc) self.gen_repr else .i32, self.cur_result);
         try self.runDefers(0);
         try self.emit(.@"return");
     }
@@ -20733,6 +22262,22 @@ const Emitter = struct {
     /// accumulator. A float is appended as its cell (`emitToFloatSlot`).
     fn emitYield(self: *Emitter, v: ast.Expr) anyerror!void {
         const tgt = self.yield_target.?;
+        if (self.mode == .gc) {
+            const ar = self.gen_repr;
+            if (!ar.isArrRef()) return self.gcFail("a yield into no known array");
+            const cls = ar.ref.arr;
+            const er: Repr = switch (cls) {
+                .i32 => if (self.isBoolExpr(v)) .bool else .i32,
+                .f64 => .f64,
+                .any => self.wasmTypeOf(v),
+            };
+            try self.emit(.{ .local_get = tgt });
+            try self.lowerCoerced(v, er);
+            if (cls == .any) try self.gcBox(er);
+            try self.emit(.{ .call = try self.gcArrPush(cls) });
+            try self.emit(.{ .local_set = tgt });
+            return;
+        }
         try self.emit(.{ .local_get = tgt });
         try self.lowerSlotWord(v);
         try self.emit(self.builder().helper(.arr_push));
@@ -21001,7 +22546,7 @@ const Emitter = struct {
         const typerefs = try ra.alloc(?ast.TypeRef, f.params.len);
         for (f.params, 0..) |p, i| {
             syms[i] = try self.paramSymbol(p, i);
-            types[i] = watType(p.typeRef);
+            types[i] = self.reprOf(p.typeRef);
             typerefs[i] = p.typeRef;
         }
         self.tail_self = .{ .name = f.name, .syms = syms, .types = types, .typerefs = typerefs };
@@ -21213,6 +22758,9 @@ const Emitter = struct {
     /// Best-effort wasm value type of `e`. In a GC module an expression the
     /// base answer takes for a word may be a reference (`gcReprOfExpr`).
     fn wasmTypeOf(self: *Emitter, e: ast.Expr) Repr {
+        // Decision 150 — a `case` / `if` the checker typed a union answers
+        // the `unknown` its arms are boxed into.
+        if (self.mode == .gc and self.unionValueOf(e) != null) return .{ .ref = .unknown };
         const base = self.wasmTypeOfBase(e);
         if (self.mode == .gc and base == .i32) if (self.gcReprOfExpr(e)) |r| return r;
         return base;
@@ -21363,6 +22911,11 @@ const Emitter = struct {
             .enum_ => return,
             else => {},
         };
+        // A scalar into an `unknown` slot (a type parameter's, a generic
+        // field's) goes in its box; read out of one where its type is known,
+        // it is unboxed (front 164 s2 P2b).
+        if (self.mode == .gc and !from.isRef() and to == .ref and to.ref == .unknown) return self.gcBox(from);
+        if (self.mode == .gc and from == .ref and from.ref == .unknown and !to.isRef()) return self.gcUnbox(to);
         if (self.mode == .gc and (from.isRef() or to.isRef())) {
             if (gc_debug) {
                 std.debug.print("GCCONV {s} -> {s}\n", .{ from.name(), to.name() });
@@ -22329,9 +23882,24 @@ const Emitter = struct {
         if ((op == Op.eq or op == Op.ne) and (self.isUnknownExpr(lhs) or self.isUnknownExpr(rhs))) {
             try self.lowerAsUnknown(lhs);
             try self.lowerAsUnknown(rhs);
-            try self.emit(self.builder().helper(.unknown_eq));
+            if (self.mode == .gc) try self.emit(.{ .call = try self.gcUnkEq() }) else try self.emit(self.builder().helper(.unknown_eq));
             if (op == Op.ne) try self.emit(opOf(.i32, "eqz"));
             return;
+        }
+        // Front 164 s2 P2b — two values of a type parameter in a GC module's
+        // generic body: `anyref`s, compared as `unknown`s are (a number by
+        // value, a string by content, anything else by identity — what the
+        // one body compared as words).
+        if (self.mode == .gc and (op == Op.eq or op == Op.ne)) {
+            const lr = self.wasmTypeOf(lhs);
+            const rr = self.wasmTypeOf(rhs);
+            if (lr == .ref and lr.ref == .unknown and rr == .ref and rr.ref == .unknown) {
+                try self.lowerCoerced(lhs, lr);
+                try self.lowerCoerced(rhs, rr);
+                try self.emit(.{ .call = try self.gcUnkEq() });
+                if (op == Op.ne) try self.emit(opOf(.i32, "eqz"));
+                return;
+            }
         }
         // Decision 332 — a `?bigint` is its block's address or `0`: two of
         // them (or one and a `bigint`) are equal when both are absent or both
@@ -22680,14 +24248,9 @@ const Emitter = struct {
         const n = self.resolveName(n0);
         const alias = try std.fmt.allocPrint(self.arena(), "{s}__is{d}", .{ n0, self.alias_seq });
         self.alias_seq += 1;
-        const b = self.builder();
-        try self.declareLocal(alias, if (pt == .float) .f64 else .i32);
+        try self.declareLocal(alias, self.unkPayloadRepr(pt));
         try self.emit(.{ .local_get = n });
-        switch (pt) {
-            .int => try self.emit(b.helper(.unknown_as_i32)),
-            .float => try self.emit(b.helper(.unknown_as_f64)),
-            .bool_, .string => try self.emitC(.{ .load = .{} }, "unknown: the proven payload"),
-        }
+        try self.emitUnkPayload(pt);
         try self.emit(.{ .local_set = alias });
         if (pt == .string) try self.str_locals.put(alias, {});
         if (pt == .bool_) try self.bool_locals.put(alias, {});

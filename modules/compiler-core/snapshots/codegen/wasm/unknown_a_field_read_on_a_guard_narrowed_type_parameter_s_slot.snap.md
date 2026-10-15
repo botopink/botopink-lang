@@ -20,50 +20,72 @@ fn main() {
 ----- WASM TEXT -- main.wat
 ```wasm
 (module
+  (rec
+    (type $str (array (mut i8)))
+    (type $var_Maybe_Some (struct (field $f0 (mut anyref))))
+  )
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
-  (data (i32.const 256) "\14\00\00\00V\nMaybe.Some\01\05valueG")
-  (data (i32.const 280) "\01\00\00\00s")
-  (data (i32.const 288) "\08\00\00\00P\06string")
-  (data (i32.const 300) "\03\00\00\00abc")
-  (global $__heap_ptr (mut i32) (i32.const 320))
-  (func $innerLength (param $b i32) (result i32)
+  (global $__heap_ptr (mut i32) (i32.const 256))
+  (func $innerLength (param $b anyref) (result i32)
     (local $v i32)
-    (local $__case_0 i32)
-    (local $v__is0 i32)
+    (local $__case_0 anyref)
+    (local $v__0 anyref)
+    (local $__gc0 anyref)
+    (local $v__is1 (ref null $str))
+    (local $__gc1 (ref null $str))
+    (local $__gc2 i32)
+    (local $v__2 anyref)
+    (local $v__3 anyref)
     local.get $b
     local.set $__case_0
     local.get $__case_0
-    i32.load ;; variant tag
-    i32.const 0 ;; Some
-    i32.eq
+    ref.test (ref null $var_Maybe_Some)
+    local.get $__case_0
+    ref.is_null
+    i32.eqz
+    i32.and
     (if (result i32)
       (then
     local.get $__case_0
-    i32.load offset=4
-    local.set $v
-    local.get $v
-    call $__unknown_kind
-    i32.const 115
-    i32.eq
+    ref.cast (ref null $var_Maybe_Some)
+    struct.get $var_Maybe_Some $f0
+    local.set $v__0
+    local.get $v__0
+    local.tee $__gc0
+    ref.test (ref null $str)
+    local.get $__gc0
+    ref.is_null
+    i32.eqz
+    i32.and
     (if (result i32)
       (then
-    local.get $v
-    i32.load ;; unknown: the proven payload
-    local.set $v__is0
-    local.get $v__is0
+    local.get $v__0
+    ref.cast (ref null $str)
+    local.set $v__is1
+    local.get $v__is1
+    local.set $__gc1
+    global.get $__heap_ptr
+    local.set $__gc2
+    local.get $__gc1
+    call $__gc_to_lin_str
     call $__std_text_length
+    local.get $__gc2
+    global.set $__heap_ptr
       )
       (else
     local.get $__case_0
-    i32.load ;; variant tag
-    i32.const 0 ;; Some
-    i32.eq
+    ref.test (ref null $var_Maybe_Some)
+    local.get $__case_0
+    ref.is_null
+    i32.eqz
+    i32.and
     (if (result i32)
       (then
     local.get $__case_0
-    i32.load offset=4
-    local.set $v
+    ref.cast (ref null $var_Maybe_Some)
+    struct.get $var_Maybe_Some $f0
+    local.set $v__2
     i32.const 0
     i32.const 1
     call $__i32_sub_chk
@@ -79,14 +101,17 @@ fn main() {
       )
       (else
     local.get $__case_0
-    i32.load ;; variant tag
-    i32.const 0 ;; Some
-    i32.eq
+    ref.test (ref null $var_Maybe_Some)
+    local.get $__case_0
+    ref.is_null
+    i32.eqz
+    i32.and
     (if (result i32)
       (then
     local.get $__case_0
-    i32.load offset=4
-    local.set $v
+    ref.cast (ref null $var_Maybe_Some)
+    struct.get $var_Maybe_Some $f0
+    local.set $v__3
     i32.const 0
     i32.const 1
     call $__i32_sub_chk
@@ -103,37 +128,9 @@ fn main() {
   )
   (func $main
     (local $__mem0 i32)
-    (local $s i32)
-    (local $__mem1 i32)
-    i32.const 16
-    call $__alloc
-    local.set $__mem0
-    local.get $__mem0
-    i32.const 260
-    i32.store
-    local.get $__mem0
-    i32.const 284
-    i32.store offset=12
-    local.get $__mem0
-    i32.const 0
-    i32.store offset=4
-    local.get $__mem0
-    i32.const 8
-    call $__alloc
-    local.set $__mem1
-    local.get $__mem1
-    i32.const 292
-    i32.store
-    local.get $__mem1
-    i32.const 300
-    i32.store offset=4 ;; unknown: box a string
-    local.get $__mem1
-    i32.const 4
-    i32.add
-    i32.store offset=8
-    local.get $__mem0
-    i32.const 4
-    i32.add
+    (local $s anyref)
+    global.get $__s0
+    struct.new $var_Maybe_Some
     local.set $s
     local.get $s
     call $innerLength
@@ -322,45 +319,6 @@ fn main() {
       )
     )
   )
-  (func $__str_eq (param $a i32) (param $b i32) (result i32)
-    (local $i i32) (local $alen i32)
-    local.get $a
-    i32.load
-    local.set $alen
-    local.get $alen
-    local.get $b
-    i32.load
-    i32.ne
-    (if
-      (then i32.const 0 return)
-    )
-    (block $done
-      (loop $cmp
-        local.get $i
-        local.get $alen
-        i32.ge_u
-        br_if $done
-        local.get $a
-        local.get $i
-        i32.add
-        i32.load8_u offset=4
-        local.get $b
-        local.get $i
-        i32.add
-        i32.load8_u offset=4
-        i32.ne
-        (if
-          (then i32.const 0 return)
-        )
-        local.get $i
-        i32.const 1
-        i32.add
-        local.set $i
-        br $cmp
-      )
-    )
-    i32.const 1
-  )
   (func $__alloc (param $n i32) (result i32)
     (local $p i32) (local $e i32)
     global.get $__heap_ptr
@@ -408,193 +366,6 @@ fn main() {
     local.get $e
     global.set $__heap_ptr
     local.get $p
-  )
-  (func $__unknown_kind (param $v i32) (result i32)
-    (local $d i32)
-    local.get $v
-    i32.const 256
-    i32.lt_u
-    (if
-      (then
-        i32.const 0
-        return
-      )
-    )
-    local.get $v
-    i32.const 4
-    i32.sub
-    i32.load
-    local.set $d
-    local.get $d
-    i32.load8_u
-    i32.const 80
-    i32.ne
-    (if
-      (then
-        local.get $d
-        i32.load8_u
-        return
-      )
-    )
-    local.get $d
-    i32.load8_u offset=2
-  )
-  (func $__unknown_int_in (param $v i32) (param $lo i32) (param $hi i32) (result i32)
-    (local $k i32) (local $x f64)
-    local.get $v
-    call $__unknown_kind
-    local.set $k
-    local.get $k
-    i32.const 105
-    i32.eq
-    (if
-      (then
-        local.get $v
-        i32.load
-        local.get $lo
-        i32.ge_s
-        local.get $v
-        i32.load
-        local.get $hi
-        i32.le_s
-        i32.and
-        return
-      )
-    )
-    local.get $k
-    i32.const 102
-    i32.ne
-    (if
-      (then
-        i32.const 0
-        return
-      )
-    )
-    local.get $v
-    f64.load
-    local.set $x
-    local.get $x
-    f64.floor
-    local.get $x
-    f64.ne
-    (if
-      (then
-        i32.const 0
-        return
-      )
-    )
-    local.get $x
-    local.get $lo
-    f64.convert_i32_s
-    f64.ge
-    local.get $x
-    local.get $hi
-    f64.convert_i32_s
-    f64.le
-    i32.and
-  )
-  (func $__unknown_as_i32 (param $v i32) (result i32)
-    local.get $v
-    call $__unknown_kind
-    i32.const 102
-    i32.eq
-    (if
-      (then
-        local.get $v
-        f64.load
-        i32.trunc_f64_s
-        return
-      )
-    )
-    local.get $v
-    i32.load
-  )
-  (func $__unknown_as_f64 (param $v i32) (result f64)
-    local.get $v
-    call $__unknown_kind
-    i32.const 105
-    i32.eq
-    (if
-      (then
-        local.get $v
-        i32.load
-        f64.convert_i32_s
-        return
-      )
-    )
-    local.get $v
-    f64.load
-  )
-  (func $__unknown_eq (param $a i32) (param $b i32) (result i32)
-    (local $ka i32) (local $kb i32)
-    local.get $a
-    call $__unknown_kind
-    local.set $ka
-    local.get $b
-    call $__unknown_kind
-    local.set $kb
-    local.get $ka
-    i32.const 105
-    i32.eq
-    local.get $ka
-    i32.const 102
-    i32.eq
-    i32.or
-    local.get $kb
-    i32.const 105
-    i32.eq
-    local.get $kb
-    i32.const 102
-    i32.eq
-    i32.or
-    i32.and
-    (if
-      (then
-        local.get $a
-        call $__unknown_as_f64
-        local.get $b
-        call $__unknown_as_f64
-        f64.eq
-        return
-      )
-    )
-    local.get $ka
-    i32.const 115
-    i32.eq
-    local.get $kb
-    i32.const 115
-    i32.eq
-    i32.and
-    (if
-      (then
-        local.get $a
-        i32.load
-        local.get $b
-        i32.load
-        call $__str_eq
-        return
-      )
-    )
-    local.get $ka
-    i32.const 98
-    i32.eq
-    local.get $kb
-    i32.const 98
-    i32.eq
-    i32.and
-    (if
-      (then
-        local.get $a
-        i32.load
-        local.get $b
-        i32.load
-        i32.eq
-        return
-      )
-    )
-    local.get $a
-    local.get $b
-    i32.eq
   )
   (func $__i32_add_chk (param $a i32) (param $b i32) (result i32)
     (local $r i64)
@@ -740,9 +511,84 @@ fn main() {
     )
     local.get $r
   )
+  (func $__gc_to_lin_str (param $s (ref null $str)) (result i32)
+    (local $n i32) (local $p i32) (local $i i32)
+    local.get $s
+    array.len
+    local.set $n
+    local.get $n
+    i32.const 4
+    i32.add
+    call $__alloc
+    local.set $p
+    local.get $p
+    local.get $n
+    i32.store
+    (block $brk
+      (loop $cont
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $brk
+        local.get $p
+        local.get $i
+        i32.add
+        local.get $s
+        local.get $i
+        array.get_u $str
+        i32.store8 offset=4
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $cont
+      )
+    )
+    local.get $p
+  )
+  (func $__lin_to_gc_str (param $p i32) (result (ref null $str))
+    (local $r (ref null $str)) (local $n i32) (local $i i32)
+    local.get $p
+    i32.load
+    local.set $n
+    local.get $n
+    array.new_default $str
+    local.set $r
+    (block $brk
+      (loop $cont
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $brk
+        local.get $r
+        local.get $i
+        local.get $p
+        local.get $i
+        i32.add
+        i32.load8_u offset=4
+        array.set $str
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $cont
+      )
+    )
+    local.get $r
+  )
   ;; std-wasm (decision 440): its functions, transpiled from std_wasm.wasm
   ;; __std_f266 — from std_wasm.wasm (sha256 5ac39cdc3016)
   ;; std:text.length — from std_wasm.wasm (sha256 c0e18ad79cad)
+  (data $__d0 "abc")
+  (global $__s0 (mut (ref null $str)) (ref.null $str))
+  (start $__init_strs)
+  (func $__init_strs
+    i32.const 0
+    i32.const 3
+    array.new_data $str $__d0
+    global.set $__s0
+  )
+  (@custom "botopink.needs" "gc\0a")
 )
 ```
 

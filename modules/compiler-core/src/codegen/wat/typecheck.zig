@@ -459,6 +459,15 @@ fn unpacked(t: ValType) ValType {
 pub fn subtype(types: []const ast.TypeDef, a: ValType, b: ValType) bool {
     if (a == b) return true;
     if (!a.isRef() or !b.isRef()) return false;
+    // A declared subtype (`$box_bool` of `$box_i32`): up its supertypes.
+    if (a.defIndex()) |k0| if (b.defIndex()) |kb| {
+        var k = k0;
+        while (k < types.len) {
+            if (k == kb) return true;
+            k = types[k].super orelse break;
+        }
+        return false;
+    };
     const kind: ?ast.TypeDef.Kind = if (a.defIndex()) |k| (if (k < types.len) types[k].kind else null) else null;
     return switch (b) {
         .anyref => a != .funcref and a != .externref,
