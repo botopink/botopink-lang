@@ -583,7 +583,12 @@ codegen/
 - **A `case` arm's block is no closure** (decision 541 (2)). A statement `case` whose arms hold a bare
   `break` / `continue` of the enclosing loop answers `{ __bp_break: true }` / `{ __bp_continue: true }` from its
   arrow (`case_jump_box`, `armLoopJumps`), and the statements after the call do the native jump
-  (`caseStmtWithReturns`, `loopJumpStmt`) — through an enclosing `case`'s box when it sits in one. A `case`
+  (`caseStmtWithReturns`, `loopJumpStmt`) — through an enclosing `case`'s box when it sits in one. A labelled
+  `break :outer` is a JS labelled loop (`for :outer (…)` whose body holds one: `js_ast.ForOf.label`,
+  `pushLoopLabel`, `ast.bodyBreaksLabel`) and a native `break outer;` while the loop is in the same JS function
+  (`labels`, `label_base`, moved wherever `loop_ctx` is reset); from a `case` arm's arrow it answers
+  `{ __bp_break_<label>: true }` (`escapingLabels`, `labelJumpStmt`). A `return` in an arm of a `case` in a generator
+  boxes like any other (`caseStmtWithReturns`), so it ends the generator through the delegation. A `case`
   whose arms `yield` inside a generator is a `function*` called in place and delegated to: `(yield*
   (function* () { … }).call(this))` (`YieldScan`; `async function*` when the arms also `await`), its value the
   delegate's. An arm ending in `await e` returns it (`isArmValueExpr`).
@@ -840,7 +845,9 @@ codegen/
   generator (`genStopThrow`): `throw({'__bp_gen_stop', Key})`, which
   `genEndCatch` answers with `ok` — a second catch clause written only when
   the body has one (`gen_stop_used`). It threw the loop's `'__bp_break'`,
-  which nothing caught (`modules/generator_break_value`).
+  which nothing caught (`modules/generator_break_value`). A bare `return;` in a generator fn does the same
+  (`GenScope.fn_level`): from a `case` arm's block as from the body itself, nothing after the `case` is
+  emitted (`modules/case_arm_return_in_yielding_arm`).
 - **Calling the result of a call** (`adder(3)(4)`, `cc.calleeExpr` with
   `callee == ""`): `(adder(3))(4)` — `applyParen` over the callee expression's
   node, first thing in `plainCallNode`. Read as a name it was `''(4)`, which
@@ -1640,7 +1647,11 @@ codegen/
     `break` throws `{'__bp_cond_break', Group}` caught around the call, and a
     `continue` throws `{'__bp_cond_continue', Group}` caught around the body, so
     the recursion carries the variables at the jump; each loop's `catch` binds
-    its own `__BpGroupN`.
+    its own `__BpGroupN`. A `for :outer (…)` whose body holds a `break :outer` (`labelTargeted`, `ast.bodyBreaksLabel`)
+    is lowered the same way, and its `break :outer` — from however many loops in — throws
+    `{'__bp_label_break', 'outer', Group}` (`labelBreakThrow`, `label_loops`), which the labelled loop's own `try`
+    catches (`labelBreakCatch`) and answers as its group (`modules/block_jump_label_reaches_loop`). beam
+    (`beam_asm.zig`) is a separate emitter and does not read the label yet.
   - **A generator scope** — a `@Iterator` / `@Stream`
     fn or method (whose effect `methodEffect` reads off the annotations), or an
     annotated `loop` — is eager: its items are pushed onto a list held in the
@@ -3635,6 +3646,11 @@ computed before it.
 
 - **commonJS** — `try { rest } finally { deferred }` (`js_ast.Stmt.try_finally`; `buildStmts`, `foldDefers`).
 - **erlang** — `try rest after deferred end` as the body's last statement (`erlang.zig` `deferTry`; `beam/AGENTS.md`).
+  The `var`s the rest reassigns and the deferred expression reads (`collectMutations`, and `collectNestedAssigns` for a
+  value `case` bound by a statement, `val r = case … { 0 { f = …; … } }`) travel in the process dictionary, written by
+  `deferPuts` after each statement and inside the arm where the reassignment happens. A deferred expression that
+  rebinds a name (`mutatingExpr`) runs for its effects: its group is not bound in the `after` (erlc's "variable is
+  unused").
 - **beam (`beam_asm.zig`)** — a statement-sequential emitter with explicit exits, so a `defer` opens a `try` region
   over the rest of its block and every other exit writes the pending defers inline. `defer_stack` holds the entries of
   the frame being emitted (`DeferEntry.out` is the frame's buffer; a lambda writes to another one, so it never sees
@@ -3659,7 +3675,7 @@ computed before it.
   `defer` in another list (a lambda inlined by a higher-order call, an `if` branch that answers a typed value) is a
   refusal located at it, never a silent wrong order.
 
-Cells: `defer_block_end_reverse_order`, `defer_scope_is_block`, `defer_reads_latest_value`,
+Cells: `defer_block_end_reverse_order`, `defer_scope_is_block`, `defer_reads_latest_value`, `defer_reads_var_set_in_arm`,
 `defer_return_value_before_defers`, `defer_in_loop_break_continue`, `defer_try_and_throw_propagate`,
 `defer_panic_attempt_catches`, `defer_async_after_awaits`, `defer_stream_consumer_stops`, and the five refusals
 (`comptime/AGENTS.md` § `defer`).

@@ -3843,6 +3843,37 @@ fn exprFindJump(e: Expr, comptime pred: fn (JumpExpr) bool) ?Loc {
     };
 }
 
+/// Does `body` hold a `break :label` (no value) naming `label`? Looks through
+/// loops, `if`s, `case` arms and blocks — a block is a scope of the enclosing
+/// function (decision 541 (2)) — and not through closures or prefixed loops.
+pub fn bodyBreaksLabel(body: []const Stmt, label: []const u8) bool {
+    for (body) |s| if (exprBreaksLabel(s.expr, label)) return true;
+    return false;
+}
+
+pub fn exprBreaksLabel(e: Expr, label: []const u8) bool {
+    return switch (e) {
+        .jump => |j| switch (j.kind) {
+            .@"break" => |b| b.value == null and b.label != null and std.mem.eql(u8, b.label.?, label),
+            else => false,
+        },
+        .branch => |br| switch (br.kind) {
+            .if_ => |i| bodyBreaksLabel(i.then_, label) or (if (i.else_) |els| bodyBreaksLabel(els, label) else false),
+            .tryCatch => false,
+        },
+        .loop => |lp| lp.generator == null and bodyBreaksLabel(lp.body, label),
+        .collection => |col| if (col.kind == .case) blk: {
+            for (col.kind.case.arms) |arm| {
+                if (arm.body == .function) {
+                    if (arm.body.function.kind.syntax == .lambda and bodyBreaksLabel(arm.body.function.kind.body, label)) break :blk true;
+                } else if (exprBreaksLabel(arm.body, label)) break :blk true;
+            }
+            break :blk false;
+        } else false,
+        else => false,
+    };
+}
+
 /// The first `throw` / bare `try` in `body`'s own scope (`bodyFails`' borders) —
 /// what an `async { }` block or an `iter` / `stream` loop became a `@Result`
 /// from (the E3.9 hint points at it) — or null.

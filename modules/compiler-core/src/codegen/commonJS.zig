@@ -1410,7 +1410,7 @@ const NameScan = struct {
 
     fn stmt(s: NameScan, st: js.Stmt, c: bool) bool {
         return switch (st) {
-            .continue_, .continue_label, .break_, .comment => false,
+            .continue_, .continue_label, .break_, .break_label, .comment => false,
             .expr, .throw_, .yield_delegate => |e| s.expr(e, c),
             .decl => |d| s.expr(d.value, c),
             .return_ => |e| if (e) |v| s.expr(v, c) else false,
@@ -1518,6 +1518,8 @@ const TailRewrite = struct {
             .for_of => |f| .{ .for_of = .{
                 .pattern = f.pattern,
                 .iter = f.iter,
+                .is_await = f.is_await,
+                .label = f.label,
                 .body = .{ .stmts = try r.stmts(f.body.stmts, depth + 1), .layout = f.body.layout, .indent = f.body.indent },
             } },
             .while_ => |wh| .{ .while_ = .{
@@ -1543,7 +1545,7 @@ const TailRewrite = struct {
 fn endsTheRound(list: []const js.Stmt) bool {
     const last = if (list.len == 0) return false else list[list.len - 1];
     return switch (last) {
-        .return_, .throw_, .yield_delegate, .continue_, .continue_label, .break_ => true,
+        .return_, .throw_, .yield_delegate, .continue_, .continue_label, .break_, .break_label => true,
         .group => |g| endsTheRound(g),
         .block => |b| endsTheRound(b.stmts),
         else => false,
@@ -1661,6 +1663,13 @@ const Emitter = struct {
     /// wherever a JS function boundary starts (an arrow, an IIFE), because a
     /// jump cannot cross one.
     loop_ctx: LoopCtx = .none,
+    /// The labels of the loops written with a JS label in the function (or
+    /// arrow) being built, innermost last (`break :outer` is a native
+    /// `break outer;` while its loop is in the same JS function); `label_base`
+    /// is where the current function's start, moved wherever `loop_ctx` is
+    /// reset to `.none`.
+    labels: std.ArrayListUnmanaged([]const u8) = .empty,
+    label_base: usize = 0,
     /// The `js/js_prelude.zig` helpers this module calls — marked by `helper`,
     /// which is the only way a call site gets a helper's name.
     helpers: std.EnumSet(jsPrelude.Helper) = .initEmpty(),
@@ -4382,13 +4391,22 @@ const Emitter = struct {
     fn caseStmtWithReturns(self: *Emitter, c: anytype) anyerror!?js.Stmt {
         var any_returns = false;
         var any_jumps = false;
+        var escaping: std.ArrayListUnmanaged([]const u8) = .empty;
+        var bound: std.ArrayListUnmanaged([]const u8) = .empty;
         for (c.arms) |arm| {
             if (armReturns(arm.body)) any_returns = true;
             if (armLoopJumps(arm.body)) any_jumps = true;
+            if (arm.body == .function) {
+                if (arm.body.function.kind.syntax == .lambda) try self.escapingLabels(arm.body.function.kind.body, &bound, &escaping);
+            } else try self.escapingLabelsExpr(arm.body, &bound, &escaping);
         }
+        if (escaping.items.len > 0) any_jumps = true;
         // A generator keeps the lowering it has always had unless an arm
-        // jumps out of the IIFE (decision 541 (2)).
-        if (self.in_generator and !any_jumps) return null;
+        // jumps out of the IIFE, or returns from the generator (decision 541
+        // (2)): the `return` of an arm that yields ends the generator, so the
+        // box carries it out of the delegated `function*` as it does out of
+        // an arrow.
+        if (self.in_generator and !any_jumps and !any_returns) return null;
         if (!any_returns and !any_jumps) return null;
         const n = self.try_seq;
         self.try_seq += 1;
@@ -4416,6 +4434,11 @@ const Emitter = struct {
             try items.append(self.arena(), try self.b.ifStmt(brk, try self.loopJumpStmt(false)));
             const cont = try self.b.binaryBare("&&", temp, try self.b.member(temp, "__bp_continue"));
             try items.append(self.arena(), try self.b.ifStmt(cont, try self.loopJumpStmt(true)));
+            for (escaping.items) |l| {
+                const key = try std.fmt.allocPrint(self.arena(), "__bp_break_{s}", .{l});
+                const hit = try self.b.binaryBare("&&", temp, try self.b.member(temp, key));
+                try items.append(self.arena(), try self.b.ifStmt(hit, try self.labelJumpStmt(l)));
+            }
         }
         return try self.b.group(items.items);
     }
@@ -4479,6 +4502,9 @@ const Emitter = struct {
         self.case_jump_box = false;
         self.in_generator = false;
         self.loop_ctx = .none;
+        const prev_label_base = self.label_base;
+        self.label_base = self.labels.items.len;
+        defer self.label_base = prev_label_base;
         self.case_ok_wrap = false;
         self.in_test_body = false;
         self.case_return_box = false;
@@ -5212,6 +5238,9 @@ const Emitter = struct {
         const prev_ctx = self.loop_ctx;
         const prev_wrap = self.case_ok_wrap;
         self.loop_ctx = .none;
+        const prev_label_base = self.label_base;
+        self.label_base = self.labels.items.len;
+        defer self.label_base = prev_label_base;
         self.case_ok_wrap = false;
         defer {
             self.loop_ctx = prev_ctx;
@@ -5350,15 +5379,18 @@ const Emitter = struct {
     /// expression, discarded.
     fn buildLoopStmt(self: *Emitter, lp: anytype) anyerror!js.Stmt {
         if (lp.generator != null) return .{ .expr = try self.buildGeneratorLoop(lp) };
-        if (lp.condition) return try self.buildWhileStmt(lp.iter.*, lp.body);
+        if (lp.condition) return try self.buildWhileStmt(lp.iter.*, lp.body, lp.label);
         const head = try self.loopHead(lp);
         const prev_ctx = self.loop_ctx;
         self.loop_ctx = .stmt;
         defer self.loop_ctx = prev_ctx;
+        const label = try self.pushLoopLabel(lp.label, lp.body);
+        defer self.popLoopLabel(label);
         return .{ .for_of = .{
             .pattern = head.pattern,
             .iter = head.iter,
             .is_await = lp.awaitLoop,
+            .label = label,
             .body = .{
                 .stmts = try self.buildStmts(lp.body),
                 .layout = .fixed,
@@ -5369,15 +5401,85 @@ const Emitter = struct {
 
     /// `while (cond) { … }` / `loop { … }` (decision 105): a JS `while`;
     /// `break` / `continue` in its body bind to it.
-    fn buildWhileStmt(self: *Emitter, cond: ast.Expr, body: []const ast.Stmt) anyerror!js.Stmt {
+    fn buildWhileStmt(self: *Emitter, cond: ast.Expr, body: []const ast.Stmt, source_label: ?[]const u8) anyerror!js.Stmt {
         const c = try self.buildExpr(cond);
         const prev_ctx = self.loop_ctx;
         self.loop_ctx = .stmt;
         defer self.loop_ctx = prev_ctx;
+        const label = try self.pushLoopLabel(source_label, body);
+        defer self.popLoopLabel(label);
         return .{ .while_ = .{
             .cond = c,
+            .label = label,
             .body = .{ .stmts = try self.buildStmts(body), .layout = .fixed, .indent = self.current_indent },
         } };
+    }
+
+    /// A loop written `for :outer (…)` is a JS labelled loop when its body
+    /// holds a `break :outer` (decision 541 (2)); the label is native to the
+    /// function being built until the loop ends. Null for any other loop.
+    fn pushLoopLabel(self: *Emitter, source_label: ?[]const u8, body: []const ast.Stmt) !?[]const u8 {
+        const l = source_label orelse return null;
+        if (!ast.bodyBreaksLabel(body, l)) return null;
+        try self.labels.append(self.arena(), l);
+        return l;
+    }
+
+    fn popLoopLabel(self: *Emitter, label: ?[]const u8) void {
+        if (label != null) _ = self.labels.pop();
+    }
+
+    fn labelIsNative(self: *const Emitter, name: []const u8) bool {
+        for (self.labels.items[self.label_base..]) |l| if (std.mem.eql(u8, l, name)) return true;
+        return false;
+    }
+
+    /// `break :label` — native while the labelled loop is in the same JS
+    /// function; from the arrow a `case` became, the box
+    /// `{ __bp_break_<label>: true }` the statement after the call turns back
+    /// into the jump (`labelJumpStmt`).
+    fn labelJumpStmt(self: *Emitter, name: []const u8) anyerror!js.Stmt {
+        if (self.labelIsNative(name)) return js.Stmt{ .break_label = name };
+        if (self.case_jump_box) return self.jumpBox(try std.fmt.allocPrint(self.arena(), "__bp_break_{s}", .{name}));
+        return error.JumpOutsideLoop;
+    }
+
+    /// The labels of the `break :label` in `stmts` that name a loop outside
+    /// them (`bound` holds the labels of the loops met on the way in).
+    fn escapingLabels(self: *Emitter, stmts: []const ast.Stmt, bound: *std.ArrayListUnmanaged([]const u8), out: *std.ArrayListUnmanaged([]const u8)) anyerror!void {
+        for (stmts) |st| try self.escapingLabelsExpr(st.expr, bound, out);
+    }
+
+    fn escapingLabelsExpr(self: *Emitter, e: ast.Expr, bound: *std.ArrayListUnmanaged([]const u8), out: *std.ArrayListUnmanaged([]const u8)) anyerror!void {
+        switch (e) {
+            .jump => |j| switch (j.kind) {
+                .@"break" => |b| if (b.value == null) if (b.label) |l| {
+                    for (bound.items) |x| if (std.mem.eql(u8, x, l)) return;
+                    for (out.items) |x| if (std.mem.eql(u8, x, l)) return;
+                    try out.append(self.arena(), l);
+                },
+                else => {},
+            },
+            .branch => |br| switch (br.kind) {
+                .if_ => |i| {
+                    try self.escapingLabels(i.then_, bound, out);
+                    if (i.else_) |els| try self.escapingLabels(els, bound, out);
+                },
+                .tryCatch => {},
+            },
+            .loop => |lp| if (lp.generator == null) {
+                const n = bound.items.len;
+                if (lp.label) |l| try bound.append(self.arena(), l);
+                try self.escapingLabels(lp.body, bound, out);
+                bound.shrinkRetainingCapacity(n);
+            },
+            .collection => |col| if (col.kind == .case) for (col.kind.case.arms) |arm| {
+                if (arm.body == .function) {
+                    if (arm.body.function.kind.syntax == .lambda) try self.escapingLabels(arm.body.function.kind.body, bound, out);
+                } else try self.escapingLabelsExpr(arm.body, bound, out);
+            },
+            else => {},
+        }
     }
 
     /// `break` in a body. Bare, it leaves the nearest loop (a native
@@ -5387,6 +5489,7 @@ const Emitter = struct {
     /// checker admits `break <v>` in a generator scope only).
     fn buildBreakStmt(self: *Emitter, br: anytype, is_last: bool) anyerror!js.Stmt {
         _ = is_last;
+        if (br.value == null) if (br.label) |l| return self.labelJumpStmt(l);
         const val = br.value orelse return switch (self.loop_ctx) {
             .none => if (self.case_jump_box) try self.jumpBox("__bp_break") else if (self.in_generator) js.Stmt{ .return_ = null } else error.JumpOutsideLoop,
             .stmt => js.Stmt.break_,
@@ -5419,6 +5522,9 @@ const Emitter = struct {
         const prev_in_test = self.in_test_body;
         self.loop_ctx = .stmt;
         self.in_generator = true;
+        const prev_label_base_g = self.label_base;
+        self.label_base = self.labels.items.len;
+        defer self.label_base = prev_label_base_g;
         self.case_ok_wrap = false;
         self.in_test_body = false;
         const prev_box_g = self.case_return_box;
@@ -5487,6 +5593,9 @@ const Emitter = struct {
         const prev_in_test = self.in_test_body;
         const prev_expr_try = self.expr_try_used;
         self.loop_ctx = .none;
+        const prev_label_base = self.label_base;
+        self.label_base = self.labels.items.len;
+        defer self.label_base = prev_label_base;
         self.in_generator = false;
         self.case_ok_wrap = false;
         self.in_test_body = false;
@@ -7577,6 +7686,9 @@ const Emitter = struct {
         const prev_ctx = self.loop_ctx;
         const prev_wrap = self.case_ok_wrap;
         self.loop_ctx = .none;
+        const prev_label_base = self.label_base;
+        self.label_base = self.labels.items.len;
+        defer self.label_base = prev_label_base;
         self.case_ok_wrap = false;
         defer {
             self.loop_ctx = prev_ctx;

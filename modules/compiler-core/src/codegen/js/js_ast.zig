@@ -294,6 +294,9 @@ pub const Stmt = union(enum) {
     continue_label: []const u8,
     /// `break;`
     break_,
+    /// `break <label>;` — leaves the labelled loop `<label>:` (a `break :label`
+    /// of the source), from however many loops in.
+    break_label: []const u8,
     /// `yield* <expr>; return;` — delegating the rest of an iteration.
     yield_delegate: Expr,
     if_: If,
@@ -368,6 +371,8 @@ pub const ForOf = struct {
     body: Block,
     /// `for await (const x of gen)` — `for await (gen) { x -> … }`.
     is_await: bool = false,
+    /// `<label>: for (…) { … }`, written verbatim; null for an unlabelled loop.
+    label: ?[]const u8 = null,
 };
 
 /// A braced statement list. The layout is part of the model because the JS

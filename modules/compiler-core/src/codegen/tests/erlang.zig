@@ -348,3 +348,96 @@ const bytes_log = "6\né\ntrue\ncd\ntrue\n";
 test "erlang: decision 346 ---- Bytes is a binary, its methods std's templates" {
     try h.assertErlangRunLog(std.testing.allocator, bytes_src, bytes_log, &.{"byte_size("});
 }
+
+test "erlang: a defer reads a var a value case's arm reassigns before it panics" {
+    // Decision 539 (amended): the `val r = case …` statement is no
+    // `collectMutations` site, so the `defer` watched nothing and the `after`
+    // read the old value (`close a`). The arm writes it where it happens.
+    try h.assertErlangRunLog(std.testing.allocator,
+        \\import {failure, failure.Failure} from "std";
+        \\
+        \\fn boom() -> i32 {
+        \\    @panic("boom");
+        \\}
+        \\
+        \\fn work(n: i32) -> i32 {
+        \\    var f = "a";
+        \\    defer @print("close " + f);
+        \\    val r = case n {
+        \\        0 { f = "e"; boom() }
+        \\        _ { f = "g"; 3 }
+        \\    };
+        \\    return r;
+        \\}
+        \\
+        \\pub fn main() {
+        \\    val r = failure.attempt({ -> work(0) });
+        \\    @print("done");
+        \\}
+        \\
+    , "close e\ndone\n", &.{"erlang:put(__BpDeferRef1, {F@"});
+}
+
+test "erlang: a defer body that rebinds a var leaves its group unbound" {
+    // The `after` runs for its effects: the group of the rebinding is not
+    // bound to a variable nothing reads (erlc: "variable 'N@2' is unused").
+    try h.assertErlangRunLog(std.testing.allocator,
+        \\fn f() -> i32 {
+        \\    var n = 1;
+        \\    defer {
+        \\        n = 100;
+        \\    }
+        \\    return n;
+        \\}
+        \\
+        \\pub fn main() {
+        \\    @print(f());
+        \\}
+        \\
+    , "1\n", &.{"    after\n        case true of"});
+}
+
+test "erlang: a bare return in a yielding case arm ends the generator" {
+    try h.assertErlangRunLog(std.testing.allocator,
+        \\fn items(n: i32) -> @Iterator<i32> {
+        \\    yield 0;
+        \\    case n {
+        \\        0 {
+        \\            yield 1;
+        \\            return;
+        \\        }
+        \\        _ { yield 2; }
+        \\    }
+        \\    yield 9;
+        \\}
+        \\
+        \\pub fn main() {
+        \\    for (items(0)) { v -> @print(v); }
+        \\    for (items(1)) { v -> @print(v); }
+        \\}
+        \\
+    , "0\n1\n0\n2\n9\n", &.{"'__bp_gen_stop'"});
+}
+
+test "erlang: a labelled break leaves the outer loop from an inner one" {
+    try h.assertErlangRunLog(std.testing.allocator,
+        \\fn sumBeforeTwo(xs: i32[], ys: i32[]) -> i32 {
+        \\    var s = 0;
+        \\    for :outer (xs) { x ->
+        \\        for (ys) { y ->
+        \\            case y {
+        \\                2 { break :outer; }
+        \\                _ { }
+        \\            }
+        \\            s = s + x * y;
+        \\        }
+        \\    }
+        \\    return s;
+        \\}
+        \\
+        \\pub fn main() {
+        \\    @print(sumBeforeTwo([1, 2], [1, 2, 3]));
+        \\}
+        \\
+    , "1\n", &.{"'__bp_label_break'"});
+}

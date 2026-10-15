@@ -348,3 +348,50 @@ test "js: decision 330 ---- a method after recv?.m() over an enum method stays u
         \\
     );
 }
+
+test "commonJS: a labelled break leaves the outer loop from a case arm of an inner one" {
+    // `break :outer` was a bare `break` of the inner loop; the `case` arm's
+    // box now names the label, and the loop is a JS labelled loop.
+    try h.assertJsRunLog(std.testing.allocator,
+        \\fn sumBeforeTwo(xs: i32[], ys: i32[]) -> i32 {
+        \\    var s = 0;
+        \\    for :outer (xs) { x ->
+        \\        for (ys) { y ->
+        \\            case y {
+        \\                2 { break :outer; }
+        \\                _ { }
+        \\            }
+        \\            s = s + x * y;
+        \\        }
+        \\    }
+        \\    return s;
+        \\}
+        \\
+        \\pub fn main() {
+        \\    @print(sumBeforeTwo([1, 2], [1, 2, 3]));
+        \\}
+        \\
+    , "1\n");
+}
+
+test "commonJS: a bare return in a yielding case arm ends the generator" {
+    try h.assertJsRunLog(std.testing.allocator,
+        \\fn items(n: i32) -> @Iterator<i32> {
+        \\    yield 0;
+        \\    case n {
+        \\        0 {
+        \\            yield 1;
+        \\            return;
+        \\        }
+        \\        _ { yield 2; }
+        \\    }
+        \\    yield 9;
+        \\}
+        \\
+        \\pub fn main() {
+        \\    for (items(0)) { v -> @print(v); }
+        \\    for (items(1)) { v -> @print(v); }
+        \\}
+        \\
+    , "0\n1\n0\n2\n9\n");
+}

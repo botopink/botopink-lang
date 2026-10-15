@@ -1873,6 +1873,10 @@ and the cells of a block as a scope of the enclosing function: `modules/block_aw
 in an arm's block), `modules/block_yield_reaches_generator` (a `yield` in a block, an arm and a value block),
 `modules/block_break_reaches_loop` (a bare `break` in a block and in an arm of a `while`) and
 `modules/block_ends_function_body_is_tail` (a block ending a function body is its tail); all four targets.
+`modules/block_jump_label_reaches_loop` (a `break :outer` from a `case` arm's block and from a plain block, to a loop two levels out)
+and `modules/case_arm_return_in_yielding_arm` (a bare `return` in a yielding arm ends the generator). The first is red on beam
+and wasm (both ignore the label); the second on wasm (the `return` ends only the arm). A cell cannot leave a target out for a gap
+(§ Narrowing a cell), so each stays red there until its backend's step lands.
 `modules/trailing_lambda_call` pins the trailing lambda as the call's last argument (decision 525): a method's and a plain
 function's, with one parameter and with none (`b.run { -> 10 }`, `twice { -> 4 }`, `apply(3) { k -> k * 3 }`), on all four
 targets — the parent refused the parameters as unbound and the plain function's lambda as an arity error, and wasm and beam
@@ -1880,7 +1884,7 @@ lowered a method's trailing lambda wrong.
 
 Decision 539 (`defer`) adds nine cells on all four targets and five refusals. `modules/defer_block_end_reverse_order`
 (the end of the block, reverse order), `modules/defer_scope_is_block` (a bare block runs its own), `modules/defer_reads_latest_value`
-(the expression is evaluated when it runs), `modules/defer_return_value_before_defers` (`return n` is computed before a defer
+(the expression is evaluated when it runs), `modules/defer_reads_var_set_in_arm` (a reassignment inside a nested arm, a value `case`'s included, reaches the defer when the arm panics), `modules/defer_return_value_before_defers` (`return n` is computed before a defer
 that changes `n`), `modules/defer_in_loop_break_continue` (the end of the round, `continue`, `break`),
 `modules/defer_try_and_throw_propagate` (a propagating `try` and a `throw` out of a `@Result` fn),
 `modules/defer_panic_attempt_catches` (a panic `attempt` catches; wasm runs with exceptions on, decision 518),

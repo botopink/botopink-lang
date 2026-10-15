@@ -858,6 +858,10 @@ const loop_fun_var = "__BpLoop";
 /// The throws a recursive loop (`while`, `loop`, a jumping `for`) catches: `{Signal, Group}`,
 /// the reassigned variables at the jump.
 const cond_break_signal = "__bp_cond_break";
+/// `throw({Signal, 'label', Group})` — a `break :label` leaving the labelled
+/// loop from however many loops in (decision 541 (2)); the labelled loop's
+/// `try` catches it and answers the group.
+const label_break_signal = "__bp_label_break";
 const cond_continue_signal = "__bp_cond_continue";
 /// The throw a `break <v>` raises to end its generator scope (decision 105):
 /// `{Signal, Key, Group, V}` — the scope's key, the variables an annotated
@@ -1975,6 +1979,7 @@ fn emitErlangModule(
     defer em.locals.deinit();
     defer em.mutable_locals.deinit(alloc);
     defer em.defer_watches.deinit(alloc);
+    defer em.label_loops.deinit(alloc);
     defer em.mutating_closures.deinit(alloc);
     defer em.hoisted_steps.deinit(alloc);
     defer {
@@ -3163,6 +3168,14 @@ fn isResultPath(name: []const u8) bool {
 const GenScope = struct {
     key: []const u8,
     names: []const []const u8,
+    /// The scope is a generator fn's own body (`generatorFnBody`), which a bare
+    /// `return` ends — not an `iter` / `stream` loop's.
+    fn_level: bool = false,
+};
+
+const LabelLoop = struct {
+    label: []const u8,
+    names: []const []const u8,
 };
 
 const DeferWatch = struct {
@@ -3456,6 +3469,10 @@ const Emitter = struct {
     /// while its body is emitted; null outside one and behind a fun boundary
     /// (a collection loop, a lambda). A `break` / `continue` there throws them.
     cond_loop: ?[]const []const u8 = null,
+    /// The loops written `for :label (…)` whose body holds a `break :label`
+    /// being lowered, innermost last, with the variables each carries.
+    label_loops: std.ArrayListUnmanaged(LabelLoop) = .empty,
+    label_seq: u32 = 0,
     /// The generator scope being lowered (decision 105): a `#[@generator]`
     /// fn or an annotated `loop`. Null outside one.
     gen_scope: ?GenScope = null,
@@ -6332,7 +6349,7 @@ const Emitter = struct {
     fn generatorFnBody(this: *Emitter, b: Ast.Builder, body: []const ast.Stmt) anyerror!Ast.Body {
         const key = try this.genKey(b);
         const saved = this.gen_scope;
-        this.gen_scope = .{ .key = key, .names = &.{} };
+        this.gen_scope = .{ .key = key, .names = &.{}, .fn_level = true };
         defer this.gen_scope = saved;
         const saved_stop = this.gen_stop_used;
         this.gen_stop_used = false;
@@ -6587,6 +6604,25 @@ const Emitter = struct {
         return .{ .stmts = stmts.items };
     }
 
+    /// Decision 539 (amended) — the locals a value `case` bound by a statement
+    /// (`val r = case … { 0 { f = …; … } }`) reassigns in its arms, added to
+    /// `out` once: `collectMutations` reads only a `case` written as a
+    /// statement. The arms' own `if`s and loops are `collectMutations`' reading.
+    fn collectNestedAssigns(this: *Emitter, gpa: std.mem.Allocator, stmts: []const ast.Stmt, out: *std.ArrayListUnmanaged([]const u8)) anyerror!void {
+        for (stmts) |s| {
+            const value: ast.Expr = switch (s.expr) {
+                .binding => |bd| switch (bd.kind) {
+                    .localBind => |lb| lb.value.*,
+                    .localBindDestruct => |lb| lb.value.*,
+                    .assign => |a| a.value.*,
+                },
+                else => continue,
+            };
+            if (value != .collection or value.collection.kind != .case) continue;
+            try this.collectMutations(gpa, &.{.{ .expr = value }}, &.{}, out);
+        }
+    }
+
     /// The versions the watched names (`defer_watches`) have now.
     fn deferSeen(this: *Emitter, b: Ast.Builder) anyerror![][]u32 {
         const seen = try b.arena.alloc([]u32, this.defer_watches.items.len);
@@ -6631,9 +6667,17 @@ const Emitter = struct {
         const stmt = body[i];
         var mutated: std.ArrayListUnmanaged([]const u8) = .empty;
         try this.collectMutations(b.arena, body[i + 1 ..], &.{}, &mutated);
+        // A reassignment written in a value position (`val r = if (c) { f = …; … }`)
+        // is no `collectMutations` site, yet the `defer` reads the new value
+        // when the arm panics or throws: it is watched all the same.
+        var nested: std.ArrayListUnmanaged([]const u8) = .empty;
+        try this.collectNestedAssigns(b.arena, body[i + 1 ..], &nested);
         var watched: std.ArrayListUnmanaged([]const u8) = .empty;
         for (mutated.items) |n| {
             if (this.locals.contains(n) and ast.exprMentions(stmt.expr, n)) try watched.append(b.arena, n);
+        }
+        for (nested.items) |n| {
+            if (!containsName(watched.items, n) and ast.exprMentions(stmt.expr, n)) try watched.append(b.arena, n);
         }
         var ref: ?[]const u8 = null;
         var scope = try this.saveLocalScope();
@@ -6656,7 +6700,9 @@ const Emitter = struct {
         }
         try this.hoistSequenceSteps(b, stmt.expr, &after);
         if (try this.mutatingExpr(b, stmt)) |mutation| {
-            try after.append(b.arena, .{ .expr = mutation });
+            // Nothing reads what the `after` rebinds: the group is not bound
+            // (erlc's "variable is unused"), the expression runs for its effects.
+            try after.append(b.arena, .{ .expr = if (mutation == .match) mutation.match.value.* else mutation });
         } else {
             try after.append(b.arena, .{ .expr = try this.stmtExpr(b, stmt) });
         }
@@ -6923,7 +6969,7 @@ const Emitter = struct {
                 if (names.items.len == 0) return null;
                 // A `for` that leaves or skips on its own walks the list in a
                 // named fun (`lists:foldl` cannot be stopped from inside).
-                if (hasJump(lp.body, .@"break") or hasJump(lp.body, .@"continue"))
+                if (hasJump(lp.body, .@"break") or hasJump(lp.body, .@"continue") or labelTargeted(lp) != null)
                     return try this.conditionLoopNode(b, lp, names.items);
                 return try this.mutatingFoldExpr(b, lp.params[0], lp.body, lp.iter.*, names.items);
             },
@@ -7010,7 +7056,13 @@ const Emitter = struct {
     /// around the body so the recursion carries on. `loop { … }`'s literal
     /// `true` is not tested.
     fn conditionLoopNode(this: *Emitter, b: Ast.Builder, lp: anytype, names: []const []const u8) anyerror!Ast.Expr {
-        const call = try this.recursiveLoopCall(b, lp, names);
+        const labelled = labelTargeted(lp);
+        if (labelled) |l| try this.label_loops.append(this.alloc, .{ .label = l, .names = names });
+        defer if (labelled != null) {
+            _ = this.label_loops.pop();
+        };
+        var call = try this.recursiveLoopCall(b, lp, names);
+        if (labelled) |l| call = try this.labelBreakCatch(b, call, l, names.len > 0);
         if (names.len == 0) return call;
         return b.match(try this.bindVarGroupExpr(b, names), call);
     }
@@ -7184,6 +7236,44 @@ const Emitter = struct {
             else => {},
         };
         return false;
+    }
+
+    /// The label of a loop written `for :label (…)` whose body holds a
+    /// `break :label` — such a loop walks its list in a named fun
+    /// (`conditionLoopNode`) so the break can be caught around it.
+    fn labelTargeted(lp: anytype) ?[]const u8 {
+        const l = lp.label orelse return null;
+        return if (ast.bodyBreaksLabel(lp.body, l)) l else null;
+    }
+
+    /// `try <call> catch throw:{'__bp_label_break', 'label', G} -> G end`.
+    fn labelBreakCatch(this: *Emitter, b: Ast.Builder, call: Ast.Expr, label: []const u8, group: bool) anyerror!Ast.Expr {
+        this.label_seq += 1;
+        const g: Ast.Expr = if (group) Ast.Expr.v(try std.fmt.allocPrint(b.arena, "__BpLabelG{d}", .{this.label_seq})) else Ast.Expr.v("_");
+        return .{ .try_catch = .{
+            .body = try b.body(&.{call}),
+            .catches = try b.arena.dupe(Ast.Clause, &.{try b.clause(
+                &.{try b.exception(Ast.Expr.a("throw"), try b.tuple(&.{ Ast.Expr.a(label_break_signal), Ast.Expr.a(label), g }))},
+                &.{},
+                &.{if (group) g else Ast.Expr.a("ok")},
+            )}),
+        } };
+    }
+
+    /// `break :label` — `throw({'__bp_label_break', 'label', Group})`, the
+    /// group being the labelled loop's variables at this point.
+    fn labelBreakThrow(this: *Emitter, b: Ast.Builder, entry: LabelLoop) anyerror!Ast.Expr {
+        const group = if (entry.names.len > 0) try this.varGroupExpr(b, entry.names) else Ast.Expr.a("ok");
+        return b.remote("erlang", "throw", &.{try b.tuple(&.{ Ast.Expr.a(label_break_signal), Ast.Expr.a(entry.label), group })});
+    }
+
+    fn labelLoop(this: *const Emitter, label: []const u8) ?LabelLoop {
+        var i = this.label_loops.items.len;
+        while (i > 0) {
+            i -= 1;
+            if (std.mem.eql(u8, this.label_loops.items[i].label, label)) return this.label_loops.items[i];
+        }
+        return null;
     }
 
     /// The throw a bare `break` inside a recursive loop raises:
@@ -7830,7 +7920,10 @@ const Emitter = struct {
         switch (e) {
             .jump => |j| switch (j.kind) {
                 .@"return" => |r| {
-                    const val = r orelse return this.returnNode(b, Ast.Expr.a("undefined"));
+                    const val = r orelse return if (this.gen_scope != null and this.gen_scope.?.fn_level)
+                        this.genStopThrow(b, this.gen_scope.?)
+                    else
+                        this.returnNode(b, Ast.Expr.a("undefined"));
                     // A `@Task` is eager here (decision 120): `return v` is
                     // `v`, and a failure is the `{error, E}` value the
                     // transform built — it never throws.
@@ -8391,7 +8484,13 @@ const Emitter = struct {
                 // already was, and a bare `throw;` throws `undefined` rather
                 // than rendering as nothing — a hole `erlc` rejected, or worse,
                 // accepted as the next expression.
-                .@"return" => |r| this.returnNode(b, if (r) |val| try this.returnOperandNode(b, val.*) else A("undefined")),
+                // A bare `return;` in a generator fn ends the generator, from a
+                // `case` arm's block as from the body's own level: nothing more
+                // is emitted (decision 541 (2), `genStopThrow`).
+                .@"return" => |r| if (r == null and this.gen_scope != null and this.gen_scope.?.fn_level)
+                    this.genStopThrow(b, this.gen_scope.?)
+                else
+                    this.returnNode(b, if (r) |val| try this.returnOperandNode(b, val.*) else A("undefined")),
                 .throw_ => |r| b.remote("erlang", "throw", &.{if (r) |val| try this.exprNode(b, val.*) else A("undefined")}),
                 .try_ => |t| if (t) |val| this.tryThrowCase(b, val.*) else A("undefined"),
                 .await_ => |av| this.exprNode(b, av.*),
@@ -8403,7 +8502,9 @@ const Emitter = struct {
                 // `break <v>` in a generator scope (decision 105) pushes `v`
                 // and ends the scope from any loop depth; anywhere else it is
                 // a `case` arm's or `comptime` block's value.
-                .@"break" => |brk| if (brk.value) |bp| (if (this.gen_scope) |gs|
+                .@"break" => |brk| if (brk.value == null and brk.label != null and this.labelLoop(brk.label.?) != null)
+                    this.labelBreakThrow(b, this.labelLoop(brk.label.?).?)
+                else if (brk.value) |bp| (if (this.gen_scope) |gs|
                     this.genBreakThrow(b, gs, bp.*)
                 else
                     this.exprNode(b, bp.*)) else if (this.cond_loop) |names|
@@ -8540,7 +8641,7 @@ const Emitter = struct {
                 }
                 // A `for` that skips an item walks the list in a named fun
                 // (`continue` is a throw its body's `try` catches).
-                if (hasJump(lp.body, .@"continue")) return this.conditionLoopNode(b, lp, &.{});
+                if (hasJump(lp.body, .@"continue") or labelTargeted(lp) != null) return this.conditionLoopNode(b, lp, &.{});
                 // Every other `for` is a `lists:foreach` (decision 105: a loop
                 // is a statement, `yield` pushes onto the generator scope). Its
                 // body is a fun, so its jumps are its own.

@@ -1740,6 +1740,14 @@ a bare `break` leaves the enclosing loop. A block that ends a function body is i
 
 <!-- example: modules/block_ends_function_body_is_tail -->
 
+A labelled `break :outer` in a block or in a `case` arm's block leaves the loop it names, from however
+many loops in, and a bare `return` in a `case` arm that yields ends the enclosing generator, so
+nothing after the `case` is emitted:
+
+<!-- example: modules/block_jump_label_reaches_loop -->
+
+<!-- example: modules/case_arm_return_in_yielding_arm -->
+
 A block handed where a function is expected is refused at the block, with the hint "expected a
 function, got a block's value — missing `->`?"; a trailing lambda follows the same rule, so one
 with no parameter is written `f(x) { -> … }`. A block whose value is `void` handed where
@@ -1781,6 +1789,11 @@ block's defers run:
 <!-- example: modules/defer_reads_latest_value -->
 
 <!-- example: modules/defer_return_value_before_defers -->
+
+A reassignment inside a nested arm counts, a value `case`'s included: an arm that reassigns a `var` and
+then panics hands the `defer` the new value:
+
+<!-- example: modules/defer_reads_var_set_in_arm -->
 
 In an `async` body a `defer` runs when the task's body ends, after its awaits; in a `@Stream` when
 the stream ends or its consumer stops (a `break` in `for await`):

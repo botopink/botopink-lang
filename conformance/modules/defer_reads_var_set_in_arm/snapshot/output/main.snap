@@ -1,0 +1,11 @@
+botopink-cell 1
+out close b
+out Error panic: x
+out close c
+out Error panic: y
+out close d
+out Ok 2
+out close e
+out Error panic: boom
+out close g
+out Ok 3
