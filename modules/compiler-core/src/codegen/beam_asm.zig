@@ -451,6 +451,19 @@ const DeferEntry = struct {
 /// (`guardLoopBreak` catches it at the loop's call site).
 const break_throw_signal = "__bp_break";
 
+/// `throw({'__bp_label_break', 'label', Group})` — a `break :label` leaving a
+/// labelled loop whose body is a fun, from however many funs in (decision 541
+/// (2)); the labelled loop's call site catches it (`guardLabelBreak`).
+const label_break_signal = "__bp_label_break";
+
+/// A labelled loop walked by a fun (`lists:foldl` / `foreach`) whose body holds
+/// a `break :label`: the names its fold threads, answered as the throw's group.
+const LabelFun = struct { label: []const u8, names: []const []const u8 };
+
+/// A labelled loop walked in the frame (`while`, `loop`, a `for` of
+/// `lowerInFrameFor`): a `break :label` of the same frame jumps to `exit`.
+const LabelJump = struct { label: []const u8, exit: u32, out: *std.Io.Writer, defer_floor: usize };
+
 /// True when `body` holds a bare `break` of the loop whose body it is —
 /// directly, under an `if`, or in a `case` arm's block (which runs in the
 /// same frame), never inside a nested loop or a lambda.
@@ -1231,6 +1244,8 @@ fn countLocalsInExpr(em: *Emitter, e: ast.Expr, count: *u32) void {
             if (lp.generator == null and !lp.condition and bodyPropagates(lp.body)) count.* += 1;
             // …and one whose fun ends it with a bare `break` (`guardLoopBreak`).
             if (lp.generator == null and !lp.condition and bodyBreaksBare(lp.body)) count.* += 1;
+            // …and a labelled one a `break :label` of its body leaves (`guardLabelBreak`).
+            if (lp.generator == null and !lp.condition and lp.label != null and ast.bodyBreaksLabel(lp.body, lp.label.?)) count.* += 1;
             // An annotated loop (decision 105) runs in this frame with its
             // item accumulator, and so does every `for` inside it that yields.
             if (lp.generator != null) {
@@ -2383,6 +2398,12 @@ const Emitter = struct {
     /// frame: its `break` jumps to `exit`, its `continue` to `top`. A lambda
     /// writes to another buffer (`out`), so its jumps never match.
     cond_loop: ?CondLoop = null,
+    /// The labelled loops walked by a fun whose body breaks to them, innermost
+    /// last (`break :label` throws to the loop's call site).
+    label_funs: std.ArrayListUnmanaged(LabelFun) = .empty,
+    /// The labelled loops walked in a frame, innermost last (`break :label`
+    /// jumps to the loop's exit when written in that frame).
+    label_jumps: std.ArrayListUnmanaged(LabelJump) = .empty,
     /// The annotated `loop` whose body is being emitted (decision 105).
     gen_loop: ?GenLoop = null,
     /// Decision 539 — the `defer`s not yet run, outermost first. The frame
@@ -2698,6 +2719,8 @@ const Emitter = struct {
         self.deferred_lambdas.deinit(self.alloc);
         for (self.defer_stack.items) |*e| e.regs.deinit();
         self.defer_stack.deinit(self.alloc);
+        self.label_funs.deinit(self.alloc);
+        self.label_jumps.deinit(self.alloc);
         self.ext_by_name.deinit();
         var rf = self.record_fields.valueIterator();
         while (rf.next()) |names| self.alloc.free(names.*);
@@ -5975,6 +5998,7 @@ const Emitter = struct {
                     try self.writeThrowCall();
                 },
                 .@"break" => |br| {
+                    if (br.value == null) if (br.label) |label| if (try self.lowerLabelBreak(label)) return;
                     // `break <v>` in an annotated loop pushes `v` and ends it
                     // from any loop depth (decision 105).
                     if (br.value) |v| if (self.inGenLoop()) |gl| {
@@ -6089,7 +6113,7 @@ const Emitter = struct {
                     return;
                 }
                 if (!hasYieldOrBreakValue(lp.body)) {
-                    if (try self.lowerMutatingFold(.{ .params = &.{lp.params[0]} }, lp.body, lp.iter.*)) return;
+                    if (try self.lowerMutatingFold(.{ .params = &.{lp.params[0]} }, lp.body, lp.iter.*, labelOf(lp))) return;
                 }
                 try self.lowerExprIntoX0(stmt.expr);
             },
@@ -6099,7 +6123,7 @@ const Emitter = struct {
                     return;
                 }
                 if (self.forEachLambda(stmt.expr)) |each| {
-                    if (try self.lowerMutatingFold(.{ .params = &.{each.param} }, each.body, each.recv.*)) return;
+                    if (try self.lowerMutatingFold(.{ .params = &.{each.param} }, each.body, each.recv.*, null)) return;
                 }
                 // `names.push(x)` on a module-level `var` (decision 28) is
                 // written back through its memory, as `names = …` is. The
@@ -11355,6 +11379,25 @@ const Emitter = struct {
             try names.append(self.alloc, n);
             try ops.append(self.alloc, reg.operand());
         }
+        // A `break :label` out of this body throws the labelled loop's group,
+        // read from this fun's own registers: the names it threads travel in
+        // the environment although the body never mentions them.
+        for (self.label_funs.items) |lf| {
+            if (!ast.bodyBreaksLabel(body, lf.label)) continue;
+            for (lf.names) |n| {
+                var present = false;
+                for (params) |p| {
+                    if (std.mem.eql(u8, p, n)) present = true;
+                }
+                for (names.items) |have| {
+                    if (std.mem.eql(u8, have, n)) present = true;
+                }
+                if (present) continue;
+                const reg = self.reg_map.get(n) orelse continue;
+                try names.append(self.alloc, n);
+                try ops.append(self.alloc, reg.operand());
+            }
+        }
     }
 
     /// Lower a lambda `{ params -> body }` into a deferred BEAM function and
@@ -11859,7 +11902,7 @@ const Emitter = struct {
     /// `Group = lists:foldl(fun(Param, Group) -> Body, Group end, Group, Iter)`
     /// for a statement loop over `iter` whose `body` reassigns outer names.
     /// Returns false (nothing emitted) when the body reassigns none.
-    fn lowerMutatingFold(self: *Emitter, head: GroupFunHead, body: []const ast.Stmt, iter: ast.Expr) anyerror!bool {
+    fn lowerMutatingFold(self: *Emitter, head: GroupFunHead, body: []const ast.Stmt, iter: ast.Expr, label: ?[]const u8) anyerror!bool {
         var names: std.ArrayListUnmanaged([]const u8) = .empty;
         defer names.deinit(self.alloc);
         var head_buf: [2][]const u8 = undefined;
@@ -11868,6 +11911,10 @@ const Emitter = struct {
 
         var env_ops: std.ArrayListUnmanaged(Op) = .empty;
         defer env_ops.deinit(self.alloc);
+        const labelled = try self.pushLabelFun(label, body, names.items);
+        defer if (labelled) {
+            _ = self.label_funs.pop();
+        };
         const entry = try self.emitGroupFun(head, names.items, body, true, &env_ops);
 
         // lists:foldl(Fun, Group, List)
@@ -11880,7 +11927,7 @@ const Emitter = struct {
                 try beamEmitter.writeCall(em.out, .normal, 3, .{ .ext = .{ .module = "lists", .function = "foldl" } }, 0);
             }
         };
-        try self.emitLoopCall(body, Call{});
+        try self.emitLoopCall(body, label, Call{});
         try self.unpackGroupFromX0(names.items);
         return true;
     }
@@ -11977,6 +12024,11 @@ const Emitter = struct {
         const saved = self.cond_loop;
         self.cond_loop = .{ .top = top, .exit = exit, .out = self.out, .defer_floor = self.defer_stack.items.len };
         defer self.cond_loop = saved;
+        const jump_label = labelOf(lp) != null;
+        if (jump_label) try self.label_jumps.append(self.alloc, .{ .label = lp.label.?, .exit = exit, .out = self.out, .defer_floor = self.defer_stack.items.len });
+        defer if (jump_label) {
+            _ = self.label_jumps.pop();
+        };
         try self.emitStmtList(lp.body);
         if (!(lp.body.len > 0 and stmtIsLoopJump(lp.body[lp.body.len - 1]))) {
             try beamEmitter.writeJump(self.out, top);
@@ -12155,6 +12207,11 @@ const Emitter = struct {
         const saved = self.cond_loop;
         self.cond_loop = .{ .top = top, .exit = exit, .out = self.out, .defer_floor = self.defer_stack.items.len };
         defer self.cond_loop = saved;
+        const jump_label = labelOf(lp) != null;
+        if (jump_label) try self.label_jumps.append(self.alloc, .{ .label = lp.label.?, .exit = exit, .out = self.out, .defer_floor = self.defer_stack.items.len });
+        defer if (jump_label) {
+            _ = self.label_jumps.pop();
+        };
         try self.emitStmtList(lp.body);
         if (!(lp.body.len > 0 and stmtIsLoopJump(lp.body[lp.body.len - 1]))) {
             try beamEmitter.writeJump(self.out, top);
@@ -12167,6 +12224,10 @@ const Emitter = struct {
         // (`lowerInFrameFor`); one reaching here outside a scope (a lambda
         // body's) keeps the per-item `lists:map`.
         const has_map = hasYieldOrBreakValue(lp.body);
+        const labelled = try self.pushLabelFun(labelOf(lp), lp.body, &.{});
+        defer if (labelled) {
+            _ = self.label_funs.pop();
+        };
 
         const idx = self.lambda_count;
         self.lambda_count += 1;
@@ -12249,14 +12310,14 @@ const Emitter = struct {
                 try beamEmitter.writeCall(em.out, .normal, 2, .{ .ext = .{ .module = "lists", .function = c.name } }, 0);
             }
         };
-        try self.emitLoopCall(lp.body, Call{ .name = func });
+        try self.emitLoopCall(lp.body, labelOf(lp), Call{ .name = func });
     }
 
     /// A loop's `lists:` call (`call.emit`), inside the catch sections its
     /// body needs: a propagating `try` / `return` (`guardLoopCall`) and a bare
     /// `break` (`guardLoopBreak`). Each takes a tag slot `countLocalsInExpr`
     /// reserves.
-    fn emitLoopCall(self: *Emitter, body: []const ast.Stmt, call: anytype) anyerror!void {
+    fn emitLoopCall(self: *Emitter, body: []const ast.Stmt, label: ?[]const u8, call: anytype) anyerror!void {
         const Guarded = struct {
             inner: @TypeOf(call),
             body: []const ast.Stmt,
@@ -12269,11 +12330,92 @@ const Emitter = struct {
             }
         };
         const guarded: Guarded = .{ .inner = call, .body = body };
-        if (bodyBreaksBare(body)) {
+        const Bare = struct {
+            inner: Guarded,
+            body: []const ast.Stmt,
+            fn emit(g: @This(), em: *Emitter) anyerror!void {
+                if (bodyBreaksBare(g.body)) {
+                    const tag = em.next_y;
+                    em.next_y += 1;
+                    try em.guardLoopBreak(tag, g.inner);
+                } else try g.inner.emit(em);
+            }
+        };
+        const bare: Bare = .{ .inner = guarded, .body = body };
+        if (label) |l| if (ast.bodyBreaksLabel(body, l)) {
             const tag = self.next_y;
             self.next_y += 1;
-            try self.guardLoopBreak(tag, guarded);
-        } else try guarded.emit(self);
+            try self.guardLabelBreak(tag, l, bare);
+            return;
+        };
+        try bare.emit(self);
+    }
+
+    /// The label of a loop that a `break :label` of its body leaves, else null.
+    fn labelOf(lp: anytype) ?[]const u8 {
+        const l = lp.label orelse return null;
+        return if (ast.bodyBreaksLabel(lp.body, l)) l else null;
+    }
+
+    /// Registers a fun-walked labelled loop for the `break :label` sites of its
+    /// body; true when it pushed an entry (the caller pops it).
+    fn pushLabelFun(self: *Emitter, label: ?[]const u8, body: []const ast.Stmt, names: []const []const u8) !bool {
+        const l = label orelse return false;
+        if (!ast.bodyBreaksLabel(body, l)) return false;
+        try self.label_funs.append(self.alloc, .{ .label = l, .names = names });
+        return true;
+    }
+
+    /// `break :label`: a jump to the exit of a labelled loop walked in this
+    /// frame, else the throw a fun-walked labelled loop catches. False when no
+    /// labelled loop is known, so the break falls back to the bare lowering.
+    fn lowerLabelBreak(self: *Emitter, label: []const u8) anyerror!bool {
+        var i = self.label_jumps.items.len;
+        while (i > 0) {
+            i -= 1;
+            const lj = self.label_jumps.items[i];
+            if (!std.mem.eql(u8, lj.label, label)) continue;
+            if (lj.out != self.out) break;
+            try self.runDefersForExit(lj.defer_floor, false);
+            try beamEmitter.writeJump(self.out, lj.exit);
+            return true;
+        }
+        i = self.label_funs.items.len;
+        while (i > 0) {
+            i -= 1;
+            const lf = self.label_funs.items[i];
+            if (!std.mem.eql(u8, lf.label, label)) continue;
+            if (lf.names.len > 0) try self.emitGroupIntoX0(lf.names) else try beamEmitter.writeMoveOp(self.out, Op.atom("ok"), Dst.xr(0));
+            try beamEmitter.writeTestHeap(self.out, 4, 1);
+            try beamEmitter.writePutTuple2(self.out, Dst.xr(0), &.{ Op.atom(label_break_signal), Op.atom(label), Op.xr(0) });
+            try self.writeThrowCall();
+            return true;
+        }
+        return false;
+    }
+
+    /// `call.emit` inside a catch section that ends the labelled loop on its
+    /// funs' `throw({'__bp_label_break', Label, V})`, with `V` in `{x, 0}`; any
+    /// other exception (another label's included) is raised again.
+    fn guardLabelBreak(self: *Emitter, tag: u32, label: []const u8, call: anytype) anyerror!void {
+        const caught = self.allocLabel();
+        const other = self.allocLabel();
+        const done = self.allocLabel();
+        try beamEmitter.writeTry(self.out, tag, caught);
+        try call.emit(self);
+        try beamEmitter.writeTryEnd(self.out, tag);
+        try beamEmitter.writeJump(self.out, done);
+        try beamEmitter.writeLabel(self.out, caught);
+        try beamEmitter.writeTryCase(self.out, tag);
+        try beamEmitter.writeTest(self.out, .is_eq_exact, other, &.{ Op.xr(0), Op.atom("throw") });
+        try beamEmitter.writeTest(self.out, .is_tagged_tuple, other, &.{ Op.xr(1), .{ .untagged = 3 }, Op.atom(label_break_signal) });
+        try beamEmitter.writeGetTupleElement(self.out, Op.xr(1), 1, Dst.xr(0));
+        try beamEmitter.writeTest(self.out, .is_eq_exact, other, &.{ Op.xr(0), Op.atom(label) });
+        try beamEmitter.writeGetTupleElement(self.out, Op.xr(1), 2, Dst.xr(0));
+        try beamEmitter.writeJump(self.out, done);
+        try beamEmitter.writeLabel(self.out, other);
+        try beamEmitter.writeBif(self.out, "raise", 0, &.{ Op.xr(2), Op.xr(1) }, Dst.xr(0));
+        try beamEmitter.writeLabel(self.out, done);
     }
 
     /// The `{Signal, V}` in `x1` a loop's fun threw, answered at its call site:
