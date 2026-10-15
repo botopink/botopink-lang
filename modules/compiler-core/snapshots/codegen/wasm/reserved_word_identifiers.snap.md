@@ -13,13 +13,14 @@ fn main() {
 ----- WASM TEXT -- main.wat
 ```wasm
 (module
+  (rec
+    (type $str (array (mut i8)))
+  )
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
-  (data (i32.const 256) "\01\00\00\00a")
-  (data (i32.const 264) "\01\00\00\00b")
-  (global $__heap_ptr (mut i32) (i32.const 272))
-  (func $delete (export "delete") (param $with i32) (param $class i32) (result i32)
-    (local $static i32)
+  (global $__heap_ptr (mut i32) (i32.const 256))
+  (func $delete (export "delete") (param $with (ref null $str)) (param $class (ref null $str)) (result (ref null $str))
+    (local $static (ref null $str))
     local.get $with
     local.get $class
     call $__str_concat
@@ -28,8 +29,8 @@ fn main() {
     return
   )
   (func $main
-    i32.const 256
-    i32.const 264
+    global.get $__s0
+    global.get $__s1
     call $delete
     call $__print_str
   )
@@ -216,71 +217,73 @@ fn main() {
       )
     )
   )
-  (func $__print_str_raw (param $s i32)
+  (func $__print_str_raw (param $s (ref null $str))
+    (local $n i32) (local $p i32) (local $i i32) (local $top i32)
     local.get $s
-    i32.const 256
-    i32.lt_u
-    (if
-      (then
-        ;; a pointer below the data floor is not a string
-        unreachable
+    array.len
+    local.set $n
+    global.get $__heap_ptr
+    local.set $top
+    local.get $n
+    call $__alloc
+    local.set $p
+    (block $brk
+      (loop $cont
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $brk
+        local.get $p
+        local.get $i
+        i32.add
+        local.get $s
+        local.get $i
+        array.get_u $str
+        i32.store8
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $cont
       )
     )
-    local.get $s
-    i32.const 4
-    i32.add
-    local.get $s
-    i32.load
+    local.get $p
+    local.get $n
     call $__write_bytes
+    local.get $top
+    global.set $__heap_ptr
   )
-  (func $__print_str (param $s i32)
+  (func $__print_str (param $s (ref null $str))
     local.get $s
     call $__print_str_raw
     call $__print_nl
   )
-  (func $__str_concat (param $a i32) (param $b i32) (result i32)
-    (local $base i32) (local $alen i32) (local $blen i32)
+  (func $__str_concat (param $a (ref null $str)) (param $b (ref null $str)) (result (ref null $str))
+    (local $r (ref null $str)) (local $alen i32) (local $blen i32)
     local.get $a
-    i32.load
+    array.len
     local.set $alen
     local.get $b
-    i32.load
+    array.len
     local.set $blen
-    ;; allocate 4 (length prefix) + alen + blen
-    i32.const 4
-    local.get $alen
-    i32.add
-    local.get $blen
-    i32.add
-    call $__alloc
-    local.set $base
-    ;; store combined length prefix
-    local.get $base
     local.get $alen
     local.get $blen
     i32.add
-    i32.store
-    ;; copy a's bytes: base+4 <- a+4
-    local.get $base
-    i32.const 4
-    i32.add
+    array.new_default $str
+    local.set $r
+    local.get $r
+    i32.const 0
     local.get $a
-    i32.const 4
-    i32.add
+    i32.const 0
     local.get $alen
-    memory.copy
-    ;; copy b's bytes: base+4+alen <- b+4
-    local.get $base
-    i32.const 4
-    i32.add
+    array.copy $str $str
+    local.get $r
     local.get $alen
-    i32.add
     local.get $b
-    i32.const 4
-    i32.add
+    i32.const 0
     local.get $blen
-    memory.copy
-    local.get $base
+    array.copy $str $str
+    local.get $r
   )
   (func $__alloc (param $n i32) (result i32)
     (local $p i32) (local $e i32)
@@ -330,6 +333,22 @@ fn main() {
     global.set $__heap_ptr
     local.get $p
   )
+  (data $__d0 "a")
+  (global $__s0 (mut (ref null $str)) (ref.null $str))
+  (data $__d1 "b")
+  (global $__s1 (mut (ref null $str)) (ref.null $str))
+  (start $__init_strs)
+  (func $__init_strs
+    i32.const 0
+    i32.const 1
+    array.new_data $str $__d0
+    global.set $__s0
+    i32.const 0
+    i32.const 1
+    array.new_data $str $__d1
+    global.set $__s1
+  )
+  (@custom "botopink.needs" "gc\0a")
 )
 ```
 

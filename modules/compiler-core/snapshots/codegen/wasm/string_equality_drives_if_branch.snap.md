@@ -13,20 +13,20 @@ fn main() {
 ----- WASM TEXT -- main.wat
 ```wasm
 (module
+  (rec
+    (type $str (array (mut i8)))
+  )
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
-  (data (i32.const 256) "\02\00\00\00ye")
-  (data (i32.const 264) "\01\00\00\00s")
-  (data (i32.const 272) "\03\00\00\00yes")
-  (global $__heap_ptr (mut i32) (i32.const 280))
+  (global $__heap_ptr (mut i32) (i32.const 256))
   (func $main
-    (local $s i32)
-    i32.const 256
-    i32.const 264
+    (local $s (ref null $str))
+    global.get $__s0
+    global.get $__s1
     call $__str_concat
     local.set $s
     local.get $s
-    i32.const 272
+    global.get $__s2
     call $__str_eq
     (if
       (then
@@ -222,85 +222,72 @@ fn main() {
       )
     )
   )
-  (func $__str_concat (param $a i32) (param $b i32) (result i32)
-    (local $base i32) (local $alen i32) (local $blen i32)
+  (func $__str_concat (param $a (ref null $str)) (param $b (ref null $str)) (result (ref null $str))
+    (local $r (ref null $str)) (local $alen i32) (local $blen i32)
     local.get $a
-    i32.load
+    array.len
     local.set $alen
     local.get $b
-    i32.load
+    array.len
     local.set $blen
-    ;; allocate 4 (length prefix) + alen + blen
-    i32.const 4
-    local.get $alen
-    i32.add
-    local.get $blen
-    i32.add
-    call $__alloc
-    local.set $base
-    ;; store combined length prefix
-    local.get $base
     local.get $alen
     local.get $blen
     i32.add
-    i32.store
-    ;; copy a's bytes: base+4 <- a+4
-    local.get $base
-    i32.const 4
-    i32.add
+    array.new_default $str
+    local.set $r
+    local.get $r
+    i32.const 0
     local.get $a
-    i32.const 4
-    i32.add
+    i32.const 0
     local.get $alen
-    memory.copy
-    ;; copy b's bytes: base+4+alen <- b+4
-    local.get $base
-    i32.const 4
-    i32.add
+    array.copy $str $str
+    local.get $r
     local.get $alen
-    i32.add
     local.get $b
-    i32.const 4
-    i32.add
+    i32.const 0
     local.get $blen
-    memory.copy
-    local.get $base
+    array.copy $str $str
+    local.get $r
   )
-  (func $__str_eq (param $a i32) (param $b i32) (result i32)
-    (local $i i32) (local $alen i32)
+  (func $__str_eq (param $a (ref null $str)) (param $b (ref null $str)) (result i32)
+    (local $i i32) (local $n i32)
     local.get $a
-    i32.load
-    local.set $alen
-    local.get $alen
+    array.len
+    local.set $n
+    local.get $n
     local.get $b
-    i32.load
+    array.len
     i32.ne
     (if
-      (then i32.const 0 return)
+      (then
+        i32.const 0
+        return
+      )
     )
-    (block $done
-      (loop $cmp
+    (block $brk
+      (loop $cont
         local.get $i
-        local.get $alen
+        local.get $n
         i32.ge_u
-        br_if $done
+        br_if $brk
         local.get $a
         local.get $i
-        i32.add
-        i32.load8_u offset=4
+        array.get_u $str
         local.get $b
         local.get $i
-        i32.add
-        i32.load8_u offset=4
+        array.get_u $str
         i32.ne
         (if
-          (then i32.const 0 return)
+          (then
+            i32.const 0
+            return
+          )
         )
         local.get $i
         i32.const 1
         i32.add
         local.set $i
-        br $cmp
+        br $cont
       )
     )
     i32.const 1
@@ -353,6 +340,28 @@ fn main() {
     global.set $__heap_ptr
     local.get $p
   )
+  (data $__d0 "ye")
+  (global $__s0 (mut (ref null $str)) (ref.null $str))
+  (data $__d1 "s")
+  (global $__s1 (mut (ref null $str)) (ref.null $str))
+  (data $__d2 "yes")
+  (global $__s2 (mut (ref null $str)) (ref.null $str))
+  (start $__init_strs)
+  (func $__init_strs
+    i32.const 0
+    i32.const 2
+    array.new_data $str $__d0
+    global.set $__s0
+    i32.const 0
+    i32.const 1
+    array.new_data $str $__d1
+    global.set $__s1
+    i32.const 0
+    i32.const 3
+    array.new_data $str $__d2
+    global.set $__s2
+  )
+  (@custom "botopink.needs" "gc\0a")
 )
 ```
 

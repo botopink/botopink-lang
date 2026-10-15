@@ -9,13 +9,17 @@ fn greet(name: string) -> string {
 ----- WASM TEXT -- main.wat
 ```wasm
 (module
+  (rec
+    (type $str (array (mut i8)))
+  )
   (memory (export "memory") 1)
   (global $__heap_ptr (mut i32) (i32.const 256))
   ;; This function greets the user
-  (func $greet (param $name i32) (result i32)
+  (func $greet (param $name (ref null $str)) (result (ref null $str))
     local.get $name
     return
   )
+  (@custom "botopink.needs" "gc\0a")
 )
 ```
 

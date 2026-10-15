@@ -17,26 +17,23 @@ fn main() {
 ----- WASM TEXT -- main.wat
 ```wasm
 (module
+  (rec
+    (type $str (array (mut i8)))
+  )
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
-  (data (i32.const 256) "\10\00\00\00Sistema iniciado")
-  (data (i32.const 276) "\0d\00\00\00Memória alta")
-  (data (i32.const 296) "\0d\00\00\00Log replicado")
-  (data (i32.const 316) "\04\00\00\00INFO")
-  (data (i32.const 324) "\02\00\00\00: ")
-  (data (i32.const 332) "\04\00\00\00WARN")
-  (global $__heap_ptr (mut i32) (i32.const 340))
+  (global $__heap_ptr (mut i32) (i32.const 256))
   (func $main
-    (local $r1 i32)
-    (local $r2 i32)
-    (local $r3 i32)
-    i32.const 256
+    (local $r1 (ref null $str))
+    (local $r2 (ref null $str))
+    (local $r3 (ref null $str))
+    global.get $__s0
     call $build_$0
     local.set $r1
-    i32.const 276
+    global.get $__s1
     call $build_$1
     local.set $r2
-    i32.const 296
+    global.get $__s2
     call $build_$0
     local.set $r3
     local.get $r1
@@ -46,23 +43,23 @@ fn main() {
     local.get $r3
     call $__print_str
   )
-  (func $build_$0 (param $name i32) (result i32)
-    (local $prefix i32)
-    i32.const 316
+  (func $build_$0 (param $name (ref null $str)) (result (ref null $str))
+    (local $prefix (ref null $str))
+    global.get $__s3
     local.set $prefix
     local.get $prefix
-    i32.const 324
+    global.get $__s4
     call $__str_concat
     local.get $name
     call $__str_concat
     return
   )
-  (func $build_$1 (param $name i32) (result i32)
-    (local $prefix i32)
-    i32.const 332
+  (func $build_$1 (param $name (ref null $str)) (result (ref null $str))
+    (local $prefix (ref null $str))
+    global.get $__s5
     local.set $prefix
     local.get $prefix
-    i32.const 324
+    global.get $__s4
     call $__str_concat
     local.get $name
     call $__str_concat
@@ -251,71 +248,73 @@ fn main() {
       )
     )
   )
-  (func $__print_str_raw (param $s i32)
+  (func $__print_str_raw (param $s (ref null $str))
+    (local $n i32) (local $p i32) (local $i i32) (local $top i32)
     local.get $s
-    i32.const 256
-    i32.lt_u
-    (if
-      (then
-        ;; a pointer below the data floor is not a string
-        unreachable
+    array.len
+    local.set $n
+    global.get $__heap_ptr
+    local.set $top
+    local.get $n
+    call $__alloc
+    local.set $p
+    (block $brk
+      (loop $cont
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $brk
+        local.get $p
+        local.get $i
+        i32.add
+        local.get $s
+        local.get $i
+        array.get_u $str
+        i32.store8
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $cont
       )
     )
-    local.get $s
-    i32.const 4
-    i32.add
-    local.get $s
-    i32.load
+    local.get $p
+    local.get $n
     call $__write_bytes
+    local.get $top
+    global.set $__heap_ptr
   )
-  (func $__print_str (param $s i32)
+  (func $__print_str (param $s (ref null $str))
     local.get $s
     call $__print_str_raw
     call $__print_nl
   )
-  (func $__str_concat (param $a i32) (param $b i32) (result i32)
-    (local $base i32) (local $alen i32) (local $blen i32)
+  (func $__str_concat (param $a (ref null $str)) (param $b (ref null $str)) (result (ref null $str))
+    (local $r (ref null $str)) (local $alen i32) (local $blen i32)
     local.get $a
-    i32.load
+    array.len
     local.set $alen
     local.get $b
-    i32.load
+    array.len
     local.set $blen
-    ;; allocate 4 (length prefix) + alen + blen
-    i32.const 4
-    local.get $alen
-    i32.add
-    local.get $blen
-    i32.add
-    call $__alloc
-    local.set $base
-    ;; store combined length prefix
-    local.get $base
     local.get $alen
     local.get $blen
     i32.add
-    i32.store
-    ;; copy a's bytes: base+4 <- a+4
-    local.get $base
-    i32.const 4
-    i32.add
+    array.new_default $str
+    local.set $r
+    local.get $r
+    i32.const 0
     local.get $a
-    i32.const 4
-    i32.add
+    i32.const 0
     local.get $alen
-    memory.copy
-    ;; copy b's bytes: base+4+alen <- b+4
-    local.get $base
-    i32.const 4
-    i32.add
+    array.copy $str $str
+    local.get $r
     local.get $alen
-    i32.add
     local.get $b
-    i32.const 4
-    i32.add
+    i32.const 0
     local.get $blen
-    memory.copy
-    local.get $base
+    array.copy $str $str
+    local.get $r
   )
   (func $__alloc (param $n i32) (result i32)
     (local $p i32) (local $e i32)
@@ -365,6 +364,46 @@ fn main() {
     global.set $__heap_ptr
     local.get $p
   )
+  (data $__d0 "Sistema iniciado")
+  (global $__s0 (mut (ref null $str)) (ref.null $str))
+  (data $__d1 "Memória alta")
+  (global $__s1 (mut (ref null $str)) (ref.null $str))
+  (data $__d2 "Log replicado")
+  (global $__s2 (mut (ref null $str)) (ref.null $str))
+  (data $__d3 "INFO")
+  (global $__s3 (mut (ref null $str)) (ref.null $str))
+  (data $__d4 ": ")
+  (global $__s4 (mut (ref null $str)) (ref.null $str))
+  (data $__d5 "WARN")
+  (global $__s5 (mut (ref null $str)) (ref.null $str))
+  (start $__init_strs)
+  (func $__init_strs
+    i32.const 0
+    i32.const 16
+    array.new_data $str $__d0
+    global.set $__s0
+    i32.const 0
+    i32.const 13
+    array.new_data $str $__d1
+    global.set $__s1
+    i32.const 0
+    i32.const 13
+    array.new_data $str $__d2
+    global.set $__s2
+    i32.const 0
+    i32.const 4
+    array.new_data $str $__d3
+    global.set $__s3
+    i32.const 0
+    i32.const 2
+    array.new_data $str $__d4
+    global.set $__s4
+    i32.const 0
+    i32.const 4
+    array.new_data $str $__d5
+    global.set $__s5
+  )
+  (@custom "botopink.needs" "gc\0a")
 )
 ```
 

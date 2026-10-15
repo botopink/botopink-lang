@@ -55,22 +55,20 @@ const Line = wat.Line;
 const Seq = wat.Seq;
 const Item = wat.Item;
 const ValType = wat.ValType;
-
-/// The `ValType` a backend-internal type name (`"i32"`, `"f64"`, …) stands for.
-/// Lowering recovers types as spelled strings; the model is an enum, and this
-/// is the one place the two meet.
-fn vt(name: []const u8) ValType {
-    return ValType.parse(name);
-}
+const reprMod = @import("./wat/repr.zig");
+const typecheck = @import("./wat/typecheck.zig");
+/// What a lowered value is (`wat/repr.zig`): a scalar, or a reference and its
+/// kind. `Emitter.vtOf` is the wasm type the module's mode gives it.
+const Repr = reprMod.Repr;
 
 /// `i32.const <text>` / `f64.const <text>` — the numeral keeps its spelling.
-fn constOf(ty: []const u8, text: []const u8) Instr {
-    return .{ .@"const" = .{ .ty = vt(ty), .text = text } };
+fn constOf(ty: Repr, text: []const u8) Instr {
+    return .{ .@"const" = .{ .ty = ty.num(), .text = text } };
 }
 
 /// `<ty>.<name>` (`i32.add`, `f64.lt`, `i32.eqz`, …).
-fn opOf(ty: []const u8, name: []const u8) Instr {
-    return .{ .op = .{ .ty = vt(ty), .name = name } };
+fn opOf(ty: Repr, name: []const u8) Instr {
+    return .{ .op = .{ .ty = ty.num(), .name = name } };
 }
 
 /// `i32.const 0` — the carrier this backend uses for absence, false, a null
@@ -86,6 +84,30 @@ const one: Instr = .{ .@"const" = .{ .ty = .i32, .text = "1" } };
 
 /// The bump-allocator pointer every aggregate construction advances.
 const heap_ptr = "__heap_ptr";
+
+/// A GC module's start (front 164 s2): builds its string literals' globals,
+/// then runs what the start ran before (`$__init_globals`).
+const gc_init_strs = "__init_strs";
+
+/// A function std-wasm's code was decoded into (`std_wasm_link.zig`): linear
+/// memory, outside the GC module's type check.
+fn isStdFunc(name: []const u8) bool {
+    return std.mem.startsWith(u8, name, "__std_");
+}
+
+/// Whether a body reads or writes linear memory.
+fn touchesMemory(s: Seq) bool {
+    for (s.lines) |l| switch (l.instr) {
+        .load, .store, .memory_copy, .memory_fill, .memory_size, .memory_grow => return true,
+        .@"if" => |i| {
+            if (touchesMemory(i.then.seq)) return true;
+            if (i.@"else") |e| if (touchesMemory(e.seq)) return true;
+        },
+        .block => |b| if (touchesMemory(b.body)) return true,
+        else => {},
+    };
+    return false;
+}
 
 /// The header a value that knows its own declaration carries
 /// (13-module-identity half 3, decision 22): one i32 holding the address of
@@ -180,29 +202,30 @@ fn taskValueTypeRef(t: ast.TypeRef) ?ast.TypeRef {
     return if (isTaskTypeRef(t)) t.generic.args[0] else null;
 }
 
-fn watType(t0: ast.TypeRef) []const u8 {
-    if (isTaskTypeRef(t0)) return "i32";
+fn watType(t0: ast.TypeRef) Repr {
+    if (isTaskTypeRef(t0)) return .i32;
     const t = eagerTypeRef(t0);
     switch (t) {
         .named => |n| {
-            if (std.mem.eql(u8, n, "i32")) return "i32";
+            if (std.mem.eql(u8, n, "i32")) return .i32;
             // `u32` and `u64` past `2^31` do not fit the signed `i32` word:
             // `4294967295` printed `-1`. Both are held as an `i64`.
-            if (std.mem.eql(u8, n, "i64") or std.mem.eql(u8, n, "u64") or std.mem.eql(u8, n, "u32")) return "i64";
+            if (std.mem.eql(u8, n, "i64") or std.mem.eql(u8, n, "u64") or std.mem.eql(u8, n, "u32")) return .i64;
             // An `f32` is held as the `f64` it is on commonJS (a JS number):
             // narrowed, `val x: f32 = 0.1` printed `0.10000000149011612`.
-            if (std.mem.eql(u8, n, "f32")) return "f64";
-            if (std.mem.eql(u8, n, "f64")) return "f64";
-            if (std.mem.eql(u8, n, "bool")) return "i32";
+            if (std.mem.eql(u8, n, "f32")) return .f64;
+            if (std.mem.eql(u8, n, "f64")) return .f64;
+            if (std.mem.eql(u8, n, "bool")) return .i32;
+            if (std.mem.eql(u8, n, "string")) return Repr.string;
         },
         else => {},
     }
-    return "i32";
+    return .i32;
 }
 
-fn watTypeOpt(t: ?ast.TypeRef) []const u8 {
+fn watTypeOpt(t: ?ast.TypeRef) Repr {
     if (t) |x| return watType(x);
-    return "i32";
+    return .i32;
 }
 
 fn isNamedTypeRef(t: ast.TypeRef, name: []const u8) bool {
@@ -217,9 +240,9 @@ fn isNamedTypeRef(t: ast.TypeRef, name: []const u8) bool {
 /// float it names, everything else the `i32` word a method has always passed.
 /// A method declared `-> f64` had an `(result i32)` and truncated its answer
 /// (`self.x / 2.0` returned `0`).
-fn memberValType(t: ast.TypeRef) []const u8 {
+fn memberValType(t: ast.TypeRef) Repr {
     const w = watType(t);
-    return if (w[0] == 'f' or std.mem.eql(u8, w, "i64")) w else "i32";
+    return if (w.isFloat() or w.isI64()) w else .i32;
 }
 
 /// The 8-byte cell a field or an optional of the named type holds its value
@@ -1127,6 +1150,8 @@ const DataSeg = struct { offset: u32, len: u32, content: []const u8 };
 /// found the module reaches fewer host features than its bindings name: the
 /// needs it reaches, and the unreached bindings that asked for the rest.
 const Plan = struct {
+    /// How the pass lowers the module (front 164 s2, `wat/repr.zig`).
+    mode: reprMod.Mode = .linear,
     forced: ?ast.WasmNeeds = null,
     skip: std.StringHashMapUnmanaged(void) = .empty,
 
@@ -1137,10 +1162,12 @@ const Plan = struct {
     }
 };
 
-/// The module for the program: lowered once; when the functions it reaches ask
-/// for fewer `needs:` than every binding it links names, lowered again without
-/// the bindings nothing reaches, so the module carries (and the runner enables)
-/// only what the program uses.
+/// The module for the program. Front 164 s2 (decision 544): lowered first with
+/// every value a WasmGC reference (`.gc`); a module that lowering refuses —
+/// it meets a value shape it has no GC form for yet, or the module it built
+/// does not type-check (`wat/typecheck.zig`) — is lowered again with every
+/// value a word in linear memory (`.linear`), which answers for the module:
+/// its refusals are the module's.
 fn emitWat(
     alloc: std.mem.Allocator,
     module_name: []const u8,
@@ -1156,7 +1183,36 @@ fn emitWat(
     missing: ?*?moduleOutput.MissingExternal,
     refused: ?*?Emitter.Refusal,
 ) !Emitted {
-    var plan: Plan = .{};
+    if (emitWatIn(.gc, alloc, module_name, src_path, own_program_in, comptime_vals, rewrites, own_instance_lowerings, linked_in, cross, external_lookup, artifact, null, null)) |gc| {
+        return gc;
+    } else |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        else => {},
+    }
+    return emitWatIn(.linear, alloc, module_name, src_path, own_program_in, comptime_vals, rewrites, own_instance_lowerings, linked_in, cross, external_lookup, artifact, missing, refused);
+}
+
+/// The module in one lowering mode: lowered once; when the functions it
+/// reaches ask for fewer `needs:` than every binding it links names, lowered
+/// again without the bindings nothing reaches, so the module carries (and the
+/// runner enables) only what the program uses.
+fn emitWatIn(
+    mode: reprMod.Mode,
+    alloc: std.mem.Allocator,
+    module_name: []const u8,
+    src_path: []const u8,
+    own_program_in: ast.Program,
+    comptime_vals: std.StringHashMap([]const u8),
+    rewrites: std.AutoHashMap(ast.Loc, []const u8),
+    own_instance_lowerings: std.AutoHashMap(ast.Loc, envMod.InstanceLowering),
+    linked_in: []const Linked,
+    cross: ?*const CrossModule,
+    external_lookup: []const u8,
+    artifact: Artifact,
+    missing: ?*?moduleOutput.MissingExternal,
+    refused: ?*?Emitter.Refusal,
+) !Emitted {
+    var plan: Plan = .{ .mode = mode };
     defer plan.deinit(alloc);
     return emitWatPass(alloc, module_name, src_path, own_program_in, comptime_vals, rewrites, own_instance_lowerings, linked_in, cross, external_lookup, artifact, missing, refused, &plan) catch |err| switch (err) {
         error.Replan => emitWatPass(alloc, module_name, src_path, own_program_in, comptime_vals, rewrites, own_instance_lowerings, linked_in, cross, external_lookup, artifact, missing, refused, &plan),
@@ -1188,6 +1244,7 @@ fn emitWatPass(
 ) !Emitted {
     var em = Emitter.init(alloc, comptime_vals, rewrites);
     defer em.deinit();
+    em.mode = plan.mode;
     em.cross = cross;
     errdefer if (missing) |slot| {
         slot.* = em.missing_external;
@@ -1485,6 +1542,7 @@ fn emitWatPass(
     try em.refuseUnboundTemplateCalls();
 
     if (has_main_0) try em.emitEntrypointWrapper(main_returns_value);
+    if (em.gc_gap != null) return error.GcFallback;
 
     // ── assemble the module ──────────────────────────────────────────────
     //
@@ -1542,6 +1600,8 @@ fn emitWatPass(
         .init = try std.fmt.allocPrint(ar, "{d}", .{em.next_data_offset}),
     } });
 
+    // The functions the lowering wrote — what a GC module's checks read.
+    const program_lo = items.items.len;
     try items.appendSlice(ar, em.items.items);
     for (em.behavior_dispatch.values()) |bd| try items.append(ar, .{ .func = try em.behaviorDispatchFunc(bd) });
     // Decision 210 — each equality may ask for the equality of a part.
@@ -1550,6 +1610,7 @@ fn emitWatPass(
         try items.append(ar, .{ .func = try em.eqFunc(em.eq_requests.keys()[eq_i], em.eq_requests.values()[eq_i]) });
     }
     if (em.float_eq_used) try items.append(ar, .{ .func = try em.floatEqFunc() });
+    const program_hi = items.items.len;
 
     // Decision 442 (1) — a print helper writes the text std-wasm makes of a
     // number: each group's std-wasm functions are the module's too.
@@ -1559,8 +1620,18 @@ fn emitWatPass(
     }
     // Decision 440 (2) — std-wasm's functions call the program's allocator.
     if (em.std_exports.count() > 0) em.b.helpers.require(.alloc);
+    // A GC module's helpers copy strings through the marshal arena.
+    if (em.mode == .gc) for (prelude.order) |group| {
+        if (em.b.helpers.has(group)) for (prelude.gcDeps(group)) |d| em.b.helpers.require(d);
+    };
     for (prelude.order) |group| {
         if (!em.b.helpers.has(group)) continue;
+        // Front 164 s2 — a GC module takes each group's GC form; a group
+        // with none yet sends the module to linear memory.
+        if (em.mode == .gc) {
+            try items.appendSlice(ar, prelude.gcItems(group, em.b.helpers.has(.text_capture)) orelse return em.gcFail(@tagName(group)));
+            continue;
+        }
         // `$__print_tagged_raw` asks the module which of its types answers its
         // own text (decision 8 §7's `Display`); the answer is this module's.
         if (group == .display_of) if (try em.displayDispatch()) |f| {
@@ -1670,6 +1741,8 @@ fn emitWatPass(
     }
     if (plan.skip.count() > 0) try reach.dropCallers(ar, &items, plan.skip);
 
+    if (em.mode == .gc) try em.finishGc(&items, program_lo, program_hi);
+
     // WasmGC (front 164 s2, decision 544) — a module declaring GC types needs
     // the host's GC (`wasmtime run -W gc=y`), whatever its bindings name.
     if (wat.typesOf(.{ .items = items.items }).len > 0) em.needs.insert(.gc);
@@ -1776,7 +1849,7 @@ const Tail = enum { value, none, terminated };
 /// A hoisted local declaration. Locals live in the `wat_ast.Func` node, so
 /// there is no way to write one into a body at all: lowering registers them
 /// here and `funcNode` hands the list to the model.
-const LocalDecl = struct { name: []const u8, ty: []const u8 };
+const LocalDecl = struct { name: []const u8, ty: Repr };
 
 /// A detached instruction sink. Lowering a nested body (a function body, an
 /// `if` arm, a `loop` body) redirects `Emitter.cur` into one of these and
@@ -1834,7 +1907,7 @@ fn blockReturnValueOf(e: ast.Expr) ?ast.Expr {
 /// for extension/record methods). `result` is null for a void function. Call
 /// sites consult this to know whether a `call` pushes a value, and to coerce
 /// arguments to the declared parameter types.
-const FnSig = struct { params: []const []const u8, result: ?[]const u8 };
+const FnSig = struct { params: []const Repr, result: ?Repr };
 
 /// A dispatcher `$__bdispatch_<method>_<n>` a behavior-typed call asked for
 /// (`Emitter.lowerBehaviorDispatch`), written once the module is lowered.
@@ -1864,7 +1937,22 @@ const Emitter = struct {
     items: std.ArrayListUnmanaged(Item) = .empty,
     cv: std.StringHashMap([]const u8),
 
-    cur_result: []const u8 = "i32",
+    cur_result: Repr = .i32,
+    /// How the module is lowered (`wat/repr.zig`'s `Mode`): what a reference
+    /// `Repr` is declared as (`vtOf`).
+    mode: reprMod.Mode = .linear,
+    /// Front 164 s2 — a `.gc` module's string literals, by their bytes: each
+    /// one a passive segment `$__d<k>` built once, at instantiation, into the
+    /// global `$__s<k>` its reads take (`emitStrLit`).
+    gc_strs: std.StringArrayHashMapUnmanaged(void) = .empty,
+    /// Whether a `.gc` module names `$str` (its type group is declared).
+    gc_str_used: bool = false,
+    /// Why a `.gc` lowering cannot finish — a value shape with no GC form
+    /// yet, met where no error can be returned (`vtOf`); the module is then
+    /// lowered in linear memory.
+    gc_gap: ?[]const u8 = null,
+    /// Numbers the temporaries `emitStdCall` marshals through.
+    gc_seq: u32 = 0,
     /// The type parameters in scope while a body is emitted: the owner type's
     /// (`Dict<K, V>`) and the function's or method's own (`first<T>`). A `?V`
     /// over one of them is boxed (`optInfoOfTypeRef`).
@@ -1883,7 +1971,7 @@ const Emitter = struct {
     /// The function being emitted returns a `@Result` (`#[@result]`, or a
     /// declared `-> @Result<…>`).
     fn_returns_result: bool = false,
-    locals: std.StringHashMap([]const u8),
+    locals: std.StringHashMap(Repr),
     /// Locals to flush into the current function's header, in insertion order.
     pending_locals: std.ArrayListUnmanaged(LocalDecl) = .empty,
     /// Locals known to hold a length-prefixed string pointer (params typed
@@ -1938,7 +2026,7 @@ const Emitter = struct {
     global_rec_types: std.StringHashMap([]const u8),
     bool_fns: std.StringHashMap(void),
     /// Module globals: wat value type, plus the string/bool shapes.
-    global_types: std.StringHashMap([]const u8),
+    global_types: std.StringHashMap(Repr),
     str_globals: std.StringHashMap(void),
     /// Names known to hold an `[len][e0][e1]…` array blob. `for (xs) {…}`
     /// only walks the layout for these; anything else is refused
@@ -2460,7 +2548,7 @@ const Emitter = struct {
         const em: Emitter = .{
             .alloc = alloc,
             .cv = cv,
-            .locals = std.StringHashMap([]const u8).init(alloc),
+            .locals = std.StringHashMap(Repr).init(alloc),
             .str_locals = std.StringHashMap(void).init(alloc),
             .bool_locals = std.StringHashMap(void).init(alloc),
             .str_fns = std.StringHashMap(void).init(alloc),
@@ -2478,7 +2566,7 @@ const Emitter = struct {
             .global_typerefs = std.StringHashMap(ast.TypeRef).init(alloc),
             .record_field_typerefs = std.StringHashMap([]const ast.TypeRef).init(alloc),
             .bool_fns = std.StringHashMap(void).init(alloc),
-            .global_types = std.StringHashMap([]const u8).init(alloc),
+            .global_types = std.StringHashMap(Repr).init(alloc),
             .str_globals = std.StringHashMap(void).init(alloc),
             .arr_locals = std.StringHashMap(void).init(alloc),
             .print_shape_locals = std.StringHashMap([]const u8).init(alloc),
@@ -2532,6 +2620,8 @@ const Emitter = struct {
     }
 
     fn deinit(self: *Emitter) void {
+        // A refusal no caller took (the `.gc` pass's, which `emitWat` drops).
+        if (self.refusal) |r| self.alloc.free(r.message);
         self.locals.deinit();
         self.pending_locals.deinit(self.alloc);
         self.defer_stack.deinit(self.alloc);
@@ -2565,6 +2655,7 @@ const Emitter = struct {
         self.globals.deinit();
         self.records.deinit();
         self.record_field_types.deinit();
+        self.gc_strs.deinit(self.alloc);
         self.enums.deinit();
         self.type_descs.deinit();
         self.local_types.deinit();
@@ -2681,7 +2772,7 @@ const Emitter = struct {
             return;
         }
         const has_result = fnHasResult(f);
-        var params: std.ArrayListUnmanaged([]const u8) = .empty;
+        var params: std.ArrayListUnmanaged(Repr) = .empty;
         var ptrefs: std.ArrayListUnmanaged(ast.TypeRef) = .empty;
         for (f.params) |p| {
             if (std.mem.eql(u8, p.name, "self")) continue;
@@ -2796,7 +2887,7 @@ const Emitter = struct {
                 }
                 const sym = try std.fmt.allocPrint(ra, "{s}_{s}", .{ i.name, m.name });
                 if (self.fn_sigs.contains(sym)) continue;
-                const params = try ra.alloc([]const u8, m.params.len);
+                const params = try ra.alloc(Repr, m.params.len);
                 for (m.params, 0..) |p, k| params[k] = watType(p.typeRef);
                 try self.fn_sigs.put(sym, .{
                     .params = params,
@@ -2915,11 +3006,11 @@ const Emitter = struct {
         for (methods) |m| {
             const qualifier = m.qualifier orelse target;
             const sym = try std.fmt.allocPrint(ra, "{s}_{s}", .{ qualifier, m.name });
-            const params = try ra.alloc([]const u8, m.params.len);
-            for (params) |*t| t.* = "i32";
+            const params = try ra.alloc(Repr, m.params.len);
+            for (params) |*t| t.* = .i32;
             try self.fn_sigs.put(sym, .{
                 .params = params,
-                .result = if (methodHasResult(m.body)) "i32" else null,
+                .result = if (methodHasResult(m.body)) .i32 else null,
             });
         }
     }
@@ -2936,13 +3027,13 @@ const Emitter = struct {
             }
             const needs_self = !has_self_param and bodyReferencesSelf(body);
             const n = m.params.len + @as(usize, if (needs_self) 1 else 0);
-            const params = try ra.alloc([]const u8, n);
-            for (params) |*t| t.* = "i32";
+            const params = try ra.alloc(Repr, n);
+            for (params) |*t| t.* = .i32;
             const first: usize = if (needs_self) 1 else 0;
             for (m.params, 0..) |p, i| params[first + i] = memberValType(p.typeRef);
             try self.fn_sigs.put(sym, .{
                 .params = params,
-                .result = if (m.returnType) |rt| memberValType(rt) else if (methodHasResult(body)) "i32" else null,
+                .result = if (m.returnType) |rt| memberValType(rt) else if (methodHasResult(body)) .i32 else null,
             });
             // A method's declared return type, under the symbol the call
             // emits. `typeRefOf` asks for it so the *reader* of a `?T` agrees
@@ -3476,14 +3567,14 @@ const Emitter = struct {
         if (descs.len == 0) return false;
         try self.emit(.{ .local_get = subj });
         try self.emit(try self.constInt(heap_floor));
-        try self.emit(opOf("i32", "ge_u"));
+        try self.emit(opOf(.i32, "ge_u"));
         for (descs, 0..) |d, i| {
             try self.emitHeaderLoad(subj);
             try self.emit(try self.constInt(d));
-            try self.emit(opOf("i32", "eq"));
-            if (i > 0) try self.emit(opOf("i32", "or"));
+            try self.emit(opOf(.i32, "eq"));
+            if (i > 0) try self.emit(opOf(.i32, "or"));
         }
-        try self.emit(opOf("i32", "and"));
+        try self.emit(opOf(.i32, "and"));
         return true;
     }
 
@@ -3497,11 +3588,11 @@ const Emitter = struct {
     fn emitHeaderLoad(self: *Emitter, subj: []const u8) anyerror!void {
         try self.emit(.{ .local_get = subj });
         try self.emit(try self.constInt(tag_header_bytes));
-        try self.emit(opOf("i32", "sub"));
+        try self.emit(opOf(.i32, "sub"));
         try self.emit(.{ .local_get = subj });
         try self.emit(try self.constInt(heap_floor));
-        try self.emit(opOf("i32", "ge_u"));
-        try self.emit(opOf("i32", "mul"));
+        try self.emit(opOf(.i32, "ge_u"));
+        try self.emit(opOf(.i32, "mul"));
         try self.emit(.{ .load = .{} });
     }
 
@@ -3536,11 +3627,11 @@ const Emitter = struct {
             try self.lowerAsUnknown(cc.args[0].value.*);
             try self.emit(.{ .local_tee = mem });
             try self.emit(try self.constInt(heap_floor));
-            try self.emit(opOf("i32", "ge_u"));
+            try self.emit(opOf(.i32, "ge_u"));
             try self.emitHeaderLoad(mem);
             try self.emit(try self.constInt(desc));
-            try self.emit(opOf("i32", "eq"));
-            try self.emit(opOf("i32", "and"));
+            try self.emit(opOf(.i32, "eq"));
+            try self.emit(opOf(.i32, "and"));
             return;
         }
         if (t.tupleElems()) |elems| return self.lowerIsTuple(cc.args[0].value.*, elems);
@@ -3549,17 +3640,17 @@ const Emitter = struct {
             return self.refuseUnlessTemplate(self.call_loc, "`is {f}`: the wasm backend has no run-time test for this type (no value of it carries a descriptor)", .{t});
         }
         const mem = try self.memName(self.nextMem());
-        try self.lowerCoerced(cc.args[0].value.*, "i32");
+        try self.lowerCoerced(cc.args[0].value.*, .i32);
         try self.emit(.{ .local_tee = mem });
         try self.emit(try self.constInt(heap_floor));
-        try self.emit(opOf("i32", "ge_u"));
+        try self.emit(opOf(.i32, "ge_u"));
         for (descs, 0..) |d, i| {
             try self.emitHeaderLoad(mem);
             try self.emit(try self.constInt(d));
-            try self.emit(opOf("i32", "eq"));
-            if (i > 0) try self.emit(opOf("i32", "or"));
+            try self.emit(opOf(.i32, "eq"));
+            if (i > 0) try self.emit(opOf(.i32, "or"));
         }
-        try self.emit(opOf("i32", "and"));
+        try self.emit(opOf(.i32, "and"));
     }
 
     // ── decision 8 §11's box (`00 · 05-wasm` step 2 D1–D3) ─────────────────
@@ -3615,16 +3706,16 @@ const Emitter = struct {
                 try self.emit(b.helper(.unknown_kind));
                 try self.emit(.{ .local_tee = k });
                 try self.emit(try self.constInt(@as(i32, 'i')));
-                try self.emit(opOf("i32", "eq"));
+                try self.emit(opOf(.i32, "eq"));
                 try self.emit(.{ .local_get = k });
                 try self.emit(try self.constInt(@as(i32, 'f')));
-                try self.emit(opOf("i32", "eq"));
-                try self.emit(opOf("i32", "or"));
+                try self.emit(opOf(.i32, "eq"));
+                try self.emit(opOf(.i32, "or"));
             },
             .bool_, .string => {
                 try self.emit(b.helper(.unknown_kind));
                 try self.emit(try self.constInt(@as(i32, if (pt == .bool_) 'b' else 's')));
-                try self.emit(opOf("i32", "eq"));
+                try self.emit(opOf(.i32, "eq"));
             },
         }
     }
@@ -3700,7 +3791,7 @@ const Emitter = struct {
         if (value == .call and value.call.kind == .call and self.callKind(value.call.kind.call) == .enum_ctor) {
             self.ctor_box = .all;
             defer self.ctor_box = .none;
-            try self.lowerCoerced(value, "i32");
+            try self.lowerCoerced(value, .i32);
             return;
         }
         if (try self.lowerBoxedIf(.{ .named = ast.unknown_type_name }, value, true, hint)) return;
@@ -3709,17 +3800,17 @@ const Emitter = struct {
             self.pending_case_arms = try self.unionArmTypes(value, value.collection.kind.case.arms.len, hint);
             defer self.pending_case_box = false;
             defer self.pending_case_arms = null;
-            try self.lowerCoerced(value, "i32");
+            try self.lowerCoerced(value, .i32);
             return;
         }
         if (isNullLit(value) or self.isUnknownExpr(value) or self.isTaggedValue(value)) {
-            try self.lowerCoerced(value, "i32");
+            try self.lowerCoerced(value, .i32);
             return;
         }
         if (self.fnValueArity(value)) |arity| {
             const fbase = try self.allocTagged(try self.fnDescriptorAddr(arity), 4);
             try self.emit(.{ .local_get = fbase });
-            try self.lowerCoerced(value, "i32");
+            try self.lowerCoerced(value, .i32);
             try self.emitC(.{ .store = .{ .offset = tag_header_bytes } }, "unknown: box a function value");
             try self.loadTaggedBase(fbase);
             return;
@@ -3728,7 +3819,7 @@ const Emitter = struct {
         // The checker's type of a union arm decides before the value's own
         // shape, which a local nothing annotates does not have.
         const hinted: ?Kind = if (hint) |h| switch (self.elemBoxOfTypeRef(h)) {
-            .as_is => return self.lowerCoerced(value, "i32"),
+            .as_is => return self.lowerCoerced(value, .i32),
             .i32_ => .i32_,
             .f64_ => .f64_,
             .bool_ => .bool_,
@@ -3740,7 +3831,7 @@ const Emitter = struct {
             .str
         else if (self.isBoolExpr(value))
             .bool_
-        else if (self.wasmTypeOf(value)[0] == 'f')
+        else if (self.wasmTypeOf(value).isFloat())
             .f64_
         else if (self.isArrayExpr(value))
             .arr
@@ -3763,7 +3854,7 @@ const Emitter = struct {
             // here at all: lowering it raises that refusal, which names the
             // real cause.
             if (value == .call and value.call.kind == .call and self.external_missing.contains(value.call.kind.call.callee))
-                return self.lowerCoerced(value, "i32");
+                return self.lowerCoerced(value, .i32);
             return self.refuse(value.getLoc(), "the wasm backend cannot box this value as `unknown`: nothing gives it a static type here", .{});
         };
         if (kind == .tuple) return self.boxTupleAsUnknown(value);
@@ -3779,10 +3870,10 @@ const Emitter = struct {
         const base = try self.allocTagged(desc, if (kind == .f64_) 8 else 4);
         try self.emit(.{ .local_get = base });
         if (kind == .f64_) {
-            try self.lowerCoerced(value, "f64");
+            try self.lowerCoerced(value, .f64);
             try self.emitC(.{ .store = .{ .ty = .f64, .offset = tag_header_bytes } }, "unknown: box an f64");
         } else {
-            try self.lowerCoerced(value, "i32");
+            try self.lowerCoerced(value, .i32);
             try self.emitCf(.{ .store = .{ .offset = tag_header_bytes } }, "unknown: box a{s} {s}", .{ if (kind == .arr) "n" else "", name });
         }
         try self.loadTaggedBase(base);
@@ -3801,8 +3892,8 @@ const Emitter = struct {
         if (self.isStringExpr(e)) return .str;
         if (self.isBoolExpr(e)) return .bool_;
         const wt = self.wasmTypeOf(e);
-        if (std.mem.eql(u8, wt, "f64")) return .f64_;
-        if (wt[0] != 'i' or wt.len != 3 or wt[1] != '3') return .unresolved;
+        if (wt.isFloat()) return .f64_;
+        if (!wt.isWord()) return .unresolved;
         if (self.isArrayExpr(e)) return .arr;
         if (isTupleLit(e) or self.typeRefIsTuple(e)) return .unresolved;
         if (self.isKnownInteger(e)) return .i32_;
@@ -3861,7 +3952,7 @@ const Emitter = struct {
             if (k.* == .unresolved) resolved = false;
         }
         const tup = try self.memName(self.nextMem());
-        try self.lowerCoerced(value, "i32");
+        try self.lowerCoerced(value, .i32);
         try self.emit(.{ .local_set = tup });
         const desc = try self.primDescriptorAddr("tuple");
         const base = try self.allocTagged(desc, @intCast(8 + 4 * (if (resolved) n else 0)));
@@ -3951,7 +4042,7 @@ const Emitter = struct {
         try self.emit(.{ .local_get = m });
         try self.emitLoadOffset(4);
         try self.emit(try self.constInt(-1));
-        try self.emit(opOf("i32", "eq"));
+        try self.emit(opOf(.i32, "eq"));
         var trap_c: Capture = .{};
         self.open(&trap_c);
         try self.emitC(.@"unreachable", "`is` over a tuple whose elements nothing typed");
@@ -3960,7 +4051,7 @@ const Emitter = struct {
         try self.emit(.{ .local_get = m });
         try self.emitLoadOffset(4);
         try self.emit(try self.constInt(@as(i32, @intCast(elems.len))));
-        try self.emit(opOf("i32", "eq"));
+        try self.emit(opOf(.i32, "eq"));
         var hit_c: Capture = .{};
         self.open(&hit_c);
         if (inner) |sq| {
@@ -3976,7 +4067,7 @@ const Emitter = struct {
         try self.emit(.{ .local_get = m });
         try self.emit(b.helper(.unknown_kind));
         try self.emit(try self.constInt(@as(i32, 't')));
-        try self.emit(opOf("i32", "eq"));
+        try self.emit(opOf(.i32, "eq"));
         try self.emit(.{ .@"if" = .{ .then = .{ .seq = arity_seq } } });
         try self.emit(.{ .local_get = r });
     }
@@ -3998,14 +4089,14 @@ const Emitter = struct {
         }
         try self.emit(.{ .local_get = e });
         try self.emit(try self.constInt(heap_floor));
-        try self.emit(opOf("i32", "ge_u"));
+        try self.emit(opOf(.i32, "ge_u"));
         for (descs, 0..) |d, k| {
             try self.emitHeaderLoad(e);
             try self.emit(try self.constInt(d));
-            try self.emit(opOf("i32", "eq"));
-            if (k > 0) try self.emit(opOf("i32", "or"));
+            try self.emit(opOf(.i32, "eq"));
+            if (k > 0) try self.emit(opOf(.i32, "or"));
         }
-        try self.emit(opOf("i32", "and"));
+        try self.emit(opOf(.i32, "and"));
     }
 
     /// Whether `e` is known to be an integer: a numeral, an integer-typed
@@ -4207,7 +4298,7 @@ const Emitter = struct {
             types[i] = blk: {
                 if (self.isStringExpr(f.value.*)) break :blk "string";
                 if (self.isBoolExpr(f.value.*)) break :blk "bool";
-                if (self.wasmTypeOf(f.value.*)[0] == 'f') break :blk "f64";
+                if (self.wasmTypeOf(f.value.*).isFloat()) break :blk "f64";
                 break :blk "";
             };
         }
@@ -4302,17 +4393,127 @@ const Emitter = struct {
         return .{ .lines = c.lines.items, .stack = stack };
     }
 
+    /// The wasm value type a declaration of a value of `r` spells — a local, a
+    /// parameter, a result, a global, a block's value. In linear memory a
+    /// reference is the `i32` word of its address.
+    fn vtOf(self: *Emitter, r: Repr) ValType {
+        return switch (self.mode) {
+            .linear => r.num(),
+            .gc => switch (r) {
+                .ref => |k| switch (k) {
+                    .str => blk: {
+                        self.gc_str_used = true;
+                        break :blk prelude.gc_str_ref;
+                    },
+                    else => blk: {
+                        self.gcGap("a reference to a value shape with no GC type yet");
+                        break :blk .i32;
+                    },
+                },
+                else => r.num(),
+            },
+        };
+    }
+
+    /// Whether a value of `a` and one of `b` are the same wasm value: one
+    /// local holds either, and neither needs a conversion to the other.
+    fn sameVal(self: *Emitter, a: Repr, b: Repr) bool {
+        return switch (self.mode) {
+            .linear => a.num() == b.num(),
+            .gc => self.vtOf(a) == self.vtOf(b),
+        };
+    }
+
+    /// Front 164 s2 — the `.gc` lowering cannot finish here (`why`: what it
+    /// met); the module is lowered in linear memory (`emitWat`).
+    fn gcFail(self: *Emitter, why: []const u8) error{GcFallback} {
+        self.gcGap(why);
+        return error.GcFallback;
+    }
+
+    /// Front 164 s2 — the `.gc` lowering meets something it has no GC form
+    /// for: the module is lowered in linear memory (`emitWat`).
+    fn gcGap(self: *Emitter, why: []const u8) void {
+        if (self.gc_gap == null) self.gc_gap = why;
+    }
+
+    /// The neutral value of `r` a context pushes where it needs one: `0`, or
+    /// a null reference in a GC module.
+    fn zeroOf(self: *Emitter, r: Repr) Instr {
+        if (self.mode == .gc and r.isRef()) return .{ .ref_null = self.vtOf(r) };
+        return constOf(r, "0");
+    }
+
+    /// A string literal's value: in linear memory the address of its interned
+    /// segment; in a GC module the global it was built into at instantiation.
+    fn emitStrLit(self: *Emitter, bytes: []const u8) !void {
+        if (self.mode == .linear) {
+            const seg = try self.internString(bytes);
+            return self.emit(try self.constInt(seg.offset));
+        }
+        const gop = try self.gc_strs.getOrPut(self.alloc, bytes);
+        self.gc_str_used = true;
+        try self.emit(.{ .global_get = try std.fmt.allocPrint(self.arena(), "__s{d}", .{gop.index}) });
+    }
+
+    /// Front 164 s2 — completes a GC module: each string literal's passive
+    /// segment and global, and the start function that builds them before
+    /// anything reads one (`$__init_globals`, which it calls, may); the type
+    /// group first. Then the module is checked: what the lowering wrote holds
+    /// no linear-memory access (a value there has no GC form yet), and every
+    /// function but std-wasm's type-checks (`wat/typecheck.zig`). A module
+    /// that fails either is lowered in linear memory.
+    fn finishGc(self: *Emitter, items: *std.ArrayListUnmanaged(Item), program_lo: usize, program_hi: usize) !void {
+        const ar = self.arena();
+        for (items.items[program_lo..program_hi]) |it| if (it == .func and touchesMemory(it.func.body)) return error.GcFallback;
+        if (self.gc_strs.count() > 0) {
+            var body: std.ArrayListUnmanaged(Line) = .empty;
+            for (self.gc_strs.keys(), 0..) |bytes, k| {
+                const seg = try std.fmt.allocPrint(ar, "__d{d}", .{k});
+                const glob = try std.fmt.allocPrint(ar, "__s{d}", .{k});
+                try items.append(ar, .{ .data = .{ .offset = 0, .len_prefix = null, .bytes = bytes, .passive = seg } });
+                try items.append(ar, .{ .global = .{ .name = glob, .ty = prelude.gc_str_ref, .mutable = true, .init = "" } });
+                try body.append(ar, .{ .instr = constOf(.i32, "0") });
+                try body.append(ar, .{ .instr = try self.constInt(bytes.len) });
+                try body.append(ar, .{ .instr = .{ .array_new_data = .{ .ty = prelude.gc_str_index, .data = seg } } });
+                try body.append(ar, .{ .instr = .{ .global_set = glob } });
+            }
+            const start_at: ?usize = for (items.items, 0..) |it, i| {
+                if (it == .start) break i;
+            } else null;
+            if (start_at) |i| {
+                try body.append(ar, .{ .instr = .{ .call = items.items[i].start } });
+                items.items[i] = .{ .start = gc_init_strs };
+            } else try items.append(ar, .{ .start = gc_init_strs });
+            try items.append(ar, .{ .func = .{ .name = gc_init_strs, .body = .{ .lines = body.items, .stack = .none } } });
+        }
+        if (self.gc_str_used) try items.insert(ar, 0, .{ .types = &.{prelude.gc_str_def} });
+        var diag: typecheck.Diag = .{};
+        typecheck.checkModule(self.alloc, .{ .items = items.items }, isStdFunc, &diag) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            else => return error.GcFallback,
+        };
+    }
+
+    /// A fresh local of `r` for the GC lowering's own temporaries.
+    fn gcTemp(self: *Emitter, r: Repr) ![]const u8 {
+        const name = try std.fmt.allocPrint(self.reg_arena.allocator(), "__gc{d}", .{self.gc_seq});
+        self.gc_seq += 1;
+        try self.declareLocal(name, r);
+        return name;
+    }
+
     /// The `wat_ast.Stack` a lowered `Tail` stands for. `.value` carries the
     /// type the context coerced the expression to.
-    fn stackOf(tail: Tail, ty: []const u8) wat.Stack {
+    fn stackOf(self: *Emitter, tail: Tail, ty: Repr) wat.Stack {
         return switch (tail) {
-            .value => .{ .value = vt(ty) },
+            .value => .{ .value = self.vtOf(ty) },
             .none => .none,
             .terminated => .terminated,
         };
     }
 
-    fn resetFnState(self: *Emitter, result_type: ?[]const u8) void {
+    fn resetFnState(self: *Emitter, result_type: ?Repr) void {
         self.locals.clearRetainingCapacity();
         self.eq_local_types.clearRetainingCapacity();
         self.bound_names.clearRetainingCapacity();
@@ -4338,7 +4539,7 @@ const Emitter = struct {
         self.closure_locals.clearRetainingCapacity();
         self.env_slots.clearRetainingCapacity();
         self.pending_locals.clearRetainingCapacity();
-        self.cur_result = result_type orelse "i32";
+        self.cur_result = result_type orelse .i32;
         self.fn_has_result = result_type != null;
         self.fn_returns_result = false;
         self.case_depth = 0;
@@ -4383,10 +4584,10 @@ const Emitter = struct {
     /// already declared with another type (`xs.map({ x -> x * 3.0 })` then
     /// `[1, 2].map({ x -> x + 1 })`) is a local of its own — one wasm local
     /// has one type, and the second walk stored an `i32` into the `f64`.
-    fn bindTargetAs(self: *Emitter, name: []const u8, ty: []const u8) ![]const u8 {
+    fn bindTargetAs(self: *Emitter, name: []const u8, ty: Repr) ![]const u8 {
         const t = try self.bindTarget(name);
         const have = self.locals.get(t) orelse return t;
-        if (std.mem.eql(u8, have, ty)) return t;
+        if (self.sameVal(have, ty)) return t;
         const ra = self.reg_arena.allocator();
         const alias = try std.fmt.allocPrint(ra, "{s}__sh{d}", .{ name, self.shadow_seq });
         self.shadow_seq += 1;
@@ -4431,7 +4632,7 @@ const Emitter = struct {
         }
     }
 
-    fn declareLocal(self: *Emitter, name: []const u8, ty: []const u8) !void {
+    fn declareLocal(self: *Emitter, name: []const u8, ty: Repr) !void {
         if (self.locals.contains(name)) return;
         try self.locals.put(name, ty);
         try self.pending_locals.append(self.alloc, .{ .name = name, .ty = ty });
@@ -4444,7 +4645,7 @@ const Emitter = struct {
         const lines = try ar.alloc([]const wat.Local, self.pending_locals.items.len);
         for (self.pending_locals.items, 0..) |l, i| {
             const slot = try ar.alloc(wat.Local, 1);
-            slot[0] = .{ .name = l.name, .ty = vt(l.ty) };
+            slot[0] = .{ .name = l.name, .ty = self.vtOf(l.ty) };
             lines[i] = slot;
         }
         return lines;
@@ -4469,7 +4670,7 @@ const Emitter = struct {
     /// Push `{cur_result}.const 0` — the neutral value used whenever a context
     /// demands a value the lowered expression did not produce.
     fn pushZero(self: *Emitter) !void {
-        try self.emit(constOf(self.cur_result, "0"));
+        try self.emit(self.zeroOf(self.cur_result));
     }
 
     /// `i32.const <n>` for a computed number: a data-segment offset, a variant
@@ -4525,6 +4726,8 @@ const Emitter = struct {
     }
 
     fn internString(self: *Emitter, s: []const u8) !DataSeg {
+        // A GC module has no address for a value (`emitStrLit`).
+        if (self.mode == .gc) return self.gcFail("internString");
         for (self.data_segments.items) |seg| {
             if (seg.len == s.len and std.mem.eql(u8, seg.content, s)) return seg;
         }
@@ -4562,7 +4765,7 @@ const Emitter = struct {
         const rty = self.resolveRecordName(typeRefName(p.typeRef));
         switch (d) {
             .names => |n| for (n.fields, 0..) |fld, i| {
-                try self.declareLocal(fld.bind_name, "i32");
+                try self.declareLocal(fld.bind_name, .i32);
                 const off: u32 = if (rty) |r|
                     (self.fieldOffsetIn(r, fld.field_name) orelse @as(u32, @intCast(i * 4)))
                 else
@@ -4578,7 +4781,7 @@ const Emitter = struct {
                 try self.emit(.{ .local_set = fld.bind_name });
             },
             .tuple_ => |names| for (names, 0..) |name, i| {
-                try self.declareLocal(name, "i32");
+                try self.declareLocal(name, .i32);
                 try self.emit(.{ .local_get = symbol });
                 try self.emitLoadOffset(@intCast(i * 4));
                 try self.emit(.{ .local_set = name });
@@ -4592,7 +4795,7 @@ const Emitter = struct {
         const ra = self.reg_arena.allocator();
         for (0..n) |i| {
             const name = try std.fmt.allocPrint(ra, "{s}{d}", .{ prefix, i });
-            try self.declareLocal(name, "i32");
+            try self.declareLocal(name, .i32);
         }
     }
 
@@ -4615,7 +4818,7 @@ const Emitter = struct {
                 try self.bindParamDestructure(p, try self.paramSymbol(p, i), loc);
             }
         }
-        const tail_type: ?[]const u8 = if (self.fn_has_result and body.len > 0)
+        const tail_type: ?Repr = if (self.fn_has_result and body.len > 0)
             self.wasmTypeOf(body[body.len - 1].expr)
         else
             null;
@@ -4631,7 +4834,7 @@ const Emitter = struct {
         const stack: wat.Stack = if (tail == .terminated)
             .terminated
         else if (self.fn_has_result)
-            .{ .value = vt(self.cur_result) }
+            .{ .value = self.vtOf(self.cur_result) }
         else
             .none;
         return self.seal(&c, stack);
@@ -4641,7 +4844,7 @@ const Emitter = struct {
         var c: Capture = .{};
         self.open(&c);
         const tgt = "__yield_fn";
-        try self.declareLocal(tgt, "i32");
+        try self.declareLocal(tgt, .i32);
         try self.emit(zero);
         try self.emit(self.builder().helper(.arr_new));
         try self.emit(.{ .local_set = tgt });
@@ -4650,9 +4853,9 @@ const Emitter = struct {
         const tail = try self.emitBody(body, false);
         if (tail != .terminated) {
             try self.emitC(.{ .local_get = tgt }, "everything the body yielded");
-            try self.emitConvert("i32", self.cur_result);
+            try self.emitConvert(.i32, self.cur_result);
         }
-        return self.seal(&c, if (tail == .terminated) .terminated else .{ .value = vt(self.cur_result) });
+        return self.seal(&c, if (tail == .terminated) .terminated else .{ .value = self.vtOf(self.cur_result) });
     }
 
     /// A `declare fn` decision 238's vocabulary binds: the form, and for
@@ -4783,23 +4986,94 @@ const Emitter = struct {
                     el;
                 if (!self.isTaskExpr(tail)) continue;
                 const ty = self.awaitedType(tail);
-                if (!std.mem.eql(u8, ty, "i32"))
-                    return self.refuse(el.getLoc(), "`{s}` carries a task's value in one word on wasm: a task answering an `{s}` has no lowering here (decision 393)", .{ cc.callee, ty });
+                if (!ty.isWord())
+                    return self.refuse(el.getLoc(), "`{s}` carries a task's value in one word on wasm: a task answering an `{s}` has no lowering here (decision 393)", .{ cc.callee, ty.name() });
             };
             const t = self.typeRefOf(arg) orelse continue;
             const el = arrayElemRef(t) orelse continue;
             const v = taskValueTypeRef(el) orelse (if (el == .function) taskValueTypeRef(el.function.returnType.*) else null) orelse continue;
             const ty = watType(v);
-            if (!std.mem.eql(u8, ty, "i32"))
-                return self.refuse(arg.getLoc(), "`{s}` carries a task's value in one word on wasm: a task answering an `{s}` has no lowering here (decision 393)", .{ cc.callee, ty });
+            if (!ty.isWord())
+                return self.refuse(arg.getLoc(), "`{s}` carries a task's value in one word on wasm: a task answering an `{s}` has no lowering here (decision 393)", .{ cc.callee, ty.name() });
         }
     }
 
     /// A call of the std-wasm function `name` (`text.trim`), which the module
     /// then links (decision 440, `std_wasm_link.zig`).
     fn stdCall(self: *Emitter, name: []const u8) !Instr {
+        // A GC module marshals what crosses into std-wasm (`emitStdCall`).
+        if (self.mode == .gc) return self.gcFail(name);
+        return self.stdCallLinked(name);
+    }
+
+    fn stdCallLinked(self: *Emitter, name: []const u8) !Instr {
         try self.std_exports.put(self.alloc, name, {});
         return .{ .call = try stdWasmLink.entryName(self.arena(), name) };
+    }
+
+    /// A call of the std-wasm function `name`, its arguments on the stack. In
+    /// a GC module (front 164 s2, decision 544) the values cross into
+    /// std-wasm's linear memory marshalled: each string argument copied into
+    /// the marshal arena (`$__gc_to_lin_str`), a string answer copied out into
+    /// a GC string (`$__lin_to_gc_str`), and the arena — everything std-wasm
+    /// allocated too — put back after the call. std-wasm never calls back, so
+    /// nothing it allocated outlives the call.
+    fn emitStdCall(self: *Emitter, name: []const u8) !void {
+        const call = try self.stdCallLinked(name);
+        if (self.mode == .linear) return self.emit(call);
+        const ex = gcStdSig(name) orelse return self.gcFail(name);
+        const slots = try self.arena().alloc([]const u8, ex.params.len);
+        var i = ex.params.len;
+        while (i > 0) {
+            i -= 1;
+            slots[i] = try self.gcTemp(try stdRepr(ex.params[i]));
+            try self.emit(.{ .local_set = slots[i] });
+        }
+        const top = try self.gcTemp(.i32);
+        try self.emit(.{ .global_get = heap_ptr });
+        try self.emit(.{ .local_set = top });
+        for (ex.params, slots) |t, slot| {
+            try self.emit(.{ .local_get = slot });
+            if (t == .string) try self.emit(self.builder().helper(.gc_to_lin_str));
+        }
+        try self.emit(call);
+        switch (ex.result) {
+            .string => try self.emit(self.builder().helper(.lin_to_gc_str)),
+            .void => {},
+            else => _ = try stdRepr(ex.result),
+        }
+        try self.emit(.{ .local_get = top });
+        try self.emit(.{ .global_set = heap_ptr });
+    }
+
+    /// What crosses into the std-wasm function `name` and back, typed: a
+    /// `std:` export's own signature, or — for a function of std-wasm's
+    /// program face, whose words are the codegen's (`std_wasm.program`) —
+    /// what its words are here. Null for a function whose words have no GC
+    /// marshal yet (an array's, a `bigint`'s).
+    fn gcStdSig(name: []const u8) ?struct { params: []const stdWasm.Type, result: stdWasm.Type } {
+        if (stdWasm.find(name)) |e| return .{ .params = e.params, .result = e.result };
+        const Sig = struct { []const u8, []const stdWasm.Type, stdWasm.Type };
+        const program_sigs = [_]Sig{
+            .{ "number.i32ToString", &.{.i32}, .string },
+            .{ "number.i64ToString", &.{.i64}, .string },
+            .{ "number.u64ToString", &.{.i64}, .string },
+            .{ "text.slice", &.{ .string, .i32, .i32 }, .string },
+        };
+        for (program_sigs) |sig| if (std.mem.eql(u8, sig[0], name)) return .{ .params = sig[1], .result = sig[2] };
+        return null;
+    }
+
+    /// The value a std-wasm parameter or answer of type `t` is in a GC
+    /// module; a shape the marshal has no form for yet falls back.
+    fn stdRepr(t: stdWasm.Type) !Repr {
+        return switch (t) {
+            .string => Repr.string,
+            .i32, .bool => .i32,
+            .i64 => .i64,
+            .f64 => .f64,
+            else => error.GcFallback,
+        };
     }
 
     /// A written type as a `std:` binding's check spells it (decision 440
@@ -4847,7 +5121,7 @@ const Emitter = struct {
         for (f.params, 0..) |p, k| {
             if (std.mem.eql(u8, p.name, "self")) continue;
             const sym = try self.paramSymbol(p, k);
-            try params.append(ar, wat.Builder.param(sym, vt(sig.params[i])));
+            try params.append(ar, wat.Builder.param(sym, self.vtOf(sig.params[i])));
             try lines.append(ar, .{ .indent = 4, .instr = .{ .local_get = sym } });
             i += 1;
         }
@@ -4878,7 +5152,7 @@ const Emitter = struct {
             },
         };
         try lines.append(ar, .{ .indent = 4, .instr = call });
-        const result: ?ValType = if (sig.result) |r| vt(r) else null;
+        const result: ?ValType = if (sig.result) |r| self.vtOf(r) else null;
         // A written `-> void` registers an `i32` result like every function
         // declaring one (`fnHasResult`); a function answering nothing (std's
         // `random.seed`) leaves the stack empty, so the wrapper answers the
@@ -4888,7 +5162,7 @@ const Emitter = struct {
             .std_ => |e| e.result != .void,
             else => true,
         };
-        if (result != null and !yields) try lines.append(ar, .{ .indent = 4, .instr = constOf(@tagName(result.?), "0") });
+        if (result != null and !yields) try lines.append(ar, .{ .indent = 4, .instr = self.zeroOf(sig.result.?) });
         try self.itemCommentF("{s} — #[@External.Wasm({s})]", .{ f.name, try ast.wasmCellDisplay(ar, f.externalFor(self.external_lookup).?.symbol) });
         try self.item(.{ .func = try self.builder().func(.{
             .name = f.name,
@@ -4971,13 +5245,13 @@ const Emitter = struct {
         var params: std.ArrayListUnmanaged(wat.Param) = .empty;
         for (f.params, 0..) |p, i| {
             if (std.mem.eql(u8, p.name, "self")) continue;
-            try params.append(ar, wat.Builder.param(try self.paramSymbol(p, i), vt(watType(p.typeRef))));
+            try params.append(ar, wat.Builder.param(try self.paramSymbol(p, i), self.vtOf(watType(p.typeRef))));
         }
         const func = try self.builder().func(.{
             .name = f.name,
             .exports = if (f.isPub) try ar.dupe([]const u8, &.{f.name}) else &.{},
             .params = params.items,
-            .result = if (has_result or is_task) vt(self.cur_result) else null,
+            .result = if (has_result or is_task) self.vtOf(self.cur_result) else null,
             .locals = try self.localLines(),
             .body = body,
         });
@@ -4994,7 +5268,7 @@ const Emitter = struct {
     fn emitExtensionMethods(self: *Emitter, target: []const u8, methods: []const ast.ImplementMethod) !void {
         for (methods) |m| {
             const has_result = methodHasResult(m.body);
-            self.resetFnState(if (has_result) "i32" else null);
+            self.resetFnState(if (has_result) .i32 else null);
             // `self.field` inside an extension method walks the target record's
             // declared field layout.
             self.self_type = if (self.records.contains(target)) target else null;
@@ -5002,7 +5276,7 @@ const Emitter = struct {
             const qualifier = m.qualifier orelse target;
             for (m.params, 0..) |p, i| {
                 const sym = try self.paramSymbol(p, i);
-                try self.locals.put(sym, "i32");
+                try self.locals.put(sym, .i32);
                 if (std.mem.eql(u8, p.name, "self")) {
                     if (self.self_type) |st| try self.local_types.put("self", st);
                 } else {
@@ -5068,7 +5342,7 @@ const Emitter = struct {
         // Decision 392 — a method answering `@Task<T>` is a state machine
         // too, its body answering the `T`.
         const is_task = if (m.returnType) |rt| isTaskTypeRef(rt) else false;
-        const result_ty: []const u8 = if (m.returnType) |rt| memberValType(taskValueTypeRef(rt) orelse rt) else "i32";
+        const result_ty: Repr = if (m.returnType) |rt| memberValType(taskValueTypeRef(rt) orelse rt) else .i32;
         self.resetFnState(if (has_result) result_ty else null);
         // What `return v` coerces to — a `-> ?i32` method boxes its scalar,
         // as a fn does (`emitFn`). Unset here, `Registry.at` returned the bare
@@ -5090,7 +5364,7 @@ const Emitter = struct {
         }
         const needs_self = !has_self_param and bodyReferencesSelf(body);
         if (needs_self) {
-            try self.locals.put("self", "i32");
+            try self.locals.put("self", .i32);
             if (self.self_type) |st| try self.local_types.put("self", st);
         }
         for (m.params, 0..) |p, i| {
@@ -5144,12 +5418,12 @@ const Emitter = struct {
         var params: std.ArrayListUnmanaged(wat.Param) = .empty;
         if (needs_self) try params.append(ar, wat.Builder.param("self", .i32));
         for (m.params, 0..) |p, i| {
-            try params.append(ar, wat.Builder.param(try self.paramSymbol(p, i), vt(memberValType(p.typeRef))));
+            try params.append(ar, wat.Builder.param(try self.paramSymbol(p, i), self.vtOf(memberValType(p.typeRef))));
         }
         const func = try self.builder().func(.{
             .name = try std.fmt.allocPrint(ar, "{s}_{s}", .{ owner, m.name }),
             .params = params.items,
-            .result = if (has_result) vt(result_ty) else null,
+            .result = if (has_result) self.vtOf(result_ty) else null,
             .locals = try self.localLines(),
             .body = seq,
         });
@@ -5590,7 +5864,7 @@ const Emitter = struct {
                         // whatever the value's own shape.
                         if (lb.typeAnnotation) |ta| if (isUnknownTypeRef(ta)) {
                             try self.local_typerefs.put(lb.name, ta);
-                            try self.declareLocal(lb.name, "i32");
+                            try self.declareLocal(lb.name, .i32);
                             try self.declareNestedLocals(lb.value.*);
                             continue;
                         };
@@ -5679,7 +5953,7 @@ const Emitter = struct {
                 const is_range = lp.iter.* == .collection and lp.iter.collection.kind == .range;
                 for (lp.params, 0..) |p, i| {
                     const float_elem = i == 0 and !is_range and self.isArrayExpr(lp.iter.*) and self.elemKindOf(lp.iter.*) == .f64;
-                    try self.declareLocal(p, if (float_elem) "f64" else "i32");
+                    try self.declareLocal(p, if (float_elem) .f64 else .i32);
                 }
                 try self.emitLocalDecls(lp.body);
             },
@@ -5711,14 +5985,14 @@ const Emitter = struct {
     /// list-pattern element and rest names).
     fn declarePatternLocals(self: *Emitter, p: ast.Pattern) anyerror!void {
         switch (p) {
-            .ident => |n| if (self.findVariant(n) == null) try self.declareLocal(n, "i32"),
+            .ident => |n| if (self.findVariant(n) == null) try self.declareLocal(n, .i32),
             .variant => |v| switch (v.payload) {
-                .binding => |b| try self.declareLocal(b, "i32"),
+                .binding => |b| try self.declareLocal(b, .i32),
                 .fields => |fs| for (fs, 0..) |f, i| {
                     const ty = if (self.findVariant(v.name)) |fv|
-                        (if (i < fv.variant.fields.len) watType(fv.variant.fields[i].typeRef) else "i32")
+                        (if (i < fv.variant.fields.len) watType(fv.variant.fields[i].typeRef) else Repr.i32)
                     else
-                        "i32";
+                        Repr.i32;
                     // A name already declared (a parameter) keeps its slot and
                     // the arm binds an alias instead — see `bindName`.
                     if (!self.locals.contains(f)) {
@@ -5730,7 +6004,7 @@ const Emitter = struct {
             },
             .list => |l| {
                 for (l.elems) |el| try self.declareListElemLocals(el);
-                if (l.spread) |rest| if (rest.len > 0) try self.declareLocal(rest, "i32");
+                if (l.spread) |rest| if (rest.len > 0) try self.declareLocal(rest, .i32);
             },
             .@"or", .multi => |pats| for (pats) |sub| try self.declarePatternLocals(sub),
             else => {},
@@ -5739,7 +6013,7 @@ const Emitter = struct {
 
     fn declareListElemLocals(self: *Emitter, el: ast.ListPatternElem) anyerror!void {
         switch (el) {
-            .bind => |n| try self.declareLocal(n, "i32"),
+            .bind => |n| try self.declareLocal(n, .i32),
             else => {},
         }
     }
@@ -5748,7 +6022,7 @@ const Emitter = struct {
     /// lowering uses, or the value pushed and the slot it is stored into
     /// disagree: `val taxa = valor * 0.15` lowered to an `f32.mul` but declared
     /// `(local $taxa i32)`.
-    fn inferExprType(self: *Emitter, e: ast.Expr) []const u8 {
+    fn inferExprType(self: *Emitter, e: ast.Expr) Repr {
         return self.wasmTypeOf(e);
     }
 
@@ -5756,9 +6030,9 @@ const Emitter = struct {
     /// it says one — a `?T` is the `i32` of its box or pointer, a number the
     /// width it names (`val a: i64 = 4294967295` is an `i64`, `val o: ?f64 =
     /// 1.1` the address of a cell) — and the value's own type otherwise.
-    fn bindingLocalType(self: *Emitter, ann: ?ast.TypeRef, value: ast.Expr) []const u8 {
+    fn bindingLocalType(self: *Emitter, ann: ?ast.TypeRef, value: ast.Expr) Repr {
         if (ann) |ta| switch (ta) {
-            .optional => return "i32",
+            .optional => return .i32,
             .named => |n| if (isScalarName(n)) return watType(ta),
             else => {},
         };
@@ -5778,7 +6052,7 @@ const Emitter = struct {
         // does not validate against.
         if (self.folded_globals.get(v.name)) |text| {
             if (isNumericLiteral(text)) {
-                try self.item(.{ .global = .{ .name = v.name, .ty = vt(t), .mutable = v.mutable, .init = try numeralText(self.arena(), text) } });
+                try self.item(.{ .global = .{ .name = v.name, .ty = self.vtOf(t), .mutable = v.mutable, .init = try numeralText(self.arena(), text) } });
                 return;
             }
             if (quotedString(text)) |str| {
@@ -5803,13 +6077,15 @@ const Emitter = struct {
                     try self.item(.{ .global = .{
                         .name = v.name,
                         .exports = if (v.isPub) try self.arena().dupe([]const u8, &.{v.name}) else &.{},
-                        .ty = vt(t),
+                        .ty = self.vtOf(t),
                         .mutable = v.mutable,
                         .init = try numeralText(self.arena(), n),
                     } });
                     return;
                 },
-                .stringLit => |s| {
+                // A GC string literal is built at instantiation: the
+                // global is filled in by `$__init_globals` below.
+                .stringLit => |s| if (self.mode == .linear) {
                     const seg = try self.internString(try self.literalBytes(s));
                     try self.item(.{ .global = .{
                         .name = v.name,
@@ -5827,7 +6103,7 @@ const Emitter = struct {
         // in from `$__init_globals` (see `emitGlobalInit`).
         try self.item(.{ .global = .{
             .name = v.name,
-            .ty = vt(t),
+            .ty = self.vtOf(t),
             .mutable = true,
             .init = "0",
         } });
@@ -5916,7 +6192,7 @@ const Emitter = struct {
     /// The wat value type of a top-level `val`. Without an annotation the
     /// literal's own spelling decides, so `val PI = 3.14` is an `f64` global
     /// rather than an `(global $PI i32 (i32.const 3.14))` parse error.
-    fn globalValType(self: *Emitter, v: ast.ValDecl) []const u8 {
+    fn globalValType(self: *Emitter, v: ast.ValDecl) Repr {
         if (v.typeAnnotation) |ta| return watType(ta);
         // A folded float is an f64 — the value the comptime pass computed.
         if (self.folded_globals.get(v.name)) |text| {
@@ -5924,8 +6200,8 @@ const Emitter = struct {
         }
         return switch (v.value.*) {
             .literal => |lit| switch (lit.kind) {
-                .numberLit => |n| if (isNumericLiteral(n)) numLitType(n) else "i32",
-                else => "i32",
+                .numberLit => |n| if (isNumericLiteral(n)) numLitType(n) else .i32,
+                else => .i32,
             },
             // Anything the init function computes is a pointer or an i32 unless
             // the expression is plainly a float.
@@ -5970,15 +6246,15 @@ const Emitter = struct {
             self.open(&guard);
             try self.emit(.{ .local_get = "v" });
             try self.emit(.{ .@"const" = .{ .ty = .i32, .text = "4" } });
-            try self.emit(opOf("i32", "sub"));
+            try self.emit(opOf(.i32, "sub"));
             try self.emit(.{ .load = .{} });
             try self.emit(try self.constInt(desc));
-            try self.emit(opOf("i32", "eq"));
+            try self.emit(opOf(.i32, "eq"));
             try self.emitC(.{ .@"if" = .{ .then = .{ .seq = hit_seq } } }, rec);
             const guard_seq = self.seal(&guard, .none);
             try self.emit(.{ .local_get = "v" });
             try self.emit(.{ .@"const" = .{ .ty = .i32, .text = "256" } });
-            try self.emit(opOf("i32", "ge_u"));
+            try self.emit(opOf(.i32, "ge_u"));
             try self.emit(.{ .@"if" = .{ .then = .{ .seq = guard_seq } } });
         }
         try self.emit(.{ .@"const" = .{ .ty = .i32, .text = "0" } });
@@ -6039,7 +6315,7 @@ const Emitter = struct {
             if (self.enums.get(t)) |variants| if (!enumHasPayload(variants))
                 return self.refuse(self.call_loc, "the wasm backend cannot dispatch `.{s}` by value: `{s}` is an all-unit enum, whose values carry no header naming their type", .{ cc.callee, t });
             const isym = try std.fmt.allocPrint(self.arena(), "{s}_{s}", .{ t, cc.callee });
-            if (!sameSig(self.fn_sigs.get(isym).?, sig))
+            if (!self.sameSig(self.fn_sigs.get(isym).?, sig))
                 return self.refuse(self.call_loc, "the wasm backend cannot dispatch `.{s}` by value: `{s}` and `{s}` declare it with different wasm signatures", .{ cc.callee, impls[0], t });
         }
         const sym = try std.fmt.allocPrint(self.reg_arena.allocator(), "__bdispatch_{s}_{d}", .{ cc.callee, cc.args.len });
@@ -6048,7 +6324,7 @@ const Emitter = struct {
             .argc = cc.args.len,
             .sig = sig,
         });
-        try self.lowerCoerced(cc.receiver.?.*, "i32");
+        try self.lowerCoerced(cc.receiver.?.*, .i32);
         try self.lowerCallArgs(cc.args, sig, 1);
         try self.emit(.{ .call = sym });
         return true;
@@ -6070,7 +6346,7 @@ const Emitter = struct {
         for (0..bd.argc) |i| {
             const n = try std.fmt.allocPrint(self.arena(), "a{d}", .{i});
             try arg_names.append(self.arena(), n);
-            try params.append(self.arena(), wat.Builder.param(n, vt(bd.sig.params[i + 1])));
+            try params.append(self.arena(), wat.Builder.param(n, self.vtOf(bd.sig.params[i + 1])));
         }
         var c: Capture = .{};
         self.open(&c);
@@ -6079,7 +6355,7 @@ const Emitter = struct {
             const sig = self.fn_sigs.get(sym).?;
             // An implementer whose method does not take and answer what the
             // dispatcher does cannot be called from it.
-            if (!sameSig(sig, bd.sig)) continue;
+            if (!self.sameSig(sig, bd.sig)) continue;
             var descs: std.ArrayListUnmanaged(u32) = .empty;
             if (self.records.contains(t)) {
                 if (self.type_descs.get(t)) |d| try descs.append(self.arena(), d);
@@ -6101,15 +6377,15 @@ const Emitter = struct {
                 self.open(&guard);
                 try self.emit(.{ .local_get = "self" });
                 try self.emit(try self.constInt(tag_header_bytes));
-                try self.emit(opOf("i32", "sub"));
+                try self.emit(opOf(.i32, "sub"));
                 try self.emit(.{ .load = .{} });
                 try self.emit(try self.constInt(d));
-                try self.emit(opOf("i32", "eq"));
+                try self.emit(opOf(.i32, "eq"));
                 try self.emitC(.{ .@"if" = .{ .then = .{ .seq = hit_seq } } }, t);
                 const guard_seq = self.seal(&guard, .none);
                 try self.emit(.{ .local_get = "self" });
                 try self.emit(try self.constInt(heap_floor));
-                try self.emit(opOf("i32", "ge_u"));
+                try self.emit(opOf(.i32, "ge_u"));
                 try self.emit(.{ .@"if" = .{ .then = .{ .seq = guard_seq } } });
             }
         }
@@ -6118,7 +6394,7 @@ const Emitter = struct {
         return try self.builder().func(.{
             .name = try std.fmt.allocPrint(self.arena(), "__bdispatch_{s}_{d}", .{ bd.method, bd.argc }),
             .params = params.items,
-            .result = if (bd.sig.result) |r| vt(r) else null,
+            .result = if (bd.sig.result) |r| self.vtOf(r) else null,
             .body = body,
         });
     }
@@ -6145,11 +6421,11 @@ const Emitter = struct {
         };
     }
 
-    fn sameSig(a: FnSig, b: FnSig) bool {
+    fn sameSig(self: *Emitter, a: FnSig, b: FnSig) bool {
         if (a.params.len != b.params.len) return false;
-        for (a.params, b.params) |x, y| if (!std.mem.eql(u8, x, y)) return false;
+        for (a.params, b.params) |x, y| if (!self.sameVal(x, y)) return false;
         if (a.result == null or b.result == null) return a.result == null and b.result == null;
-        return std.mem.eql(u8, a.result.?, b.result.?);
+        return self.sameVal(a.result.?, b.result.?);
     }
 
     fn emitEntrypointWrapper(self: *Emitter, main_returns_value: bool) !void {
@@ -6224,7 +6500,7 @@ const Emitter = struct {
         }
         const mark = self.defer_stack.items.len;
         // Only the function's own body has a value type a region can name.
-        const value_ty: ?[]const u8 = if (keep_value and self.defer_fn_body != null and
+        const value_ty: ?Repr = if (keep_value and self.defer_fn_body != null and
             self.defer_fn_body.?.ptr == body.ptr and self.defer_fn_body.?.len == body.len) self.cur_result else null;
         const tail = try self.emitStmtsFrom(body, 0, keep_value, value_ty, true);
         try self.closeDefers(mark, tail);
@@ -6235,7 +6511,7 @@ const Emitter = struct {
     /// `emitBody` says. A `defer` is not lowered here: it joins `defer_stack`
     /// and the rest of the list runs under it (`emitDeferRegion` when a panic
     /// can reach it).
-    fn emitStmtsFrom(self: *Emitter, body: []const ast.Stmt, start: usize, keep_value: bool, value_ty: ?[]const u8, regions: bool) anyerror!Tail {
+    fn emitStmtsFrom(self: *Emitter, body: []const ast.Stmt, start: usize, keep_value: bool, value_ty: ?Repr, regions: bool) anyerror!Tail {
         var tail: Tail = .none;
         var i = start;
         while (i < body.len) : (i += 1) {
@@ -6303,20 +6579,20 @@ const Emitter = struct {
     ///
     /// The deferred code is written outside the region on both paths, so a
     /// panic in it is not caught twice. The `defer` is the top entry.
-    fn emitDeferRegion(self: *Emitter, body: []const ast.Stmt, start: usize, keep_value: bool, value_ty: ?[]const u8) anyerror!Tail {
+    fn emitDeferRegion(self: *Emitter, body: []const ast.Stmt, start: usize, keep_value: bool, value_ty: ?Repr) anyerror!Tail {
         const ar = self.arena();
         const idx = self.defer_stack.items.len - 1;
         self.defer_seq += 1;
         const handler = try std.fmt.allocPrint(ar, "__defer_h{d}", .{self.defer_seq});
         const done = try std.fmt.allocPrint(ar, "__defer_done{d}", .{self.defer_seq});
         const exc = try std.fmt.allocPrint(ar, "__defer_exc{d}", .{self.defer_seq});
-        try self.declareLocal(exc, "i32");
-        const result: ?wat.ValType = if (keep_value) vt(value_ty.?) else null;
+        try self.declareLocal(exc, .i32);
+        const result: ?wat.ValType = if (keep_value) self.vtOf(value_ty.?) else null;
 
         var rest_c: Capture = .{};
         self.open(&rest_c);
         const rest_tail = try self.emitStmtsFrom(body, start, keep_value, value_ty, true);
-        const rest_seq = self.seal(&rest_c, stackOf(rest_tail, if (value_ty) |t| t else "i32"));
+        const rest_seq = self.seal(&rest_c, self.stackOf(rest_tail, if (value_ty) |t| t else .i32));
 
         var normal_c: Capture = .{};
         self.open(&normal_c);
@@ -6397,7 +6673,7 @@ const Emitter = struct {
                             // A carry wrapper (decision 504): the scope's word,
                             // or — a float or an `i64` — its cell's address,
                             // loaded as the declared type.
-                            try self.lowerCoerced(val.*, "i32");
+                            try self.lowerCoerced(val.*, .i32);
                             const cell = if (self.cur_ret_typeref) |rt| cellOfTypeRef(rt) else .none;
                             if (cell != .none) {
                                 try self.emitFromCell(cell);
@@ -6500,12 +6776,12 @@ const Emitter = struct {
                     const unknown_ann: ?ast.TypeRef = lb.typeAnnotation orelse
                         (if (self.unionValueOf(lb.value.*)) |uv| uv.type_ else null);
                     if (unknown_ann) |ta| if (isUnknownTypeRef(ta)) {
-                        try self.declareLocal(lb.name, "i32");
+                        try self.declareLocal(lb.name, .i32);
                         try self.local_typerefs.put(lb.name, ta);
                         if (self.boxesInto(ta, lb.value.*))
                             try self.lowerAsUnknown(lb.value.*)
                         else
-                            try self.lowerCoerced(lb.value.*, "i32");
+                            try self.lowerCoerced(lb.value.*, .i32);
                         try self.emit(.{ .local_set = lb.name });
                         return .none;
                     };
@@ -6582,7 +6858,7 @@ const Emitter = struct {
                     if (self.boxesInto(lb.typeAnnotation, lb.value.*))
                         try self.lowerBoxedInto(lb.typeAnnotation, lb.value.*)
                     else
-                        try self.lowerCoerced(lb.value.*, self.locals.get(lb.name) orelse "i32");
+                        try self.lowerCoerced(lb.value.*, self.locals.get(lb.name) orelse .i32);
                     try self.emit(.{ .local_set = lb.name });
                     if (lb.value.* == .function and self.lambdas.items.len > lambda_idx)
                         try self.closure_locals.put(lb.name, lambda_idx)
@@ -6623,7 +6899,7 @@ const Emitter = struct {
                             else
                                 // The slot's declared type wins over the value's.
                                 try self.lowerCoerced(a.value.*, self.locals.get(name) orelse
-                                    self.global_types.get(name) orelse "i32");
+                                    self.global_types.get(name) orelse .i32);
                             try self.emit(if (self.locals.contains(name))
                                 .{ .local_set = name }
                             else
@@ -6637,12 +6913,12 @@ const Emitter = struct {
                             else
                                 .{ .global_get = name });
                             const t = self.locals.get(name) orelse
-                                self.global_types.get(name) orelse "i32";
+                                self.global_types.get(name) orelse .i32;
                             // Decision 332 — `x += y` over `bigint`s is a fresh block.
                             if (self.isBigintAt(b.loc)) {
                                 try self.lowerValue(a.value.*);
                                 try self.emit(zero);
-                                try self.emit(try self.stdCall("bigint.add"));
+                                try self.emitStdCall("bigint.add");
                             } else {
                                 try self.lowerCoerced(a.value.*, t);
                                 try self.emitArith(t, "add", b.loc);
@@ -6684,15 +6960,15 @@ const Emitter = struct {
                                     // Decision 332 — the field holds the block's address.
                                     try self.lowerValue(a.value.*);
                                     try self.emit(zero);
-                                    try self.emit(try self.stdCall("bigint.add"));
+                                    try self.emitStdCall("bigint.add");
                                 } else if (cell != .none) {
                                     try self.emitFromCell(cell);
                                     try self.lowerCoerced(a.value.*, cell.ty());
                                     try self.emitArith(cell.ty(), "add", b.loc);
                                     try self.emit(self.builder().helper(if (cell == .f64) .box_f64 else .box_i64));
                                 } else {
-                                    try self.lowerCoerced(a.value.*, "i32");
-                                    try self.emitArith("i32", "add", b.loc);
+                                    try self.lowerCoerced(a.value.*, .i32);
+                                    try self.emitArith(.i32, "add", b.loc);
                                 }
                                 try self.emitCf(.{ .store = .{ .offset = off } }, ".{s} +=", .{fa.field});
                             },
@@ -6742,7 +7018,7 @@ const Emitter = struct {
                                 const cell = try self.tupleElemCell(lb.value.*, i);
                                 if (cell != .none) {
                                     try self.emitFromCell(cell);
-                                    if (!std.mem.eql(u8, self.locals.get(name) orelse "", cell.ty()))
+                                    if (if (self.locals.get(name)) |have| !self.sameVal(have, cell.ty()) else true)
                                         return self.refuse(stmt.expr.getLoc(), "the wasm backend binds `{s}` to values of two widths in one function", .{name});
                                 }
                                 try self.emit(.{ .local_set = name });
@@ -6784,7 +7060,7 @@ const Emitter = struct {
                         // through: `[..rest]` is the whole value.
                         .list => |pat| if (pat == .list and pat.list.elems.len == 0) {
                             if (pat.list.spread) |sp| if (sp.len > 0) {
-                                try self.declareLocal(sp, "i32");
+                                try self.declareLocal(sp, .i32);
                                 try self.noteArrayLocal(sp, lb.value.*);
                                 try self.emit(.{ .local_get = mem });
                                 try self.emit(.{ .local_set = sp });
@@ -6928,10 +7204,7 @@ const Emitter = struct {
                     }
                 },
                 .null_ => try self.emit(zero),
-                .stringLit => |s| {
-                    const seg = try self.internString(try self.literalBytes(s));
-                    try self.emit(try self.constInt(seg.offset));
-                },
+                .stringLit => |s| try self.emitStrLit(try self.literalBytes(s)),
                 // Decisions 519, 520 — a `Bytes` build constant is a data
                 // segment laid out as a string's (its `u32` length, the bytes).
                 .bytesLit => |bytes| {
@@ -7003,7 +7276,7 @@ const Emitter = struct {
                 .neg => try self.lowerNeg(un.expr.*, un.loc),
                 .not => {
                     try self.lowerExpr(un.expr.*);
-                    try self.emit(opOf("i32", "eqz"));
+                    try self.emit(opOf(.i32, "eqz"));
                 },
             },
             .call => |c| {
@@ -7043,12 +7316,12 @@ const Emitter = struct {
                         }
                         if (try self.lowerRecordMethod(cc, c.loc)) return;
                         if (self.primAssocHelper(cc)) |h| {
-                            try self.lowerCoerced(callArg(cc, 0).?, "i32");
-                            try self.emit(try self.stdCall(h));
+                            try self.lowerCoerced(callArg(cc, 0).?, .i32);
+                            try self.emitStdCall(h);
                             return;
                         }
                         if (self.bigintAssoc(cc)) |which| return self.lowerBigintAssoc(which, cc);
-                        if (self.isBytesFromUtf8(cc)) return self.lowerCoerced(callArg(cc, 0).?, "i32");
+                        if (self.isBytesFromUtf8(cc)) return self.lowerCoerced(callArg(cc, 0).?, .i32);
                         if (self.assocSym(cc)) |sym_tmp| {
                             const generic = try self.arena().dupe(u8, sym_tmp);
                             const spec = (try self.specializeFor(generic, cc.args)) orelse
@@ -7181,8 +7454,8 @@ const Emitter = struct {
     /// every target: raised as `$__bp_panic` when the program reaches
     /// `attempt` (decision 518), else written to stderr before the trap.
     fn lowerAssert(self: *Emitter, a: anytype, loc: ast.Loc) anyerror!void {
-        try self.lowerCoerced(a.condition.*, "i32");
-        try self.emit(opOf("i32", "eqz"));
+        try self.lowerCoerced(a.condition.*, .i32);
+        try self.emit(opOf(.i32, "eqz"));
         var then_c: Capture = .{};
         self.open(&then_c);
         const file = if (self.src_path.len > 0) self.src_path else try std.fmt.allocPrint(self.arena(), "{s}.bp", .{if (self.module_name.len > 0) self.module_name else "main"});
@@ -7190,7 +7463,7 @@ const Emitter = struct {
         const at = try ast.assertWhere(self.arena(), file, loc);
         if (a.message) |m| {
             try self.emit(try self.constInt((try self.internString(try std.fmt.allocPrint(self.arena(), "{s}: ", .{head}))).offset));
-            try self.lowerCoerced(m.*, "i32");
+            try self.lowerCoerced(m.*, .i32);
             try self.emit(self.builder().helper(.str_concat));
             try self.emit(try self.constInt((try self.internString(try std.fmt.allocPrint(self.arena(), " at {s}", .{at}))).offset));
             try self.emit(self.builder().helper(.str_concat));
@@ -7248,8 +7521,8 @@ const Emitter = struct {
     fn lowerAssertPattern(self: *Emitter, ap: anytype, loc: ast.Loc) anyerror!void {
         const slot = try std.fmt.allocPrint(self.arena(), "__assert_{d}", .{self.assert_seq});
         self.assert_seq += 1;
-        try self.declareLocal(slot, "i32");
-        try self.lowerCoerced(ap.expr.*, "i32");
+        try self.declareLocal(slot, .i32);
+        try self.lowerCoerced(ap.expr.*, .i32);
         try self.emit(.{ .local_set = slot });
         if (self.isStringExpr(ap.expr.*)) try self.str_locals.put(slot, {});
         if (self.resultShapeOf(ap.expr.*)) |shape| try self.result_subjects.put(slot, shape);
@@ -7257,7 +7530,7 @@ const Emitter = struct {
 
         if (!self.patternIsIrrefutable(ap.pattern) and self.patternTestIsReal(ap.pattern)) {
             try self.emitPatternTest(ap.pattern, slot, loc);
-            try self.emit(opOf("i32", "eqz"));
+            try self.emit(opOf(.i32, "eqz"));
             var then_c: Capture = .{};
             self.open(&then_c);
             const handler_tail = self.exprTail(ap.handler.*);
@@ -7281,7 +7554,7 @@ const Emitter = struct {
             try self.emit(one);
             try self.emitC(.{ .store = .{} }, "Result tag (Error)");
             try self.emit(.{ .local_get = slot });
-            if (val) |v| try self.lowerCoerced(v.*, "i32") else try self.emit(zero);
+            if (val) |v| try self.lowerCoerced(v.*, .i32) else try self.emit(zero);
             try self.emitC(.{ .store = .{ .offset = 4 } }, "payload");
             try self.emit(.{ .local_get = slot });
             try self.runDefers(0);
@@ -7298,7 +7571,7 @@ const Emitter = struct {
     fn lowerTryCatch(self: *Emitter, tc: anytype) anyerror!void {
         const slot = try self.tryName(self.try_seq);
         self.try_seq += 1;
-        try self.declareLocal(slot, "i32");
+        try self.declareLocal(slot, .i32);
         try self.lowerValue(tc.expr.*);
         try self.emit(.{ .local_set = slot });
         try self.emit(.{ .local_get = slot });
@@ -7306,7 +7579,7 @@ const Emitter = struct {
 
         // An `f64` / `i64` payload is its cell's address.
         const cell = self.resultOkCell(tc.expr.*);
-        const ty = if (cell != .none) vt(cell.ty()) else vt(self.cur_result);
+        const ty = if (cell != .none) self.vtOf(cell.ty()) else self.vtOf(self.cur_result);
         var then_c: Capture = .{};
         self.open(&then_c);
         if (cell != .none) try self.lowerCoerced(tc.handler.*, cell.ty()) else try self.lowerExpr(tc.handler.*);
@@ -7332,7 +7605,7 @@ const Emitter = struct {
     fn lowerTryPropagate(self: *Emitter, inner: ast.Expr) anyerror!void {
         const slot = try self.tryName(self.try_seq);
         self.try_seq += 1;
-        try self.declareLocal(slot, "i32");
+        try self.declareLocal(slot, .i32);
         try self.lowerValue(inner);
         try self.emit(.{ .local_set = slot });
         try self.emit(.{ .local_get = slot });
@@ -7352,7 +7625,7 @@ const Emitter = struct {
                 try self.emit(.{ .br = label });
             } else {
                 try self.emitC(.{ .local_get = tgt }, "everything the body yielded");
-                try self.emitConvert("i32", self.cur_result);
+                try self.emitConvert(.i32, self.cur_result);
                 try self.runDefers(0);
                 try self.emit(.@"return");
             }
@@ -7382,7 +7655,7 @@ const Emitter = struct {
             const tmp = try self.declRes();
             try self.lowerValue(arg);
             try self.emit(.{ .local_tee = tmp });
-            try self.emit(opOf("i32", "eqz"));
+            try self.emit(opOf(.i32, "eqz"));
             var then_c: Capture = .{};
             self.open(&then_c);
             try self.emit(self.builder().helper(.print_null));
@@ -7390,7 +7663,7 @@ const Emitter = struct {
             var else_c: Capture = .{};
             self.open(&else_c);
             try self.emit(.{ .local_get = tmp });
-            try self.emit(try self.stdCall("bigint.toString"));
+            try self.emitStdCall("bigint.toString");
             try self.emit(self.builder().helper(.print_str_raw));
             const else_seq = self.seal(&else_c, .none);
             try self.emit(.{ .@"if" = .{ .then = .{ .seq = then_seq }, .@"else" = .{ .seq = else_seq } } });
@@ -7399,7 +7672,7 @@ const Emitter = struct {
         }
         if (self.isBigintExpr(arg)) {
             try self.lowerValue(arg);
-            try self.emit(try self.stdCall("bigint.toString"));
+            try self.emitStdCall("bigint.toString");
             try self.emit(self.builder().helper(if (last) .print_str else .print_str_raw));
             return;
         }
@@ -7429,12 +7702,12 @@ const Emitter = struct {
         // `$__print_opt_tagged` prints `null`; through the integer printer it
         // answered the cell's address.
         if (self.optPayloadEnumOf(arg) != null) {
-            try self.lowerCoerced(arg, "i32");
+            try self.lowerCoerced(arg, .i32);
             try self.emit(self.builder().helper(if (last) .print_opt_tagged else .print_opt_tagged_raw));
             return;
         }
         if (self.payloadEnumOfName(arg) != null) {
-            try self.lowerCoerced(arg, "i32");
+            try self.lowerCoerced(arg, .i32);
             try self.emit(self.builder().helper(if (last) .print_tagged else .print_tagged_raw));
             return;
         }
@@ -7444,12 +7717,12 @@ const Emitter = struct {
             // a `0` would read out of bounds; `$__print_opt_tagged` answers
             // `undefined` for it and the header for anything else.
             if (self.optInfoOf(arg)) |oi| if (oi.rec != null) {
-                try self.lowerCoerced(arg, "i32");
+                try self.lowerCoerced(arg, .i32);
                 try self.emit(self.builder().helper(if (last) .print_opt_tagged else .print_opt_tagged_raw));
                 return;
             };
             if (self.isTaggedValue(arg)) {
-                try self.lowerCoerced(arg, "i32");
+                try self.lowerCoerced(arg, .i32);
                 try self.emit(self.builder().helper(if (last) .print_tagged else .print_tagged_raw));
                 return;
             }
@@ -7461,7 +7734,7 @@ const Emitter = struct {
         }
         // An `unknown` / union value prints by what its box says it holds.
         if (self.isUnknownExpr(arg)) {
-            try self.lowerCoerced(arg, "i32");
+            try self.lowerCoerced(arg, .i32);
             try self.emit(self.builder().helper(if (last) .print_unknown else .print_unknown_raw));
             return;
         }
@@ -7473,7 +7746,7 @@ const Emitter = struct {
                 const tmp = try self.declRes();
                 try self.lowerValue(arg);
                 try self.emit(.{ .local_tee = tmp });
-                try self.emit(opOf("i32", "eqz"));
+                try self.emit(opOf(.i32, "eqz"));
                 var then_c: Capture = .{};
                 self.open(&then_c);
                 try self.emit(self.builder().helper(.print_null));
@@ -7500,7 +7773,7 @@ const Emitter = struct {
                 const tmp = try self.declRes();
                 try self.lowerValue(arg);
                 try self.emit(.{ .local_tee = tmp });
-                try self.emit(opOf("i32", "eqz"));
+                try self.emit(opOf(.i32, "eqz"));
                 var then_c: Capture = .{};
                 self.open(&then_c);
                 try self.emit(self.builder().helper(.print_null));
@@ -7520,7 +7793,7 @@ const Emitter = struct {
                 const tmp = try self.declRes();
                 try self.lowerValue(arg);
                 try self.emit(.{ .local_tee = tmp });
-                try self.emit(opOf("i32", "eqz"));
+                try self.emit(opOf(.i32, "eqz"));
                 var then_c: Capture = .{};
                 self.open(&then_c);
                 try self.emit(self.builder().helper(.print_null));
@@ -7562,14 +7835,14 @@ const Emitter = struct {
             return;
         }
         if (self.isBoolExpr(arg)) {
-            try self.lowerCoerced(arg, "i32");
+            try self.lowerCoerced(arg, .i32);
             try self.emit(self.builder().helper(if (last) .print_bool else .print_bool_raw));
             return;
         }
         // An array of strings, a tuple, an array of tuples: the shape-driven
         // printer (semantics decision 1a). A flat integer or float array keeps its own.
         if (try self.printShapeOf(arg)) |shape| if (!std.mem.eql(u8, shape, "[i") and !std.mem.eql(u8, shape, "[f")) {
-            try self.lowerCoerced(arg, "i32");
+            try self.lowerCoerced(arg, .i32);
             const seg = try self.internString(shape);
             try self.emit(try self.constInt(seg.offset + 4));
             try self.emit(try self.constInt(1));
@@ -7580,24 +7853,24 @@ const Emitter = struct {
         };
         if (self.isArrayExpr(arg)) switch (self.elemKindOf(arg)) {
             .i32 => {
-                try self.lowerCoerced(arg, "i32");
+                try self.lowerCoerced(arg, .i32);
                 try self.emit(self.builder().helper(if (last) .print_arr_i32 else .print_arr_i32_raw));
                 return;
             },
             .f64 => {
-                try self.lowerCoerced(arg, "i32");
+                try self.lowerCoerced(arg, .i32);
                 try self.emit(self.builder().helper(if (last) .print_arr_f64 else .print_arr_f64_raw));
                 return;
             },
             .str => {},
         };
         const t = self.wasmTypeOf(arg);
-        if (t[0] == 'f') {
-            try self.lowerCoerced(arg, "f64");
+        if (t.isFloat()) {
+            try self.lowerCoerced(arg, .f64);
             try self.emit(self.builder().helper(if (last) .print_f64 else .print_f64_raw));
             return;
         }
-        if (std.mem.eql(u8, t, "i64")) {
+        if (t.isI64()) {
             try self.lowerValue(arg);
             if (self.isU64Expr(arg)) {
                 try self.emit(self.builder().helper(if (last) .print_u64 else .print_u64_raw));
@@ -7611,7 +7884,7 @@ const Emitter = struct {
         // printer it answered its address (`300`) at exit 0.
         if (self.typeRefOf(arg)) |tr| if (tr.tupleElems() != null)
             return self.refuse(arg.getLoc(), "the wasm backend has no printed form for this tuple: one of its elements has no print shape here", .{});
-        try self.lowerCoerced(arg, "i32");
+        try self.lowerCoerced(arg, .i32);
         try self.emit(self.builder().helper(if (last) .print_i32 else .print_i32_raw));
     }
 
@@ -7625,7 +7898,7 @@ const Emitter = struct {
             if (self.exceptions) {
                 const has_text = cc.args.len == 1 and self.isStringExpr(cc.args[0].value.*);
                 if (has_text)
-                    try self.lowerCoerced(cc.args[0].value.*, "i32")
+                    try self.lowerCoerced(cc.args[0].value.*, .i32)
                 else
                     try self.emit(try self.constInt((try self.internString(if (is_panic) "panic" else "not implemented")).offset));
                 try self.emit(if (is_panic and has_text) one else zero);
@@ -7635,7 +7908,7 @@ const Emitter = struct {
             }
             // `@panic(msg)` writes `msg` to stderr before it traps (B-41).
             if (cc.args.len == 1 and std.mem.eql(u8, cc.callee, "panic") and self.isStringExpr(cc.args[0].value.*)) {
-                try self.lowerCoerced(cc.args[0].value.*, "i32");
+                try self.lowerCoerced(cc.args[0].value.*, .i32);
                 try self.emit(self.builder().helper(.panic_fail));
             }
             try self.emit(.@"unreachable");
@@ -7758,17 +8031,17 @@ const Emitter = struct {
             if (!is_str and !is_arr) {
                 return self.refuseUnlessTemplate(self.call_loc, "the wasm backend cannot slice this receiver: nothing types it as a string or an array here", .{});
             }
-            try self.lowerCoerced(recv, "i32");
-            try self.lowerCoerced(r.start.*, "i32");
+            try self.lowerCoerced(recv, .i32);
+            try self.lowerCoerced(r.start.*, .i32);
             if (r.end) |e| {
-                try self.lowerCoerced(e.*, "i32");
+                try self.lowerCoerced(e.*, .i32);
             } else {
                 // std-wasm's `text.slice` and `array.slice` clamp, so "to the end"
                 // is the largest i32
                 try self.emit(try self.constInt(std.math.maxInt(i32)));
             }
             // Decision 240: a string's bounds are codepoints.
-            try self.emit(try self.stdCall(if (is_str) "text.slice" else "array.slice"));
+            try self.emitStdCall(if (is_str) "text.slice" else "array.slice");
             return;
         }
 
@@ -7776,19 +8049,19 @@ const Emitter = struct {
             // `s[i]` is the one-codepoint string at codepoint `i` (decision
             // 240), the `char` §7 prints.
             const at = try self.declRes();
-            try self.lowerCoerced(idx, "i32");
+            try self.lowerCoerced(idx, .i32);
             try self.emit(.{ .local_set = at });
-            try self.lowerCoerced(recv, "i32");
+            try self.lowerCoerced(recv, .i32);
             try self.emit(.{ .local_get = at });
             try self.emit(.{ .local_get = at });
             try self.emit(one);
-            try self.emit(opOf("i32", "add"));
-            try self.emit(try self.stdCall("text.slice"));
+            try self.emit(opOf(.i32, "add"));
+            try self.emitStdCall("text.slice");
             return;
         }
         if (is_arr) {
-            try self.lowerCoerced(recv, "i32");
-            try self.lowerCoerced(idx, "i32");
+            try self.lowerCoerced(recv, .i32);
+            try self.lowerCoerced(idx, .i32);
             try self.emit(b.helper(.arr_at));
             // A float array's slot holds the address of the element's `f64`
             // cell (`$__box_f64`): the value is one load away.
@@ -7811,7 +8084,7 @@ const Emitter = struct {
     fn declRes(self: *Emitter) ![]const u8 {
         const name = try self.resName(self.res_seq);
         self.res_seq += 1;
-        try self.declareLocal(name, "i32");
+        try self.declareLocal(name, .i32);
         return name;
     }
 
@@ -7860,7 +8133,7 @@ const Emitter = struct {
     fn bindLambdaParam(self: *Emitter, lam: anytype, src: []const u8) !void {
         if (lam.params.len == 0) return;
         const p = lam.params[0];
-        try self.declareLocal(p, "i32");
+        try self.declareLocal(p, .i32);
         try self.emit(.{ .local_get = src });
         try self.emit(.{ .local_set = p });
     }
@@ -8004,7 +8277,7 @@ const Emitter = struct {
             // An `f64` / `i64` payload is its cell's address; the default is
             // the value itself.
             const cell = self.resultOkCell(recv.*);
-            const ty = vt(cell.ty());
+            const ty = self.vtOf(cell.ty());
             const slot = try self.declRes();
             try self.lowerExpr(recv.*);
             try self.emit(.{ .local_set = slot });
@@ -8036,7 +8309,7 @@ const Emitter = struct {
         if (std.mem.eql(u8, callee, "__bp_result_isOk")) {
             try self.lowerExpr(recv.*);
             try self.emitC(.{ .load = .{} }, "Result tag");
-            try self.emitC(opOf("i32", "eqz"), "isOk = (tag == 0)");
+            try self.emitC(opOf(.i32, "eqz"), "isOk = (tag == 0)");
             return;
         }
 
@@ -8044,7 +8317,7 @@ const Emitter = struct {
             try self.lowerExpr(recv.*);
             try self.emitC(.{ .load = .{} }, "Result tag");
             try self.emit(zero);
-            try self.emitC(opOf("i32", "ne"), "isError = (tag != 0)");
+            try self.emitC(opOf(.i32, "ne"), "isError = (tag != 0)");
             return;
         }
 
@@ -8054,10 +8327,10 @@ const Emitter = struct {
             const lam = le.function.kind;
             const boxed = self.optionIsBoxed(recv.*, null);
             if (self.optInfoOf(recv.*)) |oi| if (oi.cell != .none) {
-                return self.refuse(loc, "`Option.{s}` over a `?{s}` has no lowering on the wasm backend", .{ if (is_map) "map" else "flatMap", oi.cell.ty() });
+                return self.refuse(loc, "`Option.{s}` over a `?{s}` has no lowering on the wasm backend", .{ if (is_map) "map" else "flatMap", oi.cell.ty().name() });
             };
             if (is_map and Cell.of(self.lambdaTailType(lam.body)) != .none) {
-                return self.refuse(loc, "`Option.map` to an `{s}` has no lowering on the wasm backend", .{self.lambdaTailType(lam.body)});
+                return self.refuse(loc, "`Option.map` to an `{s}` has no lowering on the wasm backend", .{self.lambdaTailType(lam.body).name()});
             }
             const slot = try self.declRes();
             try self.lowerExpr(recv.*);
@@ -8068,7 +8341,7 @@ const Emitter = struct {
             self.open(&then_c);
             // Some: apply the closure to the payload.
             if (lam.params.len > 0) {
-                try self.declareLocal(lam.params[0], "i32");
+                try self.declareLocal(lam.params[0], .i32);
                 try self.emit(.{ .local_get = slot });
                 if (boxed) try self.emitC(.{ .load = .{} }, "optional payload");
                 try self.emit(.{ .local_set = lam.params[0] });
@@ -8097,7 +8370,7 @@ const Emitter = struct {
             // A `?f64` / `?i64` answers what its cell holds, the default
             // that type.
             const cell: Cell = if (self.optInfoOf(recv.*)) |oi| oi.cell else .none;
-            const res_ty: ValType = vt(cell.ty());
+            const res_ty: ValType = self.vtOf(cell.ty());
             try self.lowerExpr(recv.*);
             try self.emit(.{ .local_set = slot });
             try self.emitC(.{ .local_get = slot }, option_shape);
@@ -8252,7 +8525,7 @@ const Emitter = struct {
         self.case_depth += 1;
         // A single subject keeps the wasm type it has (`i64`, `u64`, `u32`,
         // `f64`, …): the patterns compare it as that type, never narrowed.
-        const subj_ty: []const u8 = self.wasmTypeOf(c.subjects[0]);
+        const subj_ty: Repr = self.wasmTypeOf(c.subjects[0]);
         try self.declareLocal(subj_local, subj_ty);
         const start_lo = if (self.machine) |m| m.next else 0;
         var start: Capture = .{};
@@ -8267,7 +8540,16 @@ const Emitter = struct {
         const prev_result = self.cur_result;
         defer self.cur_result = prev_result;
         // The arms of a `case` boxed into an `unknown` answer a word.
-        if (self.case_box) self.cur_result = "i32";
+        if (self.case_box) self.cur_result = .i32;
+        // In a GC module a `case` whose every arm answers a string answers a
+        // string (front 164 s2): its arms are coerced to it, not to the word
+        // the enclosing function answers.
+        if (self.mode == .gc and !self.case_box) {
+            const all_str = for (c.arms) |arm| {
+                if (!self.armIsString(arm.body)) break false;
+            } else true;
+            if (all_str) self.cur_result = Repr.string;
+        }
         // `case a, n { 0, "x" -> … }`: every subject in its own local,
         // `<subject local>_<i>`, which the `.multi` pattern's i-th pattern is
         // tested against and binds from. Only the first was lowered, and the
@@ -8297,7 +8579,7 @@ const Emitter = struct {
 
     fn emitCaseArms(self: *Emitter, arms: anytype, subj: []const u8, idx: usize) anyerror!void {
         if (idx >= arms.len) {
-            try self.emit(constOf(self.cur_result, "0"));
+            try self.emit(self.zeroOf(self.cur_result));
             return;
         }
         const arm = arms[idx];
@@ -8308,7 +8590,7 @@ const Emitter = struct {
         if (self.unknown_subjects.contains(subj) and arm.pattern == .ident) if (primTestOf(.{ .named = arm.pattern.ident })) |pt| {
             try self.emit(.{ .local_get = subj });
             try self.emitPrimTest(pt);
-            const ty = vt(self.cur_result);
+            const ty = self.vtOf(self.cur_result);
             var then_c: Capture = .{};
             self.open(&then_c);
             self.arm_unbox = pt;
@@ -8362,8 +8644,8 @@ const Emitter = struct {
     /// unconditionally (`case_guard_bound_identifier_numeric_guard` answered
     /// `"positive"` for every `n`).
     fn emitGuardChain(self: *Emitter, arms: anytype, subj: []const u8, idx: usize, guard: ast.Expr) anyerror!void {
-        const ty = vt(self.cur_result);
-        try self.lowerCoerced(guard, "i32");
+        const ty = self.vtOf(self.cur_result);
+        try self.lowerCoerced(guard, .i32);
 
         var ok_c: Capture = .{};
         self.open(&ok_c);
@@ -8441,7 +8723,7 @@ const Emitter = struct {
         if (unbox) |pt| if (lam.params.len == 1) {
             const p = lam.params[0];
             const b = self.builder();
-            try self.declareLocal(p, if (pt == .float) "f64" else "i32");
+            try self.declareLocal(p, if (pt == .float) .f64 else .i32);
             try self.emit(.{ .local_get = subj });
             switch (pt) {
                 .int => try self.emit(b.helper(.unknown_as_i32)),
@@ -8454,14 +8736,14 @@ const Emitter = struct {
         };
         if (unbox == null and lam.params.len == 1) {
             const p = lam.params[0];
-            try self.declareLocal(p, self.locals.get(subj) orelse "i32");
+            try self.declareLocal(p, self.locals.get(subj) orelse .i32);
             if (self.str_locals.contains(subj)) try self.str_locals.put(p, {});
             if (record orelse self.local_types.get(subj)) |t| try self.local_types.put(p, t);
             try self.emit(.{ .local_get = subj });
             try self.emit(.{ .local_set = p });
         }
         if (lam.body.len == 0) {
-            try self.emit(constOf(self.cur_result, "0"));
+            try self.emit(self.zeroOf(self.cur_result));
             return;
         }
         _ = try self.emitStmtsFrom(lam.body[0 .. lam.body.len - 1], 0, false, null, false);
@@ -8484,7 +8766,7 @@ const Emitter = struct {
             .binding => {
                 // `val x = …` in tail position is not a value
                 _ = try self.emitStmt(last, false);
-                try self.emit(constOf(self.cur_result, "0"));
+                try self.emit(self.zeroOf(self.cur_result));
                 return;
             },
             else => {},
@@ -8569,11 +8851,11 @@ const Emitter = struct {
                     if (sub == .ident and self.unknown_subjects.contains(local)) if (primTestOf(.{ .named = sub.ident })) |pt| {
                         try self.emit(.{ .local_get = local });
                         try self.emitPrimTest(pt);
-                        try self.emit(opOf("i32", "and"));
+                        try self.emit(opOf(.i32, "and"));
                         continue;
                     };
                     try self.emitPatternTest(sub, local, loc);
-                    try self.emit(opOf("i32", "and"));
+                    try self.emit(opOf(.i32, "and"));
                 }
             },
             // `true` / `false` in a pattern are the bool literals, never a
@@ -8582,13 +8864,13 @@ const Emitter = struct {
             .ident => |n| if (isBoolLitName(n)) {
                 try self.emit(.{ .local_get = subj });
                 try self.emit(if (n[0] == 't') one else zero);
-                try self.emit(opOf("i32", "eq"));
+                try self.emit(opOf(.i32, "eq"));
             } else if (std.mem.eql(u8, n, "null")) {
                 // `Box(label: null, n: k)`: an optional field is absent when
                 // its word is `0`. Bound as a local named `null`, the arm
                 // took every value.
                 try self.emit(.{ .local_get = subj });
-                try self.emit(opOf("i32", "eqz"));
+                try self.emit(opOf(.i32, "eqz"));
             } else {
                 // A written path is a variant, never a binding (§5.1 P8), so
                 // `.Ok` and `Shape.Circle` test a tag; a path no enum here
@@ -8611,7 +8893,7 @@ const Emitter = struct {
                     // first field as a tag.
                     if (self.records.contains(n) and try self.emitNamedTypeTest(n, subj)) {
                         try self.emitVariantIdentityTest(fv, subj, loc);
-                        try self.emit(opOf("i32", "or"));
+                        try self.emit(opOf(.i32, "or"));
                     } else try self.emitTagTest(.{ .user = fv }, subj);
                 } else if (try self.emitNamedTypeTest(n, subj)) {
                     // Decision 8 §3.3 — an arm naming a `type` is chosen by the
@@ -8625,38 +8907,38 @@ const Emitter = struct {
                     // Decision 332 — the subject is a block: equal by value.
                     try self.emit(.{ .local_get = subj });
                     try self.lowerBigintLiteral(n);
-                    try self.emit(try self.stdCall("bigint.compare"));
-                    try self.emit(opOf("i32", "eqz"));
+                    try self.emitStdCall("bigint.compare");
+                    try self.emit(opOf(.i32, "eqz"));
                     return;
                 }
                 try self.emit(.{ .local_get = subj });
                 const t = numLitType(n);
                 // A subject of another wasm type (`i64`, `u64`, `f64`) is
                 // compared as that type: `5l` is `i64.eq`, never narrowed.
-                const st = self.locals.get(subj) orelse "i32";
-                if (!std.mem.eql(u8, st, "i32")) {
+                const st = self.locals.get(subj) orelse .i32;
+                if (!st.isWord()) {
                     try self.emit(constOf(st, try numeralText(self.arena(), n)));
                     try self.emit(opOf(st, "eq"));
                     return;
                 }
                 // the subject local is i32; a float literal is compared as one
-                if (t[0] == 'f') {
-                    try self.emit(constOf("f64", n));
+                if (t.isFloat()) {
+                    try self.emit(constOf(.f64, n));
                     try self.emit(.{ .convert = "i32.trunc_f64_s" });
                 } else try self.emit(try numLitConst(self.arena(), n));
-                try self.emit(opOf("i32", "eq"));
+                try self.emit(opOf(.i32, "eq"));
             },
             .stringLit => |lit| {
-                const seg = try self.internString(try self.literalBytes(lit));
+                const bytes = try self.literalBytes(lit);
                 try self.emit(.{ .local_get = subj });
-                try self.emit(try self.constInt(seg.offset));
+                try self.emitStrLit(bytes);
                 try self.emit(self.builder().helper(.str_eq));
             },
             .@"or" => |pats| {
                 try self.emit(zero);
                 for (pats) |sub| {
                     try self.emitPatternTest(sub, subj, loc);
-                    try self.emit(opOf("i32", "or"));
+                    try self.emit(opOf(.i32, "or"));
                 }
             },
             .variant => |v| {
@@ -8673,7 +8955,7 @@ const Emitter = struct {
                     const uns = self.u64_subjects.contains(subj);
                     try self.emitRangeBound(bounds[0], subj, if (uns) "ge_u" else "ge_s", loc);
                     try self.emitRangeBound(bounds[1], subj, if (uns) "le_u" else "le_s", loc);
-                    try self.emit(opOf("i32", "and"));
+                    try self.emit(opOf(.i32, "and"));
                     return;
                 }
                 // A RECORD's constructor pattern (`val assert Person(n, a) =
@@ -8729,7 +9011,7 @@ const Emitter = struct {
                             return self.refuse(loc, "a label of the `{s}` pattern names no field its variant declares", .{v.name});
                         const field = try self.payloadFieldLocal(ref, subj, slot);
                         try self.emitPatternTest(sub, field, loc);
-                        try self.emit(opOf("i32", "and"));
+                        try self.emit(opOf(.i32, "and"));
                     }
                     const then_seq = self.seal(&then_c, .{ .value = .i32 });
                     var else_c: Capture = .{};
@@ -8795,7 +9077,7 @@ const Emitter = struct {
             if (shapeCell(code) == .i64) return self.refuse(loc, "the wasm backend cannot test a 64-bit integer tuple element against a pattern", .{});
             const field = try std.fmt.allocPrint(self.arena(), "__case_{d}", .{self.case_depth});
             self.case_depth += 1;
-            try self.declareLocal(field, "i32");
+            try self.declareLocal(field, .i32);
             try self.noteTupleElemLocal(field, code);
             var then_c: Capture = .{};
             self.open(&then_c);
@@ -8847,20 +9129,20 @@ const Emitter = struct {
         try self.emit(.{ .local_get = subj });
         try self.emitC(.{ .load = .{} }, "element count");
         try self.emit(try self.constInt(@as(i32, @intCast(l.elems.len))));
-        try self.emit(opOf("i32", if (l.spread == null) "eq" else "ge_u"));
+        try self.emit(opOf(.i32, if (l.spread == null) "eq" else "ge_u"));
         for (l.elems, 0..) |el, i| {
             const n = switch (el) {
                 .numberLit => |n| n,
                 else => continue,
             };
-            if (self.arr_elem_locals.get(subj) == .f64 or numLitType(n)[0] == 'f')
+            if (self.arr_elem_locals.get(subj) == .f64 or numLitType(n).isFloat())
                 return self.refuse(loc, "the wasm backend cannot test a float list element against a pattern", .{});
             var then_c: Capture = .{};
             self.open(&then_c);
             try self.emit(.{ .local_get = subj });
             try self.emit(.{ .load = .{ .offset = @intCast((i + 1) * 4) } });
             try self.emit(try numLitConst(self.arena(), n));
-            try self.emit(opOf("i32", "eq"));
+            try self.emit(opOf(.i32, "eq"));
             const then_seq = self.seal(&then_c, .{ .value = .i32 });
             var else_c: Capture = .{};
             self.open(&else_c);
@@ -8881,11 +9163,11 @@ const Emitter = struct {
                 else => continue,
             };
             const float = ek == .f64;
-            const n = try self.bindName(name, if (float) "f64" else "i32");
+            const n = try self.bindName(name, if (float) .f64 else .i32);
             try self.emit(.{ .local_get = subj });
             try self.emit(.{ .load = .{ .offset = @intCast((i + 1) * 4) } });
             if (float) try self.emitFromFloatSlot();
-            try self.emitConvert(if (float) "f64" else "i32", self.locals.get(n) orelse "i32");
+            try self.emitConvert(if (float) .f64 else .i32, self.locals.get(n) orelse .i32);
             try self.emit(.{ .local_set = n });
             if (sh) |shape| if (shape.len > 1) try self.noteTupleElemLocal(n, shape[1..]);
             if (ek == .str) try self.str_locals.put(n, {});
@@ -8893,11 +9175,11 @@ const Emitter = struct {
         }
         const rest = l.spread orelse return;
         if (rest.len == 0) return;
-        const n = try self.bindName(rest, "i32");
+        const n = try self.bindName(rest, .i32);
         try self.emit(.{ .local_get = subj });
         try self.emit(try self.constInt(@as(i32, @intCast(l.elems.len))));
         try self.emit(try self.constInt(std.math.maxInt(i32)));
-        try self.emit(try self.stdCall("array.slice"));
+        try self.emitStdCall("array.slice");
         try self.emit(.{ .local_set = n });
         try self.arr_locals.put(n, {});
         try self.arr_elem_locals.put(n, ek);
@@ -8916,7 +9198,7 @@ const Emitter = struct {
                 try self.emit(.{ .local_get = subj });
                 try self.emit(.{ .load = .{ .offset = @intCast(i * 4) } });
                 try self.emitFromCell(cell);
-                try self.emitConvert(cell.ty(), self.locals.get(n) orelse "i32");
+                try self.emitConvert(cell.ty(), self.locals.get(n) orelse .i32);
                 try self.emit(.{ .local_set = n });
                 try self.noteTupleElemLocal(n, code);
                 try self.tuple_binders.put(self.reg_arena.allocator(), n, {});
@@ -8925,7 +9207,7 @@ const Emitter = struct {
             if (float or sub == .numberLit or sub == .stringLit) continue;
             const field = try std.fmt.allocPrint(self.arena(), "__case_{d}", .{self.case_depth});
             self.case_depth += 1;
-            try self.declareLocal(field, "i32");
+            try self.declareLocal(field, .i32);
             try self.noteTupleElemLocal(field, code);
             try self.emit(.{ .local_get = subj });
             try self.emit(.{ .load = .{ .offset = @intCast(i * 4) } });
@@ -8943,26 +9225,26 @@ const Emitter = struct {
                     // Decision 332 — `subj <cmp> bound` by std-wasm's `bigint.compare`'s sign.
                     try self.emit(.{ .local_get = subj });
                     try self.lowerBigintLiteral(n);
-                    try self.emit(try self.stdCall("bigint.compare"));
+                    try self.emitStdCall("bigint.compare");
                     try self.emit(zero);
-                    try self.emit(opOf("i32", cmp));
+                    try self.emit(opOf(.i32, cmp));
                     return;
                 }
                 try self.emit(.{ .local_get = subj });
                 const t = numLitType(n);
-                const st = self.locals.get(subj) orelse "i32";
-                if (!std.mem.eql(u8, st, "i32")) {
+                const st = self.locals.get(subj) orelse .i32;
+                if (!st.isWord()) {
                     // `subj <cmp> bound` as the subject's own wasm type; a
                     // float's comparisons carry no signedness.
                     try self.emit(constOf(st, try numeralText(self.arena(), n)));
-                    try self.emit(opOf(st, if (st[0] == 'f') cmp[0..2] else cmp));
+                    try self.emit(opOf(st, if (st.isFloat()) cmp[0..2] else cmp));
                     return;
                 }
-                if (t[0] == 'f') {
-                    try self.emit(constOf("f64", n));
+                if (t.isFloat()) {
+                    try self.emit(constOf(.f64, n));
                     try self.emit(.{ .convert = "i32.trunc_f64_s" });
                 } else try self.emit(try numLitConst(self.arena(), n));
-                try self.emit(opOf("i32", cmp));
+                try self.emit(opOf(.i32, cmp));
             },
             else => return self.refuse(loc, "the wasm backend tests a range pattern against a number literal bound only", .{}),
         }
@@ -8981,11 +9263,11 @@ const Emitter = struct {
                 const d = try self.variantDescriptorAddr(entry.key_ptr.*, fv.variant) orelse break;
                 try self.emit(.{ .local_get = subj });
                 try self.emit(try self.constInt(heap_floor));
-                try self.emit(opOf("i32", "ge_u"));
+                try self.emit(opOf(.i32, "ge_u"));
                 try self.emitHeaderLoad(subj);
                 try self.emit(try self.constInt(d));
-                try self.emit(opOf("i32", "eq"));
-                try self.emit(opOf("i32", "and"));
+                try self.emit(opOf(.i32, "eq"));
+                try self.emit(opOf(.i32, "and"));
                 return;
             }
             return self.refuse(loc, "the wasm backend has no descriptor for the variant `{s}`, so the arm cannot be tested", .{fv.variant.name});
@@ -8999,12 +9281,12 @@ const Emitter = struct {
                 try self.emit(.{ .local_get = subj });
                 if (enumHasPayload(fv.variants)) try self.emitC(.{ .load = .{} }, "variant tag");
                 try self.emitCf(try self.constInt(fv.tag), "{s}", .{fv.variant.name});
-                try self.emit(opOf("i32", "eq"));
+                try self.emit(opOf(.i32, "eq"));
             },
             .result_ok, .result_err => {
                 try self.emit(.{ .local_get = subj });
                 try self.emitC(.{ .load = .{} }, result_tag);
-                if (ref == .result_ok) try self.emit(opOf("i32", "eqz"));
+                if (ref == .result_ok) try self.emit(opOf(.i32, "eqz"));
             },
         }
     }
@@ -9020,13 +9302,13 @@ const Emitter = struct {
     /// The local a pattern binding `n` of wasm type `ty` is stored in: `n`
     /// itself, or — when `n` is already a local of another type — a fresh
     /// alias the arm's uses resolve to (until `emitCaseArms` drops it).
-    fn bindName(self: *Emitter, n: []const u8, ty: []const u8) ![]const u8 {
+    fn bindName(self: *Emitter, n: []const u8, ty: Repr) ![]const u8 {
         if (self.locals.get(n)) |existing| {
             // A binder over a name an enclosing statement list (or a
             // parameter) binds is a local of its own too: `case 5 { n -> … }`
             // under a `val n` wrote the outer `$n`.
             const shadows = self.bound_names.contains(n) or self.isParamLocal(n);
-            if (shadows or (!std.mem.eql(u8, existing, ty) and !self.pattern_locals.contains(n))) return self.bindAlias(n, ty);
+            if (shadows or (!self.sameVal(existing, ty) and !self.pattern_locals.contains(n))) return self.bindAlias(n, ty);
         }
         _ = self.aliases.remove(n);
         try self.declareLocal(n, ty);
@@ -9034,7 +9316,7 @@ const Emitter = struct {
     }
 
     /// A fresh local of type `ty` the name `n` stands for from here on.
-    fn bindAlias(self: *Emitter, n: []const u8, ty: []const u8) ![]const u8 {
+    fn bindAlias(self: *Emitter, n: []const u8, ty: Repr) ![]const u8 {
         const alias = try std.fmt.allocPrint(self.arena(), "{s}__{d}", .{ n, self.alias_seq });
         self.alias_seq += 1;
         try self.declareLocal(alias, ty);
@@ -9175,7 +9457,7 @@ const Emitter = struct {
                 try self.bindPattern(sub, local);
             },
             .ident => |n0| if (!isLitPatternName(n0) and !isVariantPath(n0) and self.findVariant(n0) == null) {
-                const n = try self.bindName(n0, self.locals.get(subj) orelse "i32");
+                const n = try self.bindName(n0, self.locals.get(subj) orelse .i32);
                 if (self.str_locals.contains(subj)) try self.str_locals.put(n, {});
                 try self.emit(.{ .local_get = subj });
                 try self.emit(.{ .local_set = n });
@@ -9285,7 +9567,7 @@ const Emitter = struct {
     fn payloadFieldLocal(self: *Emitter, ref: VariantRef, subj: []const u8, slot: usize) ![]const u8 {
         const field = try std.fmt.allocPrint(self.arena(), "__case_{d}", .{self.case_depth});
         self.case_depth += 1;
-        try self.declareLocal(field, "i32");
+        try self.declareLocal(field, .i32);
         try self.emit(.{ .local_get = subj });
         try self.emit(.{ .load = .{ .offset = @intCast((slot + 1) * 4) } });
         try self.emit(.{ .local_set = field });
@@ -9328,10 +9610,10 @@ const Emitter = struct {
             else => null,
         };
         const result_cell = if (result_ty) |t| resultPayloadCell(t) else .none;
-        const ty = if (field_ty) |t| watType(t) else if (result_cell != .none) watType(result_ty.?) else "i32";
+        const ty = if (field_ty) |t| watType(t) else if (result_cell != .none) watType(result_ty.?) else Repr.i32;
         // `declarePatternLocals` declared the name a word, not knowing the
         // subject: an `f64` / `i64` payload binds a local of its own type.
-        const n = if (result_cell != .none and !std.mem.eql(u8, self.locals.get(n0) orelse ty, ty))
+        const n = if (result_cell != .none and !self.sameVal(self.locals.get(n0) orelse ty, ty))
             try self.bindAlias(n0, ty)
         else
             try self.bindName(n0, ty);
@@ -9347,7 +9629,7 @@ const Emitter = struct {
         if (field_ty) |t| if (self.tparamArgOf(ref, subj, t)) |arg| {
             if (isUnknownTypeRef(arg)) {
                 try self.local_typerefs.put(n, arg);
-            } else if (arg == .named and watType(arg)[0] != 'f' and !std.mem.eql(u8, watType(arg), "i64")) {
+            } else if (arg == .named and !watType(arg).isFloat() and !watType(arg).isI64()) {
                 if (isStringTypeRef(arg)) try self.str_locals.put(n, {});
                 if (isBoolTypeRef(arg)) try self.bool_locals.put(n, {});
                 try self.noteTypedBinder(n, arg);
@@ -9376,11 +9658,11 @@ const Emitter = struct {
             else => {},
         }
         // payload slots are 4 bytes: a float field's holds its cell
-        const slot_float = local_ty[0] == 'f';
+        const slot_float = local_ty.isFloat();
         try self.emit(.{ .local_get = subj });
         try self.emit(.{ .load = .{ .offset = @intCast((slot + 1) * 4) } });
         if (slot_float) try self.emitFromFloatSlot();
-        try self.emitConvert(if (slot_float) "f64" else "i32", local_ty);
+        try self.emitConvert(if (slot_float) .f64 else .i32, local_ty);
         try self.emit(.{ .local_set = n });
     }
 
@@ -9409,7 +9691,7 @@ const Emitter = struct {
     /// The `(if (result …) (then <arm body>) (else <rest of the chain>))` a
     /// tested case arm expands to. The arm's test is already on the stack.
     fn emitArmChain(self: *Emitter, arms: anytype, subj: []const u8, idx: usize, body: ast.Expr) anyerror!void {
-        const ty = vt(self.cur_result);
+        const ty = self.vtOf(self.cur_result);
 
         var then_c: Capture = .{};
         self.open(&then_c);
@@ -9462,7 +9744,7 @@ const Emitter = struct {
         // (an inlined lambda body, say) still gets a declared slot. Idempotent,
         // so a pre-counted slot keeps its place in the local list.
         const name = self.memName(k) catch return k;
-        self.declareLocal(name, "i32") catch {};
+        self.declareLocal(name, .i32) catch {};
         return k;
     }
 
@@ -9494,10 +9776,10 @@ const Emitter = struct {
     /// Leave the word a 4-byte slot holds for `value`: a float's `f64` cell
     /// (`$__box_f64`), anything else the `i32` word itself.
     fn lowerSlotWord(self: *Emitter, value: ast.Expr) anyerror!void {
-        if (self.wasmTypeOf(value)[0] == 'f') {
-            try self.lowerCoerced(value, "f64");
+        if (self.wasmTypeOf(value).isFloat()) {
+            try self.lowerCoerced(value, .f64);
             try self.emitToFloatSlot();
-        } else try self.lowerCoerced(value, "i32");
+        } else try self.lowerCoerced(value, .i32);
     }
 
     /// Leave the address of `value`'s 8-byte `cell` — an `f64` or an `i64`
@@ -9513,7 +9795,7 @@ const Emitter = struct {
 
     /// The value a cell's address on the stack stands for.
     fn emitFromCell(self: *Emitter, cell: Cell) !void {
-        if (cell != .none) try self.emit(.{ .load = .{ .ty = vt(cell.ty()) } });
+        if (cell != .none) try self.emit(.{ .load = .{ .ty = (cell.ty()).num() } });
     }
 
     /// The word an element of an array of `kind` holds for `value`: a float
@@ -9523,12 +9805,12 @@ const Emitter = struct {
     /// can see, and its pointer printed as an integer at exit 0.
     fn lowerElemWord(self: *Emitter, kind: ElemKind, value: ast.Expr) anyerror!void {
         if (kind == .f64) {
-            try self.lowerCoerced(value, "f64");
+            try self.lowerCoerced(value, .f64);
             return self.emitToFloatSlot();
         }
-        if (self.wasmTypeOf(value)[0] == 'f')
+        if (self.wasmTypeOf(value).isFloat())
             return self.refuse(value.getLoc(), "the wasm backend cannot place a float in this array: nothing types its elements as floats (write the array's type, `Array<f64>`)", .{});
-        try self.lowerCoerced(value, "i32");
+        try self.lowerCoerced(value, .i32);
     }
 
     /// A float in a 4-byte word slot — an array or tuple element, a variant's
@@ -9554,7 +9836,7 @@ const Emitter = struct {
         try self.emit(.{ .local_get = base });
         const cell = try self.allocSlots(8);
         try self.emit(.{ .local_get = cell });
-        try self.lowerCoerced(value, "f64");
+        try self.lowerCoerced(value, .f64);
         try self.emit(.{ .store = .{ .ty = .f64 } });
         try self.emitC(.{ .local_get = cell }, "boxed f64 field");
         try self.emit(.{ .store = .{ .offset = offset } });
@@ -9576,7 +9858,7 @@ const Emitter = struct {
     fn loadTaggedBase(self: *Emitter, base: []const u8) !void {
         try self.emit(.{ .local_get = base });
         try self.emit(try self.constInt(tag_header_bytes));
-        try self.emit(opOf("i32", "add"));
+        try self.emit(opOf(.i32, "add"));
     }
 
     /// Allocate `nbytes` of payload behind a header holding `desc` — the
@@ -9611,7 +9893,7 @@ const Emitter = struct {
         const base = try self.allocSlots(@intCast(tl.elems.len * 4));
         for (tl.elems, 0..) |el, i| {
             const want: ?ast.TypeRef = if (as) |ts| (if (i < ts.len) ts[i] else null) else null;
-            const wide = if (want) |w| (w == .named and fieldCellOf(w.named) == .i64) else std.mem.eql(u8, self.wasmTypeOf(el), "i64");
+            const wide = if (want) |w| (w == .named and fieldCellOf(w.named) == .i64) else self.wasmTypeOf(el).isI64();
             if (wide) {
                 try self.emit(.{ .local_get = base });
                 try self.lowerCellWord(el, .i64);
@@ -9674,14 +9956,14 @@ const Emitter = struct {
         }
         try self.loadBase(base);
         if (al.spreadExpr) |se| {
-            try self.lowerCoerced(se.*, "i32");
-            try self.emit(try self.stdCall("array.concat"));
+            try self.lowerCoerced(se.*, .i32);
+            try self.emitStdCall("array.concat");
         } else if (al.spread) |name| {
             if (name.len == 0) return self.refuse(loc, "a bare `..` in an array literal spreads nothing", .{});
             const rest = try self.arena().create(ast.Expr);
             rest.* = .{ .identifier = .{ .loc = loc, .kind = .{ .ident = name } } };
-            try self.lowerCoerced(rest.*, "i32");
-            try self.emit(try self.stdCall("array.concat"));
+            try self.lowerCoerced(rest.*, .i32);
+            try self.emitStdCall("array.concat");
         }
     }
 
@@ -9949,10 +10231,10 @@ const Emitter = struct {
                         .none;
                     if (cell != .none)
                         try self.lowerCellWord(arg.value.*, cell)
-                    else if (!std.mem.eql(u8, self.wasmTypeOf(arg.value.*), "i32"))
+                    else if (!self.wasmTypeOf(arg.value.*).isWord())
                         return self.refuse(arg.value.getLoc(), "the wasm backend cannot carry this value through a component's render scope: nothing types it here as a float or an `i64`", .{})
                     else
-                        try self.lowerCoerced(arg.value.*, "i32");
+                        try self.lowerCoerced(arg.value.*, .i32);
                 } else if (self.boxesInto(ptref, arg.value.*))
                     try self.lowerBoxedInto(ptref, arg.value.*)
                 else
@@ -10269,7 +10551,7 @@ const Emitter = struct {
         const mem = try self.memName(self.nextMem());
         try self.lowerValue(recv);
         try self.emit(.{ .local_tee = mem });
-        try self.emit(opOf("i32", "eqz"));
+        try self.emit(opOf(.i32, "eqz"));
 
         var then_c: Capture = .{};
         self.open(&then_c);
@@ -10311,7 +10593,7 @@ const Emitter = struct {
     const OptTypedMethod = struct {
         payload: ast.TypeRef,
         ret: ast.TypeRef,
-        word: []const u8,
+        word: Repr,
         /// `<Owner>_<method>`, called on the payload directly: the owner is
         /// the optional's payload type, so nothing dispatches by value (an
         /// all-unit enum's values carry no header to dispatch on).
@@ -10333,7 +10615,7 @@ const Emitter = struct {
         const sym = direct orelse self.resolvedCallSym(cc, loc) orelse return null;
         const ret = self.fn_ret_typerefs.get(sym) orelse return null;
         const sig = self.fn_sigs.get(sym) orelse return null;
-        return .{ .payload = rtr.optional.*, .ret = ret, .word = sig.result orelse "i32", .direct = direct };
+        return .{ .payload = rtr.optional.*, .ret = ret, .word = sig.result orelse .i32, .direct = direct };
     }
 
     /// The carrier `optionalTypedMethod`'s call answers: the method's own
@@ -10355,7 +10637,7 @@ const Emitter = struct {
         const mem = try self.memName(self.nextMem());
         try self.lowerValue(recv);
         try self.emit(.{ .local_tee = mem });
-        try self.emit(opOf("i32", "eqz"));
+        try self.emit(opOf(.i32, "eqz"));
 
         var then_c: Capture = .{};
         self.open(&then_c);
@@ -10385,7 +10667,7 @@ const Emitter = struct {
             try self.emit(.{ .call = sym });
         } else try self.lowerValue(.{ .call = call });
         if (m.ret == .optional) {
-            try self.emitConvert(m.word, "i32");
+            try self.emitConvert(m.word, .i32);
         } else if (res.cell != .none) {
             try self.emitConvert(m.word, res.cell.ty());
             try self.emit(self.builder().helper(switch (res.cell) {
@@ -10394,7 +10676,7 @@ const Emitter = struct {
                 .none => unreachable,
             }));
         } else {
-            try self.emitConvert(m.word, "i32");
+            try self.emitConvert(m.word, .i32);
             if (res.boxed) try self.emit(self.builder().helper(.box_i32));
         }
         const else_seq = self.seal(&else_c, .{ .value = .i32 });
@@ -10783,9 +11065,9 @@ const Emitter = struct {
         const b = self.builder();
         switch (k) {
             .bool => {
-                try self.lowerCoerced(recv, "i32");
+                try self.lowerCoerced(recv, .i32);
                 if (eq(u8, name, "negate")) {
-                    try self.emit(opOf("i32", "eqz"));
+                    try self.emit(opOf(.i32, "eqz"));
                 } else if (eq(u8, name, "toString")) {
                     const t = try self.internString("true");
                     const f = try self.internString("false");
@@ -10799,17 +11081,17 @@ const Emitter = struct {
                     const else_seq = self.seal(&else_c, .{ .value = .i32 });
                     try self.emit(.{ .@"if" = .{ .result = .i32, .then = .{ .seq = then_seq }, .@"else" = .{ .seq = else_seq } } });
                 } else {
-                    try self.lowerCoerced(callArg(cc, 0).?, "i32");
+                    try self.lowerCoerced(callArg(cc, 0).?, .i32);
                     if (eq(u8, name, "nor")) {
-                        try self.emit(opOf("i32", "or"));
-                        try self.emit(opOf("i32", "eqz"));
+                        try self.emit(opOf(.i32, "or"));
+                        try self.emit(opOf(.i32, "eqz"));
                     } else if (eq(u8, name, "nand")) {
-                        try self.emit(opOf("i32", "and"));
-                        try self.emit(opOf("i32", "eqz"));
+                        try self.emit(opOf(.i32, "and"));
+                        try self.emit(opOf(.i32, "eqz"));
                     } else if (eq(u8, name, "exclusiveOr")) {
-                        try self.emit(opOf("i32", "ne"));
+                        try self.emit(opOf(.i32, "ne"));
                     } else {
-                        try self.emit(opOf("i32", "eq"));
+                        try self.emit(opOf(.i32, "eq"));
                     }
                 }
             },
@@ -10818,66 +11100,66 @@ const Emitter = struct {
                 // An `i64` answers its text in all its digits; its other
                 // methods have no `i64` lowering here, and the narrowing
                 // below refuses them.
-                if (std.mem.eql(u8, self.wasmTypeOf(recv), "i64") and eq(u8, name, "toString")) {
+                if (self.wasmTypeOf(recv).isI64() and eq(u8, name, "toString")) {
                     try self.lowerValue(recv);
-                    try self.emit(try self.stdCall(if (self.isU64Expr(recv)) "number.u64ToString" else "number.i64ToString"));
+                    try self.emitStdCall(if (self.isU64Expr(recv)) "number.u64ToString" else "number.i64ToString");
                     return;
                 }
-                try self.lowerCoerced(recv, "i32");
+                try self.lowerCoerced(recv, .i32);
                 if (eq(u8, name, "abs")) {
                     try self.emit(b.helper(.i32_abs));
                 } else if (eq(u8, name, "min") or eq(u8, name, "max")) {
-                    try self.lowerCoerced(callArg(cc, 0).?, "i32");
+                    try self.lowerCoerced(callArg(cc, 0).?, .i32);
                     try self.emit(b.helper(if (eq(u8, name, "min")) .i32_min else .i32_max));
                 } else if (eq(u8, name, "clamp")) {
-                    try self.lowerCoerced(callArg(cc, 0).?, "i32");
+                    try self.lowerCoerced(callArg(cc, 0).?, .i32);
                     try self.emit(b.helper(.i32_max));
-                    try self.lowerCoerced(callArg(cc, 1).?, "i32");
+                    try self.lowerCoerced(callArg(cc, 1).?, .i32);
                     try self.emit(b.helper(.i32_min));
                 } else if (eq(u8, name, "isEven") or eq(u8, name, "isOdd")) {
                     try self.emit(try self.constInt(2));
-                    try self.emit(opOf("i32", "rem_s"));
-                    try self.emit(opOf("i32", "eqz"));
-                    if (eq(u8, name, "isOdd")) try self.emit(opOf("i32", "eqz"));
+                    try self.emit(opOf(.i32, "rem_s"));
+                    try self.emit(opOf(.i32, "eqz"));
+                    if (eq(u8, name, "isOdd")) try self.emit(opOf(.i32, "eqz"));
                 } else {
-                    try self.emit(try self.stdCall("number.i32ToString"));
+                    try self.emitStdCall("number.i32ToString");
                 }
             },
             .float => {
-                try self.lowerCoerced(recv, "f64");
+                try self.lowerCoerced(recv, .f64);
                 if (eq(u8, name, "min") or eq(u8, name, "max")) {
-                    try self.lowerCoerced(callArg(cc, 0).?, "f64");
-                    try self.emit(opOf("f64", name));
+                    try self.lowerCoerced(callArg(cc, 0).?, .f64);
+                    try self.emit(opOf(.f64, name));
                 } else if (eq(u8, name, "clamp")) {
-                    try self.lowerCoerced(callArg(cc, 0).?, "f64");
-                    try self.emit(opOf("f64", "max"));
-                    try self.lowerCoerced(callArg(cc, 1).?, "f64");
-                    try self.emit(opOf("f64", "min"));
+                    try self.lowerCoerced(callArg(cc, 0).?, .f64);
+                    try self.emit(opOf(.f64, "max"));
+                    try self.lowerCoerced(callArg(cc, 1).?, .f64);
+                    try self.emit(opOf(.f64, "min"));
                 } else if (eq(u8, name, "round")) {
                     // `Math.round`: ties round up — `floor(x + 0.5)`.
-                    try self.emit(constOf("f64", "0.5"));
-                    try self.emit(opOf("f64", "add"));
-                    try self.emit(opOf("f64", "floor"));
+                    try self.emit(constOf(.f64, "0.5"));
+                    try self.emit(opOf(.f64, "add"));
+                    try self.emit(opOf(.f64, "floor"));
                 } else if (eq(u8, name, "squareRoot")) {
-                    try self.emit(opOf("f64", "sqrt"));
+                    try self.emit(opOf(.f64, "sqrt"));
                 } else if (eq(u8, name, "toString")) {
-                    try self.emit(try self.stdCall("number.floatToString"));
+                    try self.emitStdCall("number.floatToString");
                 } else {
                     // abs / floor / ceil are opcodes of the same name.
-                    try self.emit(opOf("f64", name));
+                    try self.emit(opOf(.f64, name));
                 }
             },
             .string => try self.lowerStringMethod(cc),
             .array => try self.lowerArrayMethod(cc),
             .bytes => try self.lowerBytesMethod(cc),
             .bigint => {
-                try self.lowerCoerced(recv, "i32");
-                try self.emit(try self.stdCall(if (eq(u8, name, "toString"))
+                try self.lowerCoerced(recv, .i32);
+                try self.emitStdCall(if (eq(u8, name, "toString"))
                     "bigint.toString"
                 else if (eq(u8, name, "toI64"))
                     "bigint.toI64"
                 else
-                    "bigint.toF64"));
+                    "bigint.toF64");
             },
         }
     }
@@ -10891,9 +11173,9 @@ const Emitter = struct {
     /// `u32` lives here.
     fn lowerIntConversion(self: *Emitter, recv: ast.Expr, name: []const u8) anyerror!void {
         const eq = std.mem.eql;
-        const wide = eq(u8, self.wasmTypeOf(recv), "i64");
+        const wide = self.wasmTypeOf(recv).isI64();
         const unsigned = wide and self.isU64Expr(recv);
-        const from: []const u8 = if (wide) "i64" else "i32";
+        const from: Repr = if (wide) .i64 else .i32;
         const v = try std.fmt.allocPrint(self.arena(), "__conv{d}", .{self.res_seq});
         self.res_seq += 1;
         try self.declareLocal(v, from);
@@ -10904,7 +11186,7 @@ const Emitter = struct {
         const f = if (to_f64 and wide) blk: {
             const fl = try std.fmt.allocPrint(self.arena(), "__conv{d}", .{self.res_seq});
             self.res_seq += 1;
-            try self.declareLocal(fl, "f64");
+            try self.declareLocal(fl, .f64);
             break :blk fl;
         } else "";
 
@@ -10925,7 +11207,7 @@ const Emitter = struct {
             if (!wide) {
                 try self.emit(.{ .local_get = v });
                 try self.emit(zero);
-                try self.emit(opOf("i32", "ge_s"));
+                try self.emit(opOf(.i32, "ge_s"));
             } else if (unsigned) {
                 try self.emitRangeTest(v, null, "4294967295", true);
             } else {
@@ -10935,7 +11217,7 @@ const Emitter = struct {
             if (!wide) {
                 try self.emit(.{ .local_get = v });
                 try self.emit(zero);
-                try self.emit(opOf("i32", "ge_s"));
+                try self.emit(opOf(.i32, "ge_s"));
             } else if (unsigned) {
                 checked = false;
             } else {
@@ -10953,14 +11235,14 @@ const Emitter = struct {
                 try self.emit(.{ .convert = if (unsigned) "f64.convert_i64_u" else "f64.convert_i64_s" });
                 try self.emit(.{ .local_set = f });
                 try self.emit(.{ .local_get = f });
-                try self.emit(constOf("f64", if (unsigned) "18446744073709551616.0" else "9223372036854775808.0"));
-                try self.emit(opOf("f64", "lt"));
+                try self.emit(constOf(.f64, if (unsigned) "18446744073709551616.0" else "9223372036854775808.0"));
+                try self.emit(opOf(.f64, "lt"));
                 var then_c: Capture = .{};
                 self.open(&then_c);
                 try self.emit(.{ .local_get = f });
                 try self.emit(.{ .convert = if (unsigned) "i64.trunc_f64_u" else "i64.trunc_f64_s" });
                 try self.emit(.{ .local_get = v });
-                try self.emit(opOf("i64", "eq"));
+                try self.emit(opOf(.i64, "eq"));
                 const then_seq = self.seal(&then_c, .{ .value = .i32 });
                 var else_c: Capture = .{};
                 self.open(&else_c);
@@ -10971,7 +11253,7 @@ const Emitter = struct {
         }
 
         if (checked) {
-            try self.emit(opOf("i32", "eqz"));
+            try self.emit(opOf(.i32, "eqz"));
             var fail_c: Capture = .{};
             self.open(&fail_c);
             const head = try self.internString(try std.fmt.allocPrint(self.arena(), "{s}: ", .{name}));
@@ -10982,7 +11264,7 @@ const Emitter = struct {
             const tail = try self.internString(tail_text);
             try self.emit(try self.constInt(head.offset));
             try self.emit(.{ .local_get = v });
-            try self.emit(try self.stdCall(if (!wide) "number.i32ToString" else if (unsigned) "number.u64ToString" else "number.i64ToString"));
+            try self.emitStdCall(if (!wide) "number.i32ToString" else if (unsigned) "number.u64ToString" else "number.i64ToString");
             try self.emit(self.builder().helper(.str_concat));
             try self.emit(try self.constInt(tail.offset));
             try self.emit(self.builder().helper(.str_concat));
@@ -11013,14 +11295,14 @@ const Emitter = struct {
     fn emitRangeTest(self: *Emitter, v: []const u8, lo: ?[]const u8, hi: ?[]const u8, unsigned: bool) anyerror!void {
         if (lo) |l| {
             try self.emit(.{ .local_get = v });
-            try self.emit(constOf("i64", l));
-            try self.emit(opOf("i64", if (unsigned) "ge_u" else "ge_s"));
+            try self.emit(constOf(.i64, l));
+            try self.emit(opOf(.i64, if (unsigned) "ge_u" else "ge_s"));
         }
         if (hi) |h| {
             try self.emit(.{ .local_get = v });
-            try self.emit(constOf("i64", h));
-            try self.emit(opOf("i64", if (unsigned) "le_u" else "le_s"));
-            if (lo != null) try self.emit(opOf("i32", "and"));
+            try self.emit(constOf(.i64, h));
+            try self.emit(opOf(.i64, if (unsigned) "le_u" else "le_s"));
+            if (lo != null) try self.emit(opOf(.i32, "and"));
         }
     }
 
@@ -11046,23 +11328,23 @@ const Emitter = struct {
         const name: []const u8 = cc.callee;
         const eq = std.mem.eql;
         if (eq(u8, name, "slice")) {
-            try self.lowerCoerced(recv, "i32");
-            if (cc.args.len > 0) try self.lowerCoerced(cc.args[0].value.*, "i32") else try self.emit(zero);
+            try self.lowerCoerced(recv, .i32);
+            if (cc.args.len > 0) try self.lowerCoerced(cc.args[0].value.*, .i32) else try self.emit(zero);
             if (cc.args.len > 1 and !isNullLit(cc.args[1].value.*))
                 try self.lowerSliceEnd(cc.args[1].value.*)
             else
                 try self.emit(try self.constInt(std.math.maxInt(i32)));
-            try self.emit(try self.stdCall("bytes.slice"));
+            try self.emitStdCall("bytes.slice");
             return;
         }
         if (eq(u8, name, "length")) {
-            try self.lowerCoerced(recv, "i32");
+            try self.lowerCoerced(recv, .i32);
             try self.emitC(.{ .load = .{} }, "byte count");
             return;
         }
         if (eq(u8, name, "concat")) {
-            try self.lowerCoerced(recv, "i32");
-            try self.lowerCoerced(callArg(cc, 0).?, "i32");
+            try self.lowerCoerced(recv, .i32);
+            try self.lowerCoerced(callArg(cc, 0).?, .i32);
             try self.emit(self.builder().helper(.str_concat));
             return;
         }
@@ -11070,11 +11352,11 @@ const Emitter = struct {
         // `Error` the other targets write.
         const p = try self.declRes();
         const out = try self.declRes();
-        try self.lowerCoerced(recv, "i32");
+        try self.lowerCoerced(recv, .i32);
         try self.emit(.{ .local_set = p });
         try self.allocResultPair(out);
         try self.emit(.{ .local_get = p });
-        try self.emit(try self.stdCall("bytes.isUtf8"));
+        try self.emitStdCall("bytes.isUtf8");
         var then_c: Capture = .{};
         self.open(&then_c);
         try self.emit(.{ .local_get = out });
@@ -11112,7 +11394,7 @@ const Emitter = struct {
         const name: []const u8 = cc.callee;
         const eq = std.mem.eql;
         if (eq(u8, name, "slice")) return self.lowerStrSlice(cc);
-        try self.lowerCoerced(recv, "i32");
+        try self.lowerCoerced(recv, Repr.string);
         if (eq(u8, name, "toString")) return; // already the string
         // Decision 442 (2) — every other method is std-wasm's, the function
         // `primitives.bp`'s `std:` cell names (`std_method_exports`), its
@@ -11120,8 +11402,13 @@ const Emitter = struct {
         const export_name = stdMethodExport("String", name) orelse
             return self.refuseUnlessTemplate(self.call_loc, "`String.{s}` has no lowering on the wasm backend", .{name});
         const ex = stdWasm.find(export_name).?;
-        for (ex.params[1..], 0..) |_, k| try self.lowerCoerced(callArg(cc, k).?, "i32");
-        try self.emit(try self.stdCall(export_name));
+        for (ex.params[1..], 0..) |t, k| {
+            // In a GC module each argument is the value its parameter is
+            // marshalled from (`emitStdCall`); in linear memory every one is a word.
+            const want: Repr = if (self.mode == .gc) try stdRepr(t) else .i32;
+            try self.lowerCoerced(callArg(cc, k).?, want);
+        }
+        try self.emitStdCall(export_name);
     }
 
     fn lowerArrayMethod(self: *Emitter, cc: anytype) anyerror!void {
@@ -11164,7 +11451,7 @@ const Emitter = struct {
             if (tail[0] != '[')
                 return self.refuseUnlessTemplate(self.call_loc, "`flatMap` on the wasm backend: its function answers no array, so there is nothing to flatten", .{});
             try self.lowerArrayHof(@intFromEnum(Hof.map), recv, lam, null);
-            try self.emit(try self.stdCall("array.flatten"));
+            try self.emitStdCall("array.flatten");
             return;
         }
         if (eq(u8, name, "flatten") or eq(u8, name, "flat")) {
@@ -11172,55 +11459,55 @@ const Emitter = struct {
             if (!(sh.len >= 2 and sh[0] == '[' and sh[1] == '[')) {
                 return self.refuseUnlessTemplate(self.call_loc, "`{s}` on the wasm backend: nothing shows that the receiver's elements are arrays", .{name});
             }
-            try self.lowerCoerced(recv, "i32");
-            try self.emit(try self.stdCall("array.flatten"));
+            try self.lowerCoerced(recv, .i32);
+            try self.emitStdCall("array.flatten");
             return;
         }
         if (eq(u8, name, "unique")) {
             const mode = (try self.uniqueMode(recv)) orelse {
                 return self.refuseUnlessTemplate(self.call_loc, "`unique` on the wasm backend compares integers, floats, bools and strings; these elements (a record, an array, a tuple) have no equality here", .{});
             };
-            try self.lowerCoerced(recv, "i32");
+            try self.lowerCoerced(recv, .i32);
             try self.emit(try self.constInt(mode));
-            try self.emit(try self.stdCall("array.unique"));
+            try self.emitStdCall("array.unique");
             return;
         }
         if (eq(u8, name, "fill")) {
             const v = callArg(cc, 0).?;
-            try self.lowerCoerced(recv, "i32");
+            try self.lowerCoerced(recv, .i32);
             try self.emitC(.{ .load = .{} }, "element count");
             // The result holds `v`s whatever the receiver held (its shape is
             // `v`'s, `newArrShape`): a float fills every slot with the one
             // cell — a cell is never written again, so sharing it is sharing
             // a value.
             try self.lowerSlotWord(v);
-            try self.emit(try self.stdCall("array.fill"));
+            try self.emitStdCall("array.fill");
             return;
         }
         if (eq(u8, name, "chunked") or eq(u8, name, "sliding")) {
-            try self.lowerCoerced(recv, "i32");
-            try self.lowerCoerced(callArg(cc, 0).?, "i32");
-            try self.emit(try self.stdCall(if (eq(u8, name, "chunked")) "array.chunked" else "array.sliding"));
+            try self.lowerCoerced(recv, .i32);
+            try self.lowerCoerced(callArg(cc, 0).?, .i32);
+            try self.emitStdCall(if (eq(u8, name, "chunked")) "array.chunked" else "array.sliding");
             return;
         }
 
-        try self.lowerCoerced(recv, "i32");
+        try self.lowerCoerced(recv, .i32);
         const elem = self.elemKindOf(recv);
         if (eq(u8, name, "length")) {
             try self.emitC(.{ .load = .{} }, "element count");
         } else if (eq(u8, name, "isEmpty")) {
             try self.emitC(.{ .load = .{} }, "element count");
-            try self.emit(opOf("i32", "eqz"));
+            try self.emit(opOf(.i32, "eqz"));
         } else if (eq(u8, name, "at") or eq(u8, name, "first")) {
             // `?T`: a pointer element (a string, a record) is its own offset; a
             // scalar is boxed. `arrayElemOpt` is the ONE place that decides,
             // and `optInfoOf` reads the same answer — see its doc comment.
-            if (eq(u8, name, "first")) try self.emit(zero) else try self.lowerCoerced(callArg(cc, 0).?, "i32");
+            if (eq(u8, name, "first")) try self.emit(zero) else try self.lowerCoerced(callArg(cc, 0).?, .i32);
             try self.emit(b.helper(self.arrAtHelper(recv)));
         } else if (eq(u8, name, "toList")) {
             // the array itself
         } else if (eq(u8, name, "reverse")) {
-            try self.emit(try self.stdCall("array.reverse"));
+            try self.emitStdCall("array.reverse");
         } else if (eq(u8, name, "rest") or eq(u8, name, "take") or eq(u8, name, "drop") or eq(u8, name, "slice")) {
             // `arr_slice` clamps its bounds, so "to the end" is the largest i32.
             const whole = try self.constInt(std.math.maxInt(i32));
@@ -11229,44 +11516,44 @@ const Emitter = struct {
                 try self.emit(whole);
             } else if (eq(u8, name, "take")) {
                 try self.emit(zero);
-                try self.lowerCoerced(callArg(cc, 0).?, "i32");
+                try self.lowerCoerced(callArg(cc, 0).?, .i32);
             } else {
-                try self.lowerCoerced(callArg(cc, 0).?, "i32");
+                try self.lowerCoerced(callArg(cc, 0).?, .i32);
                 if (callArg(cc, 1)) |end| {
                     if (isNullLit(end)) try self.emit(whole) else try self.lowerSliceEnd(end);
                 } else try self.emit(whole);
             }
-            try self.emit(try self.stdCall("array.slice"));
+            try self.emitStdCall("array.slice");
         } else {
             const arg = callArg(cc, 0).?;
             if (eq(u8, name, "join")) {
-                try self.lowerCoerced(arg, "i32");
-                try self.emit(try self.stdCall(if (elem == .str) "array.joinStrings" else if (elem == .f64) "array.joinFloats" else "array.joinInts"));
+                try self.lowerCoerced(arg, .i32);
+                try self.emitStdCall(if (elem == .str) "array.joinStrings" else if (elem == .f64) "array.joinFloats" else "array.joinInts");
             } else if (eq(u8, name, "lastIndexOf")) {
                 if (elem == .f64) {
-                    try self.lowerCoerced(arg, "f64");
-                    try self.emit(try self.stdCall("array.lastIndexOfFloat"));
+                    try self.lowerCoerced(arg, .f64);
+                    try self.emitStdCall("array.lastIndexOfFloat");
                 } else {
-                    try self.lowerCoerced(arg, "i32");
-                    try self.emit(try self.stdCall(if (elem == .str or self.isStringExpr(arg)) "array.lastIndexOfString" else "array.lastIndexOfWord"));
+                    try self.lowerCoerced(arg, .i32);
+                    try self.emitStdCall(if (elem == .str or self.isStringExpr(arg)) "array.lastIndexOfString" else "array.lastIndexOfWord");
                 }
             } else if (eq(u8, name, "indexOf") or eq(u8, name, "contains")) {
                 if (elem == .f64) {
-                    try self.lowerCoerced(arg, "f64");
-                    try self.emit(try self.stdCall("array.indexOfFloat"));
+                    try self.lowerCoerced(arg, .f64);
+                    try self.emitStdCall("array.indexOfFloat");
                 } else {
-                    try self.lowerCoerced(arg, "i32");
-                    try self.emit(try self.stdCall(if (elem == .str or self.isStringExpr(arg)) "array.indexOfString" else "array.indexOfWord"));
+                    try self.lowerCoerced(arg, .i32);
+                    try self.emitStdCall(if (elem == .str or self.isStringExpr(arg)) "array.indexOfString" else "array.indexOfWord");
                 }
                 if (eq(u8, name, "contains")) {
                     try self.emit(try self.constInt(-1));
-                    try self.emit(opOf("i32", "ne"));
+                    try self.emit(opOf(.i32, "ne"));
                 }
             } else {
                 // `prepend` takes an element (a float as its cell), `append`
                 // and `zip` an array.
-                if (eq(u8, name, "prepend")) try self.lowerElemWord(elem, arg) else try self.lowerCoerced(arg, "i32");
-                try self.emit(try self.stdCall(if (eq(u8, name, "prepend")) "array.prepend" else if (eq(u8, name, "append")) "array.concat" else "array.zip"));
+                if (eq(u8, name, "prepend")) try self.lowerElemWord(elem, arg) else try self.lowerCoerced(arg, .i32);
+                try self.emitStdCall(if (eq(u8, name, "prepend")) "array.prepend" else if (eq(u8, name, "append")) "array.concat" else "array.zip");
             }
         }
     }
@@ -11300,7 +11587,7 @@ const Emitter = struct {
         };
 
         const seq = try self.memName(self.nextMem());
-        try self.lowerCoerced(recv, "i32");
+        try self.lowerCoerced(recv, .i32);
         try self.emit(.{ .local_tee = seq });
         try self.emitC(.{ .load = .{} }, "items left");
 
@@ -11318,7 +11605,7 @@ const Emitter = struct {
             try self.emit(try self.constInt(1));
             try self.emit(.{ .local_get = seq });
             try self.emit(.{ .load = .{} });
-            try self.emit(try self.stdCall("array.slice"));
+            try self.emitStdCall("array.slice");
             try self.emitCf(.{ .local_set = n }, "{s} = the rest", .{n});
         }
         try self.loadTaggedBase(base);
@@ -11376,8 +11663,8 @@ const Emitter = struct {
                     try self.emit(.{ .local_get = arr });
                     try self.emitC(.{ .load = .{} }, "element count");
                     try self.emit(one);
-                    try self.emit(opOf("i32", "sub"));
-                    try self.emit(try self.stdCall("array.slice"));
+                    try self.emit(opOf(.i32, "sub"));
+                    try self.emitStdCall("array.slice");
                     try self.emitCf(.{ .store = .{ .offset = off } }, ".{s} = pop", .{ia.member});
                     return;
                 };
@@ -11397,8 +11684,8 @@ const Emitter = struct {
         try self.emit(get);
         try self.emitC(.{ .load = .{} }, "element count");
         try self.emit(one);
-        try self.emit(opOf("i32", "sub"));
-        try self.emit(try self.stdCall("array.slice"));
+        try self.emit(opOf(.i32, "sub"));
+        try self.emitStdCall("array.slice");
         try self.emit(if (self.locals.contains(n)) .{ .local_set = n } else .{ .global_set = n });
     }
 
@@ -11411,7 +11698,7 @@ const Emitter = struct {
             .identifier => |id| switch (id.kind) {
                 .ident => |n0| if (self.locals.contains(self.resolveName(n0)) or self.globals.contains(self.resolveName(n0))) {
                     const n = self.resolveName(n0);
-                    try self.lowerCoerced(recv, "i32");
+                    try self.lowerCoerced(recv, .i32);
                     try self.lowerElemWord(self.elemKindOf(recv), arg);
                     try self.emit(self.builder().helper(.arr_push));
                     try self.emit(if (self.locals.contains(n)) .{ .local_set = n } else .{ .global_set = n });
@@ -11458,12 +11745,12 @@ const Emitter = struct {
         const len = try std.fmt.allocPrint(ra, "__len{d}", .{n});
         const acc = try std.fmt.allocPrint(ra, "__acc{d}", .{n});
         const out = try std.fmt.allocPrint(ra, "__out{d}", .{n});
-        try self.declareLocal(base, "i32");
-        try self.declareLocal(cur, "i32");
-        try self.declareLocal(len, "i32");
+        try self.declareLocal(base, .i32);
+        try self.declareLocal(cur, .i32);
+        try self.declareLocal(len, .i32);
 
         const elem_kind = self.elemKindOf(recv);
-        const elem_ty: []const u8 = if (elem_kind == .f64) "f64" else "i32";
+        const elem_ty: Repr = if (elem_kind == .f64) .f64 else .i32;
         // fold binds (acc, item); the others bind (item).
         const acc_param0: ?[]const u8 = if (hof == fold and lam.params.len > 0) lam.params[0] else null;
         const elem_param0: ?[]const u8 = if (hof == fold)
@@ -11472,11 +11759,11 @@ const Emitter = struct {
         // A binder over a name the function already binds (`val e = 5;
         // xs.forEach({ e -> … })`) is a local of its own — read `e` after the
         // walk and it answered the last element.
-        const acc_ty: []const u8 = if (hof == fold) (if (init_expr) |i| self.wasmTypeOf(i) else "i32") else "i32";
+        const acc_ty: Repr = if (hof == fold) (if (init_expr) |i| self.wasmTypeOf(i) else .i32) else .i32;
         const acc_param: ?[]const u8 = if (acc_param0) |p| try self.bindTargetAs(p, acc_ty) else null;
         const elem_param: ?[]const u8 = if (elem_param0) |p| try self.bindTargetAs(p, elem_ty) else null;
         try self.declareLocal(acc, acc_ty);
-        if (hof == map or hof == filter) try self.declareLocal(out, "i32");
+        if (hof == map or hof == filter) try self.declareLocal(out, .i32);
         if (elem_param) |p| {
             try self.declareLocal(p, elem_ty);
             try self.noteElemShape(p, recv);
@@ -11499,7 +11786,7 @@ const Emitter = struct {
             if (init_expr) |i| if (self.isStringExpr(i)) try self.str_locals.put(p, {});
         }
 
-        try self.lowerCoerced(recv, "i32");
+        try self.lowerCoerced(recv, .i32);
         try self.emit(.{ .local_set = base });
         if (elem_param0) |p| self.installShadow(p, elem_param.?);
         if (acc_param0) |p| self.installShadow(p, acc_param.?);
@@ -11538,20 +11825,20 @@ const Emitter = struct {
         self.open(&loop_c);
         try self.emitAt(8, .{ .local_get = cur });
         try self.emitAt(8, .{ .local_get = len });
-        try self.emitAt(8, opOf("i32", "ge_s"));
+        try self.emitAt(8, opOf(.i32, "ge_s"));
         try self.emitAt(8, .{ .br_if = break_label });
         if (hof == find_index) {
             try self.emitAt(8, .{ .local_get = acc });
             try self.emitAt(8, try self.constInt(-1));
-            try self.emitAt(8, opOf("i32", "ne"));
+            try self.emitAt(8, opOf(.i32, "ne"));
             try self.emitAt(8, .{ .br_if = break_label });
         }
         if (elem_param) |p| {
             try self.emitAt(8, .{ .local_get = base });
             try self.emitAt(8, .{ .local_get = cur });
             try self.emitAt(8, try self.constInt(4));
-            try self.emitAt(8, opOf("i32", "mul"));
-            try self.emitAt(8, opOf("i32", "add"));
+            try self.emitAt(8, opOf(.i32, "mul"));
+            try self.emitAt(8, opOf(.i32, "add"));
             try self.emitAt(8, .{ .load = .{ .offset = 4 } });
             if (elem_kind == .f64) try self.emitAt(8, .{ .load = .{ .ty = .f64 } });
             try self.emitAt(8, .{ .local_set = p });
@@ -11566,15 +11853,15 @@ const Emitter = struct {
             },
             map => {
                 const tail_ty = self.lambdaTailType(lam.body);
-                const is_float = tail_ty[0] == 'f';
+                const is_float = tail_ty.isFloat();
                 // the slot address first, then the value
                 try self.emit(.{ .local_get = out });
                 try self.emit(.{ .local_get = cur });
                 try self.emit(try self.constInt(4));
-                try self.emit(opOf("i32", "mul"));
-                try self.emit(opOf("i32", "add"));
+                try self.emit(opOf(.i32, "mul"));
+                try self.emit(opOf(.i32, "add"));
                 try self.inlineLambdaBody(lam.body);
-                try self.emitConvert(tail_ty, if (is_float) "f64" else "i32");
+                try self.emitConvert(tail_ty, if (is_float) .f64 else .i32);
                 if (is_float) try self.emitToFloatSlot();
                 try self.emit(.{ .store = .{ .offset = 4 } });
             },
@@ -11593,18 +11880,18 @@ const Emitter = struct {
                         try self.emit(.{ .local_get = out });
                         try self.emit(.{ .local_get = acc });
                         try self.emit(try self.constInt(4));
-                        try self.emit(opOf("i32", "mul"));
-                        try self.emit(opOf("i32", "add"));
+                        try self.emit(opOf(.i32, "mul"));
+                        try self.emit(opOf(.i32, "add"));
                         try self.emit(.{ .local_get = base });
                         try self.emit(.{ .local_get = cur });
                         try self.emit(try self.constInt(4));
-                        try self.emit(opOf("i32", "mul"));
-                        try self.emit(opOf("i32", "add"));
+                        try self.emit(opOf(.i32, "mul"));
+                        try self.emit(opOf(.i32, "add"));
                         try self.emit(.{ .load = .{ .offset = 4 } });
                         try self.emit(.{ .store = .{ .offset = 4 } });
                         try self.emit(.{ .local_get = acc });
                         try self.emit(one);
-                        try self.emit(opOf("i32", "add"));
+                        try self.emit(opOf(.i32, "add"));
                         try self.emit(.{ .local_set = acc });
                     },
                     all => {
@@ -11618,7 +11905,7 @@ const Emitter = struct {
                     count => {
                         try self.emit(.{ .local_get = acc });
                         try self.emit(one);
-                        try self.emit(opOf("i32", "add"));
+                        try self.emit(opOf(.i32, "add"));
                         try self.emit(.{ .local_set = acc });
                     },
                     else => {
@@ -11627,13 +11914,13 @@ const Emitter = struct {
                     },
                 }
                 const then_seq = self.seal(&then_c, .none);
-                if (hof == all) try self.emit(opOf("i32", "eqz"));
+                if (hof == all) try self.emit(opOf(.i32, "eqz"));
                 try self.emit(.{ .@"if" = .{ .then = .{ .seq = then_seq } } });
             },
         }
         try self.emitAt(8, .{ .local_get = cur });
         try self.emitAt(8, one);
-        try self.emitAt(8, opOf("i32", "add"));
+        try self.emitAt(8, opOf(.i32, "add"));
         try self.emitAt(8, .{ .local_set = cur });
         try self.emitAt(8, .{ .br = continue_label });
         const loop_seq = self.seal(&loop_c, .terminated);
@@ -11654,13 +11941,13 @@ const Emitter = struct {
 
     /// The wasm type an inlined lambda body leaves (its tail, or the value of a
     /// trailing `return`).
-    fn lambdaTailType(self: *Emitter, body: []const ast.Stmt) []const u8 {
-        if (body.len == 0) return "i32";
+    fn lambdaTailType(self: *Emitter, body: []const ast.Stmt) Repr {
+        if (body.len == 0) return .i32;
         const last = body[body.len - 1].expr;
         return switch (last) {
             .jump => |j| switch (j.kind) {
-                .@"return" => |r| if (r) |v| self.wasmTypeOf(v.*) else "i32",
-                else => "i32",
+                .@"return" => |r| if (r) |v| self.wasmTypeOf(v.*) else .i32,
+                else => .i32,
             },
             else => self.wasmTypeOf(last),
         };
@@ -11691,8 +11978,8 @@ const Emitter = struct {
         if (self.isBoolExpr(e)) return "bool";
         if (self.isTaggedValue(e)) return self.recordTypeOfExpr(e);
         const t = self.wasmTypeOf(e);
-        if (t[0] == 'f') return "f64";
-        if (std.mem.eql(u8, t, "i64")) return "i64";
+        if (t.isFloat()) return "f64";
+        if (t.isI64()) return "i64";
         if (self.isKnownInteger(e)) return "i32";
         return null;
     }
@@ -12143,8 +12430,8 @@ const Emitter = struct {
         if (self.isTaggedValue(e)) return "T";
         if (self.isStringExpr(e)) return "s";
         if (self.isBoolExpr(e)) return "b";
-        if (self.wasmTypeOf(e)[0] == 'f') return "f";
-        if (std.mem.eql(u8, self.wasmTypeOf(e), "i64")) return if (self.isU64Expr(e)) "u" else "l";
+        if (self.wasmTypeOf(e).isFloat()) return "f";
+        if (self.wasmTypeOf(e).isI64()) return if (self.isU64Expr(e)) "u" else "l";
         return "i";
     }
 
@@ -12216,7 +12503,7 @@ const Emitter = struct {
                     const first = al.elems[0];
                     if (self.isStringExpr(first)) break :blk .str;
                     // A float anywhere makes it a float array: `[1, 2.5]`.
-                    for (al.elems) |el| if (self.wasmTypeOf(el)[0] == 'f') break :blk .f64;
+                    for (al.elems) |el| if (self.wasmTypeOf(el).isFloat()) break :blk .f64;
                     break :blk .i32;
                 },
                 else => .i32,
@@ -12260,7 +12547,7 @@ const Emitter = struct {
                                 const held = self.holdElemParam(lam, recv);
                                 defer self.releaseElemParam(held);
                                 if (self.isStringExpr(v)) break :blk .str;
-                                if (self.wasmTypeOf(v)[0] == 'f') break :blk .f64;
+                                if (self.wasmTypeOf(v).isFloat()) break :blk .f64;
                                 break :blk .i32;
                             }
                             // `05-wasm` step 1's arrays: their element is
@@ -12303,7 +12590,7 @@ const Emitter = struct {
         /// parameter is the element's width while it is asked about, whatever
         /// another local of that name holds (`xs.map({ x -> x * 3.0 })`, then
         /// `[1, 2].map({ x -> x + 1 })` printed its integers as floats).
-        prev_local: ?[]const u8 = null,
+        prev_local: ?Repr = null,
         prev_alias: ?[]const u8 = null,
         /// The written type the parameter held, when the question set it
         /// (`set_tref`): a primitive element's methods resolve by it
@@ -12328,7 +12615,7 @@ const Emitter = struct {
         if (self.elemRecordOf(recv)) |r| self.local_types.put(p, r) catch {};
         if (self.elemKindOf(recv) == .str) self.str_locals.put(p, {}) catch {};
         _ = self.aliases.remove(p);
-        self.locals.put(p, if (self.elemKindOf(recv) == .f64) "f64" else "i32") catch {};
+        self.locals.put(p, if (self.elemKindOf(recv) == .f64) .f64 else .i32) catch {};
         return held;
     }
 
@@ -12361,7 +12648,7 @@ const Emitter = struct {
 
     const Captured = struct {
         name: []const u8,
-        ty: []const u8,
+        ty: Repr,
         str: bool,
         record: ?[]const u8,
         arr_elem: ?ElemKind,
@@ -12472,7 +12759,7 @@ const Emitter = struct {
     fn beginMachine(self: *Emitter, body: []const ast.Stmt) !void {
         try self.checkAwaitOrder(body);
         self.machine = .{};
-        inline for (.{ sm_task, sm_frame, sm_seek, sm_state }) |n| try self.declareLocal(n, "i32");
+        inline for (.{ sm_task, sm_frame, sm_seek, sm_state }) |n| try self.declareLocal(n, .i32);
     }
 
     /// Whether `e` answers a task (decision 392): a call of a function, a
@@ -12565,7 +12852,7 @@ const Emitter = struct {
     fn operandTypeName(self: *Emitter, v: ast.Expr) []const u8 {
         if (self.isStringExpr(v)) return "string";
         if (self.isBoolExpr(v)) return "bool";
-        if (self.wasmTypeOf(v)[0] == 'f') return "f64";
+        if (self.wasmTypeOf(v).isFloat()) return "f64";
         return "i32";
     }
 
@@ -12618,11 +12905,11 @@ const Emitter = struct {
     }
 
     /// The wasm type of the value a task `e` settles with.
-    fn awaitedType(self: *Emitter, e: ast.Expr) []const u8 {
-        if (e == .function) return "i32";
+    fn awaitedType(self: *Emitter, e: ast.Expr) Repr {
+        if (e == .function) return .i32;
         if (e == .collection and e.collection.kind == .grouped) return self.awaitedType(e.collection.kind.grouped.*);
-        const t = self.typeRefOf(e) orelse return "i32";
-        const inner = taskValueTypeRef(t) orelse return "i32";
+        const t = self.typeRefOf(e) orelse return .i32;
+        const inner = taskValueTypeRef(t) orelse return .i32;
         return watType(inner);
     }
 
@@ -12650,9 +12937,9 @@ const Emitter = struct {
         const operand = innerClosureBlock(operand_in) orelse operand_in;
         if (!self.isTaskExpr(operand)) return self.lowerExpr(operand);
         const vty = self.awaitedType(operand);
-        const load: Instr = .{ .load = .{ .ty = vt(vty), .offset = 8 } };
+        const load: Instr = .{ .load = .{ .ty = (vty).num(), .offset = 8 } };
         if (self.machine == null) {
-            try self.lowerCoerced(operand, "i32");
+            try self.lowerCoerced(operand, .i32);
             try self.emit(self.builder().helper(.task_block_on));
             try self.emitC(load, "the settled value");
             return;
@@ -12660,7 +12947,7 @@ const Emitter = struct {
         const lo = self.machine.?.next;
         var op_c: Capture = .{};
         self.open(&op_c);
-        try self.lowerCoerced(operand, "i32");
+        try self.lowerCoerced(operand, .i32);
         const op_seq = self.seal(&op_c, .{ .value = .i32 });
         return self.emitSuspension(lo, op_seq, null, load);
     }
@@ -12715,26 +13002,26 @@ const Emitter = struct {
         self.loop_seq += 1;
         const cv = try std.fmt.allocPrint(ra, "__runc{d}", .{k});
         const mk = try std.fmt.allocPrint(ra, "__runm{d}", .{k});
-        try self.declareLocal(cv, "i32");
-        try self.declareLocal(mk, "i32");
+        try self.declareLocal(cv, .i32);
+        try self.declareLocal(mk, .i32);
         const load: Instr = .{ .load = .{ .offset = 8 } };
         const lo: u32 = if (self.machine) |m| m.next else 0;
         var op_c: Capture = .{};
         self.open(&op_c);
-        try self.lowerCoerced(cc.args[0].value.*, "i32");
+        try self.lowerCoerced(cc.args[0].value.*, .i32);
         try self.emit(.{ .local_tee = cv });
         try self.emit(try self.constInt(4));
-        try self.emit(opOf("i32", "sub"));
+        try self.emit(opOf(.i32, "sub"));
         try self.emitC(.{ .load = .{} }, "the lambda's mark: a state machine?");
         try self.emit(.{ .local_set = mk });
         try self.emit(.{ .local_get = cv });
-        try self.lowerCoerced(cc.args[1].value.*, "i32");
+        try self.lowerCoerced(cc.args[1].value.*, .i32);
         try self.emitIndirect(cv, 1);
         const op_seq = self.seal(&op_c, .{ .value = .i32 });
         if (awaited and self.machine != null) return self.emitSuspension(lo, op_seq, mk, load);
         for (op_seq.lines) |l| try self.cur.?.append(self.arena(), l);
         const w = try std.fmt.allocPrint(ra, "__runw{d}", .{k});
-        try self.declareLocal(w, "i32");
+        try self.declareLocal(w, .i32);
         try self.emit(.{ .local_set = w });
         try self.emit(.{ .local_get = mk });
         var then_c: Capture = .{};
@@ -12760,7 +13047,7 @@ const Emitter = struct {
         const ra = self.reg_arena.allocator();
         const aw = try std.fmt.allocPrint(ra, "__aw{d}", .{k});
         const label = aw;
-        try self.declareLocal(aw, "i32");
+        try self.declareLocal(aw, .i32);
 
         var c: Capture = .{};
         self.open(&c);
@@ -12772,7 +13059,7 @@ const Emitter = struct {
             self.open(&seek_c);
             try self.emit(.{ .local_get = sm_state });
             try self.emit(try self.constInt(k));
-            try self.emit(opOf("i32", "eq"));
+            try self.emit(opOf(.i32, "eq"));
             {
                 var hit_c: Capture = .{};
                 self.open(&hit_c);
@@ -12785,11 +13072,11 @@ const Emitter = struct {
             if (lo < k) {
                 try self.emit(.{ .local_get = sm_state });
                 try self.emit(try self.constInt(lo));
-                try self.emit(opOf("i32", "lt_u"));
+                try self.emit(opOf(.i32, "lt_u"));
                 try self.emit(.{ .local_get = sm_state });
                 try self.emit(try self.constInt(k));
-                try self.emit(opOf("i32", "gt_u"));
-                try self.emit(opOf("i32", "or"));
+                try self.emit(opOf(.i32, "gt_u"));
+                try self.emit(opOf(.i32, "or"));
                 try self.emitC(.{ .br_if = label }, "resuming past this await");
             } else try self.emitC(.{ .br = label }, "resuming past this await");
             const seek = self.seal(&seek_c, .none);
@@ -12857,16 +13144,16 @@ const Emitter = struct {
     /// one of its own `await`s. `range` null: it holds none.
     fn emitRunsWhileSeeking(self: *Emitter, range: ?[2]u32) !void {
         try self.emit(.{ .local_get = sm_seek });
-        try self.emit(opOf("i32", "eqz"));
+        try self.emit(opOf(.i32, "eqz"));
         const r = range orelse return;
         try self.emit(.{ .local_get = sm_state });
         try self.emit(try self.constInt(r[0]));
-        try self.emit(opOf("i32", "ge_u"));
+        try self.emit(opOf(.i32, "ge_u"));
         try self.emit(.{ .local_get = sm_state });
         try self.emit(try self.constInt(r[1]));
-        try self.emit(opOf("i32", "le_u"));
-        try self.emit(opOf("i32", "and"));
-        try self.emit(opOf("i32", "or"));
+        try self.emit(opOf(.i32, "le_u"));
+        try self.emit(opOf(.i32, "and"));
+        try self.emit(opOf(.i32, "or"));
     }
 
     /// The resume indices handed out since `lo`, as a range.
@@ -12911,7 +13198,7 @@ const Emitter = struct {
     fn lowerCondition(self: *Emitter, cond: ast.Expr, tee: ?[]const u8) anyerror!void {
         if (self.machine == null) {
             if (tee) |t| {
-                try self.lowerCoerced(cond, "i32");
+                try self.lowerCoerced(cond, .i32);
                 try self.emit(.{ .local_tee = t });
             } else try self.lowerExpr(cond);
             return;
@@ -12922,10 +13209,10 @@ const Emitter = struct {
         const keep = tee orelse blk: {
             const n = try std.fmt.allocPrint(self.reg_arena.allocator(), "__cnd{d}", .{self.loop_seq});
             self.loop_seq += 1;
-            try self.declareLocal(n, "i32");
+            try self.declareLocal(n, .i32);
             break :blk n;
         };
-        try self.lowerCoerced(cond, "i32");
+        try self.lowerCoerced(cond, .i32);
         try self.emit(.{ .local_tee = keep });
         const seq = self.seal(&c, .{ .value = .i32 });
         if (self.awaitRange(lo) != null) {
@@ -13008,7 +13295,7 @@ const Emitter = struct {
             .{ .instr = .{ .load = .{} }, .comment = "the resume index" },
             .{ .instr = .{ .local_tee = sm_state } },
             .{ .instr = zero },
-            .{ .instr = opOf("i32", "ne") },
+            .{ .instr = opOf(.i32, "ne") },
             .{ .instr = .{ .local_set = sm_seek } },
         });
         const replaced = try self.withFrameSaves(f.body, saves.items);
@@ -13095,7 +13382,7 @@ const Emitter = struct {
             try lines.appendSlice(ar, &.{
                 .{ .instr = .{ .local_get = "k" } },
                 .{ .instr = try self.constInt(i) },
-                .{ .instr = opOf("i32", "eq") },
+                .{ .instr = opOf(.i32, "eq") },
                 .{ .instr = .{ .@"if" = .{ .then = .{ .seq = .{ .lines = try ar.dupe(wat.Line, &.{
                     .{ .instr = .{ .local_get = "t" } },
                     .{ .instr = .{ .call = step } },
@@ -13240,7 +13527,7 @@ const Emitter = struct {
     fn lowerAsyncBlock(self: *Emitter, body: []const ast.Stmt) anyerror!void {
         const idx = self.lambdas.items.len;
         const slot = try std.fmt.allocPrint(self.reg_arena.allocator(), "__async{d}", .{idx});
-        try self.declareLocal(slot, "i32");
+        try self.declareLocal(slot, .i32);
         try self.lowerLambdaValue(&.{}, body, null);
         self.lambdas.items[idx].async_block = true;
         try self.emit(.{ .local_set = slot });
@@ -13371,7 +13658,7 @@ const Emitter = struct {
         try self.loadBase(base);
         if (head > 0) {
             try self.emit(try self.constInt(head));
-            try self.emitC(opOf("i32", "add"), "a component's lambda: past its mark");
+            try self.emitC(opOf(.i32, "add"), "a component's lambda: past its mark");
         }
     }
 
@@ -13422,7 +13709,7 @@ const Emitter = struct {
         const ra = self.reg_arena.allocator();
         const tmp = try std.fmt.allocPrint(ra, "__fnv{d}", .{self.loop_seq});
         self.loop_seq += 1;
-        try self.declareLocal(tmp, "i32");
+        try self.declareLocal(tmp, .i32);
         // A behavior literal's `self` method: the receiver is its first
         // argument, held here between the slot load and the call.
         const self_recv: ?[]const u8 = if (cc.calleeExpr == null) if (cc.receiver) |recv| blk: {
@@ -13431,7 +13718,7 @@ const Emitter = struct {
             if (!self.self_method_fields.contains(key)) break :blk null;
             const rt = try std.fmt.allocPrint(ra, "__self{d}", .{self.loop_seq});
             self.loop_seq += 1;
-            try self.declareLocal(rt, "i32");
+            try self.declareLocal(rt, .i32);
             break :blk rt;
         } else null else null;
         if (cc.calleeExpr) |ce| {
@@ -13471,7 +13758,7 @@ const Emitter = struct {
         const cells = self.valueCallCells(cc);
         for (cc.args, 0..) |a, i| {
             const cell: Cell = if (cells) |fc| (if (i < fc.params.len) fc.params[i] else .none) else .none;
-            if (cell != .none) try self.lowerCellWord(a.value.*, cell) else try self.lowerCoerced(a.value.*, "i32");
+            if (cell != .none) try self.lowerCellWord(a.value.*, cell) else try self.lowerCoerced(a.value.*, .i32);
         }
         for (cc.trailing) |t| try self.lowerLambdaValue(t.params, t.body, self.call_loc);
         try self.emitIndirect(tmp, cc.args.len + cc.trailing.len + @as(usize, if (self_recv != null) 1 else 0));
@@ -13496,7 +13783,7 @@ const Emitter = struct {
                     if (cell != .none) try self.emit(.{ .load = slot });
                     try self.emit(.{ .local_get = cp.name });
                     try self.emitConvert(ty, cell.ty());
-                    try self.emitCf(.{ .store = if (cell != .none) .{ .ty = vt(cell.ty()) } else slot }, "sync {s} into env", .{cp.name});
+                    try self.emitCf(.{ .store = if (cell != .none) .{ .ty = (cell.ty()).num() } else slot }, "sync {s} into env", .{cp.name});
                 },
                 .out_of_env => {
                     try self.emit(.{ .local_get = env });
@@ -13519,7 +13806,7 @@ const Emitter = struct {
         if (cell != .none) try self.emit(.{ .load = .{ .offset = off } });
         try self.emit(.{ .local_get = name });
         try self.emitConvert(ty, cell.ty());
-        try self.emitCf(.{ .store = if (cell != .none) .{ .ty = vt(cell.ty()) } else .{ .offset = off } }, "write {s} back to env", .{name});
+        try self.emitCf(.{ .store = if (cell != .none) .{ .ty = (cell.ty()).num() } else .{ .offset = off } }, "write {s} back to env", .{name});
     }
 
     /// Whether a statement list assigns the plain name `n` (`n = …`, `n += …`),
@@ -13711,7 +13998,7 @@ const Emitter = struct {
     }
 
     fn emitLifted(self: *Emitter, l: Lifted) anyerror!void {
-        self.resetFnState("i32");
+        self.resetFnState(.i32);
         const outer_template = self.cur_template;
         self.cur_template = l.template_of;
         defer self.cur_template = outer_template;
@@ -13721,7 +14008,7 @@ const Emitter = struct {
         const ar = self.arena();
         var params: std.ArrayListUnmanaged(wat.Param) = .empty;
         try params.append(ar, wat.Builder.param("__env", .i32));
-        try self.locals.put("__env", "i32");
+        try self.locals.put("__env", .i32);
 
         var c: Capture = .{};
         self.open(&c);
@@ -13744,7 +14031,7 @@ const Emitter = struct {
                 if (cell != .none) {
                     try self.emitConvert(r, cell.ty());
                     try self.emitBoxCell(cell);
-                } else try self.emitConvert(r, "i32");
+                } else try self.emitConvert(r, .i32);
             } else try self.emit(zero);
             self.stmt_loc = outer_loc;
         } else {
@@ -13756,7 +14043,7 @@ const Emitter = struct {
                     // local of the value's width, read out of the cell first.
                     const pn = try std.fmt.allocPrint(ar, "__cell_{s}", .{p});
                     try params.append(ar, wat.Builder.param(pn, .i32));
-                    try self.locals.put(pn, "i32");
+                    try self.locals.put(pn, .i32);
                     try self.declareLocal(p, cell.ty());
                     try self.emit(.{ .local_get = pn });
                     try self.emitFromCell(cell);
@@ -13764,7 +14051,7 @@ const Emitter = struct {
                     continue;
                 }
                 try params.append(ar, wat.Builder.param(p, .i32));
-                try self.locals.put(p, "i32");
+                try self.locals.put(p, .i32);
                 if (i < l.param_str.len and l.param_str[i]) try self.str_locals.put(p, {});
                 if (i < l.param_rec.len) if (l.param_rec[i]) |r| try self.local_types.put(p, r);
             }
@@ -13803,7 +14090,7 @@ const Emitter = struct {
             try self.declareScratch("__mem", self.countMems(l.body));
             try self.emitLocalDecls(l.body);
             if (l.async_block) try self.beginMachine(l.body);
-            const tail_type: ?[]const u8 = if (l.body.len > 0) self.wasmTypeOf(l.body[l.body.len - 1].expr) else null;
+            const tail_type: ?Repr = if (l.body.len > 0) self.wasmTypeOf(l.body[l.body.len - 1].expr) else null;
             const tail = try self.emitBody(l.body, true);
             // A closure answers through the indirect call's `i32` word: a
             // float or an `i64` answer leaves in its cell when the function
@@ -13814,7 +14101,7 @@ const Emitter = struct {
                 if (l.ret_cell != .none) {
                     try self.emitConvert(t, l.ret_cell.ty());
                     try self.emitBoxCell(l.ret_cell);
-                } else try self.emitConvert(t, "i32");
+                } else try self.emitConvert(t, .i32);
             };
             self.stmt_loc = outer_loc;
         }
@@ -13955,17 +14242,17 @@ const Emitter = struct {
         switch (op) {
             Op.add, Op.sub => {
                 try self.emit(try self.constInt(@as(i32, if (op == Op.sub) 1 else 0)));
-                try self.emit(try self.stdCall("bigint.add"));
+                try self.emitStdCall("bigint.add");
             },
-            Op.mul => try self.emit(try self.stdCall("bigint.multiply")),
+            Op.mul => try self.emitStdCall("bigint.multiply"),
             Op.div, Op.mod => {
                 try self.emit(try self.constInt(@as(i32, if (op == Op.mod) 1 else 0)));
-                try self.emit(try self.stdCall("bigint.divmod"));
+                try self.emitStdCall("bigint.divmod");
             },
             Op.eq, Op.ne, Op.lt, Op.gt, Op.lte, Op.gte => {
-                try self.emit(try self.stdCall("bigint.compare"));
+                try self.emitStdCall("bigint.compare");
                 try self.emit(zero);
-                try self.emit(opOf("i32", switch (op) {
+                try self.emit(opOf(.i32, switch (op) {
                     Op.eq => "eq",
                     Op.ne => "ne",
                     Op.lt => "lt_s",
@@ -13985,16 +14272,16 @@ const Emitter = struct {
         const b = self.builder();
         switch (which) {
             .of => {
-                try self.lowerCoerced(callArg(cc, 0).?, "i64");
-                try self.emit(try self.stdCall("bigint.ofI64"));
+                try self.lowerCoerced(callArg(cc, 0).?, .i64);
+                try self.emitStdCall("bigint.ofI64");
             },
             .parse => {
                 const text = try self.declRes();
                 const p = try self.declRes();
                 const out = try self.declRes();
-                try self.lowerCoerced(callArg(cc, 0).?, "i32");
+                try self.lowerCoerced(callArg(cc, 0).?, .i32);
                 try self.emit(.{ .local_tee = text });
-                try self.emit(try self.stdCall("bigint.parse"));
+                try self.emitStdCall("bigint.parse");
                 try self.emit(.{ .local_set = p });
                 try self.allocResultPair(out);
                 try self.emit(.{ .local_get = p });
@@ -14152,7 +14439,7 @@ const Emitter = struct {
         for (body) |st| {
             switch (st.expr) {
                 .binding => |b| switch (b.kind) {
-                    .localBind => |lb| if (self.wasmTypeOf(lb.value.*)[0] == 'f' or self.mentionsAny(lb.value.*, floats.items))
+                    .localBind => |lb| if (self.wasmTypeOf(lb.value.*).isFloat() or self.mentionsAny(lb.value.*, floats.items))
                         floats.append(self.reg_arena.allocator(), lb.name) catch {},
                     else => {},
                 },
@@ -14160,7 +14447,7 @@ const Emitter = struct {
             }
             if (self.yieldValue(st.expr)) |v| {
                 if (self.isStringExpr(v)) return .str;
-                if (self.wasmTypeOf(v)[0] == 'f' or self.mentionsAny(v, floats.items)) return .f64;
+                if (self.wasmTypeOf(v).isFloat() or self.mentionsAny(v, floats.items)) return .f64;
                 return .i32;
             }
         }
@@ -14213,18 +14500,18 @@ const Emitter = struct {
         i64,
 
         /// The wasm type of what the cell holds — `i32` for a word.
-        fn ty(c: Cell) []const u8 {
+        fn ty(c: Cell) Repr {
             return switch (c) {
-                .none => "i32",
-                .f64 => "f64",
-                .i64 => "i64",
+                .none => .i32,
+                .f64 => .f64,
+                .i64 => .i64,
             };
         }
 
         /// The cell a value of wasm type `t` needs, if any.
-        fn of(t: []const u8) Cell {
-            if (t[0] == 'f') return .f64;
-            if (std.mem.eql(u8, t, "i64")) return .i64;
+        fn of(t: Repr) Cell {
+            if (t.isFloat()) return .f64;
+            if (t.isI64()) return .i64;
             return .none;
         }
     };
@@ -14670,12 +14957,12 @@ const Emitter = struct {
         };
         switch (e) {
             .literal => |lit| switch (lit.kind) {
-                .numberLit => |n| if (isNumericLiteral(n)) return numLitType(n),
+                .numberLit => |n| if (isNumericLiteral(n)) return numLitType(n).name(),
                 else => {},
             },
             else => {},
         }
-        if (self.wasmTypeOf(e)[0] == 'f') return "f64";
+        if (self.wasmTypeOf(e).isFloat()) return "f64";
         return null;
     }
 
@@ -15152,14 +15439,14 @@ const Emitter = struct {
                     _ = self.aliases.remove(hp);
                     if (self.records.contains(en)) self.local_types.put(hp, en) catch {};
                     if (std.mem.eql(u8, en, "string")) self.str_locals.put(hp, {}) catch {};
-                    self.locals.put(hp, if (en.len > 0 and en[0] == 'f') "f64" else "i32") catch {};
+                    self.locals.put(hp, if (en.len > 0 and en[0] == 'f') .f64 else .i32) catch {};
                     if (primKindOfName(en) != null) {
                         held.prev_tref = self.local_typerefs.get(hp);
                         held.set_tref = true;
                         self.local_typerefs.put(hp, .{ .named = en }) catch {};
                     }
                 };
-                const to: []const u8 = if (self.isStringExpr(v)) "string" else if (self.isBoolExpr(v)) "bool" else if (self.wasmTypeOf(v)[0] == 'f') "f64" else if (self.recordTypeOfExpr(v)) |r| r else continue;
+                const to: []const u8 = if (self.isStringExpr(v)) "string" else if (self.isBoolExpr(v)) "bool" else if (self.wasmTypeOf(v).isFloat()) "f64" else if (self.recordTypeOfExpr(v)) |r| r else continue;
                 subs.append(ar, .{ .name = un, .to = .{ .named = to } }) catch return ret;
             }
         }
@@ -15718,14 +16005,14 @@ const Emitter = struct {
         if (target) |t| if (self.ctorUnionArgs(t, value)) |args| {
             self.ctor_box = .{ .args = args };
             defer self.ctor_box = .none;
-            return self.lowerCoerced(value, "i32");
+            return self.lowerCoerced(value, .i32);
         };
         if (try self.lowerBoxedIfArms(target, value)) return;
         // A `?f64`'s / `?i64`'s box is the value's own 8-byte cell.
         const cell: Cell = if (target) |t| (if (self.optInfoOfTypeRef(t)) |oi| oi.cell else .none) else .none;
         if (cell != .none or Cell.of(self.wasmTypeOf(value)) != .none)
             return self.lowerCellWord(value, if (cell != .none) cell else Cell.of(self.wasmTypeOf(value)));
-        try self.lowerCoerced(value, "i32");
+        try self.lowerCoerced(value, .i32);
         try self.emit(self.builder().helper(.box_i32));
     }
 
@@ -15792,7 +16079,7 @@ const Emitter = struct {
             };
             try self.lowerBoxedInto(target, last);
         } else {
-            try self.lowerCoerced(last, "i32");
+            try self.lowerCoerced(last, .i32);
         }
     }
 
@@ -15811,7 +16098,7 @@ const Emitter = struct {
     /// The payload of the boxed optional on the stack: the word its box holds,
     /// or — a `?f64` — the `f64` its cell holds.
     fn emitUnboxPayload(self: *Emitter, o: OptInfo, what: []const u8) !void {
-        try self.emitC(.{ .load = .{ .ty = vt(o.cell.ty()) } }, what);
+        try self.emitC(.{ .load = .{ .ty = (o.cell.ty()).num() } }, what);
     }
 
     // ── record inherent methods ──────────────────────────────────────────────
@@ -16012,7 +16299,7 @@ const Emitter = struct {
         if (std.mem.eql(u8, cc.callee, "at") and cc.args.len == 1) {
             // `xs.at(i)` → `xs[i]`, or 0 when out of range.
             try self.lowerValue(recv.*);
-            try self.lowerCoerced(cc.args[0].value.*, "i32");
+            try self.lowerCoerced(cc.args[0].value.*, .i32);
             try self.emit(self.builder().helper(.arr_at));
             return true;
         }
@@ -16020,7 +16307,7 @@ const Emitter = struct {
             try self.lowerValue(recv.*);
             // Decision 240: a string counts codepoints, an array its slots.
             if (self.isStringExpr(recv.*))
-                try self.emit(try self.stdCall("text.length"))
+                try self.emitStdCall("text.length")
             else
                 try self.emitC(.{ .load = .{} }, ".length (array prefix)");
             return true;
@@ -16073,7 +16360,7 @@ const Emitter = struct {
                     // cell that every reader of `T` takes for a word — `300`
                     // printed for `Box(value: 1.1).value` at exit 0.
                     if (Cell.of(self.wasmTypeOf(arg.value.*)) != .none)
-                        return self.refuse(arg.value.getLoc(), "the wasm backend cannot hold an `{s}` in field `{s}`: its declared type is not one, and its readers take a word", .{ self.wasmTypeOf(arg.value.*), fname });
+                        return self.refuse(arg.value.getLoc(), "the wasm backend cannot hold an `{s}` in field `{s}`: its declared type is not one, and its readers take a word", .{ self.wasmTypeOf(arg.value.*).name(), fname });
                     const lambda_at: u32 = @intCast(self.lambdas.items.len);
                     try self.storeSlotExpr(base, off, arg.value.*);
                     if (arg.value.* == .function and self.lambdas.items.len > lambda_at) {
@@ -16180,7 +16467,7 @@ const Emitter = struct {
                     .named => |n| isFloatTypeName(n),
                     else => false,
                 };
-                if (self.wasmTypeOf(arg.value.*)[0] == 'f' and !declared_float)
+                if (self.wasmTypeOf(arg.value.*).isFloat() and !declared_float)
                     return self.refuse(arg.value.getLoc(), "the wasm backend cannot hold an `f64` in payload `{s}`: its declared type is not one, and its readers take a word", .{vf.name});
                 try self.storeSlotExpr(base, off, arg.value.*);
             } else {
@@ -16209,7 +16496,7 @@ const Emitter = struct {
                 try self.lowerValue(ia.receiver.*);
                 // Decision 240: a string counts codepoints.
                 if (il.prim == .string)
-                    try self.emit(try self.stdCall("text.length"))
+                    try self.emitStdCall("text.length")
                 else
                     try self.emitC(.{ .load = .{} }, ".length");
                 return;
@@ -16224,7 +16511,7 @@ const Emitter = struct {
             if (self.isArrayExpr(ia.receiver.*) or self.isStringExpr(ia.receiver.*)) {
                 try self.lowerValue(ia.receiver.*);
                 if (self.isStringExpr(ia.receiver.*))
-                    try self.emit(try self.stdCall("text.length"))
+                    try self.emitStdCall("text.length")
                 else
                     try self.emitC(.{ .load = .{} }, ".length");
                 return;
@@ -16328,7 +16615,7 @@ const Emitter = struct {
         const mem = try self.memName(self.nextMem());
         try self.lowerExpr(ia.receiver.*);
         try self.emit(.{ .local_tee = mem });
-        try self.emit(opOf("i32", "eqz"));
+        try self.emit(opOf(.i32, "eqz"));
 
         var then_c: Capture = .{};
         self.open(&then_c);
@@ -17144,7 +17431,7 @@ const Emitter = struct {
             return self.refuse(e.getLoc(), "the wasm backend has no text for a `?bigint` yet", .{});
         if (self.isBigintExpr(e)) {
             try self.lowerValue(e);
-            return self.emit(try self.stdCall("bigint.toString"));
+            return self.emitStdCall("bigint.toString");
         }
         // A value of an enum is written as `@print` writes it (docs § What
         // `@print` writes): its print, captured into a string. The ordinal's
@@ -17155,42 +17442,41 @@ const Emitter = struct {
         if (self.optInfoOf(e) != null) return self.lowerCapturedPrint(e);
         if (self.isStringExpr(e)) return self.lowerValue(e);
         if (self.isBoolExpr(e)) {
-            try self.lowerCoerced(e, "i32");
-            const t = try self.internString("true");
-            const f = try self.internString("false");
+            try self.lowerCoerced(e, .i32);
+            const str_ty = self.vtOf(Repr.string);
             var then_c: Capture = .{};
             self.open(&then_c);
-            try self.emit(try self.constInt(t.offset));
-            const then_seq = self.seal(&then_c, .{ .value = .i32 });
+            try self.emitStrLit("true");
+            const then_seq = self.seal(&then_c, .{ .value = str_ty });
             var else_c: Capture = .{};
             self.open(&else_c);
-            try self.emit(try self.constInt(f.offset));
-            const else_seq = self.seal(&else_c, .{ .value = .i32 });
-            try self.emit(.{ .@"if" = .{ .result = .i32, .then = .{ .seq = then_seq }, .@"else" = .{ .seq = else_seq } } });
+            try self.emitStrLit("false");
+            const else_seq = self.seal(&else_c, .{ .value = str_ty });
+            try self.emit(.{ .@"if" = .{ .result = str_ty, .then = .{ .seq = then_seq }, .@"else" = .{ .seq = else_seq } } });
             return;
         }
-        if (self.wasmTypeOf(e)[0] == 'f') {
-            try self.lowerCoerced(e, "f64");
-            try self.emit(try self.stdCall("number.floatToString"));
+        if (self.wasmTypeOf(e).isFloat()) {
+            try self.lowerCoerced(e, .f64);
+            try self.emitStdCall("number.floatToString");
             return;
         }
-        if (std.mem.eql(u8, self.wasmTypeOf(e), "i64")) {
+        if (self.wasmTypeOf(e).isI64()) {
             try self.lowerValue(e);
-            try self.emit(try self.stdCall(if (self.isU64Expr(e)) "number.u64ToString" else "number.i64ToString"));
+            try self.emitStdCall(if (self.isU64Expr(e)) "number.u64ToString" else "number.i64ToString");
             return;
         }
         // Decision 530 — a record, an array, a tuple, `null`: the text
         // `@print` writes, captured into a string; the value's address was
         // written before.
         if (!self.isKnownInteger(e)) return self.lowerCapturedPrint(e);
-        try self.lowerCoerced(e, "i32");
-        try self.emit(try self.stdCall("number.i32ToString"));
+        try self.lowerCoerced(e, .i32);
+        try self.emitStdCall("number.i32ToString");
     }
 
     /// `e`'s printed text as a string (`text_capture`): what `@print(e)`
     /// would write, appended to the capture instead of written out.
     fn lowerCapturedPrint(self: *Emitter, e: ast.Expr) anyerror!void {
-        const prev = try self.declRes();
+        const prev = if (self.mode == .gc) try self.gcTemp(Repr.string) else try self.declRes();
         try self.emit(self.builder().helper(.cap_begin));
         try self.emit(.{ .local_set = prev });
         try self.lowerPrintArg(e, false);
@@ -17237,19 +17523,19 @@ const Emitter = struct {
         }
         // Decision 240: the bounds are codepoints, normalised as `slice`
         // normalises them (negative from the end, clamped).
-        try self.emit(try self.stdCall("text.slice"));
+        try self.emitStdCall("text.slice");
     }
 
     /// A slice's `end: ?i32` that is not the literal `null`: a plain `i32`, or
     /// an optional whose absence means "to the end" — the largest i32, which
     /// std-wasm's `text.slice` and `array.slice` both clamp.
     fn lowerSliceEnd(self: *Emitter, end: ast.Expr) anyerror!void {
-        const oi = self.optInfoOf(end) orelse return self.lowerCoerced(end, "i32");
-        if (!oi.boxed) return self.lowerCoerced(end, "i32");
+        const oi = self.optInfoOf(end) orelse return self.lowerCoerced(end, .i32);
+        if (!oi.boxed) return self.lowerCoerced(end, .i32);
         const tmp = try self.memName(self.nextMem());
-        try self.lowerCoerced(end, "i32");
+        try self.lowerCoerced(end, .i32);
         try self.emit(.{ .local_tee = tmp });
-        try self.emit(opOf("i32", "eqz"));
+        try self.emit(opOf(.i32, "eqz"));
         var then_c: Capture = .{};
         self.open(&then_c);
         try self.emit(try self.constInt(std.math.maxInt(i32)));
@@ -17270,7 +17556,7 @@ const Emitter = struct {
         try self.lowerValue(a);
         try self.lowerValue(b);
         try self.emit(self.builder().helper(.str_eq));
-        if (negate) try self.emit(opOf("i32", "eqz"));
+        if (negate) try self.emit(opOf(.i32, "eqz"));
     }
 
     fn lowerLoop(self: *Emitter, lp: anytype) anyerror!void {
@@ -17313,7 +17599,7 @@ const Emitter = struct {
         self.loop_seq += 1;
         const tgt = try std.fmt.allocPrint(ra, "__yield{d}", .{n});
         const label = try std.fmt.allocPrint(ra, "__gen{d}", .{n});
-        try self.declareLocal(tgt, "i32");
+        try self.declareLocal(tgt, .i32);
         try self.emit(zero);
         try self.emit(self.builder().helper(.arr_new));
         try self.emit(.{ .local_set = tgt });
@@ -17354,7 +17640,7 @@ const Emitter = struct {
             return;
         }
         try self.emitC(.{ .local_get = self.yield_target.? }, "everything the body yielded");
-        try self.emitConvert("i32", self.cur_result);
+        try self.emitConvert(.i32, self.cur_result);
         try self.runDefers(0);
         try self.emit(.@"return");
     }
@@ -17511,9 +17797,9 @@ const Emitter = struct {
         const base = try std.fmt.allocPrint(ra, "__iter{d}", .{n});
         const cur = try std.fmt.allocPrint(ra, "__idx{d}", .{n});
         const len = try std.fmt.allocPrint(ra, "__len{d}", .{n});
-        try self.declareLocal(base, "i32");
-        try self.declareLocal(cur, "i32");
-        try self.declareLocal(len, "i32");
+        try self.declareLocal(base, .i32);
+        try self.declareLocal(cur, .i32);
+        try self.declareLocal(len, .i32);
 
         const scope_mark = self.scopeMark();
         defer self.scopeRestore(scope_mark);
@@ -17521,7 +17807,7 @@ const Emitter = struct {
         const elem_kind = self.elemKindOf(lp.iter.*);
         // A float element is its slot's cell: loading the slot as an i32 read
         // the float as an integer (`[2.0, 4.0, 9.0]` averaged to `1082480000`).
-        const elem_ty = if (elem_kind == .f64) "f64" else "i32";
+        const elem_ty: Repr = if (elem_kind == .f64) .f64 else .i32;
         const elem = try self.bindTargetAs(elem0, elem_ty);
         try self.declareLocal(elem, elem_ty);
         if (elem_kind == .str) try self.str_locals.put(elem, {});
@@ -17542,7 +17828,7 @@ const Emitter = struct {
         const start_lo = if (self.machine) |m| m.next else 0;
         var start: Capture = .{};
         self.open(&start);
-        try self.lowerCoerced(lp.iter.*, "i32");
+        try self.lowerCoerced(lp.iter.*, .i32);
         try self.emit(.{ .local_set = base });
         self.installShadow(elem0, elem);
         try self.emit(.{ .local_get = base });
@@ -17556,20 +17842,20 @@ const Emitter = struct {
         self.open(&loop_c);
         try self.emitAt(8, .{ .local_get = cur });
         try self.emitAt(8, .{ .local_get = len });
-        try self.emitAt(8, opOf("i32", "ge_s"));
+        try self.emitAt(8, opOf(.i32, "ge_s"));
         try self.emitAt(8, .{ .br_if = break_label });
         try self.emitAt(8, .{ .local_get = base });
         try self.emitAt(8, .{ .local_get = cur });
         try self.emitAt(8, try self.constInt(4));
-        try self.emitAt(8, opOf("i32", "mul"));
-        try self.emitAt(8, opOf("i32", "add"));
+        try self.emitAt(8, opOf(.i32, "mul"));
+        try self.emitAt(8, opOf(.i32, "add"));
         try self.emitAt(8, .{ .load = .{ .offset = 4 } });
         if (elem_kind == .f64) try self.emitAt(8, .{ .load = .{ .ty = .f64 } });
         try self.emitAt(8, .{ .local_set = elem });
         try self.emitIterationBody(lp.body);
         try self.emitAt(8, .{ .local_get = cur });
         try self.emitAt(8, one);
-        try self.emitAt(8, opOf("i32", "add"));
+        try self.emitAt(8, opOf(.i32, "add"));
         try self.emitAt(8, .{ .local_set = cur });
         try self.emitAt(8, .{ .br = continue_label });
         const loop_seq = self.seal(&loop_c, .terminated);
@@ -17642,7 +17928,7 @@ const Emitter = struct {
         /// The parameter symbols, their wasm types and their declared types,
         /// in declaration order — what a tail call re-binds.
         syms: []const []const u8,
-        types: []const []const u8,
+        types: []const Repr,
         typerefs: []const ?ast.TypeRef,
     };
 
@@ -17652,7 +17938,7 @@ const Emitter = struct {
         if (!bodyHasSelfTailCall(f.body, f.name, f.params.len)) return;
         const ra = self.reg_arena.allocator();
         const syms = try ra.alloc([]const u8, f.params.len);
-        const types = try ra.alloc([]const u8, f.params.len);
+        const types = try ra.alloc(Repr, f.params.len);
         const typerefs = try ra.alloc(?ast.TypeRef, f.params.len);
         for (f.params, 0..) |p, i| {
             syms[i] = try self.paramSymbol(p, i);
@@ -17746,7 +18032,7 @@ const Emitter = struct {
         try self.emit(.{ .block = .{
             .kind = .loop,
             .label = tail_label,
-            .result = if (self.fn_has_result) vt(self.cur_result) else null,
+            .result = if (self.fn_has_result) self.vtOf(self.cur_result) else null,
             .body = body,
         } });
         return self.seal(&c, body.stack);
@@ -17786,7 +18072,7 @@ const Emitter = struct {
         const cond_lo = if (self.machine) |m| m.next else 0;
         var cond_c: Capture = .{};
         self.open(&cond_c);
-        try self.lowerCoerced(lp.iter.*, "i32");
+        try self.lowerCoerced(lp.iter.*, .i32);
         const cond = self.seal(&cond_c, .{ .value = .i32 });
         if (self.machine == null or self.awaitRange(cond_lo) != null) {
             for (cond.lines) |l| try self.cur.?.append(self.arena(), l);
@@ -17798,7 +18084,7 @@ const Emitter = struct {
             try self.emit(.{ .local_get = sm_seek });
             try self.emit(.{ .@"if" = .{ .result = .i32, .then = .{ .seq = inside }, .@"else" = .{ .seq = cond } } });
         }
-        try self.emitAt(8, opOf("i32", "eqz"));
+        try self.emitAt(8, opOf(.i32, "eqz"));
         try self.emitAt(8, .{ .br_if = break_label });
         try self.emitIterationBody(lp.body);
         try self.emitAt(8, .{ .br = continue_label });
@@ -17813,12 +18099,12 @@ const Emitter = struct {
         defer self.scopeRestore(scope_mark);
         const param0 = if (params.len > 0) params[0] else "__i";
         const param = try self.bindTarget(param0);
-        try self.declareLocal(param, "i32");
+        try self.declareLocal(param, .i32);
 
         const start_lo = if (self.machine) |m| m.next else 0;
         var start: Capture = .{};
         self.open(&start);
-        try self.lowerCoerced(r.start.*, "i32");
+        try self.lowerCoerced(r.start.*, .i32);
         try self.emit(.{ .local_set = param });
         try self.guardStart(&start, start_lo);
         self.installShadow(param0, param);
@@ -17829,7 +18115,7 @@ const Emitter = struct {
             // `a..b` stops at `b`; `a...b` (decision 105) runs it too.
             try self.emitAt(8, .{ .local_get = param });
             try self.lowerExpr(end.*);
-            try self.emitAt(8, opOf("i32", if (r.inclusive) "gt_s" else "ge_s"));
+            try self.emitAt(8, opOf(.i32, if (r.inclusive) "gt_s" else "ge_s"));
             try self.emitAt(8, .{ .br_if = break_label });
         }
 
@@ -17837,7 +18123,7 @@ const Emitter = struct {
 
         try self.emitAt(8, .{ .local_get = param });
         try self.emitAt(8, one);
-        try self.emitAt(8, opOf("i32", "add"));
+        try self.emitAt(8, opOf(.i32, "add"));
         try self.emitAt(8, .{ .local_set = param });
         try self.emitAt(8, .{ .br = continue_label });
         const loop_seq = self.seal(&loop_c, .terminated);
@@ -17856,44 +18142,48 @@ const Emitter = struct {
     // is rejected.
 
     /// Best-effort wasm value type of `e`.
-    fn wasmTypeOf(self: *Emitter, e: ast.Expr) []const u8 {
+    fn wasmTypeOf(self: *Emitter, e: ast.Expr) Repr {
+        // A string is a GC reference in a GC module (front 164 s2); in linear
+        // memory it is the word its address is, which every other answer
+        // below already gives it.
+        if (self.mode == .gc and self.isStringExpr(e)) return Repr.string;
         if (optOperatorParts(e)) |op| if (op.bang) if (self.optInfoOf(op.cond.*)) |oi| if (oi.cell != .none) return oi.cell.ty();
         return switch (e) {
             .literal => |lit| switch (lit.kind) {
-                .numberLit => |n| if (isNumericLiteral(n)) numLitType(n) else "i32",
-                else => "i32",
+                .numberLit => |n| if (isNumericLiteral(n)) numLitType(n) else .i32,
+                else => .i32,
             },
             .identifier => |id| switch (id.kind) {
                 .ident => |n| blk: {
                     // A narrowed `?f64` is the `f64` its cell holds.
                     if (self.narrowed_opts.get(self.resolveName(n))) |o| if (o.cell != .none) break :blk o.cell.ty();
-                    break :blk self.locals.get(self.resolveName(n)) orelse self.global_types.get(self.resolveName(n)) orelse "i32";
+                    break :blk self.locals.get(self.resolveName(n)) orelse self.global_types.get(self.resolveName(n)) orelse .i32;
                 },
                 // A named record's float field reads as the `f64` its box holds.
                 .identAccess => |ia| blk: {
-                    if (ia.optional) break :blk "i32";
+                    if (ia.optional) break :blk .i32;
                     // A float / 64-bit tuple element reads as the value its
                     // cell holds.
                     if (tupleIndex(ia.member) != null) {
-                        const el = (self.tupleElemShapeOf(e) catch null) orelse break :blk "i32";
+                        const el = (self.tupleElemShapeOf(e) catch null) orelse break :blk .i32;
                         break :blk shapeCell(el).ty();
                     }
-                    const rty = self.recordTypeOfExpr(ia.receiver.*) orelse break :blk "i32";
-                    if (self.fieldOffsetIn(rty, ia.member) == null) break :blk "i32";
+                    const rty = self.recordTypeOfExpr(ia.receiver.*) orelse break :blk .i32;
+                    if (self.fieldOffsetIn(rty, ia.member) == null) break :blk .i32;
                     break :blk self.fieldCellIn(rty, ia.member).ty();
                 },
-                else => "i32",
+                else => .i32,
             },
             .unaryOp => |un| switch (un.op) {
                 .neg => if (negatedMinimum(un.expr.*)) |m| m.ty else self.wasmTypeOf(un.expr.*),
-                .not => "i32",
+                .not => .i32,
             },
             .binaryOp => |bin| switch (bin.op) {
-                .eq, .ne, .lt, .gt, .lte, .gte, .@"and", .@"or" => "i32",
+                .eq, .ne, .lt, .gt, .lte, .gte, .@"and", .@"or" => .i32,
                 // A `+` with a string operand is a concatenation — a string
                 // address — whatever the other operand holds: a template is
                 // `"" + hole`, and a lone float hole made it an `f64` (B-31).
-                .add => if (self.isStringExpr(e)) "i32" else self.unifyNum(self.wasmTypeOf(bin.lhs.*), self.wasmTypeOf(bin.rhs.*)),
+                .add => if (self.isStringExpr(e)) .i32 else self.unifyNum(self.wasmTypeOf(bin.lhs.*), self.wasmTypeOf(bin.rhs.*)),
                 else => self.unifyNum(self.wasmTypeOf(bin.lhs.*), self.wasmTypeOf(bin.rhs.*)),
             },
             .collection => |col| switch (col.kind) {
@@ -17903,10 +18193,10 @@ const Emitter = struct {
                 // on the stack. Saying `i32` made `return case …` in an `f64` fn
                 // append a second, bogus `f64.convert_i32_s`.
                 .case => self.cur_result,
-                else => "i32",
+                else => .i32,
             },
             .branch => |b| switch (b.kind) {
-                .if_ => |i| if (ifIsStatementForm(i)) "i32" else self.ifValueType(i),
+                .if_ => |i| if (ifIsStatementForm(i)) .i32 else self.ifValueType(i),
                 .tryCatch => |tc| blk: {
                     const cell = self.resultOkCell(tc.expr.*);
                     break :blk if (cell != .none) cell.ty() else self.cur_result;
@@ -17917,25 +18207,25 @@ const Emitter = struct {
                     // `xs[i]` over a float array reads the `f64` its slot's cell holds
                     if (self.indexArgs(cc)) |ix|
                         break :blk if (!ix.is_slice and self.isArrayExpr(ix.recv) and
-                            self.elemKindOf(ix.recv) == .f64) "f64" else "i32";
+                            self.elemKindOf(ix.recv) == .f64) .f64 else .i32;
                     if (cc.is_builtin) {
                         // `o.unwrapOr(d)` over a `?f64` answers its `f64`.
                         if (std.mem.eql(u8, cc.callee, "__bp_option_unwrapOr") and cc.args.len > 0) if (self.optInfoOf(cc.args[0].value.*)) |oi| if (oi.cell != .none) break :blk oi.cell.ty();
                         // `r.unwrapOr(d)` over a `@Result<f64, E>` answers its `f64`.
                         if (std.mem.eql(u8, cc.callee, "__bp_result_unwrapOr") and cc.args.len > 0) break :blk self.resultOkCell(cc.args[0].value.*).ty();
-                        break :blk "i32";
+                        break :blk .i32;
                     }
                     if (self.primKindAt(cc, c.loc)) |k| {
                         // `xs.fold(init, f)` answers what its accumulator holds.
                         if (k == .array and std.mem.eql(u8, cc.callee, "fold") and cc.args.len > 0) break :blk self.wasmTypeOf(cc.args[0].value.*);
                         const res = self.primRes(k, cc);
-                        break :blk if (res == .f64) "f64" else if (res == .i64) "i64" else "i32";
+                        break :blk if (res == .f64) .f64 else if (res == .i64) .i64 else .i32;
                     }
                     // `recv?.m()` over a record's or an enum's method is the
                     // `?R` carrier `lowerOptionalTypedMethod` leaves.
-                    if (self.optionalTypedMethod(cc, c.loc) != null) break :blk "i32";
+                    if (self.optionalTypedMethod(cc, c.loc) != null) break :blk .i32;
                     if (self.recordMethodSym(cc, c.loc)) |sym| {
-                        if (self.fn_sigs.get(sym)) |sig| break :blk sig.result orelse "i32";
+                        if (self.fn_sigs.get(sym)) |sig| break :blk sig.result orelse .i32;
                     }
                     // A call through a function value answering a float or a
                     // 64-bit value: what its cell holds (`valueCallCells`).
@@ -17943,66 +18233,61 @@ const Emitter = struct {
                         if (self.valueCallCells(cc)) |fc| if (fc.ret != .none) break :blk fc.ret.ty();
                     }
                     if (self.calleeSymbol(cc, c.loc)) |sym| {
-                        if (self.fn_sigs.get(sym)) |sig| break :blk sig.result orelse "i32";
+                        if (self.fn_sigs.get(sym)) |sig| break :blk sig.result orelse .i32;
                     }
-                    break :blk "i32";
+                    break :blk .i32;
                 },
-                else => "i32",
+                else => .i32,
             },
             .useHook => |uh| self.wasmTypeOf(uh.kind.inner.*),
             // Decision 392 — what the task settles with.
             .jump => |j| switch (j.kind) {
                 .await_ => |a| if (self.isTaskExpr(a.*)) self.awaitedType(a.*) else self.wasmTypeOf(a.*),
                 // `try r` over a `@Result<f64, E>` answers the `f64` its cell holds.
-                .try_ => |v| if (v) |inner| self.resultOkCell(inner.*).ty() else "i32",
-                else => "i32",
+                .try_ => |v| if (v) |inner| self.resultOkCell(inner.*).ty() else .i32,
+                else => .i32,
             },
-            else => "i32",
+            else => .i32,
         };
     }
 
     /// The type two numeric operands meet in: the wider / floatier of the two.
-    fn unifyNum(self: *Emitter, a: []const u8, b: []const u8) []const u8 {
-        _ = self;
-        if (std.mem.eql(u8, a, b)) return a;
-        if (std.mem.eql(u8, a, "f64") or std.mem.eql(u8, b, "f64")) return "f64";
-        if (std.mem.eql(u8, a, "f32") or std.mem.eql(u8, b, "f32")) return "f32";
-        if (std.mem.eql(u8, a, "i64") or std.mem.eql(u8, b, "i64")) return "i64";
-        return "i32";
+    fn unifyNum(self: *Emitter, a: Repr, b: Repr) Repr {
+        if (self.sameVal(a, b)) return a;
+        if (a.isFloat() or b.isFloat()) return .f64;
+        if (a.isI64() or b.isI64()) return .i64;
+        return .i32;
     }
 
     /// Whether turning a `from` value into a `to` one may change the number:
     /// a float into an integer, an `i64` into an `i32`.
-    fn lossyConversion(from: []const u8, to: []const u8) bool {
-        if (from[0] == 'f' and to[0] == 'i') return true;
-        return std.mem.eql(u8, from, "i64") and std.mem.eql(u8, to, "i32");
+    fn lossyConversion(from: Repr, to: Repr) bool {
+        if (from.isFloat() and !to.isFloat()) return true;
+        return from.isI64() and to.isWord();
     }
 
     /// Emit the conversion opcode that turns a value of type `from` into `to`.
-    fn emitConvert(self: *Emitter, from: []const u8, to: []const u8) anyerror!void {
-        if (std.mem.eql(u8, from, to)) return;
+    fn emitConvert(self: *Emitter, from: Repr, to: Repr) anyerror!void {
+        if (self.sameVal(from, to)) return;
+        // A GC reference converts to nothing but itself: the lowering took a
+        // value for another shape, which it has no GC form for yet.
+        if (self.mode == .gc and (from.isRef() or to.isRef())) return self.gcFail("convert ref");
         // A float or an `i64` asked for as a narrower word: `lowerCoerced`
         // refuses it at the expression; a conversion with none (a body's
         // tail, a function value's answer) is refused at its statement.
         if (lossyConversion(from, to))
-            return self.refuse(self.stmt_loc, "the wasm backend would narrow an `{s}` value to an `{s}` slot it does not fit", .{ from, to });
-        const eq = std.mem.eql;
-        const opcode: ?[]const u8 =
-            if (eq(u8, to, "f64"))
-                (if (eq(u8, from, "f32")) "f64.promote_f32" else if (eq(u8, from, "i64")) "f64.convert_i64_s" else "f64.convert_i32_s")
-            else if (eq(u8, to, "f32"))
-                (if (eq(u8, from, "f64")) "f32.demote_f64" else if (eq(u8, from, "i64")) "f32.convert_i64_s" else "f32.convert_i32_s")
-            else if (eq(u8, to, "i64"))
-                (if (eq(u8, from, "f64")) "i64.trunc_f64_s" else if (eq(u8, from, "f32")) "i64.trunc_f32_s" else "i64.extend_i32_s")
-            else if (eq(u8, to, "i32"))
-                (if (eq(u8, from, "f64")) "i32.trunc_f64_s" else if (eq(u8, from, "f32")) "i32.trunc_f32_s" else "i32.wrap_i64")
-            else
-                null;
+            return self.refuse(self.stmt_loc, "the wasm backend would narrow an `{s}` value to an `{s}` slot it does not fit", .{ from.name(), to.name() });
+        const opcode: ?[]const u8 = switch (to.num()) {
+            .f64 => if (from.isI64()) "f64.convert_i64_s" else "f64.convert_i32_s",
+            .i64 => if (from.isFloat()) "i64.trunc_f64_s" else "i64.extend_i32_s",
+            .i32 => if (from.isFloat()) "i32.trunc_f64_s" else "i32.wrap_i64",
+            else => null,
+        };
         if (opcode) |o| try self.emit(.{ .convert = o });
     }
 
     /// Lower `e` and convert the result to `want`.
-    fn lowerCoerced(self: *Emitter, e: ast.Expr, want: []const u8) anyerror!void {
+    fn lowerCoerced(self: *Emitter, e: ast.Expr, want: Repr) anyerror!void {
         const from = self.wasmTypeOf(e);
         // A float or an `i64` asked for as a narrower word would be truncated
         // or wrapped (`i32.trunc_f64_s`, `i32.wrap_i64`) — a different number
@@ -18010,7 +18295,7 @@ const Emitter = struct {
         // by flowing a value into a slot; where this backend has no wider slot
         // for the value, it refuses.
         if (lossyConversion(from, want))
-            return self.refuse(e.getLoc(), "the wasm backend would narrow this `{s}` value to an `{s}` slot it does not fit", .{ if (from[0] == 'f') "f64" else from, want });
+            return self.refuse(e.getLoc(), "the wasm backend would narrow this `{s}` value to an `{s}` slot it does not fit", .{ from.name(), want.name() });
         try self.lowerValue(e);
         try self.emitConvert(from, want);
     }
@@ -18078,8 +18363,8 @@ const Emitter = struct {
                     try self.emit(.{ .load = .{ .offset = @intCast(off) } });
                     try self.emit(.{ .local_get = b });
                     try self.emit(.{ .load = .{ .offset = @intCast(off) } });
-                    try self.emit(try self.stdCall("bigint.compare"));
-                    try self.emit(opOf("i32", "eqz"));
+                    try self.emitStdCall("bigint.compare");
+                    try self.emit(opOf(.i32, "eqz"));
                     i += 1;
                 },
                 // A 64-bit element: the values its two cells hold.
@@ -18090,7 +18375,7 @@ const Emitter = struct {
                     try self.emit(.{ .local_get = b });
                     try self.emit(.{ .load = .{ .offset = @intCast(off) } });
                     try self.emitFromCell(.i64);
-                    try self.emit(opOf("i64", "eq"));
+                    try self.emit(opOf(.i64, "eq"));
                     i += 1;
                 },
                 else => {
@@ -18098,11 +18383,11 @@ const Emitter = struct {
                     try self.emit(.{ .load = .{ .offset = @intCast(off) } });
                     try self.emit(.{ .local_get = b });
                     try self.emit(.{ .load = .{ .offset = @intCast(off) } });
-                    try self.emit(opOf("i32", "eq"));
+                    try self.emit(opOf(.i32, "eq"));
                     i += 1;
                 },
             }
-            if (!first) try self.emit(opOf("i32", "and"));
+            if (!first) try self.emit(opOf(.i32, "and"));
             first = false;
             slot += 1;
         }
@@ -18276,7 +18561,7 @@ const Emitter = struct {
         }
         if (self.isStringExpr(e)) return .{ .named = "string" };
         if (self.isBoolExpr(e)) return .{ .named = "bool" };
-        if (self.wasmTypeOf(e)[0] == 'f') return .{ .named = "f64" };
+        if (self.wasmTypeOf(e).isFloat()) return .{ .named = "f64" };
         return switch (e) {
             .literal => |lit| switch (lit.kind) {
                 .numberLit => .{ .named = "i32" },
@@ -18371,10 +18656,10 @@ const Emitter = struct {
             return true;
         };
         const sym = try self.eqFnFor(t);
-        try self.lowerCoerced(lhs, "i32");
-        try self.lowerCoerced(rhs, "i32");
+        try self.lowerCoerced(lhs, .i32);
+        try self.lowerCoerced(rhs, .i32);
         try self.emit(.{ .call = sym });
-        if (negate) try self.emit(opOf("i32", "eqz"));
+        if (negate) try self.emit(opOf(.i32, "eqz"));
         return true;
     }
 
@@ -18390,13 +18675,13 @@ const Emitter = struct {
         const sym = try self.eqFnFor(t);
         if (lit_left) {
             try self.lowerTupleLitAs(.{ .elems = lit }, elems);
-            try self.lowerCoerced(rhs, "i32");
+            try self.lowerCoerced(rhs, .i32);
         } else {
-            try self.lowerCoerced(lhs, "i32");
+            try self.lowerCoerced(lhs, .i32);
             try self.lowerTupleLitAs(.{ .elems = lit }, elems);
         }
         try self.emit(.{ .call = sym });
-        if (negate) try self.emit(opOf("i32", "eqz"));
+        if (negate) try self.emit(opOf(.i32, "eqz"));
         return true;
     }
 
@@ -18428,11 +18713,11 @@ const Emitter = struct {
         try self.emit(.{ .local_get = a.base });
         if (a.idx) |i| {
             try self.emit(try self.constInt(4));
-            try self.emit(opOf("i32", "add"));
+            try self.emit(opOf(.i32, "add"));
             try self.emit(.{ .local_get = i });
             try self.emit(try self.constInt(4));
-            try self.emit(opOf("i32", "mul"));
-            try self.emit(opOf("i32", "add"));
+            try self.emit(opOf(.i32, "mul"));
+            try self.emit(opOf(.i32, "add"));
         }
     }
 
@@ -18460,8 +18745,8 @@ const Emitter = struct {
             try self.emit(.{ .load = .{ .offset = a.off } });
             try self.eqPushAddr(b);
             try self.emit(.{ .load = .{ .offset = b.off } });
-            try self.emit(try self.stdCall("bigint.compare"));
-            try self.emit(opOf("i32", "eqz"));
+            try self.emitStdCall("bigint.compare");
+            try self.emit(opOf(.i32, "eqz"));
             return;
         }
         if (fieldCellOf(n) == .i64 and slot != .word) {
@@ -18472,7 +18757,7 @@ const Emitter = struct {
                     try self.emit(.{ .load = .{ .ty = .i64 } });
                 } else try self.emit(.{ .load = .{ .ty = .i64, .offset = x.off } });
             }
-            try self.emit(opOf("i64", "eq"));
+            try self.emit(opOf(.i64, "eq"));
             return;
         }
         if (isFloatTypeName(n)) {
@@ -18517,7 +18802,7 @@ const Emitter = struct {
         try self.emit(.{ .load = .{ .offset = a.off } });
         try self.eqPushAddr(b);
         try self.emit(.{ .load = .{ .offset = b.off } });
-        try self.emit(opOf("i32", "eq"));
+        try self.emit(opOf(.i32, "eq"));
     }
 
     /// Decision 214 — the float `==` this module calls, marked for emission
@@ -18537,15 +18822,15 @@ const Emitter = struct {
         for ([_][]const u8{ "a", "b" }) |x| {
             try self.emit(.{ .local_get = x });
             try self.emit(.{ .local_get = x });
-            try self.emit(opOf("f64", "ne"));
+            try self.emit(opOf(.f64, "ne"));
         }
-        try self.emitC(opOf("i32", "and"), "both NaN");
+        try self.emitC(opOf(.i32, "and"), "both NaN");
         for ([_][]const u8{ "a", "b" }) |x| {
             try self.emit(.{ .local_get = x });
             try self.emit(.{ .convert = "i64.reinterpret_f64" });
         }
-        try self.emitC(opOf("i64", "eq"), "the same bits");
-        try self.emit(opOf("i32", "or"));
+        try self.emitC(opOf(.i64, "eq"), "the same bits");
+        try self.emit(opOf(.i32, "or"));
         const body = self.seal(&c, .{ .value = .i32 });
         return try self.builder().func(.{
             .name = "__f64_eq",
@@ -18568,7 +18853,7 @@ const Emitter = struct {
     /// One field test: the comparison, and `return 0` at the first difference.
     fn eqFieldStep(self: *Emitter, t: ast.TypeRef, slot: EqSlot, off: u32) !void {
         try self.emitValueEq(t, slot, .{ .base = "a", .off = off }, .{ .base = "b", .off = off });
-        try self.emit(opOf("i32", "eqz"));
+        try self.emit(opOf(.i32, "eqz"));
         try self.eqReturnIf(zero);
     }
 
@@ -18598,7 +18883,7 @@ const Emitter = struct {
         var locals: []const wat.Local = &.{};
         try self.emit(.{ .local_get = "a" });
         try self.emit(.{ .local_get = "b" });
-        try self.emit(opOf("i32", "eq"));
+        try self.emit(opOf(.i32, "eq"));
         try self.eqReturnIf(one);
         if (eqArrayElem(t)) |elem| {
             // The same length, then each element by its own type.
@@ -18606,7 +18891,7 @@ const Emitter = struct {
             try self.emit(.{ .load = .{} });
             try self.emit(.{ .local_get = "b" });
             try self.emit(.{ .load = .{} });
-            try self.emit(opOf("i32", "ne"));
+            try self.emit(opOf(.i32, "ne"));
             try self.eqReturnIf(zero);
             try self.emit(.{ .local_get = "a" });
             try self.emit(.{ .load = .{} });
@@ -18615,14 +18900,14 @@ const Emitter = struct {
             self.open(&body);
             try self.emit(.{ .local_get = "i" });
             try self.emit(.{ .local_get = "n" });
-            try self.emit(opOf("i32", "ge_u"));
+            try self.emit(opOf(.i32, "ge_u"));
             try self.emit(.{ .br_if = "brk" });
             try self.emitValueEq(elem, .word, .{ .base = "a", .idx = "i" }, .{ .base = "b", .idx = "i" });
-            try self.emit(opOf("i32", "eqz"));
+            try self.emit(opOf(.i32, "eqz"));
             try self.eqReturnIf(zero);
             try self.emit(.{ .local_get = "i" });
             try self.emit(one);
-            try self.emit(opOf("i32", "add"));
+            try self.emit(opOf(.i32, "add"));
             try self.emit(.{ .local_set = "i" });
             try self.emit(.{ .br = "cont" });
             const loop_seq = self.seal(&body, .none);
@@ -18638,10 +18923,10 @@ const Emitter = struct {
                 // Absent on either side: equal only when both are (`a == b`
                 // above answered two absences).
                 try self.emit(.{ .local_get = "a" });
-                try self.emit(opOf("i32", "eqz"));
+                try self.emit(opOf(.i32, "eqz"));
                 try self.emit(.{ .local_get = "b" });
-                try self.emit(opOf("i32", "eqz"));
-                try self.emit(opOf("i32", "or"));
+                try self.emit(opOf(.i32, "eqz"));
+                try self.emit(opOf(.i32, "or"));
                 try self.eqReturnIf(zero);
                 if (self.eqComposite(inner.*) or isNamedTypeRef(inner.*, "string")) {
                     // A pointer payload: the optional is the payload.
@@ -18675,7 +18960,7 @@ const Emitter = struct {
                     try self.emit(.{ .load = .{} });
                     try self.emit(.{ .local_get = "b" });
                     try self.emit(.{ .load = .{} });
-                    try self.emit(opOf("i32", "ne"));
+                    try self.emit(opOf(.i32, "ne"));
                     try self.eqReturnIf(zero);
                     for (self.enums.get(name).?, 0..) |v, k| {
                         if (v.fields.len == 0) continue;
@@ -18686,7 +18971,7 @@ const Emitter = struct {
                         try self.emit(.{ .local_get = "a" });
                         try self.emit(.{ .load = .{} });
                         try self.emit(try self.constInt(k));
-                        try self.emit(opOf("i32", "eq"));
+                        try self.emit(opOf(.i32, "eq"));
                         try self.emitC(.{ .@"if" = .{ .then = .{ .seq = arm_seq } } }, v.name);
                     }
                     try self.emit(one);
@@ -18722,9 +19007,9 @@ const Emitter = struct {
         // `x == null` compares the carrier with 0, whatever `x` holds — a
         // string `==` would read the length word at address 0.
         if ((op == Op.eq or op == Op.ne) and (isNullLit(lhs) or isNullLit(rhs))) {
-            try self.lowerCoerced(lhs, "i32");
-            try self.lowerCoerced(rhs, "i32");
-            try self.emit(opOf("i32", if (op == Op.eq) "eq" else "ne"));
+            try self.lowerCoerced(lhs, .i32);
+            try self.lowerCoerced(rhs, .i32);
+            try self.emit(opOf(.i32, if (op == Op.eq) "eq" else "ne"));
             return;
         }
         // Decision 8 §2.3: `==` with an `unknown` operand compares by what
@@ -18733,7 +19018,7 @@ const Emitter = struct {
             try self.lowerAsUnknown(lhs);
             try self.lowerAsUnknown(rhs);
             try self.emit(self.builder().helper(.unknown_eq));
-            if (op == Op.ne) try self.emit(opOf("i32", "eqz"));
+            if (op == Op.ne) try self.emit(opOf(.i32, "eqz"));
             return;
         }
         // Decision 332 — a `?bigint` is its block's address or `0`: two of
@@ -18742,8 +19027,8 @@ const Emitter = struct {
         if ((op == Op.eq or op == Op.ne) and (self.isOptBigintExpr(lhs) or self.isOptBigintExpr(rhs))) {
             try self.lowerValue(lhs);
             try self.lowerValue(rhs);
-            try self.emit(try self.stdCall("bigint.equalOptional"));
-            if (op == Op.ne) try self.emit(opOf("i32", "eqz"));
+            try self.emitStdCall("bigint.equalOptional");
+            if (op == Op.ne) try self.emit(opOf(.i32, "eqz"));
             return;
         }
         // A boxed optional against a value: equal only when present and its
@@ -18755,8 +19040,8 @@ const Emitter = struct {
             const val_side = if (lopt != null and lopt.?.boxed) rhs else lhs;
             const tmp = try std.fmt.allocPrint(self.arena(), "__opt{d}", .{self.loop_seq});
             self.loop_seq += 1;
-            try self.declareLocal(tmp, "i32");
-            try self.lowerCoerced(opt_side, "i32");
+            try self.declareLocal(tmp, .i32);
+            try self.lowerCoerced(opt_side, .i32);
             try self.emit(.{ .local_tee = tmp });
             var then_c: Capture = .{};
             self.open(&then_c);
@@ -18765,14 +19050,14 @@ const Emitter = struct {
             try self.emitUnboxPayload(oi, "optional payload");
             if (oi.cell == .f64) {
                 // decision 214's total order, as for two floats
-                try self.lowerCoerced(val_side, "f64");
+                try self.lowerCoerced(val_side, .f64);
                 try self.emit(.{ .call = self.floatEqSym() });
             } else if (oi.cell == .i64) {
-                try self.lowerCoerced(val_side, "i64");
-                try self.emit(opOf("i64", "eq"));
+                try self.lowerCoerced(val_side, .i64);
+                try self.emit(opOf(.i64, "eq"));
             } else {
-                try self.lowerCoerced(val_side, "i32");
-                try self.emit(opOf("i32", "eq"));
+                try self.lowerCoerced(val_side, .i32);
+                try self.emit(opOf(.i32, "eq"));
             }
             const then_seq = self.seal(&then_c, .{ .value = .i32 });
             var else_c: Capture = .{};
@@ -18780,7 +19065,7 @@ const Emitter = struct {
             try self.emitC(zero, "none equals no value");
             const else_seq = self.seal(&else_c, .{ .value = .i32 });
             try self.emit(.{ .@"if" = .{ .result = .i32, .then = .{ .seq = then_seq }, .@"else" = .{ .seq = else_seq } } });
-            if (op == Op.ne) try self.emit(opOf("i32", "eqz"));
+            if (op == Op.ne) try self.emit(opOf(.i32, "eqz"));
             return;
         }
         // Decision 332 — two `bigint`s (the checker allows no other pair):
@@ -18810,12 +19095,12 @@ const Emitter = struct {
             if (try self.tupleEqShape(lhs, rhs)) |shape| {
                 const a = try self.declRes();
                 const b = try self.declRes();
-                try self.lowerCoerced(lhs, "i32");
+                try self.lowerCoerced(lhs, .i32);
                 try self.emit(.{ .local_set = a });
-                try self.lowerCoerced(rhs, "i32");
+                try self.lowerCoerced(rhs, .i32);
                 try self.emit(.{ .local_set = b });
                 _ = try self.emitTupleEq(a, b, shape, 0);
-                if (op == Op.ne) try self.emit(opOf("i32", "eqz"));
+                if (op == Op.ne) try self.emit(opOf(.i32, "eqz"));
                 return;
             }
         }
@@ -18829,21 +19114,21 @@ const Emitter = struct {
         };
         const t0 = self.unifyNum(self.wasmTypeOf(lhs), self.wasmTypeOf(rhs));
         // Every float is compared as the `f64` the language gives it.
-        const t = if (t0[0] == 'f') "f64" else t0;
+        const t = t0;
         try self.lowerCoerced(lhs, t);
         try self.lowerCoerced(rhs, t);
-        const is_float = t[0] == 'f';
+        const is_float = t.isFloat();
         // Decision 214 — `==` over floats is a total order: NaN equals NaN
         // and `0.0` differs from `-0.0`. `<`, `>`, `<=`, `>=` stay IEEE.
         if (is_float and (op == Op.eq or op == Op.ne)) {
             try self.emit(.{ .call = self.floatEqSym() });
-            if (op == Op.ne) try self.emit(opOf("i32", "eqz"));
+            if (op == Op.ne) try self.emit(opOf(.i32, "eqz"));
             return;
         }
         // Decision 319 — a `u64` / `usize` holds `0 … 2^64 − 1` in its `i64`
         // carrier, so its division, remainder and order read the bits
         // unsigned: signed, `10^19 > 3` answered `false` at exit 0.
-        const unsigned = std.mem.eql(u8, t, "i64") and (self.isU64At(loc) or self.isU64Expr(lhs) or self.isU64Expr(rhs));
+        const unsigned = t.isI64() and (self.isU64At(loc) or self.isU64Expr(lhs) or self.isU64Expr(rhs));
         const opname: ?[]const u8 = switch (op) {
             Op.add => "add",
             Op.sub => "sub",
@@ -18866,7 +19151,7 @@ const Emitter = struct {
         } else {
             // No opcode for this pair (float `%`, float `&&`). It used to drop
             // the right operand and answer the left one at exit 0.
-            return self.refuse(lhs.getLoc(), "the wasm backend has no `{s}` for `{s}` operands", .{ @tagName(op), t });
+            return self.refuse(lhs.getLoc(), "the wasm backend has no `{s}` for `{s}` operands", .{ @tagName(op), t.name() });
         }
     }
 
@@ -18874,14 +19159,14 @@ const Emitter = struct {
         // Decision 332 — a `bigint` negates into a fresh block.
         if (self.isBigintAt(loc) or self.isBigintExpr(inner)) {
             try self.lowerValue(inner);
-            return self.emit(try self.stdCall("bigint.negate"));
+            return self.emitStdCall("bigint.negate");
         }
         // Decision 319 — a type's minimum written as itself: `0 - 2^63` traps
         // the checked `sub` and `2^31` alone reads as an `i64`, so the
         // negated literal is the constant.
         if (negatedMinimum(inner)) |m| return self.emit(constOf(m.ty, m.text));
         const t = self.wasmTypeOf(inner);
-        if (t[0] == 'f') {
+        if (t.isFloat()) {
             try self.lowerValue(inner);
             try self.emit(opOf(t, "neg"));
         } else {
@@ -18897,8 +19182,8 @@ const Emitter = struct {
     /// `-2147483648` at exit 0 where commonJS and erlang answer `2147483648`.
     /// The type inference recorded at `loc` (decision 264) then checks its
     /// own range when it is narrower than `t` (`emitRangeCheck`).
-    fn emitArith(self: *Emitter, t: []const u8, on: []const u8, loc: ast.Loc) anyerror!void {
-        const wide = std.mem.eql(u8, t, "i64");
+    fn emitArith(self: *Emitter, t: Repr, on: []const u8, loc: ast.Loc) anyerror!void {
+        const wide = t.isI64();
         // A `u64` / `usize` result is checked unsigned against the carrier's
         // whole 64 bits (decision 319), which is its range: no range check
         // follows.
@@ -18913,7 +19198,7 @@ const Emitter = struct {
                 null;
             if (h) |helper| return self.emit(self.builder().helper(helper));
         }
-        if (wide or std.mem.eql(u8, t, "i32")) {
+        if (wide or t.isWord()) {
             const h: ?wat.Helper = if (std.mem.eql(u8, on, "add"))
                 (if (wide) .i64_add_chk else .i32_add_chk)
             else if (std.mem.eql(u8, on, "sub"))
@@ -18983,7 +19268,7 @@ const Emitter = struct {
         const lo = @max(r.lo, c_lo);
         const hi = @min(r.hi, c_hi);
         if (lo == c_lo and hi == c_hi) return;
-        const ty: []const u8 = if (wide) "i64" else "i32";
+        const ty: Repr = if (wide) .i64 else .i32;
         try self.emit(constOf(ty, try std.fmt.allocPrint(self.arena(), "{d}", .{lo})));
         try self.emit(constOf(ty, try std.fmt.allocPrint(self.arena(), "{d}", .{hi})));
         try self.emit(self.builder().helper(if (wide) .i64_range_chk else .i32_range_chk));
@@ -19065,7 +19350,7 @@ const Emitter = struct {
         const alias = try std.fmt.allocPrint(self.arena(), "{s}__is{d}", .{ n0, self.alias_seq });
         self.alias_seq += 1;
         const b = self.builder();
-        try self.declareLocal(alias, if (pt == .float) "f64" else "i32");
+        try self.declareLocal(alias, if (pt == .float) .f64 else .i32);
         try self.emit(.{ .local_get = n });
         switch (pt) {
             .int => try self.emit(b.helper(.unknown_as_i32)),
@@ -19089,7 +19374,7 @@ const Emitter = struct {
         const n = self.resolveName(n0);
         const alias = try std.fmt.allocPrint(self.arena(), "{s}__is{d}", .{ n0, self.alias_seq });
         self.alias_seq += 1;
-        try self.declareLocal(alias, "i32");
+        try self.declareLocal(alias, .i32);
         try self.emit(.{ .local_get = n });
         try self.emitC(.{ .load = .{} }, "unknown: the proven function value");
         try self.emit(.{ .local_set = alias });
@@ -19186,7 +19471,7 @@ const Emitter = struct {
         const bind_tmp: ?[]const u8 = if (i.binding != null) blk: {
             const t = try std.fmt.allocPrint(self.arena(), "__opt{d}", .{self.loop_seq});
             self.loop_seq += 1;
-            try self.declareLocal(t, "i32");
+            try self.declareLocal(t, .i32);
             break :blk t;
         } else null;
         // In a state machine the condition is read back on re-entry
@@ -19197,9 +19482,9 @@ const Emitter = struct {
         // whatever the arms answered, so `val m = if (d < 0.0) { 0.0 - d }
         // else { d }` in a function answering nothing was `(if (result i32)`
         // around two `f64`s — invalid code, the module refused.
-        const ty: []const u8 = if (as_stmt) self.cur_result else if (link_box != null) "i32" else self.ifValueType(i);
-        const own_ty = !std.mem.eql(u8, ty, self.cur_result);
-        const result: ?ValType = if (as_stmt) null else vt(ty);
+        const ty: Repr = if (as_stmt) self.cur_result else if (link_box != null) .i32 else self.ifValueType(i);
+        const own_ty = !self.sameVal(ty, self.cur_result);
+        const result: ?ValType = if (as_stmt) null else self.vtOf(ty);
 
         var then_c: Capture = .{};
         self.open(&then_c);
@@ -19222,14 +19507,14 @@ const Emitter = struct {
             const oi = self.optInfoOf(i.cond.*);
             const cell: Cell = if (oi) |o| o.cell else .none;
             var name = bname;
-            if (self.locals.get(bname)) |existing| if (!std.mem.eql(u8, existing, cell.ty())) {
+            if (self.locals.get(bname)) |existing| if (!self.sameVal(existing, cell.ty())) {
                 name = try std.fmt.allocPrint(self.arena(), "{s}__{d}", .{ bname, self.alias_seq });
                 self.alias_seq += 1;
                 binder_alias = .{ .name = bname, .prev = self.aliases.get(bname) };
                 try self.aliases.put(bname, name);
             };
             try self.declareLocal(name, cell.ty());
-            if (!std.mem.eql(u8, self.locals.get(name).?, cell.ty()))
+            if (!self.sameVal(self.locals.get(name).?, cell.ty()))
                 return self.refuse(i.cond.getLoc(), "the wasm backend binds `{s}` to values of two widths in one function", .{name});
             try self.emit(.{ .local_get = bind_tmp.? });
             if (oi) |o| {
@@ -19258,7 +19543,7 @@ const Emitter = struct {
             if (bx.cell != .none) {
                 try self.lowerCellWord(tail, bx.cell);
             } else {
-                try self.lowerCoerced(tail, "i32");
+                try self.lowerCoerced(tail, .i32);
                 if (bx.boxed) try self.emit(self.builder().helper(.box_i32));
             }
             break :blk .value;
@@ -19269,7 +19554,7 @@ const Emitter = struct {
         if (binder_alias) |ba| {
             if (ba.prev) |p| try self.aliases.put(ba.name, p) else _ = self.aliases.remove(ba.name);
         }
-        const then_seq = self.seal(&then_c, stackOf(then_tail, ty));
+        const then_seq = self.seal(&then_c, self.stackOf(then_tail, ty));
 
         var else_seq: ?Seq = null;
         if (i.else_) |els| {
@@ -19280,13 +19565,13 @@ const Emitter = struct {
             const else_marked = try self.applyNarrowing(else_names.items);
             const else_tail = if (own_ty) try self.emitBranchValue(els, ty) else try self.emitBody(els, !as_stmt);
             self.dropNarrowing(else_marked);
-            else_seq = self.seal(&else_c, stackOf(else_tail, ty));
+            else_seq = self.seal(&else_c, self.stackOf(else_tail, ty));
         } else if (!as_stmt) {
             // A value-form `if` must fill its `(result …)` on both paths.
             var else_c: Capture = .{};
             self.open(&else_c);
-            try self.emitAt(8, constOf(ty, "0"));
-            else_seq = self.seal(&else_c, .{ .value = vt(ty) });
+            try self.emitAt(8, self.zeroOf(ty));
+            else_seq = self.seal(&else_c, .{ .value = self.vtOf(ty) });
         }
 
         try self.emit(.{ .@"if" = .{
@@ -19299,12 +19584,12 @@ const Emitter = struct {
     /// The type a value-form `if` answers: a float when an arm that yields a
     /// value yields one, else the enclosing result type every other value
     /// `if` has always taken (its arms are coerced to it by their context).
-    fn ifValueType(self: *Emitter, i: anytype) []const u8 {
-        var t: []const u8 = "";
+    fn ifValueType(self: *Emitter, i: anytype) Repr {
+        var t: ?Repr = null;
         // The first arm's integer type, when no arm answers a float: an `if`
         // over two `i32`s (a bool, a digit) inside a function answering `f64`
         // was `(if (result f64)` around two `i32`s — invalid code.
-        var int: []const u8 = "";
+        var int: ?Repr = null;
         for ([_]?[]const ast.Stmt{ i.then_, i.else_ }, 0..) |maybe, arm| {
             const body = maybe orelse continue;
             if (body.len == 0) continue;
@@ -19318,21 +19603,21 @@ const Emitter = struct {
                 (if (self.optInfoOf(i.cond.*)) |oi| oi.cell.ty() else self.wasmTypeOf(last))
             else
                 self.wasmTypeOf(last);
-            if (lt[0] == 'f') {
-                t = if (t.len == 0) lt else self.unifyNum(t, lt);
-            } else if (int.len == 0) int = lt;
+            if (lt.isFloat()) {
+                t = if (t) |have| self.unifyNum(have, lt) else lt;
+            } else if (int == null) int = lt;
         }
-        if (t.len > 0) return t;
-        return if (int.len > 0) int else self.cur_result;
+        if (t) |have| return have;
+        return int orelse self.cur_result;
     }
 
     /// One arm of an `if` whose value type is its own (`ifValueType`): the
     /// arm's tail converted to `ty`, a zero of `ty` where it yields nothing.
-    fn emitBranchValue(self: *Emitter, body: []const ast.Stmt, ty: []const u8) anyerror!Tail {
+    fn emitBranchValue(self: *Emitter, body: []const ast.Stmt, ty: Repr) anyerror!Tail {
         const scope_mark = self.scopeMark();
         defer self.scopeRestore(scope_mark);
         if (body.len == 0) {
-            try self.emit(constOf(ty, "0"));
+            try self.emit(self.zeroOf(ty));
             return .value;
         }
         for (body[0 .. body.len - 1]) |stmt| _ = try self.emitStmt(stmt, false);
@@ -19341,7 +19626,7 @@ const Emitter = struct {
         const tail = try self.emitStmtRaw(last);
         switch (tail) {
             .none => {
-                try self.emit(constOf(ty, "0"));
+                try self.emit(self.zeroOf(ty));
                 return .value;
             },
             .value => {
@@ -19383,7 +19668,7 @@ const Emitter = struct {
 /// The operand of a unary `-` that is an integer literal of magnitude `2^31`
 /// or `2^63`: the minimum of `i32` / `i64` written as itself (decision 319),
 /// as the constant it is. Null for any other operand.
-fn negatedMinimum(e: ast.Expr) ?struct { ty: []const u8, text: []const u8 } {
+fn negatedMinimum(e: ast.Expr) ?struct { ty: Repr, text: []const u8 } {
     if (e != .literal or e.literal.kind != .numberLit) return null;
     const n = e.literal.kind.numberLit;
     if (n.len == 0 or n[0] == '-' or n[0] == '+') return null;
@@ -19396,26 +19681,26 @@ fn negatedMinimum(e: ast.Expr) ?struct { ty: []const u8, text: []const u8 } {
         };
         break :blk acc;
     };
-    if (v == -@as(i128, std.math.minInt(i32))) return .{ .ty = "i32", .text = "-2147483648" };
-    if (v == -@as(i128, std.math.minInt(i64))) return .{ .ty = "i64", .text = "-9223372036854775808" };
+    if (v == -@as(i128, std.math.minInt(i32))) return .{ .ty = .i32, .text = "-2147483648" };
+    if (v == -@as(i128, std.math.minInt(i64))) return .{ .ty = .i64, .text = "-9223372036854775808" };
     return null;
 }
 
-fn numLitType(n: []const u8) []const u8 {
+fn numLitType(n: []const u8) Repr {
     // Decision 332 — a `bigint` literal is the address of its block.
-    if (lexerMod.isBigintText(n)) return "i32";
+    if (lexerMod.isBigintText(n)) return .i32;
     if (radixOf(n)) |r| {
-        const v = radixValue(n, r) orelse return "i32";
-        return if (v > std.math.maxInt(i32) or v < std.math.minInt(i32)) "i64" else "i32";
+        const v = radixValue(n, r) orelse return .i32;
+        return if (v > std.math.maxInt(i32) or v < std.math.minInt(i32)) .i64 else .i32;
     }
-    for (n) |c| if (c == '.' or c == 'e' or c == 'E') return "f64";
+    for (n) |c| if (c == '.' or c == 'e' or c == 'E') return .f64;
     // An integer past the `i32` range is an `i64`: as `i32.const` the text
     // `4294967295` wrapped to `-1`.
     var v: u128 = 0;
     for (n) |c| if (c >= '0' and c <= '9') {
-        v = (std.math.mul(u128, v, 10) catch return "i64") + (c - '0');
+        v = (std.math.mul(u128, v, 10) catch return .i64) + (c - '0');
     };
-    return if (v > std.math.maxInt(i32)) "i64" else "i32";
+    return if (v > std.math.maxInt(i32)) .i64 else .i32;
 }
 
 /// The base of a radix integer token — `0x` / `0b` / `0o`, after an optional
@@ -19479,22 +19764,22 @@ fn numeralText(arena: std.mem.Allocator, n: []const u8) ![]const u8 {
     return std.fmt.allocPrint(arena, "{d}", .{radixValue(n, r).?});
 }
 
-fn exprNumType(e: ast.Expr) []const u8 {
+fn exprNumType(e: ast.Expr) Repr {
     return switch (e) {
         .literal => |lit| switch (lit.kind) {
             .numberLit => |n| numLitType(n),
-            else => "i32",
+            else => .i32,
         },
         .unaryOp => |un| switch (un.op) {
             .neg => if (negatedMinimum(un.expr.*)) |m| m.ty else exprNumType(un.expr.*),
-            else => "i32",
+            else => .i32,
         },
         .binaryOp => |bin| exprNumType(bin.lhs.*),
         .collection => |col| switch (col.kind) {
             .grouped => |inner| exprNumType(inner.*),
-            else => "i32",
+            else => .i32,
         },
-        else => "i32",
+        else => .i32,
     };
 }
 

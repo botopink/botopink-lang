@@ -8,55 +8,76 @@ fn sameWord() -> bool {
 ----- WASM TEXT -- main.wat
 ```wasm
 (module
+  (rec
+    (type $str (array (mut i8)))
+  )
   (memory (export "memory") 1)
-  (data (i32.const 256) "\03\00\00\00foo")
-  (data (i32.const 264) "\03\00\00\00bar")
-  (global $__heap_ptr (mut i32) (i32.const 272))
+  (global $__heap_ptr (mut i32) (i32.const 256))
   (func $sameWord (result i32)
-    i32.const 256
-    i32.const 264
+    global.get $__s0
+    global.get $__s1
     call $__str_eq
     return
   )
-  (func $__str_eq (param $a i32) (param $b i32) (result i32)
-    (local $i i32) (local $alen i32)
+  (func $__str_eq (param $a (ref null $str)) (param $b (ref null $str)) (result i32)
+    (local $i i32) (local $n i32)
     local.get $a
-    i32.load
-    local.set $alen
-    local.get $alen
+    array.len
+    local.set $n
+    local.get $n
     local.get $b
-    i32.load
+    array.len
     i32.ne
     (if
-      (then i32.const 0 return)
+      (then
+        i32.const 0
+        return
+      )
     )
-    (block $done
-      (loop $cmp
+    (block $brk
+      (loop $cont
         local.get $i
-        local.get $alen
+        local.get $n
         i32.ge_u
-        br_if $done
+        br_if $brk
         local.get $a
         local.get $i
-        i32.add
-        i32.load8_u offset=4
+        array.get_u $str
         local.get $b
         local.get $i
-        i32.add
-        i32.load8_u offset=4
+        array.get_u $str
         i32.ne
         (if
-          (then i32.const 0 return)
+          (then
+            i32.const 0
+            return
+          )
         )
         local.get $i
         i32.const 1
         i32.add
         local.set $i
-        br $cmp
+        br $cont
       )
     )
     i32.const 1
   )
+  (data $__d0 "foo")
+  (global $__s0 (mut (ref null $str)) (ref.null $str))
+  (data $__d1 "bar")
+  (global $__s1 (mut (ref null $str)) (ref.null $str))
+  (start $__init_strs)
+  (func $__init_strs
+    i32.const 0
+    i32.const 3
+    array.new_data $str $__d0
+    global.set $__s0
+    i32.const 0
+    i32.const 3
+    array.new_data $str $__d1
+    global.set $__s1
+  )
+  (@custom "botopink.needs" "gc\0a")
 )
 ```
 

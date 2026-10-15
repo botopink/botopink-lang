@@ -9,16 +9,38 @@ fn main() {
 ----- WASM TEXT -- main.wat
 ```wasm
 (module
+  (rec
+    (type $str (array (mut i8)))
+  )
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
-  (data (i32.const 256) "\02\00\00\00aB")
-  (global $__heap_ptr (mut i32) (i32.const 320))
+  (global $__heap_ptr (mut i32) (i32.const 304))
   (func $main
-    i32.const 256
+    (local $__gc0 (ref null $str))
+    (local $__gc1 i32)
+    (local $__gc2 (ref null $str))
+    (local $__gc3 i32)
+    global.get $__s0
+    local.set $__gc0
+    global.get $__heap_ptr
+    local.set $__gc1
+    local.get $__gc0
+    call $__gc_to_lin_str
     call $__std_text_toUpper
+    call $__lin_to_gc_str
+    local.get $__gc1
+    global.set $__heap_ptr
     call $__print_str
-    i32.const 256
+    global.get $__s0
+    local.set $__gc2
+    global.get $__heap_ptr
+    local.set $__gc3
+    local.get $__gc2
+    call $__gc_to_lin_str
     call $__std_text_toLower
+    call $__lin_to_gc_str
+    local.get $__gc3
+    global.set $__heap_ptr
     call $__print_str
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")
@@ -204,24 +226,43 @@ fn main() {
       )
     )
   )
-  (func $__print_str_raw (param $s i32)
+  (func $__print_str_raw (param $s (ref null $str))
+    (local $n i32) (local $p i32) (local $i i32) (local $top i32)
     local.get $s
-    i32.const 256
-    i32.lt_u
-    (if
-      (then
-        ;; a pointer below the data floor is not a string
-        unreachable
+    array.len
+    local.set $n
+    global.get $__heap_ptr
+    local.set $top
+    local.get $n
+    call $__alloc
+    local.set $p
+    (block $brk
+      (loop $cont
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $brk
+        local.get $p
+        local.get $i
+        i32.add
+        local.get $s
+        local.get $i
+        array.get_u $str
+        i32.store8
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $cont
       )
     )
-    local.get $s
-    i32.const 4
-    i32.add
-    local.get $s
-    i32.load
+    local.get $p
+    local.get $n
     call $__write_bytes
+    local.get $top
+    global.set $__heap_ptr
   )
-  (func $__print_str (param $s i32)
+  (func $__print_str (param $s (ref null $str))
     local.get $s
     call $__print_str_raw
     call $__print_nl
@@ -274,11 +315,76 @@ fn main() {
     global.set $__heap_ptr
     local.get $p
   )
+  (func $__gc_to_lin_str (param $s (ref null $str)) (result i32)
+    (local $n i32) (local $p i32) (local $i i32)
+    local.get $s
+    array.len
+    local.set $n
+    local.get $n
+    i32.const 4
+    i32.add
+    call $__alloc
+    local.set $p
+    local.get $p
+    local.get $n
+    i32.store
+    (block $brk
+      (loop $cont
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $brk
+        local.get $p
+        local.get $i
+        i32.add
+        local.get $s
+        local.get $i
+        array.get_u $str
+        i32.store8 offset=4
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $cont
+      )
+    )
+    local.get $p
+  )
+  (func $__lin_to_gc_str (param $p i32) (result (ref null $str))
+    (local $r (ref null $str)) (local $n i32) (local $i i32)
+    local.get $p
+    i32.load
+    local.set $n
+    local.get $n
+    array.new_default $str
+    local.set $r
+    (block $brk
+      (loop $cont
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $brk
+        local.get $r
+        local.get $i
+        local.get $p
+        local.get $i
+        i32.add
+        i32.load8_u offset=4
+        array.set $str
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $cont
+      )
+    )
+    local.get $r
+  )
   ;; std-wasm (decision 440): its functions, transpiled from std_wasm.wasm
-  (global $__std_sp (mut i32) (i32.const 320))
+  (global $__std_sp (mut i32) (i32.const 304))
   (func $__std_sp_check (param $sp i32) (result i32)
     local.get $sp
-    i32.const 264
+    i32.const 256
     i32.lt_s
     (if
       (then unreachable)
@@ -295,6 +401,16 @@ fn main() {
   ;; std:text.toLower — from std_wasm.wasm (sha256 21a9e3f84dec)
   ;; __std_f494 — from std_wasm.wasm (sha256 3f688ef014c0)
   ;; std:text.toUpper — from std_wasm.wasm (sha256 83cb42c11577)
+  (data $__d0 "aB")
+  (global $__s0 (mut (ref null $str)) (ref.null $str))
+  (start $__init_strs)
+  (func $__init_strs
+    i32.const 0
+    i32.const 2
+    array.new_data $str $__d0
+    global.set $__s0
+  )
+  (@custom "botopink.needs" "gc\0a")
 )
 ```
 

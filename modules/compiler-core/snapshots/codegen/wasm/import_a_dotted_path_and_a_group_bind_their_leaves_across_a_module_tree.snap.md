@@ -12,18 +12,35 @@ pub fn label() -> string {
 ----- WASM TEXT -- shapes/circle.wat
 ```wasm
 (module
+  (rec
+    (type $str (array (mut i8)))
+  )
   (memory (export "memory") 1)
-  (data (i32.const 256) "\06\00\00\00circle")
-  (data (i32.const 268) "\0d\00\00\00shapes/circle")
-  (global $__heap_ptr (mut i32) (i32.const 288))
-  (func $name (export "name") (result i32)
-    i32.const 256
+  (global $__heap_ptr (mut i32) (i32.const 256))
+  (func $name (export "name") (result (ref null $str))
+    global.get $__s0
     return
   )
-  (func $label (export "label") (result i32)
-    i32.const 268
+  (func $label (export "label") (result (ref null $str))
+    global.get $__s1
     return
   )
+  (data $__d0 "circle")
+  (global $__s0 (mut (ref null $str)) (ref.null $str))
+  (data $__d1 "shapes/circle")
+  (global $__s1 (mut (ref null $str)) (ref.null $str))
+  (start $__init_strs)
+  (func $__init_strs
+    i32.const 0
+    i32.const 6
+    array.new_data $str $__d0
+    global.set $__s0
+    i32.const 0
+    i32.const 13
+    array.new_data $str $__d1
+    global.set $__s1
+  )
+  (@custom "botopink.needs" "gc\0a")
 )
 ```
 
@@ -45,17 +62,29 @@ pub fn label() -> string {
 ----- WASM TEXT -- shapes/helpers.wat
 ```wasm
 (module
+  (rec
+    (type $str (array (mut i8)))
+  )
   (memory (export "memory") 1)
-  (data (i32.const 256) "\0e\00\00\00shapes/helpers")
-  (global $__heap_ptr (mut i32) (i32.const 276))
+  (global $__heap_ptr (mut i32) (i32.const 256))
   (func $seven (export "seven") (result i32)
     i32.const 7
     return
   )
-  (func $label (export "label") (result i32)
-    i32.const 256
+  (func $label (export "label") (result (ref null $str))
+    global.get $__s0
     return
   )
+  (data $__d0 "shapes/helpers")
+  (global $__s0 (mut (ref null $str)) (ref.null $str))
+  (start $__init_strs)
+  (func $__init_strs
+    i32.const 0
+    i32.const 14
+    array.new_data $str $__d0
+    global.set $__s0
+  )
+  (@custom "botopink.needs" "gc\0a")
 )
 ```
 
@@ -78,26 +107,26 @@ fn main() {
 ----- WASM TEXT -- main.wat
 ```wasm
 (module
+  (rec
+    (type $str (array (mut i8)))
+  )
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
-  (data (i32.const 256) "\06\00\00\00circle")
-  (data (i32.const 268) "\0d\00\00\00shapes/circle")
-  (data (i32.const 288) "\0e\00\00\00shapes/helpers")
-  (global $__heap_ptr (mut i32) (i32.const 308))
-  (func $name (result i32)
-    i32.const 256
+  (global $__heap_ptr (mut i32) (i32.const 256))
+  (func $name (result (ref null $str))
+    global.get $__s0
     return
   )
-  (func $label (result i32)
-    i32.const 268
+  (func $label (result (ref null $str))
+    global.get $__s1
     return
   )
   (func $seven (result i32)
     i32.const 7
     return
   )
-  (func $shapes/helpers/label (result i32)
-    i32.const 288
+  (func $shapes/helpers/label (result (ref null $str))
+    global.get $__s2
     return
   )
   (func $main
@@ -293,28 +322,117 @@ fn main() {
       )
     )
   )
-  (func $__print_str_raw (param $s i32)
+  (func $__print_str_raw (param $s (ref null $str))
+    (local $n i32) (local $p i32) (local $i i32) (local $top i32)
     local.get $s
-    i32.const 256
-    i32.lt_u
-    (if
-      (then
-        ;; a pointer below the data floor is not a string
-        unreachable
+    array.len
+    local.set $n
+    global.get $__heap_ptr
+    local.set $top
+    local.get $n
+    call $__alloc
+    local.set $p
+    (block $brk
+      (loop $cont
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $brk
+        local.get $p
+        local.get $i
+        i32.add
+        local.get $s
+        local.get $i
+        array.get_u $str
+        i32.store8
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $cont
       )
     )
-    local.get $s
-    i32.const 4
-    i32.add
-    local.get $s
-    i32.load
+    local.get $p
+    local.get $n
     call $__write_bytes
+    local.get $top
+    global.set $__heap_ptr
   )
-  (func $__print_str (param $s i32)
+  (func $__print_str (param $s (ref null $str))
     local.get $s
     call $__print_str_raw
     call $__print_nl
   )
+  (func $__alloc (param $n i32) (result i32)
+    (local $p i32) (local $e i32)
+    global.get $__heap_ptr
+    local.set $p
+    local.get $p
+    local.get $n
+    i32.add
+    i32.const 3
+    i32.add
+    i32.const -4
+    i32.and
+    local.set $e
+    local.get $e
+    local.get $p
+    i32.lt_u
+    (if
+      (then
+        unreachable
+      )
+    )
+    local.get $e
+    memory.size
+    i32.const 16
+    i32.shl
+    i32.gt_u
+    (if
+      (then
+        local.get $e
+        i32.const 65535
+        i32.add
+        i32.const 16
+        i32.shr_u
+        memory.size
+        i32.sub
+        memory.grow
+        i32.const -1
+        i32.eq
+        (if
+          (then
+            unreachable
+          )
+        )
+      )
+    )
+    local.get $e
+    global.set $__heap_ptr
+    local.get $p
+  )
+  (data $__d0 "circle")
+  (global $__s0 (mut (ref null $str)) (ref.null $str))
+  (data $__d1 "shapes/circle")
+  (global $__s1 (mut (ref null $str)) (ref.null $str))
+  (data $__d2 "shapes/helpers")
+  (global $__s2 (mut (ref null $str)) (ref.null $str))
+  (start $__init_strs)
+  (func $__init_strs
+    i32.const 0
+    i32.const 6
+    array.new_data $str $__d0
+    global.set $__s0
+    i32.const 0
+    i32.const 13
+    array.new_data $str $__d1
+    global.set $__s1
+    i32.const 0
+    i32.const 14
+    array.new_data $str $__d2
+    global.set $__s2
+  )
+  (@custom "botopink.needs" "gc\0a")
 )
 ```
 

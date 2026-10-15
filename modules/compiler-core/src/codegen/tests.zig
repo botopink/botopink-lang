@@ -23,6 +23,7 @@ test {
     _ = @import("runtime.zig");
     _ = @import("snapshot.zig");
     _ = @import("wat/std_wasm_link.zig");
+    _ = @import("wat/typecheck.zig");
     _ = @import("tests/comptime_module.zig");
     _ = @import("tests/beam_templates.zig");
     _ = @import("tests/commonjs.zig");

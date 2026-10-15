@@ -17,13 +17,14 @@ fn main() -> string {
 ----- WASM TEXT -- main.wat
 ```wasm
 (module
+  (rec
+    (type $str (array (mut i8)))
+  )
   (memory (export "memory") 1)
-  (data (i32.const 256) "\04\00\00\00Alto")
-  (data (i32.const 264) "\05\00\00\00Baixo")
-  (global $__heap_ptr (mut i32) (i32.const 276))
-  (func $main (result i32)
+  (global $__heap_ptr (mut i32) (i32.const 256))
+  (func $main (result (ref null $str))
     (local $input i32)
-    (local $status i32)
+    (local $status (ref null $str))
     (local $__case_0 i32)
     (local $calculo i32)
     i32.const 42
@@ -37,12 +38,12 @@ fn main() -> string {
     local.get $calculo
     i32.const 100
     i32.gt_s
-    (if (result i32)
+    (if (result (ref null $str))
       (then
-    i32.const 256
+    global.get $__s0
       )
       (else
-    i32.const 264
+    global.get $__s1
       )
     )
     local.set $status
@@ -197,6 +198,22 @@ fn main() -> string {
     )
     local.get $r
   )
+  (data $__d0 "Alto")
+  (global $__s0 (mut (ref null $str)) (ref.null $str))
+  (data $__d1 "Baixo")
+  (global $__s1 (mut (ref null $str)) (ref.null $str))
+  (start $__init_strs)
+  (func $__init_strs
+    i32.const 0
+    i32.const 4
+    array.new_data $str $__d0
+    global.set $__s0
+    i32.const 0
+    i32.const 5
+    array.new_data $str $__d1
+    global.set $__s1
+  )
+  (@custom "botopink.needs" "gc\0a")
 )
 ```
 

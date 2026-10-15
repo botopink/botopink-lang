@@ -905,6 +905,11 @@ pub const HelperGroup = enum {
     /// called inside a `try_table` catching `$__bp_panic` — `Ok` of its value
     /// or `Error` of the abort's message.
     wasi_attempt,
+    /// Front 164 s2 (decision 544) — a WasmGC module's strings across the
+    /// std-wasm boundary: `$__gc_to_lin_str(s)` copies a GC string into the
+    /// linear memory std-wasm reads (the marshal arena, `$__alloc`'s), and
+    /// `$__lin_to_gc_str(p)` a string std-wasm answered into a GC one.
+    std_marshal,
 
     /// The groups `g`'s functions call into.
     pub fn deps(g: HelperGroup) []const HelperGroup {
@@ -943,6 +948,7 @@ pub const HelperGroup = enum {
             .text_capture => &.{ .print, .alloc },
             .panic_raise => &.{.alloc},
             .wasi_attempt => &.{.alloc},
+            .std_marshal => &.{.alloc},
             else => &.{},
         };
     }
@@ -1069,6 +1075,8 @@ pub const Helper = enum {
     cap_end,
     panic_raise,
     wasi_attempt,
+    gc_to_lin_str,
+    lin_to_gc_str,
 
     pub fn symbol(h: Helper) []const u8 {
         return switch (h) {
@@ -1104,6 +1112,7 @@ pub const Helper = enum {
             .task_host_add, .task_host_settle => .task_host,
             .task_gate_new, .task_gate_open, .task_gate_await, .task_host_cancel => .task_gate,
             .cap_begin, .cap_end => .text_capture,
+            .gc_to_lin_str, .lin_to_gc_str => .std_marshal,
             inline else => |t| @field(HelperGroup, @tagName(t)),
         };
     }

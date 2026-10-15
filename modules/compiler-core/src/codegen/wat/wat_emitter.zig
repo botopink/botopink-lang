@@ -939,6 +939,8 @@ test "every runtime helper group renders with its deps, and only with them" {
         if (wanted.items.len > 0) set.require(.alloc);
         var items: std.ArrayListUnmanaged(ast.Item) = .empty;
         defer items.deinit(alloc);
+        // Front 164 s2: a GC module's group names `$str`, the first type of its group.
+        if (set.has(.std_marshal)) try items.append(alloc, .{ .types = &.{prelude.gc_str_def} });
         if (set.has(.print)) try items.append(alloc, .{ .import = prelude.fd_write_import });
         if (set.has(.wasi_random_f64)) try items.append(alloc, .{ .import = prelude.random_get_import });
         if (set.has(.task_host)) {

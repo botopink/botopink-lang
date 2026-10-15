@@ -79,6 +79,7 @@ pub fn items(g: ast.HelperGroup) []const ast.Item {
         // Decision 150: a marker, as `bigint` is (`print_shaped_items_unknown`).
         .print_shaped_unknown => &.{},
         .text_capture => &.{ .{ .global = cap_global }, .{ .func = cap_begin }, .{ .func = cap_end } },
+        .std_marshal => &.{ .{ .func = gc_to_lin_str }, .{ .func = lin_to_gc_str } },
         .print_opt => &.{
             .{ .func = print_null },         .{ .func = print_opt_i32_raw }, .{ .func = print_opt_i32 },
             .{ .func = print_opt_bool_raw }, .{ .func = print_opt_bool },    .{ .func = print_opt_str_raw },
@@ -2060,4 +2061,197 @@ pub const bp_ready = ast.Func{
     .exports = &.{"__bp_ready"},
     .params = &.{.{ .name = "h", .ty = .i32 }},
     .body = indented(seqOf(&.{ get("h"), call("__task_host_settle"), .drop, call("__task_drain") }, .none), 4),
+};
+
+// ── WasmGC forms (front 164 s2, decision 544) ────────────────────────────────
+//
+// A module lowered in `.gc` (`../wat.zig`, `wat/repr.zig`) holds its strings as
+// GC arrays of bytes — `$str`, `(array (mut i8))`, always the first type of its
+// `(rec …)` group — and its output stays the linear-memory I/O above: a string
+// is copied into the marshal arena (`$__alloc`'s memory, the pointer put back
+// after the write) and written from there. A group whose functions take or
+// answer a string has a GC form here (`gcItems`); a group that only moves
+// numbers is the same in both modes; a group with neither has no GC form yet,
+// and a module needing it is lowered in linear memory.
+
+/// The index of `$str` in a GC module's type group.
+pub const gc_str_index: u16 = 0;
+/// `(type $str (array (mut i8)))`.
+pub const gc_str_def = ast.TypeDef{ .name = "str", .kind = .{ .array = .{ .ty = .i8, .mutable = true } } };
+/// `(ref null $str)`.
+pub const gc_str_ref = ast.ValType.def(gc_str_index);
+
+fn sref(comptime n: []const u8) ast.Local {
+    return .{ .name = n, .ty = gc_str_ref };
+}
+fn pref(comptime n: []const u8) P {
+    return .{ .name = n, .ty = gc_str_ref };
+}
+const str_len: Instr = .array_len;
+const str_get: Instr = .{ .array_get = .{ .ty = gc_str_index, .ext = .u } };
+const str_set: Instr = .{ .array_set = gc_str_index };
+const str_new: Instr = .{ .array_new_default = gc_str_index };
+const str_copy: Instr = .{ .array_copy = .{ .dst = gc_str_index, .src = gc_str_index } };
+
+/// Writes the GC string `s`: its bytes copied into the marshal arena, written,
+/// the arena put back. A null `s` traps at `array.len`, as a pointer that is
+/// no string traps in linear memory.
+const gc_print_str_raw = typedFunc("__print_str_raw", &.{pref("s")}, null, i32s(&.{ "n", "p", "i", "top" }), &.{
+    get("s"),                str_len,                 set("n"),
+    .{ .global_get = heap }, set("top"),              get("n"),
+    call("__alloc"),         set("p"),
+    loop(&.{
+        get("i"), get("n"),  op("ge_u"), brk,
+        get("p"), get("i"),  op("add"),  get("s"),
+        get("i"), str_get,   store8(0),  get("i"),
+        c32(1),   op("add"), set("i"),   again,
+    }),
+    get("p"),                get("n"),                call("__write_bytes"),
+    get("top"),              .{ .global_set = heap },
+});
+
+const gc_print_str = typedFunc("__print_str", &.{pref("s")}, null, &.{}, &.{ get("s"), call("__print_str_raw"), call("__print_nl") });
+
+/// A float's text (std-wasm's `number.floatToString`, into the marshal
+/// arena), written, the arena put back.
+const gc_print_f64_raw = typedFunc("__print_f64_raw", &.{.{ .name = "x", .ty = .f64 }}, null, i32s(&.{ "s", "top" }), &.{
+    .{ .global_get = heap }, set("top"),
+    getF("x"),               call(stdSymbol("number.floatToString")),
+    set("s"),                get("s"),
+    c32(4),                  op("add"),
+    get("s"),                load(0),
+    call("__write_bytes"),   get("top"),
+    .{ .global_set = heap },
+});
+
+/// `a + b` over GC strings: a fresh array holding both.
+const gc_str_concat = typedFunc("__str_concat", &.{ pref("a"), pref("b") }, gc_str_ref, &.{ sref("r"), l32("alen"), l32("blen") }, &.{
+    get("a"),    str_len,     set("alen"), get("b"),    str_len,
+    set("blen"), get("alen"), get("blen"), op("add"),   str_new,
+    set("r"),    get("r"),    c32(0),      get("a"),    c32(0),
+    get("alen"), str_copy,    get("r"),    get("alen"), get("b"),
+    c32(0),      get("blen"), str_copy,    get("r"),
+});
+
+/// `a == b` over GC strings, byte by byte.
+const gc_str_eq = typedFunc("__str_eq", &.{ pref("a"), pref("b") }, .i32, i32s(&.{ "i", "n" }), &.{
+    get("a"), str_len,                 set("n"),
+    get("n"), get("b"),                str_len,
+    op("ne"), when(&.{ c32(0), ret }),
+    loop(&.{
+        get("i"), get("n"), op("ge_u"), brk,
+        get("a"), get("i"), str_get,    get("b"),
+        get("i"), str_get,  op("ne"),   when(&.{ c32(0), ret }),
+        get("i"), c32(1),   op("add"),  set("i"),
+        again,
+    }),
+    c32(1),
+});
+
+/// `$__write_bytes` of a GC module with `text_capture`: while `$__cap` holds a
+/// string, the bytes `[p, p + n)` are appended to a copy of it; otherwise they
+/// go to stdout.
+const gc_write_bytes_capture = typedFunc("__write_bytes", &.{ p32("p"), p32("n") }, null, &.{ sref("c"), sref("q"), l32("l"), l32("i") }, &.{
+    .{ .global_get = "__cap" }, set("c"),
+    get("c"),                   .ref_is_null,
+    op("eqz"),
+    when(&.{
+        get("c"), str_len,                    set("l"), get("l"),
+        get("n"), op("add"),                  str_new,  set("q"),
+        get("q"), c32(0),                     get("c"), c32(0),
+        get("l"), str_copy,
+        loop(&.{
+            get("i"), get("n"), op("ge_u"), brk,
+            get("q"), get("l"), get("i"),   op("add"),
+            get("p"), get("i"), op("add"),  load8(0),
+            str_set,  get("i"), c32(1),     op("add"),
+            set("i"), again,
+        }),
+        get("q"), .{ .global_set = "__cap" }, ret,
+    }),
+    c32(0),                     get("p"),
+    store(0),                   c32(4),
+    get("n"),                   store(0),
+    c32(1),                     c32(0),
+    c32(1),                     c32(8),
+    call("fd_write"),           .drop,
+});
+
+/// The GC string `$__write_bytes` appends to while a capture is open, null
+/// when none is.
+const gc_cap_global = ast.Global{ .name = "__cap", .ty = gc_str_ref, .mutable = true, .init = "" };
+
+const gc_cap_begin = typedFunc("__cap_begin", &.{}, gc_str_ref, &.{sref("o")}, &.{
+    .{ .global_get = "__cap" }, set("o"),
+    c32(0),                     str_new,
+    .{ .global_set = "__cap" }, get("o"),
+});
+
+const gc_cap_end = typedFunc("__cap_end", &.{pref("o")}, gc_str_ref, &.{sref("s")}, &.{
+    .{ .global_get = "__cap" }, set("s"),
+    get("o"),                   .{ .global_set = "__cap" },
+    get("s"),
+});
+
+/// A GC string as std-wasm reads one: `[len][bytes…]` in the marshal arena.
+const gc_to_lin_str = typedFunc("__gc_to_lin_str", &.{pref("s")}, .i32, i32s(&.{ "n", "p", "i" }), &.{
+    get("s"),        str_len,  set("n"),
+    get("n"),        c32(4),   op("add"),
+    call("__alloc"), set("p"), get("p"),
+    get("n"),        store(0),
+    loop(&.{
+        get("i"), get("n"),  op("ge_u"), brk,
+        get("p"), get("i"),  op("add"),  get("s"),
+        get("i"), str_get,   store8(4),  get("i"),
+        c32(1),   op("add"), set("i"),   again,
+    }),
+    get("p"),
+});
+
+/// The string std-wasm answered at `p` (`[len][bytes…]`), as a GC string.
+const lin_to_gc_str = typedFunc("__lin_to_gc_str", &.{p32("p")}, gc_str_ref, &.{ sref("r"), l32("n"), l32("i") }, &.{
+    get("p"), load(0), set("n"),
+    get("n"), str_new, set("r"),
+    loop(&.{
+        get("i"),  get("n"),  op("ge_u"), brk,
+        get("r"),  get("i"),  get("p"),   get("i"),
+        op("add"), load8(4),  str_set,    get("i"),
+        c32(1),    op("add"), set("i"),   again,
+    }),
+    get("r"),
+});
+
+/// The GC form of group `g` (front 164 s2): its own items when it moves no
+/// string, its GC functions when it does, null when it has none yet — a
+/// module that needs such a group is lowered in linear memory. `capture`: the
+/// module holds `text_capture`, whose `$__write_bytes` appends to `$__cap`.
+pub fn gcItems(g: ast.HelperGroup, capture: bool) ?[]const ast.Item {
+    return switch (g) {
+        .print => if (capture) &gc_print_items_capture else &print_items,
+        .print_str => &.{ .{ .func = gc_print_str_raw }, .{ .func = gc_print_str } },
+        .print_f64 => &.{ .{ .func = print_f64 }, .{ .func = gc_print_f64_raw } },
+        .str_concat => &.{.{ .func = gc_str_concat }},
+        .str_eq => &.{.{ .func = gc_str_eq }},
+        .text_capture => &.{ .{ .global = gc_cap_global }, .{ .func = gc_cap_begin }, .{ .func = gc_cap_end } },
+        .std_marshal => items(.std_marshal),
+        .print_bool, .alloc, .i32_abs, .i32_min, .i32_max, .print_i64, .int_chk, .i32_range_chk, .i64_range_chk, .print_u64, .u64_chk => items(g),
+        else => null,
+    };
+}
+
+/// The groups a GC form calls into beyond `HelperGroup.deps`: the marshal
+/// arena.
+pub fn gcDeps(g: ast.HelperGroup) []const ast.HelperGroup {
+    return switch (g) {
+        .print_str, .print_f64, .text_capture => &.{.alloc},
+        else => &.{},
+    };
+}
+
+const gc_print_items_capture = blk: {
+    var out = print_items;
+    for (&out) |*it| if (it.* == .func and std.mem.eql(u8, it.func.name, "__write_bytes")) {
+        it.* = .{ .func = gc_write_bytes_capture };
+    };
+    break :blk out;
 };

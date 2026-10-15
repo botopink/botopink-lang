@@ -211,7 +211,9 @@ ct_0: val pi2 = comptime { 3.14 * 2.0 } → 6.28
     call $__print_nl
   )
   (func $__print_f64_raw (param $x f64)
-    (local $s i32)
+    (local $s i32) (local $top i32)
+    global.get $__heap_ptr
+    local.set $top
     local.get $x
     call $__std_number_floatToString
     local.set $s
@@ -221,6 +223,8 @@ ct_0: val pi2 = comptime { 3.14 * 2.0 } → 6.28
     local.get $s
     i32.load
     call $__write_bytes
+    local.get $top
+    global.set $__heap_ptr
   )
   (func $__alloc (param $n i32) (result i32)
     (local $p i32) (local $e i32)

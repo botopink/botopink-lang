@@ -40,12 +40,29 @@ core_module() {
   ' "$1"
 }
 
+# The `wasmtime` flags the module's `botopink.needs` section asks for (decision
+# 518; `codegen/wat/needs.zig` `wasmtimeArgs`): a GC module (front 164 s2) runs
+# under `-W gc=y`, as `botopink run` runs it.
+needs_flags() {
+  local names
+  names="$(grep -o '(@custom "botopink.needs" "[^"]*")' "$1" | sed 's/.*"botopink.needs" "//; s/")$//; s/\\0a/ /g')"
+  for n in $names; do
+    case "$n" in
+      exceptions) printf '%s\n' -W exceptions=y ;;
+      http) printf '%s\n' -S http ;;
+      gc) printf '%s\n' -W gc=y ;;
+      *) echo "error: unknown need '$n' in $1" >&2; exit 1 ;;
+    esac
+  done
+}
+
 NUMERIC="$SCRIPT_DIR/backend_exec/numeric"
 echo "==> [numeric] wasm: build + wasmtime --invoke main"
 ( cd "$NUMERIC" && "$BP_BIN" build --target wasm )
 head -1 "$NUMERIC/out/main.wat" | grep -qx '(component' || { echo "  wasm: out/main.wat is not a component" >&2; exit 1; }
 core_module "$NUMERIC/out/main.wat" > "$NUMERIC/out/main.core.wat"
-got="$(wasmtime --invoke main "$NUMERIC/out/main.core.wat" 2>/dev/null | tail -1 | tr -d '[:space:]')"
+mapfile -t flags < <(needs_flags "$NUMERIC/out/main.core.wat")
+got="$(wasmtime run "${flags[@]}" --invoke main "$NUMERIC/out/main.core.wat" 2>/dev/null | tail -1 | tr -d '[:space:]')"
 if [[ "$got" == "55" ]]; then
   echo "  wasm: main() => $got"
 else
