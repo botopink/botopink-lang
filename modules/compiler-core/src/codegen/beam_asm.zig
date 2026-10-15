@@ -12772,13 +12772,16 @@ const Emitter = struct {
         if (self.recordTypeOfReceiver(loc, ia.receiver.*, ia.member) != null) return false;
         if (std.mem.eql(u8, ia.member, "length")) return self.instanceLowering(loc, ia.receiver.*) == null;
         // A record the compiler splices into the module that uses it
-        // (`Asset`, `SourceLocation`), read in a module that neither declares
-        // nor imports it (std reading `Asset.path`): the value is a tagged
-        // tuple and answers through its own tag, whatever the other modules
-        // declare — the map read below would leave the whole record in `x0`.
+        // (`comptime.spliced_record_names`: `Asset`, `SourceLocation`,
+        // `Declared` and its entries), read in a module that neither declares
+        // nor imports it (std reading `Asset.path`, a dependency reading the
+        // `Declared` entries a program hands it): the value is a tagged tuple
+        // and answers through its own tag, whatever the other modules declare
+        // — the map read below would leave the whole record in `x0`. Only
+        // these names: a comptime builtin's value (`@Decl`) is a map at run
+        // time, and the map read stays its.
         if (self.instance_lowerings.get(loc)) |il| switch (il) {
-            .field_of => |t| if (!self.record_fields.contains(t) and
-                (std.mem.eql(u8, t, "Asset") or std.mem.eql(u8, t, "SourceLocation"))) return true,
+            .field_of => |t| if (!self.record_fields.contains(t) and comptimeMod.isSplicedRecord(t)) return true,
             else => {},
         };
         return self.programFieldDeclarers(ia.member) > 0;

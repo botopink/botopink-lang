@@ -3502,6 +3502,11 @@ package's.
 
 <!-- example: modules/typeinfo_all_dependency_declarations -->
 
+A package that does not declare `Declared` reads its fields all the same: `d.name`, `d.module` and `d.meta` of an
+entry the program hands it answer the field, directly, through a function, inside `map` and inside `for`.
+
+<!-- example: modules/declared_field_read_other_module -->
+
 #### The hooks a function reaches — `decl.hooks`
 
 A function's `@Decl` lists every function it reaches through hooks and

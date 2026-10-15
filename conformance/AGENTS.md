@@ -2008,7 +2008,11 @@ since fixed (144 B-94, B-95): `Bytes.length` read as a property is the byte coun
 (`modules/bytes_length_property`), and a field read on a type the module does not declare (`asset.path` in std,
 `Asset` being the compiler's record) answers the field on beam as on erlang (`modules/embed_field_read_other_module`,
 a dependency reading an `Asset`'s fields; wasm cannot yet place the field of a record the module does not
-declare, so the cell is narrowed by a host cell with no wasm binding until front 164 lands it).
+declare, so the cell is narrowed by a host cell with no wasm binding until front 164 lands it). 144 B-97 widens the beam
+fix to every record the compiler splices (`Declared`, `DeclaredMeta`, `DeclaredTypedMeta` beside `Asset` and
+`SourceLocation`): `modules/declared_field_read_other_module` — a dependency reading `name`, `module` and `meta` off
+the `@TypeInfo.all` entries the program hands it, directly, through a function, inside `map` and `for` — answers the
+fields on beam (the whole record on the parent binary), narrowed off wasm the same way.
 
 ### Narrowing a cell
 
@@ -2070,7 +2074,7 @@ The narrowed cells whose excluded targets' missing binding is named here (re-der
 | `modules/host_node_task_result` | commonJS | erlang, wasm, beam — `hostDouble` |
 | `modules/host_unknown_parameter` | erlang beam | commonJS, wasm — `std/erlang.element` |
 | `modules/std_template_host_fns_across_modules`, `modules/import_std_groups`, `modules/fs_stat_mtime_whole_seconds` | commonJS erlang beam | wasm — `utf8Offset` (the first host cell a body of `std/io/fs` calls with no wasm binding; decision 540) |
-| `modules/embed_field_read_other_module` | commonJS erlang beam | wasm — `through` (and the field of a record the module does not declare) |
+| `modules/embed_field_read_other_module`, `modules/declared_field_read_other_module` | commonJS erlang beam | wasm — `through` (and the field of a record the module does not declare) |
 | `modules/fs_error_variants`, `modules/fs_whole_file_shortcuts`, `modules/fs_read_text_not_utf8`, `modules/fs_file_handle`, `modules/fs_file_streams`, `modules/fs_asset_opens_as_file` | commonJS erlang beam | wasm — `utf8Offset` (the same; front 164 binds `wasi:filesystem`) |
 | `modules/clock_rfc3339_domain`, `modules/clock_civil_past_rfc3339_aborts`, `modules/clock_format_past_rfc3339_aborts`, `modules/clock_offset_past_rfc3339_aborts`, `modules/hole_any_call_at_build`, `modules/std_generic_primitives`, `modules/stage_build_and_run`, `modules/stage_comptime_block_in_run`, `modules/stage_imported`, `modules/stage_of_functions` | commonJS erlang beam | wasm — `systemTimeWithUnit` |
 | `modules/decl_hooks_direct` | commonJS erlang beam | wasm — `session` |

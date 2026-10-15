@@ -2331,7 +2331,13 @@ codegen/
   the read fell through its `is_map` / `is_tagged_tuple` test leaving the
   RECEIVER in the destination (`h.rest.length` printed the whole record; one
   `index_*` RUN LOG printed `[1, 2]` for `rows[0].length`), and the call
-  aborted with `{unresolved_method, …}`.
+  aborted with `{unresolved_method, …}`. A record the compiler splices
+  (`comptime.spliced_record_names`: `Asset`, `SourceLocation`, `Declared`,
+  `DeclaredMeta`, `DeclaredTypedMeta`) read where the module does not declare
+  it goes to `'-bp_field-'/2` too, whatever the program declares (144 B-95,
+  B-97; `conformance/modules/{embed,declared}_field_read_other_module`): its
+  value is a tagged tuple. Any other undeclared type keeps the map read — a
+  comptime builtin's value (`@Decl`) is a map at run time.
 - **Synth helpers per module** (`HelperNames`, `takeHelperNames` /
   `restoreHelperNames`): the once-per-module helpers (`'-bp_at-'/2`,
   `'-bp_yield_step-'/1`, the print prelude, …) are cached by name, and a name is only good in the module whose

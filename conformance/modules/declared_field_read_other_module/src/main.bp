@@ -1,0 +1,19 @@
+//// A field read on the compiler's `Declared` in a package that does not declare it answers the
+//// field's value on every target, not the whole record: the program hands `lib` the entries
+//// `@TypeInfo.all(with: mark)` answers, and `lib` reads `name`, `module` and `meta` off them.
+
+import {mark, show} from "lib";
+
+#[mark]
+pub fn one() -> string {
+    return "1";
+}
+
+#[mark]
+pub fn two() -> string {
+    return "2";
+}
+
+pub fn main() {
+    show(@TypeInfo.all(with: mark));
+}

@@ -553,6 +553,18 @@ fn withEmbedParams(arena: std.mem.Allocator, prog: ast.Program, env: *const envM
 const asset_decl_src = embedMod.decl_src;
 const embedMod = @import("comptime/embed.zig");
 
+/// The records the compiler splices into the module that uses them
+/// (`withSourceLocationDecl`, `withDeclaredDecls`, `withAssetDecl`): each is a
+/// program declaration of that module, so its values are records like any
+/// other (decision 21's tagged tuple on beam and erlang), never maps — in a
+/// module that does not declare it as much as in one that does.
+pub const spliced_record_names = [_][]const u8{ "SourceLocation", "Declared", "DeclaredMeta", "DeclaredTypedMeta", "Asset" };
+
+pub fn isSplicedRecord(name: []const u8) bool {
+    for (spliced_record_names) |n| if (std.mem.eql(u8, n, name)) return true;
+    return false;
+}
+
 /// The prelude enum `YieldStep<T>` as a program declaration, when the module
 /// referenced it (`env.usesYieldStep` — an annotation or a `.next()` on a
 /// sequence): the same splice `withSourceLocationDecl` makes for the record, so
