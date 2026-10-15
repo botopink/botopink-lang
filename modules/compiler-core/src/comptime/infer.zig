@@ -1139,7 +1139,7 @@ fn inferDeclTyped(env: *Env, decl: ast.DeclKind) InferError!?TypedBinding {
             // 01 R8 — `ValDecl` carries no location for its annotation; an
             // unlocated refusal there reds at the value.
             const annType: ?*T.Type = if (v.typeAnnotation) |ann|
-                resolveTypeRef(env, ann) catch |err| return locateTypeRefError(env, err, v.value.getLoc())
+                resolveAnnotationAt(env, ann, v.value.getLoc()) catch |err| return locateTypeRefError(env, err, v.value.getLoc())
             else
                 null;
             // When binding a lambda to a `fn(...) -> ...` annotation, feed the
@@ -3642,7 +3642,7 @@ fn inferDecl(env: *Env, decl: ast.DeclKind) InferError!?Binding {
             // position's expected type (00 · 01-checker) — see
             // `inferDeclTyped`'s `.val` case.
             const annType: ?*T.Type = if (v.typeAnnotation) |ann|
-                resolveTypeRef(env, ann) catch |err| return locateTypeRefError(env, err, v.value.getLoc())
+                resolveAnnotationAt(env, ann, v.value.getLoc()) catch |err| return locateTypeRefError(env, err, v.value.getLoc())
             else
                 null;
             const prevDeclSite = env.contextDeclSite;
@@ -12375,6 +12375,11 @@ fn resolveTypeRefInContext(env: *Env, ref: ast.TypeRef, genericMap: std.StringHa
                 if (hd.* != .named) return head;
                 return env.namedTypeArgs(hd.named.name, args);
             }
+            // A generic application's head name is looked up like the bare
+            // name: recorded here, refused `unknown type` by
+            // `checkPendingTypeNames` once every declaration is registered.
+            if (!b.is_builtin and !genericMap.contains(name) and !std.mem.eql(u8, name, "Self") and !std.mem.eql(u8, name, "array") and std.mem.indexOfScalar(u8, name, '.') == null and std.mem.indexOf(u8, name, "__") == null)
+                env.notePendingTypeName(name);
             return env.namedTypeArgs(name, args);
         },
         // A comptime typeparam accepts a value of any type at the call site;
@@ -16677,7 +16682,7 @@ fn inferBindingExpr(env: *Env, b: ast.BindingExprOf(.untyped), loc: ast.Loc) Inf
             // unlocated one reds at the `val`. (Setting `typeRefLoc` instead
             // would also enter every unresolved name into C10's pending list.)
             const annType: ?*T.Type = if (lb.typeAnnotation) |ann|
-                resolveTypeRef(env, ann) catch |err| return locateTypeRefError(env, err, loc)
+                resolveAnnotationAt(env, ann, loc) catch |err| return locateTypeRefError(env, err, loc)
             else
                 null;
             // Feed a `fn(...) -> ...` annotation into a lambda RHS so its
@@ -16993,6 +16998,45 @@ fn expectedEnumDeclaring(env: *Env, variant: []const u8) ?[]const u8 {
 }
 
 /// 01 R8 — give an annotation's unlocated error the binding's location.
+/// A `val` annotation carries no location of its own, and a body's type
+/// parameters are not in the generic map, so a bare name cannot be recorded for
+/// the second pass here. A generic application's head name is looked up at once
+/// (every declaration is registered by the time a body is inferred): a name
+/// nothing declares is `unknown type`, at the value as every refusal in a `val`
+/// annotation is.
+fn resolveAnnotationAt(env: *Env, ref: ast.TypeRef, loc: ast.Loc) InferError!*T.Type {
+    const ty = try resolveTypeRef(env, ref);
+    try refuseUnknownGenericHead(env, ref, loc);
+    return ty;
+}
+
+fn refuseUnknownGenericHead(env: *Env, ref: ast.TypeRef, loc: ast.Loc) InferError!void {
+    switch (ref) {
+        .named => {},
+        .array => |e| try refuseUnknownGenericHead(env, e.*, loc),
+        .optional => |e| try refuseUnknownGenericHead(env, e.*, loc),
+        .tuple_ => |es| for (es) |e| try refuseUnknownGenericHead(env, e, loc),
+        .labeledTuple => |lt| for (lt.elems) |e| try refuseUnknownGenericHead(env, e, loc),
+        .function => |f| {
+            for (f.params) |p| try refuseUnknownGenericHead(env, p, loc);
+            try refuseUnknownGenericHead(env, f.returnType.*, loc);
+        },
+        .generic => |b| {
+            for (b.args) |a| try refuseUnknownGenericHead(env, a, loc);
+            if (b.is_builtin or ref.unionMembers() != null) return;
+            const name = b.name;
+            if (std.mem.eql(u8, name, "Self") or std.mem.eql(u8, name, "Array")) return;
+            if (std.mem.indexOfScalar(u8, name, '.') != null) return;
+            if (env.fnGenericMap) |gm| if (gm.contains(name)) return;
+            if (env.typeAliases.get(name) != null or env.typeNameDeclared(name)) return;
+            if (env.ownDecls.contains(name) or env.ownTypeDecls.contains(name)) return;
+            env.lastError = TypeError.unknownTypeName(name).withLoc(loc);
+            return error.TypeError;
+        },
+        else => {},
+    }
+}
+
 fn locateTypeRefError(env: *Env, err: InferError, loc: ast.Loc) InferError {
     if (env.lastError) |*e| {
         if (e.loc == null) e.loc = loc;

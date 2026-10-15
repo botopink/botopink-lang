@@ -2484,6 +2484,21 @@ pub const Env = struct {
         return null;
     }
 
+    /// True when `name` names a type the module (or the compiler) knows — a
+    /// typedef, a binding, a behavior, an ambient behavior or a compiler-known
+    /// name. The one lookup behind the bare name's and a generic application
+    /// head's refusal.
+    pub fn typeNameDeclared(self: *Env, name: []const u8) bool {
+        if (self.typeDefs.get(name) != null) return true;
+        if (self.bindings.get(name) != null) return true;
+        // A `behavior` names a type in annotation position (`-> Counter`)
+        // without being a typedef: its decl is recorded here.
+        if (self.assocInterfaceDecls.get(name) != null) return true;
+        // An ambient behavior of `builtins.d.bp` (decision 539 (6)).
+        if (self.ambientBehaviorDecls.contains(name)) return true;
+        return isCompilerKnownTypeName(name);
+    }
+
     /// C10 second pass — after every declaration of the module is registered,
     /// an annotation that still names nothing is an error at the annotation.
     pub fn checkPendingTypeNames(self: *Env) !void {
@@ -2492,17 +2507,18 @@ pub const Env = struct {
         // by one must not red in the next.
         defer self.pendingTypeNames.clearRetainingCapacity();
         for (self.pendingTypeNames.items) |p| {
-            if (self.typeDefs.get(p.name) != null) continue;
-            if (self.bindings.get(p.name) != null) continue;
-            // A `behavior` names a type in annotation position (`-> Counter`)
-            // without being a typedef: its decl is recorded here.
-            if (self.assocInterfaceDecls.get(p.name) != null) continue;
-            // An ambient behavior of `builtins.d.bp` (decision 539 (6)).
-            if (self.ambientBehaviorDecls.contains(p.name)) continue;
-            if (isCompilerKnownTypeName(p.name)) continue;
+            if (self.typeNameDeclared(p.name)) continue;
             const e = @import("error.zig").TypeError.unknownTypeName(p.name);
             self.lastError = if (p.loc) |l| e.withLoc(l) else e;
             return error.TypeError;
+        }
+    }
+
+    /// Records a written type name whose lookup waits for the second pass
+    /// (`checkPendingTypeNames`); only an annotation the parser located counts.
+    pub fn notePendingTypeName(self: *Env, name: []const u8) void {
+        if (self.typeRefLoc != null and !isCompilerKnownTypeName(name)) {
+            self.pendingTypeNames.append(self.arena, .{ .name = name, .loc = self.typeRefLoc }) catch {};
         }
     }
 

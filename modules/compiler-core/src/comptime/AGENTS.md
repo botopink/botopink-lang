@@ -2504,7 +2504,12 @@ because registration walks the declarations in source order: `Env.resolveTypeNam
 the name in `Env.pendingTypeNames` with the annotation's location and still answers an opaque named
 type, and `Env.checkPendingTypeNames` — called at the end of both `inferProgram` and
 `inferProgramTyped`, after every declaration is registered — reds on what is still unknown. A forward
-reference (`type Outer(inner: Inner)` above `type Inner(…)`) therefore checks, and so do an imported
+reference (`type Outer(inner: Inner)` above `type Inner(…)`) therefore checks. A generic application's head name
+(`Bogus<i32, i32>`) is recorded the same way by `resolveTypeRefInContext`'s `.generic` arm
+(`Env.notePendingTypeName`) and refused with the bare name's text; a dotted or mangled (`Type__Field`) head, a
+builtin `@Name`, `Self`, `Array` and a type parameter in scope are not recorded. A `val` annotation has no
+location of its own and a body's type parameters are not in the generic map, so `resolveAnnotationAt` looks the
+head up at once (`refuseUnknownGenericHead`) and refuses at the `val`. So do an imported
 typedef (the constructor binding) and a `behavior` name in type position
 (`Env.assocInterfaceDecls`). The list is cleared per program: `registerStdlib` infers one std module
 per call on one env, and a name left pending by one must not red in the next.
