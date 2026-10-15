@@ -2,19 +2,9 @@
 //// every target: the `Failure` an `attempt` would have answered, `<kind>:
 //// <message>`, never the runtime's own report (node's stack trace, erlang's
 //// raw term). What was printed before stays printed; nothing after it runs.
-////
-//// wasm is out until front 164 s2c lands the text there — never a
-//// `snapshot/targets/` departure, which would record its defect as the
-//// language's. A narrowing stands on a host binding the target lacks (§
-//// Narrowing a cell), so the message comes from one: wasm refuses the program
-//// at its call.
-
-#[@External.Node("""\"boom\"""")]
-#[@External.Erlang("""<<"boom">>""")]
-declare fn message() -> string;
 
 pub fn main() {
-    val text = message();
+    val text = "boom";
     @print("before");
     @panic(text);
     @print("after");

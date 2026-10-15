@@ -1618,12 +1618,14 @@ const assert_fail = func("__assert_fail", &.{ "where", "msg" }, null, &.{}, &.{
     c32(188),     c32(10),                                                         store8(0),                     c32(188),     c32(1),                                                          call("__write_err"),
 });
 
-/// `@panic(msg)`: the message, unchanged, and a newline on stderr (decision 430,
-/// B-41) — the text the program raised, as on every other target. `msg` is a
+/// `@panic(msg)`: `panic: ` and the message, unchanged, and a newline on stderr
+/// (decisions 430, 535) — the text the program raised, as on every other target. `msg` is a
 /// length-prefixed string.
 const panic_fail = func("__panic_fail", &.{"msg"}, null, &.{}, &.{
-    get("msg"), c32(4),  op("add"), get("msg"), load(0), call("__write_err"),
-    c32(188),   c32(10), store8(0), c32(188),   c32(1),  call("__write_err"),
+    // "panic: " — the abort's kind (decision 535), 7 bytes as one i64 word
+    c32(188),   .{ .@"const" = .{ .ty = .i64, .text = "9071397899755888" } }, .{ .store = .{ .ty = .i64 } }, c32(188),   c32(7),  call("__write_err"),
+    get("msg"), c32(4),                                                       op("add"),                     get("msg"), load(0), call("__write_err"),
+    c32(188),   c32(10),                                                      store8(0),                     c32(188),   c32(1),  call("__write_err"),
 });
 
 // ── decision 518: aborts as wasm exceptions, and `attempt` ──────────────────
@@ -2240,21 +2242,20 @@ const gc_print_quoted_raw = typedFunc("__print_quoted_raw", &.{pref("s")}, null,
     })),
 } ++ putByte('"') ++ [_]Instr{call("__write_bytes")}));
 
-/// `@panic(msg)` over a GC string: the message and a newline on stderr.
+/// `@panic(msg)` over a GC string: `panic: `, the message and a newline on stderr.
 const gc_panic_fail = typedFunc("__panic_fail", &.{pref("msg")}, null, i32s(&.{ "n", "p", "i", "top" }), &.{
-    get("msg"),              str_len,                 set("n"),
-    .{ .global_get = heap }, set("top"),              get("n"),
-    call("__alloc"),         set("p"),
+    // "panic: " — the abort's kind (decision 535), 7 bytes as one i64 word
+    c32(188),        .{ .@"const" = .{ .ty = .i64, .text = "9071397899755888" } }, .{ .store = .{ .ty = .i64 } }, c32(188),                c32(7),                  call("__write_err"),
+    get("msg"),      str_len,                                                      set("n"),                      .{ .global_get = heap }, set("top"),              get("n"),
+    call("__alloc"), set("p"),
     loop(&.{
         get("i"), get("n"),  op("ge_u"), brk,
         get("p"), get("i"),  op("add"),  get("msg"),
         get("i"), str_get,   store8(0),  get("i"),
         c32(1),   op("add"), set("i"),   again,
     }),
-    get("p"),                get("n"),                call("__write_err"),
-    c32(188),                c32(10),                 store8(0),
-    c32(188),                c32(1),                  call("__write_err"),
-    get("top"),              .{ .global_set = heap },
+    get("p"),        get("n"),                                                     call("__write_err"),           c32(188),                c32(10),                 store8(0),
+    c32(188),        c32(1),                                                       call("__write_err"),           get("top"),              .{ .global_set = heap },
 });
 
 /// The GC form of group `g` (front 164 s2): its own items when it moves no

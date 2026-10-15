@@ -10623,8 +10623,9 @@ const Emitter = struct {
                 try self.emit(.@"unreachable");
                 return;
             }
-            // `@panic(msg)` writes `msg` to stderr before it traps (B-41).
-            if (cc.args.len == 1 and std.mem.eql(u8, cc.callee, "panic") and self.isStringExpr(cc.args[0].value.*)) {
+            // `@panic(msg)` / `@todo(msg)` write `panic: msg` to stderr before
+            // it traps (B-41, decision 535).
+            if (cc.args.len == 1 and self.isStringExpr(cc.args[0].value.*)) {
                 try self.lowerCoerced(cc.args[0].value.*, Repr.string);
                 try self.emit(self.builder().helper(.panic_fail));
             }
@@ -15689,6 +15690,8 @@ const Emitter = struct {
                 else => false,
             },
             .identifier => if (self.typeRefOf(e)) |t| isTaskTypeRef(t) else false,
+            // `tasks[1]!` over an array of tasks: the task itself.
+            .branch => if (optOperatorParts(e)) |op| (if (op.bang) (if (self.typeRefOf(op.cond.*)) |t| (t == .optional and isTaskTypeRef(t.optional.*)) else false) else false) else false,
             else => false,
         };
     }
@@ -18385,6 +18388,8 @@ const Emitter = struct {
             if (self.typeRefOf(nu.opt.*)) |ot| if (ot == .optional) return ot.optional.*;
             if (self.optInfoOf(nu.opt.*)) |oi| if (oi.inner) |inner| return inner;
         }
+        // `o!` over a `?T` answers the `T`.
+        if (optOperatorParts(e)) |op| if (op.bang) if (self.typeRefOf(op.cond.*)) |ot| if (ot == .optional) return ot.optional.*;
         return switch (e) {
             .identifier => |id| switch (id.kind) {
                 .ident => |n0| blk: {
@@ -20940,6 +20945,21 @@ const Emitter = struct {
             .jump => |j| j.kind == .@"continue",
             .branch => |b| switch (b.kind) {
                 .if_ => |i| bodyContinues(i.then_) or (if (i.else_) |els| bodyContinues(els) else false),
+                else => false,
+            },
+            .collection => |col| switch (col.kind) {
+                .grouped => |inner| exprContinues(inner.*),
+                .case => |c| blk: {
+                    // Decision 541 (2) — a block is a scope, never a closure: a
+                    // `continue` in a block or in a `case` arm reaches the loop.
+                    if (c.isBlock) break :blk bodyContinues(c.arms[0].body.function.kind.body);
+                    for (c.arms) |arm| {
+                        if (arm.body == .function) {
+                            if (bodyContinues(arm.body.function.kind.body)) break :blk true;
+                        } else if (exprContinues(arm.body)) break :blk true;
+                    }
+                    break :blk false;
+                },
                 else => false,
             },
             else => false,

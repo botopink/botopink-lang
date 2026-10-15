@@ -865,8 +865,8 @@ pub fn assertAbortWritesEveryBackend(allocator: Allocator, src: []const u8, need
 
 /// `assertAbortWritesEveryBackend` over commonJS, erlang and beam alone: the
 /// `<kind>: <message>` line an uncaught abort writes there (decision 535, the
-/// `Failure` an `attempt` would answer); wasm writes the message alone until
-/// its codegen does.
+/// `Failure` an `attempt` would answer); wasm writes it for `@panic`, `@todo`
+/// and `assert` only, not yet for an overflow or a division by zero.
 pub fn assertAbortWritesFailure(allocator: Allocator, src: []const u8, needle: []const u8) !void {
     return abortWrites(allocator, src, needle, false);
 }

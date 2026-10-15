@@ -215,7 +215,9 @@ the other targets spell it, `print` whether an uncaught one writes it (a
 `@panic` with a message, as without exceptions). `_botopink_main` runs `main`
 inside a `try_table` catching the tag; what escapes is written as `@panic`
 writes it (`$__panic_fail`) and traps, so an uncaught abort answers exactly
-what it answered before. The adapter `wasi: .Attempt` (`host_binding.zig`,
+what it answered before. `$__panic_fail` writes `panic: ` (scratch `188`), the message and a newline — the line
+commonJS, erlang and beam write (decision 535): `@panic`, `@todo` with a message and `assert` do on wasm
+(`conformance/modules/abort_text_panic`); an integer overflow and a division by zero still trap with no text. The adapter `wasi: .Attempt` (`host_binding.zig`,
 shapes `fn() -> T` → `@Result<T, string>`) is `$__wasi_attempt(f)`
 (`wasi_attempt`): the thunk called through the table inside a `try_table`
 whose `catch` branches to the block around it — a `@Result` pair, `Ok` of the
@@ -279,7 +281,7 @@ is made and runs to its first `await`; it settles once.
   still waiting on the host traps, on both hosts. A component lambda whose body
   awaits is a machine (§ Components), so a component waiting on the host no
   longer meets it. `await` of anything that is not a task
-  (`isTaskExpr`) is the identity it always was. A task is known by its type: `typeRefOf` answers an array literal of task calls as an array of tasks (a `for` binder over it is a task) and an index / `at` / `first` / `last` / `pop` read off an array of tasks as a `?@Task<T>` (`xs[1] ?? t` stays one); conformance cell `task_array_awaited_in_for`.
+  (`isTaskExpr`) is the identity it always was. A task is known by its type: `typeRefOf` answers an array literal of task calls as an array of tasks (a `for` binder over it is a task) and an index / `at` / `first` / `last` / `pop` read off an array of tasks as a `?@Task<T>` (`xs[1] ?? t` stays one), and `xs[1]!` (the `__bp_opt_` `if` the checker makes of it, `optOperatorParts`) answers the `T`, so `await xs[1]!` settles it; conformance cells `task_array_awaited_in_for`, `await_postfix_binds_tighter`.
   A local bound to a lambda written without an annotation whose last statement is an `async { }` block (`val failing = { n -> async { throw "inner"; } }`) is typed by `lambdaTaskTypeRef` at its binding: `fn(i32) -> @Task<@Result<V, E>>` (`@Task<V>` when the block cannot fail), `V` and `E` read off the block's `return` / `throw` operands as the transform leaves them (`__bp_ok(v)` / `__bp_error(e)`, `scanBlockReturns`) — the checker's type is not handed to this backend, so without it the `await` was the identity and `Error(e)` printed the handle; conformance cell `task_lambda_result_unannotated`.
   An awaited `@Result` keeps its type through `await`, so `@print` and the `Ok(v)` / `Error(e)` binders of a `case` read it (it printed the cell's address otherwise): `await twice(21)` over `fn twice<T>(v: T) -> @Task<@Result<T, string>>` binds `T` from the plain-`T` arguments (`bindAwaitedGeneric`), and `val t = async { … throw e … }` is typed `@Task<@Result<V, E>>` at its binding when the block fails (`failingAsyncTypeRef`, sharing `asyncBlockTaskType` with `lambdaTaskTypeRef`); conformance cell `await_result_print`.
 - **The scheduler.** `_start` ends with `$__task_finish`: drain the ready queue,
@@ -1437,7 +1439,9 @@ around one iteration's body, and `emitLoopJump` sends `break :label` /
 `continue :label` there — out of every loop between, running the defers of each
 iteration crossed (`LoopFrame.floor`); a bare jump, or a label no loop carries,
 still branches to the innermost `$__break` / `$__next`. A `case` arm's block is no
-closure, so its jumps take the same `br`. `conformance/modules/block_jump_label_*`.
+closure, so its jumps take the same `br`; `bodyContinues` looks for a `continue` through `if` branches, blocks and
+`case` arms, so a bare `continue` there wraps the iteration in `$__next` as a top-level one does. `conformance/modules/block_jump_label_*`,
+`block_continue_reaches_loop`.
 
 **A range pattern tests both ends** ([decision 53](../../../../../../../specs/1.0.5-beta/decisions-taken.md)):
 `1...9` arrives as a `.variant` whose `shape` is `.range` with the two bounds in

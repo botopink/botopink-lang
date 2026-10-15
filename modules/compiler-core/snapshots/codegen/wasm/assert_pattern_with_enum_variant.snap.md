@@ -348,6 +348,12 @@ fn main() {
     call $__write_err
   )
   (func $__panic_fail (param $msg i32)
+    i32.const 188
+    i64.const 9071397899755888
+    i64.store
+    i32.const 188
+    i32.const 7
+    call $__write_err
     local.get $msg
     i32.const 4
     i32.add

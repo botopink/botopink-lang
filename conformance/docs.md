@@ -2100,8 +2100,10 @@ channel (a `@Task`, `@Component` or `@Stream` return, an `async { }` block or a
 Labels go on all three: `for :outer (xs) { x -> … }`, `while :w (…) { … }`,
 `loop :l { … }`, then `break :outer`, `continue :outer`. A `continue :outer` from a nested loop's body or from a
 `case` arm's block ends the inner loops and starts the named loop's next round; a label no enclosing loop carries is
-`break-label-unbound`, on `continue` as on `break`:
+`break-label-unbound`, on `continue` as on `break`. A bare `continue` from a block or a `case` arm in a loop's
+body starts the loop's next round:
 
+<!-- example: modules/block_continue_reaches_loop -->
 <!-- example: modules/block_jump_label_continue_reaches_loop -->
 
 <!-- example: modules/continue_label_unbound -->

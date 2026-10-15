@@ -309,6 +309,12 @@ fn fail() {
   )
   (func $__panic_fail (param $msg (ref null $str))
     (local $n i32) (local $p i32) (local $i i32) (local $top i32)
+    i32.const 188
+    i64.const 9071397899755888
+    i64.store
+    i32.const 188
+    i32.const 7
+    call $__write_err
     local.get $msg
     array.len
     local.set $n

@@ -164,7 +164,7 @@ test "wat: builtin ---- @panic message reaches stderr before the trap" {
         \\}
     ,
         \\before
-        \\lib: '--gutter' is in no known namespace — a prefix
+        \\panic: lib: '--gutter' is in no known namespace — a prefix
         \\RUNTIME TRAP (wasmtime):
         \\wasm trap: wasm `unreachable` instruction executed
         \\
@@ -189,8 +189,8 @@ test "every backend: builtin ---- @panic message reaches stderr unchanged" {
 
 // Decision 535: an uncaught abort writes the `Failure` an `attempt` would have
 // answered, `<kind>: <message>`, never the runtime's raw term.
-test "every backend but wasm: builtin ---- an uncaught @panic writes panic: <message>" {
-    try h.assertAbortWritesFailure(std.testing.allocator,
+test "every backend: builtin ---- an uncaught @panic writes panic: <message>" {
+    try h.assertAbortWritesEveryBackend(std.testing.allocator,
         \\fn main() {
         \\    @print("before");
         \\    @panic("boom — 2");
@@ -198,8 +198,8 @@ test "every backend but wasm: builtin ---- an uncaught @panic writes panic: <mes
     , "panic: boom — 2\n");
 }
 
-test "every backend but wasm: builtin ---- an uncaught @todo writes panic: <message>" {
-    try h.assertAbortWritesFailure(std.testing.allocator,
+test "every backend: builtin ---- an uncaught @todo writes panic: <message>" {
+    try h.assertAbortWritesEveryBackend(std.testing.allocator,
         \\fn main() {
         \\    @todo("later");
         \\}
@@ -217,8 +217,8 @@ test "every backend but wasm: builtin ---- an uncaught integer division by zero 
     , "panic: integer division by zero: / on i32 at ");
 }
 
-test "every backend but wasm: builtin ---- an uncaught failed assert writes panic: <message>" {
-    try h.assertAbortWritesFailure(std.testing.allocator,
+test "every backend: builtin ---- an uncaught failed assert writes panic: <message>" {
+    try h.assertAbortWritesEveryBackend(std.testing.allocator,
         \\fn main() {
         \\    assert 1 > 2, "never";
         \\}
