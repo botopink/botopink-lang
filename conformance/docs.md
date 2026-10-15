@@ -2736,9 +2736,8 @@ asserted condition and where it failed (decision 527 (2)):
 <!-- example: modules/assert_failure_is_panic -->
 
 An integer `/` or `%` by zero is a `panic` too, `integer division by zero: <op>
-on <type> at <file>:<line>:<col>`, on commonJS, erlang and beam (527 (3)); on
-wasm the division traps, and a trap is no exception, so `attempt` does not
-catch it:
+on <type> at <file>:<line>:<col>`, on every target (527 (3)) — on wasm the division
+is checked and raises, so `attempt` catches it:
 
 <!-- example: modules/int_division_by_zero_is_panic -->
 
@@ -2761,8 +2760,8 @@ failure as an `Error`, so that one reaches the `catch`:
 
 On wasm `attempt` runs the thunk under wasm exception
 handling (decision 518): a program reaching it raises its aborts as an
-exception, which `attempt` catches as `panic`; a trap is no exception and
-ends the program.
+exception, which `attempt` catches as `panic` — an `@panic`, an assert, an integer overflow, a
+division by zero; a trap is no exception and ends the program.
 
 <!-- example: modules/std_failure_attempt -->
 
@@ -4376,6 +4375,7 @@ text of an abort is not one:
 
 <!-- example: modules/abort_text_host -->
 <!-- example: modules/abort_text_panic -->
+<!-- example: modules/abort_text_overflow -->
 
 A raise nothing marked is `crash` on commonJS too: a binding declared outside std without `result: true` has its
 raise marked `host` (546), so the raise of the program's own code — a method called on a value the binding

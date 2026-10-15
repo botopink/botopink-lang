@@ -94,6 +94,7 @@ pub fn main() {
       (else
     i32.const 0
     i32.const 1
+    global.get $__s0
     call $__i32_sub_chk
       )
     )
@@ -132,7 +133,7 @@ pub fn main() {
     ref.is_null
     (if
       (then
-    global.get $__s0
+    global.get $__s1
     call $__print_str_raw
       )
       (else
@@ -150,7 +151,7 @@ pub fn main() {
     ref.is_null
     (if
       (then
-    global.get $__s0
+    global.get $__s1
     call $__print_str_raw
       )
       (else
@@ -167,7 +168,7 @@ pub fn main() {
     ref.is_null
     (if
       (then
-    global.get $__s0
+    global.get $__s1
     call $__print_str_raw
       )
       (else
@@ -184,7 +185,7 @@ pub fn main() {
     ref.is_null
     (if
       (then
-    global.get $__s0
+    global.get $__s1
     call $__print_str_raw
       )
       (else
@@ -201,7 +202,7 @@ pub fn main() {
     ref.is_null
     (if
       (then
-    global.get $__s0
+    global.get $__s1
     call $__print_str_raw
       )
       (else
@@ -222,7 +223,7 @@ pub fn main() {
     call $__print_i32
     i32.const 3
     struct.new $box_i32
-    global.get $__s1
+    global.get $__s2
     struct.new $rec_Box
     local.set $b
     local.get $b
@@ -248,6 +249,7 @@ pub fn main() {
     local.set $v
     local.get $v
     i32.const 1
+    global.get $__s8
     call $__i32_add_chk
     call $__print_i32
     i32.const 0
@@ -257,8 +259,8 @@ pub fn main() {
       )
     )
     drop
-    global.get $__s7
-    global.get $__s8
+    global.get $__s9
+    global.get $__s10
     array.new_fixed $arr_any 2
     local.set $words
     local.get $words
@@ -269,7 +271,7 @@ pub fn main() {
     ref.is_null
     (if
       (then
-    global.get $__s0
+    global.get $__s1
     call $__print_str_raw
       )
       (else
@@ -286,7 +288,7 @@ pub fn main() {
     ref.is_null
     (if
       (then
-    global.get $__s0
+    global.get $__s1
     call $__print_str_raw
       )
       (else
@@ -309,7 +311,7 @@ pub fn main() {
     local.get $__bp_nullish__0
       )
       (else
-    global.get $__s9
+    global.get $__s11
       )
     )
     call $__print_str
@@ -320,7 +322,7 @@ pub fn main() {
     ref.is_null
     (if
       (then
-    global.get $__s0
+    global.get $__s1
     call $__print_str_raw
       )
       (else
@@ -385,7 +387,7 @@ pub fn main() {
     ref.is_null
     (if
       (then
-    global.get $__s0
+    global.get $__s1
     call $__print_str_raw
     return
       )
@@ -404,7 +406,7 @@ pub fn main() {
     ref.is_null
     (if
       (then
-    global.get $__s0
+    global.get $__s1
     call $__print_str_raw
     return
       )
@@ -413,21 +415,21 @@ pub fn main() {
     call $__pr4
   )
   (func $__pr0 (param $v (ref null $rec_Box))
-    global.get $__s2
-    call $__print_str_raw
     global.get $__s3
     call $__print_str_raw
     global.get $__s4
     call $__print_str_raw
+    global.get $__s5
+    call $__print_str_raw
     local.get $v
     struct.get $rec_Box $f0
     call $__pr1
-    global.get $__s5
+    global.get $__s6
     call $__print_str_raw
     local.get $v
     struct.get $rec_Box $f1
     call $__pr3
-    global.get $__s6
+    global.get $__s7
     call $__print_str_raw
   )
   (func $__arr_at_opt_any (param $xs (ref null $arr_any)) (param $i i32) (result anyref)
@@ -783,6 +785,114 @@ pub fn main() {
     global.set $__heap_ptr
     local.get $p
   )
+  (func $__write_err (param $p i32) (param $n i32)
+    i32.const 0
+    local.get $p
+    i32.store
+    i32.const 4
+    local.get $n
+    i32.store
+    i32.const 2
+    i32.const 0
+    i32.const 1
+    i32.const 8
+    call $fd_write
+    drop
+  )
+  (func $__assert_fail (param $where i32) (param $msg i32)
+    local.get $where
+    i32.const 4
+    i32.add
+    local.get $where
+    i32.load
+    call $__write_err
+    i32.const 188
+    i64.const 8390880602276044858
+    i64.store
+    i32.const 196
+    i64.const 7811882119909502825
+    i64.store
+    i32.const 204
+    i32.const 101
+    i32.store8
+    i32.const 205
+    i32.const 100
+    i32.store8
+    i32.const 188
+    i32.const 18
+    call $__write_err
+    local.get $msg
+    (if
+      (then
+        i32.const 188
+        i32.const 8250
+        i32.store
+        i32.const 188
+        i32.const 2
+        call $__write_err
+        local.get $msg
+        i32.const 4
+        i32.add
+        local.get $msg
+        i32.load
+        call $__write_err
+      )
+    )
+    i32.const 188
+    i32.const 10
+    i32.store8
+    i32.const 188
+    i32.const 1
+    call $__write_err
+  )
+  (func $__panic_fail (param $msg (ref null $str))
+    (local $n i32) (local $p i32) (local $i i32) (local $top i32)
+    i32.const 188
+    i64.const 9071397899755888
+    i64.store
+    i32.const 188
+    i32.const 7
+    call $__write_err
+    local.get $msg
+    array.len
+    local.set $n
+    global.get $__heap_ptr
+    local.set $top
+    local.get $n
+    call $__alloc
+    local.set $p
+    (block $brk
+      (loop $cont
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $brk
+        local.get $p
+        local.get $i
+        i32.add
+        local.get $msg
+        local.get $i
+        array.get_u $str
+        i32.store8
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $cont
+      )
+    )
+    local.get $p
+    local.get $n
+    call $__write_err
+    i32.const 188
+    i32.const 10
+    i32.store8
+    i32.const 188
+    i32.const 1
+    call $__write_err
+    local.get $top
+    global.set $__heap_ptr
+  )
   (func $__print_quoted_raw (param $s (ref null $str))
     (local $n i32) (local $i i32) (local $ch i32) (local $e i32)
     i32.const 8
@@ -902,7 +1012,7 @@ pub fn main() {
     call $__print_i64_raw
     call $__print_nl
   )
-  (func $__i32_add_chk (param $a i32) (param $b i32) (result i32)
+  (func $__i32_add_chk (param $a i32) (param $b i32) (param $site (ref null $str)) (result i32)
     (local $r i64)
     local.get $a
     i64.extend_i32_s
@@ -917,13 +1027,15 @@ pub fn main() {
     i64.ne
     (if
       (then
+        local.get $site
+        call $__chk_fail
         unreachable
       )
     )
     local.get $r
     i32.wrap_i64
   )
-  (func $__i32_sub_chk (param $a i32) (param $b i32) (result i32)
+  (func $__i32_sub_chk (param $a i32) (param $b i32) (param $site (ref null $str)) (result i32)
     (local $r i64)
     local.get $a
     i64.extend_i32_s
@@ -938,13 +1050,15 @@ pub fn main() {
     i64.ne
     (if
       (then
+        local.get $site
+        call $__chk_fail
         unreachable
       )
     )
     local.get $r
     i32.wrap_i64
   )
-  (func $__i32_mul_chk (param $a i32) (param $b i32) (result i32)
+  (func $__i32_mul_chk (param $a i32) (param $b i32) (param $site (ref null $str)) (result i32)
     (local $r i64)
     local.get $a
     i64.extend_i32_s
@@ -959,13 +1073,15 @@ pub fn main() {
     i64.ne
     (if
       (then
+        local.get $site
+        call $__chk_fail
         unreachable
       )
     )
     local.get $r
     i32.wrap_i64
   )
-  (func $__i64_add_chk (param $a i64) (param $b i64) (result i64)
+  (func $__i64_add_chk (param $a i64) (param $b i64) (param $site (ref null $str)) (result i64)
     (local $r i64)
     local.get $a
     local.get $b
@@ -982,12 +1098,14 @@ pub fn main() {
     i64.lt_s
     (if
       (then
+        local.get $site
+        call $__chk_fail
         unreachable
       )
     )
     local.get $r
   )
-  (func $__i64_sub_chk (param $a i64) (param $b i64) (result i64)
+  (func $__i64_sub_chk (param $a i64) (param $b i64) (param $site (ref null $str)) (result i64)
     (local $r i64)
     local.get $a
     local.get $b
@@ -1004,12 +1122,14 @@ pub fn main() {
     i64.lt_s
     (if
       (then
+        local.get $site
+        call $__chk_fail
         unreachable
       )
     )
     local.get $r
   )
-  (func $__i64_mul_chk (param $a i64) (param $b i64) (result i64)
+  (func $__i64_mul_chk (param $a i64) (param $b i64) (param $site (ref null $str)) (result i64)
     (local $r i64)
     local.get $a
     i64.const -1
@@ -1020,6 +1140,8 @@ pub fn main() {
     i32.and
     (if
       (then
+        local.get $site
+        call $__chk_fail
         unreachable
       )
     )
@@ -1039,6 +1161,8 @@ pub fn main() {
         i64.ne
         (if
           (then
+            local.get $site
+            call $__chk_fail
             unreachable
           )
         )
@@ -1062,6 +1186,11 @@ pub fn main() {
     local.get $v
     call $__print_u64_raw
     call $__print_nl
+  )
+  (func $__chk_fail (param $site (ref null $str))
+    local.get $site
+    call $__panic_fail
+    unreachable
   )
   ;; std-wasm (decision 440): its functions, transpiled from std_wasm.wasm
   (global $__std_sp (mut i32) (i32.const 8816))
@@ -1094,54 +1223,58 @@ pub fn main() {
   ;; __std_f525 — from std_wasm.wasm (sha256 4c40dff46753)
   ;; __std_f526 — from std_wasm.wasm (sha256 4d190b081720)
   ;; __std_f527 — from std_wasm.wasm (sha256 94fc71de7e06)
-  (data $__d0 "null")
+  (data $__d0 "integer overflow: - on i32 at main.bp:15:17")
   (global $__s0 (mut (ref null $str)) (ref.null $str))
-  (data $__d1 "x")
+  (data $__d1 "null")
   (global $__s1 (mut (ref null $str)) (ref.null $str))
-  (data $__d2 "Box")
+  (data $__d2 "x")
   (global $__s2 (mut (ref null $str)) (ref.null $str))
-  (data $__d3 "(")
+  (data $__d3 "Box")
   (global $__s3 (mut (ref null $str)) (ref.null $str))
-  (data $__d4 "n: ")
+  (data $__d4 "(")
   (global $__s4 (mut (ref null $str)) (ref.null $str))
-  (data $__d5 ", s: ")
+  (data $__d5 "n: ")
   (global $__s5 (mut (ref null $str)) (ref.null $str))
-  (data $__d6 ")")
+  (data $__d6 ", s: ")
   (global $__s6 (mut (ref null $str)) (ref.null $str))
-  (data $__d7 "a")
+  (data $__d7 ")")
   (global $__s7 (mut (ref null $str)) (ref.null $str))
-  (data $__d8 "b")
+  (data $__d8 "integer overflow: + on i32 at main.bp:31:30")
   (global $__s8 (mut (ref null $str)) (ref.null $str))
-  (data $__d9 "z")
+  (data $__d9 "a")
   (global $__s9 (mut (ref null $str)) (ref.null $str))
+  (data $__d10 "b")
+  (global $__s10 (mut (ref null $str)) (ref.null $str))
+  (data $__d11 "z")
+  (global $__s11 (mut (ref null $str)) (ref.null $str))
   (start $__init_strs)
   (func $__init_strs
     i32.const 0
-    i32.const 4
+    i32.const 43
     array.new_data $str $__d0
     global.set $__s0
     i32.const 0
-    i32.const 1
+    i32.const 4
     array.new_data $str $__d1
     global.set $__s1
     i32.const 0
-    i32.const 3
+    i32.const 1
     array.new_data $str $__d2
     global.set $__s2
     i32.const 0
-    i32.const 1
+    i32.const 3
     array.new_data $str $__d3
     global.set $__s3
     i32.const 0
-    i32.const 3
+    i32.const 1
     array.new_data $str $__d4
     global.set $__s4
     i32.const 0
-    i32.const 5
+    i32.const 3
     array.new_data $str $__d5
     global.set $__s5
     i32.const 0
-    i32.const 1
+    i32.const 5
     array.new_data $str $__d6
     global.set $__s6
     i32.const 0
@@ -1149,13 +1282,21 @@ pub fn main() {
     array.new_data $str $__d7
     global.set $__s7
     i32.const 0
-    i32.const 1
+    i32.const 43
     array.new_data $str $__d8
     global.set $__s8
     i32.const 0
     i32.const 1
     array.new_data $str $__d9
     global.set $__s9
+    i32.const 0
+    i32.const 1
+    array.new_data $str $__d10
+    global.set $__s10
+    i32.const 0
+    i32.const 1
+    array.new_data $str $__d11
+    global.set $__s11
   )
   (@custom "botopink.needs" "gc\0a")
 )

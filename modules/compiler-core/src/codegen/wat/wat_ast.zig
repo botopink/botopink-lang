@@ -920,6 +920,16 @@ pub const HelperGroup = enum {
     /// linear memory std-wasm reads (the marshal arena, `$__alloc`'s), and
     /// `$__lin_to_gc_str(p)` a string std-wasm answered into a GC one.
     std_marshal,
+    /// Decision 527 (3) — `$__chk_fail(site)`: the abort of a checked integer
+    /// operation (an overflow, a division by zero), `site` the message the
+    /// call site names (the operator, the type, `file:line:col`). Raised as
+    /// `$__bp_panic` when the program reaches `attempt` (`panic_raise`), else
+    /// written as `panic: <message>` and trapped (`panic_fail`); the emitter
+    /// requires the one the module's `exceptions` asks for.
+    chk_fail,
+    /// `$__i32_nz(b, site)` / `$__i64_nz` — an integer divisor, answered back
+    /// when it is not zero and `$__chk_fail(site)` when it is.
+    nz_chk,
 
     /// The groups `g`'s functions call into.
     pub fn deps(g: HelperGroup) []const HelperGroup {
@@ -959,6 +969,8 @@ pub const HelperGroup = enum {
             .panic_raise => &.{.alloc},
             .wasi_attempt => &.{.alloc},
             .std_marshal => &.{.alloc},
+            .int_chk, .u64_chk, .i32_range_chk, .i64_range_chk, .nz_chk => &.{.chk_fail},
+            .chk_fail => &.{.panic_fail},
             else => &.{},
         };
     }
@@ -1087,6 +1099,9 @@ pub const Helper = enum {
     wasi_attempt,
     gc_to_lin_str,
     lin_to_gc_str,
+    chk_fail,
+    i32_nz,
+    i64_nz,
 
     pub fn symbol(h: Helper) []const u8 {
         return switch (h) {
@@ -1123,6 +1138,7 @@ pub const Helper = enum {
             .task_gate_new, .task_gate_open, .task_gate_await, .task_host_cancel => .task_gate,
             .cap_begin, .cap_end => .text_capture,
             .gc_to_lin_str, .lin_to_gc_str => .std_marshal,
+            .i32_nz, .i64_nz => .nz_chk,
             inline else => |t| @field(HelperGroup, @tagName(t)),
         };
     }

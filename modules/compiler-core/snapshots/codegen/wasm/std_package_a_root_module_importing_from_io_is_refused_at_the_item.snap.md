@@ -323,15 +323,25 @@ test "path.isInside treats a name starting with two dots as a name" {
 ----- WASM TEXT -- std/path.wat
 ```wasm
 (module
+  (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
   (data (i32.const 256) "\01\00\00\00/")
   (data (i32.const 264) "\01\00\00\00:")
   (data (i32.const 272) "\00\00\00\00")
-  (data (i32.const 276) "\01\00\00\00.")
-  (data (i32.const 284) "\02\00\00\00..")
-  (data (i32.const 292) "\1b\00\00\00R\tPathAccum\02\05isAbsb\05parts[s")
-  (data (i32.const 324) "\03\00\00\00../")
-  (global $__heap_ptr (mut i32) (i32.const 1488))
+  (data (i32.const 276) "\2f\00\00\00integer overflow: - on i32 at src/path.bp:40:23")
+  (data (i32.const 328) "\2f\00\00\00integer overflow: - on i32 at src/path.bp:50:33")
+  (data (i32.const 380) "\01\00\00\00.")
+  (data (i32.const 388) "\2f\00\00\00integer overflow: - on i32 at src/path.bp:68:28")
+  (data (i32.const 440) "\30\00\00\00integer overflow: + on i32 at src/path.bp:114:52")
+  (data (i32.const 492) "\30\00\00\00integer overflow: - on i32 at src/path.bp:120:42")
+  (data (i32.const 544) "\02\00\00\00..")
+  (data (i32.const 552) "\30\00\00\00integer overflow: - on i32 at src/path.bp:135:39")
+  (data (i32.const 604) "\30\00\00\00integer overflow: - on i32 at src/path.bp:159:63")
+  (data (i32.const 656) "\1b\00\00\00R\tPathAccum\02\05isAbsb\05parts[s")
+  (data (i32.const 688) "\30\00\00\00integer overflow: + on i32 at src/path.bp:175:35")
+  (data (i32.const 740) "\30\00\00\00integer overflow: - on i32 at src/path.bp:205:51")
+  (data (i32.const 792) "\03\00\00\00../")
+  (global $__heap_ptr (mut i32) (i32.const 1952))
   ;; std/path — pure-botopink path manipulation (posix forward-slash).
   ;; 
   ;; Reference:
@@ -462,6 +472,7 @@ test "path.isInside treats a name starting with two dots as a name" {
     local.get $parts
     local.get $n
     i32.const 1
+    i32.const 276
     call $__i32_sub_chk
     call $__arr_at
     local.tee $__opt0
@@ -518,6 +529,7 @@ test "path.isInside treats a name starting with two dots as a name" {
     i32.const 0
     local.get $n
     i32.const 1
+    i32.const 328
     call $__i32_sub_chk
     call $__std_array_slice
     local.set $head
@@ -569,7 +581,7 @@ test "path.isInside treats a name starting with two dots as a name" {
     call $basename
     local.set $base
     local.get $base
-    i32.const 276
+    i32.const 380
     call $__std_text_split
     local.set $pieces
     local.get $pieces
@@ -606,6 +618,7 @@ test "path.isInside treats a name starting with two dots as a name" {
     local.get $pieces
     local.get $n
     i32.const 1
+    i32.const 388
     call $__i32_sub_chk
     call $__arr_at
     local.tee $__opt1
@@ -641,7 +654,7 @@ test "path.isInside treats a name starting with two dots as a name" {
     i32.const 2
     i32.store
     local.get $__mem0
-    i32.const 276
+    i32.const 380
     i32.store offset=4
     local.get $__mem0
     local.get $tail
@@ -858,7 +871,7 @@ test "path.isInside treats a name starting with two dots as a name" {
     call $__str_eq
     (if (result i32)
       (then
-    i32.const 276
+    i32.const 380
     return
       )
       (else
@@ -896,7 +909,7 @@ test "path.isInside treats a name starting with two dots as a name" {
         i32.load offset=4
         local.set $p
     local.get $p
-    i32.const 276
+    i32.const 380
     call $__str_eq
     i32.eqz
     (if
@@ -960,7 +973,7 @@ test "path.isInside treats a name starting with two dots as a name" {
     call $__str_eq
     (if (result i32)
       (then
-    i32.const 276
+    i32.const 380
       )
       (else
     local.get $joined
@@ -1046,6 +1059,7 @@ test "path.isInside treats a name starting with two dots as a name" {
     local.get $b
     local.get $i
     i32.const 1
+    i32.const 440
     call $__i32_add_chk
     call $commonPrefixCount
       )
@@ -1075,9 +1089,10 @@ test "path.isInside treats a name starting with two dots as a name" {
       (else
     local.get $n
     i32.const 1
+    i32.const 492
     call $__i32_sub_chk
     call $makeUps
-    i32.const 284
+    i32.const 544
     call $__std_array_prepend
       )
     )
@@ -1113,6 +1128,7 @@ test "path.isInside treats a name starting with two dots as a name" {
     local.get $srcParts
     i32.load ;; .length
     local.get $common
+    i32.const 552
     call $__i32_sub_chk
     call $makeUps
     local.set $ups
@@ -1135,7 +1151,7 @@ test "path.isInside treats a name starting with two dots as a name" {
     call $__str_eq
     (if (result i32)
       (then
-    i32.const 276
+    i32.const 380
       )
       (else
     local.get $joined
@@ -1194,7 +1210,7 @@ test "path.isInside treats a name starting with two dots as a name" {
     call $__std_array_slice
     local.set $rest
     local.get $p
-    i32.const 284
+    i32.const 544
     call $__str_eq
     (if (result i32)
       (then
@@ -1212,6 +1228,7 @@ test "path.isInside treats a name starting with two dots as a name" {
     local.get $acc
     i32.load ;; .length
     i32.const 1
+    i32.const 604
     call $__i32_sub_chk
     call $__std_array_slice
       )
@@ -1277,7 +1294,7 @@ test "path.isInside treats a name starting with two dots as a name" {
     call $__alloc
     local.set $__mem1
     local.get $__mem1
-    i32.const 296
+    i32.const 660
     i32.store
     local.get $__mem1
     local.get $nextIsAbs
@@ -1334,6 +1351,7 @@ test "path.isInside treats a name starting with two dots as a name" {
     local.get $segments
     local.get $i
     i32.const 1
+    i32.const 688
     call $__i32_add_chk
     local.get $next
     local.set $state
@@ -1358,7 +1376,7 @@ test "path.isInside treats a name starting with two dots as a name" {
     call $__alloc
     local.set $__mem0
     local.get $__mem0
-    i32.const 296
+    i32.const 660
     i32.store
     local.get $__mem0
     i32.const 0
@@ -1408,7 +1426,7 @@ test "path.isInside treats a name starting with two dots as a name" {
     call $__str_eq
     (if (result i32)
       (then
-    i32.const 276
+    i32.const 380
       )
       (else
     local.get $joined
@@ -1445,6 +1463,7 @@ test "path.isInside treats a name starting with two dots as a name" {
     local.get $n
     local.get $ext
     call $__std_text_length
+    i32.const 740
     call $__i32_sub_chk
     call $__std_text_slice
       )
@@ -1500,10 +1519,10 @@ test "path.isInside treats a name starting with two dots as a name" {
     call $relative
     local.set $rel
     local.get $rel
-    i32.const 284
+    i32.const 544
     call $__str_eq
     local.get $rel
-    i32.const 324
+    i32.const 792
     call $__std_text_startsWith
     i32.or
     local.set $escapes
@@ -1513,6 +1532,186 @@ test "path.isInside treats a name starting with two dots as a name" {
     return
   )
   ;; ── tests ────────────────────────────────────────────────────────────────────
+  ;; Scratch layout below the data section (which starts at 256):
+  ;;   0..8  WASI iovec   8  newline byte
+  ;;  16..32 bool text   64..128 i32 digits
+  (func $__write_bytes (param $p i32) (param $n i32)
+    i32.const 0
+    local.get $p
+    i32.store
+    i32.const 4
+    local.get $n
+    i32.store
+    i32.const 1
+    i32.const 0
+    i32.const 1
+    i32.const 8
+    call $fd_write
+    drop
+  )
+  (func $__print_nl
+    i32.const 8
+    i32.const 10
+    i32.store8
+    i32.const 8
+    i32.const 1
+    call $__write_bytes
+  )
+  ;; separator between the arguments of a multi-argument `@print`
+  (func $__print_sp
+    i32.const 8
+    i32.const 32
+    i32.store8
+    i32.const 8
+    i32.const 1
+    call $__write_bytes
+  )
+  (func $__print_i32 (param $n i32)
+    local.get $n
+    call $__print_i32_raw
+    call $__print_nl
+  )
+  (func $__print_i32_raw (param $n i32)
+    (local $buf i32) (local $len i32) (local $neg i32) (local $d i32)
+    (local $i i32) (local $j i32) (local $tmp i32)
+    i32.const 64
+    local.set $buf
+    local.get $n
+    i32.const 0
+    i32.lt_s
+    (if
+      (then
+        i32.const 1
+        local.set $neg
+        i32.const 0
+        local.get $n
+        i32.sub
+        local.set $n
+      )
+    )
+    (block $done
+      (loop $digits
+        local.get $n
+        i32.const 10
+        i32.rem_u
+        i32.const 48
+        i32.add
+        local.set $d
+        local.get $buf
+        local.get $len
+        i32.add
+        local.get $d
+        i32.store8
+        local.get $len
+        i32.const 1
+        i32.add
+        local.set $len
+        local.get $n
+        i32.const 10
+        i32.div_u
+        local.set $n
+        local.get $n
+        i32.const 0
+        i32.gt_u
+        br_if $digits
+      )
+    )
+    ;; reverse
+    i32.const 0
+    local.set $i
+    local.get $len
+    i32.const 1
+    i32.sub
+    local.set $j
+    (block $rdone
+      (loop $rev
+        local.get $i
+        local.get $j
+        i32.ge_u
+        br_if $rdone
+        local.get $buf
+        local.get $i
+        i32.add
+        i32.load8_u
+        local.set $tmp
+        local.get $buf
+        local.get $i
+        i32.add
+        local.get $buf
+        local.get $j
+        i32.add
+        i32.load8_u
+        i32.store8
+        local.get $buf
+        local.get $j
+        i32.add
+        local.get $tmp
+        i32.store8
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        local.get $j
+        i32.const 1
+        i32.sub
+        local.set $j
+        br $rev
+      )
+    )
+    ;; add neg sign + newline
+    ;; shift the digits one byte right to make room for '-'
+    ;; (dst = buf+1, NOT buf+len: the latter moved them `len`
+    ;;  bytes and printed -12 as -21)
+    local.get $neg
+    (if
+      (then
+        local.get $buf
+        i32.const 1
+        i32.add
+        local.get $buf
+        local.get $len
+        call $__memmove
+        local.get $buf
+        i32.const 45
+        i32.store8
+        local.get $len
+        i32.const 1
+        i32.add
+        local.set $len
+      )
+    )
+    local.get $buf
+    local.get $len
+    call $__write_bytes
+  )
+  (func $__memmove (param $dst i32) (param $src i32) (param $len i32)
+    (local $i i32)
+    local.get $len
+    i32.const 1
+    i32.sub
+    local.set $i
+    (block $done
+      (loop $loop
+        local.get $i
+        i32.const 0
+        i32.lt_s
+        br_if $done
+        local.get $dst
+        local.get $i
+        i32.add
+        local.get $src
+        local.get $i
+        i32.add
+        i32.load8_u
+        i32.store8
+        local.get $i
+        i32.const 1
+        i32.sub
+        local.set $i
+        br $loop
+      )
+    )
+  )
   (func $__arr_at (param $xs i32) (param $i i32) (result i32)
     local.get $i
     i32.const 0
@@ -1649,7 +1848,87 @@ test "path.isInside treats a name starting with two dots as a name" {
     i32.store
     local.get $p
   )
-  (func $__i32_add_chk (param $a i32) (param $b i32) (result i32)
+  (func $__write_err (param $p i32) (param $n i32)
+    i32.const 0
+    local.get $p
+    i32.store
+    i32.const 4
+    local.get $n
+    i32.store
+    i32.const 2
+    i32.const 0
+    i32.const 1
+    i32.const 8
+    call $fd_write
+    drop
+  )
+  (func $__assert_fail (param $where i32) (param $msg i32)
+    local.get $where
+    i32.const 4
+    i32.add
+    local.get $where
+    i32.load
+    call $__write_err
+    i32.const 188
+    i64.const 8390880602276044858
+    i64.store
+    i32.const 196
+    i64.const 7811882119909502825
+    i64.store
+    i32.const 204
+    i32.const 101
+    i32.store8
+    i32.const 205
+    i32.const 100
+    i32.store8
+    i32.const 188
+    i32.const 18
+    call $__write_err
+    local.get $msg
+    (if
+      (then
+        i32.const 188
+        i32.const 8250
+        i32.store
+        i32.const 188
+        i32.const 2
+        call $__write_err
+        local.get $msg
+        i32.const 4
+        i32.add
+        local.get $msg
+        i32.load
+        call $__write_err
+      )
+    )
+    i32.const 188
+    i32.const 10
+    i32.store8
+    i32.const 188
+    i32.const 1
+    call $__write_err
+  )
+  (func $__panic_fail (param $msg i32)
+    i32.const 188
+    i64.const 9071397899755888
+    i64.store
+    i32.const 188
+    i32.const 7
+    call $__write_err
+    local.get $msg
+    i32.const 4
+    i32.add
+    local.get $msg
+    i32.load
+    call $__write_err
+    i32.const 188
+    i32.const 10
+    i32.store8
+    i32.const 188
+    i32.const 1
+    call $__write_err
+  )
+  (func $__i32_add_chk (param $a i32) (param $b i32) (param $site i32) (result i32)
     (local $r i64)
     local.get $a
     i64.extend_i32_s
@@ -1664,13 +1943,15 @@ test "path.isInside treats a name starting with two dots as a name" {
     i64.ne
     (if
       (then
+        local.get $site
+        call $__chk_fail
         unreachable
       )
     )
     local.get $r
     i32.wrap_i64
   )
-  (func $__i32_sub_chk (param $a i32) (param $b i32) (result i32)
+  (func $__i32_sub_chk (param $a i32) (param $b i32) (param $site i32) (result i32)
     (local $r i64)
     local.get $a
     i64.extend_i32_s
@@ -1685,13 +1966,15 @@ test "path.isInside treats a name starting with two dots as a name" {
     i64.ne
     (if
       (then
+        local.get $site
+        call $__chk_fail
         unreachable
       )
     )
     local.get $r
     i32.wrap_i64
   )
-  (func $__i32_mul_chk (param $a i32) (param $b i32) (result i32)
+  (func $__i32_mul_chk (param $a i32) (param $b i32) (param $site i32) (result i32)
     (local $r i64)
     local.get $a
     i64.extend_i32_s
@@ -1706,13 +1989,15 @@ test "path.isInside treats a name starting with two dots as a name" {
     i64.ne
     (if
       (then
+        local.get $site
+        call $__chk_fail
         unreachable
       )
     )
     local.get $r
     i32.wrap_i64
   )
-  (func $__i64_add_chk (param $a i64) (param $b i64) (result i64)
+  (func $__i64_add_chk (param $a i64) (param $b i64) (param $site i32) (result i64)
     (local $r i64)
     local.get $a
     local.get $b
@@ -1729,12 +2014,14 @@ test "path.isInside treats a name starting with two dots as a name" {
     i64.lt_s
     (if
       (then
+        local.get $site
+        call $__chk_fail
         unreachable
       )
     )
     local.get $r
   )
-  (func $__i64_sub_chk (param $a i64) (param $b i64) (result i64)
+  (func $__i64_sub_chk (param $a i64) (param $b i64) (param $site i32) (result i64)
     (local $r i64)
     local.get $a
     local.get $b
@@ -1751,12 +2038,14 @@ test "path.isInside treats a name starting with two dots as a name" {
     i64.lt_s
     (if
       (then
+        local.get $site
+        call $__chk_fail
         unreachable
       )
     )
     local.get $r
   )
-  (func $__i64_mul_chk (param $a i64) (param $b i64) (result i64)
+  (func $__i64_mul_chk (param $a i64) (param $b i64) (param $site i32) (result i64)
     (local $r i64)
     local.get $a
     i64.const -1
@@ -1767,6 +2056,8 @@ test "path.isInside treats a name starting with two dots as a name" {
     i32.and
     (if
       (then
+        local.get $site
+        call $__chk_fail
         unreachable
       )
     )
@@ -1786,6 +2077,8 @@ test "path.isInside treats a name starting with two dots as a name" {
         i64.ne
         (if
           (then
+            local.get $site
+            call $__chk_fail
             unreachable
           )
         )
@@ -1793,11 +2086,16 @@ test "path.isInside treats a name starting with two dots as a name" {
     )
     local.get $r
   )
+  (func $__chk_fail (param $site i32)
+    local.get $site
+    call $__panic_fail
+    unreachable
+  )
   ;; std-wasm (decision 440): its functions, transpiled from std_wasm.wasm
-  (global $__std_sp (mut i32) (i32.const 1488))
+  (global $__std_sp (mut i32) (i32.const 1952))
   (func $__std_sp_check (param $sp i32) (result i32)
     local.get $sp
-    i32.const 336
+    i32.const 800
     i32.lt_s
     (if
       (then unreachable)

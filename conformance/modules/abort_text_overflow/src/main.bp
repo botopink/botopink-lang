@@ -1,0 +1,14 @@
+//// Decisions 535, 527 (3), 264 — an uncaught integer overflow writes
+//// `panic: integer overflow: <op> on <type> at <file>:<line>:<col>` to stderr
+//// on every target: the `Failure` an `attempt` would have answered, never a
+//// bare trap. What was printed before stays printed; nothing after it runs.
+
+fn bump(a: i32) -> i32 {
+    return a + 1;
+}
+
+pub fn main() {
+    @print("before");
+    @print(bump(2147483647));
+    @print("after");
+}

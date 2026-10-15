@@ -16,7 +16,8 @@ fn main() {
 (module
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
-  (global $__heap_ptr (mut i32) (i32.const 256))
+  (data (i32.const 256) "\32\00\00\00integer division by zero: % on i32 at main.bp:4:15")
+  (global $__heap_ptr (mut i32) (i32.const 312))
   (func $main
     (local $__mem0 i32)
     (local $processamento i32)
@@ -39,6 +40,8 @@ fn main() {
         br_if $__break
     local.get $i
     i32.const 2
+    i32.const 256
+    call $__i32_nz
     i32.rem_s
     i32.const 0
     i32.eq
@@ -401,6 +404,115 @@ fn main() {
     local.get $xs
     call $__print_arr_i32_raw
     call $__print_nl
+  )
+  (func $__write_err (param $p i32) (param $n i32)
+    i32.const 0
+    local.get $p
+    i32.store
+    i32.const 4
+    local.get $n
+    i32.store
+    i32.const 2
+    i32.const 0
+    i32.const 1
+    i32.const 8
+    call $fd_write
+    drop
+  )
+  (func $__assert_fail (param $where i32) (param $msg i32)
+    local.get $where
+    i32.const 4
+    i32.add
+    local.get $where
+    i32.load
+    call $__write_err
+    i32.const 188
+    i64.const 8390880602276044858
+    i64.store
+    i32.const 196
+    i64.const 7811882119909502825
+    i64.store
+    i32.const 204
+    i32.const 101
+    i32.store8
+    i32.const 205
+    i32.const 100
+    i32.store8
+    i32.const 188
+    i32.const 18
+    call $__write_err
+    local.get $msg
+    (if
+      (then
+        i32.const 188
+        i32.const 8250
+        i32.store
+        i32.const 188
+        i32.const 2
+        call $__write_err
+        local.get $msg
+        i32.const 4
+        i32.add
+        local.get $msg
+        i32.load
+        call $__write_err
+      )
+    )
+    i32.const 188
+    i32.const 10
+    i32.store8
+    i32.const 188
+    i32.const 1
+    call $__write_err
+  )
+  (func $__panic_fail (param $msg i32)
+    i32.const 188
+    i64.const 9071397899755888
+    i64.store
+    i32.const 188
+    i32.const 7
+    call $__write_err
+    local.get $msg
+    i32.const 4
+    i32.add
+    local.get $msg
+    i32.load
+    call $__write_err
+    i32.const 188
+    i32.const 10
+    i32.store8
+    i32.const 188
+    i32.const 1
+    call $__write_err
+  )
+  (func $__chk_fail (param $site i32)
+    local.get $site
+    call $__panic_fail
+    unreachable
+  )
+  (func $__i32_nz (param $b i32) (param $site i32) (result i32)
+    local.get $b
+    i32.eqz
+    (if
+      (then
+        local.get $site
+        call $__chk_fail
+        unreachable
+      )
+    )
+    local.get $b
+  )
+  (func $__i64_nz (param $b i64) (param $site i32) (result i64)
+    local.get $b
+    i64.eqz
+    (if
+      (then
+        local.get $site
+        call $__chk_fail
+        unreachable
+      )
+    )
+    local.get $b
   )
 )
 ```

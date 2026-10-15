@@ -1,10 +1,8 @@
 //// Decision 527 (3) — an integer `/` or `%` by zero is a `panic`, the text
 //// `integer division by zero: <op> on <type> at <file>:<line>:<col>`: erlang
 //// and beam raise it marked, as commonJS does — never a bare `badarith` read
-//// as a host raise. `attempt` contains it and the program goes on.
-////
-//// On wasm the division traps (decision 518): a trap is no exception, so
-//// `attempt` does not catch it and the program ends at the first one.
+//// as a host raise. `attempt` contains it and the program goes on — on wasm
+//// too, where the division is checked and raises (decisions 518, 527 (3)).
 
 import {failure, failure.Failure} from "std";
 

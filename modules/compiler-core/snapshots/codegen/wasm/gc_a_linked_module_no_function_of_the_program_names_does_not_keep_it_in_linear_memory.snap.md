@@ -591,11 +591,13 @@ test "order case over Order" {
   (data (i32.const 284) "\01\00\00\00)")
   (data (i32.const 292) "\0e\00\00\00R\04Dict\01\05pairsG")
   (data (i32.const 312) "\02\00\00\00[i")
-  (data (i32.const 320) "\01\00\00\00\"")
-  (data (i32.const 328) "\00\00\00\00")
-  (data (i32.const 332) "\0d\00\00\00R\03Set\01\05itemsG")
-  (data (i32.const 352) "\0f\00\00\00R\05Queue\01\05itemsG")
-  (global $__heap_ptr (mut i32) (i32.const 416))
+  (data (i32.const 320) "\36\00\00\00integer overflow: + on i32 at src/collections.bp:81:53")
+  (data (i32.const 380) "\01\00\00\00\"")
+  (data (i32.const 388) "\00\00\00\00")
+  (data (i32.const 392) "\0d\00\00\00R\03Set\01\05itemsG")
+  (data (i32.const 412) "\0f\00\00\00R\05Queue\01\05itemsG")
+  (data (i32.const 432) "\37\00\00\00integer overflow: - on i32 at src/collections.bp:540:15")
+  (global $__heap_ptr (mut i32) (i32.const 528))
   ;; std/collections — the four collection types, one namespace each (decision
   ;; 106): `Dict<K, V>`, `Set<T>`, `Queue<T>` and `Order`. Was the four modules
   ;; `dict`, `sets`, `queue` and `order`; the type is the namespace now, so a
@@ -1068,6 +1070,7 @@ test "order case over Order" {
       )
     )
     local.get $by
+    i32.const 320
     call $__i32_add_chk
     call $Dict_insert
     return
@@ -1455,7 +1458,7 @@ test "order case over Order" {
     i32.eq
     (if (result i32)
       (then
-    i32.const 320
+    i32.const 380
     call $__cap_begin
     local.set $_res0
     local.get $x
@@ -1463,7 +1466,7 @@ test "order case over Order" {
     local.get $_res0
     call $__cap_end
     call $__str_concat
-    i32.const 320
+    i32.const 380
     call $__str_concat
     return
       )
@@ -1472,7 +1475,7 @@ test "order case over Order" {
       )
     )
     drop
-    i32.const 328
+    i32.const 388
     call $__cap_begin
     local.set $_res1
     local.get $x
@@ -1617,7 +1620,7 @@ test "order case over Order" {
     call $__alloc
     local.set $__mem0
     local.get $__mem0
-    i32.const 336
+    i32.const 396
     i32.store
     local.get $__mem0
     i32.const 316
@@ -1656,7 +1659,7 @@ test "order case over Order" {
     call $__alloc
     local.set $__mem0
     local.get $__mem0
-    i32.const 336
+    i32.const 396
     i32.store
     local.get $__mem0
     i32.const 316
@@ -1734,7 +1737,7 @@ test "order case over Order" {
     call $__alloc
     local.set $__mem0
     local.get $__mem0
-    i32.const 336
+    i32.const 396
     i32.store
     local.get $__mem0
     i32.const 316
@@ -1765,7 +1768,7 @@ test "order case over Order" {
     call $__alloc
     local.set $__mem0
     local.get $__mem0
-    i32.const 336
+    i32.const 396
     i32.store
     local.get $__mem0
     i32.const 316
@@ -1849,7 +1852,7 @@ test "order case over Order" {
     call $__alloc
     local.set $__mem0
     local.get $__mem0
-    i32.const 336
+    i32.const 396
     i32.store
     local.get $__mem0
     i32.const 316
@@ -1929,7 +1932,7 @@ test "order case over Order" {
     call $__alloc
     local.set $__mem0
     local.get $__mem0
-    i32.const 336
+    i32.const 396
     i32.store
     local.get $__mem0
     i32.const 316
@@ -1961,7 +1964,7 @@ test "order case over Order" {
     call $__alloc
     local.set $__mem0
     local.get $__mem0
-    i32.const 336
+    i32.const 396
     i32.store
     local.get $__mem0
     i32.const 316
@@ -2047,7 +2050,7 @@ test "order case over Order" {
     call $__alloc
     local.set $__mem0
     local.get $__mem0
-    i32.const 356
+    i32.const 416
     i32.store
     local.get $__mem0
     i32.const 316
@@ -2098,7 +2101,7 @@ test "order case over Order" {
     call $__alloc
     local.set $__mem1
     local.get $__mem1
-    i32.const 356
+    i32.const 416
     i32.store
     local.get $__mem1
     i32.const 316
@@ -2135,7 +2138,7 @@ test "order case over Order" {
     call $__alloc
     local.set $__mem0
     local.get $__mem0
-    i32.const 356
+    i32.const 416
     i32.store
     local.get $__mem0
     i32.const 316
@@ -2160,7 +2163,7 @@ test "order case over Order" {
     call $__alloc
     local.set $__mem0
     local.get $__mem0
-    i32.const 356
+    i32.const 416
     i32.store
     local.get $__mem0
     i32.const 316
@@ -2203,6 +2206,7 @@ test "order case over Order" {
       (then
     i32.const 0
     i32.const 1
+    i32.const 432
     call $__i32_sub_chk
       )
       (else
@@ -2698,6 +2702,86 @@ test "order case over Order" {
     i32.load
     call $__box_i32
   )
+  (func $__write_err (param $p i32) (param $n i32)
+    i32.const 0
+    local.get $p
+    i32.store
+    i32.const 4
+    local.get $n
+    i32.store
+    i32.const 2
+    i32.const 0
+    i32.const 1
+    i32.const 8
+    call $fd_write
+    drop
+  )
+  (func $__assert_fail (param $where i32) (param $msg i32)
+    local.get $where
+    i32.const 4
+    i32.add
+    local.get $where
+    i32.load
+    call $__write_err
+    i32.const 188
+    i64.const 8390880602276044858
+    i64.store
+    i32.const 196
+    i64.const 7811882119909502825
+    i64.store
+    i32.const 204
+    i32.const 101
+    i32.store8
+    i32.const 205
+    i32.const 100
+    i32.store8
+    i32.const 188
+    i32.const 18
+    call $__write_err
+    local.get $msg
+    (if
+      (then
+        i32.const 188
+        i32.const 8250
+        i32.store
+        i32.const 188
+        i32.const 2
+        call $__write_err
+        local.get $msg
+        i32.const 4
+        i32.add
+        local.get $msg
+        i32.load
+        call $__write_err
+      )
+    )
+    i32.const 188
+    i32.const 10
+    i32.store8
+    i32.const 188
+    i32.const 1
+    call $__write_err
+  )
+  (func $__panic_fail (param $msg i32)
+    i32.const 188
+    i64.const 9071397899755888
+    i64.store
+    i32.const 188
+    i32.const 7
+    call $__write_err
+    local.get $msg
+    i32.const 4
+    i32.add
+    local.get $msg
+    i32.load
+    call $__write_err
+    i32.const 188
+    i32.const 10
+    i32.store8
+    i32.const 188
+    i32.const 1
+    call $__write_err
+  )
   (func $__unknown_kind (param $v i32) (result i32)
     (local $d i32)
     local.get $v
@@ -2885,7 +2969,7 @@ test "order case over Order" {
     local.get $b
     i32.eq
   )
-  (func $__i32_add_chk (param $a i32) (param $b i32) (result i32)
+  (func $__i32_add_chk (param $a i32) (param $b i32) (param $site i32) (result i32)
     (local $r i64)
     local.get $a
     i64.extend_i32_s
@@ -2900,13 +2984,15 @@ test "order case over Order" {
     i64.ne
     (if
       (then
+        local.get $site
+        call $__chk_fail
         unreachable
       )
     )
     local.get $r
     i32.wrap_i64
   )
-  (func $__i32_sub_chk (param $a i32) (param $b i32) (result i32)
+  (func $__i32_sub_chk (param $a i32) (param $b i32) (param $site i32) (result i32)
     (local $r i64)
     local.get $a
     i64.extend_i32_s
@@ -2921,13 +3007,15 @@ test "order case over Order" {
     i64.ne
     (if
       (then
+        local.get $site
+        call $__chk_fail
         unreachable
       )
     )
     local.get $r
     i32.wrap_i64
   )
-  (func $__i32_mul_chk (param $a i32) (param $b i32) (result i32)
+  (func $__i32_mul_chk (param $a i32) (param $b i32) (param $site i32) (result i32)
     (local $r i64)
     local.get $a
     i64.extend_i32_s
@@ -2942,13 +3030,15 @@ test "order case over Order" {
     i64.ne
     (if
       (then
+        local.get $site
+        call $__chk_fail
         unreachable
       )
     )
     local.get $r
     i32.wrap_i64
   )
-  (func $__i64_add_chk (param $a i64) (param $b i64) (result i64)
+  (func $__i64_add_chk (param $a i64) (param $b i64) (param $site i32) (result i64)
     (local $r i64)
     local.get $a
     local.get $b
@@ -2965,12 +3055,14 @@ test "order case over Order" {
     i64.lt_s
     (if
       (then
+        local.get $site
+        call $__chk_fail
         unreachable
       )
     )
     local.get $r
   )
-  (func $__i64_sub_chk (param $a i64) (param $b i64) (result i64)
+  (func $__i64_sub_chk (param $a i64) (param $b i64) (param $site i32) (result i64)
     (local $r i64)
     local.get $a
     local.get $b
@@ -2987,12 +3079,14 @@ test "order case over Order" {
     i64.lt_s
     (if
       (then
+        local.get $site
+        call $__chk_fail
         unreachable
       )
     )
     local.get $r
   )
-  (func $__i64_mul_chk (param $a i64) (param $b i64) (result i64)
+  (func $__i64_mul_chk (param $a i64) (param $b i64) (param $site i32) (result i64)
     (local $r i64)
     local.get $a
     i64.const -1
@@ -3003,6 +3097,8 @@ test "order case over Order" {
     i32.and
     (if
       (then
+        local.get $site
+        call $__chk_fail
         unreachable
       )
     )
@@ -3022,6 +3118,8 @@ test "order case over Order" {
         i64.ne
         (if
           (then
+            local.get $site
+            call $__chk_fail
             unreachable
           )
         )
@@ -3052,11 +3150,16 @@ test "order case over Order" {
     global.set $__cap
     local.get $s
   )
+  (func $__chk_fail (param $site i32)
+    local.get $site
+    call $__panic_fail
+    unreachable
+  )
   ;; std-wasm (decision 440): its functions, transpiled from std_wasm.wasm
-  (global $__std_sp (mut i32) (i32.const 416))
+  (global $__std_sp (mut i32) (i32.const 528))
   (func $__std_sp_check (param $sp i32) (result i32)
     local.get $sp
-    i32.const 376
+    i32.const 496
     i32.lt_s
     (if
       (then unreachable)

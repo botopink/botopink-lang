@@ -56,7 +56,9 @@ pub fn items(g: ast.HelperGroup) []const ast.Item {
         .print_i64 => &.{ .{ .func = print_i64_raw }, .{ .func = print_i64 } },
         .int_chk => &int_chk_items,
         .print_u64 => &.{ .{ .func = print_u64_raw }, .{ .func = print_u64 } },
-        .u64_chk => &.{ .{ .func = u64_add_chk }, .{ .func = u64_sub_chk }, .{ .func = u64_mul_chk } },
+        .u64_chk => &u64_chk_items,
+        .nz_chk => &nz_chk_items,
+        .chk_fail => &.{.{ .func = chk_fail_write }},
         .print_opt_i64 => &.{ .{ .func = print_opt_i64_raw }, .{ .func = print_opt_i64 } },
         .print_opt_u64 => &.{ .{ .func = print_opt_u64_raw }, .{ .func = print_opt_u64 } },
         .print_opt_tagged => &.{ .{ .func = print_opt_tagged_raw }, .{ .func = print_opt_tagged } },
@@ -1185,53 +1187,113 @@ fn loopAs(comptime out: []const u8, comptime cont: []const u8, comptime body: []
 // A result the type cannot hold traps — the value the program asked for does
 // not exist in its declared type.
 
-fn chk32(comptime name: []const u8, comptime opname: []const u8) ast.Func {
-    return func(name, &.{ "a", "b" }, .i32, &.{l64("r")}, &.{
+/// The check's abort: `$__chk_fail(site)` (decision 527 (3)) — `site` the
+/// message the call names, a length-prefixed string (an `i32` in linear
+/// memory, a `$str` in a `.gc` module).
+fn failChk() Instr {
+    return when(&.{ get("site"), call("__chk_fail"), .@"unreachable" });
+}
+
+fn chk32(comptime name: []const u8, comptime opname: []const u8, comptime site: P) ast.Func {
+    return typedFunc(name, &.{ p32("a"), p32("b"), site }, .i32, &.{l64("r")}, &.{
         get("a"), cv("i64.extend_i32_s"), get("b"),               cv("i64.extend_i32_s"), op64(opname), set("r"),
-        get("r"), cv("i32.wrap_i64"),     cv("i64.extend_i32_s"), get("r"),               op64("ne"),   when(&.{.@"unreachable"}),
+        get("r"), cv("i32.wrap_i64"),     cv("i64.extend_i32_s"), get("r"),               op64("ne"),   failChk(),
         get("r"), cv("i32.wrap_i64"),
     });
 }
-const i32_add_chk = chk32("__i32_add_chk", "add");
-const i32_sub_chk = chk32("__i32_sub_chk", "sub");
-const i32_mul_chk = chk32("__i32_mul_chk", "mul");
 
-const i64_add_chk = typedFunc("__i64_add_chk", &.{ p64("a"), p64("b") }, .i64, &.{l64("r")}, &.{
-    get("a"),     get("b"),                  op64("add"), set("r"),
-    // overflow iff both operands differ in sign from the result
-    get("a"),     get("r"),                  op64("xor"), get("b"),
-    get("r"),     op64("xor"),               op64("and"), c64(0),
-    op64("lt_s"), when(&.{.@"unreachable"}), get("r"),
-});
-const i64_sub_chk = typedFunc("__i64_sub_chk", &.{ p64("a"), p64("b") }, .i64, &.{l64("r")}, &.{
-    get("a"),     get("b"),                  op64("sub"), set("r"),
-    // overflow iff the operands differ in sign and the result's sign is `b`'s
-    get("a"),     get("b"),                  op64("xor"), get("a"),
-    get("r"),     op64("xor"),               op64("and"), c64(0),
-    op64("lt_s"), when(&.{.@"unreachable"}), get("r"),
-});
-const i64_mul_chk = typedFunc("__i64_mul_chk", &.{ p64("a"), p64("b") }, .i64, &.{l64("r")}, &.{
-    get("a"),                  c64(-1),                                                                                        op64("eq"), get("b"),    c64(-9223372036854775808), op64("eq"), op("and"),
-    when(&.{.@"unreachable"}), get("a"),                                                                                       get("b"),   op64("mul"), set("r"),                  get("a"),   op64("eqz"),
-    op("eqz"),                 when(&.{ get("r"), get("a"), op64("div_s"), get("b"), op64("ne"), when(&.{.@"unreachable"}) }), get("r"),
-});
+fn i64Chk(comptime site: P) [3]ast.Func {
+    return .{
+        typedFunc("__i64_add_chk", &.{ p64("a"), p64("b"), site }, .i64, &.{l64("r")}, &.{
+            get("a"),     get("b"),    op64("add"), set("r"),
+            // overflow iff both operands differ in sign from the result
+            get("a"),     get("r"),    op64("xor"), get("b"),
+            get("r"),     op64("xor"), op64("and"), c64(0),
+            op64("lt_s"), failChk(),   get("r"),
+        }),
+        typedFunc("__i64_sub_chk", &.{ p64("a"), p64("b"), site }, .i64, &.{l64("r")}, &.{
+            get("a"),     get("b"),    op64("sub"), set("r"),
+            // overflow iff the operands differ in sign and the result's sign is `b`'s
+            get("a"),     get("b"),    op64("xor"), get("a"),
+            get("r"),     op64("xor"), op64("and"), c64(0),
+            op64("lt_s"), failChk(),   get("r"),
+        }),
+        typedFunc("__i64_mul_chk", &.{ p64("a"), p64("b"), site }, .i64, &.{l64("r")}, &.{
+            get("a"),  c64(-1),                                                                        op64("eq"), get("b"),    c64(-9223372036854775808), op64("eq"), op("and"),
+            failChk(), get("a"),                                                                       get("b"),   op64("mul"), set("r"),                  get("a"),   op64("eqz"),
+            op("eqz"), when(&.{ get("r"), get("a"), op64("div_s"), get("b"), op64("ne"), failChk() }), get("r"),
+        }),
+    };
+}
 
 // A type narrower than its carrier (`i8`, `u8`, `i16`, `u16` in an `i32`;
 // `u32`, `u64` in an `i64`) checks the carrier's result against its own
-// range (decision 264): `v` answered inside `lo..=hi`, a trap outside it.
-const i32_range_chk = func("__i32_range_chk", &.{ "v", "lo", "hi" }, .i32, &.{}, &.{
-    get("v"), get("lo"),                 op("lt_s"), get("v"), get("hi"), op("gt_s"),
-    op("or"), when(&.{.@"unreachable"}), get("v"),
-});
-const i64_range_chk = typedFunc("__i64_range_chk", &.{ p64("v"), p64("lo"), p64("hi") }, .i64, &.{}, &.{
-    get("v"), get("lo"),                 op64("lt_s"), get("v"), get("hi"), op64("gt_s"),
-    op("or"), when(&.{.@"unreachable"}), get("v"),
-});
+// range (decision 264): `v` answered inside `lo..=hi`, an abort outside it.
+fn i32RangeChk(comptime site: P) ast.Func {
+    return typedFunc("__i32_range_chk", &.{ p32("v"), p32("lo"), p32("hi"), site }, .i32, &.{}, &.{
+        get("v"), get("lo"), op("lt_s"), get("v"), get("hi"), op("gt_s"),
+        op("or"), failChk(), get("v"),
+    });
+}
+fn i64RangeChk(comptime site: P) ast.Func {
+    return typedFunc("__i64_range_chk", &.{ p64("v"), p64("lo"), p64("hi"), site }, .i64, &.{}, &.{
+        get("v"), get("lo"), op64("lt_s"), get("v"), get("hi"), op64("gt_s"),
+        op("or"), failChk(), get("v"),
+    });
+}
 
-const int_chk_items = [_]ast.Item{
-    .{ .func = i32_add_chk }, .{ .func = i32_sub_chk }, .{ .func = i32_mul_chk },
-    .{ .func = i64_add_chk }, .{ .func = i64_sub_chk }, .{ .func = i64_mul_chk },
-};
+/// `$__i32_nz(b, site)` / `$__i64_nz` — a divisor answered back when it is
+/// not zero, else the abort (decision 527 (3)); the dividend waits beneath it
+/// on the stack and the division follows.
+fn nzItems(comptime site: P) [2]ast.Item {
+    return .{
+        .{ .func = typedFunc("__i32_nz", &.{ p32("b"), site }, .i32, &.{}, &.{ get("b"), op("eqz"), failChk(), get("b") }) },
+        .{ .func = typedFunc("__i64_nz", &.{ p64("b"), site }, .i64, &.{}, &.{ get("b"), op64("eqz"), failChk(), get("b") }) },
+    };
+}
+
+/// `$__u64_{add,sub,mul}_chk` — see the `u64` section below.
+fn u64Chk(comptime site: P) [3]ast.Item {
+    return .{
+        .{ .func = typedFunc("__u64_add_chk", &.{ p64("a"), p64("b"), site }, .i64, &.{l64("r")}, &.{
+            get("a"), get("b"), op64("add"), tee("r"), get("a"), op64("lt_u"), failChk(), get("r"),
+        }) },
+        .{ .func = typedFunc("__u64_sub_chk", &.{ p64("a"), p64("b"), site }, .i64, &.{}, &.{
+            get("a"), get("b"), op64("lt_u"), failChk(), get("a"), get("b"), op64("sub"),
+        }) },
+        .{ .func = typedFunc("__u64_mul_chk", &.{ p64("a"), p64("b"), site }, .i64, &.{l64("r")}, &.{
+            get("a"), get("b"),    op64("mul"), set("r"),
+            get("a"), op64("eqz"), op("eqz"),   when(&.{ get("r"), get("a"), op64("div_u"), get("b"), op64("ne"), failChk() }),
+            get("r"),
+        }) },
+    };
+}
+
+const linear_site = p32("site");
+
+fn intChkItems(comptime site: P) [6]ast.Item {
+    const w = i64Chk(site);
+    return .{
+        .{ .func = chk32("__i32_add_chk", "add", site) }, .{ .func = chk32("__i32_sub_chk", "sub", site) }, .{ .func = chk32("__i32_mul_chk", "mul", site) },
+        .{ .func = w[0] },                                .{ .func = w[1] },                                .{ .func = w[2] },
+    };
+}
+const int_chk_items = intChkItems(linear_site);
+const i32_range_chk = i32RangeChk(linear_site);
+const i64_range_chk = i64RangeChk(linear_site);
+const nz_chk_items = nzItems(linear_site);
+const u64_chk_items = u64Chk(linear_site);
+
+/// `$__chk_fail(site)` — the abort of a checked operation: raised as the
+/// exception `attempt` catches when the program reaches it (`exceptions`),
+/// else `panic: <message>` on stderr and a trap.
+pub fn chkFail(exceptions: bool) ast.Func {
+    return if (exceptions) chk_fail_raise else chk_fail_write;
+}
+const chk_fail_raise = typedFunc("__chk_fail", &.{linear_site}, null, &.{}, &.{ get("site"), c32(1), call("__panic_raise"), .@"unreachable" });
+const chk_fail_write = typedFunc("__chk_fail", &.{linear_site}, null, &.{}, &.{ get("site"), call("__panic_fail"), .@"unreachable" });
+/// The `.gc` form of `chkFail`: the message is a `$str` (a raise has no GC form yet).
+pub const gc_chk_fail = typedFunc("__chk_fail", &.{pref("site")}, null, &.{}, &.{ get("site"), call("__panic_fail"), .@"unreachable" });
 
 /// An `i64` printed in all its digits. It was lowered as an `i32`:
 /// `val a: i64 = 4294967295` printed `-1`. The digits are std-wasm's
@@ -1258,18 +1320,6 @@ const print_u64_raw = typedFunc("__print_u64_raw", &.{p64("v")}, null, i32s(&.{"
     get("t"), load(0),                           call("__write_bytes"),
 });
 const print_u64 = typedFunc("__print_u64", &.{p64("v")}, null, &.{}, &.{ get("v"), call("__print_u64_raw"), call("__print_nl") });
-
-const u64_add_chk = typedFunc("__u64_add_chk", &.{ p64("a"), p64("b") }, .i64, &.{l64("r")}, &.{
-    get("a"), get("b"), op64("add"), tee("r"), get("a"), op64("lt_u"), when(&.{.@"unreachable"}), get("r"),
-});
-const u64_sub_chk = typedFunc("__u64_sub_chk", &.{ p64("a"), p64("b") }, .i64, &.{}, &.{
-    get("a"), get("b"), op64("lt_u"), when(&.{.@"unreachable"}), get("a"), get("b"), op64("sub"),
-});
-const u64_mul_chk = typedFunc("__u64_mul_chk", &.{ p64("a"), p64("b") }, .i64, &.{l64("r")}, &.{
-    get("a"), get("b"),    op64("mul"), set("r"),
-    get("a"), op64("eqz"), op("eqz"),   when(&.{ get("r"), get("a"), op64("div_u"), get("b"), op64("ne"), when(&.{.@"unreachable"}) }),
-    get("r"),
-});
 
 /// An `i64` in a 4-byte word slot — a record field, a `?i64` — is the address
 /// of an 8-byte cell, as a float is (`$__box_f64`). Wrapped to an `i32` in the
@@ -2279,7 +2329,13 @@ pub fn gcItems(g: ast.HelperGroup, capture: bool) ?[]const ast.Item {
         // `$__print_tagged_raw` is generated, and asks no module's `display`
         // hook: a record's own `display` is called by its printer.
         .display_of => &.{},
-        .print_bool, .alloc, .i32_abs, .i32_min, .i32_max, .print_i64, .int_chk, .i32_range_chk, .i64_range_chk, .print_u64, .u64_chk => items(g),
+        .print_bool, .alloc, .i32_abs, .i32_min, .i32_max, .print_i64, .print_u64 => items(g),
+        .int_chk => &gc_int_chk_items,
+        .i32_range_chk => &.{.{ .func = gc_i32_range_chk }},
+        .i64_range_chk => &.{.{ .func = gc_i64_range_chk }},
+        .u64_chk => &gc_u64_chk_items,
+        .nz_chk => &gc_nz_chk_items,
+        .chk_fail => &.{.{ .func = gc_chk_fail }},
         else => null,
     };
 }
@@ -2292,6 +2348,12 @@ pub fn gcDeps(g: ast.HelperGroup) []const ast.HelperGroup {
         else => &.{},
     };
 }
+
+const gc_i32_range_chk = i32RangeChk(pref("site"));
+const gc_i64_range_chk = i64RangeChk(pref("site"));
+const gc_int_chk_items = intChkItems(pref("site"));
+const gc_u64_chk_items = u64Chk(pref("site"));
+const gc_nz_chk_items = nzItems(pref("site"));
 
 const gc_print_items_capture = blk: {
     var out = print_items;

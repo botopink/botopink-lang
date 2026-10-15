@@ -1729,6 +1729,10 @@ fn emitWatPass(
 
     // The print helpers are the only thing that needs a host function, and
     // `Builder.helper` is the only way to have called one.
+    // Decision 527 (3) — a checked operation's abort is raised as the
+    // exception `attempt` catches in a module that has one, else written and
+    // trapped; a `.gc` module with exceptions has no GC form of the raise.
+    if (em.exceptions and em.b.helpers.has(.chk_fail)) em.b.helpers.require(.panic_raise);
     if (em.b.helpers.has(.print)) try items.append(ar, .{ .import = prelude.fd_write_import });
     // Decision 238's `wasi:` adapters each bring the WASI call they make.
     if (em.b.helpers.has(.wasi_random_f64)) try items.append(ar, .{ .import = prelude.random_get_import });
@@ -1835,6 +1839,10 @@ fn emitWatPass(
                 .print_str, .print_f64, .str_concat, .str_eq, .text_capture, .std_marshal, .panic_fail, .print_shaped => em.gc_str_used = true,
                 else => {},
             }
+            continue;
+        }
+        if (group == .chk_fail) {
+            try items.append(ar, .{ .func = prelude.chkFail(em.exceptions) });
             continue;
         }
         // `$__print_tagged_raw` asks the module which of its types answers its
@@ -24181,11 +24189,15 @@ const Emitter = struct {
     }
 
     /// `<t>.<op>` over the two operands on the stack — an integer `add`,
-    /// `sub` or `mul` checked (`$__i32_add_chk`, …), which traps where the
+    /// `sub` or `mul` checked (`$__i32_add_chk`, …), which aborts where the
     /// result does not fit `t`: wrapped, `2147483647 + 1` answered
     /// `-2147483648` at exit 0 where commonJS and erlang answer `2147483648`.
     /// The type inference recorded at `loc` (decision 264) then checks its
-    /// own range when it is narrower than `t` (`emitRangeCheck`).
+    /// own range when it is narrower than `t` (`emitRangeCheck`). An integer
+    /// `div` or `rem` has its divisor checked against zero (`$__i32_nz`).
+    /// Each check takes its site — the message the abort writes (decision 527
+    /// (3)), pushed after the operands — so the abort says where it happened
+    /// and is raised, not trapped, under `attempt`.
     fn emitArith(self: *Emitter, t: Repr, on: []const u8, loc: ast.Loc) anyerror!void {
         const wide = t.isI64();
         // A `u64` / `usize` result is checked unsigned against the carrier's
@@ -24200,7 +24212,10 @@ const Emitter = struct {
                 .u64_mul_chk
             else
                 null;
-            if (h) |helper| return self.emit(self.builder().helper(helper));
+            if (h) |helper| {
+                try self.emitCheckSite("overflow", on, wide, loc);
+                return self.emit(self.builder().helper(helper));
+            }
         }
         if (wide or t.isWord()) {
             const h: ?wat.Helper = if (std.mem.eql(u8, on, "add"))
@@ -24212,11 +24227,40 @@ const Emitter = struct {
             else
                 null;
             if (h) |helper| {
+                try self.emitCheckSite("overflow", on, wide, loc);
                 try self.emit(self.builder().helper(helper));
-                return self.emitRangeCheck(wide, loc);
+                return self.emitRangeCheck(wide, loc, on);
             }
+            // The divisor is the operand on top: checked and answered back.
+            const divides = std.mem.startsWith(u8, on, "div_") or std.mem.startsWith(u8, on, "rem_");
+            if (divides) if (self.instance_lowerings.get(loc)) |il| if (il == .division and il.division.range() != null) {
+                try self.emitCheckSite("division by zero", on, wide, loc);
+                try self.emit(self.builder().helper(if (wide) .i64_nz else .i32_nz));
+            };
         }
         try self.emit(opOf(t, on));
+    }
+
+    /// Decision 527 (3) — the site of a checked operation, on the stack: the
+    /// message its abort writes, `integer <overflow | division by zero>: <op>
+    /// on <type> at <file>:<line>:<col>`, as every other target writes it. The
+    /// type is the one inference recorded at `loc`, else the carrier's.
+    fn emitCheckSite(self: *Emitter, what: []const u8, on: []const u8, wide: bool, loc: ast.Loc) anyerror!void {
+        const sym: []const u8 = if (std.mem.eql(u8, on, "add"))
+            "+"
+        else if (std.mem.eql(u8, on, "sub"))
+            "-"
+        else if (std.mem.eql(u8, on, "mul"))
+            "*"
+        else if (std.mem.startsWith(u8, on, "div_"))
+            "/"
+        else
+            "%";
+        const ty: []const u8 = if (self.instance_lowerings.get(loc)) |il|
+            (if (il == .division) @tagName(il.division) else if (wide) "i64" else "i32")
+        else if (wide) "i64" else "i32";
+        const file = if (self.src_path.len > 0) self.src_path else try std.fmt.allocPrint(self.arena(), "{s}.bp", .{if (self.module_name.len > 0) self.module_name else "main"});
+        try self.emitStrLit(try std.fmt.allocPrint(self.arena(), "integer {s}: {s} on {s} at {s}:{d}:{d}", .{ what, sym, ty, file, loc.line, loc.col }));
     }
 
     /// Whether inference typed the arithmetic operator at `loc` `u64` or
@@ -24263,7 +24307,7 @@ const Emitter = struct {
     /// lives in an `i64` here, so its range ends at the carrier's. An
     /// operator whose type was never resolved (a generic `T`) is left as the
     /// carrier's check left it.
-    fn emitRangeCheck(self: *Emitter, wide: bool, loc: ast.Loc) anyerror!void {
+    fn emitRangeCheck(self: *Emitter, wide: bool, loc: ast.Loc, on: []const u8) anyerror!void {
         const il = self.instance_lowerings.get(loc) orelse return;
         if (il != .division) return;
         const r = il.division.range() orelse return;
@@ -24275,6 +24319,7 @@ const Emitter = struct {
         const ty: Repr = if (wide) .i64 else .i32;
         try self.emit(constOf(ty, try std.fmt.allocPrint(self.arena(), "{d}", .{lo})));
         try self.emit(constOf(ty, try std.fmt.allocPrint(self.arena(), "{d}", .{hi})));
+        try self.emitCheckSite("overflow", on, wide, loc);
         try self.emit(self.builder().helper(if (wide) .i64_range_chk else .i32_range_chk));
     }
 

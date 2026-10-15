@@ -236,7 +236,8 @@ inside a `try_table` catching the tag; what escapes is written as `@panic`
 writes it (`$__panic_fail`) and traps, so an uncaught abort answers exactly
 what it answered before. `$__panic_fail` writes `panic: ` (scratch `188`), the message and a newline — the line
 commonJS, erlang and beam write (decision 535): `@panic`, `@todo` with a message and `assert` do on wasm
-(`conformance/modules/abort_text_panic`); an integer overflow and a division by zero still trap with no text. The adapter `wasi: .Attempt` (`host_binding.zig`,
+(`conformance/modules/abort_text_panic`); so do an integer overflow and an integer division or remainder by zero
+(decision 527 (3), § Checked integer arithmetic). The adapter `wasi: .Attempt` (`host_binding.zig`,
 shapes `fn() -> T` → `@Result<T, string>`) is `$__wasi_attempt(f)`
 (`wasi_attempt`): the thunk called through the table inside a `try_table`
 whose `catch` branches to the block around it — a `@Result` pair, `Ok` of the
@@ -248,9 +249,21 @@ has the forms it needs: `Instr.throw`, `Block.Kind.try_table` with its
 naming no tag (`UndefinedTag`). A program that needs no exception renders
 byte for byte as before.
 
-**What it does not cover** (144 B-07-b): an `assert`, an integer overflow, a
-division by zero and a host fault trap — no exception, so no `attempt` catches
-them; a thunk's word is an `i32` (a float or `i64` answer is not boxed for the
+**Checked integer arithmetic** (front 164 s2c, decision 527 (3)). Every checked helper takes its
+**site** as a last argument — the message the abort writes, `integer overflow: <op> on <type> at
+<file>:<line>:<col>` or `integer division by zero: …`, an interned string in linear memory (an `i32`) and a
+`$str` global in a `.gc` module (`Emitter.emitCheckSite`, pushed by `emitArith` after the operands; the
+type is the one inference recorded at the operator, else the carrier's). A site argument, not a
+`$__site` global set before each operation: it is one `const` per operation instead of two instructions,
+and it needs no state a nested or re-entered call could overwrite. `$__i32_add_chk` … `$__u64_mul_chk`,
+the range checks and `$__i32_nz` / `$__i64_nz` (the divisor of an integer `/` or `%`, answered back when
+not zero; the dividend waits under it) call `$__chk_fail(site)`, the group `chk_fail`: `$__panic_raise(site,
+1)` when the module has exceptions (so `attempt` answers `Error(panic)` and goes on), else `$__panic_fail`
+(`panic: <message>`) and a trap. A `.gc` module with exceptions falls back to linear memory (`panic_raise` has
+no GC form). `INT_MIN / -1` still traps bare.
+
+**What it does not cover** (144 B-07-b): a host fault traps — no exception, so no `attempt` catches
+it; a thunk's word is an `i32` (a float or `i64` answer is not boxed for the
 adapter); `attemptTask` contains what the thunk raises before its task's first
 `await` — an abort in a later step of the task is not caught. A generic
 `declare fn` a binding binds is read for its return as a bodied generic is

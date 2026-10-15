@@ -13,7 +13,8 @@ fn main() {
   (memory (export "memory") 1)
   (data (i32.const 256) "\0f\00\00\00not implemented")
   (data (i32.const 276) "\02\00\00\0042")
-  (global $__heap_ptr (mut i32) (i32.const 284))
+  (data (i32.const 284) "\2a\00\00\00integer overflow: + on i32 at main.bp:3:41")
+  (global $__heap_ptr (mut i32) (i32.const 332))
   (func $parseAge (param $s i32) (result i32)
     i32.const 256
     call $__panic_fail
@@ -49,6 +50,7 @@ fn main() {
     local.get $_res1
     local.get $n
     i32.const 1
+    i32.const 284
     call $__i32_add_chk
     i32.store offset=4 ;; mapped payload
     local.get $_res1
@@ -367,7 +369,7 @@ fn main() {
     i32.const 1
     call $__write_err
   )
-  (func $__i32_add_chk (param $a i32) (param $b i32) (result i32)
+  (func $__i32_add_chk (param $a i32) (param $b i32) (param $site i32) (result i32)
     (local $r i64)
     local.get $a
     i64.extend_i32_s
@@ -382,13 +384,15 @@ fn main() {
     i64.ne
     (if
       (then
+        local.get $site
+        call $__chk_fail
         unreachable
       )
     )
     local.get $r
     i32.wrap_i64
   )
-  (func $__i32_sub_chk (param $a i32) (param $b i32) (result i32)
+  (func $__i32_sub_chk (param $a i32) (param $b i32) (param $site i32) (result i32)
     (local $r i64)
     local.get $a
     i64.extend_i32_s
@@ -403,13 +407,15 @@ fn main() {
     i64.ne
     (if
       (then
+        local.get $site
+        call $__chk_fail
         unreachable
       )
     )
     local.get $r
     i32.wrap_i64
   )
-  (func $__i32_mul_chk (param $a i32) (param $b i32) (result i32)
+  (func $__i32_mul_chk (param $a i32) (param $b i32) (param $site i32) (result i32)
     (local $r i64)
     local.get $a
     i64.extend_i32_s
@@ -424,13 +430,15 @@ fn main() {
     i64.ne
     (if
       (then
+        local.get $site
+        call $__chk_fail
         unreachable
       )
     )
     local.get $r
     i32.wrap_i64
   )
-  (func $__i64_add_chk (param $a i64) (param $b i64) (result i64)
+  (func $__i64_add_chk (param $a i64) (param $b i64) (param $site i32) (result i64)
     (local $r i64)
     local.get $a
     local.get $b
@@ -447,12 +455,14 @@ fn main() {
     i64.lt_s
     (if
       (then
+        local.get $site
+        call $__chk_fail
         unreachable
       )
     )
     local.get $r
   )
-  (func $__i64_sub_chk (param $a i64) (param $b i64) (result i64)
+  (func $__i64_sub_chk (param $a i64) (param $b i64) (param $site i32) (result i64)
     (local $r i64)
     local.get $a
     local.get $b
@@ -469,12 +479,14 @@ fn main() {
     i64.lt_s
     (if
       (then
+        local.get $site
+        call $__chk_fail
         unreachable
       )
     )
     local.get $r
   )
-  (func $__i64_mul_chk (param $a i64) (param $b i64) (result i64)
+  (func $__i64_mul_chk (param $a i64) (param $b i64) (param $site i32) (result i64)
     (local $r i64)
     local.get $a
     i64.const -1
@@ -485,6 +497,8 @@ fn main() {
     i32.and
     (if
       (then
+        local.get $site
+        call $__chk_fail
         unreachable
       )
     )
@@ -504,12 +518,19 @@ fn main() {
         i64.ne
         (if
           (then
+            local.get $site
+            call $__chk_fail
             unreachable
           )
         )
       )
     )
     local.get $r
+  )
+  (func $__chk_fail (param $site i32)
+    local.get $site
+    call $__panic_fail
+    unreachable
   )
 )
 ```

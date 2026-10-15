@@ -2098,7 +2098,7 @@ The narrowed cells whose excluded targets' missing binding is named here (re-der
 | `modules/render_scope_library` | commonJS erlang beam | wasm — `hostStash` |
 | `modules/std_failure_attempt_host` | commonJS erlang beam | wasm — `raiseError` |
 | `modules/abort_text_host` | commonJS erlang beam | wasm — `explode` |
-| `modules/abort_text_panic` | commonJS erlang beam | wasm — `message` (out until front 164 s2c writes the text there) |
+| `modules/abort_text_panic` | every target | none |
 | `modules/abort_text_crash` | commonJS | erlang, wasm, beam — `notText` |
 | `modules/std_failure_attempt_crash` | commonJS erlang beam | wasm — `shapeNamed` |
 | `modules/std_asserts_throws_over_attempt` | commonJS erlang beam | wasm — `raiseBoom`, `std/testing/asserts.canonical` |
@@ -2522,8 +2522,10 @@ message in `snapshot/targets/commonJS/`) and adds the commonJS half of 546: a bi
 (`__bp_host`); std's `failure` forms and the abort guard read an unmarked raise as `crash`
 (`modules/abort_text_crash`: a binding answering a number where a `string` is declared, whose `trim()` raises in the
 program's own code). `modules/abort_text_panic` claims `panic: boom` for an uncaught `@panic` on commonJS, erlang and
-beam; wasm is out of it until 164 s2c writes the text there (its message comes from a host binding, which is what the
-narrowing audit stands on).
+beam, and on wasm too (164 s2c); `modules/abort_text_overflow` claims `panic: integer overflow: + on i32 at
+src/main.bp:7:14` for an uncaught overflow on the four targets, and `modules/std_failure_attempt_abort_kinds` and
+`modules/int_division_by_zero_is_panic` answer `Error(panic)` for an overflow and a division by zero under `attempt`
+on wasm as on the others (527 (3), 492).
 Decision 535 (an uncaught abort writes the `Failure` an `attempt` would answer, `<kind>: <message>`) adds
 `modules/abort_text_host` (an uncaught host raise writes `host: boom` on commonJS, erlang and beam) and tightens
 `case_no_arm_matches_raises` and `float_nan_infinity_words` to the whole text of their erlang and beam aborts

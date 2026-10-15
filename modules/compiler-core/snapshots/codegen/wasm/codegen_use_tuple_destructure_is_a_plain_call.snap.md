@@ -844,7 +844,8 @@ fn LikeWidget() -> @Component<Element> {
   (data (i32.const 484) "\1c\00\00\00R\05Frame\03\03keys\05valuei\06parenti")
   (data (i32.const 516) "\19\00\00\00R\08Rendered\02\05valueG\05scopeT")
   (data (i32.const 548) "\0a\00\00\00R\07Element\00")
-  (global $__heap_ptr (mut i32) (i32.const 564))
+  (data (i32.const 564) "\2a\00\00\00integer overflow: + on i32 at main.bp:7:57")
+  (global $__heap_ptr (mut i32) (i32.const 612))
   (func $createContext (param $value i32) (result i32)
     (local $__mem0 i32)
     i32.const 12
@@ -1247,6 +1248,7 @@ fn LikeWidget() -> @Component<Element> {
   (func $__lambda3 (param $__env i32) (param $c i32) (param $a i32) (result i32)
     local.get $c
     local.get $a
+    i32.const 564
     call $__i32_add_chk
   )
   ;; Scratch layout below the data section (which starts at 256):
@@ -1596,7 +1598,7 @@ fn LikeWidget() -> @Component<Element> {
     i32.const 1
     call $__write_err
   )
-  (func $__i32_add_chk (param $a i32) (param $b i32) (result i32)
+  (func $__i32_add_chk (param $a i32) (param $b i32) (param $site i32) (result i32)
     (local $r i64)
     local.get $a
     i64.extend_i32_s
@@ -1611,13 +1613,15 @@ fn LikeWidget() -> @Component<Element> {
     i64.ne
     (if
       (then
+        local.get $site
+        call $__chk_fail
         unreachable
       )
     )
     local.get $r
     i32.wrap_i64
   )
-  (func $__i32_sub_chk (param $a i32) (param $b i32) (result i32)
+  (func $__i32_sub_chk (param $a i32) (param $b i32) (param $site i32) (result i32)
     (local $r i64)
     local.get $a
     i64.extend_i32_s
@@ -1632,13 +1636,15 @@ fn LikeWidget() -> @Component<Element> {
     i64.ne
     (if
       (then
+        local.get $site
+        call $__chk_fail
         unreachable
       )
     )
     local.get $r
     i32.wrap_i64
   )
-  (func $__i32_mul_chk (param $a i32) (param $b i32) (result i32)
+  (func $__i32_mul_chk (param $a i32) (param $b i32) (param $site i32) (result i32)
     (local $r i64)
     local.get $a
     i64.extend_i32_s
@@ -1653,13 +1659,15 @@ fn LikeWidget() -> @Component<Element> {
     i64.ne
     (if
       (then
+        local.get $site
+        call $__chk_fail
         unreachable
       )
     )
     local.get $r
     i32.wrap_i64
   )
-  (func $__i64_add_chk (param $a i64) (param $b i64) (result i64)
+  (func $__i64_add_chk (param $a i64) (param $b i64) (param $site i32) (result i64)
     (local $r i64)
     local.get $a
     local.get $b
@@ -1676,12 +1684,14 @@ fn LikeWidget() -> @Component<Element> {
     i64.lt_s
     (if
       (then
+        local.get $site
+        call $__chk_fail
         unreachable
       )
     )
     local.get $r
   )
-  (func $__i64_sub_chk (param $a i64) (param $b i64) (result i64)
+  (func $__i64_sub_chk (param $a i64) (param $b i64) (param $site i32) (result i64)
     (local $r i64)
     local.get $a
     local.get $b
@@ -1698,12 +1708,14 @@ fn LikeWidget() -> @Component<Element> {
     i64.lt_s
     (if
       (then
+        local.get $site
+        call $__chk_fail
         unreachable
       )
     )
     local.get $r
   )
-  (func $__i64_mul_chk (param $a i64) (param $b i64) (result i64)
+  (func $__i64_mul_chk (param $a i64) (param $b i64) (param $site i32) (result i64)
     (local $r i64)
     local.get $a
     i64.const -1
@@ -1714,6 +1726,8 @@ fn LikeWidget() -> @Component<Element> {
     i32.and
     (if
       (then
+        local.get $site
+        call $__chk_fail
         unreachable
       )
     )
@@ -1733,6 +1747,8 @@ fn LikeWidget() -> @Component<Element> {
         i64.ne
         (if
           (then
+            local.get $site
+            call $__chk_fail
             unreachable
           )
         )
@@ -2037,6 +2053,11 @@ fn LikeWidget() -> @Component<Element> {
   )
   (func $__task_host_poll (result i32)
     i32.const 0
+  )
+  (func $__chk_fail (param $site i32)
+    local.get $site
+    call $__panic_fail
+    unreachable
   )
 )
 ```

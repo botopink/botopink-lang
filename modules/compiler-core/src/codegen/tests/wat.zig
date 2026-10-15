@@ -2440,6 +2440,7 @@ test "wat: arithmetic ---- an integer that leaves its width traps instead of wra
         \\2147483646
         \\-2147483647
         \\9223372036854775807
+        \\panic: integer overflow: + on i32 at main.bp:7:16
         \\RUNTIME TRAP (wasmtime):
         \\wasm trap: wasm `unreachable` instruction executed
         \\
@@ -2592,6 +2593,7 @@ test "wat: arithmetic ---- a `u64` past 2^63 is unsigned in its `i64` carrier" {
         \\9000000000000000000
         \\18446744073709551615
         \\9223372036854775807
+        \\panic: integer overflow: - on u64 at main.bp:14:14
         \\RUNTIME TRAP (wasmtime):
         \\wasm trap: wasm `unreachable` instruction executed
         \\
@@ -2619,6 +2621,7 @@ test "wat: arithmetic ---- an unannotated `val` over a `u64` literal or sum prin
         \\18446744073709551615
         \\18446744073709551615
         \\true
+        \\panic: integer overflow: + on u64 at main.bp:9:16
         \\RUNTIME TRAP (wasmtime):
         \\wasm trap: wasm `unreachable` instruction executed
         \\

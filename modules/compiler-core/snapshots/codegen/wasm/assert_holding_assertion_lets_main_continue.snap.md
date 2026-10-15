@@ -18,22 +18,23 @@ fn main() {
   (func $main
     i32.const 1
     i32.const 1
+    global.get $__s0
     call $__i32_add_chk
     i32.const 2
     i32.eq
     i32.eqz
     (if
       (then
-    global.get $__s0
     global.get $__s1
-    call $__str_concat
     global.get $__s2
+    call $__str_concat
+    global.get $__s3
     call $__str_concat
     call $__panic_fail
     unreachable
       )
     )
-    global.get $__s3
+    global.get $__s4
     call $__print_str
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")
@@ -443,7 +444,7 @@ fn main() {
     local.get $top
     global.set $__heap_ptr
   )
-  (func $__i32_add_chk (param $a i32) (param $b i32) (result i32)
+  (func $__i32_add_chk (param $a i32) (param $b i32) (param $site (ref null $str)) (result i32)
     (local $r i64)
     local.get $a
     i64.extend_i32_s
@@ -458,13 +459,15 @@ fn main() {
     i64.ne
     (if
       (then
+        local.get $site
+        call $__chk_fail
         unreachable
       )
     )
     local.get $r
     i32.wrap_i64
   )
-  (func $__i32_sub_chk (param $a i32) (param $b i32) (result i32)
+  (func $__i32_sub_chk (param $a i32) (param $b i32) (param $site (ref null $str)) (result i32)
     (local $r i64)
     local.get $a
     i64.extend_i32_s
@@ -479,13 +482,15 @@ fn main() {
     i64.ne
     (if
       (then
+        local.get $site
+        call $__chk_fail
         unreachable
       )
     )
     local.get $r
     i32.wrap_i64
   )
-  (func $__i32_mul_chk (param $a i32) (param $b i32) (result i32)
+  (func $__i32_mul_chk (param $a i32) (param $b i32) (param $site (ref null $str)) (result i32)
     (local $r i64)
     local.get $a
     i64.extend_i32_s
@@ -500,13 +505,15 @@ fn main() {
     i64.ne
     (if
       (then
+        local.get $site
+        call $__chk_fail
         unreachable
       )
     )
     local.get $r
     i32.wrap_i64
   )
-  (func $__i64_add_chk (param $a i64) (param $b i64) (result i64)
+  (func $__i64_add_chk (param $a i64) (param $b i64) (param $site (ref null $str)) (result i64)
     (local $r i64)
     local.get $a
     local.get $b
@@ -523,12 +530,14 @@ fn main() {
     i64.lt_s
     (if
       (then
+        local.get $site
+        call $__chk_fail
         unreachable
       )
     )
     local.get $r
   )
-  (func $__i64_sub_chk (param $a i64) (param $b i64) (result i64)
+  (func $__i64_sub_chk (param $a i64) (param $b i64) (param $site (ref null $str)) (result i64)
     (local $r i64)
     local.get $a
     local.get $b
@@ -545,12 +554,14 @@ fn main() {
     i64.lt_s
     (if
       (then
+        local.get $site
+        call $__chk_fail
         unreachable
       )
     )
     local.get $r
   )
-  (func $__i64_mul_chk (param $a i64) (param $b i64) (result i64)
+  (func $__i64_mul_chk (param $a i64) (param $b i64) (param $site (ref null $str)) (result i64)
     (local $r i64)
     local.get $a
     i64.const -1
@@ -561,6 +572,8 @@ fn main() {
     i32.and
     (if
       (then
+        local.get $site
+        call $__chk_fail
         unreachable
       )
     )
@@ -580,6 +593,8 @@ fn main() {
         i64.ne
         (if
           (then
+            local.get $site
+            call $__chk_fail
             unreachable
           )
         )
@@ -587,32 +602,43 @@ fn main() {
     )
     local.get $r
   )
-  (data $__d0 "assertion failed: 1 + 1 == 2: ")
+  (func $__chk_fail (param $site (ref null $str))
+    local.get $site
+    call $__panic_fail
+    unreachable
+  )
+  (data $__d0 "integer overflow: + on i32 at main.bp:2:14")
   (global $__s0 (mut (ref null $str)) (ref.null $str))
-  (data $__d1 "arithmetic")
+  (data $__d1 "assertion failed: 1 + 1 == 2: ")
   (global $__s1 (mut (ref null $str)) (ref.null $str))
-  (data $__d2 " at main.bp:2:5")
+  (data $__d2 "arithmetic")
   (global $__s2 (mut (ref null $str)) (ref.null $str))
-  (data $__d3 "after")
+  (data $__d3 " at main.bp:2:5")
   (global $__s3 (mut (ref null $str)) (ref.null $str))
+  (data $__d4 "after")
+  (global $__s4 (mut (ref null $str)) (ref.null $str))
   (start $__init_strs)
   (func $__init_strs
     i32.const 0
-    i32.const 30
+    i32.const 42
     array.new_data $str $__d0
     global.set $__s0
     i32.const 0
-    i32.const 10
+    i32.const 30
     array.new_data $str $__d1
     global.set $__s1
     i32.const 0
-    i32.const 15
+    i32.const 10
     array.new_data $str $__d2
     global.set $__s2
     i32.const 0
-    i32.const 5
+    i32.const 15
     array.new_data $str $__d3
     global.set $__s3
+    i32.const 0
+    i32.const 5
+    array.new_data $str $__d4
+    global.set $__s4
   )
   (@custom "botopink.needs" "gc\0a")
 )
