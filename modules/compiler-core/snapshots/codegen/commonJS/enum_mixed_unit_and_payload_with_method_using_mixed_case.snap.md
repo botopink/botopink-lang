@@ -84,6 +84,7 @@ class Maybe {
                 const { value } = _s;
                 return "just";
             }
+            throw new Error("case_clause");
         })();
     }
 

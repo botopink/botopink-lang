@@ -90,6 +90,7 @@ function main() {
             const e = _s.error;
             return ("ERR:" + e);
         }
+        throw new Error("case_clause");
     })();
     __bp_print(msg1);
     const r2 = fetch(false);
@@ -103,6 +104,7 @@ function main() {
             const e = _s.error;
             return ("ERR:" + e);
         }
+        throw new Error("case_clause");
     })();
     __bp_print(msg2);
 }

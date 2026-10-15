@@ -2643,6 +2643,7 @@ function lift(path, r) {
             const m = _s.error;
             return ({ __bp_return: true, value: ({ error: fsError(path, m) }) });
         }
+        throw new Error("case_clause");
     })();
     if (_case0 && _case0.__bp_return) return _case0.value;
 }
@@ -2938,6 +2939,7 @@ function statOr(p) {
         if ("error" in _s) {
             return new FileStat((-1), (-1), false);
         }
+        throw new Error("case_clause");
     })();
 }
 
@@ -2992,6 +2994,7 @@ function walkRefusal(root) {
             const e = _s.error;
             return describe(e);
         }
+        throw new Error("case_clause");
     })();
 }
 
@@ -3030,6 +3033,7 @@ function describe(e) {
             const { path: p, message } = _s;
             return message;
         }
+        throw new Error("case_clause");
     })();
 }
 
@@ -3076,6 +3080,7 @@ function variantOf(r) {
             const e = _s.error;
             return describe(e);
         }
+        throw new Error("case_clause");
     })();
 }
 

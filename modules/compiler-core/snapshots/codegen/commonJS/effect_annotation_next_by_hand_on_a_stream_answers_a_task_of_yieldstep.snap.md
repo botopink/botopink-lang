@@ -131,6 +131,7 @@ function stepText(s) {
             return ("yield " + v.toString());
         }
         if (_s.tag === "Done") return "done";
+        throw new Error("case_clause");
     })();
     return t;
 }

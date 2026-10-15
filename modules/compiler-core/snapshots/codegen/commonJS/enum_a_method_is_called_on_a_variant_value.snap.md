@@ -105,6 +105,7 @@ class Shape {
                 const { side: s } = _s;
                 return __bp_int((s * s), -2147483648, 2147483647, "* on i32 at main.bp:8:28");
             }
+            throw new Error("case_clause");
         })();
     }
 

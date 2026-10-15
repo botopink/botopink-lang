@@ -1337,9 +1337,11 @@ Each was run with the parent binary and fails there as its row describes.
   integers, strings, floats, bools and an empty receiver. wasm dropped only consecutive duplicates
   on the parent (`[1, 2, 1, 3, 2]`).
 - `modules/case_no_arm_matches_raises`: a `case` no arm matches raises `case_clause`; the value comes
-  from an erlang host function answering an atom no variant is (the checker sees the `case` as
-  exhaustive). beam answered the subject at exit 0 on the parent; commonJS and wasm refuse the
-  binding (`snapshot/targets/commonJS/`, `snapshot/targets/wasm/`).
+  from a host function answering a value no variant is (the checker sees the `case` as exhaustive): an
+  atom on erlang and beam, `({ tag: "Square" })` on commonJS. beam answered the subject at exit 0 and
+  commonJS `undefined` on the parent (144 B-101: commonJS ends the `case` in an unmarked throw, `crash`).
+  `output/` claims `stderr crash:` alone (question 546-a); wasm refuses the binding
+  (`snapshot/targets/wasm/`).
 - `modules/lambda_binds_name_of_enclosing_fn` (decision 205): a `forEach` body's `val k` over an outer
   `k`, a lambda parameter `e` over an outer `e`, and a lambda value's parameter `e`; the outer names
   keep their values. erlc refused the module on the parent binary (`K@1` unbound). **Red on wasm**

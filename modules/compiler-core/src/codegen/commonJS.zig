@@ -7524,7 +7524,28 @@ const Emitter = struct {
         };
         try stmts.append(self.arena(), .{ .decl = .{ .pattern = .{ .name = "_s" }, .value = subject } });
         for (arms) |arm| try stmts.append(self.arena(), try self.buildCaseArm(arm, indent));
+        // Decisions 535, 527 (1) — a subject no arm matches raises, as
+        // `{case_clause, V}` does on erlang and beam: an unmarked raise, so
+        // `attempt`, `attemptTask` and the abort guard read it as `crash`. A
+        // `case` that ends in an arm matching anything (`_`, a binding) emits
+        // none.
+        if (!self.caseCatchesAll(arms)) {
+            try stmts.append(self.arena(), .{ .throw_ = try self.b.new_(.{ .name = "Error" }, &.{.{ .quoted = "case_clause" }}) });
+        }
         return stmts.toOwnedSlice(self.arena());
+    }
+
+    /// Whether an arm without a guard matches any subject: `_` or a binding.
+    fn caseCatchesAll(self: *Emitter, arms: []const ast.CaseArm) bool {
+        for (arms) |arm| {
+            if (arm.guard != null) continue;
+            switch (arm.pattern) {
+                .wildcard => return true,
+                .ident => |n| if (self.isBindingName(n)) return true,
+                else => {},
+            }
+        }
+        return false;
     }
 
     /// A `case` used as a value, outside the statement forms

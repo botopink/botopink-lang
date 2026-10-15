@@ -763,6 +763,13 @@ codegen/
     position is `error.BindingInValuePosition`. `try x catch return y` in value
     position still returns from the value IIFE (the `try`'s value becomes `y`);
     the statement-position lowering is the one that leaves the function.
+- **A `case` no arm matches** (144 B-101): `buildCaseStmts` ends the arms in
+  `throw new Error("case_clause")` unless `caseCatchesAll` (an unguarded `_` or
+  plain binder) holds. It is an unmarked raise, so `attempt`, `attemptTask` and
+  the abort guard read it as `crash`, as `{case_clause, V}` is on erlang and
+  beam; before, a `case` value answered `undefined` and a statement `case` ran
+  on. Its text is not fixed (question 546-a): cells claim the kind.
+
 
 ### erlang
 

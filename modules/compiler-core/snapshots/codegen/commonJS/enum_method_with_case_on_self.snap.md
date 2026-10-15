@@ -80,6 +80,7 @@ class Color {
             if (_s.tag === "Red") return "red";
             if (_s.tag === "Green") return "green";
             if (_s.tag === "Blue") return "blue";
+            throw new Error("case_clause");
         })();
     }
 

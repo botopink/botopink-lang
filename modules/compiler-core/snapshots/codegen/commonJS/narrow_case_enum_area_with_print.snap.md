@@ -120,6 +120,7 @@ function area(s) {
             const { side } = _s;
             return (side * side);
         }
+        throw new Error("case_clause");
     })();
 }
 

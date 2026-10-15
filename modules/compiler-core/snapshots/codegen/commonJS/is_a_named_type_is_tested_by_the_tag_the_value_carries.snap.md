@@ -136,6 +136,7 @@ function nameOf(v) {
         if (_s instanceof Vec) {
             return "vec";
         }
+        throw new Error("case_clause");
     })();
 }
 

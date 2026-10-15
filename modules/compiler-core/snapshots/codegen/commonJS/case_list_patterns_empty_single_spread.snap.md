@@ -26,6 +26,7 @@ function describe() {
             const first = _s[0];
             return "many";
         }
+        throw new Error("case_clause");
     })();
 }
 

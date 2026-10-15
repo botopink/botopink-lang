@@ -120,6 +120,7 @@ function main() {
             const { width: w, height: h } = _s;
             return __bp_print("rect");
         }
+        throw new Error("case_clause");
     })();
 }
 

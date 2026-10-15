@@ -137,6 +137,7 @@ function weight(s) {
             const { n } = _s;
             return n;
         }
+        throw new Error("case_clause");
     })();
 }
 

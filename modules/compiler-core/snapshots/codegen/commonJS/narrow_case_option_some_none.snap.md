@@ -108,6 +108,7 @@ function describe(opt) {
             const { value: v } = _s;
             return ("value: " + v);
         }
+        throw new Error("case_clause");
     })();
 }
 
