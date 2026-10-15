@@ -964,9 +964,9 @@ exports.Dict = Dict;
 
 // interpolates.
 
-function shown(x) {
-    if (typeof x === "string") { return (("\"" + x) + "\""); }
-    return ("" + x);
+function shown(x, __bp_ty_T) {
+    if (typeof x === "string") { return (("\"" + __bp_text(x, __bp_ty_T)) + "\""); }
+    return ("" + __bp_text(x, __bp_ty_T));
 }
 
 // ── `??` over `at`'s `?V` (decision 330: `?T` has no methods) ──

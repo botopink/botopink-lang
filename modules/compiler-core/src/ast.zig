@@ -656,6 +656,14 @@ pub const text_synthetic_col: usize = 5_000_000;
 /// `text_synthetic_col`'s, which keys the float reading.
 pub const text_hole_col: usize = 7_000_000;
 
+/// The column added to an argument's loc in a call of a generic fn to key the
+/// `text_value` lowering of its type when that type holds a float (144 B-114,
+/// decision 521; `infer.textValueLowerings`): commonJS reads the print shape
+/// it hands the callee's body for each type parameter from it. Apart from
+/// `text_synthetic_col`'s and `text_hole_col`'s, whose readings the same node
+/// may carry.
+pub const text_arg_col: usize = 8_000_000;
+
 /// Helper to get the correct call argument type based on phase
 pub fn CallArgOf(comptime phase: Phase) type {
     return struct {

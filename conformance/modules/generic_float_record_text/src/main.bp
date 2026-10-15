@@ -1,0 +1,19 @@
+//// A record whose field is an `f64`, reaching a generic body as its type
+//// parameter, is written as `@print` writes it on every target (decisions
+//// 521, 530): in a template hole and through `@print`, the field with its
+//// decimal part. commonJS wrote the hole as JavaScript's `[object Object]`.
+
+type Pt(x: f64)
+
+fn inRecord<T>(r: T) -> string {
+    return "r=${r}";
+}
+
+fn printRecord<T>(r: T) {
+    @print(r);
+}
+
+pub fn main() {
+    @print(inRecord(Pt(x: 4.0)));
+    printRecord(Pt(x: 2.5));
+}

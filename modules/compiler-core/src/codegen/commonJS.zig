@@ -500,6 +500,7 @@ fn emitProgramOptsX(
     try em.collectExternals(program);
     try em.collectClassNames(program);
     try em.collectDeclIndexes(program);
+    em.pruneShapeFns();
     // The dispatch scan first: it parses the embedded std registry and fills
     // `ambiguous_prim_renames`, which the rename collector consults.
     try em.collectBuiltinNodeDispatch();
@@ -1437,6 +1438,74 @@ const NameScan = struct {
     }
 };
 
+/// 144 B-114 — whether a generic fn's body may write a value of one of its
+/// type parameters as text: a `@print` / `@println` / `@debug`, a `+` (a
+/// template hole is one), a `toString()`, or a call of a fn already kept
+/// (`Emitter.shape_fns`). Read-only, every field of every node by type.
+const ShapeSiteScan = struct {
+    kept: *const std.StringHashMapUnmanaged(void),
+    found: bool = false,
+
+    fn visit(s: *ShapeSiteScan, e: *const ast.Expr) void {
+        switch (e.*) {
+            .binaryOp => |bin| if (bin.op == .add) {
+                s.found = true;
+            },
+            .call => |c| switch (c.kind) {
+                .call => |cc| {
+                    if (cc.is_builtin) {
+                        for ([_][]const u8{ "print", "println", "debug" }) |b| if (std.mem.eql(u8, cc.callee, b)) {
+                            s.found = true;
+                        };
+                    } else if (cc.receiver == null) {
+                        if (s.kept.contains(cc.callee)) s.found = true;
+                    } else if (std.mem.eql(u8, cc.callee, "toString") and cc.args.len == 0) s.found = true;
+                },
+                else => {},
+            },
+            else => {},
+        }
+    }
+
+    fn walk(s: *ShapeSiteScan, comptime N: type, ptr: *const N) void {
+        if (s.found) return;
+        if (N == ast.Expr) {
+            s.visit(ptr);
+            if (s.found) return;
+        }
+        if (comptime !shapeScanHoldsExpr(N)) return;
+        switch (@typeInfo(N)) {
+            .@"struct" => |st| inline for (st.fields) |f| {
+                if (f.is_comptime) continue;
+                s.walk(f.type, &@field(ptr.*, f.name));
+            },
+            .@"union" => |u| if (u.tag_type != null) {
+                switch (ptr.*) {
+                    inline else => |*payload| s.walk(@TypeOf(payload.*), payload),
+                }
+            },
+            .optional => |o| if (ptr.*) |*inner| s.walk(o.child, inner),
+            .pointer => |pi| switch (pi.size) {
+                .one => if (@typeInfo(pi.child) != .@"fn" and @typeInfo(pi.child) != .@"opaque") {
+                    s.walk(pi.child, ptr.*);
+                },
+                .slice => for (ptr.*) |*e| s.walk(pi.child, e),
+                else => {},
+            },
+            else => {},
+        }
+    }
+};
+
+fn shapeScanHoldsExpr(comptime N: type) bool {
+    return switch (@typeInfo(N)) {
+        .@"struct", .@"union" => N != ast.Loc and N != ast.TypeRef and N != ast.Param,
+        .optional => |o| shapeScanHoldsExpr(o.child),
+        .pointer => |pi| pi.child != u8 and shapeScanHoldsExpr(pi.child),
+        else => false,
+    };
+}
+
 /// Rewrites every `return <self>(args);` of one function into "assign the
 /// parameters and go round again". Statement positions only: a `return` inside
 /// a nested arrow or function belongs to THAT function, and the walk never
@@ -1810,6 +1879,16 @@ const Emitter = struct {
     /// Top-level fns whose declared return names one of their own type
     /// parameters — no one static type for `staticTypeOf`.
     fn_generic_returns: std.StringHashMapUnmanaged(void) = .empty,
+    /// 144 B-114 (decision 521) — each top-level generic fn whose body may
+    /// write a value of a type parameter as text (`ShapeSiteScan`): it takes
+    /// one trailing parameter per type parameter, `__bp_ty_<T>`, the print
+    /// shape of the type that call binds (`"f"` for an `f64`), which its
+    /// calls hand in (`typeArgShapes`). JavaScript cannot tell an `f64` from
+    /// an integer at run time.
+    shape_fns: std.StringHashMapUnmanaged(ast.FnDecl) = .empty,
+    /// The type parameters whose print shape is a parameter of the fn being
+    /// emitted (`shape_fns`): `typeShape` answers `__bp_ty_<T>` for each.
+    ty_shapes: []const ast.GenericParam = &.{},
     /// The record or enum whose methods are being built — what `Self` and
     /// `self` are for `staticTypeOf`.
     eq_self_type: ?[]const u8 = null,
@@ -2325,6 +2404,35 @@ const Emitter = struct {
         };
     }
 
+    /// 144 B-114 — keeps in `shape_fns` the generic fns whose body holds a
+    /// text site (`ShapeSiteScan`), a call of a kept one included, to a
+    /// fixed point. A fn with a variadic parameter keeps its own reading.
+    fn pruneShapeFns(self: *Emitter) void {
+        var changed = true;
+        var keep: std.StringHashMapUnmanaged(void) = .empty;
+        while (changed) {
+            changed = false;
+            var it = self.shape_fns.iterator();
+            while (it.next()) |e| {
+                if (keep.contains(e.key_ptr.*)) continue;
+                const f = e.value_ptr.*;
+                const variadic = for (f.params) |p| {
+                    if (p.variadic or p.destruct != null) break true;
+                } else false;
+                if (variadic) continue;
+                var scan = ShapeSiteScan{ .kept = &keep };
+                for (f.body) |*st| scan.walk(ast.Stmt, st);
+                if (!scan.found) continue;
+                keep.put(self.arena(), e.key_ptr.*, {}) catch return;
+                changed = true;
+            }
+        }
+        var it = self.shape_fns.iterator();
+        var drop: std.ArrayListUnmanaged([]const u8) = .empty;
+        while (it.next()) |e| if (!keep.contains(e.key_ptr.*)) drop.append(self.arena(), e.key_ptr.*) catch return;
+        for (drop.items) |n| _ = self.shape_fns.remove(n);
+    }
+
     /// Indexes each fn's declared return type (`fn_return_types`) and each
     /// payload variant's declared field names (`variant_fields`). Enum
     /// sections are desugared into inner enums before codegen, so the
@@ -2333,6 +2441,7 @@ const Emitter = struct {
         for (program.decls) |decl| if (decl == .type_) try self.eq_decls.put(self.arena(), decl.type_.name, decl.type_);
         for (program.decls) |decl| switch (decl) {
             .@"fn" => |f| {
+                if (f.genericParams.len > 0) try self.shape_fns.put(self.arena(), f.name, f);
                 if (f.returnType) |rt| {
                     try self.fn_return_types.put(f.name, rt);
                     for (f.genericParams) |gp| if (typeRefMentions(rt, gp.name)) {
@@ -2980,7 +3089,18 @@ const Emitter = struct {
         const prev_expr_try = self.expr_try_used;
         self.expr_try_used = false;
         defer self.expr_try_used = prev_expr_try;
-        const params = try self.buildParams(f.params);
+        // 144 B-114 — a generic fn that writes a type parameter's value as
+        // text takes that type's print shape after its own parameters.
+        const prev_ty_shapes = self.ty_shapes;
+        defer self.ty_shapes = prev_ty_shapes;
+        self.ty_shapes = if (self.shape_fns.contains(f.name)) f.genericParams else &.{};
+        var params = try self.buildParams(f.params);
+        if (self.ty_shapes.len > 0) {
+            const all = try self.arena().alloc(js.Param, params.len + self.ty_shapes.len);
+            @memcpy(all[0..params.len], params);
+            for (self.ty_shapes, 0..) |gp, i| all[params.len + i] = js.Param.id(self.tyShapeParam(gp.name).?);
+            params = all;
+        }
         const prev_slots = self.str_slots;
         defer self.str_slots = prev_slots;
         const slots = try strSlots.analyze(self.arena(), StrSlotCtx{ .em = self }, f.params, f.body);
@@ -4803,6 +4923,7 @@ const Emitter = struct {
                 // record, an array, a tuple, an optional) is written through the
                 // text helper `@print` shares.
                 if (bin.op == .add) if (try self.holeConcat(bin)) |cat| return cat;
+                if (bin.op == .add) if (try self.paramShapeConcat(bin)) |cat| return cat;
                 if (bin.op == .add) if (try self.floatConcat(bin)) |cat| return cat;
                 // Decision 264 — an integer result outside its type aborts.
                 if (self.intKindAt(bin.loc)) |k| switch (bin.op) {
@@ -5852,6 +5973,43 @@ const Emitter = struct {
         return self.b.call(self.helper(.text), &.{value});
     }
 
+    /// 144 B-114 — `x.toString()` on a local `x` of a type parameter whose
+    /// print shape is read at run time (`shape_fns`): `__bp_f64(x)` when the
+    /// call bound an `f64` (`"f"`), else the method as it is.
+    fn paramShapeToString(self: *Emitter, cc: anytype) anyerror!?js.Expr {
+        if (self.ty_shapes.len == 0 or cc.args.len != 0 or cc.trailing.len != 0) return null;
+        if (!std.mem.eql(u8, cc.callee, "toString")) return null;
+        const recv = cc.receiver orelse return null;
+        if (recv.* != .identifier or recv.identifier.kind != .ident) return null;
+        const sh = self.print_shapes.get(recv.identifier.kind.ident) orelse return null;
+        if (sh != .name) return null;
+        const x: js.Expr = .{ .ident = recv.identifier.kind.ident };
+        return try self.b.paren(try self.b.ternary(
+            try self.b.binaryBare("===", sh, .{ .quoted = "f" }),
+            try self.b.call(self.helper(.f64_text), &.{x}),
+            try self.b.call(try self.b.member(x, "toString"), &.{}),
+        ));
+    }
+
+    /// 144 B-114 — `s + x` / `x + s` where `x`'s print shape is read at run
+    /// time (a value of a type parameter, `shape_fns`) and the other operand
+    /// is statically a `string`: `x` is written by `__bp_text(x, shape)`, the
+    /// text `@print` writes for it (decisions 521, 530). Null for any other `+`.
+    fn paramShapeConcat(self: *Emitter, bin: anytype) anyerror!?js.Expr {
+        if (self.ty_shapes.len == 0) return null;
+        const l_sh = try self.printShape(bin.lhs.*);
+        const r_sh = try self.printShape(bin.rhs.*);
+        const l_rt = if (l_sh) |sh| shapeIsRuntime(sh) else false;
+        const r_rt = if (r_sh) |sh| shapeIsRuntime(sh) else false;
+        if (l_rt == r_rt) return null;
+        if (!try self.isStringTyped(if (l_rt) bin.rhs.* else bin.lhs.*)) return null;
+        const lhs = try self.buildExpr(bin.lhs.*);
+        const rhs = try self.buildExpr(bin.rhs.*);
+        const lhs_out = if (l_rt) try self.b.call(self.helper(.text), &.{ lhs, l_sh.? }) else lhs;
+        const rhs_out = if (r_rt) try self.b.call(self.helper(.text), &.{ rhs, r_sh.? }) else rhs;
+        return try self.b.binary("+", lhs_out, rhs_out);
+    }
+
     /// `s + f` / `f + s` where one operand is statically a `string` and the
     /// other an `f64` (`printShape`): the float goes through `__bp_f64`, so
     /// `"${5.0}"` is `5.0` as on erlang, beam and wasm. Null for any other `+`.
@@ -6499,9 +6657,96 @@ const Emitter = struct {
             else
                 null,
             .optional => |inner| self.typeShape(inner.*),
-            .named => |n| if (std.mem.eql(u8, n, "f64") or std.mem.eql(u8, n, "f32")) float_shape else null,
+            .named => |n| if (std.mem.eql(u8, n, "f64") or std.mem.eql(u8, n, "f32"))
+                float_shape
+            else if (self.tyShapeParam(n)) |name|
+                .{ .name = name }
+            else
+                null,
             else => null,
         };
+    }
+
+    /// 144 B-114 — `__bp_ty_<T>`, the parameter holding the print shape of
+    /// the type parameter `n` of the fn being emitted; null when `n` is none.
+    fn tyShapeParam(self: *Emitter, n: []const u8) ?[]const u8 {
+        for (self.ty_shapes) |gp| if (std.mem.eql(u8, gp.name, n)) {
+            return std.fmt.allocPrint(self.arena(), "__bp_ty_{s}", .{n}) catch null;
+        };
+        return null;
+    }
+
+    /// True when the print shape `sh` reads a type parameter's shape at run
+    /// time (`tyShapeParam`).
+    fn shapeIsRuntime(sh: js.Expr) bool {
+        return switch (sh) {
+            .name => true,
+            .array => |a| for (a.elems) |el| {
+                if (shapeIsRuntime(el)) break true;
+            } else false,
+            else => false,
+        };
+    }
+
+    /// The shape at the type parameter `tp` inside `shape`, the print shape of
+    /// a value of the declared type `ty` (`T` → all of it, `T[]` → its
+    /// element's, a tuple → the element that mentions it); null when `shape`
+    /// places none there.
+    fn shapeAtParam(ty: ast.TypeRef, shape: js.Expr, tp: []const u8) ?js.Expr {
+        return switch (ty) {
+            .named => |n| if (std.mem.eql(u8, n, tp)) shape else null,
+            .optional => |inner| shapeAtParam(inner.*, shape, tp),
+            .array => |inner| arrayElemShape(shape, inner.*, tp),
+            .generic => |g| if (g.args.len == 1 and std.mem.eql(u8, g.name, "Array")) arrayElemShape(shape, g.args[0], tp) else null,
+            .tuple_, .labeledTuple => blk: {
+                const elems = ty.tupleElems().?;
+                if (shape != .array or shape.array.elems.len != elems.len + 1) break :blk null;
+                for (elems, 0..) |el, i| if (shapeAtParam(el, shape.array.elems[i + 1], tp)) |sh| break :blk sh;
+                break :blk null;
+            },
+            else => null,
+        };
+    }
+
+    fn arrayElemShape(shape: js.Expr, elem: ast.TypeRef, tp: []const u8) ?js.Expr {
+        if (shape != .array or shape.array.elems.len != 2) return null;
+        const head = shape.array.elems[0];
+        if (head != .quoted or !std.mem.eql(u8, head.quoted, "[")) return null;
+        return shapeAtParam(elem, shape.array.elems[1], tp);
+    }
+
+    /// The print shape of a call's argument: this backend's own reading, else
+    /// the type the checker recorded for it (`ast.text_arg_col`).
+    fn argShape(self: *Emitter, e: ast.Expr) anyerror!?js.Expr {
+        if (try self.printShape(e)) |sh| return sh;
+        const lw = self.lowerings orelse return null;
+        var key = e.getLoc();
+        key.col += ast.text_arg_col;
+        const il = lw.get(key) orelse return null;
+        if (il != .text_value) return null;
+        return self.typeShape(il.text_value);
+    }
+
+    /// 144 B-114 — the trailing arguments of a call of a `shape_fns` fn: the
+    /// print shape of each type parameter, read off the first argument whose
+    /// declared type places it; none when no type parameter has one, and the
+    /// trailing ones without a shape left out.
+    fn typeArgShapes(self: *Emitter, f: ast.FnDecl, cc: anytype) anyerror![]const js.Expr {
+        if (cc.args.len + cc.trailing.len != f.params.len) return &.{};
+        const out = try self.arena().alloc(js.Expr, f.genericParams.len);
+        var last: usize = 0;
+        for (f.genericParams, 0..) |gp, gi| {
+            out[gi] = .null_;
+            for (cc.args, 0..) |a, i| {
+                const sh = (try self.argShape(a.value.*)) orelse continue;
+                if (shapeAtParam(f.params[i].typeRef, sh, gp.name)) |at| {
+                    out[gi] = at;
+                    last = gi + 1;
+                    break;
+                }
+            }
+        }
+        return out[0..last];
     }
 
     /// True when either side of a comparison is statically known to hold a
@@ -6753,6 +6998,7 @@ const Emitter = struct {
 
     fn buildCallRaw(self: *Emitter, loc: ast.Loc, cc: anytype) anyerror!js.Expr {
         if (cc.is_builtin) return self.buildBuiltinCall(cc);
+        if (try self.paramShapeToString(cc)) |text| return text;
         // builtin_node_dispatch: `declare fn` with `#[@External.Node]`.
         // Handles both template (`$0.method()`) and module+symbol
         // (`"./mod", "fun"`) forms discovered from primitives.bp +
@@ -6948,6 +7194,10 @@ const Emitter = struct {
             for (cc.args) |arg| try args.append(self.arena(), try self.buildExpr(arg.value.*));
         }
         for (cc.trailing) |tl| try args.append(self.arena(), try self.buildArrow(tl.params, tl.body));
+        if (!is_new and slots == null and cc.receiver == null and cc.calleeExpr == null) if (self.shape_fns.get(cc.callee)) |f| {
+            if (!self.print_shapes.contains(cc.callee) and !self.eq_types.contains(cc.callee))
+                try args.appendSlice(self.arena(), try self.typeArgShapes(f, cc));
+        };
 
         const arg_slice = try args.toOwnedSlice(self.arena());
         if (opt_recv) |r| return self.optEnumCall(r, try self.b.call(callee, arg_slice));

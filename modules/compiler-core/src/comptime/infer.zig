@@ -11823,7 +11823,10 @@ pub fn textValueLowerings(env: *const Env, arena: std.mem.Allocator, out: *std.A
         const tys = e.value_ptr.items;
         if (tys.len == 0) continue;
         // Decision 530 — a hole the text helper writes: recorded as it is keyed.
-        const is_hole = e.key_ptr.col >= ast.text_hole_col;
+        // 144 B-114 — a generic call's argument: keyed already, and like a value
+        // written as text, recorded only when its type holds a float.
+        const is_arg = e.key_ptr.col >= ast.text_arg_col;
+        const is_hole = !is_arg and e.key_ptr.col >= ast.text_hole_col;
         var first: std.ArrayListUnmanaged(u8) = .empty;
         try textShapeOf(&first, arena, tys[0]);
         if (!is_hole and std.mem.indexOfScalar(u8, first.items, 'f') == null) continue;
@@ -11835,7 +11838,7 @@ pub fn textValueLowerings(env: *const Env, arena: std.mem.Allocator, out: *std.A
         if (!agree) continue;
         const ref = (try typeRefOfType(arena, env, tys[0])) orelse continue;
         var key = e.key_ptr.*;
-        if (!is_hole) key.col += ast.text_synthetic_col;
+        if (!is_hole and !is_arg) key.col += ast.text_synthetic_col;
         const slot = try out.getOrPut(key);
         if (!slot.found_existing) slot.value_ptr.* = .{ .text_value = ref };
     }
@@ -22413,6 +22416,14 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                     break :blk resolved;
                 },
                 else => try env.freshVar(),
+            };
+            // 144 B-114 (decision 521) — each argument of a generic fn's call:
+            // commonJS hands the callee's body the print shape of each type
+            // parameter, read off the argument it binds (`text_arg_col`).
+            if (!localCallee and calleeType != ctorInstantiated) for (typedArgs) |ta| {
+                var key = ta.value.getLoc();
+                key.col += ast.text_arg_col;
+                try noteTextValue(env, key, ta.value.getType());
             };
             return TypedExpr{ .call = .{ .loc = loc, .type_ = retType, .kind = .{ .call = .{
                 .receiver = null,

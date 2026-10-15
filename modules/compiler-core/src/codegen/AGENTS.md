@@ -134,7 +134,17 @@ codegen/
   `ast.text_hole_col` (`infer.noteTextHole`, `textValueLowerings`), and
   `holeConcat` writes it `__bp_text(v, shape)`, `shape` the static print shape
   `typeShape` reads off the recorded type (a tuple, a float). A type variable
-  keeps JavaScript's coercion (a `bigint` or a float there would lose its text).
+  keeps JavaScript's coercion, except in a generic fn whose body writes one of
+  its type parameters' values as text — a `@print`, a `+`, a `toString()`, a
+  call of another such fn (`ShapeSiteScan`, `Emitter.shape_fns`, 144 B-114,
+  decision 521): it takes one trailing parameter per type parameter,
+  `__bp_ty_<T>`, the print shape of the type the call binds (`"f"` for an
+  `f64`, `["[", "f"]` for an `f64[]`), which `typeShape` answers for `T` in
+  its body, and each direct call hands it in (`typeArgShapes`), read off the
+  argument's own print shape or the checker's type recorded at its loc plus
+  `ast.text_arg_col`. A call that omits it — a fn value, a host or TypeScript
+  caller, a call short of its defaulted parameters, another module — answers
+  the old text; the `.d.ts` and the `T` values are unchanged.
   A botopink value is told from a host object by the `__bp` marker its
   prototype carries (decision 5) — never by a `constructor` test, so a `Map` or
   a `@Result`'s `{ ok }` keeps `console.log`'s own text. The name comes from
