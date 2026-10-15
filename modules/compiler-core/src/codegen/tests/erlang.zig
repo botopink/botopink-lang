@@ -441,3 +441,27 @@ test "erlang: a labelled break leaves the outer loop from an inner one" {
         \\
     , "1\n", &.{"'__bp_label_break'"});
 }
+
+test "erlang: a labelled continue starts the outer loop's next round from a case arm of an inner one" {
+    try h.assertErlangRunLog(std.testing.allocator,
+        \\fn run(xs: i32[], ys: i32[]) -> i32 {
+        \\    var s = 0;
+        \\    for :outer (xs) { x ->
+        \\        for (ys) { y ->
+        \\            case x * 10 + y {
+        \\                12 { continue :outer; }
+        \\                _ { }
+        \\            }
+        \\            s = s + x * y;
+        \\        }
+        \\        s = s + 100;
+        \\    }
+        \\    return s;
+        \\}
+        \\
+        \\pub fn main() {
+        \\    @print(run([1, 2], [1, 2, 3]));
+        \\}
+        \\
+    , "113\n", &.{"__bp_label_continue"});
+}

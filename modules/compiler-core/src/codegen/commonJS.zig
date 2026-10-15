@@ -4254,7 +4254,7 @@ const Emitter = struct {
             .jump => |j| switch (j.kind) {
                 .@"break" => |br| return self.buildBreakStmt(br, false),
                 .throw_ => |r| return .{ .throw_ = try self.buildExpr((r orelse return error.ThrowWithoutOperand).*) },
-                .@"continue" => return switch (self.loop_ctx) {
+                .@"continue" => |c| return if (c.label) |l| try self.labelJumpStmt(l, true) else switch (self.loop_ctx) {
                     .none => if (self.case_jump_box) try self.jumpBox("__bp_continue") else error.JumpOutsideLoop,
                     .stmt => js.Stmt.continue_,
                 },
@@ -4391,7 +4391,7 @@ const Emitter = struct {
     fn caseStmtWithReturns(self: *Emitter, c: anytype) anyerror!?js.Stmt {
         var any_returns = false;
         var any_jumps = false;
-        var escaping: std.ArrayListUnmanaged([]const u8) = .empty;
+        var escaping: std.ArrayListUnmanaged(EscapingJump) = .empty;
         var bound: std.ArrayListUnmanaged([]const u8) = .empty;
         for (c.arms) |arm| {
             if (armReturns(arm.body)) any_returns = true;
@@ -4435,9 +4435,9 @@ const Emitter = struct {
             const cont = try self.b.binaryBare("&&", temp, try self.b.member(temp, "__bp_continue"));
             try items.append(self.arena(), try self.b.ifStmt(cont, try self.loopJumpStmt(true)));
             for (escaping.items) |l| {
-                const key = try std.fmt.allocPrint(self.arena(), "__bp_break_{s}", .{l});
+                const key = try std.fmt.allocPrint(self.arena(), "__bp_{s}_{s}", .{ if (l.is_continue) "continue" else "break", l.label });
                 const hit = try self.b.binaryBare("&&", temp, try self.b.member(temp, key));
-                try items.append(self.arena(), try self.b.ifStmt(hit, try self.labelJumpStmt(l)));
+                try items.append(self.arena(), try self.b.ifStmt(hit, try self.labelJumpStmt(l.label, l.is_continue)));
             }
         }
         return try self.b.group(items.items);
@@ -5434,30 +5434,35 @@ const Emitter = struct {
         return false;
     }
 
-    /// `break :label` — native while the labelled loop is in the same JS
-    /// function; from the arrow a `case` became, the box
-    /// `{ __bp_break_<label>: true }` the statement after the call turns back
-    /// into the jump (`labelJumpStmt`).
-    fn labelJumpStmt(self: *Emitter, name: []const u8) anyerror!js.Stmt {
-        if (self.labelIsNative(name)) return js.Stmt{ .break_label = name };
-        if (self.case_jump_box) return self.jumpBox(try std.fmt.allocPrint(self.arena(), "__bp_break_{s}", .{name}));
+    /// `break :label` / `continue :label` — native while the labelled loop is
+    /// in the same JS function; from the arrow a `case` became, the box
+    /// `{ __bp_break_<label>: true }` (`__bp_continue_<label>`) the statement
+    /// after the call turns back into the jump (`labelJumpStmt`).
+    fn labelJumpStmt(self: *Emitter, name: []const u8, is_continue: bool) anyerror!js.Stmt {
+        if (self.labelIsNative(name)) return if (is_continue) js.Stmt{ .continue_label = name } else js.Stmt{ .break_label = name };
+        if (self.case_jump_box) return self.jumpBox(try std.fmt.allocPrint(self.arena(), "__bp_{s}_{s}", .{ if (is_continue) "continue" else "break", name }));
         return error.JumpOutsideLoop;
     }
 
+    const EscapingJump = struct { label: []const u8, is_continue: bool };
+
     /// The labels of the `break :label` in `stmts` that name a loop outside
     /// them (`bound` holds the labels of the loops met on the way in).
-    fn escapingLabels(self: *Emitter, stmts: []const ast.Stmt, bound: *std.ArrayListUnmanaged([]const u8), out: *std.ArrayListUnmanaged([]const u8)) anyerror!void {
+    fn escapingLabels(self: *Emitter, stmts: []const ast.Stmt, bound: *std.ArrayListUnmanaged([]const u8), out: *std.ArrayListUnmanaged(EscapingJump)) anyerror!void {
         for (stmts) |st| try self.escapingLabelsExpr(st.expr, bound, out);
     }
 
-    fn escapingLabelsExpr(self: *Emitter, e: ast.Expr, bound: *std.ArrayListUnmanaged([]const u8), out: *std.ArrayListUnmanaged([]const u8)) anyerror!void {
+    fn noteEscaping(self: *Emitter, l: []const u8, is_continue: bool, bound: *std.ArrayListUnmanaged([]const u8), out: *std.ArrayListUnmanaged(EscapingJump)) anyerror!void {
+        for (bound.items) |x| if (std.mem.eql(u8, x, l)) return;
+        for (out.items) |x| if (x.is_continue == is_continue and std.mem.eql(u8, x.label, l)) return;
+        try out.append(self.arena(), .{ .label = l, .is_continue = is_continue });
+    }
+
+    fn escapingLabelsExpr(self: *Emitter, e: ast.Expr, bound: *std.ArrayListUnmanaged([]const u8), out: *std.ArrayListUnmanaged(EscapingJump)) anyerror!void {
         switch (e) {
             .jump => |j| switch (j.kind) {
-                .@"break" => |b| if (b.value == null) if (b.label) |l| {
-                    for (bound.items) |x| if (std.mem.eql(u8, x, l)) return;
-                    for (out.items) |x| if (std.mem.eql(u8, x, l)) return;
-                    try out.append(self.arena(), l);
-                },
+                .@"break" => |b| if (b.value == null) if (b.label) |l| try self.noteEscaping(l, false, bound, out),
+                .@"continue" => |c| if (c.label) |l| try self.noteEscaping(l, true, bound, out),
                 else => {},
             },
             .branch => |br| switch (br.kind) {
@@ -5489,7 +5494,7 @@ const Emitter = struct {
     /// checker admits `break <v>` in a generator scope only).
     fn buildBreakStmt(self: *Emitter, br: anytype, is_last: bool) anyerror!js.Stmt {
         _ = is_last;
-        if (br.value == null) if (br.label) |l| return self.labelJumpStmt(l);
+        if (br.value == null) if (br.label) |l| return self.labelJumpStmt(l, false);
         const val = br.value orelse return switch (self.loop_ctx) {
             .none => if (self.case_jump_box) try self.jumpBox("__bp_break") else if (self.in_generator) js.Stmt{ .return_ = null } else error.JumpOutsideLoop,
             .stmt => js.Stmt.break_,

@@ -60,7 +60,8 @@ parser/
 │                     `a...b` inclusive — `parseRangeExpr` reads both tokens) or a generator, binding exactly one
 │                     name (`for-without-binder` / `for-binds-one-name`; `paramsLoc` locates it); `parseWhileExpr` —
 │                     `while [:label] (cond) { … }`, the condition at `prec.lowest` like an `if`'s; `parseLoopExpr` —
-│                     `loop [:label] { … }` (`condition` over the literal `true`). A binder on `while`/`loop` is
+│                     `loop [:label] { … }` (`condition` over the literal `true`); `break [:label]` and `continue [:label]`
+│                     carry the label in the AST (the checker's `checkJumpLabel` reads both). A binder on `while`/`loop` is
 │                     `loop-binds-nothing`; `loop (…)` is `removed-loop-parenthesised` at the keyword, naming `for`
 │                     and `while`. `parseAsyncBlockAhead` reads `async { … }` (decision 124; `async` is contextual,
 │                     a keyword only before `{`) as a `.function` node with `syntax = .asyncBlock`, before the

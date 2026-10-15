@@ -312,10 +312,16 @@ pub fn parseExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
         return Expr{ .jump = .{ .loc = locFromToken(yieldTok), .kind = .{ .yield = .{ .label = label, .value = innerPtr } } } };
     }
 
-    // continue
+    // continue [:label]
     if (this.check(.@"continue")) {
         const contTok = this.advance();
-        return Expr{ .jump = .{ .loc = locFromToken(contTok), .kind = .@"continue" } };
+        var label: ?[]const u8 = null;
+        if (this.check(.colon)) {
+            _ = this.advance();
+            const labelTok = try this.consume(.identifier);
+            label = labelTok.lexeme;
+        }
+        return Expr{ .jump = .{ .loc = locFromToken(contTok), .kind = .{ .@"continue" = .{ .label = label } } } };
     }
 
     // assert condition [,"message"]

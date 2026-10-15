@@ -587,7 +587,8 @@ codegen/
   `break :outer` is a JS labelled loop (`for :outer (…)` whose body holds one: `js_ast.ForOf.label`,
   `pushLoopLabel`, `ast.bodyBreaksLabel`) and a native `break outer;` while the loop is in the same JS function
   (`labels`, `label_base`, moved wherever `loop_ctx` is reset); from a `case` arm's arrow it answers
-  `{ __bp_break_<label>: true }` (`escapingLabels`, `labelJumpStmt`). A `return` in an arm of a `case` in a generator
+  `{ __bp_break_<label>: true }` (`escapingLabels`, `labelJumpStmt`). `continue :outer` is the same with `continue outer;`
+  (`js_ast.Stmt.continue_label`) and the box `__bp_continue_<label>` (`modules/block_jump_label_continue_reaches_loop`). A `return` in an arm of a `case` in a generator
   boxes like any other (`caseStmtWithReturns`), so it ends the generator through the delegation. A `case`
   whose arms `yield` inside a generator is a `function*` called in place and delegated to: `(yield*
   (function* () { … }).call(this))` (`YieldScan`; `async function*` when the arms also `await`), its value the
@@ -1650,7 +1651,9 @@ codegen/
     its own `__BpGroupN`. A `for :outer (…)` whose body holds a `break :outer` (`labelTargeted`, `ast.bodyBreaksLabel`)
     is lowered the same way, and its `break :outer` — from however many loops in — throws
     `{'__bp_label_break', 'outer', Group}` (`labelBreakThrow`, `label_loops`), which the labelled loop's own `try`
-    catches (`labelBreakCatch`) and answers as its group (`modules/block_jump_label_reaches_loop`). beam
+    catches (`labelBreakCatch`) and answers as its group (`modules/block_jump_label_reaches_loop`). A `continue :outer` throws
+    `{'__bp_label_continue', 'outer', Group}` (`labelContinueThrow`), caught by the labelled loop's per-round `try`
+    (`recursiveLoopCall`), which carries the group into the next round (`modules/block_jump_label_continue_reaches_loop`). beam
     (`beam_asm.zig`) is a separate emitter and does not read the label yet.
   - **A generator scope** — a `@Iterator` / `@Stream`
     fn or method (whose effect `methodEffect` reads off the annotations), or an

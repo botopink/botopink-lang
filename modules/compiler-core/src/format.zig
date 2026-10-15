@@ -800,7 +800,10 @@ pub const Formatter = struct {
                     }
                     break :blk kw;
                 },
-                .@"continue" => this.text("continue"),
+                .@"continue" => |c| if (c.label) |lbl|
+                    this.text(try std.fmt.allocPrint(this.arena, "continue :{s}", .{lbl}))
+                else
+                    this.text("continue"),
             },
             .branch => |br| switch (br.kind) {
                 // `try e catch h` and the tail form `e catch h` are one node;

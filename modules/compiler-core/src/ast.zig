@@ -866,8 +866,12 @@ pub fn JumpExprOf(comptime phase: Phase) type {
             label: ?[]const u8 = null,
             value: ?*ExprOf(phase),
         },
-        /// `continue` ---- skip the rest of this loop iteration
-        @"continue",
+        /// `continue [:label]` ---- skip the rest of this loop iteration; the
+        /// optional `:label` names an enclosing labelled loop, whose next
+        /// round starts.
+        @"continue": struct {
+            label: ?[]const u8 = null,
+        },
         /// `yield [:label] expr` ---- emit `expr` from the nearest generator
         /// scope (an annotated fn or an annotated `loop`, decision 105) and
         /// continue; an unannotated `while`/`for`/`loop` between the `yield`
@@ -3843,30 +3847,39 @@ fn exprFindJump(e: Expr, comptime pred: fn (JumpExpr) bool) ?Loc {
     };
 }
 
-/// Does `body` hold a `break :label` (no value) naming `label`? Looks through
-/// loops, `if`s, `case` arms and blocks — a block is a scope of the enclosing
-/// function (decision 541 (2)) — and not through closures or prefixed loops.
+/// Which jump `bodyJumpsLabel` looks for.
+pub const LabelJump = enum { @"break", @"continue", either };
+
+/// Does `body` hold a `break :label` (no value) or a `continue :label` naming
+/// `label`? Looks through loops, `if`s, `case` arms and blocks — a block is a
+/// scope of the enclosing function (decision 541 (2)) — and not through
+/// closures or prefixed loops.
 pub fn bodyBreaksLabel(body: []const Stmt, label: []const u8) bool {
-    for (body) |s| if (exprBreaksLabel(s.expr, label)) return true;
+    return bodyJumpsLabel(body, label, .either);
+}
+
+pub fn bodyJumpsLabel(body: []const Stmt, label: []const u8, which: LabelJump) bool {
+    for (body) |s| if (exprJumpsLabel(s.expr, label, which)) return true;
     return false;
 }
 
-pub fn exprBreaksLabel(e: Expr, label: []const u8) bool {
+pub fn exprJumpsLabel(e: Expr, label: []const u8, which: LabelJump) bool {
     return switch (e) {
         .jump => |j| switch (j.kind) {
-            .@"break" => |b| b.value == null and b.label != null and std.mem.eql(u8, b.label.?, label),
+            .@"break" => |b| which != .@"continue" and b.value == null and b.label != null and std.mem.eql(u8, b.label.?, label),
+            .@"continue" => |c| which != .@"break" and c.label != null and std.mem.eql(u8, c.label.?, label),
             else => false,
         },
         .branch => |br| switch (br.kind) {
-            .if_ => |i| bodyBreaksLabel(i.then_, label) or (if (i.else_) |els| bodyBreaksLabel(els, label) else false),
+            .if_ => |i| bodyJumpsLabel(i.then_, label, which) or (if (i.else_) |els| bodyJumpsLabel(els, label, which) else false),
             .tryCatch => false,
         },
-        .loop => |lp| lp.generator == null and bodyBreaksLabel(lp.body, label),
+        .loop => |lp| lp.generator == null and bodyJumpsLabel(lp.body, label, which),
         .collection => |col| if (col.kind == .case) blk: {
             for (col.kind.case.arms) |arm| {
                 if (arm.body == .function) {
-                    if (arm.body.function.kind.syntax == .lambda and bodyBreaksLabel(arm.body.function.kind.body, label)) break :blk true;
-                } else if (exprBreaksLabel(arm.body, label)) break :blk true;
+                    if (arm.body.function.kind.syntax == .lambda and bodyJumpsLabel(arm.body.function.kind.body, label, which)) break :blk true;
+                } else if (exprJumpsLabel(arm.body, label, which)) break :blk true;
             }
             break :blk false;
         } else false,

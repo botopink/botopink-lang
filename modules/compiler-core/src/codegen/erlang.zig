@@ -862,6 +862,10 @@ const cond_break_signal = "__bp_cond_break";
 /// loop from however many loops in (decision 541 (2)); the labelled loop's
 /// `try` catches it and answers the group.
 const label_break_signal = "__bp_label_break";
+/// `throw({Signal, 'label', Group})` — a `continue :label` starting the
+/// labelled loop's next round from however many loops in; the loop's per-round
+/// `try` catches it and carries the group into the next round.
+const label_continue_signal = "__bp_label_continue";
 const cond_continue_signal = "__bp_cond_continue";
 /// The throw a `break <v>` raises to end its generator scope (decision 105):
 /// `{Signal, Key, Group, V}` — the scope's key, the variables an annotated
@@ -7064,7 +7068,9 @@ const Emitter = struct {
             _ = this.label_loops.pop();
         };
         var call = try this.recursiveLoopCall(b, lp, names);
-        if (labelled) |l| call = try this.labelBreakCatch(b, call, l, names.len > 0);
+        if (labelled) |l| if (ast.bodyJumpsLabel(lp.body, l, .@"break")) {
+            call = try this.labelBreakCatch(b, call, l, names.len > 0);
+        };
         if (names.len == 0) return call;
         return b.match(try this.bindVarGroupExpr(b, names), call);
     }
@@ -7107,17 +7113,25 @@ const Emitter = struct {
         const body_stmts = (try this.bodyNode(b, lp.body, 0, arm_indent)).stmts;
         const group_out = if (has_group) try this.varGroupExpr(b, names) else Ast.Expr.a("ok");
         var arm: std.ArrayListUnmanaged(Ast.Stmt) = .empty;
-        const next: Ast.Expr = if (hasJump(lp.body, .@"continue")) blk: {
+        const label_continued: ?[]const u8 = if (labelTargeted(lp)) |l| (if (ast.bodyJumpsLabel(lp.body, l, .@"continue")) l else null) else null;
+        const next: Ast.Expr = if (hasJump(lp.body, .@"continue") or label_continued != null) blk: {
             var tried: std.ArrayListUnmanaged(Ast.Stmt) = .empty;
             try tried.appendSlice(b.arena, body_stmts);
             try tried.append(b.arena, .{ .expr = group_out });
+            var catches: std.ArrayListUnmanaged(Ast.Clause) = .empty;
+            try catches.append(b.arena, try b.clause(
+                &.{try b.exception(Ast.Expr.a("throw"), try b.tuple(&.{ Ast.Expr.a(cond_continue_signal), Ast.Expr.v(caught_var) }))},
+                &.{},
+                &.{Ast.Expr.v(caught_var)},
+            ));
+            if (label_continued) |l| try catches.append(b.arena, try b.clause(
+                &.{try b.exception(Ast.Expr.a("throw"), try b.tuple(&.{ Ast.Expr.a(label_continue_signal), Ast.Expr.a(l), Ast.Expr.v(caught_var) }))},
+                &.{},
+                &.{Ast.Expr.v(caught_var)},
+            ));
             break :blk .{ .try_catch = .{
                 .body = .{ .stmts = tried.items },
-                .catches = try b.arena.dupe(Ast.Clause, &.{try b.clause(
-                    &.{try b.exception(Ast.Expr.a("throw"), try b.tuple(&.{ Ast.Expr.a(cond_continue_signal), Ast.Expr.v(caught_var) }))},
-                    &.{},
-                    &.{Ast.Expr.v(caught_var)},
-                )}),
+                .catches = catches.items,
             } };
         } else blk: {
             try arm.appendSlice(b.arena, body_stmts);
@@ -7267,6 +7281,13 @@ const Emitter = struct {
     fn labelBreakThrow(this: *Emitter, b: Ast.Builder, entry: LabelLoop) anyerror!Ast.Expr {
         const group = if (entry.names.len > 0) try this.varGroupExpr(b, entry.names) else Ast.Expr.a("ok");
         return b.remote("erlang", "throw", &.{try b.tuple(&.{ Ast.Expr.a(label_break_signal), Ast.Expr.a(entry.label), group })});
+    }
+
+    /// `continue :label` — `throw({'__bp_label_continue', 'label', Group})`,
+    /// the group being the labelled loop's variables at this point.
+    fn labelContinueThrow(this: *Emitter, b: Ast.Builder, entry: LabelLoop) anyerror!Ast.Expr {
+        const group = if (entry.names.len > 0) try this.varGroupExpr(b, entry.names) else Ast.Expr.a("ok");
+        return b.remote("erlang", "throw", &.{try b.tuple(&.{ Ast.Expr.a(label_continue_signal), Ast.Expr.a(entry.label), group })});
     }
 
     fn labelLoop(this: *const Emitter, label: []const u8) ?LabelLoop {
@@ -8519,7 +8540,9 @@ const Emitter = struct {
                 .yield => |y| if (this.gen_scope) |gs|
                     this.genPush(b, gs.key, if (y.value) |val| try this.exprNode(b, val.*) else A("undefined"))
                 else if (y.value) |val| this.exprNode(b, val.*) else A("undefined"),
-                .@"continue" => if (this.cond_loop) |names|
+                .@"continue" => |cont| if (cont.label != null and this.labelLoop(cont.label.?) != null)
+                    this.labelContinueThrow(b, this.labelLoop(cont.label.?).?)
+                else if (this.cond_loop) |names|
                     b.remote("erlang", "throw", &.{try b.tuple(&.{ A(cond_continue_signal), if (names.len > 0) try this.varGroupExpr(b, names) else A("ok") })})
                 else
                     .{ .comment = Ast.Comment.doc("continue") },

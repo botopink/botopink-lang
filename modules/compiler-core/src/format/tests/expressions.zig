@@ -1535,3 +1535,17 @@ test "format: catch ---- a written `try` is kept" {
     try h.assertFormatLossless(std.testing.allocator, src);
     try h.assertIdempotent(std.testing.allocator, src);
 }
+
+test "format: a label on continue prints as on break" {
+    try h.assertFormat(std.testing.allocator,
+        \\fn f(xs: i32[]) {
+        \\    for :outer (xs) { x ->
+        \\        for (xs) { y ->
+        \\            if (y == 2) continue :outer;
+        \\            if (y == 3) break :outer;
+        \\            continue;
+        \\        }
+        \\    }
+        \\}
+    );
+}

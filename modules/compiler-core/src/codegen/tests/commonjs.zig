@@ -395,3 +395,27 @@ test "commonJS: a bare return in a yielding case arm ends the generator" {
         \\
     , "0\n1\n0\n2\n9\n");
 }
+
+test "commonJS: a labelled continue starts the outer loop's next round from a case arm of an inner one" {
+    try h.assertJsRunLog(std.testing.allocator,
+        \\fn run(xs: i32[], ys: i32[]) -> i32 {
+        \\    var s = 0;
+        \\    for :outer (xs) { x ->
+        \\        for (ys) { y ->
+        \\            case x * 10 + y {
+        \\                12 { continue :outer; }
+        \\                _ { }
+        \\            }
+        \\            s = s + x * y;
+        \\        }
+        \\        s = s + 100;
+        \\    }
+        \\    return s;
+        \\}
+        \\
+        \\pub fn main() {
+        \\    @print(run([1, 2], [1, 2, 3]));
+        \\}
+        \\
+    , "113\n");
+}

@@ -2067,7 +2067,13 @@ channel (a `@Task`, `@Component` or `@Stream` return, an `async { }` block or a
 `bool` is refused naming `while`.
 
 Labels go on all three: `for :outer (xs) { x -> … }`, `while :w (…) { … }`,
-`loop :l { … }`, then `break :outer`, `continue :outer`.
+`loop :l { … }`, then `break :outer`, `continue :outer`. A `continue :outer` from a nested loop's body or from a
+`case` arm's block ends the inner loops and starts the named loop's next round; a label no enclosing loop carries is
+`break-label-unbound`, on `continue` as on `break`:
+
+<!-- example: modules/block_jump_label_continue_reaches_loop -->
+
+<!-- example: modules/continue_label_unbound -->
 
 A `//` comment inside a loop body parses like any other comment.
 

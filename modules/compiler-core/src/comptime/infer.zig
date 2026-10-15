@@ -15813,7 +15813,16 @@ fn refuseInDefer(env: *Env, kind: anytype, loc: ast.Loc) InferError!void {
     const Hint = "A `defer` runs when its block ends, whichever way it ends; its body cannot choose another way out. Do that before the `defer` or after the block.";
     const code: []const u8, const what: []const u8 = switch (kind) {
         .@"return" => .{ diagnostics.defer_return, "`return`" },
-        .@"continue" => if (env.loopDepth == 0) .{ diagnostics.defer_continue, "`continue`" } else return,
+        .@"continue" => |c| blk: {
+            if (c.label) |lbl| {
+                var i = env.labelStack.items.len;
+                while (i > 0) : (i -= 1) {
+                    if (std.mem.eql(u8, env.labelStack.items[i - 1], lbl)) break;
+                } else return;
+                if (i - 1 >= env.deferLabelFloor) return;
+            } else if (env.loopDepth > 0) return;
+            break :blk .{ diagnostics.defer_continue, "`continue`" };
+        },
         .yield => .{ diagnostics.defer_yield, "`yield`" },
         .await_ => .{ diagnostics.defer_await, "`await`" },
         .@"break" => |b| blk: {
@@ -16094,25 +16103,7 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
             // names it for `break :label <value>`.
             const ctx = env.starFn;
             const inGenerator = ctx != null and ctx.?.allowsYield;
-            if (b.label) |lbl| {
-                for (env.closedLabels) |outer| {
-                    if (std.mem.eql(u8, outer, lbl)) {
-                        env.lastError = TypeError.custom(
-                            try std.fmt.allocPrint(env.arena, "{s}: `break :{s}` crosses the border of an `{s}` loop — its body is a closure and cannot leave a loop outside it", .{ diagnostics.generator_loop_closed_scope, lbl, if (ctx.?.effect == .stream) "stream" else "iter" }),
-                            "End the prefixed loop (`break`) and leave the outer loop after it.",
-                        ).withLoc(loc);
-                        return error.TypeError;
-                    }
-                }
-                if (!env.hasLabel(lbl)) {
-                    env.lastError = TypeError.custom(
-                        diagnostics.break_label_unbound ++
-                            ": `break :<label>` targets an unknown label",
-                        "Label a loop (`for :name (…)`, `while :name (…)`, `loop :name {`) or a generator scope (`fn … -> @Iterator<…> :name`, `iter loop :name {`).",
-                    ).withLoc(loc);
-                    return error.TypeError;
-                }
-            }
+            if (b.label) |lbl| try checkJumpLabel(env, lbl, "break", loc);
             if (b.value) |expr| {
                 const targetsGenerator = inGenerator and (b.label == null or
                     (ctx.?.fnLabel != null and std.mem.eql(u8, b.label.?, ctx.?.fnLabel.?)));
@@ -16209,7 +16200,8 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
             const ty = try markResultSource(env, unwrapTaskType(rawTy) orelse rawTy, .await_);
             return TypedExpr{ .jump = .{ .loc = loc, .type_ = ty, .kind = .{ .await_ = valPtr } } };
         },
-        .@"continue" => {
+        .@"continue" => |c| {
+            if (c.label) |lbl| try checkJumpLabel(env, lbl, "continue", loc);
             if (env.loopDepth == 0) {
                 env.lastError = TypeError.custom(
                     diagnostics.continue_outside_loop ++ ": `continue` outside a loop",
@@ -16217,7 +16209,7 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
                 ).withLoc(loc);
                 return error.TypeError;
             }
-            return TypedExpr{ .jump = .{ .loc = loc, .type_ = try env.namedType("void"), .kind = .@"continue" } };
+            return TypedExpr{ .jump = .{ .loc = loc, .type_ = try env.namedType("void"), .kind = .{ .@"continue" = .{ .label = c.label } } } };
         },
         .yield => |y| {
             // Decision 105 — `yield` feeds the NEAREST generator scope, an
@@ -22715,6 +22707,31 @@ fn refuseBlockAt(env: *Env, param: *T.Type, arg: *T.Type, loc: ast.Loc) InferErr
         env.lastError = TypeError.custom(
             diagnostics.block_void_value ++ ": a block whose value is `void` is handed where a value is expected",
             "A block's value is its last expression written without `;` (decision 525).",
+        ).withLoc(loc);
+        return error.TypeError;
+    }
+}
+
+/// A `break :label` / `continue :label` names a loop (or generator scope)
+/// that encloses it in the same function: an `iter` / `stream` loop's body is
+/// a closure and a jump out of it is `generator-loop-closed-scope`; a label no
+/// enclosing loop carries is `break-label-unbound`.
+fn checkJumpLabel(env: *Env, lbl: []const u8, comptime word: []const u8, loc: ast.Loc) InferError!void {
+    const ctx = env.starFn;
+    for (env.closedLabels) |outer| {
+        if (std.mem.eql(u8, outer, lbl)) {
+            env.lastError = TypeError.custom(
+                try std.fmt.allocPrint(env.arena, "{s}: `" ++ word ++ " :{s}` crosses the border of an `{s}` loop — its body is a closure and cannot leave a loop outside it", .{ diagnostics.generator_loop_closed_scope, lbl, if (ctx.?.effect == .stream) "stream" else "iter" }),
+                "End the prefixed loop (`break`) and leave the outer loop after it.",
+            ).withLoc(loc);
+            return error.TypeError;
+        }
+    }
+    if (!env.hasLabel(lbl)) {
+        env.lastError = TypeError.custom(
+            diagnostics.break_label_unbound ++
+                ": `" ++ word ++ " :<label>` targets an unknown label",
+            "Label a loop (`for :name (…)`, `while :name (…)`, `loop :name {`) or a generator scope (`fn … -> @Iterator<…> :name`, `iter loop :name {`).",
         ).withLoc(loc);
         return error.TypeError;
     }
