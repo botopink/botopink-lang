@@ -769,6 +769,16 @@ fn memberPath(ws_dir: []const u8, cell: []const u8) []const u8 {
     return std.fs.path.basename(cell);
 }
 
+/// The workspace manifest `text` with its `"workspaces"` array replaced by the
+/// one literal entry `member`: the scratch copy holds only the cell, so the
+/// root's other entries (`a/*`, `b/c/*`) would name directories it lacks.
+fn soleMember(a: std.mem.Allocator, text: []const u8, member: []const u8) ![]const u8 {
+    const key = std.mem.indexOf(u8, text, "\"workspaces\"") orelse return text;
+    const open = std.mem.indexOfScalarPos(u8, text, key, '[') orelse return text;
+    const close = std.mem.indexOfScalarPos(u8, text, open, ']') orelse return text;
+    return std.fmt.allocPrint(a, "{s}[\"{s}\"]{s}", .{ text[0..open], member, text[close + 1 ..] });
+}
+
 /// A copy of the cell, one per target — everything but `snapshot/`, `docs.md`
 /// and hidden entries — under `<home>/.botopinkbuild/tmp/cell-<64 random bits>/`, its
 /// manifest the cell's own (`checkCell` refused a cell without one). The process works
@@ -799,12 +809,12 @@ const Scratch = struct {
         // what it inherits in place, and no sibling is read.
         var err: ?manifest.Located = null;
         const ws = manifest.workspaceOf(a, ctx.io, cell, &err) catch null;
-        // The copy keeps the cell's path relative to the workspace root, so a
-        // nested member glob (`group/*`, `*/*`) lists it as it lists the original.
+        // The copy keeps the cell's path relative to the workspace root, and the
+        // copied manifest lists that path alone (`soleMember`).
         const dir = if (ws) |w| try std.fs.path.join(a, &.{ root, memberPath(w.dir(), cell) }) else root;
         try std.Io.Dir.cwd().createDirPath(ctx.io, dir);
         if (ws) |w| {
-            const ws_text = try absolutizePathDeps(a, w.text, w.dir(), false);
+            const ws_text = try soleMember(a, try absolutizePathDeps(a, w.text, w.dir(), false), memberPath(w.dir(), cell));
             try std.Io.Dir.cwd().writeFile(ctx.io, .{ .sub_path = try std.fs.path.join(a, &.{ root, manifest.FILENAME }), .data = ws_text });
         }
         try copyTree(a, ctx.io, cell, dir, true);
@@ -1505,6 +1515,17 @@ test "a share is about two per job, at least one cell and at most MAX_SHARE" {
     try testing.expectEqual(@as(usize, 2), shareSize(5, 2));
     try testing.expectEqual(@as(usize, MAX_SHARE), shareSize(1085, 6));
     try testing.expectEqual(@as(usize, 1), shareSize(1, 8));
+}
+
+test "soleMember lists the cell alone, the rest of the manifest as written" {
+    const a = std.testing.allocator;
+    var arena = std.heap.ArenaAllocator.init(a);
+    defer arena.deinit();
+    const text = "{ \"name\": \"w\", \"workspaces\": [\"a/x/*\", \"b/y/*\"], \"targets\": [\"erlang\"] }";
+    try std.testing.expectEqualStrings(
+        "{ \"name\": \"w\", \"workspaces\": [\"b/y/c\"], \"targets\": [\"erlang\"] }",
+        try soleMember(arena.allocator(), text, "b/y/c"),
+    );
 }
 
 test "memberPath keeps the cell's path under the workspace root" {

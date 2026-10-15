@@ -1601,6 +1601,19 @@ if have node && have erl && have erlc && have wasmtime; then
   run "$CELLS" cell check empty
   expect_code 1 "cell check over a directory with no cell"
   expect_out "no cell under empty" "says no cell was found"
+
+  # 144 B-113: a cell two levels below its workspace (`group/*`), and one under
+  # the workspace's second entry (`second/group/*`). The copy keeps the cell's
+  # path under the workspace root and its manifest lists the cell alone, so the
+  # cell inherits the workspace's dependency and no other entry is read. The
+  # fixture is a workspace of its own, so it cannot be a member of
+  # `conformance/modules/` (workspaces do not nest).
+  WSC="$WORK/cell-workspace"
+  rm -rf "$WSC"; cp -R "$SCRIPT_DIR/cell-workspace" "$WSC"; rm -rf "$WSC/.botopinkbuild"
+  run "$WSC" cell check .
+  expect_code 0 "cell check over a workspace with nested member entries"
+  expect_out "cells: 2 checked — 2 passed, 0 failed" "a nested member and a second entry's member inherit the workspace's dependency"
+  no_candidate "$WSC" "the nested members write no candidate"
 else
   skip "botopink cell (node, erl, erlc and wasmtime are all needed)"
 fi

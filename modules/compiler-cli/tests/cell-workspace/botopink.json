@@ -1,6 +1,6 @@
 {
   "name": "workspace_nested_members",
   "version": "0.0.1",
-  "workspaces": ["group/*"],
+  "workspaces": ["group/*", "second/group/*"],
   "dependencies": { "greeter": { "path": "deps/greeter" } }
 }

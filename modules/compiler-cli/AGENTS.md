@@ -67,6 +67,11 @@ compiler-cli/
 │   │                          own `botopink.json`, each green
 │   │                          under `botopink cell check`; cli_contract.sh copies
 │   │                          them before it edits one
+│   └── cell-workspace/      ← a workspace of cells with nested member entries
+│   │                          (`group/*`, `second/group/*`, 144 B-113): each cell
+│   │                          inherits the workspace's dependency in `cell check`'s
+│   │                          copy; a workspace itself, so not a member of
+│   │                          `conformance/modules/` (workspaces do not nest)
 │   └── code_cache.sh        ← the code cache (decision 509) and the workspace a cell
 │   │                          inherits from (512): a member that writes its name alone
 │   │                          builds against its workspace's dependency; two members

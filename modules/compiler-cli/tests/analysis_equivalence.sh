@@ -2,9 +2,10 @@
 # `test-analysis-equivalence` over real libraries (144 B-60, guard 2): the code
 # cache's level B must answer what analysing answers. For a few conformance
 # cells of rakun's packages `rakun`, `rakun-bpp` and `rakun-stylesheet` — each a
-# consumer of its package — every cell is built three times on every target its
-# feature's manifest declares (`conformance/<package>/<feature>/botopink.json`'s
-# `targets`; the package's first listed cell decides):
+# consumer of its package — every cell is built three times on every target it
+# runs on (its own manifest's `targets`, else its workspace's — the root
+# `conformance/botopink.json`, or a feature's `conformance/<package>/<feature>/botopink.json`
+# where the root has none; the package's first listed cell decides):
 #   • `--cold`  — reads nothing;
 #   • warm      — the first cell of a target writes the package's entry into
 #                 an emptied `.botopinkbuild/analysis/<target>/`, the cells
@@ -113,15 +114,27 @@ for spec in "${PACKAGES[@]}"; do
 for w in json.load(open(sys.argv[1])).get("workspaces", []):
     os.makedirs(os.path.join(sys.argv[2], w.split("*")[0]), exist_ok=True)' "$L/botopink.json" "$L"
   copy_tree "$from/$WORKSPACE/modules" "$L/modules"
+  # One root manifest over every cell (decision 548), its other entries'
+  # directories present and empty; else one manifest per feature.
+  root_manifest="$from/$WORKSPACE/conformance/botopink.json"
+  if [[ -f "$root_manifest" ]]; then
+    cp "$root_manifest" "$L/conformance/"
+    python3 -c 'import json,os,sys
+for w in json.load(open(sys.argv[1])).get("workspaces", []):
+    os.makedirs(os.path.join(sys.argv[2], w.split("*")[0]), exist_ok=True)' "$root_manifest" "$L/conformance"
+  fi
   for c in "${cells[@]}"; do
     [[ -d "$from/$WORKSPACE/conformance/$lib/$c" ]] || { fail "$lib: no conformance cell $c"; continue; }
     mkdir -p "$C/$(dirname "$c")"
-    cp "$from/$WORKSPACE/conformance/$lib/$(dirname "$c")/botopink.json" "$C/$(dirname "$c")/"
+    [[ -f "$root_manifest" ]] || cp "$from/$WORKSPACE/conformance/$lib/$(dirname "$c")/botopink.json" "$C/$(dirname "$c")/"
     copy_tree "$from/$WORKSPACE/conformance/$lib/$c" "$C/$c"
   done
   first="$(dirname "${cells[0]}")"
-  ANALYSIS="$C/$first/.botopinkbuild/analysis"
-  targets="$(python3 -c 'import json,sys; print(" ".join(json.load(open(sys.argv[1]))["targets"]))' "$C/$first/botopink.json")"
+  if [[ -f "$root_manifest" ]]; then ws_manifest="$L/conformance/botopink.json"; else ws_manifest="$C/$first/botopink.json"; fi
+  ANALYSIS="$(dirname "$ws_manifest")/.botopinkbuild/analysis"
+  targets="$(python3 -c 'import json,sys
+cell, ws = (json.load(open(p)) for p in sys.argv[1:])
+print(" ".join(cell.get("targets") or ws["targets"]))' "$C/${cells[0]}/botopink.json" "$ws_manifest")"
 
   for target in $targets; do
     flags=()
