@@ -205,13 +205,18 @@ line and column — the header's, the markup's and the style section's alike.
 Refused, each at its line: a first line `---` (`the header starts on the first
 line; a .bpp has no opening ---`), a `--- style ---` after the markup, a second
 style section, a style section no `---` line closes, a `"""` in a section (it
-would end the literal), and `X.bp` beside `X.bpp` (one module written twice).
+would end the literal), `X.bp` beside `X.bpp` (one module written twice), and a
+header declaration written after a statement (decision 552: the header reads top
+to bottom as written, the declarations first and the statements after; the
+refusal is at the declaration and names the statement before it, and the unfold
+moves no declaration).
 
 <!-- example: modules/bpp_first_line_separator -->
 <!-- example: modules/bpp_style_after_markup -->
 <!-- example: modules/bpp_second_style_section -->
 <!-- example: modules/bpp_style_unclosed -->
 <!-- example: modules/bpp_beside_bp -->
+<!-- example: modules/bpp_declaration_after_statement -->
 
 ### Imports
 

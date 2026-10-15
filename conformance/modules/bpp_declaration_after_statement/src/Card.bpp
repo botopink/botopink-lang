@@ -1,0 +1,4 @@
+val n = 1;
+fn label() -> string { return "card"; }
+---
+<p>card</p>

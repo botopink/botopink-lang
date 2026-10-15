@@ -22,8 +22,8 @@
 /// header item stays where it is written, the function's head is written at
 /// the end of the line before the first statement, each separator line holds
 /// the generated `use … ` / `return …`, and the closing `""";` and `}`, the
-/// generated imports and a declaration written after a statement go after the
-/// end of the file. Only columns move, on the few lines that get a prefix —
+/// generated imports go after the end of the file. A declaration written after
+/// a statement is refused (552), so the unfold moves no declaration. Only columns move, on the few lines that get a prefix —
 /// `columnShifts` lists them, and the diagnostics map back through it — so a
 /// type error in the header and a `failAt` in a literal report at the `.bpp`
 /// line and column, and a literal's text is the file's bytes after its
@@ -66,8 +66,7 @@ pub const Shift = struct { line: usize, from: usize, by: usize };
 
 /// Text the unfold moved: `len` bytes at (`line`, `col`) of the unfolded text
 /// are the file's from (`file_line`, `file_col`) — the header's last-line
-/// decorator written before the function's head, a declaration written after
-/// a statement placed after the function.
+/// decorator written before the function's head.
 pub const Moved = struct { line: usize, col: usize, len: usize, file_line: usize, file_col: usize };
 
 pub const Unfolded = struct {
@@ -418,6 +417,27 @@ pub fn unfold(arena: std.mem.Allocator, source: []const u8, spec: Spec) !Result 
         if (it.kind == .annotations) trailing = it;
     }
 
+    // The header reads top to bottom as written (552): a declaration below a
+    // statement is refused at the declaration, naming the statement before it.
+    {
+        var prev: ?Item = null;
+        for (its) |it| switch (it.kind) {
+            .statement => prev = it,
+            .declaration => if (prev) |st| {
+                const lc = lineColOf(source, it.start);
+                const text = source[st.start..st.end];
+                const nl = std.mem.indexOfScalar(u8, text, '\n');
+                const shown = std.mem.trimEnd(u8, if (nl) |n| text[0..n] else text, "\r");
+                return .{ .refused = .{
+                    .line = lc.line,
+                    .col = lc.col,
+                    .message = try std.fmt.allocPrint(arena, "a .bpp header reads top to bottom: this declaration is written after the statement `{s}{s}` — write the declarations (`import`, `type`, `fn`, `pub`) first, the statements (`val`, `use`) after", .{ shown, if (nl != null) " …" else "" }),
+                } };
+            },
+            .annotations => {},
+        };
+    }
+
     const head = try std.fmt.allocPrint(arena, "pub default fn ({s}) -> {s} {{", .{ if (has_props) "props: Props" else "", spec.ret });
     // With a statement, the header's last-line decorator moves before the
     // function's head, on one line (221 (1)); without one it stays where it is
@@ -425,7 +445,6 @@ pub fn unfold(arena: std.mem.Allocator, source: []const u8, spec: Spec) !Result 
     const moved_decorator: ?Item = if (first_stmt != null) trailing else null;
 
     var b: Builder = .{ .arena = arena };
-    var late: std.ArrayListUnmanaged(Item) = .empty;
     var cursor: usize = 0;
     var opened = false;
     if (!whole_header) {
@@ -449,11 +468,7 @@ pub fn unfold(arena: std.mem.Allocator, source: []const u8, spec: Spec) !Result 
             } else try b.write(gap);
             const text = source[it.start..it.end];
             switch (it.kind) {
-                .declaration => if (opened) {
-                    // A declaration after a statement: at module level, after the function.
-                    try b.blank(text);
-                    try late.append(arena, it);
-                } else try b.write(text),
+                .declaration => try b.write(text),
                 .statement => try b.write(text),
                 .annotations => if (opened) try b.blank(text) else try b.write(text),
             }
@@ -496,10 +511,6 @@ pub fn unfold(arena: std.mem.Allocator, source: []const u8, spec: Spec) !Result 
     try b.write(spec.ret_imports);
     if (whole_header) {
         // The header did not split: the compiler reports it where it fails.
-    }
-    for (late.items) |it| {
-        try b.moveHere(source, it.start, it.end, "\n");
-        try b.write("\n");
     }
     return .{ .ok = .{ .source = b.out.items, .shifts = b.shifts.items, .moved = b.moved.items } };
 }
@@ -679,16 +690,23 @@ test "bpp unfold: the style section is a `use` before the return; the import is 
     , u.source);
 }
 
-test "bpp unfold: a decorator on the last header line annotates the function; a declaration after a statement moves past it" {
+test "bpp unfold: a decorator on the last header line annotates the function; a declaration after a statement is refused" {
     var arena_inst = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_inst.deinit();
     const a = arena_inst.allocator();
-    const u = try unfoldOk(a, "import {page} from \"web\";\nval x = 1;\nfn helper() -> i32 { return 2; }\n#[page(\"/\")]\n---\n<p/>\n", test_spec);
-    try std.testing.expectEqualStrings("import {page} from \"web\"; #[page(\"/\")] pub default fn () -> i32 {", lineOf(u.source, 1));
-    try std.testing.expectEqualStrings("val x = 1;", lineOf(u.source, 2));
-    try std.testing.expectEqualStrings("", std.mem.trim(u8, lineOf(u.source, 3), " "));
-    try std.testing.expectEqualStrings("", std.mem.trim(u8, lineOf(u.source, 4), " "));
-    try std.testing.expect(std.mem.endsWith(u8, u.source, "fn helper() -> i32 { return 2; }\n"));
+    const u = try unfoldOk(a, "import {page} from \"web\";\nfn helper() -> i32 { return 2; }\nval x = 1;\n#[page(\"/\")]\n---\n<p/>\n", test_spec);
+    try std.testing.expectEqualStrings("import {page} from \"web\";", lineOf(u.source, 1));
+    try std.testing.expectEqualStrings("fn helper() -> i32 { return 2; } #[page(\"/\")] pub default fn () -> i32 {", lineOf(u.source, 2));
+    try std.testing.expectEqualStrings("val x = 1;", lineOf(u.source, 3));
+    // A declaration after a statement is refused at the declaration (552).
+    switch (try unfold(a, "val x = 1;\nfn helper() -> i32 { return 2; }\n---\n<p/>\n", test_spec)) {
+        .ok => return error.TestUnexpectedResult,
+        .refused => |r| {
+            try std.testing.expectEqual(@as(usize, 2), r.line);
+            try std.testing.expectEqual(@as(usize, 1), r.col);
+            try std.testing.expect(std.mem.indexOf(u8, r.message, "`val x = 1;`") != null);
+        },
+    }
     // Without a statement the decorator stays where it is written, before the head.
     const d = try unfoldOk(a, "#[page(\"/\")]\n---\n<p/>\n", test_spec);
     try std.testing.expectEqualStrings("#[page(\"/\")]", lineOf(d.source, 1));
