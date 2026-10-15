@@ -759,6 +759,16 @@ fn readSnaps(ctx: *Ctx, dir: []const u8, prefix: []const u8, into: *Files, count
 
 // ── the scratch project ───────────────────────────────────────────────────────
 
+/// `cell`'s path relative to the workspace directory `ws_dir` that lists it
+/// (`a/b` for `<ws_dir>/a/b`); the cell's basename when the path does not lie under it.
+fn memberPath(ws_dir: []const u8, cell: []const u8) []const u8 {
+    var base = ws_dir;
+    while (base.len > 1 and base[base.len - 1] == std.fs.path.sep) base = base[0 .. base.len - 1];
+    if (cell.len > base.len + 1 and std.mem.startsWith(u8, cell, base) and cell[base.len] == std.fs.path.sep)
+        return std.mem.trim(u8, cell[base.len + 1 ..], &.{std.fs.path.sep});
+    return std.fs.path.basename(cell);
+}
+
 /// A copy of the cell, one per target — everything but `snapshot/`, `docs.md`
 /// and hidden entries — under `<home>/.botopinkbuild/tmp/cell-<64 random bits>/`, its
 /// manifest the cell's own (`checkCell` refused a cell without one). The process works
@@ -789,10 +799,12 @@ const Scratch = struct {
         // what it inherits in place, and no sibling is read.
         var err: ?manifest.Located = null;
         const ws = manifest.workspaceOf(a, ctx.io, cell, &err) catch null;
-        const dir = if (ws != null) try std.fs.path.join(a, &.{ root, std.fs.path.basename(cell) }) else root;
+        // The copy keeps the cell's path relative to the workspace root, so a
+        // nested member glob (`group/*`, `*/*`) lists it as it lists the original.
+        const dir = if (ws) |w| try std.fs.path.join(a, &.{ root, memberPath(w.dir(), cell) }) else root;
         try std.Io.Dir.cwd().createDirPath(ctx.io, dir);
         if (ws) |w| {
-            const ws_text = try absolutizePathDeps(a, w.text, w.dir());
+            const ws_text = try absolutizePathDeps(a, w.text, w.dir(), false);
             try std.Io.Dir.cwd().writeFile(ctx.io, .{ .sub_path = try std.fs.path.join(a, &.{ root, manifest.FILENAME }), .data = ws_text });
         }
         try copyTree(a, ctx.io, cell, dir, true);
@@ -800,7 +812,7 @@ const Scratch = struct {
         // cell is made absolute against the cell's own directory.
         const manifest_path = try std.fs.path.join(a, &.{ dir, "botopink.json" });
         const original = try std.Io.Dir.cwd().readFileAlloc(ctx.io, manifest_path, a, .limited(64 * 1024));
-        const manifest_text = try absolutizePathDeps(a, original, cell);
+        const manifest_text = try absolutizePathDeps(a, original, cell, true);
         if (!std.mem.eql(u8, original, manifest_text))
             try std.Io.Dir.cwd().writeFile(ctx.io, .{ .sub_path = manifest_path, .data = manifest_text });
         const prev_env = ctx.env_map;
@@ -909,7 +921,9 @@ fn cellEnv(ctx: *Ctx, cell: []const u8) !libs.EnvMap {
 /// path that stays inside the cell is the copy's own (`copyTree` carries it),
 /// so it stays as written: a refusal located in it is then relative to the
 /// cell (`deps/…`), and the columns of the manifest after it do not move.
-fn absolutizePathDeps(a: std.mem.Allocator, text: []const u8, cell_dir: []const u8) ![]const u8 {
+/// `keep_inside` false (the workspace's manifest, whose copy holds only the cell)
+/// makes every relative path absolute.
+fn absolutizePathDeps(a: std.mem.Allocator, text: []const u8, cell_dir: []const u8, keep_inside: bool) ![]const u8 {
     var out: std.ArrayListUnmanaged(u8) = .empty;
     var i: usize = 0;
     while (std.mem.indexOfPos(u8, text, i, "\"path\"")) |k| {
@@ -937,7 +951,7 @@ fn absolutizePathDeps(a: std.mem.Allocator, text: []const u8, cell_dir: []const 
             const resolved = try std.fs.path.resolve(a, &.{ cell_dir, value });
             const base = try std.fs.path.resolve(a, &.{cell_dir});
             const inside = resolved.len > base.len and std.mem.startsWith(u8, resolved, base) and resolved[base.len] == std.fs.path.sep;
-            try out.appendSlice(a, if (inside) value else resolved);
+            try out.appendSlice(a, if (inside and keep_inside) value else resolved);
         }
         i = end;
     }
@@ -1415,7 +1429,7 @@ test "absolutizePathDeps resolves a relative path against the cell, leaving the 
     defer arena.deinit();
     const a = arena.allocator();
     const text = "{ \"name\": \"c\", \"dependencies\": { \"k\": { \"path\": \"../../lib/k\" }, \"z\": { \"path\": \"/abs/z\" } } }";
-    const got = try absolutizePathDeps(a, text, "/w/cells/modules/c");
+    const got = try absolutizePathDeps(a, text, "/w/cells/modules/c", true);
     try std.testing.expectEqualStrings("{ \"name\": \"c\", \"dependencies\": { \"k\": { \"path\": \"/w/cells/lib/k\" }, \"z\": { \"path\": \"/abs/z\" } } }", got);
 }
 
@@ -1424,7 +1438,7 @@ test "absolutizePathDeps keeps a path inside the cell as written, so columns and
     defer arena.deinit();
     const a = arena.allocator();
     const text = "{ \"dependencies\": { \"m\": { \"path\": \"deps/m\" } }, \"bpp\": \"m\" }";
-    try std.testing.expectEqualStrings(text, try absolutizePathDeps(a, text, "/w/cells/modules/c"));
+    try std.testing.expectEqualStrings(text, try absolutizePathDeps(a, text, "/w/cells/modules/c", true));
 }
 
 test "discover finds the cells of a directory and never a nested package under deps/" {
@@ -1491,4 +1505,10 @@ test "a share is about two per job, at least one cell and at most MAX_SHARE" {
     try testing.expectEqual(@as(usize, 2), shareSize(5, 2));
     try testing.expectEqual(@as(usize, MAX_SHARE), shareSize(1085, 6));
     try testing.expectEqual(@as(usize, 1), shareSize(1, 8));
+}
+
+test "memberPath keeps the cell's path under the workspace root" {
+    try std.testing.expectEqualStrings("c", memberPath("/w/modules", "/w/modules/c"));
+    try std.testing.expectEqualStrings("group/c", memberPath("/w/modules/", "/w/modules/group/c"));
+    try std.testing.expectEqualStrings("c", memberPath("/w/other", "/w/modules/c"));
 }
