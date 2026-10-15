@@ -3470,12 +3470,59 @@ fn registerReflectionPrelude(env: *Env) anyerror!void {
     _ = try infer.inferProgram(env, program);
 }
 
-/// Decision 539 (6) — the `pub behavior`s of `builtins.d.bp` a program writes
-/// with no import, as a type (`fn f(c: Closeable)`, `<T: Closeable>`) and in an
-/// `implement` clause: plain behaviors, known to no compiler rule. The others
-/// there (`Task`, `Iterator`, `Index`, `Component`, `Decl`, …) the compiler
-/// registers or reads by rules of their own.
-pub const ambient_behaviors = [_][]const u8{ "Display", "Closeable" };
+/// Decision 539 (6) — the `pub behavior`s of `builtins.d.bp` a compiler rule
+/// reads by name. Every other `pub behavior` declared there is **ambient**
+/// (`isAmbientBehavior`): a program names it with no import, as a type — a
+/// parameter's included, with its arguments (`fn f(m: Index<i32, i32>)`) — and
+/// in an `implement` clause, which is checked against the declaration. Today
+/// that leaves `Display`, `Closeable`, `Index` and `Slice`; a plain behavior
+/// added to `builtins.d.bp` joins them with no compiler change.
+pub const rule_read_behaviors = [_][]const u8{
+    // The effect wrappers, written `@Task<…>` / `@Iterator<…>` / … and read
+    // by `comptime/effect_chain.zig`.
+    "Task",
+    "Iterator",
+    "Stream",
+    "Component",
+    // The comptime reflection carriers (`@Expr<T>`, `@Decl<T>`), registered
+    // from their own sources (`decl_reflection_src`).
+    "Expr",
+    "Decl",
+    // Markers whose `implement` a rule of `infer.zig` reads:
+    // `implementsAnnotation`, `implementsRenderable` and
+    // `decorator_type_name`.
+    "Annotation",
+    "Renderable",
+    "Decorator",
+};
+
+/// True when `b`, a behavior of `builtins.d.bp`, is ambient: public, and read
+/// by no compiler rule (`rule_read_behaviors`).
+pub fn isAmbientBehavior(b: ast.BehaviorDecl) bool {
+    if (!b.isPub) return false;
+    for (rule_read_behaviors) |name| if (std.mem.eql(u8, b.name, name)) return false;
+    return true;
+}
+
+test "ambient behaviors: builtins.d.bp's public behaviors no rule reads (decision 539 (6))" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var lx = Lexer.init(@import("std_prelude").builtins);
+    var p = Parser.init(try lx.scanAll(arena));
+    const program = try p.parse(arena);
+    var ambient: std.ArrayListUnmanaged([]const u8) = .empty;
+    var declared: std.StringHashMapUnmanaged(void) = .empty;
+    for (program.decls) |d| if (d == .behavior) {
+        try declared.put(arena, d.behavior.name, {});
+        if (isAmbientBehavior(d.behavior)) try ambient.append(arena, d.behavior.name);
+    };
+    const want = [_][]const u8{ "Display", "Closeable", "Index", "Slice" };
+    try std.testing.expectEqual(want.len, ambient.items.len);
+    for (want, ambient.items) |w, a| try std.testing.expectEqualStrings(w, a);
+    // A name the list keeps out that builtins.d.bp no longer declares is stale.
+    for (rule_read_behaviors) |name| try std.testing.expect(declared.contains(name));
+}
 
 /// Decision 252 — every builtin's declaration into `env.builtinDecls`: each
 /// top-level `declare fn` of `builtins.d.bp` and `builtins_fns.d.bp`, and each
@@ -3502,9 +3549,7 @@ fn registerBuiltinDecls(env: *Env) anyerror!void {
             }),
             // Decision 539 (6) — the ambient behaviors a program names with no
             // import (`Env.ambientBehaviorDecls`).
-            .behavior => |b| for (ambient_behaviors) |name| {
-                if (std.mem.eql(u8, b.name, name)) try env.ambientBehaviorDecls.put(env.arena, b.name, b);
-            },
+            .behavior => |b| if (isAmbientBehavior(b)) try env.ambientBehaviorDecls.put(env.arena, b.name, b),
             .type_ => |t| for (t.methods) |m| {
                 if (!m.is_declare) continue;
                 if (m.params.len > 0 and std.mem.eql(u8, m.params[0].name, "self")) continue;

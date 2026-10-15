@@ -2248,9 +2248,13 @@ pub const Env = struct {
 
     /// The `behavior` declaration `name` names: the module's own (std's
     /// registered ones included), else an imported one, else an ambient one
-    /// of `builtins.d.bp` (decision 539 (6)).
+    /// of `builtins.d.bp` (decision 539 (6)) — unless a type of that name is
+    /// in scope (`type Index(column: string)`, a library's `Slice<T>`): the
+    /// module's own type is what the name reads.
     pub fn behaviorDecl(self: *const Env, name: []const u8) ?ast.BehaviorDecl {
-        return self.assocInterfaceDecls.get(name) orelse self.importedBehaviorDecls.get(name) orelse self.ambientBehaviorDecls.get(name);
+        if (self.assocInterfaceDecls.get(name) orelse self.importedBehaviorDecls.get(name)) |d| return d;
+        if (self.typeDefs.contains(name)) return null;
+        return self.ambientBehaviorDecls.get(name);
     }
 
     /// The type alias `name` names, if one is in scope.

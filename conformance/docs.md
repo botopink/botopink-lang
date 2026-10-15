@@ -974,16 +974,25 @@ wins:
 
 <!-- example: modules/behavior_default_adopted_across_modules -->
 
-`Display` and `Closeable` are **ambient** behaviors (decision 539 (6)):
-`builtins.d.bp` declares them, and a program names them with no import — as a
-type, a parameter's included, and in an `implement` clause, which is checked
+`Display`, `Closeable`, `Index<K, V>` and `Slice<V>` are **ambient** behaviors
+(decision 539 (6)): `builtins.d.bp` declares them, and a program names them with
+no import — as a type, a parameter's included and with its arguments
+(`m: Index<string, i32>`), and in an `implement` clause, which is checked
 against the declaration as a behavior of the module's own is (a required method
-the type does not write is refused at the type). A module's own `behavior` of
-the same name, or an imported one, is the one its name reads.
+the type does not write is refused at the type). Every public behavior of
+`builtins.d.bp` that no rule of the compiler reads is ambient; `Task`,
+`Iterator`, `Stream`, `Component`, `Expr`, `Decl`, `Annotation`, `Renderable`
+and `Decorator` each have a rule of their own. A module's own `behavior` of the
+same name, or an imported one, is the one its name reads, and so is a type of
+the name it declares or imports.
 
 <!-- example: modules/ambient_behavior_parameter -->
 
 <!-- example: modules/ambient_behavior_implement_missing_method -->
+
+<!-- example: modules/ambient_index_parameter -->
+
+<!-- example: modules/ambient_index_implement_missing_method -->
 
 A `behavior` no type in the program implements is a **runtime boundary**: the
 host builds the value. Such a value carries its own members — a `val` member is
@@ -1406,7 +1415,8 @@ absent or overwritten — on every target.
 <!-- example: modules/dict_float_value -->
 
 Which methods those are comes from two **ambient** behaviors — ambient like
-`Display`, so the syntax finds them with nothing imported:
+`Display` (§ behavior), so the syntax finds them with nothing imported, a
+program names them as a type, and an `implement` of one is checked:
 
 ```text
 pub behavior Index<K, V> { fn at(self: Self<K, V>, key: K) -> ?V; }

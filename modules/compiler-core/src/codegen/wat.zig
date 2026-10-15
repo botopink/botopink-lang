@@ -6293,6 +6293,56 @@ const Emitter = struct {
         return out.items;
     }
 
+    /// Whether inference placed `recv.method(…)` at `loc` on a behavior-typed
+    /// value (`.by_value`) and some type of the module declares the method,
+    /// so `lowerBehaviorDispatch` answers it. A primitive's method of the same
+    /// name (`slice` on a `Slice<V>` value) is not the call's.
+    fn answeredByValue(self: *Emitter, cc: anytype, loc: ast.Loc) bool {
+        if (cc.receiver == null or cc.is_builtin) return false;
+        const il = self.instance_lowerings.get(loc) orelse return false;
+        if (il != .by_value) return false;
+        const impls = self.behaviorImplementers(cc.callee, cc.args.len) catch return false;
+        return impls.len > 0;
+    }
+
+    /// What a call answered by value (`answeredByValue`) answers: the return
+    /// its implementers declare, when every one declares the same. The
+    /// dispatcher calls `<Type>_<method>`, so the value is in that method's
+    /// representation — `Registry.at`'s `?i32` a box. Read as nothing, the
+    /// box's address was the payload (`m.at(k) ?? -1` on an `Index<string,
+    /// i32>` answered `388`).
+    fn byValueRetTypeRef(self: *Emitter, cc: anytype, loc: ast.Loc) ?ast.TypeRef {
+        if (!self.answeredByValue(cc, loc)) return null;
+        const impls = self.behaviorImplementers(cc.callee, cc.args.len) catch return null;
+        var out: ?ast.TypeRef = null;
+        for (impls) |t| {
+            const sym = std.fmt.allocPrint(self.arena(), "{s}_{s}", .{ t, cc.callee }) catch return null;
+            const tr = self.fn_ret_typerefs.get(sym) orelse return null;
+            if (out) |o| {
+                if (!sameTypeRef(o, tr)) return null;
+            } else out = tr;
+        }
+        return out;
+    }
+
+    /// Structural equality of two written types; a form compared nowhere
+    /// (a function type, a typeparam) is never the same.
+    fn sameTypeRef(a: ast.TypeRef, b: ast.TypeRef) bool {
+        if (std.meta.activeTag(a) != std.meta.activeTag(b)) return false;
+        return switch (a) {
+            .named => |n| std.mem.eql(u8, n, b.named),
+            .array => |e| sameTypeRef(e.*, b.array.*),
+            .optional => |e| sameTypeRef(e.*, b.optional.*),
+            .tuple_ => |es| es.len == b.tuple_.len and for (es, b.tuple_) |x, y| {
+                if (!sameTypeRef(x, y)) break false;
+            } else true,
+            .generic => |g| std.mem.eql(u8, g.name, b.generic.name) and g.args.len == b.generic.args.len and for (g.args, b.generic.args) |x, y| {
+                if (!sameTypeRef(x, y)) break false;
+            } else true,
+            else => false,
+        };
+    }
+
     /// `recv.method(…)` where `recv` is typed by a `behavior`: no declaration
     /// is known at the call, so the VALUE answers — its header names its type,
     /// and `$__bdispatch_<method>_<n>` calls that type's `<Type>_<method>`.
@@ -7347,8 +7397,9 @@ const Emitter = struct {
                             return;
                         }
                         // String slice method (`s.slice(a, b)`) — handled before the
-                        // ctor/plain classification (codegen is untyped).
-                        if (isStrSlice(cc)) {
+                        // ctor/plain classification (codegen is untyped). A `slice`
+                        // on a `Slice<V>` value is the value's (`lowerPlainCall`).
+                        if (isStrSlice(cc) and !self.answeredByValue(cc, c.loc)) {
                             try self.lowerStrSlice(cc);
                             return;
                         }
@@ -15593,6 +15644,7 @@ const Emitter = struct {
                         // namespace (`failure.attempt(…)`): its return with
                         // what the arguments bind written in.
                         if (self.isNamespaceReceiver(cc)) if (self.genericRetByFnArg(cc) catch null) |t| break :blk t;
+                        if (self.byValueRetTypeRef(cc, c.loc)) |t| break :blk t;
                         if (self.recordMethodSym(cc, c.loc)) |sym| {
                             if (self.fn_ret_typerefs.get(sym)) |t| break :blk self.bindMethodRet(sym, cc, t);
                         }
@@ -17109,7 +17161,7 @@ const Emitter = struct {
                 .call => |cc| blk: {
                     if (self.primAssocHelper(cc) != null) break :blk true;
                     if (self.primKindAt(cc, c.loc)) |k| break :blk self.primRes(k, cc) == .str;
-                    if (isStrSlice(cc)) break :blk true;
+                    if (isStrSlice(cc) and !self.answeredByValue(cc, c.loc)) break :blk true;
                     // `s[i]` / `s[a..b]` (decision 30) answer a string; an
                     // array index answers a string when its elements are ones.
                     if (self.indexArgs(cc)) |ix| break :blk if (self.isStringExpr(ix.recv))

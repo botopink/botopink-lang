@@ -2634,13 +2634,18 @@ an abstract slot typed from its signature and provides nothing), or a member of 
 behavior (`separateImplementProvides`); writing both halves is legal and the inline clause is what
 names the contract.
 
-**Ambient behaviors (decision 539 (6), 144 B-96).** `comptime.zig` `ambient_behaviors` names the
-`pub behavior`s of `builtins.d.bp` a program writes with no import — `Display` and `Closeable`;
-`registerBuiltinDecls` keeps their declarations in `Env.ambientBehaviorDecls` (cloned into every
+**Ambient behaviors (decision 539 (6), 144 B-96, B-107).** Every `pub behavior` of `builtins.d.bp` that
+no compiler rule reads is ambient — a program writes it with no import (`comptime.zig`
+`isAmbientBehavior`): `Display`, `Closeable`, `Index<K, V>` and `Slice<V>` today. The ones a rule
+reads by name are `rule_read_behaviors` (the effect wrappers `Task`, `Iterator`, `Stream`,
+`Component`; the reflection carriers `Expr`, `Decl`; the markers `Annotation`, `Renderable`,
+`Decorator`), and a unit test fails when the derived set changes or the list names a behavior the
+file no longer declares. `registerBuiltinDecls` keeps their declarations in `Env.ambientBehaviorDecls` (cloned into every
 module's env and every std module's). `validateProgram` checks an `implement` of one, inline or in a
 block, as a behavior of the program's own, unless the program declares or imports its own of the name;
-`checkPendingTypeNames` takes the name as a type (`fn f(c: Closeable)`), and `Env.behaviorDecl` (own,
-else imported, else ambient) is what every behavior lookup of `infer.zig` reads, so a call on such a
+`checkPendingTypeNames` takes the name as a type (`fn f(c: Closeable)`, `fn f(m: Index<i32, i32>)`), and
+`Env.behaviorDecl` (own, else imported, else ambient unless a type of the name is in scope —
+`type Index(column: string)`) is what every behavior lookup of `infer.zig` reads, so a call on such a
 value is `InstanceLowering.by_value`. Never emitted. An imported behavior stays unchecked in both forms
 — its members are not visible here.
 

@@ -180,7 +180,7 @@ pub behavior Display {
 // code, ambient as `Display` is: `io.fs`'s `File` writes `implement Closeable`
 // and a program takes `c: Closeable` with no import; an `implement Closeable`
 // is checked against this declaration as a module's own behavior is
-// (`comptime.zig` `ambient_behaviors`).
+// (`comptime.zig` `isAmbientBehavior`).
 
 pub behavior Closeable {
     fn close(self: Self);
@@ -197,7 +197,9 @@ pub behavior Closeable {
 //
 // Both are ambient — a type says it indexes with no import, exactly as it says
 // how it reads with `Display` above — because the syntax has to find the method
-// without the author having asked for it.
+// without the author having asked for it. A program names them as a type too
+// (`fn f(m: Index<string, i32>)`), and an `implement` of one is checked against
+// the declaration below (`comptime.zig` `isAmbientBehavior`).
 //
 // `slice` takes two arguments rather than one range because there is no `Range`
 // type in the language: `start..end` is an AST node, not a value, so an open end

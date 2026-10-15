@@ -1557,6 +1557,12 @@ dispatches by the value before the function is considered
 (`behaviorMethodShadowsFn`, in `lowerPlainCall` and `resolvedCallSym`): the
 function took the receiver's place and answered `0`.
 `conformance/modules/context_behavior_method_find`.
+A `.by_value` call answers what its implementers declare when every one declares the
+same (`byValueRetTypeRef`, read first by `typeRefOf`): the dispatcher calls
+`<Type>_<method>`, so `m.at(k) ?? -1` on an `Index<string, i32>` reads `Registry.at`'s
+`?i32` as the box it is — it read the box's address. And a `slice` dispatched by value
+(`answeredByValue`) is not the string slice the untyped fallback `isStrSlice` takes,
+in `lowerExpr` and `isStringExpr` alike (`conformance/modules/ambient_index_parameter`).
 
 **A `@Result`'s `map` / `flatMap`** inline their closure (`lowerResultOptionOp`).
 A function named as a value (`r.flatMap(half)`, a local holding one) is the
