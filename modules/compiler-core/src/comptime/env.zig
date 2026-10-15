@@ -1222,6 +1222,12 @@ pub const Env = struct {
     /// The generic-param map of the fn body being inferred, so annotations
     /// inside the body resolve `T` to the fn's own generic var.
     fnGenericMap: ?*std.StringHashMap(*T.Type) = null,
+    /// The generic-param map of the type method body being inferred (the
+    /// owner's parameters and the method's own). Annotations in the body do not
+    /// resolve through it (`fnGenericMap` stays unset there); it only tells the
+    /// `val` annotation's name lookup (`refuseUnknownName`) which names are
+    /// type parameters in scope.
+    methodGenericMap: ?*const std.StringHashMap(*T.Type) = null,
     /// Decision 525 — where the statement being inferred is a `case` or a
     /// block `{ … }` written as a whole statement (its value discarded). Set
     /// by the statement loops (`inferStmtsTyped`, `inferBodyStmts`) per

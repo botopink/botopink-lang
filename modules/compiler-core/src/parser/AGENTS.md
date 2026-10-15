@@ -589,7 +589,9 @@ line in the dump of a fn that is not a guard.
 of the annotation (`x: Foo` → `Foo`'s column, `-> Foo` → `Foo`'s). `decls.zig` sets them next to
 every `parseTypeRef` call; `{0,0}` means the declaration was synthesised. They exist so an unknown
 type name reds at the annotation (06 N30) and are kept out of the AST dumps by the `jsonStringify`
-of each struct, so adding one moved no snapshot.
+of each struct, so adding one moved no snapshot. `ValDecl.typeLoc` and `localBind.typeLoc` (a `val`/`var`
+annotation, module-level and local; `parseValDecl`, `parseBinding`) are the same, set only when `: T` is
+written (144 B-111).
 
 ## Error locations (`ParseErrorInfo`)
 

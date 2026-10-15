@@ -2507,9 +2507,12 @@ type, and `Env.checkPendingTypeNames` — called at the end of both `inferProgra
 reference (`type Outer(inner: Inner)` above `type Inner(…)`) therefore checks. A generic application's head name
 (`Bogus<i32, i32>`) is recorded the same way by `resolveTypeRefInContext`'s `.generic` arm
 (`Env.notePendingTypeName`) and refused with the bare name's text; a dotted or mangled (`Type__Field`) head, a
-builtin `@Name`, `Self`, `Array` and a type parameter in scope are not recorded. A `val` annotation has no
-location of its own and a body's type parameters are not in the generic map, so `resolveAnnotationAt` looks the
-head up at once (`refuseUnknownGenericHead`) and refuses at the `val`. So do an imported
+builtin `@Name`, `Self`, `Array` and a type parameter in scope are not recorded. A `val`/`var` annotation
+carries its own `typeLoc` (144 B-111), but a body's type parameters are not in the generic map, so a name cannot
+enter the pending list: `resolveAnnotationAt` looks every written name up at once (`refuseUnknownTypeName`, the bare
+name and a generic application's head, through `typeNameDeclared`) and refuses `unknown type` at the annotation; any
+other refusal in the annotation stays at the value. A type method body's parameters (the owner's and the
+method's) are in `Env.methodGenericMap`, which only this lookup reads. So do an imported
 typedef (the constructor binding) and a `behavior` name in type position
 (`Env.assocInterfaceDecls`). The list is cleared per program: `registerStdlib` infers one std module
 per call on one env, and a name left pending by one must not red in the next.

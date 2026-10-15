@@ -1066,6 +1066,13 @@ pub fn BindingExprOf(comptime phase: Phase) type {
             /// `val name: TypeRef = expr` — the declared type; inference binds
             /// it (not the RHS type) and the formatter round-trips it.
             typeAnnotation: ?TypeRef = null,
+            /// Where the annotation is written (its first token); `{0,0}` when
+            /// there is none or the node is synthesised. Left out of the AST dump.
+            typeLoc: Loc = .{ .line = 0, .col = 0 },
+
+            pub fn jsonStringify(this: @This(), jws: anytype) !void {
+                return stringifyOmitting(this, jws, &.{"typeLoc"}, &.{});
+            }
         },
         /// Assignment to a variable or field: `name = expr`, `name += expr`, `this.field = expr`, `this.field += expr`
         assign: struct {
@@ -3184,6 +3191,10 @@ pub const ValDecl = struct {
     /// Optional explicit type annotation, e.g. `Color` in `val c: Color = .Red`
     /// or `string[]` in `val xs: string[] = [...]`.
     typeAnnotation: ?TypeRef = null,
+    /// Where the annotation is written (its first token) — the location a
+    /// refusal of the annotation points at. `{0,0}` when there is none; left
+    /// out of the AST dump.
+    typeLoc: Loc = .{ .line = 0, .col = 0 },
     value: *Expr,
 
     /// A module-level statement rather than a binding: the discard `val _ = …`
@@ -3208,7 +3219,7 @@ pub const ValDecl = struct {
     /// dump, so a `val` written today dumps exactly as it did before the two
     /// fields existed and no parser snapshot moves.
     pub fn jsonStringify(this: @This(), jws: anytype) !void {
-        return stringifyOmitting(this, jws, &.{"nameLoc"}, &.{ "mutable", "annotations" });
+        return stringifyOmitting(this, jws, &.{ "nameLoc", "typeLoc" }, &.{ "mutable", "annotations" });
     }
 
     /// Where a module `var` lives on the BEAM (front 17, decision 43's layer

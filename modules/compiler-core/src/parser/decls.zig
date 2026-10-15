@@ -182,7 +182,9 @@ pub fn parseValDecl(this: *This, alloc: std.mem.Allocator) ParseError!ValDecl {
     const nameTok = this.advance();
     const name = nameTok.lexeme;
     var typeAnnotation: ?ast.TypeRef = null;
+    var typeLoc: ast.Loc = .{ .line = 0, .col = 0 };
     if (this.match(.colon)) {
+        typeLoc = parser.Parser.locFromToken(this.peek());
         typeAnnotation = try this.parseTypeRef(alloc);
     }
     errdefer if (typeAnnotation) |*ann| ann.deinit(alloc);
@@ -193,7 +195,7 @@ pub fn parseValDecl(this: *This, alloc: std.mem.Allocator) ParseError!ValDecl {
     const value_ptr = try this.boxExpr(alloc, value);
     // Semicolon required after top-level val declaration
     _ = try this.consume(.semicolon);
-    return ValDecl{ .name = name, .nameLoc = parser.Parser.locFromToken(nameTok), .isPub = isPub, .mutable = mutable, .typeAnnotation = typeAnnotation, .value = value_ptr };
+    return ValDecl{ .name = name, .nameLoc = parser.Parser.locFromToken(nameTok), .isPub = isPub, .mutable = mutable, .typeAnnotation = typeAnnotation, .typeLoc = typeLoc, .value = value_ptr };
 }
 
 /// `import { item, ... } [from "name"];`  ──or──
