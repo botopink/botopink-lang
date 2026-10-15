@@ -529,7 +529,15 @@ const DepClosure = struct {
         var err: ?manifest.Located = null;
         const resolved = manifest.resolveDependency(self.arena, self.io, by, abs_dir, dep, self.tiers, &err) catch |e| switch (e) {
             error.Invalid => {
-                err.?.print();
+                // Located as a dependency's source refusal is (`loadOne`):
+                // relative to the working directory, `deps/p/botopink.json`,
+                // never the absolute directory the closure resolved.
+                var loc = err.?;
+                var cwd_buf: [std.fs.max_path_bytes]u8 = undefined;
+                const cwd = cwd_buf[0..try std.process.currentPath(self.io, &cwd_buf)];
+                if (std.fs.path.isAbsolute(loc.file) and std.mem.startsWith(u8, loc.file, cwd))
+                    loc.file = try std.fs.path.relative(self.arena, cwd, null, cwd, loc.file);
+                loc.print();
                 return error.LibManifestInvalid;
             },
             error.OutOfMemory => return error.OutOfMemory,

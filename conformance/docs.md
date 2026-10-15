@@ -272,7 +272,11 @@ they are two modules: inside the first, `import {theme.Ns};` names its own `them
 the second its own, and a project's `theme` is a third. Neither import is ambiguous, and
 neither `Ns` is ever read as the other's — in the checker, in every backend's module names
 and calls, in the `.d.ts` and at compile time. Pinned by
-`conformance/modules/two_packages_one_module_name`.
+`conformance/modules/two_packages_one_module_name`. A module named like its package — `src/p.bp`
+of the package `p` — is one module, `p/p`, like any other: a program using it that is refused
+answers its own refusal alone.
+
+<!-- example: modules/module_named_like_its_package -->
 
 **A path and a group are one tree, and only the leaf enters scope.** An item
 may walk into a module (`shapes.circle.name`), and several items under one
@@ -4812,6 +4816,7 @@ row says otherwise):
 | `{ "path": … }` pointing at a workspace | `"x": path "../ws" is a workspace, not a package — depend on one of its members: a, b, c` |
 | `{ "git": … }` whose name is a workspace under a root | `"x" is a workspace, not a package — import one of its members: a, b, c` |
 | `{ "git": … }` whose name no root carries | `dependency 'x' was not found under any library root` |
+| two `files` entries of the resolved dependency naming one module (`p.bp` and `p.d.bp`, or one file listed twice) | `"files" lists p.bp and p.d.bp, one module (` p `) written twice — keep one of the two files` (located on the dependency's manifest, at the second entry; a package's own manifest is refused the same way) |
 | a `files` entry of the resolved dependency that does not exist | `dependency 'x' lists "gone.bp" in ` files `, but <path> does not exist` (located on the dependency's manifest) |
 | `bpmp install`: a `subdir` holding no manifest | `"x": subdir "modules/x" holds no botopink.json in <git> at <rev12> (looked at <checkout>/modules/x/botopink.json)` |
 | `bpmp install`: a `subdir` holding a workspace | `"x": subdir "modules/ws" is a workspace, not a package — name one of its members' subdirs: modules/ws/a, modules/ws/b` |
@@ -4824,6 +4829,7 @@ row says otherwise):
 | a host sidecar the resolved dependency does not carry | `dependency 'x' requires "./x.mjs" from module 'x/root', but no such file is in its sources (looked at <src>/sidecars/x.mjs, then <src>/x.mjs)` |
 
 <!-- example: modules/dependency_named_like_its_consumer -->
+<!-- example: modules/files_one_module_twice -->
 
 #### Host sidecars
 

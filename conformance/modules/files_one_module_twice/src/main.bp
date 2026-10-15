@@ -1,0 +1,13 @@
+//// A dependency whose `files` lists `p.bp` and `p.d.bp` names one module,
+//// `p/p`, twice: the manifest is refused at the second entry, the way `x.bp`
+//// beside `x.bpp` or `x/mod.bp` is. The parent binary loaded them as two
+//// modules of one path, and every consumer of `p` read `Module` declared
+//// `pub` by `p/p` and by `p/p`, drowning the program's own refusal.
+
+import {p} from "p";
+import {other.other} from "p";
+
+pub fn main() {
+    val n: i32 = "not a number";
+    @print(p.greet() + other().name);
+}

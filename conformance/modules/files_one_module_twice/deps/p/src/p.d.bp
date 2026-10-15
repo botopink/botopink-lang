@@ -1,0 +1,4 @@
+//// `p.d.bp` — a declaration module of the stem `p`, beside `p.bp`: one
+//// module, `p/p`, written twice.
+
+pub type Shape(w: i32)

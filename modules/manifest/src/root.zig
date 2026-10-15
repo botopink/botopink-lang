@@ -571,7 +571,10 @@ fn parseAs(arena: std.mem.Allocator, text: []const u8, path: []const u8, out_err
     m.entry = try optionalString(arena, obj, "entry", text, path, out_err);
     m.target = try optionalString(arena, obj, "target", text, path, out_err);
     m.targets = try optionalStringArray(arena, obj, "targets", text, path, out_err);
-    if (try optionalStringArray(arena, obj, "files", text, path, out_err)) |f| m.files = f;
+    if (try optionalStringArray(arena, obj, "files", text, path, out_err)) |f| {
+        try checkFilesOneModuleEach(arena, f, text, path, out_err);
+        m.files = f;
+    }
     if (try optionalString(arena, obj, "otp", text, path, out_err)) |r| m.otp = .{ .release = r, .path = path, .text = text };
 
     if (obj.get("workspaces") != null) {
@@ -618,6 +621,37 @@ fn parseAs(arena: std.mem.Allocator, text: []const u8, path: []const u8, out_err
         if (!opts.defer_bpp) try checkBpp(arena, m, out_err);
     }
     return m;
+}
+
+/// Each entry of `"files"` is one module, `<package>/<stem>`: two entries of
+/// one stem (`p.bp` and `p.d.bp`, or one file listed twice) are one module
+/// written twice, refused at the second — the rule `x.bp` beside `x.bpp`
+/// (`bpp.refuseTwins`) and beside `x/mod.bp` (`AmbiguousModule`) already
+/// follow. Loaded, the two were two modules of one path, and every consumer
+/// of the package read the module's `pub` names twice (144 B-98).
+fn checkFilesOneModuleEach(arena: std.mem.Allocator, files: []const []const u8, text: []const u8, path: []const u8, out_err: *?Located) Error!void {
+    for (files, 0..) |file, i| {
+        for (files[0..i]) |earlier| {
+            if (!std.mem.eql(u8, stripSourceExt(earlier), stripSourceExt(file))) continue;
+            out_err.* = located(text, path, locateLaterEntry(text, earlier, file), try std.fmt.allocPrint(
+                arena,
+                "\"files\" lists {s} and {s}, one module (`{s}`) written twice — keep one of the two files",
+                .{ earlier, file, stripSourceExt(file) },
+            ));
+            return error.Invalid;
+        }
+    }
+}
+
+/// Where `"<later>"` sits in `"files"`, after `"<earlier>"` — so a file listed
+/// twice is located at its second entry.
+fn locateLaterEntry(text: []const u8, earlier: []const u8, later: []const u8) Span {
+    const first = locateEntry(text, "files", earlier);
+    var ebuf: [512]u8 = undefined;
+    const qlater = std.fmt.bufPrint(&ebuf, "\"{s}\"", .{later}) catch return first;
+    const from = first.offset + first.len;
+    if (std.mem.indexOfPos(u8, text, from, qlater)) |at| return .{ .offset = at, .len = qlater.len };
+    return first;
 }
 
 /// `"bpp"` (decision 361, amending 284 and 338 (6)): one package name, a
@@ -2184,6 +2218,27 @@ test "expand: the fixture workspace — members, inherited targets, example memb
         \\
     , try sn.renderAlloc(a));
     try testing.expect(shipsNothing(testing.io, core.manifest) == null);
+}
+
+test "parse: two entries of \"files\" naming one module are refused at the second (144 B-98)" {
+    var arena_inst = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_inst.deinit();
+    const a = arena_inst.allocator();
+    try expectHead(try refuse(a,
+        \\{ "name": "p", "files": ["root.bp", "p.bp", "p.d.bp"] }
+    ), "error: \"files\" lists p.bp and p.d.bp, one module (`p`) written twice — keep one of the two files", "--> botopink.json:1:45");
+    try expectHead(try refuse(a,
+        \\{ "name": "p", "files": ["root.bp", "root.bp"] }
+    ), "error: \"files\" lists root.bp and root.bp, one module (`root`) written twice — keep one of the two files", "--> botopink.json:1:37");
+    try expectHead(try refuse(a,
+        \\{ "name": "p", "files": ["ui/Card.bpp", "ui/Card.bp"] }
+    ), "error: \"files\" lists ui/Card.bpp and ui/Card.bp, one module (`ui/Card`) written twice — keep one of the two files", "--> botopink.json:1:41");
+    // One stem per entry: a module and a folder module of other stems are two.
+    var err: ?Located = null;
+    const m = try parse(a,
+        \\{ "name": "p", "files": ["root.bp", "p.bp", "q.d.bp", "p/mod.bp"] }
+    , "botopink.json", &err);
+    try testing.expectEqual(@as(usize, 4), m.files.len);
 }
 
 /// The first two rendered lines: the message and the `--> file:line:col` location.

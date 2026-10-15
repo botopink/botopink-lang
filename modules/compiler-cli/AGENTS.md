@@ -277,7 +277,8 @@ the project directory is the bundled `libs/std` (`manifest.isBundledStd`, asked 
 JSON, the retired string-array `dependencies`, a dependency without a source, a
 workspace where a package is needed — is a located diagnostic printed by
 `config.load`/`libs.loadDependencies` before `ConfigInvalid`/`LibManifestInvalid`,
-and the commands add nothing after it. `botopink test` inside a workspace member
+and the commands add nothing after it; a dependency's manifest is located relative to the working
+directory (`deps/p/botopink.json`), as its modules are. `botopink test` inside a workspace member
 that is a library and lists no `files` fails with `ships nothing: manifest has
 no "files"` (decision 75).
 
