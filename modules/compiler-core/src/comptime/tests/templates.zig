@@ -1348,9 +1348,8 @@ test "decision 331: a template body reads a labelled tuple element by its label"
 
 test "decision 331: a template body of more variables than a frame holds compiles on both runtimes" {
     // Every Erlang variable took a Y register (the BEAM) or a local (wat) of
-    // its own: 1200 rebindings of one `var` were `{load_binary, …, badfile}`
-    // and `wasm3: compiling function overran its stack height limit`. Slots
-    // whose ranges never overlap are shared now.
+    // its own, so a body of 1200 rebindings of one `var` overran the function's
+    // stack height limit. Slots whose ranges never overlap are shared now.
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const ar = arena.allocator();

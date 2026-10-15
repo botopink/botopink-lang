@@ -1,7 +1,6 @@
 //// A decorator body's lambda holding many locals runs on the comptime
 //// runtime: 120 `val`s per field of a three-field record, then their joined
-//// length, on every target (144 B-10, decision 430). It was `wasm3: [trap]
-//// stack overflow` on a two-field record (`#[validated]`'s parse half).
+//// length, on every target (144 B-10, decision 430).
 
 fn wide(comptime decl: @Decl) {
     var out: string[] = [];

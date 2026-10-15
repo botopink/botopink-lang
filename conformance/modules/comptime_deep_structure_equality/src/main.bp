@@ -1,7 +1,7 @@
 //// Decision 471 — structural equality at build answers whatever the depth: it
 //// walks the two values with an explicit work list, never the runtime's stack.
 //// `comptime same(2000000)` compares two 2,000,000-deep chains and answers
-//// `true` on every target, never wasm3's `[trap] stack overflow`.
+//// `true` on every target, with no stack-overflow trap.
 
 type Chain {
     End,

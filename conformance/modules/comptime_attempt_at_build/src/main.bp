@@ -1,8 +1,7 @@
 //// Decisions 518, 543 — std's `failure.attempt` answers at build as in a wasm
 //// program: a `comptime` body that calls it gets `Ok` of the thunk's value,
 //// or `Error(Failure(message, "panic"))` for the abort the thunk raised — the
-//// same text on every target. It was refused at build while the comptime
-//// engine (wasm3) had no exception handling.
+//// same text on every target.
 
 import {failure, failure.Failure} from "std";
 

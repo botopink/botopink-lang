@@ -1604,9 +1604,8 @@ const PackedLocals = struct { locals: []const wat.Local, lines: []const Line };
 
 /// Locals whose live ranges never overlap share one. Every Erlang variable
 /// and every intermediate took a local of its own, so a large body declared
-/// thousands, past wasm3's per-function bound while it was the engine
-/// (`d_m3MaxFunctionStackHeight`: "compiling function overran its stack
-/// height limit", front 118's `html`); the frame stays small on wasmtime.
+/// thousands, past the engine's per-function stack height limit (front
+/// 118's `html`); the frame stays small on wasmtime.
 /// A range is the local's first to its last appearance in the body's order:
 /// a `br` out of a `block` or an `if` goes forward, and a `loop` (a
 /// comprehension) keeps live through the whole loop every local whose range

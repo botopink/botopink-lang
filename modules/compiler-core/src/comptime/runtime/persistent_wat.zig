@@ -150,7 +150,7 @@ const c = if (is_wasm) struct {} else @cImport({
 
 /// The wasm stack a body runs on. Erlang loops are recursion and the lowering
 /// has no tail calls, so a body's depth is its iteration count: the bound is
-/// wasm3's 8 MiB value stack measured in wasmtime's frames, with room.
+/// an 8 MiB value stack measured in wasmtime's frames, with room.
 const wasm_stack: usize = 64 * 1024 * 1024;
 /// The native stack of the thread a body runs on: the wasm stack and the
 /// host's own frames under it.
@@ -592,7 +592,7 @@ test "an exception and an engine trap are runtime errors, and the next evaluatio
     defer alloc.free(trapped.payload());
     try std.testing.expectEqualStrings("wasmtime: call stack exhausted", trapped.runtime_error);
 
-    // Deep, but within the wasm stack: what wasm3's 8 MiB stack reached.
+    // Deep, but within the wasm stack's 8 MiB bound.
     const deep = try runSource(alloc, module, code, Term.tupleOf(&.{.{ .integer = 100_000 }}));
     defer alloc.free(deep.payload());
     try std.testing.expectEqualStrings("{\"depth\":100000}", deep.ok);

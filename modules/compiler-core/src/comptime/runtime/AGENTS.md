@@ -76,15 +76,14 @@ timer) holds too: comptime asks no I/O of the host.
 
 ## Start-up (decision 543: the measured choice)
 
-wasmtime compiles a module before it runs it, where wasm3 interpreted it: the cost of an evaluation
-moves from running to compiling. Measured on builds of many small comptime modules — the
+wasmtime compiles a module before it runs it: the cost of an evaluation moves from running to
+compiling. Measured on builds of many small comptime modules — the
 sibling UI library's eight examples (its `html` DSL) and the styling library's four (12 builds, 43
 evaluations; the `instance` + `run` stage sums of
 `BOTOPINK_COMPTIME_STAGES`):
 
 | Engine | `instance` | `run` | Sum |
 |---|---|---|---|
-| wasm3 (before) | 33–39 ms | 130–150 ms | 163–189 ms |
 | wasmtime, Cranelift, every module compiled (a cold build) | 1000–1290 ms | 32–34 ms | 1.0–1.3 s |
 | wasmtime, Pulley (`pulley64`), every module compiled | 1230 ms | 270 ms | 1.5 s |
 | wasmtime, Cranelift, the compiled-module cache warm | 19 ms | 29 ms | 48 ms |
@@ -106,8 +105,8 @@ every core); `rm -rf .botopinkbuild` and `botopink clean` delete the cache with 
   linked module runs on the page's engine through `bp_host` (`persistent_wat.zig`) — every
   target's comptime answers there as it does natively.
 - **The engine is not a source of text** (decision 434 (5)): a comptime answer is std-wasm's, so
-  moving from wasm3 to wasmtime changed no snapshot and no cell. What wasm3 lacked is refused at
-  build no more: exception handling (518) — std's `failure.attempt` answers in a `comptime` body,
+  the engine's choice changes no snapshot and no cell. Exception handling is answered at
+  build (518) — std's `failure.attempt` answers in a `comptime` body,
   a template or a decorator as in a wasm program (`../host_cells.zig` `attemptAtBuild`, cell
   `conformance/modules/comptime_attempt_at_build`).
 - **A body's output** (`io:format`) goes to a buffer in the module's own memory, never to the
