@@ -382,8 +382,9 @@ pub fn taskSigText(alloc: std.mem.Allocator, ts: TaskSig) ![]u8 {
 }
 
 /// The adapters as a `wasi:` cell writes them (decision 481): `.RandomF64`,
-/// `.Delay`, … — each name in PascalCase.
-fn adapterNames() []const u8 {
+/// `.Delay`, … — each name in PascalCase. Public for the test that holds
+/// `external_wasm_wasi_unknown`'s refusal to this list (decision 478).
+pub fn adapterNames() []const u8 {
     comptime var text: []const u8 = "";
     inline for (adapters, 0..) |a, i| text = text ++ (if (i > 0) ", " else "") ++ "." ++ comptime pascal(a.name);
     return text;

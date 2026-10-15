@@ -2101,6 +2101,7 @@ The narrowed cells whose excluded targets' missing binding is named here (re-der
 | `modules/abort_text_panic` | commonJS erlang beam | wasm — `message` (out until front 164 s2c writes the text there) |
 | `modules/abort_text_crash` | commonJS | erlang, wasm, beam — `notText` |
 | `modules/std_failure_attempt_crash` | commonJS erlang beam | wasm — `shapeNamed` |
+| `modules/std_asserts_throws_over_attempt` | commonJS erlang beam | wasm — `raiseBoom`, `std/testing/asserts.canonical` |
 | `modules/component_default_fn_sync`, `modules/component_method_sync`, `modules/component_sync_plain_function` | commonJS | erlang, wasm, beam — `pending` |
 | `modules/task_failure_rejects` | commonJS | erlang, wasm, beam — `observe` |
 | `modules/task_result_caught_by_js` | commonJS | erlang, wasm, beam — `callFromJs` |
@@ -2508,6 +2509,10 @@ cells that quote it — `import_of_failed_module`, `imported_declaration_error_l
 `lexer_error_in_imported_module`, `bpp_decorator_last_line` and `bpp_diagnostics_located`: each importer's snapshot
 ends `(src/shapes.bp)`, the label the failed module's own refusal is printed at (`Reflection.diagLabels`); a
 dependency's module is labelled by its module path, `(a/client.bp)` and `(b/b.bp)` in `imported_declaration_error_location`.
+Group 431 (144 B-07)'s Conformance step adds `modules/std_failure_attempt_abort_kinds` — `@todo` and `x!` over `null` under
+`attempt` are `panic` (492), on the four targets — and
+`modules/std_asserts_throws_over_attempt` — `testing.asserts`' `throws` / `throwsWith` generic over the body (493),
+a host raise's message without its erlang class (527 (4)); narrowed to commonJS, erlang and beam.
 Decision 546 adds `modules/std_failure_attempt_crash` — a `case` no arm matches under `attempt` answers `crash` on
 erlang and beam, where a raise of a binding outside std is `host` (`modules/std_failure_attempt_host`); the cell is
 narrowed to erlang and beam, commonJS and wasm lacking the host binding it calls. 144 B-90 widens it to commonJS (a

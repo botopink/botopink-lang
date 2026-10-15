@@ -1,0 +1,30 @@
+//// Decision 492 — every abort the program raises itself is `panic`: a
+//// `@todo` and `x!` over `null` as a `@panic` is (`modules/std_failure_attempt`).
+//// `attempt` contains each, and the program goes on. The cell claims the kind
+//// alone; the message of each is its abort's text. An integer overflow under
+//// `attempt` is a wasm trap there, as a division by zero is
+//// (`modules/int_division_by_zero_is_panic`), so it is no case of this cell.
+
+import {failure, failure.Failure} from "std";
+
+fn notReady() -> i32 {
+    @todo("not ready");
+}
+
+fn find(key: string) -> ?i32 {
+    return if (key == "a") 1 else null;
+}
+
+fn show(r: @Result<i32, Failure>) {
+    case r {
+        Ok(v) -> @print("Ok " + v.toString());
+        Error(f) -> @print("Error " + f.kind);
+    }
+}
+
+pub fn main() {
+    show(failure.attempt({ -> notReady() }));
+    show(failure.attempt({ -> find("a")! }));
+    show(failure.attempt({ -> find("b")! }));
+    @print("after");
+}

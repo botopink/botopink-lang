@@ -1999,6 +1999,27 @@ test "wat: host binding ---- the adapter list agrees with conformance/docs.md" {
     try std.testing.expectEqual(hb.adapters.len, rows);
 }
 
+// The refusal of an unknown `wasi:` adapter lists every adapter, and the
+// conformance cell `external_wasm_wasi_unknown` claims that list in its
+// answer: an adapter added to `adapters` changes the cell's answer, which only
+// `test-conformance` reads — skipped by the commit hook (decision 470). This
+// test reads the cell's snapshot so the hook's `zig build test` names the
+// stale cell at the commit that adds the adapter (decision 478; `.Attempt`,
+// decision 518, left the cell red on feat's pipeline until it was updated).
+test "wat: host binding ---- external_wasm_wasi_unknown's answer lists every adapter" {
+    const hb = @import("../wat/host_binding.zig");
+    const io = std.testing.io;
+    const alloc = std.testing.allocator;
+    const cell_snap = try std.Io.Dir.cwd().readFileAlloc(io, "../../conformance/modules/external_wasm_wasi_unknown/snapshot/output/main.snap", alloc, .limited(1 << 16));
+    defer alloc.free(cell_snap);
+    const listed = try std.fmt.allocPrint(alloc, "§ Host bindings ({s})", .{hb.adapterNames()});
+    defer alloc.free(listed);
+    if (std.mem.indexOf(u8, cell_snap, listed) == null) {
+        std.debug.print("conformance/modules/external_wasm_wasi_unknown/snapshot/output/main.snap does not list the adapters host_binding.zig binds: {s}\n", .{hb.adapterNames()});
+        return error.WasiUnknownCellStale;
+    }
+}
+
 // Decision 440 (2) — std-wasm's program face, decoded: every function it
 // implements turns into the model, links into a module beside a stand-in
 // `$__alloc`, validates and encodes. Anything the face must not use (here, a
