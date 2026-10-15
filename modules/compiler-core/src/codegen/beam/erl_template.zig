@@ -13,10 +13,10 @@ const erlLower = @import("erl_lower.zig");
 /// The Erlang body of template `template_raw` called with `argc` arguments
 /// besides its receiver: the receiver marker → `__BpSelf`, `$N` → `__BpAN`,
 /// a `\"` kept from a `"…"` annotation unescaped, and a trailing `.`. Owned
-/// by `alloc`.
+/// by `alloc`. The unescape happens here once, for a raw lexeme; a template
+/// the caller already unescaped goes to `renderBody`, so an Erlang-escaped
+/// quote (`\\"` in the lexeme, `\"` in the Erlang text) loses no second backslash.
 pub fn templateBody(alloc: std.mem.Allocator, template_raw: []const u8, argc: usize) anyerror![]u8 {
-    var src: std.ArrayListUnmanaged(u8) = .empty;
-    errdefer src.deinit(alloc);
     var template: std.ArrayListUnmanaged(u8) = .empty;
     defer template.deinit(alloc);
     var ti: usize = 0;
@@ -24,6 +24,13 @@ pub fn templateBody(alloc: std.mem.Allocator, template_raw: []const u8, argc: us
         if (template_raw[ti] == '\\' and ti + 1 < template_raw.len and template_raw[ti + 1] == '"') continue;
         try template.append(alloc, template_raw[ti]);
     }
+    return renderBody(alloc, template.items, argc);
+}
+
+/// `templateBody` over a template whose `\"` the caller already resolved.
+fn renderBody(alloc: std.mem.Allocator, template: []const u8, argc: usize) anyerror![]u8 {
+    var src: std.ArrayListUnmanaged(u8) = .empty;
+    errdefer src.deinit(alloc);
     const Ctx = struct {
         alloc: std.mem.Allocator,
         out: *std.ArrayListUnmanaged(u8),
@@ -43,7 +50,7 @@ pub fn templateBody(alloc: std.mem.Allocator, template_raw: []const u8, argc: us
         }
     };
     var ctx = Ctx{ .alloc = alloc, .out = &src, .argc = argc };
-    try primOpTemplate.render(template.items, &ctx);
+    try primOpTemplate.render(template, &ctx);
     try src.append(alloc, '.');
     return src.toOwnedSlice(alloc);
 }
@@ -107,7 +114,7 @@ pub fn resultWrapBound(alloc: std.mem.Allocator, template: []const u8, argc: usi
 /// `wrapped`, a template already inside its `try`, as the fun applied to the
 /// call's arguments that `resultWrapBound` and `hostMarkBound` write.
 fn boundOver(alloc: std.mem.Allocator, wrapped: []const u8, argc: usize) anyerror![]u8 {
-    const body = try templateBody(alloc, wrapped, argc);
+    const body = try renderBody(alloc, wrapped, argc);
     defer alloc.free(body);
     var out: std.ArrayListUnmanaged(u8) = .empty;
     errdefer out.deinit(alloc);
