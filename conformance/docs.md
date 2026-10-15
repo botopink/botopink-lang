@@ -3356,7 +3356,9 @@ where they are written, as a call's are:
    take a default, which an annotation that leaves it out gets — a literal,
    `null`, a variant `.Name`, or an array or tuple of those; outside a
    decorator no call fills one, and a `comptime` default there is
-   `comptime-default-outside-decorator` at the default.
+   `comptime-default-outside-decorator` at the default — but for a top-level
+   function's default that is a `@TypeInfo.all(…)` query (decision 551,
+   § Typed meta).
 2. **An argument may be of any type** — a string, a number, an array, a
    record built by its constructor (directly or through a module `val`), a
    variant, a function, a type (`comptime t: @Expr<type>`), a field. It is checked
@@ -3597,6 +3599,37 @@ A package that does not declare `Declared` reads its fields all the same: `d.nam
 entry the program hands it answer the field, directly, through a function, inside `map` and inside `for`.
 
 <!-- example: modules/declared_field_read_other_module -->
+
+A library reads the program's catalogue itself through a `comptime` parameter
+whose default is a `@TypeInfo.all(…)` query (decision 551): `pub fn
+boot(comptime modules: @Expr<Declared<unknown>[]> = @TypeInfo.all(with: m))`,
+and a program writes `boot();`. The names the default writes resolve in the
+declaring module, and a call that leaves the parameter out is answered for the
+program it is compiled in, as the program's own entry point would answer
+`@TypeInfo.all(with: m)` there: every module's declarations carrying `m`, every
+package's, every module's decorators applied, each `value` the declaration
+itself — never read at build; `modules.value` hands the array on. The query is
+resolved when the library is analysed and travels with its package, a package
+read back from the code cache included; the calling package is the program's.
+The parameter's type is the answer's, `Declared<unknown>[]`, held at the
+default. The declaring module is no reader (its importers stay legal); a
+`@TypeInfo.all` anywhere else in a library's body still answers for the
+library's own build.
+
+<!-- example: modules/typeinfo_all_default_at_caller -->
+
+A call that leaves such a default out is written only in the package's root —
+`src/main.bp`, or the root file the manifest's `entry` names (s23-i (d) (1)):
+anywhere else it is `typeinfo-all-default-outside-root` at the call, naming the
+root. No module imports a root whose call was answered so.
+
+<!-- example: modules/typeinfo_all_default_outside_root -->
+
+The argument is still the caller's to pass: `boot(@TypeInfo.all(with:
+other))` and `boot([])` are answered with what they pass, the first a
+catalogue the calling module reads as an entry point.
+
+<!-- example: modules/typeinfo_all_default_override -->
 
 #### The hooks a function reaches — `decl.hooks`
 

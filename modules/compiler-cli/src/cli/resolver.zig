@@ -215,7 +215,10 @@ pub fn resolveWith(
             return Error.OutOfMemory;
         };
         std.mem.replaceScalar(u8, src_path, '\\', '/');
-        modules.append(gpa, .{ .path = logical, .source = source, .srcPath = src_path }) catch {
+        // The root file the walk starts from is the package's root module
+        // (decision 551: the one module whose calls may leave a catalogue
+        // default out).
+        modules.append(gpa, .{ .path = logical, .source = source, .srcPath = src_path, .root = item.parent == null }) catch {
             gpa.free(source);
             gpa.free(logical);
             gpa.free(src_path);

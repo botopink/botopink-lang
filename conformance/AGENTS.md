@@ -774,7 +774,13 @@ reader's default fn, `typeinfo-all-imported` at the handle) and `modules/typeinf
 of them answered once with both decorators' meta) and `modules/typeinfo_all_list_twice`; the catalogue's
 reach (144 B-86) adds `modules/typeinfo_all_dependency_declarations` (a dependency's `#[m]` declaration and its
 own dependency's, imported by no module of the program, listed beside the package's own by module path, the
-same answer when the dependencies are read back from the code cache). Decision 248
+same answer when the dependencies are read back from the code cache); decision 551 (a `comptime` parameter whose
+default is a `@TypeInfo.all(…)` query, answered for the program the call is compiled in) adds
+`modules/typeinfo_all_default_at_caller` (a library's `boot()` with no argument listing the program's `#[m]`
+declarations of every package, the library's own, the program's and a dependency no module imports, on commonJS,
+erlang and beam), `modules/typeinfo_all_default_outside_root` (the call in a module that is not the package's root,
+`typeinfo-all-default-outside-root` at the call) and `modules/typeinfo_all_default_override` (the argument passed:
+another catalogue and an empty array, on all four targets). Decision 248
 names the one reflection builtin `@typeInfo` (the structural `TypeInfo` answer of a bare
 `@typeInfo(T)` folded in): `modules/typeinfo_lowercase` and `modules/typeinfo_all_lowercase` refuse
 the lowercase `@typeinfo(…)` / `@typeinfo.all(…)` where it is written (`typeinfo-lowercase`).
@@ -2092,7 +2098,7 @@ The narrowed cells whose excluded targets' missing binding is named here (re-der
 | `modules/host_node_task_result` | commonJS | erlang, wasm, beam — `hostDouble` |
 | `modules/host_unknown_parameter` | erlang beam | commonJS, wasm — `std/erlang.element` |
 | `modules/std_template_host_fns_across_modules`, `modules/import_std_groups`, `modules/fs_stat_mtime_whole_seconds` | commonJS erlang beam | wasm — `utf8Offset` (the first host cell a body of `std/io/fs` calls with no wasm binding; decision 540) |
-| `modules/embed_field_read_other_module`, `modules/declared_field_read_other_module` | commonJS erlang beam | wasm — `through` (and the field of a record the module does not declare) |
+| `modules/embed_field_read_other_module`, `modules/declared_field_read_other_module`, `modules/typeinfo_all_default_at_caller` | commonJS erlang beam | wasm — `through` (and the field of a record the module does not declare) |
 | `modules/fs_error_variants`, `modules/fs_whole_file_shortcuts`, `modules/fs_read_text_not_utf8`, `modules/fs_file_handle`, `modules/fs_file_streams`, `modules/fs_asset_opens_as_file` | commonJS erlang beam | wasm — `utf8Offset` (the same; front 164 binds `wasi:filesystem`) |
 | `modules/clock_rfc3339_domain`, `modules/clock_civil_past_rfc3339_aborts`, `modules/clock_format_past_rfc3339_aborts`, `modules/clock_offset_past_rfc3339_aborts`, `modules/hole_any_call_at_build`, `modules/std_generic_primitives`, `modules/stage_build_and_run`, `modules/stage_comptime_block_in_run`, `modules/stage_imported`, `modules/stage_of_functions` | commonJS erlang beam | wasm — `systemTimeWithUnit` |
 | `modules/decl_hooks_direct` | commonJS erlang beam | wasm — `session` |

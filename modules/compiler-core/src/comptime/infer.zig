@@ -672,6 +672,7 @@ pub fn inferProgram(env: *Env, program: ast.Program) InferError![]Binding {
     try refuseHooksReaderOutputs(env, program);
     try invokeDecorators(env, program, .plain);
     try noteTemplateQueries(env, program);
+    try noteDefaultQueries(env, program);
     env.assocTypesPending = false;
     if (env.contributions.items.len > 0 or env.memberContributions.items.len > 0 or env.typeContributions.items.len > 0 or env.wrapContributions.items.len > 0 or env.typeinfoAllPending) {
         return list.toOwnedSlice(env.arena);
@@ -831,6 +832,7 @@ pub fn inferProgramTyped(env: *Env, program: ast.Program) InferError![]TypedBind
     try refuseHooksReaderOutputs(env, program);
     try invokeDecorators(env, program, .plain);
     try noteTemplateQueries(env, program);
+    try noteDefaultQueries(env, program);
     env.assocTypesPending = false;
     if (env.contributions.items.len > 0 or env.memberContributions.items.len > 0 or env.typeContributions.items.len > 0 or env.wrapContributions.items.len > 0 or env.typeinfoAllPending) {
         // A decorator `@emit`ed code: the spliced re-analysis (`analyzeSource`)
@@ -4873,8 +4875,8 @@ fn fieldDeclType(env: *Env, owner: ast.TypeDecl, fld: ast.Field) InferError!?*T.
 /// compiles. Refused at the parameter, in the module that declares it.
 fn refuseNonComptimeDecoratorParams(env: *Env, program: ast.Program) InferError!void {
     for (program.decls) |decl| switch (decl) {
-        .type_ => |t| for (t.methods) |m| try refuseComptimeDefaults(env, m.params),
-        .behavior => |b| for (b.methods) |m| try refuseComptimeDefaults(env, m.params),
+        .type_ => |t| for (t.methods) |m| try refuseComptimeDefaults(env, m.params, false),
+        .behavior => |b| for (b.methods) |m| try refuseComptimeDefaults(env, m.params, false),
         else => {},
     };
     for (program.decls) |decl| {
@@ -4884,7 +4886,9 @@ fn refuseNonComptimeDecoratorParams(env: *Env, program: ast.Program) InferError!
             else => continue,
         };
         if (!isDecoratorParams(params)) {
-            try refuseComptimeDefaults(env, params);
+            // Decision 551 — a top-level function's `comptime` parameter may
+            // default to a `@TypeInfo.all(…)` query, answered at the call.
+            try refuseComptimeDefaults(env, params, decl == .@"fn" and !typeinfoAll.isTemplateFn(decl.@"fn"));
             continue;
         }
         for (params[1..]) |p| {
@@ -4935,10 +4939,13 @@ fn refuseBareComptime(env: *Env, owner: []const u8, params: []const ast.Param) I
 /// (0)), where the annotation that leaves it out hands the body the default:
 /// no call site of an ordinary function fills one, so it is refused at the
 /// default — before 280 the parser refused it at the `=`.
-fn refuseComptimeDefaults(env: *Env, params: []const ast.Param) InferError!void {
+/// Decision 551: `catalogue` admits a default that is a `@TypeInfo.all(…)`
+/// query (a top-level function's, not a template's nor a method's).
+fn refuseComptimeDefaults(env: *Env, params: []const ast.Param, catalogue: bool) InferError!void {
     for (params) |p| {
         if (p.modifier != .@"comptime") continue;
         const d = p.default orelse continue;
+        if (catalogue and typeinfoAll.isCatalogueDefault(p)) continue;
         const msg = try std.fmt.allocPrint(env.arena, "{s}: the `comptime` parameter `{s}` takes a default only in a decorator", .{ diagnostics.comptime_default_outside_decorator, p.name });
         env.lastError = TypeError.custom(msg, "Pass the argument at every call, or make the function a decorator (`comptime decl: @Decl` first).").withLoc(d.getLoc());
         return error.TypeError;
@@ -7119,6 +7126,46 @@ fn noteTemplateQueries(env: *Env, program: ast.Program) InferError!void {
             },
         };
         try r.templateQueries.put(r.arena, try reflectionMod.Reflection.templateKey(r.arena, env.modulePath, t.name), resolved.items);
+    }
+}
+
+/// Decision 551 — each `comptime` parameter whose default is a
+/// `@TypeInfo.all(…)` query: its arguments resolved here, in the declaring
+/// module (the decorators `with:` names are this module's or its imports'),
+/// and recorded in the session's reflection under
+/// `Reflection.defaultKey(module, fn, param)` — journaled with this module, so
+/// a package read back from the code cache's level B holds it too. A call
+/// that leaves the parameter out is answered for the program it is compiled
+/// in (`comptime.zig` `fillCatalogueDefaults`). The parameter's type is the
+/// answer's, `Declared<unknown>[]`, held at the default.
+fn noteDefaultQueries(env: *Env, program: ast.Program) InferError!void {
+    const r = env.reflection orelse return;
+    for (try typeinfoAll.collectDefaults(env.arena, program)) |dq| {
+        const rq = switch (try typeinfoAll.resolve(env.arena, env, program, env.modulePath, dq.query)) {
+            .ok => |rq| rq,
+            .unanswered => {
+                const msg = try std.fmt.allocPrint(env.arena, "{s}: the default of `{s}`'s parameter `{s}` names no decorator in `with:`", .{ diagnostics.typeinfo_all_arguments, dq.fn_name, dq.param });
+                env.lastError = TypeError.custom(msg, "Name a decorator this module declares or imports: `@TypeInfo.all(with: <decorator>)`.").withLoc(dq.query.loc);
+                return error.TypeError;
+            },
+            .refused => |te| {
+                env.lastError = te;
+                return error.TypeError;
+            },
+        };
+        const f = for (program.decls) |d| {
+            if (d == .@"fn" and std.mem.eql(u8, d.@"fn".name, dq.fn_name)) break d.@"fn";
+        } else continue;
+        for (f.params) |p| if (std.mem.eql(u8, p.name, dq.param)) {
+            var genericMap = std.StringHashMap(*T.Type).init(env.arena);
+            defer genericMap.deinit();
+            for (f.genericParams) |gp| try genericMap.put(gp.name, try env.freshVar());
+            const answer = try env.namedTypeArgs("array", &.{try env.namedTypeArgs("Declared", &.{try env.namedType("unknown")})});
+            try unifyAt(env, try resolveParamType(env, p, genericMap), answer, dq.query.loc);
+        };
+        const one = try r.arena.alloc(reflectionMod.TemplateQuery, 1);
+        one[0] = rq;
+        try r.templateQueries.put(r.arena, try reflectionMod.Reflection.defaultKey(r.arena, env.modulePath, dq.fn_name, dq.param), one);
     }
 }
 
@@ -21240,7 +21287,10 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                 // (`with: Decorator | Decorator[]`) like any builtin's: a
                 // `with:` that names no decorator is the ordinary mismatch at
                 // the argument. `typeinfo_all.plan` answered no such query.
-                try checkCatalogueArguments(env, call, loc);
+                // Decision 551 — the query a call leaving a catalogue default
+                // out is given carries the key of the default's resolution,
+                // no argument of the source's.
+                if (typeinfoAll.defaultKeyOf(call.args) == null) try checkCatalogueArguments(env, call, loc);
                 // Decision 216 (4) — the answer `typeinfo_all.plan` built for
                 // this call; tooling that runs no decorator reads an empty one.
                 const answer = env.typeinfoAll.get(loc) orelse empty: {

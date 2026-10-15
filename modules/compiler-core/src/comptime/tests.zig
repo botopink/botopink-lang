@@ -32,6 +32,7 @@ test {
     _ = @import("tests/eval_pipeline.zig");
     _ = @import("tests/type_alias.zig");
     _ = @import("tests/located_errors.zig");
+    _ = @import("tests/catalogue_default.zig");
     _ = @import("./alias_erase.zig");
     _ = @import("./builtins.zig");
     _ = @import("./std_namespace.zig");

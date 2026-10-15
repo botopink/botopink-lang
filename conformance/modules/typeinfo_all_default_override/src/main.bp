@@ -1,0 +1,31 @@
+//// Decision 551 — a catalogue default is a default: the call that passes the
+//// argument is answered with it. `boot()` lists the program's two `#[m]`
+//// declarations; `boot(@TypeInfo.all(with: other))` the one `#[other]`, a
+//// catalogue this module reads as an entry point; `boot([])` none.
+
+import {boot, m} from "frame";
+
+pub fn other(comptime decl: @Decl) {
+    decl.setMeta("kind", "other");
+}
+
+#[m]
+pub fn one() -> i32 {
+    return 1;
+}
+
+#[m]
+pub fn two() -> i32 {
+    return 2;
+}
+
+#[other]
+pub fn three() -> i32 {
+    return 3;
+}
+
+pub fn main() {
+    boot();
+    boot(@TypeInfo.all(with: other));
+    boot([]);
+}

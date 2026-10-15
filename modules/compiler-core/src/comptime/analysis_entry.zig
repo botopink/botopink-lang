@@ -866,8 +866,10 @@ pub const Journal = struct {
 /// never stored), `templateReads` (a package whose module expands a template
 /// reading the catalogue is never stored), `oracle`, `modTree`, `srcPaths` and `diagLabels`
 /// (the session's own, built before any module), `failedModules` (a package
-/// holding a refused module is never stored — `level_b.zig` `end`).
-pub const unjournaled_reflection = [_][]const u8{ "arena", "readers", "templateReads", "oracle", "modTree", "srcPaths", "diagLabels", "failedModules" };
+/// holding a refused module is never stored — `level_b.zig` `end`),
+/// `defaultCallers` and `rootModule` (decision 551: the root package's root,
+/// whose package is never stored).
+pub const unjournaled_reflection = [_][]const u8{ "arena", "readers", "templateReads", "oracle", "modTree", "srcPaths", "diagLabels", "failedModules", "defaultCallers", "rootModule" };
 
 /// The `Reflection` fields `Journal` carries, by their names there.
 pub const journaled_reflection = [_][]const u8{ "meta", "typedMeta", "decoratorMetaTypes", "assoc", "declared", "templateQueries", "hookFns", "scopes", "templateValueReads", "declaredValues", "contextDefaults" };

@@ -131,6 +131,13 @@ pub const TemplateRead = struct {
     loc: ast.Loc,
     query: TemplateQuery,
     text: []const u8,
+    /// Decision 551 — a `comptime` parameter's catalogue default answered at
+    /// the call (`comptime.zig` `fillCatalogueDefaults`): the calling module,
+    /// whose answer leaves out the other readers' entries as an entry
+    /// point's does, and the function the call names. Null for a template
+    /// body's query (353), which answers for every module.
+    reader: ?[]const u8 = null,
+    callee: []const u8 = "",
 };
 
 pub const Reflection = struct {
@@ -162,6 +169,17 @@ pub const Reflection = struct {
     templateQueries: std.StringHashMapUnmanaged([]const TemplateQuery) = .empty,
     /// Every answer a template body's query was given in this session.
     templateReads: std.ArrayListUnmanaged(TemplateRead) = .empty,
+    /// Decision 551 — the modules whose calls had a `comptime` parameter's
+    /// catalogue default answered in this session. A second session reads
+    /// them off its oracle and analyses them after every other module but
+    /// the readers (`comptime.zig` `orderReaders`), so their answer holds
+    /// every module's declarations.
+    defaultCallers: std.StringHashMapUnmanaged(void) = .empty,
+    /// The path of the root package's root module (`Module.root`, the file
+    /// the resolver starts from — `src/main.bp`, `src/root.bp`), null when
+    /// the driver marked none: the one module whose calls may leave a
+    /// catalogue default out (decision 551).
+    rootModule: ?[]const u8 = null,
     /// Decision 356 — `templateKey(owner, name)` → where that template
     /// function's body first reads a catalogue entry's `value`: refused at
     /// an expansion whose answer holds an entry with no build value.
@@ -214,6 +232,21 @@ pub const Reflection = struct {
 
     pub fn init(arena: std.mem.Allocator) Reflection {
         return .{ .arena = arena };
+    }
+
+    /// A copy whose maps and lists are its own (allocated with `arena`), the
+    /// oracle and the module tree shared: an analysis run over it leaves
+    /// this reflection as it was. Decision 551's probe of the root module
+    /// (`comptime.zig` `fillCatalogueDefaults`), whose answer is thrown away.
+    pub fn probeCopy(self: *const Reflection, arena: std.mem.Allocator) !Reflection {
+        var out = self.*;
+        out.arena = arena;
+        inline for (@typeInfo(Reflection).@"struct".fields) |f| {
+            if (comptime @typeInfo(f.type) == .@"struct" and @hasDecl(f.type, "clone")) {
+                @field(out, f.name) = try @field(self.*, f.name).clone(arena);
+            }
+        }
+        return out;
     }
 
     /// Record one entry; false when this decorator already set `key` on the
@@ -298,6 +331,14 @@ pub const Reflection = struct {
     /// The key `templateQueries` holds a template function's queries under.
     pub fn templateKey(arena: std.mem.Allocator, owner: []const u8, name: []const u8) ![]const u8 {
         return std.fmt.allocPrint(arena, "{s}\x00{s}", .{ owner, name });
+    }
+
+    /// Decision 551 — the key `templateQueries` holds the one query of the
+    /// function `fn_name`'s `comptime` parameter `param` under, whose default
+    /// is `@TypeInfo.all(…)`: beside a template's, a NUL no name contains
+    /// between the function and the parameter.
+    pub fn defaultKey(arena: std.mem.Allocator, owner: []const u8, fn_name: []const u8, param: []const u8) ![]const u8 {
+        return std.fmt.allocPrint(arena, "{s}\x00{s}\x00{s}", .{ owner, fn_name, param });
     }
 
     /// Every entry of the declaration, in set order; empty when none.

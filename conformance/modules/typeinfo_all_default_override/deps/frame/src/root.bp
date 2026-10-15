@@ -1,0 +1,11 @@
+//// A library whose `boot` reads the catalogue of the program that calls it
+//// (decision 551): its `comptime` parameter defaults to
+//// `@TypeInfo.all(with: m)`.
+
+pub fn m(comptime decl: @Decl) {
+    decl.setMeta("role", decl.name);
+}
+
+pub fn boot(comptime modules: @Expr<Declared<unknown>[]> = @TypeInfo.all(with: m)) {
+    @print(modules.value.length.toString());
+}

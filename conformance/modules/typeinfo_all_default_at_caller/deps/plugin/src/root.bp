@@ -1,0 +1,9 @@
+//// A dependency that contributes a declaration: no module of the program
+//// imports it, and `boot()` lists it all the same.
+
+import {m} from "frame";
+
+#[m]
+pub fn service() -> string {
+    return "plugin service";
+}

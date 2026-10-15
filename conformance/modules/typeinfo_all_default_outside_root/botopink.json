@@ -1,0 +1,1 @@
+{ "name": "typeinfo_all_default_outside_root", "dependencies": { "frame": { "path": "deps/frame" } } }

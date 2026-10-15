@@ -344,6 +344,8 @@ fn recordSrcPaths(arena: std.mem.Allocator, reflection: *reflectionMod.Reflectio
         // diagnostics are (decision 545), not by its package-relative file.
         const label = if (m.package.len > 0) try std.fmt.allocPrint(arena, "{s}.bp", .{m.path}) else shown;
         try reflection.diagLabels.put(reflection.arena, m.path, label);
+        // Decision 551 — the root package's root module.
+        if (m.root and m.package.len == 0 and !m.std_member) reflection.rootModule = m.path;
     }
 }
 
@@ -689,7 +691,182 @@ fn analyzeModule(
     target_name: ?[]const u8,
     reflection: *reflectionMod.Reflection,
 ) !AnalysisResult {
-    return analyzeSource(arena, mod, mod.source, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry, templateEvalCtx, types_only, false, target_name, reflection);
+    // The language server's session runs no comptime and marks no root: a
+    // call leaving a catalogue default out type-checks as written there.
+    if (types_only) return analyzeSource(arena, mod, mod.source, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry, templateEvalCtx, types_only, false, target_name, reflection, null);
+    return fillCatalogueDefaults(arena, mod, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry, templateEvalCtx, target_name, reflection);
+}
+
+/// Decision 551 — whether the root module is worth a probe: a function with a
+/// catalogue default is declared in the program — one a module analysed
+/// before exports (`defaultParamsKey`'s carried parameters), or the root's
+/// own. Whether a call names it is the analysis's to say (an alias, a
+/// namespace, a default function all reach it).
+fn declaresCatalogueDefault(arena: std.mem.Allocator, mod: Module, templateRegistry: *const std.StringHashMap(ast.FnDecl)) !bool {
+    var it = templateRegistry.valueIterator();
+    while (it.next()) |f| for (f.params) |p| if (typeinfoAll.isCatalogueDefault(p)) return true;
+    var lx = Lexer.init(mod.source);
+    const tokens = lx.scanAll(arena) catch return false;
+    var p = Parser.init(tokens);
+    const program = p.parse(arena) catch return false;
+    return (try typeinfoAll.collectDefaults(arena, program)).len > 0;
+}
+
+/// Decision 551 — call loc → the arguments appended to that call: a query
+/// `@TypeInfo.all(<typeinfo_all.default_key_label>: "<key>")` per catalogue
+/// default it leaves out.
+const CatalogueInserts = std.AutoHashMapUnmanaged(ast.Loc, []const ast.CallArg);
+
+/// One call of a module that leaves a catalogue default out: where, the
+/// parameter's index among the callee's, and the key of the default's query.
+const CatalogueDefaultCall = struct {
+    loc: ast.Loc,
+    param: usize,
+    name: []const u8,
+    key: ?[]const u8,
+};
+
+/// Every call the analysis accepted with a catalogue default left out
+/// (`Env.defaultInjections`: the fill's slot of a `@TypeInfo.all` default is
+/// empty), by location.
+fn catalogueDefaultCalls(arena: std.mem.Allocator, env: *const envMod.Env) ![]const CatalogueDefaultCall {
+    var out: std.ArrayListUnmanaged(CatalogueDefaultCall) = .empty;
+    var it = env.defaultInjections.iterator();
+    while (it.next()) |e| for (e.value_ptr.slots, 0..) |slot, pi| {
+        if (slot != null or pi >= e.value_ptr.params.len) continue;
+        const p = e.value_ptr.params[pi];
+        if (!typeinfoAll.isCatalogueDefault(p)) continue;
+        try out.append(arena, .{ .loc = e.key_ptr.*, .param = pi, .name = p.name, .key = typeinfoAll.defaultKeyOf(p.default.?.call.kind.call.args) });
+    };
+    std.mem.sort(CatalogueDefaultCall, out.items, {}, struct {
+        fn lessThan(_: void, a: CatalogueDefaultCall, b: CatalogueDefaultCall) bool {
+            if (a.loc.line != b.loc.line) return a.loc.line < b.loc.line;
+            if (a.loc.col != b.loc.col) return a.loc.col < b.loc.col;
+            return a.param < b.param;
+        }
+    }.lessThan);
+    return out.items;
+}
+
+/// Decision 551 — a call that leaves out a `comptime` parameter whose default
+/// is a `@TypeInfo.all(…)` query is answered for the program it is compiled
+/// in. The module is analysed again with each such call given the query in
+/// place of the default (`withInsertedArgs`) — the key of the query as the
+/// declaring module resolved it (`infer.noteDefaultQueries`), so the names
+/// `with:` writes resolve there — and the module reads `@TypeInfo.all` like
+/// an entry point: its first analysis runs its decorators, the answer
+/// (`typeinfo_all.plan`) lists every module's declarations but another
+/// reader's, each `value` the declaration itself reached through an import
+/// the answer adds, and the re-analysis types it. The call is legal only in
+/// the root package's root module (`Reflection.rootModule`): refused anywhere
+/// else, at the call. Each answer is recorded as 353's template answers are
+/// (`Reflection.templateReads`, with the calling module as its reader): a
+/// module analysed later that changes the catalogue makes the session compile
+/// again, the calling module then analysed after every module but the readers
+/// (`Reflection.defaultCallers`, `orderReaders`).
+fn fillCatalogueDefaults(
+    arena: std.mem.Allocator,
+    mod: Module,
+    registry: *std.StringHashMap(std.StringHashMap(*T.Type)),
+    typeDeclRegistry: *std.StringHashMap(std.StringHashMap(ast.DeclKind)),
+    templateRegistry: *const std.StringHashMap(ast.FnDecl),
+    decoratorRegistry: *const std.StringHashMap(ast.FnDecl),
+    extensionRegistry: *const std.StringHashMap(std.StringHashMap(ast.ImplementDecl)),
+    templateEvalCtx: ?envMod.TemplateEvalCtx,
+    target_name: ?[]const u8,
+    reflection: *reflectionMod.Reflection,
+) !AnalysisResult {
+    const at_root = if (reflection.rootModule) |r| std.mem.eql(u8, r, mod.path) else false;
+    // The root is first analysed over a copy of the reflection (its decorators
+    // record nothing that stays) when the program declares a catalogue
+    // default: the module is then analysed again, its calls given their
+    // queries. Any other module is analysed once, and a call leaving a
+    // default out refused.
+    const probe = at_root and try declaresCatalogueDefault(arena, mod, templateRegistry);
+    const scratch: *reflectionMod.Reflection = if (probe) blk: {
+        const copy = try arena.create(reflectionMod.Reflection);
+        copy.* = try reflection.probeCopy(arena);
+        break :blk copy;
+    } else reflection;
+    const first = try analyzeSource(arena, mod, mod.source, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry, templateEvalCtx, false, false, target_name, scratch, null);
+    if (first != .success) {
+        if (!probe) return first;
+        return analyzeSource(arena, mod, mod.source, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry, templateEvalCtx, false, false, target_name, reflection, null);
+    }
+    var res = first;
+    const calls = try catalogueDefaultCalls(arena, &res.success.env);
+    if (calls.len == 0) {
+        if (!probe) return first;
+        res.success.env.deinit();
+        return analyzeSource(arena, mod, mod.source, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry, templateEvalCtx, false, false, target_name, reflection, null);
+    }
+    const program = res.success.program;
+    if (!at_root) {
+        const c = calls[0];
+        const name = if (typeinfoAll.callAt(program, c.loc)) |site| site.callee else "the function";
+        const root_label = if (reflection.rootModule) |r| try std.fmt.allocPrint(arena, " ({s})", .{reflection.srcPaths.get(r) orelse r}) else "";
+        const msg = try std.fmt.allocPrint(arena, "{s}: `{s}` leaves out `{s}`, whose default `@TypeInfo.all` answers for the whole program — a call that leaves it out is written only in the package's root{s}", .{ diagnostics.typeinfo_all_default_outside_root, name, c.name, root_label });
+        const hint = try std.fmt.allocPrint(arena, "Call `{s}` from the package's root, or pass the catalogue: `{s}({s}: @TypeInfo.all(with: …))` (decision 551).", .{ name, name, c.name });
+        res.success.env.deinit();
+        return .{ .typeError = validation.TypeError.custom(msg, hint).withLoc(c.loc) };
+    }
+    var inserts: CatalogueInserts = .empty;
+    var names: std.AutoHashMapUnmanaged(ast.Loc, []const u8) = .empty;
+    var i: usize = 0;
+    while (i < calls.len) {
+        const loc = calls[i].loc;
+        var j = i;
+        while (j < calls.len and calls[j].loc.eql(loc)) j += 1;
+        defer i = j;
+        // A call the analysis filled but no `f(…)` writes (a pipeline) keeps
+        // its default unfilled; the re-analysis refuses it.
+        const site = typeinfoAll.callAt(program, loc) orelse continue;
+        try names.put(arena, loc, site.callee);
+        var labelled = site.has_trailing;
+        for (site.args) |a| if (a.label != null) {
+            labelled = true;
+        };
+        var written = site.args.len;
+        var extra: std.ArrayListUnmanaged(ast.CallArg) = .empty;
+        for (calls[i..j]) |c| {
+            const key = c.key orelse try reflectionMod.Reflection.defaultKey(arena, mod.path, site.callee, c.name);
+            const at: ast.Loc = .{ .line = loc.line, .col = loc.col + ast.catalogue_default_col + c.param, .expansion = loc.expansion };
+            const query = try typeinfoAll.defaultQueryCall(arena, key, at);
+            // Positional when every earlier parameter is written in order;
+            // by the parameter's name otherwise.
+            if (!labelled and c.param == written) {
+                try extra.append(arena, .{ .label = null, .value = query });
+                written += 1;
+            } else {
+                try extra.append(arena, .{ .label = c.name, .value = query });
+                labelled = true;
+            }
+        }
+        try inserts.put(arena, loc, extra.items);
+    }
+    res.success.env.deinit();
+    var again = try analyzeSource(arena, mod, mod.source, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry, templateEvalCtx, false, false, target_name, reflection, &inserts);
+    if (again != .success) return again;
+    const left = try catalogueDefaultCalls(arena, &again.success.env);
+    if (left.len > 0) {
+        const msg = try std.fmt.allocPrint(arena, "{s}: this call leaves out `{s}`, whose default `@TypeInfo.all` is answered only at a call written `f(…)`", .{ diagnostics.typeinfo_all_default_outside_root, left[0].name });
+        again.success.env.deinit();
+        return .{ .typeError = validation.TypeError.custom(msg, "Write the call as `f(…)`, or pass the catalogue (decision 551).").withLoc(left[0].loc) };
+    }
+    // Each answer, for 353's staleness check.
+    for (calls) |c| {
+        const callee_name = names.get(c.loc) orelse continue;
+        const key = c.key orelse try reflectionMod.Reflection.defaultKey(arena, mod.path, callee_name, c.name);
+        const found = reflection.templateQueries.get(key) orelse continue;
+        if (found.len != 1) continue;
+        const text = switch (try typeinfoAll.templateAnswerText(arena, reflection, found[0], c.loc, mod.path)) {
+            .ok => |t| t,
+            .refused => continue,
+        };
+        try reflection.templateReads.append(reflection.arena, .{ .module = mod.path, .loc = c.loc, .query = found[0], .text = text, .reader = mod.path, .callee = callee_name });
+    }
+    try reflection.defaultCallers.put(reflection.arena, mod.path, {});
+    return again;
 }
 
 /// Append decorator `@emit(...)` contributions to a module's source as extra
@@ -901,7 +1078,29 @@ fn orderReaders(
             try other_tokens.append(arena, tokens);
         }
     }
-    if (readers.items.len == 0) return modules;
+    // Decision 551 — a module whose call had a catalogue default answered in
+    // the first session is analysed after every other module but the
+    // readers, so the answer it is given holds them all.
+    var late: std.ArrayListUnmanaged(Module) = .empty;
+    if (reflection.oracle) |o| if (o.defaultCallers.count() > 0) {
+        var k: usize = 0;
+        while (k < others.items.len) {
+            if (!o.defaultCallers.contains(others.items[k].path)) {
+                k += 1;
+                continue;
+            }
+            try late.append(arena, others.items[k]);
+            _ = others.orderedRemove(k);
+            const lp = other_programs.orderedRemove(k);
+            const lt = other_tokens.orderedRemove(k);
+            try other_programs.append(arena, lp);
+            try other_tokens.append(arena, lt);
+        }
+        // `others` and its programs stay index-aligned: the late modules
+        // join the end of both, in their order.
+        try others.appendSlice(arena, late.items);
+    };
+    if (readers.items.len == 0 and late.items.len == 0) return modules;
     try others.appendSlice(arena, readers.items);
     try other_programs.appendSlice(arena, reader_programs.items);
     try other_tokens.appendSlice(arena, reader_tokens.items);
@@ -927,6 +1126,20 @@ fn orderReaders(
                     }
                 }
                 for (u.imports) |imp| {
+                    // Decision 551 — a module analysed late for its catalogue
+                    // default is imported by none (s23-i (d) (2)).
+                    for (late.items) |r| {
+                        if (std.mem.eql(u8, r.path, m.path)) continue;
+                        const hit = for ([_]bool{ false, true }) |whole| switch (try u.leafSource(imp, arena, whole)) {
+                            .key => |key| if (std.mem.eql(u8, key, r.path)) break true,
+                            .module => |path| if (std.mem.eql(u8, path, r.path) or std.mem.eql(u8, std.fs.path.basename(r.path), path)) break true,
+                            .root => {},
+                        } else false;
+                        if (!hit) continue;
+                        const msg = try std.fmt.allocPrint(arena, "{s}: `{s}` is the package's root and answers a catalogue default for the whole program, so no module imports it", .{ diagnostics.typeinfo_all_imported, r.path });
+                        try refusals.put(arena, idx, validation.TypeError.custom(msg, "Move what this module needs out of the root into a module of its own; the root imports it, never the other way round (decision 551).").withLoc(imp.loc));
+                        break :scan;
+                    }
                     for ([_]bool{ false, true }) |whole| switch (try u.leafSource(imp, arena, whole)) {
                         // A `.key` is one module: the package plus the path.
                         .key => |key| for (readers.items) |r| {
@@ -1518,6 +1731,7 @@ fn analyzeSource(
     skip_invoke: bool,
     target_name: ?[]const u8,
     reflection: *reflectionMod.Reflection,
+    inserts: ?*const CatalogueInserts,
 ) anyerror!AnalysisResult {
     var env = try infer.freshEnv(arena, std.heap.page_allocator);
     env.reflection = reflection;
@@ -1556,12 +1770,15 @@ fn analyzeSource(
     };
 
     var parser = Parser.init(tokens);
-    const parsed_as_written = parser.parse(arena) catch |err| switch (err) {
+    const parsed_source = parser.parse(arena) catch |err| switch (err) {
         // The caller renders the diagnostic (`ComptimeOutput.parseError`); a
         // library call must not write to stderr — a test runner reads it.
         error.UnexpectedToken => return .{ .parseError = .{ .parse = parser.parseError } },
         else => return err,
     };
+    // Decision 551 — the queries a call leaving a catalogue default out is
+    // given (`fillCatalogueDefaults`): this module then reads `@TypeInfo.all`.
+    const parsed_as_written = if (inserts) |ins| try typeinfoAll.withInsertedArgs(arena, parsed_source, ins) else parsed_source;
     // Decision 309 — an embedded std module's brace imports name `std/<path>`.
     // A dependency's module marks its imports with its package, so a path
     // item names that package's module (decisions 170, 337).
@@ -1775,7 +1992,7 @@ fn analyzeSource(
         // full re-lex so the parser sees the original module as one unit (its
         // diagnostics carry global offsets).
         const spliced = try spliceContributions(arena, source, env.contributions.items);
-        var reanalysis = try analyzeSource(arena, mod, spliced, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry, templateEvalCtx, types_only, true, target_name, reflection);
+        var reanalysis = try analyzeSource(arena, mod, spliced, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry, templateEvalCtx, types_only, true, target_name, reflection, inserts);
         if (reanalysis == .success) {
             try keepPassOneTraces(&reanalysis.success.env, &env);
             env.deinit();
@@ -3339,6 +3556,14 @@ fn registerExports(
                 if (!infer.isDecoratorParams(f.params)) {
                     const params = try arena.dupe(ast.Param, f.params);
                     for (params) |*p| if (p.default) |d| if (!infer.isClosedDefault(d)) {
+                        // Decision 551 — a catalogue default travels as the
+                        // query a call leaving it out is given: the key of its
+                        // resolution here (`noteDefaultQueries`).
+                        if (typeinfoAll.isCatalogueDefault(p.*)) {
+                            const key = try reflectionMod.Reflection.defaultKey(arena, path, f.name, p.name);
+                            p.default = (try typeinfoAll.defaultQueryCall(arena, key, d.getLoc())).*;
+                            continue;
+                        }
                         p.default = null;
                     };
                     var carried = f;
@@ -4148,7 +4373,7 @@ pub fn compileWith(
 /// catalogue answers differently, or null (decision 353).
 fn staleTemplateRead(arena: std.mem.Allocator, reflection: *const reflectionMod.Reflection) !?reflectionMod.TemplateRead {
     for (reflection.templateReads.items) |read| {
-        const now = switch (try typeinfoAll.templateAnswerText(arena, reflection, read.query, read.loc)) {
+        const now = switch (try typeinfoAll.templateAnswerText(arena, reflection, read.query, read.loc, read.reader)) {
             .ok => |t| t,
             .refused => return read,
         };
@@ -4161,7 +4386,10 @@ fn staleTemplateRead(arena: std.mem.Allocator, reflection: *const reflectionMod.
 /// given from a complete catalogue, changed that catalogue.
 fn refuseStaleRead(allocator: std.mem.Allocator, session: *ComptimeSession, read: reflectionMod.TemplateRead) !void {
     const arena = session.arena.allocator();
-    const msg = try std.fmt.allocPrint(arena, "{s}: the template expanded here reads `@TypeInfo.all(with: {s})`, and the declarations its answer builds change that catalogue", .{ diagnostics.typeinfo_all_template_unstable, read.query.label });
+    const msg = if (read.reader != null)
+        try std.fmt.allocPrint(arena, "{s}: the call of `{s}` here takes `@TypeInfo.all(with: {s})` as its default, and the catalogue it answers changed after the call was compiled", .{ diagnostics.typeinfo_all_template_unstable, read.callee, read.query.label })
+    else
+        try std.fmt.allocPrint(arena, "{s}: the template expanded here reads `@TypeInfo.all(with: {s})`, and the declarations its answer builds change that catalogue", .{ diagnostics.typeinfo_all_template_unstable, read.query.label });
     const te = validation.TypeError.custom(msg, "A template's answer cannot add or remove a declaration carrying the decorators it reads: the catalogue it answers is the program's, decided before any template runs.").withLoc(read.loc);
     for (session.outputs.items) |*o| {
         const path = if (std.mem.eql(u8, o.name, "main")) "" else o.name;

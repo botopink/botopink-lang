@@ -664,6 +664,13 @@ pub const text_hole_col: usize = 7_000_000;
 /// may carry.
 pub const text_arg_col: usize = 8_000_000;
 
+/// The column added to a call's loc for the `@TypeInfo.all` the compiler
+/// writes in place of a `comptime` parameter's catalogue default it leaves out
+/// (decision 551, `comptime.zig` `fillCatalogueDefaults`), plus the
+/// parameter's index: past any written column and apart from the other
+/// synthetic columns, so the answer is keyed by a loc no written node has.
+pub const catalogue_default_col: usize = 9_000_000;
+
 /// Helper to get the correct call argument type based on phase
 pub fn CallArgOf(comptime phase: Phase) type {
     return struct {

@@ -636,6 +636,11 @@ pub const typeinfo_all_private: []const u8 = "typeinfo-all-private";
 /// An import of a module that reads `@TypeInfo.all`.
 pub const typeinfo_all_imported: []const u8 = "typeinfo-all-imported";
 
+/// Decision 551 — a call that leaves out a `comptime` parameter whose default
+/// is a `@TypeInfo.all(…)` query, written outside the root package's root
+/// module (s23-i (d) (1)): the default answers for the whole program.
+pub const typeinfo_all_default_outside_root: []const u8 = "typeinfo-all-default-outside-root";
+
 /// Decision 353 — a template body reads `value` of a catalogue entry: a
 /// declaration of the program is no value at build.
 pub const typeinfo_all_template_value: []const u8 = "typeinfo-all-template-value";
@@ -894,6 +899,7 @@ pub const all_codes = [_][]const u8{
     typeinfo_all_needs_member,
     typeinfo_all_private,
     typeinfo_all_imported,
+    typeinfo_all_default_outside_root,
     typeinfo_all_template_value,
     typeinfo_all_template_unstable,
     decorator_meta_on_member,

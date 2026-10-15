@@ -16,6 +16,7 @@ const std = @import("std");
 const ast = @import("../ast.zig");
 const memberFn = @import("member_fn.zig");
 const typedMeta = @import("typed_meta.zig");
+const typeinfoAll = @import("typeinfo_all.zig");
 const preludeMod = @import("runtime/prelude.zig");
 
 /// The decorator prelude's function `x.fail(m)` becomes.
@@ -95,9 +96,23 @@ pub fn eraseFn(arena: std.mem.Allocator, f: ast.FnDecl, decorator: bool) !ast.Fn
         try indices.append(arena, if (decorator and i > 0) i - 1 else i);
     }
     const declName: ?[]const u8 = if (decorator) memberFn.declParamName(f) else null;
-    if (names.items.len == 0 and declName == null) return f;
+    // Decision 551 — a catalogue default is answered at each call that leaves
+    // it out (`comptime.zig` `fillCatalogueDefaults`); the code that runs
+    // never holds the query.
+    var stripped: ?[]ast.Param = null;
+    for (f.params, 0..) |p, i| if (typeinfoAll.isCatalogueDefault(p)) {
+        if (stripped == null) stripped = try arena.dupe(ast.Param, f.params);
+        stripped.?[i].default = null;
+    };
+    const params: []ast.Param = stripped orelse f.params;
+    if (names.items.len == 0 and declName == null) {
+        var plain = f;
+        plain.params = params;
+        return plain;
+    }
     var ctx: Ctx = .{ .arena = arena, .names = names.items, .indices = indices.items, .failArg = decorator, .declName = declName };
     var out = f;
+    out.params = params;
     out.body = try clone([]ast.Stmt, &ctx, f.body);
     return out;
 }

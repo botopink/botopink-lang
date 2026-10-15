@@ -859,6 +859,70 @@ test "level B: a package expanding a template that reads the catalogue is never 
     try testing.expectEqual(@as(usize, 0), mem.store.stats.entries_staged);
 }
 
+test "level B: a package declaring a catalogue default is stored and read back with its query; the root that calls it is never stored (decision 551)" {
+    const h = @import("tests/helpers.zig");
+    const answerImports = @import("tests/catalogue_default.zig").answerImports;
+    const io = testing.io;
+    const build_root = h.buildRootPathFromSrc(io, @src());
+    const modules = [_]Module{
+        .{ .path = "frame/root", .package = "frame", .source =
+        \\pub fn m(comptime decl: @Decl) {
+        \\    decl.setMeta("role", decl.name);
+        \\}
+        \\
+        \\#[m]
+        \\pub fn frameCore() -> i32 {
+        \\    return 0;
+        \\}
+        \\
+        \\pub fn boot(comptime modules: @Expr<Declared<unknown>[]> = @TypeInfo.all(with: m)) {
+        \\    @print(modules.value.length.toString());
+        \\}
+        \\
+        },
+        .{ .path = "main", .root = true, .source =
+        \\import {boot, m as mark} from "frame";
+        \\
+        \\#[mark]
+        \\pub fn local() -> i32 {
+        \\    return 1;
+        \\}
+        \\
+        \\pub fn main() {
+        \\    boot();
+        \\}
+        \\
+        },
+    };
+    var mem: MemoryStore = undefined;
+    mem.init();
+    defer mem.deinit();
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    // `local` is the root's own: named, never imported.
+    const want = [_][]const u8{"frame/root.frameCore"};
+
+    var first = try comptimeMod.compileWith(testing.allocator, &modules, io, build_root, "erlang", &mem.store);
+    defer first.deinit(testing.allocator);
+    for (first.outputs.items) |o| try testing.expect(o.outcome == .ok);
+    try testing.expect(mem.staged.contains("frame"));
+    try testing.expect(!mem.staged.contains("main"));
+    try testing.expect(!mem.staged.contains(""));
+    try mem.commit();
+
+    var second = try comptimeMod.compileWith(testing.allocator, &modules, io, build_root, "erlang", &mem.store);
+    defer second.deinit(testing.allocator);
+    for (second.outputs.items) |o| try testing.expect(o.outcome == .ok);
+    try testing.expectEqual(@as(usize, 1), mem.store.stats.modules_read);
+    try testing.expectEqual(@as(usize, 0), mem.store.stats.entries_staged);
+    // The root's answer read from the entry's query: the same two entries.
+    for (second.outputs.items) |o| if (std.mem.eql(u8, o.name, "main")) {
+        const got = try answerImports(arena_state.allocator(), o.outcome.ok.transformed);
+        try testing.expectEqual(want.len, got.len);
+        for (want, got) |w, g| try testing.expectEqualStrings(w, g);
+    };
+}
+
 test "level B: a package that reads @TypeInfo.all is never stored" {
     const h = @import("tests/helpers.zig");
     const io = testing.io;

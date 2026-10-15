@@ -1,0 +1,5 @@
+botopink-cell 1
+out frame/root frameCore role=frameCore frame core
+out main local role=local main local
+out pages home role=home pages home
+out plugin/root service role=service plugin service

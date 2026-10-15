@@ -35,6 +35,12 @@ pub const Module = struct {
     /// on the modules of a root package named `std` — `libs/std` built,
     /// checked or tested as itself.
     std_member: bool = false,
+    /// The package's root module: the file the CLI's resolver starts the
+    /// `mod` tree from (`src/main.bp`, `src/root.bp` — the manifest's
+    /// `entry`). A call that leaves out a `comptime` parameter whose default
+    /// is a `@TypeInfo.all(…)` query is legal only in the root package's root
+    /// (decision 551, `comptime.zig` `fillCatalogueDefaults`).
+    root: bool = false,
     /// Decision 519 — the reader `@embed` reads the package's files through:
     /// the directory of the package's `botopink.json` and the function that
     /// reads a file under it. The CLI and the language server hand

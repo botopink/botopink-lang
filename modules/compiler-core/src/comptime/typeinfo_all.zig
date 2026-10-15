@@ -49,6 +49,13 @@
 //! reflection into the array expression (keyed by the call's loc, which
 //! inference splices through `Env.srcRewrites`) and the import declarations
 //! the expression needs, both handed to the re-analysis.
+//!
+//! **A catalogue default** (decision 551). A top-level function's `comptime`
+//! parameter may default to a query (`isCatalogueDefault`); it makes no
+//! reader. `collectDefaults` finds them for `infer.zig` `noteDefaultQueries`,
+//! which resolves each in the declaring module; a call that leaves one out
+//! is given `defaultQueryCall(key)` by `comptime.zig` `fillCatalogueDefaults`
+//! (`withInsertedArgs`), and `resolve` answers it with the recorded query.
 const std = @import("std");
 const ast = @import("../ast.zig");
 const envMod = @import("env.zig");
@@ -72,6 +79,79 @@ pub const Query = struct {
     args: []const ast.CallArg,
 };
 
+/// Decision 551 — the label of the one argument of a `@TypeInfo.all` the
+/// compiler writes for a call that leaves a catalogue default out
+/// (`comptime.zig` `fillCatalogueDefaults`) and of the default a function
+/// exports: its value the `Reflection.defaultKey` of the query, resolved in
+/// the declaring module. A NUL no source label contains.
+pub const default_key_label = "\x00default";
+
+/// Decision 551 — a `comptime` parameter whose default is a `@TypeInfo.all(…)`
+/// query: answered for the program the call that leaves it out is compiled
+/// in, never in the declaring module.
+pub fn isCatalogueDefault(p: ast.Param) bool {
+    if (p.modifier != .@"comptime") return false;
+    const d = p.default orelse return false;
+    return isQueryCall(d);
+}
+
+fn isQueryCall(e: ast.Expr) bool {
+    if (e != .call or e.call.kind != .call) return false;
+    const c = e.call.kind.call;
+    return c.is_builtin and std.mem.eql(u8, c.callee, callee);
+}
+
+/// The `Reflection.defaultKey` a compiler-written query carries
+/// (`default_key_label`), or null for a query the source writes.
+pub fn defaultKeyOf(args: []const ast.CallArg) ?[]const u8 {
+    for (args) |a| {
+        const l = a.label orelse continue;
+        if (!std.mem.eql(u8, l, default_key_label)) continue;
+        if (a.value.* == .literal and a.value.literal.kind == .stringLit) return a.value.literal.kind.stringLit;
+    }
+    return null;
+}
+
+/// The query a call that leaves a catalogue default out is given:
+/// `@TypeInfo.all(<default_key_label>: "<key>")` at `loc`.
+pub fn defaultQueryCall(arena: std.mem.Allocator, key: []const u8, loc: ast.Loc) Error!*ast.Expr {
+    const value = try arena.create(ast.Expr);
+    value.* = .{ .literal = .{ .loc = loc, .kind = .{ .stringLit = key } } };
+    const args = try arena.alloc(ast.CallArg, 1);
+    args[0] = .{ .label = default_key_label, .value = value };
+    const call = try arena.create(ast.Expr);
+    call.* = .{ .call = .{ .loc = loc, .kind = .{ .call = .{
+        .receiver = null,
+        .callee = callee,
+        .is_builtin = true,
+        .args = args,
+        .trailing = &.{},
+    } } } };
+    return call;
+}
+
+/// One catalogue default of a module's function (decision 551).
+pub const DefaultQuery = struct {
+    fn_name: []const u8,
+    param: []const u8,
+    query: Query,
+};
+
+/// Every catalogue default of `program`'s top-level functions (a template's
+/// and a decorator's are refused where they are declared), in source order.
+pub fn collectDefaults(arena: std.mem.Allocator, program: ast.Program) Error![]const DefaultQuery {
+    var out: std.ArrayListUnmanaged(DefaultQuery) = .empty;
+    for (program.decls) |d| {
+        if (d != .@"fn" or isTemplateFn(d.@"fn")) continue;
+        for (d.@"fn".params) |p| {
+            if (!isCatalogueDefault(p)) continue;
+            const c = p.default.?.call;
+            try out.append(arena, .{ .fn_name = d.@"fn".name, .param = p.name, .query = .{ .loc = c.loc, .args = c.kind.call.args } });
+        }
+    }
+    return out.items;
+}
+
 const Collector = struct {
     arena: std.mem.Allocator,
     found: std.ArrayListUnmanaged(Query) = .empty,
@@ -84,6 +164,9 @@ const Collector = struct {
             }
         }
         if (T == ast.ImportDecl) return;
+        // Decision 551 — a catalogue default is answered at each call that
+        // leaves it out, never by the declaring module: it makes no reader.
+        if (T == ast.Param and isCatalogueDefault(ptr.*)) return;
         switch (@typeInfo(T)) {
             .@"struct" => |s| inline for (s.fields) |f| {
                 if (f.is_comptime) continue;
@@ -223,6 +306,15 @@ pub fn resolve(
     module_path: []const u8,
     q: Query,
 ) Error!Resolution {
+    // Decision 551 — the query a call leaving a catalogue default out is
+    // given: resolved where the default is declared (`collectDefaults`).
+    if (defaultKeyOf(q.args)) |key| {
+        const found: []const Resolved = if (env.reflection) |r| r.templateQueries.get(key) orelse &.{} else &.{};
+        if (found.len != 1) return .{ .refused = try refusal(arena, q.loc, "{s}: the catalogue default this call leaves out was not recorded where its function is declared", .{diagnostics.typeinfo_all_arguments}, "Pass the catalogue: `f(@TypeInfo.all(with: <decorator>))`.") };
+        var rq = found[0];
+        rq.loc = q.loc;
+        return .{ .ok = rq };
+    }
     var with: ?*const ast.Expr = null;
     var member: ?[]const u8 = null;
     for (q.args) |a| {
@@ -567,7 +659,7 @@ pub const TemplateAnswer = union(enum) {
 pub fn answerForTemplate(arena: std.mem.Allocator, reflection: *const reflectionMod.Reflection, q: Resolved, at: ast.Loc) Error!TemplateAnswer {
     const source = reflection.oracle orelse reflection;
     var unvalued: ?[]const u8 = null;
-    const text = switch (try templateAnswerTextOf(arena, source, q, at, &unvalued)) {
+    const text = switch (try templateAnswerTextOf(arena, source, q, at, &unvalued, null)) {
         .ok => |t| t,
         .refused => |te| return .{ .refused = te },
     };
@@ -578,14 +670,16 @@ pub const AnswerText = union(enum) { ok: []const u8, refused: TypeError };
 
 /// The text of a template body's answer from `source` — also how
 /// `comptime.zig` re-reads an answer against the final catalogue.
-pub fn templateAnswerText(arena: std.mem.Allocator, source: *const reflectionMod.Reflection, q: Resolved, at: ast.Loc) Error!AnswerText {
+/// `reader` is a calling module whose catalogue default was answered there
+/// (decision 551): the other readers' entries are left out, as `plan` does.
+pub fn templateAnswerText(arena: std.mem.Allocator, source: *const reflectionMod.Reflection, q: Resolved, at: ast.Loc, reader: ?[]const u8) Error!AnswerText {
     var unvalued: ?[]const u8 = null;
-    return templateAnswerTextOf(arena, source, q, at, &unvalued);
+    return templateAnswerTextOf(arena, source, q, at, &unvalued, reader);
 }
 
-fn templateAnswerTextOf(arena: std.mem.Allocator, source: *const reflectionMod.Reflection, q: Resolved, at: ast.Loc, unvalued: *?[]const u8) Error!AnswerText {
-    const entries = try entriesFor(arena, source, q, null);
-    if (try checkEntries(arena, q, entries, null, at)) |te| return .{ .refused = te };
+fn templateAnswerTextOf(arena: std.mem.Allocator, source: *const reflectionMod.Reflection, q: Resolved, at: ast.Loc, unvalued: *?[]const u8, reader: ?[]const u8) Error!AnswerText {
+    const entries = try entriesFor(arena, source, q, reader);
+    if (try checkEntries(arena, q, entries, reader, at)) |te| return .{ .refused = te };
     var text: std.ArrayListUnmanaged(u8) = .empty;
     try text.append(arena, '[');
     for (entries, 0..) |e, i| {
@@ -668,9 +762,75 @@ pub fn substitute(arena: std.mem.Allocator, f: ast.FnDecl, answers: *const std.A
     return s.copy(ast.FnDecl, &f);
 }
 
+/// Decision 551 — `program` with each call `inserts` keys by its loc given
+/// the arguments it holds appended (the queries in place of the catalogue
+/// defaults it leaves out): a copy, the parse left as written.
+pub fn withInsertedArgs(arena: std.mem.Allocator, program: ast.Program, inserts: *const std.AutoHashMapUnmanaged(ast.Loc, []const ast.CallArg)) Error!ast.Program {
+    const none: std.AutoHashMapUnmanaged(ast.Loc, *const ast.Expr) = .empty;
+    const s = Substituter{ .arena = arena, .answers = &none, .inserts = inserts };
+    return s.copy(ast.Program, &program);
+}
+
+/// A call of `program` written at `loc`: its callee and its arguments.
+pub const CallSite = struct { callee: []const u8, args: []const ast.CallArg, has_trailing: bool };
+
+/// The call `program` writes at `loc` (`f(…)`, `ns.f(…)`), or null — a
+/// pipeline (`x |> f()`) is keyed by its own loc and found as none.
+pub fn callAt(program: ast.Program, loc: ast.Loc) ?CallSite {
+    var f = CallFinder{ .loc = loc };
+    for (program.decls) |*d| {
+        f.walk(ast.DeclKind, d);
+        if (f.found) |c| return c;
+    }
+    return null;
+}
+
+const CallFinder = struct {
+    loc: ast.Loc,
+    found: ?CallSite = null,
+
+    fn walk(self: *CallFinder, comptime T: type, ptr: *const T) void {
+        if (self.found != null) return;
+        if (T == ast.Expr) {
+            if (ptr.* == .call and ptr.call.kind == .call and ptr.call.loc.eql(self.loc)) {
+                const c = ptr.call.kind.call;
+                self.found = .{ .callee = c.callee, .args = c.args, .has_trailing = c.trailing.len > 0 };
+                return;
+            }
+        }
+        if (T == ast.ImportDecl) return;
+        switch (@typeInfo(T)) {
+            .@"struct" => |st| inline for (st.fields) |fl| {
+                if (fl.is_comptime) continue;
+                if (comptime mayHoldExpr(fl.type)) self.walk(fl.type, &@field(ptr.*, fl.name));
+            },
+            .@"union" => |u| if (u.tag_type != null) {
+                switch (ptr.*) {
+                    inline else => |*payload| if (comptime mayHoldExpr(@TypeOf(payload.*))) {
+                        self.walk(@TypeOf(payload.*), payload);
+                    },
+                }
+            },
+            .optional => |o| if (ptr.*) |*inner| self.walk(o.child, inner),
+            .pointer => |pt| switch (pt.size) {
+                .one => if (comptime mayHoldExpr(pt.child)) self.walk(pt.child, ptr.*),
+                .slice => if (comptime mayHoldExpr(pt.child)) {
+                    for (ptr.*) |*e| self.walk(pt.child, e);
+                },
+                else => {},
+            },
+            .array => |arr| if (comptime mayHoldExpr(arr.child)) {
+                for (ptr) |*e| self.walk(arr.child, e);
+            },
+            else => {},
+        }
+    }
+};
+
 const Substituter = struct {
     arena: std.mem.Allocator,
     answers: *const std.AutoHashMapUnmanaged(ast.Loc, *const ast.Expr),
+    inserts: ?*const std.AutoHashMapUnmanaged(ast.Loc, []const ast.CallArg) = null,
 
     fn copy(self: Substituter, comptime T: type, ptr: *const T) Error!T {
         if (T == ast.Expr) {
@@ -679,8 +839,20 @@ const Substituter = struct {
                 if (c.is_builtin and std.mem.eql(u8, c.callee, callee)) {
                     if (self.answers.get(ptr.call.loc)) |answer| return answer.*;
                 }
+                if (self.inserts) |ins| if (ins.get(ptr.call.loc)) |extra| {
+                    var out = try self.copyNode(T, ptr);
+                    const args = try self.arena.alloc(ast.CallArg, out.call.kind.call.args.len + extra.len);
+                    @memcpy(args[0..out.call.kind.call.args.len], out.call.kind.call.args);
+                    @memcpy(args[out.call.kind.call.args.len..], extra);
+                    out.call.kind.call.args = args;
+                    return out;
+                };
             }
         }
+        return self.copyNode(T, ptr);
+    }
+
+    fn copyNode(self: Substituter, comptime T: type, ptr: *const T) Error!T {
         if (comptime !mayHoldExpr(T)) return ptr.*;
         switch (@typeInfo(T)) {
             .@"struct" => |s| {
