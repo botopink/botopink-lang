@@ -1653,7 +1653,11 @@ fn emitWatPass(
         },
         // A method of a generic `type` (`Dict<K, V>.at`), by the symbol its
         // calls emit.
-        .type_ => |t| if (t.genericParams.len > 0) for (try em.methodsWithDefaults(t)) |m| {
+        // A generic method of a type with no type parameter (`MathOps.first<T>`)
+        // is one in a GC module too, whose one body holds `T` as an `unknown`
+        // (front 164 s2 P3).
+        .type_ => |t| for (try em.methodsWithDefaults(t)) |m| {
+            if (t.genericParams.len == 0 and !(plan.mode == .gc and m.genericParams.len > 0)) continue;
             if (m.body == null or m.is_declare or m.isExternal() or m.isHost()) continue;
             const sym = try std.fmt.allocPrint(ar0, "{s}_{s}", .{ t.name, m.name });
             try em.generic_methods.put(em.alloc, sym, .{
@@ -1794,6 +1798,7 @@ fn emitWatPass(
         if (em.gc_tagged_used) try em.gcTaggedPrinter();
         // After the tagged printer, whose declarations' printers may ask for it.
         if (em.gc_ebox_used) try em.gcEboxPrinter();
+        if (em.gc_arrs_used) try em.gcArrsPrinter();
         try items.appendSlice(ar, em.gc_pr_funcs.items);
     }
     const program_hi = items.items.len;
@@ -2191,6 +2196,8 @@ const Emitter = struct {
     /// Front 164 s2 P2b — `$__print_ebox` (the printer of an all-unit enum's
     /// box by its names) is asked for.
     gc_ebox_used: bool = false,
+    /// The unknown printer calls `$__print_arrs` (front 164 s2 P3).
+    gc_arrs_used: bool = false,
     /// Front 164 s2 P2b — the functions a linked module's declarations
     /// brought into a GC module.
     gc_linked_fns: std.StringHashMapUnmanaged(void) = .empty,
@@ -5945,6 +5952,12 @@ const Emitter = struct {
         try self.emit(.{ .local_get = "v" });
         try self.emit(.{ .call = "__print_ebox" });
         try self.gcWhenReturn(&.{});
+        // An array of words or floats, or of anything else (a tuple is the
+        // same type, so it prints as an array: no tuple enters a slot).
+        self.gc_arrs_used = true;
+        try self.emit(.{ .local_get = "v" });
+        try self.emit(.{ .call = "__print_arrs" });
+        try self.gcWhenReturn(&.{});
         const Arm = struct { vt: ValType, print: Instr };
         const arms = [_]Arm{
             .{ .vt = bb, .print = b.helper(.print_bool_raw) },
@@ -7844,6 +7857,45 @@ const Emitter = struct {
 
     /// `__print_ebox(v: anyref) -> i32`: when `v` is an all-unit enum's box
     /// (`GcTy.ebox`), its variant's name written and `1`; else `0`.
+    /// `__print_arrs(v: anyref) -> i32`: when `v` is an array of words, of
+    /// floats or of `unknown`s, written as its shape's printer writes it and
+    /// `1`; else `0`.
+    fn gcArrsPrinter(self: *Emitter) anyerror!void {
+        var c: Capture = .{};
+        self.open(&c);
+        var i: usize = 0;
+        while (i < self.gc_types.items.len) : (i += 1) {
+            const t = self.gc_types.items[i];
+            if (t != .arr) continue;
+            const k: u16 = @intCast(i + 1);
+            const vt = ValType.def(k);
+            const px = try self.gcPrinter(switch (t.arr) {
+                .i32 => "[i",
+                .f64 => "[f",
+                .any => "[U",
+            });
+            var hit: Capture = .{};
+            self.open(&hit);
+            try self.emit(.{ .local_get = "v" });
+            try self.emit(.{ .ref_cast = vt });
+            try self.emit(.{ .call = px });
+            try self.emit(one);
+            try self.emit(.@"return");
+            const hit_seq = self.seal(&hit, .terminated);
+            try self.emit(.{ .local_get = "v" });
+            try self.emit(.{ .ref_test = vt });
+            try self.emit(.{ .@"if" = .{ .then = .{ .seq = hit_seq } } });
+        }
+        try self.emit(zero);
+        const body = self.seal(&c, .{ .value = .i32 });
+        try self.gc_pr_funcs.append(self.alloc, .{ .func = try self.builder().func(.{
+            .name = "__print_arrs",
+            .params = &.{wat.Builder.param("v", .anyref)},
+            .result = .i32,
+            .body = body,
+        }) });
+    }
+
     fn gcEboxPrinter(self: *Emitter) anyerror!void {
         var c: Capture = .{};
         self.open(&c);
@@ -12807,8 +12859,11 @@ const Emitter = struct {
             },
         };
         const from = self.wasmTypeOf(last.expr);
+        // A statement that answers nothing (`yield`, a void call) left the
+        // zero of the case's result, which needs no conversion.
+        const answers_nothing = self.mode == .gc and self.exprTail(last.expr) == .none;
         const tail = try self.emitStmt(last, true);
-        if (tail == .value) try self.emitConvert(from, self.cur_result);
+        if (tail == .value and !answers_nothing) try self.emitConvert(from, self.cur_result);
         return tail;
     }
 
@@ -18233,6 +18288,13 @@ const Emitter = struct {
     /// function type's, else the lambda a known closure local holds.
     fn gcValueCallRepr(self: *Emitter, cc: anytype) ?Repr {
         if (self.gcCalleeFnType(cc)) |d| return self.gcSigRepr(d.ft.function.returnType.*, d.gps);
+        // A lambda stored in a field a type parameter types: the lambda the
+        // constructor was given.
+        if (cc.calleeExpr == null and cc.receiver != null) if (self.fieldClosureOf(cc.receiver.?.*, cc.callee)) |li| {
+            const l = self.lambdas.items[li];
+            if (l.ret_ft) |rt| return self.gcSigRepr(rt, null);
+            return self.lambdaTailType(l.body);
+        };
         if (cc.calleeExpr == null and cc.receiver == null and self.locals.contains(cc.callee)) {
             if (self.closure_locals.get(cc.callee)) |li| {
                 const l = self.lambdas.items[li];
@@ -19721,6 +19783,10 @@ const Emitter = struct {
                 // a local holding a function: reading the field back answers
                 // that type, and a call through it its return.
                 if (self.typeRefOf(arg.value.*)) |at| break at;
+                // An array literal in a type parameter's slot: its array type
+                // (`Box(value: [1, 2])` is a `Box<i32[]>`), so a read of the
+                // slot casts to the array it holds (front 164 s2 P3).
+                if (self.mode == .gc and isArrayLit(arg.value.*)) if (try self.eqTypeOf(arg.value.*)) |et| if (et == .array) break et;
             } else return null;
         }
         return .{ .generic = .{ .name = cc.callee, .args = args, .is_builtin = false } };
@@ -21288,11 +21354,20 @@ const Emitter = struct {
                 // against the declared type.
                 if (ftref == .function and arg.value.* == .function) self.expected_fn = ftref;
                 defer self.expected_fn = null;
+                const lambda_at: u32 = @intCast(self.lambdas.items.len);
                 if (gps) |g| if (mentionsGeneric(ftref, g)) {
                     try self.gcGenericArg(ftref, g, fr, arg.value.*);
+                    // A lambda in a field a type parameter types takes its
+                    // parameters from the call through the field
+                    // (`field_closures`).
+                    if (arg.value.* == .function and self.lambdas.items.len > lambda_at) {
+                        try self.ctor_lambdas.append(self.reg_arena.allocator(), .{ .field = fname, .idx = lambda_at });
+                        if (ftref == .named) @memset(self.lambdas.items[lambda_at].param_known, false);
+                    }
                     continue;
                 };
                 if (self.boxesInto(ftref, arg.value.*)) try self.lowerBoxedInto(ftref, arg.value.*) else try self.lowerCoerced(arg.value.*, fr);
+                if (arg.value.* == .function and self.lambdas.items.len > lambda_at) try self.ctor_lambdas.append(self.reg_arena.allocator(), .{ .field = fname, .idx = lambda_at });
             } else {
                 // A generic field with no argument: linear memory prints its
                 // word by `i` (`genericShapes`), which an `anyref` cannot.
@@ -21388,7 +21463,14 @@ const Emitter = struct {
                 // what it is — a string quoted, a record or variant by its
                 // printer —, an array or a tuple only when its shape has no
                 // word the slot could not name.
-                if (fr.ref == .unknown and (vr.ref == .arr or vr.ref == .tuple)) return self.gcFail("an array or tuple in a type parameter's slot");
+                if (fr.ref == .unknown and vr.ref == .tuple) return self.gcFail("a tuple in a type parameter's slot");
+                if (fr.ref == .unknown and vr.ref == .arr) {
+                    // An array of words, floats or strings prints as its
+                    // elements do (`$__print_arrs`); a bool array's words
+                    // would print as numbers, a nested one is ambiguous.
+                    const sh = (try self.printShapeOf(value)) orelse return self.gcFail("an array in a type parameter's slot of no print shape");
+                    if (!(std.mem.eql(u8, sh, "[i") or std.mem.eql(u8, sh, "[f") or std.mem.eql(u8, sh, "[s"))) return self.gcFail("an array of another shape in a type parameter's slot");
+                }
                 if (fr.ref == .arr or fr.ref == .tuple) {
                     const sh = (try self.printShapeOf(value)) orelse return self.gcFail("a generic container of no print shape");
                     // Each element prints by its box (`U`): a bool, an
@@ -21432,6 +21514,12 @@ const Emitter = struct {
             'b' => {
                 try self.lowerCoerced(value, .bool);
                 try self.gcBox(.bool);
+            },
+            // A float goes in its own box, which the slot's printer and a
+            // reader at the type argument both know (front 164 s2 P3).
+            'f' => {
+                try self.lowerCoerced(value, .f64);
+                try self.gcBox(.f64);
             },
             else => return self.gcFail("a generic argument with no box"),
         }
@@ -23851,6 +23939,10 @@ const Emitter = struct {
     fn eqTypeOf(self: *Emitter, e: ast.Expr) anyerror!?ast.TypeRef {
         if (self.genericResultOf(e)) |a| return self.eqTypeOf(a);
         const ar = self.arena();
+        // A GC module's generic record or enum keeps the type arguments the
+        // program wrote (`Pair<i32, string>`), which its slots are compared at.
+        if (self.mode == .gc) if (self.typeRefOf(e)) |t0| if (t0 == .generic and !t0.generic.is_builtin and
+            (self.record_generics.contains(t0.generic.name) or self.enum_generics.contains(t0.generic.name))) return t0;
         if (e == .identifier and e.identifier.kind == .ident) {
             if (self.eq_local_types.get(self.resolveName(e.identifier.kind.ident))) |t| return t;
         }

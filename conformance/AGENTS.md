@@ -1748,10 +1748,11 @@ every target since 144 B-45, B-50 and `modules/generic_method_array_join`.
 four-target cells for numbers wasm answered wrongly at exit 0 — `modules/float_shortest_text` (a
 float's shortest round-trip text, where erlang and beam agree with commonJS), `modules/float_slot_keeps_f64`
 (a float in an array, a tuple, a payload, a record field, a `?f64`, a capture), `modules/i64_full_width`
-(`i64` locals, parameters, fields, `?i64`, `u32`, a literal past `i32`) — and five cells refused on
+(`i64` locals, parameters, fields, `?i64`, `u32`, a literal past `i32`) — and four cells refused on
 wasm by a snapshot departure, each a value wasm has no reader for yet: `modules/optional_index_arithmetic`
-(`xs[i] + 1`), `modules/i64_in_array_slot`, `modules/fn_value_float_argument`, `modules/generic_field_float`,
-`modules/untyped_array_float_push`.
+(`xs[i] + 1`), `modules/i64_in_array_slot`, `modules/fn_value_float_argument`,
+`modules/untyped_array_float_push` (`modules/generic_field_float` answers `1.5` on wasm since 164 s2 P3: a
+float goes into a generic slot in its box in a GC module).
 
 `front/int-overflow` (decision 264: an integer result outside its type aborts on every target) adds
 eight abort cells, each `abort` plus `stderr` naming `integer overflow: <op> on <type> at

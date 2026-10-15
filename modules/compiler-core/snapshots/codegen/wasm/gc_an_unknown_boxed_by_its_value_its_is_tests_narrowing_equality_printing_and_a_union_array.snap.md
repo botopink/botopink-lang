@@ -497,6 +497,13 @@ pub fn main() {
       )
     )
     local.get $v
+    call $__print_arrs
+    (if
+      (then
+    return
+      )
+    )
+    local.get $v
     ref.test (ref null $box_bool)
     (if
       (then
@@ -565,6 +572,13 @@ pub fn main() {
     )
     local.get $v
     call $__print_ebox
+    (if
+      (then
+    return
+      )
+    )
+    local.get $v
+    call $__print_arrs
     (if
       (then
     return
@@ -670,6 +684,20 @@ pub fn main() {
     unreachable
   )
   (func $__print_ebox (param $v anyref) (result i32)
+    i32.const 0
+  )
+  (func $__print_arrs (param $v anyref) (result i32)
+    local.get $v
+    ref.test (ref null $arr_any)
+    (if
+      (then
+    local.get $v
+    ref.cast (ref null $arr_any)
+    call $__pr0
+    i32.const 1
+    return
+      )
+    )
     i32.const 0
   )
   ;; Scratch layout below the data section (which starts at 256):
