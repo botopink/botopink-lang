@@ -1806,7 +1806,7 @@ block's defers run:
 
 <!-- example: modules/defer_return_value_before_defers -->
 
-A reassignment inside a nested arm counts, a value `case`'s included: an arm that reassigns a `var` and
+A reassignment inside a nested arm counts, a value `case`'s or `if`'s included: an arm that reassigns a `var` and
 then panics hands the `defer` the new value:
 
 <!-- example: modules/defer_reads_var_set_in_arm -->
@@ -1891,6 +1891,11 @@ A condition is a whole expression, `&&` and `||` included — the grammar's own
 parentheses close it, so nothing has to be bound to a `val` first:
 
 <!-- example: modules/if_else_if -->
+
+A value `if` keeps what its branches reassign: a `var` set in whichever branch ran, an `else if`
+chain's included, holds that value after the `if`:
+
+<!-- example: modules/value_if_reassigns_var -->
 
 `if` on an optional unwraps it in the then-branch:
 

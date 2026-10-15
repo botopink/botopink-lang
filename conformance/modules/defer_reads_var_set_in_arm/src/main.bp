@@ -49,6 +49,19 @@ fn viaValueCase(n: i32) -> i32 {
     return r;
 }
 
+fn viaValueIf(c: bool) -> i32 {
+    var f = "a";
+    defer @print("close " + f);
+    val r = if (c) {
+        f = "h";
+        boom();
+    } else {
+        f = "i";
+        4;
+    };
+    return r;
+}
+
 fn show(r: @Result<i32, Failure>) {
     case r {
         Ok(v) -> @print("Ok " + v.toString());
@@ -62,4 +75,6 @@ pub fn main() {
     show(failure.attempt({ -> viaCase(1) }));
     show(failure.attempt({ -> viaValueCase(0) }));
     show(failure.attempt({ -> viaValueCase(1) }));
+    show(failure.attempt({ -> viaValueIf(true) }));
+    show(failure.attempt({ -> viaValueIf(false) }));
 }

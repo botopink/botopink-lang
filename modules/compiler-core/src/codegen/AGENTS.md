@@ -3656,7 +3656,7 @@ computed before it.
 - **commonJS** — `try { rest } finally { deferred }` (`js_ast.Stmt.try_finally`; `buildStmts`, `foldDefers`).
 - **erlang** — `try rest after deferred end` as the body's last statement (`erlang.zig` `deferTry`; `beam/AGENTS.md`).
   The `var`s the rest reassigns and the deferred expression reads (`collectMutations`, and `collectNestedAssigns` for a
-  value `case` bound by a statement, `val r = case … { 0 { f = …; … } }`) travel in the process dictionary, written by
+  value `case` or `if` bound by a statement, `val r = case … { 0 { f = …; … } }`) travel in the process dictionary, written by
   `deferPuts` after each statement and inside the arm where the reassignment happens. A deferred expression that
   rebinds a name (`mutatingExpr`) runs for its effects: its group is not bound in the `after` (erlc's "variable is
   unused").
@@ -3683,6 +3683,9 @@ computed before it.
   message, writes the code, and `throw`s it again); the deferred code is written outside the region on both paths. A
   `defer` in another list (a lambda inlined by a higher-order call, an `if` branch that answers a typed value) is a
   refusal located at it, never a silent wrong order.
+
+A value `if` whose branches reassign outer `var`s answers `{V, Group}` from each branch and rebinds the group
+  (`mutatingIfValueExpr`, as a value `case` does; `modules/value_if_reassigns_var`).
 
 Cells: `defer_block_end_reverse_order`, `defer_scope_is_block`, `defer_reads_latest_value`, `defer_reads_var_set_in_arm`,
 `defer_return_value_before_defers`, `defer_in_loop_break_continue`, `defer_try_and_throw_propagate`,

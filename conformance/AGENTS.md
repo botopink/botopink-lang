@@ -1884,7 +1884,7 @@ lowered a method's trailing lambda wrong.
 
 Decision 539 (`defer`) adds nine cells on all four targets and five refusals. `modules/defer_block_end_reverse_order`
 (the end of the block, reverse order), `modules/defer_scope_is_block` (a bare block runs its own), `modules/defer_reads_latest_value`
-(the expression is evaluated when it runs), `modules/defer_reads_var_set_in_arm` (a reassignment inside a nested arm, a value `case`'s included, reaches the defer when the arm panics), `modules/defer_return_value_before_defers` (`return n` is computed before a defer
+(the expression is evaluated when it runs), `modules/value_if_reassigns_var` (a `var` a value `if` reassigns in a branch, `else if` included, holds it after the `if`), `modules/defer_reads_var_set_in_arm` (a reassignment inside a nested arm, a value `case`'s or `if`'s included, reaches the defer when the arm panics), `modules/defer_return_value_before_defers` (`return n` is computed before a defer
 that changes `n`), `modules/defer_in_loop_break_continue` (the end of the round, `continue`, `break`),
 `modules/defer_try_and_throw_propagate` (a propagating `try` and a `throw` out of a `@Result` fn),
 `modules/defer_panic_attempt_catches` (a panic `attempt` catches; wasm runs with exceptions on, decision 518),

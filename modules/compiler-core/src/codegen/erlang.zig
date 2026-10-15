@@ -6604,7 +6604,7 @@ const Emitter = struct {
         return .{ .stmts = stmts.items };
     }
 
-    /// Decision 539 (amended) — the locals a value `case` bound by a statement
+    /// Decision 539 (amended) — the locals a value `case` or `if` bound by a statement
     /// (`val r = case … { 0 { f = …; … } }`) reassigns in its arms, added to
     /// `out` once: `collectMutations` reads only a `case` written as a
     /// statement. The arms' own `if`s and loops are `collectMutations`' reading.
@@ -6618,7 +6618,9 @@ const Emitter = struct {
                 },
                 else => continue,
             };
-            if (value != .collection or value.collection.kind != .case) continue;
+            const is_case = value == .collection and value.collection.kind == .case;
+            const is_if = value == .branch and value.branch.kind == .if_;
+            if (!is_case and !is_if) continue;
             try this.collectMutations(gpa, &.{.{ .expr = value }}, &.{}, out);
         }
     }
@@ -8525,6 +8527,13 @@ const Emitter = struct {
 
             .branch => |br| switch (br.kind) {
                 .if_ => |i| {
+                    // A value `if` whose branches reassign variables of the
+                    // function answers them beside its value, as a value
+                    // `case` does (decision 525).
+                    var mutated: std.ArrayListUnmanaged([]const u8) = .empty;
+                    try this.collectMutations(b.arena, &.{.{ .expr = e }}, &.{}, &mutated);
+                    if (i.binding) |bn| removeName(&mutated, bn);
+                    if (mutated.items.len > 0) return this.mutatingIfValueExpr(b, i, mutated.items);
                     // The binding form (`if (mb) { b -> … }`) matches on the
                     // value itself (`undefined -> …; B -> …`), so it keeps the
                     // raw subject; only the boolean form needs the null test.
@@ -9683,12 +9692,24 @@ const Emitter = struct {
     /// an `if` / `else` at the end of an arm of a `case` used as a value whose
     /// arms reassign `names` (decision 525); the binding form matches
     /// `undefined` first, as `mutatingIfExpr` does.
+    /// `element(1, {_, Group'} = case Cond of true -> …, {V, Group}; _ -> … end)` —
+    /// an `if` used as a value whose branches reassign `names` (the value
+    /// form of `mutatingIfExpr`); the group's fresh versions are bound once
+    /// both branches were built.
+    fn mutatingIfValueExpr(this: *Emitter, b: Ast.Builder, if_node: anytype, names: []const []const u8) anyerror!Ast.Expr {
+        const raw = try this.ifValueGroupExpr(b, if_node, names);
+        const target = try this.bindVarGroupExpr(b, names);
+        const bound = try b.match(try b.tuple(&.{ Ast.Expr.v("_"), target }), raw);
+        return b.remote("erlang", "element", &.{ .{ .number = "1" }, bound });
+    }
+
+    /// An `if` without `else` answers `{ok, Group}` at the versions it found.
     fn ifValueGroupExpr(this: *Emitter, b: Ast.Builder, if_node: anytype, names: []const []const u8) anyerror!Ast.Expr {
         var snapshot = try this.var_current.clone();
         defer snapshot.deinit();
         var clauses: std.ArrayListUnmanaged(Ast.Clause) = .empty;
         const arm_indent = this.indent + 2;
-        const els = if_node.else_.?;
+        const els: []const ast.Stmt = if_node.else_ orelse &.{};
         if (if_node.binding) |name| {
             const subject = try this.exprNode(b, if_node.cond.*);
             try clauses.append(b.arena, .{ .patterns = try b.exprs(&.{Ast.Expr.a("undefined")}), .body = try this.armWithValueGroup(b, els, names, arm_indent) });

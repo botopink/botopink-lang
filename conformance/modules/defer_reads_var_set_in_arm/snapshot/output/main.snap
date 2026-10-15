@@ -9,3 +9,7 @@ out close e
 out Error panic: boom
 out close g
 out Ok 3
+out close h
+out Error panic: boom
+out close i
+out Ok 4
