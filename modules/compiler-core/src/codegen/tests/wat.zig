@@ -1745,6 +1745,32 @@ test "wat: refusal ---- dispatch by value over an all-unit enum implementer is r
     , "`Color` is an all-unit enum", 18, 14);
 }
 
+// A behavior method declared with no return, called on a behavior-typed value
+// as a function's last statement: the dispatcher answers nothing, and the
+// function took a `(result i32)` it never filled — wasmtime refused the module
+// (`expected i32 but nothing on stack`) where commonJS, erlang and beam printed.
+test "wat: behavior ---- a method with no return dispatched by value as a body's tail" {
+    try h.assertWasmRunLog(std.testing.allocator,
+        \\behavior Shuttable {
+        \\    fn shut(self: Self);
+        \\}
+        \\type Door(name: string) implement Shuttable {
+        \\    fn shut(self: Self) {
+        \\        @print("shut " + self.name);
+        \\    }
+        \\}
+        \\fn doShut(c: Shuttable) {
+        \\    c.shut();
+        \\}
+        \\pub fn main() {
+        \\    doShut(Door(name: "front"));
+        \\}
+    ,
+        \\shut front
+        \\
+    );
+}
+
 // A generic body is the one a call reaches when no specialisation bound its
 // type parameters. `x is string` over a `T` now asks for a copy per bound type
 // (`callsMethodOn`), so `shown(1)` / `shown("s")` / `shown(true)` answer from

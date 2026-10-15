@@ -1893,6 +1893,12 @@ consumer's `break` and the end of the stream both end in the same two lines, so 
 the refusals, each located at the jump, are `modules/defer_refuses_return` (`defer-return`), `defer_refuses_break`
 (`defer-break`), `defer_refuses_continue` (`defer-continue`), `defer_refuses_yield` (`defer-yield`) and `defer_refuses_await`
 (`defer-await`). `throw` and `try` in a defer body are not refused (539 (5) names neither).
+Decision 539 (6) (`Closeable` ambient, 144 B-96) adds `modules/ambient_behavior_parameter` (`Closeable` and `Display`
+as a parameter's type and an array's element type with no import, each call answered by the implementer, on all four
+targets — refused `unknown type` on the parent), `modules/ambient_behavior_implement_missing_method` (an inline
+`implement Closeable` with no `close`, refused at the type — accepted on the parent) and
+`modules/behavior_method_no_return_by_value` (a method declared with no return dispatched by value as a function's last
+statement — wasm's module was refused at load on the parent).
 
 `fix-js-gaps` (gaps `libs/validation` met) adds `modules/imported_variant_positional_payload` —
 `Circle(r)`, `Rect(w, h)`, `Two(l, r)` and a `val assert Circle(r)` over enums of a sibling module, on

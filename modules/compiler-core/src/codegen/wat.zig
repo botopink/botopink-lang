@@ -7095,6 +7095,18 @@ const Emitter = struct {
                         if (isVoidBuiltinCall(cc)) break :blk .none;
                         break :blk .value;
                     }
+                    // A call the value answers (`lowerBehaviorDispatch`)
+                    // pushes what its dispatcher answers — nothing for a
+                    // method declared with no return (`c.close()` on a
+                    // `Closeable`), which gave the enclosing `fn` a
+                    // `(result i32)` it never filled.
+                    if (cc.receiver != null and self.instance_lowerings.get(c.loc) != null and self.dispatchesByValue(c.loc)) {
+                        const impls = self.behaviorImplementers(cc.callee, cc.args.len) catch break :blk .value;
+                        if (impls.len > 0) {
+                            const first = std.fmt.allocPrint(self.arena(), "{s}_{s}", .{ impls[0], cc.callee }) catch break :blk .value;
+                            if (self.fn_sigs.get(first)) |sig| break :blk if (sig.result != null) Tail.value else Tail.none;
+                        }
+                    }
                     if (self.primKindAt(cc, c.loc)) |k| {
                         const res = self.primRes(k, cc) orelse break :blk .value;
                         break :blk if (res == .none) Tail.none else Tail.value;

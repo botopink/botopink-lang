@@ -925,8 +925,9 @@ pub fn inferProgramTyped(env: *Env, program: ast.Program) InferError![]TypedBind
 /// Runs after type registration so user-defined interface and field types are
 /// already known. **Both** forms are checked for method coverage — the standalone
 /// `implement … for …` block and the inline `type … implement I { }` clause
-/// (decision 58). Interfaces that are not declared in this program (e.g. stdlib
-/// interfaces) are skipped — their method sets are not visible.
+/// (decision 58). Interfaces neither declared in this program nor ambient
+/// (decision 539 (6): `Display`, `Closeable`) — an imported one — are skipped:
+/// their method sets are not visible here.
 fn validateProgram(env: *Env, program: ast.Program) InferError!void {
     var interfaces = std.StringHashMap(ast.BehaviorDecl).init(env.arena);
     defer interfaces.deinit();
@@ -934,6 +935,14 @@ fn validateProgram(env: *Env, program: ast.Program) InferError!void {
         .behavior => |d| try interfaces.put(d.name, d),
         else => {},
     };
+    // Decision 539 (6) — an ambient behavior of `builtins.d.bp` (`Display`,
+    // `Closeable`) is checked as one this program declares, unless the
+    // program declares or imports its own of that name.
+    var ait = env.ambientBehaviorDecls.iterator();
+    while (ait.next()) |e| {
+        if (interfaces.contains(e.key_ptr.*) or env.importedBehaviorDecls.contains(e.key_ptr.*)) continue;
+        try interfaces.put(e.key_ptr.*, e.value_ptr.*);
+    }
 
     for (program.decls) |decl| switch (decl) {
         .implement => |impl| try validateImplement(env, impl, interfaces),
@@ -960,11 +969,10 @@ fn validateProgram(env: *Env, program: ast.Program) InferError!void {
 /// `implement <Behavior> for <this type>` block in the same program: writing both
 /// halves is legal and the inline clause is what names the contract.
 ///
-/// Interfaces this program does not declare are skipped, exactly as
-/// `validateImplement` skips them. That leaves an ambient `libs/std` behavior
-/// unchecked in both forms — the block form's existing blind spot, reported rather
-/// than widened here, because closing it needs the interface-member registry and
-/// would red every implementation the registry cannot open.
+/// Interfaces this program neither declares nor reads ambient are skipped,
+/// exactly as `validateImplement` skips them; an ambient behavior of
+/// `builtins.d.bp` (`Display`, `Closeable`) is checked as a declared one
+/// (decision 539 (6)).
 fn validateInlineImplements(
     env: *Env,
     td: ast.TypeDecl,
@@ -10592,7 +10600,7 @@ fn typeImplementsBehavior(env: *Env, typeName: []const u8, behavior: []const u8)
 fn isBehaviorType(env: *Env, ty: *T.Type) bool {
     const t = ty.deref();
     if (t.* != .named) return false;
-    return env.assocInterfaceDecls.contains(t.named.name) or env.importedBehaviorDecls.contains(t.named.name);
+    return env.behaviorDecl(t.named.name) != null;
 }
 
 /// 01 R4 — whether behavior `from` is `to` or extends it, through the
@@ -10600,7 +10608,7 @@ fn isBehaviorType(env: *Env, ty: *T.Type) bool {
 fn behaviorReaches(env: *Env, from: []const u8, to: []const u8, depth: usize) bool {
     if (std.mem.eql(u8, from, to)) return true;
     if (depth >= 16) return false;
-    const decl = env.assocInterfaceDecls.get(from) orelse env.importedBehaviorDecls.get(from) orelse return false;
+    const decl = env.behaviorDecl(from) orelse return false;
     for (decl.extends) |parent| {
         if (behaviorReaches(env, parent, to, depth + 1)) return true;
     }
@@ -13230,7 +13238,7 @@ fn typeAnswersMember(env: *Env, td: envMod.TypeDef, member: []const u8) bool {
 /// the value's own). `depth` bounds a cyclic `extends` chain.
 fn behaviorDeclaresBodyless(env: *Env, iface: []const u8, method: []const u8, depth: usize) bool {
     if (depth >= 16) return false;
-    const decl = env.assocInterfaceDecls.get(iface) orelse env.importedBehaviorDecls.get(iface) orelse return false;
+    const decl = env.behaviorDecl(iface) orelse return false;
     for (decl.methods) |m| {
         if (std.mem.eql(u8, m.name, method)) return !m.is_default and !m.is_declare and m.body == null;
     }
@@ -13246,7 +13254,7 @@ const BehaviorMethodFound = struct { decl: ast.BehaviorDecl, method: ast.Behavio
 /// `method`, with the behavior that declares it.
 fn behaviorBodylessMethod(env: *Env, iface: []const u8, method: []const u8, depth: usize) ?BehaviorMethodFound {
     if (depth >= 16) return null;
-    const decl = env.assocInterfaceDecls.get(iface) orelse env.importedBehaviorDecls.get(iface) orelse return null;
+    const decl = env.behaviorDecl(iface) orelse return null;
     for (decl.methods) |m| {
         if (std.mem.eql(u8, m.name, method)) {
             if (m.is_default or m.is_declare or m.body != null) return null;
@@ -13280,7 +13288,7 @@ fn behaviorMethodCallType(
 /// `method`, with the behavior that declares it.
 fn behaviorDefaultMethod(env: *Env, iface: []const u8, method: []const u8, depth: usize) ?BehaviorMethodFound {
     if (depth >= 16) return null;
-    const decl = env.assocInterfaceDecls.get(iface) orelse env.importedBehaviorDecls.get(iface) orelse return null;
+    const decl = env.behaviorDecl(iface) orelse return null;
     for (decl.methods) |m| {
         if (std.mem.eql(u8, m.name, method)) {
             if (!m.is_default or m.body == null) return null;
@@ -13370,7 +13378,7 @@ fn receiverHasMethod(env: *Env, typeName: []const u8, method: []const u8) bool {
 /// cyclic `extends` chain.
 fn behaviorDeclaresSelfMethod(env: *Env, iface: []const u8, method: []const u8, depth: usize) bool {
     if (depth >= 16) return false;
-    const decl = env.assocInterfaceDecls.get(iface) orelse env.importedBehaviorDecls.get(iface) orelse return false;
+    const decl = env.behaviorDecl(iface) orelse return false;
     for (decl.methods) |m| {
         if (std.mem.eql(u8, m.name, method)) return m.params.len > 0 and std.mem.eql(u8, m.params[0].name, "self");
     }
@@ -13384,7 +13392,7 @@ fn behaviorDeclaresSelfMethod(env: *Env, iface: []const u8, method: []const u8, 
 /// a cyclic `extends` chain.
 fn behaviorDeclaresMember(env: *Env, iface: []const u8, member: []const u8, depth: usize) bool {
     if (depth >= 16) return false;
-    const decl = env.assocInterfaceDecls.get(iface) orelse env.importedBehaviorDecls.get(iface) orelse return false;
+    const decl = env.behaviorDecl(iface) orelse return false;
     for (decl.methods) |m| {
         if (std.mem.eql(u8, m.name, member)) return true;
     }

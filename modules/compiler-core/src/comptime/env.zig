@@ -1365,6 +1365,13 @@ pub const Env = struct {
     /// method (`InstanceLowering.behavior`). Kept apart from
     /// `assocInterfaceDecls`, whose entries codegen emits.
     importedBehaviorDecls: std.StringHashMapUnmanaged(ast.BehaviorDecl) = .empty,
+    /// Decision 539 (6) — the ambient behaviors of `builtins.d.bp` a program
+    /// names with no import (`Display`, `Closeable`), by name. Read last, after a
+    /// module's own and its imported behaviors: a parameter typed by one
+    /// resolves (`fn f(c: Closeable)`), a call on such a value finds the method,
+    /// and an inline `implement` of one is checked against its declaration. A
+    /// module's own `behavior` of the same name shadows it. Never emitted.
+    ambientBehaviorDecls: std.StringHashMapUnmanaged(ast.BehaviorDecl) = .empty,
     /// The `Ok(…)` / `Error(…)` patterns matched against a `@Result` subject,
     /// keyed by the arm's `patternLoc` (a `val assert`'s own loc). The
     /// transform writes each as `Result.Ok` / `Result.Error`, so a backend
@@ -1936,6 +1943,7 @@ pub const Env = struct {
             .indexRewrites = std.AutoHashMap(ast.Loc, *const ast.Expr).init(arena),
             .optionalNullCases = std.AutoHashMap(ast.Loc, []const u8).init(arena),
             .assocInterfaceDecls = try tmpl.assocInterfaceDecls.cloneWithAllocator(arena),
+            .ambientBehaviorDecls = try tmpl.ambientBehaviorDecls.clone(arena),
             .usedAssocInterfaces = std.StringHashMap(void).init(arena),
             .dispatchRewrites = std.AutoHashMap(ast.Loc, []const u8).init(arena),
             .jsMethodRenames = std.AutoHashMap(ast.Loc, []const u8).init(arena),
@@ -2238,6 +2246,13 @@ pub const Env = struct {
         return self.typeDefs.get(name);
     }
 
+    /// The `behavior` declaration `name` names: the module's own (std's
+    /// registered ones included), else an imported one, else an ambient one
+    /// of `builtins.d.bp` (decision 539 (6)).
+    pub fn behaviorDecl(self: *const Env, name: []const u8) ?ast.BehaviorDecl {
+        return self.assocInterfaceDecls.get(name) orelse self.importedBehaviorDecls.get(name) orelse self.ambientBehaviorDecls.get(name);
+    }
+
     /// The type alias `name` names, if one is in scope.
     pub fn lookupTypeAlias(self: *const Env, name: []const u8) ?ast.TypeAliasDecl {
         return self.typeAliases.get(name);
@@ -2478,6 +2493,8 @@ pub const Env = struct {
             // A `behavior` names a type in annotation position (`-> Counter`)
             // without being a typedef: its decl is recorded here.
             if (self.assocInterfaceDecls.get(p.name) != null) continue;
+            // An ambient behavior of `builtins.d.bp` (decision 539 (6)).
+            if (self.ambientBehaviorDecls.contains(p.name)) continue;
             if (isCompilerKnownTypeName(p.name)) continue;
             const e = @import("error.zig").TypeError.unknownTypeName(p.name);
             self.lastError = if (p.loc) |l| e.withLoc(l) else e;

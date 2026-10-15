@@ -1547,6 +1547,10 @@ is no longer used for a behavior call — `Array<Request>`'s elements were all
 read as the first literal's type. A lambda written against a declared function
 type also types a record parameter (`Lambda.param_rec`), so `out.tag` reads
 `Out`'s slot. `conformance/modules/behavior_method_dispatch_by_value`.
+`exprTail` reads the same first implementer's signature for a call inference
+placed (`.by_value`, or a `.type_` naming no record or enum): a method declared
+with no return pushes nothing, so a function ending in `c.close()` takes no
+`(result i32)` it never fills (`conformance/modules/behavior_method_no_return_by_value`).
 A `.by_value` method whose name a function of the module or its imports also
 holds (`r.find(1)` beside std `context`'s `find`, which the scope lowering links)
 dispatches by the value before the function is considered

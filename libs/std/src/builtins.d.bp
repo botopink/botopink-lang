@@ -178,7 +178,9 @@ pub behavior Display {
 // the writer with `defer` — nothing checks that it is, and the compiler names
 // no std type and holds no error tied to one. A plain behavior for generic
 // code, ambient as `Display` is: `io.fs`'s `File` writes `implement Closeable`
-// and a program takes `c: Closeable` with no import.
+// and a program takes `c: Closeable` with no import; an `implement Closeable`
+// is checked against this declaration as a module's own behavior is
+// (`comptime.zig` `ambient_behaviors`).
 
 pub behavior Closeable {
     fn close(self: Self);

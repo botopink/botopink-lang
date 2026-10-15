@@ -950,6 +950,11 @@ own module, and so is every name an imported type alias mentions.
 
 <!-- example: modules/behavior_parameter -->
 
+A method the behavior declares with no return answers nothing through the
+behavior as through the type, the last statement of a function included:
+
+<!-- example: modules/behavior_method_no_return_by_value -->
+
 A method's parameter typed by a behavior takes an implementer as a free
 function's does — through the instance and through the type alike
 (decision 430):
@@ -968,6 +973,17 @@ behavior of its own module does; a method of the same name the type writes
 wins:
 
 <!-- example: modules/behavior_default_adopted_across_modules -->
+
+`Display` and `Closeable` are **ambient** behaviors (decision 539 (6)):
+`builtins.d.bp` declares them, and a program names them with no import — as a
+type, a parameter's included, and in an `implement` clause, which is checked
+against the declaration as a behavior of the module's own is (a required method
+the type does not write is refused at the type). A module's own `behavior` of
+the same name, or an imported one, is the one its name reads.
+
+<!-- example: modules/ambient_behavior_parameter -->
+
+<!-- example: modules/ambient_behavior_implement_missing_method -->
 
 A `behavior` no type in the program implements is a **runtime boundary**: the
 host builds the value. Such a value carries its own members — a `val` member is

@@ -1601,6 +1601,43 @@ test "behavior-typed field rejects a record that does not implement it" {
     try std.testing.expect(std.mem.indexOf(u8, msg, "Other") != null);
 }
 
+// ── 144 B-96: an ambient behavior (decision 539 (6)) ─────────────────────────
+
+test "ambient behavior: Closeable and Display name a parameter type with no import" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\type Door(name: string) implement Closeable {
+        \\    fn close(self: Self) { @print(self.name); }
+        \\}
+        \\type Money(cents: i32) implement Display {
+        \\    fn display(self: Self) -> string { return "$"; }
+        \\}
+        \\fn shut(c: Closeable) { c.close(); }
+        \\fn show(d: Display) -> string { return d.display(); }
+        \\fn main() { shut(Door(name: "a")); @print(show(Money(cents: 1))); }
+    );
+}
+
+test "ambient behavior: an inline implement of Closeable is checked against its declaration" {
+    const msg = try typeErrorMessage(std.testing.allocator,
+        \\type Door(name: string) implement Closeable {
+        \\    fn shut(self: Self) { @print(self.name); }
+        \\}
+        \\fn main() { Door(name: "a").shut(); }
+    );
+    defer std.testing.allocator.free(msg);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "'Door' does not implement 'close' required by behavior 'Closeable'") != null);
+}
+
+test "ambient behavior: a program's own behavior of the name shadows the ambient one" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\behavior Closeable { fn shut(self: Self); }
+        \\type Door(name: string) implement Closeable {
+        \\    fn shut(self: Self) { @print(self.name); }
+        \\}
+        \\fn main() { Door(name: "a").shut(); }
+    );
+}
+
 // ── 01 R8: a type position takes a type, not any binding ─────────────────────
 
 test "type position: a val bound to a type is a type" {
