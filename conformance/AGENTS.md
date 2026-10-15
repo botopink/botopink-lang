@@ -2074,7 +2074,9 @@ The narrowed cells whose excluded targets' missing binding is named here (re-der
 | `modules/render_scope_library` | commonJS erlang beam | wasm — `hostStash` |
 | `modules/std_failure_attempt_host` | commonJS erlang beam | wasm — `raiseError` |
 | `modules/abort_text_host` | commonJS erlang beam | wasm — `explode` |
-| `modules/std_failure_attempt_crash` | erlang beam (`"targets"`) | commonJS, wasm — `shapeNamed` |
+| `modules/abort_text_panic` | commonJS erlang beam | wasm — `message` (out until front 164 s2c writes the text there) |
+| `modules/abort_text_crash` | commonJS | erlang, wasm, beam — `notText` |
+| `modules/std_failure_attempt_crash` | commonJS erlang beam | wasm — `shapeNamed` |
 | `modules/component_default_fn_sync`, `modules/component_method_sync`, `modules/component_sync_plain_function` | commonJS | erlang, wasm, beam — `pending` |
 | `modules/task_failure_rejects` | commonJS | erlang, wasm, beam — `observe` |
 | `modules/task_result_caught_by_js` | commonJS | erlang, wasm, beam — `callFromJs` |
@@ -2484,7 +2486,15 @@ ends `(src/shapes.bp)`, the label the failed module's own refusal is printed at 
 dependency's module is labelled by its module path, `(a/client.bp)` and `(b/b.bp)` in `imported_declaration_error_location`.
 Decision 546 adds `modules/std_failure_attempt_crash` — a `case` no arm matches under `attempt` answers `crash` on
 erlang and beam, where a raise of a binding outside std is `host` (`modules/std_failure_attempt_host`); the cell is
-narrowed to erlang and beam, commonJS and wasm lacking the host binding it calls.
+narrowed to erlang and beam, commonJS and wasm lacking the host binding it calls. 144 B-90 widens it to commonJS (a
+Node form of the binding answers `null`, which the emitted `case` raises on reading its tag: `crash`, the engine's
+message in `snapshot/targets/commonJS/`) and adds the commonJS half of 546: a binding declared outside std without
+`result: true` is a function of its module whose call runs through `__bp_host_mark`, which marks its raise `host`
+(`__bp_host`); std's `failure` forms and the abort guard read an unmarked raise as `crash`
+(`modules/abort_text_crash`: a binding answering a number where a `string` is declared, whose `trim()` raises in the
+program's own code). `modules/abort_text_panic` claims `panic: boom` for an uncaught `@panic` on commonJS, erlang and
+beam; wasm is out of it until 164 s2c writes the text there (its message comes from a host binding, which is what the
+narrowing audit stands on).
 Decision 535 (an uncaught abort writes the `Failure` an `attempt` would answer, `<kind>: <message>`) adds
 `modules/abort_text_host` (an uncaught host raise writes `host: boom` on commonJS, erlang and beam) and tightens
 `case_no_arm_matches_raises` and `float_nan_infinity_words` to the whole text of their erlang and beam aborts

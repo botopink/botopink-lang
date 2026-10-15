@@ -219,7 +219,9 @@ test "js: external ---- template declare fn emits no require" {
         \\    @print(biggest(3, 9));
         \\}
     ;
-    try h.assertJsContains(std.testing.allocator, src, &.{"Math.max(3, 9)"});
+    // Decision 546: a binding outside std is a function of its module (it marks
+    // its raise `host`), the template over its parameters; the call is a call.
+    try h.assertJsContains(std.testing.allocator, src, &.{ "Math.max(a, b)", "biggest(3, 9)" });
     try h.assertJsNotContains(std.testing.allocator, src, &.{"require("});
 }
 
@@ -236,7 +238,7 @@ test "js: external ---- 1-arg host expression declare fn emits no require" {
         \\    @print(pid() > 0);
         \\}
     ;
-    try h.assertJsContains(std.testing.allocator, src, &.{"process.pid > 0"});
+    try h.assertJsContains(std.testing.allocator, src, &.{ "__bp_host_mark(() => process.pid)", "pid() > 0" });
     try h.assertJsNotContains(std.testing.allocator, src, &.{ "require(", "const { process.pid" });
 }
 

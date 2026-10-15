@@ -2964,7 +2964,7 @@ first three are now enforced by the model, not by discipline:
   `module:symbol` binding becomes a template, `hostMarked` / `marksHost`), the arguments bound before
   the `try` (`hostMarkBound`); beam: `lowerHostCall` → `evalHostTemplate` (`marksHost` reads
   `module_path`). std's own bindings are not wrapped (495 audits each), so a raise of one that is not
-  listed is a `crash`; commonJS wraps nothing. `std/failure`'s Erlang forms read `{bp_host, M}` as
+  listed is a `crash`. commonJS marks the same bindings (`js/AGENTS.md` § Aborts are marked). `std/failure`'s Erlang forms read `{bp_host, M}` as
   `host` and any other non-abort raise as `crash`.
 - **`assert cond[, msg]` is always fatal** (decision 4 of the 1.0.2-beta
   semantics decisions): a false condition writes

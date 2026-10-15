@@ -127,7 +127,9 @@ pub fn codegenEmit(
                 // the bare error name that aborted the whole build.
                 var missing: ?moduleOutput.MissingExternal = null;
                 const scope = try scopes.forModule(ct.name);
-                const emitted = emitJs(alloc, ok.transformed, ok.comptime_vals, ok.dispatch_rewrites, &ok.js_method_renames, &ok.instance_lowerings, module_test_mode, ct.name, ct.srcPath, &scope.cross, &missing, .{ .fns = &ok.sync_fns, .calls = &ok.sync_calls }) catch |err| {
+                // Decision 546 — a binding declared outside std marks its raise `host`.
+                const marks_host = !std.mem.eql(u8, config.packages.idOf(ct.name).package, crossModule.EMBEDDED_PACKAGE);
+                const emitted = emitJs(alloc, ok.transformed, ok.comptime_vals, ok.dispatch_rewrites, &ok.js_method_renames, &ok.instance_lowerings, module_test_mode, ct.name, ct.srcPath, &scope.cross, &missing, .{ .fns = &ok.sync_fns, .calls = &ok.sync_calls }, marks_host) catch |err| {
                     const me = missing orelse return err;
                     try results.append(alloc, .{
                         .name = ct.name,
@@ -185,8 +187,9 @@ fn emitJs(
     /// 06 C13 — set when the emit fails with `error.MissingExternalTarget`.
     missing: ?*?moduleOutput.MissingExternal,
     sync: SyncMarks,
+    marks_host: bool,
 ) !Emitted {
-    return try emitProgramOptsX(alloc, program, comptime_vals, rewrites, renames, lowerings, test_mode, module_name, src_file, cross, missing, sync);
+    return try emitProgramOptsX(alloc, program, comptime_vals, rewrites, renames, lowerings, test_mode, module_name, src_file, cross, missing, sync, marks_host);
 }
 
 /// One module's commonJS: the production module and, under `botopink test`
@@ -366,7 +369,7 @@ pub fn emitProgramOpts(
     test_mode: bool,
     module_name: []const u8,
 ) ![]u8 {
-    const emitted = try emitProgramOptsX(alloc, program, comptime_vals, rewrites, null, null, test_mode, module_name, "", null, null, .{});
+    const emitted = try emitProgramOptsX(alloc, program, comptime_vals, rewrites, null, null, test_mode, module_name, "", null, null, .{}, false);
     if (emitted.test_unit) |u| {
         alloc.free(u.atom);
         alloc.free(u.code);
@@ -478,6 +481,7 @@ fn emitProgramOptsX(
     cross: ?*const CrossModule,
     missing: ?*?moduleOutput.MissingExternal,
     sync: SyncMarks,
+    marks_host: bool,
 ) !Emitted {
     var arena = std.heap.ArenaAllocator.init(alloc);
     defer arena.deinit();
@@ -489,6 +493,7 @@ fn emitProgramOptsX(
     em.renames = renames;
     em.lowerings = lowerings;
     em.sync = sync;
+    em.marks_host = marks_host;
     em.module_name = module_name;
     em.src_file = if (src_file.len > 0) src_file else try std.fmt.allocPrint(arena.allocator(), "{s}.bp", .{module_name});
     em.cross = cross;
@@ -1638,6 +1643,15 @@ const Emitter = struct {
     /// plain call and every way the host fails is `Error(HostError(…))`.
     /// Arena-backed, set up with `host_returns`.
     result_bindings: std.StringHashMap(void) = undefined,
+    /// Decision 546 — whether this module's bindings without `result: true`
+    /// have their raise marked `host` (`__bp_host_mark`): every module outside
+    /// std (a library's or the program's). std's are audited one by one (495),
+    /// so a raise of one nothing marked is a `crash`.
+    marks_host: bool = false,
+    /// The bindings of this module that mark their raise: each is a function of
+    /// the module, `function name(params) { return __bp_host_mark(() => …); }`
+    /// (`buildResultBinding`), called plainly like a `result: true` one.
+    marked_bindings: std.StringHashMap(void) = undefined,
     host_returns_init: bool = false,
     /// Every host-backed `declare fn`'s declared return type, by name, for the
     /// call-site adoption (`adoptHost`). Arena-backed.
@@ -2171,6 +2185,7 @@ const Emitter = struct {
     fn collectExternals(self: *Emitter, program: ast.Program) !void {
         if (!self.host_returns_init) {
             self.result_bindings = std.StringHashMap(void).init(self.arena());
+            self.marked_bindings = std.StringHashMap(void).init(self.arena());
             self.host_returns = std.StringHashMap(ast.TypeRef).init(self.arena());
             self.host_returns_init = true;
         }
@@ -2181,6 +2196,11 @@ const Emitter = struct {
                 // Decisions 431, 490 — its own function, called plainly.
                 if (ast.externalResultFor(f.annotations, "node")) {
                     try self.result_bindings.put(f.name, {});
+                    continue;
+                }
+                // Decision 546 — a binding outside std marks its raise `host`.
+                if (self.marks_host and try self.markable(f)) {
+                    try self.marked_bindings.put(f.name, {});
                     continue;
                 }
                 // §A2 arity-branched template: `when(argc == N): "<tmpl>"`.
@@ -2224,6 +2244,40 @@ const Emitter = struct {
             },
             else => {},
         };
+    }
+
+    /// Whether the binding `f` (not `result: true`) has a function form that can
+    /// mark its raise (decision 546): it takes no `self`, no variadic or modified parameter, names the `node`
+    /// target, and its templates render over the declared parameters without a
+    /// receiver hole and without `await` / `yield` (which a thunk would break).
+    fn markable(self: *Emitter, f: ast.FnDecl) !bool {
+        var names: std.ArrayListUnmanaged([]const u8) = .empty;
+        for (f.params) |p| {
+            // A variadic reaches the host one by one (`Math.max(3, 9, 4)`): the
+            // fixed-arity function form would drop all but the first.
+            if (std.mem.eql(u8, p.name, "self") or p.variadic or p.recordParam or p.modifier != .none) return false;
+            try names.append(self.arena(), p.name);
+        }
+        var holes = ParamHoles{ .b = self.b, .names = names.items };
+        if (ast.externalHasArityBranches(f.annotations, "node")) {
+            for (f.annotations) |a| {
+                if (!std.mem.startsWith(u8, a.name, "External.") or !std.ascii.eqlIgnoreCase(a.name["External.".len..], "node")) continue;
+                for (a.args) |raw| {
+                    const br = ast.parseArityBranchArg(raw) orelse continue;
+                    if (!try self.markableTemplate(br.template, &holes, br.argc)) return false;
+                }
+            }
+            return true;
+        }
+        const ref = f.externalFor("node") orelse return false;
+        if (primOpTemplate.looksLikeTemplate(ref.symbol) or ref.module.len == 0)
+            return self.markableTemplate(ref.symbol, &holes, names.items.len);
+        return true;
+    }
+
+    fn markableTemplate(self: *Emitter, template: []const u8, holes: *ParamHoles, argc: usize) !bool {
+        if (std.mem.indexOf(u8, template, "await") != null or std.mem.indexOf(u8, template, "yield") != null) return false;
+        return (try self.renderParamTemplate(template, holes, argc)) != null;
     }
 
     /// Indexes every name that emits as a JS class so constructor calls
@@ -2522,7 +2576,8 @@ const Emitter = struct {
     /// function plus its `exports.<name>` line.
     fn buildFnItem(self: *Emitter, f: ast.FnDecl) !js.Stmt {
         if (!f.isExternal()) return self.buildFn(f);
-        if (self.host_returns_init and self.result_bindings.contains(f.name)) return self.buildResultBinding(f);
+        if (self.host_returns_init and self.result_bindings.contains(f.name)) return self.buildResultBinding(f, false);
+        if (self.host_returns_init and self.marked_bindings.contains(f.name)) return self.buildResultBinding(f, true);
         // §A2 template-form external: no decl alias — the template renders
         // inline at every call site in this module (see `tryUserTemplate`).
         // Emit a one-line doc breadcrumb so the emitted file stays
@@ -2635,6 +2690,8 @@ const Emitter = struct {
         // the host fails as `Error(HostError(…))`, as the module-level form does.
         const wrapped = if (ast.externalResultFor(m.annotations, "node"))
             try self.wrapResult(m.returnType, value)
+        else if (self.marks_host)
+            try self.markHost(m.returnType, value)
         else
             try self.adoptHost(m.returnType, value);
         return .{
@@ -2654,9 +2711,13 @@ const Emitter = struct {
     /// `arguments.length` per branch. Exported when `pub`, like a template's
     /// wrapper. A template that names a receiver has no function form: the
     /// declaration is then a comment, as `buildFnItem`'s template note.
-    fn buildResultBinding(self: *Emitter, f: ast.FnDecl) !js.Stmt {
+    ///
+    /// `mark` (decision 546): a binding without `result: true` declared outside
+    /// std — the same function over `__bp_host_mark` (`markHost`), whose raise
+    /// is marked `host`.
+    fn buildResultBinding(self: *Emitter, f: ast.FnDecl, mark: bool) !js.Stmt {
         const note = js.Stmt{ .comment = .{
-            .text = try std.fmt.allocPrint(self.arena(), "{s}: result: true binding (see annotation)", .{f.name}),
+            .text = try std.fmt.allocPrint(self.arena(), "{s}: {s} binding (see annotation)", .{ f.name, if (mark) "host-marked" else "result: true" }),
         } };
         var names: std.ArrayListUnmanaged([]const u8) = .empty;
         var params: std.ArrayListUnmanaged(js.Param) = .empty;
@@ -2677,7 +2738,7 @@ const Emitter = struct {
                         try self.b.binaryBare("===", try self.b.member(.{ .name = "arguments" }, "length"), .{
                             .number = try std.fmt.allocPrint(self.arena(), "{d}", .{br.argc}),
                         }),
-                        .{ .return_ = try self.wrapResult(f.returnType, value) },
+                        .{ .return_ = try self.wrapBinding(mark, f.returnType, value) },
                     ));
                 }
             }
@@ -2696,7 +2757,7 @@ const Emitter = struct {
                 for (names.items, 0..) |n, i| args[i] = .{ .ident = n };
                 break :blk try self.b.call(host, args);
             };
-            try body.append(self.arena(), .{ .return_ = try self.wrapResult(f.returnType, value) });
+            try body.append(self.arena(), .{ .return_ = try self.wrapBinding(mark, f.returnType, value) });
         }
         const func: js.Stmt = .{ .function = .{
             .name = f.name,
@@ -2709,6 +2770,19 @@ const Emitter = struct {
             "=",
             .{ .ident = f.name },
         ) } });
+    }
+
+    fn wrapBinding(self: *Emitter, mark: bool, ret: ?ast.TypeRef, value: js.Expr) !js.Expr {
+        return if (mark) self.markHost(ret, value) else self.wrapResult(ret, value);
+    }
+
+    /// `__bp_host_mark(() => value)` — a binding without `result: true`, declared
+    /// outside std, whose raise is marked `host` (decision 546); the ok side is
+    /// adopted into the record `ret` names (`adoptHost`).
+    fn markHost(self: *Emitter, ret: ?ast.TypeRef, value: js.Expr) !js.Expr {
+        return self.b.call(self.helper(.host_mark), &.{
+            try self.b.arrowExpr(&.{}, try self.adoptHost(ret, value)),
+        });
     }
 
     /// `value` — a `result: true` binding's host call — run through

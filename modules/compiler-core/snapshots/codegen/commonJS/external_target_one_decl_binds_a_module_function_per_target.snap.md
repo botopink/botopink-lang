@@ -68,7 +68,17 @@ function __bp_print() {
     console.log.apply(console, [f, ...a]);
 }
 
-const { dirname } = require("node:path");
+function __bp_host_mark(f) {
+    const m = (e) => { if (e != null && (e.__bp_panic != null || typeof e.__bp_assert_loc === "string" || e.__bp_host === true)) { return e; } const x = (e instanceof Error) ? e : new Error(String(e)); try { Object.defineProperty(x, "__bp_host", { value: true }); } catch (_) {} return x; };
+    try {
+        const r = f();
+        return (r != null && typeof r.then === "function" && r.__bp_fails !== true) ? r.then((v) => v, (e) => { throw m(e); }) : r;
+    } catch (e) {
+        throw m(e);
+    }
+}
+
+function dirname(p) { return __bp_host_mark(() => require("node:path").dirname(p)); }
 exports.dirname = dirname;
 
 function main() {

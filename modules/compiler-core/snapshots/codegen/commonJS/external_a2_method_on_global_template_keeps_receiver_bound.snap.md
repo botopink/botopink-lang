@@ -68,10 +68,20 @@ function __bp_print() {
     console.log.apply(console, [f, ...a]);
 }
 
-// stringify: per-call template (see annotation)
+function __bp_host_mark(f) {
+    const m = (e) => { if (e != null && (e.__bp_panic != null || typeof e.__bp_assert_loc === "string" || e.__bp_host === true)) { return e; } const x = (e instanceof Error) ? e : new Error(String(e)); try { Object.defineProperty(x, "__bp_host", { value: true }); } catch (_) {} return x; };
+    try {
+        const r = f();
+        return (r != null && typeof r.then === "function" && r.__bp_fails !== true) ? r.then((v) => v, (e) => { throw m(e); }) : r;
+    } catch (e) {
+        throw m(e);
+    }
+}
+
+function stringify(value) { return __bp_host_mark(() => JSON.stringify(value)); }
 
 function main() {
-    __bp_print(JSON.stringify(42));
+    __bp_print(stringify(42));
 }
 
 function _botopink_main() {
@@ -79,7 +89,7 @@ function _botopink_main() {
 }
 if (require.main === module) _botopink_main();
 
-Object.defineProperty(exports, "__bp_priv__", { value: { main } });
+Object.defineProperty(exports, "__bp_priv__", { value: { stringify, main } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

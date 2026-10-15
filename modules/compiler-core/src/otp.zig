@@ -59,13 +59,14 @@ pub fn guardedEval(arena: std.mem.Allocator, call: []const u8) ![]const u8 {
 /// reads the same marks), not node's own report, a stack trace. `panic` is an
 /// `@panic`, `@todo`, `x!`, an overflow, a division by zero or a failed
 /// `assert` (the `__bp_panic` mark the backend puts on each, whose value is
-/// the message when it is a string); anything else is `host`, its message an
-/// `Error`'s `message`, else `String(e)`.
+/// the message when it is a string); a raise marked `__bp_host` (a binding
+/// outside std without `result: true`, decision 546) is `host`; anything else
+/// is `crash`; the message an `Error`'s `message`, else `String(e)`.
 pub const node_abort_source =
     "import{writeSync}from\"node:fs\";" ++
     "const k=(e)=>e!=null&&e.__bp_panic!=null?[\"panic\",typeof e.__bp_panic===\"string\"?e.__bp_panic:e.message]:" ++
     "e!=null&&typeof e.__bp_assert_loc===\"string\"?[\"panic\",e.message]:" ++
-    "[\"host\",e instanceof Error?e.message:String(e)];" ++
+    "[e!=null&&e.__bp_host===true?\"host\":\"crash\",e instanceof Error?e.message:String(e)];" ++
     "const a=(e)=>{const[x,m]=k(e);writeSync(2,x+\": \"+m+\"\\n\");process.exit(1)};" ++
     "process.on(\"uncaughtException\",a);process.on(\"unhandledRejection\",a);";
 

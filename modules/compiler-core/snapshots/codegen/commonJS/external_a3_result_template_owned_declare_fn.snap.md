@@ -69,12 +69,21 @@ function __bp_print() {
     console.log.apply(console, [f, ...a]);
 }
 
-// parseInt: per-call template (see annotation)
-function parseInt(s) { return (() => { const __n = Number(s); return Number.isFinite(__n) ? { ok: __n } : { error: "not a number" } })(); }
+function __bp_host_mark(f) {
+    const m = (e) => { if (e != null && (e.__bp_panic != null || typeof e.__bp_assert_loc === "string" || e.__bp_host === true)) { return e; } const x = (e instanceof Error) ? e : new Error(String(e)); try { Object.defineProperty(x, "__bp_host", { value: true }); } catch (_) {} return x; };
+    try {
+        const r = f();
+        return (r != null && typeof r.then === "function" && r.__bp_fails !== true) ? r.then((v) => v, (e) => { throw m(e); }) : r;
+    } catch (e) {
+        throw m(e);
+    }
+}
+
+function parseInt(s) { return __bp_host_mark(() => (() => { const __n = Number(s); return Number.isFinite(__n) ? { ok: __n } : { error: "not a number" } })()); }
 exports.parseInt = parseInt;
 
 function main() {
-    const r = (() => { const __n = Number("42"); return Number.isFinite(__n) ? { ok: __n } : { error: "not a number" } })();
+    const r = parseInt("42");
     __bp_print(((_r) => "error" in _r ? ((-1)) : _r.ok)(r));
 }
 

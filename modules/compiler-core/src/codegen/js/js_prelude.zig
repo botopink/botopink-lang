@@ -80,6 +80,14 @@ pub const Helper = enum {
     /// with `host_fail`'s `HostError` for a rejection or a throw before the
     /// Promise exists.
     host_result_task,
+    /// A host binding without `result: true`, declared outside std (decisions
+    /// 546, 527 (1)): `__bp_host_mark(() => <call>)` runs the call and marks
+    /// what it raises `host` (`__bp_host`) — unless it is a botopink abort
+    /// (`__bp_panic`, `__bp_assert_loc`) or already marked. A thrown value that
+    /// is no `Error` becomes `new Error(String(e))`. A Promise the host
+    /// answers (not a botopink task, `__bp_fails`) is marked on rejection too.
+    /// std's `failure` and the abort guard read an unmarked raise as `crash`.
+    host_mark,
     /// Decision 432 — a failing task: `__bp_task(p)` takes the Promise of a
     /// `@Task<@Result<T, E>>` body, which settles with the `{ ok }` /
     /// `{ error }` value the body built, and answers the task botopink's
@@ -208,7 +216,7 @@ pub const Helper = enum {
 };
 
 /// Emission order of the helpers a module uses.
-pub const order = [_]Helper{ .assert_fatal, .str_surrogate, .str_count, .string_char_at, .str_length, .str_index_of, .str_last_index_of, .array_at, .range_from, .structural_eq, .f64_text, .str_trim, .str_trim_start, .str_trim_end, .case_map, .case_apply, .str_upper, .str_lower, .show, .text, .print, .print_as, .try_unwrap, .host_fail, .task, .await_task, .host_result, .host_result_task, .adopt, .yield_step, .int_check, .wide_norm, .wide_add, .wide_sub, .wide_mul, .wide_div, .wide_mod, .wide_neg, .big_div, .big_mod };
+pub const order = [_]Helper{ .assert_fatal, .str_surrogate, .str_count, .string_char_at, .str_length, .str_index_of, .str_last_index_of, .array_at, .range_from, .structural_eq, .f64_text, .str_trim, .str_trim_start, .str_trim_end, .case_map, .case_apply, .str_upper, .str_lower, .show, .text, .print, .print_as, .try_unwrap, .host_fail, .task, .await_task, .host_result, .host_result_task, .host_mark, .adopt, .yield_step, .int_check, .wide_norm, .wide_add, .wide_sub, .wide_mul, .wide_div, .wide_mod, .wide_neg, .big_div, .big_mod };
 
 /// The helpers `h`'s body calls, which a module calling `h` carries too.
 pub fn requires(h: Helper) []const Helper {
@@ -273,6 +281,7 @@ pub fn name(h: Helper) []const u8 {
         .host_fail => "__bp_host_fail",
         .host_result => "__bp_host_result",
         .host_result_task => "__bp_host_result_task",
+        .host_mark => "__bp_host_mark",
         .task => "__bp_task",
         .await_task => "__bp_await",
         .adopt => "__bp_adopt",
@@ -319,6 +328,7 @@ pub fn decl(h: Helper) ast.Stmt {
         .host_fail => host_fail,
         .host_result => host_result,
         .host_result_task => host_result_task,
+        .host_mark => host_mark,
         .task => task,
         .await_task => await_task,
         .adopt => adopt,
@@ -708,6 +718,19 @@ const host_result: ast.Stmt = hFn("__bp_host_result", &.{ "F", "f" }, &.{.{ .try
 /// — see `Helper.host_result_task`.
 const host_result_task: ast.Stmt = hFn("__bp_host_result_task", &.{ "F", "f" }, &.{
     hRet("__bp_task(new Promise((r) => r(f())).then((v) => ({ ok: v }), (e) => __bp_host_fail(F, e)))"),
+});
+
+/// `function __bp_host_mark(f) { … }` — see `Helper.host_mark`.
+const host_mark: ast.Stmt = hFn("__bp_host_mark", &.{"f"}, &.{
+    hConst(.const_, "m", "(e) => { if (e != null && (e.__bp_panic != null || typeof e.__bp_assert_loc === \"string\" || e.__bp_host === true)) { return e; } const x = (e instanceof Error) ? e : new Error(String(e)); try { Object.defineProperty(x, \"__bp_host\", { value: true }); } catch (_) {} return x; }"),
+    .{ .try_catch = .{
+        .body = .{ .stmts = &.{
+            hConst(.const_, "r", "f()"),
+            hRet("(r != null && typeof r.then === \"function\" && r.__bp_fails !== true) ? r.then((v) => v, (e) => { throw m(e); }) : r"),
+        }, .indent = 1 },
+        .param = "e",
+        .handler = .{ .stmts = &.{.{ .throw_ = hx("m(e)") }}, .indent = 1 },
+    } },
 });
 
 /// `function __bp_task(p) { … }` — see `Helper.task`.

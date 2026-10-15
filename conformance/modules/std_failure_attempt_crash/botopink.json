@@ -1,1 +1,1 @@
-{ "name": "std_failure_attempt_crash", "targets": ["erlang", "beam"] }
+{ "name": "std_failure_attempt_crash", "targets": ["commonJS", "erlang", "beam"] }

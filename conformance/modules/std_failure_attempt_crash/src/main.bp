@@ -3,12 +3,16 @@
 //// see (the host answers an atom no variant is). `attempt` contains it and the
 //// program goes on. A raise of a binding declared outside std without
 //// `result: true` is `host` (`modules/std_failure_attempt_host`); one nothing
-//// marked is not — erlang and beam alone, where the host is Erlang.
+//// marked is not. On commonJS the binding answers `null`, which the emitted
+//// `case` raises on when it reads the value's tag — the engine's text, so the
+//// message is commonJS's own (`snapshot/targets/commonJS/`); the kind is the
+//// same.
 
 import {failure, failure.Failure} from "std";
 
 type Shape { Dot, Circle(r: i32) }
 
+#[@External.Node("""null""")]
 #[@External.Erlang("erlang", "binary_to_atom")]
 declare fn shapeNamed(name: string) -> Shape;
 

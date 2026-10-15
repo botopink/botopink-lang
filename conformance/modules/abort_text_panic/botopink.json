@@ -1,0 +1,1 @@
+{ "name": "abort_text_panic", "targets": ["commonJS", "erlang", "beam"] }

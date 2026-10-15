@@ -2651,7 +2651,7 @@ value, or `Error(Failure(message, kind))` for the crash it caught — `kind` is
 `"panic"` for the program's own abort, its message the text the program wrote,
 `"host"` for a host raise, its message the host's text (a JavaScript
 `Error`'s `message`, the erlang reason by `~tp`), and `"crash"` for a raise nothing
-marked (on erlang and beam: a `case` no arm matches, a std binding's raise). The program goes on after a
+marked (a `case` no arm matches, a std binding's raise, a raise of the program's own code). The program goes on after a
 contained crash. A failing `assert` is a `panic` whose message names the
 asserted condition and where it failed (decision 527 (2)):
 
@@ -4262,6 +4262,13 @@ another does (a float division by zero: commonJS and wasm answer `Infinity`) dec
 text of an abort is not one:
 
 <!-- example: modules/abort_text_host -->
+<!-- example: modules/abort_text_panic -->
+
+A raise nothing marked is `crash` on commonJS too: a binding declared outside std without `result: true` has its
+raise marked `host` (546), so the raise of the program's own code — a method called on a value the binding
+mistyped — is not:
+
+<!-- example: modules/abort_text_crash -->
 <!-- example: modules/case_no_arm_matches_raises -->
 
 ### What `@print` writes

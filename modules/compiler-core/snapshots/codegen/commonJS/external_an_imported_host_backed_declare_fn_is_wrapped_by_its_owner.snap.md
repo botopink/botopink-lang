@@ -14,16 +14,23 @@ pub declare fn nodeOnly(s: string) -> void;
 
 ----- JAVASCRIPT -- hostlib.js
 ```javascript
-// hostKey: per-call template (see annotation)
-function hostKey(v) { return String(v); }
+function __bp_host_mark(f) {
+    const m = (e) => { if (e != null && (e.__bp_panic != null || typeof e.__bp_assert_loc === "string" || e.__bp_host === true)) { return e; } const x = (e instanceof Error) ? e : new Error(String(e)); try { Object.defineProperty(x, "__bp_host", { value: true }); } catch (_) {} return x; };
+    try {
+        const r = f();
+        return (r != null && typeof r.then === "function" && r.__bp_fails !== true) ? r.then((v) => v, (e) => { throw m(e); }) : r;
+    } catch (e) {
+        throw m(e);
+    }
+}
+
+function hostKey(v) { return __bp_host_mark(() => String(v)); }
 exports.hostKey = hostKey;
 
-// hostLen: per-call template (see annotation)
-function hostLen(xs) { return xs.length; }
+function hostLen(xs) { return __bp_host_mark(() => xs.length); }
 exports.hostLen = hostLen;
 
-// nodeOnly: per-call template (see annotation)
-function nodeOnly(s) { return console.log(s); }
+function nodeOnly(s) { return __bp_host_mark(() => console.log(s)); }
 exports.nodeOnly = nodeOnly;
 
 Object.defineProperty(exports, "__bp_priv__", { value: { hostKey, hostLen, nodeOnly } });
