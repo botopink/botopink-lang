@@ -8142,6 +8142,7 @@ const Emitter = struct {
                             const recv = try this.exprNode(b, ia.receiver.*);
                             return switch (k) {
                                 .string => b.remote("erlang", "length", &.{try b.remote("unicode", "characters_to_list", &.{recv})}),
+                                .bytes => b.remote("erlang", "byte_size", &.{recv}),
                                 // Qualified: a type of the module may declare
                                 // a `length/1` method, which the module then
                                 // defines under `no_auto_import`.
@@ -8160,6 +8161,7 @@ const Emitter = struct {
                             const recv = try this.exprNode(b, ia.receiver.*);
                             return switch (k) {
                                 .string => b.remote("erlang", "length", &.{try b.remote("unicode", "characters_to_list", &.{recv})}),
+                                .bytes => b.remote("erlang", "byte_size", &.{recv}),
                                 // Qualified: a type of the module may declare
                                 // a `length/1` method, which the module then
                                 // defines under `no_auto_import`.

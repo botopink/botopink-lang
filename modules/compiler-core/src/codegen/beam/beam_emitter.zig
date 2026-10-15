@@ -154,6 +154,8 @@ pub const GcBif = enum {
     fdiv,
     rem,
     length,
+    /// `byte_size/1` — a binary's byte count.
+    byte_size,
     /// `trunc/1` — an integral float's integer (decision 8 §4.1's conversion).
     trunc,
     /// `float/1` — a number's float.
@@ -168,6 +170,7 @@ pub const GcBif = enum {
             .fdiv => "'/'",
             .rem => "'rem'",
             .length => "length",
+            .byte_size => "byte_size",
             .trunc => "trunc",
             .float => "float",
         };

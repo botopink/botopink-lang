@@ -2638,18 +2638,10 @@ pub fn glob(pattern: string, root: string) -> @Result<string[], FsError> {
     return paths;
 }
 
-// An `Asset` is the compiler's record, declared in the module that writes `@embed`,
-// not here: std reads its fields through the host (`path` is the second element of
-// the Erlang tuple, `bytes` the third — the declaration's order, `embed.decl_src`),
-// since a field read on a type this module does not declare is the dynamic
-// `'__bp_field'/2`, which the beam backend answers with the whole record.
-#[@External.Node("""($0).path""")]
-#[@External.Erlang("""element(2, $0)""")]
-declare fn assetPath(asset: Asset) -> string;
-
-#[@External.Node("""({ fd: -1, mem: ($0).bytes, pos: 0, buf: new Uint8Array(0) })""")]
-#[@External.Erlang("""{mem, element(3, $0), counters:new(1, [])}""")]
-declare fn assetHandle(asset: Asset) -> unknown;
+// The host's handle over embedded bytes: read like a file, never closed on disk.
+#[@External.Node("""({ fd: -1, mem: $0, pos: 0, buf: new Uint8Array(0) })""")]
+#[@External.Erlang("""{mem, $0, counters:new(1, [])}""")]
+declare fn memoryHandle(bytes: Bytes) -> unknown;
 
 // ── the handle ───────────────────────────────────────────────────────────────
 
@@ -2692,7 +2684,7 @@ pub type File(location: string, handle: unknown) implement Closeable {
     pub fn chunks(self: Self, size: i32 = 65536) -> @Stream<@Result<Bytes, FsError>> {
         while (true) {
             val b = try self.read(size);
-            if (b.length() == 0) break;
+            if (b.length == 0) break;
             yield b;
         }
     }
@@ -2704,13 +2696,13 @@ pub type File(location: string, handle: unknown) implement Closeable {
         var consumed = 0l;
         while (true) {
             val raw = try lift(self.location, rawReadLine(self.handle));
-            if (raw.length() == 0) break;
+            if (raw.length == 0) break;
             val line = stripEol(raw);
             val offset = utf8Offset(line);
             if (offset >= 0l)
                 throw FsError.InvalidUtf8(path: self.location, offset: consumed
                     + offset);
-            val width: i32 = raw.length();
+            val width: i32 = raw.length;
             consumed = consumed + width.toI64();
             yield line.toUtf8().unwrapOr("");
         }
@@ -2750,7 +2742,7 @@ pub fn create(path: string) -> @Result<File, FsError> {
 // like a file on disk — no `@Result`, the build proved the file exists — and
 // closing it is a no-op.
 pub fn openAsset(asset: Asset) -> File {
-    return File(location: assetPath(asset), handle: assetHandle(asset));
+    return File(location: asset.path, handle: memoryHandle(asset.bytes));
 }
 
 // ── tests ────────────────────────────────────────────────────────────────────
@@ -3139,7 +3131,7 @@ test "fs.File writes, then reads bytes, text, a size and a hash" {
     assert r.read(5).unwrapOr(Bytes.fromUtf8("")).toUtf8().unwrapOr("")
         == "hello";
     assert r.text().unwrapOr("") == " world";
-    assert r.read(5).unwrapOr(Bytes.fromUtf8("x")).length() == 0;
+    assert r.read(5).unwrapOr(Bytes.fromUtf8("x")).length == 0;
     assert r.hash().unwrapOr("")
         == "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9";
     r.close();
@@ -3180,7 +3172,7 @@ test "fs answers PermissionDenied for an OS permission error" {
 {module, std@io@fs}.
 {exports, [{exists, 1}, {readBytes, 1}, {readText, 1}, {writeBytes, 2}, {writeText, 2}, {appendText, 2}, {stat, 1}, {list, 1}, {mkdir, 1}, {mkdirRecursive, 1}, {rm, 1}, {removeTree, 1}, {copy, 2}, {walk, 1}, {glob, 2}, {open, 1}, {create, 1}, {openAsset, 1}, {lift, 2}, {decode, 2}, {'__bp_priv__String_slice', 3}, {'__bp_priv__describe', 1}, {'__bp_priv__fsError', 2}, {'__bp_priv__globbed', 1}, {'__bp_priv__makeFixtureTree', 1}, {'__bp_priv__makeGlobTree', 1}, {'__bp_priv__noFile', 0}, {'__bp_priv__statOr', 1}, {'__bp_priv__variantOf', 1}, {'__bp_priv__walkFixture', 1}, {'__bp_priv__walkFixtureFromCwd', 1}, {'__bp_priv__walkRefusal', 1}]}.
 {attributes, []}.
-{labels, 889}.
+{labels, 891}.
 %%% std/io/fs — the file system, cross-backend (decision 540).
 %%% 
 %%% Reference:
@@ -3910,11 +3902,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     {put_tuple2, {x, 0}, {list, [{atom, ok}, {x, 1}]}}.
     {deallocate, 5}.
     return.
-% An `Asset` is the compiler's record, declared in the module that writes `@embed`,
-% not here: std reads its fields through the host (`path` is the second element of
-% the Erlang tuple, `bytes` the third — the declaration's order, `embed.decl_src`),
-% since a field read on a type this module does not declare is the dynamic
-% `'__bp_field'/2`, which the beam backend answers with the whole record.
+% The host's handle over embedded bytes: read like a file, never closed on disk.
 % ── the handle ───────────────────────────────────────────────────────────────
 % An open file (decision 540 (3)). `location` is the path it was opened with and
 % `handle` the host's — opaque, never read by a program. Closed by the writer:
@@ -3992,10 +3980,13 @@ test "fs answers PermissionDenied for an OS permission error" {
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {call, 1, {f, 724}}.
+    {move, {atom, path}, {x, 1}}.
+    {call, 2, {f, 724}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
-    {call, 1, {f, 726}}.
+    {move, {atom, bytes}, {x, 1}}.
+    {call, 2, {f, 724}}.
+    {call, 1, {f, 730}}.
     {test_heap, 4, 1}.
     {put_tuple2, {x, 0}, {list, [{atom, std@io@fs@@File}, {y, 1}, {x, 0}]}}.
     {deallocate, 3}.
@@ -4017,20 +4008,20 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
     {call, 1, {f, 19}}.
-    {test, is_tagged_tuple, {f, 728}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 732}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 1}}.
     {move, {x, 1}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
-    {jump, {f, 727}}.
-  {label, 728}.
-    {test, is_tagged_tuple, {f, 729}, [{x, 0}, 2, {atom, error}]}.
+    {jump, {f, 731}}.
+  {label, 732}.
+    {test, is_tagged_tuple, {f, 733}, [{x, 0}, 2, {atom, error}]}.
     {move, {atom, false}, {x, 0}}.
     {test_heap, 5, 1}.
     {put_tuple2, {x, 0}, {list, [{atom, std@io@fs@@FileStat}, {integer, -1}, {integer, -1}, {x, 0}]}}.
-    {jump, {f, 727}}.
-  {label, 729}.
+    {jump, {f, 731}}.
+  {label, 733}.
     {case_end, {x, 0}}.
-  {label, 727}.
+  {label, 731}.
     {deallocate, 2}.
     return.
 % Internal, test scaffolding: `<dir>/app/page.bp`, `<dir>/app/blog/page.bp`,
@@ -4060,7 +4051,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 1}, {x, 2}}.
     {move, {x, 0}, {x, 1}}.
     {move, {x, 2}, {x, 0}}.
-    {call, 2, {f, 731}}.
+    {call, 2, {f, 735}}.
     {call, 1, {f, 23}}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 2}}.
@@ -4078,7 +4069,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 1}, {x, 2}}.
     {move, {x, 0}, {x, 1}}.
     {move, {x, 2}, {x, 0}}.
-    {call, 2, {f, 731}}.
+    {call, 2, {f, 735}}.
     {call, 1, {f, 23}}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 3}}.
@@ -4096,7 +4087,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 1}, {x, 2}}.
     {move, {x, 0}, {x, 1}}.
     {move, {x, 2}, {x, 0}}.
-    {call, 2, {f, 731}}.
+    {call, 2, {f, 735}}.
     {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"root page">>}, {x, 0}}.
     {move, {x, 1}, {x, 2}}.
@@ -4119,7 +4110,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 1}, {x, 2}}.
     {move, {x, 0}, {x, 1}}.
     {move, {x, 2}, {x, 0}}.
-    {call, 2, {f, 731}}.
+    {call, 2, {f, 735}}.
     {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"blog page">>}, {x, 0}}.
     {move, {x, 1}, {x, 2}}.
@@ -4142,7 +4133,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 1}, {x, 2}}.
     {move, {x, 0}, {x, 1}}.
     {move, {x, 2}, {x, 0}}.
-    {call, 2, {f, 731}}.
+    {call, 2, {f, 735}}.
     {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"notes">>}, {x, 0}}.
     {move, {x, 1}, {x, 2}}.
@@ -4164,7 +4155,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     {allocate, 5, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}]}}.
     {move, {x, 0}, {y, 0}}.
-    {call, 0, {f, 765}}.
+    {call, 0, {f, 769}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
     {call, 1, {f, 45}}.
@@ -4184,26 +4175,26 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 1}, {x, 2}}.
     {move, {x, 0}, {x, 1}}.
     {move, {x, 2}, {x, 0}}.
-    {call, 2, {f, 731}}.
+    {call, 2, {f, 735}}.
     {call, 1, {f, 33}}.
-    {test, is_tagged_tuple, {f, 781}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 785}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 782}}.
-  {label, 781}.
+    {jump, {f, 786}}.
+  {label, 785}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 3}}.
     {move, {literal, <<"<error>">>}, {x, 0}}.
     {move, {y, 3}, {x, 1}}.
     {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
-  {label, 782}.
+  {label, 786}.
     {move, {x, 0}, {y, 4}}.
     {move, {y, 1}, {x, 0}}.
     {call, 1, {f, 29}}.
     {move, {literal, <<",">>}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 4}, {x, 0}}.
-    {call_last, 2, {f, 731}, 5}.
+    {call_last, 2, {f, 735}, 5}.
 % Internal, test scaffolding: the same, with the root spelled relative to the
 % working directory — `<prefix><path from the cwd to the fixture>`.
 
@@ -4215,7 +4206,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     {allocate, 8, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}]}}.
     {move, {x, 0}, {y, 0}}.
-    {call, 0, {f, 765}}.
+    {call, 0, {f, 769}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
     {call, 1, {f, 45}}.
@@ -4226,7 +4217,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {move, {x, 0}, {y, 2}}.
-    {call, 0, {f, 784}}.
+    {call, 0, {f, 788}}.
     {move, {y, 1}, {x, 1}}.
     {call_ext, 2, {extfunc, std@path, relative, 2}}.
     {move, {y, 2}, {x, 1}}.
@@ -4242,28 +4233,28 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 1}, {x, 2}}.
     {move, {x, 0}, {x, 1}}.
     {move, {x, 2}, {x, 0}}.
-    {call, 2, {f, 731}}.
+    {call, 2, {f, 735}}.
     {move, {x, 0}, {y, 3}}.
     {move, {y, 3}, {x, 0}}.
     {call, 1, {f, 33}}.
-    {test, is_tagged_tuple, {f, 793}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 797}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 794}}.
-  {label, 793}.
+    {jump, {f, 798}}.
+  {label, 797}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 4}}.
     {move, {literal, <<"<error>">>}, {x, 0}}.
     {move, {y, 4}, {x, 1}}.
     {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
-  {label, 794}.
+  {label, 798}.
     {move, {x, 0}, {y, 5}}.
     {move, {y, 1}, {x, 0}}.
     {call, 1, {f, 29}}.
     {move, {literal, <<",">>}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 5}, {x, 0}}.
-    {call_last, 2, {f, 731}, 8}.
+    {call_last, 2, {f, 735}, 8}.
 % Internal, test scaffolding: the `Error` of `walk(root)`, `""` when it walked.
 
 {function, walkRefusal, 1, 51}.
@@ -4276,19 +4267,19 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
     {call, 1, {f, 33}}.
-    {test, is_tagged_tuple, {f, 796}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 800}, [{x, 0}, 2, {atom, ok}]}.
     {move, {literal, <<"">>}, {x, 0}}.
-    {jump, {f, 795}}.
-  {label, 796}.
-    {test, is_tagged_tuple, {f, 797}, [{x, 0}, 2, {atom, error}]}.
+    {jump, {f, 799}}.
+  {label, 800}.
+    {test, is_tagged_tuple, {f, 801}, [{x, 0}, 2, {atom, error}]}.
     {get_tuple_element, {x, 0}, 1, {x, 1}}.
     {move, {x, 1}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
     {call, 1, {f, 53}}.
-    {jump, {f, 795}}.
-  {label, 797}.
+    {jump, {f, 799}}.
+  {label, 801}.
     {case_end, {x, 0}}.
-  {label, 795}.
+  {label, 799}.
     {deallocate, 2}.
     return.
 % Internal, test scaffolding: an `FsError` as one line — the variant, the path
@@ -4303,7 +4294,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}, {y, 11}, {y, 12}, {y, 13}, {y, 14}, {y, 15}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 799}, [{x, 0}, 2, {atom, std@io@fs@@FsError__v__notfound}]}.
+    {test, is_tagged_tuple, {f, 803}, [{x, 0}, 2, {atom, std@io@fs@@FsError__v__notfound}]}.
     {get_tuple_element, {x, 0}, 1, {x, 1}}.
     {move, {x, 1}, {y, 1}}.
     {move, nil, {x, 0}}.
@@ -4319,12 +4310,12 @@ test "fs answers PermissionDenied for an OS permission error" {
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
-    {make_fun3, {f, 761}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 765}, 0, 0, {x, 0}, {list, []}}.
     {call_ext, 2, {extfunc, lists, map, 2}}.
     {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
-    {jump, {f, 798}}.
-  {label, 799}.
-    {test, is_tagged_tuple, {f, 800}, [{x, 0}, 2, {atom, std@io@fs@@FsError__v__permissiondenied}]}.
+    {jump, {f, 802}}.
+  {label, 803}.
+    {test, is_tagged_tuple, {f, 804}, [{x, 0}, 2, {atom, std@io@fs@@FsError__v__permissiondenied}]}.
     {get_tuple_element, {x, 0}, 1, {x, 1}}.
     {move, {x, 1}, {y, 3}}.
     {move, nil, {x, 0}}.
@@ -4340,12 +4331,12 @@ test "fs answers PermissionDenied for an OS permission error" {
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
-    {make_fun3, {f, 761}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 765}, 0, 0, {x, 0}, {list, []}}.
     {call_ext, 2, {extfunc, lists, map, 2}}.
     {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
-    {jump, {f, 798}}.
-  {label, 800}.
-    {test, is_tagged_tuple, {f, 801}, [{x, 0}, 2, {atom, std@io@fs@@FsError__v__isdirectory}]}.
+    {jump, {f, 802}}.
+  {label, 804}.
+    {test, is_tagged_tuple, {f, 805}, [{x, 0}, 2, {atom, std@io@fs@@FsError__v__isdirectory}]}.
     {get_tuple_element, {x, 0}, 1, {x, 1}}.
     {move, {x, 1}, {y, 5}}.
     {move, nil, {x, 0}}.
@@ -4361,12 +4352,12 @@ test "fs answers PermissionDenied for an OS permission error" {
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
-    {make_fun3, {f, 761}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 765}, 0, 0, {x, 0}, {list, []}}.
     {call_ext, 2, {extfunc, lists, map, 2}}.
     {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
-    {jump, {f, 798}}.
-  {label, 801}.
-    {test, is_tagged_tuple, {f, 802}, [{x, 0}, 2, {atom, std@io@fs@@FsError__v__notdirectory}]}.
+    {jump, {f, 802}}.
+  {label, 805}.
+    {test, is_tagged_tuple, {f, 806}, [{x, 0}, 2, {atom, std@io@fs@@FsError__v__notdirectory}]}.
     {get_tuple_element, {x, 0}, 1, {x, 1}}.
     {move, {x, 1}, {y, 7}}.
     {move, nil, {x, 0}}.
@@ -4382,12 +4373,12 @@ test "fs answers PermissionDenied for an OS permission error" {
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
-    {make_fun3, {f, 761}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 765}, 0, 0, {x, 0}, {list, []}}.
     {call_ext, 2, {extfunc, lists, map, 2}}.
     {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
-    {jump, {f, 798}}.
-  {label, 802}.
-    {test, is_tagged_tuple, {f, 803}, [{x, 0}, 2, {atom, std@io@fs@@FsError__v__alreadyexists}]}.
+    {jump, {f, 802}}.
+  {label, 806}.
+    {test, is_tagged_tuple, {f, 807}, [{x, 0}, 2, {atom, std@io@fs@@FsError__v__alreadyexists}]}.
     {get_tuple_element, {x, 0}, 1, {x, 1}}.
     {move, {x, 1}, {y, 9}}.
     {move, nil, {x, 0}}.
@@ -4403,12 +4394,12 @@ test "fs answers PermissionDenied for an OS permission error" {
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
-    {make_fun3, {f, 761}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 765}, 0, 0, {x, 0}, {list, []}}.
     {call_ext, 2, {extfunc, lists, map, 2}}.
     {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
-    {jump, {f, 798}}.
-  {label, 803}.
-    {test, is_tagged_tuple, {f, 804}, [{x, 0}, 3, {atom, std@io@fs@@FsError__v__invalidutf8}]}.
+    {jump, {f, 802}}.
+  {label, 807}.
+    {test, is_tagged_tuple, {f, 808}, [{x, 0}, 3, {atom, std@io@fs@@FsError__v__invalidutf8}]}.
     {get_tuple_element, {x, 0}, 1, {x, 1}}.
     {move, {x, 1}, {y, 11}}.
     {get_tuple_element, {x, 0}, 2, {x, 1}}.
@@ -4437,21 +4428,21 @@ test "fs answers PermissionDenied for an OS permission error" {
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
-    {make_fun3, {f, 761}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 765}, 0, 0, {x, 0}, {list, []}}.
     {call_ext, 2, {extfunc, lists, map, 2}}.
     {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
-    {jump, {f, 798}}.
-  {label, 804}.
-    {test, is_tagged_tuple, {f, 805}, [{x, 0}, 3, {atom, std@io@fs@@FsError__v__other}]}.
+    {jump, {f, 802}}.
+  {label, 808}.
+    {test, is_tagged_tuple, {f, 809}, [{x, 0}, 3, {atom, std@io@fs@@FsError__v__other}]}.
     {get_tuple_element, {x, 0}, 1, {x, 1}}.
     {move, {x, 1}, {y, 14}}.
     {get_tuple_element, {x, 0}, 2, {x, 1}}.
     {move, {x, 1}, {y, 15}}.
     {move, {y, 15}, {x, 0}}.
-    {jump, {f, 798}}.
-  {label, 805}.
+    {jump, {f, 802}}.
+  {label, 809}.
     {case_end, {x, 0}}.
-  {label, 798}.
+  {label, 802}.
     {deallocate, 16}.
     return.
 % Internal, test scaffolding: the fixture tree plus the names decision 177 is
@@ -4484,7 +4475,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 1}, {x, 2}}.
     {move, {x, 0}, {x, 1}}.
     {move, {x, 2}, {x, 0}}.
-    {call, 2, {f, 731}}.
+    {call, 2, {f, 735}}.
     {call, 1, {f, 23}}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 2}}.
@@ -4502,7 +4493,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 1}, {x, 2}}.
     {move, {x, 0}, {x, 1}}.
     {move, {x, 2}, {x, 0}}.
-    {call, 2, {f, 731}}.
+    {call, 2, {f, 735}}.
     {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"cached">>}, {x, 0}}.
     {move, {x, 1}, {x, 2}}.
@@ -4525,7 +4516,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 1}, {x, 2}}.
     {move, {x, 0}, {x, 1}}.
     {move, {x, 2}, {x, 0}}.
-    {call, 2, {f, 731}}.
+    {call, 2, {f, 735}}.
     {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"hidden">>}, {x, 0}}.
     {move, {x, 1}, {x, 2}}.
@@ -4548,7 +4539,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 1}, {x, 2}}.
     {move, {x, 0}, {x, 1}}.
     {move, {x, 2}, {x, 0}}.
-    {call, 2, {f, 731}}.
+    {call, 2, {f, 735}}.
     {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"draft">>}, {x, 0}}.
     {move, {x, 1}, {x, 2}}.
@@ -4573,10 +4564,10 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 1}, {x, 2}}.
     {move, {x, 0}, {x, 1}}.
     {move, {x, 2}, {x, 0}}.
-    {call, 2, {f, 731}}.
+    {call, 2, {f, 735}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 5}, {x, 0}}.
-    {call, 2, {f, 807}}.
+    {call, 2, {f, 811}}.
     {move, {literal, <<"page.bp">>}, {x, 0}}.
     {move, {x, 0}, {y, 7}}.
     {move, nil, {x, 0}}.
@@ -4595,10 +4586,10 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 1}, {x, 2}}.
     {move, {x, 0}, {x, 1}}.
     {move, {x, 2}, {x, 0}}.
-    {call, 2, {f, 731}}.
+    {call, 2, {f, 735}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 7}, {x, 0}}.
-    {call, 2, {f, 807}}.
+    {call, 2, {f, 811}}.
     {move, {literal, <<"missing.bp">>}, {x, 0}}.
     {move, {x, 0}, {y, 9}}.
     {move, nil, {x, 0}}.
@@ -4617,10 +4608,10 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 1}, {x, 2}}.
     {move, {x, 0}, {x, 1}}.
     {move, {x, 2}, {x, 0}}.
-    {call, 2, {f, 731}}.
+    {call, 2, {f, 735}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 9}, {x, 0}}.
-    {call, 2, {f, 807}}.
+    {call, 2, {f, 811}}.
     {move, {atom, ok}, {x, 0}}.
     {deallocate, 14}.
     return.
@@ -4635,7 +4626,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     {allocate, 7, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}]}}.
     {move, {x, 0}, {y, 0}}.
-    {call, 0, {f, 765}}.
+    {call, 0, {f, 769}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
     {call, 1, {f, 55}}.
@@ -4655,28 +4646,28 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 1}, {x, 2}}.
     {move, {x, 0}, {x, 1}}.
     {move, {x, 2}, {x, 0}}.
-    {call, 2, {f, 731}}.
+    {call, 2, {f, 735}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 0}, {x, 0}}.
     {call, 2, {f, 35}}.
-    {test, is_tagged_tuple, {f, 816}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 820}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 817}}.
-  {label, 816}.
+    {jump, {f, 821}}.
+  {label, 820}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 3}}.
     {move, {literal, <<"<error>">>}, {x, 0}}.
     {move, {y, 3}, {x, 1}}.
     {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
-  {label, 817}.
+  {label, 821}.
     {move, {x, 0}, {y, 4}}.
     {move, {y, 1}, {x, 0}}.
     {call, 1, {f, 29}}.
     {move, {literal, <<",">>}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 4}, {x, 0}}.
-    {call_last, 2, {f, 731}, 7}.
+    {call_last, 2, {f, 735}, 7}.
 % ── FsError, readText and the handle ─────────────────────────────────────────
 % Internal, test scaffolding: the variant of an `Error`, `"ok"` for an `Ok`.
 
@@ -4689,19 +4680,19 @@ test "fs answers PermissionDenied for an OS permission error" {
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 819}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 823}, [{x, 0}, 2, {atom, ok}]}.
     {move, {literal, <<"ok">>}, {x, 0}}.
-    {jump, {f, 818}}.
-  {label, 819}.
-    {test, is_tagged_tuple, {f, 820}, [{x, 0}, 2, {atom, error}]}.
+    {jump, {f, 822}}.
+  {label, 823}.
+    {test, is_tagged_tuple, {f, 824}, [{x, 0}, 2, {atom, error}]}.
     {get_tuple_element, {x, 0}, 1, {x, 1}}.
     {move, {x, 1}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
     {call, 1, {f, 53}}.
-    {jump, {f, 818}}.
-  {label, 820}.
+    {jump, {f, 822}}.
+  {label, 824}.
     {case_end, {x, 0}}.
-  {label, 818}.
+  {label, 822}.
     {deallocate, 2}.
     return.
 % Internal, test scaffolding: the file a failed `open` falls back to.
@@ -4716,8 +4707,8 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {literal, <<"">>}, {x, 0}}.
     {move, {x, 0}, {y, 0}}.
     {move, {literal, <<"">>}, {x, 0}}.
-    {call, 1, {f, 824}}.
-    {call, 1, {f, 822}}.
+    {call, 1, {f, 826}}.
+    {call, 1, {f, 730}}.
     {test_heap, 4, 1}.
     {put_tuple2, {x, 0}, {list, [{atom, std@io@fs@@File}, {y, 0}, {x, 0}]}}.
     {deallocate, 2}.
@@ -4735,98 +4726,98 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {move, {x, 2}, {y, 2}}.
-    {test, is_ne_exact, {f, 825}, [{y, 2}, {atom, undefined}]}.
+    {test, is_ne_exact, {f, 827}, [{y, 2}, {atom, undefined}]}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 2}, {x, 2}}.
     {move, {y, 1}, {x, 1}}.
-    {call_last, 3, {f, 827}, 3}.
-  {label, 825}.
+    {call_last, 3, {f, 829}, 3}.
+  {label, 827}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
-    {call_last, 2, {f, 849}, 3}.
+    {call_last, 2, {f, 851}, 3}.
 
-{function, '__bp_priv__String_slice', 3, 866}.
-  {label, 865}.
+{function, '__bp_priv__String_slice', 3, 868}.
+  {label, 867}.
     {line, [{location, "std@io@fs.erl", 43}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__String_slice'}, 3}.
-  {label, 866}.
+  {label, 868}.
     {call_only, 3, {f, 85}}.
 
-{function, '__bp_priv__describe', 1, 868}.
-  {label, 867}.
+{function, '__bp_priv__describe', 1, 870}.
+  {label, 869}.
     {line, [{location, "std@io@fs.erl", 44}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__describe'}, 1}.
-  {label, 868}.
+  {label, 870}.
     {call_only, 1, {f, 53}}.
 
-{function, '__bp_priv__fsError', 2, 870}.
-  {label, 869}.
+{function, '__bp_priv__fsError', 2, 872}.
+  {label, 871}.
     {line, [{location, "std@io@fs.erl", 45}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__fsError'}, 2}.
-  {label, 870}.
+  {label, 872}.
     {call_only, 2, {f, 3}}.
 
-{function, '__bp_priv__globbed', 1, 872}.
-  {label, 871}.
+{function, '__bp_priv__globbed', 1, 874}.
+  {label, 873}.
     {line, [{location, "std@io@fs.erl", 46}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__globbed'}, 1}.
-  {label, 872}.
+  {label, 874}.
     {call_only, 1, {f, 57}}.
 
-{function, '__bp_priv__makeFixtureTree', 1, 874}.
-  {label, 873}.
+{function, '__bp_priv__makeFixtureTree', 1, 876}.
+  {label, 875}.
     {line, [{location, "std@io@fs.erl", 47}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__makeFixtureTree'}, 1}.
-  {label, 874}.
+  {label, 876}.
     {call_only, 1, {f, 45}}.
 
-{function, '__bp_priv__makeGlobTree', 1, 876}.
-  {label, 875}.
+{function, '__bp_priv__makeGlobTree', 1, 878}.
+  {label, 877}.
     {line, [{location, "std@io@fs.erl", 48}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__makeGlobTree'}, 1}.
-  {label, 876}.
+  {label, 878}.
     {call_only, 1, {f, 55}}.
 
-{function, '__bp_priv__noFile', 0, 878}.
-  {label, 877}.
+{function, '__bp_priv__noFile', 0, 880}.
+  {label, 879}.
     {line, [{location, "std@io@fs.erl", 49}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__noFile'}, 0}.
-  {label, 878}.
+  {label, 880}.
     {call_only, 0, {f, 61}}.
 
-{function, '__bp_priv__statOr', 1, 880}.
-  {label, 879}.
+{function, '__bp_priv__statOr', 1, 882}.
+  {label, 881}.
     {line, [{location, "std@io@fs.erl", 50}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__statOr'}, 1}.
-  {label, 880}.
+  {label, 882}.
     {call_only, 1, {f, 43}}.
 
-{function, '__bp_priv__variantOf', 1, 882}.
-  {label, 881}.
+{function, '__bp_priv__variantOf', 1, 884}.
+  {label, 883}.
     {line, [{location, "std@io@fs.erl", 51}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__variantOf'}, 1}.
-  {label, 882}.
+  {label, 884}.
     {call_only, 1, {f, 59}}.
 
-{function, '__bp_priv__walkFixture', 1, 884}.
-  {label, 883}.
+{function, '__bp_priv__walkFixture', 1, 886}.
+  {label, 885}.
     {line, [{location, "std@io@fs.erl", 52}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__walkFixture'}, 1}.
-  {label, 884}.
+  {label, 886}.
     {call_only, 1, {f, 47}}.
 
-{function, '__bp_priv__walkFixtureFromCwd', 1, 886}.
-  {label, 885}.
+{function, '__bp_priv__walkFixtureFromCwd', 1, 888}.
+  {label, 887}.
     {line, [{location, "std@io@fs.erl", 53}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__walkFixtureFromCwd'}, 1}.
-  {label, 886}.
+  {label, 888}.
     {call_only, 1, {f, 49}}.
 
-{function, '__bp_priv__walkRefusal', 1, 888}.
-  {label, 887}.
+{function, '__bp_priv__walkRefusal', 1, 890}.
+  {label, 889}.
     {line, [{location, "std@io@fs.erl", 54}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__walkRefusal'}, 1}.
-  {label, 888}.
+  {label, 890}.
     {call_only, 1, {f, 51}}.
 
 {function, '__bp_tpl_0', 1, 63}.
@@ -7876,49 +7867,72 @@ test "fs answers PermissionDenied for an OS permission error" {
     {deallocate, 2}.
     return.
 
-{function, '__bp_tpl_18', 1, 724}.
+{function, '-bp_field-', 2, 724}.
   {label, 723}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_18'}, 1}.
+    {line, [{location, "std@io@fs.erl", 32}]}.
+    {func_info, {atom, std@io@fs}, {atom, '-bp_field-'}, 2}.
   {label, 724}.
-    {allocate, 1, 1}.
-    {init_yregs, {list, [{y, 0}]}}.
-    {move, {x, 0}, {y, 0}}.
-    {move, {integer, 2}, {x, 0}}.
-    {move, {y, 0}, {x, 1}}.
-    {call_ext_last, 2, {extfunc, erlang, element, 2}, 1}.
-
-{function, '__bp_tpl_19', 1, 726}.
+    {test, is_map, {f, 725}, [{x, 0}]}.
+    {move, {x, 0}, {x, 2}}.
+    {move, {x, 1}, {x, 0}}.
+    {move, {x, 2}, {x, 1}}.
+    {move, {atom, undefined}, {x, 2}}.
+    {call_ext_only, 3, {extfunc, maps, get, 3}}.
   {label, 725}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_19'}, 1}.
+    {test, is_tuple, {f, 726}, [{x, 0}]}.
+    {bif, element, {f, 728}, [{integer, 1}, {x, 0}], {x, 2}}.
+    {test, is_atom, {f, 728}, [{x, 2}]}.
+    {test_heap, 4, 3}.
+    {put_list, {x, 1}, nil, {x, 3}}.
+    {put_list, {x, 0}, {x, 3}, {x, 3}}.
+    {move, {x, 2}, {x, 0}}.
+    {move, {atom, '__bp_get'}, {x, 1}}.
+    {move, {x, 3}, {x, 2}}.
+    {call_ext_only, 3, {extfunc, erlang, apply, 3}}.
   {label, 726}.
-    {allocate, 3, 1}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
+    {test, is_eq_exact, {f, 728}, [{x, 1}, {atom, length}]}.
+    {test, is_list, {f, 727}, [{x, 0}]}.
+    {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
+    return.
+  {label, 727}.
+    {test, is_binary, {f, 728}, [{x, 0}]}.
+    {allocate, 0, 1}.
+    {call_ext, 1, {extfunc, unicode, characters_to_list, 1}}.
+    {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
+    {deallocate, 0}.
+    return.
+  {label, 728}.
+    {move, {atom, undefined}, {x, 0}}.
+    return.
+
+{function, '__bp_tpl_18', 1, 730}.
+  {label, 729}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_18'}, 1}.
+  {label, 730}.
+    {allocate, 2, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
-    {move, {integer, 3}, {x, 0}}.
-    {move, {y, 0}, {x, 1}}.
-    {call_ext, 2, {extfunc, erlang, element, 2}}.
-    {move, {x, 0}, {y, 1}}.
     {move, {integer, 1}, {x, 0}}.
     {move, nil, {x, 1}}.
     {call_ext, 2, {extfunc, counters, new, 2}}.
-    {move, {x, 0}, {y, 2}}.
+    {move, {x, 0}, {y, 1}}.
     {test_heap, 4, 0}.
-    {put_tuple2, {x, 0}, {list, [{atom, mem}, {y, 1}, {y, 2}]}}.
+    {put_tuple2, {x, 0}, {list, [{atom, mem}, {y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
-    {deallocate, 3}.
+    {deallocate, 2}.
     return.
 
-{function, '__bp_print', 1, 733}.
-  {label, 732}.
+{function, '__bp_print', 1, 737}.
+  {label, 736}.
     {line, [{location, "std@io@fs.erl", 34}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_print'}, 1}.
-  {label, 733}.
+  {label, 737}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 737}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 741}, 0, 0, {x, 0}, {list, []}}.
     {move, {y, 0}, {x, 1}}.
     {call_ext, 2, {extfunc, lists, map, 2}}.
     {move, {x, 0}, {x, 1}}.
@@ -7929,46 +7943,46 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {literal, <<"~ts~n">>}, {x, 0}}.
     {call_ext_last, 2, {extfunc, io, format, 2}, 1}.
 
-{function, '-bp_show_top-', 1, 737}.
-  {label, 736}.
+{function, '-bp_show_top-', 1, 741}.
+  {label, 740}.
     {line, [{location, "std@io@fs.erl", 34}]}.
     {func_info, {atom, std@io@fs}, {atom, '-bp_show_top-'}, 1}.
-  {label, 737}.
+  {label, 741}.
     {move, {atom, true}, {x, 1}}.
-    {call_only, 2, {f, 735}}.
+    {call_only, 2, {f, 739}}.
 
-{function, '-bp_show_elem-', 1, 739}.
-  {label, 738}.
+{function, '-bp_show_elem-', 1, 743}.
+  {label, 742}.
     {line, [{location, "std@io@fs.erl", 34}]}.
     {func_info, {atom, std@io@fs}, {atom, '-bp_show_elem-'}, 1}.
-  {label, 739}.
+  {label, 743}.
     {move, {atom, false}, {x, 1}}.
-    {call_only, 2, {f, 735}}.
+    {call_only, 2, {f, 739}}.
 
-{function, '__bp_show', 2, 735}.
-  {label, 734}.
+{function, '__bp_show', 2, 739}.
+  {label, 738}.
     {line, [{location, "std@io@fs.erl", 34}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_show'}, 2}.
-  {label, 735}.
+  {label, 739}.
     {allocate, 2, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_binary, {f, 747}, [{x, 0}]}.
-    {test, is_eq, {f, 746}, [{y, 1}, {atom, true}]}.
+    {test, is_binary, {f, 751}, [{x, 0}]}.
+    {test, is_eq, {f, 750}, [{y, 1}, {atom, true}]}.
     {move, {y, 0}, {x, 0}}.
     {deallocate, 2}.
     return.
-  {label, 746}.
+  {label, 750}.
     {move, {y, 0}, {x, 0}}.
     {call_ext, 1, {extfunc, unicode, characters_to_list, 1}}.
     {call_ext_last, 1, {extfunc, io_lib, write_string, 1}, 2}.
-  {label, 747}.
+  {label, 751}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_list, {f, 748}, [{x, 0}]}.
+    {test, is_list, {f, 752}, [{x, 0}]}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 739}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 743}, 0, 0, {x, 0}, {list, []}}.
     {move, {y, 0}, {x, 1}}.
     {call_ext, 2, {extfunc, lists, map, 2}}.
     {move, {x, 0}, {x, 1}}.
@@ -7980,42 +7994,42 @@ test "fs answers PermissionDenied for an OS permission error" {
     {put_list, {integer, 91}, {x, 0}, {x, 0}}.
     {deallocate, 2}.
     return.
-  {label, 748}.
+  {label, 752}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tuple, {f, 750}, [{x, 0}]}.
+    {test, is_tuple, {f, 754}, [{x, 0}]}.
     {call_ext, 1, {extfunc, erlang, tuple_size, 1}}.
-    {test, is_lt, {f, 749}, [{integer, 0}, {x, 0}]}.
+    {test, is_lt, {f, 753}, [{integer, 0}, {x, 0}]}.
     {move, {integer, 1}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, element, 2}}.
-    {test, is_atom, {f, 749}, [{x, 0}]}.
-    {test, is_ne_exact, {f, 749}, [{x, 0}, {atom, true}]}.
-    {test, is_ne_exact, {f, 749}, [{x, 0}, {atom, false}]}.
-    {test, is_ne_exact, {f, 749}, [{x, 0}, {atom, undefined}]}.
-    {test, is_eq_exact, {f, 754}, [{x, 0}, {atom, ok}]}.
+    {test, is_atom, {f, 753}, [{x, 0}]}.
+    {test, is_ne_exact, {f, 753}, [{x, 0}, {atom, true}]}.
+    {test, is_ne_exact, {f, 753}, [{x, 0}, {atom, false}]}.
+    {test, is_ne_exact, {f, 753}, [{x, 0}, {atom, undefined}]}.
+    {test, is_eq_exact, {f, 758}, [{x, 0}, {atom, ok}]}.
     {move, {literal, <<"Ok(">>}, {y, 1}}.
-    {jump, {f, 755}}.
-  {label, 754}.
-    {test, is_eq_exact, {f, 751}, [{x, 0}, {atom, error}]}.
+    {jump, {f, 759}}.
+  {label, 758}.
+    {test, is_eq_exact, {f, 755}, [{x, 0}, {atom, error}]}.
     {move, {literal, <<"Error(">>}, {y, 1}}.
-  {label, 755}.
+  {label, 759}.
     {move, {integer, 2}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, element, 2}}.
     {move, {atom, false}, {x, 1}}.
-    {call, 2, {f, 735}}.
+    {call, 2, {f, 739}}.
     {test_heap, 6, 1}.
     {put_list, {integer, 41}, nil, {x, 1}}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {put_list, {y, 1}, {x, 0}, {x, 0}}.
     {deallocate, 2}.
     return.
-  {label, 749}.
+  {label, 753}.
     {move, {y, 0}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, tuple_to_list, 1}}.
     {move, {x, 0}, {y, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 739}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 743}, 0, 0, {x, 0}, {list, []}}.
     {move, {y, 1}, {x, 1}}.
     {call_ext, 2, {extfunc, lists, map, 2}}.
     {move, {x, 0}, {x, 1}}.
@@ -8028,31 +8042,31 @@ test "fs answers PermissionDenied for an OS permission error" {
     {put_list, {integer, 35}, {x, 0}, {x, 0}}.
     {deallocate, 2}.
     return.
-  {label, 750}.
+  {label, 754}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_atom, {f, 752}, [{x, 0}]}.
-    {test, is_ne_exact, {f, 752}, [{x, 0}, {atom, true}]}.
-    {test, is_ne_exact, {f, 752}, [{x, 0}, {atom, false}]}.
-    {test, is_ne_exact, {f, 753}, [{x, 0}, {atom, undefined}]}.
-  {label, 751}.
+    {test, is_atom, {f, 756}, [{x, 0}]}.
+    {test, is_ne_exact, {f, 756}, [{x, 0}, {atom, true}]}.
+    {test, is_ne_exact, {f, 756}, [{x, 0}, {atom, false}]}.
+    {test, is_ne_exact, {f, 757}, [{x, 0}, {atom, undefined}]}.
+  {label, 755}.
     {move, {y, 0}, {x, 1}}.
-    {call_last, 2, {f, 741}, 2}.
-  {label, 752}.
+    {call_last, 2, {f, 745}, 2}.
+  {label, 756}.
     {move, {y, 0}, {x, 0}}.
     {test_heap, 2, 1}.
     {put_list, {x, 0}, nil, {x, 1}}.
     {move, {literal, <<"~p">>}, {x, 0}}.
     {call_ext_last, 2, {extfunc, io_lib, format, 2}, 2}.
-  {label, 753}.
+  {label, 757}.
     {move, {literal, <<"null">>}, {x, 0}}.
     {deallocate, 2}.
     return.
 
-{function, '__bp_tagged', 2, 741}.
-  {label, 740}.
+{function, '__bp_tagged', 2, 745}.
+  {label, 744}.
     {line, [{location, "std@io@fs.erl", 34}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_tagged'}, 2}.
-  {label, 741}.
+  {label, 745}.
     {allocate, 3, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
     {move, {x, 1}, {y, 0}}.
@@ -8061,60 +8075,60 @@ test "fs answers PermissionDenied for an OS permission error" {
     {call_ext, 1, {extfunc, erlang, atom_to_list, 1}}.
     {move, {literal, <<"__v__">>}, {x, 1}}.
     {call_ext, 2, {extfunc, string, split, 2}}.
-    {test, is_nonempty_list, {f, 756}, [{x, 0}]}.
+    {test, is_nonempty_list, {f, 760}, [{x, 0}]}.
     {get_list, {x, 0}, {x, 1}, {x, 2}}.
     {move, {x, 1}, {y, 2}}.
-    {test, is_nonempty_list, {f, 756}, [{x, 2}]}.
+    {test, is_nonempty_list, {f, 760}, [{x, 2}]}.
     {move, {y, 2}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, list_to_atom, 1}}.
     {move, {x, 0}, {y, 1}}.
-  {label, 756}.
+  {label, 760}.
     {move, {y, 1}, {x, 0}}.
     {call_ext, 1, {extfunc, code, ensure_loaded, 1}}.
     {move, {y, 1}, {x, 0}}.
     {move, {atom, '__bp_format'}, {x, 1}}.
     {move, {integer, 1}, {x, 2}}.
     {call_ext, 3, {extfunc, erlang, function_exported, 3}}.
-    {test, is_eq_exact, {f, 757}, [{x, 0}, {atom, true}]}.
+    {test, is_eq_exact, {f, 761}, [{x, 0}, {atom, true}]}.
     {test_heap, 2, 1}.
     {put_list, {y, 0}, nil, {x, 2}}.
     {move, {y, 1}, {x, 0}}.
     {move, {atom, '__bp_format'}, {x, 1}}.
     {call_ext, 3, {extfunc, erlang, apply, 3}}.
-    {call_last, 1, {f, 743}, 3}.
-  {label, 757}.
+    {call_last, 1, {f, 747}, 3}.
+  {label, 761}.
     {test_heap, 2, 1}.
     {put_list, {y, 0}, nil, {x, 1}}.
     {move, {literal, <<"~p">>}, {x, 0}}.
     {call_ext_last, 2, {extfunc, io_lib, format, 2}, 3}.
 
-{function, '__bp_render', 1, 743}.
-  {label, 742}.
+{function, '__bp_render', 1, 747}.
+  {label, 746}.
     {line, [{location, "std@io@fs.erl", 34}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_render'}, 1}.
-  {label, 743}.
+  {label, 747}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {integer, 1}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, element, 2}}.
-    {test, is_eq_exact, {f, 758}, [{x, 0}, {atom, text}]}.
+    {test, is_eq_exact, {f, 762}, [{x, 0}, {atom, text}]}.
     {move, {integer, 2}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
     {call_ext_last, 2, {extfunc, erlang, element, 2}, 2}.
-  {label, 758}.
+  {label, 762}.
     {move, {integer, 3}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, element, 2}}.
     {move, {x, 0}, {y, 1}}.
-    {test, is_eq_exact, {f, 759}, [{x, 0}, nil]}.
+    {test, is_eq_exact, {f, 763}, [{x, 0}, nil]}.
     {move, {integer, 2}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
     {call_ext_last, 2, {extfunc, erlang, element, 2}, 2}.
-  {label, 759}.
+  {label, 763}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 745}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 749}, 0, 0, {x, 0}, {list, []}}.
     {move, {y, 1}, {x, 1}}.
     {call_ext, 2, {extfunc, lists, map, 2}}.
     {move, {x, 0}, {x, 1}}.
@@ -8132,11 +8146,11 @@ test "fs answers PermissionDenied for an OS permission error" {
     {deallocate, 2}.
     return.
 
-{function, '-bp_render_pair-', 1, 745}.
-  {label, 744}.
+{function, '-bp_render_pair-', 1, 749}.
+  {label, 748}.
     {line, [{location, "std@io@fs.erl", 34}]}.
     {func_info, {atom, std@io@fs}, {atom, '-bp_render_pair-'}, 1}.
-  {label, 745}.
+  {label, 749}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
@@ -8144,7 +8158,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {y, 0}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, element, 2}}.
     {move, {atom, false}, {x, 1}}.
-    {call, 2, {f, 735}}.
+    {call, 2, {f, 739}}.
     {move, {x, 0}, {y, 1}}.
     {move, {integer, 1}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
@@ -8156,60 +8170,60 @@ test "fs answers PermissionDenied for an OS permission error" {
     {deallocate, 2}.
     return.
 
-{function, '-bp_stringify-', 1, 761}.
-  {label, 760}.
+{function, '-bp_stringify-', 1, 765}.
+  {label, 764}.
     {line, [{location, "std@io@fs.erl", 34}]}.
     {func_info, {atom, std@io@fs}, {atom, '-bp_stringify-'}, 1}.
-  {label, 761}.
+  {label, 765}.
     {allocate, 0, 1}.
-    {test, is_binary, {f, 762}, [{x, 0}]}.
+    {test, is_binary, {f, 766}, [{x, 0}]}.
     {deallocate, 0}.
     return.
-  {label, 762}.
-    {test, is_integer, {f, 763}, [{x, 0}]}.
+  {label, 766}.
+    {test, is_integer, {f, 767}, [{x, 0}]}.
     {call_ext_last, 1, {extfunc, erlang, integer_to_binary, 1}, 0}.
-  {label, 763}.
-    {call, 1, {f, 737}}.
+  {label, 767}.
+    {call, 1, {f, 741}}.
     {call_ext_last, 1, {extfunc, unicode, characters_to_binary, 1}, 0}.
 
-{function, '-bp_join-', 2, 731}.
-  {label, 730}.
+{function, '-bp_join-', 2, 735}.
+  {label, 734}.
     {line, [{location, "std@io@fs.erl", 34}]}.
     {func_info, {atom, std@io@fs}, {atom, '-bp_join-'}, 2}.
-  {label, 731}.
+  {label, 735}.
     {allocate, 1, 2}.
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 1}, {y, 0}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
-    {make_fun3, {f, 761}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 765}, 0, 0, {x, 0}, {list, []}}.
     {call_ext, 2, {extfunc, lists, map, 2}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 0}, {x, 0}}.
     {call_ext, 2, {extfunc, lists, join, 2}}.
     {call_ext_last, 1, {extfunc, erlang, iolist_to_binary, 1}, 1}.
 
-{function, '__bp_tpl_20-t/0-fun-0-', 0, 769}.
-  {label, 768}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_20-t/0-fun-0-'}, 0}.
-  {label, 769}.
+{function, '__bp_tpl_19-t/0-fun-0-', 0, 773}.
+  {label, 772}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_19-t/0-fun-0-'}, 0}.
+  {label, 773}.
     {allocate, 3, 0}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
     {move, {literal, [84, 77, 80, 68, 73, 82]}, {x, 0}}.
     {call_ext, 1, {extfunc, os, getenv, 1}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 773}, [{x, 0}, {atom, false}]}.
+    {test, is_eq_exact, {f, 777}, [{x, 0}, {atom, false}]}.
     {move, {literal, [47, 116, 109, 112]}, {y, 2}}.
-    {jump, {f, 772}}.
-  {label, 773}.
+    {jump, {f, 776}}.
+  {label, 777}.
     {move, {y, 1}, {y, 0}}.
     {move, {y, 0}, {y, 2}}.
-    {jump, {f, 772}}.
-  {label, 772}.
-    {move, {y, 2}, {y, 0}}.
     {jump, {f, 776}}.
   {label, 776}.
+    {move, {y, 2}, {y, 0}}.
+    {jump, {f, 780}}.
+  {label, 780}.
     {move, {literal, [positive]}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, unique_integer, 1}}.
     {move, {x, 0}, {y, 1}}.
@@ -8225,77 +8239,77 @@ test "fs answers PermissionDenied for an OS permission error" {
     {call_ext, 2, {extfunc, filename, join, 2}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {y, 0}}.
-    {jump, {f, 778}}.
-  {label, 778}.
+    {jump, {f, 782}}.
+  {label, 782}.
     {move, {y, 0}, {x, 0}}.
     {call_ext, 1, {extfunc, file, make_dir, 1}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 779}, [{x, 0}, {atom, ok}]}.
-    {jump, {f, 780}}.
-  {label, 779}.
+    {test, is_eq_exact, {f, 783}, [{x, 0}, {atom, ok}]}.
+    {jump, {f, 784}}.
+  {label, 783}.
     {move, {y, 1}, {x, 0}}.
     {badmatch, {x, 0}}.
-  {label, 780}.
+  {label, 784}.
     {move, {y, 0}, {x, 0}}.
     {call_ext_last, 1, {extfunc, unicode, characters_to_binary, 1}, 3}.
 
-{function, '__bp_tpl_20', 0, 765}.
-  {label, 764}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_20'}, 0}.
-  {label, 765}.
+{function, '__bp_tpl_19', 0, 769}.
+  {label, 768}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_19'}, 0}.
+  {label, 769}.
     {allocate, 1, 0}.
     {init_yregs, {list, [{y, 0}]}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 769}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 773}, 0, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
     {call_fun, 0}.
     {deallocate, 1}.
     return.
 
-{function, '__bp_tpl_21-t/0-fun-0-', 0, 788}.
-  {label, 787}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_21-t/0-fun-0-'}, 0}.
-  {label, 788}.
+{function, '__bp_tpl_20-t/0-fun-0-', 0, 792}.
+  {label, 791}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_20-t/0-fun-0-'}, 0}.
+  {label, 792}.
     {allocate, 4, 0}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
     {call_ext, 0, {extfunc, file, get_cwd, 0}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
-    {test, is_tuple, {f, 791}, [{x, 0}]}.
-    {test, test_arity, {f, 791}, [{x, 0}, 2]}.
+    {test, is_tuple, {f, 795}, [{x, 0}]}.
+    {test, test_arity, {f, 795}, [{x, 0}, 2]}.
     {get_tuple_element, {x, 0}, 0, {y, 2}}.
     {get_tuple_element, {x, 0}, 1, {y, 3}}.
     {move, {y, 2}, {x, 0}}.
-    {test, is_eq_exact, {f, 791}, [{x, 0}, {atom, ok}]}.
+    {test, is_eq_exact, {f, 795}, [{x, 0}, {atom, ok}]}.
     {move, {y, 3}, {y, 0}}.
-    {jump, {f, 792}}.
-  {label, 791}.
+    {jump, {f, 796}}.
+  {label, 795}.
     {move, {y, 1}, {x, 0}}.
     {badmatch, {x, 0}}.
-  {label, 792}.
+  {label, 796}.
     {move, {y, 0}, {x, 0}}.
     {call_ext_last, 1, {extfunc, unicode, characters_to_binary, 1}, 4}.
 
-{function, '__bp_tpl_21', 0, 784}.
-  {label, 783}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_21'}, 0}.
-  {label, 784}.
+{function, '__bp_tpl_20', 0, 788}.
+  {label, 787}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_20'}, 0}.
+  {label, 788}.
     {allocate, 1, 0}.
     {init_yregs, {list, [{y, 0}]}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 788}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 792}, 0, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
     {call_fun, 0}.
     {deallocate, 1}.
     return.
 
-{function, '__bp_tpl_22-t/2-fun-0-', 2, 811}.
-  {label, 810}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_22-t/2-fun-0-'}, 2}.
-  {label, 811}.
+{function, '__bp_tpl_21-t/2-fun-0-', 2, 815}.
+  {label, 814}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_21-t/2-fun-0-'}, 2}.
+  {label, 815}.
     {allocate, 3, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
     {move, {x, 0}, {y, 0}}.
@@ -8305,26 +8319,26 @@ test "fs answers PermissionDenied for an OS permission error" {
     {call_ext, 2, {extfunc, file, make_symlink, 2}}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 2}, {x, 0}}.
-    {test, is_eq_exact, {f, 814}, [{x, 0}, {atom, ok}]}.
-    {jump, {f, 815}}.
-  {label, 814}.
+    {test, is_eq_exact, {f, 818}, [{x, 0}, {atom, ok}]}.
+    {jump, {f, 819}}.
+  {label, 818}.
     {move, {y, 2}, {x, 0}}.
     {badmatch, {x, 0}}.
-  {label, 815}.
+  {label, 819}.
     {move, {atom, ok}, {x, 0}}.
     {deallocate, 3}.
     return.
 
-{function, '__bp_tpl_22', 2, 807}.
-  {label, 806}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_22'}, 2}.
-  {label, 807}.
+{function, '__bp_tpl_21', 2, 811}.
+  {label, 810}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_21'}, 2}.
+  {label, 811}.
     {allocate, 3, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 811}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 815}, 0, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
@@ -8333,28 +8347,10 @@ test "fs answers PermissionDenied for an OS permission error" {
     {deallocate, 3}.
     return.
 
-{function, '__bp_tpl_23', 1, 822}.
-  {label, 821}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_23'}, 1}.
-  {label, 822}.
-    {allocate, 2, 1}.
-    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
-    {move, {x, 0}, {y, 0}}.
-    {move, {integer, 1}, {x, 0}}.
-    {move, nil, {x, 1}}.
-    {call_ext, 2, {extfunc, counters, new, 2}}.
-    {move, {x, 0}, {y, 1}}.
-    {test_heap, 4, 0}.
-    {put_tuple2, {x, 0}, {list, [{atom, mem}, {y, 0}, {y, 1}]}}.
-    {move, {x, 0}, {y, 1}}.
-    {move, {y, 1}, {x, 0}}.
-    {deallocate, 2}.
-    return.
-
-{function, '__bp_tpl_24', 1, 824}.
-  {label, 823}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_24'}, 1}.
-  {label, 824}.
+{function, '__bp_tpl_22', 1, 826}.
+  {label, 825}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_22'}, 1}.
+  {label, 826}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
@@ -8362,10 +8358,10 @@ test "fs answers PermissionDenied for an OS permission error" {
     {deallocate, 1}.
     return.
 
-{function, '__bp_tpl_25-t/3-fun-0-', 3, 831}.
-  {label, 830}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_25-t/3-fun-0-'}, 3}.
-  {label, 831}.
+{function, '__bp_tpl_23-t/3-fun-0-', 3, 833}.
+  {label, 832}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_23-t/3-fun-0-'}, 3}.
+  {label, 833}.
     {allocate, 9, 3}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}]}}.
     {move, {x, 0}, {y, 3}}.
@@ -8375,20 +8371,20 @@ test "fs answers PermissionDenied for an OS permission error" {
     {call_ext, 1, {extfunc, unicode, characters_to_list, 1}}.
     {move, {x, 0}, {y, 6}}.
     {move, {y, 6}, {y, 0}}.
-    {jump, {f, 835}}.
-  {label, 835}.
+    {jump, {f, 837}}.
+  {label, 837}.
     {move, {y, 0}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, length, 1}}.
     {move, {x, 0}, {y, 6}}.
     {move, {y, 6}, {y, 1}}.
-    {jump, {f, 837}}.
-  {label, 837}.
+    {jump, {f, 839}}.
+  {label, 839}.
     {move, {y, 4}, {x, 0}}.
     {move, {integer, 0}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, '<', 2}}.
     {move, {x, 0}, {y, 6}}.
     {move, {y, 6}, {x, 0}}.
-    {test, is_eq_exact, {f, 839}, [{x, 0}, {atom, true}]}.
+    {test, is_eq_exact, {f, 841}, [{x, 0}, {atom, true}]}.
     {move, {y, 1}, {x, 0}}.
     {move, {y, 4}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, '+', 2}}.
@@ -8398,29 +8394,29 @@ test "fs answers PermissionDenied for an OS permission error" {
     {call_ext, 2, {extfunc, erlang, max, 2}}.
     {move, {x, 0}, {y, 8}}.
     {move, {y, 8}, {y, 7}}.
-    {jump, {f, 838}}.
-  {label, 839}.
+    {jump, {f, 840}}.
+  {label, 841}.
     {move, {y, 6}, {x, 0}}.
-    {test, is_eq_exact, {f, 840}, [{x, 0}, {atom, false}]}.
+    {test, is_eq_exact, {f, 842}, [{x, 0}, {atom, false}]}.
     {move, {y, 4}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, min, 2}}.
     {move, {x, 0}, {y, 8}}.
     {move, {y, 8}, {y, 7}}.
-    {jump, {f, 838}}.
-  {label, 840}.
+    {jump, {f, 840}}.
+  {label, 842}.
     {move, {y, 6}, {x, 0}}.
     {case_end, {x, 0}}.
-  {label, 838}.
+  {label, 840}.
     {move, {y, 7}, {y, 2}}.
-    {jump, {f, 842}}.
-  {label, 842}.
+    {jump, {f, 844}}.
+  {label, 844}.
     {move, {y, 5}, {x, 0}}.
     {move, {integer, 0}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, '<', 2}}.
     {move, {x, 0}, {y, 6}}.
     {move, {y, 6}, {x, 0}}.
-    {test, is_eq_exact, {f, 844}, [{x, 0}, {atom, true}]}.
+    {test, is_eq_exact, {f, 846}, [{x, 0}, {atom, true}]}.
     {move, {y, 1}, {x, 0}}.
     {move, {y, 5}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, '+', 2}}.
@@ -8430,23 +8426,23 @@ test "fs answers PermissionDenied for an OS permission error" {
     {call_ext, 2, {extfunc, erlang, max, 2}}.
     {move, {x, 0}, {y, 8}}.
     {move, {y, 8}, {y, 7}}.
-    {jump, {f, 843}}.
-  {label, 844}.
+    {jump, {f, 845}}.
+  {label, 846}.
     {move, {y, 6}, {x, 0}}.
-    {test, is_eq_exact, {f, 845}, [{x, 0}, {atom, false}]}.
+    {test, is_eq_exact, {f, 847}, [{x, 0}, {atom, false}]}.
     {move, {y, 5}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, min, 2}}.
     {move, {x, 0}, {y, 8}}.
     {move, {y, 8}, {y, 7}}.
-    {jump, {f, 843}}.
-  {label, 845}.
+    {jump, {f, 845}}.
+  {label, 847}.
     {move, {y, 6}, {x, 0}}.
     {case_end, {x, 0}}.
-  {label, 843}.
+  {label, 845}.
     {move, {y, 7}, {y, 1}}.
-    {jump, {f, 847}}.
-  {label, 847}.
+    {jump, {f, 849}}.
+  {label, 849}.
     {move, {y, 2}, {x, 0}}.
     {move, {integer, 1}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, '+', 2}}.
@@ -8467,17 +8463,17 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {y, 6}, {x, 0}}.
     {call_ext_last, 1, {extfunc, unicode, characters_to_binary, 1}, 9}.
 
-{function, '__bp_tpl_25', 3, 827}.
-  {label, 826}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_25'}, 3}.
-  {label, 827}.
+{function, '__bp_tpl_23', 3, 829}.
+  {label, 828}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_23'}, 3}.
+  {label, 829}.
     {allocate, 4, 3}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {move, {x, 2}, {y, 2}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 831}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 833}, 0, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 3}}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
@@ -8487,10 +8483,10 @@ test "fs answers PermissionDenied for an OS permission error" {
     {deallocate, 4}.
     return.
 
-{function, '__bp_tpl_26-t/2-fun-0-', 2, 853}.
-  {label, 852}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_26-t/2-fun-0-'}, 2}.
-  {label, 853}.
+{function, '__bp_tpl_24-t/2-fun-0-', 2, 855}.
+  {label, 854}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_24-t/2-fun-0-'}, 2}.
+  {label, 855}.
     {allocate, 7, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}]}}.
     {move, {x, 0}, {y, 2}}.
@@ -8499,20 +8495,20 @@ test "fs answers PermissionDenied for an OS permission error" {
     {call_ext, 1, {extfunc, unicode, characters_to_list, 1}}.
     {move, {x, 0}, {y, 4}}.
     {move, {y, 4}, {y, 0}}.
-    {jump, {f, 857}}.
-  {label, 857}.
+    {jump, {f, 859}}.
+  {label, 859}.
     {move, {y, 0}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, length, 1}}.
     {move, {x, 0}, {y, 4}}.
     {move, {y, 4}, {y, 1}}.
-    {jump, {f, 859}}.
-  {label, 859}.
+    {jump, {f, 861}}.
+  {label, 861}.
     {move, {y, 3}, {x, 0}}.
     {move, {integer, 0}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, '<', 2}}.
     {move, {x, 0}, {y, 4}}.
     {move, {y, 4}, {x, 0}}.
-    {test, is_eq_exact, {f, 861}, [{x, 0}, {atom, true}]}.
+    {test, is_eq_exact, {f, 863}, [{x, 0}, {atom, true}]}.
     {move, {y, 1}, {x, 0}}.
     {move, {y, 3}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, '+', 2}}.
@@ -8522,23 +8518,23 @@ test "fs answers PermissionDenied for an OS permission error" {
     {call_ext, 2, {extfunc, erlang, max, 2}}.
     {move, {x, 0}, {y, 6}}.
     {move, {y, 6}, {y, 5}}.
-    {jump, {f, 860}}.
-  {label, 861}.
+    {jump, {f, 862}}.
+  {label, 863}.
     {move, {y, 4}, {x, 0}}.
-    {test, is_eq_exact, {f, 862}, [{x, 0}, {atom, false}]}.
+    {test, is_eq_exact, {f, 864}, [{x, 0}, {atom, false}]}.
     {move, {y, 3}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, min, 2}}.
     {move, {x, 0}, {y, 6}}.
     {move, {y, 6}, {y, 5}}.
-    {jump, {f, 860}}.
-  {label, 862}.
+    {jump, {f, 862}}.
+  {label, 864}.
     {move, {y, 4}, {x, 0}}.
     {case_end, {x, 0}}.
-  {label, 860}.
+  {label, 862}.
     {move, {y, 5}, {y, 1}}.
-    {jump, {f, 864}}.
-  {label, 864}.
+    {jump, {f, 866}}.
+  {label, 866}.
     {move, {y, 1}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
     {call_ext, 2, {extfunc, lists, nthtail, 2}}.
@@ -8546,16 +8542,16 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {y, 4}, {x, 0}}.
     {call_ext_last, 1, {extfunc, unicode, characters_to_binary, 1}, 7}.
 
-{function, '__bp_tpl_26', 2, 849}.
-  {label, 848}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_26'}, 2}.
-  {label, 849}.
+{function, '__bp_tpl_24', 2, 851}.
+  {label, 850}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_24'}, 2}.
+  {label, 851}.
     {allocate, 3, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 853}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 855}, 0, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
@@ -8764,7 +8760,7 @@ test "fs answers PermissionDenied for an OS permission error" {
 {module, std@io@fs@@File}.
 {exports, [{path, 1}, {size, 1}, {read, 2}, {bytes, 1}, {text, 1}, {chunks, 2}, {lines, 1}, {hash, 1}, {write, 2}, {close, 1}, {'__bp_get', 2}, {'__bp_format', 1}]}.
 {attributes, []}.
-{labels, 367}.
+{labels, 365}.
 
 {function, path, 1, 3}.
   {label, 2}.
@@ -8974,7 +8970,7 @@ test "fs answers PermissionDenied for an OS permission error" {
   {label, 150}.
     {move, {x, 0}, {y, 3}}.
     {move, {y, 3}, {x, 0}}.
-    {call, 1, {f, 153}}.
+    {gc_bif, byte_size, {f, 0}, 1, [{x, 0}], {x, 0}}.
     {test, is_eq_exact, {f, 151}, [{x, 0}, {integer, 0}]}.
     {jump, {f, 148}}.
   {label, 151}.
@@ -9004,56 +9000,56 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {integer, 0}, {x, 0}}.
     {move, {x, 0}, {y, 2}}.
     {line, [{location, "std@io@fs@@File.erl", 26}]}.
-  {label, 155}.
+  {label, 153}.
     {move, {atom, true}, {x, 0}}.
-    {test, is_eq_exact, {f, 156}, [{x, 0}, {atom, true}]}.
+    {test, is_eq_exact, {f, 154}, [{x, 0}, {atom, true}]}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 157}, [{x, 0}, 3, {atom, std@io@fs@@File}]}.
+    {test, is_tagged_tuple, {f, 155}, [{x, 0}, 3, {atom, std@io@fs@@File}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-  {label, 157}.
+  {label, 155}.
     {move, {x, 0}, {y, 3}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 196}, [{x, 0}, 3, {atom, std@io@fs@@File}]}.
+    {test, is_tagged_tuple, {f, 194}, [{x, 0}, 3, {atom, std@io@fs@@File}]}.
     {get_tuple_element, {x, 0}, 2, {x, 0}}.
-  {label, 196}.
-    {call, 1, {f, 159}}.
+  {label, 194}.
+    {call, 1, {f, 157}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 3}, {x, 0}}.
     {call_ext, 2, {extfunc, std@io@fs, lift, 2}}.
-    {test, is_tagged_tuple, {f, 197}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 195}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 198}}.
-  {label, 197}.
+    {jump, {f, 196}}.
+  {label, 195}.
     {test_heap, 2, 1}.
     {put_list, {x, 0}, {y, 1}, {y, 1}}.
-    {jump, {f, 154}}.
-  {label, 198}.
+    {jump, {f, 152}}.
+  {label, 196}.
     {move, {x, 0}, {y, 4}}.
     {move, {y, 4}, {x, 0}}.
-    {call, 1, {f, 153}}.
-    {test, is_eq_exact, {f, 199}, [{x, 0}, {integer, 0}]}.
-    {jump, {f, 156}}.
-  {label, 199}.
+    {gc_bif, byte_size, {f, 0}, 1, [{x, 0}], {x, 0}}.
+    {test, is_eq_exact, {f, 197}, [{x, 0}, {integer, 0}]}.
+    {jump, {f, 154}}.
+  {label, 197}.
     {move, {y, 4}, {x, 0}}.
-    {call, 1, {f, 201}}.
+    {call, 1, {f, 199}}.
     {move, {x, 0}, {y, 5}}.
     {move, {y, 5}, {x, 0}}.
-    {call, 1, {f, 225}}.
+    {call, 1, {f, 223}}.
     {move, {x, 0}, {y, 6}}.
-    {test, is_ge, {f, 237}, [{y, 6}, {integer, 0}]}.
+    {test, is_ge, {f, 235}, [{y, 6}, {integer, 0}]}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 238}, [{x, 0}, 3, {atom, std@io@fs@@File}]}.
+    {test, is_tagged_tuple, {f, 236}, [{x, 0}, 3, {atom, std@io@fs@@File}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-  {label, 238}.
+  {label, 236}.
     {move, {x, 0}, {x, 1}}.
     {gc_bif, '+', {f, 0}, 2, [{y, 2}, {y, 6}], {x, 0}}.
-    {test, is_ge, {f, 239}, [{x, 0}, {integer, -9223372036854775808}]}.
-    {test, is_ge, {f, 239}, [{integer, 9223372036854775807}, {x, 0}]}.
-    {jump, {f, 240}}.
-  {label, 239}.
-    {move, {literal, {integer_overflow, <<"integer overflow: + on i64 at src/io/fs.bp:475:21">>}}, {x, 0}}.
+    {test, is_ge, {f, 237}, [{x, 0}, {integer, -9223372036854775808}]}.
+    {test, is_ge, {f, 237}, [{integer, 9223372036854775807}, {x, 0}]}.
+    {jump, {f, 238}}.
+  {label, 237}.
+    {move, {literal, {integer_overflow, <<"integer overflow: + on i64 at src/io/fs.bp:467:21">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 240}.
+  {label, 238}.
     {test_heap, 4, 2}.
     {put_tuple2, {x, 0}, {list, [{atom, std@io@fs@@FsError__v__invalidutf8}, {x, 1}, {x, 0}]}}.
     {move, {x, 0}, {x, 1}}.
@@ -9061,38 +9057,38 @@ test "fs answers PermissionDenied for an OS permission error" {
     {put_tuple2, {x, 0}, {list, [{atom, error}, {x, 1}]}}.
     {test_heap, 2, 1}.
     {put_list, {x, 0}, {y, 1}, {y, 1}}.
-    {jump, {f, 154}}.
-  {label, 237}.
+    {jump, {f, 152}}.
+  {label, 235}.
     {move, {y, 4}, {x, 0}}.
-    {call, 1, {f, 153}}.
+    {gc_bif, byte_size, {f, 0}, 1, [{x, 0}], {x, 0}}.
     {move, {x, 0}, {y, 7}}.
     {move, {y, 7}, {x, 0}}.
-    {call, 1, {f, 242}}.
+    {call, 1, {f, 240}}.
     {gc_bif, '+', {f, 0}, 1, [{y, 2}, {x, 0}], {x, 0}}.
-    {test, is_ge, {f, 253}, [{x, 0}, {integer, -9223372036854775808}]}.
-    {test, is_ge, {f, 253}, [{integer, 9223372036854775807}, {x, 0}]}.
-    {jump, {f, 254}}.
-  {label, 253}.
-    {move, {literal, {integer_overflow, <<"integer overflow: + on i64 at src/io/fs.bp:477:33">>}}, {x, 0}}.
+    {test, is_ge, {f, 251}, [{x, 0}, {integer, -9223372036854775808}]}.
+    {test, is_ge, {f, 251}, [{integer, 9223372036854775807}, {x, 0}]}.
+    {jump, {f, 252}}.
+  {label, 251}.
+    {move, {literal, {integer_overflow, <<"integer overflow: + on i64 at src/io/fs.bp:469:33">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 254}.
+  {label, 252}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 5}, {x, 0}}.
-    {call, 1, {f, 258}}.
-    {test, is_tagged_tuple, {f, 255}, [{x, 0}, 2, {atom, ok}]}.
+    {call, 1, {f, 256}}.
+    {test, is_tagged_tuple, {f, 253}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 256}}.
-  {label, 255}.
+    {jump, {f, 254}}.
+  {label, 253}.
     {move, {literal, <<"">>}, {x, 0}}.
-  {label, 256}.
+  {label, 254}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, 3, 2}.
     {put_tuple2, {x, 0}, {list, [{atom, ok}, {x, 1}]}}.
     {test_heap, 2, 1}.
     {put_list, {x, 0}, {y, 1}, {y, 1}}.
-    {jump, {f, 155}}.
-  {label, 156}.
+    {jump, {f, 153}}.
   {label, 154}.
+  {label, 152}.
     {move, {y, 1}, {x, 0}}.
     {call_ext, 1, {extfunc, lists, reverse, 1}}.
     {deallocate, 11}.
@@ -9107,25 +9103,25 @@ test "fs answers PermissionDenied for an OS permission error" {
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 268}, [{x, 0}, 3, {atom, std@io@fs@@File}]}.
+    {test, is_tagged_tuple, {f, 266}, [{x, 0}, 3, {atom, std@io@fs@@File}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-  {label, 268}.
+  {label, 266}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 310}, [{x, 0}, 3, {atom, std@io@fs@@File}]}.
+    {test, is_tagged_tuple, {f, 308}, [{x, 0}, 3, {atom, std@io@fs@@File}]}.
     {get_tuple_element, {x, 0}, 2, {x, 0}}.
-  {label, 310}.
-    {call, 1, {f, 270}}.
+  {label, 308}.
+    {call, 1, {f, 268}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 1}, {x, 0}}.
     {call_ext, 2, {extfunc, std@io@fs, lift, 2}}.
-    {test, is_tagged_tuple, {f, 311}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 309}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 312}}.
-  {label, 311}.
+    {jump, {f, 310}}.
+  {label, 309}.
     {deallocate, 4}.
     return.
-  {label, 312}.
+  {label, 310}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 2}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
@@ -9144,26 +9140,26 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 313}, [{x, 0}, 3, {atom, std@io@fs@@File}]}.
+    {test, is_tagged_tuple, {f, 311}, [{x, 0}, 3, {atom, std@io@fs@@File}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-  {label, 313}.
+  {label, 311}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 344}, [{x, 0}, 3, {atom, std@io@fs@@File}]}.
+    {test, is_tagged_tuple, {f, 342}, [{x, 0}, 3, {atom, std@io@fs@@File}]}.
     {get_tuple_element, {x, 0}, 2, {x, 0}}.
-  {label, 344}.
+  {label, 342}.
     {move, {y, 1}, {x, 1}}.
-    {call, 2, {f, 315}}.
+    {call, 2, {f, 313}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 2}, {x, 0}}.
     {call_ext, 2, {extfunc, std@io@fs, lift, 2}}.
-    {test, is_tagged_tuple, {f, 345}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 343}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 346}}.
-  {label, 345}.
+    {jump, {f, 344}}.
+  {label, 343}.
     {deallocate, 5}.
     return.
-  {label, 346}.
+  {label, 344}.
     {move, {x, 0}, {y, 3}}.
     {move, {y, 3}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
@@ -9181,37 +9177,37 @@ test "fs answers PermissionDenied for an OS permission error" {
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 360}, [{x, 0}, 3, {atom, std@io@fs@@File}]}.
+    {test, is_tagged_tuple, {f, 358}, [{x, 0}, 3, {atom, std@io@fs@@File}]}.
     {get_tuple_element, {x, 0}, 2, {x, 0}}.
-  {label, 360}.
-    {call, 1, {f, 348}}.
+  {label, 358}.
+    {call, 1, {f, 346}}.
     {move, {atom, ok}, {x, 0}}.
     {deallocate, 1}.
     return.
 
-{function, '__bp_get', 2, 362}.
-  {label, 361}.
+{function, '__bp_get', 2, 360}.
+  {label, 359}.
     {line, [{location, "std@io@fs@@File.erl", 29}]}.
     {func_info, {atom, std@io@fs@@File}, {atom, '__bp_get'}, 2}.
-  {label, 362}.
-    {test, is_eq_exact, {f, 363}, [{x, 1}, {atom, location}]}.
+  {label, 360}.
+    {test, is_eq_exact, {f, 361}, [{x, 1}, {atom, location}]}.
     {move, {x, 0}, {x, 1}}.
     {move, {integer, 2}, {x, 0}}.
     {call_ext_only, 2, {extfunc, erlang, element, 2}}.
-  {label, 363}.
-    {test, is_eq_exact, {f, 364}, [{x, 1}, {atom, handle}]}.
+  {label, 361}.
+    {test, is_eq_exact, {f, 362}, [{x, 1}, {atom, handle}]}.
     {move, {x, 0}, {x, 1}}.
     {move, {integer, 3}, {x, 0}}.
     {call_ext_only, 2, {extfunc, erlang, element, 2}}.
-  {label, 364}.
+  {label, 362}.
     {move, {atom, undefined}, {x, 0}}.
     return.
 
-{function, '__bp_format', 1, 366}.
-  {label, 365}.
+{function, '__bp_format', 1, 364}.
+  {label, 363}.
     {line, [{location, "std@io@fs@@File.erl", 29}]}.
     {func_info, {atom, std@io@fs@@File}, {atom, '__bp_format'}, 1}.
-  {label, 366}.
+  {label, 364}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
@@ -9792,59 +9788,49 @@ test "fs answers PermissionDenied for an OS permission error" {
     {deallocate, 2}.
     return.
 
-{function, '__bp_tpl_4', 1, 153}.
-  {label, 152}.
-    {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_4'}, 1}.
-  {label, 153}.
-    {allocate, 1, 1}.
-    {init_yregs, {list, [{y, 0}]}}.
-    {move, {x, 0}, {y, 0}}.
-    {move, {y, 0}, {x, 0}}.
-    {call_ext_last, 1, {extfunc, erlang, byte_size, 1}, 1}.
-
-{function, '__bp_tpl_5--t/1-fun-0--fun-1-', 1, 167}.
-  {label, 166}.
-    {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_5--t/1-fun-0--fun-1-'}, 1}.
-  {label, 167}.
+{function, '__bp_tpl_4--t/1-fun-0--fun-1-', 1, 165}.
+  {label, 164}.
+    {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_4--t/1-fun-0--fun-1-'}, 1}.
+  {label, 165}.
     {allocate, 3, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 171}, [{x, 0}, {atom, enoent}]}.
+    {test, is_eq_exact, {f, 169}, [{x, 0}, {atom, enoent}]}.
     {move, {literal, <<"notfound">>}, {y, 2}}.
-    {jump, {f, 170}}.
+    {jump, {f, 168}}.
+  {label, 169}.
+    {move, {y, 1}, {x, 0}}.
+    {test, is_eq_exact, {f, 170}, [{x, 0}, {atom, eacces}]}.
+    {move, {literal, <<"denied">>}, {y, 2}}.
+    {jump, {f, 168}}.
+  {label, 170}.
+    {move, {y, 1}, {x, 0}}.
+    {test, is_eq_exact, {f, 171}, [{x, 0}, {atom, eperm}]}.
+    {move, {literal, <<"denied">>}, {y, 2}}.
+    {jump, {f, 168}}.
   {label, 171}.
     {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 172}, [{x, 0}, {atom, eacces}]}.
-    {move, {literal, <<"denied">>}, {y, 2}}.
-    {jump, {f, 170}}.
+    {test, is_eq_exact, {f, 172}, [{x, 0}, {atom, eisdir}]}.
+    {move, {literal, <<"isdir">>}, {y, 2}}.
+    {jump, {f, 168}}.
   {label, 172}.
     {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 173}, [{x, 0}, {atom, eperm}]}.
-    {move, {literal, <<"denied">>}, {y, 2}}.
-    {jump, {f, 170}}.
+    {test, is_eq_exact, {f, 173}, [{x, 0}, {atom, enotdir}]}.
+    {move, {literal, <<"notdir">>}, {y, 2}}.
+    {jump, {f, 168}}.
   {label, 173}.
     {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 174}, [{x, 0}, {atom, eisdir}]}.
-    {move, {literal, <<"isdir">>}, {y, 2}}.
-    {jump, {f, 170}}.
-  {label, 174}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 175}, [{x, 0}, {atom, enotdir}]}.
-    {move, {literal, <<"notdir">>}, {y, 2}}.
-    {jump, {f, 170}}.
-  {label, 175}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 176}, [{x, 0}, {atom, eexist}]}.
+    {test, is_eq_exact, {f, 174}, [{x, 0}, {atom, eexist}]}.
     {move, {literal, <<"exists">>}, {y, 2}}.
-    {jump, {f, 170}}.
-  {label, 176}.
+    {jump, {f, 168}}.
+  {label, 174}.
     {move, {literal, <<"other">>}, {y, 2}}.
-    {jump, {f, 170}}.
-  {label, 170}.
+    {jump, {f, 168}}.
+  {label, 168}.
     {move, {y, 2}, {y, 0}}.
-    {jump, {f, 179}}.
-  {label, 179}.
+    {jump, {f, 177}}.
+  {label, 177}.
     {test_heap, 2, 0}.
     {put_list, {y, 1}, nil, {x, 0}}.
     {move, {x, 0}, {y, 2}}.
@@ -9860,27 +9846,27 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {y, 2}, {x, 0}}.
     {call_ext_last, 1, {extfunc, unicode, characters_to_binary, 1}, 3}.
 
-{function, '__bp_tpl_5-t/1-fun-0-', 1, 163}.
-  {label, 162}.
-    {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_5-t/1-fun-0-'}, 1}.
-  {label, 163}.
+{function, '__bp_tpl_4-t/1-fun-0-', 1, 161}.
+  {label, 160}.
+    {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_4-t/1-fun-0-'}, 1}.
+  {label, 161}.
     {allocate, 11, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}]}}.
     {move, {x, 0}, {y, 4}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 167}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 165}, 0, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 5}}.
     {move, {y, 5}, {y, 0}}.
-    {jump, {f, 181}}.
-  {label, 181}.
+    {jump, {f, 179}}.
+  {label, 179}.
     {move, {y, 4}, {x, 0}}.
-    {test, is_tuple, {f, 183}, [{x, 0}]}.
-    {test, test_arity, {f, 183}, [{x, 0}, 3]}.
+    {test, is_tuple, {f, 181}, [{x, 0}]}.
+    {test, test_arity, {f, 181}, [{x, 0}, 3]}.
     {get_tuple_element, {x, 0}, 0, {y, 5}}.
     {get_tuple_element, {x, 0}, 1, {y, 6}}.
     {get_tuple_element, {x, 0}, 2, {y, 7}}.
     {move, {y, 5}, {x, 0}}.
-    {test, is_eq_exact, {f, 183}, [{x, 0}, {atom, mem}]}.
+    {test, is_eq_exact, {f, 181}, [{x, 0}, {atom, mem}]}.
     {move, {y, 6}, {y, 1}}.
     {move, {y, 7}, {y, 2}}.
     {move, {y, 2}, {x, 0}}.
@@ -9888,8 +9874,8 @@ test "fs answers PermissionDenied for an OS permission error" {
     {call_ext, 2, {extfunc, counters, get, 2}}.
     {move, {x, 0}, {y, 8}}.
     {move, {y, 8}, {y, 3}}.
-    {jump, {f, 185}}.
-  {label, 185}.
+    {jump, {f, 183}}.
+  {label, 183}.
     {move, {y, 1}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, byte_size, 1}}.
     {move, {x, 0}, {y, 8}}.
@@ -9903,14 +9889,14 @@ test "fs answers PermissionDenied for an OS permission error" {
     {call_ext, 3, {extfunc, binary, part, 3}}.
     {move, {x, 0}, {y, 8}}.
     {move, {y, 8}, {y, 1}}.
-    {jump, {f, 187}}.
-  {label, 187}.
+    {jump, {f, 185}}.
+  {label, 185}.
     {move, {y, 1}, {x, 0}}.
     {move, {literal, <<"\n">>}, {x, 1}}.
     {call_ext, 2, {extfunc, binary, match, 2}}.
     {move, {x, 0}, {y, 8}}.
     {move, {y, 8}, {x, 0}}.
-    {test, is_eq_exact, {f, 189}, [{x, 0}, {atom, nomatch}]}.
+    {test, is_eq_exact, {f, 187}, [{x, 0}, {atom, nomatch}]}.
     {move, {y, 1}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, byte_size, 1}}.
     {move, {x, 0}, {y, 9}}.
@@ -9925,10 +9911,10 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {y, 9}, {x, 0}}.
     {deallocate, 11}.
     return.
-  {label, 189}.
+  {label, 187}.
     {move, {y, 8}, {x, 0}}.
-    {test, is_tuple, {f, 190}, [{x, 0}]}.
-    {test, test_arity, {f, 190}, [{x, 0}, 2]}.
+    {test, is_tuple, {f, 188}, [{x, 0}]}.
+    {test, test_arity, {f, 188}, [{x, 0}, 2]}.
     {get_tuple_element, {x, 0}, 0, {y, 9}}.
     {move, {y, 9}, {y, 3}}.
     {move, {y, 3}, {x, 0}}.
@@ -9955,20 +9941,20 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {y, 10}, {x, 0}}.
     {deallocate, 11}.
     return.
-  {label, 190}.
+  {label, 188}.
     {move, {y, 8}, {x, 0}}.
     {case_end, {x, 0}}.
-  {label, 183}.
+  {label, 181}.
     {move, {y, 4}, {x, 0}}.
     {call_ext, 1, {extfunc, file, read_line, 1}}.
     {move, {x, 0}, {y, 5}}.
     {move, {y, 5}, {x, 0}}.
-    {test, is_tuple, {f, 193}, [{x, 0}]}.
-    {test, test_arity, {f, 193}, [{x, 0}, 2]}.
+    {test, is_tuple, {f, 191}, [{x, 0}]}.
+    {test, test_arity, {f, 191}, [{x, 0}, 2]}.
     {get_tuple_element, {x, 0}, 0, {y, 6}}.
     {get_tuple_element, {x, 0}, 1, {y, 7}}.
     {move, {y, 6}, {x, 0}}.
-    {test, is_eq_exact, {f, 193}, [{x, 0}, {atom, ok}]}.
+    {test, is_eq_exact, {f, 191}, [{x, 0}, {atom, ok}]}.
     {move, {y, 7}, {y, 1}}.
     {test_heap, 3, 0}.
     {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 1}]}}.
@@ -9976,20 +9962,20 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {y, 8}, {x, 0}}.
     {deallocate, 11}.
     return.
-  {label, 193}.
+  {label, 191}.
     {move, {y, 5}, {x, 0}}.
-    {test, is_eq_exact, {f, 194}, [{x, 0}, {atom, eof}]}.
+    {test, is_eq_exact, {f, 192}, [{x, 0}, {atom, eof}]}.
     {move, {literal, {ok, <<"">>}}, {x, 0}}.
     {deallocate, 11}.
     return.
-  {label, 194}.
+  {label, 192}.
     {move, {y, 5}, {x, 0}}.
-    {test, is_tuple, {f, 195}, [{x, 0}]}.
-    {test, test_arity, {f, 195}, [{x, 0}, 2]}.
+    {test, is_tuple, {f, 193}, [{x, 0}]}.
+    {test, test_arity, {f, 193}, [{x, 0}, 2]}.
     {get_tuple_element, {x, 0}, 0, {y, 6}}.
     {get_tuple_element, {x, 0}, 1, {y, 7}}.
     {move, {y, 6}, {x, 0}}.
-    {test, is_eq_exact, {f, 195}, [{x, 0}, {atom, error}]}.
+    {test, is_eq_exact, {f, 193}, [{x, 0}, {atom, error}]}.
     {move, {y, 7}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
@@ -10001,19 +9987,19 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {y, 8}, {x, 0}}.
     {deallocate, 11}.
     return.
-  {label, 195}.
+  {label, 193}.
     {move, {y, 5}, {x, 0}}.
     {case_end, {x, 0}}.
 
-{function, '__bp_tpl_5', 1, 159}.
-  {label, 158}.
-    {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_5'}, 1}.
-  {label, 159}.
+{function, '__bp_tpl_4', 1, 157}.
+  {label, 156}.
+    {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_4'}, 1}.
+  {label, 157}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 163}, 1, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 161}, 1, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
@@ -10021,10 +10007,10 @@ test "fs answers PermissionDenied for an OS permission error" {
     {deallocate, 2}.
     return.
 
-{function, '__bp_tpl_6-t/1-fun-0-', 1, 205}.
-  {label, 204}.
-    {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_6-t/1-fun-0-'}, 1}.
-  {label, 205}.
+{function, '__bp_tpl_5-t/1-fun-0-', 1, 203}.
+  {label, 202}.
+    {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_5-t/1-fun-0-'}, 1}.
+  {label, 203}.
     {allocate, 7, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}]}}.
     {move, {x, 0}, {y, 1}}.
@@ -10032,13 +10018,13 @@ test "fs answers PermissionDenied for an OS permission error" {
     {call_ext, 1, {extfunc, erlang, byte_size, 1}}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 2}, {y, 0}}.
-    {jump, {f, 209}}.
-  {label, 209}.
+    {jump, {f, 207}}.
+  {label, 207}.
     {move, {y, 0}, {x, 0}}.
     {move, {integer, 2}, {x, 1}}.
-    {test, is_ge, {f, 211}, [{x, 0}, {x, 1}]}.
-    {jump, {f, 212}}.
-  {label, 212}.
+    {test, is_ge, {f, 209}, [{x, 0}, {x, 1}]}.
+    {jump, {f, 210}}.
+  {label, 210}.
     {move, {y, 0}, {x, 0}}.
     {move, {integer, 2}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, '-', 2}}.
@@ -10049,7 +10035,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     {call_ext, 3, {extfunc, binary, part, 3}}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 2}, {x, 0}}.
-    {test, is_eq_exact, {f, 214}, [{x, 0}, {literal, <<"\r\n">>}]}.
+    {test, is_eq_exact, {f, 212}, [{x, 0}, {literal, <<"\r\n">>}]}.
     {move, {y, 0}, {x, 0}}.
     {move, {integer, 2}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, '-', 2}}.
@@ -10058,12 +10044,12 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {integer, 0}, {x, 1}}.
     {move, {y, 3}, {x, 2}}.
     {call_ext_last, 3, {extfunc, binary, part, 3}, 7}.
-  {label, 214}.
+  {label, 212}.
     {move, {y, 2}, {x, 0}}.
-    {test, is_binary, {f, 215}, [{x, 0}]}.
-    {gc_bif, byte_size, {f, 215}, 1, [{x, 0}], {y, 3}}.
+    {test, is_binary, {f, 213}, [{x, 0}]}.
+    {gc_bif, byte_size, {f, 213}, 1, [{x, 0}], {y, 3}}.
     {move, {y, 3}, {x, 0}}.
-    {test, is_eq_exact, {f, 215}, [{x, 0}, {integer, 2}]}.
+    {test, is_eq_exact, {f, 213}, [{x, 0}, {integer, 2}]}.
     {move, {y, 2}, {x, 0}}.
     {call_ext, 1, {extfunc, binary, decode_unsigned, 1}}.
     {move, {x, 0}, {y, 4}}.
@@ -10076,7 +10062,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     {call_ext, 2, {extfunc, erlang, 'band', 2}}.
     {move, {x, 0}, {y, 5}}.
     {move, {y, 5}, {x, 0}}.
-    {test, is_eq_exact, {f, 215}, [{x, 0}, {integer, 10}]}.
+    {test, is_eq_exact, {f, 213}, [{x, 0}, {integer, 10}]}.
     {move, {y, 0}, {x, 0}}.
     {move, {integer, 1}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, '-', 2}}.
@@ -10085,41 +10071,41 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {integer, 0}, {x, 1}}.
     {move, {y, 6}, {x, 2}}.
     {call_ext_last, 3, {extfunc, binary, part, 3}, 7}.
-  {label, 215}.
+  {label, 213}.
     {move, {y, 1}, {x, 0}}.
     {deallocate, 7}.
     return.
-  {label, 211}.
+  {label, 209}.
     {move, {y, 0}, {x, 0}}.
     {move, {integer, 1}, {x, 1}}.
-    {test, is_eq_exact, {f, 217}, [{x, 0}, {x, 1}]}.
-    {jump, {f, 218}}.
-  {label, 218}.
+    {test, is_eq_exact, {f, 215}, [{x, 0}, {x, 1}]}.
+    {jump, {f, 216}}.
+  {label, 216}.
     {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 220}, [{x, 0}, {literal, <<"\n">>}]}.
+    {test, is_eq_exact, {f, 218}, [{x, 0}, {literal, <<"\n">>}]}.
     {move, {literal, <<"">>}, {x, 0}}.
     {deallocate, 7}.
     return.
-  {label, 220}.
+  {label, 218}.
     {move, {y, 1}, {x, 0}}.
     {deallocate, 7}.
     return.
-  {label, 217}.
-    {jump, {f, 223}}.
-  {label, 223}.
+  {label, 215}.
+    {jump, {f, 221}}.
+  {label, 221}.
     {move, {y, 1}, {x, 0}}.
     {deallocate, 7}.
     return.
 
-{function, '__bp_tpl_6', 1, 201}.
-  {label, 200}.
-    {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_6'}, 1}.
-  {label, 201}.
+{function, '__bp_tpl_5', 1, 199}.
+  {label, 198}.
+    {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_5'}, 1}.
+  {label, 199}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 205}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 203}, 0, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
@@ -10127,10 +10113,10 @@ test "fs answers PermissionDenied for an OS permission error" {
     {deallocate, 2}.
     return.
 
-{function, '__bp_tpl_7-t/1-fun-0-', 1, 229}.
-  {label, 228}.
-    {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_7-t/1-fun-0-'}, 1}.
-  {label, 229}.
+{function, '__bp_tpl_6-t/1-fun-0-', 1, 227}.
+  {label, 226}.
+    {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_6-t/1-fun-0-'}, 1}.
+  {label, 227}.
     {allocate, 5, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}]}}.
     {move, {x, 0}, {y, 1}}.
@@ -10141,47 +10127,47 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 0}, {y, 2}}.
     {move, {y, 2}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_binary, {f, 233}, [{x, 0}]}.
-    {jump, {f, 234}}.
-  {label, 234}.
+    {test, is_binary, {f, 231}, [{x, 0}]}.
+    {jump, {f, 232}}.
+  {label, 232}.
     {move, {integer, -1}, {x, 0}}.
     {deallocate, 5}.
     return.
+  {label, 231}.
+    {move, {y, 2}, {x, 0}}.
+    {test, is_tuple, {f, 233}, [{x, 0}]}.
+    {test, test_arity, {f, 233}, [{x, 0}, 3]}.
+    {get_tuple_element, {x, 0}, 0, {y, 3}}.
+    {get_tuple_element, {x, 0}, 1, {y, 4}}.
+    {move, {y, 3}, {x, 0}}.
+    {test, is_eq_exact, {f, 233}, [{x, 0}, {atom, error}]}.
+    {move, {y, 4}, {y, 0}}.
+    {move, {y, 0}, {x, 0}}.
+    {call_ext_last, 1, {extfunc, erlang, byte_size, 1}, 5}.
   {label, 233}.
     {move, {y, 2}, {x, 0}}.
-    {test, is_tuple, {f, 235}, [{x, 0}]}.
-    {test, test_arity, {f, 235}, [{x, 0}, 3]}.
+    {test, is_tuple, {f, 234}, [{x, 0}]}.
+    {test, test_arity, {f, 234}, [{x, 0}, 3]}.
     {get_tuple_element, {x, 0}, 0, {y, 3}}.
     {get_tuple_element, {x, 0}, 1, {y, 4}}.
     {move, {y, 3}, {x, 0}}.
-    {test, is_eq_exact, {f, 235}, [{x, 0}, {atom, error}]}.
+    {test, is_eq_exact, {f, 234}, [{x, 0}, {atom, incomplete}]}.
     {move, {y, 4}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
     {call_ext_last, 1, {extfunc, erlang, byte_size, 1}, 5}.
-  {label, 235}.
-    {move, {y, 2}, {x, 0}}.
-    {test, is_tuple, {f, 236}, [{x, 0}]}.
-    {test, test_arity, {f, 236}, [{x, 0}, 3]}.
-    {get_tuple_element, {x, 0}, 0, {y, 3}}.
-    {get_tuple_element, {x, 0}, 1, {y, 4}}.
-    {move, {y, 3}, {x, 0}}.
-    {test, is_eq_exact, {f, 236}, [{x, 0}, {atom, incomplete}]}.
-    {move, {y, 4}, {y, 0}}.
-    {move, {y, 0}, {x, 0}}.
-    {call_ext_last, 1, {extfunc, erlang, byte_size, 1}, 5}.
-  {label, 236}.
+  {label, 234}.
     {move, {y, 2}, {x, 0}}.
     {case_end, {x, 0}}.
 
-{function, '__bp_tpl_7', 1, 225}.
-  {label, 224}.
-    {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_7'}, 1}.
-  {label, 225}.
+{function, '__bp_tpl_6', 1, 223}.
+  {label, 222}.
+    {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_6'}, 1}.
+  {label, 223}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 229}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 227}, 0, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
@@ -10189,44 +10175,44 @@ test "fs answers PermissionDenied for an OS permission error" {
     {deallocate, 2}.
     return.
 
-{function, '__bp_tpl_8-t/1-fun-0-', 1, 246}.
-  {label, 245}.
-    {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_8-t/1-fun-0-'}, 1}.
-  {label, 246}.
+{function, '__bp_tpl_7-t/1-fun-0-', 1, 244}.
+  {label, 243}.
+    {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_7-t/1-fun-0-'}, 1}.
+  {label, 244}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {integer, -9223372036854775807}, {x, 0}}.
     {move, {integer, 1}, {x, 1}}.
-    {gc_bif, '-', {f, 248}, 2, [{x, 0}, {x, 1}], {x, 0}}.
+    {gc_bif, '-', {f, 246}, 2, [{x, 0}, {x, 1}], {x, 0}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
-    {test, is_ge, {f, 248}, [{x, 0}, {x, 1}]}.
+    {test, is_ge, {f, 246}, [{x, 0}, {x, 1}]}.
     {move, {integer, 9223372036854775807}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
-    {test, is_ge, {f, 248}, [{x, 0}, {x, 1}]}.
-    {jump, {f, 249}}.
-  {label, 249}.
+    {test, is_ge, {f, 246}, [{x, 0}, {x, 1}]}.
+    {jump, {f, 247}}.
+  {label, 247}.
     {move, {y, 0}, {x, 0}}.
     {deallocate, 2}.
     return.
-  {label, 248}.
+  {label, 246}.
     {move, {y, 0}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, integer_to_binary, 1}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
-    {test, is_binary, {f, 251}, [{x, 0}]}.
+    {test, is_binary, {f, 249}, [{x, 0}]}.
     {test_heap, 6, 0}.
     {put_list, {literal, <<" does not fit i64">>}, nil, {x, 0}}.
     {put_list, {y, 1}, {x, 0}, {x, 0}}.
     {put_list, {literal, <<"toI64: ">>}, {x, 0}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
-    {jump, {f, 252}}.
-  {label, 251}.
+    {jump, {f, 250}}.
+  {label, 249}.
     {move, {atom, badarg}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 252}.
+  {label, 250}.
     {move, {x, 0}, {y, 1}}.
     {test_heap, 3, 0}.
     {put_tuple2, {x, 0}, {list, [{atom, integer_overflow}, {y, 1}]}}.
@@ -10234,15 +10220,15 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {y, 1}, {x, 0}}.
     {call_ext_last, 1, {extfunc, erlang, error, 1}, 2}.
 
-{function, '__bp_tpl_8', 1, 242}.
-  {label, 241}.
-    {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_8'}, 1}.
-  {label, 242}.
+{function, '__bp_tpl_7', 1, 240}.
+  {label, 239}.
+    {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_7'}, 1}.
+  {label, 240}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 246}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 244}, 0, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
@@ -10250,10 +10236,10 @@ test "fs answers PermissionDenied for an OS permission error" {
     {deallocate, 2}.
     return.
 
-{function, '__bp_tpl_9-t/1-fun-0-', 1, 262}.
-  {label, 261}.
-    {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_9-t/1-fun-0-'}, 1}.
-  {label, 262}.
+{function, '__bp_tpl_8-t/1-fun-0-', 1, 260}.
+  {label, 259}.
+    {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_8-t/1-fun-0-'}, 1}.
+  {label, 260}.
     {allocate, 4, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
     {move, {x, 0}, {y, 1}}.
@@ -10262,29 +10248,29 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 0}, {y, 2}}.
     {move, {y, 2}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_binary, {f, 266}, [{x, 0}]}.
-    {jump, {f, 267}}.
-  {label, 267}.
+    {test, is_binary, {f, 264}, [{x, 0}]}.
+    {jump, {f, 265}}.
+  {label, 265}.
     {test_heap, 3, 0}.
     {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 0}]}}.
     {move, {x, 0}, {y, 3}}.
     {move, {y, 3}, {x, 0}}.
     {deallocate, 4}.
     return.
-  {label, 266}.
+  {label, 264}.
     {move, {literal, {error, <<"Bytes.toUtf8: not valid UTF-8">>}}, {x, 0}}.
     {deallocate, 4}.
     return.
 
-{function, '__bp_tpl_9', 1, 258}.
-  {label, 257}.
-    {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_9'}, 1}.
-  {label, 258}.
+{function, '__bp_tpl_8', 1, 256}.
+  {label, 255}.
+    {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_8'}, 1}.
+  {label, 256}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 262}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 260}, 0, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
@@ -10292,49 +10278,49 @@ test "fs answers PermissionDenied for an OS permission error" {
     {deallocate, 2}.
     return.
 
-{function, '__bp_tpl_10--t/1-fun-0--fun-1-', 1, 278}.
-  {label, 277}.
-    {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_10--t/1-fun-0--fun-1-'}, 1}.
-  {label, 278}.
+{function, '__bp_tpl_9--t/1-fun-0--fun-1-', 1, 276}.
+  {label, 275}.
+    {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_9--t/1-fun-0--fun-1-'}, 1}.
+  {label, 276}.
     {allocate, 3, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 282}, [{x, 0}, {atom, enoent}]}.
+    {test, is_eq_exact, {f, 280}, [{x, 0}, {atom, enoent}]}.
     {move, {literal, <<"notfound">>}, {y, 2}}.
-    {jump, {f, 281}}.
+    {jump, {f, 279}}.
+  {label, 280}.
+    {move, {y, 1}, {x, 0}}.
+    {test, is_eq_exact, {f, 281}, [{x, 0}, {atom, eacces}]}.
+    {move, {literal, <<"denied">>}, {y, 2}}.
+    {jump, {f, 279}}.
+  {label, 281}.
+    {move, {y, 1}, {x, 0}}.
+    {test, is_eq_exact, {f, 282}, [{x, 0}, {atom, eperm}]}.
+    {move, {literal, <<"denied">>}, {y, 2}}.
+    {jump, {f, 279}}.
   {label, 282}.
     {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 283}, [{x, 0}, {atom, eacces}]}.
-    {move, {literal, <<"denied">>}, {y, 2}}.
-    {jump, {f, 281}}.
+    {test, is_eq_exact, {f, 283}, [{x, 0}, {atom, eisdir}]}.
+    {move, {literal, <<"isdir">>}, {y, 2}}.
+    {jump, {f, 279}}.
   {label, 283}.
     {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 284}, [{x, 0}, {atom, eperm}]}.
-    {move, {literal, <<"denied">>}, {y, 2}}.
-    {jump, {f, 281}}.
+    {test, is_eq_exact, {f, 284}, [{x, 0}, {atom, enotdir}]}.
+    {move, {literal, <<"notdir">>}, {y, 2}}.
+    {jump, {f, 279}}.
   {label, 284}.
     {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 285}, [{x, 0}, {atom, eisdir}]}.
-    {move, {literal, <<"isdir">>}, {y, 2}}.
-    {jump, {f, 281}}.
-  {label, 285}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 286}, [{x, 0}, {atom, enotdir}]}.
-    {move, {literal, <<"notdir">>}, {y, 2}}.
-    {jump, {f, 281}}.
-  {label, 286}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 287}, [{x, 0}, {atom, eexist}]}.
+    {test, is_eq_exact, {f, 285}, [{x, 0}, {atom, eexist}]}.
     {move, {literal, <<"exists">>}, {y, 2}}.
-    {jump, {f, 281}}.
-  {label, 287}.
+    {jump, {f, 279}}.
+  {label, 285}.
     {move, {literal, <<"other">>}, {y, 2}}.
-    {jump, {f, 281}}.
-  {label, 281}.
+    {jump, {f, 279}}.
+  {label, 279}.
     {move, {y, 2}, {y, 0}}.
-    {jump, {f, 290}}.
-  {label, 290}.
+    {jump, {f, 288}}.
+  {label, 288}.
     {test_heap, 2, 0}.
     {put_list, {y, 1}, nil, {x, 0}}.
     {move, {x, 0}, {y, 2}}.
@@ -10350,17 +10336,17 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {y, 2}, {x, 0}}.
     {call_ext_last, 1, {extfunc, unicode, characters_to_binary, 1}, 3}.
 
-{function, '__bp_tpl_10--t/1-fun-0--fun-2-', 3, 297}.
-  {label, 296}.
-    {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_10--t/1-fun-0--fun-2-'}, 3}.
-  {label, 297}.
+{function, '__bp_tpl_9--t/1-fun-0--fun-2-', 3, 295}.
+  {label, 294}.
+    {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_9--t/1-fun-0--fun-2-'}, 3}.
+  {label, 295}.
     {allocate, 9, 3}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}]}}.
     {move, {x, 0}, {y, 2}}.
     {move, {x, 1}, {y, 3}}.
     {move, {x, 2}, {y, 0}}.
     {test_heap, {alloc, [{words, 1}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 297}, 0, 0, {x, 0}, {list, [{y, 0}]}}.
+    {make_fun3, {f, 295}, 0, 0, {x, 0}, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 2}, {x, 1}}.
@@ -10368,12 +10354,12 @@ test "fs answers PermissionDenied for an OS permission error" {
     {call_ext, 3, {extfunc, file, pread, 3}}.
     {move, {x, 0}, {y, 4}}.
     {move, {y, 4}, {x, 0}}.
-    {test, is_tuple, {f, 301}, [{x, 0}]}.
-    {test, test_arity, {f, 301}, [{x, 0}, 2]}.
+    {test, is_tuple, {f, 299}, [{x, 0}]}.
+    {test, test_arity, {f, 299}, [{x, 0}, 2]}.
     {get_tuple_element, {x, 0}, 0, {y, 5}}.
     {get_tuple_element, {x, 0}, 1, {y, 6}}.
     {move, {y, 5}, {x, 0}}.
-    {test, is_eq_exact, {f, 301}, [{x, 0}, {atom, ok}]}.
+    {test, is_eq_exact, {f, 299}, [{x, 0}, {atom, ok}]}.
     {move, {y, 6}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, byte_size, 1}}.
@@ -10389,50 +10375,50 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {y, 7}, {x, 0}}.
     {move, {y, 8}, {x, 1}}.
     {move, {y, 0}, {x, 2}}.
-    {call_last, 3, {f, 297}, 9}.
-  {label, 301}.
+    {call_last, 3, {f, 295}, 9}.
+  {label, 299}.
     {move, {y, 4}, {x, 0}}.
-    {test, is_eq_exact, {f, 302}, [{x, 0}, {atom, eof}]}.
+    {test, is_eq_exact, {f, 300}, [{x, 0}, {atom, eof}]}.
     {move, {y, 3}, {x, 0}}.
     {call_ext_last, 1, {extfunc, crypto, hash_final, 1}, 9}.
-  {label, 302}.
+  {label, 300}.
     {move, {y, 4}, {x, 0}}.
-    {test, is_tuple, {f, 303}, [{x, 0}]}.
-    {test, test_arity, {f, 303}, [{x, 0}, 2]}.
+    {test, is_tuple, {f, 301}, [{x, 0}]}.
+    {test, test_arity, {f, 301}, [{x, 0}, 2]}.
     {get_tuple_element, {x, 0}, 0, {y, 5}}.
     {get_tuple_element, {x, 0}, 1, {y, 6}}.
     {move, {y, 5}, {x, 0}}.
-    {test, is_eq_exact, {f, 303}, [{x, 0}, {atom, error}]}.
+    {test, is_eq_exact, {f, 301}, [{x, 0}, {atom, error}]}.
     {move, {y, 6}, {y, 1}}.
     {test_heap, 3, 0}.
     {put_tuple2, {x, 0}, {list, [{atom, bp_fs_hash}, {y, 1}]}}.
     {move, {x, 0}, {y, 7}}.
     {move, {y, 7}, {x, 0}}.
     {call_ext_last, 1, {extfunc, erlang, throw, 1}, 9}.
-  {label, 303}.
+  {label, 301}.
     {move, {y, 4}, {x, 0}}.
     {case_end, {x, 0}}.
 
-{function, '__bp_tpl_10-t/1-fun-0-', 1, 274}.
-  {label, 273}.
-    {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_10-t/1-fun-0-'}, 1}.
-  {label, 274}.
+{function, '__bp_tpl_9-t/1-fun-0-', 1, 272}.
+  {label, 271}.
+    {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_9-t/1-fun-0-'}, 1}.
+  {label, 272}.
     {allocate, 11, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}]}}.
     {move, {x, 0}, {y, 2}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 278}, 1, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 276}, 1, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 3}}.
     {move, {y, 3}, {y, 0}}.
-    {jump, {f, 292}}.
-  {label, 292}.
+    {jump, {f, 290}}.
+  {label, 290}.
     {move, {y, 2}, {x, 0}}.
-    {test, is_tuple, {f, 294}, [{x, 0}]}.
-    {test, test_arity, {f, 294}, [{x, 0}, 3]}.
+    {test, is_tuple, {f, 292}, [{x, 0}]}.
+    {test, test_arity, {f, 292}, [{x, 0}, 3]}.
     {get_tuple_element, {x, 0}, 0, {y, 3}}.
     {get_tuple_element, {x, 0}, 1, {y, 4}}.
     {move, {y, 3}, {x, 0}}.
-    {test, is_eq_exact, {f, 294}, [{x, 0}, {atom, mem}]}.
+    {test, is_eq_exact, {f, 292}, [{x, 0}, {atom, mem}]}.
     {move, {y, 4}, {y, 1}}.
     {move, {atom, sha256}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
@@ -10450,14 +10436,14 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {y, 5}, {x, 0}}.
     {deallocate, 11}.
     return.
-  {label, 294}.
+  {label, 292}.
     {test_heap, {alloc, [{words, 1}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 297}, 0, 0, {x, 0}, {list, [{y, 2}]}}.
+    {make_fun3, {f, 295}, 0, 0, {x, 0}, {list, [{y, 2}]}}.
     {move, {x, 0}, {y, 3}}.
     {move, {y, 3}, {y, 1}}.
-    {jump, {f, 305}}.
-  {label, 305}.
-    {'try', {y, 10}, {f, 306}}.
+    {jump, {f, 303}}.
+  {label, 303}.
+    {'try', {y, 10}, {f, 304}}.
     {move, {atom, sha256}, {x, 0}}.
     {call_ext, 1, {extfunc, crypto, hash_init, 1}}.
     {move, {x, 0}, {y, 4}}.
@@ -10477,21 +10463,21 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 0}, {y, 4}}.
     {move, {y, 4}, {y, 3}}.
     {try_end, {y, 10}}.
-    {jump, {f, 307}}.
-  {label, 306}.
+    {jump, {f, 305}}.
+  {label, 304}.
     {try_case, {y, 10}}.
     {move, {x, 0}, {y, 4}}.
     {move, {x, 1}, {y, 5}}.
     {move, {x, 2}, {y, 6}}.
     {move, {y, 4}, {x, 0}}.
-    {test, is_eq_exact, {f, 309}, [{x, 0}, {atom, throw}]}.
+    {test, is_eq_exact, {f, 307}, [{x, 0}, {atom, throw}]}.
     {move, {y, 5}, {x, 0}}.
-    {test, is_tuple, {f, 309}, [{x, 0}]}.
-    {test, test_arity, {f, 309}, [{x, 0}, 2]}.
+    {test, is_tuple, {f, 307}, [{x, 0}]}.
+    {test, test_arity, {f, 307}, [{x, 0}, 2]}.
     {get_tuple_element, {x, 0}, 0, {y, 7}}.
     {get_tuple_element, {x, 0}, 1, {y, 8}}.
     {move, {y, 7}, {x, 0}}.
-    {test, is_eq_exact, {f, 309}, [{x, 0}, {atom, bp_fs_hash}]}.
+    {test, is_eq_exact, {f, 307}, [{x, 0}, {atom, bp_fs_hash}]}.
     {move, {y, 8}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
@@ -10501,27 +10487,27 @@ test "fs answers PermissionDenied for an OS permission error" {
     {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 9}]}}.
     {move, {x, 0}, {y, 9}}.
     {move, {y, 9}, {y, 3}}.
-    {jump, {f, 308}}.
-  {label, 309}.
+    {jump, {f, 306}}.
+  {label, 307}.
     {move, {y, 4}, {x, 0}}.
     {move, {y, 5}, {x, 1}}.
     {move, {y, 6}, {x, 2}}.
     raw_raise.
-  {label, 308}.
-  {label, 307}.
+  {label, 306}.
+  {label, 305}.
     {move, {y, 3}, {x, 0}}.
     {deallocate, 11}.
     return.
 
-{function, '__bp_tpl_10', 1, 270}.
-  {label, 269}.
-    {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_10'}, 1}.
-  {label, 270}.
+{function, '__bp_tpl_9', 1, 268}.
+  {label, 267}.
+    {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_9'}, 1}.
+  {label, 268}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 274}, 2, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 272}, 2, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
@@ -10529,49 +10515,49 @@ test "fs answers PermissionDenied for an OS permission error" {
     {deallocate, 2}.
     return.
 
-{function, '__bp_tpl_11--t/2-fun-0--fun-1-', 1, 323}.
-  {label, 322}.
-    {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_11--t/2-fun-0--fun-1-'}, 1}.
-  {label, 323}.
+{function, '__bp_tpl_10--t/2-fun-0--fun-1-', 1, 321}.
+  {label, 320}.
+    {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_10--t/2-fun-0--fun-1-'}, 1}.
+  {label, 321}.
     {allocate, 3, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 327}, [{x, 0}, {atom, enoent}]}.
+    {test, is_eq_exact, {f, 325}, [{x, 0}, {atom, enoent}]}.
     {move, {literal, <<"notfound">>}, {y, 2}}.
-    {jump, {f, 326}}.
+    {jump, {f, 324}}.
+  {label, 325}.
+    {move, {y, 1}, {x, 0}}.
+    {test, is_eq_exact, {f, 326}, [{x, 0}, {atom, eacces}]}.
+    {move, {literal, <<"denied">>}, {y, 2}}.
+    {jump, {f, 324}}.
+  {label, 326}.
+    {move, {y, 1}, {x, 0}}.
+    {test, is_eq_exact, {f, 327}, [{x, 0}, {atom, eperm}]}.
+    {move, {literal, <<"denied">>}, {y, 2}}.
+    {jump, {f, 324}}.
   {label, 327}.
     {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 328}, [{x, 0}, {atom, eacces}]}.
-    {move, {literal, <<"denied">>}, {y, 2}}.
-    {jump, {f, 326}}.
+    {test, is_eq_exact, {f, 328}, [{x, 0}, {atom, eisdir}]}.
+    {move, {literal, <<"isdir">>}, {y, 2}}.
+    {jump, {f, 324}}.
   {label, 328}.
     {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 329}, [{x, 0}, {atom, eperm}]}.
-    {move, {literal, <<"denied">>}, {y, 2}}.
-    {jump, {f, 326}}.
+    {test, is_eq_exact, {f, 329}, [{x, 0}, {atom, enotdir}]}.
+    {move, {literal, <<"notdir">>}, {y, 2}}.
+    {jump, {f, 324}}.
   {label, 329}.
     {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 330}, [{x, 0}, {atom, eisdir}]}.
-    {move, {literal, <<"isdir">>}, {y, 2}}.
-    {jump, {f, 326}}.
-  {label, 330}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 331}, [{x, 0}, {atom, enotdir}]}.
-    {move, {literal, <<"notdir">>}, {y, 2}}.
-    {jump, {f, 326}}.
-  {label, 331}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 332}, [{x, 0}, {atom, eexist}]}.
+    {test, is_eq_exact, {f, 330}, [{x, 0}, {atom, eexist}]}.
     {move, {literal, <<"exists">>}, {y, 2}}.
-    {jump, {f, 326}}.
-  {label, 332}.
+    {jump, {f, 324}}.
+  {label, 330}.
     {move, {literal, <<"other">>}, {y, 2}}.
-    {jump, {f, 326}}.
-  {label, 326}.
+    {jump, {f, 324}}.
+  {label, 324}.
     {move, {y, 2}, {y, 0}}.
-    {jump, {f, 335}}.
-  {label, 335}.
+    {jump, {f, 333}}.
+  {label, 333}.
     {test_heap, 2, 0}.
     {put_list, {y, 1}, nil, {x, 0}}.
     {move, {x, 0}, {y, 2}}.
@@ -10587,36 +10573,36 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {y, 2}, {x, 0}}.
     {call_ext_last, 1, {extfunc, unicode, characters_to_binary, 1}, 3}.
 
-{function, '__bp_tpl_11-t/2-fun-0-', 2, 319}.
-  {label, 318}.
-    {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_11-t/2-fun-0-'}, 2}.
-  {label, 319}.
+{function, '__bp_tpl_10-t/2-fun-0-', 2, 317}.
+  {label, 316}.
+    {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_10-t/2-fun-0-'}, 2}.
+  {label, 317}.
     {allocate, 8, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}]}}.
     {move, {x, 0}, {y, 2}}.
     {move, {x, 1}, {y, 3}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 323}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 321}, 0, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 4}}.
     {move, {y, 4}, {y, 0}}.
-    {jump, {f, 337}}.
-  {label, 337}.
+    {jump, {f, 335}}.
+  {label, 335}.
     {move, {y, 2}, {x, 0}}.
-    {test, is_tuple, {f, 339}, [{x, 0}]}.
-    {test, test_arity, {f, 339}, [{x, 0}, 3]}.
+    {test, is_tuple, {f, 337}, [{x, 0}]}.
+    {test, test_arity, {f, 337}, [{x, 0}, 3]}.
     {get_tuple_element, {x, 0}, 0, {y, 4}}.
     {move, {y, 4}, {x, 0}}.
-    {test, is_eq_exact, {f, 339}, [{x, 0}, {atom, mem}]}.
+    {test, is_eq_exact, {f, 337}, [{x, 0}, {atom, mem}]}.
     {move, {literal, {error, <<"other|the file is open for reading">>}}, {x, 0}}.
     {deallocate, 8}.
     return.
-  {label, 339}.
+  {label, 337}.
     {move, {y, 2}, {x, 0}}.
     {move, {y, 3}, {x, 1}}.
     {call_ext, 2, {extfunc, file, write, 2}}.
     {move, {x, 0}, {y, 4}}.
     {move, {y, 4}, {x, 0}}.
-    {test, is_eq_exact, {f, 342}, [{x, 0}, {atom, ok}]}.
+    {test, is_eq_exact, {f, 340}, [{x, 0}, {atom, ok}]}.
     {move, {y, 3}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, byte_size, 1}}.
     {move, {x, 0}, {y, 5}}.
@@ -10626,14 +10612,14 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {y, 5}, {x, 0}}.
     {deallocate, 8}.
     return.
-  {label, 342}.
+  {label, 340}.
     {move, {y, 4}, {x, 0}}.
-    {test, is_tuple, {f, 343}, [{x, 0}]}.
-    {test, test_arity, {f, 343}, [{x, 0}, 2]}.
+    {test, is_tuple, {f, 341}, [{x, 0}]}.
+    {test, test_arity, {f, 341}, [{x, 0}, 2]}.
     {get_tuple_element, {x, 0}, 0, {y, 5}}.
     {get_tuple_element, {x, 0}, 1, {y, 6}}.
     {move, {y, 5}, {x, 0}}.
-    {test, is_eq_exact, {f, 343}, [{x, 0}, {atom, error}]}.
+    {test, is_eq_exact, {f, 341}, [{x, 0}, {atom, error}]}.
     {move, {y, 6}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
@@ -10645,20 +10631,20 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {y, 7}, {x, 0}}.
     {deallocate, 8}.
     return.
-  {label, 343}.
+  {label, 341}.
     {move, {y, 4}, {x, 0}}.
     {case_end, {x, 0}}.
 
-{function, '__bp_tpl_11', 2, 315}.
-  {label, 314}.
-    {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_11'}, 2}.
-  {label, 315}.
+{function, '__bp_tpl_10', 2, 313}.
+  {label, 312}.
+    {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_10'}, 2}.
+  {label, 313}.
     {allocate, 3, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 319}, 1, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 317}, 1, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
@@ -10667,41 +10653,41 @@ test "fs answers PermissionDenied for an OS permission error" {
     {deallocate, 3}.
     return.
 
-{function, '__bp_tpl_12-t/1-fun-0-', 1, 352}.
-  {label, 351}.
-    {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_12-t/1-fun-0-'}, 1}.
-  {label, 352}.
+{function, '__bp_tpl_11-t/1-fun-0-', 1, 350}.
+  {label, 349}.
+    {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_11-t/1-fun-0-'}, 1}.
+  {label, 350}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tuple, {f, 356}, [{x, 0}]}.
-    {test, test_arity, {f, 356}, [{x, 0}, 3]}.
+    {test, is_tuple, {f, 354}, [{x, 0}]}.
+    {test, test_arity, {f, 354}, [{x, 0}, 3]}.
     {get_tuple_element, {x, 0}, 0, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 356}, [{x, 0}, {atom, mem}]}.
+    {test, is_eq_exact, {f, 354}, [{x, 0}, {atom, mem}]}.
     {move, {atom, ok}, {x, 0}}.
     {deallocate, 2}.
     return.
-  {label, 356}.
+  {label, 354}.
     {move, {y, 0}, {x, 0}}.
     {call_ext, 1, {extfunc, file, close, 1}}.
     {move, {x, 0}, {y, 1}}.
-    {jump, {f, 359}}.
-  {label, 359}.
+    {jump, {f, 357}}.
+  {label, 357}.
     {move, {atom, ok}, {x, 0}}.
     {deallocate, 2}.
     return.
 
-{function, '__bp_tpl_12', 1, 348}.
-  {label, 347}.
-    {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_12'}, 1}.
-  {label, 348}.
+{function, '__bp_tpl_11', 1, 346}.
+  {label, 345}.
+    {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_11'}, 1}.
+  {label, 346}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 352}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 350}, 0, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.

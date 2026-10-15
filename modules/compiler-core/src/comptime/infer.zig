@@ -15275,6 +15275,13 @@ fn inferIdentifierExpr(env: *Env, ident: ast.IdentifierExprOf(.untyped), loc: as
                     try env.instanceLowerings.put(loc, .{ .prim = k });
                     outType = try env.namedType("i32");
                 }
+                // `b.length` on a `Bytes` is its byte count, as `b.length()` is:
+                // the primitive kind makes erlang and beam lower it to
+                // `byte_size/1`, never a text length.
+                else if (std.mem.eql(u8, recvNamed.name, "Bytes") and std.mem.eql(u8, ia.member, "length")) {
+                    try env.instanceLowerings.put(loc, .{ .prim = .bytes });
+                    outType = try env.namedType("i32");
+                }
                 // Tuple index access (`t._0`, `t._1`, …): resolve to the Nth
                 // element type so a `?T` element keeps its `@Option` method
                 // surface (`.unwrapOr`) — without this the element gets a fresh

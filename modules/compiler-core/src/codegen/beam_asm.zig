@@ -12338,6 +12338,8 @@ const Emitter = struct {
                         try beamEmitter.writeCall(self.out, .normal, 1, .{ .ext = .{ .module = "unicode", .function = "characters_to_list" } }, 0);
                         try beamEmitter.writeGcBif(self.out, .length, 1, &.{Op.xr(0)}, Dst.xr(dest));
                     },
+                    // `b.length` on `Bytes` is its byte count (`byte_size/1`).
+                    .bytes => try beamEmitter.writeGcBif(self.out, .byte_size, @max(self.min_live, 1), &.{Op.xr(0)}, Dst.xr(dest)),
                     // `length/1` is a gc_bif, not a call: a `call_ext` here would
                     // clobber the caller-saved x-registers an enclosing argument
                     // staging is holding (`xs.slice(1, xs.length)` lost both
@@ -12769,6 +12771,16 @@ const Emitter = struct {
         if (ia.optional or tupleIndexMember(ia.member) != null) return false;
         if (self.recordTypeOfReceiver(loc, ia.receiver.*, ia.member) != null) return false;
         if (std.mem.eql(u8, ia.member, "length")) return self.instanceLowering(loc, ia.receiver.*) == null;
+        // A record the compiler splices into the module that uses it
+        // (`Asset`, `SourceLocation`), read in a module that neither declares
+        // nor imports it (std reading `Asset.path`): the value is a tagged
+        // tuple and answers through its own tag, whatever the other modules
+        // declare — the map read below would leave the whole record in `x0`.
+        if (self.instance_lowerings.get(loc)) |il| switch (il) {
+            .field_of => |t| if (!self.record_fields.contains(t) and
+                (std.mem.eql(u8, t, "Asset") or std.mem.eql(u8, t, "SourceLocation"))) return true,
+            else => {},
+        };
         return self.programFieldDeclarers(ia.member) > 0;
     }
 

@@ -792,7 +792,7 @@ is `Bytes`, and nothing converts between `Bytes` and `string` but two calls:
 UTF-8")` for bytes that are not well-formed UTF-8 (a sequence cut short, an
 overlong form, a surrogate, a code point past U+10FFFF; a byte order mark is kept).
 A string literal where `Bytes` is expected, and `Bytes` where a `string` is, are
-mismatches at the value. Every index counts bytes: `length()`, `slice(start,
+mismatches at the value. Every index counts bytes: `length()` (and the property `length`, the same count), `slice(start,
 end)` with `string`'s bounds (a negative index counts from the end, both clamp,
 an absent end is the length — `b[1..3]`, `b[2..]`), and `a.concat(b)` joins two.
 `==` and `!=` compare the bytes; `Bytes` takes no other operator (`+` and a string
@@ -804,6 +804,7 @@ carries it as a build constant — an Erlang binary, a `Uint8Array` on commonJS,
 wasm data segment (`@embed`'s `Asset.bytes`, § `@embed` and `Asset`).
 
 <!-- example: modules/bytes_round_trip -->
+<!-- example: modules/bytes_length_property -->
 <!-- example: modules/bytes_comptime -->
 
 std's `encoding` bridges `Bytes` and text losslessly: `base64EncodeBytes(b)` and
@@ -4381,6 +4382,11 @@ hands the `Asset` to std's `io.fs`, so the module that writes it imports `io.fs`
 `error[embed-open-needs-fs]`, at the call.
 
 <!-- example: modules/fs_asset_opens_as_file -->
+
+A module that does not declare `Asset` reads its fields all the same: `a.path` is the path, `a.bytes` the
+bytes, wherever the value reaches it.
+
+<!-- example: modules/embed_field_read_other_module -->
 
 <!-- example: modules/embed_open_without_fs_import -->
 

@@ -1268,18 +1268,10 @@ pub fn glob(pattern: string, root: string) -> @Result<string[], FsError> {
     return paths;
 }
 
-// An `Asset` is the compiler's record, declared in the module that writes `@embed`,
-// not here: std reads its fields through the host (`path` is the second element of
-// the Erlang tuple, `bytes` the third — the declaration's order, `embed.decl_src`),
-// since a field read on a type this module does not declare is the dynamic
-// `'__bp_field'/2`, which the beam backend answers with the whole record.
-#[@External.Node("""($0).path""")]
-#[@External.Erlang("""element(2, $0)""")]
-declare fn assetPath(asset: Asset) -> string;
-
-#[@External.Node("""({ fd: -1, mem: ($0).bytes, pos: 0, buf: new Uint8Array(0) })""")]
-#[@External.Erlang("""{mem, element(3, $0), counters:new(1, [])}""")]
-declare fn assetHandle(asset: Asset) -> unknown;
+// The host's handle over embedded bytes: read like a file, never closed on disk.
+#[@External.Node("""({ fd: -1, mem: $0, pos: 0, buf: new Uint8Array(0) })""")]
+#[@External.Erlang("""{mem, $0, counters:new(1, [])}""")]
+declare fn memoryHandle(bytes: Bytes) -> unknown;
 
 // ── the handle ───────────────────────────────────────────────────────────────
 
@@ -1322,7 +1314,7 @@ pub type File(location: string, handle: unknown) implement Closeable {
     pub fn chunks(self: Self, size: i32 = 65536) -> @Stream<@Result<Bytes, FsError>> {
         while (true) {
             val b = try self.read(size);
-            if (b.length() == 0) break;
+            if (b.length == 0) break;
             yield b;
         }
     }
@@ -1334,13 +1326,13 @@ pub type File(location: string, handle: unknown) implement Closeable {
         var consumed = 0l;
         while (true) {
             val raw = try lift(self.location, rawReadLine(self.handle));
-            if (raw.length() == 0) break;
+            if (raw.length == 0) break;
             val line = stripEol(raw);
             val offset = utf8Offset(line);
             if (offset >= 0l)
                 throw FsError.InvalidUtf8(path: self.location, offset: consumed
                     + offset);
-            val width: i32 = raw.length();
+            val width: i32 = raw.length;
             consumed = consumed + width.toI64();
             yield line.toUtf8().unwrapOr("");
         }
@@ -1380,7 +1372,7 @@ pub fn create(path: string) -> @Result<File, FsError> {
 // like a file on disk — no `@Result`, the build proved the file exists — and
 // closing it is a no-op.
 pub fn openAsset(asset: Asset) -> File {
-    return File(location: assetPath(asset), handle: assetHandle(asset));
+    return File(location: asset.path, handle: memoryHandle(asset.bytes));
 }
 
 // ── tests ────────────────────────────────────────────────────────────────────
@@ -1769,7 +1761,7 @@ test "fs.File writes, then reads bytes, text, a size and a hash" {
     assert r.read(5).unwrapOr(Bytes.fromUtf8("")).toUtf8().unwrapOr("")
         == "hello";
     assert r.text().unwrapOr("") == " world";
-    assert r.read(5).unwrapOr(Bytes.fromUtf8("x")).length() == 0;
+    assert r.read(5).unwrapOr(Bytes.fromUtf8("x")).length == 0;
     assert r.hash().unwrapOr("")
         == "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9";
     r.close();
@@ -2365,19 +2357,9 @@ glob(Pattern, Root) ->
         {error, _TryE0} -> {error, _TryE0}
     end.
 
-% An `Asset` is the compiler's record, declared in the module that writes `@embed`,
+% The host's handle over embedded bytes: read like a file, never closed on disk.
 
-% not here: std reads its fields through the host (`path` is the second element of
-
-% the Erlang tuple, `bytes` the third — the declaration's order, `embed.decl_src`),
-
-% since a field read on a type this module does not declare is the dynamic
-
-% `'__bp_field'/2`, which the beam backend answers with the whole record.
-
-%% external fn assetPath -> erlang template
-
-%% external fn assetHandle -> erlang template
+%% external fn memoryHandle -> erlang template
 
 % ── the handle ───────────────────────────────────────────────────────────────
 
@@ -2414,7 +2396,7 @@ create(Path) ->
 % closing it is a no-op.
 
 openAsset(Asset) ->
-    {std@io@fs@@File, element(2, Asset), {mem, element(3, Asset), counters:new(1, [])}}.
+    {std@io@fs@@File, '__bp_field'(Asset, path), {mem, '__bp_field'(Asset, bytes), counters:new(1, [])}}.
 
 % ── tests ────────────────────────────────────────────────────────────────────
 
@@ -2602,6 +2584,9 @@ string_slice(Self, Start, End) ->
 '__bp_int'(V, Lo, Hi, _) when V >= Lo, V =< Hi -> V;
 '__bp_int'(_, _, _, What) -> erlang:error({integer_overflow, What}).
 
+'__bp_field'(V, F) when erlang:is_map(V) -> maps:get(F, V);
+'__bp_field'(V, F) -> erlang:apply(erlang:element(1, V), '__bp_get', [V, F]).
+
 '__bp_adopt'(V, T, Ks) when erlang:is_map(V) -> erlang:list_to_tuple([T | [maps:get(K, V, undefined) || K <- Ks]]);
 '__bp_adopt'(V, T, Ks) when erlang:is_list(V) -> ['__bp_adopt'(E, T, Ks) || E <- V];
 '__bp_adopt'({ok, V}, T, Ks) -> {ok, '__bp_adopt'(V, T, Ks)};
@@ -2737,7 +2722,7 @@ chunks(Self, Size) ->
                     {ok, _TryV0} -> _TryV0;
                     {error, _TryE0} -> erlang:throw({'__bp_gen_end', __BpGen1, ok, {error, _TryE0}})
                 end,
-                case (byte_size(B) =:= 0) of
+                case (erlang:byte_size(B) =:= 0) of
                     true ->
                         erlang:throw({'__bp_cond_break', ok});
                     _ -> ok
@@ -2765,7 +2750,7 @@ lines(Self) ->
                     {ok, _TryV0} -> _TryV0;
                     {error, _TryE0} -> erlang:throw({'__bp_gen_end', __BpGen2, ok, {error, _TryE0}})
                 end,
-                case (byte_size(Raw) =:= 0) of
+                case (erlang:byte_size(Raw) =:= 0) of
                     true ->
                         erlang:throw({'__bp_cond_break', Consumed@1});
                     _ -> ok
@@ -2774,11 +2759,11 @@ lines(Self) ->
                 Offset = (fun(__B) -> case unicode:characters_to_binary(__B, utf8, utf8) of __S when is_binary(__S) -> -1; {error, __G, _} -> byte_size(__G); {incomplete, __G, _} -> byte_size(__G) end end)(Line),
                 case (Offset >= 0) of
                     true ->
-                        erlang:throw({'__bp_gen_end', __BpGen2, ok, {error, {std@io@fs@@FsError__v__invalidutf8, erlang:element(2, Self), '__bp_int'((Consumed@1 + Offset), -9223372036854775808, 9223372036854775807, <<"integer overflow: + on i64 at src/io/fs.bp:475:21">>)}}});
+                        erlang:throw({'__bp_gen_end', __BpGen2, ok, {error, {std@io@fs@@FsError__v__invalidutf8, erlang:element(2, Self), '__bp_int'((Consumed@1 + Offset), -9223372036854775808, 9223372036854775807, <<"integer overflow: + on i64 at src/io/fs.bp:467:21">>)}}});
                     _ -> ok
                 end,
-                Width = byte_size(Raw),
-                Consumed@2 = '__bp_int'((Consumed@1 + (fun(__V) when __V >= -9223372036854775807 - 1, __V =< 9223372036854775807 -> __V; (__V) -> erlang:error({integer_overflow, <<"toI64: ", (integer_to_binary(__V))/binary, " does not fit i64">>}) end)(Width)), -9223372036854775808, 9223372036854775807, <<"integer overflow: + on i64 at src/io/fs.bp:477:33">>),
+                Width = erlang:byte_size(Raw),
+                Consumed@2 = '__bp_int'((Consumed@1 + (fun(__V) when __V >= -9223372036854775807 - 1, __V =< 9223372036854775807 -> __V; (__V) -> erlang:error({integer_overflow, <<"toI64: ", (integer_to_binary(__V))/binary, " does not fit i64">>}) end)(Width)), -9223372036854775808, 9223372036854775807, <<"integer overflow: + on i64 at src/io/fs.bp:469:33">>),
                 erlang:put(__BpGen2, [{ok, (fun(__BpR) -> case __BpR of {ok, __BpV0} -> __BpV0; _ -> (<<"">>) end end)((fun(__B) -> case unicode:characters_to_binary(__B) of __S when is_binary(__S) -> {ok, __S}; _ -> {error, <<"Bytes.toUtf8: not valid UTF-8">>} end end)(Line))} | erlang:get(__BpGen2)]),
                 __BpLoop(Consumed@2)
             end)(Consumed)

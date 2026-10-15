@@ -1398,18 +1398,10 @@ pub fn glob(pattern: string, root: string) -> @Result<string[], FsError> {
     return paths;
 }
 
-// An `Asset` is the compiler's record, declared in the module that writes `@embed`,
-// not here: std reads its fields through the host (`path` is the second element of
-// the Erlang tuple, `bytes` the third — the declaration's order, `embed.decl_src`),
-// since a field read on a type this module does not declare is the dynamic
-// `'__bp_field'/2`, which the beam backend answers with the whole record.
-#[@External.Node("""($0).path""")]
-#[@External.Erlang("""element(2, $0)""")]
-declare fn assetPath(asset: Asset) -> string;
-
-#[@External.Node("""({ fd: -1, mem: ($0).bytes, pos: 0, buf: new Uint8Array(0) })""")]
-#[@External.Erlang("""{mem, element(3, $0), counters:new(1, [])}""")]
-declare fn assetHandle(asset: Asset) -> unknown;
+// The host's handle over embedded bytes: read like a file, never closed on disk.
+#[@External.Node("""({ fd: -1, mem: $0, pos: 0, buf: new Uint8Array(0) })""")]
+#[@External.Erlang("""{mem, $0, counters:new(1, [])}""")]
+declare fn memoryHandle(bytes: Bytes) -> unknown;
 
 // ── the handle ───────────────────────────────────────────────────────────────
 
@@ -1452,7 +1444,7 @@ pub type File(location: string, handle: unknown) implement Closeable {
     pub fn chunks(self: Self, size: i32 = 65536) -> @Stream<@Result<Bytes, FsError>> {
         while (true) {
             val b = try self.read(size);
-            if (b.length() == 0) break;
+            if (b.length == 0) break;
             yield b;
         }
     }
@@ -1464,13 +1456,13 @@ pub type File(location: string, handle: unknown) implement Closeable {
         var consumed = 0l;
         while (true) {
             val raw = try lift(self.location, rawReadLine(self.handle));
-            if (raw.length() == 0) break;
+            if (raw.length == 0) break;
             val line = stripEol(raw);
             val offset = utf8Offset(line);
             if (offset >= 0l)
                 throw FsError.InvalidUtf8(path: self.location, offset: consumed
                     + offset);
-            val width: i32 = raw.length();
+            val width: i32 = raw.length;
             consumed = consumed + width.toI64();
             yield line.toUtf8().unwrapOr("");
         }
@@ -1510,7 +1502,7 @@ pub fn create(path: string) -> @Result<File, FsError> {
 // like a file on disk — no `@Result`, the build proved the file exists — and
 // closing it is a no-op.
 pub fn openAsset(asset: Asset) -> File {
-    return File(location: assetPath(asset), handle: assetHandle(asset));
+    return File(location: asset.path, handle: memoryHandle(asset.bytes));
 }
 
 // ── tests ────────────────────────────────────────────────────────────────────
@@ -1899,7 +1891,7 @@ test "fs.File writes, then reads bytes, text, a size and a hash" {
     assert r.read(5).unwrapOr(Bytes.fromUtf8("")).toUtf8().unwrapOr("")
         == "hello";
     assert r.text().unwrapOr("") == " world";
-    assert r.read(5).unwrapOr(Bytes.fromUtf8("x")).length() == 0;
+    assert r.read(5).unwrapOr(Bytes.fromUtf8("x")).length == 0;
     assert r.hash().unwrapOr("")
         == "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9";
     r.close();
@@ -2792,19 +2784,9 @@ function glob(pattern, root) {
 }
 exports.glob = glob;
 
-// An `Asset` is the compiler's record, declared in the module that writes `@embed`,
+// The host's handle over embedded bytes: read like a file, never closed on disk.
 
-// not here: std reads its fields through the host (`path` is the second element of
-
-// the Erlang tuple, `bytes` the third — the declaration's order, `embed.decl_src`),
-
-// since a field read on a type this module does not declare is the dynamic
-
-// `'__bp_field'/2`, which the beam backend answers with the whole record.
-
-// assetPath: per-call template (see annotation)
-
-// assetHandle: per-call template (see annotation)
+// memoryHandle: per-call template (see annotation)
 
 // ── the handle ───────────────────────────────────────────────────────────────
 
@@ -2875,9 +2857,9 @@ class File {
     if ((raw.length === 0)) { break; }
     const line = ((__b) => { let __n = __b.length; if (__n > 0 && __b[__n - 1] === 10) { __n--; if (__n > 0 && __b[__n - 1] === 13) __n-- } return __b.subarray(0, __n) })(raw);
     const offset = ((__b) => { const __n = __b.length; let __i = 0; while (__i < __n) { const __c = __b[__i]; if (__c < 128) { __i++; continue } let __k; if (__c >= 194 && __c <= 223) __k = 1; else if (__c >= 224 && __c <= 239) __k = 2; else if (__c >= 240 && __c <= 244) __k = 3; else return __i; if (__i + __k >= __n) return __i; let __lo = 128, __hi = 191; if (__c === 224) __lo = 160; else if (__c === 237) __hi = 159; else if (__c === 240) __lo = 144; else if (__c === 244) __hi = 143; const __d = __b[__i + 1]; if (__d < __lo || __d > __hi) return __i; for (let __j = 2; __j <= __k; __j++) { const __e = __b[__i + __j]; if (__e < 128 || __e > 191) return __i } __i += __k + 1 } return -1 })(line);
-    if ((offset >= 0)) { yield ({ error: FsError.InvalidUtf8(this.location, __bp_wadd(consumed, offset, 0, "+ on i64 at src/io/fs.bp:475:21")) }); return; }
+    if ((offset >= 0)) { yield ({ error: FsError.InvalidUtf8(this.location, __bp_wadd(consumed, offset, 0, "+ on i64 at src/io/fs.bp:467:21")) }); return; }
     const width = raw.length;
-    consumed = __bp_wadd(consumed, width.toI64(), 0, "+ on i64 at src/io/fs.bp:477:33");
+    consumed = __bp_wadd(consumed, width.toI64(), 0, "+ on i64 at src/io/fs.bp:469:33");
     yield ({ ok: ((_r) => "error" in _r ? ("") : _r.ok)(line.toUtf8()) });
 }
     }
@@ -2930,7 +2912,7 @@ exports.create = create;
 // closing it is a no-op.
 
 function openAsset(asset) {
-    return new File((asset).path, ({ fd: -1, mem: (asset).bytes, pos: 0, buf: new Uint8Array(0) }));
+    return new File(asset.path, ({ fd: -1, mem: asset.bytes, pos: 0, buf: new Uint8Array(0) }));
 }
 exports.openAsset = openAsset;
 
@@ -3244,8 +3226,6 @@ export declare function walk(root: string): { ok: string[] } | { error: FsError 
 
 
 export declare function glob(pattern: string, root: string): { ok: string[] } | { error: FsError };
-
-
 
 
 
