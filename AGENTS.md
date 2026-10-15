@@ -4,7 +4,7 @@
 
 Guidance for AI agents working on the botopink **language core** — the CLI,
 the LSP, the compiler, the lib-test-runner, `bpmp`, and the bundled `std` lib.
-The libraries (emilia/erika/jhonstart/onze/rakun) and the VS Code extension are
+The libraries (rakun, a workspace of packages, and query) and the VS Code extension are
 **siblings** under `repository/` in the meta workspace — see
 [`../../AGENTS.md`](../../AGENTS.md) for the workspace overview and worktree
 workflow.
@@ -181,7 +181,7 @@ does not mirror them. Entry points:
 
 | Workflow | Trigger | What |
 | --- | --- | --- |
-| `.github/workflows/test.yml` | push / PR to `main`, `feat` | job `test`, on ubuntu-22.04 (no macos row), hard: `scripts/gate.sh --cold` — the repository's one gate WITH conformance (decisions 466, 470, 477), every stage it declares; the workflow keeps no list of stages of its own, and a front's Conformance step reads this run. The steps before it install what the gate runs: zig 0.16.0, the compiler's OTP release (decisions 227, 228: a step reads `OTP_RELEASE` from `modules/manifest/src/root.zig`, then `erlef/setup-beam`, then a step that fails the job unless `erl` reports that release), wasmtime, node 22, and every library — emilia/erika/jhonstart/onze/rakun/actions/http/log/routing/validation/css/styled/snap/json/yaml/markdown/dbcontext — at `feat` into `repository/<name>/` for the gate's `test-libs` stage. There is no windows row (1.0.11-beta gate-f: a row that cannot fail measures nothing; it returns hard or not at all). |
+| `.github/workflows/test.yml` | push / PR to `main`, `feat` | job `test`, on ubuntu-22.04 (no macos row), hard: `scripts/gate.sh --cold` — the repository's one gate WITH conformance (decisions 466, 470, 477), every stage it declares; the workflow keeps no list of stages of its own, and a front's Conformance step reads this run. The steps before it install what the gate runs: zig 0.16.0, the compiler's OTP release (decisions 227, 228: a step reads `OTP_RELEASE` from `modules/manifest/src/root.zig`, then `erlef/setup-beam`, then a step that fails the job unless `erl` reports that release), wasmtime, node 22, and every library — rakun/query/actions/http/log/routing/validation/css/snap/json/yaml/markdown — at `feat` into `repository/<name>/` for the gate's `test-libs` stage. There is no windows row (1.0.11-beta gate-f: a row that cannot fail measures nothing; it returns hard or not at all). |
 | `.github/workflows/release.yml` | tag push `v*` | No Erlang/OTP: building runs no `erlc` (decision 434). 5-target matrix (`linux-{x86_64,aarch64}`, `macos-{x86_64,aarch64}`, `windows-x86_64`) → `scripts/release-pack.sh` writes `dist/<binary>-<tag>-<target>.<ext>` + `.sha256` → `softprops/action-gh-release@v2` uploads to one Release. Prerelease iff the tag contains `-`. |
 
 Asset naming (the contract bpmp and the install scripts rely on):

@@ -686,7 +686,7 @@ printf '{ "name": "sidecar", "version": "0.1.0", "target": "commonJS", "dependen
 printf 'import { greet } from "sidelib";\n\npub fn main() {\n    @print(greet());\n}\n' >"$P/src/main.bp"
 LIBROOT="$WORK/sideroot"; mkdir -p "$LIBROOT/sidelib/src"
 printf '{ "name": "sidelib", "src": "src/", "files": ["sidelib.bp"] }\n' >"$LIBROOT/sidelib/botopink.json"
-# Authored relative to the lib's own build output, like onze's `../../src/onze.mjs`.
+# Authored relative to the lib's own build output, like a library's `../../src/<lib>.mjs`.
 printf '#[@External.Node("../../src/side.mjs", "greet")]\npub declare fn greet() -> string;\n' >"$LIBROOT/sidelib/src/sidelib.bp"
 printf 'export function greet() {\n    return "from the sidecar";\n}\n' >"$LIBROOT/sidelib/src/side.mjs"
 OUTDIR="$WORK/sidecar-build/out"; mkdir -p "$WORK/sidecar-build"
@@ -1300,7 +1300,7 @@ fi
 # `checkErlang` put every emitted `.erl` on `erl`'s argv and `run` every `.erl`
 # / `.S` on `erlc`'s: a 203-module build with a 167-char `--out` passed
 # macOS's 1 MiB ARG_MAX (execve E2BIG, reported as `SystemResources`) and the
-# onze-cli builds failed on macos-14 only. The lists now go through a file
+# rakun-ssr cli builds failed on macos-14 only. The lists now go through a file
 # (`cli/arglist.zig`). `ulimit -s 4096` sets Linux's ARG_MAX to 1 MiB, the
 # macOS figure. 1 200 modules under a ~900-char `--out` (macOS's PATH_MAX is
 # 1 024, so the depth stays below it) are ~1.1 MB of artifact paths, which the

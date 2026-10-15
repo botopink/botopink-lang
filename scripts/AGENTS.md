@@ -168,8 +168,8 @@ install tests) would otherwise act on the committing repository.
 
 `scripts/tsc-check.sh [<project>…]` builds the library the compiler ships
 (`libs/std/` — decision 326: the shared libraries are repositories of their
-own, checked by their own gates), erika's consumer cell
-(`../erika/conformance/modules/generic_loader_binding`, the sibling checkout's), every conformance cell (`conformance/modules/<cell>/`, each a project with its own
+own, checked by their own gates), query's consumer cell
+(`../query/conformance/modules/generic_loader_binding`, the sibling checkout's), every conformance cell (`conformance/modules/<cell>/`, each a project with its own
 manifest, decision 475) and every `conformance/test/<project>/` with `botopink build --target commonJS
 --typescript` into a scratch directory and runs `tsc --noEmit --strict --lib
 es2022 --module commonjs` over each build's non-empty `.d.ts` files, one `tsc`
@@ -203,7 +203,7 @@ ReleaseSafe keeps every runtime safety check — bounds, overflow,
 `unreachable`, `std.debug.assert`; what it leaves out is Debug's allocator,
 whose leak report never changed an exit status (`std/start.zig`). The same
 cell prints the same bytes under both modes; a Debug compiler spends ~12× the
-CPU on it (an `emilia-*` erlang cell: 189 CPU-s against 15), and stages 8 and
+CPU on it (a `rakun-stylesheet` erlang cell: 189 CPU-s against 15), and stages 8 and
 9 are thousands of compiles. After a gate `zig-out/bin/` holds ReleaseSafe
 binaries; a plain `zig build` puts Debug ones back.
 

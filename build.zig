@@ -5,7 +5,7 @@
 ///   zig build test -Dtest-filter=<substr> → runs only matching tests
 ///   zig build test-cli → runs every modules/compiler-cli/tests/*.sh end to end
 ///   zig build test-closure-invariant → one library under two consumers, its output compared (decision 509 (2))
-///   zig build test-analysis-equivalence → jhonstart, rakun and emilia consumers built cold and through level B, compared (144 B-60)
+///   zig build test-analysis-equivalence → rakun, rakun-bpp and rakun-stylesheet consumers built cold and through level B, compared (144 B-60)
 ///   zig build test-libs → compiles and tests every visible `.bp` library per target
 ///   zig build run      → builds and runs the botopink CLI
 const std = @import("std");
@@ -35,7 +35,7 @@ pub fn build(b: *std.Build) void {
     // `std/<dir>/<name>` (decision 106's `io/`, `testing/`). compiler-core then
     // discovers them generically through the generated `std_pkg` table below, so
     // adding a module never touches `modules/compiler-core/src/**` either.
-    // (Application-level libs like `erika` are NOT std — they ship under
+    // (Application-level libs like `query` are NOT std — they ship under
     // `libs/<name>/` and load through the generic `from "<lib>"` loader.)
     const std_pkg_files = stdPkgFilesFromRoot(b);
     // Generate the package-module registry (`pkg_modules: [N]{ path, source }`),
@@ -388,7 +388,7 @@ pub fn build(b: *std.Build) void {
     // the build if any framework name leaks into `modules/compiler-core/src`.
     // `std` is the one allowed exception (deliberately absent from the
     // alternation). The libraries are `rakun` (one repository, a workspace of
-    // packages — front 165) and `query` (the former erika, outside rakun):
+    // packages — front 165) and `query` (outside rakun):
     // `rakun` anywhere, any case; `query` as a package — the import source
     // `"query"` or the handle `import query` — since the word itself is the
     // catalogue's own vocabulary (`@TypeInfo.all`'s queries). `grep` exits 1
@@ -668,8 +668,8 @@ pub fn build(b: *std.Build) void {
     // `test-closure-invariant`), and the code cache's level B over its fixture
     // (`level_b.sh`, 144 B-60: cold, writing and reading builds the same
     // bytes on every target), and the same over real libraries — a few
-    // conformance cells of jhonstart, rakun and emilia, the checkout's
-    // siblings (`analysis_equivalence.sh`, also `test-analysis-equivalence`,
+    // conformance cells of rakun's packages `rakun`, `rakun-bpp` and
+    // `rakun-stylesheet`, the checkout's sibling workspace (`analysis_equivalence.sh`, also `test-analysis-equivalence`,
     // guard 2). The language
     // half these scripts held — numeric, records, the `mod` tree, mutual
     // recursion, `assert` / `try` — is conformance cells (144 B-29 step H). The
@@ -693,7 +693,7 @@ pub fn build(b: *std.Build) void {
     closure_invariant_step.dependOn(&closure_invariant_run.step);
 
     // `zig build test-analysis-equivalence` — level B's guard 2 (144 B-60):
-    // a few cells of jhonstart, rakun and emilia built `--cold`, writing
+    // a few cells of rakun, rakun-bpp and rakun-stylesheet built `--cold`, writing
     // `.botopinkbuild/analysis/` and reading it, compared byte for byte on
     // every target their suites declare (`analysis_equivalence.sh`); also a
     // `test-cli` script, this step runs it alone.

@@ -6,8 +6,8 @@
 # A scratch `botopink build --target commonJS --typescript` of the library
 # the compiler ships (`libs/std/` — decision 326: std alone; its `.d.ts` is
 # what a host TypeScript consumer of a botopink build reads), of the project
-# erika's consumer cell `generic_loader_binding` (the sibling checkout's
-# `conformance/modules/`, the three ways `from "erika"` reaches a library), of every
+# query's consumer cell `generic_loader_binding` (the sibling checkout's
+# `conformance/modules/`, the three ways `from "query"` reaches a library), of every
 # conformance cell
 # (`conformance/modules/<cell>/`, decision 475: each a project with its own
 # manifest) and of every project suite under `conformance/test/`, then
@@ -18,7 +18,7 @@
 # a module `node` cannot parse one of `commonJS.zig` (or of the host template a
 # library wrote); each is fixed there. The run cells execute their module under
 # node; this check reaches the modules nothing runs — the libraries' and the
-# erika cell's — and reads them all the way through.
+# query cell's — and reads them all the way through.
 #
 # What the walk leaves out is structural, the same reading `botopink cell check`
 # makes of a cell: a cell whose commonJS answer refuses a module (a `refused`
@@ -83,18 +83,18 @@ refused_on_commonjs() { # <cell dir>
     return 1
 }
 
-# erika's consumer cell: a sibling checkout — `../erika` beside this repository in the
-# meta checkout, `repository/erika` inside it on CI. Neither is an error, never a skip.
-erika_cell=""
-for d in ../erika repository/erika; do
-    [ -d "$d/conformance/modules/generic_loader_binding" ] && { erika_cell="$d/conformance/modules/generic_loader_binding"; break; }
+# query's consumer cell: a sibling checkout — `../query` beside this repository in the
+# meta checkout, `repository/query` inside it on CI. Neither is an error, never a skip.
+query_cell=""
+for d in ../query repository/query; do
+    [ -d "$d/conformance/modules/generic_loader_binding" ] && { query_cell="$d/conformance/modules/generic_loader_binding"; break; }
 done
 projects=()
 if [ "$#" -gt 0 ]; then
     projects=("$@")
 else
-    [ -n "$erika_cell" ] || { echo "tsc-check: erika's generic_loader_binding cell not found under ../erika or repository/erika" >&2; exit 1; }
-    for p in libs/std/ "$erika_cell/" conformance/modules/*/ conformance/test/*/; do
+    [ -n "$query_cell" ] || { echo "tsc-check: query's generic_loader_binding cell not found under ../query or repository/query" >&2; exit 1; }
+    for p in libs/std/ "$query_cell/" conformance/modules/*/ conformance/test/*/; do
         p="${p%/}"
         [ -f "$p/botopink.json" ] || continue
         refused_on_commonjs "$p" && continue

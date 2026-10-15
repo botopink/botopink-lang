@@ -138,19 +138,10 @@ jobs:
       # dependencies through the same roots. Decision 326: the shared
       # libraries are repositories of their own, not bundled with the compiler.
       # Every library of the meta repository's `repository/` is checked out: a
-      # library missing here fails the cells that depend on it (`styled`, `snap`).
-      - name: Checkout emilia
+      # library missing here fails the cells that depend on it (`css`, `snap`).
+      - name: Checkout query
         uses: actions/checkout@v5
-        with: { repository: botopink/emilia, ref: feat, path: repository/emilia }
-      - name: Checkout erika
-        uses: actions/checkout@v5
-        with: { repository: botopink/erika, ref: feat, path: repository/erika }
-      - name: Checkout jhonstart
-        uses: actions/checkout@v5
-        with: { repository: botopink/jhonstart, ref: feat, path: repository/jhonstart }
-      - name: Checkout onze
-        uses: actions/checkout@v5
-        with: { repository: botopink/onze, ref: feat, path: repository/onze }
+        with: { repository: botopink/query, ref: feat, path: repository/query }
       - name: Checkout rakun
         uses: actions/checkout@v5
         with: { repository: botopink/rakun, ref: feat, path: repository/rakun }
@@ -172,9 +163,6 @@ jobs:
       - name: Checkout css
         uses: actions/checkout@v5
         with: { repository: botopink/css, ref: feat, path: repository/css }
-      - name: Checkout styled
-        uses: actions/checkout@v5
-        with: { repository: botopink/styled, ref: feat, path: repository/styled }
       - name: Checkout snap
         uses: actions/checkout@v5
         with: { repository: botopink/snap, ref: feat, path: repository/snap }
@@ -187,9 +175,6 @@ jobs:
       - name: Checkout markdown
         uses: actions/checkout@v5
         with: { repository: botopink/markdown, ref: feat, path: repository/markdown }
-      - name: Checkout dbcontext
-        uses: actions/checkout@v5
-        with: { repository: botopink/dbcontext, ref: feat, path: repository/dbcontext }
 
       - name: Print library identity
         shell: bash

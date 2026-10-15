@@ -98,8 +98,9 @@ compiler-cli/
 │   │                          build (larger, once), read after, the same bytes
 │   └── analysis_equivalence.sh ← level B over real libraries (144 B-60, guard 2,
 │   │                          `test-analysis-equivalence`): two conformance cells
-│   │                          each of jhonstart, rakun and emilia — the checkout's
-│   │                          siblings, the first ancestor's `repository/<lib>`,
+│   │                          each of rakun's packages `rakun`, `rakun-bpp` and
+│   │                          `rakun-stylesheet` (`conformance/<package>/`) — the checkout's
+│   │                          sibling, the first ancestor's `repository/rakun`,
 │   │                          copied to scratch with the other siblings linked —
 │   │                          built `--cold`, writing the library's entry and
 │   │                          reading it, the same bytes on every target the
@@ -140,7 +141,7 @@ bash modules/compiler-cli/tests/code_cache.sh        # the code cache and worksp
 bash modules/compiler-cli/tests/backend_exec.sh      # the wasm core module's --invoke main
 bash modules/compiler-cli/tests/closure_invariant.sh # a library's output under two consumers (509 (2))
 bash modules/compiler-cli/tests/level_b.sh           # level B: cold, writing and reading builds the same bytes
-bash modules/compiler-cli/tests/analysis_equivalence.sh # level B over jhonstart, rakun and emilia cells
+bash modules/compiler-cli/tests/analysis_equivalence.sh # level B over rakun, rakun-bpp and rakun-stylesheet cells
 ```
 
 > **Every assertion is hard** — there are no pinned reds, and a missing runtime

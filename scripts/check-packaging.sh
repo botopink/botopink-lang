@@ -30,7 +30,7 @@ if [ -z "$libs_root" ]; then
 fi
 [ -n "$libs_root" ] || { echo "check-packaging: no library root (../ or repository/) holds a library" >&2; exit 1; }
 
-ecosystem="rakun|jhonstart|emilia|onze|erika"
+ecosystem="rakun|query"
 fail=0
 red() { printf '  ✗ %s\n' "$1" >&2; fail=1; }
 

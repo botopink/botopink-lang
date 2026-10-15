@@ -356,7 +356,7 @@ fi
 # ReleaseSafe keeps every runtime safety check (bounds, overflow, `unreachable`,
 # `std.debug.assert`); what it drops is Debug's allocator, whose leak report
 # never changed an exit status. A Debug `botopink` spends ~12× the CPU of the
-# ReleaseSafe one on the same cell, byte for byte the same output (an `emilia-*`
+# ReleaseSafe one on the same cell, byte for byte the same output (a `rakun-stylesheet`
 # erlang cell: 189 CPU-s against 15), and stages 8 and 9 are thousands of such
 # compiles — rakun's build tests alone spawn the compiler 22 times in one cell.
 # Every `zig build` below passes the same `$opt`, so no stage reinstalls a

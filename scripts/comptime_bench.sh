@@ -41,7 +41,7 @@
 # sibling checkout is measured by pointing it at that tree:
 #
 #   BOTOPINK_LIB_ROOTS=../../repository scripts/comptime_bench.sh --n '' \
-#       --project ../../repository/erika/examples/erika-linq
+#       --project ../../repository/query/examples/query-linq
 #
 # Exit 0 when every build succeeded, 1 otherwise. `erl` (OTP 28) is required
 # for the `erlang` and `beam` targets only.
