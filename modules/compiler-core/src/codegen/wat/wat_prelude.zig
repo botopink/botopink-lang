@@ -1245,8 +1245,18 @@ fn i64RangeChk(comptime site: P) ast.Func {
 /// `$__i32_nz(b, site)` / `$__i64_nz` — a divisor answered back when it is
 /// not zero, else the abort (decision 527 (3)); the dividend waits beneath it
 /// on the stack and the division follows.
-fn nzItems(comptime site: P) [2]ast.Item {
+fn nzItems(comptime site: P) [4]ast.Item {
+    const osite = P{ .name = "osite", .ty = site.ty };
+    const ovf = when(&.{ get("osite"), call("__chk_fail"), .@"unreachable" });
     return .{
+        // The signed `div_s`: the zero divisor, then `MIN / -1` — the one quotient
+        // wasm traps on bare — checked, else the quotient (decision 527 (3)).
+        .{ .func = typedFunc("__i32_divs", &.{ p32("a"), p32("b"), site, osite }, .i32, &.{}, &.{
+            get("b"), op("eqz"), failChk(), get("a"), c32(-2147483648), op("eq"), get("b"), c32(-1), op("eq"), op("and"), ovf, get("a"), get("b"), op("div_s"),
+        }) },
+        .{ .func = typedFunc("__i64_divs", &.{ p64("a"), p64("b"), site, osite }, .i64, &.{}, &.{
+            get("b"), op64("eqz"), failChk(), get("a"), c64(-9223372036854775808), op64("eq"), get("b"), c64(-1), op64("eq"), op("and"), ovf, get("a"), get("b"), op64("div_s"),
+        }) },
         .{ .func = typedFunc("__i32_nz", &.{ p32("b"), site }, .i32, &.{}, &.{ get("b"), op("eqz"), failChk(), get("b") }) },
         .{ .func = typedFunc("__i64_nz", &.{ p64("b"), site }, .i64, &.{}, &.{ get("b"), op64("eqz"), failChk(), get("b") }) },
     };

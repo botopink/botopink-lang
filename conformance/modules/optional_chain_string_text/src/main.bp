@@ -16,4 +16,6 @@ pub fn main() {
     @print(s?.toUpper() ?? "-");
     @print(none?.trim() ?? "absent");
     @print(none?.toLower() ?? "absent");
+    val f: ?f64 = 5.0;
+    @print(f?.toString() ?? "-");
 }

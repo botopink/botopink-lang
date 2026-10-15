@@ -14765,14 +14765,26 @@ const Emitter = struct {
 
         var else_c: Capture = .{};
         self.open(&else_c);
-        if (recv_boxed) {
+        // A `?f64` / `?i64` holds its 8-byte cell: the payload is read in its
+        // own type, into a local of that type (read as an `i32` it answered `0.0`).
+        var pname = mem;
+        const rcell: Cell = if (self.optInfoOf(recv)) |oi| oi.cell else .none;
+        if (recv_boxed and rcell != .none) {
+            pname = try std.fmt.allocPrint(self.arena(), "__optc{d}", .{self.loop_seq});
+            self.loop_seq += 1;
+            try self.declareLocal(pname, if (rcell == .f64) .f64 else .i64);
+            try self.local_typerefs.put(pname, .{ .named = if (rcell == .f64) "f64" else "i64" });
+            try self.emit(.{ .local_get = mem });
+            try self.emitUnboxPayload(self.optInfoOf(recv).?, "?. chain: unbox cell");
+            try self.emit(.{ .local_set = pname });
+        } else if (recv_boxed) {
             try self.emit(.{ .local_get = mem });
             try self.emitC(.{ .load = .{} }, "?. chain: unbox");
             try self.emit(.{ .local_set = mem });
         }
         if (k == .string) try self.str_locals.put(mem, {});
         const payload = try self.arena().create(ast.Expr);
-        payload.* = .{ .identifier = .{ .loc = loc, .kind = .{ .ident = mem } } };
+        payload.* = .{ .identifier = .{ .loc = loc, .kind = .{ .ident = pname } } };
         var link = cc;
         link.receiver = payload;
         link.optional = false;
@@ -24893,6 +24905,10 @@ const Emitter = struct {
             const divides = std.mem.startsWith(u8, on, "div_") or std.mem.startsWith(u8, on, "rem_");
             if (divides) if (self.instance_lowerings.get(loc)) |il| if (il == .division and il.division.range() != null) {
                 try self.emitCheckSite("division by zero", on, wide, loc);
+                if (std.mem.eql(u8, on, "div_s")) {
+                    try self.emitCheckSite("overflow", on, wide, loc);
+                    return self.emit(self.builder().helper(if (wide) .i64_divs else .i32_divs));
+                }
                 try self.emit(self.builder().helper(if (wide) .i64_nz else .i32_nz));
             };
         }

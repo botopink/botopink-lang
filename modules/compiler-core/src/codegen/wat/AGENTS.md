@@ -258,11 +258,12 @@ byte for byte as before.
 type is the one inference recorded at the operator, else the carrier's). A site argument, not a
 `$__site` global set before each operation: it is one `const` per operation instead of two instructions,
 and it needs no state a nested or re-entered call could overwrite. `$__i32_add_chk` … `$__u64_mul_chk`,
-the range checks and `$__i32_nz` / `$__i64_nz` (the divisor of an integer `/` or `%`, answered back when
-not zero; the dividend waits under it) call `$__chk_fail(site)`, the group `chk_fail`: `$__panic_raise(site,
+the range checks, `$__i32_nz` / `$__i64_nz` (the divisor of an integer `/` or `%`, answered back when
+not zero; the dividend waits under it) and `$__i32_divs` / `$__i64_divs` (a signed `/`: the zero divisor, then
+`MIN / -1` with its own overflow site, else the quotient) call `$__chk_fail(site)`, the group `chk_fail`: `$__panic_raise(site,
 1)` when the module has exceptions (so `attempt` answers `Error(panic)` and goes on), else `$__panic_fail`
 (`panic: <message>`) and a trap. A `.gc` module with exceptions falls back to linear memory (`panic_raise` has
-no GC form). `INT_MIN / -1` still traps bare.
+no GC form). `INT_MIN / -1` is checked by `$__i32_divs` / `$__i64_divs`, an overflow abort like the rest.
 
 **What it does not cover** (144 B-07-b): a host fault traps — no exception, so no `attempt` catches
 it; a thunk's word is an `i32` (a float or `i64` answer is not boxed for the

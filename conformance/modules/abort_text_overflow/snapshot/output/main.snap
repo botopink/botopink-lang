@@ -1,4 +1,5 @@
 botopink-cell 1
 out before
+out Error panic: integer overflow: / on i32 at src/main.bp:14:14
 abort
-stderr panic: integer overflow: + on i32 at src/main.bp:7:14
+stderr panic: integer overflow: + on i32 at src/main.bp:10:14

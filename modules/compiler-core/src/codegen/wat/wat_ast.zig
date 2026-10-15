@@ -928,7 +928,8 @@ pub const HelperGroup = enum {
     /// requires the one the module's `exceptions` asks for.
     chk_fail,
     /// `$__i32_nz(b, site)` / `$__i64_nz` — an integer divisor, answered back
-    /// when it is not zero and `$__chk_fail(site)` when it is.
+    /// when it is not zero and `$__chk_fail(site)` when it is; `$__i32_divs(a, b,
+    /// site, osite)` / `$__i64_divs` a signed quotient, `osite` the abort of `MIN / -1`.
     nz_chk,
 
     /// The groups `g`'s functions call into.
@@ -1102,6 +1103,8 @@ pub const Helper = enum {
     chk_fail,
     i32_nz,
     i64_nz,
+    i32_divs,
+    i64_divs,
 
     pub fn symbol(h: Helper) []const u8 {
         return switch (h) {
@@ -1138,7 +1141,7 @@ pub const Helper = enum {
             .task_gate_new, .task_gate_open, .task_gate_await, .task_host_cancel => .task_gate,
             .cap_begin, .cap_end => .text_capture,
             .gc_to_lin_str, .lin_to_gc_str => .std_marshal,
-            .i32_nz, .i64_nz => .nz_chk,
+            .i32_nz, .i64_nz, .i32_divs, .i64_divs => .nz_chk,
             inline else => |t| @field(HelperGroup, @tagName(t)),
         };
     }

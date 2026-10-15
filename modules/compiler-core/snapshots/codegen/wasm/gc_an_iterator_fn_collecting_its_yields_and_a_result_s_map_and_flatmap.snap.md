@@ -905,6 +905,62 @@ pub fn main() {
     call $__panic_fail
     unreachable
   )
+  (func $__i32_divs (param $a i32) (param $b i32) (param $site (ref null $str)) (param $osite (ref null $str)) (result i32)
+    local.get $b
+    i32.eqz
+    (if
+      (then
+        local.get $site
+        call $__chk_fail
+        unreachable
+      )
+    )
+    local.get $a
+    i32.const -2147483648
+    i32.eq
+    local.get $b
+    i32.const -1
+    i32.eq
+    i32.and
+    (if
+      (then
+        local.get $osite
+        call $__chk_fail
+        unreachable
+      )
+    )
+    local.get $a
+    local.get $b
+    i32.div_s
+  )
+  (func $__i64_divs (param $a i64) (param $b i64) (param $site (ref null $str)) (param $osite (ref null $str)) (result i64)
+    local.get $b
+    i64.eqz
+    (if
+      (then
+        local.get $site
+        call $__chk_fail
+        unreachable
+      )
+    )
+    local.get $a
+    i64.const -9223372036854775808
+    i64.eq
+    local.get $b
+    i64.const -1
+    i64.eq
+    i32.and
+    (if
+      (then
+        local.get $osite
+        call $__chk_fail
+        unreachable
+      )
+    )
+    local.get $a
+    local.get $b
+    i64.div_s
+  )
   (func $__i32_nz (param $b i32) (param $site (ref null $str)) (result i32)
     local.get $b
     i32.eqz
