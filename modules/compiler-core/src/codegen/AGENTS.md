@@ -1654,7 +1654,13 @@ codegen/
     catches (`labelBreakCatch`) and answers as its group (`modules/block_jump_label_reaches_loop`). A `continue :outer` throws
     `{'__bp_label_continue', 'outer', Group}` (`labelContinueThrow`), caught by the labelled loop's per-round `try`
     (`recursiveLoopCall`), which carries the group into the next round (`modules/block_jump_label_continue_reaches_loop`). beam
-    (`beam_asm.zig`) is a separate emitter and does not read the label yet.
+    (`beam_asm.zig`, a separate emitter) reads the label too (144 B-105): a labelled loop walked in the frame
+    (`while`, `loop`, `lowerInFrameFor`; `label_jumps`) is left or restarted by a jump to its exit or top; one walked
+    by a fun (`lists:foldl` / `foreach`; `label_funs`) is left by `throw({'__bp_label_break', 'outer', Group})`, caught
+    around the loop's call (`guardLabelBreak`), and restarted by `throw({'__bp_label_continue', 'outer', Group})`, caught
+    around the nested loop's call inside the labelled loop's own fun (`guardLabelContinue`) and answered as the round's
+    result. The names a fold threads travel in the nested funs' environments (`closureEnv`) so the throw can read them.
+    A `continue :outer` of a fun-walked loop written under an in-frame `while` inside it is not lowered.
   - **A generator scope** — a `@Iterator` / `@Stream`
     fn or method (whose effect `methodEffect` reads off the annotations), or an
     annotated `loop` — is eager: its items are pushed onto a list held in the

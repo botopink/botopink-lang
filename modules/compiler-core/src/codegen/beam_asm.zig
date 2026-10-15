@@ -458,11 +458,18 @@ const label_break_signal = "__bp_label_break";
 
 /// A labelled loop walked by a fun (`lists:foldl` / `foreach`) whose body holds
 /// a `break :label`: the names its fold threads, answered as the throw's group.
-const LabelFun = struct { label: []const u8, names: []const []const u8 };
+/// `out` is the buffer of the fun's own frame, set once the fun is opened:
+/// a `continue :label` written there is the plain `continue`.
+const LabelFun = struct { label: []const u8, names: []const []const u8, out: ?*std.Io.Writer = null };
+
+/// `throw({'__bp_label_continue', 'label', Group})` — a `continue :label` from a
+/// nested fun; the call site of the nested loop, in the labelled loop's own
+/// fun, answers the group as that round's result (`guardLabelContinue`).
+const label_continue_signal = "__bp_label_continue";
 
 /// A labelled loop walked in the frame (`while`, `loop`, a `for` of
 /// `lowerInFrameFor`): a `break :label` of the same frame jumps to `exit`.
-const LabelJump = struct { label: []const u8, exit: u32, out: *std.Io.Writer, defer_floor: usize };
+const LabelJump = struct { label: []const u8, top: u32, exit: u32, out: *std.Io.Writer, defer_floor: usize };
 
 /// True when `body` holds a bare `break` of the loop whose body it is —
 /// directly, under an `if`, or in a `case` arm's block (which runs in the
@@ -1246,6 +1253,14 @@ fn countLocalsInExpr(em: *Emitter, e: ast.Expr, count: *u32) void {
             if (lp.generator == null and !lp.condition and bodyBreaksBare(lp.body)) count.* += 1;
             // …and a labelled one a `break :label` of its body leaves (`guardLabelBreak`).
             if (lp.generator == null and !lp.condition and lp.label != null and ast.bodyBreaksLabel(lp.body, lp.label.?)) count.* += 1;
+            // …and one that `continue`s a labelled loop whose fun encloses it.
+            if (lp.generator == null and !lp.condition) for (em.label_funs.items) |lf| {
+                if (lp.label != null and std.mem.eql(u8, lp.label.?, lf.label)) continue;
+                if (ast.bodyJumpsLabel(lp.body, lf.label, .@"continue")) {
+                    count.* += 1;
+                    break;
+                }
+            };
             // An annotated loop (decision 105) runs in this frame with its
             // item accumulator, and so does every `for` inside it that yields.
             if (lp.generator != null) {
@@ -6056,7 +6071,8 @@ const Emitter = struct {
                     }
                     try self.emitReturn();
                 },
-                .@"continue" => {
+                .@"continue" => |cn| {
+                    if (cn.label) |label| if (try self.lowerLabelContinue(label)) return;
                     if (self.inCondLoop()) |cl| {
                         {
                             try self.runDefersForExit(cl.defer_floor, false);
@@ -11830,6 +11846,7 @@ const Emitter = struct {
         var lam_buf: std.Io.Writer.Allocating = .init(self.alloc);
         const saved_out = self.out;
         self.out = &lam_buf.writer;
+        self.bindLabelOut();
         const saved_reg_map = self.reg_map;
         self.reg_map = std.StringHashMap(Reg).init(self.alloc);
         const saved_y = self.next_y;
@@ -12025,7 +12042,7 @@ const Emitter = struct {
         self.cond_loop = .{ .top = top, .exit = exit, .out = self.out, .defer_floor = self.defer_stack.items.len };
         defer self.cond_loop = saved;
         const jump_label = labelOf(lp) != null;
-        if (jump_label) try self.label_jumps.append(self.alloc, .{ .label = lp.label.?, .exit = exit, .out = self.out, .defer_floor = self.defer_stack.items.len });
+        if (jump_label) try self.label_jumps.append(self.alloc, .{ .label = lp.label.?, .top = top, .exit = exit, .out = self.out, .defer_floor = self.defer_stack.items.len });
         defer if (jump_label) {
             _ = self.label_jumps.pop();
         };
@@ -12208,7 +12225,7 @@ const Emitter = struct {
         self.cond_loop = .{ .top = top, .exit = exit, .out = self.out, .defer_floor = self.defer_stack.items.len };
         defer self.cond_loop = saved;
         const jump_label = labelOf(lp) != null;
-        if (jump_label) try self.label_jumps.append(self.alloc, .{ .label = lp.label.?, .exit = exit, .out = self.out, .defer_floor = self.defer_stack.items.len });
+        if (jump_label) try self.label_jumps.append(self.alloc, .{ .label = lp.label.?, .top = top, .exit = exit, .out = self.out, .defer_floor = self.defer_stack.items.len });
         defer if (jump_label) {
             _ = self.label_jumps.pop();
         };
@@ -12252,6 +12269,7 @@ const Emitter = struct {
         var lam_buf: std.Io.Writer.Allocating = .init(self.alloc);
         const saved_out = self.out;
         self.out = &lam_buf.writer;
+        self.bindLabelOut();
 
         const saved_reg_map = self.reg_map;
         self.reg_map = std.StringHashMap(Reg).init(self.alloc);
@@ -12342,6 +12360,28 @@ const Emitter = struct {
             }
         };
         const bare: Bare = .{ .inner = guarded, .body = body };
+        const Cont = struct {
+            inner: Bare,
+            lf_label: []const u8,
+            fn emit(g: @This(), em: *Emitter) anyerror!void {
+                const tag = em.next_y;
+                em.next_y += 1;
+                try em.guardLabelContinue(tag, g.lf_label, g.inner);
+            }
+        };
+        for (self.label_funs.items) |lf| {
+            if (label != null and std.mem.eql(u8, label.?, lf.label)) continue;
+            if (lf.out != self.out or !ast.bodyJumpsLabel(body, lf.label, .@"continue")) continue;
+            const cont: Cont = .{ .inner = bare, .lf_label = lf.label };
+            if (label) |l| if (ast.bodyBreaksLabel(body, l)) {
+                const tag = self.next_y;
+                self.next_y += 1;
+                try self.guardLabelBreak(tag, l, cont);
+                return;
+            };
+            try cont.emit(self);
+            return;
+        }
         if (label) |l| if (ast.bodyBreaksLabel(body, l)) {
             const tag = self.next_y;
             self.next_y += 1;
@@ -12392,6 +12432,70 @@ const Emitter = struct {
             return true;
         }
         return false;
+    }
+
+    /// `continue :label`: a jump to the top of a labelled loop walked in this
+    /// frame, the plain `continue` of the labelled loop's own fun (false: the
+    /// caller lowers it), else the throw the nested loop's call site, in that
+    /// fun, answers (`guardLabelContinue`).
+    fn lowerLabelContinue(self: *Emitter, label: []const u8) anyerror!bool {
+        var i = self.label_jumps.items.len;
+        while (i > 0) {
+            i -= 1;
+            const lj = self.label_jumps.items[i];
+            if (!std.mem.eql(u8, lj.label, label)) continue;
+            if (lj.out != self.out) break;
+            try self.runDefersForExit(lj.defer_floor, false);
+            try beamEmitter.writeJump(self.out, lj.top);
+            return true;
+        }
+        i = self.label_funs.items.len;
+        while (i > 0) {
+            i -= 1;
+            const lf = self.label_funs.items[i];
+            if (!std.mem.eql(u8, lf.label, label)) continue;
+            if (lf.out == self.out) return false;
+            if (lf.names.len > 0) try self.emitGroupIntoX0(lf.names) else try beamEmitter.writeMoveOp(self.out, Op.atom("ok"), Dst.xr(0));
+            try beamEmitter.writeTestHeap(self.out, 4, 1);
+            try beamEmitter.writePutTuple2(self.out, Dst.xr(0), &.{ Op.atom(label_continue_signal), Op.atom(label), Op.xr(0) });
+            try self.writeThrowCall();
+            return true;
+        }
+        return false;
+    }
+
+    /// Opens the frame of the fun a pushed `LabelFun` walks.
+    fn bindLabelOut(self: *Emitter) void {
+        for (self.label_funs.items) |*lf| {
+            if (lf.out == null) {
+                lf.out = self.out;
+                return;
+            }
+        }
+    }
+
+    /// `call.emit` (a nested loop, in the labelled loop's own fun) inside a
+    /// catch section that answers the group of a `throw({'__bp_label_continue',
+    /// Label, V})` as the round's result; any other exception is raised again.
+    fn guardLabelContinue(self: *Emitter, tag: u32, label: []const u8, call: anytype) anyerror!void {
+        const caught = self.allocLabel();
+        const other = self.allocLabel();
+        const done = self.allocLabel();
+        try beamEmitter.writeTry(self.out, tag, caught);
+        try call.emit(self);
+        try beamEmitter.writeTryEnd(self.out, tag);
+        try beamEmitter.writeJump(self.out, done);
+        try beamEmitter.writeLabel(self.out, caught);
+        try beamEmitter.writeTryCase(self.out, tag);
+        try beamEmitter.writeTest(self.out, .is_eq_exact, other, &.{ Op.xr(0), Op.atom("throw") });
+        try beamEmitter.writeTest(self.out, .is_tagged_tuple, other, &.{ Op.xr(1), .{ .untagged = 3 }, Op.atom(label_continue_signal) });
+        try beamEmitter.writeGetTupleElement(self.out, Op.xr(1), 1, Dst.xr(0));
+        try beamEmitter.writeTest(self.out, .is_eq_exact, other, &.{ Op.xr(0), Op.atom(label) });
+        try beamEmitter.writeGetTupleElement(self.out, Op.xr(1), 2, Dst.xr(0));
+        try self.emitReturn();
+        try beamEmitter.writeLabel(self.out, other);
+        try beamEmitter.writeBif(self.out, "raise", 0, &.{ Op.xr(2), Op.xr(1) }, Dst.xr(0));
+        try beamEmitter.writeLabel(self.out, done);
     }
 
     /// `call.emit` inside a catch section that ends the labelled loop on its
