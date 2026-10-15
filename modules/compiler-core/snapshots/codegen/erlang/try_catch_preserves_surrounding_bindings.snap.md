@@ -29,11 +29,7 @@ load() ->
 
 process() ->
     Prefix = 10,
-    Data = case try
-        load()
-    catch
-        error:_TryR0 -> {error, _TryR0}
-    end of
+    Data = case load() of
         {ok, TryV0} -> TryV0;
         {error, _TryE0} ->
             0

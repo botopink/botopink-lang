@@ -14,7 +14,7 @@ fn f() {
 {module, test@main}.
 {exports, [{'__bp_priv__f', 0}, {'__bp_priv__fetch', 0}]}.
 {attributes, []}.
-{labels, 13}.
+{labels, 12}.
 
 {function, fetch, 0, 3}.
   {label, 2}.
@@ -36,48 +36,44 @@ fn f() {
     {line, [{location, "test@main.erl", 2}]}.
     {func_info, {atom, test@main}, {atom, f}, 0}.
   {label, 5}.
-    {allocate, 4, 0}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
-    {'try', {y, 0}, {f, 6}}.
+    {allocate, 3, 0}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
     {call, 0, {f, 3}}.
-    {try_end, {y, 0}}.
-    {test, is_tagged_tuple, {f, 7}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 6}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 8}}.
+    {jump, {f, 7}}.
   {label, 6}.
-    {try_case, {y, 0}}.
-  {label, 7}.
     {move, {literal, <<"failed">>}, {x, 0}}.
     {test_heap, 3, 1}.
     {put_tuple2, {x, 0}, {list, [{atom, test@main@@Error}, {x, 0}]}}.
     {call_ext_only, 1, {extfunc, erlang, throw, 1}}.
-  {label, 8}.
-    {move, {x, 0}, {y, 1}}.
+  {label, 7}.
+    {move, {x, 0}, {y, 0}}.
     {move, {integer, 1}, {x, 0}}.
-    {move, {y, 1}, {x, 1}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, element, 2}}.
+    {move, {x, 0}, {y, 1}}.
+    {move, {integer, 2}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, element, 2}}.
     {move, {x, 0}, {y, 2}}.
-    {move, {integer, 2}, {x, 0}}.
-    {move, {y, 1}, {x, 1}}.
-    {call_ext, 2, {extfunc, erlang, element, 2}}.
-    {move, {x, 0}, {y, 3}}.
-    {move, {y, 1}, {x, 0}}.
+    {move, {y, 0}, {x, 0}}.
     {move, {atom, ok}, {x, 0}}.
-    {deallocate, 4}.
+    {deallocate, 3}.
     return.
 
-{function, '__bp_priv__f', 0, 10}.
-  {label, 9}.
+{function, '__bp_priv__f', 0, 9}.
+  {label, 8}.
     {line, [{location, "test@main.erl", 3}]}.
     {func_info, {atom, test@main}, {atom, '__bp_priv__f'}, 0}.
-  {label, 10}.
+  {label, 9}.
     {call_only, 0, {f, 5}}.
 
-{function, '__bp_priv__fetch', 0, 12}.
-  {label, 11}.
+{function, '__bp_priv__fetch', 0, 11}.
+  {label, 10}.
     {line, [{location, "test@main.erl", 4}]}.
     {func_info, {atom, test@main}, {atom, '__bp_priv__fetch'}, 0}.
-  {label, 12}.
+  {label, 11}.
     {call_only, 0, {f, 3}}.
 ```
 

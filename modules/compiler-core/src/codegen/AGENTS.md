@@ -1617,8 +1617,9 @@ codegen/
   associated fn. A no-receiver call to a fn-typed local (`locals`) is a fun
   application `F(args)`.
 - **Control flow**: `try`/`catch` → `case … of {ok, V} -> …; {error, E} -> … end`,
-  whose subject runs inside `try … catch error:R -> {error, R} end` — `@todo()` /
-  `@panic` in a `-> @Result` callee raise, and a `case` alone cannot catch that;
+  whose subject is matched as it answers (beam: the same two tests, no catch section): `catch`
+  handles the operand's `Error` alone, and a host, `@panic` or crash raise leaves the
+  `try … catch` for `attempt` to contain (decision 431, 144 B-103);
   an `if` whose then-branch returns nests the rest of the body in the false arm
   (`earlyReturnIfExpr`) — the binding form `if (x) { s -> return …; }` too, as
   `case X of undefined -> <rest>; S -> <then> end` (its `case` value used to be

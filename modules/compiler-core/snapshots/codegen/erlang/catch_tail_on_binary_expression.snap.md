@@ -21,11 +21,7 @@ getA() ->
     {error, {test@main@@CalcError, <<"overflow">>}}.
 
 compute() ->
-    R = case try
-        getA()
-    catch
-        error:_TryR0 -> {error, _TryR0}
-    end of
+    R = case getA() of
         {ok, TryV0} -> TryV0;
         {error, _TryE0} ->
             0

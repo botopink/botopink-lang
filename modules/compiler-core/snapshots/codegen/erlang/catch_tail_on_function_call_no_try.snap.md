@@ -20,11 +20,7 @@ risky() ->
     {error, {test@main@@RiskError, 5}}.
 
 safe() ->
-    case try
-        risky()
-    catch
-        error:_TryR0 -> {error, _TryR0}
-    end of
+    case risky() of
         {ok, TryV0} -> TryV0;
         {error, _TryE0} ->
             (-1)

@@ -23,11 +23,7 @@ fetch() ->
     {error, test@main@@ErrorKind__v__notfound}.
 
 handle() ->
-    R = case try
-        fetch()
-    catch
-        error:_TryR0 -> {error, _TryR0}
-    end of
+    R = case fetch() of
         {ok, TryV0} -> TryV0;
         {error, _TryE0} ->
             0

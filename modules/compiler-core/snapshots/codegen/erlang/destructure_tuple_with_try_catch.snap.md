@@ -20,11 +20,7 @@ fetch() ->
     {error, {test@main@@Error, <<"boom">>}}.
 
 f() ->
-    {A, B} = case try
-        fetch()
-    catch
-        error:_TryR0 -> {error, _TryR0}
-    end of
+    {A, B} = case fetch() of
         {ok, TryV0} -> TryV0;
         {error, _TryE0} ->
             erlang:throw({test@main@@Error, <<"failed">>})

@@ -22,11 +22,7 @@ fetch() ->
 
 safe() ->
     try
-        R = case try
-            fetch()
-        catch
-            error:_TryR0 -> {error, _TryR0}
-        end of
+        R = case fetch() of
             {ok, TryV0} -> TryV0;
             {error, _TryE0} ->
                 erlang:throw({'__bp_try', (-1)})

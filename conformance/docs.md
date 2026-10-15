@@ -2725,6 +2725,13 @@ the audit did not list is a `crash`, as is any raise nothing marked:
 <!-- example: modules/std_failure_attempt_host -->
 <!-- example: modules/std_failure_attempt_crash -->
 
+`try e catch f` handles the `Error` of its operand's `@Result` on the spot (431), and only
+that: a host raise or a `@panic` inside the operand is not an `Error`, it leaves the
+`try … catch` and only `attempt` contains it. A `result: true` binding answers its
+failure as an `Error`, so that one reaches the `catch`:
+
+<!-- example: modules/try_catch_host_raise_propagates -->
+
 On wasm `attempt` runs the thunk under wasm exception
 handling (decision 518): a program reaching it raises its aborts as an
 exception, which `attempt` catches as `panic`; a trap is no exception and

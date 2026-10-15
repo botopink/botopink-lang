@@ -21,11 +21,7 @@ fetch() ->
     {error, {test@main@@FetchError, <<"/api">>}}.
 
 safe() ->
-    R = case try
-        fetch()
-    catch
-        error:_TryR0 -> {error, _TryR0}
-    end of
+    R = case fetch() of
         {ok, TryV0} -> TryV0;
         {error, _TryE0} ->
             fun(E) ->

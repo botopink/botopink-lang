@@ -17,38 +17,34 @@ fn run(p: Parser) -> i32 {
 {module, test@main}.
 {exports, [{'__bp_priv__run', 1}]}.
 {attributes, []}.
-{labels, 9}.
+{labels, 8}.
 
 {function, run, 1, 3}.
   {label, 2}.
     {line, [{location, "test@main.erl", 2}]}.
     {func_info, {atom, test@main}, {atom, run}, 1}.
   {label, 3}.
-    {allocate, 3, 1}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
+    {allocate, 2, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
-    {'try', {y, 1}, {f, 4}}.
     {move, {y, 0}, {x, 0}}.
     {call_ext, 1, {extfunc, test@main@@Parser, parse, 1}}.
-    {try_end, {y, 1}}.
-    {test, is_tagged_tuple, {f, 5}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 4}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 6}}.
+    {jump, {f, 5}}.
   {label, 4}.
-    {try_case, {y, 1}}.
-  {label, 5}.
     {move, {integer, 0}, {x, 0}}.
-  {label, 6}.
-    {move, {x, 0}, {y, 2}}.
-    {move, {y, 2}, {x, 0}}.
-    {deallocate, 3}.
+  {label, 5}.
+    {move, {x, 0}, {y, 1}}.
+    {move, {y, 1}, {x, 0}}.
+    {deallocate, 2}.
     return.
 
-{function, '__bp_priv__run', 1, 8}.
-  {label, 7}.
+{function, '__bp_priv__run', 1, 7}.
+  {label, 6}.
     {line, [{location, "test@main.erl", 3}]}.
     {func_info, {atom, test@main}, {atom, '__bp_priv__run'}, 1}.
-  {label, 8}.
+  {label, 7}.
     {call_only, 1, {f, 3}}.
 ```
 

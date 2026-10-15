@@ -32,20 +32,12 @@ fetchAge() ->
     {error, {test@main@@UserError, <<"age missing">>}}.
 
 loadUser() ->
-    Name = case try
-        fetchName()
-    catch
-        error:_TryR0 -> {error, _TryR0}
-    end of
+    Name = case fetchName() of
         {ok, TryV0} -> TryV0;
         {error, _TryE0} ->
             <<"anonymous">>
     end,
-    Age = case try
-        fetchAge()
-    catch
-        error:_TryR1 -> {error, _TryR1}
-    end of
+    Age = case fetchAge() of
         {ok, TryV1} -> TryV1;
         {error, _TryE1} ->
             0

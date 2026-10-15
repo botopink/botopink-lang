@@ -1097,7 +1097,6 @@ fn countLocalsInExpr(em: *Emitter, e: ast.Expr, count: *u32) void {
                 if (i.else_) |els| countLocalsRec(em, els, count);
             },
             .tryCatch => |tc| {
-                count.* += 1; // the catch tag
                 countLocalsInExpr(em, tc.expr.*, count);
                 countLocalsInExpr(em, tc.handler.*, count);
             },
@@ -11496,26 +11495,20 @@ const Emitter = struct {
     /// with `is_tagged_tuple` (never BEAM try/catch). Ok unwraps element 1; Error
     /// runs the handler.
     fn lowerTryCatch(self: *Emitter, tc: anytype) anyerror!void {
-        // The subject runs inside a real catch section: a raise from it
-        // (`@todo()` in a `#[@result]` fn) reaches the handler too, like an
-        // `{error, E}` result does.
-        const tag = self.next_y;
-        self.next_y += 1;
-        const catch_label = self.allocLabel();
+        // The subject is matched as it answers: `{ok, V}` unwraps, `{error, E}`
+        // takes the handler. A raise from it (host, panic, crash) is not the
+        // operand's `Error` and propagates — `attempt` alone contains it
+        // (decision 431).
         const err_label = self.allocLabel();
         const end_label = self.allocLabel();
 
-        try beamEmitter.writeTry(self.out, tag, catch_label);
         try self.lowerExprIntoX0(tc.expr.*);
-        try beamEmitter.writeTryEnd(self.out, tag);
 
         // {ok, V}: fall through and unwrap; otherwise jump to the Error branch.
         try beamEmitter.writeTest(self.out, .is_tagged_tuple, err_label, &.{ Op.xr(0), .{ .untagged = 2 }, Op.atom("ok") });
         try beamEmitter.writeGetTupleElement(self.out, Op.xr(0), 1, Dst.xr(0));
         try beamEmitter.writeJump(self.out, end_label);
 
-        try beamEmitter.writeLabel(self.out, catch_label);
-        try beamEmitter.writeTryCase(self.out, tag);
         try beamEmitter.writeLabel(self.out, err_label);
         try self.lowerExprIntoX0(tc.handler.*);
         try beamEmitter.writeLabel(self.out, end_label);

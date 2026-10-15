@@ -15,7 +15,7 @@ fn safe() -> i32 {
 {module, test@main}.
 {exports, [{'__bp_priv__fetch', 0}, {'__bp_priv__safe', 0}]}.
 {attributes, []}.
-{labels, 13}.
+{labels, 12}.
 
 {function, fetch, 0, 3}.
   {label, 2}.
@@ -36,38 +36,34 @@ fn safe() -> i32 {
     {line, [{location, "test@main.erl", 2}]}.
     {func_info, {atom, test@main}, {atom, safe}, 0}.
   {label, 5}.
-    {allocate, 2, 0}.
-    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
-    {'try', {y, 0}, {f, 6}}.
+    {allocate, 1, 0}.
+    {init_yregs, {list, [{y, 0}]}}.
     {call, 0, {f, 3}}.
-    {try_end, {y, 0}}.
-    {test, is_tagged_tuple, {f, 7}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 6}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 8}}.
+    {jump, {f, 7}}.
   {label, 6}.
-    {try_case, {y, 0}}.
-  {label, 7}.
     {move, {integer, -1}, {x, 0}}.
-    {deallocate, 2}.
+    {deallocate, 1}.
     return.
-  {label, 8}.
-    {move, {x, 0}, {y, 1}}.
-    {move, {y, 1}, {x, 0}}.
-    {deallocate, 2}.
+  {label, 7}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {y, 0}, {x, 0}}.
+    {deallocate, 1}.
     return.
 
-{function, '__bp_priv__fetch', 0, 10}.
-  {label, 9}.
+{function, '__bp_priv__fetch', 0, 9}.
+  {label, 8}.
     {line, [{location, "test@main.erl", 3}]}.
     {func_info, {atom, test@main}, {atom, '__bp_priv__fetch'}, 0}.
-  {label, 10}.
+  {label, 9}.
     {call_only, 0, {f, 3}}.
 
-{function, '__bp_priv__safe', 0, 12}.
-  {label, 11}.
+{function, '__bp_priv__safe', 0, 11}.
+  {label, 10}.
     {line, [{location, "test@main.erl", 4}]}.
     {func_info, {atom, test@main}, {atom, '__bp_priv__safe'}, 0}.
-  {label, 12}.
+  {label, 11}.
     {call_only, 0, {f, 5}}.
 ```
 

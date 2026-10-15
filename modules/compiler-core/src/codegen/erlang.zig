@@ -8591,19 +8591,12 @@ const Emitter = struct {
                     //   case Expr of {ok, V} -> V; {error, E} -> Handler end
                     const n = this.try_seq;
                     this.try_seq += 1;
-                    // The subject runs inside a real `try`: `@todo()`/`@panic`
-                    // in a `#[@result]` callee RAISE instead of answering
-                    // `{error, E}`, and a `case` cannot catch a raise. The
-                    // reason becomes the `{error, Reason}` the handler receives.
-                    // Only the subject is wrapped — a raise in the handler or
-                    // in the value arm still propagates.
-                    const reason = V(try std.fmt.allocPrint(b.arena, "_TryR{d}", .{n}));
-                    const subject: Ast.Expr = .{ .try_catch = .{
-                        .body = try b.body(&.{try this.exprNode(b, tc.expr.*)}),
-                        .catches = try b.arena.dupe(Ast.Clause, &.{
-                            try b.clause(&.{try b.exception(A("error"), reason)}, &.{}, &.{try b.tuple(&.{ A("error"), reason })}),
-                        }),
-                    } };
+                    // The subject is matched as it answers: a `#[@result]` callee
+                    // or a `result: true` binding answers `{error, E}`, and that
+                    // is all `catch` handles (decision 431). A raise — host,
+                    // panic, crash — is not the operand's `Error`: it leaves the
+                    // `try … catch`, `attempt` alone contains it.
+                    const subject = try this.exprNode(b, tc.expr.*);
                     const ok_var = V(try std.fmt.allocPrint(b.arena, "TryV{d}", .{n}));
                     const err_var = V(try std.fmt.allocPrint(b.arena, "_TryE{d}", .{n}));
 

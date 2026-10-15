@@ -22,11 +22,7 @@ fn run(p: Parser) -> i32 {
 %% type Parser: 
 
 run(P) ->
-    Result = case try
-        test@main@@Parser:parse(P)
-    catch
-        error:_TryR0 -> {error, _TryR0}
-    end of
+    Result = case test@main@@Parser:parse(P) of
         {ok, TryV0} -> TryV0;
         {error, _TryE0} ->
             0

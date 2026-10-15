@@ -33,20 +33,12 @@ outer() ->
     {error, {test@main@@DbError, <<"timeout">>}}.
 
 process() ->
-    A = case try
-        inner()
-    catch
-        error:_TryR0 -> {error, _TryR0}
-    end of
+    A = case inner() of
         {ok, TryV0} -> TryV0;
         {error, _TryE0} ->
             0
     end,
-    B = case try
-        outer()
-    catch
-        error:_TryR1 -> {error, _TryR1}
-    end of
+    B = case outer() of
         {ok, TryV1} -> TryV1;
         {error, _TryE1} ->
             A
