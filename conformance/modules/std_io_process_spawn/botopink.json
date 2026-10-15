@@ -1,0 +1,1 @@
+{ "name": "std_io_process_spawn", "targets": ["commonJS", "erlang", "beam"] }

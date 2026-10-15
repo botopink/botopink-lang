@@ -147,6 +147,15 @@ field), `record_param_variadic` (beside a variadic), `record_param_default` (a d
 spread of another record's value, `record-spread-type`); a spread into a function of plain parameters is
 `call_spread`'s.
 
+Decision 506 (1) (a CLI's host primitives, 144 B-27 step 6) adds five cells on commonJS, erlang and beam (the wasm audit refuses them on
+their host bindings): `modules/std_io_stdin_eof` (`readLine()` / `readChunk()` answer `null` at the end of input, repeatedly, and `isTTY()` is
+`false` — a cell's standard input is `/dev/null`), `modules/std_io_terminal_not_a_tty` (`stdoutIsTTY()` `false`, `size()` `null`,
+`setRaw` `NotATerminal`, `keys()` ending at once), `modules/std_io_signal_handlers` (`onSignal` for `Term`, `Hup` and `Winch`, two
+handlers on one signal in order), `modules/std_io_process_spawn` (`spawn`'s `NotFound` and `PermissionDenied`, `Child.wait()` — a status, `128 + n` for a signal, repeatable —
+and `kill`, `NoSuchProcess` after the end) and `modules/std_io_process_forward_signals` (the parent's `SIGTERM` reaches a child that prints
+when it gets it, asserted by the child's line in the output). A cell has no terminal and no input; what needs one (the lines of a piped
+input, a terminal's size, raw mode, the keys) was run by hand under a pty and a pipe on the three targets.
+
 Decision 359 (a spread copies a record's fields, 144 B-14) adds `modules/record_spread` (`..src` beside
 labels, several spreads left to right with the later winning, a `Type.pick` / `omit` / `merge` source, a
 field left to its default, a call as the source evaluated once, a trailing comma, a generic record — four

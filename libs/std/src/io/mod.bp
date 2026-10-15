@@ -11,3 +11,5 @@ pub mod random;
 pub mod os;
 pub mod env;
 pub mod process;
+pub mod stdin;
+pub mod terminal;

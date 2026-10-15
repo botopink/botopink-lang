@@ -1,0 +1,29 @@
+//// Decision 506 (1) — `Child.forwardSignals()`: the parent's `SIGTERM` reaches its child. The child
+//// is a shell that prints when it gets `SIGTERM` and exits with 7; the program installs
+//// `forwardSignals`, sends itself `SIGTERM` (the parent no longer ends on it) and waits for the child:
+//// the child's line is in the output and `wait()` answers 7. The same on commonJS, erlang and beam.
+
+import {io.process} from "std";
+
+// The child installs its trap within a few milliseconds of starting: half a second is the margin.
+fn scenario() -> @Task<void> {
+    val child = process.spawn("sh", [
+        "-c",
+        "trap 'echo the child got SIGTERM; exit 7' TERM; while true; do sleep 0.05; done",
+    ]);
+    case child {
+        Ok(c) {
+            c.forwardSignals();
+            @print("forwarding");
+            process.run("sleep", ["0.5"]);
+            process.run("kill", ["-TERM", process.pid().toString()]);
+            val code = await c.wait();
+            @print("the child exited with " + code.toString());
+        }
+        Error(e) -> @print("not started");
+    }
+}
+
+pub fn main() {
+    scenario();
+}

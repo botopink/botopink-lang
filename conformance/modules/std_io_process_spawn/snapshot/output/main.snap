@@ -1,0 +1,11 @@
+botopink-cell 1
+out NotFound definitely-not-a-binary-bp-std
+out PermissionDenied /
+out PermissionDenied ./not-executable.txt
+out pid is positive true
+out the child speaks
+out exit 3
+out exit again 3
+out signalled
+out exit 143
+out NoSuchProcess

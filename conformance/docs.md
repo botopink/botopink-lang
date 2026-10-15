@@ -442,6 +442,44 @@ commonJS, erlang and beam.
 
 <!-- example: modules/fs_stat_mtime_whole_seconds -->
 
+### The command line, `io.stdin`, `io.terminal` and `io.process`
+
+What a command-line program needs of its host (decision 506 (1)), the same on commonJS, erlang and
+beam, and refused at the call on wasm (`std-unsupported-on-target`, decision 518 (4)); every failure is a
+type of its own module (decision 431-a).
+
+`io.stdin.readLine()` is a `@Task<?string>`: the next line without its `\n` or `\r\n`, a last line with no
+terminator included, `null` at the end of input — again and again once it has ended. `isTTY()` is `false`
+for a pipe, a file or `/dev/null`; `readChunk()` is the byte-level read, whatever has arrived, `null` at the end.
+
+<!-- example: modules/std_io_stdin_eof -->
+
+`io.terminal` is the terminal. `stdoutIsTTY()` and `size()` (`#(columns, rows)`, `null` with no terminal) say what
+the output is; `setRaw(on)` answers `@Result<void, TerminalError>` (`NotATerminal` when standard input is none) and
+`keys()` is the `@Stream<Key>` of key presses (`Char`, `Ctrl`, `Alt`, `Enter`, `Tab`, `Backspace`, `Delete`,
+`Escape`, the arrows, `Home`, `End`, `PageUp`, `PageDown`, `Unknown`) that `parseKey(sequence)` decodes. With no
+terminal the non-terminal answers are the same on every target:
+
+<!-- example: modules/std_io_terminal_not_a_tty -->
+
+`io.process.onSignal(s, handler)` runs `handler` each time the process receives `s` (`Int`, `Term`, `Hup`, `Winch`);
+several handlers for one signal run in the order they were added, and while one is installed the signal no longer
+ends the process. It answers `@Result<void, ProcessError>`.
+
+<!-- example: modules/std_io_signal_handlers -->
+
+`io.process.spawn(cmd, args)` starts a child with no shell, sharing the parent's streams, and answers
+`@Result<Child, ProcessError>` without waiting: `NotFound` and `PermissionDenied` say why nothing started.
+`Child.wait()` is a `@Task<i32>` of the exit status (`128 + n` for a child ended by signal `n`) and answers the same
+again; `Child.kill(s)` sends a signal and is `NoSuchProcess` once the child has ended.
+
+<!-- example: modules/std_io_process_spawn -->
+
+`Child.forwardSignals()` carries the parent's `Term`, `Hup` and `Winch` (and `Int` where the target can catch it)
+to the child: the parent no longer ends on them, and ends when the child does.
+
+<!-- example: modules/std_io_process_forward_signals -->
+
 ### The file system, `io.fs`
 
 Every `io.fs` function that can fail answers `@Result<…, FsError>` (decision 540) — never a `string`
