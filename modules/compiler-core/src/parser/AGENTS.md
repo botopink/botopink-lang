@@ -129,7 +129,7 @@ block that reads something between the `{` and its first statement — a prologu
 | lambda `{ a, b -> … }`, `{ -> … }` | the parameter list | `optional`, `markTail`, `bracedTail` (decision 541 (1): a lambda answers its last expression written without `;`; one with `;` is a statement and the lambda answers nothing — the checker's `discardUnwrittenTail`) |
 | block `{ … }` (no `->`, decision 525) | — (`parseBlockValueBody`) | `requiredExceptLast`, `markTail`, `bracedTail` |
 | `comptime { … }`, `async { … }` | — | `requiredExceptLast`, `markTail`, `bracedTail`; the tail wrapped in the block's `break` / `return` (`jumpTail`) |
-| `case` arm `p { … }` / `p -> { … }` | an optional `n ->` binder (`parseLambdaBody`) | `optional` / `requiredExceptLast`, the tail marked (`markBlockTail`), a braced `if` / `case` at the end included |
+| `case` arm `p { … }` / `p -> { … }` | an optional `n ->` binder (`parseLambdaBody`) | `optional` / `requiredExceptLast`, the tail marked (`markBlockTail`), a braced `if` / `case` at the end included; both forms read the arm through `parseBlockBody`, so a `//` comment between statements is kept |
 | trailing lambda `f { a -> … }`, `f { -> … }` | an optional `label:` and the parameter list; neither parameters nor `->` is a block (`TrailingLambda.isBlock`, refused by the checker) | `requiredExceptLast` (was `required` — the one block whose last statement could not drop its `;`; front 15 step 4b), `markTail` |
 | `for (…) { x -> … }` body | the one binder (`parseLoopBody`) | `requiredExceptLast` (was `required`; front 15 step 4b, with the trailing lambda) |
 | `while (…) { … }`, `loop { … }`, `iter loop { … }` body | — (`parseLoopBody`; a binder is refused) | `requiredExceptLast` (the same `parseLoopBody`) |

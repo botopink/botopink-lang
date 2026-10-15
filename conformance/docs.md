@@ -2030,7 +2030,12 @@ take one section instead of the whole enum:
 An arm may also be written as a block, `<pattern> { … }`. A block arm takes an
 optional `when (…)` guard, and a pattern may be a literal, a type (`i32`) or `_`.
 The arm is a block (§ Blocks): used as a value it answers its last expression
-written without `;`.
+written without `;`. A `//` comment between the statements of an arm's block is
+a comment there as it is in a function body, and `botopink format` keeps it:
+
+<!-- example: modules/case_arm_block_comment -->
+
+A guard and a type pattern:
 
 <!-- example: modules/case_type_guard_arms -->
 

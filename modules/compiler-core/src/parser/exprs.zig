@@ -2064,33 +2064,27 @@ pub fn parseLambdaBody(this: *This, alloc: std.mem.Allocator) ParseError!Functio
         _ = try this.consume(.rightArrow);
     }
 
-    // Parse body statements
-    var stmts: std.ArrayList(Stmt) = .empty;
-    errdefer {
-        for (stmts.items) |*s| s.deinit(alloc);
-        stmts.deinit(alloc);
-    }
     // Decision 525 — the arm is a block used as a value: its last expression
-    // written without `;` (a braced `if` / `case` included) is its value.
-    var lastBare = false;
-    while (!this.check(.rightBrace) and !this.check(.endOfFile)) {
-        // Decision 539 — a `defer` in the arm's block.
-        const isDeferred = this.match(.@"defer");
-        const expr = try this.parseExpr(alloc);
-        // A braced `if` / `case` is the tail with or without its `;`.
-        const braced = this.isBracedBlockStmt(expr);
-        lastBare = !this.match(.semicolon) or braced;
-        try stmts.append(alloc, .{ .expr = expr, .deferred = isDeferred });
+    // written without `;` (a braced `if` / `case` included) is its value. The
+    // shared block body keeps a `//` comment between statements.
+    const stmts = try this.parseBlockBody(alloc, .{
+        .trackEmptyLines = true,
+        .handleComments = true,
+        .semicolonPolicy = .requiredExceptLast,
+        .markTail = true,
+        .bracedTail = true,
+    });
+    errdefer {
+        for (stmts) |*s| s.deinit(alloc);
+        alloc.free(stmts);
     }
-    _ = try this.consume(.rightBrace);
-    This.markBlockTail(stmts.items, lastBare);
 
     return .{
         .loc = locFromToken(startTok),
         .kind = .{
             .syntax = .lambda,
             .params = try paramList.toOwnedSlice(alloc),
-            .body = try stmts.toOwnedSlice(alloc),
+            .body = stmts,
         },
     };
 }

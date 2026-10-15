@@ -63,6 +63,23 @@ test "format: comments ---- between statements" {
     );
 }
 
+test "format: comments ---- between statements of a case arm block" {
+    try h.assertFormatLossless(std.testing.allocator,
+        \\fn main() {
+        \\    val r = case 1 {
+        \\        1 {
+        \\            val a = 1;
+        \\            // between
+        \\            a + 1
+        \\        }
+        \\        _ {
+        \\            0
+        \\        }
+        \\    };
+        \\}
+    );
+}
+
 test "format: comments ---- trailing after function" {
     try h.assertFormatLossless(std.testing.allocator,
         \\fn main() {

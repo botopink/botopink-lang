@@ -1,0 +1,57 @@
+//// A `//` line comment between the statements of a `case` arm's block is a
+//// comment, as it is between the statements of a function body: in an arm
+//// written `pattern { … }` or `pattern -> { … }`, in a `case` nested in an
+//// arm, in the `if` / `else` blocks of an arm and before a lambda value.
+
+fn pick(n: i32) -> i32 {
+    val r = case n {
+        0 {
+            // first
+            val a = 1;
+            // between
+            a + 1
+        }
+        1 {
+            val b = 10;
+            // between, in an arrow arm
+            b + 1
+        }
+        2 {
+            case n {
+                2 {
+                    val q = 20;
+                    // nested
+                    q
+                }
+                _ {
+                    0
+                }
+            }
+        }
+        3 {
+            val v = 3;
+            if (v > 1) {
+                val w = 30;
+                // in the then block
+                w;
+            } else {
+                // in the else block
+                5;
+            }
+        }
+        _ {
+            val f = { x -> x + 1 };
+            // before the lambda is called
+            f(40)
+        }
+    };
+    r
+}
+
+pub fn main() {
+    @print(pick(0));
+    @print(pick(1));
+    @print(pick(2));
+    @print(pick(3));
+    @print(pick(4));
+}
