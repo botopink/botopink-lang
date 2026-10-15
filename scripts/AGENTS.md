@@ -173,7 +173,7 @@ own, checked by their own gates), query's consumer cell
 manifest, decision 475) and every `conformance/test/<project>/` with `botopink build --target commonJS
 --typescript` into a scratch directory and runs `tsc --noEmit --strict --lib
 es2022 --module commonjs` over each build's non-empty `.d.ts` files, one `tsc`
-per project, and `node --check` over each build's `.js` files (in parallel, one
+per project, (a `conformance/test/<project>/` that holds `test/` alone, as `botopink test` reads it, is built from a scratch copy whose `src/` is that `test/`) and `node --check` over each build's `.js` files (in parallel, one
 `node` per file) — the run cells execute their module under node, this reaches
 the modules nothing runs: the libraries' and the example's. A cell is left out
 only structurally — its commonJS answer refuses a module (a `refused` record in

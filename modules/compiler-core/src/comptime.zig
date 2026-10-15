@@ -486,7 +486,7 @@ fn withDeclaredDecls(arena: std.mem.Allocator, prog: ast.Program, env: *const en
 
 /// The declarations `withDeclaredDecls` splices — the `decl_reflection_src`
 /// entries, private. Keep the two in sync.
-const declared_decl_src =
+pub const declared_decl_src =
     \\type DeclaredMeta(key: string, value: string)
     \\type DeclaredTypedMeta(key: string, value: unknown)
     \\type Declared<T>(name: string, module: string, meta: DeclaredMeta[], returnTypeName: string, value: T, typedMeta: DeclaredTypedMeta[])
@@ -495,7 +495,7 @@ const declared_decl_src =
 /// The declaration `withSourceLocationDecl` splices: private (the record is
 /// per-module — only its fields matter, never its identity), the same four
 /// fields as the `decl_reflection_src` entry. Keep the two in sync.
-const source_location_decl_src =
+pub const source_location_decl_src =
     \\type SourceLocation(file: string, line: i32, column: i32, fnName: string)
 ;
 
@@ -550,7 +550,7 @@ fn withEmbedParams(arena: std.mem.Allocator, prog: ast.Program, env: *const envM
 
 /// The declaration `withAssetDecl` splices (`embed.decl_src`). Keep it in
 /// sync with the `decl_reflection_src` entry.
-const asset_decl_src = embedMod.decl_src;
+pub const asset_decl_src = embedMod.decl_src;
 const embedMod = @import("comptime/embed.zig");
 
 /// The records the compiler splices into the module that uses them

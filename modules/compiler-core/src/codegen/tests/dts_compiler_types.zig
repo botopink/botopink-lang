@@ -54,3 +54,9 @@ test ".d.ts: a payload-less variant of a generic enum names no class type parame
         \\pub type Maybe<T> { None, Some(value: T) }
     , &.{"static readonly None: Maybe<any>"}, &.{"static readonly None: Maybe<T>"});
 }
+
+test ".d.ts: a compiler-spliced record named by a signature is declared private" {
+    try expectDts(
+        \\pub fn show(all: Declared<unknown>[]) { }
+    , &.{ "declare class Declared<T>", "declare class DeclaredMeta", "export {};" }, &.{"export declare class Declared"});
+}

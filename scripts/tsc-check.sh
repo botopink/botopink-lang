@@ -10,7 +10,9 @@
 # `conformance/modules/`, the three ways `from "query"` reaches a library), of every
 # conformance cell
 # (`conformance/modules/<cell>/`, decision 475: each a project with its own
-# manifest) and of every project suite under `conformance/test/`, then
+# manifest) and of every project suite under `conformance/test/` (a suite that holds
+# `test/` alone, as `botopink test` reads it, is built from a scratch copy whose `src/`
+# is that `test/`), then
 # `tsc --noEmit --strict --lib es2022 --module commonjs` over each build's
 # non-empty `.d.ts` files, one `tsc` per project (two projects' modules would
 # otherwise share one program), and `node --check` over each build's `.js` files.
@@ -118,7 +120,16 @@ checked=0
 modules=0
 for p in "${projects[@]}"; do
     out="$scratch/$(printf '%s' "$p" | tr '/' '_')"
-    if ! log="$(cd "$p" && "$bin" build --target commonJS --typescript --out "$out" 2>&1)"; then
+    src="$p"
+    if [ ! -d "$p/src" ] && [ -d "$p/test" ] && ! grep -q '"src"' "$p/botopink.json"; then
+        # A project suite holds `test/` alone (and names no `"src"` of its own) (`botopink test` reads its modules there);
+        # `build` reads `src/`, so the walk builds a scratch copy whose `src/` is that `test/`.
+        src="$scratch/stage_$(printf '%s' "$p" | tr '/' '_')"
+        mkdir -p "$src"
+        cp "$p/botopink.json" "$src/"
+        cp -R "$p/test" "$src/src"
+    fi
+    if ! log="$(cd "$src" && "$bin" build --target commonJS --typescript --out "$out" 2>&1)"; then
         printf '%s\n' "$log" | tail -5 >&2
         printf '  ✗ %s (does not build on commonJS)\n' "$p" >&2
         status=1

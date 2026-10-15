@@ -125,6 +125,7 @@ const Builder = struct {
         var named: std.StringHashMapUnmanaged(void) = .empty;
         for (decls.items) |d| try self.scanDecl(d, &bound, &named);
         try self.reflectionCandidates(&candidates, &named);
+        try self.splicedCandidates(&candidates, &named);
         var added = false;
         var pass_start: usize = decls.items.len;
         while (true) {
@@ -260,6 +261,28 @@ const Builder = struct {
             },
             else => {},
         };
+    }
+
+    /// The records the compiler splices into a module that uses them
+    /// (`comptime.spliced_record_names`) are no declaration of a module that only
+    /// NAMES one in a signature (`pub fn show(all: Declared<unknown>[])` in a
+    /// package that never reads `@TypeInfo.all`): its program holds no splice and
+    /// the `.d.ts` named a type nothing declared. Their sources join the
+    /// candidates, declared (private) only when a declaration names one.
+    fn splicedCandidates(self: *Builder, candidates: *std.ArrayListUnmanaged(ast.DeclKind), named: *const std.StringHashMapUnmanaged(void)) Error!void {
+        var wanted = false;
+        for (comptimeMod.spliced_record_names) |n| {
+            if (named.contains(n)) wanted = true;
+        }
+        if (!wanted) return;
+        const sources = [_][]const u8{ comptimeMod.declared_decl_src, comptimeMod.source_location_decl_src, comptimeMod.asset_decl_src };
+        for (sources) |src| {
+            var lx = Lexer.init(src);
+            const tokens = try lx.scanAll(self.b.arena);
+            var p = Parser.init(tokens);
+            const prog = try p.parse(self.b.arena);
+            for (prog.decls) |d| if (d == .type_) try candidates.append(self.b.arena, d);
+        }
     }
 
     /// The prefix of the comptime reflection records' names.
