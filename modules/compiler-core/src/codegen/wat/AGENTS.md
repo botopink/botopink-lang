@@ -23,6 +23,8 @@ wat/
 ├── reach.zig         ← decision 518 (2): the functions a lowered module reaches (call graph from exports, start, the table once a `call_indirect` is reached, task starts)
 ├── needs.zig         ← decision 518: the `botopink.needs` custom section read back (binary, text) and the `wasmtime run` flags it asks for
 ├── std_wasm_link.zig ← decision 440 (2): std-wasm's program face (`std_wasm.wasm`) decoded into the model, linked into the program
+├── wat_reader.zig    ← front 164 s3: a `.wat` text read into the model — the compiler's own s-expression reader, no tool; type names resolved against the codegen's (549), a located error for a text that does not read
+├── std_leaves.zig    ← front 164 s3: std-wasm's `.wat` leaves (`modules/std-wasm/wat/`, embedded), found by name, read into the GC module that calls one
 ├── scope_carry.zig   ← decision 504: each module's render-scope values typed by the checker's type the scope lowering carries
 ├── repr.zig          ← front 164 s2: `Repr` — what a lowered value is (a scalar, or a reference and its kind) — and `Mode` (`.linear` / `.gc`)
 ├── typecheck.zig     ← front 164 s2: the operand-stack type check a GC module passes before it is kept
@@ -1046,6 +1048,35 @@ binary, which a `wasi` build writes as component text only):
 The cost is std-wasm's float text (Ryu's code and tables against the bignum
 transcription it replaces); `contentHash` and `trim` are smaller than the
 bodies they replace.
+
+## std-wasm's `.wat` leaves (front 164 s3, decision 549)
+
+A leaf is a hand-written function of `modules/std-wasm/wat/*.wat` — `(func $<module>.<function> …)`,
+one file per leaf or small group, each listed in `build.zig` (`std_wasm_leaf_files`) and embedded as
+`std_wasm_wat/<file>` (`std_leaves.files`). `host_binding.parse` of `std: "<module>.<function>"`
+answers a `Std` binding carrying std-wasm's export (`wasm`), the leaf (`leaf`), or both while the
+export stays. A **WasmGC module** calls the leaf: `emitStdCall` (a primitive method's call, a `std:`
+wrapper's) pushes the values as the module holds them and calls `$__std_<module>_<function>` — no
+marshal, nothing in linear memory —, records it in `Emitter.std_leaves`, and `emitWat` reads each
+recorded leaf (`std_leaves.read` over `wat_reader.read`), with the leaves it calls, into the module
+as ordinary functions: a leaf nothing calls is never in the module. A **module lowered in linear
+memory** keeps std-wasm's export (§ std-wasm in the program); a `std:` cell naming a leaf with no
+export is refused there, and in a GC module its declaration's types must be the leaf's
+(`checkLeafSignature`). A leaf is GC code: the operand-stack type check reads it
+(`isLinkedStdFunc` skips only std-wasm's linear functions).
+
+`wat_reader.zig` reads what `wat_emitter.zig` writes: `(func $name (param $p <type>)… (result
+<type>)? (local $l <type>)… body)`, the body flat (`local.get $s`), folded (`(i32.add (local.get $a)
+(i32.const 1))`) or structured (`(block $l (result t)? …)`, `(loop …)`, `(if (result t)? <folded
+condition>… (then …) (else …)?)`); numeric opcodes from `host_binding`'s table, the GC instructions
+of the model, `call` of another leaf by its `$<module>.<function>`. A leaf names the codegen's types
+— `$str`, `$arr_i32`, `$arr_f64`, `$arr_any`, `$box_i32`, `$box_i64`, `$box_f64`, `$result` — which
+`Emitter.leafTypeIndex` resolves (declaring the type in the module's group on first use); every
+reference is `(ref null …)`. A `(type …)` or `(rec …)` form is refused at the declaration, and so is
+anything the model has no node for (a memory instruction, a numeric local or label, a flat
+`block … end`): a located error, `modules/std-wasm/wat/<file>:<line>:<col>: <message>`. Today's
+leaves: `text.length` and `text.charCodeAt` (`text.wat`); the unit test `std_leaves: every leaf
+reads` reads each against the codegen's type names.
 
 ## What stays in `wat_prelude` (decision 442, front 144 B-00g)
 

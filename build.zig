@@ -225,6 +225,16 @@ pub fn build(b: *std.Build) void {
     const std_wasm_step = b.step("std-wasm", "Compile modules/std-wasm's program face alone to zig-out/lib/std_wasm.wasm");
     std_wasm_step.dependOn(&b.addInstallFileWithDir(std_wasm_bin, .lib, "std_wasm.wasm").step);
 
+    // ── std-wasm's leaves (front 164 s3, decision 549) ────────────────────────
+    // The hand-written `.wat` functions of `modules/std-wasm/wat/`, one file
+    // per leaf or small group: compiler-core embeds each as
+    // `std_wasm_wat/<file>` and reads it with its own reader
+    // (`codegen/wat/wat_reader.zig`, `std_leaves.zig`) into the program that
+    // calls one. A new file is listed here.
+    const std_wasm_leaf_files = [_][]const u8{"text.wat"};
+    const std_wasm_leaves = b.addOptions();
+    std_wasm_leaves.addOption([]const []const u8, "files", &std_wasm_leaf_files);
+
     // ── beam-to-wasm (decisions 434 (3), 438, 452) ────────────────────────────
     // `.beam` bytecode translated to wasm functions over the comptime
     // runtime's terms (`modules/beam-to-wasm`), whole module by module — a
@@ -291,6 +301,7 @@ pub fn build(b: *std.Build) void {
         // Decisions 440 (2), 450 (3): std-wasm, decoded into a `--target wasm`
         // program and into the comptime runtime.
         mod.addAnonymousImport("std_wasm.wasm", .{ .root_source_file = std_wasm_bin });
+        addStdWasmLeaves(b, mod, std_wasm_leaves, &std_wasm_leaf_files);
     }
     // wasmtime runs it in-process on every native build (`persistent_wat.zig`,
     // decision 543): its C API's headers, from the library this target links.
@@ -723,6 +734,7 @@ pub fn build(b: *std.Build) void {
         },
     });
     web_core_mod.addAnonymousImport("std_wasm.wasm", .{ .root_source_file = std_wasm_bin });
+    addStdWasmLeaves(b, web_core_mod, std_wasm_leaves, &std_wasm_leaf_files);
     const web_exe = b.addExecutable(.{
         .name = "botopink",
         .root_module = b.createModule(.{
@@ -844,6 +856,16 @@ fn stdPreludeModule(
     }
     std_prelude.addImport("std_pkg", std_pkg);
     return std_prelude;
+}
+
+/// Front 164 s3 — std-wasm's `.wat` leaves into `mod`: the list as the
+/// `std_wasm_leaves` options module, each file as `std_wasm_wat/<file>`
+/// (`codegen/wat/std_leaves.zig`).
+fn addStdWasmLeaves(b: *std.Build, mod: *std.Build.Module, leaves: *std.Build.Step.Options, files: []const []const u8) void {
+    mod.addOptions("std_wasm_leaves", leaves);
+    for (files) |f| mod.addAnonymousImport(b.fmt("std_wasm_wat/{s}", .{f}), .{
+        .root_source_file = b.path(b.fmt("modules/std-wasm/wat/{s}", .{f})),
+    });
 }
 
 /// Re-resolve the user-requested target with an explicit bundled-glibc version

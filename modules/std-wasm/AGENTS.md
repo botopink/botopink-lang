@@ -15,6 +15,16 @@ there is no match by name. Everything a `--target wasm` program computes over va
 a number's text, arrays, `bigint` — is here, not in the codegen's `wat_prelude` (442 (2));
 `root.program` lists the functions only the wasm codegen calls.
 
+Front 164 s3 moves std-wasm out of Zig: its logic into botopink, and what no `.bp` form reaches —
+a byte read or written, a GC array made — into hand-written **`.wat` leaves**, `wat/*.wat`, one
+file per leaf or small group, each listed in the root `build.zig` (`std_wasm_leaf_files`). A leaf
+is `(func $<module>.<function> …)` over the codegen's GC types, named and never declared (decision
+549: `$str`, `$arr_any`, …), commented; compiler-core reads it with its own reader
+(`codegen/wat/wat_reader.zig`, `std_leaves.zig`) into a WasmGC program that calls it, under the same
+`std:` cell. A `std:` name that is a leaf and still an export of `root.exports` is the leaf's in a
+WasmGC module and the export's in linear memory and at comptime, until nothing uses the export.
+Today's leaves: `text.length`, `text.charCodeAt` (`wat/text.wat`).
+
 ## Two value representations (decision 450 (4))
 
 Each in its own file, both compiled into the one `std_wasm.wasm`:
@@ -43,6 +53,8 @@ the module's data (`__wasm_apply_data_relocs`), which `std_wasm_link.zig` refuse
 ```text
 std-wasm/
 ├── AGENTS.md      ← you are here
+├── wat/
+│   └── text.wat   ← front 164 s3: the `.wat` leaves `text.length` and `text.charCodeAt` over a `$str`'s bytes
 └── src/
     ├── root.zig   ← the package: `exports` (each function by its `std:` name, its botopink types), `program` (the wasm codegen's own calls, by wasm types), `find`, `matches`, `signatureText`, `names`, `erlang_module`; re-exports the files below
     ├── hash.zig   ← `hash.contentHash`

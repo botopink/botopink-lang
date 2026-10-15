@@ -10,7 +10,7 @@
 //! | `op: "<opcode>"` | one numeric wasm instruction over the declared parameters (`op: "f64.floor"`) |
 //! | `fn: <name>` | a private botopink `fn` of the same module, with the same signature |
 //! | `wasi: .<Adapter>` | a compiler adapter over the host (WASI preview 1 through the component, or the `browser` loader's JavaScript), from `adapters` (`.RaceOf` names `race_of`) |
-//! | `std: "<module>.<function>"` | a function std-wasm implements (`modules/std-wasm`, `std_wasm.exports`), transpiled into the program — the same cell the comptime runtime answers by (decision 440) |
+//! | `std: "<module>.<function>"` | a function std-wasm implements (`modules/std-wasm`, `std_wasm.exports`), transpiled into the program — the same cell the comptime runtime answers by (decision 440) — or a `.wat` leaf of `modules/std-wasm/wat/` (`std_leaves.zig`, front 164 s3), which a WasmGC module calls as its own function |
 //!
 //! The arguments are always the declared parameters, in order — there are no
 //! markers, no expression text and no way to name an address: nothing a
@@ -29,6 +29,7 @@
 const std = @import("std");
 const wat = @import("wat_ast.zig");
 const stdWasm = @import("std_wasm");
+const stdLeaves = @import("std_leaves.zig");
 const ast = @import("../../ast.zig");
 
 /// A numeric value type a binding's signature may spell, or `bool` — the
@@ -128,11 +129,24 @@ pub const Binding = union(enum) {
     /// The private fn's name, as written.
     fn_: []const u8,
     wasi: Adapter,
-    /// The std-wasm function the program calls (decision 440 (3)). Its types
-    /// are checked against the declaration's by the caller, which spells
-    /// them (`std_wasm.matches`; the checker refuses a mismatch on every
-    /// target, `infer.refuseStdBinding`).
-    std_: stdWasm.Export,
+    /// The std function the program calls (decision 440 (3)): std-wasm's
+    /// export, a `.wat` leaf (front 164 s3), or both while the export stays.
+    std_: Std,
+};
+
+/// What a `std: "<module>.<function>"` cell names. Its types are checked
+/// against the declaration's by the caller, which spells them: an export's by
+/// `std_wasm.matches` (the checker refuses a mismatch on every target,
+/// `infer.refuseStdBinding`), a leaf's by its GC signature in a WasmGC module
+/// (`wat.zig` `checkHostBinding`).
+pub const Std = struct {
+    name: []const u8,
+    /// std-wasm's export of the name, transpiled from `std_wasm.wasm` — what a
+    /// module lowered in linear memory calls.
+    wasm: ?stdWasm.Export = null,
+    /// The `.wat` leaf of the name (`std_leaves.zig`) — what a WasmGC module
+    /// calls.
+    leaf: ?stdLeaves.Leaf = null,
 };
 
 /// The signature a binding is checked against: the declared parameters'
@@ -301,8 +315,16 @@ pub fn parse(alloc: std.mem.Allocator, text: []const u8, sig: Signature) !Result
     }
     if (std.mem.startsWith(u8, text, "std:")) {
         const name = text["std:".len..];
-        const e = stdWasm.find(name) orelse return refused(alloc, "`#[@External.Wasm({s})]`: std-wasm implements no `{s}` — a `std:` binding names one of its functions ({s})", .{ shown, name, stdWasm.names });
-        return .{ .ok = .{ .std_ = e } };
+        // Front 164 s3: a `.wat` leaf answers the name in a WasmGC module;
+        // std-wasm's export, while it stays, in linear memory.
+        const e = stdWasm.find(name);
+        const leaf = stdLeaves.find(name);
+        if (e == null and leaf == null) {
+            const leaves = try stdLeaves.names(alloc);
+            defer alloc.free(leaves);
+            return refused(alloc, "`#[@External.Wasm({s})]`: std-wasm implements no `{s}` — a `std:` binding names one of its functions ({s}) or one of its `.wat` leaves ({s})", .{ shown, name, stdWasm.names, leaves });
+        }
+        return .{ .ok = .{ .std_ = .{ .name = name, .wasm = e, .leaf = leaf } } };
     }
     return refused(alloc, "`#[@External.Wasm({s})]` is none of the four cells a wasm binding takes: `op: \"<opcode>\"`, `fn: <private fn of this module>`, `wasi: .<Adapter>`, `std: \"<module>.<function>\"`", .{shown});
 }
@@ -594,6 +616,12 @@ test "host binding: the three forms and their refusals" {
     {
         const r = try parse(a, "std:hash.contentHash", .{ .params = &.{null}, .result = null, .result_other = true });
         try std.testing.expectEqualStrings("hash.contentHash", r.ok.std_.name);
+        try std.testing.expect(r.ok.std_.wasm != null and r.ok.std_.leaf == null);
+    }
+    {
+        // Front 164 s3: a `.wat` leaf, its std-wasm export still beside it.
+        const r = try parse(a, "std:text.length", .{ .params = &.{null}, .result = .i32 });
+        try std.testing.expect(r.ok.std_.leaf != null and r.ok.std_.wasm != null);
     }
     {
         const r = try parse(a, "std:hash.sha256", .{ .params = &.{null}, .result = null, .result_other = true });

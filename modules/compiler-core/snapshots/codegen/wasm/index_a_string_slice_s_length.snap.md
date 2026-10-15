@@ -21,8 +21,6 @@ fn main() {
     (local $__gc1 i32)
     (local $__gc2 (ref null $str))
     (local $__gc3 i32)
-    (local $__gc4 (ref null $str))
-    (local $__gc5 i32)
     global.get $__s0
     local.set $s
     local.get $s
@@ -41,14 +39,7 @@ fn main() {
     call $__lin_to_gc_str
     local.get $__gc3
     global.set $__heap_ptr
-    local.set $__gc4
-    global.get $__heap_ptr
-    local.set $__gc5
-    local.get $__gc4
-    call $__gc_to_lin_str
     call $__std_text_length
-    local.get $__gc5
-    global.set $__heap_ptr
     call $__print_i32
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")
@@ -363,7 +354,39 @@ fn main() {
   ;; __std_f266 — from std_wasm.wasm (sha256 5ac39cdc3016)
   ;; __std_f267 — from std_wasm.wasm (sha256 cda2fb2bf3e4)
   ;; std:text.slice — from std_wasm.wasm (sha256 2274e2b5ad65)
-  ;; std:text.length — from std_wasm.wasm (sha256 c0e18ad79cad)
+  ;; std-wasm's .wat leaves (front 164 s3)
+  (func $__std_text_length (param $s (ref null $str)) (result i32)
+    (local $i i32)
+    (local $len i32)
+    (local $n i32)
+    local.get $s
+    array.len
+    local.set $len
+    (block $done
+      (loop $next
+        local.get $i
+        local.get $len
+        i32.ge_u
+        br_if $done
+        local.get $s
+        local.get $i
+        array.get_u $str
+        i32.const 0xC0
+        i32.and
+        i32.const 0x80
+        i32.ne
+        local.get $n
+        i32.add
+        local.set $n
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $next
+      )
+    )
+    local.get $n
+  )
   (data $__d0 "hello")
   (global $__s0 (mut (ref null $str)) (ref.null $str))
   (start $__init_strs)

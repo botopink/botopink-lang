@@ -18,6 +18,41 @@ const watCodegen = @import("../wat.zig");
 
 test {
     _ = @import("../wat/host_binding.zig");
+    _ = @import("../wat/wat_reader.zig");
+    _ = @import("../wat/std_leaves.zig");
+}
+
+// Front 164 s3 — `String.length` and `String.charCodeAt` are `.wat` leaves
+// (`modules/std-wasm/wat/text.wat`): a WasmGC module calls each as its own
+// function over its `$str`, with no marshal into linear memory, and answers
+// what std-wasm's export answered.
+test "wat: front 164 s3 ---- a std: cell naming a .wat leaf is the leaf, read into the GC module" {
+    const io = std.testing.io;
+    const alloc = std.testing.allocator;
+    var outputs = try h.generate(alloc, &.{.{ .path = "", .source =
+        \\fn main() {
+        \\    val s = "héllo, 日本";
+        \\    @print(s.length());
+        \\    @print("".length());
+        \\    @print(s.charCodeAt(1));
+        \\    @print(s.charCodeAt(8));
+        \\    @print(s.charCodeAt(9));
+        \\    @print(s.charCodeAt(-1));
+        \\    @print("\u{1F600}".charCodeAt(0));
+        \\}
+    }}, io, h.configs[3]);
+    defer {
+        for (outputs.items) |*o| o.result.deinit(alloc);
+        outputs.deinit(alloc);
+    }
+    const o = for (outputs.items) |o| {
+        if (std.mem.eql(u8, o.name, "") or std.mem.eql(u8, o.name, "main")) break o;
+    } else return error.ModuleDidNotCompile;
+    const wat_text = o.result.js;
+    try std.testing.expect(std.mem.indexOf(u8, wat_text, "(func $__std_text_length (param $s (ref null $str)) (result i32)") != null);
+    try std.testing.expect(std.mem.indexOf(u8, wat_text, "(func $__std_text_charCodeAt (param $s (ref null $str)) (param $i i32) (result i32)") != null);
+    try std.testing.expect(std.mem.indexOf(u8, wat_text, "__gc_to_lin_str") == null);
+    try std.testing.expectEqualStrings("9\n0\n233\n26412\n-1\n-1\n128512\n", o.result.run_output orelse "");
 }
 
 test "wat: record construct two fields" {

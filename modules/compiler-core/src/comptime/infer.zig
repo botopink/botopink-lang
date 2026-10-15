@@ -34,6 +34,7 @@ const decoratorEval = @import("decorator_eval.zig");
 const hostCells = @import("host_cells.zig");
 const stdWasm = @import("std_wasm");
 const wasmHostBinding = @import("../codegen/wat/host_binding.zig");
+const stdLeaves = @import("../codegen/wat/std_leaves.zig");
 const hostFnBinding = @import("../codegen/hostFnBinding.zig");
 const erlang = @import("../codegen/erlang.zig");
 const decoratorSameMod = @import("decorator_same.zig");
@@ -4355,6 +4356,11 @@ fn refuseStdBinding(env: *Env, a: ast.Annotation, name: []const u8, params: []co
             "`#[@External.Wasm({s})]` on `{s}`: std-wasm's `{s}` is `{s}`, and `{s}` is declared `{s}` — a `std:` binding takes exactly its function's types (decision 440)",
             .{ shown, name, fname, stdWasm.signatureText(ex, &buf), name, have.items },
         ), "Declare the function with std-wasm's types, or bind it otherwise (`fn: <private fn>`).");
+    } else if (stdLeaves.find(fname) != null) {
+        // Front 164 s3 — a `.wat` leaf alone: its types are GC types, which
+        // the wasm build checks against the declaration (`wat.zig`
+        // `checkLeafSignature`).
+        return;
     } else {
         e = TypeError.custom(try std.fmt.allocPrint(
             env.arena,

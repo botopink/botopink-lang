@@ -40,6 +40,8 @@ const wasmNeeds = @import("./wat/needs.zig");
 const reach = @import("./wat/reach.zig");
 const hostBinding = @import("./wat/host_binding.zig");
 const stdWasmLink = @import("./wat/std_wasm_link.zig");
+const stdLeaves = @import("./wat/std_leaves.zig");
+const watReader = @import("./wat/wat_reader.zig");
 const stdWasm = @import("std_wasm");
 const hostFnBinding = @import("./hostFnBinding.zig");
 const lexerMod = @import("../lexer.zig");
@@ -93,6 +95,13 @@ const gc_init_strs = "__init_strs";
 /// memory, outside the GC module's type check.
 fn isStdFunc(name: []const u8) bool {
     return std.mem.startsWith(u8, name, "__std_");
+}
+
+/// A function of std-wasm's program face transpiled into a GC module: linear
+/// code the GC type check does not read. A `.wat` leaf (front 164 s3) is GC
+/// code, and is checked.
+fn isLinkedStdFunc(name: []const u8) bool {
+    return isStdFunc(name) and !stdLeaves.isSymbol(name);
 }
 
 /// Whether a body reads or writes linear memory.
@@ -1915,6 +1924,13 @@ fn emitWatPass(
         }
     }
 
+    // Front 164 s3 — the `.wat` leaves the module calls, read against its GC
+    // types, with the leaves they call.
+    if (em.std_leaves.count() > 0) {
+        try items.append(ar, .{ .comment = "std-wasm's .wat leaves (front 164 s3)" });
+        for (try em.leafFuncs()) |f| try items.append(ar, .{ .func = f });
+    }
+
     // Decision 518 (2) — the host features are those of the bindings the
     // program REACHES. A first pass that finds fewer than the bindings name
     // asks for a second one without the unreached bindings; the second drops
@@ -2653,6 +2669,10 @@ const Emitter = struct {
     /// `std:` name (`text.trim`): a `std:` binding's, a primitive method's.
     /// `emitWat` transpiles them into the module (`std_wasm_link.zig`).
     std_exports: std.StringArrayHashMapUnmanaged(void) = .empty,
+    /// Front 164 s3 — the `.wat` leaves a GC module calls, by their `std:`
+    /// name (`text.length`): `emitWat` reads each (`std_leaves.zig`) into the
+    /// module, with the leaves it calls.
+    std_leaves: std.StringArrayHashMapUnmanaged(stdLeaves.Leaf) = .empty,
     /// Decision 392 — the state machine whose body is being lowered: an
     /// asynchronous function (`-> @Task<T>`, an `async { }` block) suspends
     /// at its `await`s (`lowerAwait`) and re-enters its statements by
@@ -2939,6 +2959,7 @@ const Emitter = struct {
         self.wrapper_needs.deinit(self.alloc);
         self.host_generic_decls.deinit(self.alloc);
         self.std_exports.deinit(self.alloc);
+        self.std_leaves.deinit(self.alloc);
         self.task_kinds.deinit(self.alloc);
         self.task_edges.deinit(self.alloc);
         self.task_syms.deinit(self.alloc);
@@ -4854,7 +4875,7 @@ const Emitter = struct {
         if (self.gc_gap != null) return error.GcFallback;
         if (self.gc_str_used) try items.insert(ar, 0, .{ .types = defs });
         var diag: typecheck.Diag = .{};
-        typecheck.checkModule(self.alloc, .{ .items = items.items }, isStdFunc, &diag) catch |err| switch (err) {
+        typecheck.checkModule(self.alloc, .{ .items = items.items }, isLinkedStdFunc, &diag) catch |err| switch (err) {
             error.OutOfMemory => return error.OutOfMemory,
             else => {
                 self.gcGap("typecheck");
@@ -8284,10 +8305,13 @@ const Emitter = struct {
                 try spelled.append(ar, stdSpelling(p.typeRef));
             }
             const r: ?[]const u8 = if (f.returnType) |rt| stdSpelling(rt) else null;
-            if (!stdWasm.matches(binding.std_, spelled.items, r)) {
+            if (binding.std_.wasm) |ex| if (!stdWasm.matches(ex, spelled.items, r)) {
                 var buf: [128]u8 = undefined;
-                return self.refuse(ann_loc, "`#[@External.Wasm({s})]` on `{s}`: std-wasm's `{s}` is `{s}`, and the declared parameters and return must be exactly those types", .{ try ast.wasmCellDisplay(ar, ext.symbol), f.name, binding.std_.name, stdWasm.signatureText(binding.std_, &buf) });
-            }
+                return self.refuse(ann_loc, "`#[@External.Wasm({s})]` on `{s}`: std-wasm's `{s}` is `{s}`, and the declared parameters and return must be exactly those types", .{ try ast.wasmCellDisplay(ar, ext.symbol), f.name, binding.std_.name, stdWasm.signatureText(ex, &buf) });
+            };
+            // Front 164 s3 — a leaf with no std-wasm export beside it: a GC
+            // module's alone, its GC signature the declaration's.
+            if (binding.std_.wasm == null) try self.checkLeafSignature(f, binding.std_, ext, ann_loc);
         }
         if (binding == .fn_) {
             const name = binding.fn_;
@@ -8361,6 +8385,12 @@ const Emitter = struct {
     /// allocated too — put back after the call. std-wasm never calls back, so
     /// nothing it allocated outlives the call.
     fn emitStdCall(self: *Emitter, name: []const u8) !void {
+        // Front 164 s3: a GC module calls a `.wat` leaf with its own values —
+        // no marshal, nothing in linear memory.
+        if (self.mode == .gc) if (stdLeaves.find(name)) |leaf| {
+            try self.std_leaves.put(self.alloc, name, leaf);
+            return self.emit(.{ .call = try stdLeaves.symbol(self.arena(), name) });
+        };
         const call = try self.stdCallLinked(name);
         if (self.mode == .linear) return self.emit(call);
         const ex = gcStdSig(name) orelse return self.gcFail(name);
@@ -8421,6 +8451,78 @@ const Emitter = struct {
         }
         try self.emit(.{ .local_get = top });
         try self.emit(.{ .global_set = heap_ptr });
+    }
+
+    /// Front 164 s3 (decision 549) — the index of the codegen's GC type a
+    /// `.wat` leaf names (`str`, `arr_any`, …), declaring it in the module's
+    /// group on first use; null for a name the codegen gives no fixed type
+    /// (a record's, a variant's: the program's own).
+    fn leafTypeIndex(ctx: *anyopaque, name: []const u8) ?u16 {
+        const self: *Emitter = @ptrCast(@alignCast(ctx));
+        if (std.mem.eql(u8, name, prelude.gc_str_def.name)) {
+            self.gc_str_used = true;
+            return prelude.gc_str_index;
+        }
+        const fixed = [_]struct { []const u8, GcTy }{
+            .{ "arr_i32", .{ .arr = .i32 } },
+            .{ "arr_f64", .{ .arr = .f64 } },
+            .{ "arr_any", .{ .arr = .any } },
+            .{ "box_i32", .{ .box = .i32 } },
+            .{ "box_i64", .{ .box = .i64 } },
+            .{ "box_f64", .{ .box = .f64 } },
+            .{ "result", .result },
+        };
+        for (fixed) |x| if (std.mem.eql(u8, x[0], name)) return self.gcTyIndex(x[1]);
+        return null;
+    }
+
+    /// The leaf `leaf` read into this module (front 164 s3), and the names of
+    /// the leaves it calls appended to `calls`. A leaf that does not read is
+    /// refused with its located message (`path:line:col`).
+    fn readLeaf(self: *Emitter, leaf: stdLeaves.Leaf, calls: *std.ArrayListUnmanaged([]const u8)) !wat.Func {
+        var diag: watReader.Diag = .{};
+        return stdLeaves.read(self.arena(), leaf, .{ .ctx = self, .index = leafTypeIndex }, calls, &diag) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            error.Unreadable => return self.refuse(null, "std-wasm's leaf `{s}` does not read: {s}", .{ leaf.name, try diag.text(self.arena()) }),
+        };
+    }
+
+    /// Every leaf the module calls, read, with the leaves those call — each
+    /// once, in the order first called.
+    fn leafFuncs(self: *Emitter) ![]const wat.Func {
+        const ar = self.arena();
+        var out: std.ArrayListUnmanaged(wat.Func) = .empty;
+        var i: usize = 0;
+        while (i < self.std_leaves.count()) : (i += 1) {
+            var calls: std.ArrayListUnmanaged([]const u8) = .empty;
+            try out.append(ar, try self.readLeaf(self.std_leaves.values()[i], &calls));
+            for (calls.items) |n| if (!self.std_leaves.contains(n))
+                try self.std_leaves.put(self.alloc, n, stdLeaves.find(n).?);
+        }
+        return out.items;
+    }
+
+    /// Front 164 s3 — a `std:` cell naming a leaf with no std-wasm export
+    /// beside it: a WasmGC module's alone, and the declaration's types, as the
+    /// module holds them, are the leaf's parameters and result.
+    fn checkLeafSignature(self: *Emitter, f: ast.FnDecl, b: hostBinding.Std, ext: ast.ExternalRef, ann_loc: ?ast.Loc) !void {
+        const ar = self.arena();
+        const shown = try ast.wasmCellDisplay(ar, ext.symbol);
+        if (self.mode == .linear)
+            return self.refuse(ann_loc, "`#[@External.Wasm({s})]` on `{s}`: `{s}` is a `.wat` leaf of std-wasm, which a module in linear memory cannot call", .{ shown, f.name, b.name });
+        var calls: std.ArrayListUnmanaged([]const u8) = .empty;
+        const leaf = try self.readLeaf(b.leaf.?, &calls);
+        var ok = true;
+        var k: usize = 0;
+        for (f.params) |p| {
+            if (std.mem.eql(u8, p.name, "self")) continue;
+            if (k >= leaf.params.len or self.vtOf(self.reprOf(p.typeRef)) != leaf.params[k].ty) ok = false;
+            k += 1;
+        }
+        if (k != leaf.params.len) ok = false;
+        const declared: ?ValType = if (f.returnType) |rt| (if (std.mem.eql(u8, stdSpelling(rt), "void")) null else self.vtOf(self.reprOf(rt))) else null;
+        if (declared != leaf.result) ok = false;
+        if (!ok) return self.refuse(ann_loc, "`#[@External.Wasm({s})]` on `{s}`: the leaf `{s}` takes and answers other types than the declaration's", .{ shown, f.name, b.name });
     }
 
     /// What crosses the std-wasm boundary in a GC module (the `stdWasm.Type`s
@@ -8549,7 +8651,7 @@ const Emitter = struct {
         const call: wat.Instr = switch (hb.binding) {
             .op => |op| hostBinding.instrOf(op),
             .fn_ => .{ .call = hb.target },
-            .std_ => |e| if (gc_std) .{ .comment = "marshalled std-wasm call" } else try self.stdCall(e.name),
+            .std_ => |e| if (gc_std) .{ .comment = if (e.leaf != null) "a .wat leaf's call" else "marshalled std-wasm call" } else try self.stdCall(e.name),
             .wasi => |ad| blk: {
                 if (std.mem.eql(u8, ad.name, "random_f64")) break :blk self.builder().helper(.wasi_random_f64);
                 if (std.mem.eql(u8, ad.name, "delay")) break :blk self.builder().helper(.task_delay);
@@ -8580,7 +8682,10 @@ const Emitter = struct {
         // 0 the caller drops.
         const yields = switch (hb.binding) {
             .wasi => |ad| ad.result != null or ad.task != null,
-            .std_ => |e| e.result != .void,
+            .std_ => |e| if (e.wasm) |ex| ex.result != .void else blk: {
+                var calls: std.ArrayListUnmanaged([]const u8) = .empty;
+                break :blk (try self.readLeaf(e.leaf.?, &calls)).result != null;
+            },
             else => true,
         };
         if (result != null and !yields) try lines.append(ar, .{ .indent = 4, .instr = self.zeroOf(sig.result.?) });
