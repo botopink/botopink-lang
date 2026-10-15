@@ -160,6 +160,8 @@ pub fn parseCaseExpr(this: *This, alloc: std.mem.Allocator) ParseError!Collectio
                 // written without `;` is the arm's value.
                 var lastBare = false;
                 while (!this.check(.rightBrace) and !this.check(.endOfFile)) {
+                    // Decision 539 — a `defer` in the arm's block.
+                    const isDeferred = this.match(.@"defer");
                     const e = try this.parseExpr(alloc);
                     // A braced `if`/loop/`case` ends at its `}` (decision 29 (c));
                     // the `;` after it is optional (`Parser.isBracedBlockStmt`).
@@ -170,7 +172,7 @@ pub fn parseCaseExpr(this: *This, alloc: std.mem.Allocator) ParseError!Collectio
                         if (!this.check(.rightBrace)) return ParseError.UnexpectedToken;
                         lastBare = true;
                     } else lastBare = false;
-                    try blockStmts.append(alloc, .{ .expr = e });
+                    try blockStmts.append(alloc, .{ .expr = e, .deferred = isDeferred });
                 }
                 _ = try this.consume(.rightBrace);
                 This.markBlockTail(blockStmts.items, lastBare);

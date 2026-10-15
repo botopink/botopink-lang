@@ -952,6 +952,28 @@ const GenericFn = struct {
 /// declares it and the method.
 const PrimDefault = struct { behavior: []const u8, method: ast.BehaviorMethod, tparams: []const ast.GenericParam = &.{} };
 
+/// A name a deferred statement reads, and the alias it meant where the `defer`
+/// is written (decision 539: names bind there, only the value is read late).
+const DeferName = struct { name: []const u8, alias: ?[]const u8 };
+
+/// A `defer` waiting to run (`Emitter.defer_stack`): its statement, the
+/// aliases of the names it reads at the `defer`, and — when a panic region
+/// covers the rest of its block — the local that says an exit path already ran
+/// it, so the region's handler does not run it again.
+const DeferEntry = struct {
+    stmt: ast.Stmt,
+    names: []const DeferName = &.{},
+    ran_flag: ?[]const u8 = null,
+};
+
+/// How a body that holds a `defer` writes its last statement: the sites that
+/// answer a value (`if` branch, `case` arm, inlined lambda) convert the value
+/// to the type they hand on, and the panic region must enclose that.
+const LastHook = struct {
+    ctx: *anyopaque,
+    run: *const fn (*anyopaque, *Emitter, ast.Stmt) anyerror!Tail,
+};
+
 /// A name a block re-bound, and the alias it had before (`Emitter.shadow_log`).
 /// What a statement list did to a name, undone at its end: bound it first
 /// (`prev` unused — the name leaves `bound_names`), or aliased it over an
@@ -2281,7 +2303,7 @@ const Emitter = struct {
     /// Decision 539 — the `defer`s of the function being emitted that have
     /// not run yet, outermost first: a `return`, a `break`, a `continue` or
     /// the end of their block writes each one's statement in place.
-    defer_stack: std.ArrayListUnmanaged(ast.Stmt) = .empty,
+    defer_stack: std.ArrayListUnmanaged(DeferEntry) = .empty,
     /// `defer_stack`'s length where the innermost loop began: a `break` or a
     /// `continue` runs the entries above it.
     defer_loop_floor: usize = 0,
@@ -6920,14 +6942,15 @@ const Emitter = struct {
     /// function node, which is the one place WAT accepts it.
     /// The local a `val` / `var` (or a loop's, a HOF's binder) named `name`
     /// binds: `name` itself, or a fresh `<name>__sh<n>` when a parameter or a
-    /// binding of an enclosing, still open statement list holds it — a
+    /// binding of an enclosing, still open statement list holds it, or when it is a
+    /// module-level name (the global stays the global where a `defer` reads it) — a
     /// sibling block's binding has ended and its local is reused, as before. One function is one wasm local
     /// namespace, so an inner block's `val x = 2` wrote the outer `$x`, and
     /// `x` after the block read `2` at exit 0 where node answers the outer
     /// value (decision 152: a block is a new scope).
     fn bindTarget(self: *Emitter, name: []const u8) ![]const u8 {
         const ra = self.reg_arena.allocator();
-        if (!self.bound_names.contains(name) and !self.isParamLocal(name)) {
+        if (!self.bound_names.contains(name) and !self.isParamLocal(name) and !self.globals.contains(name)) {
             try self.bound_names.put(ra, name, {});
             try self.shadow_log.append(ra, .{ .name = name, .prev = null, .aliased = false });
             return name;
@@ -8292,7 +8315,10 @@ const Emitter = struct {
                         // local of its own (`bindTarget`), registered when it
                         // is lowered: registering its shape under the shared
                         // name here marked the OUTER `x` a string too.
-                        if (self.locals.contains(lb.name)) {
+                        // A `val` over a module-level name is one too: the
+                        // module's name stays the global's until the binding
+                        // (and for a `defer` written before it, after).
+                        if (self.locals.contains(lb.name) or self.globals.contains(lb.name)) {
                             try self.declareNestedLocals(lb.value.*);
                             continue;
                         }
@@ -9004,10 +9030,14 @@ const Emitter = struct {
             return .none;
         }
         const mark = self.defer_stack.items.len;
-        // Only the function's own body has a value type a region can name.
-        const value_ty: ?Repr = if (keep_value and self.defer_fn_body != null and
-            self.defer_fn_body.?.ptr == body.ptr and self.defer_fn_body.?.len == body.len) self.cur_result else null;
-        const tail = try self.emitStmtsFrom(body, 0, keep_value, value_ty, true);
+        // The function's own body has `cur_result`; another block answering a
+        // value, the type of its last expression (the type a region names).
+        const value_ty: ?Repr = if (!keep_value) null else if (self.defer_fn_body != null and
+            self.defer_fn_body.?.ptr == body.ptr and self.defer_fn_body.?.len == body.len) self.cur_result else if (hasDefer(body) and !body[body.len - 1].deferred)
+            self.wasmTypeOf(body[body.len - 1].expr)
+        else
+            null;
+        const tail = try self.emitStmtsFrom(body, 0, keep_value, value_ty, true, null);
         try self.closeDefers(mark, tail);
         return tail;
     }
@@ -9016,7 +9046,7 @@ const Emitter = struct {
     /// `emitBody` says. A `defer` is not lowered here: it joins `defer_stack`
     /// and the rest of the list runs under it (`emitDeferRegion` when a panic
     /// can reach it).
-    fn emitStmtsFrom(self: *Emitter, body: []const ast.Stmt, start: usize, keep_value: bool, value_ty: ?Repr, regions: bool) anyerror!Tail {
+    fn emitStmtsFrom(self: *Emitter, body: []const ast.Stmt, start: usize, keep_value: bool, value_ty: ?Repr, regions: bool, hook: ?LastHook) anyerror!Tail {
         var tail: Tail = .none;
         var i = start;
         while (i < body.len) : (i += 1) {
@@ -9025,19 +9055,44 @@ const Emitter = struct {
             if (stmt.deferred) {
                 var plain = stmt;
                 plain.deferred = false;
-                try self.defer_stack.append(self.alloc, plain);
+                try self.pushDefer(plain);
                 if (regions and self.exceptions and (!keep_value or value_ty != null))
-                    return self.emitDeferRegion(body, i + 1, keep_value, value_ty);
+                    return self.emitDeferRegion(body, i + 1, keep_value, value_ty, hook);
                 tail = .none;
-                if (is_last and keep_value) {
-                    try self.pushZero();
-                    tail = .value;
-                }
                 continue;
             }
-            tail = try self.emitStmt(stmt, is_last and keep_value);
+            if (is_last and keep_value and hook != null) {
+                tail = try hook.?.run(hook.?.ctx, self, stmt);
+            } else tail = try self.emitStmt(stmt, is_last and keep_value);
+        }
+        // A body whose last statement is a `defer` answers the neutral value.
+        if (keep_value and body.len > 0 and body[body.len - 1].deferred) {
+            if (value_ty) |t| try self.emit(self.zeroOf(t)) else try self.pushZero();
+            tail = .value;
         }
         return tail;
+    }
+
+    /// Whether a statement list holds a `defer` of its own.
+    fn hasDefer(body: []const ast.Stmt) bool {
+        for (body) |s| if (s.deferred) return true;
+        return false;
+    }
+
+    /// A `defer` joins `defer_stack` with the aliases its names have here.
+    fn pushDefer(self: *Emitter, stmt: ast.Stmt) anyerror!void {
+        var idents: std.ArrayListUnmanaged([]const u8) = .empty;
+        try self.collectIdents(stmt.expr, &idents);
+        const ra = self.reg_arena.allocator();
+        var names: std.ArrayListUnmanaged(DeferName) = .empty;
+        for (idents.items) |n| {
+            var seen = false;
+            for (names.items) |have| if (std.mem.eql(u8, have.name, n)) {
+                seen = true;
+            };
+            if (!seen) try names.append(ra, .{ .name = n, .alias = self.aliases.get(n) });
+        }
+        try self.defer_stack.append(self.alloc, .{ .stmt = stmt, .names = names.items });
     }
 
     /// The statement of `defer_stack[idx]`, written here. The entries from
@@ -9045,13 +9100,23 @@ const Emitter = struct {
     /// past the ones below only). It is stack-neutral, so a value waiting
     /// beneath it survives.
     fn writeDefer(self: *Emitter, idx: usize) anyerror!void {
-        const stmt = self.defer_stack.items[idx];
-        var hidden: std.ArrayListUnmanaged(ast.Stmt) = .empty;
+        const entry = self.defer_stack.items[idx];
+        var hidden: std.ArrayListUnmanaged(DeferEntry) = .empty;
         defer hidden.deinit(self.alloc);
         try hidden.appendSlice(self.alloc, self.defer_stack.items[idx..]);
         self.defer_stack.shrinkRetainingCapacity(idx);
         defer self.defer_stack.appendSliceAssumeCapacity(hidden.items);
-        _ = try self.emitStmtNormalised(stmt, false);
+        // The names mean what they meant at the `defer`.
+        var current: std.ArrayListUnmanaged(DeferName) = .empty;
+        defer current.deinit(self.alloc);
+        for (entry.names) |dn| {
+            try current.append(self.alloc, .{ .name = dn.name, .alias = self.aliases.get(dn.name) });
+            if (dn.alias) |a| try self.aliases.put(dn.name, a) else _ = self.aliases.remove(dn.name);
+        }
+        defer for (current.items) |dn| {
+            if (dn.alias) |a| self.aliases.put(dn.name, a) catch {} else _ = self.aliases.remove(dn.name);
+        };
+        _ = try self.emitStmtNormalised(entry.stmt, false);
     }
 
     /// A way out of the function or the loop: every pending defer above
@@ -9061,6 +9126,12 @@ const Emitter = struct {
         var k = self.defer_stack.items.len;
         while (k > floor) {
             k -= 1;
+            // Inside the entry's own panic region: it is marked run, so a
+            // panic in it does not reach the region's handler to run it again.
+            if (self.defer_stack.items[k].ran_flag) |flag| {
+                try self.emit(try self.constInt(1));
+                try self.emit(.{ .local_set = flag });
+            }
             try self.writeDefer(k);
         }
     }
@@ -9084,7 +9155,7 @@ const Emitter = struct {
     ///
     /// The deferred code is written outside the region on both paths, so a
     /// panic in it is not caught twice. The `defer` is the top entry.
-    fn emitDeferRegion(self: *Emitter, body: []const ast.Stmt, start: usize, keep_value: bool, value_ty: ?Repr) anyerror!Tail {
+    fn emitDeferRegion(self: *Emitter, body: []const ast.Stmt, start: usize, keep_value: bool, value_ty: ?Repr, hook: ?LastHook) anyerror!Tail {
         const ar = self.arena();
         const idx = self.defer_stack.items.len - 1;
         self.defer_seq += 1;
@@ -9092,15 +9163,25 @@ const Emitter = struct {
         const done = try std.fmt.allocPrint(ar, "__defer_done{d}", .{self.defer_seq});
         const exc = try std.fmt.allocPrint(ar, "__defer_exc{d}", .{self.defer_seq});
         try self.declareLocal(exc, .i32);
+        const ran = try std.fmt.allocPrint(ar, "__defer_ran{d}", .{self.defer_seq});
+        try self.declareLocal(ran, .i32);
+        self.defer_stack.items[idx].ran_flag = ran;
         const result: ?wat.ValType = if (keep_value) self.vtOf(value_ty.?) else null;
 
         var rest_c: Capture = .{};
         self.open(&rest_c);
-        const rest_tail = try self.emitStmtsFrom(body, start, keep_value, value_ty, true);
+        var rest_tail = try self.emitStmtsFrom(body, start, keep_value, value_ty, true, hook);
+        // A last statement that is no value (`val`, a loop) answers the neutral one.
+        if (keep_value and rest_tail == .none) {
+            try self.emit(self.zeroOf(value_ty.?));
+            rest_tail = .value;
+        }
         const rest_seq = self.seal(&rest_c, self.stackOf(rest_tail, if (value_ty) |t| t else .i32));
 
         var normal_c: Capture = .{};
         self.open(&normal_c);
+        try self.emit(try self.constInt(0));
+        try self.emit(.{ .local_set = ran });
         try self.emit(.{ .block = .{
             .kind = .try_table,
             .result = result,
@@ -9115,7 +9196,15 @@ const Emitter = struct {
         self.open(&caught_c);
         try self.emit(.{ .block = .{ .kind = .block, .label = handler, .result = .i32, .body = normal_seq } });
         try self.emit(.{ .local_set = exc });
+        // An exit path inside the region may have run the deferred code (and
+        // panicked in it): it runs once.
+        var again_c: Capture = .{};
+        self.open(&again_c);
         try self.writeDefer(idx);
+        const again_seq = self.seal(&again_c, .none);
+        try self.emit(.{ .local_get = ran });
+        try self.emit(opOf(.i32, "eqz"));
+        try self.emit(.{ .@"if" = .{ .then = .{ .seq = again_seq } } });
         try self.emit(.{ .local_get = exc });
         try self.emit(.{ .throw = prelude.panic_tag.name });
         const caught_seq = self.seal(&caught_c, .terminated);
@@ -10785,19 +10874,39 @@ const Emitter = struct {
             try self.emit(zero);
             return;
         }
+        if (hasDefer(body) and !body[body.len - 1].deferred) {
+            // A `defer` of the lambda: its value is computed inside the panic
+            // region, the defers run after it.
+            const ty = self.wasmTypeOf(body[body.len - 1].expr);
+            const mark = self.defer_stack.items.len;
+            var site: InlineLast = .{};
+            const tail = try self.emitStmtsFrom(body, 0, true, ty, true, .{ .ctx = &site, .run = InlineLast.run });
+            try self.closeDefers(mark, tail);
+            return;
+        }
         for (body[0 .. body.len - 1]) |s| _ = try self.emitStmt(s, false);
-        const last = body[body.len - 1];
+        _ = try self.inlineLastStmt(body[body.len - 1]);
+    }
+
+    const InlineLast = struct {
+        fn run(_: *anyopaque, em: *Emitter, stmt: ast.Stmt) anyerror!Tail {
+            return em.inlineLastStmt(stmt);
+        }
+    };
+
+    /// The last statement of an inlined lambda: its value on the stack.
+    fn inlineLastStmt(self: *Emitter, last: ast.Stmt) anyerror!Tail {
         switch (last.expr) {
             .jump => |j| switch (j.kind) {
                 .@"return" => |r| {
                     if (r) |v| try self.lowerValue(v.*) else try self.emit(zero);
-                    return;
+                    return .value;
                 },
                 else => {},
             },
             else => {},
         }
-        _ = try self.emitStmt(last, true);
+        return self.emitStmt(last, true);
     }
 
     /// Lower a `__bp_<domain>_<op>(receiver, arg?)` Result/Option method op.
@@ -11346,8 +11455,8 @@ const Emitter = struct {
     }
 
     /// The arm's value, coerced to the case's result type. A block arm's
-    /// `defer`s run after its value (decision 539; a panic in the arm skips
-    /// them, the value type of an arm not being named here).
+    /// `defer`s run after its value (decision 539), a panic in the arm
+    /// included (`emitDeferRegion` over the arm's statements).
     fn lowerArmBody(self: *Emitter, body: ast.Expr, subj: []const u8) anyerror!void {
         const mark = self.defer_stack.items.len;
         try self.lowerArmBodyStmts(body, subj);
@@ -11406,8 +11515,27 @@ const Emitter = struct {
             try self.emit(self.zeroOf(self.cur_result));
             return;
         }
-        _ = try self.emitStmtsFrom(lam.body[0 .. lam.body.len - 1], 0, false, null, false);
-        const last = lam.body[lam.body.len - 1];
+        if (hasDefer(lam.body)) {
+            // A `defer` of the arm: the panic region encloses the value too.
+            var site: ArmLast = .{ .box = box, .box_as = box_as };
+            _ = try self.emitStmtsFrom(lam.body, 0, true, self.cur_result, true, .{ .ctx = &site, .run = ArmLast.run });
+            return;
+        }
+        _ = try self.emitStmtsFrom(lam.body[0 .. lam.body.len - 1], 0, false, null, false, null);
+        _ = try self.armLastStmt(lam.body[lam.body.len - 1], box, box_as);
+    }
+
+    const ArmLast = struct {
+        box: bool,
+        box_as: ?ast.TypeRef,
+        fn run(ctx: *anyopaque, em: *Emitter, stmt: ast.Stmt) anyerror!Tail {
+            const self: *ArmLast = @ptrCast(@alignCast(ctx));
+            return em.armLastStmt(stmt, self.box, self.box_as);
+        }
+    };
+
+    /// The arm's last statement: its value, converted to the case's result.
+    fn armLastStmt(self: *Emitter, last: ast.Stmt, box: bool, box_as: ?ast.TypeRef) anyerror!Tail {
         // P3: the last expression is the value; an explicit `break v` carries
         // it instead — the shape the pre-decision-8 block arm is written with.
         switch (last.expr) {
@@ -11418,7 +11546,7 @@ const Emitter = struct {
                             self.box_as = box_as;
                             try self.lowerAsUnknown(v.*);
                         } else try self.lowerCoerced(v.*, self.cur_result);
-                        return;
+                        return .value;
                     }
                 },
                 else => {},
@@ -11427,7 +11555,7 @@ const Emitter = struct {
                 // `val x = …` in tail position is not a value
                 _ = try self.emitStmt(last, false);
                 try self.emit(self.zeroOf(self.cur_result));
-                return;
+                return .value;
             },
             else => {},
         }
@@ -11435,12 +11563,14 @@ const Emitter = struct {
             .jump, .binding => {},
             else => {
                 self.box_as = box_as;
-                return self.lowerAsUnknown(last.expr);
+                try self.lowerAsUnknown(last.expr);
+                return .value;
             },
         };
         const from = self.wasmTypeOf(last.expr);
         const tail = try self.emitStmt(last, true);
         if (tail == .value) try self.emitConvert(from, self.cur_result);
+        return tail;
     }
 
     // ── case patterns ────────────────────────────────────────────────────────
@@ -14620,8 +14750,10 @@ const Emitter = struct {
             try self.emitAt(8, .{ .local_set = p });
         }
         switch (hof) {
-            for_each => for (lam.body) |stmt| {
-                _ = try self.emitStmt(stmt, false);
+            for_each => {
+                const mark = self.defer_stack.items.len;
+                const tail = try self.emitStmtsFrom(lam.body, 0, false, null, true, null);
+                try self.closeDefers(mark, tail);
             },
             map => {
                 const tail_ty = self.lambdaTailType(lam.body);
@@ -18864,8 +18996,28 @@ const Emitter = struct {
     fn lowerBoxedArm(self: *Emitter, target: ?ast.TypeRef, body: []const ast.Stmt, arm_type: ?ast.TypeRef) anyerror!void {
         const scope_mark = self.scopeMark();
         defer self.scopeRestore(scope_mark);
+        if (hasDefer(body)) {
+            var site: BoxedLast = .{ .target = target, .arm_type = arm_type };
+            const mark = self.defer_stack.items.len;
+            const tail = try self.emitStmtsFrom(body, 0, true, .i32, true, .{ .ctx = &site, .run = BoxedLast.run });
+            try self.closeDefers(mark, tail);
+            return;
+        }
         for (body[0 .. body.len - 1]) |stmt| _ = try self.emitStmt(stmt, false);
-        const last = body[body.len - 1].expr;
+        try self.boxedLastStmt(target, body[body.len - 1].expr, arm_type);
+    }
+
+    const BoxedLast = struct {
+        target: ?ast.TypeRef,
+        arm_type: ?ast.TypeRef,
+        fn run(ctx: *anyopaque, em: *Emitter, stmt: ast.Stmt) anyerror!Tail {
+            const self: *BoxedLast = @ptrCast(@alignCast(ctx));
+            try em.boxedLastStmt(self.target, stmt.expr, self.arm_type);
+            return .value;
+        }
+    };
+
+    fn boxedLastStmt(self: *Emitter, target: ?ast.TypeRef, last: ast.Expr, arm_type: ?ast.TypeRef) anyerror!void {
         if (isNullLit(last)) {
             try self.pushZero();
         } else if (self.boxesInto(target, last)) {
@@ -20739,13 +20891,13 @@ const Emitter = struct {
     fn emitIterationInner(self: *Emitter, body: []const ast.Stmt) anyerror!void {
         const mark = self.defer_stack.items.len;
         if (!bodyContinues(body)) {
-            const tail = try self.emitStmtsFrom(body, 0, false, null, true);
+            const tail = try self.emitStmtsFrom(body, 0, false, null, true, null);
             try self.closeDefers(mark, tail);
             return;
         }
         var c: Capture = .{};
         self.open(&c);
-        const tail = try self.emitStmtsFrom(body, 0, false, null, true);
+        const tail = try self.emitStmtsFrom(body, 0, false, null, true, null);
         try self.closeDefers(mark, tail);
         const seq = self.seal(&c, .none);
         try self.emitAt(8, .{ .block = .{ .kind = .block, .label = next_label, .body = seq } });
@@ -22785,8 +22937,29 @@ const Emitter = struct {
             try self.emit(self.zeroOf(ty));
             return .value;
         }
+        if (hasDefer(body)) {
+            // A `defer` of the branch: the value is converted inside the
+            // panic region, the defers run after it.
+            var site: BranchLast = .{ .ty = ty };
+            const mark = self.defer_stack.items.len;
+            const tail = try self.emitStmtsFrom(body, 0, true, ty, true, .{ .ctx = &site, .run = BranchLast.run });
+            try self.closeDefers(mark, tail);
+            return tail;
+        }
         for (body[0 .. body.len - 1]) |stmt| _ = try self.emitStmt(stmt, false);
-        const last = body[body.len - 1];
+        return self.branchLastStmt(body[body.len - 1], ty);
+    }
+
+    const BranchLast = struct {
+        ty: Repr,
+        fn run(ctx: *anyopaque, em: *Emitter, stmt: ast.Stmt) anyerror!Tail {
+            const self: *BranchLast = @ptrCast(@alignCast(ctx));
+            return em.branchLastStmt(stmt, self.ty);
+        }
+    };
+
+    /// The last statement of a branch answering `ty`.
+    fn branchLastStmt(self: *Emitter, last: ast.Stmt, ty: Repr) anyerror!Tail {
         const from = self.wasmTypeOf(last.expr);
         const tail = try self.emitStmtRaw(last);
         switch (tail) {

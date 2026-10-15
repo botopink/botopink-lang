@@ -3690,11 +3690,13 @@ computed before it.
   (`lowerThrow`, `lowerTryPropagate`), `emitGenEnd`, `break` and `continue` (the floor is the loop's
   `defer_loop_floor`, set by `emitIterationBody`); the deferred code is stack-neutral, so the value waiting beneath it
   survives, and a self tail call is not one under a pending defer. With exceptions on (decision 518,
-  `Emitter.exceptions`) the rest of a block that can name its value type (a statement list, or the function's own
-  body) sits in a `try_table` region (`emitDeferRegion`: `catch $__bp_panic` into a block whose handler parks the
-  message, writes the code, and `throw`s it again); the deferred code is written outside the region on both paths. A
-  `defer` in another list (a lambda inlined by a higher-order call, an `if` branch that answers a typed value) is a
-  refusal located at it, never a silent wrong order.
+  `Emitter.exceptions`) the rest of a block sits in a `try_table` region (`emitDeferRegion`: `catch $__bp_panic` into
+  a block whose handler parks the message, writes the code, and `throw`s it again); the deferred code is written
+  outside the region on both paths. A block that answers a value (an `if` branch, a `case` arm, an inlined lambda)
+  names the region's type from its last expression, converted inside the region by the site's `LastHook`. An exit
+  path inside the region marks the entry run (`DeferEntry.ran_flag`) before it writes the code, so the handler does not
+  run a panicking deferred statement a second time. Names bind where `defer` is written: `DeferEntry.names` keeps the
+  aliases the names it reads had there, and `writeDefer` puts them back while it lowers the code.
 
 A value `if` whose branches reassign outer `var`s answers `{V, Group}` from each branch and rebinds the group
   (`mutatingIfValueExpr`, as a value `case` does; `modules/value_if_reassigns_var`).

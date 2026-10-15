@@ -2074,11 +2074,13 @@ pub fn parseLambdaBody(this: *This, alloc: std.mem.Allocator) ParseError!Functio
     // written without `;` (a braced `if` / `case` included) is its value.
     var lastBare = false;
     while (!this.check(.rightBrace) and !this.check(.endOfFile)) {
+        // Decision 539 — a `defer` in the arm's block.
+        const isDeferred = this.match(.@"defer");
         const expr = try this.parseExpr(alloc);
         // A braced `if` / `case` is the tail with or without its `;`.
         const braced = this.isBracedBlockStmt(expr);
         lastBare = !this.match(.semicolon) or braced;
-        try stmts.append(alloc, .{ .expr = expr });
+        try stmts.append(alloc, .{ .expr = expr, .deferred = isDeferred });
     }
     _ = try this.consume(.rightBrace);
     This.markBlockTail(stmts.items, lastBare);

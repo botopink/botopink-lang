@@ -916,3 +916,5 @@ moves. `defer { … }` is `defer` over a block expression. A deferred statement 
 value, even written last without `;`: `parseBlockBody` and `markBlockTail` skip it). `defer` in expression position or at
 module level is a parse error. `parser/tests/decision539.zig` pins the flag, the missing tail, the dump and the
 error.
+A `case` arm's block (`Pattern { … }` through `parseLambdaBody`, and `p -> { … }` in `parseCaseExpr`) matches the keyword too.
+

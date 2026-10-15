@@ -1825,6 +1825,23 @@ then panics hands the `defer` the new value:
 
 <!-- example: modules/defer_reads_var_set_in_arm -->
 
+The names a deferred expression reads bind where `defer` is written; only their values are read late. A `val`
+written after the `defer` that shadows a name the deferred expression reads is another binding, and the
+deferred expression does not see it:
+
+<!-- example: modules/defer_reads_binding_at_defer -->
+
+A `defer` is written in any block: an `if` branch or a `case` arm, one that answers a value included, and a
+lambda a higher-order function runs. A panic `attempt` catches runs the defers of the block or arm it happens in:
+
+<!-- example: modules/defer_in_value_branch -->
+
+<!-- example: modules/defer_panic_in_arm -->
+
+A deferred statement that panics runs once, even when the way out that ran it is a `return` inside the block:
+
+<!-- example: modules/defer_inner_panic_runs_once -->
+
 In an `async` body a `defer` runs when the task's body ends, after its awaits; in a `@Stream` when
 the stream ends or its consumer stops (a `break` in `for await`):
 

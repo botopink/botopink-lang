@@ -1797,6 +1797,24 @@ the body's end, so the enclosing names keep their values;
 pins it on four targets. A lifted lambda (`{ e -> e * 2 }` as a value) is a
 function of its own already.
 
+## `defer` on wasm (decision 539, front 164 s2b)
+
+`Emitter.defer_stack` holds `DeferEntry`s: the statement, the aliases its names had at the `defer` (names bind there,
+the value is read late — `writeDefer` puts them back while it lowers the code, so a `val` written later over a
+module-level name, which `bindTarget` gives a local of its own, is not the one it reads), and `ran_flag`.
+
+- **Where a `defer` is built.** Every statement list that keeps the stack goes through `emitStmtsFrom`: `emitBody`, a
+  loop's iteration, a `case` arm (`lowerArmBodyStmts`), an `if` branch answering a value (`emitBranchValue`,
+  `lowerBoxedArm`), an inlined lambda (`inlineLambdaBody`, a `forEach`'s body). A list that answers a value passes a
+  `LastHook`: its last statement is lowered and converted by the site inside the panic region, whose result type is
+  the type the site hands on (`Repr`); a block other than the function's own takes it from the last expression.
+- **A panic in the block** runs the block's defers: the region is `emitDeferRegion` whatever list holds the `defer`,
+  with exceptions on.
+- **Once.** An inline exit (`runDefers`: `return`, `break`, `continue`, `try`) inside a region sets the entry's
+  `ran_flag` before writing its code; the handler writes the code only while the flag is `0`, so a deferred statement
+  that panics on the exit path is not run again by the region it sits in. The flag is cleared at each entry of the
+  region.
+
 ## Function values, and the lowering that is not there
 
 **A function value in an `unknown` slot is boxed under its arity** (decision 254).
