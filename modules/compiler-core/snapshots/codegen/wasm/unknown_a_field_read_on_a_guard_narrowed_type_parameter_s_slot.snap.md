@@ -33,8 +33,6 @@ fn main() {
     (local $v__0 anyref)
     (local $__gc0 anyref)
     (local $v__is1 (ref null $str))
-    (local $__gc1 (ref null $str))
-    (local $__gc2 i32)
     (local $v__2 anyref)
     (local $v__3 anyref)
     local.get $b
@@ -64,14 +62,7 @@ fn main() {
     ref.cast (ref null $str)
     local.set $v__is1
     local.get $v__is1
-    local.set $__gc1
-    global.get $__heap_ptr
-    local.set $__gc2
-    local.get $__gc1
-    call $__gc_to_lin_str
     call $__std_text_length
-    local.get $__gc2
-    global.set $__heap_ptr
       )
       (else
     local.get $__case_0
@@ -319,54 +310,6 @@ fn main() {
       )
     )
   )
-  (func $__alloc (param $n i32) (result i32)
-    (local $p i32) (local $e i32)
-    global.get $__heap_ptr
-    local.set $p
-    local.get $p
-    local.get $n
-    i32.add
-    i32.const 3
-    i32.add
-    i32.const -4
-    i32.and
-    local.set $e
-    local.get $e
-    local.get $p
-    i32.lt_u
-    (if
-      (then
-        unreachable
-      )
-    )
-    local.get $e
-    memory.size
-    i32.const 16
-    i32.shl
-    i32.gt_u
-    (if
-      (then
-        local.get $e
-        i32.const 65535
-        i32.add
-        i32.const 16
-        i32.shr_u
-        memory.size
-        i32.sub
-        memory.grow
-        i32.const -1
-        i32.eq
-        (if
-          (then
-            unreachable
-          )
-        )
-      )
-    )
-    local.get $e
-    global.set $__heap_ptr
-    local.get $p
-  )
   (func $__i32_add_chk (param $a i32) (param $b i32) (result i32)
     (local $r i64)
     local.get $a
@@ -511,74 +454,39 @@ fn main() {
     )
     local.get $r
   )
-  (func $__gc_to_lin_str (param $s (ref null $str)) (result i32)
-    (local $n i32) (local $p i32) (local $i i32)
+  ;; std-wasm's .wat leaves (front 164 s3)
+  (func $__std_text_length (param $s (ref null $str)) (result i32)
+    (local $i i32)
+    (local $len i32)
+    (local $n i32)
     local.get $s
     array.len
-    local.set $n
-    local.get $n
-    i32.const 4
-    i32.add
-    call $__alloc
-    local.set $p
-    local.get $p
-    local.get $n
-    i32.store
-    (block $brk
-      (loop $cont
+    local.set $len
+    (block $done
+      (loop $next
         local.get $i
-        local.get $n
+        local.get $len
         i32.ge_u
-        br_if $brk
-        local.get $p
-        local.get $i
-        i32.add
+        br_if $done
         local.get $s
         local.get $i
         array.get_u $str
-        i32.store8 offset=4
-        local.get $i
-        i32.const 1
-        i32.add
-        local.set $i
-        br $cont
-      )
-    )
-    local.get $p
-  )
-  (func $__lin_to_gc_str (param $p i32) (result (ref null $str))
-    (local $r (ref null $str)) (local $n i32) (local $i i32)
-    local.get $p
-    i32.load
-    local.set $n
-    local.get $n
-    array.new_default $str
-    local.set $r
-    (block $brk
-      (loop $cont
-        local.get $i
+        i32.const 0xC0
+        i32.and
+        i32.const 0x80
+        i32.ne
         local.get $n
-        i32.ge_u
-        br_if $brk
-        local.get $r
-        local.get $i
-        local.get $p
-        local.get $i
         i32.add
-        i32.load8_u offset=4
-        array.set $str
+        local.set $n
         local.get $i
         i32.const 1
         i32.add
         local.set $i
-        br $cont
+        br $next
       )
     )
-    local.get $r
+    local.get $n
   )
-  ;; std-wasm (decision 440): its functions, transpiled from std_wasm.wasm
-  ;; __std_f266 — from std_wasm.wasm (sha256 5ac39cdc3016)
-  ;; std:text.length — from std_wasm.wasm (sha256 c0e18ad79cad)
   (data $__d0 "abc")
   (global $__s0 (mut (ref null $str)) (ref.null $str))
   (start $__init_strs)

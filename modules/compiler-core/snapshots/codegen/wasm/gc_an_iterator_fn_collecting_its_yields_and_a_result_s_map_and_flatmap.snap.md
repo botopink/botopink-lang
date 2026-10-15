@@ -80,8 +80,6 @@ pub fn main() {
     local.get $__yield_fn ;; everything the body yielded
   )
   (func $parse (param $s (ref null $str)) (result (ref null $result))
-    (local $__gc0 (ref null $str))
-    (local $__gc1 i32)
     local.get $s
     global.get $__s0
     call $__str_eq
@@ -99,14 +97,7 @@ pub fn main() {
     drop
     i32.const 0
     local.get $s
-    local.set $__gc0
-    global.get $__heap_ptr
-    local.set $__gc1
-    local.get $__gc0
-    call $__gc_to_lin_str
     call $__std_text_length
-    local.get $__gc1
-    global.set $__heap_ptr
     struct.new $box_i32
     struct.new $result
     return
@@ -116,14 +107,14 @@ pub fn main() {
     (local $__iter0 (ref null $arr_i32))
     (local $__idx0 i32)
     (local $__len0 i32)
+    (local $__gc0 (ref null $result))
+    (local $__gc1 (ref null $result))
+    (local $n i32)
     (local $__gc2 (ref null $result))
     (local $__gc3 (ref null $result))
-    (local $n i32)
     (local $__gc4 (ref null $result))
     (local $__gc5 (ref null $result))
     (local $__gc6 (ref null $result))
-    (local $__gc7 (ref null $result))
-    (local $__gc8 (ref null $result))
     i32.const 7
     call $evens
     local.set $__iter0
@@ -154,6 +145,45 @@ pub fn main() {
     i32.const 0
     drop
     global.get $__s2
+    call $parse
+    local.set $__gc1
+    local.get $__gc1
+    struct.get $result $tag
+    (if (result (ref null $result))
+      (then
+    local.get $__gc1
+      )
+      (else
+    local.get $__gc1
+    struct.get $result $payload
+    ref.cast (ref null $box_i32)
+    struct.get $box_i32 $v
+    local.set $n
+    i32.const 0
+    local.get $n
+    i32.const 10
+    call $__i32_mul_chk
+    struct.new $box_i32
+    struct.new $result
+      )
+    )
+    local.tee $__gc0
+    struct.get $result $tag
+    (if (result i32)
+      (then
+    i32.const 0
+    i32.const 1
+    call $__i32_sub_chk
+      )
+      (else
+    local.get $__gc0
+    struct.get $result $payload
+    ref.cast (ref null $box_i32)
+    struct.get $box_i32 $v
+      )
+    )
+    call $__print_i32
+    global.get $__s0
     call $parse
     local.set $__gc3
     local.get $__gc3
@@ -192,7 +222,7 @@ pub fn main() {
       )
     )
     call $__print_i32
-    global.get $__s0
+    global.get $__s3
     call $parse
     local.set $__gc5
     local.get $__gc5
@@ -207,12 +237,8 @@ pub fn main() {
     ref.cast (ref null $box_i32)
     struct.get $box_i32 $v
     local.set $n
-    i32.const 0
-    local.get $n
-    i32.const 10
-    call $__i32_mul_chk
-    struct.new $box_i32
-    struct.new $result
+    global.get $__s4
+    call $parse
       )
     )
     local.tee $__gc4
@@ -233,50 +259,15 @@ pub fn main() {
     call $__print_i32
     global.get $__s3
     call $parse
-    local.set $__gc7
-    local.get $__gc7
+    local.set $__gc6
+    local.get $__gc6
     struct.get $result $tag
     (if (result (ref null $result))
       (then
-    local.get $__gc7
-      )
-      (else
-    local.get $__gc7
-    struct.get $result $payload
-    ref.cast (ref null $box_i32)
-    struct.get $box_i32 $v
-    local.set $n
-    global.get $__s4
-    call $parse
-      )
-    )
-    local.tee $__gc6
-    struct.get $result $tag
-    (if (result i32)
-      (then
-    i32.const 0
-    i32.const 1
-    call $__i32_sub_chk
+    local.get $__gc6
       )
       (else
     local.get $__gc6
-    struct.get $result $payload
-    ref.cast (ref null $box_i32)
-    struct.get $box_i32 $v
-      )
-    )
-    call $__print_i32
-    global.get $__s3
-    call $parse
-    local.set $__gc8
-    local.get $__gc8
-    struct.get $result $tag
-    (if (result (ref null $result))
-      (then
-    local.get $__gc8
-      )
-      (else
-    local.get $__gc8
     struct.get $result $payload
     ref.cast (ref null $box_i32)
     struct.get $box_i32 $v
@@ -587,54 +578,6 @@ pub fn main() {
     )
     i32.const 1
   )
-  (func $__alloc (param $n i32) (result i32)
-    (local $p i32) (local $e i32)
-    global.get $__heap_ptr
-    local.set $p
-    local.get $p
-    local.get $n
-    i32.add
-    i32.const 3
-    i32.add
-    i32.const -4
-    i32.and
-    local.set $e
-    local.get $e
-    local.get $p
-    i32.lt_u
-    (if
-      (then
-        unreachable
-      )
-    )
-    local.get $e
-    memory.size
-    i32.const 16
-    i32.shl
-    i32.gt_u
-    (if
-      (then
-        local.get $e
-        i32.const 65535
-        i32.add
-        i32.const 16
-        i32.shr_u
-        memory.size
-        i32.sub
-        memory.grow
-        i32.const -1
-        i32.eq
-        (if
-          (then
-            unreachable
-          )
-        )
-      )
-    )
-    local.get $e
-    global.set $__heap_ptr
-    local.get $p
-  )
   (func $__i32_add_chk (param $a i32) (param $b i32) (result i32)
     (local $r i64)
     local.get $a
@@ -779,74 +722,39 @@ pub fn main() {
     )
     local.get $r
   )
-  (func $__gc_to_lin_str (param $s (ref null $str)) (result i32)
-    (local $n i32) (local $p i32) (local $i i32)
+  ;; std-wasm's .wat leaves (front 164 s3)
+  (func $__std_text_length (param $s (ref null $str)) (result i32)
+    (local $i i32)
+    (local $len i32)
+    (local $n i32)
     local.get $s
     array.len
-    local.set $n
-    local.get $n
-    i32.const 4
-    i32.add
-    call $__alloc
-    local.set $p
-    local.get $p
-    local.get $n
-    i32.store
-    (block $brk
-      (loop $cont
+    local.set $len
+    (block $done
+      (loop $next
         local.get $i
-        local.get $n
+        local.get $len
         i32.ge_u
-        br_if $brk
-        local.get $p
-        local.get $i
-        i32.add
+        br_if $done
         local.get $s
         local.get $i
         array.get_u $str
-        i32.store8 offset=4
-        local.get $i
-        i32.const 1
-        i32.add
-        local.set $i
-        br $cont
-      )
-    )
-    local.get $p
-  )
-  (func $__lin_to_gc_str (param $p i32) (result (ref null $str))
-    (local $r (ref null $str)) (local $n i32) (local $i i32)
-    local.get $p
-    i32.load
-    local.set $n
-    local.get $n
-    array.new_default $str
-    local.set $r
-    (block $brk
-      (loop $cont
-        local.get $i
+        i32.const 0xC0
+        i32.and
+        i32.const 0x80
+        i32.ne
         local.get $n
-        i32.ge_u
-        br_if $brk
-        local.get $r
-        local.get $i
-        local.get $p
-        local.get $i
         i32.add
-        i32.load8_u offset=4
-        array.set $str
+        local.set $n
         local.get $i
         i32.const 1
         i32.add
         local.set $i
-        br $cont
+        br $next
       )
     )
-    local.get $r
+    local.get $n
   )
-  ;; std-wasm (decision 440): its functions, transpiled from std_wasm.wasm
-  ;; __std_f266 — from std_wasm.wasm (sha256 5ac39cdc3016)
-  ;; std:text.length — from std_wasm.wasm (sha256 c0e18ad79cad)
   (data $__d0 "")
   (global $__s0 (mut (ref null $str)) (ref.null $str))
   (data $__d1 "empty")
