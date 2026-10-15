@@ -22050,6 +22050,17 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                         const innerTy = inner.deref();
                         if (innerTy.* == .named) {
                             if (primKindOfName(innerTy.named.name)) |pk| {
+                                // A link continuing a `?.` chain over a
+                                // primitive (`o?.trim().toLower()`): its
+                                // kind at the synthetic column, where a
+                                // `recv?.m()` link records it, so commonJS
+                                // calls std-wasm's helper under the chain's
+                                // guard (decision 521) — the written loc
+                                // stays the other backends'.
+                                if (continuesOptionalChain(recvPtr.*)) {
+                                    const synthLoc: ast.Loc = .{ .line = loc.line, .col = loc.col + optional_synthetic_col, .expansion = loc.expansion };
+                                    if (env.instanceLowerings.get(synthLoc) == null) try env.instanceLowerings.put(synthLoc, .{ .prim = pk });
+                                }
                                 if ((pk == .array or pk == .string or pk == .bytes) and
                                     (std.mem.eql(u8, call.callee, "len") or
                                         std.mem.eql(u8, call.callee, "size") or

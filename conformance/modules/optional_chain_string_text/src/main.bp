@@ -1,0 +1,19 @@
+//// Decision 521: a string method reached through `?.` answers std-wasm's text
+//// on every target, as the same call on a `string` does — `trim`,
+//// `trimStart` and `trimEnd` keep a NBSP (U+00A0), and `toLower` writes no
+//// final sigma. commonJS calls its helpers under the `?.` guard, never the
+//// JS engine's `trim` / `toLowerCase`; an absent receiver answers absent.
+
+pub fn main() {
+    val o: ?string = "\u{a0}ΟΔΟΣ\u{a0} ";
+    val none: ?string = null;
+    @print("[" + (o?.trim() ?? "-") + "]");
+    @print("[" + (o?.trimStart() ?? "-") + "]");
+    @print("[" + (o?.trimEnd() ?? "-") + "]");
+    @print(o?.toLower() ?? "-");
+    @print(o?.trim().toLower() ?? "-");
+    val s: ?string = "straße";
+    @print(s?.toUpper() ?? "-");
+    @print(none?.trim() ?? "absent");
+    @print(none?.toLower() ?? "absent");
+}

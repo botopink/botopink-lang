@@ -1710,17 +1710,16 @@ target has no answer at all, audited on every check — § Narrowing a cell.
 the behaviour landed with B-00e / B-00g and no cell held it, because one `snapshot/output/` answer could not hold two
 answers): `modules/float_text_at_run_time` (`"${5.0}"`, `1.0e21`, `1.0e-7` print `5.0`, `1.0e21`,
 `1.0e-7` on every target, commonJS since 144 B-78),
-`modules/string_trim_keeps_nbsp` (`trim` keeps a NBSP; commonJS's engine trims it),
-`modules/string_lower_final_sigma` (`ΟΔΟΣ` lowers to `οδοσ`; commonJS's engine to `οδος`) and
+`modules/string_trim_keeps_nbsp` (`trim` keeps a NBSP on every target, commonJS through its helper),
+`modules/string_lower_final_sigma` (`ΟΔΟΣ` lowers to `οδοσ` on every target, commonJS through its helper) and
 `modules/float_nan_infinity_words` (`Infinity`, `-Infinity`, `NaN` on commonJS and wasm; erlang and
 beam abort, `stderr badarith`). The fifth row, an unseeded `random.float()` reached from a decorator
 body, is `modules/decorator_random_float_unseeded` since 144 B-46 made a decorator body reach a nested
 std namespace: refused at build on every target with decision 451's message (434 (5): one comptime, one
-answer — no departure). Each departure is the language's, never a defect recorded (458): commonJS's
-`trim` and final sigma are the JS engine's by decisions 441 and 443, which keep commonJS's text and case
-mapping; erlang's and beam's `badarith` is their arithmetic by decision 444. The float text's one answer
-on commonJS is 144 B-78's, which waits on question B-78-a: were commonJS to keep the engine's text
-(441's last sentence), `float_text_at_run_time` would gain a `snapshot/targets/commonJS/` departure.
+answer — no departure). Each departure is the language's, never a defect recorded (458): erlang's and
+beam's `badarith` is their arithmetic by decision 444. commonJS keeps no departure of text: decision 521
+gives it std-wasm's float text, `trim` and case mapping (144 B-78), a string method reached through `?.`
+included (`modules/optional_chain_string_text`).
 
 **The language half of `test-cli`** (144 B-29 step H): `modules/tail_recursive_sum` (the numeric
 program of `backend_exec.sh`, `0 1 55`, beam included), `modules/record_enum_case_lambda` (its

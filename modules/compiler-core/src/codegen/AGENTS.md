@@ -673,7 +673,12 @@ codegen/
   (`modules/optional_enum_method_call`). A link after that guarded call
   continues its chain, so it is written `?.` (`isOptEnumCall`):
   `find(0)?.str().length()` read `.length` off `undefined`
-  (`modules/optional_enum_method_absent_receiver`).
+  (`modules/optional_enum_method_absent_receiver`). A primitive method with a
+  prelude helper (`js/js_prelude.zig` `forMethod`) reached through `?.`, or as
+  a link continuing a `?.` chain, is guarded the same way around the helper —
+  `o?.trim()`, `o?.trim().toLower()` are std-wasm's `trim` and case mapping,
+  never the engine's (decision 521, `modules/optional_chain_string_text`); its
+  kind is read at the same synthetic loc.
   An enum the module never names (`import {find}` whose `?Val` answer is
   called `b?.str()`, `b!.str()`, `(b ?? d).str()`) is found in the export
   index by its type name (`enumMethodOwner`), required under

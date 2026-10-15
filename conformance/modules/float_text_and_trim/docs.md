@@ -14,4 +14,5 @@ The reference text this cell shows (from `conformance/docs.md`, § Host bindings
 > those words), and `trim` removes space, tab, LF, CR, VT and FF (a no-break
 > space stays). A wasm program and its own comptime agree. commonJS writes the
 > same text through its helpers, never the JS engine's number text, `trim` or
-> case mapping.
+> case mapping — a string method reached through `?.`, or after a `?.` link in
+> the same chain, included.

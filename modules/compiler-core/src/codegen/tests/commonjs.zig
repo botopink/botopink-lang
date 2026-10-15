@@ -349,6 +349,24 @@ test "js: decision 330 ---- a method after recv?.m() over an enum method stays u
     );
 }
 
+// 144 B-78 Conformance (decision 521) — a string method reached through `?.`,
+// or as a link continuing the chain, is std-wasm's: the engine's `trim`
+// dropped the NBSP and its `toLowerCase` wrote a final sigma.
+test "js: decision 521 ---- trim and toLower through ?. are std-wasm's, guarded" {
+    try h.assertJsRunLog(
+        std.testing.allocator,
+        \\pub fn main() {
+        \\    val o: ?string = "\u{a0}ΟΔΟΣ ";
+        \\    val none: ?string = null;
+        \\    @print("[" + (o?.trim() ?? "-") + "]");
+        \\    @print("[" + (o?.trim().toLower() ?? "-") + "]");
+        \\    @print(none?.trim().toLower() ?? "absent");
+        \\}
+    ,
+        "[\u{a0}ΟΔΟΣ]\n[\u{a0}οδοσ]\nabsent\n",
+    );
+}
+
 test "commonJS: a labelled break leaves the outer loop from a case arm of an inner one" {
     // `break :outer` was a bare `break` of the inner loop; the `case` arm's
     // box now names the label, and the loop is a JS labelled loop.

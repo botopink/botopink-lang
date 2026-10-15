@@ -4118,13 +4118,16 @@ is `1.0e3`, `1e21` is `1.0e21`, `0.000001` is `1.0e-6`,
 those words), and `trim` removes space, tab, LF, CR, VT and FF (a no-break
 space stays). A wasm program and its own comptime agree. commonJS writes the
 same text through its helpers, never the JS engine's number text, `trim` or
-case mapping.
+case mapping — a string method reached through `?.`, or after a `?.` link in
+the same chain, included.
 
 <!-- example: modules/float_text_and_trim -->
 
 <!-- example: modules/float_text_at_run_time -->
 
 <!-- example: modules/string_trim_keeps_nbsp -->
+
+<!-- example: modules/optional_chain_string_text -->
 
 **A float written as text keeps its decimal part on every target**, commonJS
 included (decision 521): in a template hole, through `toString()`, beside a

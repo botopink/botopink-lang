@@ -6826,17 +6826,33 @@ const Emitter = struct {
                     opt_recv = try self.buildExpr(recv.*);
                     try args.append(self.arena(), .{ .name = opt_recv_param });
                 } else try args.append(self.arena(), try self.buildExpr(recv.*));
-            } else if (self.primHelper(loc, cc)) |hp| {
+            } else if (self.primHelper(loc, cc) orelse self.primHelper(.{
+                .line = loc.line,
+                .col = loc.col + ast.optional_synthetic_col,
+                .expansion = loc.expansion,
+            }, cc)) |hp| {
                 // A primitive method whose native JS method disagrees with
                 // the signature: `__bp_helper(recv, args)` (`js/js_prelude.zig`).
                 const recv_node = try self.buildExpr(recv.*);
-                if (self.str_slots) |sl| if (sl.read(recv) != null) {
-                    const built = try self.arena().alloc(js.Expr, cc.args.len);
-                    for (cc.args, 0..) |arg, i| built[i] = try self.buildExpr(arg.value.*);
-                    return self.strRead(recv, recv_node, hp, built);
-                };
-                callee = self.helper(hp);
-                try args.append(self.arena(), recv_node);
+                // `recv?.m(args)` (decision 521): the helper, guarded as an
+                // enum method's static call is — `o?.trim()` over a
+                // `?string` is std-wasm's trim, never the engine's; the
+                // checker typed the call on the payload's link
+                // (`ast.optional_synthetic_col`), as it records a link
+                // continuing the chain (`o?.trim().toLower()`).
+                if (cc.optional or self.primHelper(loc, cc) == null) {
+                    callee = self.helper(hp);
+                    opt_recv = recv_node;
+                    try args.append(self.arena(), .{ .name = opt_recv_param });
+                } else {
+                    if (self.str_slots) |sl| if (sl.read(recv) != null) {
+                        const built = try self.arena().alloc(js.Expr, cc.args.len);
+                        for (cc.args, 0..) |arg, i| built[i] = try self.buildExpr(arg.value.*);
+                        return self.strRead(recv, recv_node, hp, built);
+                    };
+                    callee = self.helper(hp);
+                    try args.append(self.arena(), recv_node);
+                }
             } else {
                 const recv_node = try self.buildExpr(recv.*);
                 // §A4 rename: a 2-arg `#[@External.Node("X")]` on a primitive
