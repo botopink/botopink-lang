@@ -14,7 +14,8 @@ fn extract_coordinates() {
   (rec
     (type $str (array (mut i8)))
     (type $box_f64 (struct (field $v f64)))
-    (type $arr_any (array (mut anyref)))
+    (type $arr_any (sub (array (mut anyref))))
+    (type $tuple (sub final $arr_any (array (mut anyref))))
   )
   (memory (export "memory") 1)
   (global $__heap_ptr (mut i32) (i32.const 256))
@@ -24,7 +25,7 @@ fn extract_coordinates() {
     struct.new $box_f64
     f64.const 0.0
     struct.new $box_f64
-    array.new_fixed $arr_any 2
+    array.new_fixed $tuple 2
     return
   )
   (func $extract_coordinates

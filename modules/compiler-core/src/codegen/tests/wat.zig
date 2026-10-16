@@ -95,6 +95,50 @@ test "wat: front 164 s2 P4 ---- tasks and their frames are GC structs" {
     try std.testing.expectEqualStrings("hi 42\n", o.result.run_output orelse "");
 }
 
+// Front 164 s2, decisions 568 and 569 — a tuple is `$tuple`, a subtype of
+// `$arr_any` of its own, so a type parameter's slot holding one prints
+// `#(…)` (`$__print_tuple`), never `[…]`; and `==` over a generic record whose
+// type arguments are not written compares its erased slots through the
+// structural `$__unk_eq` (`$__unk_eq_ref`: a record, an array, a tuple by
+// their parts). Both kept the module in linear memory before.
+test "wat: front 164 s2 ---- a tuple in a type parameter's slot, and a structural unknown equality" {
+    const io = std.testing.io;
+    const alloc = std.testing.allocator;
+    var outputs = try h.generate(alloc, &.{.{ .path = "", .source =
+        \\type Box<T>(value: T)
+        \\type Pair<A, B>(left: A, right: B)
+        \\fn id<T>(x: T) -> T {
+        \\    return x;
+        \\}
+        \\fn main() {
+        \\    @print(Box(value: #(1, 2)));
+        \\    @print(id(#(3, "x")));
+        \\    @print(Pair(left: #(1, "a"), right: [1, 2]) == Pair(left: #(1, "a"), right: [1, 2]));
+        \\    @print(Pair(left: #(1, "a"), right: [1, 2]) == Pair(left: #(1, "b"), right: [1, 2]));
+        \\    @print(Pair(left: [1.5, 2.5], right: Box(value: "x")) == Pair(left: [1.5, 2.5], right: Box(value: "x")));
+        \\}
+    }}, io, h.configs[3]);
+    defer {
+        for (outputs.items) |*o| o.result.deinit(alloc);
+        outputs.deinit(alloc);
+    }
+    const o = for (outputs.items) |o| {
+        if (std.mem.eql(u8, o.name, "") or std.mem.eql(u8, o.name, "main")) break o;
+    } else return error.ModuleDidNotCompile;
+    const wat_text = o.result.js;
+    try std.testing.expect(std.mem.indexOf(u8, wat_text, "(type $tuple (sub final $arr_any (array (mut anyref))))") != null);
+    try std.testing.expect(std.mem.indexOf(u8, wat_text, "(func $__unk_eq_ref (param $a anyref) (param $b anyref) (result i32)") != null);
+    try std.testing.expect(std.mem.indexOf(u8, wat_text, "(func $__unk_eq_arr_f64") != null);
+    try std.testing.expectEqualStrings(
+        \\Box(value: #(1, 2))
+        \\#(3, "x")
+        \\true
+        \\false
+        \\true
+        \\
+    , o.result.run_output orelse "");
+}
+
 // Front 164 s3 P1-a — `text.byteLength`, `text.byteAt`, `text.byteSlice` and
 // `text.fromCodepoint` are `.wat` leaves too. No String method is bound to
 // them yet and a `std:` cell is std's alone (decision 445), so the program is

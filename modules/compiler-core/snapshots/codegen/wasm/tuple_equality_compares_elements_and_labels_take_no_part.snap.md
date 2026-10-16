@@ -30,8 +30,9 @@ fn main() {
 (module
   (rec
     (type $str (array (mut i8)))
-    (type $arr_any (array (mut anyref)))
+    (type $arr_any (sub (array (mut anyref))))
     (type $box_i32 (struct (field $v i32)))
+    (type $tuple (sub final $arr_any (array (mut anyref))))
     (type $box_f64 (struct (field $v f64)))
   )
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
@@ -68,12 +69,12 @@ fn main() {
     i32.const 1
     struct.new $box_i32
     global.get $__s0
-    array.new_fixed $arr_any 2
+    array.new_fixed $tuple 2
     local.set $a
     i32.const 1
     struct.new $box_i32
     global.get $__s0
-    array.new_fixed $arr_any 2
+    array.new_fixed $tuple 2
     local.set $b
     local.get $a
     local.get $b
@@ -87,7 +88,7 @@ fn main() {
     i32.const 1
     struct.new $box_i32
     global.get $__s1
-    array.new_fixed $arr_any 2
+    array.new_fixed $tuple 2
     local.set $c
     local.get $a
     local.get $c
@@ -100,12 +101,12 @@ fn main() {
     local.get $name
     local.get $pop
     struct.new $box_i32
-    array.new_fixed $arr_any 2
+    array.new_fixed $tuple 2
     local.set $labeled
     global.get $__s2
     i32.const 12
     struct.new $box_i32
-    array.new_fixed $arr_any 2
+    array.new_fixed $tuple 2
     local.set $plain
     local.get $labeled
     local.get $plain
@@ -115,25 +116,25 @@ fn main() {
     struct.new $box_i32
     i32.const 2
     struct.new $box_i32
-    array.new_fixed $arr_any 2
+    array.new_fixed $tuple 2
     global.get $__s3
-    array.new_fixed $arr_any 2
+    array.new_fixed $tuple 2
     local.set $n1
     i32.const 1
     struct.new $box_i32
     i32.const 2
     struct.new $box_i32
-    array.new_fixed $arr_any 2
+    array.new_fixed $tuple 2
     global.get $__s3
-    array.new_fixed $arr_any 2
+    array.new_fixed $tuple 2
     local.set $n2
     i32.const 1
     struct.new $box_i32
     i32.const 3
     struct.new $box_i32
-    array.new_fixed $arr_any 2
+    array.new_fixed $tuple 2
     global.get $__s3
-    array.new_fixed $arr_any 2
+    array.new_fixed $tuple 2
     local.set $n3
     local.get $n1
     local.get $n2
@@ -147,19 +148,19 @@ fn main() {
     struct.new $box_f64
     i32.const 1
     struct.new $box_i32
-    array.new_fixed $arr_any 2
+    array.new_fixed $tuple 2
     local.set $f1
     f64.const 1.5
     struct.new $box_f64
     i32.const 1
     struct.new $box_i32
-    array.new_fixed $arr_any 2
+    array.new_fixed $tuple 2
     local.set $f2
     f64.const 1.5
     struct.new $box_f64
     i32.const 0
     struct.new $box_i32
-    array.new_fixed $arr_any 2
+    array.new_fixed $tuple 2
     local.set $f3
     local.get $f1
     local.get $f2

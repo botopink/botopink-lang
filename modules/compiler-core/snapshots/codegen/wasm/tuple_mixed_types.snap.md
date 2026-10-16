@@ -8,8 +8,9 @@ val t = #(12, "5452");
 (module
   (rec
     (type $str (array (mut i8)))
-    (type $arr_any (array (mut anyref)))
+    (type $arr_any (sub (array (mut anyref))))
     (type $box_i32 (struct (field $v i32)))
+    (type $tuple (sub final $arr_any (array (mut anyref))))
   )
   (memory (export "memory") 1)
   (start $__init_strs)
@@ -20,7 +21,7 @@ val t = #(12, "5452");
     i32.const 12
     struct.new $box_i32
     global.get $__s0
-    array.new_fixed $arr_any 2
+    array.new_fixed $tuple 2
     global.set $t
   )
   (data $__d0 "5452")

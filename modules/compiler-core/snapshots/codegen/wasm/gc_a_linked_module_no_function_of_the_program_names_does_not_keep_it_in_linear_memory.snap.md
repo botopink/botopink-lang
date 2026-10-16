@@ -584,11 +584,12 @@ test "order case over Order" {
 (module
   (rec
     (type $str (array (mut i8)))
-    (type $arr_any (array (mut anyref)))
+    (type $arr_any (sub (array (mut anyref))))
     (type $rec_Dict (struct (field $f0 (mut (ref null $arr_any)))))
     (type $box_i32 (sub (struct (field $v i32))))
     (type $box_bool (sub final $box_i32 (struct (field $v i32))))
     (type $box_f64 (struct (field $v f64)))
+    (type $tuple (sub final $arr_any (array (mut anyref))))
     (type $closure (sub (struct (field $idx i32) (field $mark i32))))
     (type $rec_Set (struct (field $f0 (mut (ref null $arr_any)))))
     (type $rec_Queue (struct (field $f0 (mut (ref null $arr_any)))))
@@ -986,7 +987,7 @@ test "order case over Order" {
     local.get $filtered
     local.get $key
     local.get $value
-    array.new_fixed $arr_any 2
+    array.new_fixed $tuple 2
     array.new_fixed $arr_any 1
     call $__arr_concat_any
     struct.new $rec_Dict
@@ -1240,7 +1241,7 @@ test "order case over Order" {
     local.get $__fnv1
     struct.get $closure $idx ;; table index
     call_indirect (param (ref null $closure) anyref) (result anyref)
-    array.new_fixed $arr_any 2
+    array.new_fixed $tuple 2
     call $__arr_push_any
     local.set $out
         local.get $__idx0
@@ -1806,7 +1807,7 @@ test "order case over Order" {
     local.get $rest
     struct.new $rec_Queue
     local.get $head
-    array.new_fixed $arr_any 2
+    array.new_fixed $tuple 2
     return
   )
   (func $Queue_peek (param $self (ref null $rec_Queue)) (result anyref)
@@ -2080,10 +2081,8 @@ test "order case over Order" {
       )
     )
     local.get $a
-    ref.cast (ref null eq)
     local.get $b
-    ref.cast (ref null eq)
-    ref.eq
+    call $__unk_eq_ref
   )
   (func $__arr_slice_any (param $xs (ref null $arr_any)) (param $a i32) (param $b i32) (result (ref null $arr_any))
     (local $len i32)
@@ -2244,6 +2243,274 @@ test "order case over Order" {
     local.get $lb
     array.copy $arr_any $arr_any
     local.get $r
+  )
+  (func $__unk_eq_tuple (param $a (ref null $tuple)) (param $b (ref null $tuple)) (result i32)
+    (local $i i32)
+    local.get $a
+    array.len
+    local.get $b
+    array.len
+    i32.ne
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    (block $brk
+    (loop $cont
+    local.get $i
+    local.get $a
+    array.len
+    i32.ge_u
+    br_if $brk
+    local.get $a
+    local.get $i
+    array.get $tuple
+    local.get $b
+    local.get $i
+    array.get $tuple
+    call $__unk_eq
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    local.get $i
+    i32.const 1
+    i32.add
+    local.set $i
+    br $cont
+    )
+    )
+    i32.const 1
+  )
+  (func $__unk_eq_arr_any (param $a (ref null $arr_any)) (param $b (ref null $arr_any)) (result i32)
+    (local $i i32)
+    local.get $a
+    array.len
+    local.get $b
+    array.len
+    i32.ne
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    (block $brk
+    (loop $cont
+    local.get $i
+    local.get $a
+    array.len
+    i32.ge_u
+    br_if $brk
+    local.get $a
+    local.get $i
+    array.get $arr_any
+    local.get $b
+    local.get $i
+    array.get $arr_any
+    call $__unk_eq
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    local.get $i
+    i32.const 1
+    i32.add
+    local.set $i
+    br $cont
+    )
+    )
+    i32.const 1
+  )
+  (func $__unk_eq_s2 (param $a (ref null $rec_Dict)) (param $b (ref null $rec_Dict)) (result i32)
+    local.get $a
+    struct.get $rec_Dict $f0
+    local.get $b
+    struct.get $rec_Dict $f0
+    call $__unk_eq
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    i32.const 1
+  )
+  (func $__unk_eq_s8 (param $a (ref null $rec_Set)) (param $b (ref null $rec_Set)) (result i32)
+    local.get $a
+    struct.get $rec_Set $f0
+    local.get $b
+    struct.get $rec_Set $f0
+    call $__unk_eq
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    i32.const 1
+  )
+  (func $__unk_eq_s9 (param $a (ref null $rec_Queue)) (param $b (ref null $rec_Queue)) (result i32)
+    local.get $a
+    struct.get $rec_Queue $f0
+    local.get $b
+    struct.get $rec_Queue $f0
+    call $__unk_eq
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    i32.const 1
+  )
+  (func $__unk_eq_ref (param $a anyref) (param $b anyref) (result i32)
+    local.get $a
+    ref.is_null
+    local.get $b
+    ref.is_null
+    i32.or
+    (if
+      (then
+    local.get $a
+    ref.is_null
+    local.get $b
+    ref.is_null
+    i32.and
+    return
+      )
+    )
+    local.get $a
+    ref.cast (ref null eq)
+    local.get $b
+    ref.cast (ref null eq)
+    ref.eq
+    (if
+      (then
+    i32.const 1
+    return
+      )
+    )
+    local.get $a
+    ref.test (ref null $tuple)
+    (if
+      (then
+    local.get $b
+    ref.test (ref null $tuple)
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    local.get $a
+    ref.cast (ref null $tuple)
+    local.get $b
+    ref.cast (ref null $tuple)
+    call $__unk_eq_tuple
+    return
+      )
+    )
+    local.get $a
+    ref.test (ref null $arr_any)
+    (if
+      (then
+    local.get $b
+    ref.test (ref null $arr_any)
+    i32.eqz
+    local.get $b
+    ref.test (ref null $tuple)
+    i32.or
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    local.get $a
+    ref.cast (ref null $arr_any)
+    local.get $b
+    ref.cast (ref null $arr_any)
+    call $__unk_eq_arr_any
+    return
+      )
+    )
+    local.get $a
+    ref.test (ref null $rec_Dict)
+    (if
+      (then
+    local.get $b
+    ref.test (ref null $rec_Dict)
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    local.get $a
+    ref.cast (ref null $rec_Dict)
+    local.get $b
+    ref.cast (ref null $rec_Dict)
+    call $__unk_eq_s2
+    return
+      )
+    )
+    local.get $a
+    ref.test (ref null $rec_Set)
+    (if
+      (then
+    local.get $b
+    ref.test (ref null $rec_Set)
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    local.get $a
+    ref.cast (ref null $rec_Set)
+    local.get $b
+    ref.cast (ref null $rec_Set)
+    call $__unk_eq_s8
+    return
+      )
+    )
+    local.get $a
+    ref.test (ref null $rec_Queue)
+    (if
+      (then
+    local.get $b
+    ref.test (ref null $rec_Queue)
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    local.get $a
+    ref.cast (ref null $rec_Queue)
+    local.get $b
+    ref.cast (ref null $rec_Queue)
+    call $__unk_eq_s9
+    return
+      )
+    )
+    i32.const 0
   )
   ;; Scratch layout below the data section (which starts at 256):
   ;;   0..8  WASI iovec   8  newline byte

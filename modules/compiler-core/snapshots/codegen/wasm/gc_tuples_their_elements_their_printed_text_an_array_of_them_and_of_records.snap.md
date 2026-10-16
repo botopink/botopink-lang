@@ -26,9 +26,10 @@ pub fn main() {
   (rec
     (type $str (array (mut i8)))
     (type $rec_Pair (struct (field $f0 (mut i32)) (field $f1 (mut (ref null $str)))))
-    (type $arr_any (array (mut anyref)))
+    (type $arr_any (sub (array (mut anyref))))
     (type $box_i32 (struct (field $v i32)))
     (type $box_f64 (struct (field $v f64)))
+    (type $tuple (sub final $arr_any (array (mut anyref))))
   )
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
@@ -59,7 +60,7 @@ pub fn main() {
     struct.new $box_f64
     i32.const 1
     struct.new $box_i32
-    array.new_fixed $arr_any 4
+    array.new_fixed $tuple 4
     local.set $t
     local.get $t
     call $__pr0
@@ -94,7 +95,7 @@ pub fn main() {
     struct.new $box_f64
     i32.const 1
     struct.new $box_i32
-    array.new_fixed $arr_any 4
+    array.new_fixed $tuple 4
     local.set $u
     local.get $t
     local.get $u
@@ -144,11 +145,11 @@ pub fn main() {
     i32.const 1
     struct.new $box_i32
     global.get $__s8
-    array.new_fixed $arr_any 2
+    array.new_fixed $tuple 2
     i32.const 2
     struct.new $box_i32
     global.get $__s9
-    array.new_fixed $arr_any 2
+    array.new_fixed $tuple 2
     array.new_fixed $arr_any 2
     local.set $ts
     local.get $ts

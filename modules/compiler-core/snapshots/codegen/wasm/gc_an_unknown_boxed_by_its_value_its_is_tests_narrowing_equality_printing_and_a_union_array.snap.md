@@ -474,10 +474,8 @@ pub fn main() {
       )
     )
     local.get $a
-    ref.cast (ref null eq)
     local.get $b
-    ref.cast (ref null eq)
-    ref.eq
+    call $__unk_eq_ref
   )
   (func $__unk_print_raw (param $v anyref)
     local.get $v
@@ -679,6 +677,135 @@ pub fn main() {
     )
     global.get $__s13
     call $__print_str_raw
+  )
+  (func $__unk_eq_s4 (param $a (ref null $box_i64)) (param $b (ref null $box_i64)) (result i32)
+    local.get $a
+    struct.get $box_i64 $v
+    local.get $b
+    struct.get $box_i64 $v
+    i64.eq
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    i32.const 1
+  )
+  (func $__unk_eq_arr_any (param $a (ref null $arr_any)) (param $b (ref null $arr_any)) (result i32)
+    (local $i i32)
+    local.get $a
+    array.len
+    local.get $b
+    array.len
+    i32.ne
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    (block $brk
+    (loop $cont
+    local.get $i
+    local.get $a
+    array.len
+    i32.ge_u
+    br_if $brk
+    local.get $a
+    local.get $i
+    array.get $arr_any
+    local.get $b
+    local.get $i
+    array.get $arr_any
+    call $__unk_eq
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    local.get $i
+    i32.const 1
+    i32.add
+    local.set $i
+    br $cont
+    )
+    )
+    i32.const 1
+  )
+  (func $__unk_eq_ref (param $a anyref) (param $b anyref) (result i32)
+    local.get $a
+    ref.is_null
+    local.get $b
+    ref.is_null
+    i32.or
+    (if
+      (then
+    local.get $a
+    ref.is_null
+    local.get $b
+    ref.is_null
+    i32.and
+    return
+      )
+    )
+    local.get $a
+    ref.cast (ref null eq)
+    local.get $b
+    ref.cast (ref null eq)
+    ref.eq
+    (if
+      (then
+    i32.const 1
+    return
+      )
+    )
+    local.get $a
+    ref.test (ref null $box_i64)
+    (if
+      (then
+    local.get $b
+    ref.test (ref null $box_i64)
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    local.get $a
+    ref.cast (ref null $box_i64)
+    local.get $b
+    ref.cast (ref null $box_i64)
+    call $__unk_eq_s4
+    return
+      )
+    )
+    local.get $a
+    ref.test (ref null $arr_any)
+    (if
+      (then
+    local.get $b
+    ref.test (ref null $arr_any)
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    local.get $a
+    ref.cast (ref null $arr_any)
+    local.get $b
+    ref.cast (ref null $arr_any)
+    call $__unk_eq_arr_any
+    return
+      )
+    )
+    i32.const 0
   )
   (func $__print_tagged_raw (param $v anyref)
     unreachable

@@ -22,8 +22,9 @@ pub fn main() {
   (rec
     (type $str (array (mut i8)))
     (type $arr_i32 (array (mut i32)))
-    (type $arr_any (array (mut anyref)))
+    (type $arr_any (sub (array (mut anyref))))
     (type $box_i32 (struct (field $v i32)))
+    (type $tuple (sub final $arr_any (array (mut anyref))))
   )
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
@@ -1132,7 +1133,7 @@ pub fn main() {
     local.get $ys
     local.get $i
     array.get $arr_any
-    array.new_fixed $arr_any 2
+    array.new_fixed $tuple 2
     array.set $arr_any
     local.get $i
     i32.const 1

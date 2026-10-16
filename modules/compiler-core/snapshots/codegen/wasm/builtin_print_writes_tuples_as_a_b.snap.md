@@ -21,7 +21,8 @@ fn main() {
   (rec
     (type $str (array (mut i8)))
     (type $box_i32 (struct (field $v i32)))
-    (type $arr_any (array (mut anyref)))
+    (type $arr_any (sub (array (mut anyref))))
+    (type $tuple (sub final $arr_any (array (mut anyref))))
   )
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
@@ -31,7 +32,7 @@ fn main() {
     local.get $a
     struct.new $box_i32
     local.get $b
-    array.new_fixed $arr_any 2
+    array.new_fixed $tuple 2
     return
   )
   (func $show (param $p (ref null $arr_any))
@@ -51,28 +52,28 @@ fn main() {
     struct.new $box_i32
     i32.const 1
     struct.new $box_i32
-    array.new_fixed $arr_any 2
+    array.new_fixed $tuple 2
     call $__pr3
     call $__print_nl
     i32.const 1
     struct.new $box_i32
     i32.const 2
     struct.new $box_i32
-    array.new_fixed $arr_any 2
+    array.new_fixed $tuple 2
     global.get $__s3
-    array.new_fixed $arr_any 2
+    array.new_fixed $tuple 2
     call $__pr5
     call $__print_nl
     i32.const 1
     struct.new $box_i32
     i32.const 2
     struct.new $box_i32
-    array.new_fixed $arr_any 2
+    array.new_fixed $tuple 2
     i32.const 17
     struct.new $box_i32
     i32.const 1
     struct.new $box_i32
-    array.new_fixed $arr_any 2
+    array.new_fixed $tuple 2
     array.new_fixed $arr_any 2
     call $__pr7
     call $__print_nl
@@ -84,7 +85,7 @@ fn main() {
     i32.const 3
     struct.new $box_i32
     global.get $__s7
-    array.new_fixed $arr_any 2
+    array.new_fixed $tuple 2
     call $show
     i32.const 0
   )

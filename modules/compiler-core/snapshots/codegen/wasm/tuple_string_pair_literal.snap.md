@@ -8,7 +8,8 @@ val t = #("56454", "85484");
 (module
   (rec
     (type $str (array (mut i8)))
-    (type $arr_any (array (mut anyref)))
+    (type $arr_any (sub (array (mut anyref))))
+    (type $tuple (sub final $arr_any (array (mut anyref))))
   )
   (memory (export "memory") 1)
   (start $__init_strs)
@@ -18,7 +19,7 @@ val t = #("56454", "85484");
     (local $__mem0 i32)
     global.get $__s0
     global.get $__s1
-    array.new_fixed $arr_any 2
+    array.new_fixed $tuple 2
     global.set $t
   )
   (data $__d0 "56454")

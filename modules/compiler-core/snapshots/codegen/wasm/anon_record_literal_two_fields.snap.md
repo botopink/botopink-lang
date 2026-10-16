@@ -11,8 +11,9 @@ fn make() -> #(i32, i32) {
 (module
   (rec
     (type $str (array (mut i8)))
-    (type $arr_any (array (mut anyref)))
+    (type $arr_any (sub (array (mut anyref))))
     (type $box_i32 (struct (field $v i32)))
+    (type $tuple (sub final $arr_any (array (mut anyref))))
   )
   (memory (export "memory") 1)
   (global $__heap_ptr (mut i32) (i32.const 256))
@@ -23,7 +24,7 @@ fn make() -> #(i32, i32) {
     struct.new $box_i32
     i32.const 11
     struct.new $box_i32
-    array.new_fixed $arr_any 2
+    array.new_fixed $tuple 2
     local.set $r
     local.get $r
     return

@@ -1804,6 +1804,9 @@ fn emitWatPass(
     while (eq_i < em.eq_requests.count()) : (eq_i += 1) {
         try items.append(ar, .{ .func = try em.eqFunc(em.eq_requests.keys()[eq_i], em.eq_requests.values()[eq_i]) });
     }
+    // Decision 569 — `unknown`'s structural equality, over every type the
+    // lowering declared (it may ask for `$__f64_eq`).
+    if (em.mode == .gc and em.gc_unk_eq_used) try em.gcUnkEqRef();
     if (em.float_eq_used) try items.append(ar, .{ .func = try em.floatEqFunc() });
     // Front 164 s2 P2 — the printers a GC module's values asked for.
     if (em.mode == .gc) {
@@ -2239,6 +2242,9 @@ const Emitter = struct {
     gc_ebox_used: bool = false,
     /// The unknown printer calls `$__print_arrs` (front 164 s2 P3).
     gc_arrs_used: bool = false,
+    /// `$__unk_eq` calls `$__unk_eq_ref`, written after the lowering over the
+    /// module's types (decision 569).
+    gc_unk_eq_used: bool = false,
     /// Front 164 s2 P2b — the functions a linked module's declarations
     /// brought into a GC module.
     gc_linked_fns: std.StringHashMapUnmanaged(void) = .empty,
@@ -4766,6 +4772,10 @@ const Emitter = struct {
         variant: struct { en: []const u8, name: []const u8 },
         /// `(array (mut i32 | f64 | anyref))`.
         arr: Repr.Elem,
+        /// A tuple (decision 568): `(sub $arr_any (array (mut anyref)))`, every
+        /// element in its box as an `arr_any`'s, a type of its own so a value
+        /// in an `unknown` slot prints `#(…)` and compares as a tuple.
+        tuple,
         /// The struct holding one scalar inside an `anyref` slot.
         box: Box,
         /// A `@Result`: its tag (0 = Ok, 1 = Error) and its payload in an `anyref`.
@@ -4800,7 +4810,7 @@ const Emitter = struct {
                 .variant => |v| std.mem.eql(u8, v.en, b.variant.en) and std.mem.eql(u8, v.name, b.variant.name),
                 .arr => |e| e == b.arr,
                 .box => |k| k == b.box,
-                .result, .closure => true,
+                .result, .closure, .tuple => true,
                 .ebox => |n| std.mem.eql(u8, n, b.ebox),
                 .env => |n| n == b.env,
                 .frame => |n| n == b.frame,
@@ -4818,6 +4828,7 @@ const Emitter = struct {
         // before them.
         if ((t == .box and t.box == .bool) or t == .ebox) _ = self.gcTyIndex(.{ .box = .i32 });
         if (t == .env) _ = self.gcTyIndex(.closure);
+        if (t == .tuple) _ = self.gcTyIndex(.{ .arr = .any });
         self.gc_types.append(self.alloc, t) catch {
             self.gcGap("out of memory");
             return 0;
@@ -5172,6 +5183,38 @@ const Emitter = struct {
         };
     }
 
+    /// The value type of each field of the struct type `t` (a record, a
+    /// variant, a `@Result`, a box), as `gcBuildTypes` declares them.
+    fn gcStructFieldVts(self: *Emitter, t: GcTy) ![]const ValType {
+        const ar = self.arena();
+        switch (t) {
+            .record => |n| {
+                const trefs = self.record_field_typerefs.get(n) orelse &.{};
+                const gps = self.record_generics.get(n);
+                const out = try ar.alloc(ValType, trefs.len);
+                for (trefs, out) |tr, *o| o.* = self.vtOf(if (gps) |g| self.gcErasedRepr(g, tr) else self.reprOf(tr));
+                return out;
+            },
+            .variant => |v| {
+                const variants = self.enums.get(v.en) orelse return &.{};
+                const found: ast.EnumVariant = for (variants) |ev| {
+                    if (std.mem.eql(u8, ev.name, v.name)) break ev;
+                } else return &.{};
+                const gps = self.enum_generics.get(v.en);
+                const out = try ar.alloc(ValType, found.fields.len);
+                for (found.fields, out) |vf, *o| o.* = self.vtOf(if (gps) |g| self.gcErasedRepr(g, vf.typeRef) else self.reprOf(vf.typeRef));
+                return out;
+            },
+            .result => return ar.dupe(ValType, &.{ .i32, .anyref }),
+            .box => |b| return ar.dupe(ValType, &.{switch (b) {
+                .i32, .bool => ValType.i32,
+                .i64 => ValType.i64,
+                .f64 => ValType.f64,
+            }}),
+            else => return &.{},
+        }
+    }
+
     /// The type group of a `.gc` module: `$str`, then every type the lowering
     /// asked for, each built from the declarations (a type's fields may ask
     /// for more, so the list grows while it is walked).
@@ -5224,6 +5267,15 @@ const Emitter = struct {
                         .f64 => ValType.f64,
                         .any => ValType.anyref,
                     }, .mutable = true } },
+                    // `$arr_any` is open when a tuple, its subtype, exists.
+                    .final = e != .any or for (self.gc_types.items) |x| {
+                        if (x == .tuple) break false;
+                    } else true,
+                }),
+                .tuple => try defs.append(ar, .{
+                    .name = "tuple",
+                    .kind = .{ .array = .{ .ty = ValType.anyref, .mutable = true } },
+                    .super = self.gcTyIndex(.{ .arr = .any }),
                 }),
                 .ebox => |en| {
                     const fs = try ar.alloc(wat.Field, 1);
@@ -5709,7 +5761,7 @@ const Emitter = struct {
             try self.lowerCoerced(el, r);
             try self.gcBox(r);
         }
-        try self.emit(.{ .array_new_fixed = .{ .ty = self.gcTyIndex(.{ .arr = .any }), .n = @intCast(tl.elems.len) } });
+        try self.emit(.{ .array_new_fixed = .{ .ty = self.gcTyIndex(.tuple), .n = @intCast(tl.elems.len) } });
     }
 
     /// `xs[i]` over an array in a GC module.
@@ -6113,7 +6165,7 @@ const Emitter = struct {
 
     /// `__unk_eq(a, b)`: `a == b` with an `unknown` operand (decision 8 §2.3):
     /// two numbers by value (`2.0 == 2`), two strings by content, two bools by
-    /// value, anything else by identity.
+    /// value, anything else by its structure (`$__unk_eq_ref`, decision 569).
     fn gcUnkEq(self: *Emitter) anyerror![]const u8 {
         const name = "__unk_eq";
         if (!try self.gcHelperOnce(name)) return name;
@@ -6152,12 +6204,171 @@ const Emitter = struct {
                 try self.gcWhenReturn(&.{ .{ .local_get = "a" }, .{ .ref_cast = bi }, .{ .struct_get = .{ .ty = bik, .field = 0 } }, .{ .local_get = "b" }, .{ .ref_cast = bi }, .{ .struct_get = .{ .ty = bik, .field = 0 } }, opOf(.i32, "eq") });
             }
         }
+        self.gc_unk_eq_used = true;
+        try self.emit(.{ .local_get = "a" });
+        try self.emit(.{ .local_get = "b" });
+        try self.emit(.{ .call = "__unk_eq_ref" });
+        try self.gcHelperFunc(name, &.{ wat.Builder.param("a", .anyref), wat.Builder.param("b", .anyref) }, .i32, &.{}, self.seal(&c, .{ .value = .i32 }));
+        return name;
+    }
+
+    /// Decision 569 — `__unk_eq_ref(a, b)`: two references `$__unk_eq` did
+    /// not answer, compared by structure, never by identity alone: both
+    /// absent, or the same reference; else a tuple, an array, a record, a
+    /// variant, a `@Result` or a boxed `i64` of the same type, part by part —
+    /// a word by `i32.eq`, an `i64` by `i64.eq`, a float by `$__f64_eq`, a
+    /// reference by `$__unk_eq`. Written after the lowering, over the types
+    /// the module declared: a value of any other type (a function value, a
+    /// task) is equal only to itself.
+    fn gcUnkEqRef(self: *Emitter) anyerror!void {
+        var c: Capture = .{};
+        self.open(&c);
+        // Both absent: equal; one absent: not.
+        try self.emit(.{ .local_get = "a" });
+        try self.emit(.ref_is_null);
+        try self.emit(.{ .local_get = "b" });
+        try self.emit(.ref_is_null);
+        try self.emit(opOf(.i32, "or"));
+        try self.gcWhenReturn(&.{ .{ .local_get = "a" }, .ref_is_null, .{ .local_get = "b" }, .ref_is_null, opOf(.i32, "and") });
         try self.emit(.{ .local_get = "a" });
         try self.emit(.{ .ref_cast = .eqref });
         try self.emit(.{ .local_get = "b" });
         try self.emit(.{ .ref_cast = .eqref });
         try self.emit(.ref_eq);
-        try self.gcHelperFunc(name, &.{ wat.Builder.param("a", .anyref), wat.Builder.param("b", .anyref) }, .i32, &.{}, self.seal(&c, .{ .value = .i32 }));
+        try self.gcWhenReturn(&.{one});
+        // A tuple first: it is an `arr_any` too.
+        const has_tuple = for (self.gc_types.items) |t| {
+            if (t == .tuple) break true;
+        } else false;
+        if (has_tuple) try self.gcUnkEqArm(self.gcTy(.tuple), try self.gcUnkEqElems(.tuple), null);
+        var i: usize = 0;
+        while (i < self.gc_types.items.len) : (i += 1) {
+            const t = self.gc_types.items[i];
+            const k: u16 = @intCast(i + 1);
+            const vt = ValType.def(k);
+            switch (t) {
+                .arr => |e| try self.gcUnkEqArm(vt, try self.gcUnkEqElems(t), if (e == .any and has_tuple) self.gcTy(.tuple) else null),
+                .record, .variant, .result => try self.gcUnkEqArm(vt, try self.gcUnkEqStruct(t, k), null),
+                .box => |b| if (b == .i64) try self.gcUnkEqArm(vt, try self.gcUnkEqStruct(t, k), null),
+                else => {},
+            }
+        }
+        try self.emit(zero);
+        try self.gcHelperFunc("__unk_eq_ref", &.{ wat.Builder.param("a", .anyref), wat.Builder.param("b", .anyref) }, .i32, &.{}, self.seal(&c, .{ .value = .i32 }));
+    }
+
+    /// `if (a is vt) return b is vt (and no not_vt) and cmp(a, b)`.
+    fn gcUnkEqArm(self: *Emitter, vt: ValType, cmp: []const u8, not_vt: ?ValType) anyerror!void {
+        var no: Capture = .{};
+        self.open(&no);
+        try self.emit(zero);
+        try self.emit(.@"return");
+        const no_seq = self.seal(&no, .terminated);
+        var hit: Capture = .{};
+        self.open(&hit);
+        try self.emit(.{ .local_get = "b" });
+        try self.emit(.{ .ref_test = vt });
+        try self.emit(opOf(.i32, "eqz"));
+        if (not_vt) |nv| {
+            try self.emit(.{ .local_get = "b" });
+            try self.emit(.{ .ref_test = nv });
+            try self.emit(opOf(.i32, "or"));
+        }
+        try self.emit(.{ .@"if" = .{ .then = .{ .seq = no_seq } } });
+        try self.emit(.{ .local_get = "a" });
+        try self.emit(.{ .ref_cast = vt });
+        try self.emit(.{ .local_get = "b" });
+        try self.emit(.{ .ref_cast = vt });
+        try self.emit(.{ .call = cmp });
+        try self.emit(.@"return");
+        const hit_seq = self.seal(&hit, .terminated);
+        try self.emit(.{ .local_get = "a" });
+        try self.emit(.{ .ref_test = vt });
+        try self.emit(.{ .@"if" = .{ .then = .{ .seq = hit_seq } } });
+    }
+
+    /// With two values of the wasm type `vt` on the stack, leave `1` when they
+    /// are equal (`gcUnkEqRef`'s parts).
+    fn gcUnkEqPart(self: *Emitter, vt: ValType) anyerror!void {
+        switch (vt) {
+            .i32 => try self.emit(opOf(.i32, "eq")),
+            .i64 => try self.emit(opOf(.i64, "eq")),
+            .f64 => try self.emit(.{ .call = self.floatEqSym() }),
+            else => try self.emit(.{ .call = "__unk_eq" }),
+        }
+    }
+
+    /// `__unk_eq_<type>(a, b)`: two tuples or two arrays of the same type,
+    /// the same length and each element equal.
+    fn gcUnkEqElems(self: *Emitter, t: GcTy) anyerror![]const u8 {
+        const name = switch (t) {
+            .tuple => "__unk_eq_tuple",
+            .arr => |e| switch (e) {
+                .i32 => "__unk_eq_arr_i32",
+                .f64 => "__unk_eq_arr_f64",
+                .any => "__unk_eq_arr_any",
+            },
+            else => unreachable,
+        };
+        if (!try self.gcHelperOnce(name)) return name;
+        const k = self.gcTyIndex(t);
+        const vt = ValType.def(k);
+        const ev: ValType = if (t == .arr) gcElemVt(t.arr) else .anyref;
+        var c: Capture = .{};
+        self.open(&c);
+        try self.emit(.{ .local_get = "a" });
+        try self.emit(.array_len);
+        try self.emit(.{ .local_get = "b" });
+        try self.emit(.array_len);
+        try self.emit(opOf(.i32, "ne"));
+        try self.gcWhenReturn(&.{zero});
+        var body: Capture = .{};
+        self.open(&body);
+        try self.emit(.{ .local_get = "i" });
+        try self.emit(.{ .local_get = "a" });
+        try self.emit(.array_len);
+        try self.emit(opOf(.i32, "ge_u"));
+        try self.emit(.{ .br_if = "brk" });
+        for ([_][]const u8{ "a", "b" }) |x| {
+            try self.emit(.{ .local_get = x });
+            try self.emit(.{ .local_get = "i" });
+            try self.emit(.{ .array_get = .{ .ty = k } });
+        }
+        try self.gcUnkEqPart(ev);
+        try self.emit(opOf(.i32, "eqz"));
+        try self.gcWhenReturn(&.{zero});
+        try self.emit(.{ .local_get = "i" });
+        try self.emit(one);
+        try self.emit(opOf(.i32, "add"));
+        try self.emit(.{ .local_set = "i" });
+        try self.emit(.{ .br = "cont" });
+        const loop_seq = self.seal(&body, .terminated);
+        try self.gcLoop(loop_seq);
+        try self.emit(one);
+        try self.gcHelperFunc(name, &.{ wat.Builder.param("a", vt), wat.Builder.param("b", vt) }, .i32, &.{.{ .name = "i", .ty = .i32 }}, self.seal(&c, .{ .value = .i32 }));
+        return name;
+    }
+
+    /// `__unk_eq_s<k>(a, b)`: two structs of type `k` (a record, a variant, a
+    /// `@Result`, an `i64`'s box), each field equal.
+    fn gcUnkEqStruct(self: *Emitter, t: GcTy, k: u16) anyerror![]const u8 {
+        const name = try std.fmt.allocPrint(self.arena(), "__unk_eq_s{d}", .{k});
+        if (!try self.gcHelperOnce(name)) return name;
+        const vt = ValType.def(k);
+        const vts = try self.gcStructFieldVts(t);
+        var c: Capture = .{};
+        self.open(&c);
+        for (vts, 0..) |fv, f| {
+            for ([_][]const u8{ "a", "b" }) |x| {
+                try self.emit(.{ .local_get = x });
+                try self.emit(.{ .struct_get = .{ .ty = k, .field = @intCast(f) } });
+            }
+            try self.gcUnkEqPart(fv);
+            try self.emit(opOf(.i32, "eqz"));
+            try self.gcWhenReturn(&.{zero});
+        }
+        try self.emit(one);
+        try self.gcHelperFunc(name, &.{ wat.Builder.param("a", vt), wat.Builder.param("b", vt) }, .i32, &.{}, self.seal(&c, .{ .value = .i32 }));
         return name;
     }
 
@@ -6192,8 +6403,8 @@ const Emitter = struct {
         try self.emit(.{ .local_get = "v" });
         try self.emit(.{ .call = "__print_ebox" });
         try self.gcWhenReturn(&.{});
-        // An array of words or floats, or of anything else (a tuple is the
-        // same type, so it prints as an array: no tuple enters a slot).
+        // A tuple, an array of words or floats, or of anything else (a tuple
+        // is a subtype of `arr_any` of its own, decision 568).
         self.gc_arrs_used = true;
         try self.emit(.{ .local_get = "v" });
         try self.emit(.{ .call = "__print_arrs" });
@@ -7234,7 +7445,7 @@ const Emitter = struct {
         try self.emit(lget("i"));
         try self.emit(.{ .array_get = .{ .ty = tb } });
         if (b != .any) try self.gcBox(if (b == .f64) .f64 else .i32);
-        try self.emit(.{ .array_new_fixed = .{ .ty = oi, .n = 2 } });
+        try self.emit(.{ .array_new_fixed = .{ .ty = self.gcTyIndex(.tuple), .n = 2 } });
         try self.emit(.{ .array_set = oi });
         try self.emit(lget("i"));
         try self.emit(one);
@@ -8099,12 +8310,20 @@ const Emitter = struct {
 
     /// `__print_ebox(v: anyref) -> i32`: when `v` is an all-unit enum's box
     /// (`GcTy.ebox`), its variant's name written and `1`; else `0`.
-    /// `__print_arrs(v: anyref) -> i32`: when `v` is an array of words, of
-    /// floats or of `unknown`s, written as its shape's printer writes it and
-    /// `1`; else `0`.
+    /// `__print_arrs(v: anyref) -> i32`: when `v` is a tuple, an array of
+    /// words, of floats or of `unknown`s, written as its shape's printer
+    /// writes it and `1`; else `0`. A tuple is tested first: it is an
+    /// `arr_any` too (decision 568).
     fn gcArrsPrinter(self: *Emitter) anyerror!void {
         var c: Capture = .{};
         self.open(&c);
+        for (self.gc_types.items) |t| if (t == .tuple) {
+            const vt = self.gcTy(.tuple);
+            try self.emit(.{ .local_get = "v" });
+            try self.emit(.{ .ref_test = vt });
+            try self.gcWhenReturn(&.{ .{ .local_get = "v" }, .{ .ref_cast = vt }, .{ .call = try self.gcTuplePrinter() }, one });
+            break;
+        };
         var i: usize = 0;
         while (i < self.gc_types.items.len) : (i += 1) {
             const t = self.gc_types.items[i];
@@ -8136,6 +8355,48 @@ const Emitter = struct {
             .result = .i32,
             .body = body,
         }) });
+    }
+
+    /// `__print_tuple(v)`: a tuple held by an `unknown` — `#(e1, e2)`, each
+    /// element printed by what its box holds (`U`), a string quoted.
+    fn gcTuplePrinter(self: *Emitter) anyerror![]const u8 {
+        const name = "__print_tuple";
+        if (!try self.gcHelperOnce(name)) return name;
+        const vt = self.gcTy(.tuple);
+        const at = self.gcTyIndex(.tuple);
+        const px = try self.gcUnkPrint(true);
+        var c: Capture = .{};
+        self.open(&c);
+        try self.gcPutStr("#(");
+        try self.emit(.{ .local_get = "v" });
+        try self.emit(.array_len);
+        try self.emit(.{ .local_set = "n" });
+        var body: Capture = .{};
+        self.open(&body);
+        try self.emit(.{ .local_get = "i" });
+        try self.emit(.{ .local_get = "n" });
+        try self.emit(opOf(.i32, "ge_u"));
+        try self.emit(.{ .br_if = "brk" });
+        var sep: Capture = .{};
+        self.open(&sep);
+        try self.gcPutStr(", ");
+        const sep_seq = self.seal(&sep, .none);
+        try self.emit(.{ .local_get = "i" });
+        try self.emit(.{ .@"if" = .{ .then = .{ .seq = sep_seq } } });
+        try self.emit(.{ .local_get = "v" });
+        try self.emit(.{ .local_get = "i" });
+        try self.emit(.{ .array_get = .{ .ty = at } });
+        try self.emit(.{ .call = px });
+        try self.emit(.{ .local_get = "i" });
+        try self.emit(one);
+        try self.emit(opOf(.i32, "add"));
+        try self.emit(.{ .local_set = "i" });
+        try self.emit(.{ .br = "cont" });
+        const loop_seq = self.seal(&body, .terminated);
+        try self.gcLoop(loop_seq);
+        try self.gcPutStr(")");
+        try self.gcHelperFunc(name, &.{wat.Builder.param("v", vt)}, null, &.{ .{ .name = "n", .ty = .i32 }, .{ .name = "i", .ty = .i32 } }, self.seal(&c, .none));
+        return name;
     }
 
     fn gcEboxPrinter(self: *Emitter) anyerror!void {
@@ -20624,7 +20885,9 @@ const Emitter = struct {
             else => return null,
         };
         if (!isGenericParamName(n, f.genericParams, &.{})) return null;
-        if (!comparesValues(ast.FnDecl, f)) return null;
+        // A GC module binds a tuple whatever the body does (decision 568):
+        // the copy holds it as the tuple it is, not as an `unknown`.
+        if (!comparesValues(ast.FnDecl, f) and !(self.mode == .gc and (isTupleLit(arg) or self.typeRefIsTuple(arg)))) return null;
         const at = (try self.eqTypeOf(arg)) orelse return null;
         if (!self.eqComposite(at)) return null;
         return .{ .name = n, .ty = try self.eqKey(at), .tref = at };
@@ -22126,7 +22389,6 @@ const Emitter = struct {
                 // what it is — a string quoted, a record or variant by its
                 // printer —, an array or a tuple only when its shape has no
                 // word the slot could not name.
-                if (fr.ref == .unknown and vr.ref == .tuple) return self.gcFail("a tuple in a type parameter's slot");
                 if (fr.ref == .unknown and vr.ref == .arr) {
                     // An array of words, floats or strings prints as its
                     // elements do (`$__print_arrs`); a bool array's words
@@ -22134,7 +22396,7 @@ const Emitter = struct {
                     const sh = (try self.printShapeOf(value)) orelse return self.gcFail("an array in a type parameter's slot of no print shape");
                     if (!(std.mem.eql(u8, sh, "[i") or std.mem.eql(u8, sh, "[f") or std.mem.eql(u8, sh, "[s"))) return self.gcFail("an array of another shape in a type parameter's slot");
                 }
-                if (fr.ref == .arr or fr.ref == .tuple) {
+                if (fr.ref == .arr or fr.ref == .tuple or (fr.ref == .unknown and vr.ref == .tuple)) {
                     const sh = (try self.printShapeOf(value)) orelse return self.gcFail("a generic container of no print shape");
                     // Each element prints by its box (`U`): a bool, an
                     // all-unit enum's ordinal or a `u64` would not.
@@ -24947,11 +25209,15 @@ const Emitter = struct {
         if (self.records.get(name)) |fields| {
             const trefs = self.record_field_typerefs.get(name) orelse &.{};
             const gps = self.record_generics.get(name) orelse &.{};
-            if (gps.len > 0 and !(t == .generic and t.generic.args.len == gps.len)) return self.gcFail("a generic record compared with its arguments unknown");
+            const written = gps.len == 0 or (t == .generic and t.generic.args.len == gps.len);
             const ti = self.gcTyIndex(.{ .record = name });
             for (fields, 0..) |_, i| {
                 const ft: ast.TypeRef = if (i < trefs.len) self.eqFieldType(t, gps, trefs[i]) else return self.gcFail("a field with no type");
                 const erased: ?Repr = if (gps.len > 0 and mentionsGeneric(trefs[i], gps)) self.gcErasedRepr(gps, trefs[i]) else null;
+                if (erased != null and !written) {
+                    try self.gcEqErasedSlot(ti, @intCast(i), erased.?, null);
+                    continue;
+                }
                 if (erased != null and trefs[i] != .named) return self.gcFail("a generic record's composite field");
                 for ([_][]const u8{ "a", "b" }) |x| {
                     try self.emit(.{ .local_get = x });
@@ -24966,7 +25232,7 @@ const Emitter = struct {
         } else {
             const variants = self.enums.get(name) orelse return self.gcFail("an equality over a type with no struct");
             const egps = self.enum_generics.get(name) orelse &.{};
-            if (egps.len > 0 and !(t == .generic and t.generic.args.len == egps.len)) return self.gcFail("a generic enum compared with its arguments unknown");
+            const written = egps.len == 0 or (t == .generic and t.generic.args.len == egps.len);
             for (variants) |v| {
                 const ti = self.gcTyIndex(.{ .variant = .{ .en = name, .name = v.name } });
                 const vv = ValType.def(ti);
@@ -24979,6 +25245,10 @@ const Emitter = struct {
                 for (v.fields, 0..) |f, i| {
                     const ft: ast.TypeRef = self.eqFieldType(t, egps, f.typeRef);
                     const erased: ?Repr = if (egps.len > 0 and mentionsGeneric(f.typeRef, egps)) self.gcErasedRepr(egps, f.typeRef) else null;
+                    if (erased != null and !written) {
+                        try self.gcEqErasedSlot(ti, @intCast(i), erased.?, vv);
+                        continue;
+                    }
                     if (erased != null and f.typeRef != .named) return self.gcFail("a generic enum's composite payload");
                     for ([_][]const u8{ "a", "b" }) |x| {
                         try self.emit(.{ .local_get = x });
@@ -25006,6 +25276,23 @@ const Emitter = struct {
             .result = .i32,
             .body = body,
         });
+    }
+
+    /// Decision 569 — one erased slot (field `field` of struct type `ti`, a
+    /// type parameter's) of a generic record or variant compared with its
+    /// type arguments unwritten: the two references by `$__unk_eq`, `return 0`
+    /// when they differ. `cast` is the variant's type its `anyref` operands
+    /// are cast to first.
+    fn gcEqErasedSlot(self: *Emitter, ti: u16, field: u32, erased: Repr, cast: ?ValType) anyerror!void {
+        if (!erased.isRef()) return self.gcFail("a scalar erased slot");
+        for ([_][]const u8{ "a", "b" }) |x| {
+            try self.emit(.{ .local_get = x });
+            if (cast) |vt| try self.emit(.{ .ref_cast = vt });
+            try self.emit(.{ .struct_get = .{ .ty = ti, .field = field } });
+        }
+        try self.emit(.{ .call = try self.gcUnkEq() });
+        try self.emit(opOf(.i32, "eqz"));
+        try self.eqReturnIf(zero);
     }
 
     /// `$__eq_<T>` over `?inner`: two absences are equal, one is not, two

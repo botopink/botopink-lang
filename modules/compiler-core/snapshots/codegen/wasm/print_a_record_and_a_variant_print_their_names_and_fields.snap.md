@@ -19,8 +19,9 @@ fn main() {
   (rec
     (type $str (array (mut i8)))
     (type $arr_i32 (array (mut i32)))
-    (type $arr_any (array (mut anyref)))
+    (type $arr_any (sub (array (mut anyref))))
     (type $box_i32 (struct (field $v i32)))
+    (type $tuple (sub final $arr_any (array (mut anyref))))
     (type $rec_Point (struct (field $f0 (mut i32)) (field $f1 (mut i32))))
     (type $var_Shape_Square (struct (field $f0 (mut i32))))
     (type $var_Shape_Nothing (struct))
@@ -45,7 +46,7 @@ fn main() {
     i32.const 1
     struct.new $box_i32
     global.get $__s6
-    array.new_fixed $arr_any 2
+    array.new_fixed $tuple 2
     call $__pr2
     call $__print_nl
     i32.const 1

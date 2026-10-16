@@ -1,0 +1,27 @@
+//// Decision 568 — a tuple bound to a type parameter stays a tuple: handed through a generic
+//// `fn`, held in a generic record's field, read back element by element and compared with
+//// `==` by its elements, on every target.
+
+type Box<T>(value: T)
+
+fn id<T>(x: T) -> T {
+    return x;
+}
+
+fn wrap<T>(x: T) -> Box<T> {
+    return Box(value: x);
+}
+
+pub fn main() {
+    val t = id(#(4, 5));
+    @print(t._0 + t._1);
+    val u = id(#("x", 2.5));
+    @print(u._0);
+    @print(u._1);
+    val b = wrap(#(1, "a"));
+    @print(b.value._1);
+    @print(id(#(1, 2)) == #(1, 2));
+    @print(id(#(1, 2)) == #(2, 1));
+    @print(wrap(#(1, "a")) == wrap(#(1, "a")));
+    @print(wrap(#(1, "a")) == wrap(#(1, "b")));
+}
