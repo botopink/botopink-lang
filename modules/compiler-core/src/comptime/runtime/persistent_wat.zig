@@ -32,6 +32,9 @@ const stages = @import("stages.zig");
 
 const is_wasm = builtin.cpu.arch.isWasm();
 
+/// glibc's `malloc_trim`: returns the free memory of every arena to the system.
+extern "c" fn malloc_trim(pad: usize) c_int;
+
 pub const Response = union(enum) {
     /// The reply bytes (`main`'s JSON).
     ok: []u8,
@@ -244,6 +247,11 @@ const Wasmtime = struct {
                 return null;
             }
             if (file) |path| writeCompiled(alloc, io, path, module.?);
+            // Compiling leaves the allocator holding the compiler's working
+            // memory (tens of MB a module, in per-thread arenas that never give
+            // it back): a project of many distinct comptime modules held it for
+            // each one (144 B-117).
+            if (comptime builtin.os.tag == .linux and builtin.abi.isGnu()) _ = malloc_trim(0);
         }
         // The linked module imports nothing (the file comment).
         var imports: c.wasm_importtype_vec_t = undefined;

@@ -5670,18 +5670,24 @@ fn runDeclDecorators(
         // join the support with the host functions the run reaches.
         var hosts = try hostCells.Writer.init(env, program.decls);
         const runDfn = if (local) try hosts.rewrite(try sameLoweredFn(env, program, dfn)) else dfn;
-        const erasedSupport = try env.arena.alloc(ast.FnDecl, support.len);
+        // What only the run reads — the decorator's erased body and the erased
+        // support functions, a copy of every function the run reaches — is scratch:
+        // it is gone when the run ends, not held until the session ends (144 B-117).
+        var run_scratch = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+        defer run_scratch.deinit();
+        const rs = run_scratch.allocator();
+        const erasedSupport = try rs.alloc(ast.FnDecl, support.len);
         for (support, 0..) |sf, k| {
             const own = local and k < found.fns.len and std.mem.eql(u8, env.comptimeOwnerOf(sf), env.modulePath);
-            erasedSupport[k] = try exprParam.eraseForRun(env.arena, if (own) try hosts.rewrite(try sameLoweredFn(env, program, sf)) else sf, isDecoratorParams(sf.params));
+            erasedSupport[k] = try exprParam.eraseForRun(rs, if (own) try hosts.rewrite(try sameLoweredFn(env, program, sf)) else sf, isDecoratorParams(sf.params));
         }
-        const runSupport = if (local) try std.mem.concat(env.arena, ast.FnDecl, &.{ erasedSupport, try hostCells.hostSupport(env, &env.fnDecls, try std.mem.concat(env.arena, ast.FnDecl, &.{ &.{runDfn}, erasedSupport })) }) else erasedSupport;
+        const runSupport = if (local) try std.mem.concat(rs, ast.FnDecl, &.{ erasedSupport, try hostCells.hostSupport(env, &env.fnDecls, try std.mem.concat(rs, ast.FnDecl, &.{ &.{runDfn}, erasedSupport })) }) else erasedSupport;
         // Decision 451 (3) — the calls of the decorator and of the functions
         // of its module it reaches are located: in this module's own file, or
         // in the decorator's, which the diagnostic then names
         // (`srcPathOfModule`).
         const located = try locatedFns(env, dfn, srcPathOfModule(env, owner), support[0..found.fns.len]);
-        const outcome = decoratorEval.evaluate(env.arena, ctx.io, ctx.build_root, owner, srcPathOfModule(env, owner), try exprParam.eraseForRun(env.arena, runDfn, true), runSupport, located, reached.types, try completeHandle(env, try withOwner(env, try withMethodMeta(env, handle, memberOwner), if (declared == null) memberOwner else null)), plain, capture, &env.comptimeTraces) catch {
+        const outcome = decoratorEval.evaluate(env.arena, ctx.io, ctx.build_root, owner, srcPathOfModule(env, owner), try exprParam.eraseForRun(rs, runDfn, true), runSupport, located, reached.types, try completeHandle(env, try withOwner(env, try withMethodMeta(env, handle, memberOwner), if (declared == null) memberOwner else null)), plain, capture, &env.comptimeTraces) catch {
             return decoratorError(env, a, "the decorator evaluator failed to run", "Decorator bodies run on the wasm comptime runtime inside the compiler (decision 434); this failure is the compiler's, not the body's — report it.");
         };
         switch (outcome) {
@@ -9939,14 +9945,20 @@ fn runTagAnnotation(
     const support = try std.mem.concat(env.arena, ast.FnDecl, &.{ found.fns, reached.fns, builtFns.items });
     var hosts = try hostCells.Writer.init(env, program.decls);
     const runDfn = if (local) try hosts.rewrite(try sameLoweredFn(env, program, dfn)) else dfn;
-    const erasedSupport = try env.arena.alloc(ast.FnDecl, support.len);
+    // What only the run reads — the decorator's erased body and the erased
+    // support functions, a copy of every function the run reaches — is scratch:
+    // it is gone when the run ends, not held until the session ends (144 B-117).
+    var run_scratch = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer run_scratch.deinit();
+    const rs = run_scratch.allocator();
+    const erasedSupport = try rs.alloc(ast.FnDecl, support.len);
     for (support, 0..) |sf, k| {
         const own = local and k < found.fns.len and std.mem.eql(u8, env.comptimeOwnerOf(sf), env.modulePath);
-        erasedSupport[k] = try exprParam.eraseForRun(env.arena, if (own) try hosts.rewrite(try sameLoweredFn(env, program, sf)) else sf, isDecoratorParams(sf.params));
+        erasedSupport[k] = try exprParam.eraseForRun(rs, if (own) try hosts.rewrite(try sameLoweredFn(env, program, sf)) else sf, isDecoratorParams(sf.params));
     }
-    const runSupport = if (local) try std.mem.concat(env.arena, ast.FnDecl, &.{ erasedSupport, try hostCells.hostSupport(env, &env.fnDecls, try std.mem.concat(env.arena, ast.FnDecl, &.{ &.{runDfn}, erasedSupport })) }) else erasedSupport;
+    const runSupport = if (local) try std.mem.concat(rs, ast.FnDecl, &.{ erasedSupport, try hostCells.hostSupport(env, &env.fnDecls, try std.mem.concat(rs, ast.FnDecl, &.{ &.{runDfn}, erasedSupport })) }) else erasedSupport;
     const located = try locatedFns(env, dfn, srcPathOfModule(env, owner), support[0..found.fns.len]);
-    const outcome = decoratorEval.evaluate(env.arena, ctx.io, ctx.build_root, owner, srcPathOfModule(env, owner), try exprParam.eraseForRun(env.arena, runDfn, true), runSupport, located, reached.types, try completeHandle(env, base), plain, null, &env.comptimeTraces) catch {
+    const outcome = decoratorEval.evaluate(env.arena, ctx.io, ctx.build_root, owner, srcPathOfModule(env, owner), try exprParam.eraseForRun(rs, runDfn, true), runSupport, located, reached.types, try completeHandle(env, base), plain, null, &env.comptimeTraces) catch {
         return decoratorError(env, a, "the decorator evaluator failed to run", "Decorator bodies run on the wasm comptime runtime inside the compiler (decision 434); this failure is the compiler's, not the body's — report it.");
     };
     var metas: std.ArrayListUnmanaged(decoratorEval.TagMeta) = .empty;

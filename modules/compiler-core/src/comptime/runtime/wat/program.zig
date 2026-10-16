@@ -89,11 +89,27 @@ pub fn build(module: []const u8, code: []const u8) Error!Built {
     defer unlock();
     if (cache.get(module)) |hit| return hit;
 
+    // The parse, the lowering and the rendered wat text of the build are
+    // scratch: only the linked bytes and the listing outlive it. Keeping the
+    // whole arena held the intermediate forms of every module the process had
+    // built (144 B-117).
     var arena_state = std.heap.ArenaAllocator.init(cache_alloc);
-    const ar = arena_state.allocator();
-    const built = try buildUncached(ar, code);
+    defer arena_state.deinit();
+    const built = try ownedBuilt(try buildUncached(arena_state.allocator(), code));
     try cache.put(cache_alloc, try cache_alloc.dupe(u8, module), built);
     return built;
+}
+
+/// `built` with its bytes and text copied out of the build's scratch arena
+/// into the process-wide cache's allocator.
+fn ownedBuilt(built: Built) Error!Built {
+    return switch (built) {
+        .ok => |o| .{ .ok = .{
+            .wasm = try cache_alloc.dupe(u8, o.wasm),
+            .listing = try cache_alloc.dupe(u8, o.listing),
+        } },
+        .refused => |why| .{ .refused = try cache_alloc.dupe(u8, why) },
+    };
 }
 
 fn buildUncached(ar: std.mem.Allocator, code: []const u8) Error!Built {

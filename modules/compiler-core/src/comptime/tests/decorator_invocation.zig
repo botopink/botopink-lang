@@ -506,3 +506,48 @@ test "comptime: round trip ---- a decorator's host function runs its runtime's c
     }
     try std.testing.expect(found);
 }
+
+// 144 B-117 — a decorator call keeps its outcome and its trace entry, never
+// what it was made from: the module's source and tree, the erased copy of every
+// function the body reaches, the encoded argument and the runtime's reply were
+// the session arena's, so a project of many call sites held ~20 MB each until
+// the session ended (73 refused markers, 8 GB). The memory the session holds
+// after the calls is about what their traces keep.
+test "decorator invocation: a call holds its trace and outcome only, not the scratch it ran from" {
+    const alloc = std.testing.allocator;
+    const io = std.testing.io;
+    const build_root = h.buildRootPathFromSrc(io, @src());
+    const calls = 60;
+    var body: std.ArrayListUnmanaged(u8) = .empty;
+    defer body.deinit(alloc);
+    try body.appendSlice(alloc, "fn big(comptime decl: @Decl) {\n");
+    var k: usize = 0;
+    while (k < 250) : (k += 1) try body.print(alloc, "    if (decl.name == \"never{d}\") {{ decl.fail(\"message {d}\"); }}\n", .{ k, k });
+    try body.appendSlice(alloc, "}\n");
+    // One call first: the runtime's one-time state (its linked bytes, the
+    // engine, the prelude) is the process's, not a call's.
+    {
+        const warm = try std.fmt.allocPrint(alloc, "{s}#[big]\ntype Warm(x: i32)\n", .{body.items});
+        defer alloc.free(warm);
+        var session = try comptimeMod.compile(alloc, &.{.{ .path = "", .source = warm }}, io, build_root, null);
+        defer session.deinit(alloc);
+        try std.testing.expect(session.outputs.items[0].outcome == .ok);
+    }
+    const rss0 = h.residentBytes() orelse return error.SkipZigTest;
+    var src: std.ArrayListUnmanaged(u8) = .empty;
+    defer src.deinit(alloc);
+    try src.appendSlice(alloc, body.items);
+    var t: usize = 0;
+    while (t < calls) : (t += 1) try src.print(alloc, "#[big]\ntype T{d}(x: i32)\n", .{t});
+    var session = try comptimeMod.compile(alloc, &.{.{ .path = "", .source = src.items }}, io, build_root, null);
+    defer session.deinit(alloc);
+    const outcome = session.outputs.items[0].outcome;
+    try std.testing.expect(outcome == .ok);
+    try std.testing.expectEqual(@as(usize, calls), outcome.ok.comptime_traces.len);
+    var kept: usize = 0;
+    for (outcome.ok.comptime_traces) |e| kept += e.listing.len + e.reply.len;
+    const rss1 = h.residentBytes() orelse return error.SkipZigTest;
+    const grown = if (rss1 > rss0) rss1 - rss0 else 0;
+    std.debug.print("\nB117 kept={d} grown={d}\n", .{ kept, grown });
+    try std.testing.expect(grown < kept * 2 + 16 * 1024 * 1024);
+}

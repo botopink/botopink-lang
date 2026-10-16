@@ -84,6 +84,24 @@ pub fn buildRootPathFromSrc(io: std.Io, comptime loc: std.builtin.SourceLocation
     return test_scratch.path(io, "comptime/" ++ comptime slugFromSrc(loc));
 }
 
+/// This process's resident set in bytes (`/proc/self/statm`); null where the
+/// file is not there.
+pub fn residentBytes() ?usize {
+    if (@import("builtin").os.tag != .linux) return null;
+    const linux = std.os.linux;
+    const rc = linux.open("/proc/self/statm", .{ .ACCMODE = .RDONLY }, 0);
+    if (linux.errno(rc) != .SUCCESS) return null;
+    const fd: i32 = @intCast(rc);
+    defer _ = linux.close(fd);
+    var buf: [128]u8 = undefined;
+    const n = linux.read(fd, &buf, buf.len);
+    if (linux.errno(n) != .SUCCESS) return null;
+    var it = std.mem.tokenizeAny(u8, buf[0..n], " \n");
+    _ = it.next() orelse return null;
+    const pages = std.fmt.parseInt(usize, it.next() orelse return null, 10) catch return null;
+    return pages * std.heap.pageSize();
+}
+
 /// Whether a comptime snapshot test tolerates a module that does not compile.
 pub const CompileExpectation = enum {
     /// Default: a parse / type / validation error fails the test (spec 06, H3+H9).

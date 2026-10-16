@@ -204,12 +204,20 @@ pub fn evaluate(
     traces: ?*std.ArrayListUnmanaged(trace.Entry),
 ) EvalError!Outcome {
     _ = build_root;
+    // The module's source, its tree, the encoded argument and the runtime's
+    // reply are scratch: only the outcome (and a trace entry) outlives the
+    // call. They were the session arena's, so a project of many refused
+    // decorator call sites held ~20 MB each until the session ended
+    // (144 B-117).
+    var scratch_state = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer scratch_state.deinit();
+    const scratch = scratch_state.allocator();
     var unsupported: erlang.UnsupportedMethod = .{};
     var refused: []const u8 = "";
     const t_module = stages.start();
-    const source = buildModule(arena, owner, dfn, support, located, types, handle, plainArgs, capture, &unsupported, &refused) catch |err| switch (err) {
+    const source = buildModule(scratch, owner, dfn, support, located, types, handle, plainArgs, capture, &unsupported, &refused) catch |err| switch (err) {
         error.UnsupportedMethod => return .{ .err = try unsupportedText(arena, "decorator", dfn.name, owner_file, unsupported) },
-        error.HostCell => return .{ .err = refused },
+        error.HostCell => return .{ .err = try arena.dupe(u8, refused) },
         else => |e| return e,
     };
     stages.stop(.module, t_module);
@@ -217,19 +225,19 @@ pub fn evaluate(
     // The comptime runtime is wasm for every target (decision 434,
     // `runtime/runtime.zig`).
     const t_encode = stages.start();
-    const arg = try etf.encode(arena, source.argument);
+    const arg = try etf.encode(scratch, source.argument);
     stages.stop(.encode, t_encode);
-    const response = try hostRuntime.evalWithArg(arena, io, "decorator", source.module, source.code, arg);
+    const response = try hostRuntime.evalWithArg(scratch, io, "decorator", source.module, source.code, arg);
     if (traces) |list| {
         const t_listing = stages.start();
         defer stages.stop(.listing, t_listing);
-        const listing = try hostRuntime.listingOf(arena, "decorator", source.module, source.code, try templateEval.argumentListing(arena, source.argument));
+        const listing = try arena.dupe(u8, try hostRuntime.listingOf(scratch, "decorator", source.module, source.code, try templateEval.argumentListing(scratch, source.argument)));
         try list.append(arena, .{
             .kind = .decorator,
             .name = dfn.name,
             .listing = listing,
             .reply = switch (response) {
-                .ok => |stdout| stdout,
+                .ok => |stdout| try arena.dupe(u8, stdout),
                 .compile_error => |detail| try std.fmt.allocPrint(arena, "compile error: {s}", .{detail}),
                 .runtime_error => |detail| try std.fmt.allocPrint(arena, "runtime error: {s}", .{detail}),
             },
