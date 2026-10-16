@@ -1008,3 +1008,292 @@ declare fn arraySlice0<T>(xs: Array<T>, start: i32) -> Array<T>;
 #[@External.Erlang("lists:sublist($0, ($1) + 1, (($2) - ($1)))")]
 #[@External.Node("""((__xs, __a, __e) => { const __n = __xs.length; if (__a == null) __a = 0; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); const __f = __e < 0 ? Math.max(__n + __e, 0) : Math.min(__e, __n); return Array.from({ length: Math.max(__f - __b, 0) }, (_, __i) => __xs[__b + __i]); })($0, $1, $2)""")]
 declare fn arraySlice1<T>(xs: Array<T>, start: i32, end: ?i32) -> Array<T>;
+
+// ── the wasm bodies (front 164 s3) ───────────────────────────────────────────
+// The `String` methods that take a botopink body on `--target wasm`
+// (decisions 565, 566), each a private `text<Name>OnWasm` over three byte
+// leaves of the `.wat` text module. Nothing binds them yet: a method's wasm
+// cell stays `std: "text.<name>"` until its `fn:` cell lands (s3 P1-d, after
+// s2 P5). Each answers what std-wasm's `modules/std-wasm/src/text.zig` answers,
+// byte for byte: indices count code points (a byte starts one when it is no
+// `10xxxxxx` continuation byte), searches compare bytes, `trim` strips
+// space, tab, LF, CR, VT and FF only (decision 441), `padStart` / `padEnd`
+// count and cycle the pad in bytes.
+
+#[@External.Wasm(std: "text.byteLength")]
+declare fn stringByteLength(s: string) -> i32;
+
+#[@External.Wasm(std: "text.byteAt")]
+declare fn stringByteAt(s: string, i: i32) -> i32;
+
+#[@External.Wasm(std: "text.byteSlice")]
+declare fn stringByteSlice(s: string, a: i32, b: i32) -> string;
+
+fn textIsLead(b: i32) -> bool {
+    return b < 128 || b >= 192;
+}
+
+fn textIsWhite(b: i32) -> bool {
+    return b == 32 || (b >= 9 && b <= 13);
+}
+
+fn textIsWordSpace(b: i32) -> bool {
+    return b == 32 || b == 9 || b == 10 || b == 13;
+}
+
+// Whether `sub` is the bytes of `s` starting at byte `at`.
+fn textMatchAt(s: string, at: i32, sub: string) -> bool {
+    val m = stringByteLength(sub);
+    if (at < 0 || at + m > stringByteLength(s)) return false;
+    var j = 0;
+    while (j < m) {
+        if (stringByteAt(s, at + j) != stringByteAt(sub, j)) return false;
+        j = j + 1;
+    }
+    return true;
+}
+
+// The first byte offset of `sub` in `s` from byte `origin` on, `-1` when
+// absent (an empty `sub` is at `origin`).
+fn textFindFrom(s: string, sub: string, origin: i32) -> i32 {
+    val last = stringByteLength(s) - stringByteLength(sub);
+    var i = origin;
+    while (i <= last) {
+        if (textMatchAt(s, i, sub)) return i;
+        i = i + 1;
+    }
+    return -1;
+}
+
+// The code points that start before byte `end`.
+fn textCodepointsBefore(s: string, end: i32) -> i32 {
+    var k = 0;
+    var p = 0;
+    while (p < end) {
+        if (textIsLead(stringByteAt(s, p))) k = k + 1;
+        p = p + 1;
+    }
+    return k;
+}
+
+// The byte offset where code point `index` starts, the byte length when `s`
+// has `index` code points or fewer.
+fn textCodepointStart(s: string, index: i32) -> i32 {
+    val n = stringByteLength(s);
+    var k = 0;
+    var p = 0;
+    while (p < n) {
+        if (textIsLead(stringByteAt(s, p))) {
+            if (k == index) return p;
+            k = k + 1;
+        }
+        p = p + 1;
+    }
+    return n;
+}
+
+fn textCharsOnWasm(s: string) -> string[] {
+    val n = stringByteLength(s);
+    var out: string[] = [];
+    var p = 0;
+    while (p < n) {
+        var e = p + 1;
+        while (e < n && !textIsLead(stringByteAt(s, e))) {
+            e = e + 1;
+        }
+        out.push(stringByteSlice(s, p, e));
+        p = e;
+    }
+    return out;
+}
+
+// Cut at every `sep` (bytes compared); an empty `sep` cuts before every code
+// point, and then `""` has no piece.
+fn textSplitOnWasm(s: string, sep: string) -> string[] {
+    if (stringByteLength(sep) == 0) return textCharsOnWasm(s);
+    val m = stringByteLength(sep);
+    var out: string[] = [];
+    var pos = 0;
+    var at = textFindFrom(s, sep, 0);
+    while (at >= 0) {
+        out.push(stringByteSlice(s, pos, at));
+        pos = at + m;
+        at = textFindFrom(s, sep, pos);
+    }
+    out.push(stringByteSlice(s, pos, stringByteLength(s)));
+    return out;
+}
+
+// Cut at every `\n`, a `\r` right before it dropped with it; the last piece
+// keeps a trailing `\r`, and `""` is one empty line.
+fn textLinesOnWasm(s: string) -> string[] {
+    val n = stringByteLength(s);
+    var out: string[] = [];
+    var pos = 0;
+    var i = 0;
+    while (i < n) {
+        if (stringByteAt(s, i) == 10) {
+            val e = if (i > pos && stringByteAt(s, i - 1) == 13) i - 1 else i;
+            out.push(stringByteSlice(s, pos, e));
+            pos = i + 1;
+        }
+        i = i + 1;
+    }
+    out.push(stringByteSlice(s, pos, n));
+    return out;
+}
+
+// The maximal runs of bytes that are no space, tab, LF or CR.
+fn textWordsOnWasm(s: string) -> string[] {
+    val n = stringByteLength(s);
+    var out: string[] = [];
+    var i = 0;
+    while (i < n) {
+        if (textIsWordSpace(stringByteAt(s, i))) i = i + 1 else {
+            val start = i;
+            while (i < n && !textIsWordSpace(stringByteAt(s, i))) {
+                i = i + 1;
+            }
+            out.push(stringByteSlice(s, start, i));
+        }
+    }
+    return out;
+}
+
+fn textContainsOnWasm(s: string, sub: string) -> bool {
+    return textFindFrom(s, sub, 0) >= 0;
+}
+
+fn textStartsWithOnWasm(s: string, prefix: string) -> bool {
+    return textMatchAt(s, 0, prefix);
+}
+
+fn textEndsWithOnWasm(s: string, suffix: string) -> bool {
+    return textMatchAt(s, stringByteLength(s)
+        - stringByteLength(suffix), suffix);
+}
+
+// A code point index, `-1` when absent (`0` for an empty `sub`).
+fn textIndexOfOnWasm(s: string, sub: string) -> i32 {
+    val off = textFindFrom(s, sub, 0);
+    if (off < 0) return -1;
+    return textCodepointsBefore(s, off);
+}
+
+// A code point index, `-1` when absent (the length for an empty `sub`).
+fn textLastIndexOfOnWasm(s: string, sub: string) -> i32 {
+    var i = stringByteLength(s) - stringByteLength(sub);
+    while (i >= 0) {
+        if (textMatchAt(s, i, sub)) return textCodepointsBefore(s, i);
+        i = i - 1;
+    }
+    return -1;
+}
+
+// A negative `index` counts from the end (decision 139); outside is absent.
+fn textAtOnWasm(s: string, index: i32) -> ?string {
+    val n = textCodepointsBefore(s, stringByteLength(s));
+    val j = if (index < 0) index + n else index;
+    if (j < 0 || j >= n) return null;
+    return stringByteSlice(s, textCodepointStart(s, j), textCodepointStart(s, j
+        + 1));
+}
+
+fn textTrimStartOnWasm(s: string) -> string {
+    val n = stringByteLength(s);
+    var a = 0;
+    while (a < n && textIsWhite(stringByteAt(s, a))) {
+        a = a + 1;
+    }
+    return stringByteSlice(s, a, n);
+}
+
+fn textTrimEndOnWasm(s: string) -> string {
+    var b = stringByteLength(s);
+    while (b > 0 && textIsWhite(stringByteAt(s, b - 1))) {
+        b = b - 1;
+    }
+    return stringByteSlice(s, 0, b);
+}
+
+fn textTrimOnWasm(s: string) -> string {
+    val n = stringByteLength(s);
+    var a = 0;
+    while (a < n && textIsWhite(stringByteAt(s, a))) {
+        a = a + 1;
+    }
+    var b = n;
+    while (b > a && textIsWhite(stringByteAt(s, b - 1))) {
+        b = b - 1;
+    }
+    return stringByteSlice(s, a, b);
+}
+
+// A `times` below 1 is the empty string.
+fn textRepeatOnWasm(s: string, times: i32) -> string {
+    var out = "";
+    var piece = s;
+    var left = times;
+    while (left > 0) {
+        if (left % 2 == 1) out = out + piece;
+        left = left / 2;
+        if (left > 0) piece = piece + piece;
+    }
+    return out;
+}
+
+// `width` is a byte count: the gap is `width` minus the bytes of `s`, filled
+// with the bytes of `pad` cycled (a cut may fall inside a code point); `s`
+// itself when it is already as long or `pad` is empty.
+fn textPadded(s: string, width: i32, pad: string, start: bool) -> string {
+    val n = stringByteLength(s);
+    val p = stringByteLength(pad);
+    if (width <= n || p == 0) return s;
+    val gap = width - n;
+    val fill = stringByteSlice(textRepeatOnWasm(pad, (gap + p - 1)
+        / p), 0, gap);
+    return if (start) fill + s else s + fill;
+}
+
+fn textPadStartOnWasm(s: string, width: i32, pad: string) -> string {
+    return textPadded(s, width, pad, true);
+}
+
+fn textPadEndOnWasm(s: string, width: i32, pad: string) -> string {
+    return textPadded(s, width, pad, false);
+}
+
+// An empty `pattern` matches before every byte and at the end, as
+// JavaScript's does over its units: `replace` puts `with` in front,
+// `replaceAll` around every byte.
+fn textReplaced(s: string, pattern: string, with: string, all: bool) -> string {
+    val n = stringByteLength(s);
+    val m = stringByteLength(pattern);
+    if (m == 0) {
+        if (!all) return with + s;
+        var spread = with;
+        var i = 0;
+        while (i < n) {
+            spread = spread + stringByteSlice(s, i, i + 1) + with;
+            i = i + 1;
+        }
+        return spread;
+    }
+    var out = "";
+    var pos = 0;
+    var at = textFindFrom(s, pattern, 0);
+    while (at >= 0) {
+        out = out + stringByteSlice(s, pos, at) + with;
+        pos = at + m;
+        at = if (all) textFindFrom(s, pattern, pos) else -1;
+    }
+    return out + stringByteSlice(s, pos, n);
+}
+
+fn textReplaceOnWasm(s: string, pattern: string, with: string) -> string {
+    return textReplaced(s, pattern, with, false);
+}
+
+fn textReplaceAllOnWasm(s: string, pattern: string, with: string) -> string {
+    return textReplaced(s, pattern, with, true);
+}
