@@ -745,6 +745,26 @@ pub const inject_not_record: []const u8 = "inject-not-record";
 /// implement `B`, or whose `B` names no behavior: refused at the argument.
 pub const context_behavior_not_implemented: []const u8 = "context-behavior-not-implemented";
 
+// ── decision 553 — the body markers ──────────────────────────────────────────
+
+/// Decision 553 (2) — a marker whose return type is not the wrapper it names:
+/// a declaration's written return (the parser, `print.zig`), a marked lambda's
+/// expected function type (147, the checker). Located at the marker.
+pub const marker_type_mismatch: []const u8 = "marker-type-mismatch";
+/// Decision 553 (1) — `iter { … }`, `async iter { … }`, `component { … }`
+/// without `->`: refused by the parser (`print.zig`).
+pub const marker_without_arrow: []const u8 = "marker-without-arrow";
+/// Decision 553 (4), 147 — a marked lambda with no expected function type and
+/// no written return type. Located at the marker.
+pub const marker_lambda_without_expected_type: []const u8 = "marker-lambda-without-expected-type";
+/// Decision 553 (1) — a marker on a bodyless declaration: refused by the
+/// parser (`print.zig`, open point B-116-b).
+pub const marker_on_declaration: []const u8 = "marker-on-declaration";
+/// Decision 553 (1) — a `component { -> … }` lambda is parsed and checked;
+/// its lowering is 144 B-116 (iii)'s (open point B-116-e), so it is refused
+/// where it would reach a backend, located at the marker.
+pub const component_lambda_not_lowered: []const u8 = "component-lambda-not-lowered";
+
 // ── Lookup table — every code (skipping aliases & reserved-empties) ─────────
 
 pub const all_codes = [_][]const u8{
@@ -931,6 +951,11 @@ pub const all_codes = [_][]const u8{
     template_lookup_decl_write,
     template_lookup_meta_expr_field,
     template_build_outside_bound,
+    marker_type_mismatch,
+    marker_without_arrow,
+    marker_lambda_without_expected_type,
+    marker_on_declaration,
+    component_lambda_not_lowered,
 };
 
 test "every reserved code has a stable, non-empty spelling" {

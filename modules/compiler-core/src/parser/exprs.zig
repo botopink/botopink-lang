@@ -91,8 +91,112 @@ fn parseAsyncBlockAhead(this: *This, alloc: std.mem.Allocator) ParseError!?Expr 
     return try parsePostfixChain(this, alloc, block);
 }
 
+/// Decision 553 (1) — a marked lambda or `fn` expression at the cursor:
+/// `async { x -> … }`, `iter { -> … }`, `async iter { x -> … }`,
+/// `component { -> … }`, and `<marker> fn(…) { … }`. `->` tells a lambda from
+/// the block forms: `async { … }` stays the block (523), and `iter { … }`,
+/// `async iter { … }`, `component { … }` without it are `marker-without-arrow`
+/// (the iterator's block is `iter loop { … }`, 125). Only the bare word before
+/// `{` or `fn` is a marker: `x.iter { -> }` is a member call, and a function
+/// named `iter` called with a trailing lambda writes its parentheses (525).
+/// `iter loop` / `stream loop` are `genLoopPrefixAhead`'s. Null when the
+/// cursor is on none of them. `atStart` is false for an operand
+/// (`parsePrimary`), where a `{` after a name may be the enclosing
+/// construct's (`case iter { … }` matches a value named `iter`): there a
+/// marker without `->` is left a name, and the refusal is `parseExpr`'s.
+fn parseMarkedAhead(this: *This, alloc: std.mem.Allocator, comptime atStart: bool) ParseError!?Expr {
+    const m = this.markerAt(0) orelse return null;
+    const next = this.peekAt(m.len).kind;
+    if (next == .@"fn" and this.peekAt(m.len + 1).kind == .leftParenthesis) {
+        const markerTok = this.advance();
+        if (m.len == 2) _ = this.advance();
+        var e = try this.parsePrimary(alloc);
+        errdefer e.deinit(alloc);
+        if (e.function.kind.returnType) |rt| {
+            try this.checkFnMarker(.{ .kind = m.kind, .tok = markerTok }, rt, false);
+        }
+        try desugarMarked(alloc, &e.function, m.kind, markerTok);
+        return e;
+    }
+    if (next != .leftBrace) return null;
+    if (!lambdaHeadAt(this, this.current + m.len + 1)) {
+        // `async { … }` — the block (decision 124).
+        if (m.kind == .task and m.len == 1) return parseAsyncBlockAhead(this, alloc);
+        if (!atStart) return null;
+        this.parseError = ParseErrorInfo.fromToken(.markerWithoutArrow, this.peek());
+        return ParseError.UnexpectedToken;
+    }
+    const markerTok = this.advance();
+    if (m.len == 2) _ = this.advance();
+    var e = try this.parsePrimary(alloc);
+    errdefer e.deinit(alloc);
+    try desugarMarked(alloc, &e.function, m.kind, markerTok);
+    return e;
+}
+
+/// Decision 553 (1) — a marked function written as the unmarked one it means,
+/// so the checker's block forms and the four backends' lowering serve it
+/// unchanged: `async { x -> b }` is `{ x -> async { b } }`, `iter { x -> b }`
+/// is `{ x -> iter loop { b; break; } }` and `async iter` the same with a
+/// `stream loop`. The marker stays on the node: the checker reads it against
+/// the expected type (147) and the formatter prints the marked form back. The
+/// function `return`s the block (`tail = .returned`): a typed `fn`
+/// expression's tail would not be its value, and the `return` is the shape
+/// every backend lowers for a generator a lambda answers.
+/// `component` keeps its body as written; the checker checks it and refuses
+/// its lowering until 144 B-116 (iii) (open point B-116-e).
+fn desugarMarked(alloc: std.mem.Allocator, func: *FunctionExpr, kind: ast.EffectKind, markerTok: Token) ParseError!void {
+    const loc = locFromToken(markerTok);
+    func.loc = loc;
+    func.kind.marker = kind;
+    if (kind == .component) return;
+    const body = func.kind.body;
+    const inner: Expr = switch (kind) {
+        .task => blk: {
+            try This.jumpTail(alloc, body, .@"return");
+            break :blk .{ .function = .{ .loc = loc, .kind = .{
+                .syntax = .asyncBlock,
+                .params = try alloc.alloc([]const u8, 0),
+                .body = body,
+            } } };
+        },
+        .iterator, .stream => blk: {
+            const loopBody = try alloc.alloc(Stmt, body.len + 1);
+            errdefer alloc.free(loopBody);
+            for (body, 0..) |st, i| {
+                loopBody[i] = st;
+                if (loopBody[i].tail == .value) loopBody[i].tail = .none;
+            }
+            loopBody[body.len] = .{ .expr = .{ .jump = .{ .loc = loc, .kind = .{ .@"break" = .{ .label = null, .value = null } } } } };
+            const iterPtr = try alloc.create(Expr);
+            iterPtr.* = .{ .identifier = .{ .loc = loc, .kind = .{ .ident = "true" } } };
+            alloc.free(body);
+            break :blk .{ .loop = .{
+                .loc = loc,
+                .keyword = .loop,
+                .generator = kind,
+                .prefixedKeyword = .loop,
+                .iter = iterPtr,
+                .indexRange = null,
+                .params = &.{},
+                .paramsLoc = loc,
+                .condition = true,
+                .body = loopBody,
+                .awaitLoop = false,
+                .label = null,
+            } };
+        },
+        .result, .component => unreachable,
+    };
+    const outer = try alloc.alloc(Stmt, 1);
+    const value = try alloc.create(Expr);
+    value.* = inner;
+    outer[0] = .{ .expr = .{ .jump = .{ .loc = loc, .kind = .{ .@"return" = value } } }, .tail = .returned };
+    func.kind.body = outer;
+}
+
 pub fn parseExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
-    if (try parseAsyncBlockAhead(this, alloc)) |blk| return blk;
+    if (try parseMarkedAhead(this, alloc, true)) |e| return e;
     // The removed `record { … }` literal, before the call-chain path reads
     // `record { … }` as a call with a trailing lambda (see `parsePrimary`).
     if (this.check(.identifier) and std.mem.eql(u8, this.peek().lexeme, "record") and
@@ -1304,7 +1408,7 @@ pub fn parsePrimary(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
         return this.failRemovedAt(.removedRecordLiteral, 0);
     }
 
-    if (try parseAsyncBlockAhead(this, alloc)) |blk| return blk;
+    if (try parseMarkedAhead(this, alloc, false)) |e| return e;
 
     // `try` / `await` are prefix operators binding as the unary `-` does
     // (decision 537): the operand is the next primary with its postfix chain

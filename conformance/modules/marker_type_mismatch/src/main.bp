@@ -1,0 +1,15 @@
+//// Decision 553 (2) — a marker names its return type: `async fn` returns a
+//// `@Task<T>`. `total` writes `i32`, so the marker is refused where it is
+//// written, `marker-type-mismatch`.
+
+async fn total(xs: i32[]) -> i32 {
+    var acc = 0;
+    for (xs) { x ->
+        acc = acc + x;
+    }
+    return acc;
+}
+
+pub fn main() {
+    @print(total([1, 2]));
+}

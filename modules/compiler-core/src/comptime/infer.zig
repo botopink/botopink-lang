@@ -23234,10 +23234,51 @@ fn inferFunctionExpr(env: *Env, func: ast.FunctionExprOf(.untyped), loc: ast.Loc
         break :blk e;
     };
     // Decision 408 — a typed function expression is checked against the
-    // position's function type whatever its return.
-    const typedExpected = if (func.kind.syntax == .fnExpr and func.kind.isTyped()) env.expectedType else null;
+    // position's function type whatever its return. Decision 553 (4) — a
+    // marked lambda is too (147).
+    const typedExpected = if ((func.kind.syntax == .fnExpr and func.kind.isTyped()) or func.kind.marker != null) env.expectedType else null;
     env.expectedType = null;
     return inferFunctionExprExpected(env, func, loc, typedExpected orelse fallibleExpected, false);
+}
+
+/// Decision 553 (4), 147 — a marked lambda (or untyped `fn` expression) is
+/// checked against its expected function type: with none it is
+/// `marker-lambda-without-expected-type`, and an expected return that is
+/// another type than the marker's wrapper is `marker-type-mismatch`, both at
+/// the marker. An expected return still free (a type parameter) agrees: the
+/// marked body makes the wrapper. A typed `fn` expression's marker was checked
+/// against its written return by the parser.
+fn checkLambdaMarker(env: *Env, func: ast.FunctionExprOf(.untyped), loc: ast.Loc, expected: ?*T.Type) InferError!void {
+    const m = func.kind.marker orelse return;
+    if (func.kind.returnType != null) return;
+    const want: ?*T.Type = blk: {
+        const e = expected orelse break :blk null;
+        const d = e.deref();
+        if (d.isUnbound()) break :blk null;
+        break :blk d;
+    };
+    const w = want orelse {
+        env.lastError = TypeError.custom(
+            try std.fmt.allocPrint(env.arena, "{s}: a lambda marked `{s}` needs the function type it is written for", .{ diagnostics.marker_lambda_without_expected_type, m.markerWord() }),
+            try std.fmt.allocPrint(env.arena, "A marked lambda takes its type from where it is written (decisions 147, 553): annotate the binding (`val f: fn(x: i32) -> @{s}<i32> = …`) or pass it where a function type is expected.", .{m.returnWrapper()}),
+        ).withLoc(loc);
+        return error.TypeError;
+    };
+    // Not a function type: the ordinary unification names the disagreement.
+    if (w.* != .func) return;
+    const r = w.func.ret.deref();
+    if (r.isUnbound()) return;
+    if (r.* == .named and std.mem.eql(u8, r.named.name, m.returnWrapper())) return;
+    env.lastError = TypeError.custom(
+        try std.fmt.allocPrint(env.arena, "{s}: a lambda marked `{s}` answers `@{s}<…>`, and the function type it is written for returns `{s}`", .{
+            diagnostics.marker_type_mismatch,
+            m.markerWord(),
+            m.returnWrapper(),
+            try snapshotMod.typeSignatureOf(env.arena, w.func.ret),
+        }),
+        try std.fmt.allocPrint(env.arena, "Each marker answers its wrapper (decision 553): `async` a `@Task`, `iter` an `@Iterator`, `async iter` a `@Stream`, `component` a `@Component`. Write the marker the expected type names, or drop it.", .{}),
+    ).withLoc(loc);
+    return error.TypeError;
 }
 
 /// Decision 124 — `async { … }`: a closed block worth `@Task<T>`, legal in any
@@ -23365,6 +23406,7 @@ fn inferFunctionExprExpected(
     expected: ?*T.Type,
     params_only: bool,
 ) InferError!TypedExpr {
+    try checkLambdaMarker(env, func, loc, expected);
     // Decision 408 — the typed function expression `fn(x: T, …) -> R { … }`
     // is legal in every position. The member a decorator hands to
     // `decl.addMember(name, fn…)` arrives with its written signature as
@@ -23555,6 +23597,23 @@ fn inferFunctionExprExpectedInner(
     // `case` arm's block keeps it: `await` / `yield` reach the enclosing
     // function (decision 541 (2)).
     if (!armBlock) env.starFn = null;
+    // Decision 553 (1) — a `component { -> … }` lambda's body is a component
+    // body: `use` and `await` are its (open point B-116-e). The other markers
+    // need nothing here: the parser wrote their body as the block form they
+    // name, which opens its own context.
+    const componentLambda = func.kind.marker == .component;
+    const savedFnEffectLambda = env.fnEffect;
+    const savedInContextLambda = env.inContextFn;
+    defer {
+        env.fnEffect = savedFnEffectLambda;
+        env.inContextFn = savedInContextLambda;
+    }
+    if (componentLambda) {
+        env.starFn = starCtxFromEffect(.component, try env.freshVar(), null);
+        env.useConstruct = null;
+        env.fnEffect = .component;
+        env.inContextFn = true;
+    }
 
     // Pull expected param/return types out of `expected`, but only when it is a
     // function type whose arity matches this lambda. This lets `val f: fn(A, B)
@@ -23638,6 +23697,14 @@ fn inferFunctionExprExpectedInner(
         }
         break :blk tail.getType();
     } else try env.namedType("void");
+    if (componentLambda) {
+        // Checked; its lowering is B-116 (iii)'s.
+        env.lastError = TypeError.custom(
+            try std.fmt.allocPrint(env.arena, "{s}: a `component` lambda is checked but not lowered yet (144 B-116 (iii))", .{diagnostics.component_lambda_not_lowered}),
+            "Write the component as a declaration, `component fn Name(…) -> @Component<R> { … }`, until the lambda form lowers.",
+        ).withLoc(loc);
+        return error.TypeError;
+    }
     if (!typedFn) if (expRet) |er| {
         // A lambda whose last expression ends with `;` answers nothing: say
         // what the position expected, then what the lambda answers.

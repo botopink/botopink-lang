@@ -75,7 +75,9 @@ The server handles `initialize` / `shutdown`, `didOpen` / `didChange` /
   enum members, record fields (`property`), generic type parameters, parameter
   *uses* inside the body, named-argument labels and `true`/`false`; the contextual
   effect words are `keyword` only in position — `async` right before `{`, `iter` /
-  `stream` right before `loop` / `while` / `for` (decisions 124, 125) — and stay
+  `stream` right before `loop` / `while` / `for` (decisions 124, 125), and the body
+  markers `async`, `iter`, `async iter`, `component` right before `fn` or `{`
+  (decision 553) — and stay
   names elsewhere (`g.iter()`, `val stream = 1`, `async.allOf(…)`); a fn's
   `:label` and a loop's label (`for :outer`, `break :outer`) are `keyword`; effect
   fns carry the `async` modifier — a fn whose written return is one of the five

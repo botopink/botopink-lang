@@ -904,7 +904,7 @@ pub const Formatter = struct {
                 },
             },
             .useHook => |uh| this.concat(try this.text("use "), try this.fmtExpr(uh.kind.inner.*)),
-            .function => |func| switch (func.kind.syntax) {
+            .function => |func| if (func.kind.marker) |m| try this.fmtMarkedFn(func, m) else switch (func.kind.syntax) {
                 .lambda => try this.fmtLambdaAt(func.loc.line, func.kind.params, func.kind.body, true),
                 .fnExpr => try this.fmtFnExpr(func.kind.params, func.kind.body, func.kind.paramTypes, func.kind.returnType),
                 // `async { … }` (decision 124): the block's statements, one per
@@ -1823,6 +1823,39 @@ pub const Formatter = struct {
     /// `calcular(fator: 2) { a, b -> a + b }`, while `{ -> 42 }` and
     /// `{ n -> n * 2 }` in argument position both parse. Printing the one-line
     /// form there would emit text this compiler refuses.
+    /// Decision 553 (1) — a marked lambda or `fn` expression, printed as
+    /// written: the marker, then the function with the body the parser wrapped
+    /// in its block form (`parser/exprs.zig` `desugarMarked`) unwrapped — the
+    /// `async { … }` block's statements, its tail back as the value it was, or
+    /// the `iter loop`'s without the `break;` the parser appended.
+    fn fmtMarkedFn(this: *Formatter, func: ast.FunctionExpr, marker: ast.EffectKind) !*const Doc {
+        const body = try this.markedBody(func.kind.body, marker);
+        const word = try this.text(try std.fmt.allocPrint(this.arena, "{s} ", .{marker.markerWord()}));
+        return this.concat(word, switch (func.kind.syntax) {
+            .fnExpr => try this.fmtFnExpr(func.kind.params, body, func.kind.paramTypes, func.kind.returnType),
+            else => try this.fmtLambdaAt(func.loc.line, func.kind.params, body, true),
+        });
+    }
+
+    /// The statements a marked function was written with.
+    fn markedBody(this: *Formatter, body: []ast.Stmt, marker: ast.EffectKind) ![]ast.Stmt {
+        if (marker == .component or body.len != 1) return body;
+        const inner = if (body[0].tail == .returned) tailValue(body[0]) else body[0].expr;
+        switch (inner) {
+            .function => |f| if (f.kind.syntax == .asyncBlock) {
+                const copy = try this.arena.dupe(ast.Stmt, f.kind.body);
+                if (copy.len > 0 and copy[copy.len - 1].tail == .returned) {
+                    copy[copy.len - 1].expr = tailValue(copy[copy.len - 1]);
+                    copy[copy.len - 1].tail = .value;
+                }
+                return copy;
+            },
+            .loop => |lp| if (lp.generator != null and lp.body.len > 0) return lp.body[0 .. lp.body.len - 1],
+            else => {},
+        }
+        return body;
+    }
+
     fn fmtLambdaAt(this: *Formatter, lambdaLine: usize, params: []const []const u8, body: []ast.Stmt, arrow_when_empty: bool) !*const Doc {
         if (arrow_when_empty and body.len == 1 and body[0].expr.getLoc().line == lambdaLine) {
             const inlineValue = switch (body[0].expr) {
@@ -2686,12 +2719,13 @@ pub const Formatter = struct {
 
     fn fmtInterfaceMethod(this: *Formatter, m: ast.BehaviorMethod) !*const Doc {
         const pub_prefix: *const Doc = if (m.isPub) try this.text("pub ") else try this.text("");
+        const markerKw: []const u8 = if (m.marker) |k| try std.fmt.allocPrint(this.arena, "{s} ", .{k.markerWord()}) else "";
         const fn_kw = if (m.is_default)
-            try this.text("default fn ")
+            try this.text(try std.fmt.allocPrint(this.arena, "default {s}fn ", .{markerKw}))
         else if (m.is_declare)
             try this.text("declare fn ")
         else
-            try this.text("fn ");
+            try this.text(try std.fmt.allocPrint(this.arena, "{s}fn ", .{markerKw}));
         const sig = try this.concatAll(&.{
             pub_prefix,
             fn_kw,
@@ -3052,8 +3086,9 @@ pub const Formatter = struct {
         else
             try this.text(m.name);
 
+        const markerKw: []const u8 = if (m.marker) |k| try std.fmt.allocPrint(this.arena, "{s} ", .{k.markerWord()}) else "";
         return this.concatAll(&.{
-            try this.text("fn "),
+            try this.text(try std.fmt.allocPrint(this.arena, "{s}fn ", .{markerKw})),
             nameDoc,
             try this.fmtSignature(m.params, this.nil()),
             try this.text(" "),
@@ -3081,7 +3116,9 @@ pub const Formatter = struct {
         const pubKw: []const u8 = if (f.isPub and !f.pubByDefault) "pub " else "";
         const defaultKw: []const u8 = if (f.isDefault and f.defaultBy == null) "default " else "";
         const declareKw: []const u8 = if (f.isDeclare) "declare " else "";
-        const prefix = try this.text(try std.fmt.allocPrint(this.arena, "{s}{s}{s}fn ", .{ pubKw, defaultKw, declareKw }));
+        // Decision 553 (1) — the body marker, right before `fn`.
+        const markerKw: []const u8 = if (f.marker) |m| try std.fmt.allocPrint(this.arena, "{s} ", .{m.markerWord()}) else "";
+        const prefix = try this.text(try std.fmt.allocPrint(this.arena, "{s}{s}{s}{s}fn ", .{ pubKw, defaultKw, declareKw, markerKw }));
         if (f.isDeclare and f.body.len == 0) {
             return this.concatAll(&.{
                 try this.fmtAnnotations(f.annotations),

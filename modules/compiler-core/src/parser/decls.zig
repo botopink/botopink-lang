@@ -360,6 +360,65 @@ pub fn isActivationStmt(this: *This) bool {
     return this.peekAt(offset).kind == .star;
 }
 
+// ── body markers (decision 553) ───────────────────────────────────────────────
+
+/// Decision 553 (1) — the body marker whose first word sits at `offset`:
+/// `async`, `iter`, `component` (one token each) or `async iter` (two). The
+/// words are contextual (the lexer reads identifiers): this says only that the
+/// words are there, and each caller reads what must follow them (`fn`, or a
+/// lambda's `{`). `len` is the marker's token count.
+pub const MarkerAt = struct { kind: ast.EffectKind, len: usize };
+
+pub fn markerAt(this: *This, offset: usize) ?MarkerAt {
+    const t = this.peekAt(offset);
+    if (t.kind != .identifier) return null;
+    if (std.mem.eql(u8, t.lexeme, "async")) {
+        const n = this.peekAt(offset + 1);
+        if (n.kind == .identifier and std.mem.eql(u8, n.lexeme, "iter")) return .{ .kind = .stream, .len = 2 };
+        return .{ .kind = .task, .len = 1 };
+    }
+    if (std.mem.eql(u8, t.lexeme, "iter")) return .{ .kind = .iterator, .len = 1 };
+    if (std.mem.eql(u8, t.lexeme, "component")) return .{ .kind = .component, .len = 1 };
+    return null;
+}
+
+/// True when a marker followed by `fn` starts at `offset` (`async fn`,
+/// `async iter fn`, …).
+pub fn markedFnAt(this: *This, offset: usize) bool {
+    const m = markerAt(this, offset) orelse return false;
+    return this.peekAt(offset + m.len).kind == .@"fn";
+}
+
+/// A marker written before `fn`: its effect and its first token.
+pub const FnMarker = struct { kind: ast.EffectKind, tok: Token };
+
+/// Consumes the marker before a `fn` (the cursor on its first word), or
+/// returns null when no marker followed by `fn` is next.
+pub fn parseFnMarker(this: *This) ?FnMarker {
+    if (!markedFnAt(this, 0)) return null;
+    const m = markerAt(this, 0).?;
+    const tok = this.advance();
+    if (m.len == 2) _ = this.advance();
+    return .{ .kind = m.kind, .tok = tok };
+}
+
+/// Decision 553 (1), (2) — a marker says how a BODY compiles, so a bodyless
+/// declaration takes none (`marker-on-declaration`, open point B-116-b), and
+/// its return type is the one wrapper it names, written literally
+/// (`marker-type-mismatch`; no return type at all is refused the same way,
+/// B-116-f). Both located at the marker.
+pub fn checkFnMarker(this: *This, marker: ?FnMarker, returnType: ?TypeRef, bodyless: bool) ParseError!void {
+    const m = marker orelse return;
+    if (bodyless) {
+        this.parseError = ParseErrorInfo.fromToken(.markerOnDeclaration, m.tok);
+        return ParseError.UnexpectedToken;
+    }
+    if (ast.EffectKind.fromReturnType(returnType) != m.kind) {
+        this.parseError = ParseErrorInfo.fromToken(.markerTypeMismatch, m.tok);
+        return ParseError.UnexpectedToken;
+    }
+}
+
 pub fn parseFnDecl(this: *This, alloc: std.mem.Allocator) ParseError!FnDecl {
     const annotations = try this.parseAnnotations(alloc);
     errdefer {
@@ -376,6 +435,9 @@ pub fn parseFnDecl(this: *This, alloc: std.mem.Allocator) ParseError!FnDecl {
     if (this.check(.star) and this.peekAt(1).kind == .@"fn") {
         return failDeprecatedStarFn(this);
     }
+    // Decision 553 (1) — `[#[…]] [pub] [default] <marker> fn` (open point
+    // B-116-c): the marker sits right before `fn`.
+    const marker = parseFnMarker(this);
     const fnTok = try this.consume(.@"fn");
     // Decision 289 — `pub default fn (…)`: the module's default function with
     // no name in its module.
@@ -384,13 +446,32 @@ pub fn parseFnDecl(this: *This, alloc: std.mem.Allocator) ParseError!FnDecl {
         anon.isDefault = true;
         anon.anonymousDefault = true;
         anon.nameLoc = parser.Parser.locFromToken(fnTok);
+        try applyFnMarker(this, alloc, &anon, marker);
         return anon;
     }
     const nameTok = try this.consume(.identifier);
     var fn_decl = try this.parseFnBody(alloc, nameTok.lexeme, isPub, isDeclare, annotations);
     fn_decl.isDefault = isDefault;
     fn_decl.nameLoc = parser.Parser.locFromToken(nameTok);
+    try applyFnMarker(this, alloc, &fn_decl, marker);
     return fn_decl;
+}
+
+/// Checks a declaration's marker and records it: the effect is the marker's
+/// (an `iter fn` whose body does not yield is still a generator, decision 553
+/// (5) keeping the factory for the unmarked signature). Frees `f` on a
+/// refusal, its annotations aside.
+fn applyFnMarker(this: *This, alloc: std.mem.Allocator, f: *FnDecl, marker: ?FnMarker) ParseError!void {
+    const m = marker orelse return;
+    checkFnMarker(this, m, f.returnType, f.isDeclare and f.body.len == 0) catch |err| {
+        // The annotations stay `parseFnDecl`'s to free (its `errdefer`).
+        f.annotations = &.{};
+        f.deinit(alloc);
+        return err;
+    };
+    f.marker = m.kind;
+    f.markerLoc = parser.Parser.locFromToken(m.tok);
+    f.effect = m.kind;
 }
 
 /// `val name = #[...] fn(params) -> R { body }` — val-form annotated function.
@@ -700,6 +781,8 @@ pub fn parseExtendsClause(this: *This, alloc: std.mem.Allocator) ParseError![]co
 /// `is_declare fn ` → abstract slot (no body, `is_declare = true`).
 /// Plain `fn` → always requires a body.
 pub fn parseMethodDecl(this: *This, alloc: std.mem.Allocator, is_declare: bool, isPub: bool) ParseError!BehaviorMethod {
+    // Decision 553 (1) — `[pub] [declare] <marker> fn`.
+    const marker = parseFnMarker(this);
     _ = try this.consume(.@"fn");
     const name = (try this.consume(.identifier)).lexeme;
 
@@ -714,6 +797,9 @@ pub fn parseMethodDecl(this: *This, alloc: std.mem.Allocator, is_declare: bool, 
     var returnType = sig.returnType;
     const returnTypeLoc = sig.returnTypeLoc;
     errdefer if (returnType) |*rt| rt.deinit(alloc);
+    try checkFnMarker(this, marker, returnType, is_declare);
+    const markerKind: ?ast.EffectKind = if (marker) |m| m.kind else null;
+    const markerLoc: ast.Loc = if (marker) |m| parser.Parser.locFromToken(m.tok) else .{ .line = 0, .col = 0 };
 
     if (is_declare) {
         _ = try this.consume(.semicolon);
@@ -743,6 +829,8 @@ pub fn parseMethodDecl(this: *This, alloc: std.mem.Allocator, is_declare: bool, 
         .is_default = false,
         .is_declare = false,
         .isPub = isPub,
+        .marker = markerKind,
+        .markerLoc = markerLoc,
     };
 }
 
@@ -867,7 +955,7 @@ pub fn parseImplementMethods(this: *This, alloc: std.mem.Allocator) ParseError![
     }
 
     while (!this.check(.rightBrace) and !this.check(.endOfFile)) {
-        if (this.check(.@"fn")) {
+        if (this.check(.@"fn") or markedFnAt(this, 0)) {
             const method = try this.parseImplementMethod(alloc);
             try methods.append(alloc, method);
         } else {
@@ -879,6 +967,9 @@ pub fn parseImplementMethods(this: *This, alloc: std.mem.Allocator) ParseError![
 }
 
 pub fn parseImplementMethod(this: *This, alloc: std.mem.Allocator) ParseError!ImplementMethod {
+    // Decision 553 (1) — `<marker> fn`: the return is the behavior member's,
+    // so the marker is checked against a return written here, if any.
+    const marker = parseFnMarker(this);
     _ = try this.consume(.@"fn");
 
     const firstTok = try this.consume(.identifier);
@@ -903,7 +994,8 @@ pub fn parseImplementMethod(this: *This, alloc: std.mem.Allocator) ParseError!Im
 
     if (this.match(.rightArrow)) {
         var rt = try this.parseTypeRef(alloc);
-        rt.deinit(alloc); // ImplementMethod has no returnType field
+        defer rt.deinit(alloc); // ImplementMethod has no returnType field
+        try checkFnMarker(this, marker, rt, false);
     }
 
     try refuseDiscardParam(this);
@@ -917,6 +1009,8 @@ pub fn parseImplementMethod(this: *This, alloc: std.mem.Allocator) ParseError!Im
         .params = params,
         .body = body,
         .loc = parser.Parser.locFromToken(firstTok),
+        .marker = if (marker) |m| m.kind else null,
+        .markerLoc = if (marker) |m| parser.Parser.locFromToken(m.tok) else .{ .line = 0, .col = 0 },
     };
 }
 
@@ -1392,7 +1486,7 @@ fn failAt(this: *This, kind: parser.ParseErrorType, tok: Token) ParseError {
 /// True when the current token starts a member of a `type` body (a method,
 /// optionally annotated) rather than a variant or section.
 fn startsTypeMember(this: *This) bool {
-    return this.check(.@"pub") or this.check(.@"fn") or this.check(.declare) or
+    return this.check(.@"pub") or this.check(.@"fn") or this.check(.declare) or markedFnAt(this, 0) or
         (this.check(.hash) and this.peekAt(1).kind == .leftSquareBracket);
 }
 
@@ -1797,6 +1891,7 @@ fn parseBehaviorBody(this: *This, alloc: std.mem.Allocator, name: []const u8, ex
             try expectMemberSemicolon(this);
             try fields.append(alloc, .{ .name = fieldName, .typeRef = typeRef, .comments = memberComments });
         } else if (this.check(.default) or this.check(.@"fn") or this.check(.declare) or
+            markedFnAt(this, 0) or
             this.check(.hash) or (this.check(.at) and this.peekAt(1).kind == .leftSquareBracket))
         {
             const memberAnnotations = try this.parseAnnotations(alloc);
@@ -1842,6 +1937,9 @@ fn expectMemberSemicolon(this: *This) ParseError!void {
 /// One `fn` member of a `behavior`: a signature ending with `;`, or — for a
 /// `default fn` — a body ending with `}` (no separator after it).
 fn parseBehaviorMethod(this: *This, alloc: std.mem.Allocator, is_default: bool) ParseError!BehaviorMethod {
+    // Decision 553 (1) — `[default] <marker> fn`; only a `default fn` has a
+    // body, so only it takes a marker.
+    const marker = parseFnMarker(this);
     _ = try this.consume(.@"fn");
     const methodName = (try this.consume(.identifier)).lexeme;
     const sig = try parseSignature(this, alloc);
@@ -1855,6 +1953,7 @@ fn parseBehaviorMethod(this: *This, alloc: std.mem.Allocator, is_default: bool) 
     var returnType = sig.returnType;
     const returnTypeLoc = sig.returnTypeLoc;
     errdefer if (returnType) |*rt| rt.deinit(alloc);
+    try checkFnMarker(this, marker, returnType, !is_default);
 
     if (!is_default) {
         try expectMemberSemicolon(this);
@@ -1880,6 +1979,8 @@ fn parseBehaviorMethod(this: *This, alloc: std.mem.Allocator, is_default: bool) 
         .returnTypeLoc = returnTypeLoc,
         .body = body,
         .is_default = true,
+        .marker = if (marker) |m| m.kind else null,
+        .markerLoc = if (marker) |m| parser.Parser.locFromToken(m.tok) else .{ .line = 0, .col = 0 },
     };
 }
 

@@ -1549,3 +1549,50 @@ test "format: a label on continue prints as on break" {
         \\}
     );
 }
+
+test "format: body markers print as written (decision 553)" {
+    try h.assertFormat(std.testing.allocator,
+        \\pub async fn one() -> @Task<i32> {
+        \\    return 1;
+        \\}
+        \\
+        \\iter fn two() -> @Iterator<i32> {
+        \\    yield 2;
+        \\}
+        \\
+        \\async iter fn three() -> @Stream<i32> {
+        \\    yield 3;
+        \\}
+        \\
+        \\component fn Four() -> @Component<i32> {
+        \\    return 4;
+        \\}
+        \\
+        \\type Grid(n: i32) {
+        \\    iter fn each(self: Self) -> @Iterator<i32> {
+        \\        yield self.n;
+        \\    }
+        \\}
+        \\
+        \\behavior Source {
+        \\    fn base(self: Self) -> i32;
+        \\
+        \\    default async fn scaled(self: Self) -> @Task<i32> {
+        \\        return self.base();
+        \\    }
+        \\}
+        \\
+        \\fn main() -> @Task<void> {
+        \\    val f: fn(x: i32) -> @Task<i32> = async { x -> await one() + x };
+        \\    val g: fn(n: i32) -> @Iterator<i32> = iter { n ->
+        \\        yield n;
+        \\        yield n + 1;
+        \\    };
+        \\    val s: fn() -> @Stream<i32> = async iter { ->
+        \\        yield await one();
+        \\    };
+        \\    val k: fn(x: i32) -> @Task<i32> = async fn(x) { await one() };
+        \\    @print(await f(1));
+        \\}
+    );
+}

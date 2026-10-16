@@ -160,6 +160,26 @@ read, `jumpTail`) and `async { … }` (its tail wrapped in `return`, which leave
 A trailing `{` without `->` is a block too (`TrailingLambda.isBlock`, located at its `{`): the
 checker refuses it where the call expects a function, and `botopink format` writes it back as
 `{ -> … }`. `@block` is a parse error, `removed-block-builtin`, at the builtin.
+
+**Decision 553 (1) — the body markers.** `async`, `iter`, `async iter` and `component` stay contextual
+words (the lexer reads identifiers); `decls.markerAt` reads one at an offset, `markedFnAt` one followed
+by `fn`. A declaration takes it right before `fn` — `[#[…]] [pub] [default] [declare] <marker> fn`
+(`checkMarkedFn` at the top level, `startsTypeMember`, a behavior body, an implement body;
+`parseFnMarker` consumes it in `parseFnDecl`, `parseMethodDecl`, `parseBehaviorMethod` and
+`parseImplementMethod`) — and `checkFnMarker` refuses, at the marker, one on a bodyless declaration
+(`marker-on-declaration`) and one whose written return is not the wrapper it names, or no return at all
+(`marker-type-mismatch`; an implement method's return is checked when written). `FnDecl.marker` /
+`BehaviorMethod.marker` / `ImplementMethod.marker` keep it, and a marked `FnDecl`'s `effect` is the
+marker's (an unmarked one keeps `EffectKind.ofFn`). In an expression `exprs.parseMarkedAhead` reads
+`<marker> { params -> … }` and `<marker> fn(…) { … }` (`lambdaHeadAt` tells the lambda from a block):
+`async { … }` without `->` stays the block, and `iter` / `async iter` / `component` before a `{`
+without `->` are `marker-without-arrow` at statement start (`parseExpr`) and a name in an operand
+(`parsePrimary`: `case iter { … }`). `desugarMarked` writes the marked function as the unmarked one it
+means, `FunctionExpr.kind.marker` set: `async { x -> b }` is `{ x -> return async { b }; }`,
+`iter { x -> b }` is `{ x -> return iter loop { b; break; }; }` and `async iter` the same with a
+`stream loop` (the `return` is `tail = .returned`); `component` keeps its body. A marked trailing
+lambda (`f(1) async { … }`) is not parsed. A body's tail `await e` / `try e` is its value
+(`tailLeaves`, decision 537), so `returnTail` / `jumpTail` wrap it in the `return`.
 A trailing lambda stays a `TrailingLambda` in the parser's tree (the formatter prints it as written); the checker
 lowers it to the call's last argument (`ast.lowerTrailingLambdas`, `comptime/AGENTS.md`).
 

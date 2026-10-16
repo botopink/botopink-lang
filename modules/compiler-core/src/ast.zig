@@ -1172,6 +1172,17 @@ pub fn FunctionExprOf(comptime phase: Phase) type {
         paramTypes: []const TypeRef = &.{},
         /// The `-> R` a typed function expression writes; null when none.
         returnType: ?TypeRef = null,
+        /// Decision 553 (1) — the body marker written before the lambda's
+        /// brace or the `fn` (`async { x -> … }`, `iter fn(n) { … }`), or
+        /// null. The parser writes the marked function as the unmarked one it
+        /// means, its body the one block form the marker names
+        /// (`async { x -> b }` is `{ x -> async { b } }`, `iter { x -> b }` is
+        /// `{ x -> iter loop { b; break; } }`, `async iter` a `stream loop`),
+        /// so the four backends lower nothing new; the checker reads the
+        /// marker against the expected type (147) and the formatter prints
+        /// the marked form back. A `component` lambda keeps its body as
+        /// written. Dumped only when written.
+        marker: ?EffectKind = null,
 
         /// Dumped without the decision-370 fields unless they are written, so
         /// an untyped function expression dumps as it always did.
@@ -1190,6 +1201,10 @@ pub fn FunctionExprOf(comptime phase: Phase) type {
             if (this.returnType) |rt| {
                 try jws.objectField("returnType");
                 try jws.write(rt);
+            }
+            if (this.marker) |m| {
+                try jws.objectField("marker");
+                try jws.write(m);
             }
             try jws.endObject();
         }
@@ -2069,6 +2084,11 @@ pub const BehaviorMethod = struct {
     body: ?[]Stmt,
     /// true when declared with `default fn` in an interface body
     is_default: bool = false,
+    /// Decision 553 (1) — the body marker written before `fn`, or null; the
+    /// parser checks it against the return's wrapper. Dumped only when written.
+    marker: ?EffectKind = null,
+    /// Where the marker is written. Left out of the AST dump.
+    markerLoc: Loc = .{ .line = 0, .col = 0 },
     /// true when declared with `declare fn` inside a struct/record/enum body
     /// or an interface body (bodyless, typed from the signature)
     is_declare: bool = false,
@@ -2131,7 +2151,7 @@ pub const BehaviorMethod = struct {
     }
 
     pub fn jsonStringify(this: BehaviorMethod, jws: anytype) !void {
-        return stringifyOmitting(this, jws, &.{ "returnTypeLoc", "from_prelude" }, &.{ "comments", "trailingComment" });
+        return stringifyOmitting(this, jws, &.{ "returnTypeLoc", "from_prelude", "markerLoc" }, &.{ "comments", "trailingComment", "marker" });
     }
 };
 
@@ -3632,6 +3652,20 @@ pub const EffectKind = enum {
         return e;
     }
 
+    /// Decision 553 (1) — the body marker that names this effect, as written
+    /// before `fn` and before a lambda's brace: `async`, `iter`, `async iter`,
+    /// `component`. `@Result` takes none (a failure changes nothing of how a
+    /// body runs).
+    pub fn markerWord(self: EffectKind) []const u8 {
+        return switch (self) {
+            .result => "",
+            .task => "async",
+            .iterator => "iter",
+            .stream => "async iter",
+            .component => "component",
+        };
+    }
+
     /// `ofFn` for a method, whose body is optional (a bodyless member is a
     /// declaration and keeps the wrapper's effect).
     pub fn ofMethod(rt: ?TypeRef, body: ?[]const Stmt) ?EffectKind {
@@ -3948,6 +3982,13 @@ pub const FnDecl = struct {
     /// The function's effect, or null for a plain function. Set from a
     /// `#[@<effect>]` annotation. The return wrapper carries the type params.
     effect: ?EffectKind = null,
+    /// Decision 553 (1) — the body marker written before `fn` (`async fn`,
+    /// `iter fn`, `async iter fn`, `component fn`), or null. The parser checks
+    /// it against the return's wrapper (`marker-type-mismatch`) and sets
+    /// `effect` from it. Dumped only when written.
+    marker: ?EffectKind = null,
+    /// Where the marker is written. Left out of the AST dump.
+    markerLoc: Loc = .{ .line = 0, .col = 0 },
     /// `declare fn` ---- a bodyless declaration typed from the signature alone.
     /// Required for `@[external(…)]` FFI fns (the only valid annotated form).
     isDeclare: bool = false,
@@ -4053,7 +4094,7 @@ pub const FnDecl = struct {
     /// Dumped without `returnTypeLoc`: the location is a diagnostic aid, not
     /// surface, and the AST dumps are snapshot-compared.
     pub fn jsonStringify(this: FnDecl, jws: anytype) !void {
-        return stringifyOmitting(this, jws, &.{ "returnTypeLoc", "nameLoc" }, &.{ "typeGuardType", "anonymousDefault", "defaultBy", "pubByDefault" });
+        return stringifyOmitting(this, jws, &.{ "returnTypeLoc", "nameLoc", "markerLoc" }, &.{ "typeGuardType", "anonymousDefault", "defaultBy", "pubByDefault", "marker" });
     }
 
     pub fn deinit(this: *FnDecl, allocator: std.mem.Allocator) void {
@@ -4346,6 +4387,12 @@ pub const ImplementMethod = struct {
     body: []Stmt,
     /// Where the method's name is written (01 step 9). Left out of the dump.
     loc: Loc = .{ .line = 0, .col = 0 },
+    /// Decision 553 (1) — the body marker written before `fn`, or null; the
+    /// checker reads it against the behavior member's return. Dumped only
+    /// when written.
+    marker: ?EffectKind = null,
+    /// Where the marker is written. Left out of the AST dump.
+    markerLoc: Loc = .{ .line = 0, .col = 0 },
 
     pub fn deinit(this: *ImplementMethod, allocator: std.mem.Allocator) void {
         for (this.params) |*p| p.deinit(allocator);
@@ -4355,7 +4402,7 @@ pub const ImplementMethod = struct {
     }
 
     pub fn jsonStringify(this: ImplementMethod, jws: anytype) !void {
-        return stringifyOmitting(this, jws, &.{"loc"}, &.{});
+        return stringifyOmitting(this, jws, &.{ "loc", "markerLoc" }, &.{"marker"});
     }
 };
 

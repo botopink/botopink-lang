@@ -320,6 +320,19 @@ Where the `E` is inferred (`env.inferredErrorScope`: an unannotated block, or an
 joins it through `unifyErrorChannel`, and two errors that do not unify are
 `gen-infer-conflicting-errors`.
 
+**Decision 553 (4) — a marked lambda.** The parser writes `async { x -> b }`, `iter { x -> b }` and
+`async iter { x -> b }` as the unmarked lambda returning the block form they name
+(`parser/AGENTS.md`), `FunctionExpr.kind.marker` set, so the block's own context admits `await` /
+`yield` and the four backends lower nothing new. `inferFunctionExpr` keeps the position's expectation
+for a marked lambda, and `checkLambdaMarker` (the top of `inferFunctionExprExpected`) reads the marker
+against it (147): none, or a type still free, is `marker-lambda-without-expected-type`, an expected
+function type whose return is another wrapper is `marker-type-mismatch`, both at the marker; an
+expected return still free agrees (the body makes the wrapper). A typed `fn` expression's marker is
+the parser's to check. A `component { -> … }` lambda's body is checked as a component body (`starFn`
+`.component`, `inContextFn`, no `useConstruct`) and then refused, `component-lambda-not-lowered`, at the
+marker: its lowering is B-116 (iii)'s. A declaration's marker sets `FnDecl.effect` (the parser), so
+`starCtxFromEffect` admits by it; an unmarked body that yields still compiles until P4.
+
 **Decision 125 — `iter` / `stream` loops.** The parser writes `iter while` /
 `iter for` as the prefixed `loop { <the written loop>; break; }`
 (`LoopExprOf.prefixedKeyword` keeps the written keyword for the formatter), so

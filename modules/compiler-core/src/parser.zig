@@ -355,6 +355,19 @@ pub const ParseErrorType = enum {
     /// `1e`, `2.5ex` — an exponent without digits (decision 247). Located at
     /// the `e`.
     numberExponentWithoutDigits,
+    /// Decision 553 (2) — `async fn f() -> i32`, `iter fn g()`: a marker whose
+    /// return type is not the wrapper it names, written literally (or no
+    /// return type at all, open point B-116-f). Located at the marker.
+    markerTypeMismatch,
+    /// Decision 553 (1) — `iter { … }`, `component { … }`, `async iter { … }`
+    /// without `->`: a marker before `{` opens a lambda; the block forms are
+    /// `async { … }` (523) and `iter loop { … }` / `stream loop { … }` (125).
+    /// Located at the marker.
+    markerWithoutArrow,
+    /// Decision 553 (1) — `async fn f() -> @Task<i32>;`, `declare async fn …`,
+    /// a behavior's bodyless member: a marker says how a body compiles, and a
+    /// declaration has none (open point B-116-b). Located at the marker.
+    markerOnDeclaration,
 };
 
 pub const ParseErrorInfo = struct {
@@ -604,7 +617,7 @@ pub const Parser = struct {
                 try defaultNames.append(alloc, this.advance());
                 _ = try this.consume(.semicolon);
                 continue;
-            } else if (this.checkShorthand(.@"fn") or this.checkStarFn() or this.checkDefaultFn()) blk: {
+            } else if (this.checkShorthand(.@"fn") or this.checkStarFn() or this.checkDefaultFn() or this.checkMarkedFn()) blk: {
                 const d = try this.parseFnDecl(alloc);
                 _ = this.match(.semicolon);
                 break :blk .{ .@"fn" = d };
@@ -666,12 +679,15 @@ pub const Parser = struct {
                     .@"fn", .star => DeclKind{ .@"fn" = try this.parseFnDecl(alloc) },
                     // `#[d] pub default fn …` — an annotated default function
                     // (decision 289; `.bpp`'s route decorator).
-                    .default => if (this.peekAt((if (isPub) annEnd + 1 else annEnd) + 1).kind == .@"fn")
+                    .default => if (this.peekAt((if (isPub) annEnd + 1 else annEnd) + 1).kind == .@"fn" or
+                        this.markedFnAt((if (isPub) annEnd + 1 else annEnd) + 1))
                         DeclKind{ .@"fn" = try this.parseFnDecl(alloc) }
                     else
                         return ParseError.UnexpectedToken,
-                    .identifier => {
+                    .identifier => blk2: {
                         const off = if (isPub) annEnd + 1 else annEnd;
+                        // Decision 553 (1) — `#[…] [pub] <marker> fn`.
+                        if (this.markedFnAt(off)) break :blk2 DeclKind{ .@"fn" = try this.parseFnDecl(alloc) };
                         if (this.removedDeclKeywordAt(off) != null) return this.failRemovedDeclKeyword(off);
                         return ParseError.UnexpectedToken;
                     },
@@ -1180,7 +1196,9 @@ pub const Parser = struct {
     /// builtin.
     fn tailLeaves(e: Expr) bool {
         return switch (e) {
-            .jump => true,
+            // `try e` and `await e` are values (decision 537), not jumps: a
+            // tail `await f(x)` is the value the body answers.
+            .jump => |j| j.kind != .try_ and j.kind != .await_,
             .branch => |b| switch (b.kind) {
                 .if_ => |iff| blk: {
                     const els = iff.else_ orelse break :blk false;
@@ -1953,6 +1971,27 @@ pub const Parser = struct {
     pub const parseExtendsClause = decl_grammar.parseExtendsClause;
 
     pub const parseMethodDecl = decl_grammar.parseMethodDecl;
+
+    // ── body markers (decision 553) ──────────────────────────────────────────
+
+    pub const markerAt = decl_grammar.markerAt;
+
+    pub const markedFnAt = decl_grammar.markedFnAt;
+
+    pub const parseFnMarker = decl_grammar.parseFnMarker;
+
+    pub const checkFnMarker = decl_grammar.checkFnMarker;
+
+    /// Decision 553 (1) — `[pub] [default] [declare] <marker> fn` at a
+    /// module's top level (`declare` only to be refused,
+    /// `marker-on-declaration`).
+    pub fn checkMarkedFn(this: *This) bool {
+        var i: usize = 0;
+        if (this.peekAt(i).kind == .@"pub") i += 1;
+        if (this.peekAt(i).kind == .default) i += 1;
+        if (this.peekAt(i).kind == .declare) i += 1;
+        return this.markedFnAt(i);
+    }
 
     // ── record decl ──────────────────────────────────────────────────────────
 

@@ -115,6 +115,24 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .caretCaption = "write the exponent's digits after it",
             .hint = "A floating literal's exponent is `e` (or `E`), an optional sign and digits: `1e10`, `2.5e-3` (decision 247).",
         },
+        .markerTypeMismatch => .{
+            .code = "marker-type-mismatch",
+            .message = "a body marker names its return type, and this function does not write it",
+            .caretCaption = "the return type does not match this marker",
+            .hint = "Each marker writes its wrapper as the return type (decision 553): `async fn … -> @Task<T>`, `iter fn … -> @Iterator<T>`, `async iter fn … -> @Stream<T>`, `component fn … -> @Component<R>`. Write that return type, or drop the marker.",
+        },
+        .markerWithoutArrow => .{
+            .code = "marker-without-arrow",
+            .message = "a marker before `{` opens a lambda, which writes `->`",
+            .caretCaption = "no block form: write `iter loop { … }`, or `iter { -> … }`",
+            .hint = "A marked lambda is `iter { x -> … }`, `async iter { x -> … }` or `component { -> … }` (decision 553); the block forms are `async { … }` (523), `iter loop { … }` and `stream loop { … }` (125). A function named `iter`, `async` or `component` called with a trailing lambda writes its parentheses: `iter() { … }`.",
+        },
+        .markerOnDeclaration => .{
+            .code = "marker-on-declaration",
+            .message = "a declaration without a body takes no marker",
+            .caretCaption = "remove the marker",
+            .hint = "A marker says how a body compiles (decision 553); a bodyless declaration has none, and its return type alone says what it answers.",
+        },
         .nestedFnDecl => .{
             .code = "nested-fn-decl",
             .message = "a `fn` is declared at module level, not inside a body",

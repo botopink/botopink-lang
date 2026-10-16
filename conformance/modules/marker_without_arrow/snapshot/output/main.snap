@@ -1,0 +1,4 @@
+botopink-cell 1
+refused error[marker-without-arrow]: a marker before `{` opens a lambda, which writes `->`
+at src/main.bp:7:14
+label no block form: write `iter loop { … }`, or `iter { -> … }`

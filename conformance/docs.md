@@ -2722,6 +2722,51 @@ The quick reference:
 | an asynchronous sequence | `fn g() -> @Stream<T>` | `for await`, with an await channel |
 | an iterator or a stream in the middle of a function | `iter …` · `stream …` | `for` · `for await` |
 
+#### Body markers
+
+A body that compiles specially carries a marker (decision 553): `async` (its
+body may `await`), `iter` (`yield`), `async iter` (`yield` and `await`) and
+`component` (`use`, `await`), written right before `fn` — `[#[…]] [pub]
+[default] <marker> fn` — on a declaration, a type's method, a behavior's
+`default fn` and an implement's method, and the return type is the wrapper the
+marker names. The marked body answers what the same body answers unmarked:
+
+<!-- example: modules/marker_fn_forms -->
+
+A marker whose return type is not its wrapper, or a marked function with no
+return type, is `marker-type-mismatch` at the marker; a declaration without a
+body takes no marker (`marker-on-declaration`) — its return type alone says
+what it answers:
+
+<!-- example: modules/marker_type_mismatch -->
+<!-- example: modules/marker_on_declaration -->
+
+Before a lambda's brace the marker makes a marked lambda — `async { x -> … }`,
+`iter { n -> … }`, `async iter { n -> … }` — and before `fn(…)` a marked
+function expression; `->` tells the lambda from the block forms `async { … }`
+and `iter loop { … }`. A marked lambda is typed by the function type it is
+written for (decision 147): an annotated `val`, a parameter. It answers what the
+lambda returning the block form would — `async { x -> b }` is
+`{ x -> async { b } }`, `iter { x -> b }` is `{ x -> iter loop { b; break; } }`:
+
+<!-- example: modules/marker_lambda_async -->
+<!-- example: modules/marker_lambda_iter -->
+
+With no function type to agree with it is
+`marker-lambda-without-expected-type`, with another wrapper than its own
+`marker-type-mismatch`, and `iter`, `async iter` or `component` before a brace
+without `->` is `marker-without-arrow` — a function named `iter`, `async` or
+`component` called with a trailing lambda writes its parentheses:
+
+<!-- example: modules/marker_lambda_without_expected_type -->
+<!-- example: modules/marker_lambda_type_mismatch -->
+<!-- example: modules/marker_without_arrow -->
+
+Until every body writes its marker, an unmarked body keeps its return's effect
+(`-> @Iterator<T>` with a `yield` is still a generator). A `component { -> … }`
+lambda is checked and then refused, `component-lambda-not-lowered`: it lowers
+with the iterator's `R` and `Step` (decision 553 (6), third piece).
+
 ### Results
 
 A function that can fail returns `@Result<T, E>`; `throw` produces the error,

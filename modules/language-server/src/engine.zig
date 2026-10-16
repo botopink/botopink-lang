@@ -4282,10 +4282,12 @@ fn nextSignificantIndex(tokens: []const Token, i: usize) ?usize {
 }
 
 /// True when the identifier at `i` is one of the contextual effect words in
-/// the one position where it is a keyword: `async` right before `{` (the
-/// `async { … }` block, decision 124) and `iter` / `stream` right before
+/// a position where it is a keyword: `async` right before `{` (the
+/// `async { … }` block, decision 124), `iter` / `stream` right before
 /// `loop` / `while` / `for` (the prefixed loops, decision 125 — the parser's
-/// `genLoopPrefixAhead`). Anywhere else the word is an ordinary name:
+/// `genLoopPrefixAhead`), and the body markers of decision 553 — `async`,
+/// `iter`, `async iter` and `component` right before `fn` or a lambda's `{`
+/// (the parser's `markerAt`). Anywhere else the word is an ordinary name:
 /// `g.iter()`, `val stream = 1`, `http.stream(…)`, `import {async} from "std"`
 /// and `async.allOf(…)` stay identifiers.
 fn isContextualKeywordAt(tokens: []const Token, i: usize) bool {
@@ -4294,10 +4296,21 @@ fn isContextualKeywordAt(tokens: []const Token, i: usize) bool {
         // A member (`x.iter loop` never parses, but `x.async {` must not paint).
         if (tokens[p].kind == .dot or tokens[p].kind == .questionDot) return false;
     }
-    const nk = nextSignificantKind(tokens, i) orelse return false;
-    if (std.mem.eql(u8, word, "async")) return nk == .leftBrace;
-    if (std.mem.eql(u8, word, "iter") or std.mem.eql(u8, word, "stream"))
+    const ni = nextSignificantIndex(tokens, i) orelse return false;
+    const nk = tokens[ni].kind;
+    const opensBody = nk == .leftBrace or nk == .@"fn";
+    if (std.mem.eql(u8, word, "async")) {
+        if (opensBody) return true;
+        // `async iter fn` / `async iter { x -> … }`.
+        if (nk != .identifier or !std.mem.eql(u8, tokens[ni].lexeme, "iter")) return false;
+        const after = nextSignificantKind(tokens, ni) orelse return false;
+        return after == .leftBrace or after == .@"fn";
+    }
+    if (std.mem.eql(u8, word, "iter"))
+        return opensBody or nk == .loop or nk == .@"while" or nk == .@"for";
+    if (std.mem.eql(u8, word, "stream"))
         return nk == .loop or nk == .@"while" or nk == .@"for";
+    if (std.mem.eql(u8, word, "component")) return opensBody;
     return false;
 }
 
