@@ -11,6 +11,7 @@
 const std = @import("std");
 const ast = @import("../ast.zig");
 const specialize = @import("./specialize.zig");
+const hooks = @import("./hooks.zig");
 const envMod = @import("./env.zig");
 const lexerMod = @import("../lexer.zig");
 
@@ -1750,6 +1751,8 @@ fn trySpecializeCall(
     if (fn_decl.returnType) |rt| {
         if (rt.isTemplateReturnType()) return false;
     }
+    // Decision 562 — nor is a function expanded at its call site.
+    if (try hooks.isExpandedFn(agg.spec_cache.arena, fn_decl)) return false;
     var has_comptime = false;
     for (fn_decl.params) |p| {
         if (p.modifier == .@"comptime") {

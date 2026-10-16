@@ -355,6 +355,10 @@ pub const NamespaceImports = struct {
     }
 };
 
+/// Decision 562 — an imported function expanded at its call site
+/// (`Env.expandedImports`).
+pub const ExpandedImport = struct { decl: ast.FnDecl, owner: []const u8 };
+
 /// One name of a template's library bound in the consumer (`Env.templateImports`).
 /// `Env.failedImports` — the refused module an import item names, and the item.
 pub const FailedImport = struct {
@@ -1699,6 +1703,14 @@ pub const Env = struct {
     /// the module that declares it and its declared name: what a template's
     /// `lookup` answers for it (`infer.buildScopeSnapshot`).
     importOwners: std.StringHashMapUnmanaged(TemplateImport) = .empty,
+    /// Decision 562 — an imported function expanded at its call site
+    /// (`hooks.isExpandedFn`), by the name it is bound under (`f`, or
+    /// `ns.f` through a namespace): its declaration as its module carried
+    /// it, and that module (`expand_call.zig`).
+    expandedImports: std.StringHashMapUnmanaged(ExpandedImport) = .empty,
+    /// Decision 562 — the bodies being expanded now (by their address): a
+    /// call of one of them inside its own expansion is not expanded again.
+    expanding: std.AutoHashMapUnmanaged(usize, void) = .empty,
     /// An imported name (or namespace), by the name it is bound under, whose
     /// import reaches no declaration only because the module it names was
     /// refused earlier in the build (`Reflection.failedModules`): the module

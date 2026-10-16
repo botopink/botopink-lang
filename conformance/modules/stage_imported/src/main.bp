@@ -34,7 +34,7 @@ fn usaAgora() -> bool {
 
 #[stage]
 fn usaLabel() -> string {
-    return label("x");
+    return label("x", "!");
 }
 
 pub fn main() {

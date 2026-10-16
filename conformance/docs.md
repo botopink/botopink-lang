@@ -3807,7 +3807,9 @@ declaration, never the spelling.
 `Stage.Run` or `Stage.Any` — every top-level function has one, whether or not
 it is a component. A function is `Build` when it reads what exists only while
 the program compiles — a `comptime` `@Decl` or `@Expr<T>` parameter
-(`names.value`) — and `Run` when it calls a host function, std's included,
+(`names.value`) of a function that also takes a run-time parameter (one whose
+every parameter is `comptime` is expanded at its call site instead, below) —
+and `Run` when it calls a host function, std's included,
 that is not declared `#[@Stage.Any]` (std's `math` is: a pure primitive);
 anything else — arithmetic, strings, records, arrays, `case`, loops, a method,
 std's `provide` / `context` — is `Any`. A call gives the caller the callee's
@@ -3825,6 +3827,47 @@ clock read is a `Run` function.
 <!-- example: modules/stage_imported -->
 
 <!-- example: modules/stage_comptime_block_in_run -->
+
+**A function expanded at its call site** (decision 562). A function whose
+every parameter is `comptime` and whose body reads one's `.value` has no
+run-time body: each call is replaced by the code its body emits, written where
+the call is — for `boot()` in `main`, in `main`. Its loops over a `comptime`
+value, its conditions, its `val`s and its calls answered from build data alone
+(a `Declared`'s `name`, `module` and `meta`, a literal, another `comptime`
+value, a constant `val` of the module, std's functions over them) run at build,
+and `x.fail(…)` reports there, at the argument. Each statement that reaches a
+run-time value — a `Declared`'s `value`, a host call, a `Stage.Run` function, a
+local the expansion emitted — is emitted, in order, once per iteration of the
+loop that holds it, its build-known parts written into it as constants:
+`say("starting " + d.name); start(d.value);` over three modules emits three
+pairs of calls, in the modules' order. Nothing iterates the catalogue when the
+program runs, and no entry's `value` is called at build. Reading a `.value`
+gives such a function no stage of its own (it amends 376 (1)); its stage is
+what the rest of its body reaches.
+
+<!-- example: modules/comptime_expand_boot -->
+
+<!-- example: modules/comptime_expand_banner -->
+
+A constant of the module — a `val` whose value reads no run-time variable — is
+build data: it decides a condition and is written into what is emitted.
+
+<!-- example: modules/comptime_expand_constant_at_build -->
+
+A loop's bound or a condition that needs a run-time value is refused at it,
+`run-in-build`, naming the value: `if (d.value is fn() -> string)` is decided
+at build, where `d.value` is not.
+
+<!-- example: modules/comptime_expand_condition_run_time -->
+
+Such a function meets `comptime` values and constants alone: each argument is
+known at build, and a run-time variable passed — a field of one included — is
+`comptime-arg-not-known` at the variable (417). A function that also declares
+a run-time parameter is never expanded: its `comptime` parameters are its
+specialisation, reading one's `.value` keeps it `Build`, and reaching a
+run-time value from it is `build-and-run` (`stage_build_and_run` above).
+
+<!-- example: modules/comptime_expand_runtime_argument -->
 
 **A decorator that reads `.hooks` runs last** (decision 372, provisional). A
 module's decorators run in two phases: first every decorator that reads no

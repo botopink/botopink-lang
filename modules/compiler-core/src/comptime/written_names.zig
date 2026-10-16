@@ -21,6 +21,7 @@ const infer = @import("infer.zig");
 const Env = envMod.Env;
 const reflectionMod = @import("reflection.zig");
 const member_fn = @import("member_fn.zig");
+const hooks = @import("hooks.zig");
 const dslHygiene = @import("dsl_hygiene.zig");
 const alias_erase = @import("alias_erase.zig");
 const format = @import("../format.zig");
@@ -72,6 +73,9 @@ pub fn typeAliasOf(arena: std.mem.Allocator, module: []const u8, name: []const u
 pub fn sharesPrivates(arena: std.mem.Allocator, decls: []const ast.DeclKind, reflection: ?*const reflectionMod.Reflection, path: []const u8) Error!bool {
     for (decls) |d| if (d == .@"fn") {
         const f = d.@"fn";
+        // Decision 562 — a function expanded at its call site writes its
+        // body's names into the caller.
+        if (try hooks.isExpandedFn(arena, f)) return true;
         if (member_fn.declParamName(f)) |handle| {
             if ((try member_fn.collect(arena, f, handle)).len > 0) return true;
             // Decision 316 — a wrapper is written where the function it wraps is.

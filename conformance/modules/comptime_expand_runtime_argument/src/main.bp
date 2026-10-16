@@ -1,0 +1,26 @@
+//// Decision 562 — a function whose every parameter is `comptime` meets
+//// `comptime` values and constants alone: a field of a run-time variable
+//// passed to it is `comptime-arg-not-known` at the variable (417).
+
+#[@External.Node("""console.log($0)""")]
+#[@External.Erlang("""io:format("~ts~n", [$0])""")]
+#[@External.Wasm(fn: sayBody)]
+declare fn say(line: string);
+
+fn sayBody(line: string) {
+    @print(line);
+}
+
+type Box(n: i32)
+
+fn banner(comptime rows: @Expr<i32>) {
+    for (0..rows.value) { row ->
+        say("row " + row.toString());
+    }
+}
+
+pub fn main() {
+    var box = Box(n: 2);
+    box = Box(n: box.n + 1);
+    banner(box.n);
+}

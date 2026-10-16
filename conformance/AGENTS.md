@@ -789,7 +789,17 @@ default is a `@TypeInfo.all(…)` query, answered for the program the call is co
 declarations of every package, the library's own, the program's and a dependency no module imports, on commonJS,
 erlang and beam), `modules/typeinfo_all_default_outside_root` (the call in a module that is not the package's root,
 `typeinfo-all-default-outside-root` at the call) and `modules/typeinfo_all_default_override` (the argument passed:
-another catalogue and an empty array, on all four targets). Decision 248
+another catalogue and an empty array, on all four targets). Decision 562 (a function whose every parameter is
+`comptime` and whose body reads one's `.value` is expanded at its call site) adds `modules/comptime_expand_boot`
+(a library's `boot()` starting the program's three `#[module(n)]` functions in their `meta` order, each one's `say`
+and `start` written in `main`), `modules/comptime_expand_banner` (`banner(3)`: a range over a number unrolled, the
+row written into each emitted host call), `modules/comptime_expand_constant_at_build` (a module constant deciding a
+condition and written into the emitted call), all three on all four targets, and two refusals:
+`modules/comptime_expand_condition_run_time` (`if (d.value is …)`, `run-in-build` at `d.value`) and
+`modules/comptime_expand_runtime_argument` (a field of a run-time variable passed, `comptime-arg-not-known` at the
+variable). `modules/stage_build_and_run`, `modules/stage_of_functions` and `modules/stage_imported` give their
+`Build` function a run-time parameter (an all-`comptime` one is expanded instead), and `stage_of_functions` lists
+one that is expanded, `Any`. Decision 248
 names the one reflection builtin `@typeInfo` (the structural `TypeInfo` answer of a bare
 `@typeInfo(T)` folded in): `modules/typeinfo_lowercase` and `modules/typeinfo_all_lowercase` refuse
 the lowercase `@typeinfo(…)` / `@typeinfo.all(…)` where it is written (`typeinfo-lowercase`).

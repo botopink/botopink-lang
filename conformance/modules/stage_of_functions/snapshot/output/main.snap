@@ -2,11 +2,13 @@ botopink-cell 1
 out padAll: Any
 out agora: Run
 out campos: Build
+out titulo: Any
 out cabecalho: Run
 out twice: Any
 out nomes: Build
 out raiz: Any
 out depois: Run
 out [a,b]
+out oi!
 out padding: 8px;padding: 8px;
 out 4.0

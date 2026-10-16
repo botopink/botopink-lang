@@ -1,8 +1,10 @@
 //// Decision 376 — every function has a stage, read as `HookNode.stage`:
 //// `Build` when it reads what exists only while the program compiles (a
-//// `comptime` parameter's `.value`), `Run` when it reaches a host
-//// function with an effect (std's clock), `Any` otherwise — std's `math`
-//// is a pure primitive, declared `Any`. A call gives the caller the
+//// `comptime` parameter's `.value` in a function that also takes a run-time
+//// one: a function whose every parameter is `comptime` is expanded at its
+//// call site instead, and `titulo` is `Any`, decision 562), `Run` when it
+//// reaches a host function with an effect (std's clock), `Any` otherwise —
+//// std's `math` is a pure primitive, declared `Any`. A call gives the caller the
 //// callee's stage (`Any + Build = Build`, `Any + Run = Run`), and a
 //// `comptime` in a body is computed at build and gives it none.
 
@@ -33,13 +35,18 @@ fn agora() -> i64 {
 }
 
 #[stage]
-fn campos(comptime names: @Expr<string>) -> string {
-    return "[" + names.value + "]";
+fn campos(comptime names: @Expr<string>, open: string) -> string {
+    return open + names.value + "]";
+}
+
+#[stage]
+fn titulo(comptime t: @Expr<string>) -> string {
+    return t.value + "!";
 }
 
 #[stage]
 fn cabecalho() -> string {
-    val n = comptime campos("title,body");
+    val n = comptime campos("title,body", "[");
     return n + agora().toString();
 }
 
@@ -50,7 +57,7 @@ fn twice(n: i32) -> string {
 
 #[stage]
 fn nomes() -> string {
-    return campos("a,b");
+    return campos("a,b", "[");
 }
 
 #[stage]
@@ -67,12 +74,14 @@ pub fn main() {
     @print(@typeInfo(padAll).meta.stage.text);
     @print(@typeInfo(agora).meta.stage.text);
     @print(@typeInfo(campos).meta.stage.text);
+    @print(@typeInfo(titulo).meta.stage.text);
     @print(@typeInfo(cabecalho).meta.stage.text);
     @print(@typeInfo(twice).meta.stage.text);
     @print(@typeInfo(nomes).meta.stage.text);
     @print(@typeInfo(raiz).meta.stage.text);
     @print(@typeInfo(depois).meta.stage.text);
     @print(nomes());
+    @print(titulo("oi"));
     @print(twice(2));
     @print(raiz());
 }

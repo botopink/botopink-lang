@@ -733,6 +733,11 @@ pub const typeinfo_meta_hooks_pending: []const u8 = "typeinfo-meta-hooks-pending
 /// naming the first. A `comptime` separates them.
 pub const build_and_run: []const u8 = "build-and-run";
 
+/// Decision 376 (5), with 562 — a run-time value reached where the build
+/// decides: a loop's bound or a condition of a function expanded at its call
+/// site that needs one. Refused at it, naming the value.
+pub const run_in_build: []const u8 = "run-in-build";
+
 /// Decision 379 (1) — a second `createContext(…)` declaration of one type's
 /// default in the program: refused at the second, naming the first.
 pub const context_declared_twice: []const u8 = "context-declared-twice";
@@ -940,6 +945,7 @@ pub const all_codes = [_][]const u8{
     typeinfo_meta_at_build,
     typeinfo_meta_hooks_pending,
     build_and_run,
+    run_in_build,
     context_declared_twice,
     inject_not_record,
     context_behavior_not_implemented,

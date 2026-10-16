@@ -45,6 +45,7 @@ const templateEval = @import("./comptime/template_eval.zig");
 const hostCells = @import("./comptime/host_cells.zig");
 const decoratorEval = @import("./comptime/decorator_eval.zig");
 const blockEval = @import("./comptime/block_eval.zig");
+const hooksMod = @import("./comptime/hooks.zig");
 
 // ── Re-exports for external consumers ────────────────────────────────────────
 
@@ -263,13 +264,39 @@ fn withTemplateHygiene(arena: std.mem.Allocator, prog: ast.Program, env: *const 
     for (prog.decls) |d| {
         var out = d;
         if (declares_template) switch (out) {
-            .@"fn" => |*f| f.isPub = true,
+            // A host function's `fn:` body stays private (decision 238): the
+            // binding is what other modules reach.
+            .@"fn" => |*f| f.isPub = f.isPub or !namesFnBinding(prog, f.name),
             .val => |*v| v.isPub = true,
             else => {},
         };
         try decls.append(arena, out);
     }
     return ast.Program{ .decls = decls.items };
+}
+
+/// Decision 562 — `prog` without the functions expanded at their call
+/// sites (`hooks.isExpandedFn`): each call was replaced by the code the body
+/// emits, so the function has no run-time body. Read before `expr_param`
+/// erases the `.value` reads that mark one.
+fn withoutExpandedFns(arena: std.mem.Allocator, prog: ast.Program) !ast.Program {
+    var decls: std.ArrayListUnmanaged(ast.DeclKind) = .empty;
+    for (prog.decls) |d| {
+        if (d == .@"fn" and try hooksMod.isExpandedFn(arena, d.@"fn")) continue;
+        try decls.append(arena, d);
+    }
+    if (decls.items.len == prog.decls.len) return prog;
+    return .{ .decls = decls.items };
+}
+
+/// Whether a host declaration of `prog` binds a target to the fn `name`
+/// (`#[@External.<T>(fn: name)]`).
+fn namesFnBinding(prog: ast.Program, name: []const u8) bool {
+    const targets = [_][]const u8{ "node", "erlang", "wasm" };
+    for (prog.decls) |d| if (d == .@"fn") for (targets) |t| if (d.@"fn".externalFor(t)) |r| {
+        if (r.module.len == 0 and std.mem.startsWith(u8, r.symbol, "fn:") and std.mem.eql(u8, std.mem.trim(u8, r.symbol["fn:".len..], " "), name)) return true;
+    };
+    return false;
 }
 
 fn withUsedAssocInterfaces(arena: std.mem.Allocator, prog_in: ast.Program, env: *const envMod.Env) !ast.Program {
@@ -2775,6 +2802,8 @@ fn resolveImports(
                             while (eit.next()) |fname| {
                                 if (templateRegistry.get(try defaultParamsKey(env.arena, path, fname.*))) |pfn| {
                                     try env.namespaces.params.put(env.arena, try envMod.NamespaceImports.paramsKey(env.arena, local, fname.*), pfn.params);
+                                    // Decision 562 — `ns.f(…)` of a function expanded at its call site.
+                                    if (try hooksMod.isExpandedFn(env.arena, pfn)) try env.expandedImports.put(env.arena, try std.fmt.allocPrint(env.arena, "{s}.{s}", .{ local, fname.* }), .{ .decl = pfn, .owner = path });
                                 }
                                 // Decision 386 — the module's body-carrying
                                 // decorators travel with the namespace, under
@@ -3029,6 +3058,8 @@ fn resolveImports(
                     // a call here that omits a trailing default is filled.
                     if (owner.len > 0) if (templateRegistry.get(try defaultParamsKey(env.arena, owner, name))) |pfn| {
                         try env.fnParams.put(local, pfn.params);
+                        // Decision 562 — a function expanded at its call site.
+                        if (try hooksMod.isExpandedFn(env.arena, pfn)) try env.expandedImports.put(env.arena, local, .{ .decl = pfn, .owner = owner });
                     };
                     // Imported decorators (`comptime _: @Decl` first param) carry
                     // their decl across modules too, so `#[name(args)]` sites in
@@ -4252,7 +4283,7 @@ pub fn compileTypesOnly(
                 const transformed = blk_t: {
                     const t = transform.transform(
                         arena_alloc,
-                        try expr_param.eraseProgram(arena_alloc, program_for_transform, infer.isDecoratorParams),
+                        try expr_param.eraseProgram(arena_alloc, try withoutExpandedFns(arena_alloc, program_for_transform), infer.isDecoratorParams),
                         fn_decls,
                         std.StringHashMap([]const ast.TypedExpr).init(arena_alloc),
                         empty_vals,
@@ -4611,7 +4642,7 @@ fn compileOnce(
                 };
                 const transformed = try value_or_type.withTwinImports(arena_alloc, try withImportSourcesNamed(arena_alloc, try withImportTypeAliasesErased(arena_alloc, try alias_erase.erase(arena_alloc, try withEmbedParams(arena_alloc, try withAssetDecl(arena_alloc, try withYieldStepDecl(arena_alloc, try withDeclaredDecls(arena_alloc, try withSourceLocationDecl(arena_alloc, try withSynthesisedEnumDecls(
                     arena_alloc,
-                    try withUsedAssocInterfaces(arena_alloc, try withTemplateHygiene(arena_alloc, try context_lower.lower(arena_alloc, try transform.transform(arena_alloc, try expr_param.eraseProgram(arena_alloc, program_for_transform, infer.isDecoratorParams), fn_decls, comptime_arrays, ct.comptime_vals, &succ.env.method_lowerings, &succ.env.templateExpansions, &succ.env.srcRewrites, &succ.env.result_jump_lowerings, &succ.env.stdArrayLowerings, &succ.env.enumSectionRewrites, &succ.env.indexRewrites, &succ.env.optionalNullCases, succ.env.ctorParams, &succ.env.defaultInjections, &succ.env.resultPatternLocs, &succ.env.namespaces, &succ.env.fieldKeyRewrites, &succ.env.localCalleeCalls, &succ.env.embedCallArgs), &succ.env), &succ.env, try sharesPrivates(arena_alloc, program_for_transform.decls, &succ.env)), &succ.env),
+                    try withUsedAssocInterfaces(arena_alloc, try withTemplateHygiene(arena_alloc, try context_lower.lower(arena_alloc, try transform.transform(arena_alloc, try expr_param.eraseProgram(arena_alloc, try withoutExpandedFns(arena_alloc, program_for_transform), infer.isDecoratorParams), fn_decls, comptime_arrays, ct.comptime_vals, &succ.env.method_lowerings, &succ.env.templateExpansions, &succ.env.srcRewrites, &succ.env.result_jump_lowerings, &succ.env.stdArrayLowerings, &succ.env.enumSectionRewrites, &succ.env.indexRewrites, &succ.env.optionalNullCases, succ.env.ctorParams, &succ.env.defaultInjections, &succ.env.resultPatternLocs, &succ.env.namespaces, &succ.env.fieldKeyRewrites, &succ.env.localCalleeCalls, &succ.env.embedCallArgs), &succ.env), &succ.env, try sharesPrivates(arena_alloc, program_for_transform.decls, &succ.env)), &succ.env),
                     &succ.env,
                 ), &succ.env), &succ.env), &succ.env), &succ.env), &succ.env), &succ.env.typeAliases), &succ.env), &succ.env), &succ.env.typeArgTwins);
 

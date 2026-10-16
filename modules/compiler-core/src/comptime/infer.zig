@@ -48,6 +48,7 @@ const memberFn = @import("member_fn.zig");
 const writtenNames = @import("written_names.zig");
 const typedMeta = @import("typed_meta.zig");
 const typeIdentity = @import("type_identity.zig");
+const expandCall = @import("expand_call.zig");
 /// `unify` raises its `TypeError` unlocated: it sees types, not source. Every
 /// call is `unifyAt` (which stamps the location it is given) or sits under a
 /// caller that stamps one with `locateLast` — 01 step 9: no type error leaves
@@ -13690,6 +13691,10 @@ const RuntimeName = struct { name: []const u8, loc: ast.Loc };
 fn runtimeNameIn(env: *Env, e: ast.Expr) ?RuntimeName {
     switch (e) {
         .identifier => |id| {
+            if (id.kind == .identAccess) {
+                const inner = runtimeNameIn(env, id.kind.identAccess.receiver.*) orelse return null;
+                return .{ .name = inner.name, .loc = inner.loc };
+            }
             if (id.kind != .ident) return null;
             const n = id.kind.ident;
             if (env.localBindDepth(n) == null) return null;
@@ -13705,6 +13710,30 @@ fn runtimeNameIn(env: *Env, e: ast.Expr) ?RuntimeName {
             if (c.kind.call.receiver) |r| if (runtimeNameIn(env, r.*)) |n| return n;
             for (c.kind.call.args) |a| if (runtimeNameIn(env, a.value.*)) |n| return n;
             return null;
+        },
+        // Decision 562 — a field of a run-time value is one (`box.n`), as is
+        // a hole, an element, a member of one.
+        .literal => |l| switch (l.kind) {
+            .stringTemplate => |t| {
+                for (t.parts) |p| switch (p) {
+                    .text => {},
+                    .expr => |h| if (runtimeNameIn(env, h.*)) |n| return n,
+                };
+                return null;
+            },
+            else => return null,
+        },
+        .collection => |col| switch (col.kind) {
+            .grouped => |g| return runtimeNameIn(env, g.*),
+            .arrayLit => |al| {
+                for (al.elems) |el| if (runtimeNameIn(env, el)) |n| return n;
+                return null;
+            },
+            .tupleLit => |tl| {
+                for (tl.elems) |el| if (runtimeNameIn(env, el)) |n| return n;
+                return null;
+            },
+            else => return null,
         },
         else => return null,
     }
@@ -19989,7 +20018,7 @@ const StageAnswer = struct { stage: hooksMod.Stage, why: []const u8 };
 /// function that is `any`, or a declaration of the program whose node is
 /// `foldable` (this module's computed now). Builtins, methods and function
 /// values are not.
-fn callFoldable(env: *Env, c: ast.CallExprOf(.untyped)) bool {
+pub fn callFoldable(env: *Env, c: ast.CallExprOf(.untyped)) bool {
     return callFoldableOrErr(env, c) catch false;
 }
 
@@ -21107,7 +21136,12 @@ fn markPacked(c: ast.CallExprOf(.untyped), args: []ast.CallArgOf(.untyped)) ast.
 }
 
 fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferError!TypedExpr {
-    return inferCallExprWith(env, c, loc, null);
+    const expected = env.expectedType;
+    const typed = try inferCallExprWith(env, c, loc, null);
+    // Decision 562 — a call of a function whose every parameter is
+    // `comptime` is replaced by the code its body emits.
+    if (try expandCall.expand(env, c, loc, expected)) |expanded| return expanded;
+    return typed;
 }
 
 /// Decision 525 — a trailing lambda is a call argument (`ast.lowerTrailingLambdas`);

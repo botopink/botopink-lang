@@ -389,7 +389,12 @@ fn walk(comptime X: type, ptr: *const X, member: []const u8) bool {
 /// `@Expr<T>` / `@ExprCustom<T>` (`x.value`, `x.fail`, a template's
 /// `q.parts()` / `q.source()`). A `@typeInfo` of a type the body names is
 /// answered at build as a constant (380 (1)) and is no resource.
+///
+/// Decision 562 amends 376 (1): a function whose every parameter is
+/// `comptime` (`isExpandedFn`) is expanded at its call site, and reading
+/// one's `.value` gives it no stage.
 pub fn buildResource(arena: std.mem.Allocator, f: ast.FnDecl) !?Mark {
+    if (try isExpandedFn(arena, f)) return null;
     var reflected: std.ArrayListUnmanaged([]const u8) = .empty;
     for (f.params) |p| {
         if (p.modifier != .@"comptime") continue;
@@ -405,10 +410,52 @@ pub fn buildResource(arena: std.mem.Allocator, f: ast.FnDecl) !?Mark {
     return null;
 }
 
+/// Decision 562 — a function whose every parameter is `comptime x: @Expr<T>`
+/// and whose body reads one's `.value`: it is expanded at its call site
+/// (`expand_call.zig`) and has no run-time body. A decorator (`@Decl`), a
+/// template (`-> @Expr<…>`), a component, a host declaration and a function
+/// taking a type (`@Expr<type>`, 297's twins) are not.
+pub fn isExpandedFn(arena: std.mem.Allocator, f: ast.FnDecl) !bool {
+    if (f.params.len == 0 or f.body.len == 0 or f.isDeclare) return false;
+    if (f.returnType) |rt| {
+        if (rt.isTemplateReturnType()) return false;
+        if (rt == .generic and rt.generic.is_builtin and std.mem.eql(u8, rt.generic.name, "Component")) return false;
+    }
+    for (f.annotations) |a| if (a.is_builtin and std.mem.startsWith(u8, a.name, "External")) return false;
+    var names: std.ArrayListUnmanaged([]const u8) = .empty;
+    for (f.params) |p| {
+        if (p.modifier != .@"comptime" or !p.exprWrapped) return false;
+        if (p.typeArgOf != null or mentionsType(p.typeRef)) return false;
+        try names.append(arena, p.name);
+    }
+    var w: BuildWalk = .{ .arena = arena, .reflected = names.items, .value_only = true };
+    for (f.body) |*st| {
+        w.walk(ast.Stmt, st);
+        if (w.found != null) return true;
+    }
+    return false;
+}
+
+/// Whether `tr` names `type` (`@Expr<type>`, `@Expr<V | type T>`).
+fn mentionsType(tr: ast.TypeRef) bool {
+    return switch (tr) {
+        .named => |n| std.mem.eql(u8, n, "type"),
+        .array => |e| mentionsType(e.*),
+        .optional => |e| mentionsType(e.*),
+        .generic => |g| for (g.args) |a| {
+            if (mentionsType(a)) break true;
+        } else false,
+        .typeparam => true,
+        else => false,
+    };
+}
+
 const BuildWalk = struct {
     arena: std.mem.Allocator,
     reflected: []const []const u8,
     found: ?Mark = null,
+    /// Decision 562 — only a `.value` read counts.
+    value_only: bool = false,
 
     fn walk(self: *BuildWalk, comptime X: type, ptr: *const X) void {
         if (self.found != null) return;
@@ -420,7 +467,15 @@ const BuildWalk = struct {
                     .comptimeExpr, .comptimeBlock => return,
                     else => {},
                 },
-                .identifier => |id| if (id.kind == .ident) for (self.reflected) |n| if (std.mem.eql(u8, n, id.kind.ident)) {
+                .identifier => |id| if (self.value_only) {
+                    if (id.kind == .identAccess and std.mem.eql(u8, id.kind.identAccess.member, "value")) {
+                        const r = id.kind.identAccess.receiver.*;
+                        if (r == .identifier and r.identifier.kind == .ident) for (self.reflected) |n| if (std.mem.eql(u8, n, r.identifier.kind.ident)) {
+                            self.found = .{ .at = id.loc, .what = n };
+                            return;
+                        };
+                    }
+                } else if (id.kind == .ident) for (self.reflected) |n| if (std.mem.eql(u8, n, id.kind.ident)) {
                     self.found = .{ .at = id.loc, .what = std.fmt.allocPrint(self.arena, "`{s}`, a `comptime` parameter read", .{n}) catch n };
                     return;
                 },

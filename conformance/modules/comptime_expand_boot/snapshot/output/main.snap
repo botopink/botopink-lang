@@ -1,0 +1,9 @@
+botopink-cell 1
+out boot
+out starting db
+out db up
+out starting cache
+out cache up
+out starting http
+out http up
+out done
