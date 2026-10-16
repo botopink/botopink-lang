@@ -1612,7 +1612,7 @@ if have node && have erl && have erlc && have wasmtime; then
   rm -rf "$WSC"; cp -R "$SCRIPT_DIR/cell-workspace" "$WSC"; rm -rf "$WSC/.botopinkbuild"
   run "$WSC" cell check .
   expect_code 0 "cell check over a workspace with nested member entries"
-  expect_out "cells: 2 checked — 2 passed, 0 failed" "a nested member and a second entry's member inherit the workspace's dependency"
+  expect_out "cells: 3 checked — 3 passed, 0 failed" "a nested member, a second entry's member and a cell with an excluded target and a literal workspace entry in its tree"
   no_candidate "$WSC" "the nested members write no candidate"
 else
   skip "botopink cell (node, erl, erlc and wasmtime are all needed)"

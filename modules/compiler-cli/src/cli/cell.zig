@@ -817,7 +817,7 @@ const Scratch = struct {
             const ws_text = try soleMember(a, try absolutizePathDeps(a, w.text, w.dir(), false), memberPath(w.dir(), cell));
             try std.Io.Dir.cwd().writeFile(ctx.io, .{ .sub_path = try std.fs.path.join(a, &.{ root, manifest.FILENAME }), .data = ws_text });
         }
-        try copyTree(a, ctx.io, cell, dir, true);
+        try copyTree(a, ctx.io, cell, dir, true, std.Io.Dir.cwd().realPathFileAlloc(ctx.io, cell, a) catch cell);
         // The copy lives elsewhere, so what the manifest names relative to the
         // cell is made absolute against the cell's own directory.
         const manifest_path = try std.fs.path.join(a, &.{ dir, "botopink.json" });
@@ -970,8 +970,14 @@ fn absolutizePathDeps(a: std.mem.Allocator, text: []const u8, cell_dir: []const 
 }
 
 /// Copy `from` into `to`. At the top level `snapshot/` and `docs.md` stay
-/// behind; hidden entries stay behind at every level.
-fn copyTree(a: std.mem.Allocator, io: std.Io, from: []const u8, to: []const u8, top: bool) !void {
+/// behind; hidden entries stay behind at every level. A symbolic link to a
+/// directory outside the cell (`cell_real`, the cell's real path) stays a
+/// link, its target made absolute: the compiler resolves a linked package
+/// through its real path, where its `path` dependencies and its enclosing
+/// workspace are, and a copy of the package's files in the cell's tree would
+/// be read through the cell's own `deps/botopink.json`, whose literal
+/// `"workspaces"` entries name directories the copy lacks (B-132).
+fn copyTree(a: std.mem.Allocator, io: std.Io, from: []const u8, to: []const u8, top: bool, cell_real: []const u8) !void {
     const cwd = std.Io.Dir.cwd();
     for (try childNames(a, io, from, .all)) |name| {
         if (name[0] == '.') continue;
@@ -979,13 +985,27 @@ fn copyTree(a: std.mem.Allocator, io: std.Io, from: []const u8, to: []const u8, 
         const src = try std.fs.path.join(a, &.{ from, name });
         const dst = try std.fs.path.join(a, &.{ to, name });
         if (isDir(io, src)) {
+            if (try outsideLinkTarget(a, io, src, cell_real)) |target| {
+                try cwd.symLink(io, target, dst, .{ .is_directory = true });
+                continue;
+            }
             try cwd.createDirPath(io, dst);
-            try copyTree(a, io, src, dst, false);
+            try copyTree(a, io, src, dst, false, cell_real);
         } else {
             const data = try cwd.readFileAlloc(io, src, a, .limited(64 * 1024 * 1024));
             try cwd.writeFile(io, .{ .sub_path = dst, .data = data });
         }
     }
+}
+
+/// The real path `src` links to when `src` is a symbolic link to a directory
+/// that lies outside `cell_real`; null otherwise.
+fn outsideLinkTarget(a: std.mem.Allocator, io: std.Io, src: []const u8, cell_real: []const u8) !?[]const u8 {
+    var buf: [std.fs.max_path_bytes]u8 = undefined;
+    _ = std.Io.Dir.cwd().readLink(io, src, &buf) catch return null;
+    const real = std.Io.Dir.cwd().realPathFileAlloc(io, src, a) catch return null;
+    const inside = real.len > cell_real.len and std.mem.startsWith(u8, real, cell_real) and real[cell_real.len] == std.fs.path.sep;
+    return if (inside) null else real;
 }
 
 /// `botopink build --target t --out out_dir` in this process, everything it
