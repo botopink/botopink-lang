@@ -460,22 +460,50 @@ bash scripts/check-docs.sh --list >"$par/plan.docs" 2>"$par/plan.docs.err" ||
 # One budget for the whole side-by-side set, not a pool each: three pools sized
 # to the whole machine put ~16 jobs apiece on 16 CPUs (load 4.7 → 26 in a cold
 # gate), and the admission each pool does on `procs_running` cannot see a job
-# another pool is about to start. The total is `pool_default_jobs` — one per
-# CPU, bounded by `MemAvailable / 768 MiB`, read now that the build is done —
-# and each stage that runs a pool gets its share of it, in proportion to the
+# another pool is about to start. The total is `pool_budget_jobs` (pool.sh), read
+# now that the build is done: at most one per CPU, and the largest whose estimated
+# peak memory stays within MemAvailable minus a 3 GiB reserve (144 B-129; the
+# old bound, MemAvailable / 768 MiB, let ~10 test-libs jobs of 1–3.5 GiB run
+# beside a 7 GiB wasm compile, and the hook alone took a 31 GB machine to 0–1 GB).
+# Each stage that runs a pool gets its share of the total, in proportion to the
 # CPU-seconds it measured (test-libs 2540, test-conformance 1468, the rest under
 # 300): 50 % / 30 % / 10 %, at least 1 each; test-docs reads files and runs no
-# pool. The stages keep their own
-# `--jobs` flag and admission; only the number they are given changes, so a
-# report is the bytes it was. test-cli runs its scripts one after another and
-# test-web is one wasm compile, so zig gets `-j` of its share.
+# pool. The stages keep their own `--jobs` flag and admission; only the number
+# they are given changes, so a report is the bytes it was.
+#
+# Measured peak resident memory (process tree, sampled every 0.1 s, ReleaseSafe,
+# 16 CPUs / 31 GB, one job of each run alone):
+#   test-libs job (one library: build and test, commonJS + erlang): 0.4–3.55 GiB —
+#       rakun-ssr 3.55, rakun-app 2.42, rakun-security 2.35, rakun-data 2.13,
+#       rakun-cli 1.80, onze-server 1.58, rakun 1.45, std 0.69, query 0.47;
+#   test-conformance job (one `botopink cell check`): 0.28–0.89 GiB over 50 cells;
+#   tsc-check job (`--jobs 1`, one `tsc` and its `node --check`): 0.62 GiB;
+#   test-web (`zig build test-web`, the wasm32-wasi compile of compiler-web,
+#       one process whatever `-j`): 7.39 GiB;
+#   test-cli (four scripts, one after another): 3.45 GiB.
+# test-web and test-cli are counted before the pools are sized (`budget_fixed`),
+# not run apart from them: they take no job, so they cost no wall time beside the
+# pools, and a lone 7 GiB step after them would add its whole compile to the run.
+# The per-job figures below are those peaks rounded up; a pool whose jobs are all
+# small is estimated at its worst, which only lowers a total, never raises it.
+budget_reserve_mib=3072
+budget_fixed_mib=11200   # test-web 7.39 GiB + test-cli 3.45 GiB, rounded up
+budget_libs_mib=3700     # a test-libs job (rakun-ssr 3.55 GiB)
+budget_conf_mib=1024     # a test-conformance job (0.89 GiB)
+budget_tsc_mib=768       # a tsc-check job (0.62 GiB)
 # shellcheck source=lib/pool.sh
 . scripts/lib/pool.sh
 if [ -n "$jobs_total" ]; then
     pool_check_jobs "$jobs_total" "gate"
     budget_total="$jobs_total"
 else
-    budget_total="$(pool_default_jobs)"
+    budget_avail_kb="$(awk '/^MemAvailable:/ { print $2 }' /proc/meminfo 2>/dev/null)"
+    if [ -n "$budget_avail_kb" ]; then
+        budget_total="$(pool_budget_jobs "$budget_avail_kb" "$(pool_cpus)" "$budget_fixed_mib" "$budget_reserve_mib" \
+            "$budget_libs_mib" "$budget_conf_mib" "$budget_tsc_mib")"
+    else
+        budget_total="$(pool_cpus)" # no /proc/meminfo (macOS): one per CPU
+    fi
 fi
 share() { # <percent> — that part of the total, at least 1 (pool.sh)
     pool_share "$budget_total" "$1"

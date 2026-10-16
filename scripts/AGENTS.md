@@ -412,8 +412,10 @@ and on every CPU, never by running less:
 
 The side-by-side stages used to size one pool each to the whole machine: three
 pools of about 16 jobs on 16 CPUs, load 4.7 rising to 26 in a cold gate. Now
-`gate.sh` takes its total from `--jobs <N>` or else reads `pool_default_jobs` once, after the build (CPUs bounded by
-`MemAvailable / 768 MiB`), and passes each stage its share through the flag it
+`gate.sh` takes its total from `--jobs <N>` or else reads `pool_budget_jobs` once, after the build (at most one per CPU,
+the largest whose estimated peak fits `MemAvailable` minus a 3 GiB reserve and the uncounted `test-web` and `test-cli`;
+144 B-129 — the old `MemAvailable / 768 MiB` bound let ~10 `test-libs` jobs of 1–3.5 GiB run beside test-web's 7 GiB wasm
+compile, and the hook alone took a 31 GB machine to 0–1 GB available), and passes each stage its share through the flag it
 already had: `test-libs` 50 % and `test-conformance` 30 % (`-- --jobs N`),
 `tsc-check.sh` 10 % (`--jobs N`, new, default unchanged) and `test-web` `-j`
 10 %, at least 1 each (`pool_share` of `lib/pool.sh`) — 8 / 4 / 1 / 1 on 16 CPUs.
@@ -463,7 +465,9 @@ and, per stage and per step, `specs/1.0.10-beta/00-compiler-carry-over/25-gate-p
 Sourced, never run. The one statement of the pool rule for the shell runners —
 `botopink-lib-test`'s (`../modules/lib-test-runner/AGENTS.md` § Parallel cells):
 `pool_default_jobs` (one per CPU, bounded by `MemAvailable / 768 MiB`, at
-least 1), `pool_check_jobs` (a `--jobs` value must be a positive count),
+least 1), `pool_budget_jobs` (the gate's one total, bounded by the stages' measured peak memory; pure arithmetic over
+its arguments, held by `cli_contract.sh`; the measured peaks and the `budget_*_mib` constants are in `gate.sh` § job
+budget), `pool_check_jobs` (a `--jobs` value must be a positive count),
 `pool_admit <dir>` (while a job of this run is in flight — a file in `<dir>` —
 wait until `procs_running` ≤ CPUs; a run with nothing in flight is always
 admitted) and `pool_job <dir> <cmd…>` (admit, mark, run, unmark). A caller runs

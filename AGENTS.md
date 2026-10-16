@@ -316,7 +316,8 @@ no flag) on the main checkout at a detached HEAD of the commit (`scripts/gate.sh
 conformance after (`scripts/AGENTS.md` § Step gate and full gate).
 
 The side-by-side stages share one job budget: `gate.sh` computes it once
-(CPUs bounded by memory) and hands each stage its share through its `--jobs`
+(at most one per CPU, bounded by the stages' measured peak memory so the hook never leaves less than 3 GiB
+available, 144 B-129) and hands each stage its share through its `--jobs`
 flag — `test-libs` 50 %, `test-conformance` 30 %, `tsc-check` 10 %,
 `test-web` `-j` 10 % (`scripts/AGENTS.md` § One job budget).
 

@@ -1669,6 +1669,28 @@ gate_mode_says "mode=step reach_all=1 targets=none why=no changed file to measur
   front/x
 POOL_SHARES="$(bash -c '. "$1"; for p in 50 30 10; do pool_share 16 "$p"; done; pool_share 1 10' _ "$REPO_ROOT/scripts/lib/pool.sh" | tr '\n' ' ')"
 [[ "$POOL_SHARES" == "8 4 1 1 " ]] && ok "one total of 16 jobs: test-libs 8, test-conformance 4, tsc-check 1; a share is at least 1" || fail "pool_share: got '$POOL_SHARES', want '8 4 1 1 '"
+# 144 B-129: the total of jobs is bounded by the stages' measured peaks (the
+# `budget_*_mib` of gate.sh § job budget): the largest n <= CPUs whose estimated
+# peak fits MemAvailable minus the reserve and the uncounted test-web / test-cli.
+eval "$(grep -E '^budget_(reserve|fixed|libs|conf|tsc)_mib=' "$REPO_ROOT/scripts/gate.sh" | sed 's/ *#.*//')"
+budget() { # <MemAvailable GiB> <cpus>
+  bash -c '. "$1"; pool_budget_jobs $(( $2 * 1048576 )) "$3" "$4" "$5" "$6" "$7" "$8"' _ "$REPO_ROOT/scripts/lib/pool.sh" \
+    "$1" "$2" "$budget_fixed_mib" "$budget_reserve_mib" "$budget_libs_mib" "$budget_conf_mib" "$budget_tsc_mib"
+}
+[[ "$(budget 28 16)" == "7" ]] && ok "28 GiB available, 16 CPUs: a total of 7 jobs, not 16" || fail "pool_budget_jobs 28 GiB / 16 CPUs: got '$(budget 28 16)', want 7"
+[[ "$(budget 4 16)" == "1" ]] && ok "4 GiB available: a total of 1 job (the floor)" || fail "pool_budget_jobs 4 GiB / 16 CPUs: got '$(budget 4 16)', want 1"
+[[ "$(budget 64 4)" == "4" ]] && ok "64 GiB available, 4 CPUs: bounded by the CPUs" || fail "pool_budget_jobs 64 GiB / 4 CPUs: got '$(budget 64 4)', want 4"
+BUDGET_OVER=""
+for gib in 8 12 16 20 24 28 31 40 64 128; do
+  for cpus in 2 4 8 16 32; do
+    n="$(budget "$gib" "$cpus")"
+    sh_libs=$(( n * 50 / 100 )); sh_conf=$(( n * 30 / 100 )); sh_tsc=$(( n * 10 / 100 ))
+    [[ "$sh_libs" -ge 1 ]] || sh_libs=1; [[ "$sh_conf" -ge 1 ]] || sh_conf=1; [[ "$sh_tsc" -ge 1 ]] || sh_tsc=1
+    cost=$(( sh_libs * budget_libs_mib + sh_conf * budget_conf_mib + sh_tsc * budget_tsc_mib + budget_fixed_mib + budget_reserve_mib ))
+    if [[ "$n" -gt "$cpus" || ( "$n" -gt 1 && "$cost" -gt $(( gib * 1024 )) ) ]]; then BUDGET_OVER="$BUDGET_OVER ${gib}GiB/${cpus}cpu=$n"; fi
+  done
+done
+[[ -z "$BUDGET_OVER" ]] && ok "the estimated peak of the total stays under MemAvailable minus the reserve, for 8–128 GiB and 2–32 CPUs" || fail "pool_budget_jobs exceeds its bound:$BUDGET_OVER"
 gate_args() { # <want exit> <want text> <label> <arg>… — `gate.sh` refuses the arguments before it starts
   local want="$1" text="$2" label="$3"
   shift 3

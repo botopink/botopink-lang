@@ -46,6 +46,27 @@ pool_default_jobs() {
     echo "$jobs"
 }
 
+# pool_budget_jobs <avail_kb> <cpus> <fixed_mib> <reserve_mib> <libs_mib> <conf_mib> <tsc_mib>
+# The one total of jobs `scripts/gate.sh` shares among its side-by-side stages
+# (§ job budget there): the largest n <= cpus, at least 1, whose estimated peak
+#   fixed + share(n,50) * libs + share(n,30) * conf + share(n,10) * tsc
+# stays within MemAvailable - reserve. <fixed_mib> is what runs beside the pools
+# uncounted by any of them (test-web's wasm compile, test-cli); the three
+# per-job figures are the stages' measured peaks, in MiB. Pure arithmetic over
+# its arguments, so a test gives it a MemAvailable and a CPU count.
+pool_budget_jobs() {
+    local avail_kb="$1" cpus="$2" fixed="$3" reserve="$4" libs="$5" conf="$6" tsc="$7"
+    local room n cost
+    room=$(( avail_kb / 1024 - reserve - fixed ))
+    n="$cpus"
+    while [ "$n" -gt 1 ]; do
+        cost=$(( $(pool_share "$n" 50) * libs + $(pool_share "$n" 30) * conf + $(pool_share "$n" 10) * tsc ))
+        [ "$cost" -le "$room" ] && break
+        n=$(( n - 1 ))
+    done
+    echo "$n"
+}
+
 # pool_check_jobs <value> <who> — exit 2 unless a positive count
 pool_check_jobs() {
     case "$1" in
