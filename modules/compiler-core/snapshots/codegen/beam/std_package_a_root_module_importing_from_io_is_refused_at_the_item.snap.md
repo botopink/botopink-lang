@@ -2233,6 +2233,681 @@ test "path.isInside treats a name starting with two dots as a name" {
 ```logs
 ```
 
+----- SOURCE CODE -- std/failure.bp
+```botopink
+//// std/failure — the two records a failure that is not a typed error carries
+//// (decisions 431, 492).
+////
+//// `HostError` is what a host binding that writes `result: true` answers on
+//// the `Error` side: the host's message and `kind`, always `"host"`.
+//// `Failure` is what `attempt` answers on the `Error` side: `kind` is `panic`
+//// (`@panic`, `@todo`, `x!`, an overflow, a division by zero), `host` (a raise
+//// from a binding without `result: true`) or `crash` (a VM or emitted-code
+//// fault, a wasm trap).
+////
+//// `attempt(f)` runs `f` and answers `Ok` of its value, or `Error(Failure)`
+//// for a raise it caught — the one way to contain a crash (decision 431 (3)).
+//// `attemptTask(f)` is its `@Task` form (decision 494): the task `f` answers,
+//// awaited, or the `Failure` it crashed with — a `@Task<@Result<…>>` read
+//// back by `await` like any failing task (decision 432). The kinds
+//// (decision 492): a `@panic` / `@todo` (and so `x!`), a failed `assert`
+//// and an integer overflow or division by zero are `panic`, their message
+//// the text the program wrote. A raise of a binding declared outside std without
+//// `result: true` is `host` (decision 546), its message the host's text — on
+//// commonJS an `Error`'s `message`, else `String(e)`, the call run through
+//// `__bp_host_mark`, which marks it `__bp_host`; any raise nothing marked is
+//// `crash`, its message the same text. On erlang and beam a
+//// host raise is the raise of a binding declared outside std without `result:
+//// true` — a library's or the program's, whose calls are wrapped to mark it
+//// (decision 546) — its message the reason by `~tp` (decision 489's reading);
+//// a raise nothing marked, a failing match or a std binding's, is `crash`,
+//// its message the reason by `~tp` too.
+////
+//// Both are bodyless: each backend wraps the call (a JavaScript `try` /
+//// rejection handler, an erlang `try … catch`; beam compiles the erlang
+//// form). On wasm (decision 518) each is a private body over `caught`, the
+//// `wasi: .Attempt` adapter: the thunk runs inside a `try_table` that
+//// catches the program's aborts (wasm exception handling), so the binding
+//// declares `needs: [.Exceptions]` and a program reaching it runs with the
+//// host's exceptions on (`-W exceptions=y` on wasmtime). On wasm an abort
+//// is `panic`; a trap (an overflow or a division by zero there, a host
+//// fault) is no exception and is not caught. `attemptTask` contains what
+//// the thunk raises before the task's first `await`.
+
+pub type HostErrorName {
+    Error,
+    Throw,
+    Exit,
+}
+
+pub type HostError(message: string, kind: string, name: HostErrorName, detail: ?string)
+
+pub type Failure(message: string, kind: string)
+
+// The Node forms read an abort by the `__bp_panic` mark the backend puts on
+// every one it raises — `@panic`, `@todo`, an integer overflow or division
+// by zero, a failed `assert` (whose mark carries its message) — or a test
+// body's `assert` (`__bp_assert_loc`); the Erlang forms by the reasons the
+// backends raise for them (`{panic, M}`, `{todo, M}`, `{integer_overflow,
+// M}`, `{bp_assert, M, Where}`). `attemptTask` answers a failing task
+// (decision 432): marked `__bp_fails`, resolved with the value, rejected with
+// the `Failure` (`__bp_failure`); a failing task `f` answers is read as
+// `await` reads it.
+#[@External.Node("""((__f, __k) => { try { return { ok: __f() }; } catch (__e) { return { error: __k(__e) }; } })($0, ((__e) => (__e != null && __e.__bp_panic != null) ? new Failure(typeof __e.__bp_panic === "string" ? __e.__bp_panic : __e.message, "panic") : (__e != null && typeof __e.__bp_assert_loc === "string") ? new Failure(__e.message, "panic") : new Failure((__e instanceof Error) ? __e.message : String(__e), (__e != null && __e.__bp_host === true) ? "host" : "crash")))""")]
+#[@External.Erlang("""(fun(__F) -> try {ok, __F()} catch error:{__T, __M} when (__T =:= panic orelse __T =:= todo orelse __T =:= integer_overflow) andalso (is_binary(__M) orelse is_list(__M)) -> {error, {'std@failure@@Failure', unicode:characters_to_binary(__M), <<"panic">>}}; error:{bp_assert, _, _, __M} -> {error, {'std@failure@@Failure', unicode:characters_to_binary(__M), <<"panic">>}}; error:{bp_assert, __M, _} when is_binary(__M) -> {error, {'std@failure@@Failure', __M, <<"panic">>}}; error:{bp_host, __M} when is_binary(__M) -> {error, {'std@failure@@Failure', __M, <<"host">>}}; _:__R -> {error, {'std@failure@@Failure', unicode:characters_to_binary(io_lib:format("~tp", [__R])), <<"crash">>}} end end)($0)""")]
+#[@External.Wasm(fn: attemptOnWasm)]
+pub declare fn attempt<T>(f: fn() -> T) -> @Result<T, Failure>;
+
+#[@External.Node("""((__f, __k) => { const __t = (async () => { const __x = __f(); return (__x != null && __x.__bp_fails === true) ? await __x.then((__v) => ({ ok: __v }), (__e) => { if (__x.__bp_failure === true) { return { error: __e }; } throw __e; }) : await __x; })().then((__v) => __v, (__e) => { __t.__bp_failure = true; throw __k(__e); }); __t.__bp_fails = true; __t.catch(() => {}); return __t; })($0, ((__e) => (__e != null && __e.__bp_panic != null) ? new Failure(typeof __e.__bp_panic === "string" ? __e.__bp_panic : __e.message, "panic") : (__e != null && typeof __e.__bp_assert_loc === "string") ? new Failure(__e.message, "panic") : new Failure((__e instanceof Error) ? __e.message : String(__e), (__e != null && __e.__bp_host === true) ? "host" : "crash")))""")]
+#[@External.Erlang("""(fun(__F) -> try {ok, __F()} catch error:{__T, __M} when (__T =:= panic orelse __T =:= todo orelse __T =:= integer_overflow) andalso (is_binary(__M) orelse is_list(__M)) -> {error, {'std@failure@@Failure', unicode:characters_to_binary(__M), <<"panic">>}}; error:{bp_assert, _, _, __M} -> {error, {'std@failure@@Failure', unicode:characters_to_binary(__M), <<"panic">>}}; error:{bp_assert, __M, _} when is_binary(__M) -> {error, {'std@failure@@Failure', __M, <<"panic">>}}; error:{bp_host, __M} when is_binary(__M) -> {error, {'std@failure@@Failure', __M, <<"host">>}}; _:__R -> {error, {'std@failure@@Failure', unicode:characters_to_binary(io_lib:format("~tp", [__R])), <<"crash">>}} end end)($0)""")]
+#[@External.Wasm(fn: attemptTaskOnWasm)]
+pub declare fn attemptTask<T>(f: fn() -> @Task<T>) -> @Task<@Result<T, Failure>>;
+
+// wasm's form (decision 518): the thunk's value, or the message of the abort
+// it raised — `Error` of the abort's text, which `attempt` makes a `panic`.
+// The bodies over it are compiled on every target, so it has a form on each;
+// only wasm calls it (`attempt`'s own forms answer elsewhere).
+#[@External.Node("""((__f) => { try { return { ok: __f() }; } catch (__e) { return { error: (__e instanceof Error) ? __e.message : String(__e) }; } })($0)""")]
+#[@External.Erlang("""(fun(__F) -> try {ok, __F()} catch _:__R -> {error, unicode:characters_to_binary(io_lib:format("~tp", [__R]))} end end)($0)""")]
+#[@External.Wasm(wasi: .Attempt, needs: [.Exceptions])]
+declare fn caught<T>(f: fn() -> T) -> @Result<T, string>;
+
+fn attemptOnWasm<T>(f: fn() -> T) -> @Result<T, Failure> {
+    case caught(f) {
+        Ok(v) -> return v;
+        Error(m) -> throw Failure(message: m, kind: "panic");
+    }
+}
+
+// The task the thunk started — or the `Failure` it raised before its first
+// `await` — and then its value.
+fn attemptTaskOnWasm<T>(f: fn() -> @Task<T>) -> @Task<@Result<T, Failure>> {
+    case caught(f) {
+        Ok(t) -> return await t;
+        Error(m) -> throw Failure(message: m, kind: "panic");
+    }
+}
+
+```
+
+----- BEAM ASSEMBLY -- std/failure.S
+```erlang
+{module, std@failure}.
+{exports, [{attempt, 1}, {attemptTask, 1}, {'__bp_priv__attemptOnWasm', 1}, {'__bp_priv__attemptTaskOnWasm', 1}]}.
+{attributes, []}.
+{labels, 55}.
+%%% std/failure — the two records a failure that is not a typed error carries
+%%% (decisions 431, 492).
+%%% 
+%%% `HostError` is what a host binding that writes `result: true` answers on
+%%% the `Error` side: the host's message and `kind`, always `"host"`.
+%%% `Failure` is what `attempt` answers on the `Error` side: `kind` is `panic`
+%%% (`@panic`, `@todo`, `x!`, an overflow, a division by zero), `host` (a raise
+%%% from a binding without `result: true`) or `crash` (a VM or emitted-code
+%%% fault, a wasm trap).
+%%% 
+%%% `attempt(f)` runs `f` and answers `Ok` of its value, or `Error(Failure)`
+%%% for a raise it caught — the one way to contain a crash (decision 431 (3)).
+%%% `attemptTask(f)` is its `@Task` form (decision 494): the task `f` answers,
+%%% awaited, or the `Failure` it crashed with — a `@Task<@Result<…>>` read
+%%% back by `await` like any failing task (decision 432). The kinds
+%%% (decision 492): a `@panic` / `@todo` (and so `x!`), a failed `assert`
+%%% and an integer overflow or division by zero are `panic`, their message
+%%% the text the program wrote. A raise of a binding declared outside std without
+%%% `result: true` is `host` (decision 546), its message the host's text — on
+%%% commonJS an `Error`'s `message`, else `String(e)`, the call run through
+%%% `__bp_host_mark`, which marks it `__bp_host`; any raise nothing marked is
+%%% `crash`, its message the same text. On erlang and beam a
+%%% host raise is the raise of a binding declared outside std without `result:
+%%% true` — a library's or the program's, whose calls are wrapped to mark it
+%%% (decision 546) — its message the reason by `~tp` (decision 489's reading);
+%%% a raise nothing marked, a failing match or a std binding's, is `crash`,
+%%% its message the reason by `~tp` too.
+%%% 
+%%% Both are bodyless: each backend wraps the call (a JavaScript `try` /
+%%% rejection handler, an erlang `try … catch`; beam compiles the erlang
+%%% form). On wasm (decision 518) each is a private body over `caught`, the
+%%% `wasi: .Attempt` adapter: the thunk runs inside a `try_table` that
+%%% catches the program's aborts (wasm exception handling), so the binding
+%%% declares `needs: [.Exceptions]` and a program reaching it runs with the
+%%% host's exceptions on (`-W exceptions=y` on wasmtime). On wasm an abort
+%%% is `panic`; a trap (an overflow or a division by zero there, a host
+%%% fault) is no exception and is not caught. `attemptTask` contains what
+%%% the thunk raises before the task's first `await`.
+% The Node forms read an abort by the `__bp_panic` mark the backend puts on
+% every one it raises — `@panic`, `@todo`, an integer overflow or division
+% by zero, a failed `assert` (whose mark carries its message) — or a test
+% body's `assert` (`__bp_assert_loc`); the Erlang forms by the reasons the
+% backends raise for them (`{panic, M}`, `{todo, M}`, `{integer_overflow,
+% M}`, `{bp_assert, M, Where}`). `attemptTask` answers a failing task
+% (decision 432): marked `__bp_fails`, resolved with the value, rejected with
+% the `Failure` (`__bp_failure`); a failing task `f` answers is read as
+% `await` reads it.
+
+{function, attempt, 1, 31}.
+  {label, 30}.
+    {line, [{location, "std@failure.erl", 1}]}.
+    {func_info, {atom, std@failure}, {atom, attempt}, 1}.
+  {label, 31}.
+    {call_only, 1, {f, 7}}.
+
+{function, attemptTask, 1, 33}.
+  {label, 32}.
+    {line, [{location, "std@failure.erl", 2}]}.
+    {func_info, {atom, std@failure}, {atom, attemptTask}, 1}.
+  {label, 33}.
+    {call_only, 1, {f, 7}}.
+% wasm's form (decision 518): the thunk's value, or the message of the abort
+% it raised — `Error` of the abort's text, which `attempt` makes a `panic`.
+% The bodies over it are compiled on every target, so it has a form on each;
+% only wasm calls it (`attempt`'s own forms answer elsewhere).
+
+{function, attemptOnWasm, 1, 3}.
+  {label, 2}.
+    {line, [{location, "std@failure.erl", 3}]}.
+    {func_info, {atom, std@failure}, {atom, attemptOnWasm}, 1}.
+  {label, 3}.
+    {allocate, 3, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {y, 0}, {x, 0}}.
+    {call, 1, {f, 35}}.
+    {test, is_tagged_tuple, {f, 46}, [{x, 0}, 2, {atom, ok}]}.
+    {get_tuple_element, {x, 0}, 1, {x, 1}}.
+    {move, {x, 1}, {y, 1}}.
+    {move, {y, 1}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {test_heap, 3, 2}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {x, 1}]}}.
+    {deallocate, 3}.
+    return.
+    {jump, {f, 45}}.
+  {label, 46}.
+    {test, is_tagged_tuple, {f, 47}, [{x, 0}, 2, {atom, error}]}.
+    {get_tuple_element, {x, 0}, 1, {x, 1}}.
+    {move, {x, 1}, {y, 2}}.
+    {move, {literal, <<"panic">>}, {x, 0}}.
+    {test_heap, 4, 1}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@failure@@Failure}, {y, 2}, {x, 0}]}}.
+    {move, {x, 0}, {x, 1}}.
+    {test_heap, 3, 2}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {x, 1}]}}.
+    {deallocate, 3}.
+    return.
+    {jump, {f, 45}}.
+  {label, 47}.
+    {case_end, {x, 0}}.
+  {label, 45}.
+    {move, {atom, ok}, {x, 0}}.
+    {deallocate, 3}.
+    return.
+% The task the thunk started — or the `Failure` it raised before its first
+% `await` — and then its value.
+
+%% @Task — eager lowering
+{function, attemptTaskOnWasm, 1, 5}.
+  {label, 4}.
+    {line, [{location, "std@failure.erl", 4}]}.
+    {func_info, {atom, std@failure}, {atom, attemptTaskOnWasm}, 1}.
+  {label, 5}.
+    {allocate, 3, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {y, 0}, {x, 0}}.
+    {call, 1, {f, 35}}.
+    {test, is_tagged_tuple, {f, 49}, [{x, 0}, 2, {atom, ok}]}.
+    {get_tuple_element, {x, 0}, 1, {x, 1}}.
+    {move, {x, 1}, {y, 1}}.
+    {move, {y, 1}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {test_heap, 3, 2}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {x, 1}]}}.
+    {deallocate, 3}.
+    return.
+    {jump, {f, 48}}.
+  {label, 49}.
+    {test, is_tagged_tuple, {f, 50}, [{x, 0}, 2, {atom, error}]}.
+    {get_tuple_element, {x, 0}, 1, {x, 1}}.
+    {move, {x, 1}, {y, 2}}.
+    {move, {literal, <<"panic">>}, {x, 0}}.
+    {test_heap, 4, 1}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@failure@@Failure}, {y, 2}, {x, 0}]}}.
+    {move, {x, 0}, {x, 1}}.
+    {test_heap, 3, 2}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {x, 1}]}}.
+    {deallocate, 3}.
+    return.
+    {jump, {f, 48}}.
+  {label, 50}.
+    {case_end, {x, 0}}.
+  {label, 48}.
+    {move, {atom, ok}, {x, 0}}.
+    {deallocate, 3}.
+    return.
+
+{function, '__bp_priv__attemptOnWasm', 1, 52}.
+  {label, 51}.
+    {line, [{location, "std@failure.erl", 5}]}.
+    {func_info, {atom, std@failure}, {atom, '__bp_priv__attemptOnWasm'}, 1}.
+  {label, 52}.
+    {call_only, 1, {f, 3}}.
+
+{function, '__bp_priv__attemptTaskOnWasm', 1, 54}.
+  {label, 53}.
+    {line, [{location, "std@failure.erl", 6}]}.
+    {func_info, {atom, std@failure}, {atom, '__bp_priv__attemptTaskOnWasm'}, 1}.
+  {label, 54}.
+    {call_only, 1, {f, 5}}.
+
+{function, '__bp_tpl_0-t/1-fun-0-', 1, 11}.
+  {label, 10}.
+    {func_info, {atom, std@failure}, {atom, '__bp_tpl_0-t/1-fun-0-'}, 1}.
+  {label, 11}.
+    {allocate, 11, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}]}}.
+    {move, {x, 0}, {y, 2}}.
+    {'try', {y, 10}, {f, 14}}.
+    {move, {y, 2}, {x, 0}}.
+    {call_fun, 0}.
+    {move, {x, 0}, {y, 4}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 4}]}}.
+    {move, {x, 0}, {y, 4}}.
+    {move, {y, 4}, {y, 3}}.
+    {try_end, {y, 10}}.
+    {jump, {f, 15}}.
+  {label, 14}.
+    {try_case, {y, 10}}.
+    {move, {x, 0}, {y, 4}}.
+    {move, {x, 1}, {y, 5}}.
+    {move, {x, 2}, {y, 6}}.
+    {move, {y, 4}, {x, 0}}.
+    {test, is_eq_exact, {f, 17}, [{x, 0}, {atom, error}]}.
+    {move, {y, 5}, {x, 0}}.
+    {test, is_tuple, {f, 17}, [{x, 0}]}.
+    {test, test_arity, {f, 17}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 7}}.
+    {get_tuple_element, {x, 0}, 1, {y, 8}}.
+    {move, {y, 7}, {y, 0}}.
+    {move, {y, 8}, {y, 1}}.
+    {move, {y, 0}, {x, 0}}.
+    {move, {atom, panic}, {x, 1}}.
+    {test, is_eq_exact, {f, 19}, [{x, 0}, {x, 1}]}.
+    {jump, {f, 20}}.
+  {label, 19}.
+    {move, {y, 0}, {x, 0}}.
+    {move, {atom, todo}, {x, 1}}.
+    {test, is_eq_exact, {f, 21}, [{x, 0}, {x, 1}]}.
+    {jump, {f, 22}}.
+  {label, 21}.
+    {move, {y, 0}, {x, 0}}.
+    {move, {atom, integer_overflow}, {x, 1}}.
+    {test, is_eq_exact, {f, 17}, [{x, 0}, {x, 1}]}.
+  {label, 22}.
+  {label, 20}.
+    {move, {y, 1}, {x, 0}}.
+    {test, is_binary, {f, 23}, [{x, 0}]}.
+    {jump, {f, 24}}.
+  {label, 23}.
+    {move, {y, 1}, {x, 0}}.
+    {test, is_list, {f, 17}, [{x, 0}]}.
+  {label, 24}.
+    {jump, {f, 18}}.
+  {label, 18}.
+    {move, {y, 1}, {x, 0}}.
+    {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
+    {move, {x, 0}, {y, 9}}.
+    {test_heap, 4, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@failure@@Failure}, {y, 9}, {literal, <<"panic">>}]}}.
+    {move, {x, 0}, {y, 9}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 9}]}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {y, 3}}.
+    {jump, {f, 16}}.
+  {label, 17}.
+    {move, {y, 4}, {x, 0}}.
+    {test, is_eq_exact, {f, 25}, [{x, 0}, {atom, error}]}.
+    {move, {y, 5}, {x, 0}}.
+    {test, is_tuple, {f, 25}, [{x, 0}]}.
+    {test, test_arity, {f, 25}, [{x, 0}, 4]}.
+    {get_tuple_element, {x, 0}, 0, {y, 7}}.
+    {get_tuple_element, {x, 0}, 3, {y, 8}}.
+    {move, {y, 7}, {x, 0}}.
+    {test, is_eq_exact, {f, 25}, [{x, 0}, {atom, bp_assert}]}.
+    {move, {y, 8}, {y, 1}}.
+    {move, {y, 1}, {x, 0}}.
+    {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
+    {move, {x, 0}, {y, 9}}.
+    {test_heap, 4, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@failure@@Failure}, {y, 9}, {literal, <<"panic">>}]}}.
+    {move, {x, 0}, {y, 9}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 9}]}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {y, 3}}.
+    {jump, {f, 16}}.
+  {label, 25}.
+    {move, {y, 4}, {x, 0}}.
+    {test, is_eq_exact, {f, 26}, [{x, 0}, {atom, error}]}.
+    {move, {y, 5}, {x, 0}}.
+    {test, is_tuple, {f, 26}, [{x, 0}]}.
+    {test, test_arity, {f, 26}, [{x, 0}, 3]}.
+    {get_tuple_element, {x, 0}, 0, {y, 7}}.
+    {get_tuple_element, {x, 0}, 1, {y, 8}}.
+    {move, {y, 7}, {x, 0}}.
+    {test, is_eq_exact, {f, 26}, [{x, 0}, {atom, bp_assert}]}.
+    {move, {y, 8}, {y, 1}}.
+    {move, {y, 1}, {x, 0}}.
+    {test, is_binary, {f, 26}, [{x, 0}]}.
+    {jump, {f, 27}}.
+  {label, 27}.
+    {test_heap, 4, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@failure@@Failure}, {y, 1}, {literal, <<"panic">>}]}}.
+    {move, {x, 0}, {y, 9}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 9}]}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {y, 3}}.
+    {jump, {f, 16}}.
+  {label, 26}.
+    {move, {y, 4}, {x, 0}}.
+    {test, is_eq_exact, {f, 28}, [{x, 0}, {atom, error}]}.
+    {move, {y, 5}, {x, 0}}.
+    {test, is_tuple, {f, 28}, [{x, 0}]}.
+    {test, test_arity, {f, 28}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 7}}.
+    {get_tuple_element, {x, 0}, 1, {y, 8}}.
+    {move, {y, 7}, {x, 0}}.
+    {test, is_eq_exact, {f, 28}, [{x, 0}, {atom, bp_host}]}.
+    {move, {y, 8}, {y, 1}}.
+    {move, {y, 1}, {x, 0}}.
+    {test, is_binary, {f, 28}, [{x, 0}]}.
+    {jump, {f, 29}}.
+  {label, 29}.
+    {test_heap, 4, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@failure@@Failure}, {y, 1}, {literal, <<"host">>}]}}.
+    {move, {x, 0}, {y, 9}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 9}]}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {y, 3}}.
+    {jump, {f, 16}}.
+  {label, 28}.
+    {move, {y, 5}, {y, 0}}.
+    {test_heap, 2, 0}.
+    {put_list, {y, 0}, nil, {x, 0}}.
+    {move, {x, 0}, {y, 7}}.
+    {move, {literal, [126, 116, 112]}, {x, 0}}.
+    {move, {y, 7}, {x, 1}}.
+    {call_ext, 2, {extfunc, io_lib, format, 2}}.
+    {move, {x, 0}, {y, 7}}.
+    {move, {y, 7}, {x, 0}}.
+    {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
+    {move, {x, 0}, {y, 7}}.
+    {test_heap, 4, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@failure@@Failure}, {y, 7}, {literal, <<"crash">>}]}}.
+    {move, {x, 0}, {y, 7}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 7}]}}.
+    {move, {x, 0}, {y, 7}}.
+    {move, {y, 7}, {y, 3}}.
+    {jump, {f, 16}}.
+  {label, 16}.
+  {label, 15}.
+    {move, {y, 3}, {x, 0}}.
+    {deallocate, 11}.
+    return.
+
+{function, '__bp_tpl_0', 1, 7}.
+  {label, 6}.
+    {func_info, {atom, std@failure}, {atom, '__bp_tpl_0'}, 1}.
+  {label, 7}.
+    {allocate, 2, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
+    {make_fun3, {f, 11}, 0, 0, {x, 0}, {list, []}}.
+    {move, {x, 0}, {y, 1}}.
+    {move, {y, 0}, {x, 0}}.
+    {move, {y, 1}, {x, 1}}.
+    {call_fun, 1}.
+    {deallocate, 2}.
+    return.
+
+{function, '__bp_tpl_1-t/1-fun-0-', 1, 39}.
+  {label, 38}.
+    {func_info, {atom, std@failure}, {atom, '__bp_tpl_1-t/1-fun-0-'}, 1}.
+  {label, 39}.
+    {allocate, 8, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}]}}.
+    {move, {x, 0}, {y, 1}}.
+    {'try', {y, 7}, {f, 42}}.
+    {move, {y, 1}, {x, 0}}.
+    {call_fun, 0}.
+    {move, {x, 0}, {y, 3}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 3}]}}.
+    {move, {x, 0}, {y, 3}}.
+    {move, {y, 3}, {y, 2}}.
+    {try_end, {y, 7}}.
+    {jump, {f, 43}}.
+  {label, 42}.
+    {try_case, {y, 7}}.
+    {move, {x, 0}, {y, 3}}.
+    {move, {x, 1}, {y, 4}}.
+    {move, {x, 2}, {y, 5}}.
+    {move, {y, 4}, {y, 0}}.
+    {test_heap, 2, 0}.
+    {put_list, {y, 0}, nil, {x, 0}}.
+    {move, {x, 0}, {y, 6}}.
+    {move, {literal, [126, 116, 112]}, {x, 0}}.
+    {move, {y, 6}, {x, 1}}.
+    {call_ext, 2, {extfunc, io_lib, format, 2}}.
+    {move, {x, 0}, {y, 6}}.
+    {move, {y, 6}, {x, 0}}.
+    {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
+    {move, {x, 0}, {y, 6}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 6}]}}.
+    {move, {x, 0}, {y, 6}}.
+    {move, {y, 6}, {y, 2}}.
+    {jump, {f, 44}}.
+  {label, 44}.
+  {label, 43}.
+    {move, {y, 2}, {x, 0}}.
+    {deallocate, 8}.
+    return.
+
+{function, '__bp_tpl_1', 1, 35}.
+  {label, 34}.
+    {func_info, {atom, std@failure}, {atom, '__bp_tpl_1'}, 1}.
+  {label, 35}.
+    {allocate, 2, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
+    {make_fun3, {f, 39}, 0, 0, {x, 0}, {list, []}}.
+    {move, {x, 0}, {y, 1}}.
+    {move, {y, 0}, {x, 0}}.
+    {move, {y, 1}, {x, 1}}.
+    {call_fun, 1}.
+    {deallocate, 2}.
+    return.
+```
+
+----- BEAM ASSEMBLY -- std@failure@@HostErrorName.S
+```erlang
+{module, std@failure@@HostErrorName}.
+{exports, [{'__bp_format', 1}]}.
+{attributes, []}.
+{labels, 7}.
+
+{function, '__bp_format', 1, 3}.
+  {label, 2}.
+    {line, [{location, "std@failure@@HostErrorName.erl", 1}]}.
+    {func_info, {atom, std@failure@@HostErrorName}, {atom, '__bp_format'}, 1}.
+  {label, 3}.
+    {allocate, 2, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_eq_exact, {f, 4}, [{x, 0}, {atom, std@failure@@HostErrorName__v__error}]}.
+    {test_heap, 4, 1}.
+    {put_tuple2, {x, 0}, {list, [{atom, variant}, {literal, <<"HostErrorName.Error">>}, nil]}}.
+    {deallocate, 2}.
+    return.
+  {label, 4}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_eq_exact, {f, 5}, [{x, 0}, {atom, std@failure@@HostErrorName__v__throw}]}.
+    {test_heap, 4, 1}.
+    {put_tuple2, {x, 0}, {list, [{atom, variant}, {literal, <<"HostErrorName.Throw">>}, nil]}}.
+    {deallocate, 2}.
+    return.
+  {label, 5}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_eq_exact, {f, 6}, [{x, 0}, {atom, std@failure@@HostErrorName__v__exit}]}.
+    {test_heap, 4, 1}.
+    {put_tuple2, {x, 0}, {list, [{atom, variant}, {literal, <<"HostErrorName.Exit">>}, nil]}}.
+    {deallocate, 2}.
+    return.
+  {label, 6}.
+    {test_heap, 4, 1}.
+    {put_tuple2, {x, 0}, {list, [{atom, variant}, {literal, <<"HostErrorName">>}, nil]}}.
+    {deallocate, 2}.
+    return.
+```
+
+----- BEAM ASSEMBLY -- std@failure@@HostError.S
+```erlang
+{module, std@failure@@HostError}.
+{exports, [{'__bp_get', 2}, {'__bp_format', 1}]}.
+{attributes, []}.
+{labels, 10}.
+
+{function, '__bp_get', 2, 3}.
+  {label, 2}.
+    {line, [{location, "std@failure@@HostError.erl", 1}]}.
+    {func_info, {atom, std@failure@@HostError}, {atom, '__bp_get'}, 2}.
+  {label, 3}.
+    {test, is_eq_exact, {f, 4}, [{x, 1}, {atom, message}]}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {integer, 2}, {x, 0}}.
+    {call_ext_only, 2, {extfunc, erlang, element, 2}}.
+  {label, 4}.
+    {test, is_eq_exact, {f, 5}, [{x, 1}, {atom, kind}]}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {integer, 3}, {x, 0}}.
+    {call_ext_only, 2, {extfunc, erlang, element, 2}}.
+  {label, 5}.
+    {test, is_eq_exact, {f, 6}, [{x, 1}, {atom, name}]}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {integer, 4}, {x, 0}}.
+    {call_ext_only, 2, {extfunc, erlang, element, 2}}.
+  {label, 6}.
+    {test, is_eq_exact, {f, 7}, [{x, 1}, {atom, detail}]}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {integer, 5}, {x, 0}}.
+    {call_ext_only, 2, {extfunc, erlang, element, 2}}.
+  {label, 7}.
+    {move, {atom, undefined}, {x, 0}}.
+    return.
+
+{function, '__bp_format', 1, 9}.
+  {label, 8}.
+    {line, [{location, "std@failure@@HostError.erl", 1}]}.
+    {func_info, {atom, std@failure@@HostError}, {atom, '__bp_format'}, 1}.
+  {label, 9}.
+    {allocate, 2, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, nil, {y, 1}}.
+    {move, {integer, 5}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, element, 2}}.
+    {test_heap, 5, 1}.
+    {put_tuple2, {x, 0}, {list, [{literal, <<"detail">>}, {x, 0}]}}.
+    {put_list, {x, 0}, {y, 1}, {y, 1}}.
+    {move, {integer, 4}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, element, 2}}.
+    {test_heap, 5, 1}.
+    {put_tuple2, {x, 0}, {list, [{literal, <<"name">>}, {x, 0}]}}.
+    {put_list, {x, 0}, {y, 1}, {y, 1}}.
+    {move, {integer, 3}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, element, 2}}.
+    {test_heap, 5, 1}.
+    {put_tuple2, {x, 0}, {list, [{literal, <<"kind">>}, {x, 0}]}}.
+    {put_list, {x, 0}, {y, 1}, {y, 1}}.
+    {move, {integer, 2}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, element, 2}}.
+    {test_heap, 5, 1}.
+    {put_tuple2, {x, 0}, {list, [{literal, <<"message">>}, {x, 0}]}}.
+    {put_list, {x, 0}, {y, 1}, {y, 1}}.
+    {test_heap, 4, 1}.
+    {put_tuple2, {x, 0}, {list, [{atom, record}, {literal, <<"HostError">>}, {y, 1}]}}.
+    {deallocate, 2}.
+    return.
+```
+
+----- BEAM ASSEMBLY -- std@failure@@Failure.S
+```erlang
+{module, std@failure@@Failure}.
+{exports, [{'__bp_get', 2}, {'__bp_format', 1}]}.
+{attributes, []}.
+{labels, 8}.
+
+{function, '__bp_get', 2, 3}.
+  {label, 2}.
+    {line, [{location, "std@failure@@Failure.erl", 1}]}.
+    {func_info, {atom, std@failure@@Failure}, {atom, '__bp_get'}, 2}.
+  {label, 3}.
+    {test, is_eq_exact, {f, 4}, [{x, 1}, {atom, message}]}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {integer, 2}, {x, 0}}.
+    {call_ext_only, 2, {extfunc, erlang, element, 2}}.
+  {label, 4}.
+    {test, is_eq_exact, {f, 5}, [{x, 1}, {atom, kind}]}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {integer, 3}, {x, 0}}.
+    {call_ext_only, 2, {extfunc, erlang, element, 2}}.
+  {label, 5}.
+    {move, {atom, undefined}, {x, 0}}.
+    return.
+
+{function, '__bp_format', 1, 7}.
+  {label, 6}.
+    {line, [{location, "std@failure@@Failure.erl", 1}]}.
+    {func_info, {atom, std@failure@@Failure}, {atom, '__bp_format'}, 1}.
+  {label, 7}.
+    {allocate, 2, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, nil, {y, 1}}.
+    {move, {integer, 3}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, element, 2}}.
+    {test_heap, 5, 1}.
+    {put_tuple2, {x, 0}, {list, [{literal, <<"kind">>}, {x, 0}]}}.
+    {put_list, {x, 0}, {y, 1}, {y, 1}}.
+    {move, {integer, 2}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, element, 2}}.
+    {test_heap, 5, 1}.
+    {put_tuple2, {x, 0}, {list, [{literal, <<"message">>}, {x, 0}]}}.
+    {put_list, {x, 0}, {y, 1}, {y, 1}}.
+    {test_heap, 4, 1}.
+    {put_tuple2, {x, 0}, {list, [{atom, record}, {literal, <<"Failure">>}, {y, 1}]}}.
+    {deallocate, 2}.
+    return.
+```
+
+----- RUN LOG -----
+```logs
+```
+
 ----- SOURCE CODE -- std/io/fs.bp
 ```botopink
 //// std/io/fs — the file system, cross-backend (decision 540).
@@ -2252,14 +2927,14 @@ test "path.isInside treats a name starting with two dots as a name" {
 //// `removeTree`, `copy`, `walk`, `glob`) are followed by the handle: `open`
 //// and `create` answer a `File`, a `Closeable` closed by the writer with `defer`.
 ////
-//// The host cells (`raw…`) answer `@Result<R, string>` whose error is
-//// `<kind>|<host text>` — `kind` one of `notfound`, `denied`, `isdir`, `notdir`,
-//// `exists`, `other` (or `dangling`, a `walk`'s own) — and `lift` turns it into the
-//// `FsError` of the path the caller wrote. All operations are synchronous
+//// The host cells (`raw…`) write `result: true` (decisions 431, 490) and answer
+//// `@Result<R, HostError>` — Node's `ENOENT: …`, erlang's `enoent` as its `message` —
+//// and `lift` reads that message as the `FsError` of the path the caller wrote
+//// (decision 486); no cell catches by hand. All operations are synchronous
 //// (`*Sync` on Node, blocking BIFs on Erlang); there is no wasm binding here
 //// (front 164: `wasi:filesystem` behind `needs: [.Filesystem]`).
 
-import {path.relative};
+import {path.relative, failure, failure.HostError};
 
 // The error of every `io.fs` function (decision 540). `path` is the path the
 // caller wrote (for `copy`, the source; for `walk`, the root).
@@ -2301,21 +2976,21 @@ pub type FileStat(
 // Read the whole file as bytes.
 // Node: `readFileSync($0)` copied into a plain `Uint8Array`.
 // Erlang: `file:read_file/1`.
-#[@External.Node("""(() => { const __ek = (__e) => { const __c = __e && __e.code; const __t = __c === 'ENOENT' ? 'notfound' : (__c === 'EACCES' || __c === 'EPERM') ? 'denied' : (__c === 'EISDIR' || __c === 'ERR_FS_EISDIR') ? 'isdir' : __c === 'ENOTDIR' ? 'notdir' : __c === 'EEXIST' ? 'exists' : 'other'; return __t + '|' + (__e && __e.message ? __e.message : String(__e)) }; try { return { ok: new Uint8Array(require('fs').readFileSync($0)) } } catch (__e) { return { error: __ek(__e) } } })()""")]
-#[@External.Erlang("""(fun(__P) -> __Ek = fun(__Rs) -> __K = case __Rs of enoent -> <<"notfound">>; eacces -> <<"denied">>; eperm -> <<"denied">>; eisdir -> <<"isdir">>; enotdir -> <<"notdir">>; eexist -> <<"exists">>; _ -> <<"other">> end, unicode:characters_to_binary([__K, <<"|">>, io_lib:format("~tp", [__Rs])]) end, case file:read_file(__P) of {ok, __B} -> {ok, __B}; {error, __R} -> {error, __Ek(__R)} end end)($0)""")]
-declare fn rawReadBytes(path: string) -> @Result<Bytes, string>;
+#[@External.Node("""(() => { return new Uint8Array(require('fs').readFileSync($0)) })()""", result: true)]
+#[@External.Erlang("""(fun(__P) -> case file:read_file(__P) of {ok, __B} -> {ok, __B}; {error, __R} -> {error, __R} end end)($0)""", result: true)]
+declare fn rawReadBytes(path: string) -> @Result<Bytes, HostError>;
 
 // Write `contents` to `path`, creating or truncating.
 // Node: `writeFileSync($0, $1)`. Erlang: `file:write_file/2`.
-#[@External.Node("""(() => { const __ek = (__e) => { const __c = __e && __e.code; const __t = __c === 'ENOENT' ? 'notfound' : (__c === 'EACCES' || __c === 'EPERM') ? 'denied' : (__c === 'EISDIR' || __c === 'ERR_FS_EISDIR') ? 'isdir' : __c === 'ENOTDIR' ? 'notdir' : __c === 'EEXIST' ? 'exists' : 'other'; return __t + '|' + (__e && __e.message ? __e.message : String(__e)) }; try { require('fs').writeFileSync($0, $1); return { ok: 0 } } catch (__e) { return { error: __ek(__e) } } })()""")]
-#[@External.Erlang("""(fun(__P, __C) -> __Ek = fun(__Rs) -> __K = case __Rs of enoent -> <<"notfound">>; eacces -> <<"denied">>; eperm -> <<"denied">>; eisdir -> <<"isdir">>; enotdir -> <<"notdir">>; eexist -> <<"exists">>; _ -> <<"other">> end, unicode:characters_to_binary([__K, <<"|">>, io_lib:format("~tp", [__Rs])]) end, case file:write_file(__P, __C) of ok -> {ok, 0}; {error, __R} -> {error, __Ek(__R)} end end)($0, $1)""")]
-declare fn rawWriteBytes(path: string, contents: Bytes) -> @Result<i32, string>;
+#[@External.Node("""(() => { require('fs').writeFileSync($0, $1); return 0 })()""", result: true)]
+#[@External.Erlang("""(fun(__P, __C) -> case file:write_file(__P, __C) of ok -> {ok, 0}; {error, __R} -> {error, __R} end end)($0, $1)""", result: true)]
+declare fn rawWriteBytes(path: string, contents: Bytes) -> @Result<i32, HostError>;
 
 // Append `contents` to `path`, creating it when it is not there.
 // Node: `appendFileSync($0, $1)`. Erlang: `file:write_file/3` with `append`.
-#[@External.Node("""(() => { const __ek = (__e) => { const __c = __e && __e.code; const __t = __c === 'ENOENT' ? 'notfound' : (__c === 'EACCES' || __c === 'EPERM') ? 'denied' : (__c === 'EISDIR' || __c === 'ERR_FS_EISDIR') ? 'isdir' : __c === 'ENOTDIR' ? 'notdir' : __c === 'EEXIST' ? 'exists' : 'other'; return __t + '|' + (__e && __e.message ? __e.message : String(__e)) }; try { require('fs').appendFileSync($0, $1); return { ok: 0 } } catch (__e) { return { error: __ek(__e) } } })()""")]
-#[@External.Erlang("""(fun(__P, __C) -> __Ek = fun(__Rs) -> __K = case __Rs of enoent -> <<"notfound">>; eacces -> <<"denied">>; eperm -> <<"denied">>; eisdir -> <<"isdir">>; enotdir -> <<"notdir">>; eexist -> <<"exists">>; _ -> <<"other">> end, unicode:characters_to_binary([__K, <<"|">>, io_lib:format("~tp", [__Rs])]) end, case file:write_file(__P, __C, [append]) of ok -> {ok, 0}; {error, __R} -> {error, __Ek(__R)} end end)($0, $1)""")]
-declare fn rawAppendText(path: string, contents: string) -> @Result<i32, string>;
+#[@External.Node("""(() => { require('fs').appendFileSync($0, $1); return 0 })()""", result: true)]
+#[@External.Erlang("""(fun(__P, __C) -> case file:write_file(__P, __C, [append]) of ok -> {ok, 0}; {error, __R} -> {error, __R} end end)($0, $1)""", result: true)]
+declare fn rawAppendText(path: string, contents: string) -> @Result<i32, HostError>;
 
 // The offset of the first byte that starts a sequence that is not UTF-8 (a byte no sequence
 // starts with, a sequence cut short, an overlong form, a surrogate, a code point past U+10FFFF),
@@ -2334,14 +3009,14 @@ declare fn stripEol(line: Bytes) -> Bytes;
 // The handle of the file at `path`, open for reading. A directory is `isdir` on both hosts
 // (Node opens one; the template refuses it). The handle is host-owned and opaque: a
 // `{ fd, mem, pos, buf }` object on Node, the raw file descriptor on Erlang.
-#[@External.Node("""(() => { const __ek = (__e) => { const __c = __e && __e.code; const __t = __c === 'ENOENT' ? 'notfound' : (__c === 'EACCES' || __c === 'EPERM') ? 'denied' : (__c === 'EISDIR' || __c === 'ERR_FS_EISDIR') ? 'isdir' : __c === 'ENOTDIR' ? 'notdir' : __c === 'EEXIST' ? 'exists' : 'other'; return __t + '|' + (__e && __e.message ? __e.message : String(__e)) }; try { const __fs = require('fs'); const __p = $0; const __fd = __fs.openSync(__p, 'r'); if (__fs.fstatSync(__fd).isDirectory()) { __fs.closeSync(__fd); return { error: 'isdir|EISDIR: illegal operation on a directory, open ' + JSON.stringify(__p) } } return { ok: { fd: __fd, mem: null, pos: 0, buf: new Uint8Array(0) } } } catch (__e) { return { error: __ek(__e) } } })()""")]
-#[@External.Erlang("""(fun(__P) -> __Ek = fun(__Rs) -> __K = case __Rs of enoent -> <<"notfound">>; eacces -> <<"denied">>; eperm -> <<"denied">>; eisdir -> <<"isdir">>; enotdir -> <<"notdir">>; eexist -> <<"exists">>; _ -> <<"other">> end, unicode:characters_to_binary([__K, <<"|">>, io_lib:format("~tp", [__Rs])]) end, case file:open(__P, [read, binary, raw, read_ahead]) of {ok, __F} -> {ok, __F}; {error, __R} -> {error, __Ek(__R)} end end)($0)""")]
-declare fn rawOpen(path: string) -> @Result<unknown, string>;
+#[@External.Node("""(() => { const __fs = require('fs'); const __p = $0; const __fd = __fs.openSync(__p, 'r'); if (__fs.fstatSync(__fd).isDirectory()) { __fs.closeSync(__fd); throw new Error('EISDIR: illegal operation on a directory, open ' + JSON.stringify(__p)) } return { fd: __fd, mem: null, pos: 0, buf: new Uint8Array(0) } })()""", result: true)]
+#[@External.Erlang("""(fun(__P) -> case file:open(__P, [read, binary, raw, read_ahead]) of {ok, __F} -> {ok, __F}; {error, __R} -> {error, __R} end end)($0)""", result: true)]
+declare fn rawOpen(path: string) -> @Result<unknown, HostError>;
 
 // The handle of the file at `path`, open for writing: created, or truncated.
-#[@External.Node("""(() => { const __ek = (__e) => { const __c = __e && __e.code; const __t = __c === 'ENOENT' ? 'notfound' : (__c === 'EACCES' || __c === 'EPERM') ? 'denied' : (__c === 'EISDIR' || __c === 'ERR_FS_EISDIR') ? 'isdir' : __c === 'ENOTDIR' ? 'notdir' : __c === 'EEXIST' ? 'exists' : 'other'; return __t + '|' + (__e && __e.message ? __e.message : String(__e)) }; try { const __fd = require('fs').openSync($0, 'w'); return { ok: { fd: __fd, mem: null, pos: 0, buf: new Uint8Array(0) } } } catch (__e) { return { error: __ek(__e) } } })()""")]
-#[@External.Erlang("""(fun(__P) -> __Ek = fun(__Rs) -> __K = case __Rs of enoent -> <<"notfound">>; eacces -> <<"denied">>; eperm -> <<"denied">>; eisdir -> <<"isdir">>; enotdir -> <<"notdir">>; eexist -> <<"exists">>; _ -> <<"other">> end, unicode:characters_to_binary([__K, <<"|">>, io_lib:format("~tp", [__Rs])]) end, case file:open(__P, [write, binary, raw]) of {ok, __F} -> {ok, __F}; {error, __R} -> {error, __Ek(__R)} end end)($0)""")]
-declare fn rawCreate(path: string) -> @Result<unknown, string>;
+#[@External.Node("""(() => { const __fd = require('fs').openSync($0, 'w'); return { fd: __fd, mem: null, pos: 0, buf: new Uint8Array(0) } })()""", result: true)]
+#[@External.Erlang("""(fun(__P) -> case file:open(__P, [write, binary, raw]) of {ok, __F} -> {ok, __F}; {error, __R} -> {error, __R} end end)($0)""", result: true)]
+declare fn rawCreate(path: string) -> @Result<unknown, HostError>;
 
 // A handle over bytes held in memory — what an `Asset` opens as. The position is a field
 // on Node and a `counters` cell on Erlang.
@@ -2350,51 +3025,51 @@ declare fn rawCreate(path: string) -> @Result<unknown, string>;
 declare fn memHandle(bytes: Bytes) -> unknown;
 
 // The size of the file behind `handle`, in bytes. Erlang's raw descriptor has no `fstat`, so it reads `path`.
-#[@External.Node("""(() => { const __ek = (__e) => { const __c = __e && __e.code; const __t = __c === 'ENOENT' ? 'notfound' : (__c === 'EACCES' || __c === 'EPERM') ? 'denied' : (__c === 'EISDIR' || __c === 'ERR_FS_EISDIR') ? 'isdir' : __c === 'ENOTDIR' ? 'notdir' : __c === 'EEXIST' ? 'exists' : 'other'; return __t + '|' + (__e && __e.message ? __e.message : String(__e)) }; try { const __h = $0; return { ok: __h.mem ? __h.mem.length : require('fs').fstatSync(__h.fd).size } } catch (__e) { return { error: __ek(__e) } } })()""")]
-#[@External.Erlang("""(fun(__H, __P) -> __Ek = fun(__Rs) -> __K = case __Rs of enoent -> <<"notfound">>; eacces -> <<"denied">>; eperm -> <<"denied">>; eisdir -> <<"isdir">>; enotdir -> <<"notdir">>; eexist -> <<"exists">>; _ -> <<"other">> end, unicode:characters_to_binary([__K, <<"|">>, io_lib:format("~tp", [__Rs])]) end, case __H of {mem, __B, _} -> {ok, byte_size(__B)}; _ -> case file:read_file_info(__P) of {ok, __I} -> {ok, element(2, __I)}; {error, __R} -> {error, __Ek(__R)} end end end)($0, $1)""")]
-declare fn rawSize(handle: unknown, path: string) -> @Result<i64, string>;
+#[@External.Node("""(() => { const __h = $0; return __h.mem ? __h.mem.length : require('fs').fstatSync(__h.fd).size })()""", result: true)]
+#[@External.Erlang("""(fun(__H, __P) -> case __H of {mem, __B, _} -> {ok, byte_size(__B)}; _ -> case file:read_file_info(__P) of {ok, __I} -> {ok, element(2, __I)}; {error, __R} -> {error, __R} end end end)($0, $1)""", result: true)]
+declare fn rawSize(handle: unknown, path: string) -> @Result<i64, HostError>;
 
 // Up to `n` bytes (n > 0) from the handle's position; empty at the end.
-#[@External.Node("""(() => { const __ek = (__e) => { const __c = __e && __e.code; const __t = __c === 'ENOENT' ? 'notfound' : (__c === 'EACCES' || __c === 'EPERM') ? 'denied' : (__c === 'EISDIR' || __c === 'ERR_FS_EISDIR') ? 'isdir' : __c === 'ENOTDIR' ? 'notdir' : __c === 'EEXIST' ? 'exists' : 'other'; return __t + '|' + (__e && __e.message ? __e.message : String(__e)) }; const __more = (h, n) => { if (h.mem) { const r = h.mem.subarray(h.pos, h.pos + n); h.pos += r.length; return r } const b = new Uint8Array(n); const k = require('fs').readSync(h.fd, b, 0, n, null); return b.subarray(0, k) }; try { const __h = $0; const __n = $1; if (__h.buf.length > 0) { const __k = Math.min(__n, __h.buf.length); const __o = new Uint8Array(__h.buf.subarray(0, __k)); __h.buf = __h.buf.subarray(__k); return { ok: __o } } return { ok: new Uint8Array(__more(__h, __n)) } } catch (__e) { return { error: __ek(__e) } } })()""")]
-#[@External.Erlang("""(fun(__H, __N) -> __Ek = fun(__Rs) -> __K = case __Rs of enoent -> <<"notfound">>; eacces -> <<"denied">>; eperm -> <<"denied">>; eisdir -> <<"isdir">>; enotdir -> <<"notdir">>; eexist -> <<"exists">>; _ -> <<"other">> end, unicode:characters_to_binary([__K, <<"|">>, io_lib:format("~tp", [__Rs])]) end, case __H of {mem, __B, __C} -> __Pos = counters:get(__C, 1), __Len = min(__N, byte_size(__B) - __Pos), counters:add(__C, 1, __Len), {ok, binary:part(__B, __Pos, __Len)}; _ -> case file:read(__H, __N) of {ok, __D} -> {ok, __D}; eof -> {ok, <<>>}; {error, __R} -> {error, __Ek(__R)} end end end)($0, $1)""")]
-declare fn rawRead(handle: unknown, n: i32) -> @Result<Bytes, string>;
+#[@External.Node("""(() => { const __more = (h, n) => { if (h.mem) { const r = h.mem.subarray(h.pos, h.pos + n); h.pos += r.length; return r } const b = new Uint8Array(n); const k = require('fs').readSync(h.fd, b, 0, n, null); return b.subarray(0, k) }; const __h = $0; const __n = $1; if (__h.buf.length > 0) { const __k = Math.min(__n, __h.buf.length); const __o = new Uint8Array(__h.buf.subarray(0, __k)); __h.buf = __h.buf.subarray(__k); return __o } return new Uint8Array(__more(__h, __n)) })()""", result: true)]
+#[@External.Erlang("""(fun(__H, __N) -> case __H of {mem, __B, __C} -> __Pos = counters:get(__C, 1), __Len = min(__N, byte_size(__B) - __Pos), counters:add(__C, 1, __Len), {ok, binary:part(__B, __Pos, __Len)}; _ -> case file:read(__H, __N) of {ok, __D} -> {ok, __D}; eof -> {ok, <<>>}; {error, __R} -> {error, __R} end end end)($0, $1)""", result: true)]
+declare fn rawRead(handle: unknown, n: i32) -> @Result<Bytes, HostError>;
 
 // Every byte from the handle's position to the end.
-#[@External.Node("""(() => { const __ek = (__e) => { const __c = __e && __e.code; const __t = __c === 'ENOENT' ? 'notfound' : (__c === 'EACCES' || __c === 'EPERM') ? 'denied' : (__c === 'EISDIR' || __c === 'ERR_FS_EISDIR') ? 'isdir' : __c === 'ENOTDIR' ? 'notdir' : __c === 'EEXIST' ? 'exists' : 'other'; return __t + '|' + (__e && __e.message ? __e.message : String(__e)) }; const __more = (h, n) => { if (h.mem) { const r = h.mem.subarray(h.pos, h.pos + n); h.pos += r.length; return r } const b = new Uint8Array(n); const k = require('fs').readSync(h.fd, b, 0, n, null); return b.subarray(0, k) }; try { const __h = $0; const __parts = []; if (__h.buf.length > 0) { __parts.push(__h.buf); __h.buf = new Uint8Array(0) } for (;;) { const __r = __more(__h, 65536); if (__r.length === 0) break; __parts.push(new Uint8Array(__r)) } let __t = 0; for (const __x of __parts) __t += __x.length; const __o = new Uint8Array(__t); let __p = 0; for (const __x of __parts) { __o.set(__x, __p); __p += __x.length } return { ok: __o } } catch (__e) { return { error: __ek(__e) } } })()""")]
-#[@External.Erlang("""(fun(__H) -> __Ek = fun(__Rs) -> __K = case __Rs of enoent -> <<"notfound">>; eacces -> <<"denied">>; eperm -> <<"denied">>; eisdir -> <<"isdir">>; enotdir -> <<"notdir">>; eexist -> <<"exists">>; _ -> <<"other">> end, unicode:characters_to_binary([__K, <<"|">>, io_lib:format("~tp", [__Rs])]) end, case __H of {mem, __B, __C} -> __Pos = counters:get(__C, 1), counters:add(__C, 1, byte_size(__B) - __Pos), {ok, binary:part(__B, __Pos, byte_size(__B) - __Pos)}; _ -> (fun __L(__Acc) -> case file:read(__H, 65536) of {ok, __D} -> __L([__Acc, __D]); eof -> {ok, iolist_to_binary(__Acc)}; {error, __R} -> {error, __Ek(__R)} end end)([]) end end)($0)""")]
-declare fn rawReadAll(handle: unknown) -> @Result<Bytes, string>;
+#[@External.Node("""(() => { const __more = (h, n) => { if (h.mem) { const r = h.mem.subarray(h.pos, h.pos + n); h.pos += r.length; return r } const b = new Uint8Array(n); const k = require('fs').readSync(h.fd, b, 0, n, null); return b.subarray(0, k) }; const __h = $0; const __parts = []; if (__h.buf.length > 0) { __parts.push(__h.buf); __h.buf = new Uint8Array(0) } for (;;) { const __r = __more(__h, 65536); if (__r.length === 0) break; __parts.push(new Uint8Array(__r)) } let __t = 0; for (const __x of __parts) __t += __x.length; const __o = new Uint8Array(__t); let __p = 0; for (const __x of __parts) { __o.set(__x, __p); __p += __x.length } return __o })()""", result: true)]
+#[@External.Erlang("""(fun(__H) -> case __H of {mem, __B, __C} -> __Pos = counters:get(__C, 1), counters:add(__C, 1, byte_size(__B) - __Pos), {ok, binary:part(__B, __Pos, byte_size(__B) - __Pos)}; _ -> (fun __L(__Acc) -> case file:read(__H, 65536) of {ok, __D} -> __L([__Acc, __D]); eof -> {ok, iolist_to_binary(__Acc)}; {error, __R} -> {error, __R} end end)([]) end end)($0)""", result: true)]
+declare fn rawReadAll(handle: unknown) -> @Result<Bytes, HostError>;
 
 // The next line, terminator included; empty at the end.
-#[@External.Node("""(() => { const __ek = (__e) => { const __c = __e && __e.code; const __t = __c === 'ENOENT' ? 'notfound' : (__c === 'EACCES' || __c === 'EPERM') ? 'denied' : (__c === 'EISDIR' || __c === 'ERR_FS_EISDIR') ? 'isdir' : __c === 'ENOTDIR' ? 'notdir' : __c === 'EEXIST' ? 'exists' : 'other'; return __t + '|' + (__e && __e.message ? __e.message : String(__e)) }; const __more = (h, n) => { if (h.mem) { const r = h.mem.subarray(h.pos, h.pos + n); h.pos += r.length; return r } const b = new Uint8Array(n); const k = require('fs').readSync(h.fd, b, 0, n, null); return b.subarray(0, k) }; try { const __h = $0; for (;;) { const __i = __h.buf.indexOf(10); if (__i >= 0) { const __l = new Uint8Array(__h.buf.subarray(0, __i + 1)); __h.buf = __h.buf.subarray(__i + 1); return { ok: __l } } const __r = __more(__h, 65536); if (__r.length === 0) { const __l = __h.buf; __h.buf = new Uint8Array(0); return { ok: __l } } const __nb = new Uint8Array(__h.buf.length + __r.length); __nb.set(__h.buf, 0); __nb.set(__r, __h.buf.length); __h.buf = __nb } } catch (__e) { return { error: __ek(__e) } } })()""")]
-#[@External.Erlang("""(fun(__H) -> __Ek = fun(__Rs) -> __K = case __Rs of enoent -> <<"notfound">>; eacces -> <<"denied">>; eperm -> <<"denied">>; eisdir -> <<"isdir">>; enotdir -> <<"notdir">>; eexist -> <<"exists">>; _ -> <<"other">> end, unicode:characters_to_binary([__K, <<"|">>, io_lib:format("~tp", [__Rs])]) end, case __H of {mem, __B, __C} -> __Pos = counters:get(__C, 1), __Rest = binary:part(__B, __Pos, byte_size(__B) - __Pos), case binary:match(__Rest, <<10>>) of nomatch -> counters:add(__C, 1, byte_size(__Rest)), {ok, __Rest}; {__At, _} -> counters:add(__C, 1, __At + 1), {ok, binary:part(__Rest, 0, __At + 1)} end; _ -> case file:read_line(__H) of {ok, __D} -> {ok, __D}; eof -> {ok, <<>>}; {error, __R} -> {error, __Ek(__R)} end end end)($0)""")]
-declare fn rawReadLine(handle: unknown) -> @Result<Bytes, string>;
+#[@External.Node("""(() => { const __more = (h, n) => { if (h.mem) { const r = h.mem.subarray(h.pos, h.pos + n); h.pos += r.length; return r } const b = new Uint8Array(n); const k = require('fs').readSync(h.fd, b, 0, n, null); return b.subarray(0, k) }; const __h = $0; for (;;) { const __i = __h.buf.indexOf(10); if (__i >= 0) { const __l = new Uint8Array(__h.buf.subarray(0, __i + 1)); __h.buf = __h.buf.subarray(__i + 1); return __l } const __r = __more(__h, 65536); if (__r.length === 0) { const __l = __h.buf; __h.buf = new Uint8Array(0); return __l } const __nb = new Uint8Array(__h.buf.length + __r.length); __nb.set(__h.buf, 0); __nb.set(__r, __h.buf.length); __h.buf = __nb } })()""", result: true)]
+#[@External.Erlang("""(fun(__H) -> case __H of {mem, __B, __C} -> __Pos = counters:get(__C, 1), __Rest = binary:part(__B, __Pos, byte_size(__B) - __Pos), case binary:match(__Rest, <<10>>) of nomatch -> counters:add(__C, 1, byte_size(__Rest)), {ok, __Rest}; {__At, _} -> counters:add(__C, 1, __At + 1), {ok, binary:part(__Rest, 0, __At + 1)} end; _ -> case file:read_line(__H) of {ok, __D} -> {ok, __D}; eof -> {ok, <<>>}; {error, __R} -> {error, __R} end end end)($0)""", result: true)]
+declare fn rawReadLine(handle: unknown) -> @Result<Bytes, HostError>;
 
 // The SHA-256 of the whole file behind the handle, lowercase hex — from its first byte,
 // whatever the position, which it leaves where it was.
-#[@External.Node("""(() => { const __ek = (__e) => { const __c = __e && __e.code; const __t = __c === 'ENOENT' ? 'notfound' : (__c === 'EACCES' || __c === 'EPERM') ? 'denied' : (__c === 'EISDIR' || __c === 'ERR_FS_EISDIR') ? 'isdir' : __c === 'ENOTDIR' ? 'notdir' : __c === 'EEXIST' ? 'exists' : 'other'; return __t + '|' + (__e && __e.message ? __e.message : String(__e)) }; try { const __h = $0; const __hs = require('crypto').createHash('sha256'); if (__h.mem) { __hs.update(__h.mem) } else { const __b = new Uint8Array(65536); let __pos = 0; for (;;) { const __k = require('fs').readSync(__h.fd, __b, 0, 65536, __pos); if (__k === 0) break; __hs.update(__b.subarray(0, __k)); __pos += __k } } return { ok: __hs.digest('hex') } } catch (__e) { return { error: __ek(__e) } } })()""")]
-#[@External.Erlang("""(fun(__H) -> __Ek = fun(__Rs) -> __K = case __Rs of enoent -> <<"notfound">>; eacces -> <<"denied">>; eperm -> <<"denied">>; eisdir -> <<"isdir">>; enotdir -> <<"notdir">>; eexist -> <<"exists">>; _ -> <<"other">> end, unicode:characters_to_binary([__K, <<"|">>, io_lib:format("~tp", [__Rs])]) end, case __H of {mem, __B, _} -> {ok, string:lowercase(binary:encode_hex(crypto:hash(sha256, __B)))}; _ -> __L = fun __Lp(__Pos, __Ctx) -> case file:pread(__H, __Pos, 65536) of {ok, __D} -> __Lp(__Pos + byte_size(__D), crypto:hash_update(__Ctx, __D)); eof -> crypto:hash_final(__Ctx); {error, __R} -> throw({bp_fs_hash, __R}) end end, try {ok, string:lowercase(binary:encode_hex(__L(0, crypto:hash_init(sha256))))} catch throw:{bp_fs_hash, __Y} -> {error, __Ek(__Y)} end end end)($0)""")]
-declare fn rawHash(handle: unknown) -> @Result<string, string>;
+#[@External.Node("""(() => { const __h = $0; const __hs = require('crypto').createHash('sha256'); if (__h.mem) { __hs.update(__h.mem) } else { const __b = new Uint8Array(65536); let __pos = 0; for (;;) { const __k = require('fs').readSync(__h.fd, __b, 0, 65536, __pos); if (__k === 0) break; __hs.update(__b.subarray(0, __k)); __pos += __k } } return __hs.digest('hex') })()""", result: true)]
+#[@External.Erlang("""(fun(__H) -> case __H of {mem, __B, _} -> {ok, string:lowercase(binary:encode_hex(crypto:hash(sha256, __B)))}; _ -> __L = fun __Lp(__Pos, __Ctx) -> case file:pread(__H, __Pos, 65536) of {ok, __D} -> __Lp(__Pos + byte_size(__D), crypto:hash_update(__Ctx, __D)); eof -> crypto:hash_final(__Ctx); {error, __R} -> erlang:error(__R) end end, {ok, string:lowercase(binary:encode_hex(__L(0, crypto:hash_init(sha256))))} end end)($0)""", result: true)]
+declare fn rawHash(handle: unknown) -> @Result<string, HostError>;
 
 // Write `bytes` at the handle's position; answers how many.
-#[@External.Node("""(() => { const __ek = (__e) => { const __c = __e && __e.code; const __t = __c === 'ENOENT' ? 'notfound' : (__c === 'EACCES' || __c === 'EPERM') ? 'denied' : (__c === 'EISDIR' || __c === 'ERR_FS_EISDIR') ? 'isdir' : __c === 'ENOTDIR' ? 'notdir' : __c === 'EEXIST' ? 'exists' : 'other'; return __t + '|' + (__e && __e.message ? __e.message : String(__e)) }; try { const __h = $0; const __b = $1; if (__h.mem) return { error: 'other|the file is open for reading' }; let __o = 0; while (__o < __b.length) __o += require('fs').writeSync(__h.fd, __b, __o, __b.length - __o); return { ok: __b.length } } catch (__e) { return { error: __ek(__e) } } })()""")]
-#[@External.Erlang("""(fun(__H, __B) -> __Ek = fun(__Rs) -> __K = case __Rs of enoent -> <<"notfound">>; eacces -> <<"denied">>; eperm -> <<"denied">>; eisdir -> <<"isdir">>; enotdir -> <<"notdir">>; eexist -> <<"exists">>; _ -> <<"other">> end, unicode:characters_to_binary([__K, <<"|">>, io_lib:format("~tp", [__Rs])]) end, case __H of {mem, _, _} -> {error, <<"other|the file is open for reading">>}; _ -> case file:write(__H, __B) of ok -> {ok, byte_size(__B)}; {error, __R} -> {error, __Ek(__R)} end end end)($0, $1)""")]
-declare fn rawWrite(handle: unknown, bytes: Bytes) -> @Result<i32, string>;
+#[@External.Node("""(() => { const __h = $0; const __b = $1; let __o = 0; while (__o < __b.length) __o += require('fs').writeSync(__h.fd, __b, __o, __b.length - __o); return __b.length })()""", result: true)]
+#[@External.Erlang("""(fun(__H, __B) -> case file:write(__H, __B) of ok -> {ok, byte_size(__B)}; {error, __R} -> {error, __R} end end)($0, $1)""", result: true)]
+declare fn rawWrite(handle: unknown, bytes: Bytes) -> @Result<i32, HostError>;
 
 // Close the handle. A failure to close is not reported (a `Closeable`'s `close` answers nothing).
-#[@External.Node("""(() => { try { const __h = $0; if (!__h.mem) require('fs').closeSync(__h.fd) } catch (__e) {} })()""")]
-#[@External.Erlang("""(fun(__H) -> case __H of {mem, _, _} -> ok; _ -> _ = file:close(__H), ok end end)($0)""")]
-declare fn rawClose(handle: unknown) -> void;
+#[@External.Node("""(() => { const __h = $0; if (!__h.mem) require('fs').closeSync(__h.fd); return 0 })()""", result: true)]
+#[@External.Erlang("""(fun(__H) -> case __H of {mem, _, _} -> {ok, 0}; _ -> case file:close(__H) of ok -> {ok, 0}; {error, __R} -> {error, __R} end end end)($0)""", result: true)]
+declare fn rawClose(handle: unknown) -> @Result<i32, HostError>;
 
 // Write `contents` to `path`, creating or truncating. Reds with the
 // host's I/O error message.
 // Node: `require('fs').writeFileSync($0, $1)`.
 // Erlang: `file:write_file/2`.
-#[@External.Node("""(() => { const __ek = (__e) => { const __c = __e && __e.code; const __t = __c === 'ENOENT' ? 'notfound' : (__c === 'EACCES' || __c === 'EPERM') ? 'denied' : (__c === 'EISDIR' || __c === 'ERR_FS_EISDIR') ? 'isdir' : __c === 'ENOTDIR' ? 'notdir' : __c === 'EEXIST' ? 'exists' : 'other'; return __t + '|' + (__e && __e.message ? __e.message : String(__e)) }; try { require('fs').writeFileSync($0, $1); return { ok: 0 } } catch (__e) { return { error: __ek(__e) } } })()""")]
-#[@External.Erlang("""(fun(__P, __C) -> __Ek = fun(__Rs) -> __K = case __Rs of enoent -> <<"notfound">>; eacces -> <<"denied">>; eperm -> <<"denied">>; eisdir -> <<"isdir">>; enotdir -> <<"notdir">>; eexist -> <<"exists">>; _ -> <<"other">> end, unicode:characters_to_binary([__K, <<"|">>, io_lib:format("~tp", [__Rs])]) end, case file:write_file(__P, __C) of ok -> {ok, 0}; {error, __R} -> {error, __Ek(__R)} end end)($0, $1)""")]
+#[@External.Node("""(() => { require('fs').writeFileSync($0, $1); return 0 })()""", result: true)]
+#[@External.Erlang("""(fun(__P, __C) -> case file:write_file(__P, __C) of ok -> {ok, 0}; {error, __R} -> {error, __R} end end)($0, $1)""", result: true)]
 declare fn rawWriteText(
     path: string,
     contents: string,
-) -> @Result<i32, string>;
+) -> @Result<i32, HostError>;
 
 // Whether a path exists, of any kind: a regular file, a directory, a
 // character or block device (`/dev/null`), a FIFO or a socket. A symbolic
@@ -2411,17 +3086,17 @@ pub declare fn exists(path: string) -> bool;
 // List the names of the directory entries at `path` (relative).
 // Node: `require('fs').readdirSync($0)`.
 // Erlang: `file:list_dir/1` returns `{ok, [string()]}`.
-#[@External.Node("""(() => { const __ek = (__e) => { const __c = __e && __e.code; const __t = __c === 'ENOENT' ? 'notfound' : (__c === 'EACCES' || __c === 'EPERM') ? 'denied' : (__c === 'EISDIR' || __c === 'ERR_FS_EISDIR') ? 'isdir' : __c === 'ENOTDIR' ? 'notdir' : __c === 'EEXIST' ? 'exists' : 'other'; return __t + '|' + (__e && __e.message ? __e.message : String(__e)) }; try { return { ok: require('fs').readdirSync($0) } } catch (__e) { return { error: __ek(__e) } } })()""")]
-#[@External.Erlang("""(fun(__P) -> __Ek = fun(__Rs) -> __K = case __Rs of enoent -> <<"notfound">>; eacces -> <<"denied">>; eperm -> <<"denied">>; eisdir -> <<"isdir">>; enotdir -> <<"notdir">>; eexist -> <<"exists">>; _ -> <<"other">> end, unicode:characters_to_binary([__K, <<"|">>, io_lib:format("~tp", [__Rs])]) end, case file:list_dir(__P) of {ok, __L} -> {ok, [list_to_binary(__N) || __N <- __L]}; {error, __R} -> {error, __Ek(__R)} end end)($0)""")]
-declare fn rawList(path: string) -> @Result<string[], string>;
+#[@External.Node("""(() => { return require('fs').readdirSync($0) })()""", result: true)]
+#[@External.Erlang("""(fun(__P) -> case file:list_dir(__P) of {ok, __L} -> {ok, [list_to_binary(__N) || __N <- __L]}; {error, __R} -> {error, __R} end end)($0)""", result: true)]
+declare fn rawList(path: string) -> @Result<string[], HostError>;
 
 // Create directory at `path`. Use `mkdirRecursive` to create
 // intermediate parents.
 // Node: `require('fs').mkdirSync($0)`.
 // Erlang: `file:make_dir/1`.
-#[@External.Node("""(() => { const __ek = (__e) => { const __c = __e && __e.code; const __t = __c === 'ENOENT' ? 'notfound' : (__c === 'EACCES' || __c === 'EPERM') ? 'denied' : (__c === 'EISDIR' || __c === 'ERR_FS_EISDIR') ? 'isdir' : __c === 'ENOTDIR' ? 'notdir' : __c === 'EEXIST' ? 'exists' : 'other'; return __t + '|' + (__e && __e.message ? __e.message : String(__e)) }; try { require('fs').mkdirSync($0); return { ok: 0 } } catch (__e) { return { error: __ek(__e) } } })()""")]
-#[@External.Erlang("""(fun(__P) -> __Ek = fun(__Rs) -> __K = case __Rs of enoent -> <<"notfound">>; eacces -> <<"denied">>; eperm -> <<"denied">>; eisdir -> <<"isdir">>; enotdir -> <<"notdir">>; eexist -> <<"exists">>; _ -> <<"other">> end, unicode:characters_to_binary([__K, <<"|">>, io_lib:format("~tp", [__Rs])]) end, case file:make_dir(__P) of ok -> {ok, 0}; {error, __R} -> {error, __Ek(__R)} end end)($0)""")]
-declare fn rawMkdir(path: string) -> @Result<i32, string>;
+#[@External.Node("""(() => { require('fs').mkdirSync($0); return 0 })()""", result: true)]
+#[@External.Erlang("""(fun(__P) -> case file:make_dir(__P) of ok -> {ok, 0}; {error, __R} -> {error, __R} end end)($0)""", result: true)]
+declare fn rawMkdir(path: string) -> @Result<i32, HostError>;
 
 // Create the directory at `path` and every missing directory above it. A
 // directory that is already there is `Ok` too; a path that exists as anything
@@ -2429,26 +3104,26 @@ declare fn rawMkdir(path: string) -> @Result<i32, string>;
 // directory of a `.snap` with (decision 391).
 // Node: `require('fs').mkdirSync($0, { recursive: true })`.
 // Erlang: `filelib:ensure_path/1`.
-#[@External.Node("""(() => { const __ek = (__e) => { const __c = __e && __e.code; const __t = __c === 'ENOENT' ? 'notfound' : (__c === 'EACCES' || __c === 'EPERM') ? 'denied' : (__c === 'EISDIR' || __c === 'ERR_FS_EISDIR') ? 'isdir' : __c === 'ENOTDIR' ? 'notdir' : __c === 'EEXIST' ? 'exists' : 'other'; return __t + '|' + (__e && __e.message ? __e.message : String(__e)) }; try { require('fs').mkdirSync($0, { recursive: true }); return { ok: 0 } } catch (__e) { return { error: __ek(__e) } } })()""")]
-#[@External.Erlang("""(fun(__P) -> __Ek = fun(__Rs) -> __K = case __Rs of enoent -> <<"notfound">>; eacces -> <<"denied">>; eperm -> <<"denied">>; eisdir -> <<"isdir">>; enotdir -> <<"notdir">>; eexist -> <<"exists">>; _ -> <<"other">> end, unicode:characters_to_binary([__K, <<"|">>, io_lib:format("~tp", [__Rs])]) end, case filelib:ensure_path(__P) of ok -> {ok, 0}; {error, __R} -> {error, __Ek(__R)} end end)($0)""")]
-declare fn rawMkdirRecursive(path: string) -> @Result<i32, string>;
+#[@External.Node("""(() => { require('fs').mkdirSync($0, { recursive: true }); return 0 })()""", result: true)]
+#[@External.Erlang("""(fun(__P) -> case filelib:ensure_path(__P) of ok -> {ok, 0}; {error, __R} -> {error, __R} end end)($0)""", result: true)]
+declare fn rawMkdirRecursive(path: string) -> @Result<i32, HostError>;
 
 // Delete the FILE at `path`. A directory — empty or not — is `IsDirectory` on
 // both hosts (Node's `ERR_FS_EISDIR`; Erlang's `eperm` is read as `eisdir` after
 // a `read_link_info`, so the variant is the same); `removeTree` removes one.
 // Node: `require('fs').rmSync($0)`.
 // Erlang: `file:delete/1`.
-#[@External.Node("""(() => { const __ek = (__e) => { const __c = __e && __e.code; const __t = __c === 'ENOENT' ? 'notfound' : (__c === 'EACCES' || __c === 'EPERM') ? 'denied' : (__c === 'EISDIR' || __c === 'ERR_FS_EISDIR') ? 'isdir' : __c === 'ENOTDIR' ? 'notdir' : __c === 'EEXIST' ? 'exists' : 'other'; return __t + '|' + (__e && __e.message ? __e.message : String(__e)) }; try { require('fs').rmSync($0); return { ok: 0 } } catch (__e) { return { error: __ek(__e) } } })()""")]
-#[@External.Erlang("""(fun(__P) -> __Ek = fun(__Rs) -> __K = case __Rs of enoent -> <<"notfound">>; eacces -> <<"denied">>; eperm -> <<"denied">>; eisdir -> <<"isdir">>; enotdir -> <<"notdir">>; eexist -> <<"exists">>; _ -> <<"other">> end, unicode:characters_to_binary([__K, <<"|">>, io_lib:format("~tp", [__Rs])]) end, case file:read_link_info(__P) of {ok, __I} when element(3, __I) =:= directory -> {error, __Ek(eisdir)}; _ -> case file:delete(__P) of ok -> {ok, 0}; {error, __R} -> {error, __Ek(__R)} end end end)($0)""")]
-declare fn rawRm(path: string) -> @Result<i32, string>;
+#[@External.Node("""(() => { require('fs').rmSync($0); return 0 })()""", result: true)]
+#[@External.Erlang("""(fun(__P) -> case file:read_link_info(__P) of {ok, __I} when element(3, __I) =:= directory -> {error, eisdir}; _ -> case file:delete(__P) of ok -> {ok, 0}; {error, __R} -> {error, __R} end end end)($0)""", result: true)]
+declare fn rawRm(path: string) -> @Result<i32, HostError>;
 
 // Copy file from `src` to `dest`. Reds when `src` is missing or
 // `dest` already exists (Node's default `copyFileSync` semantics).
 // Node: `require('fs').copyFileSync($0, $1)`.
 // Erlang: `file:copy/2` (returns `{ok, BytesCopied}` or `{error, _}`).
-#[@External.Node("""(() => { const __ek = (__e) => { const __c = __e && __e.code; const __t = __c === 'ENOENT' ? 'notfound' : (__c === 'EACCES' || __c === 'EPERM') ? 'denied' : (__c === 'EISDIR' || __c === 'ERR_FS_EISDIR') ? 'isdir' : __c === 'ENOTDIR' ? 'notdir' : __c === 'EEXIST' ? 'exists' : 'other'; return __t + '|' + (__e && __e.message ? __e.message : String(__e)) }; try { require('fs').copyFileSync($0, $1); return { ok: 0 } } catch (__e) { return { error: __ek(__e) } } })()""")]
-#[@External.Erlang("""(fun(__S, __D) -> __Ek = fun(__Rs) -> __K = case __Rs of enoent -> <<"notfound">>; eacces -> <<"denied">>; eperm -> <<"denied">>; eisdir -> <<"isdir">>; enotdir -> <<"notdir">>; eexist -> <<"exists">>; _ -> <<"other">> end, unicode:characters_to_binary([__K, <<"|">>, io_lib:format("~tp", [__Rs])]) end, case file:copy(__S, __D) of {ok, _} -> {ok, 0}; {error, __R} -> {error, __Ek(__R)} end end)($0, $1)""")]
-declare fn rawCopy(src: string, dest: string) -> @Result<i32, string>;
+#[@External.Node("""(() => { require('fs').copyFileSync($0, $1); return 0 })()""", result: true)]
+#[@External.Erlang("""(fun(__S, __D) -> case file:copy(__S, __D) of {ok, _} -> {ok, 0}; {error, __R} -> {error, __R} end end)($0, $1)""", result: true)]
+declare fn rawCopy(src: string, dest: string) -> @Result<i32, HostError>;
 
 // File metadata. Returns a `FileStat { size, mtime, isDir }` on
 // success. `mtime` is epoch milliseconds (matching `time.nowMillis()`);
@@ -2460,9 +3135,9 @@ declare fn rawCopy(src: string, dest: string) -> @Result<i32, string>;
 // Erlang: `file:read_file_info/1` returns a `#file_info` record; the
 // template projects the `size`, `mtime`, and `type` fields. Its `mtime` is
 // whole seconds × 1000. One value on every target: whole seconds (decision 499).
-#[@External.Node("""(() => { const __ek = (__e) => { const __c = __e && __e.code; const __t = __c === 'ENOENT' ? 'notfound' : (__c === 'EACCES' || __c === 'EPERM') ? 'denied' : (__c === 'EISDIR' || __c === 'ERR_FS_EISDIR') ? 'isdir' : __c === 'ENOTDIR' ? 'notdir' : __c === 'EEXIST' ? 'exists' : 'other'; return __t + '|' + (__e && __e.message ? __e.message : String(__e)) }; try { const __s = require('fs').statSync($0, { bigint: true }); const __c = (__v) => (__v >= -9007199254740991n && __v <= 9007199254740991n) ? Number(__v) : __v; const __ns = __s.mtimeNs; return { ok: { size: __c(__s.size), mtime: __c(((__ns - (((__ns % 1000000000n) + 1000000000n) % 1000000000n)) / 1000000000n) * 1000n), isDir: __s.isDirectory() } } } catch (__e) { return { error: __ek(__e) } } })()""")]
-#[@External.Erlang("""(fun(__P) -> __Ek = fun(__Rs) -> __K = case __Rs of enoent -> <<"notfound">>; eacces -> <<"denied">>; eperm -> <<"denied">>; eisdir -> <<"isdir">>; enotdir -> <<"notdir">>; eexist -> <<"exists">>; _ -> <<"other">> end, unicode:characters_to_binary([__K, <<"|">>, io_lib:format("~tp", [__Rs])]) end, case file:read_file_info(__P, [{time, posix}]) of {ok, {file_info, __Sz, __Ty, _, _, __Mt, _, _, _, _, _, _, _, _}} -> {ok, #{size => __Sz, mtime => __Mt * 1000, isDir => (__Ty =:= directory)}}; {error, __R} -> {error, __Ek(__R)} end end)($0)""")]
-declare fn rawStat(path: string) -> @Result<FileStat, string>;
+#[@External.Node("""(() => { const __s = require('fs').statSync($0, { bigint: true }); const __c = (__v) => (__v >= -9007199254740991n && __v <= 9007199254740991n) ? Number(__v) : __v; const __ns = __s.mtimeNs; return { size: __c(__s.size), mtime: __c(((__ns - (((__ns % 1000000000n) + 1000000000n) % 1000000000n)) / 1000000000n) * 1000n), isDir: __s.isDirectory() } })()""", result: true)]
+#[@External.Erlang("""(fun(__P) -> case file:read_file_info(__P, [{time, posix}]) of {ok, {file_info, __Sz, __Ty, _, _, __Mt, _, _, _, _, _, _, _, _}} -> {ok, #{size => __Sz, mtime => __Mt * 1000, isDir => (__Ty =:= directory)}}; {error, __R} -> {error, __R} end end)($0)""", result: true)]
+declare fn rawStat(path: string) -> @Result<FileStat, HostError>;
 
 // ── 1.0.10-beta front 01 additions ──────────────────────────────────────────
 
@@ -2485,9 +3160,9 @@ declare fn rawStat(path: string) -> @Result<FileStat, string>;
 // path: `filelib:fold_files/5` answers full paths `filename:join/2` has
 // normalised (`dir/.` + `app` is `dir/app`), so a prefix measured on the root
 // as written cut two characters too many when the root ended in `/.`.
-#[@External.Node("""(() => { const __ek = (__e) => { const __c = __e && __e.code; const __t = __c === 'ENOENT' ? 'notfound' : (__c === 'EACCES' || __c === 'EPERM') ? 'denied' : (__c === 'EISDIR' || __c === 'ERR_FS_EISDIR') ? 'isdir' : __c === 'ENOTDIR' ? 'notdir' : __c === 'EEXIST' ? 'exists' : 'other'; return __t + '|' + (__e && __e.message ? __e.message : String(__e)) }; try { const __fs = require('fs'); const __p = require('path'); const __all = __fs.readdirSync($0, { recursive: true }).map(__f => String(__f).split(__p.sep).join('/')).sort(); const __out = []; for (const __f of __all) { const __s = __fs.statSync(__p.join($0, __f), { throwIfNoEntry: false }); if (__s === undefined) return { error: 'dangling|fs.walk: dangling link "' + __f + '"' }; if (__s.isFile()) __out.push(__f) } return { ok: __out } } catch (__e) { return { error: __ek(__e) } } })()""")]
-#[@External.Erlang("""(fun(__R) -> __Ek = fun(__Rs) -> __K = case __Rs of enoent -> <<"notfound">>; eacces -> <<"denied">>; eperm -> <<"denied">>; eisdir -> <<"isdir">>; enotdir -> <<"notdir">>; eexist -> <<"exists">>; _ -> <<"other">> end, unicode:characters_to_binary([__K, <<"|">>, io_lib:format("~tp", [__Rs])]) end, __Root = unicode:characters_to_list(__R), case filelib:is_dir(__Root) of false -> {error, __Ek(case file:read_file_info(__Root) of {ok, _} -> enotdir; {error, __X0} -> __X0 end)}; true -> __Walk = fun __W(__Dir, __Rel, __Acc) -> case file:list_dir(__Dir) of {error, __E} -> throw({bp_fs_walk, __E}); {ok, __Names} -> lists:foldl(fun(__Name, __A) -> __Full = filename:join(__Dir, __Name), __Sub = case __Rel of [] -> __Name; _ -> __Rel ++ "/" ++ __Name end, case file:read_file_info(__Full) of {ok, __I} when element(3, __I) =:= directory -> __W(__Full, __Sub, __A); {ok, __I} when element(3, __I) =:= regular -> [{file, unicode:characters_to_binary(__Sub)} | __A]; {ok, _} -> __A; {error, enoent} -> [{dangling, unicode:characters_to_binary(__Sub)} | __A]; {error, __X} -> throw({bp_fs_walk, __X}) end end, __Acc, __Names) end end, try __Found = __Walk(__Root, [], []), case lists:sort([__D || {dangling, __D} <- __Found]) of [__First | _] -> {error, <<"dangling|fs.walk: dangling link ", 34, __First/binary, 34>>}; [] -> {ok, lists:sort([__F || {file, __F} <- __Found])} end catch throw:{bp_fs_walk, __Y} -> {error, __Ek(__Y)} end end end)($0)""")]
-declare fn rawWalk(root: string) -> @Result<string[], string>;
+#[@External.Node("""(() => { const __fs = require('fs'); const __p = require('path'); const __all = __fs.readdirSync($0, { recursive: true }).map(__f => String(__f).split(__p.sep).join('/')).sort(); const __out = []; const __dng = []; for (const __f of __all) { const __s = __fs.statSync(__p.join($0, __f), { throwIfNoEntry: false }); if (__s === undefined) { __dng.push(__f); continue } if (__s.isFile()) __out.push(__f) } return { files: __out, dangling: __dng } })()""", result: true)]
+#[@External.Erlang("""(fun(__R) -> __Root = unicode:characters_to_list(__R), case filelib:is_dir(__Root) of false -> {error, case file:read_file_info(__Root) of {ok, _} -> enotdir; {error, __X0} -> __X0 end}; true -> __Walk = fun __W(__Dir, __Rel, __Acc) -> case file:list_dir(__Dir) of {error, __E} -> erlang:error(__E); {ok, __Names} -> lists:foldl(fun(__Name, __A) -> __Full = filename:join(__Dir, __Name), __Sub = case __Rel of [] -> __Name; _ -> __Rel ++ "/" ++ __Name end, case file:read_file_info(__Full) of {ok, __I} when element(3, __I) =:= directory -> __W(__Full, __Sub, __A); {ok, __I} when element(3, __I) =:= regular -> [{file, unicode:characters_to_binary(__Sub)} | __A]; {ok, _} -> __A; {error, enoent} -> [{dangling, unicode:characters_to_binary(__Sub)} | __A]; {error, __X} -> erlang:error(__X) end end, __Acc, __Names) end end, __Found = __Walk(__Root, [], []), {ok, #{files => lists:sort([__F || {file, __F} <- __Found]), dangling => lists:sort([__D || {dangling, __D} <- __Found])}} end end)($0)""", result: true)]
+declare fn rawWalk(root: string) -> @Result<Walked, HostError>;
 
 // The entries under `root` matching the glob `pattern`, as paths relative to
 // `root` with `/` separators, sorted, each once. The pattern is read segment
@@ -2511,9 +3186,9 @@ declare fn rawWalk(root: string) -> @Result<string[], string>;
 // ONE directory is the host's — `fs.globSync(segment, { cwd })` (Node 22+),
 // `filelib:wildcard/2` — with the dot rule applied over its answer, since
 // `filelib:wildcard` matches dot names and `globSync` matches `{.a,b}`.
-#[@External.Node("""(() => { const __ek = (__e) => { const __c = __e && __e.code; const __t = __c === 'ENOENT' ? 'notfound' : (__c === 'EACCES' || __c === 'EPERM') ? 'denied' : (__c === 'EISDIR' || __c === 'ERR_FS_EISDIR') ? 'isdir' : __c === 'ENOTDIR' ? 'notdir' : __c === 'EEXIST' ? 'exists' : 'other'; return __t + '|' + (__e && __e.message ? __e.message : String(__e)) }; try { const __fs = require('fs'); const __p = require('path'); const __root = $1; const __pat = String($0); const __segs = __pat.split('/').filter(__s => __s !== '' && __s !== '.'); const __dirsOnly = __pat.endsWith('/'); const __lst = (__f) => { try { return __fs.lstatSync(__f, { throwIfNoEntry: false }) } catch (__e) { return undefined } }; const __realDir = (__f) => { const __s = __lst(__f); return __s !== undefined && __s.isDirectory() }; const __linkedDir = (__f) => { try { const __s = __fs.statSync(__f, { throwIfNoEntry: false }); return __s !== undefined && __s.isDirectory() } catch (__e) { return false } }; const __magic = (__s) => __s.includes('*') || __s.includes('?') || __s.includes('[') || __s.includes('{'); const __names = (__dir, __seg) => { let __all; try { __all = (__seg === '*' ? __fs.readdirSync(__dir) : __fs.globSync(__seg, { cwd: __dir })).map(String) } catch (__e) { __all = [] } return __all.filter(__n => !__n.startsWith('.') || __seg.startsWith('.')) }; const __join = (__rel, __n) => __rel === '' ? __n : __rel + '/' + __n; const __out = new Set(); const __walk = (__i, __dir, __rel) => { if (__i === __segs.length) { if (__rel !== '') __out.add(__rel); return } const __seg = __segs[__i]; const __last = __i === __segs.length - 1; if (__seg === '**') { if (!__last) __walk(__i + 1, __dir, __rel); for (const __n of __names(__dir, '*')) { const __f = __p.join(__dir, __n); const __sub = __join(__rel, __n); if (__last) __out.add(__sub); if (__realDir(__f)) __walk(__i, __f, __sub) } return } if (!__magic(__seg)) { const __f = __p.join(__dir, __seg); const __sub = __join(__rel, __seg); if (__last) { if (__lst(__f) !== undefined) __out.add(__sub) } else if (__linkedDir(__f)) __walk(__i + 1, __f, __sub); return } for (const __n of __names(__dir, __seg)) { const __f = __p.join(__dir, __n); const __sub = __join(__rel, __n); if (__last) __out.add(__sub); else if (__realDir(__f)) __walk(__i + 1, __f, __sub) } }; __walk(0, __root, ''); return { ok: Array.from(__out).filter(__r => !__dirsOnly || __realDir(__p.join(__root, __r))).sort() } } catch (__e) { return { error: __ek(__e) } } })()""")]
-#[@External.Erlang("""(fun(__P, __R) -> __Root = unicode:characters_to_list(__R), __Pat = unicode:characters_to_list(__P), __Segs = [__S || __S <- string:split(__Pat, "/", all), __S =/= [], __S =/= "."], __DirsOnly = lists:suffix("/", __Pat), __RealDir = fun(__F) -> case file:read_link_info(__F) of {ok, __I} -> element(3, __I) =:= directory; _ -> false end end, __Magic = fun(__S) -> lists:any(fun(__C) -> lists:member(__C, "*?[{") end, __S) end, __Names = fun(__Dir, __Seg) -> __All = case __Seg of "*" -> case file:list_dir(__Dir) of {ok, __L} -> __L; _ -> [] end; _ -> try filelib:wildcard(__Seg, __Dir) catch _:_ -> [] end end, [__N || __N <- __All, (hd(__N) =/= 46) orelse (hd(__Seg) =:= 46)] end, __Join = fun([], __N) -> __N; (__Rel, __N) -> __Rel ++ "/" ++ __N end, __Walk = fun __W([], _, [], __Acc) -> __Acc; __W([], _, __Rel, __Acc) -> [__Rel | __Acc]; __W(["**"], __Dir, __Rel, __Acc) -> lists:foldl(fun(__N, __A) -> __F = filename:join(__Dir, __N), __Sub = __Join(__Rel, __N), case __RealDir(__F) of true -> __W(["**"], __F, __Sub, [__Sub | __A]); false -> [__Sub | __A] end end, __Acc, __Names(__Dir, "*")); __W(["**" | __Rest] = __Pattern, __Dir, __Rel, __Acc) -> lists:foldl(fun(__N, __A) -> __F = filename:join(__Dir, __N), case __RealDir(__F) of true -> __W(__Pattern, __F, __Join(__Rel, __N), __A); false -> __A end end, __W(__Rest, __Dir, __Rel, __Acc), __Names(__Dir, "*")); __W([__Seg | __Rest], __Dir, __Rel, __Acc) -> case __Magic(__Seg) of false -> __F = filename:join(__Dir, __Seg), __Sub = __Join(__Rel, __Seg), case __Rest of [] -> case file:read_link_info(__F) of {ok, _} -> [__Sub | __Acc]; _ -> __Acc end; _ -> case filelib:is_dir(__F) of true -> __W(__Rest, __F, __Sub, __Acc); false -> __Acc end end; true -> lists:foldl(fun(__N, __A) -> __G = filename:join(__Dir, __N), __Under = __Join(__Rel, __N), case __Rest of [] -> [__Under | __A]; _ -> case __RealDir(__G) of true -> __W(__Rest, __G, __Under, __A); false -> __A end end end, __Acc, __Names(__Dir, __Seg)) end end, {ok, [unicode:characters_to_binary(__X) || __X <- lists:usort(__Walk(__Segs, __Root, [], [])), (not __DirsOnly) orelse __RealDir(filename:join(__Root, __X))]} end)($0, $1)""")]
-declare fn rawGlob(pattern: string, root: string) -> @Result<string[], string>;
+#[@External.Node("""(() => { const __fs = require('fs'); const __p = require('path'); const __root = $1; const __pat = String($0); const __segs = __pat.split('/').filter(__s => __s !== '' && __s !== '.'); const __dirsOnly = __pat.endsWith('/'); const __lst = (__f) => { try { return __fs.lstatSync(__f, { throwIfNoEntry: false }) } catch (__e) { return undefined } }; const __realDir = (__f) => { const __s = __lst(__f); return __s !== undefined && __s.isDirectory() }; const __linkedDir = (__f) => { try { const __s = __fs.statSync(__f, { throwIfNoEntry: false }); return __s !== undefined && __s.isDirectory() } catch (__e) { return false } }; const __magic = (__s) => __s.includes('*') || __s.includes('?') || __s.includes('[') || __s.includes('{'); const __names = (__dir, __seg) => { let __all; try { __all = (__seg === '*' ? __fs.readdirSync(__dir) : __fs.globSync(__seg, { cwd: __dir })).map(String) } catch (__e) { __all = [] } return __all.filter(__n => !__n.startsWith('.') || __seg.startsWith('.')) }; const __join = (__rel, __n) => __rel === '' ? __n : __rel + '/' + __n; const __out = new Set(); const __walk = (__i, __dir, __rel) => { if (__i === __segs.length) { if (__rel !== '') __out.add(__rel); return } const __seg = __segs[__i]; const __last = __i === __segs.length - 1; if (__seg === '**') { if (!__last) __walk(__i + 1, __dir, __rel); for (const __n of __names(__dir, '*')) { const __f = __p.join(__dir, __n); const __sub = __join(__rel, __n); if (__last) __out.add(__sub); if (__realDir(__f)) __walk(__i, __f, __sub) } return } if (!__magic(__seg)) { const __f = __p.join(__dir, __seg); const __sub = __join(__rel, __seg); if (__last) { if (__lst(__f) !== undefined) __out.add(__sub) } else if (__linkedDir(__f)) __walk(__i + 1, __f, __sub); return } for (const __n of __names(__dir, __seg)) { const __f = __p.join(__dir, __n); const __sub = __join(__rel, __n); if (__last) __out.add(__sub); else if (__realDir(__f)) __walk(__i + 1, __f, __sub) } }; __walk(0, __root, ''); return Array.from(__out).filter(__r => !__dirsOnly || __realDir(__p.join(__root, __r))).sort() })()""")]
+#[@External.Erlang("""(fun(__P, __R) -> __Root = unicode:characters_to_list(__R), __Pat = unicode:characters_to_list(__P), __Segs = [__S || __S <- string:split(__Pat, "/", all), __S =/= [], __S =/= "."], __DirsOnly = lists:suffix("/", __Pat), __RealDir = fun(__F) -> case file:read_link_info(__F) of {ok, __I} -> element(3, __I) =:= directory; _ -> false end end, __Magic = fun(__S) -> lists:any(fun(__C) -> lists:member(__C, "*?[{") end, __S) end, __Names = fun(__Dir, __Seg) -> __All = case __Seg of "*" -> case file:list_dir(__Dir) of {ok, __L} -> __L; _ -> [] end; _ -> try filelib:wildcard(__Seg, __Dir) catch _:_ -> [] end end, [__N || __N <- __All, (hd(__N) =/= 46) orelse (hd(__Seg) =:= 46)] end, __Join = fun([], __N) -> __N; (__Rel, __N) -> __Rel ++ "/" ++ __N end, __Walk = fun __W([], _, [], __Acc) -> __Acc; __W([], _, __Rel, __Acc) -> [__Rel | __Acc]; __W(["**"], __Dir, __Rel, __Acc) -> lists:foldl(fun(__N, __A) -> __F = filename:join(__Dir, __N), __Sub = __Join(__Rel, __N), case __RealDir(__F) of true -> __W(["**"], __F, __Sub, [__Sub | __A]); false -> [__Sub | __A] end end, __Acc, __Names(__Dir, "*")); __W(["**" | __Rest] = __Pattern, __Dir, __Rel, __Acc) -> lists:foldl(fun(__N, __A) -> __F = filename:join(__Dir, __N), case __RealDir(__F) of true -> __W(__Pattern, __F, __Join(__Rel, __N), __A); false -> __A end end, __W(__Rest, __Dir, __Rel, __Acc), __Names(__Dir, "*")); __W([__Seg | __Rest], __Dir, __Rel, __Acc) -> case __Magic(__Seg) of false -> __F = filename:join(__Dir, __Seg), __Sub = __Join(__Rel, __Seg), case __Rest of [] -> case file:read_link_info(__F) of {ok, _} -> [__Sub | __Acc]; _ -> __Acc end; _ -> case filelib:is_dir(__F) of true -> __W(__Rest, __F, __Sub, __Acc); false -> __Acc end end; true -> lists:foldl(fun(__N, __A) -> __G = filename:join(__Dir, __N), __Under = __Join(__Rel, __N), case __Rest of [] -> [__Under | __A]; _ -> case __RealDir(__G) of true -> __W(__Rest, __G, __Under, __A); false -> __A end end end, __Acc, __Names(__Dir, __Seg)) end end, [unicode:characters_to_binary(__X) || __X <- lists:usort(__Walk(__Segs, __Root, [], [])), (not __DirsOnly) orelse __RealDir(filename:join(__Root, __X))] end)($0, $1)""")]
+declare fn rawGlob(pattern: string, root: string) -> string[];
 
 // Remove `path` and everything under it: a file, a link (the link, never its
 // target) or a directory tree. A path that is not there is `Ok` too — the
@@ -2522,9 +3197,9 @@ declare fn rawGlob(pattern: string, root: string) -> @Result<string[], string>;
 // front 97).
 // Node: `rmSync(path, { recursive: true, force: true })`.
 // Erlang: `file:del_dir_r/1`.
-#[@External.Node("""(() => { const __ek = (__e) => { const __c = __e && __e.code; const __t = __c === 'ENOENT' ? 'notfound' : (__c === 'EACCES' || __c === 'EPERM') ? 'denied' : (__c === 'EISDIR' || __c === 'ERR_FS_EISDIR') ? 'isdir' : __c === 'ENOTDIR' ? 'notdir' : __c === 'EEXIST' ? 'exists' : 'other'; return __t + '|' + (__e && __e.message ? __e.message : String(__e)) }; try { require('fs').rmSync($0, { recursive: true, force: true }); return { ok: 0 } } catch (__e) { return { error: __ek(__e) } } })()""")]
-#[@External.Erlang("""(fun(__P) -> __Ek = fun(__Rs) -> __K = case __Rs of enoent -> <<"notfound">>; eacces -> <<"denied">>; eperm -> <<"denied">>; eisdir -> <<"isdir">>; enotdir -> <<"notdir">>; eexist -> <<"exists">>; _ -> <<"other">> end, unicode:characters_to_binary([__K, <<"|">>, io_lib:format("~tp", [__Rs])]) end, case file:del_dir_r(__P) of ok -> {ok, 0}; {error, enoent} -> {ok, 0}; {error, __R} -> {error, __Ek(__R)} end end)($0)""")]
-declare fn rawRemoveTree(path: string) -> @Result<i32, string>;
+#[@External.Node("""(() => { require('fs').rmSync($0, { recursive: true, force: true }); return 0 })()""", result: true)]
+#[@External.Erlang("""(fun(__P) -> case file:del_dir_r(__P) of ok -> {ok, 0}; {error, enoent} -> {ok, 0}; {error, __R} -> {error, __R} end end)($0)""", result: true)]
+declare fn rawRemoveTree(path: string) -> @Result<i32, HostError>;
 
 // Internal, test scaffolding: a fresh, unique, empty directory under the
 // host's tmpdir. Private — every `walk`/`glob` test makes its fixture tree in
@@ -2546,24 +3221,24 @@ declare fn linkTo(target: string, link: string) -> void;
 
 // ── the typed error ──────────────────────────────────────────────────────────
 
-// `<kind>|<host text>` → the `FsError` of `path`.
-fn fsError(path: string, raw: string) -> FsError {
-    val bar = raw.indexOf("|");
-    val kind = raw.slice(0, bar);
-    val message = raw.slice(bar + 1);
-    if (kind == "notfound") return FsError.NotFound(path: path);
-    if (kind == "denied") return FsError.PermissionDenied(path: path);
-    if (kind == "isdir") return FsError.IsDirectory(path: path);
-    if (kind == "notdir") return FsError.NotDirectory(path: path);
-    if (kind == "exists") return FsError.AlreadyExists(path: path);
-    return FsError.Other(path: path, message: message);
+// The `FsError` of `path` a host's failure is (decision 486), read from its code: Node's `ENOENT: …`, erlang's `enoent`.
+fn fsError(path: string, e: HostError) -> FsError {
+    val u = e.message.toUpper();
+    if (u.startsWith("ENOENT")) return FsError.NotFound(path: path);
+    if (u.startsWith("EACCES") || u.startsWith("EPERM"))
+        return FsError.PermissionDenied(path: path);
+    if (u.startsWith("EISDIR") || u.startsWith("PATH IS A DIRECTORY"))
+        return FsError.IsDirectory(path: path);
+    if (u.startsWith("ENOTDIR")) return FsError.NotDirectory(path: path);
+    if (u.startsWith("EEXIST")) return FsError.AlreadyExists(path: path);
+    return FsError.Other(path: path, message: e.message);
 }
 
-// A host cell's answer, its error read as an `FsError` of `path`.
-fn lift<T>(path: string, r: @Result<T, string>) -> @Result<T, FsError> {
+// A host cell's answer, its failure read as an `FsError` of `path`.
+fn lift<T>(path: string, r: @Result<T, HostError>) -> @Result<T, FsError> {
     case r {
         Ok(v) -> return v;
-        Error(m) -> throw fsError(path, m);
+        Error(e) -> throw fsError(path, e);
     }
 }
 
@@ -2573,6 +3248,18 @@ fn decode(path: string, b: Bytes) -> @Result<string, FsError> {
     if (offset >= 0l) throw FsError.InvalidUtf8(path: path, offset: offset);
     return b.toUtf8().unwrapOr("");
 }
+
+// What `rawWalk` finds under a root: the regular files, and the links whose
+// target is missing, both as paths relative to the root, sorted.
+type Walked(
+    files: string[],
+    dangling: string[],
+)
+
+// Whether the handle is one over bytes held in memory (an `Asset`'s), which cannot be written.
+#[@External.Node("""(($0).mem != null)""")]
+#[@External.Erlang("""(case $0 of {mem, _, _} -> true; _ -> false end)""")]
+declare fn rawReadOnly(handle: unknown) -> bool;
 
 // ── whole-file shortcuts ─────────────────────────────────────────────────────
 
@@ -2645,13 +3332,16 @@ pub fn copy(src: string, dest: string) -> @Result<i32, FsError> {
 }
 
 pub fn walk(root: string) -> @Result<string[], FsError> {
-    val paths = try lift(root, rawWalk(root));
-    return paths;
+    val found = try lift(root, rawWalk(root));
+    if (found.dangling.length > 0) {
+        val first = found.dangling.at(0) ?? "";
+        throw FsError.Other(path: root, message: ["fs.walk: dangling link \"", first, "\""].join(""));
+    }
+    return found.files;
 }
 
 pub fn glob(pattern: string, root: string) -> @Result<string[], FsError> {
-    val paths = try lift(root, rawGlob(pattern, root));
-    return paths;
+    return rawGlob(pattern, root);
 }
 
 // The host's handle over embedded bytes: read like a file, never closed on disk.
@@ -2732,13 +3422,15 @@ pub type File(location: string, handle: unknown) implement Closeable {
 
     // Write `b` at the position; answers the number of bytes written.
     pub fn write(self: Self, b: Bytes) -> @Result<i32, FsError> {
+        if (rawReadOnly(self.handle))
+            throw FsError.Other(path: self.location, message: "the file is open for reading");
         val n = try lift(self.location, rawWrite(self.handle, b));
         return n;
     }
 
     // Close the file. Closing twice is harmless; a failure to close is not reported.
     pub fn close(self: Self) {
-        rawClose(self.handle);
+        val closed = rawClose(self.handle);
     }
 }
 
@@ -3186,9 +3878,9 @@ test "fs answers PermissionDenied for an OS permission error" {
 ----- BEAM ASSEMBLY -- std/io/fs.S
 ```erlang
 {module, std@io@fs}.
-{exports, [{exists, 1}, {readBytes, 1}, {readText, 1}, {writeBytes, 2}, {writeText, 2}, {appendText, 2}, {stat, 1}, {list, 1}, {mkdir, 1}, {mkdirRecursive, 1}, {rm, 1}, {removeTree, 1}, {copy, 2}, {walk, 1}, {glob, 2}, {open, 1}, {create, 1}, {openAsset, 1}, {lift, 2}, {decode, 2}, {'__bp_priv__String_slice', 3}, {'__bp_priv__describe', 1}, {'__bp_priv__fsError', 2}, {'__bp_priv__globbed', 1}, {'__bp_priv__makeFixtureTree', 1}, {'__bp_priv__makeGlobTree', 1}, {'__bp_priv__noFile', 0}, {'__bp_priv__statOr', 1}, {'__bp_priv__variantOf', 1}, {'__bp_priv__walkFixture', 1}, {'__bp_priv__walkFixtureFromCwd', 1}, {'__bp_priv__walkRefusal', 1}]}.
+{exports, [{exists, 1}, {readBytes, 1}, {readText, 1}, {writeBytes, 2}, {writeText, 2}, {appendText, 2}, {stat, 1}, {list, 1}, {mkdir, 1}, {mkdirRecursive, 1}, {rm, 1}, {removeTree, 1}, {copy, 2}, {walk, 1}, {glob, 2}, {open, 1}, {create, 1}, {openAsset, 1}, {lift, 2}, {decode, 2}, {'__bp_priv__describe', 1}, {'__bp_priv__fsError', 2}, {'__bp_priv__globbed', 1}, {'__bp_priv__makeFixtureTree', 1}, {'__bp_priv__makeGlobTree', 1}, {'__bp_priv__noFile', 0}, {'__bp_priv__statOr', 1}, {'__bp_priv__variantOf', 1}, {'__bp_priv__walkFixture', 1}, {'__bp_priv__walkFixtureFromCwd', 1}, {'__bp_priv__walkRefusal', 1}]}.
 {attributes, []}.
-{labels, 891}.
+{labels, 798}.
 %%% std/io/fs — the file system, cross-backend (decision 540).
 %%% 
 %%% Reference:
@@ -3206,10 +3898,10 @@ test "fs answers PermissionDenied for an OS permission error" {
 %%% `removeTree`, `copy`, `walk`, `glob`) are followed by the handle: `open`
 %%% and `create` answer a `File`, a `Closeable` closed by the writer with `defer`.
 %%% 
-%%% The host cells (`raw…`) answer `@Result<R, string>` whose error is
-%%% `<kind>|<host text>` — `kind` one of `notfound`, `denied`, `isdir`, `notdir`,
-%%% `exists`, `other` (or `dangling`, a `walk`'s own) — and `lift` turns it into the
-%%% `FsError` of the path the caller wrote. All operations are synchronous
+%%% The host cells (`raw…`) write `result: true` (decisions 431, 490) and answer
+%%% `@Result<R, HostError>` — Node's `ENOENT: …`, erlang's `enoent` as its `message` —
+%%% and `lift` reads that message as the `FsError` of the path the caller wrote
+%%% (decision 486); no cell catches by hand. All operations are synchronous
 %%% (`*Sync` on Node, blocking BIFs on Erlang); there is no wasm binding here
 %%% (front 164: `wasi:filesystem` behind `needs: [.Filesystem]`).
 % The error of every `io.fs` function (decision 540). `path` is the path the
@@ -3348,80 +4040,144 @@ test "fs answers PermissionDenied for an OS permission error" {
 % Internal, test scaffolding: the working directory (what a relative root is
 % read against) and a symbolic link `link` → `target`.
 % ── the typed error ──────────────────────────────────────────────────────────
-% `<kind>|<host text>` → the `FsError` of `path`.
+% The `FsError` of `path` a host's failure is (decision 486), read from its code: Node's `ENOENT: …`, erlang's `enoent`.
 
 {function, fsError, 2, 3}.
   {label, 2}.
     {line, [{location, "std@io@fs.erl", 3}]}.
     {func_info, {atom, std@io@fs}, {atom, fsError}, 2}.
   {label, 3}.
-    {allocate, 5, 2}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}]}}.
+    {allocate, 7, 2}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
-    {move, {literal, <<"|">>}, {x, 0}}.
-    {move, {x, 0}, {x, 1}}.
     {move, {y, 1}, {x, 0}}.
-    {call, 2, {f, 71}}.
+    {test, is_tagged_tuple, {f, 70}, [{x, 0}, 5, {atom, std@failure@@HostError}]}.
+    {get_tuple_element, {x, 0}, 1, {x, 0}}.
+  {label, 70}.
+    {call_ext, 1, {extfunc, string, uppercase, 1}}.
     {move, {x, 0}, {y, 2}}.
-    {move, {y, 1}, {x, 0}}.
-    {move, {y, 2}, {x, 2}}.
-    {move, {integer, 0}, {x, 1}}.
-    {call, 3, {f, 85}}.
-    {move, {x, 0}, {y, 3}}.
-    {gc_bif, '+', {f, 0}, 0, [{y, 2}, {integer, 1}], {x, 0}}.
-    {test, is_ge, {f, 86}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 86}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 87}}.
-  {label, 86}.
-    {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/io/fs.bp:316:33">>}}, {x, 0}}.
-    {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 87}.
+    {move, {literal, <<"ENOENT">>}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
-    {move, {atom, undefined}, {x, 2}}.
-    {move, {y, 1}, {x, 0}}.
-    {call, 3, {f, 85}}.
-    {move, {x, 0}, {y, 4}}.
-    {move, {literal, <<"notfound">>}, {x, 0}}.
-    {test, is_eq_exact, {f, 88}, [{y, 3}, {x, 0}]}.
+    {move, {y, 2}, {x, 0}}.
+    {call_ext, 2, {extfunc, string, prefix, 2}}.
+    {test, is_eq, {f, 72}, [{x, 0}, {atom, nomatch}]}.
+    {move, {atom, false}, {x, 0}}.
+    {jump, {f, 73}}.
+  {label, 72}.
+    {move, {atom, true}, {x, 0}}.
+  {label, 73}.
+    {test, is_eq, {f, 71}, [{x, 0}, {atom, true}]}.
     {test_heap, 3, 0}.
     {put_tuple2, {x, 0}, {list, [{atom, std@io@fs@@FsError__v__notfound}, {y, 0}]}}.
-    {deallocate, 5}.
+    {deallocate, 7}.
     return.
-  {label, 88}.
-    {move, {literal, <<"denied">>}, {x, 0}}.
-    {test, is_eq_exact, {f, 89}, [{y, 3}, {x, 0}]}.
+  {label, 71}.
+    {move, {literal, <<"EACCES">>}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {y, 2}, {x, 0}}.
+    {call_ext, 2, {extfunc, string, prefix, 2}}.
+    {test, is_eq, {f, 75}, [{x, 0}, {atom, nomatch}]}.
+    {move, {atom, false}, {x, 0}}.
+    {jump, {f, 76}}.
+  {label, 75}.
+    {move, {atom, true}, {x, 0}}.
+  {label, 76}.
+    {move, {x, 0}, {x, 1}}.
+    {test, is_ne_exact, {f, 77}, [{x, 1}, {atom, true}]}.
+    {move, {literal, <<"EPERM">>}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {y, 2}, {x, 0}}.
+    {call_ext, 2, {extfunc, string, prefix, 2}}.
+    {test, is_eq, {f, 79}, [{x, 0}, {atom, nomatch}]}.
+    {move, {atom, false}, {x, 0}}.
+    {jump, {f, 80}}.
+  {label, 79}.
+    {move, {atom, true}, {x, 0}}.
+  {label, 80}.
+    {jump, {f, 78}}.
+  {label, 77}.
+    {move, {atom, true}, {x, 0}}.
+  {label, 78}.
+    {test, is_eq, {f, 74}, [{x, 0}, {atom, true}]}.
     {test_heap, 3, 0}.
     {put_tuple2, {x, 0}, {list, [{atom, std@io@fs@@FsError__v__permissiondenied}, {y, 0}]}}.
-    {deallocate, 5}.
+    {deallocate, 7}.
     return.
-  {label, 89}.
-    {move, {literal, <<"isdir">>}, {x, 0}}.
-    {test, is_eq_exact, {f, 90}, [{y, 3}, {x, 0}]}.
+  {label, 74}.
+    {move, {literal, <<"EISDIR">>}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {y, 2}, {x, 0}}.
+    {call_ext, 2, {extfunc, string, prefix, 2}}.
+    {test, is_eq, {f, 82}, [{x, 0}, {atom, nomatch}]}.
+    {move, {atom, false}, {x, 0}}.
+    {jump, {f, 83}}.
+  {label, 82}.
+    {move, {atom, true}, {x, 0}}.
+  {label, 83}.
+    {move, {x, 0}, {x, 1}}.
+    {test, is_ne_exact, {f, 84}, [{x, 1}, {atom, true}]}.
+    {move, {literal, <<"PATH IS A DIRECTORY">>}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {y, 2}, {x, 0}}.
+    {call_ext, 2, {extfunc, string, prefix, 2}}.
+    {test, is_eq, {f, 86}, [{x, 0}, {atom, nomatch}]}.
+    {move, {atom, false}, {x, 0}}.
+    {jump, {f, 87}}.
+  {label, 86}.
+    {move, {atom, true}, {x, 0}}.
+  {label, 87}.
+    {jump, {f, 85}}.
+  {label, 84}.
+    {move, {atom, true}, {x, 0}}.
+  {label, 85}.
+    {test, is_eq, {f, 81}, [{x, 0}, {atom, true}]}.
     {test_heap, 3, 0}.
     {put_tuple2, {x, 0}, {list, [{atom, std@io@fs@@FsError__v__isdirectory}, {y, 0}]}}.
-    {deallocate, 5}.
+    {deallocate, 7}.
     return.
+  {label, 81}.
+    {move, {literal, <<"ENOTDIR">>}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {y, 2}, {x, 0}}.
+    {call_ext, 2, {extfunc, string, prefix, 2}}.
+    {test, is_eq, {f, 89}, [{x, 0}, {atom, nomatch}]}.
+    {move, {atom, false}, {x, 0}}.
+    {jump, {f, 90}}.
+  {label, 89}.
+    {move, {atom, true}, {x, 0}}.
   {label, 90}.
-    {move, {literal, <<"notdir">>}, {x, 0}}.
-    {test, is_eq_exact, {f, 91}, [{y, 3}, {x, 0}]}.
+    {test, is_eq, {f, 88}, [{x, 0}, {atom, true}]}.
     {test_heap, 3, 0}.
     {put_tuple2, {x, 0}, {list, [{atom, std@io@fs@@FsError__v__notdirectory}, {y, 0}]}}.
-    {deallocate, 5}.
+    {deallocate, 7}.
     return.
-  {label, 91}.
-    {move, {literal, <<"exists">>}, {x, 0}}.
-    {test, is_eq_exact, {f, 92}, [{y, 3}, {x, 0}]}.
+  {label, 88}.
+    {move, {literal, <<"EEXIST">>}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {y, 2}, {x, 0}}.
+    {call_ext, 2, {extfunc, string, prefix, 2}}.
+    {test, is_eq, {f, 92}, [{x, 0}, {atom, nomatch}]}.
+    {move, {atom, false}, {x, 0}}.
+    {jump, {f, 93}}.
+  {label, 92}.
+    {move, {atom, true}, {x, 0}}.
+  {label, 93}.
+    {test, is_eq, {f, 91}, [{x, 0}, {atom, true}]}.
     {test_heap, 3, 0}.
     {put_tuple2, {x, 0}, {list, [{atom, std@io@fs@@FsError__v__alreadyexists}, {y, 0}]}}.
-    {deallocate, 5}.
+    {deallocate, 7}.
     return.
-  {label, 92}.
-    {test_heap, 4, 0}.
-    {put_tuple2, {x, 0}, {list, [{atom, std@io@fs@@FsError__v__other}, {y, 0}, {y, 4}]}}.
-    {deallocate, 5}.
+  {label, 91}.
+    {move, {y, 1}, {x, 0}}.
+    {test, is_tagged_tuple, {f, 94}, [{x, 0}, 5, {atom, std@failure@@HostError}]}.
+    {get_tuple_element, {x, 0}, 1, {x, 0}}.
+  {label, 94}.
+    {test_heap, 4, 1}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@io@fs@@FsError__v__other}, {y, 0}, {x, 0}]}}.
+    {deallocate, 7}.
     return.
-% A host cell's answer, its error read as an `FsError` of `path`.
+% A host cell's answer, its failure read as an `FsError` of `path`.
 
 {function, lift, 2, 5}.
   {label, 4}.
@@ -3433,7 +4189,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 94}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 96}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 1}}.
     {move, {x, 1}, {y, 2}}.
     {move, {y, 2}, {x, 0}}.
@@ -3442,9 +4198,9 @@ test "fs answers PermissionDenied for an OS permission error" {
     {put_tuple2, {x, 0}, {list, [{atom, ok}, {x, 1}]}}.
     {deallocate, 4}.
     return.
-    {jump, {f, 93}}.
-  {label, 94}.
-    {test, is_tagged_tuple, {f, 95}, [{x, 0}, 2, {atom, error}]}.
+    {jump, {f, 95}}.
+  {label, 96}.
+    {test, is_tagged_tuple, {f, 97}, [{x, 0}, 2, {atom, error}]}.
     {get_tuple_element, {x, 0}, 1, {x, 1}}.
     {move, {x, 1}, {y, 3}}.
     {move, {y, 0}, {x, 0}}.
@@ -3455,10 +4211,10 @@ test "fs answers PermissionDenied for an OS permission error" {
     {put_tuple2, {x, 0}, {list, [{atom, error}, {x, 1}]}}.
     {deallocate, 4}.
     return.
-    {jump, {f, 93}}.
-  {label, 95}.
+    {jump, {f, 95}}.
+  {label, 97}.
     {case_end, {x, 0}}.
-  {label, 93}.
+  {label, 95}.
     {move, {atom, ok}, {x, 0}}.
     {deallocate, 4}.
     return.
@@ -3474,9 +4230,9 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
-    {call, 1, {f, 97}}.
+    {call, 1, {f, 99}}.
     {move, {x, 0}, {y, 2}}.
-    {test, is_ge, {f, 109}, [{y, 2}, {integer, 0}]}.
+    {test, is_ge, {f, 111}, [{y, 2}, {integer, 0}]}.
     {test_heap, 4, 0}.
     {put_tuple2, {x, 0}, {list, [{atom, std@io@fs@@FsError__v__invalidutf8}, {y, 0}, {y, 2}]}}.
     {move, {x, 0}, {x, 1}}.
@@ -3484,20 +4240,23 @@ test "fs answers PermissionDenied for an OS permission error" {
     {put_tuple2, {x, 0}, {list, [{atom, error}, {x, 1}]}}.
     {deallocate, 3}.
     return.
-  {label, 109}.
-    {move, {y, 1}, {x, 0}}.
-    {call, 1, {f, 113}}.
-    {test, is_tagged_tuple, {f, 110}, [{x, 0}, 2, {atom, ok}]}.
-    {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 111}}.
-  {label, 110}.
-    {move, {literal, <<"">>}, {x, 0}}.
   {label, 111}.
+    {move, {y, 1}, {x, 0}}.
+    {call, 1, {f, 115}}.
+    {test, is_tagged_tuple, {f, 112}, [{x, 0}, 2, {atom, ok}]}.
+    {get_tuple_element, {x, 0}, 1, {x, 0}}.
+    {jump, {f, 113}}.
+  {label, 112}.
+    {move, {literal, <<"">>}, {x, 0}}.
+  {label, 113}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, 3, 2}.
     {put_tuple2, {x, 0}, {list, [{atom, ok}, {x, 1}]}}.
     {deallocate, 3}.
     return.
+% What `rawWalk` finds under a root: the regular files, and the links whose
+% target is missing, both as paths relative to the root, sorted.
+% Whether the handle is one over bytes held in memory (an `Asset`'s), which cannot be written.
 % ── whole-file shortcuts ─────────────────────────────────────────────────────
 % The file's bytes.
 
@@ -3510,17 +4269,17 @@ test "fs answers PermissionDenied for an OS permission error" {
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {call, 1, {f, 124}}.
+    {call, 1, {f, 126}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 0}, {x, 0}}.
     {call, 2, {f, 5}}.
-    {test, is_tagged_tuple, {f, 150}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 148}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 151}}.
-  {label, 150}.
+    {jump, {f, 149}}.
+  {label, 148}.
     {deallocate, 4}.
     return.
-  {label, 151}.
+  {label, 149}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
@@ -3541,6 +4300,17 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
     {call, 1, {f, 9}}.
+    {test, is_tagged_tuple, {f, 150}, [{x, 0}, 2, {atom, ok}]}.
+    {get_tuple_element, {x, 0}, 1, {x, 0}}.
+    {jump, {f, 151}}.
+  {label, 150}.
+    {deallocate, 3}.
+    return.
+  {label, 151}.
+    {move, {x, 0}, {y, 1}}.
+    {move, {y, 0}, {x, 0}}.
+    {move, {y, 1}, {x, 1}}.
+    {call, 2, {f, 7}}.
     {test, is_tagged_tuple, {f, 152}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
     {jump, {f, 153}}.
@@ -3548,17 +4318,6 @@ test "fs answers PermissionDenied for an OS permission error" {
     {deallocate, 3}.
     return.
   {label, 153}.
-    {move, {x, 0}, {y, 1}}.
-    {move, {y, 0}, {x, 0}}.
-    {move, {y, 1}, {x, 1}}.
-    {call, 2, {f, 7}}.
-    {test, is_tagged_tuple, {f, 154}, [{x, 0}, 2, {atom, ok}]}.
-    {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 155}}.
-  {label, 154}.
-    {deallocate, 3}.
-    return.
-  {label, 155}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 2}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
@@ -3579,17 +4338,17 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 1}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
-    {call, 2, {f, 157}}.
+    {call, 2, {f, 155}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 0}, {x, 0}}.
     {call, 2, {f, 5}}.
-    {test, is_tagged_tuple, {f, 183}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 177}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 184}}.
-  {label, 183}.
+    {jump, {f, 178}}.
+  {label, 177}.
     {deallocate, 5}.
     return.
-  {label, 184}.
+  {label, 178}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 2}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
@@ -3609,17 +4368,17 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 1}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
-    {call, 2, {f, 157}}.
+    {call, 2, {f, 155}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 0}, {x, 0}}.
     {call, 2, {f, 5}}.
-    {test, is_tagged_tuple, {f, 185}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 179}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 186}}.
-  {label, 185}.
+    {jump, {f, 180}}.
+  {label, 179}.
     {deallocate, 5}.
     return.
-  {label, 186}.
+  {label, 180}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 2}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
@@ -3640,17 +4399,17 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 1}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
-    {call, 2, {f, 188}}.
+    {call, 2, {f, 182}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 0}, {x, 0}}.
     {call, 2, {f, 5}}.
-    {test, is_tagged_tuple, {f, 214}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 204}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 215}}.
-  {label, 214}.
+    {jump, {f, 205}}.
+  {label, 204}.
     {deallocate, 5}.
     return.
-  {label, 215}.
+  {label, 205}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 2}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
@@ -3669,20 +4428,20 @@ test "fs answers PermissionDenied for an OS permission error" {
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {call, 1, {f, 217}}.
+    {call, 1, {f, 207}}.
     {move, {atom, std@io@fs@@FileStat}, {x, 1}}.
     {move, {literal, [size, mtime, isDir]}, {x, 2}}.
-    {call, 3, {f, 244}}.
+    {call, 3, {f, 230}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 0}, {x, 0}}.
     {call, 2, {f, 5}}.
-    {test, is_tagged_tuple, {f, 254}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 240}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 255}}.
-  {label, 254}.
+    {jump, {f, 241}}.
+  {label, 240}.
     {deallocate, 4}.
     return.
-  {label, 255}.
+  {label, 241}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
@@ -3700,17 +4459,17 @@ test "fs answers PermissionDenied for an OS permission error" {
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {call, 1, {f, 257}}.
+    {call, 1, {f, 243}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 0}, {x, 0}}.
     {call, 2, {f, 5}}.
-    {test, is_tagged_tuple, {f, 287}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 269}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 288}}.
-  {label, 287}.
+    {jump, {f, 270}}.
+  {label, 269}.
     {deallocate, 4}.
     return.
-  {label, 288}.
+  {label, 270}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
@@ -3728,17 +4487,17 @@ test "fs answers PermissionDenied for an OS permission error" {
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {call, 1, {f, 290}}.
+    {call, 1, {f, 272}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 0}, {x, 0}}.
     {call, 2, {f, 5}}.
-    {test, is_tagged_tuple, {f, 316}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 294}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 317}}.
-  {label, 316}.
+    {jump, {f, 295}}.
+  {label, 294}.
     {deallocate, 4}.
     return.
-  {label, 317}.
+  {label, 295}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
@@ -3756,17 +4515,17 @@ test "fs answers PermissionDenied for an OS permission error" {
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {call, 1, {f, 319}}.
+    {call, 1, {f, 297}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 0}, {x, 0}}.
     {call, 2, {f, 5}}.
-    {test, is_tagged_tuple, {f, 345}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 319}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 346}}.
-  {label, 345}.
+    {jump, {f, 320}}.
+  {label, 319}.
     {deallocate, 4}.
     return.
-  {label, 346}.
+  {label, 320}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
@@ -3784,17 +4543,17 @@ test "fs answers PermissionDenied for an OS permission error" {
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {call, 1, {f, 348}}.
+    {call, 1, {f, 322}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 0}, {x, 0}}.
     {call, 2, {f, 5}}.
-    {test, is_tagged_tuple, {f, 378}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 348}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 379}}.
-  {label, 378}.
+    {jump, {f, 349}}.
+  {label, 348}.
     {deallocate, 4}.
     return.
-  {label, 379}.
+  {label, 349}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
@@ -3812,17 +4571,17 @@ test "fs answers PermissionDenied for an OS permission error" {
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {call, 1, {f, 381}}.
+    {call, 1, {f, 351}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 0}, {x, 0}}.
     {call, 2, {f, 5}}.
-    {test, is_tagged_tuple, {f, 408}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 374}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 409}}.
-  {label, 408}.
+    {jump, {f, 375}}.
+  {label, 374}.
     {deallocate, 4}.
     return.
-  {label, 409}.
+  {label, 375}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
@@ -3842,17 +4601,17 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 1}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
-    {call, 2, {f, 411}}.
+    {call, 2, {f, 377}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 0}, {x, 0}}.
     {call, 2, {f, 5}}.
-    {test, is_tagged_tuple, {f, 437}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 399}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 438}}.
-  {label, 437}.
+    {jump, {f, 400}}.
+  {label, 399}.
     {deallocate, 5}.
     return.
-  {label, 438}.
+  {label, 400}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 2}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
@@ -3866,27 +4625,83 @@ test "fs answers PermissionDenied for an OS permission error" {
     {line, [{location, "std@io@fs.erl", 18}]}.
     {func_info, {atom, std@io@fs}, {atom, walk}, 1}.
   {label, 33}.
-    {allocate, 4, 1}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
+    {allocate, 10, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {call, 1, {f, 440}}.
+    {call, 1, {f, 402}}.
+    {move, {atom, std@io@fs@@Walked}, {x, 1}}.
+    {move, {literal, [files, dangling]}, {x, 2}}.
+    {call, 3, {f, 230}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 0}, {x, 0}}.
     {call, 2, {f, 5}}.
-    {test, is_tagged_tuple, {f, 518}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 467}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 519}}.
-  {label, 518}.
-    {deallocate, 4}.
+    {jump, {f, 468}}.
+  {label, 467}.
+    {deallocate, 10}.
     return.
-  {label, 519}.
+  {label, 468}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
+    {test, is_tagged_tuple, {f, 470}, [{x, 0}, 3, {atom, std@io@fs@@Walked}]}.
+    {get_tuple_element, {x, 0}, 2, {x, 0}}.
+  {label, 470}.
+    {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
+    {test, is_lt, {f, 469}, [{integer, 0}, {x, 0}]}.
+    {move, {y, 1}, {x, 0}}.
+    {test, is_tagged_tuple, {f, 472}, [{x, 0}, 3, {atom, std@io@fs@@Walked}]}.
+    {get_tuple_element, {x, 0}, 2, {x, 0}}.
+  {label, 472}.
+    {move, {integer, 0}, {x, 1}}.
+    {call, 2, {f, 474}}.
+    {test, is_ne_exact, {f, 471}, [{x, 0}, {atom, undefined}]}.
+    {move, {x, 0}, {y, 2}}.
+    {move, {y, 2}, {x, 0}}.
+    {jump, {f, 477}}.
+  {label, 471}.
+    {move, {literal, <<"">>}, {x, 0}}.
+  {label, 477}.
+    {move, {x, 0}, {y, 3}}.
+    {move, nil, {x, 0}}.
+    {move, {x, 0}, {y, 4}}.
+    {move, {literal, <<"\"">>}, {x, 0}}.
+    {move, {y, 4}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {y, 4}}.
+    {move, {y, 3}, {x, 0}}.
+    {move, {y, 4}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {y, 4}}.
+    {move, {literal, <<"fs.walk: dangling link \"">>}, {x, 0}}.
+    {move, {y, 4}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {literal, <<"">>}, {x, 0}}.
+    {move, {x, 1}, {x, 2}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {x, 2}, {x, 0}}.
+    {call, 2, {f, 479}}.
+    {test_heap, 4, 1}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@io@fs@@FsError__v__other}, {y, 0}, {x, 0}]}}.
+    {move, {x, 0}, {x, 1}}.
+    {test_heap, 3, 2}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {x, 1}]}}.
+    {deallocate, 10}.
+    return.
+  {label, 469}.
+    {move, {y, 1}, {x, 0}}.
+    {test, is_tagged_tuple, {f, 512}, [{x, 0}, 3, {atom, std@io@fs@@Walked}]}.
+    {get_tuple_element, {x, 0}, 1, {x, 0}}.
+  {label, 512}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, 3, 2}.
     {put_tuple2, {x, 0}, {list, [{atom, ok}, {x, 1}]}}.
-    {deallocate, 4}.
+    {deallocate, 10}.
     return.
 
 {function, glob, 2, 35}.
@@ -3894,29 +4709,17 @@ test "fs answers PermissionDenied for an OS permission error" {
     {line, [{location, "std@io@fs.erl", 19}]}.
     {func_info, {atom, std@io@fs}, {atom, glob}, 2}.
   {label, 35}.
-    {allocate, 5, 2}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}]}}.
+    {allocate, 2, 2}.
+    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
-    {call, 2, {f, 521}}.
-    {move, {x, 0}, {x, 1}}.
-    {move, {y, 1}, {x, 0}}.
-    {call, 2, {f, 5}}.
-    {test, is_tagged_tuple, {f, 663}, [{x, 0}, 2, {atom, ok}]}.
-    {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 664}}.
-  {label, 663}.
-    {deallocate, 5}.
-    return.
-  {label, 664}.
-    {move, {x, 0}, {y, 2}}.
-    {move, {y, 2}, {x, 0}}.
+    {call, 2, {f, 514}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, 3, 2}.
     {put_tuple2, {x, 0}, {list, [{atom, ok}, {x, 1}]}}.
-    {deallocate, 5}.
+    {deallocate, 2}.
     return.
 % The host's handle over embedded bytes: read like a file, never closed on disk.
 % ── the handle ───────────────────────────────────────────────────────────────
@@ -3934,17 +4737,17 @@ test "fs answers PermissionDenied for an OS permission error" {
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {call, 1, {f, 666}}.
+    {call, 1, {f, 657}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 0}, {x, 0}}.
     {call, 2, {f, 5}}.
-    {test, is_tagged_tuple, {f, 692}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 679}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 693}}.
-  {label, 692}.
+    {jump, {f, 680}}.
+  {label, 679}.
     {deallocate, 4}.
     return.
-  {label, 693}.
+  {label, 680}.
     {move, {x, 0}, {y, 1}}.
     {test_heap, 4, 0}.
     {put_tuple2, {x, 0}, {list, [{atom, std@io@fs@@File}, {y, 0}, {y, 1}]}}.
@@ -3964,17 +4767,17 @@ test "fs answers PermissionDenied for an OS permission error" {
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {call, 1, {f, 695}}.
+    {call, 1, {f, 682}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 0}, {x, 0}}.
     {call, 2, {f, 5}}.
-    {test, is_tagged_tuple, {f, 721}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 704}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 722}}.
-  {label, 721}.
+    {jump, {f, 705}}.
+  {label, 704}.
     {deallocate, 4}.
     return.
-  {label, 722}.
+  {label, 705}.
     {move, {x, 0}, {y, 1}}.
     {test_heap, 4, 0}.
     {put_tuple2, {x, 0}, {list, [{atom, std@io@fs@@File}, {y, 0}, {y, 1}]}}.
@@ -3997,12 +4800,12 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
     {move, {atom, path}, {x, 1}}.
-    {call, 2, {f, 724}}.
+    {call, 2, {f, 707}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
     {move, {atom, bytes}, {x, 1}}.
-    {call, 2, {f, 724}}.
-    {call, 1, {f, 730}}.
+    {call, 2, {f, 707}}.
+    {call, 1, {f, 713}}.
     {test_heap, 4, 1}.
     {put_tuple2, {x, 0}, {list, [{atom, std@io@fs@@File}, {y, 1}, {x, 0}]}}.
     {deallocate, 3}.
@@ -4024,20 +4827,20 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
     {call, 1, {f, 19}}.
-    {test, is_tagged_tuple, {f, 732}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 715}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 1}}.
     {move, {x, 1}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
-    {jump, {f, 731}}.
-  {label, 732}.
-    {test, is_tagged_tuple, {f, 733}, [{x, 0}, 2, {atom, error}]}.
+    {jump, {f, 714}}.
+  {label, 715}.
+    {test, is_tagged_tuple, {f, 716}, [{x, 0}, 2, {atom, error}]}.
     {move, {atom, false}, {x, 0}}.
     {test_heap, 5, 1}.
     {put_tuple2, {x, 0}, {list, [{atom, std@io@fs@@FileStat}, {integer, -1}, {integer, -1}, {x, 0}]}}.
-    {jump, {f, 731}}.
-  {label, 733}.
+    {jump, {f, 714}}.
+  {label, 716}.
     {case_end, {x, 0}}.
-  {label, 731}.
+  {label, 714}.
     {deallocate, 2}.
     return.
 % Internal, test scaffolding: `<dir>/app/page.bp`, `<dir>/app/blog/page.bp`,
@@ -4067,7 +4870,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 1}, {x, 2}}.
     {move, {x, 0}, {x, 1}}.
     {move, {x, 2}, {x, 0}}.
-    {call, 2, {f, 735}}.
+    {call, 2, {f, 479}}.
     {call, 1, {f, 23}}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 2}}.
@@ -4085,7 +4888,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 1}, {x, 2}}.
     {move, {x, 0}, {x, 1}}.
     {move, {x, 2}, {x, 0}}.
-    {call, 2, {f, 735}}.
+    {call, 2, {f, 479}}.
     {call, 1, {f, 23}}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 3}}.
@@ -4103,7 +4906,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 1}, {x, 2}}.
     {move, {x, 0}, {x, 1}}.
     {move, {x, 2}, {x, 0}}.
-    {call, 2, {f, 735}}.
+    {call, 2, {f, 479}}.
     {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"root page">>}, {x, 0}}.
     {move, {x, 1}, {x, 2}}.
@@ -4126,7 +4929,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 1}, {x, 2}}.
     {move, {x, 0}, {x, 1}}.
     {move, {x, 2}, {x, 0}}.
-    {call, 2, {f, 735}}.
+    {call, 2, {f, 479}}.
     {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"blog page">>}, {x, 0}}.
     {move, {x, 1}, {x, 2}}.
@@ -4149,7 +4952,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 1}, {x, 2}}.
     {move, {x, 0}, {x, 1}}.
     {move, {x, 2}, {x, 0}}.
-    {call, 2, {f, 735}}.
+    {call, 2, {f, 479}}.
     {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"notes">>}, {x, 0}}.
     {move, {x, 1}, {x, 2}}.
@@ -4171,7 +4974,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     {allocate, 5, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}]}}.
     {move, {x, 0}, {y, 0}}.
-    {call, 0, {f, 769}}.
+    {call, 0, {f, 718}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
     {call, 1, {f, 45}}.
@@ -4191,26 +4994,26 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 1}, {x, 2}}.
     {move, {x, 0}, {x, 1}}.
     {move, {x, 2}, {x, 0}}.
-    {call, 2, {f, 735}}.
+    {call, 2, {f, 479}}.
     {call, 1, {f, 33}}.
-    {test, is_tagged_tuple, {f, 785}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 734}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 786}}.
-  {label, 785}.
+    {jump, {f, 735}}.
+  {label, 734}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 3}}.
     {move, {literal, <<"<error>">>}, {x, 0}}.
     {move, {y, 3}, {x, 1}}.
     {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
-  {label, 786}.
+  {label, 735}.
     {move, {x, 0}, {y, 4}}.
     {move, {y, 1}, {x, 0}}.
     {call, 1, {f, 29}}.
     {move, {literal, <<",">>}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 4}, {x, 0}}.
-    {call_last, 2, {f, 735}, 5}.
+    {call_last, 2, {f, 479}, 5}.
 % Internal, test scaffolding: the same, with the root spelled relative to the
 % working directory — `<prefix><path from the cwd to the fixture>`.
 
@@ -4222,7 +5025,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     {allocate, 8, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}]}}.
     {move, {x, 0}, {y, 0}}.
-    {call, 0, {f, 769}}.
+    {call, 0, {f, 718}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
     {call, 1, {f, 45}}.
@@ -4233,7 +5036,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {move, {x, 0}, {y, 2}}.
-    {call, 0, {f, 788}}.
+    {call, 0, {f, 737}}.
     {move, {y, 1}, {x, 1}}.
     {call_ext, 2, {extfunc, std@path, relative, 2}}.
     {move, {y, 2}, {x, 1}}.
@@ -4249,28 +5052,28 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 1}, {x, 2}}.
     {move, {x, 0}, {x, 1}}.
     {move, {x, 2}, {x, 0}}.
-    {call, 2, {f, 735}}.
+    {call, 2, {f, 479}}.
     {move, {x, 0}, {y, 3}}.
     {move, {y, 3}, {x, 0}}.
     {call, 1, {f, 33}}.
-    {test, is_tagged_tuple, {f, 797}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 746}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 798}}.
-  {label, 797}.
+    {jump, {f, 747}}.
+  {label, 746}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 4}}.
     {move, {literal, <<"<error>">>}, {x, 0}}.
     {move, {y, 4}, {x, 1}}.
     {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
-  {label, 798}.
+  {label, 747}.
     {move, {x, 0}, {y, 5}}.
     {move, {y, 1}, {x, 0}}.
     {call, 1, {f, 29}}.
     {move, {literal, <<",">>}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 5}, {x, 0}}.
-    {call_last, 2, {f, 735}, 8}.
+    {call_last, 2, {f, 479}, 8}.
 % Internal, test scaffolding: the `Error` of `walk(root)`, `""` when it walked.
 
 {function, walkRefusal, 1, 51}.
@@ -4283,19 +5086,19 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
     {call, 1, {f, 33}}.
-    {test, is_tagged_tuple, {f, 800}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 749}, [{x, 0}, 2, {atom, ok}]}.
     {move, {literal, <<"">>}, {x, 0}}.
-    {jump, {f, 799}}.
-  {label, 800}.
-    {test, is_tagged_tuple, {f, 801}, [{x, 0}, 2, {atom, error}]}.
+    {jump, {f, 748}}.
+  {label, 749}.
+    {test, is_tagged_tuple, {f, 750}, [{x, 0}, 2, {atom, error}]}.
     {get_tuple_element, {x, 0}, 1, {x, 1}}.
     {move, {x, 1}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
     {call, 1, {f, 53}}.
-    {jump, {f, 799}}.
-  {label, 801}.
+    {jump, {f, 748}}.
+  {label, 750}.
     {case_end, {x, 0}}.
-  {label, 799}.
+  {label, 748}.
     {deallocate, 2}.
     return.
 % Internal, test scaffolding: an `FsError` as one line — the variant, the path
@@ -4310,7 +5113,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}, {y, 11}, {y, 12}, {y, 13}, {y, 14}, {y, 15}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 803}, [{x, 0}, 2, {atom, std@io@fs@@FsError__v__notfound}]}.
+    {test, is_tagged_tuple, {f, 752}, [{x, 0}, 2, {atom, std@io@fs@@FsError__v__notfound}]}.
     {get_tuple_element, {x, 0}, 1, {x, 1}}.
     {move, {x, 1}, {y, 1}}.
     {move, nil, {x, 0}}.
@@ -4326,12 +5129,12 @@ test "fs answers PermissionDenied for an OS permission error" {
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
-    {make_fun3, {f, 765}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 509}, 0, 0, {x, 0}, {list, []}}.
     {call_ext, 2, {extfunc, lists, map, 2}}.
     {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
-    {jump, {f, 802}}.
-  {label, 803}.
-    {test, is_tagged_tuple, {f, 804}, [{x, 0}, 2, {atom, std@io@fs@@FsError__v__permissiondenied}]}.
+    {jump, {f, 751}}.
+  {label, 752}.
+    {test, is_tagged_tuple, {f, 753}, [{x, 0}, 2, {atom, std@io@fs@@FsError__v__permissiondenied}]}.
     {get_tuple_element, {x, 0}, 1, {x, 1}}.
     {move, {x, 1}, {y, 3}}.
     {move, nil, {x, 0}}.
@@ -4347,12 +5150,12 @@ test "fs answers PermissionDenied for an OS permission error" {
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
-    {make_fun3, {f, 765}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 509}, 0, 0, {x, 0}, {list, []}}.
     {call_ext, 2, {extfunc, lists, map, 2}}.
     {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
-    {jump, {f, 802}}.
-  {label, 804}.
-    {test, is_tagged_tuple, {f, 805}, [{x, 0}, 2, {atom, std@io@fs@@FsError__v__isdirectory}]}.
+    {jump, {f, 751}}.
+  {label, 753}.
+    {test, is_tagged_tuple, {f, 754}, [{x, 0}, 2, {atom, std@io@fs@@FsError__v__isdirectory}]}.
     {get_tuple_element, {x, 0}, 1, {x, 1}}.
     {move, {x, 1}, {y, 5}}.
     {move, nil, {x, 0}}.
@@ -4368,12 +5171,12 @@ test "fs answers PermissionDenied for an OS permission error" {
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
-    {make_fun3, {f, 765}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 509}, 0, 0, {x, 0}, {list, []}}.
     {call_ext, 2, {extfunc, lists, map, 2}}.
     {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
-    {jump, {f, 802}}.
-  {label, 805}.
-    {test, is_tagged_tuple, {f, 806}, [{x, 0}, 2, {atom, std@io@fs@@FsError__v__notdirectory}]}.
+    {jump, {f, 751}}.
+  {label, 754}.
+    {test, is_tagged_tuple, {f, 755}, [{x, 0}, 2, {atom, std@io@fs@@FsError__v__notdirectory}]}.
     {get_tuple_element, {x, 0}, 1, {x, 1}}.
     {move, {x, 1}, {y, 7}}.
     {move, nil, {x, 0}}.
@@ -4389,12 +5192,12 @@ test "fs answers PermissionDenied for an OS permission error" {
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
-    {make_fun3, {f, 765}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 509}, 0, 0, {x, 0}, {list, []}}.
     {call_ext, 2, {extfunc, lists, map, 2}}.
     {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
-    {jump, {f, 802}}.
-  {label, 806}.
-    {test, is_tagged_tuple, {f, 807}, [{x, 0}, 2, {atom, std@io@fs@@FsError__v__alreadyexists}]}.
+    {jump, {f, 751}}.
+  {label, 755}.
+    {test, is_tagged_tuple, {f, 756}, [{x, 0}, 2, {atom, std@io@fs@@FsError__v__alreadyexists}]}.
     {get_tuple_element, {x, 0}, 1, {x, 1}}.
     {move, {x, 1}, {y, 9}}.
     {move, nil, {x, 0}}.
@@ -4410,12 +5213,12 @@ test "fs answers PermissionDenied for an OS permission error" {
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
-    {make_fun3, {f, 765}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 509}, 0, 0, {x, 0}, {list, []}}.
     {call_ext, 2, {extfunc, lists, map, 2}}.
     {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
-    {jump, {f, 802}}.
-  {label, 807}.
-    {test, is_tagged_tuple, {f, 808}, [{x, 0}, 3, {atom, std@io@fs@@FsError__v__invalidutf8}]}.
+    {jump, {f, 751}}.
+  {label, 756}.
+    {test, is_tagged_tuple, {f, 757}, [{x, 0}, 3, {atom, std@io@fs@@FsError__v__invalidutf8}]}.
     {get_tuple_element, {x, 0}, 1, {x, 1}}.
     {move, {x, 1}, {y, 11}}.
     {get_tuple_element, {x, 0}, 2, {x, 1}}.
@@ -4444,21 +5247,21 @@ test "fs answers PermissionDenied for an OS permission error" {
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
-    {make_fun3, {f, 765}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 509}, 0, 0, {x, 0}, {list, []}}.
     {call_ext, 2, {extfunc, lists, map, 2}}.
     {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
-    {jump, {f, 802}}.
-  {label, 808}.
-    {test, is_tagged_tuple, {f, 809}, [{x, 0}, 3, {atom, std@io@fs@@FsError__v__other}]}.
+    {jump, {f, 751}}.
+  {label, 757}.
+    {test, is_tagged_tuple, {f, 758}, [{x, 0}, 3, {atom, std@io@fs@@FsError__v__other}]}.
     {get_tuple_element, {x, 0}, 1, {x, 1}}.
     {move, {x, 1}, {y, 14}}.
     {get_tuple_element, {x, 0}, 2, {x, 1}}.
     {move, {x, 1}, {y, 15}}.
     {move, {y, 15}, {x, 0}}.
-    {jump, {f, 802}}.
-  {label, 809}.
+    {jump, {f, 751}}.
+  {label, 758}.
     {case_end, {x, 0}}.
-  {label, 802}.
+  {label, 751}.
     {deallocate, 16}.
     return.
 % Internal, test scaffolding: the fixture tree plus the names decision 177 is
@@ -4491,7 +5294,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 1}, {x, 2}}.
     {move, {x, 0}, {x, 1}}.
     {move, {x, 2}, {x, 0}}.
-    {call, 2, {f, 735}}.
+    {call, 2, {f, 479}}.
     {call, 1, {f, 23}}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 2}}.
@@ -4509,7 +5312,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 1}, {x, 2}}.
     {move, {x, 0}, {x, 1}}.
     {move, {x, 2}, {x, 0}}.
-    {call, 2, {f, 735}}.
+    {call, 2, {f, 479}}.
     {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"cached">>}, {x, 0}}.
     {move, {x, 1}, {x, 2}}.
@@ -4532,7 +5335,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 1}, {x, 2}}.
     {move, {x, 0}, {x, 1}}.
     {move, {x, 2}, {x, 0}}.
-    {call, 2, {f, 735}}.
+    {call, 2, {f, 479}}.
     {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"hidden">>}, {x, 0}}.
     {move, {x, 1}, {x, 2}}.
@@ -4555,7 +5358,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 1}, {x, 2}}.
     {move, {x, 0}, {x, 1}}.
     {move, {x, 2}, {x, 0}}.
-    {call, 2, {f, 735}}.
+    {call, 2, {f, 479}}.
     {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"draft">>}, {x, 0}}.
     {move, {x, 1}, {x, 2}}.
@@ -4580,10 +5383,10 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 1}, {x, 2}}.
     {move, {x, 0}, {x, 1}}.
     {move, {x, 2}, {x, 0}}.
-    {call, 2, {f, 735}}.
+    {call, 2, {f, 479}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 5}, {x, 0}}.
-    {call, 2, {f, 811}}.
+    {call, 2, {f, 760}}.
     {move, {literal, <<"page.bp">>}, {x, 0}}.
     {move, {x, 0}, {y, 7}}.
     {move, nil, {x, 0}}.
@@ -4602,10 +5405,10 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 1}, {x, 2}}.
     {move, {x, 0}, {x, 1}}.
     {move, {x, 2}, {x, 0}}.
-    {call, 2, {f, 735}}.
+    {call, 2, {f, 479}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 7}, {x, 0}}.
-    {call, 2, {f, 811}}.
+    {call, 2, {f, 760}}.
     {move, {literal, <<"missing.bp">>}, {x, 0}}.
     {move, {x, 0}, {y, 9}}.
     {move, nil, {x, 0}}.
@@ -4624,10 +5427,10 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 1}, {x, 2}}.
     {move, {x, 0}, {x, 1}}.
     {move, {x, 2}, {x, 0}}.
-    {call, 2, {f, 735}}.
+    {call, 2, {f, 479}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 9}, {x, 0}}.
-    {call, 2, {f, 811}}.
+    {call, 2, {f, 760}}.
     {move, {atom, ok}, {x, 0}}.
     {deallocate, 14}.
     return.
@@ -4642,7 +5445,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     {allocate, 7, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}]}}.
     {move, {x, 0}, {y, 0}}.
-    {call, 0, {f, 769}}.
+    {call, 0, {f, 718}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
     {call, 1, {f, 55}}.
@@ -4662,28 +5465,28 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 1}, {x, 2}}.
     {move, {x, 0}, {x, 1}}.
     {move, {x, 2}, {x, 0}}.
-    {call, 2, {f, 735}}.
+    {call, 2, {f, 479}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 0}, {x, 0}}.
     {call, 2, {f, 35}}.
-    {test, is_tagged_tuple, {f, 820}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 769}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 821}}.
-  {label, 820}.
+    {jump, {f, 770}}.
+  {label, 769}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 3}}.
     {move, {literal, <<"<error>">>}, {x, 0}}.
     {move, {y, 3}, {x, 1}}.
     {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
-  {label, 821}.
+  {label, 770}.
     {move, {x, 0}, {y, 4}}.
     {move, {y, 1}, {x, 0}}.
     {call, 1, {f, 29}}.
     {move, {literal, <<",">>}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 4}, {x, 0}}.
-    {call_last, 2, {f, 735}, 7}.
+    {call_last, 2, {f, 479}, 7}.
 % ── FsError, readText and the handle ─────────────────────────────────────────
 % Internal, test scaffolding: the variant of an `Error`, `"ok"` for an `Ok`.
 
@@ -4696,19 +5499,19 @@ test "fs answers PermissionDenied for an OS permission error" {
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 823}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 772}, [{x, 0}, 2, {atom, ok}]}.
     {move, {literal, <<"ok">>}, {x, 0}}.
-    {jump, {f, 822}}.
-  {label, 823}.
-    {test, is_tagged_tuple, {f, 824}, [{x, 0}, 2, {atom, error}]}.
+    {jump, {f, 771}}.
+  {label, 772}.
+    {test, is_tagged_tuple, {f, 773}, [{x, 0}, 2, {atom, error}]}.
     {get_tuple_element, {x, 0}, 1, {x, 1}}.
     {move, {x, 1}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
     {call, 1, {f, 53}}.
-    {jump, {f, 822}}.
-  {label, 824}.
+    {jump, {f, 771}}.
+  {label, 773}.
     {case_end, {x, 0}}.
-  {label, 822}.
+  {label, 771}.
     {deallocate, 2}.
     return.
 % Internal, test scaffolding: the file a failed `open` falls back to.
@@ -4723,8 +5526,8 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {literal, <<"">>}, {x, 0}}.
     {move, {x, 0}, {y, 0}}.
     {move, {literal, <<"">>}, {x, 0}}.
-    {call, 1, {f, 826}}.
-    {call, 1, {f, 730}}.
+    {call, 1, {f, 775}}.
+    {call, 1, {f, 713}}.
     {test_heap, 4, 1}.
     {put_tuple2, {x, 0}, {list, [{atom, std@io@fs@@File}, {y, 0}, {x, 0}]}}.
     {deallocate, 2}.
@@ -4732,108 +5535,81 @@ test "fs answers PermissionDenied for an OS permission error" {
 % Internal, test scaffolding: take every permission from `path`; whether that
 % denies this user anything (root is denied nothing), and give them back.
 
-{function, 'String_slice', 3, 85}.
-  {label, 84}.
+{function, '__bp_priv__describe', 1, 777}.
+  {label, 776}.
     {line, [{location, "std@io@fs.erl", 43}]}.
-    {func_info, {atom, std@io@fs}, {atom, 'String_slice'}, 3}.
-  {label, 85}.
-    {allocate, 3, 3}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
-    {move, {x, 0}, {y, 0}}.
-    {move, {x, 1}, {y, 1}}.
-    {move, {x, 2}, {y, 2}}.
-    {test, is_ne_exact, {f, 827}, [{y, 2}, {atom, undefined}]}.
-    {move, {y, 0}, {x, 0}}.
-    {move, {y, 2}, {x, 2}}.
-    {move, {y, 1}, {x, 1}}.
-    {call_last, 3, {f, 829}, 3}.
-  {label, 827}.
-    {move, {y, 0}, {x, 0}}.
-    {move, {y, 1}, {x, 1}}.
-    {call_last, 2, {f, 851}, 3}.
-
-{function, '__bp_priv__String_slice', 3, 868}.
-  {label, 867}.
-    {line, [{location, "std@io@fs.erl", 44}]}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_priv__String_slice'}, 3}.
-  {label, 868}.
-    {call_only, 3, {f, 85}}.
-
-{function, '__bp_priv__describe', 1, 870}.
-  {label, 869}.
-    {line, [{location, "std@io@fs.erl", 45}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__describe'}, 1}.
-  {label, 870}.
+  {label, 777}.
     {call_only, 1, {f, 53}}.
 
-{function, '__bp_priv__fsError', 2, 872}.
-  {label, 871}.
-    {line, [{location, "std@io@fs.erl", 46}]}.
+{function, '__bp_priv__fsError', 2, 779}.
+  {label, 778}.
+    {line, [{location, "std@io@fs.erl", 44}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__fsError'}, 2}.
-  {label, 872}.
+  {label, 779}.
     {call_only, 2, {f, 3}}.
 
-{function, '__bp_priv__globbed', 1, 874}.
-  {label, 873}.
-    {line, [{location, "std@io@fs.erl", 47}]}.
+{function, '__bp_priv__globbed', 1, 781}.
+  {label, 780}.
+    {line, [{location, "std@io@fs.erl", 45}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__globbed'}, 1}.
-  {label, 874}.
+  {label, 781}.
     {call_only, 1, {f, 57}}.
 
-{function, '__bp_priv__makeFixtureTree', 1, 876}.
-  {label, 875}.
-    {line, [{location, "std@io@fs.erl", 48}]}.
+{function, '__bp_priv__makeFixtureTree', 1, 783}.
+  {label, 782}.
+    {line, [{location, "std@io@fs.erl", 46}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__makeFixtureTree'}, 1}.
-  {label, 876}.
+  {label, 783}.
     {call_only, 1, {f, 45}}.
 
-{function, '__bp_priv__makeGlobTree', 1, 878}.
-  {label, 877}.
-    {line, [{location, "std@io@fs.erl", 49}]}.
+{function, '__bp_priv__makeGlobTree', 1, 785}.
+  {label, 784}.
+    {line, [{location, "std@io@fs.erl", 47}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__makeGlobTree'}, 1}.
-  {label, 878}.
+  {label, 785}.
     {call_only, 1, {f, 55}}.
 
-{function, '__bp_priv__noFile', 0, 880}.
-  {label, 879}.
-    {line, [{location, "std@io@fs.erl", 50}]}.
+{function, '__bp_priv__noFile', 0, 787}.
+  {label, 786}.
+    {line, [{location, "std@io@fs.erl", 48}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__noFile'}, 0}.
-  {label, 880}.
+  {label, 787}.
     {call_only, 0, {f, 61}}.
 
-{function, '__bp_priv__statOr', 1, 882}.
-  {label, 881}.
-    {line, [{location, "std@io@fs.erl", 51}]}.
+{function, '__bp_priv__statOr', 1, 789}.
+  {label, 788}.
+    {line, [{location, "std@io@fs.erl", 49}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__statOr'}, 1}.
-  {label, 882}.
+  {label, 789}.
     {call_only, 1, {f, 43}}.
 
-{function, '__bp_priv__variantOf', 1, 884}.
-  {label, 883}.
-    {line, [{location, "std@io@fs.erl", 52}]}.
+{function, '__bp_priv__variantOf', 1, 791}.
+  {label, 790}.
+    {line, [{location, "std@io@fs.erl", 50}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__variantOf'}, 1}.
-  {label, 884}.
+  {label, 791}.
     {call_only, 1, {f, 59}}.
 
-{function, '__bp_priv__walkFixture', 1, 886}.
-  {label, 885}.
-    {line, [{location, "std@io@fs.erl", 53}]}.
+{function, '__bp_priv__walkFixture', 1, 793}.
+  {label, 792}.
+    {line, [{location, "std@io@fs.erl", 51}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__walkFixture'}, 1}.
-  {label, 886}.
+  {label, 793}.
     {call_only, 1, {f, 47}}.
 
-{function, '__bp_priv__walkFixtureFromCwd', 1, 888}.
-  {label, 887}.
-    {line, [{location, "std@io@fs.erl", 54}]}.
+{function, '__bp_priv__walkFixtureFromCwd', 1, 795}.
+  {label, 794}.
+    {line, [{location, "std@io@fs.erl", 52}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__walkFixtureFromCwd'}, 1}.
-  {label, 888}.
+  {label, 795}.
     {call_only, 1, {f, 49}}.
 
-{function, '__bp_priv__walkRefusal', 1, 890}.
-  {label, 889}.
-    {line, [{location, "std@io@fs.erl", 55}]}.
+{function, '__bp_priv__walkRefusal', 1, 797}.
+  {label, 796}.
+    {line, [{location, "std@io@fs.erl", 53}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__walkRefusal'}, 1}.
-  {label, 890}.
+  {label, 797}.
     {call_only, 1, {f, 51}}.
 
 {function, '__bp_tpl_0', 1, 63}.
@@ -4860,71 +5636,10 @@ test "fs answers PermissionDenied for an OS permission error" {
     {deallocate, 3}.
     return.
 
-{function, '__bp_tpl_1-t/2-fun-0-', 2, 75}.
-  {label, 74}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_1-t/2-fun-0-'}, 2}.
-  {label, 75}.
-    {allocate, 6, 2}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}]}}.
-    {move, {x, 0}, {y, 1}}.
-    {move, {x, 1}, {y, 2}}.
-    {move, {y, 2}, {x, 0}}.
-    {test, is_eq_exact, {f, 79}, [{x, 0}, {literal, <<"">>}]}.
-    {move, {integer, 0}, {x, 0}}.
-    {deallocate, 6}.
-    return.
-  {label, 79}.
-    {move, {y, 1}, {x, 0}}.
-    {move, {y, 2}, {x, 1}}.
-    {call_ext, 2, {extfunc, binary, match, 2}}.
-    {move, {x, 0}, {y, 3}}.
-    {move, {y, 3}, {x, 0}}.
-    {test, is_eq_exact, {f, 82}, [{x, 0}, {atom, nomatch}]}.
-    {move, {integer, -1}, {x, 0}}.
-    {deallocate, 6}.
-    return.
-  {label, 82}.
-    {move, {y, 3}, {x, 0}}.
-    {test, is_tuple, {f, 83}, [{x, 0}]}.
-    {test, test_arity, {f, 83}, [{x, 0}, 2]}.
-    {get_tuple_element, {x, 0}, 0, {y, 4}}.
-    {move, {y, 4}, {y, 0}}.
-    {move, {y, 1}, {x, 0}}.
-    {move, {integer, 0}, {x, 1}}.
-    {move, {y, 0}, {x, 2}}.
-    {call_ext, 3, {extfunc, binary, part, 3}}.
-    {move, {x, 0}, {y, 5}}.
-    {move, {y, 5}, {x, 0}}.
-    {call_ext, 1, {extfunc, unicode, characters_to_list, 1}}.
-    {move, {x, 0}, {y, 5}}.
-    {move, {y, 5}, {x, 0}}.
-    {call_ext_last, 1, {extfunc, erlang, length, 1}, 6}.
-  {label, 83}.
-    {move, {y, 3}, {x, 0}}.
-    {case_end, {x, 0}}.
-
-{function, '__bp_tpl_1', 2, 71}.
-  {label, 70}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_1'}, 2}.
-  {label, 71}.
-    {allocate, 3, 2}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
-    {move, {x, 0}, {y, 0}}.
-    {move, {x, 1}, {y, 1}}.
-    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 75}, 0, 0, {x, 0}, {list, []}}.
-    {move, {x, 0}, {y, 2}}.
-    {move, {y, 0}, {x, 0}}.
-    {move, {y, 1}, {x, 1}}.
-    {move, {y, 2}, {x, 2}}.
-    {call_fun, 2}.
-    {deallocate, 3}.
-    return.
-
-{function, '__bp_tpl_2-t/1-fun-0-', 1, 101}.
-  {label, 100}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_2-t/1-fun-0-'}, 1}.
-  {label, 101}.
+{function, '__bp_tpl_1-t/1-fun-0-', 1, 103}.
+  {label, 102}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_1-t/1-fun-0-'}, 1}.
+  {label, 103}.
     {allocate, 5, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}]}}.
     {move, {x, 0}, {y, 1}}.
@@ -4935,47 +5650,47 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 0}, {y, 2}}.
     {move, {y, 2}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_binary, {f, 105}, [{x, 0}]}.
-    {jump, {f, 106}}.
-  {label, 106}.
+    {test, is_binary, {f, 107}, [{x, 0}]}.
+    {jump, {f, 108}}.
+  {label, 108}.
     {move, {integer, -1}, {x, 0}}.
     {deallocate, 5}.
     return.
-  {label, 105}.
-    {move, {y, 2}, {x, 0}}.
-    {test, is_tuple, {f, 107}, [{x, 0}]}.
-    {test, test_arity, {f, 107}, [{x, 0}, 3]}.
-    {get_tuple_element, {x, 0}, 0, {y, 3}}.
-    {get_tuple_element, {x, 0}, 1, {y, 4}}.
-    {move, {y, 3}, {x, 0}}.
-    {test, is_eq_exact, {f, 107}, [{x, 0}, {atom, error}]}.
-    {move, {y, 4}, {y, 0}}.
-    {move, {y, 0}, {x, 0}}.
-    {call_ext_last, 1, {extfunc, erlang, byte_size, 1}, 5}.
   {label, 107}.
     {move, {y, 2}, {x, 0}}.
-    {test, is_tuple, {f, 108}, [{x, 0}]}.
-    {test, test_arity, {f, 108}, [{x, 0}, 3]}.
+    {test, is_tuple, {f, 109}, [{x, 0}]}.
+    {test, test_arity, {f, 109}, [{x, 0}, 3]}.
     {get_tuple_element, {x, 0}, 0, {y, 3}}.
     {get_tuple_element, {x, 0}, 1, {y, 4}}.
     {move, {y, 3}, {x, 0}}.
-    {test, is_eq_exact, {f, 108}, [{x, 0}, {atom, incomplete}]}.
+    {test, is_eq_exact, {f, 109}, [{x, 0}, {atom, error}]}.
     {move, {y, 4}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
     {call_ext_last, 1, {extfunc, erlang, byte_size, 1}, 5}.
-  {label, 108}.
+  {label, 109}.
+    {move, {y, 2}, {x, 0}}.
+    {test, is_tuple, {f, 110}, [{x, 0}]}.
+    {test, test_arity, {f, 110}, [{x, 0}, 3]}.
+    {get_tuple_element, {x, 0}, 0, {y, 3}}.
+    {get_tuple_element, {x, 0}, 1, {y, 4}}.
+    {move, {y, 3}, {x, 0}}.
+    {test, is_eq_exact, {f, 110}, [{x, 0}, {atom, incomplete}]}.
+    {move, {y, 4}, {y, 0}}.
+    {move, {y, 0}, {x, 0}}.
+    {call_ext_last, 1, {extfunc, erlang, byte_size, 1}, 5}.
+  {label, 110}.
     {move, {y, 2}, {x, 0}}.
     {case_end, {x, 0}}.
 
-{function, '__bp_tpl_2', 1, 97}.
-  {label, 96}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_2'}, 1}.
-  {label, 97}.
+{function, '__bp_tpl_1', 1, 99}.
+  {label, 98}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_1'}, 1}.
+  {label, 99}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 101}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 103}, 0, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
@@ -4983,10 +5698,10 @@ test "fs answers PermissionDenied for an OS permission error" {
     {deallocate, 2}.
     return.
 
-{function, '__bp_tpl_3-t/1-fun-0-', 1, 117}.
-  {label, 116}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_3-t/1-fun-0-'}, 1}.
-  {label, 117}.
+{function, '__bp_tpl_2-t/1-fun-0-', 1, 119}.
+  {label, 118}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_2-t/1-fun-0-'}, 1}.
+  {label, 119}.
     {allocate, 4, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
     {move, {x, 0}, {y, 1}}.
@@ -4995,29 +5710,29 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 0}, {y, 2}}.
     {move, {y, 2}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_binary, {f, 121}, [{x, 0}]}.
-    {jump, {f, 122}}.
-  {label, 122}.
+    {test, is_binary, {f, 123}, [{x, 0}]}.
+    {jump, {f, 124}}.
+  {label, 124}.
     {test_heap, 3, 0}.
     {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 0}]}}.
     {move, {x, 0}, {y, 3}}.
     {move, {y, 3}, {x, 0}}.
     {deallocate, 4}.
     return.
-  {label, 121}.
+  {label, 123}.
     {move, {literal, {error, <<"Bytes.toUtf8: not valid UTF-8">>}}, {x, 0}}.
     {deallocate, 4}.
     return.
 
-{function, '__bp_tpl_3', 1, 113}.
-  {label, 112}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_3'}, 1}.
-  {label, 113}.
+{function, '__bp_tpl_2', 1, 115}.
+  {label, 114}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_2'}, 1}.
+  {label, 115}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 117}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 119}, 0, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
@@ -5025,563 +5740,739 @@ test "fs answers PermissionDenied for an OS permission error" {
     {deallocate, 2}.
     return.
 
-{function, '__bp_tpl_4--t/1-fun-0--fun-1-', 1, 132}.
+{function, '__bp_tpl_3-t/1-fun-0-', 1, 132}.
   {label, 131}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_4--t/1-fun-0--fun-1-'}, 1}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_3-t/1-fun-0-'}, 1}.
   {label, 132}.
-    {allocate, 3, 1}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
+    {allocate, 6, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}]}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 136}, [{x, 0}, {atom, enoent}]}.
-    {move, {literal, <<"notfound">>}, {y, 2}}.
-    {jump, {f, 135}}.
-  {label, 136}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 137}, [{x, 0}, {atom, eacces}]}.
-    {move, {literal, <<"denied">>}, {y, 2}}.
-    {jump, {f, 135}}.
-  {label, 137}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 138}, [{x, 0}, {atom, eperm}]}.
-    {move, {literal, <<"denied">>}, {y, 2}}.
-    {jump, {f, 135}}.
-  {label, 138}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 139}, [{x, 0}, {atom, eisdir}]}.
-    {move, {literal, <<"isdir">>}, {y, 2}}.
-    {jump, {f, 135}}.
-  {label, 139}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 140}, [{x, 0}, {atom, enotdir}]}.
-    {move, {literal, <<"notdir">>}, {y, 2}}.
-    {jump, {f, 135}}.
-  {label, 140}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 141}, [{x, 0}, {atom, eexist}]}.
-    {move, {literal, <<"exists">>}, {y, 2}}.
-    {jump, {f, 135}}.
-  {label, 141}.
-    {move, {literal, <<"other">>}, {y, 2}}.
-    {jump, {f, 135}}.
-  {label, 135}.
-    {move, {y, 2}, {y, 0}}.
-    {jump, {f, 144}}.
-  {label, 144}.
-    {test_heap, 2, 0}.
-    {put_list, {y, 1}, nil, {x, 0}}.
-    {move, {x, 0}, {y, 2}}.
-    {move, {literal, [126, 116, 112]}, {x, 0}}.
-    {move, {y, 2}, {x, 1}}.
-    {call_ext, 2, {extfunc, io_lib, format, 2}}.
-    {move, {x, 0}, {y, 2}}.
-    {test_heap, 6, 0}.
-    {put_list, {y, 2}, nil, {x, 0}}.
-    {put_list, {literal, <<"|">>}, {x, 0}, {x, 0}}.
-    {put_list, {y, 0}, {x, 0}, {x, 0}}.
+    {call_ext, 1, {extfunc, file, read_file, 1}}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 2}, {x, 0}}.
-    {call_ext_last, 1, {extfunc, unicode, characters_to_binary, 1}, 3}.
+    {test, is_tuple, {f, 136}, [{x, 0}]}.
+    {test, test_arity, {f, 136}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 3}}.
+    {get_tuple_element, {x, 0}, 1, {y, 4}}.
+    {move, {y, 3}, {x, 0}}.
+    {test, is_eq_exact, {f, 136}, [{x, 0}, {atom, ok}]}.
+    {move, {y, 4}, {y, 0}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 0}]}}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {y, 5}, {x, 0}}.
+    {deallocate, 6}.
+    return.
+  {label, 136}.
+    {move, {y, 2}, {x, 0}}.
+    {test, is_tuple, {f, 137}, [{x, 0}]}.
+    {test, test_arity, {f, 137}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 3}}.
+    {get_tuple_element, {x, 0}, 1, {y, 4}}.
+    {move, {y, 3}, {x, 0}}.
+    {test, is_eq_exact, {f, 137}, [{x, 0}, {atom, error}]}.
+    {move, {y, 4}, {y, 0}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 0}]}}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {y, 5}, {x, 0}}.
+    {deallocate, 6}.
+    return.
+  {label, 137}.
+    {move, {y, 2}, {x, 0}}.
+    {case_end, {x, 0}}.
 
-{function, '__bp_tpl_4-t/1-fun-0-', 1, 128}.
-  {label, 127}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_4-t/1-fun-0-'}, 1}.
-  {label, 128}.
-    {allocate, 7, 1}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}]}}.
-    {move, {x, 0}, {y, 2}}.
+{function, '__bp_tpl_3', 1, 126}.
+  {label, 125}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_3'}, 1}.
+  {label, 126}.
+    {allocate, 12, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}, {y, 11}]}}.
+    {move, {x, 0}, {y, 3}}.
+    {'try', {y, 11}, {f, 129}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
     {make_fun3, {f, 132}, 0, 0, {x, 0}, {list, []}}.
-    {move, {x, 0}, {y, 3}}.
-    {move, {y, 3}, {y, 0}}.
-    {jump, {f, 146}}.
-  {label, 146}.
-    {move, {y, 2}, {x, 0}}.
-    {call_ext, 1, {extfunc, file, read_file, 1}}.
-    {move, {x, 0}, {y, 3}}.
-    {move, {y, 3}, {x, 0}}.
-    {test, is_tuple, {f, 148}, [{x, 0}]}.
-    {test, test_arity, {f, 148}, [{x, 0}, 2]}.
-    {get_tuple_element, {x, 0}, 0, {y, 4}}.
-    {get_tuple_element, {x, 0}, 1, {y, 5}}.
-    {move, {y, 4}, {x, 0}}.
-    {test, is_eq_exact, {f, 148}, [{x, 0}, {atom, ok}]}.
-    {move, {y, 5}, {y, 1}}.
-    {test_heap, 3, 0}.
-    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 1}]}}.
-    {move, {x, 0}, {y, 6}}.
-    {move, {y, 6}, {x, 0}}.
-    {deallocate, 7}.
-    return.
-  {label, 148}.
-    {move, {y, 3}, {x, 0}}.
-    {test, is_tuple, {f, 149}, [{x, 0}]}.
-    {test, test_arity, {f, 149}, [{x, 0}, 2]}.
-    {get_tuple_element, {x, 0}, 0, {y, 4}}.
-    {get_tuple_element, {x, 0}, 1, {y, 5}}.
-    {move, {y, 4}, {x, 0}}.
-    {test, is_eq_exact, {f, 149}, [{x, 0}, {atom, error}]}.
-    {move, {y, 5}, {y, 1}}.
-    {move, {y, 1}, {x, 0}}.
-    {move, {y, 0}, {x, 1}}.
-    {call_fun, 1}.
-    {move, {x, 0}, {y, 6}}.
-    {test_heap, 3, 0}.
-    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 6}]}}.
-    {move, {x, 0}, {y, 6}}.
-    {move, {y, 6}, {x, 0}}.
-    {deallocate, 7}.
-    return.
-  {label, 149}.
-    {move, {y, 3}, {x, 0}}.
-    {case_end, {x, 0}}.
-
-{function, '__bp_tpl_4', 1, 124}.
-  {label, 123}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_4'}, 1}.
-  {label, 124}.
-    {allocate, 2, 1}.
-    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
-    {move, {x, 0}, {y, 0}}.
-    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 128}, 1, 0, {x, 0}, {list, []}}.
-    {move, {x, 0}, {y, 1}}.
-    {move, {y, 0}, {x, 0}}.
-    {move, {y, 1}, {x, 1}}.
-    {call_fun, 1}.
-    {deallocate, 2}.
-    return.
-
-{function, '__bp_tpl_5--t/2-fun-0--fun-1-', 1, 165}.
-  {label, 164}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_5--t/2-fun-0--fun-1-'}, 1}.
-  {label, 165}.
-    {allocate, 3, 1}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
-    {move, {x, 0}, {y, 1}}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 169}, [{x, 0}, {atom, enoent}]}.
-    {move, {literal, <<"notfound">>}, {y, 2}}.
-    {jump, {f, 168}}.
-  {label, 169}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 170}, [{x, 0}, {atom, eacces}]}.
-    {move, {literal, <<"denied">>}, {y, 2}}.
-    {jump, {f, 168}}.
-  {label, 170}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 171}, [{x, 0}, {atom, eperm}]}.
-    {move, {literal, <<"denied">>}, {y, 2}}.
-    {jump, {f, 168}}.
-  {label, 171}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 172}, [{x, 0}, {atom, eisdir}]}.
-    {move, {literal, <<"isdir">>}, {y, 2}}.
-    {jump, {f, 168}}.
-  {label, 172}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 173}, [{x, 0}, {atom, enotdir}]}.
-    {move, {literal, <<"notdir">>}, {y, 2}}.
-    {jump, {f, 168}}.
-  {label, 173}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 174}, [{x, 0}, {atom, eexist}]}.
-    {move, {literal, <<"exists">>}, {y, 2}}.
-    {jump, {f, 168}}.
-  {label, 174}.
-    {move, {literal, <<"other">>}, {y, 2}}.
-    {jump, {f, 168}}.
-  {label, 168}.
-    {move, {y, 2}, {y, 0}}.
-    {jump, {f, 177}}.
-  {label, 177}.
-    {test_heap, 2, 0}.
-    {put_list, {y, 1}, nil, {x, 0}}.
-    {move, {x, 0}, {y, 2}}.
-    {move, {literal, [126, 116, 112]}, {x, 0}}.
-    {move, {y, 2}, {x, 1}}.
-    {call_ext, 2, {extfunc, io_lib, format, 2}}.
-    {move, {x, 0}, {y, 2}}.
-    {test_heap, 6, 0}.
-    {put_list, {y, 2}, nil, {x, 0}}.
-    {put_list, {literal, <<"|">>}, {x, 0}, {x, 0}}.
-    {put_list, {y, 0}, {x, 0}, {x, 0}}.
-    {move, {x, 0}, {y, 2}}.
-    {move, {y, 2}, {x, 0}}.
-    {call_ext_last, 1, {extfunc, unicode, characters_to_binary, 1}, 3}.
-
-{function, '__bp_tpl_5-t/2-fun-0-', 2, 161}.
-  {label, 160}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_5-t/2-fun-0-'}, 2}.
-  {label, 161}.
-    {allocate, 8, 2}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}]}}.
-    {move, {x, 0}, {y, 2}}.
-    {move, {x, 1}, {y, 3}}.
-    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 165}, 0, 0, {x, 0}, {list, []}}.
-    {move, {x, 0}, {y, 4}}.
-    {move, {y, 4}, {y, 0}}.
-    {jump, {f, 179}}.
-  {label, 179}.
-    {move, {y, 2}, {x, 0}}.
-    {move, {y, 3}, {x, 1}}.
-    {call_ext, 2, {extfunc, file, write_file, 2}}.
-    {move, {x, 0}, {y, 4}}.
-    {move, {y, 4}, {x, 0}}.
-    {test, is_eq_exact, {f, 181}, [{x, 0}, {atom, ok}]}.
-    {move, {literal, {ok, 0}}, {x, 0}}.
-    {deallocate, 8}.
-    return.
-  {label, 181}.
-    {move, {y, 4}, {x, 0}}.
-    {test, is_tuple, {f, 182}, [{x, 0}]}.
-    {test, test_arity, {f, 182}, [{x, 0}, 2]}.
-    {get_tuple_element, {x, 0}, 0, {y, 5}}.
-    {get_tuple_element, {x, 0}, 1, {y, 6}}.
-    {move, {y, 5}, {x, 0}}.
-    {test, is_eq_exact, {f, 182}, [{x, 0}, {atom, error}]}.
-    {move, {y, 6}, {y, 1}}.
-    {move, {y, 1}, {x, 0}}.
-    {move, {y, 0}, {x, 1}}.
-    {call_fun, 1}.
-    {move, {x, 0}, {y, 7}}.
-    {test_heap, 3, 0}.
-    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 7}]}}.
-    {move, {x, 0}, {y, 7}}.
-    {move, {y, 7}, {x, 0}}.
-    {deallocate, 8}.
-    return.
-  {label, 182}.
-    {move, {y, 4}, {x, 0}}.
-    {case_end, {x, 0}}.
-
-{function, '__bp_tpl_5', 2, 157}.
-  {label, 156}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_5'}, 2}.
-  {label, 157}.
-    {allocate, 3, 2}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
-    {move, {x, 0}, {y, 0}}.
-    {move, {x, 1}, {y, 1}}.
-    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 161}, 1, 0, {x, 0}, {list, []}}.
-    {move, {x, 0}, {y, 2}}.
-    {move, {y, 0}, {x, 0}}.
-    {move, {y, 1}, {x, 1}}.
-    {move, {y, 2}, {x, 2}}.
-    {call_fun, 2}.
-    {deallocate, 3}.
-    return.
-
-{function, '__bp_tpl_6--t/2-fun-0--fun-1-', 1, 196}.
-  {label, 195}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_6--t/2-fun-0--fun-1-'}, 1}.
-  {label, 196}.
-    {allocate, 3, 1}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
-    {move, {x, 0}, {y, 1}}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 200}, [{x, 0}, {atom, enoent}]}.
-    {move, {literal, <<"notfound">>}, {y, 2}}.
-    {jump, {f, 199}}.
-  {label, 200}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 201}, [{x, 0}, {atom, eacces}]}.
-    {move, {literal, <<"denied">>}, {y, 2}}.
-    {jump, {f, 199}}.
-  {label, 201}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 202}, [{x, 0}, {atom, eperm}]}.
-    {move, {literal, <<"denied">>}, {y, 2}}.
-    {jump, {f, 199}}.
-  {label, 202}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 203}, [{x, 0}, {atom, eisdir}]}.
-    {move, {literal, <<"isdir">>}, {y, 2}}.
-    {jump, {f, 199}}.
-  {label, 203}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 204}, [{x, 0}, {atom, enotdir}]}.
-    {move, {literal, <<"notdir">>}, {y, 2}}.
-    {jump, {f, 199}}.
-  {label, 204}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 205}, [{x, 0}, {atom, eexist}]}.
-    {move, {literal, <<"exists">>}, {y, 2}}.
-    {jump, {f, 199}}.
-  {label, 205}.
-    {move, {literal, <<"other">>}, {y, 2}}.
-    {jump, {f, 199}}.
-  {label, 199}.
-    {move, {y, 2}, {y, 0}}.
-    {jump, {f, 208}}.
-  {label, 208}.
-    {test_heap, 2, 0}.
-    {put_list, {y, 1}, nil, {x, 0}}.
-    {move, {x, 0}, {y, 2}}.
-    {move, {literal, [126, 116, 112]}, {x, 0}}.
-    {move, {y, 2}, {x, 1}}.
-    {call_ext, 2, {extfunc, io_lib, format, 2}}.
-    {move, {x, 0}, {y, 2}}.
-    {test_heap, 6, 0}.
-    {put_list, {y, 2}, nil, {x, 0}}.
-    {put_list, {literal, <<"|">>}, {x, 0}, {x, 0}}.
-    {put_list, {y, 0}, {x, 0}, {x, 0}}.
-    {move, {x, 0}, {y, 2}}.
-    {move, {y, 2}, {x, 0}}.
-    {call_ext_last, 1, {extfunc, unicode, characters_to_binary, 1}, 3}.
-
-{function, '__bp_tpl_6-t/2-fun-0-', 2, 192}.
-  {label, 191}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_6-t/2-fun-0-'}, 2}.
-  {label, 192}.
-    {allocate, 8, 2}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}]}}.
-    {move, {x, 0}, {y, 2}}.
-    {move, {x, 1}, {y, 3}}.
-    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 196}, 0, 0, {x, 0}, {list, []}}.
-    {move, {x, 0}, {y, 4}}.
-    {move, {y, 4}, {y, 0}}.
-    {jump, {f, 210}}.
-  {label, 210}.
-    {move, {y, 2}, {x, 0}}.
-    {move, {y, 3}, {x, 1}}.
-    {move, {literal, [append]}, {x, 2}}.
-    {call_ext, 3, {extfunc, file, write_file, 3}}.
-    {move, {x, 0}, {y, 4}}.
-    {move, {y, 4}, {x, 0}}.
-    {test, is_eq_exact, {f, 212}, [{x, 0}, {atom, ok}]}.
-    {move, {literal, {ok, 0}}, {x, 0}}.
-    {deallocate, 8}.
-    return.
-  {label, 212}.
-    {move, {y, 4}, {x, 0}}.
-    {test, is_tuple, {f, 213}, [{x, 0}]}.
-    {test, test_arity, {f, 213}, [{x, 0}, 2]}.
-    {get_tuple_element, {x, 0}, 0, {y, 5}}.
-    {get_tuple_element, {x, 0}, 1, {y, 6}}.
-    {move, {y, 5}, {x, 0}}.
-    {test, is_eq_exact, {f, 213}, [{x, 0}, {atom, error}]}.
-    {move, {y, 6}, {y, 1}}.
-    {move, {y, 1}, {x, 0}}.
-    {move, {y, 0}, {x, 1}}.
-    {call_fun, 1}.
-    {move, {x, 0}, {y, 7}}.
-    {test_heap, 3, 0}.
-    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 7}]}}.
-    {move, {x, 0}, {y, 7}}.
-    {move, {y, 7}, {x, 0}}.
-    {deallocate, 8}.
-    return.
-  {label, 213}.
-    {move, {y, 4}, {x, 0}}.
-    {case_end, {x, 0}}.
-
-{function, '__bp_tpl_6', 2, 188}.
-  {label, 187}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_6'}, 2}.
-  {label, 188}.
-    {allocate, 3, 2}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
-    {move, {x, 0}, {y, 0}}.
-    {move, {x, 1}, {y, 1}}.
-    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 192}, 1, 0, {x, 0}, {list, []}}.
-    {move, {x, 0}, {y, 2}}.
-    {move, {y, 0}, {x, 0}}.
-    {move, {y, 1}, {x, 1}}.
-    {move, {y, 2}, {x, 2}}.
-    {call_fun, 2}.
-    {deallocate, 3}.
-    return.
-
-{function, '__bp_tpl_7--t/1-fun-0--fun-1-', 1, 225}.
-  {label, 224}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_7--t/1-fun-0--fun-1-'}, 1}.
-  {label, 225}.
-    {allocate, 3, 1}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
-    {move, {x, 0}, {y, 1}}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 229}, [{x, 0}, {atom, enoent}]}.
-    {move, {literal, <<"notfound">>}, {y, 2}}.
-    {jump, {f, 228}}.
-  {label, 229}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 230}, [{x, 0}, {atom, eacces}]}.
-    {move, {literal, <<"denied">>}, {y, 2}}.
-    {jump, {f, 228}}.
-  {label, 230}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 231}, [{x, 0}, {atom, eperm}]}.
-    {move, {literal, <<"denied">>}, {y, 2}}.
-    {jump, {f, 228}}.
-  {label, 231}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 232}, [{x, 0}, {atom, eisdir}]}.
-    {move, {literal, <<"isdir">>}, {y, 2}}.
-    {jump, {f, 228}}.
-  {label, 232}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 233}, [{x, 0}, {atom, enotdir}]}.
-    {move, {literal, <<"notdir">>}, {y, 2}}.
-    {jump, {f, 228}}.
-  {label, 233}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 234}, [{x, 0}, {atom, eexist}]}.
-    {move, {literal, <<"exists">>}, {y, 2}}.
-    {jump, {f, 228}}.
-  {label, 234}.
-    {move, {literal, <<"other">>}, {y, 2}}.
-    {jump, {f, 228}}.
-  {label, 228}.
-    {move, {y, 2}, {y, 0}}.
-    {jump, {f, 237}}.
-  {label, 237}.
-    {test_heap, 2, 0}.
-    {put_list, {y, 1}, nil, {x, 0}}.
-    {move, {x, 0}, {y, 2}}.
-    {move, {literal, [126, 116, 112]}, {x, 0}}.
-    {move, {y, 2}, {x, 1}}.
-    {call_ext, 2, {extfunc, io_lib, format, 2}}.
-    {move, {x, 0}, {y, 2}}.
-    {test_heap, 6, 0}.
-    {put_list, {y, 2}, nil, {x, 0}}.
-    {put_list, {literal, <<"|">>}, {x, 0}, {x, 0}}.
-    {put_list, {y, 0}, {x, 0}, {x, 0}}.
-    {move, {x, 0}, {y, 2}}.
-    {move, {y, 2}, {x, 0}}.
-    {call_ext_last, 1, {extfunc, unicode, characters_to_binary, 1}, 3}.
-
-{function, '__bp_tpl_7-t/1-fun-0-', 1, 221}.
-  {label, 220}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_7-t/1-fun-0-'}, 1}.
-  {label, 221}.
-    {allocate, 14, 1}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}, {y, 11}, {y, 12}, {y, 13}]}}.
-    {move, {x, 0}, {y, 4}}.
-    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 225}, 0, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 5}}.
+    {move, {y, 3}, {x, 0}}.
+    {move, {y, 5}, {x, 1}}.
+    {call_fun, 1}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {y, 5}, {y, 6}}.
+    {try_end, {y, 11}}.
+    {move, {y, 6}, {x, 0}}.
+    {test, is_tuple, {f, 139}, [{x, 0}]}.
+    {test, test_arity, {f, 139}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 7}}.
+    {get_tuple_element, {x, 0}, 1, {y, 8}}.
+    {move, {y, 7}, {x, 0}}.
+    {test, is_eq_exact, {f, 139}, [{x, 0}, {atom, ok}]}.
+    {move, {y, 8}, {y, 0}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 0}]}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {y, 4}}.
+    {jump, {f, 138}}.
+  {label, 139}.
+    {move, {y, 6}, {x, 0}}.
+    {test, is_tuple, {f, 140}, [{x, 0}]}.
+    {test, test_arity, {f, 140}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 7}}.
+    {get_tuple_element, {x, 0}, 1, {y, 8}}.
+    {move, {y, 7}, {x, 0}}.
+    {test, is_eq_exact, {f, 140}, [{x, 0}, {atom, error}]}.
+    {move, {y, 8}, {y, 1}}.
+    {test_heap, 2, 0}.
+    {put_list, {y, 1}, nil, {x, 0}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {literal, [126, 116, 112]}, {x, 0}}.
+    {move, {y, 9}, {x, 1}}.
+    {call_ext, 2, {extfunc, io_lib, format, 2}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {x, 0}}.
+    {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
+    {move, {x, 0}, {y, 9}}.
+    {test_heap, 6, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@failure@@HostError}, {y, 9}, {literal, <<"host">>}, {atom, std@failure@@HostErrorName__v__error}, {atom, undefined}]}}.
+    {move, {x, 0}, {y, 9}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 9}]}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {y, 4}}.
+    {jump, {f, 138}}.
+  {label, 140}.
+    {move, {y, 6}, {y, 0}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 0}]}}.
+    {move, {x, 0}, {y, 7}}.
+    {move, {y, 7}, {y, 4}}.
+    {jump, {f, 138}}.
+  {label, 138}.
+    {jump, {f, 130}}.
+  {label, 129}.
+    {try_case, {y, 11}}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {x, 1}, {y, 6}}.
+    {move, {x, 2}, {y, 7}}.
     {move, {y, 5}, {y, 0}}.
-    {jump, {f, 239}}.
-  {label, 239}.
-    {move, {y, 4}, {x, 0}}.
-    {move, {literal, [{time, posix}]}, {x, 1}}.
-    {call_ext, 2, {extfunc, file, read_file_info, 2}}.
-    {move, {x, 0}, {y, 5}}.
-    {move, {y, 5}, {x, 0}}.
-    {test, is_tuple, {f, 241}, [{x, 0}]}.
-    {test, test_arity, {f, 241}, [{x, 0}, 2]}.
-    {get_tuple_element, {x, 0}, 0, {y, 6}}.
-    {get_tuple_element, {x, 0}, 1, {y, 7}}.
-    {move, {y, 6}, {x, 0}}.
-    {test, is_eq_exact, {f, 241}, [{x, 0}, {atom, ok}]}.
+    {move, {y, 6}, {y, 1}}.
     {move, {y, 7}, {x, 0}}.
-    {test, is_tuple, {f, 241}, [{x, 0}]}.
-    {test, test_arity, {f, 241}, [{x, 0}, 14]}.
-    {get_tuple_element, {x, 0}, 0, {y, 8}}.
-    {get_tuple_element, {x, 0}, 1, {y, 9}}.
-    {get_tuple_element, {x, 0}, 2, {y, 10}}.
-    {get_tuple_element, {x, 0}, 5, {y, 11}}.
+    build_stacktrace.
+    {move, {x, 0}, {y, 2}}.
+    {test_heap, 2, 0}.
+    {put_list, {y, 1}, nil, {x, 0}}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {literal, [126, 116, 112]}, {x, 0}}.
+    {move, {y, 8}, {x, 1}}.
+    {call_ext, 2, {extfunc, io_lib, format, 2}}.
+    {move, {x, 0}, {y, 8}}.
     {move, {y, 8}, {x, 0}}.
-    {test, is_eq_exact, {f, 241}, [{x, 0}, {atom, file_info}]}.
-    {move, {y, 9}, {y, 1}}.
-    {move, {y, 10}, {y, 2}}.
-    {move, {y, 11}, {y, 3}}.
-    {move, {y, 3}, {x, 0}}.
-    {move, {integer, 1000}, {x, 1}}.
-    {call_ext, 2, {extfunc, erlang, '*', 2}}.
-    {move, {x, 0}, {y, 12}}.
-    {move, {y, 2}, {x, 0}}.
-    {move, {atom, directory}, {x, 1}}.
-    {call_ext, 2, {extfunc, erlang, '=:=', 2}}.
-    {move, {x, 0}, {y, 13}}.
-    {move, {literal, #{}}, {x, 0}}.
-    {put_map_assoc, {f, 0}, {x, 0}, {x, 0}, 1, {list, [{atom, size}, {y, 1}, {atom, mtime}, {y, 12}, {atom, isDir}, {y, 13}]}}.
-    {move, {x, 0}, {y, 12}}.
-    {test_heap, 3, 0}.
-    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 12}]}}.
-    {move, {x, 0}, {y, 12}}.
-    {move, {y, 12}, {x, 0}}.
-    {deallocate, 14}.
-    return.
-  {label, 241}.
-    {move, {y, 5}, {x, 0}}.
-    {test, is_tuple, {f, 242}, [{x, 0}]}.
-    {test, test_arity, {f, 242}, [{x, 0}, 2]}.
-    {get_tuple_element, {x, 0}, 0, {y, 6}}.
-    {get_tuple_element, {x, 0}, 1, {y, 7}}.
-    {move, {y, 6}, {x, 0}}.
-    {test, is_eq_exact, {f, 242}, [{x, 0}, {atom, error}]}.
-    {move, {y, 7}, {y, 1}}.
-    {move, {y, 1}, {x, 0}}.
-    {move, {y, 0}, {x, 1}}.
-    {call_fun, 1}.
+    {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_eq_exact, {f, 145}, [{x, 0}, {atom, error}]}.
+    {move, {atom, std@failure@@HostErrorName__v__error}, {y, 9}}.
+    {jump, {f, 144}}.
+  {label, 145}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_eq_exact, {f, 146}, [{x, 0}, {atom, throw}]}.
+    {move, {atom, std@failure@@HostErrorName__v__throw}, {y, 9}}.
+    {jump, {f, 144}}.
+  {label, 146}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_eq_exact, {f, 147}, [{x, 0}, {atom, exit}]}.
+    {move, {atom, std@failure@@HostErrorName__v__exit}, {y, 9}}.
+    {jump, {f, 144}}.
+  {label, 147}.
+    {move, {y, 0}, {x, 0}}.
+    {case_end, {x, 0}}.
+  {label, 144}.
+    {test_heap, 2, 0}.
+    {put_list, {y, 2}, nil, {x, 0}}.
+    {move, {x, 0}, {y, 10}}.
+    {move, {literal, [126, 116, 112]}, {x, 0}}.
+    {move, {y, 10}, {x, 1}}.
+    {call_ext, 2, {extfunc, io_lib, format, 2}}.
+    {move, {x, 0}, {y, 10}}.
+    {move, {y, 10}, {x, 0}}.
+    {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
+    {move, {x, 0}, {y, 10}}.
+    {test_heap, 6, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@failure@@HostError}, {y, 8}, {literal, <<"host">>}, {y, 9}, {y, 10}]}}.
     {move, {x, 0}, {y, 8}}.
     {test_heap, 3, 0}.
     {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 8}]}}.
     {move, {x, 0}, {y, 8}}.
-    {move, {y, 8}, {x, 0}}.
-    {deallocate, 14}.
+    {move, {y, 8}, {y, 4}}.
+    {jump, {f, 142}}.
+  {label, 142}.
+  {label, 130}.
+    {move, {y, 4}, {x, 0}}.
+    {deallocate, 12}.
     return.
-  {label, 242}.
-    {move, {y, 5}, {x, 0}}.
+
+{function, '__bp_tpl_4-t/2-fun-0-', 2, 161}.
+  {label, 160}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_4-t/2-fun-0-'}, 2}.
+  {label, 161}.
+    {allocate, 7, 2}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}]}}.
+    {move, {x, 0}, {y, 1}}.
+    {move, {x, 1}, {y, 2}}.
+    {move, {y, 1}, {x, 0}}.
+    {move, {y, 2}, {x, 1}}.
+    {call_ext, 2, {extfunc, file, write_file, 2}}.
+    {move, {x, 0}, {y, 3}}.
+    {move, {y, 3}, {x, 0}}.
+    {test, is_eq_exact, {f, 165}, [{x, 0}, {atom, ok}]}.
+    {move, {literal, {ok, 0}}, {x, 0}}.
+    {deallocate, 7}.
+    return.
+  {label, 165}.
+    {move, {y, 3}, {x, 0}}.
+    {test, is_tuple, {f, 166}, [{x, 0}]}.
+    {test, test_arity, {f, 166}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 4}}.
+    {get_tuple_element, {x, 0}, 1, {y, 5}}.
+    {move, {y, 4}, {x, 0}}.
+    {test, is_eq_exact, {f, 166}, [{x, 0}, {atom, error}]}.
+    {move, {y, 5}, {y, 0}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 0}]}}.
+    {move, {x, 0}, {y, 6}}.
+    {move, {y, 6}, {x, 0}}.
+    {deallocate, 7}.
+    return.
+  {label, 166}.
+    {move, {y, 3}, {x, 0}}.
     {case_end, {x, 0}}.
 
-{function, '__bp_tpl_7', 1, 217}.
-  {label, 216}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_7'}, 1}.
-  {label, 217}.
-    {allocate, 2, 1}.
-    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
-    {move, {x, 0}, {y, 0}}.
+{function, '__bp_tpl_4', 2, 155}.
+  {label, 154}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_4'}, 2}.
+  {label, 155}.
+    {allocate, 13, 2}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}, {y, 11}, {y, 12}]}}.
+    {move, {x, 0}, {y, 3}}.
+    {move, {x, 1}, {y, 4}}.
+    {'try', {y, 12}, {f, 158}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 221}, 1, 0, {x, 0}, {list, []}}.
-    {move, {x, 0}, {y, 1}}.
+    {make_fun3, {f, 161}, 0, 0, {x, 0}, {list, []}}.
+    {move, {x, 0}, {y, 6}}.
+    {move, {y, 3}, {x, 0}}.
+    {move, {y, 4}, {x, 1}}.
+    {move, {y, 6}, {x, 2}}.
+    {call_fun, 2}.
+    {move, {x, 0}, {y, 6}}.
+    {move, {y, 6}, {y, 7}}.
+    {try_end, {y, 12}}.
+    {move, {y, 7}, {x, 0}}.
+    {test, is_tuple, {f, 168}, [{x, 0}]}.
+    {test, test_arity, {f, 168}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 8}}.
+    {get_tuple_element, {x, 0}, 1, {y, 9}}.
+    {move, {y, 8}, {x, 0}}.
+    {test, is_eq_exact, {f, 168}, [{x, 0}, {atom, ok}]}.
+    {move, {y, 9}, {y, 0}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 0}]}}.
+    {move, {x, 0}, {y, 10}}.
+    {move, {y, 10}, {y, 5}}.
+    {jump, {f, 167}}.
+  {label, 168}.
+    {move, {y, 7}, {x, 0}}.
+    {test, is_tuple, {f, 169}, [{x, 0}]}.
+    {test, test_arity, {f, 169}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 8}}.
+    {get_tuple_element, {x, 0}, 1, {y, 9}}.
+    {move, {y, 8}, {x, 0}}.
+    {test, is_eq_exact, {f, 169}, [{x, 0}, {atom, error}]}.
+    {move, {y, 9}, {y, 1}}.
+    {test_heap, 2, 0}.
+    {put_list, {y, 1}, nil, {x, 0}}.
+    {move, {x, 0}, {y, 10}}.
+    {move, {literal, [126, 116, 112]}, {x, 0}}.
+    {move, {y, 10}, {x, 1}}.
+    {call_ext, 2, {extfunc, io_lib, format, 2}}.
+    {move, {x, 0}, {y, 10}}.
+    {move, {y, 10}, {x, 0}}.
+    {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
+    {move, {x, 0}, {y, 10}}.
+    {test_heap, 6, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@failure@@HostError}, {y, 10}, {literal, <<"host">>}, {atom, std@failure@@HostErrorName__v__error}, {atom, undefined}]}}.
+    {move, {x, 0}, {y, 10}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 10}]}}.
+    {move, {x, 0}, {y, 10}}.
+    {move, {y, 10}, {y, 5}}.
+    {jump, {f, 167}}.
+  {label, 169}.
+    {move, {y, 7}, {y, 0}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 0}]}}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {y, 8}, {y, 5}}.
+    {jump, {f, 167}}.
+  {label, 167}.
+    {jump, {f, 159}}.
+  {label, 158}.
+    {try_case, {y, 12}}.
+    {move, {x, 0}, {y, 6}}.
+    {move, {x, 1}, {y, 7}}.
+    {move, {x, 2}, {y, 8}}.
+    {move, {y, 6}, {y, 0}}.
+    {move, {y, 7}, {y, 1}}.
+    {move, {y, 8}, {x, 0}}.
+    build_stacktrace.
+    {move, {x, 0}, {y, 2}}.
+    {test_heap, 2, 0}.
+    {put_list, {y, 1}, nil, {x, 0}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {literal, [126, 116, 112]}, {x, 0}}.
+    {move, {y, 9}, {x, 1}}.
+    {call_ext, 2, {extfunc, io_lib, format, 2}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {x, 0}}.
+    {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
+    {move, {x, 0}, {y, 9}}.
     {move, {y, 0}, {x, 0}}.
-    {move, {y, 1}, {x, 1}}.
-    {call_fun, 1}.
-    {deallocate, 2}.
+    {test, is_eq_exact, {f, 174}, [{x, 0}, {atom, error}]}.
+    {move, {atom, std@failure@@HostErrorName__v__error}, {y, 10}}.
+    {jump, {f, 173}}.
+  {label, 174}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_eq_exact, {f, 175}, [{x, 0}, {atom, throw}]}.
+    {move, {atom, std@failure@@HostErrorName__v__throw}, {y, 10}}.
+    {jump, {f, 173}}.
+  {label, 175}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_eq_exact, {f, 176}, [{x, 0}, {atom, exit}]}.
+    {move, {atom, std@failure@@HostErrorName__v__exit}, {y, 10}}.
+    {jump, {f, 173}}.
+  {label, 176}.
+    {move, {y, 0}, {x, 0}}.
+    {case_end, {x, 0}}.
+  {label, 173}.
+    {test_heap, 2, 0}.
+    {put_list, {y, 2}, nil, {x, 0}}.
+    {move, {x, 0}, {y, 11}}.
+    {move, {literal, [126, 116, 112]}, {x, 0}}.
+    {move, {y, 11}, {x, 1}}.
+    {call_ext, 2, {extfunc, io_lib, format, 2}}.
+    {move, {x, 0}, {y, 11}}.
+    {move, {y, 11}, {x, 0}}.
+    {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
+    {move, {x, 0}, {y, 11}}.
+    {test_heap, 6, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@failure@@HostError}, {y, 9}, {literal, <<"host">>}, {y, 10}, {y, 11}]}}.
+    {move, {x, 0}, {y, 9}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 9}]}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {y, 5}}.
+    {jump, {f, 171}}.
+  {label, 171}.
+  {label, 159}.
+    {move, {y, 5}, {x, 0}}.
+    {deallocate, 13}.
     return.
 
-{function, '__bp_adopt', 3, 244}.
-  {label, 243}.
+{function, '__bp_tpl_5-t/2-fun-0-', 2, 188}.
+  {label, 187}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_5-t/2-fun-0-'}, 2}.
+  {label, 188}.
+    {allocate, 7, 2}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}]}}.
+    {move, {x, 0}, {y, 1}}.
+    {move, {x, 1}, {y, 2}}.
+    {move, {y, 1}, {x, 0}}.
+    {move, {y, 2}, {x, 1}}.
+    {move, {literal, [append]}, {x, 2}}.
+    {call_ext, 3, {extfunc, file, write_file, 3}}.
+    {move, {x, 0}, {y, 3}}.
+    {move, {y, 3}, {x, 0}}.
+    {test, is_eq_exact, {f, 192}, [{x, 0}, {atom, ok}]}.
+    {move, {literal, {ok, 0}}, {x, 0}}.
+    {deallocate, 7}.
+    return.
+  {label, 192}.
+    {move, {y, 3}, {x, 0}}.
+    {test, is_tuple, {f, 193}, [{x, 0}]}.
+    {test, test_arity, {f, 193}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 4}}.
+    {get_tuple_element, {x, 0}, 1, {y, 5}}.
+    {move, {y, 4}, {x, 0}}.
+    {test, is_eq_exact, {f, 193}, [{x, 0}, {atom, error}]}.
+    {move, {y, 5}, {y, 0}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 0}]}}.
+    {move, {x, 0}, {y, 6}}.
+    {move, {y, 6}, {x, 0}}.
+    {deallocate, 7}.
+    return.
+  {label, 193}.
+    {move, {y, 3}, {x, 0}}.
+    {case_end, {x, 0}}.
+
+{function, '__bp_tpl_5', 2, 182}.
+  {label, 181}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_5'}, 2}.
+  {label, 182}.
+    {allocate, 13, 2}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}, {y, 11}, {y, 12}]}}.
+    {move, {x, 0}, {y, 3}}.
+    {move, {x, 1}, {y, 4}}.
+    {'try', {y, 12}, {f, 185}}.
+    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
+    {make_fun3, {f, 188}, 0, 0, {x, 0}, {list, []}}.
+    {move, {x, 0}, {y, 6}}.
+    {move, {y, 3}, {x, 0}}.
+    {move, {y, 4}, {x, 1}}.
+    {move, {y, 6}, {x, 2}}.
+    {call_fun, 2}.
+    {move, {x, 0}, {y, 6}}.
+    {move, {y, 6}, {y, 7}}.
+    {try_end, {y, 12}}.
+    {move, {y, 7}, {x, 0}}.
+    {test, is_tuple, {f, 195}, [{x, 0}]}.
+    {test, test_arity, {f, 195}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 8}}.
+    {get_tuple_element, {x, 0}, 1, {y, 9}}.
+    {move, {y, 8}, {x, 0}}.
+    {test, is_eq_exact, {f, 195}, [{x, 0}, {atom, ok}]}.
+    {move, {y, 9}, {y, 0}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 0}]}}.
+    {move, {x, 0}, {y, 10}}.
+    {move, {y, 10}, {y, 5}}.
+    {jump, {f, 194}}.
+  {label, 195}.
+    {move, {y, 7}, {x, 0}}.
+    {test, is_tuple, {f, 196}, [{x, 0}]}.
+    {test, test_arity, {f, 196}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 8}}.
+    {get_tuple_element, {x, 0}, 1, {y, 9}}.
+    {move, {y, 8}, {x, 0}}.
+    {test, is_eq_exact, {f, 196}, [{x, 0}, {atom, error}]}.
+    {move, {y, 9}, {y, 1}}.
+    {test_heap, 2, 0}.
+    {put_list, {y, 1}, nil, {x, 0}}.
+    {move, {x, 0}, {y, 10}}.
+    {move, {literal, [126, 116, 112]}, {x, 0}}.
+    {move, {y, 10}, {x, 1}}.
+    {call_ext, 2, {extfunc, io_lib, format, 2}}.
+    {move, {x, 0}, {y, 10}}.
+    {move, {y, 10}, {x, 0}}.
+    {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
+    {move, {x, 0}, {y, 10}}.
+    {test_heap, 6, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@failure@@HostError}, {y, 10}, {literal, <<"host">>}, {atom, std@failure@@HostErrorName__v__error}, {atom, undefined}]}}.
+    {move, {x, 0}, {y, 10}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 10}]}}.
+    {move, {x, 0}, {y, 10}}.
+    {move, {y, 10}, {y, 5}}.
+    {jump, {f, 194}}.
+  {label, 196}.
+    {move, {y, 7}, {y, 0}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 0}]}}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {y, 8}, {y, 5}}.
+    {jump, {f, 194}}.
+  {label, 194}.
+    {jump, {f, 186}}.
+  {label, 185}.
+    {try_case, {y, 12}}.
+    {move, {x, 0}, {y, 6}}.
+    {move, {x, 1}, {y, 7}}.
+    {move, {x, 2}, {y, 8}}.
+    {move, {y, 6}, {y, 0}}.
+    {move, {y, 7}, {y, 1}}.
+    {move, {y, 8}, {x, 0}}.
+    build_stacktrace.
+    {move, {x, 0}, {y, 2}}.
+    {test_heap, 2, 0}.
+    {put_list, {y, 1}, nil, {x, 0}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {literal, [126, 116, 112]}, {x, 0}}.
+    {move, {y, 9}, {x, 1}}.
+    {call_ext, 2, {extfunc, io_lib, format, 2}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {x, 0}}.
+    {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_eq_exact, {f, 201}, [{x, 0}, {atom, error}]}.
+    {move, {atom, std@failure@@HostErrorName__v__error}, {y, 10}}.
+    {jump, {f, 200}}.
+  {label, 201}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_eq_exact, {f, 202}, [{x, 0}, {atom, throw}]}.
+    {move, {atom, std@failure@@HostErrorName__v__throw}, {y, 10}}.
+    {jump, {f, 200}}.
+  {label, 202}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_eq_exact, {f, 203}, [{x, 0}, {atom, exit}]}.
+    {move, {atom, std@failure@@HostErrorName__v__exit}, {y, 10}}.
+    {jump, {f, 200}}.
+  {label, 203}.
+    {move, {y, 0}, {x, 0}}.
+    {case_end, {x, 0}}.
+  {label, 200}.
+    {test_heap, 2, 0}.
+    {put_list, {y, 2}, nil, {x, 0}}.
+    {move, {x, 0}, {y, 11}}.
+    {move, {literal, [126, 116, 112]}, {x, 0}}.
+    {move, {y, 11}, {x, 1}}.
+    {call_ext, 2, {extfunc, io_lib, format, 2}}.
+    {move, {x, 0}, {y, 11}}.
+    {move, {y, 11}, {x, 0}}.
+    {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
+    {move, {x, 0}, {y, 11}}.
+    {test_heap, 6, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@failure@@HostError}, {y, 9}, {literal, <<"host">>}, {y, 10}, {y, 11}]}}.
+    {move, {x, 0}, {y, 9}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 9}]}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {y, 5}}.
+    {jump, {f, 198}}.
+  {label, 198}.
+  {label, 186}.
+    {move, {y, 5}, {x, 0}}.
+    {deallocate, 13}.
+    return.
+
+{function, '__bp_tpl_6-t/1-fun-0-', 1, 213}.
+  {label, 212}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_6-t/1-fun-0-'}, 1}.
+  {label, 213}.
+    {allocate, 13, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}, {y, 11}, {y, 12}]}}.
+    {move, {x, 0}, {y, 3}}.
+    {move, {y, 3}, {x, 0}}.
+    {move, {literal, [{time, posix}]}, {x, 1}}.
+    {call_ext, 2, {extfunc, file, read_file_info, 2}}.
+    {move, {x, 0}, {y, 4}}.
+    {move, {y, 4}, {x, 0}}.
+    {test, is_tuple, {f, 217}, [{x, 0}]}.
+    {test, test_arity, {f, 217}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 5}}.
+    {get_tuple_element, {x, 0}, 1, {y, 6}}.
+    {move, {y, 5}, {x, 0}}.
+    {test, is_eq_exact, {f, 217}, [{x, 0}, {atom, ok}]}.
+    {move, {y, 6}, {x, 0}}.
+    {test, is_tuple, {f, 217}, [{x, 0}]}.
+    {test, test_arity, {f, 217}, [{x, 0}, 14]}.
+    {get_tuple_element, {x, 0}, 0, {y, 7}}.
+    {get_tuple_element, {x, 0}, 1, {y, 8}}.
+    {get_tuple_element, {x, 0}, 2, {y, 9}}.
+    {get_tuple_element, {x, 0}, 5, {y, 10}}.
+    {move, {y, 7}, {x, 0}}.
+    {test, is_eq_exact, {f, 217}, [{x, 0}, {atom, file_info}]}.
+    {move, {y, 8}, {y, 0}}.
+    {move, {y, 9}, {y, 1}}.
+    {move, {y, 10}, {y, 2}}.
+    {move, {y, 2}, {x, 0}}.
+    {move, {integer, 1000}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, '*', 2}}.
+    {move, {x, 0}, {y, 11}}.
+    {move, {y, 1}, {x, 0}}.
+    {move, {atom, directory}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, '=:=', 2}}.
+    {move, {x, 0}, {y, 12}}.
+    {move, {literal, #{}}, {x, 0}}.
+    {put_map_assoc, {f, 0}, {x, 0}, {x, 0}, 1, {list, [{atom, size}, {y, 0}, {atom, mtime}, {y, 11}, {atom, isDir}, {y, 12}]}}.
+    {move, {x, 0}, {y, 11}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 11}]}}.
+    {move, {x, 0}, {y, 11}}.
+    {move, {y, 11}, {x, 0}}.
+    {deallocate, 13}.
+    return.
+  {label, 217}.
+    {move, {y, 4}, {x, 0}}.
+    {test, is_tuple, {f, 218}, [{x, 0}]}.
+    {test, test_arity, {f, 218}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 5}}.
+    {get_tuple_element, {x, 0}, 1, {y, 6}}.
+    {move, {y, 5}, {x, 0}}.
+    {test, is_eq_exact, {f, 218}, [{x, 0}, {atom, error}]}.
+    {move, {y, 6}, {y, 0}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 0}]}}.
+    {move, {x, 0}, {y, 7}}.
+    {move, {y, 7}, {x, 0}}.
+    {deallocate, 13}.
+    return.
+  {label, 218}.
+    {move, {y, 4}, {x, 0}}.
+    {case_end, {x, 0}}.
+
+{function, '__bp_tpl_6', 1, 207}.
+  {label, 206}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_6'}, 1}.
+  {label, 207}.
+    {allocate, 12, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}, {y, 11}]}}.
+    {move, {x, 0}, {y, 3}}.
+    {'try', {y, 11}, {f, 210}}.
+    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
+    {make_fun3, {f, 213}, 0, 0, {x, 0}, {list, []}}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {y, 3}, {x, 0}}.
+    {move, {y, 5}, {x, 1}}.
+    {call_fun, 1}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {y, 5}, {y, 6}}.
+    {try_end, {y, 11}}.
+    {move, {y, 6}, {x, 0}}.
+    {test, is_tuple, {f, 220}, [{x, 0}]}.
+    {test, test_arity, {f, 220}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 7}}.
+    {get_tuple_element, {x, 0}, 1, {y, 8}}.
+    {move, {y, 7}, {x, 0}}.
+    {test, is_eq_exact, {f, 220}, [{x, 0}, {atom, ok}]}.
+    {move, {y, 8}, {y, 0}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 0}]}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {y, 4}}.
+    {jump, {f, 219}}.
+  {label, 220}.
+    {move, {y, 6}, {x, 0}}.
+    {test, is_tuple, {f, 221}, [{x, 0}]}.
+    {test, test_arity, {f, 221}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 7}}.
+    {get_tuple_element, {x, 0}, 1, {y, 8}}.
+    {move, {y, 7}, {x, 0}}.
+    {test, is_eq_exact, {f, 221}, [{x, 0}, {atom, error}]}.
+    {move, {y, 8}, {y, 1}}.
+    {test_heap, 2, 0}.
+    {put_list, {y, 1}, nil, {x, 0}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {literal, [126, 116, 112]}, {x, 0}}.
+    {move, {y, 9}, {x, 1}}.
+    {call_ext, 2, {extfunc, io_lib, format, 2}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {x, 0}}.
+    {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
+    {move, {x, 0}, {y, 9}}.
+    {test_heap, 6, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@failure@@HostError}, {y, 9}, {literal, <<"host">>}, {atom, std@failure@@HostErrorName__v__error}, {atom, undefined}]}}.
+    {move, {x, 0}, {y, 9}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 9}]}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {y, 4}}.
+    {jump, {f, 219}}.
+  {label, 221}.
+    {move, {y, 6}, {y, 0}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 0}]}}.
+    {move, {x, 0}, {y, 7}}.
+    {move, {y, 7}, {y, 4}}.
+    {jump, {f, 219}}.
+  {label, 219}.
+    {jump, {f, 211}}.
+  {label, 210}.
+    {try_case, {y, 11}}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {x, 1}, {y, 6}}.
+    {move, {x, 2}, {y, 7}}.
+    {move, {y, 5}, {y, 0}}.
+    {move, {y, 6}, {y, 1}}.
+    {move, {y, 7}, {x, 0}}.
+    build_stacktrace.
+    {move, {x, 0}, {y, 2}}.
+    {test_heap, 2, 0}.
+    {put_list, {y, 1}, nil, {x, 0}}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {literal, [126, 116, 112]}, {x, 0}}.
+    {move, {y, 8}, {x, 1}}.
+    {call_ext, 2, {extfunc, io_lib, format, 2}}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {y, 8}, {x, 0}}.
+    {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_eq_exact, {f, 226}, [{x, 0}, {atom, error}]}.
+    {move, {atom, std@failure@@HostErrorName__v__error}, {y, 9}}.
+    {jump, {f, 225}}.
+  {label, 226}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_eq_exact, {f, 227}, [{x, 0}, {atom, throw}]}.
+    {move, {atom, std@failure@@HostErrorName__v__throw}, {y, 9}}.
+    {jump, {f, 225}}.
+  {label, 227}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_eq_exact, {f, 228}, [{x, 0}, {atom, exit}]}.
+    {move, {atom, std@failure@@HostErrorName__v__exit}, {y, 9}}.
+    {jump, {f, 225}}.
+  {label, 228}.
+    {move, {y, 0}, {x, 0}}.
+    {case_end, {x, 0}}.
+  {label, 225}.
+    {test_heap, 2, 0}.
+    {put_list, {y, 2}, nil, {x, 0}}.
+    {move, {x, 0}, {y, 10}}.
+    {move, {literal, [126, 116, 112]}, {x, 0}}.
+    {move, {y, 10}, {x, 1}}.
+    {call_ext, 2, {extfunc, io_lib, format, 2}}.
+    {move, {x, 0}, {y, 10}}.
+    {move, {y, 10}, {x, 0}}.
+    {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
+    {move, {x, 0}, {y, 10}}.
+    {test_heap, 6, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@failure@@HostError}, {y, 8}, {literal, <<"host">>}, {y, 9}, {y, 10}]}}.
+    {move, {x, 0}, {y, 8}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 8}]}}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {y, 8}, {y, 4}}.
+    {jump, {f, 223}}.
+  {label, 223}.
+  {label, 211}.
+    {move, {y, 4}, {x, 0}}.
+    {deallocate, 12}.
+    return.
+
+{function, '__bp_adopt', 3, 230}.
+  {label, 229}.
     {line, [{location, "std@io@fs.erl", 12}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_adopt'}, 3}.
-  {label, 244}.
-    {test, is_map, {f, 249}, [{x, 0}]}.
+  {label, 230}.
+    {test, is_map, {f, 235}, [{x, 0}]}.
     {allocate, 1, 3}.
     {move, {x, 1}, {y, 0}}.
     {move, {x, 0}, {x, 1}}.
     {move, {x, 2}, {x, 0}}.
-    {call, 2, {f, 246}}.
+    {call, 2, {f, 232}}.
     {test_heap, 2, 1}.
     {put_list, {y, 0}, {x, 0}, {x, 0}}.
     {call_ext_last, 1, {extfunc, erlang, list_to_tuple, 1}, 1}.
-  {label, 249}.
-    {test, is_list, {f, 250}, [{x, 0}]}.
-    {call_only, 3, {f, 248}}.
-  {label, 250}.
-    {test, is_tagged_tuple, {f, 251}, [{x, 0}, 2, {atom, ok}]}.
+  {label, 235}.
+    {test, is_list, {f, 236}, [{x, 0}]}.
+    {call_only, 3, {f, 234}}.
+  {label, 236}.
+    {test, is_tagged_tuple, {f, 237}, [{x, 0}, 2, {atom, ok}]}.
     {allocate, 0, 3}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {call, 3, {f, 244}}.
+    {call, 3, {f, 230}}.
     {test_heap, 3, 1}.
     {put_tuple2, {x, 0}, {list, [{atom, ok}, {x, 0}]}}.
     {deallocate, 0}.
     return.
-  {label, 251}.
+  {label, 237}.
     return.
 
-{function, '-bp_adopt_fields-', 2, 246}.
-  {label, 245}.
+{function, '-bp_adopt_fields-', 2, 232}.
+  {label, 231}.
     {line, [{location, "std@io@fs.erl", 12}]}.
     {func_info, {atom, std@io@fs}, {atom, '-bp_adopt_fields-'}, 2}.
-  {label, 246}.
-    {test, is_nonempty_list, {f, 252}, [{x, 0}]}.
+  {label, 232}.
+    {test, is_nonempty_list, {f, 238}, [{x, 0}]}.
     {allocate, 2, 2}.
     {move, {x, 1}, {y, 1}}.
     {get_list, {x, 0}, {x, 0}, {y, 0}}.
@@ -5590,890 +6481,1089 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {y, 1}, {x, 1}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
-    {call, 2, {f, 246}}.
+    {call, 2, {f, 232}}.
     {test_heap, 2, 1}.
     {put_list, {y, 1}, {x, 0}, {x, 0}}.
     {deallocate, 2}.
     return.
-  {label, 252}.
+  {label, 238}.
     {move, nil, {x, 0}}.
     return.
 
-{function, '-bp_adopt_each-', 3, 248}.
-  {label, 247}.
+{function, '-bp_adopt_each-', 3, 234}.
+  {label, 233}.
     {line, [{location, "std@io@fs.erl", 12}]}.
     {func_info, {atom, std@io@fs}, {atom, '-bp_adopt_each-'}, 3}.
-  {label, 248}.
-    {test, is_nonempty_list, {f, 253}, [{x, 0}]}.
+  {label, 234}.
+    {test, is_nonempty_list, {f, 239}, [{x, 0}]}.
     {allocate, 3, 3}.
     {move, {x, 1}, {y, 1}}.
     {move, {x, 2}, {y, 2}}.
     {get_list, {x, 0}, {x, 0}, {y, 0}}.
-    {call, 3, {f, 244}}.
+    {call, 3, {f, 230}}.
     {move, {y, 0}, {x, 3}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 3}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
     {move, {y, 2}, {x, 2}}.
-    {call, 3, {f, 248}}.
+    {call, 3, {f, 234}}.
     {test_heap, 2, 1}.
     {put_list, {y, 0}, {x, 0}, {x, 0}}.
     {deallocate, 3}.
     return.
-  {label, 253}.
+  {label, 239}.
     {move, nil, {x, 0}}.
     return.
 
-{function, '__bp_tpl_8--t/1-fun-0--fun-1-', 1, 265}.
-  {label, 264}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_8--t/1-fun-0--fun-1-'}, 1}.
-  {label, 265}.
-    {allocate, 3, 1}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
+{function, '__bp_tpl_7-t/1-fun-0-', 1, 249}.
+  {label, 248}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_7-t/1-fun-0-'}, 1}.
+  {label, 249}.
+    {allocate, 9, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}]}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 269}, [{x, 0}, {atom, enoent}]}.
-    {move, {literal, <<"notfound">>}, {y, 2}}.
-    {jump, {f, 268}}.
-  {label, 269}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 270}, [{x, 0}, {atom, eacces}]}.
-    {move, {literal, <<"denied">>}, {y, 2}}.
-    {jump, {f, 268}}.
-  {label, 270}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 271}, [{x, 0}, {atom, eperm}]}.
-    {move, {literal, <<"denied">>}, {y, 2}}.
-    {jump, {f, 268}}.
-  {label, 271}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 272}, [{x, 0}, {atom, eisdir}]}.
-    {move, {literal, <<"isdir">>}, {y, 2}}.
-    {jump, {f, 268}}.
-  {label, 272}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 273}, [{x, 0}, {atom, enotdir}]}.
-    {move, {literal, <<"notdir">>}, {y, 2}}.
-    {jump, {f, 268}}.
-  {label, 273}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 274}, [{x, 0}, {atom, eexist}]}.
-    {move, {literal, <<"exists">>}, {y, 2}}.
-    {jump, {f, 268}}.
-  {label, 274}.
-    {move, {literal, <<"other">>}, {y, 2}}.
-    {jump, {f, 268}}.
-  {label, 268}.
-    {move, {y, 2}, {y, 0}}.
-    {jump, {f, 277}}.
-  {label, 277}.
+    {call_ext, 1, {extfunc, file, list_dir, 1}}.
+    {move, {x, 0}, {y, 2}}.
+    {move, {y, 2}, {x, 0}}.
+    {test, is_tuple, {f, 253}, [{x, 0}]}.
+    {test, test_arity, {f, 253}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 3}}.
+    {get_tuple_element, {x, 0}, 1, {y, 4}}.
+    {move, {y, 3}, {x, 0}}.
+    {test, is_eq_exact, {f, 253}, [{x, 0}, {atom, ok}]}.
+    {move, {y, 4}, {y, 0}}.
+    {move, nil, {y, 5}}.
+    {move, {y, 0}, {y, 6}}.
+  {label, 255}.
+    {move, {y, 6}, {x, 0}}.
+    {test, is_nonempty_list, {f, 256}, [{x, 0}]}.
+    {get_list, {x, 0}, {y, 7}, {y, 6}}.
+    {move, {y, 7}, {y, 0}}.
+    {move, {y, 0}, {x, 0}}.
+    {call_ext, 1, {extfunc, erlang, list_to_binary, 1}}.
+    {move, {x, 0}, {y, 8}}.
+    {test_heap, 2, 0}.
+    {put_list, {y, 8}, {y, 5}, {x, 0}}.
+    {move, {x, 0}, {y, 5}}.
+    {jump, {f, 255}}.
+  {label, 256}.
+    {move, {y, 6}, {x, 0}}.
+    {test, is_nil, {f, 257}, [{x, 0}]}.
+    {jump, {f, 254}}.
+  {label, 257}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, bad_generator}, {y, 6}]}}.
+    {call_ext, 1, {extfunc, erlang, error, 1}}.
+  {label, 254}.
+    {move, {y, 5}, {x, 0}}.
+    {call_ext, 1, {extfunc, lists, reverse, 1}}.
+    {move, {x, 0}, {y, 6}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 6}]}}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {y, 5}, {x, 0}}.
+    {deallocate, 9}.
+    return.
+  {label, 253}.
+    {move, {y, 2}, {x, 0}}.
+    {test, is_tuple, {f, 258}, [{x, 0}]}.
+    {test, test_arity, {f, 258}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 3}}.
+    {get_tuple_element, {x, 0}, 1, {y, 4}}.
+    {move, {y, 3}, {x, 0}}.
+    {test, is_eq_exact, {f, 258}, [{x, 0}, {atom, error}]}.
+    {move, {y, 4}, {y, 0}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 0}]}}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {y, 5}, {x, 0}}.
+    {deallocate, 9}.
+    return.
+  {label, 258}.
+    {move, {y, 2}, {x, 0}}.
+    {case_end, {x, 0}}.
+
+{function, '__bp_tpl_7', 1, 243}.
+  {label, 242}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_7'}, 1}.
+  {label, 243}.
+    {allocate, 12, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}, {y, 11}]}}.
+    {move, {x, 0}, {y, 3}}.
+    {'try', {y, 11}, {f, 246}}.
+    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
+    {make_fun3, {f, 249}, 0, 0, {x, 0}, {list, []}}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {y, 3}, {x, 0}}.
+    {move, {y, 5}, {x, 1}}.
+    {call_fun, 1}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {y, 5}, {y, 6}}.
+    {try_end, {y, 11}}.
+    {move, {y, 6}, {x, 0}}.
+    {test, is_tuple, {f, 260}, [{x, 0}]}.
+    {test, test_arity, {f, 260}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 7}}.
+    {get_tuple_element, {x, 0}, 1, {y, 8}}.
+    {move, {y, 7}, {x, 0}}.
+    {test, is_eq_exact, {f, 260}, [{x, 0}, {atom, ok}]}.
+    {move, {y, 8}, {y, 0}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 0}]}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {y, 4}}.
+    {jump, {f, 259}}.
+  {label, 260}.
+    {move, {y, 6}, {x, 0}}.
+    {test, is_tuple, {f, 261}, [{x, 0}]}.
+    {test, test_arity, {f, 261}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 7}}.
+    {get_tuple_element, {x, 0}, 1, {y, 8}}.
+    {move, {y, 7}, {x, 0}}.
+    {test, is_eq_exact, {f, 261}, [{x, 0}, {atom, error}]}.
+    {move, {y, 8}, {y, 1}}.
     {test_heap, 2, 0}.
     {put_list, {y, 1}, nil, {x, 0}}.
-    {move, {x, 0}, {y, 2}}.
-    {move, {literal, [126, 116, 112]}, {x, 0}}.
-    {move, {y, 2}, {x, 1}}.
-    {call_ext, 2, {extfunc, io_lib, format, 2}}.
-    {move, {x, 0}, {y, 2}}.
-    {test_heap, 6, 0}.
-    {put_list, {y, 2}, nil, {x, 0}}.
-    {put_list, {literal, <<"|">>}, {x, 0}, {x, 0}}.
-    {put_list, {y, 0}, {x, 0}, {x, 0}}.
-    {move, {x, 0}, {y, 2}}.
-    {move, {y, 2}, {x, 0}}.
-    {call_ext_last, 1, {extfunc, unicode, characters_to_binary, 1}, 3}.
-
-{function, '__bp_tpl_8-t/1-fun-0-', 1, 261}.
-  {label, 260}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_8-t/1-fun-0-'}, 1}.
-  {label, 261}.
-    {allocate, 10, 1}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}]}}.
-    {move, {x, 0}, {y, 2}}.
-    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 265}, 0, 0, {x, 0}, {list, []}}.
-    {move, {x, 0}, {y, 3}}.
-    {move, {y, 3}, {y, 0}}.
-    {jump, {f, 279}}.
-  {label, 279}.
-    {move, {y, 2}, {x, 0}}.
-    {call_ext, 1, {extfunc, file, list_dir, 1}}.
-    {move, {x, 0}, {y, 3}}.
-    {move, {y, 3}, {x, 0}}.
-    {test, is_tuple, {f, 281}, [{x, 0}]}.
-    {test, test_arity, {f, 281}, [{x, 0}, 2]}.
-    {get_tuple_element, {x, 0}, 0, {y, 4}}.
-    {get_tuple_element, {x, 0}, 1, {y, 5}}.
-    {move, {y, 4}, {x, 0}}.
-    {test, is_eq_exact, {f, 281}, [{x, 0}, {atom, ok}]}.
-    {move, {y, 5}, {y, 1}}.
-    {move, nil, {y, 6}}.
-    {move, {y, 1}, {y, 7}}.
-  {label, 283}.
-    {move, {y, 7}, {x, 0}}.
-    {test, is_nonempty_list, {f, 284}, [{x, 0}]}.
-    {get_list, {x, 0}, {y, 8}, {y, 7}}.
-    {move, {y, 8}, {y, 1}}.
-    {move, {y, 1}, {x, 0}}.
-    {call_ext, 1, {extfunc, erlang, list_to_binary, 1}}.
     {move, {x, 0}, {y, 9}}.
-    {test_heap, 2, 0}.
-    {put_list, {y, 9}, {y, 6}, {x, 0}}.
-    {move, {x, 0}, {y, 6}}.
-    {jump, {f, 283}}.
-  {label, 284}.
-    {move, {y, 7}, {x, 0}}.
-    {test, is_nil, {f, 285}, [{x, 0}]}.
-    {jump, {f, 282}}.
-  {label, 285}.
+    {move, {literal, [126, 116, 112]}, {x, 0}}.
+    {move, {y, 9}, {x, 1}}.
+    {call_ext, 2, {extfunc, io_lib, format, 2}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {x, 0}}.
+    {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
+    {move, {x, 0}, {y, 9}}.
+    {test_heap, 6, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@failure@@HostError}, {y, 9}, {literal, <<"host">>}, {atom, std@failure@@HostErrorName__v__error}, {atom, undefined}]}}.
+    {move, {x, 0}, {y, 9}}.
     {test_heap, 3, 0}.
-    {put_tuple2, {x, 0}, {list, [{atom, bad_generator}, {y, 7}]}}.
-    {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 282}.
-    {move, {y, 6}, {x, 0}}.
-    {call_ext, 1, {extfunc, lists, reverse, 1}}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 9}]}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {y, 4}}.
+    {jump, {f, 259}}.
+  {label, 261}.
+    {move, {y, 6}, {y, 0}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 0}]}}.
     {move, {x, 0}, {y, 7}}.
+    {move, {y, 7}, {y, 4}}.
+    {jump, {f, 259}}.
+  {label, 259}.
+    {jump, {f, 247}}.
+  {label, 246}.
+    {try_case, {y, 11}}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {x, 1}, {y, 6}}.
+    {move, {x, 2}, {y, 7}}.
+    {move, {y, 5}, {y, 0}}.
+    {move, {y, 6}, {y, 1}}.
+    {move, {y, 7}, {x, 0}}.
+    build_stacktrace.
+    {move, {x, 0}, {y, 2}}.
+    {test_heap, 2, 0}.
+    {put_list, {y, 1}, nil, {x, 0}}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {literal, [126, 116, 112]}, {x, 0}}.
+    {move, {y, 8}, {x, 1}}.
+    {call_ext, 2, {extfunc, io_lib, format, 2}}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {y, 8}, {x, 0}}.
+    {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_eq_exact, {f, 266}, [{x, 0}, {atom, error}]}.
+    {move, {atom, std@failure@@HostErrorName__v__error}, {y, 9}}.
+    {jump, {f, 265}}.
+  {label, 266}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_eq_exact, {f, 267}, [{x, 0}, {atom, throw}]}.
+    {move, {atom, std@failure@@HostErrorName__v__throw}, {y, 9}}.
+    {jump, {f, 265}}.
+  {label, 267}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_eq_exact, {f, 268}, [{x, 0}, {atom, exit}]}.
+    {move, {atom, std@failure@@HostErrorName__v__exit}, {y, 9}}.
+    {jump, {f, 265}}.
+  {label, 268}.
+    {move, {y, 0}, {x, 0}}.
+    {case_end, {x, 0}}.
+  {label, 265}.
+    {test_heap, 2, 0}.
+    {put_list, {y, 2}, nil, {x, 0}}.
+    {move, {x, 0}, {y, 10}}.
+    {move, {literal, [126, 116, 112]}, {x, 0}}.
+    {move, {y, 10}, {x, 1}}.
+    {call_ext, 2, {extfunc, io_lib, format, 2}}.
+    {move, {x, 0}, {y, 10}}.
+    {move, {y, 10}, {x, 0}}.
+    {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
+    {move, {x, 0}, {y, 10}}.
+    {test_heap, 6, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@failure@@HostError}, {y, 8}, {literal, <<"host">>}, {y, 9}, {y, 10}]}}.
+    {move, {x, 0}, {y, 8}}.
     {test_heap, 3, 0}.
-    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 7}]}}.
-    {move, {x, 0}, {y, 6}}.
-    {move, {y, 6}, {x, 0}}.
-    {deallocate, 10}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 8}]}}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {y, 8}, {y, 4}}.
+    {jump, {f, 263}}.
+  {label, 263}.
+  {label, 247}.
+    {move, {y, 4}, {x, 0}}.
+    {deallocate, 12}.
     return.
-  {label, 281}.
+
+{function, '__bp_tpl_8-t/1-fun-0-', 1, 278}.
+  {label, 277}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_8-t/1-fun-0-'}, 1}.
+  {label, 278}.
+    {allocate, 6, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}]}}.
+    {move, {x, 0}, {y, 1}}.
+    {move, {y, 1}, {x, 0}}.
+    {call_ext, 1, {extfunc, file, make_dir, 1}}.
+    {move, {x, 0}, {y, 2}}.
+    {move, {y, 2}, {x, 0}}.
+    {test, is_eq_exact, {f, 282}, [{x, 0}, {atom, ok}]}.
+    {move, {literal, {ok, 0}}, {x, 0}}.
+    {deallocate, 6}.
+    return.
+  {label, 282}.
+    {move, {y, 2}, {x, 0}}.
+    {test, is_tuple, {f, 283}, [{x, 0}]}.
+    {test, test_arity, {f, 283}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 3}}.
+    {get_tuple_element, {x, 0}, 1, {y, 4}}.
     {move, {y, 3}, {x, 0}}.
+    {test, is_eq_exact, {f, 283}, [{x, 0}, {atom, error}]}.
+    {move, {y, 4}, {y, 0}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 0}]}}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {y, 5}, {x, 0}}.
+    {deallocate, 6}.
+    return.
+  {label, 283}.
+    {move, {y, 2}, {x, 0}}.
+    {case_end, {x, 0}}.
+
+{function, '__bp_tpl_8', 1, 272}.
+  {label, 271}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_8'}, 1}.
+  {label, 272}.
+    {allocate, 12, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}, {y, 11}]}}.
+    {move, {x, 0}, {y, 3}}.
+    {'try', {y, 11}, {f, 275}}.
+    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
+    {make_fun3, {f, 278}, 0, 0, {x, 0}, {list, []}}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {y, 3}, {x, 0}}.
+    {move, {y, 5}, {x, 1}}.
+    {call_fun, 1}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {y, 5}, {y, 6}}.
+    {try_end, {y, 11}}.
+    {move, {y, 6}, {x, 0}}.
+    {test, is_tuple, {f, 285}, [{x, 0}]}.
+    {test, test_arity, {f, 285}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 7}}.
+    {get_tuple_element, {x, 0}, 1, {y, 8}}.
+    {move, {y, 7}, {x, 0}}.
+    {test, is_eq_exact, {f, 285}, [{x, 0}, {atom, ok}]}.
+    {move, {y, 8}, {y, 0}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 0}]}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {y, 4}}.
+    {jump, {f, 284}}.
+  {label, 285}.
+    {move, {y, 6}, {x, 0}}.
     {test, is_tuple, {f, 286}, [{x, 0}]}.
     {test, test_arity, {f, 286}, [{x, 0}, 2]}.
-    {get_tuple_element, {x, 0}, 0, {y, 4}}.
-    {get_tuple_element, {x, 0}, 1, {y, 5}}.
-    {move, {y, 4}, {x, 0}}.
+    {get_tuple_element, {x, 0}, 0, {y, 7}}.
+    {get_tuple_element, {x, 0}, 1, {y, 8}}.
+    {move, {y, 7}, {x, 0}}.
     {test, is_eq_exact, {f, 286}, [{x, 0}, {atom, error}]}.
-    {move, {y, 5}, {y, 1}}.
-    {move, {y, 1}, {x, 0}}.
-    {move, {y, 0}, {x, 1}}.
-    {call_fun, 1}.
-    {move, {x, 0}, {y, 6}}.
-    {test_heap, 3, 0}.
-    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 6}]}}.
-    {move, {x, 0}, {y, 6}}.
-    {move, {y, 6}, {x, 0}}.
-    {deallocate, 10}.
-    return.
-  {label, 286}.
-    {move, {y, 3}, {x, 0}}.
-    {case_end, {x, 0}}.
-
-{function, '__bp_tpl_8', 1, 257}.
-  {label, 256}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_8'}, 1}.
-  {label, 257}.
-    {allocate, 2, 1}.
-    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
-    {move, {x, 0}, {y, 0}}.
-    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 261}, 1, 0, {x, 0}, {list, []}}.
-    {move, {x, 0}, {y, 1}}.
-    {move, {y, 0}, {x, 0}}.
-    {move, {y, 1}, {x, 1}}.
-    {call_fun, 1}.
-    {deallocate, 2}.
-    return.
-
-{function, '__bp_tpl_9--t/1-fun-0--fun-1-', 1, 298}.
-  {label, 297}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_9--t/1-fun-0--fun-1-'}, 1}.
-  {label, 298}.
-    {allocate, 3, 1}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
-    {move, {x, 0}, {y, 1}}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 302}, [{x, 0}, {atom, enoent}]}.
-    {move, {literal, <<"notfound">>}, {y, 2}}.
-    {jump, {f, 301}}.
-  {label, 302}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 303}, [{x, 0}, {atom, eacces}]}.
-    {move, {literal, <<"denied">>}, {y, 2}}.
-    {jump, {f, 301}}.
-  {label, 303}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 304}, [{x, 0}, {atom, eperm}]}.
-    {move, {literal, <<"denied">>}, {y, 2}}.
-    {jump, {f, 301}}.
-  {label, 304}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 305}, [{x, 0}, {atom, eisdir}]}.
-    {move, {literal, <<"isdir">>}, {y, 2}}.
-    {jump, {f, 301}}.
-  {label, 305}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 306}, [{x, 0}, {atom, enotdir}]}.
-    {move, {literal, <<"notdir">>}, {y, 2}}.
-    {jump, {f, 301}}.
-  {label, 306}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 307}, [{x, 0}, {atom, eexist}]}.
-    {move, {literal, <<"exists">>}, {y, 2}}.
-    {jump, {f, 301}}.
-  {label, 307}.
-    {move, {literal, <<"other">>}, {y, 2}}.
-    {jump, {f, 301}}.
-  {label, 301}.
-    {move, {y, 2}, {y, 0}}.
-    {jump, {f, 310}}.
-  {label, 310}.
+    {move, {y, 8}, {y, 1}}.
     {test_heap, 2, 0}.
     {put_list, {y, 1}, nil, {x, 0}}.
-    {move, {x, 0}, {y, 2}}.
+    {move, {x, 0}, {y, 9}}.
     {move, {literal, [126, 116, 112]}, {x, 0}}.
-    {move, {y, 2}, {x, 1}}.
+    {move, {y, 9}, {x, 1}}.
     {call_ext, 2, {extfunc, io_lib, format, 2}}.
-    {move, {x, 0}, {y, 2}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {x, 0}}.
+    {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
+    {move, {x, 0}, {y, 9}}.
     {test_heap, 6, 0}.
-    {put_list, {y, 2}, nil, {x, 0}}.
-    {put_list, {literal, <<"|">>}, {x, 0}, {x, 0}}.
-    {put_list, {y, 0}, {x, 0}, {x, 0}}.
-    {move, {x, 0}, {y, 2}}.
-    {move, {y, 2}, {x, 0}}.
-    {call_ext_last, 1, {extfunc, unicode, characters_to_binary, 1}, 3}.
-
-{function, '__bp_tpl_9-t/1-fun-0-', 1, 294}.
-  {label, 293}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_9-t/1-fun-0-'}, 1}.
-  {label, 294}.
-    {allocate, 7, 1}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}]}}.
-    {move, {x, 0}, {y, 2}}.
-    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 298}, 0, 0, {x, 0}, {list, []}}.
-    {move, {x, 0}, {y, 3}}.
-    {move, {y, 3}, {y, 0}}.
-    {jump, {f, 312}}.
-  {label, 312}.
-    {move, {y, 2}, {x, 0}}.
-    {call_ext, 1, {extfunc, file, make_dir, 1}}.
-    {move, {x, 0}, {y, 3}}.
-    {move, {y, 3}, {x, 0}}.
-    {test, is_eq_exact, {f, 314}, [{x, 0}, {atom, ok}]}.
-    {move, {literal, {ok, 0}}, {x, 0}}.
-    {deallocate, 7}.
-    return.
-  {label, 314}.
-    {move, {y, 3}, {x, 0}}.
-    {test, is_tuple, {f, 315}, [{x, 0}]}.
-    {test, test_arity, {f, 315}, [{x, 0}, 2]}.
-    {get_tuple_element, {x, 0}, 0, {y, 4}}.
-    {get_tuple_element, {x, 0}, 1, {y, 5}}.
-    {move, {y, 4}, {x, 0}}.
-    {test, is_eq_exact, {f, 315}, [{x, 0}, {atom, error}]}.
-    {move, {y, 5}, {y, 1}}.
-    {move, {y, 1}, {x, 0}}.
-    {move, {y, 0}, {x, 1}}.
-    {call_fun, 1}.
-    {move, {x, 0}, {y, 6}}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@failure@@HostError}, {y, 9}, {literal, <<"host">>}, {atom, std@failure@@HostErrorName__v__error}, {atom, undefined}]}}.
+    {move, {x, 0}, {y, 9}}.
     {test_heap, 3, 0}.
-    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 6}]}}.
-    {move, {x, 0}, {y, 6}}.
-    {move, {y, 6}, {x, 0}}.
-    {deallocate, 7}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 9}]}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {y, 4}}.
+    {jump, {f, 284}}.
+  {label, 286}.
+    {move, {y, 6}, {y, 0}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 0}]}}.
+    {move, {x, 0}, {y, 7}}.
+    {move, {y, 7}, {y, 4}}.
+    {jump, {f, 284}}.
+  {label, 284}.
+    {jump, {f, 276}}.
+  {label, 275}.
+    {try_case, {y, 11}}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {x, 1}, {y, 6}}.
+    {move, {x, 2}, {y, 7}}.
+    {move, {y, 5}, {y, 0}}.
+    {move, {y, 6}, {y, 1}}.
+    {move, {y, 7}, {x, 0}}.
+    build_stacktrace.
+    {move, {x, 0}, {y, 2}}.
+    {test_heap, 2, 0}.
+    {put_list, {y, 1}, nil, {x, 0}}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {literal, [126, 116, 112]}, {x, 0}}.
+    {move, {y, 8}, {x, 1}}.
+    {call_ext, 2, {extfunc, io_lib, format, 2}}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {y, 8}, {x, 0}}.
+    {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_eq_exact, {f, 291}, [{x, 0}, {atom, error}]}.
+    {move, {atom, std@failure@@HostErrorName__v__error}, {y, 9}}.
+    {jump, {f, 290}}.
+  {label, 291}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_eq_exact, {f, 292}, [{x, 0}, {atom, throw}]}.
+    {move, {atom, std@failure@@HostErrorName__v__throw}, {y, 9}}.
+    {jump, {f, 290}}.
+  {label, 292}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_eq_exact, {f, 293}, [{x, 0}, {atom, exit}]}.
+    {move, {atom, std@failure@@HostErrorName__v__exit}, {y, 9}}.
+    {jump, {f, 290}}.
+  {label, 293}.
+    {move, {y, 0}, {x, 0}}.
+    {case_end, {x, 0}}.
+  {label, 290}.
+    {test_heap, 2, 0}.
+    {put_list, {y, 2}, nil, {x, 0}}.
+    {move, {x, 0}, {y, 10}}.
+    {move, {literal, [126, 116, 112]}, {x, 0}}.
+    {move, {y, 10}, {x, 1}}.
+    {call_ext, 2, {extfunc, io_lib, format, 2}}.
+    {move, {x, 0}, {y, 10}}.
+    {move, {y, 10}, {x, 0}}.
+    {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
+    {move, {x, 0}, {y, 10}}.
+    {test_heap, 6, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@failure@@HostError}, {y, 8}, {literal, <<"host">>}, {y, 9}, {y, 10}]}}.
+    {move, {x, 0}, {y, 8}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 8}]}}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {y, 8}, {y, 4}}.
+    {jump, {f, 288}}.
+  {label, 288}.
+  {label, 276}.
+    {move, {y, 4}, {x, 0}}.
+    {deallocate, 12}.
     return.
-  {label, 315}.
+
+{function, '__bp_tpl_9-t/1-fun-0-', 1, 303}.
+  {label, 302}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_9-t/1-fun-0-'}, 1}.
+  {label, 303}.
+    {allocate, 6, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}]}}.
+    {move, {x, 0}, {y, 1}}.
+    {move, {y, 1}, {x, 0}}.
+    {call_ext, 1, {extfunc, filelib, ensure_path, 1}}.
+    {move, {x, 0}, {y, 2}}.
+    {move, {y, 2}, {x, 0}}.
+    {test, is_eq_exact, {f, 307}, [{x, 0}, {atom, ok}]}.
+    {move, {literal, {ok, 0}}, {x, 0}}.
+    {deallocate, 6}.
+    return.
+  {label, 307}.
+    {move, {y, 2}, {x, 0}}.
+    {test, is_tuple, {f, 308}, [{x, 0}]}.
+    {test, test_arity, {f, 308}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 3}}.
+    {get_tuple_element, {x, 0}, 1, {y, 4}}.
     {move, {y, 3}, {x, 0}}.
+    {test, is_eq_exact, {f, 308}, [{x, 0}, {atom, error}]}.
+    {move, {y, 4}, {y, 0}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 0}]}}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {y, 5}, {x, 0}}.
+    {deallocate, 6}.
+    return.
+  {label, 308}.
+    {move, {y, 2}, {x, 0}}.
     {case_end, {x, 0}}.
 
-{function, '__bp_tpl_9', 1, 290}.
-  {label, 289}.
+{function, '__bp_tpl_9', 1, 297}.
+  {label, 296}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_9'}, 1}.
-  {label, 290}.
-    {allocate, 2, 1}.
-    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
-    {move, {x, 0}, {y, 0}}.
+  {label, 297}.
+    {allocate, 12, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}, {y, 11}]}}.
+    {move, {x, 0}, {y, 3}}.
+    {'try', {y, 11}, {f, 300}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 294}, 1, 0, {x, 0}, {list, []}}.
-    {move, {x, 0}, {y, 1}}.
-    {move, {y, 0}, {x, 0}}.
-    {move, {y, 1}, {x, 1}}.
+    {make_fun3, {f, 303}, 0, 0, {x, 0}, {list, []}}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {y, 3}, {x, 0}}.
+    {move, {y, 5}, {x, 1}}.
     {call_fun, 1}.
-    {deallocate, 2}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {y, 5}, {y, 6}}.
+    {try_end, {y, 11}}.
+    {move, {y, 6}, {x, 0}}.
+    {test, is_tuple, {f, 310}, [{x, 0}]}.
+    {test, test_arity, {f, 310}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 7}}.
+    {get_tuple_element, {x, 0}, 1, {y, 8}}.
+    {move, {y, 7}, {x, 0}}.
+    {test, is_eq_exact, {f, 310}, [{x, 0}, {atom, ok}]}.
+    {move, {y, 8}, {y, 0}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 0}]}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {y, 4}}.
+    {jump, {f, 309}}.
+  {label, 310}.
+    {move, {y, 6}, {x, 0}}.
+    {test, is_tuple, {f, 311}, [{x, 0}]}.
+    {test, test_arity, {f, 311}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 7}}.
+    {get_tuple_element, {x, 0}, 1, {y, 8}}.
+    {move, {y, 7}, {x, 0}}.
+    {test, is_eq_exact, {f, 311}, [{x, 0}, {atom, error}]}.
+    {move, {y, 8}, {y, 1}}.
+    {test_heap, 2, 0}.
+    {put_list, {y, 1}, nil, {x, 0}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {literal, [126, 116, 112]}, {x, 0}}.
+    {move, {y, 9}, {x, 1}}.
+    {call_ext, 2, {extfunc, io_lib, format, 2}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {x, 0}}.
+    {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
+    {move, {x, 0}, {y, 9}}.
+    {test_heap, 6, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@failure@@HostError}, {y, 9}, {literal, <<"host">>}, {atom, std@failure@@HostErrorName__v__error}, {atom, undefined}]}}.
+    {move, {x, 0}, {y, 9}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 9}]}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {y, 4}}.
+    {jump, {f, 309}}.
+  {label, 311}.
+    {move, {y, 6}, {y, 0}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 0}]}}.
+    {move, {x, 0}, {y, 7}}.
+    {move, {y, 7}, {y, 4}}.
+    {jump, {f, 309}}.
+  {label, 309}.
+    {jump, {f, 301}}.
+  {label, 300}.
+    {try_case, {y, 11}}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {x, 1}, {y, 6}}.
+    {move, {x, 2}, {y, 7}}.
+    {move, {y, 5}, {y, 0}}.
+    {move, {y, 6}, {y, 1}}.
+    {move, {y, 7}, {x, 0}}.
+    build_stacktrace.
+    {move, {x, 0}, {y, 2}}.
+    {test_heap, 2, 0}.
+    {put_list, {y, 1}, nil, {x, 0}}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {literal, [126, 116, 112]}, {x, 0}}.
+    {move, {y, 8}, {x, 1}}.
+    {call_ext, 2, {extfunc, io_lib, format, 2}}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {y, 8}, {x, 0}}.
+    {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_eq_exact, {f, 316}, [{x, 0}, {atom, error}]}.
+    {move, {atom, std@failure@@HostErrorName__v__error}, {y, 9}}.
+    {jump, {f, 315}}.
+  {label, 316}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_eq_exact, {f, 317}, [{x, 0}, {atom, throw}]}.
+    {move, {atom, std@failure@@HostErrorName__v__throw}, {y, 9}}.
+    {jump, {f, 315}}.
+  {label, 317}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_eq_exact, {f, 318}, [{x, 0}, {atom, exit}]}.
+    {move, {atom, std@failure@@HostErrorName__v__exit}, {y, 9}}.
+    {jump, {f, 315}}.
+  {label, 318}.
+    {move, {y, 0}, {x, 0}}.
+    {case_end, {x, 0}}.
+  {label, 315}.
+    {test_heap, 2, 0}.
+    {put_list, {y, 2}, nil, {x, 0}}.
+    {move, {x, 0}, {y, 10}}.
+    {move, {literal, [126, 116, 112]}, {x, 0}}.
+    {move, {y, 10}, {x, 1}}.
+    {call_ext, 2, {extfunc, io_lib, format, 2}}.
+    {move, {x, 0}, {y, 10}}.
+    {move, {y, 10}, {x, 0}}.
+    {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
+    {move, {x, 0}, {y, 10}}.
+    {test_heap, 6, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@failure@@HostError}, {y, 8}, {literal, <<"host">>}, {y, 9}, {y, 10}]}}.
+    {move, {x, 0}, {y, 8}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 8}]}}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {y, 8}, {y, 4}}.
+    {jump, {f, 313}}.
+  {label, 313}.
+  {label, 301}.
+    {move, {y, 4}, {x, 0}}.
+    {deallocate, 12}.
     return.
 
-{function, '__bp_tpl_10--t/1-fun-0--fun-1-', 1, 327}.
-  {label, 326}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_10--t/1-fun-0--fun-1-'}, 1}.
+{function, '__bp_tpl_10-t/1-fun-0-', 1, 328}.
   {label, 327}.
-    {allocate, 3, 1}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_10-t/1-fun-0-'}, 1}.
+  {label, 328}.
+    {allocate, 7, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}]}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 331}, [{x, 0}, {atom, enoent}]}.
-    {move, {literal, <<"notfound">>}, {y, 2}}.
-    {jump, {f, 330}}.
-  {label, 331}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 332}, [{x, 0}, {atom, eacces}]}.
-    {move, {literal, <<"denied">>}, {y, 2}}.
-    {jump, {f, 330}}.
+    {call_ext, 1, {extfunc, file, read_link_info, 1}}.
+    {move, {x, 0}, {y, 2}}.
+    {move, {y, 2}, {x, 0}}.
+    {test, is_tuple, {f, 332}, [{x, 0}]}.
+    {test, test_arity, {f, 332}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 3}}.
+    {get_tuple_element, {x, 0}, 1, {y, 4}}.
+    {move, {y, 3}, {x, 0}}.
+    {test, is_eq_exact, {f, 332}, [{x, 0}, {atom, ok}]}.
+    {move, {y, 4}, {y, 0}}.
+    {move, {integer, 3}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {bif, element, {f, 332}, [{x, 0}, {x, 1}], {x, 0}}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {y, 5}, {x, 0}}.
+    {move, {atom, directory}, {x, 1}}.
+    {test, is_eq_exact, {f, 332}, [{x, 0}, {x, 1}]}.
+    {jump, {f, 333}}.
+  {label, 333}.
+    {move, {literal, {error, eisdir}}, {x, 0}}.
+    {deallocate, 7}.
+    return.
   {label, 332}.
     {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 333}, [{x, 0}, {atom, eperm}]}.
-    {move, {literal, <<"denied">>}, {y, 2}}.
-    {jump, {f, 330}}.
-  {label, 333}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 334}, [{x, 0}, {atom, eisdir}]}.
-    {move, {literal, <<"isdir">>}, {y, 2}}.
-    {jump, {f, 330}}.
-  {label, 334}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 335}, [{x, 0}, {atom, enotdir}]}.
-    {move, {literal, <<"notdir">>}, {y, 2}}.
-    {jump, {f, 330}}.
-  {label, 335}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 336}, [{x, 0}, {atom, eexist}]}.
-    {move, {literal, <<"exists">>}, {y, 2}}.
-    {jump, {f, 330}}.
-  {label, 336}.
-    {move, {literal, <<"other">>}, {y, 2}}.
-    {jump, {f, 330}}.
-  {label, 330}.
-    {move, {y, 2}, {y, 0}}.
-    {jump, {f, 339}}.
-  {label, 339}.
-    {test_heap, 2, 0}.
-    {put_list, {y, 1}, nil, {x, 0}}.
-    {move, {x, 0}, {y, 2}}.
-    {move, {literal, [126, 116, 112]}, {x, 0}}.
-    {move, {y, 2}, {x, 1}}.
-    {call_ext, 2, {extfunc, io_lib, format, 2}}.
-    {move, {x, 0}, {y, 2}}.
-    {test_heap, 6, 0}.
-    {put_list, {y, 2}, nil, {x, 0}}.
-    {put_list, {literal, <<"|">>}, {x, 0}, {x, 0}}.
-    {put_list, {y, 0}, {x, 0}, {x, 0}}.
-    {move, {x, 0}, {y, 2}}.
-    {move, {y, 2}, {x, 0}}.
-    {call_ext_last, 1, {extfunc, unicode, characters_to_binary, 1}, 3}.
-
-{function, '__bp_tpl_10-t/1-fun-0-', 1, 323}.
-  {label, 322}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_10-t/1-fun-0-'}, 1}.
-  {label, 323}.
-    {allocate, 7, 1}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}]}}.
-    {move, {x, 0}, {y, 2}}.
-    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 327}, 0, 0, {x, 0}, {list, []}}.
-    {move, {x, 0}, {y, 3}}.
-    {move, {y, 3}, {y, 0}}.
-    {jump, {f, 341}}.
-  {label, 341}.
-    {move, {y, 2}, {x, 0}}.
-    {call_ext, 1, {extfunc, filelib, ensure_path, 1}}.
+    {call_ext, 1, {extfunc, file, delete, 1}}.
     {move, {x, 0}, {y, 3}}.
     {move, {y, 3}, {x, 0}}.
-    {test, is_eq_exact, {f, 343}, [{x, 0}, {atom, ok}]}.
+    {test, is_eq_exact, {f, 336}, [{x, 0}, {atom, ok}]}.
     {move, {literal, {ok, 0}}, {x, 0}}.
     {deallocate, 7}.
     return.
-  {label, 343}.
+  {label, 336}.
     {move, {y, 3}, {x, 0}}.
-    {test, is_tuple, {f, 344}, [{x, 0}]}.
-    {test, test_arity, {f, 344}, [{x, 0}, 2]}.
+    {test, is_tuple, {f, 337}, [{x, 0}]}.
+    {test, test_arity, {f, 337}, [{x, 0}, 2]}.
     {get_tuple_element, {x, 0}, 0, {y, 4}}.
     {get_tuple_element, {x, 0}, 1, {y, 5}}.
     {move, {y, 4}, {x, 0}}.
-    {test, is_eq_exact, {f, 344}, [{x, 0}, {atom, error}]}.
-    {move, {y, 5}, {y, 1}}.
-    {move, {y, 1}, {x, 0}}.
-    {move, {y, 0}, {x, 1}}.
-    {call_fun, 1}.
-    {move, {x, 0}, {y, 6}}.
+    {test, is_eq_exact, {f, 337}, [{x, 0}, {atom, error}]}.
+    {move, {y, 5}, {y, 0}}.
     {test_heap, 3, 0}.
-    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 6}]}}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 0}]}}.
     {move, {x, 0}, {y, 6}}.
     {move, {y, 6}, {x, 0}}.
     {deallocate, 7}.
     return.
-  {label, 344}.
+  {label, 337}.
     {move, {y, 3}, {x, 0}}.
     {case_end, {x, 0}}.
 
-{function, '__bp_tpl_10', 1, 319}.
-  {label, 318}.
+{function, '__bp_tpl_10', 1, 322}.
+  {label, 321}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_10'}, 1}.
-  {label, 319}.
-    {allocate, 2, 1}.
-    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
-    {move, {x, 0}, {y, 0}}.
+  {label, 322}.
+    {allocate, 12, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}, {y, 11}]}}.
+    {move, {x, 0}, {y, 3}}.
+    {'try', {y, 11}, {f, 325}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 323}, 1, 0, {x, 0}, {list, []}}.
-    {move, {x, 0}, {y, 1}}.
-    {move, {y, 0}, {x, 0}}.
-    {move, {y, 1}, {x, 1}}.
+    {make_fun3, {f, 328}, 0, 0, {x, 0}, {list, []}}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {y, 3}, {x, 0}}.
+    {move, {y, 5}, {x, 1}}.
     {call_fun, 1}.
-    {deallocate, 2}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {y, 5}, {y, 6}}.
+    {try_end, {y, 11}}.
+    {move, {y, 6}, {x, 0}}.
+    {test, is_tuple, {f, 339}, [{x, 0}]}.
+    {test, test_arity, {f, 339}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 7}}.
+    {get_tuple_element, {x, 0}, 1, {y, 8}}.
+    {move, {y, 7}, {x, 0}}.
+    {test, is_eq_exact, {f, 339}, [{x, 0}, {atom, ok}]}.
+    {move, {y, 8}, {y, 0}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 0}]}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {y, 4}}.
+    {jump, {f, 338}}.
+  {label, 339}.
+    {move, {y, 6}, {x, 0}}.
+    {test, is_tuple, {f, 340}, [{x, 0}]}.
+    {test, test_arity, {f, 340}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 7}}.
+    {get_tuple_element, {x, 0}, 1, {y, 8}}.
+    {move, {y, 7}, {x, 0}}.
+    {test, is_eq_exact, {f, 340}, [{x, 0}, {atom, error}]}.
+    {move, {y, 8}, {y, 1}}.
+    {test_heap, 2, 0}.
+    {put_list, {y, 1}, nil, {x, 0}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {literal, [126, 116, 112]}, {x, 0}}.
+    {move, {y, 9}, {x, 1}}.
+    {call_ext, 2, {extfunc, io_lib, format, 2}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {x, 0}}.
+    {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
+    {move, {x, 0}, {y, 9}}.
+    {test_heap, 6, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@failure@@HostError}, {y, 9}, {literal, <<"host">>}, {atom, std@failure@@HostErrorName__v__error}, {atom, undefined}]}}.
+    {move, {x, 0}, {y, 9}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 9}]}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {y, 4}}.
+    {jump, {f, 338}}.
+  {label, 340}.
+    {move, {y, 6}, {y, 0}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 0}]}}.
+    {move, {x, 0}, {y, 7}}.
+    {move, {y, 7}, {y, 4}}.
+    {jump, {f, 338}}.
+  {label, 338}.
+    {jump, {f, 326}}.
+  {label, 325}.
+    {try_case, {y, 11}}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {x, 1}, {y, 6}}.
+    {move, {x, 2}, {y, 7}}.
+    {move, {y, 5}, {y, 0}}.
+    {move, {y, 6}, {y, 1}}.
+    {move, {y, 7}, {x, 0}}.
+    build_stacktrace.
+    {move, {x, 0}, {y, 2}}.
+    {test_heap, 2, 0}.
+    {put_list, {y, 1}, nil, {x, 0}}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {literal, [126, 116, 112]}, {x, 0}}.
+    {move, {y, 8}, {x, 1}}.
+    {call_ext, 2, {extfunc, io_lib, format, 2}}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {y, 8}, {x, 0}}.
+    {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_eq_exact, {f, 345}, [{x, 0}, {atom, error}]}.
+    {move, {atom, std@failure@@HostErrorName__v__error}, {y, 9}}.
+    {jump, {f, 344}}.
+  {label, 345}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_eq_exact, {f, 346}, [{x, 0}, {atom, throw}]}.
+    {move, {atom, std@failure@@HostErrorName__v__throw}, {y, 9}}.
+    {jump, {f, 344}}.
+  {label, 346}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_eq_exact, {f, 347}, [{x, 0}, {atom, exit}]}.
+    {move, {atom, std@failure@@HostErrorName__v__exit}, {y, 9}}.
+    {jump, {f, 344}}.
+  {label, 347}.
+    {move, {y, 0}, {x, 0}}.
+    {case_end, {x, 0}}.
+  {label, 344}.
+    {test_heap, 2, 0}.
+    {put_list, {y, 2}, nil, {x, 0}}.
+    {move, {x, 0}, {y, 10}}.
+    {move, {literal, [126, 116, 112]}, {x, 0}}.
+    {move, {y, 10}, {x, 1}}.
+    {call_ext, 2, {extfunc, io_lib, format, 2}}.
+    {move, {x, 0}, {y, 10}}.
+    {move, {y, 10}, {x, 0}}.
+    {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
+    {move, {x, 0}, {y, 10}}.
+    {test_heap, 6, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@failure@@HostError}, {y, 8}, {literal, <<"host">>}, {y, 9}, {y, 10}]}}.
+    {move, {x, 0}, {y, 8}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 8}]}}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {y, 8}, {y, 4}}.
+    {jump, {f, 342}}.
+  {label, 342}.
+  {label, 326}.
+    {move, {y, 4}, {x, 0}}.
+    {deallocate, 12}.
     return.
 
-{function, '__bp_tpl_11--t/1-fun-0--fun-1-', 1, 356}.
-  {label, 355}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_11--t/1-fun-0--fun-1-'}, 1}.
+{function, '__bp_tpl_11-t/1-fun-0-', 1, 357}.
   {label, 356}.
-    {allocate, 3, 1}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_11-t/1-fun-0-'}, 1}.
+  {label, 357}.
+    {allocate, 6, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}]}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 360}, [{x, 0}, {atom, enoent}]}.
-    {move, {literal, <<"notfound">>}, {y, 2}}.
-    {jump, {f, 359}}.
-  {label, 360}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 361}, [{x, 0}, {atom, eacces}]}.
-    {move, {literal, <<"denied">>}, {y, 2}}.
-    {jump, {f, 359}}.
+    {call_ext, 1, {extfunc, file, del_dir_r, 1}}.
+    {move, {x, 0}, {y, 2}}.
+    {move, {y, 2}, {x, 0}}.
+    {test, is_eq_exact, {f, 361}, [{x, 0}, {atom, ok}]}.
+    {move, {literal, {ok, 0}}, {x, 0}}.
+    {deallocate, 6}.
+    return.
   {label, 361}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 362}, [{x, 0}, {atom, eperm}]}.
-    {move, {literal, <<"denied">>}, {y, 2}}.
-    {jump, {f, 359}}.
+    {move, {y, 2}, {x, 0}}.
+    {test, is_eq_exact, {f, 362}, [{x, 0}, {literal, {error, enoent}}]}.
+    {move, {literal, {ok, 0}}, {x, 0}}.
+    {deallocate, 6}.
+    return.
   {label, 362}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 363}, [{x, 0}, {atom, eisdir}]}.
-    {move, {literal, <<"isdir">>}, {y, 2}}.
-    {jump, {f, 359}}.
+    {move, {y, 2}, {x, 0}}.
+    {test, is_tuple, {f, 363}, [{x, 0}]}.
+    {test, test_arity, {f, 363}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 3}}.
+    {get_tuple_element, {x, 0}, 1, {y, 4}}.
+    {move, {y, 3}, {x, 0}}.
+    {test, is_eq_exact, {f, 363}, [{x, 0}, {atom, error}]}.
+    {move, {y, 4}, {y, 0}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 0}]}}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {y, 5}, {x, 0}}.
+    {deallocate, 6}.
+    return.
   {label, 363}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 364}, [{x, 0}, {atom, enotdir}]}.
-    {move, {literal, <<"notdir">>}, {y, 2}}.
-    {jump, {f, 359}}.
-  {label, 364}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 365}, [{x, 0}, {atom, eexist}]}.
-    {move, {literal, <<"exists">>}, {y, 2}}.
-    {jump, {f, 359}}.
+    {move, {y, 2}, {x, 0}}.
+    {case_end, {x, 0}}.
+
+{function, '__bp_tpl_11', 1, 351}.
+  {label, 350}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_11'}, 1}.
+  {label, 351}.
+    {allocate, 12, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}, {y, 11}]}}.
+    {move, {x, 0}, {y, 3}}.
+    {'try', {y, 11}, {f, 354}}.
+    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
+    {make_fun3, {f, 357}, 0, 0, {x, 0}, {list, []}}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {y, 3}, {x, 0}}.
+    {move, {y, 5}, {x, 1}}.
+    {call_fun, 1}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {y, 5}, {y, 6}}.
+    {try_end, {y, 11}}.
+    {move, {y, 6}, {x, 0}}.
+    {test, is_tuple, {f, 365}, [{x, 0}]}.
+    {test, test_arity, {f, 365}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 7}}.
+    {get_tuple_element, {x, 0}, 1, {y, 8}}.
+    {move, {y, 7}, {x, 0}}.
+    {test, is_eq_exact, {f, 365}, [{x, 0}, {atom, ok}]}.
+    {move, {y, 8}, {y, 0}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 0}]}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {y, 4}}.
+    {jump, {f, 364}}.
   {label, 365}.
-    {move, {literal, <<"other">>}, {y, 2}}.
-    {jump, {f, 359}}.
-  {label, 359}.
-    {move, {y, 2}, {y, 0}}.
+    {move, {y, 6}, {x, 0}}.
+    {test, is_tuple, {f, 366}, [{x, 0}]}.
+    {test, test_arity, {f, 366}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 7}}.
+    {get_tuple_element, {x, 0}, 1, {y, 8}}.
+    {move, {y, 7}, {x, 0}}.
+    {test, is_eq_exact, {f, 366}, [{x, 0}, {atom, error}]}.
+    {move, {y, 8}, {y, 1}}.
+    {test_heap, 2, 0}.
+    {put_list, {y, 1}, nil, {x, 0}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {literal, [126, 116, 112]}, {x, 0}}.
+    {move, {y, 9}, {x, 1}}.
+    {call_ext, 2, {extfunc, io_lib, format, 2}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {x, 0}}.
+    {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
+    {move, {x, 0}, {y, 9}}.
+    {test_heap, 6, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@failure@@HostError}, {y, 9}, {literal, <<"host">>}, {atom, std@failure@@HostErrorName__v__error}, {atom, undefined}]}}.
+    {move, {x, 0}, {y, 9}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 9}]}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {y, 4}}.
+    {jump, {f, 364}}.
+  {label, 366}.
+    {move, {y, 6}, {y, 0}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 0}]}}.
+    {move, {x, 0}, {y, 7}}.
+    {move, {y, 7}, {y, 4}}.
+    {jump, {f, 364}}.
+  {label, 364}.
+    {jump, {f, 355}}.
+  {label, 354}.
+    {try_case, {y, 11}}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {x, 1}, {y, 6}}.
+    {move, {x, 2}, {y, 7}}.
+    {move, {y, 5}, {y, 0}}.
+    {move, {y, 6}, {y, 1}}.
+    {move, {y, 7}, {x, 0}}.
+    build_stacktrace.
+    {move, {x, 0}, {y, 2}}.
+    {test_heap, 2, 0}.
+    {put_list, {y, 1}, nil, {x, 0}}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {literal, [126, 116, 112]}, {x, 0}}.
+    {move, {y, 8}, {x, 1}}.
+    {call_ext, 2, {extfunc, io_lib, format, 2}}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {y, 8}, {x, 0}}.
+    {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_eq_exact, {f, 371}, [{x, 0}, {atom, error}]}.
+    {move, {atom, std@failure@@HostErrorName__v__error}, {y, 9}}.
+    {jump, {f, 370}}.
+  {label, 371}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_eq_exact, {f, 372}, [{x, 0}, {atom, throw}]}.
+    {move, {atom, std@failure@@HostErrorName__v__throw}, {y, 9}}.
+    {jump, {f, 370}}.
+  {label, 372}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_eq_exact, {f, 373}, [{x, 0}, {atom, exit}]}.
+    {move, {atom, std@failure@@HostErrorName__v__exit}, {y, 9}}.
+    {jump, {f, 370}}.
+  {label, 373}.
+    {move, {y, 0}, {x, 0}}.
+    {case_end, {x, 0}}.
+  {label, 370}.
+    {test_heap, 2, 0}.
+    {put_list, {y, 2}, nil, {x, 0}}.
+    {move, {x, 0}, {y, 10}}.
+    {move, {literal, [126, 116, 112]}, {x, 0}}.
+    {move, {y, 10}, {x, 1}}.
+    {call_ext, 2, {extfunc, io_lib, format, 2}}.
+    {move, {x, 0}, {y, 10}}.
+    {move, {y, 10}, {x, 0}}.
+    {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
+    {move, {x, 0}, {y, 10}}.
+    {test_heap, 6, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@failure@@HostError}, {y, 8}, {literal, <<"host">>}, {y, 9}, {y, 10}]}}.
+    {move, {x, 0}, {y, 8}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 8}]}}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {y, 8}, {y, 4}}.
     {jump, {f, 368}}.
   {label, 368}.
-    {test_heap, 2, 0}.
-    {put_list, {y, 1}, nil, {x, 0}}.
-    {move, {x, 0}, {y, 2}}.
-    {move, {literal, [126, 116, 112]}, {x, 0}}.
-    {move, {y, 2}, {x, 1}}.
-    {call_ext, 2, {extfunc, io_lib, format, 2}}.
-    {move, {x, 0}, {y, 2}}.
-    {test_heap, 6, 0}.
-    {put_list, {y, 2}, nil, {x, 0}}.
-    {put_list, {literal, <<"|">>}, {x, 0}, {x, 0}}.
-    {put_list, {y, 0}, {x, 0}, {x, 0}}.
-    {move, {x, 0}, {y, 2}}.
-    {move, {y, 2}, {x, 0}}.
-    {call_ext_last, 1, {extfunc, unicode, characters_to_binary, 1}, 3}.
-
-{function, '__bp_tpl_11-t/1-fun-0-', 1, 352}.
-  {label, 351}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_11-t/1-fun-0-'}, 1}.
-  {label, 352}.
-    {allocate, 8, 1}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}]}}.
-    {move, {x, 0}, {y, 2}}.
-    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 356}, 0, 0, {x, 0}, {list, []}}.
-    {move, {x, 0}, {y, 3}}.
-    {move, {y, 3}, {y, 0}}.
-    {jump, {f, 370}}.
-  {label, 370}.
-    {move, {y, 2}, {x, 0}}.
-    {call_ext, 1, {extfunc, file, read_link_info, 1}}.
-    {move, {x, 0}, {y, 3}}.
-    {move, {y, 3}, {x, 0}}.
-    {test, is_tuple, {f, 372}, [{x, 0}]}.
-    {test, test_arity, {f, 372}, [{x, 0}, 2]}.
-    {get_tuple_element, {x, 0}, 0, {y, 4}}.
-    {get_tuple_element, {x, 0}, 1, {y, 5}}.
+  {label, 355}.
     {move, {y, 4}, {x, 0}}.
-    {test, is_eq_exact, {f, 372}, [{x, 0}, {atom, ok}]}.
-    {move, {y, 5}, {y, 1}}.
-    {move, {integer, 3}, {x, 0}}.
-    {move, {y, 1}, {x, 1}}.
-    {bif, element, {f, 372}, [{x, 0}, {x, 1}], {x, 0}}.
-    {move, {x, 0}, {y, 6}}.
-    {move, {y, 6}, {x, 0}}.
-    {move, {atom, directory}, {x, 1}}.
-    {test, is_eq_exact, {f, 372}, [{x, 0}, {x, 1}]}.
-    {jump, {f, 373}}.
-  {label, 373}.
-    {move, {atom, eisdir}, {x, 0}}.
-    {move, {y, 0}, {x, 1}}.
-    {call_fun, 1}.
-    {move, {x, 0}, {y, 6}}.
-    {test_heap, 3, 0}.
-    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 6}]}}.
-    {move, {x, 0}, {y, 6}}.
-    {move, {y, 6}, {x, 0}}.
-    {deallocate, 8}.
-    return.
-  {label, 372}.
-    {move, {y, 2}, {x, 0}}.
-    {call_ext, 1, {extfunc, file, delete, 1}}.
-    {move, {x, 0}, {y, 4}}.
-    {move, {y, 4}, {x, 0}}.
-    {test, is_eq_exact, {f, 376}, [{x, 0}, {atom, ok}]}.
-    {move, {literal, {ok, 0}}, {x, 0}}.
-    {deallocate, 8}.
-    return.
-  {label, 376}.
-    {move, {y, 4}, {x, 0}}.
-    {test, is_tuple, {f, 377}, [{x, 0}]}.
-    {test, test_arity, {f, 377}, [{x, 0}, 2]}.
-    {get_tuple_element, {x, 0}, 0, {y, 5}}.
-    {get_tuple_element, {x, 0}, 1, {y, 6}}.
-    {move, {y, 5}, {x, 0}}.
-    {test, is_eq_exact, {f, 377}, [{x, 0}, {atom, error}]}.
-    {move, {y, 6}, {y, 1}}.
-    {move, {y, 1}, {x, 0}}.
-    {move, {y, 0}, {x, 1}}.
-    {call_fun, 1}.
-    {move, {x, 0}, {y, 7}}.
-    {test_heap, 3, 0}.
-    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 7}]}}.
-    {move, {x, 0}, {y, 7}}.
-    {move, {y, 7}, {x, 0}}.
-    {deallocate, 8}.
-    return.
-  {label, 377}.
-    {move, {y, 4}, {x, 0}}.
-    {case_end, {x, 0}}.
-
-{function, '__bp_tpl_11', 1, 348}.
-  {label, 347}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_11'}, 1}.
-  {label, 348}.
-    {allocate, 2, 1}.
-    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
-    {move, {x, 0}, {y, 0}}.
-    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 352}, 1, 0, {x, 0}, {list, []}}.
-    {move, {x, 0}, {y, 1}}.
-    {move, {y, 0}, {x, 0}}.
-    {move, {y, 1}, {x, 1}}.
-    {call_fun, 1}.
-    {deallocate, 2}.
+    {deallocate, 12}.
     return.
 
-{function, '__bp_tpl_12--t/1-fun-0--fun-1-', 1, 389}.
-  {label, 388}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_12--t/1-fun-0--fun-1-'}, 1}.
-  {label, 389}.
-    {allocate, 3, 1}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
-    {move, {x, 0}, {y, 1}}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 393}, [{x, 0}, {atom, enoent}]}.
-    {move, {literal, <<"notfound">>}, {y, 2}}.
-    {jump, {f, 392}}.
-  {label, 393}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 394}, [{x, 0}, {atom, eacces}]}.
-    {move, {literal, <<"denied">>}, {y, 2}}.
-    {jump, {f, 392}}.
-  {label, 394}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 395}, [{x, 0}, {atom, eperm}]}.
-    {move, {literal, <<"denied">>}, {y, 2}}.
-    {jump, {f, 392}}.
-  {label, 395}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 396}, [{x, 0}, {atom, eisdir}]}.
-    {move, {literal, <<"isdir">>}, {y, 2}}.
-    {jump, {f, 392}}.
-  {label, 396}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 397}, [{x, 0}, {atom, enotdir}]}.
-    {move, {literal, <<"notdir">>}, {y, 2}}.
-    {jump, {f, 392}}.
-  {label, 397}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 398}, [{x, 0}, {atom, eexist}]}.
-    {move, {literal, <<"exists">>}, {y, 2}}.
-    {jump, {f, 392}}.
-  {label, 398}.
-    {move, {literal, <<"other">>}, {y, 2}}.
-    {jump, {f, 392}}.
-  {label, 392}.
-    {move, {y, 2}, {y, 0}}.
-    {jump, {f, 401}}.
-  {label, 401}.
-    {test_heap, 2, 0}.
-    {put_list, {y, 1}, nil, {x, 0}}.
-    {move, {x, 0}, {y, 2}}.
-    {move, {literal, [126, 116, 112]}, {x, 0}}.
-    {move, {y, 2}, {x, 1}}.
-    {call_ext, 2, {extfunc, io_lib, format, 2}}.
-    {move, {x, 0}, {y, 2}}.
-    {test_heap, 6, 0}.
-    {put_list, {y, 2}, nil, {x, 0}}.
-    {put_list, {literal, <<"|">>}, {x, 0}, {x, 0}}.
-    {put_list, {y, 0}, {x, 0}, {x, 0}}.
-    {move, {x, 0}, {y, 2}}.
-    {move, {y, 2}, {x, 0}}.
-    {call_ext_last, 1, {extfunc, unicode, characters_to_binary, 1}, 3}.
-
-{function, '__bp_tpl_12-t/1-fun-0-', 1, 385}.
-  {label, 384}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_12-t/1-fun-0-'}, 1}.
-  {label, 385}.
-    {allocate, 7, 1}.
+{function, '__bp_tpl_12-t/2-fun-0-', 2, 383}.
+  {label, 382}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_12-t/2-fun-0-'}, 2}.
+  {label, 383}.
+    {allocate, 7, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}]}}.
-    {move, {x, 0}, {y, 2}}.
-    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 389}, 0, 0, {x, 0}, {list, []}}.
-    {move, {x, 0}, {y, 3}}.
-    {move, {y, 3}, {y, 0}}.
-    {jump, {f, 403}}.
-  {label, 403}.
-    {move, {y, 2}, {x, 0}}.
-    {call_ext, 1, {extfunc, file, del_dir_r, 1}}.
+    {move, {x, 0}, {y, 1}}.
+    {move, {x, 1}, {y, 2}}.
+    {move, {y, 1}, {x, 0}}.
+    {move, {y, 2}, {x, 1}}.
+    {call_ext, 2, {extfunc, file, copy, 2}}.
     {move, {x, 0}, {y, 3}}.
     {move, {y, 3}, {x, 0}}.
-    {test, is_eq_exact, {f, 405}, [{x, 0}, {atom, ok}]}.
+    {test, is_tuple, {f, 387}, [{x, 0}]}.
+    {test, test_arity, {f, 387}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 4}}.
+    {move, {y, 4}, {x, 0}}.
+    {test, is_eq_exact, {f, 387}, [{x, 0}, {atom, ok}]}.
     {move, {literal, {ok, 0}}, {x, 0}}.
     {deallocate, 7}.
     return.
-  {label, 405}.
+  {label, 387}.
     {move, {y, 3}, {x, 0}}.
-    {test, is_eq_exact, {f, 406}, [{x, 0}, {literal, {error, enoent}}]}.
-    {move, {literal, {ok, 0}}, {x, 0}}.
-    {deallocate, 7}.
-    return.
-  {label, 406}.
-    {move, {y, 3}, {x, 0}}.
-    {test, is_tuple, {f, 407}, [{x, 0}]}.
-    {test, test_arity, {f, 407}, [{x, 0}, 2]}.
+    {test, is_tuple, {f, 388}, [{x, 0}]}.
+    {test, test_arity, {f, 388}, [{x, 0}, 2]}.
     {get_tuple_element, {x, 0}, 0, {y, 4}}.
     {get_tuple_element, {x, 0}, 1, {y, 5}}.
     {move, {y, 4}, {x, 0}}.
-    {test, is_eq_exact, {f, 407}, [{x, 0}, {atom, error}]}.
-    {move, {y, 5}, {y, 1}}.
-    {move, {y, 1}, {x, 0}}.
-    {move, {y, 0}, {x, 1}}.
-    {call_fun, 1}.
-    {move, {x, 0}, {y, 6}}.
+    {test, is_eq_exact, {f, 388}, [{x, 0}, {atom, error}]}.
+    {move, {y, 5}, {y, 0}}.
     {test_heap, 3, 0}.
-    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 6}]}}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 0}]}}.
     {move, {x, 0}, {y, 6}}.
     {move, {y, 6}, {x, 0}}.
     {deallocate, 7}.
     return.
-  {label, 407}.
+  {label, 388}.
     {move, {y, 3}, {x, 0}}.
     {case_end, {x, 0}}.
 
-{function, '__bp_tpl_12', 1, 381}.
-  {label, 380}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_12'}, 1}.
-  {label, 381}.
-    {allocate, 2, 1}.
-    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
-    {move, {x, 0}, {y, 0}}.
+{function, '__bp_tpl_12', 2, 377}.
+  {label, 376}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_12'}, 2}.
+  {label, 377}.
+    {allocate, 13, 2}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}, {y, 11}, {y, 12}]}}.
+    {move, {x, 0}, {y, 3}}.
+    {move, {x, 1}, {y, 4}}.
+    {'try', {y, 12}, {f, 380}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 385}, 1, 0, {x, 0}, {list, []}}.
-    {move, {x, 0}, {y, 1}}.
-    {move, {y, 0}, {x, 0}}.
-    {move, {y, 1}, {x, 1}}.
-    {call_fun, 1}.
-    {deallocate, 2}.
-    return.
-
-{function, '__bp_tpl_13--t/2-fun-0--fun-1-', 1, 419}.
-  {label, 418}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_13--t/2-fun-0--fun-1-'}, 1}.
-  {label, 419}.
-    {allocate, 3, 1}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
-    {move, {x, 0}, {y, 1}}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 423}, [{x, 0}, {atom, enoent}]}.
-    {move, {literal, <<"notfound">>}, {y, 2}}.
-    {jump, {f, 422}}.
-  {label, 423}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 424}, [{x, 0}, {atom, eacces}]}.
-    {move, {literal, <<"denied">>}, {y, 2}}.
-    {jump, {f, 422}}.
-  {label, 424}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 425}, [{x, 0}, {atom, eperm}]}.
-    {move, {literal, <<"denied">>}, {y, 2}}.
-    {jump, {f, 422}}.
-  {label, 425}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 426}, [{x, 0}, {atom, eisdir}]}.
-    {move, {literal, <<"isdir">>}, {y, 2}}.
-    {jump, {f, 422}}.
-  {label, 426}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 427}, [{x, 0}, {atom, enotdir}]}.
-    {move, {literal, <<"notdir">>}, {y, 2}}.
-    {jump, {f, 422}}.
-  {label, 427}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 428}, [{x, 0}, {atom, eexist}]}.
-    {move, {literal, <<"exists">>}, {y, 2}}.
-    {jump, {f, 422}}.
-  {label, 428}.
-    {move, {literal, <<"other">>}, {y, 2}}.
-    {jump, {f, 422}}.
-  {label, 422}.
-    {move, {y, 2}, {y, 0}}.
-    {jump, {f, 431}}.
-  {label, 431}.
-    {test_heap, 2, 0}.
-    {put_list, {y, 1}, nil, {x, 0}}.
-    {move, {x, 0}, {y, 2}}.
-    {move, {literal, [126, 116, 112]}, {x, 0}}.
-    {move, {y, 2}, {x, 1}}.
-    {call_ext, 2, {extfunc, io_lib, format, 2}}.
-    {move, {x, 0}, {y, 2}}.
-    {test_heap, 6, 0}.
-    {put_list, {y, 2}, nil, {x, 0}}.
-    {put_list, {literal, <<"|">>}, {x, 0}, {x, 0}}.
-    {put_list, {y, 0}, {x, 0}, {x, 0}}.
-    {move, {x, 0}, {y, 2}}.
-    {move, {y, 2}, {x, 0}}.
-    {call_ext_last, 1, {extfunc, unicode, characters_to_binary, 1}, 3}.
-
-{function, '__bp_tpl_13-t/2-fun-0-', 2, 415}.
-  {label, 414}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_13-t/2-fun-0-'}, 2}.
-  {label, 415}.
-    {allocate, 8, 2}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}]}}.
-    {move, {x, 0}, {y, 2}}.
-    {move, {x, 1}, {y, 3}}.
-    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 419}, 0, 0, {x, 0}, {list, []}}.
-    {move, {x, 0}, {y, 4}}.
-    {move, {y, 4}, {y, 0}}.
-    {jump, {f, 433}}.
-  {label, 433}.
-    {move, {y, 2}, {x, 0}}.
-    {move, {y, 3}, {x, 1}}.
-    {call_ext, 2, {extfunc, file, copy, 2}}.
-    {move, {x, 0}, {y, 4}}.
-    {move, {y, 4}, {x, 0}}.
-    {test, is_tuple, {f, 435}, [{x, 0}]}.
-    {test, test_arity, {f, 435}, [{x, 0}, 2]}.
-    {get_tuple_element, {x, 0}, 0, {y, 5}}.
-    {move, {y, 5}, {x, 0}}.
-    {test, is_eq_exact, {f, 435}, [{x, 0}, {atom, ok}]}.
-    {move, {literal, {ok, 0}}, {x, 0}}.
-    {deallocate, 8}.
-    return.
-  {label, 435}.
-    {move, {y, 4}, {x, 0}}.
-    {test, is_tuple, {f, 436}, [{x, 0}]}.
-    {test, test_arity, {f, 436}, [{x, 0}, 2]}.
-    {get_tuple_element, {x, 0}, 0, {y, 5}}.
-    {get_tuple_element, {x, 0}, 1, {y, 6}}.
-    {move, {y, 5}, {x, 0}}.
-    {test, is_eq_exact, {f, 436}, [{x, 0}, {atom, error}]}.
-    {move, {y, 6}, {y, 1}}.
-    {move, {y, 1}, {x, 0}}.
-    {move, {y, 0}, {x, 1}}.
-    {call_fun, 1}.
-    {move, {x, 0}, {y, 7}}.
-    {test_heap, 3, 0}.
-    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 7}]}}.
-    {move, {x, 0}, {y, 7}}.
-    {move, {y, 7}, {x, 0}}.
-    {deallocate, 8}.
-    return.
-  {label, 436}.
-    {move, {y, 4}, {x, 0}}.
-    {case_end, {x, 0}}.
-
-{function, '__bp_tpl_13', 2, 411}.
-  {label, 410}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_13'}, 2}.
-  {label, 411}.
-    {allocate, 3, 2}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
-    {move, {x, 0}, {y, 0}}.
-    {move, {x, 1}, {y, 1}}.
-    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 415}, 1, 0, {x, 0}, {list, []}}.
-    {move, {x, 0}, {y, 2}}.
-    {move, {y, 0}, {x, 0}}.
-    {move, {y, 1}, {x, 1}}.
-    {move, {y, 2}, {x, 2}}.
+    {make_fun3, {f, 383}, 0, 0, {x, 0}, {list, []}}.
+    {move, {x, 0}, {y, 6}}.
+    {move, {y, 3}, {x, 0}}.
+    {move, {y, 4}, {x, 1}}.
+    {move, {y, 6}, {x, 2}}.
     {call_fun, 2}.
-    {deallocate, 3}.
-    return.
-
-{function, '__bp_tpl_14--t/1-fun-0--fun-1-', 1, 448}.
-  {label, 447}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_14--t/1-fun-0--fun-1-'}, 1}.
-  {label, 448}.
-    {allocate, 3, 1}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
-    {move, {x, 0}, {y, 1}}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 452}, [{x, 0}, {atom, enoent}]}.
-    {move, {literal, <<"notfound">>}, {y, 2}}.
-    {jump, {f, 451}}.
-  {label, 452}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 453}, [{x, 0}, {atom, eacces}]}.
-    {move, {literal, <<"denied">>}, {y, 2}}.
-    {jump, {f, 451}}.
-  {label, 453}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 454}, [{x, 0}, {atom, eperm}]}.
-    {move, {literal, <<"denied">>}, {y, 2}}.
-    {jump, {f, 451}}.
-  {label, 454}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 455}, [{x, 0}, {atom, eisdir}]}.
-    {move, {literal, <<"isdir">>}, {y, 2}}.
-    {jump, {f, 451}}.
-  {label, 455}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 456}, [{x, 0}, {atom, enotdir}]}.
-    {move, {literal, <<"notdir">>}, {y, 2}}.
-    {jump, {f, 451}}.
-  {label, 456}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 457}, [{x, 0}, {atom, eexist}]}.
-    {move, {literal, <<"exists">>}, {y, 2}}.
-    {jump, {f, 451}}.
-  {label, 457}.
-    {move, {literal, <<"other">>}, {y, 2}}.
-    {jump, {f, 451}}.
-  {label, 451}.
-    {move, {y, 2}, {y, 0}}.
-    {jump, {f, 460}}.
-  {label, 460}.
+    {move, {x, 0}, {y, 6}}.
+    {move, {y, 6}, {y, 7}}.
+    {try_end, {y, 12}}.
+    {move, {y, 7}, {x, 0}}.
+    {test, is_tuple, {f, 390}, [{x, 0}]}.
+    {test, test_arity, {f, 390}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 8}}.
+    {get_tuple_element, {x, 0}, 1, {y, 9}}.
+    {move, {y, 8}, {x, 0}}.
+    {test, is_eq_exact, {f, 390}, [{x, 0}, {atom, ok}]}.
+    {move, {y, 9}, {y, 0}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 0}]}}.
+    {move, {x, 0}, {y, 10}}.
+    {move, {y, 10}, {y, 5}}.
+    {jump, {f, 389}}.
+  {label, 390}.
+    {move, {y, 7}, {x, 0}}.
+    {test, is_tuple, {f, 391}, [{x, 0}]}.
+    {test, test_arity, {f, 391}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 8}}.
+    {get_tuple_element, {x, 0}, 1, {y, 9}}.
+    {move, {y, 8}, {x, 0}}.
+    {test, is_eq_exact, {f, 391}, [{x, 0}, {atom, error}]}.
+    {move, {y, 9}, {y, 1}}.
     {test_heap, 2, 0}.
     {put_list, {y, 1}, nil, {x, 0}}.
-    {move, {x, 0}, {y, 2}}.
+    {move, {x, 0}, {y, 10}}.
     {move, {literal, [126, 116, 112]}, {x, 0}}.
-    {move, {y, 2}, {x, 1}}.
+    {move, {y, 10}, {x, 1}}.
     {call_ext, 2, {extfunc, io_lib, format, 2}}.
-    {move, {x, 0}, {y, 2}}.
+    {move, {x, 0}, {y, 10}}.
+    {move, {y, 10}, {x, 0}}.
+    {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
+    {move, {x, 0}, {y, 10}}.
     {test_heap, 6, 0}.
-    {put_list, {y, 2}, nil, {x, 0}}.
-    {put_list, {literal, <<"|">>}, {x, 0}, {x, 0}}.
-    {put_list, {y, 0}, {x, 0}, {x, 0}}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@failure@@HostError}, {y, 10}, {literal, <<"host">>}, {atom, std@failure@@HostErrorName__v__error}, {atom, undefined}]}}.
+    {move, {x, 0}, {y, 10}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 10}]}}.
+    {move, {x, 0}, {y, 10}}.
+    {move, {y, 10}, {y, 5}}.
+    {jump, {f, 389}}.
+  {label, 391}.
+    {move, {y, 7}, {y, 0}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 0}]}}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {y, 8}, {y, 5}}.
+    {jump, {f, 389}}.
+  {label, 389}.
+    {jump, {f, 381}}.
+  {label, 380}.
+    {try_case, {y, 12}}.
+    {move, {x, 0}, {y, 6}}.
+    {move, {x, 1}, {y, 7}}.
+    {move, {x, 2}, {y, 8}}.
+    {move, {y, 6}, {y, 0}}.
+    {move, {y, 7}, {y, 1}}.
+    {move, {y, 8}, {x, 0}}.
+    build_stacktrace.
     {move, {x, 0}, {y, 2}}.
-    {move, {y, 2}, {x, 0}}.
-    {call_ext_last, 1, {extfunc, unicode, characters_to_binary, 1}, 3}.
+    {test_heap, 2, 0}.
+    {put_list, {y, 1}, nil, {x, 0}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {literal, [126, 116, 112]}, {x, 0}}.
+    {move, {y, 9}, {x, 1}}.
+    {call_ext, 2, {extfunc, io_lib, format, 2}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {x, 0}}.
+    {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_eq_exact, {f, 396}, [{x, 0}, {atom, error}]}.
+    {move, {atom, std@failure@@HostErrorName__v__error}, {y, 10}}.
+    {jump, {f, 395}}.
+  {label, 396}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_eq_exact, {f, 397}, [{x, 0}, {atom, throw}]}.
+    {move, {atom, std@failure@@HostErrorName__v__throw}, {y, 10}}.
+    {jump, {f, 395}}.
+  {label, 397}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_eq_exact, {f, 398}, [{x, 0}, {atom, exit}]}.
+    {move, {atom, std@failure@@HostErrorName__v__exit}, {y, 10}}.
+    {jump, {f, 395}}.
+  {label, 398}.
+    {move, {y, 0}, {x, 0}}.
+    {case_end, {x, 0}}.
+  {label, 395}.
+    {test_heap, 2, 0}.
+    {put_list, {y, 2}, nil, {x, 0}}.
+    {move, {x, 0}, {y, 11}}.
+    {move, {literal, [126, 116, 112]}, {x, 0}}.
+    {move, {y, 11}, {x, 1}}.
+    {call_ext, 2, {extfunc, io_lib, format, 2}}.
+    {move, {x, 0}, {y, 11}}.
+    {move, {y, 11}, {x, 0}}.
+    {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
+    {move, {x, 0}, {y, 11}}.
+    {test_heap, 6, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@failure@@HostError}, {y, 9}, {literal, <<"host">>}, {y, 10}, {y, 11}]}}.
+    {move, {x, 0}, {y, 9}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 9}]}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {y, 5}}.
+    {jump, {f, 393}}.
+  {label, 393}.
+  {label, 381}.
+    {move, {y, 5}, {x, 0}}.
+    {deallocate, 13}.
+    return.
 
-{function, '__bp_tpl_14---t/1-fun-0--fun-2--fun-3-', 5, 479}.
-  {label, 478}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_14---t/1-fun-0--fun-2--fun-3-'}, 5}.
-  {label, 479}.
+{function, '__bp_tpl_13---t/1-fun-0--fun-1--fun-2-', 5, 427}.
+  {label, 426}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_13---t/1-fun-0--fun-1--fun-2-'}, 5}.
+  {label, 427}.
     {allocate, 12, 5}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}, {y, 11}]}}.
     {move, {x, 0}, {y, 6}}.
@@ -6486,13 +7576,13 @@ test "fs answers PermissionDenied for an OS permission error" {
     {call_ext, 2, {extfunc, filename, join, 2}}.
     {move, {x, 0}, {y, 8}}.
     {move, {y, 8}, {y, 3}}.
-    {jump, {f, 483}}.
-  {label, 483}.
+    {jump, {f, 431}}.
+  {label, 431}.
     {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 485}, [{x, 0}, nil]}.
+    {test, is_eq_exact, {f, 433}, [{x, 0}, nil]}.
     {move, {y, 6}, {y, 8}}.
-    {jump, {f, 484}}.
-  {label, 485}.
+    {jump, {f, 432}}.
+  {label, 433}.
     {move, {literal, [47]}, {x, 0}}.
     {move, {y, 6}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, '++', 2}}.
@@ -6502,31 +7592,31 @@ test "fs answers PermissionDenied for an OS permission error" {
     {call_ext, 2, {extfunc, erlang, '++', 2}}.
     {move, {x, 0}, {y, 9}}.
     {move, {y, 9}, {y, 8}}.
-    {jump, {f, 484}}.
-  {label, 484}.
+    {jump, {f, 432}}.
+  {label, 432}.
     {move, {y, 8}, {y, 4}}.
-    {jump, {f, 488}}.
-  {label, 488}.
+    {jump, {f, 436}}.
+  {label, 436}.
     {move, {y, 3}, {x, 0}}.
     {call_ext, 1, {extfunc, file, read_file_info, 1}}.
     {move, {x, 0}, {y, 8}}.
     {move, {y, 8}, {x, 0}}.
-    {test, is_tuple, {f, 490}, [{x, 0}]}.
-    {test, test_arity, {f, 490}, [{x, 0}, 2]}.
+    {test, is_tuple, {f, 438}, [{x, 0}]}.
+    {test, test_arity, {f, 438}, [{x, 0}, 2]}.
     {get_tuple_element, {x, 0}, 0, {y, 9}}.
     {get_tuple_element, {x, 0}, 1, {y, 10}}.
     {move, {y, 9}, {x, 0}}.
-    {test, is_eq_exact, {f, 490}, [{x, 0}, {atom, ok}]}.
+    {test, is_eq_exact, {f, 438}, [{x, 0}, {atom, ok}]}.
     {move, {y, 10}, {y, 5}}.
     {move, {integer, 3}, {x, 0}}.
     {move, {y, 5}, {x, 1}}.
-    {bif, element, {f, 490}, [{x, 0}, {x, 1}], {x, 0}}.
+    {bif, element, {f, 438}, [{x, 0}, {x, 1}], {x, 0}}.
     {move, {x, 0}, {y, 11}}.
     {move, {y, 11}, {x, 0}}.
     {move, {atom, directory}, {x, 1}}.
-    {test, is_eq_exact, {f, 490}, [{x, 0}, {x, 1}]}.
-    {jump, {f, 491}}.
-  {label, 491}.
+    {test, is_eq_exact, {f, 438}, [{x, 0}, {x, 1}]}.
+    {jump, {f, 439}}.
+  {label, 439}.
     {move, {y, 3}, {x, 0}}.
     {move, {y, 4}, {x, 1}}.
     {move, {y, 7}, {x, 2}}.
@@ -6534,24 +7624,24 @@ test "fs answers PermissionDenied for an OS permission error" {
     {call_fun, 3}.
     {deallocate, 12}.
     return.
-  {label, 490}.
+  {label, 438}.
     {move, {y, 8}, {x, 0}}.
-    {test, is_tuple, {f, 492}, [{x, 0}]}.
-    {test, test_arity, {f, 492}, [{x, 0}, 2]}.
+    {test, is_tuple, {f, 440}, [{x, 0}]}.
+    {test, test_arity, {f, 440}, [{x, 0}, 2]}.
     {get_tuple_element, {x, 0}, 0, {y, 9}}.
     {get_tuple_element, {x, 0}, 1, {y, 10}}.
     {move, {y, 9}, {x, 0}}.
-    {test, is_eq_exact, {f, 492}, [{x, 0}, {atom, ok}]}.
+    {test, is_eq_exact, {f, 440}, [{x, 0}, {atom, ok}]}.
     {move, {y, 10}, {y, 5}}.
     {move, {integer, 3}, {x, 0}}.
     {move, {y, 5}, {x, 1}}.
-    {bif, element, {f, 492}, [{x, 0}, {x, 1}], {x, 0}}.
+    {bif, element, {f, 440}, [{x, 0}, {x, 1}], {x, 0}}.
     {move, {x, 0}, {y, 11}}.
     {move, {y, 11}, {x, 0}}.
     {move, {atom, regular}, {x, 1}}.
-    {test, is_eq_exact, {f, 492}, [{x, 0}, {x, 1}]}.
-    {jump, {f, 493}}.
-  {label, 493}.
+    {test, is_eq_exact, {f, 440}, [{x, 0}, {x, 1}]}.
+    {jump, {f, 441}}.
+  {label, 441}.
     {move, {y, 4}, {x, 0}}.
     {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
     {move, {x, 0}, {y, 11}}.
@@ -6564,19 +7654,19 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {y, 11}, {x, 0}}.
     {deallocate, 12}.
     return.
-  {label, 492}.
+  {label, 440}.
     {move, {y, 8}, {x, 0}}.
-    {test, is_tuple, {f, 494}, [{x, 0}]}.
-    {test, test_arity, {f, 494}, [{x, 0}, 2]}.
+    {test, is_tuple, {f, 442}, [{x, 0}]}.
+    {test, test_arity, {f, 442}, [{x, 0}, 2]}.
     {get_tuple_element, {x, 0}, 0, {y, 9}}.
     {move, {y, 9}, {x, 0}}.
-    {test, is_eq_exact, {f, 494}, [{x, 0}, {atom, ok}]}.
+    {test, is_eq_exact, {f, 442}, [{x, 0}, {atom, ok}]}.
     {move, {y, 7}, {x, 0}}.
     {deallocate, 12}.
     return.
-  {label, 494}.
+  {label, 442}.
     {move, {y, 8}, {x, 0}}.
-    {test, is_eq_exact, {f, 495}, [{x, 0}, {literal, {error, enoent}}]}.
+    {test, is_eq_exact, {f, 443}, [{x, 0}, {literal, {error, enoent}}]}.
     {move, {y, 4}, {x, 0}}.
     {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
     {move, {x, 0}, {y, 9}}.
@@ -6589,1366 +7679,378 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {y, 9}, {x, 0}}.
     {deallocate, 12}.
     return.
-  {label, 495}.
+  {label, 443}.
     {move, {y, 8}, {x, 0}}.
-    {test, is_tuple, {f, 496}, [{x, 0}]}.
-    {test, test_arity, {f, 496}, [{x, 0}, 2]}.
+    {test, is_tuple, {f, 444}, [{x, 0}]}.
+    {test, test_arity, {f, 444}, [{x, 0}, 2]}.
     {get_tuple_element, {x, 0}, 0, {y, 9}}.
     {get_tuple_element, {x, 0}, 1, {y, 10}}.
     {move, {y, 9}, {x, 0}}.
-    {test, is_eq_exact, {f, 496}, [{x, 0}, {atom, error}]}.
+    {test, is_eq_exact, {f, 444}, [{x, 0}, {atom, error}]}.
     {move, {y, 10}, {y, 3}}.
-    {test_heap, 3, 0}.
-    {put_tuple2, {x, 0}, {list, [{atom, bp_fs_walk}, {y, 3}]}}.
-    {move, {x, 0}, {y, 11}}.
-    {move, {y, 11}, {x, 0}}.
-    {call_ext_last, 1, {extfunc, erlang, throw, 1}, 12}.
-  {label, 496}.
+    {move, {y, 3}, {x, 0}}.
+    {call_ext_last, 1, {extfunc, erlang, error, 1}, 12}.
+  {label, 444}.
     {move, {y, 8}, {x, 0}}.
     {case_end, {x, 0}}.
 
-{function, '__bp_tpl_14--t/1-fun-0--fun-2-', 3, 472}.
-  {label, 471}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_14--t/1-fun-0--fun-2-'}, 3}.
-  {label, 472}.
+{function, '__bp_tpl_13--t/1-fun-0--fun-1-', 3, 420}.
+  {label, 419}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_13--t/1-fun-0--fun-1-'}, 3}.
+  {label, 420}.
     {allocate, 9, 3}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}]}}.
     {move, {x, 0}, {y, 2}}.
     {move, {x, 1}, {y, 3}}.
     {move, {x, 2}, {y, 4}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 472}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 420}, 0, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 2}, {x, 0}}.
     {call_ext, 1, {extfunc, file, list_dir, 1}}.
     {move, {x, 0}, {y, 5}}.
     {move, {y, 5}, {x, 0}}.
-    {test, is_tuple, {f, 476}, [{x, 0}]}.
-    {test, test_arity, {f, 476}, [{x, 0}, 2]}.
+    {test, is_tuple, {f, 424}, [{x, 0}]}.
+    {test, test_arity, {f, 424}, [{x, 0}, 2]}.
     {get_tuple_element, {x, 0}, 0, {y, 6}}.
     {get_tuple_element, {x, 0}, 1, {y, 7}}.
     {move, {y, 6}, {x, 0}}.
-    {test, is_eq_exact, {f, 476}, [{x, 0}, {atom, error}]}.
+    {test, is_eq_exact, {f, 424}, [{x, 0}, {atom, error}]}.
     {move, {y, 7}, {y, 1}}.
-    {test_heap, 3, 0}.
-    {put_tuple2, {x, 0}, {list, [{atom, bp_fs_walk}, {y, 1}]}}.
-    {move, {x, 0}, {y, 8}}.
-    {move, {y, 8}, {x, 0}}.
-    {call_ext_last, 1, {extfunc, erlang, throw, 1}, 9}.
-  {label, 476}.
+    {move, {y, 1}, {x, 0}}.
+    {call_ext_last, 1, {extfunc, erlang, error, 1}, 9}.
+  {label, 424}.
     {move, {y, 5}, {x, 0}}.
-    {test, is_tuple, {f, 477}, [{x, 0}]}.
-    {test, test_arity, {f, 477}, [{x, 0}, 2]}.
+    {test, is_tuple, {f, 425}, [{x, 0}]}.
+    {test, test_arity, {f, 425}, [{x, 0}, 2]}.
     {get_tuple_element, {x, 0}, 0, {y, 6}}.
     {get_tuple_element, {x, 0}, 1, {y, 7}}.
     {move, {y, 6}, {x, 0}}.
-    {test, is_eq_exact, {f, 477}, [{x, 0}, {atom, ok}]}.
+    {test, is_eq_exact, {f, 425}, [{x, 0}, {atom, ok}]}.
     {move, {y, 7}, {y, 1}}.
     {test_heap, {alloc, [{words, 3}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 479}, 1, 0, {x, 0}, {list, [{y, 2}, {y, 3}, {y, 0}]}}.
+    {make_fun3, {f, 427}, 1, 0, {x, 0}, {list, [{y, 2}, {y, 3}, {y, 0}]}}.
     {move, {x, 0}, {y, 8}}.
     {move, {y, 8}, {x, 0}}.
     {move, {y, 4}, {x, 1}}.
     {move, {y, 1}, {x, 2}}.
     {call_ext_last, 3, {extfunc, lists, foldl, 3}, 9}.
-  {label, 477}.
+  {label, 425}.
     {move, {y, 5}, {x, 0}}.
     {case_end, {x, 0}}.
 
-{function, '__bp_tpl_14-t/1-fun-0-', 1, 444}.
-  {label, 443}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_14-t/1-fun-0-'}, 1}.
-  {label, 444}.
-    {allocate, 14, 1}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}, {y, 11}, {y, 12}, {y, 13}]}}.
-    {move, {x, 0}, {y, 3}}.
-    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 448}, 2, 0, {x, 0}, {list, []}}.
-    {move, {x, 0}, {y, 4}}.
-    {move, {y, 4}, {y, 0}}.
-    {jump, {f, 462}}.
-  {label, 462}.
-    {move, {y, 3}, {x, 0}}.
-    {call_ext, 1, {extfunc, unicode, characters_to_list, 1}}.
-    {move, {x, 0}, {y, 4}}.
-    {move, {y, 4}, {y, 1}}.
-    {jump, {f, 464}}.
-  {label, 464}.
-    {move, {y, 1}, {x, 0}}.
-    {call_ext, 1, {extfunc, filelib, is_dir, 1}}.
-    {move, {x, 0}, {y, 4}}.
-    {move, {y, 4}, {x, 0}}.
-    {test, is_eq_exact, {f, 466}, [{x, 0}, {atom, false}]}.
-    {move, {y, 1}, {x, 0}}.
-    {call_ext, 1, {extfunc, file, read_file_info, 1}}.
-    {move, {x, 0}, {y, 5}}.
-    {move, {y, 5}, {x, 0}}.
-    {test, is_tuple, {f, 468}, [{x, 0}]}.
-    {test, test_arity, {f, 468}, [{x, 0}, 2]}.
-    {get_tuple_element, {x, 0}, 0, {y, 7}}.
-    {move, {y, 7}, {x, 0}}.
-    {test, is_eq_exact, {f, 468}, [{x, 0}, {atom, ok}]}.
-    {move, {atom, enotdir}, {y, 6}}.
-    {jump, {f, 467}}.
-  {label, 468}.
-    {move, {y, 5}, {x, 0}}.
-    {test, is_tuple, {f, 469}, [{x, 0}]}.
-    {test, test_arity, {f, 469}, [{x, 0}, 2]}.
-    {get_tuple_element, {x, 0}, 0, {y, 7}}.
-    {get_tuple_element, {x, 0}, 1, {y, 8}}.
-    {move, {y, 7}, {x, 0}}.
-    {test, is_eq_exact, {f, 469}, [{x, 0}, {atom, error}]}.
-    {move, {y, 8}, {y, 2}}.
-    {move, {y, 2}, {y, 6}}.
-    {jump, {f, 467}}.
-  {label, 469}.
-    {move, {y, 5}, {x, 0}}.
-    {case_end, {x, 0}}.
-  {label, 467}.
-    {move, {y, 6}, {x, 0}}.
-    {move, {y, 0}, {x, 1}}.
-    {call_fun, 1}.
-    {move, {x, 0}, {y, 5}}.
-    {test_heap, 3, 0}.
-    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 5}]}}.
-    {move, {x, 0}, {y, 5}}.
-    {move, {y, 5}, {x, 0}}.
-    {deallocate, 14}.
-    return.
-  {label, 466}.
-    {move, {y, 4}, {x, 0}}.
-    {test, is_eq_exact, {f, 470}, [{x, 0}, {atom, true}]}.
-    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 472}, 0, 0, {x, 0}, {list, []}}.
-    {move, {x, 0}, {y, 5}}.
-    {move, {y, 5}, {y, 2}}.
-    {jump, {f, 498}}.
-  {label, 498}.
-    {'try', {y, 13}, {f, 499}}.
-    {move, {y, 1}, {x, 0}}.
-    {move, nil, {x, 1}}.
-    {move, nil, {x, 2}}.
-    {move, {y, 2}, {x, 3}}.
-    {call_fun, 3}.
-    {move, {x, 0}, {y, 6}}.
-    {move, {y, 6}, {y, 1}}.
-    {jump, {f, 502}}.
-  {label, 502}.
-    {move, nil, {y, 6}}.
-    {move, {y, 1}, {y, 7}}.
-  {label, 504}.
-    {move, {y, 7}, {x, 0}}.
-    {test, is_nonempty_list, {f, 505}, [{x, 0}]}.
-    {get_list, {x, 0}, {y, 8}, {y, 7}}.
-    {move, {y, 8}, {x, 0}}.
-    {test, is_tuple, {f, 504}, [{x, 0}]}.
-    {test, test_arity, {f, 504}, [{x, 0}, 2]}.
-    {get_tuple_element, {x, 0}, 0, {y, 9}}.
-    {get_tuple_element, {x, 0}, 1, {y, 10}}.
-    {move, {y, 9}, {x, 0}}.
-    {test, is_eq_exact, {f, 504}, [{x, 0}, {atom, dangling}]}.
-    {move, {y, 10}, {y, 2}}.
-    {test_heap, 2, 0}.
-    {put_list, {y, 2}, {y, 6}, {x, 0}}.
-    {move, {x, 0}, {y, 6}}.
-    {jump, {f, 504}}.
-  {label, 505}.
-    {move, {y, 7}, {x, 0}}.
-    {test, is_nil, {f, 506}, [{x, 0}]}.
-    {jump, {f, 503}}.
-  {label, 506}.
-    {test_heap, 3, 0}.
-    {put_tuple2, {x, 0}, {list, [{atom, bad_generator}, {y, 7}]}}.
-    {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 503}.
-    {move, {y, 6}, {x, 0}}.
-    {call_ext, 1, {extfunc, lists, reverse, 1}}.
-    {move, {x, 0}, {y, 7}}.
-    {move, {y, 7}, {x, 0}}.
-    {call_ext, 1, {extfunc, lists, sort, 1}}.
-    {move, {x, 0}, {y, 6}}.
-    {move, {y, 6}, {x, 0}}.
-    {test, is_nonempty_list, {f, 508}, [{x, 0}]}.
-    {get_list, {x, 0}, {y, 8}, {y, 9}}.
-    {move, {y, 8}, {y, 2}}.
-    {move, {y, 2}, {x, 0}}.
-    {test, is_binary, {f, 509}, [{x, 0}]}.
-    {test_heap, 8, 0}.
-    {put_list, {literal, <<"\"">>}, nil, {x, 0}}.
-    {put_list, {y, 2}, {x, 0}, {x, 0}}.
-    {put_list, {literal, <<"\"">>}, {x, 0}, {x, 0}}.
-    {put_list, {literal, <<"dangling|fs.walk: dangling link ">>}, {x, 0}, {x, 0}}.
-    {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
-    {jump, {f, 510}}.
-  {label, 509}.
-    {move, {atom, badarg}, {x, 0}}.
-    {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 510}.
-    {move, {x, 0}, {y, 10}}.
-    {test_heap, 3, 0}.
-    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 10}]}}.
-    {move, {x, 0}, {y, 10}}.
-    {move, {y, 10}, {y, 7}}.
-    {jump, {f, 507}}.
-  {label, 508}.
-    {move, {y, 6}, {x, 0}}.
-    {test, is_eq_exact, {f, 511}, [{x, 0}, nil]}.
-    {move, nil, {y, 8}}.
-    {move, {y, 1}, {y, 9}}.
-  {label, 513}.
-    {move, {y, 9}, {x, 0}}.
-    {test, is_nonempty_list, {f, 514}, [{x, 0}]}.
-    {get_list, {x, 0}, {y, 10}, {y, 9}}.
-    {move, {y, 10}, {x, 0}}.
-    {test, is_tuple, {f, 513}, [{x, 0}]}.
-    {test, test_arity, {f, 513}, [{x, 0}, 2]}.
-    {get_tuple_element, {x, 0}, 0, {y, 11}}.
-    {get_tuple_element, {x, 0}, 1, {y, 12}}.
-    {move, {y, 11}, {x, 0}}.
-    {test, is_eq_exact, {f, 513}, [{x, 0}, {atom, file}]}.
-    {move, {y, 12}, {y, 1}}.
-    {test_heap, 2, 0}.
-    {put_list, {y, 1}, {y, 8}, {x, 0}}.
-    {move, {x, 0}, {y, 8}}.
-    {jump, {f, 513}}.
-  {label, 514}.
-    {move, {y, 9}, {x, 0}}.
-    {test, is_nil, {f, 515}, [{x, 0}]}.
-    {jump, {f, 512}}.
-  {label, 515}.
-    {test_heap, 3, 0}.
-    {put_tuple2, {x, 0}, {list, [{atom, bad_generator}, {y, 9}]}}.
-    {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 512}.
-    {move, {y, 8}, {x, 0}}.
-    {call_ext, 1, {extfunc, lists, reverse, 1}}.
-    {move, {x, 0}, {y, 9}}.
-    {move, {y, 9}, {x, 0}}.
-    {call_ext, 1, {extfunc, lists, sort, 1}}.
-    {move, {x, 0}, {y, 8}}.
-    {test_heap, 3, 0}.
-    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 8}]}}.
-    {move, {x, 0}, {y, 8}}.
-    {move, {y, 8}, {y, 7}}.
-    {jump, {f, 507}}.
-  {label, 511}.
-    {move, {y, 6}, {x, 0}}.
-    {case_end, {x, 0}}.
-  {label, 507}.
-    {move, {y, 7}, {y, 5}}.
-    {try_end, {y, 13}}.
-    {jump, {f, 500}}.
-  {label, 499}.
-    {try_case, {y, 13}}.
-    {move, {x, 0}, {y, 6}}.
-    {move, {x, 1}, {y, 7}}.
-    {move, {x, 2}, {y, 8}}.
-    {move, {y, 6}, {x, 0}}.
-    {test, is_eq_exact, {f, 517}, [{x, 0}, {atom, throw}]}.
-    {move, {y, 7}, {x, 0}}.
-    {test, is_tuple, {f, 517}, [{x, 0}]}.
-    {test, test_arity, {f, 517}, [{x, 0}, 2]}.
-    {get_tuple_element, {x, 0}, 0, {y, 9}}.
-    {get_tuple_element, {x, 0}, 1, {y, 10}}.
-    {move, {y, 9}, {x, 0}}.
-    {test, is_eq_exact, {f, 517}, [{x, 0}, {atom, bp_fs_walk}]}.
-    {move, {y, 10}, {y, 1}}.
-    {move, {y, 1}, {x, 0}}.
-    {move, {y, 0}, {x, 1}}.
-    {call_fun, 1}.
-    {move, {x, 0}, {y, 11}}.
-    {test_heap, 3, 0}.
-    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 11}]}}.
-    {move, {x, 0}, {y, 11}}.
-    {move, {y, 11}, {y, 5}}.
-    {jump, {f, 516}}.
-  {label, 517}.
-    {move, {y, 6}, {x, 0}}.
-    {move, {y, 7}, {x, 1}}.
-    {move, {y, 8}, {x, 2}}.
-    raw_raise.
-  {label, 516}.
-  {label, 500}.
-    {move, {y, 5}, {x, 0}}.
-    {deallocate, 14}.
-    return.
-  {label, 470}.
-    {move, {y, 4}, {x, 0}}.
-    {case_end, {x, 0}}.
-
-{function, '__bp_tpl_14', 1, 440}.
-  {label, 439}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_14'}, 1}.
-  {label, 440}.
-    {allocate, 2, 1}.
-    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
-    {move, {x, 0}, {y, 0}}.
-    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 444}, 3, 0, {x, 0}, {list, []}}.
-    {move, {x, 0}, {y, 1}}.
-    {move, {y, 0}, {x, 0}}.
-    {move, {y, 1}, {x, 1}}.
-    {call_fun, 1}.
-    {deallocate, 2}.
-    return.
-
-{function, '__bp_tpl_15--t/2-fun-0--fun-1-', 1, 544}.
-  {label, 543}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_15--t/2-fun-0--fun-1-'}, 1}.
-  {label, 544}.
-    {allocate, 6, 1}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}]}}.
-    {move, {x, 0}, {y, 1}}.
-    {move, {y, 1}, {x, 0}}.
-    {call_ext, 1, {extfunc, file, read_link_info, 1}}.
+{function, '__bp_tpl_13-t/1-fun-0-', 1, 408}.
+  {label, 407}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_13-t/1-fun-0-'}, 1}.
+  {label, 408}.
+    {allocate, 10, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}]}}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 2}, {x, 0}}.
-    {test, is_tuple, {f, 548}, [{x, 0}]}.
-    {test, test_arity, {f, 548}, [{x, 0}, 2]}.
-    {get_tuple_element, {x, 0}, 0, {y, 3}}.
-    {get_tuple_element, {x, 0}, 1, {y, 4}}.
-    {move, {y, 3}, {x, 0}}.
-    {test, is_eq_exact, {f, 548}, [{x, 0}, {atom, ok}]}.
-    {move, {y, 4}, {y, 0}}.
-    {move, {integer, 3}, {x, 0}}.
-    {move, {y, 0}, {x, 1}}.
-    {call_ext, 2, {extfunc, erlang, element, 2}}.
-    {move, {x, 0}, {y, 5}}.
-    {move, {y, 5}, {x, 0}}.
-    {move, {atom, directory}, {x, 1}}.
-    {call_ext, 2, {extfunc, erlang, '=:=', 2}}.
-    {move, {x, 0}, {y, 5}}.
-    {move, {y, 5}, {x, 0}}.
-    {deallocate, 6}.
-    return.
-  {label, 548}.
-    {move, {atom, false}, {x, 0}}.
-    {deallocate, 6}.
-    return.
-
-{function, '__bp_tpl_15---t/2-fun-0--fun-2--fun-3-', 1, 557}.
-  {label, 556}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_15---t/2-fun-0--fun-2--fun-3-'}, 1}.
-  {label, 557}.
-    {allocate, 1, 1}.
-    {init_yregs, {list, [{y, 0}]}}.
-    {move, {x, 0}, {y, 0}}.
+    {call_ext, 1, {extfunc, unicode, characters_to_list, 1}}.
+    {move, {x, 0}, {y, 3}}.
+    {move, {y, 3}, {y, 0}}.
+    {jump, {f, 412}}.
+  {label, 412}.
     {move, {y, 0}, {x, 0}}.
-    {move, {literal, [42, 63, 91, 123]}, {x, 1}}.
-    {call_ext_last, 2, {extfunc, lists, member, 2}, 1}.
-
-{function, '__bp_tpl_15--t/2-fun-0--fun-2-', 1, 553}.
-  {label, 552}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_15--t/2-fun-0--fun-2-'}, 1}.
-  {label, 553}.
-    {allocate, 2, 1}.
-    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
-    {move, {x, 0}, {y, 0}}.
-    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 557}, 0, 0, {x, 0}, {list, []}}.
-    {move, {x, 0}, {y, 1}}.
-    {move, {y, 1}, {x, 0}}.
-    {move, {y, 0}, {x, 1}}.
-    {call_ext_last, 2, {extfunc, lists, any, 2}, 2}.
-
-{function, '__bp_tpl_15--t/2-fun-0--fun-4-', 2, 563}.
-  {label, 562}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_15--t/2-fun-0--fun-4-'}, 2}.
-  {label, 563}.
-    {allocate, 9, 2}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}]}}.
-    {move, {x, 0}, {y, 1}}.
-    {move, {x, 1}, {y, 2}}.
-    {move, {y, 2}, {x, 0}}.
-    {test, is_eq_exact, {f, 567}, [{x, 0}, {literal, [42]}]}.
-    {move, {y, 1}, {x, 0}}.
-    {call_ext, 1, {extfunc, file, list_dir, 1}}.
+    {call_ext, 1, {extfunc, filelib, is_dir, 1}}.
+    {move, {x, 0}, {y, 3}}.
+    {move, {y, 3}, {x, 0}}.
+    {test, is_eq_exact, {f, 414}, [{x, 0}, {atom, false}]}.
+    {move, {y, 0}, {x, 0}}.
+    {call_ext, 1, {extfunc, file, read_file_info, 1}}.
     {move, {x, 0}, {y, 4}}.
     {move, {y, 4}, {x, 0}}.
-    {test, is_tuple, {f, 569}, [{x, 0}]}.
-    {test, test_arity, {f, 569}, [{x, 0}, 2]}.
+    {test, is_tuple, {f, 416}, [{x, 0}]}.
+    {test, test_arity, {f, 416}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 6}}.
+    {move, {y, 6}, {x, 0}}.
+    {test, is_eq_exact, {f, 416}, [{x, 0}, {atom, ok}]}.
+    {move, {atom, enotdir}, {y, 5}}.
+    {jump, {f, 415}}.
+  {label, 416}.
+    {move, {y, 4}, {x, 0}}.
+    {test, is_tuple, {f, 417}, [{x, 0}]}.
+    {test, test_arity, {f, 417}, [{x, 0}, 2]}.
     {get_tuple_element, {x, 0}, 0, {y, 6}}.
     {get_tuple_element, {x, 0}, 1, {y, 7}}.
     {move, {y, 6}, {x, 0}}.
-    {test, is_eq_exact, {f, 569}, [{x, 0}, {atom, ok}]}.
-    {move, {y, 7}, {y, 0}}.
+    {test, is_eq_exact, {f, 417}, [{x, 0}, {atom, error}]}.
+    {move, {y, 7}, {y, 1}}.
+    {move, {y, 1}, {y, 5}}.
+    {jump, {f, 415}}.
+  {label, 417}.
+    {move, {y, 4}, {x, 0}}.
+    {case_end, {x, 0}}.
+  {label, 415}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 5}]}}.
+    {move, {x, 0}, {y, 4}}.
+    {move, {y, 4}, {x, 0}}.
+    {deallocate, 10}.
+    return.
+  {label, 414}.
+    {move, {y, 3}, {x, 0}}.
+    {test, is_eq_exact, {f, 418}, [{x, 0}, {atom, true}]}.
+    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
+    {make_fun3, {f, 420}, 0, 0, {x, 0}, {list, []}}.
+    {move, {x, 0}, {y, 4}}.
+    {move, {y, 4}, {y, 1}}.
+    {jump, {f, 446}}.
+  {label, 446}.
+    {move, {y, 0}, {x, 0}}.
+    {move, nil, {x, 1}}.
+    {move, nil, {x, 2}}.
+    {move, {y, 1}, {x, 3}}.
+    {call_fun, 3}.
+    {move, {x, 0}, {y, 4}}.
+    {move, {y, 4}, {y, 0}}.
+    {jump, {f, 448}}.
+  {label, 448}.
+    {move, nil, {y, 4}}.
     {move, {y, 0}, {y, 5}}.
-    {jump, {f, 568}}.
-  {label, 569}.
-    {move, nil, {y, 5}}.
-    {jump, {f, 568}}.
-  {label, 568}.
-    {move, {y, 5}, {y, 3}}.
-    {jump, {f, 566}}.
-  {label, 567}.
-    {'try', {y, 8}, {f, 572}}.
-    {move, {y, 2}, {x, 0}}.
-    {move, {y, 1}, {x, 1}}.
-    {call_ext, 2, {extfunc, filelib, wildcard, 2}}.
+  {label, 450}.
+    {move, {y, 5}, {x, 0}}.
+    {test, is_nonempty_list, {f, 451}, [{x, 0}]}.
+    {get_list, {x, 0}, {y, 6}, {y, 5}}.
+    {move, {y, 6}, {x, 0}}.
+    {test, is_tuple, {f, 450}, [{x, 0}]}.
+    {test, test_arity, {f, 450}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 7}}.
+    {get_tuple_element, {x, 0}, 1, {y, 8}}.
+    {move, {y, 7}, {x, 0}}.
+    {test, is_eq_exact, {f, 450}, [{x, 0}, {atom, file}]}.
+    {move, {y, 8}, {y, 1}}.
+    {test_heap, 2, 0}.
+    {put_list, {y, 1}, {y, 4}, {x, 0}}.
+    {move, {x, 0}, {y, 4}}.
+    {jump, {f, 450}}.
+  {label, 451}.
+    {move, {y, 5}, {x, 0}}.
+    {test, is_nil, {f, 452}, [{x, 0}]}.
+    {jump, {f, 449}}.
+  {label, 452}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, bad_generator}, {y, 5}]}}.
+    {call_ext, 1, {extfunc, erlang, error, 1}}.
+  {label, 449}.
+    {move, {y, 4}, {x, 0}}.
+    {call_ext, 1, {extfunc, lists, reverse, 1}}.
     {move, {x, 0}, {y, 5}}.
-    {move, {y, 5}, {y, 4}}.
-    {try_end, {y, 8}}.
-    {jump, {f, 573}}.
-  {label, 572}.
-    {try_case, {y, 8}}.
+    {move, {y, 5}, {x, 0}}.
+    {call_ext, 1, {extfunc, lists, sort, 1}}.
+    {move, {x, 0}, {y, 4}}.
+    {move, nil, {y, 5}}.
+    {move, {y, 0}, {y, 6}}.
+  {label, 454}.
+    {move, {y, 6}, {x, 0}}.
+    {test, is_nonempty_list, {f, 455}, [{x, 0}]}.
+    {get_list, {x, 0}, {y, 7}, {y, 6}}.
+    {move, {y, 7}, {x, 0}}.
+    {test, is_tuple, {f, 454}, [{x, 0}]}.
+    {test, test_arity, {f, 454}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 8}}.
+    {get_tuple_element, {x, 0}, 1, {y, 9}}.
+    {move, {y, 8}, {x, 0}}.
+    {test, is_eq_exact, {f, 454}, [{x, 0}, {atom, dangling}]}.
+    {move, {y, 9}, {y, 0}}.
+    {test_heap, 2, 0}.
+    {put_list, {y, 0}, {y, 5}, {x, 0}}.
+    {move, {x, 0}, {y, 5}}.
+    {jump, {f, 454}}.
+  {label, 455}.
+    {move, {y, 6}, {x, 0}}.
+    {test, is_nil, {f, 456}, [{x, 0}]}.
+    {jump, {f, 453}}.
+  {label, 456}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, bad_generator}, {y, 6}]}}.
+    {call_ext, 1, {extfunc, erlang, error, 1}}.
+  {label, 453}.
+    {move, {y, 5}, {x, 0}}.
+    {call_ext, 1, {extfunc, lists, reverse, 1}}.
+    {move, {x, 0}, {y, 6}}.
+    {move, {y, 6}, {x, 0}}.
+    {call_ext, 1, {extfunc, lists, sort, 1}}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {literal, #{}}, {x, 0}}.
+    {put_map_assoc, {f, 0}, {x, 0}, {x, 0}, 1, {list, [{atom, files}, {y, 4}, {atom, dangling}, {y, 5}]}}.
+    {move, {x, 0}, {y, 4}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 4}]}}.
+    {move, {x, 0}, {y, 4}}.
+    {move, {y, 4}, {x, 0}}.
+    {deallocate, 10}.
+    return.
+  {label, 418}.
+    {move, {y, 3}, {x, 0}}.
+    {case_end, {x, 0}}.
+
+{function, '__bp_tpl_13', 1, 402}.
+  {label, 401}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_13'}, 1}.
+  {label, 402}.
+    {allocate, 12, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}, {y, 11}]}}.
+    {move, {x, 0}, {y, 3}}.
+    {'try', {y, 11}, {f, 405}}.
+    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
+    {make_fun3, {f, 408}, 2, 0, {x, 0}, {list, []}}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {y, 3}, {x, 0}}.
+    {move, {y, 5}, {x, 1}}.
+    {call_fun, 1}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {y, 5}, {y, 6}}.
+    {try_end, {y, 11}}.
+    {move, {y, 6}, {x, 0}}.
+    {test, is_tuple, {f, 458}, [{x, 0}]}.
+    {test, test_arity, {f, 458}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 7}}.
+    {get_tuple_element, {x, 0}, 1, {y, 8}}.
+    {move, {y, 7}, {x, 0}}.
+    {test, is_eq_exact, {f, 458}, [{x, 0}, {atom, ok}]}.
+    {move, {y, 8}, {y, 0}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 0}]}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {y, 4}}.
+    {jump, {f, 457}}.
+  {label, 458}.
+    {move, {y, 6}, {x, 0}}.
+    {test, is_tuple, {f, 459}, [{x, 0}]}.
+    {test, test_arity, {f, 459}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 7}}.
+    {get_tuple_element, {x, 0}, 1, {y, 8}}.
+    {move, {y, 7}, {x, 0}}.
+    {test, is_eq_exact, {f, 459}, [{x, 0}, {atom, error}]}.
+    {move, {y, 8}, {y, 1}}.
+    {test_heap, 2, 0}.
+    {put_list, {y, 1}, nil, {x, 0}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {literal, [126, 116, 112]}, {x, 0}}.
+    {move, {y, 9}, {x, 1}}.
+    {call_ext, 2, {extfunc, io_lib, format, 2}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {x, 0}}.
+    {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
+    {move, {x, 0}, {y, 9}}.
+    {test_heap, 6, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@failure@@HostError}, {y, 9}, {literal, <<"host">>}, {atom, std@failure@@HostErrorName__v__error}, {atom, undefined}]}}.
+    {move, {x, 0}, {y, 9}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 9}]}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {y, 4}}.
+    {jump, {f, 457}}.
+  {label, 459}.
+    {move, {y, 6}, {y, 0}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 0}]}}.
+    {move, {x, 0}, {y, 7}}.
+    {move, {y, 7}, {y, 4}}.
+    {jump, {f, 457}}.
+  {label, 457}.
+    {jump, {f, 406}}.
+  {label, 405}.
+    {try_case, {y, 11}}.
     {move, {x, 0}, {y, 5}}.
     {move, {x, 1}, {y, 6}}.
     {move, {x, 2}, {y, 7}}.
-    {move, nil, {y, 4}}.
-    {jump, {f, 574}}.
-  {label, 574}.
-  {label, 573}.
-    {move, {y, 4}, {y, 3}}.
-    {jump, {f, 566}}.
-  {label, 566}.
-    {move, {y, 3}, {y, 0}}.
-    {jump, {f, 577}}.
-  {label, 577}.
-    {move, nil, {y, 3}}.
-    {move, {y, 0}, {y, 4}}.
-  {label, 579}.
-    {move, {y, 4}, {x, 0}}.
-    {test, is_nonempty_list, {f, 580}, [{x, 0}]}.
-    {get_list, {x, 0}, {y, 5}, {y, 4}}.
     {move, {y, 5}, {y, 0}}.
-    {move, {y, 0}, {x, 0}}.
-    {bif, hd, {f, 579}, [{x, 0}], {x, 0}}.
-    {move, {x, 0}, {y, 6}}.
-    {move, {y, 6}, {x, 0}}.
-    {move, {integer, 46}, {x, 1}}.
-    {test, is_ne_exact, {f, 582}, [{x, 0}, {x, 1}]}.
-    {jump, {f, 583}}.
-  {label, 582}.
-    {move, {y, 2}, {x, 0}}.
-    {bif, hd, {f, 579}, [{x, 0}], {x, 0}}.
-    {move, {x, 0}, {y, 6}}.
-    {move, {y, 6}, {x, 0}}.
-    {move, {integer, 46}, {x, 1}}.
-    {test, is_eq_exact, {f, 579}, [{x, 0}, {x, 1}]}.
-  {label, 583}.
-    {test_heap, 2, 0}.
-    {put_list, {y, 0}, {y, 3}, {x, 0}}.
-    {move, {x, 0}, {y, 3}}.
-    {jump, {f, 579}}.
-  {label, 580}.
-    {move, {y, 4}, {x, 0}}.
-    {test, is_nil, {f, 581}, [{x, 0}]}.
-    {jump, {f, 578}}.
-  {label, 581}.
-    {test_heap, 3, 0}.
-    {put_tuple2, {x, 0}, {list, [{atom, bad_generator}, {y, 4}]}}.
-    {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 578}.
-    {move, {y, 3}, {x, 0}}.
-    {call_ext, 1, {extfunc, lists, reverse, 1}}.
-    {move, {x, 0}, {y, 4}}.
-    {move, {y, 4}, {x, 0}}.
-    {deallocate, 9}.
-    return.
-
-{function, '__bp_tpl_15--t/2-fun-0--fun-5-', 2, 587}.
-  {label, 586}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_15--t/2-fun-0--fun-5-'}, 2}.
-  {label, 587}.
-    {allocate, 3, 2}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
-    {move, {x, 0}, {y, 0}}.
-    {move, {x, 1}, {y, 1}}.
-    {move, {y, 0}, {x, 0}}.
-    {test, is_eq_exact, {f, 589}, [{x, 0}, nil]}.
-    {move, {y, 1}, {x, 0}}.
-    {deallocate, 3}.
-    return.
-  {label, 589}.
-    {move, {literal, [47]}, {x, 0}}.
-    {move, {y, 1}, {x, 1}}.
-    {call_ext, 2, {extfunc, erlang, '++', 2}}.
+    {move, {y, 6}, {y, 1}}.
+    {move, {y, 7}, {x, 0}}.
+    build_stacktrace.
     {move, {x, 0}, {y, 2}}.
-    {move, {y, 0}, {x, 0}}.
-    {move, {y, 2}, {x, 1}}.
-    {call_ext, 2, {extfunc, erlang, '++', 2}}.
-    {move, {x, 0}, {y, 2}}.
-    {move, {y, 2}, {x, 0}}.
-    {deallocate, 3}.
-    return.
-
-{function, '__bp_tpl_15---t/2-fun-0--fun-6--fun-7-', 7, 600}.
-  {label, 599}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_15---t/2-fun-0--fun-6--fun-7-'}, 7}.
-  {label, 600}.
-    {allocate, 11, 7}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}]}}.
-    {move, {x, 0}, {y, 7}}.
-    {move, {x, 1}, {y, 8}}.
-    {move, {x, 2}, {y, 0}}.
-    {move, {x, 3}, {y, 1}}.
-    {move, {x, 4}, {y, 2}}.
-    {move, {x, 5}, {y, 3}}.
-    {move, {x, 6}, {y, 4}}.
-    {move, {y, 0}, {x, 0}}.
-    {move, {y, 7}, {x, 1}}.
-    {call_ext, 2, {extfunc, filename, join, 2}}.
-    {move, {x, 0}, {y, 9}}.
-    {move, {y, 9}, {y, 5}}.
-    {jump, {f, 604}}.
-  {label, 604}.
-    {move, {y, 2}, {x, 0}}.
-    {move, {y, 7}, {x, 1}}.
-    {move, {y, 1}, {x, 2}}.
-    {call_fun, 2}.
-    {move, {x, 0}, {y, 9}}.
-    {move, {y, 9}, {y, 6}}.
-    {jump, {f, 606}}.
-  {label, 606}.
-    {move, {y, 5}, {x, 0}}.
-    {move, {y, 3}, {x, 1}}.
-    {call_fun, 1}.
-    {move, {x, 0}, {y, 9}}.
-    {move, {y, 9}, {x, 0}}.
-    {test, is_eq_exact, {f, 608}, [{x, 0}, {atom, true}]}.
     {test_heap, 2, 0}.
-    {put_list, {y, 6}, {y, 8}, {x, 0}}.
-    {move, {x, 0}, {y, 10}}.
-    {move, {literal, [[42, 42]]}, {x, 0}}.
-    {move, {y, 5}, {x, 1}}.
-    {move, {y, 6}, {x, 2}}.
-    {move, {y, 10}, {x, 3}}.
-    {move, {y, 4}, {x, 4}}.
-    {call_fun, 4}.
-    {deallocate, 11}.
-    return.
-  {label, 608}.
-    {move, {y, 9}, {x, 0}}.
-    {test, is_eq_exact, {f, 609}, [{x, 0}, {atom, false}]}.
-    {test_heap, 2, 0}.
-    {put_list, {y, 6}, {y, 8}, {x, 0}}.
-    {move, {x, 0}, {y, 10}}.
-    {move, {y, 10}, {x, 0}}.
-    {deallocate, 11}.
-    return.
-  {label, 609}.
-    {move, {y, 9}, {x, 0}}.
-    {case_end, {x, 0}}.
-
-{function, '__bp_tpl_15---t/2-fun-0--fun-6--fun-8-', 8, 612}.
-  {label, 611}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_15---t/2-fun-0--fun-6--fun-8-'}, 8}.
-  {label, 612}.
-    {allocate, 11, 8}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}]}}.
-    {move, {x, 0}, {y, 7}}.
-    {move, {x, 1}, {y, 8}}.
-    {move, {x, 2}, {y, 0}}.
-    {move, {x, 3}, {y, 1}}.
-    {move, {x, 4}, {y, 2}}.
-    {move, {x, 5}, {y, 3}}.
-    {move, {x, 6}, {y, 4}}.
-    {move, {x, 7}, {y, 5}}.
-    {move, {y, 0}, {x, 0}}.
-    {move, {y, 7}, {x, 1}}.
-    {call_ext, 2, {extfunc, filename, join, 2}}.
-    {move, {x, 0}, {y, 9}}.
-    {move, {y, 9}, {y, 6}}.
-    {jump, {f, 616}}.
-  {label, 616}.
-    {move, {y, 6}, {x, 0}}.
-    {move, {y, 1}, {x, 1}}.
-    {call_fun, 1}.
-    {move, {x, 0}, {y, 9}}.
-    {move, {y, 9}, {x, 0}}.
-    {test, is_eq_exact, {f, 618}, [{x, 0}, {atom, true}]}.
-    {move, {y, 5}, {x, 0}}.
-    {move, {y, 7}, {x, 1}}.
-    {move, {y, 4}, {x, 2}}.
-    {call_fun, 2}.
-    {move, {x, 0}, {y, 10}}.
-    {move, {y, 3}, {x, 0}}.
-    {move, {y, 6}, {x, 1}}.
-    {move, {y, 10}, {x, 2}}.
-    {move, {y, 8}, {x, 3}}.
-    {move, {y, 2}, {x, 4}}.
-    {call_fun, 4}.
-    {deallocate, 11}.
-    return.
-  {label, 618}.
-    {move, {y, 9}, {x, 0}}.
-    {test, is_eq_exact, {f, 619}, [{x, 0}, {atom, false}]}.
-    {move, {y, 8}, {x, 0}}.
-    {deallocate, 11}.
-    return.
-  {label, 619}.
-    {move, {y, 9}, {x, 0}}.
-    {case_end, {x, 0}}.
-
-{function, '__bp_tpl_15---t/2-fun-0--fun-6--fun-9-', 8, 638}.
-  {label, 637}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_15---t/2-fun-0--fun-6--fun-9-'}, 8}.
-  {label, 638}.
-    {allocate, 11, 8}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}]}}.
+    {put_list, {y, 1}, nil, {x, 0}}.
     {move, {x, 0}, {y, 8}}.
-    {move, {x, 1}, {y, 9}}.
-    {move, {x, 2}, {y, 0}}.
-    {move, {x, 3}, {y, 1}}.
-    {move, {x, 4}, {y, 2}}.
-    {move, {x, 5}, {y, 3}}.
-    {move, {x, 6}, {y, 4}}.
-    {move, {x, 7}, {y, 5}}.
-    {move, {y, 0}, {x, 0}}.
+    {move, {literal, [126, 116, 112]}, {x, 0}}.
     {move, {y, 8}, {x, 1}}.
-    {call_ext, 2, {extfunc, filename, join, 2}}.
-    {move, {x, 0}, {y, 10}}.
-    {move, {y, 10}, {y, 6}}.
-    {jump, {f, 642}}.
-  {label, 642}.
-    {move, {y, 2}, {x, 0}}.
-    {move, {y, 8}, {x, 1}}.
-    {move, {y, 1}, {x, 2}}.
-    {call_fun, 2}.
-    {move, {x, 0}, {y, 10}}.
-    {move, {y, 10}, {y, 7}}.
-    {jump, {f, 644}}.
-  {label, 644}.
-    {move, {y, 3}, {x, 0}}.
-    {test, is_eq_exact, {f, 646}, [{x, 0}, nil]}.
-    {test_heap, 2, 0}.
-    {put_list, {y, 7}, {y, 9}, {x, 0}}.
-    {move, {x, 0}, {y, 10}}.
-    {move, {y, 10}, {x, 0}}.
-    {deallocate, 11}.
-    return.
-  {label, 646}.
-    {move, {y, 6}, {x, 0}}.
-    {move, {y, 4}, {x, 1}}.
-    {call_fun, 1}.
-    {move, {x, 0}, {y, 10}}.
-    {move, {y, 10}, {x, 0}}.
-    {test, is_eq_exact, {f, 649}, [{x, 0}, {atom, true}]}.
-    {move, {y, 3}, {x, 0}}.
-    {move, {y, 6}, {x, 1}}.
-    {move, {y, 7}, {x, 2}}.
-    {move, {y, 9}, {x, 3}}.
-    {move, {y, 5}, {x, 4}}.
-    {call_fun, 4}.
-    {deallocate, 11}.
-    return.
-  {label, 649}.
-    {move, {y, 10}, {x, 0}}.
-    {test, is_eq_exact, {f, 650}, [{x, 0}, {atom, false}]}.
-    {move, {y, 9}, {x, 0}}.
-    {deallocate, 11}.
-    return.
-  {label, 650}.
-    {move, {y, 10}, {x, 0}}.
-    {case_end, {x, 0}}.
-
-{function, '__bp_tpl_15--t/2-fun-0--fun-6-', 8, 594}.
-  {label, 593}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_15--t/2-fun-0--fun-6-'}, 8}.
-  {label, 594}.
-    {allocate, 19, 8}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}, {y, 11}, {y, 12}, {y, 13}, {y, 14}, {y, 15}, {y, 16}, {y, 17}, {y, 18}]}}.
-    {move, {x, 0}, {y, 9}}.
-    {move, {x, 1}, {y, 10}}.
-    {move, {x, 2}, {y, 11}}.
-    {move, {x, 3}, {y, 12}}.
-    {move, {x, 4}, {y, 0}}.
-    {move, {x, 5}, {y, 1}}.
-    {move, {x, 6}, {y, 2}}.
-    {move, {x, 7}, {y, 3}}.
-    {test_heap, {alloc, [{words, 4}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 594}, 1, 0, {x, 0}, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
-    {move, {x, 0}, {y, 4}}.
-    {move, {y, 9}, {x, 0}}.
-    {test, is_eq_exact, {f, 596}, [{x, 0}, nil]}.
-    {move, {y, 11}, {x, 0}}.
-    {test, is_eq_exact, {f, 596}, [{x, 0}, nil]}.
-    {move, {y, 12}, {x, 0}}.
-    {deallocate, 19}.
-    return.
-  {label, 596}.
-    {move, {y, 9}, {x, 0}}.
-    {test, is_eq_exact, {f, 597}, [{x, 0}, nil]}.
-    {test_heap, 2, 0}.
-    {put_list, {y, 11}, {y, 12}, {x, 0}}.
-    {move, {x, 0}, {y, 13}}.
-    {move, {y, 13}, {x, 0}}.
-    {deallocate, 19}.
-    return.
-  {label, 597}.
-    {move, {y, 9}, {x, 0}}.
-    {test, is_eq_exact, {f, 598}, [{x, 0}, {literal, [[42, 42]]}]}.
-    {test_heap, {alloc, [{words, 5}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 600}, 2, 0, {x, 0}, {list, [{y, 10}, {y, 0}, {y, 11}, {y, 1}, {y, 4}]}}.
-    {move, {x, 0}, {y, 13}}.
-    {move, {y, 10}, {x, 0}}.
-    {move, {literal, [42]}, {x, 1}}.
-    {move, {y, 2}, {x, 2}}.
-    {call_fun, 2}.
-    {move, {x, 0}, {y, 14}}.
-    {move, {y, 13}, {x, 0}}.
-    {move, {y, 12}, {x, 1}}.
-    {move, {y, 14}, {x, 2}}.
-    {call_ext_last, 3, {extfunc, lists, foldl, 3}, 19}.
-  {label, 598}.
-    {move, {y, 9}, {x, 0}}.
-    {test, is_nonempty_list, {f, 610}, [{x, 0}]}.
-    {get_list, {x, 0}, {y, 13}, {y, 14}}.
-    {move, {y, 13}, {x, 0}}.
-    {test, is_eq_exact, {f, 610}, [{x, 0}, {literal, [42, 42]}]}.
-    {move, {y, 14}, {y, 5}}.
-    {move, {y, 9}, {y, 6}}.
-    {test_heap, {alloc, [{words, 6}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 612}, 3, 0, {x, 0}, {list, [{y, 10}, {y, 1}, {y, 4}, {y, 6}, {y, 0}, {y, 11}]}}.
-    {move, {x, 0}, {y, 15}}.
-    {move, {y, 5}, {x, 0}}.
-    {move, {y, 10}, {x, 1}}.
-    {move, {y, 11}, {x, 2}}.
-    {move, {y, 12}, {x, 3}}.
-    {move, {y, 0}, {x, 4}}.
-    {move, {y, 1}, {x, 5}}.
-    {move, {y, 2}, {x, 6}}.
-    {move, {y, 3}, {x, 7}}.
-    {call, 8, {f, 594}}.
-    {move, {x, 0}, {y, 16}}.
-    {move, {y, 10}, {x, 0}}.
-    {move, {literal, [42]}, {x, 1}}.
-    {move, {y, 2}, {x, 2}}.
-    {call_fun, 2}.
-    {move, {x, 0}, {y, 17}}.
-    {move, {y, 15}, {x, 0}}.
-    {move, {y, 16}, {x, 1}}.
-    {move, {y, 17}, {x, 2}}.
-    {call_ext_last, 3, {extfunc, lists, foldl, 3}, 19}.
-  {label, 610}.
-    {move, {y, 9}, {x, 0}}.
-    {test, is_nonempty_list, {f, 620}, [{x, 0}]}.
-    {get_list, {x, 0}, {y, 13}, {y, 14}}.
-    {move, {y, 13}, {y, 6}}.
-    {move, {y, 14}, {y, 5}}.
-    {move, {y, 6}, {x, 0}}.
-    {move, {y, 3}, {x, 1}}.
-    {call_fun, 1}.
-    {move, {x, 0}, {y, 15}}.
-    {move, {y, 15}, {x, 0}}.
-    {test, is_eq_exact, {f, 622}, [{x, 0}, {atom, false}]}.
-    {move, {y, 10}, {x, 0}}.
-    {move, {y, 6}, {x, 1}}.
-    {call_ext, 2, {extfunc, filename, join, 2}}.
-    {move, {x, 0}, {y, 16}}.
-    {move, {y, 16}, {y, 7}}.
-    {jump, {f, 624}}.
-  {label, 624}.
-    {move, {y, 11}, {x, 0}}.
-    {move, {y, 6}, {x, 1}}.
-    {move, {y, 0}, {x, 2}}.
-    {call_fun, 2}.
-    {move, {x, 0}, {y, 16}}.
-    {move, {y, 16}, {y, 8}}.
-    {jump, {f, 626}}.
-  {label, 626}.
-    {move, {y, 5}, {x, 0}}.
-    {test, is_eq_exact, {f, 628}, [{x, 0}, nil]}.
-    {move, {y, 7}, {x, 0}}.
-    {call_ext, 1, {extfunc, file, read_link_info, 1}}.
-    {move, {x, 0}, {y, 16}}.
-    {move, {y, 16}, {x, 0}}.
-    {test, is_tuple, {f, 630}, [{x, 0}]}.
-    {test, test_arity, {f, 630}, [{x, 0}, 2]}.
-    {get_tuple_element, {x, 0}, 0, {y, 17}}.
-    {move, {y, 17}, {x, 0}}.
-    {test, is_eq_exact, {f, 630}, [{x, 0}, {atom, ok}]}.
-    {test_heap, 2, 0}.
-    {put_list, {y, 8}, {y, 12}, {x, 0}}.
-    {move, {x, 0}, {y, 18}}.
-    {move, {y, 18}, {x, 0}}.
-    {deallocate, 19}.
-    return.
-  {label, 630}.
-    {move, {y, 12}, {x, 0}}.
-    {deallocate, 19}.
-    return.
-  {label, 628}.
-    {move, {y, 7}, {x, 0}}.
-    {call_ext, 1, {extfunc, filelib, is_dir, 1}}.
-    {move, {x, 0}, {y, 16}}.
-    {move, {y, 16}, {x, 0}}.
-    {test, is_eq_exact, {f, 634}, [{x, 0}, {atom, true}]}.
-    {move, {y, 5}, {x, 0}}.
-    {move, {y, 7}, {x, 1}}.
-    {move, {y, 8}, {x, 2}}.
-    {move, {y, 12}, {x, 3}}.
-    {move, {y, 0}, {x, 4}}.
-    {move, {y, 1}, {x, 5}}.
-    {move, {y, 2}, {x, 6}}.
-    {move, {y, 3}, {x, 7}}.
-    {call_last, 8, {f, 594}, 19}.
-  {label, 634}.
-    {move, {y, 16}, {x, 0}}.
-    {test, is_eq_exact, {f, 635}, [{x, 0}, {atom, false}]}.
-    {move, {y, 12}, {x, 0}}.
-    {deallocate, 19}.
-    return.
-  {label, 635}.
-    {move, {y, 16}, {x, 0}}.
-    {case_end, {x, 0}}.
-  {label, 622}.
-    {move, {y, 15}, {x, 0}}.
-    {test, is_eq_exact, {f, 636}, [{x, 0}, {atom, true}]}.
-    {test_heap, {alloc, [{words, 6}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 638}, 4, 0, {x, 0}, {list, [{y, 10}, {y, 0}, {y, 11}, {y, 5}, {y, 1}, {y, 4}]}}.
-    {move, {x, 0}, {y, 16}}.
-    {move, {y, 10}, {x, 0}}.
-    {move, {y, 6}, {x, 1}}.
-    {move, {y, 2}, {x, 2}}.
-    {call_fun, 2}.
-    {move, {x, 0}, {y, 17}}.
-    {move, {y, 16}, {x, 0}}.
-    {move, {y, 12}, {x, 1}}.
-    {move, {y, 17}, {x, 2}}.
-    {call_ext_last, 3, {extfunc, lists, foldl, 3}, 19}.
-  {label, 636}.
-    {move, {y, 15}, {x, 0}}.
-    {case_end, {x, 0}}.
-  {label, 620}.
-    {move, {y, 9}, {x, 0}}.
-    {move, {y, 10}, {x, 1}}.
-    {move, {y, 11}, {x, 2}}.
-    {move, {y, 12}, {x, 3}}.
-    {move, {y, 0}, {x, 4}}.
-    {move, {y, 1}, {x, 5}}.
-    {move, {y, 2}, {x, 6}}.
-    {move, {y, 3}, {x, 7}}.
-    {deallocate, 19}.
-    {jump, {f, 593}}.
-
-{function, '__bp_tpl_15-t/2-fun-0-', 2, 525}.
-  {label, 524}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_15-t/2-fun-0-'}, 2}.
-  {label, 525}.
-    {allocate, 16, 2}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}, {y, 11}, {y, 12}, {y, 13}, {y, 14}, {y, 15}]}}.
-    {move, {x, 0}, {y, 7}}.
-    {move, {x, 1}, {y, 8}}.
+    {call_ext, 2, {extfunc, io_lib, format, 2}}.
+    {move, {x, 0}, {y, 8}}.
     {move, {y, 8}, {x, 0}}.
-    {call_ext, 1, {extfunc, unicode, characters_to_list, 1}}.
-    {move, {x, 0}, {y, 9}}.
-    {move, {y, 9}, {y, 0}}.
-    {jump, {f, 529}}.
-  {label, 529}.
-    {move, {y, 7}, {x, 0}}.
-    {call_ext, 1, {extfunc, unicode, characters_to_list, 1}}.
-    {move, {x, 0}, {y, 9}}.
-    {move, {y, 9}, {y, 1}}.
-    {jump, {f, 531}}.
-  {label, 531}.
-    {move, nil, {y, 9}}.
-    {move, {y, 1}, {x, 0}}.
-    {move, {literal, [47]}, {x, 1}}.
-    {move, {atom, all}, {x, 2}}.
-    {call_ext, 3, {extfunc, string, split, 3}}.
-    {move, {x, 0}, {y, 11}}.
-    {move, {y, 11}, {y, 10}}.
-  {label, 533}.
-    {move, {y, 10}, {x, 0}}.
-    {test, is_nonempty_list, {f, 534}, [{x, 0}]}.
-    {get_list, {x, 0}, {y, 12}, {y, 10}}.
-    {move, {y, 12}, {y, 2}}.
-    {move, {y, 2}, {x, 0}}.
-    {move, nil, {x, 1}}.
-    {call_ext, 2, {extfunc, erlang, '=/=', 2}}.
-    {move, {x, 0}, {y, 13}}.
-    {move, {y, 13}, {x, 0}}.
-    {test, is_eq_exact, {f, 536}, [{x, 0}, {atom, true}]}.
-    {jump, {f, 538}}.
-  {label, 536}.
-    {move, {y, 13}, {x, 0}}.
-    {test, is_eq_exact, {f, 537}, [{x, 0}, {atom, false}]}.
-    {jump, {f, 533}}.
-  {label, 537}.
-    {test_heap, 3, 0}.
-    {put_tuple2, {x, 0}, {list, [{atom, bad_filter}, {y, 13}]}}.
-    {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 538}.
-    {move, {y, 2}, {x, 0}}.
-    {move, {literal, [46]}, {x, 1}}.
-    {test, is_ne_exact, {f, 533}, [{x, 0}, {x, 1}]}.
-    {test_heap, 2, 0}.
-    {put_list, {y, 2}, {y, 9}, {x, 0}}.
-    {move, {x, 0}, {y, 9}}.
-    {jump, {f, 533}}.
-  {label, 534}.
-    {move, {y, 10}, {x, 0}}.
-    {test, is_nil, {f, 535}, [{x, 0}]}.
-    {jump, {f, 532}}.
-  {label, 535}.
-    {test_heap, 3, 0}.
-    {put_tuple2, {x, 0}, {list, [{atom, bad_generator}, {y, 10}]}}.
-    {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 532}.
-    {move, {y, 9}, {x, 0}}.
-    {call_ext, 1, {extfunc, lists, reverse, 1}}.
-    {move, {x, 0}, {y, 10}}.
-    {move, {y, 10}, {y, 2}}.
-    {jump, {f, 540}}.
-  {label, 540}.
-    {move, {literal, [47]}, {x, 0}}.
-    {move, {y, 1}, {x, 1}}.
-    {call_ext, 2, {extfunc, lists, suffix, 2}}.
-    {move, {x, 0}, {y, 9}}.
-    {move, {y, 9}, {y, 1}}.
-    {jump, {f, 542}}.
-  {label, 542}.
-    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 544}, 5, 0, {x, 0}, {list, []}}.
-    {move, {x, 0}, {y, 9}}.
-    {move, {y, 9}, {y, 3}}.
-    {jump, {f, 551}}.
-  {label, 551}.
-    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 553}, 6, 0, {x, 0}, {list, []}}.
-    {move, {x, 0}, {y, 9}}.
-    {move, {y, 9}, {y, 4}}.
-    {jump, {f, 561}}.
-  {label, 561}.
-    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 563}, 7, 0, {x, 0}, {list, []}}.
-    {move, {x, 0}, {y, 9}}.
-    {move, {y, 9}, {y, 5}}.
-    {jump, {f, 585}}.
-  {label, 585}.
-    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 587}, 8, 0, {x, 0}, {list, []}}.
-    {move, {x, 0}, {y, 9}}.
-    {move, {y, 9}, {y, 6}}.
-    {jump, {f, 592}}.
-  {label, 592}.
-    {test_heap, {alloc, [{words, 4}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 594}, 1, 0, {x, 0}, {list, [{y, 6}, {y, 3}, {y, 5}, {y, 4}]}}.
-    {move, {x, 0}, {y, 9}}.
-    {move, {y, 9}, {y, 4}}.
-    {jump, {f, 652}}.
-  {label, 652}.
-    {move, nil, {y, 9}}.
-    {move, {y, 2}, {x, 0}}.
-    {move, {y, 0}, {x, 1}}.
-    {move, nil, {x, 2}}.
-    {move, nil, {x, 3}}.
-    {move, {y, 4}, {x, 4}}.
-    {call_fun, 4}.
-    {move, {x, 0}, {y, 11}}.
-    {move, {y, 11}, {x, 0}}.
-    {call_ext, 1, {extfunc, lists, usort, 1}}.
-    {move, {x, 0}, {y, 11}}.
-    {move, {y, 11}, {y, 10}}.
-  {label, 654}.
-    {move, {y, 10}, {x, 0}}.
-    {test, is_nonempty_list, {f, 655}, [{x, 0}]}.
-    {get_list, {x, 0}, {y, 12}, {y, 10}}.
-    {move, {y, 12}, {y, 2}}.
-    {move, {y, 1}, {x, 0}}.
-    {call_ext, 1, {extfunc, erlang, 'not', 1}}.
-    {move, {x, 0}, {y, 14}}.
-    {move, {y, 14}, {x, 0}}.
-    {test, is_eq_exact, {f, 657}, [{x, 0}, {atom, false}]}.
-    {move, {y, 0}, {x, 0}}.
-    {move, {y, 2}, {x, 1}}.
-    {call_ext, 2, {extfunc, filename, join, 2}}.
-    {move, {x, 0}, {y, 15}}.
-    {move, {y, 15}, {x, 0}}.
-    {move, {y, 3}, {x, 1}}.
-    {call_fun, 1}.
-    {move, {x, 0}, {y, 15}}.
-    {move, {y, 15}, {y, 13}}.
-    {jump, {f, 659}}.
-  {label, 657}.
-    {move, {y, 14}, {x, 0}}.
-    {test, is_eq_exact, {f, 658}, [{x, 0}, {atom, true}]}.
-    {move, {atom, true}, {y, 13}}.
-    {jump, {f, 659}}.
-  {label, 658}.
-    {test_heap, 3, 0}.
-    {put_tuple2, {x, 0}, {list, [{atom, badarg}, {y, 14}]}}.
-    {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 659}.
-    {move, {y, 13}, {x, 0}}.
-    {test, is_eq_exact, {f, 660}, [{x, 0}, {atom, true}]}.
-    {jump, {f, 662}}.
-  {label, 660}.
-    {move, {y, 13}, {x, 0}}.
-    {test, is_eq_exact, {f, 661}, [{x, 0}, {atom, false}]}.
-    {jump, {f, 654}}.
-  {label, 661}.
-    {test_heap, 3, 0}.
-    {put_tuple2, {x, 0}, {list, [{atom, bad_filter}, {y, 13}]}}.
-    {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 662}.
-    {move, {y, 2}, {x, 0}}.
     {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
-    {move, {x, 0}, {y, 13}}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_eq_exact, {f, 464}, [{x, 0}, {atom, error}]}.
+    {move, {atom, std@failure@@HostErrorName__v__error}, {y, 9}}.
+    {jump, {f, 463}}.
+  {label, 464}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_eq_exact, {f, 465}, [{x, 0}, {atom, throw}]}.
+    {move, {atom, std@failure@@HostErrorName__v__throw}, {y, 9}}.
+    {jump, {f, 463}}.
+  {label, 465}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_eq_exact, {f, 466}, [{x, 0}, {atom, exit}]}.
+    {move, {atom, std@failure@@HostErrorName__v__exit}, {y, 9}}.
+    {jump, {f, 463}}.
+  {label, 466}.
+    {move, {y, 0}, {x, 0}}.
+    {case_end, {x, 0}}.
+  {label, 463}.
     {test_heap, 2, 0}.
-    {put_list, {y, 13}, {y, 9}, {x, 0}}.
-    {move, {x, 0}, {y, 9}}.
-    {jump, {f, 654}}.
-  {label, 655}.
-    {move, {y, 10}, {x, 0}}.
-    {test, is_nil, {f, 656}, [{x, 0}]}.
-    {jump, {f, 653}}.
-  {label, 656}.
-    {test_heap, 3, 0}.
-    {put_tuple2, {x, 0}, {list, [{atom, bad_generator}, {y, 10}]}}.
-    {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 653}.
-    {move, {y, 9}, {x, 0}}.
-    {call_ext, 1, {extfunc, lists, reverse, 1}}.
+    {put_list, {y, 2}, nil, {x, 0}}.
     {move, {x, 0}, {y, 10}}.
-    {test_heap, 3, 0}.
-    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 10}]}}.
-    {move, {x, 0}, {y, 9}}.
-    {move, {y, 9}, {x, 0}}.
-    {deallocate, 16}.
-    return.
-
-{function, '__bp_tpl_15', 2, 521}.
-  {label, 520}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_15'}, 2}.
-  {label, 521}.
-    {allocate, 3, 2}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
-    {move, {x, 0}, {y, 0}}.
-    {move, {x, 1}, {y, 1}}.
-    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 525}, 9, 0, {x, 0}, {list, []}}.
-    {move, {x, 0}, {y, 2}}.
-    {move, {y, 0}, {x, 0}}.
-    {move, {y, 1}, {x, 1}}.
-    {move, {y, 2}, {x, 2}}.
-    {call_fun, 2}.
-    {deallocate, 3}.
-    return.
-
-{function, '__bp_tpl_16--t/1-fun-0--fun-1-', 1, 674}.
-  {label, 673}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_16--t/1-fun-0--fun-1-'}, 1}.
-  {label, 674}.
-    {allocate, 3, 1}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
-    {move, {x, 0}, {y, 1}}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 678}, [{x, 0}, {atom, enoent}]}.
-    {move, {literal, <<"notfound">>}, {y, 2}}.
-    {jump, {f, 677}}.
-  {label, 678}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 679}, [{x, 0}, {atom, eacces}]}.
-    {move, {literal, <<"denied">>}, {y, 2}}.
-    {jump, {f, 677}}.
-  {label, 679}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 680}, [{x, 0}, {atom, eperm}]}.
-    {move, {literal, <<"denied">>}, {y, 2}}.
-    {jump, {f, 677}}.
-  {label, 680}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 681}, [{x, 0}, {atom, eisdir}]}.
-    {move, {literal, <<"isdir">>}, {y, 2}}.
-    {jump, {f, 677}}.
-  {label, 681}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 682}, [{x, 0}, {atom, enotdir}]}.
-    {move, {literal, <<"notdir">>}, {y, 2}}.
-    {jump, {f, 677}}.
-  {label, 682}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 683}, [{x, 0}, {atom, eexist}]}.
-    {move, {literal, <<"exists">>}, {y, 2}}.
-    {jump, {f, 677}}.
-  {label, 683}.
-    {move, {literal, <<"other">>}, {y, 2}}.
-    {jump, {f, 677}}.
-  {label, 677}.
-    {move, {y, 2}, {y, 0}}.
-    {jump, {f, 686}}.
-  {label, 686}.
-    {test_heap, 2, 0}.
-    {put_list, {y, 1}, nil, {x, 0}}.
-    {move, {x, 0}, {y, 2}}.
     {move, {literal, [126, 116, 112]}, {x, 0}}.
-    {move, {y, 2}, {x, 1}}.
+    {move, {y, 10}, {x, 1}}.
     {call_ext, 2, {extfunc, io_lib, format, 2}}.
-    {move, {x, 0}, {y, 2}}.
+    {move, {x, 0}, {y, 10}}.
+    {move, {y, 10}, {x, 0}}.
+    {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
+    {move, {x, 0}, {y, 10}}.
     {test_heap, 6, 0}.
-    {put_list, {y, 2}, nil, {x, 0}}.
-    {put_list, {literal, <<"|">>}, {x, 0}, {x, 0}}.
-    {put_list, {y, 0}, {x, 0}, {x, 0}}.
-    {move, {x, 0}, {y, 2}}.
-    {move, {y, 2}, {x, 0}}.
-    {call_ext_last, 1, {extfunc, unicode, characters_to_binary, 1}, 3}.
-
-{function, '__bp_tpl_16-t/1-fun-0-', 1, 670}.
-  {label, 669}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_16-t/1-fun-0-'}, 1}.
-  {label, 670}.
-    {allocate, 7, 1}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}]}}.
-    {move, {x, 0}, {y, 2}}.
-    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 674}, 0, 0, {x, 0}, {list, []}}.
-    {move, {x, 0}, {y, 3}}.
-    {move, {y, 3}, {y, 0}}.
-    {jump, {f, 688}}.
-  {label, 688}.
-    {move, {y, 2}, {x, 0}}.
-    {move, {literal, [read, binary, raw, read_ahead]}, {x, 1}}.
-    {call_ext, 2, {extfunc, file, open, 2}}.
-    {move, {x, 0}, {y, 3}}.
-    {move, {y, 3}, {x, 0}}.
-    {test, is_tuple, {f, 690}, [{x, 0}]}.
-    {test, test_arity, {f, 690}, [{x, 0}, 2]}.
-    {get_tuple_element, {x, 0}, 0, {y, 4}}.
-    {get_tuple_element, {x, 0}, 1, {y, 5}}.
-    {move, {y, 4}, {x, 0}}.
-    {test, is_eq_exact, {f, 690}, [{x, 0}, {atom, ok}]}.
-    {move, {y, 5}, {y, 1}}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@failure@@HostError}, {y, 8}, {literal, <<"host">>}, {y, 9}, {y, 10}]}}.
+    {move, {x, 0}, {y, 8}}.
     {test_heap, 3, 0}.
-    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 1}]}}.
-    {move, {x, 0}, {y, 6}}.
-    {move, {y, 6}, {x, 0}}.
-    {deallocate, 7}.
-    return.
-  {label, 690}.
-    {move, {y, 3}, {x, 0}}.
-    {test, is_tuple, {f, 691}, [{x, 0}]}.
-    {test, test_arity, {f, 691}, [{x, 0}, 2]}.
-    {get_tuple_element, {x, 0}, 0, {y, 4}}.
-    {get_tuple_element, {x, 0}, 1, {y, 5}}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 8}]}}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {y, 8}, {y, 4}}.
+    {jump, {f, 461}}.
+  {label, 461}.
+  {label, 406}.
     {move, {y, 4}, {x, 0}}.
-    {test, is_eq_exact, {f, 691}, [{x, 0}, {atom, error}]}.
-    {move, {y, 5}, {y, 1}}.
-    {move, {y, 1}, {x, 0}}.
-    {move, {y, 0}, {x, 1}}.
-    {call_fun, 1}.
-    {move, {x, 0}, {y, 6}}.
-    {test_heap, 3, 0}.
-    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 6}]}}.
-    {move, {x, 0}, {y, 6}}.
-    {move, {y, 6}, {x, 0}}.
-    {deallocate, 7}.
+    {deallocate, 12}.
     return.
-  {label, 691}.
-    {move, {y, 3}, {x, 0}}.
-    {case_end, {x, 0}}.
 
-{function, '__bp_tpl_16', 1, 666}.
-  {label, 665}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_16'}, 1}.
-  {label, 666}.
-    {allocate, 2, 1}.
+{function, '-bp_at-', 2, 474}.
+  {label, 473}.
+    {line, [{location, "std@io@fs.erl", 19}]}.
+    {func_info, {atom, std@io@fs}, {atom, '-bp_at-'}, 2}.
+  {label, 474}.
+    {allocate, 2, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
-    {move, {x, 0}, {y, 0}}.
-    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 670}, 1, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 1}}.
-    {move, {y, 0}, {x, 0}}.
+    {move, {x, 1}, {y, 0}}.
+    {move, {y, 1}, {x, 0}}.
+    {call_ext, 1, {extfunc, erlang, length, 1}}.
+    {test, is_ge, {f, 476}, [{y, 0}, {integer, 0}]}.
+    {test, is_lt, {f, 475}, [{y, 0}, {x, 0}]}.
+    {gc_bif, '+', {f, 0}, 0, [{y, 0}, {integer, 1}], {x, 0}}.
     {move, {y, 1}, {x, 1}}.
-    {call_fun, 1}.
-    {deallocate, 2}.
-    return.
-
-{function, '__bp_tpl_17--t/1-fun-0--fun-1-', 1, 703}.
-  {label, 702}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_17--t/1-fun-0--fun-1-'}, 1}.
-  {label, 703}.
-    {allocate, 3, 1}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
-    {move, {x, 0}, {y, 1}}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 707}, [{x, 0}, {atom, enoent}]}.
-    {move, {literal, <<"notfound">>}, {y, 2}}.
-    {jump, {f, 706}}.
-  {label, 707}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 708}, [{x, 0}, {atom, eacces}]}.
-    {move, {literal, <<"denied">>}, {y, 2}}.
-    {jump, {f, 706}}.
-  {label, 708}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 709}, [{x, 0}, {atom, eperm}]}.
-    {move, {literal, <<"denied">>}, {y, 2}}.
-    {jump, {f, 706}}.
-  {label, 709}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 710}, [{x, 0}, {atom, eisdir}]}.
-    {move, {literal, <<"isdir">>}, {y, 2}}.
-    {jump, {f, 706}}.
-  {label, 710}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 711}, [{x, 0}, {atom, enotdir}]}.
-    {move, {literal, <<"notdir">>}, {y, 2}}.
-    {jump, {f, 706}}.
-  {label, 711}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 712}, [{x, 0}, {atom, eexist}]}.
-    {move, {literal, <<"exists">>}, {y, 2}}.
-    {jump, {f, 706}}.
-  {label, 712}.
-    {move, {literal, <<"other">>}, {y, 2}}.
-    {jump, {f, 706}}.
-  {label, 706}.
-    {move, {y, 2}, {y, 0}}.
-    {jump, {f, 715}}.
-  {label, 715}.
-    {test_heap, 2, 0}.
-    {put_list, {y, 1}, nil, {x, 0}}.
-    {move, {x, 0}, {y, 2}}.
-    {move, {literal, [126, 116, 112]}, {x, 0}}.
-    {move, {y, 2}, {x, 1}}.
-    {call_ext, 2, {extfunc, io_lib, format, 2}}.
-    {move, {x, 0}, {y, 2}}.
-    {test_heap, 6, 0}.
-    {put_list, {y, 2}, nil, {x, 0}}.
-    {put_list, {literal, <<"|">>}, {x, 0}, {x, 0}}.
-    {put_list, {y, 0}, {x, 0}, {x, 0}}.
-    {move, {x, 0}, {y, 2}}.
-    {move, {y, 2}, {x, 0}}.
-    {call_ext_last, 1, {extfunc, unicode, characters_to_binary, 1}, 3}.
-
-{function, '__bp_tpl_17-t/1-fun-0-', 1, 699}.
-  {label, 698}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_17-t/1-fun-0-'}, 1}.
-  {label, 699}.
-    {allocate, 7, 1}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}]}}.
-    {move, {x, 0}, {y, 2}}.
-    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 703}, 0, 0, {x, 0}, {list, []}}.
-    {move, {x, 0}, {y, 3}}.
-    {move, {y, 3}, {y, 0}}.
-    {jump, {f, 717}}.
-  {label, 717}.
-    {move, {y, 2}, {x, 0}}.
-    {move, {literal, [write, binary, raw]}, {x, 1}}.
-    {call_ext, 2, {extfunc, file, open, 2}}.
-    {move, {x, 0}, {y, 3}}.
-    {move, {y, 3}, {x, 0}}.
-    {test, is_tuple, {f, 719}, [{x, 0}]}.
-    {test, test_arity, {f, 719}, [{x, 0}, 2]}.
-    {get_tuple_element, {x, 0}, 0, {y, 4}}.
-    {get_tuple_element, {x, 0}, 1, {y, 5}}.
-    {move, {y, 4}, {x, 0}}.
-    {test, is_eq_exact, {f, 719}, [{x, 0}, {atom, ok}]}.
-    {move, {y, 5}, {y, 1}}.
-    {test_heap, 3, 0}.
-    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 1}]}}.
-    {move, {x, 0}, {y, 6}}.
-    {move, {y, 6}, {x, 0}}.
-    {deallocate, 7}.
-    return.
-  {label, 719}.
-    {move, {y, 3}, {x, 0}}.
-    {test, is_tuple, {f, 720}, [{x, 0}]}.
-    {test, test_arity, {f, 720}, [{x, 0}, 2]}.
-    {get_tuple_element, {x, 0}, 0, {y, 4}}.
-    {get_tuple_element, {x, 0}, 1, {y, 5}}.
-    {move, {y, 4}, {x, 0}}.
-    {test, is_eq_exact, {f, 720}, [{x, 0}, {atom, error}]}.
-    {move, {y, 5}, {y, 1}}.
-    {move, {y, 1}, {x, 0}}.
-    {move, {y, 0}, {x, 1}}.
-    {call_fun, 1}.
-    {move, {x, 0}, {y, 6}}.
-    {test_heap, 3, 0}.
-    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 6}]}}.
-    {move, {x, 0}, {y, 6}}.
-    {move, {y, 6}, {x, 0}}.
-    {deallocate, 7}.
-    return.
-  {label, 720}.
-    {move, {y, 3}, {x, 0}}.
-    {case_end, {x, 0}}.
-
-{function, '__bp_tpl_17', 1, 695}.
-  {label, 694}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_17'}, 1}.
-  {label, 695}.
-    {allocate, 2, 1}.
-    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
-    {move, {x, 0}, {y, 0}}.
-    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 699}, 1, 0, {x, 0}, {list, []}}.
-    {move, {x, 0}, {y, 1}}.
-    {move, {y, 0}, {x, 0}}.
+    {call_ext_last, 2, {extfunc, lists, nth, 2}, 2}.
+  {label, 476}.
+    {gc_bif, '+', {f, 0}, 1, [{y, 0}, {x, 0}], {x, 0}}.
+    {test, is_ge, {f, 475}, [{x, 0}, {integer, 0}]}.
+    {gc_bif, '+', {f, 0}, 1, [{x, 0}, {integer, 1}], {x, 0}}.
     {move, {y, 1}, {x, 1}}.
-    {call_fun, 1}.
-    {deallocate, 2}.
-    return.
-
-{function, '-bp_field-', 2, 724}.
-  {label, 723}.
-    {line, [{location, "std@io@fs.erl", 33}]}.
-    {func_info, {atom, std@io@fs}, {atom, '-bp_field-'}, 2}.
-  {label, 724}.
-    {test, is_map, {f, 725}, [{x, 0}]}.
-    {move, {x, 0}, {x, 2}}.
-    {move, {x, 1}, {x, 0}}.
-    {move, {x, 2}, {x, 1}}.
-    {move, {atom, undefined}, {x, 2}}.
-    {call_ext_only, 3, {extfunc, maps, get, 3}}.
-  {label, 725}.
-    {test, is_tuple, {f, 726}, [{x, 0}]}.
-    {bif, element, {f, 728}, [{integer, 1}, {x, 0}], {x, 2}}.
-    {test, is_atom, {f, 728}, [{x, 2}]}.
-    {test_heap, 4, 3}.
-    {put_list, {x, 1}, nil, {x, 3}}.
-    {put_list, {x, 0}, {x, 3}, {x, 3}}.
-    {move, {x, 2}, {x, 0}}.
-    {move, {atom, '__bp_get'}, {x, 1}}.
-    {move, {x, 3}, {x, 2}}.
-    {call_ext_only, 3, {extfunc, erlang, apply, 3}}.
-  {label, 726}.
-    {test, is_eq_exact, {f, 728}, [{x, 1}, {atom, length}]}.
-    {test, is_list, {f, 727}, [{x, 0}]}.
-    {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
-    return.
-  {label, 727}.
-    {test, is_binary, {f, 728}, [{x, 0}]}.
-    {allocate, 0, 1}.
-    {call_ext, 1, {extfunc, unicode, characters_to_list, 1}}.
-    {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
-    {deallocate, 0}.
-    return.
-  {label, 728}.
+    {call_ext_last, 2, {extfunc, lists, nth, 2}, 2}.
+  {label, 475}.
     {move, {atom, undefined}, {x, 0}}.
-    return.
-
-{function, '__bp_tpl_18', 1, 730}.
-  {label, 729}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_18'}, 1}.
-  {label, 730}.
-    {allocate, 2, 1}.
-    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
-    {move, {x, 0}, {y, 0}}.
-    {move, {integer, 1}, {x, 0}}.
-    {move, nil, {x, 1}}.
-    {call_ext, 2, {extfunc, counters, new, 2}}.
-    {move, {x, 0}, {y, 1}}.
-    {test_heap, 4, 0}.
-    {put_tuple2, {x, 0}, {list, [{atom, mem}, {y, 0}, {y, 1}]}}.
-    {move, {x, 0}, {y, 1}}.
-    {move, {y, 1}, {x, 0}}.
     {deallocate, 2}.
     return.
 
-{function, '__bp_print', 1, 737}.
-  {label, 736}.
-    {line, [{location, "std@io@fs.erl", 35}]}.
+{function, '__bp_print', 1, 481}.
+  {label, 480}.
+    {line, [{location, "std@io@fs.erl", 19}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_print'}, 1}.
-  {label, 737}.
+  {label, 481}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 741}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 485}, 0, 0, {x, 0}, {list, []}}.
     {move, {y, 0}, {x, 1}}.
     {call_ext, 2, {extfunc, lists, map, 2}}.
     {move, {x, 0}, {x, 1}}.
@@ -7959,46 +8061,46 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {literal, <<"~ts~n">>}, {x, 0}}.
     {call_ext_last, 2, {extfunc, io, format, 2}, 1}.
 
-{function, '-bp_show_top-', 1, 741}.
-  {label, 740}.
-    {line, [{location, "std@io@fs.erl", 35}]}.
+{function, '-bp_show_top-', 1, 485}.
+  {label, 484}.
+    {line, [{location, "std@io@fs.erl", 19}]}.
     {func_info, {atom, std@io@fs}, {atom, '-bp_show_top-'}, 1}.
-  {label, 741}.
+  {label, 485}.
     {move, {atom, true}, {x, 1}}.
-    {call_only, 2, {f, 739}}.
+    {call_only, 2, {f, 483}}.
 
-{function, '-bp_show_elem-', 1, 743}.
-  {label, 742}.
-    {line, [{location, "std@io@fs.erl", 35}]}.
+{function, '-bp_show_elem-', 1, 487}.
+  {label, 486}.
+    {line, [{location, "std@io@fs.erl", 19}]}.
     {func_info, {atom, std@io@fs}, {atom, '-bp_show_elem-'}, 1}.
-  {label, 743}.
+  {label, 487}.
     {move, {atom, false}, {x, 1}}.
-    {call_only, 2, {f, 739}}.
+    {call_only, 2, {f, 483}}.
 
-{function, '__bp_show', 2, 739}.
-  {label, 738}.
-    {line, [{location, "std@io@fs.erl", 35}]}.
+{function, '__bp_show', 2, 483}.
+  {label, 482}.
+    {line, [{location, "std@io@fs.erl", 19}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_show'}, 2}.
-  {label, 739}.
+  {label, 483}.
     {allocate, 2, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_binary, {f, 751}, [{x, 0}]}.
-    {test, is_eq, {f, 750}, [{y, 1}, {atom, true}]}.
+    {test, is_binary, {f, 495}, [{x, 0}]}.
+    {test, is_eq, {f, 494}, [{y, 1}, {atom, true}]}.
     {move, {y, 0}, {x, 0}}.
     {deallocate, 2}.
     return.
-  {label, 750}.
+  {label, 494}.
     {move, {y, 0}, {x, 0}}.
     {call_ext, 1, {extfunc, unicode, characters_to_list, 1}}.
     {call_ext_last, 1, {extfunc, io_lib, write_string, 1}, 2}.
-  {label, 751}.
+  {label, 495}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_list, {f, 752}, [{x, 0}]}.
+    {test, is_list, {f, 496}, [{x, 0}]}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 743}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 487}, 0, 0, {x, 0}, {list, []}}.
     {move, {y, 0}, {x, 1}}.
     {call_ext, 2, {extfunc, lists, map, 2}}.
     {move, {x, 0}, {x, 1}}.
@@ -8010,42 +8112,42 @@ test "fs answers PermissionDenied for an OS permission error" {
     {put_list, {integer, 91}, {x, 0}, {x, 0}}.
     {deallocate, 2}.
     return.
-  {label, 752}.
+  {label, 496}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tuple, {f, 754}, [{x, 0}]}.
+    {test, is_tuple, {f, 498}, [{x, 0}]}.
     {call_ext, 1, {extfunc, erlang, tuple_size, 1}}.
-    {test, is_lt, {f, 753}, [{integer, 0}, {x, 0}]}.
+    {test, is_lt, {f, 497}, [{integer, 0}, {x, 0}]}.
     {move, {integer, 1}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, element, 2}}.
-    {test, is_atom, {f, 753}, [{x, 0}]}.
-    {test, is_ne_exact, {f, 753}, [{x, 0}, {atom, true}]}.
-    {test, is_ne_exact, {f, 753}, [{x, 0}, {atom, false}]}.
-    {test, is_ne_exact, {f, 753}, [{x, 0}, {atom, undefined}]}.
-    {test, is_eq_exact, {f, 758}, [{x, 0}, {atom, ok}]}.
+    {test, is_atom, {f, 497}, [{x, 0}]}.
+    {test, is_ne_exact, {f, 497}, [{x, 0}, {atom, true}]}.
+    {test, is_ne_exact, {f, 497}, [{x, 0}, {atom, false}]}.
+    {test, is_ne_exact, {f, 497}, [{x, 0}, {atom, undefined}]}.
+    {test, is_eq_exact, {f, 502}, [{x, 0}, {atom, ok}]}.
     {move, {literal, <<"Ok(">>}, {y, 1}}.
-    {jump, {f, 759}}.
-  {label, 758}.
-    {test, is_eq_exact, {f, 755}, [{x, 0}, {atom, error}]}.
+    {jump, {f, 503}}.
+  {label, 502}.
+    {test, is_eq_exact, {f, 499}, [{x, 0}, {atom, error}]}.
     {move, {literal, <<"Error(">>}, {y, 1}}.
-  {label, 759}.
+  {label, 503}.
     {move, {integer, 2}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, element, 2}}.
     {move, {atom, false}, {x, 1}}.
-    {call, 2, {f, 739}}.
+    {call, 2, {f, 483}}.
     {test_heap, 6, 1}.
     {put_list, {integer, 41}, nil, {x, 1}}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {put_list, {y, 1}, {x, 0}, {x, 0}}.
     {deallocate, 2}.
     return.
-  {label, 753}.
+  {label, 497}.
     {move, {y, 0}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, tuple_to_list, 1}}.
     {move, {x, 0}, {y, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 743}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 487}, 0, 0, {x, 0}, {list, []}}.
     {move, {y, 1}, {x, 1}}.
     {call_ext, 2, {extfunc, lists, map, 2}}.
     {move, {x, 0}, {x, 1}}.
@@ -8058,31 +8160,31 @@ test "fs answers PermissionDenied for an OS permission error" {
     {put_list, {integer, 35}, {x, 0}, {x, 0}}.
     {deallocate, 2}.
     return.
-  {label, 754}.
+  {label, 498}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_atom, {f, 756}, [{x, 0}]}.
-    {test, is_ne_exact, {f, 756}, [{x, 0}, {atom, true}]}.
-    {test, is_ne_exact, {f, 756}, [{x, 0}, {atom, false}]}.
-    {test, is_ne_exact, {f, 757}, [{x, 0}, {atom, undefined}]}.
-  {label, 755}.
+    {test, is_atom, {f, 500}, [{x, 0}]}.
+    {test, is_ne_exact, {f, 500}, [{x, 0}, {atom, true}]}.
+    {test, is_ne_exact, {f, 500}, [{x, 0}, {atom, false}]}.
+    {test, is_ne_exact, {f, 501}, [{x, 0}, {atom, undefined}]}.
+  {label, 499}.
     {move, {y, 0}, {x, 1}}.
-    {call_last, 2, {f, 745}, 2}.
-  {label, 756}.
+    {call_last, 2, {f, 489}, 2}.
+  {label, 500}.
     {move, {y, 0}, {x, 0}}.
     {test_heap, 2, 1}.
     {put_list, {x, 0}, nil, {x, 1}}.
     {move, {literal, <<"~p">>}, {x, 0}}.
     {call_ext_last, 2, {extfunc, io_lib, format, 2}, 2}.
-  {label, 757}.
+  {label, 501}.
     {move, {literal, <<"null">>}, {x, 0}}.
     {deallocate, 2}.
     return.
 
-{function, '__bp_tagged', 2, 745}.
-  {label, 744}.
-    {line, [{location, "std@io@fs.erl", 35}]}.
+{function, '__bp_tagged', 2, 489}.
+  {label, 488}.
+    {line, [{location, "std@io@fs.erl", 19}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_tagged'}, 2}.
-  {label, 745}.
+  {label, 489}.
     {allocate, 3, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
     {move, {x, 1}, {y, 0}}.
@@ -8091,60 +8193,60 @@ test "fs answers PermissionDenied for an OS permission error" {
     {call_ext, 1, {extfunc, erlang, atom_to_list, 1}}.
     {move, {literal, <<"__v__">>}, {x, 1}}.
     {call_ext, 2, {extfunc, string, split, 2}}.
-    {test, is_nonempty_list, {f, 760}, [{x, 0}]}.
+    {test, is_nonempty_list, {f, 504}, [{x, 0}]}.
     {get_list, {x, 0}, {x, 1}, {x, 2}}.
     {move, {x, 1}, {y, 2}}.
-    {test, is_nonempty_list, {f, 760}, [{x, 2}]}.
+    {test, is_nonempty_list, {f, 504}, [{x, 2}]}.
     {move, {y, 2}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, list_to_atom, 1}}.
     {move, {x, 0}, {y, 1}}.
-  {label, 760}.
+  {label, 504}.
     {move, {y, 1}, {x, 0}}.
     {call_ext, 1, {extfunc, code, ensure_loaded, 1}}.
     {move, {y, 1}, {x, 0}}.
     {move, {atom, '__bp_format'}, {x, 1}}.
     {move, {integer, 1}, {x, 2}}.
     {call_ext, 3, {extfunc, erlang, function_exported, 3}}.
-    {test, is_eq_exact, {f, 761}, [{x, 0}, {atom, true}]}.
+    {test, is_eq_exact, {f, 505}, [{x, 0}, {atom, true}]}.
     {test_heap, 2, 1}.
     {put_list, {y, 0}, nil, {x, 2}}.
     {move, {y, 1}, {x, 0}}.
     {move, {atom, '__bp_format'}, {x, 1}}.
     {call_ext, 3, {extfunc, erlang, apply, 3}}.
-    {call_last, 1, {f, 747}, 3}.
-  {label, 761}.
+    {call_last, 1, {f, 491}, 3}.
+  {label, 505}.
     {test_heap, 2, 1}.
     {put_list, {y, 0}, nil, {x, 1}}.
     {move, {literal, <<"~p">>}, {x, 0}}.
     {call_ext_last, 2, {extfunc, io_lib, format, 2}, 3}.
 
-{function, '__bp_render', 1, 747}.
-  {label, 746}.
-    {line, [{location, "std@io@fs.erl", 35}]}.
+{function, '__bp_render', 1, 491}.
+  {label, 490}.
+    {line, [{location, "std@io@fs.erl", 19}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_render'}, 1}.
-  {label, 747}.
+  {label, 491}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {integer, 1}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, element, 2}}.
-    {test, is_eq_exact, {f, 762}, [{x, 0}, {atom, text}]}.
+    {test, is_eq_exact, {f, 506}, [{x, 0}, {atom, text}]}.
     {move, {integer, 2}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
     {call_ext_last, 2, {extfunc, erlang, element, 2}, 2}.
-  {label, 762}.
+  {label, 506}.
     {move, {integer, 3}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, element, 2}}.
     {move, {x, 0}, {y, 1}}.
-    {test, is_eq_exact, {f, 763}, [{x, 0}, nil]}.
+    {test, is_eq_exact, {f, 507}, [{x, 0}, nil]}.
     {move, {integer, 2}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
     {call_ext_last, 2, {extfunc, erlang, element, 2}, 2}.
-  {label, 763}.
+  {label, 507}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 749}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 493}, 0, 0, {x, 0}, {list, []}}.
     {move, {y, 1}, {x, 1}}.
     {call_ext, 2, {extfunc, lists, map, 2}}.
     {move, {x, 0}, {x, 1}}.
@@ -8162,11 +8264,11 @@ test "fs answers PermissionDenied for an OS permission error" {
     {deallocate, 2}.
     return.
 
-{function, '-bp_render_pair-', 1, 749}.
-  {label, 748}.
-    {line, [{location, "std@io@fs.erl", 35}]}.
+{function, '-bp_render_pair-', 1, 493}.
+  {label, 492}.
+    {line, [{location, "std@io@fs.erl", 19}]}.
     {func_info, {atom, std@io@fs}, {atom, '-bp_render_pair-'}, 1}.
-  {label, 749}.
+  {label, 493}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
@@ -8174,7 +8276,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {y, 0}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, element, 2}}.
     {move, {atom, false}, {x, 1}}.
-    {call, 2, {f, 739}}.
+    {call, 2, {f, 483}}.
     {move, {x, 0}, {y, 1}}.
     {move, {integer, 1}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
@@ -8186,60 +8288,1192 @@ test "fs answers PermissionDenied for an OS permission error" {
     {deallocate, 2}.
     return.
 
-{function, '-bp_stringify-', 1, 765}.
-  {label, 764}.
-    {line, [{location, "std@io@fs.erl", 35}]}.
+{function, '-bp_stringify-', 1, 509}.
+  {label, 508}.
+    {line, [{location, "std@io@fs.erl", 19}]}.
     {func_info, {atom, std@io@fs}, {atom, '-bp_stringify-'}, 1}.
-  {label, 765}.
+  {label, 509}.
     {allocate, 0, 1}.
-    {test, is_binary, {f, 766}, [{x, 0}]}.
+    {test, is_binary, {f, 510}, [{x, 0}]}.
     {deallocate, 0}.
     return.
-  {label, 766}.
-    {test, is_integer, {f, 767}, [{x, 0}]}.
+  {label, 510}.
+    {test, is_integer, {f, 511}, [{x, 0}]}.
     {call_ext_last, 1, {extfunc, erlang, integer_to_binary, 1}, 0}.
-  {label, 767}.
-    {call, 1, {f, 741}}.
+  {label, 511}.
+    {call, 1, {f, 485}}.
     {call_ext_last, 1, {extfunc, unicode, characters_to_binary, 1}, 0}.
 
-{function, '-bp_join-', 2, 735}.
-  {label, 734}.
-    {line, [{location, "std@io@fs.erl", 35}]}.
+{function, '-bp_join-', 2, 479}.
+  {label, 478}.
+    {line, [{location, "std@io@fs.erl", 19}]}.
     {func_info, {atom, std@io@fs}, {atom, '-bp_join-'}, 2}.
-  {label, 735}.
+  {label, 479}.
     {allocate, 1, 2}.
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 1}, {y, 0}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
-    {make_fun3, {f, 765}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 509}, 0, 0, {x, 0}, {list, []}}.
     {call_ext, 2, {extfunc, lists, map, 2}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 0}, {x, 0}}.
     {call_ext, 2, {extfunc, lists, join, 2}}.
     {call_ext_last, 1, {extfunc, erlang, iolist_to_binary, 1}, 1}.
 
-{function, '__bp_tpl_19-t/0-fun-0-', 0, 773}.
-  {label, 772}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_19-t/0-fun-0-'}, 0}.
-  {label, 773}.
+{function, '__bp_tpl_14--t/2-fun-0--fun-1-', 1, 537}.
+  {label, 536}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_14--t/2-fun-0--fun-1-'}, 1}.
+  {label, 537}.
+    {allocate, 6, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}]}}.
+    {move, {x, 0}, {y, 1}}.
+    {move, {y, 1}, {x, 0}}.
+    {call_ext, 1, {extfunc, file, read_link_info, 1}}.
+    {move, {x, 0}, {y, 2}}.
+    {move, {y, 2}, {x, 0}}.
+    {test, is_tuple, {f, 541}, [{x, 0}]}.
+    {test, test_arity, {f, 541}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 3}}.
+    {get_tuple_element, {x, 0}, 1, {y, 4}}.
+    {move, {y, 3}, {x, 0}}.
+    {test, is_eq_exact, {f, 541}, [{x, 0}, {atom, ok}]}.
+    {move, {y, 4}, {y, 0}}.
+    {move, {integer, 3}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, element, 2}}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {y, 5}, {x, 0}}.
+    {move, {atom, directory}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, '=:=', 2}}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {y, 5}, {x, 0}}.
+    {deallocate, 6}.
+    return.
+  {label, 541}.
+    {move, {atom, false}, {x, 0}}.
+    {deallocate, 6}.
+    return.
+
+{function, '__bp_tpl_14---t/2-fun-0--fun-2--fun-3-', 1, 550}.
+  {label, 549}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_14---t/2-fun-0--fun-2--fun-3-'}, 1}.
+  {label, 550}.
+    {allocate, 1, 1}.
+    {init_yregs, {list, [{y, 0}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {y, 0}, {x, 0}}.
+    {move, {literal, [42, 63, 91, 123]}, {x, 1}}.
+    {call_ext_last, 2, {extfunc, lists, member, 2}, 1}.
+
+{function, '__bp_tpl_14--t/2-fun-0--fun-2-', 1, 546}.
+  {label, 545}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_14--t/2-fun-0--fun-2-'}, 1}.
+  {label, 546}.
+    {allocate, 2, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
+    {make_fun3, {f, 550}, 0, 0, {x, 0}, {list, []}}.
+    {move, {x, 0}, {y, 1}}.
+    {move, {y, 1}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext_last, 2, {extfunc, lists, any, 2}, 2}.
+
+{function, '__bp_tpl_14--t/2-fun-0--fun-4-', 2, 556}.
+  {label, 555}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_14--t/2-fun-0--fun-4-'}, 2}.
+  {label, 556}.
+    {allocate, 9, 2}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}]}}.
+    {move, {x, 0}, {y, 1}}.
+    {move, {x, 1}, {y, 2}}.
+    {move, {y, 2}, {x, 0}}.
+    {test, is_eq_exact, {f, 560}, [{x, 0}, {literal, [42]}]}.
+    {move, {y, 1}, {x, 0}}.
+    {call_ext, 1, {extfunc, file, list_dir, 1}}.
+    {move, {x, 0}, {y, 4}}.
+    {move, {y, 4}, {x, 0}}.
+    {test, is_tuple, {f, 562}, [{x, 0}]}.
+    {test, test_arity, {f, 562}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 6}}.
+    {get_tuple_element, {x, 0}, 1, {y, 7}}.
+    {move, {y, 6}, {x, 0}}.
+    {test, is_eq_exact, {f, 562}, [{x, 0}, {atom, ok}]}.
+    {move, {y, 7}, {y, 0}}.
+    {move, {y, 0}, {y, 5}}.
+    {jump, {f, 561}}.
+  {label, 562}.
+    {move, nil, {y, 5}}.
+    {jump, {f, 561}}.
+  {label, 561}.
+    {move, {y, 5}, {y, 3}}.
+    {jump, {f, 559}}.
+  {label, 560}.
+    {'try', {y, 8}, {f, 565}}.
+    {move, {y, 2}, {x, 0}}.
+    {move, {y, 1}, {x, 1}}.
+    {call_ext, 2, {extfunc, filelib, wildcard, 2}}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {y, 5}, {y, 4}}.
+    {try_end, {y, 8}}.
+    {jump, {f, 566}}.
+  {label, 565}.
+    {try_case, {y, 8}}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {x, 1}, {y, 6}}.
+    {move, {x, 2}, {y, 7}}.
+    {move, nil, {y, 4}}.
+    {jump, {f, 567}}.
+  {label, 567}.
+  {label, 566}.
+    {move, {y, 4}, {y, 3}}.
+    {jump, {f, 559}}.
+  {label, 559}.
+    {move, {y, 3}, {y, 0}}.
+    {jump, {f, 570}}.
+  {label, 570}.
+    {move, nil, {y, 3}}.
+    {move, {y, 0}, {y, 4}}.
+  {label, 572}.
+    {move, {y, 4}, {x, 0}}.
+    {test, is_nonempty_list, {f, 573}, [{x, 0}]}.
+    {get_list, {x, 0}, {y, 5}, {y, 4}}.
+    {move, {y, 5}, {y, 0}}.
+    {move, {y, 0}, {x, 0}}.
+    {bif, hd, {f, 572}, [{x, 0}], {x, 0}}.
+    {move, {x, 0}, {y, 6}}.
+    {move, {y, 6}, {x, 0}}.
+    {move, {integer, 46}, {x, 1}}.
+    {test, is_ne_exact, {f, 575}, [{x, 0}, {x, 1}]}.
+    {jump, {f, 576}}.
+  {label, 575}.
+    {move, {y, 2}, {x, 0}}.
+    {bif, hd, {f, 572}, [{x, 0}], {x, 0}}.
+    {move, {x, 0}, {y, 6}}.
+    {move, {y, 6}, {x, 0}}.
+    {move, {integer, 46}, {x, 1}}.
+    {test, is_eq_exact, {f, 572}, [{x, 0}, {x, 1}]}.
+  {label, 576}.
+    {test_heap, 2, 0}.
+    {put_list, {y, 0}, {y, 3}, {x, 0}}.
+    {move, {x, 0}, {y, 3}}.
+    {jump, {f, 572}}.
+  {label, 573}.
+    {move, {y, 4}, {x, 0}}.
+    {test, is_nil, {f, 574}, [{x, 0}]}.
+    {jump, {f, 571}}.
+  {label, 574}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, bad_generator}, {y, 4}]}}.
+    {call_ext, 1, {extfunc, erlang, error, 1}}.
+  {label, 571}.
+    {move, {y, 3}, {x, 0}}.
+    {call_ext, 1, {extfunc, lists, reverse, 1}}.
+    {move, {x, 0}, {y, 4}}.
+    {move, {y, 4}, {x, 0}}.
+    {deallocate, 9}.
+    return.
+
+{function, '__bp_tpl_14--t/2-fun-0--fun-5-', 2, 580}.
+  {label, 579}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_14--t/2-fun-0--fun-5-'}, 2}.
+  {label, 580}.
+    {allocate, 3, 2}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {x, 1}, {y, 1}}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_eq_exact, {f, 582}, [{x, 0}, nil]}.
+    {move, {y, 1}, {x, 0}}.
+    {deallocate, 3}.
+    return.
+  {label, 582}.
+    {move, {literal, [47]}, {x, 0}}.
+    {move, {y, 1}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, '++', 2}}.
+    {move, {x, 0}, {y, 2}}.
+    {move, {y, 0}, {x, 0}}.
+    {move, {y, 2}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, '++', 2}}.
+    {move, {x, 0}, {y, 2}}.
+    {move, {y, 2}, {x, 0}}.
+    {deallocate, 3}.
+    return.
+
+{function, '__bp_tpl_14---t/2-fun-0--fun-6--fun-7-', 7, 593}.
+  {label, 592}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_14---t/2-fun-0--fun-6--fun-7-'}, 7}.
+  {label, 593}.
+    {allocate, 11, 7}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}]}}.
+    {move, {x, 0}, {y, 7}}.
+    {move, {x, 1}, {y, 8}}.
+    {move, {x, 2}, {y, 0}}.
+    {move, {x, 3}, {y, 1}}.
+    {move, {x, 4}, {y, 2}}.
+    {move, {x, 5}, {y, 3}}.
+    {move, {x, 6}, {y, 4}}.
+    {move, {y, 0}, {x, 0}}.
+    {move, {y, 7}, {x, 1}}.
+    {call_ext, 2, {extfunc, filename, join, 2}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {y, 5}}.
+    {jump, {f, 597}}.
+  {label, 597}.
+    {move, {y, 2}, {x, 0}}.
+    {move, {y, 7}, {x, 1}}.
+    {move, {y, 1}, {x, 2}}.
+    {call_fun, 2}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {y, 6}}.
+    {jump, {f, 599}}.
+  {label, 599}.
+    {move, {y, 5}, {x, 0}}.
+    {move, {y, 3}, {x, 1}}.
+    {call_fun, 1}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {x, 0}}.
+    {test, is_eq_exact, {f, 601}, [{x, 0}, {atom, true}]}.
+    {test_heap, 2, 0}.
+    {put_list, {y, 6}, {y, 8}, {x, 0}}.
+    {move, {x, 0}, {y, 10}}.
+    {move, {literal, [[42, 42]]}, {x, 0}}.
+    {move, {y, 5}, {x, 1}}.
+    {move, {y, 6}, {x, 2}}.
+    {move, {y, 10}, {x, 3}}.
+    {move, {y, 4}, {x, 4}}.
+    {call_fun, 4}.
+    {deallocate, 11}.
+    return.
+  {label, 601}.
+    {move, {y, 9}, {x, 0}}.
+    {test, is_eq_exact, {f, 602}, [{x, 0}, {atom, false}]}.
+    {test_heap, 2, 0}.
+    {put_list, {y, 6}, {y, 8}, {x, 0}}.
+    {move, {x, 0}, {y, 10}}.
+    {move, {y, 10}, {x, 0}}.
+    {deallocate, 11}.
+    return.
+  {label, 602}.
+    {move, {y, 9}, {x, 0}}.
+    {case_end, {x, 0}}.
+
+{function, '__bp_tpl_14---t/2-fun-0--fun-6--fun-8-', 8, 605}.
+  {label, 604}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_14---t/2-fun-0--fun-6--fun-8-'}, 8}.
+  {label, 605}.
+    {allocate, 11, 8}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}]}}.
+    {move, {x, 0}, {y, 7}}.
+    {move, {x, 1}, {y, 8}}.
+    {move, {x, 2}, {y, 0}}.
+    {move, {x, 3}, {y, 1}}.
+    {move, {x, 4}, {y, 2}}.
+    {move, {x, 5}, {y, 3}}.
+    {move, {x, 6}, {y, 4}}.
+    {move, {x, 7}, {y, 5}}.
+    {move, {y, 0}, {x, 0}}.
+    {move, {y, 7}, {x, 1}}.
+    {call_ext, 2, {extfunc, filename, join, 2}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {y, 6}}.
+    {jump, {f, 609}}.
+  {label, 609}.
+    {move, {y, 6}, {x, 0}}.
+    {move, {y, 1}, {x, 1}}.
+    {call_fun, 1}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {x, 0}}.
+    {test, is_eq_exact, {f, 611}, [{x, 0}, {atom, true}]}.
+    {move, {y, 5}, {x, 0}}.
+    {move, {y, 7}, {x, 1}}.
+    {move, {y, 4}, {x, 2}}.
+    {call_fun, 2}.
+    {move, {x, 0}, {y, 10}}.
+    {move, {y, 3}, {x, 0}}.
+    {move, {y, 6}, {x, 1}}.
+    {move, {y, 10}, {x, 2}}.
+    {move, {y, 8}, {x, 3}}.
+    {move, {y, 2}, {x, 4}}.
+    {call_fun, 4}.
+    {deallocate, 11}.
+    return.
+  {label, 611}.
+    {move, {y, 9}, {x, 0}}.
+    {test, is_eq_exact, {f, 612}, [{x, 0}, {atom, false}]}.
+    {move, {y, 8}, {x, 0}}.
+    {deallocate, 11}.
+    return.
+  {label, 612}.
+    {move, {y, 9}, {x, 0}}.
+    {case_end, {x, 0}}.
+
+{function, '__bp_tpl_14---t/2-fun-0--fun-6--fun-9-', 8, 631}.
+  {label, 630}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_14---t/2-fun-0--fun-6--fun-9-'}, 8}.
+  {label, 631}.
+    {allocate, 11, 8}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}]}}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {x, 1}, {y, 9}}.
+    {move, {x, 2}, {y, 0}}.
+    {move, {x, 3}, {y, 1}}.
+    {move, {x, 4}, {y, 2}}.
+    {move, {x, 5}, {y, 3}}.
+    {move, {x, 6}, {y, 4}}.
+    {move, {x, 7}, {y, 5}}.
+    {move, {y, 0}, {x, 0}}.
+    {move, {y, 8}, {x, 1}}.
+    {call_ext, 2, {extfunc, filename, join, 2}}.
+    {move, {x, 0}, {y, 10}}.
+    {move, {y, 10}, {y, 6}}.
+    {jump, {f, 635}}.
+  {label, 635}.
+    {move, {y, 2}, {x, 0}}.
+    {move, {y, 8}, {x, 1}}.
+    {move, {y, 1}, {x, 2}}.
+    {call_fun, 2}.
+    {move, {x, 0}, {y, 10}}.
+    {move, {y, 10}, {y, 7}}.
+    {jump, {f, 637}}.
+  {label, 637}.
+    {move, {y, 3}, {x, 0}}.
+    {test, is_eq_exact, {f, 639}, [{x, 0}, nil]}.
+    {test_heap, 2, 0}.
+    {put_list, {y, 7}, {y, 9}, {x, 0}}.
+    {move, {x, 0}, {y, 10}}.
+    {move, {y, 10}, {x, 0}}.
+    {deallocate, 11}.
+    return.
+  {label, 639}.
+    {move, {y, 6}, {x, 0}}.
+    {move, {y, 4}, {x, 1}}.
+    {call_fun, 1}.
+    {move, {x, 0}, {y, 10}}.
+    {move, {y, 10}, {x, 0}}.
+    {test, is_eq_exact, {f, 642}, [{x, 0}, {atom, true}]}.
+    {move, {y, 3}, {x, 0}}.
+    {move, {y, 6}, {x, 1}}.
+    {move, {y, 7}, {x, 2}}.
+    {move, {y, 9}, {x, 3}}.
+    {move, {y, 5}, {x, 4}}.
+    {call_fun, 4}.
+    {deallocate, 11}.
+    return.
+  {label, 642}.
+    {move, {y, 10}, {x, 0}}.
+    {test, is_eq_exact, {f, 643}, [{x, 0}, {atom, false}]}.
+    {move, {y, 9}, {x, 0}}.
+    {deallocate, 11}.
+    return.
+  {label, 643}.
+    {move, {y, 10}, {x, 0}}.
+    {case_end, {x, 0}}.
+
+{function, '__bp_tpl_14--t/2-fun-0--fun-6-', 8, 587}.
+  {label, 586}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_14--t/2-fun-0--fun-6-'}, 8}.
+  {label, 587}.
+    {allocate, 19, 8}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}, {y, 11}, {y, 12}, {y, 13}, {y, 14}, {y, 15}, {y, 16}, {y, 17}, {y, 18}]}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {x, 1}, {y, 10}}.
+    {move, {x, 2}, {y, 11}}.
+    {move, {x, 3}, {y, 12}}.
+    {move, {x, 4}, {y, 0}}.
+    {move, {x, 5}, {y, 1}}.
+    {move, {x, 6}, {y, 2}}.
+    {move, {x, 7}, {y, 3}}.
+    {test_heap, {alloc, [{words, 4}, {floats, 0}, {funs, 1}]}, 0}.
+    {make_fun3, {f, 587}, 1, 0, {x, 0}, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
+    {move, {x, 0}, {y, 4}}.
+    {move, {y, 9}, {x, 0}}.
+    {test, is_eq_exact, {f, 589}, [{x, 0}, nil]}.
+    {move, {y, 11}, {x, 0}}.
+    {test, is_eq_exact, {f, 589}, [{x, 0}, nil]}.
+    {move, {y, 12}, {x, 0}}.
+    {deallocate, 19}.
+    return.
+  {label, 589}.
+    {move, {y, 9}, {x, 0}}.
+    {test, is_eq_exact, {f, 590}, [{x, 0}, nil]}.
+    {test_heap, 2, 0}.
+    {put_list, {y, 11}, {y, 12}, {x, 0}}.
+    {move, {x, 0}, {y, 13}}.
+    {move, {y, 13}, {x, 0}}.
+    {deallocate, 19}.
+    return.
+  {label, 590}.
+    {move, {y, 9}, {x, 0}}.
+    {test, is_eq_exact, {f, 591}, [{x, 0}, {literal, [[42, 42]]}]}.
+    {test_heap, {alloc, [{words, 5}, {floats, 0}, {funs, 1}]}, 0}.
+    {make_fun3, {f, 593}, 2, 0, {x, 0}, {list, [{y, 10}, {y, 0}, {y, 11}, {y, 1}, {y, 4}]}}.
+    {move, {x, 0}, {y, 13}}.
+    {move, {y, 10}, {x, 0}}.
+    {move, {literal, [42]}, {x, 1}}.
+    {move, {y, 2}, {x, 2}}.
+    {call_fun, 2}.
+    {move, {x, 0}, {y, 14}}.
+    {move, {y, 13}, {x, 0}}.
+    {move, {y, 12}, {x, 1}}.
+    {move, {y, 14}, {x, 2}}.
+    {call_ext_last, 3, {extfunc, lists, foldl, 3}, 19}.
+  {label, 591}.
+    {move, {y, 9}, {x, 0}}.
+    {test, is_nonempty_list, {f, 603}, [{x, 0}]}.
+    {get_list, {x, 0}, {y, 13}, {y, 14}}.
+    {move, {y, 13}, {x, 0}}.
+    {test, is_eq_exact, {f, 603}, [{x, 0}, {literal, [42, 42]}]}.
+    {move, {y, 14}, {y, 5}}.
+    {move, {y, 9}, {y, 6}}.
+    {test_heap, {alloc, [{words, 6}, {floats, 0}, {funs, 1}]}, 0}.
+    {make_fun3, {f, 605}, 3, 0, {x, 0}, {list, [{y, 10}, {y, 1}, {y, 4}, {y, 6}, {y, 0}, {y, 11}]}}.
+    {move, {x, 0}, {y, 15}}.
+    {move, {y, 5}, {x, 0}}.
+    {move, {y, 10}, {x, 1}}.
+    {move, {y, 11}, {x, 2}}.
+    {move, {y, 12}, {x, 3}}.
+    {move, {y, 0}, {x, 4}}.
+    {move, {y, 1}, {x, 5}}.
+    {move, {y, 2}, {x, 6}}.
+    {move, {y, 3}, {x, 7}}.
+    {call, 8, {f, 587}}.
+    {move, {x, 0}, {y, 16}}.
+    {move, {y, 10}, {x, 0}}.
+    {move, {literal, [42]}, {x, 1}}.
+    {move, {y, 2}, {x, 2}}.
+    {call_fun, 2}.
+    {move, {x, 0}, {y, 17}}.
+    {move, {y, 15}, {x, 0}}.
+    {move, {y, 16}, {x, 1}}.
+    {move, {y, 17}, {x, 2}}.
+    {call_ext_last, 3, {extfunc, lists, foldl, 3}, 19}.
+  {label, 603}.
+    {move, {y, 9}, {x, 0}}.
+    {test, is_nonempty_list, {f, 613}, [{x, 0}]}.
+    {get_list, {x, 0}, {y, 13}, {y, 14}}.
+    {move, {y, 13}, {y, 6}}.
+    {move, {y, 14}, {y, 5}}.
+    {move, {y, 6}, {x, 0}}.
+    {move, {y, 3}, {x, 1}}.
+    {call_fun, 1}.
+    {move, {x, 0}, {y, 15}}.
+    {move, {y, 15}, {x, 0}}.
+    {test, is_eq_exact, {f, 615}, [{x, 0}, {atom, false}]}.
+    {move, {y, 10}, {x, 0}}.
+    {move, {y, 6}, {x, 1}}.
+    {call_ext, 2, {extfunc, filename, join, 2}}.
+    {move, {x, 0}, {y, 16}}.
+    {move, {y, 16}, {y, 7}}.
+    {jump, {f, 617}}.
+  {label, 617}.
+    {move, {y, 11}, {x, 0}}.
+    {move, {y, 6}, {x, 1}}.
+    {move, {y, 0}, {x, 2}}.
+    {call_fun, 2}.
+    {move, {x, 0}, {y, 16}}.
+    {move, {y, 16}, {y, 8}}.
+    {jump, {f, 619}}.
+  {label, 619}.
+    {move, {y, 5}, {x, 0}}.
+    {test, is_eq_exact, {f, 621}, [{x, 0}, nil]}.
+    {move, {y, 7}, {x, 0}}.
+    {call_ext, 1, {extfunc, file, read_link_info, 1}}.
+    {move, {x, 0}, {y, 16}}.
+    {move, {y, 16}, {x, 0}}.
+    {test, is_tuple, {f, 623}, [{x, 0}]}.
+    {test, test_arity, {f, 623}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 17}}.
+    {move, {y, 17}, {x, 0}}.
+    {test, is_eq_exact, {f, 623}, [{x, 0}, {atom, ok}]}.
+    {test_heap, 2, 0}.
+    {put_list, {y, 8}, {y, 12}, {x, 0}}.
+    {move, {x, 0}, {y, 18}}.
+    {move, {y, 18}, {x, 0}}.
+    {deallocate, 19}.
+    return.
+  {label, 623}.
+    {move, {y, 12}, {x, 0}}.
+    {deallocate, 19}.
+    return.
+  {label, 621}.
+    {move, {y, 7}, {x, 0}}.
+    {call_ext, 1, {extfunc, filelib, is_dir, 1}}.
+    {move, {x, 0}, {y, 16}}.
+    {move, {y, 16}, {x, 0}}.
+    {test, is_eq_exact, {f, 627}, [{x, 0}, {atom, true}]}.
+    {move, {y, 5}, {x, 0}}.
+    {move, {y, 7}, {x, 1}}.
+    {move, {y, 8}, {x, 2}}.
+    {move, {y, 12}, {x, 3}}.
+    {move, {y, 0}, {x, 4}}.
+    {move, {y, 1}, {x, 5}}.
+    {move, {y, 2}, {x, 6}}.
+    {move, {y, 3}, {x, 7}}.
+    {call_last, 8, {f, 587}, 19}.
+  {label, 627}.
+    {move, {y, 16}, {x, 0}}.
+    {test, is_eq_exact, {f, 628}, [{x, 0}, {atom, false}]}.
+    {move, {y, 12}, {x, 0}}.
+    {deallocate, 19}.
+    return.
+  {label, 628}.
+    {move, {y, 16}, {x, 0}}.
+    {case_end, {x, 0}}.
+  {label, 615}.
+    {move, {y, 15}, {x, 0}}.
+    {test, is_eq_exact, {f, 629}, [{x, 0}, {atom, true}]}.
+    {test_heap, {alloc, [{words, 6}, {floats, 0}, {funs, 1}]}, 0}.
+    {make_fun3, {f, 631}, 4, 0, {x, 0}, {list, [{y, 10}, {y, 0}, {y, 11}, {y, 5}, {y, 1}, {y, 4}]}}.
+    {move, {x, 0}, {y, 16}}.
+    {move, {y, 10}, {x, 0}}.
+    {move, {y, 6}, {x, 1}}.
+    {move, {y, 2}, {x, 2}}.
+    {call_fun, 2}.
+    {move, {x, 0}, {y, 17}}.
+    {move, {y, 16}, {x, 0}}.
+    {move, {y, 12}, {x, 1}}.
+    {move, {y, 17}, {x, 2}}.
+    {call_ext_last, 3, {extfunc, lists, foldl, 3}, 19}.
+  {label, 629}.
+    {move, {y, 15}, {x, 0}}.
+    {case_end, {x, 0}}.
+  {label, 613}.
+    {move, {y, 9}, {x, 0}}.
+    {move, {y, 10}, {x, 1}}.
+    {move, {y, 11}, {x, 2}}.
+    {move, {y, 12}, {x, 3}}.
+    {move, {y, 0}, {x, 4}}.
+    {move, {y, 1}, {x, 5}}.
+    {move, {y, 2}, {x, 6}}.
+    {move, {y, 3}, {x, 7}}.
+    {deallocate, 19}.
+    {jump, {f, 586}}.
+
+{function, '__bp_tpl_14-t/2-fun-0-', 2, 518}.
+  {label, 517}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_14-t/2-fun-0-'}, 2}.
+  {label, 518}.
+    {allocate, 16, 2}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}, {y, 11}, {y, 12}, {y, 13}, {y, 14}, {y, 15}]}}.
+    {move, {x, 0}, {y, 7}}.
+    {move, {x, 1}, {y, 8}}.
+    {move, {y, 8}, {x, 0}}.
+    {call_ext, 1, {extfunc, unicode, characters_to_list, 1}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {y, 0}}.
+    {jump, {f, 522}}.
+  {label, 522}.
+    {move, {y, 7}, {x, 0}}.
+    {call_ext, 1, {extfunc, unicode, characters_to_list, 1}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {y, 1}}.
+    {jump, {f, 524}}.
+  {label, 524}.
+    {move, nil, {y, 9}}.
+    {move, {y, 1}, {x, 0}}.
+    {move, {literal, [47]}, {x, 1}}.
+    {move, {atom, all}, {x, 2}}.
+    {call_ext, 3, {extfunc, string, split, 3}}.
+    {move, {x, 0}, {y, 11}}.
+    {move, {y, 11}, {y, 10}}.
+  {label, 526}.
+    {move, {y, 10}, {x, 0}}.
+    {test, is_nonempty_list, {f, 527}, [{x, 0}]}.
+    {get_list, {x, 0}, {y, 12}, {y, 10}}.
+    {move, {y, 12}, {y, 2}}.
+    {move, {y, 2}, {x, 0}}.
+    {move, nil, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, '=/=', 2}}.
+    {move, {x, 0}, {y, 13}}.
+    {move, {y, 13}, {x, 0}}.
+    {test, is_eq_exact, {f, 529}, [{x, 0}, {atom, true}]}.
+    {jump, {f, 531}}.
+  {label, 529}.
+    {move, {y, 13}, {x, 0}}.
+    {test, is_eq_exact, {f, 530}, [{x, 0}, {atom, false}]}.
+    {jump, {f, 526}}.
+  {label, 530}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, bad_filter}, {y, 13}]}}.
+    {call_ext, 1, {extfunc, erlang, error, 1}}.
+  {label, 531}.
+    {move, {y, 2}, {x, 0}}.
+    {move, {literal, [46]}, {x, 1}}.
+    {test, is_ne_exact, {f, 526}, [{x, 0}, {x, 1}]}.
+    {test_heap, 2, 0}.
+    {put_list, {y, 2}, {y, 9}, {x, 0}}.
+    {move, {x, 0}, {y, 9}}.
+    {jump, {f, 526}}.
+  {label, 527}.
+    {move, {y, 10}, {x, 0}}.
+    {test, is_nil, {f, 528}, [{x, 0}]}.
+    {jump, {f, 525}}.
+  {label, 528}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, bad_generator}, {y, 10}]}}.
+    {call_ext, 1, {extfunc, erlang, error, 1}}.
+  {label, 525}.
+    {move, {y, 9}, {x, 0}}.
+    {call_ext, 1, {extfunc, lists, reverse, 1}}.
+    {move, {x, 0}, {y, 10}}.
+    {move, {y, 10}, {y, 2}}.
+    {jump, {f, 533}}.
+  {label, 533}.
+    {move, {literal, [47]}, {x, 0}}.
+    {move, {y, 1}, {x, 1}}.
+    {call_ext, 2, {extfunc, lists, suffix, 2}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {y, 1}}.
+    {jump, {f, 535}}.
+  {label, 535}.
+    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
+    {make_fun3, {f, 537}, 5, 0, {x, 0}, {list, []}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {y, 3}}.
+    {jump, {f, 544}}.
+  {label, 544}.
+    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
+    {make_fun3, {f, 546}, 6, 0, {x, 0}, {list, []}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {y, 4}}.
+    {jump, {f, 554}}.
+  {label, 554}.
+    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
+    {make_fun3, {f, 556}, 7, 0, {x, 0}, {list, []}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {y, 5}}.
+    {jump, {f, 578}}.
+  {label, 578}.
+    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
+    {make_fun3, {f, 580}, 8, 0, {x, 0}, {list, []}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {y, 6}}.
+    {jump, {f, 585}}.
+  {label, 585}.
+    {test_heap, {alloc, [{words, 4}, {floats, 0}, {funs, 1}]}, 0}.
+    {make_fun3, {f, 587}, 1, 0, {x, 0}, {list, [{y, 6}, {y, 3}, {y, 5}, {y, 4}]}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {y, 4}}.
+    {jump, {f, 645}}.
+  {label, 645}.
+    {move, nil, {y, 9}}.
+    {move, {y, 2}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {move, nil, {x, 2}}.
+    {move, nil, {x, 3}}.
+    {move, {y, 4}, {x, 4}}.
+    {call_fun, 4}.
+    {move, {x, 0}, {y, 11}}.
+    {move, {y, 11}, {x, 0}}.
+    {call_ext, 1, {extfunc, lists, usort, 1}}.
+    {move, {x, 0}, {y, 11}}.
+    {move, {y, 11}, {y, 10}}.
+  {label, 647}.
+    {move, {y, 10}, {x, 0}}.
+    {test, is_nonempty_list, {f, 648}, [{x, 0}]}.
+    {get_list, {x, 0}, {y, 12}, {y, 10}}.
+    {move, {y, 12}, {y, 2}}.
+    {move, {y, 1}, {x, 0}}.
+    {call_ext, 1, {extfunc, erlang, 'not', 1}}.
+    {move, {x, 0}, {y, 14}}.
+    {move, {y, 14}, {x, 0}}.
+    {test, is_eq_exact, {f, 650}, [{x, 0}, {atom, false}]}.
+    {move, {y, 0}, {x, 0}}.
+    {move, {y, 2}, {x, 1}}.
+    {call_ext, 2, {extfunc, filename, join, 2}}.
+    {move, {x, 0}, {y, 15}}.
+    {move, {y, 15}, {x, 0}}.
+    {move, {y, 3}, {x, 1}}.
+    {call_fun, 1}.
+    {move, {x, 0}, {y, 15}}.
+    {move, {y, 15}, {y, 13}}.
+    {jump, {f, 652}}.
+  {label, 650}.
+    {move, {y, 14}, {x, 0}}.
+    {test, is_eq_exact, {f, 651}, [{x, 0}, {atom, true}]}.
+    {move, {atom, true}, {y, 13}}.
+    {jump, {f, 652}}.
+  {label, 651}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, badarg}, {y, 14}]}}.
+    {call_ext, 1, {extfunc, erlang, error, 1}}.
+  {label, 652}.
+    {move, {y, 13}, {x, 0}}.
+    {test, is_eq_exact, {f, 653}, [{x, 0}, {atom, true}]}.
+    {jump, {f, 655}}.
+  {label, 653}.
+    {move, {y, 13}, {x, 0}}.
+    {test, is_eq_exact, {f, 654}, [{x, 0}, {atom, false}]}.
+    {jump, {f, 647}}.
+  {label, 654}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, bad_filter}, {y, 13}]}}.
+    {call_ext, 1, {extfunc, erlang, error, 1}}.
+  {label, 655}.
+    {move, {y, 2}, {x, 0}}.
+    {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
+    {move, {x, 0}, {y, 13}}.
+    {test_heap, 2, 0}.
+    {put_list, {y, 13}, {y, 9}, {x, 0}}.
+    {move, {x, 0}, {y, 9}}.
+    {jump, {f, 647}}.
+  {label, 648}.
+    {move, {y, 10}, {x, 0}}.
+    {test, is_nil, {f, 649}, [{x, 0}]}.
+    {jump, {f, 646}}.
+  {label, 649}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, bad_generator}, {y, 10}]}}.
+    {call_ext, 1, {extfunc, erlang, error, 1}}.
+  {label, 646}.
+    {move, {y, 9}, {x, 0}}.
+    {call_ext, 1, {extfunc, lists, reverse, 1}}.
+    {move, {x, 0}, {y, 10}}.
+    {move, {y, 10}, {x, 0}}.
+    {deallocate, 16}.
+    return.
+
+{function, '__bp_tpl_14', 2, 514}.
+  {label, 513}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_14'}, 2}.
+  {label, 514}.
+    {allocate, 3, 2}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {x, 1}, {y, 1}}.
+    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
+    {make_fun3, {f, 518}, 9, 0, {x, 0}, {list, []}}.
+    {move, {x, 0}, {y, 2}}.
+    {move, {y, 0}, {x, 0}}.
+    {move, {y, 1}, {x, 1}}.
+    {move, {y, 2}, {x, 2}}.
+    {call_fun, 2}.
+    {deallocate, 3}.
+    return.
+
+{function, '__bp_tpl_15-t/1-fun-0-', 1, 663}.
+  {label, 662}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_15-t/1-fun-0-'}, 1}.
+  {label, 663}.
+    {allocate, 6, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}]}}.
+    {move, {x, 0}, {y, 1}}.
+    {move, {y, 1}, {x, 0}}.
+    {move, {literal, [read, binary, raw, read_ahead]}, {x, 1}}.
+    {call_ext, 2, {extfunc, file, open, 2}}.
+    {move, {x, 0}, {y, 2}}.
+    {move, {y, 2}, {x, 0}}.
+    {test, is_tuple, {f, 667}, [{x, 0}]}.
+    {test, test_arity, {f, 667}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 3}}.
+    {get_tuple_element, {x, 0}, 1, {y, 4}}.
+    {move, {y, 3}, {x, 0}}.
+    {test, is_eq_exact, {f, 667}, [{x, 0}, {atom, ok}]}.
+    {move, {y, 4}, {y, 0}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 0}]}}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {y, 5}, {x, 0}}.
+    {deallocate, 6}.
+    return.
+  {label, 667}.
+    {move, {y, 2}, {x, 0}}.
+    {test, is_tuple, {f, 668}, [{x, 0}]}.
+    {test, test_arity, {f, 668}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 3}}.
+    {get_tuple_element, {x, 0}, 1, {y, 4}}.
+    {move, {y, 3}, {x, 0}}.
+    {test, is_eq_exact, {f, 668}, [{x, 0}, {atom, error}]}.
+    {move, {y, 4}, {y, 0}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 0}]}}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {y, 5}, {x, 0}}.
+    {deallocate, 6}.
+    return.
+  {label, 668}.
+    {move, {y, 2}, {x, 0}}.
+    {case_end, {x, 0}}.
+
+{function, '__bp_tpl_15', 1, 657}.
+  {label, 656}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_15'}, 1}.
+  {label, 657}.
+    {allocate, 12, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}, {y, 11}]}}.
+    {move, {x, 0}, {y, 3}}.
+    {'try', {y, 11}, {f, 660}}.
+    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
+    {make_fun3, {f, 663}, 0, 0, {x, 0}, {list, []}}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {y, 3}, {x, 0}}.
+    {move, {y, 5}, {x, 1}}.
+    {call_fun, 1}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {y, 5}, {y, 6}}.
+    {try_end, {y, 11}}.
+    {move, {y, 6}, {x, 0}}.
+    {test, is_tuple, {f, 670}, [{x, 0}]}.
+    {test, test_arity, {f, 670}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 7}}.
+    {get_tuple_element, {x, 0}, 1, {y, 8}}.
+    {move, {y, 7}, {x, 0}}.
+    {test, is_eq_exact, {f, 670}, [{x, 0}, {atom, ok}]}.
+    {move, {y, 8}, {y, 0}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 0}]}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {y, 4}}.
+    {jump, {f, 669}}.
+  {label, 670}.
+    {move, {y, 6}, {x, 0}}.
+    {test, is_tuple, {f, 671}, [{x, 0}]}.
+    {test, test_arity, {f, 671}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 7}}.
+    {get_tuple_element, {x, 0}, 1, {y, 8}}.
+    {move, {y, 7}, {x, 0}}.
+    {test, is_eq_exact, {f, 671}, [{x, 0}, {atom, error}]}.
+    {move, {y, 8}, {y, 1}}.
+    {test_heap, 2, 0}.
+    {put_list, {y, 1}, nil, {x, 0}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {literal, [126, 116, 112]}, {x, 0}}.
+    {move, {y, 9}, {x, 1}}.
+    {call_ext, 2, {extfunc, io_lib, format, 2}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {x, 0}}.
+    {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
+    {move, {x, 0}, {y, 9}}.
+    {test_heap, 6, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@failure@@HostError}, {y, 9}, {literal, <<"host">>}, {atom, std@failure@@HostErrorName__v__error}, {atom, undefined}]}}.
+    {move, {x, 0}, {y, 9}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 9}]}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {y, 4}}.
+    {jump, {f, 669}}.
+  {label, 671}.
+    {move, {y, 6}, {y, 0}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 0}]}}.
+    {move, {x, 0}, {y, 7}}.
+    {move, {y, 7}, {y, 4}}.
+    {jump, {f, 669}}.
+  {label, 669}.
+    {jump, {f, 661}}.
+  {label, 660}.
+    {try_case, {y, 11}}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {x, 1}, {y, 6}}.
+    {move, {x, 2}, {y, 7}}.
+    {move, {y, 5}, {y, 0}}.
+    {move, {y, 6}, {y, 1}}.
+    {move, {y, 7}, {x, 0}}.
+    build_stacktrace.
+    {move, {x, 0}, {y, 2}}.
+    {test_heap, 2, 0}.
+    {put_list, {y, 1}, nil, {x, 0}}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {literal, [126, 116, 112]}, {x, 0}}.
+    {move, {y, 8}, {x, 1}}.
+    {call_ext, 2, {extfunc, io_lib, format, 2}}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {y, 8}, {x, 0}}.
+    {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_eq_exact, {f, 676}, [{x, 0}, {atom, error}]}.
+    {move, {atom, std@failure@@HostErrorName__v__error}, {y, 9}}.
+    {jump, {f, 675}}.
+  {label, 676}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_eq_exact, {f, 677}, [{x, 0}, {atom, throw}]}.
+    {move, {atom, std@failure@@HostErrorName__v__throw}, {y, 9}}.
+    {jump, {f, 675}}.
+  {label, 677}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_eq_exact, {f, 678}, [{x, 0}, {atom, exit}]}.
+    {move, {atom, std@failure@@HostErrorName__v__exit}, {y, 9}}.
+    {jump, {f, 675}}.
+  {label, 678}.
+    {move, {y, 0}, {x, 0}}.
+    {case_end, {x, 0}}.
+  {label, 675}.
+    {test_heap, 2, 0}.
+    {put_list, {y, 2}, nil, {x, 0}}.
+    {move, {x, 0}, {y, 10}}.
+    {move, {literal, [126, 116, 112]}, {x, 0}}.
+    {move, {y, 10}, {x, 1}}.
+    {call_ext, 2, {extfunc, io_lib, format, 2}}.
+    {move, {x, 0}, {y, 10}}.
+    {move, {y, 10}, {x, 0}}.
+    {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
+    {move, {x, 0}, {y, 10}}.
+    {test_heap, 6, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@failure@@HostError}, {y, 8}, {literal, <<"host">>}, {y, 9}, {y, 10}]}}.
+    {move, {x, 0}, {y, 8}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 8}]}}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {y, 8}, {y, 4}}.
+    {jump, {f, 673}}.
+  {label, 673}.
+  {label, 661}.
+    {move, {y, 4}, {x, 0}}.
+    {deallocate, 12}.
+    return.
+
+{function, '__bp_tpl_16-t/1-fun-0-', 1, 688}.
+  {label, 687}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_16-t/1-fun-0-'}, 1}.
+  {label, 688}.
+    {allocate, 6, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}]}}.
+    {move, {x, 0}, {y, 1}}.
+    {move, {y, 1}, {x, 0}}.
+    {move, {literal, [write, binary, raw]}, {x, 1}}.
+    {call_ext, 2, {extfunc, file, open, 2}}.
+    {move, {x, 0}, {y, 2}}.
+    {move, {y, 2}, {x, 0}}.
+    {test, is_tuple, {f, 692}, [{x, 0}]}.
+    {test, test_arity, {f, 692}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 3}}.
+    {get_tuple_element, {x, 0}, 1, {y, 4}}.
+    {move, {y, 3}, {x, 0}}.
+    {test, is_eq_exact, {f, 692}, [{x, 0}, {atom, ok}]}.
+    {move, {y, 4}, {y, 0}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 0}]}}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {y, 5}, {x, 0}}.
+    {deallocate, 6}.
+    return.
+  {label, 692}.
+    {move, {y, 2}, {x, 0}}.
+    {test, is_tuple, {f, 693}, [{x, 0}]}.
+    {test, test_arity, {f, 693}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 3}}.
+    {get_tuple_element, {x, 0}, 1, {y, 4}}.
+    {move, {y, 3}, {x, 0}}.
+    {test, is_eq_exact, {f, 693}, [{x, 0}, {atom, error}]}.
+    {move, {y, 4}, {y, 0}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 0}]}}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {y, 5}, {x, 0}}.
+    {deallocate, 6}.
+    return.
+  {label, 693}.
+    {move, {y, 2}, {x, 0}}.
+    {case_end, {x, 0}}.
+
+{function, '__bp_tpl_16', 1, 682}.
+  {label, 681}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_16'}, 1}.
+  {label, 682}.
+    {allocate, 12, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}, {y, 11}]}}.
+    {move, {x, 0}, {y, 3}}.
+    {'try', {y, 11}, {f, 685}}.
+    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
+    {make_fun3, {f, 688}, 0, 0, {x, 0}, {list, []}}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {y, 3}, {x, 0}}.
+    {move, {y, 5}, {x, 1}}.
+    {call_fun, 1}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {y, 5}, {y, 6}}.
+    {try_end, {y, 11}}.
+    {move, {y, 6}, {x, 0}}.
+    {test, is_tuple, {f, 695}, [{x, 0}]}.
+    {test, test_arity, {f, 695}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 7}}.
+    {get_tuple_element, {x, 0}, 1, {y, 8}}.
+    {move, {y, 7}, {x, 0}}.
+    {test, is_eq_exact, {f, 695}, [{x, 0}, {atom, ok}]}.
+    {move, {y, 8}, {y, 0}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 0}]}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {y, 4}}.
+    {jump, {f, 694}}.
+  {label, 695}.
+    {move, {y, 6}, {x, 0}}.
+    {test, is_tuple, {f, 696}, [{x, 0}]}.
+    {test, test_arity, {f, 696}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 7}}.
+    {get_tuple_element, {x, 0}, 1, {y, 8}}.
+    {move, {y, 7}, {x, 0}}.
+    {test, is_eq_exact, {f, 696}, [{x, 0}, {atom, error}]}.
+    {move, {y, 8}, {y, 1}}.
+    {test_heap, 2, 0}.
+    {put_list, {y, 1}, nil, {x, 0}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {literal, [126, 116, 112]}, {x, 0}}.
+    {move, {y, 9}, {x, 1}}.
+    {call_ext, 2, {extfunc, io_lib, format, 2}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {x, 0}}.
+    {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
+    {move, {x, 0}, {y, 9}}.
+    {test_heap, 6, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@failure@@HostError}, {y, 9}, {literal, <<"host">>}, {atom, std@failure@@HostErrorName__v__error}, {atom, undefined}]}}.
+    {move, {x, 0}, {y, 9}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 9}]}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {y, 4}}.
+    {jump, {f, 694}}.
+  {label, 696}.
+    {move, {y, 6}, {y, 0}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 0}]}}.
+    {move, {x, 0}, {y, 7}}.
+    {move, {y, 7}, {y, 4}}.
+    {jump, {f, 694}}.
+  {label, 694}.
+    {jump, {f, 686}}.
+  {label, 685}.
+    {try_case, {y, 11}}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {x, 1}, {y, 6}}.
+    {move, {x, 2}, {y, 7}}.
+    {move, {y, 5}, {y, 0}}.
+    {move, {y, 6}, {y, 1}}.
+    {move, {y, 7}, {x, 0}}.
+    build_stacktrace.
+    {move, {x, 0}, {y, 2}}.
+    {test_heap, 2, 0}.
+    {put_list, {y, 1}, nil, {x, 0}}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {literal, [126, 116, 112]}, {x, 0}}.
+    {move, {y, 8}, {x, 1}}.
+    {call_ext, 2, {extfunc, io_lib, format, 2}}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {y, 8}, {x, 0}}.
+    {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_eq_exact, {f, 701}, [{x, 0}, {atom, error}]}.
+    {move, {atom, std@failure@@HostErrorName__v__error}, {y, 9}}.
+    {jump, {f, 700}}.
+  {label, 701}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_eq_exact, {f, 702}, [{x, 0}, {atom, throw}]}.
+    {move, {atom, std@failure@@HostErrorName__v__throw}, {y, 9}}.
+    {jump, {f, 700}}.
+  {label, 702}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_eq_exact, {f, 703}, [{x, 0}, {atom, exit}]}.
+    {move, {atom, std@failure@@HostErrorName__v__exit}, {y, 9}}.
+    {jump, {f, 700}}.
+  {label, 703}.
+    {move, {y, 0}, {x, 0}}.
+    {case_end, {x, 0}}.
+  {label, 700}.
+    {test_heap, 2, 0}.
+    {put_list, {y, 2}, nil, {x, 0}}.
+    {move, {x, 0}, {y, 10}}.
+    {move, {literal, [126, 116, 112]}, {x, 0}}.
+    {move, {y, 10}, {x, 1}}.
+    {call_ext, 2, {extfunc, io_lib, format, 2}}.
+    {move, {x, 0}, {y, 10}}.
+    {move, {y, 10}, {x, 0}}.
+    {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
+    {move, {x, 0}, {y, 10}}.
+    {test_heap, 6, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@failure@@HostError}, {y, 8}, {literal, <<"host">>}, {y, 9}, {y, 10}]}}.
+    {move, {x, 0}, {y, 8}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 8}]}}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {y, 8}, {y, 4}}.
+    {jump, {f, 698}}.
+  {label, 698}.
+  {label, 686}.
+    {move, {y, 4}, {x, 0}}.
+    {deallocate, 12}.
+    return.
+
+{function, '-bp_field-', 2, 707}.
+  {label, 706}.
+    {line, [{location, "std@io@fs.erl", 33}]}.
+    {func_info, {atom, std@io@fs}, {atom, '-bp_field-'}, 2}.
+  {label, 707}.
+    {test, is_map, {f, 708}, [{x, 0}]}.
+    {move, {x, 0}, {x, 2}}.
+    {move, {x, 1}, {x, 0}}.
+    {move, {x, 2}, {x, 1}}.
+    {move, {atom, undefined}, {x, 2}}.
+    {call_ext_only, 3, {extfunc, maps, get, 3}}.
+  {label, 708}.
+    {test, is_tuple, {f, 709}, [{x, 0}]}.
+    {bif, element, {f, 711}, [{integer, 1}, {x, 0}], {x, 2}}.
+    {test, is_atom, {f, 711}, [{x, 2}]}.
+    {test_heap, 4, 3}.
+    {put_list, {x, 1}, nil, {x, 3}}.
+    {put_list, {x, 0}, {x, 3}, {x, 3}}.
+    {move, {x, 2}, {x, 0}}.
+    {move, {atom, '__bp_get'}, {x, 1}}.
+    {move, {x, 3}, {x, 2}}.
+    {call_ext_only, 3, {extfunc, erlang, apply, 3}}.
+  {label, 709}.
+    {test, is_eq_exact, {f, 711}, [{x, 1}, {atom, length}]}.
+    {test, is_list, {f, 710}, [{x, 0}]}.
+    {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
+    return.
+  {label, 710}.
+    {test, is_binary, {f, 711}, [{x, 0}]}.
+    {allocate, 0, 1}.
+    {call_ext, 1, {extfunc, unicode, characters_to_list, 1}}.
+    {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
+    {deallocate, 0}.
+    return.
+  {label, 711}.
+    {move, {atom, undefined}, {x, 0}}.
+    return.
+
+{function, '__bp_tpl_17', 1, 713}.
+  {label, 712}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_17'}, 1}.
+  {label, 713}.
+    {allocate, 2, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {integer, 1}, {x, 0}}.
+    {move, nil, {x, 1}}.
+    {call_ext, 2, {extfunc, counters, new, 2}}.
+    {move, {x, 0}, {y, 1}}.
+    {test_heap, 4, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, mem}, {y, 0}, {y, 1}]}}.
+    {move, {x, 0}, {y, 1}}.
+    {move, {y, 1}, {x, 0}}.
+    {deallocate, 2}.
+    return.
+
+{function, '__bp_tpl_18-t/0-fun-0-', 0, 722}.
+  {label, 721}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_18-t/0-fun-0-'}, 0}.
+  {label, 722}.
     {allocate, 3, 0}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
     {move, {literal, [84, 77, 80, 68, 73, 82]}, {x, 0}}.
     {call_ext, 1, {extfunc, os, getenv, 1}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 777}, [{x, 0}, {atom, false}]}.
+    {test, is_eq_exact, {f, 726}, [{x, 0}, {atom, false}]}.
     {move, {literal, [47, 116, 109, 112]}, {y, 2}}.
-    {jump, {f, 776}}.
-  {label, 777}.
+    {jump, {f, 725}}.
+  {label, 726}.
     {move, {y, 1}, {y, 0}}.
     {move, {y, 0}, {y, 2}}.
-    {jump, {f, 776}}.
-  {label, 776}.
+    {jump, {f, 725}}.
+  {label, 725}.
     {move, {y, 2}, {y, 0}}.
-    {jump, {f, 780}}.
-  {label, 780}.
+    {jump, {f, 729}}.
+  {label, 729}.
     {move, {literal, [positive]}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, unique_integer, 1}}.
     {move, {x, 0}, {y, 1}}.
@@ -8255,77 +9489,77 @@ test "fs answers PermissionDenied for an OS permission error" {
     {call_ext, 2, {extfunc, filename, join, 2}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {y, 0}}.
-    {jump, {f, 782}}.
-  {label, 782}.
+    {jump, {f, 731}}.
+  {label, 731}.
     {move, {y, 0}, {x, 0}}.
     {call_ext, 1, {extfunc, file, make_dir, 1}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 783}, [{x, 0}, {atom, ok}]}.
-    {jump, {f, 784}}.
-  {label, 783}.
+    {test, is_eq_exact, {f, 732}, [{x, 0}, {atom, ok}]}.
+    {jump, {f, 733}}.
+  {label, 732}.
     {move, {y, 1}, {x, 0}}.
     {badmatch, {x, 0}}.
-  {label, 784}.
+  {label, 733}.
     {move, {y, 0}, {x, 0}}.
     {call_ext_last, 1, {extfunc, unicode, characters_to_binary, 1}, 3}.
 
-{function, '__bp_tpl_19', 0, 769}.
-  {label, 768}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_19'}, 0}.
-  {label, 769}.
+{function, '__bp_tpl_18', 0, 718}.
+  {label, 717}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_18'}, 0}.
+  {label, 718}.
     {allocate, 1, 0}.
     {init_yregs, {list, [{y, 0}]}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 773}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 722}, 0, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
     {call_fun, 0}.
     {deallocate, 1}.
     return.
 
-{function, '__bp_tpl_20-t/0-fun-0-', 0, 792}.
-  {label, 791}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_20-t/0-fun-0-'}, 0}.
-  {label, 792}.
+{function, '__bp_tpl_19-t/0-fun-0-', 0, 741}.
+  {label, 740}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_19-t/0-fun-0-'}, 0}.
+  {label, 741}.
     {allocate, 4, 0}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
     {call_ext, 0, {extfunc, file, get_cwd, 0}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
-    {test, is_tuple, {f, 795}, [{x, 0}]}.
-    {test, test_arity, {f, 795}, [{x, 0}, 2]}.
+    {test, is_tuple, {f, 744}, [{x, 0}]}.
+    {test, test_arity, {f, 744}, [{x, 0}, 2]}.
     {get_tuple_element, {x, 0}, 0, {y, 2}}.
     {get_tuple_element, {x, 0}, 1, {y, 3}}.
     {move, {y, 2}, {x, 0}}.
-    {test, is_eq_exact, {f, 795}, [{x, 0}, {atom, ok}]}.
+    {test, is_eq_exact, {f, 744}, [{x, 0}, {atom, ok}]}.
     {move, {y, 3}, {y, 0}}.
-    {jump, {f, 796}}.
-  {label, 795}.
+    {jump, {f, 745}}.
+  {label, 744}.
     {move, {y, 1}, {x, 0}}.
     {badmatch, {x, 0}}.
-  {label, 796}.
+  {label, 745}.
     {move, {y, 0}, {x, 0}}.
     {call_ext_last, 1, {extfunc, unicode, characters_to_binary, 1}, 4}.
 
-{function, '__bp_tpl_20', 0, 788}.
-  {label, 787}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_20'}, 0}.
-  {label, 788}.
+{function, '__bp_tpl_19', 0, 737}.
+  {label, 736}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_19'}, 0}.
+  {label, 737}.
     {allocate, 1, 0}.
     {init_yregs, {list, [{y, 0}]}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 792}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 741}, 0, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
     {call_fun, 0}.
     {deallocate, 1}.
     return.
 
-{function, '__bp_tpl_21-t/2-fun-0-', 2, 815}.
-  {label, 814}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_21-t/2-fun-0-'}, 2}.
-  {label, 815}.
+{function, '__bp_tpl_20-t/2-fun-0-', 2, 764}.
+  {label, 763}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_20-t/2-fun-0-'}, 2}.
+  {label, 764}.
     {allocate, 3, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
     {move, {x, 0}, {y, 0}}.
@@ -8335,26 +9569,26 @@ test "fs answers PermissionDenied for an OS permission error" {
     {call_ext, 2, {extfunc, file, make_symlink, 2}}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 2}, {x, 0}}.
-    {test, is_eq_exact, {f, 818}, [{x, 0}, {atom, ok}]}.
-    {jump, {f, 819}}.
-  {label, 818}.
+    {test, is_eq_exact, {f, 767}, [{x, 0}, {atom, ok}]}.
+    {jump, {f, 768}}.
+  {label, 767}.
     {move, {y, 2}, {x, 0}}.
     {badmatch, {x, 0}}.
-  {label, 819}.
+  {label, 768}.
     {move, {atom, ok}, {x, 0}}.
     {deallocate, 3}.
     return.
 
-{function, '__bp_tpl_21', 2, 811}.
-  {label, 810}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_21'}, 2}.
-  {label, 811}.
+{function, '__bp_tpl_20', 2, 760}.
+  {label, 759}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_20'}, 2}.
+  {label, 760}.
     {allocate, 3, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 815}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 764}, 0, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
@@ -8363,217 +9597,15 @@ test "fs answers PermissionDenied for an OS permission error" {
     {deallocate, 3}.
     return.
 
-{function, '__bp_tpl_22', 1, 826}.
-  {label, 825}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_22'}, 1}.
-  {label, 826}.
+{function, '__bp_tpl_21', 1, 775}.
+  {label, 774}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_21'}, 1}.
+  {label, 775}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
     {deallocate, 1}.
-    return.
-
-{function, '__bp_tpl_23-t/3-fun-0-', 3, 833}.
-  {label, 832}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_23-t/3-fun-0-'}, 3}.
-  {label, 833}.
-    {allocate, 9, 3}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}]}}.
-    {move, {x, 0}, {y, 3}}.
-    {move, {x, 1}, {y, 4}}.
-    {move, {x, 2}, {y, 5}}.
-    {move, {y, 3}, {x, 0}}.
-    {call_ext, 1, {extfunc, unicode, characters_to_list, 1}}.
-    {move, {x, 0}, {y, 6}}.
-    {move, {y, 6}, {y, 0}}.
-    {jump, {f, 837}}.
-  {label, 837}.
-    {move, {y, 0}, {x, 0}}.
-    {call_ext, 1, {extfunc, erlang, length, 1}}.
-    {move, {x, 0}, {y, 6}}.
-    {move, {y, 6}, {y, 1}}.
-    {jump, {f, 839}}.
-  {label, 839}.
-    {move, {y, 4}, {x, 0}}.
-    {move, {integer, 0}, {x, 1}}.
-    {call_ext, 2, {extfunc, erlang, '<', 2}}.
-    {move, {x, 0}, {y, 6}}.
-    {move, {y, 6}, {x, 0}}.
-    {test, is_eq_exact, {f, 841}, [{x, 0}, {atom, true}]}.
-    {move, {y, 1}, {x, 0}}.
-    {move, {y, 4}, {x, 1}}.
-    {call_ext, 2, {extfunc, erlang, '+', 2}}.
-    {move, {x, 0}, {y, 8}}.
-    {move, {y, 8}, {x, 0}}.
-    {move, {integer, 0}, {x, 1}}.
-    {call_ext, 2, {extfunc, erlang, max, 2}}.
-    {move, {x, 0}, {y, 8}}.
-    {move, {y, 8}, {y, 7}}.
-    {jump, {f, 840}}.
-  {label, 841}.
-    {move, {y, 6}, {x, 0}}.
-    {test, is_eq_exact, {f, 842}, [{x, 0}, {atom, false}]}.
-    {move, {y, 4}, {x, 0}}.
-    {move, {y, 1}, {x, 1}}.
-    {call_ext, 2, {extfunc, erlang, min, 2}}.
-    {move, {x, 0}, {y, 8}}.
-    {move, {y, 8}, {y, 7}}.
-    {jump, {f, 840}}.
-  {label, 842}.
-    {move, {y, 6}, {x, 0}}.
-    {case_end, {x, 0}}.
-  {label, 840}.
-    {move, {y, 7}, {y, 2}}.
-    {jump, {f, 844}}.
-  {label, 844}.
-    {move, {y, 5}, {x, 0}}.
-    {move, {integer, 0}, {x, 1}}.
-    {call_ext, 2, {extfunc, erlang, '<', 2}}.
-    {move, {x, 0}, {y, 6}}.
-    {move, {y, 6}, {x, 0}}.
-    {test, is_eq_exact, {f, 846}, [{x, 0}, {atom, true}]}.
-    {move, {y, 1}, {x, 0}}.
-    {move, {y, 5}, {x, 1}}.
-    {call_ext, 2, {extfunc, erlang, '+', 2}}.
-    {move, {x, 0}, {y, 8}}.
-    {move, {y, 8}, {x, 0}}.
-    {move, {integer, 0}, {x, 1}}.
-    {call_ext, 2, {extfunc, erlang, max, 2}}.
-    {move, {x, 0}, {y, 8}}.
-    {move, {y, 8}, {y, 7}}.
-    {jump, {f, 845}}.
-  {label, 846}.
-    {move, {y, 6}, {x, 0}}.
-    {test, is_eq_exact, {f, 847}, [{x, 0}, {atom, false}]}.
-    {move, {y, 5}, {x, 0}}.
-    {move, {y, 1}, {x, 1}}.
-    {call_ext, 2, {extfunc, erlang, min, 2}}.
-    {move, {x, 0}, {y, 8}}.
-    {move, {y, 8}, {y, 7}}.
-    {jump, {f, 845}}.
-  {label, 847}.
-    {move, {y, 6}, {x, 0}}.
-    {case_end, {x, 0}}.
-  {label, 845}.
-    {move, {y, 7}, {y, 1}}.
-    {jump, {f, 849}}.
-  {label, 849}.
-    {move, {y, 2}, {x, 0}}.
-    {move, {integer, 1}, {x, 1}}.
-    {call_ext, 2, {extfunc, erlang, '+', 2}}.
-    {move, {x, 0}, {y, 6}}.
-    {move, {y, 1}, {x, 0}}.
-    {move, {y, 2}, {x, 1}}.
-    {call_ext, 2, {extfunc, erlang, '-', 2}}.
-    {move, {x, 0}, {y, 7}}.
-    {move, {y, 7}, {x, 0}}.
-    {move, {integer, 0}, {x, 1}}.
-    {call_ext, 2, {extfunc, erlang, max, 2}}.
-    {move, {x, 0}, {y, 7}}.
-    {move, {y, 0}, {x, 0}}.
-    {move, {y, 6}, {x, 1}}.
-    {move, {y, 7}, {x, 2}}.
-    {call_ext, 3, {extfunc, lists, sublist, 3}}.
-    {move, {x, 0}, {y, 6}}.
-    {move, {y, 6}, {x, 0}}.
-    {call_ext_last, 1, {extfunc, unicode, characters_to_binary, 1}, 9}.
-
-{function, '__bp_tpl_23', 3, 829}.
-  {label, 828}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_23'}, 3}.
-  {label, 829}.
-    {allocate, 4, 3}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
-    {move, {x, 0}, {y, 0}}.
-    {move, {x, 1}, {y, 1}}.
-    {move, {x, 2}, {y, 2}}.
-    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 833}, 0, 0, {x, 0}, {list, []}}.
-    {move, {x, 0}, {y, 3}}.
-    {move, {y, 0}, {x, 0}}.
-    {move, {y, 1}, {x, 1}}.
-    {move, {y, 2}, {x, 2}}.
-    {move, {y, 3}, {x, 3}}.
-    {call_fun, 3}.
-    {deallocate, 4}.
-    return.
-
-{function, '__bp_tpl_24-t/2-fun-0-', 2, 855}.
-  {label, 854}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_24-t/2-fun-0-'}, 2}.
-  {label, 855}.
-    {allocate, 7, 2}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}]}}.
-    {move, {x, 0}, {y, 2}}.
-    {move, {x, 1}, {y, 3}}.
-    {move, {y, 2}, {x, 0}}.
-    {call_ext, 1, {extfunc, unicode, characters_to_list, 1}}.
-    {move, {x, 0}, {y, 4}}.
-    {move, {y, 4}, {y, 0}}.
-    {jump, {f, 859}}.
-  {label, 859}.
-    {move, {y, 0}, {x, 0}}.
-    {call_ext, 1, {extfunc, erlang, length, 1}}.
-    {move, {x, 0}, {y, 4}}.
-    {move, {y, 4}, {y, 1}}.
-    {jump, {f, 861}}.
-  {label, 861}.
-    {move, {y, 3}, {x, 0}}.
-    {move, {integer, 0}, {x, 1}}.
-    {call_ext, 2, {extfunc, erlang, '<', 2}}.
-    {move, {x, 0}, {y, 4}}.
-    {move, {y, 4}, {x, 0}}.
-    {test, is_eq_exact, {f, 863}, [{x, 0}, {atom, true}]}.
-    {move, {y, 1}, {x, 0}}.
-    {move, {y, 3}, {x, 1}}.
-    {call_ext, 2, {extfunc, erlang, '+', 2}}.
-    {move, {x, 0}, {y, 6}}.
-    {move, {y, 6}, {x, 0}}.
-    {move, {integer, 0}, {x, 1}}.
-    {call_ext, 2, {extfunc, erlang, max, 2}}.
-    {move, {x, 0}, {y, 6}}.
-    {move, {y, 6}, {y, 5}}.
-    {jump, {f, 862}}.
-  {label, 863}.
-    {move, {y, 4}, {x, 0}}.
-    {test, is_eq_exact, {f, 864}, [{x, 0}, {atom, false}]}.
-    {move, {y, 3}, {x, 0}}.
-    {move, {y, 1}, {x, 1}}.
-    {call_ext, 2, {extfunc, erlang, min, 2}}.
-    {move, {x, 0}, {y, 6}}.
-    {move, {y, 6}, {y, 5}}.
-    {jump, {f, 862}}.
-  {label, 864}.
-    {move, {y, 4}, {x, 0}}.
-    {case_end, {x, 0}}.
-  {label, 862}.
-    {move, {y, 5}, {y, 1}}.
-    {jump, {f, 866}}.
-  {label, 866}.
-    {move, {y, 1}, {x, 0}}.
-    {move, {y, 0}, {x, 1}}.
-    {call_ext, 2, {extfunc, lists, nthtail, 2}}.
-    {move, {x, 0}, {y, 4}}.
-    {move, {y, 4}, {x, 0}}.
-    {call_ext_last, 1, {extfunc, unicode, characters_to_binary, 1}, 7}.
-
-{function, '__bp_tpl_24', 2, 851}.
-  {label, 850}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_24'}, 2}.
-  {label, 851}.
-    {allocate, 3, 2}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
-    {move, {x, 0}, {y, 0}}.
-    {move, {x, 1}, {y, 1}}.
-    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 855}, 0, 0, {x, 0}, {list, []}}.
-    {move, {x, 0}, {y, 2}}.
-    {move, {y, 0}, {x, 0}}.
-    {move, {y, 1}, {x, 1}}.
-    {move, {y, 2}, {x, 2}}.
-    {call_fun, 2}.
-    {deallocate, 3}.
     return.
 ```
 
@@ -9215,12 +10247,64 @@ test "fs answers PermissionDenied for an OS permission error" {
     return.
 ```
 
+----- BEAM ASSEMBLY -- std@io@fs@@Walked.S
+```erlang
+{module, std@io@fs@@Walked}.
+{exports, [{'__bp_get', 2}, {'__bp_format', 1}]}.
+{attributes, []}.
+{labels, 8}.
+
+{function, '__bp_get', 2, 3}.
+  {label, 2}.
+    {line, [{location, "std@io@fs@@Walked.erl", 6}]}.
+    {func_info, {atom, std@io@fs@@Walked}, {atom, '__bp_get'}, 2}.
+  {label, 3}.
+    {test, is_eq_exact, {f, 4}, [{x, 1}, {atom, files}]}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {integer, 2}, {x, 0}}.
+    {call_ext_only, 2, {extfunc, erlang, element, 2}}.
+  {label, 4}.
+    {test, is_eq_exact, {f, 5}, [{x, 1}, {atom, dangling}]}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {integer, 3}, {x, 0}}.
+    {call_ext_only, 2, {extfunc, erlang, element, 2}}.
+  {label, 5}.
+    {move, {atom, undefined}, {x, 0}}.
+    return.
+
+{function, '__bp_format', 1, 7}.
+  {label, 6}.
+    {line, [{location, "std@io@fs@@Walked.erl", 6}]}.
+    {func_info, {atom, std@io@fs@@Walked}, {atom, '__bp_format'}, 1}.
+  {label, 7}.
+    {allocate, 2, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, nil, {y, 1}}.
+    {move, {integer, 3}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, element, 2}}.
+    {test_heap, 5, 1}.
+    {put_tuple2, {x, 0}, {list, [{literal, <<"dangling">>}, {x, 0}]}}.
+    {put_list, {x, 0}, {y, 1}, {y, 1}}.
+    {move, {integer, 2}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, element, 2}}.
+    {test_heap, 5, 1}.
+    {put_tuple2, {x, 0}, {list, [{literal, <<"files">>}, {x, 0}]}}.
+    {put_list, {x, 0}, {y, 1}, {y, 1}}.
+    {test_heap, 4, 1}.
+    {put_tuple2, {x, 0}, {list, [{atom, record}, {literal, <<"Walked">>}, {y, 1}]}}.
+    {deallocate, 2}.
+    return.
+```
+
 ----- BEAM ASSEMBLY -- std@io@fs@@File.S
 ```erlang
 {module, std@io@fs@@File}.
 {exports, [{path, 1}, {size, 1}, {read, 2}, {bytes, 1}, {text, 1}, {chunks, 2}, {lines, 1}, {hash, 1}, {write, 2}, {close, 1}, {'__bp_get', 2}, {'__bp_format', 1}]}.
 {attributes, []}.
-{labels, 365}.
+{labels, 356}.
 
 {function, path, 1, 3}.
   {label, 2}.
@@ -9251,14 +10335,14 @@ test "fs answers PermissionDenied for an OS permission error" {
   {label, 23}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 54}, [{x, 0}, 3, {atom, std@io@fs@@File}]}.
+    {test, is_tagged_tuple, {f, 50}, [{x, 0}, 3, {atom, std@io@fs@@File}]}.
     {get_tuple_element, {x, 0}, 2, {x, 0}}.
-  {label, 54}.
+  {label, 50}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 55}, [{x, 0}, 3, {atom, std@io@fs@@File}]}.
+    {test, is_tagged_tuple, {f, 51}, [{x, 0}, 3, {atom, std@io@fs@@File}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-  {label, 55}.
+  {label, 51}.
     {move, {x, 1}, {x, 2}}.
     {move, {x, 0}, {x, 1}}.
     {move, {x, 2}, {x, 0}}.
@@ -9266,13 +10350,13 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 0}, {x, 1}}.
     {move, {y, 1}, {x, 0}}.
     {call_ext, 2, {extfunc, std@io@fs, lift, 2}}.
-    {test, is_tagged_tuple, {f, 56}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 52}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 57}}.
-  {label, 56}.
+    {jump, {f, 53}}.
+  {label, 52}.
     {deallocate, 4}.
     return.
-  {label, 57}.
+  {label, 53}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 2}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
@@ -9290,36 +10374,36 @@ test "fs answers PermissionDenied for an OS permission error" {
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
-    {test, is_ge, {f, 58}, [{integer, 0}, {y, 1}]}.
+    {test, is_ge, {f, 54}, [{integer, 0}, {y, 1}]}.
     {move, {literal, <<"">>}, {x, 0}}.
-    {call, 1, {f, 60}}.
+    {call, 1, {f, 56}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, 3, 2}.
     {put_tuple2, {x, 0}, {list, [{atom, ok}, {x, 1}]}}.
     {deallocate, 5}.
     return.
-  {label, 58}.
+  {label, 54}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 61}, [{x, 0}, 3, {atom, std@io@fs@@File}]}.
+    {test, is_tagged_tuple, {f, 57}, [{x, 0}, 3, {atom, std@io@fs@@File}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-  {label, 61}.
+  {label, 57}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 97}, [{x, 0}, 3, {atom, std@io@fs@@File}]}.
+    {test, is_tagged_tuple, {f, 89}, [{x, 0}, 3, {atom, std@io@fs@@File}]}.
     {get_tuple_element, {x, 0}, 2, {x, 0}}.
-  {label, 97}.
+  {label, 89}.
     {move, {y, 1}, {x, 1}}.
-    {call, 2, {f, 63}}.
+    {call, 2, {f, 59}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 2}, {x, 0}}.
     {call_ext, 2, {extfunc, std@io@fs, lift, 2}}.
-    {test, is_tagged_tuple, {f, 98}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 90}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 99}}.
-  {label, 98}.
+    {jump, {f, 91}}.
+  {label, 90}.
     {deallocate, 5}.
     return.
-  {label, 99}.
+  {label, 91}.
     {move, {x, 0}, {y, 3}}.
     {move, {y, 3}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
@@ -9337,25 +10421,25 @@ test "fs answers PermissionDenied for an OS permission error" {
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 100}, [{x, 0}, 3, {atom, std@io@fs@@File}]}.
+    {test, is_tagged_tuple, {f, 92}, [{x, 0}, 3, {atom, std@io@fs@@File}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-  {label, 100}.
+  {label, 92}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 138}, [{x, 0}, 3, {atom, std@io@fs@@File}]}.
+    {test, is_tagged_tuple, {f, 126}, [{x, 0}, 3, {atom, std@io@fs@@File}]}.
     {get_tuple_element, {x, 0}, 2, {x, 0}}.
-  {label, 138}.
-    {call, 1, {f, 102}}.
+  {label, 126}.
+    {call, 1, {f, 94}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 1}, {x, 0}}.
     {call_ext, 2, {extfunc, std@io@fs, lift, 2}}.
-    {test, is_tagged_tuple, {f, 139}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 127}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 140}}.
-  {label, 139}.
+    {jump, {f, 128}}.
+  {label, 127}.
     {deallocate, 4}.
     return.
-  {label, 140}.
+  {label, 128}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 2}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
@@ -9374,27 +10458,27 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
     {call, 1, {f, 9}}.
-    {test, is_tagged_tuple, {f, 141}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 129}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 142}}.
-  {label, 141}.
+    {jump, {f, 130}}.
+  {label, 129}.
     {deallocate, 3}.
     return.
-  {label, 142}.
+  {label, 130}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 143}, [{x, 0}, 3, {atom, std@io@fs@@File}]}.
+    {test, is_tagged_tuple, {f, 131}, [{x, 0}, 3, {atom, std@io@fs@@File}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-  {label, 143}.
+  {label, 131}.
     {move, {y, 1}, {x, 1}}.
     {call_ext, 2, {extfunc, std@io@fs, decode, 2}}.
-    {test, is_tagged_tuple, {f, 144}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 132}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 145}}.
-  {label, 144}.
+    {jump, {f, 133}}.
+  {label, 132}.
     {deallocate, 3}.
     return.
-  {label, 145}.
+  {label, 133}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 2}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
@@ -9414,35 +10498,35 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 1}, {y, 1}}.
     {move, nil, {y, 2}}.
     {line, [{location, "std@io@fs@@File.erl", 26}]}.
-  {label, 147}.
+  {label, 135}.
     {move, {atom, true}, {x, 0}}.
-    {test, is_eq_exact, {f, 148}, [{x, 0}, {atom, true}]}.
+    {test, is_eq_exact, {f, 136}, [{x, 0}, {atom, true}]}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
     {call, 2, {f, 7}}.
-    {test, is_tagged_tuple, {f, 149}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 137}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 150}}.
-  {label, 149}.
+    {jump, {f, 138}}.
+  {label, 137}.
     {test_heap, 2, 1}.
     {put_list, {x, 0}, {y, 2}, {y, 2}}.
-    {jump, {f, 146}}.
-  {label, 150}.
+    {jump, {f, 134}}.
+  {label, 138}.
     {move, {x, 0}, {y, 3}}.
     {move, {y, 3}, {x, 0}}.
     {gc_bif, byte_size, {f, 0}, 1, [{x, 0}], {x, 0}}.
-    {test, is_eq_exact, {f, 151}, [{x, 0}, {integer, 0}]}.
-    {jump, {f, 148}}.
-  {label, 151}.
+    {test, is_eq_exact, {f, 139}, [{x, 0}, {integer, 0}]}.
+    {jump, {f, 136}}.
+  {label, 139}.
     {move, {y, 3}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, 3, 2}.
     {put_tuple2, {x, 0}, {list, [{atom, ok}, {x, 1}]}}.
     {test_heap, 2, 1}.
     {put_list, {x, 0}, {y, 2}, {y, 2}}.
-    {jump, {f, 147}}.
-  {label, 148}.
-  {label, 146}.
+    {jump, {f, 135}}.
+  {label, 136}.
+  {label, 134}.
     {move, {y, 2}, {x, 0}}.
     {call_ext, 1, {extfunc, lists, reverse, 1}}.
     {deallocate, 4}.
@@ -9460,56 +10544,56 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {integer, 0}, {x, 0}}.
     {move, {x, 0}, {y, 2}}.
     {line, [{location, "std@io@fs@@File.erl", 27}]}.
-  {label, 153}.
+  {label, 141}.
     {move, {atom, true}, {x, 0}}.
-    {test, is_eq_exact, {f, 154}, [{x, 0}, {atom, true}]}.
+    {test, is_eq_exact, {f, 142}, [{x, 0}, {atom, true}]}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 155}, [{x, 0}, 3, {atom, std@io@fs@@File}]}.
+    {test, is_tagged_tuple, {f, 143}, [{x, 0}, 3, {atom, std@io@fs@@File}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-  {label, 155}.
+  {label, 143}.
     {move, {x, 0}, {y, 3}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 194}, [{x, 0}, 3, {atom, std@io@fs@@File}]}.
+    {test, is_tagged_tuple, {f, 178}, [{x, 0}, 3, {atom, std@io@fs@@File}]}.
     {get_tuple_element, {x, 0}, 2, {x, 0}}.
-  {label, 194}.
-    {call, 1, {f, 157}}.
+  {label, 178}.
+    {call, 1, {f, 145}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 3}, {x, 0}}.
     {call_ext, 2, {extfunc, std@io@fs, lift, 2}}.
-    {test, is_tagged_tuple, {f, 195}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 179}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 196}}.
-  {label, 195}.
+    {jump, {f, 180}}.
+  {label, 179}.
     {test_heap, 2, 1}.
     {put_list, {x, 0}, {y, 1}, {y, 1}}.
-    {jump, {f, 152}}.
-  {label, 196}.
+    {jump, {f, 140}}.
+  {label, 180}.
     {move, {x, 0}, {y, 4}}.
     {move, {y, 4}, {x, 0}}.
     {gc_bif, byte_size, {f, 0}, 1, [{x, 0}], {x, 0}}.
-    {test, is_eq_exact, {f, 197}, [{x, 0}, {integer, 0}]}.
-    {jump, {f, 154}}.
-  {label, 197}.
+    {test, is_eq_exact, {f, 181}, [{x, 0}, {integer, 0}]}.
+    {jump, {f, 142}}.
+  {label, 181}.
     {move, {y, 4}, {x, 0}}.
-    {call, 1, {f, 199}}.
+    {call, 1, {f, 183}}.
     {move, {x, 0}, {y, 5}}.
     {move, {y, 5}, {x, 0}}.
-    {call, 1, {f, 223}}.
+    {call, 1, {f, 207}}.
     {move, {x, 0}, {y, 6}}.
-    {test, is_ge, {f, 235}, [{y, 6}, {integer, 0}]}.
+    {test, is_ge, {f, 219}, [{y, 6}, {integer, 0}]}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 236}, [{x, 0}, 3, {atom, std@io@fs@@File}]}.
+    {test, is_tagged_tuple, {f, 220}, [{x, 0}, 3, {atom, std@io@fs@@File}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-  {label, 236}.
+  {label, 220}.
     {move, {x, 0}, {x, 1}}.
     {gc_bif, '+', {f, 0}, 2, [{y, 2}, {y, 6}], {x, 0}}.
-    {test, is_ge, {f, 237}, [{x, 0}, {integer, -9223372036854775808}]}.
-    {test, is_ge, {f, 237}, [{integer, 9223372036854775807}, {x, 0}]}.
-    {jump, {f, 238}}.
-  {label, 237}.
-    {move, {literal, {integer_overflow, <<"integer overflow: + on i64 at src/io/fs.bp:483:21">>}}, {x, 0}}.
+    {test, is_ge, {f, 221}, [{x, 0}, {integer, -9223372036854775808}]}.
+    {test, is_ge, {f, 221}, [{integer, 9223372036854775807}, {x, 0}]}.
+    {jump, {f, 222}}.
+  {label, 221}.
+    {move, {literal, {integer_overflow, <<"integer overflow: + on i64 at src/io/fs.bp:498:21">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 238}.
+  {label, 222}.
     {test_heap, 4, 2}.
     {put_tuple2, {x, 0}, {list, [{atom, std@io@fs@@FsError__v__invalidutf8}, {x, 1}, {x, 0}]}}.
     {move, {x, 0}, {x, 1}}.
@@ -9517,38 +10601,38 @@ test "fs answers PermissionDenied for an OS permission error" {
     {put_tuple2, {x, 0}, {list, [{atom, error}, {x, 1}]}}.
     {test_heap, 2, 1}.
     {put_list, {x, 0}, {y, 1}, {y, 1}}.
-    {jump, {f, 152}}.
-  {label, 235}.
+    {jump, {f, 140}}.
+  {label, 219}.
     {move, {y, 4}, {x, 0}}.
     {gc_bif, byte_size, {f, 0}, 1, [{x, 0}], {x, 0}}.
     {move, {x, 0}, {y, 7}}.
     {move, {y, 7}, {x, 0}}.
-    {call, 1, {f, 240}}.
+    {call, 1, {f, 224}}.
     {gc_bif, '+', {f, 0}, 1, [{y, 2}, {x, 0}], {x, 0}}.
-    {test, is_ge, {f, 251}, [{x, 0}, {integer, -9223372036854775808}]}.
-    {test, is_ge, {f, 251}, [{integer, 9223372036854775807}, {x, 0}]}.
-    {jump, {f, 252}}.
-  {label, 251}.
-    {move, {literal, {integer_overflow, <<"integer overflow: + on i64 at src/io/fs.bp:485:33">>}}, {x, 0}}.
+    {test, is_ge, {f, 235}, [{x, 0}, {integer, -9223372036854775808}]}.
+    {test, is_ge, {f, 235}, [{integer, 9223372036854775807}, {x, 0}]}.
+    {jump, {f, 236}}.
+  {label, 235}.
+    {move, {literal, {integer_overflow, <<"integer overflow: + on i64 at src/io/fs.bp:500:33">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 252}.
+  {label, 236}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 5}, {x, 0}}.
-    {call, 1, {f, 256}}.
-    {test, is_tagged_tuple, {f, 253}, [{x, 0}, 2, {atom, ok}]}.
+    {call, 1, {f, 240}}.
+    {test, is_tagged_tuple, {f, 237}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 254}}.
-  {label, 253}.
+    {jump, {f, 238}}.
+  {label, 237}.
     {move, {literal, <<"">>}, {x, 0}}.
-  {label, 254}.
+  {label, 238}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, 3, 2}.
     {put_tuple2, {x, 0}, {list, [{atom, ok}, {x, 1}]}}.
     {test_heap, 2, 1}.
     {put_list, {x, 0}, {y, 1}, {y, 1}}.
-    {jump, {f, 153}}.
-  {label, 154}.
-  {label, 152}.
+    {jump, {f, 141}}.
+  {label, 142}.
+  {label, 140}.
     {move, {y, 1}, {x, 0}}.
     {call_ext, 1, {extfunc, lists, reverse, 1}}.
     {deallocate, 11}.
@@ -9563,25 +10647,25 @@ test "fs answers PermissionDenied for an OS permission error" {
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 266}, [{x, 0}, 3, {atom, std@io@fs@@File}]}.
+    {test, is_tagged_tuple, {f, 250}, [{x, 0}, 3, {atom, std@io@fs@@File}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-  {label, 266}.
+  {label, 250}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 308}, [{x, 0}, 3, {atom, std@io@fs@@File}]}.
+    {test, is_tagged_tuple, {f, 284}, [{x, 0}, 3, {atom, std@io@fs@@File}]}.
     {get_tuple_element, {x, 0}, 2, {x, 0}}.
-  {label, 308}.
-    {call, 1, {f, 268}}.
+  {label, 284}.
+    {call, 1, {f, 252}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 1}, {x, 0}}.
     {call_ext, 2, {extfunc, std@io@fs, lift, 2}}.
-    {test, is_tagged_tuple, {f, 309}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 285}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 310}}.
-  {label, 309}.
+    {jump, {f, 286}}.
+  {label, 285}.
     {deallocate, 4}.
     return.
-  {label, 310}.
+  {label, 286}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 2}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
@@ -9600,26 +10684,46 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 311}, [{x, 0}, 3, {atom, std@io@fs@@File}]}.
+    {test, is_tagged_tuple, {f, 294}, [{x, 0}, 3, {atom, std@io@fs@@File}]}.
+    {get_tuple_element, {x, 0}, 2, {x, 0}}.
+  {label, 294}.
+    {call, 1, {f, 289}}.
+    {test, is_eq, {f, 287}, [{x, 0}, {atom, true}]}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_tagged_tuple, {f, 295}, [{x, 0}, 3, {atom, std@io@fs@@File}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-  {label, 311}.
+  {label, 295}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {literal, <<"the file is open for reading">>}, {x, 0}}.
+    {test_heap, 4, 2}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@io@fs@@FsError__v__other}, {x, 1}, {x, 0}]}}.
+    {move, {x, 0}, {x, 1}}.
+    {test_heap, 3, 2}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {x, 1}]}}.
+    {deallocate, 5}.
+    return.
+  {label, 287}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_tagged_tuple, {f, 296}, [{x, 0}, 3, {atom, std@io@fs@@File}]}.
+    {get_tuple_element, {x, 0}, 1, {x, 0}}.
+  {label, 296}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 342}, [{x, 0}, 3, {atom, std@io@fs@@File}]}.
+    {test, is_tagged_tuple, {f, 320}, [{x, 0}, 3, {atom, std@io@fs@@File}]}.
     {get_tuple_element, {x, 0}, 2, {x, 0}}.
-  {label, 342}.
+  {label, 320}.
     {move, {y, 1}, {x, 1}}.
-    {call, 2, {f, 313}}.
+    {call, 2, {f, 298}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 2}, {x, 0}}.
     {call_ext, 2, {extfunc, std@io@fs, lift, 2}}.
-    {test, is_tagged_tuple, {f, 343}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 321}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 344}}.
-  {label, 343}.
+    {jump, {f, 322}}.
+  {label, 321}.
     {deallocate, 5}.
     return.
-  {label, 344}.
+  {label, 322}.
     {move, {x, 0}, {y, 3}}.
     {move, {y, 3}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
@@ -9633,41 +10737,42 @@ test "fs answers PermissionDenied for an OS permission error" {
     {line, [{location, "std@io@fs@@File.erl", 29}]}.
     {func_info, {atom, std@io@fs@@File}, {atom, close}, 1}.
   {label, 21}.
-    {allocate, 1, 1}.
-    {init_yregs, {list, [{y, 0}]}}.
+    {allocate, 2, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 358}, [{x, 0}, 3, {atom, std@io@fs@@File}]}.
+    {test, is_tagged_tuple, {f, 349}, [{x, 0}, 3, {atom, std@io@fs@@File}]}.
     {get_tuple_element, {x, 0}, 2, {x, 0}}.
-  {label, 358}.
-    {call, 1, {f, 346}}.
+  {label, 349}.
+    {call, 1, {f, 324}}.
+    {move, {x, 0}, {y, 1}}.
     {move, {atom, ok}, {x, 0}}.
-    {deallocate, 1}.
+    {deallocate, 2}.
     return.
 
-{function, '__bp_get', 2, 360}.
-  {label, 359}.
+{function, '__bp_get', 2, 351}.
+  {label, 350}.
     {line, [{location, "std@io@fs@@File.erl", 30}]}.
     {func_info, {atom, std@io@fs@@File}, {atom, '__bp_get'}, 2}.
-  {label, 360}.
-    {test, is_eq_exact, {f, 361}, [{x, 1}, {atom, location}]}.
+  {label, 351}.
+    {test, is_eq_exact, {f, 352}, [{x, 1}, {atom, location}]}.
     {move, {x, 0}, {x, 1}}.
     {move, {integer, 2}, {x, 0}}.
     {call_ext_only, 2, {extfunc, erlang, element, 2}}.
-  {label, 361}.
-    {test, is_eq_exact, {f, 362}, [{x, 1}, {atom, handle}]}.
+  {label, 352}.
+    {test, is_eq_exact, {f, 353}, [{x, 1}, {atom, handle}]}.
     {move, {x, 0}, {x, 1}}.
     {move, {integer, 3}, {x, 0}}.
     {call_ext_only, 2, {extfunc, erlang, element, 2}}.
-  {label, 362}.
+  {label, 353}.
     {move, {atom, undefined}, {x, 0}}.
     return.
 
-{function, '__bp_format', 1, 364}.
-  {label, 363}.
+{function, '__bp_format', 1, 355}.
+  {label, 354}.
     {line, [{location, "std@io@fs@@File.erl", 30}]}.
     {func_info, {atom, std@io@fs@@File}, {atom, '__bp_format'}, 1}.
-  {label, 364}.
+  {label, 355}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
@@ -9689,162 +10794,206 @@ test "fs answers PermissionDenied for an OS permission error" {
     {deallocate, 2}.
     return.
 
-{function, '__bp_tpl_0--t/2-fun-0--fun-1-', 1, 33}.
-  {label, 32}.
-    {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_0--t/2-fun-0--fun-1-'}, 1}.
-  {label, 33}.
-    {allocate, 3, 1}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
-    {move, {x, 0}, {y, 1}}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 37}, [{x, 0}, {atom, enoent}]}.
-    {move, {literal, <<"notfound">>}, {y, 2}}.
-    {jump, {f, 36}}.
-  {label, 37}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 38}, [{x, 0}, {atom, eacces}]}.
-    {move, {literal, <<"denied">>}, {y, 2}}.
-    {jump, {f, 36}}.
-  {label, 38}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 39}, [{x, 0}, {atom, eperm}]}.
-    {move, {literal, <<"denied">>}, {y, 2}}.
-    {jump, {f, 36}}.
-  {label, 39}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 40}, [{x, 0}, {atom, eisdir}]}.
-    {move, {literal, <<"isdir">>}, {y, 2}}.
-    {jump, {f, 36}}.
-  {label, 40}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 41}, [{x, 0}, {atom, enotdir}]}.
-    {move, {literal, <<"notdir">>}, {y, 2}}.
-    {jump, {f, 36}}.
-  {label, 41}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 42}, [{x, 0}, {atom, eexist}]}.
-    {move, {literal, <<"exists">>}, {y, 2}}.
-    {jump, {f, 36}}.
-  {label, 42}.
-    {move, {literal, <<"other">>}, {y, 2}}.
-    {jump, {f, 36}}.
-  {label, 36}.
-    {move, {y, 2}, {y, 0}}.
-    {jump, {f, 45}}.
-  {label, 45}.
-    {test_heap, 2, 0}.
-    {put_list, {y, 1}, nil, {x, 0}}.
-    {move, {x, 0}, {y, 2}}.
-    {move, {literal, [126, 116, 112]}, {x, 0}}.
-    {move, {y, 2}, {x, 1}}.
-    {call_ext, 2, {extfunc, io_lib, format, 2}}.
-    {move, {x, 0}, {y, 2}}.
-    {test_heap, 6, 0}.
-    {put_list, {y, 2}, nil, {x, 0}}.
-    {put_list, {literal, <<"|">>}, {x, 0}, {x, 0}}.
-    {put_list, {y, 0}, {x, 0}, {x, 0}}.
-    {move, {x, 0}, {y, 2}}.
-    {move, {y, 2}, {x, 0}}.
-    {call_ext_last, 1, {extfunc, unicode, characters_to_binary, 1}, 3}.
-
-{function, '__bp_tpl_0-t/2-fun-0-', 2, 29}.
-  {label, 28}.
+{function, '__bp_tpl_0-t/2-fun-0-', 2, 31}.
+  {label, 30}.
     {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_0-t/2-fun-0-'}, 2}.
-  {label, 29}.
-    {allocate, 8, 2}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}]}}.
-    {move, {x, 0}, {y, 2}}.
-    {move, {x, 1}, {y, 3}}.
-    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 33}, 0, 0, {x, 0}, {list, []}}.
-    {move, {x, 0}, {y, 4}}.
+  {label, 31}.
+    {allocate, 7, 2}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}]}}.
+    {move, {x, 0}, {y, 1}}.
+    {move, {x, 1}, {y, 2}}.
+    {move, {y, 1}, {x, 0}}.
+    {test, is_tuple, {f, 35}, [{x, 0}]}.
+    {test, test_arity, {f, 35}, [{x, 0}, 3]}.
+    {get_tuple_element, {x, 0}, 0, {y, 3}}.
+    {get_tuple_element, {x, 0}, 1, {y, 4}}.
+    {move, {y, 3}, {x, 0}}.
+    {test, is_eq_exact, {f, 35}, [{x, 0}, {atom, mem}]}.
     {move, {y, 4}, {y, 0}}.
-    {jump, {f, 47}}.
-  {label, 47}.
+    {move, {y, 0}, {x, 0}}.
+    {call_ext, 1, {extfunc, erlang, byte_size, 1}}.
+    {move, {x, 0}, {y, 5}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 5}]}}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {y, 5}, {x, 0}}.
+    {deallocate, 7}.
+    return.
+  {label, 35}.
     {move, {y, 2}, {x, 0}}.
-    {test, is_tuple, {f, 49}, [{x, 0}]}.
-    {test, test_arity, {f, 49}, [{x, 0}, 3]}.
+    {call_ext, 1, {extfunc, file, read_file_info, 1}}.
+    {move, {x, 0}, {y, 3}}.
+    {move, {y, 3}, {x, 0}}.
+    {test, is_tuple, {f, 38}, [{x, 0}]}.
+    {test, test_arity, {f, 38}, [{x, 0}, 2]}.
     {get_tuple_element, {x, 0}, 0, {y, 4}}.
     {get_tuple_element, {x, 0}, 1, {y, 5}}.
     {move, {y, 4}, {x, 0}}.
-    {test, is_eq_exact, {f, 49}, [{x, 0}, {atom, mem}]}.
-    {move, {y, 5}, {y, 1}}.
-    {move, {y, 1}, {x, 0}}.
-    {call_ext, 1, {extfunc, erlang, byte_size, 1}}.
+    {test, is_eq_exact, {f, 38}, [{x, 0}, {atom, ok}]}.
+    {move, {y, 5}, {y, 0}}.
+    {move, {integer, 2}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, element, 2}}.
     {move, {x, 0}, {y, 6}}.
     {test_heap, 3, 0}.
     {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 6}]}}.
     {move, {x, 0}, {y, 6}}.
     {move, {y, 6}, {x, 0}}.
-    {deallocate, 8}.
+    {deallocate, 7}.
     return.
-  {label, 49}.
+  {label, 38}.
     {move, {y, 3}, {x, 0}}.
-    {call_ext, 1, {extfunc, file, read_file_info, 1}}.
-    {move, {x, 0}, {y, 4}}.
+    {test, is_tuple, {f, 39}, [{x, 0}]}.
+    {test, test_arity, {f, 39}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 4}}.
+    {get_tuple_element, {x, 0}, 1, {y, 5}}.
     {move, {y, 4}, {x, 0}}.
-    {test, is_tuple, {f, 52}, [{x, 0}]}.
-    {test, test_arity, {f, 52}, [{x, 0}, 2]}.
-    {get_tuple_element, {x, 0}, 0, {y, 5}}.
-    {get_tuple_element, {x, 0}, 1, {y, 6}}.
-    {move, {y, 5}, {x, 0}}.
-    {test, is_eq_exact, {f, 52}, [{x, 0}, {atom, ok}]}.
-    {move, {y, 6}, {y, 1}}.
-    {move, {integer, 2}, {x, 0}}.
-    {move, {y, 1}, {x, 1}}.
-    {call_ext, 2, {extfunc, erlang, element, 2}}.
-    {move, {x, 0}, {y, 7}}.
+    {test, is_eq_exact, {f, 39}, [{x, 0}, {atom, error}]}.
+    {move, {y, 5}, {y, 0}}.
     {test_heap, 3, 0}.
-    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 7}]}}.
-    {move, {x, 0}, {y, 7}}.
-    {move, {y, 7}, {x, 0}}.
-    {deallocate, 8}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 0}]}}.
+    {move, {x, 0}, {y, 6}}.
+    {move, {y, 6}, {x, 0}}.
+    {deallocate, 7}.
     return.
-  {label, 52}.
-    {move, {y, 4}, {x, 0}}.
-    {test, is_tuple, {f, 53}, [{x, 0}]}.
-    {test, test_arity, {f, 53}, [{x, 0}, 2]}.
-    {get_tuple_element, {x, 0}, 0, {y, 5}}.
-    {get_tuple_element, {x, 0}, 1, {y, 6}}.
-    {move, {y, 5}, {x, 0}}.
-    {test, is_eq_exact, {f, 53}, [{x, 0}, {atom, error}]}.
-    {move, {y, 6}, {y, 1}}.
-    {move, {y, 1}, {x, 0}}.
-    {move, {y, 0}, {x, 1}}.
-    {call_fun, 1}.
-    {move, {x, 0}, {y, 7}}.
-    {test_heap, 3, 0}.
-    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 7}]}}.
-    {move, {x, 0}, {y, 7}}.
-    {move, {y, 7}, {x, 0}}.
-    {deallocate, 8}.
-    return.
-  {label, 53}.
-    {move, {y, 4}, {x, 0}}.
+  {label, 39}.
+    {move, {y, 3}, {x, 0}}.
     {case_end, {x, 0}}.
 
 {function, '__bp_tpl_0', 2, 25}.
   {label, 24}.
     {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_0'}, 2}.
   {label, 25}.
-    {allocate, 3, 2}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
-    {move, {x, 0}, {y, 0}}.
-    {move, {x, 1}, {y, 1}}.
+    {allocate, 13, 2}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}, {y, 11}, {y, 12}]}}.
+    {move, {x, 0}, {y, 3}}.
+    {move, {x, 1}, {y, 4}}.
+    {'try', {y, 12}, {f, 28}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 29}, 1, 0, {x, 0}, {list, []}}.
-    {move, {x, 0}, {y, 2}}.
-    {move, {y, 0}, {x, 0}}.
-    {move, {y, 1}, {x, 1}}.
-    {move, {y, 2}, {x, 2}}.
+    {make_fun3, {f, 31}, 0, 0, {x, 0}, {list, []}}.
+    {move, {x, 0}, {y, 6}}.
+    {move, {y, 3}, {x, 0}}.
+    {move, {y, 4}, {x, 1}}.
+    {move, {y, 6}, {x, 2}}.
     {call_fun, 2}.
-    {deallocate, 3}.
+    {move, {x, 0}, {y, 6}}.
+    {move, {y, 6}, {y, 7}}.
+    {try_end, {y, 12}}.
+    {move, {y, 7}, {x, 0}}.
+    {test, is_tuple, {f, 41}, [{x, 0}]}.
+    {test, test_arity, {f, 41}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 8}}.
+    {get_tuple_element, {x, 0}, 1, {y, 9}}.
+    {move, {y, 8}, {x, 0}}.
+    {test, is_eq_exact, {f, 41}, [{x, 0}, {atom, ok}]}.
+    {move, {y, 9}, {y, 0}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 0}]}}.
+    {move, {x, 0}, {y, 10}}.
+    {move, {y, 10}, {y, 5}}.
+    {jump, {f, 40}}.
+  {label, 41}.
+    {move, {y, 7}, {x, 0}}.
+    {test, is_tuple, {f, 42}, [{x, 0}]}.
+    {test, test_arity, {f, 42}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 8}}.
+    {get_tuple_element, {x, 0}, 1, {y, 9}}.
+    {move, {y, 8}, {x, 0}}.
+    {test, is_eq_exact, {f, 42}, [{x, 0}, {atom, error}]}.
+    {move, {y, 9}, {y, 1}}.
+    {test_heap, 2, 0}.
+    {put_list, {y, 1}, nil, {x, 0}}.
+    {move, {x, 0}, {y, 10}}.
+    {move, {literal, [126, 116, 112]}, {x, 0}}.
+    {move, {y, 10}, {x, 1}}.
+    {call_ext, 2, {extfunc, io_lib, format, 2}}.
+    {move, {x, 0}, {y, 10}}.
+    {move, {y, 10}, {x, 0}}.
+    {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
+    {move, {x, 0}, {y, 10}}.
+    {test_heap, 6, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@failure@@HostError}, {y, 10}, {literal, <<"host">>}, {atom, std@failure@@HostErrorName__v__error}, {atom, undefined}]}}.
+    {move, {x, 0}, {y, 10}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 10}]}}.
+    {move, {x, 0}, {y, 10}}.
+    {move, {y, 10}, {y, 5}}.
+    {jump, {f, 40}}.
+  {label, 42}.
+    {move, {y, 7}, {y, 0}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 0}]}}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {y, 8}, {y, 5}}.
+    {jump, {f, 40}}.
+  {label, 40}.
+    {jump, {f, 29}}.
+  {label, 28}.
+    {try_case, {y, 12}}.
+    {move, {x, 0}, {y, 6}}.
+    {move, {x, 1}, {y, 7}}.
+    {move, {x, 2}, {y, 8}}.
+    {move, {y, 6}, {y, 0}}.
+    {move, {y, 7}, {y, 1}}.
+    {move, {y, 8}, {x, 0}}.
+    build_stacktrace.
+    {move, {x, 0}, {y, 2}}.
+    {test_heap, 2, 0}.
+    {put_list, {y, 1}, nil, {x, 0}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {literal, [126, 116, 112]}, {x, 0}}.
+    {move, {y, 9}, {x, 1}}.
+    {call_ext, 2, {extfunc, io_lib, format, 2}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {x, 0}}.
+    {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_eq_exact, {f, 47}, [{x, 0}, {atom, error}]}.
+    {move, {atom, std@failure@@HostErrorName__v__error}, {y, 10}}.
+    {jump, {f, 46}}.
+  {label, 47}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_eq_exact, {f, 48}, [{x, 0}, {atom, throw}]}.
+    {move, {atom, std@failure@@HostErrorName__v__throw}, {y, 10}}.
+    {jump, {f, 46}}.
+  {label, 48}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_eq_exact, {f, 49}, [{x, 0}, {atom, exit}]}.
+    {move, {atom, std@failure@@HostErrorName__v__exit}, {y, 10}}.
+    {jump, {f, 46}}.
+  {label, 49}.
+    {move, {y, 0}, {x, 0}}.
+    {case_end, {x, 0}}.
+  {label, 46}.
+    {test_heap, 2, 0}.
+    {put_list, {y, 2}, nil, {x, 0}}.
+    {move, {x, 0}, {y, 11}}.
+    {move, {literal, [126, 116, 112]}, {x, 0}}.
+    {move, {y, 11}, {x, 1}}.
+    {call_ext, 2, {extfunc, io_lib, format, 2}}.
+    {move, {x, 0}, {y, 11}}.
+    {move, {y, 11}, {x, 0}}.
+    {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
+    {move, {x, 0}, {y, 11}}.
+    {test_heap, 6, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@failure@@HostError}, {y, 9}, {literal, <<"host">>}, {y, 10}, {y, 11}]}}.
+    {move, {x, 0}, {y, 9}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 9}]}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {y, 5}}.
+    {jump, {f, 44}}.
+  {label, 44}.
+  {label, 29}.
+    {move, {y, 5}, {x, 0}}.
+    {deallocate, 13}.
     return.
 
-{function, '__bp_tpl_1', 1, 60}.
-  {label, 59}.
+{function, '__bp_tpl_1', 1, 56}.
+  {label, 55}.
     {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_1'}, 1}.
-  {label, 60}.
+  {label, 56}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
@@ -9852,625 +11001,755 @@ test "fs answers PermissionDenied for an OS permission error" {
     {deallocate, 1}.
     return.
 
-{function, '__bp_tpl_2--t/2-fun-0--fun-1-', 1, 71}.
-  {label, 70}.
-    {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_2--t/2-fun-0--fun-1-'}, 1}.
-  {label, 71}.
-    {allocate, 3, 1}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
-    {move, {x, 0}, {y, 1}}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 75}, [{x, 0}, {atom, enoent}]}.
-    {move, {literal, <<"notfound">>}, {y, 2}}.
-    {jump, {f, 74}}.
-  {label, 75}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 76}, [{x, 0}, {atom, eacces}]}.
-    {move, {literal, <<"denied">>}, {y, 2}}.
-    {jump, {f, 74}}.
-  {label, 76}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 77}, [{x, 0}, {atom, eperm}]}.
-    {move, {literal, <<"denied">>}, {y, 2}}.
-    {jump, {f, 74}}.
-  {label, 77}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 78}, [{x, 0}, {atom, eisdir}]}.
-    {move, {literal, <<"isdir">>}, {y, 2}}.
-    {jump, {f, 74}}.
-  {label, 78}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 79}, [{x, 0}, {atom, enotdir}]}.
-    {move, {literal, <<"notdir">>}, {y, 2}}.
-    {jump, {f, 74}}.
-  {label, 79}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 80}, [{x, 0}, {atom, eexist}]}.
-    {move, {literal, <<"exists">>}, {y, 2}}.
-    {jump, {f, 74}}.
-  {label, 80}.
-    {move, {literal, <<"other">>}, {y, 2}}.
-    {jump, {f, 74}}.
-  {label, 74}.
-    {move, {y, 2}, {y, 0}}.
-    {jump, {f, 83}}.
-  {label, 83}.
-    {test_heap, 2, 0}.
-    {put_list, {y, 1}, nil, {x, 0}}.
-    {move, {x, 0}, {y, 2}}.
-    {move, {literal, [126, 116, 112]}, {x, 0}}.
-    {move, {y, 2}, {x, 1}}.
-    {call_ext, 2, {extfunc, io_lib, format, 2}}.
-    {move, {x, 0}, {y, 2}}.
-    {test_heap, 6, 0}.
-    {put_list, {y, 2}, nil, {x, 0}}.
-    {put_list, {literal, <<"|">>}, {x, 0}, {x, 0}}.
-    {put_list, {y, 0}, {x, 0}, {x, 0}}.
-    {move, {x, 0}, {y, 2}}.
-    {move, {y, 2}, {x, 0}}.
-    {call_ext_last, 1, {extfunc, unicode, characters_to_binary, 1}, 3}.
-
-{function, '__bp_tpl_2-t/2-fun-0-', 2, 67}.
-  {label, 66}.
+{function, '__bp_tpl_2-t/2-fun-0-', 2, 65}.
+  {label, 64}.
     {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_2-t/2-fun-0-'}, 2}.
-  {label, 67}.
-    {allocate, 11, 2}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}]}}.
-    {move, {x, 0}, {y, 5}}.
-    {move, {x, 1}, {y, 6}}.
-    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 71}, 0, 0, {x, 0}, {list, []}}.
-    {move, {x, 0}, {y, 7}}.
+  {label, 65}.
+    {allocate, 10, 2}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}]}}.
+    {move, {x, 0}, {y, 4}}.
+    {move, {x, 1}, {y, 5}}.
+    {move, {y, 4}, {x, 0}}.
+    {test, is_tuple, {f, 69}, [{x, 0}]}.
+    {test, test_arity, {f, 69}, [{x, 0}, 3]}.
+    {get_tuple_element, {x, 0}, 0, {y, 6}}.
+    {get_tuple_element, {x, 0}, 1, {y, 7}}.
+    {get_tuple_element, {x, 0}, 2, {y, 8}}.
+    {move, {y, 6}, {x, 0}}.
+    {test, is_eq_exact, {f, 69}, [{x, 0}, {atom, mem}]}.
     {move, {y, 7}, {y, 0}}.
-    {jump, {f, 85}}.
-  {label, 85}.
-    {move, {y, 5}, {x, 0}}.
-    {test, is_tuple, {f, 87}, [{x, 0}]}.
-    {test, test_arity, {f, 87}, [{x, 0}, 3]}.
-    {get_tuple_element, {x, 0}, 0, {y, 7}}.
-    {get_tuple_element, {x, 0}, 1, {y, 8}}.
-    {get_tuple_element, {x, 0}, 2, {y, 9}}.
-    {move, {y, 7}, {x, 0}}.
-    {test, is_eq_exact, {f, 87}, [{x, 0}, {atom, mem}]}.
     {move, {y, 8}, {y, 1}}.
-    {move, {y, 9}, {y, 2}}.
-    {move, {y, 2}, {x, 0}}.
+    {move, {y, 1}, {x, 0}}.
     {move, {integer, 1}, {x, 1}}.
     {call_ext, 2, {extfunc, counters, get, 2}}.
-    {move, {x, 0}, {y, 10}}.
-    {move, {y, 10}, {y, 3}}.
-    {jump, {f, 89}}.
-  {label, 89}.
-    {move, {y, 1}, {x, 0}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {y, 2}}.
+    {jump, {f, 71}}.
+  {label, 71}.
+    {move, {y, 0}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, byte_size, 1}}.
-    {move, {x, 0}, {y, 10}}.
-    {move, {y, 10}, {x, 0}}.
-    {move, {y, 3}, {x, 1}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {x, 0}}.
+    {move, {y, 2}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, '-', 2}}.
-    {move, {x, 0}, {y, 10}}.
-    {move, {y, 6}, {x, 0}}.
-    {move, {y, 10}, {x, 1}}.
-    {call_ext, 2, {extfunc, erlang, min, 2}}.
-    {move, {x, 0}, {y, 10}}.
-    {move, {y, 10}, {y, 4}}.
-    {jump, {f, 91}}.
-  {label, 91}.
-    {move, {y, 2}, {x, 0}}.
-    {move, {integer, 1}, {x, 1}}.
-    {move, {y, 4}, {x, 2}}.
-    {call_ext, 3, {extfunc, counters, add, 3}}.
-    {move, {x, 0}, {y, 10}}.
-    {move, {y, 1}, {x, 0}}.
-    {move, {y, 3}, {x, 1}}.
-    {move, {y, 4}, {x, 2}}.
-    {call_ext, 3, {extfunc, binary, part, 3}}.
-    {move, {x, 0}, {y, 10}}.
-    {test_heap, 3, 0}.
-    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 10}]}}.
-    {move, {x, 0}, {y, 10}}.
-    {move, {y, 10}, {x, 0}}.
-    {deallocate, 11}.
-    return.
-  {label, 87}.
+    {move, {x, 0}, {y, 9}}.
     {move, {y, 5}, {x, 0}}.
-    {move, {y, 6}, {x, 1}}.
+    {move, {y, 9}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, min, 2}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {y, 3}}.
+    {jump, {f, 73}}.
+  {label, 73}.
+    {move, {y, 1}, {x, 0}}.
+    {move, {integer, 1}, {x, 1}}.
+    {move, {y, 3}, {x, 2}}.
+    {call_ext, 3, {extfunc, counters, add, 3}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 0}, {x, 0}}.
+    {move, {y, 2}, {x, 1}}.
+    {move, {y, 3}, {x, 2}}.
+    {call_ext, 3, {extfunc, binary, part, 3}}.
+    {move, {x, 0}, {y, 9}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 9}]}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {x, 0}}.
+    {deallocate, 10}.
+    return.
+  {label, 69}.
+    {move, {y, 4}, {x, 0}}.
+    {move, {y, 5}, {x, 1}}.
     {call_ext, 2, {extfunc, file, read, 2}}.
-    {move, {x, 0}, {y, 7}}.
+    {move, {x, 0}, {y, 6}}.
+    {move, {y, 6}, {x, 0}}.
+    {test, is_tuple, {f, 76}, [{x, 0}]}.
+    {test, test_arity, {f, 76}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 7}}.
+    {get_tuple_element, {x, 0}, 1, {y, 8}}.
     {move, {y, 7}, {x, 0}}.
-    {test, is_tuple, {f, 94}, [{x, 0}]}.
-    {test, test_arity, {f, 94}, [{x, 0}, 2]}.
+    {test, is_eq_exact, {f, 76}, [{x, 0}, {atom, ok}]}.
+    {move, {y, 8}, {y, 0}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 0}]}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {x, 0}}.
+    {deallocate, 10}.
+    return.
+  {label, 76}.
+    {move, {y, 6}, {x, 0}}.
+    {test, is_eq_exact, {f, 77}, [{x, 0}, {atom, eof}]}.
+    {move, {literal, {ok, <<"">>}}, {x, 0}}.
+    {deallocate, 10}.
+    return.
+  {label, 77}.
+    {move, {y, 6}, {x, 0}}.
+    {test, is_tuple, {f, 78}, [{x, 0}]}.
+    {test, test_arity, {f, 78}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 7}}.
+    {get_tuple_element, {x, 0}, 1, {y, 8}}.
+    {move, {y, 7}, {x, 0}}.
+    {test, is_eq_exact, {f, 78}, [{x, 0}, {atom, error}]}.
+    {move, {y, 8}, {y, 0}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 0}]}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {x, 0}}.
+    {deallocate, 10}.
+    return.
+  {label, 78}.
+    {move, {y, 6}, {x, 0}}.
+    {case_end, {x, 0}}.
+
+{function, '__bp_tpl_2', 2, 59}.
+  {label, 58}.
+    {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_2'}, 2}.
+  {label, 59}.
+    {allocate, 13, 2}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}, {y, 11}, {y, 12}]}}.
+    {move, {x, 0}, {y, 3}}.
+    {move, {x, 1}, {y, 4}}.
+    {'try', {y, 12}, {f, 62}}.
+    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
+    {make_fun3, {f, 65}, 0, 0, {x, 0}, {list, []}}.
+    {move, {x, 0}, {y, 6}}.
+    {move, {y, 3}, {x, 0}}.
+    {move, {y, 4}, {x, 1}}.
+    {move, {y, 6}, {x, 2}}.
+    {call_fun, 2}.
+    {move, {x, 0}, {y, 6}}.
+    {move, {y, 6}, {y, 7}}.
+    {try_end, {y, 12}}.
+    {move, {y, 7}, {x, 0}}.
+    {test, is_tuple, {f, 80}, [{x, 0}]}.
+    {test, test_arity, {f, 80}, [{x, 0}, 2]}.
     {get_tuple_element, {x, 0}, 0, {y, 8}}.
     {get_tuple_element, {x, 0}, 1, {y, 9}}.
     {move, {y, 8}, {x, 0}}.
-    {test, is_eq_exact, {f, 94}, [{x, 0}, {atom, ok}]}.
-    {move, {y, 9}, {y, 1}}.
+    {test, is_eq_exact, {f, 80}, [{x, 0}, {atom, ok}]}.
+    {move, {y, 9}, {y, 0}}.
     {test_heap, 3, 0}.
-    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 1}]}}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 0}]}}.
+    {move, {x, 0}, {y, 10}}.
+    {move, {y, 10}, {y, 5}}.
+    {jump, {f, 79}}.
+  {label, 80}.
+    {move, {y, 7}, {x, 0}}.
+    {test, is_tuple, {f, 81}, [{x, 0}]}.
+    {test, test_arity, {f, 81}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 8}}.
+    {get_tuple_element, {x, 0}, 1, {y, 9}}.
+    {move, {y, 8}, {x, 0}}.
+    {test, is_eq_exact, {f, 81}, [{x, 0}, {atom, error}]}.
+    {move, {y, 9}, {y, 1}}.
+    {test_heap, 2, 0}.
+    {put_list, {y, 1}, nil, {x, 0}}.
+    {move, {x, 0}, {y, 10}}.
+    {move, {literal, [126, 116, 112]}, {x, 0}}.
+    {move, {y, 10}, {x, 1}}.
+    {call_ext, 2, {extfunc, io_lib, format, 2}}.
     {move, {x, 0}, {y, 10}}.
     {move, {y, 10}, {x, 0}}.
-    {deallocate, 11}.
-    return.
-  {label, 94}.
-    {move, {y, 7}, {x, 0}}.
-    {test, is_eq_exact, {f, 95}, [{x, 0}, {atom, eof}]}.
-    {move, {literal, {ok, <<"">>}}, {x, 0}}.
-    {deallocate, 11}.
-    return.
-  {label, 95}.
-    {move, {y, 7}, {x, 0}}.
-    {test, is_tuple, {f, 96}, [{x, 0}]}.
-    {test, test_arity, {f, 96}, [{x, 0}, 2]}.
-    {get_tuple_element, {x, 0}, 0, {y, 8}}.
-    {get_tuple_element, {x, 0}, 1, {y, 9}}.
-    {move, {y, 8}, {x, 0}}.
-    {test, is_eq_exact, {f, 96}, [{x, 0}, {atom, error}]}.
-    {move, {y, 9}, {y, 1}}.
-    {move, {y, 1}, {x, 0}}.
-    {move, {y, 0}, {x, 1}}.
-    {call_fun, 1}.
+    {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
+    {move, {x, 0}, {y, 10}}.
+    {test_heap, 6, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@failure@@HostError}, {y, 10}, {literal, <<"host">>}, {atom, std@failure@@HostErrorName__v__error}, {atom, undefined}]}}.
     {move, {x, 0}, {y, 10}}.
     {test_heap, 3, 0}.
     {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 10}]}}.
     {move, {x, 0}, {y, 10}}.
-    {move, {y, 10}, {x, 0}}.
-    {deallocate, 11}.
-    return.
-  {label, 96}.
-    {move, {y, 7}, {x, 0}}.
-    {case_end, {x, 0}}.
-
-{function, '__bp_tpl_2', 2, 63}.
+    {move, {y, 10}, {y, 5}}.
+    {jump, {f, 79}}.
+  {label, 81}.
+    {move, {y, 7}, {y, 0}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 0}]}}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {y, 8}, {y, 5}}.
+    {jump, {f, 79}}.
+  {label, 79}.
+    {jump, {f, 63}}.
   {label, 62}.
-    {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_2'}, 2}.
-  {label, 63}.
-    {allocate, 3, 2}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
-    {move, {x, 0}, {y, 0}}.
-    {move, {x, 1}, {y, 1}}.
-    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 67}, 1, 0, {x, 0}, {list, []}}.
+    {try_case, {y, 12}}.
+    {move, {x, 0}, {y, 6}}.
+    {move, {x, 1}, {y, 7}}.
+    {move, {x, 2}, {y, 8}}.
+    {move, {y, 6}, {y, 0}}.
+    {move, {y, 7}, {y, 1}}.
+    {move, {y, 8}, {x, 0}}.
+    build_stacktrace.
     {move, {x, 0}, {y, 2}}.
-    {move, {y, 0}, {x, 0}}.
-    {move, {y, 1}, {x, 1}}.
-    {move, {y, 2}, {x, 2}}.
-    {call_fun, 2}.
-    {deallocate, 3}.
-    return.
-
-{function, '__bp_tpl_3--t/1-fun-0--fun-1-', 1, 110}.
-  {label, 109}.
-    {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_3--t/1-fun-0--fun-1-'}, 1}.
-  {label, 110}.
-    {allocate, 3, 1}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
-    {move, {x, 0}, {y, 1}}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 114}, [{x, 0}, {atom, enoent}]}.
-    {move, {literal, <<"notfound">>}, {y, 2}}.
-    {jump, {f, 113}}.
-  {label, 114}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 115}, [{x, 0}, {atom, eacces}]}.
-    {move, {literal, <<"denied">>}, {y, 2}}.
-    {jump, {f, 113}}.
-  {label, 115}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 116}, [{x, 0}, {atom, eperm}]}.
-    {move, {literal, <<"denied">>}, {y, 2}}.
-    {jump, {f, 113}}.
-  {label, 116}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 117}, [{x, 0}, {atom, eisdir}]}.
-    {move, {literal, <<"isdir">>}, {y, 2}}.
-    {jump, {f, 113}}.
-  {label, 117}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 118}, [{x, 0}, {atom, enotdir}]}.
-    {move, {literal, <<"notdir">>}, {y, 2}}.
-    {jump, {f, 113}}.
-  {label, 118}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 119}, [{x, 0}, {atom, eexist}]}.
-    {move, {literal, <<"exists">>}, {y, 2}}.
-    {jump, {f, 113}}.
-  {label, 119}.
-    {move, {literal, <<"other">>}, {y, 2}}.
-    {jump, {f, 113}}.
-  {label, 113}.
-    {move, {y, 2}, {y, 0}}.
-    {jump, {f, 122}}.
-  {label, 122}.
     {test_heap, 2, 0}.
     {put_list, {y, 1}, nil, {x, 0}}.
-    {move, {x, 0}, {y, 2}}.
+    {move, {x, 0}, {y, 9}}.
     {move, {literal, [126, 116, 112]}, {x, 0}}.
-    {move, {y, 2}, {x, 1}}.
+    {move, {y, 9}, {x, 1}}.
     {call_ext, 2, {extfunc, io_lib, format, 2}}.
-    {move, {x, 0}, {y, 2}}.
-    {test_heap, 6, 0}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {x, 0}}.
+    {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_eq_exact, {f, 86}, [{x, 0}, {atom, error}]}.
+    {move, {atom, std@failure@@HostErrorName__v__error}, {y, 10}}.
+    {jump, {f, 85}}.
+  {label, 86}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_eq_exact, {f, 87}, [{x, 0}, {atom, throw}]}.
+    {move, {atom, std@failure@@HostErrorName__v__throw}, {y, 10}}.
+    {jump, {f, 85}}.
+  {label, 87}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_eq_exact, {f, 88}, [{x, 0}, {atom, exit}]}.
+    {move, {atom, std@failure@@HostErrorName__v__exit}, {y, 10}}.
+    {jump, {f, 85}}.
+  {label, 88}.
+    {move, {y, 0}, {x, 0}}.
+    {case_end, {x, 0}}.
+  {label, 85}.
+    {test_heap, 2, 0}.
     {put_list, {y, 2}, nil, {x, 0}}.
-    {put_list, {literal, <<"|">>}, {x, 0}, {x, 0}}.
-    {put_list, {y, 0}, {x, 0}, {x, 0}}.
-    {move, {x, 0}, {y, 2}}.
-    {move, {y, 2}, {x, 0}}.
-    {call_ext_last, 1, {extfunc, unicode, characters_to_binary, 1}, 3}.
+    {move, {x, 0}, {y, 11}}.
+    {move, {literal, [126, 116, 112]}, {x, 0}}.
+    {move, {y, 11}, {x, 1}}.
+    {call_ext, 2, {extfunc, io_lib, format, 2}}.
+    {move, {x, 0}, {y, 11}}.
+    {move, {y, 11}, {x, 0}}.
+    {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
+    {move, {x, 0}, {y, 11}}.
+    {test_heap, 6, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@failure@@HostError}, {y, 9}, {literal, <<"host">>}, {y, 10}, {y, 11}]}}.
+    {move, {x, 0}, {y, 9}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 9}]}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {y, 5}}.
+    {jump, {f, 83}}.
+  {label, 83}.
+  {label, 63}.
+    {move, {y, 5}, {x, 0}}.
+    {deallocate, 13}.
+    return.
 
-{function, '__bp_tpl_3--t/1-fun-0--fun-2-', 3, 131}.
-  {label, 130}.
-    {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_3--t/1-fun-0--fun-2-'}, 3}.
-  {label, 131}.
-    {allocate, 8, 3}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}]}}.
-    {move, {x, 0}, {y, 3}}.
-    {move, {x, 1}, {y, 0}}.
-    {move, {x, 2}, {y, 1}}.
-    {test_heap, {alloc, [{words, 2}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 131}, 0, 0, {x, 0}, {list, [{y, 0}, {y, 1}]}}.
+{function, '__bp_tpl_3--t/1-fun-0--fun-1-', 2, 109}.
+  {label, 108}.
+    {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_3--t/1-fun-0--fun-1-'}, 2}.
+  {label, 109}.
+    {allocate, 7, 2}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}]}}.
     {move, {x, 0}, {y, 2}}.
+    {move, {x, 1}, {y, 0}}.
+    {test_heap, {alloc, [{words, 1}, {floats, 0}, {funs, 1}]}, 0}.
+    {make_fun3, {f, 109}, 0, 0, {x, 0}, {list, [{y, 0}]}}.
+    {move, {x, 0}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
     {move, {integer, 65536}, {x, 1}}.
     {call_ext, 2, {extfunc, file, read, 2}}.
+    {move, {x, 0}, {y, 3}}.
+    {move, {y, 3}, {x, 0}}.
+    {test, is_tuple, {f, 113}, [{x, 0}]}.
+    {test, test_arity, {f, 113}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 4}}.
+    {get_tuple_element, {x, 0}, 1, {y, 5}}.
+    {move, {y, 4}, {x, 0}}.
+    {test, is_eq_exact, {f, 113}, [{x, 0}, {atom, ok}]}.
+    {move, {y, 5}, {y, 1}}.
+    {test_heap, 4, 0}.
+    {put_list, {y, 1}, nil, {x, 0}}.
+    {put_list, {y, 2}, {x, 0}, {x, 0}}.
+    {move, {x, 0}, {y, 6}}.
+    {move, {y, 6}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_last, 2, {f, 109}, 7}.
+  {label, 113}.
+    {move, {y, 3}, {x, 0}}.
+    {test, is_eq_exact, {f, 114}, [{x, 0}, {atom, eof}]}.
+    {move, {y, 2}, {x, 0}}.
+    {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
+    {move, {x, 0}, {y, 4}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 4}]}}.
     {move, {x, 0}, {y, 4}}.
     {move, {y, 4}, {x, 0}}.
-    {test, is_tuple, {f, 135}, [{x, 0}]}.
-    {test, test_arity, {f, 135}, [{x, 0}, 2]}.
-    {get_tuple_element, {x, 0}, 0, {y, 5}}.
-    {get_tuple_element, {x, 0}, 1, {y, 6}}.
-    {move, {y, 5}, {x, 0}}.
-    {test, is_eq_exact, {f, 135}, [{x, 0}, {atom, ok}]}.
-    {move, {y, 6}, {y, 2}}.
-    {test_heap, 4, 0}.
-    {put_list, {y, 2}, nil, {x, 0}}.
-    {put_list, {y, 3}, {x, 0}, {x, 0}}.
-    {move, {x, 0}, {y, 7}}.
-    {move, {y, 7}, {x, 0}}.
-    {move, {y, 0}, {x, 1}}.
-    {move, {y, 1}, {x, 2}}.
-    {call_last, 3, {f, 131}, 8}.
-  {label, 135}.
-    {move, {y, 4}, {x, 0}}.
-    {test, is_eq_exact, {f, 136}, [{x, 0}, {atom, eof}]}.
+    {deallocate, 7}.
+    return.
+  {label, 114}.
     {move, {y, 3}, {x, 0}}.
-    {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
-    {move, {x, 0}, {y, 5}}.
-    {test_heap, 3, 0}.
-    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 5}]}}.
-    {move, {x, 0}, {y, 5}}.
-    {move, {y, 5}, {x, 0}}.
-    {deallocate, 8}.
-    return.
-  {label, 136}.
+    {test, is_tuple, {f, 115}, [{x, 0}]}.
+    {test, test_arity, {f, 115}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 4}}.
+    {get_tuple_element, {x, 0}, 1, {y, 5}}.
     {move, {y, 4}, {x, 0}}.
-    {test, is_tuple, {f, 137}, [{x, 0}]}.
-    {test, test_arity, {f, 137}, [{x, 0}, 2]}.
-    {get_tuple_element, {x, 0}, 0, {y, 5}}.
-    {get_tuple_element, {x, 0}, 1, {y, 6}}.
-    {move, {y, 5}, {x, 0}}.
-    {test, is_eq_exact, {f, 137}, [{x, 0}, {atom, error}]}.
-    {move, {y, 6}, {y, 2}}.
-    {move, {y, 2}, {x, 0}}.
-    {move, {y, 1}, {x, 1}}.
-    {call_fun, 1}.
-    {move, {x, 0}, {y, 7}}.
+    {test, is_eq_exact, {f, 115}, [{x, 0}, {atom, error}]}.
+    {move, {y, 5}, {y, 1}}.
     {test_heap, 3, 0}.
-    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 7}]}}.
-    {move, {x, 0}, {y, 7}}.
-    {move, {y, 7}, {x, 0}}.
-    {deallocate, 8}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 1}]}}.
+    {move, {x, 0}, {y, 6}}.
+    {move, {y, 6}, {x, 0}}.
+    {deallocate, 7}.
     return.
-  {label, 137}.
-    {move, {y, 4}, {x, 0}}.
+  {label, 115}.
+    {move, {y, 3}, {x, 0}}.
     {case_end, {x, 0}}.
 
-{function, '__bp_tpl_3-t/1-fun-0-', 1, 106}.
-  {label, 105}.
+{function, '__bp_tpl_3-t/1-fun-0-', 1, 100}.
+  {label, 99}.
     {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_3-t/1-fun-0-'}, 1}.
-  {label, 106}.
-    {allocate, 9, 1}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}]}}.
-    {move, {x, 0}, {y, 4}}.
-    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 110}, 1, 0, {x, 0}, {list, []}}.
-    {move, {x, 0}, {y, 5}}.
-    {move, {y, 5}, {y, 0}}.
-    {jump, {f, 124}}.
-  {label, 124}.
+  {label, 100}.
+    {allocate, 8, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}]}}.
+    {move, {x, 0}, {y, 3}}.
+    {move, {y, 3}, {x, 0}}.
+    {test, is_tuple, {f, 104}, [{x, 0}]}.
+    {test, test_arity, {f, 104}, [{x, 0}, 3]}.
+    {get_tuple_element, {x, 0}, 0, {y, 4}}.
+    {get_tuple_element, {x, 0}, 1, {y, 5}}.
+    {get_tuple_element, {x, 0}, 2, {y, 6}}.
     {move, {y, 4}, {x, 0}}.
-    {test, is_tuple, {f, 126}, [{x, 0}]}.
-    {test, test_arity, {f, 126}, [{x, 0}, 3]}.
-    {get_tuple_element, {x, 0}, 0, {y, 5}}.
-    {get_tuple_element, {x, 0}, 1, {y, 6}}.
-    {get_tuple_element, {x, 0}, 2, {y, 7}}.
-    {move, {y, 5}, {x, 0}}.
-    {test, is_eq_exact, {f, 126}, [{x, 0}, {atom, mem}]}.
+    {test, is_eq_exact, {f, 104}, [{x, 0}, {atom, mem}]}.
+    {move, {y, 5}, {y, 0}}.
     {move, {y, 6}, {y, 1}}.
-    {move, {y, 7}, {y, 2}}.
-    {move, {y, 2}, {x, 0}}.
+    {move, {y, 1}, {x, 0}}.
     {move, {integer, 1}, {x, 1}}.
     {call_ext, 2, {extfunc, counters, get, 2}}.
-    {move, {x, 0}, {y, 8}}.
-    {move, {y, 8}, {y, 3}}.
-    {jump, {f, 128}}.
-  {label, 128}.
-    {move, {y, 1}, {x, 0}}.
+    {move, {x, 0}, {y, 7}}.
+    {move, {y, 7}, {y, 2}}.
+    {jump, {f, 106}}.
+  {label, 106}.
+    {move, {y, 0}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, byte_size, 1}}.
-    {move, {x, 0}, {y, 8}}.
-    {move, {y, 8}, {x, 0}}.
-    {move, {y, 3}, {x, 1}}.
+    {move, {x, 0}, {y, 7}}.
+    {move, {y, 7}, {x, 0}}.
+    {move, {y, 2}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, '-', 2}}.
-    {move, {x, 0}, {y, 8}}.
-    {move, {y, 2}, {x, 0}}.
+    {move, {x, 0}, {y, 7}}.
+    {move, {y, 1}, {x, 0}}.
     {move, {integer, 1}, {x, 1}}.
-    {move, {y, 8}, {x, 2}}.
+    {move, {y, 7}, {x, 2}}.
     {call_ext, 3, {extfunc, counters, add, 3}}.
-    {move, {x, 0}, {y, 8}}.
-    {move, {y, 1}, {x, 0}}.
+    {move, {x, 0}, {y, 7}}.
+    {move, {y, 0}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, byte_size, 1}}.
-    {move, {x, 0}, {y, 8}}.
-    {move, {y, 8}, {x, 0}}.
-    {move, {y, 3}, {x, 1}}.
+    {move, {x, 0}, {y, 7}}.
+    {move, {y, 7}, {x, 0}}.
+    {move, {y, 2}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, '-', 2}}.
-    {move, {x, 0}, {y, 8}}.
-    {move, {y, 1}, {x, 0}}.
-    {move, {y, 3}, {x, 1}}.
-    {move, {y, 8}, {x, 2}}.
+    {move, {x, 0}, {y, 7}}.
+    {move, {y, 0}, {x, 0}}.
+    {move, {y, 2}, {x, 1}}.
+    {move, {y, 7}, {x, 2}}.
     {call_ext, 3, {extfunc, binary, part, 3}}.
-    {move, {x, 0}, {y, 8}}.
+    {move, {x, 0}, {y, 7}}.
     {test_heap, 3, 0}.
-    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 8}]}}.
-    {move, {x, 0}, {y, 8}}.
-    {move, {y, 8}, {x, 0}}.
-    {deallocate, 9}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 7}]}}.
+    {move, {x, 0}, {y, 7}}.
+    {move, {y, 7}, {x, 0}}.
+    {deallocate, 8}.
     return.
-  {label, 126}.
-    {test_heap, {alloc, [{words, 2}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 131}, 0, 0, {x, 0}, {list, [{y, 4}, {y, 0}]}}.
-    {move, {x, 0}, {y, 5}}.
+  {label, 104}.
+    {test_heap, {alloc, [{words, 1}, {floats, 0}, {funs, 1}]}, 0}.
+    {make_fun3, {f, 109}, 0, 0, {x, 0}, {list, [{y, 3}]}}.
+    {move, {x, 0}, {y, 4}}.
     {move, nil, {x, 0}}.
+    {move, {y, 4}, {x, 1}}.
+    {call_fun, 1}.
+    {deallocate, 8}.
+    return.
+
+{function, '__bp_tpl_3', 1, 94}.
+  {label, 93}.
+    {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_3'}, 1}.
+  {label, 94}.
+    {allocate, 12, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}, {y, 11}]}}.
+    {move, {x, 0}, {y, 3}}.
+    {'try', {y, 11}, {f, 97}}.
+    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
+    {make_fun3, {f, 100}, 1, 0, {x, 0}, {list, []}}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {y, 3}, {x, 0}}.
     {move, {y, 5}, {x, 1}}.
     {call_fun, 1}.
-    {deallocate, 9}.
-    return.
-
-{function, '__bp_tpl_3', 1, 102}.
-  {label, 101}.
-    {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_3'}, 1}.
-  {label, 102}.
-    {allocate, 2, 1}.
-    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
-    {move, {x, 0}, {y, 0}}.
-    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 106}, 2, 0, {x, 0}, {list, []}}.
-    {move, {x, 0}, {y, 1}}.
-    {move, {y, 0}, {x, 0}}.
-    {move, {y, 1}, {x, 1}}.
-    {call_fun, 1}.
-    {deallocate, 2}.
-    return.
-
-{function, '__bp_tpl_4--t/1-fun-0--fun-1-', 1, 165}.
-  {label, 164}.
-    {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_4--t/1-fun-0--fun-1-'}, 1}.
-  {label, 165}.
-    {allocate, 3, 1}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
-    {move, {x, 0}, {y, 1}}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 169}, [{x, 0}, {atom, enoent}]}.
-    {move, {literal, <<"notfound">>}, {y, 2}}.
-    {jump, {f, 168}}.
-  {label, 169}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 170}, [{x, 0}, {atom, eacces}]}.
-    {move, {literal, <<"denied">>}, {y, 2}}.
-    {jump, {f, 168}}.
-  {label, 170}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 171}, [{x, 0}, {atom, eperm}]}.
-    {move, {literal, <<"denied">>}, {y, 2}}.
-    {jump, {f, 168}}.
-  {label, 171}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 172}, [{x, 0}, {atom, eisdir}]}.
-    {move, {literal, <<"isdir">>}, {y, 2}}.
-    {jump, {f, 168}}.
-  {label, 172}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 173}, [{x, 0}, {atom, enotdir}]}.
-    {move, {literal, <<"notdir">>}, {y, 2}}.
-    {jump, {f, 168}}.
-  {label, 173}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 174}, [{x, 0}, {atom, eexist}]}.
-    {move, {literal, <<"exists">>}, {y, 2}}.
-    {jump, {f, 168}}.
-  {label, 174}.
-    {move, {literal, <<"other">>}, {y, 2}}.
-    {jump, {f, 168}}.
-  {label, 168}.
-    {move, {y, 2}, {y, 0}}.
-    {jump, {f, 177}}.
-  {label, 177}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {y, 5}, {y, 6}}.
+    {try_end, {y, 11}}.
+    {move, {y, 6}, {x, 0}}.
+    {test, is_tuple, {f, 117}, [{x, 0}]}.
+    {test, test_arity, {f, 117}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 7}}.
+    {get_tuple_element, {x, 0}, 1, {y, 8}}.
+    {move, {y, 7}, {x, 0}}.
+    {test, is_eq_exact, {f, 117}, [{x, 0}, {atom, ok}]}.
+    {move, {y, 8}, {y, 0}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 0}]}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {y, 4}}.
+    {jump, {f, 116}}.
+  {label, 117}.
+    {move, {y, 6}, {x, 0}}.
+    {test, is_tuple, {f, 118}, [{x, 0}]}.
+    {test, test_arity, {f, 118}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 7}}.
+    {get_tuple_element, {x, 0}, 1, {y, 8}}.
+    {move, {y, 7}, {x, 0}}.
+    {test, is_eq_exact, {f, 118}, [{x, 0}, {atom, error}]}.
+    {move, {y, 8}, {y, 1}}.
     {test_heap, 2, 0}.
     {put_list, {y, 1}, nil, {x, 0}}.
-    {move, {x, 0}, {y, 2}}.
+    {move, {x, 0}, {y, 9}}.
     {move, {literal, [126, 116, 112]}, {x, 0}}.
-    {move, {y, 2}, {x, 1}}.
+    {move, {y, 9}, {x, 1}}.
     {call_ext, 2, {extfunc, io_lib, format, 2}}.
-    {move, {x, 0}, {y, 2}}.
-    {test_heap, 6, 0}.
-    {put_list, {y, 2}, nil, {x, 0}}.
-    {put_list, {literal, <<"|">>}, {x, 0}, {x, 0}}.
-    {put_list, {y, 0}, {x, 0}, {x, 0}}.
-    {move, {x, 0}, {y, 2}}.
-    {move, {y, 2}, {x, 0}}.
-    {call_ext_last, 1, {extfunc, unicode, characters_to_binary, 1}, 3}.
-
-{function, '__bp_tpl_4-t/1-fun-0-', 1, 161}.
-  {label, 160}.
-    {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_4-t/1-fun-0-'}, 1}.
-  {label, 161}.
-    {allocate, 11, 1}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}]}}.
-    {move, {x, 0}, {y, 4}}.
-    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 165}, 0, 0, {x, 0}, {list, []}}.
-    {move, {x, 0}, {y, 5}}.
-    {move, {y, 5}, {y, 0}}.
-    {jump, {f, 179}}.
-  {label, 179}.
-    {move, {y, 4}, {x, 0}}.
-    {test, is_tuple, {f, 181}, [{x, 0}]}.
-    {test, test_arity, {f, 181}, [{x, 0}, 3]}.
-    {get_tuple_element, {x, 0}, 0, {y, 5}}.
-    {get_tuple_element, {x, 0}, 1, {y, 6}}.
-    {get_tuple_element, {x, 0}, 2, {y, 7}}.
-    {move, {y, 5}, {x, 0}}.
-    {test, is_eq_exact, {f, 181}, [{x, 0}, {atom, mem}]}.
-    {move, {y, 6}, {y, 1}}.
-    {move, {y, 7}, {y, 2}}.
-    {move, {y, 2}, {x, 0}}.
-    {move, {integer, 1}, {x, 1}}.
-    {call_ext, 2, {extfunc, counters, get, 2}}.
-    {move, {x, 0}, {y, 8}}.
-    {move, {y, 8}, {y, 3}}.
-    {jump, {f, 183}}.
-  {label, 183}.
-    {move, {y, 1}, {x, 0}}.
-    {call_ext, 1, {extfunc, erlang, byte_size, 1}}.
-    {move, {x, 0}, {y, 8}}.
-    {move, {y, 8}, {x, 0}}.
-    {move, {y, 3}, {x, 1}}.
-    {call_ext, 2, {extfunc, erlang, '-', 2}}.
-    {move, {x, 0}, {y, 8}}.
-    {move, {y, 1}, {x, 0}}.
-    {move, {y, 3}, {x, 1}}.
-    {move, {y, 8}, {x, 2}}.
-    {call_ext, 3, {extfunc, binary, part, 3}}.
-    {move, {x, 0}, {y, 8}}.
-    {move, {y, 8}, {y, 1}}.
-    {jump, {f, 185}}.
-  {label, 185}.
-    {move, {y, 1}, {x, 0}}.
-    {move, {literal, <<"\n">>}, {x, 1}}.
-    {call_ext, 2, {extfunc, binary, match, 2}}.
-    {move, {x, 0}, {y, 8}}.
-    {move, {y, 8}, {x, 0}}.
-    {test, is_eq_exact, {f, 187}, [{x, 0}, {atom, nomatch}]}.
-    {move, {y, 1}, {x, 0}}.
-    {call_ext, 1, {extfunc, erlang, byte_size, 1}}.
-    {move, {x, 0}, {y, 9}}.
-    {move, {y, 2}, {x, 0}}.
-    {move, {integer, 1}, {x, 1}}.
-    {move, {y, 9}, {x, 2}}.
-    {call_ext, 3, {extfunc, counters, add, 3}}.
-    {move, {x, 0}, {y, 9}}.
-    {test_heap, 3, 0}.
-    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 1}]}}.
     {move, {x, 0}, {y, 9}}.
     {move, {y, 9}, {x, 0}}.
-    {deallocate, 11}.
-    return.
-  {label, 187}.
-    {move, {y, 8}, {x, 0}}.
-    {test, is_tuple, {f, 188}, [{x, 0}]}.
-    {test, test_arity, {f, 188}, [{x, 0}, 2]}.
-    {get_tuple_element, {x, 0}, 0, {y, 9}}.
-    {move, {y, 9}, {y, 3}}.
-    {move, {y, 3}, {x, 0}}.
-    {move, {integer, 1}, {x, 1}}.
-    {call_ext, 2, {extfunc, erlang, '+', 2}}.
-    {move, {x, 0}, {y, 10}}.
-    {move, {y, 2}, {x, 0}}.
-    {move, {integer, 1}, {x, 1}}.
-    {move, {y, 10}, {x, 2}}.
-    {call_ext, 3, {extfunc, counters, add, 3}}.
-    {move, {x, 0}, {y, 10}}.
-    {move, {y, 3}, {x, 0}}.
-    {move, {integer, 1}, {x, 1}}.
-    {call_ext, 2, {extfunc, erlang, '+', 2}}.
-    {move, {x, 0}, {y, 10}}.
-    {move, {y, 1}, {x, 0}}.
-    {move, {integer, 0}, {x, 1}}.
-    {move, {y, 10}, {x, 2}}.
-    {call_ext, 3, {extfunc, binary, part, 3}}.
-    {move, {x, 0}, {y, 10}}.
+    {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
+    {move, {x, 0}, {y, 9}}.
+    {test_heap, 6, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@failure@@HostError}, {y, 9}, {literal, <<"host">>}, {atom, std@failure@@HostErrorName__v__error}, {atom, undefined}]}}.
+    {move, {x, 0}, {y, 9}}.
     {test_heap, 3, 0}.
-    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 10}]}}.
-    {move, {x, 0}, {y, 10}}.
-    {move, {y, 10}, {x, 0}}.
-    {deallocate, 11}.
-    return.
-  {label, 188}.
-    {move, {y, 8}, {x, 0}}.
-    {case_end, {x, 0}}.
-  {label, 181}.
-    {move, {y, 4}, {x, 0}}.
-    {call_ext, 1, {extfunc, file, read_line, 1}}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 9}]}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {y, 4}}.
+    {jump, {f, 116}}.
+  {label, 118}.
+    {move, {y, 6}, {y, 0}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 0}]}}.
+    {move, {x, 0}, {y, 7}}.
+    {move, {y, 7}, {y, 4}}.
+    {jump, {f, 116}}.
+  {label, 116}.
+    {jump, {f, 98}}.
+  {label, 97}.
+    {try_case, {y, 11}}.
     {move, {x, 0}, {y, 5}}.
-    {move, {y, 5}, {x, 0}}.
-    {test, is_tuple, {f, 191}, [{x, 0}]}.
-    {test, test_arity, {f, 191}, [{x, 0}, 2]}.
-    {get_tuple_element, {x, 0}, 0, {y, 6}}.
-    {get_tuple_element, {x, 0}, 1, {y, 7}}.
-    {move, {y, 6}, {x, 0}}.
-    {test, is_eq_exact, {f, 191}, [{x, 0}, {atom, ok}]}.
-    {move, {y, 7}, {y, 1}}.
-    {test_heap, 3, 0}.
-    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 1}]}}.
+    {move, {x, 1}, {y, 6}}.
+    {move, {x, 2}, {y, 7}}.
+    {move, {y, 5}, {y, 0}}.
+    {move, {y, 6}, {y, 1}}.
+    {move, {y, 7}, {x, 0}}.
+    build_stacktrace.
+    {move, {x, 0}, {y, 2}}.
+    {test_heap, 2, 0}.
+    {put_list, {y, 1}, nil, {x, 0}}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {literal, [126, 116, 112]}, {x, 0}}.
+    {move, {y, 8}, {x, 1}}.
+    {call_ext, 2, {extfunc, io_lib, format, 2}}.
     {move, {x, 0}, {y, 8}}.
     {move, {y, 8}, {x, 0}}.
-    {deallocate, 11}.
-    return.
-  {label, 191}.
-    {move, {y, 5}, {x, 0}}.
-    {test, is_eq_exact, {f, 192}, [{x, 0}, {atom, eof}]}.
-    {move, {literal, {ok, <<"">>}}, {x, 0}}.
-    {deallocate, 11}.
-    return.
-  {label, 192}.
-    {move, {y, 5}, {x, 0}}.
-    {test, is_tuple, {f, 193}, [{x, 0}]}.
-    {test, test_arity, {f, 193}, [{x, 0}, 2]}.
-    {get_tuple_element, {x, 0}, 0, {y, 6}}.
-    {get_tuple_element, {x, 0}, 1, {y, 7}}.
-    {move, {y, 6}, {x, 0}}.
-    {test, is_eq_exact, {f, 193}, [{x, 0}, {atom, error}]}.
-    {move, {y, 7}, {y, 1}}.
-    {move, {y, 1}, {x, 0}}.
-    {move, {y, 0}, {x, 1}}.
-    {call_fun, 1}.
+    {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_eq_exact, {f, 123}, [{x, 0}, {atom, error}]}.
+    {move, {atom, std@failure@@HostErrorName__v__error}, {y, 9}}.
+    {jump, {f, 122}}.
+  {label, 123}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_eq_exact, {f, 124}, [{x, 0}, {atom, throw}]}.
+    {move, {atom, std@failure@@HostErrorName__v__throw}, {y, 9}}.
+    {jump, {f, 122}}.
+  {label, 124}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_eq_exact, {f, 125}, [{x, 0}, {atom, exit}]}.
+    {move, {atom, std@failure@@HostErrorName__v__exit}, {y, 9}}.
+    {jump, {f, 122}}.
+  {label, 125}.
+    {move, {y, 0}, {x, 0}}.
+    {case_end, {x, 0}}.
+  {label, 122}.
+    {test_heap, 2, 0}.
+    {put_list, {y, 2}, nil, {x, 0}}.
+    {move, {x, 0}, {y, 10}}.
+    {move, {literal, [126, 116, 112]}, {x, 0}}.
+    {move, {y, 10}, {x, 1}}.
+    {call_ext, 2, {extfunc, io_lib, format, 2}}.
+    {move, {x, 0}, {y, 10}}.
+    {move, {y, 10}, {x, 0}}.
+    {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
+    {move, {x, 0}, {y, 10}}.
+    {test_heap, 6, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@failure@@HostError}, {y, 8}, {literal, <<"host">>}, {y, 9}, {y, 10}]}}.
     {move, {x, 0}, {y, 8}}.
     {test_heap, 3, 0}.
     {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 8}]}}.
     {move, {x, 0}, {y, 8}}.
-    {move, {y, 8}, {x, 0}}.
-    {deallocate, 11}.
+    {move, {y, 8}, {y, 4}}.
+    {jump, {f, 120}}.
+  {label, 120}.
+  {label, 98}.
+    {move, {y, 4}, {x, 0}}.
+    {deallocate, 12}.
     return.
-  {label, 193}.
+
+{function, '__bp_tpl_4-t/1-fun-0-', 1, 151}.
+  {label, 150}.
+    {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_4-t/1-fun-0-'}, 1}.
+  {label, 151}.
+    {allocate, 10, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}]}}.
+    {move, {x, 0}, {y, 3}}.
+    {move, {y, 3}, {x, 0}}.
+    {test, is_tuple, {f, 155}, [{x, 0}]}.
+    {test, test_arity, {f, 155}, [{x, 0}, 3]}.
+    {get_tuple_element, {x, 0}, 0, {y, 4}}.
+    {get_tuple_element, {x, 0}, 1, {y, 5}}.
+    {get_tuple_element, {x, 0}, 2, {y, 6}}.
+    {move, {y, 4}, {x, 0}}.
+    {test, is_eq_exact, {f, 155}, [{x, 0}, {atom, mem}]}.
+    {move, {y, 5}, {y, 0}}.
+    {move, {y, 6}, {y, 1}}.
+    {move, {y, 1}, {x, 0}}.
+    {move, {integer, 1}, {x, 1}}.
+    {call_ext, 2, {extfunc, counters, get, 2}}.
+    {move, {x, 0}, {y, 7}}.
+    {move, {y, 7}, {y, 2}}.
+    {jump, {f, 157}}.
+  {label, 157}.
+    {move, {y, 0}, {x, 0}}.
+    {call_ext, 1, {extfunc, erlang, byte_size, 1}}.
+    {move, {x, 0}, {y, 7}}.
+    {move, {y, 7}, {x, 0}}.
+    {move, {y, 2}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, '-', 2}}.
+    {move, {x, 0}, {y, 7}}.
+    {move, {y, 0}, {x, 0}}.
+    {move, {y, 2}, {x, 1}}.
+    {move, {y, 7}, {x, 2}}.
+    {call_ext, 3, {extfunc, binary, part, 3}}.
+    {move, {x, 0}, {y, 7}}.
+    {move, {y, 7}, {y, 0}}.
+    {jump, {f, 159}}.
+  {label, 159}.
+    {move, {y, 0}, {x, 0}}.
+    {move, {literal, <<"\n">>}, {x, 1}}.
+    {call_ext, 2, {extfunc, binary, match, 2}}.
+    {move, {x, 0}, {y, 7}}.
+    {move, {y, 7}, {x, 0}}.
+    {test, is_eq_exact, {f, 161}, [{x, 0}, {atom, nomatch}]}.
+    {move, {y, 0}, {x, 0}}.
+    {call_ext, 1, {extfunc, erlang, byte_size, 1}}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {y, 1}, {x, 0}}.
+    {move, {integer, 1}, {x, 1}}.
+    {move, {y, 8}, {x, 2}}.
+    {call_ext, 3, {extfunc, counters, add, 3}}.
+    {move, {x, 0}, {y, 8}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 0}]}}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {y, 8}, {x, 0}}.
+    {deallocate, 10}.
+    return.
+  {label, 161}.
+    {move, {y, 7}, {x, 0}}.
+    {test, is_tuple, {f, 162}, [{x, 0}]}.
+    {test, test_arity, {f, 162}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 8}}.
+    {move, {y, 8}, {y, 2}}.
+    {move, {y, 2}, {x, 0}}.
+    {move, {integer, 1}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, '+', 2}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 1}, {x, 0}}.
+    {move, {integer, 1}, {x, 1}}.
+    {move, {y, 9}, {x, 2}}.
+    {call_ext, 3, {extfunc, counters, add, 3}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 2}, {x, 0}}.
+    {move, {integer, 1}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, '+', 2}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 0}, {x, 0}}.
+    {move, {integer, 0}, {x, 1}}.
+    {move, {y, 9}, {x, 2}}.
+    {call_ext, 3, {extfunc, binary, part, 3}}.
+    {move, {x, 0}, {y, 9}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 9}]}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {x, 0}}.
+    {deallocate, 10}.
+    return.
+  {label, 162}.
+    {move, {y, 7}, {x, 0}}.
+    {case_end, {x, 0}}.
+  {label, 155}.
+    {move, {y, 3}, {x, 0}}.
+    {call_ext, 1, {extfunc, file, read_line, 1}}.
+    {move, {x, 0}, {y, 4}}.
+    {move, {y, 4}, {x, 0}}.
+    {test, is_tuple, {f, 165}, [{x, 0}]}.
+    {test, test_arity, {f, 165}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 5}}.
+    {get_tuple_element, {x, 0}, 1, {y, 6}}.
     {move, {y, 5}, {x, 0}}.
+    {test, is_eq_exact, {f, 165}, [{x, 0}, {atom, ok}]}.
+    {move, {y, 6}, {y, 0}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 0}]}}.
+    {move, {x, 0}, {y, 7}}.
+    {move, {y, 7}, {x, 0}}.
+    {deallocate, 10}.
+    return.
+  {label, 165}.
+    {move, {y, 4}, {x, 0}}.
+    {test, is_eq_exact, {f, 166}, [{x, 0}, {atom, eof}]}.
+    {move, {literal, {ok, <<"">>}}, {x, 0}}.
+    {deallocate, 10}.
+    return.
+  {label, 166}.
+    {move, {y, 4}, {x, 0}}.
+    {test, is_tuple, {f, 167}, [{x, 0}]}.
+    {test, test_arity, {f, 167}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 5}}.
+    {get_tuple_element, {x, 0}, 1, {y, 6}}.
+    {move, {y, 5}, {x, 0}}.
+    {test, is_eq_exact, {f, 167}, [{x, 0}, {atom, error}]}.
+    {move, {y, 6}, {y, 0}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 0}]}}.
+    {move, {x, 0}, {y, 7}}.
+    {move, {y, 7}, {x, 0}}.
+    {deallocate, 10}.
+    return.
+  {label, 167}.
+    {move, {y, 4}, {x, 0}}.
     {case_end, {x, 0}}.
 
-{function, '__bp_tpl_4', 1, 157}.
-  {label, 156}.
+{function, '__bp_tpl_4', 1, 145}.
+  {label, 144}.
     {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_4'}, 1}.
-  {label, 157}.
-    {allocate, 2, 1}.
-    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
-    {move, {x, 0}, {y, 0}}.
+  {label, 145}.
+    {allocate, 12, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}, {y, 11}]}}.
+    {move, {x, 0}, {y, 3}}.
+    {'try', {y, 11}, {f, 148}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 161}, 1, 0, {x, 0}, {list, []}}.
-    {move, {x, 0}, {y, 1}}.
-    {move, {y, 0}, {x, 0}}.
-    {move, {y, 1}, {x, 1}}.
+    {make_fun3, {f, 151}, 0, 0, {x, 0}, {list, []}}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {y, 3}, {x, 0}}.
+    {move, {y, 5}, {x, 1}}.
     {call_fun, 1}.
-    {deallocate, 2}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {y, 5}, {y, 6}}.
+    {try_end, {y, 11}}.
+    {move, {y, 6}, {x, 0}}.
+    {test, is_tuple, {f, 169}, [{x, 0}]}.
+    {test, test_arity, {f, 169}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 7}}.
+    {get_tuple_element, {x, 0}, 1, {y, 8}}.
+    {move, {y, 7}, {x, 0}}.
+    {test, is_eq_exact, {f, 169}, [{x, 0}, {atom, ok}]}.
+    {move, {y, 8}, {y, 0}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 0}]}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {y, 4}}.
+    {jump, {f, 168}}.
+  {label, 169}.
+    {move, {y, 6}, {x, 0}}.
+    {test, is_tuple, {f, 170}, [{x, 0}]}.
+    {test, test_arity, {f, 170}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 7}}.
+    {get_tuple_element, {x, 0}, 1, {y, 8}}.
+    {move, {y, 7}, {x, 0}}.
+    {test, is_eq_exact, {f, 170}, [{x, 0}, {atom, error}]}.
+    {move, {y, 8}, {y, 1}}.
+    {test_heap, 2, 0}.
+    {put_list, {y, 1}, nil, {x, 0}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {literal, [126, 116, 112]}, {x, 0}}.
+    {move, {y, 9}, {x, 1}}.
+    {call_ext, 2, {extfunc, io_lib, format, 2}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {x, 0}}.
+    {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
+    {move, {x, 0}, {y, 9}}.
+    {test_heap, 6, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@failure@@HostError}, {y, 9}, {literal, <<"host">>}, {atom, std@failure@@HostErrorName__v__error}, {atom, undefined}]}}.
+    {move, {x, 0}, {y, 9}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 9}]}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {y, 4}}.
+    {jump, {f, 168}}.
+  {label, 170}.
+    {move, {y, 6}, {y, 0}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 0}]}}.
+    {move, {x, 0}, {y, 7}}.
+    {move, {y, 7}, {y, 4}}.
+    {jump, {f, 168}}.
+  {label, 168}.
+    {jump, {f, 149}}.
+  {label, 148}.
+    {try_case, {y, 11}}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {x, 1}, {y, 6}}.
+    {move, {x, 2}, {y, 7}}.
+    {move, {y, 5}, {y, 0}}.
+    {move, {y, 6}, {y, 1}}.
+    {move, {y, 7}, {x, 0}}.
+    build_stacktrace.
+    {move, {x, 0}, {y, 2}}.
+    {test_heap, 2, 0}.
+    {put_list, {y, 1}, nil, {x, 0}}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {literal, [126, 116, 112]}, {x, 0}}.
+    {move, {y, 8}, {x, 1}}.
+    {call_ext, 2, {extfunc, io_lib, format, 2}}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {y, 8}, {x, 0}}.
+    {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_eq_exact, {f, 175}, [{x, 0}, {atom, error}]}.
+    {move, {atom, std@failure@@HostErrorName__v__error}, {y, 9}}.
+    {jump, {f, 174}}.
+  {label, 175}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_eq_exact, {f, 176}, [{x, 0}, {atom, throw}]}.
+    {move, {atom, std@failure@@HostErrorName__v__throw}, {y, 9}}.
+    {jump, {f, 174}}.
+  {label, 176}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_eq_exact, {f, 177}, [{x, 0}, {atom, exit}]}.
+    {move, {atom, std@failure@@HostErrorName__v__exit}, {y, 9}}.
+    {jump, {f, 174}}.
+  {label, 177}.
+    {move, {y, 0}, {x, 0}}.
+    {case_end, {x, 0}}.
+  {label, 174}.
+    {test_heap, 2, 0}.
+    {put_list, {y, 2}, nil, {x, 0}}.
+    {move, {x, 0}, {y, 10}}.
+    {move, {literal, [126, 116, 112]}, {x, 0}}.
+    {move, {y, 10}, {x, 1}}.
+    {call_ext, 2, {extfunc, io_lib, format, 2}}.
+    {move, {x, 0}, {y, 10}}.
+    {move, {y, 10}, {x, 0}}.
+    {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
+    {move, {x, 0}, {y, 10}}.
+    {test_heap, 6, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@failure@@HostError}, {y, 8}, {literal, <<"host">>}, {y, 9}, {y, 10}]}}.
+    {move, {x, 0}, {y, 8}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 8}]}}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {y, 8}, {y, 4}}.
+    {jump, {f, 172}}.
+  {label, 172}.
+  {label, 149}.
+    {move, {y, 4}, {x, 0}}.
+    {deallocate, 12}.
     return.
 
-{function, '__bp_tpl_5-t/1-fun-0-', 1, 203}.
-  {label, 202}.
+{function, '__bp_tpl_5-t/1-fun-0-', 1, 187}.
+  {label, 186}.
     {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_5-t/1-fun-0-'}, 1}.
-  {label, 203}.
+  {label, 187}.
     {allocate, 7, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}]}}.
     {move, {x, 0}, {y, 1}}.
@@ -10478,13 +11757,13 @@ test "fs answers PermissionDenied for an OS permission error" {
     {call_ext, 1, {extfunc, erlang, byte_size, 1}}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 2}, {y, 0}}.
-    {jump, {f, 207}}.
-  {label, 207}.
+    {jump, {f, 191}}.
+  {label, 191}.
     {move, {y, 0}, {x, 0}}.
     {move, {integer, 2}, {x, 1}}.
-    {test, is_ge, {f, 209}, [{x, 0}, {x, 1}]}.
-    {jump, {f, 210}}.
-  {label, 210}.
+    {test, is_ge, {f, 193}, [{x, 0}, {x, 1}]}.
+    {jump, {f, 194}}.
+  {label, 194}.
     {move, {y, 0}, {x, 0}}.
     {move, {integer, 2}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, '-', 2}}.
@@ -10495,7 +11774,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     {call_ext, 3, {extfunc, binary, part, 3}}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 2}, {x, 0}}.
-    {test, is_eq_exact, {f, 212}, [{x, 0}, {literal, <<"\r\n">>}]}.
+    {test, is_eq_exact, {f, 196}, [{x, 0}, {literal, <<"\r\n">>}]}.
     {move, {y, 0}, {x, 0}}.
     {move, {integer, 2}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, '-', 2}}.
@@ -10504,12 +11783,12 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {integer, 0}, {x, 1}}.
     {move, {y, 3}, {x, 2}}.
     {call_ext_last, 3, {extfunc, binary, part, 3}, 7}.
-  {label, 212}.
+  {label, 196}.
     {move, {y, 2}, {x, 0}}.
-    {test, is_binary, {f, 213}, [{x, 0}]}.
-    {gc_bif, byte_size, {f, 213}, 1, [{x, 0}], {y, 3}}.
+    {test, is_binary, {f, 197}, [{x, 0}]}.
+    {gc_bif, byte_size, {f, 197}, 1, [{x, 0}], {y, 3}}.
     {move, {y, 3}, {x, 0}}.
-    {test, is_eq_exact, {f, 213}, [{x, 0}, {integer, 2}]}.
+    {test, is_eq_exact, {f, 197}, [{x, 0}, {integer, 2}]}.
     {move, {y, 2}, {x, 0}}.
     {call_ext, 1, {extfunc, binary, decode_unsigned, 1}}.
     {move, {x, 0}, {y, 4}}.
@@ -10522,7 +11801,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     {call_ext, 2, {extfunc, erlang, 'band', 2}}.
     {move, {x, 0}, {y, 5}}.
     {move, {y, 5}, {x, 0}}.
-    {test, is_eq_exact, {f, 213}, [{x, 0}, {integer, 10}]}.
+    {test, is_eq_exact, {f, 197}, [{x, 0}, {integer, 10}]}.
     {move, {y, 0}, {x, 0}}.
     {move, {integer, 1}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, '-', 2}}.
@@ -10531,41 +11810,41 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {integer, 0}, {x, 1}}.
     {move, {y, 6}, {x, 2}}.
     {call_ext_last, 3, {extfunc, binary, part, 3}, 7}.
-  {label, 213}.
+  {label, 197}.
     {move, {y, 1}, {x, 0}}.
     {deallocate, 7}.
     return.
-  {label, 209}.
+  {label, 193}.
     {move, {y, 0}, {x, 0}}.
     {move, {integer, 1}, {x, 1}}.
-    {test, is_eq_exact, {f, 215}, [{x, 0}, {x, 1}]}.
-    {jump, {f, 216}}.
-  {label, 216}.
+    {test, is_eq_exact, {f, 199}, [{x, 0}, {x, 1}]}.
+    {jump, {f, 200}}.
+  {label, 200}.
     {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 218}, [{x, 0}, {literal, <<"\n">>}]}.
+    {test, is_eq_exact, {f, 202}, [{x, 0}, {literal, <<"\n">>}]}.
     {move, {literal, <<"">>}, {x, 0}}.
     {deallocate, 7}.
     return.
-  {label, 218}.
+  {label, 202}.
     {move, {y, 1}, {x, 0}}.
     {deallocate, 7}.
     return.
-  {label, 215}.
-    {jump, {f, 221}}.
-  {label, 221}.
+  {label, 199}.
+    {jump, {f, 205}}.
+  {label, 205}.
     {move, {y, 1}, {x, 0}}.
     {deallocate, 7}.
     return.
 
-{function, '__bp_tpl_5', 1, 199}.
-  {label, 198}.
+{function, '__bp_tpl_5', 1, 183}.
+  {label, 182}.
     {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_5'}, 1}.
-  {label, 199}.
+  {label, 183}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 203}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 187}, 0, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
@@ -10573,10 +11852,10 @@ test "fs answers PermissionDenied for an OS permission error" {
     {deallocate, 2}.
     return.
 
-{function, '__bp_tpl_6-t/1-fun-0-', 1, 227}.
-  {label, 226}.
+{function, '__bp_tpl_6-t/1-fun-0-', 1, 211}.
+  {label, 210}.
     {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_6-t/1-fun-0-'}, 1}.
-  {label, 227}.
+  {label, 211}.
     {allocate, 5, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}]}}.
     {move, {x, 0}, {y, 1}}.
@@ -10587,47 +11866,47 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 0}, {y, 2}}.
     {move, {y, 2}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_binary, {f, 231}, [{x, 0}]}.
-    {jump, {f, 232}}.
-  {label, 232}.
+    {test, is_binary, {f, 215}, [{x, 0}]}.
+    {jump, {f, 216}}.
+  {label, 216}.
     {move, {integer, -1}, {x, 0}}.
     {deallocate, 5}.
     return.
-  {label, 231}.
+  {label, 215}.
     {move, {y, 2}, {x, 0}}.
-    {test, is_tuple, {f, 233}, [{x, 0}]}.
-    {test, test_arity, {f, 233}, [{x, 0}, 3]}.
+    {test, is_tuple, {f, 217}, [{x, 0}]}.
+    {test, test_arity, {f, 217}, [{x, 0}, 3]}.
     {get_tuple_element, {x, 0}, 0, {y, 3}}.
     {get_tuple_element, {x, 0}, 1, {y, 4}}.
     {move, {y, 3}, {x, 0}}.
-    {test, is_eq_exact, {f, 233}, [{x, 0}, {atom, error}]}.
+    {test, is_eq_exact, {f, 217}, [{x, 0}, {atom, error}]}.
     {move, {y, 4}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
     {call_ext_last, 1, {extfunc, erlang, byte_size, 1}, 5}.
-  {label, 233}.
+  {label, 217}.
     {move, {y, 2}, {x, 0}}.
-    {test, is_tuple, {f, 234}, [{x, 0}]}.
-    {test, test_arity, {f, 234}, [{x, 0}, 3]}.
+    {test, is_tuple, {f, 218}, [{x, 0}]}.
+    {test, test_arity, {f, 218}, [{x, 0}, 3]}.
     {get_tuple_element, {x, 0}, 0, {y, 3}}.
     {get_tuple_element, {x, 0}, 1, {y, 4}}.
     {move, {y, 3}, {x, 0}}.
-    {test, is_eq_exact, {f, 234}, [{x, 0}, {atom, incomplete}]}.
+    {test, is_eq_exact, {f, 218}, [{x, 0}, {atom, incomplete}]}.
     {move, {y, 4}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
     {call_ext_last, 1, {extfunc, erlang, byte_size, 1}, 5}.
-  {label, 234}.
+  {label, 218}.
     {move, {y, 2}, {x, 0}}.
     {case_end, {x, 0}}.
 
-{function, '__bp_tpl_6', 1, 223}.
-  {label, 222}.
+{function, '__bp_tpl_6', 1, 207}.
+  {label, 206}.
     {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_6'}, 1}.
-  {label, 223}.
+  {label, 207}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 227}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 211}, 0, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
@@ -10635,44 +11914,44 @@ test "fs answers PermissionDenied for an OS permission error" {
     {deallocate, 2}.
     return.
 
-{function, '__bp_tpl_7-t/1-fun-0-', 1, 244}.
-  {label, 243}.
+{function, '__bp_tpl_7-t/1-fun-0-', 1, 228}.
+  {label, 227}.
     {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_7-t/1-fun-0-'}, 1}.
-  {label, 244}.
+  {label, 228}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {integer, -9223372036854775807}, {x, 0}}.
     {move, {integer, 1}, {x, 1}}.
-    {gc_bif, '-', {f, 246}, 2, [{x, 0}, {x, 1}], {x, 0}}.
+    {gc_bif, '-', {f, 230}, 2, [{x, 0}, {x, 1}], {x, 0}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
-    {test, is_ge, {f, 246}, [{x, 0}, {x, 1}]}.
+    {test, is_ge, {f, 230}, [{x, 0}, {x, 1}]}.
     {move, {integer, 9223372036854775807}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
-    {test, is_ge, {f, 246}, [{x, 0}, {x, 1}]}.
-    {jump, {f, 247}}.
-  {label, 247}.
+    {test, is_ge, {f, 230}, [{x, 0}, {x, 1}]}.
+    {jump, {f, 231}}.
+  {label, 231}.
     {move, {y, 0}, {x, 0}}.
     {deallocate, 2}.
     return.
-  {label, 246}.
+  {label, 230}.
     {move, {y, 0}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, integer_to_binary, 1}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
-    {test, is_binary, {f, 249}, [{x, 0}]}.
+    {test, is_binary, {f, 233}, [{x, 0}]}.
     {test_heap, 6, 0}.
     {put_list, {literal, <<" does not fit i64">>}, nil, {x, 0}}.
     {put_list, {y, 1}, {x, 0}, {x, 0}}.
     {put_list, {literal, <<"toI64: ">>}, {x, 0}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
-    {jump, {f, 250}}.
-  {label, 249}.
+    {jump, {f, 234}}.
+  {label, 233}.
     {move, {atom, badarg}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 250}.
+  {label, 234}.
     {move, {x, 0}, {y, 1}}.
     {test_heap, 3, 0}.
     {put_tuple2, {x, 0}, {list, [{atom, integer_overflow}, {y, 1}]}}.
@@ -10680,9 +11959,51 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {y, 1}, {x, 0}}.
     {call_ext_last, 1, {extfunc, erlang, error, 1}, 2}.
 
-{function, '__bp_tpl_7', 1, 240}.
-  {label, 239}.
+{function, '__bp_tpl_7', 1, 224}.
+  {label, 223}.
     {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_7'}, 1}.
+  {label, 224}.
+    {allocate, 2, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
+    {make_fun3, {f, 228}, 0, 0, {x, 0}, {list, []}}.
+    {move, {x, 0}, {y, 1}}.
+    {move, {y, 0}, {x, 0}}.
+    {move, {y, 1}, {x, 1}}.
+    {call_fun, 1}.
+    {deallocate, 2}.
+    return.
+
+{function, '__bp_tpl_8-t/1-fun-0-', 1, 244}.
+  {label, 243}.
+    {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_8-t/1-fun-0-'}, 1}.
+  {label, 244}.
+    {allocate, 4, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
+    {move, {x, 0}, {y, 1}}.
+    {move, {y, 1}, {x, 0}}.
+    {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
+    {move, {x, 0}, {y, 2}}.
+    {move, {y, 2}, {y, 0}}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_binary, {f, 248}, [{x, 0}]}.
+    {jump, {f, 249}}.
+  {label, 249}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 0}]}}.
+    {move, {x, 0}, {y, 3}}.
+    {move, {y, 3}, {x, 0}}.
+    {deallocate, 4}.
+    return.
+  {label, 248}.
+    {move, {literal, {error, <<"Bytes.toUtf8: not valid UTF-8">>}}, {x, 0}}.
+    {deallocate, 4}.
+    return.
+
+{function, '__bp_tpl_8', 1, 240}.
+  {label, 239}.
+    {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_8'}, 1}.
   {label, 240}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
@@ -10696,117 +12017,17 @@ test "fs answers PermissionDenied for an OS permission error" {
     {deallocate, 2}.
     return.
 
-{function, '__bp_tpl_8-t/1-fun-0-', 1, 260}.
-  {label, 259}.
-    {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_8-t/1-fun-0-'}, 1}.
-  {label, 260}.
-    {allocate, 4, 1}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
-    {move, {x, 0}, {y, 1}}.
-    {move, {y, 1}, {x, 0}}.
-    {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
-    {move, {x, 0}, {y, 2}}.
-    {move, {y, 2}, {y, 0}}.
-    {move, {y, 0}, {x, 0}}.
-    {test, is_binary, {f, 264}, [{x, 0}]}.
-    {jump, {f, 265}}.
-  {label, 265}.
-    {test_heap, 3, 0}.
-    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 0}]}}.
-    {move, {x, 0}, {y, 3}}.
-    {move, {y, 3}, {x, 0}}.
-    {deallocate, 4}.
-    return.
+{function, '__bp_tpl_9--t/1-fun-0--fun-1-', 3, 265}.
   {label, 264}.
-    {move, {literal, {error, <<"Bytes.toUtf8: not valid UTF-8">>}}, {x, 0}}.
-    {deallocate, 4}.
-    return.
-
-{function, '__bp_tpl_8', 1, 256}.
-  {label, 255}.
-    {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_8'}, 1}.
-  {label, 256}.
-    {allocate, 2, 1}.
-    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
-    {move, {x, 0}, {y, 0}}.
-    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 260}, 0, 0, {x, 0}, {list, []}}.
-    {move, {x, 0}, {y, 1}}.
-    {move, {y, 0}, {x, 0}}.
-    {move, {y, 1}, {x, 1}}.
-    {call_fun, 1}.
-    {deallocate, 2}.
-    return.
-
-{function, '__bp_tpl_9--t/1-fun-0--fun-1-', 1, 276}.
-  {label, 275}.
-    {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_9--t/1-fun-0--fun-1-'}, 1}.
-  {label, 276}.
-    {allocate, 3, 1}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
-    {move, {x, 0}, {y, 1}}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 280}, [{x, 0}, {atom, enoent}]}.
-    {move, {literal, <<"notfound">>}, {y, 2}}.
-    {jump, {f, 279}}.
-  {label, 280}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 281}, [{x, 0}, {atom, eacces}]}.
-    {move, {literal, <<"denied">>}, {y, 2}}.
-    {jump, {f, 279}}.
-  {label, 281}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 282}, [{x, 0}, {atom, eperm}]}.
-    {move, {literal, <<"denied">>}, {y, 2}}.
-    {jump, {f, 279}}.
-  {label, 282}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 283}, [{x, 0}, {atom, eisdir}]}.
-    {move, {literal, <<"isdir">>}, {y, 2}}.
-    {jump, {f, 279}}.
-  {label, 283}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 284}, [{x, 0}, {atom, enotdir}]}.
-    {move, {literal, <<"notdir">>}, {y, 2}}.
-    {jump, {f, 279}}.
-  {label, 284}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 285}, [{x, 0}, {atom, eexist}]}.
-    {move, {literal, <<"exists">>}, {y, 2}}.
-    {jump, {f, 279}}.
-  {label, 285}.
-    {move, {literal, <<"other">>}, {y, 2}}.
-    {jump, {f, 279}}.
-  {label, 279}.
-    {move, {y, 2}, {y, 0}}.
-    {jump, {f, 288}}.
-  {label, 288}.
-    {test_heap, 2, 0}.
-    {put_list, {y, 1}, nil, {x, 0}}.
-    {move, {x, 0}, {y, 2}}.
-    {move, {literal, [126, 116, 112]}, {x, 0}}.
-    {move, {y, 2}, {x, 1}}.
-    {call_ext, 2, {extfunc, io_lib, format, 2}}.
-    {move, {x, 0}, {y, 2}}.
-    {test_heap, 6, 0}.
-    {put_list, {y, 2}, nil, {x, 0}}.
-    {put_list, {literal, <<"|">>}, {x, 0}, {x, 0}}.
-    {put_list, {y, 0}, {x, 0}, {x, 0}}.
-    {move, {x, 0}, {y, 2}}.
-    {move, {y, 2}, {x, 0}}.
-    {call_ext_last, 1, {extfunc, unicode, characters_to_binary, 1}, 3}.
-
-{function, '__bp_tpl_9--t/1-fun-0--fun-2-', 3, 295}.
-  {label, 294}.
-    {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_9--t/1-fun-0--fun-2-'}, 3}.
-  {label, 295}.
+    {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_9--t/1-fun-0--fun-1-'}, 3}.
+  {label, 265}.
     {allocate, 9, 3}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}]}}.
     {move, {x, 0}, {y, 2}}.
     {move, {x, 1}, {y, 3}}.
     {move, {x, 2}, {y, 0}}.
     {test_heap, {alloc, [{words, 1}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 295}, 0, 0, {x, 0}, {list, [{y, 0}]}}.
+    {make_fun3, {f, 265}, 0, 0, {x, 0}, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 2}, {x, 1}}.
@@ -10814,12 +12035,12 @@ test "fs answers PermissionDenied for an OS permission error" {
     {call_ext, 3, {extfunc, file, pread, 3}}.
     {move, {x, 0}, {y, 4}}.
     {move, {y, 4}, {x, 0}}.
-    {test, is_tuple, {f, 299}, [{x, 0}]}.
-    {test, test_arity, {f, 299}, [{x, 0}, 2]}.
+    {test, is_tuple, {f, 269}, [{x, 0}]}.
+    {test, test_arity, {f, 269}, [{x, 0}, 2]}.
     {get_tuple_element, {x, 0}, 0, {y, 5}}.
     {get_tuple_element, {x, 0}, 1, {y, 6}}.
     {move, {y, 5}, {x, 0}}.
-    {test, is_eq_exact, {f, 299}, [{x, 0}, {atom, ok}]}.
+    {test, is_eq_exact, {f, 269}, [{x, 0}, {atom, ok}]}.
     {move, {y, 6}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, byte_size, 1}}.
@@ -10835,82 +12056,45 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {y, 7}, {x, 0}}.
     {move, {y, 8}, {x, 1}}.
     {move, {y, 0}, {x, 2}}.
-    {call_last, 3, {f, 295}, 9}.
-  {label, 299}.
+    {call_last, 3, {f, 265}, 9}.
+  {label, 269}.
     {move, {y, 4}, {x, 0}}.
-    {test, is_eq_exact, {f, 300}, [{x, 0}, {atom, eof}]}.
+    {test, is_eq_exact, {f, 270}, [{x, 0}, {atom, eof}]}.
     {move, {y, 3}, {x, 0}}.
     {call_ext_last, 1, {extfunc, crypto, hash_final, 1}, 9}.
-  {label, 300}.
+  {label, 270}.
     {move, {y, 4}, {x, 0}}.
-    {test, is_tuple, {f, 301}, [{x, 0}]}.
-    {test, test_arity, {f, 301}, [{x, 0}, 2]}.
+    {test, is_tuple, {f, 271}, [{x, 0}]}.
+    {test, test_arity, {f, 271}, [{x, 0}, 2]}.
     {get_tuple_element, {x, 0}, 0, {y, 5}}.
     {get_tuple_element, {x, 0}, 1, {y, 6}}.
     {move, {y, 5}, {x, 0}}.
-    {test, is_eq_exact, {f, 301}, [{x, 0}, {atom, error}]}.
+    {test, is_eq_exact, {f, 271}, [{x, 0}, {atom, error}]}.
     {move, {y, 6}, {y, 1}}.
-    {test_heap, 3, 0}.
-    {put_tuple2, {x, 0}, {list, [{atom, bp_fs_hash}, {y, 1}]}}.
-    {move, {x, 0}, {y, 7}}.
-    {move, {y, 7}, {x, 0}}.
-    {call_ext_last, 1, {extfunc, erlang, throw, 1}, 9}.
-  {label, 301}.
+    {move, {y, 1}, {x, 0}}.
+    {call_ext_last, 1, {extfunc, erlang, error, 1}, 9}.
+  {label, 271}.
     {move, {y, 4}, {x, 0}}.
     {case_end, {x, 0}}.
 
-{function, '__bp_tpl_9-t/1-fun-0-', 1, 272}.
-  {label, 271}.
+{function, '__bp_tpl_9-t/1-fun-0-', 1, 258}.
+  {label, 257}.
     {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_9-t/1-fun-0-'}, 1}.
-  {label, 272}.
-    {allocate, 11, 1}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}]}}.
-    {move, {x, 0}, {y, 2}}.
-    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 276}, 1, 0, {x, 0}, {list, []}}.
-    {move, {x, 0}, {y, 3}}.
-    {move, {y, 3}, {y, 0}}.
-    {jump, {f, 290}}.
-  {label, 290}.
+  {label, 258}.
+    {allocate, 5, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}]}}.
+    {move, {x, 0}, {y, 1}}.
+    {move, {y, 1}, {x, 0}}.
+    {test, is_tuple, {f, 262}, [{x, 0}]}.
+    {test, test_arity, {f, 262}, [{x, 0}, 3]}.
+    {get_tuple_element, {x, 0}, 0, {y, 2}}.
+    {get_tuple_element, {x, 0}, 1, {y, 3}}.
     {move, {y, 2}, {x, 0}}.
-    {test, is_tuple, {f, 292}, [{x, 0}]}.
-    {test, test_arity, {f, 292}, [{x, 0}, 3]}.
-    {get_tuple_element, {x, 0}, 0, {y, 3}}.
-    {get_tuple_element, {x, 0}, 1, {y, 4}}.
-    {move, {y, 3}, {x, 0}}.
-    {test, is_eq_exact, {f, 292}, [{x, 0}, {atom, mem}]}.
-    {move, {y, 4}, {y, 1}}.
+    {test, is_eq_exact, {f, 262}, [{x, 0}, {atom, mem}]}.
+    {move, {y, 3}, {y, 0}}.
     {move, {atom, sha256}, {x, 0}}.
-    {move, {y, 1}, {x, 1}}.
+    {move, {y, 0}, {x, 1}}.
     {call_ext, 2, {extfunc, crypto, hash, 2}}.
-    {move, {x, 0}, {y, 5}}.
-    {move, {y, 5}, {x, 0}}.
-    {call_ext, 1, {extfunc, binary, encode_hex, 1}}.
-    {move, {x, 0}, {y, 5}}.
-    {move, {y, 5}, {x, 0}}.
-    {call_ext, 1, {extfunc, string, lowercase, 1}}.
-    {move, {x, 0}, {y, 5}}.
-    {test_heap, 3, 0}.
-    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 5}]}}.
-    {move, {x, 0}, {y, 5}}.
-    {move, {y, 5}, {x, 0}}.
-    {deallocate, 11}.
-    return.
-  {label, 292}.
-    {test_heap, {alloc, [{words, 1}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 295}, 0, 0, {x, 0}, {list, [{y, 2}]}}.
-    {move, {x, 0}, {y, 3}}.
-    {move, {y, 3}, {y, 1}}.
-    {jump, {f, 303}}.
-  {label, 303}.
-    {'try', {y, 10}, {f, 304}}.
-    {move, {atom, sha256}, {x, 0}}.
-    {call_ext, 1, {extfunc, crypto, hash_init, 1}}.
-    {move, {x, 0}, {y, 4}}.
-    {move, {integer, 0}, {x, 0}}.
-    {move, {y, 4}, {x, 1}}.
-    {move, {y, 1}, {x, 2}}.
-    {call_fun, 2}.
     {move, {x, 0}, {y, 4}}.
     {move, {y, 4}, {x, 0}}.
     {call_ext, 1, {extfunc, binary, encode_hex, 1}}.
@@ -10921,238 +12105,528 @@ test "fs answers PermissionDenied for an OS permission error" {
     {test_heap, 3, 0}.
     {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 4}]}}.
     {move, {x, 0}, {y, 4}}.
-    {move, {y, 4}, {y, 3}}.
-    {try_end, {y, 10}}.
-    {jump, {f, 305}}.
-  {label, 304}.
-    {try_case, {y, 10}}.
-    {move, {x, 0}, {y, 4}}.
-    {move, {x, 1}, {y, 5}}.
-    {move, {x, 2}, {y, 6}}.
     {move, {y, 4}, {x, 0}}.
-    {test, is_eq_exact, {f, 307}, [{x, 0}, {atom, throw}]}.
-    {move, {y, 5}, {x, 0}}.
-    {test, is_tuple, {f, 307}, [{x, 0}]}.
-    {test, test_arity, {f, 307}, [{x, 0}, 2]}.
+    {deallocate, 5}.
+    return.
+  {label, 262}.
+    {test_heap, {alloc, [{words, 1}, {floats, 0}, {funs, 1}]}, 0}.
+    {make_fun3, {f, 265}, 0, 0, {x, 0}, {list, [{y, 1}]}}.
+    {move, {x, 0}, {y, 2}}.
+    {move, {y, 2}, {y, 0}}.
+    {jump, {f, 273}}.
+  {label, 273}.
+    {move, {atom, sha256}, {x, 0}}.
+    {call_ext, 1, {extfunc, crypto, hash_init, 1}}.
+    {move, {x, 0}, {y, 2}}.
+    {move, {integer, 0}, {x, 0}}.
+    {move, {y, 2}, {x, 1}}.
+    {move, {y, 0}, {x, 2}}.
+    {call_fun, 2}.
+    {move, {x, 0}, {y, 2}}.
+    {move, {y, 2}, {x, 0}}.
+    {call_ext, 1, {extfunc, binary, encode_hex, 1}}.
+    {move, {x, 0}, {y, 2}}.
+    {move, {y, 2}, {x, 0}}.
+    {call_ext, 1, {extfunc, string, lowercase, 1}}.
+    {move, {x, 0}, {y, 2}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 2}]}}.
+    {move, {x, 0}, {y, 2}}.
+    {move, {y, 2}, {x, 0}}.
+    {deallocate, 5}.
+    return.
+
+{function, '__bp_tpl_9', 1, 252}.
+  {label, 251}.
+    {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_9'}, 1}.
+  {label, 252}.
+    {allocate, 12, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}, {y, 11}]}}.
+    {move, {x, 0}, {y, 3}}.
+    {'try', {y, 11}, {f, 255}}.
+    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
+    {make_fun3, {f, 258}, 1, 0, {x, 0}, {list, []}}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {y, 3}, {x, 0}}.
+    {move, {y, 5}, {x, 1}}.
+    {call_fun, 1}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {y, 5}, {y, 6}}.
+    {try_end, {y, 11}}.
+    {move, {y, 6}, {x, 0}}.
+    {test, is_tuple, {f, 275}, [{x, 0}]}.
+    {test, test_arity, {f, 275}, [{x, 0}, 2]}.
     {get_tuple_element, {x, 0}, 0, {y, 7}}.
     {get_tuple_element, {x, 0}, 1, {y, 8}}.
     {move, {y, 7}, {x, 0}}.
-    {test, is_eq_exact, {f, 307}, [{x, 0}, {atom, bp_fs_hash}]}.
+    {test, is_eq_exact, {f, 275}, [{x, 0}, {atom, ok}]}.
+    {move, {y, 8}, {y, 0}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 0}]}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {y, 4}}.
+    {jump, {f, 274}}.
+  {label, 275}.
+    {move, {y, 6}, {x, 0}}.
+    {test, is_tuple, {f, 276}, [{x, 0}]}.
+    {test, test_arity, {f, 276}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 7}}.
+    {get_tuple_element, {x, 0}, 1, {y, 8}}.
+    {move, {y, 7}, {x, 0}}.
+    {test, is_eq_exact, {f, 276}, [{x, 0}, {atom, error}]}.
     {move, {y, 8}, {y, 1}}.
-    {move, {y, 1}, {x, 0}}.
-    {move, {y, 0}, {x, 1}}.
-    {call_fun, 1}.
+    {test_heap, 2, 0}.
+    {put_list, {y, 1}, nil, {x, 0}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {literal, [126, 116, 112]}, {x, 0}}.
+    {move, {y, 9}, {x, 1}}.
+    {call_ext, 2, {extfunc, io_lib, format, 2}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {x, 0}}.
+    {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
+    {move, {x, 0}, {y, 9}}.
+    {test_heap, 6, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@failure@@HostError}, {y, 9}, {literal, <<"host">>}, {atom, std@failure@@HostErrorName__v__error}, {atom, undefined}]}}.
     {move, {x, 0}, {y, 9}}.
     {test_heap, 3, 0}.
     {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 9}]}}.
     {move, {x, 0}, {y, 9}}.
-    {move, {y, 9}, {y, 3}}.
-    {jump, {f, 306}}.
-  {label, 307}.
+    {move, {y, 9}, {y, 4}}.
+    {jump, {f, 274}}.
+  {label, 276}.
+    {move, {y, 6}, {y, 0}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 0}]}}.
+    {move, {x, 0}, {y, 7}}.
+    {move, {y, 7}, {y, 4}}.
+    {jump, {f, 274}}.
+  {label, 274}.
+    {jump, {f, 256}}.
+  {label, 255}.
+    {try_case, {y, 11}}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {x, 1}, {y, 6}}.
+    {move, {x, 2}, {y, 7}}.
+    {move, {y, 5}, {y, 0}}.
+    {move, {y, 6}, {y, 1}}.
+    {move, {y, 7}, {x, 0}}.
+    build_stacktrace.
+    {move, {x, 0}, {y, 2}}.
+    {test_heap, 2, 0}.
+    {put_list, {y, 1}, nil, {x, 0}}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {literal, [126, 116, 112]}, {x, 0}}.
+    {move, {y, 8}, {x, 1}}.
+    {call_ext, 2, {extfunc, io_lib, format, 2}}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {y, 8}, {x, 0}}.
+    {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_eq_exact, {f, 281}, [{x, 0}, {atom, error}]}.
+    {move, {atom, std@failure@@HostErrorName__v__error}, {y, 9}}.
+    {jump, {f, 280}}.
+  {label, 281}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_eq_exact, {f, 282}, [{x, 0}, {atom, throw}]}.
+    {move, {atom, std@failure@@HostErrorName__v__throw}, {y, 9}}.
+    {jump, {f, 280}}.
+  {label, 282}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_eq_exact, {f, 283}, [{x, 0}, {atom, exit}]}.
+    {move, {atom, std@failure@@HostErrorName__v__exit}, {y, 9}}.
+    {jump, {f, 280}}.
+  {label, 283}.
+    {move, {y, 0}, {x, 0}}.
+    {case_end, {x, 0}}.
+  {label, 280}.
+    {test_heap, 2, 0}.
+    {put_list, {y, 2}, nil, {x, 0}}.
+    {move, {x, 0}, {y, 10}}.
+    {move, {literal, [126, 116, 112]}, {x, 0}}.
+    {move, {y, 10}, {x, 1}}.
+    {call_ext, 2, {extfunc, io_lib, format, 2}}.
+    {move, {x, 0}, {y, 10}}.
+    {move, {y, 10}, {x, 0}}.
+    {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
+    {move, {x, 0}, {y, 10}}.
+    {test_heap, 6, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@failure@@HostError}, {y, 8}, {literal, <<"host">>}, {y, 9}, {y, 10}]}}.
+    {move, {x, 0}, {y, 8}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 8}]}}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {y, 8}, {y, 4}}.
+    {jump, {f, 278}}.
+  {label, 278}.
+  {label, 256}.
     {move, {y, 4}, {x, 0}}.
-    {move, {y, 5}, {x, 1}}.
-    {move, {y, 6}, {x, 2}}.
-    raw_raise.
-  {label, 306}.
-  {label, 305}.
-    {move, {y, 3}, {x, 0}}.
-    {deallocate, 11}.
+    {deallocate, 12}.
     return.
 
-{function, '__bp_tpl_9', 1, 268}.
-  {label, 267}.
-    {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_9'}, 1}.
-  {label, 268}.
+{function, '__bp_tpl_10', 1, 289}.
+  {label, 288}.
+    {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_10'}, 1}.
+  {label, 289}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
-    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 272}, 2, 0, {x, 0}, {list, []}}.
-    {move, {x, 0}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
-    {move, {y, 1}, {x, 1}}.
-    {call_fun, 1}.
+    {test, is_tuple, {f, 293}, [{x, 0}]}.
+    {test, test_arity, {f, 293}, [{x, 0}, 3]}.
+    {get_tuple_element, {x, 0}, 0, {y, 1}}.
+    {move, {y, 1}, {x, 0}}.
+    {test, is_eq_exact, {f, 293}, [{x, 0}, {atom, mem}]}.
+    {move, {atom, true}, {x, 0}}.
+    {deallocate, 2}.
+    return.
+  {label, 293}.
+    {move, {atom, false}, {x, 0}}.
     {deallocate, 2}.
     return.
 
-{function, '__bp_tpl_10--t/2-fun-0--fun-1-', 1, 321}.
-  {label, 320}.
-    {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_10--t/2-fun-0--fun-1-'}, 1}.
-  {label, 321}.
-    {allocate, 3, 1}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
+{function, '__bp_tpl_11-t/2-fun-0-', 2, 304}.
+  {label, 303}.
+    {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_11-t/2-fun-0-'}, 2}.
+  {label, 304}.
+    {allocate, 7, 2}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}]}}.
     {move, {x, 0}, {y, 1}}.
+    {move, {x, 1}, {y, 2}}.
     {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 325}, [{x, 0}, {atom, enoent}]}.
-    {move, {literal, <<"notfound">>}, {y, 2}}.
-    {jump, {f, 324}}.
-  {label, 325}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 326}, [{x, 0}, {atom, eacces}]}.
-    {move, {literal, <<"denied">>}, {y, 2}}.
-    {jump, {f, 324}}.
-  {label, 326}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 327}, [{x, 0}, {atom, eperm}]}.
-    {move, {literal, <<"denied">>}, {y, 2}}.
-    {jump, {f, 324}}.
-  {label, 327}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 328}, [{x, 0}, {atom, eisdir}]}.
-    {move, {literal, <<"isdir">>}, {y, 2}}.
-    {jump, {f, 324}}.
-  {label, 328}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 329}, [{x, 0}, {atom, enotdir}]}.
-    {move, {literal, <<"notdir">>}, {y, 2}}.
-    {jump, {f, 324}}.
-  {label, 329}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 330}, [{x, 0}, {atom, eexist}]}.
-    {move, {literal, <<"exists">>}, {y, 2}}.
-    {jump, {f, 324}}.
-  {label, 330}.
-    {move, {literal, <<"other">>}, {y, 2}}.
-    {jump, {f, 324}}.
-  {label, 324}.
-    {move, {y, 2}, {y, 0}}.
-    {jump, {f, 333}}.
-  {label, 333}.
+    {move, {y, 2}, {x, 1}}.
+    {call_ext, 2, {extfunc, file, write, 2}}.
+    {move, {x, 0}, {y, 3}}.
+    {move, {y, 3}, {x, 0}}.
+    {test, is_eq_exact, {f, 308}, [{x, 0}, {atom, ok}]}.
+    {move, {y, 2}, {x, 0}}.
+    {call_ext, 1, {extfunc, erlang, byte_size, 1}}.
+    {move, {x, 0}, {y, 4}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 4}]}}.
+    {move, {x, 0}, {y, 4}}.
+    {move, {y, 4}, {x, 0}}.
+    {deallocate, 7}.
+    return.
+  {label, 308}.
+    {move, {y, 3}, {x, 0}}.
+    {test, is_tuple, {f, 309}, [{x, 0}]}.
+    {test, test_arity, {f, 309}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 4}}.
+    {get_tuple_element, {x, 0}, 1, {y, 5}}.
+    {move, {y, 4}, {x, 0}}.
+    {test, is_eq_exact, {f, 309}, [{x, 0}, {atom, error}]}.
+    {move, {y, 5}, {y, 0}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 0}]}}.
+    {move, {x, 0}, {y, 6}}.
+    {move, {y, 6}, {x, 0}}.
+    {deallocate, 7}.
+    return.
+  {label, 309}.
+    {move, {y, 3}, {x, 0}}.
+    {case_end, {x, 0}}.
+
+{function, '__bp_tpl_11', 2, 298}.
+  {label, 297}.
+    {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_11'}, 2}.
+  {label, 298}.
+    {allocate, 13, 2}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}, {y, 11}, {y, 12}]}}.
+    {move, {x, 0}, {y, 3}}.
+    {move, {x, 1}, {y, 4}}.
+    {'try', {y, 12}, {f, 301}}.
+    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
+    {make_fun3, {f, 304}, 0, 0, {x, 0}, {list, []}}.
+    {move, {x, 0}, {y, 6}}.
+    {move, {y, 3}, {x, 0}}.
+    {move, {y, 4}, {x, 1}}.
+    {move, {y, 6}, {x, 2}}.
+    {call_fun, 2}.
+    {move, {x, 0}, {y, 6}}.
+    {move, {y, 6}, {y, 7}}.
+    {try_end, {y, 12}}.
+    {move, {y, 7}, {x, 0}}.
+    {test, is_tuple, {f, 311}, [{x, 0}]}.
+    {test, test_arity, {f, 311}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 8}}.
+    {get_tuple_element, {x, 0}, 1, {y, 9}}.
+    {move, {y, 8}, {x, 0}}.
+    {test, is_eq_exact, {f, 311}, [{x, 0}, {atom, ok}]}.
+    {move, {y, 9}, {y, 0}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 0}]}}.
+    {move, {x, 0}, {y, 10}}.
+    {move, {y, 10}, {y, 5}}.
+    {jump, {f, 310}}.
+  {label, 311}.
+    {move, {y, 7}, {x, 0}}.
+    {test, is_tuple, {f, 312}, [{x, 0}]}.
+    {test, test_arity, {f, 312}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 8}}.
+    {get_tuple_element, {x, 0}, 1, {y, 9}}.
+    {move, {y, 8}, {x, 0}}.
+    {test, is_eq_exact, {f, 312}, [{x, 0}, {atom, error}]}.
+    {move, {y, 9}, {y, 1}}.
     {test_heap, 2, 0}.
     {put_list, {y, 1}, nil, {x, 0}}.
-    {move, {x, 0}, {y, 2}}.
+    {move, {x, 0}, {y, 10}}.
     {move, {literal, [126, 116, 112]}, {x, 0}}.
-    {move, {y, 2}, {x, 1}}.
+    {move, {y, 10}, {x, 1}}.
     {call_ext, 2, {extfunc, io_lib, format, 2}}.
-    {move, {x, 0}, {y, 2}}.
+    {move, {x, 0}, {y, 10}}.
+    {move, {y, 10}, {x, 0}}.
+    {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
+    {move, {x, 0}, {y, 10}}.
     {test_heap, 6, 0}.
-    {put_list, {y, 2}, nil, {x, 0}}.
-    {put_list, {literal, <<"|">>}, {x, 0}, {x, 0}}.
-    {put_list, {y, 0}, {x, 0}, {x, 0}}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@failure@@HostError}, {y, 10}, {literal, <<"host">>}, {atom, std@failure@@HostErrorName__v__error}, {atom, undefined}]}}.
+    {move, {x, 0}, {y, 10}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 10}]}}.
+    {move, {x, 0}, {y, 10}}.
+    {move, {y, 10}, {y, 5}}.
+    {jump, {f, 310}}.
+  {label, 312}.
+    {move, {y, 7}, {y, 0}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 0}]}}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {y, 8}, {y, 5}}.
+    {jump, {f, 310}}.
+  {label, 310}.
+    {jump, {f, 302}}.
+  {label, 301}.
+    {try_case, {y, 12}}.
+    {move, {x, 0}, {y, 6}}.
+    {move, {x, 1}, {y, 7}}.
+    {move, {x, 2}, {y, 8}}.
+    {move, {y, 6}, {y, 0}}.
+    {move, {y, 7}, {y, 1}}.
+    {move, {y, 8}, {x, 0}}.
+    build_stacktrace.
     {move, {x, 0}, {y, 2}}.
-    {move, {y, 2}, {x, 0}}.
-    {call_ext_last, 1, {extfunc, unicode, characters_to_binary, 1}, 3}.
-
-{function, '__bp_tpl_10-t/2-fun-0-', 2, 317}.
-  {label, 316}.
-    {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_10-t/2-fun-0-'}, 2}.
+    {test_heap, 2, 0}.
+    {put_list, {y, 1}, nil, {x, 0}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {literal, [126, 116, 112]}, {x, 0}}.
+    {move, {y, 9}, {x, 1}}.
+    {call_ext, 2, {extfunc, io_lib, format, 2}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {x, 0}}.
+    {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_eq_exact, {f, 317}, [{x, 0}, {atom, error}]}.
+    {move, {atom, std@failure@@HostErrorName__v__error}, {y, 10}}.
+    {jump, {f, 316}}.
   {label, 317}.
-    {allocate, 8, 2}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}]}}.
-    {move, {x, 0}, {y, 2}}.
-    {move, {x, 1}, {y, 3}}.
-    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 321}, 0, 0, {x, 0}, {list, []}}.
-    {move, {x, 0}, {y, 4}}.
-    {move, {y, 4}, {y, 0}}.
-    {jump, {f, 335}}.
-  {label, 335}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_eq_exact, {f, 318}, [{x, 0}, {atom, throw}]}.
+    {move, {atom, std@failure@@HostErrorName__v__throw}, {y, 10}}.
+    {jump, {f, 316}}.
+  {label, 318}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_eq_exact, {f, 319}, [{x, 0}, {atom, exit}]}.
+    {move, {atom, std@failure@@HostErrorName__v__exit}, {y, 10}}.
+    {jump, {f, 316}}.
+  {label, 319}.
+    {move, {y, 0}, {x, 0}}.
+    {case_end, {x, 0}}.
+  {label, 316}.
+    {test_heap, 2, 0}.
+    {put_list, {y, 2}, nil, {x, 0}}.
+    {move, {x, 0}, {y, 11}}.
+    {move, {literal, [126, 116, 112]}, {x, 0}}.
+    {move, {y, 11}, {x, 1}}.
+    {call_ext, 2, {extfunc, io_lib, format, 2}}.
+    {move, {x, 0}, {y, 11}}.
+    {move, {y, 11}, {x, 0}}.
+    {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
+    {move, {x, 0}, {y, 11}}.
+    {test_heap, 6, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@failure@@HostError}, {y, 9}, {literal, <<"host">>}, {y, 10}, {y, 11}]}}.
+    {move, {x, 0}, {y, 9}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 9}]}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {y, 5}}.
+    {jump, {f, 314}}.
+  {label, 314}.
+  {label, 302}.
+    {move, {y, 5}, {x, 0}}.
+    {deallocate, 13}.
+    return.
+
+{function, '__bp_tpl_12-t/1-fun-0-', 1, 330}.
+  {label, 329}.
+    {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_12-t/1-fun-0-'}, 1}.
+  {label, 330}.
+    {allocate, 6, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}]}}.
+    {move, {x, 0}, {y, 1}}.
+    {move, {y, 1}, {x, 0}}.
+    {test, is_tuple, {f, 334}, [{x, 0}]}.
+    {test, test_arity, {f, 334}, [{x, 0}, 3]}.
+    {get_tuple_element, {x, 0}, 0, {y, 2}}.
     {move, {y, 2}, {x, 0}}.
-    {test, is_tuple, {f, 337}, [{x, 0}]}.
-    {test, test_arity, {f, 337}, [{x, 0}, 3]}.
-    {get_tuple_element, {x, 0}, 0, {y, 4}}.
-    {move, {y, 4}, {x, 0}}.
-    {test, is_eq_exact, {f, 337}, [{x, 0}, {atom, mem}]}.
-    {move, {literal, {error, <<"other|the file is open for reading">>}}, {x, 0}}.
-    {deallocate, 8}.
+    {test, is_eq_exact, {f, 334}, [{x, 0}, {atom, mem}]}.
+    {move, {literal, {ok, 0}}, {x, 0}}.
+    {deallocate, 6}.
+    return.
+  {label, 334}.
+    {move, {y, 1}, {x, 0}}.
+    {call_ext, 1, {extfunc, file, close, 1}}.
+    {move, {x, 0}, {y, 2}}.
+    {move, {y, 2}, {x, 0}}.
+    {test, is_eq_exact, {f, 337}, [{x, 0}, {atom, ok}]}.
+    {move, {literal, {ok, 0}}, {x, 0}}.
+    {deallocate, 6}.
     return.
   {label, 337}.
     {move, {y, 2}, {x, 0}}.
-    {move, {y, 3}, {x, 1}}.
-    {call_ext, 2, {extfunc, file, write, 2}}.
-    {move, {x, 0}, {y, 4}}.
-    {move, {y, 4}, {x, 0}}.
-    {test, is_eq_exact, {f, 340}, [{x, 0}, {atom, ok}]}.
+    {test, is_tuple, {f, 338}, [{x, 0}]}.
+    {test, test_arity, {f, 338}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 3}}.
+    {get_tuple_element, {x, 0}, 1, {y, 4}}.
     {move, {y, 3}, {x, 0}}.
-    {call_ext, 1, {extfunc, erlang, byte_size, 1}}.
-    {move, {x, 0}, {y, 5}}.
+    {test, is_eq_exact, {f, 338}, [{x, 0}, {atom, error}]}.
+    {move, {y, 4}, {y, 0}}.
     {test_heap, 3, 0}.
-    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 5}]}}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 0}]}}.
     {move, {x, 0}, {y, 5}}.
     {move, {y, 5}, {x, 0}}.
-    {deallocate, 8}.
+    {deallocate, 6}.
     return.
-  {label, 340}.
-    {move, {y, 4}, {x, 0}}.
-    {test, is_tuple, {f, 341}, [{x, 0}]}.
-    {test, test_arity, {f, 341}, [{x, 0}, 2]}.
-    {get_tuple_element, {x, 0}, 0, {y, 5}}.
-    {get_tuple_element, {x, 0}, 1, {y, 6}}.
-    {move, {y, 5}, {x, 0}}.
-    {test, is_eq_exact, {f, 341}, [{x, 0}, {atom, error}]}.
-    {move, {y, 6}, {y, 1}}.
-    {move, {y, 1}, {x, 0}}.
-    {move, {y, 0}, {x, 1}}.
-    {call_fun, 1}.
-    {move, {x, 0}, {y, 7}}.
-    {test_heap, 3, 0}.
-    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 7}]}}.
-    {move, {x, 0}, {y, 7}}.
-    {move, {y, 7}, {x, 0}}.
-    {deallocate, 8}.
-    return.
-  {label, 341}.
-    {move, {y, 4}, {x, 0}}.
+  {label, 338}.
+    {move, {y, 2}, {x, 0}}.
     {case_end, {x, 0}}.
 
-{function, '__bp_tpl_10', 2, 313}.
-  {label, 312}.
-    {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_10'}, 2}.
-  {label, 313}.
-    {allocate, 3, 2}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
-    {move, {x, 0}, {y, 0}}.
-    {move, {x, 1}, {y, 1}}.
+{function, '__bp_tpl_12', 1, 324}.
+  {label, 323}.
+    {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_12'}, 1}.
+  {label, 324}.
+    {allocate, 12, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}, {y, 11}]}}.
+    {move, {x, 0}, {y, 3}}.
+    {'try', {y, 11}, {f, 327}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 317}, 1, 0, {x, 0}, {list, []}}.
-    {move, {x, 0}, {y, 2}}.
-    {move, {y, 0}, {x, 0}}.
-    {move, {y, 1}, {x, 1}}.
-    {move, {y, 2}, {x, 2}}.
-    {call_fun, 2}.
-    {deallocate, 3}.
-    return.
-
-{function, '__bp_tpl_11-t/1-fun-0-', 1, 350}.
-  {label, 349}.
-    {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_11-t/1-fun-0-'}, 1}.
-  {label, 350}.
-    {allocate, 2, 1}.
-    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
-    {move, {x, 0}, {y, 0}}.
-    {move, {y, 0}, {x, 0}}.
-    {test, is_tuple, {f, 354}, [{x, 0}]}.
-    {test, test_arity, {f, 354}, [{x, 0}, 3]}.
-    {get_tuple_element, {x, 0}, 0, {y, 1}}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 354}, [{x, 0}, {atom, mem}]}.
-    {move, {atom, ok}, {x, 0}}.
-    {deallocate, 2}.
-    return.
-  {label, 354}.
-    {move, {y, 0}, {x, 0}}.
-    {call_ext, 1, {extfunc, file, close, 1}}.
-    {move, {x, 0}, {y, 1}}.
-    {jump, {f, 357}}.
-  {label, 357}.
-    {move, {atom, ok}, {x, 0}}.
-    {deallocate, 2}.
-    return.
-
-{function, '__bp_tpl_11', 1, 346}.
-  {label, 345}.
-    {func_info, {atom, std@io@fs@@File}, {atom, '__bp_tpl_11'}, 1}.
-  {label, 346}.
-    {allocate, 2, 1}.
-    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
-    {move, {x, 0}, {y, 0}}.
-    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 350}, 0, 0, {x, 0}, {list, []}}.
-    {move, {x, 0}, {y, 1}}.
-    {move, {y, 0}, {x, 0}}.
-    {move, {y, 1}, {x, 1}}.
+    {make_fun3, {f, 330}, 0, 0, {x, 0}, {list, []}}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {y, 3}, {x, 0}}.
+    {move, {y, 5}, {x, 1}}.
     {call_fun, 1}.
-    {deallocate, 2}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {y, 5}, {y, 6}}.
+    {try_end, {y, 11}}.
+    {move, {y, 6}, {x, 0}}.
+    {test, is_tuple, {f, 340}, [{x, 0}]}.
+    {test, test_arity, {f, 340}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 7}}.
+    {get_tuple_element, {x, 0}, 1, {y, 8}}.
+    {move, {y, 7}, {x, 0}}.
+    {test, is_eq_exact, {f, 340}, [{x, 0}, {atom, ok}]}.
+    {move, {y, 8}, {y, 0}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 0}]}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {y, 4}}.
+    {jump, {f, 339}}.
+  {label, 340}.
+    {move, {y, 6}, {x, 0}}.
+    {test, is_tuple, {f, 341}, [{x, 0}]}.
+    {test, test_arity, {f, 341}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 7}}.
+    {get_tuple_element, {x, 0}, 1, {y, 8}}.
+    {move, {y, 7}, {x, 0}}.
+    {test, is_eq_exact, {f, 341}, [{x, 0}, {atom, error}]}.
+    {move, {y, 8}, {y, 1}}.
+    {test_heap, 2, 0}.
+    {put_list, {y, 1}, nil, {x, 0}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {literal, [126, 116, 112]}, {x, 0}}.
+    {move, {y, 9}, {x, 1}}.
+    {call_ext, 2, {extfunc, io_lib, format, 2}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {x, 0}}.
+    {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
+    {move, {x, 0}, {y, 9}}.
+    {test_heap, 6, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@failure@@HostError}, {y, 9}, {literal, <<"host">>}, {atom, std@failure@@HostErrorName__v__error}, {atom, undefined}]}}.
+    {move, {x, 0}, {y, 9}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 9}]}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {y, 4}}.
+    {jump, {f, 339}}.
+  {label, 341}.
+    {move, {y, 6}, {y, 0}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 0}]}}.
+    {move, {x, 0}, {y, 7}}.
+    {move, {y, 7}, {y, 4}}.
+    {jump, {f, 339}}.
+  {label, 339}.
+    {jump, {f, 328}}.
+  {label, 327}.
+    {try_case, {y, 11}}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {x, 1}, {y, 6}}.
+    {move, {x, 2}, {y, 7}}.
+    {move, {y, 5}, {y, 0}}.
+    {move, {y, 6}, {y, 1}}.
+    {move, {y, 7}, {x, 0}}.
+    build_stacktrace.
+    {move, {x, 0}, {y, 2}}.
+    {test_heap, 2, 0}.
+    {put_list, {y, 1}, nil, {x, 0}}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {literal, [126, 116, 112]}, {x, 0}}.
+    {move, {y, 8}, {x, 1}}.
+    {call_ext, 2, {extfunc, io_lib, format, 2}}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {y, 8}, {x, 0}}.
+    {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_eq_exact, {f, 346}, [{x, 0}, {atom, error}]}.
+    {move, {atom, std@failure@@HostErrorName__v__error}, {y, 9}}.
+    {jump, {f, 345}}.
+  {label, 346}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_eq_exact, {f, 347}, [{x, 0}, {atom, throw}]}.
+    {move, {atom, std@failure@@HostErrorName__v__throw}, {y, 9}}.
+    {jump, {f, 345}}.
+  {label, 347}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_eq_exact, {f, 348}, [{x, 0}, {atom, exit}]}.
+    {move, {atom, std@failure@@HostErrorName__v__exit}, {y, 9}}.
+    {jump, {f, 345}}.
+  {label, 348}.
+    {move, {y, 0}, {x, 0}}.
+    {case_end, {x, 0}}.
+  {label, 345}.
+    {test_heap, 2, 0}.
+    {put_list, {y, 2}, nil, {x, 0}}.
+    {move, {x, 0}, {y, 10}}.
+    {move, {literal, [126, 116, 112]}, {x, 0}}.
+    {move, {y, 10}, {x, 1}}.
+    {call_ext, 2, {extfunc, io_lib, format, 2}}.
+    {move, {x, 0}, {y, 10}}.
+    {move, {y, 10}, {x, 0}}.
+    {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
+    {move, {x, 0}, {y, 10}}.
+    {test_heap, 6, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@failure@@HostError}, {y, 8}, {literal, <<"host">>}, {y, 9}, {y, 10}]}}.
+    {move, {x, 0}, {y, 8}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 8}]}}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {y, 8}, {y, 4}}.
+    {jump, {f, 343}}.
+  {label, 343}.
+  {label, 328}.
+    {move, {y, 4}, {x, 0}}.
+    {deallocate, 12}.
     return.
 ```
 
