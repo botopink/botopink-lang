@@ -3724,11 +3724,11 @@ const Emitter = struct {
                     // (decision 359) names the record its construction is.
                     if (i.binding == null) {
                         if (i.then_.len == 0) break :blk null;
-                        break :blk self.recordTypeOfExpr(i.then_[i.then_.len - 1].expr);
+                        break :blk self.recordTypeOfExpr(i.then_[ast.lastRealIndex(i.then_)].expr);
                     }
                     const els = i.else_ orelse break :blk null;
                     if (els.len == 0) break :blk null;
-                    break :blk self.recordTypeOfExpr(els[els.len - 1].expr);
+                    break :blk self.recordTypeOfExpr(els[ast.lastRealIndex(els)].expr);
                 },
                 // `try f(…) catch H`: the handler and the call's ok payload
                 // are one type; either names the record.
@@ -8302,7 +8302,7 @@ const Emitter = struct {
             }
         }
         const tail_type: ?Repr = if (self.fn_has_result and body.len > 0)
-            self.wasmTypeOf(body[body.len - 1].expr)
+            self.wasmTypeOf(body[ast.lastRealIndex(body)].expr)
         else
             null;
         self.defer_fn_body = body;
@@ -8311,7 +8311,7 @@ const Emitter = struct {
         // An implicit tail value has to meet the declared `(result …)` too.
         if (self.fn_has_result and tail == .value) {
             // A tail that cannot return (`@panic`) leaves the stack polymorphic.
-            const no_return = self.mode == .gc and body.len > 0 and isNoReturnCall(body[body.len - 1].expr);
+            const no_return = self.mode == .gc and body.len > 0 and isNoReturnCall(body[ast.lastRealIndex(body)].expr);
             if (tail_type) |t| if (!no_return) try self.emitConvert(t, self.cur_result);
         }
         // `emitBody` normalises: with a result the tail is a value (or the
@@ -8480,7 +8480,7 @@ const Emitter = struct {
             const arg = a.value.*;
             if (arg == .collection and arg.collection.kind == .arrayLit) for (arg.collection.kind.arrayLit.elems) |el| {
                 const tail: ast.Expr = if (el == .function and el.function.kind.syntax == .lambda and el.function.kind.body.len > 0)
-                    el.function.kind.body[el.function.kind.body.len - 1].expr
+                    el.function.kind.body[ast.lastRealIndex(el.function.kind.body)].expr
                 else
                     el;
                 if (!self.isTaskExpr(tail)) continue;
@@ -9179,7 +9179,7 @@ const Emitter = struct {
     /// a valueless `return`, or an empty body) yield nothing.
     fn bodyYieldsValue(body: []const ast.Stmt) bool {
         if (body.len == 0) return false;
-        const last = body[body.len - 1].expr;
+        const last = body[ast.lastRealIndex(body)].expr;
         return switch (last) {
             .jump => |j| switch (j.kind) {
                 .@"return" => |r| r != null,
@@ -10240,7 +10240,7 @@ const Emitter = struct {
         // value, the type of its last expression (the type a region names).
         const value_ty: ?Repr = if (!keep_value) null else if (self.defer_fn_body != null and
             self.defer_fn_body.?.ptr == body.ptr and self.defer_fn_body.?.len == body.len) self.cur_result else if (hasDefer(body) and !body[body.len - 1].deferred)
-            self.wasmTypeOf(body[body.len - 1].expr)
+            self.wasmTypeOf(body[ast.lastRealIndex(body)].expr)
         else
             null;
         const tail = try self.emitStmtsFrom(body, 0, keep_value, value_ty, true, null);
@@ -10255,9 +10255,13 @@ const Emitter = struct {
     fn emitStmtsFrom(self: *Emitter, body: []const ast.Stmt, start: usize, keep_value: bool, value_ty: ?Repr, regions: bool, hook: ?LastHook) anyerror!Tail {
         var tail: Tail = .none;
         var i = start;
+        // A `//` comment written after the tail is no statement of the value.
+        const lastAt = if (body.len > start) ast.lastRealIndex(body) else 0;
         while (i < body.len) : (i += 1) {
             const stmt = body[i];
-            const is_last = i + 1 == body.len;
+            const is_last = i == lastAt;
+            // The comments after the tail emit nothing and leave its `Tail`.
+            if (i > lastAt) continue;
             if (stmt.deferred) {
                 var plain = stmt;
                 plain.deferred = false;
@@ -10974,7 +10978,7 @@ const Emitter = struct {
 
     fn bodyTail(self: *Emitter, body: []const ast.Stmt) Tail {
         if (body.len == 0) return .none;
-        return self.exprTail(body[body.len - 1].expr);
+        return self.exprTail(body[ast.lastRealIndex(body)].expr);
     }
 
     /// Lower `e` guaranteeing exactly one value on the stack. Used wherever an
@@ -12109,15 +12113,15 @@ const Emitter = struct {
         if (hasDefer(body) and !body[body.len - 1].deferred) {
             // A `defer` of the lambda: its value is computed inside the panic
             // region, the defers run after it.
-            const ty = self.wasmTypeOf(body[body.len - 1].expr);
+            const ty = self.wasmTypeOf(body[ast.lastRealIndex(body)].expr);
             const mark = self.defer_stack.items.len;
             var site: InlineLast = .{};
             const tail = try self.emitStmtsFrom(body, 0, true, ty, true, .{ .ctx = &site, .run = InlineLast.run });
             try self.closeDefers(mark, tail);
             return;
         }
-        for (body[0 .. body.len - 1]) |s| _ = try self.emitStmt(s, false);
-        _ = try self.inlineLastStmt(body[body.len - 1]);
+        for (body[0..ast.lastRealIndex(body)]) |s| _ = try self.emitStmt(s, false);
+        _ = try self.inlineLastStmt(body[ast.lastRealIndex(body)]);
     }
 
     const InlineLast = struct {
@@ -12180,8 +12184,8 @@ const Emitter = struct {
             }
             const body = lam.body;
             if (body.len == 0) return self.gcFail("a map closure with no body");
-            for (body[0 .. body.len - 1]) |st| _ = try self.emitStmt(st, false);
-            const last = body[body.len - 1].expr;
+            for (body[0..ast.lastRealIndex(body)]) |st| _ = try self.emitStmt(st, false);
+            const last = body[ast.lastRealIndex(body)].expr;
             const tail: ast.Expr = switch (last) {
                 .jump => |j| switch (j.kind) {
                     .@"return" => |r| if (r) |v| v.* else return self.gcFail("a map closure answering nothing"),
@@ -12812,8 +12816,8 @@ const Emitter = struct {
             _ = try self.emitStmtsFrom(lam.body, 0, true, self.cur_result, true, .{ .ctx = &site, .run = ArmLast.run });
             return;
         }
-        _ = try self.emitStmtsFrom(lam.body[0 .. lam.body.len - 1], 0, false, null, false, null);
-        _ = try self.armLastStmt(lam.body[lam.body.len - 1], box, box_as);
+        _ = try self.emitStmtsFrom(lam.body[0..ast.lastRealIndex(lam.body)], 0, false, null, false, null);
+        _ = try self.armLastStmt(lam.body[ast.lastRealIndex(lam.body)], box, box_as);
     }
 
     const ArmLast = struct {
@@ -15195,7 +15199,7 @@ const Emitter = struct {
     /// element parameter bound (as `elemKindOf`'s `map` arm asks).
     fn lambdaTailShape(self: *Emitter, lam: LambdaView, recv: ast.Expr) anyerror!?[]const u8 {
         if (lam.body.len == 0) return null;
-        const last = lam.body[lam.body.len - 1].expr;
+        const last = lam.body[ast.lastRealIndex(lam.body)].expr;
         const v = switch (last) {
             .jump => |j| switch (j.kind) {
                 .@"return" => |r| if (r) |x| x.* else return null,
@@ -15210,7 +15214,7 @@ const Emitter = struct {
 
     fn lambdaTailIsBool(self: *Emitter, lam: LambdaView, recv: ast.Expr) bool {
         if (lam.body.len == 0) return false;
-        const last = lam.body[lam.body.len - 1].expr;
+        const last = lam.body[ast.lastRealIndex(lam.body)].expr;
         const v = switch (last) {
             .jump => |j| switch (j.kind) {
                 .@"return" => |r| if (r) |x| x.* else return false,
@@ -16176,8 +16180,8 @@ const Emitter = struct {
     /// is; answers the repr left on the stack.
     fn gcInlineTail(self: *Emitter, body: []const ast.Stmt, want: ?Repr) anyerror!Repr {
         if (body.len == 0) return self.gcFail("an inlined lambda with no body");
-        for (body[0 .. body.len - 1]) |st| _ = try self.emitStmt(st, false);
-        const last = body[body.len - 1].expr;
+        for (body[0..ast.lastRealIndex(body)]) |st| _ = try self.emitStmt(st, false);
+        const last = body[ast.lastRealIndex(body)].expr;
         const tail: ast.Expr = switch (last) {
             .jump => |j| switch (j.kind) {
                 .@"return" => |r| if (r) |v| v.* else return self.gcFail("an inlined lambda answering nothing"),
@@ -16222,7 +16226,7 @@ const Emitter = struct {
         if (self.elemKindOf(recv) == .str) self.str_locals.put(p, {}) catch {};
         var t = self.lambdaTailType(lam.body);
         if (t == .i32) {
-            const last = if (lam.body.len > 0) lam.body[lam.body.len - 1].expr else return t;
+            const last = if (lam.body.len > 0) lam.body[ast.lastRealIndex(lam.body)].expr else return t;
             const v = switch (last) {
                 .jump => |j| switch (j.kind) {
                     .@"return" => |r| if (r) |x| x.* else return t,
@@ -16445,7 +16449,7 @@ const Emitter = struct {
     /// trailing `return`).
     fn lambdaTailType(self: *Emitter, body: []const ast.Stmt) Repr {
         if (body.len == 0) return .i32;
-        const last = body[body.len - 1].expr;
+        const last = body[ast.lastRealIndex(body)].expr;
         return switch (last) {
             .jump => |j| switch (j.kind) {
                 .@"return" => |r| if (r) |v| self.wasmTypeOf(v.*) else .i32,
@@ -17031,7 +17035,7 @@ const Emitter = struct {
                                     break :blk elemKindOfTypeRef(rt);
                                 };
                                 if (lam.body.len == 0) break :blk .i32;
-                                const last = lam.body[lam.body.len - 1].expr;
+                                const last = lam.body[ast.lastRealIndex(lam.body)].expr;
                                 const v = switch (last) {
                                     .jump => |j| switch (j.kind) {
                                         .@"return" => |r| if (r) |x| x.* else break :blk .i32,
@@ -17316,7 +17320,7 @@ const Emitter = struct {
         if (e != .function or e.function.kind.syntax != .lambda) return null;
         const lbody = e.function.kind.body;
         if (lbody.len == 0) return null;
-        const tail = lbody[lbody.len - 1].expr;
+        const tail = lbody[ast.lastRealIndex(lbody)].expr;
         const blk: ast.Expr = if (tail == .jump and tail.jump.kind == .@"return")
             (if (tail.jump.kind.@"return") |rv| rv.* else return null)
         else
@@ -19072,7 +19076,7 @@ const Emitter = struct {
             try self.declareScratch("__mem", self.countMems(l.body));
             try self.emitLocalDecls(l.body);
             if (l.async_block) try self.beginMachine(l.body);
-            const tail_type: ?Repr = if (l.body.len > 0) self.wasmTypeOf(l.body[l.body.len - 1].expr) else null;
+            const tail_type: ?Repr = if (l.body.len > 0) self.wasmTypeOf(l.body[ast.lastRealIndex(l.body)].expr) else null;
             const tail = try self.emitBody(l.body, true);
             // A closure answers through the indirect call's `i32` word: a
             // float or an `i64` answer leaves in its cell when the function
@@ -19133,7 +19137,7 @@ const Emitter = struct {
         for ([_]?[]const ast.Stmt{ i.then_, i.else_ }) |maybe| {
             const body = maybe orelse continue;
             if (body.len == 0) continue;
-            if (self.isBigintExpr(body[body.len - 1].expr)) return true;
+            if (self.isBigintExpr(body[ast.lastRealIndex(body)].expr)) return true;
         }
         return false;
     }
@@ -19146,7 +19150,7 @@ const Emitter = struct {
         for ([_]?[]const ast.Stmt{ i.then_, i.else_ }) |maybe| {
             const body = maybe orelse return null;
             if (body.len == 0) return null;
-            const last = body[body.len - 1].expr;
+            const last = body[ast.lastRealIndex(body)].expr;
             if (isNullLit(last)) {
                 absent = true;
             } else if (self.isBigintExpr(last)) {
@@ -20225,7 +20229,7 @@ const Emitter = struct {
     fn asyncBlockValue(e: ast.Expr) ?ast.Expr {
         if (e != .function or e.function.kind.syntax != .asyncBlock) return null;
         const body = e.function.kind.body;
-        var v = blockReturnValue(body) orelse if (body.len > 0) body[body.len - 1].expr else return null;
+        var v = blockReturnValue(body) orelse if (body.len > 0) body[ast.lastRealIndex(body)].expr else return null;
         // A name the block binds is read in the outer scope by its value:
         // `async { val w = await work(); return w; }` answers what `work`'s
         // task does.
@@ -20274,7 +20278,7 @@ const Emitter = struct {
     /// The expression a thunk `{ -> e }` answers.
     fn thunkTail(e: ast.Expr) ?ast.Expr {
         if (e != .function or e.function.kind.syntax != .lambda or e.function.kind.body.len == 0) return null;
-        return e.function.kind.body[e.function.kind.body.len - 1].expr;
+        return e.function.kind.body[ast.lastRealIndex(e.function.kind.body)].expr;
     }
 
     /// A task's value as the shape readers see it: an `async { }` block's
@@ -20407,7 +20411,7 @@ const Emitter = struct {
                 if (primKindOfName(un) != null or self.records.contains(un) or self.enums.contains(un)) continue;
                 const lam = lambdaAt(cc, pi) orelse continue;
                 if (lam.body.len == 0) continue;
-                const last = lam.body[lam.body.len - 1].expr;
+                const last = lam.body[ast.lastRealIndex(lam.body)].expr;
                 const v = switch (last) {
                     .jump => |j| switch (j.kind) {
                         .@"return" => |r| if (r) |x| x.* else continue,
@@ -20791,7 +20795,7 @@ const Emitter = struct {
                     if (std.mem.eql(u8, cc.callee, "map") and cc.receiver != null and cc.args.len == 1) {
                         if (lambdaArg(cc.args[0].value)) |lam| {
                             const body = lam.function.kind.body;
-                            if (body.len > 0) if (self.recordTypeOfExpr(body[body.len - 1].expr)) |r| return r;
+                            if (body.len > 0) if (self.recordTypeOfExpr(body[ast.lastRealIndex(body)].expr)) |r| return r;
                         }
                     }
                 },
@@ -20980,7 +20984,7 @@ const Emitter = struct {
 
     fn lambdaTailIsPointer(self: *Emitter, body: []const ast.Stmt) bool {
         if (body.len == 0) return false;
-        const last = body[body.len - 1].expr;
+        const last = body[ast.lastRealIndex(body)].expr;
         const v = switch (last) {
             .jump => |j| switch (j.kind) {
                 .@"return" => |r| if (r) |x| x.* else return false,
@@ -21087,8 +21091,8 @@ const Emitter = struct {
             try self.closeDefers(mark, tail);
             return;
         }
-        for (body[0 .. body.len - 1]) |stmt| _ = try self.emitStmt(stmt, false);
-        try self.boxedLastStmt(target, body[body.len - 1].expr, arm_type);
+        for (body[0..ast.lastRealIndex(body)]) |stmt| _ = try self.emitStmt(stmt, false);
+        try self.boxedLastStmt(target, body[ast.lastRealIndex(body)].expr, arm_type);
     }
 
     const BoxedLast = struct {
@@ -21123,7 +21127,7 @@ const Emitter = struct {
         if (i.binding != null) return false;
         const els = i.else_ orelse return false;
         if (i.then_.len == 0 or els.len == 0) return false;
-        return armAnswersNull(i.then_[i.then_.len - 1].expr) or armAnswersNull(els[els.len - 1].expr);
+        return armAnswersNull(i.then_[ast.lastRealIndex(i.then_)].expr) or armAnswersNull(els[ast.lastRealIndex(els)].expr);
     }
 
     /// The payload of the boxed optional on the stack: the word its box holds,
@@ -21973,8 +21977,8 @@ const Emitter = struct {
             .branch => |b| switch (b.kind) {
                 .if_ => |i| {
                     const els = i.else_ orelse return null;
-                    if (i.then_.len > 0) if (self.unitEnumOf(i.then_[i.then_.len - 1].expr)) |en| return en;
-                    if (els.len > 0) return self.unitEnumOf(els[els.len - 1].expr);
+                    if (i.then_.len > 0) if (self.unitEnumOf(i.then_[ast.lastRealIndex(i.then_)].expr)) |en| return en;
+                    if (els.len > 0) return self.unitEnumOf(els[ast.lastRealIndex(els)].expr);
                     return null;
                 },
                 else => {},
@@ -22563,7 +22567,7 @@ const Emitter = struct {
                         const le = self.resultClosureArg(cc.args[1].value) orelse break :blk null;
                         const body = le.function.kind.body;
                         if (body.len == 0) break :blk null;
-                        const last = body[body.len - 1].expr;
+                        const last = body[ast.lastRealIndex(body)].expr;
                         const tail: ast.Expr = switch (last) {
                             .jump => |j| switch (j.kind) {
                                 .@"return" => |r| (r orelse break :blk null).*,
@@ -22635,7 +22639,7 @@ const Emitter = struct {
             },
             else => {},
         };
-        return self.isStringExpr(body[body.len - 1].expr);
+        return self.isStringExpr(body[ast.lastRealIndex(body)].expr);
     }
 
     /// `val #(a, b) = #(12, "hello")`: an element of a tuple literal lends its
@@ -22697,7 +22701,7 @@ const Emitter = struct {
     /// Whether a statement list yields a string (its last statement does).
     fn bodyIsString(self: *Emitter, body: []const ast.Stmt) bool {
         if (body.len == 0) return false;
-        return self.isStringExpr(body[body.len - 1].expr);
+        return self.isStringExpr(body[ast.lastRealIndex(body)].expr);
     }
 
     /// `a + b` on strings → a fresh length-prefixed buffer. Both operands are
@@ -25317,7 +25321,7 @@ const Emitter = struct {
         for ([_]?[]const ast.Stmt{ i.then_, i.else_ }, 0..) |maybe, arm| {
             const body = maybe orelse continue;
             if (body.len == 0) continue;
-            const last = body[body.len - 1].expr;
+            const last = body[ast.lastRealIndex(body)].expr;
             if (self.exprTail(last) != .value) continue;
             // The then-arm answering the binder (`a ?? b`'s `__bp_nullish`)
             // answers the payload's width, which a local of the binder's name
@@ -25353,8 +25357,8 @@ const Emitter = struct {
             try self.closeDefers(mark, tail);
             return tail;
         }
-        for (body[0 .. body.len - 1]) |stmt| _ = try self.emitStmt(stmt, false);
-        return self.branchLastStmt(body[body.len - 1], ty);
+        for (body[0..ast.lastRealIndex(body)]) |stmt| _ = try self.emitStmt(stmt, false);
+        return self.branchLastStmt(body[ast.lastRealIndex(body)], ty);
     }
 
     const BranchLast = struct {
@@ -25387,7 +25391,7 @@ const Emitter = struct {
     /// `return`). Drives the statement-form `(if ...)` emission above.
     fn branchIsVoid(body: []const ast.Stmt) bool {
         if (body.len == 0) return true;
-        const last = body[body.len - 1].expr;
+        const last = body[ast.lastRealIndex(body)].expr;
         return switch (last) {
             .jump => |j| switch (j.kind) {
                 .@"return" => |r| r == null,

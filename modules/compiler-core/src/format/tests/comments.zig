@@ -80,6 +80,30 @@ test "format: comments ---- between statements of a case arm block" {
     );
 }
 
+test "format: comments ---- after a block's bare tail" {
+    try h.assertFormatLossless(std.testing.allocator,
+        \\fn main() -> i32 {
+        \\    val a = 1;
+        \\    a
+        \\    // last
+        \\}
+    );
+    try h.assertFormatLossless(std.testing.allocator,
+        \\fn main() {
+        \\    val r = case 1 {
+        \\        1 {
+        \\            val a = 1;
+        \\            a
+        \\            // last
+        \\        }
+        \\        _ {
+        \\            0
+        \\        }
+        \\    };
+        \\}
+    );
+}
+
 test "format: comments ---- trailing after function" {
     try h.assertFormatLossless(std.testing.allocator,
         \\fn main() {

@@ -607,6 +607,17 @@ pub fn StmtOf(comptime phase: Phase) type {
     };
 }
 
+/// The index of a non-empty body's last statement that is not a `//` comment:
+/// the statement a block's tail is, a comment written after it aside.
+pub fn lastRealIndex(body: anytype) usize {
+    var i = body.len;
+    while (i > 1) : (i -= 1) {
+        const e = body[i - 1].expr;
+        if (!(e == .literal and e.literal.kind == .comment)) break;
+    }
+    return i - 1;
+}
+
 /// Decision 409 — what a function body's last statement written without `;`
 /// is. `value`: the expression as written — the body's value where the body
 /// answers one from its tail (a lambda, an untyped function expression), and

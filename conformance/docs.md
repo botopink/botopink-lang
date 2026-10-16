@@ -1807,6 +1807,12 @@ do; a braced `if` / `case` at its end is that expression too:
 
 <!-- example: modules/block_tail_value -->
 
+A `//` comment after a block's last expression, written without `;`, is a comment after the tail:
+the expression stays the block's value, in a function body, a lambda, an `if` / `else` block and a
+`case` arm's block alike, and `botopink format` keeps the comment after it:
+
+<!-- example: modules/block_tail_comment -->
+
 A `return` in a block leaves the enclosing function — from its own statements, from a `case` arm or
 a nested block in it, from a `for` inside it — and the block's tail is its value on every other
 path:

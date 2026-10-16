@@ -1,0 +1,57 @@
+//// A `//` line comment after the last expression of a block, written without
+//// `;`, is a comment after the tail: the expression is still the block's value.
+//// It holds in a function body, a lambda body, an `if` / `else` block used as
+//// a value and a `case` arm's block.
+
+fn fnBody() -> i32 {
+    val a = 1;
+    a
+    // last
+}
+
+fn lambdaBody() -> i32 {
+    val f = { x ->
+        val y = x + 1;
+        y
+        // last
+    };
+    f(10)
+}
+
+fn ifElse(c: bool) -> i32 {
+    val r = if (c) {
+        val t = 3;
+        t;
+        // then tail
+    } else {
+        val e = 4;
+        e;
+        // else tail
+    };
+    r
+}
+
+fn armBlock(n: i32) -> i32 {
+    val r = case n {
+        0 {
+            val z = 20;
+            z
+            // arm tail
+        }
+        _ {
+            val o = 30;
+            o
+            // arm tail
+        }
+    };
+    r
+}
+
+pub fn main() {
+    @print(fnBody());
+    @print(lambdaBody());
+    @print(ifElse(true));
+    @print(ifElse(false));
+    @print(armBlock(0));
+    @print(armBlock(1));
+}

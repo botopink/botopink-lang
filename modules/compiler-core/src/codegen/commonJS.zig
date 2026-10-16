@@ -4437,8 +4437,9 @@ const Emitter = struct {
     /// because a JS arrow block does not auto-return.
     fn buildLambdaBody(self: *Emitter, body: []const ast.Stmt) ![]const js.Stmt {
         const out = try self.arena().alloc(js.Stmt, body.len);
+        const tailAt = if (body.len > 0) ast.lastRealIndex(body) else 0;
         for (body, 0..) |st, i| {
-            out[i] = if (i == body.len - 1 and !st.deferred)
+            out[i] = if (i == tailAt and !st.deferred)
                 try self.buildLambdaTail(st)
             else
                 try self.buildStmt(st);
@@ -5478,9 +5479,10 @@ const Emitter = struct {
     fn buildBranchBody(self: *Emitter, body: []const ast.Stmt) ![]const js.Stmt {
         if (body.len == 0) return &.{};
         const out = try self.arena().alloc(js.Stmt, body.len);
-        for (body[0 .. body.len - 1], 0..) |st, i| out[i] = try self.buildStmt(st);
-        const last = body[body.len - 1];
-        out[body.len - 1] = if (last.deferred) try self.buildStmt(last) else try self.buildIfLast(last);
+        const tailAt = ast.lastRealIndex(body);
+        for (body, 0..) |st, i| {
+            out[i] = if (i == tailAt and !st.deferred) try self.buildIfLast(st) else try self.buildStmt(st);
+        }
         return self.foldDefers(body, out);
     }
 
@@ -7599,9 +7601,10 @@ const Emitter = struct {
         } });
         // Decision 525 — an `if` / `try … catch` at the end of an arm (a
         // block's tail) is its value too, unless it jumps out of the arrow.
+        const armTail = if (l.body.len > 0) ast.lastRealIndex(l.body) else 0;
         const tail_is_value = !armBreakValue(l.body) and
-            l.body.len > 0 and !l.body[l.body.len - 1].deferred and (isArmValueExpr(l.body[l.body.len - 1].expr) or
-            (l.body[l.body.len - 1].expr == .branch and !exprJumps(l.body[l.body.len - 1].expr, false, false)));
+            l.body.len > 0 and !l.body[armTail].deferred and (isArmValueExpr(l.body[armTail].expr) or
+            (l.body[armTail].expr == .branch and !exprJumps(l.body[armTail].expr, false, false)));
         var armOut: std.ArrayListUnmanaged(js.Stmt) = .empty;
         for (l.body, 0..) |st, i| {
             const br: ?ast.Expr = switch (st.expr) {
@@ -7613,7 +7616,7 @@ const Emitter = struct {
             };
             if (br) |val| {
                 try armOut.append(self.arena(), try self.armReturn(val));
-            } else if (tail_is_value and i + 1 == l.body.len) {
+            } else if (tail_is_value and i == armTail) {
                 try armOut.append(self.arena(), try self.armReturn(st.expr));
             } else {
                 try armOut.append(self.arena(), try self.buildStmt(st));

@@ -13487,7 +13487,8 @@ fn behaviorDeclaresMember(env: *Env, iface: []const u8, member: []const u8, dept
 /// for the other branch to agree with.
 fn stmtsYieldValue(stmts: []const ast.StmtOf(.typed)) bool {
     if (stmts.len == 0) return false;
-    return switch (stmts[stmts.len - 1].expr) {
+    const last = lastNonComment(stmts) orelse return false;
+    return switch (last.expr) {
         .binding => false,
         .loop => false,
         else => true,
@@ -16455,9 +16456,9 @@ fn inferBranchExpr(env: *Env, b: ast.MakeExpr(.untyped, ast.BranchExprOf(.untype
                 break :blk typed;
             } else null;
 
-            const bodyType = if (thenTyped.len > 0) thenTyped[thenTyped.len - 1].expr.getType() else try env.namedType("void");
+            const bodyType = if (lastNonComment(thenTyped)) |t| t.expr.getType() else try env.namedType("void");
             const elseType = if (elseTyped) |els| blk: {
-                if (els.len > 0) break :blk els[els.len - 1].expr.getType();
+                if (lastNonComment(els)) |t| break :blk t.expr.getType();
                 break :blk try env.namedType("void");
             } else try env.namedType("void");
 
@@ -23699,8 +23700,8 @@ fn inferFunctionExprExpectedInner(
             try refuseValueTailInVoid(env, "the function expression", fk.body, tailTy);
         }
         break :blk written;
-    } else if (bodyTyped.len > 0) blk: {
-        const tail = bodyTyped[bodyTyped.len - 1].expr;
+    } else if (lastNonComment(bodyTyped) != null) blk: {
+        const tail = lastNonComment(bodyTyped).?.expr;
         // A fallible lambda's `return` / `throw` answer the expected
         // `@Result` (wrapped by the transform); its value is that type.
         if (lambdaErr != null and !keep and tail == .jump and (tail.jump.kind == .@"return" or tail.jump.kind == .throw_)) break :blk expected.?.deref().func.ret;

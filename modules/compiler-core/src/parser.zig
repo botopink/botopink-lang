@@ -1076,7 +1076,9 @@ pub const Parser = struct {
                 .required => _ = try this.consume(.semicolon),
                 .optional => bare = !this.match(.semicolon),
                 .requiredExceptLast => if (!this.match(.semicolon)) {
-                    if (!this.check(.rightBrace)) return ParseError.UnexpectedToken;
+                    // A `//` comment after the tail is no statement: the
+                    // `}` still follows it.
+                    if (!this.closesAfterComments(opts.handleComments)) return ParseError.UnexpectedToken;
                     bare = true;
                 },
             }
@@ -1091,6 +1093,18 @@ pub const Parser = struct {
             };
         }
         return stmts.toOwnedSlice(alloc);
+    }
+
+    /// Whether the next token, past any comment tokens (when the block keeps
+    /// comments), is the `}` that closes the block.
+    fn closesAfterComments(this: *This, comptime handleComments: bool) bool {
+        var i = this.current;
+        if (handleComments) {
+            while (i < this.tokens.len and (this.tokens[i].kind == .commentNormal or
+                this.tokens[i].kind == .commentDoc or this.tokens[i].kind == .commentModule)) : (i += 1)
+            {}
+        }
+        return i < this.tokens.len and this.tokens[i].kind == .rightBrace;
     }
 
     /// Decision 541 (4) — a block `{ … }` (`case true { _ { … } }`, `isBlock`).
