@@ -1072,6 +1072,42 @@ fn mergeMembers(
     return .{ .ok = .{ .decls = decls } };
 }
 
+/// Decision 567 — a type error inside a member or an associated type a
+/// decorator wrote sits past the module's last line (their source is placed
+/// after the module's lines, `mergeMembers`, `mergeAssocTypes`). It is located
+/// at the annotation that ran the decorator, as `decorator-member-duplicate`
+/// is, with the decorator's `decl.addMember` / `decl.addType` call as the
+/// `called from` line. One annotation, one error: the first failure is the
+/// only one the analysis reports.
+fn locateInOutputs(arena: std.mem.Allocator, te: validation.TypeError, source: []const u8, env: *const Env) validation.TypeError {
+    const at = (te.loc orelse return te).line;
+    var line: usize = std.mem.count(u8, source, "\n") + 1;
+    for (env.contributions.items) |c| line += std.mem.count(u8, c, "\n") + 1;
+    for (env.memberContributions.items) |m| {
+        const last = line + std.mem.count(u8, m.source, "\n") + 1;
+        if (at > line and at <= last) return locatedAt(arena, te, m.loc, m.call);
+        line = last;
+    }
+    for (env.typeContributions.items) |t| {
+        const last = line + std.mem.count(u8, t.source, "\n") + 1;
+        if (at > line and at <= last) return locatedAt(arena, te, t.loc, t.call);
+        line = last;
+    }
+    return te;
+}
+
+fn locatedAt(arena: std.mem.Allocator, te: validation.TypeError, loc: ?ast.Loc, call: ?envMod.CallSite) validation.TypeError {
+    var out = te;
+    out.loc = loc orelse return te;
+    out.origin = null;
+    out.frames = &.{};
+    if (call) |c| if (arena.alloc(validation.Frame, 1)) |one| {
+        one[0] = .{ .file = c.file, .loc = c.loc };
+        out.frames = one;
+    } else |_| {};
+    return out;
+}
+
 /// Decision 216 (4) — the build's modules with every module that reads
 /// `@TypeInfo.all` moved after all the others (relative order kept), so a
 /// reader's answer covers the whole program; the readers are noted in the
@@ -1299,7 +1335,7 @@ fn mergeAssocTypes(
         const tokens = try arena.dupe(Token, lexer.scanAll(arena) catch
             return refuse(arena, t, "{s}: `#[{s}]` declares `{s}.{s}` from a source that does not lex: `{s}`", .{ diagnostics.decorator_type_not_one_type, t.decorator, t.owner, t.name, t.source }, not_one));
         for (tokens) |*tok| {
-            tok.line += line_shift - 1;
+            tok.line += line_shift;
             tok.offset = (tok.offset + offset_shift) -| prefix.len;
         }
         var parser = Parser.init(tokens);
@@ -2040,6 +2076,7 @@ fn analyzeSource(
         }
         if (try parseAndMergeContributions(arena, source, with_members, env.contributions.items)) |merged_program| {
             var reanalysis = try analyzeMerged(arena, mod, merged_program, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry, templateEvalCtx, target_name, reflection, typeinfo_plan, hygiene.items);
+            if (reanalysis == .typeError) reanalysis.typeError = locateInOutputs(arena, reanalysis.typeError, source, &env);
             if (reanalysis == .success) {
                 try keepPassOneTraces(&reanalysis.success.env, &env);
                 env.deinit();

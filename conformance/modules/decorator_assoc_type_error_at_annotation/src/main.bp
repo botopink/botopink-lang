@@ -1,0 +1,15 @@
+//// Decision 567 — a type error inside an associated type a decorator declared
+//// is located at the annotation on the declaration that added it, naming the
+//// type by its owner's path (`City.Columns`); the `called from` line names the
+//// decorator's `decl.addType` call.
+
+fn columns(comptime decl: @Decl) {
+    decl.addType("Columns", "(id: Missing)");
+}
+
+#[columns]
+pub type City(name: string)
+
+pub fn main() {
+    @print(City(name: "a").name);
+}

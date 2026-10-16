@@ -661,7 +661,14 @@ pub const MemberContribution = struct {
     loc: ?ast.Loc,
     /// The decorator as the annotation spells it (`entity`, `mocks.mock`).
     decorator: []const u8,
+    /// Decision 567 — the `decl.addMember` call that wrote the member: the
+    /// decorator's file and the call's place in it.
+    call: ?CallSite = null,
 };
+
+/// Decision 567 — where a decorator body wrote the `decl.addMember` /
+/// `decl.addType` call whose output the module's analysis refused.
+pub const CallSite = struct { file: []const u8, loc: ast.Loc };
 
 /// Decision 316 — one wrapper a decorator body gave the function or method it
 /// annotates (`decl.wrapWith(f)`).
@@ -688,6 +695,8 @@ pub const TypeContribution = struct {
     source: []const u8,
     loc: ?ast.Loc,
     decorator: []const u8,
+    /// Decision 567 — the `decl.addType` call that declared it.
+    call: ?CallSite = null,
 };
 
 /// The top-level name an associated type is declared under: `City.Columns`

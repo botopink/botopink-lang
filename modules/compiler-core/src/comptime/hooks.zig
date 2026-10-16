@@ -647,6 +647,51 @@ fn findOutput(comptime X: type, ptr: *const X) ?OutputCall {
     return null;
 }
 
+/// Where a decorator body writes `.<callee>(…)` on a receiver
+/// (`decl.addMember(…)`), in the walk's source order. A run's k-th output of a
+/// kind is taken to come from the k-th such call: exact for a body that calls
+/// straight through, the nearest call otherwise.
+pub fn callSites(arena: std.mem.Allocator, f: ast.FnDecl, callee: []const u8) ![]const ast.Loc {
+    var out: std.ArrayListUnmanaged(ast.Loc) = .empty;
+    for (f.body) |*s| try collectCalls(arena, ast.Stmt, s, callee, &out);
+    return out.toOwnedSlice(arena);
+}
+
+fn collectCalls(arena: std.mem.Allocator, comptime X: type, ptr: *const X, callee: []const u8, out: *std.ArrayListUnmanaged(ast.Loc)) std.mem.Allocator.Error!void {
+    if (X == ast.Expr) {
+        if (ptr.* == .call and ptr.call.kind == .call) {
+            const c = ptr.call.kind.call;
+            if (!c.is_builtin and c.receiver != null and std.mem.eql(u8, c.callee, callee)) try out.append(arena, ptr.call.loc);
+        }
+    }
+    if (X == ast.ImportDecl) return;
+    switch (@typeInfo(X)) {
+        .@"struct" => |s| inline for (s.fields) |f| {
+            if (f.is_comptime) continue;
+            if (comptime mayHoldExpr(f.type)) try collectCalls(arena, f.type, &@field(ptr.*, f.name), callee, out);
+        },
+        .@"union" => |u| if (u.tag_type != null) {
+            switch (ptr.*) {
+                inline else => |*payload| if (comptime mayHoldExpr(@TypeOf(payload.*))) {
+                    try collectCalls(arena, @TypeOf(payload.*), payload, callee, out);
+                },
+            }
+        },
+        .optional => |o| if (ptr.*) |*inner| try collectCalls(arena, o.child, inner, callee, out),
+        .pointer => |p| switch (p.size) {
+            .one => if (comptime mayHoldExpr(p.child)) try collectCalls(arena, p.child, ptr.*, callee, out),
+            .slice => if (comptime mayHoldExpr(p.child)) {
+                for (ptr.*) |*e| try collectCalls(arena, p.child, e, callee, out);
+            },
+            else => {},
+        },
+        .array => |arr| if (comptime mayHoldExpr(arr.child)) {
+            for (ptr) |*e| try collectCalls(arena, arr.child, e, callee, out);
+        },
+        else => {},
+    }
+}
+
 fn mayHoldExpr(comptime X: type) bool {
     return switch (@typeInfo(X)) {
         .int, .float, .bool, .@"enum", .void, .comptime_int, .comptime_float, .@"fn", .@"opaque" => false,

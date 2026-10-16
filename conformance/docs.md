@@ -3417,6 +3417,17 @@ written:
 
 <!-- example: modules/assoc_type_named_by_owner_in_diagnostic -->
 
+A type error inside a member or an associated type a decorator wrote is located
+at the annotation on the declaration that added it (decision 567), the
+decorator's `decl.addMember` / `decl.addType` call its `called from` line; one
+error per failing annotation:
+
+<!-- example: modules/decorator_member_type_error_at_annotation -->
+
+<!-- example: modules/decorator_assoc_type_error_at_annotation -->
+
+<!-- example: modules/decorator_output_error_one_per_annotation -->
+
 A member or an associated type from a field's or a method's decorator belongs
 to the type that owns it; a function and a module-level `val` have none
 (`decorator-member-without-type`, `decorator-type-without-owner`). A decorator

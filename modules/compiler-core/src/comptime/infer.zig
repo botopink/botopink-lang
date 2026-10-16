@@ -5742,7 +5742,7 @@ fn runDeclDecorators(
             return decoratorError(env, a, "the decorator evaluator failed to run", "Decorator bodies run on the wasm comptime runtime inside the compiler (decision 434); this failure is the compiler's, not the body's — report it.");
         };
         switch (outcome) {
-            .ok => |raw| for (if (capture) |cap| try unplaceholderContributions(env.arena, raw, cap.paramName, try holeSourcesOf(env.arena, a.template.?)) else raw) |c| {
+            .ok => |raw| for (if (capture) |cap| try unplaceholderContributions(env.arena, raw, cap.paramName, try holeSourcesOf(env.arena, a.template.?)) else raw, 0..) |c, ci| {
                 // Decision 372 — the bodies are inferred: a `.hooks` reader
                 // gives the program no code (`refuseHooksReaderOutputs`
                 // refuses the call where it is written; this is the call
@@ -5767,7 +5767,7 @@ fn runDeclDecorators(
                             const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s}]` on the {s} `{s}` calls `decl.addMember`, and a member belongs to a type", .{ diagnostics.decorator_member_without_type, a.name, ownerlessKindWord(handle.kind), handle.name });
                             return decoratorError(env, a, msg, "`decl.addMember(source)` adds to the annotated `type` or `behavior` (or to the type that owns an annotated field or method); a function or a `val` has no body to add to.");
                         };
-                        try env.memberContributions.append(env.arena, .{ .target = target, .source = c.source, .loc = a.loc, .decorator = a.name });
+                        try env.memberContributions.append(env.arena, .{ .target = target, .source = c.source, .loc = a.loc, .decorator = a.name, .call = try outputCallSite(env, dfn, owner, raw[0..ci], c.kind) });
                     },
                     // `decl.addMember(name, fn…)` (decision 370 (2)) — the
                     // member function the body wrote, rendered for the type with
@@ -5778,7 +5778,7 @@ fn runDeclDecorators(
                             return decoratorError(env, a, msg, "`decl.addMember(name, fn…)` adds to the annotated `type` or `behavior` (or to the type that owns an annotated field or method); a function or a `val` has no body to add to.");
                         };
                         const source = try memberFnSource(env, a, dfn, sig, values, c, target, local);
-                        try env.memberContributions.append(env.arena, .{ .target = target, .source = source, .loc = a.loc, .decorator = a.name });
+                        try env.memberContributions.append(env.arena, .{ .target = target, .source = source, .loc = a.loc, .decorator = a.name, .call = try outputCallSite(env, dfn, owner, raw[0..ci], c.kind) });
                     },
                     // `decl.wrapWith(f)` (decision 316) — the wrapper the body
                     // wrote, rendered with each parameter's argument spliced;
@@ -5811,7 +5811,7 @@ fn runDeclDecorators(
                             const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s}]` declares `{s}.{s}`, and `{s}` already has an associated type `{s}`", .{ diagnostics.decorator_type_duplicate, a.name, assoc_owner, c.name, assoc_owner, c.name });
                             return decoratorError(env, a, msg, "An owner's associated types have one name each; rename the one this decorator declares.");
                         };
-                        try env.typeContributions.append(env.arena, .{ .owner = assoc_owner, .name = c.name, .source = c.source, .loc = a.loc, .decorator = a.name });
+                        try env.typeContributions.append(env.arena, .{ .owner = assoc_owner, .name = c.name, .source = c.source, .loc = a.loc, .decorator = a.name, .call = try outputCallSite(env, dfn, owner, raw[0..ci], c.kind) });
                     },
                     // `decl.setMeta(v)` / `decl.addMeta(v)` (decision 298) — a
                     // typed value keyed by its record type.
@@ -6859,6 +6859,21 @@ fn sameLoweredFn(env: *Env, program: ast.Program, f: ast.FnDecl) InferError!ast.
 /// decorator that reads no `.hooks` before the bodies (`plain`), the ones
 /// that read it after them (`hooksReaders`).
 const DecoratorPhase = enum { plain, hooksReaders };
+
+/// Decision 567 — the `decl.addMember` / `decl.addType` call of `dfn`'s body
+/// that wrote the output `kind` follows `before` (the run's earlier outputs):
+/// the k-th such call for the k-th output of its kind (`hooksMod.callSites`).
+fn outputCallSite(env: *Env, dfn: ast.FnDecl, owner: []const u8, before: []const decoratorEval.Contribution, kind: decoratorEval.Contribution.Kind) !?envMod.CallSite {
+    const callee: []const u8 = if (kind == .assoc) "addType" else "addMember";
+    var nth: usize = 0;
+    for (before) |b| {
+        const same = if (kind == .assoc) b.kind == .assoc else (b.kind == .member or b.kind == .memberFn);
+        if (same) nth += 1;
+    }
+    const sites = try hooksMod.callSites(env.arena, dfn, callee);
+    if (sites.len == 0) return null;
+    return .{ .file = srcPathOfModule(env, owner), .loc = sites[@min(nth, sites.len - 1)] };
+}
 
 const hooks_output_hint = "A decorator that reads `.hooks` runs after the module's bodies are inferred (decision 372): it records meta (`decl.setMeta`) or refuses (`decl.fail`). Add members and types from a decorator that reads no `.hooks`.";
 
