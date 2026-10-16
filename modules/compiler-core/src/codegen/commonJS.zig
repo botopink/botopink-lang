@@ -3308,13 +3308,29 @@ const Emitter = struct {
             // refused by the checker (`effect-on-behavior-method-forbidden`),
             // so a default body never carries one — the implementing `fn` does.
             const params = try self.buildParams(m.params);
-            self.current_indent = 2;
-            const body = try self.buildStmts(body_src);
+            // The adopted body keeps the shape its effect asks for (144 B-119): a
+            // `default fn … -> @Task<T>` that awaits is `async`, as the same
+            // method declared on the type itself.
+            const eff = methodEffect(m);
+            var shape = try self.methodShape(iface_name, m, eff);
+            const failing = isFailingTask(eff, m.returnType);
+            const level: usize = if (failing) 3 else 2;
+            const prev_in_generator = self.in_generator;
+            self.in_generator = shape.is_generator;
+            self.current_indent = level;
+            var body = try self.buildStmts(body_src);
+            if (failing) {
+                body = try self.failingTaskBody(body, 2);
+                shape.is_async = false;
+            }
             self.current_indent = 0;
+            self.in_generator = prev_in_generator;
             try members.append(self.arena(), .{
                 .name = m.name,
                 .params = params,
                 .body = .{ .stmts = body, .indent = 1 },
+                .is_async = shape.is_async,
+                .is_generator = shape.is_generator,
             });
         }
         for (iface.extends) |parent| try self.appendInterfaceDefaults(members, parent, depth + 1);

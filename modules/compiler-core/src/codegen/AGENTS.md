@@ -703,6 +703,9 @@ codegen/
   every local record that implements it and does not define the method
   (`appendInterfaceDefaults`, following `extends`); nothing is patched onto
   `Iface.prototype`. An implementer in another module does not get them yet.
+  A copied default takes the shape its effect asks for, as the same method declared on the
+  record: `-> @Task<T>` is `async` (a failing task wrapped as `failingTaskBody` does; 144 B-119,
+  `modules/behavior_default_awaits`).
   A module that redeclares a primitive interface (`behavior Number { fn
   max(self: Self, other: Self) -> Self; … }`) replaces the prelude's
   declaration; a bodyless member without its own `@External.Node` takes the
