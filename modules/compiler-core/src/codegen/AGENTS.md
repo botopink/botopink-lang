@@ -2305,7 +2305,7 @@ codegen/
   answers the fun: a statement-position block does not parse, so `{ … -> … }`
   there is always one). It ran as a statement and the arm answered `ok`, which
   the caller then applied (`{badfun, ok}`). `emitLambdaBody` shares the rule,
-  so a lambda's own last-statement lambda is its value too. `await e` / `try e` are values (`armValueTail`);
+  so a lambda's own last-statement lambda is its value too. `await e` / `try e` are values (`armValueTail`), and so is an `iter loop { … }` (the generator it makes, 144 B-118);
   a bare `break` in an arm leaves the enclosing loop, and an arm ending in `yield` does not end the arm
   (decision 541 (2)) — `lowerArmBody`.
 - **Case patterns** (`emitPatternArm`, `emitSubPattern`, decision 8 §5; C-06's

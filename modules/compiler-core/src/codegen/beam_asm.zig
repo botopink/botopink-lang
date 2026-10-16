@@ -207,6 +207,9 @@ fn armValueTail(e: ast.Expr) bool {
         .function => true,
         // `await e` and `try e` are values (decisions 537, 541 (2)).
         .jump => |j| j.kind == .await_ or j.kind == .try_,
+        // An `iter loop { … }` is the generator it makes (144 B-118): as a
+        // lambda's tail it is the closure's answer, not a statement.
+        .loop => |lp| lp.generator != null,
         else => false,
     };
 }
