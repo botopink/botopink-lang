@@ -50,6 +50,18 @@ pub fn publish(env: *Env, program: ast.Program) Error!void {
         const o = e.value_ptr.*;
         try r.scopes.put(r.arena, try reflectionMod.Reflection.scopeKey(r.arena, env.modulePath, e.key_ptr.*), .{ .module = o.owner, .name = o.name, .isType = typeAt(env, o.owner, o.name) });
     }
+    // Decision 562 — each namespace import, for the code a function expanded
+    // at its call site writes into its caller (`expand_call.importsFor`).
+    var nit = env.namespaces.paths.iterator();
+    while (nit.next()) |e| try putNamespace(r, env.modulePath, e.key_ptr.*, e.value_ptr.*, .module);
+    var sit = env.stdImports.iterator();
+    while (sit.next()) |e| try putNamespace(r, env.modulePath, e.key_ptr.*, e.value_ptr.*, .std);
+}
+
+fn putNamespace(r: *reflectionMod.Reflection, module: []const u8, local: []const u8, path: []const u8, kind: reflectionMod.WrittenName.Namespace) Error!void {
+    const gop = try r.scopes.getOrPut(r.arena, try reflectionMod.Reflection.scopeKey(r.arena, module, local));
+    if (gop.found_existing) return;
+    gop.value_ptr.* = .{ .module = path, .name = local, .isType = false, .namespace = kind };
 }
 
 fn typeAt(env: *const Env, module: []const u8, name: []const u8) bool {
@@ -133,6 +145,11 @@ pub fn eraseTypeAliases(arena: std.mem.Allocator, decls: []const ast.DeclKind, a
 
 const type_alias_prefix = "Bp__bp_tpl_";
 
+/// Whether `name` is an alias `typeAliasOf` wrote — a name no source writes.
+pub fn isTypeAlias(name: []const u8) bool {
+    return std.mem.startsWith(u8, name, type_alias_prefix);
+}
+
 /// The re-analysis' imports of each recorded type, under its alias:
 /// `import {Violation as Bp__bp_tpl_rules__Violation} from "rules";`.
 pub fn typeImports(arena: std.mem.Allocator, recorded: []const envMod.HygieneImport) Error![]const ast.DeclKind {
@@ -161,7 +178,7 @@ pub const Binder = struct {
     pub fn aliasFor(self: @This(), name: []const u8) Error!?[]const u8 {
         const r = self.env.reflection orelse return null;
         const w = (try r.written(self.env.arena, self.module, name)) orelse return null;
-        if (w.isType) return null;
+        if (w.isType or w.namespace != .none) return null;
         const alias = (try bindValue(self.env, w.module, w.name)) orelse return null;
         self.renamed.* += 1;
         return alias;
@@ -179,7 +196,7 @@ pub const Collector = struct {
 
     pub fn aliasFor(self: @This(), name: []const u8) Error!?[]const u8 {
         const w = (try self.reflection.written(self.arena, self.module, name)) orelse return null;
-        if (w.isType) return null;
+        if (w.isType or w.namespace != .none) return null;
         const alias = try envMod.templateAlias(self.arena, w.module, w.name);
         try self.out.append(self.arena, .{ .alias = alias, .module = w.module, .name = w.name, .isType = false });
         self.renamed.* += 1;

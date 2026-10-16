@@ -22,6 +22,7 @@ const expr_param = @import("./comptime/expr_param.zig");
 const derived_types = @import("./comptime/derived_types.zig");
 const typed_meta = @import("./comptime/typed_meta.zig");
 const written_names = @import("./comptime/written_names.zig");
+const expand_call = @import("./comptime/expand_call.zig");
 const evalMod = @import("./comptime/eval.zig");
 const format = @import("./format.zig");
 pub const trace = @import("./comptime/trace.zig");
@@ -247,8 +248,12 @@ fn sharesPrivates(arena: std.mem.Allocator, decls: []const ast.DeclKind, env: *c
     return written_names.sharesPrivates(arena, decls, env.reflection, env.modulePath);
 }
 
-fn withTemplateHygiene(arena: std.mem.Allocator, prog: ast.Program, env: *const envMod.Env, declares_template: bool) !ast.Program {
+fn withTemplateHygiene(arena: std.mem.Allocator, prog: ast.Program, env: *const envMod.Env, declares_template: bool, source: []const ast.DeclKind) !ast.Program {
     if (env.templateImports.count() == 0 and !declares_template) return prog;
+    // Decision 562 — a module declaring a function expanded at its call site
+    // shares its types too: the code it writes into a caller names them
+    // (`expand_call.importsFor`).
+    const shares_types = declares_template and declaresExpandedFn(arena, source);
     var decls: std.ArrayListUnmanaged(ast.DeclKind) = .empty;
     var it = env.templateImports.iterator();
     while (it.next()) |e| {
@@ -268,11 +273,17 @@ fn withTemplateHygiene(arena: std.mem.Allocator, prog: ast.Program, env: *const 
             // binding is what other modules reach.
             .@"fn" => |*f| f.isPub = f.isPub or !namesFnBinding(prog, f.name),
             .val => |*v| v.isPub = true,
+            .type_ => |*t| t.isPub = t.isPub or shares_types,
             else => {},
         };
         try decls.append(arena, out);
     }
     return ast.Program{ .decls = decls.items };
+}
+
+fn declaresExpandedFn(arena: std.mem.Allocator, decls: []const ast.DeclKind) bool {
+    for (decls) |d| if (d == .@"fn") if (hooksMod.isExpandedFn(arena, d.@"fn") catch false) return true;
+    return false;
 }
 
 /// Decision 562 — `prog` without the functions expanded at their call
@@ -1651,7 +1662,15 @@ fn analyzeMerged(
         else => return err,
     };
     try written_names.bindRecorded(&env, hygiene);
-    const program = try adoptDefaults.expand(arena, unadopted, try behaviorsReached(arena, &env.importedBehaviorDecls, typeDeclRegistry));
+    const with_expansions = withExpansionImports(arena, &env, unadopted, mod.package, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry) catch |err| switch (err) {
+        error.TypeError => {
+            const te = env.lastError orelse validation.TypeError{ .kind = .{ .unboundVariable = "" } };
+            env.deinit();
+            return .{ .typeError = te };
+        },
+        else => return err,
+    };
+    const program = try adoptDefaults.expand(arena, with_expansions, try behaviorsReached(arena, &env.importedBehaviorDecls, typeDeclRegistry));
     const bindings = infer.inferProgramTyped(&env, program) catch |err| switch (err) {
         error.TypeError => {
             const te = inline_types.locatedAtCall(env.lastError orelse validation.TypeError{ .kind = .{ .unboundVariable = "" } });
@@ -1878,9 +1897,17 @@ fn analyzeSource(
         },
         else => return err,
     };
+    const with_expansions = withExpansionImports(arena, &env, unadopted, mod.package, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry) catch |err| switch (err) {
+        error.TypeError => {
+            const te = env.lastError orelse validation.TypeError{ .kind = .{ .unboundVariable = "" } };
+            env.deinit();
+            return .{ .typeError = te };
+        },
+        else => return err,
+    };
     // 144 B-19 — a type adopts the instance defaults of a behavior it
     // implements from another module (`adopt_defaults.zig`).
-    const program = try adoptDefaults.expand(arena, unadopted, try behaviorsReached(arena, &env.importedBehaviorDecls, typeDeclRegistry));
+    const program = try adoptDefaults.expand(arena, with_expansions, try behaviorsReached(arena, &env.importedBehaviorDecls, typeDeclRegistry));
     // Decisions 341, 434 — a host function a decorator of this module reaches
     // has one of the comptime runtime's three sources; decided when the
     // package is compiled, never at a consumer's build.
@@ -2711,6 +2738,32 @@ fn stdModuleOrder(arena: std.mem.Allocator) ![]const usize {
     return out.toOwnedSlice(arena);
 }
 
+/// Decision 562 — `program` with the imports each function expanded here
+/// from another module needs (`expand_call.importsFor`: the types and
+/// namespaces its body names, under aliases no source writes), resolved as
+/// any import of the module is and written ahead of its declarations, so the
+/// checker and every backend read them as written.
+fn withExpansionImports(
+    arena: std.mem.Allocator,
+    env: *envMod.Env,
+    program: ast.Program,
+    package: []const u8,
+    registry: *std.StringHashMap(std.StringHashMap(*T.Type)),
+    typeDeclRegistry: *std.StringHashMap(std.StringHashMap(ast.DeclKind)),
+    templateRegistry: *const std.StringHashMap(ast.FnDecl),
+    decoratorRegistry: *const std.StringHashMap(ast.FnDecl),
+    extensionRegistry: *const std.StringHashMap(std.StringHashMap(ast.ImplementDecl)),
+) !ast.Program {
+    const extra = try expand_call.importsFor(env, program.decls, package);
+    if (extra.len == 0) return program;
+    const marked = try ast.ImportDecl.withOwnPackage(arena, .{ .decls = extra }, package);
+    try resolveImports(env, marked, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry);
+    const grown = try arena.alloc(ast.DeclKind, marked.decls.len + program.decls.len);
+    @memcpy(grown[0..marked.decls.len], marked.decls);
+    @memcpy(grown[marked.decls.len..], program.decls);
+    return .{ .decls = grown };
+}
+
 fn resolveImports(
     env: *envMod.Env,
     program: anytype,
@@ -2893,7 +2946,13 @@ fn resolveImports(
                         while (dit.next()) |e| {
                             if (isStdPkgPath(e.key_ptr.*)) continue;
                             if (!leaf_src.admits(e.key_ptr.*, pass) or outOfScope(scope, e.key_ptr.*)) continue;
-                            if (e.value_ptr.get(name)) |type_decl| {
+                            // Decision 562 — the alias a function expanded
+                            // here names its module's type under reaches a
+                            // private one too: that module shares its
+                            // privates (`expand_call.importsFor`).
+                            const hygienic = if (imp.alias) |al| written_names.isTypeAlias(al) else false;
+                            const found = e.value_ptr.get(name) orelse if (hygienic) e.value_ptr.get(try std.mem.concat(env.arena, u8, &.{ private_type_prefix, name })) else null;
+                            if (found) |type_decl| {
                                 // A behavior is not re-registered as a type:
                                 // its value binding below stays what it was,
                                 // and the importer only learns its methods.
@@ -4340,7 +4399,7 @@ pub fn compileTypesOnly(
                         &succ.env.localCalleeCalls,
                         &succ.env.embedCallArgs,
                     ) catch break :blk_t program_for_transform;
-                    const hygienic = withTemplateHygiene(arena_alloc, t, &succ.env, sharesPrivates(arena_alloc, program_for_transform.decls, &succ.env) catch true) catch break :blk_t t;
+                    const hygienic = withTemplateHygiene(arena_alloc, t, &succ.env, sharesPrivates(arena_alloc, program_for_transform.decls, &succ.env) catch true, program_for_transform.decls) catch break :blk_t t;
                     const with_assoc = withUsedAssocInterfaces(arena_alloc, hygienic, &succ.env) catch break :blk_t hygienic;
                     const with_enums = withSynthesisedEnumDecls(arena_alloc, with_assoc, &succ.env) catch with_assoc;
                     const with_src = withSourceLocationDecl(arena_alloc, with_enums, &succ.env) catch with_enums;
@@ -4679,7 +4738,7 @@ fn compileOnce(
                 };
                 const transformed = try value_or_type.withTwinImports(arena_alloc, try withImportSourcesNamed(arena_alloc, try withImportTypeAliasesErased(arena_alloc, try alias_erase.erase(arena_alloc, try withEmbedParams(arena_alloc, try withAssetDecl(arena_alloc, try withYieldStepDecl(arena_alloc, try withDeclaredDecls(arena_alloc, try withSourceLocationDecl(arena_alloc, try withSynthesisedEnumDecls(
                     arena_alloc,
-                    try withUsedAssocInterfaces(arena_alloc, try withTemplateHygiene(arena_alloc, try context_lower.lower(arena_alloc, try transform.transform(arena_alloc, try expr_param.eraseProgram(arena_alloc, try withoutExpandedFns(arena_alloc, program_for_transform), infer.isDecoratorParams), fn_decls, comptime_arrays, ct.comptime_vals, &succ.env.method_lowerings, &succ.env.templateExpansions, &succ.env.srcRewrites, &succ.env.result_jump_lowerings, &succ.env.stdArrayLowerings, &succ.env.enumSectionRewrites, &succ.env.indexRewrites, &succ.env.optionalNullCases, succ.env.ctorParams, &succ.env.defaultInjections, &succ.env.resultPatternLocs, &succ.env.namespaces, &succ.env.fieldKeyRewrites, &succ.env.localCalleeCalls, &succ.env.embedCallArgs), &succ.env), &succ.env, try sharesPrivates(arena_alloc, program_for_transform.decls, &succ.env)), &succ.env),
+                    try withUsedAssocInterfaces(arena_alloc, try withTemplateHygiene(arena_alloc, try context_lower.lower(arena_alloc, try transform.transform(arena_alloc, try expr_param.eraseProgram(arena_alloc, try withoutExpandedFns(arena_alloc, program_for_transform), infer.isDecoratorParams), fn_decls, comptime_arrays, ct.comptime_vals, &succ.env.method_lowerings, &succ.env.templateExpansions, &succ.env.srcRewrites, &succ.env.result_jump_lowerings, &succ.env.stdArrayLowerings, &succ.env.enumSectionRewrites, &succ.env.indexRewrites, &succ.env.optionalNullCases, succ.env.ctorParams, &succ.env.defaultInjections, &succ.env.resultPatternLocs, &succ.env.namespaces, &succ.env.fieldKeyRewrites, &succ.env.localCalleeCalls, &succ.env.embedCallArgs), &succ.env), &succ.env, try sharesPrivates(arena_alloc, program_for_transform.decls, &succ.env), program_for_transform.decls), &succ.env),
                     &succ.env,
                 ), &succ.env), &succ.env), &succ.env), &succ.env), &succ.env), &succ.env.typeAliases), &succ.env), &succ.env), &succ.env.typeArgTwins);
 

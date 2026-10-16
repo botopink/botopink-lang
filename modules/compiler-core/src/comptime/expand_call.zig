@@ -41,6 +41,11 @@ const templateEval = @import("template_eval.zig");
 const typeinfoAll = @import("typeinfo_all.zig");
 const formatMod = @import("../format.zig");
 const exprsMod = @import("../parser/exprs.zig");
+const Lexer = @import("../lexer.zig").Lexer;
+const Parser = @import("../parser.zig").Parser;
+const reflectionMod = @import("reflection.zig");
+const modTree = @import("mod_tree.zig");
+const Frame = @import("error.zig").Frame;
 
 const InferError = infer.InferError;
 
@@ -94,10 +99,19 @@ pub fn expand(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, expected: ?*
         .owner = target.owner,
         .foreign = !std.mem.eql(u8, target.owner, env.modulePath),
         .call_loc = loc,
+        .first_exp = env.expansionCount,
     };
-    for (target.decl.params, args) |p, a| try x.bindings.append(env.arena, .{ .name = p.name, .bound = .{ .param = a } });
+    return expandWith(&x, target.decl, args, loc, expected) catch |err| {
+        if (err == error.TypeError) try x.locateInOwner();
+        return err;
+    };
+}
+
+fn expandWith(x: *Expander, decl: ast.FnDecl, args: []const Arg, loc: ast.Loc, expected: ?*T.Type) InferError!?ast.TypedExpr {
+    const env = x.env;
+    for (decl.params, args) |p, a| try x.bindings.append(env.arena, .{ .name = p.name, .bound = .{ .param = a } });
     var out: std.ArrayListUnmanaged(ast.Stmt) = .empty;
-    _ = try x.walk(target.decl.body, &out);
+    _ = try x.walk(decl.body, &out);
 
     const expansion = try env.arena.create(ast.Expr);
     if (out.items.len == 0 and x.tail != null) {
@@ -106,7 +120,7 @@ pub fn expand(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, expected: ?*
         expansion.* = out.items[0].expr;
     } else {
         if (x.tail) |t| try out.append(env.arena, .{ .expr = t.*, .tail = .value });
-        expansion.* = exprsMod.makeBlockExpr(env.arena, .{ .line = loc.line, .col = loc.col, .expansion = x.fresh() }, out.items) catch return error.OutOfMemory;
+        expansion.* = exprsMod.makeBlockExpr(env.arena, .{ .line = loc.line, .col = loc.col, .expansion = try x.callerFresh() }, out.items) catch return error.OutOfMemory;
     }
     const saved = env.expectedType;
     env.expectedType = expected;
@@ -115,6 +129,141 @@ pub fn expand(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, expected: ?*
     try env.templateExpansions.put(loc, expansion);
     return typed;
 }
+
+/// Decision 562 — the imports the code of each function expanded here from
+/// another module needs, read before this module is inferred: every type and
+/// every namespace its body names, as its own module resolves them
+/// (`Reflection.scopes`), imported under an alias no source writes — a type
+/// under `written_names.typeAliasOf` (a private one too: the module shares
+/// its privates), a namespace under `namespaceAlias`. The copies of the body
+/// name them by those aliases (`Copier`). A type of a name this module
+/// already holds from elsewhere is left out: naming it is refused at the call
+/// (`aliasOf`). Each import is the checker's and every backend's, as written.
+pub fn importsFor(env: *Env, decls: []const ast.DeclKind, own_package: []const u8) InferError![]ast.DeclKind {
+    const r = env.reflection orelse return &.{};
+    var out: std.ArrayListUnmanaged(ast.DeclKind) = .empty;
+    var bound: std.StringHashMapUnmanaged(void) = .empty;
+    for (decls) |d| if (d == .use) for (d.use.imports) |imp| try bound.put(env.arena, imp.name(), {});
+    var seen: std.AutoHashMapUnmanaged(usize, void) = .empty;
+    var it = env.expandedImports.valueIterator();
+    while (it.next()) |imp| {
+        if (std.mem.eql(u8, imp.owner, env.modulePath)) continue;
+        if ((try seen.getOrPut(env.arena, @intFromPtr(imp.decl.body.ptr))).found_existing) continue;
+        var names: Names = .{ .arena = env.arena };
+        try names.walk([]const ast.Stmt, imp.decl.body);
+        for (names.list.items) |n| {
+            const w = (try r.written(env.arena, imp.owner, n)) orelse continue;
+            const text = switch (w.namespace) {
+                .std => try std.fmt.allocPrint(env.arena, "import {{{s} as {s}}} from \"std\";", .{ try dotted(env.arena, w.module), try namespaceAlias(env.arena, imp.owner, n) }),
+                .module => blk: {
+                    // A module of this package is named by its path in it, one
+                    // of another package through that package (decision 337).
+                    const pkg = packageOf(r, w.module);
+                    const local = try dotted(env.arena, modTree.localPath(pkg, w.module));
+                    const alias = try namespaceAlias(env.arena, imp.owner, n);
+                    break :blk if (std.mem.eql(u8, pkg, own_package))
+                        try std.fmt.allocPrint(env.arena, "import {{{s} as {s}}};", .{ local, alias })
+                    else
+                        try std.fmt.allocPrint(env.arena, "import {{{s} as {s}}} from \"{s}\";", .{ local, alias, pkg });
+                },
+                .none => if (w.isType and !typeHeldElsewhere(env, decls, w.module, w.name))
+                    try std.fmt.allocPrint(env.arena, "import {{{s} as {s}}} from \"{s}\";", .{ w.name, try writtenNames.typeAliasOf(env.arena, w.module, w.name), w.module })
+                else
+                    continue,
+            };
+            const parsed = try parseImport(env.arena, text) orelse continue;
+            const alias = parsed.use.imports[0].name();
+            if ((try bound.getOrPut(env.arena, alias)).found_existing) continue;
+            try out.append(env.arena, parsed);
+        }
+    }
+    return out.items;
+}
+
+/// The alias a namespace `name` of `module` is imported under where a
+/// function of `module` is expanded.
+fn namespaceAlias(arena: std.mem.Allocator, module: []const u8, name: []const u8) ![]const u8 {
+    return envMod.templateAlias(arena, module, name);
+}
+
+/// The package `module` belongs to: the session's module tree's answer, else
+/// its first segment when it has more than one (a dependency's module is
+/// loaded as `<lib>/<stem>`).
+fn packageOf(r: *const reflectionMod.Reflection, module: []const u8) []const u8 {
+    if (r.modTree) |t| if (t.entries.get(module)) |e| return e.package;
+    if (std.mem.indexOfScalar(u8, module, '/')) |i| return module[0..i];
+    return "";
+}
+
+fn dotted(arena: std.mem.Allocator, path: []const u8) ![]const u8 {
+    const out = try arena.dupe(u8, path);
+    std.mem.replaceScalar(u8, out, '/', '.');
+    return out;
+}
+
+fn parseImport(arena: std.mem.Allocator, text: []const u8) InferError!?ast.DeclKind {
+    var lx = Lexer.init(text);
+    const tokens = lx.scanAll(arena) catch return null;
+    var p = Parser.init(tokens);
+    const parsed = p.parse(arena) catch return null;
+    if (parsed.decls.len != 1 or parsed.decls[0] != .use) return null;
+    return parsed.decls[0];
+}
+
+/// Whether this module holds a type named `name` other than `module`'s:
+/// declared in `decls`, or imported from another module.
+fn typeHeldElsewhere(env: *const Env, decls: []const ast.DeclKind, module: []const u8, name: []const u8) bool {
+    for (decls) |d| switch (d) {
+        .type_ => |t| if (std.mem.eql(u8, t.name, name)) return true,
+        .typeAlias => |a| if (std.mem.eql(u8, a.name, name)) return true,
+        else => {},
+    };
+    return writtenNames.typeNameTaken(env, module, name);
+}
+
+/// Every name a body writes: a name read, a function called by name, a type
+/// named — what `importsFor` asks the declaring module's scope about.
+const Names = struct {
+    arena: std.mem.Allocator,
+    list: std.ArrayListUnmanaged([]const u8) = .empty,
+    set: std.StringHashMapUnmanaged(void) = .empty,
+
+    fn add(self: *Names, n: []const u8) InferError!void {
+        if (n.len == 0 or (try self.set.getOrPut(self.arena, n)).found_existing) return;
+        try self.list.append(self.arena, n);
+    }
+
+    fn walk(self: *Names, comptime N: type, v: N) InferError!void {
+        if (N == ast.Expr) switch (v) {
+            .identifier => |id| if (id.kind == .ident) try self.add(id.kind.ident),
+            .call => |c| if (c.kind == .call) {
+                const cc = c.kind.call;
+                if (cc.receiver == null and !cc.is_builtin and cc.calleeExpr == null) try self.add(cc.callee);
+            },
+            else => {},
+        };
+        if (N == ast.TypeRef) switch (v) {
+            .named => |n| try self.add(n),
+            .generic => |g| if (!g.is_builtin) try self.add(g.name),
+            else => {},
+        };
+        switch (@typeInfo(N)) {
+            .@"struct" => |st| inline for (st.fields) |f| {
+                if (!f.is_comptime) try self.walk(f.type, @field(v, f.name));
+            },
+            .@"union" => |u| if (u.tag_type != null) switch (v) {
+                inline else => |payload| try self.walk(@TypeOf(payload), payload),
+            },
+            .optional => |o| if (v) |inner| try self.walk(o.child, inner),
+            .pointer => |pi| switch (pi.size) {
+                .one => if (@typeInfo(pi.child) != .@"fn" and @typeInfo(pi.child) != .@"opaque") try self.walk(pi.child, v.*),
+                .slice => if (pi.child != u8) for (v) |e| try self.walk(pi.child, e),
+                else => {},
+            },
+            else => {},
+        }
+    }
+};
 
 /// The function `call` names, when it is expanded: this module's own
 /// (not shadowed by a local) or one imported by name or through a namespace.
@@ -191,10 +340,43 @@ const Expander = struct {
     shadows: std.ArrayListUnmanaged([]const u8) = .empty,
     /// The value a `return` answered.
     tail: ?*const ast.Expr = null,
+    /// The expansions the caller's own nodes (an argument, a value computed
+    /// at build) were copied into; every other one this expansion opened
+    /// holds a copy of the body.
+    caller_exps: std.AutoHashMapUnmanaged(u32, void) = .empty,
+    /// The expansions this one opened: `(first, last]`.
+    first_exp: u32 = 0,
 
     fn fresh(self: *Expander) u32 {
         self.env.expansionCount += 1;
         return self.env.expansionCount;
+    }
+
+    /// A fresh expansion for a node located at the call.
+    fn callerFresh(self: *Expander) InferError!u32 {
+        const exp = self.fresh();
+        try self.caller_exps.put(self.env.arena, exp, {});
+        return exp;
+    }
+
+    /// A refusal raised while the body of a function of another module is
+    /// expanded or its code typed, located in a copy of that body: located
+    /// in the declaring module's file, where it is written (decision 532's
+    /// `origin`), and the call it was expanded at named (`called from`). A
+    /// refusal already located in another file (a nested expansion's, a raise
+    /// at build) is left as it is.
+    fn locateInOwner(self: *Expander) InferError!void {
+        if (!self.foreign) return;
+        var e = self.env.lastError orelse return;
+        if (e.origin != null) return;
+        const l = e.loc orelse return;
+        if (l.expansion <= self.first_exp or l.expansion > self.env.expansionCount or self.caller_exps.contains(l.expansion)) return;
+        const frames = try self.env.arena.alloc(Frame, 1);
+        frames[0] = .{ .file = self.env.srcPathOf(self.env.modulePath), .loc = self.call_loc };
+        e.origin = .{ .file = self.env.diagLabelOf(self.owner), .loc = .{ .line = l.line, .col = l.col } };
+        e.loc = self.call_loc;
+        e.frames = frames;
+        self.env.lastError = e;
     }
 
     fn lookup(self: *Expander, name: []const u8) ?Bound {
@@ -326,7 +508,7 @@ const Expander = struct {
         if (!declares(inner.items)) {
             try out.appendSlice(self.env.arena, inner.items);
         } else {
-            const loc: ast.Loc = .{ .line = self.call_loc.line, .col = self.call_loc.col, .expansion = self.fresh() };
+            const loc: ast.Loc = .{ .line = self.call_loc.line, .col = self.call_loc.col, .expansion = try self.callerFresh() };
             const blk = exprsMod.makeBlockExpr(self.env.arena, loc, inner.items) catch return error.OutOfMemory;
             try out.append(self.env.arena, .{ .expr = blk });
         }
@@ -398,7 +580,7 @@ const Expander = struct {
 
     fn where(self: *Expander, loc: ast.Loc) InferError![]const u8 {
         if (!self.foreign) return "";
-        return std.fmt.allocPrint(self.env.arena, " (at {s}:{d}:{d}, in the function expanded here)", .{ self.env.srcPathOf(self.owner), loc.line, loc.col });
+        return std.fmt.allocPrint(self.env.arena, " (at {s}:{d}:{d}, in the function expanded here)", .{ self.env.diagLabelOf(self.owner), loc.line, loc.col });
     }
 
     // ── values at build ──────────────────────────────────────────────────
@@ -410,7 +592,7 @@ const Expander = struct {
         const s = try self.env.arena.create(ast.Expr);
         s.* = try cp.copy(ast.Expr, e.*);
         if (isData(s.*)) return s;
-        const loc: ast.Loc = .{ .line = self.call_loc.line, .col = self.call_loc.col, .expansion = self.fresh() };
+        const loc: ast.Loc = .{ .line = self.call_loc.line, .col = self.call_loc.col, .expansion = try self.callerFresh() };
         const node: ast.Expr = .{ .comptime_ = .{ .loc = loc, .kind = .{ .comptimeExpr = s } } };
         _ = try infer.inferExprTyped(self.env, node);
         if (self.env.srcRewrites.get(loc)) |v| return v;
@@ -620,7 +802,30 @@ const Copier = struct {
     fn copy(self: *Copier, comptime N: type, v: N) InferError!N {
         if (N == ast.Loc) return .{ .line = v.line, .col = v.col, .expansion = self.exp };
         if (N == ast.Expr) if (try self.rewrite(v)) |r| return r;
+        if (N == ast.TypeRef) if (try self.rewriteType(v)) |r| return r;
         return self.copyPlain(N, v);
+    }
+
+    /// A type of the declaring module the body names, by the alias the
+    /// caller holds it under.
+    fn rewriteType(self: *Copier, t: ast.TypeRef) InferError!?ast.TypeRef {
+        if (!self.body or !self.x.foreign) return null;
+        const name = switch (t) {
+            .named => |n| n,
+            .generic => |g| if (g.is_builtin) return null else g.name,
+            else => return null,
+        };
+        const r = self.x.env.reflection orelse return null;
+        const w = (try r.written(self.x.env.arena, self.x.owner, name)) orelse return null;
+        if (!w.isType or w.namespace != .none) return null;
+        const alias = (try typeAliasIn(self.x, w)) orelse return null;
+        var out = try self.copyPlain(ast.TypeRef, t);
+        switch (out) {
+            .named => out = .{ .named = alias },
+            .generic => |*g| g.name = alias,
+            else => {},
+        }
+        return out;
     }
 
     fn copyPlain(self: *Copier, comptime N: type, v: N) InferError!N {
@@ -662,7 +867,10 @@ const Copier = struct {
     /// A value of the caller copied into the expansion: its names are the
     /// caller's, left as written.
     fn caller(self: *Copier, e: *const ast.Expr) InferError!ast.Expr {
-        var cp: Copier = .{ .x = self.x, .exp = self.exp, .body = false, .eval = self.eval, .depth = self.depth };
+        // An expansion of its own: a refusal located in it is the caller's.
+        const exp = self.x.fresh();
+        try self.x.caller_exps.put(self.x.env.arena, exp, {});
+        var cp: Copier = .{ .x = self.x, .exp = exp, .body = false, .eval = self.eval, .depth = self.depth };
         return cp.copy(ast.Expr, e.*);
     }
 
@@ -736,13 +944,31 @@ fn moduleConst(env: *Env, name: []const u8) ?*const ast.Expr {
 fn aliasOf(x: *Expander, name: []const u8) InferError!?[]const u8 {
     const r = x.env.reflection orelse return null;
     const w = (try r.written(x.env.arena, x.owner, name)) orelse return null;
-    if (w.isType) return null;
+    // A namespace or a type `importsFor` imported under its alias.
+    if (w.namespace != .none) {
+        const alias = try namespaceAlias(x.env.arena, x.owner, name);
+        return if (x.env.stdImports.contains(alias) or x.env.namespaces.paths.contains(alias)) alias else null;
+    }
+    if (w.isType) return typeAliasIn(x, w);
     const alias = (try writtenNames.bindValue(x.env, w.module, w.name)) orelse return null;
     // A function expanded at its call site, reached under its alias.
     if (x.env.reflection) |_| if (x.env.templateImports.get(alias)) |_| {
         if (try expandedDeclOf(x.env, w.module, w.name)) |decl| try x.env.expandedImports.put(x.env.arena, try aliasKey(x.env.arena, w.module, w.name), .{ .decl = decl, .owner = w.module });
     };
     return alias;
+}
+
+/// The name the caller holds the declaring module's type `w` under: the alias
+/// `importsFor` imported it as, or decision 310's alias of a contested name.
+/// A type of that name the caller holds from elsewhere is refused at the call:
+/// one module holds one type of a name.
+fn typeAliasIn(x: *Expander, w: reflectionMod.WrittenName) InferError!?[]const u8 {
+    if (writtenNames.renamedAliasOf(x.env, w.module, w.name)) |al| return al;
+    const alias = try writtenNames.typeAliasOf(x.env.arena, w.module, w.name);
+    if (x.env.importedTypeDecls.contains(alias)) return alias;
+    const msg = try std.fmt.allocPrint(x.env.arena, "{s}: the function expanded here names `{s}`'s type `{s}`, and this module holds another type declared `{s}`; a type is told apart by its declared name, so one module holds one type of a name", .{ diagnostics.import_name_collision, w.module, w.name, w.name });
+    x.env.lastError = TypeError.custom(msg, "Rename this module's own type, or call the function from a module that holds no other type of that name (decisions 310, 562).").withLoc(x.call_loc);
+    return error.TypeError;
 }
 
 /// The declaration of `module`'s function `name` when it is expanded at its

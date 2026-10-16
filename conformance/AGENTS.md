@@ -797,7 +797,10 @@ row written into each emitted host call), `modules/comptime_expand_constant_at_b
 condition and written into the emitted call), all three on all four targets, and two refusals:
 `modules/comptime_expand_condition_run_time` (`if (d.value is …)`, `run-in-build` at `d.value`) and
 `modules/comptime_expand_runtime_argument` (a field of a run-time variable passed, `comptime-arg-not-known` at the
-variable). `modules/stage_build_and_run`, `modules/stage_of_functions` and `modules/stage_imported` give their
+variable); `modules/comptime_expand_library_names` (a library's expanded function naming its private type, its private
+function and a std namespace the caller does not import, on all four targets) and
+`modules/comptime_expand_library_type_error` (a refusal of the emitted code located in the library, the call as its
+`from` line). `modules/stage_build_and_run`, `modules/stage_of_functions` and `modules/stage_imported` give their
 `Build` function a run-time parameter (an all-`comptime` one is expanded instead), and `stage_of_functions` lists
 one that is expanded, `Any`. Decision 248
 names the one reflection builtin `@typeInfo` (the structural `TypeInfo` answer of a bare

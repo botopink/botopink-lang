@@ -3876,6 +3876,22 @@ run-time value from it is `build-and-run` (`stage_build_and_run` above).
 
 <!-- example: modules/comptime_expand_runtime_argument -->
 
+The code a function of another module emits resolves every name as in the
+module that wrote it: its types (a private one too), its functions and values
+(private ones too — the module shares its privates) and its namespace imports
+(`path` of `import {path} from "std"`) are reached under aliases no source
+writes, though the caller imports none of them. A type of the same name the
+caller holds from elsewhere is `import-name-collision` at the call: one module
+holds one type of a name.
+
+<!-- example: modules/comptime_expand_library_names -->
+
+A refusal of that code is located in the declaring module, where the refused
+code is written, and the call it was expanded at is its `called from` line:
+`shout(7)` writes `count.toUpper()` over an `i32`.
+
+<!-- example: modules/comptime_expand_library_type_error -->
+
 **A decorator that reads `.hooks` runs last** (decision 372, provisional). A
 module's decorators run in two phases: first every decorator that reads no
 `.hooks` — the ones that add members and associated types —, then the module's

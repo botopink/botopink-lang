@@ -6062,6 +6062,7 @@ fn memberRenames(
         for (typeArgs) |ta| if (std.mem.eql(u8, ta.name, n)) continue :next;
         for (out.items) |done| if (std.mem.eql(u8, done.from, n)) continue :next;
         const w = (try r.written(env.arena, owner, n)) orelse continue;
+        if (w.namespace != .none) continue;
         // Decision 310 — a type this module holds under an alias is named by it.
         if (w.isType) if (writtenNames.renamedAliasOf(env, w.module, w.name)) |al| {
             try out.append(env.arena, .{ .from = n, .to = al });

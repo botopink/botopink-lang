@@ -102,6 +102,13 @@ pub const WrittenName = struct {
     module: []const u8,
     name: []const u8,
     isType: bool,
+    /// Decision 562 — a namespace import (`import {path} from "std"`,
+    /// `import {util} from "frame"`): `module` is the module it names (std's
+    /// `io/clock`, a program's `frame/util`), `name` the local name. A
+    /// function expanded at its call site writes it into its caller.
+    namespace: Namespace = .none,
+
+    pub const Namespace = enum { none, module, std };
 };
 
 /// A decorator's identity: its declaring module and its own name.
