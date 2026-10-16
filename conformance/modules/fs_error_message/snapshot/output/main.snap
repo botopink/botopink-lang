@@ -1,0 +1,8 @@
+botopink-cell 1
+out not found: a.txt
+out permission denied: b.txt
+out is a directory: c
+out not a directory: d.txt
+out already exists: e
+out not UTF-8: f.bin at byte 2
+out g: disk on fire

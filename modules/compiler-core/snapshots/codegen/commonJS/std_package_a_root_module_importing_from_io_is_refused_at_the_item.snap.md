@@ -1034,6 +1034,22 @@ pub type FsError {
     InvalidUtf8(path: string, offset: i64),
     // Any other host error; `message` is the host's text.
     Other(path: string, message: string),
+
+    // The error's text (decision 563): `<what>: <path>`, the same on every target.
+    pub fn message(self: Self) -> string {
+        return case self {
+            NotFound(path: path) -> "not found: " + path;
+            PermissionDenied(path: path) -> "permission denied: " + path;
+            IsDirectory(path: path) -> "is a directory: " + path;
+            NotDirectory(path: path) -> "not a directory: " + path;
+            AlreadyExists(path: path) -> "already exists: " + path;
+            InvalidUtf8(path: path, offset: offset) -> "not UTF-8: "
+                + path
+                + " at byte "
+                + offset.toString();
+            Other(path: path, message: message) -> path + ": " + message;
+        };
+    }
 }
 
 pub type FileStat(
@@ -2233,6 +2249,41 @@ class FsError {
         return new FsError$Other(path, message);
     }
 
+    static message(self) {
+        return (() => {
+            const _s = self;
+            if (_s.tag === "NotFound") {
+                const { path } = _s;
+                return ("not found: " + path);
+            }
+            if (_s.tag === "PermissionDenied") {
+                const { path } = _s;
+                return ("permission denied: " + path);
+            }
+            if (_s.tag === "IsDirectory") {
+                const { path } = _s;
+                return ("is a directory: " + path);
+            }
+            if (_s.tag === "NotDirectory") {
+                const { path } = _s;
+                return ("not a directory: " + path);
+            }
+            if (_s.tag === "AlreadyExists") {
+                const { path } = _s;
+                return ("already exists: " + path);
+            }
+            if (_s.tag === "InvalidUtf8") {
+                const { path, offset } = _s;
+                return ((("not UTF-8: " + path) + " at byte ") + offset.toString());
+            }
+            if (_s.tag === "Other") {
+                const { path, message } = _s;
+                return ((path + ": ") + message);
+            }
+            throw new Error("case_clause");
+        })();
+    }
+
     toString() {
         return __bp_text(this);
     }
@@ -2657,7 +2708,7 @@ function fsError(path, raw) {
     let raw$sp = null;
     const bar = ((raw$sp ??= __bp_has_surrogate(raw)) ? __bp_str_index_of(raw, "|") : raw.indexOf("|"));
     const kind = raw.slice(0, bar);
-    const message = raw.slice(__bp_int((bar + 1), -2147483648, 2147483647, "+ on i32 at src/io/fs.bp:300:33"), null);
+    const message = raw.slice(__bp_int((bar + 1), -2147483648, 2147483647, "+ on i32 at src/io/fs.bp:316:33"), null);
     if ((kind === "notfound")) { return FsError.NotFound(path); }
     if ((kind === "denied")) { return FsError.PermissionDenied(path); }
     if ((kind === "isdir")) { return FsError.IsDirectory(path); }
@@ -2894,9 +2945,9 @@ class File {
     if ((raw.length === 0)) { break; }
     const line = ((__b) => { let __n = __b.length; if (__n > 0 && __b[__n - 1] === 10) { __n--; if (__n > 0 && __b[__n - 1] === 13) __n-- } return __b.subarray(0, __n) })(raw);
     const offset = ((__b) => { const __n = __b.length; let __i = 0; while (__i < __n) { const __c = __b[__i]; if (__c < 128) { __i++; continue } let __k; if (__c >= 194 && __c <= 223) __k = 1; else if (__c >= 224 && __c <= 239) __k = 2; else if (__c >= 240 && __c <= 244) __k = 3; else return __i; if (__i + __k >= __n) return __i; let __lo = 128, __hi = 191; if (__c === 224) __lo = 160; else if (__c === 237) __hi = 159; else if (__c === 240) __lo = 144; else if (__c === 244) __hi = 143; const __d = __b[__i + 1]; if (__d < __lo || __d > __hi) return __i; for (let __j = 2; __j <= __k; __j++) { const __e = __b[__i + __j]; if (__e < 128 || __e > 191) return __i } __i += __k + 1 } return -1 })(line);
-    if ((offset >= 0)) { yield ({ error: FsError.InvalidUtf8(this.location, __bp_wadd(consumed, offset, 0, "+ on i64 at src/io/fs.bp:467:21")) }); return; }
+    if ((offset >= 0)) { yield ({ error: FsError.InvalidUtf8(this.location, __bp_wadd(consumed, offset, 0, "+ on i64 at src/io/fs.bp:483:21")) }); return; }
     const width = raw.length;
-    consumed = __bp_wadd(consumed, width.toI64(), 0, "+ on i64 at src/io/fs.bp:469:33");
+    consumed = __bp_wadd(consumed, width.toI64(), 0, "+ on i64 at src/io/fs.bp:485:33");
     yield ({ ok: ((_r) => "error" in _r ? ("") : _r.ok)(line.toUtf8()) });
 }
     }
@@ -3151,6 +3202,7 @@ export declare class FsError {
     static AlreadyExists(path: string): FsError;
     static InvalidUtf8(path: string, offset: number | bigint): FsError;
     static Other(path: string, message: string): FsError;
+    static message(self: FsError): string;
 }
 
 

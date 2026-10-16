@@ -499,6 +499,13 @@ source; for `walk`, the root); `Other.message` is the host's text; a dangling li
 
 <!-- example: modules/fs_error_variants -->
 
+`FsError` carries its own text (decision 563): `e.message()` answers one string per variant, `<what>: <path>` —
+`not found: <path>`, `permission denied: <path>`, `is a directory: <path>`, `not a directory: <path>`,
+`already exists: <path>`, `not UTF-8: <path> at byte <offset>`, and `<path>: <message>` for `Other` — the same on
+every target; a library that carries an `io.fs` failure into a `string` writes `e.message()`, no `case` of its own.
+
+<!-- example: modules/fs_error_message -->
+
 **The whole-file shortcuts.** `readBytes`, `readText`, `writeBytes`, `writeText` (creating or
 truncating), `appendText` (creating), `stat` (`size: i64`, `mtime: i64`, `isDir: bool`) and the directory
 functions (`exists`, `list`, `mkdir`, `mkdirRecursive`, `rm`, `removeTree`, `copy`, `walk`, `glob`).

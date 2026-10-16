@@ -904,6 +904,22 @@ pub type FsError {
     InvalidUtf8(path: string, offset: i64),
     // Any other host error; `message` is the host's text.
     Other(path: string, message: string),
+
+    // The error's text (decision 563): `<what>: <path>`, the same on every target.
+    pub fn message(self: Self) -> string {
+        return case self {
+            NotFound(path: path) -> "not found: " + path;
+            PermissionDenied(path: path) -> "permission denied: " + path;
+            IsDirectory(path: path) -> "is a directory: " + path;
+            NotDirectory(path: path) -> "not a directory: " + path;
+            AlreadyExists(path: path) -> "already exists: " + path;
+            InvalidUtf8(path: path, offset: offset) -> "not UTF-8: "
+                + path
+                + " at byte "
+                + offset.toString();
+            Other(path: path, message: message) -> path + ": " + message;
+        };
+    }
 }
 
 pub type FileStat(
@@ -2192,7 +2208,7 @@ exists(Path) ->
 fsError(Path, Raw) ->
     Bar = (fun(__S, __X) -> case __X of <<>> -> 0; _ -> case binary:match(__S, __X) of nomatch -> -1; {__P, _} -> erlang:length(unicode:characters_to_list(binary:part(__S, 0, __P))) end end end)(Raw, <<"|">>),
     Kind = string_slice(Raw, 0, Bar),
-    Message = string_slice(Raw, '__bp_int'((Bar + 1), -2147483648, 2147483647, <<"integer overflow: + on i32 at src/io/fs.bp:300:33">>), undefined),
+    Message = string_slice(Raw, '__bp_int'((Bar + 1), -2147483648, 2147483647, <<"integer overflow: + on i32 at src/io/fs.bp:316:33">>), undefined),
     case (Kind =:= <<"notfound">>) of
         true ->
             {std@io@fs@@FsError__v__notfound, Path};
@@ -2642,7 +2658,25 @@ string_slice(Self, Start, End) ->
 ----- ERLANG -- std@io@fs@@FsError.erl
 ```erlang
 -module(std@io@fs@@FsError).
--export(['__bp_format'/1]).
+-export([message/1, '__bp_format'/1]).
+
+message(Self) ->
+    case Self of
+        {std@io@fs@@FsError__v__notfound, Path} ->
+            <<"not found: ", ('__bp_text'(Path))/binary>>;
+        {std@io@fs@@FsError__v__permissiondenied, Path@1} ->
+            <<"permission denied: ", ('__bp_text'(Path@1))/binary>>;
+        {std@io@fs@@FsError__v__isdirectory, Path@2} ->
+            <<"is a directory: ", ('__bp_text'(Path@2))/binary>>;
+        {std@io@fs@@FsError__v__notdirectory, Path@3} ->
+            <<"not a directory: ", ('__bp_text'(Path@3))/binary>>;
+        {std@io@fs@@FsError__v__alreadyexists, Path@4} ->
+            <<"already exists: ", ('__bp_text'(Path@4))/binary>>;
+        {std@io@fs@@FsError__v__invalidutf8, Path@5, Offset} ->
+            <<"not UTF-8: ", ('__bp_text'(Path@5))/binary, " at byte ", ('__bp_text'(erlang:integer_to_binary(Offset)))/binary>>;
+        {std@io@fs@@FsError__v__other, Path@6, Message} ->
+            <<('__bp_text'(Path@6))/binary, ": ", ('__bp_text'(Message))/binary>>
+    end.
 
 '__bp_format'({std@io@fs@@FsError__v__notfound, F0}) -> {variant, "FsError.NotFound", [{"path", F0}]};
 '__bp_format'({std@io@fs@@FsError__v__permissiondenied, F0}) -> {variant, "FsError.PermissionDenied", [{"path", F0}]};
@@ -2651,6 +2685,28 @@ string_slice(Self, Start, End) ->
 '__bp_format'({std@io@fs@@FsError__v__alreadyexists, F0}) -> {variant, "FsError.AlreadyExists", [{"path", F0}]};
 '__bp_format'({std@io@fs@@FsError__v__invalidutf8, F0, F1}) -> {variant, "FsError.InvalidUtf8", [{"path", F0}, {"offset", F1}]};
 '__bp_format'({std@io@fs@@FsError__v__other, F0, F1}) -> {variant, "FsError.Other", [{"path", F0}, {"message", F1}]}.
+
+'__bp_text'(Value) when erlang:is_binary(Value) -> Value;
+'__bp_text'(Value) -> unicode:characters_to_binary('__bp_show'(Value, true)).
+
+'__bp_show'(V, true) when erlang:is_binary(V) -> V;
+'__bp_show'(V, _) when erlang:is_binary(V) -> [$", [case C of $" -> "\\\""; $\\ -> "\\\\"; $\n -> "\\n"; $\r -> "\\r"; $\t -> "\\t"; _ -> C end || C <- unicode:characters_to_list(V)], $"];
+'__bp_show'(V, _) when erlang:is_list(V) -> [$[, lists:join(", ", ['__bp_show'(E, false) || E <- V]), $]];
+'__bp_show'({ok, P}, _) -> ["Ok(", '__bp_show'(P, false), $)];
+'__bp_show'({error, P}, _) -> ["Error(", '__bp_show'(P, false), $)];
+'__bp_show'(V, _) when erlang:is_tuple(V), erlang:tuple_size(V) > 0, erlang:is_atom(erlang:element(1, V)), erlang:element(1, V) =/= true, erlang:element(1, V) =/= false, erlang:element(1, V) =/= undefined -> '__bp_tagged'(erlang:element(1, V), V);
+'__bp_show'(V, _) when erlang:is_tuple(V) -> ["#(", lists:join(", ", ['__bp_show'(E, false) || E <- erlang:tuple_to_list(V)]), $)];
+'__bp_show'(undefined, _) -> "null";
+'__bp_show'(V, _) when erlang:is_atom(V), V =/= true, V =/= false, V =/= undefined -> '__bp_tagged'(V, V);
+'__bp_show'(V, _) -> io_lib:format("~p", [V]).
+
+'__bp_tagged'(A, V) ->
+    M = case string:split(erlang:atom_to_list(A), "__v__") of [P, _] -> erlang:list_to_atom(P); _ -> A end,
+    case code:ensure_loaded(M) =:= {module, M} andalso erlang:function_exported(M, '__bp_format', 1) of true -> '__bp_render'(erlang:apply(M, '__bp_format', [V])); false -> io_lib:format("~p", [V]) end.
+
+'__bp_render'({text, T}) -> T;
+'__bp_render'({variant, N, []}) -> N;
+'__bp_render'({_, N, Fs}) -> [N, $(, lists:join(", ", [[K, ": ", '__bp_show'(Val, false)] || {K, Val} <- Fs]), $)].
 ```
 
 ----- ERLANG -- std@io@fs@@FileStat.erl
@@ -2759,11 +2815,11 @@ lines(Self) ->
                 Offset = (fun(__B) -> case unicode:characters_to_binary(__B, utf8, utf8) of __S when is_binary(__S) -> -1; {error, __G, _} -> byte_size(__G); {incomplete, __G, _} -> byte_size(__G) end end)(Line),
                 case (Offset >= 0) of
                     true ->
-                        erlang:throw({'__bp_gen_end', __BpGen2, ok, {error, {std@io@fs@@FsError__v__invalidutf8, erlang:element(2, Self), '__bp_int'((Consumed@1 + Offset), -9223372036854775808, 9223372036854775807, <<"integer overflow: + on i64 at src/io/fs.bp:467:21">>)}}});
+                        erlang:throw({'__bp_gen_end', __BpGen2, ok, {error, {std@io@fs@@FsError__v__invalidutf8, erlang:element(2, Self), '__bp_int'((Consumed@1 + Offset), -9223372036854775808, 9223372036854775807, <<"integer overflow: + on i64 at src/io/fs.bp:483:21">>)}}});
                     _ -> ok
                 end,
                 Width = erlang:byte_size(Raw),
-                Consumed@2 = '__bp_int'((Consumed@1 + (fun(__V) when __V >= -9223372036854775807 - 1, __V =< 9223372036854775807 -> __V; (__V) -> erlang:error({integer_overflow, <<"toI64: ", (integer_to_binary(__V))/binary, " does not fit i64">>}) end)(Width)), -9223372036854775808, 9223372036854775807, <<"integer overflow: + on i64 at src/io/fs.bp:469:33">>),
+                Consumed@2 = '__bp_int'((Consumed@1 + (fun(__V) when __V >= -9223372036854775807 - 1, __V =< 9223372036854775807 -> __V; (__V) -> erlang:error({integer_overflow, <<"toI64: ", (integer_to_binary(__V))/binary, " does not fit i64">>}) end)(Width)), -9223372036854775808, 9223372036854775807, <<"integer overflow: + on i64 at src/io/fs.bp:485:33">>),
                 erlang:put(__BpGen2, [{ok, (fun(__BpR) -> case __BpR of {ok, __BpV0} -> __BpV0; _ -> (<<"">>) end end)((fun(__B) -> case unicode:characters_to_binary(__B) of __S when is_binary(__S) -> {ok, __S}; _ -> {error, <<"Bytes.toUtf8: not valid UTF-8">>} end end)(Line))} | erlang:get(__BpGen2)]),
                 __BpLoop(Consumed@2)
             end)(Consumed)

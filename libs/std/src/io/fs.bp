@@ -37,6 +37,22 @@ pub type FsError {
     InvalidUtf8(path: string, offset: i64),
     // Any other host error; `message` is the host's text.
     Other(path: string, message: string),
+
+    // The error's text (decision 563): `<what>: <path>`, the same on every target.
+    pub fn message(self: Self) -> string {
+        return case self {
+            NotFound(path: path) -> "not found: " + path;
+            PermissionDenied(path: path) -> "permission denied: " + path;
+            IsDirectory(path: path) -> "is a directory: " + path;
+            NotDirectory(path: path) -> "not a directory: " + path;
+            AlreadyExists(path: path) -> "already exists: " + path;
+            InvalidUtf8(path: path, offset: offset) -> "not UTF-8: "
+                + path
+                + " at byte "
+                + offset.toString();
+            Other(path: path, message: message) -> path + ": " + message;
+        };
+    }
 }
 
 pub type FileStat(

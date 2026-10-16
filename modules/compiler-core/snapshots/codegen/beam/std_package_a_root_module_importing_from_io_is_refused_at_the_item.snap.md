@@ -2274,6 +2274,22 @@ pub type FsError {
     InvalidUtf8(path: string, offset: i64),
     // Any other host error; `message` is the host's text.
     Other(path: string, message: string),
+
+    // The error's text (decision 563): `<what>: <path>`, the same on every target.
+    pub fn message(self: Self) -> string {
+        return case self {
+            NotFound(path: path) -> "not found: " + path;
+            PermissionDenied(path: path) -> "permission denied: " + path;
+            IsDirectory(path: path) -> "is a directory: " + path;
+            NotDirectory(path: path) -> "not a directory: " + path;
+            AlreadyExists(path: path) -> "already exists: " + path;
+            InvalidUtf8(path: path, offset: offset) -> "not UTF-8: "
+                + path
+                + " at byte "
+                + offset.toString();
+            Other(path: path, message: message) -> path + ": " + message;
+        };
+    }
 }
 
 pub type FileStat(
@@ -3240,7 +3256,7 @@ test "fs answers PermissionDenied for an OS permission error" {
 
 {function, exists, 1, 69}.
   {label, 68}.
-    {line, [{location, "std@io@fs.erl", 1}]}.
+    {line, [{location, "std@io@fs.erl", 2}]}.
     {func_info, {atom, std@io@fs}, {atom, exists}, 1}.
   {label, 69}.
     {call_only, 1, {f, 63}}.
@@ -3336,7 +3352,7 @@ test "fs answers PermissionDenied for an OS permission error" {
 
 {function, fsError, 2, 3}.
   {label, 2}.
-    {line, [{location, "std@io@fs.erl", 2}]}.
+    {line, [{location, "std@io@fs.erl", 3}]}.
     {func_info, {atom, std@io@fs}, {atom, fsError}, 2}.
   {label, 3}.
     {allocate, 5, 2}.
@@ -3358,7 +3374,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     {test, is_ge, {f, 86}, [{integer, 2147483647}, {x, 0}]}.
     {jump, {f, 87}}.
   {label, 86}.
-    {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/io/fs.bp:300:33">>}}, {x, 0}}.
+    {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/io/fs.bp:316:33">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
   {label, 87}.
     {move, {x, 0}, {x, 1}}.
@@ -3409,7 +3425,7 @@ test "fs answers PermissionDenied for an OS permission error" {
 
 {function, lift, 2, 5}.
   {label, 4}.
-    {line, [{location, "std@io@fs.erl", 3}]}.
+    {line, [{location, "std@io@fs.erl", 4}]}.
     {func_info, {atom, std@io@fs}, {atom, lift}, 2}.
   {label, 5}.
     {allocate, 4, 2}.
@@ -3450,7 +3466,7 @@ test "fs answers PermissionDenied for an OS permission error" {
 
 {function, decode, 2, 7}.
   {label, 6}.
-    {line, [{location, "std@io@fs.erl", 4}]}.
+    {line, [{location, "std@io@fs.erl", 5}]}.
     {func_info, {atom, std@io@fs}, {atom, decode}, 2}.
   {label, 7}.
     {allocate, 3, 2}.
@@ -3487,7 +3503,7 @@ test "fs answers PermissionDenied for an OS permission error" {
 
 {function, readBytes, 1, 9}.
   {label, 8}.
-    {line, [{location, "std@io@fs.erl", 5}]}.
+    {line, [{location, "std@io@fs.erl", 6}]}.
     {func_info, {atom, std@io@fs}, {atom, readBytes}, 1}.
   {label, 9}.
     {allocate, 4, 1}.
@@ -3517,7 +3533,7 @@ test "fs answers PermissionDenied for an OS permission error" {
 
 {function, readText, 1, 11}.
   {label, 10}.
-    {line, [{location, "std@io@fs.erl", 6}]}.
+    {line, [{location, "std@io@fs.erl", 7}]}.
     {func_info, {atom, std@io@fs}, {atom, readText}, 1}.
   {label, 11}.
     {allocate, 3, 1}.
@@ -3554,7 +3570,7 @@ test "fs answers PermissionDenied for an OS permission error" {
 
 {function, writeBytes, 2, 13}.
   {label, 12}.
-    {line, [{location, "std@io@fs.erl", 7}]}.
+    {line, [{location, "std@io@fs.erl", 8}]}.
     {func_info, {atom, std@io@fs}, {atom, writeBytes}, 2}.
   {label, 13}.
     {allocate, 5, 2}.
@@ -3584,7 +3600,7 @@ test "fs answers PermissionDenied for an OS permission error" {
 
 {function, writeText, 2, 15}.
   {label, 14}.
-    {line, [{location, "std@io@fs.erl", 8}]}.
+    {line, [{location, "std@io@fs.erl", 9}]}.
     {func_info, {atom, std@io@fs}, {atom, writeText}, 2}.
   {label, 15}.
     {allocate, 5, 2}.
@@ -3615,7 +3631,7 @@ test "fs answers PermissionDenied for an OS permission error" {
 
 {function, appendText, 2, 17}.
   {label, 16}.
-    {line, [{location, "std@io@fs.erl", 9}]}.
+    {line, [{location, "std@io@fs.erl", 10}]}.
     {func_info, {atom, std@io@fs}, {atom, appendText}, 2}.
   {label, 17}.
     {allocate, 5, 2}.
@@ -3646,7 +3662,7 @@ test "fs answers PermissionDenied for an OS permission error" {
 
 {function, stat, 1, 19}.
   {label, 18}.
-    {line, [{location, "std@io@fs.erl", 10}]}.
+    {line, [{location, "std@io@fs.erl", 11}]}.
     {func_info, {atom, std@io@fs}, {atom, stat}, 1}.
   {label, 19}.
     {allocate, 4, 1}.
@@ -3677,7 +3693,7 @@ test "fs answers PermissionDenied for an OS permission error" {
 
 {function, list, 1, 21}.
   {label, 20}.
-    {line, [{location, "std@io@fs.erl", 11}]}.
+    {line, [{location, "std@io@fs.erl", 12}]}.
     {func_info, {atom, std@io@fs}, {atom, list}, 1}.
   {label, 21}.
     {allocate, 4, 1}.
@@ -3705,7 +3721,7 @@ test "fs answers PermissionDenied for an OS permission error" {
 
 {function, mkdir, 1, 23}.
   {label, 22}.
-    {line, [{location, "std@io@fs.erl", 12}]}.
+    {line, [{location, "std@io@fs.erl", 13}]}.
     {func_info, {atom, std@io@fs}, {atom, mkdir}, 1}.
   {label, 23}.
     {allocate, 4, 1}.
@@ -3733,7 +3749,7 @@ test "fs answers PermissionDenied for an OS permission error" {
 
 {function, mkdirRecursive, 1, 25}.
   {label, 24}.
-    {line, [{location, "std@io@fs.erl", 13}]}.
+    {line, [{location, "std@io@fs.erl", 14}]}.
     {func_info, {atom, std@io@fs}, {atom, mkdirRecursive}, 1}.
   {label, 25}.
     {allocate, 4, 1}.
@@ -3761,7 +3777,7 @@ test "fs answers PermissionDenied for an OS permission error" {
 
 {function, rm, 1, 27}.
   {label, 26}.
-    {line, [{location, "std@io@fs.erl", 14}]}.
+    {line, [{location, "std@io@fs.erl", 15}]}.
     {func_info, {atom, std@io@fs}, {atom, rm}, 1}.
   {label, 27}.
     {allocate, 4, 1}.
@@ -3789,7 +3805,7 @@ test "fs answers PermissionDenied for an OS permission error" {
 
 {function, removeTree, 1, 29}.
   {label, 28}.
-    {line, [{location, "std@io@fs.erl", 15}]}.
+    {line, [{location, "std@io@fs.erl", 16}]}.
     {func_info, {atom, std@io@fs}, {atom, removeTree}, 1}.
   {label, 29}.
     {allocate, 4, 1}.
@@ -3817,7 +3833,7 @@ test "fs answers PermissionDenied for an OS permission error" {
 
 {function, copy, 2, 31}.
   {label, 30}.
-    {line, [{location, "std@io@fs.erl", 16}]}.
+    {line, [{location, "std@io@fs.erl", 17}]}.
     {func_info, {atom, std@io@fs}, {atom, copy}, 2}.
   {label, 31}.
     {allocate, 5, 2}.
@@ -3847,7 +3863,7 @@ test "fs answers PermissionDenied for an OS permission error" {
 
 {function, walk, 1, 33}.
   {label, 32}.
-    {line, [{location, "std@io@fs.erl", 17}]}.
+    {line, [{location, "std@io@fs.erl", 18}]}.
     {func_info, {atom, std@io@fs}, {atom, walk}, 1}.
   {label, 33}.
     {allocate, 4, 1}.
@@ -3875,7 +3891,7 @@ test "fs answers PermissionDenied for an OS permission error" {
 
 {function, glob, 2, 35}.
   {label, 34}.
-    {line, [{location, "std@io@fs.erl", 18}]}.
+    {line, [{location, "std@io@fs.erl", 19}]}.
     {func_info, {atom, std@io@fs}, {atom, glob}, 2}.
   {label, 35}.
     {allocate, 5, 2}.
@@ -3911,7 +3927,7 @@ test "fs answers PermissionDenied for an OS permission error" {
 
 {function, open, 1, 37}.
   {label, 36}.
-    {line, [{location, "std@io@fs.erl", 29}]}.
+    {line, [{location, "std@io@fs.erl", 30}]}.
     {func_info, {atom, std@io@fs}, {atom, open}, 1}.
   {label, 37}.
     {allocate, 4, 1}.
@@ -3941,7 +3957,7 @@ test "fs answers PermissionDenied for an OS permission error" {
 
 {function, create, 1, 39}.
   {label, 38}.
-    {line, [{location, "std@io@fs.erl", 30}]}.
+    {line, [{location, "std@io@fs.erl", 31}]}.
     {func_info, {atom, std@io@fs}, {atom, create}, 1}.
   {label, 39}.
     {allocate, 4, 1}.
@@ -3973,7 +3989,7 @@ test "fs answers PermissionDenied for an OS permission error" {
 
 {function, openAsset, 1, 41}.
   {label, 40}.
-    {line, [{location, "std@io@fs.erl", 31}]}.
+    {line, [{location, "std@io@fs.erl", 32}]}.
     {func_info, {atom, std@io@fs}, {atom, openAsset}, 1}.
   {label, 41}.
     {allocate, 3, 1}.
@@ -4000,7 +4016,7 @@ test "fs answers PermissionDenied for an OS permission error" {
 
 {function, statOr, 1, 43}.
   {label, 42}.
-    {line, [{location, "std@io@fs.erl", 32}]}.
+    {line, [{location, "std@io@fs.erl", 33}]}.
     {func_info, {atom, std@io@fs}, {atom, statOr}, 1}.
   {label, 43}.
     {allocate, 2, 1}.
@@ -4029,7 +4045,7 @@ test "fs answers PermissionDenied for an OS permission error" {
 
 {function, makeFixtureTree, 1, 45}.
   {label, 44}.
-    {line, [{location, "std@io@fs.erl", 33}]}.
+    {line, [{location, "std@io@fs.erl", 34}]}.
     {func_info, {atom, std@io@fs}, {atom, makeFixtureTree}, 1}.
   {label, 45}.
     {allocate, 6, 1}.
@@ -4149,7 +4165,7 @@ test "fs answers PermissionDenied for an OS permission error" {
 
 {function, walkFixture, 1, 47}.
   {label, 46}.
-    {line, [{location, "std@io@fs.erl", 34}]}.
+    {line, [{location, "std@io@fs.erl", 35}]}.
     {func_info, {atom, std@io@fs}, {atom, walkFixture}, 1}.
   {label, 47}.
     {allocate, 5, 1}.
@@ -4200,7 +4216,7 @@ test "fs answers PermissionDenied for an OS permission error" {
 
 {function, walkFixtureFromCwd, 1, 49}.
   {label, 48}.
-    {line, [{location, "std@io@fs.erl", 35}]}.
+    {line, [{location, "std@io@fs.erl", 36}]}.
     {func_info, {atom, std@io@fs}, {atom, walkFixtureFromCwd}, 1}.
   {label, 49}.
     {allocate, 8, 1}.
@@ -4259,7 +4275,7 @@ test "fs answers PermissionDenied for an OS permission error" {
 
 {function, walkRefusal, 1, 51}.
   {label, 50}.
-    {line, [{location, "std@io@fs.erl", 36}]}.
+    {line, [{location, "std@io@fs.erl", 37}]}.
     {func_info, {atom, std@io@fs}, {atom, walkRefusal}, 1}.
   {label, 51}.
     {allocate, 2, 1}.
@@ -4287,7 +4303,7 @@ test "fs answers PermissionDenied for an OS permission error" {
 
 {function, describe, 1, 53}.
   {label, 52}.
-    {line, [{location, "std@io@fs.erl", 37}]}.
+    {line, [{location, "std@io@fs.erl", 38}]}.
     {func_info, {atom, std@io@fs}, {atom, describe}, 1}.
   {label, 53}.
     {allocate, 16, 1}.
@@ -4451,7 +4467,7 @@ test "fs answers PermissionDenied for an OS permission error" {
 
 {function, makeGlobTree, 1, 55}.
   {label, 54}.
-    {line, [{location, "std@io@fs.erl", 38}]}.
+    {line, [{location, "std@io@fs.erl", 39}]}.
     {func_info, {atom, std@io@fs}, {atom, makeGlobTree}, 1}.
   {label, 55}.
     {allocate, 14, 1}.
@@ -4620,7 +4636,7 @@ test "fs answers PermissionDenied for an OS permission error" {
 
 {function, globbed, 1, 57}.
   {label, 56}.
-    {line, [{location, "std@io@fs.erl", 39}]}.
+    {line, [{location, "std@io@fs.erl", 40}]}.
     {func_info, {atom, std@io@fs}, {atom, globbed}, 1}.
   {label, 57}.
     {allocate, 7, 1}.
@@ -4673,7 +4689,7 @@ test "fs answers PermissionDenied for an OS permission error" {
 
 {function, variantOf, 1, 59}.
   {label, 58}.
-    {line, [{location, "std@io@fs.erl", 40}]}.
+    {line, [{location, "std@io@fs.erl", 41}]}.
     {func_info, {atom, std@io@fs}, {atom, variantOf}, 1}.
   {label, 59}.
     {allocate, 2, 1}.
@@ -4699,7 +4715,7 @@ test "fs answers PermissionDenied for an OS permission error" {
 
 {function, noFile, 0, 61}.
   {label, 60}.
-    {line, [{location, "std@io@fs.erl", 41}]}.
+    {line, [{location, "std@io@fs.erl", 42}]}.
     {func_info, {atom, std@io@fs}, {atom, noFile}, 0}.
   {label, 61}.
     {allocate, 2, 0}.
@@ -4718,7 +4734,7 @@ test "fs answers PermissionDenied for an OS permission error" {
 
 {function, 'String_slice', 3, 85}.
   {label, 84}.
-    {line, [{location, "std@io@fs.erl", 42}]}.
+    {line, [{location, "std@io@fs.erl", 43}]}.
     {func_info, {atom, std@io@fs}, {atom, 'String_slice'}, 3}.
   {label, 85}.
     {allocate, 3, 3}.
@@ -4738,84 +4754,84 @@ test "fs answers PermissionDenied for an OS permission error" {
 
 {function, '__bp_priv__String_slice', 3, 868}.
   {label, 867}.
-    {line, [{location, "std@io@fs.erl", 43}]}.
+    {line, [{location, "std@io@fs.erl", 44}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__String_slice'}, 3}.
   {label, 868}.
     {call_only, 3, {f, 85}}.
 
 {function, '__bp_priv__describe', 1, 870}.
   {label, 869}.
-    {line, [{location, "std@io@fs.erl", 44}]}.
+    {line, [{location, "std@io@fs.erl", 45}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__describe'}, 1}.
   {label, 870}.
     {call_only, 1, {f, 53}}.
 
 {function, '__bp_priv__fsError', 2, 872}.
   {label, 871}.
-    {line, [{location, "std@io@fs.erl", 45}]}.
+    {line, [{location, "std@io@fs.erl", 46}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__fsError'}, 2}.
   {label, 872}.
     {call_only, 2, {f, 3}}.
 
 {function, '__bp_priv__globbed', 1, 874}.
   {label, 873}.
-    {line, [{location, "std@io@fs.erl", 46}]}.
+    {line, [{location, "std@io@fs.erl", 47}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__globbed'}, 1}.
   {label, 874}.
     {call_only, 1, {f, 57}}.
 
 {function, '__bp_priv__makeFixtureTree', 1, 876}.
   {label, 875}.
-    {line, [{location, "std@io@fs.erl", 47}]}.
+    {line, [{location, "std@io@fs.erl", 48}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__makeFixtureTree'}, 1}.
   {label, 876}.
     {call_only, 1, {f, 45}}.
 
 {function, '__bp_priv__makeGlobTree', 1, 878}.
   {label, 877}.
-    {line, [{location, "std@io@fs.erl", 48}]}.
+    {line, [{location, "std@io@fs.erl", 49}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__makeGlobTree'}, 1}.
   {label, 878}.
     {call_only, 1, {f, 55}}.
 
 {function, '__bp_priv__noFile', 0, 880}.
   {label, 879}.
-    {line, [{location, "std@io@fs.erl", 49}]}.
+    {line, [{location, "std@io@fs.erl", 50}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__noFile'}, 0}.
   {label, 880}.
     {call_only, 0, {f, 61}}.
 
 {function, '__bp_priv__statOr', 1, 882}.
   {label, 881}.
-    {line, [{location, "std@io@fs.erl", 50}]}.
+    {line, [{location, "std@io@fs.erl", 51}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__statOr'}, 1}.
   {label, 882}.
     {call_only, 1, {f, 43}}.
 
 {function, '__bp_priv__variantOf', 1, 884}.
   {label, 883}.
-    {line, [{location, "std@io@fs.erl", 51}]}.
+    {line, [{location, "std@io@fs.erl", 52}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__variantOf'}, 1}.
   {label, 884}.
     {call_only, 1, {f, 59}}.
 
 {function, '__bp_priv__walkFixture', 1, 886}.
   {label, 885}.
-    {line, [{location, "std@io@fs.erl", 52}]}.
+    {line, [{location, "std@io@fs.erl", 53}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__walkFixture'}, 1}.
   {label, 886}.
     {call_only, 1, {f, 47}}.
 
 {function, '__bp_priv__walkFixtureFromCwd', 1, 888}.
   {label, 887}.
-    {line, [{location, "std@io@fs.erl", 53}]}.
+    {line, [{location, "std@io@fs.erl", 54}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__walkFixtureFromCwd'}, 1}.
   {label, 888}.
     {call_only, 1, {f, 49}}.
 
 {function, '__bp_priv__walkRefusal', 1, 890}.
   {label, 889}.
-    {line, [{location, "std@io@fs.erl", 54}]}.
+    {line, [{location, "std@io@fs.erl", 55}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__walkRefusal'}, 1}.
   {label, 890}.
     {call_only, 1, {f, 51}}.
@@ -5533,7 +5549,7 @@ test "fs answers PermissionDenied for an OS permission error" {
 
 {function, '__bp_adopt', 3, 244}.
   {label, 243}.
-    {line, [{location, "std@io@fs.erl", 11}]}.
+    {line, [{location, "std@io@fs.erl", 12}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_adopt'}, 3}.
   {label, 244}.
     {test, is_map, {f, 249}, [{x, 0}]}.
@@ -5562,7 +5578,7 @@ test "fs answers PermissionDenied for an OS permission error" {
 
 {function, '-bp_adopt_fields-', 2, 246}.
   {label, 245}.
-    {line, [{location, "std@io@fs.erl", 11}]}.
+    {line, [{location, "std@io@fs.erl", 12}]}.
     {func_info, {atom, std@io@fs}, {atom, '-bp_adopt_fields-'}, 2}.
   {label, 246}.
     {test, is_nonempty_list, {f, 252}, [{x, 0}]}.
@@ -5585,7 +5601,7 @@ test "fs answers PermissionDenied for an OS permission error" {
 
 {function, '-bp_adopt_each-', 3, 248}.
   {label, 247}.
-    {line, [{location, "std@io@fs.erl", 11}]}.
+    {line, [{location, "std@io@fs.erl", 12}]}.
     {func_info, {atom, std@io@fs}, {atom, '-bp_adopt_each-'}, 3}.
   {label, 248}.
     {test, is_nonempty_list, {f, 253}, [{x, 0}]}.
@@ -7869,7 +7885,7 @@ test "fs answers PermissionDenied for an OS permission error" {
 
 {function, '-bp_field-', 2, 724}.
   {label, 723}.
-    {line, [{location, "std@io@fs.erl", 32}]}.
+    {line, [{location, "std@io@fs.erl", 33}]}.
     {func_info, {atom, std@io@fs}, {atom, '-bp_field-'}, 2}.
   {label, 724}.
     {test, is_map, {f, 725}, [{x, 0}]}.
@@ -7925,7 +7941,7 @@ test "fs answers PermissionDenied for an OS permission error" {
 
 {function, '__bp_print', 1, 737}.
   {label, 736}.
-    {line, [{location, "std@io@fs.erl", 34}]}.
+    {line, [{location, "std@io@fs.erl", 35}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_print'}, 1}.
   {label, 737}.
     {allocate, 1, 1}.
@@ -7945,7 +7961,7 @@ test "fs answers PermissionDenied for an OS permission error" {
 
 {function, '-bp_show_top-', 1, 741}.
   {label, 740}.
-    {line, [{location, "std@io@fs.erl", 34}]}.
+    {line, [{location, "std@io@fs.erl", 35}]}.
     {func_info, {atom, std@io@fs}, {atom, '-bp_show_top-'}, 1}.
   {label, 741}.
     {move, {atom, true}, {x, 1}}.
@@ -7953,7 +7969,7 @@ test "fs answers PermissionDenied for an OS permission error" {
 
 {function, '-bp_show_elem-', 1, 743}.
   {label, 742}.
-    {line, [{location, "std@io@fs.erl", 34}]}.
+    {line, [{location, "std@io@fs.erl", 35}]}.
     {func_info, {atom, std@io@fs}, {atom, '-bp_show_elem-'}, 1}.
   {label, 743}.
     {move, {atom, false}, {x, 1}}.
@@ -7961,7 +7977,7 @@ test "fs answers PermissionDenied for an OS permission error" {
 
 {function, '__bp_show', 2, 739}.
   {label, 738}.
-    {line, [{location, "std@io@fs.erl", 34}]}.
+    {line, [{location, "std@io@fs.erl", 35}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_show'}, 2}.
   {label, 739}.
     {allocate, 2, 2}.
@@ -8064,7 +8080,7 @@ test "fs answers PermissionDenied for an OS permission error" {
 
 {function, '__bp_tagged', 2, 745}.
   {label, 744}.
-    {line, [{location, "std@io@fs.erl", 34}]}.
+    {line, [{location, "std@io@fs.erl", 35}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_tagged'}, 2}.
   {label, 745}.
     {allocate, 3, 2}.
@@ -8104,7 +8120,7 @@ test "fs answers PermissionDenied for an OS permission error" {
 
 {function, '__bp_render', 1, 747}.
   {label, 746}.
-    {line, [{location, "std@io@fs.erl", 34}]}.
+    {line, [{location, "std@io@fs.erl", 35}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_render'}, 1}.
   {label, 747}.
     {allocate, 2, 1}.
@@ -8148,7 +8164,7 @@ test "fs answers PermissionDenied for an OS permission error" {
 
 {function, '-bp_render_pair-', 1, 749}.
   {label, 748}.
-    {line, [{location, "std@io@fs.erl", 34}]}.
+    {line, [{location, "std@io@fs.erl", 35}]}.
     {func_info, {atom, std@io@fs}, {atom, '-bp_render_pair-'}, 1}.
   {label, 749}.
     {allocate, 2, 1}.
@@ -8172,7 +8188,7 @@ test "fs answers PermissionDenied for an OS permission error" {
 
 {function, '-bp_stringify-', 1, 765}.
   {label, 764}.
-    {line, [{location, "std@io@fs.erl", 34}]}.
+    {line, [{location, "std@io@fs.erl", 35}]}.
     {func_info, {atom, std@io@fs}, {atom, '-bp_stringify-'}, 1}.
   {label, 765}.
     {allocate, 0, 1}.
@@ -8188,7 +8204,7 @@ test "fs answers PermissionDenied for an OS permission error" {
 
 {function, '-bp_join-', 2, 735}.
   {label, 734}.
-    {line, [{location, "std@io@fs.erl", 34}]}.
+    {line, [{location, "std@io@fs.erl", 35}]}.
     {func_info, {atom, std@io@fs}, {atom, '-bp_join-'}, 2}.
   {label, 735}.
     {allocate, 1, 2}.
@@ -8564,20 +8580,201 @@ test "fs answers PermissionDenied for an OS permission error" {
 ----- BEAM ASSEMBLY -- std@io@fs@@FsError.S
 ```erlang
 {module, std@io@fs@@FsError}.
-{exports, [{'__bp_format', 1}]}.
+{exports, [{message, 1}, {'__bp_format', 1}]}.
 {attributes, []}.
-{labels, 11}.
+{labels, 53}.
 
-{function, '__bp_format', 1, 3}.
+{function, message, 1, 3}.
   {label, 2}.
     {line, [{location, "std@io@fs@@FsError.erl", 1}]}.
-    {func_info, {atom, std@io@fs@@FsError}, {atom, '__bp_format'}, 1}.
+    {func_info, {atom, std@io@fs@@FsError}, {atom, message}, 1}.
   {label, 3}.
+    {allocate, 17, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}, {y, 11}, {y, 12}, {y, 13}, {y, 14}, {y, 15}, {y, 16}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_tagged_tuple, {f, 5}, [{x, 0}, 2, {atom, std@io@fs@@FsError__v__notfound}]}.
+    {get_tuple_element, {x, 0}, 1, {x, 1}}.
+    {move, {x, 1}, {y, 1}}.
+    {move, nil, {x, 0}}.
+    {move, {x, 0}, {y, 2}}.
+    {move, {y, 1}, {x, 0}}.
+    {move, {y, 2}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {y, 2}}.
+    {move, {literal, <<"not found: ">>}, {x, 0}}.
+    {move, {y, 2}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
+    {make_fun3, {f, 35}, 0, 0, {x, 0}, {list, []}}.
+    {call_ext, 2, {extfunc, lists, map, 2}}.
+    {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
+    {jump, {f, 4}}.
+  {label, 5}.
+    {test, is_tagged_tuple, {f, 38}, [{x, 0}, 2, {atom, std@io@fs@@FsError__v__permissiondenied}]}.
+    {get_tuple_element, {x, 0}, 1, {x, 1}}.
+    {move, {x, 1}, {y, 3}}.
+    {move, nil, {x, 0}}.
+    {move, {x, 0}, {y, 4}}.
+    {move, {y, 3}, {x, 0}}.
+    {move, {y, 4}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {y, 4}}.
+    {move, {literal, <<"permission denied: ">>}, {x, 0}}.
+    {move, {y, 4}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
+    {make_fun3, {f, 35}, 0, 0, {x, 0}, {list, []}}.
+    {call_ext, 2, {extfunc, lists, map, 2}}.
+    {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
+    {jump, {f, 4}}.
+  {label, 38}.
+    {test, is_tagged_tuple, {f, 39}, [{x, 0}, 2, {atom, std@io@fs@@FsError__v__isdirectory}]}.
+    {get_tuple_element, {x, 0}, 1, {x, 1}}.
+    {move, {x, 1}, {y, 5}}.
+    {move, nil, {x, 0}}.
+    {move, {x, 0}, {y, 6}}.
+    {move, {y, 5}, {x, 0}}.
+    {move, {y, 6}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {y, 6}}.
+    {move, {literal, <<"is a directory: ">>}, {x, 0}}.
+    {move, {y, 6}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
+    {make_fun3, {f, 35}, 0, 0, {x, 0}, {list, []}}.
+    {call_ext, 2, {extfunc, lists, map, 2}}.
+    {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
+    {jump, {f, 4}}.
+  {label, 39}.
+    {test, is_tagged_tuple, {f, 40}, [{x, 0}, 2, {atom, std@io@fs@@FsError__v__notdirectory}]}.
+    {get_tuple_element, {x, 0}, 1, {x, 1}}.
+    {move, {x, 1}, {y, 7}}.
+    {move, nil, {x, 0}}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {y, 7}, {x, 0}}.
+    {move, {y, 8}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {literal, <<"not a directory: ">>}, {x, 0}}.
+    {move, {y, 8}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
+    {make_fun3, {f, 35}, 0, 0, {x, 0}, {list, []}}.
+    {call_ext, 2, {extfunc, lists, map, 2}}.
+    {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
+    {jump, {f, 4}}.
+  {label, 40}.
+    {test, is_tagged_tuple, {f, 41}, [{x, 0}, 2, {atom, std@io@fs@@FsError__v__alreadyexists}]}.
+    {get_tuple_element, {x, 0}, 1, {x, 1}}.
+    {move, {x, 1}, {y, 9}}.
+    {move, nil, {x, 0}}.
+    {move, {x, 0}, {y, 10}}.
+    {move, {y, 9}, {x, 0}}.
+    {move, {y, 10}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {y, 10}}.
+    {move, {literal, <<"already exists: ">>}, {x, 0}}.
+    {move, {y, 10}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
+    {make_fun3, {f, 35}, 0, 0, {x, 0}, {list, []}}.
+    {call_ext, 2, {extfunc, lists, map, 2}}.
+    {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
+    {jump, {f, 4}}.
+  {label, 41}.
+    {test, is_tagged_tuple, {f, 42}, [{x, 0}, 3, {atom, std@io@fs@@FsError__v__invalidutf8}]}.
+    {get_tuple_element, {x, 0}, 1, {x, 1}}.
+    {move, {x, 1}, {y, 11}}.
+    {get_tuple_element, {x, 0}, 2, {x, 1}}.
+    {move, {x, 1}, {y, 12}}.
+    {move, nil, {x, 0}}.
+    {move, {x, 0}, {y, 13}}.
+    {move, {y, 12}, {x, 0}}.
+    {call_ext, 1, {extfunc, erlang, integer_to_binary, 1}}.
+    {move, {y, 13}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {y, 13}}.
+    {move, {literal, <<" at byte ">>}, {x, 0}}.
+    {move, {y, 13}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {y, 13}}.
+    {move, {y, 11}, {x, 0}}.
+    {move, {y, 13}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {y, 13}}.
+    {move, {literal, <<"not UTF-8: ">>}, {x, 0}}.
+    {move, {y, 13}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
+    {make_fun3, {f, 35}, 0, 0, {x, 0}, {list, []}}.
+    {call_ext, 2, {extfunc, lists, map, 2}}.
+    {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
+    {jump, {f, 4}}.
+  {label, 42}.
+    {test, is_tagged_tuple, {f, 43}, [{x, 0}, 3, {atom, std@io@fs@@FsError__v__other}]}.
+    {get_tuple_element, {x, 0}, 1, {x, 1}}.
+    {move, {x, 1}, {y, 14}}.
+    {get_tuple_element, {x, 0}, 2, {x, 1}}.
+    {move, {x, 1}, {y, 15}}.
+    {move, nil, {x, 0}}.
+    {move, {x, 0}, {y, 16}}.
+    {move, {y, 15}, {x, 0}}.
+    {move, {y, 16}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {y, 16}}.
+    {move, {literal, <<": ">>}, {x, 0}}.
+    {move, {y, 16}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {y, 16}}.
+    {move, {y, 14}, {x, 0}}.
+    {move, {y, 16}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
+    {make_fun3, {f, 35}, 0, 0, {x, 0}, {list, []}}.
+    {call_ext, 2, {extfunc, lists, map, 2}}.
+    {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
+    {jump, {f, 4}}.
+  {label, 43}.
+    {case_end, {x, 0}}.
+  {label, 4}.
+    {deallocate, 17}.
+    return.
+
+{function, '__bp_format', 1, 45}.
+  {label, 44}.
+    {line, [{location, "std@io@fs@@FsError.erl", 2}]}.
+    {func_info, {atom, std@io@fs@@FsError}, {atom, '__bp_format'}, 1}.
+  {label, 45}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 4}, [{x, 0}, 2, {atom, std@io@fs@@FsError__v__notfound}]}.
+    {test, is_tagged_tuple, {f, 46}, [{x, 0}, 2, {atom, std@io@fs@@FsError__v__notfound}]}.
     {move, nil, {y, 1}}.
     {move, {integer, 2}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
@@ -8589,9 +8786,9 @@ test "fs answers PermissionDenied for an OS permission error" {
     {put_tuple2, {x, 0}, {list, [{atom, variant}, {literal, <<"FsError.NotFound">>}, {y, 1}]}}.
     {deallocate, 2}.
     return.
-  {label, 4}.
+  {label, 46}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 5}, [{x, 0}, 2, {atom, std@io@fs@@FsError__v__permissiondenied}]}.
+    {test, is_tagged_tuple, {f, 47}, [{x, 0}, 2, {atom, std@io@fs@@FsError__v__permissiondenied}]}.
     {move, nil, {y, 1}}.
     {move, {integer, 2}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
@@ -8603,9 +8800,9 @@ test "fs answers PermissionDenied for an OS permission error" {
     {put_tuple2, {x, 0}, {list, [{atom, variant}, {literal, <<"FsError.PermissionDenied">>}, {y, 1}]}}.
     {deallocate, 2}.
     return.
-  {label, 5}.
+  {label, 47}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 6}, [{x, 0}, 2, {atom, std@io@fs@@FsError__v__isdirectory}]}.
+    {test, is_tagged_tuple, {f, 48}, [{x, 0}, 2, {atom, std@io@fs@@FsError__v__isdirectory}]}.
     {move, nil, {y, 1}}.
     {move, {integer, 2}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
@@ -8617,9 +8814,9 @@ test "fs answers PermissionDenied for an OS permission error" {
     {put_tuple2, {x, 0}, {list, [{atom, variant}, {literal, <<"FsError.IsDirectory">>}, {y, 1}]}}.
     {deallocate, 2}.
     return.
-  {label, 6}.
+  {label, 48}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 7}, [{x, 0}, 2, {atom, std@io@fs@@FsError__v__notdirectory}]}.
+    {test, is_tagged_tuple, {f, 49}, [{x, 0}, 2, {atom, std@io@fs@@FsError__v__notdirectory}]}.
     {move, nil, {y, 1}}.
     {move, {integer, 2}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
@@ -8631,9 +8828,9 @@ test "fs answers PermissionDenied for an OS permission error" {
     {put_tuple2, {x, 0}, {list, [{atom, variant}, {literal, <<"FsError.NotDirectory">>}, {y, 1}]}}.
     {deallocate, 2}.
     return.
-  {label, 7}.
+  {label, 49}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 8}, [{x, 0}, 2, {atom, std@io@fs@@FsError__v__alreadyexists}]}.
+    {test, is_tagged_tuple, {f, 50}, [{x, 0}, 2, {atom, std@io@fs@@FsError__v__alreadyexists}]}.
     {move, nil, {y, 1}}.
     {move, {integer, 2}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
@@ -8645,9 +8842,9 @@ test "fs answers PermissionDenied for an OS permission error" {
     {put_tuple2, {x, 0}, {list, [{atom, variant}, {literal, <<"FsError.AlreadyExists">>}, {y, 1}]}}.
     {deallocate, 2}.
     return.
-  {label, 8}.
+  {label, 50}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 9}, [{x, 0}, 3, {atom, std@io@fs@@FsError__v__invalidutf8}]}.
+    {test, is_tagged_tuple, {f, 51}, [{x, 0}, 3, {atom, std@io@fs@@FsError__v__invalidutf8}]}.
     {move, nil, {y, 1}}.
     {move, {integer, 3}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
@@ -8665,9 +8862,9 @@ test "fs answers PermissionDenied for an OS permission error" {
     {put_tuple2, {x, 0}, {list, [{atom, variant}, {literal, <<"FsError.InvalidUtf8">>}, {y, 1}]}}.
     {deallocate, 2}.
     return.
-  {label, 9}.
+  {label, 51}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 10}, [{x, 0}, 3, {atom, std@io@fs@@FsError__v__other}]}.
+    {test, is_tagged_tuple, {f, 52}, [{x, 0}, 3, {atom, std@io@fs@@FsError__v__other}]}.
     {move, nil, {y, 1}}.
     {move, {integer, 3}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
@@ -8685,11 +8882,274 @@ test "fs answers PermissionDenied for an OS permission error" {
     {put_tuple2, {x, 0}, {list, [{atom, variant}, {literal, <<"FsError.Other">>}, {y, 1}]}}.
     {deallocate, 2}.
     return.
-  {label, 10}.
+  {label, 52}.
     {test_heap, 4, 1}.
     {put_tuple2, {x, 0}, {list, [{atom, variant}, {literal, <<"FsError">>}, nil]}}.
     {deallocate, 2}.
     return.
+
+{function, '__bp_print', 1, 7}.
+  {label, 6}.
+    {line, [{location, "std@io@fs@@FsError.erl", 2}]}.
+    {func_info, {atom, std@io@fs@@FsError}, {atom, '__bp_print'}, 1}.
+  {label, 7}.
+    {allocate, 1, 1}.
+    {init_yregs, {list, [{y, 0}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
+    {make_fun3, {f, 11}, 0, 0, {x, 0}, {list, []}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, lists, map, 2}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {literal, <<" ">>}, {x, 0}}.
+    {call_ext, 2, {extfunc, lists, join, 2}}.
+    {test_heap, 2, 1}.
+    {put_list, {x, 0}, nil, {x, 1}}.
+    {move, {literal, <<"~ts~n">>}, {x, 0}}.
+    {call_ext_last, 2, {extfunc, io, format, 2}, 1}.
+
+{function, '-bp_show_top-', 1, 11}.
+  {label, 10}.
+    {line, [{location, "std@io@fs@@FsError.erl", 2}]}.
+    {func_info, {atom, std@io@fs@@FsError}, {atom, '-bp_show_top-'}, 1}.
+  {label, 11}.
+    {move, {atom, true}, {x, 1}}.
+    {call_only, 2, {f, 9}}.
+
+{function, '-bp_show_elem-', 1, 13}.
+  {label, 12}.
+    {line, [{location, "std@io@fs@@FsError.erl", 2}]}.
+    {func_info, {atom, std@io@fs@@FsError}, {atom, '-bp_show_elem-'}, 1}.
+  {label, 13}.
+    {move, {atom, false}, {x, 1}}.
+    {call_only, 2, {f, 9}}.
+
+{function, '__bp_show', 2, 9}.
+  {label, 8}.
+    {line, [{location, "std@io@fs@@FsError.erl", 2}]}.
+    {func_info, {atom, std@io@fs@@FsError}, {atom, '__bp_show'}, 2}.
+  {label, 9}.
+    {allocate, 2, 2}.
+    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {x, 1}, {y, 1}}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_binary, {f, 21}, [{x, 0}]}.
+    {test, is_eq, {f, 20}, [{y, 1}, {atom, true}]}.
+    {move, {y, 0}, {x, 0}}.
+    {deallocate, 2}.
+    return.
+  {label, 20}.
+    {move, {y, 0}, {x, 0}}.
+    {call_ext, 1, {extfunc, unicode, characters_to_list, 1}}.
+    {call_ext_last, 1, {extfunc, io_lib, write_string, 1}, 2}.
+  {label, 21}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_list, {f, 22}, [{x, 0}]}.
+    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
+    {make_fun3, {f, 13}, 0, 0, {x, 0}, {list, []}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, lists, map, 2}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {literal, <<", ">>}, {x, 0}}.
+    {call_ext, 2, {extfunc, lists, join, 2}}.
+    {test_heap, 6, 1}.
+    {put_list, {integer, 93}, nil, {x, 1}}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {put_list, {integer, 91}, {x, 0}, {x, 0}}.
+    {deallocate, 2}.
+    return.
+  {label, 22}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_tuple, {f, 24}, [{x, 0}]}.
+    {call_ext, 1, {extfunc, erlang, tuple_size, 1}}.
+    {test, is_lt, {f, 23}, [{integer, 0}, {x, 0}]}.
+    {move, {integer, 1}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, element, 2}}.
+    {test, is_atom, {f, 23}, [{x, 0}]}.
+    {test, is_ne_exact, {f, 23}, [{x, 0}, {atom, true}]}.
+    {test, is_ne_exact, {f, 23}, [{x, 0}, {atom, false}]}.
+    {test, is_ne_exact, {f, 23}, [{x, 0}, {atom, undefined}]}.
+    {test, is_eq_exact, {f, 28}, [{x, 0}, {atom, ok}]}.
+    {move, {literal, <<"Ok(">>}, {y, 1}}.
+    {jump, {f, 29}}.
+  {label, 28}.
+    {test, is_eq_exact, {f, 25}, [{x, 0}, {atom, error}]}.
+    {move, {literal, <<"Error(">>}, {y, 1}}.
+  {label, 29}.
+    {move, {integer, 2}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, element, 2}}.
+    {move, {atom, false}, {x, 1}}.
+    {call, 2, {f, 9}}.
+    {test_heap, 6, 1}.
+    {put_list, {integer, 41}, nil, {x, 1}}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {put_list, {y, 1}, {x, 0}, {x, 0}}.
+    {deallocate, 2}.
+    return.
+  {label, 23}.
+    {move, {y, 0}, {x, 0}}.
+    {call_ext, 1, {extfunc, erlang, tuple_to_list, 1}}.
+    {move, {x, 0}, {y, 1}}.
+    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
+    {make_fun3, {f, 13}, 0, 0, {x, 0}, {list, []}}.
+    {move, {y, 1}, {x, 1}}.
+    {call_ext, 2, {extfunc, lists, map, 2}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {literal, <<", ">>}, {x, 0}}.
+    {call_ext, 2, {extfunc, lists, join, 2}}.
+    {test_heap, 8, 1}.
+    {put_list, {integer, 41}, nil, {x, 1}}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {put_list, {integer, 40}, {x, 0}, {x, 0}}.
+    {put_list, {integer, 35}, {x, 0}, {x, 0}}.
+    {deallocate, 2}.
+    return.
+  {label, 24}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_atom, {f, 26}, [{x, 0}]}.
+    {test, is_ne_exact, {f, 26}, [{x, 0}, {atom, true}]}.
+    {test, is_ne_exact, {f, 26}, [{x, 0}, {atom, false}]}.
+    {test, is_ne_exact, {f, 27}, [{x, 0}, {atom, undefined}]}.
+  {label, 25}.
+    {move, {y, 0}, {x, 1}}.
+    {call_last, 2, {f, 15}, 2}.
+  {label, 26}.
+    {move, {y, 0}, {x, 0}}.
+    {test_heap, 2, 1}.
+    {put_list, {x, 0}, nil, {x, 1}}.
+    {move, {literal, <<"~p">>}, {x, 0}}.
+    {call_ext_last, 2, {extfunc, io_lib, format, 2}, 2}.
+  {label, 27}.
+    {move, {literal, <<"null">>}, {x, 0}}.
+    {deallocate, 2}.
+    return.
+
+{function, '__bp_tagged', 2, 15}.
+  {label, 14}.
+    {line, [{location, "std@io@fs@@FsError.erl", 2}]}.
+    {func_info, {atom, std@io@fs@@FsError}, {atom, '__bp_tagged'}, 2}.
+  {label, 15}.
+    {allocate, 3, 2}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
+    {move, {x, 1}, {y, 0}}.
+    {move, {x, 0}, {y, 1}}.
+    {move, {y, 1}, {x, 0}}.
+    {call_ext, 1, {extfunc, erlang, atom_to_list, 1}}.
+    {move, {literal, <<"__v__">>}, {x, 1}}.
+    {call_ext, 2, {extfunc, string, split, 2}}.
+    {test, is_nonempty_list, {f, 30}, [{x, 0}]}.
+    {get_list, {x, 0}, {x, 1}, {x, 2}}.
+    {move, {x, 1}, {y, 2}}.
+    {test, is_nonempty_list, {f, 30}, [{x, 2}]}.
+    {move, {y, 2}, {x, 0}}.
+    {call_ext, 1, {extfunc, erlang, list_to_atom, 1}}.
+    {move, {x, 0}, {y, 1}}.
+  {label, 30}.
+    {move, {y, 1}, {x, 0}}.
+    {call_ext, 1, {extfunc, code, ensure_loaded, 1}}.
+    {move, {y, 1}, {x, 0}}.
+    {move, {atom, '__bp_format'}, {x, 1}}.
+    {move, {integer, 1}, {x, 2}}.
+    {call_ext, 3, {extfunc, erlang, function_exported, 3}}.
+    {test, is_eq_exact, {f, 31}, [{x, 0}, {atom, true}]}.
+    {test_heap, 2, 1}.
+    {put_list, {y, 0}, nil, {x, 2}}.
+    {move, {y, 1}, {x, 0}}.
+    {move, {atom, '__bp_format'}, {x, 1}}.
+    {call_ext, 3, {extfunc, erlang, apply, 3}}.
+    {call_last, 1, {f, 17}, 3}.
+  {label, 31}.
+    {test_heap, 2, 1}.
+    {put_list, {y, 0}, nil, {x, 1}}.
+    {move, {literal, <<"~p">>}, {x, 0}}.
+    {call_ext_last, 2, {extfunc, io_lib, format, 2}, 3}.
+
+{function, '__bp_render', 1, 17}.
+  {label, 16}.
+    {line, [{location, "std@io@fs@@FsError.erl", 2}]}.
+    {func_info, {atom, std@io@fs@@FsError}, {atom, '__bp_render'}, 1}.
+  {label, 17}.
+    {allocate, 2, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {integer, 1}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, element, 2}}.
+    {test, is_eq_exact, {f, 32}, [{x, 0}, {atom, text}]}.
+    {move, {integer, 2}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext_last, 2, {extfunc, erlang, element, 2}, 2}.
+  {label, 32}.
+    {move, {integer, 3}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, element, 2}}.
+    {move, {x, 0}, {y, 1}}.
+    {test, is_eq_exact, {f, 33}, [{x, 0}, nil]}.
+    {move, {integer, 2}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext_last, 2, {extfunc, erlang, element, 2}, 2}.
+  {label, 33}.
+    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
+    {make_fun3, {f, 19}, 0, 0, {x, 0}, {list, []}}.
+    {move, {y, 1}, {x, 1}}.
+    {call_ext, 2, {extfunc, lists, map, 2}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {literal, <<", ">>}, {x, 0}}.
+    {call_ext, 2, {extfunc, lists, join, 2}}.
+    {move, {x, 0}, {y, 1}}.
+    {move, {integer, 2}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, element, 2}}.
+    {test_heap, 8, 1}.
+    {put_list, {integer, 41}, nil, {x, 1}}.
+    {put_list, {y, 1}, {x, 1}, {x, 1}}.
+    {put_list, {integer, 40}, {x, 1}, {x, 1}}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {deallocate, 2}.
+    return.
+
+{function, '-bp_render_pair-', 1, 19}.
+  {label, 18}.
+    {line, [{location, "std@io@fs@@FsError.erl", 2}]}.
+    {func_info, {atom, std@io@fs@@FsError}, {atom, '-bp_render_pair-'}, 1}.
+  {label, 19}.
+    {allocate, 2, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {integer, 2}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, element, 2}}.
+    {move, {atom, false}, {x, 1}}.
+    {call, 2, {f, 9}}.
+    {move, {x, 0}, {y, 1}}.
+    {move, {integer, 1}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, element, 2}}.
+    {test_heap, 6, 1}.
+    {put_list, {y, 1}, nil, {x, 1}}.
+    {put_list, {literal, <<": ">>}, {x, 1}, {x, 1}}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {deallocate, 2}.
+    return.
+
+{function, '-bp_stringify-', 1, 35}.
+  {label, 34}.
+    {line, [{location, "std@io@fs@@FsError.erl", 2}]}.
+    {func_info, {atom, std@io@fs@@FsError}, {atom, '-bp_stringify-'}, 1}.
+  {label, 35}.
+    {allocate, 0, 1}.
+    {test, is_binary, {f, 36}, [{x, 0}]}.
+    {deallocate, 0}.
+    return.
+  {label, 36}.
+    {test, is_integer, {f, 37}, [{x, 0}]}.
+    {call_ext_last, 1, {extfunc, erlang, integer_to_binary, 1}, 0}.
+  {label, 37}.
+    {call, 1, {f, 11}}.
+    {call_ext_last, 1, {extfunc, unicode, characters_to_binary, 1}, 0}.
 ```
 
 ----- BEAM ASSEMBLY -- std@io@fs@@FileStat.S
@@ -8701,7 +9161,7 @@ test "fs answers PermissionDenied for an OS permission error" {
 
 {function, '__bp_get', 2, 3}.
   {label, 2}.
-    {line, [{location, "std@io@fs@@FileStat.erl", 1}]}.
+    {line, [{location, "std@io@fs@@FileStat.erl", 2}]}.
     {func_info, {atom, std@io@fs@@FileStat}, {atom, '__bp_get'}, 2}.
   {label, 3}.
     {test, is_eq_exact, {f, 4}, [{x, 1}, {atom, size}]}.
@@ -8724,7 +9184,7 @@ test "fs answers PermissionDenied for an OS permission error" {
 
 {function, '__bp_format', 1, 8}.
   {label, 7}.
-    {line, [{location, "std@io@fs@@FileStat.erl", 1}]}.
+    {line, [{location, "std@io@fs@@FileStat.erl", 2}]}.
     {func_info, {atom, std@io@fs@@FileStat}, {atom, '__bp_format'}, 1}.
   {label, 8}.
     {allocate, 2, 1}.
@@ -8764,7 +9224,7 @@ test "fs answers PermissionDenied for an OS permission error" {
 
 {function, path, 1, 3}.
   {label, 2}.
-    {line, [{location, "std@io@fs@@File.erl", 19}]}.
+    {line, [{location, "std@io@fs@@File.erl", 20}]}.
     {func_info, {atom, std@io@fs@@File}, {atom, path}, 1}.
   {label, 3}.
     {allocate, 1, 1}.
@@ -8779,7 +9239,7 @@ test "fs answers PermissionDenied for an OS permission error" {
 
 {function, size, 1, 5}.
   {label, 4}.
-    {line, [{location, "std@io@fs@@File.erl", 20}]}.
+    {line, [{location, "std@io@fs@@File.erl", 21}]}.
     {func_info, {atom, std@io@fs@@File}, {atom, size}, 1}.
   {label, 5}.
     {allocate, 4, 1}.
@@ -8823,7 +9283,7 @@ test "fs answers PermissionDenied for an OS permission error" {
 
 {function, read, 2, 7}.
   {label, 6}.
-    {line, [{location, "std@io@fs@@File.erl", 21}]}.
+    {line, [{location, "std@io@fs@@File.erl", 22}]}.
     {func_info, {atom, std@io@fs@@File}, {atom, read}, 2}.
   {label, 7}.
     {allocate, 5, 2}.
@@ -8870,7 +9330,7 @@ test "fs answers PermissionDenied for an OS permission error" {
 
 {function, bytes, 1, 9}.
   {label, 8}.
-    {line, [{location, "std@io@fs@@File.erl", 22}]}.
+    {line, [{location, "std@io@fs@@File.erl", 23}]}.
     {func_info, {atom, std@io@fs@@File}, {atom, bytes}, 1}.
   {label, 9}.
     {allocate, 4, 1}.
@@ -8906,7 +9366,7 @@ test "fs answers PermissionDenied for an OS permission error" {
 
 {function, text, 1, 11}.
   {label, 10}.
-    {line, [{location, "std@io@fs@@File.erl", 23}]}.
+    {line, [{location, "std@io@fs@@File.erl", 24}]}.
     {func_info, {atom, std@io@fs@@File}, {atom, text}, 1}.
   {label, 11}.
     {allocate, 3, 1}.
@@ -8945,7 +9405,7 @@ test "fs answers PermissionDenied for an OS permission error" {
 
 {function, chunks, 2, 13}.
   {label, 12}.
-    {line, [{location, "std@io@fs@@File.erl", 24}]}.
+    {line, [{location, "std@io@fs@@File.erl", 25}]}.
     {func_info, {atom, std@io@fs@@File}, {atom, chunks}, 2}.
   {label, 13}.
     {allocate, 4, 2}.
@@ -8953,7 +9413,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {move, nil, {y, 2}}.
-    {line, [{location, "std@io@fs@@File.erl", 25}]}.
+    {line, [{location, "std@io@fs@@File.erl", 26}]}.
   {label, 147}.
     {move, {atom, true}, {x, 0}}.
     {test, is_eq_exact, {f, 148}, [{x, 0}, {atom, true}]}.
@@ -8990,7 +9450,7 @@ test "fs answers PermissionDenied for an OS permission error" {
 
 {function, lines, 1, 15}.
   {label, 14}.
-    {line, [{location, "std@io@fs@@File.erl", 25}]}.
+    {line, [{location, "std@io@fs@@File.erl", 26}]}.
     {func_info, {atom, std@io@fs@@File}, {atom, lines}, 1}.
   {label, 15}.
     {allocate, 11, 1}.
@@ -8999,7 +9459,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, nil, {y, 1}}.
     {move, {integer, 0}, {x, 0}}.
     {move, {x, 0}, {y, 2}}.
-    {line, [{location, "std@io@fs@@File.erl", 26}]}.
+    {line, [{location, "std@io@fs@@File.erl", 27}]}.
   {label, 153}.
     {move, {atom, true}, {x, 0}}.
     {test, is_eq_exact, {f, 154}, [{x, 0}, {atom, true}]}.
@@ -9047,7 +9507,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     {test, is_ge, {f, 237}, [{integer, 9223372036854775807}, {x, 0}]}.
     {jump, {f, 238}}.
   {label, 237}.
-    {move, {literal, {integer_overflow, <<"integer overflow: + on i64 at src/io/fs.bp:467:21">>}}, {x, 0}}.
+    {move, {literal, {integer_overflow, <<"integer overflow: + on i64 at src/io/fs.bp:483:21">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
   {label, 238}.
     {test_heap, 4, 2}.
@@ -9069,7 +9529,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     {test, is_ge, {f, 251}, [{integer, 9223372036854775807}, {x, 0}]}.
     {jump, {f, 252}}.
   {label, 251}.
-    {move, {literal, {integer_overflow, <<"integer overflow: + on i64 at src/io/fs.bp:469:33">>}}, {x, 0}}.
+    {move, {literal, {integer_overflow, <<"integer overflow: + on i64 at src/io/fs.bp:485:33">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
   {label, 252}.
     {move, {x, 0}, {y, 2}}.
@@ -9096,7 +9556,7 @@ test "fs answers PermissionDenied for an OS permission error" {
 
 {function, hash, 1, 17}.
   {label, 16}.
-    {line, [{location, "std@io@fs@@File.erl", 26}]}.
+    {line, [{location, "std@io@fs@@File.erl", 27}]}.
     {func_info, {atom, std@io@fs@@File}, {atom, hash}, 1}.
   {label, 17}.
     {allocate, 4, 1}.
@@ -9132,7 +9592,7 @@ test "fs answers PermissionDenied for an OS permission error" {
 
 {function, write, 2, 19}.
   {label, 18}.
-    {line, [{location, "std@io@fs@@File.erl", 27}]}.
+    {line, [{location, "std@io@fs@@File.erl", 28}]}.
     {func_info, {atom, std@io@fs@@File}, {atom, write}, 2}.
   {label, 19}.
     {allocate, 5, 2}.
@@ -9170,7 +9630,7 @@ test "fs answers PermissionDenied for an OS permission error" {
 
 {function, close, 1, 21}.
   {label, 20}.
-    {line, [{location, "std@io@fs@@File.erl", 28}]}.
+    {line, [{location, "std@io@fs@@File.erl", 29}]}.
     {func_info, {atom, std@io@fs@@File}, {atom, close}, 1}.
   {label, 21}.
     {allocate, 1, 1}.
@@ -9187,7 +9647,7 @@ test "fs answers PermissionDenied for an OS permission error" {
 
 {function, '__bp_get', 2, 360}.
   {label, 359}.
-    {line, [{location, "std@io@fs@@File.erl", 29}]}.
+    {line, [{location, "std@io@fs@@File.erl", 30}]}.
     {func_info, {atom, std@io@fs@@File}, {atom, '__bp_get'}, 2}.
   {label, 360}.
     {test, is_eq_exact, {f, 361}, [{x, 1}, {atom, location}]}.
@@ -9205,7 +9665,7 @@ test "fs answers PermissionDenied for an OS permission error" {
 
 {function, '__bp_format', 1, 364}.
   {label, 363}.
-    {line, [{location, "std@io@fs@@File.erl", 29}]}.
+    {line, [{location, "std@io@fs@@File.erl", 30}]}.
     {func_info, {atom, std@io@fs@@File}, {atom, '__bp_format'}, 1}.
   {label, 364}.
     {allocate, 2, 1}.
