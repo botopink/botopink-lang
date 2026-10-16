@@ -14406,6 +14406,9 @@ fn patternIsIrrefutable(env: *Env, pattern: ast.Pattern, elemType: ?*T.Type) Inf
         .wildcard => true,
         .ident => |nm| blk: {
             if (isVariantPath(nm)) break :blk false;
+            // `null`, `true` and `false` are literals, not binders: each
+            // selects some values and not others.
+            if (isLiteralKeyword(nm)) break :blk false;
             const ty = elemType orelse break :blk true;
             break :blk !isEnumVariantNameForSubject(env, ty, nm);
         },
@@ -14454,6 +14457,34 @@ fn tupleElementTypes(ty: *T.Type) ?[]*T.Type {
     const d = ty.deref();
     if (d.* != .named or !std.mem.eql(u8, d.named.name, "tuple")) return null;
     return d.named.args;
+}
+
+/// `null`, `true` and `false` written as a pattern name: literals the parser
+/// keeps as plain identifiers, never binders.
+fn isLiteralKeyword(name: []const u8) bool {
+    return std.mem.eql(u8, name, "null") or std.mem.eql(u8, name, "true") or std.mem.eql(u8, name, "false");
+}
+
+/// The record type a constructor pattern (`Dog(name: n, breed: b)`) tests when
+/// it matches every value of that record: a `.variant` pattern whose bare name
+/// is a known type and not a variant of the subject, with a payload of binders
+/// only. A payload that carries a literal makes the arm partial (null).
+fn fullConstructorPatternType(env: *Env, pattern: ast.Pattern, subjectType: *T.Type) InferError!?*T.Type {
+    const v = switch (pattern) {
+        .variant => |v| v,
+        else => return null,
+    };
+    if (v.shape != .variant) return null;
+    if (isVariantPath(v.name)) return null;
+    if (isEnumVariantNameForSubject(env, subjectType, v.name)) return null;
+    if (!isKnownTypeName(env, v.name)) return null;
+    switch (v.payload) {
+        .binding, .fields => {},
+        .literals => |args| for (args) |a| {
+            if (!try patternIsIrrefutable(env, a, null)) return null;
+        },
+    }
+    return try env.namedType(v.name);
 }
 
 fn variantPayloadIrrefutable(
@@ -14691,6 +14722,17 @@ fn checkCaseExhaustiveness(
                 .enum_ => {},
             }
             continue;
+        }
+
+        // §3.3 — a constructor pattern naming a union member and binding all of
+        // its fields covers that member whole.
+        if (domain == .union_) {
+            if (try fullConstructorPatternType(env, arm.pattern, resolved)) |tested| {
+                for (domain.union_, 0..) |m, i| {
+                    if (sameNamedType(tested, m)) memberCovered[i] = true;
+                }
+                continue;
+            }
         }
 
         if (try alreadyCoveredVariant(env, arm.pattern, resolved, covered.items)) |dup| {

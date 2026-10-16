@@ -1,0 +1,29 @@
+//// A `null` written in a variant's payload makes the arm partial: it tests
+//// that the payload is absent, so a later arm that binds the payload is
+//// reachable (decision 8 §5.1). Coverage read `null` as a binder and refused
+//// the second arm "unreachable: variant 'Filled' is already covered".
+
+type Slot {
+    Filled(item: ?string),
+    Empty,
+}
+
+fn describe(s: Slot) -> string {
+    return case s {
+        .Filled(null) {
+            "filled with nothing"
+        }
+        .Filled(item: i) {
+            "filled with " + (i ?? "?")
+        }
+        .Empty {
+            "empty"
+        }
+    };
+}
+
+pub fn main() {
+    @print(describe(Slot.Filled(item: null)));
+    @print(describe(Slot.Filled(item: "a")));
+    @print(describe(Slot.Empty));
+}
