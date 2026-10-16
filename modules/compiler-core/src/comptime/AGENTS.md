@@ -507,8 +507,19 @@ to `shapes/circle`, the same `namesModule` narrowing as a `from`), and binds
 it under `imp.name()` — the alias when one is written — so the template and
 decorator registries are keyed by the alias too. `markStdImports` does the
 same over `env.stdModules`: a whole path that is a std module (`dict`,
-`io.fs`) binds the namespace (`stdImports`), a prefix that is one binds the
-leaf as a value (`env.bind`) or registers the one `pub type` it names. Three
+`io.fs`) binds the namespace (`stdImports`) and registers the module's `pub`
+types as TYPES only (`registerStdTypeDecl(.type_only)`: the constructor and
+variant bindings taken back into `typeOnlyCtors`, as a namespace of the
+program's own module — `failure`'s `HostErrorName.Error` never shadows
+`Error`), a prefix that is one binds the leaf as a value (`env.bind`) or
+registers the one `pub type` it names, after the closure of the types its
+fields and methods name (`registerImportedTypeClosure` over the module's `pub`
+types, as a leaf of the program's own module). A refusal met while registering
+a std declaration is located in its file (`locateInStd`: the error's `origin`
+is `libs/std/src/<mod>.bp`, its `loc` the import item). A dot-shorthand
+variant of a std enum the module never names (`.Error` where a `HostErrorName`
+is expected) is imported for the backends through `liftedStdTypes`
+(`noteImplicitEnum`). Three
 refusals, each located at the item: `import-name-collision` (a second item
 binding a name already bound — `noteImportBindings`, over every `use` decl,
 an identical repeated item excepted because an `@emit` contribution re-imports

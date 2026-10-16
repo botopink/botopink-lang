@@ -209,9 +209,11 @@ fn markStdImports(env: *Env, u: ast.ImportDecl) InferError!bool {
             try env.stdImports.put(imp.name(), whole);
             // Type export: register the module's `pub` record/struct/enum decls
             // into this env so case patterns and annotations can name them
-            // (e.g. `Order` from `import {order} from "std"`). Variant/constructor
-            // value bindings come along — construct via the module's fns
-            // (`order.lt()`), not the bare constructors (codegen has no local decl).
+            // (e.g. `Order` from `import {order} from "std"`). Each is a TYPE
+            // only, as a namespace import of the program's own module: no
+            // constructor or variant enters scope as a bare name — `failure`'s
+            // `HostErrorName.Error` never shadows `Error`; it is reached as
+            // `failure.HostErrorName.Error`.
             if (env.stdModuleTypes.get(whole)) |decls| {
                 for (decls) |d| {
                     // Decision 170 — a type the module declares or imports by
@@ -226,7 +228,7 @@ fn markStdImports(env: *Env, u: ast.ImportDecl) InferError!bool {
                         try env.shadowedStdTypes.put(env.arena, n, whole);
                         continue;
                     };
-                    try registerTypeDecl(env, d);
+                    try registerStdTypeDecl(env, whole, imp, d, .type_only);
                 }
             }
             continue;
@@ -249,7 +251,17 @@ fn markStdImports(env: *Env, u: ast.ImportDecl) InferError!bool {
                         else => continue,
                     };
                     if (!std.mem.eql(u8, type_name, leaf)) continue;
-                    try registerTypeDecl(env, d);
+                    // The types its fields and methods name come along as
+                    // types only, as for a leaf import of the program's own
+                    // module (`registerImportedTypeClosure`).
+                    var module_decls = std.StringHashMap(ast.DeclKind).init(env.arena);
+                    for (decls) |md| switch (md) {
+                        .type_ => |t| try module_decls.put(t.name, md),
+                        .typeAlias => |a| try module_decls.put(a.name, md),
+                        else => {},
+                    };
+                    registerImportedTypeClosure(env, module_decls, d) catch |err| return locateInStd(env, err, mod_name, imp);
+                    try registerStdTypeDecl(env, mod_name, imp, d, .with_bindings);
                     // Decision 110 — `as` binds a type leaf like any other.
                     if (imp.alias) |al| try registerImportedTypeAlias(env, d, al, imp.loc);
                     bound_type = true;
@@ -284,6 +296,44 @@ fn markStdImports(env: *Env, u: ast.ImportDecl) InferError!bool {
         return error.TypeError;
     }
     return true;
+}
+
+/// Register a `pub` type of std module `mod_name` that `imp` brings in.
+/// `.type_only` takes back the constructor and variant bindings the
+/// registration adds (a namespace import, as `registerTypesOnly` does for a
+/// type's closure); `.with_bindings` keeps them (the type named by the leaf).
+fn registerStdTypeDecl(env: *Env, mod_name: []const u8, imp: ast.ImportPath, d: ast.DeclKind, mode: enum { type_only, with_bindings }) InferError!void {
+    if (mode == .with_bindings) {
+        registerTypeDecl(env, d) catch |err| return locateInStd(env, err, mod_name, imp);
+        return;
+    }
+    var before = std.StringHashMap(void).init(env.arena);
+    defer before.deinit();
+    var kit = env.bindings.keyIterator();
+    while (kit.next()) |k| try before.put(k.*, {});
+    registerTypeDecl(env, d) catch |err| return locateInStd(env, err, mod_name, imp);
+    var added: std.ArrayListUnmanaged([]const u8) = .empty;
+    defer added.deinit(env.arena);
+    var ait = env.bindings.keyIterator();
+    while (ait.next()) |k| if (!before.contains(k.*)) try added.append(env.arena, k.*);
+    for (added.items) |k| {
+        if (env.bindings.get(k)) |ty| try env.typeOnlyCtors.put(k, ty);
+        _ = env.bindings.remove(k);
+    }
+}
+
+/// A refusal met while registering a std module's declaration is located in
+/// that module's file (`libs/std/src/<mod>.bp`, the error's `origin`), the
+/// importing module's `loc` the import item that brought it — never std's
+/// line read against the program's file.
+fn locateInStd(env: *Env, err: InferError, mod_name: []const u8, imp: ast.ImportPath) InferError {
+    if (err == error.TypeError) {
+        if (env.lastError) |*te| if (te.origin == null) {
+            if (te.loc) |at| te.origin = .{ .file = try std.fmt.allocPrint(env.arena, "libs/std/src/{s}.bp", .{mod_name}), .loc = at };
+            te.loc = imp.loc;
+        };
+    }
+    return err;
 }
 
 /// Decision 170 — collect the type names this module declares (`type`, a
@@ -17109,21 +17159,35 @@ fn isLeadingDotCall(c: ast.CallExprOf(.untyped)) bool {
 /// 144 B-10 — `en`, an enum a dot-shorthand variant resolved to, recorded in
 /// `Env.implicitEnumImports` when this module neither declares nor imports
 /// it by name: the one non-std module of the registry that declares it. Two
-/// such modules leave it unrecorded (nothing here says which one).
+/// such modules leave it unrecorded (nothing here says which one). An enum
+/// no such module declares and one std module declares `pub` (`failure`'s
+/// `HostErrorName`, reached through `HostError`'s field after `import
+/// {failure.HostError} from "std"`) is imported from that module the way a
+/// lifted std type is (`Env.liftedStdTypes`).
 fn noteImplicitEnum(env: *Env, en: []const u8) InferError!void {
-    if (env.explicitTypeNames.contains(en) or env.implicitEnumImports.contains(en)) return;
-    const reg = env.typeDeclRegistry orelse return;
+    if (env.explicitTypeNames.contains(en) or env.implicitEnumImports.contains(en) or env.liftedStdTypes.contains(en)) return;
     var owner: ?[]const u8 = null;
-    var it = reg.iterator();
-    while (it.next()) |e| {
-        if (std.mem.startsWith(u8, e.key_ptr.*, "std/")) continue;
-        if (std.mem.eql(u8, e.key_ptr.*, env.modulePath)) return;
-        const d = e.value_ptr.get(en) orelse continue;
-        if (d != .type_ or d.type_.shape != .enum_) continue;
-        if (owner != null) return;
-        owner = e.key_ptr.*;
+    if (env.typeDeclRegistry) |reg| {
+        var it = reg.iterator();
+        while (it.next()) |e| {
+            if (std.mem.startsWith(u8, e.key_ptr.*, "std/")) continue;
+            if (std.mem.eql(u8, e.key_ptr.*, env.modulePath)) return;
+            const d = e.value_ptr.get(en) orelse continue;
+            if (d != .type_ or d.type_.shape != .enum_) continue;
+            if (owner != null) return;
+            owner = e.key_ptr.*;
+        }
     }
-    if (owner) |o| try env.implicitEnumImports.put(env.arena, en, o);
+    if (owner) |o| return env.implicitEnumImports.put(env.arena, en, o);
+    if (std.mem.startsWith(u8, env.modulePath, "std/")) return;
+    var std_owner: ?[]const u8 = null;
+    var sit = env.stdModuleTypes.iterator();
+    while (sit.next()) |e| for (e.value_ptr.*) |d| {
+        if (d != .type_ or d.type_.shape != .enum_ or !std.mem.eql(u8, d.type_.name, en)) continue;
+        if (std_owner != null) return;
+        std_owner = e.key_ptr.*;
+    };
+    if (std_owner) |o| try env.liftedStdTypes.put(env.arena, en, o);
 }
 
 fn expectedEnumDeclaring(env: *Env, variant: []const u8) ?[]const u8 {

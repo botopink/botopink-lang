@@ -334,6 +334,23 @@ and a module namespace reaches its types, so `import {collections} from "std"`
 allows `collections.Dict.empty()` beside `collections.lt()` (decision 111's
 constructors are type-scoped).
 
+A namespace brings no bare name of its module, std's as a module of the
+package: neither a type's constructor nor an enum's variant enters scope. After
+`import {failure} from "std"`, `failure`'s `HostErrorName.Error` is
+`failure.HostErrorName.Error`, and a bare `Error` is what it is without the
+import — no name in an expression (decision 208), the `@Result`'s error in a
+pattern:
+
+<!-- example: modules/import_std_namespace_no_bare_variant -->
+
+A type leaf brings the types its fields and methods name along, as types —
+from std as from a module of the package: `import {failure.HostError} from
+"std"` alone builds a `HostError` with `name: .Error` and matches its `name`
+by the variants of `HostErrorName`, which it never names. A refusal met in a
+std module's declaration is located in that module's file:
+
+<!-- example: modules/import_std_leaf_field_types -->
+
 <!-- example: modules/import_group_modifier -->
 
 <!-- example: modules/import_tree_group -->
