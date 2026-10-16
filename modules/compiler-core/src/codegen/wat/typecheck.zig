@@ -237,7 +237,16 @@ const FuncCtx = struct {
                 if (i.result) |r| try st.push(r);
             },
             .block => |b| {
-                if (b.kind == .try_table) return self.unsupported("a try_table");
+                // A `try_table`'s catch branches to an enclosing label with
+                // the tag's values (decision 518): the label takes them.
+                if (b.kind == .try_table) for (b.catches) |c| {
+                    const ps = self.mod.tags.get(c.tag) orelse return self.fail("a catch of no tag");
+                    const want = (try self.frameOf(c.label)).arity();
+                    if (ps.len > 1) return self.unsupported("a catch of several values");
+                    if (ps.len == 0) {
+                        if (want != null) return self.fail("a catch of no value to a label that takes one");
+                    } else if (want == null or !subtype(self.mod.types, ps[0], want.?)) return self.fail("a catch whose value the label does not take");
+                };
                 try self.frames.append(self.arena, .{ .label = b.label, .kind = if (b.kind == .loop) .loop else .block, .result = b.result });
                 defer _ = self.frames.pop();
                 try self.checkSeq(b.body, b.result);

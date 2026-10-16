@@ -12,36 +12,44 @@ fn loadTwice(x: i32) -> @Task<i32> {
 ----- WASM TEXT -- main.wat
 ```wasm
 (module
+  (rec
+    (type $str (array (mut i8)))
+    (type $task (struct (field $state (mut i32)) (field $waiters (mut (ref null $waiter))) (field $value (mut anyref)) (field $frame (mut structref)) (field $kind i32) (field $next (mut (ref null $task))) (field $aux (mut anyref)) (field $left (mut i32))))
+    (type $frame0 (struct (field $resume (mut i32)) (field $s0 (mut i32))))
+    (type $box_i32 (struct (field $v i32)))
+    (type $frame1 (struct (field $resume (mut i32)) (field $s0 (mut i32)) (field $s1 (mut i32)) (field $s2 (mut (ref null $task)))))
+    (type $waiter (struct (field $next (mut (ref null $waiter))) (field $kind i32) (field $target (ref null $task)) (field $slot i32)))
+    (type $arr_any (array (mut anyref)))
+  )
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
-  (data (i32.const 256) "\2a\00\00\00integer overflow: + on i32 at main.bp:6:14")
-  (global $__heap_ptr (mut i32) (i32.const 304))
+  (global $__heap_ptr (mut i32) (i32.const 256))
   ;; @Task — a state machine (decision 392)
-  (func $fetch (param $x i32) (result i32)
-    (local $__fr i32)
-    i32.const 16 ;; the frame: the resume index, then every local
-    call $__alloc
+  (func $fetch (param $x i32) (result (ref null $task))
+    (local $__fr (ref null $frame0))
+    struct.new_default $frame0 ;; the frame: the resume index, then every local
     local.set $__fr
     local.get $__fr
     local.get $x
-    i32.store offset=8
+    struct.set $frame0 $s0
     i32.const 0 ;; fetch__step
     local.get $__fr
     call $__task_start ;; runs to its first await
   )
-  (func $fetch__body (param $__task i32) (result i32)
+  (func $fetch__body (param $__task (ref null $task)) (result i32)
     (local $x i32)
-    (local $__frame i32)
+    (local $__frame (ref null $frame0))
     (local $__seek i32)
     (local $__state i32)
     local.get $__task
-    i32.load offset=16
+    struct.get $task $frame
+    ref.cast (ref null $frame0)
     local.set $__frame
     local.get $__frame
-    i32.load offset=8
+    struct.get $frame0 $s0
     local.set $x
     local.get $__frame
-    i32.load ;; the resume index
+    struct.get $frame0 $resume ;; the resume index
     local.tee $__state
     i32.const 0
     i32.ne
@@ -49,7 +57,7 @@ fn loadTwice(x: i32) -> @Task<i32> {
     local.get $x
     return
   )
-  (func $fetch__step (param $__task i32)
+  (func $fetch__step (param $__task (ref null $task))
     (local $__v i32)
     local.get $__task
     call $fetch__body
@@ -64,42 +72,43 @@ fn loadTwice(x: i32) -> @Task<i32> {
     )
     local.get $__task
     local.get $__v
-    call $__task_settle_i32
+    struct.new $box_i32
+    call $__task_settle
   )
   ;; @Task — a state machine (decision 392)
-  (func $loadTwice (param $x i32) (result i32)
-    (local $__fr i32)
-    i32.const 32 ;; the frame: the resume index, then every local
-    call $__alloc
+  (func $loadTwice (param $x i32) (result (ref null $task))
+    (local $__fr (ref null $frame1))
+    struct.new_default $frame1 ;; the frame: the resume index, then every local
     local.set $__fr
     local.get $__fr
     local.get $x
-    i32.store offset=8
+    struct.set $frame1 $s0
     i32.const 1 ;; loadTwice__step
     local.get $__fr
     call $__task_start ;; runs to its first await
   )
-  (func $loadTwice__body (param $__task i32) (result i32)
+  (func $loadTwice__body (param $__task (ref null $task)) (result i32)
     (local $x i32)
     (local $a i32)
-    (local $__frame i32)
+    (local $__frame (ref null $frame1))
     (local $__seek i32)
     (local $__state i32)
-    (local $__aw1 i32)
+    (local $__aw1 (ref null $task))
     local.get $__task
-    i32.load offset=16
+    struct.get $task $frame
+    ref.cast (ref null $frame1)
     local.set $__frame
     local.get $__frame
-    i32.load offset=8
+    struct.get $frame1 $s0
     local.set $x
     local.get $__frame
-    i32.load offset=16
+    struct.get $frame1 $s1
     local.set $a
     local.get $__frame
-    i32.load offset=24
+    struct.get $frame1 $s2
     local.set $__aw1
     local.get $__frame
-    i32.load ;; the resume index
+    struct.get $frame1 $resume ;; the resume index
     local.tee $__state
     i32.const 0
     i32.ne
@@ -145,16 +154,16 @@ fn loadTwice(x: i32) -> @Task<i32> {
     call $__task_wait
     local.get $__frame
     local.get $x
-    i32.store offset=8
+    struct.set $frame1 $s0
     local.get $__frame
     local.get $a
-    i32.store offset=16
+    struct.set $frame1 $s1
     local.get $__frame
     local.get $__aw1
-    i32.store offset=24
+    struct.set $frame1 $s2
     local.get $__frame
     i32.const 1
-    i32.store ;; the resume index
+    struct.set $frame1 $resume ;; the resume index
     i32.const 1
     global.set $__task_suspended
     i32.const 0
@@ -163,17 +172,19 @@ fn loadTwice(x: i32) -> @Task<i32> {
     )
     )
     local.get $__aw1
-    i32.load offset=8 ;; the settled value
+    struct.get $task $value ;; the settled value
+    ref.cast (ref null $box_i32)
+    struct.get $box_i32 $v
     local.set $a
       )
     )
     local.get $a
     local.get $a
-    i32.const 256
+    global.get $__s0
     call $__i32_add_chk
     return
   )
-  (func $loadTwice__step (param $__task i32)
+  (func $loadTwice__step (param $__task (ref null $task))
     (local $__v i32)
     local.get $__task
     call $loadTwice__body
@@ -188,7 +199,8 @@ fn loadTwice(x: i32) -> @Task<i32> {
     )
     local.get $__task
     local.get $__v
-    call $__task_settle_i32
+    struct.new $box_i32
+    call $__task_settle
   )
   ;; Scratch layout below the data section (which starts at 256):
   ;;   0..8  WASI iovec   8  newline byte
@@ -478,7 +490,8 @@ fn loadTwice(x: i32) -> @Task<i32> {
     i32.const 1
     call $__write_err
   )
-  (func $__panic_fail (param $msg i32)
+  (func $__panic_fail (param $msg (ref null $str))
+    (local $n i32) (local $p i32) (local $i i32) (local $top i32)
     i32.const 188
     i64.const 9071397899755888
     i64.store
@@ -486,10 +499,35 @@ fn loadTwice(x: i32) -> @Task<i32> {
     i32.const 7
     call $__write_err
     local.get $msg
-    i32.const 4
-    i32.add
-    local.get $msg
-    i32.load
+    array.len
+    local.set $n
+    global.get $__heap_ptr
+    local.set $top
+    local.get $n
+    call $__alloc
+    local.set $p
+    (block $brk
+      (loop $cont
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $brk
+        local.get $p
+        local.get $i
+        i32.add
+        local.get $msg
+        local.get $i
+        array.get_u $str
+        i32.store8
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $cont
+      )
+    )
+    local.get $p
+    local.get $n
     call $__write_err
     i32.const 188
     i32.const 10
@@ -497,8 +535,10 @@ fn loadTwice(x: i32) -> @Task<i32> {
     i32.const 188
     i32.const 1
     call $__write_err
+    local.get $top
+    global.set $__heap_ptr
   )
-  (func $__i32_add_chk (param $a i32) (param $b i32) (param $site i32) (result i32)
+  (func $__i32_add_chk (param $a i32) (param $b i32) (param $site (ref null $str)) (result i32)
     (local $r i64)
     local.get $a
     i64.extend_i32_s
@@ -521,7 +561,7 @@ fn loadTwice(x: i32) -> @Task<i32> {
     local.get $r
     i32.wrap_i64
   )
-  (func $__i32_sub_chk (param $a i32) (param $b i32) (param $site i32) (result i32)
+  (func $__i32_sub_chk (param $a i32) (param $b i32) (param $site (ref null $str)) (result i32)
     (local $r i64)
     local.get $a
     i64.extend_i32_s
@@ -544,7 +584,7 @@ fn loadTwice(x: i32) -> @Task<i32> {
     local.get $r
     i32.wrap_i64
   )
-  (func $__i32_mul_chk (param $a i32) (param $b i32) (param $site i32) (result i32)
+  (func $__i32_mul_chk (param $a i32) (param $b i32) (param $site (ref null $str)) (result i32)
     (local $r i64)
     local.get $a
     i64.extend_i32_s
@@ -567,7 +607,7 @@ fn loadTwice(x: i32) -> @Task<i32> {
     local.get $r
     i32.wrap_i64
   )
-  (func $__i64_add_chk (param $a i64) (param $b i64) (param $site i32) (result i64)
+  (func $__i64_add_chk (param $a i64) (param $b i64) (param $site (ref null $str)) (result i64)
     (local $r i64)
     local.get $a
     local.get $b
@@ -591,7 +631,7 @@ fn loadTwice(x: i32) -> @Task<i32> {
     )
     local.get $r
   )
-  (func $__i64_sub_chk (param $a i64) (param $b i64) (param $site i32) (result i64)
+  (func $__i64_sub_chk (param $a i64) (param $b i64) (param $site (ref null $str)) (result i64)
     (local $r i64)
     local.get $a
     local.get $b
@@ -615,7 +655,7 @@ fn loadTwice(x: i32) -> @Task<i32> {
     )
     local.get $r
   )
-  (func $__i64_mul_chk (param $a i64) (param $b i64) (param $site i32) (result i64)
+  (func $__i64_mul_chk (param $a i64) (param $b i64) (param $site (ref null $str)) (result i64)
     (local $r i64)
     local.get $a
     i64.const -1
@@ -656,24 +696,22 @@ fn loadTwice(x: i32) -> @Task<i32> {
     )
     local.get $r
   )
-  (global $__task_head (mut i32) (i32.const 0))
-  (global $__task_tail (mut i32) (i32.const 0))
+  (global $__task_head (mut (ref null $task)) (ref.null $task))
+  (global $__task_tail (mut (ref null $task)) (ref.null $task))
   (global $__task_suspended (mut i32) (i32.const 0))
-  (func $__task_new (param $kind i32) (param $frame i32) (result i32)
-    (local $t i32)
-    i32.const 40
-    call $__alloc
-    local.set $t
-    local.get $t
-    local.get $kind
-    i32.store offset=20
-    local.get $t
+  (func $__task_new (param $kind i32) (param $frame structref) (result (ref null $task))
+    i32.const 0
+    ref.null $waiter
+    ref.null any
     local.get $frame
-    i32.store offset=16
-    local.get $t
+    local.get $kind
+    ref.null $task
+    ref.null any
+    i32.const 0
+    struct.new $task
   )
-  (func $__task_start (param $kind i32) (param $frame i32) (result i32)
-    (local $t i32)
+  (func $__task_start (param $kind i32) (param $frame structref) (result (ref null $task))
+    (local $t (ref null $task))
     local.get $kind
     local.get $frame
     call $__task_new
@@ -681,65 +719,42 @@ fn loadTwice(x: i32) -> @Task<i32> {
     call $__task_resume
     local.get $t
   )
-  (func $__task_pending (param $t i32) (result i32)
+  (func $__task_pending (param $t (ref null $task)) (result i32)
     local.get $t
-    i32.load
+    struct.get $task $state
     i32.eqz
   )
-  (func $__task_listen (param $t i32) (param $kind i32) (param $target i32) (param $index i32)
-    (local $n i32)
-    i32.const 16
-    call $__alloc
-    local.set $n
-    local.get $n
+  (func $__task_listen (param $t (ref null $task)) (param $kind i32) (param $target (ref null $task)) (param $index i32)
+    (local $n (ref null $waiter))
     local.get $t
-    i32.load offset=4
-    i32.store
-    local.get $n
+    struct.get $task $waiters
     local.get $kind
-    i32.store offset=4
-    local.get $n
     local.get $target
-    i32.store offset=8
-    local.get $n
     local.get $index
-    i32.store offset=12
+    struct.new $waiter
+    local.set $n
     local.get $t
     local.get $n
-    i32.store offset=4
+    struct.set $task $waiters
   )
-  (func $__task_wait (param $t i32) (param $w i32)
+  (func $__task_wait (param $t (ref null $task)) (param $w (ref null $task))
     local.get $t
     i32.const 0
     local.get $w
     i32.const 0
     call $__task_listen
   )
-  (func $__task_settle_i32 (param $t i32) (param $v i32)
+  (func $__task_settle (param $t (ref null $task)) (param $v anyref)
     local.get $t
     local.get $v
-    i32.store offset=8
+    struct.set $task $value
     local.get $t
     call $__task_wake
   )
-  (func $__task_settle_i64 (param $t i32) (param $v i64)
+  (func $__task_wake (param $t (ref null $task))
+    (local $n (ref null $waiter)) (local $m (ref null $waiter)) (local $r (ref null $waiter)) (local $k i32) (local $w (ref null $task))
     local.get $t
-    local.get $v
-    i64.store offset=8
-    local.get $t
-    call $__task_wake
-  )
-  (func $__task_settle_f64 (param $t i32) (param $v f64)
-    local.get $t
-    local.get $v
-    f64.store offset=8
-    local.get $t
-    call $__task_wake
-  )
-  (func $__task_wake (param $t i32)
-    (local $n i32) (local $m i32) (local $r i32) (local $k i32) (local $w i32)
-    local.get $t
-    i32.load
+    struct.get $task $state
     (if
       (then
         return
@@ -747,24 +762,27 @@ fn loadTwice(x: i32) -> @Task<i32> {
     )
     local.get $t
     i32.const 1
-    i32.store
+    struct.set $task $state
     local.get $t
-    i32.load offset=4
+    struct.get $task $waiters
     local.set $n
     local.get $t
-    i32.const 0
-    i32.store offset=4
+    ref.null $waiter
+    struct.set $task $waiters
+    local.get $t
+    ref.null struct
+    struct.set $task $frame
     (block $brk
       (loop $cont
         local.get $n
-        i32.eqz
+        ref.is_null
         br_if $brk
         local.get $n
-        i32.load
+        struct.get $waiter $next
         local.set $m
         local.get $n
         local.get $r
-        i32.store
+        struct.set $waiter $next
         local.get $n
         local.set $r
         local.get $m
@@ -775,13 +793,13 @@ fn loadTwice(x: i32) -> @Task<i32> {
     (block $brk
       (loop $cont
         local.get $r
-        i32.eqz
+        ref.is_null
         br_if $brk
         local.get $r
-        i32.load offset=4
+        struct.get $waiter $kind
         local.set $k
         local.get $r
-        i32.load offset=8
+        struct.get $waiter $target
         local.set $w
         local.get $k
         i32.eqz
@@ -797,14 +815,14 @@ fn loadTwice(x: i32) -> @Task<i32> {
         (if
           (then
             local.get $w
-            i32.load
+            struct.get $task $state
             i32.eqz
             (if
               (then
                 local.get $w
                 local.get $t
-                i64.load offset=8
-                i64.store offset=8
+                struct.get $task $value
+                struct.set $task $value
                 local.get $w
                 call $__task_wake
               )
@@ -817,32 +835,31 @@ fn loadTwice(x: i32) -> @Task<i32> {
         (if
           (then
             local.get $w
-            i32.load offset=28
-            i32.const 4
-            i32.add
+            struct.get $task $aux
+            ref.cast (ref null $arr_any)
             local.get $r
-            i32.load offset=12
-            i32.const 4
-            i32.mul
-            i32.add
+            struct.get $waiter $slot
             local.get $t
-            i32.load offset=8
-            i32.store
+            struct.get $task $value
+            array.set $arr_any
             local.get $w
             local.get $w
-            i32.load offset=32
+            struct.get $task $left
             i32.const 1
             i32.sub
-            i32.store offset=32
+            struct.set $task $left
             local.get $w
-            i32.load offset=32
+            struct.get $task $left
             i32.eqz
             (if
               (then
                 local.get $w
                 local.get $w
-                i32.load offset=28
-                i32.store offset=8
+                struct.get $task $aux
+                struct.set $task $value
+                local.get $w
+                ref.null any
+                struct.set $task $aux
                 local.get $w
                 call $__task_wake
               )
@@ -850,47 +867,48 @@ fn loadTwice(x: i32) -> @Task<i32> {
           )
         )
         local.get $r
-        i32.load
+        struct.get $waiter $next
         local.set $r
         br $cont
       )
     )
   )
-  (func $__task_enqueue (param $t i32)
+  (func $__task_enqueue (param $t (ref null $task))
     local.get $t
-    i32.const 0
-    i32.store offset=24
+    ref.null $task
+    struct.set $task $next
     global.get $__task_tail
+    ref.is_null
     (if
       (then
-        global.get $__task_tail
-        local.get $t
-        i32.store offset=24
-      )
-      (else
         local.get $t
         global.set $__task_head
+      )
+      (else
+        global.get $__task_tail
+        local.get $t
+        struct.set $task $next
       )
     )
     local.get $t
     global.set $__task_tail
   )
   (func $__task_drain
-    (local $t i32)
+    (local $t (ref null $task))
     (block $brk
       (loop $cont
         global.get $__task_head
         local.tee $t
-        i32.eqz
+        ref.is_null
         br_if $brk
         local.get $t
-        i32.load offset=24
+        struct.get $task $next
         global.set $__task_head
         global.get $__task_head
-        i32.eqz
+        ref.is_null
         (if
           (then
-            i32.const 0
+            ref.null $task
             global.set $__task_tail
           )
         )
@@ -900,29 +918,29 @@ fn loadTwice(x: i32) -> @Task<i32> {
       )
     )
   )
-  (func $__task_block_on (param $t i32) (result i32)
-    (local $r i32)
+  (func $__task_block_on (param $t (ref null $task)) (result (ref null $task))
+    (local $r (ref null $task))
     (block $brk
       (loop $cont
         local.get $t
-        i32.load
+        struct.get $task $state
         br_if $brk
         global.get $__task_head
         local.tee $r
-        i32.eqz
+        ref.is_null
         (if
           (then
             unreachable
           )
         )
         local.get $r
-        i32.load offset=24
+        struct.get $task $next
         global.set $__task_head
         global.get $__task_head
-        i32.eqz
+        ref.is_null
         (if
           (then
-            i32.const 0
+            ref.null $task
             global.set $__task_tail
           )
         )
@@ -944,10 +962,10 @@ fn loadTwice(x: i32) -> @Task<i32> {
       )
     )
   )
-  (func $__task_resume (param $t i32)
+  (func $__task_resume (param $t (ref null $task))
     (local $k i32)
     local.get $t
-    i32.load offset=20 ;; kind
+    struct.get $task $kind ;; kind
     local.set $k
     local.get $k
     i32.const 0
@@ -974,11 +992,21 @@ fn loadTwice(x: i32) -> @Task<i32> {
   (func $__task_host_poll (result i32)
     i32.const 0
   )
-  (func $__chk_fail (param $site i32)
+  (func $__chk_fail (param $site (ref null $str))
     local.get $site
     call $__panic_fail
     unreachable
   )
+  (data $__d0 "integer overflow: + on i32 at main.bp:6:14")
+  (global $__s0 (mut (ref null $str)) (ref.null $str))
+  (start $__init_strs)
+  (func $__init_strs
+    i32.const 0
+    i32.const 42
+    array.new_data $str $__d0
+    global.set $__s0
+  )
+  (@custom "botopink.needs" "gc\0a")
 )
 ```
 

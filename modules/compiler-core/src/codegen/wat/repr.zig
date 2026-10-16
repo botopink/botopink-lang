@@ -49,6 +49,9 @@ pub const Repr = union(enum) {
         bigint,
         /// A `@Result<A, E>`: its tag and its payload.
         result,
+        /// The frame of state machine `n` (front 164 s2 P4): its resume index
+        /// and every local, typed — what a suspended task keeps.
+        frame: u32,
 
         pub fn eql(a: Kind, b: Kind) bool {
             if (std.meta.activeTag(a) != std.meta.activeTag(b)) return false;
@@ -56,6 +59,7 @@ pub const Repr = union(enum) {
                 .arr => |e| e == b.arr,
                 .record => |n| std.mem.eql(u8, n, b.record),
                 .enum_ => |n| std.mem.eql(u8, n, b.enum_),
+                .frame => |n| n == b.frame,
                 else => true,
             };
         }
@@ -143,6 +147,7 @@ pub const Repr = union(enum) {
                 .bytes => "Bytes",
                 .bigint => "bigint",
                 .result => "@Result",
+                .frame => "a task's frame",
             },
         };
     }

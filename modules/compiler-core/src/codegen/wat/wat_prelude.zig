@@ -2318,6 +2318,468 @@ const gc_panic_fail = typedFunc("__panic_fail", &.{pref("msg")}, null, i32s(&.{ 
     c32(188),        c32(1),                                                       call("__write_err"),           get("top"),              .{ .global_set = heap },
 });
 
+// ── decision 392's scheduler in a GC module (front 164 s2 P4) ────────────────
+//
+// The same scheduler as the linear one above, over GC structs. Its types are
+// the module's own and their indices are known only once the module is
+// lowered, so these forms name them by a slot (`GcSlot`): an index at
+// `gc_slot_base` + the slot, which `wat.zig` replaces by the module's index of
+// the type (`gcRemapFunc`) when it writes the group into the module.
+//
+//   $task   (struct (mut i32) state  — 0 pending, 1 settled
+//                   (mut (ref null $waiter)) waiters
+//                   (mut anyref) value  — a scalar in its box, a reference as it is
+//                   (mut structref) frame  — the state machine's `$frame<n>`
+//                   i32 kind  — `$__task_resume` dispatches on it; -1 for a host
+//                             task or a combinator
+//                   (mut (ref null $task)) next  — its link in the ready queue
+//                   (mut anyref) aux  — `spawn_all`'s answers, `gate_await`'s delay
+//                   (mut i32) left)  — `spawn_all`'s count left
+//   $waiter (struct (mut (ref null $waiter)) next, i32 kind  — 0 a suspended
+//                   task to resume, 1 a `race` to settle, 2 a `spawn_all` slot,
+//                   (ref null $task) target, i32 slot)
+//   $hostn  (struct (mut (ref null $hostn)) next, i32 pollable, (ref null $task) task)
+//   $exn    (struct (ref null $str) msg, i32 print)  — an abort's payload (518)
+//
+// A task settles once: its value is shared, never copied (a reference, or a
+// box nothing writes). A settled task drops what it held — its waiters and
+// its frame — so it is no cycle the host's collector must follow (decision
+// 544, question 544-a): a task waiting on another holds it from its frame,
+// the other holds it back as a waiter until it settles.
+
+/// The types the GC forms name by slot.
+pub const GcSlot = enum(u16) { task, waiter, hostn, closure, arr_any, box_i32, result, exn };
+/// The first slot index: far above any index a module's group reaches.
+pub const gc_slot_base: u16 = 0xF000;
+
+fn gs(comptime s: GcSlot) u16 {
+    return gc_slot_base + @intFromEnum(s);
+}
+fn gref(comptime s: GcSlot) ast.ValType {
+    return ast.ValType.def(gs(s));
+}
+fn sget(comptime s: GcSlot, comptime f: u32) Instr {
+    return .{ .struct_get = .{ .ty = gs(s), .field = f } };
+}
+fn sset(comptime s: GcSlot, comptime f: u32) Instr {
+    return .{ .struct_set = .{ .ty = gs(s), .field = f } };
+}
+fn snew(comptime s: GcSlot) Instr {
+    return .{ .struct_new = gs(s) };
+}
+fn rnull(comptime s: GcSlot) Instr {
+    return .{ .ref_null = gref(s) };
+}
+fn rcast(comptime s: GcSlot) Instr {
+    return .{ .ref_cast = gref(s) };
+}
+fn lref(comptime n: []const u8, comptime s: GcSlot) ast.Local {
+    return .{ .name = n, .ty = gref(s) };
+}
+fn pslot(comptime n: []const u8, comptime s: GcSlot) P {
+    return .{ .name = n, .ty = gref(s) };
+}
+const null_any: Instr = .{ .ref_null = .anyref };
+const null_struct: Instr = .{ .ref_null = .structref };
+const is_null: Instr = .ref_is_null;
+/// `br_if $brk` when the reference on the stack is null.
+const brk_null = [_]Instr{ is_null, brk };
+/// `(struct.new $box_i32 (i32.const n))`.
+fn boxed(comptime n: comptime_int) [2]Instr {
+    return .{ c32(n), snew(.box_i32) };
+}
+
+/// The fields of `$task`.
+const tk = struct {
+    const state = 0;
+    const waiters = 1;
+    const value = 2;
+    const frame = 3;
+    const kind = 4;
+    const next = 5;
+    const aux = 6;
+    const left = 7;
+};
+/// The fields of `$waiter`.
+const wt = struct {
+    const next = 0;
+    const kind = 1;
+    const target = 2;
+    const slot = 3;
+};
+/// The fields of `$hostn`.
+const hn = struct {
+    const next = 0;
+    const h = 1;
+    const t = 2;
+};
+
+/// The ready queue and the host tasks pending, as references.
+pub const gc_task_head_global = ast.Global{ .name = "__task_head", .ty = gref(.task), .mutable = true, .init = "" };
+pub const gc_task_tail_global = ast.Global{ .name = "__task_tail", .ty = gref(.task), .mutable = true, .init = "" };
+pub const gc_task_hosts_global = ast.Global{ .name = "__task_hosts", .ty = gref(.hostn), .mutable = true, .init = "" };
+
+/// A pending task of `kind` over `frame`.
+const gc_task_new = typedFunc("__task_new", &.{ p32("kind"), .{ .name = "frame", .ty = .structref } }, gref(.task), &.{}, &.{
+    c32(0),      rnull(.waiter), null_any, get("frame"), get("kind"), rnull(.task), null_any, c32(0),
+    snew(.task),
+});
+
+/// A task made and run to its first `await` (decision 392 (1)).
+const gc_task_start = typedFunc("__task_start", &.{ p32("kind"), .{ .name = "frame", .ty = .structref } }, gref(.task), &.{lref("t", .task)}, &.{
+    get("kind"), get("frame"), call("__task_new"), tee("t"), call("__task_resume"), get("t"),
+});
+
+const gc_task_pending = typedFunc("__task_pending", &.{pslot("t", .task)}, .i32, &.{}, &.{ get("t"), sget(.task, tk.state), op("eqz") });
+
+/// `target` waits on `t` as a waiter of `kind` (slot `index`).
+const gc_task_listen = typedFunc("__task_listen", &.{ pslot("t", .task), p32("kind"), pslot("target", .task), p32("index") }, null, &.{lref("n", .waiter)}, &.{
+    get("t"), sget(.task, tk.waiters), get("kind"),             get("target"), get("index"), snew(.waiter), set("n"),
+    get("t"), get("n"),                sset(.task, tk.waiters),
+});
+
+/// The suspended task `w` resumes when `t` settles.
+const gc_task_wait = typedFunc("__task_wait", &.{ pslot("t", .task), pslot("w", .task) }, null, &.{}, &.{
+    get("t"), c32(0), get("w"), c32(0), call("__task_listen"),
+});
+
+/// `t` settles with `v`.
+const gc_task_settle = typedFunc("__task_settle", &.{ pslot("t", .task), .{ .name = "v", .ty = .anyref } }, null, &.{}, &.{
+    get("t"), get("v"), sset(.task, tk.value), get("t"), call("__task_wake"),
+});
+
+/// `t` settles — once. It drops its waiters and its frame (cycle hygiene),
+/// then what waited on it, in the order it began waiting: a suspended task
+/// joins the ready queue, a `race` settles with this value, a `spawn_all`
+/// slot takes it and the combinator settles with its answers when the last
+/// slot is filled.
+const gc_task_wake = typedFunc("__task_wake", &.{pslot("t", .task)}, null, &.{ lref("n", .waiter), lref("m", .waiter), lref("r", .waiter), l32("k"), lref("w", .task) }, &.{
+    get("t"), sget(.task, tk.state),   when(&.{ret}),
+    get("t"), c32(1),                  sset(.task, tk.state),
+    get("t"), sget(.task, tk.waiters), set("n"),
+    get("t"), rnull(.waiter),          sset(.task, tk.waiters),
+    get("t"), null_struct,             sset(.task, tk.frame),
+    loop(&.{
+        get("n"), is_null,                brk,
+        get("n"), sget(.waiter, wt.next), set("m"),
+        get("n"), get("r"),               sset(.waiter, wt.next),
+        get("n"), set("r"),               get("m"),
+        set("n"), again,
+    }),
+    loop(&.{
+        get("r"), is_null,                  brk,
+        get("r"), sget(.waiter, wt.kind),   set("k"),
+        get("r"), sget(.waiter, wt.target), set("w"),
+        get("k"), op("eqz"),                when(&.{ get("w"), call("__task_enqueue") }),
+        get("k"), c32(1),                   op("eq"),
+        when(&.{
+            get("w"),                                                                                                    sget(.task, tk.state), op("eqz"),
+            when(&.{ get("w"), get("t"), sget(.task, tk.value), sset(.task, tk.value), get("w"), call("__task_wake") }),
+        }),
+        get("k"), c32(2),                   op("eq"),
+        when(&.{
+            get("w"),             sget(.task, tk.aux),   rcast(.arr_any),                                                                                                                                    get("r"),             sget(.waiter, wt.slot),
+            get("t"),             sget(.task, tk.value), .{ .array_set = gs(.arr_any) },                                                                                                                     get("w"),             get("w"),
+            sget(.task, tk.left), c32(1),                op("sub"),                                                                                                                                          sset(.task, tk.left), get("w"),
+            sget(.task, tk.left), op("eqz"),             when(&.{ get("w"), get("w"), sget(.task, tk.aux), sset(.task, tk.value), get("w"), null_any, sset(.task, tk.aux), get("w"), call("__task_wake") }),
+        }),
+        get("r"), sget(.waiter, wt.next),   set("r"),
+        again,
+    }),
+});
+
+const gc_task_enqueue = typedFunc("__task_enqueue", &.{pslot("t", .task)}, null, &.{}, &.{
+    get("t"),            rnull(.task),        sset(.task, tk.next),
+    gget("__task_tail"), is_null,             whenElse(&.{ get("t"), gset("__task_head") }, &.{ gget("__task_tail"), get("t"), sset(.task, tk.next) }),
+    get("t"),            gset("__task_tail"),
+});
+
+/// Resume the ready tasks until none is left.
+const gc_task_drain = typedFunc("__task_drain", &.{}, null, &.{lref("t", .task)}, &.{
+    loop(&.{
+        gget("__task_head"), tee("t"),                                      is_null,             brk,
+        get("t"),            sget(.task, tk.next),                          gset("__task_head"), gget("__task_head"),
+        is_null,             when(&.{ rnull(.task), gset("__task_tail") }), get("t"),            call("__task_resume"),
+        again,
+    }),
+});
+
+/// `await t` where no state machine can suspend: the ready tasks run until
+/// `t` settles; a task still waiting on the host traps (decision 394's parity).
+const gc_task_block_on = typedFunc("__task_block_on", &.{pslot("t", .task)}, gref(.task), &.{lref("r", .task)}, &.{
+    loop(&.{
+        get("t"),                                      sget(.task, tk.state), brk,
+        gget("__task_head"),                           tee("r"),              is_null,
+        when(&.{.@"unreachable"}),                     get("r"),              sget(.task, tk.next),
+        gset("__task_head"),                           gget("__task_head"),   is_null,
+        when(&.{ rnull(.task), gset("__task_tail") }), get("r"),              call("__task_resume"),
+        again,
+    }),
+    get("t"),
+});
+
+/// A host task's pollable joins the pending list.
+const gc_task_host_add = typedFunc("__task_host_add", &.{ p32("h"), pslot("t", .task) }, null, &.{}, &.{
+    gget("__task_hosts"), get("h"), get("t"), snew(.hostn), gset("__task_hosts"),
+});
+
+/// The host answered pollable `h`: its task leaves the pending list and
+/// settles. `1` when `h` was pending.
+const gc_task_host_settle = typedFunc("__task_host_settle", &.{p32("h")}, .i32, &.{ lref("p", .hostn), lref("n", .hostn) }, &.{
+    gget("__task_hosts"), set("n"),
+    loop(&.{
+        get("n"),              is_null,            brk,
+        get("n"),              sget(.hostn, hn.h), get("h"),
+        op("eq"),
+        when(&.{
+            get("p"),                                                                                                                                      is_null,
+            whenElse(&.{ get("n"), sget(.hostn, hn.next), gset("__task_hosts") }, &.{ get("p"), get("n"), sget(.hostn, hn.next), sset(.hostn, hn.next) }), get("n"),
+            sget(.hostn, hn.t),                                                                                                                            call("__task_wake"),
+            c32(1),                                                                                                                                        ret,
+        }),
+        get("n"),              set("p"),           get("n"),
+        sget(.hostn, hn.next), set("n"),           again,
+    }),
+    c32(0),
+});
+
+/// Host task `t`'s pollable leaves the pending list and is dropped; `t`
+/// stays pending.
+const gc_task_host_cancel = typedFunc("__task_host_cancel", &.{pslot("t", .task)}, null, &.{ lref("p", .hostn), lref("n", .hostn) }, &.{
+    gget("__task_hosts"), set("n"),
+    loop(&.{
+        get("n"),              is_null,            brk,
+        get("n"),              sget(.hostn, hn.t), get("t"),
+        .ref_eq,
+        when(&.{
+            get("p"),                                                                                                                                      is_null,
+            whenElse(&.{ get("n"), sget(.hostn, hn.next), gset("__task_hosts") }, &.{ get("p"), get("n"), sget(.hostn, hn.next), sset(.hostn, hn.next) }), get("n"),
+            sget(.hostn, hn.h),                                                                                                                            call("bp_host_drop"),
+            ret,
+        }),
+        get("n"),              set("p"),           get("n"),
+        sget(.hostn, hn.next), set("n"),           again,
+    }),
+});
+
+/// The `wasi` host's poll over the GC list: the pollables copied into a
+/// scratch list in linear memory (what `bp_host.wait` reads), the ready ones
+/// settled and dropped, the scratch given back. `0` when nothing is pending.
+pub const gc_task_host_poll_wasi = typedFunc("__task_host_poll", &.{}, .i32, &.{ l32("n"), l32("buf"), l32("out"), l32("k"), l32("i"), l32("h"), l32("top"), lref("node", .hostn) }, &.{
+    gget("__task_hosts"),                                                                                                                 set("node"),
+    loop(&.{ get("node"), is_null, brk, get("n"), c32(1), op("add"), set("n"), get("node"), sget(.hostn, hn.next), set("node"), again }), get("n"),
+    op("eqz"),                                                                                                                            when(&.{ c32(0), ret }),
+    gget(heap),                                                                                                                           set("top"),
+    get("n"),                                                                                                                             c32(4),
+    op("mul"),                                                                                                                            call("__alloc"),
+    set("buf"),                                                                                                                           get("n"),
+    c32(4),                                                                                                                               op("mul"),
+    call("__alloc"),                                                                                                                      set("out"),
+    gget("__task_hosts"),                                                                                                                 set("node"),
+    loop(&.{
+        get("node"),        is_null,               brk,
+        get("buf"),         get("i"),              c32(4),
+        op("mul"),          op("add"),             get("node"),
+        sget(.hostn, hn.h), store(0),              get("i"),
+        c32(1),             op("add"),             set("i"),
+        get("node"),        sget(.hostn, hn.next), set("node"),
+        again,
+    }),
+    get("buf"),                                                                                                                           get("n"),
+    get("out"),                                                                                                                           call("bp_host_wait"),
+    set("k"),                                                                                                                             c32(0),
+    set("i"),
+    loop(&.{
+        get("i"),             get("k"),                   op("ge_u"), brk,
+        get("buf"),           get("out"),                 get("i"),   c32(4),
+        op("mul"),            op("add"),                  load(0),    c32(4),
+        op("mul"),            op("add"),                  load(0),    set("h"),
+        get("h"),             call("__task_host_settle"), .drop,      get("h"),
+        call("bp_host_drop"), get("i"),                   c32(1),     op("add"),
+        set("i"),             again,
+    }),
+    get("top"),                                                                                                                           gset(heap),
+    c32(1),
+});
+
+/// `wasi:delay` — a task holding `v`, settled when the host's pollable for
+/// `ms` milliseconds is ready. A negative duration is `0`.
+const gc_task_delay = typedFunc("__task_delay", &.{ p32("ms"), .{ .name = "v", .ty = .anyref } }, gref(.task), &.{lref("t", .task)}, &.{
+    get("ms"),             c32(0),      op("lt_s"),              when(&.{ c32(0), set("ms") }),
+    c32(-1),               null_struct, call("__task_new"),      set("t"),
+    get("t"),              get("v"),    sset(.task, tk.value),   get("ms"),
+    call("bp_host_delay"), get("t"),    call("__task_host_add"), get("t"),
+});
+
+/// `wasi:race` — the first of `xs` to settle: one settled already, the first
+/// in input order; else the task waits on all of them. An empty list traps.
+const gc_task_race = typedFunc("__task_race", &.{pslot("xs", .arr_any)}, gref(.task), &.{ l32("n"), l32("i"), lref("t", .task), lref("r", .task) }, &.{
+    get("xs"), .array_len,  set("n"),
+    get("n"),  op("eqz"),   when(&.{.@"unreachable"}),
+    c32(-1),   null_struct, call("__task_new"),
+    set("r"),
+    loop(&.{
+        get("i"),  get("n"), op("ge_u"),                                brk,
+        get("xs"), get("i"), .{ .array_get = .{ .ty = gs(.arr_any) } }, rcast(.task),
+        set("t"),  get("t"), sget(.task, tk.state),                     when(&.{ get("r"), get("t"), sget(.task, tk.value), sset(.task, tk.value), get("r"), call("__task_wake"), get("r"), ret }),
+        get("i"),  c32(1),   op("add"),                                 set("i"),
+        again,
+    }),
+    c32(0),    set("i"),
+    loop(&.{
+        get("i"),  get("n"), op("ge_u"),                                brk,
+        get("xs"), get("i"), .{ .array_get = .{ .ty = gs(.arr_any) } }, rcast(.task),
+        c32(1),    get("r"), c32(0),                                    call("__task_listen"),
+        get("i"),  c32(1),   op("add"),                                 set("i"),
+        again,
+    }),
+    get("r"),
+});
+
+/// Thunk `f` called: the task it answers (decision 392: started, run to its
+/// first `await`). A function value is a `$closure`, called through the table
+/// with no argument (`gcClosureSig(0)`).
+fn callThunk(comptime f: []const u8) [5]Instr {
+    return .{ get(f), get(f), sget(.closure, 0), .{ .call_indirect = .{ .params = &.{gref(.closure)}, .result = .anyref } }, rcast(.task) };
+}
+
+/// `wasi:race_of` — every thunk of `fs` called in order, then raced.
+const gc_task_race_of = typedFunc("__task_race_of", &.{pslot("fs", .arr_any)}, gref(.task), &.{ l32("n"), l32("i"), lref("xs", .arr_any), lref("f", .closure) }, &([_]Instr{
+    get("fs"), .array_len,                             set("n"),
+    get("n"),  .{ .array_new_default = gs(.arr_any) }, set("xs"),
+    loop(&([_]Instr{
+        get("i"),  get("n"),  op("ge_u"),                                brk,
+        get("fs"), get("i"),  .{ .array_get = .{ .ty = gs(.arr_any) } }, rcast(.closure),
+        set("f"),  get("xs"), get("i"),
+    } ++ callThunk("f") ++ [_]Instr{
+        .{ .array_set = gs(.arr_any) },
+        get("i"),
+        c32(1),
+        op("add"),
+        set("i"),
+        again,
+    })),
+    get("xs"), call("__task_race"),
+}));
+
+/// `wasi:spawn_all` — every thunk of `fs` called in order; the task settles
+/// with their answers in input order once the last of them has settled.
+const gc_task_spawn_all = typedFunc("__task_spawn_all", &.{pslot("fs", .arr_any)}, gref(.task), &.{ l32("n"), l32("i"), lref("out", .arr_any), lref("f", .closure), lref("t", .task), lref("r", .task) }, &([_]Instr{
+    get("fs"),                                                                                                                       .array_len,                             set("n"),
+    get("n"),                                                                                                                        .{ .array_new_default = gs(.arr_any) }, set("out"),
+    c32(-1),                                                                                                                         null_struct,                            call("__task_new"),
+    set("r"),                                                                                                                        get("r"),                               get("out"),
+    sset(.task, tk.aux),                                                                                                             get("r"),                               get("n"),
+    sset(.task, tk.left),
+    loop(&([_]Instr{
+        get("i"),  get("n"), op("ge_u"),                                brk,
+        get("fs"), get("i"), .{ .array_get = .{ .ty = gs(.arr_any) } }, rcast(.closure),
+        set("f"),
+    } ++ callThunk("f") ++ [_]Instr{
+        set("t"),
+        get("t"),
+        sget(.task, tk.state),
+        whenElse(&.{
+            get("out"),           get("i"), get("t"),             sget(.task, tk.value), .{ .array_set = gs(.arr_any) },
+            get("r"),             get("r"), sget(.task, tk.left), c32(1),                op("sub"),
+            sset(.task, tk.left),
+        }, &.{ get("t"), c32(2), get("r"), get("i"), call("__task_listen") }),
+        get("i"),
+        c32(1),
+        op("add"),
+        set("i"),
+        again,
+    })),
+    get("r"),                                                                                                                        sget(.task, tk.left),                   op("eqz"),
+    when(&.{ get("r"), get("out"), sset(.task, tk.value), get("r"), null_any, sset(.task, tk.aux), get("r"), call("__task_wake") }), get("r"),
+}));
+
+/// `wasi:gate_new` — a closed gate: a pending task no host answers.
+const gc_task_gate_new = typedFunc("__task_gate_new", &.{}, gref(.task), &.{}, &.{ c32(-1), null_struct, call("__task_new") });
+
+/// `wasi:gate_open` — gate `g` opens: the timer of each wait still pending on
+/// it is dropped, then every wait answers `1`. Opening an open gate changes
+/// nothing.
+const gc_task_gate_open = typedFunc("__task_gate_open", &.{.{ .name = "g", .ty = .anyref }}, null, &.{ lref("t", .task), lref("n", .waiter), lref("r", .task) }, &([_]Instr{
+    get("g"), rcast(.task),            set("t"),
+    get("t"), sget(.task, tk.state),   when(&.{ret}),
+    get("t"), sget(.task, tk.waiters), set("n"),
+    loop(&.{
+        get("n"), is_null,                  brk,
+        get("n"), sget(.waiter, wt.target), set("r"),
+        get("n"), sget(.waiter, wt.kind),   c32(1),
+        op("eq"),
+        when(&.{
+            get("r"),                                                                                                                                           sget(.task, tk.state), op("eqz"),
+            when(&.{ get("r"), sget(.task, tk.aux), is_null, op("eqz"), when(&.{ get("r"), sget(.task, tk.aux), rcast(.task), call("__task_host_cancel") }) }),
+        }),
+        get("n"), sget(.waiter, wt.next),   set("n"),
+        again,
+    }),
+    get("t"),
+} ++ boxed(1) ++ [_]Instr{call("__task_settle")}));
+
+/// `wasi:gate_await` — a task answering `1` when gate `g` opens (at once when
+/// it is open), `0` when `ms` milliseconds pass first.
+const gc_task_gate_await = typedFunc("__task_gate_await", &.{ .{ .name = "g", .ty = .anyref }, p32("ms") }, gref(.task), &.{ lref("t", .task), lref("r", .task), lref("d", .task) }, &([_]Instr{
+    get("g"),                                                                                    rcast(.task), set("t"),
+    c32(-1),                                                                                     null_struct,  call("__task_new"),
+    set("r"),                                                                                    get("t"),     sget(.task, tk.state),
+    when(&([_]Instr{get("r")} ++ boxed(1) ++ [_]Instr{ call("__task_settle"), get("r"), ret })), get("ms"),
+} ++ boxed(0) ++ [_]Instr{
+    call("__task_delay"),  set("d"),
+    get("r"),              get("d"),
+    sset(.task, tk.aux),   get("t"),
+    c32(1),                get("r"),
+    c32(0),                call("__task_listen"),
+    get("d"),              c32(1),
+    get("r"),              c32(0),
+    call("__task_listen"), get("r"),
+}));
+
+/// The program's exception tag in a GC module (decision 518): its one value
+/// an `$exn`, as an `anyref`.
+pub const gc_panic_tag = ast.Tag{ .name = "__bp_panic", .params = &.{.anyref} };
+
+/// `$__panic_raise(msg, print)` — the abort's `$exn`, thrown.
+const gc_panic_raise = typedFunc("__panic_raise", &.{ pref("msg"), p32("print") }, null, &.{}, &.{
+    get("msg"), get("print"), snew(.exn), .{ .throw = "__bp_panic" },
+});
+
+/// `wasi:attempt` — `$__wasi_attempt(f)`: the thunk `f` called inside a
+/// `try_table` catching `$__bp_panic`; a `$result` — `Ok` (0) of the thunk's
+/// answer, or `Error` (1) of the abort's message.
+const gc_wasi_attempt = typedFunc("__wasi_attempt", &.{pslot("f", .closure)}, gref(.result), &.{ .{ .name = "v", .ty = .anyref }, sref("m") }, &.{
+    .{ .block = .{ .kind = .block, .label = "caught", .result = .anyref, .body = seqOf(&.{
+        .{ .block = .{ .kind = .try_table, .result = .anyref, .catches = &.{.{ .tag = "__bp_panic", .label = "caught" }}, .body = seqOf(&.{
+            get("f"), get("f"), sget(.closure, 0), .{ .call_indirect = .{ .params = &.{gref(.closure)}, .result = .anyref } },
+        }, .{ .value = .anyref }) } },
+        .{ .local_set = "v" },
+        c32(0),
+        get("v"),
+        snew(.result),
+        ret,
+    }, .terminated) } },
+    rcast(.exn),
+    sget(.exn, 0),
+    .{ .local_set = "m" },
+    c32(1),
+    get("m"),
+    snew(.result),
+});
+
+/// `$__chk_fail(site)` of a GC module with exceptions: the abort raised.
+pub const gc_chk_fail_raise = typedFunc("__chk_fail", &.{pref("site")}, null, &.{}, &.{ get("site"), c32(1), call("__panic_raise"), .@"unreachable" });
+
+/// The GC forms of the scheduler's groups (`gcItems`).
+const gc_task_items = [_]ast.Item{
+    .{ .global = gc_task_head_global }, .{ .global = gc_task_tail_global }, .{ .global = task_suspended_global },
+    .{ .func = gc_task_new },           .{ .func = gc_task_start },         .{ .func = gc_task_pending },
+    .{ .func = gc_task_listen },        .{ .func = gc_task_wait },          .{ .func = gc_task_settle },
+    .{ .func = gc_task_wake },          .{ .func = gc_task_enqueue },       .{ .func = gc_task_drain },
+    .{ .func = gc_task_block_on },      .{ .func = task_finish },
+};
+
 /// The GC form of group `g` (front 164 s2): its own items when it moves no
 /// string, its GC functions when it does, null when it has none yet — a
 /// module that needs such a group is lowered in linear memory. `capture`: the
@@ -2346,7 +2808,30 @@ pub fn gcItems(g: ast.HelperGroup, capture: bool) ?[]const ast.Item {
         .u64_chk => &gc_u64_chk_items,
         .nz_chk => &gc_nz_chk_items,
         .chk_fail => &.{.{ .func = gc_chk_fail }},
+        // Front 164 s2 P4 — the scheduler over GC structs; its types named
+        // by slot (`GcSlot`), which `wat.zig` resolves for the module. The
+        // dispatch (`task_resume`), the `wasi` poll and the `browser` entry
+        // are the module's (`wat.zig`), as in linear memory.
+        .task => &gc_task_items,
+        .task_poll => items(g),
+        .task_host => &.{ .{ .global = gc_task_hosts_global }, .{ .func = gc_task_host_add }, .{ .func = gc_task_host_settle } },
+        .task_delay => &.{.{ .func = gc_task_delay }},
+        .task_race => &.{.{ .func = gc_task_race }},
+        .task_race_of => &.{.{ .func = gc_task_race_of }},
+        .task_spawn_all => &.{.{ .func = gc_task_spawn_all }},
+        .task_gate => &.{ .{ .func = gc_task_host_cancel }, .{ .func = gc_task_gate_new }, .{ .func = gc_task_gate_open }, .{ .func = gc_task_gate_await } },
+        .panic_raise => &.{.{ .func = gc_panic_raise }},
+        .wasi_attempt => &.{.{ .func = gc_wasi_attempt }},
         else => null,
+    };
+}
+
+/// The groups whose GC form names a type by slot (`GcSlot`): `wat.zig`
+/// resolves each of their items for the module (`gcRemapItem`).
+pub fn gcSlotted(g: ast.HelperGroup) bool {
+    return switch (g) {
+        .task, .task_host, .task_delay, .task_race, .task_race_of, .task_spawn_all, .task_gate, .panic_raise, .wasi_attempt => true,
+        else => false,
     };
 }
 

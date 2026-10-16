@@ -20,95 +20,66 @@ fn main() {
 ----- WASM TEXT -- main.wat
 ```wasm
 (module
+  (rec
+    (type $str (array (mut i8)))
+    (type $rec_UserError (struct (field $f0 (mut (ref null $str)))))
+    (type $result (struct (field $tag (mut i32)) (field $payload (mut anyref))))
+    (type $box_i32 (struct (field $v i32)))
+  )
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
-  (data (i32.const 256) "\11\00\00\00R\tUserError\01\03msgs")
-  (data (i32.const 280) "\0c\00\00\00name missing")
-  (data (i32.const 296) "\0b\00\00\00age missing")
-  (data (i32.const 312) "\09\00\00\00anonymous")
-  (global $__heap_ptr (mut i32) (i32.const 328))
-  (func $fetchName (result i32)
+  (global $__heap_ptr (mut i32) (i32.const 256))
+  (func $fetchName (result (ref null $result))
     (local $__mem0 i32)
-    (local $_res0 i32)
-    i32.const 8
-    call $__alloc
-    local.set $_res0
-    local.get $_res0
     i32.const 1
-    i32.store ;; Result tag (Error)
-    local.get $_res0
-    i32.const 8
-    call $__alloc
-    local.set $__mem0
-    local.get $__mem0
-    i32.const 260
-    i32.store
-    local.get $__mem0
-    i32.const 280
-    i32.store offset=4
-    local.get $__mem0
-    i32.const 4
-    i32.add
-    i32.store offset=4 ;; payload
-    local.get $_res0
+    global.get $__s0
+    struct.new $rec_UserError
+    struct.new $result
     return
   )
-  (func $fetchAge (result i32)
+  (func $fetchAge (result (ref null $result))
     (local $__mem0 i32)
-    (local $_res0 i32)
-    i32.const 8
-    call $__alloc
-    local.set $_res0
-    local.get $_res0
     i32.const 1
-    i32.store ;; Result tag (Error)
-    local.get $_res0
-    i32.const 8
-    call $__alloc
-    local.set $__mem0
-    local.get $__mem0
-    i32.const 260
-    i32.store
-    local.get $__mem0
-    i32.const 296
-    i32.store offset=4
-    local.get $__mem0
-    i32.const 4
-    i32.add
-    i32.store offset=4 ;; payload
-    local.get $_res0
+    global.get $__s1
+    struct.new $rec_UserError
+    struct.new $result
     return
   )
   (func $loadUser
     (local $_try0 i32)
     (local $_try1 i32)
-    (local $name i32)
+    (local $name (ref null $str))
     (local $age i32)
+    (local $__gc0 (ref null $result))
+    (local $__gc1 (ref null $result))
     call $fetchName
-    local.set $_try0
-    local.get $_try0
-    i32.load ;; Result tag (0 = Ok, non-zero = Error)
-    (if (result i32)
+    local.set $__gc0
+    local.get $__gc0
+    struct.get $result $tag ;; Result tag (0 = Ok, non-zero = Error)
+    (if (result (ref null $str))
       (then
-    i32.const 312
+    global.get $__s2
       )
       (else
-    local.get $_try0
-    i32.load offset=4 ;; Ok payload
+    local.get $__gc0
+    struct.get $result $payload ;; Ok payload
+    ref.cast (ref null $str)
       )
     )
     local.set $name
     call $fetchAge
-    local.set $_try1
-    local.get $_try1
-    i32.load ;; Result tag (0 = Ok, non-zero = Error)
+    local.set $__gc1
+    local.get $__gc1
+    struct.get $result $tag ;; Result tag (0 = Ok, non-zero = Error)
     (if (result i32)
       (then
     i32.const 0
       )
       (else
-    local.get $_try1
-    i32.load offset=4 ;; Ok payload
+    local.get $__gc1
+    struct.get $result $payload ;; Ok payload
+    ref.cast (ref null $box_i32)
+    struct.get $box_i32 $v
       )
     )
     local.set $age
@@ -306,24 +277,43 @@ fn main() {
       )
     )
   )
-  (func $__print_str_raw (param $s i32)
+  (func $__print_str_raw (param $s (ref null $str))
+    (local $n i32) (local $p i32) (local $i i32) (local $top i32)
     local.get $s
-    i32.const 256
-    i32.lt_u
-    (if
-      (then
-        ;; a pointer below the data floor is not a string
-        unreachable
+    array.len
+    local.set $n
+    global.get $__heap_ptr
+    local.set $top
+    local.get $n
+    call $__alloc
+    local.set $p
+    (block $brk
+      (loop $cont
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $brk
+        local.get $p
+        local.get $i
+        i32.add
+        local.get $s
+        local.get $i
+        array.get_u $str
+        i32.store8
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $cont
       )
     )
-    local.get $s
-    i32.const 4
-    i32.add
-    local.get $s
-    i32.load
+    local.get $p
+    local.get $n
     call $__write_bytes
+    local.get $top
+    global.set $__heap_ptr
   )
-  (func $__print_str (param $s i32)
+  (func $__print_str (param $s (ref null $str))
     local.get $s
     call $__print_str_raw
     call $__print_nl
@@ -376,6 +366,28 @@ fn main() {
     global.set $__heap_ptr
     local.get $p
   )
+  (data $__d0 "name missing")
+  (global $__s0 (mut (ref null $str)) (ref.null $str))
+  (data $__d1 "age missing")
+  (global $__s1 (mut (ref null $str)) (ref.null $str))
+  (data $__d2 "anonymous")
+  (global $__s2 (mut (ref null $str)) (ref.null $str))
+  (start $__init_strs)
+  (func $__init_strs
+    i32.const 0
+    i32.const 12
+    array.new_data $str $__d0
+    global.set $__s0
+    i32.const 0
+    i32.const 11
+    array.new_data $str $__d1
+    global.set $__s1
+    i32.const 0
+    i32.const 9
+    array.new_data $str $__d2
+    global.set $__s2
+  )
+  (@custom "botopink.needs" "gc\0a")
 )
 ```
 

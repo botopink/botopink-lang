@@ -55,6 +55,46 @@ test "wat: front 164 s3 ---- a std: cell naming a .wat leaf is the leaf, read in
     try std.testing.expectEqualStrings("9\n0\n233\n26412\n-1\n-1\n128512\n", o.result.run_output orelse "");
 }
 
+// Front 164 s2 P4 — a task is a `$task` in a WasmGC module: an asynchronous
+// function's frame a typed struct, the value boxed when it settles, an
+// `async { }` block a lifted state machine, and `await` outside a machine the
+// scheduler run in place.
+test "wat: front 164 s2 P4 ---- tasks and their frames are GC structs" {
+    const io = std.testing.io;
+    const alloc = std.testing.allocator;
+    var outputs = try h.generate(alloc, &.{.{ .path = "", .source =
+        \\fn twice(n: i32) -> @Task<i32> {
+        \\    return n * 2;
+        \\}
+        \\fn greet(name: string) -> @Task<string> {
+        \\    val n = await twice(21);
+        \\    return name + " " + n.toString();
+        \\}
+        \\fn run() -> @Task<void> {
+        \\    val b = async {
+        \\        val g = await greet("hi");
+        \\        return g;
+        \\    };
+        \\    @print(await b);
+        \\}
+        \\fn main() {
+        \\    run();
+        \\}
+    }}, io, h.configs[3]);
+    defer {
+        for (outputs.items) |*o| o.result.deinit(alloc);
+        outputs.deinit(alloc);
+    }
+    const o = for (outputs.items) |o| {
+        if (std.mem.eql(u8, o.name, "") or std.mem.eql(u8, o.name, "main")) break o;
+    } else return error.ModuleDidNotCompile;
+    const wat_text = o.result.js;
+    try std.testing.expect(std.mem.indexOf(u8, wat_text, "(type $task (struct") != null);
+    try std.testing.expect(std.mem.indexOf(u8, wat_text, "(func $__task_settle (param $t (ref null $task)) (param $v anyref)") != null);
+    try std.testing.expect(std.mem.indexOf(u8, wat_text, "struct.new_default $frame") != null);
+    try std.testing.expectEqualStrings("hi 42\n", o.result.run_output orelse "");
+}
+
 // Front 164 s3 P1-a — `text.byteLength`, `text.byteAt`, `text.byteSlice` and
 // `text.fromCodepoint` are `.wat` leaves too. No String method is bound to
 // them yet and a `std:` cell is std's alone (decision 445), so the program is
@@ -2850,7 +2890,8 @@ fn wasmNeedsOfSource(allocator: Allocator, src: []const u8) !bpAst.WasmNeeds {
 
 // Decision 518 (2) — the compiler gathers the `needs` of what the program
 // REACHES: `std/failure` linked and `attempt` never called asks for no
-// exception handling, and the module carries no `botopink.needs` section.
+// exception handling. The module is a WasmGC one (front 164 s2), so `gc` is
+// the one need its section names.
 test "wat: needs ---- std/failure linked and attempt never called asks for nothing" {
     const needs = try wasmNeedsOfSource(std.testing.allocator,
         \\import {failure} from "std";
@@ -2858,7 +2899,9 @@ test "wat: needs ---- std/failure linked and attempt never called asks for nothi
         \\    @print("no attempt");
         \\}
     );
-    try std.testing.expectEqual(@as(usize, 0), needs.count());
+    try std.testing.expect(!needs.contains(.exceptions));
+    try std.testing.expect(needs.contains(.gc));
+    try std.testing.expectEqual(@as(usize, 1), needs.count());
 }
 
 // ... and a call of `attempt` asks for `Exceptions`.

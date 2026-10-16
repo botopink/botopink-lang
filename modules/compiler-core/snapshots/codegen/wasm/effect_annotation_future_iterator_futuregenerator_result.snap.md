@@ -19,35 +19,44 @@ fn parse(n: i32) -> @Result<i32, string> {
 ----- WASM TEXT -- main.wat
 ```wasm
 (module
+  (rec
+    (type $str (array (mut i8)))
+    (type $task (struct (field $state (mut i32)) (field $waiters (mut (ref null $waiter))) (field $value (mut anyref)) (field $frame (mut structref)) (field $kind i32) (field $next (mut (ref null $task))) (field $aux (mut anyref)) (field $left (mut i32))))
+    (type $frame0 (struct (field $resume (mut i32)) (field $s0 (mut i32))))
+    (type $box_i32 (struct (field $v i32)))
+    (type $arr_i32 (array (mut i32)))
+    (type $arr_any (array (mut anyref)))
+    (type $result (struct (field $tag (mut i32)) (field $payload (mut anyref))))
+    (type $waiter (struct (field $next (mut (ref null $waiter))) (field $kind i32) (field $target (ref null $task)) (field $slot i32)))
+  )
   (memory (export "memory") 1)
-  (data (i32.const 256) "\08\00\00\00negative")
-  (global $__heap_ptr (mut i32) (i32.const 268))
+  (global $__heap_ptr (mut i32) (i32.const 256))
   ;; @Task — a state machine (decision 392)
-  (func $fetch (param $x i32) (result i32)
-    (local $__fr i32)
-    i32.const 16 ;; the frame: the resume index, then every local
-    call $__alloc
+  (func $fetch (param $x i32) (result (ref null $task))
+    (local $__fr (ref null $frame0))
+    struct.new_default $frame0 ;; the frame: the resume index, then every local
     local.set $__fr
     local.get $__fr
     local.get $x
-    i32.store offset=8
+    struct.set $frame0 $s0
     i32.const 0 ;; fetch__step
     local.get $__fr
     call $__task_start ;; runs to its first await
   )
-  (func $fetch__body (param $__task i32) (result i32)
+  (func $fetch__body (param $__task (ref null $task)) (result i32)
     (local $x i32)
-    (local $__frame i32)
+    (local $__frame (ref null $frame0))
     (local $__seek i32)
     (local $__state i32)
     local.get $__task
-    i32.load offset=16
+    struct.get $task $frame
+    ref.cast (ref null $frame0)
     local.set $__frame
     local.get $__frame
-    i32.load offset=8
+    struct.get $frame0 $s0
     local.set $x
     local.get $__frame
-    i32.load ;; the resume index
+    struct.get $frame0 $resume ;; the resume index
     local.tee $__state
     i32.const 0
     i32.ne
@@ -55,7 +64,7 @@ fn parse(n: i32) -> @Result<i32, string> {
     local.get $x
     return
   )
-  (func $fetch__step (param $__task i32)
+  (func $fetch__step (param $__task (ref null $task))
     (local $__v i32)
     local.get $__task
     call $fetch__body
@@ -70,82 +79,107 @@ fn parse(n: i32) -> @Result<i32, string> {
     )
     local.get $__task
     local.get $__v
-    call $__task_settle_i32
+    struct.new $box_i32
+    call $__task_settle
   )
   ;; @Iterator — eager lowering
-  (func $counter (result i32)
-    (local $__yield_fn i32)
+  (func $counter (result (ref null $arr_i32))
+    (local $__yield_fn (ref null $arr_i32))
     i32.const 0
-    call $__arr_new
+    array.new_default $arr_i32
     local.set $__yield_fn
     local.get $__yield_fn
     i32.const 1
-    call $__arr_push
+    call $__arr_push_i32
     local.set $__yield_fn
     local.get $__yield_fn
     i32.const 2
-    call $__arr_push
+    call $__arr_push_i32
     local.set $__yield_fn
     local.get $__yield_fn ;; everything the body yielded
   )
   ;; @Stream — eager lowering
-  (func $stream (result i32)
-    (local $__yield_fn i32)
-    (local $_res0 i32)
+  (func $stream (result (ref null $arr_any))
+    (local $__yield_fn (ref null $arr_any))
     i32.const 0
-    call $__arr_new
+    array.new_default $arr_any
     local.set $__yield_fn
     local.get $__yield_fn
-    i32.const 8
-    call $__alloc
-    local.set $_res0
-    local.get $_res0
     i32.const 0
-    i32.store ;; Result tag (Ok)
-    local.get $_res0
     i32.const 1
-    i32.store offset=4 ;; payload
-    local.get $_res0
-    call $__arr_push
+    struct.new $box_i32
+    struct.new $result
+    call $__arr_push_any
     local.set $__yield_fn
     local.get $__yield_fn ;; everything the body yielded
   )
-  (func $parse (param $n i32) (result i32)
-    (local $_res0 i32)
-    (local $_res1 i32)
+  (func $parse (param $n i32) (result (ref null $result))
     local.get $n
     i32.const 0
     i32.lt_s
-    (if (result i32)
+    (if (result (ref null $result))
       (then
-    i32.const 8
-    call $__alloc
-    local.set $_res0
-    local.get $_res0
     i32.const 1
-    i32.store ;; Result tag (Error)
-    local.get $_res0
-    i32.const 256
-    i32.store offset=4 ;; payload
-    local.get $_res0
+    global.get $__s0
+    struct.new $result
     return
       )
       (else
-        i32.const 0
+        ref.null $result
       )
     )
     drop
-    i32.const 8
-    call $__alloc
-    local.set $_res1
-    local.get $_res1
     i32.const 0
-    i32.store ;; Result tag (Ok)
-    local.get $_res1
     local.get $n
-    i32.store offset=4 ;; payload
-    local.get $_res1
+    struct.new $box_i32
+    struct.new $result
     return
+  )
+  (func $__arr_push_i32 (param $xs (ref null $arr_i32)) (param $x i32) (result (ref null $arr_i32))
+    (local $n i32)
+    (local $r (ref null $arr_i32))
+    local.get $xs
+    array.len
+    local.set $n
+    local.get $n
+    i32.const 1
+    i32.add
+    array.new_default $arr_i32
+    local.set $r
+    local.get $r
+    i32.const 0
+    local.get $xs
+    i32.const 0
+    local.get $n
+    array.copy $arr_i32 $arr_i32
+    local.get $r
+    local.get $n
+    local.get $x
+    array.set $arr_i32
+    local.get $r
+  )
+  (func $__arr_push_any (param $xs (ref null $arr_any)) (param $x anyref) (result (ref null $arr_any))
+    (local $n i32)
+    (local $r (ref null $arr_any))
+    local.get $xs
+    array.len
+    local.set $n
+    local.get $n
+    i32.const 1
+    i32.add
+    array.new_default $arr_any
+    local.set $r
+    local.get $r
+    i32.const 0
+    local.get $xs
+    i32.const 0
+    local.get $n
+    array.copy $arr_any $arr_any
+    local.get $r
+    local.get $n
+    local.get $x
+    array.set $arr_any
+    local.get $r
   )
   (func $__alloc (param $n i32) (result i32)
     (local $p i32) (local $e i32)
@@ -195,69 +229,22 @@ fn parse(n: i32) -> @Result<i32, string> {
     global.set $__heap_ptr
     local.get $p
   )
-  (func $__arr_new (param $n i32) (result i32)
-    (local $p i32)
-    local.get $n
-    i32.const 1
-    i32.add
-    i32.const 4
-    i32.mul
-    call $__alloc
-    local.set $p
-    local.get $p
-    local.get $n
-    i32.store
-    local.get $p
-  )
-  (func $__arr_push (param $xs i32) (param $x i32) (result i32)
-    (local $n i32) (local $p i32)
-    local.get $xs
-    i32.load
-    local.set $n
-    local.get $n
-    i32.const 1
-    i32.add
-    call $__arr_new
-    local.set $p
-    local.get $p
-    i32.const 4
-    i32.add
-    local.get $xs
-    i32.const 4
-    i32.add
-    local.get $n
-    i32.const 4
-    i32.mul
-    memory.copy
-    local.get $p
-    i32.const 4
-    i32.add
-    local.get $n
-    i32.const 4
-    i32.mul
-    i32.add
-    local.get $x
-    i32.store
-    local.get $p
-  )
-  (global $__task_head (mut i32) (i32.const 0))
-  (global $__task_tail (mut i32) (i32.const 0))
+  (global $__task_head (mut (ref null $task)) (ref.null $task))
+  (global $__task_tail (mut (ref null $task)) (ref.null $task))
   (global $__task_suspended (mut i32) (i32.const 0))
-  (func $__task_new (param $kind i32) (param $frame i32) (result i32)
-    (local $t i32)
-    i32.const 40
-    call $__alloc
-    local.set $t
-    local.get $t
-    local.get $kind
-    i32.store offset=20
-    local.get $t
+  (func $__task_new (param $kind i32) (param $frame structref) (result (ref null $task))
+    i32.const 0
+    ref.null $waiter
+    ref.null any
     local.get $frame
-    i32.store offset=16
-    local.get $t
+    local.get $kind
+    ref.null $task
+    ref.null any
+    i32.const 0
+    struct.new $task
   )
-  (func $__task_start (param $kind i32) (param $frame i32) (result i32)
-    (local $t i32)
+  (func $__task_start (param $kind i32) (param $frame structref) (result (ref null $task))
+    (local $t (ref null $task))
     local.get $kind
     local.get $frame
     call $__task_new
@@ -265,65 +252,42 @@ fn parse(n: i32) -> @Result<i32, string> {
     call $__task_resume
     local.get $t
   )
-  (func $__task_pending (param $t i32) (result i32)
+  (func $__task_pending (param $t (ref null $task)) (result i32)
     local.get $t
-    i32.load
+    struct.get $task $state
     i32.eqz
   )
-  (func $__task_listen (param $t i32) (param $kind i32) (param $target i32) (param $index i32)
-    (local $n i32)
-    i32.const 16
-    call $__alloc
-    local.set $n
-    local.get $n
+  (func $__task_listen (param $t (ref null $task)) (param $kind i32) (param $target (ref null $task)) (param $index i32)
+    (local $n (ref null $waiter))
     local.get $t
-    i32.load offset=4
-    i32.store
-    local.get $n
+    struct.get $task $waiters
     local.get $kind
-    i32.store offset=4
-    local.get $n
     local.get $target
-    i32.store offset=8
-    local.get $n
     local.get $index
-    i32.store offset=12
+    struct.new $waiter
+    local.set $n
     local.get $t
     local.get $n
-    i32.store offset=4
+    struct.set $task $waiters
   )
-  (func $__task_wait (param $t i32) (param $w i32)
+  (func $__task_wait (param $t (ref null $task)) (param $w (ref null $task))
     local.get $t
     i32.const 0
     local.get $w
     i32.const 0
     call $__task_listen
   )
-  (func $__task_settle_i32 (param $t i32) (param $v i32)
+  (func $__task_settle (param $t (ref null $task)) (param $v anyref)
     local.get $t
     local.get $v
-    i32.store offset=8
+    struct.set $task $value
     local.get $t
     call $__task_wake
   )
-  (func $__task_settle_i64 (param $t i32) (param $v i64)
+  (func $__task_wake (param $t (ref null $task))
+    (local $n (ref null $waiter)) (local $m (ref null $waiter)) (local $r (ref null $waiter)) (local $k i32) (local $w (ref null $task))
     local.get $t
-    local.get $v
-    i64.store offset=8
-    local.get $t
-    call $__task_wake
-  )
-  (func $__task_settle_f64 (param $t i32) (param $v f64)
-    local.get $t
-    local.get $v
-    f64.store offset=8
-    local.get $t
-    call $__task_wake
-  )
-  (func $__task_wake (param $t i32)
-    (local $n i32) (local $m i32) (local $r i32) (local $k i32) (local $w i32)
-    local.get $t
-    i32.load
+    struct.get $task $state
     (if
       (then
         return
@@ -331,24 +295,27 @@ fn parse(n: i32) -> @Result<i32, string> {
     )
     local.get $t
     i32.const 1
-    i32.store
+    struct.set $task $state
     local.get $t
-    i32.load offset=4
+    struct.get $task $waiters
     local.set $n
     local.get $t
-    i32.const 0
-    i32.store offset=4
+    ref.null $waiter
+    struct.set $task $waiters
+    local.get $t
+    ref.null struct
+    struct.set $task $frame
     (block $brk
       (loop $cont
         local.get $n
-        i32.eqz
+        ref.is_null
         br_if $brk
         local.get $n
-        i32.load
+        struct.get $waiter $next
         local.set $m
         local.get $n
         local.get $r
-        i32.store
+        struct.set $waiter $next
         local.get $n
         local.set $r
         local.get $m
@@ -359,13 +326,13 @@ fn parse(n: i32) -> @Result<i32, string> {
     (block $brk
       (loop $cont
         local.get $r
-        i32.eqz
+        ref.is_null
         br_if $brk
         local.get $r
-        i32.load offset=4
+        struct.get $waiter $kind
         local.set $k
         local.get $r
-        i32.load offset=8
+        struct.get $waiter $target
         local.set $w
         local.get $k
         i32.eqz
@@ -381,14 +348,14 @@ fn parse(n: i32) -> @Result<i32, string> {
         (if
           (then
             local.get $w
-            i32.load
+            struct.get $task $state
             i32.eqz
             (if
               (then
                 local.get $w
                 local.get $t
-                i64.load offset=8
-                i64.store offset=8
+                struct.get $task $value
+                struct.set $task $value
                 local.get $w
                 call $__task_wake
               )
@@ -401,32 +368,31 @@ fn parse(n: i32) -> @Result<i32, string> {
         (if
           (then
             local.get $w
-            i32.load offset=28
-            i32.const 4
-            i32.add
+            struct.get $task $aux
+            ref.cast (ref null $arr_any)
             local.get $r
-            i32.load offset=12
-            i32.const 4
-            i32.mul
-            i32.add
+            struct.get $waiter $slot
             local.get $t
-            i32.load offset=8
-            i32.store
+            struct.get $task $value
+            array.set $arr_any
             local.get $w
             local.get $w
-            i32.load offset=32
+            struct.get $task $left
             i32.const 1
             i32.sub
-            i32.store offset=32
+            struct.set $task $left
             local.get $w
-            i32.load offset=32
+            struct.get $task $left
             i32.eqz
             (if
               (then
                 local.get $w
                 local.get $w
-                i32.load offset=28
-                i32.store offset=8
+                struct.get $task $aux
+                struct.set $task $value
+                local.get $w
+                ref.null any
+                struct.set $task $aux
                 local.get $w
                 call $__task_wake
               )
@@ -434,47 +400,48 @@ fn parse(n: i32) -> @Result<i32, string> {
           )
         )
         local.get $r
-        i32.load
+        struct.get $waiter $next
         local.set $r
         br $cont
       )
     )
   )
-  (func $__task_enqueue (param $t i32)
+  (func $__task_enqueue (param $t (ref null $task))
     local.get $t
-    i32.const 0
-    i32.store offset=24
+    ref.null $task
+    struct.set $task $next
     global.get $__task_tail
+    ref.is_null
     (if
       (then
-        global.get $__task_tail
-        local.get $t
-        i32.store offset=24
-      )
-      (else
         local.get $t
         global.set $__task_head
+      )
+      (else
+        global.get $__task_tail
+        local.get $t
+        struct.set $task $next
       )
     )
     local.get $t
     global.set $__task_tail
   )
   (func $__task_drain
-    (local $t i32)
+    (local $t (ref null $task))
     (block $brk
       (loop $cont
         global.get $__task_head
         local.tee $t
-        i32.eqz
+        ref.is_null
         br_if $brk
         local.get $t
-        i32.load offset=24
+        struct.get $task $next
         global.set $__task_head
         global.get $__task_head
-        i32.eqz
+        ref.is_null
         (if
           (then
-            i32.const 0
+            ref.null $task
             global.set $__task_tail
           )
         )
@@ -484,29 +451,29 @@ fn parse(n: i32) -> @Result<i32, string> {
       )
     )
   )
-  (func $__task_block_on (param $t i32) (result i32)
-    (local $r i32)
+  (func $__task_block_on (param $t (ref null $task)) (result (ref null $task))
+    (local $r (ref null $task))
     (block $brk
       (loop $cont
         local.get $t
-        i32.load
+        struct.get $task $state
         br_if $brk
         global.get $__task_head
         local.tee $r
-        i32.eqz
+        ref.is_null
         (if
           (then
             unreachable
           )
         )
         local.get $r
-        i32.load offset=24
+        struct.get $task $next
         global.set $__task_head
         global.get $__task_head
-        i32.eqz
+        ref.is_null
         (if
           (then
-            i32.const 0
+            ref.null $task
             global.set $__task_tail
           )
         )
@@ -528,10 +495,10 @@ fn parse(n: i32) -> @Result<i32, string> {
       )
     )
   )
-  (func $__task_resume (param $t i32)
+  (func $__task_resume (param $t (ref null $task))
     (local $k i32)
     local.get $t
-    i32.load offset=20 ;; kind
+    struct.get $task $kind ;; kind
     local.set $k
     local.get $k
     i32.const 0
@@ -548,6 +515,16 @@ fn parse(n: i32) -> @Result<i32, string> {
   (func $__task_host_poll (result i32)
     i32.const 0
   )
+  (data $__d0 "negative")
+  (global $__s0 (mut (ref null $str)) (ref.null $str))
+  (start $__init_strs)
+  (func $__init_strs
+    i32.const 0
+    i32.const 8
+    array.new_data $str $__d0
+    global.set $__s0
+  )
+  (@custom "botopink.needs" "gc\0a")
 )
 ```
 

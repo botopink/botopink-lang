@@ -13,55 +13,44 @@ fn safe() -> i32 {
 ----- WASM TEXT -- main.wat
 ```wasm
 (module
+  (rec
+    (type $str (array (mut i8)))
+    (type $rec_NetError (struct (field $f0 (mut i32))))
+    (type $result (struct (field $tag (mut i32)) (field $payload (mut anyref))))
+    (type $box_i32 (struct (field $v i32)))
+  )
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
-  (data (i32.const 256) "\11\00\00\00R\08NetError\01\04codei")
-  (data (i32.const 280) "\2a\00\00\00integer overflow: - on i32 at main.bp:6:38")
-  (global $__heap_ptr (mut i32) (i32.const 328))
-  (func $fetch (result i32)
+  (global $__heap_ptr (mut i32) (i32.const 256))
+  (func $fetch (result (ref null $result))
     (local $__mem0 i32)
-    (local $_res0 i32)
-    i32.const 8
-    call $__alloc
-    local.set $_res0
-    local.get $_res0
     i32.const 1
-    i32.store ;; Result tag (Error)
-    local.get $_res0
-    i32.const 8
-    call $__alloc
-    local.set $__mem0
-    local.get $__mem0
-    i32.const 260
-    i32.store
-    local.get $__mem0
     i32.const 500
-    i32.store offset=4
-    local.get $__mem0
-    i32.const 4
-    i32.add
-    i32.store offset=4 ;; payload
-    local.get $_res0
+    struct.new $rec_NetError
+    struct.new $result
     return
   )
   (func $safe (result i32)
     (local $_try0 i32)
     (local $r i32)
+    (local $__gc0 (ref null $result))
     call $fetch
-    local.set $_try0
-    local.get $_try0
-    i32.load ;; Result tag (0 = Ok, non-zero = Error)
+    local.set $__gc0
+    local.get $__gc0
+    struct.get $result $tag ;; Result tag (0 = Ok, non-zero = Error)
     (if (result i32)
       (then
     i32.const 0
     i32.const 1
-    i32.const 280
+    global.get $__s0
     call $__i32_sub_chk
     return
       )
       (else
-    local.get $_try0
-    i32.load offset=4 ;; Ok payload
+    local.get $__gc0
+    struct.get $result $payload ;; Ok payload
+    ref.cast (ref null $box_i32)
+    struct.get $box_i32 $v
       )
     )
     local.set $r
@@ -356,7 +345,8 @@ fn safe() -> i32 {
     i32.const 1
     call $__write_err
   )
-  (func $__panic_fail (param $msg i32)
+  (func $__panic_fail (param $msg (ref null $str))
+    (local $n i32) (local $p i32) (local $i i32) (local $top i32)
     i32.const 188
     i64.const 9071397899755888
     i64.store
@@ -364,10 +354,35 @@ fn safe() -> i32 {
     i32.const 7
     call $__write_err
     local.get $msg
-    i32.const 4
-    i32.add
-    local.get $msg
-    i32.load
+    array.len
+    local.set $n
+    global.get $__heap_ptr
+    local.set $top
+    local.get $n
+    call $__alloc
+    local.set $p
+    (block $brk
+      (loop $cont
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $brk
+        local.get $p
+        local.get $i
+        i32.add
+        local.get $msg
+        local.get $i
+        array.get_u $str
+        i32.store8
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $cont
+      )
+    )
+    local.get $p
+    local.get $n
     call $__write_err
     i32.const 188
     i32.const 10
@@ -375,8 +390,10 @@ fn safe() -> i32 {
     i32.const 188
     i32.const 1
     call $__write_err
+    local.get $top
+    global.set $__heap_ptr
   )
-  (func $__i32_add_chk (param $a i32) (param $b i32) (param $site i32) (result i32)
+  (func $__i32_add_chk (param $a i32) (param $b i32) (param $site (ref null $str)) (result i32)
     (local $r i64)
     local.get $a
     i64.extend_i32_s
@@ -399,7 +416,7 @@ fn safe() -> i32 {
     local.get $r
     i32.wrap_i64
   )
-  (func $__i32_sub_chk (param $a i32) (param $b i32) (param $site i32) (result i32)
+  (func $__i32_sub_chk (param $a i32) (param $b i32) (param $site (ref null $str)) (result i32)
     (local $r i64)
     local.get $a
     i64.extend_i32_s
@@ -422,7 +439,7 @@ fn safe() -> i32 {
     local.get $r
     i32.wrap_i64
   )
-  (func $__i32_mul_chk (param $a i32) (param $b i32) (param $site i32) (result i32)
+  (func $__i32_mul_chk (param $a i32) (param $b i32) (param $site (ref null $str)) (result i32)
     (local $r i64)
     local.get $a
     i64.extend_i32_s
@@ -445,7 +462,7 @@ fn safe() -> i32 {
     local.get $r
     i32.wrap_i64
   )
-  (func $__i64_add_chk (param $a i64) (param $b i64) (param $site i32) (result i64)
+  (func $__i64_add_chk (param $a i64) (param $b i64) (param $site (ref null $str)) (result i64)
     (local $r i64)
     local.get $a
     local.get $b
@@ -469,7 +486,7 @@ fn safe() -> i32 {
     )
     local.get $r
   )
-  (func $__i64_sub_chk (param $a i64) (param $b i64) (param $site i32) (result i64)
+  (func $__i64_sub_chk (param $a i64) (param $b i64) (param $site (ref null $str)) (result i64)
     (local $r i64)
     local.get $a
     local.get $b
@@ -493,7 +510,7 @@ fn safe() -> i32 {
     )
     local.get $r
   )
-  (func $__i64_mul_chk (param $a i64) (param $b i64) (param $site i32) (result i64)
+  (func $__i64_mul_chk (param $a i64) (param $b i64) (param $site (ref null $str)) (result i64)
     (local $r i64)
     local.get $a
     i64.const -1
@@ -534,11 +551,21 @@ fn safe() -> i32 {
     )
     local.get $r
   )
-  (func $__chk_fail (param $site i32)
+  (func $__chk_fail (param $site (ref null $str))
     local.get $site
     call $__panic_fail
     unreachable
   )
+  (data $__d0 "integer overflow: - on i32 at main.bp:6:38")
+  (global $__s0 (mut (ref null $str)) (ref.null $str))
+  (start $__init_strs)
+  (func $__init_strs
+    i32.const 0
+    i32.const 42
+    array.new_data $str $__d0
+    global.set $__s0
+  )
+  (@custom "botopink.needs" "gc\0a")
 )
 ```
 

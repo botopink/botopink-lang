@@ -344,6 +344,9 @@ pub fn codegenEmit(
     const na = notes_arena.allocator();
     var refusals: std.StringHashMapUnmanaged([]const u8) = .empty;
     var refused_links: std.ArrayListUnmanaged(RefusedLinks) = .empty;
+    const outer_refused = refused_modules;
+    refused_modules = &refusals;
+    defer refused_modules = outer_refused;
 
     for (outputs) |*ct| {
         switch (ct.outcome) {
@@ -1313,6 +1316,10 @@ fn pruneUnreached(
 /// type-check failure, `GCERR` the error, `GCWHY` the module; set `GCTRACE` for the stack of a refused
 /// conversion). Off: flip it to measure which constructs still send modules to linear memory.
 const gc_debug = false;
+
+/// The modules of the build this backend refused so far (`emitModules`):
+/// a GC pass that links one falls back (`emitWatPass`).
+threadlocal var refused_modules: ?*const std.StringHashMapUnmanaged([]const u8) = null;
 const DataSeg = struct { offset: u32, len: u32, content: []const u8 };
 
 /// Decision 518 (2) — a second pass over the same program when the first one
@@ -1621,6 +1628,11 @@ fn emitWatPass(
         em.skip_wrappers = &plan.skip;
     }
     em.exceptions = em.needs.contains(.exceptions);
+    // Front 164 s2 P4 — a module this backend refused takes every module that
+    // links it down with it (`relocateLinkedRefusals`): the GC pass lowers only
+    // what the module reaches, so it would not meet the refusal; the module is
+    // lowered in linear memory, which links everything, as it always did.
+    if (plan.mode == .gc) if (refused_modules) |rm| for (linked) |l| if (rm.contains(l.name)) return em.gcFail("a linked module this backend refused");
     if (plan.mode == .gc) try pruneUnreached(ar0, &decls, &owner, linked.len);
     const program: ast.Program = .{ .decls = decls.items };
     try em.registerTypes(program);
@@ -1753,7 +1765,7 @@ fn emitWatPass(
     try items.append(ar, .{ .memory = .{ .@"export" = "memory", .min_pages = 1 } });
     // Decision 518 — the tag an abort is raised as, in a program that
     // reaches a binding needing exceptions.
-    if (em.exceptions) try items.append(ar, .{ .tag = prelude.panic_tag });
+    if (em.exceptions) try items.append(ar, .{ .tag = if (em.mode == .gc) prelude.gc_panic_tag else prelude.panic_tag });
 
     // The function table a lambda value indexes into.
     if (em.lambdas.items.len > 0 or em.uses_table) {
@@ -1837,7 +1849,26 @@ fn emitWatPass(
         // Front 164 s2 — a GC module takes each group's GC form; a group
         // with none yet sends the module to linear memory.
         if (em.mode == .gc) {
-            try items.appendSlice(ar, prelude.gcItems(group, em.b.helpers.has(.text_capture)) orelse return em.gcFail(@tagName(group)));
+            // Front 164 s2 P4 — the module's dispatch over its state machines,
+            // the `wasi` host's poll, an abort raised where `attempt` can
+            // catch it.
+            if (group == .task_resume) {
+                try items.append(ar, .{ .func = try em.taskResumeFunc() });
+                continue;
+            }
+            if (group == .task_poll and em.b.helpers.has(.task_host) and artifact != .browser) {
+                try items.append(ar, try em.gcRemapItem(.{ .func = prelude.gc_task_host_poll_wasi }));
+                continue;
+            }
+            if (group == .chk_fail and em.exceptions) {
+                try items.append(ar, .{ .func = prelude.gc_chk_fail_raise });
+                continue;
+            }
+            const gc_items = prelude.gcItems(group, em.b.helpers.has(.text_capture)) orelse return em.gcFail(@tagName(group));
+            if (prelude.gcSlotted(group)) {
+                for (gc_items) |it| try items.append(ar, try em.gcRemapItem(it));
+            } else try items.appendSlice(ar, gc_items);
+            if (group == .task_host and artifact == .browser) try items.append(ar, .{ .func = prelude.bp_ready });
             // The groups whose GC form names `$str` need the type group, though
             // no local of the module is a string.
             switch (group) {
@@ -1948,7 +1979,10 @@ fn emitWatPass(
     // program REACHES. A first pass that finds fewer than the bindings name
     // asks for a second one without the unreached bindings; the second drops
     // what only they were called from (nothing reachable calls them).
-    if (plan.forced == null and em.wrapper_needs.count() > 0) {
+    // A GC pass lowers only what the module reaches (`pruneUnreached`): a
+    // binding nothing reaches is not emitted at all, so its needs are asked
+    // for by no wrapper — the same second pass drops them.
+    if (plan.forced == null and (em.wrapper_needs.count() > 0 or (em.mode == .gc and em.needs.count() > 0))) {
         var live = try reach.reached(alloc, items.items, em.task_edges.items);
         defer live.deinit(alloc);
         var reached_needs = ast.WasmNeeds.initEmpty();
@@ -2186,6 +2220,13 @@ const Emitter = struct {
     gc_types: std.ArrayListUnmanaged(GcTy) = .empty,
     /// The environment type of the lifted lambda being emitted (`.gc`).
     gc_env_ty: u16 = 0,
+    /// Front 164 s2 P4 — per state machine of a GC module, the value types
+    /// of its frame's slots (`GcTy.frame`), filled once its locals are known
+    /// (`emitStateMachine`).
+    gc_frames: std.ArrayListUnmanaged([]const ValType) = .empty,
+    /// The repr each local bound to an `async { }` block settles with
+    /// (`gcBlockRepr`), known when its locals are declared.
+    gc_block_locals: std.StringHashMapUnmanaged(Repr) = .empty,
     /// The GC printers of a `.gc` module (`gcPrinter`): the shapes (and
     /// declarations) printed, in the order asked — a printer's symbol is
     /// `__pr<position>` — and the functions written for them.
@@ -2930,6 +2971,8 @@ const Emitter = struct {
         self.record_field_types.deinit();
         self.gc_strs.deinit(self.alloc);
         self.gc_types.deinit(self.alloc);
+        self.gc_frames.deinit(self.alloc);
+        self.gc_block_locals.deinit(self.alloc);
         self.gc_printers.deinit(self.alloc);
         self.gc_pr_funcs.deinit(self.alloc);
         self.gc_linked_fns.deinit(self.alloc);
@@ -4736,6 +4779,15 @@ const Emitter = struct {
         /// The environment of lifted lambda `n`: a subtype of `closure`
         /// holding the lambda's captures, each typed as the local it copies.
         env: u32,
+        /// Front 164 s2 P4 — a `@Task<T>` (`wat_prelude.zig` § the scheduler
+        /// in a GC module), what waits on one, a host task pending, an abort's
+        /// payload (decision 518), and state machine `n`'s frame: its resume
+        /// index, then one mutable field per local (`gc_frames`).
+        task,
+        waiter,
+        hostn,
+        exn,
+        frame: u32,
 
         /// A `bool` has a box of its own, so an `unknown` holding one prints
         /// and compares as a `bool` (front 164 s2 P2b).
@@ -4751,6 +4803,8 @@ const Emitter = struct {
                 .result, .closure => true,
                 .ebox => |n| std.mem.eql(u8, n, b.ebox),
                 .env => |n| n == b.env,
+                .frame => |n| n == b.frame,
+                .task, .waiter, .hostn, .exn => true,
             };
         }
     };
@@ -4769,6 +4823,122 @@ const Emitter = struct {
             return 0;
         };
         return @intCast(self.gc_types.items.len);
+    }
+
+    /// Front 164 s2 P4 — the module type a prelude GC form names by slot
+    /// (`wat_prelude.GcSlot`).
+    fn gcSlotTy(slot: prelude.GcSlot) GcTy {
+        return switch (slot) {
+            .task => .task,
+            .waiter => .waiter,
+            .hostn => .hostn,
+            .closure => .closure,
+            .arr_any => .{ .arr = .any },
+            .box_i32 => .{ .box = .i32 },
+            .result => .result,
+            .exn => .exn,
+        };
+    }
+
+    /// Type index `k` of a prelude GC form, resolved: a slot is the module's
+    /// index of its type (declared on first use), any other index as it is.
+    fn gcRemapIdx(self: *Emitter, k: u16) u16 {
+        if (k < prelude.gc_slot_base) return k;
+        return self.gcTyIndex(gcSlotTy(@enumFromInt(k - prelude.gc_slot_base)));
+    }
+
+    fn gcRemapVt(self: *Emitter, v: ValType) ValType {
+        const k = v.defIndex() orelse return v;
+        return ValType.def(self.gcRemapIdx(k));
+    }
+
+    fn gcRemapStack(self: *Emitter, st: wat.Stack) wat.Stack {
+        return switch (st) {
+            .value => |v| .{ .value = self.gcRemapVt(v) },
+            else => st,
+        };
+    }
+
+    fn gcRemapSeq(self: *Emitter, seq: Seq) anyerror!Seq {
+        const ar = self.arena();
+        const lines = try ar.alloc(wat.Line, seq.lines.len);
+        for (seq.lines, lines) |l, *o| {
+            o.* = l;
+            o.instr = try self.gcRemapInstr(l.instr);
+        }
+        return .{ .lines = lines, .stack = self.gcRemapStack(seq.stack) };
+    }
+
+    fn gcRemapInstr(self: *Emitter, i: Instr) anyerror!Instr {
+        return switch (i) {
+            .struct_new => |k| .{ .struct_new = self.gcRemapIdx(k) },
+            .struct_new_default => |k| .{ .struct_new_default = self.gcRemapIdx(k) },
+            .struct_get => |f| .{ .struct_get = .{ .ty = self.gcRemapIdx(f.ty), .field = f.field, .ext = f.ext } },
+            .struct_set => |f| .{ .struct_set = .{ .ty = self.gcRemapIdx(f.ty), .field = f.field, .ext = f.ext } },
+            .array_new => |k| .{ .array_new = self.gcRemapIdx(k) },
+            .array_new_default => |k| .{ .array_new_default = self.gcRemapIdx(k) },
+            .array_new_fixed => |a| .{ .array_new_fixed = .{ .ty = self.gcRemapIdx(a.ty), .n = a.n } },
+            .array_new_data => |a| .{ .array_new_data = .{ .ty = self.gcRemapIdx(a.ty), .data = a.data } },
+            .array_get => |a| .{ .array_get = .{ .ty = self.gcRemapIdx(a.ty), .ext = a.ext } },
+            .array_set => |k| .{ .array_set = self.gcRemapIdx(k) },
+            .array_fill => |k| .{ .array_fill = self.gcRemapIdx(k) },
+            .array_copy => |a| .{ .array_copy = .{ .dst = self.gcRemapIdx(a.dst), .src = self.gcRemapIdx(a.src) } },
+            .ref_null => |v| .{ .ref_null = self.gcRemapVt(v) },
+            .ref_test => |v| .{ .ref_test = self.gcRemapVt(v) },
+            .ref_cast => |v| .{ .ref_cast = self.gcRemapVt(v) },
+            .call_indirect => |ft| blk: {
+                const ps = try self.arena().alloc(ValType, ft.params.len);
+                for (ft.params, ps) |v, *o| o.* = self.gcRemapVt(v);
+                break :blk .{ .call_indirect = .{ .params = ps, .result = if (ft.result) |r| self.gcRemapVt(r) else null } };
+            },
+            .@"if" => |n| blk: {
+                var m = n;
+                m.result = if (n.result) |r| self.gcRemapVt(r) else null;
+                m.then.seq = try self.gcRemapSeq(n.then.seq);
+                if (n.@"else") |e| {
+                    var ee = e;
+                    ee.seq = try self.gcRemapSeq(e.seq);
+                    m.@"else" = ee;
+                }
+                break :blk .{ .@"if" = m };
+            },
+            .block => |b| blk: {
+                var m = b;
+                m.result = if (b.result) |r| self.gcRemapVt(r) else null;
+                m.body = try self.gcRemapSeq(b.body);
+                break :blk .{ .block = m };
+            },
+            else => i,
+        };
+    }
+
+    /// A prelude GC form whose types are named by slot, resolved for the module.
+    fn gcRemapItem(self: *Emitter, it: Item) anyerror!Item {
+        const ar = self.arena();
+        switch (it) {
+            .func => |f| {
+                var g = f;
+                const ps = try ar.alloc(wat.Param, f.params.len);
+                for (f.params, ps) |p, *o| o.* = .{ .name = p.name, .ty = self.gcRemapVt(p.ty) };
+                g.params = ps;
+                g.result = if (f.result) |r| self.gcRemapVt(r) else null;
+                const groups = try ar.alloc([]const wat.Local, f.locals.len);
+                for (f.locals, groups) |grp, *o| {
+                    const ls = try ar.alloc(wat.Local, grp.len);
+                    for (grp, ls) |l, *x| x.* = .{ .name = l.name, .ty = self.gcRemapVt(l.ty) };
+                    o.* = ls;
+                }
+                g.locals = groups;
+                g.body = try self.gcRemapSeq(f.body);
+                return .{ .func = g };
+            },
+            .global => |gl| {
+                var g = gl;
+                g.ty = self.gcRemapVt(gl.ty);
+                return .{ .global = g };
+            },
+            else => return it,
+        }
     }
 
     /// `(ref null $t)` of the GC type `t`.
@@ -4793,6 +4963,8 @@ const Emitter = struct {
                     .tuple => self.gcTy(.{ .arr = .any }),
                     .result => self.gcTy(.result),
                     .closure => self.gcTy(.closure),
+                    .task => self.gcTy(.task),
+                    .frame => |n| self.gcTy(.{ .frame = n }),
                     // A payload enum's value: a struct of one of its variants'
                     // types, tested by `ref.test`; an `unknown`: anything.
                     .enum_, .unknown => .anyref,
@@ -4943,6 +5115,8 @@ const Emitter = struct {
     /// The reference a GC module holds a value of type `t0` as, null for a
     /// scalar and for a type with no GC form here.
     fn gcReprOfType(self: *Emitter, t0: ast.TypeRef) ?Repr {
+        // Front 164 s2 P4 — a task is a `$task`, whatever it settles with.
+        if (isTaskTypeRef(t0)) return .{ .ref = .task };
         const t = eagerTypeRef(t0);
         if (isUnknownTypeRef(t)) return .{ .ref = .unknown };
         switch (t) {
@@ -5074,6 +5248,46 @@ const Emitter = struct {
                     };
                     try defs.append(ar, .{ .name = try std.fmt.allocPrint(ar, "env{d}", .{li}), .kind = .{ .@"struct" = fs }, .super = self.gcTyIndex(.closure) });
                 },
+                .task => {
+                    const fs = try ar.alloc(wat.Field, 8);
+                    fs[0] = .{ .name = "state", .ty = .i32, .mutable = true };
+                    fs[1] = .{ .name = "waiters", .ty = self.gcTy(.waiter), .mutable = true };
+                    fs[2] = .{ .name = "value", .ty = .anyref, .mutable = true };
+                    fs[3] = .{ .name = "frame", .ty = .structref, .mutable = true };
+                    fs[4] = .{ .name = "kind", .ty = .i32 };
+                    fs[5] = .{ .name = "next", .ty = self.gcTy(.task), .mutable = true };
+                    fs[6] = .{ .name = "aux", .ty = .anyref, .mutable = true };
+                    fs[7] = .{ .name = "left", .ty = .i32, .mutable = true };
+                    try defs.append(ar, .{ .name = "task", .kind = .{ .@"struct" = fs } });
+                },
+                .waiter => {
+                    const fs = try ar.alloc(wat.Field, 4);
+                    fs[0] = .{ .name = "next", .ty = self.gcTy(.waiter), .mutable = true };
+                    fs[1] = .{ .name = "kind", .ty = .i32 };
+                    fs[2] = .{ .name = "target", .ty = self.gcTy(.task) };
+                    fs[3] = .{ .name = "slot", .ty = .i32 };
+                    try defs.append(ar, .{ .name = "waiter", .kind = .{ .@"struct" = fs } });
+                },
+                .hostn => {
+                    const fs = try ar.alloc(wat.Field, 3);
+                    fs[0] = .{ .name = "next", .ty = self.gcTy(.hostn), .mutable = true };
+                    fs[1] = .{ .name = "h", .ty = .i32 };
+                    fs[2] = .{ .name = "t", .ty = self.gcTy(.task) };
+                    try defs.append(ar, .{ .name = "hostn", .kind = .{ .@"struct" = fs } });
+                },
+                .exn => {
+                    const fs = try ar.alloc(wat.Field, 2);
+                    fs[0] = .{ .name = "msg", .ty = prelude.gc_str_ref };
+                    fs[1] = .{ .name = "print", .ty = .i32 };
+                    try defs.append(ar, .{ .name = "exn", .kind = .{ .@"struct" = fs } });
+                },
+                .frame => |n| {
+                    const slots = self.gc_frames.items[n];
+                    const fs = try ar.alloc(wat.Field, 1 + slots.len);
+                    fs[0] = .{ .name = "resume", .ty = .i32, .mutable = true };
+                    for (slots, 0..) |ty, k| fs[1 + k] = .{ .name = try std.fmt.allocPrint(ar, "s{d}", .{k}), .ty = ty, .mutable = true };
+                    try defs.append(ar, .{ .name = try std.fmt.allocPrint(ar, "frame{d}", .{n}), .kind = .{ .@"struct" = fs } });
+                },
                 .result => {
                     const fs = try ar.alloc(wat.Field, 2);
                     fs[0] = .{ .name = "tag", .ty = .i32, .mutable = true };
@@ -5113,7 +5327,7 @@ const Emitter = struct {
     /// their declaration's type is the local's.
     fn gcReprOfExpr(self: *Emitter, e: ast.Expr) ?Repr {
         switch (e) {
-            .function => |f| if (f.kind.syntax != .asyncBlock) return .{ .ref = .closure },
+            .function => |f| return if (f.kind.syntax != .asyncBlock) .{ .ref = .closure } else .{ .ref = .task },
             .identifier => |id| switch (id.kind) {
                 .ident => |n0| {
                     // A top-level fn named as a value (front 164 s2 P3).
@@ -5671,6 +5885,32 @@ const Emitter = struct {
         try self.gcUnbox(pr);
     }
 
+    /// `try r catch h` in a GC module (front 164 s2 P4): the `$result`'s Ok
+    /// payload unboxed, or the handler's value.
+    fn gcTryCatch(self: *Emitter, tc: anytype) anyerror!void {
+        const sh = self.resultShapeOf(tc.expr.*) orelse return self.gcFail("a try over a @Result of no known shape");
+        const pr = self.reprOf(sh.ok orelse return self.gcFail("a @Result of no known Ok type"));
+        const rr: Repr = .{ .ref = .result };
+        const rti = self.gcTyIndex(.result);
+        const slot = try self.gcTemp(rr);
+        const ty = self.vtOf(pr);
+        try self.lowerCoerced(tc.expr.*, rr);
+        try self.emit(.{ .local_set = slot });
+        try self.emit(.{ .local_get = slot });
+        try self.emitC(.{ .struct_get = .{ .ty = rti, .field = 0 } }, result_tag);
+        var then_c: Capture = .{};
+        self.open(&then_c);
+        try self.lowerCoerced(tc.handler.*, pr);
+        const then_seq = self.seal(&then_c, .{ .value = ty });
+        var else_c: Capture = .{};
+        self.open(&else_c);
+        try self.emit(.{ .local_get = slot });
+        try self.emitC(.{ .struct_get = .{ .ty = rti, .field = 1 } }, ok_payload);
+        try self.gcUnbox(pr);
+        const else_seq = self.seal(&else_c, .{ .value = ty });
+        try self.emit(.{ .@"if" = .{ .result = ty, .then = .{ .seq = then_seq }, .@"else" = .{ .seq = else_seq } } });
+    }
+
     /// The GC types a value of `x is T` / a `case` arm naming `T` can be: a
     /// record's struct, a payload enum's variants, one variant by its path.
     fn gcTypeTests(self: *Emitter, t: ast.TypeRef) anyerror![]const ValType {
@@ -6101,7 +6341,7 @@ const Emitter = struct {
             .ref => {
                 var r = self.wasmTypeOf(value);
                 if (!r.isRef()) r = self.gcReprOfExpr(value) orelse return self.gcFail("a value of no GC reference as an unknown");
-                if (r == .ref and (r.ref == .bytes or r.ref == .task or r.ref == .cell or r.ref == .bigint)) return self.gcFail("a value with no unknown form");
+                if (r == .ref and (r.ref == .bytes or r.ref == .cell or r.ref == .bigint)) return self.gcFail("a value with no unknown form");
                 try self.lowerCoerced(value, r);
             },
         }
@@ -6120,6 +6360,8 @@ const Emitter = struct {
     /// What the payload of an optional is, from the facts the lowering holds
     /// of it (`OptInfo`); null when they say nothing.
     fn gcOptPayload(self: *Emitter, oi: OptInfo) ?Repr {
+        // A `?@Task<T>`: the task's own nullable reference.
+        if (oi.inner) |tr| if (isTaskTypeRef(tr)) return .{ .ref = .task };
         if (oi.str) return Repr.string;
         if (oi.cell == .f64) return .f64;
         if (oi.cell == .i64) return .i64;
@@ -8302,7 +8544,7 @@ const Emitter = struct {
             }
         }
         const tail_type: ?Repr = if (self.fn_has_result and body.len > 0)
-            self.wasmTypeOf(body[ast.lastRealIndex(body)].expr)
+            (if (self.mode == .gc and self.adoptsTask(body[ast.lastRealIndex(body)].expr)) self.cur_result else self.wasmTypeOf(body[ast.lastRealIndex(body)].expr))
         else
             null;
         self.defer_fn_body = body;
@@ -8311,8 +8553,18 @@ const Emitter = struct {
         // An implicit tail value has to meet the declared `(result …)` too.
         if (self.fn_has_result and tail == .value) {
             // A tail that cannot return (`@panic`) leaves the stack polymorphic.
-            const no_return = self.mode == .gc and body.len > 0 and isNoReturnCall(body[ast.lastRealIndex(body)].expr);
-            if (tail_type) |t| if (!no_return) try self.emitConvert(t, self.cur_result);
+            const last_e: ?ast.Expr = if (body.len > 0) body[ast.lastRealIndex(body)].expr else null;
+            const leaves = if (last_e) |le| le == .jump and (le.jump.kind == .@"return" or le.jump.kind == .throw_) else false;
+            const no_return = self.mode == .gc and last_e != null and (isNoReturnCall(last_e.?) or leaves);
+            // Front 164 s2 P4 — a function declaring no answer whose last
+            // statement makes a task (`pub fn main() { run(); }`): the word
+            // linear memory answered was the task's address, which nothing
+            // reads; here the task is dropped for the `0`.
+            const dropped_task = self.mode == .gc and tail_type != null and tail_type.? == .ref and tail_type.?.ref == .task and !self.cur_result.isRef() and prologue != null and prologue.?.returnType == null;
+            if (dropped_task) {
+                try self.emit(.drop);
+                try self.emit(self.zeroOf(self.cur_result));
+            } else if (tail_type) |t| if (!no_return) try self.emitConvert(t, self.cur_result);
         }
         // `emitBody` normalises: with a result the tail is a value (or the
         // body terminated), without one it is nothing (or terminated).
@@ -8495,6 +8747,19 @@ const Emitter = struct {
             if (!ty.isWord())
                 return self.refuse(arg.getLoc(), "`{s}` carries a task's value in one word on wasm: a task answering an `{s}` has no lowering here (decision 393)", .{ cc.callee, ty.name() });
         }
+    }
+
+    /// Front 164 s2 P4 — `spawn_all`'s GC form settles with an `arr_any` of
+    /// its tasks' answers: a call whose answers are scalars (an array of
+    /// words or floats, `arr_i32` / `arr_f64` here), or whose answers nothing
+    /// types, keeps its module in linear memory.
+    fn gcSpawnAllAnswers(self: *Emitter, cc: anytype) !void {
+        if (cc.args.len != 1) return self.gcFail("a spawn_all of no task list");
+        const t = self.typeRefOf(cc.args[0].value.*) orelse return self.gcFail("a spawn_all over thunks of no known type");
+        const el = arrayElemRef(t) orelse return self.gcFail("a spawn_all over thunks of no known type");
+        if (el != .function) return self.gcFail("a spawn_all over thunks of no known type");
+        const v = taskValueTypeRef(el.function.returnType.*) orelse return self.gcFail("a spawn_all over thunks of no known type");
+        if (gcElemClassOf(self.reprOf(v)) != .any) return self.gcFail("a spawn_all of scalar answers");
     }
 
     /// A call of the std-wasm function `name` (`text.trim`), which the module
@@ -8791,10 +9056,12 @@ const Emitter = struct {
                 if (std.mem.eql(u8, ad.name, "race")) break :blk self.builder().helper(.task_race);
                 if (std.mem.eql(u8, ad.name, "race_of")) {
                     self.uses_table = true;
+                    if (self.mode == .gc) break :blk self.gcTaskHelper(.task_race_of, .task_race, "__task_race_of");
                     break :blk self.builder().helper(.task_race_of);
                 }
                 if (std.mem.eql(u8, ad.name, "spawn_all")) {
                     self.uses_table = true;
+                    if (self.mode == .gc) break :blk self.gcTaskHelper(.task_spawn_all, .task, "__task_spawn_all");
                     break :blk self.builder().helper(.task_spawn_all);
                 }
                 if (std.mem.eql(u8, ad.name, "gate_new")) break :blk self.builder().helper(.task_gate_new);
@@ -8831,6 +9098,15 @@ const Emitter = struct {
             .locals = if (gc_std) try self.localLines() else &.{},
             .body = .{ .stack = if (result) |r| .{ .value = r } else .none, .lines = lines.items },
         }) });
+    }
+
+    /// Front 164 s2 P4 — the call of a combinator's GC form, which builds its
+    /// tasks' array as a GC array: the group without the linear `arr_new`
+    /// its linear form calls.
+    fn gcTaskHelper(self: *Emitter, g: wat.HelperGroup, dep: wat.HelperGroup, symbol: []const u8) Instr {
+        self.b.helpers.groups.insert(g);
+        self.b.helpers.require(dep);
+        return .{ .call = symbol };
     }
 
     fn emitFn(self: *Emitter, f: ast.FnDecl) !void {
@@ -9545,8 +9821,12 @@ const Emitter = struct {
                             // `unknown` a test proved): the annotation names it.
                             if (ta == .named) if (self.resolveRecordName(ta.named)) |rty| try self.local_types.put(lb.name, rty);
                         };
-                        if (self.isStringExpr(lb.value.*)) try self.str_locals.put(lb.name, {});
-                        if (self.isBoolExpr(lb.value.*)) try self.bool_locals.put(lb.name, {});
+                        const gc_task = self.mode == .gc and t == .ref and t.ref == .task;
+                        if (gc_task and lb.value.* == .function and lb.value.function.kind.syntax == .asyncBlock) {
+                            if (try self.gcBlockRepr(lb.value.*)) |r| try self.gc_block_locals.put(self.alloc, lb.name, r) else _ = self.gc_block_locals.remove(lb.name);
+                        }
+                        if (!gc_task and self.isStringExpr(lb.value.*)) try self.str_locals.put(lb.name, {});
+                        if (!gc_task and self.isBoolExpr(lb.value.*)) try self.bool_locals.put(lb.name, {});
                         try self.noteArrayLocal(lb.name, lb.value.*);
                         if (self.resultShapeOf(lb.value.*)) |shape| try self.result_shape_locals.put(lb.name, shape);
                         try self.declareLocal(lb.name, t);
@@ -9699,6 +9979,9 @@ const Emitter = struct {
     /// width it names (`val a: i64 = 4294967295` is an `i64`, `val o: ?f64 =
     /// 1.1` the address of a cell) — and the value's own type otherwise.
     fn bindingLocalType(self: *Emitter, ann: ?ast.TypeRef, value: ast.Expr) Repr {
+        // Front 164 s2 P4 — a task (an `async { }` block, a call answering
+        // one) is a `$task`, whatever its value's shape.
+        if (self.mode == .gc and ann == null and self.isTaskExpr(value)) return .{ .ref = .task };
         if (self.mode == .gc) if (ann) |ta| {
             const r = self.reprOf(ta);
             if (r != .i32) return r;
@@ -10198,23 +10481,40 @@ const Emitter = struct {
         } } };
         const caught = try self.builder().seq(&.{ try_line, .{ .instr = .@"return" } }, .terminated);
         const fail = self.builder().helper(.panic_fail);
-        const print_arm = try self.builder().seq(&.{
-            .{ .instr = .{ .local_get = "__c" }, .indent = 6 },
+        // Front 164 s2 P4 — in a GC module the payload is an `$exn`.
+        const gc = self.mode == .gc;
+        const exn: u16 = if (gc) self.gcTyIndex(.exn) else 0;
+        const c_vt: ValType = if (gc) .anyref else .i32;
+        const msg_read: []const wat.Line = if (gc) &.{
+            .{ .instr = .{ .ref_cast = ValType.def(exn) }, .indent = 6 },
+            .{ .instr = .{ .struct_get = .{ .ty = exn, .field = 0 } }, .indent = 6, .comment = "the message" },
+        } else &.{
             .{ .instr = .{ .load = .{} }, .indent = 6, .comment = "the message" },
-            .{ .instr = fail, .indent = 6 },
-        }, .none);
-        const body = try self.builder().seq(&.{
-            .{ .instr = .{ .block = .{ .kind = .block, .label = "__uncaught", .result = .i32, .body = caught } } },
+        };
+        var print_lines: std.ArrayListUnmanaged(wat.Line) = .empty;
+        try print_lines.append(ar, .{ .instr = .{ .local_get = "__c" }, .indent = 6 });
+        try print_lines.appendSlice(ar, msg_read);
+        try print_lines.append(ar, .{ .instr = fail, .indent = 6 });
+        const print_arm = try self.builder().seq(print_lines.items, .none);
+        var body_lines: std.ArrayListUnmanaged(wat.Line) = .empty;
+        try body_lines.appendSlice(ar, &.{
+            .{ .instr = .{ .block = .{ .kind = .block, .label = "__uncaught", .result = c_vt, .body = caught } } },
             .{ .instr = .{ .local_set = "__c" }, .comment = "an abort nothing caught (decision 518)" },
             .{ .instr = .{ .local_get = "__c" } },
-            .{ .instr = .{ .load = .{ .offset = 4 } }, .comment = "print" },
+        });
+        if (gc) {
+            try body_lines.append(ar, .{ .instr = .{ .ref_cast = ValType.def(exn) } });
+            try body_lines.append(ar, .{ .instr = .{ .struct_get = .{ .ty = exn, .field = 1 } }, .comment = "print" });
+        } else try body_lines.append(ar, .{ .instr = .{ .load = .{ .offset = 4 } }, .comment = "print" });
+        try body_lines.appendSlice(ar, &.{
             .{ .instr = .{ .@"if" = .{ .then = .{ .seq = print_arm } } } },
             .{ .instr = .@"unreachable" },
-        }, .terminated);
+        });
+        const body = try self.builder().seq(body_lines.items, .terminated);
         try self.item(.{ .func = try self.builder().func(.{
             .name = "_botopink_main",
             .exports = &.{ "_botopink_main", "_start" },
-            .locals = try self.builder().localLines(&.{.{ .name = "__c", .ty = .i32 }}),
+            .locals = try self.builder().localLines(&.{.{ .name = "__c", .ty = c_vt }}),
             .body = body,
         }) });
     }
@@ -10372,7 +10672,9 @@ const Emitter = struct {
         const handler = try std.fmt.allocPrint(ar, "__defer_h{d}", .{self.defer_seq});
         const done = try std.fmt.allocPrint(ar, "__defer_done{d}", .{self.defer_seq});
         const exc = try std.fmt.allocPrint(ar, "__defer_exc{d}", .{self.defer_seq});
-        try self.declareLocal(exc, .i32);
+        // The tag's payload: an `$exn` as an `anyref` in a GC module.
+        const exc_r: Repr = if (self.mode == .gc) .{ .ref = .unknown } else .i32;
+        try self.declareLocal(exc, exc_r);
         const ran = try std.fmt.allocPrint(ar, "__defer_ran{d}", .{self.defer_seq});
         try self.declareLocal(ran, .i32);
         self.defer_stack.items[idx].ran_flag = ran;
@@ -10404,7 +10706,7 @@ const Emitter = struct {
 
         var caught_c: Capture = .{};
         self.open(&caught_c);
-        try self.emit(.{ .block = .{ .kind = .block, .label = handler, .result = .i32, .body = normal_seq } });
+        try self.emit(.{ .block = .{ .kind = .block, .label = handler, .result = self.vtOf(exc_r), .body = normal_seq } });
         try self.emit(.{ .local_set = exc });
         // An exit path inside the region may have run the deferred code (and
         // panicked in it): it runs once.
@@ -10603,7 +10905,8 @@ const Emitter = struct {
                     // An enum constructor's value is typed by its enum, so the
                     // name prints by the variant's descriptor.
                     const enum_tr: ?ast.TypeRef = if (self.enumValueOf(lb.value.*)) |en| .{ .named = en } else null;
-                    const bound_tr: ?ast.TypeRef = lb.typeAnnotation orelse (try self.failingAsyncTypeRef(lb.value.*)) orelse self.typeRefOf(lb.value.*) orelse (try self.fnRefTypeRef(lb.value.*)) orelse enum_tr orelse try self.lambdaTaskTypeRef(lb.value.*);
+                    const gc_block: ?ast.TypeRef = if (self.mode == .gc and lb.value.* == .function and lb.value.function.kind.syntax == .asyncBlock) try self.asyncBlockTaskType(lb.value.*, false) else null;
+                    const bound_tr: ?ast.TypeRef = lb.typeAnnotation orelse (try self.failingAsyncTypeRef(lb.value.*)) orelse gc_block orelse self.typeRefOf(lb.value.*) orelse (try self.fnRefTypeRef(lb.value.*)) orelse enum_tr orelse try self.lambdaTaskTypeRef(lb.value.*);
                     if (bound_tr) |tr| try self.local_typerefs.put(lb.name, tr);
                     // Decision 210 — the composite a `val` holds, for `==`
                     // over the name (`val t = #(P(x: 1), 2)`).
@@ -11418,6 +11721,7 @@ const Emitter = struct {
     }
 
     fn lowerTryCatch(self: *Emitter, tc: anytype) anyerror!void {
+        if (self.mode == .gc) return self.gcTryCatch(tc);
         const slot = try self.tryName(self.try_seq);
         self.try_seq += 1;
         try self.declareLocal(slot, .i32);
@@ -11850,7 +12154,9 @@ const Emitter = struct {
             if (self.exceptions) {
                 const has_text = cc.args.len == 1 and self.isStringExpr(cc.args[0].value.*);
                 if (has_text)
-                    try self.lowerCoerced(cc.args[0].value.*, .i32)
+                    try self.lowerCoerced(cc.args[0].value.*, if (self.mode == .gc) Repr.string else .i32)
+                else if (self.mode == .gc)
+                    try self.emitStrLit(if (is_panic) "panic" else "not implemented")
                 else
                     try self.emit(try self.constInt((try self.internString(if (is_panic) "panic" else "not implemented")).offset));
                 try self.emit(if (is_panic and has_text) one else zero);
@@ -14381,7 +14687,10 @@ const Emitter = struct {
                     return self.refuse(arg.getLoc(), "the wasm backend has one body for generic `{s}`, where `{s}`'s type parameter is a word: a float or an `i64` in it has no lowering", .{ cc.callee, p.name });
             }
         }
-        if (self.host_bindings.get(cc.callee)) |hb| if (hb.binding == .wasi and hb.binding.wasi.task != null) try self.refuseWideTaskValues(cc);
+        if (self.host_bindings.get(cc.callee)) |hb| if (hb.binding == .wasi and hb.binding.wasi.task != null) {
+            try self.refuseWideTaskValues(cc);
+            if (self.mode == .gc and std.mem.eql(u8, hb.binding.wasi.name, "spawn_all")) try self.gcSpawnAllAnswers(cc);
+        };
         if (self.fn_sigs.get(cc.callee)) |sig| {
             var base: usize = 0;
             // `recv.m(a)` against a top-level `fn m(self, a)`: the receiver is
@@ -17257,7 +17566,11 @@ const Emitter = struct {
 
     /// The state machine being lowered: the next resume index (0 is "from
     /// the top").
-    const Machine = struct { next: u32 = 1 };
+    const Machine = struct {
+        next: u32 = 1,
+        /// A GC module's machine: the index of its frame type (`gc_frames`).
+        frame: u32 = 0,
+    };
 
     /// The comment line `lowerAwait` writes where a suspension saves the
     /// frame; `emitStateMachine` replaces it with the stores once every local
@@ -17277,6 +17590,18 @@ const Emitter = struct {
     fn beginMachine(self: *Emitter, body: []const ast.Stmt) !void {
         try self.checkAwaitOrder(body);
         self.machine = .{};
+        if (self.mode == .gc) {
+            // Front 164 s2 P4 — the task and its typed frame are references;
+            // the frame's slots are known once the body is lowered.
+            const n: u32 = @intCast(self.gc_frames.items.len);
+            try self.gc_frames.append(self.alloc, &.{});
+            self.machine.?.frame = n;
+            try self.declareLocal(sm_task, .{ .ref = .task });
+            try self.declareLocal(sm_frame, .{ .ref = .{ .frame = n } });
+            try self.declareLocal(sm_seek, .i32);
+            try self.declareLocal(sm_state, .i32);
+            return;
+        }
         inline for (.{ sm_task, sm_frame, sm_seek, sm_state }) |n| try self.declareLocal(n, .i32);
     }
 
@@ -17286,6 +17611,8 @@ const Emitter = struct {
     /// type. Anything else is awaited as the value it is — an eager
     /// `@Component` is its own value here.
     fn isTaskExpr(self: *Emitter, e: ast.Expr) bool {
+        // `o ?? t` over a `?@Task<T>` (front 164 s2 P4, a GC module).
+        if (self.mode == .gc) if (nullishParts(e)) |nu| return self.isTaskExpr(nu.dflt);
         return switch (e) {
             .function => |f| f.kind.syntax == .asyncBlock,
             .collection => |col| switch (col.kind) {
@@ -17424,6 +17751,15 @@ const Emitter = struct {
         return e;
     }
 
+    /// Whether `e` is a state machine's `return t` of a task, which the
+    /// machine adopts (`adoptTask`): its value is what `t` settles with, read
+    /// as the machine's own answer.
+    fn adoptsTask(self: *Emitter, e: ast.Expr) bool {
+        if (self.machine == null or e != .jump or e.jump.kind != .@"return") return false;
+        const v = e.jump.kind.@"return" orelse return false;
+        return self.isTaskExpr(v.*);
+    }
+
     /// The wasm type of the value a task `e` settles with.
     fn awaitedType(self: *Emitter, e: ast.Expr) Repr {
         if (e == .function) return .i32;
@@ -17456,20 +17792,121 @@ const Emitter = struct {
         if (runCallOf(operand_in)) |rc| return self.lowerRun(rc.call.kind.call, true);
         const operand = innerClosureBlock(operand_in) orelse operand_in;
         if (!self.isTaskExpr(operand)) return self.lowerExpr(operand);
-        const vty = self.awaitedType(operand);
-        const load: Instr = .{ .load = .{ .ty = (vty).num(), .offset = 8 } };
+        const read: Settled = if (self.mode == .gc)
+            .{ .gc = try self.gcAwaitedRead(operand) }
+        else
+            .{ .load = .{ .load = .{ .ty = self.awaitedType(operand).num(), .offset = 8 } } };
+        const task_r: Repr = if (self.mode == .gc) .{ .ref = .task } else .i32;
         if (self.machine == null) {
-            try self.lowerCoerced(operand, .i32);
+            try self.lowerCoerced(operand, task_r);
             try self.emit(self.builder().helper(.task_block_on));
-            try self.emitC(load, "the settled value");
+            try self.emitSettledRead(read);
             return;
         }
         const lo = self.machine.?.next;
         var op_c: Capture = .{};
         self.open(&op_c);
-        try self.lowerCoerced(operand, .i32);
-        const op_seq = self.seal(&op_c, .{ .value = .i32 });
-        return self.emitSuspension(lo, op_seq, null, load);
+        try self.lowerCoerced(operand, task_r);
+        const op_seq = self.seal(&op_c, .{ .value = self.vtOf(task_r) });
+        return self.emitSuspension(lo, op_seq, null, read);
+    }
+
+    /// How an `await` reads the value a settled task holds: in linear memory
+    /// a load off the task's record; in a GC module the task's `value` field,
+    /// unboxed to the repr the task settles with (`raw`: kept the `anyref` it
+    /// is — a component run's answer, decision 504); a `void` one is `0`.
+    const Settled = union(enum) {
+        load: Instr,
+        gc: GcSettled,
+    };
+    const GcSettled = struct { repr: Repr, void_: bool = false, raw: bool = false };
+
+    /// The settled task on the stack read as `read` says.
+    fn emitSettledRead(self: *Emitter, read: Settled) anyerror!void {
+        switch (read) {
+            .load => |l| try self.emitC(l, "the settled value"),
+            .gc => |g| {
+                if (g.void_) {
+                    try self.emit(.drop);
+                    try self.emit(zero);
+                    return;
+                }
+                try self.emitC(.{ .struct_get = .{ .ty = self.gcTyIndex(.task), .field = 2 } }, "the settled value");
+                if (!g.raw) try self.gcUnbox(g.repr);
+            },
+        }
+    }
+
+    /// Front 164 s2 P4 — the repr an awaited task `e` settles with in a GC
+    /// module: `T` of its `@Task<T>` (an `async { }` block's by its value);
+    /// a task whose `T` nothing here can tell keeps the module in linear
+    /// memory, since a box read as another kind traps.
+    fn gcAwaitedRead(self: *Emitter, e: ast.Expr) anyerror!GcSettled {
+        if (e == .collection and e.collection.kind == .grouped) return self.gcAwaitedRead(e.collection.kind.grouped.*);
+        if (e == .function) return .{ .repr = (try self.gcBlockRepr(e)) orelse return self.gcFail("an awaited async block of no known type") };
+        if (plainIdentName(e)) |n| if (self.gc_block_locals.get(self.resolveName(n))) |r| return .{ .repr = r };
+        const t: ast.TypeRef = self.typeRefOf(e) orelse return self.gcFail("an awaited task of no known type");
+        var inner = taskValueTypeRef(t) orelse return self.gcFail("an awaited task of no known type");
+        if (!self.typeConcrete(inner)) {
+            // A generic task's `T`: bound by the call's arguments, or read off
+            // the expression the shape readers see the task's value as
+            // (`delay`'s value argument, `race`'s first task, …).
+            if (self.bindAwaitedGeneric(e, inner)) |b| inner = b;
+        }
+        if (!self.typeConcrete(inner)) {
+            if (e == .call and e.call.kind == .call) if (self.genericResultArg(e.call.kind.call)) |v| {
+                if (self.isTaskExpr(v)) return self.gcAwaitedRead(v);
+                const r = self.wasmTypeOf(v);
+                if (r == .ref and r.ref == .task) return self.gcFail("an awaited task of a type parameter");
+                return .{ .repr = r };
+            };
+            return self.gcFail("an awaited task of a type parameter");
+        }
+        if (inner == .named and std.mem.eql(u8, inner.named, "void")) return .{ .repr = .i32, .void_ = true };
+        return .{ .repr = self.reprOf(inner) };
+    }
+
+    /// The repr an `async { }` block settles with, as its lifted body
+    /// answers it: a failing block's `@Result`, else the type of its value
+    /// (`asyncBlockValue` — a name the block binds read by its value, an
+    /// awaited task by what it settles with). Null when that value names
+    /// something only the block declares.
+    fn gcBlockRepr(self: *Emitter, e: ast.Expr) anyerror!?Repr {
+        if ((try self.failingAsyncTypeRef(e)) != null) return .{ .ref = .result };
+        const v = asyncBlockValue(e) orelse return null;
+        if (plainIdentName(v)) |n| {
+            const rn = self.resolveName(n);
+            if (!self.locals.contains(rn) and !self.globals.contains(rn)) return null;
+        }
+        if (v == .jump and v.jump.kind == .@"return") return null;
+        if (v == .jump and v.jump.kind == .await_) {
+            const inner = v.jump.kind.await_.*;
+            if (!self.isTaskExpr(inner)) return self.wasmTypeOf(inner);
+            const g = self.gcAwaitedRead(inner) catch return null;
+            return if (g.void_) null else g.repr;
+        }
+        if (self.isTaskExpr(v)) {
+            const g = self.gcAwaitedRead(v) catch return null;
+            return if (g.void_) null else g.repr;
+        }
+        return self.wasmTypeOf(v);
+    }
+
+    /// Whether `t` names only types this module knows — no type parameter
+    /// left unbound (front 164 s2 P4: a box read as another kind traps).
+    fn typeConcrete(self: *Emitter, t: ast.TypeRef) bool {
+        return switch (t) {
+            // A type parameter of the body being lowered is an `anyref` here.
+            .named => |n| self.namesConcreteType(n) or std.mem.eql(u8, n, "unknown") or std.mem.eql(u8, n, "Bytes") or std.mem.eql(u8, n, "bigint") or isGenericParamName(n, self.owner_tparams, self.fn_tparams),
+            .array => |inner| self.typeConcrete(inner.*),
+            .optional => |inner| self.typeConcrete(inner.*),
+            .generic => |g| blk: {
+                for (g.args) |a| if (!self.typeConcrete(a)) break :blk false;
+                break :blk true;
+            },
+            .tuple_, .labeledTuple, .function => true,
+            else => false,
+        };
     }
 
     /// Decision 504 — a component body that keeps a bare `try` runs its
@@ -17517,7 +17954,7 @@ const Emitter = struct {
     /// `Rendered` are never told apart by their word.
     fn lowerRun(self: *Emitter, cc: anytype, awaited: bool) anyerror!void {
         if (cc.args.len != 2) return self.refuse(self.call_loc, "a component run takes the component and the scope", .{});
-        if (self.mode == .gc) return self.gcRun(cc);
+        if (self.mode == .gc) return self.gcRun(cc, awaited);
         const ra = self.reg_arena.allocator();
         const k = self.loop_seq;
         self.loop_seq += 1;
@@ -17539,7 +17976,7 @@ const Emitter = struct {
         try self.lowerCoerced(cc.args[1].value.*, .i32);
         try self.emitIndirect(cv, 1);
         const op_seq = self.seal(&op_c, .{ .value = .i32 });
-        if (awaited and self.machine != null) return self.emitSuspension(lo, op_seq, mk, load);
+        if (awaited and self.machine != null) return self.emitSuspension(lo, op_seq, mk, .{ .load = load });
         for (op_seq.lines) |l| try self.cur.?.append(self.arena(), l);
         const w = try std.fmt.allocPrint(ra, "__runw{d}", .{k});
         try self.declareLocal(w, .i32);
@@ -17561,16 +17998,49 @@ const Emitter = struct {
     /// A component's run in a GC module: the lambda is called with the
     /// scope and answers what the run wrapper declares. A component that
     /// awaits is a state machine, which has no GC form (`gcEmitLifted`).
-    fn gcRun(self: *Emitter, cc: anytype) anyerror!void {
+    fn gcRun(self: *Emitter, cc: anytype, awaited: bool) anyerror!void {
         const sig = self.fn_sigs.get(cc.callee) orelse return self.gcFail("a component run of no signature");
-        const cv = try std.fmt.allocPrint(self.reg_arena.allocator(), "__runc{d}", .{self.loop_seq});
+        const ra = self.reg_arena.allocator();
+        const k = self.loop_seq;
         self.loop_seq += 1;
+        const cv = try std.fmt.allocPrint(ra, "__runc{d}", .{k});
+        const mk = try std.fmt.allocPrint(ra, "__runm{d}", .{k});
         try self.declareLocal(cv, .{ .ref = .closure });
+        try self.declareLocal(mk, .i32);
+        const lo: u32 = if (self.machine) |m| m.next else 0;
+        var op_c: Capture = .{};
+        self.open(&op_c);
         try self.lowerCoerced(cc.args[0].value.*, .{ .ref = .closure });
-        try self.emit(.{ .local_set = cv });
+        try self.emit(.{ .local_tee = cv });
+        try self.emitC(.{ .struct_get = .{ .ty = self.gcTyIndex(.closure), .field = 1 } }, "the lambda's mark: a state machine?");
+        try self.emit(.{ .local_set = mk });
         try self.emit(.{ .local_get = cv });
         try self.lowerCoerced(cc.args[1].value.*, .{ .ref = .unknown });
         try self.gcEmitIndirect(cv, 1);
+        const op_seq = self.seal(&op_c, .{ .value = .anyref });
+        // Decision 504 — a marked lambda answers its task: awaited where
+        // the run is awaited inside a machine, else run until it settles.
+        if (awaited and self.machine != null) {
+            try self.emitSuspension(lo, op_seq, mk, .{ .gc = .{ .repr = .{ .ref = .unknown }, .raw = true } });
+        } else {
+            for (op_seq.lines) |l| try self.cur.?.append(self.arena(), l);
+            const w = try std.fmt.allocPrint(ra, "__runw{d}", .{k});
+            try self.declareLocal(w, .{ .ref = .unknown });
+            try self.emit(.{ .local_set = w });
+            try self.emit(.{ .local_get = mk });
+            var then_c: Capture = .{};
+            self.open(&then_c);
+            try self.emit(.{ .local_get = w });
+            try self.emit(.{ .ref_cast = self.gcTy(.task) });
+            try self.emit(self.builder().helper(.task_block_on));
+            try self.emitSettledRead(.{ .gc = .{ .repr = .{ .ref = .unknown }, .raw = true } });
+            const then_seq = self.seal(&then_c, .{ .value = .anyref });
+            var else_c: Capture = .{};
+            self.open(&else_c);
+            try self.emit(.{ .local_get = w });
+            const else_seq = self.seal(&else_c, .{ .value = .anyref });
+            try self.emit(.{ .@"if" = .{ .result = .anyref, .then = .{ .seq = then_seq }, .@"else" = .{ .seq = else_seq } } });
+        }
         try self.emitConvert(.{ .ref = .unknown }, sig.result orelse .i32);
     }
 
@@ -17578,13 +18048,18 @@ const Emitter = struct {
     /// `op_seq` leaves (`lowerAwait`'s comment). With `mark` (a run, decision
     /// 504), the word is a task only when the local `mark` is set: otherwise
     /// it is the value, and nothing suspends.
-    fn emitSuspension(self: *Emitter, lo: u32, op_seq: wat.Seq, mark: ?[]const u8, load: Instr) anyerror!void {
+    fn emitSuspension(self: *Emitter, lo: u32, op_seq: wat.Seq, mark: ?[]const u8, read: Settled) anyerror!void {
         const k = self.machine.?.next;
         self.machine.?.next += 1;
         const ra = self.reg_arena.allocator();
         const aw = try std.fmt.allocPrint(ra, "__aw{d}", .{k});
         const label = aw;
-        try self.declareLocal(aw, .i32);
+        const gc = self.mode == .gc;
+        // In a GC module the awaited word is a `$task`, or — a run's, whose
+        // mark says whether it is one — an `anyref` cast where it is one.
+        const aw_r: Repr = if (!gc) .i32 else if (mark != null) .{ .ref = .unknown } else .{ .ref = .task };
+        try self.declareLocal(aw, aw_r);
+        const as_task: ?Instr = if (gc and mark != null) .{ .ref_cast = self.gcTy(.task) } else null;
 
         var c: Capture = .{};
         self.open(&c);
@@ -17627,6 +18102,7 @@ const Emitter = struct {
             var p_c: Capture = .{};
             self.open(&p_c);
             try self.emit(.{ .local_get = aw });
+            if (as_task) |i| try self.emit(i);
             try self.emit(self.builder().helper(.task_pending));
             const p_seq = self.seal(&p_c, .{ .value = .i32 });
             var n_c: Capture = .{};
@@ -17642,12 +18118,16 @@ const Emitter = struct {
             var sus_c: Capture = .{};
             self.open(&sus_c);
             try self.emit(.{ .local_get = aw });
+            if (as_task) |i| try self.emit(i);
             try self.emit(.{ .local_get = sm_task });
             try self.emit(self.builder().helper(.task_wait));
             try self.emit(.{ .comment = save_marker });
             try self.emit(.{ .local_get = sm_frame });
             try self.emit(try self.constInt(k));
-            try self.emitC(.{ .store = .{} }, "the resume index");
+            if (gc)
+                try self.emitC(.{ .struct_set = .{ .ty = self.gcTyIndex(.{ .frame = self.machine.?.frame }), .field = 0 } }, "the resume index")
+            else
+                try self.emitC(.{ .store = .{} }, "the resume index");
             try self.emit(one);
             try self.emit(.{ .global_set = "__task_suspended" });
             try self.pushZero();
@@ -17658,21 +18138,23 @@ const Emitter = struct {
         const inner = self.seal(&c, .none);
         try self.emit(.{ .block = .{ .kind = .block, .label = label, .body = inner } });
         if (mark) |m| {
+            const vt = self.vtOf(aw_r);
             try self.emit(.{ .local_get = m });
             var t_c: Capture = .{};
             self.open(&t_c);
             try self.emit(.{ .local_get = aw });
-            try self.emitC(load, "the settled value");
-            const t_seq = self.seal(&t_c, .{ .value = .i32 });
+            if (as_task) |i| try self.emit(i);
+            try self.emitSettledRead(read);
+            const t_seq = self.seal(&t_c, .{ .value = vt });
             var v_c: Capture = .{};
             self.open(&v_c);
             try self.emit(.{ .local_get = aw });
-            const v_seq = self.seal(&v_c, .{ .value = .i32 });
-            try self.emit(.{ .@"if" = .{ .result = .i32, .then = .{ .seq = t_seq }, .@"else" = .{ .seq = v_seq } } });
+            const v_seq = self.seal(&v_c, .{ .value = vt });
+            try self.emit(.{ .@"if" = .{ .result = vt, .then = .{ .seq = t_seq }, .@"else" = .{ .seq = v_seq } } });
             return;
         }
         try self.emit(.{ .local_get = aw });
-        try self.emitC(load, "the settled value");
+        try self.emitSettledRead(read);
     }
 
     /// `!$__seek || lo <= $__state <= hi` — the condition a statement (or a
@@ -17737,7 +18219,7 @@ const Emitter = struct {
         if (self.mode == .gc) {
             const r = self.wasmTypeOf(cond);
             if (r.isRef()) {
-                if (self.machine != null) return self.gcFail("an optional condition in a state machine");
+                if (self.machine != null) return self.gcMachineRefCondition(cond, r, tee);
                 try self.lowerCoerced(cond, r);
                 if (tee) |t| try self.emit(.{ .local_tee = t });
                 try self.emit(.ref_is_null);
@@ -17776,10 +18258,44 @@ const Emitter = struct {
         try self.emit(.{ .@"if" = .{ .result = .i32, .then = .{ .seq = back }, .@"else" = .{ .seq = seq } } });
     }
 
+    /// An optional condition (a reference: present when not null) of a GC
+    /// module's state machine: the reference is kept in a local the frame
+    /// saves (`tee`, the binding's own, else `__cnd<n>`), and re-entering
+    /// reads it back instead of evaluating the condition again — unless an
+    /// `await` is inside it (front 164 s2 P4).
+    fn gcMachineRefCondition(self: *Emitter, cond: ast.Expr, r: Repr, tee: ?[]const u8) anyerror!void {
+        const lo = self.machine.?.next;
+        const vt = self.vtOf(r);
+        var c: Capture = .{};
+        self.open(&c);
+        const keep = tee orelse blk: {
+            const n = try std.fmt.allocPrint(self.reg_arena.allocator(), "__cnd{d}", .{self.loop_seq});
+            self.loop_seq += 1;
+            try self.declareLocal(n, r);
+            break :blk n;
+        };
+        try self.lowerCoerced(cond, r);
+        try self.emit(.{ .local_tee = keep });
+        const seq = self.seal(&c, .{ .value = vt });
+        if (self.awaitRange(lo) != null) {
+            for (seq.lines) |l| try self.cur.?.append(self.arena(), l);
+        } else {
+            var back_c: Capture = .{};
+            self.open(&back_c);
+            try self.emitC(.{ .local_get = keep }, "the condition, read back");
+            const back = self.seal(&back_c, .{ .value = vt });
+            try self.emit(.{ .local_get = sm_seek });
+            try self.emit(.{ .@"if" = .{ .result = vt, .then = .{ .seq = back }, .@"else" = .{ .seq = seq } } });
+        }
+        try self.emit(.ref_is_null);
+        try self.emit(opOf(.i32, "eqz"));
+    }
+
     /// Decision 392 — `fn`'s lowered body as a state machine (§ above): `f`
     /// is the function the body would have been, its `result` the task's
     /// value type.
     fn emitStateMachine(self: *Emitter, f: wat.Func) !void {
+        if (self.mode == .gc) return self.gcEmitStateMachine(f);
         const ar = self.arena();
         const ty: ValType = f.result orelse .i32;
         var slots: std.ArrayListUnmanaged(wat.Local) = .empty;
@@ -17884,6 +18400,126 @@ const Emitter = struct {
         }) });
     }
 
+    /// Decision 392 in a GC module (front 164 s2 P4): the same three
+    /// functions over a `$task` and the machine's typed frame `$frame<n>` —
+    /// field 0 its resume index, then one field per local. `$f` makes the
+    /// frame (`struct.new_default`, the arguments stored) and starts the task;
+    /// `$f__body(task)` casts the task's frame back and restores every local
+    /// from it; `$f__step(task)` settles the task with the body's answer in its
+    /// box (`gcBox`, decision 544: shared, never copied) unless it suspended.
+    fn gcEmitStateMachine(self: *Emitter, f: wat.Func) !void {
+        const ar = self.arena();
+        const n = self.machine.?.frame;
+        var slots: std.ArrayListUnmanaged(wat.Local) = .empty;
+        for (f.params) |p| try slots.append(ar, .{ .name = p.name, .ty = p.ty });
+        var body_locals: std.ArrayListUnmanaged(wat.Local) = .empty;
+        for (f.params) |p| try body_locals.append(ar, .{ .name = p.name, .ty = p.ty });
+        for (f.locals) |group| for (group) |l| {
+            if (std.mem.eql(u8, l.name, sm_task)) continue;
+            try body_locals.append(ar, l);
+            if (!isMachineLocal(l.name)) try slots.append(ar, l);
+        };
+        const slot_tys = try ar.alloc(ValType, slots.items.len);
+        for (slots.items, slot_tys) |sl, *t| t.* = sl.ty;
+        self.gc_frames.items[n] = slot_tys;
+        const fty = self.gcTyIndex(.{ .frame = n });
+        const frame_vt = ValType.def(fty);
+        const task_vt = self.gcTy(.task);
+        const kind = self.task_kinds.items.len;
+        const body_name = try std.fmt.allocPrint(ar, "{s}__body", .{f.name});
+        const step_name = try std.fmt.allocPrint(ar, "{s}__step", .{f.name});
+        try self.task_kinds.append(self.alloc, step_name);
+        try self.task_edges.append(self.alloc, .{ .from = f.name, .to = step_name });
+
+        var saves: std.ArrayListUnmanaged(wat.Line) = .empty;
+        var restores: std.ArrayListUnmanaged(wat.Line) = .empty;
+        for (slots.items, 0..) |sl, i| {
+            const field: wat.FieldRef = .{ .ty = fty, .field = @intCast(1 + i) };
+            try saves.appendSlice(ar, &.{ .{ .instr = .{ .local_get = sm_frame } }, .{ .instr = .{ .local_get = sl.name } }, .{ .instr = .{ .struct_set = field } } });
+            try restores.appendSlice(ar, &.{ .{ .instr = .{ .local_get = sm_frame } }, .{ .instr = .{ .struct_get = field } }, .{ .instr = .{ .local_set = sl.name } } });
+        }
+
+        // $f — the task.
+        var start: std.ArrayListUnmanaged(wat.Line) = .empty;
+        try start.appendSlice(ar, &.{
+            .{ .instr = .{ .struct_new_default = fty }, .comment = "the frame: the resume index, then every local" },
+            .{ .instr = .{ .local_set = "__fr" } },
+        });
+        for (f.params, 0..) |p, i| try start.appendSlice(ar, &.{
+            .{ .instr = .{ .local_get = "__fr" } },
+            .{ .instr = .{ .local_get = p.name } },
+            .{ .instr = .{ .struct_set = .{ .ty = fty, .field = @intCast(1 + i) } } },
+        });
+        try start.appendSlice(ar, &.{
+            .{ .instr = try self.constInt(kind), .comment = step_name },
+            .{ .instr = .{ .local_get = "__fr" } },
+            .{ .instr = self.builder().helper(.task_start), .comment = "runs to its first await" },
+        });
+        try self.item(.{ .func = try self.builder().func(.{
+            .name = f.name,
+            .exports = f.exports,
+            .params = f.params,
+            .result = task_vt,
+            .locals = try self.builder().localLines(&.{.{ .name = "__fr", .ty = frame_vt }}),
+            .body = .{ .lines = start.items, .stack = .{ .value = task_vt } },
+        }) });
+
+        // $f__body — entered again at the frame's resume index.
+        var lines: std.ArrayListUnmanaged(wat.Line) = .empty;
+        try lines.appendSlice(ar, &.{
+            .{ .instr = .{ .local_get = sm_task } },
+            .{ .instr = .{ .struct_get = .{ .ty = self.gcTyIndex(.task), .field = 3 } } },
+            .{ .instr = .{ .ref_cast = frame_vt } },
+            .{ .instr = .{ .local_set = sm_frame } },
+        });
+        try lines.appendSlice(ar, restores.items);
+        try lines.appendSlice(ar, &.{
+            .{ .instr = .{ .local_get = sm_frame } },
+            .{ .instr = .{ .struct_get = .{ .ty = fty, .field = 0 } }, .comment = "the resume index" },
+            .{ .instr = .{ .local_tee = sm_state } },
+            .{ .instr = zero },
+            .{ .instr = opOf(.i32, "ne") },
+            .{ .instr = .{ .local_set = sm_seek } },
+        });
+        const replaced = try self.withFrameSaves(f.body, saves.items);
+        try lines.appendSlice(ar, replaced.lines);
+        try self.item(.{ .func = try self.builder().func(.{
+            .name = body_name,
+            .params = &.{wat.Builder.param(sm_task, task_vt)},
+            .result = f.result,
+            .locals = try self.builder().localLines(body_locals.items),
+            .body = .{ .lines = lines.items, .stack = replaced.stack },
+        }) });
+
+        // $f__step — the body, then the task settled unless it suspended.
+        var step: std.ArrayListUnmanaged(wat.Line) = .empty;
+        try step.append(ar, .{ .instr = .{ .local_get = sm_task } });
+        try step.append(ar, .{ .instr = .{ .call = body_name } });
+        if (f.result != null) try step.append(ar, .{ .instr = .{ .local_set = "__v" } });
+        try step.append(ar, .{ .instr = .{ .global_get = "__task_suspended" } });
+        try step.append(ar, .{ .instr = .{ .@"if" = .{ .then = .{ .seq = .{ .lines = try ar.dupe(wat.Line, &.{
+            .{ .instr = zero },
+            .{ .instr = .{ .global_set = "__task_suspended" } },
+            .{ .instr = .@"return" },
+        }), .stack = .terminated } } } } });
+        try step.append(ar, .{ .instr = .{ .local_get = sm_task } });
+        if (f.result != null) {
+            try step.append(ar, .{ .instr = .{ .local_get = "__v" } });
+            var box_c: Capture = .{};
+            self.open(&box_c);
+            try self.gcBox(self.cur_result);
+            const boxed = self.seal(&box_c, .{ .value = .anyref });
+            try step.appendSlice(ar, boxed.lines);
+        } else try step.append(ar, .{ .instr = .{ .ref_null = .anyref } });
+        try step.append(ar, .{ .instr = .{ .call = "__task_settle" } });
+        try self.item(.{ .func = try self.builder().func(.{
+            .name = step_name,
+            .params = &.{wat.Builder.param(sm_task, task_vt)},
+            .locals = if (f.result) |rt| try self.builder().localLines(&.{.{ .name = "__v", .ty = rt }}) else &.{},
+            .body = .{ .lines = step.items, .stack = .none },
+        }) });
+    }
+
     /// `seq` with each `save_marker` line replaced by `saves`.
     fn withFrameSaves(self: *Emitter, seq: Seq, saves: []const wat.Line) !Seq {
         const ar = self.arena();
@@ -17921,10 +18557,11 @@ const Emitter = struct {
     /// its `kind` (`task_kinds`).
     fn taskResumeFunc(self: *Emitter) !wat.Func {
         const ar = self.arena();
+        const gc = self.mode == .gc;
         var lines: std.ArrayListUnmanaged(wat.Line) = .empty;
         try lines.appendSlice(ar, &.{
             .{ .instr = .{ .local_get = "t" } },
-            .{ .instr = .{ .load = .{ .offset = 20 } }, .comment = "kind" },
+            .{ .instr = if (gc) .{ .struct_get = .{ .ty = self.gcTyIndex(.task), .field = 4 } } else .{ .load = .{ .offset = 20 } }, .comment = "kind" },
             .{ .instr = .{ .local_set = "k" } },
         });
         for (self.task_kinds.items, 0..) |step, i| {
@@ -17942,7 +18579,7 @@ const Emitter = struct {
         try lines.append(ar, .{ .instr = .@"unreachable" });
         return self.builder().func(.{
             .name = "__task_resume",
-            .params = &.{wat.Builder.param("t", .i32)},
+            .params = &.{wat.Builder.param("t", if (gc) self.gcTy(.task) else .i32)},
             .locals = try self.builder().localLines(&.{.{ .name = "k", .ty = .i32 }}),
             .body = .{ .lines = lines.items, .stack = .terminated },
         });
@@ -18074,15 +18711,18 @@ const Emitter = struct {
     /// 392): the call answers the block's task, started and run to its first
     /// `await`.
     fn lowerAsyncBlock(self: *Emitter, body: []const ast.Stmt) anyerror!void {
-        if (self.mode == .gc) return self.gcFail("an async block");
+        const gc = self.mode == .gc;
         const idx = self.lambdas.items.len;
         const slot = try std.fmt.allocPrint(self.reg_arena.allocator(), "__async{d}", .{idx});
-        try self.declareLocal(slot, .i32);
+        try self.declareLocal(slot, if (gc) .{ .ref = .closure } else .i32);
         try self.lowerLambdaValue(&.{}, body, null);
         self.lambdas.items[idx].async_block = true;
         try self.emit(.{ .local_set = slot });
         try self.emitC(.{ .local_get = slot }, "the block's environment");
-        try self.emitIndirect(slot, 0);
+        if (!gc) return self.emitIndirect(slot, 0);
+        // Front 164 s2 P4 — the table's wrapper answers the task as an `anyref`.
+        try self.gcEmitIndirect(slot, 0);
+        try self.emit(.{ .ref_cast = self.gcTy(.task) });
     }
 
     fn lowerLambdaValue(self: *Emitter, params: []const []const u8, body: []const ast.Stmt, loc: ?ast.Loc) anyerror!void {
@@ -18471,7 +19111,6 @@ const Emitter = struct {
     /// The lifted lambda `l` in a GC module: the typed body and the table's
     /// wrapper over it.
     fn gcEmitLifted(self: *Emitter, l: Lifted) anyerror!void {
-        if (l.async_block) return self.gcFail("an async block");
         if (l.fn_ref) |target| return self.gcFnRefWrapper(l, target);
         self.resetFnState(null);
         const outer_template = self.cur_template;
@@ -18557,9 +19196,16 @@ const Emitter = struct {
         try self.declareScratch("_try", countTrys(l.body));
         try self.declareScratch("__mem", self.countMems(l.body));
         try self.emitLocalDecls(l.body);
+        // Front 164 s2 P4 — an `async { }` block, or a component whose body
+        // awaits (decision 504): the body is a state machine whose answer is
+        // the task's value; the wrapper answers the task.
+        if (l.async_block) try self.beginMachine(l.body);
+        defer self.machine = null;
         const tail_type: ?Repr = if (l.body.len > 0) self.lambdaTailType(l.body) else null;
         const ret: Repr = if (l.ret_ft) |rt|
-            (self.gcSigRepr(rt, null) orelse return self.gcFail("a lambda answer of a type with no repr"))
+            // A declared answer naming a type parameter nothing binds here
+            // (`attempt<T>(f: fn() -> T)`): the body's own, in its box.
+            (self.gcSigRepr(rt, null) orelse tail_type orelse return self.gcFail("a lambda answer of a type with no repr"))
         else if (l.ret_seen) |rs|
             rs
         else
@@ -18575,13 +19221,14 @@ const Emitter = struct {
         self.stmt_loc = outer_loc;
         const body = self.seal(&c, if (tail == .terminated) .terminated else .{ .value = self.vtOf(ret) });
         const bname = try std.fmt.allocPrint(ar, "{s}__b", .{l.name});
-        try self.item(.{ .func = try self.builder().func(.{
+        const bfunc = try self.builder().func(.{
             .name = bname,
             .params = params.items,
             .result = self.vtOf(ret),
             .locals = try self.localLines(),
             .body = body,
-        }) });
+        });
+        if (l.async_block) try self.emitStateMachine(bfunc) else try self.item(.{ .func = bfunc });
         // The table's wrapper.
         var wparams: std.ArrayListUnmanaged(wat.Param) = .empty;
         try wparams.append(ar, wat.Builder.param("__env", self.gcTy(.closure)));
@@ -18596,7 +19243,7 @@ const Emitter = struct {
             try self.gcUnbox(r);
         }
         try self.emit(.{ .call = bname });
-        try self.gcBox(ret);
+        if (!l.async_block) try self.gcBox(ret);
         const wbody = self.seal(&wc, .{ .value = .anyref });
         try self.item(.{ .func = try self.builder().func(.{
             .name = l.name,
@@ -21474,7 +22121,7 @@ const Emitter = struct {
             return;
         }
         if (vr.isRef() and fr.isRef()) {
-            if (vr.eql(fr) or (fr.ref == .unknown and vr.ref != .unknown and vr.ref != .bytes and vr.ref != .task and vr.ref != .cell and vr.ref != .bigint)) {
+            if (vr.eql(fr) or (fr.ref == .unknown and vr.ref != .unknown and vr.ref != .bytes and vr.ref != .cell and vr.ref != .bigint)) {
                 // A reference slot of a type parameter: the value prints by
                 // what it is — a string quoted, a record or variant by its
                 // printer —, an array or a tuple only when its shape has no
@@ -23534,6 +24181,20 @@ const Emitter = struct {
     /// Best-effort wasm value type of `e`. In a GC module an expression the
     /// base answer takes for a word may be a reference (`gcReprOfExpr`).
     fn wasmTypeOf(self: *Emitter, e: ast.Expr) Repr {
+        // Front 164 s2 P4 — a task is a `$task` in a GC module, whatever the
+        // shape of what it settles with.
+        if (self.mode == .gc and self.isTaskExpr(e)) return .{ .ref = .task };
+        // What an awaited task settles with (`gcAwaitedRead`).
+        if (self.mode == .gc and e == .jump and e.jump.kind == .await_ and runCallOf(e.jump.kind.await_.*) == null) {
+            const op = innerClosureBlock(e.jump.kind.await_.*) orelse e.jump.kind.await_.*;
+            if (self.isTaskExpr(op)) {
+                const g = self.gcAwaitedRead(op) catch {
+                    self.gcGap("an awaited task of no known type");
+                    return .i32;
+                };
+                return g.repr;
+            }
+        }
         // Decision 150 — a `case` / `if` the checker typed a union answers
         // the `unknown` its arms are boxed into.
         if (self.mode == .gc and self.unionValueOf(e) != null) return .{ .ref = .unknown };
@@ -23723,6 +24384,11 @@ const Emitter = struct {
         // `@panic(…)` / `@todo()` stand wherever a value of any type is wanted:
         // the call ends in `unreachable`, so nothing converts or follows it.
         if (self.mode == .gc and isNoReturnCall(e)) return self.lowerExpr(e);
+        // A `return` / `throw` / `break` / `continue` leaves: nothing follows it.
+        if (self.mode == .gc and e == .jump) switch (e.jump.kind) {
+            .@"return", .throw_, .@"break", .@"continue" => return self.lowerValue(e),
+            else => {},
+        };
         const from = self.wasmTypeOf(e);
         // A float or an `i64` asked for as a narrower word would be truncated
         // or wrapped (`i32.trunc_f64_s`, `i32.wrap_i64`) — a different number
