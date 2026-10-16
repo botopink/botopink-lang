@@ -28,7 +28,7 @@ pub fn main() {
         @print(c.message);
     }
     @print(@typeInfo(Signup).meta(Note)?.text ?? "none");
-    for (@TypeInfo.all(with: note, member: "make")) { d ->
+    for (@TypeInfo.all(with: note)) { d ->
         for (d.metaAll(Note)) { n ->
             @print(d.name + ": " + n.text);
         }

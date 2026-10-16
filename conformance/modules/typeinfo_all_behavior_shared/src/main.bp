@@ -1,0 +1,37 @@
+//// Decision 564 — a query over several decorators answers the behavior they
+//// share: `#[service]` and `#[repository]` both name `Bean`, so
+//// `@TypeInfo.all(with: [service, repository])` answers
+//// `Declared<Bean>[]`, in the one order (decision 235).
+
+pub behavior Bean {
+    fn make() -> Self;
+}
+
+pub fn service(comptime decl: @Decl<Bean>) {
+    decl.setMeta("role", "service");
+}
+
+pub fn repository(comptime decl: @Decl<Bean>) {
+    decl.setMeta("role", "repository");
+}
+
+#[service]
+pub type Mailer(host: string) implement Bean {
+    fn make() -> Self {
+        return Mailer(host: "smtp");
+    }
+}
+
+#[repository]
+pub type Orders(table: string) implement Bean {
+    fn make() -> Self {
+        return Orders(table: "orders");
+    }
+}
+
+pub fn main() {
+    val all: Declared<Bean>[] = @TypeInfo.all(with: [service, repository]);
+    for (all) { d ->
+        @print(d.name + " " + d.meta.map({ m -> m.value }).join(","));
+    }
+}

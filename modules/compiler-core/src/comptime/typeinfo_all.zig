@@ -257,6 +257,9 @@ pub const Plan = struct {
     /// Decision 385 — each name an entry's `@Expr` meta field wrote in its
     /// annotation's module, bound under its alias by the re-analysis.
     values: []const envMod.HygieneImport = &.{},
+    /// Decision 564 — call loc → the behavior its decorators share: the
+    /// answer is `Declared<B>[]` (absent: `Declared<unknown>[]`).
+    behaviors: std.AutoHashMapUnmanaged(ast.Loc, []const u8) = .empty,
 };
 
 pub const Outcome = union(enum) {
@@ -343,6 +346,8 @@ pub fn resolve(
         else => @as(*const [1]ast.Expr, with_expr)[0..1],
     };
     var decorators: std.ArrayListUnmanaged(Decorator) = .empty;
+    var typed = false;
+    var behavior: ?[]const u8 = null;
     // Decision 268 — an item that names no decorator leaves the query
     // unanswered: inference holds `with:` to its declared type
     // (`Decorator | Decorator[]`) and refuses it as the ordinary mismatch
@@ -359,16 +364,36 @@ pub fn resolve(
             },
             else => "",
         };
+        var decl_ref: ?ast.TypeRef = null;
+        var imported_behavior: ?[]const u8 = null;
+        var decl_generics: []const ast.GenericParam = &.{};
         const decorator: Decorator = found: {
             for (program.decls) |d| switch (d) {
-                .@"fn" => |f| if (std.mem.eql(u8, f.name, spelled) and f.params.len > 0 and f.params[0].typeRef.isDeclType() and f.body.len > 0)
-                    break :found .{ .owner = module_path, .name = f.name },
+                .@"fn" => |f| if (std.mem.eql(u8, f.name, spelled) and f.params.len > 0 and f.params[0].typeRef.isDeclType() and f.body.len > 0) {
+                    decl_ref = f.params[0].typeRef;
+                    decl_generics = f.genericParams;
+                    break :found .{ .owner = module_path, .name = f.name };
+                },
                 else => {},
             };
-            if (env.decorators.get(spelled)) |sig| if (sig.fn_decl) |dfn| if (dfn.body.len > 0)
+            if (env.decorators.get(spelled)) |sig| if (sig.fn_decl) |dfn| if (dfn.body.len > 0) {
+                decl_ref = sig.decl;
+                imported_behavior = sig.declBehavior;
+                decl_generics = sig.generics;
                 break :found .{ .owner = env.comptimeOwnerOf(dfn), .name = dfn.name };
+            };
             return .unanswered;
         };
+        // Decision 564 — the behavior the decorator's `@Decl<B>` names.
+        const named = imported_behavior orelse if (decl_ref) |r| declBehavior(env, program, r, decl_generics) else null;
+        if (named) |b| {
+            if (decorators.items.len == 0) {
+                typed = true;
+                behavior = b;
+            } else if (behavior) |prev| {
+                if (!std.mem.eql(u8, prev, b)) behavior = null;
+            }
+        } else typed = false;
         for (decorators.items) |seen| if (std.mem.eql(u8, seen.owner, decorator.owner) and std.mem.eql(u8, seen.name, decorator.name))
             return .{ .refused = try refusal(arena, q.loc, "{s}: `with:` lists `{s}` twice", .{ diagnostics.typeinfo_all_arguments, spelled }, arguments_hint) };
         try decorators.append(arena, decorator);
@@ -379,7 +404,22 @@ pub fn resolve(
         if (i > 0) try label_buf.append(arena, '/');
         try label_buf.print(arena, "#[{s}]", .{d.name});
     }
-    return .{ .ok = .{ .loc = q.loc, .decorators = decorators.items, .member = member, .label = label_buf.items } };
+    if (!typed) behavior = null;
+    return .{ .ok = .{ .loc = q.loc, .decorators = decorators.items, .member = member, .label = label_buf.items, .typed = typed, .behavior = behavior } };
+}
+
+/// Decision 564 — the behavior a decorator's `@Decl<B>` names: `B` when it
+/// is a `behavior` the module declares or reaches (not one of the
+/// decorator's own type parameters), else null.
+fn declBehavior(env: *const envMod.Env, program: ast.Program, decl: ast.TypeRef, generics: []const ast.GenericParam) ?[]const u8 {
+    if (decl != .generic or decl.generic.args.len != 1) return null;
+    const arg = decl.generic.args[0];
+    if (arg != .named) return null;
+    const name = arg.named;
+    for (generics) |g| if (std.mem.eql(u8, g.name, name)) return null;
+    for (program.decls) |d| if (d == .behavior and std.mem.eql(u8, d.behavior.name, name)) return name;
+    if (env.behaviorDecl(name) != null) return name;
+    return null;
 }
 
 /// The declarations a resolved query answers, by module path then recording
@@ -439,8 +479,10 @@ fn checkEntries(arena: std.mem.Allocator, q: Resolved, entries: []const reflecti
         if (kindClass(e.kind) != .type_) fns += 1;
     }
     const of_types = entries.len > fns;
-    if (of_types and q.member == null) {
-        return try refusal(arena, at, "{s}: `{s}` is carried by the type `{s}`, and a type is no value: name the associated fn each entry calls", .{ diagnostics.typeinfo_all_needs_member, q.label, entries[0].name }, "Write `@TypeInfo.all(with: <decorator>, member: \"<associated fn>\")`; each `value` is then `{ -> T.<associated fn>() }`.");
+    // Decision 564 — a decorator naming the behavior its declarations
+    // implement catalogues them with no `member:`.
+    if (of_types and q.member == null and !q.typed) {
+        return try refusal(arena, at, "{s}: `{s}` is carried by the type `{s}`, and a type is no value: name the associated fn each entry calls", .{ diagnostics.typeinfo_all_needs_member, q.label, entries[0].name }, "Name the behavior the types implement in the decorator's `@Decl<B>` (decision 564), or write `@TypeInfo.all(with: <decorator>, member: \"<associated fn>\")`; each `value` is then `{ -> T.<associated fn>() }`.");
     }
     if (!of_types and q.member != null and entries.len > 0) {
         return try refusal(arena, at, "{s}: `{s}` is carried by {s}, and `member:` names an associated fn of a type", .{ diagnostics.typeinfo_all_arguments, q.label, if (kindClass(entries[0].kind) == .val) "`val`s" else "functions" }, "A function's or a `val`'s entry is the declaration itself; leave `member:` out.");
@@ -614,7 +656,10 @@ pub fn plan(
                 try imports.appendSlice(arena, parsed.decls);
                 break :ref alias;
             };
-            const value = if (of_types) try std.fmt.allocPrint(arena, "{{ -> {s}.{s}() }}", .{ ref, rq.member.? }) else ref;
+            // Decision 564 — an entry seen through its decorators' behavior
+            // is no value outside an expansion (`infer.zig`
+            // `refuseBehaviorCallOnEntry`): `null` stands for it.
+            const value = if (of_types) if (rq.member) |m| try std.fmt.allocPrint(arena, "{{ -> {s}.{s}() }}", .{ ref, m }) else "null" else ref;
             const slots = switch (try typedSlots(arena, reflection, e, module_path, &imports, &values, &alias_seq, q.loc)) {
                 .ok => |t| t,
                 .refused => |te| return .{ .refused = te },
@@ -625,6 +670,7 @@ pub fn plan(
 
         // `val __bp_ti = <answer>;`, its tokens on lines of their own.
         try out.rewrites.put(arena, q.loc, try parseAnswer(arena, text.items, line));
+        if (rq.member == null) if (rq.behavior) |b| try out.behaviors.put(arena, q.loc, b);
         line += 1;
     }
     out.imports = imports.items;

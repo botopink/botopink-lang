@@ -4546,7 +4546,7 @@ fn validateDecorators(env: *Env, program: ast.Program) InferError!void {
         },
         .type_ => |tdecl| {
             const self = try typeDeclType(env, tdecl.name);
-            try checkDecoratorAnnotations(env, program, tdecl.annotations, .{ .name = tdecl.name, .type_ = self });
+            try checkDecoratorAnnotations(env, program, tdecl.annotations, .{ .name = tdecl.name, .type_ = self, .isType = true });
             if (tdecl.shape == .record) for (tdecl.recordFields()) |fld| {
                 try checkDecoratorAnnotations(env, program, fld.annotations, .{ .name = fld.name, .type_ = try fieldDeclType(env, tdecl, fld) });
             };
@@ -4885,6 +4885,8 @@ fn refuseUnknownAnnotationList(env: *Env, anns: []const ast.Annotation) InferErr
 const DecoratedDecl = struct {
     name: []const u8,
     type_: ?*T.Type,
+    /// A `type` declaration (decision 564: only a type implements a behavior).
+    isType: bool = false,
 };
 
 /// A function's type as its signature registered it — or a module-level
@@ -5114,7 +5116,23 @@ fn checkDecoratorArgs(env: *Env, program: ast.Program, a: ast.Annotation, sig: e
     // Decision 280 (2) — `@Decl<P>`: `P` meets the annotated declaration's
     // type, binding the type parameters it names; a declaration that does
     // not match is refused at the annotation.
-    if (declWant) |dw| if (dw.deref().* == .named and dw.deref().named.args.len == 1) {
+    // Decision 564 — `@Decl<B>`, `B` a behavior: the declaration is a type
+    // implementing `B`, refused at the annotation otherwise.
+    const declBehavior: ?[]const u8 = sig.declBehavior orelse if (declWant) |dw| blk: {
+        const d = dw.deref();
+        if (d.* != .named or d.named.args.len != 1) break :blk null;
+        const p = d.named.args[0].deref();
+        if (p.* != .named or !(isBehaviorType(env, p) or isBehaviorName(env, p.named.name))) break :blk null;
+        break :blk p.named.name;
+    } else null;
+    if (declBehavior) |b| {
+        const implementsIt = if (target.isType) typeImplementsBehavior(env, owner, b) else false;
+        if (!implementsIt) {
+            const msg = try std.fmt.allocPrint(env.arena, "`#[{s}]` needs a type implementing `{s}` — `{s}` does not", .{ a.name, b, owner });
+            const hint = try std.fmt.allocPrint(env.arena, "The decorator's `@Decl<{s}>` names the behavior its declarations implement (decision 564): write `implement {s}` on the type.", .{ b, b });
+            return decoratorError(env, a, msg, hint);
+        }
+    } else if (declWant) |dw| if (dw.deref().* == .named and dw.deref().named.args.len == 1) {
         var pattern = dw.deref().named.args[0];
         // Decision 316 — `@Decl<fn(..) -> R>`: a function of any parameters;
         // only its return meets the declaration's.
@@ -5213,6 +5231,18 @@ fn resolveDecoratorParamType(env: *Env, ref: ast.TypeRef, generics: std.StringHa
 
 /// Decision 316 — whether a decorator's `@Decl<…>` names `fn(..) -> R`, a
 /// function of any parameters.
+/// Decision 564 — the name `@Decl<B>` gives a decorator's declarations, when
+/// `B` is a plain name (not one of the decorator's type parameters).
+pub fn declPatternName(f: ast.FnDecl) ?[]const u8 {
+    if (f.params.len == 0) return null;
+    const decl = f.params[0].typeRef;
+    if (!decl.isDeclType() or decl.generic.args.len != 1) return null;
+    const arg = decl.generic.args[0];
+    if (arg != .named) return null;
+    for (f.genericParams) |g| if (std.mem.eql(u8, g.name, arg.named)) return null;
+    return arg.named;
+}
+
 pub fn declPatternAnyParams(decl: ast.TypeRef) bool {
     if (decl != .generic or decl.generic.args.len != 1) return false;
     const p = decl.generic.args[0];
@@ -7233,7 +7263,9 @@ fn noteDefaultQueries(env: *Env, program: ast.Program) InferError!void {
             var genericMap = std.StringHashMap(*T.Type).init(env.arena);
             defer genericMap.deinit();
             for (f.genericParams) |gp| try genericMap.put(gp.name, try env.freshVar());
-            const answer = try env.namedTypeArgs("array", &.{try env.namedTypeArgs("Declared", &.{try env.namedType("unknown")})});
+            // Decision 564 — `Declared<B>[]` when the decorators share `B`.
+            const entry = if (rq.member == null) rq.behavior orelse "unknown" else "unknown";
+            const answer = try env.namedTypeArgs("array", &.{try env.namedTypeArgs("Declared", &.{try env.namedType(entry)})});
             try unifyAt(env, try resolveParamType(env, p, genericMap), answer, dq.query.loc);
         };
         const one = try r.arena.alloc(reflectionMod.TemplateQuery, 1);
@@ -8280,6 +8312,11 @@ fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
     const savedInDecorator = env.inDecoratorFn;
     env.inDecoratorFn = isDecoratorParams(f.params);
     defer env.inDecoratorFn = savedInDecorator;
+    // Decision 564 — a function expanded at its call site (562) may call a
+    // behavior's function on a catalogue entry's `value`.
+    const savedInExpansion = env.inExpansion;
+    if (try hooksMod.isExpandedFn(env.arena, f)) env.inExpansion = true;
+    defer env.inExpansion = savedInExpansion;
     // Decision 370 (2) — what a member function handed to `decl.addMember`
     // may not read.
     const savedDecoratorBody = env.decoratorBody;
@@ -10938,14 +10975,17 @@ fn inferBuiltinCallReturnType(
 }
 
 /// Decision 254 — the answer `typeinfo_all.plan` built for one
-/// `@TypeInfo.all(…)`, typed `Declared<unknown>[]` whatever its entries are.
+/// `@TypeInfo.all(…)`, typed `Declared<unknown>[]` whatever its entries are —
+/// or, decision 564, `Declared<B>[]` when its decorators' `@Decl<B>` share
+/// the behavior `behavior`.
 /// Each entry is inferred on its own and met by `Declared<unknown>` (every
 /// type is assignable to `unknown`), then carries that type: the entries never
 /// unify with each other, so a function and a type's thunk, or two functions
 /// of different signatures, sit in one answer.
-fn inferCatalogueAnswer(env: *Env, answer: ast.Expr, loc: ast.Loc) InferError!TypedExpr {
+fn inferCatalogueAnswer(env: *Env, answer: ast.Expr, loc: ast.Loc, behavior: ?[]const u8) InferError!TypedExpr {
     const declared_unknown = try env.namedTypeArgs("Declared", &.{try env.namedType("unknown")});
-    const array_type = try env.namedTypeArgs("array", &.{declared_unknown});
+    const entry_type = if (behavior) |b| try env.namedTypeArgs("Declared", &.{try env.namedType(b)}) else declared_unknown;
+    const array_type = try env.namedTypeArgs("array", &.{entry_type});
     if (answer != .collection or answer.collection.kind != .arrayLit) {
         const typed = try inferExprTyped(env, answer);
         try unifyAt(env, array_type, typed.getType(), loc);
@@ -10957,7 +10997,7 @@ fn inferCatalogueAnswer(env: *Env, answer: ast.Expr, loc: ast.Loc) InferError!Ty
         elems[i] = try inferExprTyped(env, elem);
         try unifyAt(env, declared_unknown, elems[i].getType(), elems[i].getLoc());
         switch (elems[i]) {
-            inline else => |*e| e.type_ = declared_unknown,
+            inline else => |*e| e.type_ = entry_type,
         }
     }
     return TypedExpr{ .collection = .{ .loc = answer.collection.loc, .type_ = array_type, .kind = .{ .arrayLit = .{
@@ -21259,11 +21299,37 @@ fn markPacked(c: ast.CallExprOf(.untyped), args: []ast.CallArgOf(.untyped)) ast.
 
 fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferError!TypedExpr {
     const expected = env.expectedType;
+    try refuseBehaviorCallOnEntry(env, c, loc);
     const typed = try inferCallExprWith(env, c, loc, null);
     // Decision 562 — a call of a function whose every parameter is
     // `comptime` is replaced by the code its body emits.
     if (try expandCall.expand(env, c, loc, expected)) |expanded| return expanded;
     return typed;
+}
+
+/// Decision 564 — `d.value.f(…)`, `d` a catalogue entry `Declared<B>` and
+/// `f` a function of the behavior `B`: legal only inside a 562 expansion,
+/// where each entry is a concrete type and the call is emitted direct.
+/// Elsewhere it is refused at the call.
+fn refuseBehaviorCallOnEntry(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferError!void {
+    if (env.inExpansion or c.kind != .call) return;
+    const call = c.kind.call;
+    if (call.is_builtin or call.calleeExpr != null) return;
+    const recv = call.receiver orelse return;
+    if (recv.* != .identifier or recv.identifier.kind != .identAccess) return;
+    const ia = recv.identifier.kind.identAccess;
+    if (!std.mem.eql(u8, ia.member, "value")) return;
+    if (ia.receiver.* != .identifier or ia.receiver.identifier.kind != .ident) return;
+    const entry = ia.receiver.identifier.kind.ident;
+    const ty = (env.lookup(entry) orelse return).deref();
+    if (ty.* != .named or !std.mem.eql(u8, ty.named.name, "Declared") or ty.named.args.len != 1) return;
+    const b = ty.named.args[0].deref();
+    if (b.* != .named) return;
+    const decl = env.behaviorDecl(b.named.name) orelse return;
+    for (decl.methods) |m| if (std.mem.eql(u8, m.name, call.callee)) break else return;
+    const msg = try std.fmt.allocPrint(env.arena, "`{s}.value.{s}()` calls `{s}`'s `{s}` on a catalogue entry, which is legal only inside a function expanded at its call site", .{ entry, call.callee, b.named.name, call.callee });
+    env.lastError = TypeError.custom(msg, "An entry's `value` is the type seen through the behavior: call its functions in a function whose every parameter is `comptime` (decision 562), where each entry is a concrete type and the call is emitted direct (decision 564).").withLoc(loc);
+    return error.TypeError;
 }
 
 /// Decision 525 — a trailing lambda is a call argument (`ast.lowerTrailingLambdas`);
@@ -21476,7 +21542,9 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                 // Decision 254 — the answer is `Declared<unknown>[]`, one
                 // fixed type whatever the program declares: every entry's
                 // `value` is `unknown`, and a use narrows it with `is`.
-                return inferCatalogueAnswer(env, answer.*, loc);
+                // Decision 564 — `Declared<B>[]` when the decorators share
+                // the behavior `B` their `@Decl<B>` names.
+                return inferCatalogueAnswer(env, answer.*, loc, env.typeinfoAllBehaviors.get(loc));
             }
             if (call.is_builtin and (std.mem.eql(u8, call.callee, "typeinfo") or std.mem.startsWith(u8, call.callee, "typeinfo."))) {
                 const msg = try std.fmt.allocPrint(env.arena, "{s}: `@{s}` is spelled `@{s}`", .{ diagnostics.typeinfo_lowercase, call.callee, if (std.mem.eql(u8, call.callee, "typeinfo.all")) "TypeInfo.all" else try std.mem.concat(env.arena, u8, &.{ "typeInfo", call.callee["typeinfo".len..] }) });

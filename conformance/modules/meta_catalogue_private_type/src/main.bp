@@ -7,5 +7,5 @@ pub mod models;
 import {models.entity};
 
 pub fn main() {
-    @print(@TypeInfo.all(with: entity, member: "make").length);
+    @print(@TypeInfo.all(with: entity).length);
 }

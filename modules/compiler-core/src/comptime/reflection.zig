@@ -126,6 +126,11 @@ pub const TemplateQuery = struct {
     member: ?[]const u8,
     /// How refusals name the decorators: `#[a]`, `#[a]/#[b]`.
     label: []const u8,
+    /// Decision 564 — every listed decorator's `@Decl<B>` names a behavior
+    /// (`typed`), and `behavior` the one they all name (null when they name
+    /// different ones: the answer is `Declared<unknown>[]`).
+    typed: bool = false,
+    behavior: ?[]const u8 = null,
 };
 
 /// One answer given to a template body's query: where the expansion was

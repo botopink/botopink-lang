@@ -1664,7 +1664,10 @@ fn analyzeMerged(
     env.modulePath = mod.path;
     env.inStd = mod.std_member;
     env.reflection = reflection;
-    if (typeinfo_plan) |pl| env.typeinfoAll = pl.rewrites;
+    if (typeinfo_plan) |pl| {
+        env.typeinfoAll = pl.rewrites;
+        env.typeinfoAllBehaviors = pl.behaviors;
+    }
     env.srcPath = try displaySrcPath(arena, mod);
     env.packageFiles = mod.files;
     // The prelude registration may have named `SourceLocation`; only the
@@ -3202,6 +3205,10 @@ fn resolveImports(
                         }
                         const conflict = if (decoratorRegistry.get(try decoratorConflictKey(env.arena, owner, name))) |c| c.name else null;
                         try infer.registerImportedDecorator(env, local, dfn, owner, support.items, conflict);
+                        // Decision 564 — the behavior its `@Decl<B>` names in its own module.
+                        if (infer.declPatternName(dfn)) |bn| if (typeDeclRegistry.get(owner)) |decls| if (decls.get(bn)) |d| if (d == .behavior) {
+                            if (env.decorators.getPtr(local)) |sig| sig.declBehavior = bn;
+                        };
                     };
                     // 01-compiler/14 step 8 — an imported `val` its module
                     // knew at build: a template hole naming it reads the value.

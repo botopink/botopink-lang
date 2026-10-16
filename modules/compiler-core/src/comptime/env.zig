@@ -773,6 +773,10 @@ pub const DecoratorSig = struct {
     /// Why the imported decorator's module cannot be built (`infer.Support`):
     /// two functions it reaches share a name. Refused where it is applied.
     conflict: ?[]const u8 = null,
+    /// Decision 564 — the behavior `@Decl<B>` names, as its declaring module
+    /// resolves it: set for an imported decorator whose `B` is a `behavior` of
+    /// that module (the importer need not name `B`).
+    declBehavior: ?[]const u8 = null,
 };
 
 /// A type-directed lowering for a `return`/`throw`/`yield`/`break` jump inside
@@ -985,6 +989,11 @@ pub const Env = struct {
     /// first parameter is `comptime _: @Decl`): compile-time evaluation with
     /// no render tree, where `use` is refused (`use-outside-render-tree`).
     inDecoratorFn: bool = false,
+    /// Decision 564 — inside a 562 expansion: the body of a function expanded
+    /// at its call site (`hooks.isExpandedFn`) or the code an expansion
+    /// emits, where a behavior's function may be called on a catalogue
+    /// entry's `value` (`infer.zig` `refuseBehaviorCallOnEntry`).
+    inExpansion: bool = false,
     /// Decision 370 (2) — the body of the decorator being inferred: a member
     /// function it hands to `decl.addMember(name, fn…)` reads none of its
     /// locals (`infer.zig` `inferMemberFnCall`). Null outside a decorator.
@@ -1548,6 +1557,9 @@ pub const Env = struct {
     /// Call loc → the `Declared<T>` array answering that `@TypeInfo.all`
     /// (`typeinfo_all.plan`), spliced through `srcRewrites`.
     typeinfoAll: std.AutoHashMapUnmanaged(ast.Loc, *const ast.Expr) = .empty,
+    /// Decision 564 — call loc → the behavior that answer's decorators share:
+    /// it is typed `Declared<B>[]` (`typeinfo_all.Plan.behaviors`).
+    typeinfoAllBehaviors: std.AutoHashMapUnmanaged(ast.Loc, []const u8) = .empty,
     /// The module names the prelude records `Declared` / `DeclaredMeta`, so
     /// `comptime.zig` splices their declarations in (`withDeclaredDecls`).
     usesDeclared: bool = false,

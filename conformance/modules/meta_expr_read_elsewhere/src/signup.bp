@@ -12,7 +12,11 @@ pub fn check<T>(
     decl.addMeta(Check(message: message, rule: rule));
 }
 
-pub fn note(comptime decl: @Decl, comptime text: @Expr<string>) {
+pub behavior Noted {
+    fn make() -> Self;
+}
+
+pub fn note(comptime decl: @Decl<Noted>, comptime text: @Expr<string>) {
     decl.addMeta(Note(text: text));
 }
 
@@ -26,8 +30,8 @@ fn hint() -> string {
 
 #[check("the passwords differ", passwordsMatch)]
 #[note(hint())]
-pub type Signup(password: string, confirm: string) {
-    pub fn make() -> string {
-        return "signup";
+pub type Signup(password: string, confirm: string) implement Noted {
+    fn make() -> Self {
+        return Signup(password: "", confirm: "");
     }
 }

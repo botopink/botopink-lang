@@ -802,7 +802,15 @@ function and a std namespace the caller does not import, on all four targets) an
 `modules/comptime_expand_library_type_error` (a refusal of the emitted code located in the library, the call as its
 `from` line). `modules/stage_build_and_run`, `modules/stage_of_functions` and `modules/stage_imported` give their
 `Build` function a run-time parameter (an all-`comptime` one is expanded instead), and `stage_of_functions` lists
-one that is expanded, `Any`. Decision 248
+one that is expanded, `Any`. Decision 564 (a decorator's `@Decl<B>` names the behavior its declarations
+implement) adds `modules/decorator_decl_behavior_not_implemented` (`#[module]` on a type that does not
+`implement Module`, refused at the annotation naming both), `modules/typeinfo_all_behavior_typed` (the answer bound
+and handed on as `Declared<Module>[]`, no `member:`), `modules/typeinfo_all_behavior_shared` (two decorators naming
+one behavior answer `Declared<Component>[]`), `modules/typeinfo_all_behavior_none_shared` (two naming different
+ones answer `Declared<unknown>[]`, the ordinary mismatch at the binding) and
+`modules/typeinfo_all_behavior_call_outside_expansion` (`d.value.make()` in `main`, refused at the call); the
+`meta_catalogue_private_type`, `meta_typed_catalogue` and `meta_expr_read_elsewhere` cells catalogue their types
+through such a behavior instead of `member:`. Decision 248
 names the one reflection builtin `@typeInfo` (the structural `TypeInfo` answer of a bare
 `@typeInfo(T)` folded in): `modules/typeinfo_lowercase` and `modules/typeinfo_all_lowercase` refuse
 the lowercase `@typeinfo(…)` / `@typeinfo.all(…)` where it is written (`typeinfo-lowercase`).

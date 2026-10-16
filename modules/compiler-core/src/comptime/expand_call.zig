@@ -93,6 +93,11 @@ pub fn expand(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, expected: ?*
 
     try env.expanding.put(env.arena, key, {});
     defer _ = env.expanding.remove(key);
+    // Decision 564 — the code an expansion emits may call a behavior's
+    // function on a catalogue entry's `value`.
+    const savedInExpansion = env.inExpansion;
+    env.inExpansion = true;
+    defer env.inExpansion = savedInExpansion;
 
     var x: Expander = .{
         .env = env,

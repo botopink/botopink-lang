@@ -14,7 +14,7 @@ import {orm.entity};
 import {orm.describe};
 
 pub fn main() {
-    val all = @TypeInfo.all(with: entity, member: "make");
+    val all = @TypeInfo.all(with: entity);
     for (all) { d ->
         val e = d.meta(Entity);
         @print(

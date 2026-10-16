@@ -3759,6 +3759,31 @@ twice is `typeinfo-all-arguments`.
 
 <!-- example: modules/typeinfo_all_with_decorator -->
 
+**A decorator names the behavior its declarations implement** (decision 564).
+`pub fn module(comptime decl: @Decl<Module>) { … }`, `Module` a `behavior`:
+`#[module]` on a type that does not `implement Module` is refused at the
+annotation, naming the type and the behavior (`` `#[module]` needs a type
+implementing `Module` — `City` does not ``). `@TypeInfo.all(with: module)`
+answers `Declared<Module>[]`, with no `member:`; a query over several
+decorators answers the behavior they all name, and `Declared<unknown>[]` when
+they name different ones; a decorator whose `@Decl` names no behavior answers
+`Declared<unknown>[]` as above (`member:` still names a type's associated fn
+there). The annotation is the opt-in: implementing a behavior catalogues no
+type by itself. Calling a function of the behavior on an entry's `value`
+(`d.value.make()`) is legal only inside a function expanded at its call site
+(decision 562, below), where each entry is a concrete type; elsewhere it is
+refused at the call.
+
+<!-- example: modules/decorator_decl_behavior_not_implemented -->
+
+<!-- example: modules/typeinfo_all_behavior_typed -->
+
+<!-- example: modules/typeinfo_all_behavior_shared -->
+
+<!-- example: modules/typeinfo_all_behavior_none_shared -->
+
+<!-- example: modules/typeinfo_all_behavior_call_outside_expansion -->
+
 The catalogue's reach is the build, not the program's imports: a declaration
 carrying `d` in a dependency — one the package declares, or one a dependency
 declares — is an entry of the program's queries though no module of the program
@@ -4583,7 +4608,7 @@ decorator or template body runs, never at run time):
 | `@field` | `field<T, F>(obj: T, comptime name: @Expr<string>) -> F` — COMPTIME-ONLY name | the declaration |
 | `@src` | `src() -> SourceLocation` — COMPTIME-ONLY (§ `@src()` and `SourceLocation`) | its own rule (`src-takes-no-arguments`) |
 | `@typeInfo` | `typeInfo<T>(comptime _: @Expr<type>) -> TypeInfo<T>` — COMPTIME-ONLY (§ Decorators) | its own rule (`typeinfo-unknown-declaration`, `typeinfo-unknown-member`) |
-| `@TypeInfo.all` | `all(with: Decorator \| Decorator[], member: ?string = null) -> Declared<unknown>[]`, a static `declare fn` of `TypeInfo<T>` — COMPTIME-ONLY | the declaration — `Decorator` is the type of a decorator's name (decision 268), so anything else in `with:` is the ordinary mismatch at the argument —, after its own shape rule (`typeinfo-all-arguments`) |
+| `@TypeInfo.all` | `all(with: Decorator \| Decorator[], member: ?string = null) -> Declared<unknown>[]` (`Declared<B>[]` when the decorators' `@Decl<B>` share the behavior `B`, decision 564), a static `declare fn` of `TypeInfo<T>` — COMPTIME-ONLY | the declaration — `Decorator` is the type of a decorator's name (decision 268), so anything else in `with:` is the ordinary mismatch at the argument —, after its own shape rule (`typeinfo-all-arguments`) |
 | `@TypeOf` | `TypeOf<T>(value: T) -> T` — COMPTIME-ONLY | the declaration |
 | `@makeRecord` | `makeRecord<R>(fields: RecordField[]) -> R` — COMPTIME-ONLY | the declaration |
 | `@RecordKeys` | `RecordKeys(comptime _: @Expr<type>) -> string[]` — COMPTIME-ONLY | the declaration |
