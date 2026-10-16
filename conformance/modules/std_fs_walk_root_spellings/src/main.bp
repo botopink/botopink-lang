@@ -8,7 +8,7 @@
 //// path from the names it walks now. A dangling link under the root is an `Error`
 //// naming the link by its relative path, the same text on every target
 //// (decision 178) — the last two lines, again under two spellings of the root.
-//// Refused on wasm (`.wasm.expect`): std's `io/fs` host cells have no wasm
+//// Refused on wasm (`.wasm.expect`): std's `io/fs` and `io/process` host cells have no wasm
 //// binding.
 
 import {io.fs, path} from "std";
