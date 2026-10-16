@@ -19,6 +19,10 @@
 //!   return v             →  return bpScopeRendered__(v, <kids>)
 //!
 //! and a body that ends without a `return` answers `rendered(null, <kids>)`.
+//! A `component { x -> body }` lambda (decision 574, `Env.componentLambdas`)
+//! is lowered the same way, its tail made its `return`:
+//! `{ x -> return { bpScope__ -> body' }; }` — its parameters and what it
+//! captures closed over by the inner lambda.
 //! A component call the checker renders in a body (`inferComponentCall`, 128)
 //! is an `await` of it, so it runs with the children's scope. Outside every
 //! body — `main`, a test, a plain function, a lambda — an `await c` runs `c`
@@ -352,6 +356,13 @@ const Lowering = struct {
                 return true;
             },
             .function => |*f| {
+                // Decision 574 — a `component { -> … }` lambda is a
+                // `component fn`: its body becomes the lambda over the scope,
+                // the lambda's parameters and captures closed over by it.
+                if (f.kind.marker == .component) if (self.env.componentLambdas.get(f.loc)) |r| {
+                    try self.lowerComponentLambda(f, r);
+                    return true;
+                };
                 // A lambda (an `async { … }` block too) is no component body:
                 // nothing is captured, and its `return`s are its own.
                 try self.frames.append(self.arena, null);
@@ -457,6 +468,31 @@ const Lowering = struct {
         const out = try self.arena.alloc(ast.Stmt, 1);
         out[0] = .{ .expr = .{ .jump = .{ .loc = loc, .kind = .{ .@"return" = lambda } } } };
         return out;
+    }
+
+    /// Decision 574 — `component { x -> body }` as `{ x -> return { bpScope__
+    /// -> body' }; }`, the body a `component fn`'s (`lowerComponentBody`).
+    /// The tail the body answers (decision 541 (1)) is its `return`, so it
+    /// is rendered as a `return` is.
+    fn lowerComponentLambda(self: *Lowering, f: anytype, r: *T.Type) !void {
+        const body = f.kind.body;
+        if (body.len > 0) {
+            const s = &body[ast.lastRealIndex(body)];
+            const tailable = switch (s.expr) {
+                .binding, .useHook, .loop => false,
+                .jump => |j| j.kind == .try_ or j.kind == .await_,
+                .literal => |lit| lit.kind != .comment,
+                else => true,
+            };
+            if (s.tail == .value and tailable) {
+                const v = try self.arena.create(ast.Expr);
+                v.* = s.expr;
+                s.expr = .{ .jump = .{ .loc = v.getLoc(), .kind = .{ .@"return" = v } } };
+                s.tail = .returned;
+            }
+        }
+        f.kind.body = try self.lowerComponentBody(body, try self.typeRefOfType(r), f.loc);
+        f.kind.marker = null;
     }
 
     /// `fn(unknown) -> unknown` — what a component function answers once
@@ -609,7 +645,7 @@ fn implementMethodComponent(env: *Env, program: ast.Program, im: ast.ImplementDe
 fn needed(env: *Env, program: ast.Program) bool {
     if (env.contextUses.count() > 0 or env.componentCalls.count() > 0 or
         env.componentAwaits.count() > 0 or env.componentRuns.count() > 0 or
-        env.createContextCalls.count() > 0 or env.liftedStdTypes.contains("Context")) return true;
+        env.componentLambdas.count() > 0 or env.createContextCalls.count() > 0 or env.liftedStdTypes.contains("Context")) return true;
     for (program.decls) |d| switch (d) {
         .@"fn" => |f| if (writesComponent(f.returnType)) return true,
         .type_ => |t| for (t.methods) |m| if (writesComponent(m.returnType)) return true,

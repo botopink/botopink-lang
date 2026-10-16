@@ -765,10 +765,6 @@ pub const marker_lambda_without_expected_type: []const u8 = "marker-lambda-witho
 /// Decision 553 (1) — a marker on a bodyless declaration: refused by the
 /// parser (`print.zig`, open point B-116-b).
 pub const marker_on_declaration: []const u8 = "marker-on-declaration";
-/// Decision 553 (1) — a `component { -> … }` lambda is parsed and checked;
-/// its lowering is 144 B-116 (iii)'s (open point B-116-e), so it is refused
-/// where it would reach a backend, located at the marker.
-pub const component_lambda_not_lowered: []const u8 = "component-lambda-not-lowered";
 
 // ── Lookup table — every code (skipping aliases & reserved-empties) ─────────
 
@@ -961,7 +957,6 @@ pub const all_codes = [_][]const u8{
     marker_without_arrow,
     marker_lambda_without_expected_type,
     marker_on_declaration,
-    component_lambda_not_lowered,
 };
 
 test "every reserved code has a stable, non-empty spelling" {

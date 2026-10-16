@@ -329,9 +329,13 @@ for a marked lambda, and `checkLambdaMarker` (the top of `inferFunctionExprExpec
 against it (147): none, or a type still free, is `marker-lambda-without-expected-type`, an expected
 function type whose return is another wrapper is `marker-type-mismatch`, both at the marker; an
 expected return still free agrees (the body makes the wrapper). A typed `fn` expression's marker is
-the parser's to check. A `component { -> … }` lambda's body is checked as a component body (`starFn`
-`.component`, `inContextFn`, no `useConstruct`) and then refused, `component-lambda-not-lowered`, at the
-marker: its lowering is B-116 (iii)'s. A declaration's marker sets `FnDecl.effect` (the parser), so
+the parser's to check. A `component { -> … }` lambda (decision 574) is a `component fn`: its body is checked as a component body
+(`starFn` `.component`, `inContextFn`, an annotated `fnContext`, no `useConstruct`, no hook node of the
+enclosing function's), its `return`s and its tail answer the `R` of the expected `@Component<R>`, and the
+lambda answers `@Component<R>`; `Env.componentLambdas` records it by location with its `R`, and
+`context_lower.zig` lowers its body as a `component fn`'s (`lowerComponentLambda`: the tail made its
+`return`, then `lowerComponentBody`), so `{ x -> body }` becomes `{ x -> return { bpScope__ -> body' } }`
+and the parameters and captures are closed over by the inner lambda on every backend. A declaration's marker sets `FnDecl.effect` (the parser), so
 `starCtxFromEffect` admits by it; an unmarked body that yields still compiles until P4.
 
 **Decision 125 — `iter` / `stream` loops.** The parser writes `iter while` /

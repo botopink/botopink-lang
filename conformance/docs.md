@@ -2792,10 +2792,18 @@ without `->` is `marker-without-arrow` — a function named `iter`, `async` or
 <!-- example: modules/marker_lambda_type_mismatch -->
 <!-- example: modules/marker_without_arrow -->
 
+A `component { x -> … }` lambda is a `component fn` (decision 574): typed by
+the function type it is written for, `fn(x: T) -> @Component<R>`, its body is a
+component body — it `use`s and `await`s, and its `return`s and its last
+expression answer `R` — and calling it only makes the component, which runs
+where it is rendered, with the scope it is rendered with. Its parameters and
+what it captures reach the body:
+
+<!-- example: modules/component_lambda_typed_val -->
+<!-- example: modules/component_lambda_typed_param -->
+
 Until every body writes its marker, an unmarked body keeps its return's effect
-(`-> @Iterator<T>` with a `yield` is still a generator). A `component { -> … }`
-lambda is checked and then refused, `component-lambda-not-lowered`: it lowers
-with the iterator's `R` and `Step` (decision 553 (6), third piece).
+(`-> @Iterator<T>` with a `yield` is still a generator).
 
 ### Results
 

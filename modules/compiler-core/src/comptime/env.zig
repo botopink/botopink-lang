@@ -1119,6 +1119,10 @@ pub const Env = struct {
     /// type: in a component body it runs the value with the children's scope,
     /// outside every body with `RenderScope.root()` (`context_lower.zig`).
     componentAwaits: std.AutoHashMapUnmanaged(ast.Loc, *T.Type) = .empty,
+    /// Decision 574 — every `component { -> … }` lambda, by its location,
+    /// with the `R` of the `@Component<R>` it answers: `context_lower.zig`
+    /// lowers its body as a `component fn`'s, a lambda over the scope.
+    componentLambdas: std.AutoHashMapUnmanaged(ast.Loc, *T.Type) = .empty,
     /// Decision 432 — every written `await`, by its location, with its
     /// operand's type; and every `return` of a whole `@Task` wrapper, by the
     /// `return`'s location. Read once inference is done

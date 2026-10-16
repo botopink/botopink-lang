@@ -23751,22 +23751,53 @@ fn inferFunctionExprExpectedInner(
     // `case` arm's block keeps it: `await` / `yield` reach the enclosing
     // function (decision 541 (2)).
     if (!armBlock) env.starFn = null;
-    // Decision 553 (1) — a `component { -> … }` lambda's body is a component
-    // body: `use` and `await` are its (open point B-116-e). The other markers
-    // need nothing here: the parser wrote their body as the block form they
-    // name, which opens its own context.
+    // Decision 553 (1), 574 — a `component { -> … }` lambda's body is a
+    // component body, as a `component fn`'s: `use` and `await` are its, its
+    // `return`s and its tail answer the `R` of the expected `@Component<R>`,
+    // and its hooks are its own, not the enclosing function's node. The other
+    // markers need nothing here: the parser wrote their body as the block
+    // form they name, which opens its own context.
     const componentLambda = func.kind.marker == .component;
     const savedFnEffectLambda = env.fnEffect;
     const savedInContextLambda = env.inContextFn;
+    const savedFnCtxLambda = env.fnContext;
+    const savedHookBuilderLambda = env.hookBuilder;
+    const savedFirstRenderLambda = env.firstRenderAt;
+    const savedAliasWrapperLambda = env.aliasWrapper;
     defer {
         env.fnEffect = savedFnEffectLambda;
         env.inContextFn = savedInContextLambda;
+        env.fnContext = savedFnCtxLambda;
+        env.hookBuilder = savedHookBuilderLambda;
+        env.firstRenderAt = savedFirstRenderLambda;
+        env.aliasWrapper = savedAliasWrapperLambda;
     }
+    // The `R` the body answers and the `@Component<R>` the lambda returns.
+    var componentRenders: ?*T.Type = null;
+    var componentWhole: ?*T.Type = null;
     if (componentLambda) {
-        env.starFn = starCtxFromEffect(.component, try env.freshVar(), null);
+        const r = try env.freshVar();
+        const whole = try env.namedTypeArgs("Component", &.{r});
+        if (expected) |e| {
+            const d = e.deref();
+            if (d.* == .func and d.func.params.len == func.kind.params.len) try unifyAt(env, d.func.ret, whole, loc);
+        }
+        componentRenders = r;
+        componentWhole = whole;
+        env.starFn = starCtxFromEffect(.component, whole, null);
         env.useConstruct = null;
         env.fnEffect = .component;
         env.inContextFn = true;
+        env.fnContext = .{
+            .implementsContext = true,
+            .returnDisplay = try snapshotMod.typeSignatureOf(env.arena, whole),
+            .annotated = true,
+            .fnName = "a `component` lambda",
+            .renderable = isComponentType(env, whole),
+        };
+        env.hookBuilder = null;
+        env.firstRenderAt = null;
+        env.aliasWrapper = null;
     }
 
     // Pull expected param/return types out of `expected`, but only when it is a
@@ -23802,7 +23833,7 @@ fn inferFunctionExprExpectedInner(
     const keep = env.keepReturnTarget;
     env.keepReturnTarget = false;
     if (!keep) {
-        env.returnTarget = expRet orelse try env.freshVar();
+        env.returnTarget = componentRenders orelse expRet orelse try env.freshVar();
         env.returnBareIsVoid = false;
         env.returnWhole = null;
         // A fallible lambda (`fn(x: T) -> @Result<U, E>` expected) returns
@@ -23852,12 +23883,19 @@ fn inferFunctionExprExpectedInner(
         break :blk tail.getType();
     } else try env.namedType("void");
     if (componentLambda) {
-        // Checked; its lowering is B-116 (iii)'s.
-        env.lastError = TypeError.custom(
-            try std.fmt.allocPrint(env.arena, "{s}: a `component` lambda is checked but not lowered yet (144 B-116 (iii))", .{diagnostics.component_lambda_not_lowered}),
-            "Write the component as a declaration, `component fn Name(…) -> @Component<R> { … }`, until the lambda form lowers.",
-        ).withLoc(loc);
-        return error.TypeError;
+        // Decision 574 — the body's value is the `R` it renders; the lambda
+        // answers the `@Component<R>`, lowered as a `component fn`'s body
+        // (`context_lower.zig`).
+        const r = componentRenders.?;
+        if (!typedFn) {
+            if (bodyTyped.len != fk.body.len) try unifyAt(env, r, retType, loc) else try unifyAt(env, retType, r, loc);
+        }
+        try env.componentLambdas.put(env.arena, loc, r);
+        return TypedExpr{ .function = .{ .loc = loc, .type_ = try env.funcType(params, componentWhole.?), .kind = .{
+            .syntax = fk.syntax,
+            .params = fk.params,
+            .body = bodyTyped,
+        } } };
     }
     if (!typedFn) if (expRet) |er| {
         // A lambda whose last expression ends with `;` answers nothing: say
