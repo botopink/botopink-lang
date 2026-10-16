@@ -231,7 +231,7 @@ pub fn evaluate(
     if (traces) |list| {
         const t_listing = stages.start();
         defer stages.stop(.listing, t_listing);
-        const listing = try arena.dupe(u8, try hostRuntime.listingOf(scratch, "decorator", source.module, source.code, try templateEval.argumentListing(scratch, source.argument)));
+        const listing = try (try hostRuntime.listingOf(scratch, "decorator", source.module, source.code, try templateEval.argumentListing(scratch, source.argument))).dupe(arena);
         try list.append(arena, .{
             .kind = .decorator,
             .name = dfn.name,

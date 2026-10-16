@@ -16,6 +16,7 @@ const builtin = @import("builtin");
 const persistent_wat = @import("persistent_wat.zig");
 const watProgram = @import("wat/program.zig");
 const stages = @import("stages.zig");
+const trace = @import("../trace.zig");
 
 /// Whether this build can spawn a child process: the RUN LOG executors'
 /// precondition (`codegen/runtime.zig`). The comptime runtime needs none.
@@ -77,18 +78,17 @@ pub const compiled_cache_dir = ".botopinkbuild/build/comptime";
 /// argument` line on: the template and decorator evaluators pass only that
 /// part, `template_eval.argumentListing`; `block_eval` its whole Erlang
 /// listing) — or the refusal.
-pub fn listingOf(arena: std.mem.Allocator, host: []const u8, module: []const u8, code: []const u8, erl_listing: []const u8) EvalError![]const u8 {
+pub fn listingOf(arena: std.mem.Allocator, host: []const u8, module: []const u8, code: []const u8, erl_listing: []const u8) EvalError!trace.Listing {
     _ = host;
     const marker = "\n%% main/1 argument";
     const argument: ?[]const u8 = if (std.mem.indexOf(u8, erl_listing, marker)) |i| erl_listing[i + 1 ..] else null;
-    const built = try watProgram.build(module, code);
-    const body = switch (built) {
-        .ok => |o| o.listing,
-        .refused => |why| return std.fmt.allocPrint(arena, ";; not lowered: {s}\n", .{why}),
-    };
+    // The lowered functions stay the build cache's: the listing names the
+    // module and keeps only the argument lines (144 B-127).
+    switch (try watProgram.build(module, code)) {
+        .ok => {},
+        .refused => |why| return .whole(try std.fmt.allocPrint(arena, ";; not lowered: {s}\n", .{why})),
+    }
     var out: std.ArrayListUnmanaged(u8) = .empty;
-    try out.appendSlice(arena, std.mem.trimEnd(u8, body, "\n"));
-    try out.append(arena, '\n');
     if (argument) |a| {
         try out.append(arena, '\n');
         var lines = std.mem.splitScalar(u8, a, '\n');
@@ -99,7 +99,7 @@ pub fn listingOf(arena: std.mem.Allocator, host: []const u8, module: []const u8,
             try out.append(arena, '\n');
         }
     }
-    return out.items;
+    return .{ .module = try arena.dupe(u8, module), .text = out.items };
 }
 
 test "a module the lowering does not take is a compile error naming the construct" {

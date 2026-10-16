@@ -386,7 +386,11 @@ test "decorator invocation: the body runs on the wat runtime for every target (d
         const traces = outcome.ok.comptime_traces;
         try std.testing.expect(traces.len > 0);
         // The listing is the wasm the module was lowered to.
-        for (traces) |t| try std.testing.expect(std.mem.indexOf(u8, t.listing, "(func ") != null);
+        for (traces) |t| {
+            const listing = try t.listing.render(std.testing.allocator);
+            defer std.testing.allocator.free(listing);
+            try std.testing.expect(std.mem.indexOf(u8, listing, "(func ") != null);
+        }
     }
 }
 
@@ -544,10 +548,22 @@ test "decorator invocation: a call holds its trace and outcome only, not the scr
     const outcome = session.outputs.items[0].outcome;
     try std.testing.expect(outcome == .ok);
     try std.testing.expectEqual(@as(usize, calls), outcome.ok.comptime_traces.len);
+    // 144 B-127 — a trace keeps its module's atom, the argument lines and the
+    // reply; the listing's lowered functions are built when it is read, not
+    // kept per call.
     var kept: usize = 0;
-    for (outcome.ok.comptime_traces) |e| kept += e.listing.len + e.reply.len;
+    for (outcome.ok.comptime_traces) |e| kept += e.listing.module.len + e.listing.text.len + e.reply.len;
     const rss1 = h.residentBytes() orelse return error.SkipZigTest;
     const grown = if (rss1 > rss0) rss1 - rss0 else 0;
-    std.debug.print("\nB117 kept={d} grown={d}\n", .{ kept, grown });
+    var listed: usize = 0;
+    for (outcome.ok.comptime_traces) |e| {
+        const listing = try e.listing.render(alloc);
+        defer alloc.free(listing);
+        listed += listing.len;
+    }
+    std.debug.print("\nB117 kept={d} listed={d} grown={d}\n", .{ kept, listed, grown });
     try std.testing.expect(grown < kept * 2 + 16 * 1024 * 1024);
+    // The calls' listings rendered are more than the session grew by: a
+    // listing kept per call would not fit.
+    try std.testing.expect(grown < listed);
 }

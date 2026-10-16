@@ -158,7 +158,9 @@ pub fn keyFromHex(hex: [64]u8) Key {
 //   optional          one byte, then the payload when 1
 //   tagged union      its tag, then the active payload
 //   struct            its fields in declaration order (`skips` left out; a
-//                     packed struct as its backing integer)
+//                     packed struct as its backing integer); one declaring
+//                     `entry_as_string` as the string its `entryText` renders,
+//                     read back through `fromEntryText` (`trace.Listing`)
 //   array             its elements
 //   string            (a slice of u8) 1 + an index into STRINGS, each content
 //                     once — or 0 and (source, offset, length) for a slice of
@@ -328,6 +330,9 @@ pub fn Encoder(comptime skips: []const Skip) type {
         out: std.ArrayListUnmanaged(u8) = .empty,
         strings: std.StringArrayHashMapUnmanaged(void) = .empty,
         ptrs: std.AutoHashMapUnmanaged(PtrKey, u32) = .empty,
+        /// The texts of the values written as strings (`entry_as_string`)
+        /// that STRINGS holds, freed with the encoder.
+        rendered: std.ArrayListUnmanaged([]u8) = .empty,
 
         pub fn init(gpa: std.mem.Allocator) Self {
             return .{ .gpa = gpa };
@@ -337,6 +342,8 @@ pub fn Encoder(comptime skips: []const Skip) type {
             self.out.deinit(self.gpa);
             self.strings.deinit(self.gpa);
             self.ptrs.deinit(self.gpa);
+            for (self.rendered.items) |t| self.gpa.free(t);
+            self.rendered.deinit(self.gpa);
         }
 
         /// The bytes written since the last call, handed to the caller
@@ -411,6 +418,7 @@ pub fn Encoder(comptime skips: []const Skip) type {
                         }
                     },
                     .none => {
+                        if (comptime @hasDecl(T, "entry_as_string")) return self.encodeRendered(try value.entryText(self.gpa));
                         if (st.layout == .@"packed") {
                             const bits: st.backing_integer.? = @bitCast(value.*);
                             return self.encode(st.backing_integer.?, &bits);
@@ -436,6 +444,20 @@ pub fn Encoder(comptime skips: []const Skip) type {
             }
             const gop = try self.strings.getOrPut(self.gpa, s);
             try writeUleb(self.gpa, &self.out, @as(u64, gop.index) + 1);
+        }
+
+        /// `text` (owned, from `gpa`) written as a string; kept while STRINGS
+        /// holds it.
+        fn encodeRendered(self: *Self, text: []u8) EncodeError!void {
+            if (self.strings.contains(text)) {
+                defer self.gpa.free(text);
+                return self.encodeString(text);
+            }
+            self.rendered.append(self.gpa, text) catch |err| {
+                self.gpa.free(text);
+                return err;
+            };
+            try self.encodeString(text);
         }
 
         /// 0 and a new entry of the identity table, or 1 + a known one's index.
@@ -646,6 +668,7 @@ pub fn Decoder(comptime skips: []const Skip) type {
                         return map;
                     },
                     .none => {
+                        if (comptime @hasDecl(T, "entry_as_string")) return T.fromEntryText(try self.decode([]const u8));
                         if (st.layout == .@"packed") return @bitCast(try self.decode(st.backing_integer.?));
                         var out: T = undefined;
                         inline for (st.fields) |f| {

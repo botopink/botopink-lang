@@ -254,8 +254,11 @@ pub fn buildWith(arena: std.mem.Allocator, modules: []const Module, known: []con
             for (k.reexports) |r| try tree.reexports.put(arena, try reexportKey(arena, m.path, r.name), r.to);
             continue;
         };
+        // The tokens are scratch: the tree holds none (144 B-127).
+        var token_scratch = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+        defer token_scratch.deinit();
         var lx = Lexer.init(m.source);
-        const tokens = lx.scanAll(arena) catch continue;
+        const tokens = lx.scanAll(token_scratch.allocator()) catch continue;
         var p = Parser.init(tokens);
         const program = p.parse(arena) catch continue;
         programs[i] = program;

@@ -52,7 +52,11 @@ line.
 
 Usage: `var l = Lexer.init(source); const tokens = try l.scanAll(alloc);
 defer l.deinit(alloc);` — `scanAll` returns `[]const Token` owned by the lexer.
-`Lexer.init` does **not** store an allocator.
+`Lexer.init` does **not** store an allocator. The tree a parse builds holds no
+token (only slices of the source), so a caller lexes into a scratch arena and
+parses into its own: a module's tokens are gone once its parse ends, not kept
+for the session (`comptime.zig` `analyzeSource`, its probes, `mod_tree.zig`,
+144 B-127).
 
 ## A name between backticks is an identifier (decision 561)
 

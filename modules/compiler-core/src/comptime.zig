@@ -729,14 +729,18 @@ fn analyzeModule(
 /// before exports (`defaultParamsKey`'s carried parameters), or the root's
 /// own. Whether a call names it is the analysis's to say (an alias, a
 /// namespace, a default function all reach it).
-fn declaresCatalogueDefault(arena: std.mem.Allocator, mod: Module, templateRegistry: *const std.StringHashMap(ast.FnDecl)) !bool {
+fn declaresCatalogueDefault(mod: Module, templateRegistry: *const std.StringHashMap(ast.FnDecl)) !bool {
     var it = templateRegistry.valueIterator();
     while (it.next()) |f| for (f.params) |p| if (typeinfoAll.isCatalogueDefault(p)) return true;
+    // A probe: its tokens and tree are scratch (144 B-127).
+    var scratch_state = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer scratch_state.deinit();
+    const scratch = scratch_state.allocator();
     var lx = Lexer.init(mod.source);
-    const tokens = lx.scanAll(arena) catch return false;
+    const tokens = lx.scanAll(scratch) catch return false;
     var p = Parser.init(tokens);
-    const program = p.parse(arena) catch return false;
-    return (try typeinfoAll.collectDefaults(arena, program)).len > 0;
+    const program = p.parse(scratch) catch return false;
+    return (try typeinfoAll.collectDefaults(scratch, program)).len > 0;
 }
 
 /// Decision 551 — call loc → the arguments appended to that call: a query
@@ -809,7 +813,7 @@ fn fillCatalogueDefaults(
     // default: the module is then analysed again, its calls given their
     // queries. Any other module is analysed once, and a call leaving a
     // default out refused.
-    const probe = at_root and try declaresCatalogueDefault(arena, mod, templateRegistry);
+    const probe = at_root and try declaresCatalogueDefault(mod, templateRegistry);
     const scratch: *reflectionMod.Reflection = if (probe) blk: {
         const copy = try arena.create(reflectionMod.Reflection);
         copy.* = try reflection.probeCopy(arena);
@@ -1070,6 +1074,12 @@ fn orderReaders(
     refusals: *std.AutoHashMapUnmanaged(usize, validation.TypeError),
     lb: ?*levelB.Session,
 ) ![]const Module {
+    // Every module's tokens and tree here are a probe's — what is kept is the
+    // order, the readers' paths and the refusals, all in `arena` — so they are
+    // scratch, gone when the order is made (144 B-127).
+    var scratch_state = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer scratch_state.deinit();
+    const scratch = scratch_state.allocator();
     var readers: std.ArrayListUnmanaged(Module) = .empty;
     var others: std.ArrayListUnmanaged(Module) = .empty;
     var reader_programs: std.ArrayListUnmanaged(?ast.Program) = .empty;
@@ -1081,28 +1091,28 @@ fn orderReaders(
         // reader's package is never stored) and imports none: not parsed.
         if (lb) |l| if (l.hitMeta(m) != null) {
             try others.append(arena, m);
-            try other_programs.append(arena, null);
-            try other_tokens.append(arena, &.{});
+            try other_programs.append(scratch, null);
+            try other_tokens.append(scratch, &.{});
             continue;
         };
         // A module that does not parse is no reader; its own analysis
         // reports the parse error.
         var lx = Lexer.init(m.source);
-        const tokens: []const Token = lx.scanAll(arena) catch &.{};
+        const tokens: []const Token = lx.scanAll(scratch) catch &.{};
         const program: ?ast.Program = if (tokens.len > 0) parsed: {
             var p = Parser.init(tokens);
-            const parsed = p.parse(arena) catch break :parsed null;
-            break :parsed try ast.ImportDecl.withOwnPackage(arena, parsed, m.package);
+            const parsed = p.parse(scratch) catch break :parsed null;
+            break :parsed try ast.ImportDecl.withOwnPackage(scratch, parsed, m.package);
         } else null;
-        if (program != null and try typeinfoAll.reads(arena, program.?)) {
+        if (program != null and try typeinfoAll.reads(scratch, program.?)) {
             try readers.append(arena, m);
-            try reader_programs.append(arena, program);
-            try reader_tokens.append(arena, tokens);
+            try reader_programs.append(scratch, program);
+            try reader_tokens.append(scratch, tokens);
             try reflection.readers.put(arena, m.path, {});
         } else {
             try others.append(arena, m);
-            try other_programs.append(arena, program);
-            try other_tokens.append(arena, tokens);
+            try other_programs.append(scratch, program);
+            try other_tokens.append(scratch, tokens);
         }
     }
     // Decision 551 — a module whose call had a catalogue default answered in
@@ -1120,8 +1130,8 @@ fn orderReaders(
             _ = others.orderedRemove(k);
             const lp = other_programs.orderedRemove(k);
             const lt = other_tokens.orderedRemove(k);
-            try other_programs.append(arena, lp);
-            try other_tokens.append(arena, lt);
+            try other_programs.append(scratch, lp);
+            try other_tokens.append(scratch, lt);
         }
         // `others` and its programs stay index-aligned: the late modules
         // join the end of both, in their order.
@@ -1129,8 +1139,8 @@ fn orderReaders(
     };
     if (readers.items.len == 0 and late.items.len == 0) return modules;
     try others.appendSlice(arena, readers.items);
-    try other_programs.appendSlice(arena, reader_programs.items);
-    try other_tokens.appendSlice(arena, reader_tokens.items);
+    try other_programs.appendSlice(scratch, reader_programs.items);
+    try other_tokens.appendSlice(scratch, reader_tokens.items);
     for (others.items, other_programs.items, other_tokens.items, 0..) |m, maybe_program, tokens, idx| {
         const program = maybe_program orelse continue;
         scan: for (program.decls) |d| switch (d) {
@@ -1157,7 +1167,7 @@ fn orderReaders(
                     // default is imported by none (s23-i (d) (2)).
                     for (late.items) |r| {
                         if (std.mem.eql(u8, r.path, m.path)) continue;
-                        const hit = for ([_]bool{ false, true }) |whole| switch (try u.leafSource(imp, arena, whole)) {
+                        const hit = for ([_]bool{ false, true }) |whole| switch (try u.leafSource(imp, scratch, whole)) {
                             .key => |key| if (std.mem.eql(u8, key, r.path)) break true,
                             .module => |path| if (std.mem.eql(u8, path, r.path) or std.mem.eql(u8, std.fs.path.basename(r.path), path)) break true,
                             .root => {},
@@ -1167,7 +1177,7 @@ fn orderReaders(
                         try refusals.put(arena, idx, validation.TypeError.custom(msg, "Move what this module needs out of the root into a module of its own; the root imports it, never the other way round (decision 551).").withLoc(imp.loc));
                         break :scan;
                     }
-                    for ([_]bool{ false, true }) |whole| switch (try u.leafSource(imp, arena, whole)) {
+                    for ([_]bool{ false, true }) |whole| switch (try u.leafSource(imp, scratch, whole)) {
                         // A `.key` is one module: the package plus the path.
                         .key => |key| for (readers.items) |r| {
                             if (std.mem.eql(u8, r.path, m.path) or !std.mem.eql(u8, key, r.path)) continue;
@@ -1783,8 +1793,13 @@ fn analyzeSource(
     env.typeDeclRegistry = typeDeclRegistry;
     env.exportsRegistry = registry;
 
+    // The tokens are scratch: the tree holds no token, only slices of
+    // `source`, so they are gone once the parse ends instead of staying the
+    // session's (144 B-127).
+    var token_scratch = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer token_scratch.deinit();
     var lexer = Lexer.init(source);
-    const tokens = lexer.scanAll(arena) catch |err| switch (err) {
+    const tokens = lexer.scanAll(token_scratch.allocator()) catch |err| switch (err) {
         error.OutOfMemory => return err,
         // A lex error is an outcome of this module, not a failure of the
         // whole session: the other modules still compile and get diagnosed.
@@ -2340,11 +2355,15 @@ fn outOfScope(scope: ?[]const u8, path: []const u8) bool {
 
 /// True when `source` declares a module-level `var`. A source that does not
 /// parse declares none here; `analyzeModule` reports it later.
-fn declaresModuleVar(arena: std.mem.Allocator, source: []const u8) bool {
+fn declaresModuleVar(source: []const u8) bool {
+    // A probe: its tokens and tree are scratch (144 B-127).
+    var scratch_state = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer scratch_state.deinit();
+    const scratch = scratch_state.allocator();
     var lx = Lexer.init(source);
-    const tokens = lx.scanAll(arena) catch return false;
+    const tokens = lx.scanAll(scratch) catch return false;
     var p = Parser.init(tokens);
-    const program = p.parse(arena) catch return false;
+    const program = p.parse(scratch) catch return false;
     for (program.decls) |decl| switch (decl) {
         .val => |v| if (v.mutable) return true,
         else => {},
@@ -2449,6 +2468,10 @@ fn stdIndex(path: []const u8) ?usize {
 /// reports the error.
 fn stdNeedsOf(arena: std.mem.Allocator, mod: Module, beam_target: bool) ![]const usize {
     var needed = [_]bool{false} ** std_pkg_modules.len;
+    // The module's tokens and tree here are a probe's: scratch (144 B-127).
+    var scratch_state = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer scratch_state.deinit();
+    const scratch = scratch_state.allocator();
     collect: {
         // Decision 388 — a program that writes `@Component` needs std's
         // `context` module: every component is lowered to a lambda over its
@@ -2458,12 +2481,12 @@ fn stdNeedsOf(arena: std.mem.Allocator, mod: Module, beam_target: bool) ![]const
             if (stdIndex("std/context")) |i| needed[i] = true;
         }
         var lx = Lexer.init(mod.source);
-        const tokens = lx.scanAll(arena) catch break :collect;
+        const tokens = lx.scanAll(scratch) catch break :collect;
         var p = Parser.init(tokens);
         // The same rewrite `analyzeSource` makes, so a module reached only
         // through a folder namespace (`io.fs.f()`) or a module's type
         // (`collections.Dict.empty()`) is embedded like any imported one.
-        const program = std_namespace.expand(arena, p.parse(arena) catch break :collect) catch break :collect;
+        const program = std_namespace.expand(scratch, p.parse(scratch) catch break :collect) catch break :collect;
         for (program.decls) |decl| switch (decl) {
             .val => |v| if (beam_target and v.mutable) {
                 if (stdIndex("std/beam")) |i| needed[i] = true;
@@ -2475,8 +2498,8 @@ fn stdNeedsOf(arena: std.mem.Allocator, mod: Module, beam_target: bool) ![]const
                     // (`io.fs`, the namespace form) or a symbol of the module
                     // its prefix names (`io.fs.readText`); a single segment is
                     // both spellings of `dict`. Whichever matches is needed.
-                    const whole = try imp.fullPath(arena);
-                    const prefix = try imp.prefixPath(arena);
+                    const whole = try imp.fullPath(scratch);
+                    const prefix = try imp.prefixPath(scratch);
                     for (std_pkg_modules, 0..) |spm, i| {
                         const key = spm.path["std/".len..];
                         if (std.mem.eql(u8, key, whole) or (prefix.len > 0 and std.mem.eql(u8, key, prefix))) needed[i] = true;
@@ -2523,7 +2546,7 @@ fn stdGraph() !*const StdGraph {
             const declares_var = try arena.alloc(bool, std_pkg_modules.len);
             for (std_pkg_modules, imports, declares_var) |spm, *im, *dv| {
                 im.* = try stdImportsOf(arena, spm.source);
-                dv.* = declaresModuleVar(arena, spm.source);
+                dv.* = declaresModuleVar(spm.source);
             }
             std_graph = .{ .imports = imports, .order = try stdModuleOrder(arena), .declares_var = declares_var };
             std_graph_init.store(2, .release);
@@ -2578,8 +2601,11 @@ fn embeddedStdFile(arena: std.mem.Allocator, path: []const u8) ![]const u8 {
 /// `compilation failed` / `UnexpectedToken`, naming no file and no line — a
 /// reserved word used as a name in a `libs/std/src` file read that way.
 pub fn parseEmbeddedStd(arena: std.mem.Allocator, path: []const u8, source: []const u8) !ast.Program {
+    // The tokens are scratch: the tree holds none (144 B-127).
+    var token_scratch = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer token_scratch.deinit();
     var lx = Lexer.init(source);
-    const tokens = lx.scanAll(arena) catch |err| {
+    const tokens = lx.scanAll(token_scratch.allocator()) catch |err| {
         if (err == error.OutOfMemory) return err;
         std.debug.print("{s}", .{try embeddedStdDiagnostic(arena, path, source, &lx, null)});
         return error.EmbeddedStdRefused;
@@ -2635,18 +2661,23 @@ pub fn embeddedStdDiagnostic(arena: std.mem.Allocator, path: []const u8, source:
 /// `std_pkg_modules`. A source that does not parse imports nothing here; its
 /// own compile reports the error.
 fn stdImportsOf(arena: std.mem.Allocator, source: []const u8) ![]const usize {
+    // A probe: its tokens and tree are scratch, only the indices are kept
+    // (144 B-127).
+    var scratch_state = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer scratch_state.deinit();
+    const scratch = scratch_state.allocator();
     var lx = Lexer.init(source);
-    const tokens = lx.scanAll(arena) catch return &.{};
+    const tokens = lx.scanAll(scratch) catch return &.{};
     var p = Parser.init(tokens);
-    const program = p.parse(arena) catch return &.{};
+    const program = p.parse(scratch) catch return &.{};
     var out: std.ArrayListUnmanaged(usize) = .empty;
     for (program.decls) |decl| {
         if (decl != .use) continue;
         const u = decl.use;
         if (!importsStd(u, true)) continue;
         for (u.imports) |imp| {
-            const whole = try imp.fullPath(arena);
-            const prefix = try imp.prefixPath(arena);
+            const whole = try imp.fullPath(scratch);
+            const prefix = try imp.prefixPath(scratch);
             for (std_pkg_modules, 0..) |spm, i| {
                 const key = spm.path["std/".len..];
                 if (std.mem.eql(u8, key, whole) or (prefix.len > 0 and std.mem.eql(u8, key, prefix))) {
@@ -3719,8 +3750,11 @@ fn stripTestDecls(program: ast.Program, alloc: std.mem.Allocator) !ast.Program {
 /// a std module in, so a std module's signature may name a prelude record.
 fn registerReflectionPrelude(env: *Env) anyerror!void {
     const alloc = env.arena;
+    // The tokens are scratch: the tree holds none (144 B-127).
+    var token_scratch = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer token_scratch.deinit();
     var lx = Lexer.init(decl_reflection_src);
-    const tokens = try lx.scanAll(alloc);
+    const tokens = try lx.scanAll(token_scratch.allocator());
     var p = Parser.init(tokens);
     const program = try p.parse(alloc);
     _ = try infer.inferProgram(env, program);
@@ -3962,8 +3996,11 @@ pub fn registerStdlib(env: *Env, gpa: std.mem.Allocator) anyerror!void {
             while (ait.next()) |e| try env2.stdModuleAllFns.put(e.key_ptr.*, e.value_ptr.*);
         }
         for (sources) |src| {
+            // The tokens are scratch: the tree holds none (144 B-127).
+            var token_scratch = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+            defer token_scratch.deinit();
             var lx = Lexer.init(src);
-            const tokens = try lx.scanAll(env.arena);
+            const tokens = try lx.scanAll(token_scratch.allocator());
             var p = Parser.init(tokens);
             const program = try stripTestDecls(try p.parse(env.arena), env.arena);
             _ = try infer.inferProgram(&env2, program);
@@ -4737,10 +4774,7 @@ test "embedded std module: a brace import of a sibling resolves to std/<path> (d
 }
 
 test "declaresModuleVar: a module-level var is seen, a val and a local var are not" {
-    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena_state.deinit();
-    const arena = arena_state.allocator();
-    try std.testing.expect(declaresModuleVar(arena, "var hits: i32 = 0;\npub fn f() -> i32 { return hits; }\n"));
-    try std.testing.expect(!declaresModuleVar(arena, "pub val hits: i32 = 0;\n"));
-    try std.testing.expect(!declaresModuleVar(arena, "pub fn f() -> i32 {\n    var n: i32 = 0;\n    n = n + 1;\n    return n;\n}\n"));
+    try std.testing.expect(declaresModuleVar("var hits: i32 = 0;\npub fn f() -> i32 { return hits; }\n"));
+    try std.testing.expect(!declaresModuleVar("pub val hits: i32 = 0;\n"));
+    try std.testing.expect(!declaresModuleVar("pub fn f() -> i32 {\n    var n: i32 = 0;\n    n = n + 1;\n    return n;\n}\n"));
 }
