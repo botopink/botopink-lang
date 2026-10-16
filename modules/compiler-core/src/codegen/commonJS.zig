@@ -2912,7 +2912,14 @@ const Emitter = struct {
     fn wrapResult(self: *Emitter, ret: ?ast.TypeRef, value: js.Expr) !js.Expr {
         const task = isTaskOfResult(ret);
         const inner = if (task) value else try self.adoptHost(resultOkType(ret), value);
-        const failure = try self.requireCall(try std.fmt.allocPrint(self.arena(), "{s}std/failure.js", .{try self.requirePrefix()}));
+        // `failure` is `std/failure` in a consumer's build and `failure` at the
+        // output root in std's own (its tests): the module that exports
+        // `HostError` says which.
+        const failure_mod: []const u8 = if (self.cross) |xc| blk: {
+            const info = xc.picked("HostError", null, null) orelse break :blk "std/failure";
+            break :blk if (std.mem.eql(u8, info.module, "failure")) "failure" else "std/failure";
+        } else "std/failure";
+        const failure = try self.requireCall(try std.fmt.allocPrint(self.arena(), "{s}{s}.js", .{ try self.requirePrefix(), failure_mod }));
         return self.b.call(self.helper(if (task) .host_result_task else .host_result), &.{
             failure,
             try self.b.arrowExpr(&.{}, inner),

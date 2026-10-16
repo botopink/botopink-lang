@@ -898,8 +898,8 @@ wasm data segment (`@embed`'s `Asset.bytes`, § `@embed` and `Asset`).
 
 std's `encoding` bridges `Bytes` and text losslessly: `base64EncodeBytes(b)` and
 `hexEncodeBytes(b)` answer the text of the bytes as they are, and
-`base64DecodeBytes(s)` / `hexDecodeBytes(s)` answer `@Result<Bytes, string>` with
-the text codecs' rules and `Error` texts (`"not base64"`, `"not hex"`).
+`base64DecodeBytes(s)` / `hexDecodeBytes(s)` answer `@Result<Bytes, EncodingError>` with
+the text codecs' rules and `Error` variants (`NotBase64`, `NotHex`, decision 486).
 
 <!-- example: modules/bytes_encoding_bridges -->
 <!-- example: modules/bytes_string_literal -->
@@ -4160,6 +4160,14 @@ A host function declared as a method of its type answers the same way, a
 `@Task` method's failure read back as `Error(HostError(…))` at its `await`:
 
 <!-- example: modules/external_result_host_method -->
+
+**std maps its own host failures** (decisions 431, 486). A std function whose host call can fail answers
+`@Result<T, E>`, never a `string`. Where std maps the host's raise — `encoding`, `io.clock`, `io.fs` — the
+binding stays private, writes `result: true`, and the public function maps the `HostError` into the
+module's own error enum (`EncodingError`, `ClockError`, `FsError`), so the same input is the same variant
+on every target; `json`, `regex` and `io.process` answer std's `HostError` itself, its `kind` `"host"`.
+
+<!-- example: modules/std_host_error_variants -->
 
 One annotation binds the BEAM: `External.Erlang` serves the erlang and the beam
 targets, the same VM and the same OTP calls (decision 437). `@External.Beam` is

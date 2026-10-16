@@ -50,6 +50,8 @@
 ////   Promise.all       — https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise/all
 ////   Erlang processes  — https://www.erlang.org/doc/system/ref_man_processes.html
 
+import {failure};
+
 // ── instruments ──────────────────────────────────────────────────────────────
 
 // Which backend is running. The future surface's erlang behaviour differs from
@@ -681,9 +683,13 @@ declare fn countOf(counter: unknown) -> i32;
 
 // The text a task panics with, `""` when it answered — a panic inside a
 // `-> @Task` function is a rejected Promise on commonJS and a raise on erlang.
-#[@External.Node("""((__f) => Promise.resolve().then(() => (__f)()).then(() => '', (__e) => (__e && __e.message ? __e.message : String(__e))))($0)""")]
-#[@External.Erlang("""(fun(__B) -> try __B(), <<>> catch error:{panic, __M} -> unicode:characters_to_binary(__M); __C:__E -> iolist_to_binary(io_lib:format("~p:~p", [__C, __E])) end end)($0)""")]
-declare fn panicOf<T>(body: fn() -> @Task<T>) -> @Task<string>;
+fn panicOf<T>(body: fn() -> @Task<T>) -> @Task<string> {
+    val r = await failure.attemptTask(body);
+    return case r {
+        Ok(_) -> "";
+        Error(f) -> f.message;
+    };
+}
 
 // Attempt `n` of a task that fails until its `succeedAt`-th call:
 // `Error("failure <n>")` before it, `Ok("ok after <n>")` from it on. The test

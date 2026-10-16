@@ -165,17 +165,34 @@ pub type Civil(
 // `hours`, combined by `add`, read back by `toMillis`.
 pub type Duration(millis: i64)
 
+import {failure, failure.HostError};
+
 // Parse an RFC 3339 timestamp (`2024-02-29T12:34:56Z`,
 // `2024-02-29T12:34:56.789+02:00`) into epoch milliseconds. The date, the
 // time AND the offset are required — a timestamp without an offset has no
 // single instant, so it is an `Error`, not a guess at the host timezone.
 // Node: `Date.parse` accepts far more than RFC 3339 (`"2024"`, `"Feb 1"`),
-// so the template checks the RFC 3339 shape first, then parses.
+// so the template checks the RFC 3339 shape first, then parses; a shape or a
+// date it refuses is its raise.
 // Erlang: `calendar:rfc3339_to_system_time/2` in milliseconds; it raises on
-// a malformed string, caught.
-#[@External.Node("""(() => { const __s = String($0); const __t = /^[0-9]{4}-[0-9]{2}-[0-9]{2}[Tt ][0-9]{2}:[0-9]{2}:[0-9]{2}([.][0-9]+)?([Zz]|[+-][0-9]{2}:[0-9]{2})$/.test(__s) ? Date.parse(__s) : NaN; return Number.isNaN(__t) ? { error: 'not an RFC 3339 timestamp' } : { ok: __t } })()""")]
-#[@External.Erlang("""(fun(__S) -> try {ok, calendar:rfc3339_to_system_time(binary_to_list(__S), [{unit, millisecond}])} catch _:_ -> {error, <<"not an RFC 3339 timestamp">>} end end)($0)""")]
-pub declare fn parseIso8601(s: string) -> @Result<i64, string>;
+// a malformed string.
+// Both run under `result: true` (decisions 431, 490); `parseIso8601` makes
+// the host's raise `ClockError.NotRfc3339` (decision 486).
+#[@External.Node("""(() => { const __s = String($0); const __t = /^[0-9]{4}-[0-9]{2}-[0-9]{2}[Tt ][0-9]{2}:[0-9]{2}:[0-9]{2}([.][0-9]+)?([Zz]|[+-][0-9]{2}:[0-9]{2})$/.test(__s) ? Date.parse(__s) : NaN; if (Number.isNaN(__t)) throw new Error('not an RFC 3339 timestamp'); return __t })()""", result: true)]
+#[@External.Erlang("""calendar:rfc3339_to_system_time(binary_to_list($0), [{unit, millisecond}])""", result: true)]
+declare fn parseIso8601Host(s: string) -> @Result<i64, HostError>;
+
+// What `parseIso8601` refuses (decision 486).
+pub type ClockError {
+    NotRfc3339,
+}
+
+pub fn parseIso8601(s: string) -> @Result<i64, ClockError> {
+    case parseIso8601Host(s) {
+        Ok(v) -> return v;
+        Error(_) -> throw ClockError.NotRfc3339;
+    }
+}
 
 // The UTC civil breakdown of `epochMillis`.
 // Node: the `getUTC*` readers of a `Date`; `getUTCDay` counts Sunday = 0,

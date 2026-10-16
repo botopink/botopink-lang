@@ -15,14 +15,14 @@
 //// `removeTree`, `copy`, `walk`, `glob`) are followed by the handle: `open`
 //// and `create` answer a `File`, a `Closeable` closed by the writer with `defer`.
 ////
-//// The host cells (`raw…`) answer `@Result<R, string>` whose error is
-//// `<kind>|<host text>` — `kind` one of `notfound`, `denied`, `isdir`, `notdir`,
-//// `exists`, `other` (or `dangling`, a `walk`'s own) — and `lift` turns it into the
-//// `FsError` of the path the caller wrote. All operations are synchronous
+//// The host cells (`raw…`) write `result: true` (decisions 431, 490) and answer
+//// `@Result<R, HostError>` — Node's `ENOENT: …`, erlang's `enoent` as its `message` —
+//// and `lift` reads that message as the `FsError` of the path the caller wrote
+//// (decision 486); no cell catches by hand. All operations are synchronous
 //// (`*Sync` on Node, blocking BIFs on Erlang); there is no wasm binding here
 //// (front 164: `wasi:filesystem` behind `needs: [.Filesystem]`).
 
-import {path.relative};
+import {path.relative, failure, failure.HostError};
 
 // The error of every `io.fs` function (decision 540). `path` is the path the
 // caller wrote (for `copy`, the source; for `walk`, the root).
@@ -64,21 +64,21 @@ pub type FileStat(
 // Read the whole file as bytes.
 // Node: `readFileSync($0)` copied into a plain `Uint8Array`.
 // Erlang: `file:read_file/1`.
-#[@External.Node("""(() => { const __ek = (__e) => { const __c = __e && __e.code; const __t = __c === 'ENOENT' ? 'notfound' : (__c === 'EACCES' || __c === 'EPERM') ? 'denied' : (__c === 'EISDIR' || __c === 'ERR_FS_EISDIR') ? 'isdir' : __c === 'ENOTDIR' ? 'notdir' : __c === 'EEXIST' ? 'exists' : 'other'; return __t + '|' + (__e && __e.message ? __e.message : String(__e)) }; try { return { ok: new Uint8Array(require('fs').readFileSync($0)) } } catch (__e) { return { error: __ek(__e) } } })()""")]
-#[@External.Erlang("""(fun(__P) -> __Ek = fun(__Rs) -> __K = case __Rs of enoent -> <<"notfound">>; eacces -> <<"denied">>; eperm -> <<"denied">>; eisdir -> <<"isdir">>; enotdir -> <<"notdir">>; eexist -> <<"exists">>; _ -> <<"other">> end, unicode:characters_to_binary([__K, <<"|">>, io_lib:format("~tp", [__Rs])]) end, case file:read_file(__P) of {ok, __B} -> {ok, __B}; {error, __R} -> {error, __Ek(__R)} end end)($0)""")]
-declare fn rawReadBytes(path: string) -> @Result<Bytes, string>;
+#[@External.Node("""(() => { return new Uint8Array(require('fs').readFileSync($0)) })()""", result: true)]
+#[@External.Erlang("""(fun(__P) -> case file:read_file(__P) of {ok, __B} -> {ok, __B}; {error, __R} -> {error, __R} end end)($0)""", result: true)]
+declare fn rawReadBytes(path: string) -> @Result<Bytes, HostError>;
 
 // Write `contents` to `path`, creating or truncating.
 // Node: `writeFileSync($0, $1)`. Erlang: `file:write_file/2`.
-#[@External.Node("""(() => { const __ek = (__e) => { const __c = __e && __e.code; const __t = __c === 'ENOENT' ? 'notfound' : (__c === 'EACCES' || __c === 'EPERM') ? 'denied' : (__c === 'EISDIR' || __c === 'ERR_FS_EISDIR') ? 'isdir' : __c === 'ENOTDIR' ? 'notdir' : __c === 'EEXIST' ? 'exists' : 'other'; return __t + '|' + (__e && __e.message ? __e.message : String(__e)) }; try { require('fs').writeFileSync($0, $1); return { ok: 0 } } catch (__e) { return { error: __ek(__e) } } })()""")]
-#[@External.Erlang("""(fun(__P, __C) -> __Ek = fun(__Rs) -> __K = case __Rs of enoent -> <<"notfound">>; eacces -> <<"denied">>; eperm -> <<"denied">>; eisdir -> <<"isdir">>; enotdir -> <<"notdir">>; eexist -> <<"exists">>; _ -> <<"other">> end, unicode:characters_to_binary([__K, <<"|">>, io_lib:format("~tp", [__Rs])]) end, case file:write_file(__P, __C) of ok -> {ok, 0}; {error, __R} -> {error, __Ek(__R)} end end)($0, $1)""")]
-declare fn rawWriteBytes(path: string, contents: Bytes) -> @Result<i32, string>;
+#[@External.Node("""(() => { require('fs').writeFileSync($0, $1); return 0 })()""", result: true)]
+#[@External.Erlang("""(fun(__P, __C) -> case file:write_file(__P, __C) of ok -> {ok, 0}; {error, __R} -> {error, __R} end end)($0, $1)""", result: true)]
+declare fn rawWriteBytes(path: string, contents: Bytes) -> @Result<i32, HostError>;
 
 // Append `contents` to `path`, creating it when it is not there.
 // Node: `appendFileSync($0, $1)`. Erlang: `file:write_file/3` with `append`.
-#[@External.Node("""(() => { const __ek = (__e) => { const __c = __e && __e.code; const __t = __c === 'ENOENT' ? 'notfound' : (__c === 'EACCES' || __c === 'EPERM') ? 'denied' : (__c === 'EISDIR' || __c === 'ERR_FS_EISDIR') ? 'isdir' : __c === 'ENOTDIR' ? 'notdir' : __c === 'EEXIST' ? 'exists' : 'other'; return __t + '|' + (__e && __e.message ? __e.message : String(__e)) }; try { require('fs').appendFileSync($0, $1); return { ok: 0 } } catch (__e) { return { error: __ek(__e) } } })()""")]
-#[@External.Erlang("""(fun(__P, __C) -> __Ek = fun(__Rs) -> __K = case __Rs of enoent -> <<"notfound">>; eacces -> <<"denied">>; eperm -> <<"denied">>; eisdir -> <<"isdir">>; enotdir -> <<"notdir">>; eexist -> <<"exists">>; _ -> <<"other">> end, unicode:characters_to_binary([__K, <<"|">>, io_lib:format("~tp", [__Rs])]) end, case file:write_file(__P, __C, [append]) of ok -> {ok, 0}; {error, __R} -> {error, __Ek(__R)} end end)($0, $1)""")]
-declare fn rawAppendText(path: string, contents: string) -> @Result<i32, string>;
+#[@External.Node("""(() => { require('fs').appendFileSync($0, $1); return 0 })()""", result: true)]
+#[@External.Erlang("""(fun(__P, __C) -> case file:write_file(__P, __C, [append]) of ok -> {ok, 0}; {error, __R} -> {error, __R} end end)($0, $1)""", result: true)]
+declare fn rawAppendText(path: string, contents: string) -> @Result<i32, HostError>;
 
 // The offset of the first byte that starts a sequence that is not UTF-8 (a byte no sequence
 // starts with, a sequence cut short, an overlong form, a surrogate, a code point past U+10FFFF),
@@ -97,14 +97,14 @@ declare fn stripEol(line: Bytes) -> Bytes;
 // The handle of the file at `path`, open for reading. A directory is `isdir` on both hosts
 // (Node opens one; the template refuses it). The handle is host-owned and opaque: a
 // `{ fd, mem, pos, buf }` object on Node, the raw file descriptor on Erlang.
-#[@External.Node("""(() => { const __ek = (__e) => { const __c = __e && __e.code; const __t = __c === 'ENOENT' ? 'notfound' : (__c === 'EACCES' || __c === 'EPERM') ? 'denied' : (__c === 'EISDIR' || __c === 'ERR_FS_EISDIR') ? 'isdir' : __c === 'ENOTDIR' ? 'notdir' : __c === 'EEXIST' ? 'exists' : 'other'; return __t + '|' + (__e && __e.message ? __e.message : String(__e)) }; try { const __fs = require('fs'); const __p = $0; const __fd = __fs.openSync(__p, 'r'); if (__fs.fstatSync(__fd).isDirectory()) { __fs.closeSync(__fd); return { error: 'isdir|EISDIR: illegal operation on a directory, open ' + JSON.stringify(__p) } } return { ok: { fd: __fd, mem: null, pos: 0, buf: new Uint8Array(0) } } } catch (__e) { return { error: __ek(__e) } } })()""")]
-#[@External.Erlang("""(fun(__P) -> __Ek = fun(__Rs) -> __K = case __Rs of enoent -> <<"notfound">>; eacces -> <<"denied">>; eperm -> <<"denied">>; eisdir -> <<"isdir">>; enotdir -> <<"notdir">>; eexist -> <<"exists">>; _ -> <<"other">> end, unicode:characters_to_binary([__K, <<"|">>, io_lib:format("~tp", [__Rs])]) end, case file:open(__P, [read, binary, raw, read_ahead]) of {ok, __F} -> {ok, __F}; {error, __R} -> {error, __Ek(__R)} end end)($0)""")]
-declare fn rawOpen(path: string) -> @Result<unknown, string>;
+#[@External.Node("""(() => { const __fs = require('fs'); const __p = $0; const __fd = __fs.openSync(__p, 'r'); if (__fs.fstatSync(__fd).isDirectory()) { __fs.closeSync(__fd); throw new Error('EISDIR: illegal operation on a directory, open ' + JSON.stringify(__p)) } return { fd: __fd, mem: null, pos: 0, buf: new Uint8Array(0) } })()""", result: true)]
+#[@External.Erlang("""(fun(__P) -> case file:open(__P, [read, binary, raw, read_ahead]) of {ok, __F} -> {ok, __F}; {error, __R} -> {error, __R} end end)($0)""", result: true)]
+declare fn rawOpen(path: string) -> @Result<unknown, HostError>;
 
 // The handle of the file at `path`, open for writing: created, or truncated.
-#[@External.Node("""(() => { const __ek = (__e) => { const __c = __e && __e.code; const __t = __c === 'ENOENT' ? 'notfound' : (__c === 'EACCES' || __c === 'EPERM') ? 'denied' : (__c === 'EISDIR' || __c === 'ERR_FS_EISDIR') ? 'isdir' : __c === 'ENOTDIR' ? 'notdir' : __c === 'EEXIST' ? 'exists' : 'other'; return __t + '|' + (__e && __e.message ? __e.message : String(__e)) }; try { const __fd = require('fs').openSync($0, 'w'); return { ok: { fd: __fd, mem: null, pos: 0, buf: new Uint8Array(0) } } } catch (__e) { return { error: __ek(__e) } } })()""")]
-#[@External.Erlang("""(fun(__P) -> __Ek = fun(__Rs) -> __K = case __Rs of enoent -> <<"notfound">>; eacces -> <<"denied">>; eperm -> <<"denied">>; eisdir -> <<"isdir">>; enotdir -> <<"notdir">>; eexist -> <<"exists">>; _ -> <<"other">> end, unicode:characters_to_binary([__K, <<"|">>, io_lib:format("~tp", [__Rs])]) end, case file:open(__P, [write, binary, raw]) of {ok, __F} -> {ok, __F}; {error, __R} -> {error, __Ek(__R)} end end)($0)""")]
-declare fn rawCreate(path: string) -> @Result<unknown, string>;
+#[@External.Node("""(() => { const __fd = require('fs').openSync($0, 'w'); return { fd: __fd, mem: null, pos: 0, buf: new Uint8Array(0) } })()""", result: true)]
+#[@External.Erlang("""(fun(__P) -> case file:open(__P, [write, binary, raw]) of {ok, __F} -> {ok, __F}; {error, __R} -> {error, __R} end end)($0)""", result: true)]
+declare fn rawCreate(path: string) -> @Result<unknown, HostError>;
 
 // A handle over bytes held in memory — what an `Asset` opens as. The position is a field
 // on Node and a `counters` cell on Erlang.
@@ -113,51 +113,51 @@ declare fn rawCreate(path: string) -> @Result<unknown, string>;
 declare fn memHandle(bytes: Bytes) -> unknown;
 
 // The size of the file behind `handle`, in bytes. Erlang's raw descriptor has no `fstat`, so it reads `path`.
-#[@External.Node("""(() => { const __ek = (__e) => { const __c = __e && __e.code; const __t = __c === 'ENOENT' ? 'notfound' : (__c === 'EACCES' || __c === 'EPERM') ? 'denied' : (__c === 'EISDIR' || __c === 'ERR_FS_EISDIR') ? 'isdir' : __c === 'ENOTDIR' ? 'notdir' : __c === 'EEXIST' ? 'exists' : 'other'; return __t + '|' + (__e && __e.message ? __e.message : String(__e)) }; try { const __h = $0; return { ok: __h.mem ? __h.mem.length : require('fs').fstatSync(__h.fd).size } } catch (__e) { return { error: __ek(__e) } } })()""")]
-#[@External.Erlang("""(fun(__H, __P) -> __Ek = fun(__Rs) -> __K = case __Rs of enoent -> <<"notfound">>; eacces -> <<"denied">>; eperm -> <<"denied">>; eisdir -> <<"isdir">>; enotdir -> <<"notdir">>; eexist -> <<"exists">>; _ -> <<"other">> end, unicode:characters_to_binary([__K, <<"|">>, io_lib:format("~tp", [__Rs])]) end, case __H of {mem, __B, _} -> {ok, byte_size(__B)}; _ -> case file:read_file_info(__P) of {ok, __I} -> {ok, element(2, __I)}; {error, __R} -> {error, __Ek(__R)} end end end)($0, $1)""")]
-declare fn rawSize(handle: unknown, path: string) -> @Result<i64, string>;
+#[@External.Node("""(() => { const __h = $0; return __h.mem ? __h.mem.length : require('fs').fstatSync(__h.fd).size })()""", result: true)]
+#[@External.Erlang("""(fun(__H, __P) -> case __H of {mem, __B, _} -> {ok, byte_size(__B)}; _ -> case file:read_file_info(__P) of {ok, __I} -> {ok, element(2, __I)}; {error, __R} -> {error, __R} end end end)($0, $1)""", result: true)]
+declare fn rawSize(handle: unknown, path: string) -> @Result<i64, HostError>;
 
 // Up to `n` bytes (n > 0) from the handle's position; empty at the end.
-#[@External.Node("""(() => { const __ek = (__e) => { const __c = __e && __e.code; const __t = __c === 'ENOENT' ? 'notfound' : (__c === 'EACCES' || __c === 'EPERM') ? 'denied' : (__c === 'EISDIR' || __c === 'ERR_FS_EISDIR') ? 'isdir' : __c === 'ENOTDIR' ? 'notdir' : __c === 'EEXIST' ? 'exists' : 'other'; return __t + '|' + (__e && __e.message ? __e.message : String(__e)) }; const __more = (h, n) => { if (h.mem) { const r = h.mem.subarray(h.pos, h.pos + n); h.pos += r.length; return r } const b = new Uint8Array(n); const k = require('fs').readSync(h.fd, b, 0, n, null); return b.subarray(0, k) }; try { const __h = $0; const __n = $1; if (__h.buf.length > 0) { const __k = Math.min(__n, __h.buf.length); const __o = new Uint8Array(__h.buf.subarray(0, __k)); __h.buf = __h.buf.subarray(__k); return { ok: __o } } return { ok: new Uint8Array(__more(__h, __n)) } } catch (__e) { return { error: __ek(__e) } } })()""")]
-#[@External.Erlang("""(fun(__H, __N) -> __Ek = fun(__Rs) -> __K = case __Rs of enoent -> <<"notfound">>; eacces -> <<"denied">>; eperm -> <<"denied">>; eisdir -> <<"isdir">>; enotdir -> <<"notdir">>; eexist -> <<"exists">>; _ -> <<"other">> end, unicode:characters_to_binary([__K, <<"|">>, io_lib:format("~tp", [__Rs])]) end, case __H of {mem, __B, __C} -> __Pos = counters:get(__C, 1), __Len = min(__N, byte_size(__B) - __Pos), counters:add(__C, 1, __Len), {ok, binary:part(__B, __Pos, __Len)}; _ -> case file:read(__H, __N) of {ok, __D} -> {ok, __D}; eof -> {ok, <<>>}; {error, __R} -> {error, __Ek(__R)} end end end)($0, $1)""")]
-declare fn rawRead(handle: unknown, n: i32) -> @Result<Bytes, string>;
+#[@External.Node("""(() => { const __more = (h, n) => { if (h.mem) { const r = h.mem.subarray(h.pos, h.pos + n); h.pos += r.length; return r } const b = new Uint8Array(n); const k = require('fs').readSync(h.fd, b, 0, n, null); return b.subarray(0, k) }; const __h = $0; const __n = $1; if (__h.buf.length > 0) { const __k = Math.min(__n, __h.buf.length); const __o = new Uint8Array(__h.buf.subarray(0, __k)); __h.buf = __h.buf.subarray(__k); return __o } return new Uint8Array(__more(__h, __n)) })()""", result: true)]
+#[@External.Erlang("""(fun(__H, __N) -> case __H of {mem, __B, __C} -> __Pos = counters:get(__C, 1), __Len = min(__N, byte_size(__B) - __Pos), counters:add(__C, 1, __Len), {ok, binary:part(__B, __Pos, __Len)}; _ -> case file:read(__H, __N) of {ok, __D} -> {ok, __D}; eof -> {ok, <<>>}; {error, __R} -> {error, __R} end end end)($0, $1)""", result: true)]
+declare fn rawRead(handle: unknown, n: i32) -> @Result<Bytes, HostError>;
 
 // Every byte from the handle's position to the end.
-#[@External.Node("""(() => { const __ek = (__e) => { const __c = __e && __e.code; const __t = __c === 'ENOENT' ? 'notfound' : (__c === 'EACCES' || __c === 'EPERM') ? 'denied' : (__c === 'EISDIR' || __c === 'ERR_FS_EISDIR') ? 'isdir' : __c === 'ENOTDIR' ? 'notdir' : __c === 'EEXIST' ? 'exists' : 'other'; return __t + '|' + (__e && __e.message ? __e.message : String(__e)) }; const __more = (h, n) => { if (h.mem) { const r = h.mem.subarray(h.pos, h.pos + n); h.pos += r.length; return r } const b = new Uint8Array(n); const k = require('fs').readSync(h.fd, b, 0, n, null); return b.subarray(0, k) }; try { const __h = $0; const __parts = []; if (__h.buf.length > 0) { __parts.push(__h.buf); __h.buf = new Uint8Array(0) } for (;;) { const __r = __more(__h, 65536); if (__r.length === 0) break; __parts.push(new Uint8Array(__r)) } let __t = 0; for (const __x of __parts) __t += __x.length; const __o = new Uint8Array(__t); let __p = 0; for (const __x of __parts) { __o.set(__x, __p); __p += __x.length } return { ok: __o } } catch (__e) { return { error: __ek(__e) } } })()""")]
-#[@External.Erlang("""(fun(__H) -> __Ek = fun(__Rs) -> __K = case __Rs of enoent -> <<"notfound">>; eacces -> <<"denied">>; eperm -> <<"denied">>; eisdir -> <<"isdir">>; enotdir -> <<"notdir">>; eexist -> <<"exists">>; _ -> <<"other">> end, unicode:characters_to_binary([__K, <<"|">>, io_lib:format("~tp", [__Rs])]) end, case __H of {mem, __B, __C} -> __Pos = counters:get(__C, 1), counters:add(__C, 1, byte_size(__B) - __Pos), {ok, binary:part(__B, __Pos, byte_size(__B) - __Pos)}; _ -> (fun __L(__Acc) -> case file:read(__H, 65536) of {ok, __D} -> __L([__Acc, __D]); eof -> {ok, iolist_to_binary(__Acc)}; {error, __R} -> {error, __Ek(__R)} end end)([]) end end)($0)""")]
-declare fn rawReadAll(handle: unknown) -> @Result<Bytes, string>;
+#[@External.Node("""(() => { const __more = (h, n) => { if (h.mem) { const r = h.mem.subarray(h.pos, h.pos + n); h.pos += r.length; return r } const b = new Uint8Array(n); const k = require('fs').readSync(h.fd, b, 0, n, null); return b.subarray(0, k) }; const __h = $0; const __parts = []; if (__h.buf.length > 0) { __parts.push(__h.buf); __h.buf = new Uint8Array(0) } for (;;) { const __r = __more(__h, 65536); if (__r.length === 0) break; __parts.push(new Uint8Array(__r)) } let __t = 0; for (const __x of __parts) __t += __x.length; const __o = new Uint8Array(__t); let __p = 0; for (const __x of __parts) { __o.set(__x, __p); __p += __x.length } return __o })()""", result: true)]
+#[@External.Erlang("""(fun(__H) -> case __H of {mem, __B, __C} -> __Pos = counters:get(__C, 1), counters:add(__C, 1, byte_size(__B) - __Pos), {ok, binary:part(__B, __Pos, byte_size(__B) - __Pos)}; _ -> (fun __L(__Acc) -> case file:read(__H, 65536) of {ok, __D} -> __L([__Acc, __D]); eof -> {ok, iolist_to_binary(__Acc)}; {error, __R} -> {error, __R} end end)([]) end end)($0)""", result: true)]
+declare fn rawReadAll(handle: unknown) -> @Result<Bytes, HostError>;
 
 // The next line, terminator included; empty at the end.
-#[@External.Node("""(() => { const __ek = (__e) => { const __c = __e && __e.code; const __t = __c === 'ENOENT' ? 'notfound' : (__c === 'EACCES' || __c === 'EPERM') ? 'denied' : (__c === 'EISDIR' || __c === 'ERR_FS_EISDIR') ? 'isdir' : __c === 'ENOTDIR' ? 'notdir' : __c === 'EEXIST' ? 'exists' : 'other'; return __t + '|' + (__e && __e.message ? __e.message : String(__e)) }; const __more = (h, n) => { if (h.mem) { const r = h.mem.subarray(h.pos, h.pos + n); h.pos += r.length; return r } const b = new Uint8Array(n); const k = require('fs').readSync(h.fd, b, 0, n, null); return b.subarray(0, k) }; try { const __h = $0; for (;;) { const __i = __h.buf.indexOf(10); if (__i >= 0) { const __l = new Uint8Array(__h.buf.subarray(0, __i + 1)); __h.buf = __h.buf.subarray(__i + 1); return { ok: __l } } const __r = __more(__h, 65536); if (__r.length === 0) { const __l = __h.buf; __h.buf = new Uint8Array(0); return { ok: __l } } const __nb = new Uint8Array(__h.buf.length + __r.length); __nb.set(__h.buf, 0); __nb.set(__r, __h.buf.length); __h.buf = __nb } } catch (__e) { return { error: __ek(__e) } } })()""")]
-#[@External.Erlang("""(fun(__H) -> __Ek = fun(__Rs) -> __K = case __Rs of enoent -> <<"notfound">>; eacces -> <<"denied">>; eperm -> <<"denied">>; eisdir -> <<"isdir">>; enotdir -> <<"notdir">>; eexist -> <<"exists">>; _ -> <<"other">> end, unicode:characters_to_binary([__K, <<"|">>, io_lib:format("~tp", [__Rs])]) end, case __H of {mem, __B, __C} -> __Pos = counters:get(__C, 1), __Rest = binary:part(__B, __Pos, byte_size(__B) - __Pos), case binary:match(__Rest, <<10>>) of nomatch -> counters:add(__C, 1, byte_size(__Rest)), {ok, __Rest}; {__At, _} -> counters:add(__C, 1, __At + 1), {ok, binary:part(__Rest, 0, __At + 1)} end; _ -> case file:read_line(__H) of {ok, __D} -> {ok, __D}; eof -> {ok, <<>>}; {error, __R} -> {error, __Ek(__R)} end end end)($0)""")]
-declare fn rawReadLine(handle: unknown) -> @Result<Bytes, string>;
+#[@External.Node("""(() => { const __more = (h, n) => { if (h.mem) { const r = h.mem.subarray(h.pos, h.pos + n); h.pos += r.length; return r } const b = new Uint8Array(n); const k = require('fs').readSync(h.fd, b, 0, n, null); return b.subarray(0, k) }; const __h = $0; for (;;) { const __i = __h.buf.indexOf(10); if (__i >= 0) { const __l = new Uint8Array(__h.buf.subarray(0, __i + 1)); __h.buf = __h.buf.subarray(__i + 1); return __l } const __r = __more(__h, 65536); if (__r.length === 0) { const __l = __h.buf; __h.buf = new Uint8Array(0); return __l } const __nb = new Uint8Array(__h.buf.length + __r.length); __nb.set(__h.buf, 0); __nb.set(__r, __h.buf.length); __h.buf = __nb } })()""", result: true)]
+#[@External.Erlang("""(fun(__H) -> case __H of {mem, __B, __C} -> __Pos = counters:get(__C, 1), __Rest = binary:part(__B, __Pos, byte_size(__B) - __Pos), case binary:match(__Rest, <<10>>) of nomatch -> counters:add(__C, 1, byte_size(__Rest)), {ok, __Rest}; {__At, _} -> counters:add(__C, 1, __At + 1), {ok, binary:part(__Rest, 0, __At + 1)} end; _ -> case file:read_line(__H) of {ok, __D} -> {ok, __D}; eof -> {ok, <<>>}; {error, __R} -> {error, __R} end end end)($0)""", result: true)]
+declare fn rawReadLine(handle: unknown) -> @Result<Bytes, HostError>;
 
 // The SHA-256 of the whole file behind the handle, lowercase hex — from its first byte,
 // whatever the position, which it leaves where it was.
-#[@External.Node("""(() => { const __ek = (__e) => { const __c = __e && __e.code; const __t = __c === 'ENOENT' ? 'notfound' : (__c === 'EACCES' || __c === 'EPERM') ? 'denied' : (__c === 'EISDIR' || __c === 'ERR_FS_EISDIR') ? 'isdir' : __c === 'ENOTDIR' ? 'notdir' : __c === 'EEXIST' ? 'exists' : 'other'; return __t + '|' + (__e && __e.message ? __e.message : String(__e)) }; try { const __h = $0; const __hs = require('crypto').createHash('sha256'); if (__h.mem) { __hs.update(__h.mem) } else { const __b = new Uint8Array(65536); let __pos = 0; for (;;) { const __k = require('fs').readSync(__h.fd, __b, 0, 65536, __pos); if (__k === 0) break; __hs.update(__b.subarray(0, __k)); __pos += __k } } return { ok: __hs.digest('hex') } } catch (__e) { return { error: __ek(__e) } } })()""")]
-#[@External.Erlang("""(fun(__H) -> __Ek = fun(__Rs) -> __K = case __Rs of enoent -> <<"notfound">>; eacces -> <<"denied">>; eperm -> <<"denied">>; eisdir -> <<"isdir">>; enotdir -> <<"notdir">>; eexist -> <<"exists">>; _ -> <<"other">> end, unicode:characters_to_binary([__K, <<"|">>, io_lib:format("~tp", [__Rs])]) end, case __H of {mem, __B, _} -> {ok, string:lowercase(binary:encode_hex(crypto:hash(sha256, __B)))}; _ -> __L = fun __Lp(__Pos, __Ctx) -> case file:pread(__H, __Pos, 65536) of {ok, __D} -> __Lp(__Pos + byte_size(__D), crypto:hash_update(__Ctx, __D)); eof -> crypto:hash_final(__Ctx); {error, __R} -> throw({bp_fs_hash, __R}) end end, try {ok, string:lowercase(binary:encode_hex(__L(0, crypto:hash_init(sha256))))} catch throw:{bp_fs_hash, __Y} -> {error, __Ek(__Y)} end end end)($0)""")]
-declare fn rawHash(handle: unknown) -> @Result<string, string>;
+#[@External.Node("""(() => { const __h = $0; const __hs = require('crypto').createHash('sha256'); if (__h.mem) { __hs.update(__h.mem) } else { const __b = new Uint8Array(65536); let __pos = 0; for (;;) { const __k = require('fs').readSync(__h.fd, __b, 0, 65536, __pos); if (__k === 0) break; __hs.update(__b.subarray(0, __k)); __pos += __k } } return __hs.digest('hex') })()""", result: true)]
+#[@External.Erlang("""(fun(__H) -> case __H of {mem, __B, _} -> {ok, string:lowercase(binary:encode_hex(crypto:hash(sha256, __B)))}; _ -> __L = fun __Lp(__Pos, __Ctx) -> case file:pread(__H, __Pos, 65536) of {ok, __D} -> __Lp(__Pos + byte_size(__D), crypto:hash_update(__Ctx, __D)); eof -> crypto:hash_final(__Ctx); {error, __R} -> erlang:error(__R) end end, {ok, string:lowercase(binary:encode_hex(__L(0, crypto:hash_init(sha256))))} end end)($0)""", result: true)]
+declare fn rawHash(handle: unknown) -> @Result<string, HostError>;
 
 // Write `bytes` at the handle's position; answers how many.
-#[@External.Node("""(() => { const __ek = (__e) => { const __c = __e && __e.code; const __t = __c === 'ENOENT' ? 'notfound' : (__c === 'EACCES' || __c === 'EPERM') ? 'denied' : (__c === 'EISDIR' || __c === 'ERR_FS_EISDIR') ? 'isdir' : __c === 'ENOTDIR' ? 'notdir' : __c === 'EEXIST' ? 'exists' : 'other'; return __t + '|' + (__e && __e.message ? __e.message : String(__e)) }; try { const __h = $0; const __b = $1; if (__h.mem) return { error: 'other|the file is open for reading' }; let __o = 0; while (__o < __b.length) __o += require('fs').writeSync(__h.fd, __b, __o, __b.length - __o); return { ok: __b.length } } catch (__e) { return { error: __ek(__e) } } })()""")]
-#[@External.Erlang("""(fun(__H, __B) -> __Ek = fun(__Rs) -> __K = case __Rs of enoent -> <<"notfound">>; eacces -> <<"denied">>; eperm -> <<"denied">>; eisdir -> <<"isdir">>; enotdir -> <<"notdir">>; eexist -> <<"exists">>; _ -> <<"other">> end, unicode:characters_to_binary([__K, <<"|">>, io_lib:format("~tp", [__Rs])]) end, case __H of {mem, _, _} -> {error, <<"other|the file is open for reading">>}; _ -> case file:write(__H, __B) of ok -> {ok, byte_size(__B)}; {error, __R} -> {error, __Ek(__R)} end end end)($0, $1)""")]
-declare fn rawWrite(handle: unknown, bytes: Bytes) -> @Result<i32, string>;
+#[@External.Node("""(() => { const __h = $0; const __b = $1; let __o = 0; while (__o < __b.length) __o += require('fs').writeSync(__h.fd, __b, __o, __b.length - __o); return __b.length })()""", result: true)]
+#[@External.Erlang("""(fun(__H, __B) -> case file:write(__H, __B) of ok -> {ok, byte_size(__B)}; {error, __R} -> {error, __R} end end)($0, $1)""", result: true)]
+declare fn rawWrite(handle: unknown, bytes: Bytes) -> @Result<i32, HostError>;
 
 // Close the handle. A failure to close is not reported (a `Closeable`'s `close` answers nothing).
-#[@External.Node("""(() => { try { const __h = $0; if (!__h.mem) require('fs').closeSync(__h.fd) } catch (__e) {} })()""")]
-#[@External.Erlang("""(fun(__H) -> case __H of {mem, _, _} -> ok; _ -> _ = file:close(__H), ok end end)($0)""")]
-declare fn rawClose(handle: unknown) -> void;
+#[@External.Node("""(() => { const __h = $0; if (!__h.mem) require('fs').closeSync(__h.fd); return 0 })()""", result: true)]
+#[@External.Erlang("""(fun(__H) -> case __H of {mem, _, _} -> {ok, 0}; _ -> case file:close(__H) of ok -> {ok, 0}; {error, __R} -> {error, __R} end end end)($0)""", result: true)]
+declare fn rawClose(handle: unknown) -> @Result<i32, HostError>;
 
 // Write `contents` to `path`, creating or truncating. Reds with the
 // host's I/O error message.
 // Node: `require('fs').writeFileSync($0, $1)`.
 // Erlang: `file:write_file/2`.
-#[@External.Node("""(() => { const __ek = (__e) => { const __c = __e && __e.code; const __t = __c === 'ENOENT' ? 'notfound' : (__c === 'EACCES' || __c === 'EPERM') ? 'denied' : (__c === 'EISDIR' || __c === 'ERR_FS_EISDIR') ? 'isdir' : __c === 'ENOTDIR' ? 'notdir' : __c === 'EEXIST' ? 'exists' : 'other'; return __t + '|' + (__e && __e.message ? __e.message : String(__e)) }; try { require('fs').writeFileSync($0, $1); return { ok: 0 } } catch (__e) { return { error: __ek(__e) } } })()""")]
-#[@External.Erlang("""(fun(__P, __C) -> __Ek = fun(__Rs) -> __K = case __Rs of enoent -> <<"notfound">>; eacces -> <<"denied">>; eperm -> <<"denied">>; eisdir -> <<"isdir">>; enotdir -> <<"notdir">>; eexist -> <<"exists">>; _ -> <<"other">> end, unicode:characters_to_binary([__K, <<"|">>, io_lib:format("~tp", [__Rs])]) end, case file:write_file(__P, __C) of ok -> {ok, 0}; {error, __R} -> {error, __Ek(__R)} end end)($0, $1)""")]
+#[@External.Node("""(() => { require('fs').writeFileSync($0, $1); return 0 })()""", result: true)]
+#[@External.Erlang("""(fun(__P, __C) -> case file:write_file(__P, __C) of ok -> {ok, 0}; {error, __R} -> {error, __R} end end)($0, $1)""", result: true)]
 declare fn rawWriteText(
     path: string,
     contents: string,
-) -> @Result<i32, string>;
+) -> @Result<i32, HostError>;
 
 // Whether a path exists, of any kind: a regular file, a directory, a
 // character or block device (`/dev/null`), a FIFO or a socket. A symbolic
@@ -174,17 +174,17 @@ pub declare fn exists(path: string) -> bool;
 // List the names of the directory entries at `path` (relative).
 // Node: `require('fs').readdirSync($0)`.
 // Erlang: `file:list_dir/1` returns `{ok, [string()]}`.
-#[@External.Node("""(() => { const __ek = (__e) => { const __c = __e && __e.code; const __t = __c === 'ENOENT' ? 'notfound' : (__c === 'EACCES' || __c === 'EPERM') ? 'denied' : (__c === 'EISDIR' || __c === 'ERR_FS_EISDIR') ? 'isdir' : __c === 'ENOTDIR' ? 'notdir' : __c === 'EEXIST' ? 'exists' : 'other'; return __t + '|' + (__e && __e.message ? __e.message : String(__e)) }; try { return { ok: require('fs').readdirSync($0) } } catch (__e) { return { error: __ek(__e) } } })()""")]
-#[@External.Erlang("""(fun(__P) -> __Ek = fun(__Rs) -> __K = case __Rs of enoent -> <<"notfound">>; eacces -> <<"denied">>; eperm -> <<"denied">>; eisdir -> <<"isdir">>; enotdir -> <<"notdir">>; eexist -> <<"exists">>; _ -> <<"other">> end, unicode:characters_to_binary([__K, <<"|">>, io_lib:format("~tp", [__Rs])]) end, case file:list_dir(__P) of {ok, __L} -> {ok, [list_to_binary(__N) || __N <- __L]}; {error, __R} -> {error, __Ek(__R)} end end)($0)""")]
-declare fn rawList(path: string) -> @Result<string[], string>;
+#[@External.Node("""(() => { return require('fs').readdirSync($0) })()""", result: true)]
+#[@External.Erlang("""(fun(__P) -> case file:list_dir(__P) of {ok, __L} -> {ok, [list_to_binary(__N) || __N <- __L]}; {error, __R} -> {error, __R} end end)($0)""", result: true)]
+declare fn rawList(path: string) -> @Result<string[], HostError>;
 
 // Create directory at `path`. Use `mkdirRecursive` to create
 // intermediate parents.
 // Node: `require('fs').mkdirSync($0)`.
 // Erlang: `file:make_dir/1`.
-#[@External.Node("""(() => { const __ek = (__e) => { const __c = __e && __e.code; const __t = __c === 'ENOENT' ? 'notfound' : (__c === 'EACCES' || __c === 'EPERM') ? 'denied' : (__c === 'EISDIR' || __c === 'ERR_FS_EISDIR') ? 'isdir' : __c === 'ENOTDIR' ? 'notdir' : __c === 'EEXIST' ? 'exists' : 'other'; return __t + '|' + (__e && __e.message ? __e.message : String(__e)) }; try { require('fs').mkdirSync($0); return { ok: 0 } } catch (__e) { return { error: __ek(__e) } } })()""")]
-#[@External.Erlang("""(fun(__P) -> __Ek = fun(__Rs) -> __K = case __Rs of enoent -> <<"notfound">>; eacces -> <<"denied">>; eperm -> <<"denied">>; eisdir -> <<"isdir">>; enotdir -> <<"notdir">>; eexist -> <<"exists">>; _ -> <<"other">> end, unicode:characters_to_binary([__K, <<"|">>, io_lib:format("~tp", [__Rs])]) end, case file:make_dir(__P) of ok -> {ok, 0}; {error, __R} -> {error, __Ek(__R)} end end)($0)""")]
-declare fn rawMkdir(path: string) -> @Result<i32, string>;
+#[@External.Node("""(() => { require('fs').mkdirSync($0); return 0 })()""", result: true)]
+#[@External.Erlang("""(fun(__P) -> case file:make_dir(__P) of ok -> {ok, 0}; {error, __R} -> {error, __R} end end)($0)""", result: true)]
+declare fn rawMkdir(path: string) -> @Result<i32, HostError>;
 
 // Create the directory at `path` and every missing directory above it. A
 // directory that is already there is `Ok` too; a path that exists as anything
@@ -192,26 +192,26 @@ declare fn rawMkdir(path: string) -> @Result<i32, string>;
 // directory of a `.snap` with (decision 391).
 // Node: `require('fs').mkdirSync($0, { recursive: true })`.
 // Erlang: `filelib:ensure_path/1`.
-#[@External.Node("""(() => { const __ek = (__e) => { const __c = __e && __e.code; const __t = __c === 'ENOENT' ? 'notfound' : (__c === 'EACCES' || __c === 'EPERM') ? 'denied' : (__c === 'EISDIR' || __c === 'ERR_FS_EISDIR') ? 'isdir' : __c === 'ENOTDIR' ? 'notdir' : __c === 'EEXIST' ? 'exists' : 'other'; return __t + '|' + (__e && __e.message ? __e.message : String(__e)) }; try { require('fs').mkdirSync($0, { recursive: true }); return { ok: 0 } } catch (__e) { return { error: __ek(__e) } } })()""")]
-#[@External.Erlang("""(fun(__P) -> __Ek = fun(__Rs) -> __K = case __Rs of enoent -> <<"notfound">>; eacces -> <<"denied">>; eperm -> <<"denied">>; eisdir -> <<"isdir">>; enotdir -> <<"notdir">>; eexist -> <<"exists">>; _ -> <<"other">> end, unicode:characters_to_binary([__K, <<"|">>, io_lib:format("~tp", [__Rs])]) end, case filelib:ensure_path(__P) of ok -> {ok, 0}; {error, __R} -> {error, __Ek(__R)} end end)($0)""")]
-declare fn rawMkdirRecursive(path: string) -> @Result<i32, string>;
+#[@External.Node("""(() => { require('fs').mkdirSync($0, { recursive: true }); return 0 })()""", result: true)]
+#[@External.Erlang("""(fun(__P) -> case filelib:ensure_path(__P) of ok -> {ok, 0}; {error, __R} -> {error, __R} end end)($0)""", result: true)]
+declare fn rawMkdirRecursive(path: string) -> @Result<i32, HostError>;
 
 // Delete the FILE at `path`. A directory — empty or not — is `IsDirectory` on
 // both hosts (Node's `ERR_FS_EISDIR`; Erlang's `eperm` is read as `eisdir` after
 // a `read_link_info`, so the variant is the same); `removeTree` removes one.
 // Node: `require('fs').rmSync($0)`.
 // Erlang: `file:delete/1`.
-#[@External.Node("""(() => { const __ek = (__e) => { const __c = __e && __e.code; const __t = __c === 'ENOENT' ? 'notfound' : (__c === 'EACCES' || __c === 'EPERM') ? 'denied' : (__c === 'EISDIR' || __c === 'ERR_FS_EISDIR') ? 'isdir' : __c === 'ENOTDIR' ? 'notdir' : __c === 'EEXIST' ? 'exists' : 'other'; return __t + '|' + (__e && __e.message ? __e.message : String(__e)) }; try { require('fs').rmSync($0); return { ok: 0 } } catch (__e) { return { error: __ek(__e) } } })()""")]
-#[@External.Erlang("""(fun(__P) -> __Ek = fun(__Rs) -> __K = case __Rs of enoent -> <<"notfound">>; eacces -> <<"denied">>; eperm -> <<"denied">>; eisdir -> <<"isdir">>; enotdir -> <<"notdir">>; eexist -> <<"exists">>; _ -> <<"other">> end, unicode:characters_to_binary([__K, <<"|">>, io_lib:format("~tp", [__Rs])]) end, case file:read_link_info(__P) of {ok, __I} when element(3, __I) =:= directory -> {error, __Ek(eisdir)}; _ -> case file:delete(__P) of ok -> {ok, 0}; {error, __R} -> {error, __Ek(__R)} end end end)($0)""")]
-declare fn rawRm(path: string) -> @Result<i32, string>;
+#[@External.Node("""(() => { require('fs').rmSync($0); return 0 })()""", result: true)]
+#[@External.Erlang("""(fun(__P) -> case file:read_link_info(__P) of {ok, __I} when element(3, __I) =:= directory -> {error, eisdir}; _ -> case file:delete(__P) of ok -> {ok, 0}; {error, __R} -> {error, __R} end end end)($0)""", result: true)]
+declare fn rawRm(path: string) -> @Result<i32, HostError>;
 
 // Copy file from `src` to `dest`. Reds when `src` is missing or
 // `dest` already exists (Node's default `copyFileSync` semantics).
 // Node: `require('fs').copyFileSync($0, $1)`.
 // Erlang: `file:copy/2` (returns `{ok, BytesCopied}` or `{error, _}`).
-#[@External.Node("""(() => { const __ek = (__e) => { const __c = __e && __e.code; const __t = __c === 'ENOENT' ? 'notfound' : (__c === 'EACCES' || __c === 'EPERM') ? 'denied' : (__c === 'EISDIR' || __c === 'ERR_FS_EISDIR') ? 'isdir' : __c === 'ENOTDIR' ? 'notdir' : __c === 'EEXIST' ? 'exists' : 'other'; return __t + '|' + (__e && __e.message ? __e.message : String(__e)) }; try { require('fs').copyFileSync($0, $1); return { ok: 0 } } catch (__e) { return { error: __ek(__e) } } })()""")]
-#[@External.Erlang("""(fun(__S, __D) -> __Ek = fun(__Rs) -> __K = case __Rs of enoent -> <<"notfound">>; eacces -> <<"denied">>; eperm -> <<"denied">>; eisdir -> <<"isdir">>; enotdir -> <<"notdir">>; eexist -> <<"exists">>; _ -> <<"other">> end, unicode:characters_to_binary([__K, <<"|">>, io_lib:format("~tp", [__Rs])]) end, case file:copy(__S, __D) of {ok, _} -> {ok, 0}; {error, __R} -> {error, __Ek(__R)} end end)($0, $1)""")]
-declare fn rawCopy(src: string, dest: string) -> @Result<i32, string>;
+#[@External.Node("""(() => { require('fs').copyFileSync($0, $1); return 0 })()""", result: true)]
+#[@External.Erlang("""(fun(__S, __D) -> case file:copy(__S, __D) of {ok, _} -> {ok, 0}; {error, __R} -> {error, __R} end end)($0, $1)""", result: true)]
+declare fn rawCopy(src: string, dest: string) -> @Result<i32, HostError>;
 
 // File metadata. Returns a `FileStat { size, mtime, isDir }` on
 // success. `mtime` is epoch milliseconds (matching `time.nowMillis()`);
@@ -223,9 +223,9 @@ declare fn rawCopy(src: string, dest: string) -> @Result<i32, string>;
 // Erlang: `file:read_file_info/1` returns a `#file_info` record; the
 // template projects the `size`, `mtime`, and `type` fields. Its `mtime` is
 // whole seconds × 1000. One value on every target: whole seconds (decision 499).
-#[@External.Node("""(() => { const __ek = (__e) => { const __c = __e && __e.code; const __t = __c === 'ENOENT' ? 'notfound' : (__c === 'EACCES' || __c === 'EPERM') ? 'denied' : (__c === 'EISDIR' || __c === 'ERR_FS_EISDIR') ? 'isdir' : __c === 'ENOTDIR' ? 'notdir' : __c === 'EEXIST' ? 'exists' : 'other'; return __t + '|' + (__e && __e.message ? __e.message : String(__e)) }; try { const __s = require('fs').statSync($0, { bigint: true }); const __c = (__v) => (__v >= -9007199254740991n && __v <= 9007199254740991n) ? Number(__v) : __v; const __ns = __s.mtimeNs; return { ok: { size: __c(__s.size), mtime: __c(((__ns - (((__ns % 1000000000n) + 1000000000n) % 1000000000n)) / 1000000000n) * 1000n), isDir: __s.isDirectory() } } } catch (__e) { return { error: __ek(__e) } } })()""")]
-#[@External.Erlang("""(fun(__P) -> __Ek = fun(__Rs) -> __K = case __Rs of enoent -> <<"notfound">>; eacces -> <<"denied">>; eperm -> <<"denied">>; eisdir -> <<"isdir">>; enotdir -> <<"notdir">>; eexist -> <<"exists">>; _ -> <<"other">> end, unicode:characters_to_binary([__K, <<"|">>, io_lib:format("~tp", [__Rs])]) end, case file:read_file_info(__P, [{time, posix}]) of {ok, {file_info, __Sz, __Ty, _, _, __Mt, _, _, _, _, _, _, _, _}} -> {ok, #{size => __Sz, mtime => __Mt * 1000, isDir => (__Ty =:= directory)}}; {error, __R} -> {error, __Ek(__R)} end end)($0)""")]
-declare fn rawStat(path: string) -> @Result<FileStat, string>;
+#[@External.Node("""(() => { const __s = require('fs').statSync($0, { bigint: true }); const __c = (__v) => (__v >= -9007199254740991n && __v <= 9007199254740991n) ? Number(__v) : __v; const __ns = __s.mtimeNs; return { size: __c(__s.size), mtime: __c(((__ns - (((__ns % 1000000000n) + 1000000000n) % 1000000000n)) / 1000000000n) * 1000n), isDir: __s.isDirectory() } })()""", result: true)]
+#[@External.Erlang("""(fun(__P) -> case file:read_file_info(__P, [{time, posix}]) of {ok, {file_info, __Sz, __Ty, _, _, __Mt, _, _, _, _, _, _, _, _}} -> {ok, #{size => __Sz, mtime => __Mt * 1000, isDir => (__Ty =:= directory)}}; {error, __R} -> {error, __R} end end)($0)""", result: true)]
+declare fn rawStat(path: string) -> @Result<FileStat, HostError>;
 
 // ── 1.0.10-beta front 01 additions ──────────────────────────────────────────
 
@@ -248,9 +248,9 @@ declare fn rawStat(path: string) -> @Result<FileStat, string>;
 // path: `filelib:fold_files/5` answers full paths `filename:join/2` has
 // normalised (`dir/.` + `app` is `dir/app`), so a prefix measured on the root
 // as written cut two characters too many when the root ended in `/.`.
-#[@External.Node("""(() => { const __ek = (__e) => { const __c = __e && __e.code; const __t = __c === 'ENOENT' ? 'notfound' : (__c === 'EACCES' || __c === 'EPERM') ? 'denied' : (__c === 'EISDIR' || __c === 'ERR_FS_EISDIR') ? 'isdir' : __c === 'ENOTDIR' ? 'notdir' : __c === 'EEXIST' ? 'exists' : 'other'; return __t + '|' + (__e && __e.message ? __e.message : String(__e)) }; try { const __fs = require('fs'); const __p = require('path'); const __all = __fs.readdirSync($0, { recursive: true }).map(__f => String(__f).split(__p.sep).join('/')).sort(); const __out = []; for (const __f of __all) { const __s = __fs.statSync(__p.join($0, __f), { throwIfNoEntry: false }); if (__s === undefined) return { error: 'dangling|fs.walk: dangling link "' + __f + '"' }; if (__s.isFile()) __out.push(__f) } return { ok: __out } } catch (__e) { return { error: __ek(__e) } } })()""")]
-#[@External.Erlang("""(fun(__R) -> __Ek = fun(__Rs) -> __K = case __Rs of enoent -> <<"notfound">>; eacces -> <<"denied">>; eperm -> <<"denied">>; eisdir -> <<"isdir">>; enotdir -> <<"notdir">>; eexist -> <<"exists">>; _ -> <<"other">> end, unicode:characters_to_binary([__K, <<"|">>, io_lib:format("~tp", [__Rs])]) end, __Root = unicode:characters_to_list(__R), case filelib:is_dir(__Root) of false -> {error, __Ek(case file:read_file_info(__Root) of {ok, _} -> enotdir; {error, __X0} -> __X0 end)}; true -> __Walk = fun __W(__Dir, __Rel, __Acc) -> case file:list_dir(__Dir) of {error, __E} -> throw({bp_fs_walk, __E}); {ok, __Names} -> lists:foldl(fun(__Name, __A) -> __Full = filename:join(__Dir, __Name), __Sub = case __Rel of [] -> __Name; _ -> __Rel ++ "/" ++ __Name end, case file:read_file_info(__Full) of {ok, __I} when element(3, __I) =:= directory -> __W(__Full, __Sub, __A); {ok, __I} when element(3, __I) =:= regular -> [{file, unicode:characters_to_binary(__Sub)} | __A]; {ok, _} -> __A; {error, enoent} -> [{dangling, unicode:characters_to_binary(__Sub)} | __A]; {error, __X} -> throw({bp_fs_walk, __X}) end end, __Acc, __Names) end end, try __Found = __Walk(__Root, [], []), case lists:sort([__D || {dangling, __D} <- __Found]) of [__First | _] -> {error, <<"dangling|fs.walk: dangling link ", 34, __First/binary, 34>>}; [] -> {ok, lists:sort([__F || {file, __F} <- __Found])} end catch throw:{bp_fs_walk, __Y} -> {error, __Ek(__Y)} end end end)($0)""")]
-declare fn rawWalk(root: string) -> @Result<string[], string>;
+#[@External.Node("""(() => { const __fs = require('fs'); const __p = require('path'); const __all = __fs.readdirSync($0, { recursive: true }).map(__f => String(__f).split(__p.sep).join('/')).sort(); const __out = []; const __dng = []; for (const __f of __all) { const __s = __fs.statSync(__p.join($0, __f), { throwIfNoEntry: false }); if (__s === undefined) { __dng.push(__f); continue } if (__s.isFile()) __out.push(__f) } return { files: __out, dangling: __dng } })()""", result: true)]
+#[@External.Erlang("""(fun(__R) -> __Root = unicode:characters_to_list(__R), case filelib:is_dir(__Root) of false -> {error, case file:read_file_info(__Root) of {ok, _} -> enotdir; {error, __X0} -> __X0 end}; true -> __Walk = fun __W(__Dir, __Rel, __Acc) -> case file:list_dir(__Dir) of {error, __E} -> erlang:error(__E); {ok, __Names} -> lists:foldl(fun(__Name, __A) -> __Full = filename:join(__Dir, __Name), __Sub = case __Rel of [] -> __Name; _ -> __Rel ++ "/" ++ __Name end, case file:read_file_info(__Full) of {ok, __I} when element(3, __I) =:= directory -> __W(__Full, __Sub, __A); {ok, __I} when element(3, __I) =:= regular -> [{file, unicode:characters_to_binary(__Sub)} | __A]; {ok, _} -> __A; {error, enoent} -> [{dangling, unicode:characters_to_binary(__Sub)} | __A]; {error, __X} -> erlang:error(__X) end end, __Acc, __Names) end end, __Found = __Walk(__Root, [], []), {ok, #{files => lists:sort([__F || {file, __F} <- __Found]), dangling => lists:sort([__D || {dangling, __D} <- __Found])}} end end)($0)""", result: true)]
+declare fn rawWalk(root: string) -> @Result<Walked, HostError>;
 
 // The entries under `root` matching the glob `pattern`, as paths relative to
 // `root` with `/` separators, sorted, each once. The pattern is read segment
@@ -274,9 +274,9 @@ declare fn rawWalk(root: string) -> @Result<string[], string>;
 // ONE directory is the host's — `fs.globSync(segment, { cwd })` (Node 22+),
 // `filelib:wildcard/2` — with the dot rule applied over its answer, since
 // `filelib:wildcard` matches dot names and `globSync` matches `{.a,b}`.
-#[@External.Node("""(() => { const __ek = (__e) => { const __c = __e && __e.code; const __t = __c === 'ENOENT' ? 'notfound' : (__c === 'EACCES' || __c === 'EPERM') ? 'denied' : (__c === 'EISDIR' || __c === 'ERR_FS_EISDIR') ? 'isdir' : __c === 'ENOTDIR' ? 'notdir' : __c === 'EEXIST' ? 'exists' : 'other'; return __t + '|' + (__e && __e.message ? __e.message : String(__e)) }; try { const __fs = require('fs'); const __p = require('path'); const __root = $1; const __pat = String($0); const __segs = __pat.split('/').filter(__s => __s !== '' && __s !== '.'); const __dirsOnly = __pat.endsWith('/'); const __lst = (__f) => { try { return __fs.lstatSync(__f, { throwIfNoEntry: false }) } catch (__e) { return undefined } }; const __realDir = (__f) => { const __s = __lst(__f); return __s !== undefined && __s.isDirectory() }; const __linkedDir = (__f) => { try { const __s = __fs.statSync(__f, { throwIfNoEntry: false }); return __s !== undefined && __s.isDirectory() } catch (__e) { return false } }; const __magic = (__s) => __s.includes('*') || __s.includes('?') || __s.includes('[') || __s.includes('{'); const __names = (__dir, __seg) => { let __all; try { __all = (__seg === '*' ? __fs.readdirSync(__dir) : __fs.globSync(__seg, { cwd: __dir })).map(String) } catch (__e) { __all = [] } return __all.filter(__n => !__n.startsWith('.') || __seg.startsWith('.')) }; const __join = (__rel, __n) => __rel === '' ? __n : __rel + '/' + __n; const __out = new Set(); const __walk = (__i, __dir, __rel) => { if (__i === __segs.length) { if (__rel !== '') __out.add(__rel); return } const __seg = __segs[__i]; const __last = __i === __segs.length - 1; if (__seg === '**') { if (!__last) __walk(__i + 1, __dir, __rel); for (const __n of __names(__dir, '*')) { const __f = __p.join(__dir, __n); const __sub = __join(__rel, __n); if (__last) __out.add(__sub); if (__realDir(__f)) __walk(__i, __f, __sub) } return } if (!__magic(__seg)) { const __f = __p.join(__dir, __seg); const __sub = __join(__rel, __seg); if (__last) { if (__lst(__f) !== undefined) __out.add(__sub) } else if (__linkedDir(__f)) __walk(__i + 1, __f, __sub); return } for (const __n of __names(__dir, __seg)) { const __f = __p.join(__dir, __n); const __sub = __join(__rel, __n); if (__last) __out.add(__sub); else if (__realDir(__f)) __walk(__i + 1, __f, __sub) } }; __walk(0, __root, ''); return { ok: Array.from(__out).filter(__r => !__dirsOnly || __realDir(__p.join(__root, __r))).sort() } } catch (__e) { return { error: __ek(__e) } } })()""")]
-#[@External.Erlang("""(fun(__P, __R) -> __Root = unicode:characters_to_list(__R), __Pat = unicode:characters_to_list(__P), __Segs = [__S || __S <- string:split(__Pat, "/", all), __S =/= [], __S =/= "."], __DirsOnly = lists:suffix("/", __Pat), __RealDir = fun(__F) -> case file:read_link_info(__F) of {ok, __I} -> element(3, __I) =:= directory; _ -> false end end, __Magic = fun(__S) -> lists:any(fun(__C) -> lists:member(__C, "*?[{") end, __S) end, __Names = fun(__Dir, __Seg) -> __All = case __Seg of "*" -> case file:list_dir(__Dir) of {ok, __L} -> __L; _ -> [] end; _ -> try filelib:wildcard(__Seg, __Dir) catch _:_ -> [] end end, [__N || __N <- __All, (hd(__N) =/= 46) orelse (hd(__Seg) =:= 46)] end, __Join = fun([], __N) -> __N; (__Rel, __N) -> __Rel ++ "/" ++ __N end, __Walk = fun __W([], _, [], __Acc) -> __Acc; __W([], _, __Rel, __Acc) -> [__Rel | __Acc]; __W(["**"], __Dir, __Rel, __Acc) -> lists:foldl(fun(__N, __A) -> __F = filename:join(__Dir, __N), __Sub = __Join(__Rel, __N), case __RealDir(__F) of true -> __W(["**"], __F, __Sub, [__Sub | __A]); false -> [__Sub | __A] end end, __Acc, __Names(__Dir, "*")); __W(["**" | __Rest] = __Pattern, __Dir, __Rel, __Acc) -> lists:foldl(fun(__N, __A) -> __F = filename:join(__Dir, __N), case __RealDir(__F) of true -> __W(__Pattern, __F, __Join(__Rel, __N), __A); false -> __A end end, __W(__Rest, __Dir, __Rel, __Acc), __Names(__Dir, "*")); __W([__Seg | __Rest], __Dir, __Rel, __Acc) -> case __Magic(__Seg) of false -> __F = filename:join(__Dir, __Seg), __Sub = __Join(__Rel, __Seg), case __Rest of [] -> case file:read_link_info(__F) of {ok, _} -> [__Sub | __Acc]; _ -> __Acc end; _ -> case filelib:is_dir(__F) of true -> __W(__Rest, __F, __Sub, __Acc); false -> __Acc end end; true -> lists:foldl(fun(__N, __A) -> __G = filename:join(__Dir, __N), __Under = __Join(__Rel, __N), case __Rest of [] -> [__Under | __A]; _ -> case __RealDir(__G) of true -> __W(__Rest, __G, __Under, __A); false -> __A end end end, __Acc, __Names(__Dir, __Seg)) end end, {ok, [unicode:characters_to_binary(__X) || __X <- lists:usort(__Walk(__Segs, __Root, [], [])), (not __DirsOnly) orelse __RealDir(filename:join(__Root, __X))]} end)($0, $1)""")]
-declare fn rawGlob(pattern: string, root: string) -> @Result<string[], string>;
+#[@External.Node("""(() => { const __fs = require('fs'); const __p = require('path'); const __root = $1; const __pat = String($0); const __segs = __pat.split('/').filter(__s => __s !== '' && __s !== '.'); const __dirsOnly = __pat.endsWith('/'); const __lst = (__f) => { try { return __fs.lstatSync(__f, { throwIfNoEntry: false }) } catch (__e) { return undefined } }; const __realDir = (__f) => { const __s = __lst(__f); return __s !== undefined && __s.isDirectory() }; const __linkedDir = (__f) => { try { const __s = __fs.statSync(__f, { throwIfNoEntry: false }); return __s !== undefined && __s.isDirectory() } catch (__e) { return false } }; const __magic = (__s) => __s.includes('*') || __s.includes('?') || __s.includes('[') || __s.includes('{'); const __names = (__dir, __seg) => { let __all; try { __all = (__seg === '*' ? __fs.readdirSync(__dir) : __fs.globSync(__seg, { cwd: __dir })).map(String) } catch (__e) { __all = [] } return __all.filter(__n => !__n.startsWith('.') || __seg.startsWith('.')) }; const __join = (__rel, __n) => __rel === '' ? __n : __rel + '/' + __n; const __out = new Set(); const __walk = (__i, __dir, __rel) => { if (__i === __segs.length) { if (__rel !== '') __out.add(__rel); return } const __seg = __segs[__i]; const __last = __i === __segs.length - 1; if (__seg === '**') { if (!__last) __walk(__i + 1, __dir, __rel); for (const __n of __names(__dir, '*')) { const __f = __p.join(__dir, __n); const __sub = __join(__rel, __n); if (__last) __out.add(__sub); if (__realDir(__f)) __walk(__i, __f, __sub) } return } if (!__magic(__seg)) { const __f = __p.join(__dir, __seg); const __sub = __join(__rel, __seg); if (__last) { if (__lst(__f) !== undefined) __out.add(__sub) } else if (__linkedDir(__f)) __walk(__i + 1, __f, __sub); return } for (const __n of __names(__dir, __seg)) { const __f = __p.join(__dir, __n); const __sub = __join(__rel, __n); if (__last) __out.add(__sub); else if (__realDir(__f)) __walk(__i + 1, __f, __sub) } }; __walk(0, __root, ''); return Array.from(__out).filter(__r => !__dirsOnly || __realDir(__p.join(__root, __r))).sort() })()""")]
+#[@External.Erlang("""(fun(__P, __R) -> __Root = unicode:characters_to_list(__R), __Pat = unicode:characters_to_list(__P), __Segs = [__S || __S <- string:split(__Pat, "/", all), __S =/= [], __S =/= "."], __DirsOnly = lists:suffix("/", __Pat), __RealDir = fun(__F) -> case file:read_link_info(__F) of {ok, __I} -> element(3, __I) =:= directory; _ -> false end end, __Magic = fun(__S) -> lists:any(fun(__C) -> lists:member(__C, "*?[{") end, __S) end, __Names = fun(__Dir, __Seg) -> __All = case __Seg of "*" -> case file:list_dir(__Dir) of {ok, __L} -> __L; _ -> [] end; _ -> try filelib:wildcard(__Seg, __Dir) catch _:_ -> [] end end, [__N || __N <- __All, (hd(__N) =/= 46) orelse (hd(__Seg) =:= 46)] end, __Join = fun([], __N) -> __N; (__Rel, __N) -> __Rel ++ "/" ++ __N end, __Walk = fun __W([], _, [], __Acc) -> __Acc; __W([], _, __Rel, __Acc) -> [__Rel | __Acc]; __W(["**"], __Dir, __Rel, __Acc) -> lists:foldl(fun(__N, __A) -> __F = filename:join(__Dir, __N), __Sub = __Join(__Rel, __N), case __RealDir(__F) of true -> __W(["**"], __F, __Sub, [__Sub | __A]); false -> [__Sub | __A] end end, __Acc, __Names(__Dir, "*")); __W(["**" | __Rest] = __Pattern, __Dir, __Rel, __Acc) -> lists:foldl(fun(__N, __A) -> __F = filename:join(__Dir, __N), case __RealDir(__F) of true -> __W(__Pattern, __F, __Join(__Rel, __N), __A); false -> __A end end, __W(__Rest, __Dir, __Rel, __Acc), __Names(__Dir, "*")); __W([__Seg | __Rest], __Dir, __Rel, __Acc) -> case __Magic(__Seg) of false -> __F = filename:join(__Dir, __Seg), __Sub = __Join(__Rel, __Seg), case __Rest of [] -> case file:read_link_info(__F) of {ok, _} -> [__Sub | __Acc]; _ -> __Acc end; _ -> case filelib:is_dir(__F) of true -> __W(__Rest, __F, __Sub, __Acc); false -> __Acc end end; true -> lists:foldl(fun(__N, __A) -> __G = filename:join(__Dir, __N), __Under = __Join(__Rel, __N), case __Rest of [] -> [__Under | __A]; _ -> case __RealDir(__G) of true -> __W(__Rest, __G, __Under, __A); false -> __A end end end, __Acc, __Names(__Dir, __Seg)) end end, [unicode:characters_to_binary(__X) || __X <- lists:usort(__Walk(__Segs, __Root, [], [])), (not __DirsOnly) orelse __RealDir(filename:join(__Root, __X))] end)($0, $1)""")]
+declare fn rawGlob(pattern: string, root: string) -> string[];
 
 // Remove `path` and everything under it: a file, a link (the link, never its
 // target) or a directory tree. A path that is not there is `Ok` too — the
@@ -285,9 +285,9 @@ declare fn rawGlob(pattern: string, root: string) -> @Result<string[], string>;
 // front 97).
 // Node: `rmSync(path, { recursive: true, force: true })`.
 // Erlang: `file:del_dir_r/1`.
-#[@External.Node("""(() => { const __ek = (__e) => { const __c = __e && __e.code; const __t = __c === 'ENOENT' ? 'notfound' : (__c === 'EACCES' || __c === 'EPERM') ? 'denied' : (__c === 'EISDIR' || __c === 'ERR_FS_EISDIR') ? 'isdir' : __c === 'ENOTDIR' ? 'notdir' : __c === 'EEXIST' ? 'exists' : 'other'; return __t + '|' + (__e && __e.message ? __e.message : String(__e)) }; try { require('fs').rmSync($0, { recursive: true, force: true }); return { ok: 0 } } catch (__e) { return { error: __ek(__e) } } })()""")]
-#[@External.Erlang("""(fun(__P) -> __Ek = fun(__Rs) -> __K = case __Rs of enoent -> <<"notfound">>; eacces -> <<"denied">>; eperm -> <<"denied">>; eisdir -> <<"isdir">>; enotdir -> <<"notdir">>; eexist -> <<"exists">>; _ -> <<"other">> end, unicode:characters_to_binary([__K, <<"|">>, io_lib:format("~tp", [__Rs])]) end, case file:del_dir_r(__P) of ok -> {ok, 0}; {error, enoent} -> {ok, 0}; {error, __R} -> {error, __Ek(__R)} end end)($0)""")]
-declare fn rawRemoveTree(path: string) -> @Result<i32, string>;
+#[@External.Node("""(() => { require('fs').rmSync($0, { recursive: true, force: true }); return 0 })()""", result: true)]
+#[@External.Erlang("""(fun(__P) -> case file:del_dir_r(__P) of ok -> {ok, 0}; {error, enoent} -> {ok, 0}; {error, __R} -> {error, __R} end end)($0)""", result: true)]
+declare fn rawRemoveTree(path: string) -> @Result<i32, HostError>;
 
 // Internal, test scaffolding: a fresh, unique, empty directory under the
 // host's tmpdir. Private — every `walk`/`glob` test makes its fixture tree in
@@ -309,24 +309,24 @@ declare fn linkTo(target: string, link: string) -> void;
 
 // ── the typed error ──────────────────────────────────────────────────────────
 
-// `<kind>|<host text>` → the `FsError` of `path`.
-fn fsError(path: string, raw: string) -> FsError {
-    val bar = raw.indexOf("|");
-    val kind = raw.slice(0, bar);
-    val message = raw.slice(bar + 1);
-    if (kind == "notfound") return FsError.NotFound(path: path);
-    if (kind == "denied") return FsError.PermissionDenied(path: path);
-    if (kind == "isdir") return FsError.IsDirectory(path: path);
-    if (kind == "notdir") return FsError.NotDirectory(path: path);
-    if (kind == "exists") return FsError.AlreadyExists(path: path);
-    return FsError.Other(path: path, message: message);
+// The `FsError` of `path` a host's failure is (decision 486), read from its code: Node's `ENOENT: …`, erlang's `enoent`.
+fn fsError(path: string, e: HostError) -> FsError {
+    val u = e.message.toUpper();
+    if (u.startsWith("ENOENT")) return FsError.NotFound(path: path);
+    if (u.startsWith("EACCES") || u.startsWith("EPERM"))
+        return FsError.PermissionDenied(path: path);
+    if (u.startsWith("EISDIR") || u.startsWith("PATH IS A DIRECTORY"))
+        return FsError.IsDirectory(path: path);
+    if (u.startsWith("ENOTDIR")) return FsError.NotDirectory(path: path);
+    if (u.startsWith("EEXIST")) return FsError.AlreadyExists(path: path);
+    return FsError.Other(path: path, message: e.message);
 }
 
-// A host cell's answer, its error read as an `FsError` of `path`.
-fn lift<T>(path: string, r: @Result<T, string>) -> @Result<T, FsError> {
+// A host cell's answer, its failure read as an `FsError` of `path`.
+fn lift<T>(path: string, r: @Result<T, HostError>) -> @Result<T, FsError> {
     case r {
         Ok(v) -> return v;
-        Error(m) -> throw fsError(path, m);
+        Error(e) -> throw fsError(path, e);
     }
 }
 
@@ -336,6 +336,18 @@ fn decode(path: string, b: Bytes) -> @Result<string, FsError> {
     if (offset >= 0l) throw FsError.InvalidUtf8(path: path, offset: offset);
     return b.toUtf8().unwrapOr("");
 }
+
+// What `rawWalk` finds under a root: the regular files, and the links whose
+// target is missing, both as paths relative to the root, sorted.
+type Walked(
+    files: string[],
+    dangling: string[],
+)
+
+// Whether the handle is one over bytes held in memory (an `Asset`'s), which cannot be written.
+#[@External.Node("""(($0).mem != null)""")]
+#[@External.Erlang("""(case $0 of {mem, _, _} -> true; _ -> false end)""")]
+declare fn rawReadOnly(handle: unknown) -> bool;
 
 // ── whole-file shortcuts ─────────────────────────────────────────────────────
 
@@ -408,13 +420,16 @@ pub fn copy(src: string, dest: string) -> @Result<i32, FsError> {
 }
 
 pub fn walk(root: string) -> @Result<string[], FsError> {
-    val paths = try lift(root, rawWalk(root));
-    return paths;
+    val found = try lift(root, rawWalk(root));
+    if (found.dangling.length > 0) {
+        val first = found.dangling.at(0) ?? "";
+        throw FsError.Other(path: root, message: ["fs.walk: dangling link \"", first, "\""].join(""));
+    }
+    return found.files;
 }
 
 pub fn glob(pattern: string, root: string) -> @Result<string[], FsError> {
-    val paths = try lift(root, rawGlob(pattern, root));
-    return paths;
+    return rawGlob(pattern, root);
 }
 
 // The host's handle over embedded bytes: read like a file, never closed on disk.
@@ -495,13 +510,15 @@ pub type File(location: string, handle: unknown) implement Closeable {
 
     // Write `b` at the position; answers the number of bytes written.
     pub fn write(self: Self, b: Bytes) -> @Result<i32, FsError> {
+        if (rawReadOnly(self.handle))
+            throw FsError.Other(path: self.location, message: "the file is open for reading");
         val n = try lift(self.location, rawWrite(self.handle, b));
         return n;
     }
 
     // Close the file. Closing twice is harmless; a failure to close is not reported.
     pub fn close(self: Self) {
-        rawClose(self.handle);
+        val closed = rawClose(self.handle);
     }
 }
 

@@ -19,6 +19,8 @@
 //// a 0-arg lowering has no `$N` to embed, so the arity branch keeps
 //// the template-path dispatch.
 
+import {failure, failure.HostError};
+
 // Exit the current process with the given status code.
 // Node: `process.exit(code)` (chained method — §A2 template).
 // Erlang: `erlang:halt(code)` (bare BIF).
@@ -72,12 +74,18 @@ pub type Exit(
 // `args`, no shell, and wait for it. A process that RAN is `Ok` whatever its
 // status — a non-zero exit is an `Exit` carrying that status. `Error` means
 // it could not be started (not found, not executable).
-// Node: `child_process.spawnSync`; a start failure is `r.error`, not a throw.
+// Node: `child_process.spawnSync`; a start failure is `r.error`, which the
+// template throws.
 // Erlang: `open_port({spawn_executable, Path}, [exit_status, …])`, the path
-// from `os:find_executable/1`, the output gathered until `exit_status`.
-#[@External.Node("""(() => { const __r = require('child_process').spawnSync($0, $1, { encoding: 'utf8' }); return __r.error ? { error: String(__r.error.message ?? __r.error) } : { ok: { status: __r.status ?? -1, stdout: __r.stdout ?? '', stderr: __r.stderr ?? '' } } })()""")]
-#[@External.Erlang("""(fun(__C, __A) -> __X = case string:find(__C, <<"/">>) of nomatch -> os:find_executable(binary_to_list(__C)); _ -> binary_to_list(__C) end, case __X of false -> {error, iolist_to_binary([<<"process.run: not found: ">>, __C])}; _ -> try open_port({spawn_executable, __X}, [binary, exit_status, stderr_to_stdout, {args, [binary_to_list(__Y) || __Y <- __A]}]) of __P -> __L = fun __F(__Acc) -> receive {__Q, {data, __D}} when __Q =:= __P -> __F([__D | __Acc]); {__Q, {exit_status, __S}} when __Q =:= __P -> {__S, iolist_to_binary(lists:reverse(__Acc))} end end, {__St, __Out} = __L([]), {ok, #{status => __St, stdout => __Out, stderr => <<>>}} catch _:__E -> {error, iolist_to_binary(io_lib:format("process.run: ~p", [__E]))} end end end)($0, $1)""")]
-pub declare fn run(cmd: string, args: string[]) -> @Result<Exit, string>;
+// from `os:find_executable/1`, the output gathered until `exit_status`; a
+// missing executable is `{error, enoent}`, a port that cannot open raises.
+// Both run under `result: true` (decisions 431, 490); the answer is the host's
+// `HostError`, not a `ProcessError` of std's own: a public function over the
+// cell would be a body calling a cell with no wasm binding, which wasm refuses
+// for the whole module — `import {io.process}` would stop compiling there.
+#[@External.Node("""(() => { const __r = require('child_process').spawnSync($0, $1, { encoding: 'utf8' }); if (__r.error) throw __r.error; return { status: __r.status ?? -1, stdout: __r.stdout ?? '', stderr: __r.stderr ?? '' } })()""", result: true)]
+#[@External.Erlang("""(fun(__C, __A) -> __X = case string:find(__C, <<"/">>) of nomatch -> os:find_executable(binary_to_list(__C)); _ -> binary_to_list(__C) end, case __X of false -> {error, enoent}; _ -> __P = open_port({spawn_executable, __X}, [binary, exit_status, stderr_to_stdout, {args, [binary_to_list(__Y) || __Y <- __A]}]), __L = fun __F(__Acc) -> receive {__Q, {data, __D}} when __Q =:= __P -> __F([__D | __Acc]); {__Q, {exit_status, __S}} when __Q =:= __P -> {__S, iolist_to_binary(lists:reverse(__Acc))} end end, {__St, __Out} = __L([]), {ok, #{status => __St, stdout => __Out, stderr => <<>>}} end end)($0, $1)""", result: true)]
+pub declare fn run(cmd: string, args: string[]) -> @Result<Exit, HostError>;
 
 // Run `cmd` through `/bin/sh -c` and answer its output, stdout and stderr
 // together. STATUS-LOSING on both targets: the answer is text only, so a

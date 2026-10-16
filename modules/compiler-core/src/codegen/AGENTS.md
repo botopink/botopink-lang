@@ -2585,7 +2585,10 @@ codegen/
   build time into the module's `'__bp_tpl_<k>'` helper (the same
   `compiledTemplate` cache the call sites use) and tail-called locally — so a
   qualified call from another module (`erlang.node()`, `std@beam:pdGet/1`
-  from a module `var`, `fs.exists(p)`, `os.eol()`) answers. No wrapper: a
+  from a module `var`, `fs.exists(p)`, `os.eol()`) answers. A `result: true`
+  binding's wrapper holds the template inside `erlTemplate.resultWrap`, as an
+  inlined call site does (decisions 431, 490): a qualified `json.parse("{bad")`
+  from another module is an `Error(HostError)`, not a crash. No wrapper: a
   `self`-first declaration, a `module:template` target and a template the lowering
   refuses (each call site is then the located build error). Every
   `@External.Erlang`-bodied `pub declare fn` of std gets one;
@@ -3560,7 +3563,7 @@ commonJS makes it a function of the module (`buildResultBinding`) whose body run
 the host call through the prelude's `__bp_host_result(F, () => …)` — a
 `try`/`catch` — or, for a `@Task` return, `__bp_host_result_task(F, () => …)`,
 which resolves `{ ok: v }` and a rejection (or a throw before the Promise exists)
-`{ error: HostError }`; `F` is `require("…/std/failure.js")`, `__bp_host_fail` builds
+`{ error: HostError }`; `F` is `require("…/std/failure.js")` — `require("…/failure.js")` in std's own build, where the module that exports `HostError` is `failure` (`wrapResult`) —, `__bp_host_fail` builds
 the record (an `Error` is `name: Error` with its `message` and `stack`, any other
 value `name: Throw` with `String(e)`); a call is a plain call, so the arguments are
 evaluated outside the `try`. erlang and beam wrap the binding's template — a

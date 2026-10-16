@@ -16,8 +16,7 @@
 //// `HostError` (decision 486): the node template's rejected `fetch` is
 //// `Error(HostError(…))` and a fulfilled one `Ok({ status, body })`; the
 //// erlang template ensures `inets`/`ssl` are
-//// started (idempotent — `{error, {already_started, _}}` is folded back to ok
-//// via `catch`) and lowers to a synchronous `httpc:request/4`, whose
+//// started (`application:ensure_all_started/1`, idempotent) and lowers to a synchronous `httpc:request/4`, whose
 //// `{error, R}` becomes `Error(HostError(<R formatted>, …))`. Erlang is eager: `@Task<T>` is
 //// `T` there, so the caller's `await` is identity on that backend. An HTTP
 //// error status (404, 500) is a RESPONSE, not a failure: it is `Ok` with its
@@ -49,12 +48,13 @@ pub type Response(
 // anywhere in the chain is `Error(HostError(<message>, …))`
 // (`codegen/commonJS.zig` `wrapResult`).
 //
-// Erlang: idempotently start `inets` + `ssl` (caught so a second `fetch`
-// call doesn't bomb on `{already_started, _}`), then call `httpc:request/4`.
+// Erlang: idempotently start `inets` + `ssl` (`application:ensure_all_started/1`,
+// so a second `fetch` call doesn't bomb on `{already_started, _}`), then call
+// `httpc:request/4`.
 // The OK arm answers `{ok, #{status => Code, body => Body}}`; the error arm
 // `{error, Reason}`, whose message is the reason formatted (decision 490).
 #[@External.Node("""globalThis.fetch($0).then(__r => __r.text().then(__b => ({ status: __r.status, body: __b })))""", result: true)]
-#[@External.Erlang("""(fun(__U) -> (catch inets:start()), (catch ssl:start()), case httpc:request(get, {binary_to_list(__U), []}, [], []) of {ok, {{_, __C, _}, _, __B}} -> {ok, #{status => __C, body => iolist_to_binary(__B)}}; {error, __R} -> {error, __R} end end)($0)""", result: true)]
+#[@External.Erlang("""(fun(__U) -> application:ensure_all_started(inets), application:ensure_all_started(ssl), case httpc:request(get, {binary_to_list(__U), []}, [], []) of {ok, {{_, __C, _}, _, __B}} -> {ok, #{status => __C, body => iolist_to_binary(__B)}}; {error, __R} -> {error, __R} end end)($0)""", result: true)]
 declare fn fetchHost(url: string) -> @Task<@Result<Response, HostError>>;
 
 // Issue a GET request and resolve with the response, or fail with the

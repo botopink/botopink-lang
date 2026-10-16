@@ -177,7 +177,7 @@ behavior BigInt {
 
     // The `f64` equal to the value; one between two `f64`s aborts, never
     // rounds (decision 319's conversions).
-    #[@External.Erlang("""(fun(__V) -> __F = try float(__V) catch error:badarg -> erlang:error({integer_overflow, <<"toF64: ", (integer_to_binary(__V))/binary, " has no exact f64">>}) end, case trunc(__F) =:= __V of true -> __F; false -> erlang:error({integer_overflow, <<"toF64: ", (integer_to_binary(__V))/binary, " has no exact f64">>}) end end)($0)""")]
+    #[@External.Erlang("""(fun(__V) -> case abs(__V) =< ((1 bsl 1024) - (1 bsl 971)) of true -> __F = float(__V), case trunc(__F) =:= __V of true -> __F; false -> erlang:error({integer_overflow, <<"toF64: ", (integer_to_binary(__V))/binary, " has no exact f64">>}) end; false -> erlang:error({integer_overflow, <<"toF64: ", (integer_to_binary(__V))/binary, " has no exact f64">>}) end end)($0)""")]
     #[@External.Node("""((__v) => { const __f = Number(__v); if (typeof __v !== "bigint" || BigInt(__f) === __v) { return __f; } throw new Error("integer overflow: toF64: " + __v + " has no exact f64"); })($0)""")]
     fn toF64(self: Self) -> f64;
 }
@@ -207,7 +207,7 @@ behavior Bytes {
     // surrogate, a code point past U+10FFFF) is an `Error`. A byte order mark
     // is kept as U+FEFF.
     #[@External.Erlang("""(fun(__B) -> case unicode:characters_to_binary(__B) of __S when is_binary(__S) -> {ok, __S}; _ -> {error, <<"Bytes.toUtf8: not valid UTF-8">>} end end)($0)""")]
-    #[@External.Node("""((__b) => { try { return { ok: new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(__b) }; } catch (__e) { return { error: "Bytes.toUtf8: not valid UTF-8" }; } })($0)""")]
+    #[@External.Node("""((__b) => require('buffer').isUtf8(__b) ? { ok: new TextDecoder("utf-8", { ignoreBOM: true }).decode(__b) } : { error: "Bytes.toUtf8: not valid UTF-8" })($0)""")]
     fn toUtf8(self: Self) -> @Result<string, string>;
 
     // The number of bytes.
@@ -611,9 +611,9 @@ declare fn stringToInteger(numeral: string) -> @Result<i64, string>;
 
 // The `f64` the numeral `text` spells, read from its accepted pieces as
 // `<sign><whole>.<fraction>e<exponent>`; the overflow `Error`, naming `text`,
-// when it does not fit. `binary_to_float/1` raises on an overflow and answers
-// `0.0` on an underflow, which is what `Number` does with `Infinity` and `0`.
-#[@External.Erlang("""(fun(__T, __W, __F, __X) -> __Sign = case __T of <<45, _/binary>> -> <<45>>; _ -> <<>> end, try {ok, binary_to_float(<<__Sign/binary, __W/binary, 46, __F/binary, 101, __X/binary>>)} catch _:_ -> {error, <<"parseFloat: ", 34, __T/binary, 34, " overflows f64">>} end end)($0, $1, $2, $3)""")]
+// when it does not fit. `string:to_float/1` answers `{error, no_float}` on an
+// overflow and `0.0` on an underflow, which is what `Number` does with `Infinity` and `0`.
+#[@External.Erlang("""(fun(__T, __W, __F, __X) -> __Sign = case __T of <<45, _/binary>> -> <<45>>; _ -> <<>> end, case string:to_float(binary_to_list(<<__Sign/binary, __W/binary, 46, __F/binary, 101, __X/binary>>)) of {__N, []} -> {ok, __N}; _ -> {error, <<"parseFloat: ", 34, __T/binary, 34, " overflows f64">>} end end)($0, $1, $2, $3)""")]
 #[@External.Node("""((__t, __w, __f, __x) => { const __n = Number((__t.startsWith('-') ? '-' : '') + __w + '.' + __f + 'e' + __x); return Number.isFinite(__n) ? { ok: __n } : { error: 'parseFloat: "' + __t + '" overflows f64' } })($0, $1, $2, $3)""")]
 #[@External.Wasm(std: "number.toFloat")]
 declare fn stringToFloat(

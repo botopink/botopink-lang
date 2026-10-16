@@ -24,6 +24,8 @@
 //// templates around the value+offset extraction so the result shape
 //// matches across backends.
 
+import {failure, failure.HostError};
+
 // True when `pattern` matches anywhere in `input`. Named `matches`
 // rather than the spec's `test` because `test` is a reserved keyword
 // introducing inline test blocks at the parser level.
@@ -110,13 +112,16 @@ pub type Regex(handle: unknown) {
     pub declare fn matches(self: Self, input: string) -> bool;
 }
 
-// Compile `pattern` once. A pattern the host cannot compile is an `Error`
-// naming why.
-// Node: `new RegExp(pattern)` throws a `SyntaxError`, caught.
+// Compile `pattern` once. A pattern the host cannot compile is an
+// `Error(HostError)` carrying why (`result: true`, decisions 431, 490). The answer
+// is the host's `HostError`, not a `RegexError` of std's own: a public function
+// over this cell would be a body calling a cell with no wasm binding, which wasm
+// refuses for the whole module.
+// Node: `new RegExp(pattern)` throws a `SyntaxError`.
 // Erlang: `re:compile/1` answers `{error, {Reason, Offset}}`.
-#[@External.Node("""(() => { try { return { ok: { handle: new RegExp($0) } } } catch (__e) { return { error: String(__e && __e.message ? __e.message : __e) } } })()""")]
-#[@External.Erlang("""(fun(__P) -> case re:compile(__P) of {ok, __M} -> {ok, #{handle => __M}}; {error, __R} -> {error, iolist_to_binary(io_lib:format("~p", [__R]))} end end)($0)""")]
-pub declare fn compile(pattern: string) -> @Result<Regex, string>;
+#[@External.Node("""({ handle: new RegExp($0) })""", result: true)]
+#[@External.Erlang("""(fun(__P) -> case re:compile(__P) of {ok, __M} -> {ok, #{handle => __M}}; {error, __R} -> {error, __R} end end)($0)""", result: true)]
+pub declare fn compile(pattern: string) -> @Result<Regex, HostError>;
 
 // Every group of the first match, group 0 (the whole match) first; a group
 // that did not take part is `""`. `null` when the pattern does not match —

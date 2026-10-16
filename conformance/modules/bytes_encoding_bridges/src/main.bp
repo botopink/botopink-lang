@@ -1,13 +1,21 @@
 //// Decision 346 — `encoding`'s `Bytes` bridges: base64 and hex over bytes, lossless where the
-//// text codecs read the bytes back as UTF-8. A decoder answers `@Result<Bytes, string>` with
-//// the text codecs' rules and `Error` texts. The parent binary knew no `Bytes`.
+//// text codecs read the bytes back as UTF-8. A decoder answers `@Result<Bytes, EncodingError>` with
+//// the text codecs' rules and `Error` variants (decision 486). The parent binary knew no `Bytes`.
 
 import {encoding} from "std";
 
-fn show(r: @Result<Bytes, string>) -> string {
+fn show(r: @Result<Bytes, encoding.EncodingError>) -> string {
     return case r {
         Ok(b) -> "bytes " + encoding.hexEncodeBytes(b);
-        Error(e) -> "error " + e;
+        Error(e) -> "error " + errorName(e);
+    };
+}
+
+fn errorName(e: encoding.EncodingError) -> string {
+    return case e {
+        encoding.EncodingError.NotBase64 -> "NotBase64";
+        encoding.EncodingError.NotHex -> "NotHex";
+        encoding.EncodingError.NotPercentEncoded -> "NotPercentEncoded";
     };
 }
 

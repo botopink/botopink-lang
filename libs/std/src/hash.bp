@@ -24,6 +24,8 @@
 //// Text in: every input is the UTF-8 bytes of a `string` (there is no
 //// byte type — `language-gaps.md`), so an HMAC key is text too.
 
+import {failure};
+
 // base64url (no padding) of the raw HMAC-SHA256 of `data` under `key` —
 // the JWS HS256 signature (RFC 7515 §3) and a session-cookie MAC.
 #[@External.Node("""require('crypto').createHmac('sha256', $0).update($1).digest('base64url')""")]
@@ -95,11 +97,14 @@ pub fn pbkdf2Sha256(
 }
 
 // Internal, test scaffolding: the text a body panics with, `""` when it
-// answered. The shape of `testing.asserts`' own cell — a root module does not
-// import the harness.
-#[@External.Node("""(() => { try { ($0)(); return '' } catch (__e) { return __e && __e.message ? __e.message : String(__e) } })()""")]
-#[@External.Erlang("""(fun(__B) -> try __B(), <<>> catch error:{panic, __M} -> unicode:characters_to_binary(__M); __C:__E -> iolist_to_binary(io_lib:format("~p:~p", [__C, __E])) end end)($0)""")]
-declare fn panicText(body: fn() -> string) -> string;
+// answered — `attempt` (decision 431), which a root module may import: it is
+// not the harness.
+fn panicText(body: fn() -> string) -> string {
+    return case failure.attempt(body) {
+        Ok(_) -> "";
+        Error(f) -> f.message;
+    };
+}
 
 // ── tests ────────────────────────────────────────────────────────────────────
 

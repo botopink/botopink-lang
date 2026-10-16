@@ -2132,6 +2132,856 @@ test "path.isInside treats a name starting with two dots as a name" {
 ```logs
 ```
 
+----- SOURCE CODE -- std/failure.bp
+```botopink
+//// std/failure — the two records a failure that is not a typed error carries
+//// (decisions 431, 492).
+////
+//// `HostError` is what a host binding that writes `result: true` answers on
+//// the `Error` side: the host's message and `kind`, always `"host"`.
+//// `Failure` is what `attempt` answers on the `Error` side: `kind` is `panic`
+//// (`@panic`, `@todo`, `x!`, an overflow, a division by zero), `host` (a raise
+//// from a binding without `result: true`) or `crash` (a VM or emitted-code
+//// fault, a wasm trap).
+////
+//// `attempt(f)` runs `f` and answers `Ok` of its value, or `Error(Failure)`
+//// for a raise it caught — the one way to contain a crash (decision 431 (3)).
+//// `attemptTask(f)` is its `@Task` form (decision 494): the task `f` answers,
+//// awaited, or the `Failure` it crashed with — a `@Task<@Result<…>>` read
+//// back by `await` like any failing task (decision 432). The kinds
+//// (decision 492): a `@panic` / `@todo` (and so `x!`), a failed `assert`
+//// and an integer overflow or division by zero are `panic`, their message
+//// the text the program wrote. A raise of a binding declared outside std without
+//// `result: true` is `host` (decision 546), its message the host's text — on
+//// commonJS an `Error`'s `message`, else `String(e)`, the call run through
+//// `__bp_host_mark`, which marks it `__bp_host`; any raise nothing marked is
+//// `crash`, its message the same text. On erlang and beam a
+//// host raise is the raise of a binding declared outside std without `result:
+//// true` — a library's or the program's, whose calls are wrapped to mark it
+//// (decision 546) — its message the reason by `~tp` (decision 489's reading);
+//// a raise nothing marked, a failing match or a std binding's, is `crash`,
+//// its message the reason by `~tp` too.
+////
+//// Both are bodyless: each backend wraps the call (a JavaScript `try` /
+//// rejection handler, an erlang `try … catch`; beam compiles the erlang
+//// form). On wasm (decision 518) each is a private body over `caught`, the
+//// `wasi: .Attempt` adapter: the thunk runs inside a `try_table` that
+//// catches the program's aborts (wasm exception handling), so the binding
+//// declares `needs: [.Exceptions]` and a program reaching it runs with the
+//// host's exceptions on (`-W exceptions=y` on wasmtime). On wasm an abort
+//// is `panic`; a trap (an overflow or a division by zero there, a host
+//// fault) is no exception and is not caught. `attemptTask` contains what
+//// the thunk raises before the task's first `await`.
+
+pub type HostErrorName {
+    Error,
+    Throw,
+    Exit,
+}
+
+pub type HostError(message: string, kind: string, name: HostErrorName, detail: ?string)
+
+pub type Failure(message: string, kind: string)
+
+// The Node forms read an abort by the `__bp_panic` mark the backend puts on
+// every one it raises — `@panic`, `@todo`, an integer overflow or division
+// by zero, a failed `assert` (whose mark carries its message) — or a test
+// body's `assert` (`__bp_assert_loc`); the Erlang forms by the reasons the
+// backends raise for them (`{panic, M}`, `{todo, M}`, `{integer_overflow,
+// M}`, `{bp_assert, M, Where}`). `attemptTask` answers a failing task
+// (decision 432): marked `__bp_fails`, resolved with the value, rejected with
+// the `Failure` (`__bp_failure`); a failing task `f` answers is read as
+// `await` reads it.
+#[@External.Node("""((__f, __k) => { try { return { ok: __f() }; } catch (__e) { return { error: __k(__e) }; } })($0, ((__e) => (__e != null && __e.__bp_panic != null) ? new Failure(typeof __e.__bp_panic === "string" ? __e.__bp_panic : __e.message, "panic") : (__e != null && typeof __e.__bp_assert_loc === "string") ? new Failure(__e.message, "panic") : new Failure((__e instanceof Error) ? __e.message : String(__e), (__e != null && __e.__bp_host === true) ? "host" : "crash")))""")]
+#[@External.Erlang("""(fun(__F) -> try {ok, __F()} catch error:{__T, __M} when (__T =:= panic orelse __T =:= todo orelse __T =:= integer_overflow) andalso (is_binary(__M) orelse is_list(__M)) -> {error, {'std@failure@@Failure', unicode:characters_to_binary(__M), <<"panic">>}}; error:{bp_assert, _, _, __M} -> {error, {'std@failure@@Failure', unicode:characters_to_binary(__M), <<"panic">>}}; error:{bp_assert, __M, _} when is_binary(__M) -> {error, {'std@failure@@Failure', __M, <<"panic">>}}; error:{bp_host, __M} when is_binary(__M) -> {error, {'std@failure@@Failure', __M, <<"host">>}}; _:__R -> {error, {'std@failure@@Failure', unicode:characters_to_binary(io_lib:format("~tp", [__R])), <<"crash">>}} end end)($0)""")]
+#[@External.Wasm(fn: attemptOnWasm)]
+pub declare fn attempt<T>(f: fn() -> T) -> @Result<T, Failure>;
+
+#[@External.Node("""((__f, __k) => { const __t = (async () => { const __x = __f(); return (__x != null && __x.__bp_fails === true) ? await __x.then((__v) => ({ ok: __v }), (__e) => { if (__x.__bp_failure === true) { return { error: __e }; } throw __e; }) : await __x; })().then((__v) => __v, (__e) => { __t.__bp_failure = true; throw __k(__e); }); __t.__bp_fails = true; __t.catch(() => {}); return __t; })($0, ((__e) => (__e != null && __e.__bp_panic != null) ? new Failure(typeof __e.__bp_panic === "string" ? __e.__bp_panic : __e.message, "panic") : (__e != null && typeof __e.__bp_assert_loc === "string") ? new Failure(__e.message, "panic") : new Failure((__e instanceof Error) ? __e.message : String(__e), (__e != null && __e.__bp_host === true) ? "host" : "crash")))""")]
+#[@External.Erlang("""(fun(__F) -> try {ok, __F()} catch error:{__T, __M} when (__T =:= panic orelse __T =:= todo orelse __T =:= integer_overflow) andalso (is_binary(__M) orelse is_list(__M)) -> {error, {'std@failure@@Failure', unicode:characters_to_binary(__M), <<"panic">>}}; error:{bp_assert, _, _, __M} -> {error, {'std@failure@@Failure', unicode:characters_to_binary(__M), <<"panic">>}}; error:{bp_assert, __M, _} when is_binary(__M) -> {error, {'std@failure@@Failure', __M, <<"panic">>}}; error:{bp_host, __M} when is_binary(__M) -> {error, {'std@failure@@Failure', __M, <<"host">>}}; _:__R -> {error, {'std@failure@@Failure', unicode:characters_to_binary(io_lib:format("~tp", [__R])), <<"crash">>}} end end)($0)""")]
+#[@External.Wasm(fn: attemptTaskOnWasm)]
+pub declare fn attemptTask<T>(f: fn() -> @Task<T>) -> @Task<@Result<T, Failure>>;
+
+// wasm's form (decision 518): the thunk's value, or the message of the abort
+// it raised — `Error` of the abort's text, which `attempt` makes a `panic`.
+// The bodies over it are compiled on every target, so it has a form on each;
+// only wasm calls it (`attempt`'s own forms answer elsewhere).
+#[@External.Node("""((__f) => { try { return { ok: __f() }; } catch (__e) { return { error: (__e instanceof Error) ? __e.message : String(__e) }; } })($0)""")]
+#[@External.Erlang("""(fun(__F) -> try {ok, __F()} catch _:__R -> {error, unicode:characters_to_binary(io_lib:format("~tp", [__R]))} end end)($0)""")]
+#[@External.Wasm(wasi: .Attempt, needs: [.Exceptions])]
+declare fn caught<T>(f: fn() -> T) -> @Result<T, string>;
+
+fn attemptOnWasm<T>(f: fn() -> T) -> @Result<T, Failure> {
+    case caught(f) {
+        Ok(v) -> return v;
+        Error(m) -> throw Failure(message: m, kind: "panic");
+    }
+}
+
+// The task the thunk started — or the `Failure` it raised before its first
+// `await` — and then its value.
+fn attemptTaskOnWasm<T>(f: fn() -> @Task<T>) -> @Task<@Result<T, Failure>> {
+    case caught(f) {
+        Ok(t) -> return await t;
+        Error(m) -> throw Failure(message: m, kind: "panic");
+    }
+}
+
+```
+
+----- WASM TEXT -- std/failure.wat
+```wasm
+(module
+  (memory (export "memory") 1)
+  (tag $__bp_panic (param i32))
+  (table funcref (elem))
+  (data (i32.const 256) "\19\00\00\00R\07Failure\02\07messages\04kinds")
+  (data (i32.const 288) "\05\00\00\00panic")
+  (global $__heap_ptr (mut i32) (i32.const 300))
+  ;; std/failure — the two records a failure that is not a typed error carries
+  ;; (decisions 431, 492).
+  ;; 
+  ;; `HostError` is what a host binding that writes `result: true` answers on
+  ;; the `Error` side: the host's message and `kind`, always `"host"`.
+  ;; `Failure` is what `attempt` answers on the `Error` side: `kind` is `panic`
+  ;; (`@panic`, `@todo`, `x!`, an overflow, a division by zero), `host` (a raise
+  ;; from a binding without `result: true`) or `crash` (a VM or emitted-code
+  ;; fault, a wasm trap).
+  ;; 
+  ;; `attempt(f)` runs `f` and answers `Ok` of its value, or `Error(Failure)`
+  ;; for a raise it caught — the one way to contain a crash (decision 431 (3)).
+  ;; `attemptTask(f)` is its `@Task` form (decision 494): the task `f` answers,
+  ;; awaited, or the `Failure` it crashed with — a `@Task<@Result<…>>` read
+  ;; back by `await` like any failing task (decision 432). The kinds
+  ;; (decision 492): a `@panic` / `@todo` (and so `x!`), a failed `assert`
+  ;; and an integer overflow or division by zero are `panic`, their message
+  ;; the text the program wrote. A raise of a binding declared outside std without
+  ;; `result: true` is `host` (decision 546), its message the host's text — on
+  ;; commonJS an `Error`'s `message`, else `String(e)`, the call run through
+  ;; `__bp_host_mark`, which marks it `__bp_host`; any raise nothing marked is
+  ;; `crash`, its message the same text. On erlang and beam a
+  ;; host raise is the raise of a binding declared outside std without `result:
+  ;; true` — a library's or the program's, whose calls are wrapped to mark it
+  ;; (decision 546) — its message the reason by `~tp` (decision 489's reading);
+  ;; a raise nothing marked, a failing match or a std binding's, is `crash`,
+  ;; its message the reason by `~tp` too.
+  ;; 
+  ;; Both are bodyless: each backend wraps the call (a JavaScript `try` /
+  ;; rejection handler, an erlang `try … catch`; beam compiles the erlang
+  ;; form). On wasm (decision 518) each is a private body over `caught`, the
+  ;; `wasi: .Attempt` adapter: the thunk runs inside a `try_table` that
+  ;; catches the program's aborts (wasm exception handling), so the binding
+  ;; declares `needs: [.Exceptions]` and a program reaching it runs with the
+  ;; host's exceptions on (`-W exceptions=y` on wasmtime). On wasm an abort
+  ;; is `panic`; a trap (an overflow or a division by zero there, a host
+  ;; fault) is no exception and is not caught. `attemptTask` contains what
+  ;; the thunk raises before the task's first `await`.
+  ;; The Node forms read an abort by the `__bp_panic` mark the backend puts on
+  ;; every one it raises — `@panic`, `@todo`, an integer overflow or division
+  ;; by zero, a failed `assert` (whose mark carries its message) — or a test
+  ;; body's `assert` (`__bp_assert_loc`); the Erlang forms by the reasons the
+  ;; backends raise for them (`{panic, M}`, `{todo, M}`, `{integer_overflow,
+  ;; M}`, `{bp_assert, M, Where}`). `attemptTask` answers a failing task
+  ;; (decision 432): marked `__bp_fails`, resolved with the value, rejected with
+  ;; the `Failure` (`__bp_failure`); a failing task `f` answers is read as
+  ;; `await` reads it.
+  ;; attempt — #[@External.Wasm(fn: attemptOnWasm)]
+  (func $attempt (export "attempt") (param $f i32) (result i32)
+    local.get $f
+    call $attemptOnWasm
+  )
+  ;; attemptTask — #[@External.Wasm(fn: attemptTaskOnWasm)]
+  (func $attemptTask (export "attemptTask") (param $f i32) (result i32)
+    local.get $f
+    call $attemptTaskOnWasm
+  )
+  ;; wasm's form (decision 518): the thunk's value, or the message of the abort
+  ;; it raised — `Error` of the abort's text, which `attempt` makes a `panic`.
+  ;; The bodies over it are compiled on every target, so it has a form on each;
+  ;; only wasm calls it (`attempt`'s own forms answer elsewhere).
+  ;; caught — #[@External.Wasm(wasi: .Attempt)]
+  (func $caught (param $f i32) (result i32)
+    local.get $f
+    call $__wasi_attempt
+  )
+  (func $attemptOnWasm (param $f i32) (result i32)
+    (local $__mem0 i32)
+    (local $v i32)
+    (local $m i32)
+    (local $__case_0 i32)
+    (local $_res0 i32)
+    (local $_res1 i32)
+    local.get $f
+    call $caught
+    local.set $__case_0
+    local.get $__case_0
+    i32.load ;; Result tag (0 = Ok, non-zero = Error)
+    i32.eqz
+    (if (result i32)
+      (then
+    local.get $__case_0
+    i32.load offset=4
+    local.set $v
+    i32.const 8
+    call $__alloc
+    local.set $_res0
+    local.get $_res0
+    i32.const 0
+    i32.store ;; Result tag (Ok)
+    local.get $_res0
+    local.get $v
+    i32.store offset=4 ;; payload
+    local.get $_res0
+    return
+      )
+      (else
+    local.get $__case_0
+    i32.load ;; Result tag (0 = Ok, non-zero = Error)
+    (if (result i32)
+      (then
+    local.get $__case_0
+    i32.load offset=4
+    local.set $m
+    i32.const 8
+    call $__alloc
+    local.set $_res1
+    local.get $_res1
+    i32.const 1
+    i32.store ;; Result tag (Error)
+    local.get $_res1
+    i32.const 12
+    call $__alloc
+    local.set $__mem0
+    local.get $__mem0
+    i32.const 260
+    i32.store
+    local.get $__mem0
+    local.get $m
+    i32.store offset=4
+    local.get $__mem0
+    i32.const 288
+    i32.store offset=8
+    local.get $__mem0
+    i32.const 4
+    i32.add
+    i32.store offset=4 ;; payload
+    local.get $_res1
+    return
+      )
+      (else
+    i32.const 0
+      )
+    )
+      )
+    )
+  )
+  ;; The task the thunk started — or the `Failure` it raised before its first
+  ;; `await` — and then its value.
+  ;; @Task — a state machine (decision 392)
+  (func $attemptTaskOnWasm (param $f i32) (result i32)
+    (local $__fr i32)
+    i32.const 72 ;; the frame: the resume index, then every local
+    call $__alloc
+    local.set $__fr
+    local.get $__fr
+    local.get $f
+    i32.store offset=8
+    i32.const 0 ;; attemptTaskOnWasm__step
+    local.get $__fr
+    call $__task_start ;; runs to its first await
+  )
+  (func $attemptTaskOnWasm__body (param $__task i32) (result i32)
+    (local $f i32)
+    (local $__mem0 i32)
+    (local $t i32)
+    (local $m i32)
+    (local $__frame i32)
+    (local $__seek i32)
+    (local $__state i32)
+    (local $__case_0_0 i32)
+    (local $_res0 i32)
+    (local $__aw1 i32)
+    (local $_res1 i32)
+    local.get $__task
+    i32.load offset=16
+    local.set $__frame
+    local.get $__frame
+    i32.load offset=8
+    local.set $f
+    local.get $__frame
+    i32.load offset=16
+    local.set $__mem0
+    local.get $__frame
+    i32.load offset=24
+    local.set $t
+    local.get $__frame
+    i32.load offset=32
+    local.set $m
+    local.get $__frame
+    i32.load offset=40
+    local.set $__case_0_0
+    local.get $__frame
+    i32.load offset=48
+    local.set $_res0
+    local.get $__frame
+    i32.load offset=56
+    local.set $__aw1
+    local.get $__frame
+    i32.load offset=64
+    local.set $_res1
+    local.get $__frame
+    i32.load ;; the resume index
+    local.tee $__state
+    i32.const 0
+    i32.ne
+    local.set $__seek
+    local.get $__seek
+    i32.eqz
+    (if
+      (then
+    local.get $f
+    call $caught
+    local.set $__case_0_0
+      )
+    )
+    local.get $__case_0_0
+    i32.load ;; Result tag (0 = Ok, non-zero = Error)
+    i32.eqz
+    (if (result i32)
+      (then
+    local.get $__case_0_0
+    i32.load offset=4
+    local.set $t
+    i32.const 8
+    call $__alloc
+    local.set $_res0
+    local.get $_res0
+    i32.const 0
+    i32.store ;; Result tag (Ok)
+    local.get $_res0
+    (block $__aw1
+    local.get $__seek
+    (if
+      (then
+    local.get $__state
+    i32.const 1
+    i32.eq
+    (if
+      (then
+    i32.const 0
+    local.set $__seek
+    br $__aw1 ;; resumed here
+      )
+    )
+    br $__aw1 ;; resuming past this await
+      )
+    )
+    local.get $t
+    local.set $__aw1
+    local.get $__aw1
+    call $__task_pending
+    (if
+      (then
+    local.get $__aw1
+    local.get $__task
+    call $__task_wait
+    local.get $__frame
+    local.get $f
+    i32.store offset=8
+    local.get $__frame
+    local.get $__mem0
+    i32.store offset=16
+    local.get $__frame
+    local.get $t
+    i32.store offset=24
+    local.get $__frame
+    local.get $m
+    i32.store offset=32
+    local.get $__frame
+    local.get $__case_0_0
+    i32.store offset=40
+    local.get $__frame
+    local.get $_res0
+    i32.store offset=48
+    local.get $__frame
+    local.get $__aw1
+    i32.store offset=56
+    local.get $__frame
+    local.get $_res1
+    i32.store offset=64
+    local.get $__frame
+    i32.const 1
+    i32.store ;; the resume index
+    i32.const 1
+    global.set $__task_suspended
+    i32.const 0
+    return ;; suspended
+      )
+    )
+    )
+    local.get $__aw1
+    i32.load offset=8 ;; the settled value
+    i32.store offset=4 ;; payload
+    local.get $_res0
+    return
+      )
+      (else
+    local.get $__case_0_0
+    i32.load ;; Result tag (0 = Ok, non-zero = Error)
+    (if (result i32)
+      (then
+    local.get $__case_0_0
+    i32.load offset=4
+    local.set $m
+    i32.const 8
+    call $__alloc
+    local.set $_res1
+    local.get $_res1
+    i32.const 1
+    i32.store ;; Result tag (Error)
+    local.get $_res1
+    i32.const 12
+    call $__alloc
+    local.set $__mem0
+    local.get $__mem0
+    i32.const 260
+    i32.store
+    local.get $__mem0
+    local.get $m
+    i32.store offset=4
+    local.get $__mem0
+    i32.const 288
+    i32.store offset=8
+    local.get $__mem0
+    i32.const 4
+    i32.add
+    i32.store offset=4 ;; payload
+    local.get $_res1
+    return
+      )
+      (else
+    i32.const 0
+      )
+    )
+      )
+    )
+  )
+  (func $attemptTaskOnWasm__step (param $__task i32)
+    (local $__v i32)
+    local.get $__task
+    call $attemptTaskOnWasm__body
+    local.set $__v
+    global.get $__task_suspended
+    (if
+      (then
+    i32.const 0
+    global.set $__task_suspended
+    return
+      )
+    )
+    local.get $__task
+    local.get $__v
+    call $__task_settle_i32
+  )
+  (func $__alloc (param $n i32) (result i32)
+    (local $p i32) (local $e i32)
+    global.get $__heap_ptr
+    local.set $p
+    local.get $p
+    local.get $n
+    i32.add
+    i32.const 3
+    i32.add
+    i32.const -4
+    i32.and
+    local.set $e
+    local.get $e
+    local.get $p
+    i32.lt_u
+    (if
+      (then
+        unreachable
+      )
+    )
+    local.get $e
+    memory.size
+    i32.const 16
+    i32.shl
+    i32.gt_u
+    (if
+      (then
+        local.get $e
+        i32.const 65535
+        i32.add
+        i32.const 16
+        i32.shr_u
+        memory.size
+        i32.sub
+        memory.grow
+        i32.const -1
+        i32.eq
+        (if
+          (then
+            unreachable
+          )
+        )
+      )
+    )
+    local.get $e
+    global.set $__heap_ptr
+    local.get $p
+  )
+  (global $__task_head (mut i32) (i32.const 0))
+  (global $__task_tail (mut i32) (i32.const 0))
+  (global $__task_suspended (mut i32) (i32.const 0))
+  (func $__task_new (param $kind i32) (param $frame i32) (result i32)
+    (local $t i32)
+    i32.const 40
+    call $__alloc
+    local.set $t
+    local.get $t
+    local.get $kind
+    i32.store offset=20
+    local.get $t
+    local.get $frame
+    i32.store offset=16
+    local.get $t
+  )
+  (func $__task_start (param $kind i32) (param $frame i32) (result i32)
+    (local $t i32)
+    local.get $kind
+    local.get $frame
+    call $__task_new
+    local.tee $t
+    call $__task_resume
+    local.get $t
+  )
+  (func $__task_pending (param $t i32) (result i32)
+    local.get $t
+    i32.load
+    i32.eqz
+  )
+  (func $__task_listen (param $t i32) (param $kind i32) (param $target i32) (param $index i32)
+    (local $n i32)
+    i32.const 16
+    call $__alloc
+    local.set $n
+    local.get $n
+    local.get $t
+    i32.load offset=4
+    i32.store
+    local.get $n
+    local.get $kind
+    i32.store offset=4
+    local.get $n
+    local.get $target
+    i32.store offset=8
+    local.get $n
+    local.get $index
+    i32.store offset=12
+    local.get $t
+    local.get $n
+    i32.store offset=4
+  )
+  (func $__task_wait (param $t i32) (param $w i32)
+    local.get $t
+    i32.const 0
+    local.get $w
+    i32.const 0
+    call $__task_listen
+  )
+  (func $__task_settle_i32 (param $t i32) (param $v i32)
+    local.get $t
+    local.get $v
+    i32.store offset=8
+    local.get $t
+    call $__task_wake
+  )
+  (func $__task_settle_i64 (param $t i32) (param $v i64)
+    local.get $t
+    local.get $v
+    i64.store offset=8
+    local.get $t
+    call $__task_wake
+  )
+  (func $__task_settle_f64 (param $t i32) (param $v f64)
+    local.get $t
+    local.get $v
+    f64.store offset=8
+    local.get $t
+    call $__task_wake
+  )
+  (func $__task_wake (param $t i32)
+    (local $n i32) (local $m i32) (local $r i32) (local $k i32) (local $w i32)
+    local.get $t
+    i32.load
+    (if
+      (then
+        return
+      )
+    )
+    local.get $t
+    i32.const 1
+    i32.store
+    local.get $t
+    i32.load offset=4
+    local.set $n
+    local.get $t
+    i32.const 0
+    i32.store offset=4
+    (block $brk
+      (loop $cont
+        local.get $n
+        i32.eqz
+        br_if $brk
+        local.get $n
+        i32.load
+        local.set $m
+        local.get $n
+        local.get $r
+        i32.store
+        local.get $n
+        local.set $r
+        local.get $m
+        local.set $n
+        br $cont
+      )
+    )
+    (block $brk
+      (loop $cont
+        local.get $r
+        i32.eqz
+        br_if $brk
+        local.get $r
+        i32.load offset=4
+        local.set $k
+        local.get $r
+        i32.load offset=8
+        local.set $w
+        local.get $k
+        i32.eqz
+        (if
+          (then
+            local.get $w
+            call $__task_enqueue
+          )
+        )
+        local.get $k
+        i32.const 1
+        i32.eq
+        (if
+          (then
+            local.get $w
+            i32.load
+            i32.eqz
+            (if
+              (then
+                local.get $w
+                local.get $t
+                i64.load offset=8
+                i64.store offset=8
+                local.get $w
+                call $__task_wake
+              )
+            )
+          )
+        )
+        local.get $k
+        i32.const 2
+        i32.eq
+        (if
+          (then
+            local.get $w
+            i32.load offset=28
+            i32.const 4
+            i32.add
+            local.get $r
+            i32.load offset=12
+            i32.const 4
+            i32.mul
+            i32.add
+            local.get $t
+            i32.load offset=8
+            i32.store
+            local.get $w
+            local.get $w
+            i32.load offset=32
+            i32.const 1
+            i32.sub
+            i32.store offset=32
+            local.get $w
+            i32.load offset=32
+            i32.eqz
+            (if
+              (then
+                local.get $w
+                local.get $w
+                i32.load offset=28
+                i32.store offset=8
+                local.get $w
+                call $__task_wake
+              )
+            )
+          )
+        )
+        local.get $r
+        i32.load
+        local.set $r
+        br $cont
+      )
+    )
+  )
+  (func $__task_enqueue (param $t i32)
+    local.get $t
+    i32.const 0
+    i32.store offset=24
+    global.get $__task_tail
+    (if
+      (then
+        global.get $__task_tail
+        local.get $t
+        i32.store offset=24
+      )
+      (else
+        local.get $t
+        global.set $__task_head
+      )
+    )
+    local.get $t
+    global.set $__task_tail
+  )
+  (func $__task_drain
+    (local $t i32)
+    (block $brk
+      (loop $cont
+        global.get $__task_head
+        local.tee $t
+        i32.eqz
+        br_if $brk
+        local.get $t
+        i32.load offset=24
+        global.set $__task_head
+        global.get $__task_head
+        i32.eqz
+        (if
+          (then
+            i32.const 0
+            global.set $__task_tail
+          )
+        )
+        local.get $t
+        call $__task_resume
+        br $cont
+      )
+    )
+  )
+  (func $__task_block_on (param $t i32) (result i32)
+    (local $r i32)
+    (block $brk
+      (loop $cont
+        local.get $t
+        i32.load
+        br_if $brk
+        global.get $__task_head
+        local.tee $r
+        i32.eqz
+        (if
+          (then
+            unreachable
+          )
+        )
+        local.get $r
+        i32.load offset=24
+        global.set $__task_head
+        global.get $__task_head
+        i32.eqz
+        (if
+          (then
+            i32.const 0
+            global.set $__task_tail
+          )
+        )
+        local.get $r
+        call $__task_resume
+        br $cont
+      )
+    )
+    local.get $t
+  )
+  (func $__task_finish
+    (block $brk
+      (loop $cont
+        call $__task_drain
+        call $__task_host_poll
+        i32.eqz
+        br_if $brk
+        br $cont
+      )
+    )
+  )
+  (func $__task_resume (param $t i32)
+    (local $k i32)
+    local.get $t
+    i32.load offset=20 ;; kind
+    local.set $k
+    local.get $k
+    i32.const 0
+    i32.eq
+    (if
+      (then
+    local.get $t
+    call $attemptTaskOnWasm__step
+    return
+      )
+    )
+    unreachable
+  )
+  (func $__task_host_poll (result i32)
+    i32.const 0
+  )
+  (func $__wasi_attempt (param $f i32) (result i32)
+    (local $v i32) (local $r i32)
+    (block $caught (result i32)
+      (try_table (result i32) (catch $__bp_panic $caught)
+        local.get $f
+        local.get $f
+        i32.load
+        call_indirect (param i32) (result i32)
+      )
+      local.set $v
+      i32.const 8
+      call $__alloc
+      local.set $r
+      local.get $r
+      i32.const 0
+      i32.store
+      local.get $r
+      local.get $v
+      i32.store offset=4
+      local.get $r
+      return
+    )
+    i32.load
+    local.set $v
+    i32.const 8
+    call $__alloc
+    local.set $r
+    local.get $r
+    i32.const 1
+    i32.store
+    local.get $r
+    local.get $v
+    i32.store offset=4
+    local.get $r
+  )
+  (@custom "botopink.needs" "exceptions\0a")
+)
+```
+
+----- RUN LOG -----
+```logs
+```
+
 ----- SOURCE CODE -- std/probe.bp
 ```botopink
 import {path: {join}, io.fs.readText};

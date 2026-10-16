@@ -4920,6 +4920,13 @@ const Emitter = struct {
     fn hostWrapperFor(self: *Emitter, f: ast.FnDecl) anyerror!?HostWrapper {
         if (!hostDeclareWrapperNeeded(f)) return null;
         if (f.params.len > 0 and std.mem.eql(u8, f.params[0].name, "self")) return null;
+        // Decisions 431, 490 — a `result: true` binding answers `@Result<T, HostError>`
+        // through the wrapper a qualified call from another module reaches, as it
+        // does at an inlined call site (`lowerHostCall`): its template, or its
+        // `(module, symbol)` as the call it names, inside `erlTemplate.resultWrap`.
+        const result = ast.externalResultFor(f.annotations, "erlang");
+        var remote: ?[]u8 = null;
+        defer if (remote) |r| self.alloc.free(r);
         const template_raw = if (ast.externalHasArityBranches(f.annotations, "erlang"))
             ast.externalArityBranchFor(f.annotations, "erlang", f.params.len) orelse return null
         else blk: {
@@ -4928,11 +4935,25 @@ const Emitter = struct {
                 // The keyword form's template (`lowerHostCall`).
                 if (primOpTemplate.looksLikeTemplate(ref.symbol)) break :blk ref.symbol;
                 if (std.mem.indexOfScalar(u8, ref.symbol, '(') != null) return null;
-                return .{ .ext = ref };
+                if (!result) return .{ .ext = ref };
+                remote = try erlTemplate.remoteCallTemplate(self.alloc, ref.module, ref.symbol, f.params.len);
+                break :blk remote.?;
             }
             break :blk ref.symbol;
         };
-        const src = try templateBody(self.alloc, template_raw, f.params.len);
+        var wrapped: ?[]u8 = null;
+        defer if (wrapped) |w| self.alloc.free(w);
+        if (result) {
+            const ar = self.atom_arena.allocator();
+            const id = self.idOf("std/failure");
+            wrapped = try erlTemplate.resultWrap(self.alloc, template_raw, .{
+                .record = try crossModule.typeAtom(ar, id, "HostError"),
+                .err = try crossModule.variantAtom(ar, id, "HostErrorName", "Error"),
+                .throw = try crossModule.variantAtom(ar, id, "HostErrorName", "Throw"),
+                .exit = try crossModule.variantAtom(ar, id, "HostErrorName", "Exit"),
+            });
+        }
+        const src = try templateBody(self.alloc, wrapped orelse template_raw, f.params.len);
         defer self.alloc.free(src);
         const saved_refusal = self.template_refusal;
         defer self.template_refusal = saved_refusal;
