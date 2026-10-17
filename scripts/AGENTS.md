@@ -32,6 +32,9 @@ scripts/
 ├── codemod/external-implementations.py ← decision 575 (6)'s migration: every `#[@External.<T>(…)]` of one declaration → one `#[@external(.<T>(…), …)]` (`#[external(…)]` inside `libs/std/src`), labels kept, `fn:` → `body:`, the two-string `("m", "s")` → one template over the parameters (`"m:s($0, $1)"` erlang, `"M.s($0)"` / `$args` for a variadic on node, `"s(a, self)"` reordered), a host `${` → `\${`; `.bp` files in place, a `.zig` file's `\\` line strings as `.bp` text; `--check` lists
 ├── codemod-wasm-cells.py ← decision 481's migration: `.Wasm`'s prefixed strings → labelled cells (`"fn:x"` → `fn: x`, `"op:o"` → `op: "o"`, `"wasi:a_b"` → `wasi: .AB`, `"std:m.f"` → `std: "m.f"`) (§ below)
 ├── codemod-conformance-cells.py ← 144 B-29 step H: `tests/language/` → `conformance/` cells (`migrate`, `accept`, `audit` — § below)
+├── codemod/
+│   ├── compiler_keyword.py      ← 144 B-136's migration (decisions 575 (4), (5), 576, 577, 578): `@Expr<T>` parameters → `comptime` / `expr`, `@Decl` → `expr d: unknown`, `x.text()` / `.fail` / the template model / a handle's reads and outputs → `compiler.*`, `@expr(v)` → `v`, `-> @Expr<T>` / `-> @ExprCustom<T>` → `-> T`, `type T` → `type<T>`, a bare `type` → `anytype`, a template's calls → `` name @`…` `` (§ below)
+│   └── test_compiler_keyword.py ← its unit tests (`python3 scripts/codemod/test_compiler_keyword.py`)
 ├── lib/
 │   ├── gate-mode.sh   ← which gate a checkout runs (`front/*` → step, anything else → full) and what a changed-file list reaches, from the backend partition (sourced by gate.sh; run directly it explains a branch and a file list)
 │   ├── pool.sh        ← the bounded worker pool the shell runners share (sourced by ../conformance/run.sh), and `pool_share`, a stage's part of the gate's one total of jobs (sourced by gate.sh)
@@ -888,3 +891,60 @@ and 1 manifest `"targets"` — every claim stated (1825 `out`, 86 `abort`, 242 p
 1620 `reject` refusals over four targets, 50 `stderr`, 20 narrowings, 73 test suites byte for
 byte).
 
+## codemod/compiler_keyword.py
+
+144 B-136's migration of a tree to decisions 575 (4), (5) and 576 (6), source to source, over the
+`.bp` files under each path (`builtins.d.bp`, `builtins_fns.d.bp` and `compiler.bp` of std are written
+by hand and skipped):
+
+```sh
+python3 scripts/codemod/compiler_keyword.py [--check] [--measure] [--format <botopink>] [--imports] <path>...
+python3 scripts/codemod/test_compiler_keyword.py
+```
+
+- **A parameter typed `@Expr<T>`** becomes `comptime x: T` when its body reads it as `x.value` and
+  otherwise only fails at it (each read dropped; `x is type` counts as a value read; an unread one is
+  `comptime` too), else `expr x: T`. `x.text()` →
+  `compiler.text(x)`, `x.fail(m)` → `compiler.fail(m, at: x)`, `x.failAt(s, m)` → `compiler.fail(m, at:
+  x, span: s)`, the template model `x.<m>(…)` (`parts`, `source`, `context`, `lookup`, `bindings`)
+  → `compiler.<m>(x, …)`, `x.build` / `note` / `tagDecl` / `annotate(…)` → `compiler.<m>(…)` (576 (2)), `return x.custom(ast, code);` →
+  `compiler.custom(ast); return code;`.
+- **A parameter typed `@Decl`** becomes `expr d: unknown` (`@Decl<T>` → `expr d: T`); `d.name` →
+  `compiler.name(d)!`, `d.<r>` → `compiler.<r>(d)` (`module` → `moduleOf`), `d.meta(T)` →
+  `compiler.meta<T>(d)`, the outputs `d.setMeta` / `addMeta` / `addMember` / `addType` / `wrapWith(…)` →
+  `compiler.<m>(…)`, `d.addType(name, src)` → `compiler.addType(name, compiler.buildType(src))` (578
+  (3)). The string `setMeta("key", value)` is left and counted. The same rules take a
+  local bound from `x.lookup` / `tagDecl` / `annotate(…)` or from `d.owner`, and `d.owner!.<r>`; the
+  elements of `methods`, `params`, `annotations`, `hooks` and `fields` are records and stay.
+- A plain parameter `x: @Decl` / `@Decl<T>` / `Decl` (a helper taking a handle) → `x: unknown`.
+- `@expr(v)` → `v`; `-> @Expr<T>` and `-> @ExprCustom<T>` → `-> T` (578); a record field `f: @Expr<T>`
+  → `f: T`; `type T` in a type → `type<T>`; a bare `type` in a type → `anytype` (`type<T>`, `type(`,
+  `type {` stay).
+- **Decision 578:** a function declared `-> @Expr<…>` / `-> @ExprCustom<…>` whose first parameter
+  (after a `self` receiver) is `@Expr<string>` is a template: that parameter becomes `expr q: string`
+  whatever the body reads, a `q.value` read `compiler.text(q)`. B-136's interim `-> expr T` → `-> T`,
+  its `comptime q: string` text parameter → `expr q: string` with each read `compiler.text(q)`.
+- **Decision 577:** a call of a template (a function whose first parameter, after a `self` receiver,
+  is `expr q: string`, in the same project — a cell with its `deps/`, std; `recv.name` for a
+  template method; the name a package's default import binds when that package's `default fn` is a template) written `name "…"`, `name """…"""`,
+  `name("lit")`, `#[name("lit")]` or `#[name "…"]` → `` name @`…` `` / `` #[name @`…`] ``, the
+  string's escapes resolved to raw bytes (a backtick written `` \` ``), `${…}` kept as written. Any
+  other call shape is printed `TEMPLATE-CALL`; a function declared `-> @Expr` that is no template by
+  578 (1) `TEMPLATE-SIGNATURE`. The refusal cell `expr_call_outside_expr` keeps its call shape.
+- **Decision 576 (13), with `--imports` only** (off by default; B-136's removal piece runs it): a file naming `Span`, `Part`, `Source`, `ExprContext`, `CustomNode`,
+  `DeclKind`, `HookNode`, `Field`, `Method`, `Param` or `DeclAnnotation` (and not declaring or
+  importing it otherwise) gains `import {compiler.<Name>} from "std";` — merged into its first `from
+  "std"` import; in std itself `import {compiler.<Name>};`.
+- The cells `removed_type_bare_param` and `expr_param_method` are skipped (refusal tests of the
+  removed spellings). Comments and string contents are never rewritten (a `${…}`
+  hole is code).
+- What it cannot decide is printed `UNDECIDED <file>:<line> <what>` (a `.value` read on an `expr`
+  parameter, a `custom(…)` that is not a whole `return`, a member with no rule) and left as written.
+- `--check` writes nothing and exits 1 when a file would change; a second run over its output
+  changes nothing. `--format <botopink>` runs that compiler's formatter over each changed file that
+  was canonical before, through today's parser (the new spellings written back as `x: @Expr<T>`,
+  `-> @Expr<T>`, `type T` for the formatter, and restored after); a file it cannot read keeps the
+  codemod's layout and is named `UNFORMATTED`; the template texts, which today's formatter cannot read,
+  are written after it ran. `--measure` prints what the run leaves for a person:
+  reads with no 576 spelling, `Declared<`, the string `setMeta` sites by decorator and key with their
+  readers, `addMeta`, `wrapWith`.
