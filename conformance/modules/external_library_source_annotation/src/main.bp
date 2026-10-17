@@ -3,6 +3,8 @@
 //// `Implementation`. `#[bif("lists")]` binds the erlang BIF of the module named
 //// by its argument; the other targets name their own.
 
+import {compiler} from "std";
+
 fn bif(expr decl: unknown, comptime module: string) {
     compiler.implement(Implementation.Erlang(module + ":reverse($0)"));
 }

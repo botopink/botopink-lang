@@ -25,6 +25,8 @@
 //// no import, and its body is the compiler's to run where it annotates
 //// (`comptime/implementations.zig`).
 
+import {compiler};
+
 // The host features a wasm binding needs (decision 518). The compiler gathers
 // the needs of every binding a program reaches into the `.wasm`'s
 // `botopink.needs` custom section, and the runner hands the host only the

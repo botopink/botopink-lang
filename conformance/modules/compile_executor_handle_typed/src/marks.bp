@@ -2,6 +2,7 @@
 
 import {registry.add};
 import {registry.Module};
+import {compiler} from "std";
 
 pub fn module(expr decl: unknown, comptime lifecycle: string) {
     val name = compiler.name(decl)!;
