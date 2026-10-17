@@ -19366,6 +19366,26 @@ const Emitter = struct {
 
     /// The repr a call through a function value answers: the declared
     /// function type's, else the lambda a known closure local holds.
+    /// Whether `(fn(p) { … })(args)` answers a string: its body, with each
+    /// parameter a string when its argument is one.
+    fn inlineCallIsString(self: *Emitter, k: anytype, cc: anytype) bool {
+        if (k.returnType) |rt| return isStringTypeRef(rt);
+        const flags = self.arena().alloc(bool, k.params.len) catch return false;
+        for (flags, 0..) |*f, i| f.* = i < cc.args.len and self.isStringExpr(cc.args[i].value.*);
+        const saved = self.param_shape;
+        defer self.param_shape = saved;
+        self.param_shape = .{ .names = k.params, .str = flags };
+        return self.bodyIsString(k.body);
+    }
+
+    /// The fn expression a call's callee is, parentheses looked through.
+    fn inlineFnExpr(e: ast.Expr) ?@TypeOf(e.function) {
+        var cur = e;
+        while (cur == .collection and cur.collection.kind == .grouped) cur = cur.collection.kind.grouped.*;
+        if (cur != .function or cur.function.kind.syntax == .asyncBlock) return null;
+        return cur.function;
+    }
+
     fn gcValueCallRepr(self: *Emitter, cc: anytype) ?Repr {
         if (self.gcCalleeFnType(cc)) |d| return self.gcSigRepr(d.ft.function.returnType.*, d.gps);
         // A lambda stored in a field a type parameter types: the lambda the
@@ -19374,6 +19394,14 @@ const Emitter = struct {
             const l = self.lambdas.items[li];
             if (l.ret_ft) |rt| return self.gcSigRepr(rt, null);
             return self.lambdaTailType(l.body);
+        };
+        // A fn expression called where it is written: its parameters are typed by
+        // the arguments, as a closure local's are (`closureCallIsString`).
+        if (cc.calleeExpr) |ce| if (inlineFnExpr(ce.*)) |inl| {
+            const k = inl.kind;
+            if (k.returnType) |rt| return self.gcSigRepr(rt, null);
+            if (self.inlineCallIsString(k, cc)) return Repr.string;
+            return self.lambdaTailType(k.body);
         };
         if (cc.calleeExpr == null and cc.receiver == null and self.locals.contains(cc.callee)) {
             if (self.closure_locals.get(cc.callee)) |li| {
@@ -19426,6 +19454,9 @@ const Emitter = struct {
         self.loop_seq += 1;
         try self.declareLocal(tmp, .{ .ref = .closure });
         const clo: Repr = .{ .ref = .closure };
+        // A fn expression called where it is written (`(fn(s) { … })("a")`) is
+        // the closure its call types: its lambda is the last one lowered.
+        const lambdas_before = self.lambdas.items.len;
         if (cc.calleeExpr) |ce| {
             try self.lowerCoerced(ce.*, clo);
         } else if (cc.receiver) |recv| switch (slot.?) {
@@ -19454,6 +19485,8 @@ const Emitter = struct {
             self.closure_locals.get(cc.callee)
         else if (cc.calleeExpr == null and cc.receiver != null)
             self.fieldClosureOf(cc.receiver.?.*, cc.callee)
+        else if (cc.calleeExpr) |ce|
+            (if (inlineFnExpr(ce.*) != null and self.lambdas.items.len == lambdas_before + 1) @as(u32, @intCast(lambdas_before)) else null)
         else
             null;
         const decl = self.gcCalleeFnType(cc);
@@ -23465,6 +23498,7 @@ const Emitter = struct {
                     if (isUnwrapOr(cc)) break :blk self.isStringExpr(cc.args[1].value.*);
                     if (cc.is_builtin) break :blk false;
                     if (self.genericResultArg(cc)) |a| break :blk self.isStringExpr(a);
+                    if (cc.calleeExpr) |ce| if (inlineFnExpr(ce.*)) |inl| break :blk self.inlineCallIsString(inl.kind, cc);
                     if (cc.receiver == null and self.locals.contains(cc.callee)) {
                         if (self.closure_locals.get(cc.callee)) |li| break :blk self.closureCallIsString(li, cc);
                     } else if (cc.receiver == null and cc.calleeExpr == null) if (self.global_lambdas.get(cc.callee)) |gl| {
@@ -23781,7 +23815,10 @@ const Emitter = struct {
     /// Whether a statement list yields a string (its last statement does).
     fn bodyIsString(self: *Emitter, body: []const ast.Stmt) bool {
         if (body.len == 0) return false;
-        return self.isStringExpr(body[ast.lastRealIndex(body)].expr);
+        const last = body[ast.lastRealIndex(body)].expr;
+        // `{ return s + "x"; }` answers what the `return` carries.
+        if (last == .jump and last.jump.kind == .@"return") return if (last.jump.kind.@"return") |v| self.isStringExpr(v.*) else false;
+        return self.isStringExpr(last);
     }
 
     /// `a + b` on strings → a fresh length-prefixed buffer. Both operands are

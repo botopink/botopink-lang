@@ -1772,6 +1772,12 @@ none, the written types are the function's:
 
 <!-- example: modules/fn_expr_typed_mismatch -->
 
+<!-- example: modules/fn_expression_string_parameter -->
+
+An untyped fn expression takes its parameter types from its use: called where it is written
+(`(fn(s) { return s + "x"; })("a")`), passed to a parameter that expects `fn(string) -> string`,
+or bound to a `val` and called, a `string` parameter writes its text on every target.
+
 A record field's value and an array element are positions like any other: the expression is
 checked against the field's function type, and a lambda beside it in an array takes its types from
 the element type. The member a decorator hands to `decl.addMember(name, fn…)` answers its tail as
