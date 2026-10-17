@@ -63,8 +63,8 @@ pub const table = [_]Builtin{
     .{ .name = "comptimeError", .signature = "comptimeError(comptime message: string) -> noreturn", .held = .own_rule, .comptime_only = true },
     .{ .name = "emit", .signature = "emit(source: string)", .held = .declaration, .comptime_only = true },
     .{ .name = "compilerError", .signature = "compilerError(message: string) -> noreturn", .held = .declaration, .comptime_only = true },
-    .{ .name = "expr", .signature = "expr<T>(comptime value: T) -> Expr<T>", .held = .declaration, .comptime_only = true },
-    .{ .name = "code", .signature = "code<T>(text: string) -> Expr<T>", .held = .declaration, .comptime_only = true },
+    .{ .name = "expr", .signature = "expr<T>(comptime value: T) -> __Expr<T>", .held = .declaration, .comptime_only = true },
+    .{ .name = "code", .signature = "code<T>(text: string) -> __Expr<T>", .held = .declaration, .comptime_only = true },
 };
 
 /// One builtin method of a builtin type, resolved by inference and lowered
@@ -304,6 +304,9 @@ pub fn typeDrift(alloc: std.mem.Allocator, sources: []const []const u8, mirror_s
     const mirrored = try collectTypes(alloc, mirror_sources);
     var out: std.ArrayListUnmanaged(TypeDrift) = .empty;
     for (mirrored) |m| {
+        // Decision 576 (1) — the declaration handle (`ast.decl_type_name`) is
+        // the compiler's own: no source declares it.
+        if (std.mem.eql(u8, m.name, ast.decl_type_name)) continue;
         const d = findType(declared, m.name) orelse {
             try out.append(alloc, .{ .undeclared = m.name });
             continue;
@@ -474,12 +477,12 @@ test "builtins: a mirror spelled under another name than its declaration is name
     defer arena.deinit();
     const a = arena.allocator();
     // The reflection record a handle's `annotations` hold was mirrored as
-    // `Annotation` while `builtins.d.bp` declares `DeclAnnotation`.
-    const renamed = try std.mem.replaceOwned(u8, a, prelude.builtins, "pub type DeclAnnotation(", "pub type ReflectedAnnotation(");
+    // `Annotation` while `builtins.d.bp` declares `__Decl__Annotation` (`compiler.DeclAnnotation`, decision 576 (13)).
+    const renamed = try std.mem.replaceOwned(u8, a, prelude.builtins, "pub type __Decl__Annotation(", "pub type ReflectedAnnotation(");
     const items = try typeDrift(a, &.{ renamed, prelude.builtin_fns }, &type_mirrors);
     var undeclared: usize = 0;
     for (items) |item| if (item == .undeclared) {
-        try std.testing.expectEqualStrings("DeclAnnotation", item.undeclared);
+        try std.testing.expectEqualStrings("__Decl__Annotation", item.undeclared);
         undeclared += 1;
     };
     try std.testing.expectEqual(@as(usize, 1), undeclared);

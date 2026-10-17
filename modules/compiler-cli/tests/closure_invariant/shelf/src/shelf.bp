@@ -7,6 +7,6 @@ pub fn makeLabel(text: string) -> Label {
     return Label(text: text, size: text.length);
 }
 
-pub default fn label(comptime t: @Expr<string>) -> @Expr<Label> {
-    return t.build("makeLabel(\"" + t.text() + "\")");
+pub default fn label(expr t: string) -> Label {
+    return compiler.build("makeLabel(\"" + compiler.text(t) + "\")");
 }

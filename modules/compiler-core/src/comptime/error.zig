@@ -458,7 +458,7 @@ pub const TypeError = struct {
             },
             .unboundVariable => |n| std.fmt.allocPrint(gpa, "unbound variable '{s}'", .{n}),
             .arityMismatch => |a| std.fmt.allocPrint(gpa, "'{s}' expects {d} argument(s), got {d}", .{ a.name, a.expected, a.got }),
-            .unknownField => |u| std.fmt.allocPrint(gpa, "unknown field '{s}' on type '{s}'", .{ u.field, u.typeName }),
+            .unknownField => |u| std.fmt.allocPrint(gpa, "unknown field '{s}' on type '{s}'", .{ u.field, internalShown(u.typeName) }),
             .notARecord => |n| std.fmt.allocPrint(gpa, "type '{s}' is not a record or struct", .{n}),
             .recursiveType => std.fmt.allocPrint(gpa, "recursive type detected", .{}),
             .unknownTypeName => |n| std.fmt.allocPrint(gpa, "unknown type '{s}'", .{n}),
@@ -481,7 +481,7 @@ pub const TypeError = struct {
             .extendRequiresInterface => |t| std.fmt.allocPrint(gpa, "`extend {s}` adds methods without a contract — use `implement <Behavior> for {s}` so the methods satisfy a behavior", .{ t, t }),
             .redundantActivation => |name| std.fmt.allocPrint(gpa, "`{s}*` is redundant: an extension declared in this module is auto-applied; `*` is only for imports", .{name}),
             .missingMethod => |m| std.fmt.allocPrint(gpa, "'{s}' does not implement '{s}' required by behavior '{s}'", .{ m.typeName, m.method, m.interfaceName }),
-            .unknownMethod => |m| std.fmt.allocPrint(gpa, "'{s}' is not declared in any behavior implemented for '{s}'", .{ m.method, m.typeName }),
+            .unknownMethod => |m| std.fmt.allocPrint(gpa, "'{s}' is not declared in any behavior implemented for '{s}'", .{ m.method, internalShown(m.typeName) }),
             .unknownInterface => |u| std.fmt.allocPrint(gpa, "'{s}' is not a behavior implemented here (method '{s}')", .{ u.qualifier, u.method }),
             .ambiguousMethod => |a| std.fmt.allocPrint(gpa, "'{s}' is declared by both '{s}' and '{s}' — qualify it", .{ a.method, a.interfaceA, a.interfaceB }),
             .typeparamConstraint => |c| std.fmt.allocPrint(gpa, "'{s}' has type '{s}', which does not satisfy its type constraint", .{ c.paramName, typeLabel(c.got) }),
@@ -522,6 +522,13 @@ pub fn namedByOwner(gpa: std.mem.Allocator, raw: []u8) ![]u8 {
         i += 1;
     }
     return out.toOwnedSlice(gpa);
+}
+
+/// An internal type (`__Decl`, `__Expr` — decision 576 (1)) as a diagnostic
+/// names it: without its `__`.
+fn internalShown(name: []const u8) []const u8 {
+    if (std.mem.startsWith(u8, name, "__") and name.len > 2 and std.mem.indexOf(u8, name[2..], "__") == null) return name[2..];
+    return name;
 }
 
 /// Decision 216 (3), 330 (7) — an associated type is named in every

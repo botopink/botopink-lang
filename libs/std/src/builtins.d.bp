@@ -268,7 +268,7 @@ pub behavior Component<R> extends Task {
 // code) make of it.
 
 pub behavior Annotation {
-    default fn checkAnnotation(self: Self, comptime decl: @Decl) {}
+    default fn checkAnnotation(self: Self, expr decl: unknown) {}
 }
 
 // ── builtin functions (decision 252) ────────────────────────────────────────
@@ -294,7 +294,7 @@ pub declare fn trap() -> noreturn;
 // `@field(obj, "name")` — the field `name` of `obj`, the name known at
 // compile time: typed as that field when `obj` is a known non-generic record,
 // otherwise left open. COMPTIME-ONLY name.
-pub declare fn field<T, F>(obj: T, comptime name: @Expr<string>) -> F;
+pub declare fn field<T, F>(obj: T, comptime name: string) -> F;
 
 // `@src()` — the place it is written, as a `SourceLocation` (decision 73;
 // the section below). COMPTIME-ONLY: rewritten into the constructor call.
@@ -304,7 +304,7 @@ pub declare fn src() -> SourceLocation;
 // section below). A `Build` builtin: the path is known at build — a literal, a
 // constant, a `comptime` parameter's value — and the call is computed where it
 // is written; the artifact carries the bytes on every target.
-pub declare fn embed(comptime path: @Expr<string>) -> Asset;
+pub declare fn embed(comptime path: string) -> Asset;
 
 // `@module()` — declared, and refused at every call (`builtin-not-lowered`):
 // no target lowers a module value.
@@ -315,7 +315,7 @@ pub declare fn module() -> module;
 // are string constants (the only members read today). COMPTIME-ONLY: no
 // run-time code. The program's catalogue is the static `@TypeInfo.all` of the
 // answer's type (below).
-pub declare fn typeInfo<T>(comptime _: @Expr<anytype>) -> TypeInfo<T>;
+pub declare fn typeInfo<T>(comptime _: anytype) -> TypeInfo<T>;
 
 // `@TypeOf(value)` — the type of `value`, as the expression's type.
 // COMPTIME-ONLY.
@@ -326,11 +326,11 @@ pub declare fn TypeOf<T>(value: T) -> T;
 pub declare fn makeRecord<R>(fields: RecordField[]) -> R;
 
 // `@RecordKeys(T)` — the field names of the record type `T`. COMPTIME-ONLY.
-pub declare fn RecordKeys(comptime _: @Expr<anytype>) -> string[];
+pub declare fn RecordKeys(comptime _: anytype) -> string[];
 
 // `@comptimeError(message)` — fails the check with `comptime error:
 // <message>` at the call. COMPTIME-ONLY.
-pub declare fn comptimeError(comptime message: @Expr<string>) -> noreturn;
+pub declare fn comptimeError(comptime message: string) -> noreturn;
 
 // Contribute generated top-level declarations to the program from a decorator
 // body. `@emit("pub val userServiceSingleton = …")` parses `source` as botopink
@@ -344,12 +344,13 @@ pub declare fn emit(source: string);
 // declaration it runs over with `message`. COMPTIME-ONLY.
 pub declare fn compilerError(message: string) -> noreturn;
 
-// `@expr(value)` lifts a comptime value as code, `@code(text)` parses
-// generated source text; both only inside a template function
-// (`-> @Expr<…>`). COMPTIME-ONLY.
-pub declare fn expr<T>(comptime value: @Expr<T>) -> Expr<T>;
+// `@expr(value)` lifts a comptime value as code — the compiler's own: a
+// `-> expr T` template's `return e` is read as it (decision 575 (4)), and a
+// written `@expr` is refused. `@code(text)` parses generated source text;
+// only inside a template function. COMPTIME-ONLY.
+pub declare fn expr<T>(comptime value: T) -> __Expr<T>;
 
-pub declare fn code<T>(text: string) -> Expr<T>;
+pub declare fn code<T>(text: string) -> __Expr<T>;
 
 // `todo` and `panic` live in the sibling `builtins_fns.d.bp` so the compiler's
 // `registerStdlib` can parse them into the global env (each has a trailing
@@ -386,24 +387,16 @@ pub type Target { Node, Typescript, Erlang, Beam, Wasm }
 // the companion types are top-level declarations (siblings of `Expr<E>`), not
 // nested members.
 
-pub type Span(
+pub type __Span(
     start: i32,
     end: i32,
     line: i32,
 )
 
-// One segment of a template: raw text, or a `${…}` interpolation hole whose
-// expression was already type-checked in the caller's scope (string holes —
-// interpolation follows the language's `+` coercion).
-pub type Part {
-    Text(text: string, span: Span),
-    Interp(hole: Expr<string>, span: Span),
-}
-
 // Where an expression was written: the declaration position in the origin file.
 // `file` is the module path ("" for main); `line`/`col` point at the template
 // literal's opening quote (1-based).
-pub type Source(
+pub type __Source(
     file: string,
     line: i32,
     col: i32,
@@ -417,8 +410,8 @@ pub type Source(
 // F1 — this record is `ExprContext`, not `Context`: `Context<T>` is std's
 // context object (decision 354). `q.context()` still reads `context`, because
 // a method names the receiver's own input rather than a type.
-pub type ExprContext(
-    source: Source,
+pub type __ExprContext(
+    source: __Source,
     text: string,
     multiline: bool,
 )
@@ -431,72 +424,13 @@ pub type ExprContext(
 // `kind`/`label` are opaque tags the lib picks; `span` indexes the
 // `Expr<string>` source text; `ref` optionally ties a node (a queried
 // collection, a column, …) to a caller-scope declaration via a `lookup` result.
-pub type CustomNode(
+pub type __CustomNode(
     kind: string, // lib-chosen tag: "select" / "field" / "predicate" / "literal" …
-    span: Span, // offsets into the template's source text
+    span: __Span, // offsets into the template's source text
     label: string, // tooling token category: "keyword"/"property"/"string"/"number"/"operator"
-    ref: ?Decl, // optional association to an origin-scope declaration
-    children: CustomNode[],
+    ref: ?__Decl, // optional association to an origin-scope declaration (a handle, decision 576 (5))
+    children: __CustomNode[],
 )
-
-// What `@ExprCustom<T>` carries: the executable expression plus the reference
-// tree. The `code` half travels the ordinary `Expr<T>` expansion path (spliced,
-// lowered to every backend — runtime behaviour is unchanged); the `ast` half is
-// stored by call-location and is reference-only (the language server reads it).
-pub type ExprCustom<T>(
-    code: Expr<T>, // the botopink expression that actually runs
-    ast: CustomNode, // the sub-language tree, reference only
-)
-
-pub behavior Expr<E> {
-    fn text(self: Self<E>) -> string;
-    fn parts(self: Self<E>) -> Part[];
-    fn source(self: Self<E>) -> Source;
-    fn context(self: Self<E>) -> ExprContext;
-    // Decision 415 (2) — the declaration `name` (a word of the text)
-    // resolves to where the call stands, as a read-only `@Decl`: `name`,
-    // `kind`, `module`, `fields`, `meta(T)` / `metaAll(T)` (answered at
-    // build when `T` is data); `null` when nothing of that name is in scope.
-    // `setMeta` / `addMeta` / `addMember` / `addType` / `wrapWith` on it are
-    // refused at the call.
-    fn lookup(self: Self<E>, name: string) -> ?Decl;
-    // Every declaration a word of the text names, as `lookup` answers it.
-    fn bindings(self: Self<E>) -> Decl[];
-    // Decision 426 (1) — `R` is the type the built code infers to where the
-    // call stands: the call's type. The template's answer (`-> @Expr<…>`) is
-    // a bound the built code fits, refused at this `build` otherwise.
-    fn build<R>(self: Self<E>, source: string) -> Expr<R>;
-    // Pack a reference tree + the executable code into the custom return — a
-    // template fn opts into tooling visibility by returning `ExprCustom<T>`.
-    fn custom<R>(
-        self: Self<E>,
-        ast: CustomNode,
-        code: Expr<R>,
-    ) -> ExprCustom<R>;
-    fn fail(self: Self<E>, message: string);
-    fn failAt(self: Self<E>, span: Span, message: string);
-    // Decision 426 (4) — the template's reason, attached to an error reported
-    // at its call (`note: …`); the template never reads the type expected
-    // there, so what it builds is decided by its text.
-    fn note(self: Self<E>, message: string);
-    // Decision 302 — a tag's `@Decl`, built by the template function for a tag
-    // of its text: `kind` `DeclKind.Element` or `DeclKind.Component`, `name`
-    // the tag's name, `attrs` its static attributes in written order. It
-    // carries no meta until an annotation runs over it.
-    fn tagDecl(
-        self: Self<E>,
-        kind: DeclKind,
-        name: string,
-        attrs: Array<#(string, string)>,
-    ) -> Decl;
-    // Decision 302 — run the annotation written at `at` of the text (`name`
-    // or `name(args)`, one item of a `#[…]`) over `decl`: the name resolves
-    // in the caller's scope to a decorator, its arguments are checked against
-    // the decorator's parameters there, and the answer is `decl` with what
-    // the annotation recorded (`d.meta(T)` / `d.metaAll(T)`) and, for a
-    // component, `decl.component`. A refusal is located at the annotation.
-    fn annotate(self: Self<E>, decl: Decl, at: Span) -> Decl;
-}
 
 // ── Source location (`@src()`) ───────────────────────────────────────────────
 // The place a `@src()` is written, as a value (1.0.10-beta decision 73). The
@@ -573,7 +507,7 @@ pub type Asset(
 // wiring. The core only provides the protocol (recognize → reflect → invoke).
 
 // Which kind of top-level declaration the annotation sits on.
-pub type DeclKind {
+pub type __DeclKind {
     Type,
     Behavior,
     Fn,
@@ -599,7 +533,7 @@ pub type DeclKind {
 // alias (`#[srv]` after `import {serverOnly as srv}`) and a namespace
 // (`#[web.route]`) give the declaration's identity, never the spelling
 // (decision 277).
-pub type DeclAnnotation(
+pub type __Decl__Annotation(
     name: string,
     args: string[],
     decorator: Decorator,
@@ -612,16 +546,16 @@ pub type DeclAnnotation(
 // written type (a missing return type is `""`).
 
 // One parameter of a reflected method/fn.
-pub type Param(
+pub type __Decl__Param(
     name: string,
     typeName: string,
 )
 
 // One field of a reflected record/struct, with its own annotations.
-pub type Field(
+pub type __Decl__Field(
     name: string,
     typeName: string,
-    annotations: DeclAnnotation[],
+    annotations: __Decl__Annotation[],
 )
 
 // One method of a reflected record/struct/enum, with its own annotations.
@@ -629,166 +563,12 @@ pub type Field(
 // owner's body reads the typed meta they recorded on the entry: `m.meta(T)`
 // (`?T`) / `m.metaAll(T)` (`T[]`), `T` the record written by its declared
 // name; the checker answers the call (`infer.zig` `inferMethodMetaRead`).
-pub type Method(
+pub type __Decl__Method(
     name: string,
-    params: Param[],
+    params: __Decl__Param[],
     returnType: string,
-    annotations: DeclAnnotation[],
+    annotations: __Decl__Annotation[],
 )
-
-// The reflection handle, `@Decl<T>` (decision 280 (2)): `T` is the annotated
-// declaration's type — the type itself, a field's type, a function's type —,
-// bound when the decorator's signature names it (`fn index<T>(comptime decl:
-// @Decl<T>, comptime ..fields: Type.Field<T>[])`), through a pattern too
-// (`@Decl<fn(e: E) -> unknown>` binds `E`); a declaration that does not fit
-// is refused at the annotation. `@Decl` is `@Decl<unknown>`. Every parameter
-// after it is `comptime`.
-// `kind`/`name`/`fields`/`variants`/`methods`/`returnType`/
-// `annotations` are read-only data (serialized like a template's capture);
-// `variants` lists an enum-shaped `type`'s variant and section names and is
-// empty otherwise — `kind == DeclKind.Type && variants.length == 0` is a record;
-// `fail`/`failAt` emit a scoped diagnostic at the annotated declaration, reusing
-// the template diagnostic surface.
-pub behavior Decl<T> {
-    val kind: DeclKind;
-    val name: string;
-    // Decision 415 (2) — the path of the module that declares it (`main`,
-    // `models`), as a `Declared` entry's `module`.
-    val module: string;
-    // Decision 526 — a member's owner: the `Declared<unknown>` of the type or
-    // behavior that holds the annotated method or field (`decl.owner!.name`,
-    // its `value` `null` as in every decorator body); `null` for a
-    // module-level declaration. A registration a member's decorator emits is
-    // named through it (`decl.owner!.name + "_" + decl.name`), so two
-    // same-named members of two types never collide.
-    val owner: ?Declared<unknown>;
-    val fields: Field[];
-    val variants: string[];
-    val methods: Method[];
-    val returnType: string;
-    val annotations: DeclAnnotation[];
-    // Decision 277 — a function's hook graph: its own node, then the node of
-    // every function reachable through its `use`s and calls of `@Component`
-    // functions, breadth-first in body order, each function once. Empty for
-    // any other declaration.
-    val hooks: HookNode[];
-    // A function's or a method's own parameters, in order (`01-checker` step
-    // 29, decision 280): a method's `@Decl` carries its parameter list as a
-    // `decl.methods` entry does. Empty for any other declaration.
-    val params: Param[];
-    // Decision 302 — a component tag's function, as its own `@Decl`; `null`
-    // for an element and for every declaration.
-    val component: ?Decl;
-
-    // Decision 302 — a tag's static attribute `name` as written
-    // (`<div id="x">` → `"x"`), `null` when the tag has none and on every
-    // declaration.
-    fn attr(self: Self, name: string) -> ?string;
-
-    // Decision 302 — `d.meta(T)` (`?T`) / `d.metaAll(T)` (`T[]`): the typed
-    // meta the tag's annotations recorded, read in the template function's
-    // body on the `@Decl` `q.annotate` answered. A declaration's meta is read
-    // `@typeInfo(X).meta(T)`; the checker answers the call (`infer.zig`
-    // `inferTagMetaRead`).
-
-    fn fail(self: Self, message: string);
-    fn failAt(self: Self, span: Span, message: string);
-
-    // Decision 216 (1) — give the annotated type a member, written as it would
-    // be in the type's body: one `fn`, an associated fn or a method
-    // (`decl.addMember("pub fn fromRow(r: Row) -> Self { … }")`). It is
-    // ordinary run-time code of the type and travels with it to every
-    // importer. From a field's or a method's decorator it joins the type that
-    // owns the field or method; from a function's or a `val`'s it is refused
-    // (`decorator-member-without-type`), and so is a name the type already
-    // has (`decorator-member-duplicate`) or a source that is not one `fn`
-    // (`decorator-member-not-one-fn`).
-    //
-    // Decision 370 (2) — `decl.addMember(name, fn(self: T) -> R { … })`: the
-    // member written as a function expression at the call, every parameter
-    // typed. It is the program's code: each `comptime x: @Expr<T>` parameter
-    // is a `T` in it, spliced where the member uses it as the annotation
-    // wrote the argument, and the type receives `pub fn <name>(…) -> R`. It
-    // reads neither the handle nor a local of the decorator's body
-    // (`decorator-member-captures`); the checker answers the two-argument
-    // call itself (`infer.zig` `inferMemberFnCall`).
-    fn addMember(self: Self, source: string);
-
-    // Decision 216 (2) — record a comptime fact about the annotated
-    // declaration, under this decorator's own name: `decl.setMeta("table",
-    // "cities")` in `#[entity]` is read anywhere the declaration is reached as
-    // `@typeInfo(City).meta.entity.table`, a string constant. It never becomes
-    // run-time code. Set from a `type`'s, a `behavior`'s, a `fn`'s or a
-    // `val`'s (decision 356) decorator (a field's or a method's is
-    // `decorator-meta-on-member`), each key once (`decorator-meta-duplicate`).
-    //
-    // Decision 298 — `decl.setMeta(v)`, one argument: a typed meta value,
-    // keyed by its record type, never by the decorator's name —
-    // `decl.setMeta(Entity(table: table.value))` is read
-    // `@typeInfo(City).meta(Entity)` (`?Entity`) wherever `City` and `Entity`
-    // are reached, and on a `@TypeInfo.all` entry (`d.meta(Entity)`). One
-    // value of a type per declaration (`decorator-meta-twice` at the second).
-    // `v` is the record's constructor written at the call
-    // (`decorator-meta-not-record`), each field data the compiler rebuilds
-    // where the meta is read — a string, an integer, a float, a `bool`, a
-    // variant of an enum without payloads, an array or an optional of those
-    // (`decorator-meta-field-type`) — or an `@Expr<T>` field (decision 370
-    // (1)) given one of the decorator's `comptime x: @Expr<T>` parameters as it
-    // is (`decorator-meta-expr-arg`): the argument is spliced where the meta
-    // is read and runs there. The checker answers the one-argument call itself
-    // (`infer.zig` `inferTypedMetaCall`); the two-argument string form above
-    // goes once the library sites are migrated (130 step 8).
-    fn setMeta(self: Self, key: string, value: string);
-
-    // Decision 298 — `decl.addMeta(v)`: a typed meta value that repeats —
-    // two `#[index(…)]` add two `Index`, read `@typeInfo(City).metaAll(Index)`
-    // (`Index[]`). A type is recorded by `setMeta` or by `addMeta` on a
-    // declaration, never both. The rules on `v` are `setMeta(v)`'s.
-    fn addMeta<T>(self: Self, value: T);
-
-    // Decision 216 (3) — declare a type that belongs to the annotated one,
-    // named through it: `decl.addType("Columns", "(id: string)")` on `City`
-    // is `City.Columns` — written in type positions, constructed as
-    // `City.Columns(id: "x")`, its variants reached as `City.Size.Large` for
-    // an enum shape (`"{ Small, Large }"`) — and imported with its owner.
-    // `source` is the shape as it follows the name in a declaration. From a
-    // field's or a method's decorator it belongs to the owning type; from a
-    // function's or a `val`'s it is refused (`decorator-type-without-owner`), as are a
-    // name that is not a type name (`decorator-type-name`), one the owner
-    // already answers (`decorator-type-duplicate`) and a source that is not
-    // the shape of one type (`decorator-type-not-one-type`).
-    fn addType(self: Self, name: string, source: string);
-
-    // Decision 316 — wrap the annotated function or method:
-    // `decl.wrapWith({ call -> … })`, the wrapper written at the call. It
-    // receives the call value — `call.args`, the arguments as a tuple (typed
-    // by the `@Decl<fn(…) -> R>` pattern's parameters, `unknown` under
-    // `fn(..) -> R`), and `call.run()`, which runs the original body with them
-    // — and answers the function's return type `R`, checked here: a wrapper of
-    // another type is an error at the decorator. Several wrappers compose in
-    // annotation order, the first written outermost. The function keeps its
-    // name, signature and identity for its callers, an importer's included;
-    // its original body is reachable only through `call.run()`. Like a member
-    // function (370 (2)), the wrapper is the program's code: it reads the
-    // decorator's `@Expr` parameters, spliced, never the handle or a local of
-    // the body (`decorator-member-captures`). From a decorator on anything but
-    // a function or a method it is refused at the annotation
-    // (`decorator-wrap-without-function`). The checker answers the call itself
-    // (`infer.zig` `inferWrapWithCall`).
-    fn wrapWith<A, R>(self: Self, wrapper: fn(call: __Decl__Call<A, R>) -> R);
-
-    // Decision 575 (3) — `compiler.compile(f)`: run-time code compiled beside
-    // the annotated declaration, run once before `main` in the program's init
-    // list — modules in dependency order, declarations in source order, calls
-    // in order. Like a member function, the executor is the program's code
-    // (the tree rule, 575 (4)).
-    fn compile(self: Self, executor: fn());
-
-    // Decision 575 (6) — `compiler.implement(source)`: a host source of the
-    // annotated `declare fn`, an `Implementation` (`external.bp`), one per
-    // target.
-    fn implement(self: Self, source: Implementation);
-}
 
 // Decision 316 — the call value a `decl.wrapWith` wrapper receives. No program
 // names it; it is the wrapper's parameter alone.
@@ -866,7 +646,7 @@ pub type Declared<T>(
 // any other hook.
 pub type HookUse(
     hook: ?Declared<unknown>,
-    annotations: DeclAnnotation[],
+    annotations: __Decl__Annotation[],
     at: string,
     typeArgs: TypeInfo<unknown>[],
     context: ?Declared<unknown>,
@@ -884,7 +664,7 @@ pub type HookCall(
 // otherwise. A `comptime` in the body is computed at build and gives none.
 pub type Stage { Build, Run, Any }
 
-pub type HookNode(
+pub type __HookNode(
     function: Declared<unknown>,
     uses: HookUse[],
     calls: HookCall[],
@@ -935,8 +715,8 @@ pub behavior Decorator {
 pub type TypeInfo<T>(
     name: string,
     module: string,
-    fields: Field[],
-    methods: Method[],
+    fields: __Decl__Field[],
+    methods: __Decl__Method[],
     meta: DeclaredMeta[],
 ) {
     declare fn all(

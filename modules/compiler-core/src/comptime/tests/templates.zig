@@ -63,10 +63,10 @@ test "template: expr param capture ---- plain string arg arrives unevaluated" {
     defer env.deinit();
 
     try inferInto(&env, alloc,
-        \\pub fn sql(comptime q: @Expr<string>) -> @Expr<string> {
+        \\pub fn sql(expr q: string) -> string {
         \\    return q;
         \\}
-        \\val stmt = sql "SELECT 1";
+        \\val stmt = sql @`SELECT 1`;
     );
 
     const captures = try onlyCaptures(&env);
@@ -82,7 +82,7 @@ test "template: expr param capture ---- plain string arg arrives unevaluated" {
     try std.testing.expect(cap.node.literal.kind == .stringLit);
 }
 
-test "template: expr param capture ---- multiline template with hole keeps parts" {
+test "template: expr param capture ---- a @` text keeps its raw bytes (quotes, newlines) and is multiline when it spans lines" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -90,24 +90,35 @@ test "template: expr param capture ---- multiline template with hole keeps parts
     defer env.deinit();
 
     try inferInto(&env, alloc,
-        \\pub fn html(comptime template: @Expr<string>) -> @Expr<string> {
-        \\    return template;
+        \\pub fn conf(expr q: string) -> string {
+        \\    return q;
         \\}
-        \\val c = html """
-        \\<p>${1 + 2}</p>
-        \\""";
+        \\val c = conf @`a: "x"
+        \\b: 1`;
     );
 
-    const captures = try onlyCaptures(&env);
-    const cap = captures[0];
-    try std.testing.expectEqualStrings("template", cap.paramName);
+    const cap = (try onlyCaptures(&env))[0];
+    try std.testing.expectEqualStrings("a: \"x\"\nb: 1", cap.text.?);
     try std.testing.expect(cap.multiline);
-    // Holes present: no contiguous text — the parts live on the node.
-    try std.testing.expect(cap.text == null);
-    try std.testing.expect(cap.node.* == .literal);
-    const parts = cap.node.literal.kind.stringTemplate.parts;
-    try std.testing.expectEqual(@as(usize, 3), parts.len); // text, hole, text
-    try std.testing.expect(parts[1] == .expr);
+}
+
+test "template: expr param capture ---- a one-line @` text is not multiline" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var env = try freshTestEnv(alloc);
+    defer env.deinit();
+
+    try inferInto(&env, alloc,
+        \\pub fn conf(expr q: string) -> string {
+        \\    return q;
+        \\}
+        \\val c = conf @`say "hi"`;
+    );
+
+    const cap = (try onlyCaptures(&env))[0];
+    try std.testing.expectEqualStrings("say \"hi\"", cap.text.?);
+    try std.testing.expect(!cap.multiline);
 }
 
 test "template: scope snapshot lookup ---- hit and miss" {
@@ -121,12 +132,12 @@ test "template: scope snapshot lookup ---- hit and miss" {
         \\pub type Button(
         \\    label: string,
         \\)
-        \\pub fn html(comptime template: @Expr<string>) -> @Expr<string> {
+        \\pub fn html(expr template: string) -> string {
         \\    return template;
         \\}
-        \\val c = html """
+        \\val c = html @`
         \\<Button/>
-        \\""";
+        \\`;
     );
 
     const captures = try onlyCaptures(&env);
@@ -154,32 +165,35 @@ test "template: expr methods typecheck and record lowerings" {
     defer env.deinit();
 
     try inferInto(&env, alloc,
-        \\pub fn html(comptime template: @Expr<string>, sp: Span) -> @Expr<string> {
-        \\    val v = template.value();
-        \\    val t = template.text();
-        \\    val ps = template.parts();
-        \\    val where = template.source();
-        \\    val ctx = template.context();
-        \\    val scope = template.bindings();
-        \\    val b = template.lookup("Button");
-        \\    val made = template.build("1 + 2");
+        \\pub fn html(expr template: string) -> string {
+        \\    val sp = Span(0, 1, 1);
+        \\    val t = compiler.text(template);
+        \\    val where = compiler.source(template);
+        \\    val ctx = compiler.context(template);
+        \\    val scope = compiler.bindings(template);
+        \\    val b = compiler.lookup(template, "Button");
+        \\    val made = compiler.build("1 + 2");
         \\    val node = CustomNode(kind: "expr", span: sp, label: "number", ref: b, children: []);
-        \\    val cu = template.custom(node, made);
-        \\    val tag = template.tagDecl(DeclKind.Element, "div", [#("id", "x")]);
-        \\    val annotated = template.annotate(tag, sp);
-        \\    template.failAt(sp, "bad tag");
-        \\    template.fail("no component");
-        \\    template.note("a reason");
+        \\    compiler.custom(node);
+        \\    val tag = compiler.tagDecl(DeclKind.Element, "div", [#("id", "x")]);
+        \\    val annotated = compiler.annotate(tag, sp);
+        \\    compiler.fail("bad tag", at: template, span: sp);
+        \\    compiler.fail("no component", at: template);
+        \\    compiler.note("a reason");
         \\    return template;
         \\}
+        \\import {compiler.Span, compiler.CustomNode, compiler.DeclKind} from "std";
     );
 
-    try std.testing.expectEqual(@as(usize, 14), env.templateLowerings.count());
+    // Decision 576 (2) — every template op but `.value` (an `expr` is
+    // opaque: its value is no `compiler` member) and `.parts` (577: a
+    // template text holds no hole).
+    try std.testing.expectEqual(@as(usize, 12), env.templateLowerings.count());
     var counts = std.enums.EnumArray(envMod.TemplateOp, usize).initFill(0);
     var it = env.templateLowerings.valueIterator();
     while (it.next()) |op| counts.set(op.*, counts.get(op.*) + 1);
     for (std.enums.values(envMod.TemplateOp)) |op| {
-        try std.testing.expectEqual(@as(usize, 1), counts.get(op));
+        try std.testing.expectEqual(@as(usize, if (op == .value or op == .parts) 0 else 1), counts.get(op));
     }
 }
 
@@ -191,12 +205,12 @@ test "template: fail span maps into the caller's template" {
     defer env.deinit();
 
     const src =
-        \\pub fn html(comptime template: @Expr<string>) -> @Expr<string> {
+        \\pub fn html(expr template: string) -> string {
         \\    return template;
         \\}
-        \\val c = html """
+        \\val c = html @`
         \\<Buttom label="Send"/>
-        \\""";
+        \\`;
     ;
     try inferInto(&env, alloc, src);
 
@@ -226,20 +240,11 @@ test "template: fail span maps into the caller's template" {
 
 test "infer error: expr argument must be a literal string (V1)" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\pub fn html(comptime template: @Expr<string>) -> @Expr<string> {
+        \\pub fn html(expr template: string) -> string {
         \\    return template;
         \\}
         \\val tpl = "<p></p>";
         \\val c = html(tpl);
-    );
-}
-
-test "infer error: expr argument is typed in the caller against inner T" {
-    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\pub fn check(comptime cond: @Expr<bool>) -> @Expr<bool> {
-        \\    return cond;
-        \\}
-        \\val c = check("not a bool");
     );
 }
 
@@ -254,12 +259,12 @@ test "template: context exposes declaration position and scope for second-layer 
         \\pub type Button(
         \\    label: string,
         \\)
-        \\pub fn dsl(comptime template: @Expr<string>) -> @Expr<string> {
+        \\pub fn dsl(expr template: string) -> string {
         \\    return template;
         \\}
-        \\val c = dsl """
+        \\val c = dsl @`
         \\<Button/>
-        \\""";
+        \\`;
     );
 
     // The capture reaches the template body (`q.context()`, `q.source()`,
@@ -288,25 +293,25 @@ test "template: context exposes declaration position and scope for second-layer 
 
 test "infer: context/source/bindings/build methods typecheck against std.syntax" {
     try h.assertInfersOk(std.testing.allocator,
-        \\pub fn dsl(comptime template: @Expr<string>) -> @Expr<string> {
-        \\    val ctx = template.context();
+        \\pub fn dsl(expr template: string) -> string {
+        \\    val ctx = compiler.context(template);
         \\    val file: string = ctx.source.file;
         \\    val line: i32 = ctx.source.line;
         \\    val raw: string = ctx.text;
-        \\    val names = template.bindings();
-        \\    return template.build("file + raw");
+        \\    val names = compiler.bindings(template);
+        \\    return compiler.build("file + raw");
         \\}
     );
 }
 
 test "comptime: template fn with expr param compiles through the pipeline" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\pub fn html(comptime template: @Expr<string>) -> @Expr<string> {
+        \\pub fn html(expr template: string) -> string {
         \\    return template;
         \\}
-        \\val c = html """
+        \\val c = html @`
         \\<p>hello</p>
-        \\""";
+        \\`;
     );
 }
 
@@ -320,12 +325,12 @@ test "template: bounded expansion is transparent to the caller (F6)" {
     defer env.deinit();
 
     try inferInto(&env, alloc,
-        \\pub fn html(comptime template: @Expr<string>) -> @Expr<string> {
+        \\pub fn html(expr template: string) -> string {
         \\    return template;
         \\}
-        \\val c = html """
+        \\val c = html @`
         \\<p>hi</p>
-        \\""";
+        \\`;
     );
 
     // The call site types as the bound `string`, not `expr<string>` —
@@ -334,7 +339,7 @@ test "template: bounded expansion is transparent to the caller (F6)" {
     try std.testing.expectEqual(@as(u32, 1), env.templateExpansions.count());
 }
 
-test "template: generic @Expr<T> return reveals the expansion type per call (F6)" {
+test "template: an anyvalue answer reveals the expansion type per call (F6, decision 578)" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -342,19 +347,19 @@ test "template: generic @Expr<T> return reveals the expansion type per call (F6)
     defer env.deinit();
 
     try inferInto(&env, alloc,
-        \\pub fn answer<T>() -> @Expr<T> {
-        \\    return @code("42");
+        \\pub fn answer(expr q: string) -> anyvalue {
+        \\    return 42;
         \\}
-        \\val n = answer();
+        \\val n = answer @`x`;
         \\val m = n + 1;
     );
 
-    // `n` carries the expansion's own type — the generic `@Expr<T>` return
+    // `n` carries the expansion's own type — the `anyvalue` answer
     // revealed it, and `n + 1` typechecked against it.
     try std.testing.expectEqualStrings("i32", env.lookup("n").?.deref().named.name);
 }
 
-test "template: explicit value lift via @expr builtin (F6)" {
+test "template: a value return is lifted (F6, decision 575 (4))" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -362,30 +367,30 @@ test "template: explicit value lift via @expr builtin (F6)" {
     defer env.deinit();
 
     try inferInto(&env, alloc,
-        \\pub fn port() -> @Expr<i32> {
-        \\    return @expr(8080);
+        \\pub fn port(expr q: string) -> i32 {
+        \\    return 8080;
         \\}
-        \\val p = port();
+        \\val p = port @`x`;
     );
     try std.testing.expectEqualStrings("i32", env.lookup("p").?.deref().named.name);
 }
 
 test "infer error: splice bound violation at the call site (F6)" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\pub fn bad() -> @Expr<i32> {
-        \\    return @expr("not an int");
+        \\pub fn bad(expr q: string) -> i32 {
+        \\    return "not an int";
         \\}
-        \\val d = bad();
+        \\val d = bad @`x`;
     );
 }
 
 test "infer error: template body not expandable by the V1 driver (F6)" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\pub fn hard(comptime t: @Expr<string>) -> @Expr<string> {
-        \\    val x = t.text();
+        \\pub fn hard(expr t: string) -> string {
+        \\    val x = compiler.text(t);
         \\    return t;
         \\}
-        \\val c = hard "SELECT 1";
+        \\val c = hard @`SELECT 1`;
     );
 }
 
@@ -403,7 +408,7 @@ fn assertCompilesOk(comptime loc: std.builtin.SourceLocation, src: []const u8) !
         null,
     );
     defer session.deinit(std.testing.allocator);
-    const outcome = session.outputs.items[0].outcome;
+    const outcome = session.outputs.items[session.outputs.items.len - 1].outcome;
     if (outcome == .typeError) {
         const desc = try h.renderTypeError(std.testing.allocator, src, outcome.typeError);
         defer std.testing.allocator.free(desc);
@@ -420,32 +425,32 @@ test "comptime: runtime template body ---- a method nothing answers is refused a
     // body — no runtime is asked. (A decorator body is untyped; its twin is
     // `decorator invocation: a method nothing answers …`.)
     const src =
-        \\pub fn shout(comptime q: @Expr<string>) -> @Expr<string> {
-        \\    val t = q.text();
-        \\    return q.build(t.frobnicate());
+        \\pub fn shout(expr q: string) -> string {
+        \\    val t = compiler.text(q);
+        \\    return compiler.build(t.frobnicate());
         \\}
-        \\val s = shout "hey";
+        \\val s = shout @`hey`;
     ;
     const io = std.testing.io;
     const build_root = h.buildRootPathFromSrc(io, @src());
     var session = try comptimeMod.compile(std.testing.allocator, &.{.{ .path = "", .source = src }}, io, build_root, null);
     defer session.deinit(std.testing.allocator);
-    const outcome = session.outputs.items[0].outcome;
+    const outcome = session.outputs.items[session.outputs.items.len - 1].outcome;
     try std.testing.expect(outcome == .typeError);
     const message = try outcome.typeError.message(std.testing.allocator);
     defer std.testing.allocator.free(message);
     const at = outcome.typeError.loc orelse return error.TestUnexpectedResult;
     try std.testing.expectEqualStrings("unknown-primitive-method: `string` has no method `frobnicate`", message);
-    try std.testing.expectEqual([2]usize{ 3, 22 }, [2]usize{ at.line, at.col });
+    try std.testing.expectEqual([2]usize{ 3, 29 }, [2]usize{ at.line, at.col });
 }
 
 test "comptime: runtime template body ---- text() + build() end to end" {
     const src =
-        \\pub fn shout(comptime q: @Expr<string>) -> @Expr<string> {
-        \\    val t = q.text();
-        \\    return q.build("\"" + t + "!\"");
+        \\pub fn shout(expr q: string) -> string {
+        \\    val t = compiler.text(q);
+        \\    return compiler.build("\"" + t + "!\"");
         \\}
-        \\val s = shout "hey";
+        \\val s = shout @`hey`;
     ;
     try assertCompilesOk(@src(), src);
     try h.assertComptimeAstSingle(std.testing.allocator, @src(), src);
@@ -456,26 +461,26 @@ test "comptime: runtime template body ---- lookup miss drives control flow" {
         \\pub type Button(
         \\    label: string,
         \\)
-        \\pub fn need(comptime t: @Expr<string>) -> @Expr<string> {
-        \\    val hit = t.lookup("Buttom");
+        \\pub fn need(expr t: string) -> string {
+        \\    val hit = compiler.lookup(t, "Buttom");
         \\    if (hit) { b ->
-        \\        return t.fail("should be missing");
+        \\        return compiler.fail("should be missing", at: t);
         \\    };
-        \\    return t.build("\"ok\"");
+        \\    return compiler.build("\"ok\"");
         \\}
-        \\val r = need "<Buttom/>";
+        \\val r = need @`<Buttom/>`;
     ;
     try assertCompilesOk(@src(), src);
     try h.assertComptimeAstSingle(std.testing.allocator, @src(), src);
 }
 
-test "comptime: runtime template body ---- @expr lifts a computed value" {
+test "comptime: runtime template body ---- a computed value is lifted" {
     const src =
-        \\pub fn six(comptime t: @Expr<string>) -> @Expr<i32> {
+        \\pub fn six(expr t: string) -> i32 {
         \\    val n = 2 + 4;
-        \\    return @expr(n);
+        \\    return n;
         \\}
-        \\val n = six "ignored";
+        \\val n = six @`ignored`;
     ;
     try assertCompilesOk(@src(), src);
     try h.assertComptimeAstSingle(std.testing.allocator, @src(), src);
@@ -483,12 +488,12 @@ test "comptime: runtime template body ---- @expr lifts a computed value" {
 
 test "template: runtime fail() maps into the caller's template" {
     const src =
-        \\pub fn lint(comptime q: @Expr<string>) -> @Expr<string> {
-        \\    val t = q.text();
-        \\    q.fail("template rejected: " + t);
+        \\pub fn lint(expr q: string) -> string {
+        \\    val t = compiler.text(q);
+        \\    compiler.fail("template rejected: " + t, at: q);
         \\    return q;
         \\}
-        \\val s = lint "bad";
+        \\val s = lint @`bad`;
     ;
     const io = std.testing.io;
     var session = try comptimeMod.compile(
@@ -501,7 +506,7 @@ test "template: runtime fail() maps into the caller's template" {
     defer session.deinit(std.testing.allocator);
 
     try std.testing.expectEqual(@as(usize, 1), session.outputs.items.len);
-    const outcome = session.outputs.items[0].outcome;
+    const outcome = session.outputs.items[session.outputs.items.len - 1].outcome;
     try std.testing.expect(outcome == .typeError);
     const te = outcome.typeError;
     // The diagnostic points at the template literal in the caller's file.
@@ -511,27 +516,6 @@ test "template: runtime fail() maps into the caller's template" {
     try std.testing.expectEqualStrings("template rejected: bad", msg);
 }
 
-test "comptime: runtime template body ---- parts() with a hole splices the caller expression" {
-    const src =
-        \\pub fn html(comptime q: @Expr<string>) -> @Expr<string> {
-        \\    var acc = "\"\"";
-        \\    for (q.parts()) { p ->
-        \\        if (p.kind == "Text") {
-        \\            acc = acc + " + \"" + p.text + "\"";
-        \\        };
-        \\        if (p.kind == "Interp") {
-        \\            acc = acc + " + " + p.code;
-        \\        };
-        \\    };
-        \\    return q.build(acc);
-        \\}
-        \\val name = "world";
-        \\val page = html """<p>${name}</p>""";
-    ;
-    try assertCompilesOk(@src(), src);
-    try h.assertComptimeAstSingle(std.testing.allocator, @src(), src);
-}
-
 // ── the term round trip, per shape (front 14 step 3) ──────────────────────────
 //
 // A capture reaches the body as `main/1`'s argument, an external term
@@ -539,50 +523,21 @@ test "comptime: runtime template body ---- parts() with a hole splices the calle
 // it in the reply (`h.canonicalReplies`) beside the exchange snapshots
 // (`comptime/runtime/`).
 
-test "comptime: round trip ---- a holed template's parts carry a record, an array and an optional" {
-    const src =
-        \\pub type Point(x: i32, y: i32)
-        \\pub fn holes<T>(comptime q: @Expr<string>) -> @Expr<T> {
-        \\    var codes: Array<string> = [];
-        \\    var texts = "";
-        \\    var spans = "";
-        \\    for (q.parts()) { p ->
-        \\        if (p.kind == "Interp") { codes.push(p.code); };
-        \\        if (p.kind == "Text") { texts = texts + p.text; };
-        \\        spans = spans + p.span.start.toString() + "-" + p.span.end.toString() + ";";
-        \\    };
-        \\    return q.build("#(" + codes.join(", ") + ", \"" + texts + "\", \"" + spans + "\")");
-        \\}
-        \\val origin = Point(x: 3, y: 4);
-        \\val xs = [1, 2, 3];
-        \\val maybe: ?i32 = null;
-        \\val got = holes """p=${origin} xs=${xs} m=${maybe}""";
-    ;
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const replies = try h.canonicalReplies(std.testing.allocator, arena.allocator(), @src(), &.{.{ .path = "", .source = src }});
-    try std.testing.expectEqual(@as(usize, 1), replies.len);
-    // Three holes, each its placeholder in order, the text between them, and
-    // every part's span — the capture's `parts` list survived the trip whole.
-    try std.testing.expectEqualStrings(
-        \\{"kind":"code","source":"#(__bp_hole_q_0, __bp_hole_q_1, __bp_hole_q_2, \"p= xs= m=\", \"0-2;2-15;15-19;19-32;32-35;35-48;\")"}
-    , replies[0]);
-    try h.assertComptimeAstSingle(std.testing.allocator, @src(), src);
-}
-
 test "comptime: round trip ---- an @ExprCustom reference tree names a declaration of another module" {
     const shapes =
         \\pub type Item(id: i32)
     ;
     const main =
         \\import {Item} from "shapes";
-        \\pub fn dsl<T>(comptime e: @Expr<string>) -> @ExprCustom<T> {
-        \\    val code = e.build("41");
-        \\    val leaf = CustomNode(kind: "field", span: Span(7, 9, 1), label: "property", ref: e.lookup("Item"), children: []);
+        \\pub fn dsl(expr e: string) -> anyvalue {
+        \\    val code = compiler.build("41");
+        \\    val leaf = CustomNode(kind: "field", span: Span(7, 9, 1), label: "property", ref: compiler.lookup(e, "Item"), children: []);
         \\    val root = CustomNode(kind: "select", span: Span(0, 6, 1), label: "keyword", ref: null, children: [leaf]);
-        \\    return e.custom(root, code);
+        \\    compiler.custom(root);
+        \\    return code;
         \\}
-        \\val rows = dsl "select id from Item";
+        \\val rows = dsl @`select id from Item`;
+        \\import {compiler.Span, compiler.CustomNode} from "std";
     ;
     const modules: []const @import("../../module.zig").Module = &.{
         .{ .path = "shapes", .source = shapes },
@@ -621,59 +576,6 @@ test "comptime: round trip ---- an @ExprCustom reference tree names a declaratio
     try h.assertComptimeAst(std.testing.allocator, @src(), modules);
 }
 
-test "comptime: round trip ---- a hole known at build reaches the body as its value (decision 355)" {
-    // 01-compiler/14 step 8. `${label}` names a `val` holding a literal,
-    // `${pt}` a `val` whose initializer is another expansion with no run-time
-    // hole (its value is the record that expansion's code builds, evaluated on
-    // the comptime runtime), `${dyn()}` a call of a function that reads a
-    // module `var`: computed at render (a call of an `Any` function that reads
-    // nothing of the run time would be known at build, decision 380).
-    const src =
-        \\pub type Point(x: i32, y: i32)
-        \\pub fn mk(comptime q: @Expr<string>) -> @Expr<Point> {
-        \\    return q.build("Point(x: " + q.text().length.toString() + ", y: 2)");
-        \\}
-        \\fn flag(b: bool) -> string {
-        \\    return if (b) "known" else "render";
-        \\}
-        \\fn pointText(p: Point) -> string {
-        \\    return p.x.toString() + "," + p.y.toString();
-        \\}
-        \\fn asText(s: string) -> string {
-        \\    return s;
-        \\}
-        \\pub fn probe(comptime q: @Expr<string>) -> @Expr<string> {
-        \\    var out = "";
-        \\    var k = 0;
-        \\    for (q.parts()) { p ->
-        \\        if (p.kind == "Interp") {
-        \\            out = out + flag(p.known);
-        \\            if (k == 0) out = out + "=" + asText(p.value);
-        \\            if (k == 1) out = out + "=" + pointText(p.value);
-        \\            out = out + ";";
-        \\            k = k + 1;
-        \\        }
-        \\    }
-        \\    return q.build("\"" + out + "\"");
-        \\}
-        \\var seen = "d";
-        \\fn dyn() -> string {
-        \\    return seen;
-        \\}
-        \\pub val label = "a";
-        \\pub val pt = mk "abc";
-        \\pub val got = probe """${label} ${pt} ${dyn()}""";
-    ;
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const replies = try h.canonicalReplies(std.testing.allocator, arena.allocator(), @src(), &.{.{ .path = "", .source = src }});
-    var found = false;
-    for (replies) |r| {
-        if (std.mem.indexOf(u8, r, "known=a;known=3,2;render;") != null) found = true;
-    }
-    try std.testing.expect(found);
-}
-
 // ── decision 237: a capture carries only the bindings its text names ─────────
 
 test "decision 237: the capture's bindings are the scope entries its text names, in text order" {
@@ -691,11 +593,11 @@ test "decision 237: the capture's bindings are the scope entries its text names,
         \\    n: i32,
         \\)
         \\val unrelated = 1;
-        \\pub fn dsl(comptime template: @Expr<string>) -> @Expr<string> {
+        \\pub fn dsl(expr template: string) -> string {
         \\    return template;
         \\}
-        \\val a = dsl "<Card title=\"x\"><Badge/></Card> 9lives _x Badge";
-        \\val b = dsl "cfg-0";
+        \\val a = dsl @`<Card title="x"><Badge/></Card> 9lives _x Badge`;
+        \\val b = dsl @`cfg-0`;
     );
 
     var it = env.exprCaptures.iterator();
@@ -733,11 +635,11 @@ test "decision 237: the capture's bindings are the scope entries its text names,
 test "decision 237 ---- a text that names nothing in scope carries no binding" {
     const src =
         \\val cfg_1 = "unread";
-        \\pub fn conf(comptime q: @Expr<string>) -> @Expr<i32> {
-        \\    val n = q.bindings().length;
-        \\    return @expr(n);
+        \\pub fn conf(expr q: string) -> i32 {
+        \\    val n = compiler.bindings(q).length;
+        \\    return n;
         \\}
-        \\val n = conf "cfg-0";
+        \\val n = conf @`cfg-0`;
     ;
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -758,16 +660,16 @@ test "decision 237 ---- lookup of a word of the text finds its binding" {
         \\    n: i32,
         \\)
         \\val unrelated = 1;
-        \\pub fn ui(comptime q: @Expr<string>) -> @Expr<string> {
-        \\    val count = q.bindings().length;
-        \\    val hit = q.lookup("Badge");
+        \\pub fn ui(expr q: string) -> string {
+        \\    val count = compiler.bindings(q).length;
+        \\    val hit = compiler.lookup(q, "Badge");
         \\    if (hit) { b ->
-        \\        return q.build("\"" + b.name + "/" + b.module + "\"");
+        \\        return compiler.build("\"" + b.name + "/" + b.module + "\"");
         \\    } else {
-        \\        return q.fail("Badge is a word of the text and in scope");
+        \\        return compiler.fail("Badge is a word of the text and in scope", at: q);
         \\    };
         \\}
-        \\val s = ui "<Card title=\"x\"><Badge/></Card>";
+        \\val s = ui @`<Card title="x"><Badge/></Card>`;
     ;
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -786,22 +688,22 @@ test "decision 237 ---- lookup of a name outside the text is a located error" {
         \\pub type Button(
         \\    label: string,
         \\)
-        \\pub fn need(comptime t: @Expr<string>) -> @Expr<string> {
-        \\    val hit = t.lookup("Button");
+        \\pub fn need(expr t: string) -> string {
+        \\    val hit = compiler.lookup(t, "Button");
         \\    if (hit) { b ->
-        \\        return t.build("\"hit\"");
+        \\        return compiler.build("\"hit\"");
         \\    } else {
-        \\        return t.build("\"miss\"");
+        \\        return compiler.build("\"miss\"");
         \\    };
         \\}
-        \\val r = need "<Card/>";
+        \\val r = need @`<Card/>`;
     ;
     const io = std.testing.io;
     {
         var session = try comptimeMod.compile(std.testing.allocator, &.{.{ .path = "", .source = src }}, io, h.buildRootPathFromSrc(io, @src()), null);
         defer session.deinit(std.testing.allocator);
         try std.testing.expectEqual(@as(usize, 1), session.outputs.items.len);
-        const outcome = session.outputs.items[0].outcome;
+        const outcome = session.outputs.items[session.outputs.items.len - 1].outcome;
         try std.testing.expect(outcome == .typeError);
         const message = try outcome.typeError.message(std.testing.allocator);
         defer std.testing.allocator.free(message);
@@ -827,11 +729,13 @@ test "infer: a fn returning @ExprCustom<T> is recognized as a template fn" {
     // Body-only inference: the carrier return marks `dsl` as a template fn, so it
     // lands in `env.templateFns` and never reaches codegen.
     try inferInto(&env, alloc,
-        \\pub fn dsl<T>(comptime e: @Expr<string>) -> @ExprCustom<T> {
-        \\    val code = e.build("[1, 2]");
+        \\pub fn dsl(expr e: string) -> anyvalue {
+        \\    val code = compiler.build("[1, 2]");
         \\    val root = CustomNode(kind: "select", span: Span(0, 6, 1), label: "keyword", ref: null, children: []);
-        \\    return e.custom(root, code);
+        \\    compiler.custom(root);
+        \\    return code;
         \\}
+        \\import {compiler.Span, compiler.CustomNode} from "std";
     );
     try std.testing.expect(env.templateFns.contains("dsl"));
 }
@@ -839,14 +743,16 @@ test "infer: a fn returning @ExprCustom<T> is recognized as a template fn" {
 test "comptime: q.custom executes `code` identically + the tree is retrievable by loc" {
     const src =
         \\pub type Item(id: i32)
-        \\pub fn dsl<T>(comptime e: @Expr<string>) -> @ExprCustom<T> {
-        \\    val code = e.build("41");
-        \\    val leaf = CustomNode(kind: "field", span: Span(5, 9, 1), label: "property", ref: e.lookup("Item"), children: []);
+        \\pub fn dsl(expr e: string) -> anyvalue {
+        \\    val code = compiler.build("41");
+        \\    val leaf = CustomNode(kind: "field", span: Span(5, 9, 1), label: "property", ref: compiler.lookup(e, "Item"), children: []);
         \\    val root = CustomNode(kind: "select", span: Span(0, 6, 1), label: "keyword", ref: null, children: [leaf]);
-        \\    return e.custom(root, code);
+        \\    compiler.custom(root);
+        \\    return code;
         \\}
-        \\val rows = dsl "select id from Item";
+        \\val rows = dsl @`select id from Item`;
         \\val answer = rows + 1;
+        \\import {compiler.Span, compiler.CustomNode} from "std";
     ;
     const io = std.testing.io;
     var session = try comptimeMod.compile(
@@ -858,8 +764,9 @@ test "comptime: q.custom executes `code` identically + the tree is retrievable b
     );
     defer session.deinit(std.testing.allocator);
 
-    try std.testing.expectEqual(@as(usize, 1), session.outputs.items.len);
-    const outcome = session.outputs.items[0].outcome;
+    // The program, after the `compiler` module its import brings (decision 576 (13)).
+    try std.testing.expectEqual(@as(usize, 2), session.outputs.items.len);
+    const outcome = session.outputs.items[session.outputs.items.len - 1].outcome;
     if (outcome == .typeError) {
         const desc = try h.renderTypeError(std.testing.allocator, src, outcome.typeError);
         defer std.testing.allocator.free(desc);
@@ -876,7 +783,7 @@ test "comptime: q.custom executes `code` identically + the tree is retrievable b
     const entry = entries[0];
     try std.testing.expectEqualStrings("dsl", entry.callee);
     // Provenance points at the template literal in the caller (line 8).
-    try std.testing.expectEqual(@as(usize, 8), entry.line);
+    try std.testing.expectEqual(@as(usize, 9), entry.line);
 
     // The canonical reference tree is the one the lib built — opaque tags intact.
     const root = entry.root;
@@ -907,15 +814,17 @@ test "decision 112: lookup answers the declaration's identity, never the alias" 
     const lib =
         \\pub fn area(w: i32, h: i32) -> i32 { return w * h; }
         \\fn double(x: i32) -> i32 { return x * 2; }
-        \\pub default fn shapesdsl<T>(comptime e: @Expr<string>) -> @ExprCustom<T> {
-        \\    val code = e.build("double(" + e.text() + ")");
-        \\    val root = CustomNode(kind: "call", span: Span(0, 7, 1), label: "keyword", ref: e.lookup("surface"), children: []);
-        \\    return e.custom(root, code);
+        \\pub default fn shapesdsl(expr e: string) -> anyvalue {
+        \\    val code = compiler.build("double(" + compiler.text(e) + ")");
+        \\    val root = CustomNode(kind: "call", span: Span(0, 7, 1), label: "keyword", ref: compiler.lookup(e, "surface"), children: []);
+        \\    compiler.custom(root);
+        \\    return code;
         \\}
+        \\import {compiler.Span, compiler.CustomNode} from "std";
     ;
     const main =
         \\import shapesdsl, {area as surface} from "shapesdsl";
-        \\val x = shapesdsl "surface(4, 5)";
+        \\val x = shapesdsl @`surface(4, 5)`;
     ;
     const io = std.testing.io;
     var session = try comptimeMod.compile(
@@ -1006,10 +915,10 @@ test "comptime: yaml model ---- a lifted tuple reveals its element types (V1 dri
     defer env.deinit();
 
     try inferInto(&env, alloc,
-        \\pub fn conf<T>(comptime q: @Expr<string>) -> @Expr<T> {
-        \\    return @expr(#(8080, true));
+        \\pub fn conf(expr q: string) -> anyvalue {
+        \\    return #(8080, true);
         \\}
-        \\val cfg = conf "server:";
+        \\val cfg = conf @`server:`;
         \\val p = cfg.0 + 1;
         \\val d = cfg.1;
     );
@@ -1017,115 +926,7 @@ test "comptime: yaml model ---- a lifted tuple reveals its element types (V1 dri
     try std.testing.expectEqualStrings("bool", env.lookup("d").?.deref().named.name);
 }
 
-// ── mixed signatures ──────────────────────────────────────────────────────────
-
-test "template: mixed signature ---- plain string literal arg is collected alongside capture" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-    var env = try freshTestEnv(alloc);
-    defer env.deinit();
-
-    // V1 driver can expand a pass-through even with a plain arg present.
-    try inferInto(&env, alloc,
-        \\pub fn wrap(comptime template: @Expr<string>, prefix: string) -> @Expr<string> {
-        \\    return template;
-        \\}
-        \\val c = wrap("hello", "pre:");
-    );
-    // The expansion replaces the call with the capture node (the string "hello").
-    const exp = env.templateExpansions.get(.{ .line = 4, .col = 9 });
-    try std.testing.expect(exp != null);
-}
-
-test "template: mixed signature ---- number literal arg is accepted" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-    var env = try freshTestEnv(alloc);
-    defer env.deinit();
-
-    try inferInto(&env, alloc,
-        \\pub fn port<T>(comptime template: @Expr<string>, base: i32) -> @Expr<T> {
-        \\    return template;
-        \\}
-        \\val c = port("8080", 80);
-    );
-    const exp = env.templateExpansions.get(.{ .line = 4, .col = 9 });
-    try std.testing.expect(exp != null);
-}
-
-test "infer error: non-@Expr template param must receive a literal (V1)" {
-    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\pub fn wrap(comptime template: @Expr<string>, prefix: string) -> @Expr<string> {
-        \\    return template;
-        \\}
-        \\val p = "pre:";
-        \\val c = wrap("hello", p);
-    );
-}
-
-// ── hole loc mapping ─────────────────────────────────────────────────────────
-
-test "template: holed fallback span ---- hole on first non-opening line maps correctly" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-    var env = try freshTestEnv(alloc);
-    defer env.deinit();
-
-    const src =
-        \\pub fn html(comptime template: @Expr<string>) -> @Expr<string> {
-        \\    return template;
-        \\}
-        \\val name = "world";
-        \\val c = html """
-        \\<p>${name}</p>
-        \\""";
-    ;
-    try inferInto(&env, alloc, src);
-
-    const captures = try onlyCaptures(&env);
-    const cap = &captures[0];
-    try std.testing.expect(cap.text == null); // has holes
-
-    // The hole is on the second template line (1-based = line 2 in the template);
-    // capture.loc.line = 5 (opening `"""`), so the expected source line is 5+2-1 = 6.
-    const loc = template.mapSpanToLoc(cap, .{ .start = 0, .end = 0, .line = 2 });
-    try std.testing.expectEqual(@as(usize, 6), loc.line);
-}
-
 // ── net-new (v0.beta.13 · A7): expr-templates ─────────────────────────────────
-
-// A template called with a `${…}` hole that is a bare VARIABLE reference (not a
-// literal) captures the variable as an unevaluated `.identifier` expression.
-test "template: net-new ---- a hole captures a bare variable reference" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-    var env = try freshTestEnv(alloc);
-    defer env.deinit();
-
-    try inferInto(&env, alloc,
-        \\pub fn tpl(comptime t: @Expr<string>) -> @Expr<string> {
-        \\    return t;
-        \\}
-        \\val name = "world";
-        \\val page = tpl """${name}""";
-    );
-
-    const captures = try onlyCaptures(&env);
-    const cap = captures[0];
-    // A hole is present, so there is no contiguous text — the variable lives in
-    // the parts as an unevaluated identifier reference.
-    try std.testing.expect(cap.text == null);
-    const parts = cap.node.literal.kind.stringTemplate.parts;
-    var sawIdentHole = false;
-    for (parts) |p| {
-        if (p == .expr and p.expr.* == .identifier) sawIdentHole = true;
-    }
-    try std.testing.expect(sawIdentHole);
-}
 
 // An empty template (`tpl ""`) is handled gracefully — it captures empty text
 // with no holes and does not crash inference.
@@ -1137,10 +938,10 @@ test "template: net-new ---- an empty template is handled gracefully" {
     defer env.deinit();
 
     try inferInto(&env, alloc,
-        \\pub fn tpl(comptime t: @Expr<string>) -> @Expr<string> {
+        \\pub fn tpl(expr t: string) -> string {
         \\    return t;
         \\}
-        \\val c = tpl "";
+        \\val c = tpl @``;
     );
 
     const captures = try onlyCaptures(&env);
@@ -1151,14 +952,14 @@ test "template: net-new ---- an empty template is handled gracefully" {
 }
 
 // A splice whose lifted value expands to a TYPE error is reported at the splice
-// site (the caller's `port()` call), not at the template definition: `@expr`
-// lifts a `bool`, but the bound is `@Expr<i32>`.
+// site (the caller's `port @`…`` call), not at the template definition: the
+// body answers a `bool`, but the template answers `i32`.
 test "infer error: net-new ---- splice type error reports at the splice site" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\pub fn port() -> @Expr<i32> {
-        \\    return @expr(true);
+        \\pub fn port(expr q: string) -> i32 {
+        \\    return true;
         \\}
-        \\val p = port();
+        \\val p = port @`x`;
     );
 }
 
@@ -1172,28 +973,28 @@ test "template: net-new ---- two template invocations expand independently" {
     defer env.deinit();
 
     try inferInto(&env, alloc,
-        \\pub fn tpl(comptime q: @Expr<string>) -> @Expr<string> {
+        \\pub fn tpl(expr q: string) -> string {
         \\    return q;
         \\}
-        \\val a = tpl "one";
-        \\val b = tpl "two";
+        \\val a = tpl @`one`;
+        \\val b = tpl @`two`;
     );
 
     try std.testing.expectEqual(@as(u32, 2), env.templateExpansions.count());
 }
 
 // A nested template — `outer`'s built code itself calls the template fn `inner`
-// with a literal. Expanding `outer` splices in `inner("deep")`, which then
+// with its template text. Expanding `outer` splices in `inner @`deep``, which then
 // expands in turn: each template fn expands once for its own call site.
 test "comptime: net-new ---- nested template call inside a template body" {
     const src =
-        \\pub fn inner(comptime q: @Expr<string>) -> @Expr<string> {
+        \\pub fn inner(expr q: string) -> string {
         \\    return q;
         \\}
-        \\pub fn outer(comptime q: @Expr<string>) -> @Expr<string> {
-        \\    return q.build("inner(\"deep\")");
+        \\pub fn outer(expr q: string) -> string {
+        \\    return compiler.build("inner @`deep`");
         \\}
-        \\val s = outer "x";
+        \\val s = outer @`x`;
     ;
     try assertCompilesOk(@src(), src);
     try h.assertComptimeAstSingle(std.testing.allocator, @src(), src);
@@ -1212,29 +1013,10 @@ test "template: markup DSL ---- <Component/> tags resolve to calls" {
         \\fn fragment(items: Element[]) -> Element { return Element(); }
         \\fn Page1() -> Element { return Element(); }
         \\fn Page2() -> Element { return Element(); }
-        \\pub fn html(comptime q: @Expr<string>) -> @Expr<Element> {
-        \\    return q.build("fragment([Page1(), Page2()])");
+        \\pub fn html(expr q: string) -> Element {
+        \\    return compiler.build("fragment([Page1(), Page2()])");
         \\}
-        \\val page = html """<Page1/><Page2/>""";
-    );
-}
-
-test "template: markup DSL ---- ${expr} splices as a text child" {
-    try assertCompilesOk(@src(),
-        \\val Element = type() implement @Renderable
-        \\fn fragment(items: Element[]) -> Element { return Element(); }
-        \\fn text(value: string) -> Element { return Element(); }
-        \\pub fn html(comptime q: @Expr<string>) -> @Expr<Element> {
-        \\    var acc = "fragment([";
-        \\    for (q.parts()) { p ->
-        \\        if (p.kind == "Interp") {
-        \\            acc = acc + "text(" + p.code + "),";
-        \\        };
-        \\    };
-        \\    return q.build(acc + "])");
-        \\}
-        \\val name = "world";
-        \\val page = html """<p>${name}</p>""";
+        \\val page = html @`<Page1/><Page2/>`;
     );
 }
 
@@ -1266,21 +1048,21 @@ test "decision 331: a template body calls its module's functions, a recursive on
         \\fn depth(n: i32) -> i32 {
         \\    return if (n <= 0) 0 else 1 + depth(n - 1);
         \\}
-        \\pub fn shout(comptime q: @Expr<string>) -> @Expr<string> {
-        \\    return q.build("\"" + wrap(helper(q.text())) + depth(3).toString() + "\"");
+        \\pub fn shout(expr q: string) -> string {
+        \\    return compiler.build("\"" + wrap(helper(compiler.text(q))) + depth(3).toString() + "\"");
         \\}
-        \\val here = shout "in";
+        \\val here = shout @`in`;
     ;
     const main =
         \\import {shout} from "tags";
         \\fn twice(s: string) -> string {
         \\    return s + s;
         \\}
-        \\pub fn echo(comptime q: @Expr<string>) -> @Expr<string> {
-        \\    return q.build("\"" + twice(q.text()) + "\"");
+        \\pub fn echo(expr q: string) -> string {
+        \\    return compiler.build("\"" + twice(compiler.text(q)) + "\"");
         \\}
-        \\val a = shout "ab";
-        \\val b = echo "xy";
+        \\val a = shout @`ab`;
+        \\val b = echo @`xy`;
     ;
     const modules: []const @import("../../module.zig").Module = &.{
         .{ .path = "text", .source = text },
@@ -1312,23 +1094,23 @@ test "decision 331: a template body reads a labelled tuple element by its label"
         \\fn kindOf(x: #(kind: string, n: i32)) -> string {
         \\    return x.kind;
         \\}
-        \\pub fn pairs(comptime q: @Expr<string>) -> @Expr<string> {
-        \\    val items: #(kind: string, n: i32)[] = [#(q.text(), 1), #("z", 2)];
+        \\pub fn pairs(expr q: string) -> string {
+        \\    val items: #(kind: string, n: i32)[] = [#(compiler.text(q), 1), #("z", 2)];
         \\    var out = "";
         \\    for (items) { it ->
         \\        out = out + it.kind + it.n.toString() + ";";
         \\    };
-        \\    return q.build("\"" + out + kindOf(#("w", 7)) + "\"");
+        \\    return compiler.build("\"" + out + kindOf(#("w", 7)) + "\"");
         \\}
     ;
     const main =
         \\import {pairs} from "pairs";
-        \\pub fn probe(comptime q: @Expr<string>) -> @Expr<string> {
-        \\    val x: #(kind: string, n: i32) = #(q.text(), 2);
-        \\    return q.build("\"" + x.kind + x.n.toString() + "\"");
+        \\pub fn probe(expr q: string) -> string {
+        \\    val x: #(kind: string, n: i32) = #(compiler.text(q), 2);
+        \\    return compiler.build("\"" + x.kind + x.n.toString() + "\"");
         \\}
-        \\val a = probe "ab";
-        \\val b = pairs "xy";
+        \\val a = probe @`ab`;
+        \\val b = pairs @`xy`;
     ;
     const modules: []const @import("../../module.zig").Module = &.{
         .{ .path = "pairs", .source = pairs },
@@ -1355,8 +1137,8 @@ test "decision 331: a template body of more variables than a frame holds compile
     const ar = arena.allocator();
     var src: std.ArrayListUnmanaged(u8) = .empty;
     try src.appendSlice(ar,
-        \\pub fn big(comptime q: @Expr<string>) -> @Expr<string> {
-        \\    var s = q.text();
+        \\pub fn big(expr q: string) -> string {
+        \\    var s = compiler.text(q);
         \\    var n = 0;
         \\
     );
@@ -1365,9 +1147,9 @@ test "decision 331: a template body of more variables than a frame holds compile
         try src.appendSlice(ar, "    n = n + 1;\n");
     }
     try src.appendSlice(ar,
-        \\    return q.build("\"" + s.slice(0, 6) + n.toString() + "\"");
+        \\    return compiler.build("\"" + s.slice(0, 6) + n.toString() + "\"");
         \\}
-        \\val got = big "q";
+        \\val got = big @`q`;
     );
     const replies = try h.canonicalReplies(std.testing.allocator, ar, @src(), &.{.{ .path = "", .source = src.items }});
     try std.testing.expectEqual(@as(usize, 1), replies.len);
@@ -1384,13 +1166,13 @@ test "infer: a receiver's own method named like a template method of the scope i
         \\    }
         \\}
         \\type Visitor(who: string)
-        \\fn greet(comptime self: @Expr<Visitor>, comptime q: @Expr<string>) -> @Expr<string> {
-        \\    return q.build(self.text() + ".who");
+        \\fn greet(expr self: Visitor, expr q: string) -> string {
+        \\    return compiler.build(compiler.text(self) + ".who");
         \\}
         \\pub fn main() {
         \\    val g = Greeter(who: "Ana");
         \\    @print(g.greet("hello"));
-        \\    @print(g.greet "hello");
+        \\    @print(g.greet @`hello`);
         \\}
     );
 }
@@ -1409,11 +1191,11 @@ test "infer: a behavior method the receiver's type adopts, named like a template
         \\    }
         \\}
         \\type Visitor(who: string)
-        \\fn greet(comptime self: @Expr<Visitor>, comptime q: @Expr<string>) -> @Expr<string> {
-        \\    return q.build(self.text() + ".who");
+        \\fn greet(expr self: Visitor, expr q: string) -> string {
+        \\    return compiler.build(compiler.text(self) + ".who");
         \\}
         \\fn wave(w: Waves) -> string {
-        \\    return w.greet "hi";
+        \\    return w.greet @`hi`;
         \\}
         \\pub fn main() {
         \\    @print(Waver(name: "Ana").greet "hello");
@@ -1429,9 +1211,9 @@ test "infer: template-call-unexpanded ---- the backstop refuses a template call 
     var env = try freshTestEnv(alloc);
     defer env.deinit();
     const src =
-        \\fn shout(comptime q: @Expr<string>) -> @Expr<string> { return q; }
+        \\fn shout(expr q: string) -> string { return q; }
         \\fn run(shout: fn(string) -> string) -> string { return shout("x"); }
-        \\pub fn main() { @print(shout "a"); @print(run({ s -> s })); }
+        \\pub fn main() { @print(shout @`a`); @print(run({ s -> s })); }
     ;
     var lx = Lexer.init(src);
     var p = Parser.init(try lx.scanAll(alloc));
@@ -1459,16 +1241,16 @@ test "templates: a raise in another module's template body names the body's file
     // `srcPath`), line 3, column 5 —, and the call site that expanded it is
     // the `called from` line.
     const tpl =
-        \\pub fn shout(comptime t: @Expr<string>) -> @Expr<string> {
-        \\    val s = t.text();
+        \\pub fn shout(expr t: string) -> string {
+        \\    val s = compiler.text(t);
         \\    @panic("boom " + s);
-        \\    return t.build("\"" + s + "\"");
+        \\    return compiler.build("\"" + s + "\"");
         \\}
     ;
     const src =
         \\import {tpl.shout};
         \\pub fn main() {
-        \\    @print(shout "hi");
+        \\    @print(shout @`hi`);
         \\}
     ;
     const io = std.testing.io;

@@ -13,30 +13,17 @@
         "comment": null,
         "moduleComment": null,
         "annotations": [],
-        "genericParams": [
-          {
-            "name": "T",
-            "default": null
-          }
-        ],
+        "genericParams": [],
         "params": [
           {
             "name": "first",
             "typeRef": {
               "generic": {
-                "name": "Expr",
+                "name": "__Decl",
                 "args": [
                   {
                     "optional": {
-                      "generic": {
-                        "name": "Expr",
-                        "args": [
-                          {
-                            "named": "Element"
-                          }
-                        ],
-                        "is_builtin": true
-                      }
+                      "named": "Element"
                     }
                   }
                 ],
@@ -47,19 +34,11 @@
             "modifier": "comptime",
             "destruct": null,
             "default": null,
-            "arrival": "value"
+            "arrival": "expr"
           }
         ],
         "returnType": {
-          "generic": {
-            "name": "Expr",
-            "args": [
-              {
-                "named": "T"
-              }
-            ],
-            "is_builtin": true
-          }
+          "named": "i32"
         },
         "typeGuardParam": null,
         "body": [

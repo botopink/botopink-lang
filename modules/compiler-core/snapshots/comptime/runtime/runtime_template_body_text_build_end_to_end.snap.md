@@ -1,10 +1,10 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-pub fn shout(comptime q: @Expr<string>) -> @Expr<string> {
-    val t = q.text();
-    return q.build("\"" + t + "!\"");
+pub fn shout(expr q: string) -> string {
+    val t = compiler.text(q);
+    return compiler.build("\"" + t + "!\"");
 }
-val s = shout "hey";
+val s = shout @`hey`;
 ```
 
 ----- COMPTIME WAT -- template shout
@@ -49,7 +49,7 @@ val s = shout "hey";
   call $rt_bin
   i64.const 2
   call $rt_int
-  i64.const 13
+  i64.const 27
   call $rt_int
   local.get $s3
   call $bp_comptime_template:__bp_push/4
@@ -174,7 +174,7 @@ val s = shout "hey";
   call $rt_bin
   i64.const 3
   call $rt_int
-  i64.const 12
+  i64.const 21
   call $rt_int
   local.get $s3
   call $bp_comptime_template:__bp_push/4

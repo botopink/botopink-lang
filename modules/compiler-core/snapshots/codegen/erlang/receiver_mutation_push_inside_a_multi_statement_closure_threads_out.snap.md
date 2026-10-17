@@ -1,8 +1,8 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-pub fn component(comptime decl: @Decl) {
+pub fn component(expr decl: unknown) {
     var args: Array<string> = [];
-    decl.fields.forEach({ f ->
+    compiler.fields(decl).forEach({ f ->
         var valKey = "";
         f.annotations.forEach({ a -> if (a.name == "value") { valKey = a.args.join(""); } });
         val expr = if (valKey != "") {
@@ -12,7 +12,7 @@ pub fn component(comptime decl: @Decl) {
         };
         args.push(f.name + ": " + expr);
     });
-    @emit("pub fn wire" + decl.name + "() -> string { return \"" + decl.name + "(" + args.join(", ") + ")\"; }");
+    @emit("pub fn wire" + compiler.name(decl)! + "() -> string { return \"" + compiler.name(decl)! + "(" + args.join(", ") + ")\"; }");
 }
 
 #[component]
@@ -185,7 +185,7 @@ fn main() {
   call $rt_bin
   i64.const 13
   call $rt_int
-  i64.const 86
+  i64.const 108
   call $rt_int
   local.get $s3
   call $bp_comptime_decorator:__bp_push/4
@@ -1123,7 +1123,8 @@ fn main() {
 ;;     params => [],
 ;;     component => undefined,
 ;;     module => <<"">>,
-;;     owner => undefined
+;;     owner => undefined,
+;;     package => <<"">>
 ;; }
 ```
 

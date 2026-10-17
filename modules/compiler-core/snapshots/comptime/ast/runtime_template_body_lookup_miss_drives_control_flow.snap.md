@@ -3,14 +3,14 @@
 pub type Button(
     label: string,
 )
-pub fn need(comptime t: @Expr<string>) -> @Expr<string> {
-    val hit = t.lookup("Buttom");
+pub fn need(expr t: string) -> string {
+    val hit = compiler.lookup(t, "Buttom");
     if (hit) { b ->
-        return t.fail("should be missing");
+        return compiler.fail("should be missing", at: t);
     };
-    return t.build("\"ok\"");
+    return compiler.build("\"ok\"");
 }
-val r = need "<Buttom/>";
+val r = need @`<Buttom/>`;
 ```
 
 ----- BOTOPINK TRANSFORM CODE -- main.bp
@@ -40,20 +40,20 @@ pub val r = "ok";
       "params": [
         {
           "name": "t",
-          "type": "Expr<string>",
+          "type": "__Expr<string>",
           "is_comptime": true
         }
       ],
-      "return_type": "Expr<string>",
+      "return_type": "__Expr<string>",
       "body": [
         {
-          "source": "val hit = t.lookup(\"Buttom\");"
+          "source": "val hit = compiler.lookup(t, \"Buttom\");"
         },
         {
           "source": "if (hit) { b ->"
         },
         {
-          "source": "return t.build(\"\\\"ok\\\"\");"
+          "source": "return compiler.build(\"\\\"ok\\\"\");"
         }
       ]
     },

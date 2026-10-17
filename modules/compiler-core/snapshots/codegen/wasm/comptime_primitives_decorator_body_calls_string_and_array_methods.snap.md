@@ -1,12 +1,12 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-pub fn describe(comptime decl: @Decl) {
-    val names = decl.fields.map({ f -> f.name });
+pub fn describe(expr decl: unknown) {
+    val names = compiler.fields(decl).map({ f -> f.name });
     val upper = names.map({ n -> n.toUpper() }).join("_");
     val hidden = if (names.contains("secret")) { "hidden"; } else { "open"; };
-    val short = decl.name.slice(0, 3);
-    val size = if (decl.name.length() == 4) { "four"; } else { "other"; };
-    @emit("pub fn describe" + decl.name + "() -> string { return \"" + upper + ":" + hidden + ":" + short + ":" + size + "\"; }");
+    val short = compiler.name(decl)!.slice(0, 3);
+    val size = if (compiler.name(decl)!.length() == 4) { "four"; } else { "other"; };
+    @emit("pub fn describe" + compiler.name(decl)! + "() -> string { return \"" + upper + ":" + hidden + ":" + short + ":" + size + "\"; }");
 }
 
 #[describe]
@@ -109,7 +109,7 @@ fn main() {
   call $rt_bin
   i64.const 2
   call $rt_int
-  i64.const 17
+  i64.const 33
   call $rt_int
   local.get $s4
   call $bp_comptime_decorator:__bp_push/4
@@ -595,7 +595,7 @@ fn main() {
   call $rt_bin
   i64.const 5
   call $rt_int
-  i64.const 17
+  i64.const 31
   call $rt_int
   local.get $s6
   call $bp_comptime_decorator:__bp_push/4
@@ -707,7 +707,7 @@ fn main() {
   call $rt_bin
   i64.const 6
   call $rt_int
-  i64.const 20
+  i64.const 34
   call $rt_int
   local.get $V___BpF11
   call $bp_comptime_decorator:__bp_push/4
@@ -2383,7 +2383,8 @@ fn main() {
 ;;     params => [],
 ;;     component => undefined,
 ;;     module => <<"">>,
-;;     owner => undefined
+;;     owner => undefined,
+;;     package => <<"">>
 ;; }
 ```
 

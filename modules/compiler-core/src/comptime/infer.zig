@@ -305,9 +305,55 @@ fn markStdImports(env: *Env, u: ast.ImportDecl) InferError!bool {
 /// `.type_only` takes back the constructor and variant bindings the
 /// registration adds (a namespace import, as `registerTypesOnly` does for a
 /// type's closure); `.with_bindings` keeps them (the type named by the leaf).
+/// Decision 576 (13) — a module that imports one of `compiler.bp`'s aliases
+/// (`import {compiler.Span} from "std"`) names it in its own type
+/// declarations and signatures, which register before the module's imports
+/// are marked: the imported aliases enter the scope first. An alias registers as a name
+/// only (`registerTypeDecl`), so marking the import again later is the same.
+/// An imported alias of an enum (`compiler.DeclKind`, `= __DeclKind`)
+/// reaches its variants as the type does: `DeclKind.Fn` is `__DeclKind.Fn`
+/// (decision 110's receiver rewrite, `importedTypeAliasReceiver`).
+fn bindAliasNamespace(env: *Env, a: ast.TypeAliasDecl) InferError!void {
+    const target = switch (a.target) {
+        .named => |n| n,
+        else => return,
+    };
+    if (env.bindings.get(a.name) != null) return;
+    if (env.lookupTypeDef(target) == null) return;
+    // As decision 110's `import {T as A}` (`registerImportedTypeAlias`): the
+    // alias is the declared name at a call and a receiver, and its
+    // constructor is the target's.
+    try env.importedTypeAliases.put(env.arena, a.name, target);
+    if (env.lookup(target)) |ctor| try env.bind(a.name, ctor);
+}
+
+pub fn preRegisterStdImportAliases(env: *Env, program: ast.Program) InferError!void {
+    for (program.decls) |decl| {
+        if (decl != .use) continue;
+        const u = decl.use;
+        // A std module names a sibling with a bare `import {compiler.X};`.
+        const from_std = switch (u.source) {
+            .module => |m| std.mem.eql(u8, m, "std"),
+            .root => env.inStd or std.mem.startsWith(u8, env.modulePath, "std/"),
+            .key => false,
+        };
+        if (!from_std) continue;
+        for (u.imports) |imp| {
+            if (!imp.isQualified()) continue;
+            const mod_name = try imp.prefixPath(env.arena);
+            const decls = env.stdModuleTypes.get(mod_name) orelse continue;
+            for (decls) |d| if (d == .typeAlias and std.mem.eql(u8, d.typeAlias.name, imp.leaf())) {
+                try env.typeAliases.put(env.arena, d.typeAlias.name, d.typeAlias);
+                try bindAliasNamespace(env, d.typeAlias);
+            };
+        }
+    }
+}
+
 fn registerStdTypeDecl(env: *Env, mod_name: []const u8, imp: ast.ImportPath, d: ast.DeclKind, mode: enum { type_only, with_bindings }) InferError!void {
     if (mode == .with_bindings) {
         registerTypeDecl(env, d) catch |err| return locateInStd(env, err, mod_name, imp);
+        if (d == .typeAlias) try bindAliasNamespace(env, d.typeAlias);
         return;
     }
     var before = std.StringHashMap(void).init(env.arena);
@@ -706,6 +752,7 @@ pub fn inferProgram(env: *Env, program: ast.Program) InferError![]Binding {
     try refuseDeclsNamedLikeImports(env, program);
     try refuseDeclsNamedLikePrimitives(env, program);
     try noteExplicitTypeNames(env, program);
+    try preRegisterStdImportAliases(env, program);
 
     // Pass 1: register type definitions and their constructors.
     try registerTypeAliases(env, program);
@@ -874,6 +921,7 @@ pub fn inferProgramTyped(env: *Env, program: ast.Program) InferError![]TypedBind
     try refuseDeclsNamedLikeImports(env, program);
     try refuseDeclsNamedLikePrimitives(env, program);
     try noteExplicitTypeNames(env, program);
+    try preRegisterStdImportAliases(env, program);
 
     try registerTypeAliases(env, program);
     try checkSelfSpelling(env, program);
@@ -4612,14 +4660,14 @@ fn templateFnNamed(env: *Env, name: []const u8) ?ast.FnDecl {
     return if (rt.isTemplateReturnType()) f else null;
 }
 
-/// Decision 311 — the template annotation `#[f "…"]`. `f` is a template
+/// Decision 311 — the template annotation `#[f @`…`]`. `f` is a template
 /// function written as an annotation, taking the annotated declaration's
-/// handle beside its literal (`memberFn.isTemplateAnnotation`, question s29-a);
+/// handle beside its text (`memberFn.isTemplateAnnotation`, question s29-a);
 /// refused at the annotation: a name that is no template function
-/// (`template-annotation-not-template`), a template that takes no `@Decl`
-/// (`template-annotation-without-decl`), and the call form `#[f(…)]` / `#[f]`
-/// naming a template function (`template-annotation-call-form`, naming
-/// `#[f "…"]`).
+/// (`template-annotation-not-template`), a template that takes no
+/// `expr decl` (`template-annotation-without-decl`), and any other form
+/// naming a template — `#[f(…)]`, `#[f]`, `#[f "…"]` —
+/// (`expr-call-outside-expr`, decision 577 (3)).
 fn checkTemplateAnnotations(env: *Env, program: ast.Program) InferError!void {
     for (try annotatedSites(env, program)) |site| for (site.anns) |a| {
         if (a.is_builtin) continue;
@@ -4628,11 +4676,12 @@ fn checkTemplateAnnotations(env: *Env, program: ast.Program) InferError!void {
         if (a.template == null) {
             const t = tfn orelse continue;
             if (env.decorators.contains(a.name)) continue;
-            const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s}{s}]` names the template function `{s}`, which is written as an annotation `#[{s} \"…\"]`", .{ diagnostics.template_annotation_call_form, a.name, if (a.args.len > 0) "(…)" else "", a.name, a.name });
+            // Decision 577 (3) — `#[f(…)]` and `#[f]` naming a template.
+            const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s}{s}]` names the template `{s}`, which is written `#[{s} @`…`]`", .{ diagnostics.expr_call_outside_expr, a.name, if (a.args.len > 0) "(…)" else "", a.name, a.name });
             const hint = if (memberFn.isTemplateAnnotation(t))
-                "A template function takes its literal unevaluated: write the literal after the name, `#[f \"…\"]` or `#[f \"\"\"…\"\"\"]` (decision 311)."
+                "A template takes its text unevaluated: write the template text after the name, `#[f @`…`]` (decision 577 (3))."
             else
-                "A template function takes its literal unevaluated: write the literal after the name, `#[f \"…\"]` — and declare `comptime decl: @Decl` beside its `comptime q: @Expr<…>` (decision 311).";
+                "A template takes its text unevaluated: write the template text after the name, `#[f @`…`]` — and declare `expr decl: unknown` beside its `expr q: string` (decisions 311, 577 (3)).";
             env.lastError = TypeError.custom(msg, hint).withLoc(at);
             return error.TypeError;
         }
@@ -4641,7 +4690,7 @@ fn checkTemplateAnnotations(env: *Env, program: ast.Program) InferError!void {
                 "a decorator"
             else if (env.lookup(a.name)) |ty| (if (ty.deref().* == .func) "a function that is not a template function" else "not a function") else "not declared";
             const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s} \"…\"]` names `{s}`, which is {s}", .{ diagnostics.template_annotation_not_template, a.name, a.name, what });
-            env.lastError = TypeError.custom(msg, "A template annotation names a template function — `fn f(comptime q: @Expr<…>, comptime decl: @Decl) -> @Expr<…>` —; a decorator is written `#[f(…)]` (decision 311).").withLoc(at);
+            env.lastError = TypeError.custom(msg, "A template annotation names a template function — `fn f(expr q: string, expr decl: unknown) -> R` —; a decorator is written `#[f(…)]` (decisions 311, 578).").withLoc(at);
             return error.TypeError;
         };
         // Decision 577 (3) — a template annotation writes the template text.
@@ -4651,8 +4700,8 @@ fn checkTemplateAnnotations(env: *Env, program: ast.Program) InferError!void {
             return error.TypeError;
         };
         if (!memberFn.isTemplateAnnotation(t)) {
-            const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s} \"…\"]` names the template function `{s}`, which takes no `comptime decl: @Decl` beside its literal", .{ diagnostics.template_annotation_without_decl, a.name, a.name });
-            env.lastError = TypeError.custom(msg, "Written as an annotation, a template receives the annotated declaration as its second parameter — `fn f(comptime q: @Expr<…>, comptime decl: @Decl) -> @Expr<…>` — and records its outputs on it (decision 311, question s29-a).").withLoc(at);
+            const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s} \"…\"]` names the template function `{s}`, which takes no `expr decl: unknown` beside its text", .{ diagnostics.template_annotation_without_decl, a.name, a.name });
+            env.lastError = TypeError.custom(msg, "Written as an annotation, a template receives the annotated declaration as its second parameter — `fn f(expr q: string, expr decl: unknown) -> R` — and records its outputs on it (decision 311, question s29-a).").withLoc(at);
             return error.TypeError;
         }
     };
@@ -4688,7 +4737,7 @@ fn checkTemplateAnnotationHoles(env: *Env, program: ast.Program) InferError!void
         for (site.params) |p| {
             if (p.destruct != null) continue;
             const ty = try resolveParamType(env, p, genericMap);
-            try env.bind(p.name, if (p.exprWrapped) try env.namedTypeArgs("Expr", &.{ty}) else ty);
+            try env.bind(p.name, if (p.exprWrapped) try env.namedTypeArgs(ast.expr_type_name, &.{ty}) else ty);
         }
         for (node.literal.kind.stringTemplate.parts) |part| switch (part) {
             .expr => |hole| _ = try inferExprTyped(env, hole.*),
@@ -5641,7 +5690,7 @@ fn runDeclDecorators(
         // (`block_eval.typesReached`); the evaluator's own (`DeclKind`,
         // `Span`) are injected by it.
         const carried = try std.mem.concat(env.arena, ast.FnDecl, &.{ &.{dfn}, found.fns, builtFns.items });
-        const reached = try blockEval.typesReached(env, carried, if (tfn != null) &(templateEval.injected_names ++ [_][]const u8{ "DeclKind", "Decl" }) else &.{ "DeclKind", "Span", "Decl" });
+        const reached = try blockEval.typesReached(env, carried, if (tfn != null) &(templateEval.injected_names ++ [_][]const u8{ "__DeclKind", ast.decl_type_name }) else &.{ "__DeclKind", "__Span", "DeclKind", "Span", ast.decl_type_name });
         const support = try std.mem.concat(env.arena, ast.FnDecl, &.{ found.fns, reached.fns, builtFns.items });
         // Decision 364 — the body reads `x.value`; the module holds the value
         // in `x` (`expr_param.zig`), and `x.fail(m)` names its argument.
@@ -5845,7 +5894,8 @@ fn templateAnnotationCapture(env: *Env, a: ast.Annotation, tfn: ast.FnDecl) Infe
     const node = try parseDecoratorArg(env, written, at);
     const q = tfn.params[0].name;
     const holed = node.* == .literal and node.literal.kind == .stringTemplate;
-    const text: ?[]const u8 = if (node.* == .literal and node.literal.kind == .stringLit) node.literal.kind.stringLit else null;
+    // Decision 577 — a template text `#[f @`…`]` is its raw bytes.
+    const text: ?[]const u8 = if (node.* == .literal and node.literal.kind == .stringLit) (a.templateText orelse node.literal.kind.stringLit) else null;
     const valueRead = exprParam.useOf(tfn, q).value;
     if (valueRead and holed) {
         const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s} \"…\"]`'s literal has a `${{…}}` hole, so it is not known while the program compiles, and the template reads `{s}.value`", .{ diagnostics.template_value_not_known, a.name, q });
@@ -5859,7 +5909,8 @@ fn templateAnnotationCapture(env: *Env, a: ast.Annotation, tfn: ast.FnDecl) Infe
         .paramName = q,
         .node = node,
         .text = text,
-        .multiline = std.mem.startsWith(u8, written, "\"\"\""),
+        .multiline = std.mem.startsWith(u8, written, "\"\"\"") or (a.templateText != null and std.mem.indexOfScalar(u8, a.templateText.?, '\n') != null),
+        .templateText = a.templateText != null,
         .loc = at,
         .modulePath = env.modulePath,
         .scope = env.scopeSnapshot,
@@ -6359,7 +6410,7 @@ fn inferTypedMetaCall(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedEx
         } else continue;
         const was = env.lookup(p.name) orelse continue;
         const d = was.deref();
-        const inner = if (d.* == .named and std.mem.eql(u8, d.named.name, "Expr") and d.named.args.len == 1) d.named.args[0] else continue;
+        const inner = if (d.* == .named and std.mem.eql(u8, d.named.name, ast.expr_type_name) and d.named.args.len == 1) d.named.args[0] else continue;
         try rebound.append(env.arena, .{ .name = p.name, .was = was });
         try env.bind(p.name, inner);
     }
@@ -6864,7 +6915,7 @@ fn isDeclWrite(callee: []const u8) bool {
 /// Whether `t` is the `@Decl` handle's type.
 fn isDeclHandleType(t: *T.Type) bool {
     const d = t.deref();
-    return d.* == .named and std.mem.eql(u8, d.named.name, "Decl");
+    return d.* == .named and std.mem.eql(u8, d.named.name, ast.decl_type_name);
 }
 
 /// Decision 371 — `f`, a function of this module a decorator's run reaches,
@@ -8232,7 +8283,7 @@ fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
         } else if (p.exprWrapped) {
             // Decision 364 — the body holds the argument as the user's
             // expression, `Expr<T>`; its value is `x.value`.
-            try env.bind(p.name, try env.namedTypeArgs("Expr", &.{ty}));
+            try env.bind(p.name, try env.namedTypeArgs(ast.expr_type_name, &.{ty}));
         } else {
             try env.bind(p.name, ty);
         }
@@ -8552,7 +8603,7 @@ fn inferTypeMethods(
         for (m.params) |p| {
             const ty = try resolveParamType(env, p, genericMap);
             // Decision 364 — a `comptime x: @Expr<T>` is read `x.value`.
-            try env.bind(p.name, if (p.exprWrapped) try env.namedTypeArgs("Expr", &.{ty}) else ty);
+            try env.bind(p.name, if (p.exprWrapped) try env.namedTypeArgs(ast.expr_type_name, &.{ty}) else ty);
         }
         const savedParams = env.currentParams;
         env.currentParams = m.params;
@@ -8946,6 +8997,7 @@ fn captureExprArg(
     rawArg: *const ast.Expr,
     typedArg: ast.CallArgOf(.typed),
     paramType: *T.Type,
+    templateText: ?[]const u8,
 ) InferError!template.CapturedExpr {
     // Inner `T` of `expr T` (`expr` is encoded as a named type with one arg);
     // a bare `expr` param already carries a fresh var as its arg.
@@ -8972,8 +9024,10 @@ fn captureExprArg(
     if (rawArg.* == .literal) {
         switch (rawArg.literal.kind) {
             .stringLit => |s| {
-                text = s;
-                newlines = std.mem.count(u8, s, "\n");
+                // Decision 577 — a template text `@`…`` is its raw bytes,
+                // which the literal spells escaped.
+                text = templateText orelse s;
+                newlines = std.mem.count(u8, text.?, "\n");
                 multiline = newlines > 0;
                 isLiteral = true;
             },
@@ -9020,6 +9074,7 @@ fn captureExprArg(
         .node = rawArg,
         .text = text,
         .multiline = multiline,
+        .templateText = templateText != null,
         .loc = litLoc,
         .modulePath = env.modulePath,
         .scope = env.scopeSnapshot,
@@ -9424,7 +9479,7 @@ fn inferTemplateMethodCall(
             ).withLoc(arg.value.getLoc());
             return error.TypeError;
         }
-        try captures.append(env.arena, try captureExprArg(env, call.callee, .{ .paramIndex = pi, .paramName = tfn.params[pi].name }, arg.value, ta, f.params[pi]));
+        try captures.append(env.arena, try captureExprArg(env, call.callee, .{ .paramIndex = pi, .paramName = tfn.params[pi].name }, arg.value, ta, f.params[pi], call.templateText));
     }
     const slice = try captures.toOwnedSlice(env.arena);
     try env.exprCaptures.put(loc, slice);
@@ -9462,7 +9517,7 @@ fn finishExpansionBuilt(env: *Env, expansion_in: *const ast.Expr, retType: *T.Ty
     // `CustomExpr<T>` struct), whose `T` is the code's value type.
     const rDeref = retType.deref();
     if (rDeref.* == .named and rDeref.named.args.len == 1 and
-        (std.mem.eql(u8, rDeref.named.name, "Expr") or std.mem.eql(u8, rDeref.named.name, "CustomExpr")))
+        (std.mem.eql(u8, rDeref.named.name, ast.expr_type_name) or std.mem.eql(u8, rDeref.named.name, "CustomExpr")))
     {
         const bound = rDeref.named.args[0];
         unifyUnlocated(env, bound, typed.getType()) catch |err| {
@@ -10017,7 +10072,7 @@ fn runTagAnnotation(
         .{ .fns = sig.support, .conflict = sig.conflict };
     if (found.conflict) |c| return decoratorError(env, a, c, "Rename one of the two functions, so each name the decorator reaches is one function.");
     const carried = try std.mem.concat(env.arena, ast.FnDecl, &.{ &.{dfn}, found.fns, builtFns.items });
-    const reached = try blockEval.typesReached(env, carried, &.{ "DeclKind", "Span", "Decl" });
+    const reached = try blockEval.typesReached(env, carried, &.{ "__DeclKind", "__Span", "DeclKind", "Span", ast.decl_type_name });
     const support = try std.mem.concat(env.arena, ast.FnDecl, &.{ found.fns, reached.fns, builtFns.items });
     var hosts = try hostCells.Writer.init(env, program.decls);
     const runDfn = if (local) try hosts.rewrite(try sameLoweredFn(env, program, dfn)) else dfn;
@@ -10371,7 +10426,9 @@ fn valueToAstLiteral(env: *Env, v: templateEval.TypedValue, loc: ast.Loc, shape:
             node.* = .{ .literal = .{ .loc = loc, .kind = .{ .numberLit = text } } };
         },
         .string => |str| {
-            const text = env.arena.dupe(u8, str) catch return null;
+            // The literal spells the value: its `\`, `"`, `$` and control
+            // bytes escaped (a template text's raw bytes reach here, 577).
+            const text = blockEval.stringLexeme(env.arena, str) catch return null;
             node.* = .{ .literal = .{ .loc = loc, .kind = .{ .stringLit = text } } };
         },
         .bool => |b| {
@@ -10828,13 +10885,13 @@ fn inferBuiltinCallReturnType(
         if (std.mem.eql(u8, callee, "expr")) {
             // `@expr(v)`: the result is an expression OF the value's type.
             const inner: *T.Type = if (typedArgs.len >= 1) typedArgs[0].value.getType() else try env.freshVar();
-            return env.namedTypeArgs("Expr", &.{inner});
+            return env.namedTypeArgs(ast.expr_type_name, &.{inner});
         }
         // `@code(text)`: the produced expression's type is revealed at expansion.
         if (typedArgs.len >= 1) {
             try unifyAt(env, try env.namedType("string"), typedArgs[0].value.getType(), typedArgs[0].value.getLoc());
         }
-        return env.namedTypeArgs("Expr", &.{try env.freshVar()});
+        return env.namedTypeArgs(ast.expr_type_name, &.{try env.freshVar()});
     }
 
     // ── Type introspection / manipulation builtins (§1.0.0-beta) ─────────────
@@ -12133,8 +12190,8 @@ fn builtinRequiredGenericArgs(name: []const u8) ?usize {
     if (eq(u8, name, "Result")) return 2;
     if (eq(u8, name, "Component")) return 1;
     if (eq(u8, name, "Renderable")) return 0;
-    if (eq(u8, name, "Expr")) return 1;
-    if (eq(u8, name, "ExprCustom")) return 1;
+    if (eq(u8, name, ast.expr_type_name)) return 1;
+    if (eq(u8, name, ast.expr_custom_type_name)) return 1;
     return null;
 }
 
@@ -12534,7 +12591,7 @@ fn resolveTypeRefInContext(env: *Env, ref: ast.TypeRef, genericMap: std.StringHa
             // `Expr` interface).
             const name = if (std.mem.eql(u8, b.name, "Array"))
                 "array"
-            else if (b.is_builtin and std.mem.eql(u8, b.name, "ExprCustom"))
+            else if (b.is_builtin and std.mem.eql(u8, b.name, ast.expr_custom_type_name))
                 "CustomExpr"
             else
                 b.name;
@@ -15553,11 +15610,11 @@ fn inferIdentifierExpr(env: *Env, ident: ast.IdentifierExprOf(.untyped), loc: as
                     if (tupleMemberIndex(ia.member)) |idx| {
                         if (idx < recvNamed.args.len) outType = recvNamed.args[idx];
                     }
-                } else if (std.mem.eql(u8, recvNamed.name, "Expr") and recvNamed.args.len == 1) {
+                } else if (std.mem.eql(u8, recvNamed.name, ast.expr_type_name) and recvNamed.args.len == 1) {
                     // Decision 364 (2), (3) — `x.value` is the expression's
                     // value at build: `T`, unless `T` is a function or a type.
                     if (!std.mem.eql(u8, ia.member, "value")) {
-                        env.lastError = TypeError.unknownField("Expr", ia.member).withLoc(loc);
+                        env.lastError = TypeError.unknownField(ast.expr_type_name, ia.member).withLoc(loc);
                         return error.TypeError;
                     }
                     try refuseExprValueRead(env, ia.receiver.*, recvNamed.args[0], loc);
@@ -18410,7 +18467,7 @@ fn inferTemplateMethod(
     // Decision 364 — a `comptime` parameter's `@Expr` (not a template's
     // capture) answers `.value`, and in a decorator `.fail(…)`, located at
     // the argument.
-    if (std.mem.eql(u8, named.name, "Expr")) if (exprParamOfName(env, typedIdentName(recvPtr.*))) |p| {
+    if (std.mem.eql(u8, named.name, ast.expr_type_name)) if (exprParamOfName(env, typedIdentName(recvPtr.*))) |p| {
         // `rule.value(x)` calls the function at build: refused as its read.
         if (std.mem.eql(u8, callee, "value") and named.args.len == 1) {
             const recvExpr: ast.Expr = .{ .identifier = .{ .loc = recvPtr.getLoc(), .kind = .{ .ident = p.name } } };
@@ -18425,7 +18482,7 @@ fn inferTemplateMethod(
         }
     };
 
-    if (std.mem.eql(u8, named.name, "Expr")) {
+    if (std.mem.eql(u8, named.name, ast.expr_type_name)) {
         if (std.mem.eql(u8, callee, "value")) {
             // The expression's value type slot — what the code evaluates to.
             op = .value;
@@ -18439,25 +18496,25 @@ fn inferTemplateMethod(
         } else if (std.mem.eql(u8, callee, "source")) {
             // Declaration position — where the expression was written.
             op = .source;
-            retType = try env.namedType("Source");
+            retType = try env.namedType("__Source");
         } else if (std.mem.eql(u8, callee, "context")) {
             // The full second-layer input: source + text + shape. The record is
             // `ExprContext`, not `Context`: `@Renderable` is the owner
             // marker and one name cannot mean both (front 20 F1).
             op = .context;
-            retType = try env.namedType("ExprContext");
+            retType = try env.namedType("__ExprContext");
         } else if (std.mem.eql(u8, callee, "bindings")) {
             // Every declaration a word of the text names (decision 237), as
             // `lookup` answers it (decision 415 (2)).
             op = .bindings;
-            retType = try env.namedTypeArgs("array", &.{try env.namedType("Decl")});
+            retType = try env.namedTypeArgs("array", &.{try env.namedType(ast.decl_type_name)});
         } else if (std.mem.eql(u8, callee, "build")) {
             // Parse source text into an expression carrying the receiver's
             // origin scope + provenance — how a second-layer language emits
             // code without quoting (`expr { … }` covers the pattern case).
             op = .build;
             try unifyArg(env, typedArgs, 0, try env.namedType("string"));
-            retType = try env.namedTypeArgs("Expr", &.{try env.freshVar()});
+            retType = try env.namedTypeArgs(ast.expr_type_name, &.{try env.freshVar()});
         } else if (std.mem.eql(u8, callee, "custom")) {
             // Pack a reference `CustomNode` tree + executable `code` into the
             // `@ExprCustom<R>` carrier (expr-custom). The `code`'s value type `R`
@@ -18465,15 +18522,15 @@ fn inferTemplateMethod(
             // tooling. Generic — the core never inspects `kind`/`label`.
             op = .custom;
             const r = try env.freshVar();
-            try unifyArg(env, typedArgs, 0, try env.namedType("CustomNode"));
-            try unifyArg(env, typedArgs, 1, try env.namedTypeArgs("Expr", &.{r}));
+            try unifyArg(env, typedArgs, 0, try env.namedType("__CustomNode"));
+            try unifyArg(env, typedArgs, 1, try env.namedTypeArgs(ast.expr_type_name, &.{r}));
             retType = try env.namedTypeArgs("CustomExpr", &.{r});
         } else if (std.mem.eql(u8, callee, "lookup")) {
             // Decision 415 (2) — the call site's declaration, a read-only
             // `?@Decl`.
             op = .lookup;
             try unifyArg(env, typedArgs, 0, try env.namedType("string"));
-            retType = try env.namedTypeArgs("optional", &.{try env.namedType("Decl")});
+            retType = try env.namedTypeArgs("optional", &.{try env.namedType(ast.decl_type_name)});
         } else if (std.mem.eql(u8, callee, "fail")) {
             op = .fail;
             try unifyArg(env, typedArgs, 0, try env.namedType("string"));
@@ -18487,24 +18544,24 @@ fn inferTemplateMethod(
             retType = try env.namedType("void");
         } else if (std.mem.eql(u8, callee, "failAt")) {
             op = .failAt;
-            try unifyArg(env, typedArgs, 0, try env.namedType("Span"));
+            try unifyArg(env, typedArgs, 0, try env.namedType("__Span"));
             try unifyArg(env, typedArgs, 1, try env.namedType("string"));
             retType = try env.freshVar();
         } else if (std.mem.eql(u8, callee, "tagDecl")) {
             // Decision 302 — a tag's `@Decl`, built by the template.
             op = .tagDecl;
-            try unifyArg(env, typedArgs, 0, try env.namedType("DeclKind"));
+            try unifyArg(env, typedArgs, 0, try env.namedType("__DeclKind"));
             try unifyArg(env, typedArgs, 1, try env.namedType("string"));
             const pair = try env.namedTypeArgs("tuple", &.{ try env.namedType("string"), try env.namedType("string") });
             try unifyArg(env, typedArgs, 2, try env.namedTypeArgs("array", &.{pair}));
-            retType = try env.namedType("Decl");
+            retType = try env.namedType(ast.decl_type_name);
         } else if (std.mem.eql(u8, callee, "annotate")) {
             // Decision 302 — the annotation written at a span of the text,
             // run over a tag's `@Decl` (`expandTemplateCallViaRuntime`).
             op = .annotate;
-            try unifyArg(env, typedArgs, 0, try env.namedType("Decl"));
-            try unifyArg(env, typedArgs, 1, try env.namedType("Span"));
-            retType = try env.namedType("Decl");
+            try unifyArg(env, typedArgs, 0, try env.namedType(ast.decl_type_name));
+            try unifyArg(env, typedArgs, 1, try env.namedType("__Span"));
+            retType = try env.namedType(ast.decl_type_name);
         } else return null;
     } else return null;
 
@@ -20662,6 +20719,7 @@ fn completeHandle(env: *Env, handle: decoratorEval.DeclHandle) InferError!decora
     // Decision 415 (2) — `decl.module`: a declaration of this module, unless
     // the handle names another's (a `q.lookup` answer).
     if (h.module.len == 0 and !h.isTag()) h.module = env.modulePath;
+    if (h.package.len == 0 and h.lookup == null and !h.isTag()) h.package = if (env.inStd) "std" else env.package;
     return h;
 }
 
@@ -22665,7 +22723,7 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                         const maybeTfn: ?ast.FnDecl = if (localCallee) null else env.templateFns.get(call.callee);
                         // Decisions 577 (3), 578 (1) — a template is called one
                         // way: its name before a template text, `` f @`…` ``.
-                        if (maybeTfn) |tf| if (tf.returnType) |rt| if (ast.isExprKeywordReturn(rt) and call.templateText == null) {
+                        if (maybeTfn) |tf| if (tf.returnType) |rt| if (ast.isExprKeywordReturn(rt) and (call.templateText == null or (env.inDecoratorFn and loc.expansion == 0))) {
                             const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` is a template, called only with a template text, and is called here another way", .{ diagnostics.expr_call_outside_expr, call.callee });
                             env.lastError = TypeError.custom(msg, "Write its text after its name: `f @`select …``, `value.f @`…``, or `#[f @`…`]` (decision 577 (3)).").withLoc(loc);
                             return error.TypeError;
@@ -22675,7 +22733,7 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                         for (typedArgs, f.params, 0..) |ta, paramType, i| {
                             if (typeparams) |constraints| if (isTypeparamIndex(constraints, i)) continue;
                             if (exprParams) |eps| if (exprParamAt(eps, i)) |ep| {
-                                try captures.append(env.arena, try captureExprArg(env, call.callee, ep, call.args[i].value, ta, paramType));
+                                try captures.append(env.arena, try captureExprArg(env, call.callee, ep, call.args[i].value, ta, paramType, call.templateText));
                                 continue;
                             };
                             try unifyArgument(env, paramType, ta.value.getType(), ta.value.getLoc());
@@ -23370,7 +23428,7 @@ fn inferMemberFnCall(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedExp
     for (env.currentParams) |p| if (p.exprWrapped) {
         const was = env.lookup(p.name) orelse continue;
         const d = was.deref();
-        const inner = if (d.* == .named and std.mem.eql(u8, d.named.name, "Expr") and d.named.args.len == 1) d.named.args[0] else continue;
+        const inner = if (d.* == .named and std.mem.eql(u8, d.named.name, ast.expr_type_name) and d.named.args.len == 1) d.named.args[0] else continue;
         try rebound.append(env.arena, .{ .name = p.name, .was = was });
         try env.bind(p.name, inner);
     };
@@ -23459,7 +23517,7 @@ fn inferWrapWithCall(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedExp
     for (env.currentParams) |p| if (p.exprWrapped) {
         const was = env.lookup(p.name) orelse continue;
         const d = was.deref();
-        const inner = if (d.* == .named and std.mem.eql(u8, d.named.name, "Expr") and d.named.args.len == 1) d.named.args[0] else continue;
+        const inner = if (d.* == .named and std.mem.eql(u8, d.named.name, ast.expr_type_name) and d.named.args.len == 1) d.named.args[0] else continue;
         try rebound.append(env.arena, .{ .name = p.name, .was = was });
         try env.bind(p.name, inner);
     };

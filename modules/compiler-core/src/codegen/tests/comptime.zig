@@ -80,8 +80,8 @@ test "js: comptime val ---- comptime val folds arithmetic to literal" {
 
 test "js: comptime specialization ---- distinct string args generate specialized functions" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn build(prefix comptime: @Expr<string>, name: string) -> string {
-        \\    return prefix.value + ": " + name;
+        \\fn build(prefix comptime: string, name: string) -> string {
+        \\    return prefix + ": " + name;
         \\}
         \\
         \\fn main() {
@@ -97,8 +97,8 @@ test "js: comptime specialization ---- distinct string args generate specialized
 
 test "js: comptime specialization ---- distinct integer args generate specialized functions" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn multiply(comptime factor: @Expr<i32>, x: i32) -> i32 {
-        \\    return x * factor.value;
+        \\fn multiply(comptime factor: i32, x: i32) -> i32 {
+        \\    return x * factor;
         \\}
         \\
         \\fn main() {
@@ -117,8 +117,8 @@ test "js: comptime specialization ---- distinct integer args generate specialize
 // above with the modifier spelled before the name.)
 test "js: comptime specialization ---- same string arg reuses specialized function" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn build(comptime prefix: @Expr<string>, name: string) -> string {
-        \\    return prefix.value + ": " + name;
+        \\fn build(comptime prefix: string, name: string) -> string {
+        \\    return prefix + ": " + name;
         \\}
         \\
         \\fn main() {
@@ -134,8 +134,8 @@ test "js: comptime specialization ---- comptime val used as specialization argum
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\val base = comptime 10 + 5;
         \\
-        \\fn scale(comptime factor: @Expr<i32>, value: i32) -> i32 {
-        \\    return value * factor.value;
+        \\fn scale(comptime factor: i32, value: i32) -> i32 {
+        \\    return value * factor;
         \\}
         \\
         \\fn main() {
@@ -148,7 +148,7 @@ test "js: comptime specialization ---- comptime val used as specialization argum
 
 test "js: comptime specialization ---- constrained type meta-kind specializes per value" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn coerce(comptime v: @Expr<type<string | int | bool>>, x: i32) -> i32 {
+        \\fn coerce(comptime v: type<string | int | bool>, x: i32) -> i32 {
         \\    return x;
         \\}
         \\
@@ -162,7 +162,7 @@ test "js: comptime specialization ---- constrained type meta-kind specializes pe
 
 test "js: comptime specialization ---- simple function body without loop" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn execute(comptime slug: @Expr<string>, input: i32) -> i32 {
+        \\fn execute(comptime slug: string, input: i32) -> i32 {
         \\    return input + 0;
         \\}
         \\
@@ -178,10 +178,10 @@ test "js: comptime loop unrolling ---- single if condition resolved per element"
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\val COMMANDS = comptime ["calc", "noop", "help"];
         \\
-        \\fn execute(comptime slug: @Expr<string>, input: i32) -> i32 {
+        \\fn execute(comptime slug: string, input: i32) -> i32 {
         \\    var output = 0;
         \\    for (COMMANDS) { cmd ->
-        \\        if (cmd == slug.value) {
+        \\        if (cmd == slug) {
         \\            output = input * 2;
         \\        };
         \\    };
@@ -199,10 +199,10 @@ test "js: comptime loop unrolling ---- nested if-else chain fully folded" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\val COMMANDS = comptime ["calc", "noop", "help"];
         \\
-        \\fn execute(comptime slug: @Expr<string>, input: i32) -> i32 {
+        \\fn execute(comptime slug: string, input: i32) -> i32 {
         \\    var output = 0;
         \\    for (COMMANDS) { cmd ->
-        \\        if (cmd == slug.value) {
+        \\        if (cmd == slug) {
         \\            if (cmd == "calc") {
         \\                output = input * 2;
         \\            } else if (cmd == "noop") {
@@ -224,10 +224,10 @@ test "js: comptime loop unrolling ---- case expression folded inside unrolled lo
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\val COMMANDS = comptime ["calc", "noop", "help"];
         \\
-        \\fn execute(comptime slug: @Expr<string>, input: i32) -> i32 {
+        \\fn execute(comptime slug: string, input: i32) -> i32 {
         \\    var output = 0;
         \\    for (COMMANDS) { cmd ->
-        \\        if (cmd == slug.value) {
+        \\        if (cmd == slug) {
         \\            output = case cmd {
         \\                "calc" -> input * 2;
         \\                "noop" -> input;
@@ -249,10 +249,10 @@ test "js: comptime partial ---- runtime array loop preserved, comptime param spe
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\val COMMANDS = ["calc", "noop", "help"];
         \\
-        \\fn execute(comptime slug: @Expr<string>, input: i32) -> i32 {
+        \\fn execute(comptime slug: string, input: i32) -> i32 {
         \\    var output = 0;
         \\    for (COMMANDS) { cmd ->
-        \\        if (cmd == slug.value) {
+        \\        if (cmd == slug) {
         \\            output = input * 2;
         \\        };
         \\    };
@@ -298,66 +298,26 @@ test "js: comptime ---- block with a tail" {
 
 test "js: template end to end ---- bounded html expansion" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\pub fn html(comptime template: @Expr<string>) -> @Expr<string> {
+        \\pub fn html(expr template: string) -> string {
         \\    return template;
         \\}
-        \\val name = "world";
-        \\val page = html """
-        \\<p>${name}</p>
-        \\""";
+        \\val page = html @`
+        \\<p>world</p>
+        \\`;
         \\fn main() {
         \\    @print(page);
         \\}
     );
 }
 
-test "js: template end to end ---- generic expr via code builtin" {
+test "js: template end to end ---- an anyvalue answer built from text" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\pub fn port<T>() -> @Expr<T> {
-        \\    return @code("8080");
+        \\pub fn port(expr q: string) -> anyvalue {
+        \\    return compiler.build("8080");
         \\}
         \\fn main() {
-        \\    val p = port() + 1;
+        \\    val p = port @`x` + 1;
         \\    @print(p);
-        \\}
-    );
-}
-
-test "js: template end to end ---- holed html via parts() runs" {
-    try h.assertJsSingle(std.testing.allocator, @src(),
-        \\pub fn html(comptime q: @Expr<string>) -> @Expr<string> {
-        \\    var acc = "\"\"";
-        \\    for (q.parts()) { p ->
-        \\        if (p.kind == "Text") {
-        \\            acc = acc + " + \"" + p.text + "\"";
-        \\        };
-        \\        if (p.kind == "Interp") {
-        \\            acc = acc + " + " + p.code;
-        \\        };
-        \\    };
-        \\    return q.build(acc);
-        \\}
-        \\val name = "world";
-        \\val page = html """<p>${name}</p>""";
-        \\fn main() {
-        \\    @print(page);
-        \\}
-    );
-}
-
-test "js: template end to end ---- line string template with hole" {
-    try h.assertJsSingle(std.testing.allocator, @src(),
-        \\pub fn html(comptime q: @Expr<string>) -> @Expr<string> {
-        \\    return q;
-        \\}
-        \\val name = "world";
-        \\val page = html
-        \\    \\<div>
-        \\    \\  <p>${name}</p>
-        \\    \\</div>
-        \\;
-        \\fn main() {
-        \\    @print(page);
         \\}
     );
 }
@@ -367,17 +327,8 @@ test "js: template end to end ---- cross-module html mirrors the canonical examp
         .{
             .path = "view",
             .source =
-            \\pub fn html(comptime q: @Expr<string>) -> @Expr<string> {
-            \\    var acc = "\"\"";
-            \\    for (q.parts()) { p ->
-            \\        if (p.kind == "Text") {
-            \\            acc = acc + " + \"" + p.text + "\"";
-            \\        };
-            \\        if (p.kind == "Interp") {
-            \\            acc = acc + " + " + p.code;
-            \\        };
-            \\    };
-            \\    return q.build(acc);
+            \\pub fn html(expr q: string) -> string {
+            \\    return q;
             \\}
             ,
         },
@@ -386,14 +337,10 @@ test "js: template end to end ---- cross-module html mirrors the canonical examp
             .source =
             \\import {view.html};
             \\
-            \\val name = "world";
-            \\
-            \\val page = html
-            \\    \\<div>
-            \\    \\  <p>${name}</p>
-            \\    \\  <Page1/>
-            \\    \\</div>
-            \\;
+            \\val page = html @`<div>
+            \\  <p>world</p>
+            \\  <Page1/>
+            \\</div>`;
             \\fn main() {
             \\    @print(page);
             \\}
@@ -416,15 +363,15 @@ test "js: template end to end ---- cross-module html mirrors the canonical examp
 test "js: template end to end ---- lookup() names a caller-scope declaration the build splices" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\val greeting = "ola mundo";
-        \\pub fn refer(comptime q: @Expr<string>) -> @Expr<string> {
-        \\    val hit = q.lookup("greeting");
+        \\pub fn refer(expr q: string) -> string {
+        \\    val hit = compiler.lookup(q, "greeting");
         \\    if (hit) { b ->
-        \\        return q.build(b.name);
+        \\        return compiler.build(b.name);
         \\    } else {
-        \\        return q.fail("greeting not found in caller scope");
+        \\        return compiler.fail("greeting not found in caller scope", at: q);
         \\    };
         \\}
-        \\val s = refer "greeting";
+        \\val s = refer @`greeting`;
         \\fn main() {
         \\    @print(s);
         \\}
@@ -433,13 +380,13 @@ test "js: template end to end ---- lookup() names a caller-scope declaration the
 
 test "js: template end to end ---- yaml model computes a labeled tuple" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\pub fn conf<T>(comptime q: @Expr<string>) -> @Expr<T> {
-        \\    val t = q.text();
+        \\pub fn conf(expr q: string) -> anyvalue {
+        \\    val t = compiler.text(q);
         \\    val port = 8000 + t.length;
         \\    val debug = true;
-        \\    return @expr(#(port, debug));
+        \\    return #(port, debug);
         \\}
-        \\val cfg = conf "yaml";
+        \\val cfg = conf @`yaml`;
         \\fn main() {
         \\    @print(cfg.port + 1);
         \\}

@@ -480,12 +480,12 @@ test "typed meta calls, in body order; the string form and a member's body are n
     const lexer = @import("../lexer.zig");
     const parser = @import("../parser.zig");
     var lx = lexer.Lexer.init(
-        \\fn d(comptime decl: @Decl, comptime m: @Expr<string>) {
+        \\fn d(expr decl: unknown, expr m: string) {
         \\    decl.setMeta("key", "value");
-        \\    decl.setMeta(Entity(table: "a"));
-        \\    if (decl.name == "") { decl.addMeta(Index(column: "x")); }
-        \\    decl.addMember("v", fn(self: string) -> string { return m; });
-        \\    decl.addMeta(orm.Index(column: "y"));
+        \\    compiler.setMeta(Entity(table: "a"));
+        \\    if (compiler.name(decl)! == "") { compiler.addMeta(Index(column: "x")); }
+        \\    compiler.addMember("v", fn(self: string) -> string { return m; });
+        \\    compiler.addMeta(orm.Index(column: "y"));
         \\}
     );
     var p = parser.Parser.init(try lx.scanAll(arena));

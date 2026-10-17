@@ -15,7 +15,7 @@
         "annotations": [],
         "genericParams": [
           {
-            "name": "T",
+            "name": "__anyvalue",
             "default": null
           }
         ],
@@ -24,7 +24,7 @@
             "name": "template",
             "typeRef": {
               "generic": {
-                "name": "Expr",
+                "name": "__Expr",
                 "args": [
                   {
                     "named": "string"
@@ -36,15 +36,16 @@
             "typeName": "",
             "modifier": "comptime",
             "destruct": null,
-            "default": null
+            "default": null,
+            "arrival": "expr"
           }
         ],
         "returnType": {
           "generic": {
-            "name": "Expr",
+            "name": "__Expr",
             "args": [
               {
-                "named": "T"
+                "named": "__anyvalue"
               }
             ],
             "is_builtin": true

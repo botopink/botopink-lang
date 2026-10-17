@@ -7,22 +7,22 @@ pub type Badge(
     n: i32,
 )
 val unrelated = 1;
-pub fn ui(comptime q: @Expr<string>) -> @Expr<string> {
-    val count = q.bindings().length;
-    val hit = q.lookup("Badge");
+pub fn ui(expr q: string) -> string {
+    val count = compiler.bindings(q).length;
+    val hit = compiler.lookup(q, "Badge");
     if (hit) { b ->
-        return q.build("\"" + b.name + "/" + b.module + "\"");
+        return compiler.build("\"" + b.name + "/" + b.module + "\"");
     } else {
-        return q.fail("Badge is a word of the text and in scope");
+        return compiler.fail("Badge is a word of the text and in scope", at: q);
     };
 }
-val s = ui "<Card title=\"x\"><Badge/></Card>";
+val s = ui @`<Card title="x"><Badge/></Card>`;
 ```
 
 ----- COMPTIME WAT -- template ui
 ```wat
 (func $ui/1 (param $a0 i32) (result i32)
-  (local $s0 i32) (local $s1 i32) (local $s2 i32) (local $s3 i32) (local $s4 i32)
+  (local $s0 i32) (local $s1 i32) (local $s2 i32) (local $s3 i32) (local $s4 i32) (local $s5 i32)
   (block $raise
   (block $L1 (result i32)
   (block $L2
@@ -61,7 +61,7 @@ val s = ui "<Card title=\"x\"><Badge/></Card>";
   call $rt_bin
   i64.const 9
   call $rt_int
-  i64.const 17
+  i64.const 35
   call $rt_int
   local.get $s3
   call $bp_comptime_template:__bp_push/4
@@ -148,7 +148,7 @@ val s = ui "<Card title=\"x\"><Badge/></Card>";
   call $rt_bin
   i64.const 10
   call $rt_int
-  i64.const 15
+  i64.const 31
   call $rt_int
   local.get $s3
   call $bp_comptime_template:__bp_push/4
@@ -202,6 +202,11 @@ val s = ui "<Card title=\"x\"><Badge/></Card>";
   call $rt_eqx
   i32.eqz
   br_if $L16
+  i32.const 1
+  call $rt_tuple
+  local.set $s2
+  local.get $s2
+  i32.const 0
   (block $L17 (result i32)
   (block $L18
   local.get $s0
@@ -216,13 +221,13 @@ val s = ui "<Card title=\"x\"><Badge/></Card>";
   br $L17
   )
   call $rt_class
-  local.set $s2
-  call $rt_reason
   local.set $s3
+  call $rt_reason
+  local.set $s4
   call $rt_clear
   (block $L19 (result i32)
   (block $L20
-  local.get $s2
+  local.get $s3
   global.get $__lit
   i32.const 72
   i32.add
@@ -231,8 +236,8 @@ val s = ui "<Card title=\"x\"><Badge/></Card>";
   call $rt_eqx
   i32.eqz
   br_if $L20
-  local.get $s3
-  local.set $s4
+  local.get $s4
+  local.set $s5
   global.get $__lit
   i32.const 296
   i32.add
@@ -240,9 +245,9 @@ val s = ui "<Card title=\"x\"><Badge/></Card>";
   call $rt_bin
   i64.const 14
   call $rt_int
-  i64.const 16
+  i64.const 78
   call $rt_int
-  local.get $s4
+  local.get $s5
   call $bp_comptime_template:__bp_push/4
   call $rt_pending
   br_if $raise
@@ -252,24 +257,108 @@ val s = ui "<Card title=\"x\"><Badge/></Card>";
   i32.add
   i32.const 5
   call $rt_atom
-  local.get $s4
+  local.get $s5
   call $rt_raise
   drop
   br $raise
   call $rt_nil
   br $L19
   )
-  local.get $s2
   local.get $s3
+  local.get $s4
   call $rt_raise
   drop
   br $raise
   )
   br $L17
   )
+  call $rt_tset
+  drop
+  local.get $s2
+  local.set $s2
+  (block $L21 (result i32)
+  (block $L22
+  local.get $s2
+  call $rt_tuple_arity
+  i32.const 1
+  i32.ne
+  br_if $L22
+  local.get $s2
+  i32.const 0
+  call $rt_elem
+  local.set $s3
+  local.get $s3
+  local.set $s3
+  (block $L23 (result i32)
+  (block $L24
+  local.get $s3
+  call $bp_comptime_template:expr/1
+  call $rt_pending
+  br_if $L24
+  br $L23
+  )
+  call $rt_class
+  local.set $s3
+  call $rt_reason
+  local.set $s4
+  call $rt_clear
+  (block $L25 (result i32)
+  (block $L26
+  local.get $s3
+  global.get $__lit
+  i32.const 72
+  i32.add
+  i32.const 5
+  call $rt_atom
+  call $rt_eqx
+  i32.eqz
+  br_if $L26
+  local.get $s4
+  local.set $s5
+  global.get $__lit
+  i32.const 296
+  i32.add
+  i32.const 7
+  call $rt_bin
+  i64.const 14
+  call $rt_int
+  i64.const 25
+  call $rt_int
+  local.get $s5
+  call $bp_comptime_template:__bp_push/4
+  call $rt_pending
+  br_if $raise
+  drop
+  global.get $__lit
+  i32.const 72
+  i32.add
+  i32.const 5
+  call $rt_atom
+  local.get $s5
+  call $rt_raise
+  drop
+  br $raise
+  call $rt_nil
+  br $L25
+  )
+  local.get $s3
+  local.get $s4
+  call $rt_raise
+  drop
+  br $raise
+  )
+  br $L23
+  )
+  br $L21
+  )
+  local.get $s2
+  call $rt_case_clause
+  drop
+  br $raise
+  )
   br $L15
   )
-  (block $L21
+  (block $L27
   local.get $s1
   local.set $s2
   i32.const 2
@@ -331,13 +420,13 @@ val s = ui "<Card title=\"x\"><Badge/></Card>";
   drop
   local.get $s3
   local.set $s0
-  (block $L22 (result i32)
-  (block $L23
+  (block $L28 (result i32)
+  (block $L29
   local.get $s0
   call $rt_tuple_arity
   i32.const 2
   i32.ne
-  br_if $L23
+  br_if $L29
   local.get $s0
   i32.const 0
   call $rt_elem
@@ -350,22 +439,22 @@ val s = ui "<Card title=\"x\"><Badge/></Card>";
   local.set $s3
   local.get $s3
   local.set $s3
-  (block $L24 (result i32)
-  (block $L25
+  (block $L30 (result i32)
+  (block $L31
   local.get $s2
   local.get $s3
   call $bp_comptime_template:build/2
   call $rt_pending
-  br_if $L25
-  br $L24
+  br_if $L31
+  br $L30
   )
   call $rt_class
   local.set $s2
   call $rt_reason
   local.set $s3
   call $rt_clear
-  (block $L26 (result i32)
-  (block $L27
+  (block $L32 (result i32)
+  (block $L33
   local.get $s2
   global.get $__lit
   i32.const 72
@@ -374,7 +463,7 @@ val s = ui "<Card title=\"x\"><Badge/></Card>";
   call $rt_atom
   call $rt_eqx
   i32.eqz
-  br_if $L27
+  br_if $L33
   local.get $s3
   local.set $s4
   global.get $__lit
@@ -384,7 +473,7 @@ val s = ui "<Card title=\"x\"><Badge/></Card>";
   call $rt_bin
   i64.const 12
   call $rt_int
-  i64.const 16
+  i64.const 25
   call $rt_int
   local.get $s4
   call $bp_comptime_template:__bp_push/4
@@ -401,7 +490,7 @@ val s = ui "<Card title=\"x\"><Badge/></Card>";
   drop
   br $raise
   call $rt_nil
-  br $L26
+  br $L32
   )
   local.get $s2
   local.get $s3
@@ -409,9 +498,9 @@ val s = ui "<Card title=\"x\"><Badge/></Card>";
   drop
   br $raise
   )
-  br $L24
+  br $L30
   )
-  br $L22
+  br $L28
   )
   local.get $s0
   call $rt_case_clause
@@ -439,18 +528,18 @@ val s = ui "<Card title=\"x\"><Badge/></Card>";
 ;; main/1 argument — an external term, not part of the module:
 ;; Arg0 = #{
 ;;     '__bp_capture' => <<"q">>,
-;;     text => <<"<Card title=\\\"x\\\"><Badge/></Card>">>,
+;;     text => <<"<Card title=\"x\"><Badge/></Card>">>,
 ;;     parts => [
 ;;         #{
 ;;             kind => <<"Text">>,
-;;             text => <<"<Card title=\\\"x\\\"><Badge/></Card>">>,
-;;             span => #{start => 0, 'end' => 33, line => 1}
+;;             text => <<"<Card title=\"x\"><Badge/></Card>">>,
+;;             span => #{start => 0, 'end' => 31, line => 1}
 ;;         }
 ;;     ],
 ;;     source => #{file => <<"">>, line => 17, col => 12},
 ;;     context => #{
 ;;         source => #{file => <<"">>, line => 17, col => 12},
-;;         text => <<"<Card title=\\\"x\\\"><Badge/></Card>">>,
+;;         text => <<"<Card title=\"x\"><Badge/></Card>">>,
 ;;         multiline => false
 ;;     },
 ;;     bindings => [
@@ -467,6 +556,7 @@ val s = ui "<Card title=\"x\"><Badge/></Card>";
 ;;             component => undefined,
 ;;             module => <<"">>,
 ;;             owner => undefined,
+;;             package => <<"">>,
 ;;             meta => [],
 ;;             identity => <<"main@@Card">>,
 ;;             local => <<"Card">>
@@ -484,6 +574,7 @@ val s = ui "<Card title=\"x\"><Badge/></Card>";
 ;;             component => undefined,
 ;;             module => <<"">>,
 ;;             owner => undefined,
+;;             package => <<"">>,
 ;;             meta => [],
 ;;             identity => <<"main@@Badge">>,
 ;;             local => <<"Badge">>

@@ -1,11 +1,11 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 val cfg_1 = "unread";
-pub fn conf(comptime q: @Expr<string>) -> @Expr<i32> {
-    val n = q.bindings().length;
-    return @expr(n);
+pub fn conf(expr q: string) -> i32 {
+    val n = compiler.bindings(q).length;
+    return n;
 }
-val n = conf "cfg-0";
+val n = conf @`cfg-0`;
 ```
 
 ----- COMPTIME WAT -- template conf
@@ -50,7 +50,7 @@ val n = conf "cfg-0";
   call $rt_bin
   i64.const 3
   call $rt_int
-  i64.const 13
+  i64.const 31
   call $rt_int
   local.get $s2
   call $bp_comptime_template:__bp_push/4

@@ -1,11 +1,11 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn main() {
-    val Type = "Type";
-    val Fn = "Fn";
-    val kinds = #(Type, Fn);
-    val decl = @Decl(kind: kinds.Type, name: "Service", fields: [#("x", "i32", [])], methods: [], returnType: "", annotations: []);
-    @print(decl.fields.length);
+    val File = "main.bp";
+    val Fn = "main";
+    val names = #(File, Fn);
+    val at = @SourceLocation(file: names.File, line: 3, column: 7, fnName: names.Fn);
+    @print(at.line);
 }
 ```
 
@@ -14,106 +14,52 @@ fn main() {
 (module
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
-  (data (i32.const 256) "\04\00\00\00Type")
-  (data (i32.const 264) "\02\00\00\00Fn")
-  (data (i32.const 272) "\07\00\00\00Service")
-  (data (i32.const 284) "\01\00\00\00x")
-  (data (i32.const 292) "\03\00\00\00i32")
-  (data (i32.const 300) "\00\00\00\00")
-  (global $__heap_ptr (mut i32) (i32.const 304))
+  (data (i32.const 256) "\07\00\00\00main.bp")
+  (data (i32.const 268) "\04\00\00\00main")
+  (global $__heap_ptr (mut i32) (i32.const 276))
   (func $main
     (local $__mem0 i32)
     (local $__mem1 i32)
-    (local $__mem2 i32)
-    (local $__mem3 i32)
-    (local $__mem4 i32)
-    (local $__mem5 i32)
-    (local $__mem6 i32)
-    (local $Type i32)
+    (local $File i32)
     (local $Fn i32)
-    (local $kinds i32)
-    (local $decl i32)
+    (local $names i32)
+    (local $at i32)
     i32.const 256
-    local.set $Type
-    i32.const 264
+    local.set $File
+    i32.const 268
     local.set $Fn
     i32.const 8
     call $__alloc
     local.set $__mem0
     local.get $__mem0
-    local.get $Type
+    local.get $File
     i32.store
     local.get $__mem0
     local.get $Fn
     i32.store offset=4
     local.get $__mem0
-    local.set $kinds
-    i32.const 24
+    local.set $names
+    i32.const 16
     call $__alloc
     local.set $__mem1
     local.get $__mem1
-    local.get $kinds
+    local.get $names
     i32.load
     i32.store
     local.get $__mem1
-    i32.const 272
+    i32.const 3
     i32.store offset=4
     local.get $__mem1
-    i32.const 8
-    call $__alloc
-    local.set $__mem2
-    local.get $__mem2
-    i32.const 1
-    i32.store
-    local.get $__mem2
-    i32.const 12
-    call $__alloc
-    local.set $__mem3
-    local.get $__mem3
-    i32.const 284
-    i32.store
-    local.get $__mem3
-    i32.const 292
-    i32.store offset=4
-    local.get $__mem3
-    i32.const 4
-    call $__alloc
-    local.set $__mem4
-    local.get $__mem4
-    i32.const 0
-    i32.store
-    local.get $__mem4
-    i32.store offset=8
-    local.get $__mem3
-    i32.store offset=4
-    local.get $__mem2
+    i32.const 7
     i32.store offset=8
     local.get $__mem1
-    i32.const 4
-    call $__alloc
-    local.set $__mem5
-    local.get $__mem5
-    i32.const 0
-    i32.store
-    local.get $__mem5
+    local.get $names
+    i32.load offset=4
     i32.store offset=12
     local.get $__mem1
-    i32.const 300
-    i32.store offset=16
-    local.get $__mem1
-    i32.const 4
-    call $__alloc
-    local.set $__mem6
-    local.get $__mem6
-    i32.const 0
-    i32.store
-    local.get $__mem6
-    i32.store offset=20
-    local.get $__mem1
-    local.set $decl
-    local.get $decl
-    i32.load offset=8 ;; .fields
-    i32.load ;; .length
+    local.set $at
+    local.get $at
+    i32.load offset=4 ;; .line
     call $__print_i32
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")
@@ -352,5 +298,5 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
-1
+3
 ```

@@ -1,11 +1,11 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 val cfg_1 = "unread";
-pub fn conf(comptime q: @Expr<string>) -> @Expr<i32> {
-    val n = q.bindings().length;
-    return @expr(n);
+pub fn conf(expr q: string) -> i32 {
+    val n = compiler.bindings(q).length;
+    return n;
 }
-val n = conf "cfg-0";
+val n = conf @`cfg-0`;
 ```
 
 ----- BOTOPINK TRANSFORM CODE -- main.bp
@@ -31,17 +31,17 @@ pub val n = 0;
       "params": [
         {
           "name": "q",
-          "type": "Expr<string>",
+          "type": "__Expr<string>",
           "is_comptime": true
         }
       ],
-      "return_type": "Expr<i32>",
+      "return_type": "__Expr<i32>",
       "body": [
         {
-          "source": "val n = q.bindings().length;"
+          "source": "val n = compiler.bindings(q).length;"
         },
         {
-          "source": "return @expr(n);"
+          "source": "return n;"
         }
       ]
     },

@@ -1,11 +1,11 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn main() {
-    val Type = "Type";
-    val Fn = "Fn";
-    val kinds = #(Type, Fn);
-    val decl = @Decl(kind: kinds.Type, name: "Service", fields: [#("x", "i32", [])], methods: [], returnType: "", annotations: []);
-    @print(decl.fields.length);
+    val File = "main.bp";
+    val Fn = "main";
+    val names = #(File, Fn);
+    val at = @SourceLocation(file: names.File, line: 3, column: 7, fnName: names.Fn);
+    @print(at.line);
 }
 ```
 
@@ -16,11 +16,11 @@ fn main() {
 -export(['__bp_priv__main'/0]).
 
 main() ->
-    Type = <<"Type">>,
-    Fn = <<"Fn">>,
-    Kinds = {Type, Fn},
-    Decl = #{kind => erlang:element(1, Kinds), name => <<"Service">>, fields => [{<<"x">>, <<"i32">>, []}], methods => [], returnType => <<"">>, annotations => []},
-    '__bp_print'([erlang:length('__bp_field'(Decl, fields))]).
+    File = <<"main.bp">>,
+    Fn = <<"main">>,
+    Names = {File, Fn},
+    At = #{file => erlang:element(1, Names), line => 3, column => 7, fnName => erlang:element(2, Names)},
+    '__bp_print'(['__bp_field'(At, line)]).
 
 '__bp_field'(V, F) when erlang:is_map(V) -> maps:get(F, V);
 '__bp_field'(V, F) -> erlang:apply(erlang:element(1, V), '__bp_get', [V, F]).
@@ -59,5 +59,5 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
-1
+3
 ```

@@ -1868,14 +1868,12 @@ pub const compiler_keyword = "compiler";
 
 /// The internal tree type a `expr x: T` parameter and a `-> expr T` return
 /// are read as — a builtin generic no source spells (decision 576 (1)).
-pub const expr_type_name = "Expr";
+pub const expr_type_name = "__Expr";
 /// Whether `rt` is a return written `-> expr T` (decision 575 (4)) — the
 /// tree type the parser built from the keyword (`parser/decls.zig`
-/// `wrapTree`), told by its name's storage from an `@Expr<T>` written, whose
-/// name is a slice of the source. Read by the printer and by
-/// `parser/compiler_surface.zig` while both spellings parse.
+/// `wrapTree`); the only spelling since `@Expr<T>` went (decision 576 (1)).
 pub fn isExprKeywordReturn(rt: TypeRef) bool {
-    return rt.isExprType() and rt.generic.name.ptr == expr_type_name.ptr;
+    return rt.isExprType();
 }
 
 /// Decision 578 (1) — the position of a template's text parameter: the first
@@ -1900,8 +1898,12 @@ pub const anyvalue_type_name = "anyvalue";
 /// built code's type binds at each call (426 (1)); no source spells it.
 pub const anyvalue_param_name = "__anyvalue";
 
+/// The internal custom carrier a `-> expr T` template that calls
+/// `compiler.custom(tree)` is read as (`parser/compiler_surface.zig`).
+pub const expr_custom_type_name = "__ExprCustom";
+
 /// The internal handle type of a decorator's first `expr` parameter.
-pub const decl_type_name = "Decl";
+pub const decl_type_name = "__Decl";
 
 pub const FieldDestruct = struct {
     field_name: []const u8,
@@ -3096,6 +3098,11 @@ pub const TypeRef = union(enum) {
                 try w.print(") -> {f}", .{f.returnType.*});
             },
             .generic => |g| {
+                // Decision 575 (4) — the internal tree types print as written.
+                if (g.is_builtin and g.args.len == 1 and (std.mem.eql(u8, g.name, expr_type_name) or std.mem.eql(u8, g.name, expr_custom_type_name))) {
+                    try w.print("expr {f}", .{g.args[0]});
+                    return;
+                }
                 try w.print("{s}{s}<", .{ if (g.is_builtin) "@" else "", g.name });
                 for (g.args, 0..) |a, i| try w.print("{s}{f}", .{ if (i > 0) ", " else "", a });
                 try w.writeAll(">");
@@ -3162,7 +3169,7 @@ pub const TypeRef = union(enum) {
     /// core never learns any sub-language; `kind`/`label` are opaque lib tags.
     pub fn isExprCustomType(this: TypeRef) bool {
         return this == .generic and this.generic.is_builtin and
-            std.mem.eql(u8, this.generic.name, "ExprCustom");
+            std.mem.eql(u8, this.generic.name, expr_custom_type_name);
     }
 
     /// True when this return type marks a comptime-expanded template function —

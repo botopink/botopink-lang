@@ -585,8 +585,8 @@ test "js: import ---- disk-lib namespace member binds + emits the namespace obje
         \\    return x + 1;
         \\}
         \\
-        \\pub fn qlib(comptime e: @Expr<string>) -> @Expr<i32> {
-        \\    return e.build("99");
+        \\pub fn qlib(expr e: string) -> i32 {
+        \\    return compiler.build("99");
         \\}
         },
         .{ .path = "", .source =
@@ -616,8 +616,8 @@ test "js: import ---- disk-lib namespace merges across the lib's modules" {
         \\    return x + 1;
         \\}
         \\
-        \\pub fn mlib(comptime e: @Expr<string>) -> @Expr<i32> {
-        \\    return e.build("7");
+        \\pub fn mlib(expr e: string) -> i32 {
+        \\    return compiler.build("7");
         \\}
         },
         .{ .path = "mlib/extra", .source =
@@ -1360,8 +1360,8 @@ test "beam: enum sections ---- an imported enum's inner enum has one type module
 // backends.
 test "js: comptime primitives ---- template body calls string and array methods" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\pub fn shout(comptime q: @Expr<string>) -> @Expr<string> {
-        \\    val t = q.text().trim();
+        \\pub fn shout(expr q: string) -> string {
+        \\    val t = compiler.text(q).trim();
         \\    val words = t.split(" ").map({ w -> w.toUpper() });
         \\    val lead = t.slice(0, 5);
         \\    val rest = t.slice(6, t.length);
@@ -1370,10 +1370,10 @@ test "js: comptime primitives ---- template body calls string and array methods"
         \\    val big = if (t.contains("big")) { "contains"; } else { "-"; };
         \\    val greet = if (lead.startsWith("hel")) { "startsWith"; } else { "-"; };
         \\    val where = if (words.indexOf("WORLD") == 2) { "indexOf"; } else { "-"; };
-        \\    return q.build("\"" + all.join(",") + "|" + lead + "|" + rest + "|" + at + "|" + big + "|" + greet + "|" + where + "\"");
+        \\    return compiler.build("\"" + all.join(",") + "|" + lead + "|" + rest + "|" + at + "|" + big + "|" + greet + "|" + where + "\"");
         \\}
         \\
-        \\val s = shout " hello big world ";
+        \\val s = shout @` hello big world `;
         \\
         \\fn main() {
         \\    @print(s);
@@ -1386,13 +1386,13 @@ test "js: comptime primitives ---- template body calls string and array methods"
 // wasm run log is empty (a wasm backend gap, not a comptime one).
 test "js: comptime primitives ---- decorator body calls string and array methods" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\pub fn describe(comptime decl: @Decl) {
-        \\    val names = decl.fields.map({ f -> f.name });
+        \\pub fn describe(expr decl: unknown) {
+        \\    val names = compiler.fields(decl).map({ f -> f.name });
         \\    val upper = names.map({ n -> n.toUpper() }).join("_");
         \\    val hidden = if (names.contains("secret")) { "hidden"; } else { "open"; };
-        \\    val short = decl.name.slice(0, 3);
-        \\    val size = if (decl.name.length() == 4) { "four"; } else { "other"; };
-        \\    @emit("pub fn describe" + decl.name + "() -> string { return \"" + upper + ":" + hidden + ":" + short + ":" + size + "\"; }");
+        \\    val short = compiler.name(decl)!.slice(0, 3);
+        \\    val size = if (compiler.name(decl)!.length() == 4) { "four"; } else { "other"; };
+        \\    @emit("pub fn describe" + compiler.name(decl)! + "() -> string { return \"" + upper + ":" + hidden + ":" + short + ":" + size + "\"; }");
         \\}
         \\
         \\#[describe]
@@ -1412,9 +1412,9 @@ test "js: comptime primitives ---- decorator body calls string and array methods
 // All four backends print the same RUN LOG.
 test "js: receiver mutation ---- push inside a multi-statement closure threads out" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\pub fn component(comptime decl: @Decl) {
+        \\pub fn component(expr decl: unknown) {
         \\    var args: Array<string> = [];
-        \\    decl.fields.forEach({ f ->
+        \\    compiler.fields(decl).forEach({ f ->
         \\        var valKey = "";
         \\        f.annotations.forEach({ a -> if (a.name == "value") { valKey = a.args.join(""); } });
         \\        val expr = if (valKey != "") {
@@ -1424,7 +1424,7 @@ test "js: receiver mutation ---- push inside a multi-statement closure threads o
         \\        };
         \\        args.push(f.name + ": " + expr);
         \\    });
-        \\    @emit("pub fn wire" + decl.name + "() -> string { return \"" + decl.name + "(" + args.join(", ") + ")\"; }");
+        \\    @emit("pub fn wire" + compiler.name(decl)! + "() -> string { return \"" + compiler.name(decl)! + "(" + args.join(", ") + ")\"; }");
         \\}
         \\
         \\#[component]

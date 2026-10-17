@@ -1,13 +1,15 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 import {Item} from "shapes";
-pub fn dsl<T>(comptime e: @Expr<string>) -> @ExprCustom<T> {
-    val code = e.build("41");
-    val leaf = CustomNode(kind: "field", span: Span(7, 9, 1), label: "property", ref: e.lookup("Item"), children: []);
+pub fn dsl(expr e: string) -> anyvalue {
+    val code = compiler.build("41");
+    val leaf = CustomNode(kind: "field", span: Span(7, 9, 1), label: "property", ref: compiler.lookup(e, "Item"), children: []);
     val root = CustomNode(kind: "select", span: Span(0, 6, 1), label: "keyword", ref: null, children: [leaf]);
-    return e.custom(root, code);
+    compiler.custom(root);
+    return code;
 }
-val rows = dsl "select id from Item";
+val rows = dsl @`select id from Item`;
+import {compiler.Span, compiler.CustomNode} from "std";
 ```
 
 ----- COMPTIME WAT -- template dsl
@@ -57,7 +59,7 @@ val rows = dsl "select id from Item";
   call $rt_bin
   i64.const 3
   call $rt_int
-  i64.const 16
+  i64.const 25
   call $rt_int
   local.get $s3
   call $bp_comptime_template:__bp_push/4
@@ -267,7 +269,7 @@ val rows = dsl "select id from Item";
   call $rt_bin
   i64.const 4
   call $rt_int
-  i64.const 87
+  i64.const 103
   call $rt_int
   local.get $s4
   call $bp_comptime_template:__bp_push/4
@@ -592,23 +594,38 @@ val rows = dsl "select id from Item";
   )
   local.get $s1
   drop
-  (block $L33 (result i32)
+  local.get $s3
+  local.set $s1
   (block $L34
+  (block $L33
+  local.get $s1
+  local.set $s3
+  br $L34
+  )
+  local.get $s1
+  call $rt_badmatch
+  drop
+  br $raise
+  )
+  local.get $s1
+  drop
+  (block $L35 (result i32)
+  (block $L36
   local.get $s0
   local.get $s3
   local.get $s2
   call $bp_comptime_template:custom/3
   call $rt_pending
-  br_if $L34
-  br $L33
+  br_if $L36
+  br $L35
   )
   call $rt_class
   local.set $s0
   call $rt_reason
   local.set $s1
   call $rt_clear
-  (block $L35 (result i32)
-  (block $L36
+  (block $L37 (result i32)
+  (block $L38
   local.get $s0
   global.get $__lit
   i32.const 72
@@ -617,7 +634,7 @@ val rows = dsl "select id from Item";
   call $rt_atom
   call $rt_eqx
   i32.eqz
-  br_if $L36
+  br_if $L38
   local.get $s1
   local.set $s2
   global.get $__lit
@@ -625,7 +642,7 @@ val rows = dsl "select id from Item";
   i32.add
   i32.const 7
   call $rt_bin
-  i64.const 6
+  i64.const 7
   call $rt_int
   i64.const 12
   call $rt_int
@@ -644,7 +661,7 @@ val rows = dsl "select id from Item";
   drop
   br $raise
   call $rt_nil
-  br $L35
+  br $L37
   )
   local.get $s0
   local.get $s1
@@ -652,7 +669,7 @@ val rows = dsl "select id from Item";
   drop
   br $raise
   )
-  br $L33
+  br $L35
   )
   br $L1
   )
@@ -676,9 +693,9 @@ val rows = dsl "select id from Item";
 ;;             span => #{start => 0, 'end' => 19, line => 1}
 ;;         }
 ;;     ],
-;;     source => #{file => <<"">>, line => 8, col => 16},
+;;     source => #{file => <<"">>, line => 9, col => 16},
 ;;     context => #{
-;;         source => #{file => <<"">>, line => 8, col => 16},
+;;         source => #{file => <<"">>, line => 9, col => 16},
 ;;         text => <<"select id from Item">>,
 ;;         multiline => false
 ;;     },
@@ -696,6 +713,7 @@ val rows = dsl "select id from Item";
 ;;             component => undefined,
 ;;             module => <<"shapes">>,
 ;;             owner => undefined,
+;;             package => <<"">>,
 ;;             meta => [],
 ;;             identity => <<"shapes@@Item">>,
 ;;             local => <<"Item">>
@@ -733,6 +751,7 @@ val rows = dsl "select id from Item";
           "module": "shapes",
           "name": "Item",
           "owner": null,
+          "package": "",
           "params": [],
           "returnType": "",
           "variants": []

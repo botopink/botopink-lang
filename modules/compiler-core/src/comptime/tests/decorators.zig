@@ -52,7 +52,7 @@ fn expectDecoratorError(src: []const u8, needle: []const u8) !void {
 
 test "decorator: marker with no trailing args applies to a record" {
     try h.assertInfersOk(std.testing.allocator,
-        \\fn service(comptime decl: @Decl) { }
+        \\fn service(expr decl: unknown) { }
         \\
         \\#[service]
         \\type UserService(name: string)
@@ -61,7 +61,7 @@ test "decorator: marker with no trailing args applies to a record" {
 
 test "decorator: string-arg marker on a method (interface site)" {
     try h.assertInfersOk(std.testing.allocator,
-        \\fn getMapping(comptime decl: @Decl, comptime path: @Expr<string>) { }
+        \\fn getMapping(expr decl: unknown, comptime path: string) { }
         \\
         \\behavior Routes {
         \\    #[getMapping("/users")]
@@ -72,7 +72,7 @@ test "decorator: string-arg marker on a method (interface site)" {
 
 test "decorator: string-arg marker on a record method (P3 method-site)" {
     try h.assertInfersOk(std.testing.allocator,
-        \\fn getMapping(comptime decl: @Decl, comptime path: @Expr<string>) { }
+        \\fn getMapping(expr decl: unknown, comptime path: string) { }
         \\
         \\type Controller(
         \\    name: string) {
@@ -84,7 +84,7 @@ test "decorator: string-arg marker on a record method (P3 method-site)" {
 
 test "decorator: marker on a struct method (P3 method-site)" {
     try h.assertInfersOk(std.testing.allocator,
-        \\fn tag(comptime decl: @Decl, comptime label: @Expr<string>) { }
+        \\fn tag(expr decl: unknown, comptime label: string) { }
         \\
         \\type Sb(
         \\    x: i32) {
@@ -96,7 +96,7 @@ test "decorator: marker on a struct method (P3 method-site)" {
 
 test "decorator: marker on a record field (P3 field-site)" {
     try h.assertInfersOk(std.testing.allocator,
-        \\fn inject(comptime decl: @Decl) { }
+        \\fn inject(expr decl: unknown) { }
         \\
         \\type UserService(
         \\    #[inject]
@@ -108,7 +108,7 @@ test "decorator: marker on a record field (P3 field-site)" {
 
 test "decorator: string-arg marker on a struct field (P3 field-site)" {
     try h.assertInfersOk(std.testing.allocator,
-        \\fn value(comptime decl: @Decl, comptime key: @Expr<string>) { }
+        \\fn value(expr decl: unknown, comptime key: string) { }
         \\
         \\type Config(
         \\    #[value("port")]
@@ -121,7 +121,7 @@ test "decorator: declared as a `declare fn` marker (delegate form)" {
     // A framework lib may ship its markers as bodyless `declare fn`s — the core
     // recognizes that form identically (first param `comptime _: @Decl`).
     try h.assertInfersOk(std.testing.allocator,
-        \\declare fn component(comptime decl: @Decl);
+        \\declare fn component(expr decl: unknown);
         \\
         \\#[component]
         \\type Widget(id: i32)
@@ -130,7 +130,7 @@ test "decorator: declared as a `declare fn` marker (delegate form)" {
 
 test "decorator: applies on struct, enum and fn sites" {
     try h.assertInfersOk(std.testing.allocator,
-        \\fn tag(comptime decl: @Decl, comptime label: @Expr<string>) { }
+        \\fn tag(expr decl: unknown, comptime label: string) { }
         \\
         \\#[tag("a")]
         \\type Sa(x: i32)
@@ -158,8 +158,8 @@ test "decorator body: @compilerError aborts compilation" {
     // `@compilerError(msg)` is the generic compile-time error — no `@Decl` handle
     // needed, reads like `@panic`. Preferred over `decl.fail`/`decl.failAt`.
     try h.assertInfersOk(std.testing.allocator,
-        \\fn service(comptime decl: @Decl) {
-        \\    if (decl.kind != .Type) {
+        \\fn service(expr decl: unknown) {
+        \\    if (compiler.kind(decl) != .Type) {
         \\        @compilerError("#[service] must annotate a type with fields");
         \\    }
         \\}
@@ -176,9 +176,9 @@ test "decorator body: reads decl.kind and calls decl.fail" {
     // `TypeInfo` but not of `DeclKind`, taken from the flat variant table) —
     // and the `decl.fail(string)` diagnostic call.
     try h.assertInfersOk(std.testing.allocator,
-        \\fn service(comptime decl: @Decl) {
-        \\    if (decl.kind != .Type) {
-        \\        decl.fail("#[service] must annotate a type with fields");
+        \\fn service(expr decl: unknown) {
+        \\    if (compiler.kind(decl) != .Type) {
+        \\        compiler.fail("#[service] must annotate a type with fields", at: decl);
         \\    }
         \\}
         \\
@@ -189,9 +189,9 @@ test "decorator body: reads decl.kind and calls decl.fail" {
 
 test "decorator body: reads decl.name and decl.returnType" {
     try h.assertInfersOk(std.testing.allocator,
-        \\fn describe(comptime decl: @Decl) {
-        \\    val n = decl.name;
-        \\    val rt = decl.returnType;
+        \\fn describe(expr decl: unknown) {
+        \\    val n = compiler.name(decl)!;
+        \\    val rt = compiler.returnType(decl);
         \\}
         \\
         \\#[describe]
@@ -203,10 +203,10 @@ test "decorator body: reads the aggregate members (fields/methods/annotations)" 
     // P3: `@Decl` is a struct, so the aggregate reflection members resolve —
     // this is what a wiring decorator iterates to build a DI/router table.
     try h.assertInfersOk(std.testing.allocator,
-        \\fn component(comptime decl: @Decl) {
-        \\    val fs = decl.fields;
-        \\    val ms = decl.methods;
-        \\    val ans = decl.annotations;
+        \\fn component(expr decl: unknown) {
+        \\    val fs = compiler.fields(decl);
+        \\    val ms = compiler.methods(decl);
+        \\    val ans = compiler.annotations(decl);
         \\}
         \\
         \\#[component]
@@ -218,7 +218,7 @@ test "decorator body: reads the aggregate members (fields/methods/annotations)" 
 
 test "decorator error: too few arguments" {
     try expectDecoratorError(
-        \\fn getMapping(comptime decl: @Decl, comptime path: @Expr<string>) { }
+        \\fn getMapping(expr decl: unknown, comptime path: string) { }
         \\
         \\#[getMapping]
         \\type A(x: i32)
@@ -227,7 +227,7 @@ test "decorator error: too few arguments" {
 
 test "decorator error: too many arguments" {
     try expectDecoratorError(
-        \\fn service(comptime decl: @Decl) { }
+        \\fn service(expr decl: unknown) { }
         \\
         \\#[service("oops")]
         \\type A(x: i32)
@@ -236,7 +236,7 @@ test "decorator error: too many arguments" {
 
 test "decorator error: argument type mismatch (number where string expected)" {
     try expectDecoratorError(
-        \\fn value(comptime decl: @Decl, comptime key: @Expr<string>) { }
+        \\fn value(expr decl: unknown, comptime key: string) { }
         \\
         \\#[value(123)]
         \\type A(x: i32)
@@ -247,20 +247,20 @@ test "decorator error: argument type mismatch (number where string expected)" {
 
 test "decision 280: a decorator parameter without comptime is refused at it" {
     try expectDecoratorError(
-        \\fn route(comptime decl: @Decl, path: string) { }
+        \\fn route(expr decl: unknown, path: string) { }
     , "decorator-param-not-comptime: the decorator `route`'s parameter `path` is not `comptime`");
 }
 
 test "decision 280: a comptime default outside a decorator is refused at it" {
     try expectDecoratorError(
-        \\fn scale(x: i32, comptime n: @Expr<i32> = 3) -> i32 { return x * n.value; }
+        \\fn scale(x: i32, comptime n: i32 = 3) -> i32 { return x * n; }
     , "comptime-default-outside-decorator: the `comptime` parameter `n` takes a default only in a decorator");
 }
 
 test "decision 364: a function call is not known at build, refused where the body reads it" {
     try expectDecoratorError(
         \\fn env(name: string) -> string { return name; }
-        \\fn tag(comptime decl: @Decl, comptime label: @Expr<string>) { decl.setMeta("l", label.value); }
+        \\fn tag(expr decl: unknown, comptime label: string) { decl.setMeta("l", label); }
         \\
         \\#[tag(env("X"))]
         \\type A(x: i32)
@@ -270,7 +270,7 @@ test "decision 364: a function call is not known at build, refused where the bod
 test "decision 364: an argument not known at build that the body never reads is accepted" {
     try h.assertInfersOk(std.testing.allocator,
         \\fn env(name: string) -> string { return name; }
-        \\fn tag(comptime decl: @Decl, comptime label: @Expr<string>) { }
+        \\fn tag(expr decl: unknown, comptime label: string) { }
         \\
         \\#[tag(env("X"))]
         \\type A(x: i32)
@@ -282,10 +282,10 @@ test "decision 280: arguments are typed — arrays, functions, variants, labels,
         \\type Level { Low, High }
         \\fn positive(o: Order) -> bool { return o.total > 0; }
         \\fn mark<T>(
-        \\    comptime decl: @Decl<T>,
-        \\    comptime sizes: @Expr<i32[]>,
-        \\    comptime rule: @Expr<?fn(v: T) -> bool> = null,
-        \\    comptime level: @Expr<Level> = .Low,
+        \\    expr decl: T,
+        \\    comptime sizes: i32[],
+        \\    comptime rule: ?fn(v: T) -> bool = null,
+        \\    comptime level: Level = .Low,
         \\) { }
         \\
         \\#[mark([1, 2], positive, level: .High)]
@@ -297,7 +297,7 @@ test "decision 280: a function argument over another type is refused, both spell
     try expectDecoratorError(
         \\type Order(total: i32)
         \\fn positive(o: Order) -> bool { return o.total > 0; }
-        \\fn check<T>(comptime decl: @Decl<T>, comptime rule: @Expr<fn(v: T) -> bool>) { }
+        \\fn check<T>(expr decl: T, comptime rule: fn(v: T) -> bool) { }
         \\
         \\#[check(positive)]
         \\type Account(name: string)
@@ -306,7 +306,7 @@ test "decision 280: a function argument over another type is refused, both spell
 
 test "decision 280: @Decl<P> refuses a declaration of another shape" {
     try expectDecoratorError(
-        \\fn on<E>(comptime decl: @Decl<fn(e: E) -> unknown>) { }
+        \\fn on<E>(expr decl: fn(e: E) -> unknown) { }
         \\
         \\#[on]
         \\fn wrong() { }
@@ -316,7 +316,7 @@ test "decision 280: @Decl<P> refuses a declaration of another shape" {
 test "decision 280: a variant is named as declared" {
     try expectDecoratorError(
         \\type Code { Custom, Mismatch }
-        \\fn tag(comptime decl: @Decl, comptime code: @Expr<Code>) { }
+        \\fn tag(expr decl: unknown, comptime code: Code) { }
         \\
         \\#[tag(.custom)]
         \\type A(x: i32)
@@ -326,7 +326,7 @@ test "decision 280: a variant is named as declared" {
 test "decision 280: a type parameter refuses a string" {
     try expectDecoratorError(
         \\type Mail(to: string)
-        \\fn missing(comptime decl: @Decl, comptime t: @Expr<type>) { }
+        \\fn missing(expr decl: unknown, comptime t: anytype) { }
         \\
         \\#[missing("Mail")]
         \\fn mail() { }
@@ -335,7 +335,7 @@ test "decision 280: a type parameter refuses a string" {
 
 test "decision 280: a label names a parameter" {
     try expectDecoratorError(
-        \\fn tag(comptime decl: @Decl, comptime label: @Expr<string>) { }
+        \\fn tag(expr decl: unknown, comptime label: string) { }
         \\
         \\#[tag(name: "x")]
         \\type A(x: i32)
@@ -357,7 +357,7 @@ test "infer: an @emit-ing module still yields source-decl TypedBindings (R2)" {
     const alloc = arena.allocator();
 
     const src =
-        \\fn service(comptime decl: @Decl) { }
+        \\fn service(expr decl: unknown) { }
         \\
         \\#[service]
         \\type PostService(name: string)
@@ -397,7 +397,7 @@ test "decision 575 (4): `comptime x: T` holds the value — decorator, function,
         \\}
         \\fn scale(comptime n: i32, x: i32) -> i32 { return x * n; }
         \\type Kit {
-        \\    fn pick(comptime t: type) -> i32 { return 1; }
+        \\    fn pick(comptime t: anytype) -> i32 { return 1; }
         \\}
         \\#[@external(.Erlang("os:getenv($0)"), .Node("process.env[$0]"))]
         \\declare fn host(comptime key: string) -> string;
@@ -410,11 +410,11 @@ test "decision 575 (4): `comptime x: T` holds the value — decorator, function,
 test "decision 364: `x.value` is the argument's value, typed `T`" {
     try h.assertInfersOk(std.testing.allocator,
         \\type Level { Low, High }
-        \\fn mark(comptime decl: @Decl, comptime n: @Expr<i32>, comptime l: @Expr<Level>, comptime xs: @Expr<string[]>) {
-        \\    val total: i32 = n.value + xs.value.length;
-        \\    if (l.value == Level.High) decl.setMeta("t", total.toString());
+        \\fn mark(expr decl: unknown, comptime n: i32, comptime l: Level, comptime xs: string[]) {
+        \\    val total: i32 = n + xs.length;
+        \\    if (l == Level.High) decl.setMeta("t", total.toString());
         \\}
-        \\fn scale(comptime n: @Expr<i32>, x: i32) -> i32 { return x * n.value; }
+        \\fn scale(comptime n: i32, x: i32) -> i32 { return x * n; }
         \\#[mark(2, .High, ["a"])]
         \\type A(x: i32)
         \\val s = scale(3, 4);
@@ -423,24 +423,24 @@ test "decision 364: `x.value` is the argument's value, typed `T`" {
 
 test "decision 364: an `@Expr` of a function or a type has no `.value`" {
     try expectDecoratorError(
-        \\fn rule(comptime decl: @Decl, comptime r: @Expr<fn(x: i32) -> bool>) {
-        \\    val f = r.value;
+        \\fn rule(expr decl: unknown, comptime r: fn(x: i32) -> bool) {
+        \\    val f = r;
         \\}
     , "expr-value-of-function: `r` is an `@Expr` of a function, which has no `.value`");
     try expectDecoratorError(
-        \\fn rule(comptime decl: @Decl, comptime r: @Expr<?fn(x: i32) -> bool> = null) {
-        \\    if (r.value == null) decl.fail("none");
+        \\fn rule(expr decl: unknown, comptime r: ?fn(x: i32) -> bool = null) {
+        \\    if (r == null) compiler.fail("none", at: decl);
         \\}
     , "expr-value-of-function");
     try expectDecoratorError(
-        \\fn bean(comptime decl: @Decl, comptime t: @Expr<type>) {
-        \\    val v = t.value;
+        \\fn bean(expr decl: unknown, comptime t: anytype) {
+        \\    val v = t;
         \\}
     , "expr-value-of-type: `t` is an `@Expr` of a type, which has no `.value`");
     // A type parameter the annotation binds to a function, read `.value`.
     try expectDecoratorError(
-        \\fn pass<T>(comptime decl: @Decl, comptime v: @Expr<T>) {
-        \\    val x = v.value;
+        \\fn pass<T>(expr decl: unknown, comptime v: T) {
+        \\    val x = v;
         \\}
         \\fn f(n: i32) -> i32 { return n; }
         \\#[pass(f)]
@@ -450,19 +450,13 @@ test "decision 364: an `@Expr` of a function or a type has no `.value`" {
 
 test "decision 364: a `comptime` parameter's `@Expr` answers `.value`, and `.fail` and `.text` in a decorator (576 (2))" {
     try h.assertInfersOk(std.testing.allocator,
-        \\fn note(comptime decl: @Decl, comptime m: @Expr<string>) {
-        \\    decl.setMeta("m", m.text());
+        \\fn note(expr decl: unknown, expr m: string) {
+        \\    decl.setMeta("m", compiler.text(m));
         \\}
     );
-    try expectDecoratorError(
-        \\fn twice(comptime n: @Expr<i32>) -> i32 {
-        \\    n.fail("no");
-        \\    return 2;
-        \\}
-    , "expr-param-method: `n` is a `comptime` parameter, whose `@Expr` answers `.value` — not `.fail(…)`");
     try h.assertInfersOk(std.testing.allocator,
-        \\fn check(comptime decl: @Decl, comptime n: @Expr<i32>) {
-        \\    if (n.value < 0) n.fail("negative");
+        \\fn check(expr decl: unknown, comptime n: i32) {
+        \\    if (n < 0) compiler.fail("negative", at: n);
         \\}
     );
 }

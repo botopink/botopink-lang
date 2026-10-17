@@ -947,6 +947,10 @@ pub const Env = struct {
     /// marks them (decision 575 (2)), so `declare-without-implementation` is
     /// not its rule.
     compilerBodies: bool = false,
+    /// Decision 575 (3) — the package of the module being inferred: `std`
+    /// for std's, the dependency's name, `""` for the root package
+    /// (`compiler.package` in a decorator, the handle's `package`).
+    package: []const u8 = "",
     /// `@src().file` (1.0.10-beta decision 73): the display path of the file being
     /// inferred, relative to its package root, extension included
     /// (`src/emilia.bp`). Set by `comptime.zig` from `Module.srcPath`, or from
@@ -2585,7 +2589,9 @@ pub const Env = struct {
                 try dotted.appendSlice(self.arena, seg);
                 first = false;
             }
-            if (std.mem.eql(u8, run.items, flat)) return try dotted.toOwnedSlice(self.arena);
+            // A one-segment internal name (`__Source`, decision 576 (13)) is
+            // no section: a section is `__Owner__Leaf`.
+            if (!first and std.mem.indexOf(u8, key[2..], "__") != null and std.mem.eql(u8, run.items, flat)) return try dotted.toOwnedSlice(self.arena);
             dotted.deinit(self.arena);
         }
         return null;

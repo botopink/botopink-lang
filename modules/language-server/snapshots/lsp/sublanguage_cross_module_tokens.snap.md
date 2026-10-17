@@ -1,7 +1,7 @@
 ----- SOURCE
 ```botopink
 import { erika, Cities } from "erika";
-val xs = erika "select name from Cities";
+val xs = erika @`select name from Cities`;
 ```
 
 ----- SEMANTIC TOKENS
@@ -12,8 +12,8 @@ val xs = erika "select name from Cities";
   (1,0) +3  keyword  "val"
   (1,4) +2  variable [declaration]  "xs"
   (1,9) +5  variable  "erika"
-  (1,16) +6  keyword  "select"
-  (1,23) +4  property  "name"
+  (1,17) +6  keyword  "select"
+  (1,24) +4  property  "name"
 ----- ENCODED (deltaLine, deltaStart, len, type, mods)
   0 0 6 9 0
   0 9 5 7 0
@@ -22,5 +22,5 @@ val xs = erika "select name from Cities";
   1 0 3 9 0
   0 4 2 7 1
   0 5 5 7 0
-  0 7 6 9 0
+  0 8 6 9 0
   0 7 4 8 0

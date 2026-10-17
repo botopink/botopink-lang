@@ -1,15 +1,15 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 val greeting = "ola mundo";
-pub fn refer(comptime q: @Expr<string>) -> @Expr<string> {
-    val hit = q.lookup("greeting");
+pub fn refer(expr q: string) -> string {
+    val hit = compiler.lookup(q, "greeting");
     if (hit) { b ->
-        return q.build(b.name);
+        return compiler.build(b.name);
     } else {
-        return q.fail("greeting not found in caller scope");
+        return compiler.fail("greeting not found in caller scope", at: q);
     };
 }
-val s = refer "greeting";
+val s = refer @`greeting`;
 fn main() {
     @print(s);
 }
@@ -18,7 +18,7 @@ fn main() {
 ----- COMPTIME WAT -- template refer
 ```wat
 (func $refer/1 (param $a0 i32) (result i32)
-  (local $s0 i32) (local $s1 i32) (local $s2 i32) (local $s3 i32) (local $s4 i32)
+  (local $s0 i32) (local $s1 i32) (local $s2 i32) (local $s3 i32) (local $s4 i32) (local $s5 i32)
   (block $raise
   (block $L1 (result i32)
   (block $L2
@@ -62,7 +62,7 @@ fn main() {
   call $rt_bin
   i64.const 3
   call $rt_int
-  i64.const 15
+  i64.const 31
   call $rt_int
   local.get $s3
   call $bp_comptime_template:__bp_push/4
@@ -116,6 +116,11 @@ fn main() {
   call $rt_eqx
   i32.eqz
   br_if $L10
+  i32.const 1
+  call $rt_tuple
+  local.set $s2
+  local.get $s2
+  i32.const 0
   (block $L11 (result i32)
   (block $L12
   local.get $s0
@@ -130,13 +135,13 @@ fn main() {
   br $L11
   )
   call $rt_class
-  local.set $s2
-  call $rt_reason
   local.set $s3
+  call $rt_reason
+  local.set $s4
   call $rt_clear
   (block $L13 (result i32)
   (block $L14
-  local.get $s2
+  local.get $s3
   global.get $__lit
   i32.const 72
   i32.add
@@ -145,8 +150,8 @@ fn main() {
   call $rt_eqx
   i32.eqz
   br_if $L14
-  local.get $s3
-  local.set $s4
+  local.get $s4
+  local.set $s5
   global.get $__lit
   i32.const 304
   i32.add
@@ -154,9 +159,9 @@ fn main() {
   call $rt_bin
   i64.const 7
   call $rt_int
-  i64.const 16
+  i64.const 72
   call $rt_int
-  local.get $s4
+  local.get $s5
   call $bp_comptime_template:__bp_push/4
   call $rt_pending
   br_if $raise
@@ -166,24 +171,108 @@ fn main() {
   i32.add
   i32.const 5
   call $rt_atom
-  local.get $s4
+  local.get $s5
   call $rt_raise
   drop
   br $raise
   call $rt_nil
   br $L13
   )
-  local.get $s2
   local.get $s3
+  local.get $s4
   call $rt_raise
   drop
   br $raise
   )
   br $L11
   )
+  call $rt_tset
+  drop
+  local.get $s2
+  local.set $s2
+  (block $L15 (result i32)
+  (block $L16
+  local.get $s2
+  call $rt_tuple_arity
+  i32.const 1
+  i32.ne
+  br_if $L16
+  local.get $s2
+  i32.const 0
+  call $rt_elem
+  local.set $s3
+  local.get $s3
+  local.set $s3
+  (block $L17 (result i32)
+  (block $L18
+  local.get $s3
+  call $bp_comptime_template:expr/1
+  call $rt_pending
+  br_if $L18
+  br $L17
+  )
+  call $rt_class
+  local.set $s3
+  call $rt_reason
+  local.set $s4
+  call $rt_clear
+  (block $L19 (result i32)
+  (block $L20
+  local.get $s3
+  global.get $__lit
+  i32.const 72
+  i32.add
+  i32.const 5
+  call $rt_atom
+  call $rt_eqx
+  i32.eqz
+  br_if $L20
+  local.get $s4
+  local.set $s5
+  global.get $__lit
+  i32.const 304
+  i32.add
+  i32.const 7
+  call $rt_bin
+  i64.const 7
+  call $rt_int
+  i64.const 25
+  call $rt_int
+  local.get $s5
+  call $bp_comptime_template:__bp_push/4
+  call $rt_pending
+  br_if $raise
+  drop
+  global.get $__lit
+  i32.const 72
+  i32.add
+  i32.const 5
+  call $rt_atom
+  local.get $s5
+  call $rt_raise
+  drop
+  br $raise
+  call $rt_nil
+  br $L19
+  )
+  local.get $s3
+  local.get $s4
+  call $rt_raise
+  drop
+  br $raise
+  )
+  br $L17
+  )
+  br $L15
+  )
+  local.get $s2
+  call $rt_case_clause
+  drop
+  br $raise
+  )
   br $L9
   )
-  (block $L15
+  (block $L21
   local.get $s1
   local.set $s2
   i32.const 2
@@ -209,13 +298,13 @@ fn main() {
   drop
   local.get $s3
   local.set $s0
-  (block $L16 (result i32)
-  (block $L17
+  (block $L22 (result i32)
+  (block $L23
   local.get $s0
   call $rt_tuple_arity
   i32.const 2
   i32.ne
-  br_if $L17
+  br_if $L23
   local.get $s0
   i32.const 0
   call $rt_elem
@@ -228,22 +317,22 @@ fn main() {
   local.set $s3
   local.get $s3
   local.set $s3
-  (block $L18 (result i32)
-  (block $L19
+  (block $L24 (result i32)
+  (block $L25
   local.get $s2
   local.get $s3
   call $bp_comptime_template:build/2
   call $rt_pending
-  br_if $L19
-  br $L18
+  br_if $L25
+  br $L24
   )
   call $rt_class
   local.set $s2
   call $rt_reason
   local.set $s3
   call $rt_clear
-  (block $L20 (result i32)
-  (block $L21
+  (block $L26 (result i32)
+  (block $L27
   local.get $s2
   global.get $__lit
   i32.const 72
@@ -252,7 +341,7 @@ fn main() {
   call $rt_atom
   call $rt_eqx
   i32.eqz
-  br_if $L21
+  br_if $L27
   local.get $s3
   local.set $s4
   global.get $__lit
@@ -262,7 +351,7 @@ fn main() {
   call $rt_bin
   i64.const 5
   call $rt_int
-  i64.const 16
+  i64.const 25
   call $rt_int
   local.get $s4
   call $bp_comptime_template:__bp_push/4
@@ -279,7 +368,7 @@ fn main() {
   drop
   br $raise
   call $rt_nil
-  br $L20
+  br $L26
   )
   local.get $s2
   local.get $s3
@@ -287,9 +376,9 @@ fn main() {
   drop
   br $raise
   )
-  br $L18
+  br $L24
   )
-  br $L16
+  br $L22
   )
   local.get $s0
   call $rt_case_clause
@@ -345,6 +434,7 @@ fn main() {
 ;;             component => undefined,
 ;;             module => <<"">>,
 ;;             owner => undefined,
+;;             package => <<"">>,
 ;;             meta => [],
 ;;             identity => <<"main@@greeting">>,
 ;;             local => <<"greeting">>

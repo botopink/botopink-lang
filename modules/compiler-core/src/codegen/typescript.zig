@@ -547,6 +547,7 @@ const Builder = struct {
         for (r.methods) |m| {
             if (m.is_declare and !declaresHostMember(m)) continue;
             if (m.returnType) |ret| if (ret.isTemplateReturnType()) continue;
+            if (ast.templateTextIndex(m.params) != null) continue; // a template method (decision 578)
             try members.append(self.b.arena, .{ .method = .{
                 .name = try self.genericName(m.name, m.genericParams),
                 .params = try self.params(m.params),
@@ -615,6 +616,7 @@ const Builder = struct {
         for (e.methods) |m| {
             if (m.is_declare and !declaresHostMember(m)) continue;
             if (m.returnType) |ret| if (ret.isTemplateReturnType()) continue;
+            if (ast.templateTextIndex(m.params) != null) continue; // a template method (decision 578)
             // An enum method is a `static` of the enum's class, and a
             // receiver-first one keeps `self` as a real first parameter, so it
             // is not dropped the way a record method's `self` is.
@@ -692,6 +694,7 @@ const Builder = struct {
         for (i.methods) |m| {
             if (m.is_default) continue;
             if (m.returnType) |ret| if (ret.isTemplateReturnType()) continue;
+            if (ast.templateTextIndex(m.params) != null) continue; // a template method (decision 578)
             try members.append(self.b.arena, .{ .method = .{
                 .name = try self.genericName(m.name, m.genericParams),
                 .params = try self.params(m.params),

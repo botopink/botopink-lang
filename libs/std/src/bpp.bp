@@ -16,13 +16,16 @@
 //// A module takes no annotation (315), so a prelude is marked by a `val` it
 //// declares — `#[bpp.htmlPrelude] pub val prelude = bpp.Prelude();` — whose
 //// value is the empty record `Prelude`. Each annotation is a decorator in
-//// 302's shape and checks only where it sits: a template function answering
-//// `@ExprCustom<R>` (275 reads `R` from it) for the two template roles, a
+//// 302's shape and checks only where it sits: a template function — its
+//// first parameter `expr q: string`, answering `R` (275 reads `R` from it,
+//// decision 578) — for the two template roles, a
 //// `val` for the two prelude roles. How many of each a package carries, and
 //// what else a prelude module declares, is the toolchain's check
 //// (`compiler-cli`, front 116).
 ////
 //// A root module (decision 106): pure, no import.
+
+import {compiler.DeclKind};
 
 // The value of a prelude module's marker `val`.
 pub type Prelude()
@@ -37,9 +40,9 @@ pub fn html(expr decl: unknown) {
                 + "` is not a function",
             at: decl,
         );
-    if (!compiler.returnType(decl).startsWith("@ExprCustom<"))
+    if (!compiler.returnType(decl).startsWith("expr "))
         compiler.fail(
-            "#[bpp.html] annotates a template function answering `@ExprCustom<R>` — `"
+            "#[bpp.html] annotates a template function, whose first parameter is `expr q: string` — `"
                 + compiler.name(decl)!
                 + "` answers `"
                 + compiler.returnType(decl)
@@ -58,9 +61,9 @@ pub fn style(expr decl: unknown) {
                 + "` is not a function",
             at: decl,
         );
-    if (!compiler.returnType(decl).startsWith("@ExprCustom<"))
+    if (!compiler.returnType(decl).startsWith("expr "))
         compiler.fail(
-            "#[bpp.style] annotates a template function answering `@ExprCustom<R>` — `"
+            "#[bpp.style] annotates a template function, whose first parameter is `expr q: string` — `"
                 + compiler.name(decl)!
                 + "` answers `"
                 + compiler.returnType(decl)

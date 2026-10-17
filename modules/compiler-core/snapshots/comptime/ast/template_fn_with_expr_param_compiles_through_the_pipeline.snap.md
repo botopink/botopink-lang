@@ -1,18 +1,16 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-pub fn html(comptime template: @Expr<string>) -> @Expr<string> {
+pub fn html(expr template: string) -> string {
     return template;
 }
-val c = html """
+val c = html @`
 <p>hello</p>
-""";
+`;
 ```
 
 ----- BOTOPINK TRANSFORM CODE -- main.bp
 ```botopink
-pub val c = """
-<p>hello</p>
-""";
+pub val c = "\n<p>hello</p>\n";
 ```
 
 ----- TYPED AST JSON -- main.json
@@ -26,11 +24,11 @@ pub val c = """
       "params": [
         {
           "name": "template",
-          "type": "Expr<string>",
+          "type": "__Expr<string>",
           "is_comptime": true
         }
       ],
-      "return_type": "Expr<string>",
+      "return_type": "__Expr<string>",
       "body": [
         {
           "source": "return template;"

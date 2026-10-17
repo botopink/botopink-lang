@@ -19,16 +19,18 @@ const MARKUP =
     \\import {bpp} from "std";
     \\
     \\#[bpp.html]
-    \\pub default fn markup(comptime t: @Expr<string>) -> @ExprCustom<i32> {
-    \\    val text = t.text();
+    \\pub default fn markup(expr t: string) -> i32 {
+    \\    val text = compiler.text(t);
     \\    val at = text.indexOf("!");
     \\    if (at >= 0) {
-    \\        t.failAt(Span(at, at + 1, 1), "markup: `!` is not markup");
+    \\        compiler.fail("markup: `!` is not markup", at: t, span: Span(at, at + 1, 1));
     \\    }
     \\    val root = CustomNode(kind: "markup", span: Span(0, 0, 1), label: "", ref: null, children: []);
-    \\    return t.custom(root, t.build(text.length().toString()));
+    \\    compiler.custom(root);
+    \\    return compiler.build(text.length().toString());
     \\}
     \\
+    \\import {compiler.Span, compiler.CustomNode} from "std";
 ;
 
 const CARD =

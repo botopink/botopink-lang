@@ -7,16 +7,16 @@ pub type Badge(
     n: i32,
 )
 val unrelated = 1;
-pub fn ui(comptime q: @Expr<string>) -> @Expr<string> {
-    val count = q.bindings().length;
-    val hit = q.lookup("Badge");
+pub fn ui(expr q: string) -> string {
+    val count = compiler.bindings(q).length;
+    val hit = compiler.lookup(q, "Badge");
     if (hit) { b ->
-        return q.build("\"" + b.name + "/" + b.module + "\"");
+        return compiler.build("\"" + b.name + "/" + b.module + "\"");
     } else {
-        return q.fail("Badge is a word of the text and in scope");
+        return compiler.fail("Badge is a word of the text and in scope", at: q);
     };
 }
-val s = ui "<Card title=\"x\"><Badge/></Card>";
+val s = ui @`<Card title="x"><Badge/></Card>`;
 ```
 
 ----- BOTOPINK TRANSFORM CODE -- main.bp
@@ -64,17 +64,17 @@ pub val s = "Badge/";
       "params": [
         {
           "name": "q",
-          "type": "Expr<string>",
+          "type": "__Expr<string>",
           "is_comptime": true
         }
       ],
-      "return_type": "Expr<string>",
+      "return_type": "__Expr<string>",
       "body": [
         {
-          "source": "val count = q.bindings().length;"
+          "source": "val count = compiler.bindings(q).length;"
         },
         {
-          "source": "val hit = q.lookup(\"Badge\");"
+          "source": "val hit = compiler.lookup(q, \"Badge\");"
         },
         {
           "source": "if (hit) { b ->"

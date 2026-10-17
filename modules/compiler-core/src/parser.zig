@@ -224,6 +224,10 @@ pub const ParseErrorType = enum {
     removedRecordType,
     /// `type T` — the type of a type is written `type<T>` (decision 575 (5)).
     removedTypeBareParam,
+    /// The bare `type` — written `anytype` (decision 578 (2)).
+    removedBareType,
+    /// `@Expr<T>`, `@ExprCustom<T>`, `@Decl` — gone (decision 576 (1)).
+    removedExprType,
     /// `unknown<i32>` / `unknown(…)` — decision 8 §2's `unknown` is one type,
     /// not a constructor: it takes no type arguments (06 N19).
     unknownTakesNoArguments,

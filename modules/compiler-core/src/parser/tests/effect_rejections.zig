@@ -418,11 +418,11 @@ test "RG4 — user-defined generic skip is rejected" {
 
 test "decision 316 — `fn(..) -> R` is `@Decl<…>`'s pattern alone, refused anywhere else at the `..`" {
     try expectKindAt("fn f(g: fn(..) -> i32) -> i32 { return 0; }", .anyParamsOutsideDecl, 1, 12);
-    try expectKind("fn d(comptime decl: @Decl<fn(g: fn(..) -> i32) -> i32>) {}", .anyParamsOutsideDecl);
-    try expectKind("fn d(comptime decl: @Decl<Box<fn(..) -> i32>>) {}", .anyParamsOutsideDecl);
+    try expectKind("fn d(expr decl: fn(g: fn(..) -> i32) -> i32) {}", .anyParamsOutsideDecl);
+    try expectKind("fn d(expr decl: Box<fn(..) -> i32>) {}", .anyParamsOutsideDecl);
 
     const alloc = std.testing.allocator;
-    const src = "fn d(comptime decl: @Decl<fn(..) -> string>) {}";
+    const src = "fn d(expr decl: fn(..) -> string) {}";
     var l = Lexer.init(src);
     const tokens = try l.scanAll(alloc);
     defer l.deinit(alloc);

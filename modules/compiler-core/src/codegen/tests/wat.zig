@@ -2937,7 +2937,7 @@ test "wat: print ---- a bool element of a module-level tuple prints true / false
 }
 
 test "wat: a package template's answer is its library's record, its field read and its method resolved" {
-    // 144 B-68 — `shelf "built"` answers `Label`, a type this module does not
+    // 144 B-68 — `shelf @`built`` answers `Label`, a type this module does not
     // import. The call's value carries `Label`'s fields (the slot of `text`
     // is a string, `size` an `i32` with `toString`), and the built code's
     // call to the library's `makeLabel` — under the template's alias —
@@ -2950,8 +2950,8 @@ test "wat: a package template's answer is its library's record, its field read a
         \\    return Label(text: text, size: text.length);
         \\}
         \\
-        \\pub default fn label(comptime t: @Expr<string>) -> @Expr<Label> {
-        \\    return t.build("makeLabel(\"" + t.text() + "\")");
+        \\pub default fn label(expr t: string) -> Label {
+        \\    return compiler.build("makeLabel(\"" + compiler.text(t) + "\")");
         \\}
         },
         .{ .path = "shelf/root", .source =
@@ -2961,7 +2961,7 @@ test "wat: a package template's answer is its library's record, its field read a
         \\import shelf from "shelf";
         \\
         \\pub fn main() {
-        \\    val built = shelf "built";
+        \\    val built = shelf @`built`;
         \\    @print(built.text);
         \\    @print(built.size.toString());
         \\}

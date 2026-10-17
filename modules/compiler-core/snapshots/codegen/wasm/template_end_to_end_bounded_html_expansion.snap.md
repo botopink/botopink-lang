@@ -1,12 +1,11 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-pub fn html(comptime template: @Expr<string>) -> @Expr<string> {
+pub fn html(expr template: string) -> string {
     return template;
 }
-val name = "world";
-val page = html """
-<p>${name}</p>
-""";
+val page = html @`
+<p>world</p>
+`;
 fn main() {
     @print(page);
 }
@@ -22,7 +21,6 @@ fn main() {
   (memory (export "memory") 1)
   (start $__init_strs)
   (global $__heap_ptr (mut i32) (i32.const 256))
-  (global $name (mut (ref null $str)) (ref.null $str))
   (global $page (mut (ref null $str)) (ref.null $str))
   (func $main (export "main")
     global.get $page
@@ -30,12 +28,6 @@ fn main() {
   )
   (func $__init_globals
     global.get $__s0
-    global.set $name
-    global.get $__s1
-    global.get $name
-    call $__str_concat
-    global.get $__s2
-    call $__str_concat
     global.set $page
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")
@@ -262,33 +254,6 @@ fn main() {
     call $__print_str_raw
     call $__print_nl
   )
-  (func $__str_concat (param $a (ref null $str)) (param $b (ref null $str)) (result (ref null $str))
-    (local $r (ref null $str)) (local $alen i32) (local $blen i32)
-    local.get $a
-    array.len
-    local.set $alen
-    local.get $b
-    array.len
-    local.set $blen
-    local.get $alen
-    local.get $blen
-    i32.add
-    array.new_default $str
-    local.set $r
-    local.get $r
-    i32.const 0
-    local.get $a
-    i32.const 0
-    local.get $alen
-    array.copy $str $str
-    local.get $r
-    local.get $alen
-    local.get $b
-    i32.const 0
-    local.get $blen
-    array.copy $str $str
-    local.get $r
-  )
   (func $__alloc (param $n i32) (result i32)
     (local $p i32) (local $e i32)
     global.get $__heap_ptr
@@ -337,25 +302,13 @@ fn main() {
     global.set $__heap_ptr
     local.get $p
   )
-  (data $__d0 "world")
+  (data $__d0 "\n<p>world</p>\n")
   (global $__s0 (mut (ref null $str)) (ref.null $str))
-  (data $__d1 "\n<p>")
-  (global $__s1 (mut (ref null $str)) (ref.null $str))
-  (data $__d2 "</p>\n")
-  (global $__s2 (mut (ref null $str)) (ref.null $str))
   (func $__init_strs
     i32.const 0
-    i32.const 5
+    i32.const 14
     array.new_data $str $__d0
     global.set $__s0
-    i32.const 0
-    i32.const 4
-    array.new_data $str $__d1
-    global.set $__s1
-    i32.const 0
-    i32.const 5
-    array.new_data $str $__d2
-    global.set $__s2
     call $__init_globals
   )
   (@custom "botopink.needs" "gc\0a")

@@ -1,7 +1,7 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-pub fn shout(comptime q: @Expr<string>) -> @Expr<string> {
-    val t = q.text().trim();
+pub fn shout(expr q: string) -> string {
+    val t = compiler.text(q).trim();
     val words = t.split(" ").map({ w -> w.toUpper() });
     val lead = t.slice(0, 5);
     val rest = t.slice(6, t.length);
@@ -10,10 +10,10 @@ pub fn shout(comptime q: @Expr<string>) -> @Expr<string> {
     val big = if (t.contains("big")) { "contains"; } else { "-"; };
     val greet = if (lead.startsWith("hel")) { "startsWith"; } else { "-"; };
     val where = if (words.indexOf("WORLD") == 2) { "indexOf"; } else { "-"; };
-    return q.build("\"" + all.join(",") + "|" + lead + "|" + rest + "|" + at + "|" + big + "|" + greet + "|" + where + "\"");
+    return compiler.build("\"" + all.join(",") + "|" + lead + "|" + rest + "|" + at + "|" + big + "|" + greet + "|" + where + "\"");
 }
 
-val s = shout " hello big world ";
+val s = shout @` hello big world `;
 
 fn main() {
     @print(s);
@@ -67,7 +67,7 @@ fn main() {
   call $rt_bin
   i64.const 2
   call $rt_int
-  i64.const 13
+  i64.const 27
   call $rt_int
   local.get $s4
   call $bp_comptime_template:__bp_push/4
@@ -144,7 +144,7 @@ fn main() {
   call $rt_bin
   i64.const 2
   call $rt_int
-  i64.const 13
+  i64.const 27
   call $rt_int
   local.get $s4
   call $bp_comptime_template:__bp_push/4
@@ -1350,7 +1350,7 @@ fn main() {
   call $rt_bin
   i64.const 11
   call $rt_int
-  i64.const 27
+  i64.const 34
   call $rt_int
   local.get $s9
   call $bp_comptime_template:__bp_push/4
@@ -1517,7 +1517,7 @@ fn main() {
   call $rt_bin
   i64.const 11
   call $rt_int
-  i64.const 12
+  i64.const 21
   call $rt_int
   local.get $s3
   call $bp_comptime_template:__bp_push/4

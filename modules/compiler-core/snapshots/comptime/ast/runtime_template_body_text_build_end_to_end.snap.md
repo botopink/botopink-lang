@@ -1,10 +1,10 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-pub fn shout(comptime q: @Expr<string>) -> @Expr<string> {
-    val t = q.text();
-    return q.build("\"" + t + "!\"");
+pub fn shout(expr q: string) -> string {
+    val t = compiler.text(q);
+    return compiler.build("\"" + t + "!\"");
 }
-val s = shout "hey";
+val s = shout @`hey`;
 ```
 
 ----- BOTOPINK TRANSFORM CODE -- main.bp
@@ -23,17 +23,17 @@ pub val s = "hey!";
       "params": [
         {
           "name": "q",
-          "type": "Expr<string>",
+          "type": "__Expr<string>",
           "is_comptime": true
         }
       ],
-      "return_type": "Expr<string>",
+      "return_type": "__Expr<string>",
       "body": [
         {
-          "source": "val t = q.text();"
+          "source": "val t = compiler.text(q);"
         },
         {
-          "source": "return q.build(\"\\\"\" + t + \"!\\\"\");"
+          "source": "return compiler.build(\"\\\"\" + t + \"!\\\"\");"
         }
       ]
     },

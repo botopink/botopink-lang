@@ -1,10 +1,10 @@
 ----- SOURCE CODE
-pub fn html(comptime template: @Expr<string>) -> @Expr<string> {
+pub fn html(expr template: string) -> string {
     return template;
 }
-val c = html """
+val c = html @`
 <Buttom label="Send"/>
-""";
+`;
 
 ----- ERROR
 error: component `Buttom` not found in caller scope

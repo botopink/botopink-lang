@@ -119,6 +119,8 @@ const Ctx = struct {
     values: []const []const u8 = &.{},
     /// Parameters whose argument is a tree (`expr x: T`, a template's).
     trees: []const []const u8 = &.{},
+    /// `expr x: T` parameters (not the handle): opaque in the body.
+    exprs: []const []const u8 = &.{},
     /// `main` / a `test` body: no build-time body.
     runTime: bool = false,
     /// Inside a tree a decorator writes (a member, a wrapper).
@@ -215,8 +217,10 @@ fn expandFn(P: Pass, name: []const u8, params: []ast.Param, returnRef: *?ast.Typ
     ctx.template = template;
     var values: std.ArrayListUnmanaged([]const u8) = .empty;
     var trees: std.ArrayListUnmanaged([]const u8) = .empty;
+    var exprs: std.ArrayListUnmanaged([]const u8) = .empty;
     for (params, 0..) |p, i| {
         if (p.arrival == .value) try values.append(alloc, p.name);
+        if (p.arrival == .expr and !p.typeRef.isDeclType()) try exprs.append(alloc, p.name);
         const tree = p.exprWrapped or p.typeRef.isExprType() or p.typeRef.isExprCustomType();
         if (p.arrival != .value and tree) try trees.append(alloc, p.name);
         if (template and ctx.site == null and p.typeRef.isExprType()) {
@@ -226,6 +230,7 @@ fn expandFn(P: Pass, name: []const u8, params: []ast.Param, returnRef: *?ast.Typ
     }
     ctx.values = values.items;
     ctx.trees = trees.items;
+    ctx.exprs = exprs.items;
     // Decision 576 (4) — `compiler.custom(tree)` in a `-> expr T` template:
     // the tree is kept (`val <custom_tree_name> = tree`), the template is the
     // custom carrier the machinery knows (`@ExprCustom<T>`), and each return
@@ -237,7 +242,7 @@ fn expandFn(P: Pass, name: []const u8, params: []ast.Param, returnRef: *?ast.Typ
     };
     try walkStmts(&ctx, body);
     if (keyword) try liftReturns(&ctx, body);
-    if (ctx.custom) returnRef.*.?.generic.name = "ExprCustom";
+    if (ctx.custom) returnRef.*.?.generic.name = ast.expr_custom_type_name;
 }
 
 fn walkStmts(ctx: *Ctx, body: []ast.Stmt) error{OutOfMemory}!void {
@@ -438,6 +443,7 @@ fn mapProperty(ctx: *Ctx, loc: ast.Loc, name: []const u8) error{OutOfMemory}!ast
     ctx.changed = true;
     if (std.mem.eql(u8, name, "src")) return builtinCall(loc, "src", &.{}, &[_]ast.TrailingLambda{});
     if (std.mem.eql(u8, name, "module")) if (ctx.decl) |d| return fieldRead(ctx, loc, try ident(ctx, d, loc), "module");
+    if (std.mem.eql(u8, name, "package")) if (ctx.decl) |d| return fieldRead(ctx, loc, try ident(ctx, d, loc), "package");
     // Whether the annotated declaration is std's: its module is `std/…`.
     if (std.mem.eql(u8, name, "isStd")) if (ctx.decl) |d| {
         const args = try ctx.alloc.alloc(ast.CallArg, 1);
@@ -466,6 +472,21 @@ fn walkExpr(ctx: *Ctx, p: *ast.Expr) error{OutOfMemory}!void {
         if (compilerCall(e.call.kind.call.args[0].value.*)) |inner| if (std.mem.eql(u8, inner.callee, "name") and inner.args.len == 1 and isHandle(ctx, inner.args[0].value.*)) {
             p.* = e.call.kind.call.args[0].value.*;
             return walkExpr(ctx, p);
+        };
+    }
+    if (e == .call and e.call.kind == .call) {
+        const c = e.call.kind.call;
+        // Decision 575 (4) — `@expr` is the compiler's own: a `-> expr T`
+        // template returns the expression.
+        if (c.is_builtin and std.mem.eql(u8, c.callee, "expr")) {
+            p.* = try refusal(ctx, loc, diagnostics.unknown_builtin, "`@expr` is gone: a `-> expr T` template returns the expression itself", "Write `return e;` — a `comptime` value is spliced as a literal, an `expr` as written (decision 575 (4)).");
+            return;
+        }
+        // Decision 576 (2) — an `expr` is opaque: read only through
+        // `compiler.*`.
+        if (c.receiver) |r| if (r.* == .identifier and r.identifier.kind == .ident and contains(ctx.exprs, r.identifier.kind.ident) and !contains(ctx.shadow.items, r.identifier.kind.ident)) {
+            p.* = try refusal(ctx, loc, diagnostics.expr_param_method, try std.fmt.allocPrint(ctx.alloc, "`{s}` is an `expr` — the expression written — and has no method `.{s}(…)`", .{ r.identifier.kind.ident, c.callee }), "Read it through the compiler — `compiler.text(e)`, `compiler.lookup(e, name)`, … — or hand it to a tree (decision 576 (2)).");
+            return;
         };
     }
     // `x is type` tests a value-or-type parameter itself (decision 297).
@@ -542,6 +563,10 @@ fn walkExpr(ctx: *Ctx, p: *ast.Expr) error{OutOfMemory}!void {
             return;
         },
         .identAccess => |ia| {
+            if (ia.receiver.* == .identifier and ia.receiver.identifier.kind == .ident and contains(ctx.exprs, ia.receiver.identifier.kind.ident) and !contains(ctx.shadow.items, ia.receiver.identifier.kind.ident)) {
+                p.* = try refusal(ctx, loc, diagnostics.expr_param_method, try std.fmt.allocPrint(ctx.alloc, "`{s}` is an `expr` — the expression written — and has no field `.{s}`", .{ ia.receiver.identifier.kind.ident, ia.member }), "Read it through the compiler — `compiler.text(e)`, … — or hand it to a tree (decision 576 (2)).");
+                return;
+            }
             if (isIdent(ia.receiver.*, ast.compiler_keyword)) {
                 const at = ia.receiver.getLoc();
                 p.* = if (ctx.runTime) try runTimeRefusal(ctx, at) else if (ctx.inTree) try treeRefusal(ctx, at) else try mapProperty(ctx, loc, ia.member);
@@ -602,6 +627,16 @@ fn walkAny(ctx: *Ctx, v: anytype) error{OutOfMemory}!void {
 /// answers a tree (the site's `build`, `custom`, `@expr`, `@code`) stay; any
 /// other expression is lifted (`@expr(e)`).
 fn liftReturns(ctx: *Ctx, body: []ast.Stmt) error{OutOfMemory}!void {
+    // A local bound to a tree (`val code = compiler.build(…)`) is one too.
+    var trees: std.ArrayListUnmanaged([]const u8) = .empty;
+    try trees.appendSlice(ctx.scratch, ctx.trees);
+    for (body) |st| if (st.expr == .binding and st.expr.binding.kind == .localBind) {
+        const lb = st.expr.binding.kind.localBind;
+        if (answersTree(ctx, lb.value.*)) {
+            try trees.append(ctx.scratch, lb.name);
+            ctx.trees = trees.items;
+        }
+    };
     for (body) |*s| try liftIn(ctx, &s.expr);
 }
 
@@ -667,4 +702,24 @@ fn answersTree(ctx: *Ctx, e: ast.Expr) bool {
             return std.mem.eql(u8, c.callee, "build") or std.mem.eql(u8, c.callee, "custom");
     }
     return false;
+}
+
+test "a template's value return is lifted (decision 578)" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const lexer = @import("../lexer.zig");
+    const parser = @import("../parser.zig");
+    var lx = lexer.Lexer.init(
+        \\fn shout(expr q: string) -> string {
+        \\    return compiler.text(q).toUpper();
+        \\}
+    );
+    var p = parser.Parser.init(try lx.scanAll(arena));
+    const program = try p.parse(arena);
+    const f = program.decls[0].@"fn";
+    const r = f.body[0].expr.jump.kind.@"return".?.*;
+    try std.testing.expect(r == .call);
+    try std.testing.expect(r.call.kind.call.is_builtin);
+    try std.testing.expectEqualStrings("expr", r.call.kind.call.callee);
 }

@@ -401,9 +401,9 @@ caller and captured **unevaluated**:
 - `inferTemplateMethod` resolves the comptime-only methods on `@Expr` receivers
   (`value`/`text`/`parts`/`source`/`context`/`lookup`/`bindings`/`build`/
   `custom`/`fail`/`failAt`/`tagDecl`/`annotate`), recording
-  `env.templateLowerings`. The contract is `behavior Expr<E>` in
-  `libs/std/src/builtins.d.bp`, alongside `Span`/`Part`/`Source`/
-  `ExprContext` and the `@ExprCustom` carrier; `lookup` answers `?Decl` and
+  `env.templateLowerings`. The contract is `behavior __Expr<E>` in
+  `libs/std/src/builtins.d.bp`, alongside `__Span`/`__Source`/
+  `__ExprContext` and the `__ExprCustom` carrier; `lookup` answers `?Decl` and
   `bindings` `Decl[]` (decision 415 (2), below).
 - Construction is **explicit**: `@expr(value)` (lift a comptime value) and
   `@code(text)` (parse generated source) are typed in
@@ -821,12 +821,12 @@ recognize → reflect → invoke → apply; marker meaning lives in the lib body
   module's are under `<handle>.<name>` (`registerStdDecorators`): `#[markers.tag]`
   runs `tag` (`modules/decorator_through_namespace`).
 
-## The template annotation `#[f "…"]` (decision 311, `01-checker` step 29)
+## The template annotation `` #[f @`…`] `` (decisions 311, 577, `01-checker` step 29)
 
-The parser keeps `#[f "…"]` / `#[f """…"""]` as `ast.Annotation.template` (the
-literal as written, `templateLoc` where it starts; `args` empty). `f` is a
-template function whose second parameter is the handle —
-`fn f(comptime q: @Expr<…>, comptime decl: @Decl<…>) -> @Expr<…>`,
+The parser keeps `` #[f @`…`] `` as `ast.Annotation.template` (the text as a
+string literal, `templateText` its raw bytes, `templateLoc` where it starts;
+`args` empty). `f` is a template function whose second parameter is the handle —
+`fn f(expr q: string, expr decl: unknown) -> R`,
 `member_fn.isTemplateAnnotation` (question s29-a); `member_fn.declParamIndex`
 / `declParamName` answer `1` / `decl` for it, so everything keyed on a
 decorator's handle — `typed_meta.collect`, `member_fn.collect`,
@@ -839,9 +839,9 @@ the template's body as a decorator's.
   template, or a local one from `Env.fnDecls` — decorators run before the
   bodies that fill `Env.templateFns`) and refuses at the annotation
   `template-annotation-not-template`, `template-annotation-without-decl` and,
-  for `#[f(…)]` / `#[f]` naming a template, `template-annotation-call-form`; a
-  call `f "…"` of an annotation template is `template-annotation-only` at the
-  call. `checkTemplateAnnotationHoles` (after Pass 2, every module name bound)
+  for `#[f(…)]`, `#[f]` or `#[f "…"]` naming a template, `expr-call-outside-expr`
+  (decision 577 (3)); a call `` f @`…` `` of an annotation template is
+  `template-annotation-only` at the call. `checkTemplateAnnotationHoles` (after Pass 2, every module name bound)
   types each `${…}` hole in the annotated declaration's scope — a function's
   or a method's parameters (a method's `Self` its owner), then the module's —
   so an unknown name is the ordinary unbound-name error at the hole
@@ -964,11 +964,19 @@ method's, a `declare fn`'s (std's `builtins.d.bp` and `types.bp` included).
   specialisation, a backend's signature — reads `T`. A variadic is
   `comptime ..xs: @Expr<T[]>` (`parser/decls.zig` `checkVariadicParam` reads
   through the wrapper). The formatter prints `@Expr<T>` back.
+- **Decision 576 (1).** `@Expr`, `@ExprCustom` and `@Decl` are gone from the surface (the parser refuses
+  them, `removed-expr-type`); the checker's tree type, custom carrier and declaration handle are the
+  internal `__Expr<T>` / `__ExprCustom<T>` / `__Decl` (`ast.expr_type_name` and siblings), the handle a
+  record of `comptime.zig` `decl_reflection_src` that no std module declares (`builtins.zig`'s drift
+  test exempts it), shown `Expr` / `Decl` in a diagnostic (`error.zig` `internalShown`). std's
+  `builtins.d.bp` keeps `@expr` / `@code` as the compiler's own builtins (`-> __Expr<T>`); a written
+  `@expr` is refused by `parser/compiler_surface.zig`. The string `decl.addMember(source)` and
+  `addType(name, source)` stay until a type can be written as a value (B-140).
 - **Decision 575 (4)'s surface.** `comptime x: T` (`Param.arrival = .value`)
   and `expr x: T` (`.expr`) parse into this same internal form, and
   `parser/compiler_surface.zig` reads a `comptime x: T`'s bare reads as
   `x.value`, `compiler.*` onto the handle / the template site / the builtins,
-  and a `-> expr T` template's returns as lifted trees (`parser/AGENTS.md`
+  and a template's returns as lifted trees (`parser/AGENTS.md`
   § `comptime`, `expr` and `compiler`). 364 (4)'s `comptime-param-not-expr`
   is gone (575 reverts it). `type<T>`, `T` a type parameter of the function,
   binds `T` from the type argument (`resolveTypeRefInContext`, a decorator's
@@ -982,6 +990,30 @@ method's, a `declare fn`'s (std's `builtins.d.bp` and `types.bp` included).
   `member_fn.capturedLocals`) and `memberFnSource` splices each as a literal
   (`member_fn.literalSource`: a string, a number, a `bool`, `null`, an array
   of those; any other value is `decorator-member-captures`).
+- **Decision 576 (13) — the types of `compiler.bp` are imported.** The
+  records and enum the compiler hands a body (`Span`, `Source`,
+  `ExprContext`, `CustomNode`, `DeclKind`, `HookNode`, `DeclAnnotation`,
+  `Param`, `Field`, `Method`) are registered under internal names
+  (`__Span`, …, `__Decl__Annotation`; `builtins.d.bp`, the mirror
+  `decl_reflection_src`, which also carries `__Source`, `__ExprContext` and
+  `__CustomNode` for a std module's scratch env) and spelled through
+  `libs/std/src/compiler.bp`'s aliases (`pub type Span = __Span;`). A
+  module imports one (`import {compiler.Span} from "std"`, a std module
+  `import {compiler.DeclKind};`): `infer.zig` `preRegisterStdImportAliases`
+  enters the imported aliases before the module's own types and
+  signatures register, and `bindAliasNamespace` makes the alias the
+  declared name at a call and a receiver as decision 110's `import {T as
+  A}` does (`Span(0, 1, 1)`, `DeclKind.Fn`). The comptime modules take the
+  alias names beside the internal ones (`decorator_eval.zig` /
+  `template_eval.zig` `host_enums`, `host_records`, `injected_names`).
+  `env.zig` `sectionPathForFlatName` skips a one-segment internal name, so a
+  program's own `Source` is its own.
+- **Decision 577 — the template text.** A capture of `` name @`…` `` /
+  `` #[name @`…`] `` holds the text's raw bytes (`captureExprArg`'s
+  `templateText`, `templateAnnotationCapture`'s `Annotation.templateText`),
+  `CapturedExpr.templateText` marks the two-byte opening `template.mapSpanToLoc`
+  counts, and a string value a template answers is lifted escaped
+  (`valueToAstLiteral`, `block_eval.stringLexeme`).
 - **Body.** `inferFnDecl` and `inferTypeMethods` bind an `exprWrapped`
   parameter as `Expr<T>` (the signature keeps `T`, so a call checks the
   argument against `T`) and set `Env.currentParams`. `x.value` (the

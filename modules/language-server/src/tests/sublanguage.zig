@@ -20,14 +20,16 @@ const comptime_pipeline = @import("botopink").comptime_pipeline;
 /// proves the overlay is generic.
 const FIXTURE =
     \\pub type Users(name: string)
-    \\pub fn q<T>(comptime e: @Expr<string>) -> @ExprCustom<T> {
-    \\    val code = e.build("[1, 2]");
+    \\pub fn q(expr e: string) -> anyvalue {
+    \\    val code = compiler.build("[1, 2]");
     \\    val kw = CustomNode(kind: "kw", span: Span(0, 6, 1), label: "keyword", ref: null, children: []);
-    \\    val col = CustomNode(kind: "col", span: Span(7, 11, 1), label: "property", ref: e.lookup("Users"), children: []);
+    \\    val col = CustomNode(kind: "col", span: Span(7, 11, 1), label: "property", ref: compiler.lookup(e, "Users"), children: []);
     \\    val root = CustomNode(kind: "root", span: Span(0, 0, 1), label: "none", ref: null, children: [kw, col]);
-    \\    return e.custom(root, code);
+    \\    compiler.custom(root);
+    \\    return code;
     \\}
-    \\val xs = q "select name from Users";
+    \\val xs = q @`select name from Users`;
+    \\import {compiler.Span, compiler.CustomNode} from "std";
 ;
 
 /// Semantic tokens with the sub-language overlay merged in (mirrors the server's
@@ -74,13 +76,15 @@ test "sublanguage: semantic tokens light up keyword + property inside the string
 /// a malformed query. The span (7..11) targets `name` inside `q "select name"`.
 const FIXTURE_FAIL =
     \\pub type Users(name: string)
-    \\pub fn q<T>(comptime e: @Expr<string>) -> @ExprCustom<T> {
-    \\    e.failAt(Span(7, 11, 1), "unknown column 'name'");
-    \\    val code = e.build("[1, 2]");
+    \\pub fn q(expr e: string) -> anyvalue {
+    \\    compiler.fail("unknown column 'name'", at: e, span: Span(7, 11, 1));
+    \\    val code = compiler.build("[1, 2]");
     \\    val root = CustomNode(kind: "root", span: Span(0, 0, 1), label: "none", ref: null, children: []);
-    \\    return e.custom(root, code);
+    \\    compiler.custom(root);
+    \\    return code;
     \\}
-    \\val xs = q "select name";
+    \\val xs = q @`select name`;
+    \\import {compiler.Span, compiler.CustomNode} from "std";
 ;
 
 /// Byte offset of `pos` in `source` (test-side mirror of the engine's mapping).
@@ -231,17 +235,19 @@ test "sublanguage F4: hover snapshot on a bound sub-language node" {
 
 const X_DEP =
     \\pub type Cities(name: string)
-    \\pub fn erika<T>(comptime e: @Expr<string>) -> @ExprCustom<T> {
-    \\    val code = e.build("[1, 2]");
+    \\pub fn erika(expr e: string) -> anyvalue {
+    \\    val code = compiler.build("[1, 2]");
     \\    val kw = CustomNode(kind: "kw", span: Span(0, 6, 1), label: "keyword", ref: null, children: []);
-    \\    val col = CustomNode(kind: "col", span: Span(7, 11, 1), label: "property", ref: e.lookup("Cities"), children: []);
+    \\    val col = CustomNode(kind: "col", span: Span(7, 11, 1), label: "property", ref: compiler.lookup(e, "Cities"), children: []);
     \\    val root = CustomNode(kind: "root", span: Span(0, 0, 1), label: "none", ref: null, children: [kw, col]);
-    \\    return e.custom(root, code);
+    \\    compiler.custom(root);
+    \\    return code;
     \\}
+    \\import {compiler.Span, compiler.CustomNode} from "std";
 ;
 const X_MAIN =
     \\import { erika, Cities } from "erika";
-    \\val xs = erika "select name from Cities";
+    \\val xs = erika @`select name from Cities`;
 ;
 
 fn compileCrossModule(gpa: std.mem.Allocator) !h.CompileHandle {
@@ -288,12 +294,14 @@ test "sublanguage R4: cross-module literal paints keyword + property tokens" {
 /// case of R4. The diagnostic must land inside the literal in the CALLER module.
 const X_DEP_FAIL =
     \\pub type Cities(name: string)
-    \\pub fn erika<T>(comptime e: @Expr<string>) -> @ExprCustom<T> {
-    \\    e.failAt(Span(7, 11, 1), "unknown column 'name'");
-    \\    val code = e.build("[1, 2]");
+    \\pub fn erika(expr e: string) -> anyvalue {
+    \\    compiler.fail("unknown column 'name'", at: e, span: Span(7, 11, 1));
+    \\    val code = compiler.build("[1, 2]");
     \\    val root = CustomNode(kind: "root", span: Span(0, 0, 1), label: "none", ref: null, children: []);
-    \\    return e.custom(root, code);
+    \\    compiler.custom(root);
+    \\    return code;
     \\}
+    \\import {compiler.Span, compiler.CustomNode} from "std";
 ;
 
 test "sublanguage R4: a malformed cross-module query diagnoses inside the string" {

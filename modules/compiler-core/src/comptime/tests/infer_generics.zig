@@ -20,7 +20,7 @@ const h = @import("helpers.zig");
 
 test "infer: type ---- arg satisfies single constraint" {
     try h.assertInfersOk(std.testing.allocator,
-        \\fn render(comptime tag: @Expr<type<string>>, props: i32) -> i32 {
+        \\fn render(comptime tag: type<string>, props: i32) -> i32 {
         \\    return props;
         \\}
         \\val a = render("div", 1);
@@ -29,7 +29,7 @@ test "infer: type ---- arg satisfies single constraint" {
 
 test "infer: type ---- arg satisfies one of multiple constraints" {
     try h.assertInfersOk(std.testing.allocator,
-        \\fn coerce(comptime v: @Expr<type<string | int | bool>>, x: i32) -> i32 {
+        \\fn coerce(comptime v: type<string | int | bool>, x: i32) -> i32 {
         \\    return x;
         \\}
         \\val s = coerce("s", 0);
@@ -40,7 +40,7 @@ test "infer: type ---- arg satisfies one of multiple constraints" {
 
 test "infer: type ---- no constraint accepts any type" {
     try h.assertInfersOk(std.testing.allocator,
-        \\fn id(comptime t: @Expr<type>, x: i32) -> i32 {
+        \\fn id(comptime t: anytype, x: i32) -> i32 {
         \\    return x;
         \\}
         \\val a = id("s", 0);
@@ -158,7 +158,7 @@ test "infer: generic interface Container<T>" {
 
 test "infer: @Expr builtin type ---- declaration with bounded return typechecks" {
     try h.assertInfersOk(std.testing.allocator,
-        \\pub fn identity(comptime template: @Expr<string>) -> @Expr<string> {
+        \\pub fn identity(expr template: string) -> string {
         \\    return template;
         \\}
         \\fn main() {

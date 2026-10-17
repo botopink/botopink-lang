@@ -516,9 +516,9 @@ test "`x.value` is `x`, and a decorator's `x.fail(m)` names its argument" {
     const parser = @import("../parser.zig");
     const format = @import("../format.zig");
     var lx = lexer.Lexer.init(
-        \\fn setting(comptime decl: @Decl, comptime key: @Expr<string>, comptime n: @Expr<i32>) {
-        \\    if (key.value == "") n.fail("empty");
-        \\    decl.setMeta("key", key.value + n.value.toString());
+        \\fn setting(expr decl: unknown, comptime key: string, comptime n: i32) {
+        \\    if (key == "") compiler.fail("empty", at: n);
+        \\    decl.setMeta("key", key + n.toString());
         \\}
     );
     var p = parser.Parser.init(try lx.scanAll(arena));
@@ -544,9 +544,9 @@ test "a typed meta call hands the runtime its index; a parameter given to an `@E
     const parser = @import("../parser.zig");
     const format = @import("../format.zig");
     var lx = lexer.Lexer.init(
-        \\fn check(comptime decl: @Decl, comptime table: @Expr<string>, comptime rule: @Expr<fn(v: i32) -> bool>) {
-        \\    decl.setMeta(Entity(table: table.value));
-        \\    decl.addMeta(Check(message: "m", rule: rule));
+        \\fn check(expr decl: unknown, comptime table: string, expr rule: fn(v: i32) -> bool) {
+        \\    compiler.setMeta(Entity(table: table));
+        \\    compiler.addMeta(Check(message: "m", rule: rule));
         \\}
     );
     var p = parser.Parser.init(try lx.scanAll(arena));
@@ -575,9 +575,9 @@ test "a body's use of a parameter: read, `.value`, `.fail` only" {
     const lexer = @import("../lexer.zig");
     const parser = @import("../parser.zig");
     var lx = lexer.Lexer.init(
-        \\fn d(comptime decl: @Decl, comptime a: @Expr<string>, comptime b: @Expr<string>, comptime c: @Expr<string>) {
-        \\    decl.setMeta("a", a.value);
-        \\    if (decl.name == "") b.fail("no");
+        \\fn d(expr decl: unknown, comptime a: string, expr b: string, comptime c: string) {
+        \\    decl.setMeta("a", a);
+        \\    if (compiler.name(decl)! == "") compiler.fail("no", at: b);
         \\}
     );
     var p = parser.Parser.init(try lx.scanAll(arena));

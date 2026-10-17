@@ -1,12 +1,12 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-pub fn conf<T>(comptime q: @Expr<string>) -> @Expr<T> {
-    val t = q.text();
+pub fn conf(expr q: string) -> anyvalue {
+    val t = compiler.text(q);
     val port = 8000 + t.length;
     val debug = true;
-    return @expr(#(port, debug));
+    return #(port, debug);
 }
-val cfg = conf "yaml";
+val cfg = conf @`yaml`;
 fn main() {
     @print(cfg.port + 1);
 }
@@ -54,7 +54,7 @@ fn main() {
   call $rt_bin
   i64.const 2
   call $rt_int
-  i64.const 13
+  i64.const 27
   call $rt_int
   local.get $s2
   call $bp_comptime_template:__bp_push/4

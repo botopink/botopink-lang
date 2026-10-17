@@ -926,8 +926,6 @@ what was written (`ast.Arrival`, dumped only when not `written`; the formatter p
   decorator: `expr_params.zig` `declHandle` reads that parameter as the declaration handle
   (`ast.decl_type_name`; `expr decl: unknown` is the handle with no pattern). A template annotation
   (decision 311) is a template whose second parameter is `expr d: unknown`: that one is the handle.
-- `-> expr T` (`parseReturnTypeRef`) — a template's return, the tree type; `ast.isExprKeywordReturn` tells
-  it from an `@Expr<T>` written while both parse.
 - Decisions 577, 578 — a **template** is a function whose first parameter (after an `expr self: R`
   receiver, for a template method) is its text `expr q: string` (`ast.templateTextIndex`); `unwrapProgram`
   keeps its trees, and `compiler_surface.zig` reads its return — `T`, or `anyvalue` (a type parameter
@@ -938,7 +936,12 @@ what was written (`ast.Arrival`, dumped only when not `written`; the formatter p
   `anyvalue-outside-template` (the checker; std's `compiler.bp` declares `build`'s answer with it).
   `anytype` is the bare `type` (`types.zig`, a `typeparam` with no member; the printer writes it).
   `compiler.addType(name, compiler.buildType("(…)"))` hands the built type's text to `addType`;
-  `buildType` elsewhere waits for B-140. The `-> expr T` return still parses until the codemod's run lands.
+  `buildType` elsewhere waits for B-140. `-> expr T` is `removed-expr-type` (`decls.zig`
+  `parseReturnTypeRef`), and the bare `type` is `removed-bare-type` (`types.zig`; `x is type` keeps it).
+- `@Expr<T>`, `@ExprCustom<T>` and `@Decl` are gone (decision 576 (1)): `types.zig` refuses each as
+  `removed-expr-type`, at the name. The tree type, the custom carrier and the handle are internal builtin
+  generics no source spells — `ast.expr_type_name` (`__Expr`), `ast.expr_custom_type_name`
+  (`__ExprCustom`), `ast.decl_type_name` (`__Decl`), shown without the `__` in a diagnostic.
 - `type<T>` — the type of the type `T` (`types.zig`, a `typeparam` with one member; `type<A | B>` keeps
   a constraint list); `type T` is `removed-type-bare-param`, at the name. `type` alone, `type(` and
   `type {` are unchanged.
@@ -949,9 +952,9 @@ After `unwrapProgram`, `compiler_surface.zig` `expandProgram` reads the surface 
 (`Parser.keep_surface` skips it — the formatter and the language server's formatting set it):
 `compiler.<member>(…)` becomes the handle's, the template site's or a builtin's form (its table,
 `members`, is held to std's `compiler.bp` by `comptime/tests/compiler_members.zig`); a bare read of a
-`comptime x: T` is `x.value` outside a member or a wrapper; a `-> expr T` template's `return e` lifts `e`
+`comptime x: T` is `x.value` outside a member or a wrapper; a template's `return e` lifts `e`
 (`@expr(e)`) unless it is a tree parameter or a call answering one; a call of a `comptime` parameter,
-`rule(x)`, is `rule.value(x)` (refused for a function, 364 (3)); `compiler.custom(tree)` in a `-> expr T`
+`rule(x)`, is `rule.value(x)` (refused for a function, 364 (3)); `compiler.custom(tree)` in a
 template keeps the tree in a local, makes the template the custom carrier (`@ExprCustom<T>`) and each
 return `q.custom(tree, e)` (decision 576 (4)). A refusal is written at its place
 as the builtin `compiler_surface.refusal_builtin` (`compiler-at-run-time` in `main` or a `test`,
@@ -960,9 +963,9 @@ as the builtin `compiler_surface.refusal_builtin` (`compiler-at-run-time` in `ma
 `{ -> f() }`, the call its tail, decision 409),
 `compiler-member-unknown`), which the checker reports there (`infer.zig` `refuseSurface`).
 
-A record field written `@Expr<T>` (decision 370 (1), a typed meta record's field) is read off as before
-— `Field.typeRef` is `T`, `Field.exprWrapped` set. The parameter modifier `syntax` is gone (decision
-576 (1)): `syntax` is an ordinary name.
+A typed meta record's field is written `f: T`; one a decorator fills from an `expr` parameter holds the
+tree (575 (4), the checker's `treeFed`). The parameter modifier `syntax` is gone (decision 576 (1)):
+`syntax` is an ordinary name.
 
 ## `defer` (decision 539)
 

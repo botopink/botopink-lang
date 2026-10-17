@@ -80,6 +80,9 @@ pub const DeclHandle = struct {
     /// Decision 415 (2) — `decl.module`, the path of the module that
     /// declares it.
     module: []const u8 = "",
+    /// Decision 575 (3) — `compiler.package`: the package of the module that
+    /// declares it (`std` for std's, `""` for the root package).
+    package: []const u8 = "",
     /// Decision 526 — `decl.owner`: the `Declared<unknown>` term of the type
     /// or behavior that holds an annotated method or field (`hooks.zig`
     /// `declaredTerm`, built by the checker, `infer.zig` `runDeclDecorators`);
@@ -432,12 +435,14 @@ fn buildModule(
         },
     };
     const config: erlang.ComptimeModule = .{
-        .host_enums = &.{ "DeclKind", "Stage" },
+        .host_enums = &.{ "__DeclKind", "DeclKind", "Stage" },
         // `decl.failAt(Span(start, end, line), msg)` builds the span map.
         // Decision 280 — a field key `.name` reaches the body as the
         // `Type.Field<T>` record a `decl.fields` entry is (`infer.zig`
         // `fieldKeySource`).
         .host_records = &.{
+            .{ .name = "__Span", .fields = &.{ "start", "end", "line" } },
+            // The `compiler.bp` alias of it (decision 576 (13)).
             .{ .name = "Span", .fields = &.{ "start", "end", "line" } },
             .{ .name = "__bp_FieldKey", .fields = &.{ "name", "typeName", "annotations" } },
             .{ .name = "__bp_DeclAnnotation", .fields = &.{ "name", "args", "decorator" } },
@@ -618,7 +623,7 @@ pub fn handleToTerm(arena: std.mem.Allocator, handle: DeclHandle) std.mem.Alloca
 
     const tag = handle.isTag();
     const extra: usize = if (tag) 2 else if (handle.lookup != null) 3 else 0;
-    const entries = try arena.alloc(Term.MapEntry, 12 + extra);
+    const entries = try arena.alloc(Term.MapEntry, 13 + extra);
     entries[0] = Term.field("kind", Term.atomOf(handle.kind));
     entries[1] = Term.field("name", Term.str(handle.name));
     entries[2] = Term.field("fields", Term.listOf(fields));
@@ -631,13 +636,14 @@ pub fn handleToTerm(arena: std.mem.Allocator, handle: DeclHandle) std.mem.Alloca
     entries[9] = Term.field("component", if (handle.component) |c| try handleToTerm(arena, c.*) else Term.undefined_atom);
     entries[10] = Term.field("module", Term.str(handle.module));
     entries[11] = Term.field("owner", handle.owner orelse Term.undefined_atom);
+    entries[12] = Term.field("package", Term.str(handle.package));
     if (handle.lookup) |l| if (!tag) {
-        entries[12] = Term.field("meta", if (l.pending)
+        entries[13] = Term.field("meta", if (l.pending)
             Term.tupleOf(try arena.dupe(Term, &.{ Term.atomOf(preludeMod.meta_pending_tag), Term.str(handle.name) }))
         else
             try metaListTerm(arena, l.meta));
-        entries[13] = Term.field("identity", Term.str(l.identity));
-        entries[14] = Term.field("local", Term.str(l.local));
+        entries[14] = Term.field("identity", Term.str(l.identity));
+        entries[15] = Term.field("local", Term.str(l.local));
     };
     if (tag) {
         // `attrs` — `[{<<"id">>, <<"x">>}]`, what `attr/2` reads; `meta` —
@@ -645,8 +651,8 @@ pub fn handleToTerm(arena: std.mem.Allocator, handle: DeclHandle) std.mem.Alloca
         // `'__bp_methodMeta'/2` reads (a method entry's shape).
         const attrs = try arena.alloc(Term, handle.attrs.len);
         for (handle.attrs, 0..) |a, i| attrs[i] = Term.tupleOf(try arena.dupe(Term, &.{ Term.str(a[0]), Term.str(a[1]) }));
-        entries[12] = Term.field("attrs", Term.listOf(attrs));
-        entries[13] = Term.field("meta", try metaListTerm(arena, handle.tagMeta));
+        entries[13] = Term.field("attrs", Term.listOf(attrs));
+        entries[14] = Term.field("meta", try metaListTerm(arena, handle.tagMeta));
     }
     return Term.mapOf(entries);
 }
@@ -941,9 +947,10 @@ test "decorator module: lowered body, handle term and host glue" {
     const lexerMod = @import("../lexer.zig");
     const parserMod = @import("../parser.zig");
     var lx = lexerMod.Lexer.init(
-        \\fn getMapping(comptime decl: @Decl, comptime path: @Expr<string>, comptime verb: @Expr<string>) {
-        \\    if (decl.kind != DeclKind.Method) { decl.fail("#[getMapping] must annotate a method"); }
+        \\fn getMapping(expr decl: unknown, comptime path: string, comptime verb: string) {
+        \\    if (compiler.kind(decl) != DeclKind.Method) { compiler.fail("#[getMapping] must annotate a method", at: decl); }
         \\}
+        \\import {compiler.DeclKind} from "std";
     );
     var p = parserMod.Parser.init(try lx.scanAll(arena));
     const program = try p.parse(arena);
@@ -1020,7 +1027,7 @@ test "decorator module: one module per decorator, whatever it annotates" {
     const lexerMod = @import("../lexer.zig");
     const parserMod = @import("../parser.zig");
     var lx = lexerMod.Lexer.init(
-        \\fn audit(comptime decl: @Decl) {
+        \\fn audit(expr decl: unknown) {
         \\    @emit("pub val seen = 1;");
         \\}
     );

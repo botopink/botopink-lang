@@ -23,4 +23,5 @@ test {
     _ = @import("tests/decision529.zig");
     _ = @import("tests/decision539.zig");
     _ = @import("expr_params.zig");
+    _ = @import("compiler_surface.zig");
 }

@@ -1,12 +1,11 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-pub fn html(comptime template: @Expr<string>) -> @Expr<string> {
+pub fn html(expr template: string) -> string {
     return template;
 }
-val name = "world";
-val page = html """
-<p>${name}</p>
-""";
+val page = html @`
+<p>world</p>
+`;
 fn main() {
     @print(page);
 }
@@ -16,13 +15,10 @@ fn main() {
 ```erlang
 -module(test@main).
 -export(['_botopink_main'/0, main/1]).
--export([main/0, name/0, page/0]).
-
-name() ->
-    <<"world">>.
+-export([main/0, page/0]).
 
 page() ->
-    <<"\n<p>", (name())/binary, "</p>\n">>.
+    <<"\n<p>world</p>\n">>.
 
 main() ->
     '__bp_print'([page()]).

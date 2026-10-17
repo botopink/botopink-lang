@@ -4018,9 +4018,9 @@ pub const CustomAstEntry = compiler_mod.CustomAstEntry;
 /// Byte offset in `source` where a custom template literal's content begins —
 /// the anchor that `CustomNode.span` offsets are relative to (`span == 0` is the
 /// first content byte). The provenance `entry.line`/`entry.col` (1-based) point
-/// at the opening quote; content starts after the delimiter: `"""` for a
-/// triple-quoted literal (whose captured text keeps the leading `\n`), else the
-/// single `"`. Returns null when the position is not a string literal in
+/// at the opening quote; content starts after the delimiter: `@`` for a
+/// template text, `"""` for a triple-quoted literal (whose captured text keeps
+/// the leading `\n`), else the single `"`. Returns null when the position is not a string literal in
 /// `source` (stale provenance, holed template, …).
 fn customContentStart(source: []const u8, entry: CustomAstEntry) ?usize {
     if (entry.line == 0 or entry.col == 0) return null;
@@ -4028,6 +4028,8 @@ fn customContentStart(source: []const u8, entry: CustomAstEntry) ?usize {
         .line = @intCast(entry.line - 1),
         .character = @intCast(entry.col - 1),
     });
+    // Decision 577 — a template text `@`…`` opens with two bytes.
+    if (quote + 1 < source.len and source[quote] == '@' and source[quote + 1] == '`') return quote + 2;
     if (quote >= source.len or source[quote] != '"') return null;
     const triple = quote + 3 <= source.len and std.mem.eql(u8, source[quote .. quote + 3], "\"\"\"");
     return quote + (if (triple) @as(usize, 3) else @as(usize, 1));
@@ -4386,12 +4388,15 @@ fn fnReturnsEffectWrapper(tokens: []const Token, name_idx: usize) bool {
 /// 31 (the checker refuses it as `any-type-removed`); `unknown` is decision 8
 /// §2's type; front 06 registers it, and painting it
 /// early costs nothing — no other declaration may be called `unknown`.
+/// `anyvalue` and `anytype` are decision 578's (a template's answer, the kind
+/// of types).
 fn isPrimitiveType(name: []const u8) bool {
     const prims = [_][]const u8{
-        "bool", "string", "void",    "v128",   "noreturn",
-        "i8",   "i16",    "i32",     "i64",    "isize",
-        "u8",   "u16",    "u32",     "u64",    "usize",
-        "f32",  "f64",    "unknown", "bigint", "Bytes",
+        "bool",     "string",  "void",    "v128",   "noreturn",
+        "i8",       "i16",     "i32",     "i64",    "isize",
+        "u8",       "u16",     "u32",     "u64",    "usize",
+        "f32",      "f64",     "unknown", "bigint", "Bytes",
+        "anyvalue", "anytype",
     };
     for (prims) |p| if (std.mem.eql(u8, name, p)) return true;
     return false;
@@ -4496,6 +4501,8 @@ fn collectParams(
                 expect_name = false; // the type follows, up to the next top-level comma
             },
             .identifier => if (expect_name and nest == 0) {
+                // Decision 575 (4) — `expr name: T`: `expr` is the modifier.
+                if (std.mem.eql(u8, t.lexeme, "expr") and i + 1 < tokens.len and (tokens[i + 1].kind == .identifier or tokens[i + 1].kind == .dotDot)) continue;
                 try pending.append(arena, .{ .name = t.lexeme, .kind = .param, .line = t.line, .col = t.col, .depth = depth });
                 expect_name = false;
             },

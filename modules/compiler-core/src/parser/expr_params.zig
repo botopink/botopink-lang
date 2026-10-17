@@ -35,17 +35,6 @@ pub fn unwrapProgram(alloc: std.mem.Allocator, program: *ast.Program) void {
 fn unwrapType(alloc: std.mem.Allocator, t: *ast.TypeDecl) void {
     for (t.methods) |*m| unwrap(alloc, m.params, m.returnType);
     for (t.assocTypes) |*inner| unwrapType(alloc, inner);
-    // Decision 370 (1) — a record field written `@Expr<T>` is a `T` to the
-    // program; a typed meta value a decorator records fills it with a
-    // parameter's `@Expr` (`comptime/typed_meta.zig`).
-    if (t.isRecord()) for (t.recordFields()) |*f| {
-        if (!f.typeRef.isExprType()) continue;
-        const g = f.typeRef.generic;
-        if (g.args.len != 1) continue;
-        f.typeRef = g.args[0];
-        alloc.free(g.args);
-        f.exprWrapped = true;
-    };
 }
 
 /// Decision 575 (4) — a decorator's first `expr` is the annotated
@@ -94,17 +83,17 @@ fn unwrap(alloc: std.mem.Allocator, params: []ast.Param, returnType: ?ast.TypeRe
     }
 }
 
-test "a decorator's and a function's `@Expr` parameters are unwrapped, a template's kept" {
+test "a decorator's and a function's comptime parameters are unwrapped, a template's kept" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
     const lexer = @import("../lexer.zig");
     const parser = @import("../parser.zig");
     var lx = lexer.Lexer.init(
-        \\fn setting(comptime decl: @Decl, comptime key: @Expr<string>) {}
-        \\fn scale(comptime n: @Expr<i32>, x: i32) -> i32 { return x * n.value; }
-        \\fn sql(comptime q: @Expr<string>) -> @Expr<string> { return q; }
-        \\type Kit { fn pick(comptime t: @Expr<type>) -> i32 { return 1; } }
+        \\fn setting(expr decl: unknown, comptime key: string) {}
+        \\fn scale(comptime n: i32, x: i32) -> i32 { return x * n; }
+        \\fn sql(expr q: string) -> string { return q; }
+        \\type Kit { fn pick(comptime t: anytype) -> i32 { return 1; } }
     );
     var p = parser.Parser.init(try lx.scanAll(arena));
     const program = try p.parse(arena);
@@ -122,23 +111,4 @@ test "a decorator's and a function's `@Expr` parameters are unwrapped, a templat
     const kit = program.decls[3].type_;
     try std.testing.expect(kit.methods[0].params[0].exprWrapped);
     try std.testing.expect(kit.methods[0].params[0].typeRef == .typeparam);
-}
-
-test "a record field written `@Expr<T>` is unwrapped, every other field kept" {
-    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena_state.deinit();
-    const arena = arena_state.allocator();
-    const lexer = @import("../lexer.zig");
-    const parser = @import("../parser.zig");
-    var lx = lexer.Lexer.init(
-        \\pub type Check<T>(message: @Expr<string>, rule: @Expr<fn(v: T) -> bool>, code: string)
-    );
-    var p = parser.Parser.init(try lx.scanAll(arena));
-    const program = try p.parse(arena);
-    const fields = program.decls[0].type_.recordFields();
-    try std.testing.expect(fields[0].exprWrapped);
-    try std.testing.expectEqualStrings("string", fields[0].typeRef.named);
-    try std.testing.expect(fields[1].exprWrapped);
-    try std.testing.expect(fields[1].typeRef == .function);
-    try std.testing.expect(!fields[2].exprWrapped);
 }

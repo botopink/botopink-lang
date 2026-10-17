@@ -503,8 +503,8 @@ test "beam: a member call through a library's default handle is a call into the 
         \\    return x + 1;
         \\}
         \\
-        \\pub fn qlib(comptime e: @Expr<string>) -> @Expr<i32> {
-        \\    return e.build("99");
+        \\pub fn qlib(expr e: string) -> i32 {
+        \\    return compiler.build("99");
         \\}
         },
         .{ .path = "", .source =

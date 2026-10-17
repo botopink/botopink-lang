@@ -28,9 +28,10 @@ test "comptime module: host enum member lowers to an atom, method call to a host
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
     const out = try lower(arena_state.allocator(),
-        \\fn service(comptime decl: @Decl) {
-        \\    if (decl.kind != DeclKind.Type) { decl.fail("must annotate a type"); }
+        \\fn service(expr decl: unknown) {
+        \\    if (compiler.kind(decl) != DeclKind.Type) { compiler.fail("must annotate a type", at: decl); }
         \\}
+        \\import {compiler.DeclKind} from "std";
     , .{
         .host_enums = &.{"DeclKind"},
         .exports = &.{.{ .name = "main", .arity = 0 }},
@@ -53,10 +54,10 @@ test "comptime module: `+` and `.len` dispatch at runtime, rebinding versions th
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
     const out = try lower(arena_state.allocator(),
-        \\fn check(comptime decl: @Decl) {
+        \\fn check(expr decl: unknown) {
         \\    var msg = "invalid name: ";
-        \\    msg = msg + decl.name;
-        \\    if (decl.fields.len > 5) { decl.fail(msg); }
+        \\    msg = msg + compiler.name(decl)!;
+        \\    if (compiler.fields(decl).len > 5) { compiler.fail(msg, at: decl); }
         \\}
     , .{ .host_enums = &.{"DeclKind"} });
     try expectContains(out, "Msg = <<\"invalid name: \">>,");
@@ -73,12 +74,12 @@ test "comptime module: forEach with a mutated var fuses into a fold" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
     const out = try lower(arena_state.allocator(),
-        \\fn mock(comptime decl: @Decl) {
+        \\fn mock(expr decl: unknown) {
         \\    var methods = "";
-        \\    decl.methods.forEach({ m ->
+        \\    compiler.methods(decl).forEach({ m ->
         \\        methods = methods + "fn " + m.name;
         \\    });
-        \\    @emit("type Mock" + decl.name + " {" + methods + "}");
+        \\    @emit("type Mock" + compiler.name(decl)! + " {" + methods + "}");
         \\}
     , .{ .host_enums = &.{"DeclKind"} });
     try expectContains(out, "lists:foldl(fun(M, Methods) ->");
@@ -94,10 +95,10 @@ test "comptime module: a counted loop folds the counter through lists:foldl" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
     const out = try lower(arena_state.allocator(),
-        \\fn pick(comptime decl: @Decl) {
+        \\fn pick(expr decl: unknown) {
         \\    var first = "";
         \\    var idx = 0;
-        \\    for (decl.fields) { f ->
+        \\    for (compiler.fields(decl)) { f ->
         \\        if (idx == 0) { first = f.name; };
         \\        idx = idx + 1;
         \\    };
@@ -116,11 +117,11 @@ test "comptime module: a closure reassigning outer vars takes and answers them" 
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
     const out = try lower(arena_state.allocator(),
-        \\fn tags(comptime decl: @Decl) {
+        \\fn tags(expr decl: unknown) {
         \\    var toks = [];
         \\    val emit = { t -> toks = toks.append([t]); };
         \\    emit("first");
-        \\    decl.fields.forEach({ f -> emit(f.name); });
+        \\    compiler.fields(decl).forEach({ f -> emit(f.name); });
         \\    @emit(toks.join(","));
         \\}
     , .{ .host_enums = &.{"DeclKind"} });
@@ -137,11 +138,11 @@ test "comptime module: a condition loop threads the variables its body reassigns
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
     const out = try lower(arena_state.allocator(),
-        \\fn count(comptime decl: @Decl) {
+        \\fn count(expr decl: unknown) {
         \\    var i = 0;
         \\    var names = "";
         \\    while (i < 3) {
-        \\        names = names + decl.name;
+        \\        names = names + compiler.name(decl)!;
         \\        i = i + 1;
         \\    };
         \\    @emit(names);
@@ -159,7 +160,7 @@ test "comptime module: `loop (…)` is refused before lowering (decision 105)" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
     const result = lower(arena_state.allocator(),
-        \\fn count(comptime decl: @Decl) {
+        \\fn count(expr decl: unknown) {
         \\    var i = 0;
         \\    loop (i < 3) {
         \\        i = i + 1;
@@ -175,10 +176,10 @@ test "comptime module: push through a local threads out of a multi-statement clo
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
     const out = try lower(arena_state.allocator(),
-        \\fn component(comptime decl: @Decl) {
+        \\fn component(expr decl: unknown) {
         \\    var args: Array<string> = [];
         \\    args.push("first");
-        \\    decl.fields.forEach({ f ->
+        \\    compiler.fields(decl).forEach({ f ->
         \\        var valKey = "";
         \\        f.annotations.forEach({ a -> if (a.name == "value") { valKey = a.args.join(""); } });
         \\        args.push(f.name + ": " + valKey);
@@ -196,8 +197,8 @@ test "comptime module: push through a local threads out of a multi-statement clo
 
     // A parameter is not rebound: the push keeps its plain lowering.
     const param = try lower(arena_state.allocator(),
-        \\fn tag(comptime decl: @Decl, names: Array<string>) {
-        \\    names.push(decl.name);
+        \\fn tag(expr decl: unknown, names: Array<string>) {
+        \\    names.push(compiler.name(decl)!);
         \\    @emit(names.join(", "));
         \\}
     , .{ .host_enums = &.{"DeclKind"} });
@@ -225,8 +226,8 @@ test "comptime module: template body primitive methods dispatch through shims" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
     const out = try lower(arena_state.allocator(),
-        \\pub fn html(comptime q: @Expr<string>) -> @Expr<string> {
-        \\    val t = q.text().trim();
+        \\pub fn html(expr q: string) -> string {
+        \\    val t = compiler.text(q).trim();
         \\    val lines = t.split("\n").map({ l -> l.toUpper() });
         \\    val head = t.slice(0, t.indexOf(">"));
         \\    val tail = t.slice(1);
@@ -234,7 +235,7 @@ test "comptime module: template body primitive methods dispatch through shims" {
         \\    val open = head.startsWith("<");
         \\    val hasP = t.contains("p");
         \\    val first = all.at(0);
-        \\    return q.build(all.join(",") + tail);
+        \\    return compiler.build(all.join(",") + tail);
         \\}
     , .{ .forms = &.{ hostFn("text", 1), hostFn("build", 2) } });
     // Host API calls stay bare local calls.
@@ -281,9 +282,9 @@ test "comptime module: decorator body primitive methods dispatch through shims" 
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
     const out = try lower(arena_state.allocator(),
-        \\fn mock(comptime decl: @Decl) {
-        \\    val names = decl.fields.map({ f -> f.name });
-        \\    if (decl.name.startsWith("_")) { decl.fail("private: " + names.join(", ")); }
+        \\fn mock(expr decl: unknown) {
+        \\    val names = compiler.fields(decl).map({ f -> f.name });
+        \\    if (compiler.name(decl)!.startsWith("_")) { compiler.fail("private: " + names.join(", "), at: decl); }
         \\}
     , .{ .host_enums = &.{"DeclKind"}, .forms = &.{hostFn("fail", 2)} });
     try expectContains(out, "Names = '__bp_prim_map'(maps:get(fields, Decl), fun(F) ->");
@@ -296,10 +297,10 @@ test "comptime module: a method named like an auto-imported BIF dispatches on th
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
     const out = try lower(arena_state.allocator(),
-        \\fn sizes(comptime decl: @Decl) {
-        \\    val a = decl.name.length();
-        \\    val b = decl.fields.length();
-        \\    val c = decl.fields.size;
+        \\fn sizes(expr decl: unknown) {
+        \\    val a = compiler.name(decl)!.length();
+        \\    val b = compiler.fields(decl).length();
+        \\    val c = compiler.fields(decl).size;
         \\    val d = a.abs() + b.round() + c.floor() + a.ceil();
         \\}
     , .{ .host_enums = &.{"DeclKind"} });
@@ -324,8 +325,8 @@ test "comptime module: a method nothing answers is a located error, not an undef
     defer arena_state.deinit();
     var unsupported: erlang.UnsupportedMethod = .{};
     const result = lower(arena_state.allocator(),
-        \\fn check(comptime decl: @Decl) {
-        \\    val n = decl.name;
+        \\fn check(expr decl: unknown) {
+        \\    val n = compiler.name(decl)!;
         \\    val x = n.frobnicate(1, 2);
         \\}
     , .{ .host_enums = &.{"DeclKind"}, .unsupported_method = &unsupported });
@@ -339,7 +340,7 @@ test "comptime module: a method nothing answers is a located error, not an undef
 
     // A host form of that name/arity answers it: the bare local call stays.
     const hosted = try lower(arena_state.allocator(),
-        \\fn check(comptime decl: @Decl) {
+        \\fn check(expr decl: unknown) {
         \\    decl.frobnicate(1, 2);
         \\}
     , .{ .host_enums = &.{"DeclKind"}, .forms = &.{hostFn("frobnicate", 3)}, .unsupported_method = &unsupported });
@@ -350,8 +351,8 @@ test "comptime module: a listing shows the shim calls but not the shims" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
     const out = try lower(arena_state.allocator(),
-        \\fn names(comptime decl: @Decl) {
-        \\    @emit(decl.fields.map({ f -> f.name }).join(", "));
+        \\fn names(expr decl: unknown) {
+        \\    @emit(compiler.fields(decl).map({ f -> f.name }).join(", "));
         \\}
     , .{ .listing = true });
     try expectContains(out, "'__bp_prim_join'('__bp_prim_map'(maps:get(fields, Decl), fun(F) ->");

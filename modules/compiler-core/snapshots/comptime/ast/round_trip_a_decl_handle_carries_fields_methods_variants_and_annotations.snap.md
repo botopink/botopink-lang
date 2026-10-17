@@ -1,20 +1,20 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn column(comptime decl: @Decl, comptime name: @Expr<string>) { }
-fn describe(comptime decl: @Decl, comptime label: @Expr<string>) {
-    var out = decl.name + "[" + label.value + "]";
-    for (decl.annotations) { a -> out = out + " @" + a.name + "(" + a.args.join(",") + ")"; };
-    for (decl.fields) { f ->
+fn column(expr decl: unknown, comptime name: string) { }
+fn describe(expr decl: unknown, comptime label: string) {
+    var out = compiler.name(decl)! + "[" + label + "]";
+    for (compiler.annotations(decl)) { a -> out = out + " @" + a.name + "(" + a.args.join(",") + ")"; };
+    for (compiler.fields(decl)) { f ->
         out = out + " field " + f.name + ":" + f.typeName;
         for (f.annotations) { a -> out = out + " @" + a.name + "(" + a.args.join(",") + ")"; };
     };
-    for (decl.variants) { v -> out = out + " variant " + v; };
-    for (decl.methods) { m ->
+    for (compiler.variants(decl)) { v -> out = out + " variant " + v; };
+    for (compiler.methods(decl)) { m ->
         var ps = "";
         for (m.params) { p -> ps = ps + p.name + ":" + p.typeName + ";"; };
         out = out + " method " + m.name + "(" + ps + ")->" + m.returnType;
     };
-    @emit("pub fn describe" + decl.name + "() -> string { return \"\"\"" + out + "\"\"\"; }");
+    @emit("pub fn describe" + compiler.name(decl)! + "() -> string { return \"\"\"" + out + "\"\"\"; }");
 }
 #[describe("record")]
 type Point(#[column("px")] x: i32, y: ?i32) {
@@ -77,7 +77,7 @@ pub fn describeMode() -> string {
       "params": [
         {
           "name": "decl",
-          "type": "Decl",
+          "type": "__Decl",
           "is_comptime": true
         },
         {
@@ -96,7 +96,7 @@ pub fn describeMode() -> string {
       "params": [
         {
           "name": "decl",
-          "type": "Decl",
+          "type": "__Decl",
           "is_comptime": true
         },
         {
@@ -108,22 +108,22 @@ pub fn describeMode() -> string {
       "return_type": "void",
       "body": [
         {
-          "source": "var out = decl.name + \"[\" + label.value + \"]\";"
+          "source": "var out = compiler.name(decl)! + \"[\" + label + \"]\";"
         },
         {
-          "source": "for (decl.annotations) { a -> out = out + \" @\" + a.name + \"(\" + a.args.join(\",\") + \")\"; };"
+          "source": "for (compiler.annotations(decl)) { a -> out = out + \" @\" + a.name + \"(\" + a.args.join(\",\") + \")\"; };"
         },
         {
-          "source": "for (decl.fields) { f ->"
+          "source": "for (compiler.fields(decl)) { f ->"
         },
         {
-          "source": "for (decl.variants) { v -> out = out + \" variant \" + v; };"
+          "source": "for (compiler.variants(decl)) { v -> out = out + \" variant \" + v; };"
         },
         {
-          "source": "for (decl.methods) { m ->"
+          "source": "for (compiler.methods(decl)) { m ->"
         },
         {
-          "source": "@emit(\"pub fn describe\" + decl.name + \"() -> string { return \\\"\\\"\\\"\" + out + \"\\\"\\\"\\\"; }\");"
+          "source": "@emit(\"pub fn describe\" + compiler.name(decl)! + \"() -> string { return \\\"\\\"\\\"\" + out + \"\\\"\\\"\\\"; }\");"
         }
       ]
     },

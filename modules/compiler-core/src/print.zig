@@ -472,6 +472,19 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .caretCaption = "remove `new`",
             .hint = "A constructor is called by name: `Person(name: \"ann\")`. There is no builtin `Error`: `throw` carries the error channel's own value, `throw \"message\"`.",
         },
+        .removedExprType => .{
+            .code = "removed-expr-type",
+            .message = "`@Expr`, `@ExprCustom`, `@Decl` and `-> expr` are gone",
+            .caretCaption = "a removed type",
+            .lexemeInCaption = true,
+            .hint = "A parameter says how its argument arrives — `comptime x: T` (the value) or `expr x: T` (the expression written); a template is marked by its text `expr q: string` and returns `T`, `anyvalue` or `anytype`; a decorator's first parameter is `expr decl: unknown` (decisions 575 (4), 576, 578).",
+        },
+        .removedBareType => .{
+            .code = "removed-bare-type",
+            .message = "the type of any type is written `anytype`",
+            .caretCaption = "write `anytype`",
+            .hint = "`comptime t: anytype` takes any type; `type<T>` takes one and binds `T`; `type(…)` / `type { … }` stay the inline type (decision 578 (2)).",
+        },
         .removedTypeBareParam => .{
             .code = "removed-type-bare-param",
             .message = "the type of a type is written `type<T>`",

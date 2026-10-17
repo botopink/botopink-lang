@@ -13,15 +13,15 @@
 /// The module (199, 289): the header's declarations at module level, as
 /// written; then the anonymous `pub default fn (props: Props) -> R` (`()` when
 /// the header declares no `Props`), whose body is the header's statements in
-/// order, `use <style> """<the section>""";` when there is a style section,
-/// and `return <html> """<the markup>""";`. `R` is the `R` of the marked
+/// order, `use <style> @`<the section>`;` when there is a style section,
+/// and `return <html> @`<the markup>`;` (the template text, decision 577). `R` is the `R` of the marked
 /// function's `@ExprCustom<R>` (275). A decorator on the header's last line
 /// annotates the function (221); nothing else does.
 ///
 /// Positions. The unfolded text keeps every line of the file at its line: a
 /// header item stays where it is written, the function's head is written at
 /// the end of the line before the first statement, each separator line holds
-/// the generated `use … ` / `return …`, and the closing `""";` and `}`, the
+/// the generated `use … ` / `return …`, and the closing `` `; `` and `}`, the
 /// generated imports go after the end of the file. A declaration written after
 /// a statement is refused (552), so the unfold moves no declaration. Only columns move, on the few lines that get a prefix —
 /// `columnShifts` lists them, and the diagnostics map back through it — so a
@@ -87,7 +87,7 @@ pub const FIRST_LINE_SEPARATOR = "the header starts on the first line; a .bpp ha
 pub const STYLE_AFTER_MARKUP = "a style section comes before the markup — this `--- style ---` line is after the markup's `---`";
 pub const SECOND_STYLE = "a .bpp has one style section — this `--- style ---` line opens a second one";
 pub const STYLE_UNCLOSED = "the style section opened here is not closed — a `---` line ends it, and the markup follows";
-pub const LITERAL_QUOTES = "a .bpp section is one literal, and `\"\"\"` would end it — this line holds `\"\"\"`";
+pub const LITERAL_QUOTES = "a .bpp section is one template text, and a backtick would end it — this line holds `` ` ``";
 
 // ── The file's sections ───────────────────────────────────────────────────────
 
@@ -357,7 +357,7 @@ fn importLine(arena: std.mem.Allocator, t: Target, alias: []const u8) ![]const u
 }
 
 fn quoteFree(source: []const u8, from: usize, to: usize) ?usize {
-    const at = std.mem.indexOfPos(u8, source[0..to], from, "\"\"\"") orelse return null;
+    const at = std.mem.indexOfScalarPos(u8, source[0..to], from, '`') orelse return null;
     return at;
 }
 
@@ -378,7 +378,7 @@ pub fn unfold(arena: std.mem.Allocator, source: []const u8, spec: Spec) !Result 
         .refused => |r| return .{ .refused = r },
     };
     if (secs.style_open != null and spec.style == null) return error.NoStyleTarget; // `bpp.checkStyleSections` refuses it first
-    // A literal holds no `"""`.
+    // A literal holds no backtick: the template text `@`…`` ends at one.
     const style_body: ?[2]usize = if (secs.style_open) |o| .{ o.next, secs.style_close.?.start } else null;
     if (style_body) |b| if (quoteFree(source, b[0], b[1])) |at| {
         const lc = lineColOf(source, at);
@@ -481,7 +481,7 @@ pub fn unfold(arena: std.mem.Allocator, source: []const u8, spec: Spec) !Result 
     if (secs.markup_sep == null) {
         // Markup only: the whole file is the literal.
         try b.prefix(head);
-        try b.prefix(" return " ++ HTML_ALIAS ++ " \"\"\"");
+        try b.prefix(" return " ++ HTML_ALIAS ++ " @`");
     } else {
         if (secs.style_open) |o| {
             if (!opened) {
@@ -491,9 +491,9 @@ pub fn unfold(arena: std.mem.Allocator, source: []const u8, spec: Spec) !Result 
             opened = true;
             try b.write("use " ++ STYLE_ALIAS);
             try b.write(source[o.end..o.next]);
-            try b.prefix("\"\"\"");
+            try b.prefix("@`");
             try b.write(source[o.next..secs.style_close.?.start]);
-            try b.write("\"\"\"; ");
+            try b.write("`; ");
         } else if (!opened) {
             try b.write(head);
             try b.write(" ");
@@ -502,10 +502,10 @@ pub fn unfold(arena: std.mem.Allocator, source: []const u8, spec: Spec) !Result 
         try b.write("return " ++ HTML_ALIAS);
         try b.write(source[sep.end..sep.next]);
         if (sep.next == sep.end) try b.write("\n"); // the separator is the file's last line
-        try b.prefix("\"\"\"");
+        try b.prefix("@`");
     }
     try b.write(source[secs.markup_start..]);
-    try b.write("\"\"\";\n}\n");
+    try b.write("`;\n}\n");
     try b.write(try importLine(arena, spec.html, HTML_ALIAS));
     if (secs.style_open != null) try b.write(try importLine(arena, spec.style.?, STYLE_ALIAS));
     try b.write(spec.ret_imports);
@@ -645,15 +645,15 @@ test "bpp unfold: Props' header, statements in the body, every line where it is 
         \\
         \\val n = props.title.length();
         \\return __bppHtml
-        \\"""<h1>{props.title}</h1>
-        \\""";
+        \\@`<h1>{props.title}</h1>
+        \\`;
         \\}
         \\import {markup.markup as __bppHtml} from "markup";
         \\
     , u.source);
     try std.testing.expectEqual(@as(usize, 1), u.shifts.len);
     try std.testing.expectEqual(@as(usize, 6), u.shifts[0].line);
-    try std.testing.expectEqual(@as(usize, 5), fileColumn(u.shifts, 6, 8));
+    try std.testing.expectEqual(@as(usize, 5), fileColumn(u.shifts, 6, 7));
 }
 
 test "bpp unfold: no Props, no header, markup only" {
@@ -661,9 +661,9 @@ test "bpp unfold: no Props, no header, markup only" {
     defer arena_inst.deinit();
     const a = arena_inst.allocator();
     const none = try unfoldOk(a, "import {x.y};\n---\n<p/>\n", test_spec);
-    try std.testing.expectEqualStrings("import {x.y};\npub default fn () -> i32 { return __bppHtml\n\"\"\"<p/>\n\"\"\";\n}\nimport {markup.markup as __bppHtml} from \"markup\";\n", none.source);
+    try std.testing.expectEqualStrings("import {x.y};\npub default fn () -> i32 { return __bppHtml\n@`<p/>\n`;\n}\nimport {markup.markup as __bppHtml} from \"markup\";\n", none.source);
     const only = try unfoldOk(a, "<article></article>\n", test_spec);
-    try std.testing.expect(std.mem.startsWith(u8, only.source, "pub default fn () -> i32 { return __bppHtml \"\"\"<article></article>\n\"\"\";"));
+    try std.testing.expect(std.mem.startsWith(u8, only.source, "pub default fn () -> i32 { return __bppHtml @`<article></article>\n`;"));
     // The markup's first column is the file's.
     const col = std.mem.indexOf(u8, only.source, "<article>").? + 1;
     try std.testing.expectEqual(@as(usize, 1), fileColumn(only.shifts, 1, col));
@@ -679,10 +679,10 @@ test "bpp unfold: the style section is a `use` before the return; the import is 
     try std.testing.expectEqualStrings(
         \\type Props(title: string)
         \\pub default fn (props: Props) -> i32 { use __bppStyle
-        \\""".title { font-size: 2rem; }
-        \\"""; return __bppHtml
-        \\"""<h1 class="title">{props.title}</h1>
-        \\""";
+        \\@`.title { font-size: 2rem; }
+        \\`; return __bppHtml
+        \\@`<h1 class="title">{props.title}</h1>
+        \\`;
         \\}
         \\import {markup.markup as __bppHtml} from "markup";
         \\import {css as __bppStyle} from "markup";
@@ -731,7 +731,7 @@ test "bpp unfold: if, use and expression statements are statements; test, privat
         \\val tagged = 1;
         \\val k = if (props.title == "") { "a" } else { "b" };
         \\if (k == "a") { notFound(); }
-        \\use styled """x""";
+        \\use styled @`x`;
         \\notFound()
         \\    .then(1);
     ;
@@ -758,7 +758,7 @@ test "bpp unfold: the sections' refusals, each at its line" {
         .{ .src = "val x = 1;\n---\n<p/>\n--- style ---\n.a {}\n", .line = 4, .msg = STYLE_AFTER_MARKUP },
         .{ .src = "val x = 1;\n--- style ---\n.a {}\n--- style ---\n.b {}\n---\n<p/>\n", .line = 4, .msg = SECOND_STYLE },
         .{ .src = "val x = 1;\n--- style ---\n.a {}\n", .line = 2, .msg = STYLE_UNCLOSED },
-        .{ .src = "val x = 1;\n---\n<p>\"\"\"</p>\n", .line = 3, .msg = LITERAL_QUOTES },
+        .{ .src = "val x = 1;\n---\n<p>`</p>\n", .line = 3, .msg = LITERAL_QUOTES },
     };
     for (cases) |c| switch (try unfold(a, c.src, spec)) {
         .ok => return error.TestUnexpectedResult,

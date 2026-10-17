@@ -283,7 +283,8 @@ knows only `CustomNode` — it never branches on any sub-language:
 - **Semantic tokens** — `engine.customSemanticTokens` maps each node's `label`
   (`keyword`/`property`/`string`/`number`/`operator`; `string`/`number`/`operator`
   are legend indices 11–13 in `protocol.zig`) and `span` (a byte offset into the
-  literal) to an absolute range; `mergeSemanticTokens` re-sorts them into the
+  literal, which starts after `` @` `` for a template text, decision 577 —
+  `customContentStart`) to an absolute range; `mergeSemanticTokens` re-sorts them into the
   lexer stream. Unknown labels stay the opaque `string` token.
 - **Diagnostics** — a template's `failAt(span, msg)` maps through compiler-core's
   `template.failDiagnostic` to a type error located **inside** the literal.

@@ -23,7 +23,9 @@
             "typeName": "",
             "modifier": "comptime",
             "destruct": null,
-            "default": null
+            "default": null,
+            "exprWrapped": true,
+            "arrival": "value"
           },
           {
             "name": "n",
@@ -33,7 +35,9 @@
             "typeName": "",
             "modifier": "comptime",
             "destruct": null,
-            "default": null
+            "default": null,
+            "exprWrapped": true,
+            "arrival": "value"
           }
         ],
         "returnType": {

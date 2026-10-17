@@ -988,7 +988,6 @@ pub const all_codes = [_][]const u8{
     inject_not_record,
     context_behavior_not_implemented,
     template_annotation_not_template,
-    template_annotation_call_form,
     template_annotation_without_decl,
     template_annotation_only,
     template_call_unexpanded,
@@ -1064,10 +1063,6 @@ pub const nullish_beside_logical: []const u8 = "nullish-beside-logical";
 /// function (a decorator, an ordinary function) or naming nothing: refused at
 /// the annotation.
 pub const template_annotation_not_template: []const u8 = "template-annotation-not-template";
-
-/// Decision 311 — `#[f(…)]` / `#[f]` naming a template function: a template
-/// is written as an annotation `#[f "…"]`; refused at the annotation.
-pub const template_annotation_call_form: []const u8 = "template-annotation-call-form";
 
 /// Decision 311, question s29-a — `#[f "…"]` naming a template function that
 /// declares no `comptime decl: @Decl<…>` beside its literal: what it builds

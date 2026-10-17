@@ -445,17 +445,17 @@ test "format: test ---- named block with assert message" {
     );
 }
 
-test "format: Expr builtin type ---- round-trip" {
+test "format: template ---- round-trip (decision 578)" {
     try h.assertFormat(std.testing.allocator,
-        \\pub fn html(comptime template: @Expr<string>) -> @Expr<Component> {
+        \\pub fn html(expr template: string) -> Component {
         \\    @todo();
         \\}
     );
 }
 
-test "format: Expr builtin type ---- generic return round-trip" {
+test "format: template ---- anyvalue answer round-trip (decision 578)" {
     try h.assertFormat(std.testing.allocator,
-        \\fn yaml<T>(comptime template: @Expr<string>) -> @Expr<T> {
+        \\fn yaml(expr template: string) -> anyvalue {
         \\    @todo();
         \\}
     );
@@ -982,7 +982,7 @@ test "format: declare fn ---- unannotated generics, discard param and generic re
         \\
         \\pub declare fn getContext<T>(comptime _: anytype) -> Component<T, unknown>;
         \\
-        \\declare fn marker(comptime decl: @Decl);
+        \\declare fn marker(expr decl: unknown);
     );
 }
 

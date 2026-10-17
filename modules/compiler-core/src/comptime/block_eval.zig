@@ -1344,7 +1344,7 @@ fn fnListed(list: []const ast.FnDecl, f: ast.FnDecl) bool {
 /// A decorator or a template: never a function the evaluation calls.
 fn isComptimeOnly(f: ast.FnDecl) bool {
     if (f.returnType) |rt| if (rt.isTemplateReturnType()) return true;
-    for (f.params) |p| if (p.typeRef == .named and std.mem.eql(u8, p.typeRef.named, "Decl")) return true;
+    for (f.params) |p| if (p.typeRef == .named and std.mem.eql(u8, p.typeRef.named, ast.decl_type_name)) return true;
     return false;
 }
 

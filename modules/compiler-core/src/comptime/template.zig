@@ -148,6 +148,9 @@ pub const CapturedExpr = struct {
     text: ?[]const u8,
     /// true when the literal was written as `"""…"""`.
     multiline: bool,
+    /// The literal is a template text `@`…`` (decision 577): its content
+    /// sits after a two-byte opening, and `text` holds its raw bytes.
+    templateText: bool = false,
     /// Location of the literal in the caller's file.
     loc: ast.Loc,
     /// Module path of the caller's file ("" for main).
@@ -301,8 +304,9 @@ pub fn mapSpanToLoc(capture: *const CapturedExpr, span: Span) ast.Loc {
         }
         if (line == 0) {
             // Still on the literal's own line: content sits after the opening
-            // quote — three of them for a `"""…"""` literal.
-            const open: usize = if (capture.multiline) 3 else 1;
+            // quote — three of them for a `"""…"""` literal, `@`` for a
+            // template text.
+            const open: usize = if (capture.templateText) 2 else if (capture.multiline) 3 else 1;
             return .{ .line = capture.loc.line, .col = capture.loc.col + open + upto, .expansion = capture.loc.expansion };
         }
         return .{ .line = capture.loc.line + line, .col = upto - lineStart + 1, .expansion = capture.loc.expansion };

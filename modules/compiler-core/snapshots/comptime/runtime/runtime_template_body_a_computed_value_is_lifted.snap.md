@@ -1,10 +1,10 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-pub fn six(comptime t: @Expr<string>) -> @Expr<i32> {
+pub fn six(expr t: string) -> i32 {
     val n = 2 + 4;
-    return @expr(n);
+    return n;
 }
-val n = six "ignored";
+val n = six @`ignored`;
 ```
 
 ----- COMPTIME WAT -- template six

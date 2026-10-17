@@ -1,12 +1,12 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-pub fn inner(comptime q: @Expr<string>) -> @Expr<string> {
+pub fn inner(expr q: string) -> string {
     return q;
 }
-pub fn outer(comptime q: @Expr<string>) -> @Expr<string> {
-    return q.build("inner(\"deep\")");
+pub fn outer(expr q: string) -> string {
+    return compiler.build("inner @`deep`");
 }
-val s = outer "x";
+val s = outer @`x`;
 ```
 
 ----- BOTOPINK TRANSFORM CODE -- main.bp
@@ -25,11 +25,11 @@ pub val s = "deep";
       "params": [
         {
           "name": "q",
-          "type": "Expr<string>",
+          "type": "__Expr<string>",
           "is_comptime": true
         }
       ],
-      "return_type": "Expr<string>",
+      "return_type": "__Expr<string>",
       "body": [
         {
           "source": "return q;"
@@ -43,14 +43,14 @@ pub val s = "deep";
       "params": [
         {
           "name": "q",
-          "type": "Expr<string>",
+          "type": "__Expr<string>",
           "is_comptime": true
         }
       ],
-      "return_type": "Expr<string>",
+      "return_type": "__Expr<string>",
       "body": [
         {
-          "source": "return q.build(\"inner(\\\"deep\\\")\");"
+          "source": "return compiler.build(\"inner @`deep`\");"
         }
       ]
     },

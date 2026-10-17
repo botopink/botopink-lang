@@ -1,10 +1,10 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-pub fn six(comptime t: @Expr<string>) -> @Expr<i32> {
+pub fn six(expr t: string) -> i32 {
     val n = 2 + 4;
-    return @expr(n);
+    return n;
 }
-val n = six "ignored";
+val n = six @`ignored`;
 ```
 
 ----- BOTOPINK TRANSFORM CODE -- main.bp
@@ -23,17 +23,17 @@ pub val n = 6;
       "params": [
         {
           "name": "t",
-          "type": "Expr<string>",
+          "type": "__Expr<string>",
           "is_comptime": true
         }
       ],
-      "return_type": "Expr<i32>",
+      "return_type": "__Expr<i32>",
       "body": [
         {
           "source": "val n = 2 + 4;"
         },
         {
-          "source": "return @expr(n);"
+          "source": "return n;"
         }
       ]
     },

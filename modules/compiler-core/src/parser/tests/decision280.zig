@@ -19,13 +19,13 @@ test "decision 280: a comptime parameter takes a default and is located" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const program = try parse(arena.allocator(),
-        \\fn mark(comptime decl: @Decl, comptime n: i32 = 3, size: i32 = 4) { }
+        \\fn mark(expr decl: unknown, comptime n: i32 = 3, size: i32 = 4) { }
     );
     const params = program.decls[0].@"fn".params;
     try std.testing.expect(params[1].modifier == .@"comptime");
     try std.testing.expect(params[1].default != null);
-    try std.testing.expectEqual(@as(usize, 31), params[1].loc.col);
-    try std.testing.expectEqual(@as(usize, 52), params[2].loc.col);
+    try std.testing.expectEqual(@as(usize, 29), params[1].loc.col);
+    try std.testing.expectEqual(@as(usize, 50), params[2].loc.col);
 }
 
 test "decision 280: a decorator argument is one expression, spanned and located" {

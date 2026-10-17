@@ -3,20 +3,20 @@
 pub type Button(
     label: string,
 )
-pub fn need(comptime t: @Expr<string>) -> @Expr<string> {
-    val hit = t.lookup("Buttom");
+pub fn need(expr t: string) -> string {
+    val hit = compiler.lookup(t, "Buttom");
     if (hit) { b ->
-        return t.fail("should be missing");
+        return compiler.fail("should be missing", at: t);
     };
-    return t.build("\"ok\"");
+    return compiler.build("\"ok\"");
 }
-val r = need "<Buttom/>";
+val r = need @`<Buttom/>`;
 ```
 
 ----- COMPTIME WAT -- template need
 ```wat
 (func $need/1 (param $a0 i32) (result i32)
-  (local $s0 i32) (local $s1 i32) (local $s2 i32) (local $s3 i32) (local $V___BpF1 i32)
+  (local $s0 i32) (local $s1 i32) (local $s2 i32) (local $s3 i32) (local $s4 i32)
   (block $raise
   (block $L1 (result i32)
   (block $L2
@@ -60,7 +60,7 @@ val r = need "<Buttom/>";
   call $rt_bin
   i64.const 5
   call $rt_int
-  i64.const 15
+  i64.const 31
   call $rt_int
   local.get $s3
   call $bp_comptime_template:__bp_push/4
@@ -144,7 +144,7 @@ val r = need "<Buttom/>";
   i32.eqz
   br_if $L14
   local.get $s3
-  local.set $V___BpF1
+  local.set $s4
   global.get $__lit
   i32.const 304
   i32.add
@@ -152,9 +152,9 @@ val r = need "<Buttom/>";
   call $rt_bin
   i64.const 9
   call $rt_int
-  i64.const 12
+  i64.const 21
   call $rt_int
-  local.get $V___BpF1
+  local.get $s4
   call $bp_comptime_template:__bp_push/4
   call $rt_pending
   br_if $raise
@@ -164,7 +164,7 @@ val r = need "<Buttom/>";
   i32.add
   i32.const 5
   call $rt_atom
-  local.get $V___BpF1
+  local.get $s4
   call $rt_raise
   drop
   br $raise
@@ -184,6 +184,11 @@ val r = need "<Buttom/>";
   (block $L15
   local.get $s1
   local.set $s2
+  i32.const 1
+  call $rt_tuple
+  local.set $s2
+  local.get $s2
+  i32.const 0
   (block $L16 (result i32)
   (block $L17
   local.get $s0
@@ -200,7 +205,7 @@ val r = need "<Buttom/>";
   call $rt_class
   local.set $s0
   call $rt_reason
-  local.set $s2
+  local.set $s3
   call $rt_clear
   (block $L18 (result i32)
   (block $L19
@@ -213,8 +218,8 @@ val r = need "<Buttom/>";
   call $rt_eqx
   i32.eqz
   br_if $L19
-  local.get $s2
-  local.set $s3
+  local.get $s3
+  local.set $s4
   global.get $__lit
   i32.const 304
   i32.add
@@ -222,9 +227,9 @@ val r = need "<Buttom/>";
   call $rt_bin
   i64.const 7
   call $rt_int
-  i64.const 16
+  i64.const 55
   call $rt_int
-  local.get $s3
+  local.get $s4
   call $bp_comptime_template:__bp_push/4
   call $rt_pending
   br_if $raise
@@ -234,7 +239,7 @@ val r = need "<Buttom/>";
   i32.add
   i32.const 5
   call $rt_atom
-  local.get $s3
+  local.get $s4
   call $rt_raise
   drop
   br $raise
@@ -242,12 +247,96 @@ val r = need "<Buttom/>";
   br $L18
   )
   local.get $s0
-  local.get $s2
+  local.get $s3
   call $rt_raise
   drop
   br $raise
   )
   br $L16
+  )
+  call $rt_tset
+  drop
+  local.get $s2
+  local.set $s0
+  (block $L20 (result i32)
+  (block $L21
+  local.get $s0
+  call $rt_tuple_arity
+  i32.const 1
+  i32.ne
+  br_if $L21
+  local.get $s0
+  i32.const 0
+  call $rt_elem
+  local.set $s2
+  local.get $s2
+  local.set $s2
+  (block $L22 (result i32)
+  (block $L23
+  local.get $s2
+  call $bp_comptime_template:expr/1
+  call $rt_pending
+  br_if $L23
+  br $L22
+  )
+  call $rt_class
+  local.set $s2
+  call $rt_reason
+  local.set $s3
+  call $rt_clear
+  (block $L24 (result i32)
+  (block $L25
+  local.get $s2
+  global.get $__lit
+  i32.const 72
+  i32.add
+  i32.const 5
+  call $rt_atom
+  call $rt_eqx
+  i32.eqz
+  br_if $L25
+  local.get $s3
+  local.set $s4
+  global.get $__lit
+  i32.const 304
+  i32.add
+  i32.const 7
+  call $rt_bin
+  i64.const 7
+  call $rt_int
+  i64.const 25
+  call $rt_int
+  local.get $s4
+  call $bp_comptime_template:__bp_push/4
+  call $rt_pending
+  br_if $raise
+  drop
+  global.get $__lit
+  i32.const 72
+  i32.add
+  i32.const 5
+  call $rt_atom
+  local.get $s4
+  call $rt_raise
+  drop
+  br $raise
+  call $rt_nil
+  br $L24
+  )
+  local.get $s2
+  local.get $s3
+  call $rt_raise
+  drop
+  br $raise
+  )
+  br $L22
+  )
+  br $L20
+  )
+  local.get $s0
+  call $rt_case_clause
+  drop
+  br $raise
   )
   br $L9
   )

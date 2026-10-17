@@ -20,8 +20,8 @@ const h = @import("helpers.zig");
 
 test "infer error: two pub default fn in one package" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\pub default fn one(comptime q: @Expr<string>) -> @ExprCustom<i32> { return q.build("0"); }
-        \\pub default fn two(comptime q: @Expr<string>) -> @ExprCustom<i32> { return q.build("0"); }
+        \\pub default fn one(expr q: string) -> i32 { return compiler.build("0"); }
+        \\pub default fn two(expr q: string) -> i32 { return compiler.build("0"); }
     );
 }
 
@@ -34,7 +34,7 @@ test "infer error: two pub default mod in one package" {
 
 test "infer error: type ---- arg violates constraint" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\fn coerce(comptime v: @Expr<type<string | int | bool>>, x: i32) -> i32 {
+        \\fn coerce(comptime v: type<string | int | bool>, x: i32) -> i32 {
         \\    return x;
         \\}
         \\val bad = coerce(3.14, 0);

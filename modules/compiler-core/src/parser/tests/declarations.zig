@@ -457,7 +457,7 @@ test "parser: pub fn ---- comptime params" {
 
 test "parser: pub fn ---- type meta-kind no constraint" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\pub fn wrap(comptime T: type) -> type {
+        \\pub fn wrap(comptime T: anytype) -> anytype {
         \\    @todo();
         \\}
     );
@@ -538,25 +538,25 @@ test "parser: test rejects in fn body" {
     );
 }
 
-test "parser: Expr builtin type ---- param and bounded return" {
+test "parser: template ---- its text parameter and its answer (decision 578)" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\pub fn html(comptime template: @Expr<string>) -> @Expr<Component> {
+        \\pub fn html(expr template: string) -> Component {
         \\    @todo();
         \\}
     );
 }
 
-test "parser: Expr builtin type ---- generic return" {
+test "parser: template ---- anyvalue answer (decision 578)" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\fn yaml<T>(comptime template: @Expr<string>) -> @Expr<T> {
+        \\fn yaml(expr template: string) -> anyvalue {
         \\    @todo();
         \\}
     );
 }
 
-test "parser: Expr builtin type ---- composed type position" {
+test "parser: expr parameter ---- composed type position" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\fn collect<T>(comptime first: ?@Expr<Element>) -> @Expr<T> {
+        \\fn collect(expr first: ?Element) -> i32 {
         \\    @todo();
         \\}
     );
@@ -1038,7 +1038,7 @@ test "parser: declare fn ---- unannotated with generic params and a comptime par
 
 test "parser: declare fn ---- unannotated with a discard param and a generic return" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\pub declare fn getContext<T>(comptime _: type) -> Component<T, unknown>;
+        \\pub declare fn getContext<T>(comptime _: anytype) -> Component<T, unknown>;
     );
 }
 

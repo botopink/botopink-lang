@@ -1,12 +1,11 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-pub fn html(comptime template: @Expr<string>) -> @Expr<string> {
+pub fn html(expr template: string) -> string {
     return template;
 }
-val name = "world";
-val page = html """
-<p>${name}</p>
-""";
+val page = html @`
+<p>world</p>
+`;
 fn main() {
     @print(page);
 }
@@ -71,11 +70,7 @@ function __bp_print() {
     console.log.apply(console, [f, ...a]);
 }
 
-const name = "world";
-
-exports.name = name;
-
-const page = (("\n<p>" + name) + "</p>\n");
+const page = "\n<p>world</p>\n";
 
 exports.page = page;
 
@@ -89,13 +84,11 @@ function _botopink_main() {
 }
 if (require.main === module) _botopink_main();
 
-Object.defineProperty(exports, "__bp_priv__", { value: { name, page, main } });
+Object.defineProperty(exports, "__bp_priv__", { value: { page, main } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts
 ```typescript
-
-
 
 
 

@@ -114,3 +114,17 @@ pub behavior Compiler {
     // A type's reflection (decision 253).
     fn typeInfo<T>(self: Self, comptime t: type<T>) -> TypeInfo<T>;
 }
+
+// ── The types `compiler` answers (decision 576 (13)) ──────────────────────
+// No prelude name: a file naming one imports it, `import {compiler.Span} from
+// "std";`. Each is the compiler's own type, written here under its name.
+pub type Span = __Span;
+pub type Source = __Source;
+pub type ExprContext = __ExprContext;
+pub type CustomNode = __CustomNode;
+pub type DeclKind = __DeclKind;
+pub type DeclAnnotation = __Decl__Annotation;
+pub type Param = __Decl__Param;
+pub type Field = __Decl__Field;
+pub type Method = __Decl__Method;
+pub type HookNode = __HookNode;

@@ -139,9 +139,9 @@ test "a raise inside a decorator or a comptime is located at the call that raise
             .src =
             \\import {io} from "std";
             \\
-            \\fn drawn(comptime decl: @Decl) {
+            \\fn drawn(expr decl: unknown) {
             \\    val x = io.random.float();
-            \\    @emit("pub fn label() -> string { return \"" + decl.name + " ${x}\"; }");
+            \\    @emit("pub fn label() -> string { return \"" + compiler.name(decl)! + " ${x}\"; }");
             \\}
             \\
             \\#[drawn]
@@ -182,9 +182,9 @@ test "a raise inside a decorator or a comptime is located at the call that raise
             \\    return n;
             \\}
             \\
-            \\fn sized(comptime decl: @Decl) {
+            \\fn sized(expr decl: unknown) {
             \\    val n = checked(2);
-            \\    @emit("pub fn label() -> string { return \"" + decl.name + " ${n}\"; }");
+            \\    @emit("pub fn label() -> string { return \"" + compiler.name(decl)! + " ${n}\"; }");
             \\}
             \\
             \\#[sized]
@@ -255,9 +255,9 @@ test "a raise inside a decorator is located in its own build when an earlier bui
     const decorated =
         \\import {io} from "std";
         \\
-        \\fn drawn(comptime decl: @Decl) {
+        \\fn drawn(expr decl: unknown) {
         \\    val x = io.random.float();
-        \\    @emit("pub fn moved() -> string { return \"" + decl.name + " ${x}\"; }");
+        \\    @emit("pub fn moved() -> string { return \"" + compiler.name(decl)! + " ${x}\"; }");
         \\}
         \\
         \\#[drawn]

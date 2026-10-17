@@ -19,7 +19,7 @@
             "name": "template",
             "typeRef": {
               "generic": {
-                "name": "Expr",
+                "name": "__Expr",
                 "args": [
                   {
                     "named": "string"
@@ -31,12 +31,13 @@
             "typeName": "",
             "modifier": "comptime",
             "destruct": null,
-            "default": null
+            "default": null,
+            "arrival": "expr"
           }
         ],
         "returnType": {
           "generic": {
-            "name": "Expr",
+            "name": "__Expr",
             "args": [
               {
                 "named": "Component"

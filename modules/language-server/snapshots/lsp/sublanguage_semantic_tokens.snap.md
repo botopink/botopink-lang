@@ -1,14 +1,16 @@
 ----- SOURCE
 ```botopink
 pub type Users(name: string)
-pub fn q<T>(comptime e: @Expr<string>) -> @ExprCustom<T> {
-    val code = e.build("[1, 2]");
+pub fn q(expr e: string) -> anyvalue {
+    val code = compiler.build("[1, 2]");
     val kw = CustomNode(kind: "kw", span: Span(0, 6, 1), label: "keyword", ref: null, children: []);
-    val col = CustomNode(kind: "col", span: Span(7, 11, 1), label: "property", ref: e.lookup("Users"), children: []);
+    val col = CustomNode(kind: "col", span: Span(7, 11, 1), label: "property", ref: compiler.lookup(e, "Users"), children: []);
     val root = CustomNode(kind: "root", span: Span(0, 0, 1), label: "none", ref: null, children: [kw, col]);
-    return e.custom(root, code);
+    compiler.custom(root);
+    return code;
 }
-val xs = q "select name from Users";
+val xs = q @`select name from Users`;
+import {compiler.Span, compiler.CustomNode} from "std";
 ```
 
 ----- SEMANTIC TOKENS
@@ -20,17 +22,14 @@ val xs = q "select name from Users";
   (1,0) +3  keyword  "pub"
   (1,4) +2  keyword  "fn"
   (1,7) +1  function [declaration]  "q"
-  (1,9) +1  type [declaration]  "T"
-  (1,12) +8  keyword  "comptime"
-  (1,21) +1  parameter [readonly]  "e"
-  (1,24) +5  type [defaultLibrary]  "@Expr"
-  (1,30) +6  type [defaultLibrary]  "string"
-  (1,42) +11  type [defaultLibrary]  "@ExprCustom"
-  (1,54) +1  type  "T"
+  (1,9) +4  parameter  "expr"
+  (1,14) +1  variable  "e"
+  (1,17) +6  type [defaultLibrary]  "string"
+  (1,28) +8  type [defaultLibrary]  "anyvalue"
   (2,4) +3  keyword  "val"
   (2,8) +4  variable [declaration]  "code"
-  (2,15) +1  parameter  "e"
-  (2,17) +5  method  "build"
+  (2,15) +8  variable  "compiler"
+  (2,24) +5  method  "build"
   (3,4) +3  keyword  "val"
   (3,8) +2  variable [declaration]  "kw"
   (3,13) +10  type  "CustomNode"
@@ -49,9 +48,10 @@ val xs = q "select name from Users";
   (4,44) +4  type  "Span"
   (4,60) +5  parameter  "label"
   (4,79) +3  parameter  "ref"
-  (4,84) +1  parameter  "e"
-  (4,86) +6  method  "lookup"
-  (4,103) +8  parameter  "children"
+  (4,84) +8  variable  "compiler"
+  (4,93) +6  method  "lookup"
+  (4,100) +1  variable  "e"
+  (4,113) +8  parameter  "children"
   (5,4) +3  keyword  "val"
   (5,8) +4  variable [declaration]  "root"
   (5,15) +10  type  "CustomNode"
@@ -64,16 +64,22 @@ val xs = q "select name from Users";
   (5,87) +8  parameter  "children"
   (5,98) +2  variable  "kw"
   (5,102) +3  variable  "col"
-  (6,4) +6  keyword  "return"
-  (6,11) +1  parameter  "e"
+  (6,4) +8  variable  "compiler"
   (6,13) +6  method  "custom"
   (6,20) +4  variable  "root"
-  (6,26) +4  variable  "code"
-  (8,0) +3  keyword  "val"
-  (8,4) +2  variable [declaration]  "xs"
-  (8,9) +1  function  "q"
-  (8,12) +6  keyword  "select"
-  (8,19) +4  property  "name"
+  (7,4) +6  keyword  "return"
+  (7,11) +4  variable  "code"
+  (9,0) +3  keyword  "val"
+  (9,4) +2  variable [declaration]  "xs"
+  (9,9) +1  function  "q"
+  (9,13) +6  keyword  "select"
+  (9,20) +4  property  "name"
+  (10,0) +6  keyword  "import"
+  (10,8) +8  variable  "compiler"
+  (10,17) +4  property  "Span"
+  (10,23) +8  variable  "compiler"
+  (10,32) +10  property  "CustomNode"
+  (10,44) +4  keyword  "from"
 ----- ENCODED (deltaLine, deltaStart, len, type, mods)
   0 0 3 9 0
   0 4 4 9 0
@@ -83,17 +89,14 @@ val xs = q "select name from Users";
   1 0 3 9 0
   0 4 2 9 0
   0 3 1 4 1
-  0 2 1 0 1
-  0 3 8 9 0
-  0 9 1 6 2
-  0 3 5 0 4
-  0 6 6 0 4
-  0 12 11 0 4
-  0 12 1 0 0
+  0 2 4 6 0
+  0 5 1 7 0
+  0 3 6 0 4
+  0 11 8 0 4
   1 4 3 9 0
   0 4 4 7 1
-  0 7 1 6 0
-  0 2 5 5 0
+  0 7 8 7 0
+  0 9 5 5 0
   1 4 3 9 0
   0 4 2 7 1
   0 5 10 0 0
@@ -112,9 +115,10 @@ val xs = q "select name from Users";
   0 6 4 0 0
   0 16 5 6 0
   0 19 3 6 0
-  0 5 1 6 0
-  0 2 6 5 0
-  0 17 8 6 0
+  0 5 8 7 0
+  0 9 6 5 0
+  0 7 1 7 0
+  0 13 8 6 0
   1 4 3 9 0
   0 4 4 7 1
   0 7 10 0 0
@@ -127,13 +131,19 @@ val xs = q "select name from Users";
   0 6 8 6 0
   0 11 2 7 0
   0 4 3 7 0
-  1 4 6 9 0
-  0 7 1 6 0
-  0 2 6 5 0
+  1 4 8 7 0
+  0 9 6 5 0
   0 7 4 7 0
-  0 6 4 7 0
+  1 4 6 9 0
+  0 7 4 7 0
   2 0 3 9 0
   0 4 2 7 1
   0 5 1 4 0
-  0 3 6 9 0
+  0 4 6 9 0
   0 7 4 8 0
+  1 0 6 9 0
+  0 8 8 7 0
+  0 9 4 8 0
+  0 6 8 7 0
+  0 9 10 8 0
+  0 12 4 9 0

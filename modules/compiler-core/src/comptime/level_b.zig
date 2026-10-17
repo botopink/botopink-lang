@@ -810,13 +810,13 @@ test "level B: a package expanding a template that reads the catalogue is never 
     const modules = [_]Module{
         .{ .path = "looks/root", .package = "looks", .source = "pub default mod looks;\n" },
         .{ .path = "looks/looks", .package = "looks", .source =
-        \\pub fn theme(comptime decl: @Decl) {
-        \\    decl.setMeta("named", decl.name);
+        \\pub fn theme(expr decl: unknown) {
+        \\    decl.setMeta("named", compiler.name(decl)!);
         \\}
         \\
-        \\pub default fn looks(comptime e: @Expr<string>) -> @Expr<string> {
+        \\pub default fn looks(expr e: string) -> string {
         \\    val themes = @TypeInfo.all(with: theme);
-        \\    return @expr(e.text() + ": " + themes.length.toString());
+        \\    return compiler.text(e) + ": " + themes.length.toString();
         \\}
         \\
         },
@@ -824,7 +824,7 @@ test "level B: a package expanding a template that reads the catalogue is never 
         \\import looks from "looks";
         \\
         \\pub fn shown() -> string {
-        \\    return looks "mid";
+        \\    return looks @`mid`;
         \\}
         \\
         },
@@ -866,8 +866,8 @@ test "level B: a package declaring a catalogue default is stored and read back w
     const build_root = h.buildRootPathFromSrc(io, @src());
     const modules = [_]Module{
         .{ .path = "frame/root", .package = "frame", .source =
-        \\pub fn m(comptime decl: @Decl) {
-        \\    decl.setMeta("role", decl.name);
+        \\pub fn m(expr decl: unknown) {
+        \\    decl.setMeta("role", compiler.name(decl)!);
         \\}
         \\
         \\#[m]
@@ -875,8 +875,8 @@ test "level B: a package declaring a catalogue default is stored and read back w
         \\    return 0;
         \\}
         \\
-        \\pub fn boot(comptime modules: @Expr<Declared<unknown>[]> = @TypeInfo.all(with: m)) {
-        \\    @print(modules.value.length.toString());
+        \\pub fn boot(comptime modules: Declared<unknown>[] = @TypeInfo.all(with: m)) {
+        \\    @print(modules.length.toString());
         \\}
         \\
         },
@@ -929,8 +929,8 @@ test "level B: a package that reads @TypeInfo.all is never stored" {
     const build_root = h.buildRootPathFromSrc(io, @src());
     const modules = [_]Module{
         .{ .path = "cat/cat", .package = "cat", .source =
-        \\pub fn listed(comptime decl: @Decl) {
-        \\    decl.setMeta("named", decl.name);
+        \\pub fn listed(expr decl: unknown) {
+        \\    decl.setMeta("named", compiler.name(decl)!);
         \\}
         \\
         \\#[listed]

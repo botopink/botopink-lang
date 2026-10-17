@@ -1,11 +1,11 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn main() {
-    val Type = "Type";
-    val Fn = "Fn";
-    val kinds = #(Type, Fn);
-    val decl = @Decl(kind: kinds.Type, name: "Service", fields: [#("x", "i32", [])], methods: [], returnType: "", annotations: []);
-    @print(decl.fields.length);
+    val File = "main.bp";
+    val Fn = "main";
+    val names = #(File, Fn);
+    val at = @SourceLocation(file: names.File, line: 3, column: 7, fnName: names.Fn);
+    @print(at.line);
 }
 ```
 
@@ -69,11 +69,11 @@ function __bp_print() {
 }
 
 function main() {
-    const Type = "Type";
-    const Fn = "Fn";
-    const kinds = [Type, Fn];
-    const decl = ({ kind: kinds[0], name: "Service", fields: [["x", "i32", []]], methods: [], returnType: "", annotations: [] });
-    __bp_print(decl.fields.length);
+    const File = "main.bp";
+    const Fn = "main";
+    const names = [File, Fn];
+    const at = ({ file: names[0], line: 3, column: 7, fnName: names[1] });
+    __bp_print(at.line);
 }
 
 function _botopink_main() {
@@ -91,5 +91,5 @@ Object.defineProperty(exports, "__bp_priv__", { value: { main } });
 
 ----- RUN LOG -----
 ```logs
-1
+3
 ```

@@ -24,7 +24,7 @@ pub fn main() {
     @print(area(Shape.Circle(radius: 2)).toString());
     @print(pick(1, 2, true).toString());
     @print(pick("a", "b", false));
-    val built = shelf "built";
+    val built = shelf @`built`;
     @print(built.text);
     @print(total(q, Shape.Dot).toString());
     @print(readMeter(Meter(n: 3)).toString());

@@ -1,20 +1,20 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn column(comptime decl: @Decl, comptime name: @Expr<string>) { }
-fn describe(comptime decl: @Decl, comptime label: @Expr<string>) {
-    var out = decl.name + "[" + label.value + "]";
-    for (decl.annotations) { a -> out = out + " @" + a.name + "(" + a.args.join(",") + ")"; };
-    for (decl.fields) { f ->
+fn column(expr decl: unknown, comptime name: string) { }
+fn describe(expr decl: unknown, comptime label: string) {
+    var out = compiler.name(decl)! + "[" + label + "]";
+    for (compiler.annotations(decl)) { a -> out = out + " @" + a.name + "(" + a.args.join(",") + ")"; };
+    for (compiler.fields(decl)) { f ->
         out = out + " field " + f.name + ":" + f.typeName;
         for (f.annotations) { a -> out = out + " @" + a.name + "(" + a.args.join(",") + ")"; };
     };
-    for (decl.variants) { v -> out = out + " variant " + v; };
-    for (decl.methods) { m ->
+    for (compiler.variants(decl)) { v -> out = out + " variant " + v; };
+    for (compiler.methods(decl)) { m ->
         var ps = "";
         for (m.params) { p -> ps = ps + p.name + ":" + p.typeName + ";"; };
         out = out + " method " + m.name + "(" + ps + ")->" + m.returnType;
     };
-    @emit("pub fn describe" + decl.name + "() -> string { return \"\"\"" + out + "\"\"\"; }");
+    @emit("pub fn describe" + compiler.name(decl)! + "() -> string { return \"\"\"" + out + "\"\"\"; }");
 }
 #[describe("record")]
 type Point(#[column("px")] x: i32, y: ?i32) {
@@ -483,7 +483,7 @@ val m = describeMode();
   call $rt_bin
   i64.const 4
   call $rt_int
-  i64.const 69
+  i64.const 79
   call $rt_int
   local.get $V___BpF1
   call $bp_comptime_decorator:__bp_push/4
@@ -1390,7 +1390,8 @@ val m = describeMode();
 ;;     params => [],
 ;;     component => undefined,
 ;;     module => <<"">>,
-;;     owner => undefined
+;;     owner => undefined,
+;;     package => <<"">>
 ;; }
 ;; Arg1 = <<"record">>
 ```
@@ -1857,7 +1858,7 @@ val m = describeMode();
   call $rt_bin
   i64.const 4
   call $rt_int
-  i64.const 69
+  i64.const 79
   call $rt_int
   local.get $V___BpF1
   call $bp_comptime_decorator:__bp_push/4
@@ -2752,7 +2753,8 @@ val m = describeMode();
 ;;     params => [],
 ;;     component => undefined,
 ;;     module => <<"">>,
-;;     owner => undefined
+;;     owner => undefined,
+;;     package => <<"">>
 ;; }
 ;; Arg1 = <<"enum">>
 ```

@@ -975,9 +975,9 @@ test "typeinfo.all: a template body's query makes no reader (decision 353)" {
     defer arena_state.deinit();
     const arena = arena_state.allocator();
     const src =
-        \\pub fn tpl(comptime e: @Expr<string>) -> @Expr<string> {
+        \\pub fn tpl(expr e: string) -> string {
         \\    val n = @TypeInfo.all(with: d).length;
-        \\    return @expr(e.text() + n.toString());
+        \\    return compiler.text(e) + n.toString();
         \\}
     ;
     try std.testing.expect(!try readsSource(arena, src));

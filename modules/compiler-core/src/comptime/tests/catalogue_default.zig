@@ -9,8 +9,8 @@ const Module = @import("../../module.zig").Module;
 const h = @import("helpers.zig");
 
 const frame =
-    \\pub fn m(comptime decl: @Decl) {
-    \\    decl.setMeta("role", decl.name);
+    \\pub fn m(expr decl: unknown) {
+    \\    decl.setMeta("role", compiler.name(decl)!);
     \\}
     \\
     \\#[m]
@@ -18,8 +18,8 @@ const frame =
     \\    return 0;
     \\}
     \\
-    \\pub fn boot(comptime modules: @Expr<Declared<unknown>[]> = @TypeInfo.all(with: m)) {
-    \\    @print(modules.value.length.toString());
+    \\pub fn boot(comptime modules: Declared<unknown>[] = @TypeInfo.all(with: m)) {
+    \\    @print(modules.length.toString());
     \\}
     \\
 ;

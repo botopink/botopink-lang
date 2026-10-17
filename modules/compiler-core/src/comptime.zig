@@ -1024,7 +1024,10 @@ fn mergeMembers(
         } else return error.MemberTargetMissing;
         const is_behavior = decls[target_index] == .behavior;
         const prefix = if (is_behavior) "behavior __bp_member {\n" else "type __bp_member() {\n";
-        const text = try std.fmt.allocPrint(arena, "{s}{s}\n}}", .{ prefix, m.source });
+        // A member a behavior is given has a body: its default (decision
+        // 370 (2)'s rendered `pub fn …` read as `default fn …`).
+        const source = if (is_behavior and std.mem.startsWith(u8, m.source, "pub fn ")) try std.mem.concat(arena, u8, &.{ "default fn ", m.source["pub fn ".len..] }) else m.source;
+        const text = try std.fmt.allocPrint(arena, "{s}{s}\n}}", .{ prefix, source });
 
         const refuse = struct {
             fn at(a: std.mem.Allocator, mc: envMod.MemberContribution, comptime fmt: []const u8, args: anytype, hint: []const u8) !MemberMerge {
@@ -1693,6 +1696,7 @@ fn analyzeMerged(
     env.modulePath = mod.path;
     env.inStd = mod.std_member;
     env.compilerBodies = declaresCompilerBodies(mod);
+    env.package = mod.package;
     env.reflection = reflection;
     if (typeinfo_plan) |pl| {
         env.typeinfoAll = pl.rewrites;
@@ -1864,6 +1868,7 @@ fn analyzeSource(
     env.modulePath = mod.path;
     env.inStd = mod.std_member;
     env.compilerBodies = declaresCompilerBodies(mod);
+    env.package = mod.package;
     // `@src().file` (decision 73): the package-relative display path.
     env.srcPath = try displaySrcPath(arena, mod);
     env.packageFiles = mod.files;
@@ -2251,8 +2256,8 @@ fn isIdentChar(c: u8) bool {
 /// `dropReflectionAlias`), so a decorator module that imports a user `Param`
 /// still reads `m.params` of a `@Decl` as the reflection's `Param`.
 pub const decl_reflection_src =
-    \\pub type DeclKind { Type, Behavior, Fn, Method, Field, Val, Element, Component }
-    \\pub type Span(start: i32, end: i32, line: i32)
+    \\pub type __DeclKind { Type, Behavior, Fn, Method, Field, Val, Element, Component }
+    \\pub type __Span(start: i32, end: i32, line: i32)
     \\pub type SourceLocation(file: string, line: i32, column: i32, fnName: string)
     \\pub type Asset(path: string, bytes: Bytes, size: i64, hash: string) {
     \\    declare fn text(self: Self) -> string;
@@ -2264,10 +2269,6 @@ pub const decl_reflection_src =
     \\pub type __Decl__Param(name: string, typeName: string)
     \\pub type __Decl__Field(name: string, typeName: string, annotations: __Decl__Annotation[])
     \\pub type __Decl__Method(name: string, params: __Decl__Param[], returnType: string, annotations: __Decl__Annotation[])
-    \\pub type DeclAnnotation = __Decl__Annotation;
-    \\pub type Param = __Decl__Param;
-    \\pub type Field = __Decl__Field;
-    \\pub type Method = __Decl__Method;
     \\pub type DeclaredMeta(key: string, value: string)
     \\pub type DeclaredTypedMeta(key: string, value: unknown)
     \\pub type Declared<T>(name: string, module: string, meta: DeclaredMeta[], returnTypeName: string, value: T, typedMeta: DeclaredTypedMeta[])
@@ -2288,23 +2289,24 @@ pub const decl_reflection_src =
     \\pub type __Decl__Call<A, R>(args: A, run: fn() -> R)
     \\pub type HookCall(callee: ?Declared<unknown>, at: string)
     \\pub type Stage { Build, Run, Any }
-    \\pub type HookNode(function: Declared<unknown>, uses: HookUse[], calls: HookCall[], async: bool, stage: Stage)
-    \\pub type Decl(
-    \\    kind: DeclKind,
+    \\pub type __HookNode(function: Declared<unknown>, uses: HookUse[], calls: HookCall[], async: bool, stage: Stage)
+    \\pub type __Decl(
+    \\    kind: __DeclKind,
     \\    name: string,
     \\    fields: __Decl__Field[],
     \\    variants: string[],
     \\    methods: __Decl__Method[],
     \\    returnType: string,
     \\    annotations: __Decl__Annotation[],
-    \\    hooks: HookNode[],
+    \\    hooks: __HookNode[],
     \\    params: __Decl__Param[],
-    \\    component: ?Decl,
+    \\    component: ?__Decl,
     \\    module: string,
-    \\    owner: ?Declared<unknown>) {
+    \\    owner: ?Declared<unknown>,
+    \\    package: string) {
     \\    declare fn attr(self: Self, name: string) -> ?string;
     \\    declare fn fail(self: Self, message: string);
-    \\    declare fn failAt(self: Self, span: Span, message: string);
+    \\    declare fn failAt(self: Self, span: __Span, message: string);
     \\    declare fn addMember(self: Self, source: string);
     \\    declare fn setMeta(self: Self, key: string, value: string);
     \\    declare fn addMeta<T>(self: Self, value: T);
@@ -2313,6 +2315,9 @@ pub const decl_reflection_src =
     \\    declare fn compile(self: Self, executor: fn());
     \\    declare fn implement(self: Self, source: Implementation);
     \\}
+    \\pub type __Source(file: string, line: i32, col: i32)
+    \\pub type __ExprContext(source: __Source, text: string, multiline: bool)
+    \\pub type __CustomNode(kind: string, span: __Span, label: string, ref: ?__Decl, children: __CustomNode[])
 ;
 
 /// The `@ExprCustom` reference-tree type (expr-custom), registered into the
@@ -2323,12 +2328,12 @@ pub const decl_reflection_src =
 /// `Span` field type resolves. `Decl` (the `ref` field) is what `q.lookup`
 /// answers (decision 415 (2)). Generic — the core never inspects `kind`/`label`.
 const custom_ast_reflection_src =
-    \\pub type CustomNode(
+    \\pub type __CustomNode(
     \\    kind: string,
-    \\    span: Span,
+    \\    span: __Span,
     \\    label: string,
-    \\    ref: ?Decl,
-    \\    children: CustomNode[],
+    \\    ref: ?__Decl,
+    \\    children: __CustomNode[],
     \\)
 ;
 
@@ -3958,10 +3963,6 @@ pub const rule_read_behaviors = [_][]const u8{
     "Iterator",
     "Stream",
     "Component",
-    // The comptime reflection carriers (`@Expr<T>`, `@Decl<T>`), registered
-    // from their own sources (`decl_reflection_src`).
-    "Expr",
-    "Decl",
     // Markers whose `implement` a rule of `infer.zig` reads:
     // `implementsAnnotation`, `implementsRenderable` and
     // `decorator_type_name`.

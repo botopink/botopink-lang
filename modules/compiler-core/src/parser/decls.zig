@@ -1358,9 +1358,16 @@ pub fn parseParam(this: *This, alloc: std.mem.Allocator) ParseError!Param {
     if (this.match(.equal)) {
         defaultExpr = try this.parseBinaryExpr(alloc, prec.equality);
     }
+    // Decision 575 (4) — `x comptime: T` is `comptime x: T`: the value.
+    var arrival: ast.Arrival = .written;
+    if (modifier == .@"comptime" and !typeRef.isExprType() and !typeRef.isDeclType()) {
+        arrival = .value;
+        typeRef = try wrapTree(alloc, typeRef);
+    }
     return Param{
         .name = name,
         .typeRef = typeRef,
+        .arrival = arrival,
         .modifier = modifier,
         .default = defaultExpr,
         .typeLoc = parser.Parser.locFromToken(typeTok),
@@ -1391,9 +1398,11 @@ pub fn wrapTree(alloc: std.mem.Allocator, inner: ast.TypeRef) ParseError!ast.Typ
 /// return, read as the tree type (`@Expr<T>`) the template machinery knows.
 pub fn parseReturnTypeRef(this: *This, alloc: std.mem.Allocator) ParseError!ast.TypeRef {
     const t = this.peek();
+    // Decision 578 (1) — `-> expr T` is gone: a template is marked by its
+    // text parameter and returns `T`, `anyvalue` or `anytype`.
     if (t.kind == .identifier and std.mem.eql(u8, t.lexeme, "expr") and startsTypeRefKind(this.peekAt(1).kind)) {
-        _ = this.advance();
-        return wrapTree(alloc, try this.parseTypeRef(alloc));
+        this.parseError = ParseErrorInfo.fromTokenDetail(.removedExprType, t, "-> expr");
+        return ParseError.UnexpectedToken;
     }
     return this.parseTypeRef(alloc);
 }

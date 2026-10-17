@@ -282,11 +282,11 @@ test "js: interface literal ---- basic" {
 test "js: interface literal ---- with fields" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
-        \\    val Type = "Type";
-        \\    val Fn = "Fn";
-        \\    val kinds = #(Type, Fn);
-        \\    val decl = @Decl(kind: kinds.Type, name: "Service", fields: [#("x", "i32", [])], methods: [], returnType: "", annotations: []);
-        \\    @print(decl.fields.length);
+        \\    val File = "main.bp";
+        \\    val Fn = "main";
+        \\    val names = #(File, Fn);
+        \\    val at = @SourceLocation(file: names.File, line: 3, column: 7, fnName: names.Fn);
+        \\    @print(at.line);
         \\}
     );
 }

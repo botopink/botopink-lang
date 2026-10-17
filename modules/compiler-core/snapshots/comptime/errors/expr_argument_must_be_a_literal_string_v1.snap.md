@@ -1,15 +1,15 @@
 ----- SOURCE CODE
-pub fn html(comptime template: @Expr<string>) -> @Expr<string> {
+pub fn html(expr template: string) -> string {
     return template;
 }
 val tpl = "<p></p>";
 val c = html(tpl);
 
 ----- ERROR
-error: an `expr` argument must be a literal string at the call site
-  ┌─ main.bp:5:14
+error: expr-call-outside-expr: `html` is a template, called only with a template text, and is called here another way
+  ┌─ main.bp:5:9
   │
 5 │ val c = html(tpl);
-  │              ^
+  │         ^
 
-  hint: Write the template inline — `f """…"""` or `f("…")`; a variable carries no span or scope to capture (V1).
+  hint: Write its text after its name: `f @`select …``, `value.f @`…``, or `#[f @`…`]` (decision 577 (3)).

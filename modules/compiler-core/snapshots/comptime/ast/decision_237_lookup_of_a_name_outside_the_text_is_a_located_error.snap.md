@@ -3,15 +3,15 @@
 pub type Button(
     label: string,
 )
-pub fn need(comptime t: @Expr<string>) -> @Expr<string> {
-    val hit = t.lookup("Button");
+pub fn need(expr t: string) -> string {
+    val hit = compiler.lookup(t, "Button");
     if (hit) { b ->
-        return t.build("\"hit\"");
+        return compiler.build("\"hit\"");
     } else {
-        return t.build("\"miss\"");
+        return compiler.build("\"miss\"");
     };
 }
-val r = need "<Card/>";
+val r = need @`<Card/>`;
 ```
 
 ----- COMPILE DIAGNOSTIC -- main
@@ -19,7 +19,7 @@ val r = need "<Card/>";
 error: lookup("Button"): not a word of the template's text; a template capture carries only the bindings whose name its text spells
   ┌─ main.bp:12:14
   │
-12 │ val r = need "<Card/>";
+12 │ val r = need @`<Card/>`;
   │              ^
 
   hint: raised by the template function against this template (`fail`/`failAt`, or `lookup` of a name its text does not spell)

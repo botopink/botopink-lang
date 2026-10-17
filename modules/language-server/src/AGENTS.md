@@ -93,7 +93,7 @@ in `engine.zig`, add a test in [`tests/`](tests/AGENTS.md) (register it in
   here or a legal rename is refused. `isPrimitiveType` is
   `Env.registerBuiltins` in `comptime/env.zig` minus `Self` — it decides what
   semantic tokens paint `type [defaultLibrary]`, so a name that is registered
-  nowhere must not be in it. `unknown` (decision 8 §2) became a keyword token with
+  nowhere must not be in it; `anyvalue` and `anytype` (decision 578) are in it. `unknown` (decision 8 §2) became a keyword token with
   06 N19 — it is in `isKeyword` now, and the keyword branch of the semantic-token
   walk paints it `type [defaultLibrary]` like `Self`, so `isPrimitiveType` never
   sees it. `any` is not in it: decision 31 deleted it, and the checker refuses it as

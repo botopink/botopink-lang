@@ -695,9 +695,9 @@ test "a member function: collected in order, its free names, rendered with each 
     const lexer = @import("../lexer.zig");
     const parser = @import("../parser.zig");
     var lx = lexer.Lexer.init(
-        \\fn check<T>(comptime decl: @Decl<T>, comptime message: @Expr<string>, comptime rule: @Expr<fn(v: T) -> bool>) {
+        \\fn check<T>(expr decl: T, expr message: string, expr rule: fn(v: T) -> bool) {
         \\    val unused = 1;
-        \\    decl.addMember("validate", fn(self: T) -> Violation[] {
+        \\    compiler.addMember("validate", fn(self: T) -> Violation[] {
         \\        if (rule(self)) return [];
         \\        val m = message;
         \\        return [Violation(field: "confirm", message: m)];
@@ -732,10 +732,10 @@ test "decision 316 — a wrapper: collected in order apart from the members, ren
     const lexer = @import("../lexer.zig");
     const parser = @import("../parser.zig");
     var lx = lexer.Lexer.init(
-        \\fn tagged(comptime decl: @Decl<fn(..) -> string>, comptime mark: @Expr<string>) {
-        \\    decl.addMember("m", fn(self: T) -> string { return mark; });
-        \\    decl.wrapWith({ call -> mark + call.run() });
-        \\    decl.wrapWith({ call -> call.run() });
+        \\fn tagged(expr decl: fn(..) -> string, expr mark: string) {
+        \\    compiler.addMember("m", fn(self: T) -> string { return mark; });
+        \\    compiler.wrapWith({ call -> mark + call.run() });
+        \\    compiler.wrapWith({ call -> call.run() });
         \\}
     );
     var p = parser.Parser.init(try lx.scanAll(arena));

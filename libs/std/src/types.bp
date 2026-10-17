@@ -33,7 +33,9 @@ pub type Type {
     pub type Field<T>(
         name: string,
         typeName: string,
-        annotations: DeclAnnotation[],
+        // `compiler.DeclAnnotation` by its internal name: an importer of
+        // `Type` reads the field without importing it (decision 576 (13)).
+        annotations: __Decl__Annotation[],
     ) {
         // The key named `text`, or `null` when `T` declares no such field.
         pub declare fn of(text: string) -> ?Type.Field<T>;

@@ -257,9 +257,14 @@ fn parseBaseTypeRefArm(this: *This, alloc: std.mem.Allocator) ParseError!ast.Typ
             this.parseError = ParseErrorInfo.fromToken(.removedBuiltinType, tok);
             return ParseError.UnexpectedToken;
         }
-        // `@Decl` (the annotation-processor reflection handle) is the one builtin
-        // written WITHOUT type arguments — bare, like a nominal type. A decorator
-        // declares its first parameter as `comptime _: @Decl`.
+        // Decision 576 (1) — `@Expr`, `@ExprCustom` and `@Decl` are gone: a
+        // parameter says how its argument arrives (`comptime` / `expr`), a
+        // template answers `-> expr T`, a decorator's first `expr` is the
+        // declaration.
+        if (std.mem.eql(u8, name, "Expr") or std.mem.eql(u8, name, "ExprCustom") or std.mem.eql(u8, name, "Decl")) {
+            this.parseError = ParseErrorInfo.fromTokenDetail(.removedExprType, tok, tok.lexeme);
+            return ParseError.UnexpectedToken;
+        }
         // Decisions 120 / 122 / 127 / 128 — the removed effect wrappers are
         // recognised only to be refused, located on the wrapper's name.
         const removedKind: ?parser.ParseErrorType = if (std.mem.eql(u8, name, "Future"))
@@ -283,12 +288,9 @@ fn parseBaseTypeRefArm(this: *This, alloc: std.mem.Allocator) ParseError!ast.Typ
             this.parseError = ParseErrorInfo.fromToken(k, tok);
             return ParseError.UnexpectedToken;
         }
-        if (std.mem.eql(u8, name, "Decl") and !this.check(.lessThan)) {
-            return ast.TypeRef{ .generic = .{ .name = name, .args = &.{}, .is_builtin = true } };
-        }
         // Decision 354 — `@Renderable` is the marker a component's `R`
         // implements (`type Element(…) implement @Renderable`). It takes no
-        // type argument: written bare, like `@Decl`.
+        // type argument: written bare.
         if (std.mem.eql(u8, name, "Renderable")) {
             if (this.check(.lessThan)) {
                 this.parseError = ParseErrorInfo.fromToken(.renderableTakesNoTypeArguments, this.peek());
@@ -296,9 +298,8 @@ fn parseBaseTypeRefArm(this: *This, alloc: std.mem.Allocator) ParseError!ast.Typ
             }
             return ast.TypeRef{ .generic = .{ .name = name, .args = &.{}, .is_builtin = true } };
         }
-        // Other builtin types always take their generic parameters (`@Expr<i32>`,
-        // never bare `@Expr`) — a result type only the expansion knows is
-        // written as an ordinary fn generic: `fn yaml<T>(…) -> @Expr<T>`.
+        // Other builtin types always take their generic parameters
+        // (`@Task<i32>`, never bare `@Task`).
         _ = try this.consume(.lessThan);
         var first_arg_tok = this.peek();
         var args: std.ArrayList(ast.TypeRef) = .empty;
@@ -321,9 +322,7 @@ fn parseBaseTypeRefArm(this: *This, alloc: std.mem.Allocator) ParseError!ast.Typ
                 return ParseError.UnexpectedToken;
             }
             if (args.items.len == 0) first_arg_tok = this.peek();
-            this.inDeclPattern = std.mem.eql(u8, name, "Decl");
             try args.append(alloc, try this.parseTypeRef(alloc));
-            this.inDeclPattern = false;
             // A `>>` that closed an inner list left the outer close pending: the
             // `,` after it separates the ENCLOSING list, not this one.
             if (this.pending_gt or !this.match(.comma)) break;
@@ -351,7 +350,9 @@ fn parseBaseTypeRefArm(this: *This, alloc: std.mem.Allocator) ParseError!ast.Typ
         return ParseError.UnexpectedToken;
     }
     if (this.check(.type)) {
-        _ = this.advance(); // consume 'type'
+        // `x is type` tests a value-or-type parameter (decision 297).
+        const afterIs = this.current > 0 and this.tokens[this.current - 1].kind == .is;
+        const typeTok = this.advance(); // consume 'type'
         var constraints: std.ArrayList(ast.TypeRef) = .empty;
         errdefer {
             for (constraints.items) |*c| c.deinit(alloc);
@@ -369,6 +370,10 @@ fn parseBaseTypeRefArm(this: *This, alloc: std.mem.Allocator) ParseError!ast.Typ
             try this.consumeGenericClose();
         } else if (startsTypeRef(this.peek().kind) and this.peek().kind != .leftParenthesis) {
             this.parseError = ParseErrorInfo.fromToken(.removedTypeBareParam, this.peek());
+            return ParseError.UnexpectedToken;
+        } else if (!afterIs) {
+            // Decision 578 (2) — the bare `type` is written `anytype`.
+            this.parseError = ParseErrorInfo.fromToken(.removedBareType, typeTok);
             return ParseError.UnexpectedToken;
         }
         return ast.TypeRef{ .typeparam = try constraints.toOwnedSlice(alloc) };

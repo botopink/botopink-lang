@@ -726,9 +726,15 @@ fn mayHoldExprs(comptime U: type) bool {
 
 /// The type names the template module defines itself (its host enums and
 /// records): never carried from the program (`block_eval.typesReached`'s skip).
-pub const injected_names = [_][]const u8{ "DeclKind", "Span", "CustomNode", "Source", "ExprContext" };
+/// Each internal name is also reached through its `compiler.bp` alias
+/// (`import {compiler.Span} from "std"`, decision 576 (13)).
+pub const injected_names = [_][]const u8{ "__DeclKind", "__Span", "__CustomNode", "__Source", "__ExprContext", "DeclKind", "Span", "CustomNode", "Source", "ExprContext" };
 
 const host_records = [_]erlang.HostRecord{
+    .{ .name = "__Span", .fields = &.{ "start", "end", "line" } },
+    .{ .name = "__CustomNode", .fields = &.{ "kind", "span", "label", "ref", "children" } },
+    .{ .name = "__Source", .fields = &.{ "file", "line", "col" } },
+    .{ .name = "__ExprContext", .fields = &.{ "source", "text", "multiline" } },
     .{ .name = "Span", .fields = &.{ "start", "end", "line" } },
     .{ .name = "CustomNode", .fields = &.{ "kind", "span", "label", "ref", "children" } },
     .{ .name = "Source", .fields = &.{ "file", "line", "col" } },
@@ -850,7 +856,7 @@ fn buildModule(
         },
     };
     const config: erlang.ComptimeModule = .{
-        .host_enums = &.{ "DeclKind", "Stage" },
+        .host_enums = &.{ "__DeclKind", "DeclKind", "Stage" },
         .host_records = &host_records,
         .exports = &.{.{ .name = "main", .arity = 1 }},
         .forms = forms,
@@ -1416,8 +1422,8 @@ test "template module: one module per declaration, the capture as the argument" 
     const lexerMod = @import("../lexer.zig");
     const parserMod = @import("../parser.zig");
     var lx = lexerMod.Lexer.init(
-        \\pub fn shout(comptime q: @Expr<string>) -> @Expr<string> {
-        \\    return q.build(q.text());
+        \\pub fn shout(expr q: string) -> string {
+        \\    return compiler.build(compiler.text(q));
         \\}
     );
     var p = parserMod.Parser.init(try lx.scanAll(arena));
@@ -1499,8 +1505,8 @@ test "template module: the emit memo is keyed by the declaration's text and the 
         }
     }.decls;
     const body =
-        \\pub fn shout(comptime q: @Expr<string>) -> @Expr<string> {
-        \\    return q.build(q.text());
+        \\pub fn shout(expr q: string) -> string {
+        \\    return compiler.build(compiler.text(q));
         \\}
     ;
     const original = try parse(arena, body);
@@ -1508,8 +1514,8 @@ test "template module: the emit memo is keyed by the declaration's text and the 
     // or the language server re-reading the file) is the same key.
     const moved = try parse(arena, "\n\n" ++ body);
     const edited = try parse(arena,
-        \\pub fn shout(comptime q: @Expr<string>) -> @Expr<string> {
-        \\    return q.build(q.text() + "!");
+        \\pub fn shout(expr q: string) -> string {
+        \\    return compiler.build(compiler.text(q) + "!");
         \\}
     );
 

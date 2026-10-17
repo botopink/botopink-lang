@@ -207,7 +207,7 @@ pub fn refuseTwins(arena: std.mem.Allocator, io: std.Io, files: []const BppFile)
 /// `arena`: the `#[bpp.html]` function and the `#[bpp.style]` one, each as
 /// the import that reaches it in package `pkg` (whose entry module is
 /// `entry`, a path under its `src` with its extension), and the `R` of the
-/// html function's `@ExprCustom<R>` (decision 275) — read from its signature;
+/// html function's `-> expr R` (decisions 275, 576 (4)) — read from its signature;
 /// a name the package declares there is imported under an alias of the
 /// unfold's, so the toolchain spells no type name of its own.
 pub fn unfoldSpec(arena: std.mem.Allocator, pkg: []const u8, entry: []const u8, roles: Roles) Error!bpp_unfold.Spec {
@@ -233,35 +233,31 @@ fn targetOf(arena: std.mem.Allocator, pkg: []const u8, entry: []const u8, m: Mar
     return .{ .package = try arena.dupe(u8, pkg), .path = path, .name = try arena.dupe(u8, m.name) };
 }
 
-/// The `R` of `m`'s `-> @ExprCustom<R>`, each name `m`'s module declares or
-/// imports from its own package rewritten to an alias whose import goes to
-/// `imports`. `i32` when the signature cannot be read (std's decorator has
-/// already refused a role function that answers no `@ExprCustom<R>`).
+/// The `R` of `m`'s `-> expr R` (decision 576 (4)), each name `m`'s module
+/// declares or imports from its own package rewritten to an alias whose import
+/// goes to `imports`. `i32` when the signature cannot be read (std's decorator
+/// has already refused a role function that answers no `-> expr R`).
 fn returnOf(arena: std.mem.Allocator, pkg: []const u8, entry: []const u8, m: Marked, imports: *std.ArrayListUnmanaged(u8)) Error![]const u8 {
     var lx = bp.Lexer.init(m.source);
     const toks = lx.scanAll(arena) catch return "i32";
-    // The function's name, then its `->`, then `@ExprCustom` `<`.
+    // The function's name, then its `->`, then `expr`.
     var i: usize = 0;
     while (i < toks.len and !(toks[i].kind == .identifier and toks[i].line == m.loc.line and std.mem.eql(u8, toks[i].lexeme, m.name))) i += 1;
     while (i < toks.len and toks[i].kind != .rightArrow) i += 1;
-    if (i + 2 >= toks.len or !std.mem.eql(u8, toks[i + 1].lexeme, "@ExprCustom") or toks[i + 2].kind != .lessThan) return "i32";
-    const first = i + 3;
-    var depth: usize = 1;
+    if (i + 2 >= toks.len or toks[i + 1].kind != .identifier or !std.mem.eql(u8, toks[i + 1].lexeme, "expr")) return "i32";
+    const first = i + 2;
+    // `R` runs to the body's `{`, outside any `<…>` / `(…)`.
+    var depth: usize = 0;
     var j = first;
-    // Where `R` ends: before the `>` closing `@ExprCustom<`, which a `>>`
-    // shares with `R`'s own last `>` (`@ExprCustom<@Component<View>>`).
     var end: usize = 0;
     while (j < toks.len) : (j += 1) {
         switch (toks[j].kind) {
-            .lessThan => depth += 1,
-            .greaterThan => depth -= 1,
-            .greaterThanGreaterThan => {
-                if (depth == 2) end = toks[j].offset + 1;
-                depth -|= 2;
-            },
+            .lessThan, .leftParenthesis => depth += 1,
+            .greaterThan, .rightParenthesis => depth -|= 1,
+            .greaterThanGreaterThan => depth -|= 2,
+            .leftBrace => if (depth == 0) break,
             else => {},
         }
-        if (depth == 0) break;
     }
     if (j >= toks.len or j == first) return "i32";
     if (end == 0) end = toks[j].offset;
@@ -279,7 +275,7 @@ fn returnOf(arena: std.mem.Allocator, pkg: []const u8, entry: []const u8, m: Mar
         try imports.print(arena, "import {{{s} as {s}}} from \"{s}\";\n", .{ path, alias, pkg });
     }
     try out.appendSlice(arena, m.source[at..end]);
-    return out.items;
+    return std.mem.trimEnd(u8, out.items, " \t\r\n");
 }
 
 /// Where `name`, read in `m`'s module, is declared in the package — the
@@ -446,12 +442,12 @@ test "bpp roles: one #[bpp.html], the others at most once, through a handle, an 
         testModule("ui/root",
             \\import {bpp} from "std";
             \\#[bpp.html]
-            \\pub fn html(comptime t: @Expr<string>) -> @ExprCustom<i32> { return t.custom(t.node(), t.build("1")); }
+            \\pub fn html(expr t: string) -> i32 { return t.custom(t.node(), compiler.build("1")); }
         ),
         testModule("ui/style",
             \\import {bpp.style as role} from "std";
             \\#[role]
-            \\pub fn css(comptime t: @Expr<string>) -> @ExprCustom<i32> { return t.custom(t.node(), t.build("1")); }
+            \\pub fn css(expr t: string) -> i32 { return t.custom(t.node(), compiler.build("1")); }
         ),
         testModule("ui/prelude",
             \\import {bpp as b} from "std";

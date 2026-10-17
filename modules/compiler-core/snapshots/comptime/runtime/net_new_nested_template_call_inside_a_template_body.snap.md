@@ -1,12 +1,12 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-pub fn inner(comptime q: @Expr<string>) -> @Expr<string> {
+pub fn inner(expr q: string) -> string {
     return q;
 }
-pub fn outer(comptime q: @Expr<string>) -> @Expr<string> {
-    return q.build("inner(\"deep\")");
+pub fn outer(expr q: string) -> string {
+    return compiler.build("inner @`deep`");
 }
-val s = outer "x";
+val s = outer @`x`;
 ```
 
 ----- COMPTIME WAT -- template outer
@@ -56,7 +56,7 @@ val s = outer "x";
   call $rt_bin
   i64.const 5
   call $rt_int
-  i64.const 12
+  i64.const 21
   call $rt_int
   local.get $V___BpF0
   call $bp_comptime_template:__bp_push/4
@@ -120,7 +120,7 @@ val s = outer "x";
 ```json
 {
   "kind": "code",
-  "source": "inner(\"deep\")"
+  "source": "inner @`deep`"
 }
 ```
 

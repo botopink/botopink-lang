@@ -183,9 +183,9 @@ test "surface: val Dict = type<K, V>(pairs) { … } is a val-form generic record
     try std.testing.expectEqual(@as(usize, 2), t.genericParams.len);
 }
 
-test "surface: comptime T: type and -> type still name the kind of types" {
+test "surface: comptime T: anytype and -> anytype name the kind of types (decision 578)" {
     var parsed = try parse(
-        \\fn same(comptime T: type) -> type {
+        \\fn same(comptime T: anytype) -> anytype {
         \\    return T;
         \\}
     );
