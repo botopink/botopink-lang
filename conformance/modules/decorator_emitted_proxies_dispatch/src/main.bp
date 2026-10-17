@@ -13,24 +13,26 @@ fn guard(label: string) -> i32 {
     return label.length();
 }
 
-fn proxied(comptime decl: @Decl) {
+fn proxied(expr decl: unknown) {
     var methods: string[] = [];
-    decl.methods.forEach({ m ->
-        methods.push(
-            "pub fn "
-                + m.name
-                + "(self: Self) -> string {\n        val _g = guard(\""
-                + decl.name
-                + "\");\n        return \"sec \" + self.inner."
-                + m.name
-                + "();\n    }",
-        )
-    });
+    compiler
+        .methods(decl)
+        .forEach({ m ->
+            methods.push(
+                "pub fn "
+                    + m.name
+                    + "(self: Self) -> string {\n        val _g = guard(\""
+                    + compiler.name(decl)!
+                    + "\");\n        return \"sec \" + self.inner."
+                    + m.name
+                    + "();\n    }",
+            )
+        });
     @emit(
         "pub type "
-            + decl.name
+            + compiler.name(decl)!
             + "Sec(inner: "
-            + decl.name
+            + compiler.name(decl)!
             + ") {\n    "
             + methods.join("\n    ")
             + "\n}",

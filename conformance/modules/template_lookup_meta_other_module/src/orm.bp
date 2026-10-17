@@ -2,6 +2,6 @@
 
 pub type Table(name: string, schema: string = "public")
 
-pub fn entity(comptime decl: @Decl, comptime name: @Expr<string>) {
-    decl.setMeta(Table(name: name.value));
+pub fn entity(expr decl: unknown, comptime name: string) {
+    compiler.setMeta(Table(name: name));
 }

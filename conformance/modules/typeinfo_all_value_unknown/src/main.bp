@@ -2,8 +2,8 @@
 //// the program declares: an entry's `value` is `unknown`, and using it as a
 //// function without testing it is refused where it is used.
 
-fn route(comptime decl: @Decl) {
-    decl.setMeta(Route(path: "/"));
+fn route(expr decl: unknown) {
+    compiler.setMeta(Route(path: "/"));
 }
 
 #[route]

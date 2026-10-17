@@ -20,8 +20,8 @@ fn Badge() -> string {
 }
 
 pub fn main() {
-    @print(markup """<div id="x" #[cls("a")]>hi</div>""");
-    @print(markup """<Badge #[cls("c")]>new</Badge>""");
+    @print(markup @`<div id="x" #[cls("a")]>hi</div>`);
+    @print(markup @`<Badge #[cls("c")]>new</Badge>`);
     @print(Badge());
     for (@typeInfo(Card).metaAll(ClassName)) { c ->
         @print("Card: " + c.names.join(" "));

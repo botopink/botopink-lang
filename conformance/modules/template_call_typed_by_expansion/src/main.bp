@@ -5,20 +5,21 @@
 //// code fits, and the call keeps the built type (`string[]`, not
 //// `unknown[]`).
 
-fn data<T>(comptime q: @Expr<string>) -> @Expr<T> {
-    if (q.text() == "names") return q.build("[\"ana\", \"bia\"]");
-    return q.build("41");
+fn data<T>(expr q: string) -> T {
+    if (compiler.text(q) == "names")
+        return compiler.build("[\"ana\", \"bia\"]");
+    return compiler.build("41");
 }
 
-fn listed(comptime q: @Expr<string>) -> @Expr<unknown[]> {
-    return q.build("[\"" + q.text() + "\"]");
+fn listed(expr q: string) -> unknown[] {
+    return compiler.build("[\"" + compiler.text(q) + "\"]");
 }
 
 pub fn main() {
-    val names = data "names";
-    val n = data "count";
+    val names = data @`names`;
+    val n = data @`count`;
     @print(names.join(","));
     @print((n + 1).toString());
-    val xs = listed "solo";
+    val xs = listed @`solo`;
     @print(xs.join("") + "!");
 }

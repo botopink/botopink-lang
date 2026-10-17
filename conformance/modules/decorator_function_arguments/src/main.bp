@@ -17,12 +17,12 @@ type BlogParams(slug: string)
 type Post(title: string, body: string)
 
 fn page<P, D>(
-    comptime decl: @Decl<fn(route: Route<P, D>) -> View>,
-    comptime seg: @Expr<string>,
-    comptime paths: @Expr<?fn() -> #(P, D)[]> = null,
-    comptime head: @Expr<?fn(p: P, d: D) -> Head> = null,
+    expr decl: fn(route: Route<P, D>) -> View,
+    comptime seg: string,
+    comptime paths: ?fn() -> #(P, D)[] = null,
+    comptime head: ?fn(p: P, d: D) -> Head = null,
 ) {
-    decl.setMeta(Page(seg: seg.value));
+    compiler.setMeta(Page(seg: seg));
 }
 
 #[page("blog/[slug]", paths: allPosts, head: postHead)]

@@ -3,10 +3,10 @@
 
 pub type Tag(label: string)
 
-pub fn tag(comptime decl: @Decl) {
-    decl.setMeta(Tag(label: "tagged " + decl.name));
+pub fn tag(expr decl: unknown) {
+    compiler.setMeta(Tag(label: "tagged " + compiler.name(decl)!));
 }
 
-pub fn serverOnly(comptime decl: @Decl) {
-    val _n = decl.name;
+pub fn serverOnly(expr decl: unknown) {
+    val _n = compiler.name(decl)!;
 }

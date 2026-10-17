@@ -27,11 +27,11 @@ fn quoted(text: string) -> string {
     return "\"" + text + "\"";
 }
 
-pub fn rule(comptime t: @Expr<string>) -> @Expr<Rule> {
+pub fn rule(expr t: string) -> Rule {
     var built = "";
     var computed = "\"\"";
     var known = true;
-    for (t.parts()) { part ->
+    for (compiler.parts(t)) { part ->
         if (part.kind == "Interp") {
             if (part.known)
                 built = built + buildText(part.value, part.value)
@@ -44,8 +44,10 @@ pub fn rule(comptime t: @Expr<string>) -> @Expr<Rule> {
         }
     }
     if (known)
-        return t.build("Rule(text: " + quoted(built) + ", at: \"build\")");
-    return t.build("Rule(text: " + computed + ", at: \"render\")");
+        return compiler.build("Rule(text: "
+            + quoted(built)
+            + ", at: \"build\")");
+    return compiler.build("Rule(text: " + computed + ", at: \"render\")");
 }
 
 pub val ESPACO = 2;
@@ -67,20 +69,20 @@ fn loud(n: i32) -> string {
     return n.toString();
 }
 
-pub val literal = rule "${padAll(2)}";
+pub val literal = rule @`${padAll(2)}`;
 
-pub val named = rule "${padAll(ESPACO)}";
+pub val named = rule @`${padAll(ESPACO)}`;
 
 pub val p = padAll(ESPACO * 2);
 
-pub val throughVal = rule "${p} margin: 0;";
+pub val throughVal = rule @`${p} margin: 0;`;
 
-pub val ran = rule "${stamp(1)}";
+pub val ran = rule @`${stamp(1)}`;
 
-pub val printed = rule "${loud(3)}";
+pub val printed = rule @`${loud(3)}`;
 
 fn param(n: i32) -> Rule {
-    return rule "${padAll(n)}";
+    return rule @`${padAll(n)}`;
 }
 
 fn show(r: Rule) {

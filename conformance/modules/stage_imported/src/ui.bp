@@ -10,6 +10,6 @@ pub fn agora() -> i64 {
     return clock.nowMillis();
 }
 
-pub fn label(comptime x: @Expr<string>, mark: string) -> string {
-    return x.value + mark;
+pub fn label(comptime x: string, mark: string) -> string {
+    return x + mark;
 }

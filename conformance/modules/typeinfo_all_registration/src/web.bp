@@ -1,22 +1,22 @@
 //// The framework: `#[route(path)]` marks a page function and records its
 //// path; `#[component]` gives a type the member its catalogue calls.
 
-pub fn route(comptime decl: @Decl, comptime path: @Expr<string>) {
-    decl.setMeta(Route(path: path.value));
-    if (decl.kind != DeclKind.Fn)
-        decl.fail("#[route] must annotate a function");
+pub fn route(expr decl: unknown, comptime path: string) {
+    compiler.setMeta(Route(path: path));
+    if (compiler.kind(decl) != DeclKind.Fn)
+        compiler.fail("#[route] must annotate a function", at: decl);
 }
 
-pub fn component(comptime decl: @Decl) {
-    decl.addMember(
+pub fn component(expr decl: unknown) {
+    compiler.addMember(
         "pub fn describe() -> string { return \"component "
-            + decl.name
+            + compiler.name(decl)!
             + "\"; }",
     );
 }
 
-pub fn unused(comptime decl: @Decl) {
-    decl.setMeta(Unused(marked: true));
+pub fn unused(expr decl: unknown) {
+    compiler.setMeta(Unused(marked: true));
 }
 
 // What `#[route]` records.

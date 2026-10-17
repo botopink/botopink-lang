@@ -10,12 +10,12 @@ type Table(name: string, rows: i32, cached: bool = false, size: Size = .Small, t
 
 type Index(column: string)
 
-fn table(comptime decl: @Decl, comptime name: @Expr<string>, comptime rows: @Expr<i32>) {
-    decl.setMeta(Table(name: name.value, rows: rows.value, size: .Large, tags: ["a", "b"]));
+fn table(expr decl: unknown, comptime name: string, comptime rows: i32) {
+    compiler.setMeta(Table(name: name, rows: rows, size: .Large, tags: ["a", "b"]));
 }
 
-fn index(comptime decl: @Decl, comptime column: @Expr<string>) {
-    decl.addMeta(Index(column: column.value));
+fn index(expr decl: unknown, comptime column: string) {
+    compiler.addMeta(Index(column: column));
 }
 
 #[table("users", 3), index("email"), index("id")]
@@ -23,11 +23,13 @@ type User(id: i32, email: string)
 
 type Plain(x: i32)
 
-fn sql(comptime q: @Expr<string>) -> @Expr<string> {
-    val decl = q.lookup(q.text()) ?? q.fail("`"
-        + q.text()
-        + "` is not in scope");
-    val t = decl.meta(Table) ?? q.fail("`" + q.text() + "` is not an entity");
+fn sql(expr q: string) -> string {
+    val decl = compiler.lookup(q, compiler.text(q)) ?? compiler.fail("`"
+        + compiler.text(q)
+        + "` is not in scope", at: q);
+    val t = compiler.meta<Table>(decl) ?? compiler.fail("`"
+        + compiler.text(q)
+        + "` is not an entity", at: q);
     val cached = if (t.cached) "yes" else "no";
     val size = if (t.size == Size.Large) "large" else "small";
     var text = t.name
@@ -39,25 +41,26 @@ fn sql(comptime q: @Expr<string>) -> @Expr<string> {
         + size
         + " tags="
         + t.tags.join(",");
-    for (decl.metaAll(Index)) { i ->
+    for (compiler.metaAll<Index>(decl)) { i ->
         text = text + " index=" + i.column;
     }
-    return q.build("\"" + text + "\"");
+    return compiler.build("\"" + text + "\"");
 }
 
-fn entity(comptime q: @Expr<string>) -> @Expr<bool> {
-    val decl = q.lookup(q.text()) ?? q.fail("`"
-        + q.text()
-        + "` is not in scope");
-    val found = if (decl.meta(Table) == null && decl.metaAll(Index).length == 0)
+fn entity(expr q: string) -> bool {
+    val decl = compiler.lookup(q, compiler.text(q)) ?? compiler.fail("`"
+        + compiler.text(q)
+        + "` is not in scope", at: q);
+    val found = if (compiler.meta<Table>(decl) == null
+        && compiler.metaAll<Index>(decl).length == 0)
         "false"
     else
         "true";
-    return q.build(found);
+    return compiler.build(found);
 }
 
 pub fn main() {
-    @print(sql "User");
-    @print(entity "User");
-    @print(entity "Plain");
+    @print(sql @`User`);
+    @print(entity @`User`);
+    @print(entity @`Plain`);
 }

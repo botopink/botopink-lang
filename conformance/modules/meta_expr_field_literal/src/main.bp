@@ -3,10 +3,10 @@
 //// annotation's expression is spliced where the meta is read. A literal
 //// written in the decorator's body is refused at the argument.
 
-pub type Check(message: @Expr<string>)
+pub type Check(message: string)
 
-fn check(comptime decl: @Decl) {
-    decl.addMeta(Check(message: "fixed"));
+fn check(expr decl: unknown) {
+    compiler.addMeta(Check(message: "fixed"));
 }
 
 #[check]

@@ -6,9 +6,9 @@
 mod yamlconf;
 import {yamlconf.conf};
 
-val cfg = conf """server:
+val cfg = conf @`server:
   host: "0.0.0.0"
-debug: true""";
+debug: true`;
 
 fn main() {
     @print(cfg.server.prot);

@@ -2,9 +2,9 @@
 //// names, each `key=value` pair a labelled argument — the shape a markup
 //// template's `<Greeting name="Partner" />` lowers to.
 
-pub fn tag(comptime q: @Expr<string>) -> @Expr<string> {
+pub fn tag(expr q: string) -> string {
     var text = "";
-    for (q.parts()) { p ->
+    for (compiler.parts(q)) { p ->
         if (p.kind != "Interp") text = text + p.text;
     }
     val words = text.split(" ");
@@ -16,5 +16,8 @@ pub fn tag(comptime q: @Expr<string>) -> @Expr<string> {
             + kv.slice(1, 2).join("")
             + "\"");
     }
-    return q.build(words.slice(0, 1).join("") + "(" + args.join(", ") + ")");
+    return compiler.build(words.slice(0, 1).join("")
+        + "("
+        + args.join(", ")
+        + ")");
 }

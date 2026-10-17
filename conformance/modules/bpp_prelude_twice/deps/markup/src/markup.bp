@@ -3,7 +3,7 @@
 import {bpp} from "std";
 
 #[bpp.html]
-pub default fn markup(comptime t: @Expr<string>) -> @ExprCustom<i32> {
+pub default fn markup(expr t: string) -> i32 {
     val root = CustomNode(
         kind: "markup",
         span: Span(0, 0, 1),
@@ -11,5 +11,6 @@ pub default fn markup(comptime t: @Expr<string>) -> @ExprCustom<i32> {
         ref: null,
         children: [],
     );
-    return t.custom(root, t.build(t.text().length().toString()));
+    compiler.custom(root);
+    return compiler.build(compiler.text(t).length().toString());
 }

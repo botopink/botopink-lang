@@ -4,9 +4,9 @@
 //// only while the program compiles: the wrapper reading it is refused at the
 //// read.
 
-fn labelled(comptime decl: @Decl<fn(..) -> string>) {
-    val label = decl.name;
-    decl.wrapWith({ call -> label + ": " + call.run() });
+fn labelled(expr decl: fn(..) -> string) {
+    val label = compiler.name(decl)!;
+    compiler.wrapWith({ call -> label + ": " + call.run() });
 }
 
 #[labelled]

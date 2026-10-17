@@ -9,8 +9,8 @@ pub behavior Module {
     fn start(self: Self) -> string;
 }
 
-pub fn module(comptime decl: @Decl<Module>, comptime order: @Expr<i32>) {
-    decl.setMeta(ModuleOrder(order: order.value));
+pub fn module(expr decl: Module, comptime order: i32) {
+    compiler.setMeta(ModuleOrder(order: order));
 }
 
 #[module(2)]

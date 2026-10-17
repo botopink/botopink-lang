@@ -8,5 +8,5 @@ pub mod tpl;
 import {tpl.shout};
 
 pub fn main() {
-    @print(shout "hi");
+    @print(shout @`hi`);
 }

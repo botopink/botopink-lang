@@ -8,12 +8,14 @@ import {markers} from "web";
 
 type Found(names: string)
 
-fn find(comptime decl: @Decl) {
+fn find(expr decl: unknown) {
     var out: string[] = [];
-    decl.annotations.forEach({ a ->
-        if (a.decorator.same(markers.serverOnly)) out.push(a.name)
-    });
-    decl.setMeta(Found(names: out.join(" ")));
+    compiler
+        .annotations(decl)
+        .forEach({ a ->
+            if (a.decorator.same(markers.serverOnly)) out.push(a.name)
+        });
+    compiler.setMeta(Found(names: out.join(" ")));
 }
 
 #[markers.tag]

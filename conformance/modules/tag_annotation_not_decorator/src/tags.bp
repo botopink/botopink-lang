@@ -5,10 +5,10 @@ pub fn shout(text: string) -> string {
     return text.toUpper();
 }
 
-pub fn markup(comptime q: @Expr<string>) -> @Expr<string> {
-    val text = q.text();
-    val tag = q.tagDecl(DeclKind.Element, "div", []);
-    val d = q.annotate(tag, Span(start: text.indexOf("#[")
+pub fn markup(expr q: string) -> string {
+    val text = compiler.text(q);
+    val tag = compiler.tagDecl(DeclKind.Element, "div", []);
+    val d = compiler.annotate(tag, Span(start: text.indexOf("#[")
         + 2, end: text.indexOf("]>"), line: 1));
-    return @expr(d.name);
+    return compiler.name(d)!;
 }

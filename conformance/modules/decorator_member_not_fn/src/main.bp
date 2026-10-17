@@ -8,8 +8,8 @@ fn none(s: Signup) -> Violation[] {
     return [];
 }
 
-fn check<T>(comptime decl: @Decl<T>, comptime rule: @Expr<fn(v: T) -> bool>) {
-    decl.addMember("validate", none);
+fn check<T>(expr decl: T, comptime rule: fn(v: T) -> bool) {
+    compiler.addMember("validate", none);
 }
 
 fn passwordsMatch(a: Signup) -> bool {

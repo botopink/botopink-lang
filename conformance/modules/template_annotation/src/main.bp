@@ -13,38 +13,40 @@
 
 pub type Query(sql: string, params: string[])
 
-fn query(comptime q: @Expr<string>, comptime decl: @Decl) -> @Expr<string> {
+fn query(expr q: string, expr decl: unknown) -> string {
     var text = "";
     var params: string[] = [];
-    for (q.parts()) { p ->
+    for (compiler.parts(q)) { p ->
         if (p.kind == "Interp") {
             params.push(p.code);
             text = text + "$" + params.length.toString();
         } else text = text + p.text;
     }
-    val declared = decl.params
+    val declared = compiler
+        .params(decl)
         .map({ p -> p.name + ": " + p.typeName })
         .join(", ");
     if (params.length == 0)
-        decl.fail(
+        compiler.fail(
             "a query of `"
-                + decl.name
+                + compiler.name(decl)!
                 + "("
                 + declared
                 + ")` binds no parameter",
+            at: decl,
         );
     val sql = text
         .split("\n")
         .map({ l -> l.trim() })
         .filter({ l -> l.length > 0 })
         .join(" ");
-    decl.setMeta(Query(sql: sql, params: params));
-    return q.build("\"\"");
+    compiler.setMeta(Query(sql: sql, params: params));
+    return compiler.build("\"\"");
 }
 
-fn repository(comptime decl: @Decl) {
+fn repository(expr decl: unknown) {
     var lines: string[] = [];
-    for (decl.methods) { m ->
+    for (compiler.methods(decl)) { m ->
         val found = m.meta(Query);
         if (found != null) {
             val names = m.params.map({ p -> p.name }).join(", ");
@@ -65,32 +67,32 @@ fn repository(comptime decl: @Decl) {
             );
         }
     }
-    decl.setMeta(Repository(statements: lines));
+    compiler.setMeta(Repository(statements: lines));
 }
 
 pub type Audit(level: i32)
 
-fn audited(comptime decl: @Decl, comptime level: @Expr<i32>) {
-    decl.setMeta(Audit(level: level.value));
+fn audited(expr decl: unknown, comptime level: i32) {
+    compiler.setMeta(Audit(level: level));
 }
 
 #[repository]
 behavior Users {
-    #[query "select * from users where id = ${id} limit 1"]
+    #[query @`select * from users where id = ${id} limit 1`]
     fn find(self: Self, id: i32) -> string;
 
     #[audited(2)]
-    #[query """
+    #[query @`
         select * from users
          where name = ${name}
            and age > ${minAge}
-    """]
+    `]
     fn byName(self: Self, name: string, minAge: i32) -> string;
 
     fn count(self: Self) -> i32;
 }
 
-#[query "delete from sessions where user = ${user}"]
+#[query @`delete from sessions where user = ${user}`]
 fn logout(user: string) -> string {
     return user + " out";
 }

@@ -3,11 +3,11 @@
 //// (`comptime decl: @Decl`); a template that takes none has nowhere to put
 //// what it builds and is refused at the annotation.
 
-fn shout(comptime q: @Expr<string>) -> @Expr<string> {
-    return q.build("\"" + q.text().toUpper() + "\"");
+fn shout(expr q: string) -> string {
+    return compiler.build("\"" + compiler.text(q).toUpper() + "\"");
 }
 
-#[shout "hello"]
+#[shout @`hello`]
 fn one() -> i32 {
     return 1;
 }

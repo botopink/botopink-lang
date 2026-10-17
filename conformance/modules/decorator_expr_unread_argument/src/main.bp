@@ -7,8 +7,8 @@ fn label(key: string) -> string {
     return key + "!";
 }
 
-fn audit(comptime decl: @Decl, comptime message: @Expr<string>) {
-    decl.setMeta(Audit(audited: decl.name));
+fn audit(expr decl: unknown, comptime message: string) {
+    compiler.setMeta(Audit(audited: compiler.name(decl)!));
 }
 
 #[audit(label("signup.mismatch"))]

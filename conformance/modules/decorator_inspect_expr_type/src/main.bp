@@ -5,9 +5,9 @@ pub behavior MailSender {
     fn send(self: Self, to: string) -> string;
 }
 
-fn conditionalOnMissingBean(comptime decl: @Decl, comptime t: @Expr<type>) {
-    val bean = t.value;
-    decl.setMeta(MissingBean(bean: decl.name));
+fn conditionalOnMissingBean(expr decl: unknown, comptime t: anytype) {
+    val bean = t;
+    compiler.setMeta(MissingBean(bean: compiler.name(decl)!));
 }
 
 #[conditionalOnMissingBean(MailSender)]

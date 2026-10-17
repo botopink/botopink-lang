@@ -9,5 +9,5 @@ mod query;
 import {models.User, query.tableOf};
 
 pub fn main() {
-    @print(tableOf "User");
+    @print(tableOf @`User`);
 }

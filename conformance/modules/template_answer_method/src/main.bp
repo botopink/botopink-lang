@@ -4,7 +4,7 @@
 import shelf from "shelf";
 
 pub fn main() {
-    val built = shelf "built";
+    val built = shelf @`built`;
     @print(built.text);
     @print(built.size.toString());
 }

@@ -13,21 +13,21 @@ import {types.Type} from "std";
 pub type Code { Custom, Required, TooShort, Mismatch }
 
 fn check<T>(
-    comptime decl: @Decl<T>,
-    comptime message: @Expr<string>,
-    comptime rule: @Expr<?fn(v: T) -> bool> = null,
-    comptime at: @Expr<?Type.Field<T>> = null,
-    comptime code: @Expr<Code> = .Custom,
+    expr decl: T,
+    comptime message: string,
+    comptime rule: ?fn(v: T) -> bool = null,
+    comptime at: ?Type.Field<T> = null,
+    comptime code: Code = .Custom,
 ) {
-    if (decl.kind == DeclKind.Fn) {
-        if (decl.returnType != "bool")
-            decl.fail("#[check] without `rule` annotates an `fn(x) -> bool`");
-        decl.addMeta(Check(at: "rule", message: message.value, kind: "rule"));
+    if (compiler.kind(decl) == DeclKind.Fn) {
+        if (compiler.returnType(decl) != "bool")
+            compiler.fail("#[check] without `rule` annotates an `fn(x) -> bool`", at: decl);
+        compiler.addMeta(Check(at: "rule", message: message, kind: "rule"));
         return;
     }
-    val key = at.value?.name ?? "type";
-    val kind = if (code.value == Code.Mismatch) "mismatch" else "custom";
-    decl.addMeta(Check(at: key, message: message.value, kind: kind));
+    val key = at?.name ?? "type";
+    val kind = if (code == Code.Mismatch) "mismatch" else "custom";
+    compiler.addMeta(Check(at: key, message: message, kind: kind));
 }
 
 #[check("passwords differ", passwordsMatch, at: .confirm)]

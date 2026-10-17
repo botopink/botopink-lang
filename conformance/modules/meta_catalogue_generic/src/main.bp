@@ -6,12 +6,13 @@
 
 pub type Check<T>(note: string)
 
-fn check<T>(comptime decl: @Decl<T>, comptime note: @Expr<string>) {
-    decl.addMeta(Check(note: note.value));
+fn check<T>(expr decl: T, comptime note: string) {
+    compiler.addMeta(Check(note: note));
 }
 
-fn mark(comptime decl: @Decl) {
-    if (decl.name == "") decl.fail("a declaration has a name");
+fn mark(expr decl: unknown) {
+    if (compiler.name(decl)! == "")
+        compiler.fail("a declaration has a name", at: decl);
 }
 
 #[mark]

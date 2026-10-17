@@ -2,8 +2,8 @@
 //// of the declaration `#[on]` annotates: a function with no parameter does
 //// not match it, refused at the annotation with both shapes spelled.
 
-fn on<E>(comptime decl: @Decl<fn(e: E) -> unknown>) {
-    decl.setMeta(EventHandler(event: decl.name));
+fn on<E>(expr decl: fn(e: E) -> unknown) {
+    compiler.setMeta(EventHandler(event: compiler.name(decl)!));
 }
 
 #[on]

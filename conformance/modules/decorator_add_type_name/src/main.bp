@@ -2,8 +2,8 @@
 //// identifier starting with an upper-case letter (`City.Columns`), refused
 //// at the annotation otherwise.
 
-fn entity(comptime decl: @Decl) {
-    decl.addType("columns", "(id: string)");
+fn entity(expr decl: unknown) {
+    compiler.addType("columns", compiler.buildType("(id: string)"));
 }
 
 #[entity]

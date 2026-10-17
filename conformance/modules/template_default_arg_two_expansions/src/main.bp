@@ -13,13 +13,13 @@ pub fn footer(name: string) -> string {
 }
 
 // The built code is the literal's own text.
-pub fn code<T>(comptime q: @Expr<string>) -> @Expr<T> {
-    return q.build(q.text());
+pub fn code<T>(expr q: string) -> T {
+    return compiler.build(compiler.text(q));
 }
 
 pub fn main() {
-    val top = code "headline(partner)";
-    val bottom = code "footer(partner)";
+    val top = code @`headline(partner)`;
+    val bottom = code @`footer(partner)`;
     @print(top);
     @print(bottom);
 }

@@ -3,10 +3,10 @@
 //// comes too late for the bodies already inferred, so `decl.addMember` in it
 //// is refused at the call.
 
-fn graph<T>(comptime decl: @Decl<T>) {
-    val count = decl.hooks.length;
-    decl.setMeta(Graph(count: count));
-    decl.addMember("extra", fn() -> i32 {
+fn graph<T>(expr decl: T) {
+    val count = compiler.hooks(decl).length;
+    compiler.setMeta(Graph(count: count));
+    compiler.addMember("extra", fn() -> i32 {
         return 1;
     });
 }

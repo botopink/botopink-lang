@@ -8,12 +8,12 @@ pub fn msOf(p: Policy) -> i32 {
     return p.ms;
 }
 
-pub fn quick(comptime t: @Expr<string>) -> @Expr<Policy> {
-    return t.build("slow()");
+pub fn quick(expr t: string) -> Policy {
+    return compiler.build("slow()");
 }
 
-pub fn stamp<T>(comptime decl: @Decl<T>) {
-    decl.addMember("policy", fn(self: T) -> Policy {
+pub fn stamp<T>(expr decl: T) {
+    compiler.addMember("policy", fn(self: T) -> Policy {
         return Policy(ms: 7);
     });
 }

@@ -8,10 +8,10 @@
 pub mod rules;
 import {rules.rule, rules.tab, rules.red};
 
-pub val code = rule "${tab} color: ${red};";
+pub val code = rule @`${tab} color: ${red};`;
 
 fn badge(c: string) -> string {
-    return rule "${red} ${c}";
+    return rule @`${red} ${c}`;
 }
 
 pub fn main() {

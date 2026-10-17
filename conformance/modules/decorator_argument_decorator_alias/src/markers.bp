@@ -1,31 +1,31 @@
 //// Two markers and a decorator that takes one of them by name.
 
-pub fn email(comptime decl: @Decl) {
-    val _n = decl.name;
+pub fn email(expr decl: unknown) {
+    val _n = compiler.name(decl)!;
 }
 
-pub fn lowercased(comptime decl: @Decl) {
-    val _n = decl.name;
+pub fn lowercased(expr decl: unknown) {
+    val _n = compiler.name(decl)!;
 }
 
-pub fn each(comptime decl: @Decl, comptime marker: @Expr<Decorator>) {
-    val which = if (marker.value.same(email))
+pub fn each(expr decl: unknown, comptime marker: Decorator) {
+    val which = if (marker.same(email))
         "email"
-    else if (marker.value.same(lowercased))
+    else if (marker.same(lowercased))
         "lowercased"
     else
         "other";
-    decl.addMember("pub fn "
-        + decl.name
+    compiler.addMember("pub fn "
+        + compiler.name(decl)!
         + "Each() -> string { return \""
         + which
         + "\"; }");
 }
 
-pub fn all(comptime decl: @Decl, comptime markers: @Expr<Decorator[]>) {
-    val n = markers.value.filter({ m -> m.same(email) || m.same(lowercased) }).length;
-    decl.addMember("pub fn "
-        + decl.name
+pub fn all(expr decl: unknown, comptime markers: Decorator[]) {
+    val n = markers.filter({ m -> m.same(email) || m.same(lowercased) }).length;
+    compiler.addMember("pub fn "
+        + compiler.name(decl)!
         + "All() -> i32 { return "
         + n.toString()
         + "; }");

@@ -3,7 +3,7 @@
 //// argument: `count.toUpper()` checks for a `T` of no known type, and fails
 //// only once a call makes `T` an `i32`.
 
-pub fn shout<T>(comptime value: @Expr<T>) {
-    var count = value.value;
+pub fn shout<T>(comptime value: T) {
+    var count = value;
     @print(count.toUpper());
 }

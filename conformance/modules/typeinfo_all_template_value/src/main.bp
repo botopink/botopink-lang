@@ -2,14 +2,14 @@
 //// where a declaration of the program is no value: `value` is refused at the
 //// read (`name`, `module`, `meta` and `returnTypeName` are answered).
 
-pub fn mark(comptime decl: @Decl) {
-    decl.setMeta(Mark(name: decl.name));
+pub fn mark(expr decl: unknown) {
+    compiler.setMeta(Mark(name: compiler.name(decl)!));
 }
 
-pub fn first(comptime e: @Expr<string>) -> @Expr<string> {
+pub fn first(expr e: string) -> string {
     val all = @TypeInfo.all(with: mark);
     val v = all.map({ d -> d.value });
-    return @expr(e.text() + v.length.toString());
+    return compiler.text(e) + v.length.toString();
 }
 
 #[mark]
@@ -18,7 +18,7 @@ pub fn job() -> i32 {
 }
 
 pub fn main() {
-    @print(first "x");
+    @print(first @`x`);
 }
 
 // What `#[mark]` records.

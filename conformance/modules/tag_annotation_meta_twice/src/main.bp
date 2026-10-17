@@ -6,5 +6,5 @@ pub mod tags;
 import {tags.markup, tags.hydrate};
 
 pub fn main() {
-    @print(markup "<div #[hydrate(1)] #[hydrate(2)]>hi</div>");
+    @print(markup @`<div #[hydrate(1)] #[hydrate(2)]>hi</div>`);
 }

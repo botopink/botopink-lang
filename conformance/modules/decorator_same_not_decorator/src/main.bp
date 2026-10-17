@@ -3,14 +3,17 @@
 //// decorator — the comparison is by declaration, never by the name — and is
 //// refused at the argument.
 
-fn serverOnly(comptime decl: @Decl) {
-    val _n = decl.name;
+fn serverOnly(expr decl: unknown) {
+    val _n = compiler.name(decl)!;
 }
 
-fn check(comptime decl: @Decl) {
-    decl.annotations.forEach({ a ->
-        if (a.decorator.same("serverOnly")) decl.fail("server only")
-    });
+fn check(expr decl: unknown) {
+    compiler
+        .annotations(decl)
+        .forEach({ a ->
+            if (a.decorator.same("serverOnly"))
+                compiler.fail("server only", at: decl)
+        });
 }
 
 #[check]

@@ -10,6 +10,6 @@ pub fn make() -> Ns {
     return Ns(label: "red");
 }
 
-pub fn tag(comptime q: @Expr<string>) -> @Expr<string> {
-    return q.build("\"a-" + q.text() + "\"");
+pub fn tag(expr q: string) -> string {
+    return compiler.build("\"a-" + compiler.text(q) + "\"");
 }

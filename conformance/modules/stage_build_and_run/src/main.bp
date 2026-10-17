@@ -6,8 +6,8 @@
 
 import {io.clock} from "std";
 
-fn campos(comptime names: @Expr<string>, open: string) -> string {
-    return open + names.value + "]";
+fn campos(comptime names: string, open: string) -> string {
+    return open + names + "]";
 }
 
 fn mixed() -> string {

@@ -3,12 +3,18 @@
 
 import {orm.Table};
 
-pub fn tableOf(comptime q: @Expr<string>) -> @Expr<string> {
-    val decl = q.lookup(q.text()) ?? q.fail("`"
-        + q.text()
-        + "` is not in scope");
-    val t = decl.meta(Table) ?? q.fail("`"
-        + q.text()
-        + "` is not an entity — annotate it with #[entity(…)]");
-    return q.build("\"" + t.schema + "." + t.name + " (" + decl.module + ")\"");
+pub fn tableOf(expr q: string) -> string {
+    val decl = compiler.lookup(q, compiler.text(q)) ?? compiler.fail("`"
+        + compiler.text(q)
+        + "` is not in scope", at: q);
+    val t = compiler.meta<Table>(decl) ?? compiler.fail("`"
+        + compiler.text(q)
+        + "` is not an entity — annotate it with #[entity(…)]", at: q);
+    return compiler.build("\""
+        + t.schema
+        + "."
+        + t.name
+        + " ("
+        + compiler.moduleOf(decl)
+        + ")\"");
 }

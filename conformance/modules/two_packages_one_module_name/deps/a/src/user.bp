@@ -14,7 +14,7 @@ pub fn describeA() -> string {
         + " "
         + Ns(label: "blue").label
         + " "
-        + tag("x")
+        + tag @`x`
         + " "
         + early;
 }

@@ -4,11 +4,11 @@
 
 type Entity(table: string)
 
-fn record(d: Decl) {
-    d.addMeta(Entity(table: "cities"));
+fn record(d: unknown) {
+    compiler.addMeta(Entity(table: "cities"));
 }
 
-fn entity(comptime decl: @Decl) {
+fn entity(expr decl: unknown) {
     record(decl);
 }
 

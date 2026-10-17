@@ -21,10 +21,10 @@ fn tagged(name: string) -> string {
     return bang(name) + " " + hash.contentHash(name);
 }
 
-fn labelled(comptime decl: @Decl) {
+fn labelled(expr decl: unknown) {
     @emit(
         "pub fn label() -> string { return \""
-            + tagged(decl.name)
+            + tagged(compiler.name(decl)!)
             + " "
             + digest("héllo €")
             + "\"; }",

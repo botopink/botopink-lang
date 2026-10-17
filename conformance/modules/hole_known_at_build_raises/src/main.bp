@@ -9,20 +9,21 @@ pub fn crash(s: string) -> string {
     return s;
 }
 
-pub fn raising(comptime t: @Expr<string>) -> @Expr<string> {
-    return t.build("crash(\"" + t.text() + "\")");
+pub fn raising(expr t: string) -> string {
+    return compiler.build("crash(\"" + compiler.text(t) + "\")");
 }
 
-pub fn quote(comptime t: @Expr<string>) -> @Expr<string> {
-    for (t.parts()) { part ->
-        if (part.kind == "Interp" && part.known) return t.build("\"known\"");
+pub fn quote(expr t: string) -> string {
+    for (compiler.parts(t)) { part ->
+        if (part.kind == "Interp" && part.known)
+            return compiler.build("\"known\"");
     }
-    return t.build("\"render\"");
+    return compiler.build("\"render\"");
 }
 
-pub val boom = raising "x";
+pub val boom = raising @`x`;
 
-pub val read = quote "${boom}";
+pub val read = quote @`${boom}`;
 
 pub fn main() {
     @print(read);

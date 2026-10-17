@@ -1,8 +1,8 @@
 //// A member a decorator wrote is type-checked like a hand-written method: a body
 //// returning the wrong type is refused, located at the annotation.
 
-fn maker(comptime decl: @Decl) {
-    decl.addMember("pub fn code(self: Self) -> i32 { return \"nope\"; }");
+fn maker(expr decl: unknown) {
+    compiler.addMember("pub fn code(self: Self) -> i32 { return \"nope\"; }");
 }
 
 #[maker]

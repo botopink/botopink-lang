@@ -9,13 +9,15 @@ import {ui};
 
 import {ui.session as currentUser, ui.Element};
 
-fn graph(comptime decl: @Decl) {
+fn graph(expr decl: unknown) {
     var nodes: string[] = [];
-    decl.hooks.forEach({ n ->
-        val mark = if (n.async) "async" else "sync";
-        nodes.push(n.function.module + "." + n.function.name + ": " + mark)
-    });
-    decl.setMeta(Graph(nodes: nodes));
+    compiler
+        .hooks(decl)
+        .forEach({ n ->
+            val mark = if (n.async) "async" else "sync";
+            nodes.push(n.function.module + "." + n.function.name + ": " + mark)
+        });
+    compiler.setMeta(Graph(nodes: nodes));
 }
 
 #[graph]

@@ -3,20 +3,20 @@
 //// unevaluated — the mechanism `erika` and `jhonstart` build their sub-languages
 //// on.
 
-pub fn sql(comptime q: @Expr<string>) -> @Expr<string> {
+pub fn sql(expr q: string) -> string {
     return q;
 }
 
-fn twice(comptime n: @Expr<i32>) -> i32 {
-    return n.value * 2;
+fn twice(comptime n: i32) -> i32 {
+    return n * 2;
 }
 
 test "an @Expr parameter captures the call-site text" {
-    assert sql "SELECT 1" == "SELECT 1";
+    assert sql @`SELECT 1` == "SELECT 1";
 }
 
 test "a multi-line template is captured whole" {
-    val t = sql "ab";
+    val t = sql @`ab`;
     assert t == "ab";
 }
 

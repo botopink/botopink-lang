@@ -9,8 +9,8 @@ fn noteHit() {
     hits = hits + 1;
 }
 
-fn counted(comptime decl: @Decl<fn(..) -> i32>) {
-    decl.wrapWith({ call ->
+fn counted(expr decl: fn(..) -> i32) {
+    compiler.wrapWith({ call ->
         noteHit();
         call.run()
     });

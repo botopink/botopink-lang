@@ -4,8 +4,8 @@
 //// the checker reads its body (01-checker's decorator-body row): the caret is
 //// the call in the body, the message the checker's unknown method.
 
-fn check(comptime decl: @Decl) {
-    val n = decl.name;
+fn check(expr decl: unknown) {
+    val n = compiler.name(decl)!;
     val x = n.frobnicate(1, 2);
 }
 

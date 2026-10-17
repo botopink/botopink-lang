@@ -5,11 +5,11 @@
 import {types.Type} from "std";
 
 fn check<T>(
-    comptime decl: @Decl<T>,
-    comptime message: @Expr<string>,
-    comptime at: @Expr<?Type.Field<T>> = null,
+    expr decl: T,
+    comptime message: string,
+    comptime at: ?Type.Field<T> = null,
 ) {
-    decl.setMeta(Check(message: message.value));
+    compiler.setMeta(Check(message: message));
 }
 
 #[check("must match", at = .confirm)]

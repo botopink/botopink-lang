@@ -2,8 +2,8 @@
 //// owner's path, `City.Columns`, as it is written — never as the top-level
 //// type it is hoisted into (144 B-19).
 
-fn columns(comptime decl: @Decl) {
-    decl.addType("Columns", "(id: string)");
+fn columns(expr decl: unknown) {
+    compiler.addType("Columns", compiler.buildType("(id: string)"));
 }
 
 #[columns]

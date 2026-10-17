@@ -4,12 +4,19 @@
 pub default mod markup;
 
 /// A decorator that refuses what it annotates, naming it and its kind.
-pub fn named(comptime decl: @Decl) {
-    val kind = if (decl.kind == DeclKind.Fn) "a function" else "not a function";
-    decl.fail("named " + decl.name + " (" + kind + ")");
+pub fn named(expr decl: unknown) {
+    val kind = if (compiler.kind(decl) == DeclKind.Fn)
+        "a function"
+    else
+        "not a function";
+    compiler.fail("named "
+        + compiler.name(decl)!
+        + " ("
+        + kind
+        + ")", at: decl);
 }
 
 /// A decorator named like a route file: it refuses what it annotates.
-pub fn page(comptime decl: @Decl) {
-    decl.fail("page applied to " + decl.name);
+pub fn page(expr decl: unknown) {
+    compiler.fail("page applied to " + compiler.name(decl)!, at: decl);
 }

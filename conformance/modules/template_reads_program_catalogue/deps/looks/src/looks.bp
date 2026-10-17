@@ -3,21 +3,22 @@
 //// program that expands `looks "…"`, every module's decorators applied —
 //// not for this package, which declares no `#[theme]` of its own.
 
-pub fn theme(comptime decl: @Decl) {
-    decl.setMeta(Theme(named: decl.name));
+pub fn theme(expr decl: unknown) {
+    compiler.setMeta(Theme(named: compiler.name(decl)!));
 }
 
-pub fn palette(comptime decl: @Decl) {
-    decl.setMeta(Palette(named: decl.name));
+pub fn palette(expr decl: unknown) {
+    compiler.setMeta(Palette(named: compiler.name(decl)!));
 }
 
-pub default fn looks(comptime e: @Expr<string>) -> @Expr<string> {
+pub default fn looks(expr e: string) -> string {
     val themes = @TypeInfo.all(with: theme);
     val palettes = @TypeInfo.all(with: palette);
     if (themes.length > 1)
-        e.fail(
+        compiler.fail(
             "looks: two #[theme] declarations: "
                 + themes.map({ t -> t.module + "." + t.name }).join(", "),
+            at: e,
         );
     val chosen = if (themes.length == 0)
         "default"
@@ -27,9 +28,11 @@ pub default fn looks(comptime e: @Expr<string>) -> @Expr<string> {
                 t.module + "." + t.name + " -> " + t.returnTypeName
             })
             .join("");
-    return @expr(
-        e.text() + ": " + chosen + ", palettes " + palettes.length.toString(),
-    );
+    return compiler.text(e)
+        + ": "
+        + chosen
+        + ", palettes "
+        + palettes.length.toString();
 }
 
 // What `#[theme]` records.

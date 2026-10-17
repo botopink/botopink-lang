@@ -6,5 +6,5 @@ pub mod tags;
 import {tags.markup, tags.withMember};
 
 pub fn main() {
-    @print(markup "<div #[withMember]>hi</div>");
+    @print(markup @`<div #[withMember]>hi</div>`);
 }

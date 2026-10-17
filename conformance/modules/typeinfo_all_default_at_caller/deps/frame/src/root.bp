@@ -3,8 +3,8 @@
 //// `@TypeInfo.all(with: m)`, `m` resolved here, in the declaring module, and
 //// the query answered for the program the call is compiled in.
 
-pub fn m(comptime decl: @Decl) {
-    decl.setMeta(Role(role: decl.name));
+pub fn m(expr decl: unknown) {
+    compiler.setMeta(Role(role: compiler.name(decl)!));
 }
 
 #[m]
@@ -22,8 +22,8 @@ fn show(all: Declared<unknown>[]) {
     }
 }
 
-pub fn boot(comptime modules: @Expr<Declared<unknown>[]> = @TypeInfo.all(with: m)) {
-    show(modules.value);
+pub fn boot(comptime modules: Declared<unknown>[] = @TypeInfo.all(with: m)) {
+    show(modules);
 }
 
 // What `#[m]` records: the role its declaration plays.

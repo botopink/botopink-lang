@@ -7,15 +7,16 @@ import {types.Type} from "std";
 pub type Code { Custom, Mismatch }
 
 fn check<T>(
-    comptime decl: @Decl<T>,
-    comptime message: @Expr<string>,
-    comptime rule: @Expr<?fn(v: T) -> bool> = null,
-    comptime at: @Expr<?Type.Field<T>> = null,
-    comptime code: @Expr<Code> = .Custom,
+    expr decl: T,
+    comptime message: string,
+    comptime rule: ?fn(v: T) -> bool = null,
+    comptime at: ?Type.Field<T> = null,
+    comptime code: Code = .Custom,
 ) {
-    if (decl.kind == DeclKind.Fn && decl.returnType != "bool")
-        decl.fail("#[check] without `rule` annotates an `fn(x) -> bool`");
-    decl.setMeta(Check(message: message.value));
+    if (compiler.kind(decl) == DeclKind.Fn
+        && compiler.returnType(decl) != "bool")
+        compiler.fail("#[check] without `rule` annotates an `fn(x) -> bool`", at: decl);
+    compiler.setMeta(Check(message: message));
 }
 
 type Account(password: string, handle: string)

@@ -3,21 +3,21 @@
 //// 370 (1)) holds code the program runs, so `decl.meta(T)` of it is refused at
 //// the read, naming the field (`template-lookup-meta-expr-field`).
 
-type Check(message: string, rule: @Expr<fn(n: i32) -> bool>)
+type Check(message: string, rule: fn(n: i32) -> bool)
 
-fn check(comptime decl: @Decl, comptime message: @Expr<string>, comptime rule: @Expr<fn(n: i32) -> bool>) {
-    decl.addMeta(Check(message: message.value, rule: rule));
+fn check(expr decl: unknown, comptime message: string, expr rule: fn(n: i32) -> bool) {
+    compiler.addMeta(Check(message: message, rule: rule));
 }
 
 #[check("positive", { n -> n > 0 })]
 type Amount(n: i32)
 
-fn rules(comptime q: @Expr<string>) -> @Expr<i32> {
-    val decl = q.lookup(q.text()) ?? q.fail("`" + q.text() + "` is not in scope");
-    val found = decl.metaAll(Check);
-    return q.build(found.length.toString());
+fn rules(expr q: string) -> i32 {
+    val decl = compiler.lookup(q, compiler.text(q)) ?? compiler.fail("`" + compiler.text(q) + "` is not in scope", at: q);
+    val found = compiler.metaAll<Check>(decl);
+    return compiler.build(found.length.toString());
 }
 
 pub fn main() {
-    @print(rules "Amount");
+    @print(rules @`Amount`);
 }

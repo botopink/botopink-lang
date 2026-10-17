@@ -2,12 +2,12 @@
 //// (decision 551): its `comptime` parameter defaults to
 //// `@TypeInfo.all(with: m)`.
 
-pub fn m(comptime decl: @Decl) {
-    decl.setMeta(Role(role: decl.name));
+pub fn m(expr decl: unknown) {
+    compiler.setMeta(Role(role: compiler.name(decl)!));
 }
 
-pub fn boot(comptime modules: @Expr<Declared<unknown>[]> = @TypeInfo.all(with: m)) {
-    @print(modules.value.length.toString());
+pub fn boot(comptime modules: Declared<unknown>[] = @TypeInfo.all(with: m)) {
+    @print(modules.length.toString());
 }
 
 // What `#[m]` records.

@@ -1,8 +1,8 @@
 //// The package that declares the decorator: `#[m]` records the role its
 //// declaration plays. It annotates nothing of its own.
 
-pub fn m(comptime decl: @Decl) {
-    decl.setMeta(Role(role: decl.name));
+pub fn m(expr decl: unknown) {
+    compiler.setMeta(Role(role: compiler.name(decl)!));
 }
 
 // What `#[m]` records: the role its declaration plays.

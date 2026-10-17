@@ -5,16 +5,16 @@
 //// argument's value, and the specialization answers what the function
 //// declares (a `string[]` joined as strings).
 
-fn campos(comptime names: @Expr<string>) -> string[] {
-    return names.value.split(",");
+fn campos(comptime names: string) -> string[] {
+    return names.split(",");
 }
 
-fn tamanho(comptime s: @Expr<string>) -> i32 {
-    return s.value.length();
+fn tamanho(comptime s: string) -> i32 {
+    return s.length();
 }
 
-fn grito(comptime s: @Expr<string>) -> string {
-    return s.value.toUpper() + "!";
+fn grito(comptime s: string) -> string {
+    return s.toUpper() + "!";
 }
 
 pub fn main() {

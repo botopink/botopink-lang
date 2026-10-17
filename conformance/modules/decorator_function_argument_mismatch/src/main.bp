@@ -11,11 +11,11 @@ type BlogParams(slug: string)
 type User(name: string)
 
 fn page<P>(
-    comptime decl: @Decl<fn(route: Route<P>) -> View>,
-    comptime seg: @Expr<string>,
-    comptime paths: @Expr<?fn() -> P[]> = null,
+    expr decl: fn(route: Route<P>) -> View,
+    comptime seg: string,
+    comptime paths: ?fn() -> P[] = null,
 ) {
-    decl.setMeta(Page(seg: seg.value));
+    compiler.setMeta(Page(seg: seg));
 }
 
 fn allUsers() -> User[] {

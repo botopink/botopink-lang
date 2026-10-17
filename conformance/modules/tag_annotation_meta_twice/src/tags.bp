@@ -2,20 +2,20 @@
 
 pub type Hydrate(level: i32)
 
-pub fn hydrate(comptime decl: @Decl, comptime level: @Expr<i32>) {
-    decl.setMeta(Hydrate(level: level.value));
+pub fn hydrate(expr decl: unknown, comptime level: i32) {
+    compiler.setMeta(Hydrate(level: level));
 }
 
 // `<div #[first] #[second]>`: both annotations over the one tag, in order.
-pub fn markup(comptime q: @Expr<string>) -> @Expr<string> {
-    val text = q.text();
+pub fn markup(expr q: string) -> string {
+    val text = compiler.text(q);
     val firstStart = text.indexOf("#[") + 2;
     val firstEnd = text.indexOf("]");
     val rest = text.slice(firstEnd + 1, text.length);
     val secondStart = firstEnd + 1 + rest.indexOf("#[") + 2;
     val secondEnd = firstEnd + 1 + rest.indexOf("]");
-    val tag = q.tagDecl(DeclKind.Element, "div", []);
-    val once = q.annotate(tag, Span(start: firstStart, end: firstEnd, line: 1));
-    val twice = q.annotate(once, Span(start: secondStart, end: secondEnd, line: 1));
-    return @expr(twice.meta(Hydrate)?.level ?? 0);
+    val tag = compiler.tagDecl(DeclKind.Element, "div", []);
+    val once = compiler.annotate(tag, Span(start: firstStart, end: firstEnd, line: 1));
+    val twice = compiler.annotate(once, Span(start: secondStart, end: secondEnd, line: 1));
+    return compiler.meta<Hydrate>(twice)?.level ?? 0;
 }

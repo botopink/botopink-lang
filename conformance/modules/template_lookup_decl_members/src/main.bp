@@ -18,13 +18,15 @@ fn scale(x: i32, factor: f64) -> f64 {
     return factor;
 }
 
-fn shape(comptime q: @Expr<string>) -> @Expr<string> {
-    val d = q.lookup(q.text()) ?? q.fail("`" + q.text() + "` is not in scope");
-    var text = d.name;
-    for (d.variants) { v ->
+fn shape(expr q: string) -> string {
+    val d = compiler.lookup(q, compiler.text(q)) ?? compiler.fail("`"
+        + compiler.text(q)
+        + "` is not in scope", at: q);
+    var text = compiler.name(d)!;
+    for (compiler.variants(d)) { v ->
         text = text + " " + v;
     }
-    for (d.methods) { m ->
+    for (compiler.methods(d)) { m ->
         text = text
             + " "
             + m.name
@@ -33,14 +35,14 @@ fn shape(comptime q: @Expr<string>) -> @Expr<string> {
             + ")->"
             + m.returnType;
     }
-    for (d.params) { p ->
+    for (compiler.params(d)) { p ->
         text = text + " " + p.name + ":" + p.typeName;
     }
-    return q.build("\"" + text + "\"");
+    return compiler.build("\"" + text + "\"");
 }
 
 pub fn main() {
-    @print(shape "Color");
-    @print(shape "Counter");
-    @print(shape "scale");
+    @print(shape @`Color`);
+    @print(shape @`Counter`);
+    @print(shape @`scale`);
 }

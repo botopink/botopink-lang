@@ -9,10 +9,10 @@ type User(name: string)
 type Cache<T>(name: string)
 
 fn cacheable<A, T>(
-    comptime decl: @Decl<fn(a: A) -> T>,
-    comptime cache: @Expr<Cache<T>>,
+    expr decl: fn(a: A) -> T,
+    comptime cache: Cache<T>,
 ) {
-    decl.setMeta(Cacheable(cache: cache.value.name));
+    compiler.setMeta(Cacheable(cache: cache.name));
 }
 
 val users = Cache<User[]>("users");

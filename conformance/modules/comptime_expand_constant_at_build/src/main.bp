@@ -17,8 +17,8 @@ val VERBOSE = false;
 
 val PREFIX = "> ";
 
-fn show(comptime lines: @Expr<string[]>) {
-    for (lines.value) { line ->
+fn show(comptime lines: string[]) {
+    for (lines) { line ->
         if (VERBOSE) say("verbose: " + line) else say(PREFIX + line);
     }
 }

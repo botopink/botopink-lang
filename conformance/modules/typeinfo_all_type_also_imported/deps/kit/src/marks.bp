@@ -1,11 +1,11 @@
 //// `#[service]` gives a type the member its catalogue calls.
 
-pub fn service(comptime decl: @Decl) {
-    decl.addMember(
+pub fn service(expr decl: unknown) {
+    compiler.addMember(
         "pub fn make() -> "
-            + decl.name
+            + compiler.name(decl)!
             + " { return "
-            + decl.name
+            + compiler.name(decl)!
             + "(tag: \"made\"); }",
     );
 }

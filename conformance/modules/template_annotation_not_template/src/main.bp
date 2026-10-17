@@ -1,8 +1,8 @@
 //// Decision 311 — `#[f "…"]` names a template function; a decorator (or
 //// any other function) there is refused at the annotation.
 
-fn mark(comptime decl: @Decl) {
-    decl.setMeta(Mark(marked: true));
+fn mark(expr decl: unknown) {
+    compiler.setMeta(Mark(marked: true));
 }
 
 #[mark "select 1"]

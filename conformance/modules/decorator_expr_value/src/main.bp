@@ -11,26 +11,26 @@ pub type Level { Low, High }
 pub type Limits(min: i32, max: i32)
 
 fn mark<T>(
-    comptime decl: @Decl<T>,
-    comptime label: @Expr<string>,
-    comptime weight: @Expr<f64>,
-    comptime loud: @Expr<bool>,
-    comptime level: @Expr<Level>,
-    comptime limits: @Expr<Limits>,
-    comptime key: @Expr<Type.Field<T>>,
-    comptime tags: @Expr<string[]>,
+    expr decl: T,
+    comptime label: string,
+    comptime weight: f64,
+    comptime loud: bool,
+    comptime level: Level,
+    comptime limits: Limits,
+    comptime key: Type.Field<T>,
+    comptime tags: string[],
 ) {
-    val shown = if (loud.value) label.value.toUpper() else label.value;
-    val lvl = if (level.value == Level.High) "high" else "low";
-    decl.setMeta(
+    val shown = if (loud) label.toUpper() else label;
+    val lvl = if (level == Level.High) "high" else "low";
+    compiler.setMeta(
         Mark(
             shown: shown,
-            weight: weight.value,
+            weight: weight,
             level: lvl,
-            min: limits.value.min,
-            max: limits.value.max,
-            key: key.value.name,
-            tags: tags.value,
+            min: limits.min,
+            max: limits.max,
+            key: key.name,
+            tags: tags,
         ),
     );
 }
@@ -38,13 +38,13 @@ fn mark<T>(
 #[mark("city", 2.5, true, .High, Limits(min: 1, max: 9), .name, ["a", "b"])]
 pub type City(code: string, name: string)
 
-fn scale(comptime n: @Expr<i32>, x: i32) -> i32 {
-    return x * n.value;
+fn scale(comptime n: i32, x: i32) -> i32 {
+    return x * n;
 }
 
-fn shout(comptime q: @Expr<string>) -> @Expr<string> {
-    val loud = q.value.toUpper() + "!";
-    return @expr(loud);
+fn shout(expr q: string) -> string {
+    val loud = compiler.text(q).toUpper() + "!";
+    return loud;
 }
 
 pub fn main() {
@@ -69,7 +69,7 @@ pub fn main() {
     }
     @print(scale(3, 7));
     @print(scale(5, 2));
-    @print(shout "hello");
+    @print(shout @`hello`);
 }
 
 // What `#[mark]` records: each argument's value as the body read it.

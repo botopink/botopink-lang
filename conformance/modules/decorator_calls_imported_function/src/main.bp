@@ -10,8 +10,10 @@ pub mod sched;
 import {sched.scheduled};
 import {text.shout as yell};
 
-fn tag(comptime decl: @Decl) {
-    @emit("pub fn tagged() -> string { return \"" + yell(decl.name) + "\"; }");
+fn tag(expr decl: unknown) {
+    @emit("pub fn tagged() -> string { return \""
+        + yell(compiler.name(decl)!)
+        + "\"; }");
 }
 
 #[scheduled("* * * * *")]

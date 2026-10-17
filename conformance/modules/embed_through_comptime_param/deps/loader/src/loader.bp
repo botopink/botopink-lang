@@ -1,8 +1,8 @@
 //// `load` passes its caller's path on to `@embed` through a `comptime` parameter: the file
 //// is the caller's package's. `own` writes its path itself: the file is this package's.
 
-pub fn load(comptime path: @Expr<string>) -> Asset {
-    return @embed(path.value);
+pub fn load(comptime path: string) -> Asset {
+    return @embed(path);
 }
 
 pub fn own() -> Asset {

@@ -5,25 +5,25 @@
 //// members stay beside them. A field's decorator adds to the type that owns
 //// the field (`#[label]` below).
 
-fn entity(comptime decl: @Decl) {
+fn entity(expr decl: unknown) {
     var names: string[] = [];
-    decl.fields.forEach({ f -> names.push(f.name) });
-    decl.addMember(
+    compiler.fields(decl).forEach({ f -> names.push(f.name) });
+    compiler.addMember(
         "pub fn columns() -> string { return \"" + names.join(",") + "\"; }",
     );
-    decl.addMember(
+    compiler.addMember(
         "pub fn describe(self: Self) -> string { return \""
-            + decl.name
+            + compiler.name(decl)!
             + "(\" + self.name + \", \" + self.size.toString() + \")\"; }",
     );
 }
 
-fn label(comptime decl: @Decl) {
-    decl.addMember(
+fn label(expr decl: unknown) {
+    compiler.addMember(
         "pub fn "
-            + decl.name
+            + compiler.name(decl)!
             + "Label() -> string { return \"the "
-            + decl.name
+            + compiler.name(decl)!
             + "\"; }",
     );
 }

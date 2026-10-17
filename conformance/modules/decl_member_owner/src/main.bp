@@ -6,30 +6,30 @@
 //// collide. A field's decorator and an enum's method read their owner the
 //// same way; a module-level function's reads `null`.
 
-fn register(comptime decl: @Decl) {
-    val owner = decl.owner!;
-    val reg = "reg_" + owner.name + "_" + decl.name;
+fn register(expr decl: unknown) {
+    val owner = compiler.owner(decl)!;
+    val reg = "reg_" + compiler.name(owner)! + "_" + compiler.name(decl)!;
     @emit(
         "val "
             + reg
             + " = \""
-            + owner.module
+            + compiler.moduleOf(owner)
             + "."
-            + owner.name
+            + compiler.name(owner)!
             + "."
-            + decl.name
+            + compiler.name(decl)!
             + "\";",
     );
     @emit("pub fn " + reg + "Text() -> string { return " + reg + "; }");
 }
 
-fn topLevel(comptime decl: @Decl) {
-    val owner = decl.owner?.name ?? "null";
-    @emit("val top_" + decl.name + " = \"" + owner + "\";");
+fn topLevel(expr decl: unknown) {
+    val owner = compiler.owner(decl)?.name ?? "null";
+    @emit("val top_" + compiler.name(decl)! + " = \"" + owner + "\";");
     @emit("pub fn top_"
-        + decl.name
+        + compiler.name(decl)!
         + "Text() -> string { return top_"
-        + decl.name
+        + compiler.name(decl)!
         + "; }");
 }
 

@@ -1,8 +1,8 @@
 type Box<T>(value: T)
 
-fn orDefault<T>(comptime source: @Expr<Box<T> | type<T>>, fallback: T) -> T {
+fn orDefault<T>(comptime source: Box<T> | type<T>, fallback: T) -> T {
     if (source is type) return fallback;
-    return source.value.value;
+    return source.value;
 }
 
 fn main() {

@@ -8,19 +8,19 @@
 pub type Level { Low, High }
 
 fn mark(
-    comptime decl: @Decl,
-    comptime sizes: @Expr<i32[]>,
-    comptime big: @Expr<i64> = 1,
-    comptime level: @Expr<Level> = .Low,
-    comptime tags: @Expr<string[]> = ["a"],
+    expr decl: unknown,
+    comptime sizes: i32[],
+    comptime big: i64 = 1,
+    comptime level: Level = .Low,
+    comptime tags: string[] = ["a"],
 ) {
-    decl.setMeta(
+    compiler.setMeta(
         Mark(
-            count: sizes.value.length,
-            sizes: sizes.value,
-            big: big.value,
-            level: if (level.value == Level.High) "high" else "low",
-            tags: tags.value,
+            count: sizes.length,
+            sizes: sizes,
+            big: big,
+            level: if (level == Level.High) "high" else "low",
+            tags: tags,
         ),
     );
 }

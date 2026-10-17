@@ -2,13 +2,14 @@
 //// error reported at its call: the template never reads the type expected
 //// there, so it builds by its text and says why.
 
-fn rows(comptime q: @Expr<string>) -> @Expr<unknown> {
-    if (q.text().contains("limit 1")) return q.build("\"one row\"");
-    q.note("rows answers a list — add limit 1 for one row");
-    return q.build("[\"a\", \"b\"]");
+fn rows(expr q: string) -> unknown {
+    if (compiler.text(q).contains("limit 1"))
+        return compiler.build("\"one row\"");
+    compiler.note("rows answers a list — add limit 1 for one row");
+    return compiler.build("[\"a\", \"b\"]");
 }
 
 pub fn main() {
-    val one: string = rows "select name";
+    val one: string = rows @`select name`;
     @print(one);
 }

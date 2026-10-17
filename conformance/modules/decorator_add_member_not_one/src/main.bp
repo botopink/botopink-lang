@@ -2,8 +2,8 @@
 //// `fn`: two of them in one call (or a `val`, or text that does not parse) is
 //// refused at the annotation, the source quoted.
 
-fn twice(comptime decl: @Decl) {
-    decl.addMember("pub fn a() -> i32 { return 1; } pub fn b() -> i32 { return 2; }");
+fn twice(expr decl: unknown) {
+    compiler.addMember("pub fn a() -> i32 { return 1; } pub fn b() -> i32 { return 2; }");
 }
 
 #[twice]

@@ -6,8 +6,8 @@
 
 type Count(uses: i32)
 
-fn graph(comptime decl: @Decl) {
-    decl.setMeta(Count(uses: decl.hooks.length));
+fn graph(expr decl: unknown) {
+    compiler.setMeta(Count(uses: compiler.hooks(decl).length));
 }
 
 #[graph]
@@ -15,13 +15,13 @@ fn page() -> string {
     return "page";
 }
 
-fn uses(comptime q: @Expr<string>) -> @Expr<i32> {
-    val decl = q.lookup(q.text()) ?? q.fail("`" + q.text() + "` is not in scope");
-    val c = decl.meta(Count) ?? q.fail("`" + q.text() + "` records no count");
-    return q.build(c.uses.toString());
+fn uses(expr q: string) -> i32 {
+    val decl = compiler.lookup(q, compiler.text(q)) ?? compiler.fail("`" + compiler.text(q) + "` is not in scope", at: q);
+    val c = compiler.meta<Count>(decl) ?? compiler.fail("`" + compiler.text(q) + "` records no count", at: q);
+    return compiler.build(c.uses.toString());
 }
 
 pub fn main() {
     @print(page());
-    @print(uses "page");
+    @print(uses @`page`);
 }

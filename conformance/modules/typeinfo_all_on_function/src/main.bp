@@ -2,7 +2,7 @@
 //// builtin type `TypeInfo`: `@typeInfo.all(…)` is refused where it is
 //// written, naming `@TypeInfo.all`.
 
-fn route(comptime decl: @Decl) {}
+fn route(expr decl: unknown) {}
 
 #[route]
 pub fn home() -> string { return "home"; }

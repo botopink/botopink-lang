@@ -3,19 +3,19 @@ import {types.Type} from "std";
 pub type Order { Asc, Desc }
 
 pub fn index<T>(
-    comptime decl: @Decl<T>,
-    comptime ..fields: @Expr<Type.Field<T>[]>,
+    expr decl: T,
+    comptime ..fields: Type.Field<T>[],
 ) {
-    decl.setMeta(Index(columns: fields.value.map({ f -> f.name })));
+    compiler.setMeta(Index(columns: fields.map({ f -> f.name })));
 }
 
 pub fn sorted<T>(
-    comptime decl: @Decl<T>,
-    comptime by: @Expr<Type.Field<T>>,
-    comptime order: @Expr<Order> = .Asc,
+    expr decl: T,
+    comptime by: Type.Field<T>,
+    comptime order: Order = .Asc,
 ) {
-    val dir = if (order.value == Order.Desc) " desc" else " asc";
-    decl.setMeta(Sorted(sort: by.value.name + dir));
+    val dir = if (order == Order.Desc) " desc" else " asc";
+    compiler.setMeta(Sorted(sort: by.name + dir));
 }
 
 // What `#[index]` records.

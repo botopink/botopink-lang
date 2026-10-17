@@ -11,9 +11,11 @@ fn bump() {
     seen = seen + 1;
 }
 
-fn counted(comptime decl: @Decl) {
+fn counted(expr decl: unknown) {
     bump();
-    @emit("pub fn summary() -> string { return \"" + decl.name + "\"; }");
+    @emit("pub fn summary() -> string { return \""
+        + compiler.name(decl)!
+        + "\"; }");
 }
 
 #[counted]

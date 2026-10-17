@@ -11,8 +11,12 @@ type Greeter(who: string) {
 
 type Visitor(who: string)
 
-fn greet(comptime self: @Expr<Visitor>, comptime q: @Expr<string>) -> @Expr<string> {
-    return q.build("\"template " + q.text() + ", \" + " + self.text() + ".who");
+fn greet(expr self: Visitor, expr q: string) -> string {
+    return compiler.build("\"template "
+        + compiler.text(q)
+        + ", \" + "
+        + compiler.text(self)
+        + ".who");
 }
 
 pub fn main() {

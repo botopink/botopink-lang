@@ -4,8 +4,8 @@
 
 import {io.clock} from "std";
 
-fn campos(comptime names: @Expr<string>) -> string {
-    return "[" + names.value + "]";
+fn campos(comptime names: string) -> string {
+    return "[" + names + "]";
 }
 
 fn cabecalho() -> string {

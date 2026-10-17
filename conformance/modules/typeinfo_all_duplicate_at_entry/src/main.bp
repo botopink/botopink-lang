@@ -4,8 +4,8 @@
 //// declarations — never by a decorator body collecting names in a
 //// module-level `var` (`reject/decorator_writes_module_var`).
 
-fn command(comptime decl: @Decl, comptime name: @Expr<string>) {
-    decl.setMeta("command", name.value);
+fn command(expr decl: unknown, comptime name: string) {
+    decl.setMeta("command", name);
 }
 
 #[command("deploy")]

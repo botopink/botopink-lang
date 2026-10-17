@@ -8,29 +8,29 @@ fn placeholder(n: i32) -> string {
     return "$" + n.toString();
 }
 
-pub fn query(comptime q: @Expr<string>, comptime decl: @Decl) -> @Expr<string> {
+pub fn query(expr q: string, expr decl: unknown) -> string {
     var text = "";
     var params: string[] = [];
-    for (q.parts()) { p ->
+    for (compiler.parts(q)) { p ->
         if (p.kind == "Interp") {
             params.push(p.code);
             text = text + placeholder(params.length);
         } else text = text + p.text;
     }
-    decl.setMeta(Query(sql: text, params: params));
-    return q.build("\"\"");
+    compiler.setMeta(Query(sql: text, params: params));
+    return compiler.build("\"\"");
 }
 
-pub fn repository(comptime decl: @Decl) {
+pub fn repository(expr decl: unknown) {
     var lines: string[] = [];
-    for (decl.methods) { m ->
+    for (compiler.methods(decl)) { m ->
         val found = m.meta(Query);
         if (found != null)
             lines.push(
                 m.name + ": " + found.sql + " <- " + found.params.join(", "),
             );
     }
-    decl.setMeta(Repository(statements: lines));
+    compiler.setMeta(Repository(statements: lines));
 }
 
 // What `#[repository]` records: one statement per method that carries a query.

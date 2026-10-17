@@ -2,6 +2,6 @@
 
 pub type Origin(module: string)
 
-pub fn located(comptime decl: @Decl) {
-    decl.setMeta(Origin(module: decl.module));
+pub fn located(expr decl: unknown) {
+    compiler.setMeta(Origin(module: compiler.moduleOf(decl)));
 }

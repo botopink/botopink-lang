@@ -4,8 +4,8 @@
 
 type Index(column: string)
 
-fn index(comptime decl: @Decl, comptime column: @Expr<string>) {
-    decl.addMeta(Index(column: column.value));
+fn index(expr decl: unknown, comptime column: string) {
+    compiler.addMeta(Index(column: column));
 }
 
 #[index("name")]

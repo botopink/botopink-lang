@@ -8,8 +8,8 @@ fn make(t: string) -> Entity {
     return Entity(table: t);
 }
 
-fn entity(comptime decl: @Decl, comptime table: @Expr<string>) {
-    decl.setMeta(make(table.value));
+fn entity(expr decl: unknown, comptime table: string) {
+    compiler.setMeta(make(table));
 }
 
 #[entity("cities")]

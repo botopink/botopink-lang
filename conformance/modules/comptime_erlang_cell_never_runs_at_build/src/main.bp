@@ -21,8 +21,10 @@ fn tagBody(value: string) -> string {
     return value + ":fn";
 }
 
-fn tagged(comptime decl: @Decl) {
-    @emit("pub fn summary() -> string { return \"" + tag(decl.name) + "\"; }");
+fn tagged(expr decl: unknown) {
+    @emit("pub fn summary() -> string { return \""
+        + tag(compiler.name(decl)!)
+        + "\"; }");
 }
 
 #[tagged]

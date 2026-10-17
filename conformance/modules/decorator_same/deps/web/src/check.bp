@@ -5,18 +5,20 @@
 
 import {markers.serverOnly};
 
-pub fn check(comptime decl: @Decl) {
+pub fn check(expr decl: unknown) {
     var out: string[] = [];
-    decl.annotations.forEach({ a ->
-        val which = if (a.decorator.same(serverOnly))
-            "web"
-        else if (a.decorator.same(check))
-            "check"
-        else
-            "other";
-        out.push(a.name + "=" + which)
-    });
-    decl.setMeta(Check(ids: out));
+    compiler
+        .annotations(decl)
+        .forEach({ a ->
+            val which = if (a.decorator.same(serverOnly))
+                "web"
+            else if (a.decorator.same(check))
+                "check"
+            else
+                "other";
+            out.push(a.name + "=" + which)
+        });
+    compiler.setMeta(Check(ids: out));
 }
 
 // What `#[check]` records: each annotation as `<name>=<which>`.

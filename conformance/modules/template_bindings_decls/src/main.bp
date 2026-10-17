@@ -13,17 +13,17 @@ fn helper(n: i32) -> i32 {
     return n;
 }
 
-fn named(comptime q: @Expr<string>) -> @Expr<string> {
-    val all = q.bindings();
+fn named(expr q: string) -> string {
+    val all = compiler.bindings(q);
     var text = all.length.toString();
     for (["City", "User", "helper"]) { want ->
         for (all) { d ->
             if (d.name == want) text = text + " " + d.name + "@" + d.module;
         }
     }
-    return q.build("\"" + text + "\"");
+    return compiler.build("\"" + text + "\"");
 }
 
 pub fn main() {
-    @print(named "City helper Person Nobody");
+    @print(named @`City helper Person Nobody`);
 }

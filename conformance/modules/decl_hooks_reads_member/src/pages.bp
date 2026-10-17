@@ -7,24 +7,26 @@
 type Element(text: string) implement @Renderable
 
 // Reads `decl.hooks`: each node as `fn(uses: […])`.
-fn graph(comptime decl: @Decl) {
+fn graph(expr decl: unknown) {
     var nodes: string[] = [];
-    decl.hooks.forEach({ n ->
-        var uses: string[] = [];
-        n.uses.forEach({ u ->
-            val h = u.hook;
-            uses.push(if (h == null) "null" else h.name)
+    compiler
+        .hooks(decl)
+        .forEach({ n ->
+            var uses: string[] = [];
+            n.uses.forEach({ u ->
+                val h = u.hook;
+                uses.push(if (h == null) "null" else h.name)
+            });
+            nodes.push(n.function.name + "(uses: [" + uses.join(", ") + "])")
         });
-        nodes.push(n.function.name + "(uses: [" + uses.join(", ") + "])")
-    });
-    decl.setMeta(Graph(nodes: nodes));
+    compiler.setMeta(Graph(nodes: nodes));
 }
 
 // Reads no `.hooks`: gives the type it annotates a `validate` method.
-fn check(comptime decl: @Decl) {
-    decl.addMember(
+fn check(expr decl: unknown) {
+    compiler.addMember(
         "pub fn validate(self: Self) -> string { return \""
-            + decl.name
+            + compiler.name(decl)!
             + " \" + self.name + \" ok\"; }",
     );
 }

@@ -3,10 +3,10 @@
 //// that reads `decl.hooks` runs after the module's bodies, so the member
 //// would come too late for them, and the call is refused where it is written.
 
-fn graph<T>(comptime decl: @Decl<T>) {
-    val count = decl.hooks.length;
-    decl.setMeta(Graph(count: count));
-    decl.addMember("extra", fn(self: T) -> i32 {
+fn graph<T>(expr decl: T) {
+    val count = compiler.hooks(decl).length;
+    compiler.setMeta(Graph(count: count));
+    compiler.addMember("extra", fn(self: T) -> i32 {
         return 1;
     });
 }

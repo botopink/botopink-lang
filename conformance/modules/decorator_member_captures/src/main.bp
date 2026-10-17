@@ -6,9 +6,9 @@
 
 pub type Violation(field: string, message: string)
 
-fn check<T>(comptime decl: @Decl<T>, comptime rule: @Expr<fn(v: T) -> bool>) {
-    val field = decl.name;
-    decl.addMember("validate", fn(self: T) -> Violation[] {
+fn check<T>(expr decl: T, expr rule: fn(v: T) -> bool) {
+    val field = compiler.name(decl)!;
+    compiler.addMember("validate", fn(self: T) -> Violation[] {
         if (rule(self)) return [];
         return [Violation(field: field, message: "invalid")];
     });

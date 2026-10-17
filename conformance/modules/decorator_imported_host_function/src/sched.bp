@@ -14,12 +14,12 @@ fn wrapBody(value: string) -> string {
     return "<" + value + ">";
 }
 
-pub fn stamped(comptime decl: @Decl) {
+pub fn stamped(expr decl: unknown) {
     @emit(
         "pub fn stamp() -> string { return \""
-            + wrap(decl.name)
+            + wrap(compiler.name(decl)!)
             + " "
-            + contentHash(decl.name)
+            + contentHash(compiler.name(decl)!)
             + "\"; }",
     );
 }

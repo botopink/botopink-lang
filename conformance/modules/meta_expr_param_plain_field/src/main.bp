@@ -5,8 +5,8 @@
 
 type Entity(table: string)
 
-fn entity(comptime decl: @Decl, comptime table: @Expr<string>) {
-    decl.setMeta(Entity(table: table));
+fn entity(expr decl: unknown, expr table: string) {
+    compiler.setMeta(Entity(table: table));
 }
 
 #[entity("cities")]

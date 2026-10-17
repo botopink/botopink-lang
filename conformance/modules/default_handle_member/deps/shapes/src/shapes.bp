@@ -5,6 +5,6 @@ pub fn twice(n: i32) -> i32 {
     return n * 2;
 }
 
-pub default fn shapes(comptime q: @Expr<string>) -> @ExprCustom<i32> {
-    return q.build("1");
+pub default fn shapes(expr q: string) -> i32 {
+    return compiler.build("1");
 }

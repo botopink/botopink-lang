@@ -2,12 +2,13 @@ type Entity(table: string, audited: bool)
 
 type Index(column: string)
 
-fn entity(comptime decl: @Decl, comptime table: @Expr<string>) {
-    decl.setMeta(Entity(table: table.value, audited: decl.name == "City"));
+fn entity(expr decl: unknown, comptime table: string) {
+    compiler.setMeta(Entity(table: table, audited: compiler.name(decl)!
+        == "City"));
 }
 
-fn index(comptime decl: @Decl, comptime column: @Expr<string>) {
-    decl.addMeta(Index(column: column.value));
+fn index(expr decl: unknown, comptime column: string) {
+    compiler.addMeta(Index(column: column));
 }
 
 #[entity("cities")]

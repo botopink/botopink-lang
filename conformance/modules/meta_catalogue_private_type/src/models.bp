@@ -6,8 +6,8 @@ pub behavior Model {
     fn make() -> Self;
 }
 
-pub fn entity(comptime decl: @Decl<Model>, comptime table: @Expr<string>) {
-    decl.setMeta(Entity(table: table.value));
+pub fn entity(expr decl: Model, comptime table: string) {
+    compiler.setMeta(Entity(table: table));
 }
 
 #[entity("cities")]

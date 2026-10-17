@@ -3,11 +3,11 @@
 //// checked too, its unknown field located in the helper (the parent binary:
 //// `{error,{badkey,nope}}` at the annotation).
 
-fn nameOf(decl: @Decl) -> string {
+fn nameOf(decl: unknown) -> string {
     return decl.nope;
 }
 
-fn tagged(comptime decl: @Decl) {
+fn tagged(expr decl: unknown) {
     val n = nameOf(decl);
 }
 

@@ -12,5 +12,5 @@ import {cards.card};
 
 pub fn main() {
     @print(card());
-    @print(looks "page");
+    @print(looks @`page`);
 }

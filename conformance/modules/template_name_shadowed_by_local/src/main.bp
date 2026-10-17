@@ -2,18 +2,18 @@
 //// a local named like a template function is the value called there, and the
 //// template stays the name's everywhere else.
 
-fn shout(comptime q: @Expr<string>) -> @Expr<string> {
-    return q.build("\"template " + q.text() + "\"");
+fn shout(expr q: string) -> string {
+    return compiler.build("\"template " + compiler.text(q) + "\"");
 }
 
 fn run(shout: fn(string) -> string) -> string {
-    return shout("x");
+    return shout @`x`;
 }
 
 pub fn main() {
-    @print(shout "before");
+    @print(shout @`before`);
     @print(run({ s -> "param " + s }));
     val shout: fn(string) -> string = { s -> "local " + s };
-    @print(shout("a"));
-    @print(shout "b");
+    @print(shout @`a`);
+    @print(shout @`b`);
 }

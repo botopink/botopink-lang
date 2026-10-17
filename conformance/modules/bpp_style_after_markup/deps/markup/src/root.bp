@@ -6,7 +6,14 @@ pub default mod markup;
 pub mod style;
 
 /// A decorator that refuses what it annotates, naming it and its kind.
-pub fn named(comptime decl: @Decl) {
-    val kind = if (decl.kind == DeclKind.Fn) "a function" else "not a function";
-    decl.fail("named " + decl.name + " (" + kind + ")");
+pub fn named(expr decl: unknown) {
+    val kind = if (compiler.kind(decl) == DeclKind.Fn)
+        "a function"
+    else
+        "not a function";
+    compiler.fail("named "
+        + compiler.name(decl)!
+        + " ("
+        + kind
+        + ")", at: decl);
 }

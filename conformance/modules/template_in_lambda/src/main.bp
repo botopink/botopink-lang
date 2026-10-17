@@ -1,12 +1,12 @@
 //// Decision 425 — a template call expands wherever an expression may stand:
 //// in a lambda's body.
 
-fn twice(comptime q: @Expr<string>) -> @Expr<string> {
-    return q.build("\"" + q.text() + q.text() + "\"");
+fn twice(expr q: string) -> string {
+    return compiler.build("\"" + compiler.text(q) + compiler.text(q) + "\"");
 }
 
 pub fn main() {
-    val f = { -> twice "cd" + "!" };
+    val f = { -> twice @`cd` + "!" };
     @print(f());
-    @print(["a", "b"].map({ s -> s + twice "-" }).join(","));
+    @print(["a", "b"].map({ s -> s + twice @`-` }).join(","));
 }

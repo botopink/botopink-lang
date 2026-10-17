@@ -22,17 +22,24 @@ type Greeter(who: string) implement Named {
     }
 }
 
-fn shout(comptime self: @Expr<Greeter>, comptime q: @Expr<string>) -> @Expr<string> {
-    return q.build(self.text() + ".greet(\"" + q.text().toUpper() + "\")");
+fn shout(expr self: Greeter, expr q: string) -> string {
+    return compiler.build(compiler.text(self)
+        + ".greet(\""
+        + compiler.text(q).toUpper()
+        + "\")");
 }
 
-fn tag(comptime self: @Expr<Named>, comptime q: @Expr<string>) -> @Expr<string> {
-    return q.build("\"[" + q.text() + "] \" + " + self.text() + ".name()");
+fn tag(expr self: Named, expr q: string) -> string {
+    return compiler.build("\"["
+        + compiler.text(q)
+        + "] \" + "
+        + compiler.text(self)
+        + ".name()");
 }
 
-fn shape(comptime self: @Expr<Greeter>, comptime q: @Expr<string>) -> @Expr<string> {
-    val kind = if (q.context().multiline) "multi" else "single";
-    return q.build(self.text() + ".greet(\"" + kind + "\")");
+fn shape(expr self: Greeter, expr q: string) -> string {
+    val kind = if (compiler.context(q).multiline) "multi" else "single";
+    return compiler.build(compiler.text(self) + ".greet(\"" + kind + "\")");
 }
 
 type Room(host: Greeter) {
@@ -56,14 +63,14 @@ type Report(db: Memory) {
 
 pub fn main() {
     val g = Greeter(who: "Ana");
-    @print(g.shout "hello");
-    @print(g.shape """
+    @print(g.shout @`hello`);
+    @print(g.shape @`
         vip
-        """);
+        `);
     @print(Room(host: Greeter(who: "Bia")).open());
-    @print(g.tag "guest");
+    @print(g.tag @`guest`);
     val mem = Memory(prefix: "m:");
-    @print(try mem.read "a" catch "none");
+    @print(try mem.read @`a` catch "none");
     @print(try Report(db: mem).title() catch "none");
-    @print(try mem.read "" catch "none");
+    @print(try mem.read @`` catch "none");
 }

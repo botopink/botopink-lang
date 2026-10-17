@@ -3,21 +3,21 @@
 //// `Point(..v, z: z)` — copies every field it does not name, on
 //// every target (144 B-10, decision 430).
 
-fn flatten(comptime decl: @Decl) {
-    decl.addMember(
+fn flatten(expr decl: unknown) {
+    compiler.addMember(
         "pub fn flat(self: Self) -> "
-            + decl.name
+            + compiler.name(decl)!
             + " { return "
-            + decl.name
+            + compiler.name(decl)!
             + "(..self, y: 0); }",
     );
-    decl.addMember(
+    compiler.addMember(
         "pub fn rebuilt(v: "
-            + decl.name
+            + compiler.name(decl)!
             + ", z: i32) -> "
-            + decl.name
+            + compiler.name(decl)!
             + " { val __w = "
-            + decl.name
+            + compiler.name(decl)!
             + "(..v, z: z); return __w; }",
     );
 }

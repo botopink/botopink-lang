@@ -1,4 +1,4 @@
-pub fn check(comptime decl: @Decl) {
-    val n = decl.name;
+pub fn check(expr decl: unknown) {
+    val n = compiler.name(decl)!;
     @panic("boom " + n);
 }

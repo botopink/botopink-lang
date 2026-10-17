@@ -2,13 +2,13 @@
 //// build; a literal with a `${…}` hole is not, and is refused at the
 //// argument when the template reads `.value`.
 
-fn shout(comptime q: @Expr<string>) -> @Expr<string> {
-    val loud = q.value.toUpper() + "!";
-    return @expr(loud);
+fn shout(expr q: string) -> string {
+    val loud = compiler.text(q).toUpper() + "!";
+    return loud;
 }
 
 val name = "ana";
 
 pub fn main() {
-    @print(shout "hello ${name}");
+    @print(shout @`hello ${name}`);
 }

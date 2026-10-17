@@ -15,12 +15,12 @@ fn fieldSummary(count: i32) -> string {
     return plural(count, "field");
 }
 
-fn sized(comptime decl: @Decl) {
+fn sized(expr decl: unknown) {
     @emit(
         "pub fn summary() -> string { return \""
-            + decl.name
+            + compiler.name(decl)!
             + ": "
-            + fieldSummary(decl.fields.length)
+            + fieldSummary(compiler.fields(decl).length)
             + "\"; }",
     );
 }

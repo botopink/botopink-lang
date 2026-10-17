@@ -11,8 +11,8 @@ fn shout(label: Label) -> string {
     return label.text.toUpper();
 }
 
-pub fn marquee(comptime title: @Expr<string>) {
-    val label: Label = Label(text: title.value);
+pub fn marquee(comptime title: string) {
+    val label: Label = Label(text: title);
     @print(shout(label));
     @print(path.relative("/" + label.text, "/" + label.text + "/docs"));
 }

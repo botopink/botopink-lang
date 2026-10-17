@@ -8,14 +8,15 @@ pub fn area(w: i32, h: i32) -> i32 {
     return w * h;
 }
 
-pub default fn shapesdsl<T>(comptime e: @Expr<string>) -> @ExprCustom<T> {
-    val code = e.build(e.text());
+pub default fn shapesdsl<T>(expr e: string) -> T {
+    val code = compiler.build(compiler.text(e));
     val root = CustomNode(
         kind: "call",
         span: Span(0, 4, 1),
         label: "keyword",
-        ref: e.lookup("area"),
+        ref: compiler.lookup(e, "area"),
         children: [],
     );
-    return e.custom(root, code);
+    compiler.custom(root);
+    return code;
 }

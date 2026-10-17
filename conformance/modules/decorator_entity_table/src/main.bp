@@ -1,11 +1,13 @@
-fn entity(comptime decl: @Decl, comptime table: @Expr<string>) {
+fn entity(expr decl: unknown, comptime table: string) {
     var cols: string[] = [];
-    decl.fields.forEach({ f -> cols.push(f.name + ": string") });
-    decl.setMeta(Entity(table: table.value));
-    decl.addMember(
-        "pub fn table() -> string { return \"" + table.value + "\"; }",
+    compiler.fields(decl).forEach({ f -> cols.push(f.name + ": string") });
+    compiler.setMeta(Entity(table: table));
+    compiler.addMember(
+        "pub fn table() -> string { return \"" + table + "\"; }",
     );
-    decl.addType("Columns", "(" + cols.join(", ") + ")");
+    compiler.addType("Columns", compiler.buildType("("
+        + cols.join(", ")
+        + ")"));
 }
 
 #[entity("cities")]

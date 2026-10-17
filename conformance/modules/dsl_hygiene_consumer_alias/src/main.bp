@@ -6,6 +6,6 @@
 import shapesdsl, {area as surface} from "shapesdsl";
 
 pub fn main() {
-    val x = shapesdsl "surface(4, 5)";
+    val x = shapesdsl @`surface(4, 5)`;
     @print(x);
 }

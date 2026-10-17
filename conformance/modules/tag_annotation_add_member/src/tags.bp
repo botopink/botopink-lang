@@ -1,16 +1,16 @@
 //// A template function that runs a tag's annotation (decision 302).
 
 // Gives the annotated declaration a member — a type's channel, not a tag's.
-pub fn withMember<T>(comptime decl: @Decl<T>) {
-    decl.addMember("extra", fn(self: T) -> i32 {
+pub fn withMember<T>(expr decl: T) {
+    compiler.addMember("extra", fn(self: T) -> i32 {
         return 1;
     });
 }
 
-pub fn markup(comptime q: @Expr<string>) -> @Expr<string> {
-    val text = q.text();
-    val tag = q.tagDecl(DeclKind.Element, "div", []);
-    val d = q.annotate(tag, Span(start: text.indexOf("#[")
+pub fn markup(expr q: string) -> string {
+    val text = compiler.text(q);
+    val tag = compiler.tagDecl(DeclKind.Element, "div", []);
+    val d = compiler.annotate(tag, Span(start: text.indexOf("#[")
         + 2, end: text.indexOf("]>"), line: 1));
-    return @expr(d.name);
+    return compiler.name(d)!;
 }

@@ -7,12 +7,12 @@ fn posts() -> string {
     return "posts";
 }
 
-fn wrapping(comptime q: @Expr<string>) -> @Expr<string> {
-    val decl = q.lookup(q.text()) ?? q.fail("not in scope");
-    decl.wrapWith({ call -> call.run() });
-    return q.build("\"" + decl.name + "\"");
+fn wrapping(expr q: string) -> string {
+    val decl = compiler.lookup(q, compiler.text(q)) ?? compiler.fail("not in scope", at: q);
+    compiler.wrapWith({ call -> call.run() });
+    return compiler.build("\"" + compiler.name(decl)! + "\"");
 }
 
 pub fn main() {
-    @print(wrapping "posts");
+    @print(wrapping @`posts`);
 }

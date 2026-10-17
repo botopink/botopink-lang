@@ -2,12 +2,12 @@
 //// and a decorator's name has type `Decorator`: a decorator with further
 //// arguments, a single decorator and a list of them are all accepted.
 
-fn route(comptime decl: @Decl, comptime path: @Expr<string>) {
-    decl.setMeta(Route(path: path.value));
+fn route(expr decl: unknown, comptime path: string) {
+    compiler.setMeta(Route(path: path));
 }
 
-fn job(comptime decl: @Decl) {
-    decl.setMeta(Job(kind: "job"));
+fn job(expr decl: unknown) {
+    compiler.setMeta(Job(kind: "job"));
 }
 
 #[route("/home")]

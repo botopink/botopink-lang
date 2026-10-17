@@ -10,7 +10,7 @@ type Element(text: string) implement @Renderable
 
 pub val themeContext = comptime createContext(Theme(mode: "default"));
 
-fn themed(comptime decl: @Decl) {
+fn themed(expr decl: unknown) {
     val t = use context(Theme);
 }
 

@@ -58,7 +58,7 @@ pub fn provide<T>(ctx: Context<T>) -> @Component<void> {
 // The value of the context of type `T` provided nearest above this body, or
 // `T`'s declared default: `use context(T)` answers `T`, which the checker
 // reads off the type the argument names (decision 379 (3)).
-pub fn context(comptime t: @Expr<type>) -> @Component<unknown> {
+pub fn context(comptime t: anytype) -> @Component<unknown> {
     @panic(
         "`use provide` / `use context` are lowered where they are written; this body never runs",
     );
@@ -70,7 +70,7 @@ pub fn context(comptime t: @Expr<type>) -> @Component<unknown> {
 // inject(Deps)`). `T` is a record; a behavior is read with `use context`.
 // `createContext(value, Behavior)` keys a context by the behavior its value
 // implements, so a field typed by the behavior reads it.
-pub fn inject(comptime t: @Expr<type>) -> @Component<unknown> {
+pub fn inject(comptime t: anytype) -> @Component<unknown> {
     @panic(
         "`use inject` is lowered where it is written; this body never runs",
     );

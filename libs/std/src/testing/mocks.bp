@@ -242,59 +242,71 @@ pub fn verify<T>(mock: T, spec: i32) -> T {
 // statement is only legal as the last statement in a block; and the body cannot
 // call sibling fns — only this one is lowered into the decorator eval script —
 // so the return-type default is inlined rather than factored out.
-pub fn mock(comptime decl: @Decl) {
+pub fn mock(expr decl: unknown) {
     var q = "";
-    decl.annotations.forEach({ a ->
-        if (a.name.endsWith(".mock")) q = a.name.slice(0, a.name.length() - 4)
-    });
-    var methods = "";
-    decl.methods.forEach({ m ->
-        var paramList: Array<string> = [];
-        var keyList: Array<string> = [];
-        m.params.forEach({ p ->
-            if (p.name != "self") {
-                paramList.push(p.name + ": " + p.typeName);
-                keyList.push(q + "key(" + p.name + ")");
-            }
+    compiler
+        .annotations(decl)
+        .forEach({ a ->
+            if (a.name.endsWith(".mock"))
+                q = a.name.slice(0, a.name.length() - 4)
         });
-        val params = paramList.join(", ");
-        val sig = if (params == "") "self: Self" else "self: Self, " + params;
-        val keys = keyList.join(", ");
-        val def = if (m.returnType == "string")
-            "\"\""
-        else if (m.returnType == "bool")
-            "false"
-        else if (m.returnType.startsWith("Array<")
-            || m.returnType.endsWith("[]"))
-            "[]"
-        else
-            "0";
-        methods = methods
-            + "  fn "
-            + m.name
-            + "("
-            + sig
-            + ") -> "
-            + m.returnType
-            + " { return "
-            + q
-            + "invoke(self.__id, \""
-            + m.name
-            + "\", ["
-            + keys
-            + "], "
-            + def
-            + "); }\n";
-    });
-    decl.addType(
+    var methods = "";
+    compiler
+        .methods(decl)
+        .forEach({ m ->
+            var paramList: Array<string> = [];
+            var keyList: Array<string> = [];
+            m.params.forEach({ p ->
+                if (p.name != "self") {
+                    paramList.push(p.name + ": " + p.typeName);
+                    keyList.push(q + "key(" + p.name + ")");
+                }
+            });
+            val params = paramList.join(", ");
+            val sig = if (params == "")
+                "self: Self"
+            else
+                "self: Self, " + params;
+            val keys = keyList.join(", ");
+            val def = if (m.returnType == "string")
+                "\"\""
+            else if (m.returnType == "bool")
+                "false"
+            else if (m.returnType.startsWith("Array<")
+                || m.returnType.endsWith("[]"))
+                "[]"
+            else
+                "0";
+            methods = methods
+                + "  fn "
+                + m.name
+                + "("
+                + sig
+                + ") -> "
+                + m.returnType
+                + " { return "
+                + q
+                + "invoke(self.__id, \""
+                + m.name
+                + "\", ["
+                + keys
+                + "], "
+                + def
+                + "); }\n";
+        });
+    compiler.addType(
         "Mock",
-        "(__id: string) implement " + decl.name + " {\n" + methods + "}",
+        compiler.buildType("(__id: string) implement "
+            + compiler.name(decl)!
+            + " {\n"
+            + methods
+            + "}"),
     );
-    decl.addMember(
+    compiler.addMember(
         "default fn mock() -> "
-            + decl.name
+            + compiler.name(decl)!
             + " { return "
-            + decl.name
+            + compiler.name(decl)!
             + ".Mock(__id: "
             + q
             + "newMock()); }",

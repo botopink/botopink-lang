@@ -6,8 +6,8 @@
 
 type Element(text: string) implement @Renderable
 
-fn graph(comptime decl: @Decl) {
-    decl.setMeta(Graph(count: decl.hooks.length));
+fn graph(expr decl: unknown) {
+    compiler.setMeta(Graph(count: compiler.hooks(decl).length));
 }
 
 #[graph]

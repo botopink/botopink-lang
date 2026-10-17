@@ -4,7 +4,7 @@
 //// at the annotation. The body is checked: an unknown field of `Decl`, located
 //// at the field.
 
-fn tagged(comptime decl: @Decl) {
+fn tagged(expr decl: unknown) {
     val n = decl.nope;
 }
 

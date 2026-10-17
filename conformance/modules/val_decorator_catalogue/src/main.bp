@@ -5,9 +5,10 @@
 //// declared type as `returnTypeName`. On the parent binary the decorator was
 //// dropped silently (`DeclKind.Val` did not exist).
 
-fn setting(comptime decl: @Decl, comptime key: @Expr<string>) {
-    if (decl.kind != DeclKind.Val) decl.fail("#[setting] annotates a val");
-    decl.setMeta(Setting(key: key.value, declared: decl.returnType));
+fn setting(expr decl: unknown, comptime key: string) {
+    if (compiler.kind(decl) != DeclKind.Val)
+        compiler.fail("#[setting] annotates a val", at: decl);
+    compiler.setMeta(Setting(key: key, declared: compiler.returnType(decl)));
 }
 
 #[setting("port")]

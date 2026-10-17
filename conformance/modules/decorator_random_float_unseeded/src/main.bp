@@ -7,9 +7,11 @@
 
 import {io} from "std";
 
-fn drawn(comptime decl: @Decl) {
+fn drawn(expr decl: unknown) {
     val x = io.random.float();
-    @emit("pub fn label() -> string { return \"" + decl.name + " ${x}\"; }");
+    @emit("pub fn label() -> string { return \""
+        + compiler.name(decl)!
+        + " ${x}\"; }");
 }
 
 #[drawn]

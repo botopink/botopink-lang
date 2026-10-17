@@ -9,5 +9,5 @@ import {store.Memory};
 
 pub fn main() {
     val mem = Memory(prefix: "m:");
-    @print(mem.read "a");
+    @print(mem.read @`a`);
 }

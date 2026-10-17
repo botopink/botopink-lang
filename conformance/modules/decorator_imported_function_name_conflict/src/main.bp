@@ -10,10 +10,10 @@ fn wrap(s: string) -> string {
     return "[" + s + "]";
 }
 
-fn tag(comptime decl: @Decl) {
+fn tag(expr decl: unknown) {
     @emit(
         "pub fn tagged() -> string { return \""
-            + wrap(shout(decl.name))
+            + wrap(shout(compiler.name(decl)!))
             + "\"; }",
     );
 }

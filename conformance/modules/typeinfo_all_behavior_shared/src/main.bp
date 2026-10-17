@@ -7,12 +7,12 @@ pub behavior Bean {
     fn make() -> Self;
 }
 
-pub fn service(comptime decl: @Decl<Bean>) {
-    decl.setMeta(BeanRole(role: "service"));
+pub fn service(expr decl: Bean) {
+    compiler.setMeta(BeanRole(role: "service"));
 }
 
-pub fn repository(comptime decl: @Decl<Bean>) {
-    decl.setMeta(BeanRole(role: "repository"));
+pub fn repository(expr decl: Bean) {
+    compiler.setMeta(BeanRole(role: "repository"));
 }
 
 #[service]

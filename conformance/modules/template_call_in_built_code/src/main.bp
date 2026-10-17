@@ -2,27 +2,27 @@
 //// expands in turn, as one written at the call site does — at a module `val`,
 //// in a function body, and through a chain of templates.
 
-fn inner(comptime q: @Expr<string>) -> @Expr<string> {
-    return q.build("\"inner " + q.text() + "\"");
+fn inner(expr q: string) -> string {
+    return compiler.build("\"inner " + compiler.text(q) + "\"");
 }
 
-fn outer(comptime q: @Expr<string>) -> @Expr<string> {
-    return q.build("inner \"" + q.text() + "\"");
+fn outer(expr q: string) -> string {
+    return compiler.build("inner \"" + compiler.text(q) + "\"");
 }
 
-fn outerParens(comptime q: @Expr<string>) -> @Expr<string> {
-    return q.build("inner(\"" + q.text() + "\")");
+fn outerParens(expr q: string) -> string {
+    return compiler.build("inner(\"" + compiler.text(q) + "\")");
 }
 
-fn outermost(comptime q: @Expr<string>) -> @Expr<string> {
-    return q.build("outer \"" + q.text() + "\" + \"!\"");
+fn outermost(expr q: string) -> string {
+    return compiler.build("outer \"" + compiler.text(q) + "\" + \"!\"");
 }
 
-val atModule = outer "module";
+val atModule = outer @`module`;
 
 pub fn main() {
     @print(atModule);
-    @print(outer "body");
-    @print(outerParens "parens");
-    @print(outermost "chain");
+    @print(outer @`body`);
+    @print(outerParens @`parens`);
+    @print(outermost @`chain`);
 }

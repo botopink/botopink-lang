@@ -7,10 +7,10 @@ type View(html: string)
 type Route<P>(params: P)
 
 fn page<P>(
-    comptime decl: @Decl<fn(route: Route<P>) -> View>,
-    comptime seg: @Expr<string>,
+    expr decl: fn(route: Route<P>) -> View,
+    comptime seg: string,
 ) {
-    decl.setMeta(Page(seg: seg.value));
+    compiler.setMeta(Page(seg: seg));
 }
 
 #[page("blog")]

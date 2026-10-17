@@ -14,9 +14,9 @@ fn sayBody(line: string) {
     @print(line);
 }
 
-fn banner(comptime rows: @Expr<i32>) {
-    for (1...rows.value) { row ->
-        say("row " + row.toString() + " of " + rows.value.toString());
+fn banner(comptime rows: i32) {
+    for (1...rows) { row ->
+        say("row " + row.toString() + " of " + rows.toString());
     }
 }
 

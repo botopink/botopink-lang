@@ -1,5 +1,5 @@
-pub fn tagged(comptime decl: @Decl) {
-    decl.setMeta(Tagged(tag: decl.name));
+pub fn tagged(expr decl: unknown) {
+    compiler.setMeta(Tagged(tag: compiler.name(decl)!));
 }
 
 // What `#[tagged]` records.

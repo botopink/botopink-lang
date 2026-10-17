@@ -11,12 +11,12 @@ pub behavior Job {
     fn run(self: Self) -> string;
 }
 
-pub fn service(comptime decl: @Decl<Bean>) {
-    decl.setMeta(Role(role: "service"));
+pub fn service(expr decl: Bean) {
+    compiler.setMeta(Role(role: "service"));
 }
 
-pub fn job(comptime decl: @Decl<Job>) {
-    decl.setMeta(Role(role: "job"));
+pub fn job(expr decl: Job) {
+    compiler.setMeta(Role(role: "job"));
 }
 
 #[service]

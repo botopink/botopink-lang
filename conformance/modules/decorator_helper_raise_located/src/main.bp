@@ -9,8 +9,8 @@ fn requireShort(name: string) -> string {
     return name;
 }
 
-fn short(comptime decl: @Decl) {
-    val n = requireShort(decl.name);
+fn short(expr decl: unknown) {
+    val n = requireShort(compiler.name(decl)!);
     @emit("pub fn tag() -> string { return \"" + n + "\"; }");
 }
 

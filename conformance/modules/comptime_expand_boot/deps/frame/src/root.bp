@@ -16,17 +16,17 @@ fn sayBody(line: string) {
     @print(line);
 }
 
-pub fn module(comptime decl: @Decl, comptime order: @Expr<i32>) {
-    decl.setMeta("order", order.value.toString());
+pub fn module(expr decl: unknown, comptime order: i32) {
+    decl.setMeta("order", order.toString());
 }
 
 fn start(m: unknown) {
     if (m is fn() -> string) say(m());
 }
 
-pub fn boot(comptime modules: @Expr<Declared<unknown>[]> = @TypeInfo.all(with: module)) {
-    for (1...modules.value.length) { rank ->
-        for (modules.value) { d ->
+pub fn boot(comptime modules: Declared<unknown>[] = @TypeInfo.all(with: module)) {
+    for (1...modules.length) { rank ->
+        for (modules) { d ->
             if (d.meta.any({ m -> m.key == "order" && m.value == rank.toString() })) {
                 say("starting " + d.name);
                 start(d.value);

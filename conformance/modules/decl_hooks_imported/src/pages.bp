@@ -8,35 +8,37 @@ import {ui};
 
 import {ui.session as currentUser, ui.Element};
 
-fn graph(comptime decl: @Decl) {
+fn graph(expr decl: unknown) {
     var nodes: string[] = [];
-    decl.hooks.forEach({ n ->
-        var uses: string[] = [];
-        n.uses.forEach({ u ->
-            val h = u.hook;
-            var anns: string[] = [];
-            u.annotations.forEach({ a -> anns.push("#[" + a.name + "]") });
-            val name = if (h == null) "null" else h.module + "." + h.name;
-            uses.push(name + anns.join(""))
+    compiler
+        .hooks(decl)
+        .forEach({ n ->
+            var uses: string[] = [];
+            n.uses.forEach({ u ->
+                val h = u.hook;
+                var anns: string[] = [];
+                u.annotations.forEach({ a -> anns.push("#[" + a.name + "]") });
+                val name = if (h == null) "null" else h.module + "." + h.name;
+                uses.push(name + anns.join(""))
+            });
+            var calls: string[] = [];
+            n.calls.forEach({ c ->
+                val k = c.callee;
+                val name = if (k == null) "null" else k.module + "." + k.name;
+                calls.push(name + "@" + c.at)
+            });
+            nodes.push(
+                n.function.module
+                    + "."
+                    + n.function.name
+                    + "(uses: ["
+                    + uses.join(", ")
+                    + "], calls: ["
+                    + calls.join(", ")
+                    + "])",
+            )
         });
-        var calls: string[] = [];
-        n.calls.forEach({ c ->
-            val k = c.callee;
-            val name = if (k == null) "null" else k.module + "." + k.name;
-            calls.push(name + "@" + c.at)
-        });
-        nodes.push(
-            n.function.module
-                + "."
-                + n.function.name
-                + "(uses: ["
-                + uses.join(", ")
-                + "], calls: ["
-                + calls.join(", ")
-                + "])",
-        )
-    });
-    decl.setMeta(Graph(nodes: nodes));
+    compiler.setMeta(Graph(nodes: nodes));
 }
 
 #[graph]

@@ -15,8 +15,8 @@ fn sayBody(line: string) {
 
 type Box(n: i32)
 
-fn banner(comptime rows: @Expr<i32>) {
-    for (0..rows.value) { row ->
+fn banner(comptime rows: i32) {
+    for (0..rows) { row ->
         say("row " + row.toString());
     }
 }

@@ -6,11 +6,12 @@
 
 import {types.Type} from "std";
 
-fn label(comptime decl: @Decl, comptime text: @Expr<string>) {}
+fn label(expr decl: unknown, comptime text: string) {}
 
-fn schema(comptime decl: @Decl) {
-    val isType = decl.kind == DeclKind.Type;
-    val fields = decl.fields
+fn schema(expr decl: unknown) {
+    val isType = compiler.kind(decl) == DeclKind.Type;
+    val fields = compiler
+        .fields(decl)
         .map({ f ->
             f.name
                 + ": "
@@ -20,9 +21,9 @@ fn schema(comptime decl: @Decl) {
         .join(", ");
     @emit(
         "pub fn "
-            + decl.name
+            + compiler.name(decl)!
             + "Schema() -> string { return \""
-            + decl.name
+            + compiler.name(decl)!
             + " "
             + isType.toString()
             + " ("

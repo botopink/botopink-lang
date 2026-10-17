@@ -29,61 +29,67 @@ pub type Prelude()
 
 // The markup's unfold target: the template function `html """…"""` a `.bpp`
 // file's markup becomes.
-pub fn html(comptime decl: @Decl) {
-    if (decl.kind != DeclKind.Fn)
-        decl.fail(
+pub fn html(expr decl: unknown) {
+    if (compiler.kind(decl) != DeclKind.Fn)
+        compiler.fail(
             "#[bpp.html] annotates the template function a .bpp file's markup unfolds onto — `"
-                + decl.name
+                + compiler.name(decl)!
                 + "` is not a function",
+            at: decl,
         );
-    if (!decl.returnType.startsWith("@ExprCustom<"))
-        decl.fail(
+    if (!compiler.returnType(decl).startsWith("@ExprCustom<"))
+        compiler.fail(
             "#[bpp.html] annotates a template function answering `@ExprCustom<R>` — `"
-                + decl.name
+                + compiler.name(decl)!
                 + "` answers `"
-                + decl.returnType
+                + compiler.returnType(decl)
                 + "`",
+            at: decl,
         );
 }
 
 // The style section's unfold target: the template function the section
 // between `--- style ---` and `---` becomes (`use <style> """…""";`).
-pub fn style(comptime decl: @Decl) {
-    if (decl.kind != DeclKind.Fn)
-        decl.fail(
+pub fn style(expr decl: unknown) {
+    if (compiler.kind(decl) != DeclKind.Fn)
+        compiler.fail(
             "#[bpp.style] annotates the template function a .bpp file's style section unfolds onto — `"
-                + decl.name
+                + compiler.name(decl)!
                 + "` is not a function",
+            at: decl,
         );
-    if (!decl.returnType.startsWith("@ExprCustom<"))
-        decl.fail(
+    if (!compiler.returnType(decl).startsWith("@ExprCustom<"))
+        compiler.fail(
             "#[bpp.style] annotates a template function answering `@ExprCustom<R>` — `"
-                + decl.name
+                + compiler.name(decl)!
                 + "` answers `"
-                + decl.returnType
+                + compiler.returnType(decl)
                 + "`",
+            at: decl,
         );
 }
 
 // The markup's prelude: the marker `val` of the module whose imports a
 // `.bpp` file's markup and header resolve through.
-pub fn htmlPrelude(comptime decl: @Decl) {
-    if (decl.kind != DeclKind.Val)
-        decl.fail(
+pub fn htmlPrelude(expr decl: unknown) {
+    if (compiler.kind(decl) != DeclKind.Val)
+        compiler.fail(
             "#[bpp.htmlPrelude] annotates the marker `val` of a prelude module (`pub val prelude = bpp.Prelude();`) — `"
-                + decl.name
+                + compiler.name(decl)!
                 + "` is not a val",
+            at: decl,
         );
 }
 
 // The style section's prelude: the marker `val` of the module whose imports
 // a `.bpp` file's style section resolves through.
-pub fn stylePrelude(comptime decl: @Decl) {
-    if (decl.kind != DeclKind.Val)
-        decl.fail(
+pub fn stylePrelude(expr decl: unknown) {
+    if (compiler.kind(decl) != DeclKind.Val)
+        compiler.fail(
             "#[bpp.stylePrelude] annotates the marker `val` of a prelude module (`pub val prelude = bpp.Prelude();`) — `"
-                + decl.name
+                + compiler.name(decl)!
                 + "` is not a val",
+            at: decl,
         );
 }
 

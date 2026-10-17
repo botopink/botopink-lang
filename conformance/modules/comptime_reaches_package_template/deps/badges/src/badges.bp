@@ -7,6 +7,6 @@ pub fn makeBadge(label: string) -> Badge {
     return Badge(label: label, size: label.length);
 }
 
-pub default fn badge(comptime t: @Expr<string>) -> @Expr<Badge> {
-    return t.build("makeBadge(\"" + t.text() + "\")");
+pub default fn badge(expr t: string) -> Badge {
+    return compiler.build("makeBadge(\"" + compiler.text(t) + "\")");
 }

@@ -5,22 +5,24 @@
 
 type Table(name: string)
 
-fn tableOf(comptime q: @Expr<string>) -> @Expr<string> {
-    val decl = q.lookup(q.text()) ?? q.fail("`"
-        + q.text()
-        + "` is not in scope");
-    val t = decl.meta(Table) ?? q.fail("`" + q.text() + "` is not an entity");
-    return q.build("\"" + t.name + "\"");
+fn tableOf(expr q: string) -> string {
+    val decl = compiler.lookup(q, compiler.text(q)) ?? compiler.fail("`"
+        + compiler.text(q)
+        + "` is not in scope", at: q);
+    val t = compiler.meta<Table>(decl) ?? compiler.fail("`"
+        + compiler.text(q)
+        + "` is not an entity", at: q);
+    return compiler.build("\"" + t.name + "\"");
 }
 
-val early = tableOf "User";
+val early = tableOf @`User`;
 
 fn report() -> string {
-    return tableOf "User";
+    return tableOf @`User`;
 }
 
-fn entity(comptime decl: @Decl, comptime name: @Expr<string>) {
-    decl.setMeta(Table(name: name.value));
+fn entity(expr decl: unknown, comptime name: string) {
+    compiler.setMeta(Table(name: name));
 }
 
 #[entity("users")]

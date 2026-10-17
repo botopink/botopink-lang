@@ -2,8 +2,8 @@
 //// argument, not at the annotation: the upper bound below the lower one is
 //// refused at the `1`.
 
-fn sizeBetween(comptime decl: @Decl, comptime min: @Expr<i32>, comptime max: @Expr<i32>) {
-    if (min.value > max.value) max.fail("the upper bound is below the lower one");
+fn sizeBetween(expr decl: unknown, comptime min: i32, comptime max: i32) {
+    if (min > max) compiler.fail("the upper bound is below the lower one", at: max);
 }
 
 type Form(

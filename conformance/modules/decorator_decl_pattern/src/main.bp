@@ -7,8 +7,8 @@ pub type OrderPlaced(id: string, total: i64)
 
 pub type OrderCancelled(id: string)
 
-fn on<E>(comptime decl: @Decl<fn(e: E) -> unknown>) {
-    decl.setMeta(EventHandler(event: decl.name));
+fn on<E>(expr decl: fn(e: E) -> unknown) {
+    compiler.setMeta(EventHandler(event: compiler.name(decl)!));
 }
 
 #[on]

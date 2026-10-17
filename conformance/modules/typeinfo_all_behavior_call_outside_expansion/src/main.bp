@@ -8,8 +8,8 @@ pub behavior Module {
     fn start(self: Self) -> string;
 }
 
-pub fn module(comptime decl: @Decl<Module>) {
-    decl.setMeta(ModuleRole(role: "module"));
+pub fn module(expr decl: Module) {
+    compiler.setMeta(ModuleRole(role: "module"));
 }
 
 #[module]

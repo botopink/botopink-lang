@@ -5,18 +5,22 @@
 //// same path; a member the decorator adds names it too. A value prints under
 //// its owner's path (`City.Columns(…)`, `City.Size.Small`).
 
-fn entity(comptime decl: @Decl) {
+fn entity(expr decl: unknown) {
     var cols: string[] = [];
-    decl.fields.forEach({ f -> cols.push(f.name + ": string") });
-    decl.addType("Columns", "(" + cols.join(", ") + ")");
-    decl.addType("Size", "{ Small, Large }");
+    compiler.fields(decl).forEach({ f -> cols.push(f.name + ": string") });
+    compiler.addType("Columns", compiler.buildType("("
+        + cols.join(", ")
+        + ")"));
+    compiler.addType("Size", compiler.buildType("{ Small, Large }"));
     var names: string[] = [];
-    decl.fields.forEach({ f -> names.push(f.name + ": \"" + f.name + "\"") });
-    decl.addMember(
+    compiler
+        .fields(decl)
+        .forEach({ f -> names.push(f.name + ": \"" + f.name + "\"") });
+    compiler.addMember(
         "pub fn columns() -> "
-            + decl.name
+            + compiler.name(decl)!
             + ".Columns { return "
-            + decl.name
+            + compiler.name(decl)!
             + ".Columns("
             + names.join(", ")
             + "); }",

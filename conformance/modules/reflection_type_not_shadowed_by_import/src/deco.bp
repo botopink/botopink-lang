@@ -4,9 +4,9 @@
 
 import {model.Param, model.Field};
 
-pub fn described(comptime decl: @Decl) {
+pub fn described(expr decl: unknown) {
     var names = "";
-    for (decl.methods) { m ->
+    for (compiler.methods(decl)) { m ->
         for (m.params) { p ->
             names = names + m.name + "." + p.name + ";";
         }

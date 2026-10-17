@@ -2,8 +2,8 @@
 //// decorator on a field (or a method) has no `@typeInfo` to answer through,
 //// and `decl.setMeta` from it is refused at the annotation.
 
-fn column(comptime decl: @Decl) {
-    decl.setMeta(Column(name: decl.name));
+fn column(expr decl: unknown) {
+    compiler.setMeta(Column(name: compiler.name(decl)!));
 }
 
 type City(#[column] name: string)

@@ -10,16 +10,16 @@ import {local.pin};
 import {mark} from "marks";
 
 fn note(
-    comptime decl: @Decl,
-    comptime text: @Expr<string> = "n",
-    comptime size: @Expr<f64> = 2.5,
+    expr decl: unknown,
+    comptime text: string = "n",
+    comptime size: f64 = 2.5,
 ) {
     @emit(
         "pub fn "
-            + decl.name
+            + compiler.name(decl)!
             + "Note() -> string { return \""
-            + text.value
-            + size.value.toString()
+            + text
+            + size.toString()
             + "\"; }",
     );
 }

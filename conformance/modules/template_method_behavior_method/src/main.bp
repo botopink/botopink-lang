@@ -31,12 +31,16 @@ type Waver(name: string) implement Waves {
 
 type Visitor(who: string)
 
-fn greet(comptime self: @Expr<Visitor>, comptime q: @Expr<string>) -> @Expr<string> {
-    return q.build("\"template " + q.text() + ", \" + " + self.text() + ".who");
+fn greet(expr self: Visitor, expr q: string) -> string {
+    return compiler.build("\"template "
+        + compiler.text(q)
+        + ", \" + "
+        + compiler.text(self)
+        + ".who");
 }
 
 fn wave(w: Waves) -> string {
-    return w.greet "hi";
+    return w.greet @`hi`;
 }
 
 pub fn main() {

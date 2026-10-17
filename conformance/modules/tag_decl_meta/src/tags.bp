@@ -6,20 +6,20 @@ pub type ClassName(names: string[])
 // One annotation for a tag and a declaration: it records a `ClassName`
 // through `decl` — on an element with the tag's `id` attribute, on a
 // component with the component function's name.
-pub fn cls(comptime decl: @Decl, comptime name: @Expr<string>) {
-    if (decl.kind == DeclKind.Element)
-        decl.addMeta(ClassName(names: [name.value, decl.attr("id") ?? "none"]))
-    else if (decl.kind == DeclKind.Component)
-        decl.addMeta(ClassName(names: [name.value, decl.component?.name ?? "none"]))
+pub fn cls(expr decl: unknown, comptime name: string) {
+    if (compiler.kind(decl) == DeclKind.Element)
+        compiler.addMeta(ClassName(names: [name, compiler.attr(decl, "id") ?? "none"]))
+    else if (compiler.kind(decl) == DeclKind.Component)
+        compiler.addMeta(ClassName(names: [name, compiler.component(decl)?.name ?? "none"]))
     else
-        decl.addMeta(ClassName(names: [name.value]));
+        compiler.addMeta(ClassName(names: [name]));
 }
 
 // `markup """<div id="x" #[cls("a")]>hi</div>"""`: one tag, an optional `id`,
 // one annotation; the class names the annotation recorded become `class`. A
 // tag whose name starts upper-case is a component.
-pub fn markup(comptime q: @Expr<string>) -> @Expr<string> {
-    val text = q.text();
+pub fn markup(expr q: string) -> string {
+    val text = compiler.text(q);
     val name = text.slice(1, text.indexOf(" "));
     val kind = if ("ABCDEFGHIJKLMNOPQRSTUVWXYZ".contains(name.slice(0, 1)))
         DeclKind.Component
@@ -33,24 +33,25 @@ pub fn markup(comptime q: @Expr<string>) -> @Expr<string> {
     val annStart = text.indexOf("#[") + 2;
     val annEnd = text.indexOf("]>");
     val body = text.slice(annEnd + 2, text.indexOf("</"));
-    val tag = q.tagDecl(kind, name, attrs);
-    val d = q.annotate(tag, Span(start: annStart, end: annEnd, line: 1));
+    val tag = compiler.tagDecl(kind, name, attrs);
+    val d = compiler.annotate(tag, Span(start: annStart, end: annEnd, line: 1));
     val classes = d
         .metaAll(ClassName)
         .map({ c -> c.names.join(" ") })
         .join(" ");
-    val shown = if (d.kind == DeclKind.Element) "element" else "component";
-    return @expr(
-        "<"
-            + d.name
-            + " class=\""
-            + classes
-            + "\">"
-            + body
-            + "</"
-            + d.name
-            + "> ("
-            + shown
-            + ")",
-    );
+    val shown = if (compiler.kind(d) == DeclKind.Element)
+        "element"
+    else
+        "component";
+    return "<"
+        + compiler.name(d)!
+        + " class=\""
+        + classes
+        + "\">"
+        + body
+        + "</"
+        + compiler.name(d)!
+        + "> ("
+        + shown
+        + ")";
 }

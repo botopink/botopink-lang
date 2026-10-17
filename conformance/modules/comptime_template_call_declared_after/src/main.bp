@@ -4,14 +4,14 @@
 //// `comptime` is refused, naming the call and the remedy, instead of reaching
 //// the emitter with a call no backend lowers.
 
-pub fn tag(comptime t: @Expr<string>) -> @Expr<string> {
-    return t.build("\"<" + t.text() + ">\"");
+pub fn tag(expr t: string) -> string {
+    return compiler.build("\"<" + compiler.text(t) + ">\"");
 }
 
 pub val early = comptime late();
 
 fn late() -> string {
-    return tag "b";
+    return tag @`b`;
 }
 
 pub fn main() {

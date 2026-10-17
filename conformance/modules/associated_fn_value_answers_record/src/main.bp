@@ -4,12 +4,12 @@
 //// `val` and by a parameter typed `fn(string) -> Town` — each call's record
 //// read by its field, on every target (144 B-19).
 
-fn maker(comptime decl: @Decl) {
-    decl.addMember(
+fn maker(expr decl: unknown) {
+    compiler.addMember(
         "pub fn make(name: string) -> "
-            + decl.name
+            + compiler.name(decl)!
             + " { return "
-            + decl.name
+            + compiler.name(decl)!
             + "(name: name); }",
     );
 }

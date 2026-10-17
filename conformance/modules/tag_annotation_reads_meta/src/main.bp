@@ -7,28 +7,28 @@
 
 pub type Level(n: i32)
 
-pub fn level(comptime decl: @Decl, comptime n: @Expr<i32>) {
-    decl.setMeta(Level(n: n.value));
+pub fn level(expr decl: unknown, comptime n: i32) {
+    compiler.setMeta(Level(n: n));
 }
 
 // Reads the meta the earlier annotation recorded on the same tag.
-pub fn checked(comptime decl: @Decl) {
-    if (decl.meta(Level) == null) decl.fail("no level");
+pub fn checked(expr decl: unknown) {
+    if (compiler.meta<Level>(decl) == null) compiler.fail("no level", at: decl);
 }
 
-pub fn markup(comptime q: @Expr<string>) -> @Expr<string> {
-    val text = q.text();
+pub fn markup(expr q: string) -> string {
+    val text = compiler.text(q);
     val firstStart = text.indexOf("#[") + 2;
     val firstEnd = text.indexOf("]");
     val rest = text.slice(firstEnd + 1, text.length);
     val secondStart = firstEnd + 1 + rest.indexOf("#[") + 2;
     val secondEnd = firstEnd + 1 + rest.indexOf("]");
-    val tag = q.tagDecl(DeclKind.Element, "div", []);
-    val once = q.annotate(tag, Span(start: firstStart, end: firstEnd, line: 1));
-    val twice = q.annotate(once, Span(start: secondStart, end: secondEnd, line: 1));
-    return @expr(twice.meta(Level)?.n ?? 0);
+    val tag = compiler.tagDecl(DeclKind.Element, "div", []);
+    val once = compiler.annotate(tag, Span(start: firstStart, end: firstEnd, line: 1));
+    val twice = compiler.annotate(once, Span(start: secondStart, end: secondEnd, line: 1));
+    return compiler.meta<Level>(twice)?.n ?? 0;
 }
 
 pub fn main() {
-    @print(markup "<div #[level(2)] #[checked]>hi</div>");
+    @print(markup @`<div #[level(2)] #[checked]>hi</div>`);
 }

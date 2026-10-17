@@ -4,12 +4,12 @@
 
 type Query(sql: string)
 
-fn sql(comptime q: @Expr<string>, comptime decl: @Decl) -> @Expr<string> {
-    decl.setMeta(Query(sql: q.text()));
-    return q.build("\"\"");
+fn sql(expr q: string, expr decl: unknown) -> string {
+    compiler.setMeta(Query(sql: compiler.text(q)));
+    return compiler.build("\"\"");
 }
 
 pub fn main() {
-    val s = sql "select 1";
+    val s = sql @`select 1`;
     @print(s);
 }

@@ -7,14 +7,14 @@
 //// counts its calls, and the count moves only when the program reads the
 //// meta.
 
-pub type Check<T>(message: @Expr<string>, rule: @Expr<fn(v: T) -> bool>)
+pub type Check<T>(message: string, rule: fn(v: T) -> bool)
 
 fn check<T>(
-    comptime decl: @Decl<T>,
-    comptime message: @Expr<string>,
-    comptime rule: @Expr<fn(v: T) -> bool>,
+    expr decl: T,
+    expr message: string,
+    expr rule: fn(v: T) -> bool,
 ) {
-    decl.addMeta(Check(message: message, rule: rule));
+    compiler.addMeta(Check(message: message, rule: rule));
 }
 
 var calls = 0;

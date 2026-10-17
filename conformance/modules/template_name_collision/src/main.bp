@@ -11,6 +11,6 @@ import {loud.tag};
 import {quiet.marker};
 
 pub fn main() {
-    @print(tag("x"));
+    @print(tag @`x`);
     @print(marker());
 }

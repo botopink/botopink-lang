@@ -7,6 +7,9 @@ pub behavior Store<E> {
     fn fetch(self: Self<E>, key: string) -> @Result<string, E>;
 }
 
-pub fn read<E>(comptime self: @Expr<Store<E>>, comptime q: @Expr<string>) -> @Expr<@Result<string, E>> {
-    return q.build(self.text() + ".fetch(\"" + q.text() + "\")");
+pub fn read<E>(expr self: Store<E>, expr q: string) -> @Result<string, E> {
+    return compiler.build(compiler.text(self)
+        + ".fetch(\""
+        + compiler.text(q)
+        + "\")");
 }

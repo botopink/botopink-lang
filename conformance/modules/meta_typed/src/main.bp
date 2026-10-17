@@ -15,15 +15,15 @@ type Index(column: string, unique: bool, order: i32)
 
 type Other(note: string)
 
-fn entity(comptime decl: @Decl, comptime table: @Expr<string>) {
+fn entity(expr decl: unknown, comptime table: string) {
     var names: string[] = [];
-    decl.fields.forEach({ f -> names.push(f.name) });
-    decl.setMeta(
+    compiler.fields(decl).forEach({ f -> names.push(f.name) });
+    compiler.setMeta(
         Entity(
-            table: table.value,
+            table: table,
             columns: names,
             weight: 1.5,
-            audited: decl.name == "City",
+            audited: compiler.name(decl)! == "City",
             level: Level.High,
             alias: null,
         ),
@@ -31,15 +31,15 @@ fn entity(comptime decl: @Decl, comptime table: @Expr<string>) {
 }
 
 fn index(
-    comptime decl: @Decl,
-    comptime column: @Expr<string>,
-    comptime order: @Expr<i32>,
+    expr decl: unknown,
+    comptime column: string,
+    comptime order: i32,
 ) {
-    decl.addMeta(
+    compiler.addMeta(
         Index(
-            column: column.value,
-            unique: order.value == 1,
-            order: order.value,
+            column: column,
+            unique: order == 1,
+            order: order,
         ),
     );
 }

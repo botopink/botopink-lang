@@ -10,30 +10,32 @@ type Element(text: string) implement @Renderable
 
 // Renders `decl.hooks` into one meta string `main` prints: each node as
 // `fn(uses: […], calls: […])`, a `use` over a function value as `null`.
-fn graph(comptime decl: @Decl) {
+fn graph(expr decl: unknown) {
     var nodes: string[] = [];
-    decl.hooks.forEach({ n ->
-        var uses: string[] = [];
-        n.uses.forEach({ u ->
-            val h = u.hook;
-            uses.push(if (h == null) "null" else h.name + "@" + u.at)
+    compiler
+        .hooks(decl)
+        .forEach({ n ->
+            var uses: string[] = [];
+            n.uses.forEach({ u ->
+                val h = u.hook;
+                uses.push(if (h == null) "null" else h.name + "@" + u.at)
+            });
+            var calls: string[] = [];
+            n.calls.forEach({ c ->
+                val k = c.callee;
+                val name = if (k == null) "null" else k.name;
+                calls.push(name + "@" + c.at)
+            });
+            nodes.push(
+                n.function.name
+                    + "(uses: ["
+                    + uses.join(", ")
+                    + "], calls: ["
+                    + calls.join(", ")
+                    + "])",
+            )
         });
-        var calls: string[] = [];
-        n.calls.forEach({ c ->
-            val k = c.callee;
-            val name = if (k == null) "null" else k.name;
-            calls.push(name + "@" + c.at)
-        });
-        nodes.push(
-            n.function.name
-                + "(uses: ["
-                + uses.join(", ")
-                + "], calls: ["
-                + calls.join(", ")
-                + "])",
-        )
-    });
-    decl.setMeta(Graph(nodes: nodes));
+    compiler.setMeta(Graph(nodes: nodes));
 }
 
 #[@external(.Node("""Promise.resolve("alice")"""), .Erlang("""<<"alice">>"""))]

@@ -3,8 +3,8 @@
 //// the pattern names `string` is refused at the wrapper, in the decorator —
 //// before any function it annotates is wrapped.
 
-fn counted(comptime decl: @Decl<fn(..) -> string>) {
-    decl.wrapWith({ call -> 42 });
+fn counted(expr decl: fn(..) -> string) {
+    compiler.wrapWith({ call -> 42 });
 }
 
 #[counted]

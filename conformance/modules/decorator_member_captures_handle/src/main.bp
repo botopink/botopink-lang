@@ -1,9 +1,9 @@
 //// Decision 370 (2) — the `@Decl` handle exists only while the program
 //// compiles: a member function reading it is refused at the read.
 
-fn named(comptime decl: @Decl) {
-    decl.addMember("typeName", fn() -> string {
-        return decl.name;
+fn named(expr decl: unknown) {
+    compiler.addMember("typeName", fn() -> string {
+        return compiler.name(decl)!;
     });
 }
 

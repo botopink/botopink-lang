@@ -1,11 +1,13 @@
 type Element(text: string) implement @Renderable
 
-fn graph(comptime decl: @Decl) {
+fn graph(expr decl: unknown) {
     var names: string[] = [];
-    decl.hooks.forEach(
-        { n -> names.push(n.function.name + "/" + n.uses.length.toString()) },
-    );
-    decl.setMeta(Graph(nodes: names));
+    compiler
+        .hooks(decl)
+        .forEach(
+            { n -> names.push(n.function.name + "/" + n.uses.length.toString()) },
+        );
+    compiler.setMeta(Graph(nodes: names));
 }
 
 fn session() -> @Component<string> {

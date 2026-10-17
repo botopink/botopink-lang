@@ -1,8 +1,8 @@
 //// A package that does not declare `Declared` — the compiler's record — reads its fields off the
 //// entries the program hands it: directly, through a function, inside `map` and inside `for`.
 
-pub fn mark(comptime decl: @Decl) {
-    decl.setMeta(Mark(k: decl.name));
+pub fn mark(expr decl: unknown) {
+    compiler.setMeta(Mark(k: compiler.name(decl)!));
 }
 
 fn nameOf(d: Declared<unknown>) -> string {

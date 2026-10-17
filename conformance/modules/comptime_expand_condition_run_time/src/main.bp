@@ -14,8 +14,8 @@ fn sayBody(line: string) {
     @print(line);
 }
 
-pub fn module(comptime decl: @Decl) {
-    decl.setMeta(ModuleRole(kind: "module"));
+pub fn module(expr decl: unknown) {
+    compiler.setMeta(ModuleRole(kind: "module"));
 }
 
 #[module]
@@ -23,8 +23,8 @@ pub fn db() -> string {
     return "db up";
 }
 
-fn boot(comptime modules: @Expr<Declared<unknown>[]>) {
-    for (modules.value) { d ->
+fn boot(comptime modules: Declared<unknown>[]) {
+    for (modules) { d ->
         if (d.value is fn() -> string) say("starting " + d.name);
     }
 }

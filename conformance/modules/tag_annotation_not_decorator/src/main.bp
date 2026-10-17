@@ -6,5 +6,5 @@ pub mod tags;
 import {tags.markup, tags.shout};
 
 pub fn main() {
-    @print(markup "<div #[shout]>hi</div>");
+    @print(markup @`<div #[shout]>hi</div>`);
 }

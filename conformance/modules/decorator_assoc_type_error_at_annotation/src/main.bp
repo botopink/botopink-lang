@@ -3,8 +3,8 @@
 //// type by its owner's path (`City.Columns`); the `called from` line names the
 //// decorator's `decl.addType` call.
 
-fn columns(comptime decl: @Decl) {
-    decl.addType("Columns", "(id: Missing)");
+fn columns(expr decl: unknown) {
+    compiler.addType("Columns", compiler.buildType("(id: Missing)"));
 }
 
 #[columns]

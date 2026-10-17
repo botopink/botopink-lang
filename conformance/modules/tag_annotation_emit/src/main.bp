@@ -6,5 +6,5 @@ pub mod tags;
 import {tags.markup, tags.withEmit};
 
 pub fn main() {
-    @print(markup "<div #[withEmit]>hi</div>");
+    @print(markup @`<div #[withEmit]>hi</div>`);
 }

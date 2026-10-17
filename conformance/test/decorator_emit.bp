@@ -6,9 +6,10 @@
 //// The bare `if` must be the last statement of the decorator body: a value-less
 //// `if` followed by another statement does not parse today.
 
-fn wire(comptime decl: @Decl) {
+fn wire(expr decl: unknown) {
     @emit("pub fn wiredSize() -> i32 { return 99; }");
-    if (decl.kind != DeclKind.Type) decl.fail("#[wire] must annotate a type");
+    if (compiler.kind(decl) != DeclKind.Type)
+        compiler.fail("#[wire] must annotate a type", at: decl);
 }
 
 #[wire]

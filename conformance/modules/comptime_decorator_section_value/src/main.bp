@@ -32,10 +32,10 @@ fn fallback() -> Tok {
     return .Pad.All.8;
 }
 
-fn mark(comptime decl: @Decl, comptime ..tokens: @Expr<Tok[]>) {
-    decl.setMeta(
+fn mark(expr decl: unknown, comptime ..tokens: Tok[]) {
+    compiler.setMeta(
         Mark(
-            labels: tokens.value.map({ t -> label(t) }),
+            labels: tokens.map({ t -> label(t) }),
             fallback: label(fallback()),
         ),
     );

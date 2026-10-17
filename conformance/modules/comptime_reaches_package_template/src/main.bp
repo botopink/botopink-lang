@@ -9,12 +9,12 @@
 import badges from "badges";
 
 fn ready() -> string {
-    return "${(badges "ready").label}!";
+    return "${(badges @`ready`).label}!";
 }
 
 pub val label = comptime ready();
 
-pub val whole = comptime badges "done";
+pub val whole = comptime badges @`done`;
 
 pub fn main() {
     @print(label);

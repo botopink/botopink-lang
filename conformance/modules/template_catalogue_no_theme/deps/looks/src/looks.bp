@@ -2,22 +2,24 @@
 //// (decision 353): the program declares its theme, exactly one — none is
 //// refused at the literal that reads it (decision 358).
 
-pub fn theme(comptime decl: @Decl) {
-    decl.setMeta(Theme(named: decl.name));
+pub fn theme(expr decl: unknown) {
+    compiler.setMeta(Theme(named: compiler.name(decl)!));
 }
 
-pub default fn looks(comptime e: @Expr<string>) -> @Expr<string> {
+pub default fn looks(expr e: string) -> string {
     val themes = @TypeInfo.all(with: theme);
     if (themes.length == 0)
-        e.fail(
+        compiler.fail(
             "looks: no #[theme] declaration — declare one: `#[theme] pub fn brand() -> string`",
+            at: e,
         );
     if (themes.length > 1)
-        e.fail(
+        compiler.fail(
             "looks: two #[theme] declarations: "
                 + themes.map({ t -> t.module + "." + t.name }).join(", "),
+            at: e,
         );
-    return @expr(e.text() + ": " + themes.map({ t -> t.name }).join(""));
+    return compiler.text(e) + ": " + themes.map({ t -> t.name }).join("");
 }
 
 // What `#[theme]` records.

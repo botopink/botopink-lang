@@ -9,8 +9,8 @@ fn one() -> i32 {
     return 1;
 }
 
-fn hooked(comptime decl: @Decl) {
-    decl.setMeta(Hook(run: one));
+fn hooked(expr decl: unknown) {
+    compiler.setMeta(Hook(run: one));
 }
 
 #[hooked]

@@ -11,8 +11,8 @@ pub behavior Any {
     fn label(self: Self) -> string;
 }
 
-pub fn widget(comptime decl: @Decl<Component>) {
-    decl.setMeta(Widget(kind: "widget"));
+pub fn widget(expr decl: Component) {
+    compiler.setMeta(Widget(kind: "widget"));
 }
 
 #[widget]

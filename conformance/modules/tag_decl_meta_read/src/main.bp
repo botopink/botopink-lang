@@ -8,5 +8,5 @@ pub mod tags;
 import {tags.markup, tags.hydrated};
 
 pub fn main() {
-    @print(markup "<section #[hydrated]>hi</section>");
+    @print(markup @`<section #[hydrated]>hi</section>`);
 }

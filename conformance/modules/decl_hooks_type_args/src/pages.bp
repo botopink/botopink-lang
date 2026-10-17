@@ -8,26 +8,28 @@ type Element(text: string) implement @Renderable
 
 type BlogParams(slug: string, id: i32)
 
-fn args(comptime decl: @Decl) {
+fn args(expr decl: unknown) {
     var out: string[] = [];
-    decl.hooks.forEach({ n ->
-        n.uses.forEach({ u ->
-            var tas: string[] = [];
-            u.typeArgs.forEach({ t ->
-                var fields: string[] = [];
-                t.fields.forEach(
-                    { f -> fields.push(f.name + ": " + f.typeName) },
-                );
-                tas.push(
-                    t.module + "." + t.name + "(" + fields.join(", ") + ")",
-                )
-            });
-            val h = u.hook;
-            val name = if (h == null) "null" else h.name;
-            out.push(name + "<" + tas.join(", ") + ">")
-        })
-    });
-    decl.setMeta(HookArgs(uses: out));
+    compiler
+        .hooks(decl)
+        .forEach({ n ->
+            n.uses.forEach({ u ->
+                var tas: string[] = [];
+                u.typeArgs.forEach({ t ->
+                    var fields: string[] = [];
+                    t.fields.forEach(
+                        { f -> fields.push(f.name + ": " + f.typeName) },
+                    );
+                    tas.push(
+                        t.module + "." + t.name + "(" + fields.join(", ") + ")",
+                    )
+                });
+                val h = u.hook;
+                val name = if (h == null) "null" else h.name;
+                out.push(name + "<" + tas.join(", ") + ">")
+            })
+        });
+    compiler.setMeta(HookArgs(uses: out));
 }
 
 fn params<P>(fallback: P) -> @Component<P> {

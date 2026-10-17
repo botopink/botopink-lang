@@ -5,7 +5,7 @@ pub type Entity(table: string)
 
 type Note(text: string)
 
-pub fn entity(comptime decl: @Decl, comptime table: @Expr<string>) {
-    val n = Note(text: table.value);
-    decl.setMeta(Entity(table: n.text));
+pub fn entity(expr decl: unknown, comptime table: string) {
+    val n = Note(text: table);
+    compiler.setMeta(Entity(table: n.text));
 }

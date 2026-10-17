@@ -2,13 +2,13 @@
 //// members fails to type-check: one error, at the annotation of the one that
 //// failed.
 
-fn maker<T>(comptime decl: @Decl<T>) {
-    if (decl.name == "Town")
-        decl.addMember("code", fn(self: T) -> i32 {
+fn maker<T>(expr decl: T) {
+    if (compiler.name(decl)! == "Town")
+        compiler.addMember("code", fn(self: T) -> i32 {
             return self.nope;
         })
     else
-        decl.addMember("code", fn(self: T) -> i32 {
+        compiler.addMember("code", fn(self: T) -> i32 {
             return 1;
         });
 }

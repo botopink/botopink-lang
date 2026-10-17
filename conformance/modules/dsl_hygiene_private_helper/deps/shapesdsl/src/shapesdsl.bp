@@ -10,8 +10,8 @@ fn double(x: i32) -> i32 {
     return x * 2;
 }
 
-pub default fn shapesdsl<T>(comptime e: @Expr<string>) -> @ExprCustom<T> {
-    val code = e.build("double(" + e.text() + ")");
+pub default fn shapesdsl<T>(expr e: string) -> T {
+    val code = compiler.build("double(" + compiler.text(e) + ")");
     val root = CustomNode(
         kind: "call",
         span: Span(0, 4, 1),
@@ -19,5 +19,6 @@ pub default fn shapesdsl<T>(comptime e: @Expr<string>) -> @ExprCustom<T> {
         ref: null,
         children: [],
     );
-    return e.custom(root, code);
+    compiler.custom(root);
+    return code;
 }

@@ -4,13 +4,14 @@
 
 type Entity(table: string)
 
-fn entity(comptime decl: @Decl) {
-    decl.setMeta(Entity(table: "cities"));
+fn entity(expr decl: unknown) {
+    compiler.setMeta(Entity(table: "cities"));
 }
 
-fn audit(comptime decl: @Decl) {
-    for (decl.hooks) { h ->
-        if (h.function.meta(Entity) == null) decl.fail("no entity");
+fn audit(expr decl: unknown) {
+    for (compiler.hooks(decl)) { h ->
+        if (h.function.meta(Entity) == null)
+            compiler.fail("no entity", at: decl);
     }
 }
 

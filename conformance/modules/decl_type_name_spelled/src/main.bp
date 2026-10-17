@@ -7,18 +7,20 @@
 //// `returnType` erased the same way. Each name is printed through a function
 //// the decorator emits.
 
-fn shape(comptime decl: @Decl) {
-    val fields = decl.fields
+fn shape(expr decl: unknown) {
+    val fields = compiler
+        .fields(decl)
         .map({ f -> f.name + ": " + f.typeName })
         .join("\n");
-    val methods = decl.methods
+    val methods = compiler
+        .methods(decl)
         .map(
             { m -> m.name + "(" + m.params.map({ p -> p.typeName }).join(", ") + ") -> " + m.returnType },
         )
         .join("\n");
     @emit(
         "pub fn shapeOf"
-            + decl.name
+            + compiler.name(decl)!
             + "() -> string { return \""
             + fields
             + "\n"

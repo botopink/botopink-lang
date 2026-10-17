@@ -10,8 +10,10 @@ pub mod sched;
 import {text.shout};
 import {sched.stamped};
 
-fn tag(comptime decl: @Decl) {
-    @emit("pub fn tagged() -> string { return \"" + shout(decl.name) + "\"; }");
+fn tag(expr decl: unknown) {
+    @emit("pub fn tagged() -> string { return \""
+        + shout(compiler.name(decl)!)
+        + "\"; }");
 }
 
 #[tag]

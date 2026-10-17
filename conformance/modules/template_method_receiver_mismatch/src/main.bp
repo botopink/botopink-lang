@@ -8,11 +8,15 @@ behavior Named {
 
 type Robot(serial: i32)
 
-fn tag(comptime self: @Expr<Named>, comptime q: @Expr<string>) -> @Expr<string> {
-    return q.build("\"[" + q.text() + "] \" + " + self.text() + ".name()");
+fn tag(expr self: Named, expr q: string) -> string {
+    return compiler.build("\"["
+        + compiler.text(q)
+        + "] \" + "
+        + compiler.text(self)
+        + ".name()");
 }
 
 pub fn main() {
     val r = Robot(serial: 7);
-    @print(r.tag "vip");
+    @print(r.tag @`vip`);
 }

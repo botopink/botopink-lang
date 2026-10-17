@@ -6,9 +6,9 @@ fn passwordsMatch(a: Signup) -> bool {
     return a.password == a.confirm;
 }
 
-fn check<T>(comptime decl: @Decl<T>, comptime rule: @Expr<fn(v: T) -> bool>) {
-    if (rule.value(Signup(password: "a", confirm: "a")))
-        decl.setMeta(Check(rule: "holds"));
+fn check<T>(expr decl: T, comptime rule: fn(v: T) -> bool) {
+    if (rule(Signup(password: "a", confirm: "a")))
+        compiler.setMeta(Check(rule: "holds"));
 }
 
 #[check(passwordsMatch)]

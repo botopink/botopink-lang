@@ -1,8 +1,8 @@
 //// Decision 216 (4) — a type is no value: cataloguing types names the
 //// member each entry's `value` calls (`member: "describe"`).
 
-fn component(comptime decl: @Decl) {
-    decl.addMember("pub fn describe() -> string { return \"" + decl.name + "\"; }");
+fn component(expr decl: unknown) {
+    compiler.addMember("pub fn describe() -> string { return \"" + compiler.name(decl)! + "\"; }");
 }
 
 #[component]

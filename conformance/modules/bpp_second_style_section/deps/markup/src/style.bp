@@ -9,10 +9,12 @@ pub fn sized(size: i32) -> @Component<i32> {
 }
 
 #[bpp.style]
-pub fn css(comptime t: @Expr<string>) -> @ExprCustom<@Component<i32>> {
-    val text = t.text();
+pub fn css(expr t: string) -> @Component<i32> {
+    val text = compiler.text(t);
     val at = text.indexOf("!");
-    if (at >= 0) t.failAt(Span(at, at + 1, 1), "css: `!` is not a rule");
+    if (at >= 0)
+        compiler.fail("css: `!` is not a rule", at: t, span: Span(at, at
+            + 1, 1));
     val root = CustomNode(
         kind: "css",
         span: Span(0, 0, 1),
@@ -20,5 +22,6 @@ pub fn css(comptime t: @Expr<string>) -> @ExprCustom<@Component<i32>> {
         ref: null,
         children: [],
     );
-    return t.custom(root, t.build("sized(" + text.length().toString() + ")"));
+    compiler.custom(root);
+    return compiler.build("sized(" + text.length().toString() + ")");
 }

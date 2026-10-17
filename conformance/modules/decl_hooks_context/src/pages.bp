@@ -12,18 +12,20 @@ type Element(text: string) implement @Renderable
 
 pub val themeContext = comptime createContext(Theme(mode: "default"));
 
-fn contexts(comptime decl: @Decl) {
+fn contexts(expr decl: unknown) {
     var out: string[] = [];
-    decl.hooks.forEach({ n ->
-        n.uses.forEach({ u ->
-            val h = u.hook;
-            val c = u.context;
-            val hook = if (h == null) "null" else h.module + "." + h.name;
-            val ctx = if (c == null) "-" else c.module + "." + c.name;
-            out.push(n.function.name + ": " + hook + "(" + ctx + ")")
-        })
-    });
-    decl.setMeta(ContextUses(uses: out));
+    compiler
+        .hooks(decl)
+        .forEach({ n ->
+            n.uses.forEach({ u ->
+                val h = u.hook;
+                val c = u.context;
+                val hook = if (h == null) "null" else h.module + "." + h.name;
+                val ctx = if (c == null) "-" else c.module + "." + c.name;
+                out.push(n.function.name + ": " + hook + "(" + ctx + ")")
+            })
+        });
+    compiler.setMeta(ContextUses(uses: out));
 }
 
 fn Label() -> @Component<Element> {

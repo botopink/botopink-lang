@@ -5,5 +5,5 @@
 import looks from "looks";
 
 pub fn main() {
-    @print(looks "page");
+    @print(looks @`page`);
 }

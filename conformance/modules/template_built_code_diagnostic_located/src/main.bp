@@ -7,14 +7,14 @@
 pub type Box(w: i32, h: i32)
 
 // The built code is the literal's own text.
-pub fn code<T>(comptime q: @Expr<string>) -> @Expr<T> {
-    return q.build(q.text());
+pub fn code<T>(expr q: string) -> T {
+    return compiler.build(compiler.text(q));
 }
 
 pub fn main() {
     val boxes = [Box(w: 2, h: 3)];
-    val widths = code "boxes.map({ r -> r.w })";
-    val depths = code "boxes.map({ r -> r.d })";
+    val widths = code @`boxes.map({ r -> r.w })`;
+    val depths = code @`boxes.map({ r -> r.d })`;
     @print(widths);
     @print(depths);
 }

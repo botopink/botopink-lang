@@ -14,7 +14,7 @@ fn Greeting(props: type(name: string, greeting: string = "Hello")) -> string {
 }
 
 pub fn main() {
-    @print(tag "Greeting name=Partner");
-    @print(tag "Greeting greeting=Howdy name=Partner");
+    @print(tag @`Greeting name=Partner`);
+    @print(tag @`Greeting greeting=Howdy name=Partner`);
     @print(Greeting(name: "Bob"));
 }

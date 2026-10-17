@@ -3,8 +3,8 @@
 //// A parameter without it is refused at the parameter, where the decorator is
 //// declared.
 
-fn route(comptime decl: @Decl, path: string) {
-    decl.setMeta(Route(path: path));
+fn route(expr decl: unknown, path: string) {
+    compiler.setMeta(Route(path: path));
 }
 
 pub fn main() {

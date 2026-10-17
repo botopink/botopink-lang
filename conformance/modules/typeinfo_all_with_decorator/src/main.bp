@@ -1,5 +1,5 @@
-fn route(comptime decl: @Decl, comptime path: @Expr<string>) {
-    decl.setMeta(Route(path: path.value));
+fn route(expr decl: unknown, comptime path: string) {
+    compiler.setMeta(Route(path: path));
 }
 
 #[route("/about")]

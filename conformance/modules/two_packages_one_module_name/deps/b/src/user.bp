@@ -16,7 +16,7 @@ pub fn describeB() -> string {
         + n.size.toString()
         + n.unit
         + " "
-        + tag("y")
+        + tag @`y`
         + " "
         + early;
 }

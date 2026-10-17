@@ -4,8 +4,8 @@
 //// Each entry names its function's declared return type (`returnTypeName`,
 //// decision 256), the key a catalogue of providers is built by.
 
-fn job(comptime decl: @Decl) {
-    decl.setMeta(Job(kind: "job"));
+fn job(expr decl: unknown) {
+    compiler.setMeta(Job(kind: "job"));
 }
 
 #[job]

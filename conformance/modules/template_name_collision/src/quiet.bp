@@ -1,7 +1,7 @@
 //// The other module exporting a template named `tag`.
 
-pub fn tag(comptime q: @Expr<string>) -> @Expr<string> {
-    return q.build("\"quiet\"");
+pub fn tag(expr q: string) -> string {
+    return compiler.build("\"quiet\"");
 }
 
 pub fn marker() -> string {

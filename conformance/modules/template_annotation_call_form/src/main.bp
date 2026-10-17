@@ -3,12 +3,12 @@
 
 type Query(sql: string)
 
-fn sql(comptime q: @Expr<string>, comptime decl: @Decl) -> @Expr<string> {
-    decl.setMeta(Query(sql: q.text()));
-    return q.build("\"\"");
+fn sql(expr q: string, expr decl: unknown) -> string {
+    compiler.setMeta(Query(sql: compiler.text(q)));
+    return compiler.build("\"\"");
 }
 
-#[sql("select 1")]
+#[sql @`select 1`]
 fn one() -> i32 {
     return 1;
 }

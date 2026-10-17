@@ -7,11 +7,11 @@
 pub type Violation(field: string, message: string)
 
 fn check<T>(
-    comptime decl: @Decl<T>,
-    comptime message: @Expr<string>,
-    comptime rule: @Expr<fn(v: T) -> bool>,
+    expr decl: T,
+    expr message: string,
+    expr rule: fn(v: T) -> bool,
 ) {
-    decl.addMember("validate", fn(self: T) -> Violation[] {
+    compiler.addMember("validate", fn(self: T) -> Violation[] {
         if (rule(self)) return [];
         return [Violation(field: "confirm", message: message)];
     });

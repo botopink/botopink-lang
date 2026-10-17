@@ -17,9 +17,10 @@ fn helper(n: i32) -> i32 {
     return n;
 }
 
-fn describe(comptime q: @Expr<string>) -> @Expr<string> {
-    val found = q.lookup(q.text());
-    if (found == null) return q.build("\"" + q.text() + ": not in scope\"");
+fn describe(expr q: string) -> string {
+    val found = compiler.lookup(q, compiler.text(q));
+    if (found == null)
+        return compiler.build("\"" + compiler.text(q) + ": not in scope\"");
     val d = found;
     var kind = "other";
     if (d.kind == DeclKind.Type) kind = "type";
@@ -29,13 +30,13 @@ fn describe(comptime q: @Expr<string>) -> @Expr<string> {
     for (d.fields) { f ->
         text = text + " " + f.name + ":" + f.typeName;
     }
-    return q.build("\"" + text + "\"");
+    return compiler.build("\"" + text + "\"");
 }
 
 pub fn main() {
-    @print(describe "City");
-    @print(describe "Person");
-    @print(describe "Named");
-    @print(describe "helper");
-    @print(describe "Nobody");
+    @print(describe @`City`);
+    @print(describe @`Person`);
+    @print(describe @`Named`);
+    @print(describe @`helper`);
+    @print(describe @`Nobody`);
 }

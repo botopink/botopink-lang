@@ -7,29 +7,30 @@
 
 import {types.Type} from "std";
 
-fn entity<T>(comptime decl: @Decl<T>, comptime table: @Expr<string>) {
-    decl.setMeta(Entity(table: table.value));
+fn entity<T>(expr decl: T, comptime table: string) {
+    compiler.setMeta(Entity(table: table));
 }
 
 fn index<T>(
-    comptime decl: @Decl<T>,
-    comptime ..fields: @Expr<Type.Field<T>[]>,
+    expr decl: T,
+    comptime ..fields: Type.Field<T>[],
 ) {
-    decl.setMeta(
+    compiler.setMeta(
         Index(
-            columns: fields.value.map(
+            columns: fields.map(
                 { f -> f.name + ":" + f.typeName + ":" + f.annotations.length.toString() },
             ),
         ),
     );
 }
 
-fn unique<T>(comptime decl: @Decl<T>, comptime field: @Expr<Type.Field<T>>) {
-    decl.setMeta(Unique(column: field.value.name));
+fn unique<T>(expr decl: T, comptime field: Type.Field<T>) {
+    compiler.setMeta(Unique(column: field.name));
 }
 
-fn column<T>(comptime decl: @Decl<T>, comptime name: @Expr<string>) {
-    if (decl.kind != DeclKind.Field) decl.fail("#[column] annotates a field");
+fn column<T>(expr decl: T, comptime name: string) {
+    if (compiler.kind(decl) != DeclKind.Field)
+        compiler.fail("#[column] annotates a field", at: decl);
 }
 
 #[entity("cities")]

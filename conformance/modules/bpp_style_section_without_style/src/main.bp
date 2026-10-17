@@ -1,5 +1,5 @@
 import markup from "markup";
 
 pub fn main() {
-    @print(markup "abcd");
+    @print(markup @`abcd`);
 }

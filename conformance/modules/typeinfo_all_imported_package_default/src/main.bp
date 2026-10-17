@@ -6,5 +6,5 @@
 import cat from "cat";
 
 pub fn main() {
-    @print(cat "x");
+    @print(cat @`x`);
 }

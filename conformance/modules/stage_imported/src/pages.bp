@@ -8,18 +8,20 @@ import {ui};
 
 import {ui.label};
 
-fn stage(comptime decl: @Decl) {
+fn stage(expr decl: unknown) {
     var out: string[] = [];
-    decl.hooks.forEach({ n ->
-        val s = if (n.stage == Stage.Build)
-            "Build"
-        else if (n.stage == Stage.Run)
-            "Run"
-        else
-            "Any";
-        out.push(s)
-    });
-    decl.setMeta(Staged(name: decl.name, stages: out));
+    compiler
+        .hooks(decl)
+        .forEach({ n ->
+            val s = if (n.stage == Stage.Build)
+                "Build"
+            else if (n.stage == Stage.Run)
+                "Run"
+            else
+                "Any";
+            out.push(s)
+        });
+    compiler.setMeta(Staged(name: compiler.name(decl)!, stages: out));
 }
 
 #[stage]

@@ -5,18 +5,22 @@
 //// calling it through `is fn() -> T` is front 130's. A type's entry has no
 //// return type: `returnTypeName` is `""` (decision 256).
 
-fn service(comptime decl: @Decl) {
-    decl.setMeta(Service(role: "service"));
-    decl.addMember("pub fn make() -> string { return \"" + decl.name + "\"; }");
+fn service(expr decl: unknown) {
+    compiler.setMeta(Service(role: "service"));
+    compiler.addMember("pub fn make() -> string { return \""
+        + compiler.name(decl)!
+        + "\"; }");
 }
 
-fn repository(comptime decl: @Decl) {
-    decl.setMeta(Store(store: "sql"));
-    decl.addMember("pub fn make() -> string { return \"" + decl.name + "\"; }");
+fn repository(expr decl: unknown) {
+    compiler.setMeta(Store(store: "sql"));
+    compiler.addMember("pub fn make() -> string { return \""
+        + compiler.name(decl)!
+        + "\"; }");
 }
 
-fn audited(comptime decl: @Decl) {
-    decl.setMeta(Audited(audit: "yes"));
+fn audited(expr decl: unknown) {
+    compiler.setMeta(Audited(audit: "yes"));
 }
 
 #[service]

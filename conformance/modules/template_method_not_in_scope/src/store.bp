@@ -6,6 +6,9 @@ pub type Memory(prefix: string) {
     }
 }
 
-pub fn read(comptime self: @Expr<Memory>, comptime q: @Expr<string>) -> @Expr<string> {
-    return q.build(self.text() + ".fetch(\"" + q.text() + "\")");
+pub fn read(expr self: Memory, expr q: string) -> string {
+    return compiler.build(compiler.text(self)
+        + ".fetch(\""
+        + compiler.text(q)
+        + "\")");
 }
