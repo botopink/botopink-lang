@@ -11,6 +11,10 @@ from compiler_keyword import (add_compiler_imports, default_import_aliases, defa
 
 
 def rw(src):
+    return rewrite(src)[0]
+
+
+def rwi(src):
     return rewrite(src, imports=True)[0]
 
 
@@ -55,8 +59,8 @@ class ExprParam(unittest.TestCase):
                          "fn f(expr m: string) { g(message: m); }")
 
     def test_fail_at(self):
-        self.assertEqual(rw('fn f(comptime t: @Expr<string>) { t.failAt(Span(0, 1, 1), "no"); }'),
-                         'import {compiler.Span} from "std";\n\n'
+        self.assertEqual(rwi('fn f(comptime t: @Expr<string>) { t.failAt(Span(0, 1, 1), "no"); }'),
+                         'import {compiler, compiler.Span} from "std";\n\n'
                          'fn f(expr t: string) { compiler.fail("no", at: t, span: Span(0, 1, 1)); }')
 
     def test_value_and_fail_location_is_comptime(self):
@@ -109,10 +113,10 @@ class Templates(unittest.TestCase):
 
     def test_model_members_that_read_no_expr(self):
         self.assertEqual(
-            rw('fn f(comptime q: @Expr<string>) -> @Expr<string> {\n'
+            rwi('fn f(comptime q: @Expr<string>) -> @Expr<string> {\n'
                '    q.note("n");\n    val t = q.tagDecl(DeclKind.Element, "div", []);\n'
                '    val d = q.annotate(t, Span(start: 0, end: 1, line: 1));\n    return q.build("1");\n}\n'),
-            'import {compiler.DeclKind, compiler.Span} from "std";\n\n'
+            'import {compiler, compiler.DeclKind, compiler.Span} from "std";\n\n'
             'fn f(expr q: string) -> string {\n'
             '    compiler.note("n");\n    val t = compiler.tagDecl(DeclKind.Element, "div", []);\n'
             '    val d = compiler.annotate(t, Span(start: 0, end: 1, line: 1));\n    return compiler.build("1");\n}\n')
@@ -164,8 +168,8 @@ class DeclParam(unittest.TestCase):
                "    val m = decl.meta(Mark);\n"
                "    decl.module;\n"
                "}\n")
-        self.assertEqual(rw(src),
-                         'import {compiler.DeclKind} from "std";\n\n'
+        self.assertEqual(rwi(src),
+                         'import {compiler, compiler.DeclKind} from "std";\n\n'
                          "fn d(expr decl: unknown) {\n"
                          "    if (compiler.kind(decl) != DeclKind.Fn)\n"
                          "        compiler.fail(\n"
