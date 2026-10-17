@@ -220,7 +220,7 @@ test "js: enum ---- method using qualified enum member" {
         \\val Status = type {
         \\    Active,
         \\    Inactive,
-        \\    fn isDefault(s: Self) -> string {
+        \\    fn isDefault(s: Self) -> Status {
         \\        val current = Status.Active;
         \\        return current;
         \\    }

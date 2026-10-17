@@ -8680,6 +8680,17 @@ fn inferTypeMethods(
         const savedReturnWhole = env.returnWhole;
         defer env.returnWhole = savedReturnWhole;
         env.returnWhole = if (m.returnType) |rt| try resolveTypeRefInContext(env, rt, genericMap) else null;
+        // C1 — every `return <value>` of an annotated method unifies with its
+        // declared return, as a free fn's does; a member a decorator wrote
+        // (`decl.addMember`) is checked the same way.
+        const savedMethodReturnTarget = env.returnTarget;
+        const savedMethodBareIsVoid = env.returnBareIsVoid;
+        defer {
+            env.returnTarget = savedMethodReturnTarget;
+            env.returnBareIsVoid = savedMethodBareIsVoid;
+        }
+        env.returnTarget = if (env.returnWhole) |w| returnTargetFor(w, methodEffect, !env.inTemplateFn) else null;
+        env.returnBareIsVoid = env.returnTarget != null and (methodEffect == null or methodEffect.? == .result or methodEffect.? == .task);
 
         // 06 C9 — a method body is part of the strict contract, like a
         // `default fn` interface body (`inferInterfaceDefaultBodies`). The walk
