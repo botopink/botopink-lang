@@ -58,9 +58,7 @@ pub fn main() {
     (local $string i32)
     (local $__case_0 anyref)
     (local $n i32)
-    (local $__gc0 i32)
-    (local $__gc1 i32)
-    (local $__gc2 anyref)
+    (local $__gc0 anyref)
     (local $s (ref null $str))
     local.get $x
     local.set $__case_0
@@ -75,21 +73,14 @@ pub fn main() {
     local.set $n
     global.get $__s0
     local.get $n
-    local.set $__gc0
-    global.get $__heap_ptr
-    local.set $__gc1
-    local.get $__gc0
     call $__std_number_i32ToString
-    call $__lin_to_gc_str
-    local.get $__gc1
-    global.set $__heap_ptr
     call $__str_concat
       )
       (else
     local.get $__case_0
-    local.tee $__gc2
+    local.tee $__gc0
     ref.test (ref null $str)
-    local.get $__gc2
+    local.get $__gc0
     ref.is_null
     i32.eqz
     i32.and
@@ -113,9 +104,9 @@ pub fn main() {
   (func $show (param $x anyref) (result (ref null $str))
     (local $x__is0 i32)
     (local $x__is1 f64)
-    (local $__gc3 anyref)
+    (local $__gc1 anyref)
     (local $x__is2 (ref null $str))
-    (local $__gc4 anyref)
+    (local $__gc2 anyref)
     (local $x__is3 i32)
     local.get $x
     i32.const -2147483648
@@ -150,9 +141,9 @@ pub fn main() {
     )
     drop
     local.get $x
-    local.tee $__gc3
+    local.tee $__gc1
     ref.test (ref null $str)
-    local.get $__gc3
+    local.get $__gc1
     ref.is_null
     i32.eqz
     i32.and
@@ -170,9 +161,9 @@ pub fn main() {
     )
     drop
     local.get $x
-    local.tee $__gc4
+    local.tee $__gc2
     ref.test (ref null $box_bool)
-    local.get $__gc4
+    local.get $__gc2
     ref.is_null
     i32.eqz
     i32.and
@@ -1338,16 +1329,9 @@ pub fn main() {
     call $__write_bytes
   )
   (func $__print_i64_raw (param $v i64)
-    (local $t i32)
     local.get $v
-    call $__std_number_i64Text
-    local.set $t
-    local.get $t
-    i32.const 4
-    i32.add
-    local.get $t
-    i32.load
-    call $__write_bytes
+    call $__std_number_i64ToString
+    call $__print_str_raw
   )
   (func $__print_i64 (param $v i64)
     local.get $v
@@ -1355,86 +1339,14 @@ pub fn main() {
     call $__print_nl
   )
   (func $__print_u64_raw (param $v i64)
-    (local $t i32)
     local.get $v
-    call $__std_number_u64Text
-    local.set $t
-    local.get $t
-    i32.const 4
-    i32.add
-    local.get $t
-    i32.load
-    call $__write_bytes
+    call $__std_number_u64ToString
+    call $__print_str_raw
   )
   (func $__print_u64 (param $v i64)
     local.get $v
     call $__print_u64_raw
     call $__print_nl
-  )
-  (func $__gc_to_lin_str (param $s (ref null $str)) (result i32)
-    (local $n i32) (local $p i32) (local $i i32)
-    local.get $s
-    array.len
-    local.set $n
-    local.get $n
-    i32.const 4
-    i32.add
-    call $__alloc
-    local.set $p
-    local.get $p
-    local.get $n
-    i32.store
-    (block $brk
-      (loop $cont
-        local.get $i
-        local.get $n
-        i32.ge_u
-        br_if $brk
-        local.get $p
-        local.get $i
-        i32.add
-        local.get $s
-        local.get $i
-        array.get_u $str
-        i32.store8 offset=4
-        local.get $i
-        i32.const 1
-        i32.add
-        local.set $i
-        br $cont
-      )
-    )
-    local.get $p
-  )
-  (func $__lin_to_gc_str (param $p i32) (result (ref null $str))
-    (local $r (ref null $str)) (local $n i32) (local $i i32)
-    local.get $p
-    i32.load
-    local.set $n
-    local.get $n
-    array.new_default $str
-    local.set $r
-    (block $brk
-      (loop $cont
-        local.get $i
-        local.get $n
-        i32.ge_u
-        br_if $brk
-        local.get $r
-        local.get $i
-        local.get $p
-        local.get $i
-        i32.add
-        i32.load8_u offset=4
-        array.set $str
-        local.get $i
-        i32.const 1
-        i32.add
-        local.set $i
-        br $cont
-      )
-    )
-    local.get $r
   )
   ;; std-wasm (decision 440): its functions, transpiled from std_wasm.wasm
   (global $__std_sp (mut i32) (i32.const 8816))
@@ -1458,17 +1370,105 @@ pub fn main() {
   ;; __std_f55 — from std_wasm.wasm (sha256 440c634a9e36)
   ;; __std_f56 — from std_wasm.wasm (sha256 cb1fdd37c963)
   ;; __std_f57 — from std_wasm.wasm (sha256 108fd54ec388)
-  ;; __std_f58 — from std_wasm.wasm (sha256 3fe867e565e7)
-  ;; __std_f59 — from std_wasm.wasm (sha256 432c7dfb021a)
   ;; std:number.floatToString — from std_wasm.wasm (sha256 132a8bca308b)
-  ;; __std_f466 — from std_wasm.wasm (sha256 fbcbd5636368)
-  ;; std:number.u64Text — from std_wasm.wasm (sha256 49ad3d3e0903)
-  ;; __std_f474 — from std_wasm.wasm (sha256 9bce870e6828)
-  ;; std:number.i64Text — from std_wasm.wasm (sha256 ea7d7630a94e)
-  ;; std:number.i32ToString — from std_wasm.wasm (sha256 d813d5dcc272)
   ;; __std_f532 — from std_wasm.wasm (sha256 4c40dff46753)
   ;; __std_f533 — from std_wasm.wasm (sha256 4d190b081720)
   ;; __std_f534 — from std_wasm.wasm (sha256 94fc71de7e06)
+  ;; std-wasm's .wat leaves (front 164 s3)
+  (func $__std_number_i32ToString (param $v i32) (result (ref null $str))
+    local.get $v
+    i64.extend_i32_s
+    call $__std_number_i64ToString
+  )
+  (func $__std_number_i64ToString (param $v i64) (result (ref null $str))
+    local.get $v
+    i64.const 0
+    i64.lt_s
+    (if (result (ref null $str))
+      (then
+        i64.const 0
+        local.get $v
+        i64.sub
+        i32.const 1
+        call $__std_number_decimal
+      )
+      (else
+        local.get $v
+        i32.const 0
+        call $__std_number_decimal
+      )
+    )
+  )
+  (func $__std_number_u64ToString (param $v i64) (result (ref null $str))
+    local.get $v
+    i32.const 0
+    call $__std_number_decimal
+  )
+  (func $__std_number_decimal (param $mag i64) (param $neg i32) (result (ref null $str))
+    (local $n i32)
+    (local $i i32)
+    (local $t i64)
+    (local $out (ref null $str))
+    local.get $mag
+    local.set $t
+    (block $counted
+      (loop $count
+        local.get $n
+        i32.const 1
+        i32.add
+        local.set $n
+        local.get $t
+        i64.const 10
+        i64.div_u
+        local.tee $t
+        i64.eqz
+        br_if $counted
+        br $count
+      )
+    )
+    local.get $n
+    local.get $neg
+    i32.add
+    local.tee $i
+    array.new_default $str
+    local.set $out
+    local.get $mag
+    local.set $t
+    (block $filled
+      (loop $fill
+        local.get $i
+        i32.const 1
+        i32.sub
+        local.set $i
+        local.get $out
+        local.get $i
+        local.get $t
+        i64.const 10
+        i64.rem_u
+        i32.wrap_i64
+        i32.const 48
+        i32.add
+        array.set $str
+        local.get $t
+        i64.const 10
+        i64.div_u
+        local.tee $t
+        i64.eqz
+        br_if $filled
+        br $fill
+      )
+    )
+    local.get $neg
+    (if
+      (then
+        local.get $out
+        i32.const 0
+        i32.const 45
+        array.set $str
+      )
+    )
+    local.get $out
+  )
   (data $__d0 "number ")
   (global $__s0 (mut (ref null $str)) (ref.null $str))
   (data $__d1 "text ")

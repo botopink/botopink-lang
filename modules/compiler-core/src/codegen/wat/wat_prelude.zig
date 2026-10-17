@@ -2186,6 +2186,16 @@ const gc_print_f64_raw = typedFunc("__print_f64_raw", &.{.{ .name = "x", .ty = .
     .{ .global_set = heap },
 });
 
+/// The GC forms of `$__print_i64_raw` / `$__print_u64_raw` (front 164 s3 P2-a):
+/// the digits are the `.wat` leaf's `$str` (`number.i64ToString` /
+/// `number.u64ToString`), written through `$__print_str_raw`.
+const gc_print_i64_raw = typedFunc("__print_i64_raw", &.{p64("v")}, null, &.{}, &.{
+    get("v"), call(stdSymbol("number.i64ToString")), call("__print_str_raw"),
+});
+const gc_print_u64_raw = typedFunc("__print_u64_raw", &.{p64("v")}, null, &.{}, &.{
+    get("v"), call(stdSymbol("number.u64ToString")), call("__print_str_raw"),
+});
+
 /// `a + b` over GC strings: a fresh array holding both.
 const gc_str_concat = typedFunc("__str_concat", &.{ pref("a"), pref("b") }, gc_str_ref, &.{ sref("r"), l32("alen"), l32("blen") }, &.{
     get("a"),    str_len,     set("alen"), get("b"),    str_len,
@@ -2801,7 +2811,9 @@ pub fn gcItems(g: ast.HelperGroup, capture: bool) ?[]const ast.Item {
         // `$__print_tagged_raw` is generated, and asks no module's `display`
         // hook: a record's own `display` is called by its printer.
         .display_of => &.{},
-        .print_bool, .alloc, .i32_abs, .i32_min, .i32_max, .print_i64, .print_u64 => items(g),
+        .print_bool, .alloc, .i32_abs, .i32_min, .i32_max => items(g),
+        .print_i64 => &.{ .{ .func = gc_print_i64_raw }, .{ .func = print_i64 } },
+        .print_u64 => &.{ .{ .func = gc_print_u64_raw }, .{ .func = print_u64 } },
         .int_chk => &gc_int_chk_items,
         .i32_range_chk => &.{.{ .func = gc_i32_range_chk }},
         .i64_range_chk => &.{.{ .func = gc_i64_range_chk }},
@@ -2840,6 +2852,7 @@ pub fn gcSlotted(g: ast.HelperGroup) bool {
 pub fn gcDeps(g: ast.HelperGroup) []const ast.HelperGroup {
     return switch (g) {
         .print_str, .print_f64, .text_capture, .panic_fail => &.{.alloc},
+        .print_i64, .print_u64 => &.{ .print_str, .alloc },
         else => &.{},
     };
 }

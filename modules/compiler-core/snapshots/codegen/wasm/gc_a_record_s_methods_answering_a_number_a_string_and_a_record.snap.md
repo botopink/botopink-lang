@@ -685,16 +685,9 @@ pub fn main() {
     call $__write_bytes
   )
   (func $__print_i64_raw (param $v i64)
-    (local $t i32)
     local.get $v
-    call $__std_number_i64Text
-    local.set $t
-    local.get $t
-    i32.const 4
-    i32.add
-    local.get $t
-    i32.load
-    call $__write_bytes
+    call $__std_number_i64ToString
+    call $__print_str_raw
   )
   (func $__print_i64 (param $v i64)
     local.get $v
@@ -860,16 +853,9 @@ pub fn main() {
     local.get $r
   )
   (func $__print_u64_raw (param $v i64)
-    (local $t i32)
     local.get $v
-    call $__std_number_u64Text
-    local.set $t
-    local.get $t
-    i32.const 4
-    i32.add
-    local.get $t
-    i32.load
-    call $__write_bytes
+    call $__std_number_u64ToString
+    call $__print_str_raw
   )
   (func $__print_u64 (param $v i64)
     local.get $v
@@ -903,15 +889,100 @@ pub fn main() {
   ;; __std_f55 — from std_wasm.wasm (sha256 440c634a9e36)
   ;; __std_f56 — from std_wasm.wasm (sha256 cb1fdd37c963)
   ;; __std_f57 — from std_wasm.wasm (sha256 108fd54ec388)
-  ;; __std_f58 — from std_wasm.wasm (sha256 3fe867e565e7)
-  ;; __std_f59 — from std_wasm.wasm (sha256 432c7dfb021a)
   ;; std:number.floatToString — from std_wasm.wasm (sha256 132a8bca308b)
-  ;; std:number.u64Text — from std_wasm.wasm (sha256 49ad3d3e0903)
-  ;; __std_f474 — from std_wasm.wasm (sha256 9bce870e6828)
-  ;; std:number.i64Text — from std_wasm.wasm (sha256 ea7d7630a94e)
   ;; __std_f532 — from std_wasm.wasm (sha256 4c40dff46753)
   ;; __std_f533 — from std_wasm.wasm (sha256 4d190b081720)
   ;; __std_f534 — from std_wasm.wasm (sha256 94fc71de7e06)
+  ;; std-wasm's .wat leaves (front 164 s3)
+  (func $__std_number_i64ToString (param $v i64) (result (ref null $str))
+    local.get $v
+    i64.const 0
+    i64.lt_s
+    (if (result (ref null $str))
+      (then
+        i64.const 0
+        local.get $v
+        i64.sub
+        i32.const 1
+        call $__std_number_decimal
+      )
+      (else
+        local.get $v
+        i32.const 0
+        call $__std_number_decimal
+      )
+    )
+  )
+  (func $__std_number_u64ToString (param $v i64) (result (ref null $str))
+    local.get $v
+    i32.const 0
+    call $__std_number_decimal
+  )
+  (func $__std_number_decimal (param $mag i64) (param $neg i32) (result (ref null $str))
+    (local $n i32)
+    (local $i i32)
+    (local $t i64)
+    (local $out (ref null $str))
+    local.get $mag
+    local.set $t
+    (block $counted
+      (loop $count
+        local.get $n
+        i32.const 1
+        i32.add
+        local.set $n
+        local.get $t
+        i64.const 10
+        i64.div_u
+        local.tee $t
+        i64.eqz
+        br_if $counted
+        br $count
+      )
+    )
+    local.get $n
+    local.get $neg
+    i32.add
+    local.tee $i
+    array.new_default $str
+    local.set $out
+    local.get $mag
+    local.set $t
+    (block $filled
+      (loop $fill
+        local.get $i
+        i32.const 1
+        i32.sub
+        local.set $i
+        local.get $out
+        local.get $i
+        local.get $t
+        i64.const 10
+        i64.rem_u
+        i32.wrap_i64
+        i32.const 48
+        i32.add
+        array.set $str
+        local.get $t
+        i64.const 10
+        i64.div_u
+        local.tee $t
+        i64.eqz
+        br_if $filled
+        br $fill
+      )
+    )
+    local.get $neg
+    (if
+      (then
+        local.get $out
+        i32.const 0
+        i32.const 45
+        array.set $str
+      )
+    )
+    local.get $out
+  )
   (data $__d0 "integer overflow: + on i32 at main.bp:3:23")
   (global $__s0 (mut (ref null $str)) (ref.null $str))
   (data $__d1 "!")

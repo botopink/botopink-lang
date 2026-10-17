@@ -1150,7 +1150,7 @@ fn main() {
   )
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
-  (global $__heap_ptr (mut i32) (i32.const 320))
+  (global $__heap_ptr (mut i32) (i32.const 256))
   (func $collect (param $xs (ref null $arr_i32)) (result (ref null $arr_any))
     (local $__mem0 i32)
     (local $out (ref null $arr_any))
@@ -1160,8 +1160,6 @@ fn main() {
     (local $__acc0 i32)
     (local $x i32)
     (local $doubled i32)
-    (local $__gc0 i32)
-    (local $__gc1 i32)
     array.new_fixed $arr_any 0
     local.set $out
     local.get $out
@@ -1195,14 +1193,7 @@ fn main() {
     local.get $out
     global.get $__s2
     local.get $doubled
-    local.set $__gc0
-    global.get $__heap_ptr
-    local.set $__gc1
-    local.get $__gc0
     call $__std_number_i32ToString
-    call $__lin_to_gc_str
-    local.get $__gc1
-    global.set $__heap_ptr
     call $__str_concat
     call $__arr_push_any
     local.set $out
@@ -1862,92 +1853,101 @@ fn main() {
     )
     local.get $r
   )
-  (func $__gc_to_lin_str (param $s (ref null $str)) (result i32)
-    (local $n i32) (local $p i32) (local $i i32)
-    local.get $s
-    array.len
-    local.set $n
-    local.get $n
-    i32.const 4
-    i32.add
-    call $__alloc
-    local.set $p
-    local.get $p
-    local.get $n
-    i32.store
-    (block $brk
-      (loop $cont
-        local.get $i
-        local.get $n
-        i32.ge_u
-        br_if $brk
-        local.get $p
-        local.get $i
-        i32.add
-        local.get $s
-        local.get $i
-        array.get_u $str
-        i32.store8 offset=4
-        local.get $i
-        i32.const 1
-        i32.add
-        local.set $i
-        br $cont
-      )
-    )
-    local.get $p
-  )
-  (func $__lin_to_gc_str (param $p i32) (result (ref null $str))
-    (local $r (ref null $str)) (local $n i32) (local $i i32)
-    local.get $p
-    i32.load
-    local.set $n
-    local.get $n
-    array.new_default $str
-    local.set $r
-    (block $brk
-      (loop $cont
-        local.get $i
-        local.get $n
-        i32.ge_u
-        br_if $brk
-        local.get $r
-        local.get $i
-        local.get $p
-        local.get $i
-        i32.add
-        i32.load8_u offset=4
-        array.set $str
-        local.get $i
-        i32.const 1
-        i32.add
-        local.set $i
-        br $cont
-      )
-    )
-    local.get $r
-  )
   (func $__chk_fail (param $site (ref null $str))
     local.get $site
     call $__panic_fail
     unreachable
   )
-  ;; std-wasm (decision 440): its functions, transpiled from std_wasm.wasm
-  (global $__std_sp (mut i32) (i32.const 320))
-  (func $__std_sp_check (param $sp i32) (result i32)
-    local.get $sp
-    i32.const 256
-    i32.lt_s
-    (if
-      (then unreachable)
-    )
-    local.get $sp
+  ;; std-wasm's .wat leaves (front 164 s3)
+  (func $__std_number_i32ToString (param $v i32) (result (ref null $str))
+    local.get $v
+    i64.extend_i32_s
+    call $__std_number_i64ToString
   )
-  ;; __std_f4 — from std_wasm.wasm (sha256 b4b6f06748d6)
-  ;; __std_f58 — from std_wasm.wasm (sha256 3fe867e565e7)
-  ;; __std_f59 — from std_wasm.wasm (sha256 432c7dfb021a)
-  ;; __std_f466 — from std_wasm.wasm (sha256 fbcbd5636368)
-  ;; std:number.i32ToString — from std_wasm.wasm (sha256 d813d5dcc272)
+  (func $__std_number_decimal (param $mag i64) (param $neg i32) (result (ref null $str))
+    (local $n i32)
+    (local $i i32)
+    (local $t i64)
+    (local $out (ref null $str))
+    local.get $mag
+    local.set $t
+    (block $counted
+      (loop $count
+        local.get $n
+        i32.const 1
+        i32.add
+        local.set $n
+        local.get $t
+        i64.const 10
+        i64.div_u
+        local.tee $t
+        i64.eqz
+        br_if $counted
+        br $count
+      )
+    )
+    local.get $n
+    local.get $neg
+    i32.add
+    local.tee $i
+    array.new_default $str
+    local.set $out
+    local.get $mag
+    local.set $t
+    (block $filled
+      (loop $fill
+        local.get $i
+        i32.const 1
+        i32.sub
+        local.set $i
+        local.get $out
+        local.get $i
+        local.get $t
+        i64.const 10
+        i64.rem_u
+        i32.wrap_i64
+        i32.const 48
+        i32.add
+        array.set $str
+        local.get $t
+        i64.const 10
+        i64.div_u
+        local.tee $t
+        i64.eqz
+        br_if $filled
+        br $fill
+      )
+    )
+    local.get $neg
+    (if
+      (then
+        local.get $out
+        i32.const 0
+        i32.const 45
+        array.set $str
+      )
+    )
+    local.get $out
+  )
+  (func $__std_number_i64ToString (param $v i64) (result (ref null $str))
+    local.get $v
+    i64.const 0
+    i64.lt_s
+    (if (result (ref null $str))
+      (then
+        i64.const 0
+        local.get $v
+        i64.sub
+        i32.const 1
+        call $__std_number_decimal
+      )
+      (else
+        local.get $v
+        i32.const 0
+        call $__std_number_decimal
+      )
+    )
+  )
   (data $__d0 "start")
   (global $__s0 (mut (ref null $str)) (ref.null $str))
   (data $__d1 "integer overflow: * on i32 at main.bp:27:25")

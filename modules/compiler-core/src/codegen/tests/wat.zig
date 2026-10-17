@@ -294,6 +294,58 @@ test "wat: front 164 s3 P1-b ---- a String method bound by fn: runs its private 
     , o.result.run_output orelse "");
 }
 
+// Front 164 s3 P2-a — an integer's text is the `.wat` leaves'
+// (`number.i32ToString`, `number.i64ToString`, `number.u64ToString`) in a GC
+// module: `@print` of an `i64` / `u64` writes the leaf's `$str`, a `toString`
+// calls it, and no digit goes through linear memory.
+test "wat: front 164 s3 ---- an integer's text is the number leaves in a GC module" {
+    const io = std.testing.io;
+    const alloc = std.testing.allocator;
+    var outputs = try h.generate(alloc, &.{.{ .path = "", .source =
+        \\fn main() {
+        \\    val lo: i64 = -9223372036854775807 - 1;
+        \\    val hi: i64 = 9223372036854775807;
+        \\    val big: u64 = 18446744073709551615;
+        \\    val mid: u64 = 9223372036854775808;
+        \\    val z: i64 = 0;
+        \\    val one: i64 = -1;
+        \\    @print(lo);
+        \\    @print(hi);
+        \\    @print(big);
+        \\    @print(mid);
+        \\    @print(z);
+        \\    @print(one);
+        \\    @print(lo.toString());
+        \\    @print(big.toString());
+        \\    val n: i32 = -2147483648;
+        \\    @print(n.toString());
+        \\    @print(n);
+        \\}
+    }}, io, h.configs[3]);
+    defer {
+        for (outputs.items) |*o| o.result.deinit(alloc);
+        outputs.deinit(alloc);
+    }
+    const o = for (outputs.items) |o| {
+        if (std.mem.eql(u8, o.name, "") or std.mem.eql(u8, o.name, "main")) break o;
+    } else return error.ModuleDidNotCompile;
+    if (o.result.diagnostic) |d| switch (d) {
+        .type => |t| std.debug.print("\n=== refused: {s}\n", .{t.message}),
+        .syntax => {},
+    };
+    const wat_text = o.result.js;
+    for ([_][]const u8{ "i64ToString", "u64ToString", "i32ToString" }) |leaf| {
+        var buf: [64]u8 = undefined;
+        try std.testing.expect(std.mem.indexOf(u8, wat_text, try std.fmt.bufPrint(&buf, "(func $__std_number_{s} ", .{leaf})) != null);
+    }
+    try std.testing.expect(std.mem.indexOf(u8, wat_text, "i64Text") == null);
+    try std.testing.expect(std.mem.indexOf(u8, wat_text, "__gc_to_lin_str") == null);
+    try std.testing.expectEqualStrings(
+        "-9223372036854775808\n9223372036854775807\n18446744073709551615\n9223372036854775808\n0\n-1\n-9223372036854775808\n18446744073709551615\n-2147483648\n-2147483648\n",
+        o.result.run_output orelse "",
+    );
+}
+
 test "wat: record construct two fields" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\type Point(x: i32, y: i32)

@@ -1855,6 +1855,13 @@ fn emitWatPass(
     // number: each group's std-wasm functions are the module's too.
     for (prelude.order) |group| {
         if (!em.b.helpers.has(group)) continue;
+        // A GC module's integer printers call the `.wat` leaves (front 164 s3
+        // P2-a), not std-wasm's linear workspace.
+        if (em.mode == .gc and (group == .print_i64 or group == .print_u64)) {
+            const leaf = if (group == .print_i64) "number.i64ToString" else "number.u64ToString";
+            try em.std_leaves.put(em.alloc, leaf, stdLeaves.find(leaf).?);
+            continue;
+        }
         for (group.stdCalls()) |name| try em.std_exports.put(em.alloc, name, {});
     }
     // Decision 440 (2) — std-wasm's functions call the program's allocator.
@@ -1907,7 +1914,7 @@ fn emitWatPass(
             // The groups whose GC form names `$str` need the type group, though
             // no local of the module is a string.
             switch (group) {
-                .print_str, .print_f64, .str_concat, .str_eq, .text_capture, .std_marshal, .panic_fail, .print_shaped => em.gc_str_used = true,
+                .print_str, .print_f64, .str_concat, .str_eq, .text_capture, .std_marshal, .panic_fail, .print_shaped, .print_i64, .print_u64 => em.gc_str_used = true,
                 else => {},
             }
             continue;
@@ -9253,9 +9260,6 @@ const Emitter = struct {
     fn gcStdSig(name: []const u8) ?struct { params: []const GcStd, result: GcStd } {
         const Sig = struct { []const u8, []const GcStd, GcStd };
         const sigs = [_]Sig{
-            .{ "number.i32ToString", &.{.i32}, .string },
-            .{ "number.i64ToString", &.{.i64}, .string },
-            .{ "number.u64ToString", &.{.i64}, .string },
             .{ "text.slice", &.{ .string, .i32, .i32 }, .string },
             // `Bytes` is a string's layout.
             .{ "bytes.slice", &.{ .bytes, .i32, .i32 }, .bytes },

@@ -1116,7 +1116,7 @@ of the model, `call` of another leaf by its `$<module>.<function>`. A leaf names
 reference is `(ref null …)`. A `(type …)` or `(rec …)` form is refused at the declaration, and so is
 anything the model has no node for (a memory instruction, a numeric local or label, a flat
 `block … end`): a located error, `modules/std-wasm/wat/<file>:<line>:<col>: <message>`. Today's
-leaves: `text.length`, `text.charCodeAt`, `text.byteLength`, `text.byteAt`, `text.byteSlice` and `text.fromCodepoint` (`text.wat`); the unit test `std_leaves: every leaf
+leaves: `text.length`, `text.charCodeAt`, `text.byteLength`, `text.byteAt`, `text.byteSlice` and `text.fromCodepoint` (`text.wat`), `number.i32ToString`, `number.i64ToString` and `number.u64ToString` (`number.wat`, with their internal body `number.decimal`; a GC module's `print_i64` / `print_u64` groups register the two 64-bit leaves and write their `$str` through `$__print_str_raw`, so the groups need `print_str`, `gcDeps`, and link no `number.i64Text`); the unit test `std_leaves: every leaf
 reads` reads each against the codegen's type names.
 
 ## What stays in `wat_prelude` (decision 442, front 144 B-00g)

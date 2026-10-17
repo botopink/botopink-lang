@@ -23,7 +23,7 @@ is `(func $<module>.<function> …)` over the codegen's GC types, named and neve
 (`codegen/wat/wat_reader.zig`, `std_leaves.zig`) into a WasmGC program that calls it, under the same
 `std:` cell. A `std:` name that is a leaf and still an export of `root.exports` is the leaf's in a
 WasmGC module and the export's in linear memory and at comptime, until nothing uses the export.
-Today's leaves (`wat/text.wat`):
+Today's leaves (`wat/text.wat`, `wat/number.wat`):
 
 | Leaf | Signature over the codegen's types | Answers |
 |---|---|---|
@@ -33,6 +33,9 @@ Today's leaves (`wat/text.wat`):
 | `text.byteAt` | `($str, i32) -> i32` | the byte at a byte index, `-1` for a negative index or one past the end |
 | `text.byteSlice` | `($str, i32, i32) -> $str` | the bytes `a` to `b`, each clamped to `0..length`, an end before the start the start |
 | `text.fromCodepoint` | `(i32) -> $str` | the one to four UTF-8 bytes of a scalar value; a value that is none traps |
+| `number.i32ToString` | `(i32) -> $str` | the decimal text, a `-` first for a negative |
+| `number.i64ToString` | `(i64) -> $str` | the decimal text; `i64::MIN` through its wrapped magnitude, read unsigned |
+| `number.u64ToString` | `(i64) -> $str` | the carrier's 64 bits read unsigned (decision 319) |
 
 `text.byteLength`, `text.byteAt` and `text.byteSlice` are bound by `declare fn`s of `primitives.bp`'s trailing
 section `the wasm bodies (front 164 s3)` (`stringByteLength`, `stringByteAt`, `stringByteSlice`), which the private
@@ -43,6 +46,11 @@ after s2 P5 (decision 566), and the wasm codegen then lowers it to the body (dec
 so those methods still call the exports of `text.zig` below. Each leaf has a twin export of the same name and types in
 `wasm.zig` / `root.exports` / `term_faces.zig`, so a module that falls back to linear memory still builds. The twins go when nothing
 uses the exports (s3 P6). `text.fromCodepoint` is a leaf and keeps its export.
+
+The three `number.*ToString` leaves share the body `number.decimal(magnitude: i64, neg: i32)` (an internal function of
+`number.wat`, not a `std:` name), and each has its twin export already (`wasm.zig`, `root.program`). A GC module calls
+them with no marshal (`gcStdSig` has no row for them), and its `$__print_i64_raw` / `$__print_u64_raw` write the leaf's
+`$str` through `$__print_str_raw`; `number.i64Text` / `u64Text` (the linear workspace) stay for a linear module until s3 P5.
 
 ## Two value representations (decision 450 (4))
 
