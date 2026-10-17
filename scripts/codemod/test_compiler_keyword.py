@@ -80,7 +80,7 @@ class Templates(unittest.TestCase):
                '    for (q.parts()) { p -> p; }\n'
                '    return q.build("\\"\\"");\n}\n'),
             'fn f(expr q: string) -> string {\n'
-            '    for (compiler.parts(q)) { p -> p; }\n'
+            '    for (q.parts()) { p -> p; }\n'
             '    return compiler.build("\\"\\"");\n}\n')
 
     def test_expr_builtin_dropped(self):
@@ -99,6 +99,13 @@ class Templates(unittest.TestCase):
         new, _, und = rewrite("fn m(comptime t: @Expr<string>) -> @ExprCustom<i32> { val c = t.custom(r, x); }")
         self.assertIn("t.custom(r, x)", new)
         self.assertEqual(len(und), 1)
+
+    def test_parts_is_undecided(self):
+        new, _, und = rewrite("fn f(comptime q: @Expr<string>) -> @Expr<string> {\n    for (q.parts()) { p -> p; }\n}\n")
+        self.assertIn("for (q.parts())", new)
+        self.assertEqual(len(und), 1)
+        self.assertEqual(und[0][0], 2)
+        self.assertIn("577 (5)", und[0][1])
 
     def test_model_members_that_read_no_expr(self):
         self.assertEqual(

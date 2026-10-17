@@ -906,7 +906,7 @@ python3 scripts/codemod/test_compiler_keyword.py
   otherwise only fails at it (each read dropped; `x is type` counts as a value read; an unread one is
   `comptime` too), else `expr x: T`. `x.text()` →
   `compiler.text(x)`, `x.fail(m)` → `compiler.fail(m, at: x)`, `x.failAt(s, m)` → `compiler.fail(m, at:
-  x, span: s)`, the template model `x.<m>(…)` (`parts`, `source`, `context`, `lookup`, `bindings`)
+  x, span: s)`, the template model `x.<m>(…)` (`source`, `context`, `lookup`, `bindings`; `x.parts()` is UNDECIDED, 577 (5) removed it)
   → `compiler.<m>(x, …)`, `x.build` / `note` / `tagDecl` / `annotate(…)` → `compiler.<m>(…)` (576 (2)), `return x.custom(ast, code);` →
   `compiler.custom(ast); return code;`.
 - **A parameter typed `@Decl`** becomes `expr d: unknown` (`@Decl<T>` → `expr d: T`); `d.name` →

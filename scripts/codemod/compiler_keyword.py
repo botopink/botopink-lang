@@ -10,8 +10,9 @@ keyword `compiler`; a parameter says how its argument arrives (`comptime` /
     x.text()                      ->  compiler.text(x)
     x.fail(m)                     ->  compiler.fail(m, at: x)
     x.failAt(span, m)             ->  compiler.fail(m, at: x, span: span)
-    x.<m>(…)                      ->  compiler.<m>(x, …)     (the template model: parts, source,
-                                                              context, lookup, bindings)
+    x.<m>(…)                      ->  compiler.<m>(x, …)     (the template model: source,
+                                                              context, lookup, bindings; `x.parts()`
+                                                              is UNDECIDED, 577 (5))
     x.<m>(…)                      ->  compiler.<m>(…)        (build, note, tagDecl, annotate: 576 (2))
     @expr(v)                      ->  v
     -> @Expr<T> / -> @ExprCustom<T>   ->  -> T  (578; the template's first parameter, after
@@ -68,7 +69,7 @@ SKIP_CELLS = ("conformance/modules/removed_type_bare_param/", "conformance/modul
 KEEP_TEMPLATE_CALLS = ("conformance/modules/expr_call_outside_expr/",)
 SKIP_DIRS = {".botopinkbuild", "node_modules", "out", "zig-out", ".zig-cache", ".git", "snapshot"}
 
-TEMPLATE_MODEL = ("parts", "source", "context", "lookup", "bindings")
+TEMPLATE_MODEL = ("source", "context", "lookup", "bindings")
 # 576 (2): these do not read the expr they were called on.
 TEMPLATE_MODEL_NO_EXPR = ("build", "note", "tagDecl", "annotate")
 # A local bound from one of these holds a declaration handle.
@@ -845,6 +846,10 @@ class Run:
                 self.undecided.append((self.line_of(p), "`%s.value` on an `expr` parameter" % name))
             return
         if self.plan_common(p, name, mem):
+            return
+        if call is not None and member == "parts":
+            self.undecided.append((self.line_of(p), "`%s.parts()`: 577 (5): parse the holes from compiler.text(%s)"
+                                   % (name, name)))
             return
         if call is not None and member in TEMPLATE_MODEL_NO_EXPR:
             self.add(p, call, "q.<m>(…) -> compiler.<m>(…) (build, note, tagDecl, annotate)",
