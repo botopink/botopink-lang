@@ -3587,6 +3587,12 @@ the outputs a decorator's only (`compiler-output-outside-decorator`):
 | an associated type | `compiler.addType("Columns", compiler.buildType("(name: string)"))` — a type built from its text (decision 578 (3)) | `City.Columns` in a type position, `City.Columns(name: "n")`, imported with its owner |
 | the program's catalogue | (every declaration a decorator runs over) | `@TypeInfo.all(with: entity)` at an entry point (`compiler.catalogue(with: entity)` is the same query) |
 
+A marker is a decorator with an empty body (decision 604): `fn registered(comptime decl: @Decl) {}`
+annotates declarations, runs nothing, and is read back by its marking —
+`@TypeInfo.all(with: registered)` lists what it marks:
+
+<!-- example: modules/decorator_marker_empty_body -->
+
 An associated type is named `City.Columns` in every diagnostic, as it is
 written:
 
@@ -4384,6 +4390,13 @@ a type's static function alike:
 <!-- example: modules/declare_without_implementation_method -->
 
 <!-- example: modules/declare_without_implementation_static -->
+
+No bodyless declaration exists but two: one with `#[external(…)]`, and the
+compiler's own `declare val compiler` (decision 604). A decorator is no
+exception — its marker is a decorator with an empty body, so a bodyless one is
+refused at the declaration like any other:
+
+<!-- example: modules/declare_without_implementation_decorator -->
 
 A behavior declares a member's signature, or a `default fn` with a body;
 `declare fn` inside one is refused at the member:

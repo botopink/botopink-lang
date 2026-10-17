@@ -2438,8 +2438,8 @@ pub const Env = struct {
     /// identity to key by, so it is not recorded. The first owner stays: the
     /// defining module registers its own declaration before any importer sees it.
     pub fn noteComptimeOwner(self: *Env, decl: ast.FnDecl, owner: []const u8) !void {
-        if (decl.body.len == 0) return;
-        const gop = try self.comptimeOwners.getOrPut(@intFromPtr(decl.body.ptr));
+        const key = ownerKey(decl) orelse return;
+        const gop = try self.comptimeOwners.getOrPut(key);
         if (!gop.found_existing) gop.value_ptr.* = owner;
     }
 
@@ -2469,8 +2469,17 @@ pub const Env = struct {
     /// The module path `decl` was declared in, or "" when nothing recorded it
     /// (the compiler's own tests evaluate a declaration no module owns).
     pub fn comptimeOwnerOf(self: *const Env, decl: ast.FnDecl) []const u8 {
-        if (decl.body.len == 0) return "";
-        return self.comptimeOwners.get(@intFromPtr(decl.body.ptr)) orelse "";
+        const key = ownerKey(decl) orelse return "";
+        return self.comptimeOwners.get(key) orelse "";
+    }
+
+    /// The identity `comptimeOwners` keys a declaration by: its body, or — a
+    /// marker's body is empty (decision 604) — its parameter list. A `declare
+    /// fn` has neither and is never recorded.
+    fn ownerKey(decl: ast.FnDecl) ?usize {
+        if (decl.body.len > 0) return @intFromPtr(decl.body.ptr);
+        if (!decl.isDeclare and decl.params.len > 0) return @intFromPtr(decl.params.ptr);
+        return null;
     }
 
     /// Record the `expr` meta-kind params for a function (keyed by name).

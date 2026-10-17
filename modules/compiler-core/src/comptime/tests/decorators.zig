@@ -117,11 +117,11 @@ test "decorator: string-arg marker on a struct field (P3 field-site)" {
     );
 }
 
-test "decorator: declared as a `declare fn` marker (delegate form)" {
-    // A framework lib may ship its markers as bodyless `declare fn`s — the core
-    // recognizes that form identically (first param `comptime _: @Decl`).
+test "decorator: a marker is a decorator with an empty body" {
+    // Decision 604 — a library ships its markers as decorators with an empty
+    // body; a bodyless `declare fn` decorator is refused.
     try h.assertInfersOk(std.testing.allocator,
-        \\declare fn component(expr decl: unknown);
+        \\fn component(expr decl: unknown) {}
         \\
         \\#[component]
         \\type Widget(id: i32)

@@ -30,6 +30,7 @@ scripts/
 ├── codemod-optional-operators.py ← decision 330's migration: `.unwrapOr(d)` on a `?T` → `?? d`, `result.<op>(r, …)` → `r.<op>(…)` (§ below)
 ├── codemod-component-contexts.py ← decision 354's migration: `@Component<C, R>` → `@Component<R>`, `@Context<C>` → `@Renderable`, `use @getContext(T)` reported (§ below)
 ├── codemod/external-implementations.py ← decision 575 (6)'s migration: every `#[@External.<T>(…)]` of one declaration → one `#[@external(.<T>(…), …)]` (`#[external(…)]` inside `libs/std/src`), labels kept, `fn:` → `body:`, the two-string `("m", "s")` → one template over the parameters (`"m:s($0, $1)"` erlang, `"M.s($0)"` / `$args` for a variadic on node, `"s(a, self)"` reordered), a host `${` → `\${`; `.bp` files in place, a `.zig` file's `\\` line strings as `.bp` text; `--check` lists
+├── codemod/bodyless-decorators.py ← decision 604's migration: a bodyless decorator `[pub] declare fn name(comptime decl: @Decl, …);` → `[pub] fn name(…) {}`, a marker with an empty body, visibility, generics and the comments above kept; `.bp` files in place, `--check` lists every site as `path:line: name`
 ├── codemod-wasm-cells.py ← decision 481's migration: `.Wasm`'s prefixed strings → labelled cells (`"fn:x"` → `fn: x`, `"op:o"` → `op: "o"`, `"wasi:a_b"` → `wasi: .AB`, `"std:m.f"` → `std: "m.f"`) (§ below)
 ├── codemod-conformance-cells.py ← 144 B-29 step H: `tests/language/` → `conformance/` cells (`migrate`, `accept`, `audit` — § below)
 ├── codemod/

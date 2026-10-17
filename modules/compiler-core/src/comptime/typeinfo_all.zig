@@ -369,14 +369,14 @@ pub fn resolve(
         var decl_generics: []const ast.GenericParam = &.{};
         const decorator: Decorator = found: {
             for (program.decls) |d| switch (d) {
-                .@"fn" => |f| if (std.mem.eql(u8, f.name, spelled) and f.params.len > 0 and f.params[0].typeRef.isDeclType() and f.body.len > 0) {
+                .@"fn" => |f| if (std.mem.eql(u8, f.name, spelled) and f.params.len > 0 and f.params[0].typeRef.isDeclType() and (f.body.len > 0 or !f.isDeclare)) {
                     decl_ref = f.params[0].typeRef;
                     decl_generics = f.genericParams;
                     break :found .{ .owner = module_path, .name = f.name };
                 },
                 else => {},
             };
-            if (env.decorators.get(spelled)) |sig| if (sig.fn_decl) |dfn| if (dfn.body.len > 0) {
+            if (env.decorators.get(spelled)) |sig| if (sig.fn_decl) |dfn| if (dfn.body.len > 0 or !dfn.isDeclare) {
                 decl_ref = sig.decl;
                 imported_behavior = sig.declBehavior;
                 decl_generics = sig.generics;

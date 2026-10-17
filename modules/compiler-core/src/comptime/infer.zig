@@ -4342,9 +4342,9 @@ fn refuseUnimplementedDeclares(env: *Env, program: ast.Program) InferError!void 
     };
     if (env.compilerBodies) return;
     for (program.decls) |decl| switch (decl) {
-        // A bodyless decorator (its first parameter the declaration) is a
-        // marker a library ships, read and never called.
-        .@"fn" => |f| if (f.isDeclare and f.body.len == 0 and f.implementations.len == 0 and !isDecoratorParams(f.params)) {
+        // Decision 604 — no bodyless decorator either: a marker is a decorator
+        // with an empty body (`pub fn page(expr decl: unknown) {}`).
+        .@"fn" => |f| if (f.isDeclare and f.body.len == 0 and f.implementations.len == 0) {
             return refuseUnimplemented(env, f.name, if (f.nameLoc.line > 0) f.nameLoc else null);
         },
         .type_ => |t| for (t.methods) |m| if (m.is_declare and m.body == null and m.implementations.len == 0) {
@@ -5638,7 +5638,6 @@ fn runDeclDecorators(
         if (tfn) |t| if (!memberFn.isTemplateAnnotation(t)) continue;
         const sig: envMod.DecoratorSig = if (tfn) |t| .{ .params = &.{}, .fn_decl = t } else env.decorators.get(a.name) orelse continue;
         const dfn = sig.fn_decl orelse continue; // bodyless `declare fn` marker
-        if (dfn.body.len == 0) continue; // empty body — nothing to run
         const capture: ?*const template.CapturedExpr = if (tfn) |t| try templateAnnotationCapture(env, a, t) else null;
         // Decision 372 — a decorator that reads `.hooks` runs in the second
         // phase, after the module's bodies; every other one in the first.
@@ -5658,6 +5657,9 @@ fn runDeclDecorators(
             .decorator_name = dfn.name,
             .seq = 0,
         });
+        // Decision 604 — a marker's empty body has nothing to run; the
+        // catalogue entry above is its reading.
+        if (dfn.body.len == 0) continue;
         if (phase == .plain and readsHooks) continue;
 
         // Decision 280 — each parameter's value as `checkDecoratorArgs` typed
@@ -11512,7 +11514,9 @@ fn namesDecorator(env: *Env, e: ast.Expr) bool {
     };
     const sig = env.decorators.get(spelled) orelse return false;
     const f = sig.fn_decl orelse return false;
-    return f.body.len > 0;
+    // Decision 604 — a marker is a decorator with an empty body: only a
+    // `declare fn` is bodyless.
+    return f.body.len > 0 or !f.isDeclare;
 }
 
 /// `unknown-builtin: unknown builtin \`@name\`` — with the nearest known name

@@ -1,0 +1,9 @@
+//// Decision 604 — no bodyless declaration exists but one with `#[external(…)]`
+//// (and `compiler.bp`'s): a decorator is no exception, a marker is a decorator
+//// with an empty body. A bodyless one is refused at the declaration.
+
+declare fn registered(comptime decl: @Decl);
+
+pub fn main() {
+    @print("unreached");
+}
