@@ -2998,6 +2998,7 @@ fn resolveImports(
                                 // and the importer only learns its methods.
                                 if (type_decl == .behavior) {
                                     try env.importedBehaviorDecls.put(env.arena, name, type_decl.behavior);
+                                    if (imp.alias == null) infer.takeNameFromPrelude(env, name);
                                     bound_behavior = true;
                                     break;
                                 }

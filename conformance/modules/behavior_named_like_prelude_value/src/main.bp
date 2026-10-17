@@ -1,0 +1,41 @@
+//// A module's own `behavior Component` and `behavior Any` — names the prelude
+//// also gives as bare variants (`DeclKind.Component`, `Stage.Any`) and, for
+//// `Component`, as a behavior. In this module each name is its own behavior,
+//// in a decorator's `@Decl<Component>`, a parameter and an `implement` clause.
+
+pub behavior Component {
+    fn render(self: Self) -> string;
+}
+
+pub behavior Any {
+    fn label(self: Self) -> string;
+}
+
+pub fn widget(comptime decl: @Decl<Component>) {
+    decl.setMeta("kind", "widget");
+}
+
+#[widget]
+pub type Card(title: string) implement Component, Any {
+    fn render(self: Self) -> string {
+        return "<" + self.title + ">";
+    }
+
+    fn label(self: Self) -> string {
+        return "card " + self.title;
+    }
+}
+
+fn show(c: Component) -> string {
+    return c.render();
+}
+
+fn name(a: Any) -> string {
+    return a.label();
+}
+
+pub fn main() {
+    val card = Card(title: "hi");
+    @print(show(card));
+    @print(name(card));
+}

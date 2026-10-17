@@ -1100,6 +1100,19 @@ the name it declares or imports.
 
 <!-- example: modules/ambient_index_implement_missing_method -->
 
+That holds for every name the prelude gives — a type (`Result`, `Field`,
+`Declared`), a behavior, a bare variant (`DeclKind.Component`, `Stage.Any`):
+a `behavior` the module declares or imports under that name is what the name
+reads in every type position — an annotation, a decorator's `@Decl<…>`, an
+`implement` clause — and the prelude's declaration is out of that module's
+scope.
+
+<!-- example: modules/behavior_named_like_prelude_value -->
+
+<!-- example: modules/behavior_named_like_prelude_type -->
+
+<!-- example: modules/import_behavior_named_like_prelude -->
+
 A `behavior` no type in the program implements is a **runtime boundary**: the
 host builds the value. Such a value carries its own members — a `val` member is
 read off it, and a method is found on it the same way and applied to the

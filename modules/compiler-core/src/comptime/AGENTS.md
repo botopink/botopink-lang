@@ -630,7 +630,15 @@ recognize → reflect → invoke → apply; marker meaning lives in the lib body
   spelled through prelude aliases — the template's only aliases a module's env
   inherits (`Env.cloneFromTemplate`); a module that declares or imports a type
   of one of those names takes the name (`infer.zig` `dropReflectionAlias`), and
-  a handle's `m.params` / `decl.fields` keep the reflection's identity.
+  a handle's `m.params` / `decl.fields` keep the reflection's identity. A
+  `behavior` the module declares, or imports un-aliased (`comptime.zig`
+  `resolveImports`, beside `importedBehaviorDecls`), takes its name the same way
+  (`infer.zig` `takeNameFromPrelude`): the alias, a prelude typedef of the name
+  (`Result`, `Field`, `Declared`) and a bare variant binding (`DeclKind.Component`,
+  `Stage.Any`) leave the module's scope, so every type position reads the
+  module's behavior; `refuseResultMemberAccess` stands down for a `behavior
+  Result` as for a `type Result`. Cells: `modules/behavior_named_like_prelude_value`,
+  `behavior_named_like_prelude_type`, `import_behavior_named_like_prelude`.
 - `registerStdlib` also parses `libs/std/src/builtins_fns.d.bp` (the parseable
   `declare fn` slice: `todo`/`panic`/`trap`/`emit`/…) into `env.stdlibFnDecls`,
   which `compile`/`compileTypesOnly` merge into transform's `fn_decls` so

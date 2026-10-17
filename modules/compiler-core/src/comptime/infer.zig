@@ -705,6 +705,7 @@ pub fn inferProgram(env: *Env, program: ast.Program) InferError![]Binding {
     try registerTypeAliases(env, program);
     try checkSelfSpelling(env, program);
     for (program.decls) |decl| {
+        if (decl == .behavior) takeNameFromPrelude(env, decl.behavior.name);
         try registerTypeDecl(env, decl);
     }
     try registerExtensions(env, program);
@@ -862,6 +863,7 @@ pub fn inferProgramTyped(env: *Env, program: ast.Program) InferError![]TypedBind
     try registerTypeAliases(env, program);
     try checkSelfSpelling(env, program);
     for (program.decls) |decl| {
+        if (decl == .behavior) takeNameFromPrelude(env, decl.behavior.name);
         try registerTypeDecl(env, decl);
     }
     try registerExtensions(env, program);
@@ -1526,6 +1528,26 @@ fn dropReflectionAlias(env: *Env, name: []const u8) void {
         else => return,
     };
     if (std.mem.startsWith(u8, target, "__Decl__")) _ = env.typeAliases.remove(name);
+}
+
+/// A `behavior` this module declares, or imports by its name, is what that
+/// name means here, as a `type` of the name is (`registerTypeDecl`,
+/// `dropReflectionAlias`): the prelude's declaration of the name — a type
+/// (`Result`, `Field`, `Declared`), a reflection alias (`Param` =
+/// `__Decl__Param`) or a bare unit variant (`DeclKind.Component`,
+/// `Stage.Any`) — leaves this module's scope. Without it a type position
+/// read the prelude's: `behavior Component` in `@Decl<Component>` was refused
+/// "'Component' is a value, not a type", and `behavior Field` silently named
+/// std's `Field`. The behavior's own binding (typed by its display name,
+/// which holds a space) is kept.
+pub fn takeNameFromPrelude(env: *Env, name: []const u8) void {
+    dropReflectionAlias(env, name);
+    if (env.typeDefs.get(name) != null and !env.ownTypeDecls.contains(name)) _ = env.typeDefs.remove(name);
+    if (env.bindings.get(name)) |ty| {
+        const d = ty.deref();
+        const declBinding = d.* == .named and std.mem.indexOfScalar(u8, d.named.name, ' ') != null;
+        if (!declBinding) _ = env.bindings.remove(name);
+    }
 }
 
 /// Pre-pass (mutual recursion): bind every top-level `fn`/`pub fn` name to its
@@ -18167,6 +18189,8 @@ fn refuseResultMemberAccess(env: *Env, recvTy: *T.Type, member: []const u8, is_c
     // A program's own `type Result { … }` is that type, with its own fields
     // and methods (`unknownField` answers for it), not the builtin carrier.
     if (env.lookupTypeDef("Result") != null) return;
+    // So is a `behavior Result` it declares or imports (`takeNameFromPrelude`).
+    if (env.assocInterfaceDecls.get("Result") != null or env.importedBehaviorDecls.contains("Result")) return;
     // The builtin methods of a `@Result<R, E>` value — `inferResultOptionMethod`
     // resolves each; `comptime/builtins.zig` `methods` holds them to
     // `libs/std/src/builtins.d.bp` (decision 252).

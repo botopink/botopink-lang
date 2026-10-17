@@ -1,0 +1,15 @@
+//// Behaviors named like prelude declarations — `Component` (a prelude
+//// behavior and the bare variant `DeclKind.Component`) and `Field` (a
+//// prelude type) — and a decorator whose `@Decl` names one of them.
+
+pub behavior Component {
+    fn render(self: Self) -> string;
+}
+
+pub behavior Field {
+    fn column(self: Self) -> string;
+}
+
+pub fn widget(comptime decl: @Decl<Component>) {
+    decl.setMeta("kind", "widget");
+}

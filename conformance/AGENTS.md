@@ -810,7 +810,11 @@ one behavior answer `Declared<Component>[]`), `modules/typeinfo_all_behavior_non
 ones answer `Declared<unknown>[]`, the ordinary mismatch at the binding) and
 `modules/typeinfo_all_behavior_call_outside_expansion` (`d.value.make()` in `main`, refused at the call); the
 `meta_catalogue_private_type`, `meta_typed_catalogue` and `meta_expr_read_elsewhere` cells catalogue their types
-through such a behavior instead of `member:`. Decision 248
+through such a behavior instead of `member:`. A `behavior` named like a prelude declaration is the module's
+(§ behavior of `docs.md`): `modules/behavior_named_like_prelude_value` (`behavior Component` and `behavior Any`, names
+the prelude also binds as bare variants, in a decorator's `@Decl<Component>`, a parameter and an `implement` clause),
+`modules/behavior_named_like_prelude_type` (`behavior Field` and `behavior Result`, names of prelude types) and
+`modules/import_behavior_named_like_prelude` (the same imported from a sibling module). Decision 248
 names the one reflection builtin `@typeInfo` (the structural `TypeInfo` answer of a bare
 `@typeInfo(T)` folded in): `modules/typeinfo_lowercase` and `modules/typeinfo_all_lowercase` refuse
 the lowercase `@typeinfo(…)` / `@typeinfo.all(…)` where it is written (`typeinfo-lowercase`).
