@@ -2,7 +2,7 @@
 //// through `@Decl<T>`: `#[check]` without `rule` refuses a function that does
 //// not answer `bool`, at the annotation (`decl.fail`).
 
-import {types.Type} from "std";
+import {types.Type, compiler.DeclKind} from "std";
 
 pub type Code { Custom, Mismatch }
 

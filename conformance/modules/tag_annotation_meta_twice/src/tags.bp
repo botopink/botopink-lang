@@ -1,5 +1,7 @@
 //// A template function that runs two annotations over one tag (decision 302).
 
+import {compiler.DeclKind, compiler.Span} from "std";
+
 pub type Hydrate(level: i32)
 
 pub fn hydrate(expr decl: unknown, comptime level: i32) {

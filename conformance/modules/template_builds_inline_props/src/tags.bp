@@ -3,11 +3,7 @@
 //// template's `<Greeting name="Partner" />` lowers to.
 
 pub fn tag(expr q: string) -> string {
-    var text = "";
-    for (compiler.parts(q)) { p ->
-        if (p.kind != "Interp") text = text + p.text;
-    }
-    val words = text.split(" ");
+    val words = compiler.text(q).split(" ");
     var args: string[] = [];
     for (words.slice(1, words.length)) { w ->
         val kv = w.split("=");

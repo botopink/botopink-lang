@@ -4,7 +4,7 @@
 //// `Type.partial` writes each field's type `?T` — what the decorator emits
 //// runs on all four targets.
 
-import {types.Type} from "std";
+import {types.Type, compiler.DeclKind} from "std";
 
 fn label(expr decl: unknown, comptime text: string) {}
 

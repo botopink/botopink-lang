@@ -1,6 +1,8 @@
 //// The framework: `#[route(path)]` marks a page function and records its
 //// path; `#[component]` gives a type the member its catalogue calls.
 
+import {compiler.DeclKind} from "std";
+
 pub fn route(expr decl: unknown, comptime path: string) {
     compiler.setMeta(Route(path: path));
     if (compiler.kind(decl) != DeclKind.Fn)

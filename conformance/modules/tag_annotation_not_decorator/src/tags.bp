@@ -1,5 +1,7 @@
 //// A template function that runs a tag's annotation (decision 302).
 
+import {compiler.DeclKind, compiler.Span} from "std";
+
 // No decorator: its first parameter is no `comptime decl: @Decl`.
 pub fn shout(text: string) -> string {
     return text.toUpper();

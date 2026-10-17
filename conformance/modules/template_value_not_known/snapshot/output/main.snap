@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: template-value-not-known: `shout`'s argument has a `${…}` hole, so it is not known while the program compiles, and the template reads `q.value`
-at src/main.bp:13:18

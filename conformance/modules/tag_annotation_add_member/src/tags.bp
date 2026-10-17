@@ -1,5 +1,7 @@
 //// A template function that runs a tag's annotation (decision 302).
 
+import {compiler.DeclKind, compiler.Span} from "std";
+
 // Gives the annotated declaration a member — a type's channel, not a tag's.
 pub fn withMember<T>(expr decl: T) {
     compiler.addMember("extra", fn(self: T) -> i32 {

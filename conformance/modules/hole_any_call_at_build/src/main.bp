@@ -1,21 +1,11 @@
-//// Decisions 355, 380 — a call of an `Any` function (376) whose arguments
-//// are known at build is known at build, in a hole and in a `val`'s
-//// initializer: `rule` writes the text into the code (`at: "build"`) for
-//// `${padAll(2)}`, `${padAll(ESPACO)}` and `${p}` (`p = padAll(ESPACO * 2)`),
-//// and leaves `${padAll(n)}`, `n` a parameter, to the program
-//// (`at: "render"`). `stamp` reads std's clock (`Run`) and `loud` prints:
-//// neither is computed at build.
+//// Decisions 355, 380 as decision 577 (5) amends them — `rule` parses the
+//// `${…}` holes of its text itself and splices each expression into the
+//// `Rule` it builds: a call of an `Any` function, a `val` and a parameter
+//// alike. `stamp` reads std's clock (`Run`) and `loud` prints.
 
 import {io.clock} from "std";
 
-pub type Rule(text: string, at: string)
-
-// What a hole puts in the text, read twice by the template: as a string and
-// as a `Rule`.
-fn buildText(v: string, r: Rule) -> string {
-    if (v is string) return v;
-    return r.text;
-}
+pub type Rule(text: string)
 
 pub fn textOf(v: string | Rule) -> string {
     if (v is Rule) return v.text;
@@ -27,27 +17,30 @@ fn quoted(text: string) -> string {
     return "\"" + text + "\"";
 }
 
-pub fn rule(expr t: string) -> Rule {
-    var built = "";
-    var computed = "\"\"";
-    var known = true;
-    for (compiler.parts(t)) { part ->
-        if (part.kind == "Interp") {
-            if (part.known)
-                built = built + buildText(part.value, part.value)
-            else
-                known = false;
-            computed = computed + " + textOf(" + part.code + ")";
+// The text's `${…}` holes are the template's own syntax (decision 577 (1)):
+// the code `"" + "<text>" + textOf(<hole>) + …`, each hole's expression
+// spliced as written and typed where the call stands (14s8-a (e)).
+fn spliced(text: string) -> string {
+    var code = "\"\"";
+    var first = true;
+    for (text.split("\${")) { piece ->
+        if (first) {
+            code = code + " + " + quoted(piece);
+            first = false;
         } else {
-            built = built + part.text;
-            computed = computed + " + " + quoted(part.text);
+            val close = piece.indexOf("}");
+            code = code
+                + " + textOf("
+                + piece.slice(0, close)
+                + ") + "
+                + quoted(piece.slice(close + 1));
         }
     }
-    if (known)
-        return compiler.build("Rule(text: "
-            + quoted(built)
-            + ", at: \"build\")");
-    return compiler.build("Rule(text: " + computed + ", at: \"render\")");
+    return code;
+}
+
+pub fn rule(expr t: string) -> Rule {
+    return compiler.build("Rule(text: " + spliced(compiler.text(t)) + ")");
 }
 
 pub val ESPACO = 2;
@@ -86,7 +79,7 @@ fn param(n: i32) -> Rule {
 }
 
 fn show(r: Rule) {
-    @print(r.at + " " + r.text);
+    @print(r.text);
 }
 
 pub fn main() {

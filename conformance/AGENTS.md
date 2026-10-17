@@ -1142,9 +1142,8 @@ at build whose parameter the body never reads is accepted), and the refusals
 `env("MSG")`, at the call — the old `decorator_arg_not_comptime`), `modules/decorator_call_expr_fn`
 (`rule.value(…)`, `expr-value-of-function`), `modules/decorator_inspect_expr_type` (`t.value`,
 `expr-value-of-type`), `modules/decorator_expr_fail_at_argument` (`max.fail(…)` at the argument),
-`modules/expr_param_method` (`message.text()` in an ordinary function — a decorator's reads it since
-decision 576 (2)) and `modules/template_value_not_known` (a holed literal's
-`q.value`), each red on the parent binary. `modules/decorator_arguments_check` and
+`modules/expr_param_method` (`message.text()` on an `expr` parameter, decision 576 (2)), each red
+on the parent binary; `template_value_not_known` went with the holes (decision 577 (5)). `modules/decorator_arguments_check` and
 `modules/decorator_check_without_rule_not_bool` tell the function form by `decl.kind` (an `@Expr` of
 a function has no `.value`, question `s35-b`).
 

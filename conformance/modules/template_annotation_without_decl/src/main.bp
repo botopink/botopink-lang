@@ -1,6 +1,6 @@
 //// Decision 311, question s29-a — written as an annotation, a template
 //// function receives the annotated declaration beside its literal
-//// (`comptime decl: @Decl`); a template that takes none has nowhere to put
+//// (`expr decl: unknown`); a template that takes none has nowhere to put
 //// what it builds and is refused at the annotation.
 
 fn shout(expr q: string) -> string {

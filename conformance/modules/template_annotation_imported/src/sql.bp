@@ -11,11 +11,18 @@ fn placeholder(n: i32) -> string {
 pub fn query(expr q: string, expr decl: unknown) -> string {
     var text = "";
     var params: string[] = [];
-    for (compiler.parts(q)) { p ->
-        if (p.kind == "Interp") {
-            params.push(p.code);
-            text = text + placeholder(params.length);
-        } else text = text + p.text;
+    var first = true;
+    // The text's `${…}` holes are the template's own syntax (decision 577
+    // (1)): each one's expression is a parameter.
+    for (compiler.text(q).split("\${")) { piece ->
+        if (first) {
+            text = piece;
+            first = false;
+        } else {
+            val close = piece.indexOf("}");
+            params.push(piece.slice(0, close));
+            text = text + placeholder(params.length) + piece.slice(close + 1);
+        }
     }
     compiler.setMeta(Query(sql: text, params: params));
     return compiler.build("\"\"");

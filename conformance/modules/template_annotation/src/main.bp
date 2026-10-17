@@ -1,26 +1,33 @@
-//// Decision 311 — the template annotation `#[f "…"]`: the template call
-//// `f "…"` written as an annotation. `query` is a template function whose
+//// Decision 311 — the template annotation `#[f @`…`]`: the template call
+//// `f @`…`` written as an annotation. `query` is a template function whose
 //// second parameter receives the annotated declaration (question s29-a); the
-//// literal is captured unevaluated, as at a call site, and each `${…}` hole
-//// resolves in the annotated declaration's scope — a method's parameters, by
-//// name and type. What the template records goes where a decorator's does:
-//// typed meta of the method, read by the owner's decorator on
-//// `decl.methods` (`m.meta(Query)`, question s29-b: a method's decorators
-//// run before its owner's), and typed meta of a function, read by
+//// text is captured unevaluated, as at a call site, and its `${…}` holes are
+//// the template's own syntax (decision 577 (1)): it reads each one's
+//// expression from `compiler.text(q)`. What the template records goes where
+//// a decorator's does: typed meta of the method, read by the owner's
+//// decorator on `decl.methods` (`m.meta(Query)`, question s29-b: a method's
+//// decorators run before its owner's), and typed meta of a function, read by
 //// `@typeInfo(f).meta(Query)`. A template annotation sits beside a
-//// decorator, and its literal may be `"""…"""`. `decl.params` is a
-//// method's own parameter list.
+//// decorator, and its text may span lines. `decl.params` is a method's own
+//// parameter list.
 
 pub type Query(sql: string, params: string[])
 
 fn query(expr q: string, expr decl: unknown) -> string {
     var text = "";
     var params: string[] = [];
-    for (compiler.parts(q)) { p ->
-        if (p.kind == "Interp") {
-            params.push(p.code);
-            text = text + "$" + params.length.toString();
-        } else text = text + p.text;
+    var first = true;
+    // The text's `${…}` holes are the template's own syntax (decision 577
+    // (1)): each one's expression is a parameter.
+    for (compiler.text(q).split("\${")) { piece ->
+        if (first) {
+            text = piece;
+            first = false;
+        } else {
+            val close = piece.indexOf("}");
+            params.push(piece.slice(0, close));
+            text = text + "$" + params.length.toString() + piece.slice(close + 1);
+        }
     }
     val declared = compiler
         .params(decl)

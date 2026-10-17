@@ -1,5 +1,6 @@
-//// Decision 311 — `#[f(…)]` naming a template function is refused at the
-//// annotation, naming the template form `#[f "…"]`.
+//// Decisions 311, 577 (3) — `#[f(…)]` naming a template function is
+//// `expr-call-outside-expr` at the annotation, naming the template form
+//// `#[f @`…`]`.
 
 type Query(sql: string)
 
@@ -8,7 +9,7 @@ fn sql(expr q: string, expr decl: unknown) -> string {
     return compiler.build("\"\"");
 }
 
-#[sql @`select 1`]
+#[sql("select 1")]
 fn one() -> i32 {
     return 1;
 }

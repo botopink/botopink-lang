@@ -1,4 +1,2 @@
 botopink-cell 1
-refused error: this hole is known at build (decision 355) and its value raised there: comptime-badarith: an error occurred when evaluating an arithmetic expression — `ratio(4, 0)` (division by zero)
-at src/main.bp:47:15
-from src/main.bp:50:30
+abort

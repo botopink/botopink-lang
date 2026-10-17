@@ -1,3 +1,2 @@
 botopink-cell 1
-refused error: decorator-meta-expr-arg: `table` is an `@Expr`, and the field `table` of `Entity` is a `string`
-at src/main.bp:9:32
+out cities

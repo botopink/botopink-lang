@@ -15,18 +15,14 @@ pub fn each(expr decl: unknown, comptime marker: Decorator) {
         "lowercased"
     else
         "other";
-    compiler.addMember("pub fn "
-        + compiler.name(decl)!
-        + "Each() -> string { return \""
-        + which
-        + "\"; }");
+    compiler.addMember(compiler.name(decl)! + "Each", fn() -> string {
+        return which;
+    });
 }
 
 pub fn all(expr decl: unknown, comptime markers: Decorator[]) {
     val n = markers.filter({ m -> m.same(email) || m.same(lowercased) }).length;
-    compiler.addMember("pub fn "
-        + compiler.name(decl)!
-        + "All() -> i32 { return "
-        + n.toString()
-        + "; }");
+    compiler.addMember(compiler.name(decl)! + "All", fn() -> i32 {
+        return n;
+    });
 }

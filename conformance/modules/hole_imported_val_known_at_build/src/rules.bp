@@ -1,26 +1,34 @@
-//// A template telling a hole known at build from one computed at render
-//// (`run/styled_holes_known_at_build`, over strings), and the `val`s it
-//// exports: a literal and an expansion with no run-time hole.
+//// A template that parses the holes of its text and splices them, and the
+//// `val`s it exports: a literal and an expansion.
 
 fn quoted(text: string) -> string {
     return "\"" + text + "\"";
 }
 
-pub fn rule(expr t: string) -> string {
-    var built = "";
-    var computed = "\"\"";
-    var known = true;
-    for (compiler.parts(t)) { part ->
-        if (part.kind == "Interp") {
-            if (part.known) built = built + part.value else known = false;
-            computed = computed + " + " + part.code;
+// The text's `${…}` holes are the template's own syntax (decision 577 (1)):
+// the code `"" + "<text>" + (<hole>) + …`, each hole's expression
+// spliced as written and typed where the call stands (14s8-a (e)).
+fn spliced(text: string) -> string {
+    var code = "\"\"";
+    var first = true;
+    for (text.split("\${")) { piece ->
+        if (first) {
+            code = code + " + " + quoted(piece);
+            first = false;
         } else {
-            built = built + part.text;
-            computed = computed + " + " + quoted(part.text);
+            val close = piece.indexOf("}");
+            code = code
+                + " + ("
+                + piece.slice(0, close)
+                + ") + "
+                + quoted(piece.slice(close + 1));
         }
     }
-    if (known) return compiler.build(quoted("build " + built));
-    return compiler.build("\"render \" + " + computed);
+    return code;
+}
+
+pub fn rule(expr t: string) -> string {
+    return compiler.build(spliced(compiler.text(t)));
 }
 
 pub val red = "red";

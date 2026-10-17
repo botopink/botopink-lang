@@ -1,7 +1,7 @@
-//// Decision 311 — a `${…}` hole of a template annotation resolves in the
-//// annotated declaration's scope: on a method, its parameters by name and
-//// type. A name the method does not declare is the ordinary unbound-name
-//// error at the hole.
+//// Decisions 311, 577 (1) — a template annotation's text holds no language
+//// hole: `${userId}` is text, and the member `sql` builds from it is checked
+//// as written code, where `userId` is the ordinary unbound-name error, at the
+//// annotation and from the `compiler.addMember` that wrote it.
 
 type Query(sql: string)
 

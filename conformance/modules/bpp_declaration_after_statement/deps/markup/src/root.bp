@@ -1,6 +1,8 @@
 //// A fixture package that is not jhonstart (front 116): its default module
 //// holds the markup's unfold target, found by std's `#[bpp.html]` alone.
 
+import {compiler.DeclKind} from "std";
+
 pub default mod markup;
 
 /// A decorator that refuses what it annotates, naming it and its kind.

@@ -1,6 +1,6 @@
 //// The markup's unfold target: answers the literal's length.
 
-import {bpp} from "std";
+import {bpp, compiler.CustomNode, compiler.Span} from "std";
 
 #[bpp.html]
 pub default fn markup(expr t: string) -> i32 {

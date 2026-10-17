@@ -10,11 +10,11 @@ type Box<T>(value: T)
 type User(name: string)
 
 fn pick<T>(comptime s: Box<T> | type<T>) -> string {
-    return if (s is type) "type" else "value";
+    return if (s is anytype) "type" else "value";
 }
 
 fn orDefault<T>(comptime s: Box<T> | type<T>, fallback: T) -> T {
-    if (s is type) return fallback;
+    if (s is anytype) return fallback;
     return s.value;
 }
 

@@ -1,9 +1,6 @@
-//// 01-compiler/14 step 8 (decision 355) — a hole naming a `val` ANOTHER
-//// module exports is known at build when its initializer is: the exporting
-//// module computes the value when it exports it, and the template reads it
-//// as it reads a `val` of its own module — so `code` is written at build.
-//// It used to be computed at render: the export carried the `val`'s type
-//// alone. A hole naming a parameter stays at render.
+//// Decision 355 as decision 577 (5) amends it — an imported template splices
+//// each hole of its text: one naming a `val` ANOTHER module exports and one
+//// naming a parameter alike.
 
 pub mod rules;
 import {rules.rule, rules.tab, rules.red};

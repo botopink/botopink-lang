@@ -1,3 +1,2 @@
 botopink-cell 1
-refused error: decorator-meta-expr-arg: the field `message` of `Check` is an `@Expr<string>`, filled with one of the decorator's `comptime x: @Expr<T>` parameters as it is
-at src/main.bp:9:33
+out 1

@@ -5,6 +5,8 @@
 //// annotations do not depend on their written order. `checked` reads the
 //// meta `level` recorded before it on the same tag: refused at the read.
 
+import {compiler.DeclKind, compiler.Span} from "std";
+
 pub type Level(n: i32)
 
 pub fn level(expr decl: unknown, comptime n: i32) {

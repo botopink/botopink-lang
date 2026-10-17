@@ -1,4 +1,4 @@
 botopink-cell 1
-out build tab-size: 4;
-out build build tab-size: 4; color: red;
-out render red green
+out tab-size: 4;
+out tab-size: 4; color: red;
+out red green

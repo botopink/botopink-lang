@@ -2,6 +2,8 @@
 //// whose frame (`double(` … `)`) the library writes around the consumer's
 //// text (`e.text()`).
 
+import {compiler.CustomNode, compiler.Span} from "std";
+
 pub fn area(w: i32, h: i32) -> i32 {
     return w * h;
 }

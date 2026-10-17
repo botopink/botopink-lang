@@ -1,5 +1,7 @@
 //// A template function that runs a tag's annotation (decision 302).
 
+import {compiler.DeclKind, compiler.Span} from "std";
+
 // Gives the annotated declaration a type — a declaration's channel, not a tag's.
 pub fn withType(expr decl: unknown) {
     compiler.addType("Extra", compiler.buildType("pub type Extra(n: i32)"));

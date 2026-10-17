@@ -1,5 +1,7 @@
 //// A template function that runs a tag's annotation (decision 302).
 
+import {compiler.DeclKind, compiler.Span} from "std";
+
 pub fn markup(expr q: string) -> string {
     val text = compiler.text(q);
     val tag = compiler.tagDecl(DeclKind.Element, "div", []);

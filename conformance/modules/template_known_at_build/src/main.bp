@@ -1,23 +1,40 @@
-pub fn shout(expr q: string) -> string {
-    var built = "";
-    var computed = "\"\"";
-    var known = true;
-    for (compiler.parts(q)) { p ->
-        if (p.kind == "Interp") {
-            if (p.known) built = built + p.value else known = false;
-            computed = computed + " + " + p.code;
+//// Decision 577 (1), (5) — a template parses the `${…}` holes of its text
+//// itself and splices each expression into the code it builds, typed where
+//// the call stands.
+
+fn quoted(text: string) -> string {
+    return "\"" + text + "\"";
+}
+
+// The text's `${…}` holes are the template's own syntax (decision 577 (1)):
+// the code `"" + "<text>" + (<hole>) + …`, each hole's expression
+// spliced as written and typed where the call stands (14s8-a (e)).
+fn spliced(text: string) -> string {
+    var code = "\"\"";
+    var first = true;
+    for (text.split("\${")) { piece ->
+        if (first) {
+            code = code + " + " + quoted(piece);
+            first = false;
         } else {
-            built = built + p.text;
-            computed = computed + " + \"" + p.text + "\"";
+            val close = piece.indexOf("}");
+            code = code
+                + " + ("
+                + piece.slice(0, close)
+                + ") + "
+                + quoted(piece.slice(close + 1));
         }
     }
-    if (known) return compiler.build("\"" + built.toUpper() + "\"");
-    return compiler.build("(" + computed + ").toUpper()");
+    return code;
+}
+
+pub fn shout(expr q: string) -> string {
+    return compiler.build("(" + spliced(compiler.text(q)) + ").toUpper()");
 }
 
 pub val name = "world";
 
-pub val fixed = shout @`hello ${name}`; // "HELLO WORLD", written at build
+pub val fixed = shout @`hello ${name}`; // "HELLO WORLD"
 
 fn greet(who: string) -> string {
     return shout @`hello ${who}`; // computed when it runs

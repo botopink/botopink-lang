@@ -1,6 +1,8 @@
 //// A template function that builds a tag's `@Decl`, runs the tag's
 //// annotation over it and reads back what it recorded (decision 302).
 
+import {compiler.DeclKind, compiler.Span} from "std";
+
 pub type ClassName(names: string[])
 
 // One annotation for a tag and a declaration: it records a `ClassName`

@@ -1,8 +1,6 @@
-//// 01-compiler/14 step 8, decision 355 — a hole whose value is known at build
-//// is evaluated while the program compiles, as a `comptime` is (decision
-//// 331). `boom` is a `val` whose initializer is an expansion with no run-time
-//// hole, so `${boom}` is known at build; its code raises there, and the hole
-//// is refused at build, at the call that raised, not read as computed at render.
+//// Decision 355 as decision 577 (5) amends it — `quote` splices the hole
+//// `boom` into the code it builds; it never reads the hole's value, and
+//// `boom`'s panic raises when the program runs.
 
 pub fn crash(s: string) -> string {
     @panic("crash: " + s);
@@ -13,12 +11,34 @@ pub fn raising(expr t: string) -> string {
     return compiler.build("crash(\"" + compiler.text(t) + "\")");
 }
 
-pub fn quote(expr t: string) -> string {
-    for (compiler.parts(t)) { part ->
-        if (part.kind == "Interp" && part.known)
-            return compiler.build("\"known\"");
+fn quoted(text: string) -> string {
+    return "\"" + text + "\"";
+}
+
+// The text's `${…}` holes are the template's own syntax (decision 577 (1)):
+// the code `"" + "<text>" + (<hole>) + …`, each hole's expression
+// spliced as written and typed where the call stands (14s8-a (e)).
+fn spliced(text: string) -> string {
+    var code = "\"\"";
+    var first = true;
+    for (text.split("\${")) { piece ->
+        if (first) {
+            code = code + " + " + quoted(piece);
+            first = false;
+        } else {
+            val close = piece.indexOf("}");
+            code = code
+                + " + ("
+                + piece.slice(0, close)
+                + ") + "
+                + quoted(piece.slice(close + 1));
+        }
     }
-    return compiler.build("\"render\"");
+    return code;
+}
+
+pub fn quote(expr t: string) -> string {
+    return compiler.build(spliced(compiler.text(t)));
 }
 
 pub val boom = raising @`x`;

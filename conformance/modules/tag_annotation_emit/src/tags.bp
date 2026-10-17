@@ -1,5 +1,7 @@
 //// A template function that runs a tag's annotation (decision 302).
 
+import {compiler.DeclKind, compiler.Span} from "std";
+
 // Emits a declaration — a declaration's channel, not a tag's.
 pub fn withEmit(expr decl: unknown) {
     @emit("pub fn extra() -> i32 { return 1; }");
