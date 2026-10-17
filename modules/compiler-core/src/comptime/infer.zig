@@ -5763,6 +5763,7 @@ fn runDeclDecorators(
                         .member => "addMember",
                         .memberFn => "addMember",
                         .wrap => "wrapWith",
+                        .compile => "compile",
                         else => "addType",
                     } });
                     return decoratorError(env, a, msg, hooks_output_hint);
@@ -5803,6 +5804,13 @@ fn runDeclDecorators(
                         const source = try wrapperSource(env, a, dfn, sig, values, c, local);
                         try env.wrapContributions.append(env.arena, .{ .target = handle.name, .owner = if (isMethod) memberOwner else null, .source = source, .loc = a.loc, .decorator = a.name });
                     },
+                    // `compiler.compile(f)` (decision 575 (3)) — the executor
+                    // the body wrote, rendered with each parameter's argument
+                    // and each local it reads spliced, joins the module beside
+                    // its declarations: a function, and the module-level `val`
+                    // that calls it, so the module's body (decision 140) runs
+                    // it once before `main`, in call order.
+                    .compile => try env.contributions.append(env.arena, try executorSource(env, a, dfn, sig, values, c, local)),
                     // `decl.addType(name, source)` (decision 216 (3)) — an
                     // associated type of the owner, merged as `__Owner__Name`.
                     .assoc => {
@@ -6091,6 +6099,62 @@ fn wrapperSource(
     for (values, 0..) |v, j| splices[j] = .{ .param = sig.params[j].name, .lexeme = v.lexeme };
     const renames: []const memberFn.Rename = if (local) &.{} else try memberRenames(env, a, dfn, c, func, splices, typeArgs);
     return memberFn.renderWrapper(env.arena, func, splices, typeArgs, "", renames) catch return error.OutOfMemory;
+}
+
+/// Decision 575 (3) — the source `compiler.compile(f)` gives the annotated
+/// declaration's module: the body's `c.index`-th executor
+/// (`member_fn.collectExecutors`) as a function, each decorator parameter it
+/// reads replaced by the argument as the annotation wrote it, each local of
+/// the body it reads by the literal of the value the body handed (the tree
+/// rule, 575 (4)), each type parameter by what the annotation bound it to, and
+/// — for a decorator declared in another module — every other name renamed to
+/// resolve in the decorator's module (decision 384); then the module-level
+/// `val` that runs it with the module's body.
+fn executorSource(
+    env: *Env,
+    a: ast.Annotation,
+    dfn: ast.FnDecl,
+    sig: envMod.DecoratorSig,
+    values: []const envMod.DecoratorArgValue,
+    c: decoratorEval.Contribution,
+    local: bool,
+) InferError![]const u8 {
+    const declName = memberFn.declParamName(dfn) orelse return decoratorError(env, a, "the decorator has no `@Decl` handle", "");
+    const fns = try memberFn.collectExecutors(env.arena, dfn, declName);
+    if (c.index >= fns.len) return decoratorError(env, a, "the decorator evaluator handed back an executor the body does not write", "Report it: `compiler.compile(f)` numbers the body's executors in source order.");
+    const func = fns[c.index];
+    // A decorator of this module runs before its body is checked.
+    if (local) try refuseCaptures(env, func, dfn.params, dfn.body, true);
+    const typeArgs: []const memberFn.TypeArg = (if (a.loc) |l| env.decoratorTypeArgs.get(l) else null) orelse &.{};
+    const captured = try memberFn.capturedLocals(env.arena, dfn, func);
+    const handed: []const std.json.Value = if (c.data) |d| (if (d == .array) d.array.items else &.{}) else &.{};
+    const splices = try env.arena.alloc(memberFn.Splice, values.len + captured.len);
+    for (values, 0..) |v, j| splices[j] = .{ .param = sig.params[j].name, .lexeme = v.lexeme };
+    for (captured, 0..) |n, k| {
+        const v: std.json.Value = if (k < handed.len) handed[k] else .null;
+        const lit = (try memberFn.literalSource(env.arena, v)) orelse {
+            const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s}]`'s executor reads `{s}`, a local of the decorator's body whose value is no literal", .{ diagnostics.decorator_member_captures, a.name, n });
+            return decoratorError(env, a, msg, "An executor holds a local of the decorator's body as a literal: a string, a number, a `bool`, `null` or an array of those (decision 575 (4), the tree rule).");
+        };
+        splices[values.len + k] = .{ .param = n, .lexeme = lit };
+    }
+    const renames: []const memberFn.Rename = if (local) &.{} else try memberRenames(env, a, dfn, c, func, splices, typeArgs);
+    // The executor written as a function of no parameter: `fn() { … }`.
+    var asFn = func;
+    asFn.kind.syntax = .fnExpr;
+    asFn.kind.params = &.{};
+    asFn.kind.paramTypes = &.{};
+    asFn.kind.returnType = null;
+    // What the lambda's last expression answers is dropped: each statement
+    // runs for its effect (`;`).
+    const stmts = try env.arena.dupe(ast.Stmt, func.kind.body);
+    for (stmts) |*st| st.tail = .none;
+    asFn.kind.body = stmts;
+    const k = env.contributions.items.len;
+    const name = try std.fmt.allocPrint(env.arena, "__bp_executor_{d}", .{k});
+    const rendered = memberFn.render(env.arena, name, asFn, splices, typeArgs, "", renames) catch return error.OutOfMemory;
+    const text = if (std.mem.startsWith(u8, rendered, "pub ")) rendered["pub ".len..] else rendered;
+    return std.fmt.allocPrint(env.arena, "{s}\nval _bp_init_{d} = {s}();", .{ text, k, name });
 }
 
 /// What a declaration a decorator cannot wrap is called in a refusal.
@@ -21463,6 +21527,11 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
             if (currentDeclParam(env)) |declName| if (memberFn.isWrapWithOn(call, declName)) {
                 return inferWrapWithCall(env, call, loc);
             };
+            // Decision 575 (3) — `compiler.compile(f)` in a decorator's body:
+            // the executor is the program's code.
+            if (currentDeclParam(env)) |declName| if (memberFn.isCompileOn(call, declName)) {
+                return inferCompileCall(env, call, loc);
+            };
             // Decision 298 — `decl.setMeta(v)` / `decl.addMeta(v)` in a
             // decorator's body: a typed meta value.
             if (currentDeclParam(env)) |declName| if (isTypedMetaOn(call, declName)) {
@@ -23514,6 +23583,58 @@ fn inferWrapWithCall(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedExp
     return TypedExpr{ .call = .{ .loc = loc, .type_ = try env.namedType("void"), .kind = .{ .call = .{
         .receiver = recv,
         .callee = memberFn.wrap_with,
+        .is_builtin = false,
+        .args = typedArgs,
+        .trailing = &.{},
+    } } } };
+}
+
+/// Decision 575 (3) — `compiler.compile(f)` in a decorator's body (read onto
+/// the handle, `decl.compile(f)`). `f` is the executor, a function written at
+/// the call that takes nothing; it is the program's code, typed here as a
+/// wrapper is (`inferWrapWithCall`): each `comptime x: T` parameter read as
+/// its `T`, the body's locals read as the literals of their values (the tree
+/// rule, 575 (4)), never the handle (`decorator-member-captures`). Whatever
+/// its body answers is dropped: an executor runs for its effect.
+fn inferCompileCall(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedExpr {
+    const func = call.args[0].value.function;
+    try refuseCaptures(env, func, env.currentParams, env.decoratorBody orelse &.{}, true);
+    const expected = try env.funcType(&.{}, try env.freshVar());
+
+    // Each `@Expr<T>` parameter is its `T` in the executor.
+    const Rebound = struct { name: []const u8, was: *T.Type };
+    var rebound: std.ArrayListUnmanaged(Rebound) = .empty;
+    for (env.currentParams) |p| if (p.exprWrapped) {
+        const was = env.lookup(p.name) orelse continue;
+        const d = was.deref();
+        const inner = if (d.* == .named and std.mem.eql(u8, d.named.name, "Expr") and d.named.args.len == 1) d.named.args[0] else continue;
+        try rebound.append(env.arena, .{ .name = p.name, .was = was });
+        try env.bind(p.name, inner);
+    };
+    const savedParams = env.currentParams;
+    const savedInDecorator = env.inDecoratorFn;
+    const savedBody = env.decoratorBody;
+    env.currentParams = &.{};
+    env.inDecoratorFn = false;
+    env.decoratorBody = null;
+    const fnTyped = try env.arena.create(TypedExpr);
+    fnTyped.* = blk: {
+        defer {
+            env.currentParams = savedParams;
+            env.inDecoratorFn = savedInDecorator;
+            env.decoratorBody = savedBody;
+        }
+        break :blk try inferFunctionExprExpected(env, func, func.loc, expected, false);
+    };
+    for (rebound.items) |r| try env.bind(r.name, r.was);
+
+    const recv = try env.arena.create(TypedExpr);
+    recv.* = try inferExprTyped(env, call.receiver.?.*);
+    const typedArgs = try env.arena.alloc(ast.CallArgOf(.typed), 1);
+    typedArgs[0] = .{ .label = call.args[0].label, .value = fnTyped };
+    return TypedExpr{ .call = .{ .loc = loc, .type_ = try env.namedType("void"), .kind = .{ .call = .{
+        .receiver = recv,
+        .callee = memberFn.compile_name,
         .is_builtin = false,
         .args = typedArgs,
         .trailing = &.{},

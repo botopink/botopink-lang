@@ -92,6 +92,8 @@ pub fn sharesPrivates(arena: std.mem.Allocator, decls: []const ast.DeclKind, ref
             if ((try member_fn.collect(arena, f, handle)).len > 0) return true;
             // Decision 316 — a wrapper is written where the function it wraps is.
             if ((try member_fn.collectWrappers(arena, f, handle)).len > 0) return true;
+            // Decision 575 (3) — so is an executor, beside the annotated declaration.
+            if ((try member_fn.collectExecutors(arena, f, handle)).len > 0) return true;
         }
     };
     const r = reflection orelse return false;

@@ -43,6 +43,10 @@ const Ctx = struct {
     /// index (`member_fn.collectWrappers`'s order): the wrapper is the
     /// program's code.
     wrappers: usize = 0,
+    /// Decision 575 (3) — each `decl.compile(f)` hands the runtime the
+    /// executor's index (`member_fn.collectExecutors`'s order) and the body's
+    /// locals it reads (the tree rule): the executor is the program's code.
+    executors: usize = 0,
     /// Decision 298 — each `decl.setMeta(v)` / `decl.addMeta(v)` hands the
     /// runtime `'__bp_typedMeta'(k, v)`, `k` in `typed_meta.collect`'s order.
     metas: usize = 0,
@@ -248,6 +252,27 @@ fn clone(comptime T: type, ctx: *Ctx, v: T) error{OutOfMemory}!T {
             idx.* = .{ .literal = .{ .loc = func.loc, .kind = .{ .numberLit = try std.fmt.allocPrint(ctx.arena, "{d}", .{ctx.wrappers}) } } };
             ctx.wrappers += 1;
             args[0] = .{ .label = c.args[0].label, .value = idx };
+            out.call.kind.call.args = args;
+            return out;
+        };
+        // `decl.compile(f)` → `decl.compile(<k>)`, or `decl.compile(<k>,
+        // [v, …])` with the body's locals the executor reads (575 (3), (4)).
+        if (ctx.declName) |dn| if (memberFn.asCompileCall(v, dn)) |func| {
+            var out = v;
+            const c = v.call.kind.call;
+            const captured: []const []const u8 = if (ctx.dfn) |dfn| try memberFn.capturedLocals(ctx.arena, dfn, func) else &.{};
+            const args = try ctx.arena.alloc(ast.CallArg, if (captured.len > 0) 2 else 1);
+            const idx = try ctx.arena.create(ast.Expr);
+            idx.* = .{ .literal = .{ .loc = func.loc, .kind = .{ .numberLit = try std.fmt.allocPrint(ctx.arena, "{d}", .{ctx.executors}) } } };
+            ctx.executors += 1;
+            args[0] = .{ .label = c.args[0].label, .value = idx };
+            if (captured.len > 0) {
+                const elems = try ctx.arena.alloc(ast.Expr, captured.len);
+                for (captured, 0..) |n, k| elems[k] = .{ .identifier = .{ .loc = func.loc, .kind = .{ .ident = n } } };
+                const list = try ctx.arena.create(ast.Expr);
+                list.* = .{ .collection = .{ .loc = func.loc, .kind = .{ .arrayLit = .{ .elems = elems } } } };
+                args[1] = .{ .label = null, .value = list };
+            }
             out.call.kind.call.args = args;
             return out;
         };

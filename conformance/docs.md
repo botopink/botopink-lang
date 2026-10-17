@@ -3704,6 +3704,33 @@ method) with type parameters `decorator-wrap-generic`, at the annotation
 
 <!-- example: modules/decorator_any_params_outside_decl -->
 
+A decorator compiles run-time code beside the annotated declaration with
+`compiler.compile(executor)` (decision 575 (3)): the executor, a function of
+no parameter written at the call (`compiler.compile({ -> register(name) })`)
+or named there, runs once before `main`, in the program's init list —
+modules in dependency order, declarations in source order, the calls in the
+order the bodies make them; a declaration takes any number. What it answers
+is dropped. The executor is a tree (575 (4)): run-time code whose names
+resolve where the decorator wrote it — a private helper of the decorator's
+module included, a library's too —, each `expr` parameter spliced as the
+expression written, each `comptime` parameter and each `val` of the body
+spliced as the literal of its value. A library module's executors run in the
+program that imports it, before the program's own.
+
+<!-- example: modules/compile_executor_before_main -->
+
+<!-- example: modules/compile_init_order_modules -->
+
+<!-- example: modules/compile_executor_from_library -->
+
+`compiler` inside the executor is `expr-captures-build`, at the keyword, and
+`compiler.compile` in a function that is no decorator
+`compiler-output-outside-decorator`, at the member.
+
+<!-- example: modules/compile_executor_captures_build -->
+
+<!-- example: modules/compile_output_outside_decorator -->
+
 ### Typed meta (decision 298)
 
 A decorator's meta is a typed value keyed by its record type, never by the

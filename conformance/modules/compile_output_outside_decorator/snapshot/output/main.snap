@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: compiler-output-outside-decorator: `compiler.compile` writes to the annotated declaration, and only a decorator has one
+at src/main.bp:7:14

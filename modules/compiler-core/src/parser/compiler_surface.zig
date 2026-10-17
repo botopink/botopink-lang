@@ -44,9 +44,9 @@ pub const Kind = enum {
 
 pub const Member = struct { name: []const u8, kind: Kind };
 
-/// The `Compiler` members this step builds — 575 (3) and 576 (2), (3), less
-/// B-137 … B-140's (`compile`, `implement`, `setBuiltin`, `embed`, `record`,
-/// `fields` over a type, `optional`, `required`). `comptime/tests/compiler_
+/// The `Compiler` members built so far — 575 (3) and 576 (2), (3), less
+/// B-138 … B-140's (`implement`, `setBuiltin`, `embed`, `record`, `fields`
+/// over a type, `optional`, `required`). `comptime/tests/compiler_
 /// members.zig` holds it to `libs/std/src/compiler.bp`.
 pub const members = [_]Member{
     .{ .name = "src", .kind = .property },
@@ -59,6 +59,7 @@ pub const members = [_]Member{
     .{ .name = "addMember", .kind = .output },
     .{ .name = "addType", .kind = .output },
     .{ .name = "wrapWith", .kind = .output },
+    .{ .name = "compile", .kind = .output },
     .{ .name = "catalogue", .kind = .site },
     .{ .name = "typeInfo", .kind = .site },
     .{ .name = "text", .kind = .read },
@@ -412,6 +413,23 @@ fn isHandle(ctx: *Ctx, e: ast.Expr) bool {
     return !contains(ctx.trees, n) and !contains(ctx.values, n);
 }
 
+/// `{ -> e() }` — the executor `e` names, called (decision 575 (3)).
+fn executorOf(ctx: *Ctx, e: *ast.Expr) error{OutOfMemory}!*ast.Expr {
+    const loc = e.getLoc();
+    const named = e.* == .identifier and e.identifier.kind == .ident;
+    const call: ast.Expr = .{ .call = .{ .loc = loc, .kind = .{ .call = .{
+        .receiver = null,
+        .callee = if (named) e.identifier.kind.ident else "",
+        .calleeExpr = if (named) null else e,
+        .is_builtin = false,
+        .args = &.{},
+        .trailing = &.{},
+    } } } };
+    const body = try ctx.alloc.alloc(ast.Stmt, 1);
+    body[0] = .{ .expr = call };
+    return box(ctx, .{ .function = .{ .loc = loc, .kind = .{ .syntax = .lambda, .params = &.{}, .body = body } } });
+}
+
 /// `compiler.<p>` read without a call.
 fn mapProperty(ctx: *Ctx, loc: ast.Loc, name: []const u8) error{OutOfMemory}!ast.Expr {
     ctx.changed = true;
@@ -481,8 +499,13 @@ fn walkExpr(ctx: *Ctx, p: *ast.Expr) error{OutOfMemory}!void {
         if (std.mem.eql(u8, c.callee, "addType") and c.args.len == 2) if (compilerCall(c.args[1].value.*)) |bt| if (std.mem.eql(u8, bt.callee, "buildType") and bt.args.len == 1) {
             c.args[1].value = bt.args[0].value;
         };
-        // The arguments first: a member and a wrapper are trees.
-        const tree = std.mem.eql(u8, c.callee, "addMember") or std.mem.eql(u8, c.callee, "wrapWith");
+        // Decision 575 (3) — `compiler.compile(e)` with an executor that is
+        // no function written at the call (a function's name, an `expr`
+        // parameter): the executor is `{ -> e() }`, a tree like any other.
+        if (std.mem.eql(u8, c.callee, "compile") and c.args.len == 1 and c.args[0].value.* != .function)
+            c.args[0].value = try executorOf(ctx, c.args[0].value);
+        // The arguments first: a member, a wrapper and an executor are trees.
+        const tree = std.mem.eql(u8, c.callee, "addMember") or std.mem.eql(u8, c.callee, "wrapWith") or std.mem.eql(u8, c.callee, "compile");
         const reads = if (memberOf(c.callee)) |m| m.kind == .read else false;
         for (c.args, 0..) |*a, i| {
             // The expression a read is about — `at:` of `fail`, the first

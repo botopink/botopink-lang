@@ -2274,6 +2274,7 @@ pub const decl_reflection_src =
     \\    declare fn addMeta<T>(self: Self, value: T);
     \\    declare fn addType(self: Self, name: string, source: string);
     \\    declare fn wrapWith<A, R>(self: Self, wrapper: fn(call: __Decl__Call<A, R>) -> R);
+    \\    declare fn compile(self: Self, executor: fn());
     \\}
 ;
 

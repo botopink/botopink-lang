@@ -1,0 +1,23 @@
+//// Decision 575 (3) — an executor from a library's decorator runs in the
+//// program: `#[route]` is declared in the dependency `routes`, its executor
+//// calls a function private to the library, and the program's two annotated
+//// functions register before `main`. A library module's own executors run in
+//// the program that imports it — `routes.builtin`'s `health`, first, since
+//// the program depends on it.
+
+import {registry.route, registry.routes, builtin.health} from "routes";
+
+#[route("/")]
+pub fn index() -> string {
+    return "index";
+}
+
+#[route("/about")]
+pub fn about() -> string {
+    return "about";
+}
+
+pub fn main() {
+    @print(routes());
+    @print(index() + " " + about() + " " + health());
+}

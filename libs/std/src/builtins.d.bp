@@ -400,7 +400,7 @@ pub declare fn module() -> module;
 // are string constants (the only members read today). COMPTIME-ONLY: no
 // run-time code. The program's catalogue is the static `@TypeInfo.all` of the
 // answer's type (below).
-pub declare fn typeInfo<T>(comptime _: @Expr<type>) -> TypeInfo<T>;
+pub declare fn typeInfo<T>(comptime _: @Expr<anytype>) -> TypeInfo<T>;
 
 // `@TypeOf(value)` — the type of `value`, as the expression's type.
 // COMPTIME-ONLY.
@@ -411,7 +411,7 @@ pub declare fn TypeOf<T>(value: T) -> T;
 pub declare fn makeRecord<R>(fields: RecordField[]) -> R;
 
 // `@RecordKeys(T)` — the field names of the record type `T`. COMPTIME-ONLY.
-pub declare fn RecordKeys(comptime _: @Expr<type>) -> string[];
+pub declare fn RecordKeys(comptime _: @Expr<anytype>) -> string[];
 
 // `@comptimeError(message)` — fails the check with `comptime error:
 // <message>` at the call. COMPTIME-ONLY.
@@ -877,6 +877,13 @@ pub behavior Decl<T> {
     // (`decorator-wrap-without-function`). The checker answers the call itself
     // (`infer.zig` `inferWrapWithCall`).
     fn wrapWith<A, R>(self: Self, wrapper: fn(call: __Decl__Call<A, R>) -> R);
+
+    // Decision 575 (3) — `compiler.compile(f)`: run-time code compiled beside
+    // the annotated declaration, run once before `main` in the program's init
+    // list — modules in dependency order, declarations in source order, calls
+    // in order. Like a member function, the executor is the program's code
+    // (the tree rule, 575 (4)).
+    fn compile(self: Self, executor: fn());
 }
 
 // Decision 316 — the call value a `decl.wrapWith` wrapper receives. No program

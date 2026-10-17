@@ -1,0 +1,24 @@
+//// Decision 575 (3) — the program's init list runs each module's executors
+//// in dependency order: `beta` before `alpha`, which imports it, and both
+//// before `main`'s own, whatever order `main` imports them in; within a
+//// module, declarations in source order. The executors register into
+//// `registry`'s `var`, read when `main` runs.
+
+pub mod marks;
+pub mod registry;
+pub mod alpha;
+pub mod beta;
+import {marks.registered};
+import {registry.names};
+import {alpha.first};
+import {beta.second};
+
+#[registered]
+pub fn own() -> string {
+    return "own";
+}
+
+pub fn main() {
+    @print(names());
+    @print(first() + " " + second() + " " + own());
+}

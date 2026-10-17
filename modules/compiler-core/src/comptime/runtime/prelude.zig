@@ -460,6 +460,16 @@ pub fn decoratorForms(b: Ast.Builder) Error![]const Ast.Form {
         try b.function("wrapWith", &.{ V("_Decl"), V("Index") }, &.{}, &.{
             try b.call("__bp_contribute", &.{try b.map(&.{ Ast.field("kind", Ast.str("wrap")), Ast.field("index", V("Index")) })}),
         }),
+        // Decision 575 (3) — `decl.compile(f)`: the executor is the
+        // program's code, so the body hands its index (`expr_param.eraseFn`,
+        // `member_fn.collectExecutors`'s order) and, by the tree rule, the
+        // values of the body's locals it reads.
+        try b.function("compile", &.{ V("_Decl"), V("Index") }, &.{}, &.{
+            try b.call("__bp_contribute", &.{try b.map(&.{ Ast.field("kind", Ast.str("compile")), Ast.field("index", V("Index")) })}),
+        }),
+        try b.function("compile", &.{ V("_Decl"), V("Index"), V("Captured") }, &.{}, &.{
+            try b.call("__bp_contribute", &.{try b.map(&.{ Ast.field("kind", Ast.str("compile")), Ast.field("index", V("Index")), Ast.field("data", try b.call(meta_json_fn, &.{V("Captured")})) })}),
+        }),
         try b.function("setMeta", &.{ V("_Decl"), V("Key"), V("Value") }, &.{}, &.{
             try b.call("__bp_contribute", &.{try b.map(&.{ Ast.field("kind", Ast.str("meta")), Ast.field("key", V("Key")), Ast.field("value", V("Value")) })}),
         }),

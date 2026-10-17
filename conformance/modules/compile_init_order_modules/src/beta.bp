@@ -1,0 +1,8 @@
+//// Imports nothing that registers: its executors run first.
+
+import {marks.registered};
+
+#[registered]
+pub fn second() -> string {
+    return "second";
+}

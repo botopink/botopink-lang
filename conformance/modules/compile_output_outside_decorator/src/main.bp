@@ -1,0 +1,12 @@
+//// Decision 575 (3) — `compiler.compile` is an output: it compiles code
+//// beside the annotated declaration, and only a decorator has one. A
+//// function whose first parameter is no `expr` is refused at the output
+//// (`compiler-output-outside-decorator`).
+
+fn setup(comptime text: string) {
+    compiler.compile({ -> @print(text) });
+}
+
+pub fn main() {
+    setup("x");
+}

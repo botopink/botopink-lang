@@ -149,7 +149,10 @@ pub const Contribution = struct {
 
     /// `wrap` — decision 316, `decl.wrapWith(f)`: `index` is the wrapper's
     /// (`member_fn.collectWrappers`'s order).
-    pub const Kind = enum { emit, member, memberFn, meta, assoc, typedMeta, wrap };
+    /// `compile` — decision 575 (3), `compiler.compile(f)`: `index` is the
+    /// executor's (`member_fn.collectExecutors`'s order), `data` the values
+    /// of the body's locals it reads.
+    pub const Kind = enum { emit, member, memberFn, meta, assoc, typedMeta, wrap, compile };
 };
 
 pub const Outcome = union(enum) {
@@ -1112,7 +1115,8 @@ pub fn moduleVarWrite(arena: std.mem.Allocator, decls: []const ast.DeclKind, dfn
         const f = queue.items[i];
         const declared = try blockEval.declaredNames(arena, f.body);
         // The program's code a decorator hands on — a member function
-        // (370 (2)), a wrapper (316) — runs at run time, not in the body.
+        // (370 (2)), a wrapper (316), an executor (575 (3)) — runs at run
+        // time, not in the body.
         var w = WriteWalk{ .arena = arena, .vars = &vars, .declName = if (i == 0) memberFnMod.declParamName(f) else null };
         for (f.body) |*st| try w.walk(ast.Expr, &st.expr);
         for (w.writes.items) |wr| {
@@ -1141,7 +1145,7 @@ const WriteWalk = struct {
 
     fn walk(self: *WriteWalk, comptime U: type, ptr: *const U) std.mem.Allocator.Error!void {
         if (U == ast.Expr) if (self.declName) |dn| {
-            if (memberFnMod.asWrapCall(ptr.*, dn) != null or memberFnMod.asCall(ptr.*, dn) != null) return;
+            if (memberFnMod.asWrapCall(ptr.*, dn) != null or memberFnMod.asCall(ptr.*, dn) != null or memberFnMod.asCompileCall(ptr.*, dn) != null) return;
         };
         if (U == ast.Expr) switch (ptr.*) {
             .binding => |b| switch (b.kind) {

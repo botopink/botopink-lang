@@ -1,0 +1,46 @@
+//// Decision 575 (3) — `compiler.compile(executor)`: run-time code a decorator
+//// compiles beside the annotated declaration, run once before `main` in the
+//// program's init list — declarations in source order, the calls of one body
+//// in order, any number per declaration. The executor is a tree (575 (4)):
+//// the `comptime` parameter `label` and the body's `val name` are spliced as
+//// literals. An executor may be named instead of written at the call: a
+//// function of the decorator's module (`hello`), or an `expr` parameter
+//// (`run`), spliced as the annotation wrote it.
+
+fn registered(expr decl: unknown, comptime label: string) {
+    val name = compiler.name(decl)!;
+    compiler.compile({ -> @print(label + " " + name) });
+    compiler.compile({ -> @print("again " + name) });
+}
+
+fn hello() {
+    @print("hello");
+}
+
+fn greet() {
+    @print("greet");
+}
+
+fn announced(expr decl: unknown, expr run: fn()) {
+    compiler.compile(hello);
+    compiler.compile(run);
+}
+
+#[registered("page")]
+pub fn home() -> string {
+    return "home";
+}
+
+#[registered("layout")]
+#[registered("view")]
+pub type Shell(title: string)
+
+#[announced(greet)]
+pub val banner = "banner";
+
+pub fn main() {
+    @print("main");
+    @print(home());
+    @print(Shell(title: "t").title);
+    @print(banner);
+}

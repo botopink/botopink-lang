@@ -73,6 +73,27 @@ pub fn isWrapWithOn(c: anytype, declName: []const u8) bool {
     return std.mem.eql(u8, r.identifier.kind.ident, declName) and std.mem.eql(u8, c.callee, wrap_with) and !c.is_builtin;
 }
 
+/// Decision 575 (3) — the name a decorator body's `compile` is written with
+/// (`compiler.compile(f)`, read onto the handle).
+pub const compile_name = "compile";
+
+/// `e` as `<declName>.compile(<function>)` — the executor written at the
+/// call (a lambda); null for any other node.
+pub fn asCompileCall(e: ast.Expr, declName: []const u8) ?ast.FunctionExpr {
+    if (e != .call or e.call.kind != .call) return null;
+    const c = e.call.kind.call;
+    if (!isCompileOn(c, declName)) return null;
+    return c.args[0].value.function;
+}
+
+/// Whether `c` is `<declName>.compile(<function>)`.
+pub fn isCompileOn(c: anytype, declName: []const u8) bool {
+    const r = c.receiver orelse return false;
+    if (r.* != .identifier or r.identifier.kind != .ident) return false;
+    if (!std.mem.eql(u8, r.identifier.kind.ident, declName) or !std.mem.eql(u8, c.callee, compile_name) or c.is_builtin) return false;
+    return c.args.len == 1 and c.trailing.len == 0 and c.args[0].value.* == .function;
+}
+
 /// The `@Decl` parameter's name of a decorator or a template annotation
 /// function (`declParamIndex`), null for any other function.
 pub fn declParamName(f: ast.FnDecl) ?[]const u8 {
@@ -135,15 +156,31 @@ pub fn collectWrappers(arena: std.mem.Allocator, f: ast.FnDecl, declName: []cons
     return out.items;
 }
 
+/// Decision 575 (3) — every executor `f`'s body hands to `decl.compile`, in
+/// the order `expr_param.eraseFn` numbers them (a pre-order walk).
+pub fn collectExecutors(arena: std.mem.Allocator, f: ast.FnDecl, declName: []const u8) ![]const ast.FunctionExpr {
+    var out: std.ArrayListUnmanaged(ast.FunctionExpr) = .empty;
+    var c: Collector = .{ .arena = arena, .declName = declName, .out = &out, .executors = true };
+    try c.walk([]ast.Stmt, f.body);
+    return out.items;
+}
+
 const Collector = struct {
     arena: std.mem.Allocator,
     declName: []const u8,
     out: *std.ArrayListUnmanaged(ast.FunctionExpr),
     /// Collect `decl.wrapWith(f)`'s functions in place of `addMember`'s.
     wrappers: bool = false,
+    /// Collect `decl.compile(f)`'s functions in place of `addMember`'s.
+    executors: bool = false,
 
     fn walk(self: *Collector, comptime T: type, v: T) std.mem.Allocator.Error!void {
-        if (T == ast.Expr) if (self.wrappers) {
+        if (T == ast.Expr) if (self.executors) {
+            if (asCompileCall(v, self.declName)) |func| {
+                try self.out.append(self.arena, func);
+                return;
+            }
+        } else if (self.wrappers) {
             if (asWrapCall(v, self.declName)) |func| {
                 try self.out.append(self.arena, func);
                 return;
