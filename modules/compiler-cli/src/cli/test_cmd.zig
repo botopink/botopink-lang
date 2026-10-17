@@ -507,7 +507,7 @@ pub fn run(
         }
     }
 
-    // Ship runtime `.mjs` sidecars (G2): a dependency's `#[@External.<targert>(...)]` modules
+    // Ship runtime `.mjs` sidecars (G2): a dependency's `#[@external(.<Target>(…))]` modules
     // sit a directory deeper here than in their own build, so their relative
     // `require("../../src/x.mjs")` would miss the source — copy each into place.
     if (target == .commonJS) {
@@ -519,8 +519,8 @@ pub fn run(
         };
     }
 
-    // erlang: the same for host `.erl` modules — a `#[@External.Erlang("host",
-    // "fn")]` lowers to `host:fn(…)`, and `host` is a module the library keeps
+    // erlang: the same for host `.erl` modules — a `#[@external(.Erlang("host:fn($0)"))]`
+    // lowers to `host:fn(…)`, and `host` is a module the library keeps
     // beside its `.bp` sources. Copying it into the test output is enough: the
     // emitted runner's `__bp_load_siblings/0` compiles and loads every `.erl`
     // beside the script before running the tests.

@@ -4,7 +4,7 @@
 
 import {items.Queue, items.describe} from "shelf";
 
-#[@External.Erlang("hosted_greeter", "hello")]
+#[@external(.Erlang("hosted_greeter:hello($0)"))]
 declare fn hello(name: string) -> string;
 
 pub fn main() {

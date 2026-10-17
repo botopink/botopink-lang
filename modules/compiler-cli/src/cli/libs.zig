@@ -1164,7 +1164,7 @@ pub fn freeModules(gpa: std.mem.Allocator, modules: []Module) void {
 
 // ── runtime `.mjs` sidecar shipping (G2) ───────────────────────────────────────
 //
-// A `#\[@External\.node("../../src/x.mjs", …)]` lowers to a top-level
+// A `#[@external(.Node("""require("../../src/x.mjs")…"""))]` lowers to a top-level
 // `require("../../src/x.mjs")` in the emitted module. The path is authored
 // relative to the lib's OWN build output, so it resolves for the lib's own
 // `botopink test`/`build`; but when the lib is loaded as a *dependency* its
@@ -1218,7 +1218,7 @@ pub fn shipMjsSidecars(
 
         var search: usize = 0;
         const js = o.result.js;
-        // Probe both quote styles — `#\[@External\.node(…)]` templates rendered
+        // Probe both quote styles — `#[@external(.Node(…))]` templates rendered
         // verbatim by the §A2 path may emit either `require("…")` (the legacy
         // codegen-side form) or `require('…')` (when the template body itself
         // chose single quotes, e.g. `require('./sidecars/random.mjs')`).
@@ -1264,7 +1264,7 @@ pub fn shipMjsSidecars(
             if (fileExists(io, target)) continue;
 
             // std-tail F2: when a sidecar lives under `<lib>/<src>/sidecars/<base>`
-            // (the convention for std's `#\[@External\.node(…)]` adapters that
+            // (the convention for std's `#[@external(.Node(…))]` adapters that
             // need a sibling `.mjs`/`.erl` file), the search also probes that
             // subdirectory before falling back to the flat `<lib>/<src>/<base>`.
             //
@@ -1373,7 +1373,7 @@ test "shipMjsSidecars: std's sidecar ships from the compiler's own copy, not fro
 
 // ── host `.erl` module shipping ────────────────────────────────────────────────
 //
-// The erlang twin of `shipMjsSidecars`. A `#\[@External\.Erlang("host", "fn")]`
+// The erlang twin of `shipMjsSidecars`. A `#[@external(.Erlang("host:fn($0)"))]`
 // lowers to a qualified call `host:fn(…)`; `host` is a module the library
 // authors in erlang and keeps beside its `.bp` sources. Nothing shipped it, so
 // a library whose host code is erlang had nothing to ship — only `.mjs`
@@ -1398,8 +1398,8 @@ test "shipMjsSidecars: std's sidecar ships from the compiler's own copy, not fro
 // is a call to another module of this build. Idempotent; writes only inside
 // `out_dir`. Returns how many host modules it shipped.
 //
-// The BEAM target calls the same host modules — an `#[@External.Erlang("host",
-// "fn")]` lowers to `{extfunc, host, fn, N}` in the `.S` — so its build ships
+// The BEAM target calls the same host modules — an `#[@external(.Erlang("host:fn($0)"))]`
+// lowers to `{extfunc, host, fn, N}` in the `.S` — so its build ships
 // the same files, into `out/beam/`, where the assembled entry's
 // `'__bp_load_siblings'/0` (`codegen/beam_asm.zig`) compiles and loads every
 // `.erl` beside the module. `text` says which of the two emitted texts
@@ -1887,7 +1887,7 @@ const CODE_PATH_EVAL =
 
 /// The refusal for a host module that is neither shipped nor in the code
 /// path, located on the botopink line that names it — the `"<atom>"` of an
-/// `#[@External.Erlang("<atom>", …)]`, or an `<atom>:` in a template — and on
+/// `#[@external(.Erlang("<atom>:…"))]`, or an `<atom>:` in a template — and on
 /// the manifest when the source spells it nowhere.
 fn locateErlMiss(arena: std.mem.Allocator, proj: ?manifest.Manifest, atom: []const u8, miss: ErlMiss) manifest.Located {
     const whose = if (miss.owner) |lib|

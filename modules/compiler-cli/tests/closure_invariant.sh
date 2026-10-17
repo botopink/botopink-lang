@@ -13,7 +13,7 @@
 #                 `std/collections`, all declaring `shelf`'s names again with
 #                 other fields;
 #   • `hosted`  — erlang and beam only: binds a BEAM host of its own (an
-#                 `#[@External.Erlang]` function and its `.erl` sidecar), so
+#                 `#[@external(.Erlang(…))]` function and its `.erl` sidecar), so
 #                 its program's entry loads the sidecars beside it; `shelf`'s
 #                 own entry point (`shelf/demo`'s `main/0`) does so only when
 #                 `shelf`'s closure binds one (`binds_erlang_host`, computed

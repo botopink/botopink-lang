@@ -228,7 +228,7 @@ mkaudit() { # mkaudit <lib> — an erlang-only member: `"targets": ["erlang"]`
 # hostbound: its one host cell has an erlang binding and no node one.
 mkaudit hostbound
 cat >"$AUDWORK/hostbound/src/cell.bp" <<'BP'
-#[@External.Erlang("erlang:system_time()")]
+#[@external(.Erlang("erlang:system_time()"))]
 declare fn now() -> i64;
 
 pub fn stamp() -> i64 {
@@ -238,8 +238,7 @@ BP
 # bothbound: the same cell, given a node binding too — it builds on commonJS.
 mkaudit bothbound
 cat >"$AUDWORK/bothbound/src/cell.bp" <<'BP'
-#[@External.Erlang("erlang:system_time()"),
-  @External.Node("Date.now()")]
+#[@external(.Erlang("erlang:system_time()"), .Node("Date.now()"))]
 declare fn now() -> i64;
 
 pub fn stamp() -> i64 {
@@ -262,7 +261,7 @@ auditrun hostbound
 [[ $code -eq 0 ]] || fail "a structural exclusion must not fail the run (exit $code)"
 grep -q '"event":"cell_summary","lib":"hostbound","target":"erlang","status":"no_tests"' <<<"$out" || fail "hostbound·erlang is a declared cell and should compile"
 ! grep -q '"event":"cell_summary","lib":"hostbound","target":"commonJS"' <<<"$out" || fail "hostbound·commonJS is excluded by the manifest: it must not be a cell"
-grep -qF '"event":"restriction_audit","lib":"hostbound","target":"commonJS","status":"ok","line":"error: `now` has no `#[@External.<Target>(…)]` for the node backend"' <<<"$out" ||
+grep -qF '"event":"restriction_audit","lib":"hostbound","target":"commonJS","status":"ok","line":"error: `now` has no implementation for the node backend"' <<<"$out" ||
   fail "the audit should accept hostbound's exclusion and quote the refusal"
 grep -q '"event":"run_summary","passed":0,"failed":0,"no_tests":1,"skipped":0,"audited":1,"not_structural":0' <<<"$out" || fail "the run summary should count one cell and one audit"
 auditrun bothbound
@@ -296,7 +295,7 @@ wraprun() { # wraprun <lib> — scripts/test-libs.sh over one member
 }
 wraprun hostbound
 [[ $code -eq 0 ]] || fail "test-libs.sh: a structural exclusion must not fail the run (exit $code)"
-grep -qF 'hostbound · commonJS: excluded by "targets" — structural: error: `now` has no `#[@External.<Target>(…)]` for the node backend (src/cell.bp:' <<<"$out" ||
+grep -qF 'hostbound · commonJS: excluded by "targets" — structural: error: `now` has no implementation for the node backend (src/cell.bp:' <<<"$out" ||
   fail "test-libs.sh should print the refusal that proves the exclusion structural"
 grep -qx "test-libs: 0 passed, 0 failed, 1 without tests, 1 restrictions audited" <<<"$out" || fail "test-libs.sh: the summary line is not the one documented"
 wraprun bothbound
@@ -394,7 +393,7 @@ grep -q "umbrella/AGENTS.md:1: the workspace refusal is quoted with the members 
   fail "the refusal should name the file, the quote and the tool's list"
 
 # ── a library ships its erlang host module ───────────────────────────────────
-# `#[@External.Erlang("host", "fn")]` lowers to `host:fn(…)`. `host` is a module
+# `#[@external(.Erlang("host:fn($0)"))]` lowers to `host:fn(…)`. `host` is a module
 # the library authors in erlang and keeps beside its `.bp` sources; nothing
 # copied it into the output, so the call died with `{error,undef}` — only `.mjs`
 # sidecars were ever shipped. `libs.shipErlSidecars` is the `.erl` counterpart.
@@ -406,7 +405,7 @@ if command -v escript >/dev/null 2>&1; then
 { "name": "hostlib", "version": "0.0.1", "src": "src/", "files": ["hostlib.bp"] }
 JSON
   cat >"$ERLWORK/root/hostlib/src/hostlib.bp" <<'BP'
-#[@External.Erlang("hostlib_native", "greet")]
+#[@external(.Erlang("hostlib_native:greet($0)"))]
 pub declare fn greet(name: string) -> string;
 BP
   cat >"$ERLWORK/root/hostlib/src/hostlib_native.erl" <<'ERL'

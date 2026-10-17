@@ -297,7 +297,7 @@ expect_out "botopink.json:1:" "located at the name"
 # one `erlc` refuses — the build must fail and name the refusal.
 echo "==> build --target erlang refuses emitted erlang the OTP compiler rejects"
 P="$(project erlcrefused erlang)"
-printf '#[@External.Erlang("lists:reverse($0 ++)")]\ndeclare fn bad(xs: i32[]) -> i32[];\n\npub fn main() {\n    @print(bad([1]).length);\n}\n' >"$P/src/main.bp"
+printf '#[@external(.Erlang("lists:reverse($0 ++)"))]\ndeclare fn bad(xs: i32[]) -> i32[];\n\npub fn main() {\n    @print(bad([1]).length);\n}\n' >"$P/src/main.bp"
 run "$P" build
 expect_code 1 "build --target erlang of a module erlc rejects"
 expect_out "erlcrefused@main.erl:" "names the refused module"
@@ -346,7 +346,7 @@ expect_code 0 "clean"
 [[ ! -e "$P/.botopinkbuild" ]] && ok "clean leaves no .botopinkbuild/" || fail "clean left $P/.botopinkbuild"
 [[ "$(user_cache_files)" -eq 0 ]] && ok "no file under HOME/.cache/botopink after clean" || fail "files remain under the user cache"
 P="$(project erlcacherefused erlang)"
-printf '#[@External.Erlang("lists:reverse($0 ++)")]\ndeclare fn bad(xs: i32[]) -> i32[];\n\npub fn main() {\n    @print(bad([1]).length);\n}\n' >"$P/src/main.bp"
+printf '#[@external(.Erlang("lists:reverse($0 ++)"))]\ndeclare fn bad(xs: i32[]) -> i32[];\n\npub fn main() {\n    @print(bad([1]).length);\n}\n' >"$P/src/main.bp"
 for i in 1 2; do
   set +e
   OUT="$(cd "$P" && bp_isolated build 2>&1)"
@@ -687,7 +687,7 @@ printf 'import { greet } from "sidelib";\n\npub fn main() {\n    @print(greet())
 LIBROOT="$WORK/sideroot"; mkdir -p "$LIBROOT/sidelib/src"
 printf '{ "name": "sidelib", "src": "src/", "files": ["sidelib.bp"] }\n' >"$LIBROOT/sidelib/botopink.json"
 # Authored relative to the lib's own build output, like a library's `../../src/<lib>.mjs`.
-printf '#[@External.Node("../../src/side.mjs", "greet")]\npub declare fn greet() -> string;\n' >"$LIBROOT/sidelib/src/sidelib.bp"
+printf '#[@external(.Node("""require("../../src/side.mjs").greet()"""))]\npub declare fn greet() -> string;\n' >"$LIBROOT/sidelib/src/sidelib.bp"
 printf 'export function greet() {\n    return "from the sidecar";\n}\n' >"$LIBROOT/sidelib/src/side.mjs"
 OUTDIR="$WORK/sidecar-build/out"; mkdir -p "$WORK/sidecar-build"
 set +e
@@ -1152,7 +1152,7 @@ else
 fi
 
 # ── `.mjs` sidecars (00 · 10-cli-residuals) ──────────────────────────────────
-# A `#[@External.Node("./x.mjs", …)]` lowers to a relative `require` in the
+# A `#[@external(.Node("""require("./x.mjs")…"""))]` lowers to a relative `require` in the
 # emitted module, and the CLI copies the source `.mjs` next to it. The owner of
 # that file is the dependency the build RESOLVED — not the first directory of
 # that name across the library roots — and a sidecar that cannot be shipped is
@@ -1165,7 +1165,7 @@ sidecar_lib() { # <dir> <marker>
   cat >"$1/botopink.json" <<'JSON'
 { "name": "side", "version": "0.0.1", "target": "commonJS", "entry": "root.bp", "files": ["root.bp"] }
 JSON
-  printf '#[@External.Node("./side.mjs", "mark")]\npub declare fn mark() -> string;\n' >"$1/src/root.bp"
+  printf '#[@external(.Node("""require("./side.mjs").mark()"""))]\npub declare fn mark() -> string;\n' >"$1/src/root.bp"
   printf 'module.exports = { mark: () => "%s" };\n' "$2" >"$1/src/side.mjs"
 }
 sidecar_app() { # <dir> <dependency-json>

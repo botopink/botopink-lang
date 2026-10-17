@@ -34,7 +34,7 @@
 #   excluded      not a cell: the member's `"targets"` list excludes the target.
 #                 The exclusion is AUDITED on every run — `botopink build
 #                 --target <excluded>` must be refused, its first error the
-#                 missing host binding (`has no #[@External.<Target>(…)]`). The
+#                 missing host binding (`has no implementation for the <t> backend`). The
 #                 line quotes the refusal that proves the exclusion structural
 #   NOT STRUCTURAL  the audit refused an exclusion: the member builds on the
 #                 excluded target, or its build fails for another reason. A

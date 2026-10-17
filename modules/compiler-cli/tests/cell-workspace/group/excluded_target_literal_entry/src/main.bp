@@ -6,8 +6,7 @@
 
 import {word} from "shared";
 
-#[@External.Node("'host'")]
-#[@External.Erlang("<<\"host\">>")]
+#[@external(.Node("'host'"), .Erlang("<<\"host\">>"))]
 declare fn host() -> string;
 
 pub fn main() {

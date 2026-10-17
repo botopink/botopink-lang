@@ -465,12 +465,12 @@ fn writeOutputs(
     }
 
     // Ship runtime `.mjs` sidecars (G2) so a built program resolves every
-    // `#[@External.<targert>(...)]` `require("…/x.mjs")` — including a dependency's, whose
+    // `#[@external(.Node(…))]` `require("…/x.mjs")` — including a dependency's, whose
     // emitted module sits a directory deeper than in its own build.
     if (target == .commonJS) {
         try libs.shipMjsSidecars(gpa, io, outputs, packages, out_dir, ext, env_map);
     }
-    // erlang and BEAM: a `#[@External.Erlang("host", …)]`'s `host.erl` goes
+    // erlang and BEAM: a `#[@external(.Erlang("host:fn($0)"))]`'s `host.erl` goes
     // beside the emitted modules — `out/erl/`, where `botopink run` compiles
     // every `.erl` onto the code path, and `out/beam/`, where the assembled
     // entry's `'__bp_load_siblings'/0` compiles and loads every `.erl` beside
