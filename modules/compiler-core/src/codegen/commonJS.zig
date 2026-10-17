@@ -560,6 +560,12 @@ fn emitProgramOptsX(
         }
     }
 
+    // The module-level `var`s: a statement `v.push(x)` rebinds one of them.
+    for (program.decls) |decl| switch (decl) {
+        .val => |v| if (v.mutable) try em.module_vars.put(em.arena(), v.name, {}),
+        else => {},
+    };
+
     // Build declarations from the transformed program.
     for (program.decls) |decl| {
         switch (decl) {
@@ -1866,6 +1872,13 @@ const Emitter = struct {
     /// gave it (`staticTypeOf`), for `==` over composites. Rebinding a name
     /// overwrites it; a binding whose type is not known here removes it.
     eq_types: std.StringHashMapUnmanaged(ast.TypeRef) = .empty,
+    /// The module-level `var` names: the receivers a statement `v.push(x)`
+    /// rebinds besides the mutable locals (`pushRebind`).
+    module_vars: std.StringHashMapUnmanaged(void) = .empty,
+    /// The function's own names, valued by whether the binding is a `var`
+    /// (a parameter, a `val` or a lambda parameter is not): a name present
+    /// here shadows the module's `var` of the same name. Reset with `eq_types`.
+    local_vars: std.StringHashMapUnmanaged(bool) = .empty,
     /// Every record and enum this module declares, by name — the types a
     /// per-type equality is generated for.
     eq_decls: std.StringHashMapUnmanaged(ast.TypeDecl) = .empty,
@@ -3865,6 +3878,8 @@ const Emitter = struct {
         var out: std.ArrayListUnmanaged(js.Param) = .empty;
         // A parameter list starts a function's own names (`eq_types`).
         self.eq_types.clearRetainingCapacity();
+        self.local_vars.clearRetainingCapacity();
+        for (params) |p| try self.local_vars.put(self.arena(), p.name, false);
         if (self.eq_self_type) |n| try self.eq_types.put(self.arena(), "self", .{ .named = n });
         for (params) |p| {
             if (std.mem.eql(u8, p.name, "self")) continue;
@@ -4141,6 +4156,7 @@ const Emitter = struct {
             .binding => |b| switch (b.kind) {
                 .localBind => |lb| {
                     const kw: js.Decl.Kw = if (lb.mutable) .let_ else .const_;
+                    try self.local_vars.put(self.arena(), lb.name, lb.mutable);
                     try self.notePrintShape(lb.name, if (lb.typeAnnotation) |ta| try self.typeShape(ta) else try self.printShape(lb.value.*));
                     try self.noteEqType(lb.name, lb.typeAnnotation orelse try self.staticTypeOf(lb.value.*));
                     if (classifyTry(lb.value.*)) |form| {
@@ -4243,9 +4259,34 @@ const Emitter = struct {
             },
             else => {
                 if (classifyTry(e)) |form| return self.buildTryStmt(form, .discard);
+                if (try self.pushRebind(e)) |st| return st;
                 return .{ .expr = try self.buildExpr(e) };
             },
         }
+    }
+
+    /// A statement `v.push(x)` on a `var` Array — a module-level `var` or a
+    /// mutable local — rebinds the `var` to a new array, `v = v.concat([x])`,
+    /// as `erlang.zig`'s `receiverMutation` does (decisions 447 (2), 448 (2),
+    /// 547): JavaScript's `push` grows the array every binding holds. A
+    /// receiver that is no `var` (a parameter, a `val`, a field access) keeps
+    /// the plain call. `[x]` wraps the item so an array item stays one element.
+    fn pushRebind(self: *Emitter, e: ast.Expr) anyerror!?js.Stmt {
+        if (e != .call or e.call.kind != .call) return null;
+        const cc = e.call.kind.call;
+        if (cc.is_builtin or cc.optional or !std.mem.eql(u8, cc.callee, "push")) return null;
+        if (cc.args.len != 1 or cc.trailing.len != 0) return null;
+        const recv = cc.receiver orelse return null;
+        if (recv.* != .identifier or recv.identifier.kind != .ident) return null;
+        const name = recv.identifier.kind.ident;
+        const is_var = if (self.local_vars.get(name)) |m| m else self.module_vars.contains(name);
+        if (!is_var) return null;
+        const lw = self.lowerings orelse return null;
+        const il = lw.get(e.call.loc) orelse return null;
+        if (il != .prim or il.prim != .array) return null;
+        const item = try self.buildExpr(cc.args[0].value.*);
+        const grown = try self.b.call(try self.b.member(.{ .ident = name }, "concat"), &.{try self.b.array(&.{item})});
+        return .{ .expr = try self.b.assign(.{ .ident = name }, "=", grown) };
     }
 
     /// A trailing/inline lambda body: the tail value expression is its result,
@@ -4462,6 +4503,9 @@ const Emitter = struct {
         const prev_eq_types = try self.eq_types.clone(self.arena());
         defer self.eq_types = prev_eq_types;
         for (params) |p| _ = self.eq_types.remove(p);
+        const prev_local_vars = try self.local_vars.clone(self.arena());
+        defer self.local_vars = prev_local_vars;
+        for (params) |p| try self.local_vars.put(self.arena(), p, false);
         const prev_expr_try = self.expr_try_used;
         self.expr_try_used = false;
         defer self.expr_try_used = prev_expr_try;

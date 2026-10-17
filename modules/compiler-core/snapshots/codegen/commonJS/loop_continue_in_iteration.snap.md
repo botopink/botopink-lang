@@ -18,7 +18,7 @@ function sumEvens(arr) {
     let out = [];
     for (const x of arr) {
     if ((__bp_int((x % 2), -2147483648, 2147483647, "% on i32 at main.bp:4:15") !== 0)) { continue; }
-    out.push(x);
+    out = out.concat([x]);
 }
     return out;
 }

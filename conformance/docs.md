@@ -1555,6 +1555,12 @@ range, an `|` of patterns and a guard see the value whole, on every target.
 An array method **answers a value and leaves its receiver alone**, on every
 target: `reverse`, `slice`, `map` and `filter` all hand back a new array.
 
+A statement `v.push(x)` on a `var` — a module `var` or a local — rebinds the
+`var` to the grown array, so a `val` that read the array before keeps the array
+of its moment:
+
+<!-- example: modules/array_push_rebinds_var -->
+
 `Array.range(start, stop)` is the integers of `[start, stop)`, empty when
 `stop <= start`; `Array.repeat(value, times)` is `times` copies of `value`, empty
 when `times <= 0`. A result costs its own length in memory, a long one too, and so

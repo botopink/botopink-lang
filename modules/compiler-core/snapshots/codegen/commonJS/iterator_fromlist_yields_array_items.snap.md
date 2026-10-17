@@ -87,7 +87,7 @@ function* fromList(xs) {
 function toList(iter) {
     let out = [];
     for (const item of iter) {
-    out.push(item);
+    out = out.concat([item]);
 }
     return out;
 }

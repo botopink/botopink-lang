@@ -75,7 +75,7 @@ function main() {
     let precosComTaxa = [];
     for (const valor of precosBrutos) {
     const taxa = (valor * 0.15);
-    precosComTaxa.push((valor + taxa));
+    precosComTaxa = precosComTaxa.concat([(valor + taxa)]);
 }
     __bp_print(precosComTaxa);
 }

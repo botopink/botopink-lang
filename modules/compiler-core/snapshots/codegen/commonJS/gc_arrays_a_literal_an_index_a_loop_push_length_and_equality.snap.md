@@ -158,7 +158,7 @@ function main() {
     __bp_print(xs.length);
     __bp_print(xs.length);
     let ys = [10, 20];
-    ys.push(30);
+    ys = ys.concat([30]);
     __bp_print(ys);
     const names = ["ann", "bobby"];
     __bp_print(names);

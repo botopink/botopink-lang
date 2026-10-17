@@ -1621,7 +1621,7 @@ Service.prototype.__bp = "Service";
 
 function collect(xs) {
     let out = [];
-    out.push("start");
+    out = out.concat(["start"]);
     xs.forEach((x) => {
     const doubled = __bp_int((x * 2), -2147483648, 2147483647, "* on i32 at main.bp:27:25");
     return out.push(("v" + doubled.toString()));

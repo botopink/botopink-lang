@@ -2,7 +2,8 @@
 //// annotated declaration's position: the module's `val`s and its executors
 //// run in one order, source order. `seen`, written below `own`, runs after
 //// `own`'s executor, so it reads the four names; modules in dependency
-//// order, `beta` before `alpha` before `main` (575 (3)).
+//// order, `beta` before `alpha` before `main` (575 (3)). `before`, written above
+//// `own`, reads the registry before `own`'s executor ran: three names.
 
 pub mod marks;
 pub mod registry;
@@ -13,6 +14,8 @@ import {registry.names};
 import {alpha.first};
 import {beta.second};
 
+val before = names();
+
 #[registered]
 pub fn own() -> string {
     return "own";
@@ -21,6 +24,7 @@ pub fn own() -> string {
 val seen = names();
 
 pub fn main() {
+    @print(before);
     @print(seen);
     @print(first() + " " + second() + " " + own());
 }

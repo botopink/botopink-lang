@@ -801,6 +801,11 @@ codegen/
   beam; before, a `case` value answered `undefined` and a statement `case` ran
   on. Its text is not fixed (question 546-a): cells claim the kind.
 
+- **A statement `v.push(x)` on a `var` Array** (a module-level `var` — `module_vars` — or a mutable local —
+  `local_vars`; not a parameter, a `val` or a field access) lowers to the rebinding `v = v.concat([x])`
+  (`pushRebind`), as erlang's `receiverMutation` does (decisions 447 (2), 448 (2), 547); JavaScript's in-place
+  `push` grew the array every binding held (`modules/array_push_rebinds_var`). `pop` is still in place (B-143 Outside).
+
 
 ### erlang
 
