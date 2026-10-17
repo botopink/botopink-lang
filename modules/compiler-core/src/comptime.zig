@@ -941,17 +941,29 @@ fn spliceContributions(arena: std.mem.Allocator, source: []const u8, contributio
 /// (`LedgerSec`, `RunbookSec`) wrote `self.inner.status()` at the same loc,
 /// the second record overwrote the first, and erlang called `Runbook:status`
 /// from `LedgerSec` — another type's code, silently.
+///
+/// Decision 580 — an executor's declarations (its function and the
+/// `val _bp_init_<k>` that runs it) are a statement of the module's body at
+/// the annotated declaration's position: placed right after that declaration
+/// (`anchors`, indices of the pass-1 module, moved past the `prepended`
+/// imports), after the executors placed there before, so the module's body
+/// runs its `val`s and its executors in source order.
 fn parseAndMergeContributions(
     arena: std.mem.Allocator,
     source: []const u8,
     original: ast.Program,
     contributions: []const []const u8,
+    anchors: []const envMod.ExecutorAnchor,
+    prepended: usize,
 ) !?ast.Program {
     var merged: std.ArrayListUnmanaged(ast.DeclKind) = .empty;
     try merged.appendSlice(arena, original.decls);
+    // How many declarations were placed after each original declaration.
+    const placed = try arena.alloc(usize, original.decls.len);
+    @memset(placed, 0);
     var line_shift: usize = std.mem.count(u8, source, "\n") + 1;
     var offset_shift: usize = source.len + 1;
-    for (contributions) |contrib| {
+    for (contributions, 0..) |contrib, ci| {
         var c_lexer = Lexer.init(contrib);
         const c_tokens = try arena.dupe(Token, c_lexer.scanAll(arena) catch return null);
         for (c_tokens) |*t| {
@@ -962,6 +974,16 @@ fn parseAndMergeContributions(
         offset_shift += contrib.len + 1;
         var c_parser = Parser.init(c_tokens);
         const c_program = c_parser.parse(arena) catch return null;
+        const anchor: ?usize = for (anchors) |an| {
+            if (an.contribution == ci) break an.decl + prepended;
+        } else null;
+        if (anchor) |at| if (at < original.decls.len) {
+            var before: usize = 0;
+            for (placed[0 .. at + 1]) |n| before += n;
+            try merged.insertSlice(arena, at + 1 + before, c_program.decls);
+            placed[at] += c_program.decls.len;
+            continue;
+        };
         try merged.appendSlice(arena, c_program.decls);
     }
     return ast.Program{ .decls = try merged.toOwnedSlice(arena) };
@@ -1081,7 +1103,15 @@ fn mergeMembers(
 fn locateInOutputs(arena: std.mem.Allocator, te: validation.TypeError, source: []const u8, env: *const Env) validation.TypeError {
     const at = (te.loc orelse return te).line;
     var line: usize = std.mem.count(u8, source, "\n") + 1;
-    for (env.contributions.items) |c| line += std.mem.count(u8, c, "\n") + 1;
+    for (env.contributions.items, 0..) |c, ci| {
+        const last = line + std.mem.count(u8, c, "\n") + 1;
+        // Decision 580 — an executor is code a decorator added, located as
+        // a member is.
+        if (at > line and at <= last) for (env.executorAnchors.items) |an| {
+            if (an.contribution == ci) return locatedAt(arena, te, an.loc, an.call);
+        };
+        line = last;
+    }
     for (env.memberContributions.items) |m| {
         const last = line + std.mem.count(u8, m.source, "\n") + 1;
         if (at > line and at <= last) return locatedAt(arena, te, m.loc, m.call);
@@ -2045,6 +2075,9 @@ fn analyzeSource(
         // Decision 216 (4): every query answered, now that this module's
         // decorators ran too; the answers' imports join the program.
         var typeinfo_plan: ?typeinfoAll.Plan = null;
+        // The declarations put before the module's own: an executor's anchor
+        // (decision 580) moves past them.
+        var prepended: usize = 0;
         if (typeinfo_queries.len > 0) {
             var first_line: usize = std.mem.count(u8, source, "\n") + 2;
             for (env.contributions.items) |c| first_line += std.mem.count(u8, c, "\n") + 1;
@@ -2058,6 +2091,7 @@ fn analyzeSource(
                     @memcpy(grown[0..pl.imports.len], pl.imports);
                     @memcpy(grown[pl.imports.len..], with_members.decls);
                     with_members = .{ .decls = grown };
+                    prepended += pl.imports.len;
                 },
                 .refused => |te| {
                     env.deinit();
@@ -2077,8 +2111,9 @@ fn analyzeSource(
             @memcpy(grown[0..imports.len], imports);
             @memcpy(grown[imports.len..], with_members.decls);
             with_members = .{ .decls = grown };
+            prepended += imports.len;
         }
-        if (try parseAndMergeContributions(arena, source, with_members, env.contributions.items)) |merged_program| {
+        if (try parseAndMergeContributions(arena, source, with_members, env.contributions.items, env.executorAnchors.items, prepended)) |merged_program| {
             var reanalysis = try analyzeMerged(arena, mod, merged_program, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry, templateEvalCtx, target_name, reflection, typeinfo_plan, hygiene.items);
             if (reanalysis == .typeError) reanalysis.typeError = locateInOutputs(arena, reanalysis.typeError, source, &env);
             if (reanalysis == .success) {

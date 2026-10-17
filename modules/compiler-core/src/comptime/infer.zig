@@ -5732,7 +5732,13 @@ fn runDeclDecorators(
                     // its declarations: a function, and the module-level `val`
                     // that calls it, so the module's body (decision 140) runs
                     // it once before `main`, in call order.
-                    .compile => try env.contributions.append(env.arena, try executorSource(env, a, dfn, sig, values, c, local)),
+                    // Decision 580 — its `val` stands at the annotated
+                    // declaration's index, not at the module's end.
+                    .compile => {
+                        const source = try executorSource(env, a, dfn, sig, values, c, local, handle.name);
+                        try env.executorAnchors.append(env.arena, .{ .contribution = env.contributions.items.len, .decl = env.decoratedDeclIndex, .loc = a.loc, .call = try outputCallSite(env, dfn, owner, raw[0..ci], c.kind) });
+                        try env.contributions.append(env.arena, source);
+                    },
                     // `decl.addType(name, source)` (decision 216 (3)) — an
                     // associated type of the owner, merged as `__Owner__Name`.
                     .assoc => {
@@ -6024,7 +6030,7 @@ fn wrapperSource(
     if (c.index >= fns.len) return decoratorError(env, a, "the decorator evaluator handed back a wrapper the body does not write", "Report it: `decl.wrapWith(f)` numbers the body's wrappers in source order.");
     const func = fns[c.index];
     // A decorator of this module runs before its body is checked.
-    if (local) try refuseCaptures(env, func, dfn.params, dfn.body, false);
+    if (local) try refuseCaptures(env, func, dfn.params, dfn.body, false, false);
     const typeArgs: []const memberFn.TypeArg = (if (a.loc) |l| env.decoratorTypeArgs.get(l) else null) orelse &.{};
     const splices = try env.arena.alloc(memberFn.Splice, values.len);
     for (values, 0..) |v, j| splices[j] = .{ .param = sig.params[j].name, .lexeme = v.lexeme };
@@ -6049,18 +6055,22 @@ fn executorSource(
     values: []const envMod.DecoratorArgValue,
     c: decoratorEval.Contribution,
     local: bool,
+    /// Decision 581 (2) — what the handle is in the executor: the annotated
+    /// declaration itself, read by its name in its module.
+    annotated: []const u8,
 ) InferError![]const u8 {
     const declName = memberFn.declParamName(dfn) orelse return decoratorError(env, a, "the decorator has no `@Decl` handle", "");
     const fns = try memberFn.collectExecutors(env.arena, dfn, declName);
     if (c.index >= fns.len) return decoratorError(env, a, "the decorator evaluator handed back an executor the body does not write", "Report it: `compiler.compile(f)` numbers the body's executors in source order.");
     const func = fns[c.index];
     // A decorator of this module runs before its body is checked.
-    if (local) try refuseCaptures(env, func, dfn.params, dfn.body, true);
+    if (local) try refuseCaptures(env, func, dfn.params, dfn.body, true, true);
     const typeArgs: []const memberFn.TypeArg = (if (a.loc) |l| env.decoratorTypeArgs.get(l) else null) orelse &.{};
     const captured = try memberFn.capturedLocals(env.arena, dfn, func);
     const handed: []const std.json.Value = if (c.data) |d| (if (d == .array) d.array.items else &.{}) else &.{};
-    const splices = try env.arena.alloc(memberFn.Splice, values.len + captured.len);
+    const splices = try env.arena.alloc(memberFn.Splice, values.len + captured.len + 1);
     for (values, 0..) |v, j| splices[j] = .{ .param = sig.params[j].name, .lexeme = v.lexeme };
+    splices[values.len + captured.len] = .{ .param = declName, .lexeme = annotated };
     for (captured, 0..) |n, k| {
         const v: std.json.Value = if (k < handed.len) handed[k] else .null;
         const lit = (try memberFn.literalSource(env.arena, v)) orelse {
@@ -6892,10 +6902,17 @@ const DecoratorPhase = enum { plain, hooksReaders };
 /// that wrote the output `kind` follows `before` (the run's earlier outputs):
 /// the k-th such call for the k-th output of its kind (`hooksMod.callSites`).
 fn outputCallSite(env: *Env, dfn: ast.FnDecl, owner: []const u8, before: []const decoratorEval.Contribution, kind: decoratorEval.Contribution.Kind) !?envMod.CallSite {
-    const callee: []const u8 = if (kind == .assoc) "addType" else "addMember";
+    const callee: []const u8 = switch (kind) {
+        .assoc => "addType",
+        .compile => memberFn.compile_name,
+        else => "addMember",
+    };
     var nth: usize = 0;
     for (before) |b| {
-        const same = if (kind == .assoc) b.kind == .assoc else (b.kind == .member or b.kind == .memberFn);
+        const same = switch (kind) {
+            .assoc, .compile => b.kind == kind,
+            else => b.kind == .member or b.kind == .memberFn,
+        };
         if (same) nth += 1;
     }
     const sites = try hooksMod.callSites(env.arena, dfn, callee);
@@ -7278,8 +7295,9 @@ fn invokeDecorators(env: *Env, program: ast.Program, phase: DecoratorPhase) Infe
     if (phase == .plain and env.skipDecoratorInvoke) return;
     if (env.decorators.count() == 0 and !try hasTemplateAnnotation(env, program)) return;
     const ctx = env.templateEval orelse return;
-    for (program.decls) |decl| switch (decl) {
+    for (program.decls, 0..) |decl, di| switch (decl) {
         .@"fn" => |f| {
+            env.decoratedDeclIndex = di;
             const h = decoratorEval.DeclHandle{
                 .kind = "Fn",
                 // Decision 289 — an anonymous default is named by its file.
@@ -7300,6 +7318,7 @@ fn invokeDecorators(env: *Env, program: ast.Program, phase: DecoratorPhase) Infe
         // `val` is an entry of `@TypeInfo.all`. A module `var` never gets
         // here with a decorator: `validateDecorators` refuses it first.
         .val => |v| {
+            env.decoratedDeclIndex = di;
             const h = decoratorEval.DeclHandle{
                 .kind = "Val",
                 .name = v.name,
@@ -7312,6 +7331,7 @@ fn invokeDecorators(env: *Env, program: ast.Program, phase: DecoratorPhase) Infe
         },
         .type_ => |tdecl| switch (tdecl.shape) {
             .record => {
+                env.decoratedDeclIndex = di;
                 var fields = try env.arena.alloc(decoratorEval.FieldHandle, tdecl.recordFields().len);
                 for (tdecl.recordFields(), 0..) |fld, i| {
                     fields[i] = .{
@@ -7357,6 +7377,7 @@ fn invokeDecorators(env: *Env, program: ast.Program, phase: DecoratorPhase) Infe
                 }
             },
             .enum_ => {
+                env.decoratedDeclIndex = di;
                 const vs = tdecl.variants();
                 const secs = tdecl.sections();
                 const names = try env.arena.alloc([]const u8, vs.len + secs.len);
@@ -7390,6 +7411,7 @@ fn invokeDecorators(env: *Env, program: ast.Program, phase: DecoratorPhase) Infe
             },
         },
         .behavior => |i| {
+            env.decoratedDeclIndex = di;
             // Behavior-level markers (`#[mock]`) reflect with kind `Behavior`,
             // exposing the interface's fields + method signatures. Its methods also
             // reflect individually (`#[getMapping]` on a route) as `Method`.
@@ -23407,7 +23429,7 @@ fn inferWrapWithCall(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedExp
         return error.TypeError;
     }
     const func = fnArg.?.function;
-    try refuseCaptures(env, func, env.currentParams, env.decoratorBody orelse &.{}, false);
+    try refuseCaptures(env, func, env.currentParams, env.decoratorBody orelse &.{}, false, false);
 
     // The call value and the return, from the `@Decl<…>` pattern.
     const declParam = env.currentParams[0];
@@ -23488,7 +23510,7 @@ fn inferWrapWithCall(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedExp
 /// value is refused at it.
 fn inferCompileCall(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedExpr {
     const func = call.args[0].value.function;
-    try refuseCaptures(env, func, env.currentParams, env.decoratorBody orelse &.{}, true);
+    try refuseCaptures(env, func, env.currentParams, env.decoratorBody orelse &.{}, true, true);
     const expected = try env.funcType(&.{}, try env.freshVar());
 
     // Each `@Expr<T>` parameter is its `T` in the executor.
@@ -23501,6 +23523,20 @@ fn inferCompileCall(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedExpr
         try rebound.append(env.arena, .{ .name = p.name, .was = was });
         try env.bind(p.name, inner);
     };
+    // Decision 581 (2) — the handle is the annotated declaration as a
+    // run-time value: its type is that declaration's, checked where the
+    // executor joins each annotated declaration's module (`executorSource`);
+    // here, a type still free.
+    if (env.currentParams.len > 0) {
+        const h = env.currentParams[0].name;
+        const already = for (rebound.items) |r| {
+            if (std.mem.eql(u8, r.name, h)) break true;
+        } else false;
+        if (!already) if (env.lookup(h)) |was| {
+            try rebound.append(env.arena, .{ .name = h, .was = was });
+            try env.bind(h, try env.freshVar());
+        };
+    }
     const savedParams = env.currentParams;
     const savedInDecorator = env.inDecoratorFn;
     const savedBody = env.decoratorBody;
@@ -23551,7 +23587,7 @@ fn refuseMemberFnShape(env: *Env, func: ast.FunctionExpr, params: []const ast.Pa
         env.lastError = TypeError.custom(msg, "A member is written as in the type's body: `fn(self: T, x: i32) -> R { … }`, every parameter typed (decision 370 (2)).").withLoc(func.loc);
         return error.TypeError;
     }
-    return refuseCaptures(env, func, params, body, true);
+    return refuseCaptures(env, func, params, body, true, false);
 }
 
 /// Decision 370 (2), 316 — a member function or a wrapper reads no `@Decl`
@@ -23560,7 +23596,9 @@ fn refuseMemberFnShape(env: *Env, func: ast.FunctionExpr, params: []const ast.Pa
 /// Decision 575 (4), the tree rule — a member holds the body's locals as
 /// literals (`member_fn.capturedLocals`): `locals` admits them; a wrapper
 /// does not yet, and neither reads the handle.
-fn refuseCaptures(env: *Env, func: ast.FunctionExpr, params: []const ast.Param, body: []const ast.Stmt, locals: bool) InferError!void {
+/// Decision 581 (2) — an executor reads it (`handle`): there it is the
+/// annotated declaration itself as a run-time value (`executorSource`).
+fn refuseCaptures(env: *Env, func: ast.FunctionExpr, params: []const ast.Param, body: []const ast.Stmt, locals: bool, handle: bool) InferError!void {
     const declName = if (params.len > 0) params[0].name else "";
     const decoratorLocals = try memberFn.boundNames(env.arena, &.{}, body);
     for (try memberFn.freeNames(env.arena, func)) |n| {
@@ -23569,6 +23607,7 @@ fn refuseCaptures(env: *Env, func: ast.FunctionExpr, params: []const ast.Param, 
         } else false;
         if (isExprParam) continue;
         const isHandle = std.mem.eql(u8, n.name, declName);
+        if (isHandle and handle) continue;
         if (!isHandle and (locals or !decoratorLocals.contains(n.name))) continue;
         const msg = if (isHandle)
             try std.fmt.allocPrint(env.arena, "{s}: the member reads `{s}`, the decorator's `@Decl` handle, which exists only while the program compiles", .{ diagnostics.decorator_member_captures, n.name })

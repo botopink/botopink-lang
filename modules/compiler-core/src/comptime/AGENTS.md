@@ -1107,7 +1107,20 @@ method's, a `declare fn`'s (std's `builtins.d.bp` and `types.bp` included).
   dependency order, declarations in source order, calls in order, before
   `main`. `moduleVarWrite` skips an executor and `sharesPrivates` counts one,
   so a private helper of a library decorator's module resolves where the
-  executor lands.
+  executor lands. **Decision 580:** the executor is a statement of the module's
+  body at the annotated declaration's position — `runDeclDecorators` records an
+  `Env.executorAnchors` entry (the contribution, `Env.decoratedDeclIndex` set by
+  `invokeDecorators`, the annotation and the `compiler.compile` call), and
+  `comptime.zig` `parseAndMergeContributions` inserts the executor's
+  declarations right after that declaration (past the imports prepended before
+  the module's own), so a `val` below it runs after it; a type error inside one
+  is located at the annotation, the call its `called from` line
+  (`locateInOutputs`, decision 567). **Decision 581 (2):** the handle is
+  admitted in an executor (`refuseCaptures`' `handle`): `inferCompileCall` types
+  it as a free type in the decorator's body, and `executorSource` splices it as
+  the annotated declaration's name, so the module checks it with its declared
+  type (`modules/compile_executor_handle_typed`,
+  `modules/compile_executor_handle_mistyped`).
 
 ## Typed meta (decisions 298, 370 (1))
 

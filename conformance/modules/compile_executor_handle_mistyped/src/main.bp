@@ -1,0 +1,25 @@
+//// Decision 581 (2) — the executor's `make: decl` is checked against
+//// `make`'s `fn() -> string` for each annotated declaration: `home` fits,
+//// `count`, a `fn() -> i32`, does not and is refused.
+
+pub mod marks;
+pub mod registry;
+import {marks.module};
+import {registry.all};
+
+#[module("singleton")]
+pub fn home() -> string {
+    return "home";
+}
+
+#[module("scoped")]
+fn count() -> i32 {
+    return 1;
+}
+
+pub fn main() {
+    for (all()) { m ->
+        @print(m.name + " " + m.make());
+    }
+    @print(count());
+}

@@ -1,0 +1,9 @@
+//// The decorator: its executor registers the annotated declaration itself.
+
+import {registry.add};
+import {registry.Module};
+
+pub fn module(expr decl: unknown, comptime lifecycle: string) {
+    val name = compiler.name(decl)!;
+    compiler.compile({ -> add(Module(name: name, lifecycle: lifecycle, make: decl)) });
+}

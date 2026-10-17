@@ -1,0 +1,26 @@
+//// Decision 580 — an executor is a statement of its module's body at its
+//// annotated declaration's position: the module's `val`s and its executors
+//// run in one order, source order. `seen`, written below `own`, runs after
+//// `own`'s executor, so it reads the four names; modules in dependency
+//// order, `beta` before `alpha` before `main` (575 (3)).
+
+pub mod marks;
+pub mod registry;
+pub mod alpha;
+pub mod beta;
+import {marks.registered};
+import {registry.names};
+import {alpha.first};
+import {beta.second};
+
+#[registered]
+pub fn own() -> string {
+    return "own";
+}
+
+val seen = names();
+
+pub fn main() {
+    @print(seen);
+    @print(first() + " " + second() + " " + own());
+}

@@ -3734,6 +3734,24 @@ program that imports it, before the program's own.
 
 <!-- example: modules/compile_executor_from_library -->
 
+An executor is a statement of its module's body at the annotated
+declaration's position (decision 580): a module's `val`s, `var`s, `_`
+statements and executors run in one order, source order, so a `val` written
+below an annotated declaration reads what that declaration's executor did.
+
+<!-- example: modules/compile_executor_module_val_order -->
+
+Inside the executor the decorator's `expr decl` handle is the annotated
+declaration itself as a run-time value, with its declared type (decision 581
+(2)): `add(Module(name: name, lifecycle: lifecycle, make: decl))` is checked
+against `make`'s type for each annotated declaration, and a declaration whose
+type does not fit is refused at its annotation, the decorator's
+`compiler.compile` call its `called from` line (decision 567).
+
+<!-- example: modules/compile_executor_handle_typed -->
+
+<!-- example: modules/compile_executor_handle_mistyped -->
+
 `compiler` inside the executor is `expr-captures-build`, at the keyword, and
 `compiler.compile` in a function that is no decorator
 `compiler-output-outside-decorator`, at the member.
