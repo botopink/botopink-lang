@@ -55,7 +55,19 @@ fn unwrapType(alloc: std.mem.Allocator, t: *ast.TypeDecl) void {
 /// machinery knows (`ast.decl_type_name`, `T` the pattern 280 (2) checks;
 /// `unknown` is the handle with no pattern).
 fn declHandle(alloc: std.mem.Allocator, params: []ast.Param, returnType: ?ast.TypeRef) void {
-    if (returnType) |rt| if (rt.isTemplateReturnType()) return;
+    // Decision 311 — a template annotation (`fn sql(expr q: string, expr
+    // decl: unknown) -> expr string`): its second parameter, an `expr` typed
+    // `unknown`, is the annotated declaration.
+    if (returnType) |rt| if (rt.isTemplateReturnType()) {
+        if (params.len < 2 or params[0].arrival != .expr or std.mem.eql(u8, params[0].name, "self")) return;
+        const d = &params[1];
+        if (d.arrival != .expr or d.variadic or !d.typeRef.isExprType()) return;
+        const inner = d.typeRef.generic.args[0];
+        if (inner != .named or !std.mem.eql(u8, inner.named, ast.unknown_type_name)) return;
+        alloc.free(d.typeRef.generic.args);
+        d.typeRef = .{ .generic = .{ .name = ast.decl_type_name, .args = &.{}, .is_builtin = true } };
+        return;
+    };
     if (params.len == 0 or params[0].arrival != .expr or params[0].variadic) return;
     const p = &params[0];
     if (!p.typeRef.isExprType()) return;

@@ -6257,9 +6257,23 @@ fn checkTypedMetaCalls(env: *Env, program: ast.Program) InferError!void {
                 return error.TypeError;
             }
             const fields = target.decl.recordFields();
+            // Decision 575 (4), the tree rule — a field written `f: T` holds a
+            // tree when the decorator fills it with an `expr` parameter: the
+            // field is then what an `@Expr<T>` field was (370 (1)).
+            const treeFed = try env.arena.alloc(bool, fields.len);
+            @memset(treeFed, false);
+            for (ctor.args, 0..) |arg, i| {
+                const fi: ?usize = if (arg.label) |lbl| for (fields, 0..) |fld, j| {
+                    if (std.mem.eql(u8, fld.name, lbl)) break j;
+                } else null else if (i < fields.len) i else null;
+                const at = fi orelse continue;
+                if (metaExprParam(f, arg.value.*)) |pn| for (f.params) |p| {
+                    if (p.arrival == .expr and std.mem.eql(u8, p.name, pn)) treeFed[at] = true;
+                };
+            }
             const shapes = try env.arena.alloc(typedMeta.FieldShape, fields.len);
             for (fields, 0..) |fld, i| {
-                const shape: typedMeta.Shape = if (fld.exprWrapped) .expr else (try metaFieldShape(env, program.decls, target.module, fld.typeRef)) orelse {
+                const shape: typedMeta.Shape = if (fld.exprWrapped or treeFed[i]) .expr else (try metaFieldShape(env, program.decls, target.module, fld.typeRef)) orelse {
                     const msg = try std.fmt.allocPrint(env.arena, "{s}: the field `{s}: {f}` of the meta record `{s}` holds no data the compiler rebuilds where the meta is read", .{ diagnostics.decorator_meta_field_type, fld.name, fld.typeRef, target.decl.name });
                     env.lastError = TypeError.custom(msg, "A meta field is a string, an integer, a float, a `bool`, a variant of an enum without payloads, a `Type.Field<T>`, an array, an optional or a tuple of those — or `@Expr<T>`, filled with a decorator parameter (decision 370 (1)).").withLoc(call.value.getLoc());
                     return error.TypeError;
@@ -6279,7 +6293,7 @@ fn checkTypedMetaCalls(env: *Env, program: ast.Program) InferError!void {
                     env.lastError = TypeError.custom(msg, "Hand the parameter on — `Check(rule: rule)` —: the expression the annotation wrote is spliced where the meta is read (decision 370 (1)).").withLoc(arg.value.getLoc());
                     return error.TypeError;
                 }
-                if (!field.exprWrapped and param != null) {
+                if (!field.exprWrapped and param != null and !treeFed[fi.?]) {
                     const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` is an `@Expr`, and the field `{s}` of `{s}` is a `{f}`", .{ diagnostics.decorator_meta_expr_arg, param.?, field.name, target.decl.name, field.typeRef });
                     env.lastError = TypeError.custom(msg, "Read the value known at build with `.value` (decision 364 (2)), or declare the field `@Expr<T>` to hand the expression on (decision 370 (1)).").withLoc(arg.value.getLoc());
                     return error.TypeError;
@@ -6822,7 +6836,9 @@ fn inferTagMetaRead(env: *Env, call: anytype, recv: *ast.TypedExpr, loc: ast.Loc
     if (env.inTemplateFn) {
         const mt = try metaReadType(env, call, loc);
         if (typeDeclAt(env, env.moduleDecls, mt.module, mt.name)) |td| for (td.recordFields()) |f| {
-            if (!f.exprWrapped) continue;
+            // A tree (an `@Expr<T>` field, or a function field, which only a
+            // tree fills — decision 575 (4)).
+            if (!f.exprWrapped and f.typeRef != .function) continue;
             const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}({s})` is read while the program compiles, and `{s}`'s field `{s}` is an `@Expr` — code the program runs, not data", .{ diagnostics.template_lookup_meta_expr_field, call.callee, mt.spelled, mt.name, f.name });
             env.lastError = TypeError.custom(msg, "A template body reads a declaration's meta at build when every field is data — a string, a number, a `bool`, a variant, an array or an optional of those (decision 415 (3)).").withLoc(loc);
             return error.TypeError;
@@ -22653,8 +22669,9 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                         // params can also be collected as plain arg bindings.
                         const maybeTfn: ?ast.FnDecl = if (localCallee) null else env.templateFns.get(call.callee);
                         // Decision 575 (4) — a `-> expr T` function is called by
-                        // the template syntax, an annotation, or inside a tree.
-                        if (maybeTfn) |tf| if (tf.returnType) |rt| if (ast.isExprKeywordReturn(rt) and !call.is_tagged and !env.inTemplateFn) {
+                        // the template syntax, an annotation, or inside a tree
+                        // (a template's body, the code a template built).
+                        if (maybeTfn) |tf| if (tf.returnType) |rt| if (ast.isExprKeywordReturn(rt) and !call.is_tagged and !env.inTemplateFn and loc.expansion == 0) {
                             const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` answers `-> expr`, an expression spliced where it is called, and is called here as a function", .{ diagnostics.expr_call_outside_expr, call.callee });
                             env.lastError = TypeError.custom(msg, "Call it with the template syntax (`f \"…\"`), as an annotation, or inside a tree (decision 575 (4)).").withLoc(loc);
                             return error.TypeError;

@@ -125,6 +125,8 @@ const Ctx = struct {
     shadow: std.ArrayListUnmanaged([]const u8) = .empty,
     /// Whether the pass wrote anything.
     changed: bool = false,
+    /// A `-> expr T` template that attaches a reference tree.
+    custom: bool = false,
 };
 
 /// Read the program's new surface onto the machinery (see the file comment).
@@ -134,11 +136,11 @@ pub fn expandProgram(alloc: std.mem.Allocator, program: *ast.Program) error{OutO
     defer arena.deinit();
     const P = Pass{ .alloc = alloc, .scratch = arena.allocator() };
     for (program.decls) |*d| switch (d.*) {
-        .@"fn" => |*f| try expandFn(P, f.name, f.params, f.returnType, f.body),
+        .@"fn" => |*f| try expandFn(P, f.name, f.params, &f.returnType, f.body),
         .type_ => |*t| try expandType(P, t),
-        .behavior => |*b| for (b.methods) |*m| if (m.body) |body| try expandFn(P, m.name, m.params, m.returnType, body),
-        .implement => |*i| for (i.methods) |*m| try expandFn(P, m.name, m.params, null, m.body),
-        .extend => |*e| for (e.methods) |*m| try expandFn(P, m.name, m.params, null, m.body),
+        .behavior => |*b| for (b.methods) |*m| if (m.body) |body| try expandFn(P, m.name, m.params, &m.returnType, body),
+        .implement => |*i| for (i.methods) |*m| try expandFn(P, m.name, m.params, &none, m.body),
+        .extend => |*e| for (e.methods) |*m| try expandFn(P, m.name, m.params, &none, m.body),
         .@"test" => |*t| {
             var ctx: Ctx = .{ .alloc = alloc, .scratch = P.scratch, .runTime = true };
             try walkStmts(&ctx, t.body);
@@ -153,16 +155,26 @@ pub fn expandProgram(alloc: std.mem.Allocator, program: *ast.Program) error{OutO
 
 const Pass = struct { alloc: std.mem.Allocator, scratch: std.mem.Allocator };
 
+/// The return of a function that writes none (an `implement` method's).
+var none: ?ast.TypeRef = null;
+
+/// The local a `-> expr T` template's `compiler.custom(tree)` keeps its tree
+/// in (decision 576 (4)); no source can spell it.
+const custom_tree_name = "__bp_customTree";
+
 fn expandType(P: Pass, t: *ast.TypeDecl) error{OutOfMemory}!void {
-    for (t.methods) |*m| if (m.body) |body| try expandFn(P, m.name, m.params, m.returnType, body);
+    for (t.methods) |*m| if (m.body) |body| try expandFn(P, m.name, m.params, &m.returnType, body);
     for (t.assocTypes) |*inner| try expandType(P, inner);
 }
 
-fn expandFn(P: Pass, name: []const u8, params: []ast.Param, returnType: ?ast.TypeRef, body: []ast.Stmt) error{OutOfMemory}!void {
+fn expandFn(P: Pass, name: []const u8, params: []ast.Param, returnRef: *?ast.TypeRef, body: []ast.Stmt) error{OutOfMemory}!void {
+    const returnType = returnRef.*;
     const alloc = P.scratch;
     var ctx: Ctx = .{ .alloc = P.alloc, .scratch = P.scratch };
     ctx.runTime = std.mem.eql(u8, name, "main");
     if (params.len > 0 and params[0].typeRef.isDeclType()) ctx.decl = params[0].name;
+    // A template annotation's handle is its second parameter (decision 311).
+    if (params.len > 1 and params[1].typeRef.isDeclType()) ctx.decl = params[1].name;
     const template = if (returnType) |rt| rt.isTemplateReturnType() else false;
     ctx.template = template;
     var values: std.ArrayListUnmanaged([]const u8) = .empty;
@@ -178,8 +190,18 @@ fn expandFn(P: Pass, name: []const u8, params: []ast.Param, returnType: ?ast.Typ
     }
     ctx.values = values.items;
     ctx.trees = trees.items;
+    // Decision 576 (4) — `compiler.custom(tree)` in a `-> expr T` template:
+    // the tree is kept (`val <custom_tree_name> = tree`), the template is the
+    // custom carrier the machinery knows (`@ExprCustom<T>`), and each return
+    // hands the tree with its expression (`q.custom(tree, e)`).
+    const keyword = if (returnType) |rt| ast.isExprKeywordReturn(rt) else false;
+    if (keyword) for (body) |*st| if (compilerCall(st.expr)) |c| if (std.mem.eql(u8, c.callee, "custom") and c.args.len == 1) {
+        st.expr = .{ .binding = .{ .loc = st.expr.getLoc(), .kind = .{ .localBind = .{ .name = custom_tree_name, .value = c.args[0].value, .mutable = false } } } };
+        ctx.custom = true;
+    };
     try walkStmts(&ctx, body);
-    if (returnType) |rt| if (ast.isExprKeywordReturn(rt)) try liftReturns(&ctx, body);
+    if (keyword) try liftReturns(&ctx, body);
+    if (ctx.custom) returnRef.*.?.generic.name = "ExprCustom";
 }
 
 fn walkStmts(ctx: *Ctx, body: []ast.Stmt) error{OutOfMemory}!void {
@@ -394,6 +416,19 @@ fn walkExpr(ctx: *Ctx, p: *ast.Expr) error{OutOfMemory}!void {
         const a = e.call.kind.call.args[0].value.*;
         if (a == .identifier and a.identifier.kind == .ident and contains(ctx.values, a.identifier.kind.ident)) return;
     }
+    // A call of a `comptime` parameter, `rule(x)`: its value called
+    // (`rule.value(x)` to the machinery, which refuses a function's value at
+    // build — decision 364 (3)).
+    if (e == .call and e.call.kind == .call) {
+        const c = e.call.kind.call;
+        if (!ctx.inTree and c.receiver == null and c.calleeExpr == null and !c.is_builtin and contains(ctx.values, c.callee) and !contains(ctx.shadow.items, c.callee)) {
+            ctx.changed = true;
+            p.call.kind.call.receiver = try ident(ctx, c.callee, loc);
+            p.call.kind.call.callee = "value";
+            for (p.call.kind.call.args) |*a| try walkExpr(ctx, a.value);
+            return;
+        }
+    }
     if (compilerCall(e)) |c| {
         // Refused at the keyword itself.
         const at = c.receiver.?.getLoc();
@@ -507,11 +542,19 @@ fn liftIn(ctx: *Ctx, p: *ast.Expr) error{OutOfMemory}!void {
     switch (p.*) {
         .function => return,
         .jump => |*j| if (j.kind == .@"return") {
-            if (j.kind.@"return") |r| if (!answersTree(ctx, r.*)) {
-                const args = try ctx.alloc.alloc(ast.CallArg, 1);
-                args[0] = .{ .label = null, .value = try box(ctx, r.*) };
-                r.* = builtinCall(r.getLoc(), "expr", args, &[_]ast.TrailingLambda{});
-            };
+            if (j.kind.@"return") |r| {
+                if (!answersTree(ctx, r.*)) {
+                    const args = try ctx.alloc.alloc(ast.CallArg, 1);
+                    args[0] = .{ .label = null, .value = try box(ctx, r.*) };
+                    r.* = builtinCall(r.getLoc(), "expr", args, &[_]ast.TrailingLambda{});
+                }
+                if (ctx.custom) if (ctx.site) |site| {
+                    const args = try ctx.alloc.alloc(ast.CallArg, 2);
+                    args[0] = .{ .label = null, .value = try ident(ctx, custom_tree_name, r.getLoc()) };
+                    args[1] = .{ .label = null, .value = try box(ctx, r.*) };
+                    r.* = methodCall(ctx, r.getLoc(), try ident(ctx, site, r.getLoc()), "custom", args, &[_]ast.TrailingLambda{}, null);
+                };
+            }
             return;
         },
         else => {},

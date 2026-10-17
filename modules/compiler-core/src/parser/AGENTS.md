@@ -923,7 +923,8 @@ what was written (`ast.Arrival`, dumped only when not `written`; the formatter p
   or `..` follows it (`isExprModifierAt`); anywhere else it is a name. Its type may write `fn(..) -> R`
   (`inDeclPattern`). A top-level function that is no template and whose first parameter is `expr` is a
   decorator: `expr_params.zig` `declHandle` reads that parameter as the declaration handle
-  (`ast.decl_type_name`; `expr decl: unknown` is the handle with no pattern).
+  (`ast.decl_type_name`; `expr decl: unknown` is the handle with no pattern). A template annotation
+  (decision 311) is a template whose second parameter is `expr d: unknown`: that one is the handle.
 - `-> expr T` (`parseReturnTypeRef`) — a template's return, the tree type; `ast.isExprKeywordReturn` tells
   it from an `@Expr<T>` written while both parse.
 - `type<T>` — the type of the type `T` (`types.zig`, a `typeparam` with one member; `type<A | B>` keeps
@@ -937,7 +938,10 @@ After `unwrapProgram`, `compiler_surface.zig` `expandProgram` reads the surface 
 `compiler.<member>(…)` becomes the handle's, the template site's or a builtin's form (its table,
 `members`, is held to std's `compiler.bp` by `comptime/tests/compiler_members.zig`); a bare read of a
 `comptime x: T` is `x.value` outside a member or a wrapper; a `-> expr T` template's `return e` lifts `e`
-(`@expr(e)`) unless it is a tree parameter or a call answering one. A refusal is written at its place
+(`@expr(e)`) unless it is a tree parameter or a call answering one; a call of a `comptime` parameter,
+`rule(x)`, is `rule.value(x)` (refused for a function, 364 (3)); `compiler.custom(tree)` in a `-> expr T`
+template keeps the tree in a local, makes the template the custom carrier (`@ExprCustom<T>`) and each
+return `q.custom(tree, e)` (decision 576 (4)). A refusal is written at its place
 as the builtin `compiler_surface.refusal_builtin` (`compiler-at-run-time` in `main` or a `test`,
 `compiler-output-outside-decorator`, `expr-captures-build` inside a member or a wrapper,
 `compiler-member-unknown`), which the checker reports there (`infer.zig` `refuseSurface`).
