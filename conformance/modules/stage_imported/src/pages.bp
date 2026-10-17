@@ -1,0 +1,42 @@
+//// Decision 376 (6) — a function's stage is published with its module's
+//// nodes: each function here takes the stage of the imported one it calls
+//// (`ui.pad` `Any`, `ui.agora` `Run`, `label` `Build`), through a namespace
+//// or a named import. `main` calls only the `Any` one: calling the
+//// `Build` and the `Run` one together would be `build-and-run`.
+
+import {ui};
+
+import {ui.label};
+
+fn stage(comptime decl: @Decl) {
+    var out: string[] = [];
+    decl.hooks.forEach({ n ->
+        val s = if (n.stage == Stage.Build)
+            "Build"
+        else if (n.stage == Stage.Run)
+            "Run"
+        else
+            "Any";
+        out.push(s)
+    });
+    decl.setMeta(Staged(name: decl.name, stages: out));
+}
+
+#[stage]
+pub fn usaPad() -> string {
+    return ui.pad(2);
+}
+
+#[stage]
+pub fn usaAgora() -> bool {
+    return ui.agora() > 0;
+}
+
+#[stage]
+pub fn usaLabel() -> string {
+    return label("x", "!");
+}
+
+// What `#[stage]` records: the function's name and the stage of each node of
+// its `decl.hooks`.
+pub type Staged(name: string, stages: string[])

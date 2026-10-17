@@ -1,43 +1,12 @@
-//// Decisions 277, 354 (4), 379 — `decl.hooks` carries each `use
-//// provide(ctx)` / `use context(T)` with its context object, the `val` that
-//// declares the type's default, which a framework's root decorator reads to
-//// check that every context read has a provider on its path. std's `provide`
-//// / `context` get no node.
+//// Reads what `#[contexts]` recorded on the declarations of `pages`, the cell's
+//// subject: a decorator that reads `.hooks` runs after its module's bodies,
+//// so its typed meta is read from another module (`typeinfo-meta-hooks-pending`).
 
-import {context.createContext, context.provide, context.context} from "std";
+pub mod pages;
 
-type Theme(mode: string)
-
-type Element(text: string) implement @Renderable
-
-pub val themeContext = comptime createContext(Theme(mode: "default"));
-
-fn contexts(comptime decl: @Decl) {
-    var out: string[] = [];
-    decl.hooks.forEach({ n ->
-        n.uses.forEach({ u ->
-            val h = u.hook;
-            val c = u.context;
-            val hook = if (h == null) "null" else h.module + "." + h.name;
-            val ctx = if (c == null) "-" else c.module + "." + c.name;
-            out.push(n.function.name + ": " + hook + "(" + ctx + ")")
-        })
-    });
-    decl.setMeta("uses", out.join(" | "));
-}
-
-fn Label() -> @Component<Element> {
-    val t = use context(Theme);
-    return Element(text: t.mode);
-}
-
-#[contexts]
-fn App() -> @Component<Element> {
-    use provide(createContext(Theme(mode: "dark")));
-    val l = Label();
-    return Element(text: l.text);
-}
+import {pages.App, pages.ContextUses};
 
 pub fn main() {
-    @print(@typeInfo(App).meta.contexts.uses);
+    val uses: string[] = @typeInfo(App).meta(ContextUses)?.uses ?? [];
+    @print(uses.join(" | "));
 }

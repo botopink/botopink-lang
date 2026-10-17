@@ -1,2 +1,2 @@
 botopink-cell 1
-out params<main.BlogParams(slug: string, id: i32)> title<>
+out params<pages.BlogParams(slug: string, id: i32)> title<>

@@ -1,87 +1,30 @@
-//// Decision 376 — every function has a stage, read as `HookNode.stage`:
-//// `Build` when it reads what exists only while the program compiles (a
-//// `comptime` parameter's `.value` in a function that also takes a run-time
-//// one: a function whose every parameter is `comptime` is expanded at its
-//// call site instead, and `titulo` is `Any`, decision 562), `Run` when it
-//// reaches a host function with an effect (std's clock), `Any` otherwise —
-//// std's `math` is a pure primitive, declared `Any`. A call gives the caller the
-//// callee's stage (`Any + Build = Build`, `Any + Run = Run`), and a
-//// `comptime` in a body is computed at build and gives it none.
+//// Reads what `#[stage]` recorded on the declarations of `pages`, the cell's
+//// subject: a decorator that reads `.hooks` runs after its module's bodies,
+//// so its typed meta is read from another module (`typeinfo-meta-hooks-pending`).
 
-import {io.clock, math} from "std";
+pub mod pages;
 
-fn stage(comptime decl: @Decl) {
-    var out: string[] = [];
-    decl.hooks.forEach({ n ->
-        val s = if (n.stage == Stage.Build)
-            "Build"
-        else if (n.stage == Stage.Run)
-            "Run"
-        else
-            "Any";
-        out.push(s)
-    });
-    decl.setMeta("text", decl.name + ": " + out.join(" "));
-}
-
-#[stage]
-fn padAll(n: i32) -> string {
-    return "padding: " + (n * 4).toString() + "px;";
-}
-
-#[stage]
-fn agora() -> i64 {
-    return clock.nowMillis();
-}
-
-#[stage]
-fn campos(comptime names: @Expr<string>, open: string) -> string {
-    return open + names.value + "]";
-}
-
-#[stage]
-fn titulo(comptime t: @Expr<string>) -> string {
-    return t.value + "!";
-}
-
-#[stage]
-fn cabecalho() -> string {
-    val n = comptime campos("title,body", "[");
-    return n + agora().toString();
-}
-
-#[stage]
-fn twice(n: i32) -> string {
-    return padAll(n) + padAll(n);
-}
-
-#[stage]
-fn nomes() -> string {
-    return campos("a,b", "[");
-}
-
-#[stage]
-fn raiz() -> f64 {
-    return math.sqrt(16.0);
-}
-
-#[stage]
-fn depois() -> i64 {
-    return agora() + 1;
-}
+import {pages.padAll, pages.agora, pages.campos, pages.titulo, pages.cabecalho, pages.twice, pages.nomes, pages.raiz, pages.depois, pages.Staged};
 
 pub fn main() {
-    @print(@typeInfo(padAll).meta.stage.text);
-    @print(@typeInfo(agora).meta.stage.text);
-    @print(@typeInfo(campos).meta.stage.text);
-    @print(@typeInfo(titulo).meta.stage.text);
-    @print(@typeInfo(cabecalho).meta.stage.text);
-    @print(@typeInfo(twice).meta.stage.text);
-    @print(@typeInfo(nomes).meta.stage.text);
-    @print(@typeInfo(raiz).meta.stage.text);
-    @print(@typeInfo(depois).meta.stage.text);
+    show(@typeInfo(padAll).meta(Staged));
+    show(@typeInfo(agora).meta(Staged));
+    show(@typeInfo(campos).meta(Staged));
+    show(@typeInfo(titulo).meta(Staged));
+    show(@typeInfo(cabecalho).meta(Staged));
+    show(@typeInfo(twice).meta(Staged));
+    show(@typeInfo(nomes).meta(Staged));
+    show(@typeInfo(raiz).meta(Staged));
+    show(@typeInfo(depois).meta(Staged));
     @print(nomes());
     @print(titulo("oi"));
     @print(twice(2));
     @print(raiz());
+}
+
+fn show(staged: ?Staged) {
+    if (staged) {
+        s ->
+        @print(s.name + ": " + s.stages.join(" "));
+    }
 }

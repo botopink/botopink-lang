@@ -1,28 +1,12 @@
-type Element(text: string) implement @Renderable
+//// Reads what `#[graph]` recorded on the declarations of `pages`, the cell's
+//// subject: a decorator that reads `.hooks` runs after its module's bodies,
+//// so its typed meta is read from another module (`typeinfo-meta-hooks-pending`).
 
-fn graph(comptime decl: @Decl) {
-    var names: string[] = [];
-    decl.hooks.forEach(
-        { n -> names.push(n.function.name + "/" + n.uses.length.toString()) },
-    );
-    decl.setMeta("nodes", names.join(" "));
-}
+pub mod pages;
 
-fn session() -> @Component<string> {
-    return "alice";
-}
+import {pages.Page, pages.Graph};
 
-fn user() -> @Component<string> {
-    val s = use session();
-    return "user " + s;
-}
-
-#[graph]
-fn Page() -> @Component<Element> {
-    val u = use user();
-    return Element(text: u);
-}
-
-fn main() {
-    @print(@typeInfo(Page).meta.graph.nodes); // Page/1 user/1 session/0
+pub fn main() {
+    val pageNodes: string[] = @typeInfo(Page).meta(Graph)?.nodes ?? [];
+    @print(pageNodes.join(" ")); // Page/1 user/1 session/0
 }
