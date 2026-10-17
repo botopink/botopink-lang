@@ -1125,6 +1125,20 @@ reads` reads each against the codegen's type names.
 host; everything that only computes over values is Zig, transpiled into the
 program as std-wasm is (§ std-wasm in the program).
 
+**A `String` method bound by `fn:` (decision 565, front 164 s3 P1-b).** A `String` method whose wasm
+cell is `#[@External.Wasm(fn: <name>)]` is a call of `<name>`, a private bodied fn taking the receiver
+first and then the method's parameters, of the same types (`hostFnBinding.resolve` over the method seen
+as a fn, `stringMethodAsFn`): `lowerPrimMethod` asks `stringFnCellOf` before any other lowering and
+`lowerStringFnCell` emits the call. A program's own `behavior String` member is registered with its body
+(`registerSymbols` → `registerStringFnCell`, `Emitter.string_fn_cells`; `primRes` and `optInfoOf` read
+the body's declared return, so a `?string` prints as absent). A member of `primitives.bp` is read from
+the prelude at the call (`preludeStringFnCell`): its body, a private fn of `primitives.bp`, is adopted
+with every private fn it calls (`adoptPreludeHostFn`: a bodied private prelude fn registered and queued
+in `spec_pending`, a refusal inside it reported at the call), and where the method keeps a
+`std_method_exports` row the body's answer is converted to what that row's std-wasm call leaves.
+`primitives.bp` binds none of its methods so yet (decision 566: after s2 P5); `codegen/tests/wat.zig`
+proves the path over a program module.
+
 **The rule for a new helper (442 (3)).** It stays in `wat_prelude` when it
 reads or writes the layout the codegen decides (a box, an array's or a
 string's cell, a value's header, the heap pointer) or talks to the host (a

@@ -34,9 +34,14 @@ Today's leaves (`wat/text.wat`):
 | `text.byteSlice` | `($str, i32, i32) -> $str` | the bytes `a` to `b`, each clamped to `0..length`, an end before the start the start |
 | `text.fromCodepoint` | `(i32) -> $str` | the one to four UTF-8 bytes of a scalar value; a value that is none traps |
 
-`text.byteLength`, `text.byteAt` and `text.byteSlice` have no `.bp` binding yet (a later piece of 164 s3
-binds them); each has a twin export of the same name and types in `wasm.zig` / `root.exports` /
-`term_faces.zig`, so a module that falls back to linear memory still builds. The twins go when nothing
+`text.byteLength`, `text.byteAt` and `text.byteSlice` are bound by `declare fn`s of `primitives.bp`'s trailing
+section `the wasm bodies (front 164 s3)` (`stringByteLength`, `stringByteAt`, `stringByteSlice`), which the private
+`text<Name>OnWasm` bodies of `split`, `chars`, `lines`, `words`, `contains`, `startsWith`, `endsWith`, `indexOf`,
+`lastIndexOf`, `at`, `padStart`, `padEnd`, `repeat`, `replace`, `replaceAll`, `trim`, `trimStart` and `trimEnd` call
+(each answering what `text.zig` answers). No `String` method binds a body yet — its `fn:` cell replaces its `std:` cell
+after s2 P5 (decision 566), and the wasm codegen then lowers it to the body (decision 565, `codegen/wat/AGENTS.md`) —
+so those methods still call the exports of `text.zig` below. Each leaf has a twin export of the same name and types in
+`wasm.zig` / `root.exports` / `term_faces.zig`, so a module that falls back to linear memory still builds. The twins go when nothing
 uses the exports (s3 P6). `text.fromCodepoint` is a leaf and keeps its export.
 
 ## Two value representations (decision 450 (4))

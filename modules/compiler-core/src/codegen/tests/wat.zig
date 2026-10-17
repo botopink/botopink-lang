@@ -207,6 +207,93 @@ test "wat: front 164 s3 ---- the byte leaves and fromCodepoint answer in a GC mo
     );
 }
 
+// Front 164 s3 P1-b, decision 565 — a `String` method whose wasm cell is
+// `#[@External.Wasm(fn: <name>)]` lowers to a call of that private body, the
+// receiver its first argument: a `string`, a `bool`, a `?string` and a
+// `string[]` answer read at the call as the method's own. `primitives.bp`
+// binds none of its methods so yet (decision 566), so the program is the
+// module that declares the method and its body.
+test "wat: front 164 s3 P1-b ---- a String method bound by fn: runs its private body" {
+    const io = std.testing.io;
+    const alloc = std.testing.allocator;
+    var outputs = try h.generate(alloc, &.{.{ .path = "", .source =
+        \\behavior String {
+        \\    #[@External.Erlang("string:uppercase($0)")]
+        \\    #[@External.Node("toUpperCase")]
+        \\    #[@External.Wasm(fn: shoutBody)]
+        \\    fn shout(self: Self) -> string;
+        \\    #[@External.Erlang("($0 =:= $1)")]
+        \\    #[@External.Node("startsWith")]
+        \\    #[@External.Wasm(fn: sameBody)]
+        \\    fn same(self: Self, other: string) -> bool;
+        \\    #[@External.Erlang("$0")]
+        \\    #[@External.Node("at")]
+        \\    #[@External.Wasm(fn: pickBody)]
+        \\    fn pick(self: Self, i: i32) -> ?string;
+        \\    #[@External.Erlang("[$0, $0]")]
+        \\    #[@External.Node("split")]
+        \\    #[@External.Wasm(fn: twiceBody)]
+        \\    fn twice(self: Self) -> string[];
+        \\}
+        \\fn shoutBody(s: string) -> string {
+        \\    return s + "!";
+        \\}
+        \\fn sameBody(s: string, other: string) -> bool {
+        \\    return s == other;
+        \\}
+        \\fn pickBody(s: string, i: i32) -> ?string {
+        \\    if (i < 0) return null;
+        \\    return s;
+        \\}
+        \\fn twiceBody(s: string) -> string[] {
+        \\    var out: string[] = [];
+        \\    out.push(s);
+        \\    out.push(s);
+        \\    return out;
+        \\}
+        \\fn main() {
+        \\    val s = "hi";
+        \\    @print(s.shout());
+        \\    @print(s.shout().length());
+        \\    @print(s.same("hi"));
+        \\    @print(s.same("ho"));
+        \\    @print(s.pick(0));
+        \\    @print(s.pick(-1));
+        \\    @print(s.pick(-1) ?? "none");
+        \\    @print(s.twice());
+        \\    @print(s.twice().join("+"));
+        \\}
+    }}, io, h.configs[3]);
+    defer {
+        for (outputs.items) |*o| o.result.deinit(alloc);
+        outputs.deinit(alloc);
+    }
+    const o = for (outputs.items) |o| {
+        if (std.mem.eql(u8, o.name, "") or std.mem.eql(u8, o.name, "main")) break o;
+    } else return error.ModuleDidNotCompile;
+    if (o.result.diagnostic) |d| switch (d) {
+        .type => |t| std.debug.print("\n=== refused: {s}\n", .{t.message}),
+        .syntax => {},
+    };
+    const wat_text = o.result.js;
+    for ([_][]const u8{ "shoutBody", "sameBody", "pickBody", "twiceBody" }) |body| {
+        var buf: [64]u8 = undefined;
+        try std.testing.expect(std.mem.indexOf(u8, wat_text, try std.fmt.bufPrint(&buf, "call ${s}", .{body})) != null);
+    }
+    try std.testing.expectEqualStrings(
+        \\hi!
+        \\3
+        \\true
+        \\false
+        \\hi
+        \\null
+        \\none
+        \\["hi", "hi"]
+        \\hi+hi
+        \\
+    , o.result.run_output orelse "");
+}
+
 test "wat: record construct two fields" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\type Point(x: i32, y: i32)

@@ -3957,6 +3957,23 @@ fn registerBuiltinDecls(env: *Env) anyerror!void {
     }
 }
 
+/// Decision 565 — a private bodied `fn` of `primitives.bp` (a `String`
+/// method's wasm body, 164 s3) is the prelude's own: inferred with the prelude,
+/// then taken out of the global environment it was flattened into, so a program
+/// neither calls it nor collides with it. The wasm codegen reads it from the
+/// prelude's parse (`prelude_cache.freeFn`) when a `fn:` cell names it.
+fn hidePreludeBodies(env: *Env, program: ast.Program) void {
+    for (program.decls) |d| {
+        if (d != .@"fn") continue;
+        const f = d.@"fn";
+        if (f.isPub or f.isDeclare or f.body.len == 0) continue;
+        _ = env.bindings.remove(f.name);
+        _ = env.fnParams.remove(f.name);
+        _ = env.fnDecls.remove(f.name);
+        _ = env.ownDecls.remove(f.name);
+    }
+}
+
 pub fn registerStdlib(env: *Env, gpa: std.mem.Allocator) anyerror!void {
     _ = gpa; // stdlib sources are now parsed into `env.arena` (see below)
     const prelude = @import("std_prelude");
@@ -3965,6 +3982,10 @@ pub fn registerStdlib(env: *Env, gpa: std.mem.Allocator) anyerror!void {
     };
     // The prelude is std's (decision 445): its `std:` cells are std's to write.
     env.inStd = true;
+    // A bodied `fn` of the prelude (164 s3's wasm bodies, decision 565) reads
+    // `true` / `false` as any program does: bound before the prelude is inferred.
+    try env.bind("true", try env.namedType("bool"));
+    try env.bind("false", try env.namedType("bool"));
     for (sources) |src| {
         // Parse into `env.arena` (not a scratch arena): the interface decls for
         // primitive associated fns (`Pair`, `Function`, …) are retained in
@@ -3982,6 +4003,7 @@ pub fn registerStdlib(env: *Env, gpa: std.mem.Allocator) anyerror!void {
             m.from_prelude = true;
         };
         _ = try infer.inferProgram(env, program);
+        hidePreludeBodies(env, program);
     }
     env.inStd = false;
 

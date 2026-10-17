@@ -654,6 +654,38 @@ fn hasWasmCell(anns: []const ast.Annotation) bool {
     return false;
 }
 
+/// Decision 565 — the body a `String` method's `#[@External.Wasm(fn: <name>)]`
+/// cell names, or null when its wasm cell is another (or it has none).
+fn methodFnCell(m: ast.BehaviorMethod) ?[]const u8 {
+    for (m.annotations) |a| if (ast.isExternalWasm(a)) if (ast.externalRefOf(a, "wasm")) |r| return hostFnBinding.fnName(r);
+    return null;
+}
+
+/// `primitives.bp`'s `String.<method>`, or null.
+fn preludeStringMethod(method: []const u8) ?ast.BehaviorMethod {
+    const prog = preludeCache.primitives() orelse return null;
+    for (prog.decls) |d| if (d == .behavior and std.mem.eql(u8, d.behavior.name, "String")) {
+        for (d.behavior.methods) |m| if (std.mem.eql(u8, m.name, method)) return m;
+    };
+    return null;
+}
+
+/// The `fn:` cell `primitives.bp`'s `String.<method>` carries, or null.
+fn preludeStringFnCell(method: []const u8) ?[]const u8 {
+    return methodFnCell(preludeStringMethod(method) orelse return null);
+}
+
+/// A `String` method seen as the `fn:` check reads a binding: the receiver a
+/// `string` first parameter, the body's own first parameter (decision 565).
+fn stringMethodAsFn(ar: std.mem.Allocator, m: ast.BehaviorMethod) !ast.FnDecl {
+    const params = try ar.alloc(ast.Param, m.params.len);
+    for (m.params, 0..) |p, i| params[i] = if (std.mem.eql(u8, p.name, "self"))
+        .{ .name = "__recv", .typeRef = .{ .named = "string" } }
+    else
+        p;
+    return .{ .isPub = false, .name = m.name, .genericParams = m.genericParams, .params = params, .returnType = m.returnType, .body = &.{}, .annotations = m.annotations };
+}
+
 /// Whether `b` is a primitive behavior of the std prelude (`String`, `Array`,
 /// the numeric tower, `Bool`, `Function`, `Pair`) whose declaration already
 /// sits in `own` or `linked` with the same members, name for name — the
@@ -2619,6 +2651,11 @@ const Emitter = struct {
     /// `<kind>.<method>` for every primitive kind the behavior covers
     /// (`primBehaviorKinds`). In `reg_arena`.
     prim_defaults: std.StringHashMapUnmanaged(PrimDefault) = .empty,
+    /// Decision 565 — a `String` method the program's own `behavior String`
+    /// binds on wasm by `#[@External.Wasm(fn: <name>)]` → that private body's
+    /// symbol (`lowerStringFnCell`). `primitives.bp`'s own are read from the
+    /// prelude at the call (`stringFnCellOf`).
+    string_fn_cells: std.StringHashMapUnmanaged([]const u8) = .empty,
     /// Every behavior the program declares, by name (`registerTypes`): where a
     /// type that implements one finds the `default fn`s it adopts.
     behavior_decls: std.StringHashMapUnmanaged(ast.BehaviorDecl) = .empty,
@@ -3203,6 +3240,10 @@ const Emitter = struct {
             .type_ => |r| try self.registerInterfaceSigs(r.name, r.genericParams, try self.methodsWithDefaults(r)),
             .behavior => |i| for (i.methods) |m| {
                 try self.behavior_methods.put(self.alloc, try std.fmt.allocPrint(ra, "{s}.{s}", .{ i.name, m.name }), m);
+                if (std.mem.eql(u8, i.name, "String") and m.body == null) if (methodFnCell(m)) |name| {
+                    try self.registerStringFnCell(m, name, program);
+                    continue;
+                };
                 const body = m.body orelse continue;
                 // An associated default whose cells name other targets only
                 // (`Array.range`'s `External.Node` template) is its body here,
@@ -15082,6 +15123,20 @@ const Emitter = struct {
     fn adoptPreludeHostFn(self: *Emitter, name: []const u8) !bool {
         if (self.fn_sigs.contains(name) or self.host_fns.contains(name) or self.generic_fns.contains(name)) return false;
         const f = preludeCache.freeFn(name) orelse return false;
+        // Decision 565 — a private body of the prelude a `String` method's
+        // `fn:` cell names (and the private fns it calls): adopted whole, its
+        // locations `primitives.bp`'s, a refusal inside it reported at the call.
+        if (!f.isDeclare and f.body.len > 0 and !f.isPub and !f.isExternal()) {
+            try self.registerFn(f);
+            try self.spec_pending.append(self.alloc, .{
+                .decl = f,
+                .rewrites = self.rewrites,
+                .lowerings = self.instance_lowerings,
+                .renames = self.global_renames,
+                .origin = self.foreign_origin orelse self.call_loc,
+            });
+            return true;
+        }
         if (!f.isDeclare or f.body.len > 0) return false;
         const ext = for (f.annotations) |a| {
             if (ast.isExternalWasm(a)) if (ast.externalRefOf(a, "wasm")) |r| break r;
@@ -15522,6 +15577,17 @@ const Emitter = struct {
     /// answers by its declared return (`Self` the receiver's kind).
     fn primRes(self: *Emitter, k: envMod.PrimKind, cc: anytype) ?PrimRes {
         if (primCallRes(k, cc)) |r| return r;
+        // Decision 565 — a program's `String` method bound by `fn:` answers
+        // what its body declares.
+        if (k == .string) if (self.string_fn_cells.get(cc.callee)) |sym| {
+            const rt = (self.fn_ret_typerefs.get(sym) orelse return .none);
+            return switch (rt) {
+                .named => |n| if (std.mem.eql(u8, n, "string")) .str else if (std.mem.eql(u8, n, "bool")) .bool_ else if (isFloatTypeName(n)) .f64 else .i32,
+                .array, .generic => .arr,
+                .optional => |o| if (o.* == .named and std.mem.eql(u8, o.named, "string")) .str else .i32,
+                else => .i32,
+            };
+        };
         const pd = self.primDefaultOf(k, cc.callee) orelse return null;
         if (pd.method.params.len != cc.args.len + 1) return null;
         if (k == .array) {
@@ -15545,6 +15611,59 @@ const Emitter = struct {
         if (std.mem.eql(u8, t, "bool")) return .bool_;
         if (isFloatTypeName(t)) return .f64;
         return .i32;
+    }
+
+    /// Decision 565 — a `String` method of the program's own `behavior String`
+    /// whose wasm cell is `fn: <name>`: `<name>` is a private bodied fn of the
+    /// program taking the receiver first, then the method's parameters, and
+    /// answering its type (`hostFnBinding.resolve`, refused at the annotation
+    /// otherwise). `primitives.bp`'s own members, which a materialised prelude
+    /// may bring along, are the prelude's (`stringFnCellOf`).
+    fn registerStringFnCell(self: *Emitter, m: ast.BehaviorMethod, name: []const u8, program: ast.Program) !void {
+        if (preludeStringFnCell(m.name)) |pn| if (std.mem.eql(u8, pn, name)) return;
+        const ra = self.reg_arena.allocator();
+        const as_fn = try stringMethodAsFn(ra, m);
+        switch (try hostFnBinding.resolve(ra, as_fn, name, program, "", "Wasm")) {
+            .refused => |message| return self.refuse(hostFnBinding.annotationLoc(as_fn, "Wasm"), "{s}", .{message}),
+            .ok => {},
+        }
+        try self.string_fn_cells.put(ra, m.name, name);
+    }
+
+    /// The body symbol a `String.<method>` call lowers to on wasm (decision
+    /// 565): the program's own binding, else `primitives.bp`'s — its private
+    /// body adopted from the prelude (`adoptPreludeHostFn`). Null when the
+    /// method's wasm cell is no `fn:` (a `std:` cell, `lowerStringMethod`).
+    fn stringFnCellOf(self: *Emitter, method: []const u8) !?[]const u8 {
+        if (self.string_fn_cells.get(method)) |sym| return sym;
+        const m = preludeStringMethod(method) orelse return null;
+        const name = methodFnCell(m) orelse return null;
+        if (self.fn_sigs.contains(name)) return name;
+        const ra = self.reg_arena.allocator();
+        switch (try hostFnBinding.resolve(ra, try stringMethodAsFn(ra, m), name, preludeCache.primitives().?, "", "Wasm")) {
+            .refused => |message| return self.refuse(self.call_loc, "{s} (in `primitives.bp`)", .{message}),
+            .ok => {},
+        }
+        _ = try self.adoptPreludeHostFn(name);
+        return name;
+    }
+
+    /// `s.<method>(…)` whose wasm cell is `fn: <body>` (decision 565): a call
+    /// of the body, the receiver its first argument. Where `primitives.bp`'s
+    /// method also has a std-wasm row, the body's answer is coerced to what
+    /// that row leaves (a `?string` is the `$str` reference `text.at` left), so
+    /// the call site reads the same value either way.
+    fn lowerStringFnCell(self: *Emitter, sym: []const u8, cc: anytype) anyerror!void {
+        const sig = self.fn_sigs.get(sym).?;
+        try self.lowerCoerced(cc.receiver.?.*, sig.params[0]);
+        try self.lowerCallArgs(cc.args, sig, 1);
+        try self.emit(.{ .call = sym });
+        const res = sig.result orelse return;
+        if (self.mode != .gc) return;
+        const export_name = stdMethodExport("String", cc.callee) orelse return;
+        if (stdLeaves.find(export_name) != null) return;
+        const ex = gcStdSig(export_name) orelse return;
+        try self.emitConvert(res, try stdRepr(ex.result));
     }
 
     /// `"a+b".tailShout()` over a program's `behavior String { default fn
@@ -15845,6 +15964,7 @@ const Emitter = struct {
     }
 
     fn lowerPrimMethod(self: *Emitter, k: envMod.PrimKind, cc: anytype) anyerror!void {
+        if (k == .string) if (try self.stringFnCellOf(cc.callee)) |sym| return self.lowerStringFnCell(sym, cc);
         if (primCallRes(k, cc) == null) {
             if (self.primDefaultOf(k, cc.callee)) |pd| if (pd.method.params.len == cc.args.len + 1)
                 return self.lowerPrimDefault(k, pd, cc);
@@ -21785,6 +21905,12 @@ const Emitter = struct {
                     // printed through `$__print_str`, which reads a length at
                     // address 0 — the WASI iovec — and answers whatever is
                     // there with exit 0 instead of saying it is absent.
+                    // A program's `String` method bound by `fn:` (decision
+                    // 565): the optional its body declares.
+                    if (k == .string) if (self.string_fn_cells.get(cc.callee)) |sym| {
+                        const rt = self.fn_ret_typerefs.get(sym) orelse return null;
+                        return self.optInfoOfTypeRef(rt);
+                    };
                     if (k == .string and std.mem.eql(u8, cc.callee, "at")) {
                         return .{ .boxed = false, .str = true };
                     }
