@@ -11,9 +11,8 @@ The reference text this cell shows (from `conformance/docs.md`, § Decorators):
 > query answers functions, `val`s or types, never two of them
 > (`typeinfo-all-mixed`). A decorator adds and never replaces: a name
 > the type already has is `decorator-member-duplicate` / `decorator-type-duplicate`.
-> Meta describes a top-level declaration — a `type`, a `behavior`, a `fn` or a `val` — and
-> each key is set once (`decorator-meta-duplicate`); a read naming a key the
-> decorator did not set is `typeinfo-meta-missing`.
+> Meta describes a top-level declaration — a `type`, a `behavior`, a `fn` or a `val`
+> (`decorator-meta-on-member` from a field's or a method's decorator).
 > A record-shaped type's members are closed: a call through the type names an
 > associated fn it declares, by hand or through `decl.addMember`, and any other
 > name is `unknown-associated-fn` where the call is written.

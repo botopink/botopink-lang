@@ -207,7 +207,7 @@ parent, where `wrapWith` was no member of `Decl`.
 Decision 302 (a tag is a `@Decl`, 144 B-15) adds `modules/tag_decl_meta`, `tag_annotation_add_member`,
 `tag_annotation_meta_twice` and `type_named_like_decl_kind`; its Conformance step adds `modules/tag_decl_meta_read`
 (`d.meta(T)` read back, `decl.attr` absent and `decl.component` on an element `null`, four targets),
-`tag_annotation_add_type` and `tag_annotation_string_meta` (`tag-annotation-output`), `tag_annotation_unknown_name`
+`tag_annotation_add_type` (`tag-annotation-output`), `tag_annotation_unknown_name`
 and `tag_annotation_not_decorator` (no decorator named, at the annotation) and `tag_annotation_reads_meta`
 (`decl.meta(T)` in an annotation, question B-15-c as built) — each red on B-15's parent, which had no `q.tagDecl`.
 Decisions 311 (3), 415 and 426 (templates, 144 B-18) add `modules/template_method_call`, the `template_lookup_*`
@@ -742,13 +742,11 @@ refusal cells at the annotation: `decorator_add_member_on_fn` (`decorator-member
 `decorator_add_member_duplicate` (`decorator-member-duplicate`) and `decorator_add_member_not_one`
 (`decorator-member-not-one-fn`), and one where the call is written: `decorator_member_unknown`
 (`unknown-associated-fn` — a type's members are closed, so `City.revisions()` on a type no
-decorator gave it is refused). Its second place — `decl.setMeta(key, value)`, read as
-`@typeInfo(X).meta.<decorator>.<key>` — adds `modules/decorator_set_meta` (two decorators' keys on a
-type, a `fn`'s meta, `.name`, a read held in a typed `val` and continued by `.length`) and
+decorator gave it is refused). Its second place — meta, a typed record per decorator since decision
+576 (11) (`decl.setMeta(Entity(…))`, read `@typeInfo(X).meta(Entity)`) — adds
 `modules/decorator_meta_import` (meta read through a plain import, an alias and a namespace import),
-on all four targets, and four refusal cells: `typeinfo_meta_missing` and
-`typeinfo_unknown_declaration` where the read is written, `decorator_meta_duplicate` and
-`decorator_meta_on_member` at the annotation. Its third place — `decl.addType(name, source)`, an
+on all four targets, and two refusal cells: `typeinfo_unknown_declaration` where the read is
+written and `decorator_meta_on_member` at the annotation. Its third place — `decl.addType(name, source)`, an
 associated type named `Owner.Name` — adds `modules/decorator_add_type` (a record `City.Columns` in type
 positions, constructed by its path and returned by an added member, an enum `City.Size` whose
 variants are reached as `City.Size.Large`, both printed under the owner's path) and `modules/decorator_add_type_import` (imported with its

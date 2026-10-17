@@ -3464,7 +3464,6 @@ the decorator produces goes to one of four places (decision 216):
 |---|---|---|
 | a member of the annotated type | `decl.addMember("pub fn table() -> string { … }")` | `City.table()`, `c.describe()` — run-time code of the type, imported with it |
 | comptime meta, a typed value keyed by its type (decision 298) | `decl.setMeta(Entity(table: "cities"))`, `decl.addMeta(Index(column: "name"))` | `@typeInfo(City).meta(Entity)` → `?Entity`, `.metaAll(Index)` → `Index[]`, and on a `@TypeInfo.all` entry — the values written back where they are read |
-| comptime meta, per decorator (decision 216 (2); goes once the library sites are migrated, 130 step 8) | `decl.setMeta("table", "cities")` | `@typeInfo(City).meta.entity.table` — a string constant, never run-time code |
 | an associated type | `decl.addType("Columns", "(name: string)")` | `City.Columns` in a type position, `City.Columns(name: "n")`, imported with its owner |
 | the program's catalogue | (every declaration a decorator runs over) | `@TypeInfo.all(with: entity)` at an entry point |
 
@@ -3493,9 +3492,8 @@ none), `setMeta` is legal, and the `val` is an entry of `@TypeInfo.all` — one
 query answers functions, `val`s or types, never two of them
 (`typeinfo-all-mixed`). A decorator adds and never replaces: a name
 the type already has is `decorator-member-duplicate` / `decorator-type-duplicate`.
-Meta describes a top-level declaration — a `type`, a `behavior`, a `fn` or a `val` — and
-each key is set once (`decorator-meta-duplicate`); a read naming a key the
-decorator did not set is `typeinfo-meta-missing`.
+Meta describes a top-level declaration — a `type`, a `behavior`, a `fn` or a `val`
+(`decorator-meta-on-member` from a field's or a method's decorator).
 A record-shaped type's members are closed: a call through the type names an
 associated fn it declares, by hand or through `decl.addMember`, and any other
 name is `unknown-associated-fn` where the call is written.
@@ -3752,8 +3750,8 @@ annotation's module is reached, a same-named function of the reader is not.
 
 <!-- example: modules/meta_expr_rule -->
 
-`@typeInfo` is the one reflection builtin (decision 248): `.name` and
-`.meta.<decorator>.<key>` read a declaration, `.meta(T)` / `.metaAll(T)` its
+`@typeInfo` is the one reflection builtin (decision 248): `.name` reads a
+declaration, `.meta(T)` / `.metaAll(T)` its
 typed meta (§ Typed meta), the static `@TypeInfo.all(…)` of
 its type the program (decision 253; `@typeInfo.all` is `typeinfo-all-on-function`),
 and `@typeInfo(T)` used as a value is a `TypeInfo<T>` (decision 253; its members
@@ -4099,7 +4097,7 @@ declaration alike.
 <!-- example: modules/tag_decl_meta_read -->
 
 Refused at the annotation, in the caller's text: `decl.addMember`,
-`decl.addType`, `@emit` and the string `decl.setMeta(key, value)`
+`decl.addType` and `@emit`
 (`tag-annotation-output`); a second `setMeta` of one type on the tag
 (`decorator-meta-twice`); a name the caller's scope does not declare, and one
 that names no decorator. Inside an annotation `decl.meta(T)` is refused
@@ -4109,7 +4107,6 @@ annotation ran, so annotations do not depend on their written order.
 <!-- example: modules/tag_annotation_add_member -->
 <!-- example: modules/tag_annotation_add_type -->
 <!-- example: modules/tag_annotation_emit -->
-<!-- example: modules/tag_annotation_string_meta -->
 <!-- example: modules/tag_annotation_meta_twice -->
 <!-- example: modules/tag_annotation_unknown_name -->
 <!-- example: modules/tag_annotation_not_decorator -->
