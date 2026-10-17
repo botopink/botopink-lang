@@ -105,9 +105,6 @@ const Aggregator = struct {
     /// subject, written `Result.Ok` / `Result.Error` by `qualifyResultPattern`.
     /// Applied by both aggregators.
     result_patterns: ?*const std.AutoHashMapUnmanaged(ast.Loc, envMod.PatternNote) = null,
-    /// `Env.fieldKeyRewrites` (decision 308): a field key's written node
-    /// swapped whole for its run-time form. Both aggregators.
-    field_keys: ?*const std.AutoHashMapUnmanaged(ast.Loc, *const ast.Expr) = null,
     /// `Env.localCalleeCalls`: a free call of a parameter or a local named
     /// like a module function, never that function (`localFnOf`). Both
     /// aggregators.
@@ -214,7 +211,6 @@ pub fn transform(
     default_injections: *const DefaultInjections,
     result_patterns: *const std.AutoHashMapUnmanaged(ast.Loc, envMod.PatternNote),
     namespaces: *const envMod.NamespaceImports,
-    field_keys: *const std.AutoHashMapUnmanaged(ast.Loc, *const ast.Expr),
     local_callee_calls: *const std.AutoHashMapUnmanaged(ast.Loc, void),
     embed_call_args: *const std.AutoHashMapUnmanaged(ast.Loc, []const ast.CallArg),
 ) !ast.Program {
@@ -239,8 +235,6 @@ pub fn transform(
     src_agg.result_patterns = result_patterns;
     agg.namespaces = namespaces;
     src_agg.namespaces = namespaces;
-    agg.field_keys = field_keys;
-    src_agg.field_keys = field_keys;
     agg.local_callee_calls = local_callee_calls;
     src_agg.local_callee_calls = local_callee_calls;
     agg.embed_call_args = embed_call_args;
@@ -991,20 +985,6 @@ fn namespaceCall(agg: *Aggregator, expr_ptr: *ast.Expr) ScanError!void {
 
 fn rewriteExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), comptime_arrays: std.StringHashMap([]const ast.TypedExpr), expr_ptr: *ast.Expr) ScanError!void {
     try namespaceCall(agg, expr_ptr);
-    // Decision 308 — a field key's node (`.title`, a `case` over a key,
-    // `K.of(text)`, `K.all()`), swapped whole for the run-time form inference
-    // typed; the form sits at locs of its own, so it is never swapped again.
-    if (agg.field_keys) |fk| {
-        const at: ?ast.Loc = switch (expr_ptr.*) {
-            .identifier => |id| if (id.kind == .dotIdent) id.loc else null,
-            .collection => |col| if (col.kind == .case) col.loc else null,
-            .call => |cl| if (cl.kind == .call) cl.loc else null,
-            else => null,
-        };
-        if (at) |l| if (fk.get(l)) |rewrite| {
-            expr_ptr.* = rewrite.*;
-        };
-    }
     // Decision 54's `?T` pattern form — swapped before the other dispatches so
     // the `if` it becomes rides through the same recursive walker.
     if (expr_ptr.* == .collection and expr_ptr.collection.kind == .case) {

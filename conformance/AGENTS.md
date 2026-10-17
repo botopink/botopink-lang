@@ -195,12 +195,6 @@ on `beamMemory(.Ets)`, `annotation-label-equals` at the label, naming `keyed:`),
 targets read) and `modules/decisions-taken/external_wasm_labelled_cells-481/refused/src/cases/external_node_prefixed_op_refused` (`.JavaScript("op:f64.floor")` names the wasm
 cell `#[@external(.Wasm(op: "f64.floor"))]`) — each red on B-02's parent, which ran the `=` label's program,
 refused `fn: mixBody` beside the prefixed string and passed `"op:f64.floor"` to node as host code.
-Decision 308 (a field key at run time, 144 B-16) adds `modules/decisions-taken/field_build_time_value-599/run/src/cases/field_key_runtime` (`Type.keys(Recipe)` exported
-and imported; a key stored in a `var` and an array, passed, compared, matched by an exhaustive `case` and by
-`|` / `_`, `key.name`, `RecipeKey.of(text)` and `RecipeKey.all()`, on the four targets) and three refusals:
-`field_key_case_missing` (a `case` without a field's arm, at the `case`), `field_key_unknown_field` (`.titel`,
-at the `.name`) and `type_keys_outside_val` (`Type.keys` in a body, `derived-type-outside-val`); every one red
-on the parent binary, where `Type.keys` was not answered.
 Decision 316 (`decl.wrapWith`, 144 B-11) added `modules/decisions-taken/compiler_wrap_with_removed-714/cells/decorator_any_params_outside_decl`; its wrapper cells went with
 `wrapWith` (decision 714).
 Decision 302 (a tag is a declaration handle, 144 B-15) adds `modules/decisions-taken/tag_annotation_is_decorator-302/run/src/cases/tag_decl_meta`, `tag_annotation_add_member`,
@@ -278,9 +272,6 @@ on the parent binary) and two pins that held on the parent binary: `modules/deci
 `modules/fn/run/src/cases/fn_empty_body_call` (a `fn` written `{}` called between two prints), four targets (wasm took an
 empty body for a bodyless `declare fn` on the parent binary: no `main` emitted, `compilation failed
 UndefinedCall`, and the call refused).
-144 B-22 adds `modules/decisions-taken/field_build_time_value-599/run/src/cases/field_key_under_annotation` — a field key under an annotation
-(`val t: Sort<Book> = Sort(by: .title)`) beside the applied constructor, four targets (refused as an
-unbound `title` on the parent binary).
 144 B-22 adds `modules/decisions-taken/optional_typescript_operators-330/cells/optional_chain_field_after_call` — a field read after a `?.` method link and
 after a `?.` field link, and a method after the read, present and absent, four targets (refused as a
 member read off an optional on the parent binary).

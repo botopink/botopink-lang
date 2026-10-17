@@ -1,6 +1,0 @@
-mod cases;
-
-pub fn main() {
-    cases.field_key_runtime.runCase();
-    cases.field_key_under_annotation.runCase();
-}

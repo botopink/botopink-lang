@@ -659,11 +659,6 @@ pub const spread_synthetic_col: usize = 3_000_000;
 /// other synthetic columns.
 pub const record_param_synthetic_col: usize = 6_000_000;
 
-/// The column the checker adds to a node it synthesises for a field key's
-/// run-time form (decision 308, `infer.inferFieldKey*`): past any written
-/// column and apart from `spread_synthetic_col`'s.
-pub const field_key_synthetic_col: usize = 4_000_000;
-
 /// The column added to a value's loc to key its `text_value` lowering (144
 /// B-78, decision 521; `infer.textValueLowerings`): past any written column
 /// and apart from the other synthetic columns, so the operand's own lowering

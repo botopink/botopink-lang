@@ -16780,9 +16780,6 @@ fn inferIdentifierExpr(env: *Env, ident: ast.IdentifierExprOf(.untyped), loc: as
             // mangling `__50`; it resolves by the expected section like an
             // identifier leaf, and only that way.
             const name = if (looksNumeric(written)) try std.fmt.allocPrint(env.arena, "__{s}", .{written}) else written;
-            // Decision 308 — `.title` where the position expects a
-            // `Type.Field<T>`: the key of `T`'s field.
-            if (try inferFieldKeyLiteral(env, written, loc)) |te| return te;
             // 01 step 12 — a leading-dot variant takes its enum from the
             // position's expected type (as `.Circle(…)` does), spliced in as
             // `Enum.Variant` so the backends see the qualified form. Without
@@ -18615,13 +18612,7 @@ fn inferBindingExpr(env: *Env, b: ast.BindingExprOf(.untyped), loc: ast.Loc) Inf
                 .name => |name| try checkKeyedWrite(env, name, a.op == .plusAssign, a.value, loc),
                 .fieldAccess => {},
             }
-            // Decision 308 — `key = .title` for a `var key: Type.Field<T>`:
-            // the `.name` resolves against the variable's type.
             const prevExpected = env.expectedType;
-            if (a.target == .name) if (env.lookup(a.target.name)) |ty| {
-                const declared = env.narrowedDecl.get(a.target.name) orelse ty;
-                if (fieldKeyRecordOf(env, declared, true) != null) env.expectedType = declared;
-            };
             const valTyped = inferExprTyped(env, a.value.*) catch |err| {
                 env.expectedType = prevExpected;
                 return err;
@@ -23251,9 +23242,6 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                 direct.kind.call.receiver = recv;
                 return inferCallExpr(env, direct, loc);
             };
-            // Decision 308 — `K.of(text)` / `K.all()` through an alias of
-            // `Type.Field<T>`.
-            if (try inferFieldKeyStatic(env, c, loc)) |te| return te;
             // Decision 332 — `bigint.of(n)` / `bigint.parse(text)`: an
             // associated function of the primitive, declared in
             // `primitives.bp`'s `behavior BigInt`.
@@ -26061,10 +26049,6 @@ fn inferCollectionExpr(env: *Env, col: ast.CollectionExprOf(.untyped), loc: ast.
             for (c.subjects, 0..) |subj, i| {
                 typedSubjects[i] = try inferExprTyped(env, subj);
             }
-            // Decision 308 — a `case` over a field key.
-            if (typedSubjects.len == 1) if (fieldKeyRecordOf(env, typedSubjects[0].getType(), false)) |rec| {
-                return inferFieldKeyCase(env, c, rec, loc);
-            };
 
             // Decision 54 — the optional's pattern form. `optionalNullCaseBinder`
             // validates the whole `case` when any arm is `null` and answers the
@@ -26465,237 +26449,4 @@ pub fn freshEnv(a: std.mem.Allocator, gpa: std.mem.Allocator) !Env {
     // pointers still reference the template's process-lifetime arena).
     const tmpl = try comptimeMod.getStdlibTemplate(gpa);
     return Env.cloneFromTemplate(tmpl, a);
-}
-
-// ── decision 308: a field key at run time ─────────────────────────────────────
-//
-// A `Type.Field<T>` is also a run-time value: `.title` against one is the
-// `Type.Field<T>` record of `T`'s field (`name`, `typeName`, `annotations`),
-// stored, passed and compared like any record; `case key { .title -> … }` is
-// exhaustive over `T`'s fields and runs as a `case` over `key.name`;
-// `K.of(text)` answers the key named `text` or `null`, `K.all()` every key in
-// declaration order, `K` an alias of `Type.Field<T>` (`Type.keys(T)`'s answer,
-// `comptime/derived_types.zig`). Each written node is typed through the
-// ordinary expression it means and swapped for it whole by the transform
-// (`Env.fieldKeyRewrites`), so no backend learns a node.
-
-/// The record `T` of a `Type.Field<T>` type — through an optional when
-/// `throughOptional` — when `T` is a record or a struct.
-fn fieldKeyRecordOf(env: *Env, ty: *T.Type, throughOptional: bool) ?[]const u8 {
-    const d = (if (throughOptional) optionalInner(ty) orelse ty else ty).deref();
-    if (d.* != .named or !std.mem.eql(u8, d.named.name, field_key_type_name) or d.named.args.len != 1) return null;
-    const t = d.named.args[0].deref();
-    if (t.* != .named) return null;
-    _ = recordFieldNames(env, t.named.name) orelse return null;
-    return t.named.name;
-}
-
-fn fieldKeyLoc(loc: ast.Loc, k: usize) ast.Loc {
-    return .{ .line = loc.line, .col = loc.col + ast.field_key_synthetic_col + k, .expansion = loc.expansion };
-}
-
-fn fieldKeyString(env: *Env, s: []const u8, loc: ast.Loc) InferError!*ast.Expr {
-    const e = try env.arena.create(ast.Expr);
-    e.* = .{ .literal = .{ .loc = loc, .kind = .{ .stringLit = s } } };
-    return e;
-}
-
-/// `Type.Field<rec>`.
-fn fieldKeyType(env: *Env, rec: []const u8) InferError!*T.Type {
-    return env.namedTypeArgs(field_key_type_name, &.{try env.namedType(rec)});
-}
-
-/// The `Type.Field<rec>` record of the field `field`, its nodes at `loc`'s
-/// synthetic columns from `k` on.
-fn fieldKeyValue(env: *Env, rec: []const u8, field: envMod.FieldDef, loc: ast.Loc, k: usize) InferError!*ast.Expr {
-    const args = try env.arena.alloc(ast.CallArg, 3);
-    args[0] = .{ .label = null, .value = try fieldKeyString(env, field.name, fieldKeyLoc(loc, k + 1)) };
-    args[1] = .{ .label = null, .value = try fieldKeyString(env, try genericSpelling(env, field.type_, 0), fieldKeyLoc(loc, k + 2)) };
-    const none = try env.arena.create(ast.Expr);
-    none.* = .{ .collection = .{ .loc = fieldKeyLoc(loc, k + 3), .kind = .{ .arrayLit = .{ .elems = &.{} } } } };
-    args[2] = .{ .label = null, .value = none };
-    _ = rec;
-    const call = try env.arena.create(ast.Expr);
-    call.* = .{ .call = .{ .loc = fieldKeyLoc(loc, k), .kind = .{ .call = .{
-        .receiver = null,
-        .callee = field_key_type_name,
-        .is_builtin = false,
-        .args = args,
-        .trailing = &.{},
-    } } } };
-    return call;
-}
-
-/// Types `rewrite` as `want`, and records it for the node at `loc`.
-fn fieldKeyRewrite(env: *Env, rewrite: *ast.Expr, want: *T.Type, loc: ast.Loc) InferError!TypedExpr {
-    env.expectedType = null;
-    const typed = try inferExprTyped(env, rewrite.*);
-    try unifyAt(env, want, typed.getType(), loc);
-    try env.fieldKeyRewrites.put(env.arena, loc, rewrite);
-    return typed;
-}
-
-/// `.name` where the position expects a `Type.Field<T>`: `T`'s field, or the
-/// unknown-field error at the `.name`.
-fn inferFieldKeyLiteral(env: *Env, name: []const u8, loc: ast.Loc) InferError!?TypedExpr {
-    const exp = env.expectedType orelse return null;
-    const rec = fieldKeyRecordOf(env, exp, true) orelse return null;
-    const fields = recordFieldNames(env, rec).?;
-    const field = for (fields) |f| {
-        if (std.mem.eql(u8, f.name, name)) break f;
-    } else {
-        env.lastError = TypeError.unknownField(rec, name).withLoc(loc);
-        return error.TypeError;
-    };
-    return try fieldKeyRewrite(env, try fieldKeyValue(env, rec, field, loc, 0), try fieldKeyType(env, rec), loc);
-}
-
-/// The field a `.name` pattern names, or null for `_`; any other pattern is
-/// refused at the arm.
-fn fieldKeyPatternNames(env: *Env, rec: []const u8, p: ast.Pattern, at: ast.Loc, out: *std.ArrayListUnmanaged([]const u8)) InferError!void {
-    switch (p) {
-        .wildcard => {},
-        .ident => |n| {
-            if (std.mem.eql(u8, n, "_")) return;
-            if (n.len < 2 or n[0] != '.' or std.mem.indexOfScalar(u8, n[1..], '.') != null) return fieldKeyPatternRefused(env, rec, at);
-            const name = n[1..];
-            for (recordFieldNames(env, rec).?) |f| if (std.mem.eql(u8, f.name, name)) {
-                try out.append(env.arena, name);
-                return;
-            };
-            env.lastError = TypeError.unknownField(rec, name).withLoc(at);
-            return error.TypeError;
-        },
-        .@"or" => |alts| for (alts) |q| {
-            if (q == .wildcard) return fieldKeyPatternRefused(env, rec, at);
-            try fieldKeyPatternNames(env, rec, q, at, out);
-        },
-        else => return fieldKeyPatternRefused(env, rec, at),
-    }
-}
-
-fn fieldKeyPatternRefused(env: *Env, rec: []const u8, at: ast.Loc) InferError {
-    const msg = try std.fmt.allocPrint(env.arena, "a `Type.Field<{s}>` is matched by its fields — `.name` — or by `_`", .{rec});
-    env.lastError = TypeError.custom(msg, "Write one arm per field (`.title -> …`), alternatives with `|`, or `_` for the rest (decision 308).").withLoc(at);
-    return error.TypeError;
-}
-
-/// `case key { .title -> …; … }` over a `Type.Field<T>`: exhaustive over
-/// `T`'s fields, run as the `case` over `key.name`.
-fn inferFieldKeyCase(env: *Env, c: anytype, rec: []const u8, loc: ast.Loc) InferError!TypedExpr {
-    const typeName = try std.fmt.allocPrint(env.arena, "Type.Field<{s}>", .{rec});
-    var covered: std.ArrayListUnmanaged([]const u8) = .empty;
-    var hasCatchAll = false;
-    const arms = try env.arena.alloc(ast.CaseArm, c.arms.len + 1);
-    for (c.arms, 0..) |arm, i| {
-        if (hasCatchAll and arm.guard == null) {
-            env.lastError = TypeError.redundantPattern(typeName, "this arm").withLoc(arm.body.getLoc());
-            return error.TypeError;
-        }
-        var names: std.ArrayListUnmanaged([]const u8) = .empty;
-        try fieldKeyPatternNames(env, rec, arm.pattern, arm.patternLoc, &names);
-        arms[i] = arm;
-        if (names.items.len == 0) {
-            arms[i].pattern = .wildcard;
-            if (arm.guard == null) hasCatchAll = true;
-            continue;
-        }
-        const lits = try env.arena.alloc(ast.Pattern, names.items.len);
-        for (names.items, 0..) |n, k| {
-            lits[k] = .{ .stringLit = n };
-            if (arm.guard != null) continue;
-            if (namesContain(covered.items, n)) {
-                const desc = try std.fmt.allocPrint(env.arena, "field '{s}'", .{n});
-                env.lastError = TypeError.redundantPattern(typeName, desc).withLoc(arm.body.getLoc());
-                return error.TypeError;
-            }
-            try covered.append(env.arena, n);
-        }
-        arms[i].pattern = if (lits.len == 1) lits[0] else .{ .@"or" = lits };
-    }
-    var n_arms = c.arms.len;
-    if (!hasCatchAll) {
-        var missing: std.ArrayListUnmanaged([]const u8) = .empty;
-        for (recordFieldNames(env, rec).?) |f| {
-            if (!namesContain(covered.items, f.name)) try missing.append(env.arena, try std.fmt.allocPrint(env.arena, ".{s}", .{f.name}));
-        }
-        if (missing.items.len > 0) {
-            env.lastError = TypeError.nonExhaustiveOf(typeName, try missing.toOwnedSlice(env.arena), "field(s)").withLoc(loc);
-            return error.TypeError;
-        }
-        // Every field has its arm: the strings `name` holds are those, and
-        // the `case` over a string still takes a last arm.
-        const panicArgs = try env.arena.alloc(ast.CallArg, 1);
-        panicArgs[0] = .{ .label = null, .value = try fieldKeyString(env, "unreachable: a field key names a field of its type", fieldKeyLoc(loc, 2)) };
-        arms[n_arms] = .{
-            .pattern = .wildcard,
-            .body = .{ .call = .{ .loc = fieldKeyLoc(loc, 3), .kind = .{ .call = .{
-                .receiver = null,
-                .callee = "panic",
-                .is_builtin = true,
-                .args = panicArgs,
-                .trailing = &.{},
-            } } } },
-            .patternLoc = fieldKeyLoc(loc, 4),
-        };
-        n_arms += 1;
-    }
-    const subject = try env.arena.alloc(ast.Expr, 1);
-    subject[0] = .{ .identifier = .{ .loc = fieldKeyLoc(loc, 1), .kind = .{ .identAccess = .{ .receiver = &c.subjects[0], .member = "name" } } } };
-    const rewrite = try env.arena.create(ast.Expr);
-    rewrite.* = .{ .collection = .{ .loc = fieldKeyLoc(loc, 0), .kind = .{ .case = .{
-        .subjects = subject,
-        .arms = arms[0..n_arms],
-        .trailingComments = c.trailingComments,
-    } } } };
-    const typed = try inferExprTyped(env, rewrite.*);
-    try env.fieldKeyRewrites.put(env.arena, loc, rewrite);
-    return typed;
-}
-
-/// `K.of(text)` / `K.all()` with `K` an alias of `Type.Field<T>`.
-fn inferFieldKeyStatic(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferError!?TypedExpr {
-    const call = c.kind.call;
-    const re = call.receiver orelse return null;
-    if (re.* != .identifier or re.identifier.kind != .ident) return null;
-    const written = re.identifier.kind.ident;
-    if (env.lookup(written) != null and env.lookupTypeAlias(written) == null) return null;
-    const alias = env.lookupTypeAlias(written) orelse return null;
-    if (alias.genericParams.len != 0) return null;
-    const rec = fieldKeyRecordOf(env, try resolveTypeRef(env, alias.target), false) orelse return null;
-    const isOf = std.mem.eql(u8, call.callee, "of");
-    const isAll = std.mem.eql(u8, call.callee, "all");
-    if (!isOf and !isAll) return null;
-    const want: usize = if (isOf) 1 else 0;
-    if (call.args.len != want or call.trailing.len != 0 or (want == 1 and call.args[0].label != null)) {
-        const msg = try std.fmt.allocPrint(env.arena, "`{s}.{s}` takes {s}", .{ written, call.callee, if (isOf) "one argument, the field's name (`text: string`)" else "no argument" });
-        env.lastError = TypeError.custom(msg, null).withLoc(loc);
-        return error.TypeError;
-    }
-    const fields = recordFieldNames(env, rec).?;
-    const keyTy = try fieldKeyType(env, rec);
-    const rewrite = try env.arena.create(ast.Expr);
-    if (isAll) {
-        const elems = try env.arena.alloc(ast.Expr, fields.len);
-        for (fields, 0..) |f, i| elems[i] = (try fieldKeyValue(env, rec, f, loc, 1 + i * 4)).*;
-        rewrite.* = .{ .collection = .{ .loc = fieldKeyLoc(loc, 0), .kind = .{ .arrayLit = .{ .elems = elems } } } };
-        return try fieldKeyRewrite(env, rewrite, try env.namedTypeArgs("array", &.{keyTy}), loc);
-    }
-    // `case text { "title" -> <the key>; …; _ -> null }`
-    const arms = try env.arena.alloc(ast.CaseArm, fields.len + 1);
-    for (fields, 0..) |f, i| arms[i] = .{
-        .pattern = .{ .stringLit = f.name },
-        .body = (try fieldKeyValue(env, rec, f, loc, 2 + i * 4)).*,
-        .patternLoc = fieldKeyLoc(loc, 2 + i * 4),
-    };
-    const nullLoc = fieldKeyLoc(loc, 2 + fields.len * 4);
-    arms[fields.len] = .{
-        .pattern = .wildcard,
-        .body = .{ .literal = .{ .loc = nullLoc, .kind = .null_ } },
-        .patternLoc = nullLoc,
-    };
-    const subject = try env.arena.alloc(ast.Expr, 1);
-    subject[0] = call.args[0].value.*;
-    rewrite.* = .{ .collection = .{ .loc = fieldKeyLoc(loc, 0), .kind = .{ .case = .{ .subjects = subject, .arms = arms } } } };
-    return try fieldKeyRewrite(env, rewrite, try env.namedTypeArgs("optional", &.{keyTy}), loc);
 }
