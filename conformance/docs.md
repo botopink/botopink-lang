@@ -1640,6 +1640,15 @@ the chain, and so does a method after it (`p(true)?.me().name.length()`):
 
 <!-- example: modules/optional_chain_field_after_call -->
 
+A method written after a `?.` field that is a list is the list's: `meta(Tags)?.list.join(",")`
+reads the payload's list and joins its elements as the list's element type says, and
+`(opt?.list ?? []).join(",")` keeps that element type across `??` — an empty default
+adds none, so a list of strings joins as strings on every target:
+
+<!-- example: modules/meta_list_method_on_optional -->
+
+<!-- example: modules/meta_list_coalesced_method -->
+
 A tuple's label read through `?.` on an absent element is absent (`es.at(3)?.a ?? 0`
 is `0`), and a present element's label is its value, `0`, `false` and `""` included
 — never taken for absence:
@@ -4064,6 +4073,16 @@ type mismatch at the argument). `is` stays a keyword and `==` on two
 <!-- example: modules/decl_hooks_graph -->
 
 <!-- example: modules/decorator_same_refuses_mark -->
+
+A decorator that reads `.hooks` records its meta after its module's bodies, so the page's
+meta is read from another module. A component the importing module lowers is lowered against
+the checked types of the module that wrote it: the calls on literals in its body (`5.toString()`,
+`[1, 2].map(Card)`) resolve there, whether or not the importer calls it. A component value the
+checker cannot follow (a parameter, a method, generic code) is an edge with `callee: null`:
+
+<!-- example: modules/decl_hooks_dynamic_call -->
+
+<!-- example: modules/array_map_component_imported -->
 
 ### Template annotations (decision 311)
 

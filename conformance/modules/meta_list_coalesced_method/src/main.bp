@@ -1,0 +1,15 @@
+//// A method called on a coalesced list: `(opt ?? []).join(",")` keeps the
+//// list's element type across `??`, so the elements are joined as strings.
+
+pub type Tags(list: string[])
+
+fn tag<T>(expr decl: T) {
+    compiler.setMeta(Tags(list: ["a", "b"]));
+}
+
+#[tag]
+pub type Item(id: i32)
+
+pub fn main() {
+    @print((@typeInfo(Item).meta(Tags)?.list ?? []).join(","));
+}

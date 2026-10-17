@@ -1479,6 +1479,16 @@ guarded link's result, a field's declared type, a string). The whole expression
 is the `?T` the checker typed — `optInfoOf` answers it (`chainedCallOpt`) — and
 prints `null` or its value. A float result has no box here and keeps the
 unguarded path. `modules/optional_chain_method` pins it. The link written with
+A field written as an array read through `?.` is an array payload
+(`chainPayloadKind`: `m?.list.join(",")` resolves `join/1`, the payload bound with its
+element shape — `modules/meta_list_method_on_optional`), and `elemKindOf` reads a `o ?? d`'s
+elements off the optional's type, an empty `[]` default adding none
+(`(m?.list ?? []).join(",")` joins strings as strings — `modules/meta_list_coalesced_method`).
+A lifted lambda keeps the `rewrites`, `instance_lowerings` and `global_renames` of the module
+it is written in (`Lifted.rewrites` / `lowerings` / `renames`, swapped in by `emitPendingFns`): it is
+lowered after its module's declarations, when the emitter holds another module's, and a linked
+component's `5.toString()` or `[1, 2].map(Card)` lost their primitive methods
+(`modules/array_map_component_imported`, `modules/decl_hooks_dynamic_call`).
 `?.` itself (`s?.length()`, `find(k)?.contains("x")`, `xs.at(i)?.slice(1, 3)`)
 is lowered the same way (`chainedCallKind`: the plan inference recorded, else
 the family of the receiver's `?T` payload — its type, or a string element's

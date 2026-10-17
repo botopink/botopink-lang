@@ -1,0 +1,15 @@
+//// A method called on the list of an optional chain: `meta(Tags)?.list` is
+//// `string[]?` and `.join(",")` is looked up on the list, not on the optional.
+
+pub type Tags(list: string[])
+
+fn tag<T>(expr decl: T) {
+    compiler.setMeta(Tags(list: ["a", "b"]));
+}
+
+#[tag]
+pub type Item(id: i32)
+
+pub fn main() {
+    @print(@typeInfo(Item).meta(Tags)?.list.join(",") ?? "none");
+}

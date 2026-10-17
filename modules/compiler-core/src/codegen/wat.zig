@@ -15361,6 +15361,7 @@ const Emitter = struct {
             .identifier => |id| switch (id.kind) {
                 .identAccess => |ia| if (self.recordTypeOfExpr(ia.receiver.*)) |rty| {
                     if (self.fieldTypeIn(rty, ia.member)) |ft| {
+                        if (self.typeRefOf(recv)) |tr| if (arrayElemOfTypeRef(tr) != null) return .array;
                         if (std.mem.eql(u8, ft, "string")) return .string;
                         if (std.mem.eql(u8, ft, "bool")) return .bool;
                         for ([_][]const u8{ "i32", "i64", "u32", "u64", "int" }) |n| {
@@ -15374,6 +15375,9 @@ const Emitter = struct {
             else => {},
         }
         if (self.isStringExpr(recv)) return .string;
+        // A field written as an array (`m?.list`, `list: string[]`): the
+        // payload is an array, whose element the type spells.
+        if (self.typeRefOf(recv)) |tr| if (arrayElemOfTypeRef(tr) != null) return .array;
         return null;
     }
 
@@ -15455,6 +15459,11 @@ const Emitter = struct {
             try self.emit(.{ .local_set = mem });
         }
         if (k == .string) try self.str_locals.put(mem, {});
+        // An array payload: its element shape is the optional's type's.
+        if (k == .array) if (self.typeRefOf(recv)) |tr| if (arrayElemOfTypeRef(tr)) |ek| {
+            try self.arr_locals.put(pname, {});
+            try self.arr_elem_locals.put(pname, ek);
+        };
         const payload = try self.arena().create(ast.Expr);
         payload.* = .{ .identifier = .{ .loc = loc, .kind = .{ .ident = pname } } };
         var link = cc;
@@ -17716,6 +17725,12 @@ const Emitter = struct {
     /// integers, bools and pointers alike.
     fn elemKindOf(self: *Emitter, e: ast.Expr) ElemKind {
         if (self.genericResultOf(e)) |a| return self.elemKindOf(a);
+        // `o ?? d` over an optional array: the elements are the optional's
+        // (`(m?.list ?? []).join(",")`); an empty default says nothing.
+        if (nullishParts(e)) |nu| {
+            if (self.typeRefOf(nu.opt.*)) |ot| if (arrayElemOfTypeRef(ot)) |ek| return ek;
+            if (!isEmptyArrayLit(nu.dflt)) return self.elemKindOf(nu.dflt);
+        }
         return switch (e) {
             .identifier => |id| switch (id.kind) {
                 .ident => |n| self.arr_elem_locals.get(self.resolveName(n)) orelse self.arr_elem_globals.get(self.resolveName(n)) orelse .i32,
@@ -17937,6 +17952,14 @@ const Emitter = struct {
         template_of: ?[]const u8 = null,
         /// `Emitter.foreign_origin` where the lambda is written.
         origin: ?ast.Loc = null,
+        /// The checker's answers for the module the lambda is written in
+        /// (`rewrites`, `instance_lowerings`, `global_renames`): the lambda
+        /// is lowered after its module's declarations, when the emitter
+        /// holds another module's — a linked module's body lost its
+        /// primitive methods (`5.toString()` in an imported component).
+        rewrites: ?std.AutoHashMap(ast.Loc, []const u8) = null,
+        lowerings: ?std.AutoHashMap(ast.Loc, envMod.InstanceLowering) = null,
+        renames: ?*const std.StringHashMapUnmanaged([]const u8) = null,
         /// Set for a trampoline standing for a top-level fn used as a value.
         fn_ref: ?[]const u8 = null,
         /// Per parameter: the cell a float or 64-bit argument arrives in —
@@ -19237,6 +19260,9 @@ const Emitter = struct {
             .loc = loc,
             .template_of = self.cur_template,
             .origin = self.foreign_origin,
+            .rewrites = self.rewrites,
+            .lowerings = self.instance_lowerings,
+            .renames = self.global_renames,
             .idx = idx,
             .param_ft = param_ft,
             .ret_ft = ret_ft,
@@ -20068,7 +20094,19 @@ const Emitter = struct {
                 }
                 try self.emitFn(sp.decl);
             }
-            while (li < self.lambdas.items.len) : (li += 1) try self.emitLifted(self.lambdas.items[li]);
+            while (li < self.lambdas.items.len) : (li += 1) {
+                const l = self.lambdas.items[li];
+                const saved = .{ self.rewrites, self.instance_lowerings, self.global_renames };
+                if (l.rewrites) |r| self.rewrites = r;
+                if (l.lowerings) |il| self.instance_lowerings = il;
+                if (l.fn_ref == null) self.global_renames = l.renames;
+                defer {
+                    self.rewrites = saved[0];
+                    self.instance_lowerings = saved[1];
+                    self.global_renames = saved[2];
+                }
+                try self.emitLifted(l);
+            }
             while (ai < self.assoc_needed.items.len) : (ai += 1) {
                 const sym = self.assoc_needed.items[ai];
                 if (self.assoc_emitted.contains(sym)) continue;

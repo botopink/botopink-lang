@@ -359,9 +359,12 @@ component called as a statement outside a body runs nothing now, so `modules/eff
 `modules/component_hook_and_component` `await` it in `main`, and `modules/component_sync_plain_function` reads
 375's mark through `run`. Decision 389 (a component named as a value is a reached node; a value the checker
 cannot follow an edge with `callee: null`) adds `modules/decl_hooks_component_value` (`map(Card)`, a `val`, a
-record field, a lambda answering one) and `modules/decl_hooks_dynamic_call` (a parameter, a method and a
+record field, a lambda answering one) and `modules/decl_hooks_dynamic_call` (in the module `pages` that `main` imports, its meta a typed `Graph` record; a parameter, a method and a
 generic answer as `null` edges, the node asynchronous), each red on the parent binary; the `decl.hooks`
 readers of the other cells read `HookCall.callee` as the `?Declared<unknown>` it is now.
+144 B-141 adds `modules/meta_list_method_on_optional` and `modules/meta_list_coalesced_method` (a method on an
+optional's list, a coalesced list) and `modules/array_map_component_imported` (a component of an imported module),
+each red on wasm on the parent binary and green on the four targets.
 Decision 375 (`HookNode.async`) adds `modules/decl_hooks_async` (a synchronous `Card` and `Header`, an awaiting
 `Comments`, a page `async` through it with no written `await`, a cycle, a function value) and
 `modules/decl_hooks_async_imported` (an imported node's mark) on the four targets, and
