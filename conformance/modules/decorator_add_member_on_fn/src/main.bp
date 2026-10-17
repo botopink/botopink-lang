@@ -2,8 +2,10 @@
 //// decorator on a function is refused at the annotation (a function has no
 //// body to add a member to).
 
-fn helper(comptime decl: @Decl) {
-    decl.addMember("pub fn extra() -> i32 { return 1; }");
+fn helper<T>(comptime decl: @Decl<T>) {
+    decl.addMember("extra", fn() -> i32 {
+        return 1;
+    });
 }
 
 #[helper]

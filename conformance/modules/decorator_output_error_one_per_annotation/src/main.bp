@@ -2,12 +2,15 @@
 //// members fails to type-check: one error, at the annotation of the one that
 //// failed.
 
-fn maker(comptime decl: @Decl) {
-    if (decl.name == "Town") {
-        decl.addMember("pub fn code(self: Self) -> i32 { return self.nope; }");
-    } else {
-        decl.addMember("pub fn code(self: Self) -> i32 { return 1; }");
-    }
+fn maker<T>(comptime decl: @Decl<T>) {
+    if (decl.name == "Town")
+        decl.addMember("code", fn(self: T) -> i32 {
+            return self.nope;
+        })
+    else
+        decl.addMember("code", fn(self: T) -> i32 {
+            return 1;
+        });
 }
 
 #[maker]

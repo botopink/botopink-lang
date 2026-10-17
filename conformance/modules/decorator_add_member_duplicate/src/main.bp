@@ -1,8 +1,10 @@
 //// Decision 216 (1) — a decorator cannot replace or shadow a member the type
 //// already has: a second `size` is refused at the annotation, naming it.
 
-fn sized(comptime decl: @Decl) {
-    decl.addMember("pub fn size(self: Self) -> i32 { return 0; }");
+fn sized<T>(comptime decl: @Decl<T>) {
+    decl.addMember("size", fn(self: T) -> i32 {
+        return 0;
+    });
 }
 
 #[sized]
