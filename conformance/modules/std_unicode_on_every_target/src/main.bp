@@ -1,0 +1,27 @@
+//// `std/unicode` on all four targets (`01-compiler/05-wasm` step 5, `02/97`
+//// step 16): `fromCodepoint` over `String.fromCodepoint` (decision 262),
+//// `codepoints` and `firstCodepoint` by code point — an astral character is
+//// one — and the four normalization forms over composed, decomposed and
+//// compatibility text, by std's own botopink normalizer over the generated
+//// Unicode tables on every target (decision 333 (A)) — one `.out`.
+
+import {unicode} from "std";
+
+fn cps(s: string) -> string {
+    return unicode.codepoints(s).map({ c -> c.toString() }).join(" ");
+}
+
+pub fn main() {
+    @print(unicode.fromCodepoint(65));
+    @print(unicode.fromCodepoint(233));
+    @print(unicode.fromCodepoint(127881));
+    @print(cps("aé🎉"));
+    @print(unicode.codepoints("").length);
+    @print(unicode.firstCodepoint("🎉x") ?? -1);
+    @print(unicode.firstCodepoint("") ?? -1);
+    @print(cps(unicode.normalize("e\u{301}", unicode.NormalizationForm.NFC)));
+    @print(cps(unicode.normalize("é", unicode.NormalizationForm.NFD)));
+    @print(cps(unicode.normalize("ﬁ²", unicode.NormalizationForm.NFKC)));
+    @print(cps(unicode.normalize("ǅ", unicode.NormalizationForm.NFKD)));
+    @print(cps(unicode.normalize("한", unicode.NormalizationForm.NFD)));
+}

@@ -1,0 +1,1 @@
+{ "name": "default_handle_member", "dependencies": { "shapes": { "path": "deps/shapes" } } }

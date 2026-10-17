@@ -1,0 +1,8 @@
+#[@External.Node("""String($0.length)""")]
+#[@External.Erlang("""integer_to_binary(string:length($0))""")]
+#[@External.Wasm("std:hash.contentHash")]
+pub declare fn contentHash(value: string) -> string;
+
+pub fn main() {
+    @print(contentHash("a"));
+}

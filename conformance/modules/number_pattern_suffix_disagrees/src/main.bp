@@ -1,0 +1,13 @@
+//// Decision 247 — a suffixed number pattern is its suffix's type: `1l` is an
+//// `i64` and cannot match an `i32` subject.
+
+fn kind(n: i32) -> string {
+    return case n {
+        1l -> "one";
+        _ -> "other";
+    };
+}
+
+pub fn main() {
+    @print(kind(1));
+}

@@ -1,0 +1,11 @@
+//// `#[check]` gives `Signup` a member whose signature names `rules`'s
+//// `Violation`, which this module never imports.
+
+import {rules.check};
+
+fn passwordsMatch(a: Signup) -> bool {
+    return a.password == a.confirm;
+}
+
+#[check(passwordsMatch)]
+pub type Signup(password: string, confirm: string)

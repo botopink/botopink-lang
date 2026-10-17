@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: typeinfo-all-default-outside-root: `boot` leaves out `modules`, whose default `@TypeInfo.all` answers for the whole program — a call that leaves it out is written only in the package's root (src/main.bp)
+at src/setup.bp:7:5

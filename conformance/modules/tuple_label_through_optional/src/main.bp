@@ -1,0 +1,14 @@
+//// Decision 45 — `rs.at(0)?.b` reads a tuple element by its label through
+//// the optional `at` answers: the label is rewritten to its position past the
+//// `?.`. The absent half (`es.at(0)?.b ?? "none"`) is not in this cell:
+//// wasm traps and beam raises `badarg` on it (`05-wasm` / `03-beam` rows).
+
+fn rows() -> #(a: i32, b: string)[] {
+    return [#(1, "x"), #(2, "y")];
+}
+
+pub fn main() {
+    val rs = rows();
+    @print(rs.at(0)?.b ?? "none");
+    @print(rs.at(1)?.a ?? 0);
+}

@@ -1,0 +1,11 @@
+//// Decision 208 — `Error(e)` is no constructor either: the error of a
+//// `@Result` is made by `throw e`.
+
+fn parse() -> @Result<i32, string> {
+    val e = Error("bad");
+    return 1;
+}
+
+pub fn main() {
+    @print(parse().isOk());
+}

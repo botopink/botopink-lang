@@ -1,0 +1,11 @@
+//// Decision 481 — an `op:` cell names an opcode the opcode table holds,
+//// checked at the annotation on every target: `"f64.flor"` names none.
+
+#[@External.Node("Math", "floor")]
+#[@External.Erlang("math", "floor")]
+#[@External.Wasm(op: "f64.flor")]
+pub declare fn floorOf(x: f64) -> f64;
+
+pub fn main() {
+    @print(floorOf(2.7));
+}

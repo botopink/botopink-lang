@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: `#[nowhere]` names no decorator in this scope — a tag annotation is a function whose first parameter is `comptime decl: @Decl`
+at src/main.bp:9:27

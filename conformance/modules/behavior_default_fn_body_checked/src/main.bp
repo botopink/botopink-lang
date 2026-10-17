@@ -1,0 +1,22 @@
+//// A behavior's `default fn` body is checked like any method body, against
+//// its own signature with `self` typed as the behavior: an unbound call
+//// inside it is refused at the call. The body used to be walked by no pass,
+//// so `return nothingHere(1) + true;` checked clean.
+
+behavior Shape {
+    fn area(self: Self) -> i32;
+
+    default fn bad(self: Self) -> i32 {
+        return nothingHere(1) + true;
+    }
+}
+
+type Sq(s: i32) implement Shape {
+    fn area(self: Self) -> i32 {
+        return self.s * self.s;
+    }
+}
+
+pub fn main() {
+    @print(Sq(s: 2).area());
+}

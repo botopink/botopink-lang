@@ -1,0 +1,1 @@
+{ "name": "dot_shorthand_enum_not_imported", "dependencies": { "lib": { "path": "deps/lib" } } }

@@ -1,0 +1,13 @@
+// src/main.bp
+pub mod config;
+mod text;
+
+fn show(p: text.Pair) -> string {
+    return p.a + "+" + p.b;
+}
+
+fn main() {
+    @print(config.label("x")); // [x]
+    @print(text.splitPath("a/b")); // a b
+    @print(show(text.Pair(a: "c", b: "d"))); // c+d
+}

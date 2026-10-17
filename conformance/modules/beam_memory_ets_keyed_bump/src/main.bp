@@ -1,0 +1,26 @@
+//// Decision 340 — `counts = counts.bump(k, n)` on a `#[@BeamMemory.Ets(keyed: true)]`
+//// var is one atomic `ets:update_counter`: two processes bumping the SAME key
+//// 2 000 times each, by 1 and by 2, lose none (`6000`); a key with no row
+//// counts from 0, the seed's row from its seed (`10 + 5`), and a key never
+//// bumped reads `null`.
+
+import {async, collections.Dict} from "std";
+
+#[@BeamMemory.Ets(keyed: true)]
+var counts: Dict<string, i32> = Dict.ofEntries([#("seed", 10)]);
+
+fn worker(by: i32) -> @Task<i32> {
+    var i = 0;
+    while (i < 2000) {
+        i += 1;
+        counts = counts.bump("hot", by);
+    }
+    return i;
+}
+
+pub fn main() -> @Task<void> {
+    val done = await async.runAll([{ -> worker(1) }, { -> worker(2) }]);
+    counts = counts.bump("seed", 5);
+    @print(done);
+    @print(counts.at("hot"), counts.at("seed"), counts.at("none"));
+}

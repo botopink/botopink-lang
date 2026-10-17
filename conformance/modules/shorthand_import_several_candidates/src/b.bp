@@ -1,0 +1,5 @@
+//// The other declaration of `parse`.
+
+pub fn parse(s: string) -> string {
+    return "b:" + s;
+}

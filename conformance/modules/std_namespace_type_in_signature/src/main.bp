@@ -1,0 +1,19 @@
+//// A std module's `pub type` named through the module namespace in a type
+//// position (`language-gaps.md`, "A type cannot be named through a
+//// namespace"): a return, a parameter and a `val` annotation. The return was
+//// checked as a type spelled `collections.Dict` that no value inhabits.
+
+import {collections} from "std";
+
+fn make() -> collections.Dict<string, i32> {
+    return collections.Dict.empty();
+}
+
+fn sizeOf(d: collections.Dict<string, i32>) -> i32 {
+    return d.size();
+}
+
+pub fn main() {
+    val d: collections.Dict<string, i32> = make();
+    @print(sizeOf(d));
+}

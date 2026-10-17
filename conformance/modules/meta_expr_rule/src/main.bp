@@ -1,0 +1,23 @@
+pub type Check<T>(message: @Expr<string>, rule: @Expr<fn(v: T) -> bool>)
+
+fn check<T>(
+    comptime decl: @Decl<T>,
+    comptime message: @Expr<string>,
+    comptime rule: @Expr<fn(v: T) -> bool>,
+) {
+    decl.addMeta(Check(message: message, rule: rule));
+}
+
+fn passwordsMatch(s: Signup) -> bool {
+    return s.password == s.confirm;
+}
+
+#[check("the passwords differ", passwordsMatch)]
+type Signup(password: string, confirm: string)
+
+fn main() {
+    val s = Signup(password: "a", confirm: "b");
+    for (@typeInfo(Signup).metaAll(Check)) { c ->
+        if (!c.rule(s)) @print(c.message); // the passwords differ
+    }
+}

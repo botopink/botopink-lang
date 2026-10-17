@@ -1,0 +1,8 @@
+//// Decision 247 reverses decision 209's array half: `[1, 2.5]` with nothing
+//// expected is refused at the integer literal (it was `f64[]`, the `1`
+//// re-spelt `1.0`); write `[1.0, 2.5]`.
+
+pub fn main() {
+    val xs = [1, 2.5];
+    @print(xs.length);
+}

@@ -1,0 +1,14 @@
+//// Decision 150 (D5, decision 8 §3.2) — the elements of an array literal that
+//// disagree make the union of their types, with no error: `[1, "a"]` is
+//// `(i32 | string)[]`. The misuse is reported at the use
+//// (`reject/array_literal_union_misuse`); an expected union takes the
+//// elements as its members.
+
+pub fn main() {
+    val xs = [1, "a"];
+    @print(xs.length);
+    val ys: (i32 | string)[] = [2, "b", 3];
+    @print(ys.length);
+    val zs = ["c", 4, "d", 5];
+    @print(zs.length);
+}

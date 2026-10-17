@@ -1,0 +1,28 @@
+//// A `@TypeInfo.all` answer reaches each catalogued type of another module
+//// through an import it adds (`import {Widget as __bp_ti_0} from
+//// "kit/catalog";`). The entry point also imports `Widget` itself, from the
+//// package, `Gadget` under an alias, and `Part` of its own package by its
+//// path: each is ONE declaration reached by two import items, so it is one
+//// type — decision 170 refuses only two declarations of one name
+//// (`import_two_types_one_name`). The parent binary refused it as
+//// `import-name-collision` (`two types declared `Widget` — `kit/catalog`'s
+//// and `kit:catalog`'s`), telling the two spellings apart instead of the
+//// declaration each resolved to; and where the two spellings agreed (a module
+//// of this package's root), the type registered twice left the erlang
+//// answer's thunk calling `make` on an unbound alias.
+
+pub mod shop;
+import {marks.service} from "kit";
+import {catalog.Widget, catalog.Gadget as G} from "kit";
+import {shop.parts.Part};
+
+pub fn main() {
+    val made = @TypeInfo.all(with: service, member: "make");
+    for (made) { e ->
+        @print(e.module + " " + e.name);
+    }
+    @print(Widget.make().name());
+    @print(G.make().tag);
+    @print(G(tag: "g").tag);
+    @print(Part.make().tag);
+}

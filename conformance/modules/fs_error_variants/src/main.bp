@@ -1,0 +1,61 @@
+//// Decision 540 (1) — `io.fs` answers a typed `FsError`: the same OS error is the same variant
+//// on every target (`ENOENT`, `enoent` → `NotFound`), whichever function met it, and the error
+//// holds the path the caller wrote. Six of its variants are met here; `PermissionDenied` is the
+//// seventh, answered for `EACCES` / `EPERM` (std's own test reaches it as a user who is not root).
+//// A dangling link under `walk` is `Other` (decision 178's text is its `message`); text that is
+//// not UTF-8 is `InvalidUtf8`, at the byte where the first invalid sequence starts.
+
+import {io.fs} from "std";
+
+// A symbolic link `link` -> `target`: std has no public cell that makes one.
+#[@External.Node("""require('fs').symlinkSync($0, $1)""")]
+#[@External.Erlang("""(fun(__T, __L) -> ok = file:make_symlink(__T, __L), ok end)($0, $1)""")]
+declare fn linkTo(target: string, link: string) -> void;
+
+fn describe(e: fs.FsError) -> string {
+    return case e {
+        fs.FsError.NotFound(path) -> "NotFound " + path;
+        fs.FsError.PermissionDenied(path) -> "PermissionDenied " + path;
+        fs.FsError.IsDirectory(path) -> "IsDirectory " + path;
+        fs.FsError.NotDirectory(path) -> "NotDirectory " + path;
+        fs.FsError.AlreadyExists(path) -> "AlreadyExists " + path;
+        fs.FsError.InvalidUtf8(path, offset) -> "InvalidUtf8 "
+            + path
+            + " "
+            + offset.toString();
+        fs.FsError.Other(path, message) -> "Other " + path + " " + message;
+    };
+}
+
+fn show<T>(label: string, r: @Result<T, fs.FsError>) {
+    case r {
+        Ok(_) -> @print(label + ": ok");
+        Error(e) -> @print(label + ": " + describe(e));
+    }
+}
+
+pub fn main() {
+    fs.removeTree("errors");
+    fs.mkdir("errors");
+    fs.writeText("errors/file.txt", "text");
+    fs.writeBytes("errors/bad.bin", Bytes
+        .fromUtf8("ab")
+        .concat(Bytes.fromUtf8("é").slice(0, 1)));
+    show("readText of a missing file", fs.readText("errors/nope.txt"));
+    show("readText of a directory", fs.readText("errors"));
+    show("list of a file", fs.list("errors/file.txt"));
+    show("mkdir of a directory", fs.mkdir("errors"));
+    show("mkdir under a missing directory", fs.mkdir("errors/missing/child"));
+    show("rm of a directory", fs.rm("errors"));
+    show("copy of a missing file", fs.copy("errors/nope.txt", "errors/copy.txt"));
+    show("stat of a missing file", fs.stat("errors/nope.txt"));
+    show("open of a missing file", fs.open("errors/nope.txt"));
+    show("open of a directory", fs.open("errors"));
+    show("create under a missing directory", fs.create("errors/missing/file.txt"));
+    show("writeText over a directory", fs.writeText("errors", "x"));
+    show("walk of a file", fs.walk("errors/file.txt"));
+    show("readText of bytes that are not UTF-8", fs.readText("errors/bad.bin"));
+    linkTo("nowhere.bp", "errors/gone.bp");
+    show("walk over a dangling link", fs.walk("errors"));
+    fs.removeTree("errors");
+}

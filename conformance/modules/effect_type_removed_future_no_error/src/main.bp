@@ -1,0 +1,11 @@
+//// Decisions 120 and 127 of 1.0.10-beta (front 24, § Cells "Migration";
+//// guide.md § 9, row `@Future<T>` with no error) — the one-argument `@Future<T>`
+//// is refused like the two-argument one; its fix-it is `@Task<T>`. The type sits
+//// in a parameter, so the refusal does not depend on a function's effect mode.
+//// The new form is `run/task_await_no_try.bp`.
+
+fn answer(n: i32) -> @Task<i32> { return n; }
+
+fn keep(t: @Future<i32>) -> i32 { return 1; }
+
+pub fn main() { @print(keep(answer(1))); }

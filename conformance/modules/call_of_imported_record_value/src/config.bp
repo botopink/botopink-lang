@@ -1,0 +1,3 @@
+pub type Settings(name: string)
+
+pub val settings = Settings(name: "app");

@@ -1,0 +1,19 @@
+mod sql;
+import {sql.query, sql.repository, sql.Query, sql.Repository};
+
+#[repository]
+behavior Users {
+    #[query "select * from users where id = ${id} limit 1"]
+    fn find(self: Self, id: i32) -> string;
+}
+
+#[query "delete from s where u = ${u}"]
+fn logout(u: string) -> string {
+    return u;
+}
+
+pub fn main() {
+    val statements: string[] = @typeInfo(Users).meta(Repository)?.statements ?? [];
+    @print(statements.join(" | "));
+    @print(@typeInfo(logout).meta(Query)!.sql);
+}

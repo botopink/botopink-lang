@@ -1,0 +1,21 @@
+//// 00 · 01-checker — two enums carry `.Color.Red.500` and the `val` says
+//// nothing about which one it wants. The checker refuses, naming both
+//// candidates: picking one is what made the answer depend on the order the
+//// type definitions came out of their hash map.
+
+type Token {
+    Color {
+        Red { 100, 500 }
+    }
+}
+
+type Border {
+    Color {
+        Red { 100, 500 }
+    }
+}
+
+pub fn main() {
+    val x = .Color.Red.500;
+    @print("unreachable");
+}

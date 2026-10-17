@@ -1,0 +1,42 @@
+//// Decisions 277, 354 (4), 379 — `decl.hooks` carries each `use
+//// provide(ctx)` / `use context(T)` with its context object, the `val` that
+//// declares the type's default, which a framework's root decorator reads to
+//// check that every context read has a provider on its path. std's `provide`
+//// / `context` get no node.
+
+import {context.createContext, context.provide, context.context} from "std";
+
+type Theme(mode: string)
+
+type Element(text: string) implement @Renderable
+
+pub val themeContext = comptime createContext(Theme(mode: "default"));
+
+fn contexts(comptime decl: @Decl) {
+    var out: string[] = [];
+    decl.hooks.forEach({ n ->
+        n.uses.forEach({ u ->
+            val h = u.hook;
+            val c = u.context;
+            val hook = if (h == null) "null" else h.module + "." + h.name;
+            val ctx = if (c == null) "-" else c.module + "." + c.name;
+            out.push(n.function.name + ": " + hook + "(" + ctx + ")")
+        })
+    });
+    decl.setMeta(ContextUses(uses: out));
+}
+
+fn Label() -> @Component<Element> {
+    val t = use context(Theme);
+    return Element(text: t.mode);
+}
+
+#[contexts]
+pub fn App() -> @Component<Element> {
+    use provide(createContext(Theme(mode: "dark")));
+    val l = Label();
+    return Element(text: l.text);
+}
+
+// What `#[contexts]` records: each `use` of `decl.hooks` with its context.
+pub type ContextUses(uses: string[])

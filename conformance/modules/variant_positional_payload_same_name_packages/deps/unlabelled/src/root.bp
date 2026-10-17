@@ -1,0 +1,10 @@
+//// The other package declaring a variant named `Text`: a different type, a different field.
+
+pub type Token {
+    Text(count: i32),
+    Stop,
+}
+
+pub fn makeToken(n: i32) -> Token {
+    return Token.Text(n);
+}

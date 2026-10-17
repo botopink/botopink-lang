@@ -1,0 +1,5 @@
+//// What is left of `raw` once every character of `allowed` is removed.
+
+pub fn residue(raw: string, allowed: string) -> string {
+    return allowed.split("").fold(raw, { acc, c -> acc.split(c).join("") });
+}

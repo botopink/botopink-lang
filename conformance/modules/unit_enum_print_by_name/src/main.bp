@@ -1,0 +1,57 @@
+//// A value of an all-unit enum prints as the source writes it, however it
+//// reached `@print`. On wasm such a value is its ordinal, with no header to
+//// read: a literal trapped, and a name or a call printed the ordinal (`@print(g)`
+//// → `2`). A record field, an array, an array element, a parameter, a `?Color`
+//// (present, absent, and a present FIRST variant, whose ordinal is `0` — a
+//// declared `?Color` was unboxed on wasm, so `Color.Red` there was absent), an
+//// `if` value and a `var` after a write.
+
+type Color {
+    Red,
+    Green,
+    Blue,
+}
+
+type Car(name: string, color: Color)
+
+fn fav() -> Color {
+    return Color.Green;
+}
+
+fn show(c: Color) {
+    @print(c);
+}
+
+fn firstOrNone(b: bool) -> ?Color {
+    if (b) return Color.Red;
+    return null;
+}
+
+pub fn main() {
+    val g = Color.Blue;
+    @print(g);
+    @print(fav());
+    @print(Color.Red);
+    @print([Color.Red, Color.Blue]);
+    val car = Car(name: "a", color: Color.Green);
+    @print(car);
+    @print(car.color);
+    show(Color.Blue);
+    val cs = [Color.Red, Color.Green];
+    @print(cs);
+    @print(cs.at(1));
+    @print(cs.at(5));
+    var x = Color.Red;
+    x = Color.Blue;
+    @print(x);
+    @print(if (g == Color.Blue) Color.Green else Color.Red);
+    val m: ?Color = Color.Red;
+    @print(m);
+    @print(m == null);
+    @print(m ?? Color.Blue);
+    @print(firstOrNone(true));
+    @print(firstOrNone(false));
+    @print(firstOrNone(true) == Color.Red);
+    val n: ?Color = null;
+    @print(n ?? Color.Blue);
+}

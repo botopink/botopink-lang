@@ -1,0 +1,11 @@
+//// Decision 247 — the other operand of an `f64` operator expects an `f64`,
+//// and an integer literal is not one: `v / 2` is refused at the `2` (decision
+//// 209 re-spelt it `2.0`).
+
+fn half(v: f64) -> f64 {
+    return v / 2;
+}
+
+pub fn main() {
+    @print(half(5.0));
+}

@@ -1,0 +1,14 @@
+//// Decision 356 — a decorator on a module-level `val` runs over a `@Decl`
+//// of kind `DeclKind.Val`: its `fail` refuses the program at the annotation.
+//// It used to be dropped silently, and the program printed `1`.
+
+fn mark(comptime decl: @Decl) {
+    decl.fail("#[mark] ran on the val " + decl.name);
+}
+
+#[mark]
+pub val one = 1;
+
+pub fn main() {
+    @print(one);
+}

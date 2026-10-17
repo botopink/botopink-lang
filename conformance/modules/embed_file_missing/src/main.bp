@@ -1,0 +1,7 @@
+//// Decision 519 — a path of `@embed` that names no file of the package is a build error,
+//// located at the call.
+
+pub fn main() {
+    val a = @embed("assets/missing.txt");
+    @print(a.size);
+}

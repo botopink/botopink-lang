@@ -1,0 +1,3 @@
+botopink-cell 1
+out pages.Page: sync, ui.session: sync, ui.Avatar: sync
+out pages.Wall: async, ui.Posts: async

@@ -1,0 +1,61 @@
+//// Decision 331 — a record is matched on the comptime runtime as the
+//// untagged map a comptime module builds: a `case` arm naming a record that
+//// shares its name with a section's variant (`Block`, emilia's
+//// `Layout { Block }` beside `type Block(…)`), a constructor pattern in an
+//// arm and in a `val`, and `is`, on both runtimes. The parent binary
+//// rendered the record's package-qualified tag, which a comptime module has
+//// no package for: "the comptime block could not be lowered for the
+//// comptime runtime (MissingPackage)".
+
+type Block(header: string, body: string)
+
+type Rule(selector: string, decl: string)
+
+type Tok {
+    Layout {
+        Block,
+        Flex,
+    }
+    Bold,
+}
+
+fn kind(t: Tok) -> string {
+    return case t {
+        Layout(l) -> case l {
+            Block -> "layout-block";
+            Flex -> "layout-flex";
+        };
+        Bold -> "bold";
+    };
+}
+
+fn shape(v: Rule | Tok) -> string {
+    return case v {
+        Rule(selector: s, ..) -> "rule " + s;
+        _ -> "token";
+    };
+}
+
+fn decl(r: Rule) -> string {
+    val Rule(_s, d) = r;
+    return d;
+}
+
+fn isRule(v: Rule | Tok) -> bool {
+    return v is Rule;
+}
+
+fn header(b: Block) -> string {
+    return b.header;
+}
+
+pub fn main() {
+    @print(comptime shape(Rule(selector: ".a", decl: "color:red")));
+    @print(comptime shape(Tok.Bold));
+    @print(comptime decl(Rule(selector: ".b", decl: "margin:0")));
+    @print(comptime isRule(Rule(selector: ".c", decl: "")));
+    @print(comptime isRule(Tok.Bold));
+    @print(comptime header(Block(header: "h1", body: "b1")));
+    @print(comptime kind(.Layout.Block));
+    @print(comptime kind(.Layout.Flex));
+}

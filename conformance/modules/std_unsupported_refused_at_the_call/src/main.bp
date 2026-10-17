@@ -1,0 +1,11 @@
+//// Decision 518 (4) — STD-001 refuses at the call, never at the import: a
+//// std function with no binding for the target is importable everywhere,
+//// and the call that reaches it is refused, located at the call and naming
+//// the function. `erlang.node` binds erlang and beam alone.
+
+import {erlang.node} from "std";
+
+pub fn main() {
+    @print("imported");
+    @print(node());
+}

@@ -1,0 +1,10 @@
+//// Decision 255 (1) through a module namespace — the type arguments of
+//// `shapes.Box<i32>.make(…)` bind the type's parameter in the static fn's
+//// signature, so a `string` argument is the mismatch at the argument.
+
+pub mod shapes;
+
+pub fn main() {
+    val b = shapes.Box<i32>.make("x");
+    @print(b.value);
+}

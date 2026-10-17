@@ -1,0 +1,26 @@
+//// Decision 506 (1) — `io.stdin`: `readLine()` answers the next line without its terminator and
+//// `null` at the end of input; `isTTY()` is `false` for a stream that is no terminal. A cell runs
+//// with standard input closed (`/dev/null`), so the end of input is what every read answers, on
+//// every target, again and again; `readChunk()` — the byte-level read `io.terminal.keys` is made of —
+//// answers `null` there too. (A cell cannot give its program an input: the lines themselves — `\n`, `\r\n`,
+//// a last line with no terminator, UTF-8 — were read off a piped input by hand on the three targets.)
+
+import {io.stdin} from "std";
+
+fn show(line: ?string) -> string {
+    return case line {
+        null -> "<end of input>";
+        text -> "[" + text + "]";
+    };
+}
+
+fn scenario() -> @Task<void> {
+    @print("isTTY " + stdin.isTTY().toString());
+    @print(show(await stdin.readLine()));
+    @print(show(await stdin.readLine()));
+    @print(show(await stdin.readChunk()));
+}
+
+pub fn main() {
+    scenario();
+}

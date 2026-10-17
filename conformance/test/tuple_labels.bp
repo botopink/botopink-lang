@@ -1,0 +1,60 @@
+//// Decision 8 §6 T1–T5 — labels are compile-time names: lent by construction
+//// variables, given by written types (parameter, return, annotation), resolved
+//// to a position, and ignored when types are compared.
+
+fn load() -> #(name: string, pop: i32) {
+    return #("SP", 12);
+}
+
+fn population(r: #(name: string, pop: i32)) -> i32 {
+    return r.pop;
+}
+
+fn byCity(r: #(city: string, pop: i32)) -> string {
+    return r.city;
+}
+
+test "§6 T1 a construction variable lends its name as a label" {
+    val name = "SP";
+    val pop = 12;
+    val row = #(name, pop);
+    assert row.name == "SP";
+    assert row.pop == 12;
+}
+
+test "§6 T2 T4 a labeled return type gives the labels" {
+    assert load().name == "SP";
+    assert load().pop == 12;
+}
+
+test "§6 T3 a labeled parameter gives labels to an unlabeled argument" {
+    assert population(#("Rio", 6)) == 6;
+}
+
+test "§6 T2 T3 a labeled annotation gives the labels" {
+    val r: #(name: string, pop: i32) = #("BH", 2);
+    assert r.name == "BH";
+}
+
+test "§6 T4 a label and its position read the same element" {
+    val r = load();
+    assert r.pop == r.1;
+}
+
+test "§6 T5 types with different labels are compatible" {
+    assert byCity(load()) == "SP";
+}
+
+test "§6 T3 labels survive an inferred val" {
+    val name = "x";
+    val pop = 1;
+    val a = #(name, pop);
+    val b = a;
+    assert b.pop == 1;
+}
+
+test "§6 T4 a label survives a generic array method" {
+    val rs: #(a: i32, b: string)[] = [#(1, "x"), #(2, "y")];
+    assert rs.at(0)?.b == "x";
+    assert rs.at(1)?.a == 2;
+}

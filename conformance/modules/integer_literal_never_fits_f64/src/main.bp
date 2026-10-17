@@ -1,0 +1,9 @@
+//// Decision 247 reverses decision 209: a literal without a suffix never
+//// changes type to fit, so an integer literal where an `f64` is expected is
+//// refused at the literal, naming `1d` and `1.0`. (It was
+//// `run/integer_literal_fits_f64`.)
+
+pub fn main() {
+    val x: f64 = 1;
+    @print(x);
+}

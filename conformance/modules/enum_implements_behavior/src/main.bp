@@ -1,0 +1,33 @@
+//// An enum implementing a behavior: its method called on the enum value and
+//// through a behavior-typed parameter. The checker records the behavior-typed
+//// call as the value's (`InstanceLowering.by_value`) and the direct call as
+//// the enum's (`.type_`); the backends must reach the enum's method from a
+//// variant value — commonJS emitted the enum's methods `static`, erlang and
+//// beam asked the variant's tag (`…@@Msg__v__get`) for a module.
+
+behavior Req {
+    fn path(self: Self) -> string;
+}
+
+type Msg implement Req {
+    Get(url: string),
+    Post(url: string, body: string),
+
+    fn path(self: Self) -> string {
+        return case self {
+            Get(url) -> url;
+            Post(url, body) -> url + "!";
+        };
+    }
+}
+
+fn show(r: Req) -> string {
+    return r.path();
+}
+
+pub fn main() {
+    val m = Msg.Get(url: "/a");
+    @print(m.path());
+    @print(show(m));
+    @print(show(Msg.Post(url: "/b", body: "x")));
+}

@@ -11,4 +11,4 @@ kind: markdown
 fn abs(self: Self) -> Self
 ```
 
-*from `interface I32`*
+*from `behavior Signed` (via I32)*

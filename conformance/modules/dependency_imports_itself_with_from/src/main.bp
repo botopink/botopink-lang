@@ -1,0 +1,10 @@
+//// Decision 309, inside a dependency — `starter`'s module imports its own
+//// sibling `from "starter"`. A dependency's sources follow the rule its own
+//// build applies: the refusal is the one `starter`'s build gives, located at
+//// the source string in `starter`'s module, with the brace form written.
+
+import {start} from "starter";
+
+pub fn main() {
+    @print(start());
+}

@@ -1,0 +1,10 @@
+pub fn f() -> i32 {
+    defer {
+        return 1;
+    }
+    return 2;
+}
+
+pub fn main() {
+    @print(f());
+}

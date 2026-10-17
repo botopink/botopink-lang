@@ -1,0 +1,31 @@
+//// Two enums of the program, each in its own module, declare a payload
+//// variant named `Item` with different fields (`label`, `count`). A
+//// positional pattern `Item(x)` in a third module binds the field at
+//// position 0 of the variant the matched value IS — `label` for a `Tag`,
+//// `count` for a `Count` — on every target (decision 8 § 5.1 P4).
+
+mod tags;
+mod counts;
+
+import {tags.Tag};
+import {counts.Count};
+
+fn tagText(t: Tag) -> string {
+    return case t {
+        Item(label) -> label;
+        Blank -> "<blank>";
+    };
+}
+
+fn countOf(c: Count) -> i32 {
+    return case c {
+        Item(n) -> n;
+        Zero -> 0;
+    };
+}
+
+pub fn main() {
+    @print(tagText(Tag.Item("first")));
+    @print(countOf(Count.Item(7)));
+    @print(countOf(Count.Zero) + 1);
+}

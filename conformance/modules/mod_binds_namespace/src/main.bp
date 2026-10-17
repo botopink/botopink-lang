@@ -1,0 +1,19 @@
+//// Decision 337 (2) — `mod config;` binds the namespace `config` in the
+//// module that declares it, as `import {config};` binds it elsewhere: a call,
+//// a function as a value, a type in a signature, a constructor and a variant
+//// path through it, with no import.
+
+pub mod config;
+mod shapes;
+
+fn area(r: shapes.Rect) -> i32 {
+    return r.w * r.h;
+}
+
+pub fn main() {
+    @print(config.splitPath("a/b"));
+    val f = config.splitPath;
+    @print(f("c/d"));
+    @print(area(shapes.Rect(w: 2, h: 3)));
+    @print(shapes.Kind.Square == shapes.square());
+}

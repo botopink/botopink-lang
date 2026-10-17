@@ -1,0 +1,21 @@
+//// onze finding F2 — importing a record type from a package brings the types
+//// its fields and methods name from the package's OTHER modules. `Canvas`
+//// names `Outline` and `Point`; `Outline` names `Point` from a third module.
+//// 01-checker's step 8 R2 registered the closure from the declaring module's
+//// OWN types only, so `import {Canvas}` was refused with "unknown type
+//// 'Outline'" located in this file. Neither `Outline` nor `Point` is named.
+
+import {Canvas, canvas} from "shapes";
+
+fn make() -> Canvas {
+    return canvas();
+}
+
+pub fn main() {
+    val c = make();
+    @print(c.count());
+    @print(c.origin.y);
+    for (c.outlines) { o ->
+        @print(o.first().x);
+    }
+}

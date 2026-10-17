@@ -1,0 +1,12 @@
+//// Decision 337 (2) — `mod config;` binds `config` in this module, so a
+//// top-level declaration of that name is `import-name-collision` at its name.
+
+pub mod config;
+
+fn config() -> string {
+    return "local";
+}
+
+pub fn main() {
+    @print(config());
+}

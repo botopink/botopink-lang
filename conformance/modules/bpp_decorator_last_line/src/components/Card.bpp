@@ -1,0 +1,6 @@
+import {named} from "markup";
+
+val size = 2;
+#[named]
+---
+<p>card</p>

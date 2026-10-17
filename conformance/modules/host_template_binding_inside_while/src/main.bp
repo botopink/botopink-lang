@@ -1,0 +1,22 @@
+//// A host template is author text spliced into the caller's clause: a
+//// variable it binds must not meet one the backend binds around it. Erlang's
+//// `while` lowering recursed through a named fun `__Loop`, so a template
+//// binding `__Loop` inside a `while` body re-matched the bound fun —
+//// `{badmatch, #Fun<…>}` at run time (language-gaps T14). Not scheduled on
+//// commonJS and wasm: no host binding there.
+
+#[@External.Erlang("begin __Loop = $0 + 1, __Loop end")]
+declare fn bump(n: i32) -> i32;
+
+pub fn main() {
+    var i = 0;
+    var total = 0;
+    while (i < 3) {
+        total = bump(total);
+        i = i + 1;
+    }
+    @print(total);
+    for ([10, 20]) { x ->
+        @print(bump(x));
+    }
+}

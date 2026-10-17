@@ -1,0 +1,35 @@
+//// The busy consumer: every kind of use of `shelf` — the generic at two types,
+//// the template, the decorator, the enum's variants, the method — beside a
+//// program that declares `shelf`'s names again (`rival`, `local`, and
+//// `std/collections`' `Queue`). None of it is in `shelf`'s closure, so none of
+//// it may change a byte of `shelf`'s code.
+
+pub mod local;
+
+import {collections} from "std";
+import shelf from "shelf";
+import {items.Queue, items.Shape, items.Meter, items.describe, items.area, items.readMeter} from "shelf";
+import {tools.pick, tools.tagged, tools.total} from "shelf";
+import {items.rivalLabel, items.Gauge} from "rival";
+import {local.Pair};
+
+#[tagged]
+fn marked() -> i32 {
+    return 1;
+}
+
+pub fn main() {
+    val q = Queue(label: "crowded", size: 2);
+    @print(describe(q));
+    @print(area(Shape.Circle(radius: 2)).toString());
+    @print(pick(1, 2, true).toString());
+    @print(pick("a", "b", false));
+    val built = shelf "built";
+    @print(built.text);
+    @print(total(q, Shape.Dot).toString());
+    @print(readMeter(Meter(n: 3)).toString());
+    @print(Gauge(n: 4).reading().toString());
+    @print(markedTag());
+    @print(Pair(label: "p", size: 9).label);
+    @print(collections.toInt(collections.lt()));
+}

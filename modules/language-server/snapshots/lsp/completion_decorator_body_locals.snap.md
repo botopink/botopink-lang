@@ -13,3 +13,4 @@ pub fn component(comptime decl: @Decl) {
 f  [Variable]  detail: binder
 args  [Variable]  detail: local
 decl  [Variable]  detail: parameter
+component  [Function]  detail: fn

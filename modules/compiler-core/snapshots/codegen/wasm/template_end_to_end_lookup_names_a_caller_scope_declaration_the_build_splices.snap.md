@@ -1,0 +1,675 @@
+----- SOURCE CODE -- main.bp
+```botopink
+val greeting = "ola mundo";
+pub fn refer(comptime q: @Expr<string>) -> @Expr<string> {
+    val hit = q.lookup("greeting");
+    if (hit) { b ->
+        return q.build(b.name);
+    } else {
+        return q.fail("greeting not found in caller scope");
+    };
+}
+val s = refer "greeting";
+fn main() {
+    @print(s);
+}
+```
+
+----- COMPTIME WAT -- template refer
+```wat
+(func $refer/1 (param $a0 i32) (result i32)
+  (local $s0 i32) (local $s1 i32) (local $s2 i32) (local $s3 i32) (local $s4 i32)
+  (block $raise
+  (block $L1 (result i32)
+  (block $L2
+  local.get $a0
+  local.set $s0
+  (block $L3 (result i32)
+  (block $L4
+  local.get $s0
+  global.get $__lit
+  i32.const 296
+  i32.add
+  i32.const 8
+  call $rt_bin
+  call $bp_comptime_template:lookup/2
+  call $rt_pending
+  br_if $L4
+  br $L3
+  )
+  call $rt_class
+  local.set $s1
+  call $rt_reason
+  local.set $s2
+  call $rt_clear
+  (block $L5 (result i32)
+  (block $L6
+  local.get $s1
+  global.get $__lit
+  i32.const 72
+  i32.add
+  i32.const 5
+  call $rt_atom
+  call $rt_eqx
+  i32.eqz
+  br_if $L6
+  local.get $s2
+  local.set $s3
+  global.get $__lit
+  i32.const 304
+  i32.add
+  i32.const 7
+  call $rt_bin
+  i64.const 3
+  call $rt_int
+  i64.const 15
+  call $rt_int
+  local.get $s3
+  call $bp_comptime_template:__bp_push/4
+  call $rt_pending
+  br_if $raise
+  drop
+  global.get $__lit
+  i32.const 72
+  i32.add
+  i32.const 5
+  call $rt_atom
+  local.get $s3
+  call $rt_raise
+  drop
+  br $raise
+  call $rt_nil
+  br $L5
+  )
+  local.get $s1
+  local.get $s2
+  call $rt_raise
+  drop
+  br $raise
+  )
+  br $L3
+  )
+  local.set $s1
+  (block $L8
+  (block $L7
+  local.get $s1
+  local.set $s2
+  br $L8
+  )
+  local.get $s1
+  call $rt_badmatch
+  drop
+  br $raise
+  )
+  local.get $s1
+  drop
+  local.get $s2
+  local.set $s1
+  (block $L9 (result i32)
+  (block $L10
+  local.get $s1
+  global.get $__lit
+  i32.const 120
+  i32.add
+  i32.const 9
+  call $rt_atom
+  call $rt_eqx
+  i32.eqz
+  br_if $L10
+  (block $L11 (result i32)
+  (block $L12
+  local.get $s0
+  global.get $__lit
+  i32.const 312
+  i32.add
+  i32.const 34
+  call $rt_bin
+  call $bp_comptime_template:fail/2
+  call $rt_pending
+  br_if $L12
+  br $L11
+  )
+  call $rt_class
+  local.set $s2
+  call $rt_reason
+  local.set $s3
+  call $rt_clear
+  (block $L13 (result i32)
+  (block $L14
+  local.get $s2
+  global.get $__lit
+  i32.const 72
+  i32.add
+  i32.const 5
+  call $rt_atom
+  call $rt_eqx
+  i32.eqz
+  br_if $L14
+  local.get $s3
+  local.set $s4
+  global.get $__lit
+  i32.const 304
+  i32.add
+  i32.const 7
+  call $rt_bin
+  i64.const 7
+  call $rt_int
+  i64.const 16
+  call $rt_int
+  local.get $s4
+  call $bp_comptime_template:__bp_push/4
+  call $rt_pending
+  br_if $raise
+  drop
+  global.get $__lit
+  i32.const 72
+  i32.add
+  i32.const 5
+  call $rt_atom
+  local.get $s4
+  call $rt_raise
+  drop
+  br $raise
+  call $rt_nil
+  br $L13
+  )
+  local.get $s2
+  local.get $s3
+  call $rt_raise
+  drop
+  br $raise
+  )
+  br $L11
+  )
+  br $L9
+  )
+  (block $L15
+  local.get $s1
+  local.set $s2
+  i32.const 2
+  call $rt_tuple
+  local.set $s3
+  local.get $s3
+  i32.const 0
+  local.get $s0
+  call $rt_tset
+  drop
+  local.get $s3
+  i32.const 1
+  global.get $__lit
+  i32.const 352
+  i32.add
+  i32.const 4
+  call $rt_atom
+  local.get $s2
+  call $rt_maps_get
+  call $rt_pending
+  br_if $raise
+  call $rt_tset
+  drop
+  local.get $s3
+  local.set $s0
+  (block $L16 (result i32)
+  (block $L17
+  local.get $s0
+  call $rt_tuple_arity
+  i32.const 2
+  i32.ne
+  br_if $L17
+  local.get $s0
+  i32.const 0
+  call $rt_elem
+  local.set $s2
+  local.get $s2
+  local.set $s2
+  local.get $s0
+  i32.const 1
+  call $rt_elem
+  local.set $s3
+  local.get $s3
+  local.set $s3
+  (block $L18 (result i32)
+  (block $L19
+  local.get $s2
+  local.get $s3
+  call $bp_comptime_template:build/2
+  call $rt_pending
+  br_if $L19
+  br $L18
+  )
+  call $rt_class
+  local.set $s2
+  call $rt_reason
+  local.set $s3
+  call $rt_clear
+  (block $L20 (result i32)
+  (block $L21
+  local.get $s2
+  global.get $__lit
+  i32.const 72
+  i32.add
+  i32.const 5
+  call $rt_atom
+  call $rt_eqx
+  i32.eqz
+  br_if $L21
+  local.get $s3
+  local.set $s4
+  global.get $__lit
+  i32.const 304
+  i32.add
+  i32.const 7
+  call $rt_bin
+  i64.const 5
+  call $rt_int
+  i64.const 16
+  call $rt_int
+  local.get $s4
+  call $bp_comptime_template:__bp_push/4
+  call $rt_pending
+  br_if $raise
+  drop
+  global.get $__lit
+  i32.const 72
+  i32.add
+  i32.const 5
+  call $rt_atom
+  local.get $s4
+  call $rt_raise
+  drop
+  br $raise
+  call $rt_nil
+  br $L20
+  )
+  local.get $s2
+  local.get $s3
+  call $rt_raise
+  drop
+  br $raise
+  )
+  br $L18
+  )
+  br $L16
+  )
+  local.get $s0
+  call $rt_case_clause
+  drop
+  br $raise
+  )
+  br $L9
+  )
+  local.get $s1
+  call $rt_case_clause
+  drop
+  br $raise
+  )
+  br $L1
+  )
+  call $rt_function_clause
+  drop
+  br $raise
+  )
+  return
+  )
+  i32.const 0
+)
+
+;; main/1 argument — an external term, not part of the module:
+;; Arg0 = #{
+;;     '__bp_capture' => <<"q">>,
+;;     text => <<"greeting">>,
+;;     parts => [
+;;         #{
+;;             kind => <<"Text">>,
+;;             text => <<"greeting">>,
+;;             span => #{start => 0, 'end' => 8, line => 1}
+;;         }
+;;     ],
+;;     source => #{file => <<"">>, line => 10, col => 15},
+;;     context => #{
+;;         source => #{file => <<"">>, line => 10, col => 15},
+;;         text => <<"greeting">>,
+;;         multiline => false
+;;     },
+;;     bindings => [
+;;         #{
+;;             kind => 'Val',
+;;             name => <<"greeting">>,
+;;             fields => [],
+;;             variants => [],
+;;             methods => [],
+;;             returnType => <<"">>,
+;;             annotations => [],
+;;             hooks => [],
+;;             params => [],
+;;             component => undefined,
+;;             module => <<"">>,
+;;             owner => undefined,
+;;             meta => [],
+;;             identity => <<"main@@greeting">>,
+;;             local => <<"greeting">>
+;;         }
+;;     ],
+;;     words => [<<"greeting">>]
+;; }
+```
+
+----- COMPTIME REPLY -- template refer
+```json
+{
+  "kind": "code",
+  "source": "greeting"
+}
+```
+
+----- WASM TEXT -- main.wat
+```wasm
+(module
+  (rec
+    (type $str (array (mut i8)))
+  )
+  (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
+  (memory (export "memory") 1)
+  (start $__init_strs)
+  (global $__heap_ptr (mut i32) (i32.const 256))
+  (global $greeting (mut (ref null $str)) (ref.null $str))
+  (global $s (mut (ref null $str)) (ref.null $str))
+  (func $main (export "main")
+    global.get $s
+    call $__print_str
+  )
+  (func $__init_globals
+    global.get $__s0
+    global.set $greeting
+    global.get $greeting
+    global.set $s
+  )
+  (func $_botopink_main (export "_botopink_main") (export "_start")
+    (call $main)
+  )
+  ;; Scratch layout below the data section (which starts at 256):
+  ;;   0..8  WASI iovec   8  newline byte
+  ;;  16..32 bool text   64..128 i32 digits
+  (func $__write_bytes (param $p i32) (param $n i32)
+    i32.const 0
+    local.get $p
+    i32.store
+    i32.const 4
+    local.get $n
+    i32.store
+    i32.const 1
+    i32.const 0
+    i32.const 1
+    i32.const 8
+    call $fd_write
+    drop
+  )
+  (func $__print_nl
+    i32.const 8
+    i32.const 10
+    i32.store8
+    i32.const 8
+    i32.const 1
+    call $__write_bytes
+  )
+  ;; separator between the arguments of a multi-argument `@print`
+  (func $__print_sp
+    i32.const 8
+    i32.const 32
+    i32.store8
+    i32.const 8
+    i32.const 1
+    call $__write_bytes
+  )
+  (func $__print_i32 (param $n i32)
+    local.get $n
+    call $__print_i32_raw
+    call $__print_nl
+  )
+  (func $__print_i32_raw (param $n i32)
+    (local $buf i32) (local $len i32) (local $neg i32) (local $d i32)
+    (local $i i32) (local $j i32) (local $tmp i32)
+    i32.const 64
+    local.set $buf
+    local.get $n
+    i32.const 0
+    i32.lt_s
+    (if
+      (then
+        i32.const 1
+        local.set $neg
+        i32.const 0
+        local.get $n
+        i32.sub
+        local.set $n
+      )
+    )
+    (block $done
+      (loop $digits
+        local.get $n
+        i32.const 10
+        i32.rem_u
+        i32.const 48
+        i32.add
+        local.set $d
+        local.get $buf
+        local.get $len
+        i32.add
+        local.get $d
+        i32.store8
+        local.get $len
+        i32.const 1
+        i32.add
+        local.set $len
+        local.get $n
+        i32.const 10
+        i32.div_u
+        local.set $n
+        local.get $n
+        i32.const 0
+        i32.gt_u
+        br_if $digits
+      )
+    )
+    ;; reverse
+    i32.const 0
+    local.set $i
+    local.get $len
+    i32.const 1
+    i32.sub
+    local.set $j
+    (block $rdone
+      (loop $rev
+        local.get $i
+        local.get $j
+        i32.ge_u
+        br_if $rdone
+        local.get $buf
+        local.get $i
+        i32.add
+        i32.load8_u
+        local.set $tmp
+        local.get $buf
+        local.get $i
+        i32.add
+        local.get $buf
+        local.get $j
+        i32.add
+        i32.load8_u
+        i32.store8
+        local.get $buf
+        local.get $j
+        i32.add
+        local.get $tmp
+        i32.store8
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        local.get $j
+        i32.const 1
+        i32.sub
+        local.set $j
+        br $rev
+      )
+    )
+    ;; add neg sign + newline
+    ;; shift the digits one byte right to make room for '-'
+    ;; (dst = buf+1, NOT buf+len: the latter moved them `len`
+    ;;  bytes and printed -12 as -21)
+    local.get $neg
+    (if
+      (then
+        local.get $buf
+        i32.const 1
+        i32.add
+        local.get $buf
+        local.get $len
+        call $__memmove
+        local.get $buf
+        i32.const 45
+        i32.store8
+        local.get $len
+        i32.const 1
+        i32.add
+        local.set $len
+      )
+    )
+    local.get $buf
+    local.get $len
+    call $__write_bytes
+  )
+  (func $__memmove (param $dst i32) (param $src i32) (param $len i32)
+    (local $i i32)
+    local.get $len
+    i32.const 1
+    i32.sub
+    local.set $i
+    (block $done
+      (loop $loop
+        local.get $i
+        i32.const 0
+        i32.lt_s
+        br_if $done
+        local.get $dst
+        local.get $i
+        i32.add
+        local.get $src
+        local.get $i
+        i32.add
+        i32.load8_u
+        i32.store8
+        local.get $i
+        i32.const 1
+        i32.sub
+        local.set $i
+        br $loop
+      )
+    )
+  )
+  (func $__print_str_raw (param $s (ref null $str))
+    (local $n i32) (local $p i32) (local $i i32) (local $top i32)
+    local.get $s
+    array.len
+    local.set $n
+    global.get $__heap_ptr
+    local.set $top
+    local.get $n
+    call $__alloc
+    local.set $p
+    (block $brk
+      (loop $cont
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $brk
+        local.get $p
+        local.get $i
+        i32.add
+        local.get $s
+        local.get $i
+        array.get_u $str
+        i32.store8
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $cont
+      )
+    )
+    local.get $p
+    local.get $n
+    call $__write_bytes
+    local.get $top
+    global.set $__heap_ptr
+  )
+  (func $__print_str (param $s (ref null $str))
+    local.get $s
+    call $__print_str_raw
+    call $__print_nl
+  )
+  (func $__alloc (param $n i32) (result i32)
+    (local $p i32) (local $e i32)
+    global.get $__heap_ptr
+    local.set $p
+    local.get $p
+    local.get $n
+    i32.add
+    i32.const 3
+    i32.add
+    i32.const -4
+    i32.and
+    local.set $e
+    local.get $e
+    local.get $p
+    i32.lt_u
+    (if
+      (then
+        unreachable
+      )
+    )
+    local.get $e
+    memory.size
+    i32.const 16
+    i32.shl
+    i32.gt_u
+    (if
+      (then
+        local.get $e
+        i32.const 65535
+        i32.add
+        i32.const 16
+        i32.shr_u
+        memory.size
+        i32.sub
+        memory.grow
+        i32.const -1
+        i32.eq
+        (if
+          (then
+            unreachable
+          )
+        )
+      )
+    )
+    local.get $e
+    global.set $__heap_ptr
+    local.get $p
+  )
+  (data $__d0 "ola mundo")
+  (global $__s0 (mut (ref null $str)) (ref.null $str))
+  (func $__init_strs
+    i32.const 0
+    i32.const 9
+    array.new_data $str $__d0
+    global.set $__s0
+    call $__init_globals
+  )
+  (@custom "botopink.needs" "gc\0a")
+)
+```
+
+----- RUN LOG -----
+```logs
+ola mundo
+```

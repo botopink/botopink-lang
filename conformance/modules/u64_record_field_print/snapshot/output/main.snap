@@ -1,0 +1,5 @@
+botopink-cell 1
+out Big(n: 18446744073709551615, label: "top")
+out 18446744073709551615
+out Pair(left: Big(n: 9223372036854775808, label: "half"), right: -1)
+out [Big(n: 18446744073709551615, label: "top"), Big(n: 0, label: "zero")]

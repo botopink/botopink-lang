@@ -2,7 +2,6 @@
 
 > Path: `modules/compiler-core/src/lexer/`
 > Parent: [`../AGENTS.md`](../AGENTS.md)
-> Docs: [`./docs.md`](docs.md) · Examples: [`./examples.md`](examples.md)
 
 Lexer support files. The lexer entry point itself lives at `../lexer.zig`.
 
@@ -11,12 +10,11 @@ Lexer support files. The lexer entry point itself lives at `../lexer.zig`.
 ```text
 lexer/
 ├── AGENTS.md      ← you are here
-├── docs.md        ← tokenizer reference (invariants, error policy)
-├── examples.md    ← `.bp` token syntax (numbers, strings, identifiers)
-├── token.zig      ← TokenKind enum + Token struct (lexeme + line/col)
-├── tests.zig      ← barrel: aggregates tests/<feature>.zig for test_root.zig
+├── token.zig      ← TokenKind enum + Token struct (lexeme + line/col); `record`/`enum`/`interface` are no longer lexed (declaration-kind tags for the language server only); `unknown` IS lexed (decision 8 §2, 06 N19); `ampersand`/`caret`/`charLiteral` are lexed so the parser refuses them by name (front 15 step 3)
+├── tests.zig      ← barrel importing every tests/<feature>.zig
 └── tests/         ← lexer tests, split by feature
-    ├── helpers.zig    ← shared harness (`pub fn assertTokens`, imports)
+    ├── helpers.zig    ← placeholder harness module (no helpers defined)
+    ├── backtick.zig   ← decision 561's backtick identifiers
     ├── basics.zig     ← empty/whitespace/identifier/number basics
     ├── recognizes.zig ← single-token recognition
     ├── tokenizes.zig  ← multi-token sequences
@@ -31,17 +29,158 @@ lexer/
 Token {
     kind:   TokenKind,
     lexeme: []const u8,  // exact slice of source for this token
-    line:   usize,       // 1-based
-    col:    usize,       // 1-based
+    line:   usize,       // 1-based, the line the token STARTS on
+    col:    usize,       // 1-based, measured from the start of `line`
+    offset: usize,       // byte offset of the token's first byte in the source
 }
 ```
 
-Usage: `Lexer.init(source).scanAll(alloc)` returns `[]Token`. `Lexer.init`
-does **not** store an allocator.
+`source[offset..offset + lexeme.len]` is the token's text. Diagnostics and LSP
+ranges are built from `offset` (`ParseErrorInfo.fromToken`), never from `col`.
+
+### A token's location is where it STARTS
+
+Multi-line tokens (`"""…"""`, `\\ …` line strings) advance the scanner's
+`line`/`lineStart` as they consume embedded newlines. `scanAll` snapshots both
+into `tokenLine`/`tokenLineStart` before each token, and `addToken` stamps
+those — so a `"""` literal is located at its opening quotes, not at its
+closing ones. `newlineAt()` is the single place that advances `line` +
+`lineStart` together for a newline the scanner walks over inside a literal;
+before it existed, `line` moved but `lineStart` did not, and every token on the
+closing line of a multi-line literal got a column counted from the opening
+line.
+
+Usage: `var l = Lexer.init(source); const tokens = try l.scanAll(alloc);
+defer l.deinit(alloc);` — `scanAll` returns `[]const Token` owned by the lexer.
+`Lexer.init` does **not** store an allocator. The tree a parse builds holds no
+token (only slices of the source), so a caller lexes into a scratch arena and
+parses into its own: a module's tokens are gone once its parse ends, not kept
+for the session (`comptime.zig` `analyzeSource`, its probes, `mod_tree.zig`,
+144 B-127).
+
+## A name between backticks is an identifier (decision 561)
+
+`` `text` `` lexes as an `identifier` whose name is the text between the
+backticks — any bytes but a backtick and a line break (`\n`, `\r`), a keyword
+included (`scanBacktickIdentifier`). A text that is a plain identifier
+(`Lexer.isPlainIdentifier`: `` `count` ``) is that identifier: the token is the
+bare text, located at it, so `source[offset..offset + lexeme.len]` still holds
+and the two spellings are one name. Any other text keeps its backticks in the
+lexeme (`` `not-found` ``, `` `fn` ``): it never meets a plain name or a keyword,
+and every diagnostic prints it as written. `isBacktickName` tells such a name,
+`unquotedName` strips the backticks where a module path segment names its file
+(`ast.unquotedName`, `ImportPath.prefixPath` / `fullPath`). An empty `` `` `` is
+`EmptyBacktickIdentifier`, a line break or the end of the file before the
+closing backtick `UnclosedBacktickIdentifier`, both located at the opening
+backtick. Each backend spells such a name its own way (`codegen/js`,
+`codegen/beam`, `codegen/wat` AGENTS).
+
+## `...` is its own token (decision 8 §5.2, 06 N22)
+
+`...` lexes as `dotDotDot`, the inclusive range of a pattern (`1...9`); `..`
+stays `dotDot`, iteration and slicing. The scanner tries the third dot before
+settling for `..`, so no source that writes `..` changed meaning.
+
+## `while` is a keyword (decision 105)
+
+`while` lexes as `@"while"` since 1.0.10-beta's front 22; `for` was already a
+keyword the lexer produced and nothing consumed. The three loop keywords —
+`for`, `while`, `loop` — are one `LoopExpr` node in the parser
+(`../parser/AGENTS.md`). `while` was refused as `removed-keyword-while` before;
+that kind is gone.
+
+## `??` is its own token (decision 28)
+
+`??` lexes as `questionQuestion`, tried after `?.` and before the bare `?`, the
+way `..` is tried before `.`. So an optional type `?i32` and optional chaining
+`?.` are untouched, and the only source that writes `??` today does it inside
+`@External.Node` template strings, which are string literals and never lexed as
+botopink tokens.
+
+The parser **desugars** it (`parseNullishExpr`) rather than mapping it to a
+`BinOp`; `ast.nullish_binding_name` says why.
+
+## `&`, `^` and `'a'` are tokens the parser refuses by name (front 15 step 3)
+
+A lone `&`, a `^` and a `'…'` literal used to stop the scanner with
+`LexerError.UnexpectedCharacter` — an error with no kind and, for the reader,
+no name: "unexpected character" at a column. They lex now — `ampersand`,
+`caret`, and `charLiteral` spanning the opening `'` to the closing one on the
+same line (an escaped `\'` does not close it) or to the end of the line — and
+the **parser** refuses each where an expression could have continued:
+`bitwise-operator-absent` at `parsePostfixChain`'s exit (`<<` and `>>` were
+tokens already and are refused there too), `char-literal-absent` in
+`parsePrimary`. The rule this follows: a form the language *decided against* is
+not a malformed token, so it gets a `ParseErrorType`, a located message naming
+the replacement and an `expectErrorAt` case (`parser/AGENTS.md` § *A
+decided-against form is refused by name*). `&&` is unchanged.
+
+## `unknown` is a keyword (decision 8 §2, 06 N19)
+
+`unknown` lexes as `TokenKind.unknown` and `isReservedWord` refuses it as a
+name, so no declaration, binding or parameter can be called `unknown` and the
+word in a type position always means decision 8's type. The parser turns it
+into `TypeRef.named = ast.unknown_type_name`; the language server lists it in
+`isKeyword` and paints it `type [defaultLibrary]`, like `Self`.
 
 ## Notes
 
-- Prefer reporting `LexicalError` over a parser error when the token itself is
-  malformed.
-- Numeric literals support `1_000_000` digit separators, scientific notation
-  (`1.5e-10`, `2E+3`), and unary `-` is handled in the parser primary.
+- Prefer reporting a lexical error over a parser error when the token itself is
+  malformed: `scanAll` returns `LexerError.LexicalError` and fills
+  `Lexer.lexError: ?LexicalError` (`LexicalErrorType`: `DigitOutOfRadix`,
+  `RadixIntNovalue`, `BadStringEscape`, `InvalidUnicodeEscape`,
+  `InvalidTripleEqual`). A spelling the language decided against is **not**
+  malformed — it lexes, and the parser names it (§ above).
+- Numeric literals support `1_000_000` digit separators and scientific notation
+  (`1.5e-10`, `2E+3`); unary `-` is handled in the parser primary.
+- A new `tests/*.zig` file only runs once it is imported from `tests.zig`.
+
+## A digit after a member `.` is a positional index
+
+`scanNumber` checks the previous token: a number that starts right after a `.`
+(adjacent, `prev.offset + 1 == start`) scans integer digits only. `t.0.1` is
+`t . 0 . 1` (two tuple indexes), not `t . 0.1`, and `p.0.toString()` is not the
+float `0.`. Every other number keeps the decimal / radix / exponent rules.
+
+## A `.` continues a number only before a **digit**
+
+The fractional guard reads `isDigit(peekNext())`, applied **once at the single
+point** where the decimal part starts. It used to read `peekNext() != '.'` —
+"anything but a second dot is a fraction" — which kept `1..9` a range and made
+every other `.` part of the number: `42.toString()` lexed as `42.` followed by
+`toString`, so an integer literal could not receive a method while a string
+literal could, though `libs/std` declares `Integer.toString` (front 15 R3).
+
+Testing for a digit subsumes the `..` guard (a `.` is not a digit) and leaves
+`1.5`, `1_000.5`, `1e10`, `1.5e-3` and `0xFF` exactly as they were. The one
+spelling that changes meaning is `42.` with nothing after the point: two tokens
+now, `42` and `.`, where it used to be one float — write `42.0`. Asserted in
+`tests/basics.zig`, because this is the riskiest line the front touched.
+
+## `n` is `bigint`'s suffix (decision 332)
+
+`number_suffixes` holds `n` → `bigint`: an integer literal of any size (`123…890n`, `0xFFn`,
+`1_000n`). It is an integer suffix, so `1.5n` and `1e3n` are the parser's
+`number-suffix-integer-on-float` and `42N` its `number-suffix-uppercase`. `numberBackendText` keeps
+the `n` (every other suffix leaves): the backends read a `bigint` literal by its text
+(`isBigintText`, `bigintDigits`) — commonJS writes it as JavaScript's own, erlang and beam strip the
+`n` (`beam/erl_emitter.zig` `bigintNumeralDigits`), wasm interns its limbs.
+
+## `defer` (decision 539)
+
+`defer` is a keyword (`TokenKind.@"defer"`, `keywordOrIdent`; the language server's keyword list names it too).
+It begins a statement of a block and nothing else: anywhere else it is the ordinary unexpected-token parse error.
+
+## `compiler` lexes as a name; `syntax` is gone (decisions 575 (3), 576 (1))
+
+The keyword `compiler` (a build-time body's `Compiler`) is read as an identifier: the parser
+refuses it as a parameter name (`consumeParamName`, `reserved-word-as-name`) and
+`parser/compiler_surface.zig` reads the expression `compiler` (`ast.compiler_keyword`). The
+parameter modifier `syntax` left the keyword table with `TokenKind.syntax`: it is an ordinary name.
+
+## The template text `` @`…` `` (decision 577)
+
+`` @` `` opens a `templateText` token that runs to the next unescaped backtick: any number of lines,
+its bytes as written — `` \` `` is its one escape — and no `${…}` interpolation. It is a template's one
+literal (`` name @`…` ``, `` #[name @`…`] ``); the parser reads it as a string literal with no hole
+(`parser/exprs.zig` `templateTextRaw` / `templateTextContent`) and keeps the raw text for the printer.

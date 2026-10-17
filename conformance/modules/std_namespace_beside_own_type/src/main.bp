@@ -1,0 +1,16 @@
+//// Decision 170 — a type the module declares is that declaration: `type
+//// Dict(initialMs: i32)` beside `import {collections} from "std"` (whose
+//// module declares its own `pub type Dict`) constructs and reads the
+//// module's `Dict`, and the namespace's functions still answer. The
+//// namespace import used to register std's `Dict` over the module's own
+//// (`Dict has no parameter named initialMs`).
+
+import {collections} from "std";
+
+type Dict(initialMs: i32)
+
+pub fn main() {
+    val d = Dict(initialMs: 5);
+    @print(d.initialMs);
+    @print(collections.toInt(collections.lt()));
+}

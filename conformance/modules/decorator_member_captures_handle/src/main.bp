@@ -1,0 +1,15 @@
+//// Decision 370 (2) — the `@Decl` handle exists only while the program
+//// compiles: a member function reading it is refused at the read.
+
+fn named(comptime decl: @Decl) {
+    decl.addMember("typeName", fn() -> string {
+        return decl.name;
+    });
+}
+
+#[named]
+pub type Signup(password: string, confirm: string)
+
+pub fn main() {
+    @print(Signup.typeName());
+}

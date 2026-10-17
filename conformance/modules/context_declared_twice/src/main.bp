@@ -1,0 +1,15 @@
+//// Decision 379 (1) — one declaration of a type's default in the program:
+//// a second `createContext(…)` of `Theme` is refused at it, naming the
+//// first.
+
+import {context.createContext, context.provide, context.context} from "std";
+
+type Theme(mode: string)
+
+pub val themeContext = comptime createContext(Theme(mode: "light"));
+
+pub val otherTheme = comptime createContext(Theme(mode: "dark"));
+
+pub fn main() {
+    @print("unreached");
+}

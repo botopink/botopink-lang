@@ -1,0 +1,8 @@
+//// Decision 354 (1) — `@Renderable` is a bare marker: it takes no type
+//// argument, and one written is refused at the `<`.
+
+type Element(count: i32) implement @Renderable<Element>
+
+pub fn main() {
+    @print(Element(count: 1).count);
+}

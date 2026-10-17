@@ -1,0 +1,29 @@
+//// Decision 575 (5) — `type<T>` is the type of the type `T`: a `comptime`
+//// parameter written `comptime t: type<T>` takes a type, and the type
+//// argument binds `T` for the rest of the signature — here the decorator's
+//// declaration pattern `fn() -> T`, and in `orDefault` the fallback.
+
+pub type Box<T>(value: T)
+
+pub type Provides(name: string)
+
+fn provides<T>(expr decl: fn() -> T, comptime t: type<T>) {
+    compiler.setMeta(Provides(name: compiler.name(decl)!));
+}
+
+#[provides(string)]
+fn greeting() -> string {
+    return "hello";
+}
+
+fn orDefault<T>(comptime source: Box<T> | type<T>, fallback: T) -> T {
+    if (source is type) return fallback;
+    return source.value;
+}
+
+pub fn main() {
+    @print(@typeInfo(greeting).meta(Provides)?.name ?? "none");
+    @print(greeting());
+    @print(orDefault(i32, 3));
+    @print(orDefault(Box(value: 9), 3));
+}

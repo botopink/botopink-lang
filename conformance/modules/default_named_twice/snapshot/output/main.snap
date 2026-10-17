@@ -1,0 +1,4 @@
+botopink-cell 1
+refused error[default-twice]: a module has one default function
+at src/main.bp:9:13
+label already the default `render`

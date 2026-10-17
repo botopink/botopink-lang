@@ -1,0 +1,8 @@
+//// A module whose only print is a module-level binding: no function of it
+//// prints, so the print helper had no function body to be synthesized for,
+//// and erlang's `'_botopink_init'/0` called an undefined `'__bp_print'/1`
+//// (C-34).
+
+val _x = @print("boot");
+
+pub val greeting = "hi";

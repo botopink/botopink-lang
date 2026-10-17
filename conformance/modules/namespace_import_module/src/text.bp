@@ -1,0 +1,5 @@
+//// A module of the project's own tree, imported as a namespace.
+
+pub fn shout(s: string) -> string {
+    return s.toUpper() + "!";
+}

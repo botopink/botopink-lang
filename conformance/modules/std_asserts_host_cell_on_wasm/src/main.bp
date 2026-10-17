@@ -1,0 +1,15 @@
+//// Decision 67 on wasm, one call away from the host cell: `deepEquals` is a
+//// botopink function whose body calls `testing.asserts`' private `canonical`
+//// (Node and Erlang templates, no wasm binding). The program runs on
+//// commonJS, erlang and beam. On wasm the call of `deepEquals` reaches
+//// `canonical`, so STD-001 refuses it at the call, naming both (decision
+//// 518 (4), 503's direction); the module is still refused where it calls
+//// `canonical` — decision 146's rule, which `std_asserts_on_every_target`
+//// pins — until `canonical` gains a botopink body (503).
+
+import {testing.asserts} from "std";
+
+pub fn main() {
+    @print(asserts.errorText(asserts.deepEquals([1, 2], [1, 2])).length);
+    @print(asserts.errorText(asserts.deepEquals([1, 2], [2, 1])));
+}

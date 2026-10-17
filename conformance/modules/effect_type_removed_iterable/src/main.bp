@@ -1,0 +1,11 @@
+//// Decision 127 of 1.0.10-beta (front 24, § Cells "Migration"; guide.md § 9,
+//// row `Iterable`, `IteratorStep`, `Yield<T, R>`) — there is no `Iterable`
+//// (decision 122): a type that wants to be iterated exposes a method answering
+//// `@Iterator<T>` (`test/contextual_words.bp`'s `Grid.iter()`). Measured at
+//// compiler `82e32e36`: `@Iterable<i32>` in a parameter is accepted in silence.
+//// The cell asks for `effect-type-removed` (the family's code; decision 127
+//// names none for the older names — reported as a choice).
+
+fn total(xs: @Iterable<i32>) -> i32 { return 0; }
+
+pub fn main() { @print(total([1, 2])); }

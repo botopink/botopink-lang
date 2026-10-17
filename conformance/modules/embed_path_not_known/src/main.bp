@@ -1,0 +1,10 @@
+//// Decision 519 — `@embed` is a `Build` builtin: its path is known at build. A path the
+//// program computes when it runs — here a parameter — is refused at the argument.
+
+fn load(path: string) -> Asset {
+    return @embed(path);
+}
+
+pub fn main() {
+    @print(load("assets/x.txt").size);
+}

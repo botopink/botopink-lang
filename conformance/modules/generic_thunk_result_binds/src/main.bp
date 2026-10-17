@@ -1,0 +1,27 @@
+//// 144 B-25 (decision 392) — a generic function of another module over a thunk
+//// answering `@Task<@Result<T, E>>` binds `T` and `E` from the thunk's answer,
+//// and so does the generic it passes the thunk on to: `attempts.attempt({ ->
+//// slow(1, "answered") })` answers the string on every target, the shape std's
+//// `async.retry` is called in (wasm called the generic body with no type bound
+//// and printed a word for the string).
+
+pub mod attempts;
+
+#[@External.Node("""((__ms, __v) => new Promise((__r) => { const __end = performance.now() + __ms; const __tick = () => { const __left = __end - performance.now(); if (__left > 0) { setTimeout(__tick, Math.ceil(__left)); } else { __r(__v); } }; setTimeout(__tick, __ms); }))($0, $1)""")]
+#[@External.Erlang("""(fun(__M, __V) -> timer:sleep(__M), __V end)($0, $1)""")]
+#[@External.Wasm(wasi: .Delay)]
+declare fn delay<T>(millis: i32, value: T) -> @Task<T>;
+
+fn slow(millis: i32, value: string) -> @Task<@Result<string, string>> {
+    val v = await delay(millis, value);
+    return v;
+}
+
+fn run() -> @Task<void> {
+    val r = await attempts.attempt({ -> slow(1, "answered") });
+    @print("attempt " + r.unwrapOr("-"));
+}
+
+pub fn main() {
+    run();
+}

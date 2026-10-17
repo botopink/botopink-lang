@@ -1,0 +1,46 @@
+//// Decision 319 — `i64` is −2^63 … 2^63 − 1 on every target (`u64`:
+//// `run/int_overflow_add_u64_max`). commonJS holds a value within ±(2^53 − 1) as a number and one
+//// beyond as a `BigInt`, so a computation past 2^53 answers there what it
+//// answers on erlang, beam and wasm: commonJS refused the literals and
+//// aborted `9007199254740991l + 1l` before (decision 264's ±(2^53 − 1)).
+//// A value that crosses back below 2^53 is a plain number again, so `==`
+//// with a literal holds; the sum past `2^63 − 1` aborts on all four.
+
+fn add(a: i64, b: i64) -> i64 {
+    return a + b;
+}
+
+fn sub(a: i64, b: i64) -> i64 {
+    return a - b;
+}
+
+fn mul(a: i64, b: i64) -> i64 {
+    return a * b;
+}
+
+pub fn main() {
+    val safe = 9007199254740991l;
+    @print(safe + 1l);
+    @print(add(safe, 2l));
+    val top = 9223372036854775807l;
+    @print(top);
+    val bottom = -9223372036854775807l - 1l;
+    @print(bottom);
+    @print(top / 2l);
+    @print(top % 10l);
+    @print(-top);
+    @print(bottom / 3l);
+    val back = sub(add(safe, 10l), 20l);
+    @print(back);
+    @print(back == 9007199254740981l);
+    @print(add(safe, 1l) > safe);
+    @print(add(safe, 1l) == add(safe, 1l));
+    @print(mul(4294967296l, 2147483647l));
+    var acc = 9007199254740990l;
+    acc += 5l;
+    @print(acc);
+    @print("top=" + top);
+    @print(top.toString());
+    @print(add(top, 1l));
+    @print("unreachable");
+}

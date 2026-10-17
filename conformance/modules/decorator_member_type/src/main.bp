@@ -1,0 +1,15 @@
+//// Decision 370 (2) — a method's `self` is the type the member joins. On a
+//// field, `@Decl<T>` binds `T` to the field's type, so `fn(self: T)` takes a
+//// `string` while the member joins `Signup`: refused at the annotation.
+
+fn trimmed<T>(comptime decl: @Decl<T>) {
+    decl.addMember("trimmedLength", fn(self: T) -> i32 {
+        return 0;
+    });
+}
+
+pub type Signup(#[trimmed] name: string)
+
+pub fn main() {
+    @print("unreached");
+}

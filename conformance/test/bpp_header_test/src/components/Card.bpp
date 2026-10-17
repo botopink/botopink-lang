@@ -1,0 +1,14 @@
+pub type Props(title: string)
+
+pub fn twice(x: i32) -> i32 {
+    return x * 2;
+}
+
+test "a test declared in a .bpp header is found by the test runner" {
+    assert twice(21) == 42;
+    assert Props(title: "ab").title.length() == 2;
+}
+
+val size = props.title.length();
+---
+<h1>{props.title}</h1>

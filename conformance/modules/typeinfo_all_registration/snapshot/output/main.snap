@@ -1,0 +1,7 @@
+botopink-cell 1
+out about about /about
+out pages blog /blog
+out pages latest /blog/latest
+out about Mailer
+out main Local
+out 0

@@ -1,0 +1,20 @@
+//// Decision 575 (4), the tree rule — a member a decorator writes is code the
+//// program runs; `compiler` exists only while it compiles, so a `compiler`
+//// read inside the member is refused there (`expr-captures-build`).
+
+fn named<T>(expr decl: T, expr rule: fn(v: T) -> bool) {
+    compiler.addMember("ruleText", fn(self: T) -> string {
+        return compiler.text(rule);
+    });
+}
+
+fn always(a: Account) -> bool {
+    return true;
+}
+
+#[named(always)]
+pub type Account(balance: i32)
+
+pub fn main() {
+    @print(Account(balance: 1).ruleText());
+}

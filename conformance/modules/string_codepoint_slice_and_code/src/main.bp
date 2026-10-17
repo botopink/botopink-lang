@@ -1,0 +1,15 @@
+//// Decision 320 — every std primitive taking a string index counts
+//// codepoints: a negative `slice` bound, the index and range syntax and
+//// `charCodeAt` read `"a👍bX👍c"` as six codepoints on every target. commonJS
+//// counted UTF-16 units (`charCodeAt(4)` answered a low surrogate's half).
+
+pub fn main() {
+    val t = "a👍bX👍c";
+    @print(t[-2]);
+    @print(t[4..]);
+    @print(t.slice(-3, -1));
+    @print(t.slice(-1));
+    @print(t.charCodeAt(4));
+    @print(t.charCodeAt(5));
+    @print(t.charCodeAt(6));
+}

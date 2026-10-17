@@ -1,0 +1,54 @@
+//// Decisions 355, 380 (2), question 14s8-c — a hole whose value is a call of
+//// an `Any` function with arguments known at build is computed at build;
+//// when the computation raises there (an integer division by zero), the
+//// build is refused, at the call that raised, never deferred to the render.
+
+pub type Rule(text: string, at: string)
+
+// What a hole puts in the text, read twice by the template: as a string and
+// as a `Rule`.
+fn buildText(v: string, r: Rule) -> string {
+    if (v is string) return v;
+    return r.text;
+}
+
+pub fn textOf(v: string | Rule) -> string {
+    if (v is Rule) return v.text;
+    if (v is string) return v;
+    return "";
+}
+
+fn quoted(text: string) -> string {
+    return "\"" + text + "\"";
+}
+
+pub fn rule(comptime t: @Expr<string>) -> @Expr<Rule> {
+    var built = "";
+    var computed = "\"\"";
+    var known = true;
+    for (t.parts()) { part ->
+        if (part.kind == "Interp") {
+            if (part.known)
+                built = built + buildText(part.value, part.value)
+            else
+                known = false;
+            computed = computed + " + textOf(" + part.code + ")";
+        } else {
+            built = built + part.text;
+            computed = computed + " + " + quoted(part.text);
+        }
+    }
+    if (known)
+        return t.build("Rule(text: " + quoted(built) + ", at: \"build\")");
+    return t.build("Rule(text: " + computed + ", at: \"render\")");
+}
+
+fn ratio(a: i32, b: i32) -> string {
+    return (a / b).toString();
+}
+
+pub val bad = rule "width: ${ratio(4, 0)};";
+
+pub fn main() {
+    @print(bad.text);
+}

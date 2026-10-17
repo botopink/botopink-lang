@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: context-declared-twice: `Theme` already has its context declared — `themeContext` in main at 9:33; a type declares one default in the program (decision 379 (1))
+at src/main.bp:11:31

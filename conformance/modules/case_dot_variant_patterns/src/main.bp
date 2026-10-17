@@ -1,0 +1,20 @@
+type Shape {
+    Circle(radius: i32),
+    Rect(width: i32, height: i32),
+}
+
+fn describe(s: Shape) -> i32 {
+    return case s {
+        .Rect(width: w, ..) {
+            w
+        }
+        .Circle(r) {
+            r
+        }
+    };
+}
+
+pub fn main() {
+    @print(describe(Shape.Rect(width: 3, height: 4))); // 3
+    @print(describe(Shape.Circle(radius: 5))); // 5
+}

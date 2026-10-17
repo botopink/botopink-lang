@@ -1,0 +1,22 @@
+//// A library `Seq<T>` over an array: `select<U>` binds `U` from its lambda's
+//// answer, `toArray` hands the items back.
+
+pub type Seq<T>(
+    items: Array<T>,
+) {
+    pub fn toArray(self: Self<T>) -> Array<T> {
+        return self.items;
+    }
+
+    pub fn where(self: Self<T>, pred: fn(item: T) -> bool) -> Seq<T> {
+        return Seq(items: self.items.filter(pred));
+    }
+
+    pub fn select<U>(self: Self<T>, selector: fn(item: T) -> U) -> Seq<U> {
+        return Seq(items: self.items.map(selector));
+    }
+}
+
+pub fn of<T>(xs: Array<T>) -> Seq<T> {
+    return Seq(items: xs);
+}

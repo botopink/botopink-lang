@@ -1,0 +1,10 @@
+fn work() {
+    defer @print("a");
+    defer @print("b");
+    @print("body");
+}
+
+pub fn main() {
+    work();
+    @print("after");
+}

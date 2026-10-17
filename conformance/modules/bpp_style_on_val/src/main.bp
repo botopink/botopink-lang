@@ -1,0 +1,12 @@
+//// Decision 361 — `#[bpp.style]` marks the template function a `.bpp`
+//// file's style section unfolds onto; on a `val` it is refused at the
+//// annotation.
+
+import {bpp} from "std";
+
+#[bpp.style]
+pub val sheet = "";
+
+pub fn main() {
+    @print(sheet);
+}

@@ -1,0 +1,5 @@
+pub type Policy(name: string)
+
+pub fn named() -> Policy {
+    return Policy(name: "b");
+}

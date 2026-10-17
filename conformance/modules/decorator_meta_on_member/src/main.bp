@@ -1,0 +1,16 @@
+//// Decision 216 (2) — meta describes a declaration of the module: a
+//// decorator on a field (or a method) has no `@typeInfo` to answer through,
+//// and `decl.setMeta` from it is refused at the annotation.
+
+fn column(comptime decl: @Decl) {
+    decl.setMeta(Column(name: decl.name));
+}
+
+type City(#[column] name: string)
+
+pub fn main() {
+    @print(City(name: "x").name);
+}
+
+// What `#[column]` would record.
+type Column(name: string)

@@ -1,0 +1,13 @@
+//// Decision 330 (5) — `x!` over a `null` aborts, a program error like
+//// `@panic`, naming the expression and where it is written. What was printed
+//// before it stays printed.
+
+fn find(key: string) -> ?string {
+    return if (key == "a") "found" else null;
+}
+
+pub fn main() {
+    @print(find("a")!);
+    @print(find("b")!);
+    @print("unreachable");
+}

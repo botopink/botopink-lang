@@ -1,0 +1,17 @@
+//// A package that does not declare `Asset` — the compiler's record — reads its fields.
+
+pub fn pathOf(a: Asset) -> string {
+    return a.path;
+}
+
+pub fn sizeOf(a: Asset) -> i64 {
+    return a.size;
+}
+
+pub fn hashOf(a: Asset) -> string {
+    return a.hash;
+}
+
+pub fn byteCount(a: Asset) -> i32 {
+    return a.bytes.length;
+}

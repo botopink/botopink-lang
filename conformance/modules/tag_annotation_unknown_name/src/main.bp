@@ -1,0 +1,10 @@
+//// Decision 302 — the annotation a template runs over a tag resolves in the
+//// caller's scope: a name nothing declares or imports there is refused at the
+//// annotation, in the caller's text.
+
+pub mod tags;
+import {tags.markup};
+
+pub fn main() {
+    @print(markup "<div #[nowhere]>hi</div>");
+}

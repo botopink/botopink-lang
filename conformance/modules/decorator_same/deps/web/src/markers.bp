@@ -1,0 +1,6 @@
+//// `web/markers` — a marker: it reads nothing, and `check` finds it among a
+//// declaration's annotations by its identity.
+
+pub fn serverOnly(comptime decl: @Decl) {
+    val _n = decl.name;
+}

@@ -1,0 +1,9 @@
+//// Decision 63 (amended 2026-09-19) — a tuple's positions are fixed by its
+//// type, so an index past the last one names nothing. It is a compile-time
+//// refusal rather than decision 47's `null`: absence is an answer an ARRAY or a
+//// `Dict` can give, and a tuple position either exists in the type or does not.
+
+pub fn main() {
+    val t = #(1, "a");
+    @print(t[2]);
+}

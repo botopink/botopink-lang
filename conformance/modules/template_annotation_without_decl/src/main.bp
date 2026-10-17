@@ -1,0 +1,17 @@
+//// Decision 311, question s29-a — written as an annotation, a template
+//// function receives the annotated declaration beside its literal
+//// (`comptime decl: @Decl`); a template that takes none has nowhere to put
+//// what it builds and is refused at the annotation.
+
+fn shout(comptime q: @Expr<string>) -> @Expr<string> {
+    return q.build("\"" + q.text().toUpper() + "\"");
+}
+
+#[shout "hello"]
+fn one() -> i32 {
+    return 1;
+}
+
+pub fn main() {
+    @print(one().toString());
+}

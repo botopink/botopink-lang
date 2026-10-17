@@ -1,0 +1,25 @@
+// Two expansions of one template whose built code calls a function at the
+// same offset of its built string: the first leaves out a default argument
+// (`greeting`), the second calls a function of one parameter — the shape of
+// jhonstart's `<GreetingHeadline name="Partner" />` and `<Footer />`.
+pub val partner = "Partner";
+
+pub fn headline(name: string, greeting: string = "Hello") -> string {
+    return "${greeting}, ${name}!";
+}
+
+pub fn footer(name: string) -> string {
+    return "bye, ${name}";
+}
+
+// The built code is the literal's own text.
+pub fn code<T>(comptime q: @Expr<string>) -> @Expr<T> {
+    return q.build(q.text());
+}
+
+pub fn main() {
+    val top = code "headline(partner)";
+    val bottom = code "footer(partner)";
+    @print(top);
+    @print(bottom);
+}

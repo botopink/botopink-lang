@@ -1,0 +1,1 @@
+{ "name": "a", "version": "0.0.1", "src": "src/", "entry": "root.bp", "files": ["root.bp", "theme.bp", "user.bp"] }

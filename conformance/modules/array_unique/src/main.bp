@@ -1,0 +1,15 @@
+//// `Array.unique()` drops every duplicate and keeps each value at its first
+//// occurrence, in order, comparing with `==` (decision 217, C-35): integers,
+//// strings, floats and bools, a duplicate that is not adjacent, and an empty
+//// receiver. wasm dropped only consecutive duplicates (`[1, 2, 1, 3, 2]`).
+
+pub fn main() {
+    @print([1, 2, 1, 3, 2].unique());
+    @print([3, 1, 1, 3].unique());
+    @print(["b", "a", "b", "c", "a"].unique());
+    @print([1.5, 2.5, 1.5].unique());
+    @print([true, false, true].unique());
+    val none: i32[] = [];
+    @print(none.unique());
+    @print([7, 7, 7].unique().length);
+}

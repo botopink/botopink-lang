@@ -1,0 +1,24 @@
+//// Decision 562 — a `comptime` parameter that is no catalogue: `banner(3)`
+//// unrolls its loop at build, and each iteration's `say` — a host function,
+//// a run-time call — is written at the call with the row's number as a
+//// constant. `banner(1)` writes one row.
+
+#[@External.Node("""console.log($0)""")]
+#[@External.Erlang("""io:format("~ts~n", [$0])""")]
+#[@External.Wasm(fn: sayBody)]
+declare fn say(line: string);
+
+fn sayBody(line: string) {
+    @print(line);
+}
+
+fn banner(comptime rows: @Expr<i32>) {
+    for (1...rows.value) { row ->
+        say("row " + row.toString() + " of " + rows.value.toString());
+    }
+}
+
+pub fn main() {
+    banner(3);
+    banner(1);
+}

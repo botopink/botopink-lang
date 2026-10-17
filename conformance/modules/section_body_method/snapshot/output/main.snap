@@ -1,0 +1,4 @@
+botopink-cell 1
+refused error[section-body-method]: a section of an enum holds variants, not methods
+at src/main.bp:9:9
+label declare it in the enum's own body

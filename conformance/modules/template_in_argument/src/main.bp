@@ -1,0 +1,15 @@
+//// Decision 425 — a template call expands wherever an expression may stand:
+//// as a call's argument, a method's included.
+
+fn twice(comptime q: @Expr<string>) -> @Expr<string> {
+    return q.build("\"" + q.text() + q.text() + "\"");
+}
+
+fn shout(s: string) -> string {
+    return s.toUpper();
+}
+
+pub fn main() {
+    @print(shout(twice "ef"));
+    @print("a--b".split(twice "-").join("+"));
+}

@@ -8,8 +8,7 @@ const storage = @import("../storage.zig");
 pub fn run(ctx: cli.Context, args: []const []const u8) anyerror!u8 {
     var yes = false;
     for (args) |a| {
-        if (std.mem.eql(u8, a, "--yes")) yes = true
-        else if (std.mem.eql(u8, a, "-h") or std.mem.eql(u8, a, "--help")) {
+        if (std.mem.eql(u8, a, "--yes")) yes = true else if (std.mem.eql(u8, a, "-h") or std.mem.eql(u8, a, "--help")) {
             common.writeStdout(ctx, "bpmp self uninstall [--yes]\n");
             return 0;
         } else return common.errFmt("self uninstall: unknown flag '{s}'", .{a});

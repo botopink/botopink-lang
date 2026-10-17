@@ -1,0 +1,10 @@
+//// Decision 525 — a block handed where a function is expected is refused at
+//// the block: `{ 3 }` is the value `3`, never `{ -> 3 }`.
+
+fn apply(f: fn(n: i32) -> i32, x: i32) -> i32 {
+    return f(x);
+}
+
+pub fn main() {
+    @print(apply({ 3 }, 2));
+}

@@ -1,0 +1,1 @@
+{ "name": "plugin", "version": "0.0.1", "src": "src/", "entry": "root.bp", "files": ["root.bp"], "dependencies": { "core": { "path": "../core" }, "extra": { "path": "../extra" } } }

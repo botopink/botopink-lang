@@ -1,0 +1,12 @@
+//// Decision 267 — there is no spread at a call: a function that takes an
+//// existing array declares `values: T[]`, not `..values`. `sum(..xs)` is
+//// refused at the spread argument.
+
+fn sum(..values: i32[]) -> i32 {
+    return values.length();
+}
+
+pub fn main() {
+    val xs = [1, 2, 3];
+    @print(sum(..xs));
+}

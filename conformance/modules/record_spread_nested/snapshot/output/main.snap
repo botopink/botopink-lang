@@ -1,0 +1,11 @@
+botopink-cell 1
+out Equipe(lider: Pessoa(nome: "Ana", idade: 31), vice: Pessoa(nome: "Ana", idade: 30), titulo: "A")
+out Equipe(lider: Pessoa(nome: "Ana", idade: 31), vice: Pessoa(nome: "Bia", idade: 31), titulo: "A")
+out Pessoa(nome: "Bia", idade: 40)
+out Pessoa(nome: "Caio", idade: 50)
+out Pessoa(nome: "Duda", idade: 30)
+out Pessoa(nome: "Ana", idade: 1)
+out Pessoa(nome: "Ana", idade: 31)
+out Pessoa(nome: "Edu", idade: 30)
+out Pessoa(nome: "Ana", idade: 30)
+out Pessoa(nome: "Ana", idade: 31)

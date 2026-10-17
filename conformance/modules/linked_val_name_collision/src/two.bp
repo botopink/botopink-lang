@@ -1,0 +1,18 @@
+pub val limit = "two";
+
+pub val shout = limit + "!";
+
+pub fn viaTwo() -> string {
+    return limit + "-x";
+}
+
+pub fn shadow(limit: string) -> string {
+    return limit;
+}
+
+var hits = 0;
+
+pub fn hitTwo() -> i32 {
+    hits += 5;
+    return hits;
+}

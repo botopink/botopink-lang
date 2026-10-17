@@ -1,0 +1,13 @@
+//// A host vocabulary takes any value: `std/erlang`'s declarations are typed
+//// `unknown` (1.0.5 decision 31 deleted `any`, a closed type no botopink
+//// value inhabited — `erlang.element(1, t)` read "expected any, got i32").
+//// What a host call answers is `unknown`, tested with `is` before use.
+//// Erlang and beam only (`.targets`): `std/erlang` has no other target.
+
+import {erlang} from "std";
+
+pub fn main() {
+    val first = erlang.element(1, #(7, "x"));
+    if (first is i32) @print(first + 1);
+    @print(erlang.abs(-3));
+}

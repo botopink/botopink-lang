@@ -1,0 +1,15 @@
+pub type Meter(base: i32) {
+    #[@External.Node("""($0.base + $1)""")]
+    #[@External.Erlang("""(element(2, $0) + $1)""")]
+    pub declare fn plus(self: Self, n: i32) -> i32;
+
+    pub fn twice(self: Self) -> i32 {
+        return self.plus(self.base);
+    }
+}
+
+fn main() {
+    val m = Meter(base: 3);
+    @print(m.plus(4)); // 7 on every backend that has a host
+    @print(m.twice()); // 6
+}

@@ -1,0 +1,18 @@
+//// Decisions 307 and 359 (2) — `Type.pick` of a `Type.partial` type is
+//// derived from the partial type, not from its source record: a value of
+//// it is refused as a spread into the record, as a record of another type,
+//// at the `...` (question B-14-c as built).
+
+import {types.Type} from "std";
+
+type Pessoa(nome: string, idade: i32)
+
+val Patch = Type.partial(Pessoa);
+
+val SoNome = Type.pick(Patch, .nome);
+
+pub fn main() {
+    val n = SoNome(nome: "Ana");
+    val p = Pessoa(..n, idade: 3);
+    @print(p.idade);
+}

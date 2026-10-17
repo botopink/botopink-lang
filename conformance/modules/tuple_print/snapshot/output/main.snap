@@ -1,0 +1,6 @@
+botopink-cell 1
+out #(1, "a")
+out [#(1, "a"), #(2, "b")]
+out #("SP", 12)
+out #(#(1, 2), "x")
+out #(1, "a\"b")

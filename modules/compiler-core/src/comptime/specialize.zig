@@ -28,6 +28,11 @@ pub const SpecializedFn = struct {
     params: []const ast.Param,
     /// Transformed body: loops unrolled, static ifs/cases folded.
     body: []const ast.Stmt,
+    /// The source function's declared return and its type parameters, which
+    /// the specialization answers as the source does (a backend reads the
+    /// element of a `-> string[]`, `wat.zig` `fn_arr_elem`).
+    return_type: ?ast.TypeRef = null,
+    generic_params: []ast.GenericParam = &.{},
     spec_arena: std.heap.ArenaAllocator,
 
     pub fn deinit(self: *SpecializedFn) void {
@@ -146,6 +151,8 @@ pub fn specialize(
         .ct_params = try ct_params_list.toOwnedSlice(arena),
         .params = try rt_params.toOwnedSlice(arena),
         .body = body,
+        .return_type = fn_decl.returnType,
+        .generic_params = fn_decl.genericParams,
         .spec_arena = spec_arena,
     };
 }
@@ -424,14 +431,20 @@ fn bodyNeedsParamConst(
 pub fn identInExpr(expr: anytype, name: []const u8) bool {
     const e = if (@typeInfo(@TypeOf(expr)) == .pointer) expr.* else expr;
     return switch (e) {
-        .identifier => |id| if (id.kind == .ident)
-            std.mem.eql(u8, id.kind.ident, name)
-        else
-            false,
+        // A member read and a method call read their receiver: `x.length()`,
+        // `x.value.split(",")` (decision 364's `comptime x: @Expr<string>`)
+        // need the parameter's constant as much as `x + "!"` does.
+        .identifier => |id| switch (id.kind) {
+            .ident => |n| std.mem.eql(u8, n, name),
+            .identAccess => |ia| identInExpr(ia.receiver.*, name),
+            .dotIdent => false,
+        },
         .binaryOp => |bin| identInExpr(bin.lhs.*, name) or identInExpr(bin.rhs.*, name),
         .call => |c| switch (c.kind) {
             .pipeline => |p| identInExpr(p.lhs.*, name) or identInExpr(p.rhs.*, name),
             .call => |cc| blk: {
+                if (cc.receiver) |r| if (identInExpr(r.*, name)) break :blk true;
+                if (cc.calleeExpr) |ce| if (identInExpr(ce.*, name)) break :blk true;
                 for (cc.args) |a| if (identInExpr(a.value.*, name)) break :blk true;
                 for (cc.trailing) |tl| {
                     for (tl.body) |s| if (identInExpr(s.expr, name)) break :blk true;
@@ -504,8 +517,8 @@ pub fn identInExpr(expr: anytype, name: []const u8) bool {
                 if (r.end) |end| if (identInExpr(end.*, name)) break :blk true;
                 break :blk false;
             },
-            .recordLit => |rl| blk: {
-                for (rl.fields) |f| if (identInExpr(f.value.*, name)) break :blk true;
+            .behaviorLit => |il| blk: {
+                for (il.fields) |f| if (identInExpr(f.value.*, name)) break :blk true;
                 break :blk false;
             },
         },
@@ -527,7 +540,7 @@ pub fn identInExpr(expr: anytype, name: []const u8) bool {
             },
         },
         .literal => |lit| switch (lit.kind) {
-            .stringLit, .numberLit, .null_, .comment => false,
+            .stringLit, .numberLit, .bytesLit, .null_, .comment => false,
             .stringTemplate => |t| blk: {
                 for (t.parts) |p| switch (p) {
                     .text => {},

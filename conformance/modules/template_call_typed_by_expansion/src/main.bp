@@ -1,0 +1,24 @@
+//// Decision 426 (1), (3) — a template call's type is the type of the code it
+//// built for that call, computed at build: no free `T` of the signature is
+//// left, so one template answers `string[]` at one call and `i32` at
+//// another; a signature's answer with `unknown` in it is a bound the built
+//// code fits, and the call keeps the built type (`string[]`, not
+//// `unknown[]`).
+
+fn data<T>(comptime q: @Expr<string>) -> @Expr<T> {
+    if (q.text() == "names") return q.build("[\"ana\", \"bia\"]");
+    return q.build("41");
+}
+
+fn listed(comptime q: @Expr<string>) -> @Expr<unknown[]> {
+    return q.build("[\"" + q.text() + "\"]");
+}
+
+pub fn main() {
+    val names = data "names";
+    val n = data "count";
+    @print(names.join(","));
+    @print((n + 1).toString());
+    val xs = listed "solo";
+    @print(xs.join("") + "!");
+}

@@ -1,0 +1,36 @@
+//// Four shapes rakun front 23 met writing a renderer over an `ElementView<El>`
+//// record of function values, each recorded as an erlang-only call-site rule:
+//// a function-valued record field called in place (`v.tagOf(e)`) lowered to a
+//// method call (`function tagOf/2 undefined`); a local `val raw` in one
+//// function of `view` typed an importer's `raw(…)` as `bool`; `xs.at(i)
+//// .unwrapOr(…)` read the element back unwrapped when the array came off a
+//// record field inside a generic function; and a parameter typed
+//// `Array<fn() -> @Task<El>>` beside another generic in `El` was refused
+//// `generic-arg-skip-forbidden`. A parameter named like an imported function
+//// (`label(raw)`) is the parameter.
+
+pub mod view;
+import {view.ElementView, view.Node, view.raw, view.other, view.open, view.Box, view.firstOf, view.count};
+
+fn label(raw: string) -> string {
+    return "[" + raw + "]";
+}
+
+pub fn main() {
+    val v: ElementView<Node> = ElementView(
+        tagOf: { e -> e.tag },
+        isVoid: { t -> t == "br" },
+    );
+    @print(open(v, raw("p")));
+    @print(open(v, raw("br")));
+    @print(v.tagOf(Node(tag: "em")));
+    @print(other(2));
+    @print(label("x"));
+    val first: string = firstOf(Box(items: ["a", "b"]), "z");
+    @print(first);
+    val none: Array<string> = [];
+    val fallback: string = firstOf(Box(items: none), "z");
+    @print(fallback);
+    val thunks: Array<fn() -> @Task<Node>> = [];
+    @print(count(v, thunks));
+}

@@ -1,0 +1,12 @@
+//// Decision 206 — `from "<name>"` names a package: std, a bundled package or
+//// a declared dependency. `geometry` is a module of this package, so
+//// `from "geometry"` is refused at the source string, and the diagnostic
+//// writes the fix: the module's path inside the braces, with no `from`.
+
+pub mod geometry;
+import {area, perimeter as around} from "geometry";
+
+pub fn main() {
+    @print(area(3, 4));
+    @print(around(3, 4));
+}

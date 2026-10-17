@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: embed-open-needs-fs: `open()` hands the `Asset` to std's file system, which this module does not import
+at src/main.bp:7:7

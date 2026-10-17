@@ -1,0 +1,12 @@
+//// Decision 2 (01 R7) — a value leaves a function through `return`. A `fn`
+//// whose written return type has a value and whose body can reach its end
+//// without one used to check, and each backend answered whatever its
+//// block-as-value lowering produced. Refused at the return type.
+
+fn f() -> i32 {
+    val x = 1;
+}
+
+pub fn main() {
+    @print(f());
+}

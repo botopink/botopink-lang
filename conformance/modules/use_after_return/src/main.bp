@@ -1,0 +1,13 @@
+//// Decision 357 (front 19 row 4b before it) — a `use` after a statement that
+//// may `return` early does not run on every call: `val c = use …` after a
+//// `return` is refused at the `use`, naming the `return`'s line.
+
+type Element(count: i32) implement @Renderable
+fn state(initial: i32) -> @Component<i32> { return initial; }
+
+fn Widget() -> @Component<Element> {
+    return Element(count: 1);
+    val c = use state(0);
+}
+
+pub fn main() { @print(Widget().count); }

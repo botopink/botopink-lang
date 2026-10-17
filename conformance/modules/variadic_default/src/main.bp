@@ -1,0 +1,10 @@
+//// Decision 267 — a variadic takes no default: a call with no argument after
+//// the fixed ones already gives it an empty array. Refused at the `=`.
+
+fn sum(..values: i32[] = [1]) -> i32 {
+    return values.length();
+}
+
+pub fn main() {
+    @print(sum());
+}

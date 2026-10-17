@@ -1,0 +1,35 @@
+//// Decision 147 (lg-a) — a lambda that can fail is written under an expected
+//// `fn(x: T) -> @Result<U, E>`: its `try` propagates, its `return v` is
+//// `Ok(v)` and its `throw e` is `Error(e)`.
+
+fn half(x: i32) -> @Result<i32, string> {
+    if (x % 2 != 0) throw "odd";
+    return x / 2;
+}
+
+fn apply(
+    f: fn(x: i32) -> @Result<i32, string>,
+    x: i32,
+) -> @Result<i32, string> {
+    return f(x);
+}
+
+pub fn main() {
+    val quarter: fn(x: i32) -> @Result<i32, string> = { x ->
+        val h = try half(x);
+        return try half(h);
+    };
+    @print(quarter(8).unwrapOr(-1));
+    @print(quarter(6).isError());
+    @print(
+        apply({ x ->
+            if (x < 0) throw "negative";
+            return x + 1;
+        }, -3).isError(),
+    );
+    @print(
+        apply({ x ->
+            return x + 1;
+        }, 4).unwrapOr(0),
+    );
+}

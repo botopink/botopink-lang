@@ -1,0 +1,35 @@
+//// Decisions 126, 431 (2), 490 — a `#[@External.Node(…, result: true)]`
+//// function declared `-> @Task<@Result<T, HostError>>` turns a rejected Promise
+//// into `Error(HostError(…))`, and a resolved value is the `T` the return
+//// wraps in `Ok`. Without `result: true` a binding promises no failure: 126's
+//// implicit conversion of every `-> @Task<@Result<T, E>>` host is retired.
+////
+//// The host rejects with a STRING, which is not a JavaScript `Error`: its
+//// `message` is `String(e)` and its `name` is `HostErrorName.Throw` (decision
+//// 489). Printed from inside `run`. `.targets` is `commonJS`: the claim is
+//// Node's; `external_result_host_error` makes it on every target.
+
+import {failure, failure.HostError} from "std";
+
+#[@External.Node("""(($0 > 0) ? Promise.resolve($0 * 2) : Promise.reject('refused ' + $0))""", result: true)]
+declare fn hostDouble(n: i32) -> @Task<@Result<i32, HostError>>;
+
+fn show(r: @Result<i32, HostError>) {
+    case r {
+        Ok(v) -> @print("ok " + v.toString());
+        Error(e) -> @print("error", e.message, e.kind, e.name);
+    }
+}
+
+fn run() -> @Task<void> {
+    show(await hostDouble(21));
+    show(await hostDouble(0));
+    val a = try await hostDouble(1) catch 0;
+    val b = try await hostDouble(-1) catch 100;
+    val sum = a + b;
+    @print(sum);
+}
+
+pub fn main() {
+    run();
+}

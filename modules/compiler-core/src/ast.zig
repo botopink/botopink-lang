@@ -24,18 +24,112 @@ pub const Comment = struct {
         allocator.free(this.text);
     }
 };
+/// One leaf of an import list (decision 107). The dotted spelling
+/// (`io.fs.readText as read`) and the grouped spelling
+/// (`io: {fs: {readText as read}}`) both flatten to this — the parser writes
+/// the group's prefix into `segments`, so nothing downstream knows which one
+/// was written. Only the leaf enters scope: `segments[0..len-1]` is the path
+/// of the module the leaf lives in (or, when the whole path names a module,
+/// the leaf is that module as a namespace).
 pub const ImportPath = struct {
     segments: []const []const u8,
     /// Trailing `*` — activates dispatch of the symbol's methods (impl or extend).
     activate: bool = false,
     /// `as` rename of the final binding (`std.List as L`); null when absent.
     alias: ?[]const u8 = null,
+    /// Where the item is written — its first own token (`json` in `json.parse`,
+    /// `parse` in `json: {parse}`), so a refusal such as `import-name-collision`
+    /// points at the item it is about. `line == 0` when synthesised.
+    loc: Loc = .{ .line = 0, .col = 0 },
 
     /// Final bound name: the alias when present, else the last path segment.
     pub fn name(this: ImportPath) []const u8 {
         return this.alias orelse this.segments[this.segments.len - 1];
     }
+
+    /// The AST snapshots serialise every field; `loc` is diagnostic
+    /// provenance, not shape, so it stays out of them — a snapshot recorded
+    /// before the field existed reads the same after it.
+    pub fn jsonStringify(this: ImportPath, jws: anytype) !void {
+        try jws.beginObject();
+        try jws.objectField("segments");
+        try jws.write(this.segments);
+        try jws.objectField("activate");
+        try jws.write(this.activate);
+        try jws.objectField("alias");
+        try jws.write(this.alias);
+        try jws.endObject();
+    }
+
+    /// The last segment — the exported name the leaf refers to, whatever the
+    /// local binding (`alias`) is called.
+    pub fn leaf(this: ImportPath) []const u8 {
+        return this.segments[this.segments.len - 1];
+    }
+
+    /// True when the item carries a path (`a.b`, or a group leaf), so the leaf
+    /// is looked up in the module the prefix names rather than in the source
+    /// module itself.
+    pub fn isQualified(this: ImportPath) bool {
+        return this.segments.len > 1;
+    }
+
+    /// The segments before the leaf joined with `/` — the module path the
+    /// leaf is resolved in, relative to the import's source package. Empty for
+    /// a single-segment item.
+    pub fn prefixPath(this: ImportPath, alloc: std.mem.Allocator) ![]const u8 {
+        return joinSegments(alloc, this.segments[0 .. this.segments.len - 1]);
+    }
+
+    /// Every segment joined with `/` — the module path the whole item names
+    /// when the leaf is itself a module (`io.fs` → `io/fs`).
+    pub fn fullPath(this: ImportPath, alloc: std.mem.Allocator) ![]const u8 {
+        return joinSegments(alloc, this.segments);
+    }
+
+    /// The item as written, segments joined with `.` — for a diagnostic (a
+    /// backtick segment keeps its backticks, decision 561).
+    pub fn dotted(this: ImportPath, alloc: std.mem.Allocator) ![]const u8 {
+        return std.mem.join(alloc, ".", this.segments);
+    }
+
+    /// True when two items name the same thing: same path, same activation.
+    /// A repeated identical import (an `@emit` contribution re-importing what
+    /// its module already imports) is not a collision.
+    pub fn samePath(this: ImportPath, other: ImportPath) bool {
+        if (this.segments.len != other.segments.len) return false;
+        for (this.segments, other.segments) |a, b| {
+            if (!std.mem.eql(u8, a, b)) return false;
+        }
+        return this.activate == other.activate;
+    }
 };
+
+/// Decision 561 — a backtick identifier's name keeps its backticks
+/// (`` `not-found` ``); as a module path segment it spells the file name
+/// without them.
+pub const isBacktickName = @import("lexer.zig").isBacktickName;
+pub const unquotedName = @import("lexer.zig").unquotedName;
+
+/// The segments of a module path joined with `/`, each the file name it
+/// spells: a backtick segment without its backticks (decision 561,
+/// `` pages.`not-found` `` → `pages/not-found`).
+fn joinSegments(alloc: std.mem.Allocator, segs: []const []const u8) ![]const u8 {
+    var total: usize = 0;
+    for (segs, 0..) |s, i| total += unquotedName(s).len + @as(usize, if (i > 0) 1 else 0);
+    const out = try alloc.alloc(u8, total);
+    var at: usize = 0;
+    for (segs, 0..) |seg, i| {
+        const s = unquotedName(seg);
+        if (i > 0) {
+            out[at] = '/';
+            at += 1;
+        }
+        @memcpy(out[at .. at + s.len], s);
+        at += s.len;
+    }
+    return out;
+}
 
 /// Where an `import { … }` resolves from.
 pub const ImportSource = union(enum) {
@@ -43,6 +137,130 @@ pub const ImportSource = union(enum) {
     root,
     /// `import { … } from "name";` — resolves from a named dependency.
     module: []const u8,
+    /// One module, by its registry key — the package plus the path (decisions
+    /// 170, 337): `a/theme` for the `theme` of dependency `a`, `theme` for the
+    /// root package's. Never written in source: `ImportDecl.leafSource`
+    /// answers it for an item that names a module of the importing package by
+    /// its path (`import {theme.make};`). It names exactly that module — no
+    /// basename reading, no package widening, no whole-program pass — so two
+    /// packages that each hold a `theme` are two modules to every lookup.
+    key: []const u8,
+
+    /// Whether `path` is the module this source NAMES. The question every
+    /// name-keyed import index used to skip: a symbol name is unique only
+    /// inside one module, so "which `parse`" is answered by the `from` and not
+    /// by whichever module a hash iteration reached first (`libs/std` declares
+    /// `parse` in `json`, `querystring` and `url` today).
+    ///
+    /// Two spellings name a module: its full path (`web/http`) and the last
+    /// segment of it (`http`). A PACKAGE handle (`std`, a lib's name) names the
+    /// package, so it matches only a module whose basename IS the handle — the
+    /// single-module lib shape — and a caller that gets no match must widen to
+    /// the whole package rather than treat the name as absent. `.root` names no
+    /// module in particular (it is "this project"), so it never narrows.
+    ///
+    /// The source is compared as the PATH it spells (`spellsPath`): `from
+    /// "a.nf"` names `a/nf`. Compared byte for byte, a dotted source named no
+    /// module at all, so it narrowed nothing and every lookup fell through to
+    /// the whole program — where two modules declaring one `pub` name made the
+    /// import that said which module it meant `ambiguous-import-use`
+    /// (`conformance/modules/import_same_fn_name_by_module`).
+    pub fn namesModule(this: ImportSource, path: []const u8) bool {
+        const m = switch (this) {
+            .root => return false,
+            .key => |key| return std.mem.eql(u8, key, path),
+            .module => |name| name,
+        };
+        if (spellsPath(m, path)) return true;
+        const base = if (std.mem.lastIndexOfScalar(u8, path, '/')) |i| path[i + 1 ..] else path;
+        return spellsPath(m, base);
+    }
+
+    /// Whether the source names `path` across a PACKAGE boundary — the second
+    /// reading, tried when the first names no module declaring the name, and
+    /// before the whole program. Two shapes:
+    ///
+    /// - `path` is a module of the package the source names: a handle (`web`,
+    ///   `ui`) covers every `<handle>/…` path. Two libraries of one build may
+    ///   each declare a name (a server library's `Response` and an HTML
+    ///   library's, both loaded by an application that uses the two), and
+    ///   `from "web"` inside `web`'s own modules says which. Without it a
+    ///   package handle narrowed nothing, and every such name in either
+    ///   library was refused as ambiguous
+    ///   (`conformance/modules/import_same_name_from_two_packages`).
+    /// - `path` is the module the source names BELOW a package: a module of a
+    ///   package names a sibling by its path under the package's own root
+    ///   (`from "sql/rows"`, `from "app.page"`), and the registries key that
+    ///   module `<package>/sql/rows` once the package is somebody's
+    ///   dependency. Without it such a source named nothing, and the import
+    ///   was refused as soon as any other module of the program — a std
+    ///   module included — declared the name
+    ///   (`conformance/modules/import_sibling_path_beside_std_name`,
+    ///   `import_same_fn_name_in_dependency`).
+    ///
+    /// The full path is `namesModule`'s and is tried first, so a project's
+    /// own `app/page` wins over a dependency's `<package>/app/page`.
+    pub fn inPackage(this: ImportSource, path: []const u8) bool {
+        const m = switch (this) {
+            .root, .key => return false,
+            .module => |name| name,
+        };
+        if (m.len == 0 or path.len <= m.len) return false;
+        if (path[m.len] == '/' and spellsPath(m, path[0..m.len])) return true;
+        const at = path.len - m.len;
+        return path[at - 1] == '/' and spellsPath(m, path[at..]);
+    }
+
+    /// Whether the text of a `from "…"` spells the module path `path`. A
+    /// source separates the segments of a nested module with `.` (`from
+    /// "shapes.circle"`, the `mod` chain) or with `/` (`from "tree/api"`); the
+    /// registries key a module by its `/` path, so a `.` of the source stands
+    /// for a `/` of the path and every other byte for itself.
+    fn spellsPath(written: []const u8, path: []const u8) bool {
+        if (written.len != path.len) return false;
+        for (written, path) |w, p| {
+            if (w != p and !(w == '.' and p == '/')) return false;
+        }
+        return true;
+    }
+
+    /// Decision 206 — the PACKAGE a `from "…"` names: its first segment (`log`
+    /// for `from "log"` and `from "log.levels"`). `from` names a package —
+    /// std, a bundled package or a declared dependency — and never a module of
+    /// the importing package, which is imported by its path inside the braces
+    /// (`import {log.logger};`). Null for `.root`.
+    pub fn packageName(this: ImportSource) ?[]const u8 {
+        const m = switch (this) {
+            .root, .key => return null,
+            .module => |name| name,
+        };
+        const end = std.mem.indexOfAny(u8, m, "./") orelse m.len;
+        return m[0..end];
+    }
+
+    /// Whether `path` is a module of the package `pkg` — the registries key a
+    /// package's modules `<pkg>/<module>` (a dependency, a bundled package).
+    /// The checker's lookup under `from "<pkg>"` admits only those once the
+    /// program holds any (`comptime.packageScope`): a module of the importing
+    /// package keyed `log` is never what `from "log"` names, so a bundled
+    /// package added later never changes what an import means.
+    pub fn ofPackage(pkg: []const u8, path: []const u8) bool {
+        return path.len > pkg.len and path[pkg.len] == '/' and std.mem.startsWith(u8, path, pkg);
+    }
+
+    /// The three widening passes of a name-keyed import lookup: 0 — the module
+    /// the source names (`namesModule`), 1 — the source read across a package
+    /// boundary (`inPackage`), 2 — the whole program. A `.key` never widens:
+    /// every pass admits its one module and no other, so a name the module
+    /// does not declare is unresolved rather than found in another package.
+    pub fn admits(this: ImportSource, path: []const u8, pass: u2) bool {
+        if (this == .key) return this.namesModule(path);
+        return switch (pass) {
+            0 => this.namesModule(path),
+            1 => this.inPackage(path),
+            else => true,
+        };
+    }
 };
 
 pub const ImportDecl = struct {
@@ -61,6 +279,63 @@ pub const ImportDecl = struct {
     comment: ?[]const u8 = null,
     /// `////` module-level documentation
     moduleComment: ?[]const u8 = null,
+    /// The package of the module that wrote the import, as its modules' paths
+    /// begin (`a` for `a/user`), empty for the root package — set by the
+    /// checker from `Module.package` before any lookup reads the import
+    /// (`withOwnPackage`). It makes a path item absolute: `import
+    /// {theme.make};` in `a/user` names `a/theme` and never `b/theme`
+    /// (decisions 170, 337). Left out of the dump.
+    ownPackage: []const u8 = "",
+    /// Decision 166 — the braced list had a comma before its `}`. Dumped only
+    /// when set.
+    trailingComma: bool = false,
+
+    pub fn jsonStringify(this: ImportDecl, jws: anytype) !void {
+        return stringifyOmitting(this, jws, &.{"ownPackage"}, &.{"trailingComma"});
+    }
+
+    /// `program` with every import marking `package` as the package that wrote
+    /// it (`ownPackage`). The declarations are copied; `program` is unchanged.
+    pub fn withOwnPackage(arena: std.mem.Allocator, program: Program, package: []const u8) !Program {
+        if (package.len == 0) return program;
+        const decls = try arena.dupe(DeclKind, program.decls);
+        for (decls) |*d| switch (d.*) {
+            .use => |*u| u.ownPackage = package,
+            else => {},
+        };
+        var out = program;
+        out.decls = decls;
+        return out;
+    }
+
+    /// The module a qualified item's leaf lives in, as the source a lookup
+    /// narrows by (`ImportSource.namesModule`): `import {io.fs.readText} from
+    /// "std"` answers `std/io/fs`, `import {html.div} from "web"` answers
+    /// `web/html`, and the bare `import {shapes.circle.name};` answers
+    /// `shapes/circle` — the package's own module tree. A single-segment item
+    /// answers the decl's own source, and so does `from "std"` on a single
+    /// segment (the std namespace form). With `whole`, every segment is the
+    /// path: the item names a module (`io.fs` → `std/io/fs`) rather than a
+    /// symbol of one. A composed answer is a `/` path whatever the source's
+    /// spelling (`import {c} from "a.b"` → `a/b/c`): callers look it up as a
+    /// registry key, and `a.b/c` is the key of nothing. An item with no
+    /// `from` names a module of the importing package (206, 309, 337), so
+    /// its answer is that module's key — the package plus the path
+    /// (`ownPackage`): `a/theme` in dependency `a`, `theme` in the root
+    /// package, never another package's `theme`.
+    pub fn leafSource(this: ImportDecl, imp: ImportPath, alloc: std.mem.Allocator, whole: bool) !ImportSource {
+        if (!whole and !imp.isQualified()) return this.source;
+        const rel = if (whole) try imp.fullPath(alloc) else try imp.prefixPath(alloc);
+        return switch (this.source) {
+            .root => .{ .key = if (this.ownPackage.len == 0) rel else try std.fmt.allocPrint(alloc, "{s}/{s}", .{ this.ownPackage, rel }) },
+            .key => |key| .{ .key = try std.fmt.allocPrint(alloc, "{s}/{s}", .{ key, rel }) },
+            .module => |pkg| blk: {
+                const path = try std.fmt.allocPrint(alloc, "{s}/{s}", .{ pkg, rel });
+                std.mem.replaceScalar(u8, path[0..pkg.len], '.', '/');
+                break :blk .{ .module = path };
+            },
+        };
+    }
 };
 
 /// A `mod Name;` / `pub mod Name;` declaration — a node in the explicit module
@@ -81,12 +356,46 @@ pub const ModDecl = struct {
     comment: ?[]const u8 = null,
     /// `////` module-level documentation
     moduleComment: ?[]const u8 = null,
+    /// Where the module's name is written (01 step 9). Left out of the dump.
+    loc: Loc = .{ .line = 0, .col = 0 },
+
+    pub fn jsonStringify(this: ModDecl, jws: anytype) !void {
+        return stringifyOmitting(this, jws, &.{"loc"}, &.{});
+    }
 };
 
-/// Source location of a node: line and column (both 1-based).
+/// Source location of a node: line and column (both 1-based), and the template
+/// expansion whose built code holds it (decision 429). A node the programmer
+/// wrote has `expansion` 0. A node of template-built code has the id its
+/// expansion took (`infer.parseCodeText`), and its line and column are its
+/// offset in the built string read from the literal's own line and column
+/// (`q.source()`) — so a diagnostic in built code points at the literal, and
+/// two expansions whose code sits at the same offsets are two locations. Every
+/// plan keyed by a location (an `AutoHashMap(ast.Loc, …)`, `Loc.eql`) reads the
+/// pair.
 pub const Loc = struct {
     line: usize,
     col: usize,
+    expansion: u32 = 0,
+
+    pub fn eql(a: Loc, b: Loc) bool {
+        return a.line == b.line and a.col == b.col and a.expansion == b.expansion;
+    }
+
+    /// The JSON dump names the expansion only for built code, so a dump of
+    /// written code is unchanged.
+    pub fn jsonStringify(this: Loc, jws: anytype) !void {
+        try jws.beginObject();
+        try jws.objectField("line");
+        try jws.write(this.line);
+        try jws.objectField("col");
+        try jws.write(this.col);
+        if (this.expansion != 0) {
+            try jws.objectField("expansion");
+            try jws.write(this.expansion);
+        }
+        try jws.endObject();
+    }
 };
 
 // ── Statement types ───────────────────────────────────────────────────────────
@@ -138,6 +447,11 @@ pub fn LiteralExprOf(comptime phase: Phase) type {
         },
         /// A number literal, e.g. `0`
         numberLit: []const u8,
+        /// A `Bytes` build constant (decisions 519, 520): the raw bytes, never
+        /// written in source — `@embed`'s `Asset.bytes` and a `comptime`'s
+        /// lifted `Bytes`. Every target embeds it (an Erlang binary, a JS
+        /// `Uint8Array`, a wasm data segment).
+        bytesLit: []const u8,
         /// `null` literal
         null_,
         /// A comment treated as an expression: `//` normal, `///` doc, or `////` module.
@@ -145,11 +459,27 @@ pub fn LiteralExprOf(comptime phase: Phase) type {
         comment: struct {
             kind: CommentKind,
             text: []const u8,
+            /// Written at the end of the previous statement's line
+            /// (`f(); // note`); the formatter keeps it there.
+            trailing: bool = false,
+
+            pub fn jsonStringify(this: @This(), jws: anytype) !void {
+                try jws.beginObject();
+                try jws.objectField("kind");
+                try jws.write(this.kind);
+                try jws.objectField("text");
+                try jws.write(this.text);
+                if (this.trailing) {
+                    try jws.objectField("trailing");
+                    try jws.write(true);
+                }
+                try jws.endObject();
+            }
         },
 
         pub fn deinit(this: *@This(), allocator: std.mem.Allocator) void {
             switch (this.*) {
-                .stringLit, .numberLit, .null_ => {},
+                .stringLit, .numberLit, .bytesLit, .null_ => {},
                 .stringTemplate => |t| {
                     for (t.parts) |*p| switch (p.*) {
                         .text => {},
@@ -244,6 +574,32 @@ pub fn StmtOf(comptime phase: Phase) type {
         expr: ExprOf(phase),
         /// Number of empty lines before this statement in the source
         emptyLinesBefore: u32 = 0,
+        /// Decision 409 — the last expression of a function body written
+        /// without `;` (`parser.zig` `parseBlockBody`, `markTail`).
+        tail: Tail = .none,
+        /// Decision 539 — `defer <expr>;`: the statement's `expr` runs when
+        /// the block it is written in ends, on every exit. It answers no
+        /// value, so a deferred statement never carries a `tail`.
+        deferred: bool = false,
+
+        /// Dumped without `tail` or `deferred` unless set, so every body
+        /// written before decisions 409 and 539 dumps as it always did.
+        pub fn jsonStringify(this: @This(), jws: anytype) !void {
+            try jws.beginObject();
+            try jws.objectField("expr");
+            try jws.write(this.expr);
+            try jws.objectField("emptyLinesBefore");
+            try jws.write(this.emptyLinesBefore);
+            if (this.tail != .none) {
+                try jws.objectField("tail");
+                try jws.write(this.tail);
+            }
+            if (this.deferred) {
+                try jws.objectField("deferred");
+                try jws.write(true);
+            }
+            try jws.endObject();
+        }
 
         pub fn deinit(this: *@This(), allocator: std.mem.Allocator) void {
             this.expr.deinit(allocator);
@@ -251,10 +607,93 @@ pub fn StmtOf(comptime phase: Phase) type {
     };
 }
 
+/// The index of a non-empty body's last statement that is not a `//` comment:
+/// the statement a block's tail is, a comment written after it aside.
+pub fn lastRealIndex(body: anytype) usize {
+    var i = body.len;
+    while (i > 1) : (i -= 1) {
+        const e = body[i - 1].expr;
+        if (!(e == .literal and e.literal.kind == .comment)) break;
+    }
+    return i - 1;
+}
+
+/// Decision 409 — what a function body's last statement written without `;`
+/// is. `value`: the expression as written — the body's value where the body
+/// answers one from its tail (a lambda, an untyped function expression), and
+/// in a body answering nothing a tail the checker refuses unless it is
+/// `void`. `returned`: the parser wrapped it in `return` because the body's
+/// written return has a value (`fn inc(x: i32) -> i32 { x + 1 }`,
+/// `parser.zig` `returnTail`), so every later pass reads the `return` it
+/// means; the printer writes the value back alone, without `;`.
+pub const Tail = enum { none, value, returned };
+
+/// The label the parser gives a record-update spread argument:
+/// `Ctor(..base, x: 1)` holds `base` as the argument labelled `..`. It is not
+/// an identifier, so no source can write it as a label (`..: base` does not
+/// parse) — an argument carrying it is always the spread, and the formatter
+/// prints it back as `..base`.
+pub const spread_arg_label = "..";
+
+/// Decision 359 — the label the parser gives a record spread argument:
+/// `Pessoa(..old, nome: "Ana")` holds `old` as the argument labelled `...`,
+/// the `..` token's place on `CallArg.spreadLoc`. Like `spread_arg_label` it
+/// is not an identifier, so no source writes it as a label; the formatter
+/// prints it back as `..old`. Inference (`infer.inferRecordSpread`) builds
+/// the complete constructor call it means, and refuses it anywhere but a
+/// record's constructor (`call-spread`).
+pub const record_spread_label = "...";
+
+/// The column the checker adds to a node it synthesises for a record spread
+/// (decision 359, `infer.inferRecordSpread`): past any written column and
+/// apart from `optional_synthetic_col`'s, so its loc keys no plan of a written
+/// node.
+pub const spread_synthetic_col: usize = 3_000_000;
+
+/// The column the checker adds to the loc of the record construction it
+/// builds for a call's `..props: R` argument (decision 529 (2),
+/// `infer.packRecordParamCall`): past any written column and apart from the
+/// other synthetic columns.
+pub const record_param_synthetic_col: usize = 6_000_000;
+
+/// The column the checker adds to a node it synthesises for a field key's
+/// run-time form (decision 308, `infer.inferFieldKey*`): past any written
+/// column and apart from `spread_synthetic_col`'s.
+pub const field_key_synthetic_col: usize = 4_000_000;
+
+/// The column added to a value's loc to key its `text_value` lowering (144
+/// B-78, decision 521; `infer.textValueLowerings`): past any written column
+/// and apart from the other synthetic columns, so the operand's own lowering
+/// (a field read, a call) keeps its key.
+pub const text_synthetic_col: usize = 5_000_000;
+
+/// The column added to a `string +` operand's loc (a template hole is one) to key the
+/// `text_value` lowering that says the operand is a value the text helper writes
+/// (decision 530; `infer.textValueLowerings`): a record, an array, a tuple, an optional or an
+/// enum, whose text JavaScript's own coercion would not write as `@print` does. Apart from
+/// `text_synthetic_col`'s, which keys the float reading.
+pub const text_hole_col: usize = 7_000_000;
+
+/// The column added to an argument's loc in a call of a generic fn to key the
+/// `text_value` lowering of its type when that type holds a float (144 B-114,
+/// decision 521; `infer.textValueLowerings`): commonJS reads the print shape
+/// it hands the callee's body for each type parameter from it. Apart from
+/// `text_synthetic_col`'s and `text_hole_col`'s, whose readings the same node
+/// may carry.
+pub const text_arg_col: usize = 8_000_000;
+
+/// The column added to a call's loc for the `@TypeInfo.all` the compiler
+/// writes in place of a `comptime` parameter's catalogue default it leaves out
+/// (decision 551, `comptime.zig` `fillCatalogueDefaults`), plus the
+/// parameter's index: past any written column and apart from the other
+/// synthetic columns, so the answer is keyed by a loc no written node has.
+pub const catalogue_default_col: usize = 9_000_000;
+
 /// Helper to get the correct call argument type based on phase
 pub fn CallArgOf(comptime phase: Phase) type {
     return struct {
-        /// null for positional args; non-null for named args (`fator: 2`).
+        /// null for positional args; non-null for named args (`fator: 2`);
+        /// `spread_arg_label` for the spread of a record update (`..base`).
         label: ?[]const u8,
         value: *ExprOf(phase),
         /// Comments appearing before this argument (text only, without `// `)
@@ -264,6 +703,18 @@ pub fn CallArgOf(comptime phase: Phase) type {
         /// `comptime/transform.zig`). `deinit` skips the value teardown since
         /// the source decl owns it.
         is_default_inj: bool = false,
+        /// Decision 166 — set on the **last** argument of a list written with a
+        /// comma before its `)`; the formatter opens the list on it and on
+        /// nothing else. Dumped only when set; the typed phase never copies it.
+        trailingComma: bool = false,
+        /// Decision 359 — where the `..` of a record spread argument
+        /// (`record_spread_label`) is written: its refusals are located
+        /// there. Null on every other argument; left out of the dump.
+        spreadLoc: ?Loc = null,
+
+        pub fn jsonStringify(this: @This(), jws: anytype) !void {
+            return stringifyOmitting(this, jws, &.{"spreadLoc"}, &.{"trailingComma"});
+        }
 
         pub fn deinit(this: *@This(), allocator: std.mem.Allocator) void {
             if (!this.is_default_inj) {
@@ -283,6 +734,18 @@ pub fn TrailingLambdaOf(comptime phase: Phase) type {
         /// Parameter names (types are inferred). Empty when the lambda takes no params.
         params: []const []const u8,
         body: []StmtOf(phase),
+        /// Decision 525 — written without `->` (`f(x) { … }`): a block, never
+        /// a closure. The checker refuses it where the call expects a
+        /// function (every trailing position does), with the hint "missing
+        /// `->`?"; `botopink format` writes it back as `{ -> … }`. Dumped only
+        /// when set.
+        isBlock: bool = false,
+        /// The `{` it opens with. Left out of the dump.
+        loc: Loc = .{ .line = 0, .col = 0 },
+
+        pub fn jsonStringify(this: @This(), jws: anytype) !void {
+            return stringifyOmitting(this, jws, &.{"loc"}, &.{"isBlock"});
+        }
 
         pub fn deinit(this: *@This(), allocator: std.mem.Allocator) void {
             allocator.free(this.params);
@@ -302,11 +765,21 @@ pub fn CaseArmOf(comptime phase: Phase) type {
         guard: ?ExprOf(phase) = null,
         /// Number of empty lines before this arm in the source
         emptyLinesBefore: u32 = 0,
+        /// Where the arm's pattern starts. `Pattern` carries no location of its
+        /// own, so a diagnostic about the pattern — decision 54's "an optional
+        /// is matched by `null`", for one — has nowhere else to point. Left out
+        /// of the dump: a location is a diagnostic aid, not surface, and the AST
+        /// dumps are snapshot-compared.
+        patternLoc: Loc = .{ .line = 0, .col = 0 },
 
         pub fn deinit(this: *@This(), allocator: std.mem.Allocator) void {
             this.pattern.deinit(allocator);
             this.body.deinit(allocator);
             if (this.guard) |*g| g.deinit(allocator);
+        }
+
+        pub fn jsonStringify(this: @This(), jws: anytype) !void {
+            return stringifyOmitting(this, jws, &.{"patternLoc"}, &.{});
         }
     };
 }
@@ -325,6 +798,16 @@ pub fn IdentifierExprOf(comptime phase: Phase) type {
             receiver: *ExprOf(phase),
             member: []const u8,
             optional: bool = false,
+            /// Decision 255 (1) — the type arguments of a type application
+            /// written on the receiver, `Opt<i32>.None`: the receiver names a
+            /// type and the member is read off its instantiation. Read by the
+            /// checker only; null when none was written, and then left out of
+            /// the AST dump.
+            receiverTypeArgs: ?[]TypeRef = null,
+
+            pub fn jsonStringify(this: @This(), jws: anytype) !void {
+                return stringifyOmitting(this, jws, &.{}, &.{"receiverTypeArgs"});
+            }
         },
 
         pub fn deinit(this: *@This(), allocator: std.mem.Allocator) void {
@@ -333,6 +816,7 @@ pub fn IdentifierExprOf(comptime phase: Phase) type {
                 .identAccess => |a| {
                     a.receiver.deinit(allocator);
                     allocator.destroy(a.receiver);
+                    freeTypeRefs(allocator, a.receiverTypeArgs);
                 },
             }
         }
@@ -405,22 +889,27 @@ pub fn JumpExprOf(comptime phase: Phase) type {
         try_: ?*ExprOf(phase),
         /// `await expr` — suspend until the `@Future` operand resolves; result is its `T`
         await_: *ExprOf(phase),
-        /// `break [:label] [expr]` ---- exit a block/loop/iterator early.
-        /// `value=null` is bare `break`; the optional `:label` targets a named
-        /// outer loop or `#[@iterator]` / `#[@asyncGenerator]` fn scope (§1I
-        /// REGRAS DE ESCOPO: an unlabelled `break` inside a nested loop binds
-        /// to the loop, not the iterator).
+        /// `break [:label] [expr]` ---- leave the nearest loop, or end the
+        /// generator scope. `value=null` is bare `break`: it leaves the nearest
+        /// `loop`/`while`/`for`, or ends the generator when no loop encloses
+        /// it. `break v` (decision 105) emits `v` and ends the nearest generator
+        /// scope — an annotated fn or an annotated `loop` — and needs one. The
+        /// optional `:label` names an enclosing labelled loop.
         @"break": struct {
             label: ?[]const u8 = null,
             value: ?*ExprOf(phase),
         },
-        /// `continue` ---- skip the rest of this loop iteration
-        @"continue",
-        /// `yield [:label] expr` ---- in a generator (`#[@iterator]` /
-        /// `#[@generator]` / `#[@asyncGenerator]` fn), suspend emitting `expr`;
-        /// in a plain loop, accumulate `expr` into the loop's result list. The
-        /// optional `:label` disambiguates which generator/loop scope the yield
-        /// targets.
+        /// `continue [:label]` ---- skip the rest of this loop iteration; the
+        /// optional `:label` names an enclosing labelled loop, whose next
+        /// round starts.
+        @"continue": struct {
+            label: ?[]const u8 = null,
+        },
+        /// `yield [:label] expr` ---- emit `expr` from the nearest generator
+        /// scope (an annotated fn or an annotated `loop`, decision 105) and
+        /// continue; an unannotated `while`/`for`/`loop` between the `yield`
+        /// and that scope is transparent. The optional `:label` names the
+        /// generator scope (a fn's signature label or a `loop :name`).
         yield: struct {
             label: ?[]const u8 = null,
             value: ?*ExprOf(phase),
@@ -452,10 +941,22 @@ pub fn BranchExprOf(comptime phase: Phase) type {
             then_: []StmtOf(phase),
             else_: ?[]StmtOf(phase),
         },
-        /// `try expr catch handler` — handle error inline
+        /// `try expr catch handler` / `expr catch handler` — handle error inline
         tryCatch: struct {
             expr: *ExprOf(phase),
             handler: *ExprOf(phase),
+            /// True when the source wrote the `try` keyword (`try e catch h`),
+            /// false for the tail form (`e catch h`). The two spell one node
+            /// with one meaning; the flag is source layout, read by the
+            /// formatter alone: the tail form is legal inside parentheses (and
+            /// so as an operand), where a `try` is refused (decision 137), so
+            /// printing a `try` nobody wrote does not re-parse. Left out of
+            /// the AST dump.
+            tryKeyword: bool = false,
+
+            pub fn jsonStringify(this: @This(), jws: anytype) !void {
+                return stringifyOmitting(this, jws, &.{"tryKeyword"}, &.{});
+            }
         },
 
         pub fn deinit(this: *@This(), allocator: std.mem.Allocator) void {
@@ -478,22 +979,79 @@ pub fn BranchExprOf(comptime phase: Phase) type {
     };
 }
 
-/// Loop expressions: iteration constructs.
+/// The keyword a loop node was written with (decision 105): three keywords,
+/// one meaning each. `keyword` is what the formatter prints back; `condition`
+/// and `awaitLoop` are the shape the checker and the backends read.
+pub const LoopKeyword = enum {
+    /// `loop { … }` — repeats until `break`; `iter loop { … }` /
+    /// `stream loop { … }` when `generator` is set.
+    loop,
+    /// `while (cond) { … }` — repeats while `cond` holds.
+    while_,
+    /// `for (coll) { x -> … }` / `for await (gen) { x -> … }` — iterates a
+    /// collection, a range or a generator.
+    for_,
+
+    pub fn spelling(self: LoopKeyword) []const u8 {
+        return switch (self) {
+            .loop => "loop",
+            .while_ => "while",
+            .for_ => "for",
+        };
+    }
+};
+
+/// Loop expressions: `loop`, `while` and `for` (decision 105).
 /// Flattened: loop fields live directly on the node (no `.kind` indirection).
+/// Every unprefixed loop is a statement typed `void`; a prefixed
+/// `iter …` / `stream …` loop is an expression worth `@Iterator<T>` /
+/// `@Stream<T>` (decision 125).
 pub fn LoopExprOf(comptime phase: Phase) type {
     return struct {
         loc: Loc,
         type_: if (phase == .typed) *@import("./comptime/types.zig").Type else void =
             if (phase == .typed) undefined else {},
-        /// `loop (iter) { params -> body }` or `loop (iter, 0..) { item, i -> body }`
+        /// The keyword written: `loop`, `while` or `for`.
+        keyword: LoopKeyword = .loop,
+        /// `iter …` / `stream …` (decision 125) — `.iterator` or `.stream`; the
+        /// body is a generator scope and the node is an expression worth
+        /// `@Iterator<T>` / `@Stream<T>`. Only a `.loop` node carries one: the
+        /// parser writes `iter while (c) { … }` / `iter for (xs) { x -> … }` as
+        /// the prefixed `loop { <the unprefixed loop>; break; }` it means
+        /// (decision 125's own equivalence), and records the written keyword
+        /// in `prefixedKeyword` so the formatter prints the source back.
+        generator: ?EffectKind = null,
+        /// The keyword written after `iter` / `stream`: `.loop` for `iter loop`,
+        /// `.while_` / `.for_` for the desugared forms (whose `body[0]` is the
+        /// written loop). Null on an unprefixed loop.
+        prefixedKeyword: ?LoopKeyword = null,
+        /// `for (iter) { param -> body }`: the collection, range or generator
+        /// iterated; `while (iter) { … }`: the condition. A `loop { … }` is the
+        /// condition loop over the literal `true`.
         iter: *ExprOf(phase),
+        /// Retired with decision 105 (`for (xs, 0..) { x, i -> }` no longer
+        /// parses); always null. Leaves with the backends' index lowering.
         indexRange: ?*ExprOf(phase),
+        /// The one name a `for` binds; empty for `while` and `loop`.
         params: []const []const u8,
+        /// Location of the first parameter (the loop's own location when it has none).
+        paramsLoc: Loc = .{ .line = 0, .col = 0 },
+        /// True for `while (cond) { … }` and `loop { … }`: repeat while `iter`
+        /// (a `bool`) holds, binding nothing.
+        condition: bool = false,
         body: []StmtOf(phase),
-        /// `loop await (iter) { ... }` ---- iterate an `@AsyncIterator`, awaiting each item.
+        /// `for await (iter) { ... }` ---- iterate an `@FutureGenerator`, awaiting each item.
         awaitLoop: bool = false,
-        /// Optional loop label (`loop :acc (iter) { ... }`) for `yield :label` disambiguation.
+        /// Optional label (`for :outer (xs) { … }`, `while :w (…)`, `loop :l {`)
+        /// for `break :label` / `continue :label`, and — on an annotated
+        /// `loop` — for `yield :label` / `break :label v`.
         label: ?[]const u8 = null,
+
+        /// `prefixedKeyword` is left out of the AST dump when null, so the
+        /// slot moved no snapshot of an unprefixed loop.
+        pub fn jsonStringify(this: @This(), jws: anytype) !void {
+            return stringifyOmitting(this, jws, &.{"type_"}, &.{"prefixedKeyword"});
+        }
 
         pub fn deinit(this: *@This(), allocator: std.mem.Allocator) void {
             destroyExpr(allocator, this.iter);
@@ -541,6 +1099,13 @@ pub fn BindingExprOf(comptime phase: Phase) type {
             /// `val name: TypeRef = expr` — the declared type; inference binds
             /// it (not the RHS type) and the formatter round-trips it.
             typeAnnotation: ?TypeRef = null,
+            /// Where the annotation is written (its first token); `{0,0}` when
+            /// there is none or the node is synthesised. Left out of the AST dump.
+            typeLoc: Loc = .{ .line = 0, .col = 0 },
+
+            pub fn jsonStringify(this: @This(), jws: anytype) !void {
+                return stringifyOmitting(this, jws, &.{"typeLoc"}, &.{});
+            }
         },
         /// Assignment to a variable or field: `name = expr`, `name += expr`, `this.field = expr`, `this.field += expr`
         assign: struct {
@@ -602,16 +1167,71 @@ pub fn UseHookExprOf(comptime phase: Phase) type {
 /// form produced the node so consumers can emit the right syntax.
 pub fn FunctionExprOf(comptime phase: Phase) type {
     const Kind = struct {
-        /// Surface syntax: `{ a, b -> stmts }` lambda vs `fn(a, b) { stmts }`.
-        syntax: enum { lambda, fnExpr },
+        /// Surface syntax: `{ a, b -> stmts }` lambda vs `fn(a, b) { stmts }`,
+        /// or `async { stmts }` (decision 124): a closed block worth
+        /// `@Task<T>`, which every backend runs as a parameterless closure
+        /// called in place (`(async () => { … })()` on commonJS) — so it
+        /// keeps the lambda's shape and `params` is empty.
+        syntax: enum { lambda, fnExpr, asyncBlock },
         /// Parameter names (inferred types). Empty for no-param functions.
         params: []const []const u8,
         body: []StmtOf(phase),
+        /// Decision 370 (2) — `fn(self: T) -> R { … }`: each parameter's type
+        /// as written, one per `params` entry, or empty when none is written.
+        /// The checker admits the typed form only as the member a decorator
+        /// hands to `decl.addMember(name, fn…)` (`comptime/member_fn.zig`).
+        paramTypes: []const TypeRef = &.{},
+        /// The `-> R` a typed function expression writes; null when none.
+        returnType: ?TypeRef = null,
+        /// Decision 553 (1) — the body marker written before the lambda's
+        /// brace or the `fn` (`async { x -> … }`, `iter fn(n) { … }`), or
+        /// null. The parser writes the marked function as the unmarked one it
+        /// means, its body the one block form the marker names
+        /// (`async { x -> b }` is `{ x -> async { b } }`, `iter { x -> b }` is
+        /// `{ x -> iter loop { b; break; } }`, `async iter` a `stream loop`),
+        /// so the four backends lower nothing new; the checker reads the
+        /// marker against the expected type (147) and the formatter prints
+        /// the marked form back. A `component` lambda keeps its body as
+        /// written. Dumped only when written.
+        marker: ?EffectKind = null,
+
+        /// Dumped without the decision-370 fields unless they are written, so
+        /// an untyped function expression dumps as it always did.
+        pub fn jsonStringify(this: @This(), jws: anytype) !void {
+            try jws.beginObject();
+            try jws.objectField("syntax");
+            try jws.write(this.syntax);
+            try jws.objectField("params");
+            try jws.write(this.params);
+            try jws.objectField("body");
+            try jws.write(this.body);
+            if (this.paramTypes.len > 0) {
+                try jws.objectField("paramTypes");
+                try jws.write(this.paramTypes);
+            }
+            if (this.returnType) |rt| {
+                try jws.objectField("returnType");
+                try jws.write(rt);
+            }
+            if (this.marker) |m| {
+                try jws.objectField("marker");
+                try jws.write(m);
+            }
+            try jws.endObject();
+        }
+
+        /// Whether a parameter type or a return type is written.
+        pub fn isTyped(this: @This()) bool {
+            return this.paramTypes.len > 0 or this.returnType != null;
+        }
 
         pub fn deinit(this: *@This(), allocator: std.mem.Allocator) void {
             allocator.free(this.params);
             for (this.body) |*s| s.deinit(allocator);
             allocator.free(this.body);
+            for (this.paramTypes) |*t| @constCast(t).deinit(allocator);
+            allocator.free(this.paramTypes);
+            if (this.returnType) |*t| @constCast(t).deinit(allocator);
         }
     };
 
@@ -642,11 +1262,63 @@ pub fn CallExprOf(comptime phase: Phase) type {
             /// `callee """..."""` — a single string-literal argument with no
             /// parentheses. Formatting preserves the tagged form.
             is_tagged: bool = false,
+            /// Decision 577 — the call `` name @`…` ``: its raw text (the
+            /// bytes between the backticks, `` \` `` resolved), kept for the
+            /// printer; the argument is the same text as a string literal
+            /// with no hole. Null for every other call, and left out of the
+            /// AST dump then.
+            templateText: ?[]const u8 = null,
             /// true for the optional-chaining call form `recv?.method(args)` —
             /// when the receiver is null/absent the call short-circuits to null.
             optional: bool = false,
             args: []CallArgOf(phase),
             trailing: []TrailingLambdaOf(phase),
+            /// The type on the right of `x is T` — set only on the `is` builtin
+            /// call the parser synthesises (`is_builtin_name`), null on every
+            /// other call. Left out of the AST dump when null, so the slot moved
+            /// no snapshot.
+            isType: ?TypeRef = null,
+            /// The callee as an **expression** rather than a name — set only
+            /// for `adder(3)(4)`, where what is called is the result of the
+            /// previous call and no name exists to put in `callee` (which is
+            /// then `""`). `receiver` stays null: a chained call is not a
+            /// method call, and a consumer that reads `receiver` to mean "the
+            /// value before the `.`" must not see one here.
+            ///
+            /// Null on every call written today, and left out of the AST dump
+            /// when null, so the slot moved no snapshot. A backend that does
+            /// not read it lowers exactly the calls it lowered before.
+            calleeExpr: ?*ExprOf(phase) = null,
+            /// Decision 8 §1.3 — explicit type arguments at a use,
+            /// `Box<i32>(value: 1)` / `first<string>([])`: the `<…>` written
+            /// adjacent to the callee. Read by the checker only; null when none
+            /// was written, and then left out of the AST dump.
+            typeArgs: ?[]TypeRef = null,
+            /// Decision 255 (1) — a type application's arguments written on
+            /// the receiver, `Dict<string, unknown>.empty()`: the receiver
+            /// names a type, and its parameters take these in order before the
+            /// member is called. Read by the checker only; null when none was
+            /// written, and then left out of the AST dump.
+            receiverTypeArgs: ?[]TypeRef = null,
+            /// Decision 267 — the call's arguments past the callee's fixed
+            /// parameters were packed into one array literal, its last
+            /// argument, for the variadic parameter (`comptime/transform.zig`
+            /// from the checker's `Env.variadicPacks`). erlang, beam and wasm
+            /// read the array as the one list / array argument; commonJS
+            /// writes its elements back as the rest parameter's arguments.
+            /// False on every call the parser builds, and then left out of the
+            /// AST dump.
+            variadicPacked: bool = false,
+            /// Decision 529 (2) — the call's field labels and spread were
+            /// gathered into the record argument of the callee's `..props: R`
+            /// parameter (`infer.packRecordParamCall`); set on the rewritten
+            /// call so it is not packed again. False on every call the parser
+            /// builds, and then left out of the AST dump.
+            recordPacked: bool = false,
+
+            pub fn jsonStringify(this: @This(), jws: anytype) !void {
+                return stringifyOmitting(this, jws, &.{}, &.{ "isType", "calleeExpr", "typeArgs", "receiverTypeArgs", "variadicPacked", "recordPacked", "templateText" });
+            }
         },
         /// `expr |> fn1 |> fn2` — pipeline operator, left-associative chain
         pipeline: struct {
@@ -667,6 +1339,16 @@ pub fn CallExprOf(comptime phase: Phase) type {
                     allocator.free(c.args);
                     for (c.trailing) |*t| t.deinit(allocator);
                     allocator.free(c.trailing);
+                    if (c.isType) |t| {
+                        var owned = t;
+                        owned.deinit(allocator);
+                    }
+                    if (c.calleeExpr) |ce| {
+                        ce.deinit(allocator);
+                        allocator.destroy(ce);
+                    }
+                    freeTypeRefs(allocator, c.typeArgs);
+                    freeTypeRefs(allocator, c.receiverTypeArgs);
                 },
                 .pipeline => |p| {
                     p.lhs.deinit(allocator);
@@ -708,6 +1390,17 @@ pub fn CollectionExprOf(comptime phase: Phase) type {
             commentsPerElem: []const u32 = &.{},
             /// true when source had trailing comma after last element → forces multi-line
             trailingComma: bool = false,
+            /// One slot per element: the `//` comment written on the element's
+            /// own line, after it (`1, // one`) — text only, owned. Empty when no
+            /// element has one. Without it the comment was counted among the
+            /// NEXT element's leading ones and printed above it, where it says
+            /// something false (front 16's G7). Omitted from the AST dump when
+            /// empty.
+            trailingPerElem: []const ?[]const u8 = &.{},
+
+            pub fn jsonStringify(this: @This(), jws: anytype) !void {
+                return stringifyOmitting(this, jws, &.{}, &.{"trailingPerElem"});
+            }
         },
         /// `#(e1, e2, ...)` ---- tuple literal
         tupleLit: struct {
@@ -717,11 +1410,31 @@ pub fn CollectionExprOf(comptime phase: Phase) type {
             /// Number of comments before each element, then trailing.
             /// Length = elems.len + 1 (or 0 when no comments).
             commentsPerElem: []const u32 = &.{},
+            /// Element labels the COMPILER attaches (decision 8 §6) — never set
+            /// by the parser: construction has no labels. A value lifted from a
+            /// template (`@expr(…)`) carries the labels of the structure it was
+            /// built from, so `cfg.server.port` resolves. "" = unlabeled.
+            /// Arena-owned; not freed by `deinit`.
+            labels: []const []const u8 = &.{},
+            /// One slot per element, as `arrayLit.trailingPerElem`.
+            trailingPerElem: []const ?[]const u8 = &.{},
+            /// Decision 166 — the source had a comma before the `)`. Dumped
+            /// only when set.
+            trailingComma: bool = false,
+
+            pub fn jsonStringify(this: @This(), jws: anytype) !void {
+                return stringifyOmitting(this, jws, &.{}, &.{ "trailingPerElem", "trailingComma" });
+            }
         },
-        /// `start..end` or `start..` ---- integer range (end=null means open)
+        /// `start..end` (exclusive), `start...end` (inclusive, decision 105 —
+        /// the pattern token of decision 53 as a value) or `start..` (open,
+        /// end=null) ---- an integer range. Not a value: it is the iteration of a
+        /// `for` and the bounds of a slice, never a `Range` to hold.
         range: struct {
             start: *ExprOf(phase),
             end: ?*ExprOf(phase),
+            /// `a...b` — both ends included. Only with an `end`.
+            inclusive: bool = false,
         },
         /// `case .identifier{ arm* }` or `case expr1, expr2 { arm* }`
         case: struct {
@@ -729,13 +1442,34 @@ pub fn CollectionExprOf(comptime phase: Phase) type {
             arms: []CaseArmOf(phase),
             /// Comments appearing after the last arm, before closing `}`
             trailingComments: []const []const u8 = &.{},
+            /// Decision 525 — a block `{ … }` (no `->`): a scope, never a
+            /// closure. The parser lands it as `case true { _ { … } }` — one
+            /// arm whose body is the block's statements — so every pass reads
+            /// what a `case` arm's block already means: its `return` leaves
+            /// the enclosing function, a `var` it reassigns is the function's,
+            /// and its value is its tail (the last expression written without
+            /// `;`). The printer writes it back as `{ … }`; the checker names
+            /// it a block. Dumped only when set.
+            isBlock: bool = false,
+
+            pub fn jsonStringify(this: @This(), jws: anytype) !void {
+                return stringifyOmitting(this, jws, &.{}, &.{"isBlock"});
+            }
         },
         /// `(expr)` ---- grouped expression (parentheses for precedence)
         grouped: *ExprOf(phase),
-        /// `record { name: value, … }` ---- anonymous structural record literal.
-        /// Types as an anonymous record (`Type.record`); nests freely.
-        recordLit: struct {
+        /// `@BehaviorName(field: value, …)` ---- behavior literal instantiation.
+        /// Creates a value of the named behavior type with the given fields.
+        behaviorLit: struct {
+            name: []const u8,
             fields: []RecordLitFieldOf(phase),
+            /// Decision 166 — the source had a comma before the `)`. Dumped
+            /// only when set.
+            trailingComma: bool = false,
+
+            pub fn jsonStringify(this: @This(), jws: anytype) !void {
+                return stringifyOmitting(this, jws, &.{}, &.{"trailingComma"});
+            }
         },
 
         pub fn deinit(this: *@This(), allocator: std.mem.Allocator) void {
@@ -750,6 +1484,7 @@ pub fn CollectionExprOf(comptime phase: Phase) type {
                     for (al.comments) |c| allocator.free(c);
                     allocator.free(al.comments);
                     allocator.free(al.commentsPerElem);
+                    freeTrailingPerElem(allocator, al.trailingPerElem);
                 },
                 .tupleLit => |tl| {
                     for (tl.elems) |*e| e.deinit(allocator);
@@ -757,6 +1492,7 @@ pub fn CollectionExprOf(comptime phase: Phase) type {
                     for (tl.comments) |c| allocator.free(c);
                     allocator.free(tl.comments);
                     allocator.free(tl.commentsPerElem);
+                    freeTrailingPerElem(allocator, tl.trailingPerElem);
                 },
                 .range => |r| {
                     r.start.deinit(allocator);
@@ -778,12 +1514,12 @@ pub fn CollectionExprOf(comptime phase: Phase) type {
                     e.deinit(allocator);
                     allocator.destroy(e);
                 },
-                .recordLit => |rl| {
-                    for (rl.fields) |f| {
+                .behaviorLit => |il| {
+                    for (il.fields) |f| {
                         f.value.deinit(allocator);
                         allocator.destroy(f.value);
                     }
-                    allocator.free(rl.fields);
+                    allocator.free(il.fields);
                 },
             }
         }
@@ -804,6 +1540,16 @@ pub fn ComptimeExprOf(comptime phase: Phase) type {
             condition: *ExprOf(phase),
             /// Optional error message displayed when assertion fails
             message: ?*ExprOf(phase) = null,
+            /// The condition as the source wrote it (a slice of the source,
+            /// never owned), which a failed assert's panic names (decision
+            /// 527 (2)): `assertion failed: x > 0 at src/main.bp:12:5`.
+            /// Empty when the parser had no source span for it. Left out of
+            /// the AST dump.
+            text: []const u8 = "",
+
+            pub fn jsonStringify(this: @This(), jws: anytype) !void {
+                return stringifyOmitting(this, jws, &.{"text"}, &.{});
+            }
         },
         /// `assert Pattern = expr catch handler` ---- pattern assertion with error handling
         assertPattern: struct {
@@ -813,6 +1559,20 @@ pub fn ComptimeExprOf(comptime phase: Phase) type {
             expr: *ExprOf(phase),
             /// catch handler expression (can be throw, return, or a fallback value)
             handler: *ExprOf(phase),
+            /// True for the handler-less `val assert P = e;` of decision 8 § 9,
+            /// whose failure is a fatal assert. The parser still fills
+            /// `handler` — with the `@panic(…)` the form desugars to — so every
+            /// backend's existing lowering emits the fatal path unchanged; the
+            /// flag is what lets the checker tell the two forms apart.
+            fatal: bool = false,
+            /// Where the written `catch` is (01 R9) — the caret of
+            /// "after `catch` the value is not a @Result". Null for the
+            /// handler-less form. Left out of the AST dump.
+            catchLoc: ?Loc = null,
+
+            pub fn jsonStringify(this: @This(), jws: anytype) !void {
+                return stringifyOmitting(this, jws, &.{"catchLoc"}, &.{});
+            }
         },
 
         pub fn deinit(this: *@This(), allocator: std.mem.Allocator) void {
@@ -860,13 +1620,53 @@ pub const ListPatternElem = union(enum) {
     numberLit: []const u8,
 };
 
+/// What a `Pattern.variant` node matches (decision 8 §5, 06 N22). The default,
+/// `.variant`, is the pre-decision-8 meaning; the other two are §5's shapes that
+/// have no name of their own, so they ride on the same node.
+pub const PatternShape = enum {
+    /// `Ok(v)`, `Shape.Circle(r)`, `.Some(v)` — the variant `name` names.
+    variant,
+    /// `#(a, b)`, `#(0, s)`, `#(a, ..)` — a tuple pattern (§5.1 P6). Positional
+    /// only: `name` is empty, the elements are `payload.literals`, and a label
+    /// inside one is a parse error.
+    tuple,
+    /// `1...9` — an inclusive range (§5.2), both ends included. `name` is empty
+    /// and `payload.literals` holds exactly the two bounds, low then high.
+    /// `1..9` in a pattern is refused: `..` is iteration.
+    range,
+};
+
 /// A match pattern used in `case` arms.
+///
+/// Decision 8 §5's shapes (06 N22) are carried by the existing variants under
+/// spellings no source can write, because a new variant here does not compile
+/// without edits to `comptime/infer.zig`, `comptime/specialize.zig`,
+/// `codegen/erlang.zig` and `format.zig`, which this front's checker half owns:
+///
+/// | Written | Node |
+/// |---|---|
+/// | `Shape.Circle(r)` | `.variant` whose `name` is the dotted path |
+/// | `.None` / `.Some(v)` | `.ident` / `.variant` whose `name` keeps the leading `.` |
+/// | `Rect(width: w, height: h)` | `.variant` with `labels` beside `payload.fields` |
+/// | `.Rect(width: w, ..)` | the same, with `rest` set |
+/// | `#(a, b)` | `.variant` with `shape == .tuple` |
+/// | `1...9` | `.variant` with `shape == .range` |
+///
+/// **What inference has to do with them** (the checker half of N22): resolve a
+/// dotted or dot-shorthand `name` against the matched value's type (§5.1 P8),
+/// bind `payload.fields` by `labels` when they are there and by position when
+/// they are not (P4), type each bound name from the matched value (P5), let
+/// `rest` stand for the fields or elements the pattern does not name and require
+/// the arity to match when it is not set (P7), and count arms for
+/// exhaustiveness (§5.4) — a guarded arm never counting.
 pub const Pattern = union(enum) {
     /// `_`
     wildcard,
-    /// enum variant or variable binding: `Red`, `x`, `total`
+    /// enum variant or variable binding: `Red`, `x`, `total`. A `name` carrying
+    /// a `.` is a variant path, never a binding: `Maybe.None`, `.None` (§5.1 P8).
     ident: []const u8,
-    /// enum variant with a payload: `Ok ok`, `Rgb(r, g, b)`, `Ok(1)`.
+    /// enum variant with a payload: `Ok ok`, `Rgb(r, g, b)`, `Ok(1)`; and, under
+    /// `shape`, decision 8's tuple and range patterns.
     /// The `name` is the variant; `payload` records how its contents are matched.
     variant: struct {
         name: []const u8,
@@ -878,6 +1678,16 @@ pub const Pattern = union(enum) {
             /// literal / nested-pattern arguments: `Ok(1)`, `Error("not found")`
             literals: []Pattern,
         },
+        /// Which of decision 8 §5's patterns this is; `.variant` unless the
+        /// parser read a `#(…)` tuple or an `A...B` range.
+        shape: PatternShape = .variant,
+        /// The labels written in the payload, parallel to `payload.fields` /
+        /// `payload.literals` — `""` where an element carried none. Empty when
+        /// the pattern is fully positional. Owned slice; the strings slice into
+        /// the source.
+        labels: []const []const u8 = &.{},
+        /// `..` — the pattern ignores the remaining fields or elements (§5.1 P7).
+        rest: bool = false,
     },
     /// Number literal: `42`
     numberLit: []const u8,
@@ -898,13 +1708,16 @@ pub const Pattern = union(enum) {
 
     pub fn deinit(this: *Pattern, allocator: std.mem.Allocator) void {
         switch (this.*) {
-            .variant => |*v| switch (v.payload) {
-                .fields => |f| allocator.free(f),
-                .literals => |args| {
-                    for (args) |*p| p.deinit(allocator);
-                    allocator.free(args);
-                },
-                .binding => {},
+            .variant => |*v| {
+                switch (v.payload) {
+                    .fields => |f| allocator.free(f),
+                    .literals => |args| {
+                        for (args) |*p| p.deinit(allocator);
+                        allocator.free(args);
+                    },
+                    .binding => {},
+                }
+                if (v.labels.len > 0) allocator.free(v.labels);
             },
             .list => |l| allocator.free(l.elems),
             .@"or" => |pats| {
@@ -924,9 +1737,110 @@ pub const Pattern = union(enum) {
 // ── interface decl ────────────────────────────────────────────────────────────────
 
 /// A field declared inside a interface: `val name: Type`
-pub const InterfaceField = struct {
+/// JSON dump of a struct (the parser snapshots) that leaves out formatting-only
+/// fields: `omitAlways` never appear, `omitIfEmpty` only when their slice is
+/// non-empty — so source layout kept for the formatter does not reach every
+/// snapshot.
+/// `omitIfEmpty` names fields the dump leaves out when they carry nothing: a
+/// slice of length 0, or an optional that is null. A field listed there is
+/// therefore invisible in every declaration that does not use it, which is what
+/// keeps adding one — `typeGuardType`, say — from moving several hundred
+/// snapshots that would all gain the same `null`.
+/// Frees an `arrayLit` / `tupleLit` `trailingPerElem` slice and its texts.
+fn freeTrailingPerElem(allocator: std.mem.Allocator, slots: []const ?[]const u8) void {
+    if (slots.len == 0) return;
+    for (slots) |slot| if (slot) |c| allocator.free(c);
+    allocator.free(slots);
+}
+
+/// Frees an owned list of written type arguments (`typeArgs`,
+/// `receiverTypeArgs`) — null when none was written.
+fn freeTypeRefs(allocator: std.mem.Allocator, refs: ?[]TypeRef) void {
+    const list = refs orelse return;
+    for (list) |*t| t.deinit(allocator);
+    allocator.free(list);
+}
+
+/// Decision 527 (2) — a failed `assert`'s panic message, the same on every
+/// target: `assertion failed: <condition> at <where>`, and with the
+/// program's message `assertion failed: <condition>: <message> at <where>`.
+/// `assertHead` is the part before the message, `assertion failed:
+/// <condition>` (`assertion failed` when the parser kept no text), the
+/// condition's source text with each run of whitespace — a condition written
+/// over several lines — folded to one space. `where` is `<file>:<line>:<col>`
+/// of the `assert` keyword (`assertWhere`).
+pub fn assertHead(alloc: std.mem.Allocator, text: []const u8) ![]const u8 {
+    var buf: std.ArrayListUnmanaged(u8) = .empty;
+    errdefer buf.deinit(alloc);
+    try buf.appendSlice(alloc, "assertion failed");
+    const trimmed = std.mem.trim(u8, text, " \t\r\n");
+    if (trimmed.len > 0) {
+        try buf.appendSlice(alloc, ": ");
+        var space = false;
+        for (trimmed) |c| {
+            if (c == ' ' or c == '\t' or c == '\r' or c == '\n') {
+                space = true;
+                continue;
+            }
+            if (space) try buf.append(alloc, ' ');
+            space = false;
+            try buf.append(alloc, c);
+        }
+    }
+    return buf.toOwnedSlice(alloc);
+}
+
+/// `<file>:<line>:<col>` — where a failed assert's panic says it failed.
+pub fn assertWhere(alloc: std.mem.Allocator, file: []const u8, loc: Loc) ![]const u8 {
+    return std.fmt.allocPrint(alloc, "{s}:{d}:{d}", .{ file, loc.line, loc.col });
+}
+
+/// The whole message of an assert without one of its own:
+/// `assertion failed: <condition> at <where>`.
+pub fn assertPanicText(alloc: std.mem.Allocator, text: []const u8, where: []const u8) ![]const u8 {
+    const head = try assertHead(alloc, text);
+    defer alloc.free(head);
+    return std.fmt.allocPrint(alloc, "{s} at {s}", .{ head, where });
+}
+
+fn stringifyOmitting(value: anytype, jws: anytype, comptime omitAlways: []const []const u8, comptime omitIfEmpty: []const []const u8) !void {
+    const T = @TypeOf(value);
+    try jws.beginObject();
+    inline for (@typeInfo(T).@"struct".fields) |f| {
+        comptime var always = false;
+        comptime var ifEmpty = false;
+        inline for (omitAlways) |name| {
+            if (comptime std.mem.eql(u8, f.name, name)) always = true;
+        }
+        inline for (omitIfEmpty) |name| {
+            if (comptime std.mem.eql(u8, f.name, name)) ifEmpty = true;
+        }
+        const empty = if (!ifEmpty) false else switch (@typeInfo(f.type)) {
+            .optional => @field(value, f.name) == null,
+            .bool => !@field(value, f.name),
+            else => @field(value, f.name).len == 0,
+        };
+        if (!always and !empty) {
+            try jws.objectField(f.name);
+            try jws.write(@field(value, f.name));
+        }
+    }
+    try jws.endObject();
+}
+
+pub const BehaviorField = struct {
     name: []const u8,
-    typeName: []const u8,
+    /// The member's declared type — any type reference (`Field[]`,
+    /// `Array<Field>`, `?T`), not just a single identifier. Owned.
+    typeRef: TypeRef,
+    /// Comment lines written above the member inside the body (the lexemes,
+    /// prefix included), with "" for a blank source line. Owned slice; the
+    /// strings slice into the source. Kept by the formatter.
+    comments: []const []const u8 = &.{},
+
+    pub fn jsonStringify(this: BehaviorField, jws: anytype) !void {
+        return stringifyOmitting(this, jws, &.{}, &.{"comments"});
+    }
 };
 
 /// Modifier on a parameter type ---- controls how the argument is treated.
@@ -935,27 +1849,59 @@ pub const ParamModifier = enum {
     none,
     /// `comptime` ---- argument must be known at compile time.
     @"comptime",
-    /// `syntax` ---- argument is passed as an unevaluated expression tree (AST).
-    syntax,
 };
 
-/// A parameter inside a function-type annotation used by `syntax` params.
-/// Example: `item: T` in `fn(item: T) -> R`.
-pub const FnTypeParam = struct {
-    name: []const u8,
-    typeName: []const u8,
-};
+/// Decision 575 (4) — how a parameter of the `comptime` family was written.
+/// `value` is `comptime x: T` (the body holds a `T` known at build), `expr`
+/// is `expr x: T` (the body holds the expression written, a tree). The parser
+/// keeps the internal form the checker and the runtimes read — `modifier`
+/// `.comptime`, `typeRef` the tree type (`expr_type_name`, or
+/// `decl_type_name` for a decorator's first `expr`) — and this says what to
+/// print back.
+pub const Arrival = enum { written, value, expr };
 
-/// A function-type annotation: `fn(item: T) -> R`.
-/// Used as the type of `syntax` parameters.
-pub const FnType = struct {
-    params: []FnTypeParam,
-    returnType: ?[]const u8,
+/// Decision 575 (3) — the keyword `compiler`. The lexer reads it as a name
+/// (no binding may take it: a parameter is refused by the parser, any other
+/// binding by `comptime/compiler_surface.zig`), so the expression `compiler`
+/// is an identifier of this spelling.
+pub const compiler_keyword = "compiler";
 
-    pub fn deinit(this: *FnType, allocator: std.mem.Allocator) void {
-        allocator.free(this.params);
-    }
-};
+/// The internal tree type a `expr x: T` parameter and a `-> expr T` return
+/// are read as — a builtin generic no source spells (decision 576 (1)).
+pub const expr_type_name = "Expr";
+/// Whether `rt` is a return written `-> expr T` (decision 575 (4)) — the
+/// tree type the parser built from the keyword (`parser/decls.zig`
+/// `wrapTree`), told by its name's storage from an `@Expr<T>` written, whose
+/// name is a slice of the source. Read by the printer and by
+/// `parser/compiler_surface.zig` while both spellings parse.
+pub fn isExprKeywordReturn(rt: TypeRef) bool {
+    return rt.isExprType() and rt.generic.name.ptr == expr_type_name.ptr;
+}
+
+/// Decision 578 (1) — the position of a template's text parameter: the first
+/// parameter, after an `expr self: R` receiver for a template method,
+/// written `expr q: string` (the parser read it as the tree type of
+/// `string`). Null for any other function — it is no template by its
+/// parameters.
+pub fn templateTextIndex(params: []const Param) ?usize {
+    const q: usize = if (params.len > 0 and params[0].arrival == .expr and std.mem.eql(u8, params[0].name, "self")) 1 else 0;
+    if (q >= params.len) return null;
+    const p = params[q];
+    if (p.arrival != .expr or !p.typeRef.isExprType() or p.typeRef.generic.args.len != 1) return null;
+    const inner = p.typeRef.generic.args[0];
+    if (inner != .named or !std.mem.eql(u8, inner.named, "string")) return null;
+    return q;
+}
+
+/// Decision 578 (2) — a value whose type is known once its code is built: a
+/// template's return, `compiler.build`'s answer.
+pub const anyvalue_type_name = "anyvalue";
+/// The type parameter a template answering `anyvalue` is given, which the
+/// built code's type binds at each call (426 (1)); no source spells it.
+pub const anyvalue_param_name = "__anyvalue";
+
+/// The internal handle type of a decorator's first `expr` parameter.
+pub const decl_type_name = "Decl";
 
 pub const FieldDestruct = struct {
     field_name: []const u8,
@@ -1000,7 +1946,6 @@ pub const ParamDestruct = union(enum) {
 /// Examples:
 ///   `x: Int`
 ///   `s comptime: string`
-///   `lamb comptime: syntax fn(item: T) -> R`
 ///   `comptime T: typeparam`
 pub const Param = struct {
     name: []const u8,
@@ -1008,25 +1953,147 @@ pub const Param = struct {
     typeRef: TypeRef,
     typeName: []const u8 = "",
     modifier: ParamModifier = .none,
-    /// For `syntax fn(...)` params: the function-type signature.
-    /// Null for all other params.
-    fnType: ?FnType = null,
     /// null for plain params; set for destructuring params.
     destruct: ?ParamDestruct = null,
-    /// Default value expression for the param. Unified with `RecordField.default`
+    /// Default value expression for the param. Unified with `Field.default`
     /// / struct-field init / enum-variant-field default so call sites,
     /// annotations, record constructors, and enum-variant constructors all
     /// consume the same fallback shape (see infer.zig arity check + the
     /// `fn-param-default-expansion` future spec for call-site injection).
     default: ?Expr = null,
+    /// Where the type annotation starts (`x: Foo` → `Foo`'s column). Set by the
+    /// parser; `{0,0}` when the param was synthesised. Carries the location an
+    /// unknown type name reds at (06 N30) and is left out of the AST dump.
+    typeLoc: Loc = .{ .line = 0, .col = 0 },
+    /// Where the parameter starts (its `comptime`, `..` or name). Set by the
+    /// parser for a plain and a `comptime` parameter; `{0,0}` when synthesised.
+    /// Decision 280 (0) refuses a decorator parameter there. Not dumped.
+    loc: Loc = .{ .line = 0, .col = 0 },
+    /// Decision 207 — `props: type(href: string, …)`: the parameter's type is
+    /// written inline, with `type(…)`'s field grammar and no name. The parser
+    /// leaves `typeRef` at `inline_type_name`; `comptime/inline_types.zig`
+    /// declares the type for the module and points `typeRef` at it, and keeps
+    /// the fields here for the checker's rules and for the formatter. Dumped
+    /// only when set.
+    inlineFields: ?[]Field = null,
+    /// Decision 297 — `comptime source: Box<T> | type T`: the type parameter
+    /// a type argument binds. `comptime/value_or_type.zig` sets it and leaves
+    /// `typeRef` at the value member (`Box<T>`); the parser never does. Not
+    /// dumped.
+    typeArgOf: ?[]const u8 = null,
+    /// Decision 267 — `..name: T[]`: the function's last parameter takes the
+    /// zero or more positional arguments after the fixed ones, each a `T`, and
+    /// the body reads `name` as a `T[]`. The parser refuses one that is not
+    /// last, a second one, a default on it and a type that is not `T[]`.
+    /// Dumped only when set.
+    variadic: bool = false,
+    /// Decision 529 (2) — `..props: R`, `R` a record type: `R`'s fields are the
+    /// function's parameters from outside (a call passes them by label or by
+    /// a spread) and the body reads `props` as the record. The parser sets it
+    /// on a `..name: T` whose `T` is a named type (not a primitive, not an
+    /// array); `typeRef` stays `R`. The checker refuses a second one, a name
+    /// clash and an `R` that is no record. Dumped only when set.
+    recordParam: bool = false,
+    /// Decision 364 — `comptime x: @Expr<T>` on a function that is not a
+    /// template (a decorator, any other function, a method, a `declare fn`):
+    /// the parser keeps `T` in `typeRef`, so every rule that reads a
+    /// `comptime` parameter's type reads `T`, and sets this
+    /// (`parser/expr_params.zig`). The body reads `x` as an `Expr<T>`
+    /// (`x.value`), and the formatter prints `@Expr<T>` back. A template
+    /// function's `@Expr` parameters keep the wrapper. Dumped only when set.
+    exprWrapped: bool = false,
+    /// Decision 575 (4) — `comptime x: T` / `expr x: T` as written
+    /// (`Arrival`). Dumped only when not `written`.
+    arrival: Arrival = .written,
+    /// Decision 166 — set on the **last** parameter of a list written with a
+    /// comma before its `)`; the formatter opens the list on it. Dumped only
+    /// when set.
+    trailingComma: bool = false,
+
+    /// Dumped without `typeLoc`: the location is a diagnostic aid, not surface.
+    pub fn jsonStringify(this: Param, jws: anytype) !void {
+        try jws.beginObject();
+        try jws.objectField("name");
+        try jws.write(this.name);
+        try jws.objectField("typeRef");
+        try jws.write(this.typeRef);
+        try jws.objectField("typeName");
+        try jws.write(this.typeName);
+        try jws.objectField("modifier");
+        try jws.write(this.modifier);
+        try jws.objectField("destruct");
+        try jws.write(this.destruct);
+        try jws.objectField("default");
+        try jws.write(this.default);
+        if (this.inlineFields) |fs| {
+            try jws.objectField("inlineFields");
+            try jws.write(fs);
+        }
+        if (this.variadic) {
+            try jws.objectField("variadic");
+            try jws.write(true);
+        }
+        if (this.recordParam) {
+            try jws.objectField("recordParam");
+            try jws.write(true);
+        }
+        if (this.exprWrapped) {
+            try jws.objectField("exprWrapped");
+            try jws.write(true);
+        }
+        if (this.arrival != .written) {
+            try jws.objectField("arrival");
+            try jws.write(this.arrival);
+        }
+        if (this.trailingComma) {
+            try jws.objectField("trailingComma");
+            try jws.write(true);
+        }
+        try jws.endObject();
+    }
 
     pub fn deinit(this: *Param, allocator: std.mem.Allocator) void {
+        if (this.inlineFields) |fs| {
+            for (fs) |*f| @constCast(f).deinit(allocator);
+            allocator.free(fs);
+        }
         this.typeRef.deinit(allocator);
-        if (this.fnType) |*ft| ft.deinit(allocator);
         if (this.destruct) |*d| d.deinit(allocator);
         if (this.default) |*d| d.deinit(allocator);
     }
 };
+
+/// Decision 207 — the placeholder `Param.typeRef` of an inline-typed
+/// parameter until `comptime/inline_types.zig` names its type; no source can
+/// spell it.
+pub const inline_type_name = "type(…)";
+
+/// Decisions 311 (3), 415 (1) — a template method's signature: a template
+/// function (`-> @Expr<…>` / `@ExprCustom<…>`) whose first parameter is
+/// `comptime self: @Expr<R>`, the call site's receiver, and whose second is
+/// `comptime q: @Expr<…>`, the literal. It is called `value.method "…"`.
+pub fn isTemplateMethodSignature(params: []const Param, returnType: ?TypeRef) bool {
+    const rt = returnType orelse return false;
+    if (!rt.isTemplateReturnType() or params.len < 2) return false;
+    const recv = params[0];
+    const q = params[1];
+    return std.mem.eql(u8, recv.name, "self") and recv.modifier == .@"comptime" and recv.typeRef.isExprType() and
+        q.modifier == .@"comptime" and q.typeRef.isExprType();
+}
+
+/// The name `comptime/inline_types.zig` declares an inline parameter type
+/// under: `BpInline__<fn>__<param>` (PascalCase: beam reads a constructor call by its first letter). No source should spell it; a diagnostic
+/// names it by its owner (`ownerOfInlineType`).
+pub const inline_type_prefix = "BpInline__";
+
+/// `the props of `Link`` for `BpInline__Link__props`; null for any other
+/// name.
+pub fn ownerOfInlineType(name: []const u8) ?struct { owner: []const u8, param: []const u8 } {
+    if (!std.mem.startsWith(u8, name, inline_type_prefix)) return null;
+    const rest = name[inline_type_prefix.len..];
+    const sep = std.mem.lastIndexOf(u8, rest, "__") orelse return null;
+    return .{ .owner = rest[0..sep], .param = rest[sep + 2 ..] };
+}
 
 /// A generic type parameter, e.g. `T` or `R` in `fn select<T, R>(...)`.
 /// `default` is set when the param carries a default type ref
@@ -1035,6 +2102,13 @@ pub const Param = struct {
 pub const GenericParam = struct {
     name: []const u8,
     default: ?TypeRef = null,
+    /// Decision 166 — set on the **last** parameter of a list written with a
+    /// comma before its `>`. Dumped only when set.
+    trailingComma: bool = false,
+
+    pub fn jsonStringify(this: GenericParam, jws: anytype) !void {
+        return stringifyOmitting(this, jws, &.{}, &.{"trailingComma"});
+    }
 
     pub fn deinit(this: *GenericParam, allocator: std.mem.Allocator) void {
         if (this.default) |*d| d.deinit(allocator);
@@ -1043,7 +2117,7 @@ pub const GenericParam = struct {
 
 /// A method declared inside a interface.
 /// If `body` is null the method is abstract (no default implementation).
-pub const InterfaceMethod = struct {
+pub const BehaviorMethod = struct {
     name: []const u8,
     /// `@[external(target, "module", "symbol")]` annotations on a `declare fn`
     /// member — host-backed interface methods (per-target lowering).
@@ -1053,17 +2127,41 @@ pub const InterfaceMethod = struct {
     params: []Param,
     /// Return type annotation. null for void methods.
     returnType: ?TypeRef = null,
+    /// Where the return-type annotation starts (06 N30); `{0,0}` when the
+    /// member was synthesised. Left out of the AST dump.
+    returnTypeLoc: Loc = .{ .line = 0, .col = 0 },
     body: ?[]Stmt,
     /// true when declared with `default fn` in an interface body
     is_default: bool = false,
+    /// Decision 553 (1) — the body marker written before `fn`, or null; the
+    /// parser checks it against the return's wrapper. Dumped only when written.
+    marker: ?EffectKind = null,
+    /// Where the marker is written. Left out of the AST dump.
+    markerLoc: Loc = .{ .line = 0, .col = 0 },
     /// true when declared with `declare fn` inside a struct/record/enum body
     /// or an interface body (bodyless, typed from the signature)
     is_declare: bool = false,
     isPub: bool = false,
+    /// Comment lines written above the member inside the body (the lexemes,
+    /// prefix included), with "" for a blank source line. Owned slice; the
+    /// strings slice into the source. Kept by the formatter.
+    comments: []const []const u8 = &.{},
+    /// A `//` comment written on the member's own line, after it
+    /// (`fn two(self: Self) -> i32 { return 2; } // trailing`). Without this
+    /// slot it is picked up as the NEXT member's leading comment, or — on the
+    /// last member — by `bodyComments`, and either way it moves below the member
+    /// it was written on. Slices into the source.
+    trailingComment: ?[]const u8 = null,
+    /// Set on a member of std's prelude (`primitives.bp`, `registerStdlib`):
+    /// its locations are that file's, so a backend that copies the member
+    /// into the program reports a refusal inside it at the program's call
+    /// that reached it, never at the prelude's line under the program's file
+    /// name. Left out of the AST dump.
+    from_prelude: bool = false,
 
     /// True when the method is a host-backed `#[@External.<Target>(…)]`
     /// declaration.
-    pub fn isExternal(this: InterfaceMethod) bool {
+    pub fn isExternal(this: BehaviorMethod) bool {
         for (this.annotations) |a| {
             if (std.mem.startsWith(u8, a.name, "External.") and a.name.len > "External.".len) return true;
         }
@@ -1072,7 +2170,7 @@ pub const InterfaceMethod = struct {
 
     /// True when the method carries `#[builtin]` — the host/raw-infra provides
     /// the real body; the bp body is a stub and codegen skips it.
-    pub fn isHost(this: InterfaceMethod) bool {
+    pub fn isHost(this: BehaviorMethod) bool {
         for (this.annotations) |a| {
             if (std.mem.eql(u8, a.name, "Host")) return true;
         }
@@ -1081,19 +2179,12 @@ pub const InterfaceMethod = struct {
 
     /// The `(module, symbol)` of the `external` annotation targeting `target`
     /// (e.g. "node", "erlang"), or null when none matches.
-    pub fn externalFor(this: InterfaceMethod, target: []const u8) ?ExternalRef {
-        for (this.annotations) |a| {
-            if (!std.mem.startsWith(u8, a.name, "External.")) continue;
-            if (!std.ascii.eqlIgnoreCase(a.name["External.".len..], target)) continue;
-            var n = a.args.len;
-            if (n >= 1 and isBoolFlagArg(a.args[n - 1])) n -= 1;
-            if (n == 1) return .{ .module = "", .symbol = unquoteAnnotationArg(a.args[0]) };
-            if (n == 2) return .{ .module = unquoteAnnotationArg(a.args[0]), .symbol = unquoteAnnotationArg(a.args[1]) };
-        }
+    pub fn externalFor(this: BehaviorMethod, target: []const u8) ?ExternalRef {
+        for (this.annotations) |a| if (externalRefOf(a, target)) |r| return r;
         return null;
     }
 
-    pub fn deinit(this: *InterfaceMethod, allocator: std.mem.Allocator) void {
+    pub fn deinit(this: *BehaviorMethod, allocator: std.mem.Allocator) void {
         for (this.annotations) |*ann| ann.deinit(allocator);
         if (this.annotations.len > 0) allocator.free(this.annotations);
         for (this.genericParams) |*gp| gp.deinit(allocator);
@@ -1105,6 +2196,11 @@ pub const InterfaceMethod = struct {
             for (stmts) |*s| s.deinit(allocator);
             allocator.free(stmts);
         }
+        if (this.comments.len > 0) allocator.free(this.comments);
+    }
+
+    pub fn jsonStringify(this: BehaviorMethod, jws: anytype) !void {
+        return stringifyOmitting(this, jws, &.{ "returnTypeLoc", "from_prelude", "markerLoc" }, &.{ "comments", "trailingComment", "marker" });
     }
 };
 
@@ -1119,12 +2215,26 @@ pub const DelegateDecl = struct {
     comment: ?[]const u8 = null,
     /// `////` module-level documentation
     moduleComment: ?[]const u8 = null,
+    /// `<T, F>` — the same generic list a `fn` declaration takes.
+    genericParams: []GenericParam = &.{},
     params: []Param,
-    returnType: ?[]const u8 = null,
+    /// `-> R` — any type reference (`Component<T, any>`), not one name.
+    returnType: ?TypeRef = null,
+    /// Where the return type starts (06 N30), `0:0` when there is none.
+    returnTypeLoc: Loc = .{ .line = 0, .col = 0 },
 
     pub fn deinit(this: *DelegateDecl, allocator: std.mem.Allocator) void {
+        for (this.genericParams) |*gp| gp.deinit(allocator);
+        allocator.free(this.genericParams);
         for (this.params) |*p| p.deinit(allocator);
         allocator.free(this.params);
+        if (this.returnType) |*rt| rt.deinit(allocator);
+    }
+
+    /// Dumped without `returnTypeLoc` (a diagnostic aid, not surface), and
+    /// without `genericParams` when there are none.
+    pub fn jsonStringify(this: DelegateDecl, jws: anytype) !void {
+        return stringifyOmitting(this, jws, &.{"returnTypeLoc"}, &.{"genericParams"});
     }
 };
 
@@ -1137,9 +2247,121 @@ pub const Annotation = struct {
     /// True when the annotation was written with a `@` prefix inside `#[…]`
     /// — i.e. `#[@External.<Target>(…)]`. False for user-defined attributes `#[custom()]`.
     is_builtin: bool = false,
+    /// Where the annotation name starts (null for synthesized annotations).
+    /// Diagnostics raised by a decorator body point here.
+    loc: ?Loc = null,
+    /// The arguments as written, when `args` holds a translation — an
+    /// `@External` template whose positional markers (decision 5) were mapped
+    /// to the renderers' receiver convention (`parser/template_markers.zig`).
+    /// `args` and its strings are then owned; `source_args` borrows the source.
+    source_args: ?[]const []const u8 = null,
+    /// The label written before each argument — `keyed` in
+    /// `#[@BeamMemory.Ets(keyed: true)]`, `inline` in `inline: true`, `fn` in
+    /// `fn: tanBody` — parallel to `args`, `""` where the argument had none.
+    /// Empty when no argument was labelled, so an unlabelled annotation dumps
+    /// and frees as before. The value still lands positionally in `args`; the
+    /// label is what a validator checks (decision 41) and what the formatter
+    /// prints back, always `label: value` (decision 305 — the parser refuses
+    /// `label = value`, `annotation-label-equals`).
+    labels: []const []const u8 = &.{},
+    /// Where each argument starts, parallel to `args` (decision 280: a
+    /// decorator argument is refused at the argument). Empty for a
+    /// synthesized annotation; diagnostic metadata, never serialized.
+    argLocs: []const Loc = &.{},
+    /// Decision 311 — the template annotation `#[f "…"]` / `#[f """…"""]`:
+    /// the template call `f "…"` written as an annotation. The literal as
+    /// written, quotes included — a node of its own beside the call form
+    /// (`args` is then empty); the checker parses it again and captures it
+    /// unevaluated, as at a call site (`infer.zig` `checkTemplateAnnotation`).
+    template: ?[]const u8 = null,
+    /// Where the template annotation's literal starts.
+    templateLoc: ?Loc = null,
+    /// Decision 577 — `` #[f @`…`] ``: the raw text, kept for the printer;
+    /// `template` holds it as a string literal with no hole. Null for every
+    /// other annotation.
+    templateText: ?[]const u8 = null,
+    /// Decision 286 — how the annotation was written, for the formatter only
+    /// (never serialized): which `#[…]` block it sits in and the comments
+    /// around it.
+    written: Written = .{},
+
+    /// The layout of the source around one annotation. `#[a]` `#[b]` are two
+    /// blocks and `#[a, b]` one list; the formatter prints both back as
+    /// written. The comment slices are owned, their texts borrow the source.
+    pub const Written = struct {
+        /// True when this annotation shares the previous one's `#[…]`
+        /// (`b` in `#[a, b]`); false when it opens a block of its own.
+        listContinues: bool = false,
+        /// True on the last annotation of a block written with a comma
+        /// before the `]` — the list prints one annotation per line.
+        trailingComma: bool = false,
+        /// Comments between the previous block and this block's `#[`
+        /// (only on the annotation that opens a block).
+        leadComments: []const []const u8 = &.{},
+        /// Comments inside the list, before this annotation (after the `[`
+        /// or after the previous annotation's `,`).
+        innerComments: []const []const u8 = &.{},
+        /// Comments inside the list after the last annotation, before the `]`
+        /// (only on the last annotation of a block).
+        closeComments: []const []const u8 = &.{},
+        /// Comments after the last block, before what the annotations
+        /// annotate (only on the last annotation).
+        afterComments: []const []const u8 = &.{},
+
+        pub fn deinit(this: *Written, allocator: std.mem.Allocator) void {
+            if (this.leadComments.len > 0) allocator.free(this.leadComments);
+            if (this.innerComments.len > 0) allocator.free(this.innerComments);
+            if (this.closeComments.len > 0) allocator.free(this.closeComments);
+            if (this.afterComments.len > 0) allocator.free(this.afterComments);
+        }
+    };
+
+    /// Where argument `i` starts, or the annotation's own location.
+    pub fn argLoc(this: Annotation, i: usize) ?Loc {
+        if (i < this.argLocs.len) return this.argLocs[i];
+        return this.loc;
+    }
+
+    /// The label of argument `i`, or null when it was written bare.
+    pub fn labelOf(this: Annotation, i: usize) ?[]const u8 {
+        if (i >= this.labels.len or this.labels[i].len == 0) return null;
+        return this.labels[i];
+    }
 
     pub fn deinit(this: *Annotation, allocator: std.mem.Allocator) void {
+        this.written.deinit(allocator);
+        if (this.labels.len > 0) allocator.free(this.labels);
+        if (this.argLocs.len > 0) allocator.free(this.argLocs);
+        if (this.source_args) |src| {
+            for (this.args) |a| allocator.free(a);
+            allocator.free(src);
+        }
         allocator.free(this.args);
+    }
+
+    /// The arguments as the author wrote them (see `source_args`).
+    pub fn writtenArgs(this: Annotation) []const []const u8 {
+        return this.source_args orelse this.args;
+    }
+
+    /// The location is diagnostic metadata, not part of the serialized AST.
+    pub fn jsonStringify(this: Annotation, jws: anytype) !void {
+        try jws.beginObject();
+        try jws.objectField("name");
+        try jws.write(this.name);
+        try jws.objectField("args");
+        try jws.write(this.writtenArgs());
+        if (this.template) |t| {
+            try jws.objectField("template");
+            try jws.write(t);
+        }
+        if (this.labels.len > 0) {
+            try jws.objectField("labels");
+            try jws.write(this.labels);
+        }
+        try jws.objectField("is_builtin");
+        try jws.write(this.is_builtin);
+        try jws.endObject();
     }
 };
 
@@ -1149,6 +2371,264 @@ pub const ExternalRef = struct {
     module: []const u8,
     symbol: []const u8,
 };
+
+/// Decision 334 — the runtime a wasm build binds to. A
+/// `#[@External.Wasm(…, host: .Wasi)]` binding serves that host only; one
+/// written without `host:` serves every host.
+pub const WasmHost = enum {
+    wasi,
+    browser,
+
+    /// The written value of a `host:` argument — `.Wasi` / `.Browser`, the one
+    /// spelling — or null for anything else (the checker refuses it,
+    /// `validateExternalAnnotation`).
+    pub fn ofArg(arg: []const u8) ?WasmHost {
+        if (std.mem.eql(u8, arg, ".Wasi")) return .wasi;
+        if (std.mem.eql(u8, arg, ".Browser")) return .browser;
+        return null;
+    }
+
+    /// The `#[@External.<Member>]` lookup name of a wasm build for this host
+    /// (`codegen.generateWith`, `botopink check`): `wasm` is the `wasi` host's
+    /// — the default of decision 334 —, `wasm.browser` the `browser` host's.
+    pub fn lookupName(self: WasmHost) []const u8 {
+        return switch (self) {
+            .wasi => "wasm",
+            .browser => "wasm.browser",
+        };
+    }
+};
+
+/// A lookup name (`node`, `erlang`, `wasm`, `wasm.browser`) split into the
+/// `External` member it reads and, on wasm, the host the build binds to.
+pub const ExternalLookup = struct {
+    member: []const u8,
+    host: ?WasmHost = null,
+
+    pub fn of(target: []const u8) ExternalLookup {
+        if (std.mem.eql(u8, target, "wasm")) return .{ .member = "wasm", .host = .wasi };
+        if (std.mem.eql(u8, target, "wasm.browser")) return .{ .member = "wasm", .host = .browser };
+        return .{ .member = target };
+    }
+};
+
+/// Decision 518 — a host feature a wasm binding needs, from std's closed
+/// enum `WasmNeed` (`libs/std/src/builtins.d.bp`, kept in step by a test):
+/// `#[@External.Wasm(…, needs: [.Exceptions])]`. The compiler gathers the
+/// needs of every binding a program reaches into the `.wasm`'s
+/// `botopink.needs` custom section, and the runner hands the host only the
+/// matching flags (`wasmtime run -W exceptions=y`, `-S http`, `-W gc=y`).
+/// `gc` (front 164 s2, decision 544) is also every program's that emits GC
+/// types: the wasm codegen adds it whenever the module declares one.
+pub const WasmNeed = enum {
+    exceptions,
+    http,
+    gc,
+
+    /// The written value of one item — `.Exceptions` / `.Http` / `.Gc` —,
+    /// or null.
+    pub fn ofItem(item: []const u8) ?WasmNeed {
+        if (std.mem.eql(u8, item, ".Exceptions")) return .exceptions;
+        if (std.mem.eql(u8, item, ".Http")) return .http;
+        if (std.mem.eql(u8, item, ".Gc")) return .gc;
+        return null;
+    }
+
+    /// The value as std's enum spells it (`Exceptions`).
+    pub fn spelling(self: WasmNeed) []const u8 {
+        return switch (self) {
+            .exceptions => "Exceptions",
+            .http => "Http",
+            .gc => "Gc",
+        };
+    }
+};
+
+/// A set of `WasmNeed`s.
+pub const WasmNeeds = std.EnumSet(WasmNeed);
+
+/// The index of the argument an annotation labels `needs:`, or null.
+pub fn needsArgIndex(a: Annotation) ?usize {
+    for (a.args, 0..) |_, i| {
+        if (a.labelOf(i)) |label| if (std.mem.eql(u8, label, "needs")) return i;
+    }
+    return null;
+}
+
+/// The items of a written `needs:` list (`[.Exceptions, .Http]`), trimmed;
+/// null when the text is no `[…]` list.
+pub fn needsItems(alloc: std.mem.Allocator, arg: []const u8) !?[]const []const u8 {
+    const t = std.mem.trim(u8, arg, " \t\r\n");
+    if (t.len < 2 or t[0] != '[' or t[t.len - 1] != ']') return null;
+    var out: std.ArrayListUnmanaged([]const u8) = .empty;
+    const inner = std.mem.trim(u8, t[1 .. t.len - 1], " \t\r\n");
+    if (inner.len == 0) return out.items;
+    var it = std.mem.splitScalar(u8, inner, ',');
+    while (it.next()) |raw| {
+        const item = std.mem.trim(u8, raw, " \t\r\n");
+        if (item.len == 0) continue; // a trailing comma
+        try out.append(alloc, item);
+    }
+    return out.items;
+}
+
+/// The needs `a`'s `needs:` argument declares; empty when it writes none or
+/// an item outside `WasmNeed` (the checker refuses those at the annotation).
+pub fn wasmNeedsOf(a: Annotation) WasmNeeds {
+    var set = WasmNeeds.initEmpty();
+    const at = needsArgIndex(a) orelse return set;
+    const t = std.mem.trim(u8, a.args[at], " \t\r\n");
+    if (t.len < 2 or t[0] != '[' or t[t.len - 1] != ']') return set;
+    var it = std.mem.splitScalar(u8, t[1 .. t.len - 1], ',');
+    while (it.next()) |raw| {
+        if (WasmNeed.ofItem(std.mem.trim(u8, raw, " \t\r\n"))) |n| set.insert(n);
+    }
+    return set;
+}
+
+/// The index of the argument an annotation labels `host:`, or null.
+pub fn hostArgIndex(a: Annotation) ?usize {
+    for (a.args, 0..) |_, i| {
+        if (a.labelOf(i)) |label| if (std.mem.eql(u8, label, "host")) return i;
+    }
+    return null;
+}
+
+/// Decision 481 — the four cells an `@External.Wasm` binding writes, each a
+/// labelled argument of the kind it names: `fn: tanBody` (an identifier),
+/// `op: "f64.floor"` (a string), `wasi: .Delay` (an adapter, an enum value),
+/// `std: "hash.contentHash"` (a string naming a std-wasm export).
+pub const wasm_cell_labels = [_][]const u8{ "fn", "op", "wasi", "std" };
+
+/// True when `label` is one of `wasm_cell_labels`.
+pub fn isWasmCellLabel(label: []const u8) bool {
+    for (wasm_cell_labels) |l| if (std.mem.eql(u8, l, label)) return true;
+    return false;
+}
+
+/// True when `a` is an `@External.Wasm(…)` annotation.
+pub fn isExternalWasm(a: Annotation) bool {
+    return std.ascii.eqlIgnoreCase(a.name, "External.Wasm");
+}
+
+/// True when `a` is an `@External.<Target>(…)` annotation.
+pub fn isExternal(a: Annotation) bool {
+    return std.mem.startsWith(u8, a.name, "External.");
+}
+
+/// True when `label` names a binding cell of `a`: the four of
+/// `@External.Wasm` (decision 481), and `fn:` on every other target's
+/// `@External.<Target>` (decisions 238, 305 — `#[@External.Erlang(fn: powBody)]`).
+pub fn isCellLabelOf(a: Annotation, label: []const u8) bool {
+    if (isExternalWasm(a)) return isWasmCellLabel(label);
+    return isExternal(a) and std.mem.eql(u8, label, "fn");
+}
+
+/// Decisions 305 and 481 — the parser's reading of a labelled binding cell:
+/// argument `i` written `fn: x` (every target) or, on `@External.Wasm`,
+/// `op: "o"` / `wasi: .A` / `std: "m.f"` lands in `args` as the one binding
+/// text every reader takes (`"fn:x"`, `"op:o"`, `"wasi:a"`, `"std:m.f"` —
+/// `externalRefOf`, `hostFnBinding.fnName`, `wat/host_binding.parse`,
+/// `comptime/host_cells`), its spelling kept in `source_args` for the
+/// formatter and the checker, which refuses a value of the wrong kind
+/// (`infer.zig` `checkExternalCells`). A wasi adapter's enum value is its name
+/// in PascalCase (`.RaceOf` names `race_of`).
+pub fn translateExternalCells(alloc: std.mem.Allocator, a: *Annotation) !void {
+    if (!isExternal(a.*) or a.source_args != null) return;
+    var any = false;
+    for (a.args, 0..) |_, i| if (a.labelOf(i)) |l| if (isCellLabelOf(a.*, l)) {
+        any = true;
+    };
+    if (!any) return;
+    const out = try alloc.alloc([]const u8, a.args.len);
+    var done: usize = 0;
+    errdefer {
+        for (out[0..done]) |x| alloc.free(x);
+        alloc.free(out);
+    }
+    for (a.args, 0..) |arg, i| {
+        const label = a.labelOf(i) orelse "";
+        out[i] = if (isCellLabelOf(a.*, label)) try wasmCellText(alloc, label, arg) else try alloc.dupe(u8, arg);
+        done += 1;
+    }
+    a.source_args = a.args;
+    a.args = out;
+}
+
+/// `"<label>:<value>"` — the binding text of a labelled cell, quoted as a
+/// string argument is.
+fn wasmCellText(alloc: std.mem.Allocator, label: []const u8, arg: []const u8) ![]u8 {
+    var value = arg;
+    if (value.len >= 2 and value[0] == '"' and value[value.len - 1] == '"') value = value[1 .. value.len - 1];
+    if (std.mem.eql(u8, label, "wasi") and value.len > 1 and value[0] == '.') {
+        var buf: std.ArrayList(u8) = .empty;
+        defer buf.deinit(alloc);
+        for (value[1..], 0..) |c, k| {
+            if (std.ascii.isUpper(c) and k > 0) try buf.append(alloc, '_');
+            try buf.append(alloc, std.ascii.toLower(c));
+        }
+        return std.fmt.allocPrint(alloc, "\"{s}:{s}\"", .{ label, buf.items });
+    }
+    return std.fmt.allocPrint(alloc, "\"{s}:{s}\"", .{ label, value });
+}
+
+/// Decision 481 — a binding text (`fn:tanBody`, `op:f64.floor`,
+/// `wasi:race_of`, `std:hash.contentHash`) as the labelled cell that writes
+/// it (`fn: tanBody`, `op: "f64.floor"`, `wasi: .RaceOf`,
+/// `std: "hash.contentHash"`), for a message; any other text quoted.
+pub fn wasmCellDisplay(alloc: std.mem.Allocator, text: []const u8) ![]u8 {
+    const colon = std.mem.indexOfScalar(u8, text, ':') orelse return std.fmt.allocPrint(alloc, "\"{s}\"", .{text});
+    const label = text[0..colon];
+    const value = text[colon + 1 ..];
+    if (std.mem.eql(u8, label, "fn")) return std.fmt.allocPrint(alloc, "fn: {s}", .{value});
+    if (std.mem.eql(u8, label, "op") or std.mem.eql(u8, label, "std")) return std.fmt.allocPrint(alloc, "{s}: \"{s}\"", .{ label, value });
+    if (std.mem.eql(u8, label, "wasi")) {
+        var buf: std.ArrayList(u8) = .empty;
+        defer buf.deinit(alloc);
+        try buf.appendSlice(alloc, "wasi: .");
+        var up = true;
+        for (value) |c| {
+            if (c == '_') {
+                up = true;
+                continue;
+            }
+            try buf.append(alloc, if (up) std.ascii.toUpper(c) else c);
+            up = false;
+        }
+        return buf.toOwnedSlice(alloc);
+    }
+    return std.fmt.allocPrint(alloc, "\"{s}\"", .{text});
+}
+
+/// The `(module, symbol)` of `a` when it is an `External.<member>` annotation
+/// serving `lookup` (`ExternalLookup.of`): a `host:` argument other than the
+/// lookup's host passes it by, and is not counted among the template's
+/// arguments; neither is wasm's `needs:` list (decision 518) nor any bool
+/// flag — `inline:`, `result:` (decisions 487, 490), wherever it is written,
+/// or a bare `true` / `false` the checker refuses.
+pub fn externalRefOf(a: Annotation, target: []const u8) ?ExternalRef {
+    const lookup = ExternalLookup.of(target);
+    if (!std.mem.startsWith(u8, a.name, "External.")) return null;
+    if (!std.ascii.eqlIgnoreCase(a.name["External.".len..], lookup.member)) return null;
+    const host_at = hostArgIndex(a);
+    if (host_at) |h| if (lookup.host) |want| {
+        if (WasmHost.ofArg(a.args[h]) != want) return null;
+    };
+    const needs_at = needsArgIndex(a);
+    var pos: [3][]const u8 = undefined;
+    var n: usize = 0;
+    for (a.args, 0..) |arg, i| {
+        if (host_at != null and i == host_at.?) continue;
+        if (needs_at != null and i == needs_at.?) continue;
+        if (isExternalFlagArg(a, i)) continue;
+        if (n == pos.len) return null;
+        pos[n] = arg;
+        n += 1;
+    }
+    if (n == 1) return .{ .module = "", .symbol = unquoteAnnotationArg(pos[0]) };
+    if (n == 2) return .{ .module = unquoteAnnotationArg(pos[0]), .symbol = unquoteAnnotationArg(pos[1]) };
+    return null;
+}
 
 /// A parsed `@external` call template: the host `symbol` (with the call
 /// punctuation stripped) plus the ordered argument names that pin the host's
@@ -1163,7 +2643,7 @@ pub const ExternalCall = struct {
 /// ordered arg-name list. `"sym(a, self)"` → `("sym", ["a", "self"])`;
 /// `"sym"` → `("sym", null)`. The arg list is empty for `"sym()"`.
 /// `slots_out` must have capacity for at least one slot per `,` plus one — the
-/// caller (`InterfaceMethod.callTemplateFor`/`FnDecl.callTemplateFor`) reuses a
+/// caller (`BehaviorMethod.callTemplateFor`/`FnDecl.callTemplateFor`) reuses a
 /// stack-allocated buffer so we never allocate just to read an annotation.
 pub fn parseExternalCallTemplate(
     symbol: []const u8,
@@ -1232,6 +2712,34 @@ fn isBoolFlagArg(arg: []const u8) bool {
     return std.mem.eql(u8, arg, "true") or std.mem.eql(u8, arg, "false");
 }
 
+/// The bool flags an `External.<Target>` annotation declares
+/// (`libs/std/src/builtins.d.bp`): `inline:` on `Erlang`, `result:` on every
+/// variant (decisions 487, 490). Each is labelled and read by its label.
+pub const external_flag_labels = [_][]const u8{ "inline", "result" };
+
+/// True when argument `i` of an `External.<Target>` annotation is a flag,
+/// not a template argument: labelled with one of `external_flag_labels`, or
+/// a bare `true` / `false` (refused by the checker, decision 487, and never a
+/// template either way).
+pub fn isExternalFlagArg(a: Annotation, i: usize) bool {
+    if (a.labelOf(i)) |label| {
+        for (external_flag_labels) |l| if (std.mem.eql(u8, l, label)) return true;
+        return false;
+    }
+    return isBoolFlagArg(a.args[i]);
+}
+
+/// The value of the labelled flag `label` on `a` (`inline`, `result`) when
+/// it is written `true`; false when absent, `false`, or any other value
+/// (which the checker refuses).
+pub fn externalFlagSet(a: Annotation, label: []const u8) bool {
+    for (a.args, 0..) |arg, i| {
+        const l = a.labelOf(i) orelse continue;
+        if (std.mem.eql(u8, l, label)) return std.mem.eql(u8, arg, "true");
+    }
+    return false;
+}
+
 /// `prim-op-annotation` arity branch: `when($argc == N): "<template>"`.
 pub const ArityBranch = struct {
     argc: usize,
@@ -1287,6 +2795,19 @@ pub fn parseArityBranchArg(raw: []const u8) ?ArityBranch {
     return .{ .argc = argc, .template = unquoteAnnotationArg(value) };
 }
 
+/// True when an `External.<target>` annotation in `annotations` writes
+/// `result: true` (decisions 431, 490): the backend answers every way the host
+/// call fails as `Error(HostError(…))`. `target` is the annotation's member
+/// (`node`, `erlang`), compared without case.
+pub fn externalResultFor(annotations: []const Annotation, target: []const u8) bool {
+    for (annotations) |a| {
+        if (!std.mem.startsWith(u8, a.name, "External.")) continue;
+        if (!std.ascii.eqlIgnoreCase(a.name["External.".len..], target)) continue;
+        if (externalFlagSet(a, "result")) return true;
+    }
+    return false;
+}
+
 /// True when `annotations` carry at least one `when($argc == N): "..."` branch
 /// targeting `target`. Used by callers to know whether arity-branch dispatch
 /// is in play and choose the matching branch via `externalArityBranchFor`.
@@ -1318,9 +2839,9 @@ pub fn externalArityBranchFor(annotations: []const Annotation, target: []const u
 }
 
 /// `val Name = interface { ... }`  or  `val Name = interface <T> { ... }`
-pub const InterfaceDecl = struct {
+pub const BehaviorDecl = struct {
     name: []const u8,
-    /// Auto-generated unique ID counter, formatted as `"interface_{id:0>4}"` when rendered.
+    /// Auto-generated unique ID counter, formatted as `"behavior_{id:0>4}"` when rendered.
     id: u32 = 0,
     isPub: bool = false,
     docComment: ?[]const u8 = null,
@@ -1333,37 +2854,35 @@ pub const InterfaceDecl = struct {
     genericParams: []GenericParam = &.{},
     /// Super-interfaces listed in `extends T1, T2` clause. Empty when absent.
     extends: []const []const u8 = &.{},
-    fields: []InterfaceField,
+    fields: []BehaviorField,
     /// Whether the last field/method had a trailing comma in the source.
     trailingComma: bool = false,
-    methods: []InterfaceMethod,
+    methods: []BehaviorMethod,
+    /// Comment lines after the last member, before `}` ("" = blank line). Owned slice.
+    bodyComments: []const []const u8 = &.{},
 
-    pub fn deinit(this: *InterfaceDecl, allocator: std.mem.Allocator) void {
+    pub fn deinit(this: *BehaviorDecl, allocator: std.mem.Allocator) void {
         for (this.annotations) |*ann| ann.deinit(allocator);
         allocator.free(this.annotations);
         for (this.genericParams) |*gp| gp.deinit(allocator);
         allocator.free(this.genericParams);
         allocator.free(this.extends);
+        for (this.fields) |*f| {
+            f.typeRef.deinit(allocator);
+            if (f.comments.len > 0) allocator.free(f.comments);
+        }
         allocator.free(this.fields);
         for (this.methods) |*m| m.deinit(allocator);
         allocator.free(this.methods);
+        if (this.bodyComments.len > 0) allocator.free(this.bodyComments);
+    }
+
+    pub fn jsonStringify(this: BehaviorDecl, jws: anytype) !void {
+        return stringifyOmitting(this, jws, &.{}, &.{"bodyComments"});
     }
 };
 
 // ── enum decl ─────────────────────────────────────────────────────────────────
-
-/// A named field inside an enum variant with a payload: `r: Int` or `reason: ?string`
-pub const EnumVariantField = struct {
-    name: []const u8,
-    typeRef: TypeRef,
-    /// Optional default value, mirrors `RecordField.default` and `Param.default`.
-    default: ?Expr = null,
-
-    pub fn deinit(this: *EnumVariantField, allocator: std.mem.Allocator) void {
-        this.typeRef.deinit(allocator);
-        if (this.default) |*d| d.deinit(allocator);
-    }
-};
 
 /// One variant of an enum.
 /// Simple:  `Red`
@@ -1373,14 +2892,34 @@ pub const EnumVariantField = struct {
 pub const EnumVariant = struct {
     name: []const u8,
     /// Empty for simple (unit) variants; non-empty for payload variants.
-    fields: []EnumVariantField,
+    fields: []Field,
     /// True iff the variant name is a pure-digit literal. Only legal inside an
     /// enum-section body (top-level enum body still rejects digit names).
     numeric: bool = false,
+    /// Position among the members of the body that declares it, counting
+    /// variants and sections together. `variants` and `sections` are two
+    /// parallel slices, so without this the interleaving the source wrote is
+    /// gone by the time anything reads the AST, and a printer can only emit all
+    /// of one list and then all of the other. Layout only — never dumped.
+    order: u32 = 0,
+    /// `//` comment lines written above the variant, with "" for a blank source
+    /// line — the same convention `Field.comments` and `BehaviorMethod.comments`
+    /// use. Owned slice; the strings slice into the source.
+    comments: []const []const u8 = &.{},
+    /// A `//` comment written on the variant's own line, after it (`Red, // warm`).
+    /// Slices into the source.
+    trailingComment: ?[]const u8 = null,
 
     pub fn deinit(this: *EnumVariant, allocator: std.mem.Allocator) void {
         for (this.fields) |*f| f.deinit(allocator);
         allocator.free(this.fields);
+        if (this.comments.len > 0) allocator.free(this.comments);
+    }
+
+    /// `order` is layout, and the trivia is written only when present, so a
+    /// variant that carries neither dumps exactly as it did before they existed.
+    pub fn jsonStringify(this: EnumVariant, jws: anytype) !void {
+        return stringifyOmitting(this, jws, &.{"order"}, &.{ "comments", "trailingComment" });
     }
 };
 
@@ -1395,65 +2934,146 @@ pub const EnumSection = struct {
     variants: []EnumVariant,
     /// Nested sub-sections.
     sections: []EnumSection,
+    /// Position among the members of the body that declares it — see
+    /// `EnumVariant.order`, which counts from the same sequence. Layout only.
+    order: u32 = 0,
+    /// `//` comment lines written above the section, with "" for a blank source
+    /// line. Owned slice; the strings slice into the source.
+    comments: []const []const u8 = &.{},
+    /// `//` comment lines written after the section's last member, before its
+    /// closing `}` — `TypeDecl.bodyComments`' convention one level down. The
+    /// parser collected them and freed them, so `format` deleted them.
+    bodyComments: []const []const u8 = &.{},
 
     pub fn deinit(this: *EnumSection, allocator: std.mem.Allocator) void {
         for (this.variants) |*v| v.deinit(allocator);
         allocator.free(this.variants);
         for (this.sections) |*s| s.deinit(allocator);
         allocator.free(this.sections);
+        if (this.comments.len > 0) allocator.free(this.comments);
+        if (this.bodyComments.len > 0) allocator.free(this.bodyComments);
     }
-};
 
-/// `val Color = enum { Red, Green, Rgb(r: Int, g: Int, b: Int) }` or `val Option = enum <T> { ... }`
-pub const EnumDecl = struct {
-    name: []const u8,
-    /// Auto-generated unique ID counter, formatted as `"enum_{id:0>4}"` when rendered.
-    id: u32 = 0,
-    isPub: bool = false,
-    docComment: ?[]const u8 = null,
-    /// `//` regular comment (last one before the declaration)
-    comment: ?[]const u8 = null,
-    /// `////` module-level documentation
-    moduleComment: ?[]const u8 = null,
-    annotations: []Annotation = &.{},
-    genericParams: []GenericParam = &.{},
-    /// Inline interface implementations: `enum implement I1 { }`.
-    implement: []TypeRef = &.{},
-    variants: []EnumVariant,
-    /// Whether the last variant had a trailing comma in the source.
-    trailingComma: bool = false,
-    /// Methods declared after the variant list (may include `declare fn` abstract slots).
-    methods: []InterfaceMethod = &.{},
-    /// Top-level sections (recursive groupings) declared inside the body. The
-    /// comptime desugars each section into a synthesised inner enum with a
-    /// mangled name encoding the path. Empty for plain enums.
-    sections: []EnumSection = &.{},
-
-    pub fn deinit(this: *EnumDecl, allocator: std.mem.Allocator) void {
-        for (this.annotations) |*ann| ann.deinit(allocator);
-        allocator.free(this.annotations);
-        for (this.genericParams) |*gp| gp.deinit(allocator);
-        allocator.free(this.genericParams);
-        for (this.implement) |*im| im.deinit(allocator);
-        allocator.free(this.implement);
-        for (this.variants) |*v| v.deinit(allocator);
-        allocator.free(this.variants);
-        for (this.methods) |*m| m.deinit(allocator);
-        allocator.free(this.methods);
-        for (this.sections) |*s| s.deinit(allocator);
-        allocator.free(this.sections);
+    pub fn jsonStringify(this: EnumSection, jws: anytype) !void {
+        return stringifyOmitting(this, jws, &.{"order"}, &.{ "comments", "bodyComments" });
     }
 };
 
 // ── type reference ────────────────────────────────────────────────────────────
 
 /// One field of an anonymous record TYPE: `name: Type` in `{ value: T, set: fn(T) }`.
-pub const RecordTypeField = struct {
-    name: []const u8,
-    typeRef: TypeRef,
-};
-
 /// A type annotation expression, e.g. `Int`, `string[]`, `#(Int, string)`, `?T`.
+/// The reserved `TypeRef.named` spelling of decision 8 §2's `unknown` (06 N19).
+///
+/// `unknown` lexes as a keyword (`TokenKind.unknown`), so no declaration can be
+/// named `unknown` and this spelling can only come from the `unknown` written
+/// in a type position — never from a user type of that name.
+///
+/// **What inference has to do with it** (the checker half of N19): resolve a
+/// `TypeRef.named` equal to this to the `unknown` type instead of looking the
+/// name up, and give that type §2's rules — every value assignable *into* it,
+/// nothing out of it without an `is` check, `@print`/`==`/`!=` and a generic
+/// argument allowed, arithmetic / field access / indexing / method calls
+/// refused, and a `pub` declaration whose *inferred* type contains it an error.
+pub const unknown_type_name = "unknown";
+
+/// The reserved `TypeRef.generic` name that carries decision 8 §3's union type
+/// `A | B` (06 N20): `generic{ .name = union_type_name, .args = <members>,
+/// .is_builtin = false }`, members in source order, never fewer than two.
+///
+/// It is a spelling no source can write — `consumeTypeName` needs an identifier
+/// — so no user type collides with it. It is not a `TypeRef` variant of its own
+/// because one does not compile without edits to `comptime/infer.zig`,
+/// `codegen/typescript.zig`, `format.zig` and the language server, which this
+/// front's checker half owns; promoting it to a variant is a rename away once
+/// both halves are in one tree.
+///
+/// **What inference has to do with it** (the checker half of N20): resolve it to
+/// a union of its members instead of a named type, and give it §3's rules — a
+/// value assignable when it is assignable to one member, only the operations
+/// every member allows, narrowing by `is` and by a `case` arm, the join of
+/// `X<A> | X<B>` for a single-value immutable container and for `Dict` (never
+/// for `T[]`), and the error reported at the *use*, naming the branch that
+/// widened it.
+pub const union_type_name = "|";
+
+/// The reserved builtin-call name that carries decision 8 §4's `x is T`
+/// (06 N21): `call{ .callee = is_builtin_name, .is_builtin = true,
+/// .args = &.{ <the value> }, .isType = <the type> }` — the desugaring of the
+/// expression into `@is(x)` with the tested type on the node, since a type is
+/// not an expression and no AST union here may gain a variant.
+///
+/// `is` is a keyword, so no user function is called `is`. A source can write
+/// `@is(…)` by hand, and that call carries no `isType`: inference refuses it as
+/// `unknown-builtin` (decision 322 — `is` is only an operator, and
+/// `builtins.d.bp` declares no `is`).
+///
+/// **What inference has to do with it** (the checker half of N21): type the call
+/// `bool`, test the *value* by §4.1 (a number by range, converting inside the
+/// narrowed block), narrow the operand for the guarded block / arm body, and
+/// warn when the operand's static type makes the answer always false (§4.3).
+/// `Box<i32>` as the tested type is §4.2's error — only `Box<unknown>` is
+/// checkable.
+pub const is_builtin_name = "is";
+
+/// The reserved builtin-call name that carries [decision 30](../../../specs)'s
+/// index expression: `call{ .callee = index_builtin_name, .is_builtin = true,
+/// .args = &.{ <the receiver>, <the index> } }` — the desugaring of `xs[0]`
+/// into `@[](xs, 0)`, for the same reason `is` desugars: **no AST union here
+/// may gain a variant**, and every consumer would otherwise have to grow an arm
+/// before the form can parse at all.
+///
+/// The spelling is not an identifier, like `union_type_name`, so no source can
+/// write this call by hand: `@[](…)` does not lex.
+///
+/// **The index is an ordinary expression**, which is what makes one node serve
+/// indexing *and* slicing: `xs[0..2]` is this call with a `range` second
+/// argument (`decision-8:447` — "`..` belongs to iteration and slicing"), and a
+/// dict read `d["k"]` is this call with a string.
+///
+/// **What inference has to do with it** (`01-checker`): type the call by the
+/// receiver — the element type for an array, the value type for a dict, a
+/// character for a string, the member type for a tuple with a constant index —
+/// decide whether it answers `T` or `?T`, and refuse an index on a receiver
+/// decision 8 §2 says has none (`:112` lists indexing among the operations
+/// `unknown` refuses). **What each backend has to do with it** (fronts 02–05):
+/// lower it. Until then it reaches each backend's unrecognised-builtin path,
+/// which is the same place `x is T` reached before `04-js` lowered it.
+pub const index_builtin_name = "[]";
+
+/// Decision 330 (5) — the reserved builtin-call name that carries the postfix
+/// `x!`: `call{ .callee = non_null_builtin_name, .is_builtin = true, .args =
+/// &.{ <the operand> } }`, for `index_builtin_name`'s reason. `@!(…)` does not
+/// lex, so no source writes it by hand. Inference types it as the operand's
+/// payload (`T` for `?T`; a never-null operand is refused) and records the
+/// abort it is — `x ?? @panic("value is null — x! at <file>:<line>:<col>")` —
+/// for the transform, so no backend learns a new rule.
+pub const non_null_builtin_name = "!";
+
+/// The binding name the parser gives `a ?? b`'s desugaring (decision 28).
+///
+/// `a ?? b` becomes `if (a) { <this> -> <this> } else { b }` — the optional
+/// binding form the language already has (`if (email) { e -> … }`), which
+/// evaluates `a` once and narrows it inside the branch. There is no `??`
+/// operator in `BinOp` and no new AST node, for the reason `is_builtin_name`
+/// states: no AST union here may gain a variant, and every consumer would have
+/// to grow an arm before the form could parse at all. The desugaring instead
+/// reaches machinery all four backends already lower.
+///
+/// The `__bp` prefix is the codebase's reserved one (`__bp_show`, `__bp_eq`),
+/// so a nested `a ?? (b ?? c)` shadows correctly and no user name collides in
+/// practice.
+pub const nullish_binding_name = "__bp_nullish";
+
+/// The column the checker adds to a node it synthesises for a decision-330
+/// operator where no written token stands (`comptime/infer.zig`
+/// `inferOptionalOperator`): past any written column, so its loc keys no plan
+/// of a written node. `recv?.m(args)` is typed through the link `v.m(args)`
+/// over the payload at `loc.col + optional_synthetic_col`, so the plans that
+/// typing records (the instance lowering naming the payload's type) are read
+/// there — commonJS reads an enum method's owner from it.
+pub const optional_synthetic_col: usize = 2_000_000;
+
 pub const TypeRef = union(enum) {
     /// Plain named type: `Int`, `string`, `Self`. Slice into source — not heap-owned.
     named: []const u8,
@@ -1461,28 +3081,116 @@ pub const TypeRef = union(enum) {
     array: *TypeRef,
     /// Tuple type: `#(T1, T2, ...)`. Owns the element types.
     tuple_: []TypeRef,
+    /// Tuple type with labels: `#(name: string, pop: i32)` (decision 8 §6). The
+    /// labels are names for the compiler — `row.pop` becomes a positional access
+    /// and the run-time value is the plain tuple. Owns `elems` and the `labels`
+    /// slice (the label strings slice into the source).
+    labeledTuple: struct { elems: []TypeRef, labels: []const []const u8 },
     /// Optional type: `?T`. Owns the inner type.
     optional: *TypeRef,
     /// Function type: `fn(T1, T2) -> R`. Owns both param types and return type.
-    function: struct { params: []TypeRef, returnType: *TypeRef },
+    function: struct {
+        params: []TypeRef,
+        returnType: *TypeRef,
+        /// The documentation names written in `fn(item: T)` ("" where none), for
+        /// the formatter; function types stay positional. Owned slice; the
+        /// strings slice into the source. Left out of the AST dump.
+        paramNames: []const []const u8 = &.{},
+        /// Decision 316 — `fn(..) -> R`: a function of any parameters, written
+        /// only as `@Decl<…>`'s pattern (`params` is empty).
+        anyParams: bool = false,
+
+        pub fn jsonStringify(this: @This(), jws: anytype) !void {
+            try jws.beginObject();
+            try jws.objectField("params");
+            try jws.write(this.params);
+            try jws.objectField("returnType");
+            try jws.write(this.returnType);
+            try jws.endObject();
+        }
+    },
     /// Generic type: `@Result<D, E>` (builtin) or `MyType<T>` (user-defined). Owns the argument types.
     generic: struct { name: []const u8, args: []TypeRef, is_builtin: bool },
     /// Comptime type parameter: `typeparam` or `typeparam string | int | bool`.
     /// `constraints` is the `|`-separated list of accepted types; an empty slice
     /// means the typeparam is unconstrained and accepts any type. Owns the constraints.
-    /// Surface syntax (post-F0): `type` / `type string | int | bool`.
+    /// Surface syntax (post-F0): `type` / `type<string | int | bool>`.
     typeparam: []TypeRef,
-    /// Anonymous structural record type: `{ value: T, set: fn(T) }`, usable as a
-    /// return type or annotation without a named `record`. Owns the fields.
-    record_type: []RecordTypeField,
+
+    /// `Self` as written in a signature — bare, or with the type arguments a
+    /// declaration with type parameters writes (`Self<T>`, decision 8 §1.2).
+    /// The arguments are the checker's; a backend asking "does this method
+    /// return the receiver's type" reads both spellings the same.
+    pub fn isSelf(this: TypeRef) bool {
+        return switch (this) {
+            .named => |n| std.mem.eql(u8, n, "Self"),
+            .generic => |g| !g.is_builtin and std.mem.eql(u8, g.name, "Self"),
+            else => false,
+        };
+    }
+
+    /// The members of a union type `A | B` (`union_type_name`); null otherwise.
+    pub fn unionMembers(this: TypeRef) ?[]TypeRef {
+        return switch (this) {
+            .generic => |g| if (!g.is_builtin and std.mem.eql(u8, g.name, union_type_name)) g.args else null,
+            else => null,
+        };
+    }
+
+    /// The element types of a tuple type, labeled or not; null otherwise.
+    pub fn tupleElems(this: TypeRef) ?[]TypeRef {
+        return switch (this) {
+            .tuple_ => |elems| elems,
+            .labeledTuple => |lt| lt.elems,
+            else => null,
+        };
+    }
+
+    /// The reference in its source spelling (`Field[]`, `@Result<T, E>`,
+    /// `?T`, `A | B`), for `{f}` — what a codegen comment names a behavior
+    /// member's type with. A display form: it does not add the parentheses
+    /// `(A | B)[]` needs to re-read (the formatter's `fmtTypeRefIn` does).
+    pub fn format(this: TypeRef, w: *std.Io.Writer) std.Io.Writer.Error!void {
+        if (this.unionMembers()) |members| {
+            for (members, 0..) |m, i| try w.print("{s}{f}", .{ if (i > 0) " | " else "", m });
+            return;
+        }
+        switch (this) {
+            .named => |n| try w.writeAll(n),
+            .array => |elem| try w.print("{f}[]", .{elem.*}),
+            .tuple_ => |elems| {
+                try w.writeAll("#(");
+                for (elems, 0..) |e, i| try w.print("{s}{f}", .{ if (i > 0) ", " else "", e });
+                try w.writeAll(")");
+            },
+            .labeledTuple => |lt| {
+                try w.writeAll("#(");
+                for (lt.elems, 0..) |e, i| try w.print("{s}{s}: {f}", .{ if (i > 0) ", " else "", lt.labels[i], e });
+                try w.writeAll(")");
+            },
+            .optional => |inner| try w.print("?{f}", .{inner.*}),
+            .function => |f| {
+                try w.writeAll("fn(");
+                if (f.anyParams) try w.writeAll("..");
+                for (f.params, 0..) |p, i| try w.print("{s}{f}", .{ if (i > 0) ", " else "", p });
+                try w.print(") -> {f}", .{f.returnType.*});
+            },
+            .generic => |g| {
+                try w.print("{s}{s}<", .{ if (g.is_builtin) "@" else "", g.name });
+                for (g.args, 0..) |a, i| try w.print("{s}{f}", .{ if (i > 0) ", " else "", a });
+                try w.writeAll(">");
+            },
+            .typeparam => |constraints| {
+                try w.writeAll("type");
+                for (constraints, 0..) |c, i| try w.print("{s}{f}", .{ if (i == 0) "<" else " | ", c });
+                if (constraints.len > 0) try w.writeAll(">");
+            },
+        }
+    }
 
     pub fn deinit(this: *TypeRef, allocator: std.mem.Allocator) void {
         switch (this.*) {
             .named => {},
-            .record_type => |flds| {
-                for (flds) |*f| f.typeRef.deinit(allocator);
-                allocator.free(flds);
-            },
             .array => |elem| {
                 elem.deinit(allocator);
                 allocator.destroy(elem);
@@ -1490,6 +3198,11 @@ pub const TypeRef = union(enum) {
             .tuple_ => |elems| {
                 for (elems) |*e| e.deinit(allocator);
                 allocator.free(elems);
+            },
+            .labeledTuple => |lt| {
+                for (lt.elems) |*e| e.deinit(allocator);
+                allocator.free(lt.elems);
+                allocator.free(lt.labels);
             },
             .optional => |inner| {
                 inner.deinit(allocator);
@@ -1500,6 +3213,7 @@ pub const TypeRef = union(enum) {
                 allocator.free(f.params);
                 f.returnType.deinit(allocator);
                 allocator.destroy(f.returnType);
+                if (f.paramNames.len > 0) allocator.free(f.paramNames);
             },
             .generic => |b| {
                 for (b.args) |*a| a.deinit(allocator);
@@ -1517,7 +3231,7 @@ pub const TypeRef = union(enum) {
     /// unevaluated; functions returning it are comptime-expanded templates.
     pub fn isExprType(this: TypeRef) bool {
         return this == .generic and this.generic.is_builtin and
-            std.mem.eql(u8, this.generic.name, "Expr");
+            std.mem.eql(u8, this.generic.name, expr_type_name);
     }
 
     /// True when this annotation is the builtin custom-carrier type
@@ -1544,16 +3258,27 @@ pub const TypeRef = union(enum) {
     /// Bare `@Decl` parses as a builtin generic with no args (like bare `@Expr`).
     pub fn isDeclType(this: TypeRef) bool {
         return this == .generic and this.generic.is_builtin and
-            std.mem.eql(u8, this.generic.name, "Decl");
+            std.mem.eql(u8, this.generic.name, decl_type_name);
     }
 };
 
 // ── top-level program ─────────────────────────────────────────────────────────
 
-/// Top-level constant binding: `val name = expr` or `val name: Type = expr`
+/// Top-level binding: `val name = expr`, `val name: Type = expr` — or, since
+/// decision 38 / front 17, `var name: Type = expr`, the module-level `var`
+/// that a `#[@BeamMemory.<mode>]` annotation gives storage on the BEAM.
 pub const ValDecl = struct {
     name: []const u8,
+    /// Where the name is written — the location a refusal of the name points
+    /// at. `{0,0}` when synthesised; left out of the AST dump.
+    nameLoc: Loc = .{ .line = 0, .col = 0 },
     isPub: bool = false,
+    /// `var` rather than `val`: the binding may be assigned. The local form
+    /// keeps the same bit on `localBind.mutable`; this is it one level up.
+    mutable: bool = false,
+    /// `#[…]` written above the declaration — `#[@BeamMemory.Ets]`. Empty for
+    /// the plain form; only a `var` may carry one (checked by inference).
+    annotations: []Annotation = &.{},
     docComment: ?[]const u8 = null,
     /// `//` regular comment (last one before the declaration)
     comment: ?[]const u8 = null,
@@ -1562,14 +3287,251 @@ pub const ValDecl = struct {
     /// Optional explicit type annotation, e.g. `Color` in `val c: Color = .Red`
     /// or `string[]` in `val xs: string[] = [...]`.
     typeAnnotation: ?TypeRef = null,
+    /// Where the annotation is written (its first token) — the location a
+    /// refusal of the annotation points at. `{0,0}` when there is none; left
+    /// out of the AST dump.
+    typeLoc: Loc = .{ .line = 0, .col = 0 },
     value: *Expr,
+
+    /// A module-level statement rather than a binding: the discard `val _ = …`
+    /// and the statements the parser and the comptime transform synthesise
+    /// (`_loop`, `_main…`). It has no reader. A `_`-prefixed name a user wrote
+    /// (`val _cpf = …`) is a binding like any other and is read by name.
+    pub fn isStatement(this: ValDecl) bool {
+        return std.mem.eql(u8, this.name, "_") or
+            std.mem.eql(u8, this.name, "_loop") or
+            std.mem.startsWith(u8, this.name, "_main");
+    }
 
     pub fn deinit(this: *ValDecl, allocator: std.mem.Allocator) void {
         if (this.typeAnnotation) |*ann| ann.deinit(allocator);
+        for (this.annotations) |*ann| ann.deinit(allocator);
+        allocator.free(this.annotations);
         this.value.deinit(allocator);
         allocator.destroy(this.value);
     }
+
+    /// `mutable` (false) and `annotations` (empty) are left out of the AST
+    /// dump, so a `val` written today dumps exactly as it did before the two
+    /// fields existed and no parser snapshot moves.
+    pub fn jsonStringify(this: @This(), jws: anytype) !void {
+        return stringifyOmitting(this, jws, &.{ "nameLoc", "typeLoc" }, &.{ "mutable", "annotations" });
+    }
+
+    /// Where a module `var` lives on the BEAM (front 17, decision 43's layer
+    /// 2): the `#[@BeamMemory.<Mode>]` it carries, `ProcessDict` when it
+    /// carries none. Null for a `val`. An unknown member reads as the default
+    /// here because inference has already refused it (decision 41).
+    pub fn memory(this: ValDecl) ?Memory {
+        if (!this.mutable) return null;
+        for (this.annotations) |a| {
+            if (!std.mem.startsWith(u8, a.name, "BeamMemory.")) continue;
+            const member = a.name["BeamMemory.".len..];
+            const mode: MemoryMode = if (std.mem.eql(u8, member, "Ets"))
+                .ets
+            else if (std.mem.eql(u8, member, "PersistentTerm"))
+                .persistentTerm
+            else
+                .processDict;
+            var keyed = false;
+            for (a.writtenArgs(), 0..) |arg, i| {
+                const label = a.labelOf(i) orelse continue;
+                if (std.mem.eql(u8, label, "keyed")) keyed = std.mem.eql(u8, arg, "true");
+            }
+            return .{ .mode = mode, .keyed = keyed, .loc = a.loc };
+        }
+        return .{ .mode = .processDict };
+    }
 };
+
+/// The three members of `@BeamMemory` (decision 41). `processDict` is also
+/// what a module `var` with no annotation means.
+pub const MemoryMode = enum {
+    processDict,
+    ets,
+    persistentTerm,
+
+    pub fn spelling(self: MemoryMode) []const u8 {
+        return switch (self) {
+            .processDict => "ProcessDict",
+            .ets => "Ets",
+            .persistentTerm => "PersistentTerm",
+        };
+    }
+};
+
+/// A module `var`'s storage on the BEAM — `ValDecl.memory`.
+pub const Memory = struct {
+    mode: MemoryMode,
+    /// `keyed: true` — a `Dict` stored one row per key (decision 51).
+    keyed: bool = false,
+    /// The annotation's location; null for the unannotated default.
+    loc: ?Loc = null,
+};
+
+/// What an assignment to the module `var` `name` does with the value it
+/// replaces — the shape `@BeamMemory.Ets` lowers and the checker refuses
+/// (design §5(b), decision 40). One reading, shared by `infer.zig` (which
+/// refuses `recompose`) and the BEAM emitters (which lower `bump` to the
+/// host's atomic increment), so the two can never disagree about which
+/// write is atomic.
+pub const MemoryWrite = union(enum) {
+    /// `x = e` where `e` does not read `x`: the whole value is replaced.
+    whole,
+    /// `x += e`, `x = x + e`, `x = e + x` or `x = x - e`, `e` not reading `x`:
+    /// an increment by `incr`, subtracted when `negate`.
+    bump: struct { incr: *const Expr, negate: bool = false },
+    /// The new value is computed from `x` any other way — read, recompute,
+    /// write: one of two concurrent runs can be lost.
+    recompose,
+};
+
+/// Classify the write `name <op> value` — `plus` is `+=`.
+pub fn classifyMemoryWrite(name: []const u8, plus: bool, value: *const Expr) MemoryWrite {
+    if (plus) {
+        if (exprMentions(value.*, name)) return .recompose;
+        return .{ .bump = .{ .incr = value } };
+    }
+    if (!exprMentions(value.*, name)) return .whole;
+    const inner = ungroup(value);
+    if (inner.* == .binaryOp) {
+        const bo = inner.binaryOp;
+        const lhs_is = isIdentNamed(ungroup(bo.lhs).*, name);
+        const rhs_is = isIdentNamed(ungroup(bo.rhs).*, name);
+        switch (bo.op) {
+            .add => {
+                if (lhs_is and !exprMentions(bo.rhs.*, name)) return .{ .bump = .{ .incr = bo.rhs } };
+                if (rhs_is and !exprMentions(bo.lhs.*, name)) return .{ .bump = .{ .incr = bo.lhs } };
+            },
+            .sub => if (lhs_is and !exprMentions(bo.rhs.*, name)) return .{ .bump = .{ .incr = bo.rhs, .negate = true } },
+            else => {},
+        }
+    }
+    return .recompose;
+}
+
+fn ungroup(e: *const Expr) *const Expr {
+    var cur = e;
+    while (cur.* == .collection and cur.collection.kind == .grouped) cur = cur.collection.kind.grouped;
+    return cur;
+}
+
+fn isIdentNamed(e: Expr, name: []const u8) bool {
+    return e == .identifier and e.identifier.kind == .ident and std.mem.eql(u8, e.identifier.kind.ident, name);
+}
+
+/// Does `e` read the name `name` anywhere? Conservative: a node kind this walk
+/// does not open answers `true`, so an unrecognised shape is treated as a read
+/// — the refusal it feeds (`recompose`) is the restrictive answer (decision 67).
+/// A lambda or trailing block whose parameter shadows the name is still walked;
+/// shadowing a module `var` inside its own write is not a pattern worth a hole.
+pub fn exprMentions(e: Expr, name: []const u8) bool {
+    return switch (e) {
+        .literal => |l| switch (l.kind) {
+            .stringTemplate => |st| blk: {
+                for (st.parts) |p| switch (p) {
+                    .expr => |x| if (exprMentions(x.*, name)) break :blk true,
+                    else => {},
+                };
+                break :blk false;
+            },
+            else => false,
+        },
+        .identifier => |id| switch (id.kind) {
+            .ident => |n| std.mem.eql(u8, n, name),
+            .dotIdent => false,
+            .identAccess => |ia| exprMentions(ia.receiver.*, name),
+        },
+        .binaryOp => |bo| exprMentions(bo.lhs.*, name) or exprMentions(bo.rhs.*, name),
+        .unaryOp => |uo| exprMentions(uo.expr.*, name),
+        .call => |c| switch (c.kind) {
+            .call => |cc| blk: {
+                if (cc.receiver) |r| if (exprMentions(r.*, name)) break :blk true;
+                if (cc.receiver == null and !cc.is_builtin and std.mem.eql(u8, cc.callee, name)) break :blk true;
+                if (cc.calleeExpr) |ce| if (exprMentions(ce.*, name)) break :blk true;
+                for (cc.args) |a| if (exprMentions(a.value.*, name)) break :blk true;
+                for (cc.trailing) |t| if (stmtsMention(t.body, name)) break :blk true;
+                break :blk false;
+            },
+            .pipeline => |p| exprMentions(p.lhs.*, name) or exprMentions(p.rhs.*, name),
+        },
+        .collection => |c| switch (c.kind) {
+            .arrayLit => |al| blk: {
+                for (al.elems) |x| if (exprMentions(x, name)) break :blk true;
+                if (al.spread) |s| if (std.mem.eql(u8, s, name)) break :blk true;
+                if (al.spreadExpr) |se| if (exprMentions(se.*, name)) break :blk true;
+                break :blk false;
+            },
+            .tupleLit => |tl| blk: {
+                for (tl.elems) |x| if (exprMentions(x, name)) break :blk true;
+                break :blk false;
+            },
+            .range => |r| exprMentions(r.start.*, name) or (if (r.end) |x| exprMentions(x.*, name) else false),
+            .grouped => |g| exprMentions(g.*, name),
+            else => true,
+        },
+        .branch => |b| switch (b.kind) {
+            .if_ => |i| exprMentions(i.cond.*, name) or stmtsMention(i.then_, name) or
+                (if (i.else_) |els| stmtsMention(els, name) else false),
+            .tryCatch => |tc| exprMentions(tc.expr.*, name) or exprMentions(tc.handler.*, name),
+        },
+        .binding => |b| switch (b.kind) {
+            .localBind => |lb| exprMentions(lb.value.*, name),
+            .localBindDestruct => |lb| exprMentions(lb.value.*, name),
+            .assign => |a| exprMentions(a.value.*, name) or switch (a.target) {
+                .name => |n| std.mem.eql(u8, n, name),
+                .fieldAccess => |fa| exprMentions(fa.receiver.*, name),
+            },
+        },
+        .comptime_ => |c| switch (c.kind) {
+            // Folded before the program runs: it reads no run-time value.
+            .comptimeExpr, .comptimeBlock => false,
+            else => true,
+        },
+        else => true,
+    };
+}
+
+fn stmtsMention(stmts: []const Stmt, name: []const u8) bool {
+    for (stmts) |s| if (exprMentions(s.expr, name)) return true;
+    return false;
+}
+
+/// The initialiser rule of `@BeamMemory.Ets` (design §5(d), step 4): the
+/// value a missing table is re-seeded from must be one that can be computed
+/// again at any moment nobody chose, so it is a literal or a `comptime`
+/// expression — `isComptimeExpr()` plus the literal path — and **not** a
+/// purity judgement, which the compiler cannot make (`EffectKind` is the
+/// declared return wrappers). The literal path: a number, string or `null`
+/// literal, a negated one, and an array or tuple literal of them.
+pub fn isMemorySeed(e: Expr) bool {
+    if (e.isComptimeExpr()) return true;
+    return switch (e) {
+        .literal => |l| switch (l.kind) {
+            .numberLit, .stringLit, .null_ => true,
+            else => false,
+        },
+        .identifier => |id| switch (id.kind) {
+            .ident => |n| std.mem.eql(u8, n, "true") or std.mem.eql(u8, n, "false"),
+            else => false,
+        },
+        .unaryOp => |uo| uo.op == .neg and isMemorySeed(uo.expr.*),
+        .collection => |c| switch (c.kind) {
+            .arrayLit => |al| blk: {
+                if (al.spread != null or al.spreadExpr != null) break :blk false;
+                for (al.elems) |x| if (!isMemorySeed(x)) break :blk false;
+                break :blk true;
+            },
+            .tupleLit => |tl| blk: {
+                for (tl.elems) |x| if (!isMemorySeed(x)) break :blk false;
+                break :blk true;
+            },
+            .grouped => |g| isMemorySeed(g.*),
+            else => false,
+        },
+        else => false,
+    };
+}
 
 /// Top-level test declaration: `test { body }` or `test "name" { body }`.
 /// Collected and run by `botopink test`; excluded from normal build output.
@@ -1591,14 +3553,15 @@ pub const TestDecl = struct {
 };
 
 pub const DeclKind = union(enum) {
-    record: RecordDecl,
+    type_: TypeDecl,
+    /// `[pub] type Name<T> = Target;` — see `TypeAliasDecl`.
+    typeAlias: TypeAliasDecl,
     implement: ImplementDecl,
     extend: ExtendDecl,
     use: ImportDecl,
     mod: ModDecl,
-    interface: InterfaceDecl,
+    behavior: BehaviorDecl,
     delegate: DelegateDecl,
-    @"enum": EnumDecl,
     @"fn": FnDecl,
     val: ValDecl,
     @"test": TestDecl,
@@ -1606,7 +3569,34 @@ pub const DeclKind = union(enum) {
     /// `text` is the comment content without the `//` / `///` / `////` prefix.
     /// `is_module` is true for `////` module-level comments.
     /// `is_doc` is true for `///` doc comments.
-    comment: struct { text: []const u8, is_module: bool, is_doc: bool },
+    comment: struct {
+        text: []const u8,
+        is_module: bool,
+        is_doc: bool,
+        /// Written at the end of the previous declaration's line
+        /// (`pub mod geometry; // note`); the formatter keeps it there.
+        trailing: bool = false,
+        /// Where the comment starts in the source. A comment that continues a
+        /// trailing one on the next line, from the same column, is printed
+        /// aligned under it (`format.zig`'s `CommentChain`). Layout only —
+        /// never dumped.
+        loc: Loc = .{ .line = 0, .col = 0 },
+
+        pub fn jsonStringify(this: @This(), jws: anytype) !void {
+            try jws.beginObject();
+            try jws.objectField("text");
+            try jws.write(this.text);
+            try jws.objectField("is_module");
+            try jws.write(this.is_module);
+            try jws.objectField("is_doc");
+            try jws.write(this.is_doc);
+            if (this.trailing) {
+                try jws.objectField("trailing");
+                try jws.write(true);
+            }
+            try jws.endObject();
+        }
+    },
 
     pub fn deinit(this: *DeclKind, allocator: std.mem.Allocator) void {
         switch (this.*) {
@@ -1614,12 +3604,12 @@ pub const DeclKind = union(enum) {
                 for (u.imports) |imp| allocator.free(imp.segments);
                 allocator.free(u.imports);
             },
-            .interface => |*t| t.deinit(allocator),
+            .behavior => |*t| t.deinit(allocator),
             .delegate => |*d| d.deinit(allocator),
-            .record => |*r| r.deinit(allocator),
+            .type_ => |*t| t.deinit(allocator),
+            .typeAlias => |*a| a.deinit(allocator),
             .implement => |*i| i.deinit(allocator),
             .extend => |*x| x.deinit(allocator),
-            .@"enum" => |*e| e.deinit(allocator),
             .@"fn" => |*f| f.deinit(allocator),
             .val => |*v| v.deinit(allocator),
             .@"test" => |*t| t.deinit(allocator),
@@ -1631,10 +3621,18 @@ pub const DeclKind = union(enum) {
 
 pub const Program = struct {
     decls: []DeclKind,
+    /// `blankLineBefore[i]`: a blank source line precedes `decls[i]` (empty
+    /// when the program was not parsed from source). The formatter keeps it.
+    blankLineBefore: []const bool = &.{},
 
     pub fn deinit(this: *Program, allocator: std.mem.Allocator) void {
         for (this.decls) |*d| d.deinit(allocator);
         allocator.free(this.decls);
+        if (this.blankLineBefore.len > 0) allocator.free(this.blankLineBefore);
+    }
+
+    pub fn jsonStringify(this: Program, jws: anytype) !void {
+        return stringifyOmitting(this, jws, &.{"blankLineBefore"}, &.{});
     }
 };
 
@@ -1642,70 +3640,500 @@ pub const Program = struct {
 
 /// `pub fn name<T>(params) ReturnType { body }`
 /// `isPub` is false for module-private functions.
-/// The effect a function implements, named by a `#[@<effect>]` annotation. The
-/// matching `@Effect<…>` return wrapper carries the effect's type parameters;
-/// this enum is the source of truth for how the function lowers and which body
-/// operations (`await` / `yield` / `throw`) it permits.
+/// The effect a function implements — decision 118: the return type IS the
+/// annotation. A body gains a capability by writing the effect wrapper,
+/// literally, as its return type (`-> @Task<User>`); an alias to a wrapper
+/// types the function but activates nothing. This enum is the source of truth
+/// for how the function lowers and which body operations (`await` / `yield` /
+/// `use`) its level permits; `throw` / `try` follow the fallible channel (a
+/// `@Result` in some layer of the return, decision 121), not the level.
 pub const EffectKind = enum {
+    /// `-> @Result<T, E>` — the one fallible wrapper.
     result,
-    future,
-    generator,
+    /// `-> @Task<T>` — a value that has not arrived yet; never fails (decision 120).
+    task,
+    /// `-> @Iterator<T>` whose body yields — a synchronous sequence (decision 122).
     iterator,
-    asyncGenerator,
-    context,
+    /// `-> @Stream<T>` whose body yields — an asynchronous sequence (decision 122).
+    stream,
+    /// `-> @Component<T>` — the body may `use` a hook (decision 128).
+    component,
 
-    /// The annotation spelling — `#[@<name>]` — for this effect.
-    pub fn annotationName(self: EffectKind) []const u8 {
-        return switch (self) {
-            .result => "result",
-            .future => "future",
-            .generator => "generator",
-            .iterator => "iterator",
-            .asyncGenerator => "asyncGenerator",
-            .context => "context",
-        };
-    }
+    /// Every effect, in declaration order. The one list: `fromWrapperName`
+    /// and `comptime/effect_chain.zig` both walk it, so a sixth effect is a
+    /// value here and nowhere else.
+    pub const all = [_]EffectKind{ .result, .task, .iterator, .stream, .component };
 
-    /// The builtin return-type wrapper this effect requires (`@Future`, …).
+    /// The builtin return-type wrapper that activates this effect (`@Task`, …).
     pub fn returnWrapper(self: EffectKind) []const u8 {
         return switch (self) {
             .result => "Result",
-            .future => "Future",
-            .generator => "Generator",
+            .task => "Task",
             .iterator => "Iterator",
-            .asyncGenerator => "AsyncIterator",
-            .context => "Context",
+            .stream => "Stream",
+            .component => "Component",
         };
     }
 
-    /// Map a builtin annotation name (`future`, …) to its effect, or null when
-    /// the name is not one of the builtin effect markers.
-    pub fn fromAnnotationName(name: []const u8) ?EffectKind {
-        const all = [_]EffectKind{ .result, .future, .generator, .iterator, .asyncGenerator, .context };
+    /// Map a builtin wrapper name (`Task`, …) to its effect, or null when the
+    /// name is not one of the five effect wrappers.
+    pub fn fromWrapperName(name: []const u8) ?EffectKind {
         for (all) |kind| {
-            if (std.mem.eql(u8, kind.annotationName(), name)) return kind;
+            if (std.mem.eql(u8, kind.returnWrapper(), name)) return kind;
         }
         return null;
     }
+
+    /// The effect a return type written in source activates (decision 118):
+    /// one of the five wrappers, spelled with its `@`, as the OUTERMOST type.
+    /// An alias (`-> Parser<i32>`) activates nothing — the checker resolves it
+    /// to type the function and refuses a capability used under it
+    /// (`effect-wrapper-behind-alias`).
+    pub fn fromReturnType(rt: ?TypeRef) ?EffectKind {
+        const t = rt orelse return null;
+        if (t != .generic or !t.generic.is_builtin) return null;
+        return fromWrapperName(t.generic.name);
+    }
+
+    /// The effect of a fn with return `rt` and body `body` (decision 123): an
+    /// `@Iterator` / `@Stream` return whose body neither `yield`s nor
+    /// `break v`s in its own scope is a FACTORY — an ordinary function that
+    /// returns a ready iterator — and carries no effect. A bodyless
+    /// declaration keeps the wrapper's effect.
+    pub fn ofFn(rt: ?TypeRef, body: []const Stmt, hasBody: bool) ?EffectKind {
+        const e = fromReturnType(rt) orelse return null;
+        if ((e == .iterator or e == .stream) and hasBody and !bodyYields(body)) return null;
+        return e;
+    }
+
+    /// Decision 553 (1) — the body marker that names this effect, as written
+    /// before `fn` and before a lambda's brace: `async`, `iter`, `async iter`,
+    /// `component`. `@Result` takes none (a failure changes nothing of how a
+    /// body runs).
+    pub fn markerWord(self: EffectKind) []const u8 {
+        return switch (self) {
+            .result => "",
+            .task => "async",
+            .iterator => "iter",
+            .stream => "async iter",
+            .component => "component",
+        };
+    }
+
+    /// `ofFn` for a method, whose body is optional (a bodyless member is a
+    /// declaration and keeps the wrapper's effect).
+    pub fn ofMethod(rt: ?TypeRef, body: ?[]const Stmt) ?EffectKind {
+        return ofFn(rt, body orelse &.{}, body != null);
+    }
 };
+
+/// The effect annotations that left the language, spelled as written after
+/// `#[@` — each is `effect-annotation-removed` (decision 127): the six decision
+/// 118 removed, and the pre-121 names that had already left (`#[@context]`,
+/// `#[@iterator]`, `#[@asyncGenerator]`), which stay refused.
+pub const removed_effect_annotations = [_][]const u8{ "result", "future", "use", "generator", "resultGenerator", "futureGenerator", "context", "iterator", "asyncGenerator" };
+
+/// True when `name` is one of the removed effect annotations.
+pub fn isRemovedEffectAnnotation(name: []const u8) bool {
+    for (removed_effect_annotations) |a| {
+        if (std.mem.eql(u8, a, name)) return true;
+    }
+    return false;
+}
+
+/// True when `body` yields in its OWN generator scope (decision 123): a `yield`
+/// or a `break v` reached without entering a closure, a prefixed `iter` /
+/// `stream` loop, or an `async { }` block — each of those is a scope of its own.
+pub fn bodyYields(body: []const Stmt) bool {
+    return bodyHasJump(body, isYieldJump);
+}
+
+/// True when `body` writes `throw` or a bare `try` in its OWN scope (the same
+/// borders as `bodyYields`) — what makes the item of an `iter` / `stream` loop
+/// a `@Result` on its own (decision 125).
+pub fn bodyFails(body: []const Stmt) bool {
+    return bodyHasJump(body, isFailJump);
+}
+
+/// Every bare name `body` reads or calls — a callee written without a
+/// receiver (`problemOf(x)`) and a plain identifier (`map(xs, problemOf)`) —
+/// lambdas and nested blocks included, appended to `out` (duplicates kept).
+/// What a caller keeps is its own business: the decorator evaluator keeps the
+/// names of the module's top-level functions (`infer.decoratorSupport`). A
+/// node kind this walk does not open contributes nothing.
+pub fn collectNames(gpa: std.mem.Allocator, body: []const Stmt, out: *std.ArrayListUnmanaged([]const u8)) std.mem.Allocator.Error!void {
+    return collectNamesIn(gpa, body, out, false);
+}
+
+/// `collectNames` for what runs with the program (144 B-128): an `assert`'s
+/// operands, a typed function expression and a `wrapWith` wrapper's body are
+/// read too.
+pub fn collectRunNames(gpa: std.mem.Allocator, body: []const Stmt, out: *std.ArrayListUnmanaged([]const u8)) std.mem.Allocator.Error!void {
+    return collectNamesIn(gpa, body, out, true);
+}
+
+/// Every name `body` assigns (`n = …`, `n += …`) — lambdas and nested blocks
+/// included, appended to `out` (duplicates kept). What a generator's body reads
+/// and the code around it writes is one variable on both sides (decision 105,
+/// 144 B-135): the erlang and beam backends share it through a cell.
+pub fn collectAssignedNames(gpa: std.mem.Allocator, body: []const Stmt, out: *std.ArrayListUnmanaged([]const u8)) std.mem.Allocator.Error!void {
+    return collectNamesInMode(gpa, body, out, true, .assigned);
+}
+
+/// Every name `body` binds — a `val` / `var`, a loop's, a lambda's or a trailing
+/// lambda's parameter — lambdas and nested blocks included, appended to `out`.
+pub fn collectDeclaredNames(gpa: std.mem.Allocator, body: []const Stmt, out: *std.ArrayListUnmanaged([]const u8)) std.mem.Allocator.Error!void {
+    return collectNamesInMode(gpa, body, out, true, .declared);
+}
+
+const NamesMode = enum { reads, assigned, declared };
+
+fn collectNamesIn(gpa: std.mem.Allocator, body: []const Stmt, out: *std.ArrayListUnmanaged([]const u8), comptime run: bool) std.mem.Allocator.Error!void {
+    return collectNamesInMode(gpa, body, out, run, .reads);
+}
+
+fn collectExprNames(gpa: std.mem.Allocator, e: Expr, out: *std.ArrayListUnmanaged([]const u8), comptime run: bool) std.mem.Allocator.Error!void {
+    return collectExprNamesMode(gpa, e, out, run, .reads);
+}
+
+fn collectNamesInMode(gpa: std.mem.Allocator, body: []const Stmt, out: *std.ArrayListUnmanaged([]const u8), comptime run: bool, comptime mode: NamesMode) std.mem.Allocator.Error!void {
+    for (body) |s| try collectExprNamesMode(gpa, s.expr, out, run, mode);
+}
+
+fn collectExprNamesMode(gpa: std.mem.Allocator, e: Expr, out: *std.ArrayListUnmanaged([]const u8), comptime run: bool, comptime mode: NamesMode) std.mem.Allocator.Error!void {
+    switch (e) {
+        .literal => |lit| switch (lit.kind) {
+            .stringTemplate => |t| for (t.parts) |p| switch (p) {
+                .expr => |x| try collectExprNamesMode(gpa, x.*, out, run, mode),
+                .text => {},
+            },
+            else => {},
+        },
+        .identifier => |id| switch (id.kind) {
+            .ident => |n| if (mode == .reads) try out.append(gpa, n),
+            .identAccess => |ia| try collectExprNamesMode(gpa, ia.receiver.*, out, run, mode),
+            .dotIdent => {},
+        },
+        .jump => |j| switch (j.kind) {
+            .@"return", .throw_, .try_ => |v| if (v) |x| try collectExprNamesMode(gpa, x.*, out, run, mode),
+            .await_ => |x| try collectExprNamesMode(gpa, x.*, out, run, mode),
+            .@"break" => |b| if (b.value) |x| try collectExprNamesMode(gpa, x.*, out, run, mode),
+            .yield => |y| if (y.value) |x| try collectExprNamesMode(gpa, x.*, out, run, mode),
+            .@"continue" => {},
+        },
+        .branch => |b| switch (b.kind) {
+            .if_ => |i| {
+                try collectExprNamesMode(gpa, i.cond.*, out, run, mode);
+                try collectNamesInMode(gpa, i.then_, out, run, mode);
+                if (i.else_) |els| try collectNamesInMode(gpa, els, out, run, mode);
+            },
+            .tryCatch => |tc| {
+                try collectExprNamesMode(gpa, tc.expr.*, out, run, mode);
+                try collectExprNamesMode(gpa, tc.handler.*, out, run, mode);
+            },
+        },
+        .loop => |lp| {
+            if (mode == .declared) try out.appendSlice(gpa, lp.params);
+            try collectExprNamesMode(gpa, lp.iter.*, out, run, mode);
+            try collectNamesInMode(gpa, lp.body, out, run, mode);
+        },
+        .binding => |b| switch (b.kind) {
+            .localBind => |lb| {
+                if (mode == .declared) try out.append(gpa, lb.name);
+                try collectExprNamesMode(gpa, lb.value.*, out, run, mode);
+            },
+            .assign => |a| {
+                if (mode == .assigned and a.target == .name) try out.append(gpa, a.target.name);
+                try collectExprNamesMode(gpa, a.value.*, out, run, mode);
+            },
+            .localBindDestruct => |lb| try collectExprNamesMode(gpa, lb.value.*, out, run, mode),
+        },
+        .binaryOp => |op| {
+            try collectExprNamesMode(gpa, op.lhs.*, out, run, mode);
+            try collectExprNamesMode(gpa, op.rhs.*, out, run, mode);
+        },
+        .unaryOp => |op| try collectExprNamesMode(gpa, op.expr.*, out, run, mode),
+        .useHook => |u| try collectExprNamesMode(gpa, u.kind.inner.*, out, run, mode),
+        .collection => |col| switch (col.kind) {
+            .grouped => |inner| try collectExprNamesMode(gpa, inner.*, out, run, mode),
+            .case => |c| {
+                for (c.subjects) |x| try collectExprNamesMode(gpa, x, out, run, mode);
+                for (c.arms) |arm| {
+                    try collectExprNamesMode(gpa, arm.body, out, run, mode);
+                    if (arm.guard) |g| try collectExprNamesMode(gpa, g, out, run, mode);
+                }
+            },
+            .arrayLit => |al| for (al.elems) |x| try collectExprNamesMode(gpa, x, out, run, mode),
+            .tupleLit => |tl| for (tl.elems) |x| try collectExprNamesMode(gpa, x, out, run, mode),
+            else => {},
+        },
+        .call => |c| switch (c.kind) {
+            .call => |cc| {
+                if (cc.receiver) |r| try collectExprNamesMode(gpa, r.*, out, run, mode) else if (!cc.is_builtin and mode == .reads) try out.append(gpa, cc.callee);
+                // Decision 316 — `<handle>.wrapWith({ call -> … })`: the
+                // wrapper runs with the program, as a typed member does.
+                if (!run and cc.receiver != null and !cc.is_builtin and std.mem.eql(u8, cc.callee, "wrapWith") and cc.args.len == 1 and cc.args[0].value.* == .function) return;
+                for (cc.args) |a| try collectExprNamesMode(gpa, a.value.*, out, run, mode);
+                for (cc.trailing) |tl| {
+                    if (mode == .declared) try out.appendSlice(gpa, tl.params);
+                    try collectNamesInMode(gpa, tl.body, out, run, mode);
+                }
+            },
+            else => {},
+        },
+        // A typed function expression is the member a decorator hands to
+        // `decl.addMember(name, fn…)` (decision 370 (2)): it runs with the
+        // program, never while it compiles, so the names it reads are no
+        // support of the decorator (decision 395 — `#[validated]`'s member
+        // reaching the run-time checks).
+        .function => |f| if (run or !f.kind.isTyped()) {
+            if (mode == .declared) try out.appendSlice(gpa, f.kind.params);
+            try collectNamesInMode(gpa, f.kind.body, out, run, mode);
+        },
+        // An `assert` reads its operands at run time (`collectRunNames`); a
+        // folded `comptime` reads none.
+        .comptime_ => |c| if (run) switch (c.kind) {
+            .assert => |a| {
+                try collectExprNamesMode(gpa, a.condition.*, out, run, mode);
+                if (a.message) |m| try collectExprNamesMode(gpa, m.*, out, run, mode);
+            },
+            .assertPattern => |a| {
+                try collectExprNamesMode(gpa, a.expr.*, out, run, mode);
+                try collectExprNamesMode(gpa, a.handler.*, out, run, mode);
+            },
+            .comptimeExpr, .comptimeBlock => {},
+        },
+    }
+}
+
+/// True when `e` holds a valued or bare `return` in its OWN scope (the same
+/// borders as `bodyYields`: a closure's `return` is the closure's).
+pub fn exprReturns(e: Expr) bool {
+    return exprFindJump(e, isReturnJump) != null;
+}
+
+fn isReturnJump(j: JumpExpr) bool {
+    return j == .@"return";
+}
+
+/// Decision 357 — true when the statement `e` may leave its function before
+/// the statements after it run: a `return`, a `throw` or a propagating `try`
+/// in its OWN scope (a closure's are the closure's; a `case` arm's block and
+/// an `if` branch are the function's).
+pub fn exprMayExitEarly(e: Expr) bool {
+    return exprFindJump(e, isEarlyExitJump) != null;
+}
+
+fn isEarlyExitJump(j: JumpExpr) bool {
+    return switch (j) {
+        .@"return", .throw_, .try_ => true,
+        else => false,
+    };
+}
+
+fn isYieldJump(j: JumpExpr) bool {
+    return switch (j) {
+        .yield => true,
+        .@"break" => |b| b.value != null,
+        else => false,
+    };
+}
+
+fn isFailJump(j: JumpExpr) bool {
+    return switch (j) {
+        .throw_ => true,
+        .try_ => true,
+        else => false,
+    };
+}
+
+fn bodyHasJump(body: []const Stmt, comptime pred: fn (JumpExpr) bool) bool {
+    return bodyFindJump(body, pred) != null;
+}
+
+/// The location of the first jump `pred` accepts in `body`'s own scope (the
+/// borders of `bodyHasJump`), in source order, or null.
+fn bodyFindJump(body: []const Stmt, comptime pred: fn (JumpExpr) bool) ?Loc {
+    for (body) |s| {
+        if (exprFindJump(s.expr, pred)) |l| return l;
+    }
+    return null;
+}
+
+fn exprFindJump(e: Expr, comptime pred: fn (JumpExpr) bool) ?Loc {
+    return switch (e) {
+        .jump => |j| if (pred(j.kind)) j.loc else switch (j.kind) {
+            .@"return", .throw_, .try_ => |v| if (v) |x| exprFindJump(x.*, pred) else null,
+            .await_ => |x| exprFindJump(x.*, pred),
+            .@"break" => |b| if (b.value) |x| exprFindJump(x.*, pred) else null,
+            .yield => |y| if (y.value) |x| exprFindJump(x.*, pred) else null,
+            .@"continue" => null,
+        },
+        .branch => |b| switch (b.kind) {
+            .if_ => |i| exprFindJump(i.cond.*, pred) orelse bodyFindJump(i.then_, pred) orelse (if (i.else_) |els| bodyFindJump(els, pred) else null),
+            // `try x catch h` handles its own failure; only its operands count.
+            .tryCatch => |tc| exprFindJump(tc.expr.*, pred) orelse exprFindJump(tc.handler.*, pred),
+        },
+        // A prefixed loop is a scope of its own; an unprefixed one feeds the
+        // nearest generator scope (decision 125).
+        .loop => |lp| if (lp.generator == null) (exprFindJump(lp.iter.*, pred) orelse bodyFindJump(lp.body, pred)) else null,
+        .binding => |b| switch (b.kind) {
+            .localBind => |lb| exprFindJump(lb.value.*, pred),
+            .assign => |a| exprFindJump(a.value.*, pred),
+            .localBindDestruct => |lb| exprFindJump(lb.value.*, pred),
+        },
+        .binaryOp => |op| exprFindJump(op.lhs.*, pred) orelse exprFindJump(op.rhs.*, pred),
+        .unaryOp => |op| exprFindJump(op.expr.*, pred),
+        .useHook => |u| exprFindJump(u.kind.inner.*, pred),
+        .collection => |col| switch (col.kind) {
+            .grouped => |inner| exprFindJump(inner.*, pred),
+            .case => |c| blk: {
+                // Decision 525 — a block `{ … }` is a scope of the enclosing
+                // function: every jump in it is the function's.
+                if (c.isBlock) break :blk bodyFindJump(c.arms[0].body.function.kind.body, pred);
+                for (c.subjects) |x| if (exprFindJump(x, pred)) |l| break :blk l;
+                for (c.arms) |arm| {
+                    // A braced arm is parsed as a lambda, but it is the
+                    // arm's block, not a closure: its `return` is the
+                    // enclosing function's.
+                    if ((pred == isReturnJump or pred == isEarlyExitJump) and arm.body == .function and arm.body.function.kind.syntax == .lambda) {
+                        if (bodyFindJump(arm.body.function.kind.body, pred)) |l| break :blk l;
+                        continue;
+                    }
+                    if (exprFindJump(arm.body, pred)) |l| break :blk l;
+                }
+                break :blk null;
+            },
+            .arrayLit => |al| blk: {
+                for (al.elems) |x| if (exprFindJump(x, pred)) |l| break :blk l;
+                break :blk null;
+            },
+            .tupleLit => |tl| blk: {
+                for (tl.elems) |x| if (exprFindJump(x, pred)) |l| break :blk l;
+                break :blk null;
+            },
+            else => null,
+        },
+        .call => |c| switch (c.kind) {
+            .call => |cc| blk: {
+                if (cc.receiver) |r| if (exprFindJump(r.*, pred)) |l| break :blk l;
+                for (cc.args) |a| if (exprFindJump(a.value.*, pred)) |l| break :blk l;
+                break :blk null;
+            },
+            else => null,
+        },
+        // A closure (and an `async { }` block, a closure called in place) is a
+        // scope of its own.
+        else => null,
+    };
+}
+
+/// Which jump `bodyJumpsLabel` looks for.
+pub const LabelJump = enum { @"break", @"continue", either };
+
+/// Does `body` hold a `break :label` (no value) or a `continue :label` naming
+/// `label`? Looks through loops, `if`s, `case` arms and blocks — a block is a
+/// scope of the enclosing function (decision 541 (2)) — and not through
+/// closures or prefixed loops.
+pub fn bodyBreaksLabel(body: []const Stmt, label: []const u8) bool {
+    return bodyJumpsLabel(body, label, .either);
+}
+
+pub fn bodyJumpsLabel(body: []const Stmt, label: []const u8, which: LabelJump) bool {
+    for (body) |s| if (exprJumpsLabel(s.expr, label, which)) return true;
+    return false;
+}
+
+pub fn exprJumpsLabel(e: Expr, label: []const u8, which: LabelJump) bool {
+    return switch (e) {
+        .jump => |j| switch (j.kind) {
+            .@"break" => |b| which != .@"continue" and b.value == null and b.label != null and std.mem.eql(u8, b.label.?, label),
+            .@"continue" => |c| which != .@"break" and c.label != null and std.mem.eql(u8, c.label.?, label),
+            else => false,
+        },
+        .branch => |br| switch (br.kind) {
+            .if_ => |i| bodyJumpsLabel(i.then_, label, which) or (if (i.else_) |els| bodyJumpsLabel(els, label, which) else false),
+            .tryCatch => false,
+        },
+        .loop => |lp| lp.generator == null and bodyJumpsLabel(lp.body, label, which),
+        .collection => |col| if (col.kind == .case) blk: {
+            for (col.kind.case.arms) |arm| {
+                if (arm.body == .function) {
+                    if (arm.body.function.kind.syntax == .lambda and bodyJumpsLabel(arm.body.function.kind.body, label, which)) break :blk true;
+                } else if (exprJumpsLabel(arm.body, label, which)) break :blk true;
+            }
+            break :blk false;
+        } else false,
+        else => false,
+    };
+}
+
+/// The first `throw` / bare `try` in `body`'s own scope (`bodyFails`' borders) —
+/// what an `async { }` block or an `iter` / `stream` loop became a `@Result`
+/// from (the E3.9 hint points at it) — or null.
+pub fn bodyFirstFail(body: []const Stmt) ?Loc {
+    return bodyFindJump(body, isFailJump);
+}
+
+/// The first `throw` in `body`'s own scope, or null — tells `bodyFirstFail`'s
+/// answer a `throw` from a `try`.
+pub fn bodyFirstThrow(body: []const Stmt) ?Loc {
+    return bodyFindJump(body, isThrowJump);
+}
+
+fn isThrowJump(j: JumpExpr) bool {
+    return j == .throw_;
+}
+
+/// Decision 289 — the name an anonymous `pub default fn (…)` is analysed and
+/// emitted under: `default` is a keyword, so no declaration, import or call of
+/// the module can spell it, and its importer reaches it only through the
+/// module path (`import {m.double};`).
+pub const anonymous_default_name = "default";
 
 pub const FnDecl = struct {
     isPub: bool,
     /// The function's effect, or null for a plain function. Set from a
     /// `#[@<effect>]` annotation. The return wrapper carries the type params.
     effect: ?EffectKind = null,
+    /// Decision 553 (1) — the body marker written before `fn` (`async fn`,
+    /// `iter fn`, `async iter fn`, `component fn`), or null. The parser checks
+    /// it against the return's wrapper (`marker-type-mismatch`) and sets
+    /// `effect` from it. Dumped only when written.
+    marker: ?EffectKind = null,
+    /// Where the marker is written. Left out of the AST dump.
+    markerLoc: Loc = .{ .line = 0, .col = 0 },
     /// `declare fn` ---- a bodyless declaration typed from the signature alone.
     /// Required for `@[external(…)]` FFI fns (the only valid annotated form).
     isDeclare: bool = false,
     /// `pub default fn` — a package's DEFAULT handler, invoked by the
     /// `<package> "…"` DSL form (`q "select …"`). Declarable at any module's top
-    /// level (not just `root.bp`).
+    /// level (not just `root.bp`). Decision 289: the module's default function,
+    /// the one an importer binds under the module path's last segment.
     isDefault: bool = false,
+    /// Decision 289 — `pub default fn (…) -> R { … }`: the default binds no
+    /// name in its module. The parser leaves `name` empty (the formatter prints
+    /// `fn (`); analysis names it `anonymous_default_name`, a keyword no source
+    /// can spell, and its reflected `decl.name` is the module's file name.
+    /// Omitted from the AST dump when false.
+    anonymousDefault: bool = false,
+    /// Decision 289 — where `pub default <name>;` made this function the
+    /// module's default (null when `default` is written on the `fn` itself or
+    /// the fn is no default). Omitted from the AST dump when null.
+    defaultBy: ?Loc = null,
+    /// Decision 289 — the function is `pub` only because `pub default <name>;`
+    /// made it the module's (exported) default; the `fn` itself is written
+    /// without `pub`, which the formatter keeps. Omitted from the dump when false.
+    pubByDefault: bool = false,
     /// Optional generator label declared after the return type
-    /// (`#[@iterator] fn f() -> @Iterator<T> :gen`), used to disambiguate
-    /// `yield :label` from an enclosing loop's accumulator.
+    /// (`#[@resultGenerator] fn f() -> @ResultGenerator<T, E> :gen`), used to
+    /// disambiguate `yield :label` / `break :label` from an enclosing loop's.
     label: ?[]const u8 = null,
     name: []const u8,
+    /// Where the name is written (`fn link` → `link`) — the location a refusal
+    /// of the name points at. `{0,0}` when synthesised; left out of the AST
+    /// dump.
+    nameLoc: Loc = .{ .line = 0, .col = 0 },
     docComment: ?[]const u8 = null,
     /// `//` regular comment (last one before the declaration)
     comment: ?[]const u8 = null,
@@ -1717,10 +4145,19 @@ pub const FnDecl = struct {
     params: []Param,
     /// null when the return type is omitted (void-returning functions).
     returnType: ?TypeRef,
+    /// Where the return-type annotation starts (`-> Foo` → `Foo`'s column). Set
+    /// by the parser; `{0,0}` when the fn was synthesised. Carries the location
+    /// an unknown type name reds at (06 N30) and is left out of the AST dump.
+    returnTypeLoc: Loc = .{ .line = 0, .col = 0 },
     /// When non-null, this fn is a type guard: `fn f(x: T) -> x is NarrowedType`.
-    /// The string names the parameter being narrowed. The return type (above)
-    /// holds the narrowed type.
+    /// The string names the parameter being narrowed.
     typeGuardParam: ?[]const u8 = null,
+    /// The narrowed type of a type guard (`NarrowedType` above). 06 C5: a guard
+    /// *returns* `bool` — `returnType` says so — and this slot holds the type the
+    /// parameter is narrowed to in the branch the guard proves. Before C5 the
+    /// narrowed type was parked in `returnType`, which typed every guard call as
+    /// `T` and made the narrowing at the `if` unreachable.
+    typeGuardType: ?TypeRef = null,
     body: []Stmt,
 
     /// The effect named by a `#[@<effect>]` annotation on this fn, if any.
@@ -1764,15 +4201,14 @@ pub const FnDecl = struct {
     /// The `(module, symbol)` of the `external` annotation matching `target`
     /// (e.g. "erlang", "node"), or null when no annotation targets it.
     pub fn externalFor(this: FnDecl, target: []const u8) ?ExternalRef {
-        for (this.annotations) |a| {
-            if (!std.mem.startsWith(u8, a.name, "External.")) continue;
-            if (!std.ascii.eqlIgnoreCase(a.name["External.".len..], target)) continue;
-            var n = a.args.len;
-            if (n >= 1 and isBoolFlagArg(a.args[n - 1])) n -= 1;
-            if (n == 1) return .{ .module = "", .symbol = unquoteAnnotationArg(a.args[0]) };
-            if (n == 2) return .{ .module = unquoteAnnotationArg(a.args[0]), .symbol = unquoteAnnotationArg(a.args[1]) };
-        }
+        for (this.annotations) |a| if (externalRefOf(a, target)) |r| return r;
         return null;
+    }
+
+    /// Dumped without `returnTypeLoc`: the location is a diagnostic aid, not
+    /// surface, and the AST dumps are snapshot-compared.
+    pub fn jsonStringify(this: FnDecl, jws: anytype) !void {
+        return stringifyOmitting(this, jws, &.{ "returnTypeLoc", "nameLoc", "markerLoc" }, &.{ "typeGuardType", "anonymousDefault", "defaultBy", "pubByDefault", "marker" });
     }
 
     pub fn deinit(this: *FnDecl, allocator: std.mem.Allocator) void {
@@ -1783,35 +4219,132 @@ pub const FnDecl = struct {
         for (this.params) |*p| p.deinit(allocator);
         allocator.free(this.params);
         if (this.returnType) |*rt| rt.deinit(allocator);
+        if (this.typeGuardType) |*gt| gt.deinit(allocator);
         for (this.body) |*s| s.deinit(allocator);
         allocator.free(this.body);
     }
 };
 
-// ── record decl ───────────────────────────────────────────────────────────────
+// ── type decl ───────────────────────────────────────────────────────────────────
 
-/// A field in a record's parameter list: `name: Type` or `name: ?Type = default`
-pub const RecordField = struct {
+/// One field — of a record field list or of an enum variant payload:
+/// `name: Type` or `name: ?Type = default`.
+pub const Field = struct {
     name: []const u8,
     typeRef: TypeRef,
     /// Optional default value, e.g. `= null` or `= 0`.
     default: ?Expr = null,
     /// Member-level decorators on the field (`#[inject] repo: …`).
     annotations: []Annotation = &.{},
+    /// `//` comments written before the field in a 1.0.3 field list
+    /// (`type Config(\n // where it listens\n host: string)`), text only.
+    /// Owned. Kept so the formatter prints them back.
+    comments: []const []const u8 = &.{},
+    /// A `//` comment written on the field's own line, after it
+    /// (`x: i32, // the horizontal coordinate`). Without this slot the comment
+    /// is read as the NEXT field's leading comment — where it says something
+    /// false — and on the last field there is no next field, so it was freed.
+    /// Text only and owned, like `comments`.
+    trailingComment: ?[]const u8 = null,
+    /// Where the field's type annotation starts (06 N30). `{0,0}` when
+    /// synthesised. Left out of the AST dump.
+    typeLoc: Loc = .{ .line = 0, .col = 0 },
+    /// Decision 370 (1) — a record field written `@Expr<T>`: the parser read
+    /// the wrapper off (`parser/expr_params.zig`), `typeRef` holds `T`. To the
+    /// program the field is a `T`; a decorator fills it in a typed meta value
+    /// with a parameter's `@Expr`, spliced where the meta is read
+    /// (`comptime/typed_meta.zig`). Dumped only when set.
+    exprWrapped: bool = false,
 
-    pub fn deinit(this: *RecordField, allocator: std.mem.Allocator) void {
+    pub fn deinit(this: *Field, allocator: std.mem.Allocator) void {
         this.typeRef.deinit(allocator);
         if (this.default) |*d| d.deinit(allocator);
         for (this.annotations) |*ann| ann.deinit(allocator);
         if (this.annotations.len > 0) allocator.free(this.annotations);
+        for (this.comments) |c| allocator.free(c);
+        if (this.comments.len > 0) allocator.free(this.comments);
+        if (this.trailingComment) |c| allocator.free(c);
+    }
+
+    /// `comments` is written only when present, so a field without comments
+    /// serializes exactly as before the field list kept them.
+    pub fn jsonStringify(this: Field, jws: anytype) !void {
+        try jws.beginObject();
+        try jws.objectField("name");
+        try jws.write(this.name);
+        try jws.objectField("typeRef");
+        try jws.write(this.typeRef);
+        try jws.objectField("default");
+        try jws.write(this.default);
+        try jws.objectField("annotations");
+        try jws.write(this.annotations);
+        if (this.comments.len > 0) {
+            try jws.objectField("comments");
+            try jws.write(this.comments);
+        }
+        if (this.trailingComment) |c| {
+            try jws.objectField("trailingComment");
+            try jws.write(c);
+        }
+        if (this.exprWrapped) {
+            try jws.objectField("exprWrapped");
+            try jws.write(true);
+        }
+        try jws.endObject();
     }
 };
 
-/// `val Name = record(val f1: T1, val f2: T2) { fn ... }`
-/// or `val Name = record <T>(val item: T) { fn ... }`
-pub const RecordDecl = struct {
+/// The body shape of a `TypeDecl`: a field list (record) or variants and
+/// sections (enum).
+pub const TypeShape = union(enum) {
+    /// Inline fields declared in the parameter list.
+    record: []Field,
+    enum_: EnumShape,
+
+    /// Two parallel slices, and an enum body may **interleave** them. The
+    /// source order lives in each member's `order` field, not in the slices:
+    /// read them together and sort by it to recover what was written.
+    ///
+    /// **Nothing in `src/codegen/` may key on a variant's position in
+    /// `variants`.** A section desugars into a synthesised inner enum with a
+    /// mangled name, and no emitter derives a run-time encoding from an ordinal
+    /// (`grep -r 'variantIndex\|tag_index\|ordinal' src/codegen/` → 0 hits;
+    /// emilia built from both orderings emits byte-identical output on commonJS,
+    /// erlang, beam and wasm, and its 17 cells pass either way — re-measured
+    /// 2026-09-18 at `f8d97f95`, after fronts 02, 03, 04 and 05 had landed their
+    /// emitter work, by hoisting the 13 variants `tokens.bp` writes after a
+    /// section and diffing all four output trees). The moment one emitter did key
+    /// on the position, the order a member is stored in would stop being layout
+    /// and start being semantics, and it would do so silently.
+    pub const EnumShape = struct {
+        variants: []EnumVariant,
+        /// Top-level sections (recursive groupings) declared inside the body. The
+        /// comptime desugars each section into a synthesised inner enum with a
+        /// mangled name encoding the path. Empty for plain enums.
+        sections: []EnumSection = &.{},
+    };
+
+    pub fn deinit(this: *TypeShape, allocator: std.mem.Allocator) void {
+        switch (this.*) {
+            .record => |fields| {
+                for (fields) |*f| f.deinit(allocator);
+                allocator.free(fields);
+            },
+            .enum_ => |*e| {
+                for (e.variants) |*v| v.deinit(allocator);
+                allocator.free(e.variants);
+                for (e.sections) |*sec| sec.deinit(allocator);
+                allocator.free(e.sections);
+            },
+        }
+    }
+};
+
+/// A named type: a record (`val Name = record(val f: T) { fn ... }`) or an
+/// enum (`val Color = enum { Red, Rgb(r: Int) }`). The shape tells them apart.
+pub const TypeDecl = struct {
     name: []const u8,
-    /// Auto-generated unique ID counter, formatted as `"record_{id:0>4}"` when rendered.
+    /// Auto-generated unique ID counter, formatted as `"type_{id:0>4}"` when rendered.
     id: u32 = 0,
     isPub: bool = false,
     docComment: ?[]const u8 = null,
@@ -1820,28 +4353,138 @@ pub const RecordDecl = struct {
     /// `////` module-level documentation
     moduleComment: ?[]const u8 = null,
     annotations: []Annotation = &.{},
-    /// Generic type parameters on the record, e.g. `<T>`.
+    /// Generic type parameters, e.g. `<T>`.
     genericParams: []GenericParam = &.{},
-    /// Inline interface implementations: `record(...) implement I1 { }`.
+    /// Inline behavior implementations: `record(...) implement I1 { }`.
     implement: []TypeRef = &.{},
-    /// Inline fields declared in the parameter list.
-    fields: []RecordField,
-    /// Whether the last field had a trailing comma in the source.
+    shape: TypeShape,
+    /// Whether the last field/variant had a trailing comma in the source.
     trailingComma: bool = false,
-    /// Methods declared in the body (use InterfaceMethod; body is always present).
-    methods: []InterfaceMethod,
+    /// Methods declared in the body (may include `declare fn` abstract slots).
+    methods: []BehaviorMethod = &.{},
+    /// Comment lines after the last member, before `}` ("" = blank line). Owned slice.
+    bodyComments: []const []const u8 = &.{},
+    /// Where the declaration is written (01 step 9 — the diagnostics about it
+    /// are located here). Left out of the AST dump.
+    loc: Loc = .{ .line = 0, .col = 0 },
+    /// The name a printed value spells, when it is not `name`: an associated
+    /// type is declared `City__Columns` and prints as `City.Columns(…)`
+    /// (decision 216). Null — the dump leaves it out — for every type written
+    /// by hand. Read through `printedName`.
+    displayName: ?[]const u8 = null,
+    /// Decision 329 — a namespace type: `type Name { fn … }`, no field list,
+    /// every function in its body associated (no `self`). It has no value
+    /// (`Name()` is refused); its shape is the record with no field. Left out
+    /// of the dump when false.
+    isNamespace: bool = false,
+    /// Decision 330 (7) — the types declared in this type's body, each its
+    /// associated type (`Owner.Name`, the node `decl.addType` produces,
+    /// decision 216). The compile pipeline hoists each as the top-level type
+    /// `Owner__Name` shown `Owner.Name` (`nested_types.zig`); the formatter
+    /// prints them in the body. Left out of the dump when empty.
+    assocTypes: []TypeDecl = &.{},
+    /// Comment lines written above a type declared in a type's body ("" =
+    /// blank line). Owned slice. Left out of the dump when empty.
+    comments: []const []const u8 = &.{},
+    /// Decision 359 — a derived type's (307) lineage: the records it was made
+    /// from by `Type.pick`, `Type.omit` and `Type.merge`, each derived source
+    /// with its own lineage — the records a value of it may be spread into.
+    /// Empty for a type written by hand, and for `Type.partial` /
+    /// `Type.required` (neither is a pick, an omit or a merge). Left out of the
+    /// dump when empty.
+    derivedFrom: []const []const u8 = &.{},
+    /// Decision 359 — the type is `Type.partial(…)`'s answer: a value of it is
+    /// never spread. Left out of the dump when false.
+    derivedPartial: bool = false,
 
-    pub fn deinit(this: *RecordDecl, allocator: std.mem.Allocator) void {
+    /// The type's name as `@print` writes it.
+    pub fn printedName(this: TypeDecl) []const u8 {
+        return this.displayName orelse this.name;
+    }
+
+    /// True for the record shape (a field list).
+    pub fn isRecord(this: TypeDecl) bool {
+        return this.shape == .record;
+    }
+
+    /// The record fields; empty for an enum.
+    pub fn recordFields(this: TypeDecl) []Field {
+        return switch (this.shape) {
+            .record => |f| f,
+            .enum_ => &.{},
+        };
+    }
+
+    /// The enum variants; empty for a record.
+    pub fn variants(this: TypeDecl) []EnumVariant {
+        return switch (this.shape) {
+            .record => &.{},
+            .enum_ => |e| e.variants,
+        };
+    }
+
+    /// The enum sections; empty for a record.
+    pub fn sections(this: TypeDecl) []EnumSection {
+        return switch (this.shape) {
+            .record => &.{},
+            .enum_ => |e| e.sections,
+        };
+    }
+
+    pub fn deinit(this: *TypeDecl, allocator: std.mem.Allocator) void {
         for (this.annotations) |*ann| ann.deinit(allocator);
         allocator.free(this.annotations);
         for (this.genericParams) |*gp| gp.deinit(allocator);
         allocator.free(this.genericParams);
         for (this.implement) |*im| im.deinit(allocator);
         allocator.free(this.implement);
-        for (this.fields) |*f| f.deinit(allocator);
-        allocator.free(this.fields);
+        this.shape.deinit(allocator);
         for (this.methods) |*m| m.deinit(allocator);
         allocator.free(this.methods);
+        if (this.bodyComments.len > 0) allocator.free(this.bodyComments);
+        for (this.assocTypes) |*a| a.deinit(allocator);
+        if (this.assocTypes.len > 0) allocator.free(this.assocTypes);
+        if (this.comments.len > 0) allocator.free(this.comments);
+    }
+
+    pub fn jsonStringify(this: TypeDecl, jws: anytype) !void {
+        return stringifyOmitting(this, jws, &.{"loc"}, &.{ "bodyComments", "displayName", "isNamespace", "assocTypes", "comments", "derivedFrom", "derivedPartial" });
+    }
+};
+
+// ── type alias decl ───────────────────────────────────────────────────────────
+
+/// `[pub] type Name<A, B> = Target;` — a transparent name for a type
+/// (decision 118 rule 1). The checker substitutes `Target` wherever `Name` is
+/// written; backends emit nothing for it. The declarations that *use* the
+/// alias keep it syntactically (`-> Parser<i32>` stays a `TypeRef` naming
+/// `Parser`), which is how the effect checker tells an aliased return from a
+/// literal wrapper (`Env.aliasedReturnWrapper`).
+pub const TypeAliasDecl = struct {
+    name: []const u8,
+    isPub: bool = false,
+    docComment: ?[]const u8 = null,
+    /// `//` regular comment (last one before the declaration)
+    comment: ?[]const u8 = null,
+    /// `////` module-level documentation
+    moduleComment: ?[]const u8 = null,
+    /// The alias's own parameters, e.g. `<T>` in `type Parser<T> = …`.
+    genericParams: []GenericParam = &.{},
+    /// The aliased type, as written.
+    target: TypeRef,
+    /// The `type` keyword (the declaration's location).
+    loc: Loc = .{ .line = 0, .col = 0 },
+    /// Where `target` starts. Left out of the AST dump.
+    targetLoc: Loc = .{ .line = 0, .col = 0 },
+
+    pub fn deinit(this: *TypeAliasDecl, allocator: std.mem.Allocator) void {
+        for (this.genericParams) |*gp| gp.deinit(allocator);
+        allocator.free(this.genericParams);
+        this.target.deinit(allocator);
+    }
+
+    pub fn jsonStringify(this: TypeAliasDecl, jws: anytype) !void {
+        return stringifyOmitting(this, jws, &.{ "loc", "targetLoc" }, &.{});
     }
 };
 
@@ -1856,12 +4499,24 @@ pub const ImplementMethod = struct {
     name: []const u8,
     params: []Param,
     body: []Stmt,
+    /// Where the method's name is written (01 step 9). Left out of the dump.
+    loc: Loc = .{ .line = 0, .col = 0 },
+    /// Decision 553 (1) — the body marker written before `fn`, or null; the
+    /// checker reads it against the behavior member's return. Dumped only
+    /// when written.
+    marker: ?EffectKind = null,
+    /// Where the marker is written. Left out of the AST dump.
+    markerLoc: Loc = .{ .line = 0, .col = 0 },
 
     pub fn deinit(this: *ImplementMethod, allocator: std.mem.Allocator) void {
         for (this.params) |*p| p.deinit(allocator);
         allocator.free(this.params);
         for (this.body) |*s| s.deinit(allocator);
         allocator.free(this.body);
+    }
+
+    pub fn jsonStringify(this: ImplementMethod, jws: anytype) !void {
+        return stringifyOmitting(this, jws, &.{ "loc", "markerLoc" }, &.{"marker"});
     }
 };
 
@@ -1881,13 +4536,17 @@ pub const ImplementDecl = struct {
     comment: ?[]const u8 = null,
     /// `////` module-level documentation
     moduleComment: ?[]const u8 = null,
-    /// interfaces being implemented, e.g. `[Drawable, @Context<E, E>]`.
-    /// Each is a full `TypeRef` so generic interfaces (`Iface<A, B>`, `@Context<…>`)
+    /// interfaces being implemented, e.g. `[Drawable, @Renderable]`.
+    /// Each is a full `TypeRef` so generic interfaces (`Iface<A, B>`, `@Renderable`)
     /// are supported, not just bare identifiers.
     interfaces: []TypeRef,
     /// The type this implement is for, e.g. "SmartCamera".
     target: []const u8,
     methods: []ImplementMethod,
+
+    /// Where the declaration is written (01 step 9 — the diagnostics about it
+    /// are located here). Left out of the AST dump.
+    loc: Loc = .{ .line = 0, .col = 0 },
 
     pub fn deinit(this: *ImplementDecl, allocator: std.mem.Allocator) void {
         for (this.genericParams) |*gp| gp.deinit(allocator);
@@ -1896,6 +4555,10 @@ pub const ImplementDecl = struct {
         allocator.free(this.interfaces);
         for (this.methods) |*m| m.deinit(allocator);
         allocator.free(this.methods);
+    }
+
+    pub fn jsonStringify(this: ImplementDecl, jws: anytype) !void {
+        return stringifyOmitting(this, jws, &.{"loc"}, &.{});
     }
 };
 
@@ -1921,11 +4584,19 @@ pub const ExtendDecl = struct {
     target: []const u8,
     methods: []ImplementMethod,
 
+    /// Where the declaration is written (01 step 9 — the diagnostics about it
+    /// are located here). Left out of the AST dump.
+    loc: Loc = .{ .line = 0, .col = 0 },
+
     pub fn deinit(this: *ExtendDecl, allocator: std.mem.Allocator) void {
         for (this.genericParams) |*gp| gp.deinit(allocator);
         allocator.free(this.genericParams);
         for (this.methods) |*m| m.deinit(allocator);
         allocator.free(this.methods);
+    }
+
+    pub fn jsonStringify(this: ExtendDecl, jws: anytype) !void {
+        return stringifyOmitting(this, jws, &.{"loc"}, &.{});
     }
 };
 
@@ -1938,6 +4609,32 @@ pub const TypedStmt = StmtOf(.typed);
 
 /// Untyped call argument
 pub const CallArg = CallArgOf(.untyped);
+
+/// Decision 525 — a trailing lambda is the argument after the written ones:
+/// `f(x) { n -> … }` is `f(x, { n -> … })` and a method's `b.run { -> 10 }` is
+/// `b.run({ -> 10 })`, so the parameter it fills is checked, bound and lowered
+/// as any lambda argument's is, on every backend. `call` is the untyped call
+/// payload (`.call.kind.call`); only a plain trailing lambda (unlabelled, not a
+/// block) of a non-builtin call is lowered, and either all of them or none.
+/// True when it lowered.
+pub fn lowerTrailingLambdas(arena: std.mem.Allocator, call: anytype) std.mem.Allocator.Error!bool {
+    if (call.is_builtin or call.trailing.len == 0) return false;
+    for (call.trailing) |tl| if (tl.label != null or tl.isBlock) return false;
+    const args = try arena.alloc(CallArg, call.args.len + call.trailing.len);
+    @memcpy(args[0..call.args.len], call.args);
+    for (call.trailing, 0..) |tl, i| {
+        const lambda = try arena.create(Expr);
+        lambda.* = .{ .function = .{ .loc = tl.loc, .kind = .{
+            .syntax = .lambda,
+            .params = tl.params,
+            .body = tl.body,
+        } } };
+        args[call.args.len + i] = .{ .label = null, .value = lambda };
+    }
+    call.args = args;
+    call.trailing = &.{};
+    return true;
+}
 /// Typed call argument
 pub const TypedCallArg = CallArgOf(.typed);
 

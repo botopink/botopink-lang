@@ -1,0 +1,4 @@
+botopink-cell 1
+refused error[generic-arg-count-exceeded]: `@Renderable` takes no type argument — it is a bare marker (decision 354)
+at src/main.bp:4:47
+label write `@Renderable`

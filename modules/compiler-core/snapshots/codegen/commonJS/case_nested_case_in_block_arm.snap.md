@@ -1,0 +1,38 @@
+----- SOURCE CODE -- main.bp
+```botopink
+val result = case 42 {
+    0 -> {
+      case 1 {
+          0    -> 54;
+          _ -> 1;
+      };
+   };
+   _ -> 1;
+};
+```
+
+----- JAVASCRIPT -- main.js
+```javascript
+const result = (() => {
+    const _s = 42;
+    if (_s === 0) {
+        return (() => {
+            const _s = 1;
+            if (_s === 0) return 54;
+            return 1;
+        })();
+    }
+    return 1;
+})();
+
+Object.defineProperty(exports, "__bp_priv__", { value: { result } });
+```
+
+----- TYPESCRIPT TYPEDEF -- main.d.ts
+```typescript
+
+```
+
+----- RUN LOG -----
+```logs
+```

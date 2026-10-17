@@ -1,0 +1,29 @@
+//// Decisions 535, 527 (3), 264 — an uncaught integer overflow writes
+//// `panic: integer overflow: <op> on <type> at <file>:<line>:<col>` to stderr
+//// on every target: the `Failure` an `attempt` would have answered, never a
+//// bare trap. What was printed before stays printed; nothing after it runs.
+//// `INT_MIN / -1` is one: `attempt` catches it as `Error(panic)` with that text.
+
+import {failure, failure.Failure} from "std";
+
+fn bump(a: i32) -> i32 {
+    return a + 1;
+}
+
+fn divide(a: i32, b: i32) -> i32 {
+    return a / b;
+}
+
+fn show(r: @Result<i32, Failure>) {
+    case r {
+        Ok(v) -> @print("Ok " + v.toString());
+        Error(f) -> @print("Error " + f.kind + ": " + f.message);
+    }
+}
+
+pub fn main() {
+    @print("before");
+    show(failure.attempt({ -> divide(-2147483647 - 1, -1) }));
+    @print(bump(2147483647));
+    @print("after");
+}

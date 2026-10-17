@@ -1,0 +1,10 @@
+//// Decision 247 — a float folded at compile time keeps its decimal point:
+//// `comptime 2.0 * 3.0` is the literal `6.0`, not `6` — which erlang and
+//// beam read back as the integer and printed `6` before (`eval.zig`).
+
+val c = comptime 2.0 * 3.0;
+
+pub fn main() {
+    val e: f64 = c;
+    @print(e);
+}

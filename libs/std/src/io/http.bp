@@ -1,0 +1,87 @@
+//// std/io/http — minimal HTTP client primitives (cross-backend).
+////
+//// Reference:
+////   Node.js  — https://nodejs.org/api/globals.html#fetch
+////              (the global `fetch` since Node 18; `Response.text()`
+////               reads the body as a UTF-8 string).
+////   Erlang   — https://www.erlang.org/doc/man/httpc.html
+////              (`httpc:request/4`; requires `inets:start()` and,
+////               for https URLs, `ssl:start()`).
+////
+//// `fetch(url) -> @Task<@Result<Response, string>>` is the single GET
+//// surface (decision 432: the task that fails with the message — `await`
+//// answers the `@Result`, so the caller writes `try await http.fetch(url)`
+//// to propagate it). It maps the host binding
+//// `fetchHost` (`result: true`, decisions 431, 490) to the message of its
+//// `HostError` (decision 486): the node template's rejected `fetch` is
+//// `Error(HostError(…))` and a fulfilled one `Ok({ status, body })`; the
+//// erlang template ensures `inets`/`ssl` are
+//// started (`application:ensure_all_started/1`, idempotent) and lowers to a synchronous `httpc:request/4`, whose
+//// `{error, R}` becomes `Error(HostError(<R formatted>, …))`. Erlang is eager: `@Task<T>` is
+//// `T` there, so the caller's `await` is identity on that backend. An HTTP
+//// error status (404, 500) is a RESPONSE, not a failure: it is `Ok` with its
+//// `status`.
+////
+//// Out of scope: methods other than GET, request headers/body,
+//// streaming responses. Richer shapes can land as separate `declare`s
+//// (`get`/`post`/`request`) on top of the same
+//// `@Task<@Result<Response, string>>` contract.
+////
+//// BEAM and wasm targets are out of scope: `wat3` has no host fetch
+//// surface; BEAM follows the erlang template once an `httpc`-equivalent
+//// shim is ported. Either backend's caller will fail with a missing-
+//// external diagnostic at codegen time, matching the spec wave's
+//// scope.
+
+import {failure, failure.HostError};
+
+pub type Response(
+    status: i32,
+    body: string,
+)
+
+// The GET as the host answers it, under `result: true` (decisions 431, 490):
+// the response, or every way the host fails as `Error(HostError(…))`.
+//
+// Node: `globalThis.fetch($0)` chained with `.text()` flattens the
+// `Response → Promise<text>` shape into one `{ status, body }`; a rejection
+// anywhere in the chain is `Error(HostError(<message>, …))`
+// (`codegen/commonJS.zig` `wrapResult`).
+//
+// Erlang: idempotently start `inets` + `ssl` (`application:ensure_all_started/1`,
+// so a second `fetch` call doesn't bomb on `{already_started, _}`), then call
+// `httpc:request/4`.
+// The OK arm answers `{ok, #{status => Code, body => Body}}`; the error arm
+// `{error, Reason}`, whose message is the reason formatted (decision 490).
+#[@External.Node("""globalThis.fetch($0).then(__r => __r.text().then(__b => ({ status: __r.status, body: __b })))""", result: true)]
+#[@External.Erlang("""(fun(__U) -> application:ensure_all_started(inets), application:ensure_all_started(ssl), case httpc:request(get, {binary_to_list(__U), []}, [], []) of {ok, {{_, __C, _}, _, __B}} -> {ok, #{status => __C, body => iolist_to_binary(__B)}}; {error, __R} -> {error, __R} end end)($0)""", result: true)]
+declare fn fetchHost(url: string) -> @Task<@Result<Response, HostError>>;
+
+// Issue a GET request and resolve with the response, or fail with the
+// transport failure's message (`await` answers `Error(message)`, decision 432):
+// `fetchHost`'s `HostError` mapped to its message (decision 486).
+pub fn fetch(url: string) -> @Task<@Result<Response, string>> {
+    val r = await fetchHost(url);
+    return case r {
+        Ok(resp) -> resp;
+        Error(e) -> throw e.message;
+    };
+}
+
+// ── tests ────────────────────────────────────────────────────────────────────
+// No inline runtime tests: `fetch` needs network access, which the
+// per-backend lib-test runners do not provide. The surface is exercised
+// indirectly through the parser §A3 + infer §A3 acceptance gates
+// (`modules/compiler-core/src/parser/tests/effect_rejections.zig`)
+// which pin `declare fn` with `#[@External.<Target>(…)]` as accepted.
+//
+// A compile-only smoke fixture lives below to ensure callers can
+// `try await fetch(url)` from a `-> @Task<@Result<…>>` body without the type
+// checker tripping on the eager `Response` payload. The body is not executed
+// at test time (its `await` would issue a network call), but the fixture
+// type-checks at compile time.
+
+pub fn fetchStatus(url: string) -> @Task<@Result<i32, string>> {
+    val resp = try await fetch(url);
+    return resp.status;
+}

@@ -1,0 +1,11 @@
+//// Report L (R3) — package `a` declares `Life` in one module and
+//// `Client(life: Life, …)` in another; package `b` imports `Client` only and
+//// names it in its signatures; the root imports from `b` and calls them. The
+//// closure of `Client`'s field types resolves in `a`'s own scope at every
+//// import site (rakun-metrics read `unknown type 'CacheLife'` there).
+
+import {lifeOf, make} from "b";
+
+pub fn main() {
+    @print(lifeOf(make(7)));
+}

@@ -1,0 +1,21 @@
+//// Decision 316 — the wrapper `decl.wrapWith` takes is a lambda written at
+//// the call (question B-11-a, as built): it is the program's code, where the
+//// decorator's parameters are spliced. A function named in its place is
+//// refused at the argument.
+
+fn passThrough(call: unknown) -> string {
+    return "wrapped";
+}
+
+fn counted(comptime decl: @Decl<fn(..) -> string>) {
+    decl.wrapWith(passThrough);
+}
+
+#[counted]
+pub fn posts() -> string {
+    return "posts";
+}
+
+pub fn main() {
+    @print(posts());
+}

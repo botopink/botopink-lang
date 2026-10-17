@@ -1,0 +1,1 @@
+{ "name": "std_asserts_throws_over_attempt", "targets": ["commonJS", "erlang", "beam"] }

@@ -1,0 +1,13 @@
+//// Decisions 397, 415 (1) — a template method is found by a name of the call
+//// site's scope, declared there or imported (question B-18-a, as built): the
+//// receiver's type imports nothing by itself. `store.bp` declares `read` for
+//// `Memory`, and this module imports `Memory` alone, so `mem.read "a"` names
+//// no method — refused at the call.
+
+mod store;
+import {store.Memory};
+
+pub fn main() {
+    val mem = Memory(prefix: "m:");
+    @print(mem.read "a");
+}

@@ -1,0 +1,19 @@
+//// Two packages of one build each declare an enum named `Signal`, with
+//// different variants, and each matches its own with `case`. A module is a
+//// namespace on every target; wasm links the program into one namespace and
+//// mangles the second `Signal` per module (`audio/level/Signal`), renaming
+//// every path its module writes (`Signal.High(db)`, the `case` arms, the
+//// `-> Signal` signatures). Before, the second enum was dropped at link time:
+//// `audio`'s `case` tested `traffic`'s tags and every value printed wrong.
+
+import {stop, blink, describe} from "traffic";
+import {quiet, loud, level} from "audio";
+
+pub fn main() {
+    @print(describe(stop()));
+    @print(describe(blink(3)));
+    @print(level(quiet()));
+    @print(level(loud(70)));
+    @print(stop());
+    @print(quiet());
+}

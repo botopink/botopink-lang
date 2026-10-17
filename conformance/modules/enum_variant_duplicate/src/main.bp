@@ -1,0 +1,9 @@
+//// A variant declared twice at one level of an enum body is refused at the
+//// second; it used to check, and the second declaration was the one a bare
+//// name reached.
+
+type Color { Red, Green, Red }
+
+pub fn main() {
+    @print(Color.Red);
+}

@@ -1,0 +1,4 @@
+//// The package root of `b`: its `theme` and the `user` reading it.
+
+pub mod theme;
+pub mod user;

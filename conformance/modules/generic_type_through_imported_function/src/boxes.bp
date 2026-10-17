@@ -1,0 +1,5 @@
+pub type Box<T>(value: T, tag: string)
+
+pub fn box<T>(v: T) -> Box<T> {
+    return Box(value: v, tag: "b");
+}

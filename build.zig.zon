@@ -1,0 +1,45 @@
+// The workspace's one fetched input: wasmtime's C API, the comptime runtime's
+// engine (decision 543), one prebuilt library per release target, pinned by
+// hash. Lazy: `zig build` fetches only the one its target links (`build.zig`
+// `wasmtimeDependency`); no cargo, nothing else fetched.
+.{
+    .name = .botopink,
+    .fingerprint = 0xce445227c49e5a2,
+    .version = "0.0.0",
+    .minimum_zig_version = "0.16.0",
+    .dependencies = .{
+        .wasmtime_linux_x86_64 = .{
+            .url = "https://github.com/bytecodealliance/wasmtime/releases/download/v49.0.3/wasmtime-v49.0.3-x86_64-linux-c-api.tar.xz",
+            .hash = "N-V-__8AAHq7dAbk2Qk3yD4KEXDQDopq7H6XBUu6fCPWPWLp",
+            .lazy = true,
+        },
+        .wasmtime_linux_aarch64 = .{
+            .url = "https://github.com/bytecodealliance/wasmtime/releases/download/v49.0.3/wasmtime-v49.0.3-aarch64-linux-c-api.tar.xz",
+            .hash = "N-V-__8AALpJxAUV86d6TbsQrDYz0QQ8ccWwPkNW7mgCwxdH",
+            .lazy = true,
+        },
+        .wasmtime_macos_x86_64 = .{
+            .url = "https://github.com/bytecodealliance/wasmtime/releases/download/v49.0.3/wasmtime-v49.0.3-x86_64-macos-c-api.tar.xz",
+            .hash = "N-V-__8AAP4VngQiqGmysjQWXdnbHojNVmyiP3ZvyIjBYa57",
+            .lazy = true,
+        },
+        .wasmtime_macos_aarch64 = .{
+            .url = "https://github.com/bytecodealliance/wasmtime/releases/download/v49.0.3/wasmtime-v49.0.3-aarch64-macos-c-api.tar.xz",
+            .hash = "N-V-__8AAF5-RQRz1Y8hjpgG5-ELG2bbW1EXUn_CrmrCu0Hq",
+            .lazy = true,
+        },
+        .wasmtime_windows_x86_64 = .{
+            .url = "https://github.com/bytecodealliance/wasmtime/releases/download/v49.0.3/wasmtime-v49.0.3-x86_64-mingw-c-api.zip",
+            .hash = "N-V-__8AAJ-I3gb7ODUFYn_l7004XiD9Uwn2XHuBBcr6dXvd",
+            .lazy = true,
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "modules",
+        "libs",
+        "scripts",
+        "conformance",
+    },
+}

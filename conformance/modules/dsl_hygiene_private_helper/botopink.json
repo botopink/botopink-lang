@@ -1,0 +1,1 @@
+{ "name": "dsl_hygiene_private_helper", "dependencies": { "shapesdsl": { "path": "deps/shapesdsl" } } }

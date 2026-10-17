@@ -1,0 +1,9 @@
+//// 01-compiler/01-checker row `primitive-type-name-taken` — a module-level
+//// `val` named like a primitive type is refused at its name, as a `fn` is.
+//// The parent binary accepted it and printed `3`.
+
+val i64 = 3;
+
+pub fn main() {
+    @print(i64);
+}

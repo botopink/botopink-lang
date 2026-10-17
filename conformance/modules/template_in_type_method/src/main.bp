@@ -1,0 +1,16 @@
+//// Decision 425 — a template call expands wherever an expression may stand:
+//// in a type's method body, as in a function's.
+
+fn twice(comptime q: @Expr<string>) -> @Expr<string> {
+    return q.build("\"" + q.text() + q.text() + "\"");
+}
+
+type Filter(minAge: i32) {
+    pub fn names(self: Self) -> string {
+        return twice "ab" + self.minAge.toString();
+    }
+}
+
+pub fn main() {
+    @print(Filter(minAge: 7).names());
+}

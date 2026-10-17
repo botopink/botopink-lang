@@ -1,0 +1,11 @@
+fn f() -> i32 {
+    var n = 1;
+    defer {
+        n = 100;
+    }
+    return n;
+}
+
+pub fn main() {
+    @print(f());
+}

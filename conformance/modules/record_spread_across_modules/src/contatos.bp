@@ -1,0 +1,18 @@
+//// Decision 359 — types derived in this module from a record of another
+//// module are derived from that record: a value of one spreads into
+//// `Pessoa` here and in the module that imports it.
+
+import {pessoas.Pessoa};
+import {types.Type} from "std";
+
+pub type Extra(nota: string)
+
+pub val Contato = Type.pick(Pessoa, .email);
+
+pub val Cadastro = Type.omit(Pessoa, .idade);
+
+pub val Ficha = Type.merge(Pessoa, Extra);
+
+pub fn completar(c: Contato, nome: string) -> Pessoa {
+    return Pessoa(..c, nome: nome);
+}

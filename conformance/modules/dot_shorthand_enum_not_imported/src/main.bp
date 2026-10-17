@@ -1,0 +1,15 @@
+//// A leading-dot variant takes its enum from the position's expected type
+//// even where the module never names the enum: `label` and `width` are
+//// imported, `Mode` and `Size` are not (144 B-10, decision 430). commonJS and
+//// erlang emitted the enum's name unbound (`Mode is not defined`, `variable
+//// 'Mode' is unbound`).
+
+pub mod sizes;
+import {label} from "lib";
+import {sizes.width};
+
+pub fn main() {
+    @print(label(.Top));
+    @print(label(.Two("x")));
+    @print(width(.Large));
+}

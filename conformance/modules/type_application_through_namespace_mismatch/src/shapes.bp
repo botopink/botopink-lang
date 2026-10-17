@@ -1,0 +1,14 @@
+pub type Box<T>(value: T) {
+    pub fn make(v: T) -> Box<T> {
+        return Box(value: v);
+    }
+
+    pub fn get(self: Self<T>) -> T {
+        return self.value;
+    }
+}
+
+pub type Opt<T> {
+    Some(value: T),
+    None,
+}

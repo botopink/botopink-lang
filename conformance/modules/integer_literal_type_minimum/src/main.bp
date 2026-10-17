@@ -1,0 +1,23 @@
+//// Decision 319 — each signed type's minimum is written as itself: the
+//// operand of a unary `-` is range-checked as the negative value, so
+//// `-9223372036854775808l` is `i64`'s minimum (it was refused as `2^63`), and
+//// an unsuffixed literal takes the range of the type its position asks for —
+//// a negated one included, from the other operand of a comparison
+//// (`value >= -9007199254740991` over an `i64`).
+
+fn safe(value: i64) -> bool {
+    return value <= 9007199254740991 && value >= -9007199254740991;
+}
+
+pub fn main() {
+    val a: i8 = -128;
+    val b: i16 = -32768;
+    val c: i32 = -2147483648;
+    val d = -9223372036854775808l;
+    val e: i64 = 3000000000;
+    val f: u32 = 4294967295;
+    @print(a, b, c);
+    @print(d);
+    @print(e, f);
+    @print(safe(0l), safe(-9007199254740992l));
+}

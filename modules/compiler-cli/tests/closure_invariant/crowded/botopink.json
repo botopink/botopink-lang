@@ -1,0 +1,7 @@
+{
+  "name": "crowded",
+  "version": "0.0.1",
+  "src": "src/",
+  "entry": "main.bp",
+  "dependencies": { "shelf": { "path": "../shelf" }, "rival": { "path": "../rival" } }
+}

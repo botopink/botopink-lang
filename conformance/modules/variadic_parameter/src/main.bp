@@ -1,0 +1,44 @@
+//// Decision 267 — a variadic parameter `..name: T[]`: the last parameter
+//// takes zero or more positional arguments after the fixed ones, each checked
+//// against `T`, and the body reads `name` as a `T[]`. Pinned: a free function
+//// called with zero, one and three variadic arguments, a generic one, a method
+//// (`self` first, then the variadic), an associated function, and `@print`
+//// itself, declared `(..values: unknown[])` in `builtins.d.bp`, with two.
+//// commonJS lowers it as a rest parameter, erlang and beam as one list
+//// argument, wasm as one array.
+
+fn total(label: string, ..values: i32[]) -> string {
+    var sum = 0;
+    for (values) { v ->
+        sum = sum + v;
+    }
+    return "${label}: ${values.length()} -> ${sum}";
+}
+
+fn count<T>(..items: T[]) -> i32 {
+    return items.length();
+}
+
+pub type Bag(sep: string) {
+    pub fn join(self: Self, ..parts: string[]) -> string {
+        return parts.join(self.sep);
+    }
+
+    pub fn of(..parts: string[]) -> i32 {
+        return parts.length();
+    }
+}
+
+pub fn main() {
+    @print(total("none"));
+    @print(total("one", 4));
+    @print(total("three", 1, 2, 3));
+    @print(count("a", "b"));
+    @print(count<bool>());
+    val b = Bag(sep: "+");
+    @print(b.join());
+    @print(b.join("x"));
+    @print(b.join("x", "y", "z"));
+    @print(Bag.of("p", "q"));
+    @print("two", 3);
+}

@@ -1,0 +1,38 @@
+//// 02-std-and-packaging/97-std-dedupe step 13, decision 319 — std's `io` cells over an `i64`
+//// answer one value on every target: `fs.stat`'s `size` and `mtime` (the Node form reads
+//// `statSync` with `bigint: true` and answers the canonical form, a `number` within
+//// ±(2^53 − 1)) and `clock`'s durations past 2^53 (a `BigInt` on commonJS), built by
+//// `clock.hours` — std's `toI64()`, no host cell — and printed as the same digits.
+//// Refused on wasm (`.wasm.expect`): std's `io/fs` host cells have no wasm binding.
+
+import {io.fs, io.clock} from "std";
+
+// After 2020-01-01T00:00:00Z.
+fn recent(epochMillis: i64) -> bool {
+    return epochMillis > 1577836800000l;
+}
+
+fn printStat(p: string) -> void {
+    case fs.stat(p) {
+        Ok(s) {
+            @print(s.size);
+            @print(s.isDir);
+            @print(recent(s.mtime));
+        }
+        Error(reason) -> @print(reason);
+    }
+}
+
+pub fn main() {
+    fs.writeText("five.txt", "12345");
+    printStat("five.txt");
+    @print(fs.stat(".").isOk());
+    val most = clock.hours(2147483647);
+    val twice = clock.add(most, most);
+    @print(clock.toMillis(most));
+    @print(clock.toMillis(twice));
+    @print(
+        clock.toMillis(twice) - clock.toMillis(most) == clock.toMillis(most),
+    );
+    @print(clock.parseDuration("9007199254740991ms").unwrapOr(0l));
+}

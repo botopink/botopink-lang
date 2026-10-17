@@ -1,0 +1,76 @@
+//// Decision 8 §3.2, §5.1 P5, §5.3 on wasm: the payload of a generic variant read
+//// through an `unknown`, a guard's `is` that narrows it, and the values of a
+//// `case` or an `if` whose arms differ, which are their union. `test/case_unknown.bp`
+//// and `test/case_exhaustive.bp` state the same rules; this cell is the cheap run
+//// of them (a payload declared `T` has no static type in a `case` over an `unknown`,
+//// and a union-valued `case` or `if` has no static type at all, so the wasm backend
+//// boxed neither and refused the program).
+
+type Maybe<T> {
+    Some(value: T),
+    None,
+}
+
+fn innerLength(b: unknown) -> i32 {
+    return case b {
+        Maybe.Some(value: v) when (v is string) {
+            v.length
+        }
+        Maybe.Some(value: v) {
+            -1
+        }
+        _ {
+            -2
+        }
+    };
+}
+
+fn size(v: i32 | string) -> i32 {
+    return case v {
+        i32 { n ->
+            n
+        }
+        string { s ->
+            s.length
+        }
+    };
+}
+
+fn innerSize(m: Maybe<i32 | string>) -> i32 {
+    return case m {
+        .Some(value: v) {
+            size(v)
+        }
+        .None {
+            0
+        }
+    };
+}
+
+fn orNone(m: Maybe<i32>) -> i32 | string {
+    return case m {
+        .Some(value: n) {
+            n
+        }
+        .None {
+            "none"
+        }
+    };
+}
+
+pub fn main() {
+    val s: unknown = Maybe.Some(value: "abc");
+    val n: unknown = Maybe.Some(value: 5);
+    val x: unknown = 1;
+    @print(innerLength(s));
+    @print(innerLength(n));
+    @print(innerLength(x));
+    @print(innerSize(Maybe.Some(value: "abc")));
+    @print(innerSize(Maybe.Some(value: 2)));
+    @print(innerSize(Maybe.None));
+    @print(orNone(Maybe.Some(value: 7)) == 7);
+    @print(orNone(Maybe.None) == "none");
+    val flag = true;
+    val v = if (flag) 2 else "two";
+    @print(size(v));
+}

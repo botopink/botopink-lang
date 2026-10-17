@@ -1,0 +1,16 @@
+//// Decision 567 — a type error inside a member a decorator wrote is located at
+//// the annotation on the declaration that added it, not past the file's last
+//// line; the `called from` line names the decorator's `decl.addMember` call.
+
+fn maker<T>(comptime decl: @Decl<T>) {
+    decl.addMember("code", fn(self: T) -> i32 {
+        return self.nope;
+    });
+}
+
+#[maker]
+pub type City(name: string)
+
+pub fn main() {
+    @print(City(name: "a").code());
+}

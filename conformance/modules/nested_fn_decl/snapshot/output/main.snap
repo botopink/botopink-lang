@@ -1,0 +1,4 @@
+botopink-cell 1
+refused error[nested-fn-decl]: a `fn` is declared at module level, not inside a body
+at src/main.bp:6:5
+label bind a lambda instead

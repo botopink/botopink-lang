@@ -1,0 +1,12 @@
+botopink-cell 1
+out null
+out F(x: null, y: 1.5)
+out 9.5
+out 2.25
+out F(x: 2.25, y: 0.5)
+out 2.25
+out 1.5
+out F(x: null, y: 0.25)
+out 7.5
+out 2.25
+out 0.5

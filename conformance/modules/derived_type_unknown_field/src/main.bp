@@ -1,0 +1,13 @@
+//// Decision 307 — a field the source does not declare is the ordinary
+//// `Type.Field<T>` error (decision 280), at the field.
+
+import {types.Type} from "std";
+
+type Recipe(
+    title: string,
+    description: ?string,
+)
+
+pub val RecipeTitle = Type.pick(Recipe, .titel);
+
+pub fn main() {}

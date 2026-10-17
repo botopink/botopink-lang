@@ -1,0 +1,19 @@
+//// Decision 63's amendment, the reader half on every backend: `String.at`
+//// answers the one-character string at an index. It is the method the index
+//// expression `s[i]` rewrites to, and until `fix/wasm-refusals` it had no wasm
+//// lowering at all — `s.at(1)` compiled and then **trapped** (`unreachable`,
+//// exit 134) where commonJS, erlang and beam all answered.
+////
+//// Only present indexes are probed here. An absent one answers `?string`'s
+//// absence, and the three backends spell that three different ways today
+//// (`null` / the atom `undefined` / `undefined`) — decision 47's row, C-18,
+//// measured by `run/index_at_optional.bp`. A §47 divergence must not hide this
+//// cell's claim.
+
+pub fn main() {
+    val s = "abc";
+    @print(s.at(0));
+    @print(s.at(1));
+    @print(s.at(2));
+    @print("hello world".at(6));
+}

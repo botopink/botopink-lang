@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: anyvalue-outside-template: `anyvalue` — a value whose type is known once its code is built — is written only as a template's return
+at src/main.bp:5:12

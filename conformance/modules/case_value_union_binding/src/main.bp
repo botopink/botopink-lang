@@ -1,0 +1,24 @@
+type Shape {
+    Circle(r: i32),
+    Label(text: string),
+}
+
+fn describe(s: Shape) -> string {
+    val v = case s {
+        Circle(r) -> r * 2;
+        Label(text) -> text;
+    };
+    return case v {
+        i32 { n ->
+            "number ${n}"
+        }
+        string { t ->
+            "text ${t}"
+        }
+    };
+}
+
+pub fn main() {
+    @print(describe(Shape.Circle(r: 4)));
+    @print(describe(Shape.Label(text: "hi")));
+}

@@ -1,0 +1,7 @@
+{
+  "name": "test_tooling_multi",
+  "version": "0.0.1",
+  "description": "test-tooling fixture: two modules with tests, so the run prints two module summaries and one total.",
+  "target": "commonJS",
+  "src": "src/"
+}

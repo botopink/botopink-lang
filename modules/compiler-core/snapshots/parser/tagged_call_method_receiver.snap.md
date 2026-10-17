@@ -13,7 +13,7 @@
           "call": {
             "loc": {
               "line": 1,
-              "col": 9
+              "col": 12
             },
             "kind": {
               "call": {

@@ -1,0 +1,6 @@
+botopink-cell 1
+out component
+out ["component"]
+out ["component", "second"]
+out second
+out ["component"]

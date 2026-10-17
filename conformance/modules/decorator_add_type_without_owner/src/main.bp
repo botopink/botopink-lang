@@ -1,0 +1,15 @@
+//// Decision 216 (3) — an associated type belongs to a type: a function's
+//// decorator has no owner to give one to, and is refused at the annotation.
+
+fn helper(comptime decl: @Decl) {
+    decl.addType("Extra", "(id: i32)");
+}
+
+#[helper]
+fn work() -> i32 {
+    return 2;
+}
+
+pub fn main() {
+    @print(work());
+}

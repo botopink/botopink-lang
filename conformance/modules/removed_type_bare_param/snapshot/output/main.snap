@@ -1,0 +1,4 @@
+botopink-cell 1
+refused error[removed-type-bare-param]: the type of a type is written `type<T>`
+at src/main.bp:4:29
+label write `type<T>`

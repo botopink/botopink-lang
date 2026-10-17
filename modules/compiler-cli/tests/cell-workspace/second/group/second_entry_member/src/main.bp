@@ -1,0 +1,9 @@
+//// A cell under the workspace's second entry (`second/group/*`): its copy
+//// holds only itself, the first entry's directory absent there, and it still
+//// inherits the workspace's dependency.
+
+import {greeting} from "greeter";
+
+pub fn main() {
+    @print(greeting() + " (second entry)");
+}

@@ -1,0 +1,9 @@
+botopink-cell 1
+out 2/1+2
+out 1
+out high
+out a
+out 1/3
+out 40
+out low
+out x,y

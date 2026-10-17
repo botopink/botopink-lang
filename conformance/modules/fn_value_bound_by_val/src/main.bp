@@ -1,0 +1,29 @@
+//// A function named as a value and bound by a `val` answers its declared
+//// return when it is called: `val g = greet; g()` is a string, `val y = yes;
+//// y()` a bool. wasm typed the local from nothing and printed the string's
+//// address (`256`) at exit 0; it now types the local by the declaration, as a
+//// written `fn(…) -> T` annotation does.
+
+fn greet() -> string {
+    return "hi";
+}
+
+fn shout(s: string) -> string {
+    return s + "!";
+}
+
+fn yes() -> bool {
+    return true;
+}
+
+pub fn main() {
+    val g = greet;
+    @print(g());
+    val again = g;
+    @print(again());
+    val h = shout;
+    @print(h("hey"));
+    val y = yes;
+    @print(y());
+    @print(g() + "?");
+}

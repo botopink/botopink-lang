@@ -37,11 +37,18 @@ pub const LspCompiler = struct {
     ) !CompileResult {
         var mods = try self.gpa.alloc(Module, modules.len);
         defer self.gpa.free(mods);
+        // Decision 519 — `@embed` reads the disk: each module's package is
+        // the directory of the nearest `botopink.json` above its file.
+        var roots = std.heap.ArenaAllocator.init(self.gpa);
+        defer roots.deinit();
 
         for (modules, 0..) |entry, i| {
+            const path = lsp_types.uriToPath(entry.uri);
             mods[i] = .{
-                .path = lsp_types.uriToPath(entry.uri),
+                .path = path,
                 .source = entry.source,
+                .std_member = entry.std_member,
+                .files = if (try packageRoot(roots.allocator(), self.io, path)) |root| bp.PackageFiles.disk(self.io, root) else null,
             };
         }
 
@@ -54,10 +61,24 @@ pub const LspCompiler = struct {
     }
 };
 
+/// The directory of the nearest `botopink.json` above the file `path`, or
+/// null when none is (an unsaved buffer, a file outside every package).
+fn packageRoot(arena: std.mem.Allocator, io: std.Io, path: []const u8) !?[]const u8 {
+    var dir = std.fs.path.dirname(path) orelse return null;
+    while (true) {
+        const manifest_path = try std.fs.path.join(arena, &.{ dir, "botopink.json" });
+        if (std.Io.Dir.cwd().access(io, manifest_path, .{})) |_| return dir else |_| {}
+        dir = std.fs.path.dirname(dir) orelse return null;
+    }
+}
+
 /// (uri, source) pair passed to compilation.
 pub const ModuleEntry = struct {
     uri: []const u8,
     source: []const u8,
+    /// One of std's own modules — its package's manifest is named `std`
+    /// (decision 445: only std writes a `std:` cell; `Module.std_member`).
+    std_member: bool = false,
 };
 
 /// Re-export: one `@ExprCustom` reference-AST entry (`{ loc, callee, root, file,
@@ -111,7 +132,19 @@ pub const CompileResult = struct {
         for (self.session.outputs.items) |output| {
             if (!std.mem.eql(u8, output.name, path)) continue;
             switch (output.outcome) {
-                .ok => {},
+                // Decision 57 — a checker warning (`OkData.warnings`) fails
+                // nothing; the editor shows it with severity Warning, the
+                // same diagnostic `botopink check` prints under `warning:`.
+                .ok => |ok| for (ok.warnings) |w| {
+                    const line = if (w.loc) |l| l.line else 1;
+                    const col = if (w.loc) |l| l.col else 1;
+                    try diags.append(gpa, .{
+                        .range = .{ .start = lsp_types.locToPosition(line, col), .end = lsp_types.locToPosition(line, col + 1) },
+                        .severity = proto.DiagnosticSeverity.Warning,
+                        .message = try w.message(gpa),
+                        .source = "botopink",
+                    });
+                },
                 .parseError => {},
                 .typeError => |te| {
                     const line = if (te.loc) |l| l.line else 1;

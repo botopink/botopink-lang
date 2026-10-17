@@ -1,0 +1,17 @@
+//// A generic function returning what an index answers declares `?T`
+//// (decision 63): `xs[0]` and `xs.at(1)` over a `T[]` are `?T`, defaulted at
+//// the call.
+
+fn first<T>(xs: T[]) -> ?T {
+    return xs[0];
+}
+
+fn second<T>(xs: T[]) -> ?T {
+    return xs.at(1);
+}
+
+pub fn main() {
+    @print(first([4, 5]) ?? 0);
+    @print(second(["a", "b"]) ?? "");
+    @print(first([]) ?? 9);
+}

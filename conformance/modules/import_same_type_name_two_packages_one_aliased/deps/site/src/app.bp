@@ -1,0 +1,11 @@
+//// A site library's `App` (jhonstart's shape).
+
+pub type App(title: string) {
+    fn render(self: Self) -> string {
+        return "site:" + self.title;
+    }
+}
+
+pub fn makeSite() -> App {
+    return App(title: "t");
+}

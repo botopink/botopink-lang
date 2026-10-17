@@ -1,0 +1,48 @@
+//// Decision 416 (2) — `createContext(value, Behavior)` keys a context by the
+//// behavior its value implements: `MissingRepository` declares
+//// `Repository`'s default, `Root` provides a `MemoryRepository` as a
+//// `Repository`, and both `use context(Repository)` and an `inject` field
+//// typed `Repository` read it.
+
+import {context.createContext, context.provide, context.context, context.inject} from "std";
+
+type View(text: string) implement @Renderable
+
+behavior Repository {
+    fn fetch(self: Self, id: i32) -> string;
+}
+
+type MissingRepository() implement Repository {
+    fn fetch(self: Self, id: i32) -> string {
+        return "missing";
+    }
+}
+
+type MemoryRepository(prefix: string) implement Repository {
+    fn fetch(self: Self, id: i32) -> string {
+        return self.prefix + id.toString();
+    }
+}
+
+type Deps(repo: Repository)
+
+pub val repoContext = createContext(MissingRepository(), Repository);
+
+fn Lookup() -> @Component<View> {
+    val r = use context(Repository);
+    val deps = use inject(Deps);
+    return View(text: r.fetch(1) + " " + deps.repo.fetch(2));
+}
+
+fn Root() -> @Component<View> {
+    use provide(createContext(MemoryRepository(prefix: "row-"), Repository));
+    val l = Lookup();
+    return View(text: l.text);
+}
+
+pub fn main() -> @Task<void> {
+    val outside = await Lookup();
+    @print(outside.text);
+    val inside = await Root();
+    @print(inside.text);
+}

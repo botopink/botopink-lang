@@ -1,0 +1,60 @@
+//// Decision 375 (2), as 388 amends it — a component's lambda runs
+//// synchronously or asynchronously as its hooks node is marked: on commonJS
+//// a synchronous one is a plain arrow that answers its `Rendered` at once, an
+//// asynchronous one an `async` arrow answering a `Promise`, and a call or
+//// `use` of a synchronous one is not awaited. `Card` `use`s the synchronous
+//// hook `label` and awaits nothing, so `Card("direct").run(scope)` answers the
+//// `Rendered` itself, not a `Promise`. `Comments` awaits and `Post` renders
+//// it: `Post`'s run answers a `Promise`. `Post` renders `Card` with and
+//// without a written `await` (a no-op on a synchronous one) and reads both.
+////
+//// commonJS only: `pending` asks the host whether a value is a `Promise`, and
+//// only Node has one (`await` is the identity on erlang, beam and wasm).
+
+import {context.RenderScope, context.Rendered} from "std";
+
+type Element(text: string) implement @Renderable
+
+#[@External.Node("""($0 instanceof Promise)""")]
+declare fn pending(v: unknown) -> bool;
+
+fn loadComments() -> @Task<string> {
+    return "2 comments";
+}
+
+fn label() -> @Component<string> {
+    return "card:";
+}
+
+fn delayed() -> @Component<string> {
+    val t = await loadComments();
+    return t;
+}
+
+fn Card(title: string) -> @Component<Element> {
+    val prefix = use label();
+    return Element(text: prefix + title);
+}
+
+fn Comments() -> @Component<Element> {
+    val text = use delayed();
+    return Element(text: text);
+}
+
+fn Post() -> @Component<Element> {
+    val a = Card("a");
+    val b = await Card("b");
+    val m = Comments();
+    return Element(text: a.text + " " + b.text + " " + m.text);
+}
+
+pub fn main() -> @Task<void> {
+    val card = Card("direct").run(RenderScope.root());
+    @print(pending(card));
+    val post = Post().run(RenderScope.root());
+    @print(pending(post));
+    val p = await post;
+    @print(p.value.text);
+    val c = await card;
+    @print(c.value.text);
+}

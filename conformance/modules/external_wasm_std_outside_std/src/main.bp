@@ -1,0 +1,12 @@
+//// Decision 445 — `#[@External.Wasm(std: "…")]` is std's alone. A `std:` cell
+//// outside `libs/std` is refused at the annotation, on every target, naming
+//// the std function to call instead: std-wasm's export names stay internal to
+//// std, whose botopink API is the public contract.
+
+#[@External.Node("String")]
+#[@External.Wasm(std: "hash.contentHash")]
+declare fn digest(x: string) -> string;
+
+pub fn main() {
+    @print(digest("Point"));
+}

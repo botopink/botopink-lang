@@ -2,7 +2,7 @@
 {
   "decls": [
     {
-      "interface": {
+      "behavior": {
         "name": "Drawable",
         "id": 1,
         "isPub": false,
@@ -15,7 +15,9 @@
         "fields": [
           {
             "name": "color",
-            "typeName": "string"
+            "typeRef": {
+              "named": "string"
+            }
           }
         ],
         "trailingComma": false,
@@ -32,7 +34,6 @@
                 },
                 "typeName": "",
                 "modifier": "none",
-                "fnType": null,
                 "destruct": null,
                 "default": null
               }
@@ -55,7 +56,6 @@
                 },
                 "typeName": "",
                 "modifier": "none",
-                "fnType": null,
                 "destruct": null,
                 "default": null
               }

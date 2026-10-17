@@ -1,0 +1,14 @@
+//// An array made empty (`var xs = []`) and filled with floats prints them
+//// on commonJS, erlang and beam. On wasm a float in an array is its cell, and
+//// an array no type says holds floats is read as words: the cells' addresses
+//// printed as integers at exit 0 (`00 · gate-wasm-wrong-answers`). wasm
+//// refuses the push; `var xs: Array<f64> = []` is the form it lowers.
+
+pub fn main() {
+    val base = [100, 250];
+    var taxed = [];
+    for (base) { v ->
+        taxed.push(v * 1.5);
+    }
+    @print(taxed.length);
+}

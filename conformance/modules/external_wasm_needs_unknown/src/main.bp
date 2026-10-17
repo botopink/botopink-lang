@@ -1,0 +1,18 @@
+//// Decision 518 — `needs:` on `@External.Wasm` names the host features a
+//// binding needs, each a value of std's closed enum `WasmNeed { Exceptions,
+//// Http }`. A value outside it names no feature, and is refused at the
+//// annotation on every target, not on a wasm build alone (decision 516).
+
+#[@External.Node("Math.abs($0)")]
+#[@External.Erlang("erlang:abs($0)")]
+#[@External.Wasm(fn: absBody, needs: [.Threads])]
+declare fn hostAbs(n: i32) -> i32;
+
+fn absBody(n: i32) -> i32 {
+    if (n < 0) return -n;
+    return n;
+}
+
+pub fn main() {
+    @print(hostAbs(-3));
+}

@@ -1,0 +1,33 @@
+//// Decision 370 (2) — a decorator hands a parameter's `@Expr` on to the
+//// program through a typed member: `decl.addMember(name, fn(…) -> R { … })`
+//// gives the annotated type a function value whose body uses the
+//// parameters, each `@Expr` spliced where it was written. `rule` is
+//// `passwordsMatch`, called by `validate` at run time — never at build.
+
+pub type Violation(field: string, message: string)
+
+fn check<T>(
+    comptime decl: @Decl<T>,
+    comptime message: @Expr<string>,
+    comptime rule: @Expr<fn(v: T) -> bool>,
+) {
+    decl.addMember("validate", fn(self: T) -> Violation[] {
+        if (rule(self)) return [];
+        return [Violation(field: "confirm", message: message)];
+    });
+}
+
+fn passwordsMatch(a: Signup) -> bool {
+    return a.password == a.confirm;
+}
+
+#[check("the passwords differ", passwordsMatch)]
+pub type Signup(password: string, confirm: string)
+
+pub fn main() {
+    val ok = Signup(password: "abc", confirm: "abc").validate();
+    @print(ok.length);
+    val bad = Signup(password: "abc", confirm: "abd").validate();
+    @print(bad.length);
+    bad.forEach({ v -> @print(v.field + ": " + v.message) });
+}

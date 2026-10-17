@@ -1,0 +1,22 @@
+//// Reads what `#[stage]` recorded on the declarations of `pages`, the cell's
+//// subject: a decorator that reads `.hooks` runs after its module's bodies,
+//// so its typed meta is read from another module (`typeinfo-meta-hooks-pending`).
+
+pub mod pages;
+pub mod ui;
+
+import {pages.usaPad, pages.usaAgora, pages.usaLabel, pages.Staged};
+
+pub fn main() {
+    show(@typeInfo(usaPad).meta(Staged));
+    show(@typeInfo(usaAgora).meta(Staged));
+    show(@typeInfo(usaLabel).meta(Staged));
+    @print(usaPad());
+}
+
+fn show(staged: ?Staged) {
+    if (staged) {
+        s ->
+        @print(s.name + ": " + s.stages.join(" "));
+    }
+}

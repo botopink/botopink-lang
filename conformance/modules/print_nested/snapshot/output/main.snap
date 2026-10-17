@@ -1,0 +1,5 @@
+botopink-cell 1
+out ["hi"]
+out ["a\"b"]
+out ["c\\d"]
+out ["x\ny"]

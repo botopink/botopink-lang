@@ -1,0 +1,61 @@
+//// An awaited `@Result` is printed as the value it is: `Ok(21)`, `Error(boom)`.
+//// The answer of a generic `@Task`, of a non-generic one and of an `async`
+//// block keeps its `@Result<T, string>` type through `await`, so `@print` and a
+//// `case` binder read it the same on every target.
+
+type Point(x: i32, y: i32)
+
+fn twice<T>(v: T) -> @Task<@Result<T, string>> {
+    return v;
+}
+
+fn plain(n: i32) -> @Task<@Result<i32, string>> {
+    if (n < 0) throw "negative";
+    return n;
+}
+
+fn place() -> @Task<@Result<Point, string>> {
+    return Point(x: 1, y: 2);
+}
+
+fn run(n: i32) -> @Task<void> {
+    val c = await twice(21);
+    @print(c);
+    val d = await plain(5);
+    @print(d);
+    val neg = await plain(-1);
+    @print(neg);
+    val p = await place();
+    @print(p);
+    case await plain(7) {
+        Ok(v) -> @print(v);
+        Error(m) -> @print(m);
+    }
+    val t = async {
+        if (n > 0) throw "late " + n.toString();
+        return n;
+    };
+    case await t {
+        Error(e) -> @print(e);
+        Ok(v) -> @print(v);
+    }
+    val u = async {
+        throw "plain";
+    };
+    case await u {
+        Error(e) -> @print(e);
+        Ok(v) -> @print("ok");
+    }
+    val w = async {
+        val z = await t;
+        return z;
+    };
+    case await w {
+        Error(e) -> @print(e);
+        Ok(v) -> @print(v);
+    }
+}
+
+pub fn main() {
+    run(3);
+}

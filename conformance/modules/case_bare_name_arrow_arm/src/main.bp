@@ -1,0 +1,14 @@
+//// Decision 8 §5.2 — a lower-case name alone is no pattern in the `pattern -> value` arm either:
+//// `k -> k + 1` is refused at the arm, as `k { … }` is. It was accepted, and commonJS bound
+//// nothing (`k is not defined`); the matched value is named in the body: `_ { k -> k + 1 }`.
+
+fn plus(n: i32) -> i32 {
+    return case n {
+        0 -> 0;
+        k -> k + 1;
+    };
+}
+
+pub fn main() {
+    @print(plus(4));
+}

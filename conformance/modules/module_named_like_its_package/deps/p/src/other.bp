@@ -1,0 +1,7 @@
+//// `p/other` — reads its sibling `p` through the namespace.
+
+import {p};
+
+pub fn other() -> p.Module {
+    return p.Module(name: p.greet() + "!");
+}

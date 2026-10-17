@@ -23,23 +23,31 @@
           {
             "name": "first",
             "typeRef": {
-              "optional": {
-                "generic": {
-                  "name": "Expr",
-                  "args": [
-                    {
-                      "named": "Element"
+              "generic": {
+                "name": "Expr",
+                "args": [
+                  {
+                    "optional": {
+                      "generic": {
+                        "name": "Expr",
+                        "args": [
+                          {
+                            "named": "Element"
+                          }
+                        ],
+                        "is_builtin": true
+                      }
                     }
-                  ],
-                  "is_builtin": true
-                }
+                  }
+                ],
+                "is_builtin": true
               }
             },
             "typeName": "",
             "modifier": "comptime",
-            "fnType": null,
             "destruct": null,
-            "default": null
+            "default": null,
+            "arrival": "value"
           }
         ],
         "returnType": {

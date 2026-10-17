@@ -1,0 +1,23 @@
+//// Decision 564 — `@Decl<Module>`, `Module` a behavior, names the behavior
+//// the declarations `#[module]` annotates implement: `City` does not
+//// `implement Module`, so the annotation is refused, naming the type and the
+//// behavior.
+
+pub behavior Module {
+    fn make() -> Self;
+    fn start(self: Self) -> string;
+}
+
+pub fn module(comptime decl: @Decl<Module>) {
+    decl.setMeta(ModuleRole(role: "module"));
+}
+
+#[module]
+pub type City(name: string)
+
+pub fn main() {
+    @print(City(name: "Recife").name);
+}
+
+// What `#[module]` records.
+type ModuleRole(role: string)

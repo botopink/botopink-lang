@@ -1,0 +1,1 @@
+{ "name": "external_template_quote_in_host_string", "targets": ["commonJS", "erlang", "beam"] }

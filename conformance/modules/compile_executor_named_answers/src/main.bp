@@ -1,0 +1,17 @@
+//// Decision 409 — an executor `compiler.compile` takes is checked against
+//// `fn()`: a named executor that answers a value is refused at its name.
+
+fn count() -> i32 { 1 }
+
+fn named(expr decl: unknown) {
+    compiler.compile(count);
+}
+
+#[named]
+pub fn away() -> string {
+    return "away";
+}
+
+pub fn main() {
+    @print(away());
+}

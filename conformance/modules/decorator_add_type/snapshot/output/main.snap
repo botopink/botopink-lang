@@ -1,0 +1,7 @@
+botopink-cell 1
+out nome|gente
+out name|people
+out true
+out false
+out City.Columns(name: "nome", people: "gente")
+out City.Size.Small

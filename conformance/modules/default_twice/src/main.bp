@@ -1,0 +1,17 @@
+//// 01-compiler/01-checker step 25 (decision 289) — a module has one default
+//// function: an anonymous `pub default fn (…)` and `pub default other;` are
+//// two, refused as `default-twice` at the second.
+
+pub default fn (x: i32) -> i32 {
+    return x;
+}
+
+fn other(x: i32) -> i32 {
+    return x + 1;
+}
+
+pub default other;
+
+pub fn main() {
+    @print(other(1));
+}

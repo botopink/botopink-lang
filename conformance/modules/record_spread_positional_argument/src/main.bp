@@ -1,0 +1,10 @@
+//// Decision 359 (3) — beside a spread every argument names its field: a
+//// positional argument has no field to supply. Refused at the argument.
+
+type Pessoa(nome: string, idade: i32)
+
+pub fn main() {
+    val ana = Pessoa(nome: "Ana", idade: 3);
+    val p = Pessoa(..ana, "Bia");
+    @print(p.nome);
+}

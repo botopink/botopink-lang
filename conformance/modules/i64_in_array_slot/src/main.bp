@@ -1,0 +1,11 @@
+//// An `i64` past the `i32` range held in an array element is the whole
+//// number on commonJS, erlang and beam. A wasm array slot is four bytes, and
+//// the value was wrapped into it (`3000000000` read back as `-1294967296`);
+//// with no reader that knows the element is an `i64`, wasm refuses the
+//// element at its source (`00 · gate-wasm-wrong-answers`).
+
+pub fn main() {
+    val a: i64 = 3000000000;
+    val ys = [a, 1];
+    @print(ys);
+}

@@ -1,0 +1,11 @@
+//// A type and a template method over it, in one module.
+
+pub type Memory(prefix: string) {
+    pub fn fetch(self: Self, key: string) -> string {
+        return self.prefix + key;
+    }
+}
+
+pub fn read(comptime self: @Expr<Memory>, comptime q: @Expr<string>) -> @Expr<string> {
+    return q.build(self.text() + ".fetch(\"" + q.text() + "\")");
+}

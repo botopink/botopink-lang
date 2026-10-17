@@ -1,0 +1,14 @@
+botopink-cell 1
+out 3
+out x
+out 5
+out s
+out true
+out 1.5
+out 3.5
+out ["a", "b"]
+out [1, 2]
+out true
+out false
+out found
+out none

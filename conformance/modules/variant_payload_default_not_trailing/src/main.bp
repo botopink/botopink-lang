@@ -1,0 +1,10 @@
+//// Decision 244 — the same rule on a variant's payload.
+
+type Shape {
+    Rect(width: i32 = 1, height: i32),
+    Dot,
+}
+
+pub fn main() {
+    @print(1);
+}

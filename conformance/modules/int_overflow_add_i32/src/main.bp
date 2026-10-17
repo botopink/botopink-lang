@@ -1,0 +1,15 @@
+//// Decision 264 — an integer result outside its type is a program error on
+//// every target: `2147483647 + 1` on `i32` aborts, where commonJS, erlang and
+//// beam answered `2147483648` and only wasm trapped. What was printed before
+//// stays printed; the abort names the operator, the type and the place.
+
+fn add(a: i32, b: i32) -> i32 {
+    return a + b;
+}
+
+pub fn main() {
+    @print(add(2147483646, 1));
+    @print(add(-2147483647, -1));
+    @print(add(2147483647, 1));
+    @print("unreachable");
+}

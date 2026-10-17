@@ -1,0 +1,8 @@
+#[@External.Node("Math", "floor")]
+#[@External.Erlang("math", "floor")]
+#[@External.Wasm("op:f64.floor")]
+pub declare fn floorOf(x: f64) -> f64;
+
+pub fn main() {
+    @print(floorOf(2.7));
+}

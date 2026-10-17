@@ -1,0 +1,1 @@
+{ "name": "import_sibling_path_beside_std_name", "dependencies": { "kit": { "path": "deps/kit" } } }

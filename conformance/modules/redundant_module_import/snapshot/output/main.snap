@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: redundant-module-import: `config` is already bound by `mod config;` in this module — delete this item
+at src/main.bp:6:9

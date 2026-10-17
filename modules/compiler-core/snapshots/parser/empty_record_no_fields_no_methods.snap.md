@@ -2,7 +2,7 @@
 {
   "decls": [
     {
-      "record": {
+      "type_": {
         "name": "Point",
         "id": 1,
         "isPub": false,
@@ -12,7 +12,9 @@
         "annotations": [],
         "genericParams": [],
         "implement": [],
-        "fields": [],
+        "shape": {
+          "record": []
+        },
         "trailingComma": false,
         "methods": []
       }

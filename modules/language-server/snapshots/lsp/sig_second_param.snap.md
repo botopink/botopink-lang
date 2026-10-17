@@ -6,7 +6,7 @@ val r = add(1,
 ```
 
 ----- SIGNATURE HELP at (line 1, char 14)
-► add(i32, i32) -> void
-  param 0 [ ]: i32
-  param 1 [▔]: i32
+► add(x: i32, y: i32) -> void
+  param 0 [ ]: x: i32
+  param 1 [▔]: y: i32
 activeSignature: 0  activeParameter: 1

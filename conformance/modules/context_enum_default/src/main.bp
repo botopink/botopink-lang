@@ -1,0 +1,39 @@
+//// Decision 379 — an enum's default is declared as a record's is:
+//// `comptime createContext(Mode.Light)` declares `Mode`'s default, read
+//// outside every provider, and `Dark` provides `Mode.Dark` below it.
+
+import {context.createContext, context.provide, context.context} from "std";
+
+type View(text: string) implement @Renderable
+
+type Mode {
+    Light,
+    Dark,
+}
+
+pub val modeContext = comptime createContext(Mode.Light);
+
+fn name(m: Mode) -> string {
+    return case m {
+        .Light -> "light";
+        .Dark -> "dark";
+    };
+}
+
+fn Label() -> @Component<View> {
+    val m = use context(Mode);
+    return View(text: name(m));
+}
+
+fn Dark() -> @Component<View> {
+    use provide(createContext(Mode.Dark));
+    val l = Label();
+    return View(text: l.text);
+}
+
+pub fn main() -> @Task<void> {
+    val l = await Label();
+    @print(l.text);
+    val d = await Dark();
+    @print(d.text);
+}

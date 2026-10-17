@@ -1,0 +1,1 @@
+{ "name": "dependency_imports_itself_with_from", "dependencies": { "starter": { "path": "deps/starter" } } }

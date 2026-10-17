@@ -1,0 +1,10 @@
+//// Decision 63 (amended 2026-09-19) — a tuple answers a type per position, so
+//// the position has to be known at compile time. A computed index has no type
+//// to answer with, and the refusal says which indexable a computed key belongs
+//// to instead.
+
+pub fn main() {
+    val t = #(1, "a");
+    val i = 0;
+    @print(t[i]);
+}

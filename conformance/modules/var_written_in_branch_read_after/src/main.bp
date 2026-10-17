@@ -1,0 +1,124 @@
+//// A `var` written in one branch and read after it keeps the value the branch
+//// wrote — on erlang the names were versioned per branch and never joined, so
+//// `erlc` refused the module (`variable 'Out@1' is unbound`): a write in the
+//// arms of a statement `case` (and carried to the next round of a loop); a
+//// write inside an `if` block that ends in `return`, read after the block; two
+//// `var`s of one name declared in sibling branches of a loop body; a `case`
+//// binder named like the `val` it initialises (front 121's gaps).
+
+type Cell {
+    Box(kids: i32[]),
+    Leaf(v: i32),
+}
+
+fn caseArms(xs: i32[]) -> i32 {
+    var total = 0;
+    var seen = 0;
+    for (xs) { x ->
+        case x {
+            1 {
+                total = total + 10;
+            }
+            2 {
+                total = total + 20;
+                seen = seen + 1;
+            }
+            _ {
+                seen = seen + 1;
+            }
+        }
+    }
+    return total * 100 + seen;
+}
+
+fn ifReturn(n: i32) -> i32 {
+    var acc = 1;
+    if (n > 5) {
+        acc = acc + n;
+        if (n > 100) return 0 - 1;
+    }
+    return acc;
+}
+
+fn endsInReturn(n: i32) -> i32 {
+    var acc = 1;
+    if (n > 5) {
+        acc = acc + n;
+        return acc * 10;
+    }
+    return acc;
+}
+
+fn ifReturnElse(n: i32) -> string {
+    var label = "small";
+    if (n > 5) {
+        label = "big";
+        if (n > 100) return "huge";
+    } else label = "tiny";
+    return label;
+}
+
+fn siblingVars(xs: i32[]) -> i32 {
+    var sum = 0;
+    for (xs) { x ->
+        if (x > 2) {
+            var k = x;
+            k = k * 2;
+            sum = sum + k;
+        } else {
+            var k = x;
+            k = k + 100;
+            sum = sum + k;
+        }
+    }
+    return sum;
+}
+
+fn siblingVarsElseIf(start: i32) -> i32 {
+    var end = start;
+    var going = true;
+    while (going && end > 0) {
+        if (end > 20) end = end - 5 else if (end > 10) {
+            var k = end;
+            while (k > 15) {
+                k = k - 1;
+            }
+            end = k - 6;
+        } else if (end > 5) {
+            var k = end;
+            while (k > 7) {
+                k = k - 1;
+            }
+            end = k - 3;
+        } else going = false;
+    }
+    return end;
+}
+
+fn binderNamedLikeVal(c: Cell) -> i32 {
+    val kids: i32[] = case c {
+        Box(kids) -> kids;
+        Leaf(v) -> [v];
+    };
+    var n = 0;
+    for (kids) { k ->
+        n = n + k;
+    }
+    return n + kids.length;
+}
+
+pub fn main() {
+    @print(caseArms([1, 2, 3, 2, 1]));
+    @print(ifReturn(3));
+    @print(ifReturn(7));
+    @print(ifReturn(200));
+    @print(endsInReturn(3));
+    @print(endsInReturn(7));
+    @print(ifReturnElse(1));
+    @print(ifReturnElse(9));
+    @print(ifReturnElse(900));
+    @print(siblingVars([1, 3, 2, 4]));
+    @print(siblingVarsElseIf(30));
+    @print(binderNamedLikeVal(Cell.Box(kids: [4, 5])));
+    @print(binderNamedLikeVal(Cell.Leaf(v: 9)));
+}

@@ -1,0 +1,18 @@
+//// Both declarations of `NotFound` in one module, each under its own alias —
+//// what a route table generated from an application's folders writes, one
+//// import per file. Each import names its module, and each alias names its
+//// import: there are two names here and each has one declaration. Both used
+//// to be refused as `ambiguous-import-use` (see
+//// `import_same_fn_name_by_module`); the two answers prove each alias reached
+//// its own module, on every target.
+
+pub mod app;
+
+import {app.not_found.NotFound as appNotFound};
+import {app.blog.not_found.NotFound as blogNotFound};
+
+pub fn main() {
+    @print(appNotFound());
+    @print(blogNotFound());
+    @print(appNotFound() + "/" + blogNotFound());
+}

@@ -1,0 +1,12 @@
+//// Decision 361 — std's `#[bpp.html]` marks the template function a `.bpp`
+//// file's markup unfolds onto; on a `val` (a decorator that runs since 356)
+//// it is refused at the annotation.
+
+import {bpp} from "std";
+
+#[bpp.html]
+pub val page = 1;
+
+pub fn main() {
+    @print(page);
+}

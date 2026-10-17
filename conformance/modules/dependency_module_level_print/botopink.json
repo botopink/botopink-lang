@@ -1,0 +1,1 @@
+{ "name": "dependency_module_level_print", "dependencies": { "boot": { "path": "deps/boot" } } }

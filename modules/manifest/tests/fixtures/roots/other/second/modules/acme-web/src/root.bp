@@ -1,0 +1,3 @@
+pub fn web() -> i32 {
+    return 3;
+}

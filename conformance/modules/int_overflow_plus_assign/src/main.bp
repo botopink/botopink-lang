@@ -1,0 +1,10 @@
+//// Decision 264 — a compound assignment is checked like the operator it
+//// stands for: `n += 1` past `i32`'s maximum aborts, at the assignment.
+
+pub fn main() {
+    var n: i32 = 2147483646;
+    n += 1;
+    @print(n);
+    n += 1;
+    @print("unreachable");
+}

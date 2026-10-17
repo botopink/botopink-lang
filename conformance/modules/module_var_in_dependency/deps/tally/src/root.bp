@@ -1,0 +1,3 @@
+//// The fixture package `tally`: one module holding a module-level `var`.
+
+pub mod counter;

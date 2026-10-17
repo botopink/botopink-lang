@@ -1,0 +1,2 @@
+botopink-cell 1
+out params<pages.BlogParams(slug: string, id: i32)> title<>

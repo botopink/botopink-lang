@@ -1,0 +1,7 @@
+//// `unknown` is a keyword, and a keyword is no binding name: `val unknown:
+//// i32 = 1;` is `reserved-word-as-name` at the name, naming the word, as a
+//// field or a parameter already is (`language-gaps.md` T9).
+
+pub fn main() {
+    val unknown: i32 = 1;
+}

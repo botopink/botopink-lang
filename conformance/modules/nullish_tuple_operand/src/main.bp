@@ -1,0 +1,14 @@
+//// T11 — a tuple literal is a full operand on the right of `??`:
+//// `hits.at(0) ?? #(0, 0)` parses (it was `unexpected #`) and answers the
+//// fallback when the optional is absent, the element when it is present.
+//// Integer elements: wasm reads a `string` element of a tuple through `??`
+//// as its address (`05-wasm`'s row).
+
+pub fn main() {
+    val none: #(i32, i32)[] = [];
+    val a = none.at(0) ?? #(0, 7);
+    @print(a._1);
+    val some: #(i32, i32)[] = [#(3, 4)];
+    val b = some.at(0) ?? #(0, 7);
+    @print(b._1);
+}

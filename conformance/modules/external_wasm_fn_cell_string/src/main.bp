@@ -1,0 +1,16 @@
+//// Decision 481 — `fn:` names a private fn of the module by its identifier,
+//// never a string: `fn: "tanBody"` is refused at the argument, on every
+//// target, naming the form to write.
+
+#[@External.Node("Math", "tan")]
+#[@External.Erlang("math", "tan")]
+#[@External.Wasm(fn: "tanBody")]
+pub declare fn tanOf(x: f64) -> f64;
+
+fn tanBody(x: f64) -> f64 {
+    return x;
+}
+
+pub fn main() {
+    @print(tanOf(0.0));
+}

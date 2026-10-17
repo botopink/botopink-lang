@@ -1,0 +1,14 @@
+//// The decorator lives in a library module of its own. Its member reads the
+//// decorator's parameters and its own locals only, so it means the same in
+//// the module of every type it annotates (decision 370 (2); `s35-g`).
+
+pub fn rule<T>(
+    comptime decl: @Decl<T>,
+    comptime holds: @Expr<fn(v: T) -> bool>,
+    comptime label: @Expr<string>,
+) {
+    decl.addMember("check", fn(self: T) -> string {
+        val ok = holds(self);
+        return if (ok) "ok" else label;
+    });
+}

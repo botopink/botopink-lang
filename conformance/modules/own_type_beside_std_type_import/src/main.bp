@@ -1,0 +1,13 @@
+//// A module's own `type Dict(…)` and std's `Dict` imported by name (here
+//// under an alias) would be two types of one declared name in one module:
+//// refused at the import, naming both. The module's `Dict(initialMs: 5)`
+//// used to resolve to std's (`Dict has no parameter named initialMs`).
+
+import {collections.Dict as D} from "std";
+
+type Dict(initialMs: i32)
+
+pub fn main() {
+    val d = Dict(initialMs: 5);
+    @print(d.initialMs);
+}

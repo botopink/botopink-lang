@@ -1,0 +1,12 @@
+//// Decision 264 — an unsigned type has no negative values: `0 - 1` on `u32`
+//// aborts, where every target answered `-1`.
+
+fn sub(a: u32, b: u32) -> u32 {
+    return a - b;
+}
+
+pub fn main() {
+    @print(sub(4294967295, 4294967295));
+    @print(sub(0, 1));
+    @print("unreachable");
+}

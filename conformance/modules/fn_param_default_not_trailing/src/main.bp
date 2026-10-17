@@ -1,0 +1,11 @@
+//// Decision 244 — a default is trailing everywhere; on a free `fn` it always
+//// was: a parameter without a default after one with a default is refused at
+//// that parameter.
+
+fn lead(a: i32 = 1, b: i32) -> i32 {
+    return a + b;
+}
+
+pub fn main() {
+    @print(lead(b: 2));
+}

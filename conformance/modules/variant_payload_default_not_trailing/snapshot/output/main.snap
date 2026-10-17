@@ -1,0 +1,4 @@
+botopink-cell 1
+refused error[field-default-trailing-only]: a field with a default must be followed only by fields with defaults
+at src/main.bp:4:26
+label a required field after a defaulted one `height`

@@ -1,0 +1,7 @@
+//// A server library's `App` (rakun's shape).
+
+pub type App(port: i32, basePath: string) {
+    fn describe(self: Self) -> string {
+        return "srv:" + self.port.toString();
+    }
+}

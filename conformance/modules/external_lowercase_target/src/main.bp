@@ -1,0 +1,7 @@
+//// Decision 8 §8 — an external target is `External.<Target>`; a lower-case
+//// `@external(node, …)` binds no host and must be a located error, not silence.
+
+#[@external(node, "console.log($0)")]
+declare fn hostLog(msg: string);
+
+pub fn main() { hostLog("hi"); }

@@ -1,0 +1,61 @@
+//// A `?T` held in a tuple: printed `null` or its payload, read back through
+//// `._N`, and unwrapped — a scalar's box, a string, a float's cell, a record —
+//// from a literal, from a function's declared `#(…, ?T)` and from a generic
+//// method's `#(Q<T>, ?T)` (`Queue.dequeue`'s shape). On wasm the slot is the
+//// optional's carrier; read through the payload's own shape it printed the
+//// box's address (`#(1, 328)`, `296`) at exit 0. `o.unwrapOr(d)` keeps the
+//// payload's shape: `rows.at(1).unwrapOr(#("", ""))._1` and `r.unwrapOr([])`
+//// over an `@Result` of tuples printed string addresses.
+
+type P(n: i32)
+
+pub type Q<T>(
+    items: Array<T>,
+) {
+    pub fn pop(self: Self<T>) -> #(Q<T>, ?T) {
+        return #(
+            Q(items: self.items.slice(1, self.items.length)),
+            self.items.at(0),
+        );
+    }
+}
+
+fn firstOf(xs: Array<i32>) -> #(i32, ?i32) {
+    return #(xs.length, xs.at(0));
+}
+
+fn mixed() -> #(?string, ?bool, ?f64, ?P) {
+    return #(["s"].at(0), [true].at(5), [1.5].at(0), [P(n: 2)].at(0));
+}
+
+fn rows() -> @Result<Array<#(string, string)>, string> {
+    val xs = [#("a", "b"), #("c", "d")];
+    if (xs.length > 5) throw "too many";
+    return xs;
+}
+
+pub fn main() {
+    val t = #(1, [7].at(5));
+    @print(t);
+    @print(t._1);
+    @print(t._1 ?? 4);
+    @print(firstOf([9, 8]));
+    @print(firstOf([]));
+    @print(firstOf([9])._1 ?? -1);
+    @print(mixed());
+    val m = mixed();
+    @print(m._0);
+    @print(m._1);
+    @print(m._2);
+    @print(m._3);
+    val q: Q<i32> = Q(items: [5, 6]);
+    val d = q.pop();
+    @print(d._1 ?? -1);
+    @print(d._1);
+    @print(d._0.items.length);
+    val e: Q<i32> = Q(items: []);
+    @print(e.pop()._1 ?? -1);
+    val rs = rows().unwrapOr([]);
+    @print((rs.at(1) ?? #("", ""))._1);
+    @print(rs.map({ r -> [r._0, r._1].join("=") }).join("&"));
+}

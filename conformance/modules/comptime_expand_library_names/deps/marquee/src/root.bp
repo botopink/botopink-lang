@@ -1,0 +1,18 @@
+//// A library whose `marquee` takes only `comptime` parameters, so each call
+//// is expanded where it is written (decision 562). Its body names what only
+//// this module holds: the type `Label`, the private function `shout` and the
+//// std namespace `path`, none of which the caller imports.
+
+import {path} from "std";
+
+type Label(text: string)
+
+fn shout(label: Label) -> string {
+    return label.text.toUpper();
+}
+
+pub fn marquee(comptime title: @Expr<string>) {
+    val label: Label = Label(text: title.value);
+    @print(shout(label));
+    @print(path.relative("/" + label.text, "/" + label.text + "/docs"));
+}

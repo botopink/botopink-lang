@@ -1,0 +1,12 @@
+//// A template method declared in another module over a generic behavior —
+//// the shape of decision 415's `query<E>(comptime self: @Expr<QueryContext<E>>,
+//// comptime q: @Expr<string>)`: the importer calls it on a value of a type
+//// that implements the behavior.
+
+pub behavior Store<E> {
+    fn fetch(self: Self<E>, key: string) -> @Result<string, E>;
+}
+
+pub fn read<E>(comptime self: @Expr<Store<E>>, comptime q: @Expr<string>) -> @Expr<@Result<string, E>> {
+    return q.build(self.text() + ".fetch(\"" + q.text() + "\")");
+}

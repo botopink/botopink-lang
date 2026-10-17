@@ -1,0 +1,13 @@
+//// Decision 539 (6) — an inline `implement` of an ambient behavior is checked against its
+//// declaration in `builtins.d.bp`: `Closeable` requires `close`, and a type that names it
+//// without one is refused at the type.
+
+type Door(name: string) implement Closeable {
+    fn shut(self: Self) {
+        @print("shut " + self.name);
+    }
+}
+
+pub fn main() {
+    Door(name: "front").shut();
+}

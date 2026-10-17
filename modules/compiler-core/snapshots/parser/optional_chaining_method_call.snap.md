@@ -80,7 +80,7 @@
                                 }
                               }
                             },
-                            "callee": "to_upper",
+                            "callee": "toUpper",
                             "is_builtin": false,
                             "is_tagged": false,
                             "optional": true,

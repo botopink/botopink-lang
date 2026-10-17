@@ -1,0 +1,11 @@
+//// Decision 152 (01c-d) — a name is bound once per block: a second `var`
+//// of `n` in the same body is `binding-redeclared` at the second, naming the
+//// first. erlang rebound it and printed `10`; commonJS refused to load
+//// (`Identifier 'n' has already been declared`).
+
+pub fn main() {
+    var n: i32 = 1;
+    n = n + 1;
+    var n: i32 = 10;
+    @print(n);
+}

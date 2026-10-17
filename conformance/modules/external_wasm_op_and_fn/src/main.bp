@@ -1,0 +1,20 @@
+#[@External.Node("Math", "floor")]
+#[@External.Erlang("math", "floor")]
+#[@External.Wasm(op: "f64.floor")]
+pub declare fn floorOf(x: f64) -> f64;
+
+#[@External.Node("Math", "round")]
+#[@External.Erlang("""float(floor($0 + 0.5))""")]
+#[@External.Wasm(fn: roundHalfUp)]
+pub declare fn roundOf(x: f64) -> f64;
+
+fn roundHalfUp(x: f64) -> f64 {
+    val up = -1.0 * floorOf(-1.0 * x);
+    return if (up - 0.5 > x) up - 1.0 else up;
+}
+
+pub fn main() {
+    @print(floorOf(2.7)); // 2.0
+    @print(roundOf(2.5)); // 3.0
+    @print(roundOf(-2.5)); // -2.0
+}

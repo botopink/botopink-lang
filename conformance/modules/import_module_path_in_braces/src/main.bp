@@ -1,0 +1,20 @@
+//// Decision 206 — a module of this package is imported by its path inside
+//// the braces, with no `from`: a dotted path to each leaf, nested modules
+//// included, `as` on the leaf. `nextDelay` is declared here too, so the
+//// alias is what tells the two apart.
+
+pub mod components;
+pub mod reliability;
+import {components.card.Card};
+import {reliability.policy.nextDelay as policyDelay, reliability.policy.maxAttempts};
+
+fn nextDelay(attempt: i32) -> i32 {
+    return attempt;
+}
+
+pub fn main() {
+    @print(Card(title: "card").heading());
+    @print(policyDelay(2));
+    @print(nextDelay(2));
+    @print(maxAttempts());
+}

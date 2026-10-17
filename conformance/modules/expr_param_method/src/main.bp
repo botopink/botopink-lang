@@ -1,0 +1,12 @@
+//// Decision 576 (2) — `compiler.text(e)` reads an `expr` as written in a
+//// decorator or a template (the argument as the annotation wrote it). An
+//// ordinary function's `comptime` parameter is a value, not an expression:
+//// `.text()` on it is refused at the call (`expr-param-method`).
+
+fn shout(comptime message: @Expr<string>) -> string {
+    return message.text();
+}
+
+pub fn main() {
+    @print(shout("x"));
+}

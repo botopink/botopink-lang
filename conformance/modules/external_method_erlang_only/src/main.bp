@@ -1,0 +1,15 @@
+//// A host-backed method bound to one host is a method for that host: on
+//// erlang (and beam, which reads the Erlang vocabulary) `p.codes()` runs and
+//// prints `hi`; on commonJS and wasm the type has no such method, and the
+//// compiler refuses the CALL where it is written, naming `Type.method` and the
+//// backend — the `.commonJS.expect` / `.wasm.expect` sidecars, the method twin
+//// of `run/external_erlang_only`.
+
+pub type Codes(list: i32[]) {
+    #[@External.Erlang("""list_to_binary(element(2, $0))""")]
+    pub declare fn text(self: Self) -> string;
+}
+
+pub fn main() {
+    @print(Codes(list: [104, 105]).text());
+}

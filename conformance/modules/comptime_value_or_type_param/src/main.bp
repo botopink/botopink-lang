@@ -1,0 +1,13 @@
+type Box<T>(value: T)
+
+fn orDefault<T>(comptime source: @Expr<Box<T> | type<T>>, fallback: T) -> T {
+    if (source is type) return fallback;
+    return source.value.value;
+}
+
+fn main() {
+    val n: i32 = orDefault(Box(value: 4), 0); // 4, from the value
+    val s: string = orDefault(string, "none"); // "none", T bound to string
+    @print(n);
+    @print(s);
+}

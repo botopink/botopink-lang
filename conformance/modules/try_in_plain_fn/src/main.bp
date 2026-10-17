@@ -1,0 +1,15 @@
+//// Decision 95 — bare `try` PROPAGATES: it returns the `Error` out of the
+//// enclosing function, so that function needs an error channel of its own. A
+//// plain `fn` has no effect and therefore no channel, and the value it would
+//// return is not the one its signature promises. `try … catch` is the form
+//// that needs no channel (it handles the error on the spot); this one does
+//// not have it.
+
+fn parse(n: i32) -> @Result<i32, string> { return n; }
+
+fn plain(n: i32) -> i32 {
+    val v = try parse(n);
+    return v;
+}
+
+pub fn main() { @print(plain(1)); }

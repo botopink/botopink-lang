@@ -1,0 +1,3 @@
+//// The `sort` folder of `kit`.
+
+pub mod queue;

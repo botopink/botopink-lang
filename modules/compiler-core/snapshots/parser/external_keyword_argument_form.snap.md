@@ -17,7 +17,11 @@
             "name": "External.Erlang",
             "args": [
               "\"lists\"",
-              "\"reverse(self)\""
+              "\"reverse(xs)\""
+            ],
+            "labels": [
+              "module",
+              "method"
             ],
             "is_builtin": true
           }
@@ -25,7 +29,7 @@
         "genericParams": [],
         "params": [
           {
-            "name": "self",
+            "name": "xs",
             "typeRef": {
               "generic": {
                 "name": "Array",
@@ -39,7 +43,6 @@
             },
             "typeName": "",
             "modifier": "none",
-            "fnType": null,
             "destruct": null,
             "default": null
           }

@@ -1,0 +1,28 @@
+//// Decision 431 (3) — std's `failure.attempt` contains a crash: `Ok` of the
+//// body's value, or `Error(Failure(message, kind))` for a raise it caught.
+//// A `@panic` is `panic` (decision 492), its message the text the program
+//// wrote. After a contained crash the program goes on.
+////
+//// On wasm (decision 518) `attempt` runs the thunk under wasm exception
+//// handling, so the program runs with the host's exceptions on. A host raise
+//// is `modules/std_failure_attempt_host`'s, on the targets whose host raises
+//// (decision 527 (0)).
+
+import {failure, failure.Failure} from "std";
+
+fn explode() -> i32 {
+    @panic("the body exploded");
+}
+
+fn show(r: @Result<i32, Failure>) {
+    case r {
+        Ok(v) -> @print("Ok " + v.toString());
+        Error(f) -> @print("Error " + f.kind + ": " + f.message);
+    }
+}
+
+pub fn main() {
+    show(failure.attempt({ -> explode() }));
+    show(failure.attempt({ -> 6 * 7 }));
+    @print("after");
+}

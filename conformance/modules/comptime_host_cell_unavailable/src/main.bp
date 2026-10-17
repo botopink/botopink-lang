@@ -1,0 +1,20 @@
+//// Decisions 434, 341, 452 — a host function a decorator reaches runs at
+//// comptime on the wasm runtime, for every target, by one of two cells: its
+//// `@External.Wasm(std: "…")` cell (std-wasm) or its `@External.Wasm(fn: …)`
+//// cell. `bang` has neither — `@External.Node` never serves, there is no Node
+//// at comptime — so the call is refused when the package is compiled, naming
+//// the function and both cells, whatever the build's target.
+
+#[@External.Node("""($0 + "!")""")]
+declare fn bang(value: string) -> string;
+
+fn sized(comptime decl: @Decl) {
+    @emit("pub fn summary() -> string { return \"" + bang(decl.name) + "\"; }");
+}
+
+#[sized]
+type Point(x: i32, y: i32)
+
+pub fn main() {
+    @print(summary());
+}

@@ -1,0 +1,6 @@
+//// 144 B-27 step 3 (proposed by its Conformance step; decisions 198, 361) —
+//// a `test` declared in a `.bpp` file's header stays at module level, as
+//// every header declaration does, and `botopink test` finds it and runs it:
+//// it calls the header's `twice` and builds its `Props`.
+
+pub mod components;

@@ -1,0 +1,6 @@
+//// Decision 332 — a `bigint` is no `i64`: the conversion is written (`b.toI64()`).
+
+pub fn main() {
+    val x: i64 = 2n;
+    @print(x);
+}

@@ -1,0 +1,50 @@
+//// Decision 280 (1) — a decorator argument is a value of its parameter's
+//// type, handed to the body as that value: an array keeps its elements
+//// (`[1, 2]` has length 2, not the length of its source text), a variant is
+//// the variant, a parameter left out takes its default, a labelled argument
+//// meets the parameter it names, and an integer literal takes the integer
+//// type its parameter asks for.
+
+pub type Level { Low, High }
+
+fn mark(
+    comptime decl: @Decl,
+    comptime sizes: @Expr<i32[]>,
+    comptime big: @Expr<i64> = 1,
+    comptime level: @Expr<Level> = .Low,
+    comptime tags: @Expr<string[]> = ["a"],
+) {
+    decl.setMeta(
+        Mark(
+            count: sizes.value.length,
+            sizes: sizes.value,
+            big: big.value,
+            level: if (level.value == Level.High) "high" else "low",
+            tags: tags.value,
+        ),
+    );
+}
+
+#[mark([1, 2], level: .High)]
+type A(x: i32)
+
+#[mark([3], 40, tags: ["x", "y"])]
+type B(x: i32)
+
+pub fn main() {
+    show(@typeInfo(A).meta(Mark));
+    show(@typeInfo(B).meta(Mark));
+}
+
+fn show(mark: ?Mark) {
+    if (mark) {
+        m ->
+        @print(m.count.toString() + "/" + m.sizes.join("+"));
+        @print(m.big.toString());
+        @print(m.level);
+        @print(m.tags.join(","));
+    }
+}
+
+// What `#[mark]` records: the values its arguments held in the body.
+type Mark(count: i32, sizes: i32[], big: i64, level: string, tags: string[])

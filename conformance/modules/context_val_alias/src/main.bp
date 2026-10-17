@@ -1,0 +1,17 @@
+//// Decisions 378, 379 — a module-level `Context<T>` declares `T`'s default,
+//// and only `createContext(value)` declares one: a `val` naming another
+//// context would give one type two defaults.
+
+import {context.createContext, context.provide, context.context} from "std";
+
+type Theme(mode: string)
+
+type Element(text: string) implement @Renderable
+
+pub val themeContext = comptime createContext(Theme(mode: "default"));
+
+pub val Alias = themeContext;
+
+pub fn main() {
+    @print("unreached");
+}

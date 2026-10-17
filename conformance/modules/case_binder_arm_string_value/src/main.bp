@@ -1,0 +1,38 @@
+//// A `case` whose catch-all arm binds the subject (`_ { n -> … }`) is the
+//// type of its arms' values: here a string, over a field read and a local,
+//// as a `val`'s value and as an argument. wasm took the binder's arm for no
+//// string and printed the string's address (`388`) where the case was a
+//// `val`'s value.
+
+type D(name: string, age: i32)
+
+pub fn main() {
+    val d = D(name: "a", age: 320);
+    val s = case d.age {
+        3 {
+            "three"
+        }
+        _ { n ->
+            "max " + n.toString()
+        }
+    };
+    @print(s);
+    val x = 3;
+    val t = case x {
+        3 {
+            "three"
+        }
+        _ { n ->
+            "max " + n.toString()
+        }
+    };
+    @print(t);
+    @print(case d.age {
+        3 {
+            "three"
+        }
+        _ { n ->
+            "age " + n.toString()
+        }
+    });
+}

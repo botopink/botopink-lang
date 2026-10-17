@@ -1,0 +1,40 @@
+//// A method's parameter typed by a behavior takes an implementer, as a free
+//// function's does: `sheet.add("c", s)` against `fn add(self: Self, layer:
+//// string, item: Styleable)` with a `Styled` `s` was `type mismatch:
+//// expected Styleable, got Styled` (144 B-10, decision 430). An associated
+//// fn's parameter alike, on every target.
+
+behavior Styleable {
+    fn css(self: Self) -> string;
+}
+
+type Styled(rule: string) implement Styleable {
+    fn css(self: Self) -> string {
+        return "{" + self.rule + "}";
+    }
+}
+
+type Prop(name: string, value: string) implement Styleable {
+    fn css(self: Self) -> string {
+        return self.name + ":" + self.value;
+    }
+}
+
+type Sheet(items: string[]) {
+    fn add(self: Self, layer: string, item: Styleable) -> Sheet {
+        return Sheet(items: self.items.append([layer + " " + item.css()]));
+    }
+
+    fn of(item: Styleable) -> Sheet {
+        return Sheet(items: [item.css()]);
+    }
+}
+
+pub fn main() {
+    val s = Styled(rule: "color: red");
+    val sheet = Sheet
+        .of(Prop(name: "gap", value: "1rem"))
+        .add("c", s)
+        .add("u", Prop(name: "m", value: "0"));
+    @print(sheet.items.join(" | "));
+}

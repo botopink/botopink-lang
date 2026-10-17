@@ -1,0 +1,12 @@
+//// A fixture package that is not jhonstart (front 116): its default module
+//// holds the markup's unfold target, `style` the style section's; the
+//// toolchain finds both by std's `bpp` annotations alone.
+
+pub default mod markup;
+pub mod style;
+
+/// A decorator that refuses what it annotates, naming it and its kind.
+pub fn named(comptime decl: @Decl) {
+    val kind = if (decl.kind == DeclKind.Fn) "a function" else "not a function";
+    decl.fail("named " + decl.name + " (" + kind + ")");
+}

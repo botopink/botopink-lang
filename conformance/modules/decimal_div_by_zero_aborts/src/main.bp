@@ -1,0 +1,12 @@
+//// 144 B-24, decision 332 (2) — a `Decimal` divided by zero aborts, whatever the scale and the
+//// rounding asked for (`0.00` is zero too), on every target.
+
+import {decimal.Decimal, decimal.Rounding} from "std";
+
+pub fn main() {
+    val one = Decimal(unscaled: 1n, scale: 0);
+    val zero = Decimal(unscaled: 0n, scale: 2);
+    @print("before");
+    @print(one.div(zero, 2, Rounding.HalfEven).toString());
+    @print("after");
+}

@@ -1,0 +1,5 @@
+//// The blog's `NotFound` — the other declaration of the name.
+
+pub fn NotFound() -> string {
+    return "blog";
+}

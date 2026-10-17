@@ -1,0 +1,45 @@
+//// Decision 494 — `failure.attemptTask` is `attempt`'s `@Task` form: it
+//// awaits the task its thunk answers and is `Ok` of its value, or
+//// `Error(Failure)` when the task crashed (decision 492's kinds). A task that
+//// fails with its own `E` (decision 432) did not crash: its `@Result` is the
+//// value, so `attemptTask` answers `Ok(Error(e))`.
+////
+//// On wasm (decision 518) the thunk runs under wasm exception handling: an
+//// abort before the task's first `await` is contained.
+
+import {failure, failure.Failure} from "std";
+
+fn doubled(n: i32) -> @Task<i32> {
+    if (n < 0) @panic("a negative input");
+    return n * 2;
+}
+
+fn lookup(n: i32) -> @Task<@Result<i32, string>> {
+    if (n < 0) throw "not found";
+    return n;
+}
+
+fn show(r: @Result<i32, Failure>) {
+    case r {
+        Ok(v) -> @print("Ok " + v.toString());
+        Error(f) -> @print("Error " + f.kind + ": " + f.message);
+    }
+}
+
+fn run() -> @Task<void> {
+    show(await failure.attemptTask({ -> doubled(21) }));
+    show(await failure.attemptTask({ -> doubled(-1) }));
+    val found = await failure.attemptTask({ -> lookup(-1) });
+    case found {
+        Ok(inner) -> case inner {
+            Ok(v) -> @print("Ok Ok " + v.toString());
+            Error(e) -> @print("Ok Error " + e);
+        };
+        Error(f) -> @print("Error " + f.kind + ": " + f.message);
+    }
+    @print("after");
+}
+
+pub fn main() {
+    run();
+}

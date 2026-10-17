@@ -1,0 +1,15 @@
+//// Decisions 431 (2), 432, 490 — a `@Task` binding that writes `result: true`
+//// must hold the `@Result` inside the task, `@Task<@Result<…, HostError>>`: a
+//// `@Task<T>` never fails, so a host that answers later and can fail has
+//// nowhere to put the error. `-> @Task<i32>` is refused at the annotation.
+
+#[@External.Node("Promise.resolve($0)", result: true), @External.Erlang("$0", result: true)]
+declare fn later(n: i32) -> @Task<i32>;
+
+fn run() -> @Task<void> {
+    @print(await later(1));
+}
+
+pub fn main() {
+    run();
+}

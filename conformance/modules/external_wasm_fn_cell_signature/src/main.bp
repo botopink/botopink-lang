@@ -1,0 +1,16 @@
+//// Decision 481 — `fn: <name>` is resolved in the module and type-checked
+//// against the declaration: a body taking an `i32` cannot serve a declaration
+//// over `f64`, refused at the annotation on every target.
+
+#[@External.Node("Math", "tan")]
+#[@External.Erlang("math", "tan")]
+#[@External.Wasm(fn: tanBody)]
+pub declare fn tanOf(x: f64) -> f64;
+
+fn tanBody(x: i32) -> f64 {
+    return 0.0;
+}
+
+pub fn main() {
+    @print(tanOf(0.0));
+}

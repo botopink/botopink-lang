@@ -1,0 +1,13 @@
+//// A program's `behavior String` adds members to std's `String` and
+//// redeclares none: a `startsWith` of its own is `behavior-member-redeclared`
+//// at the member.
+
+behavior String {
+    default fn startsWith(self: Self, p: string) -> bool {
+        return false;
+    }
+}
+
+pub fn main() {
+    @print("x".startsWith("x"));
+}

@@ -1,0 +1,16 @@
+//// Decision 353 — the program declares two `#[theme]`s, one here and one in
+//// `skin`, and the template reading the catalogue sees both: its own refusal
+//// (`e.fail`) names them, located at the literal it expands.
+
+pub mod skin;
+import looks from "looks";
+import {theme} from "looks";
+
+#[theme]
+pub fn house() -> string {
+    return "house";
+}
+
+pub fn main() {
+    @print(looks "page");
+}

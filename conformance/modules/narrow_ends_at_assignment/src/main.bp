@@ -1,0 +1,13 @@
+//// A narrowed `var` is assigned its declared type, and the assignment ends
+//// the narrowing: after `x = x.next` inside `if (x != null)`, `x` is a `?Node`
+//// again and a member read off it is the optional-member error.
+
+type Node(v: i32, next: ?Node)
+
+pub fn main() {
+    var x: ?Node = Node(v: 1, next: null);
+    if (x != null) {
+        x = x.next;
+        @print(x.v);
+    }
+}

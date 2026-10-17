@@ -1,0 +1,11 @@
+//// Decision 38 — a `val` is immutable at module level too: assigning to one is
+//// a located error, and the hint names `var`. This is the program front 17
+//// opened with; it checked clean once and then threw on node, did not compile
+//// on erlang and did not validate on wasm. Written `var hits`, it prints `2`
+//// (`run/module_var.bp`).
+
+val hits: i32 = 0;
+
+pub fn bump() { hits = hits + 1; }
+
+pub fn main() { bump(); bump(); @print(hits); }

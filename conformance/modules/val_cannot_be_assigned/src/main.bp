@@ -1,0 +1,4 @@
+val x: i32 = 0;
+pub fn main() {
+    x = 1;    // error: `x` is a `val` and cannot be assigned
+}

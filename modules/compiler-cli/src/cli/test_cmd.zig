@@ -1,19 +1,29 @@
 /// `botopink test` — compile in test mode then run every test block.
 ///
-/// Compiles the project with `test_mode = true` (test blocks emit as
-/// functions + a registry + runner entry; `fn main/0` is not auto-invoked),
-/// writes artifacts under `.botopinkbuild/test-out/`, then executes each
-/// module that contains tests and aggregates the exit codes.
-///
-/// Currently only the `commonJS` target runs tests (node); other targets
-/// are pending phases of the `test-blocks` spec.
+/// Compiles the project with `test_mode = true`: every module's production
+/// unit is the one `build` writes, and each module of the package under test
+/// that declares tests gets its test unit — its tests, their registry and the
+/// runner (decision 513). Writes the artifacts under
+/// `.botopinkbuild/test-out/<target>/<id>/` (one directory per run, removed
+/// when the run ends), then runs each test unit and aggregates the exit
+/// codes, on commonJS, erlang, beam and wasm (the `wasi` host).
 const std = @import("std");
+const source_stamp = @import("source_stamp");
+const build_stamp = @import("build_stamp");
 const bp = @import("botopink");
 const reporter = @import("./reporter.zig");
 const config = @import("./config.zig");
+const manifest = @import("manifest");
 const scanner = @import("./scanner.zig");
 const sources = @import("./sources.zig");
+const arglist = @import("./arglist.zig");
+const otp = @import("./otp.zig");
 const libs = @import("./libs.zig");
+const build_cmd = @import("./build.zig");
+const diagnostics = @import("./diagnostics.zig");
+const code_cache = @import("./code_cache.zig");
+const analysis_store = @import("./analysis_store.zig");
+const run_cmd = @import("./run.zig");
 
 // ── Options ───────────────────────────────────────────────────────────────────
 
@@ -29,9 +39,245 @@ pub const Options = struct {
     /// error_line?}` per test plus a final `{event:"summary", passed, failed}`.
     /// Schema documented in `modules/compiler-cli/AGENTS.md` "§T".
     json: bool = false,
+    /// `--cold`: the code cache is not read, and what ran is written
+    /// (decision 509 (5)).
+    cold: bool = false,
 };
 
-const TEST_OUT_DIR = ".botopinkbuild/test-out";
+/// Root of the test output tree. One run NEVER writes here directly: it writes
+/// to `<TEST_OUT_ROOT>/<target>/<id>/` (see `makeTestOutDir`), removed again
+/// when the run ends.
+///
+/// Two runs used to share this one directory, and each emptied it on the way
+/// in. `botopink-lib-test` gives every cell `cwd = <lib dir>`, so two gates
+/// over one library checkout — two worktrees, or one gate and a hand-run
+/// `botopink test` — wiped each other's artifacts mid-run. The loser reported
+/// a library red nobody owned: modules missing under `node` (`Cannot find
+/// module …/x_test.js`), or an `{error,undef}` storm under `escript` when the
+/// sibling `.erl` files it loads had been replaced by another target's `.js`.
+const TEST_OUT_ROOT = ".botopinkbuild/test-out";
+
+/// Where a module's test artifact goes: the mirrored `<module path><ext>`,
+/// except on beam, where it is `<module atom>.S` in the run's one directory
+/// (`erl -pa` loads by atom, and `erlc` names a `.beam` after its module).
+fn artifactIn(arena: std.mem.Allocator, test_out: []const u8, target: config.Target, packages: bp.codegen.crossModule.Packages, name: []const u8, ext: []const u8) ![]const u8 {
+    if (target != .beam) return std.fmt.allocPrint(arena, "{s}/{s}{s}", .{ test_out, name, ext });
+    const stem = try bp.codegen.crossModule.outputStem(.beam, arena, packages.idOf(name));
+    return std.fmt.allocPrint(arena, "{s}/{s}{s}", .{ test_out, stem, ext });
+}
+
+/// Where a module's test unit (decision 513, `GenerateResult.test_unit`) is
+/// written: on erlang `<atom>.erl` in the directory of the module that
+/// declares it, as its type units (its runner loads that directory and
+/// below); on beam `<atom>.S` in the run's one directory; on commonJS
+/// `__test__/<module path>.js` under the run's root.
+fn testUnitPath(arena: std.mem.Allocator, test_out: []const u8, target: config.Target, name: []const u8, unit: bp.codegen.Unit) ![]const u8 {
+    return switch (target) {
+        .erlang => if (std.fs.path.dirname(name)) |d|
+            std.fmt.allocPrint(arena, "{s}/{s}/{s}.erl", .{ test_out, d, unit.atom })
+        else
+            std.fmt.allocPrint(arena, "{s}/{s}.erl", .{ test_out, unit.atom }),
+        .beam => std.fmt.allocPrint(arena, "{s}/{s}.S", .{ test_out, unit.atom }),
+        .commonJS => std.fmt.allocPrint(arena, "{s}/{s}.js", .{ test_out, unit.atom }),
+        .wasm => std.fmt.allocPrint(arena, "{s}/{s}.wat", .{ test_out, unit.atom }),
+    };
+}
+
+/// `erlc +from_asm -o <dir>` over every `.S` in `dir` — a job of the command's
+/// `erl` session (`run.compileInto`, a refusal printed as `erlc` prints it);
+/// its exit status. A dependency's module is linked from the code cache when
+/// it is there (decision 509, `cache`), the project's own are assembled every
+/// time.
+fn assembleBeam(arena: std.mem.Allocator, io: std.Io, dir: []const u8, cache: run_cmd.Cache) !u8 {
+    var files: std.ArrayListUnmanaged([]const u8) = .empty;
+    var d = std.Io.Dir.cwd().openDir(io, dir, .{ .iterate = true }) catch return 1;
+    defer d.close(io);
+    var it = d.iterate();
+    while (try it.next(io)) |entry| {
+        if (entry.kind != .file or !std.mem.endsWith(u8, entry.name, ".S")) continue;
+        try files.append(arena, try std.fmt.allocPrint(arena, "{s}/{s}", .{ dir, entry.name }));
+    }
+    if (files.items.len == 0) return 0;
+    return run_cmd.compileInto(arena, io, dir, .beam, files.items, cache);
+}
+
+/// The output directory of THIS run: `<root>/<target>/<id>`, where `id` is 64
+/// random bits — the same shape the comptime runtime uses for its scratch dirs
+/// (`codegen/runtime.zig`, `makeScratchDir`), and the same per-target scoping
+/// `lib-test-build/<target>` already has in `lib-test-runner`.
+///
+/// Both halves earn their place. Per target, because the two targets of one
+/// library emit DIFFERENT file sets (`.js` vs `.erl`) into the same names — the
+/// clobber that made the artifacts of the loser vanish for good instead of for
+/// a millisecond. Per run, because two gates reach the same `(lib, target)`
+/// cell as often as they reach two.
+///
+/// It stays under `.botopinkbuild/` so `botopink clean` (which removes `out/`
+/// and `.botopinkbuild/`) and the `.gitignore` entry both keep covering it with
+/// no new rule. The caller removes it when the run ends: a run's artifacts
+/// belong to the run, and the next one's id differs, so nothing readable would
+/// survive anyway.
+fn makeTestOutDir(arena: std.mem.Allocator, io: std.Io, target: config.Target) ![]const u8 {
+    var rand_bytes: [8]u8 = undefined;
+    io.random(&rand_bytes);
+    const id = std.mem.readInt(u64, &rand_bytes, .little);
+    return std.fmt.allocPrint(arena, TEST_OUT_ROOT ++ "/{s}/{x}", .{ target.toString(), id });
+}
+
+/// The environment variable that names THIS run's scratch directory to the
+/// tests it runs: `<cwd>/<test_out>.tmp` (`testTmpDir`), absolute, empty when
+/// the first test starts, and removed with the run's directory when the run
+/// ends.
+///
+/// A test that writes files — a fixture project it then compiles, a pid file,
+/// a certificate — needs a place no other process writes to. The library's own
+/// directory is not one: `botopink-lib-test` runs the commonJS and the erlang
+/// cell of one library side by side with the same `cwd`, and two gates share a
+/// checkout. rakun's build tests wrote their fixture projects to
+/// `.botopinkbuild/tmp/<member>-fixtures/<name>` and `rm -rf`'d each one before
+/// writing it, so the erlang cell deleted the commonJS cell's fixture between
+/// its write and its compile: one full `zig build test-libs` measured
+/// `rakun-data·commonJS` at 6 failed, the next at 0, the next at 1. This run's
+/// directory is already unique per run and per target (`makeTestOutDir`), so
+/// its `.tmp` sibling is too, with nothing to reap.
+///
+/// It sits BESIDE the run's directory, never inside it: an erlang runner loads
+/// every `.erl` under its own directory before its tests run
+/// (`'__bp_load_siblings'/0`, `codegen/erlang.zig`), and a fixture project a
+/// test builds holds an `out/erl/` of its own. Inside the run's directory, every
+/// test module that ran after rakun-scheduling's build tests compiled and loaded
+/// the ~6 500 fixture `.erl` those tests had written — about five CPU-minutes per
+/// module, and modules of the fixtures' builds loaded over the run's own.
+pub const TEST_TMPDIR_ENV = "BOTOPINK_TEST_TMPDIR";
+
+/// `<test_out>.tmp` — the run's scratch directory (`TEST_TMPDIR_ENV`), a
+/// sibling of the run's directory, so no runner's sibling walk reaches it.
+fn testTmpDir(arena: std.mem.Allocator, test_out: []const u8) ![]const u8 {
+    return std.fmt.allocPrint(arena, "{s}.tmp", .{test_out});
+}
+
+/// The environment variable that names "the compiler running me" to the tests
+/// a run executes: the absolute path of this `botopink` executable, set when
+/// the variable is not already in the environment (a value the caller set is
+/// the caller's choice and is passed through untouched). A test that builds a
+/// fixture project spawns the compiler it reads here, so it spawns the right
+/// one in every layout — a path relative to the library's checkout exists in
+/// one layout only.
+pub const TEST_BIN_ENV = "BOTOPINK_BIN";
+
+/// The runners' environment: this process's own plus `TEST_TMPDIR_ENV`, whose
+/// directory is created here, and `TEST_BIN_ENV` when it is unset. The absolute
+/// path is spelled from the process's cwd because a test may `cd` (a fixture
+/// build does) before it uses it.
+fn testTmpEnv(
+    arena: std.mem.Allocator,
+    io: std.Io,
+    rel: []const u8,
+    env_map: libs.EnvMap,
+) !*const std.process.Environ.Map {
+    try std.Io.Dir.cwd().createDirPath(io, rel);
+    var cwd_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const n = try std.process.currentPath(io, &cwd_buf);
+    const abs = try std.fs.path.join(arena, &.{ cwd_buf[0..n], rel });
+
+    const map = try arena.create(std.process.Environ.Map);
+    map.* = std.process.Environ.Map.init(arena);
+    if (env_map) |m| {
+        for (m.keys(), m.values()) |k, v| try map.put(k, v);
+    }
+    try map.put(TEST_TMPDIR_ENV, abs);
+    if (map.get(TEST_BIN_ENV) == null) {
+        if (std.process.executablePathAlloc(io, arena)) |self_exe| {
+            try map.put(TEST_BIN_ENV, self_exe);
+        } else |_| {}
+    }
+    return map;
+}
+
+/// Compile every `.erl` under `dir` ONCE, in one `erl` (a process per file),
+/// writing `<name>.beam` beside each source that compiled.
+///
+/// Each erlang test module's runner loads every sibling `.erl` before its
+/// tests run (`codegen/erlang.zig`, `__bp_load_siblings`). It used to call
+/// `compile:file/2` on each of them, so a package with T test modules and M
+/// modules compiled T × M times — `libs/std` spent ~24 s of its erlang cell
+/// there, against ~2 s for commonJS. The runner now loads the `.beam` written
+/// here (`__bp_prebuilt`) and compiles from source only when there is none.
+///
+/// Nothing is decided here. The compile uses the loader's own options
+/// (`binary`, `return_errors`, the include dir), a module that does not compile
+/// gets no `.beam` and so reaches the loader's `compile:file/2` arm, whose
+/// refusal names it exactly as before, and a source that says `-include` is
+/// left to the loader (its include dir is the script's, which this step does
+/// not know). The directory is this run's own, written above from this run's
+/// outputs. A failure of the step itself — `erl` missing, a crash — leaves some
+/// or no `.beam` behind, which is the old path for the rest; its output is
+/// discarded.
+///
+/// **The code cache** (decision 509, `code_cache.zig`): a DEPENDENCY's module
+/// — `deps`, the files of every module (and `type` unit) of another package
+/// than the one under test — is linked beside its source from the store when
+/// its `.beam` is there under the key of its bytes and the OTP compiler's
+/// version, else compiled `deterministic` and stored; one that cannot be keyed
+/// or does not compile is compiled as before. The modules under test are
+/// compiled every time. It is a job of the command's `erl` session
+/// (`otp.zig`), `files` (the emitted modules) setting how many schedulers it
+/// brings online.
+fn precompileErlang(arena: std.mem.Allocator, io: std.Io, dir: []const u8, cache_dir: []const u8, deps: []const []const u8, files: usize) !void {
+    const eval = PRECOMPILE_EVAL;
+    const dep_list = try arglist.write(arena, io, deps);
+    defer arglist.remove(io, dep_list);
+    const argv: []const []const u8 = &.{ "erl", "-noshell", "-eval", eval, "-extra", dir, cache_dir, code_cache.mode(), dep_list };
+    const result = otp.job(arena, io, eval, argv[5..], otp.onlineFor(files)) catch return;
+    _ = result;
+}
+
+/// The job `precompileErlang` runs.
+const PRECOMPILE_EVAL =
+    \\[Dir, CacheDir, CacheMode, DepListFile] = init:get_plain_arguments(),
+++ arglist.READ_LIST("DepList", "DepListFile") ++ code_cache.ERL_FUNS ++
+    \\Deps = sets:from_list([filename:absname(F) || F <- DepList]),
+    \\Opts = [binary, return_errors, {i, Dir}],
+    \\Publish = fun(Path, Bin) ->
+    \\    Tmp = iolist_to_binary([Path, ".", integer_to_list(erlang:unique_integer([positive])),
+    \\                            "-", os:getpid(), ".tmp"]),
+    \\    case file:write_file(Tmp, Bin) of
+    \\        ok ->
+    \\            case file:rename(Tmp, Path) of
+    \\                ok -> ok;
+    \\                _ -> file:delete(Tmp)
+    \\            end;
+    \\        _ -> file:delete(Tmp)
+    \\    end
+    \\end,
+    \\Plain = fun(Src, Beam) ->
+    \\    {ok, Text} = file:read_file(Src),
+    \\    case binary:match(Text, <<"-include">>) of
+    \\        nomatch ->
+    \\            case compile:file(Src, Opts) of
+    \\                {ok, _Mod, Bin} -> Publish(Beam, Bin);
+    \\                _ -> ok
+    \\            end;
+    \\        _ -> ok
+    \\    end
+    \\end,
+    \\Compile = fun(Src) ->
+    \\    Beam = filename:rootname(Src) ++ ".beam",
+    \\    case sets:is_element(filename:absname(Src), Deps) andalso (catch CodeDep(Src, erl, Beam)) of
+    \\        ok -> ok;
+    \\        _ -> Plain(Src, Beam)
+    \\    end
+    \\end,
+    \\Parent = self(),
+    \\Refs = [begin
+    \\            Ref = make_ref(),
+    \\            spawn(fun() -> catch Compile(S), Parent ! Ref end),
+    \\            Ref
+    \\        end || S <- filelib:wildcard(filename:join([Dir, "**", "*.erl"]))],
+    \\[receive R -> ok end || R <- Refs],
+    \\CodeReap(),
+    \\halt(0).
+;
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
@@ -44,34 +290,81 @@ pub fn run(
     var arena_instance = std.heap.ArenaAllocator.init(gpa);
     defer arena_instance.deinit();
     const arena = arena_instance.allocator();
+    if (opts.cold) code_cache.cold = true;
+
+    // A test run against a stale build measures the previous compiler: when
+    // this binary's checkout still exists and its sources have changed since
+    // the binary was built, refuse to start (`source_stamp`). An installed
+    // binary, built elsewhere, has no checkout here and is never refused.
+    if (try source_stamp.checkFresh(gpa, io, build_stamp.source_root, build_stamp.source_hash)) |stale| {
+        var msg_buf: [1024]u8 = undefined;
+        reporter.errMsg(std.mem.trimEnd(u8, source_stamp.render(&msg_buf, stale, "this botopink"), "\n"));
+        return 1;
+    }
 
     // Load project config.
     const proj = config.load(arena, io) catch |err| {
         switch (err) {
             error.ConfigNotFound => reporter.errMsg("botopink.json not found — are you in a botopink project?"),
-            error.ConfigInvalid => reporter.errMsg("botopink.json is invalid JSON"),
+            error.ConfigInvalid => {}, // refused — the located diagnostic is already printed
             else => reporter.errMsg("failed to load botopink.json"),
         }
         return 1;
     };
 
-    const target = opts.target orelse proj.parsedTarget();
-    if (target != .commonJS and target != .erlang) {
-        reporter.errMsg("`botopink test` currently supports only the commonJS and erlang targets");
-        reporter.hintMsg("run with `--target commonJS` or set \"target\": \"commonJS\" in botopink.json");
+    // A workspace member that is a library and lists no `files` ships nothing
+    // to a consumer (decision 75): its own tests fail, they do not skip.
+    if (proj.workspace != null) {
+        if (manifest.shipsNothing(io, proj.manifest)) |refusal| {
+            refusal.print();
+            return 1;
+        }
+    }
+
+    const target = opts.target orelse proj.parsedTarget() orelse {
+        build_cmd.reportUnsupportedTarget(proj.target);
+        return 1;
+    };
+    // wasm: a test unit is a WASI component run by `wasmtime` (decision 513);
+    // the `browser` host has no runner of its own.
+    if (target == .wasm and proj.wasmHost() == .browser) {
+        reporter.errMsg("`botopink test` on wasm runs the `wasi` host only — this project's \"wasm\" host is `browser`");
         return 1;
     }
+    // erlang and beam: the `erl` on PATH runs the OTP release the compiler
+    // emits for, or no test runs (decision 228, `otp.zig`).
+    if ((target == .erlang or target == .beam) and !try otp.check(arena, io)) return 1;
+
+    // Resolve declared external libs first — a `.bpp` file unfolds onto the
+    // package `"bpp"` names (front 116 step 2, `closure_keys.bpp`) — (generic — `libs/<name>/`),
+    // same as `build`, so a consumer's tests can `import … from "<lib>"`. Dependency modules are
+    // compiled first (their types/exports must resolve before the project), but
+    // their OWN `test {}` blocks are not run — only the project's are.
+    const entry_target: code_cache.EntryTarget = .{ .target = target };
+    var closure_keys: libs.ClosureKeys = .{ .arena = arena, .target = entry_target };
+    const dep_modules = libs.loadDependenciesWith(gpa, io, proj, env_map, &closure_keys) catch |err| {
+        build_cmd.reportDependencyError(err);
+        return 1;
+    };
+    defer libs.freeModules(gpa, dep_modules);
 
     // Scan source files: `src/` (inline test blocks) plus `test/` (separate
     // `*_test.bp` suites). Test modules come last so `src/` exports are
     // already registered when they compile.
     // `src/` resolves through the explicit module tree; the flat `test/` suite
     // dir is not a package, so it keeps the plain directory scan.
-    var src_loaded = sources.load(gpa, io, proj, "src") catch return 1;
+    var src_loaded = sources.loadWith(gpa, io, proj, proj.srcDir(), if (closure_keys.bpp) |*b| b else null) catch return 1;
     defer src_loaded.free(gpa);
     const src_modules = src_loaded.modules;
-    const test_modules = try scanner.scanSources(gpa, io, "test");
-    defer scanner.freeModules(gpa, test_modules);
+    var test_scan = try scanner.scanSourcesWithFiles(gpa, io, "test");
+    defer test_scan.free(gpa);
+    // Decision 519 — a test module's `@embed` reads the package's files.
+    for (test_scan.modules) |*m| m.files = bp.PackageFiles.disk(io, proj.dir);
+    const test_modules = test_scan.modules;
+
+    // The flat `test/` directory is not a package, so it never reached the
+    // resolver: check its imports here, against the same rule `src/` answers to.
+    sources.checkFlatImports(gpa, proj, src_modules, test_scan) catch return 1;
 
     if (src_modules.len == 0 and test_modules.len == 0) {
         reporter.errMsg("no source files found in src/ or test/");
@@ -79,50 +372,46 @@ pub fn run(
         return 1;
     }
 
-    // Resolve declared external libs (generic — `libs/<name>/`), same as `build`,
-    // so a consumer's tests can `import … from "<lib>"`. Dependency modules are
-    // compiled first (their types/exports must resolve before the project), but
-    // their OWN `test {}` blocks are not run — only the project's are.
-    const dep_modules = libs.loadDependencies(gpa, io, proj.dependencies, env_map) catch |err| {
-        switch (err) {
-            error.LibsRootNotFound => {
-                reporter.errMsg("project declares dependencies but no libs/ directory was found in this or any parent directory");
-                reporter.hintMsg("if your botopink.json uses the new object form ({\"<name>\": {\"git\": ...}}), run `bpmp install` to fetch deps into $BPMP_HOME first");
-            },
-            error.LibNotFound => reporter.errMsg("a declared dependency was not found under the libs root"),
-            error.LibManifestInvalid => reporter.errMsg("a dependency's botopink.json is invalid"),
-            else => reporter.errMsg("failed to load project dependencies"),
-        }
-        return 1;
-    };
-    defer libs.freeModules(gpa, dep_modules);
+    // The code cache's level B (144 B-60): a dependency's analysis and its
+    // unit (CODE) are read from its entry when one reads back, as `build`
+    // reads them — a dependency has no test unit and its production unit
+    // does not depend on `test_mode` (decision 513). The package under test
+    // is always analysed and emitted, and never stored.
+    var level_b: analysis_store.Cache = undefined;
+    try level_b.init(gpa, io, analysis_store.root(proj), entry_target, closure_keys.keys);
+    defer level_b.deinit();
+    // The compiled comptime modules beside it (decision 543).
+    try bp.comptime_runtime.useCompiledCache(analysis_store.root(proj), code_cache.cold);
 
-    // Keep only real `.bp` dependency modules. Declaration-only (`.d.bp`) modules
-    // use declaration-file syntax the regular pipeline doesn't parse for external
-    // libs yet (the declaration-parse path is std-only), so they are skipped
-    // rather than failed — they carry host-bound / gated surface, not runnable
-    // code. `build` effectively drops them the same way.
-    var real_deps: std.ArrayListUnmanaged(bp.Module) = .empty;
-    for (dep_modules) |d| {
-        if (!d.declaration) try real_deps.append(arena, d);
-    }
+    // A dependency's `.d.bp` modules are kept, as `build` and `run` keep them
+    // (decisions 514, 515): one module set under every command, so one level B
+    // entry.
+    const all_modules = try std.mem.concat(arena, bp.Module, &.{ dep_modules, src_modules, test_modules });
 
-    const modules = try std.mem.concat(arena, bp.Module, &.{ real_deps.items, src_modules, test_modules });
+    reporter.compiling(all_modules.len);
 
-    reporter.compiling(modules.len);
+    // A module that does not lex, parse or type-check is reported with its
+    // location (below); every module that does compile still has its tests run.
+    const modules = all_modules;
 
     // Build codegen config in test mode.
     const cfg = bp.codegen.Config{
         .targetSource = switch (target) {
             .commonJS => .commonJS,
             .erlang => .erlang,
-            else => unreachable, // guarded above
+            .beam => .beam,
+            .wasm => .wasm,
         },
         .build_root = ".botopinkbuild",
         .test_mode = true,
+        .wasm_host = proj.wasmHost(),
+        .wasm_artifact = true,
+        .packages = try libs.packagesOf(arena, proj, dep_modules),
+        .analysis_store = &level_b.store,
     };
 
-    var outputs = bp.codegen.generate(gpa, modules, io, cfg) catch |err| {
+    // Emit only: each test module is run once, below, by its runner.
+    var outputs = bp.codegen.generateWith(gpa, modules, io, cfg, .{ .execute = false }) catch |err| {
         reporter.errMsg("compilation failed");
         std.debug.print("  {s}\n", .{@errorName(err)});
         return 1;
@@ -131,51 +420,64 @@ pub fn run(
         for (outputs.items) |*o| o.result.deinit(gpa);
         outputs.deinit(gpa);
     }
+    level_b.commit();
 
-    // Check for comptime errors in outputs.
-    var had_error = false;
-    for (outputs.items) |o| {
-        if (o.result.comptime_err) |ce| {
-            had_error = true;
-            const rendered = ce.renderAlloc(gpa, o.src) catch continue;
-            defer gpa.free(rendered);
-            std.debug.print("{s}", .{rendered});
-        }
-    }
-    if (had_error) return 1;
+    // Every module comes back from the compiler; one that failed carries its
+    // diagnostic, rendered here (file, line, excerpt). It does not stop the
+    // modules that compiled from running their tests. A warning is printed
+    // as `check` prints it and fails nothing (decision 57).
+    diagnostics.renderWarnings(gpa, io, arena, outputs.items);
+    const failed = try diagnostics.failedOutputs(gpa, io, arena, modules, outputs.items);
 
-    // Modules with parse/type errors produce no output at all — surface that
-    // instead of silently skipping their tests.
-    if (outputs.items.len < modules.len) {
-        const msg = try std.fmt.allocPrint(
-            arena,
-            "{d} module(s) failed to compile — run `botopink check` for diagnostics",
-            .{modules.len - outputs.items.len},
-        );
-        reporter.errMsg(msg);
-        return 1;
-    }
+    // This run's own artifact tree, empty by construction: a previous run's
+    // artifact of a module that no longer compiles cannot be found (or run) by
+    // this one, and no concurrent run can reach in and empty it. Removed when
+    // the run ends, whichever way it ends.
+    const test_out = try makeTestOutDir(arena, io, target);
+    std.Io.Dir.cwd().deleteTree(io, test_out) catch {};
+    defer std.Io.Dir.cwd().deleteTree(io, test_out) catch {};
 
     // Write every module's test-mode artifact (test modules `require` their
     // sibling modules on commonJS), then run each module that contains tests.
-    std.Io.Dir.cwd().createDirPath(io, TEST_OUT_DIR) catch |err| switch (err) {
+    std.Io.Dir.cwd().createDirPath(io, test_out) catch |err| switch (err) {
         error.PathAlreadyExists => {},
         else => return err,
     };
 
+    // The run's scratch directory, handed to every test runner as
+    // `BOTOPINK_TEST_TMPDIR` (see `TEST_TMPDIR_ENV`).
+    const test_tmp = try testTmpDir(arena, test_out);
+    std.Io.Dir.cwd().deleteTree(io, test_tmp) catch {};
+    defer std.Io.Dir.cwd().deleteTree(io, test_tmp) catch {};
+    // The runners start with no scheduler busy wait (`otp.quietEnv`); their
+    // scheduler count stays the default — they run the user's tests.
+    const child_env = try otp.quietEnv(arena, try testTmpEnv(arena, io, test_tmp, env_map), "");
+
     const ext: []const u8 = switch (target) {
         .commonJS => ".js",
         .erlang => ".erl",
-        else => unreachable,
+        .beam => ".S",
+        .wasm => ".wat",
     };
     const runner: []const u8 = switch (target) {
         .commonJS => "node",
         .erlang => "escript",
-        else => unreachable,
+        .beam => "erl",
+        .wasm => "wasmtime",
     };
 
     for (outputs.items) |o| {
-        const sub_path = try std.fmt.allocPrint(arena, TEST_OUT_DIR ++ "/{s}{s}", .{ o.name, ext });
+        if (o.result.failed()) continue;
+        // wasm: a test unit is the whole program, linked; nothing else runs.
+        if (target == .wasm) {
+            if (o.result.test_unit) |u| {
+                const unit_path = try testUnitPath(arena, test_out, target, o.name, u);
+                if (std.fs.path.dirname(unit_path)) |parent| try std.Io.Dir.cwd().createDirPath(io, parent);
+                try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = unit_path, .data = u.code });
+            }
+            continue;
+        }
+        const sub_path = try artifactIn(arena, test_out, target, cfg.packages, o.name, ext);
         if (std.fs.path.dirname(sub_path)) |parent| {
             std.Io.Dir.cwd().createDirPath(io, parent) catch |err| switch (err) {
                 error.PathAlreadyExists => {},
@@ -183,13 +485,76 @@ pub fn run(
             };
         }
         try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = sub_path, .data = o.result.js });
+
+        // Policy 3 (`13-module-identity`): a `type` of the module is an erlang
+        // module of its own, and the emitted test runner loads every `.erl` it
+        // finds beside itself and below — so the units have to be there. Named
+        // by their atom, in the directory of the module that declares them: a
+        // runner at the root loads the whole tree, and the runner of a module
+        // in a folder (`io/net` under `libs/std`) loads only its own folder, so
+        // a unit written at the root was `{error,undef}` there.
+        // On beam every module is one flat directory named by atom, where
+        // `erl -pa` finds it (`artifactIn`).
+        const unit_dir = if (target == .beam) test_out else if (std.fs.path.dirname(o.name)) |d| try std.fmt.allocPrint(arena, "{s}/{s}", .{ test_out, d }) else test_out;
+        for (o.result.units) |u| {
+            const unit_path = try std.fmt.allocPrint(arena, "{s}/{s}{s}", .{ unit_dir, u.atom, ext });
+            try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = unit_path, .data = u.code });
+        }
+        // Decision 513: the module's test unit, beside its type units.
+        if (o.result.test_unit) |u| {
+            const unit_path = try testUnitPath(arena, test_out, target, o.name, u);
+            if (std.fs.path.dirname(unit_path)) |parent| try std.Io.Dir.cwd().createDirPath(io, parent);
+            try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = unit_path, .data = u.code });
+        }
     }
 
     // Ship runtime `.mjs` sidecars (G2): a dependency's `#[@External.<targert>(...)]` modules
     // sit a directory deeper here than in their own build, so their relative
     // `require("../../src/x.mjs")` would miss the source — copy each into place.
     if (target == .commonJS) {
-        libs.shipMjsSidecars(gpa, io, outputs.items, TEST_OUT_DIR, ext, env_map) catch {};
+        libs.shipMjsSidecars(gpa, io, outputs.items, cfg.packages, test_out, ext, env_map) catch |err| switch (err) {
+            // A sidecar the run cannot ship: the located refusal is already
+            // printed, and a suite that cannot load its modules has no verdict.
+            error.SidecarRefused => return 1,
+            else => return err,
+        };
+    }
+
+    // erlang: the same for host `.erl` modules — a `#[@External.Erlang("host",
+    // "fn")]` lowers to `host:fn(…)`, and `host` is a module the library keeps
+    // beside its `.bp` sources. Copying it into the test output is enough: the
+    // emitted runner's `__bp_load_siblings/0` compiles and loads every `.erl`
+    // beside the script before running the tests.
+    if (target == .erlang or target == .beam) {
+        _ = libs.shipErlSidecars(gpa, io, outputs.items, cfg.packages, test_out, if (target == .beam) .beam else .erlang, env_map) catch |err| switch (err) {
+            // A host module that is neither shipped nor in the Erlang code
+            // path: the located refusal is already printed, and every call
+            // into it would be `{error,undef}`.
+            error.SidecarRefused => return 1,
+            else => return err,
+        };
+        // Every `.erl` of the run is now in place: compile each once, here,
+        // instead of once per test module that loads it.
+        if (target == .erlang) {
+            // A dependency's files: every module and `type` unit of another
+            // package than the one under test (decision 509 (1)).
+            var dep_files: std.ArrayListUnmanaged([]const u8) = .empty;
+            for (outputs.items) |o| {
+                if (o.result.failed() or !cfg.packages.idOf(o.name).package_in_path) continue;
+                try dep_files.append(arena, try artifactIn(arena, test_out, target, cfg.packages, o.name, ext));
+                const unit_dir = if (std.fs.path.dirname(o.name)) |d| try std.fmt.allocPrint(arena, "{s}/{s}", .{ test_out, d }) else test_out;
+                for (o.result.units) |u| try dep_files.append(arena, try std.fmt.allocPrint(arena, "{s}/{s}{s}", .{ unit_dir, u.atom, ext }));
+            }
+            try precompileErlang(arena, io, test_out, try code_cache.dir(arena, proj), dep_files.items, outputs.items.len);
+        }
+    }
+    // beam: every module of the run assembled beside itself, once; each
+    // runner's `'__bp_load_siblings'/0` compiles the host `.erl`s shipped
+    // above (`codegen/beam_asm.zig`). A module the assembler refuses fails
+    // the run with `erlc`'s own message.
+    if (target == .beam) {
+        const cache: run_cmd.Cache = .{ .dir = try code_cache.dir(arena, proj), .own_prefix = try code_cache.ownAtomPrefix(arena, proj.name) };
+        if (try assembleBeam(arena, io, test_out, cache) != 0) return 1;
     }
 
     // commonJS: root-source imports (`import {x};`) emit `require("./module")`
@@ -211,12 +576,14 @@ pub fn run(
             // mid-aggregator-build — the circular `require("./module")` would then
             // see an empty object and its side effects would crash. Exclude them.
             if (isTestModule(o.name, test_modules)) continue;
+            if (o.result.failed()) continue;
             try agg.appendSlice(arena, ", require(\"./");
             try agg.appendSlice(arena, o.name);
             try agg.appendSlice(arena, ".js\")");
         }
         try agg.appendSlice(arena, ");\n");
-        try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = TEST_OUT_DIR ++ "/module.js", .data = agg.items });
+        const agg_path = try std.fmt.allocPrint(arena, "{s}/module.js", .{test_out});
+        try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = agg_path, .data = agg.items });
 
         // Nested modules (a dependency's `jhonstart/hooks.js`) emit a flat
         // `require("./module")` for their bare sibling imports, which would
@@ -226,6 +593,8 @@ pub fn run(
         var seen_dirs = std.StringHashMap(void).init(arena);
         for (outputs.items) |o| {
             if (std.mem.startsWith(u8, o.name, "std/")) continue;
+            // A module that did not lex, parse or type-check is written nowhere.
+            if (o.result.diagnostic != null) continue;
             const dir = std.fs.path.dirname(o.name) orelse continue; // null → top level
             if (seen_dirs.contains(dir)) continue;
             try seen_dirs.put(dir, {});
@@ -238,13 +607,33 @@ pub fn run(
             for (0..depth) |_| try shim.appendSlice(arena, "../");
             try shim.appendSlice(arena, "module\");\n");
 
-            const shim_path = try std.fmt.allocPrint(arena, TEST_OUT_DIR ++ "/{s}/module.js", .{dir});
+            const shim_path = try std.fmt.allocPrint(arena, "{s}/{s}/module.js", .{ test_out, dir });
             try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = shim_path, .data = shim.items });
         }
     }
 
     var any_tests = false;
     var exit_code: u8 = 0;
+    // Text mode: how many module runners actually ran. Each prints its OWN
+    // `<P> passed, <F> failed` line, so the last line of a multi-module run is
+    // the last MODULE's count and not the run's — a reading two fronts of
+    // 1.0.10-beta nearly took as a suite baseline. The banner below labels
+    // every summary with the module it belongs to and the footer says how many
+    // there were; `--json` already aggregates one `{"event":"summary",…}` and
+    // gets neither (its stdout channel stays pure JSONL).
+    var modules_ran: usize = 0;
+    // Text mode: how many of those runners exited non-zero — a failing test
+    // or a module that did not load; the footer names the count.
+    var modules_nonzero: usize = 0;
+    // Text mode: the run's total, summed from each module's own summary line,
+    // printed LAST as `total: <P> passed, <F> failed in <N> module(s)` — the
+    // one line of the run a reader (or `botopink-lib-test`) may take as its
+    // count. A module whose runner printed no summary line (it crashed before
+    // its tests finished) is named and fails the run: its tests are in no
+    // total, so a green-looking sum must not survive it.
+    var text_passed_total: usize = 0;
+    var text_failed_total: usize = 0;
+    var no_summary = std.ArrayListUnmanaged([]const u8).empty;
     // JSON mode accumulates `passed`/`failed` across modules so the final
     // `summary` JSON object reflects the whole run, not the last module only.
     var json_passed_total: usize = 0;
@@ -252,17 +641,29 @@ pub fn run(
     for (outputs.items) |o| {
         // Dependency modules are compiled for their exports, not tested here —
         // run only the project's own `test {}` blocks.
-        if (isDepModule(o.name, real_deps.items)) continue;
-        // Modules without test blocks have no runner — skip them.
-        if (std.mem.indexOf(u8, o.result.js, "__bp_run_tests") == null) continue;
+        if (isDepModule(o.name, dep_modules)) continue;
+        if (o.result.failed()) continue;
+        // A module with no test unit has no tests (decision 513).
+        const unit = o.result.test_unit orelse continue;
         any_tests = true;
 
-        const sub_path = try std.fmt.allocPrint(arena, TEST_OUT_DIR ++ "/{s}{s}", .{ o.name, ext });
+        const sub_path = try testUnitPath(arena, test_out, target, o.name, unit);
 
         var argv = std.ArrayListUnmanaged([]const u8).empty;
         defer argv.deinit(arena);
         try argv.append(arena, runner);
-        try argv.append(arena, sub_path);
+        if (target == .beam) {
+            // `erl` on the run's directory; the runner's `main/1` takes the
+            // filter as the command line `-extra` leaves it.
+            const atom = std.fs.path.stem(sub_path);
+            try argv.appendSlice(arena, &.{ "-noshell", "-pa", test_out, "-eval", try std.fmt.allocPrint(arena, "'{s}':main(init:get_plain_arguments()), halt().", .{atom}), "-extra" });
+        } else if (target == .wasm) {
+            // A WASI preview 2 component, handed the host features its
+            // `botopink.needs` section names, as `run` does (decision 518).
+            try argv.append(arena, "run");
+            try argv.appendSlice(arena, try run_cmd.wasmtimeFlags(arena, io, sub_path));
+            try argv.append(arena, sub_path);
+        } else try argv.append(arena, sub_path);
         if (opts.filter) |f| try argv.append(arena, f);
 
         if (opts.json) {
@@ -272,10 +673,11 @@ pub fn run(
             // inherit-stdio so live streaming is unchanged when --json is off.
             const result = std.process.run(arena, io, .{
                 .argv = argv.items,
+                .environ_map = child_env,
                 .stdout_limit = .limited(16 * 1024 * 1024),
                 .stderr_limit = .limited(16 * 1024 * 1024),
             }) catch |err| {
-                const msg = try std.fmt.allocPrint(arena, "failed to spawn '{s}': {s}", .{ runner, @errorName(err) });
+                const msg = arglist.spawnError(arena, runner, argv.items, err);
                 reporter.errMsg(msg);
                 return 1;
             };
@@ -289,29 +691,66 @@ pub fn run(
             };
             json_passed_total += counts.passed;
             json_failed_total += counts.failed;
+            if (parseModuleSummary(result.stdout) == null) try no_summary.append(arena, o.name);
 
             const code: u8 = switch (result.term) {
                 .exited => |c| c,
                 .signal, .stopped, .unknown => 1,
             };
             if (code != 0) exit_code = code;
+            // A runner that ends without its own `<P> passed, <F> failed` line
+            // did not finish — the module did not load (a `SyntaxError`, an
+            // `erlc` refusal) or died mid-run. It is one failure of its own,
+            // never a module that passed nothing and failed nothing.
+            if (!hasRunnerSummary(result.stdout)) {
+                json_failed_total += 1;
+                var rec = std.ArrayListUnmanaged(u8).empty;
+                try rec.appendSlice(arena, "{\"event\":\"module_crashed\",\"module\":");
+                try writeJsonString(arena, &rec, o.name);
+                try rec.appendSlice(arena, ",\"exit\":");
+                try appendDecimal(arena, &rec, if (code == 0) 1 else code);
+                try rec.appendSlice(arena, "}\n");
+                std.Io.File.stdout().writeStreamingAll(io, rec.items) catch {};
+                if (code == 0) exit_code = 1;
+            }
             continue;
         }
 
-        // Spawn and wait — stdio is inherited so the runner reports directly.
-        var child = std.process.spawn(io, .{ .argv = argv.items }) catch |err| {
-            const msg = try std.fmt.allocPrint(arena, "failed to spawn '{s}': {s}", .{ runner, @errorName(err) });
+        modules_ran += 1;
+        const banner = try std.fmt.allocPrint(arena, "----- TESTS OF {s} -----\n", .{o.name});
+        reporter.stdout(io, banner);
+
+        // Spawn and wait — stderr is inherited; stdout is streamed through
+        // as it arrives (the report stays live) and scanned for the module's
+        // summary line, which the run's total is summed from.
+        var child = std.process.spawn(io, .{ .argv = argv.items, .environ_map = child_env, .stdout = .pipe }) catch |err| {
+            const msg = arglist.spawnError(arena, runner, argv.items, err);
             reporter.errMsg(msg);
             return 1;
         };
         defer child.kill(io);
+
+        const summary = try teeModuleStdout(arena, io, child.stdout.?);
+        if (summary) |c| {
+            text_passed_total += c.passed;
+            text_failed_total += c.failed;
+        } else try no_summary.append(arena, o.name);
 
         const term = try child.wait(io);
         const code: u8 = switch (term) {
             .exited => |c| c,
             .signal, .stopped, .unknown => 1,
         };
-        if (code != 0) exit_code = code;
+        if (code != 0) {
+            exit_code = code;
+            modules_nonzero += 1;
+            // The runner's stdout streams straight through, so a module that
+            // did not load (a `SyntaxError`, an `erlc` refusal) prints no
+            // `N passed, M failed` line of its own. Say so under its banner,
+            // so the module never reads as one that ran clean.
+            const tail = try std.fmt.allocPrint(arena, "----- {s} EXITED WITH STATUS {d} -----\n", .{ o.name, code });
+            reporter.stdout(io, tail);
+        }
     }
 
     if (opts.json and any_tests) {
@@ -327,15 +766,181 @@ pub fn run(
         std.Io.File.stdout().writeStreamingAll(io, buf.items) catch {};
     }
 
-    if (!any_tests) {
-        reporter.stdout(io, "no test blocks found\n");
-        return 0;
+    // the `snap` library writes `<path>.new` on a mismatch or a missing
+    // snapshot, and nothing else says so: name every candidate the project
+    // holds, after the results (stderr under `--json`, which keeps stdout
+    // JSONL).
+    if (any_tests) {
+        const candidates = snapshotCandidates(arena, io) catch &.{};
+        if (candidates.len > 0) {
+            var text: std.ArrayListUnmanaged(u8) = .empty;
+            try text.appendSlice(arena, "----- SNAPSHOT CANDIDATES — a mismatch or a missing snapshot; record one by renaming it without `.new`, never commit it -----\n");
+            for (candidates) |c| {
+                try text.appendSlice(arena, "  ");
+                try text.appendSlice(arena, c);
+                try text.append(arena, '\n');
+            }
+            if (opts.json)
+                std.Io.File.stderr().writeStreamingAll(io, text.items) catch {}
+            else
+                reporter.stdout(io, text.items);
+        }
+    }
+
+    for (no_summary.items) |name| {
+        const msg = try std.fmt.allocPrint(arena, "the tests of '{s}' printed no summary — the module's runner stopped before its tests finished, so they are in no count", .{name});
+        reporter.errMsg(msg);
+        exit_code = 1;
+    }
+
+    if (!opts.json and modules_ran > 0) {
+        // The run's total is the LAST line of the report, so the last line
+        // is never a module's own count again.
+        const footer = try std.fmt.allocPrint(
+            arena,
+            "----- {d} MODULE(S) RAN, {d} EXITED NON-ZERO — each \"N passed, M failed\" above is that module's own -----\n" ++ TOTAL_PREFIX ++ "{d} passed, {d} failed in {d} module(s)\n",
+            .{ modules_ran, modules_nonzero, text_passed_total, text_failed_total, modules_ran },
+        );
+        reporter.stdout(io, footer);
+    }
+
+    diagnostics.reportOrphans(arena, src_loaded.orphans.len);
+
+    if (!any_tests) reporter.stdout(io, "no test blocks found\n");
+
+    // A module that failed to compile fails the run, whatever the tests did.
+    if (failed.len > 0) {
+        diagnostics.reportFailedModules(arena, failed);
+        return 1;
     }
 
     return exit_code;
 }
 
+/// Whether a runner's stdout carries its closing `<P> passed, <F> failed`
+/// line — the one line every commonJS / erlang runner prints once all of
+/// its tests have run. Absent, the module did not finish.
+fn hasRunnerSummary(stdout_buf: []const u8) bool {
+    var it = std.mem.splitScalar(u8, stdout_buf, '\n');
+    while (it.next()) |raw| {
+        const line = std.mem.trimEnd(u8, raw, "\r");
+        const sp = std.mem.indexOf(u8, line, " passed, ") orelse continue;
+        if (sp == 0 or !std.mem.endsWith(u8, line, " failed")) continue;
+        const failed = line[sp + " passed, ".len .. line.len - " failed".len];
+        if (failed.len == 0) continue;
+        const digits = struct {
+            fn all(x: []const u8) bool {
+                for (x) |c| if (c < '0' or c > '9') return false;
+                return true;
+            }
+        };
+        if (digits.all(line[0..sp]) and digits.all(failed)) return true;
+    }
+    return false;
+}
+
+test "hasRunnerSummary: a finished runner's line, and a crash without one" {
+    try std.testing.expect(hasRunnerSummary("TEST a:1 x\n  ok   x\n1 passed, 0 failed\n"));
+    try std.testing.expect(hasRunnerSummary("0 passed, 12 failed"));
+    try std.testing.expect(!hasRunnerSummary("SyntaxError: await is only valid in async functions\n"));
+    try std.testing.expect(!hasRunnerSummary("x passed, 0 failed\n"));
+    try std.testing.expect(!hasRunnerSummary(""));
+}
+
+/// Every `*.snap.new` under the project (the cwd), package-relative with `/`
+/// separators, sorted — the candidates the `snap` library wrote. Dot
+/// directories (`.botopinkbuild`, `.git`) and `node_modules` are not entered.
+fn snapshotCandidates(arena: std.mem.Allocator, io: std.Io) ![]const []const u8 {
+    var root = try std.Io.Dir.cwd().openDir(io, ".", .{ .iterate = true });
+    defer root.close(io);
+    var walker = try root.walkSelectively(arena);
+    defer walker.deinit();
+    var out: std.ArrayListUnmanaged([]const u8) = .empty;
+    while (try walker.next(io)) |entry| switch (entry.kind) {
+        .directory => {
+            if (entry.basename.len > 0 and entry.basename[0] == '.') continue;
+            if (std.mem.eql(u8, entry.basename, "node_modules")) continue;
+            try walker.enter(io, entry);
+        },
+        .file => if (std.mem.endsWith(u8, entry.basename, ".snap.new")) {
+            const p = try arena.dupe(u8, entry.path);
+            std.mem.replaceScalar(u8, p, '\\', '/');
+            try out.append(arena, p);
+        },
+        else => {},
+    };
+    std.mem.sort([]const u8, out.items, {}, struct {
+        fn lt(_: void, a: []const u8, b: []const u8) bool {
+            return std.mem.lessThan(u8, a, b);
+        }
+    }.lt);
+    return out.items;
+}
+
 const JsonCounts = struct { passed: usize, failed: usize };
+
+/// The first bytes of the run's total — the last line `botopink test` prints
+/// in text mode (`total: <P> passed, <F> failed in <N> module(s)`).
+/// `botopink-lib-test` reads a text-mode cell's count from this line.
+pub const TOTAL_PREFIX = "total: ";
+
+/// A module runner's own summary line, `<P> passed, <F> failed` (the commonJS
+/// and erlang runners both print it last); the last such line of `text`, or
+/// null when there is none.
+fn parseModuleSummary(text: []const u8) ?JsonCounts {
+    var found: ?JsonCounts = null;
+    var it = std.mem.splitScalar(u8, text, '\n');
+    while (it.next()) |raw| {
+        const line = std.mem.trimEnd(u8, raw, "\r");
+        if (parseSummaryLine(line)) |c| found = c;
+    }
+    return found;
+}
+
+/// `<P> passed, <F> failed`, exactly.
+fn parseSummaryLine(line: []const u8) ?JsonCounts {
+    const mid = " passed, ";
+    const end = " failed";
+    if (!std.mem.endsWith(u8, line, end)) return null;
+    const at = std.mem.indexOf(u8, line, mid) orelse return null;
+    const passed = std.fmt.parseUnsigned(usize, line[0..at], 10) catch return null;
+    const failed = std.fmt.parseUnsigned(usize, line[at + mid.len .. line.len - end.len], 10) catch return null;
+    return .{ .passed = passed, .failed = failed };
+}
+
+/// Copy a module runner's stdout to ours as it arrives and return the
+/// module's summary (its last `<P> passed, <F> failed` line), or null when it
+/// printed none.
+fn teeModuleStdout(arena: std.mem.Allocator, io: std.Io, src: std.Io.File) !?JsonCounts {
+    var found: ?JsonCounts = null;
+    var line: std.ArrayListUnmanaged(u8) = .empty;
+    var buf: [4096]u8 = undefined;
+    while (true) {
+        const n = src.readStreaming(io, &.{&buf}) catch |err| switch (err) {
+            error.EndOfStream => break,
+            else => return err,
+        };
+        if (n == 0) continue;
+        std.Io.File.stdout().writeStreamingAll(io, buf[0..n]) catch {};
+        for (buf[0..n]) |c| {
+            if (c == '\n') {
+                if (parseSummaryLine(std.mem.trimEnd(u8, line.items, "\r"))) |got| found = got;
+                line.clearRetainingCapacity();
+            } else try line.append(arena, c);
+        }
+    }
+    if (parseSummaryLine(std.mem.trimEnd(u8, line.items, "\r"))) |got| found = got;
+    return found;
+}
+
+test "a module summary line is `<P> passed, <F> failed`, and the last one counts" {
+    try std.testing.expectEqual(@as(?JsonCounts, null), parseModuleSummary("TEST a.bp:1 x\n  ok   x\n"));
+    const c = parseModuleSummary("3 passed, 1 failed\nnoise\n12 passed, 0 failed\n").?;
+    try std.testing.expectEqual(@as(usize, 12), c.passed);
+    try std.testing.expectEqual(@as(usize, 0), c.failed);
+    try std.testing.expectEqual(@as(?JsonCounts, null), parseSummaryLine("x passed, 0 failed"));
+    try std.testing.expectEqual(@as(?JsonCounts, null), parseSummaryLine("1 passed, 0 failed!"));
+}
 
 /// Parse the §T text envelope emitted by the commonJS / erlang runners and
 /// re-emit each test result as a single-line JSON object on stdout. Returns

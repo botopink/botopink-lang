@@ -1,0 +1,11 @@
+//// Decision 451 (3) — a build has no entropy. At comptime `io/random`'s
+//// seeded stream answers through its `std:` cells, std-wasm's, and a draw
+//// before any `seed` is refused, located, rather than drawn from a fixed
+//// seed the program never wrote.
+
+import {io} from "std";
+
+pub fn main() {
+    val atBuild = comptime io.random.seededFloat();
+    @print(atBuild);
+}

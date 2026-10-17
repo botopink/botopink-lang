@@ -1,0 +1,9 @@
+//// A module of the library whose declaration is annotated: its executor
+//// runs in the program that imports the module.
+
+import {registry.route};
+
+#[route("/health")]
+pub fn health() -> string {
+    return "ok";
+}

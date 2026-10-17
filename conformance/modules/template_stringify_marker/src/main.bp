@@ -1,0 +1,13 @@
+//// 01-compiler/01-checker row "`$stringify` refused" (decisions 164, 239) — an
+//// `@External` template is host code: `$stringify(…)` is no marker of the
+//// language, so the parser refuses it as `template-stringify-marker` at the
+//// template, beside `template-self-marker`. The parent binary rendered it
+//// (`JSON.stringify(…)` on Node, `io_lib:format("~p", …)` on erlang).
+
+#[@External.Node("String($stringify($0))")]
+#[@External.Erlang("iolist_to_binary($stringify($0))")]
+declare fn show(x: i32) -> string;
+
+pub fn main() {
+    @print(show(1));
+}

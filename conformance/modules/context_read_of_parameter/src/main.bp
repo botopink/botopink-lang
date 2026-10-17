@@ -1,0 +1,18 @@
+//// Decision 379 (3) — `use context(T)` names the context by its value's
+//// type; a parameter holding a context names no type.
+
+import {context.Context, context.createContext, context.provide, context.context} from "std";
+
+type Theme(mode: string)
+
+type Element(text: string) implement @Renderable
+
+pub val themeContext = comptime createContext(Theme(mode: "default"));
+
+fn read(ctx: Context<Theme>) -> @Component<Theme> {
+    return use context(ctx);
+}
+
+pub fn main() {
+    read(themeContext);
+}

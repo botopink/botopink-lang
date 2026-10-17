@@ -2,7 +2,7 @@
 {
   "decls": [
     {
-      "interface": {
+      "behavior": {
         "name": "List",
         "id": 1,
         "isPub": true,
@@ -32,7 +32,6 @@
                 },
                 "typeName": "",
                 "modifier": "none",
-                "fnType": null,
                 "destruct": null,
                 "default": null
               }
@@ -116,9 +115,8 @@
                 "is_builtin": true
               },
               {
-                "name": "external",
+                "name": "External.Node",
                 "args": [
-                  "node",
                   "\"./bp_stdlib.mjs\"",
                   "\"list_reverse\""
                 ],
@@ -134,7 +132,6 @@
                 },
                 "typeName": "",
                 "modifier": "none",
-                "fnType": null,
                 "destruct": null,
                 "default": null
               }

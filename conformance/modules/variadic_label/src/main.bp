@@ -1,0 +1,10 @@
+//// Decision 267 — a variadic takes no label: its arguments are positional,
+//// after the fixed ones. `sum(values: 1)` is refused at the argument.
+
+fn sum(..values: i32[]) -> i32 {
+    return values.length();
+}
+
+pub fn main() {
+    @print(sum(values: 1));
+}

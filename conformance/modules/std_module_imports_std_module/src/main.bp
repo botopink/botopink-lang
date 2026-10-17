@@ -1,0 +1,21 @@
+//// A std module imports another std module: `querystring` takes its percent
+//// codec from `encoding` (`import {encoding.percentEncode, …};`, the brace
+//// form — decision 309) instead of re-declaring the two host cells. Each std module was inferred
+//// in a scratch env that knew no other std module, so any such import stopped
+//// the compiler before the program was read, and a program never embedded a
+//// std module that only another std module imported. std modules are now
+//// inferred after the ones they import, and embedded with them.
+////
+//// On all four targets: `encoding`'s host cells are bound with `fn:` on wasm
+//// (`01-compiler/05-wasm` step 5), and `pairs.at(1).unwrapOr(#("", ""))._1`
+//// keeps the tuple's shape there — it printed the string's address at exit 0.
+
+import {querystring} from "std";
+
+pub fn main() {
+    val pairs = querystring.parse("?n=caf%C3%A9&x=a%20b").unwrapOr([]);
+    @print(pairs.length);
+    @print((pairs.at(1) ?? #("", ""))._1);
+    @print(querystring.stringify([#("a b", "c+d")]).unwrapOr("?"));
+    @print(querystring.parse("a=%ZZ").isError());
+}

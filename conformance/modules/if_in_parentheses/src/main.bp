@@ -1,0 +1,12 @@
+//// A group exists only to become an operand, so an `if` inside parentheses is
+//// the operand form too: `(if (c) a else b).v` is `if-operand`, at the `if`.
+
+type R(v: string)
+
+fn pick(c: bool) -> string {
+    return (if (c) R(v: "a") else R(v: "b")).v;
+}
+
+pub fn main() {
+    @print(pick(true));
+}

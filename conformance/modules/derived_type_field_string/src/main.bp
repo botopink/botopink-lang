@@ -1,0 +1,13 @@
+//// Decision 307 — a field of `Type.pick` is `Type.Field<T>`, written `.title`;
+//// a string is refused at it, naming `.title`.
+
+import {types.Type} from "std";
+
+type Recipe(
+    title: string,
+    description: ?string,
+)
+
+pub val RecipeTitle = Type.pick(Recipe, "title");
+
+pub fn main() {}

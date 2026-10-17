@@ -1,0 +1,26 @@
+//// Decisions 280 (3), 308, example 6 — each `.name` of the variadic
+//// `..fields: Type.Field<T>[]` is a field of the annotated type: `.nmae` is
+//// refused at it. Renaming a field turns every `.name` of it red here.
+
+import {types.Type} from "std";
+
+fn index<T>(comptime decl: @Decl<T>, comptime ..fields: @Expr<Type.Field<T>[]>) {
+    decl.setMeta(Index(columns: fields.value.map({ f -> f.name })));
+}
+
+fn unique<T>(comptime decl: @Decl<T>, comptime field: @Expr<Type.Field<T>>) {
+    decl.setMeta(Unique(column: field.value.name));
+}
+
+#[index(.state, .nmae)]
+type City(code: string, name: string, state: string)
+
+pub fn main() {
+    @print(City(code: "SP", name: "São Paulo", state: "SP").name);
+}
+
+// What `#[index]` records.
+type Index(columns: string[])
+
+// What `#[unique]` records.
+type Unique(column: string)

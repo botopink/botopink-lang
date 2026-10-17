@@ -1,0 +1,26 @@
+//// Two packages each declare a payload variant named `Text` with a different field
+//// (`value` of a `Node`, `count` of a `Token`). A positional pattern `Text(x)` binds the
+//// field at position 0 of the variant the matched type declares, whatever other package's
+//// variant shares its name, on every target.
+
+import {Node, makeNode} from "labelled";
+import {Token, makeToken} from "unlabelled";
+
+fn nodeText(n: Node) -> string {
+    return case n {
+        Text(x) -> x;
+        Break -> "<break>";
+    };
+}
+
+fn tokenCount(t: Token) -> i32 {
+    return case t {
+        Text(x) -> x;
+        Stop -> 0;
+    };
+}
+
+pub fn main() {
+    @print(nodeText(makeNode("hello")));
+    @print(tokenCount(makeToken(7)));
+}

@@ -1,0 +1,11 @@
+//// Decision 578 (4) — `anyvalue`, a value whose type is known once its code
+//// is built, is written only as a template's return: a parameter's type
+//// `anyvalue` is refused there (`anyvalue-outside-template`).
+
+fn show(x: anyvalue) -> string {
+    return "x";
+}
+
+pub fn main() {
+    @print(show(1));
+}

@@ -1,0 +1,1 @@
+{ "name": "std_generic_primitives", "targets": ["commonJS", "erlang", "beam"] }

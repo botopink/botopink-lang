@@ -1,0 +1,21 @@
+//// Decision 370 (2) — a member is written as in the type's body: every
+//// parameter of the function handed to `decl.addMember(name, fn…)` is typed.
+
+pub type Violation(field: string, message: string)
+
+fn check<T>(comptime decl: @Decl<T>, comptime rule: @Expr<fn(v: T) -> bool>) {
+    decl.addMember("validate", fn(self) {
+        rule(self);
+    });
+}
+
+fn passwordsMatch(a: Signup) -> bool {
+    return a.password == a.confirm;
+}
+
+#[check(passwordsMatch)]
+pub type Signup(password: string, confirm: string)
+
+pub fn main() {
+    @print("unreached");
+}

@@ -1,0 +1,8 @@
+//// 1.0.10-beta `00 · 15-language-surface` step 3 — there is no character
+//// literal; `'a'` is written `"a"`. The lexer scans `'…'` as one token so the
+//// parser refuses it by name (it used to be an unnamed lexer error).
+
+pub fn main() {
+    val c = 'a';
+    @print(c);
+}

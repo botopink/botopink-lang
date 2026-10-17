@@ -1,0 +1,9 @@
+//// Decision 491 — an `op:` cell is a wasm instruction, not a host call that
+//// can fail, so `result:` beside `op:` is refused at the annotation.
+
+#[@External.Wasm(op: "f64.floor", result: true), @External.Node("Math.floor($0)"), @External.Erlang("float(floor($0))")]
+declare fn floor(x: f64) -> f64;
+
+pub fn main() {
+    @print(floor(2.5));
+}

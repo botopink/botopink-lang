@@ -1,0 +1,11 @@
+//// Decision 337 (1) — an import names where its names come from. `import
+//// {splitPath};` names no module of the package (the shorthand): refused at
+//// the item, `shorthand-import`, with its fix written — the one module that
+//// declares the name `pub`.
+
+pub mod config;
+import {splitPath};
+
+pub fn main() {
+    @print(splitPath("a/b"));
+}

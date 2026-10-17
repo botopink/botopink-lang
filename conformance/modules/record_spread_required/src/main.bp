@@ -1,0 +1,18 @@
+//// Decisions 307 and 359 (2) — `Type.required` answers a type with no
+//// lineage: a value of `Type.required(Type.partial(Pessoa))` is refused as
+//// a spread into `Pessoa`, as a record of another type, at the `...`
+//// (question B-14-c as built).
+
+import {types.Type} from "std";
+
+type Pessoa(nome: string, idade: i32)
+
+val Patch = Type.partial(Pessoa);
+
+val Full = Type.required(Patch);
+
+pub fn main() {
+    val f = Full(nome: "Ana", idade: 3);
+    val p = Pessoa(..f);
+    @print(p.idade);
+}

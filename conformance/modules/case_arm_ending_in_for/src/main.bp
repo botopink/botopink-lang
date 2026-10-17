@@ -1,0 +1,53 @@
+//// A statement `case` arm whose block ends in a `for` runs that arm only — on
+//// commonJS it fell into the next arm, running both (front 121's gap).
+
+type Node {
+    Many(vs: i32[]),
+    One(v: i32),
+}
+
+fn flatten(ns: Node[]) -> i32[] {
+    var out: i32[] = [];
+    for (ns) { n ->
+        case n {
+            Many(vs) {
+                val items: i32[] = vs;
+                for (items) { k ->
+                    out.push(k);
+                }
+            }
+            _ {
+                out.push(0 - 1);
+            }
+        }
+    }
+    return out;
+}
+
+fn tagged(n: i32) -> string[] {
+    var out: string[] = [];
+    case n {
+        1 {
+            out.push("one");
+            for ([1, 2]) { k ->
+                out.push(k.toString());
+            }
+        }
+        2 {
+            for ([3]) { k ->
+                out.push(k.toString());
+            }
+        }
+        _ {
+            out.push("other");
+        }
+    }
+    return out;
+}
+
+pub fn main() {
+    @print(flatten([Node.Many(vs: [1, 2]), Node.One(v: 5), Node.Many(vs: [])]));
+    @print(tagged(1));
+    @print(tagged(2));
+    @print(tagged(3));
+}

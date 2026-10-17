@@ -1,0 +1,46 @@
+//// Decision 415 (2) — the declaration `q.lookup` answers carries, beside
+//// `name`, `kind`, `module` and `fields`, an enum's `variants`, a type's
+//// `methods` (each with its parameters and return — here a method with no
+//// `self`) and a function's `params`.
+
+type Color {
+    Red,
+    Green,
+}
+
+type Counter(n: i32) {
+    pub fn of(start: i32, step: i32) -> Counter {
+        return Counter(n: start + step);
+    }
+}
+
+fn scale(x: i32, factor: f64) -> f64 {
+    return factor;
+}
+
+fn shape(comptime q: @Expr<string>) -> @Expr<string> {
+    val d = q.lookup(q.text()) ?? q.fail("`" + q.text() + "` is not in scope");
+    var text = d.name;
+    for (d.variants) { v ->
+        text = text + " " + v;
+    }
+    for (d.methods) { m ->
+        text = text
+            + " "
+            + m.name
+            + "("
+            + m.params.map({ p -> p.name + ":" + p.typeName }).join(",")
+            + ")->"
+            + m.returnType;
+    }
+    for (d.params) { p ->
+        text = text + " " + p.name + ":" + p.typeName;
+    }
+    return q.build("\"" + text + "\"");
+}
+
+pub fn main() {
+    @print(shape "Color");
+    @print(shape "Counter");
+    @print(shape "scale");
+}

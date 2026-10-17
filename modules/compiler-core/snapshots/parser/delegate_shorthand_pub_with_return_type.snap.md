@@ -16,12 +16,13 @@
             },
             "typeName": "",
             "modifier": "none",
-            "fnType": null,
             "destruct": null,
             "default": null
           }
         ],
-        "returnType": "string"
+        "returnType": {
+          "named": "string"
+        }
       }
     }
   ]

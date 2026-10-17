@@ -1,0 +1,33 @@
+//// `std/encoding` on all four targets (`01-compiler/05-wasm` step 5): on wasm
+//// every host cell is bound with `fn:` to a private body, answering what
+//// Node's `Buffer` / `encodeURIComponent` answer — base64 and base64url,
+//// hex, percent-encoding and the form codec, ASCII, two-byte, three-byte and
+//// astral text, and each decoder's refusal.
+
+import {encoding} from "std";
+
+pub fn main() {
+    @print(encoding.base64Encode(""));
+    @print(encoding.base64Encode("f"));
+    @print(encoding.base64Encode("fo"));
+    @print(encoding.base64Encode("foo"));
+    @print(encoding.base64Encode("héllo €🎉"));
+    @print(encoding.base64Decode("aMOpbGxvIOKCrPCfjok=").unwrapOr("?"));
+    @print(encoding.base64Decode("Zm9v").unwrapOr("?"));
+    @print(encoding.base64Decode("Zm9").isError());
+    @print(encoding.base64Decode("Zm9v!").isError());
+    @print(encoding.base64UrlEncode("??>>"));
+    @print(encoding.base64UrlDecode("Pz8-Pg").unwrapOr("?"));
+    @print(encoding.hexEncode("hi é🎉"));
+    @print(encoding.hexDecode("6869c3a9").unwrapOr("?"));
+    @print(encoding.hexDecode("6g").isError());
+    @print(encoding.hexDecode("abc").isError());
+    @print(encoding.percentEncode("a b&c=d/é🎉~-_.!*'()"));
+    @print(encoding.percentDecode("caf%C3%A9%20%F0%9F%8E%89").unwrapOr("?"));
+    @print(encoding.percentDecode("%ZZ").isError());
+    @print(encoding.percentDecode("%C3").isError());
+    @print(encoding.formStringify([#("a b", "c&d"), #("é", "")]));
+    val pairs = encoding.formParse("a=1&b=x+y&c=%C3%A9&d");
+    @print(pairs.length);
+    @print(pairs.map({ p -> [p._0, "=", p._1].join("") }).join("|"));
+}

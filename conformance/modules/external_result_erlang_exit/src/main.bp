@@ -1,0 +1,26 @@
+//// Decisions 431 (2), 489 — a `result: true` erlang binding names the class
+//// of every raise: `erlang:error` is `HostErrorName.Error`, `throw` is
+//// `HostErrorName.Throw` and `exit` is `HostErrorName.Exit`, the reason the
+//// message by `~tp`. `kind` is `"host"` whatever the class.
+////
+//// `"targets"` is `erlang`, `beam`: an `exit` is the Erlang host's alone
+//// (`external_result_host_error` holds `Error` and `Throw` on every target).
+
+import {failure, failure.HostError} from "std";
+
+#[@External.Erlang("""(case $0 of 1 -> erlang:error(broken); 2 -> throw(thrown); 3 -> exit(gone); _ -> $0 end)""", result: true)]
+declare fn host(n: i32) -> @Result<i32, HostError>;
+
+fn show(r: @Result<i32, HostError>) {
+    case r {
+        Ok(v) -> @print("ok", v);
+        Error(e) -> @print("error", e.message, e.kind, e.name);
+    }
+}
+
+pub fn main() {
+    show(host(1));
+    show(host(2));
+    show(host(3));
+    show(host(4));
+}

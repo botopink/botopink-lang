@@ -1,0 +1,7 @@
+{
+  "name": "b",
+  "version": "1.0.0",
+  "targets": ["erlang"],
+  "dependencies": { "extra": { "path": "../vendor/extra" } },
+  "bpp": "lib"
+}

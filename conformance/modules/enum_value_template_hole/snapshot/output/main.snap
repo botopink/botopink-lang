@@ -1,0 +1,10 @@
+botopink-cell 1
+out Target.Top
+out at Target.Bottom!
+out Shape.Circle(radius: 2)
+out shape Shape.Named(label: "é") and Shape.Dot
+out t=Target.Bottom s=Shape.Named(label: "x")
+out picked Target.Top
+out mode Mode.Slow(n: 3) Mode.Fast
+out plus Target.Top Shape.Circle(radius: 2)
+out 23

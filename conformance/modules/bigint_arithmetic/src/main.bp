@@ -1,0 +1,65 @@
+//// Decision 332 — `bigint` is an integer of any size, one value on the four targets: erlang and
+//// beam hold the VM's integer, commonJS a `BigInt`, wasm its runtime library. `+ - * / %`, unary
+//// `-`, `+=`, the comparisons and `==` over two `bigint`s never overflow; `/` truncates toward
+//// zero and `%` takes the dividend's sign; `bigint.of` / `bigint.parse` cross in, `toString`,
+//// `toI64` and `toF64` out. The parent binary refused the `n` suffix.
+
+fn power(base: bigint, times: i32) -> bigint {
+    var x = 1n;
+    var i = 0;
+    while (i < times) {
+        x = x * base;
+        i += 1;
+    }
+    return x;
+}
+
+pub fn main() {
+    val two: bigint = 2n;
+    val top = power(two, 101);
+    @print(top);
+    val a = 1234567890123456789012345678901234567890n;
+    val b = 9876543210987654321098765432109876543210n;
+    @print(a * b);
+    @print(b - a * 8n);
+    @print(a + b);
+    @print(-7n / 2n);
+    @print(7n / -2n);
+    @print(-7n % 2n);
+    @print(7n % -2n);
+    @print(-b / a);
+    @print(-b % a);
+    @print(a * b / b == a);
+    @print((a * b + 7n) % b);
+    @print(top / 1000000007n);
+    @print(top % 1000000007n);
+    @print(a < b);
+    @print(b <= a);
+    @print(-b < a);
+    @print(a == 1234567890123456789012345678901234567890n);
+    @print(a != b);
+    @print(top.toString());
+    @print("2^101 = " + top);
+    var sum = 0n;
+    sum += a;
+    sum += b;
+    @print(sum);
+    @print(-sum);
+    @print(0n - sum + sum);
+    @print(bigint.of(9223372036854775807l) + 1n);
+    @print(bigint.of(-9223372036854775807l - 1l) - 1n);
+    @print(bigint.of(-5l) * 3n);
+    @print(bigint.of(12));
+    @print(bigint.parse("-123456789012345678901234567890").unwrapOr(0n));
+    @print(bigint.parse("+42").unwrapOr(0n));
+    @print(bigint.parse("12x").unwrapOr(-1n));
+    @print(bigint.parse("").unwrapOr(-2n));
+    @print(bigint.parse("-").unwrapOr(-3n));
+    val near = 4611686018427387904n;
+    @print(near.toI64() + 1l);
+    @print((-near * 2n).toI64());
+    @print((1024n).toF64());
+    @print((power(two, 80) * 3n).toF64() == 3626777458843887524118528.0);
+    @print(0xFFn * 0x100n);
+    @print(1_000_000n * 1_000_000n);
+}

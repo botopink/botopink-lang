@@ -1,0 +1,4 @@
+// src/shapes/circle.bp
+pub fn name() -> string {
+    return "circle";
+}

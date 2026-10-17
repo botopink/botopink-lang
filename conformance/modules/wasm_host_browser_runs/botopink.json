@@ -1,0 +1,1 @@
+{ "name": "wasm_host_browser_runs", "wasm": { "host": "browser" } }

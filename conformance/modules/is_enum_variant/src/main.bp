@@ -1,0 +1,26 @@
+//// Decision 8 §4.2 — `x is <Enum>.<Variant>` tests that one variant: a
+//// payload variant and a unit one, through a local, a parameter and an
+//// unannotated binding, beside the whole-enum `x is Token`. The row that
+//// measured it had each target wrong in its own way — commonJS threw
+//// (`instanceof Token.Text`, a factory with no prototype), erlang answered
+//// `false` for every variant at exit 0, wasm answered and then trapped.
+
+pub type Token { Text(v: string), Num(n: i32), Eof }
+
+fn check(t: Token) -> bool {
+    return t is Token.Num;
+}
+
+pub fn main() {
+    val x: Token = Token.Text(v: "hi");
+    val y: Token = Token.Eof;
+    val z = Token.Num(n: 3);
+    @print(x is Token.Text);
+    @print(x is Token.Num);
+    @print(y is Token.Eof);
+    @print(y is Token.Text);
+    @print(x is Token.Eof);
+    @print(check(z));
+    @print(check(x));
+    @print(z is Token.Num);
+}

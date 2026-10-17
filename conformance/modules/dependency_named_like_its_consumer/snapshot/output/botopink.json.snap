@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: two packages named "dependency_named_like_its_consumer" in this workspace's build — deps/dependency_named_like_its_consumer here and . — one name is one package
+at botopink.json:1:67

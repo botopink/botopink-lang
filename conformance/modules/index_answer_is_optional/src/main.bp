@@ -1,0 +1,10 @@
+//// C-02 / decision 63 (amended) — `ts[0]` is `ts.at(0)`, whose answer is
+//// `?i32`, so a name written `i32` cannot hold it. The index once typed `void`
+//// here (`expected i32, got void`), which named the wrong type; the refusal
+//// names the method's answer.
+
+pub fn main() {
+    val ts: Array<i32> = [1, 2];
+    val x: i32 = ts[0];
+    @print(x);
+}

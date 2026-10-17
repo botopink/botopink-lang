@@ -27,14 +27,14 @@
                       "binaryOp": {
                         "loc": {
                           "line": 1,
-                          "col": 3
+                          "col": 18
                         },
                         "op": "add",
                         "lhs": {
                           "literal": {
                             "loc": {
                               "line": 1,
-                              "col": 1
+                              "col": 16
                             },
                             "kind": {
                               "numberLit": "1"
@@ -45,7 +45,7 @@
                           "literal": {
                             "loc": {
                               "line": 1,
-                              "col": 5
+                              "col": 20
                             },
                             "kind": {
                               "numberLit": "2"

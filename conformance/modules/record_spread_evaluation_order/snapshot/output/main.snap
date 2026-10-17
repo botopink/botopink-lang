@@ -1,0 +1,7 @@
+botopink-cell 1
+out faz
+out n
+out Pessoa(nome: "Ana", idade: 3)
+out faz
+out m
+out Pessoa(nome: "m", idade: 3)

@@ -1,0 +1,14 @@
+//// Decision 264 — a unary `-` leaves `i32` at its minimum: `-(-2147483648)`
+//// is no `i32`, and aborts on every target.
+
+fn neg(x: i32) -> i32 {
+    return -x;
+}
+
+pub fn main() {
+    val min = neg(2147483647) - 1;
+    @print(min);
+    @print(neg(-2147483647));
+    @print(neg(min));
+    @print("unreachable");
+}

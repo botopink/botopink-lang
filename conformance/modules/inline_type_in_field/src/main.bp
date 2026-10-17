@@ -1,0 +1,8 @@
+//// Decision 207 — an inline `type(…)` is written only as a parameter's type;
+//// as a field's type it is `inline-type-outside-parameter` at the `type`.
+
+type Card(link: type(href: string))
+
+pub fn main() {
+    @print(0);
+}

@@ -1,0 +1,31 @@
+//// Decision 207 — a parameter's type written inline: `props: type(href:
+//// string, label: string, external: bool = false)`, the field grammar of
+//// `type Name(…)` with no name. The call builds the value from its own
+//// labelled arguments, each naming a field of the inline type (in any order,
+//// a defaulted field left out); a value already of the type is passed as the
+//// parameter itself; another parameter of the function stays an ordinary one.
+
+pub fn link(
+    props: type(href: string, label: string, external: bool = false),
+) -> string {
+    val mark = if (props.external) " (external)" else "";
+    return props.label + " <" + props.href + ">" + mark;
+}
+
+fn again(
+    props: type(href: string, label: string, external: bool = false),
+) -> string {
+    return link(href: props.href, label: props.label);
+}
+
+fn scaled(props: type(n: i32, unit: string = "px"), times: i32) -> string {
+    return (props.n * times).toString() + props.unit;
+}
+
+pub fn main() {
+    @print(link(href: "/a", label: "A"));
+    @print(link(label: "B", href: "/b", external: true));
+    @print(again(href: "/c", label: "C", external: true));
+    @print(scaled(n: 4, times: 3));
+    @print(scaled(times: 2, n: 5, unit: "em"));
+}

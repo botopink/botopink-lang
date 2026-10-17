@@ -1,0 +1,8 @@
+{
+  "name": "plain",
+  "files": ["plain.bp"],
+  "dependencies": {
+    "acme-web": { "git": "https://github.com/acme/acme.git", "branch": "feat" },
+    "local": { "path": "../../local" }
+  }
+}

@@ -1,0 +1,11 @@
+//// A method called on a number literal (`42.toString()`, front 15's R3 of
+//// 1.0.5-beta — the receiver production `test/paren_receiver.bp` pins over a
+//// parenthesised expression). The commonJS emitter once wrote
+//// `__bp_print(42.toString())`, which node refuses (`42.` reads as a float);
+//// the cell pins the answer on every target, a float literal beside it.
+
+pub fn main() {
+    @print(42.toString());
+    @print(42.toString().length);
+    @print(1.5.toString());
+}

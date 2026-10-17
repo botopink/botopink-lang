@@ -1,0 +1,11 @@
+//// T11 — a postfix read continues after a grouped `??`: `(hits.at(0) ?? d)._1`
+//// and `(none.at(0) ?? #(5, 6))._0` read an element of the defaulted tuple.
+
+pub fn main() {
+    val d = #(1, 2);
+    val none: #(i32, i32)[] = [];
+    @print((none.at(0) ?? d)._1);
+    @print((none.at(0) ?? #(5, 6))._0);
+    val some: #(i32, i32)[] = [#(8, 9)];
+    @print((some.at(0) ?? d)._1);
+}

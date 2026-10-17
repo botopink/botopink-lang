@@ -1,0 +1,12 @@
+//// A method called on a number literal: `42.toString()`. JavaScript lexes
+//// `42.` as a float, so the commonJS backend writes the receiver
+//// parenthesised (`(42).toString()`, `codegen/js/AGENTS.md`); a literal in
+//// an expression and one held in a `val` answer the same text. On all four
+//// targets (C-18 of 1.0.10-beta, pinned by 01-compiler/04-js step 3).
+
+pub fn main() {
+    @print(42.toString());
+    @print("n=" + 7.toString());
+    val n = 42;
+    @print(n.toString() == 42.toString());
+}

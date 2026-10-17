@@ -1,0 +1,20 @@
+//// Decisions 431 (2), 487, 488, 490 — `result: true` is accepted on a binding
+//// whose return is `@Result<…, HostError>` or `@Task<@Result<…, HostError>>`,
+//// std's `failure.HostError` named as a leaf or through its module; the flag
+//// is labelled and sits anywhere among the arguments, beside `inline:`. No
+//// binding is called: what the cell claims is that the program checks.
+
+import {failure, failure.HostError} from "std";
+
+#[@External.Node("JSON.parse($0)", result: true), @External.Erlang(result: true, "json:decode($0)")]
+declare fn jsParse(s: string) -> @Result<i32, HostError>;
+
+#[@External.Node("Promise.resolve($0)", result: true), @External.Erlang("$0", inline: true, result: true)]
+declare fn later(n: i32) -> @Task<@Result<i32, failure.HostError>>;
+
+#[@External.Node("Math.abs($0)", result: false), @External.Erlang("abs($0)", result: false)]
+declare fn magnitude(n: i32) -> i32;
+
+pub fn main() {
+    @print("checked");
+}

@@ -1,0 +1,14 @@
+botopink-cell 1
+out ["one two", "three", "", "four\r"]
+out 4
+out [""]
+out ["x", ""]
+out a|b
+out ["alpha", "beta", "gamma"]
+out beta
+out 5
+out 4
+out 5
+out []
+out 0
+out ["a!", "b!"]

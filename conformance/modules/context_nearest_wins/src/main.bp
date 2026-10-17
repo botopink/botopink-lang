@@ -1,0 +1,49 @@
+//// Decisions 354 (2), 379 — the nearest provider of a type wins: `Outer`
+//// provides depth 1 and a step, `Inner` provides depth 2 below it, so `Leaf` rendered by
+//// `Inner` reads 2 while the `Leaf` rendered by `Outer` reads 1; the step,
+//// provided once, reaches both. A provider gives its value to descendants
+//// only, never a sibling: `Sibling`, rendered by `Outer` after `Inner`, reads
+//// `Outer`'s depth. Depth and step are two types over one `i32` (379 (5)).
+
+import {context.createContext, context.provide, context.context} from "std";
+
+type Element(text: string) implement @Renderable
+
+type Depth(n: i32)
+
+type Step(n: i32)
+
+pub val depthContext = comptime createContext(Depth(n: 0));
+
+pub val stepContext = comptime createContext(Step(n: 1));
+
+fn Leaf(name: string) -> @Component<Element> {
+    val depth = use context(Depth);
+    val step = use context(Step);
+    return Element(text: name + "=" + (depth.n * step.n).toString());
+}
+
+fn Inner() -> @Component<Element> {
+    use provide(createContext(Depth(n: 2)));
+    val l = Leaf("inner");
+    return Element(text: l.text);
+}
+
+fn Sibling() -> @Component<Element> {
+    val l = Leaf("sibling");
+    return Element(text: l.text);
+}
+
+fn Outer() -> @Component<Element> {
+    use provide(createContext(Depth(n: 1)));
+    use provide(createContext(Step(n: 10)));
+    val a = Leaf("outer");
+    val b = Inner();
+    val c = Sibling();
+    return Element(text: a.text + " " + b.text + " " + c.text);
+}
+
+pub fn main() -> @Task<void> {
+    val e = await Outer();
+    @print(e.text);
+}

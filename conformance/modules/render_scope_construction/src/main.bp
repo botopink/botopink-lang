@@ -1,0 +1,9 @@
+//// Decision 388 (2) — a `RenderScope` is opaque, made only by
+//// `RenderScope.root()`: every other scope is one a component's `run`
+//// answered, so constructing one is refused at the call.
+
+import {context.RenderScope} from "std";
+
+pub fn main() {
+    val s = RenderScope(frames: null);
+}

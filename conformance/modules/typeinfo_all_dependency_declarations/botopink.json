@@ -1,0 +1,1 @@
+{ "name": "typeinfo_all_dependency_declarations", "dependencies": { "core": { "path": "deps/core" }, "plugin": { "path": "deps/plugin" } } }

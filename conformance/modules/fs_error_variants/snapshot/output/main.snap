@@ -1,0 +1,16 @@
+botopink-cell 1
+out readText of a missing file: NotFound errors/nope.txt
+out readText of a directory: IsDirectory errors
+out list of a file: NotDirectory errors/file.txt
+out mkdir of a directory: AlreadyExists errors
+out mkdir under a missing directory: NotFound errors/missing/child
+out rm of a directory: IsDirectory errors
+out copy of a missing file: NotFound errors/nope.txt
+out stat of a missing file: NotFound errors/nope.txt
+out open of a missing file: NotFound errors/nope.txt
+out open of a directory: IsDirectory errors
+out create under a missing directory: NotFound errors/missing/file.txt
+out writeText over a directory: IsDirectory errors
+out walk of a file: NotDirectory errors/file.txt
+out readText of bytes that are not UTF-8: InvalidUtf8 errors/bad.bin 2
+out walk over a dangling link: Other errors fs.walk: dangling link "gone.bp"

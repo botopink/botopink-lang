@@ -1,0 +1,14 @@
+botopink-cell 1
+out mais
+out Pessoa(nome: "Caio", email: "bia@a", idade: 41)
+out padrao
+out Pessoa(nome: "Ana", email: "ana@a", idade: 33)
+out padrao
+out mais
+out Pessoa(nome: "Ana", email: "ana@a", idade: 32)
+out contatoDe
+out Pessoa(nome: "Duda", email: "d@a", idade: 20)
+out contatoDe
+out mais
+out Pessoa(nome: "Edu", email: "bia@a", idade: 43)
+out Pessoa(nome: "Bia", email: "bia@a", idade: 40)

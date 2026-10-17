@@ -1,0 +1,70 @@
+//// Decision 205 — two sibling blocks may each bind the same name, since
+//// neither sees the other's: an `if` and its `else`, two `if`s in sequence,
+//// two loop bodies, two `case` arms' binders — and a block's binding followed by
+//// the function's own binding of the name once the block has closed (the inner
+//// one is no longer visible there). Each binding is its own block's; no target
+//// invents a scope for it, and none leaks one out of it. 01-compiler/04-js
+//// step 4: commonJS writes one `const` per block.
+
+fn pick(flag: bool) -> i32 {
+    if (flag) {
+        val n = 1;
+        @print(n);
+    } else {
+        val n = 2;
+        @print(n);
+    }
+    if (flag) {
+        val m = 10;
+        @print(m);
+    }
+    if (!flag) {
+        val m = 20;
+        @print(m);
+    }
+    return 0;
+}
+
+fn loops() -> i32 {
+    var total = 0;
+    for ([1, 2]) { x ->
+        val step = x * 10;
+        total = total + step;
+    }
+    for ([3, 4]) { x ->
+        val step = x * 100;
+        total = total + step;
+    }
+    return total;
+}
+
+type Shape {
+    Circle(radius: i32),
+    Square(side: i32),
+}
+
+fn arms(s: Shape) -> i32 {
+    return case s {
+        Circle(v) -> 3 * v * v;
+        Square(v) -> v * v;
+    };
+}
+
+fn after(flag: bool) -> i32 {
+    if (flag) {
+        val n = 1;
+        @print(n);
+    }
+    val n = 2;
+    return n;
+}
+
+pub fn main() {
+    @print(pick(true));
+    @print(pick(false));
+    @print(loops());
+    @print(arms(Shape.Circle(radius: 2)));
+    @print(arms(Shape.Square(side: 5)));
+    @print(after(true));
+    @print(after(false));
+}

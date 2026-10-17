@@ -1,0 +1,12 @@
+//// The consumer that binds a BEAM host of its own (erlang and beam only):
+//// its program loads the `.erl` sidecar it ships, `shelf`'s modules do not
+//// change for it.
+
+import {items.Queue, items.describe} from "shelf";
+
+#[@External.Erlang("hosted_greeter", "hello")]
+declare fn hello(name: string) -> string;
+
+pub fn main() {
+    @print(hello(describe(Queue(label: "hosted", size: 1))));
+}

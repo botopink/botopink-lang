@@ -1,0 +1,4 @@
+//// An audio library: its `level` module declares its own `Signal` enum, with
+//// other variants than `traffic`'s.
+
+pub mod level;

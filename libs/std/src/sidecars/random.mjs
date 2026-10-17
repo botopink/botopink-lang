@@ -12,7 +12,7 @@ let state = 0;
 let seeded = false;
 
 export function seed(s) {
-    // `s` arrives as a bp `i64`; coerce to a 32-bit unsigned base.
+    // `s` arrives as a bp `i32` (a JS number); coerce to a 32-bit unsigned base.
     state = (Number(s) | 0) >>> 0;
     seeded = true;
 }

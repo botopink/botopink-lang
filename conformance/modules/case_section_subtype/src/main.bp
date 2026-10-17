@@ -1,0 +1,19 @@
+type Token {
+    Text {
+        Bold,
+        Italic,
+    }
+    Hover(inner: Token[]),
+}
+
+fn textToCss(t: Token.Text) -> string {
+    return case t {
+        Bold -> "font-weight:bold";
+        Italic -> "font-style:italic";
+    };
+}
+
+pub fn main() {
+    @print(textToCss(.Bold)); // font-weight:bold
+    @print(textToCss(.Italic)); // font-style:italic
+}

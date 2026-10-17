@@ -1,0 +1,14 @@
+//// Decision 364 (2) — a template's `q.value` answers a literal known at
+//// build; a literal with a `${…}` hole is not, and is refused at the
+//// argument when the template reads `.value`.
+
+fn shout(comptime q: @Expr<string>) -> @Expr<string> {
+    val loud = q.value.toUpper() + "!";
+    return @expr(loud);
+}
+
+val name = "ana";
+
+pub fn main() {
+    @print(shout "hello ${name}");
+}

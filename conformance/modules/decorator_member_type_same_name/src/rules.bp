@@ -1,0 +1,13 @@
+//// The decorator's member names `Violation`, a type of this module.
+
+pub type Violation(field: string, message: string)
+
+pub fn check<T>(
+    comptime decl: @Decl<T>,
+    comptime rule: @Expr<fn(v: T) -> bool>,
+) {
+    decl.addMember("validate", fn(self: T) -> Violation[] {
+        if (rule(self)) return [];
+        return [Violation(field: "confirm", message: "invalid")];
+    });
+}

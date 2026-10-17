@@ -1,0 +1,9 @@
+fn work() {
+    var f = "a";
+    defer @print("close " + f);
+    f = "b";
+}
+
+pub fn main() {
+    work();
+}

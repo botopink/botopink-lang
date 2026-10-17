@@ -1,0 +1,20 @@
+//// Decision 207 — the labelled arguments of a call build a function's inline
+//// parameter type in the module that declares the function, the calls a
+//// template built there included (decision 192): `tag "Greeting name=Partner"`
+//// expands to `Greeting(name: "Partner")`, against `props: type(name: string,
+//// greeting: string = "Hello")`, on every target (144 B-10, decision 430). It
+//// was `inline-type-position: name: is a field of the props of Greeting, an
+//// inline type built only in the module that declares Greeting`.
+
+pub mod tags;
+import {tags.tag};
+
+fn Greeting(props: type(name: string, greeting: string = "Hello")) -> string {
+    return props.greeting + ", " + props.name + "!";
+}
+
+pub fn main() {
+    @print(tag "Greeting name=Partner");
+    @print(tag "Greeting greeting=Howdy name=Partner");
+    @print(Greeting(name: "Bob"));
+}

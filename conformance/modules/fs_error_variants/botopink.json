@@ -1,0 +1,1 @@
+{ "name": "fs_error_variants", "targets": ["commonJS", "erlang", "beam"] }

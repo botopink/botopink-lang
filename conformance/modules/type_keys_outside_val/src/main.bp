@@ -1,0 +1,11 @@
+//// Decision 308 — `Type.keys(T)` is bound by a module-level `val`, as a
+//// derived type is (307): in a body it is refused at the call.
+
+import {types.Type} from "std";
+
+type Recipe(title: string)
+
+pub fn main() {
+    val RecipeKey = Type.keys(Recipe);
+    @print("never");
+}

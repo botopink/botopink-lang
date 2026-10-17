@@ -1,0 +1,17 @@
+//// `length` on a `Bytes` read as a property counts bytes, as the call `b.length()` does: bytes
+//// that are not UTF-8 (a lone 0xFF) answer their count, and UTF-8 text answers bytes, not characters.
+
+#[@External.Node("""Uint8Array.from([104, 255, 200])""")]
+#[@External.Erlang("""<<104, 255, 200>>""")]
+#[@External.Wasm(fn: rawBody)]
+declare fn raw() -> Bytes;
+
+fn rawBody() -> Bytes {
+    return Bytes.fromUtf8("h").concat(Bytes.fromUtf8("é"));
+}
+
+pub fn main() {
+    val b: Bytes = raw();
+    @print(b.length);
+    @print(Bytes.fromUtf8("héllo").length);
+}

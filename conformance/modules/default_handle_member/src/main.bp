@@ -1,0 +1,9 @@
+//// A library's default handle is also its namespace: `shapes.twice(…)`
+//// calls a member of the library through the handle the importer binds,
+//// on every target.
+
+import {shapes} from "shapes";
+
+pub fn main() {
+    @print(shapes.twice(21));
+}

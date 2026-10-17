@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: `utf8Offset` has no `#[@External.<Target>(…)]` for the wasm backend
+at std/io/fs.bp:335:18

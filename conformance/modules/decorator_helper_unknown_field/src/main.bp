@@ -1,0 +1,21 @@
+//// 01-compiler/01-checker row "a type error in a decorator body" — the same
+//// through a helper of the module the decorator body calls: the helper is
+//// checked too, its unknown field located in the helper (the parent binary:
+//// `{error,{badkey,nope}}` at the annotation).
+
+fn nameOf(decl: @Decl) -> string {
+    return decl.nope;
+}
+
+fn tagged(comptime decl: @Decl) {
+    val n = nameOf(decl);
+}
+
+#[tagged]
+fn work() -> i32 {
+    return 2;
+}
+
+pub fn main() {
+    @print(work());
+}

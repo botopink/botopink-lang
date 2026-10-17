@@ -1,0 +1,18 @@
+//// Decision 8 §7 — `@print` names the type a value belongs to: a record prints
+//// `Point(x: 1, y: 2)`, a unit variant `Shape.Dot`, a payload variant
+//// `Shape.Circle(radius: 4)`. The name is in the value, which is
+//// `13-module-identity`'s subject; this is the program that shows it.
+
+type Point(x: i32, y: i32)
+
+type Shape {
+    Dot,
+    Circle(radius: i32),
+}
+
+pub fn main() {
+    @print(Point(x: 1, y: 2));
+    @print(Shape.Dot);
+    @print(Shape.Circle(radius: 4));
+    @print([Point(x: 1, y: 2), Point(x: 3, y: 4)]);
+}

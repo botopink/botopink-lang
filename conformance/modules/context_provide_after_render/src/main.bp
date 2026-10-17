@@ -1,0 +1,27 @@
+//// Decision 354 (2) — a provider reaches everything its component renders
+//// below it, so it is written before the body renders its first child: the
+//// child `Label()` rendered on line 15 would not see the value. Refused at
+//// the `use`, naming the line of the render.
+
+import {context.createContext, context.provide, context.context} from "std";
+
+type Theme(mode: string)
+
+type Element(text: string) implement @Renderable
+
+pub val themeContext = comptime createContext(Theme(mode: "default"));
+
+fn Label() -> @Component<Element> {
+    val t = use context(Theme);
+    return Element(text: t.mode);
+}
+
+fn App() -> @Component<Element> {
+    val first = Label();
+    use provide(createContext(Theme(mode: "dark")));
+    return first;
+}
+
+pub fn main() {
+    App();
+}

@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: template-annotation-only: `sql` takes the annotated declaration (`comptime decl: @Decl`), so it is written as an annotation `#[sql "…"]`, never called
+at src/main.bp:13:13

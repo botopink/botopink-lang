@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: type mismatch: `#[cacheable]`'s `cache` expects `Cache<Product[]>`, got `string`
+at src/main.bp:17:13

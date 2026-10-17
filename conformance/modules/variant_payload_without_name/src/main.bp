@@ -1,0 +1,16 @@
+//// Decision 12 — an unnamed variant payload is refused, with a **located**
+//// diagnostic that names the field form. A payload nobody can name is a
+//// payload no `case` arm can bind, so `Circle(i32)` is not a shorter
+//// `Circle(radius: i32)`; it is a declaration the language does not have.
+////
+//// Measured at `c748631e`, before C-08: the form reached the generic
+//// `error: this token cannot appear here` with `unexpected `)`` — located at
+//// the wrong token (the `)` after the type, not the payload), and naming
+//// nothing. The row asked for a named diagnostic; this cell pins it.
+
+type Shape { Circle(i32), Square(side: i32) }
+
+pub fn main() {
+    val s: Shape = Shape.Square(side: 2);
+    @print("unreachable");
+}

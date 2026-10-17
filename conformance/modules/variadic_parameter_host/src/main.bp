@@ -1,0 +1,16 @@
+//// Decision 267 — a `declare fn` bound to a host function takes a variadic
+//// like any function: commonJS hands the host its arguments one by one (a rest
+//// parameter — `Math.max(3, 9, 4)`), erlang and beam one list
+//// (`lists:max([3, 9, 4])`).
+////
+//// wasm has no host, so it refuses the program where the host function is
+//// first called — `variadic_parameter_host.wasm.expect`.
+
+#[@External.Node("Math", "max")]
+#[@External.Erlang("lists", "max")]
+pub declare fn largest(..values: i32[]) -> i32;
+
+pub fn main() {
+    @print(largest(3, 9, 4));
+    @print(largest(7));
+}

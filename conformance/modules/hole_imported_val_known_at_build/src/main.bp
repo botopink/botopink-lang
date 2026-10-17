@@ -1,0 +1,21 @@
+//// 01-compiler/14 step 8 (decision 355) — a hole naming a `val` ANOTHER
+//// module exports is known at build when its initializer is: the exporting
+//// module computes the value when it exports it, and the template reads it
+//// as it reads a `val` of its own module — so `code` is written at build.
+//// It used to be computed at render: the export carried the `val`'s type
+//// alone. A hole naming a parameter stays at render.
+
+pub mod rules;
+import {rules.rule, rules.tab, rules.red};
+
+pub val code = rule "${tab} color: ${red};";
+
+fn badge(c: string) -> string {
+    return rule "${red} ${c}";
+}
+
+pub fn main() {
+    @print(tab);
+    @print(code);
+    @print(badge("green"));
+}

@@ -1,0 +1,12 @@
+//// A default fills only the parameter that declares one: an associated fn
+//// called without a REQUIRED argument is still the arity error, at the call.
+
+behavior Scale {
+    default fn by(x: i32, factor: i32 = 10) -> i32 {
+        return x * factor;
+    }
+}
+
+pub fn main() {
+    @print(Scale.by(factor: 3));
+}

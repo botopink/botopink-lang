@@ -1,0 +1,10 @@
+//// Decision 319 — an `l` / `ul` literal past 2^53 is an exact value on every
+//// target: commonJS holds it as a `BigInt` and prints it as written, as
+//// erlang, beam and wasm do. commonJS refused it at the literal before
+//// (decision 247's `refuseBeyondJsSafeInteger`), and printed
+//// `9007199254740992` before that.
+
+pub fn main() {
+    val w = 9007199254740993l;
+    @print(w);
+}

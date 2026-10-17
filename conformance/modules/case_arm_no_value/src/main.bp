@@ -1,0 +1,16 @@
+//// Decision 525 — a `case` arm is a block: used as a value it answers its
+//// last expression written without `;`. An arm whose last expression ends
+//// with `;` answers nothing, refused at the arm beside arms that answer a
+//// value (it answered `10` before).
+
+fn arm(n: i32) -> i32 {
+    val v = case n {
+        0 { 10; }
+        _ { 20 }
+    };
+    return v;
+}
+
+pub fn main() {
+    @print(arm(0));
+}

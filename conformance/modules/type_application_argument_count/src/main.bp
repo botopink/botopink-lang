@@ -1,0 +1,13 @@
+//// Decision 255 (1) — a type application names the type's parameters one
+//// for one; a count that does not match is refused at the type's name.
+
+type Box<T>(value: T) {
+    pub fn make(v: T) -> Box<T> {
+        return Box(value: v);
+    }
+}
+
+pub fn main() {
+    val b = Box<i32, string>.make(1);
+    @print(b.value);
+}

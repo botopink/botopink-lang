@@ -1,0 +1,8 @@
+//// Decision 307 — the derivations are `Type`'s: the bare `partial(…)` is an
+//// unbound name.
+
+type Recipe(title: string)
+
+pub val Patch = partial(Recipe);
+
+pub fn main() {}

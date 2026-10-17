@@ -1,0 +1,10 @@
+//// Decision 103 of 1.0.10-beta — `@Iterator<T>` has no error channel, so
+//// `throw` in a `#[@generator]` body is refused, naming the generator that
+//// has one (`@Iterator<@Result<T, E>>`). `try` is `reject/try_in_generator.bp`.
+
+fn counted(n: i32) -> @Iterator<i32> {
+    yield n;
+    throw "stop";
+}
+
+pub fn main() { @print(1); }

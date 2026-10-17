@@ -1,0 +1,18 @@
+//// Decision 332 — a `bigint` `/` or `%` by zero aborts on every target, as an integer one does
+//// (decision 264): commonJS names it `integer division by zero` where `BigInt` threw its own
+//// `RangeError`, erlang and beam raise `badarith`, wasm traps.
+
+fn rem(a: bigint, b: bigint) -> bigint {
+    return a % b;
+}
+
+fn div(a: bigint, b: bigint) -> bigint {
+    return a / b;
+}
+
+pub fn main() {
+    @print(rem(7n, 2n));
+    @print(div(7n, 2n));
+    @print(div(7n, 0n));
+    @print("unreachable");
+}

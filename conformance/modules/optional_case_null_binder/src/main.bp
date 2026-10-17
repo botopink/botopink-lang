@@ -1,0 +1,12 @@
+pub fn main() {
+    val x: ?i32 = 5;
+    val a = case x {
+        null {
+            "absent"
+        }
+        v {
+            "present " + v.toString()
+        }
+    };
+    @print(a);
+}

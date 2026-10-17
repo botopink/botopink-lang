@@ -3,6 +3,7 @@
 //! so `test_root.zig` (which imports this) discovers every test.
 
 test {
+    _ = @import("tests/backtick.zig");
     _ = @import("tests/imports.zig");
     _ = @import("tests/declarations.zig");
     _ = @import("tests/expressions.zig");
@@ -10,4 +11,6 @@ test {
     _ = @import("tests/patterns.zig");
     _ = @import("tests/comments.zig");
     _ = @import("tests/idempotent.zig");
+    _ = @import("tests/predicate.zig");
+    _ = @import("tests/trailing_comma.zig");
 }

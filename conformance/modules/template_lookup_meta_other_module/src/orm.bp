@@ -1,0 +1,7 @@
+//// The meta record and the decorator that records it.
+
+pub type Table(name: string, schema: string = "public")
+
+pub fn entity(comptime decl: @Decl, comptime name: @Expr<string>) {
+    decl.setMeta(Table(name: name.value));
+}

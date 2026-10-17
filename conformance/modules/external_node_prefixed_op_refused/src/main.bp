@@ -1,0 +1,13 @@
+//// Decisions 305, 481 — `op:` is `@External.Wasm`'s cell alone. The prefixed
+//// string `"op:f64.floor"` on `@External.Node` is no binding and no host code
+//// the compiler passes through: it is refused at the argument on every
+//// target, naming the wasm cell to write.
+
+#[@External.Node("op:f64.floor")]
+#[@External.Erlang("math:floor($0)")]
+#[@External.Wasm(op: "f64.floor")]
+pub declare fn floorOf(x: f64) -> f64;
+
+pub fn main() {
+    @print(floorOf(2.5));
+}

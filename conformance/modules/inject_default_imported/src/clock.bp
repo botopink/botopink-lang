@@ -1,0 +1,7 @@
+//// The type and its declared default, in one module.
+
+import {context.createContext} from "std";
+
+pub type Clock(now: string)
+
+pub val clockContext = comptime createContext(Clock(now: "never"));

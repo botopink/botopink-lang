@@ -1,0 +1,25 @@
+//// Decision 364 — a `comptime x: @Expr<T>` parameter of a function that is
+//// no template is read as `x.value`, whatever reads it: an operand
+//// (`x.value + "!"`), a method's receiver (`x.value.split(",")`,
+//// `x.value.length()`). Each call is specialized with its
+//// argument's value, and the specialization answers what the function
+//// declares (a `string[]` joined as strings).
+
+fn campos(comptime names: @Expr<string>) -> string[] {
+    return names.value.split(",");
+}
+
+fn tamanho(comptime s: @Expr<string>) -> i32 {
+    return s.value.length();
+}
+
+fn grito(comptime s: @Expr<string>) -> string {
+    return s.value.toUpper() + "!";
+}
+
+pub fn main() {
+    @print(campos("a,b,c").join("|"));
+    @print(campos("x").length());
+    @print(tamanho("abcd"));
+    @print(grito("oi"));
+}

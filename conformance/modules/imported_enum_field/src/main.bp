@@ -1,0 +1,37 @@
+//// A field of an imported enum prints `Target.Top`, as erlang always did.
+////
+//// A field default written as a leading-dot variant (`target: Target =
+//// .Top`) reached the call that omits it bare: commonJS wrote `Top` (a
+//// `ReferenceError`) and beam the atom `'Top'` (printed `'Top'`). The
+//// injected default is now qualified by the field's declared enum, the form
+//// a `.Top` the call writes already took. wasm printed a field of an enum
+//// with a payload variant, and a `?Target` field, as the cell's address
+//// (`place: 316`), and `@print` of such a field or name the same; they
+//// print by the value's header and by the optional's payload. A record of
+//// this module with an enum default takes the same path.
+
+pub mod shapes;
+
+import {shapes.Target, shapes.Place, shapes.Anchor};
+
+type Pin(n: i32, at: Target = .Bottom)
+
+pub fn main() {
+    val a = Anchor(href: "/x");
+    @print(a);
+    @print(a.target);
+    @print(a.place);
+    @print(a.fallback ?? Target.Top);
+    @print(
+        Anchor(
+            href: "/y",
+            target: .Bottom,
+            place: Place.There(name: "q"),
+            fallback: null,
+        ),
+    );
+    val p: Place = Place.There(name: "w");
+    @print(p);
+    @print(Pin(n: 1));
+    @print(Pin(n: 2).at);
+}

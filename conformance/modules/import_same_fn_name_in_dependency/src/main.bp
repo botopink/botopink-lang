@@ -1,0 +1,16 @@
+//// `import_same_fn_name_by_module` across a package boundary. The dependency
+//// `site` declares `pub fn title` in two of its modules. Its own `routes`
+//// names one by the path below the package (`from "app.page"`), and the
+//// consumer names the other by the package-qualified path
+//// (`from "site.app.blog.page"`). A source names a module by its full path or
+//// by a trailing run of whole segments of it, `.` and `/` alike; both imports
+//// were refused as `ambiguous-import-use` while the dotted spelling named
+//// nothing.
+
+import {appTitle} from "site";
+import {title} from "site.app.blog.page";
+
+pub fn main() {
+    @print(appTitle());
+    @print(title());
+}

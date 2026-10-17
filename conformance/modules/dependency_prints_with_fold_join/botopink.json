@@ -1,0 +1,1 @@
+{ "name": "dependency_prints_with_fold_join", "dependencies": { "strip": { "path": "deps/strip" } } }

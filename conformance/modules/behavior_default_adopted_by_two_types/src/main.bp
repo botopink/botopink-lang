@@ -1,0 +1,45 @@
+//// A behavior's bodied `default fn`, adopted by two types that implement it
+//// without declaring it — one of them declaring another default itself — is
+//// a method of each type: called on a typed value, through a default that
+//// calls it, and through a behavior-typed parameter. Erlang skipped a default
+//// two types adopt (a flat namespace's rule, before each type had a module of
+//// its own) and `erlc` refused the module: `function twice/1 undefined`.
+
+behavior Shape {
+    fn area(self: Self) -> i32;
+
+    default fn twice(self: Self) -> i32 {
+        return self.area() * 2;
+    }
+    default fn label(self: Self) -> string {
+        return "area " + self.twice().toString();
+    }
+}
+
+type Sq(s: i32) implement Shape {
+    fn area(self: Self) -> i32 {
+        return self.s * self.s;
+    }
+}
+
+type Rect(w: i32, h: i32) implement Shape {
+    fn area(self: Self) -> i32 {
+        return self.w * self.h;
+    }
+    fn label(self: Self) -> string {
+        return "rect";
+    }
+}
+
+fn show(x: Shape) -> i32 {
+    return x.twice();
+}
+
+pub fn main() {
+    @print(Sq(s: 3).twice());
+    @print(Sq(s: 3).label());
+    @print(Rect(w: 2, h: 5).twice());
+    @print(Rect(w: 2, h: 5).label());
+    @print(show(Sq(s: 1)));
+    @print(show(Rect(w: 1, h: 7)));
+}

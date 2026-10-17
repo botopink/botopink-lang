@@ -1,0 +1,1 @@
+{ "name": "fs_whole_file_shortcuts", "targets": ["commonJS", "erlang", "beam"] }

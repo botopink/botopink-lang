@@ -1,0 +1,7 @@
+//// B-110 — an unknown generic type name in a record field is `unknown type`.
+
+type Holder(m: Bogus<i32, i32>)
+
+pub fn main() {
+    @print(1);
+}

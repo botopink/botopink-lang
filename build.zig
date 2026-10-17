@@ -1,72 +1,41 @@
 /// Workspace build — coordinates compiler-core, compiler-cli and language-server.
 ///
 ///   zig build          → builds botopink + botopink-lsp
-///   zig build test     → runs every compiler-core test
+///   zig build test     → runs every compiler-core, language-server, CLI, lib-test-runner and manifest unit test
 ///   zig build test -Dtest-filter=<substr> → runs only matching tests
+///   zig build test-cli → runs every modules/compiler-cli/tests/*.sh end to end
+///   zig build test-closure-invariant → one library under two consumers, its output compared (decision 509 (2))
+///   zig build test-analysis-equivalence → rakun, rakun-bpp and rakun-stylesheet consumers built cold and through level B, compared (144 B-60)
+///   zig build test-libs → compiles and tests every visible `.bp` library per target
 ///   zig build run      → builds and runs the botopink CLI
 const std = @import("std");
+const source_stamp = @import("modules/source-stamp/src/root.zig");
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    // Build-time options exposed to modules via @import("build_options").
-    const build_options_opts = b.addOptions();
-    const build_options_mod = build_options_opts.createModule();
-
-    // wasm3 needs libc; on Linux + system glibc 2.42 (Arch as of 2026-06-17)
-    // Zig 0.16's linker errors on the new `.sframe` sections in the system
-    // crt1.o (`unhandled relocation type R_X86_64_PC64`). The workaround is to
-    // use Zig's bundled glibc + crt1, which we opt into by re-resolving the
-    // target with an explicit glibc version pin. Affects only Linux-gnu
-    // builds; macOS / Windows / musl pass through unchanged.
+    // On Linux + system glibc 2.41 or newer (Arch as of 2026-06-17) Zig 0.16's
+    // linker errors on the new `.sframe` sections in the system crt1.o
+    // (`unhandled relocation type R_X86_64_PC64`). The workaround is to use
+    // Zig's bundled glibc + crt1, which we opt into by re-resolving the target
+    // with an explicit glibc version pin. Affects only Linux-gnu builds;
+    // macOS / Windows / musl pass through unchanged.
     const target_for_libc = libcResolvedTarget(b, target);
 
     // ── std prelude ───────────────────────────────────────────────────────────
-
-    const std_prelude = b.addModule("std_prelude", .{
-        .root_source_file = b.path("modules/compiler-core/src/comptime/stdlib/prelude.zig"),
-        .target = target,
-    });
-
-    // Core controller files flattened into the global type env. These are NOT
-    // importable "std" packages — `prelude.zig` embeds them by name, so they are
-    // anonymous imports on the std_prelude module.
-    const std_core_files = [_][]const u8{
-        "primitives.bp",
-        "builtins.d.bp",
-        "builtins_fns.d.bp",
-    };
-    for (std_core_files) |f| {
-        std_prelude.addAnonymousImport(f, .{
-            .root_source_file = b.path(b.fmt("libs/std/src/{s}", .{f})),
-        });
-    }
-
-    // Compiler-internal `.bp` sources — NOT user-importable (no `pub mod` entry
-    // in `root.bp`), NOT flattened into the global type env (no entry in the
-    // `pkg_modules` registry above). The wat3 comptime prelude (`template_runtime.bp`)
-    // is the first such file: `wat_runtime.zig` reads the embedded source through
-    // `std_prelude.template_runtime_src`, compiles it through the wat backend, and
-    // splices the post-processed wat into `prelude()` ahead of every template body.
-    const std_internal_files = [_][]const u8{
-        "template_runtime.bp",
-    };
-    for (std_internal_files) |f| {
-        std_prelude.addAnonymousImport(f, .{
-            .root_source_file = b.path(b.fmt("libs/std/src/{s}", .{f})),
-        });
-    }
 
     // "std" package modules — importable via `import {…} from "std"`. The set is
     // derived from the std module tree: `libs/std/src/root.bp` declares one
     // `pub mod <name>;` per module, and the build embeds exactly those. This is
     // the std pilot of the explicit module system — `root.bp` is the single
     // source of truth, so adding a module is `drop libs/std/src/<name>.bp` +
-    // `pub mod <name>;` in root.bp (no build.zig edit). compiler-core then
+    // `pub mod <name>;` in root.bp (no build.zig edit); a `pub mod <dir>;`
+    // whose `<dir>/mod.bp` declares its own `pub mod`s embeds those under
+    // `std/<dir>/<name>` (decision 106's `io/`, `testing/`). compiler-core then
     // discovers them generically through the generated `std_pkg` table below, so
     // adding a module never touches `modules/compiler-core/src/**` either.
-    // (Application-level libs like `erika` are NOT std — they ship under
+    // (Application-level libs like `query` are NOT std — they ship under
     // `libs/<name>/` and load through the generic `from "<lib>"` loader.)
     const std_pkg_files = stdPkgFilesFromRoot(b);
     // Generate the package-module registry (`pkg_modules: [N]{ path, source }`),
@@ -77,6 +46,8 @@ pub fn build(b: *std.Build) void {
         "// Generated by build.zig — do not edit. The \"std\" package registry.\n" ++
         "pub const pkg_modules = [_]struct { path: []const u8, source: []const u8 }{\n";
     for (std_pkg_files) |f| {
+        // `f` is relative to `libs/std/src` (`dict.bp`, `io/fs.bp`); the
+        // registry key is the same path without the extension, under `std/`.
         const name = f[0 .. f.len - ".bp".len];
         pkg_table_src = b.fmt(
             "{s}    .{{ .path = \"std/{s}\", .source = @embedFile(\"{s}\") }},\n",
@@ -85,18 +56,205 @@ pub fn build(b: *std.Build) void {
     }
     pkg_table_src = b.fmt("{s}}};\n", .{pkg_table_src});
 
+    // The bundled packages: `std` alone (decision 326 — every other library is
+    // a repository of its own, declared in `dependencies` like any other). The
+    // table keeps its shape so compiler-core, the CLI and the language server
+    // read "is this name bundled" from one place; std's modules are
+    // `pkg_modules` above, so its row lists none.
+    pkg_table_src = b.fmt(
+        "{s}\n/// The bundled packages: `std` alone (its modules are `pkg_modules` above).\n" ++
+            "pub const BundledModule = struct {{ stem: []const u8, file: []const u8, source: []const u8 }};\n" ++
+            "pub const BundledPackage = struct {{ name: []const u8, modules: []const BundledModule }};\n" ++
+            "pub const bundled_packages = [_]BundledPackage{{\n    .{{ .name = \"std\", .modules = &.{{}} }},\n",
+        .{pkg_table_src},
+    );
+    pkg_table_src = b.fmt("{s}}};\n", .{pkg_table_src});
+
+    // std's `.mjs` sidecars (`libs/std/src/sidecars/*.mjs`), embedded the same
+    // way: the CLI ships them from the compiler's own copy, so a project outside
+    // any checkout (where `std` resolves to no package directory) still builds
+    // on commonJS (144 B-49).
+    const std_sidecar_files = stdSidecarFiles(b);
+    pkg_table_src = b.fmt(
+        "{s}\n/// std's `.mjs` sidecars, keyed by file name.\npub const std_sidecars = [_]struct {{ name: []const u8, source: []const u8 }}{{\n",
+        .{pkg_table_src},
+    );
+    for (std_sidecar_files) |f| {
+        pkg_table_src = b.fmt(
+            "{s}    .{{ .name = \"{s}\", .source = @embedFile(\"sidecars/{s}\") }},\n",
+            .{ pkg_table_src, f, f },
+        );
+    }
+    pkg_table_src = b.fmt("{s}}};\n", .{pkg_table_src});
+
     const wf = b.addWriteFiles();
     const pkg_table_file = wf.add("std_pkg_modules.zig", pkg_table_src);
-    const std_pkg = b.createModule(.{
-        .root_source_file = pkg_table_file,
+    const std_prelude = stdPreludeModule(b, target, std_pkg_files, std_sidecar_files, pkg_table_file);
+
+    const test_filters = b.option([]const []const u8, "test-filter", "Only run tests matching filter") orelse &.{};
+
+    // ── test_scratch (per-process scratch paths) ──────────────────────────────
+    // Every test binary below runs with its package directory as cwd, so the
+    // whole suite writes into ONE shared checkout. A scratch path scoped per
+    // test name but not per RUN is shared with every other process running the
+    // suite, and each test empties its own root on the way in — so a second
+    // `zig build test` over the same checkout reds the first. This module is
+    // the one way a test spells such a path; its root carries a per-process
+    // segment. See `modules/test-scratch/src/root.zig`.
+    //
+    // It is given to the TEST modules ONLY. Naming it outside a `test` block
+    // is analysed by the executable build too, where the module does not
+    // exist — so it does not compile. That is the refusal (decision 67).
+    const test_scratch_mod = b.addModule("test_scratch", .{
+        .root_source_file = b.path("modules/test-scratch/src/root.zig"),
         .target = target,
     });
-    for (std_pkg_files) |f| {
-        std_pkg.addAnonymousImport(f, .{
-            .root_source_file = b.path(b.fmt("libs/std/src/{s}", .{f})),
-        });
+    const test_scratch_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("modules/test-scratch/src/root.zig"),
+            .target = target,
+        }),
+        .filters = test_filters,
+    });
+    const run_test_scratch_tests = b.addRunArtifact(test_scratch_tests);
+    // Its own tests write a scratch tree — under its own package directory.
+    run_test_scratch_tests.setCwd(b.path("modules/test-scratch"));
+
+    // ── source_stamp (the stale-binary refusal) ───────────────────────────────
+    // The content hash of the sources `botopink` and `botopink-lib-test` are
+    // built from, computed HERE, when the build is configured, and embedded
+    // with the checkout's absolute path. A library run (`botopink test`,
+    // `botopink-lib-test`) hashes the same files again and refuses to start
+    // when they differ: the binary is older than its sources, and would
+    // measure the previous compiler. See `modules/source-stamp/src/root.zig`.
+    const stamp_hash = source_stamp.hash(b.allocator, b.graph.io, b.build_root.handle) catch |err|
+        std.debug.panic("source_stamp: cannot hash the checkout's sources: {s}", .{@errorName(err)});
+    const stamp_root = b.build_root.handle.realPathFileAlloc(b.graph.io, ".", b.allocator) catch |err|
+        std.debug.panic("source_stamp: cannot resolve the checkout's path: {s}", .{@errorName(err)});
+    const stamp_options = b.addOptions();
+    stamp_options.addOption([]const u8, "source_root", stamp_root);
+    stamp_options.addOption([]const u8, "source_hash", &stamp_hash);
+    // The same sources partitioned by backend (decision 249): the compiler's
+    // part of the code cache's closure key on each target (decision 509 (3),
+    // `compiler-cli/src/cli/code_cache.zig` `compilerKey`).
+    const partition_hashes = source_stamp.partitionHashes(b.allocator, b.graph.io, b.build_root.handle) catch |err|
+        std.debug.panic("source_stamp: cannot hash the checkout's sources by backend: {s}", .{@errorName(err)});
+    for (source_stamp.TARGETS, partition_hashes) |t, h| {
+        stamp_options.addOption([]const u8, b.fmt("partition_hash_{s}", .{t}), b.dupe(&h));
     }
-    std_prelude.addImport("std_pkg", std_pkg);
+    const source_stamp_mod = b.addModule("source_stamp", .{
+        .root_source_file = b.path("modules/source-stamp/src/root.zig"),
+        .target = target,
+    });
+    const source_stamp_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("modules/source-stamp/src/root.zig"),
+            .target = target,
+        }),
+        .filters = test_filters,
+    });
+    const run_source_stamp_tests = b.addRunArtifact(source_stamp_tests);
+
+    // ── manifest (shared `botopink.json` model) ───────────────────────────────
+    // The one reading of the manifest — packages, workspaces, the dependency
+    // object — imported by the CLI, the LSP, the lib-test runner and bpmp.
+    // `std` only: the runner and bpmp keep their "no compiler-core" contract.
+
+    const manifest_mod = b.addModule("manifest", .{
+        .root_source_file = b.path("modules/manifest/src/root.zig"),
+        .target = target,
+    });
+    const manifest_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("modules/manifest/src/root.zig"),
+            .target = target,
+        }),
+        .filters = test_filters,
+    });
+    const run_manifest_tests = b.addRunArtifact(manifest_tests);
+    // Fixtures under modules/manifest/tests/fixtures are read relative to cwd.
+    run_manifest_tests.setCwd(b.path("modules/manifest"));
+
+    // ── std-wasm (decisions 434 (2), 440, 450) ─────────────────────────────────
+    // botopink's wasm runtime in Zig (`modules/std-wasm`): std's host
+    // functions, and the Erlang terms with the OTP functions over them. Read
+    // by compiler-core for its tables (`exports`, the OTP table), and
+    // compiled — `wasm.zig` — to `std_wasm.wasm`, a position-independent side
+    // module (`dylink.0`: `__memory_base`, `__table_base`, `__stack_pointer`
+    // imported) that compiler-core embeds: the wasm codegen decodes the
+    // `std:` exports a `--target wasm` program calls into it
+    // (`codegen/wat/std_wasm_link.zig`, decision 440 (2)), and the comptime
+    // runtime decodes every `rt_*` export into its term library once per
+    // process (`comptime/runtime/wat/runtime_module.zig`, decision 450 (3) —
+    // there is no other wasm runtime). MVP plus bulk
+    // memory: the codegen emits `memory.copy` already. wasm-ld warns that a
+    // shared library is "not yet stable" when it links it; the module is read
+    // by our own decoder, never by a dynamic loader.
+    const std_wasm_mod = b.createModule(.{ .root_source_file = b.path("modules/std-wasm/src/root.zig") });
+    const std_wasm_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("modules/std-wasm/src/root.zig"),
+            .target = target,
+        }),
+        .filters = test_filters,
+    });
+    const run_std_wasm_tests = b.addRunArtifact(std_wasm_tests);
+    // A `Run` of `zig build-lib`, not `addLibrary`: wasm-ld prints its
+    // "creating shared libraries … is not yet stable" warning for every
+    // side module, and the build runner fails a compile step on any linker
+    // stderr. The module is read by our own decoder, never by a dynamic
+    // loader. Its sources are the step's inputs; a failed compile still fails
+    // the step (non-zero exit).
+    const std_wasm_build = b.addSystemCommand(&.{
+        b.graph.zig_exe, "build-lib",           "-dynamic",              "-fPIC",          "-rdynamic",
+        "-target",       "wasm32-freestanding", "-mcpu=mvp+bulk_memory", "-OReleaseSmall", "--name",
+        "std_wasm",
+    });
+    std_wasm_build.addPrefixedFileArg("-Mroot=", b.path("modules/std-wasm/src/wasm.zig"));
+    const std_wasm_bin = std_wasm_build.addPrefixedOutputFileArg("-femit-bin=", "std_wasm.wasm");
+    for ([_][]const u8{
+        "root.zig",       "hash.zig",        "text.zig",       "number.zig",      "array.zig",
+        "bigint.zig",     "case_tables.zig", "random.zig",     "wasm.zig",        "env.zig",
+        "term.zig",       "term_faces.zig",  "otp.zig",        "otp/erlang.zig",  "otp/lists.zig",
+        "otp/maps.zig",   "otp/string.zig",  "otp/binary.zig", "otp/unicode.zig", "otp/math.zig",
+        "otp/io_lib.zig", "otp/json.zig",    "otp/etf.zig",    "heap.zig",
+    }) |f|
+        std_wasm_build.addFileInput(b.path(b.fmt("modules/std-wasm/src/{s}", .{f})));
+    // The warning goes to a captured file, not the build's output.
+    _ = std_wasm_build.captureStdErr(.{});
+    const std_wasm_step = b.step("std-wasm", "Compile modules/std-wasm's program face alone to zig-out/lib/std_wasm.wasm");
+    std_wasm_step.dependOn(&b.addInstallFileWithDir(std_wasm_bin, .lib, "std_wasm.wasm").step);
+
+    // ── std-wasm's leaves (front 164 s3, decision 549) ────────────────────────
+    // The hand-written `.wat` functions of `modules/std-wasm/wat/`, one file
+    // per leaf or small group: compiler-core embeds each as
+    // `std_wasm_wat/<file>` and reads it with its own reader
+    // (`codegen/wat/wat_reader.zig`, `std_leaves.zig`) into the program that
+    // calls one. A new file is listed here.
+    const std_wasm_leaf_files = [_][]const u8{ "text.wat", "number.wat" };
+    const std_wasm_leaves = b.addOptions();
+    std_wasm_leaves.addOption([]const []const u8, "files", &std_wasm_leaf_files);
+
+    // ── beam-to-wasm (decisions 434 (3), 438, 452) ────────────────────────────
+    // `.beam` bytecode translated to wasm functions over the comptime
+    // runtime's terms (`modules/beam-to-wasm`), whole module by module — a
+    // standalone utility with its own tests; nothing in botopink (compiler-core
+    // included) imports it (decision 452).
+    // Zig's `std` and std-wasm only: `requireStandalone`, at the end of
+    // `build`, fails the build on any other import.
+    const beam_to_wasm_mod = b.createModule(.{
+        .root_source_file = b.path("modules/beam-to-wasm/src/root.zig"),
+        .imports = &.{.{ .name = "std_wasm", .module = std_wasm_mod }},
+    });
+    const beam_to_wasm_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("modules/beam-to-wasm/src/root.zig"),
+            .target = target,
+            .imports = &.{.{ .name = "std_wasm", .module = std_wasm_mod }},
+        }),
+        .filters = test_filters,
+    });
+    const run_beam_to_wasm_tests = b.addRunArtifact(beam_to_wasm_tests);
 
     // ── compiler-core (library) ───────────────────────────────────────────────
 
@@ -105,10 +263,26 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .imports = &.{
             .{ .name = "std_prelude", .module = std_prelude },
+            // `OTP_RELEASE`, the one constant `src/otp.zig` checks `erl` against (decision 228).
+            .{ .name = "manifest", .module = manifest_mod },
+            .{ .name = "std_wasm", .module = std_wasm_mod },
         },
     });
-    // wasm3 headers are accessed via `@cImport` in
-    core_mod.addImport("build_options", build_options_mod);
+    // ── the CLI's module-tree resolver, for the language server ───────────────
+    // Front 26 step 8: the LSP reports the import-source refusals `check`
+    // makes (decisions 206, 242) through the CLI's own predicate
+    // (`resolver.importSourceProblems` / `importSourceMessage`), so the editor
+    // and the command line cannot drift. The CLI itself imports the file by
+    // path; this module is the language server's view of it.
+    const cli_resolver_mod = b.createModule(.{
+        .root_source_file = b.path("modules/compiler-cli/src/cli/resolver.zig"),
+        .target = target_for_libc,
+        .imports = &.{
+            .{ .name = "botopink", .module = core_mod },
+            .{ .name = "test_scratch", .module = test_scratch_mod },
+            .{ .name = "manifest", .module = manifest_mod },
+        },
+    });
 
     // ── compiler-core tests ───────────────────────────────────────────────────
 
@@ -117,21 +291,54 @@ pub fn build(b: *std.Build) void {
         .target = target_for_libc,
         .imports = &.{
             .{ .name = "std_prelude", .module = std_prelude },
+            .{ .name = "test_scratch", .module = test_scratch_mod },
+            .{ .name = "manifest", .module = manifest_mod },
+            .{ .name = "std_wasm", .module = std_wasm_mod },
         },
     });
 
-    core_test_mod.addImport("build_options", build_options_mod);
+    for ([_]*std.Build.Module{ core_mod, core_test_mod }) |mod| {
+        // Decisions 440 (2), 450 (3): std-wasm, decoded into a `--target wasm`
+        // program and into the comptime runtime.
+        mod.addAnonymousImport("std_wasm.wasm", .{ .root_source_file = std_wasm_bin });
+        addStdWasmLeaves(b, mod, std_wasm_leaves, &std_wasm_leaf_files);
+    }
+    // wasmtime runs it in-process on every native build (`persistent_wat.zig`,
+    // decision 543): its C API's headers, from the library this target links.
+    exposeWasmtimeHeaders(b, core_mod, target);
+    exposeWasmtimeHeaders(b, core_test_mod, target);
 
-    const test_filters = b.option([]const []const u8, "test-filter", "Only run tests matching filter") orelse &.{};
+    // The compiler-core suite runs as SHARDS: one test binary, `test_shards`
+    // processes side by side, each running the tests whose index is its own
+    // modulo the count (`modules/test-shard/runner.zig` — zig's default
+    // runner restricted by `BOTOPINK_TEST_SHARD=<i>/<n>`). Every test runs
+    // exactly once over the shards and is reported by name as before; the
+    // runner is serial inside one process, and most of this suite's time is
+    // spent waiting on the node/erl/wasmtime a snapshot's RUN LOG spawns, so
+    // one process left the machine idle (front 00 · 25-gate-perf step 2).
+    // The suite was written for concurrent processes over one checkout —
+    // `test_scratch` roots are per process, the runtime cache is written by
+    // rename — which is what makes the shards safe. The count is scheduling,
+    // never coverage: `-Dtest-shards=1` runs the one process of before.
     const core_tests = b.addTest(.{
         .root_module = core_test_mod,
         .filters = test_filters,
+        .test_runner = .{ .path = b.path("modules/test-shard/runner.zig"), .mode = .server },
     });
+    linkWasmtime(b, core_tests);
 
-    const run_core_tests = b.addRunArtifact(core_tests);
-    // Ensure snapshots are written inside modules/compiler-core/,
-    // not at the workspace root.
-    run_core_tests.setCwd(b.path("modules/compiler-core"));
+    const default_shards: u32 = @intCast(std.math.clamp(std.Thread.getCpuCount() catch 1, 1, 8));
+    const test_shards = b.option(u32, "test-shards", "Processes the compiler-core suite is split across (default: CPUs, at most 8)") orelse default_shards;
+    if (test_shards == 0) @panic("-Dtest-shards must be at least 1");
+    var core_shard_runs: std.ArrayListUnmanaged(*std.Build.Step.Run) = .empty;
+    for (0..test_shards) |shard| {
+        const run_shard = b.addRunArtifact(core_tests);
+        // Ensure snapshots are written inside modules/compiler-core/,
+        // not at the workspace root.
+        run_shard.setCwd(b.path("modules/compiler-core"));
+        run_shard.setEnvironmentVariable("BOTOPINK_TEST_SHARD", b.fmt("{d}/{d}", .{ shard, test_shards }));
+        core_shard_runs.append(b.allocator, run_shard) catch @panic("OOM");
+    }
 
     // `clean-tmp` reaps per-test scratch dirs older than 1 day from
     // `<compiler-core>/.botopinkbuild/tmp/`. A live test run never
@@ -146,30 +353,79 @@ pub fn build(b: *std.Build) void {
     clean_tmp_run.setCwd(b.path("modules/compiler-core"));
     clean_tmp_run.has_side_effects = true; // never cache — always re-reap
 
-    const clean_tmp_step = b.step("clean-tmp", "Reap per-test scratch dirs older than 1 day from .botopinkbuild/tmp/");
+    // The same reap for the per-PROCESS roots `test_scratch` draws, which every
+    // package's test binary leaves behind in its own directory
+    // (`modules/<pkg>/.botopinkbuild/test-scratch/<id>/`). A test removes its
+    // own subtree on the way out, so what survives is an empty root — one per
+    // run, and one per crashed run with its fixtures still in it. Same 1-day
+    // TTL, for the same reason: a live run's root is minutes old, never a day.
+    const clean_scratch_run = b.addSystemCommand(&.{
+        "sh",                                                                                                               "-c",
+        "find modules -mindepth 4 -maxdepth 4 -type d -path '*/.botopinkbuild/test-scratch/*' -mtime +1 -exec rm -rf {} +",
+    });
+    clean_scratch_run.has_side_effects = true; // never cache — always re-reap
+
+    const clean_tmp_step = b.step("clean-tmp", "Reap per-test scratch dirs older than 1 day (.botopinkbuild/tmp/ and every .botopinkbuild/test-scratch/)");
     clean_tmp_step.dependOn(&clean_tmp_run.step);
+    clean_tmp_step.dependOn(&clean_scratch_run.step);
 
     // Runs at the start of every test cycle so crashed-test leaks
     // never accumulate beyond a day.
-    run_core_tests.step.dependOn(&clean_tmp_run.step);
+    const test_step = b.step("test", "Run every unit test (compiler-core, language-server, CLI, lib-test-runner, manifest, test-scratch, std-wasm, beam-to-wasm)");
+    for (core_shard_runs.items) |run_shard| {
+        run_shard.step.dependOn(&clean_tmp_run.step);
+        run_shard.step.dependOn(&clean_scratch_run.step);
+        test_step.dependOn(&run_shard.step);
+    }
+    test_step.dependOn(&run_manifest_tests.step);
+    test_step.dependOn(&run_std_wasm_tests.step);
+    test_step.dependOn(&run_beam_to_wasm_tests.step);
+    test_step.dependOn(&run_test_scratch_tests.step);
+    test_step.dependOn(&run_source_stamp_tests.step);
 
-    const test_step = b.step("test", "Run every test (compiler-core + language-server)");
-    test_step.dependOn(&run_core_tests.step);
+    // ── shared-checkout gate (front 00 · 11-tooling) ──────────────────────────
+    // HARD RULE: a test may not name a cwd-anchored `.botopinkbuild` path. Each
+    // test binary runs with its package directory as cwd, so a fixed path is
+    // shared with every other process running the suite and the second one
+    // deletes the first one's fixtures mid-test. The one way to spell such a
+    // path is the `test_scratch` module, whose root is per process. The script
+    // refuses, it does not warn, and no flag turns it off (decision 67).
+    const test_scratch_gate = b.addSystemCommand(&.{"scripts/check-test-scratch.sh"});
+    test_scratch_gate.has_side_effects = true; // never cache — always re-scan
+    test_step.dependOn(&test_scratch_gate.step);
 
     // ── lib-agnostic gate (annotation-processors P0) ──────────────────────────
     // HARD RULE: the compiler core must name no specific NON-std library. Fail
     // the build if any framework name leaks into `modules/compiler-core/src`.
     // `std` is the one allowed exception (deliberately absent from the
-    // alternation). Extend the pattern as frameworks are added. `grep` exits 1
+    // alternation). The libraries are `rakun` (one repository, a workspace of
+    // packages — front 165) and `query` (outside rakun):
+    // `rakun` anywhere, any case; `query` as a package — the import source
+    // `"query"` or the handle `import query` — since the word itself is the
+    // catalogue's own vocabulary (`@TypeInfo.all`'s queries). `grep` exits 1
     // when nothing matches, so `!` turns "clean" into success; a match → exit 0
     // → `!` → failure. This file lives outside the scanned tree, so it may name
     // the forbidden tokens. Runs as part of `zig build test`.
     const lib_agnostic_gate = b.addSystemCommand(&.{
-        "sh",                                                             "-c",
-        "! grep -riIE 'rakun|jhonstart|erika' modules/compiler-core/src",
+        "sh",                                                                                                                  "-c",
+        "! grep -riIE 'rakun' modules/compiler-core/src && ! grep -rIE '\"query\"|import query\\b' modules/compiler-core/src",
     });
     lib_agnostic_gate.has_side_effects = true; // never cache — always re-scan
     test_step.dependOn(&lib_agnostic_gate.step);
+
+    // ── labelled binding cells (decision 305) ─────────────────────────────────
+    // HARD RULE: a binding cell is a labelled argument (`fn: powBody`,
+    // `op: "f64.sqrt"`, `wasi: .RandomF64`); the prefixed strings `"fn:…"`,
+    // `"op:…"`, `"wasi:…"` are no binding, and none is left in the bundled
+    // libraries. The checker refuses them where written
+    // (`infer.zig` `checkExternalCells`); this scan keeps them out of `libs/**`
+    // even where nothing checks a file. Runs as part of `zig build test`.
+    const labelled_cells_gate = b.addSystemCommand(&.{
+        "sh",                                                   "-c",
+        "! grep -rnIE --include='*.bp' '\"(fn|op|wasi):' libs",
+    });
+    labelled_cells_gate.has_side_effects = true; // never cache — always re-scan
+    test_step.dependOn(&labelled_cells_gate.step);
 
     // ── language-server tests ─────────────────────────────────────────────────
 
@@ -178,10 +434,14 @@ pub fn build(b: *std.Build) void {
         .target = target_for_libc,
         .imports = &.{
             .{ .name = "botopink", .module = core_mod },
+            .{ .name = "manifest", .module = manifest_mod },
+            .{ .name = "test_scratch", .module = test_scratch_mod },
+            .{ .name = "cli_resolver", .module = cli_resolver_mod },
         },
     });
 
     const lsp_tests = b.addTest(.{ .root_module = lsp_test_mod, .filters = test_filters });
+    linkWasmtime(b, lsp_tests);
 
     const run_lsp_tests = b.addRunArtifact(lsp_tests);
     run_lsp_tests.setCwd(b.path("modules/language-server"));
@@ -197,10 +457,15 @@ pub fn build(b: *std.Build) void {
         .target = target_for_libc,
         .imports = &.{
             .{ .name = "botopink", .module = core_mod },
+            .{ .name = "manifest", .module = manifest_mod },
+            .{ .name = "test_scratch", .module = test_scratch_mod },
+            .{ .name = "source_stamp", .module = source_stamp_mod },
+            .{ .name = "build_stamp", .module = stamp_options.createModule() },
         },
     });
 
     const cli_tests = b.addTest(.{ .root_module = cli_test_mod, .filters = test_filters });
+    linkWasmtime(b, cli_tests);
 
     const run_cli_tests = b.addRunArtifact(cli_tests);
     run_cli_tests.setCwd(b.path("modules/compiler-cli"));
@@ -217,10 +482,14 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
             .imports = &.{
                 .{ .name = "botopink", .module = core_mod },
+                .{ .name = "manifest", .module = manifest_mod },
+                .{ .name = "source_stamp", .module = source_stamp_mod },
+                .{ .name = "build_stamp", .module = stamp_options.createModule() },
             },
         }),
     });
 
+    linkWasmtime(b, cli_exe);
     b.installArtifact(cli_exe);
 
     // ── language-server (botopink-lsp executable) ─────────────────────────────
@@ -233,15 +502,19 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
             .imports = &.{
                 .{ .name = "botopink", .module = core_mod },
+                .{ .name = "manifest", .module = manifest_mod },
+                .{ .name = "cli_resolver", .module = cli_resolver_mod },
             },
         }),
     });
 
+    linkWasmtime(b, lsp_exe);
     b.installArtifact(lsp_exe);
 
     // ── lib-test-runner (botopink-lib-test executable) ────────────────────────
     // Fully self-contained orchestrator — shells out to the installed `botopink`
-    // binary, so it carries no `compiler-core` import.
+    // binary, so it carries no `compiler-core` import (only the std-only
+    // `manifest` module, for the shared reading of `botopink.json`).
 
     const lib_test_exe = b.addExecutable(.{
         .name = "botopink-lib-test",
@@ -249,10 +522,33 @@ pub fn build(b: *std.Build) void {
             .root_source_file = b.path("modules/lib-test-runner/src/main.zig"),
             .target = target,
             .optimize = optimize,
+            .imports = &.{
+                .{ .name = "manifest", .module = manifest_mod },
+                .{ .name = "source_stamp", .module = source_stamp_mod },
+                .{ .name = "build_stamp", .module = stamp_options.createModule() },
+            },
         }),
     });
 
     b.installArtifact(lib_test_exe);
+
+    // Its unit tests (args, discovery, matrix, runner) run with `zig build test`.
+    const lib_test_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("modules/lib-test-runner/src/main.zig"),
+            .target = target,
+            .imports = &.{
+                .{ .name = "manifest", .module = manifest_mod },
+                .{ .name = "test_scratch", .module = test_scratch_mod },
+                .{ .name = "source_stamp", .module = source_stamp_mod },
+                .{ .name = "build_stamp", .module = stamp_options.createModule() },
+            },
+        }),
+        .filters = test_filters,
+    });
+    const run_lib_test_tests = b.addRunArtifact(lib_test_tests);
+    run_lib_test_tests.setCwd(b.path("modules/lib-test-runner"));
+    test_step.dependOn(&run_lib_test_tests.step);
 
     // ── bpmp (Boto Pink Package Manager executable) ───────────────────────────
     // Self-contained — no `compiler-core` import. bpmp *spawns* `botopink`, it
@@ -263,6 +559,9 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("modules/bpmp/src/main.zig"),
         .target = target,
         .optimize = optimize,
+        .imports = &.{
+            .{ .name = "manifest", .module = manifest_mod },
+        },
     });
     const bpmp_exe = b.addExecutable(.{ .name = "bpmp", .root_module = bpmp_mod });
     b.installArtifact(bpmp_exe);
@@ -275,6 +574,10 @@ pub fn build(b: *std.Build) void {
     const bpmp_test_mod = b.createModule(.{
         .root_source_file = b.path("modules/bpmp/src/main.zig"),
         .target = target,
+        .imports = &.{
+            .{ .name = "manifest", .module = manifest_mod },
+            .{ .name = "test_scratch", .module = test_scratch_mod },
+        },
     });
     const bpmp_tests = b.addTest(.{ .root_module = bpmp_test_mod, .filters = test_filters });
     const run_bpmp_tests = b.addRunArtifact(bpmp_tests);
@@ -308,33 +611,163 @@ pub fn build(b: *std.Build) void {
 
     // `zig build test-vscode` — run the VS Code extension's pure-function
     // unit suite (`npm test` → tsc typecheck + Node's built-in test runner)
-    // via the workspace's `scripts/test-vscode.sh` wrapper. On first run the
-    // wrapper does an `npm ci` (K2 of v0.beta.19 §K env deferreds) and
-    // touches a marker under `repository/vscode-extension/node_modules/`;
-    // subsequent runs skip the install. Like `test-libs`, NOT wired into
-    // `zig build test` — needs `node`/`npm` on PATH.
-    const test_vscode_run = b.addSystemCommand(&.{ "bash", "../../scripts/test-vscode.sh" });
+    // through `scripts/test-vscode.sh`, which locates the sibling
+    // `vscode-extension` checkout (BOTOPINK_VSCODE_DIR, else
+    // `<ancestor>/repository/vscode-extension`) and fails when it cannot. On
+    // first run the wrapper does an `npm ci`. NOT wired into `zig build test` —
+    // needs `node`/`npm` and a sibling checkout.
+    const test_vscode_run = b.addSystemCommand(&.{ "bash", "scripts/test-vscode.sh" });
     test_vscode_run.setCwd(b.path("."));
     test_vscode_run.has_side_effects = true; // spawns node — never cache
 
     const test_vscode_step = b.step("test-vscode", "Run the VS Code extension unit tests");
     test_vscode_step.dependOn(&test_vscode_run.step);
 
-    // `zig build test-backends` — the single build step that reaches BEAM + wasm
-    // *execution* (not just codegen snapshots): builds the CLI, then runs the
-    // backend-execution harness against `node`/`escript`/`erlc`+`erl`/`wasmtime`,
-    // skipping any backend whose runtime is absent. Like `test-libs`/`test-vscode`
-    // it is NOT wired into `zig build test` (needs those runtimes on PATH).
-    // BOTOPINK_SKIP_BUILD=1 avoids nesting a `zig build` — the CLI is installed by
-    // the dependency below.
-    const test_backends_run = b.addSystemCommand(&.{ "bash", "modules/compiler-cli/tests/backend_exec.sh" });
-    test_backends_run.setCwd(b.path("."));
-    test_backends_run.setEnvironmentVariable("BOTOPINK_SKIP_BUILD", "1");
-    test_backends_run.step.dependOn(b.getInstallStep());
-    test_backends_run.has_side_effects = true; // spawns child runtimes — never cache
+    // `zig build test-conformance` — the language's conformance suite
+    // (decisions 457, 464, 466): every cell of `conformance/modules/` checked by
+    // `botopink cell check` on every target its manifest declares, and every
+    // `conformance/test/` suite run by `botopink test --json`, through
+    // `conformance/run.sh` against the installed `botopink`; a red cell fails
+    // the step. Forwards `--` args, e.g.
+    //   zig build test-conformance -- --only modules/case_range_value
+    // NOT wired into `zig build test` (spawns node/erl/wasmtime per cell).
+    const test_conformance_run = b.addSystemCommand(&.{ "bash", "conformance/run.sh" });
+    test_conformance_run.step.dependOn(b.getInstallStep());
+    test_conformance_run.setCwd(b.path("."));
+    test_conformance_run.has_side_effects = true; // spawns child compilers — never cache
+    if (b.args) |args| test_conformance_run.addArgs(args);
 
-    const test_backends_step = b.step("test-backends", "Run beam/wasm/erlang execution parity scenarios");
+    const test_conformance_step = b.step("test-conformance", "Run the conformance suite (conformance/)");
+    test_conformance_step.dependOn(&test_conformance_run.step);
+
+    // `zig build test-docs` — every example of the language reference names a
+    // conformance cell (decisions 461, 462): `scripts/check-docs.sh` reads
+    // `conformance/docs.md`, each cell's `docs.md` and `README.md`, and every
+    // `<!-- example: modules/<cell> -->` / `<!-- example: test/<suite> -->`
+    // must name one that exists; an inline ```botopink fence is refused (what
+    // an example answers is the cell's, checked by `test-conformance`).
+    // Forwards `--` args, e.g.
+    //   zig build test-docs -- --doc conformance/docs.md --list
+    // NOT wired into `zig build test`.
+    const test_docs_run = b.addSystemCommand(&.{ "bash", "scripts/check-docs.sh" });
+    test_docs_run.step.dependOn(b.getInstallStep());
+    test_docs_run.setCwd(b.path("."));
+    test_docs_run.has_side_effects = true; // spawns child compilers — never cache
+    if (b.args) |args| test_docs_run.addArgs(args);
+
+    const test_docs_step = b.step("test-docs", "Check that every example of the language reference names a conformance cell");
+    test_docs_step.dependOn(&test_docs_run.step);
+
+    // `zig build test-backends` — the wasm core module's `--invoke main`
+    // contract (`backend_exec.sh`): a `wasi` build is a component whose core
+    // module runs on its own under `wasmtime --invoke main`. What programs answer
+    // on every backend is the conformance suite's (`test-conformance`). NOT wired
+    // into `zig build test` (needs wasmtime on PATH). BOTOPINK_SKIP_BUILD=1
+    // avoids nesting a `zig build` — the CLI is installed by the dependency below.
+    const test_backends_run = cliScript(b, "backend_exec.sh");
+    const test_backends_step = b.step("test-backends", "Run the wasm core module's --invoke main contract");
     test_backends_step.dependOn(&test_backends_run.step);
+
+    // `zig build test-cli` — every end-to-end CLI script under
+    // `modules/compiler-cli/tests/`, each against the installed binary
+    // (BOTOPINK_SKIP_BUILD=1): the command contract (`cli_contract.sh`), the
+    // `botopink test` behaviours (`test_tooling.sh`), the code cache of the
+    // dependencies' compiled modules and the workspace a cell inherits from
+    // (`code_cache.sh`, decisions 509, 512), the wasm core module's
+    // `--invoke main` (`backend_exec.sh`, also `test-backends`), and decision
+    // 509 (2)'s closure invariant (`closure_invariant.sh`, also
+    // `test-closure-invariant`), and the code cache's level B over its fixture
+    // (`level_b.sh`, 144 B-60: cold, writing and reading builds the same
+    // bytes on every target), and the same over real libraries — a few
+    // conformance cells of rakun's packages `rakun`, `rakun-bpp` and
+    // `rakun-stylesheet`, the checkout's sibling workspace (`analysis_equivalence.sh`, also `test-analysis-equivalence`,
+    // guard 2). The language
+    // half these scripts held — numeric, records, the `mod` tree, mutual
+    // recursion, `assert` / `try` — is conformance cells (144 B-29 step H). The
+    // scripts run one after another — they share `zig-out/` and fixture `out/` dirs.
+    const cli_scripts = [_][]const u8{ "cli_contract.sh", "test_tooling.sh", "code_cache.sh", "backend_exec.sh", "closure_invariant.sh", "level_b.sh", "analysis_equivalence.sh" };
+    const test_cli_step = b.step("test-cli", "Run every modules/compiler-cli/tests/*.sh against the installed CLI");
+    var prev_cli_script: ?*std.Build.Step = null;
+    for (cli_scripts) |script| {
+        const run_script = cliScript(b, script);
+        if (prev_cli_script) |p| run_script.step.dependOn(p);
+        prev_cli_script = &run_script.step;
+        test_cli_step.dependOn(&run_script.step);
+    }
+
+    // `zig build test-closure-invariant` — decision 509 (2)'s invariant (144
+    // B-60): one library built under two consumers emits the same files, byte
+    // for byte, on every target (`closure_invariant.sh`); also a `test-cli`
+    // script, this step runs it alone.
+    const closure_invariant_run = cliScript(b, "closure_invariant.sh");
+    const closure_invariant_step = b.step("test-closure-invariant", "Build one library under two consumers and compare its output on every target");
+    closure_invariant_step.dependOn(&closure_invariant_run.step);
+
+    // `zig build test-analysis-equivalence` — level B's guard 2 (144 B-60):
+    // a few cells of rakun, rakun-bpp and rakun-stylesheet built `--cold`, writing
+    // `.botopinkbuild/analysis/` and reading it, compared byte for byte on
+    // every target their features declare (`conformance/<package>/<feature>/<cell>`, decision 548; `analysis_equivalence.sh`); also a
+    // `test-cli` script, this step runs it alone.
+    const analysis_equivalence_run = cliScript(b, "analysis_equivalence.sh");
+    const analysis_equivalence_step = b.step("test-analysis-equivalence", "Build real libraries' consumers cold, writing and reading level B, and compare their output");
+    analysis_equivalence_step.dependOn(&analysis_equivalence_run.step);
+
+    // ── compiler-web: compiler-core for the browser (front 18 step 5) ─────────
+    // `zig build compiler-web` → zig-out/web/{botopink.wasm, glue.js, index.html}.
+    // A `wasm32-wasi` build of compiler-core's API (`modules/compiler-web/src/
+    // web_root.zig`: sources in, generated text out); the target is fixed here,
+    // not read from `-Dtarget`, because nothing else in this workspace builds
+    // for wasm and the CLI never will (it spawns processes). WASI provides the
+    // clock, stdout/stderr and randomness through the JS shim in `glue.js`;
+    // the comptime runtime and the RUN LOG executors are compiled out on wasm
+    // (`comptime/runtime/runtime.zig`), so the module imports no process spawn.
+    // `-Doptimize` applies; the size budget is measured at ReleaseSmall.
+    const web_target = b.resolveTargetQuery(.{ .cpu_arch = .wasm32, .os_tag = .wasi });
+    const web_core_mod = b.createModule(.{
+        .root_source_file = b.path("modules/compiler-core/src/root.zig"),
+        .target = web_target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "std_prelude", .module = stdPreludeModule(b, web_target, std_pkg_files, std_sidecar_files, pkg_table_file) },
+            .{ .name = "manifest", .module = b.createModule(.{ .root_source_file = b.path("modules/manifest/src/root.zig") }) },
+            .{ .name = "std_wasm", .module = std_wasm_mod },
+        },
+    });
+    web_core_mod.addAnonymousImport("std_wasm.wasm", .{ .root_source_file = std_wasm_bin });
+    addStdWasmLeaves(b, web_core_mod, std_wasm_leaves, &std_wasm_leaf_files);
+    const web_exe = b.addExecutable(.{
+        .name = "botopink",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("modules/compiler-web/src/web_root.zig"),
+            .target = web_target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "botopink", .module = web_core_mod },
+            },
+        }),
+    });
+    web_exe.entry = .disabled; // a library of exports, not a `_start` program
+    web_exe.rdynamic = true; // keep every `export fn` in the wasm export table
+    const web_install = b.addInstallArtifact(web_exe, .{ .dest_dir = .{ .override = .{ .custom = "web" } } });
+    const web_step = b.step("compiler-web", "Build compiler-core for the browser (zig-out/web/)");
+    web_step.dependOn(&web_install.step);
+    web_step.dependOn(&b.addInstallFile(b.path("modules/compiler-web/glue.js"), "web/glue.js").step);
+    web_step.dependOn(&b.addInstallFile(b.path("modules/compiler-web/index.html"), "web/index.html").step);
+
+    // `zig build test-web` — the browser build answers like the native compiler:
+    // `modules/compiler-web/tests/smoke.js` loads `glue.js` and the built
+    // module under node, compiles one program to the four targets, and pins a
+    // rendered diagnostic and the comptime refusal. Needs `node`; NOT wired
+    // into `zig build test` (a wasm build is 15–50 s on top of the suite).
+    const test_web_run = b.addSystemCommand(&.{ "node", "modules/compiler-web/tests/smoke.js" });
+    test_web_run.addFileArg(web_exe.getEmittedBin());
+    test_web_run.setCwd(b.path("."));
+    test_web_run.has_side_effects = true; // spawns node — never cache
+    const test_web_step = b.step("test-web", "Run the browser build's smoke test under node");
+    test_web_step.dependOn(&test_web_run.step);
+
+    // `zig build gen-unicode` — std's normalization tables (decision 333 (A)).
+    @import("libs/std/tools/unicode-gen/build_step.zig").addStep(b);
 
     // ── Run step ──────────────────────────────────────────────────────────────
 
@@ -344,6 +777,95 @@ pub fn build(b: *std.Build) void {
 
     const run_step = b.step("run", "Build and run the botopink CLI");
     run_step.dependOn(&run_cmd.step);
+
+    // ── beam-to-wasm stands alone (decision 438 (3)) ────────────────────────
+    // Checked last, once every module of the graph is wired.
+    requireStandalone(beam_to_wasm_mod, "modules/beam-to-wasm");
+    requireStandalone(beam_to_wasm_tests.root_module, "modules/beam-to-wasm's tests");
+}
+
+/// Decision 438 (3): `modules/beam-to-wasm` is a utility that knows nothing
+/// of botopink the language — it imports Zig's `std` and std-wasm
+/// (`std_wasm`) only; no compiler-core, `manifest`, `bpmp` or anything else.
+/// Every module it can import by name is an entry of its import table (a file
+/// outside its own directory is no import at all: Zig refuses a path outside
+/// a module's root), so the table is the whole check: any other entry fails
+/// the build, named, before a step runs.
+fn requireStandalone(mod: *std.Build.Module, what: []const u8) void {
+    for (mod.import_table.keys()) |name| {
+        if (std.mem.eql(u8, name, "std_wasm")) continue;
+        std.debug.panic("{s} imports `{s}`: decision 438 (3) allows Zig's `std` and std-wasm (`std_wasm`) only", .{ what, name });
+    }
+}
+
+/// A `bash modules/compiler-cli/tests/<script>` run against the installed CLI.
+fn cliScript(b: *std.Build, script: []const u8) *std.Build.Step.Run {
+    const run = b.addSystemCommand(&.{ "bash", b.fmt("modules/compiler-cli/tests/{s}", .{script}) });
+    run.setCwd(b.path("."));
+    run.setEnvironmentVariable("BOTOPINK_SKIP_BUILD", "1");
+    run.step.dependOn(b.getInstallStep());
+    run.has_side_effects = true; // spawns child runtimes — never cache
+    return run;
+}
+
+/// The `std_prelude` module for one target: the stdlib prelude with the core
+/// controller files and the generated "std" package registry embedded. Built
+/// for the build target (compiler-core) and again for the browser build.
+fn stdPreludeModule(
+    b: *std.Build,
+    target: std.Build.ResolvedTarget,
+    std_pkg_files: []const []const u8,
+    std_sidecar_files: []const []const u8,
+    pkg_table_file: std.Build.LazyPath,
+) *std.Build.Module {
+    const std_prelude = b.createModule(.{
+        .root_source_file = b.path("modules/compiler-core/src/comptime/stdlib/prelude.zig"),
+        .target = target,
+    });
+
+    // Core controller files flattened into the global type env. These are NOT
+    // importable "std" packages — `prelude.zig` embeds them by name, so they are
+    // anonymous imports on the std_prelude module.
+    const std_core_files = [_][]const u8{
+        "primitives.bp",
+        "builtins.d.bp",
+        "builtins_fns.d.bp",
+    };
+    for (std_core_files) |f| {
+        std_prelude.addAnonymousImport(f, .{
+            .root_source_file = b.path(b.fmt("libs/std/src/{s}", .{f})),
+        });
+    }
+
+    // The generated registry lives in its own module so its `@embedFile`s
+    // resolve against the package `.bp` anonymous imports; `std_prelude`
+    // re-exports the table for compiler-core to consume.
+    const std_pkg = b.createModule(.{
+        .root_source_file = pkg_table_file,
+        .target = target,
+    });
+    for (std_pkg_files) |f| {
+        std_pkg.addAnonymousImport(f, .{
+            .root_source_file = b.path(b.fmt("libs/std/src/{s}", .{f})),
+        });
+    }
+    for (std_sidecar_files) |f| {
+        std_pkg.addAnonymousImport(b.fmt("sidecars/{s}", .{f}), .{
+            .root_source_file = b.path(b.fmt("libs/std/src/sidecars/{s}", .{f})),
+        });
+    }
+    std_prelude.addImport("std_pkg", std_pkg);
+    return std_prelude;
+}
+
+/// Front 164 s3 — std-wasm's `.wat` leaves into `mod`: the list as the
+/// `std_wasm_leaves` options module, each file as `std_wasm_wat/<file>`
+/// (`codegen/wat/std_leaves.zig`).
+fn addStdWasmLeaves(b: *std.Build, mod: *std.Build.Module, leaves: *std.Build.Step.Options, files: []const []const u8) void {
+    mod.addOptions("std_wasm_leaves", leaves);
+    for (files) |f| mod.addAnonymousImport(b.fmt("std_wasm_wat/{s}", .{f}), .{
+        .root_source_file = b.path(b.fmt("modules/std-wasm/wat/{s}", .{f})),
+    });
 }
 
 /// Re-resolve the user-requested target with an explicit bundled-glibc version
@@ -351,35 +873,64 @@ pub fn build(b: *std.Build) void {
 /// the Zig 0.16 + glibc ≥ 2.41 `.sframe` crt1.o relocation bug by making Zig
 /// emit its own crt files instead of dragging the system ones. macOS, Windows,
 /// musl and any explicitly-pinned target pass through unchanged.
+///
+/// The pin is the oldest glibc the shipped binary supports (1.0.11-beta
+/// decision 219): 2.35, ubuntu-22.04's. At 2.36 or newer Zig's std links
+/// `arc4random_buf` (GLIBC_2.36) and the binary no longer starts there;
+/// `objdump -T zig-out/bin/botopink` must list nothing newer than GLIBC_2.35.
 fn libcResolvedTarget(b: *std.Build, requested: std.Build.ResolvedTarget) std.Build.ResolvedTarget {
     const r = requested.result;
     if (r.os.tag != .linux) return requested;
     if (r.abi != .gnu) return requested;
     var q = requested.query;
     if (q.glibc_version != null) return requested;
-    q.glibc_version = .{ .major = 2, .minor = 38, .patch = 0 };
+    q.glibc_version = .{ .major = 2, .minor = 35, .patch = 0 };
     return b.resolveTargetQuery(q);
 }
 
 /// Derive the importable "std" package module files from the std module tree
-/// (`libs/std/src/root.bp`): one `<name>.bp` per `pub mod <name>;` declaration,
-/// in declaration order. This makes `root.bp` the single source of truth for the
-/// std module set (the module-system pilot for std). Panics with a clear message
-/// if the root is missing or declares nothing — a misread here would silently
-/// drop std modules and break every build.
+/// (`libs/std/src/root.bp`), the way the CLI resolver follows a package's
+/// `mod` declarations: each `mod X;` / `pub mod X;` of a declaring file names
+/// `X.bp` (a sibling) or `X/mod.bp` (a folder index) in that file's directory
+/// — exactly one must exist — and a folder index is followed in turn, so
+/// `pub mod io;` embeds `io/fs.bp`, `io/http.bp`, … under the paths `io/fs`,
+/// `io/http` (decision 106's tree). Files are relative to `libs/std/src`, in
+/// declaration order, depth-first. This keeps `root.bp` the single source of
+/// truth for the std module set. Panics with a clear message if the root is
+/// missing, declares nothing, or a `mod` resolves to neither or both of its
+/// two spellings — a misread here would silently drop std modules and break
+/// every build.
 fn stdPkgFilesFromRoot(b: *std.Build) []const []const u8 {
-    const root_src = b.build_root.handle.readFileAlloc(
+    var files: std.ArrayListUnmanaged([]const u8) = .empty;
+    collectStdModules(b, &files, "root.bp", "");
+    if (files.items.len == 0) std.debug.panic(
+        "std pilot: libs/std/src/root.bp declares no `pub mod` modules",
+        .{},
+    );
+    return files.toOwnedSlice(b.allocator) catch @panic("OOM");
+}
+
+/// One declaring file of the std tree: `decl_file` relative to `libs/std/src`
+/// (`root.bp`, `io/mod.bp`), `prefix` the module-path prefix its `mod`s live
+/// under (`""`, `"io/"`).
+fn collectStdModules(
+    b: *std.Build,
+    files: *std.ArrayListUnmanaged([]const u8),
+    decl_file: []const u8,
+    prefix: []const u8,
+) void {
+    const decl_path = b.fmt("libs/std/src/{s}", .{decl_file});
+    const src = b.build_root.handle.readFileAlloc(
         b.graph.io,
-        "libs/std/src/root.bp",
+        decl_path,
         b.allocator,
         .unlimited,
     ) catch |err| std.debug.panic(
-        "std pilot: cannot read libs/std/src/root.bp (the std module-tree root): {s}",
-        .{@errorName(err)},
+        "std pilot: cannot read {s} (a std module-tree file): {s}",
+        .{ decl_path, @errorName(err) },
     );
 
-    var files: std.ArrayListUnmanaged([]const u8) = .empty;
-    var it = std.mem.splitScalar(u8, root_src, '\n');
+    var it = std.mem.splitScalar(u8, src, '\n');
     while (it.next()) |raw| {
         var line = std.mem.trim(u8, raw, " \t\r");
         // Skip comments and blank lines; accept `mod X;` and `pub mod X;`.
@@ -390,12 +941,115 @@ fn stdPkgFilesFromRoot(b: *std.Build) []const []const u8 {
         name = std.mem.trimEnd(u8, name, ";");
         name = std.mem.trim(u8, name, " \t");
         if (name.len == 0) continue;
-        files.append(b.allocator, b.fmt("{s}.bp", .{name})) catch @panic("OOM");
-    }
 
-    if (files.items.len == 0) std.debug.panic(
-        "std pilot: libs/std/src/root.bp declares no `pub mod` modules",
-        .{},
-    );
+        const sibling = b.fmt("{s}{s}.bp", .{ prefix, name });
+        const folder = b.fmt("{s}{s}/mod.bp", .{ prefix, name });
+        const has_sibling = stdSrcExists(b, sibling);
+        const has_folder = stdSrcExists(b, folder);
+        if (has_sibling and has_folder) std.debug.panic(
+            "std pilot: `mod {s};` in {s} is ambiguous — both libs/std/src/{s} and libs/std/src/{s} exist",
+            .{ name, decl_path, sibling, folder },
+        );
+        if (!has_sibling and !has_folder) std.debug.panic(
+            "std pilot: `mod {s};` in {s} resolves to nothing — neither libs/std/src/{s} nor libs/std/src/{s} exists",
+            .{ name, decl_path, sibling, folder },
+        );
+        if (has_sibling) {
+            files.append(b.allocator, sibling) catch @panic("OOM");
+        } else {
+            collectStdModules(b, files, folder, b.fmt("{s}{s}/", .{ prefix, name }));
+        }
+    }
+}
+
+/// The `.mjs` files of `libs/std/src/sidecars`, sorted by name.
+fn stdSidecarFiles(b: *std.Build) []const []const u8 {
+    var files: std.ArrayListUnmanaged([]const u8) = .empty;
+    var dir = b.build_root.handle.openDir(b.graph.io, "libs/std/src/sidecars", .{ .iterate = true }) catch |err| switch (err) {
+        error.FileNotFound => return &.{},
+        else => std.debug.panic("std sidecars: cannot open libs/std/src/sidecars: {s}", .{@errorName(err)}),
+    };
+    defer dir.close(b.graph.io);
+    var it = dir.iterate();
+    while (it.next(b.graph.io) catch |err| std.debug.panic("std sidecars: {s}", .{@errorName(err)})) |entry| {
+        if (entry.kind != .file or !std.mem.endsWith(u8, entry.name, ".mjs")) continue;
+        files.append(b.allocator, b.dupe(entry.name)) catch @panic("OOM");
+    }
+    std.mem.sort([]const u8, files.items, {}, struct {
+        fn lt(_: void, a: []const u8, c: []const u8) bool {
+            return std.mem.lessThan(u8, a, c);
+        }
+    }.lt);
     return files.toOwnedSlice(b.allocator) catch @panic("OOM");
+}
+
+fn stdSrcExists(b: *std.Build, rel: []const u8) bool {
+    b.build_root.handle.access(b.graph.io, b.fmt("libs/std/src/{s}", .{rel}), .{}) catch return false;
+    return true;
+}
+
+// ── wasmtime, the comptime runtime's engine (decision 543) ──────────────────
+
+/// The `build.zig.zon` dependency holding wasmtime's prebuilt C API for
+/// `target` — one per release target (`release.yml`'s five), each lazy, so a
+/// build fetches only its own. Null while the lazy fetch is pending (zig then
+/// fetches it and runs the build again); a target outside the five panics,
+/// naming them: the native compiler has no comptime engine there.
+fn wasmtimeDependency(b: *std.Build, target: std.Build.ResolvedTarget) ?*std.Build.Dependency {
+    const t = target.result;
+    const name: []const u8 = @as(?[]const u8, switch (t.os.tag) {
+        .linux => switch (t.cpu.arch) {
+            .x86_64 => @as(?[]const u8, "wasmtime_linux_x86_64"),
+            .aarch64 => "wasmtime_linux_aarch64",
+            else => null,
+        },
+        .macos => switch (t.cpu.arch) {
+            .x86_64 => "wasmtime_macos_x86_64",
+            .aarch64 => "wasmtime_macos_aarch64",
+            else => null,
+        },
+        .windows => if (t.cpu.arch == .x86_64) "wasmtime_windows_x86_64" else null,
+        else => null,
+    }) orelse std.debug.panic(
+        "wasmtime: no prebuilt C API pinned for {s}-{s} — build.zig.zon pins linux-{{x86_64,aarch64}}, macos-{{x86_64,aarch64}}, windows-x86_64 (decision 543)",
+        .{ @tagName(t.cpu.arch), @tagName(t.os.tag) },
+    );
+    return b.lazyDependency(name, .{});
+}
+
+/// wasmtime's C API headers on `mod`'s include path (`@cImport` resolution
+/// is module-scoped): compiler-core's `persistent_wat.zig` translates them.
+fn exposeWasmtimeHeaders(b: *std.Build, mod: *std.Build.Module, target: std.Build.ResolvedTarget) void {
+    const dep = wasmtimeDependency(b, target) orelse return;
+    mod.addIncludePath(dep.path("include"));
+}
+
+/// Link wasmtime's static library into an artifact whose root module imports
+/// compiler-core, with the system libraries a Rust static library needs on
+/// its target.
+fn linkWasmtime(b: *std.Build, compile: *std.Build.Step.Compile) void {
+    const root = compile.root_module;
+    const target = root.resolved_target.?;
+    const dep = wasmtimeDependency(b, target) orelse return;
+    root.addObjectFile(dep.path("lib/libwasmtime.a"));
+    // wasmtime's object holds more sections than an ELF header counts (the
+    // extended numbering), which zig 0.16's own ELF linker cannot read: an
+    // artifact linking it is linked by LLD, and so compiled by LLVM.
+    if (target.result.ofmt == .elf) {
+        compile.use_llvm = true;
+        compile.use_lld = true;
+    }
+    root.link_libc = true;
+    switch (target.result.os.tag) {
+        // libSystem carries everything it calls, `_Unwind_*` included.
+        .macos => {},
+        // Rust's standard library unwinds through libunwind's `_Unwind_*`
+        // (zig builds its bundled one); on Windows it calls these DLLs too.
+        .windows => {
+            root.linkSystemLibrary("unwind", .{});
+            for ([_][]const u8{ "kernel32", "advapi32", "ntdll", "userenv", "bcrypt", "ole32", "shell32", "ws2_32" }) |lib|
+                root.linkSystemLibrary(lib, .{});
+        },
+        else => root.linkSystemLibrary("unwind", .{}),
+    }
 }

@@ -1,0 +1,15 @@
+//// Decision 316 — `decl.wrapWith(f)` wraps a function's body: a `declare fn`
+//// has none, so wrapping one is refused at the annotation.
+
+fn counted(comptime decl: @Decl<fn(..) -> i32>) {
+    decl.wrapWith({ call -> call.run() });
+}
+
+type Clock() {
+    #[counted]
+    declare fn now(self: Self) -> i32;
+}
+
+pub fn main() {
+    @print(Clock().now());
+}

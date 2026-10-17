@@ -1,0 +1,12 @@
+//// ES4 names the enum the position expects. Two enums carry a section
+//// `Color` and neither has `.Color.Green.100`; the annotation says `Border`,
+//// and the refusal used to name whichever enum the type table's walk met
+//// first (`Token` here).
+
+type Token  { Color { Red { 100, 500 } } }
+type Border { Color { Blue { 100 } } }
+
+pub fn main() {
+    val a: Border = .Color.Green.100;
+    @print(0);
+}

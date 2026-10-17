@@ -1,0 +1,1 @@
+{ "name": "namespace_import_module", "dependencies": { "sec": { "path": "deps/sec" } } }

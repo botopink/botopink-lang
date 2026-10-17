@@ -1,0 +1,8 @@
+//// Decision 328 — a lambda's types come from where it is used. A parameter
+//// that no position, annotation or call types cannot choose a method: the call
+//// on it is refused, located, on every target.
+
+pub fn main() {
+    val describe = { n -> "n=" + n.toString() };
+    @print("never called");
+}

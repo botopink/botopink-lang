@@ -1,0 +1,11 @@
+//// Decision 242 — only a direct dependency is importable. The package
+//// declares `starter`, and `starter` declares `core`: `core` is compiled into
+//// the build, but it is `starter`'s dependency, not this package's, so `from
+//// "core"` here is refused at the source string, on every target. Declaring
+//// `core` in this package's botopink.json is the fix.
+
+import {greet} from "core";
+
+pub fn main() {
+    @print(greet());
+}

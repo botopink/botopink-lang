@@ -1,0 +1,7 @@
+//// Decision 268 — `with:` is declared `Decorator | Decorator[]`: a literal is
+//// no decorator, so `with: 42` is the ordinary argument mismatch, located at
+//// the argument.
+
+pub fn main() {
+    @print(@TypeInfo.all(with: 42).length);
+}

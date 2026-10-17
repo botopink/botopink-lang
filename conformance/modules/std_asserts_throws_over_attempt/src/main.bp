@@ -1,0 +1,38 @@
+//// Decisions 431 (3), 493 — `testing.asserts`' `throws<T>` and
+//// `throwsWith<T>` run the body under `failure.attempt`, generic over the
+//// body's own type: `T` is inferred from the body, whatever it answers. Each
+//// fails when the body completes; `throwsWith` also when the caught
+//// `Failure.message` does not contain the needle. A host raise's message is
+//// the host's text — on erlang and beam the reason by `~tp`, without its class
+//// (decision 527 (4)) — so a needle naming the class matches on no target.
+////
+//// The host binding has no wasm form, and on wasm `testing.asserts` itself
+//// reaches its private `canonical`, which has none (decision 146,
+//// `modules/std_asserts_on_every_target`).
+
+import {testing.asserts} from "std";
+
+#[@External.Node("""(() => { throw new Error("boom"); })()""")]
+#[@External.Erlang("""erlang:error(boom)""")]
+declare fn raiseBoom() -> i32;
+
+fn label(n: i32) -> string {
+    if (n < 0) @panic("a negative label");
+    return "n" + n.toString();
+}
+
+fn shown(r: @Result<void, string>) {
+    val text = asserts.errorText(r);
+    @print(if (text == "") "Ok" else text);
+}
+
+pub fn main() {
+    shown(asserts.throws({ -> label(-1) }));
+    shown(asserts.throws({ -> label(1) }));
+    shown(asserts.throws({ -> raiseBoom() }));
+    shown(asserts.throwsWith({ -> label(-1) }, "negative"));
+    shown(asserts.throwsWith({ -> label(-1) }, "positive"));
+    shown(asserts.throwsWith({ -> raiseBoom() }, "boom"));
+    shown(asserts.throwsWith({ -> raiseBoom() }, "error:"));
+    shown(asserts.throwsWith({ -> label(2) }, "n2"));
+}

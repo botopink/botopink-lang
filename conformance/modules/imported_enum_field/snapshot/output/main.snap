@@ -1,0 +1,9 @@
+botopink-cell 1
+out Anchor(href: "/x", target: Target.Top, place: Place.Here, fallback: Target.Bottom)
+out Target.Top
+out Place.Here
+out Target.Bottom
+out Anchor(href: "/y", target: Target.Bottom, place: Place.There(name: "q"), fallback: null)
+out Place.There(name: "w")
+out Pin(n: 1, at: Target.Bottom)
+out Target.Bottom

@@ -1,0 +1,5 @@
+import looks from "looks";
+
+pub fn card() -> string {
+    return looks "card";
+}

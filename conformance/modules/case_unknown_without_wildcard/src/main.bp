@@ -1,0 +1,10 @@
+//// Decision 8 §5.4 — a case over unknown always needs `_`.
+
+pub fn main() {
+    val x: unknown = 1;
+    val y = case x {
+        i32 { n -> "number" }
+        string { s -> "text" }
+    };
+    @print(y);
+}

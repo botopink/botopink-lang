@@ -1,0 +1,14 @@
+import {cache.Life};
+
+pub type Client(life: Life, name: string) {
+    pub fn withLife(self: Self, l: Life) -> Client {
+        return Client(life: l, name: self.name);
+    }
+    pub fn ms(self: Self) -> i32 {
+        return self.life.missing;
+    }
+}
+
+pub fn client(ms: i32) -> Client {
+    return Client(life: Life(ms: ms), name: "c");
+}

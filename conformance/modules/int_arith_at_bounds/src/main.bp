@@ -1,0 +1,35 @@
+//// Decision 264's other half: a result AT its type's bound is a value, never
+//// an abort — `i32`'s and `i8`'s two ends, `u32`'s maximum and zero, and an
+//// `i64` at commonJS's exact bound `2^53 − 1`, each reached by arithmetic.
+
+fn i32Of(x: i32) -> i32 {
+    return x;
+}
+
+fn i8Of(x: i8) -> i8 {
+    return x;
+}
+
+fn u32Of(x: u32) -> u32 {
+    return x;
+}
+
+fn i64Of(x: i64) -> i64 {
+    return x;
+}
+
+pub fn main() {
+    @print(i32Of(2147483646) + 1);
+    @print(i32Of(-2147483647) - 1);
+    @print(i32Of(-46341) * 46340);
+    @print(-i32Of(-2147483647));
+    @print(i8Of(126) + 1);
+    @print(i8Of(-127) - 1);
+    @print(u32Of(4294967294) + 1);
+    @print(u32Of(1) - 1);
+    @print(i64Of(9007199254740990) + 1);
+    @print(-i64Of(9007199254740991));
+    var n: i32 = 2147483640;
+    n += 7;
+    @print(n);
+}

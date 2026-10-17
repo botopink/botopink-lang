@@ -1,0 +1,24 @@
+//// commonJS patches `Array.prototype.slice` and `String.prototype.slice` with
+//// `default fn slice` (`libs/std/src/primitives.bp`), and the patch is global:
+//// host code — a sidecar, a Node template, Node itself — reaches it too. A
+//// host `.slice()` with no start answered `[]` (and `""`): the normalised start
+//// was `Math.min(undefined, n)`, `NaN`. Native `slice` reads a missing start
+//// as 0, and so does the patch now. jhonstart's sidecar `arr.slice()` copy is
+//// the finding. `.targets` is `commonJS`: the patch is that backend's alone.
+
+#[@External.Node("$0.slice()")]
+declare fn copyAll(xs: i32[]) -> i32[];
+
+#[@External.Node("$0.slice()")]
+declare fn copyText(s: string) -> string;
+
+#[@External.Node("$0.slice(undefined, 2)")]
+declare fn headTwo(xs: i32[]) -> i32[];
+
+pub fn main() {
+    val xs: i32[] = [1, 2, 3];
+    @print(copyAll(xs));
+    @print(copyText("abc"));
+    @print(headTwo(xs));
+    @print(xs.slice(1));
+}

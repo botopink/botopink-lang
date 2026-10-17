@@ -1,0 +1,39 @@
+//// Decision 214's premise: an integer is never `-0` — erlang, beam and wasm
+//// have no such value. JavaScript's `*`, `%`, unary `-` and a truncated `/`
+//// answer `-0` for `0 * -1`, `-x` with `x = 0`, `-4 % 2` and `0 / -3`, which
+//// commonJS printed as `-0` and which would make an `f64`'s total order (the
+//// run-time `__bp_eq` compares numbers with `Object.is`) tell two equal
+//// integers apart. The integer lowering canonicalises those four.
+////
+//// The last two rows go through a generic body, which on commonJS compares
+//// with `__bp_eq` whatever `T` is: two integer zeros are equal, an `f64`
+//// `0.0` and `-0.0` are not (`zero() * -1.0`, built at run time).
+
+fn zi() -> i32 {
+    return 0;
+}
+
+fn zero() -> f64 {
+    return 0.0;
+}
+
+fn same<T>(a: T, b: T) -> bool {
+    return a == b;
+}
+
+pub fn main() {
+    val x = zi();
+    val m = x * -1;
+    val n = -x;
+    val r = -4 % 2;
+    val q = x / -3;
+    @print(m);
+    @print(n);
+    @print(r);
+    @print(q);
+    @print([m, n, r, q]);
+    @print(0 * -1 == 0);
+    @print(m == 0);
+    @print(same(0, x * -1));
+    @print(same(0.0, zero() * -1.0));
+}

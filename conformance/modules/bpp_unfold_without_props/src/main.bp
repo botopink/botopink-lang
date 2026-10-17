@@ -1,0 +1,14 @@
+//// Front 116 — a `.bpp` file whose header declares no `Props` is the
+//// module's `pub default fn ()`; a file with no separator line is markup
+//// only; no decorator comes from a file's name: `page.bpp` imports the
+//// package's `page` decorator and writes none, so none runs (decisions 221,
+//// 285, 289).
+
+pub mod components;
+import {components.Banner, components.Bare, components.page as Page};
+
+pub fn main() {
+    @print(Banner());
+    @print(Bare());
+    @print(Page());
+}

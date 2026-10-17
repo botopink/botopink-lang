@@ -1,0 +1,32 @@
+//// Decision 415 (3) — the looked-up declaration's decorators run before the
+//// template body in one module too: the module's decorators run before its
+//// bodies and its `val`s are inferred (decision 372's first phase), so a call
+//// written above the annotated declaration reads the meta it records.
+
+type Table(name: string)
+
+fn tableOf(comptime q: @Expr<string>) -> @Expr<string> {
+    val decl = q.lookup(q.text()) ?? q.fail("`"
+        + q.text()
+        + "` is not in scope");
+    val t = decl.meta(Table) ?? q.fail("`" + q.text() + "` is not an entity");
+    return q.build("\"" + t.name + "\"");
+}
+
+val early = tableOf "User";
+
+fn report() -> string {
+    return tableOf "User";
+}
+
+fn entity(comptime decl: @Decl, comptime name: @Expr<string>) {
+    decl.setMeta(Table(name: name.value));
+}
+
+#[entity("users")]
+type User(id: i32)
+
+pub fn main() {
+    @print(early);
+    @print(report());
+}

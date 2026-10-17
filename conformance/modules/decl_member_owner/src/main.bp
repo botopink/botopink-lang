@@ -1,0 +1,71 @@
+//// Decision 526 — a member's `@Decl` names its owner: `decl.owner` is the
+//// `Declared<unknown>` of the type that holds the method or the field, `null`
+//// at module level. Two types each declare a method `find`; one decorator on
+//// both emits a module-level `val` named from `decl.owner!.name + "_" +
+//// decl.name` (and a function that reads it), so the two registrations never
+//// collide. A field's decorator and an enum's method read their owner the
+//// same way; a module-level function's reads `null`.
+
+fn register(comptime decl: @Decl) {
+    val owner = decl.owner!;
+    val reg = "reg_" + owner.name + "_" + decl.name;
+    @emit(
+        "val "
+            + reg
+            + " = \""
+            + owner.module
+            + "."
+            + owner.name
+            + "."
+            + decl.name
+            + "\";",
+    );
+    @emit("pub fn " + reg + "Text() -> string { return " + reg + "; }");
+}
+
+fn topLevel(comptime decl: @Decl) {
+    val owner = decl.owner?.name ?? "null";
+    @emit("val top_" + decl.name + " = \"" + owner + "\";");
+    @emit("pub fn top_"
+        + decl.name
+        + "Text() -> string { return top_"
+        + decl.name
+        + "; }");
+}
+
+type Users(id: i32) {
+    #[register]
+    fn find(self: Self) -> i32 {
+        return self.id;
+    }
+}
+
+type Orders(id: i32, #[register] total: i32) {
+    #[register]
+    fn find(self: Self) -> i32 {
+        return self.total;
+    }
+}
+
+type Status {
+    Open,
+    Closed,
+
+    #[register]
+    fn find(self: Self) -> i32 {
+        return 0;
+    }
+}
+
+#[topLevel]
+fn helper() -> i32 {
+    return 1;
+}
+
+pub fn main() {
+    @print(reg_Users_findText());
+    @print(reg_Orders_findText());
+    @print(reg_Orders_totalText());
+    @print(reg_Status_findText());
+    @print(top_helperText());
+}

@@ -1,0 +1,13 @@
+//// A function used as a value takes and answers its declared types: `half`
+//// bound to `halve` answers `1.75` for `3.5` on every target — wasm, which
+//// once called a function value through one `i32` word per argument and
+//// result and truncated the float (`00 · gate-wasm-wrong-answers`), included.
+
+fn halve(x: f64) -> f64 {
+    return x / 2.0;
+}
+
+pub fn main() {
+    val half = halve;
+    @print(half(3.5));
+}

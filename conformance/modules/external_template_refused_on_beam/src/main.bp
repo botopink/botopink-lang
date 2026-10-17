@@ -1,0 +1,14 @@
+//// Decision 141 — an `@External.Erlang` template the beam backend cannot
+//// compile is a build error at the call site naming the construct, never a
+//// template evaluated from source at run time. `?MODULE` is Erlang the erlang
+//// backend splices into its module and runs (`true`); the reader the beam
+//// backend compiles a template with takes no macro, so beam refuses the
+//// program — `external_template_refused_on_beam.beam.expect`. erlang and beam
+//// only: the template names no other host.
+
+#[@External.Erlang("""length(atom_to_list(?MODULE)) > 0""")]
+declare fn moduleNamed() -> bool;
+
+pub fn main() {
+    @print(moduleNamed());
+}

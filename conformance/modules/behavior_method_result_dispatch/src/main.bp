@@ -1,0 +1,60 @@
+//// Decision 304 (144 B-13) — a behavior method declared `-> @Result` dispatches
+//// and wraps as a function does: called through a parameter typed by the
+//// behavior, each implementation's `return v` is `Ok(v)`, its `throw e` is
+//// `Error(e)` and its `try` propagates the error; a `default fn` of the
+//// behavior that `try`s the dispatched method wraps the same.
+
+behavior KeyValueStore {
+    fn get(self: Self, key: string) -> @Result<string, string>;
+
+    default fn getTwice(self: Self, key: string) -> @Result<string, string> {
+        val once = try self.get(key);
+        return once + once;
+    }
+}
+
+type Memory(prefix: string) implement KeyValueStore {
+    fn get(self: Self, key: string) -> @Result<string, string> {
+        if (key == "") throw "empty key";
+        return self.prefix + key;
+    }
+}
+
+type Layered(inner: Memory) implement KeyValueStore {
+    fn get(self: Self, key: string) -> @Result<string, string> {
+        if (key == "secret") throw "denied";
+        val found = try self.inner.get(key);
+        return "[" + found + "]";
+    }
+}
+
+fn describe(r: @Result<string, string>) -> string {
+    return case r {
+        Ok(v) {
+            "ok " + v
+        }
+        Error(e) {
+            "error " + e
+        }
+    };
+}
+
+fn read(store: KeyValueStore, key: string) -> string {
+    return describe(store.get(key));
+}
+
+fn readTwice(store: KeyValueStore, key: string) -> string {
+    return describe(store.getTwice(key));
+}
+
+pub fn main() {
+    val memory = Memory(prefix: "m:");
+    val layered = Layered(inner: memory);
+    @print(read(memory, "a"));
+    @print(read(memory, ""));
+    @print(read(layered, "b"));
+    @print(read(layered, ""));
+    @print(read(layered, "secret"));
+    @print(readTwice(memory, "c"));
+    @print(readTwice(layered, ""));
+}

@@ -1,0 +1,19 @@
+//// The enums and the record `main` imports: an all-unit enum, an enum with
+//// a payload variant, and a record whose fields default to their variants.
+
+pub type Target {
+    Top,
+    Bottom,
+}
+
+pub type Place {
+    Here,
+    There(name: string),
+}
+
+pub type Anchor(
+    href: string,
+    target: Target = .Top,
+    place: Place = .Here,
+    fallback: ?Target = .Bottom,
+)

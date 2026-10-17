@@ -1,0 +1,49 @@
+//// Decision 343 — a duplicate across declarations (two commands of one
+//// name) is read where the catalogue is: at the entry point, with
+//// `@TypeInfo.all(with: …)`, and refused there at compile time naming both
+//// declarations — never by a decorator body collecting names in a
+//// module-level `var` (`reject/decorator_writes_module_var`).
+
+fn command(comptime decl: @Decl, comptime name: @Expr<string>) {
+    decl.setMeta("command", name.value);
+}
+
+#[command("deploy")]
+fn ship() -> i32 {
+    return 1;
+}
+
+#[command("deploy")]
+fn release() -> i32 {
+    return 2;
+}
+
+fn uniqueCommands(entries: Declared<unknown>[]) -> i32 {
+    var seen: string[] = [];
+    var owners: string[] = [];
+    for (entries) { d ->
+        for (d.meta) { m ->
+            var i = 0;
+            while (i < seen.length) {
+                if (seen.at(i) == m.value)
+                    @panic(
+                        "two commands named `"
+                            + m.value
+                            + "`: "
+                            + (owners.at(i) ?? "")
+                            + " and "
+                            + d.name,
+                    );
+                i = i + 1;
+            }
+            seen = seen.append([m.value]);
+            owners = owners.append([d.name]);
+        }
+    }
+    return seen.length;
+}
+
+pub fn main() {
+    val count = comptime uniqueCommands(@TypeInfo.all(with: command));
+    @print(count);
+}

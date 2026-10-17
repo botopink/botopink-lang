@@ -1,0 +1,32 @@
+//// 02-std-and-packaging/97-std-dedupe step 13, decision 319 — the explicit integer conversions
+//// `toI32()`, `toI64()`, `toU32()`, `toU64()` and `toF64()` are std's `Integer` methods, and a
+//// value that fits converts exactly on every target: the type's own bounds, a value past 2^53
+//// (a `BigInt` on commonJS) and an `f64` that holds the integer exactly. The parent declared none
+//// (`toI32` was no method of `i64`). A value that does not fit aborts:
+//// `run/integer_conversion_to_i32_aborts`, `run/integer_conversion_to_f64_inexact_aborts`.
+
+fn grow(a: i64, b: i64) -> i64 {
+    return a + b;
+}
+
+pub fn main() {
+    val small = 2147483647l;
+    @print(small.toI32());
+    @print(grow(-small, -1l).toI32());
+    @print(4294967295l.toU32());
+    @print(0l.toU32());
+    val big = grow(9007199254740991l, 2l);
+    @print(big.toU64());
+    @print(big.toI64());
+    @print(9223372036854775807ul.toI64());
+    @print(18446744073709551615ul.toU64());
+    @print(grow(big, 1l).toF64() == 9007199254740994.0);
+    @print(9223372036854775807l.toI64().toU64().toString());
+    @print(grow(-9007199254740991l, 0l).toF64() == -9007199254740991.0);
+    @print(7.toI64() + 9007199254740991l);
+    @print(7.toF64() / 2.0);
+    @print(4000000000ul.toI64());
+    @print(-5.toI64().toI32());
+    @print(1234567u.toU64().toI32());
+    @print(4611686018427387904l.toF64() == 4611686018427387904.0);
+}

@@ -1,0 +1,3 @@
+//// A traffic library: its `light` module declares a `Signal` enum.
+
+pub mod light;

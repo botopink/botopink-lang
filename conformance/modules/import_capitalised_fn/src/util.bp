@@ -1,0 +1,7 @@
+pub fn Make(n: i32) -> i32 {
+    return n + 100;
+}
+
+pub fn Scale(x: i32, by: i32) -> i32 {
+    return x * by;
+}

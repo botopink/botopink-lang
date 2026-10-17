@@ -1,0 +1,1 @@
+{ "name": "bpp_decorator_last_line", "dependencies": { "markup": { "path": "deps/markup" } }, "bpp": "markup" }

@@ -1,0 +1,7 @@
+//// Decision 247 — the lexer keeps the letters glued to a number with it
+//// and the parser names the spelling: `0b1f` is refused at the suffix.
+
+pub fn main() {
+    val n = 0b1f;
+    @print(n);
+}

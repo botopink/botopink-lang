@@ -1,0 +1,16 @@
+//// A function value's type is positional (`fn(i32, string) -> string`) and
+//// names no parameter, so a label in a call of it names nothing. It used to
+//// be ignored and the arguments zipped by position — `f(s: "x", n: 1)` was
+//// `f("x", 1)`, and with the labels the other way round it checked.
+
+fn describe(n: i32, s: string) -> string {
+    return s + n.toString();
+}
+
+fn apply(f: fn(i32, string) -> string) -> string {
+    return f(n: 1, s: "x");
+}
+
+pub fn main() {
+    @print(apply(describe));
+}

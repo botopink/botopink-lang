@@ -1,0 +1,18 @@
+//// A template function's `failAt` locates a span of its text in the
+//// caller's file: on the opening line of a `"""…"""` literal the text starts
+//// after the three quotes, so the caret is on the `!` itself (it stood two
+//// columns to its left, as after one quote).
+
+fn markup(comptime t: @Expr<string>) -> @Expr<i32> {
+    val text = t.text();
+    val at = text.indexOf("!");
+    if (at >= 0) {
+        t.failAt(Span(at, at + 1, 1), "markup: `!` is not markup");
+    }
+    return t.build(text.length().toString());
+}
+
+pub fn main() {
+    @print(markup """<p>bang!</p>
+""");
+}

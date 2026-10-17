@@ -1,0 +1,631 @@
+//! Decisions 238, 481 — what a `#[@External.Wasm(…)]` binding names: a closed
+//! vocabulary of four cells, each a labelled argument of the kind it names
+//! (decision 440 added `std:`), read and checked here before anything is
+//! lowered. The parser hands each cell on as one binding text
+//! (`ast.translateExternalCells`: `fn: tanBody` → `fn:tanBody`), which `parse`
+//! reads; a message names the cell as written (`ast.wasmCellDisplay`).
+//!
+//! | Cell | Means |
+//! |---|---|
+//! | `op: "<opcode>"` | one numeric wasm instruction over the declared parameters (`op: "f64.floor"`) |
+//! | `fn: <name>` | a private botopink `fn` of the same module, with the same signature |
+//! | `wasi: .<Adapter>` | a compiler adapter over the host (WASI preview 1 through the component, or the `browser` loader's JavaScript), from `adapters` (`.RaceOf` names `race_of`) |
+//! | `std: "<module>.<function>"` | a function std-wasm implements (`modules/std-wasm`, `std_wasm.exports`), transpiled into the program — the same cell the comptime runtime answers by (decision 440) — or a `.wat` leaf of `modules/std-wasm/wat/` (`std_leaves.zig`, front 164 s3), which a WasmGC module calls as its own function |
+//!
+//! The arguments are always the declared parameters, in order — there are no
+//! markers, no expression text and no way to name an address: nothing a
+//! binding writes exposes raw memory, and no runtime helper's name becomes a
+//! library's contract. Anything outside the vocabulary — another prefix, an
+//! opcode this table does not know, an opcode whose type disagrees with the
+//! signature, an adapter that is not listed — is an error at the annotation,
+//! never a guess (decision 67).
+//!
+//! The module is pure: it reads text and value types and answers a `Binding`
+//! or a message. `wat.zig` (`checkHostBindings`) resolves `fn:` against the
+//! declaring module and lowers each form; `conformance/docs.md` § Host bindings documents
+//! the adapters and is kept in step with `adapters` by
+//! `codegen/tests/wat.zig`'s drift test.
+
+const std = @import("std");
+const wat = @import("wat_ast.zig");
+const stdWasm = @import("std_wasm");
+const stdLeaves = @import("std_leaves.zig");
+const ast = @import("../../ast.zig");
+
+/// A numeric value type a binding's signature may spell, or `bool` — the
+/// `i32` a comparison answers, which a signature writes as `bool` — or
+/// `unknown`: a handle the adapter alone reads (a gate, decision 334), which
+/// no opcode takes.
+pub const Slot = enum { i32, i64, f32, f64, bool, unknown };
+
+/// One opcode: its full text (`f64.floor`), operand types and result.
+pub const Op = struct {
+    text: []const u8,
+    params: []const wat.ValType,
+    result: wat.ValType,
+    /// A comparison or `eqz`: the `i32` it answers is a truth value, so the
+    /// declared return is `bool`.
+    yields_bool: bool = false,
+};
+
+/// A type an adapter answering `@Task<T>` spells, over the declaration's one
+/// type parameter `T` (decision 393): checked by shape, never by the word a
+/// `T` happens to be.
+pub const Shape = enum {
+    i32,
+    /// The type parameter itself.
+    t,
+    /// `@Task<T>`.
+    task_t,
+    /// `@Task<Array<T>>` (`T[]`).
+    task_array_t,
+    /// `Array<@Task<T>>` — started tasks.
+    array_task_t,
+    /// `Array<fn() -> @Task<T>>` — unstarted ones.
+    array_thunk_task_t,
+    /// `fn() -> T` — a thunk (decision 518's `attempt`).
+    thunk_t,
+    /// `@Result<T, E>` over the type parameter, whatever `E`.
+    result_t,
+    /// Anything else.
+    other,
+
+    pub fn text(sh: Shape) []const u8 {
+        return switch (sh) {
+            .i32 => "i32",
+            .t => "T",
+            .task_t => "@Task<T>",
+            .task_array_t => "@Task<Array<T>>",
+            .array_task_t => "Array<@Task<T>>",
+            .array_thunk_task_t => "Array<fn() -> @Task<T>>",
+            .thunk_t => "fn() -> T",
+            .result_t => "@Result<T, string>",
+            .other => "another type",
+        };
+    }
+};
+
+/// An adapter over a generic `T` (decision 393's task adapters, decision
+/// 518's `attempt`): its parameters' and result's shapes.
+pub const TaskSig = struct { params: []const Shape, result: Shape };
+
+/// A host adapter: the compiler-owned bridge from a host call to a botopink
+/// value. `helper` is the prelude function the binding calls. Each has an
+/// implementation per host — WASI preview 2 through the `wasi` component's
+/// adapter, JavaScript in the `browser` loader — so one list serves both
+/// (decision 394).
+pub const Adapter = struct {
+    name: []const u8,
+    params: []const Slot = &.{},
+    result: ?Slot = null,
+    /// Set for an adapter answering `@Task<T>`: checked by shape instead of
+    /// `params` / `result`.
+    task: ?TaskSig = null,
+    /// Set for an adapter over fixed types that answers `@Task<result>` (a
+    /// gate's wait): the declared return is that task, never the bare value.
+    answers_task: bool = false,
+    /// What the adapter answers, for `conformance/docs.md`'s table and the diagnostics.
+    what: []const u8,
+};
+
+/// The adapters a `wasi:` binding may name — the list `conformance/docs.md` § Host
+/// bindings documents. Each is a prelude helper (`wat_prelude.zig`, the group
+/// of its name) named `__wasi_<name>`. `std/io/random`'s seeded stream is
+/// std-wasm's (decision 451), bound by `std:` cells, not an adapter.
+pub const adapters = [_]Adapter{
+    .{ .name = "random_f64", .params = &.{}, .result = .f64, .what = "a uniform `f64` in `[0.0, 1.0)` from 53 bits of `random_get`" },
+    .{ .name = "delay", .task = .{ .params = &.{ .i32, .t }, .result = .task_t }, .what = "a task that settles with the value once the milliseconds have passed on the host's monotonic clock (`wasi:clocks/monotonic-clock` and `wasi:io/poll` on `wasi`, `setTimeout` on `browser`)" },
+    .{ .name = "race", .task = .{ .params = &.{.array_task_t}, .result = .task_t }, .what = "the first of the started tasks to settle (the first settled one in input order when some already are); an empty list traps" },
+    .{ .name = "race_of", .task = .{ .params = &.{.array_thunk_task_t}, .result = .task_t }, .what = "each thunk called in order — its task runs to its first `await` — then raced; an empty list traps" },
+    .{ .name = "spawn_all", .task = .{ .params = &.{.array_thunk_task_t}, .result = .task_array_t }, .what = "each thunk called in order; the answers in input order once the last has settled" },
+    .{ .name = "gate_new", .result = .unknown, .what = "a closed gate: a pending task no host answers, opened by `gate_open`" },
+    .{ .name = "gate_open", .params = &.{.unknown}, .what = "the gate opened: every task waiting on it answers `true`, and each wait's own timer is dropped; opening an open gate changes nothing" },
+    .{ .name = "gate_await", .params = &.{ .unknown, .i32 }, .result = .bool, .answers_task = true, .what = "a task answering `true` once the gate is open (at once when it is), `false` when the milliseconds pass first on the host's monotonic clock (the `delay` adapter's pollable)" },
+    .{ .name = "attempt", .task = .{ .params = &.{.thunk_t}, .result = .result_t }, .what = "the thunk called inside a `try_table` catching the program's aborts (wasm exception handling, decision 518 — the binding declares `needs: [.Exceptions]`): `Ok` of its value, or `Error` of the abort's message" },
+};
+
+pub const Binding = union(enum) {
+    op: Op,
+    /// The private fn's name, as written.
+    fn_: []const u8,
+    wasi: Adapter,
+    /// The std function the program calls (decision 440 (3)): std-wasm's
+    /// export, a `.wat` leaf (front 164 s3), or both while the export stays.
+    std_: Std,
+};
+
+/// What a `std: "<module>.<function>"` cell names. Its types are checked
+/// against the declaration's by the caller, which spells them: an export's by
+/// `std_wasm.matches` (the checker refuses a mismatch on every target,
+/// `infer.refuseStdBinding`), a leaf's by its GC signature in a WasmGC module
+/// (`wat.zig` `checkHostBinding`).
+pub const Std = struct {
+    name: []const u8,
+    /// std-wasm's export of the name, transpiled from `std_wasm.wasm` — what a
+    /// module lowered in linear memory calls.
+    wasm: ?stdWasm.Export = null,
+    /// The `.wat` leaf of the name (`std_leaves.zig`) — what a WasmGC module
+    /// calls.
+    leaf: ?stdLeaves.Leaf = null,
+};
+
+/// The signature a binding is checked against: the declared parameters'
+/// slots (null for a type no numeric slot spells — a string, an array, a
+/// record) and the declared return's (null for `void` / no return; `other`
+/// set when the return is a non-numeric type).
+pub const Signature = struct {
+    params: []const ?Slot,
+    result: ?Slot,
+    result_other: bool = false,
+    /// The declaration's parameter shapes over its one type parameter
+    /// (decision 393) — null when it declares no type parameter or several.
+    shapes: ?[]const Shape = null,
+    result_shape: Shape = .other,
+    /// The declared return is a `@Task<…>` (its slot is the task's value).
+    result_task: bool = false,
+};
+
+/// The signature `f` declares, as `parse` checks a binding against it: each
+/// parameter's numeric slot (`self` skipped), the return's, and — when `f`
+/// declares one type parameter — the shapes over it (decision 393). The
+/// checker reads every target's `@External.Wasm` with it, the wasm backend
+/// its build's: one reading, so a binding no wasm build reaches is refused
+/// as a wasm build refuses it.
+pub fn signatureOf(alloc: std.mem.Allocator, f: ast.FnDecl) !Signature {
+    var slots: std.ArrayListUnmanaged(?Slot) = .empty;
+    for (f.params) |p| {
+        if (std.mem.eql(u8, p.name, "self")) continue;
+        try slots.append(alloc, slotOf(p.typeRef));
+    }
+    const rslot: ?Slot = if (f.returnType) |rt| slotOf(rt) else null;
+    const result_other = if (f.returnType) |rt| rslot == null and !isVoid(rt) else false;
+    var shapes: ?[]const Shape = null;
+    var result_shape: Shape = .other;
+    if (f.genericParams.len == 1) {
+        const tp = f.genericParams[0].name;
+        var list: std.ArrayListUnmanaged(Shape) = .empty;
+        for (f.params) |p| {
+            if (std.mem.eql(u8, p.name, "self")) continue;
+            try list.append(alloc, shapeOf(p.typeRef, tp));
+        }
+        shapes = list.items;
+        if (f.returnType) |rt| result_shape = shapeOf(rt, tp);
+    }
+    const result_task = if (f.returnType) |rt| taskValue(rt) != null else false;
+    return .{ .params = slots.items, .result = rslot, .result_other = result_other, .shapes = shapes, .result_shape = result_shape, .result_task = result_task };
+}
+
+/// `@Task<T>` / `@Component<T>` read as their `T` — what a binding's slot
+/// is checked by (the backend's `eagerTypeRef`).
+fn eager(t: ast.TypeRef) ast.TypeRef {
+    return switch (t) {
+        .generic => |g| if (g.is_builtin and g.args.len == 1 and (std.mem.eql(u8, g.name, "Task") or std.mem.eql(u8, g.name, "Component")))
+            eager(g.args[0])
+        else
+            t,
+        else => t,
+    };
+}
+
+fn isVoid(t: ast.TypeRef) bool {
+    return switch (eager(t)) {
+        .named => |n| std.mem.eql(u8, n, "void"),
+        .optional => |inner| isVoid(inner.*),
+        else => false,
+    };
+}
+
+/// The numeric slot a written type spells; null for any other type.
+fn slotOf(t: ast.TypeRef) ?Slot {
+    return switch (eager(t)) {
+        .named => |n| inline for (.{ "i32", "i64", "f32", "f64", "bool", "unknown" }) |k| {
+            if (std.mem.eql(u8, n, k)) break @field(Slot, k);
+        } else null,
+        else => null,
+    };
+}
+
+/// The `T` of a `@Task<T>`.
+fn taskValue(t: ast.TypeRef) ?ast.TypeRef {
+    return switch (t) {
+        .generic => |g| if (g.is_builtin and g.args.len == 1 and std.mem.eql(u8, g.name, "Task")) g.args[0] else null,
+        else => null,
+    };
+}
+
+/// The element type of `T[]` / `Array<T>`.
+fn arrayElem(t: ast.TypeRef) ?ast.TypeRef {
+    return switch (t) {
+        .array => |el| el.*,
+        .generic => |g| if (std.mem.eql(u8, g.name, "Array") and g.args.len == 1) g.args[0] else null,
+        else => null,
+    };
+}
+
+fn isParam(t: ast.TypeRef, tp: []const u8) bool {
+    return t == .named and std.mem.eql(u8, t.named, tp);
+}
+
+/// The shape `t` spells over the type parameter `tp` (decision 393).
+fn shapeOf(t: ast.TypeRef, tp: []const u8) Shape {
+    switch (t) {
+        .named => |n| {
+            if (std.mem.eql(u8, n, tp)) return .t;
+            if (std.mem.eql(u8, n, "i32")) return .i32;
+            return .other;
+        },
+        else => {},
+    }
+    if (taskValue(t)) |inner| {
+        if (isParam(inner, tp)) return .task_t;
+        if (arrayElem(inner)) |el| if (isParam(el, tp)) return .task_array_t;
+        return .other;
+    }
+    if (arrayElem(t)) |el| {
+        if (taskValue(el)) |v| if (isParam(v, tp)) return .array_task_t;
+        if (el == .function and el.function.params.len == 0) if (taskValue(el.function.returnType.*)) |v| if (isParam(v, tp)) return .array_thunk_task_t;
+    }
+    if (t == .function and t.function.params.len == 0 and isParam(t.function.returnType.*, tp)) return .thunk_t;
+    if (t == .generic and t.generic.is_builtin and std.mem.eql(u8, t.generic.name, "Result") and t.generic.args.len == 2 and isParam(t.generic.args[0], tp)) return .result_t;
+    return .other;
+}
+
+/// A refused binding: the message, owned by the caller's allocator.
+pub const Refused = struct { message: []u8 };
+
+pub const Result = union(enum) { ok: Binding, refused: Refused };
+
+/// Reads `text` (the annotation's string, unquoted). `fn:` is only split
+/// here; its name is resolved by the caller, which knows the module.
+pub fn parse(alloc: std.mem.Allocator, text: []const u8, sig: Signature) !Result {
+    // Decision 481 — a message names the cell as it is written: `fn: x`,
+    // `op: "f64.floor"`, `wasi: .Delay`, `std: "hash.contentHash"`.
+    const shown = try ast.wasmCellDisplay(alloc, text);
+    defer alloc.free(shown);
+    if (std.mem.startsWith(u8, text, "op:")) {
+        const name = text["op:".len..];
+        const op = findOp(name) orelse return refused(alloc, "`#[@External.Wasm({s})]`: `{s}` is not a wasm numeric instruction this backend binds (an `op:` names one opcode, e.g. `op: \"f64.floor\"`)", .{ shown, name });
+        if (try checkOp(alloc, shown, op, sig)) |r| return r;
+        return .{ .ok = .{ .op = op } };
+    }
+    if (std.mem.startsWith(u8, text, "fn:")) {
+        const name = text["fn:".len..];
+        if (!isIdent(name)) return refused(alloc, "`#[@External.Wasm({s})]`: `fn:` names a private fn of this module by its identifier — `fn: name`", .{shown});
+        return .{ .ok = .{ .fn_ = name } };
+    }
+    if (std.mem.startsWith(u8, text, "wasi:")) {
+        const name = text["wasi:".len..];
+        const value = shown["wasi: ".len..];
+        const ad = findAdapter(name) orelse return refused(alloc, "`#[@External.Wasm({s})]`: `{s}` is not a WASI adapter — the adapters are listed in conformance/docs.md § Host bindings ({s})", .{ shown, value, adapterNames() });
+        if (ad.task) |ts| {
+            const ok = if (sig.shapes) |shapes| shapes.len == ts.params.len and std.mem.eql(Shape, shapes, ts.params) and sig.result_shape == ts.result else false;
+            if (ok) return .{ .ok = .{ .wasi = ad } };
+            const shape = try taskSigText(alloc, ts);
+            defer alloc.free(shape);
+            return refused(alloc, "`#[@External.Wasm({s})]`: the adapter `{s}` is `{s}` over one type parameter `T`; the declaration's signature differs", .{ shown, value, shape });
+        }
+        if (sig.params.len != ad.params.len or !slotsEql(sig.params, ad.params) or !resultEql(sig, ad.result) or sig.result_task != ad.answers_task) {
+            const takes = try slotsText(alloc, ad.params);
+            defer alloc.free(takes);
+            const answers = if (ad.answers_task) try std.fmt.allocPrint(alloc, "@Task<{s}>", .{slotText(ad.result)}) else try alloc.dupe(u8, slotText(ad.result));
+            defer alloc.free(answers);
+            return refused(alloc, "`#[@External.Wasm({s})]`: the adapter `{s}` takes {s} and answers {s}; the declaration's signature differs", .{ shown, value, takes, answers });
+        }
+        return .{ .ok = .{ .wasi = ad } };
+    }
+    if (std.mem.startsWith(u8, text, "std:")) {
+        const name = text["std:".len..];
+        // Front 164 s3: a `.wat` leaf answers the name in a WasmGC module;
+        // std-wasm's export, while it stays, in linear memory.
+        const e = stdWasm.find(name);
+        const leaf = stdLeaves.find(name);
+        if (e == null and leaf == null) {
+            const leaves = try stdLeaves.names(alloc);
+            defer alloc.free(leaves);
+            return refused(alloc, "`#[@External.Wasm({s})]`: std-wasm implements no `{s}` — a `std:` binding names one of its functions ({s}) or one of its `.wat` leaves ({s})", .{ shown, name, stdWasm.names, leaves });
+        }
+        return .{ .ok = .{ .std_ = .{ .name = name, .wasm = e, .leaf = leaf } } };
+    }
+    return refused(alloc, "`#[@External.Wasm({s})]` is none of the four cells a wasm binding takes: `op: \"<opcode>\"`, `fn: <private fn of this module>`, `wasi: .<Adapter>`, `std: \"<module>.<function>\"`", .{shown});
+}
+
+fn refused(alloc: std.mem.Allocator, comptime f: []const u8, args: anytype) !Result {
+    return .{ .refused = .{ .message = try std.fmt.allocPrint(alloc, f, args) } };
+}
+
+fn checkOp(alloc: std.mem.Allocator, text: []const u8, op: Op, sig: Signature) !?Result {
+    var ok = sig.params.len == op.params.len and !sig.result_other;
+    if (ok) for (sig.params, op.params) |p, want| {
+        const got = p orelse {
+            ok = false;
+            break;
+        };
+        if (got == .bool or !std.mem.eql(u8, @tagName(got), @tagName(want))) ok = false;
+    };
+    if (ok) {
+        const r = sig.result orelse return try refused(alloc, "`#[@External.Wasm({s})]`: `{s}` answers a value; the declaration answers none", .{ text, op.text });
+        ok = if (op.yields_bool) r == .bool else (r != .bool and std.mem.eql(u8, @tagName(r), @tagName(op.result)));
+    }
+    if (ok) return null;
+    var buf: std.ArrayListUnmanaged(u8) = .empty;
+    defer buf.deinit(alloc);
+    try buf.append(alloc, '(');
+    for (op.params, 0..) |p, i| {
+        if (i > 0) try buf.appendSlice(alloc, ", ");
+        try buf.appendSlice(alloc, @tagName(p));
+    }
+    try buf.appendSlice(alloc, ") -> ");
+    try buf.appendSlice(alloc, if (op.yields_bool) "bool" else @tagName(op.result));
+    return try refused(alloc, "`#[@External.Wasm({s})]`: `{s}` is `{s}`, and the declared parameters and return must be exactly those types", .{ text, op.text, buf.items });
+}
+
+fn slotsEql(a: []const ?Slot, b: []const Slot) bool {
+    for (a, b) |x, y| if (x == null or x.? != y) return false;
+    return true;
+}
+
+fn resultEql(sig: Signature, want: ?Slot) bool {
+    if (sig.result_other) return false;
+    if (want == null) return sig.result == null;
+    return sig.result != null and sig.result.? == want.?;
+}
+
+fn slotText(s: ?Slot) []const u8 {
+    return if (s) |x| @tagName(x) else "nothing";
+}
+
+/// The adapter's parameter list as text, owned by the caller.
+fn slotsText(alloc: std.mem.Allocator, ss: []const Slot) ![]u8 {
+    if (ss.len == 0) return alloc.dupe(u8, "no parameter");
+    var buf: std.ArrayListUnmanaged(u8) = .empty;
+    errdefer buf.deinit(alloc);
+    try buf.append(alloc, '(');
+    for (ss, 0..) |s, i| {
+        if (i > 0) try buf.appendSlice(alloc, ", ");
+        try buf.appendSlice(alloc, @tagName(s));
+    }
+    try buf.append(alloc, ')');
+    return buf.toOwnedSlice(alloc);
+}
+
+/// `(i32, T) -> @Task<T>` — an adapter's shape as `conformance/docs.md` writes it,
+/// owned by the caller.
+pub fn taskSigText(alloc: std.mem.Allocator, ts: TaskSig) ![]u8 {
+    var buf: std.ArrayListUnmanaged(u8) = .empty;
+    errdefer buf.deinit(alloc);
+    try buf.append(alloc, '(');
+    for (ts.params, 0..) |p, i| {
+        if (i > 0) try buf.appendSlice(alloc, ", ");
+        try buf.appendSlice(alloc, p.text());
+    }
+    try buf.appendSlice(alloc, ") -> ");
+    try buf.appendSlice(alloc, ts.result.text());
+    return buf.toOwnedSlice(alloc);
+}
+
+/// The adapters as a `wasi:` cell writes them (decision 481): `.RandomF64`,
+/// `.Delay`, … — each name in PascalCase. Public for the test that holds
+/// `external_wasm_wasi_unknown`'s refusal to this list (decision 478).
+pub fn adapterNames() []const u8 {
+    comptime var text: []const u8 = "";
+    inline for (adapters, 0..) |a, i| text = text ++ (if (i > 0) ", " else "") ++ "." ++ comptime pascal(a.name);
+    return text;
+}
+
+/// `race_of` → `RaceOf`, at compile time.
+fn pascal(comptime name: []const u8) []const u8 {
+    comptime var out: []const u8 = "";
+    comptime var up = true;
+    inline for (name) |c| {
+        if (c == '_') {
+            up = true;
+        } else {
+            out = out ++ &[_]u8{if (up) std.ascii.toUpper(c) else c};
+            up = false;
+        }
+    }
+    return out;
+}
+
+pub fn findAdapter(name: []const u8) ?Adapter {
+    for (adapters) |a| if (std.mem.eql(u8, a.name, name)) return a;
+    return null;
+}
+
+fn isIdent(s: []const u8) bool {
+    if (s.len == 0) return false;
+    for (s, 0..) |c, i| {
+        const ok = std.ascii.isAlphabetic(c) or c == '_' or (i > 0 and std.ascii.isDigit(c));
+        if (!ok) return false;
+    }
+    return true;
+}
+
+// ── the opcode table ─────────────────────────────────────────────────────────
+//
+// The MVP numeric instructions, by shape. Memory, control, local/global and
+// reference instructions are not in it: a binding names a computation over
+// its parameters, never a place.
+
+const int_unary = [_][]const u8{ "clz", "ctz", "popcnt" };
+const int_binary = [_][]const u8{ "add", "sub", "mul", "div_s", "div_u", "rem_s", "rem_u", "and", "or", "xor", "shl", "shr_s", "shr_u", "rotl", "rotr" };
+const int_compare = [_][]const u8{ "eq", "ne", "lt_s", "lt_u", "gt_s", "gt_u", "le_s", "le_u", "ge_s", "ge_u" };
+const float_unary = [_][]const u8{ "abs", "neg", "ceil", "floor", "trunc", "nearest", "sqrt" };
+const float_binary = [_][]const u8{ "add", "sub", "mul", "div", "min", "max", "copysign" };
+const float_compare = [_][]const u8{ "eq", "ne", "lt", "gt", "le", "ge" };
+
+const Conversion = struct { text: []const u8, from: wat.ValType, to: wat.ValType };
+const conversions = [_]Conversion{
+    .{ .text = "i32.wrap_i64", .from = .i64, .to = .i32 },
+    .{ .text = "i64.extend_i32_s", .from = .i32, .to = .i64 },
+    .{ .text = "i64.extend_i32_u", .from = .i32, .to = .i64 },
+    .{ .text = "i32.trunc_f32_s", .from = .f32, .to = .i32 },
+    .{ .text = "i32.trunc_f32_u", .from = .f32, .to = .i32 },
+    .{ .text = "i32.trunc_f64_s", .from = .f64, .to = .i32 },
+    .{ .text = "i32.trunc_f64_u", .from = .f64, .to = .i32 },
+    .{ .text = "i64.trunc_f32_s", .from = .f32, .to = .i64 },
+    .{ .text = "i64.trunc_f32_u", .from = .f32, .to = .i64 },
+    .{ .text = "i64.trunc_f64_s", .from = .f64, .to = .i64 },
+    .{ .text = "i64.trunc_f64_u", .from = .f64, .to = .i64 },
+    .{ .text = "f32.convert_i32_s", .from = .i32, .to = .f32 },
+    .{ .text = "f32.convert_i32_u", .from = .i32, .to = .f32 },
+    .{ .text = "f32.convert_i64_s", .from = .i64, .to = .f32 },
+    .{ .text = "f32.convert_i64_u", .from = .i64, .to = .f32 },
+    .{ .text = "f64.convert_i32_s", .from = .i32, .to = .f64 },
+    .{ .text = "f64.convert_i32_u", .from = .i32, .to = .f64 },
+    .{ .text = "f64.convert_i64_s", .from = .i64, .to = .f64 },
+    .{ .text = "f64.convert_i64_u", .from = .i64, .to = .f64 },
+    .{ .text = "f32.demote_f64", .from = .f64, .to = .f32 },
+    .{ .text = "f64.promote_f32", .from = .f32, .to = .f64 },
+    .{ .text = "i32.reinterpret_f32", .from = .f32, .to = .i32 },
+    .{ .text = "i64.reinterpret_f64", .from = .f64, .to = .i64 },
+    .{ .text = "f32.reinterpret_i32", .from = .i32, .to = .f32 },
+    .{ .text = "f64.reinterpret_i64", .from = .i64, .to = .f64 },
+};
+
+fn tyOf(s: []const u8) ?wat.ValType {
+    inline for (.{ wat.ValType.i32, .i64, .f32, .f64 }) |t| if (std.mem.eql(u8, s, @tagName(t))) return t;
+    return null;
+}
+
+fn listed(list: []const []const u8, s: []const u8) bool {
+    for (list) |x| if (std.mem.eql(u8, x, s)) return true;
+    return false;
+}
+
+/// The opcode `text` spells (`f64.floor`, `i32.add`, `f64.convert_i32_s`),
+/// or null for anything the table does not hold.
+pub fn findOp(text: []const u8) ?Op {
+    for (conversions) |c| if (std.mem.eql(u8, c.text, text))
+        return .{ .text = c.text, .params = oneOf(c.from), .result = c.to };
+    const dot = std.mem.indexOfScalar(u8, text, '.') orelse return null;
+    const ty = tyOf(text[0..dot]) orelse return null;
+    const name = text[dot + 1 ..];
+    const one = oneOf(ty);
+    const two = twoOf(ty);
+    switch (ty) {
+        .i32, .i64 => {
+            if (std.mem.eql(u8, name, "eqz")) return .{ .text = text, .params = one, .result = .i32, .yields_bool = true };
+            if (listed(&int_unary, name)) return .{ .text = text, .params = one, .result = ty };
+            if (listed(&int_binary, name)) return .{ .text = text, .params = two, .result = ty };
+            if (listed(&int_compare, name)) return .{ .text = text, .params = two, .result = .i32, .yields_bool = true };
+        },
+        .f32, .f64 => {
+            if (listed(&float_unary, name)) return .{ .text = text, .params = one, .result = ty };
+            if (listed(&float_binary, name)) return .{ .text = text, .params = two, .result = ty };
+            if (listed(&float_compare, name)) return .{ .text = text, .params = two, .result = .i32, .yields_bool = true };
+        },
+        else => {},
+    }
+    return null;
+}
+
+fn oneOf(t: wat.ValType) []const wat.ValType {
+    return switch (t) {
+        .i32 => &.{.i32},
+        .i64 => &.{.i64},
+        .f32 => &.{.f32},
+        .f64 => &.{.f64},
+        else => &.{},
+    };
+}
+
+fn twoOf(t: wat.ValType) []const wat.ValType {
+    return switch (t) {
+        .i32 => &.{ .i32, .i32 },
+        .i64 => &.{ .i64, .i64 },
+        .f32 => &.{ .f32, .f32 },
+        .f64 => &.{ .f64, .f64 },
+        else => &.{},
+    };
+}
+
+/// The opcode's shape for the instruction model: a conversion is a
+/// `.convert`, everything else an `.op` of its type and name.
+pub fn instrOf(op: Op) wat.Instr {
+    for (conversions) |c| if (std.mem.eql(u8, c.text, op.text)) return .{ .convert = c.text };
+    const dot = std.mem.indexOfScalar(u8, op.text, '.').?;
+    return .{ .op = .{ .ty = tyOf(op.text[0..dot]).?, .name = op.text[dot + 1 ..] } };
+}
+
+test "host binding: the three forms and their refusals" {
+    const a = std.testing.allocator;
+    const f64x1 = Signature{ .params = &.{.f64}, .result = .f64 };
+    {
+        const r = try parse(a, "op:f64.floor", f64x1);
+        try std.testing.expectEqualStrings("f64.floor", r.ok.op.text);
+    }
+    {
+        const r = try parse(a, "op:f64.flor", f64x1);
+        defer a.free(r.refused.message);
+        try std.testing.expect(std.mem.indexOf(u8, r.refused.message, "`f64.flor` is not a wasm numeric instruction") != null);
+    }
+    {
+        const r = try parse(a, "op:f64.min", f64x1);
+        defer a.free(r.refused.message);
+        try std.testing.expect(std.mem.indexOf(u8, r.refused.message, "`(f64, f64) -> f64`") != null);
+    }
+    {
+        const r = try parse(a, "op:f64.lt", .{ .params = &.{ .f64, .f64 }, .result = .f64 });
+        defer a.free(r.refused.message);
+        try std.testing.expect(std.mem.indexOf(u8, r.refused.message, "-> bool") != null);
+    }
+    {
+        const r = try parse(a, "fn:powBody", f64x1);
+        try std.testing.expectEqualStrings("powBody", r.ok.fn_);
+    }
+    {
+        const r = try parse(a, "wasi:random_f64", .{ .params = &.{}, .result = .f64 });
+        try std.testing.expectEqualStrings("random_f64", r.ok.wasi.name);
+    }
+    {
+        const r = try parse(a, "wasi:random_f64", .{ .params = &.{.f64}, .result = .f64 });
+        defer a.free(r.refused.message);
+        try std.testing.expect(std.mem.indexOf(u8, r.refused.message, "takes no parameter and answers f64") != null);
+    }
+    {
+        // Decision 451: the seeded stream left the adapters for std-wasm.
+        const r = try parse(a, "wasi:seed_u32", .{ .params = &.{.i32}, .result = null });
+        defer a.free(r.refused.message);
+        try std.testing.expect(std.mem.indexOf(u8, r.refused.message, "is not a WASI adapter") != null);
+    }
+    {
+        const r = try parse(a, "wasi:clock_time_get", .{ .params = &.{}, .result = .f64 });
+        defer a.free(r.refused.message);
+        try std.testing.expect(std.mem.indexOf(u8, r.refused.message, "is not a WASI adapter") != null);
+    }
+    {
+        const r = try parse(a, "wasi:delay", .{ .params = &.{ .i32, null }, .result = null, .result_other = true, .shapes = &.{ .i32, .t }, .result_shape = .task_t });
+        try std.testing.expectEqualStrings("delay", r.ok.wasi.name);
+    }
+    {
+        const r = try parse(a, "wasi:delay", .{ .params = &.{null}, .result = null, .result_other = true, .shapes = &.{.t}, .result_shape = .task_t });
+        defer a.free(r.refused.message);
+        try std.testing.expect(std.mem.indexOf(u8, r.refused.message, "is `(i32, T) -> @Task<T>` over one type parameter `T`") != null);
+    }
+    {
+        const r = try parse(a, "wasi:race_of", .{ .params = &.{null}, .result = null, .result_other = true, .shapes = null });
+        defer a.free(r.refused.message);
+        try std.testing.expect(std.mem.indexOf(u8, r.refused.message, "`(Array<fn() -> @Task<T>>) -> @Task<T>`") != null);
+    }
+    {
+        const r = try parse(a, "$0 + 1", f64x1);
+        defer a.free(r.refused.message);
+        try std.testing.expect(std.mem.indexOf(u8, r.refused.message, "none of the four cells") != null);
+    }
+    {
+        const r = try parse(a, "std:hash.contentHash", .{ .params = &.{null}, .result = null, .result_other = true });
+        try std.testing.expectEqualStrings("hash.contentHash", r.ok.std_.name);
+        try std.testing.expect(r.ok.std_.wasm != null and r.ok.std_.leaf == null);
+    }
+    {
+        // Front 164 s3: a `.wat` leaf, its std-wasm export still beside it.
+        const r = try parse(a, "std:text.length", .{ .params = &.{null}, .result = .i32 });
+        try std.testing.expect(r.ok.std_.leaf != null and r.ok.std_.wasm != null);
+    }
+    {
+        const r = try parse(a, "std:hash.sha256", .{ .params = &.{null}, .result = null, .result_other = true });
+        defer a.free(r.refused.message);
+        try std.testing.expect(std.mem.indexOf(u8, r.refused.message, "std-wasm implements no `hash.sha256`") != null);
+    }
+}

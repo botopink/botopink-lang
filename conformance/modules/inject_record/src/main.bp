@@ -1,0 +1,40 @@
+//// Decision 416 (1) — `use inject(Deps)` builds the record `Deps` from the
+//// contexts of its fields' types: each field the nearest context of its type
+//// provided above (`Clock` in `Root`), else that type's declared default
+//// (`Greeter`), else the field's own default (`retries`).
+
+import {context.createContext, context.provide, context.context, context.inject} from "std";
+
+type View(text: string) implement @Renderable
+
+type Clock(now: string)
+
+type Greeter(word: string)
+
+type Deps(clock: Clock, greeter: Greeter, retries: i32 = 3)
+
+pub val clockContext = comptime createContext(Clock(now: "never"));
+
+pub val greeterContext = comptime createContext(Greeter(word: "hello"));
+
+fn Page() -> @Component<View> {
+    val deps = use inject(Deps);
+    return View(text: deps.greeter.word
+        + " at "
+        + deps.clock.now
+        + " x"
+        + deps.retries.toString());
+}
+
+fn Root() -> @Component<View> {
+    use provide(createContext(Clock(now: "noon")));
+    val p = Page();
+    return View(text: p.text);
+}
+
+pub fn main() -> @Task<void> {
+    val outside = await Page();
+    @print(outside.text);
+    val inside = await Root();
+    @print(inside.text);
+}

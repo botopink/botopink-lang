@@ -1,0 +1,17 @@
+//// Decision 541 (2) — a `yield` in a block `{ … }` or in a `case` arm's block
+//// feeds the enclosing generator, and the block still answers its tail.
+
+fn items() -> @Iterator<i32> {
+    yield 0;
+    { yield 1; yield 2; }
+    case 3 {
+        3 { yield 3; }
+        _ { yield 4; }
+    }
+    val x = { yield 5; 6 };
+    yield x;
+}
+
+pub fn main() {
+    for (items()) { v -> @print(v); }
+}

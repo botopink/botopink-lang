@@ -1,0 +1,1 @@
+{ "name": "std_io_process_forward_signals", "targets": ["commonJS", "erlang", "beam"] }

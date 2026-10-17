@@ -1,0 +1,14 @@
+//// Imports `beta`: its executors run after `beta`'s.
+
+import {marks.registered};
+import {beta.second};
+
+#[registered]
+pub fn first() -> string {
+    return "first";
+}
+
+#[registered]
+pub fn later() -> string {
+    return second();
+}

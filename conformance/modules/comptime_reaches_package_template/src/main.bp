@@ -1,0 +1,23 @@
+//// 01-compiler/14 step 8 — a `comptime` reaching a template expansion
+//// evaluates, and a record it answers is lifted as its constructor. `ready()`
+//// interpolates `badges "ready"`, whose built code calls the package's
+//// `makeBadge` under the template's alias (decision 112): the comptime carries
+//// the expansion and that function. `whole` is a `Badge`, a type this module
+//// does not import: it is written as the package type's constructor, imported
+//// where it is written.
+
+import badges from "badges";
+
+fn ready() -> string {
+    return "${(badges "ready").label}!";
+}
+
+pub val label = comptime ready();
+
+pub val whole = comptime badges "done";
+
+pub fn main() {
+    @print(label);
+    @print(whole.label);
+    @print(whole.size);
+}

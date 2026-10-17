@@ -1,0 +1,16 @@
+//// Decision 112, row 3: the consumer declares its own `double`, and the
+//// library's `double(` … `)` is still the library's. Before, the expansion
+//// resolved it here and SILENTLY called this one: `21` at exit 0, where the
+//// library means `40`.
+
+import shapesdsl, {area} from "shapesdsl";
+
+fn double(x: i32) -> i32 {
+    return x + 1;
+}
+
+pub fn main() {
+    val x = shapesdsl "area(4, 5)";
+    @print(x);
+    @print(double(1));
+}

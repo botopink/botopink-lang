@@ -1,0 +1,24 @@
+//// 01-checker step 20's finding, step 21 (decisions 266, 331) — a
+//// module-level `comptime` `val` declared after an import is emitted on every
+//// target. The parent binary dropped it on commonJS (`ReferenceError: short
+//// is not defined`) and refused it on wasm: the `ct_<i>` entries were numbered
+//// by binding, which the backends read by declaration. A module-level
+//// `comptime` may call a function now, and build a record.
+
+import {collections.Dict} from "std";
+
+fn two() -> i32 {
+    return 2;
+}
+
+val short = comptime 2 + 3;
+
+val called = comptime two() * 10;
+
+val table: Dict<string, i32> = comptime Dict.empty().insert("k", 7);
+
+pub fn main() {
+    @print(short);
+    @print(called);
+    @print(table["k"] ?? 0);
+}

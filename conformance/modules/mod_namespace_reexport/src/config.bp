@@ -1,0 +1,4 @@
+// src/config.bp
+pub fn label(s: string) -> string {
+    return "[" + s + "]";
+}

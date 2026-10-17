@@ -1,0 +1,12 @@
+//// Decision 425 — a template call expands wherever an expression may
+//// stand: in a lambda a module-level `val` holds too.
+
+fn shout(comptime q: @Expr<string>) -> @Expr<string> {
+    return q.build("\"template " + q.text() + "\"");
+}
+
+val g = { -> shout "x" };
+
+pub fn main() {
+    @print(g());
+}

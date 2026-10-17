@@ -1,0 +1,4 @@
+botopink-cell 1
+refused error[any-params-outside-decl]: `fn(..)` names a function of any parameters only as a decorator's `@Decl<fn(..) -> R>` pattern (decision 316)
+at src/main.bp:5:16
+label write the parameters' types

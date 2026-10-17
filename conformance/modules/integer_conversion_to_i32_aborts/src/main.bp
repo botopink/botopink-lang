@@ -1,0 +1,13 @@
+//// 02-std-and-packaging/97-std-dedupe step 13, decision 319 — `toI32()` of a value past `i32`
+//// aborts naming the value, on every target; it never wraps (`2147483648` is not `-2147483648`)
+//// and never saturates. The parent declared no `toI32`.
+
+fn grow(a: i64, b: i64) -> i64 {
+    return a + b;
+}
+
+pub fn main() {
+    @print(grow(2147483646l, 1l).toI32());
+    @print(grow(2147483647l, 1l).toI32());
+    @print("unreachable");
+}

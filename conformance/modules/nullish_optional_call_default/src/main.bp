@@ -1,0 +1,35 @@
+//// Decision 330 — the default of `??` may itself be a `?.()` call, defaulted
+//// again by a further `??`: `a ?? f?.(x) ?? d` takes the first present value,
+//// and a default is evaluated only when everything before it is absent, on
+//// every target.
+
+fn primary(present: bool) -> ?fn(i32) -> i32 {
+    val f: fn(i32) -> i32 = { n -> n + 10 };
+    return if (present) f else null;
+}
+
+fn backup(present: bool) -> ?fn(i32) -> i32 {
+    @print("backup");
+    val f: fn(i32) -> i32 = { n -> n + 100 };
+    return if (present) f else null;
+}
+
+fn greeter(present: bool) -> ?fn(string) -> string {
+    val f: fn(string) -> string = { s -> "hi " + s };
+    return if (present) f else null;
+}
+
+fn nickname(present: bool) -> ?string {
+    return if (present) "bo" else null;
+}
+
+pub fn main() {
+    @print(primary(true)?.(1) ?? backup(true)?.(1) ?? -1);
+    @print(primary(false)?.(1) ?? backup(true)?.(1) ?? -1);
+    @print(primary(false)?.(1) ?? backup(false)?.(1) ?? -1);
+    @print(nickname(true) ?? greeter(true)?.("you") ?? "nobody");
+    @print(nickname(false) ?? greeter(true)?.("you") ?? "nobody");
+    @print(nickname(false) ?? greeter(false)?.("you") ?? "nobody");
+    val n = nickname(false) ?? greeter(true)?.("all") ?? "";
+    @print(n.length());
+}

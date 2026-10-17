@@ -1,0 +1,34 @@
+//// Decision 63 (amended 2026-09-19) — an index is a method call: `d["k"]`
+//// **is** `d.at("k")` through the ambient `Index<K, V>` behavior that
+//// `Dict<K, V>` answers on its declaration, and the value of the expression is
+//// whatever `at` answers — `?V`. Three rules, one probe each:
+////
+////   1. a present key answers the value — `d["a"]` is `1`;
+////   2. an absent key is `null` (decision 47's one spelling of absent), and it
+////      is an ANSWER, not a failure: the index has no typing rule of its own,
+////      so it cannot be stricter than the method it is;
+////   3. a `Dict<string, ?i32>` indexes to an optional too — `o["missing"]` is
+////      `null` for the same reason its present values would be.
+////
+//// Decision 46 dissolves into this: the route to `Dict.at` IS the call, and
+//// there is one exit point for absent instead of one per backend.
+////
+//// Both halves have landed — `libs/std` at `e065b564` (the behaviors, `Dict`'s
+//// `lookup` → `at`) and the checker's rewrite (C-02) — and the PRESENT key
+//// answers `1` on all four backends. An empty optional prints `null` on all
+//// four too: erlang and beam write the atom `undefined` as `null`, and wasm
+//// boxes a `?V` over a type parameter (C-18's wasm half) — unboxed, the absent
+//// key printed `0`.
+
+import {collections.Dict} from "std";
+
+pub fn main() {
+    val d = Dict.empty().insert("a", 1);
+    @print(d["a"]);
+
+    val o: Dict<string, ?i32> = Dict.empty();
+    @print(o["missing"]);
+
+    @print(d["zz"]);
+    @print("after");
+}

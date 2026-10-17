@@ -1,0 +1,11 @@
+//// Decisions 451 (3), 456 — `random.float()` is an unseeded draw with a
+//// `std: "random.float"` cell: at comptime it is refused at the call that raised
+//// (the `comptime` expression is the frame that ran it), with the seeded
+//// stream's message — never `comptime-host-cell-unavailable`.
+
+import {io} from "std";
+
+pub fn main() {
+    val atBuild = comptime io.random.float();
+    @print(atBuild);
+}

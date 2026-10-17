@@ -1,0 +1,9 @@
+//// Narrowed to erlang and beam: `magnitude` is bound for the BEAM alone, so
+//// commonJS and wasm refuse the cell on a host binding — the audit checks it.
+
+#[@External.Erlang("erlang", "abs")]
+declare fn magnitude(n: i32) -> i32;
+
+pub fn main() {
+    @print(magnitude(0 - 7));
+}

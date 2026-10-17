@@ -1,0 +1,46 @@
+//// Decisions 118, 120 and 128 of 1.0.10-beta (front 24, § Cells "Chain and
+//// `use`", first line; guide.md § 4 and § 9, rows `#[@use] fn f() -> @Use<C, T>`,
+//// `#[@use] fn f() -> @Component<T>`, `#[@context]` and `-> Element` on a
+//// component that uses a hook) — one wrapper, `@Component<T>`, with the base
+//// always written. A HOOK returns any `T` (`state`: `i32`, `label`: `string`);
+//// `counter` is a hook that composes a hook with `use` and awaits a Task
+//// (`@Component ⊃ @Task`); `Widget` is a COMPONENT (its `T` implements
+//// `@Renderable`) holding `use` and `await` in one body, and `main`
+//// awaits it (decision 388: the call only makes its lambda).
+////
+//// Printed from inside `Widget`: commonJS lowers every `@Component` return to an
+//// `async function` (decision 120) and hands `main` a Promise.
+
+type Element(count: i32) implement @Renderable
+
+fn state(initial: i32) -> @Component<i32> {
+    return initial;
+}
+
+fn label() -> @Component<string> {
+    return "clicks";
+}
+
+fn answer(n: i32) -> @Task<i32> {
+    return n;
+}
+
+fn counter(start: i32) -> @Component<i32> {
+    val s = use state(start);
+    val v = await answer(1);
+    return s + v;
+}
+
+fn Widget(n: i32) -> @Component<Element> {
+    val name = use label();
+    val c = use counter(n);
+    val v = await answer(10);
+    @print(name + ": " + (c + v).toString());
+    return Element(count: c + v);
+}
+
+// Decision 388 — a call only makes the component's lambda: `main` awaits
+// it, which runs it with `RenderScope.root()`.
+pub fn main() -> @Task<void> {
+    await Widget(1);
+}

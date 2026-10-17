@@ -1,0 +1,14 @@
+//// 144 B-92 (decision 532) — a template declared in the module that uses it
+//// and whose body raises is refused at the call that raised, in the module's
+//// own file, with the use as the `called from` line: no call of an expansion
+//// is left unlocated.
+
+pub fn shout(comptime t: @Expr<string>) -> @Expr<string> {
+    val s = t.text();
+    @panic("boom " + s);
+    return t.build("\"" + s + "\"");
+}
+
+pub fn main() {
+    @print(shout "hi");
+}

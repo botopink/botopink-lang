@@ -1,0 +1,5 @@
+botopink-cell 1
+refused error: the comptime block raised: {error,{panic,<<"two commands named `deploy`: ship and release">>}}
+at src/main.bp:29:21
+from src/main.bp:47:26
+from src/main.bp:47:17

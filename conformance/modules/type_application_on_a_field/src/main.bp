@@ -1,0 +1,10 @@
+//// Decision 255 (1) — without a call, a type application reads a unit
+//// variant (`Opt<i32>.None`); a record's field is no member of the type,
+//// so its type arguments reach nothing and the read is refused.
+
+type Box<T>(value: T)
+
+pub fn main() {
+    val v = Box<i32>.value;
+    @print(v);
+}

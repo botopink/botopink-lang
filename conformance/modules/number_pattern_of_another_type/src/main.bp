@@ -1,0 +1,13 @@
+//// Decision 247 — a number pattern matches a subject of its own type: `1.5`
+//// is an `f64` and the subject a `u8`, so the arm is refused at its pattern.
+
+fn kind(n: u8) -> string {
+    return case n {
+        1.5 -> "half";
+        _ -> "other";
+    };
+}
+
+pub fn main() {
+    @print(kind(1u8));
+}

@@ -1,0 +1,12 @@
+//// Decision 8 §5.2 — a constant is not a pattern: use `_ when (x == MAX) { … }`.
+
+val MAX = 10;
+
+pub fn main() {
+    val x = 3;
+    val y = case x {
+        MAX { "max" }
+        _ { "other" }
+    };
+    @print(y);
+}

@@ -1,0 +1,1 @@
+{ "name": "dependency_files_order", "dependencies": { "dep": { "path": "deps/dep" } } }

@@ -1,0 +1,78 @@
+//// Decision 298 — a decorator's meta is a typed value keyed by its type:
+//// `decl.setMeta(Entity(table: "cities"))` records one `Entity` on the
+//// declaration, read `@typeInfo(City).meta(Entity)` → `?Entity`;
+//// `decl.addMeta(Index(…))` records values that repeat, read
+//// `@typeInfo(City).metaAll(Index)` → `Index[]`. A type nothing recorded
+//// answers `null` and `[]`. Every field kind the compiler writes back where
+//// the meta is read: a string, an integer, a float, a `bool`, a variant, an
+//// array and an optional.
+
+type Level { Low, High }
+
+type Entity(table: string, columns: string[], weight: f64, audited: bool, level: Level, alias: ?string)
+
+type Index(column: string, unique: bool, order: i32)
+
+type Other(note: string)
+
+fn entity(comptime decl: @Decl, comptime table: @Expr<string>) {
+    var names: string[] = [];
+    decl.fields.forEach({ f -> names.push(f.name) });
+    decl.setMeta(
+        Entity(
+            table: table.value,
+            columns: names,
+            weight: 1.5,
+            audited: decl.name == "City",
+            level: Level.High,
+            alias: null,
+        ),
+    );
+}
+
+fn index(
+    comptime decl: @Decl,
+    comptime column: @Expr<string>,
+    comptime order: @Expr<i32>,
+) {
+    decl.addMeta(
+        Index(
+            column: column.value,
+            unique: order.value == 1,
+            order: order.value,
+        ),
+    );
+}
+
+#[entity("cities")]
+#[index("name", 1)]
+#[index("state", 2)]
+type City(name: string, state: string)
+
+fn levelName(l: Level) -> string {
+    return case l {
+        Low -> "low";
+        High -> "high";
+    };
+}
+
+pub fn main() {
+    val e = @typeInfo(City).meta(Entity);
+    @print(e?.table ?? "none");
+    if (e) {
+        x ->
+        @print(x.columns.join(","));
+        @print(x.weight.toString());
+        @print(if (x.audited) "audited" else "plain");
+        @print(levelName(x.level));
+        @print(x.alias ?? "no alias");
+    }
+    val indexes = @typeInfo(City).metaAll(Index);
+    @print(indexes.length);
+    for (indexes) { i ->
+        val kind = if (i.unique) "unique" else "shared";
+        @print(i.column + " " + i.order.toString() + " " + kind);
+    }
+    @print(@typeInfo(City).meta(Other)?.note ?? "no other");
+    @print(@typeInfo(City).metaAll(Other).length);
+}

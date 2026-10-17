@@ -1,0 +1,1 @@
+{ "name": "dependency_imports_undeclared_package", "dependencies": { "starter": { "path": "deps/starter" }, "core": { "path": "deps/core" } } }

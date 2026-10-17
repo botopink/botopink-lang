@@ -1,0 +1,1 @@
+{ "name": "template_answer_method", "dependencies": { "shelf": { "path": "deps/shelf" } } }

@@ -1,0 +1,24 @@
+//// Two modules of one package each declare `pub fn title` (a page per folder
+//// of an application), and each importer names the module it reads from by
+//// its dotted path — `from "app.page"`, the `mod` chain. A source that names
+//// its module says which declaration the name is. The dotted spelling used to
+//// be compared byte for byte with the module's `/` path, so it named nothing,
+//// the lookup widened to the whole program, and both importers were refused
+//// as `ambiguous-import-use`. `main` reaches `app`'s own and `routes` the
+//// blog's: the two answers prove each import reached the module it named.
+//// The third line is the same source rule on a namespace: `import {page} from
+//// "app.blog"` binds the module `app/blog/page`, which was an unbound `page`
+//// while `app.blog/page` was looked up as written.
+
+pub mod app;
+pub mod routes;
+
+import {app.page.title};
+import {routes.blogTitle};
+import {app.blog.page};
+
+pub fn main() {
+    @print(title());
+    @print(blogTitle());
+    @print(page.title());
+}

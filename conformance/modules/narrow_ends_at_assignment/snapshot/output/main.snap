@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: `v` is read off an optional `?Node` — write `?.v`
+at src/main.bp:11:18

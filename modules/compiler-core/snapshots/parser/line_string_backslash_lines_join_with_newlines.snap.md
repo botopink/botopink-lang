@@ -12,7 +12,7 @@
         "value": {
           "literal": {
             "loc": {
-              "line": 4,
+              "line": 2,
               "col": 5
             },
             "kind": {

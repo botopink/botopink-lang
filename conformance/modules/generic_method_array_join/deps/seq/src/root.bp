@@ -1,0 +1,3 @@
+//// The package root: `seq.bp` is the whole library and its default module.
+
+pub default mod seq;

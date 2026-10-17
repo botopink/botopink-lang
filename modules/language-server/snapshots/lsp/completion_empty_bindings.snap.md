@@ -5,4 +5,6 @@ val x = 1;
 ```
 
 ----- COMPLETION at (line 0, char 10)
-(empty)
+x  [Variable]  detail: val
+behavior  [Keyword]  detail: declaration
+type  [Keyword]  detail: declaration

@@ -1,0 +1,19 @@
+//// 01-compiler/02-erlang (a row 03-beam measured): a list pattern that is a
+//// spread alone, `[..all]`, matches every list and binds the whole of it — a
+//// `case` arm over a list of three elements and over the empty list, and
+//// `val assert [..every]`. Erlang wrote it `[All]`, a one-element list: the arm
+//// died `case_clause` and the `val assert` panicked "assert pattern did not
+//// match".
+
+fn describe(xs: i32[]) -> string {
+    return case xs {
+        [..all] -> "all ${all.length()}";
+    };
+}
+
+pub fn main() {
+    @print(describe([1, 2, 3]));
+    @print(describe([]));
+    val assert [..every] = [4, 5];
+    @print(every);
+}

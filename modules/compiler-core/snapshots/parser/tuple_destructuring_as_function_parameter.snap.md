@@ -29,7 +29,6 @@
             },
             "typeName": "",
             "modifier": "none",
-            "fnType": null,
             "destruct": {
               "tuple_": [
                 "x",

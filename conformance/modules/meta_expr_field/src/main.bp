@@ -1,0 +1,59 @@
+//// Decision 370 (1) — a decorator hands a parameter's `@Expr` on to the
+//// program through typed meta: a record whose fields are `@Expr<T>`,
+//// `decl.addMeta(Check(message: message, rule: rule))`, built in the reading
+//// program with each expression spliced where it was written. The reader
+//// calls `rule` (`passwordsMatch`, `handleFree`) and evaluates `message`
+//// (`t("signup.mismatch")`, a call) at run time — never at build: `t`
+//// counts its calls, and the count moves only when the program reads the
+//// meta.
+
+pub type Check<T>(message: @Expr<string>, rule: @Expr<fn(v: T) -> bool>)
+
+fn check<T>(
+    comptime decl: @Decl<T>,
+    comptime message: @Expr<string>,
+    comptime rule: @Expr<fn(v: T) -> bool>,
+) {
+    decl.addMeta(Check(message: message, rule: rule));
+}
+
+var calls = 0;
+
+fn t(key: string) -> string {
+    calls = calls + 1;
+    return "[" + key + "]";
+}
+
+fn passwordsMatch(a: Signup) -> bool {
+    return a.password == a.confirm;
+}
+
+fn handleFree(a: Signup) -> bool {
+    return a.handle != "admin";
+}
+
+#[check(t("signup.mismatch"), passwordsMatch)]
+#[check("the handle is taken", handleFree)]
+pub type Signup(handle: string, password: string, confirm: string)
+
+fn violations(s: Signup) -> string[] {
+    var out: string[] = [];
+    for (@typeInfo(Signup).metaAll(Check)) { c ->
+        if (!c.rule(s)) out.push(c.message);
+    }
+    return out;
+}
+
+pub fn main() {
+    @print(calls);
+    val ok = violations(Signup(handle: "ana", password: "abc", confirm: "abc"));
+    @print(ok.length);
+    val bad = violations(
+        Signup(handle: "admin", password: "abc", confirm: "abd"),
+    );
+    @print(bad.length);
+    for (bad) { m ->
+        @print(m);
+    }
+    @print(calls);
+}

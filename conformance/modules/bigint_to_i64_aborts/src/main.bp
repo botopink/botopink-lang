@@ -1,0 +1,13 @@
+//// Decision 332 — `toI64()` of a `bigint` past −2^63 … 2^63 − 1 aborts naming the value (decision
+//// 264's text, as `Integer.toI64`), on every target: it never wraps. wasm traps with no text.
+
+fn double(a: bigint) -> bigint {
+    return a * 2n;
+}
+
+pub fn main() {
+    @print(double(4611686018427387903n).toI64());
+    @print(double(-4611686018427387904n).toI64());
+    @print(double(4611686018427387904n).toI64());
+    @print("unreachable");
+}

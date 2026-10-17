@@ -1,0 +1,16 @@
+pub type Box(w: i32, h: i32)
+
+// The built code is the literal's own text: two expansions whose code sits
+// at the same offsets of their built strings.
+pub fn code<T>(comptime q: @Expr<string>) -> @Expr<T> {
+    return q.build(q.text());
+}
+
+pub fn main() {
+    val words = [["a", "b"], ["c"]];
+    val boxes = [Box(w: 2, h: 3), Box(w: 5, h: 5)];
+    val lengths = code "words.map({ r -> r.length })";
+    val widths = code "boxes.map({ r -> r.w })";
+    @print(lengths);
+    @print(widths);
+}

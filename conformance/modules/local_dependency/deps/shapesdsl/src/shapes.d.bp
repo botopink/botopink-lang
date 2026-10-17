@@ -1,0 +1,3 @@
+//// Declarations only, shipped through `files`: the record the consumer builds.
+
+pub type Rect(w: i32, h: i32)

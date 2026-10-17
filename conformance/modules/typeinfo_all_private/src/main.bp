@@ -1,0 +1,11 @@
+//// Decision 216 (4) — the catalogue reaches each declaration from the
+//// entry point, so a declaration it answers is `pub`; a private one is
+//// refused where the query is written, named.
+
+pub mod marks;
+pub mod jobs;
+import {marks.tagged};
+
+pub fn main() {
+    @print(@TypeInfo.all(with: tagged).length);
+}

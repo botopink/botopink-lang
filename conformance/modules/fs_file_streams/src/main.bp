@@ -1,0 +1,77 @@
+//// Decision 540 (3) — `chunks(size)` and `lines()` are `@Stream<@Result<…, FsError>>`: the rest of
+//// the file in pieces of at most `size` bytes (65536 by default), or line by line with `\n` and
+//// `\r\n` stripped — an empty line is a line, a last line with no terminator is one, an empty
+//// file has none. A line that is not UTF-8 ends the stream with `InvalidUtf8` (the item is
+//// `Error`, and nothing follows). Reading goes on from the position, so `lines` after `read`
+//// starts where `read` stopped.
+
+import {io.fs, encoding} from "std";
+
+fn describe(e: fs.FsError) -> string {
+    return case e {
+        fs.FsError.NotFound(path) -> "NotFound";
+        fs.FsError.PermissionDenied(path) -> "PermissionDenied";
+        fs.FsError.IsDirectory(path) -> "IsDirectory";
+        fs.FsError.NotDirectory(path) -> "NotDirectory";
+        fs.FsError.AlreadyExists(path) -> "AlreadyExists";
+        fs.FsError.InvalidUtf8(path, offset) -> "InvalidUtf8 "
+            + path
+            + " "
+            + offset.toString();
+        fs.FsError.Other(path, message) -> "Other";
+    };
+}
+
+fn printChunks(f: fs.File, size: i32) -> @Task<void> {
+    for await (f.chunks(size)) { r ->
+        case r {
+            Ok(b) -> @print("chunk " + encoding.hexEncodeBytes(b));
+            Error(e) -> @print("error " + describe(e));
+        }
+    }
+    @print("end of chunks");
+}
+
+fn printLines(f: fs.File) -> @Task<void> {
+    for await (f.lines()) { r ->
+        case r {
+            Ok(line) -> @print("line [" + line + "]");
+            Error(e) -> @print("error " + describe(e));
+        }
+    }
+    @print("end of lines");
+}
+
+fn open(path: string) -> fs.File {
+    return fs.open(path).unwrapOr(fs.openAsset(@embed("assets/empty.txt")));
+}
+
+fn run() -> @Task<void> {
+    fs.writeText("sample.txt", "ab\r\n\nçd\nlast");
+    await printChunks(open("sample.txt"), 4);
+    await printChunks(open("sample.txt"), 65536);
+    await printLines(open("sample.txt"));
+
+    val partway = open("sample.txt");
+    val head = partway.read(2).unwrapOr(Bytes.fromUtf8("?"));
+    @print(encoding.hexEncodeBytes(head));
+    await printLines(partway);
+
+    fs.writeText("empty.txt", "");
+    await printChunks(open("empty.txt"), 4);
+    await printLines(open("empty.txt"));
+
+    fs.writeBytes("bad.txt", Bytes
+        .fromUtf8("ok\nfine\n")
+        .concat(Bytes.fromUtf8("é").slice(0, 1))
+        .concat(Bytes.fromUtf8("\nnever\n")));
+    await printLines(open("bad.txt"));
+
+    fs.rm("sample.txt");
+    fs.rm("empty.txt");
+    fs.rm("bad.txt");
+}
+
+pub fn main() {
+    run();
+}

@@ -1,0 +1,5 @@
+//// The package root: one `pub default mod` — the tree edge to `shapesdsl.bp`
+//// and the handle a consumer imports as `import shapesdsl from "shapesdsl"`.
+//// A dependency ships only what `files` lists, so `root.bp` is listed.
+
+pub default mod shapesdsl;

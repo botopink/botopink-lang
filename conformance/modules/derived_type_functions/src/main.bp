@@ -1,0 +1,79 @@
+//// Decision 307 — std's `Type` answers a NEW record type at build, bound by a
+//// module-level `val` and named after it: `pick`, `omit`, `partial`,
+//// `required` and `merge`, nested and chained, each usable in every type
+//// position, constructed by its fields, read, printed and matched by name, on
+//// all four targets.
+
+import {types.Type} from "std";
+
+type Recipe(
+    title: string,
+    description: ?string,
+    servings: i32 = 2,
+)
+
+type Dog(name: string, age: ?i32)
+
+type Breed(breed: string)
+
+type Note(text: string)
+
+val RecipeTitle = Type.pick(Recipe, .title);
+
+val RecipeBrief = Type.omit(Recipe, .description);
+
+val RecipePatch = Type.partial(Recipe);
+
+val RecipeFull = Type.required(RecipePatch);
+
+val DogWithBreed = Type.merge(Dog, Breed);
+
+// A derivation of a derivation, and a nested call as the source.
+val NotedDog = Type.merge(Type.merge(Dog, Breed), Note);
+
+val TitleOnly = Type.pick(RecipeBrief, .title);
+
+fn titleOf(t: RecipeTitle) -> string {
+    return t.title;
+}
+
+fn patched(r: Recipe, p: RecipePatch) -> Recipe {
+    return Recipe(
+        title: p.title ?? r.title,
+        description: p.description ?? r.description,
+        servings: p.servings ?? r.servings,
+    );
+}
+
+// Matched by name: a derived type is its own type, not its source's.
+fn kind(v: unknown) -> string {
+    if (v is DogWithBreed) return "DogWithBreed";
+    if (v is Dog) return "Dog";
+    return "other";
+}
+
+pub fn main() {
+    @print(titleOf(RecipeTitle(title: "Feijoada")));
+    val brief = RecipeBrief(title: "Moqueca");
+    @print(brief.servings);
+    val before = Recipe(title: "Feijoada", description: null);
+    val after = patched(
+        before,
+        RecipePatch(title: null, description: "black beans", servings: 6),
+    );
+    @print(after.title);
+    @print(after.description ?? "-");
+    @print(after.servings);
+    val full = RecipeFull(title: "Acarajé", description: "fried", servings: 4);
+    @print(full.description);
+    val rex: unknown = DogWithBreed(name: "Rex", age: null, breed: "mutt");
+    val bia: unknown = Dog(name: "Bia", age: 3);
+    @print(kind(rex));
+    @print(kind(bia));
+    val mixed = DogWithBreed(name: "Lua", age: 3, breed: "beagle");
+    @print("${mixed.name} (${mixed.breed})");
+    val noted = NotedDog(name: "Lua", age: 1, breed: "poodle", text: "calm");
+    @print(noted.text);
+    @print(TitleOnly(title: "Vatapá").title);
+    @print(RecipeTitle(title: "Bobó"));
+}

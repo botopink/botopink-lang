@@ -1,0 +1,23 @@
+type Token {
+    Color {
+        Red {
+            100,
+            500,
+        }
+        Gray {
+            100,
+            500,
+        }
+    }
+    Bold,
+}
+
+fn main() {
+    val t: Token = .Color.Red.500;
+    @print(
+        case t {
+            Color(_inner) -> "a colour";
+            Bold -> "bold";
+        },
+    );
+}

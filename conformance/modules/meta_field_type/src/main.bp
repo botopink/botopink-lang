@@ -1,0 +1,21 @@
+//// Decision 298 — a meta value is rebuilt where it is read, so each field
+//// holds data (a string, a number, a `bool`, a variant, an array or an
+//// optional of those) or an `@Expr<T>`: a function field is refused at the
+//// call, naming the field.
+
+type Hook(run: fn() -> i32)
+
+fn one() -> i32 {
+    return 1;
+}
+
+fn hooked(comptime decl: @Decl) {
+    decl.setMeta(Hook(run: one));
+}
+
+#[hooked]
+type City(name: string)
+
+pub fn main() {
+    @print(@typeInfo(City).metaAll(Hook).length);
+}

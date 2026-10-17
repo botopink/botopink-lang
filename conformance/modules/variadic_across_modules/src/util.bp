@@ -1,0 +1,9 @@
+//// Decision 267 — a `pub fn` with a variadic parameter, imported by `main`.
+
+pub fn sum(..values: i32[]) -> i32 {
+    var t = 0;
+    for (values) { v ->
+        t = t + v;
+    }
+    return t;
+}

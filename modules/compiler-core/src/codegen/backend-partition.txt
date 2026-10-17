@@ -1,0 +1,49 @@
+# backend-partition.txt — which compiler sources belong to ONE backend (decision 249 of
+# 1.0.11-beta, front 00-gate/133-gate-speed).
+#
+# The step gate's reach (`scripts/lib/gate-mode.sh`) and the code cache's fingerprint read
+# this list over the compiler's sources (the file set of
+# `modules/source-stamp/src/root.zig`): a file listed here under a target belongs to that
+# target alone; every other source file — lexer, parser, checker, comptime and its two
+# runtimes, the preludes, the embedded std and bundled packages, the CLI, the runners,
+# build.zig, this list — is SHARED. A step that edits a listed file reaches that target's
+# cells; one that edits a shared file reaches every cell. The full gate runs everything at
+# every landing, so a wrong line here can delay a red to the landing, never land one. No
+# test result is cached (decision 510): the list only decides what a step runs.
+#
+# One line per file: `<target> <path from the checkout root>`, the target one of
+# commonJS, erlang, beam, wasm. Exact paths, no wildcard: a file added beside these
+# is shared until it is listed here. `dispatcher <path>` names the one shared file
+# that may import a listed file — it calls each emitter for its own target only.
+#
+# The list is audited on every gate run (`scripts/lib/backend-partition-audit.js`): a listed
+# file imported AND used by a file that is neither listed under the same target nor the
+# dispatcher fails the gate, and the audit says why. A test reference (`_ = @import(...)`)
+# is not a use.
+#
+# Not listed, and why (each is reached by shared code on every target):
+#   codegen/erlang.zig, codegen/beam/erl_ast.zig, codegen/beam/erl_emitter.zig —
+#     every comptime body, on every target, is lowered to Erlang through them
+#     (comptime/decorator_eval.zig, template_eval.zig, runtime/prelude.zig); so the
+#     erlang target has no file of its own
+#   codegen/beam/asm_text.zig, beam_file.zig, term.zig, opcodes.zig, erl_template.zig —
+#     read by the beam target alone since decision 452 (the comptime runtime
+#     no longer assembles a host function's Erlang cell)
+#   codegen/* — the wat comptime runtime (commonJS and wasm builds) lowers and
+#     links with them
+#   codegen/hostMethods.zig, crossModule.zig, patterns.zig, moduleOutput.zig,
+#     config.zig, runtime.zig — every backend reads them
+
+dispatcher modules/compiler-core/src/codegen.zig
+
+commonJS modules/compiler-core/src/codegen/commonJS.zig
+commonJS modules/compiler-core/src/codegen/typescript.zig
+commonJS modules/compiler-core/src/codegen/js/js_ast.zig
+commonJS modules/compiler-core/src/codegen/js/js_emitter.zig
+commonJS modules/compiler-core/src/codegen/js/js_prelude.zig
+commonJS modules/compiler-core/src/codegen/js/ts_emitter.zig
+
+beam modules/compiler-core/src/codegen/beam_asm.zig
+beam modules/compiler-core/src/codegen/beam/beam_emitter.zig
+
+wasm modules/compiler-core/src/codegen/wat.zig

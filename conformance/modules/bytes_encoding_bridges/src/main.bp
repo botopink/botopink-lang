@@ -1,0 +1,43 @@
+//// Decision 346 — `encoding`'s `Bytes` bridges: base64 and hex over bytes, lossless where the
+//// text codecs read the bytes back as UTF-8. A decoder answers `@Result<Bytes, EncodingError>` with
+//// the text codecs' rules and `Error` variants (decision 486). The parent binary knew no `Bytes`.
+
+import {encoding} from "std";
+
+fn show(r: @Result<Bytes, encoding.EncodingError>) -> string {
+    return case r {
+        Ok(b) -> "bytes " + encoding.hexEncodeBytes(b);
+        Error(e) -> "error " + errorName(e);
+    };
+}
+
+fn errorName(e: encoding.EncodingError) -> string {
+    return case e {
+        encoding.EncodingError.NotBase64 -> "NotBase64";
+        encoding.EncodingError.NotHex -> "NotHex";
+        encoding.EncodingError.NotPercentEncoded -> "NotPercentEncoded";
+    };
+}
+
+pub fn main() {
+    val hi = Bytes.fromUtf8("hi");
+    @print(encoding.base64EncodeBytes(hi));
+    @print(encoding.hexEncodeBytes(hi));
+    val raw = encoding.hexDecodeBytes("00ff80c3").unwrapOr(hi);
+    @print(raw.length());
+    @print(encoding.base64EncodeBytes(raw));
+    @print(show(encoding.base64DecodeBytes("AP+Aww==")));
+    @print(show(encoding.base64DecodeBytes("AP+Aww")));
+    @print(show(encoding.base64DecodeBytes("aGk")));
+    @print(show(encoding.base64DecodeBytes("aGl")));
+    @print(show(encoding.base64DecodeBytes("a*b=")));
+    @print(show(encoding.base64DecodeBytes("")));
+    @print(show(encoding.hexDecodeBytes("00FFab")));
+    @print(show(encoding.hexDecodeBytes("abc")));
+    @print(show(encoding.hexDecodeBytes("zz")));
+    @print(encoding
+        .base64DecodeBytes(encoding.base64EncodeBytes(raw))
+        .unwrapOr(hi)
+        == raw);
+    @print(encoding.base64Encode("hi") == encoding.base64EncodeBytes(hi));
+}

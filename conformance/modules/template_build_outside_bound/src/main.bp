@@ -1,0 +1,11 @@
+//// Decision 426 (2) — the template's answer (`-> @Expr<i32>`) is a bound the
+//// code it builds fits: code of another type is refused in the template, at
+//// its `build` (`template-build-outside-bound`).
+
+fn count(comptime q: @Expr<string>) -> @Expr<i32> {
+    return q.build("\"" + q.text() + "\"");
+}
+
+pub fn main() {
+    @print(count "seven");
+}

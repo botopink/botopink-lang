@@ -1,0 +1,5 @@
+import {text.splitPath, text.join, text.Pair};
+
+pub fn run() -> string {
+    return join(Pair(a: splitPath("c/d"), b: "e"));
+}

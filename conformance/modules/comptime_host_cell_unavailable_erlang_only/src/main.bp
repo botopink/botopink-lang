@@ -1,0 +1,20 @@
+//// Decisions 434, 452 — an `@External.Erlang` cell never runs at build: a host
+//// function a decorator reaches answers by its `std:` cell or its
+//// `@External.Wasm(fn: …)` cell, and `tidy` has neither. Its Erlang cell
+//// (`re:replace/4`, once a call beam-to-wasm did not convert) is not looked
+//// at: the call is refused when the package is compiled, naming both cells.
+
+#[@External.Node("""$0.replace(/a/g, "b")""")]
+#[@External.Erlang("""iolist_to_binary(re:replace($0, <<"a">>, <<"b">>, [global]))""")]
+declare fn tidy(value: string) -> string;
+
+fn sized(comptime decl: @Decl) {
+    @emit("pub fn summary() -> string { return \"" + tidy(decl.name) + "\"; }");
+}
+
+#[sized]
+type Point(x: i32, y: i32)
+
+pub fn main() {
+    @print(summary());
+}

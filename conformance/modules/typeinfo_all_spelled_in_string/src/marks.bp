@@ -1,0 +1,6 @@
+pub fn tagged(comptime decl: @Decl) {
+    decl.setMeta(Tagged(tag: decl.name));
+}
+
+// What `#[tagged]` records.
+pub type Tagged(tag: string)

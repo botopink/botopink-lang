@@ -1,0 +1,39 @@
+//// Decisions 527 (1), 546 — a raise nothing marked is `crash`, its message the
+//// reason by `~tp`: here a `case` no arm matches, on a value the checker cannot
+//// see (the host answers an atom no variant is). `attempt` contains it and the
+//// program goes on. A raise of a binding declared outside std without
+//// `result: true` is `host` (`modules/std_failure_attempt_host`); one nothing
+//// marked is not.
+//// The cell claims the kind alone: the message's text is not fixed yet
+//// (question 546-a).
+
+import {failure, failure.Failure} from "std";
+
+type Shape { Dot, Circle(r: i32) }
+
+#[@External.Node("""({ tag: "Square" })""")]
+#[@External.Erlang("erlang", "binary_to_atom")]
+declare fn shapeNamed(name: string) -> Shape;
+
+fn area(s: Shape) -> i32 {
+    return case s {
+        Dot {
+            0
+        }
+        Circle(r) {
+            r * r
+        }
+    };
+}
+
+fn show(r: @Result<i32, Failure>) {
+    case r {
+        Ok(v) -> @print("Ok " + v.toString());
+        Error(f) -> @print("Error " + f.kind);
+    }
+}
+
+pub fn main() {
+    show(failure.attempt({ -> area(shapeNamed("Square")) }));
+    @print("after");
+}

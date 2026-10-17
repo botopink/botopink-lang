@@ -1,0 +1,1 @@
+{ "name": "derived_type_two_packages", "dependencies": { "a": { "path": "deps/a" }, "b": { "path": "deps/b" } } }

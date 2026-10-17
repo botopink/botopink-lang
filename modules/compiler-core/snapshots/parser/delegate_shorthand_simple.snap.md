@@ -10,13 +10,12 @@
         "moduleComment": null,
         "params": [
           {
-            "name": "self",
+            "name": "message",
             "typeRef": {
-              "named": "Self"
+              "named": "string"
             },
             "typeName": "",
             "modifier": "none",
-            "fnType": null,
             "destruct": null,
             "default": null
           }

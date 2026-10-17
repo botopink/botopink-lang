@@ -1,0 +1,21 @@
+//// Decision 357 (1) — the rules of hooks: a `use` stands at the top level of
+//// a `@Component` body and runs on every call. One inside an `if` runs on
+//// some calls only, and is refused at the `use`, naming the `if`.
+
+type Element(count: i32) implement @Renderable
+
+fn state(initial: i32) -> @Component<i32> {
+    return initial;
+}
+
+fn Widget(on: bool) -> @Component<Element> {
+    var n = 0;
+    if (on) {
+        n = use state(1);
+    }
+    return Element(count: n);
+}
+
+pub fn main() {
+    Widget(true);
+}

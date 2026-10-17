@@ -1,0 +1,51 @@
+//// A program's own `behavior Array<T>` extends std's `Array`: its default fns
+//// call std's members on `self` (`at`, `length`, `filter`, `all`,
+//// `contains`, `join`), take a `T` and a `Self<T>` beside `self`, and answer
+//// `?T`, `T`, `Self<T>`, a bool and a string — over integers, strings and
+//// records. wasm trapped on every one (`prim method not lowered on wasm`);
+//// it calls a copy of the default with `Self<T>` written as the receiver's
+//// array type and `T` as its element.
+
+type P(x: i32)
+
+behavior Array<T> {
+    default fn second(self: Self<T>) -> ?T {
+        return self.at(1);
+    }
+
+    default fn doubled(self: Self<T>) -> i32 {
+        return self.length * 2;
+    }
+
+    default fn evens(self: Self<T>) -> Self<T> {
+        return self.filter({ x -> x % 2 == 0 });
+    }
+
+    default fn lastOr(self: Self<T>, d: T) -> T {
+        return self.at(-1) ?? d;
+    }
+
+    default fn hasAll(self: Self<T>, ys: Self<T>) -> bool {
+        return ys.all({ y -> self.contains(y) });
+    }
+
+    default fn csv(self: Self<T>) -> string {
+        return self.join(",");
+    }
+}
+
+pub fn main() {
+    val xs = [1, 2, 3, 4];
+    @print(xs.second());
+    @print(xs.doubled());
+    @print(xs.evens());
+    @print(["a", "b"].second());
+    @print(["a"].second());
+    @print(["a", "b"].lastOr("z"));
+    val none: string[] = [];
+    @print(none.lastOr("z"));
+    @print([1, 2, 3].hasAll([3, 1]));
+    @print(["a"].hasAll(["b"]));
+    @print(["x", "y"].csv());
+    @print([P(x: 4), P(x: 5)].lastOr(P(x: 0)).x);
+}

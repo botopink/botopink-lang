@@ -1,0 +1,18 @@
+//// Decision 205 — the body is the whole function: a `val` in an inner block
+//// that reuses a name the function already bound is `binding-redeclared` at
+//// the second binding, naming the first. erlang (`unsafe in 'case'`), wasm
+//// (the inner value leaked out of the block) and beam (`unassigned`) each
+//// miscompiled the shadow.
+
+fn f(x: i32) -> i32 {
+    val y = x + 1;
+    if (y > 1) {
+        val y = 10;
+        @print(y);
+    }
+    return y;
+}
+
+pub fn main() {
+    @print(f(1));
+}

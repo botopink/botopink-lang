@@ -1,0 +1,32 @@
+//// Decision 341 — a host function reached through an IMPORTED function or
+//// decorator travels with the export: `text.shout` calls the host function
+//// `bang` of its module and std's `hash.contentHash`, and `sched.stamped`'s
+//// body calls them too. The export carries each with its cells (and what a
+//// `fn:` binding names); a decorator and a `comptime` of this module run
+//// them on either runtime.
+
+pub mod text;
+pub mod sched;
+import {text.shout};
+import {sched.stamped};
+
+fn tag(comptime decl: @Decl) {
+    @emit("pub fn tagged() -> string { return \"" + shout(decl.name) + "\"; }");
+}
+
+#[tag]
+fn tock() -> i32 {
+    return 2;
+}
+
+#[stamped]
+fn tick() -> i32 {
+    return 1;
+}
+
+pub fn main() {
+    @print(tagged());
+    @print(stamp());
+    @print(comptime shout("build"));
+    @print(shout("build"));
+}

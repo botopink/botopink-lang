@@ -1,0 +1,1 @@
+{ "name": "fs_read_text_not_utf8", "targets": ["commonJS", "erlang", "beam"] }

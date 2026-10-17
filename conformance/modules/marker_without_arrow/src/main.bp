@@ -1,0 +1,14 @@
+//// Decision 553 (1) — a marker before `{` opens a lambda, which writes `->`.
+//// `iter { … }` is no block: the iterator's block is `iter loop { … }`
+//// (decision 125), so the brace without an arrow is refused at the marker,
+//// `marker-without-arrow`.
+
+pub fn main() {
+    val xs = iter {
+        yield 1;
+        yield 2;
+    };
+    for (xs) { x ->
+        @print(x);
+    }
+}

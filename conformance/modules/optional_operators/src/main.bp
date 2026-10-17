@@ -1,0 +1,30 @@
+//// Decision 330 — `?T` is read with TypeScript's operators: `??`, `?.`,
+//// `?.[i]` and the postfix `!` (`?.(args)` is `run/optional_call_operator`).
+//// `?.` flattens: a link answering `?U` through `?.` is `?U`, so one `??`
+//// defaults it. On all four targets.
+
+type Node(name: string, tags: string[], next: ?Node)
+
+fn node(present: bool) -> ?Node {
+    return if (present)
+        Node(name: "a", tags: ["t0", "t1"], next: null)
+    else
+        null;
+}
+
+fn numbers(present: bool) -> ?i32[] {
+    return if (present) [10, 20] else null;
+}
+
+pub fn main() {
+    // `?.[i]`: the index read through the optional, absent when it is.
+    @print(numbers(true)?.[1] ?? 0);
+    @print(numbers(true)?.[5] ?? -1);
+    @print(numbers(false)?.[0] ?? -2);
+    // `?.` flattens: `next?.name` is `?string`, not `??string`.
+    @print(node(true)?.next?.name ?? "none");
+    @print(node(true)?.tags?.[0] ?? "none");
+    // The postfix `!`: the value, when it is there.
+    @print(node(true)!.name);
+    @print(numbers(true)![0] ?? 0);
+}

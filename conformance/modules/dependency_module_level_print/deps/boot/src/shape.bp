@@ -1,0 +1,6 @@
+//// Imported for a type only — its body still runs (T7's fixed shape), and,
+//// like `greet`, its only print is a module-level binding.
+
+val _y = @print("shape boot");
+
+pub type Tag(name: string)

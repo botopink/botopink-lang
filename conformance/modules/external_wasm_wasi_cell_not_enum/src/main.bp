@@ -1,0 +1,11 @@
+//// Decision 481 — `wasi:` names an adapter by its enum value (`.Delay`): a
+//// string is refused at the argument, on every target, naming the enum form.
+
+#[@External.Node("Math", "random")]
+#[@External.Erlang("rand", "uniform")]
+#[@External.Wasm(wasi: "RandomF64")]
+pub declare fn draw() -> f64;
+
+pub fn main() {
+    @print(draw() < 1.0);
+}

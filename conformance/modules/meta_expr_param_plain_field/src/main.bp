@@ -1,0 +1,17 @@
+//// Decision 370 (1) — a decorator parameter's `@Expr` goes only to an
+//// `@Expr<T>` field; a plain field takes the value known at build,
+//// `table.value` (decision 364 (2)). Handing the expression itself to a
+//// `string` field is refused at the argument.
+
+type Entity(table: string)
+
+fn entity(comptime decl: @Decl, comptime table: @Expr<string>) {
+    decl.setMeta(Entity(table: table));
+}
+
+#[entity("cities")]
+type City(name: string)
+
+pub fn main() {
+    @print(@typeInfo(City).meta(Entity)?.table ?? "none");
+}

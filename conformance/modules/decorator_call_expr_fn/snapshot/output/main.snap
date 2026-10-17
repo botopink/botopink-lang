@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: expr-value-of-function: `rule` is an `@Expr` of a function, which has no `.value`
+at src/main.bp:10:14

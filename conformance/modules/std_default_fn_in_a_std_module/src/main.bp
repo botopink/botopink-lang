@@ -1,0 +1,37 @@
+//// 1.0.10-beta `00 · 02-erlang` — a primitive-interface `default fn`
+//// (`String.slice`, `Array.slice`) reached INSIDE a `libs/std` module that
+//// `from "std"` compiled as an ordinary dependency.
+////
+//// `String.slice` is a bodied `default fn` of `libs/std/src/primitives.bp`,
+//// not a bare-symbol prim-op, so the erlang backend reaches it through
+//// `collectPreludeInstanceDefaults` — which was called only for a COMPTIME
+//// module. A std module compiled as a dependency took neither path, and
+//// `query.slice(1, query.length)` fell through to a bare local `slice/3` the
+//// module never defines. Five std modules were dead on the erlang row at once
+//// — `path`, `querystring`, `queue`, `snapshots`, `url` — each refused by
+//// `erlc` with `function slice/3 undefined`. The same expression in a PROJECT
+//// module has always lowered to the emitted `string_slice/3`, which is why the
+//// defect needed a std module to say anything.
+////
+//// Each line reaches the shim through a different std module and a different
+//// interface: `querystring.parse` and `url.parse` through `String.slice`,
+//// `path.extname` through the `basename` beside it, `queue.dequeue` through
+//// `Array.slice` in a std TYPE's method — the four routes the audit found dead.
+////
+//// On all four targets (`01-compiler/05-wasm` step 5): `encoding` binds every
+//// cell on wasm, `url.parse` reached through its namespace is `url`'s and not
+//// `querystring`'s `parse` (one of the two is mangled there), and
+//// `dequeue`'s `#(Queue<T>, ?T)` reads its `?T` as the box the generic body
+//// wrote — on wasm `url.parse(…).host` printed `0` and the front item a heap
+//// address, at exit 0.
+
+import {querystring, path, url, collections.Queue} from "std";
+
+pub fn main() {
+    @print(querystring.parse("?a=1&b=2").unwrapOr([]).length);
+    @print(path.extname("dir/report.tar.gz"));
+    @print(url.parse("https://example.com/a?b=1").host);
+    val r = Queue.empty().enqueue(1).enqueue(2).dequeue();
+    @print(r._1 ?? -1);
+    @print(r._0.size());
+}

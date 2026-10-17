@@ -1,0 +1,11 @@
+pub type RequestBase()
+
+type MathOps() {
+    fn double(self: Self, x: i32) -> i32 {
+        return x * 2;
+    }
+}
+
+pub fn main() {
+    @print(MathOps().double(4)); // 8
+}

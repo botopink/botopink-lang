@@ -1,0 +1,36 @@
+//// A module's own `behavior Field` and `behavior Result` — names the prelude
+//// gives as types (the reflection record `Field`, the carrier `Result`). In
+//// this module each name is its own behavior: a call on a parameter typed by
+//// it dispatches to the implementing type's method.
+
+pub behavior Field {
+    fn column(self: Self) -> string;
+}
+
+pub behavior Result {
+    fn score(self: Self) -> i32;
+}
+
+pub type Age(years: i32) implement Field, Result {
+    fn column(self: Self) -> string {
+        return "age";
+    }
+
+    fn score(self: Self) -> i32 {
+        return self.years * 2;
+    }
+}
+
+fn columnOf(f: Field) -> string {
+    return f.column();
+}
+
+fn scoreOf(r: Result) -> i32 {
+    return r.score();
+}
+
+pub fn main() {
+    val a = Age(years: 21);
+    @print(columnOf(a));
+    @print(scoreOf(a));
+}

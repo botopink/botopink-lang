@@ -1,0 +1,10 @@
+//// Decision 207 — one parameter of a function may have an inline type, so a
+//// call's field labels have one reading; a second is `inline-type-position`.
+
+fn two(a: type(x: i32), b: type(y: i32)) -> i32 {
+    return a.x;
+}
+
+pub fn main() {
+    @print(0);
+}

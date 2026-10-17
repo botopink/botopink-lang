@@ -1,0 +1,10 @@
+//// Decision 8 §5.4 — literal arms alone never cover i32: `_` is required.
+
+pub fn main() {
+    val x = 4;
+    val y = case x {
+        0 { "zero" }
+        1 { "one" }
+    };
+    @print(y);
+}

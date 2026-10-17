@@ -1,0 +1,24 @@
+//// `[a, b, ..rest]` — an array literal whose trailing spread appends the
+//// elements of another array (the parser admits the spread last only). wasm
+//// used to drop the spread with a `;; note` and build the two-element array:
+//// `list.length` printed `2` at exit 0. It is the literal's elements followed
+//// by the spread value's now, on every target.
+
+fn tail() -> i32[] {
+    return [30, 40];
+}
+
+pub fn main() {
+    val rest = [3, 4];
+    val list = [1, 2, ..rest];
+    @print(list.length);
+    @print(list[0]);
+    @print(list[3]);
+    val t = tail();
+    val fromCall = [10, ..t];
+    @print(fromCall.length);
+    @print(fromCall[2]);
+    val empty: i32[] = [];
+    val onlySpread = [..empty];
+    @print(onlySpread.length);
+}

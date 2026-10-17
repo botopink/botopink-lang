@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: template-annotation-call-form: `#[sql(…)]` names the template function `sql`, which is written as an annotation `#[sql "…"]`
+at src/main.bp:11:3

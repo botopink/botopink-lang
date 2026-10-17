@@ -1,0 +1,15 @@
+//// A module that declares its own `Dict` cannot also name std's through the
+//// namespace: the backends tell two types of one name apart by nothing
+//// (decision 170). The dotted name is an unknown type, located at it.
+
+import {collections} from "std";
+
+type Dict(n: i32)
+
+fn make() -> collections.Dict<string, i32> {
+    return collections.Dict.empty();
+}
+
+pub fn main() {
+    @print(Dict(n: 1).n);
+}

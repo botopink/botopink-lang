@@ -1,0 +1,18 @@
+//// Decision 553 (1) — a marker says how a body compiles, and a declaration
+//// without a body has none: `now` is a behavior's bodyless member, so its
+//// marker is refused, `marker-on-declaration`. Its return type alone says
+//// what it answers.
+
+behavior Clock {
+    async fn now(self: Self) -> @Task<i32>;
+}
+
+type Fixed(t: i32) implement Clock {
+    fn now(self: Self) -> @Task<i32> {
+        return self.t;
+    }
+}
+
+pub fn main() -> @Task<void> {
+    @print(await Fixed(t: 7).now());
+}

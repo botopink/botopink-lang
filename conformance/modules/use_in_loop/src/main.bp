@@ -1,0 +1,22 @@
+//// Decision 357 (1) — a loop runs its body any number of times, so a `use`
+//// in it would not run the same number of times on every call: refused at
+//// the `use`, naming the loop.
+
+type Element(count: i32) implement @Renderable
+
+fn state(initial: i32) -> @Component<i32> {
+    return initial;
+}
+
+fn Widget(xs: i32[]) -> @Component<Element> {
+    var total = 0;
+    for (xs) { x ->
+        val v = use state(x);
+        total = total + v;
+    }
+    return Element(count: total);
+}
+
+pub fn main() {
+    Widget([1, 2]);
+}

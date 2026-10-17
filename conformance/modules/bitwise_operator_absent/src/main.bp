@@ -1,0 +1,8 @@
+//// 1.0.10-beta `00 · 15-language-surface` step 3 — there are no bitwise
+//// operators (`<<`, `>>`, `&`, `^`); `&&`/`||` are the boolean ones and a bit
+//// operation is a host function. Refused by name at the operator.
+
+pub fn main() {
+    val x = 1 << 2;
+    @print(x.toString());
+}

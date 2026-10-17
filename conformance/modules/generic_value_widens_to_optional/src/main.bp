@@ -1,0 +1,20 @@
+//// A value typed by a type parameter widens to that parameter's optional at a
+//// return, as a concrete `i32` widens to `?i32` (`language-gaps.md`, "A generic
+//// value cannot be returned as its optional"). It was `recursive type
+//// detected`: the variable sat inside the optional it was linked to.
+
+fn some<T>(v: T) -> ?T {
+    return v;
+}
+
+fn pick<T>(v: T, keep: bool) -> ?T {
+    if (keep) return v;
+    return null;
+}
+
+pub fn main() {
+    @print(some(3) ?? 0);
+    @print(some("a") ?? "z");
+    @print(pick(7, true) ?? 0);
+    @print(pick(7, false) ?? 0);
+}

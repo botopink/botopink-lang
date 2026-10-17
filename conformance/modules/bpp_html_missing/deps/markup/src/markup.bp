@@ -1,0 +1,14 @@
+//// The markup's unfold target: answers the literal's length.
+
+import {bpp} from "std";
+
+pub default fn markup(comptime t: @Expr<string>) -> @ExprCustom<i32> {
+    val root = CustomNode(
+        kind: "markup",
+        span: Span(0, 0, 1),
+        label: "",
+        ref: null,
+        children: [],
+    );
+    return t.custom(root, t.build(t.text().length().toString()));
+}

@@ -1,0 +1,20 @@
+//// Decision 319 — `u64` is 0 … 2^64 − 1 on every target: its top prints as
+//// itself, a difference near it answers, `%` and `/` past 2^53 answer (commonJS
+//// aborted `10^19 % 3·10^18` as an overflow), and a sum past the top aborts.
+//// commonJS holds a value past 2^53 as a `BigInt` (it refused the literal
+//// before).
+
+fn add(a: u64, b: u64) -> u64 {
+    return a + b;
+}
+
+pub fn main() {
+    val top = 18446744073709551615ul;
+    @print(top);
+    @print(top - 18446744073709551614ul);
+    @print(add(18446744073709551614ul, 1ul));
+    @print(10000000000000000000ul % 3000000000000000000ul);
+    @print(10000000000000000000ul / 3ul);
+    @print(add(top, 1ul));
+    @print("unreachable");
+}

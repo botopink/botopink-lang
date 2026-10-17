@@ -1,0 +1,12 @@
+//// Decisions 120 and 127 of 1.0.10-beta (front 24, § Cells "Migration";
+//// guide.md § 9, row `#[@future] fn f() -> @Future<T, E>`) — `@Future` leaves
+//// with its error channel: `@Future<T, E>` in a type is `effect-type-removed`,
+//// located at the type, with the fix-it `@Task<@Result<T, E>>`. No annotation
+//// here, so the type is the only old spelling in the program. The new form is
+//// `run/task_await_result.bp`.
+
+fn fetch(n: i32) -> @Future<i32, string> {
+    return n;
+}
+
+pub fn main() { fetch(1); }

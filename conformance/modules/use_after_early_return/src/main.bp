@@ -1,0 +1,21 @@
+//// Decision 357 (1) — a `use` after a statement that may `return` early does
+//// not run on every call: refused at the `use`, naming the line of that
+//// statement.
+
+type Element(count: i32) implement @Renderable
+
+fn state(initial: i32) -> @Component<i32> {
+    return initial;
+}
+
+fn Widget(empty: bool) -> @Component<Element> {
+    if (empty) {
+        return Element(count: 0);
+    }
+    val n = use state(1);
+    return Element(count: n);
+}
+
+pub fn main() {
+    Widget(false);
+}

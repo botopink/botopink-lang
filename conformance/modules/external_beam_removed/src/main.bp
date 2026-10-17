@@ -1,0 +1,10 @@
+//// Decision 437 — `@External.Beam` is gone: the beam target reads
+//// `@External.Erlang`, the same VM and the same OTP calls. Writing the old
+//// variant binds no host and is a located error at the annotation, never an
+//// alias.
+
+#[@External.Erlang("math", "sqrt")]
+#[@External.Beam("math", "sqrt")]
+declare fn root(x: f64) -> f64;
+
+pub fn main() { @print(root(16.0)); }

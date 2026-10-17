@@ -1,0 +1,8 @@
+//// Decision 332, question 139-a — a `bigint` does not widen to `unknown`: a test on the `unknown`
+//// would answer per target (erlang holds one integer; an `i64` past 2^53 is a `BigInt` on commonJS).
+
+pub fn main() {
+    val x = 5n;
+    val u: unknown = x;
+    @print(u);
+}

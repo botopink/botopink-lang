@@ -2,7 +2,7 @@
 {
   "decls": [
     {
-      "interface": {
+      "behavior": {
         "name": "Test",
         "id": 1,
         "isPub": false,
@@ -56,7 +56,8 @@
                                 },
                                 "emptyLinesBefore": 0
                               }
-                            ]
+                            ],
+                            "isBlock": true
                           },
                           {
                             "label": "erro",
@@ -76,7 +77,8 @@
                                 },
                                 "emptyLinesBefore": 0
                               }
-                            ]
+                            ],
+                            "isBlock": true
                           }
                         ]
                       }

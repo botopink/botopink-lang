@@ -1,0 +1,27 @@
+type Element(text: string) implement @Renderable
+
+fn graph(comptime decl: @Decl) {
+    var names: string[] = [];
+    decl.hooks.forEach(
+        { n -> names.push(n.function.name + "/" + n.uses.length.toString()) },
+    );
+    decl.setMeta(Graph(nodes: names));
+}
+
+fn session() -> @Component<string> {
+    return "alice";
+}
+
+fn user() -> @Component<string> {
+    val s = use session();
+    return "user " + s;
+}
+
+#[graph]
+pub fn Page() -> @Component<Element> {
+    val u = use user();
+    return Element(text: u);
+}
+
+// What `#[graph]` records: one rendered node per entry of `decl.hooks`.
+pub type Graph(nodes: string[])

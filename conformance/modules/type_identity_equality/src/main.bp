@@ -1,0 +1,15 @@
+//// Decision 8 §4 — two declarations with the same fields are two types, and
+//// their values are never equal. `test/type_identity.bp` asserts it, but
+//// `botopink test` refuses beam and wasm, so only two backends reach it; this
+//// cell is the same statement as a `run/`, which every backend executes.
+////
+//// Two values of the SAME type with equal fields are equal (decision 210);
+//// `run/record_structural_equality.bp` is that half.
+
+type Person(name: string, age: i32)
+
+type Vec(name: string, age: i32)
+
+pub fn main() {
+    @print(Person(name: "a", age: 1) == Vec(name: "a", age: 1));
+}

@@ -1,0 +1,12 @@
+//// Reads what `#[args]` recorded on the declarations of `pages`, the cell's
+//// subject: a decorator that reads `.hooks` runs after its module's bodies,
+//// so its typed meta is read from another module (`typeinfo-meta-hooks-pending`).
+
+pub mod pages;
+
+import {pages.Post, pages.HookArgs};
+
+pub fn main() {
+    val uses: string[] = @typeInfo(Post).meta(HookArgs)?.uses ?? [];
+    @print(uses.join(" "));
+}

@@ -1,0 +1,10 @@
+fn work() -> @Task<i32> {
+    defer @print("done");
+    val v = await (async { 20 });
+    @print("got " + v.toString());
+    return v + 1;
+}
+
+pub fn main() -> @Task<void> {
+    @print(await work());
+}

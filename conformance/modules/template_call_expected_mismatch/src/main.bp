@@ -1,0 +1,12 @@
+//// Decision 426 (3) — a template call meets the type expected where it
+//// stands as any expression does: the call's type is the built code's
+//// (`string[]`), and `val n: i32 = …` is the ordinary mismatch at the call.
+
+fn names(comptime q: @Expr<string>) -> @Expr<unknown[]> {
+    return q.build("[\"" + q.text() + "\"]");
+}
+
+pub fn main() {
+    val n: i32 = names "cities";
+    @print(n.toString());
+}

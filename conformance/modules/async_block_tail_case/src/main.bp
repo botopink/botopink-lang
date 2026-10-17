@@ -1,0 +1,32 @@
+//// Decision 525 — a `case` at the end of an `async { … }` block is its tail:
+//// the task's value is the arm's, and an arm's `throw` fails the task. The
+//// `case` was a statement, so the succeeding task answered no value: erlang
+//// raised `case_clause`, commonJS printed `null`, wasm `0` and beam `-1`.
+
+fn load(n: i32) -> @Task<@Result<i32, string>> {
+    if (n < 0) throw "negative " + n.toString();
+    return n;
+}
+
+fn run() -> @Task<void> {
+    val bad = async {
+        case await load(-7) {
+            Error(e) -> throw "wrapped: " + e;
+            Ok(v) -> v * 2;
+        }
+    };
+    val b = try await bad catch -1;
+    @print(b);
+    val good = async {
+        case await load(970) {
+            Error(e) -> throw "wrapped: " + e;
+            Ok(v) -> v * 2;
+        }
+    };
+    val g = try await good catch -1;
+    @print(g);
+}
+
+pub fn main() {
+    run();
+}

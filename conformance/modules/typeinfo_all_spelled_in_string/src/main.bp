@@ -1,0 +1,16 @@
+//// Decision 216 (4) — a reader is a module that CALLS `@TypeInfo.all`. A
+//// module whose string literal only spells it (`hints`) reads nothing: the
+//// entry point imports it, and its tagged declaration is in the catalogue
+//// (a reader's own declarations would be left out of another reader's).
+
+pub mod marks;
+pub mod hints;
+import {marks.tagged};
+import {hints.usage};
+
+pub fn main() {
+    @print(usage());
+    for (@TypeInfo.all(with: tagged)) { e ->
+        @print(e.module + " " + e.name);
+    }
+}

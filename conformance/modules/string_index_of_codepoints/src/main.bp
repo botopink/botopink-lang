@@ -1,0 +1,42 @@
+//// Decisions 169, 240 and 320: a string index counts codepoints on every
+//// target, so the index `indexOf` answers is the one `at` reads back. `—`
+//// (U+2014) is three UTF-8 bytes and one codepoint: counted in bytes,
+//// `indexOf("X")` answered `5` on wasm and `at(3)` the last byte of the dash.
+//// A combining mark is a codepoint of its own (`"e\u{301}"` is two, where
+//// erlang's `string:length/1` counted one grapheme cluster), and a character
+//// outside the BMP is one (`"👍"` is two UTF-16 units on commonJS).
+
+pub fn main() {
+    val s = "a—bXc";
+    @print(s.indexOf("X"));
+    @print(s.at(3));
+    @print(s.at(1));
+
+    val e = "e\u{301}";
+    @print(e.length);
+    @print(e.at(1) == "\u{301}");
+    @print(e.at(-1) == "\u{301}");
+    @print(e.indexOf("\u{301}"));
+    @print(e.slice(0, 1));
+    @print(e.slice(1) == "\u{301}");
+
+    val m = "e\u{301}xe\u{301}";
+    @print(m.length);
+    @print(m.indexOf("x"));
+    @print(m.lastIndexOf("e"));
+    @print(m.lastIndexOf("\u{301}"));
+    @print(m.slice(1, 4) == "\u{301}xe");
+
+    val t = "👍";
+    @print(t.length);
+    @print(t.at(0) == "👍");
+    @print(t.at(1) == null);
+
+    val a = "a👍b👍c";
+    @print(a.length);
+    @print(a.indexOf("b"));
+    @print(a.lastIndexOf("👍"));
+    @print(a.at(3));
+    @print(a.slice(1, 3));
+    @print(a.slice(4));
+}

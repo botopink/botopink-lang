@@ -1,0 +1,27 @@
+pub type Tok {
+    Pad {
+        All {
+            4,
+            8,
+        }
+    }
+    Bold,
+    Hover(inner: Tok[]),
+}
+
+pub fn defaultPad() -> Tok {
+    return .Pad.All.8;
+}
+
+pub fn label(t: Tok) -> string {
+    return case t {
+        Pad(p) -> case p {
+            All(a) -> case a {
+                __4 -> "pad-4";
+                __8 -> "pad-8";
+            };
+        };
+        Bold -> "bold";
+        Hover(inner) -> "hover(" + inner.map({ i -> label(i) }).join(",") + ")";
+    };
+}

@@ -1,0 +1,28 @@
+//// A template telling a hole known at build from one computed at render
+//// (`run/styled_holes_known_at_build`, over strings), and the `val`s it
+//// exports: a literal and an expansion with no run-time hole.
+
+fn quoted(text: string) -> string {
+    return "\"" + text + "\"";
+}
+
+pub fn rule(comptime t: @Expr<string>) -> @Expr<string> {
+    var built = "";
+    var computed = "\"\"";
+    var known = true;
+    for (t.parts()) { part ->
+        if (part.kind == "Interp") {
+            if (part.known) built = built + part.value else known = false;
+            computed = computed + " + " + part.code;
+        } else {
+            built = built + part.text;
+            computed = computed + " + " + quoted(part.text);
+        }
+    }
+    if (known) return t.build(quoted("build " + built));
+    return t.build("\"render \" + " + computed);
+}
+
+pub val red = "red";
+
+pub val tab = rule "tab-size: 4;";

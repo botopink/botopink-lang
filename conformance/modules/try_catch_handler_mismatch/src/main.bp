@@ -1,0 +1,15 @@
+//// A `catch` handler is the other way a `try` expression ends, so its value
+//// must be the success type (or `null`, which makes the whole a `?T`). A
+//// mismatch is located at the handler — the `try … catch` path used to red
+//// with no location at all.
+
+pub type Post(title: string)
+
+fn loadPost(id: i32) -> @Task<@Result<Post, string>> {
+    return async { throw "missing"; };
+}
+
+pub fn main() -> @Task<void> {
+    val post: Post = try await loadPost(1) catch 7;
+    @print(post.title);
+}

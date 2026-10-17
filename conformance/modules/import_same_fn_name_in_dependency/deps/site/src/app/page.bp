@@ -1,0 +1,5 @@
+//// The application's page — one of the two declarations of `title`.
+
+pub fn title() -> string {
+    return "app";
+}

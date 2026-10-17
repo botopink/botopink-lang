@@ -1,0 +1,18 @@
+//// A record field declared `Children` is the markup child list, an array at
+//// run time (the coercion is type-level only): `for (e.children)` walks it on
+//// every target, the element recursing as the record it is. wasm refused the
+//// walk, "nothing shows this iterable is one".
+
+pub type El(tag: string, children: Children)
+
+pub fn render(e: El) -> string {
+    var inner = "";
+    for (e.children) { c ->
+        inner = inner + render(c);
+    }
+    return "<" + e.tag + ">" + inner + "</" + e.tag + ">";
+}
+
+pub fn main() {
+    @print(render(El(tag: "a", children: [El(tag: "b", children: []), El(tag: "c", children: [])])));
+}

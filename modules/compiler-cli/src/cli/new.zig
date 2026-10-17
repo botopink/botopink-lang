@@ -1,6 +1,7 @@
 /// `botopink new <name>` — scaffold a new botopink project.
 const std = @import("std");
 const reporter = @import("./reporter.zig");
+const manifest = @import("manifest");
 
 // ── Options ───────────────────────────────────────────────────────────────────
 
@@ -11,9 +12,18 @@ pub const Options = struct {
 
 // ── Templates ─────────────────────────────────────────────────────────────────
 
+/// The scaffolded program. It must **print**: a block's value is its `break`
+/// (`specs/1.0.4-beta/08-review-backlog/semantics-decisions.md` decision 2), so
+/// a body whose only statement is the literal `"Hello, world!"` evaluates to
+/// nothing and `botopink run` shows an empty screen — the quick start of the
+/// README then has no visible effect. `@print` is the builtin, on every target.
 const MAIN_BP =
+    \\fn greet(name: string) -> string {
+    \\    return "Hello, " + name + "!";
+    \\}
+    \\
     \\pub fn main() {
-    \\  "Hello, world!"
+    \\    @print(greet("world"));
     \\}
     \\
 ;
@@ -37,6 +47,13 @@ pub fn run(gpa: std.mem.Allocator, io: std.Io, opts: Options) !u8 {
             reporter.errMsg("project name may only contain letters, digits, '-' and '_'");
             return 1;
         }
+    }
+    // The name becomes the manifest's `name`, which `manifest` refuses unless
+    // it starts with a lowercase letter (decision 109) — refuse before
+    // scaffolding a project that could not build.
+    if (manifest.nameRefusal(opts.name)) |why| {
+        reporter.errMsg(why);
+        return 1;
     }
 
     const cwd = std.Io.Dir.cwd();

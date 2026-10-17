@@ -22,9 +22,8 @@
             "is_builtin": true
           },
           {
-            "name": "external",
+            "name": "External.Node",
             "args": [
-              "node",
               "\"./gleam_stdlib.mjs\"",
               "\"string_length\""
             ],
@@ -40,7 +39,6 @@
             },
             "typeName": "",
             "modifier": "none",
-            "fnType": null,
             "destruct": null,
             "default": null
           }

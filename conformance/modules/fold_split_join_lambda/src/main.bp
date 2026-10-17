@@ -1,0 +1,11 @@
+// A lambda handed to `fold` chains string methods on its accumulator:
+// `acc.split(c).join("")` removes every `c` from it.
+fn residue(raw: string, allowed: string) -> string {
+    return allowed.split("").fold(raw, { acc, c -> acc.split(c).join("") });
+}
+
+pub fn main() {
+    @print("a-b".split("-").join(""));
+    @print(residue("a1b2", "ab"));
+    @print(residue("abab", "ab") == "");
+}

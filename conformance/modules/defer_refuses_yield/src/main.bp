@@ -1,0 +1,10 @@
+pub fn nums() -> @Iterator<i32> {
+    defer {
+        yield 9;
+    }
+    yield 1;
+}
+
+pub fn main() {
+    @print("unreachable");
+}

@@ -1,0 +1,5 @@
+pub type Card(title: string) {
+    pub fn heading(self: Self) -> string {
+        return "# " + self.title;
+    }
+}

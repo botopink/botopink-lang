@@ -1,0 +1,14 @@
+//// Decision 359 (2) — a `Type.partial` value is not spread: a field of it may
+//// be null. Refused at the `...`, naming both types.
+
+import {types.Type} from "std";
+
+type Pessoa(nome: string, idade: i32)
+
+val PessoaPatch = Type.partial(Pessoa);
+
+pub fn main() {
+    val patch = PessoaPatch(nome: "Ana", idade: null);
+    val p = Pessoa(..patch, idade: 3);
+    @print(p.nome);
+}

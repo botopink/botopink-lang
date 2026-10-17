@@ -1,0 +1,16 @@
+//// A std module's `pub fn` in value position is the function it names
+//// (`language-gaps.md`, "A namespace member is a call, not a value"):
+//// `path.basename` and `path.extname` passed as arguments, and `path.dirname`
+//// called through the namespace beside them. It was `unbound variable 'path'`.
+
+import {path} from "std";
+
+fn apply(f: fn(s: string) -> string, v: string) -> string {
+    return f(v);
+}
+
+pub fn main() {
+    @print(apply(path.basename, "/a/b/c.txt"));
+    @print(apply(path.extname, "/a/b/c.txt"));
+    @print(path.dirname("/a/b/c.txt"));
+}

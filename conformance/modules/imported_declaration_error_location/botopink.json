@@ -1,0 +1,1 @@
+{ "name": "imported_declaration_error_location", "dependencies": { "a": { "path": "deps/a" }, "b": { "path": "deps/b" } } }

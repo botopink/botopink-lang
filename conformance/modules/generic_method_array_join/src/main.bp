@@ -1,0 +1,29 @@
+// The array a library's generic method answers is an array of what its type
+// argument names: `.join` over `toArray()` of a `Seq<string>` joins strings,
+// and `select<U>` binds `U` from its lambda's answer — a record's string
+// field, a number — however the chain is written.
+import {of} from "seq";
+
+type City(name: string, pop: i32)
+
+val cities = [
+    City(name: "Lyon", pop: 5),
+    City(name: "Paris", pop: 9),
+    City(name: "Nice", pop: 3),
+];
+
+pub fn main() {
+    @print(of(cities)
+        .where({ c -> c.pop >= 5 })
+        .select({ c -> c.name })
+        .toArray()
+        .join(", "));
+    val names = of(cities).select({ c -> c.name }).toArray();
+    @print(names.join("/"));
+    @print(of([1, 2, 3, 4])
+        .where({ n -> n % 2 == 0 })
+        .select({ n -> n * n })
+        .toArray()
+        .join("-"));
+    @print(of(["a", "b"]).toArray().join("+"));
+}

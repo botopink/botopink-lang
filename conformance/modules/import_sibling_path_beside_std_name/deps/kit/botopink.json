@@ -1,0 +1,1 @@
+{ "name": "kit", "version": "0.0.1", "src": "src/", "entry": "root.bp", "files": ["root.bp", "sort/mod.bp", "sort/queue.bp", "report.bp"] }

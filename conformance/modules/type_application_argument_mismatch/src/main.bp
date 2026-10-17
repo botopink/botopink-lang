@@ -1,0 +1,14 @@
+//// Decision 255 (1) — the type arguments of `Box<i32>.make(…)` bind the
+//// type's parameter in the static fn's signature, so a `string` argument
+//// is the mismatch at the argument.
+
+type Box<T>(value: T) {
+    pub fn make(v: T) -> Box<T> {
+        return Box(value: v);
+    }
+}
+
+pub fn main() {
+    val b = Box<i32>.make("x");
+    @print(b.value);
+}

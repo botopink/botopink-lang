@@ -11,9 +11,14 @@
 ///   - `botopink`  — minimum compiler-version constraint (SemVer string)
 ///   - `requires`  — per-dep version constraint map (`{name: constraint}`)
 ///
-/// On `bpmp install <name>@<spec>`, bpmp appends to `dependencies` (so the
+/// On `bpmp install <name>@<spec>`, bpmp adds a `dependencies` entry (so the
 /// compiler's loader picks the lib up) AND records the constraint in
 /// `requires` (so a teammate's `bpmp install` resolves the same way).
+///
+/// `dependencies` is the object form only (decision 76) — `{ "<name>": { "git" }
+/// | { "path" } | { "workspace": true } }`; the shared `manifest` module
+/// (`modules/manifest`) is the parser of record, `dep/spec.zig` reaches it. The
+/// typed view here only lists the keys and writes an entry in that shape.
 const std = @import("std");
 
 pub const Error = anyerror;
@@ -81,16 +86,18 @@ pub const Manifest = struct {
         return out;
     }
 
-    /// Iterate `dependencies` as a `[]const string`. Arena-allocated.
+    /// The names of `dependencies` (the object's keys, in declared order).
+    /// Caller owns the slice via `gpa`; the strings point into the tree. Any
+    /// shape but an object — the retired string array included — is
+    /// `ManifestInvalid`.
     pub fn dependencies(self: *Manifest, gpa: std.mem.Allocator) ![]const []const u8 {
         const o = try self.obj();
         const v = o.get("dependencies") orelse return &.{};
-        if (v != .array) return error.ManifestInvalid;
-        var out = try gpa.alloc([]const u8, v.array.items.len);
-        for (v.array.items, 0..) |entry, i| {
-            if (entry != .string) return error.ManifestInvalid;
-            out[i] = entry.string;
-        }
+        if (v != .object) return error.ManifestInvalid;
+        var out = try gpa.alloc([]const u8, v.object.count());
+        var i: usize = 0;
+        var it = v.object.iterator();
+        while (it.next()) |kv| : (i += 1) out[i] = kv.key_ptr.*;
         return out;
     }
 
@@ -104,32 +111,31 @@ pub const Manifest = struct {
         return if (c == .string) c.string else null;
     }
 
-    /// Append `dep_name` to `dependencies` (when not already present) and set
-    /// `requires.<dep_name>` to `constraint` (overwriting any existing). Both
-    /// updates happen in lockstep — see Notes in the spec for why.
+    /// Add `dep_name` to `dependencies` as `{ "git": git_url }` (when not
+    /// already present — an existing entry keeps its own source and pin) and
+    /// set `requires.<dep_name>` to `constraint` (overwriting any existing).
+    /// Both updates happen in lockstep — see Notes in the spec for why.
     pub fn addDependency(
         self: *Manifest,
         gpa: std.mem.Allocator,
         dep_name: []const u8,
         constraint: []const u8,
+        git_url: []const u8,
     ) !void {
         const a = self.arenaAllocator();
         const o = try self.obj();
 
-        // 1. dependencies (string[]): ensure entry present.
+        // 1. dependencies (object): ensure the entry is present.
         if (o.getPtr("dependencies") == null) {
-            try o.put(a, try a.dupe(u8, "dependencies"), .{ .array = std.json.Array.init(a) });
+            try o.put(a, try a.dupe(u8, "dependencies"), .{ .object = std.json.ObjectMap.empty });
         }
         const deps_val = o.getPtr("dependencies").?;
-        if (deps_val.* != .array) return error.ManifestInvalid;
-        var found = false;
-        for (deps_val.array.items) |e| {
-            if (e == .string and std.mem.eql(u8, e.string, dep_name)) {
-                found = true;
-                break;
-            }
+        if (deps_val.* != .object) return error.ManifestInvalid;
+        if (deps_val.object.get(dep_name) == null) {
+            var entry: std.json.ObjectMap = .empty;
+            try entry.put(a, try a.dupe(u8, "git"), .{ .string = try a.dupe(u8, git_url) });
+            try deps_val.object.put(a, try a.dupe(u8, dep_name), .{ .object = entry });
         }
-        if (!found) try deps_val.array.append(.{ .string = try a.dupe(u8, dep_name) });
 
         // 2. requires (object): set/overwrite the constraint.
         if (o.getPtr("requires") == null) {
@@ -148,20 +154,12 @@ pub const Manifest = struct {
     /// Remove `dep_name` from both `dependencies` and `requires`. No-op when
     /// either is absent (so `bpmp uninstall` is idempotent).
     pub fn removeDependency(self: *Manifest, dep_name: []const u8) !void {
-        const a = self.arenaAllocator();
         const o = try self.obj();
         if (o.getPtr("dependencies")) |p| {
-            if (p.* != .array) return error.ManifestInvalid;
-            var keep: std.json.Array = std.json.Array.init(a);
-            for (p.array.items) |e| {
-                if (e == .string and std.mem.eql(u8, e.string, dep_name)) continue;
-                try keep.append(e);
-            }
-            // The old array's backing slice is arena-owned (parseFromSliceLeaky
-            // allocated it there); leaving it for the arena to reclaim is
-            // cheaper than calling deinit, which would walk back through the
-            // arena's free path and hit non-top blocks.
-            p.* = .{ .array = keep };
+            if (p.* != .object) return error.ManifestInvalid;
+            // Ordered removal keeps the other entries in their declared order,
+            // so the rewritten file diffs by one line.
+            _ = p.object.orderedRemove(dep_name);
         }
         if (o.getPtr("requires")) |p| {
             if (p.* != .object) return error.ManifestInvalid;
@@ -236,7 +234,7 @@ pub fn create(
     try obj.put(a, "target", .{ .string = try a.dupe(u8, target) });
     try obj.put(a, "entry", .{ .string = try a.dupe(u8, entry) });
     try obj.put(a, "src", .{ .string = try a.dupe(u8, "src/") });
-    try obj.put(a, "dependencies", .{ .array = std.json.Array.init(a) });
+    try obj.put(a, "dependencies", .{ .object = std.json.ObjectMap.empty });
     try obj.put(a, "requires", .{ .object = std.json.ObjectMap.empty });
     return .{ .gpa = gpa, .arena = arena, .tree = .{ .object = obj } };
 }
@@ -247,7 +245,7 @@ const testing = std.testing;
 
 test "parse: minimal manifest yields typed views" {
     var m = try parse(testing.allocator,
-        \\{ "name": "x", "version": "0.1.0", "dependencies": ["erika"] }
+        \\{ "name": "x", "version": "0.1.0", "dependencies": { "erika": { "git": "https://github.com/botopink/erika.git" } } }
     );
     defer m.deinit();
     try testing.expectEqualStrings("x", m.name().?);
@@ -287,36 +285,51 @@ test "requirement: reads requires.<name>" {
     try testing.expect(m.requirement("absent") == null);
 }
 
-test "addDependency adds to both dependencies AND requires" {
+test "dependencies: the string-array form is ManifestInvalid (76)" {
     var m = try parse(testing.allocator,
-        \\{ "name": "x", "version": "0.1.0", "dependencies": [] }
+        \\{ "name": "x", "version": "0.1.0", "dependencies": ["erika"] }
     );
     defer m.deinit();
-    try m.addDependency(testing.allocator, "erika", "^0.0.1");
+    try testing.expectError(error.ManifestInvalid, m.dependencies(testing.allocator));
+}
+
+test "addDependency adds an object entry with its git source AND the requires constraint" {
+    var m = try parse(testing.allocator,
+        \\{ "name": "x", "version": "0.1.0", "dependencies": {} }
+    );
+    defer m.deinit();
+    try m.addDependency(testing.allocator, "erika", "^0.0.1", "https://github.com/botopink/erika.git");
 
     const deps = try m.dependencies(testing.allocator);
     defer testing.allocator.free(deps);
     try testing.expectEqual(@as(usize, 1), deps.len);
     try testing.expectEqualStrings("erika", deps[0]);
     try testing.expectEqualStrings("^0.0.1", m.requirement("erika").?);
+    const out = try m.writeAlloc(testing.allocator);
+    defer testing.allocator.free(out);
+    try testing.expect(std.mem.indexOf(u8, out, "\"erika\": {\n      \"git\": \"https://github.com/botopink/erika.git\"\n    }") != null);
 }
 
-test "addDependency is idempotent on dependencies array" {
+test "addDependency is idempotent on an existing entry (its source and pin stay)" {
     var m = try parse(testing.allocator,
-        \\{ "name": "x", "version": "0.1.0", "dependencies": ["erika"], "requires": { "erika": "^0.0.1" } }
+        \\{ "name": "x", "version": "0.1.0", "dependencies": { "erika": { "git": "https://e/erika.git", "branch": "feat" } }, "requires": { "erika": "^0.0.1" } }
     );
     defer m.deinit();
-    try m.addDependency(testing.allocator, "erika", "^0.0.2"); // bumped constraint
+    try m.addDependency(testing.allocator, "erika", "^0.0.2", "https://other/erika.git"); // bumped constraint
 
     const deps = try m.dependencies(testing.allocator);
     defer testing.allocator.free(deps);
     try testing.expectEqual(@as(usize, 1), deps.len);
     try testing.expectEqualStrings("^0.0.2", m.requirement("erika").?);
+    const out = try m.writeAlloc(testing.allocator);
+    defer testing.allocator.free(out);
+    try testing.expect(std.mem.indexOf(u8, out, "https://e/erika.git") != null);
+    try testing.expect(std.mem.indexOf(u8, out, "\"branch\": \"feat\"") != null);
 }
 
-test "removeDependency drops from both arrays" {
+test "removeDependency drops from both dependencies and requires" {
     var m = try parse(testing.allocator,
-        \\{ "name": "x", "version": "0.1.0", "dependencies": ["erika","onze"], "requires": { "erika":"^0.0.1", "onze":"*" } }
+        \\{ "name": "x", "version": "0.1.0", "dependencies": { "erika": { "git": "https://e/erika.git" }, "onze": { "path": "../onze" } }, "requires": { "erika":"^0.0.1", "onze":"*" } }
     );
     defer m.deinit();
     try m.removeDependency("erika");

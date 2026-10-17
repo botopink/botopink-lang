@@ -1,0 +1,12 @@
+//// Decision 40 — an increment under `@BeamMemory.Ets` is the host's atomic
+//// counter (`ets:update_counter`), which answers `badarg` for anything but an
+//// integer. On an `f64` the `+=` would have to become read, add, write — the
+//// recomputation the rule beside it refuses — so it is refused too.
+
+#[@BeamMemory.Ets]
+var total: f64 = 0.0;
+
+pub fn main() {
+    total += 1.5;
+    @print(total);
+}

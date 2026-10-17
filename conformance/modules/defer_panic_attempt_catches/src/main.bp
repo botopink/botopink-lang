@@ -1,0 +1,17 @@
+import {failure, failure.Failure} from "std";
+
+fn boom() -> i32 {
+    defer @print("released");
+    @panic("kaboom");
+}
+
+fn show(r: @Result<i32, Failure>) {
+    case r {
+        Ok(v) -> @print("Ok " + v.toString());
+        Error(f) -> @print("Error " + f.kind + ": " + f.message);
+    }
+}
+
+pub fn main() {
+    show(failure.attempt({ -> boom() }));
+}

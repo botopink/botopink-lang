@@ -1,0 +1,20 @@
+//// Decision 167 (amends 43) — `#[@BeamMemory]` names BEAM storage, and a
+//// target whose execution context is the whole program has none: commonJS
+//// and wasm refuse the annotation where it is written
+//// (`.commonJS.expect`, `.wasm.expect`). It used to be a silent no-op there,
+//// so this program built and printed `2` on every target while its
+//// `ProcessDict` var meant one value per process only on the BEAM. On erlang
+//// and beam the var is written through a `fn` and read back.
+
+#[@BeamMemory.ProcessDict]
+var hits: i32 = 0;
+
+fn bump() {
+    hits = hits + 1;
+}
+
+pub fn main() {
+    bump();
+    bump();
+    @print(hits);
+}

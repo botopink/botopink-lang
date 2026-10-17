@@ -1,0 +1,11 @@
+//// Decision 268 — `with:` is declared `Decorator | Decorator[]`, and only a
+//// decorator's name has type `Decorator`: an ordinary function is the
+//// ordinary argument mismatch, located at the argument.
+
+fn helper() -> i32 {
+    return 1;
+}
+
+pub fn main() {
+    @print(@TypeInfo.all(with: helper).length);
+}

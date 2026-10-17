@@ -1,0 +1,11 @@
+//// Decision 487 — an `@External` variant's flags are labelled (`result:`,
+//// and `inline:` on `External.Erlang`) and read in any order. A bare `true`
+//// or `false` among the arguments names no flag, so it is refused at the
+//// argument, never read as the last-written flag.
+
+#[@External.Node("Math.max($0, $1)", true)]
+declare fn biggest(a: i32, b: i32) -> i32;
+
+pub fn main() {
+    @print(biggest(1, 2));
+}

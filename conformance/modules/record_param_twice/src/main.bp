@@ -1,0 +1,14 @@
+//// Decision 529 (2) — a function has at most one record parameter: a second
+//// `..props: R` is refused at the declaration, at its `..`.
+
+type CardProps(title: string)
+
+type IconProps(name: string)
+
+fn Card(..card: CardProps, ..icon: IconProps) -> string {
+    return card.title;
+}
+
+pub fn main() {
+    @print(Card(title: "a", name: "b"));
+}

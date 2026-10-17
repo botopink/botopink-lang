@@ -1,0 +1,17 @@
+//// Decisions 104 and 128 of 1.0.10-beta (front 24, § Cells "Chain and `use`";
+//// guide.md § 4.5 `Errado`) — a component is the `@Component<T>` whose `T`
+//// implements `@Renderable`, and it is CALLED (`Counter()`); `use` is for hooks.
+//// The guide gives the refusal no code (README open point 2); line 1 is
+//// today's message, at the `use`.
+
+type Element(count: i32) implement @Renderable
+
+fn Counter() -> @Component<Element> {
+    return Element(count: 1);
+}
+
+fn Errado() -> @Component<Element> {
+    return use Counter();
+}
+
+pub fn main() { Errado(); }

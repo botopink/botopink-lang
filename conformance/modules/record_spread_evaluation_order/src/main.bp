@@ -1,0 +1,24 @@
+//// Decision 359 (3), (6) — every argument is evaluated once: a spread's
+//// source that is not a name before the labelled values, even one written
+//// before it (question B-14-b as built), and a labelled value a later spread
+//// overrides still evaluated, though its field is the spread's — the fields
+//// apply left to right, the later winning.
+
+type Pessoa(nome: string, idade: i32)
+
+fn diz(texto: string) -> string {
+    @print(texto);
+    return texto;
+}
+
+fn faz() -> Pessoa {
+    @print("faz");
+    return Pessoa(nome: "Ana", idade: 3);
+}
+
+pub fn main() {
+    val p = Pessoa(nome: diz("n"), ..faz());
+    @print(p);
+    val q = Pessoa(..faz(), nome: diz("m"));
+    @print(q);
+}

@@ -1,0 +1,25 @@
+//// Decision 319 — an `i64` keys a `Dict` and a `Set` by its value on both
+//// sides of 2^53: commonJS holds `9007199254740991` as a number and
+//// `9007199254740992` as a `BigInt`, one canonical form per value, so a key
+//// computed by arithmetic finds the key written as a literal.
+
+import {collections.Dict, collections.Set} from "std";
+
+fn next(n: i64) -> i64 {
+    return n + 1l;
+}
+
+pub fn main() {
+    val below = 9007199254740991l;
+    val d = Dict.empty().insert(below, "below").insert(next(below), "above");
+    @print(d.at(9007199254740991l));
+    @print(d.at(9007199254740992l));
+    @print(d.at(next(next(below)) - 1l));
+    @print(d.size());
+    val s = Set.fromList(
+        [next(below), 9007199254740992l, below, next(below - 1l)],
+    );
+    @print(s.size());
+    @print(s.contains(9007199254740992l));
+    @print(s.contains(9007199254740993l));
+}

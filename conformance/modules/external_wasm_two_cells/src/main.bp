@@ -1,0 +1,15 @@
+//// Decision 481 — a wasm binding is one cell: an `op:` beside a `fn:` is
+//// refused at the second, on every target.
+
+#[@External.Node("Math", "floor")]
+#[@External.Erlang("math", "floor")]
+#[@External.Wasm(op: "f64.floor", fn: floorBody)]
+pub declare fn floorOf(x: f64) -> f64;
+
+fn floorBody(x: f64) -> f64 {
+    return x;
+}
+
+pub fn main() {
+    @print(floorOf(2.7));
+}

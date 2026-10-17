@@ -1,0 +1,56 @@
+//// Decision 214 — `==` over `f64` is a total order, as Java's
+//// `Double.compare` and Kotlin's data class: `0.0 == -0.0` is `false`, for a
+//// bare `f64` and for one inside a record, a tuple, an array or a variant
+//// alike; `<`, `>`, `<=`, `>=` keep IEEE ordering (`-0.0 < 0.0` is `false`).
+//// erlang and beam already separate the zeros (`=:=`); commonJS (`===`) and
+//// wasm (`f64.eq`) answered `true`. `-0.0` is built at run time, as
+//// `zero() * -1.0`, so no backend folds it.
+////
+//// The NaN half (`NaN == NaN` is `true`) is not in this cell: erlang and beam
+//// never produce a NaN (`z / z` raises `badarith`), and the runner narrows a
+//// cell only on a host binding a target lacks, which a division is not. Each
+//// backend that has NaN pins it in its own RUN LOG fixture
+//// (`codegen/tests/commonjs.zig`, `codegen/tests/wat.zig`).
+
+type F(x: f64)
+
+type V {
+    W(x: f64),
+    Z,
+}
+
+fn zero() -> f64 {
+    return 0.0;
+}
+
+pub fn main() {
+    val z = zero();
+    val neg = z * -1.0;
+
+    @print(z == neg);
+    @print(z != neg);
+    @print(z == zero());
+    @print(neg == neg);
+    @print(neg < z);
+    @print(neg <= z);
+    @print(neg >= z);
+
+    @print(F(x: z) == F(x: neg));
+    @print(F(x: z) != F(x: neg));
+    @print(F(x: z) == F(x: zero()));
+
+    val ta = #(z, 1);
+    val tb = #(neg, 1);
+    val tc = #(zero(), 1);
+    @print(ta == tb);
+    @print(ta == tc);
+
+    val xs = [z, 1.5];
+    val ys = [neg, 1.5];
+    val zs = [zero(), 1.5];
+    @print(xs == ys);
+    @print(xs == zs);
+
+    @print(V.W(x: z) == V.W(x: neg));
+    @print(V.W(x: z) == V.W(x: zero()));
+}

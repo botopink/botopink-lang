@@ -6,8 +6,11 @@ const std = @import("std");
 test {
     _ = @import("./test_warmup.zig"); // runs first: lazy-inits stdlib_template
     _ = @import("./lexer/tests.zig");
+    _ = @import("./otp.zig");
     _ = @import("./parser/tests.zig");
     _ = @import("./format/tests.zig");
     _ = @import("./comptime/tests.zig");
+    _ = @import("./comptime/analysis_entry.zig");
+    _ = @import("./comptime/level_b.zig");
     _ = @import("./codegen/tests.zig");
 }

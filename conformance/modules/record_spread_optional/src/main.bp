@@ -1,0 +1,15 @@
+//// Decision 359 (2) — a spread's source is a value of the record's type or
+//// of a type derived from it; an optional of it may be null, so it is
+//// neither. Refused at the `...`, naming both types.
+
+type Pessoa(nome: string, idade: i32)
+
+fn achar(nome: string) -> ?Pessoa {
+    return if (nome == "Ana") Pessoa(nome: "Ana", idade: 3) else null;
+}
+
+pub fn main() {
+    val talvez = achar("Ana");
+    val p = Pessoa(..talvez, idade: 4);
+    @print(p.nome);
+}

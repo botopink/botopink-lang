@@ -1,0 +1,15 @@
+//// Decision 563 — an `FsError` carries its own text: std's `io.fs` gives it `message()`, one text
+//// per variant, `<what>: <path>`, the same on every target. No library writes a `case` over the
+//// seven variants to print one.
+
+import {io.fs} from "std";
+
+pub fn main() {
+    @print(fs.FsError.NotFound(path: "a.txt").message());
+    @print(fs.FsError.PermissionDenied(path: "b.txt").message());
+    @print(fs.FsError.IsDirectory(path: "c").message());
+    @print(fs.FsError.NotDirectory(path: "d.txt").message());
+    @print(fs.FsError.AlreadyExists(path: "e").message());
+    @print(fs.FsError.InvalidUtf8(path: "f.bin", offset: 2l).message());
+    @print(fs.FsError.Other(path: "g", message: "disk on fire").message());
+}

@@ -1,0 +1,14 @@
+//// A field read on an imported record the module does not declare answers the field's value
+//// on every target, not the whole record: the dependency `assetreader` takes the compiler's
+//// `Asset` and reads `path`, `size`, `hash` and `bytes` off it.
+
+import {pathOf, sizeOf, hashOf, byteCount} from "assetreader";
+
+val note = @embed("assets/note.txt");
+
+pub fn main() {
+    @print(pathOf(note));
+    @print(sizeOf(note));
+    @print(hashOf(note) == note.hash);
+    @print(byteCount(note));
+}

@@ -1,0 +1,21 @@
+//// Two entities; one carries no index.
+
+import {orm.Model};
+import {orm.entity};
+import {orm.index};
+
+#[entity("cities")]
+#[index("name")]
+#[index("state")]
+pub type City(name: string, state: string) implement Model {
+    fn make() -> Self {
+        return City(name: "city", state: "pe");
+    }
+}
+
+#[entity("people")]
+pub type Person(name: string) implement Model {
+    fn make() -> Self {
+        return Person(name: "person");
+    }
+}

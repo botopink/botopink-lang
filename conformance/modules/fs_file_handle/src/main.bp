@@ -1,0 +1,62 @@
+//// Decision 540 (3) — the `File` handle: `create` (write, creating or truncating) and `open`
+//// (read), `path`, `size`, `read(n)` (up to `n` bytes, empty at the end), `bytes` and `text` (the
+//// rest from the position), `hash` (the SHA-256 of the whole file, whatever the position) and
+//// `write`, closed by the writer. Every fallible call answers `@Result<…, FsError>`; a file
+//// opened for reading refuses `write` and one created for writing refuses `read`.
+
+import {io.fs, encoding, hash} from "std";
+
+fn hex(b: Bytes) -> string {
+    return encoding.hexEncodeBytes(b);
+}
+
+fn session() -> @Result<void, fs.FsError> {
+    val out = try fs.create("handle.txt");
+    @print(out.path());
+    @print(try out.write(Bytes.fromUtf8("hello ")));
+    @print(try out.write(Bytes.fromUtf8("wörld")));
+    @print(out.read(1).isError());
+    out.close();
+    out.close();
+
+    val f = try fs.open("handle.txt");
+    @print(try f.size());
+    @print(hex(try f.read(5)));
+    val none = try f.read(0);
+    @print(none.length());
+    val digest = try f.hash();
+    @print(digest == hash.sha256("hello wörld"));
+    val rest = try f.text();
+    @print("[" + rest + "]");
+    val end = try f.read(5);
+    @print(end.length());
+    val again = try f.text();
+    @print("[" + again + "]");
+    @print(f.write(Bytes.fromUtf8("x")).isError());
+    f.close();
+
+    val g = try fs.open("handle.txt");
+    @print(hex(try g.bytes()));
+    g.close();
+
+    val h = try fs.open("handle.txt");
+    val head = try h.read(4);
+    @print(hex(head));
+    val tail = try h.text();
+    @print("[" + tail + "]");
+    h.close();
+
+    val again2 = try fs.create("handle.txt");
+    @print(try again2.write(Bytes.fromUtf8("x")));
+    again2.close();
+    @print(try fs.readText("handle.txt"));
+    return;
+}
+
+pub fn main() {
+    case session() {
+        Ok(_) -> @print("done");
+        Error(_) -> @print("failed");
+    }
+    fs.rm("handle.txt");
+}

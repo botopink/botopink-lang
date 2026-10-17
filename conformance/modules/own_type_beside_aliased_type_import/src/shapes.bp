@@ -1,0 +1,3 @@
+//// A module whose `Box` another module's own `Box` meets under an alias.
+
+pub type Box(w: i32)

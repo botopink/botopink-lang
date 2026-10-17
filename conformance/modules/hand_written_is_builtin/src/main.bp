@@ -1,0 +1,7 @@
+//// Decision 322 — `is` is only an operator: `builtins.d.bp` declares no `is`,
+//// so `@is(…)` written by hand is an unknown builtin, located at the `@`.
+
+pub fn main() {
+    val b = @is(1);
+    @println(b);
+}

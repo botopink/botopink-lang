@@ -1,0 +1,18 @@
+//// Decisions 535, 527 (1), 546 — an uncaught raise nothing marked writes
+//// `crash: <reason>` to stderr. A raise of a binding declared outside std
+//// without `result: true` is `host` (`abort_text_host`); one from the emitted
+//// code itself is not: here the binding answers a number where it is declared
+//// to answer a `string`, and `trim()` on it raises inside the program's own
+//// code, after the binding has returned. The reason is the engine's text, so
+//// the cell claims the kind alone.
+////
+//// The binding is commonJS's alone: erlang, beam and wasm refuse it.
+
+#[@External.Node("""5""")]
+declare fn notText() -> string;
+
+pub fn main() {
+    @print("before");
+    @print(notText().trim());
+    @print("after");
+}

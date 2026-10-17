@@ -1,0 +1,9 @@
+//// Decision 8 §7 — a string nested inside a container prints quoted, with its
+//// source escapes (`\"`, `\\`, `\n`) kept as written.
+
+pub fn main() {
+    @print(["hi"]);
+    @print(["a\"b"]);
+    @print(["c\\d"]);
+    @print(["x\ny"]);
+}

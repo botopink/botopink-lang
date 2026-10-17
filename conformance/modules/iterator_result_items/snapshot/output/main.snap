@@ -1,0 +1,6 @@
+botopink-cell 1
+out sum 6
+out sum failed: negative -2
+out 1
+out error: negative -2
+out 3

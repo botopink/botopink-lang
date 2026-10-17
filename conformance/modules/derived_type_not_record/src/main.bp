@@ -1,0 +1,13 @@
+//// Decision 307 — a derived type's source is a record: an enum is refused at
+//// the argument.
+
+import {types.Type} from "std";
+
+type Fish {
+    Salmon,
+    Tuna,
+}
+
+pub val MaybeFish = Type.partial(Fish);
+
+pub fn main() {}

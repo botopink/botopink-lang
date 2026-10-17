@@ -1,0 +1,6 @@
+botopink-cell 1
+out 3
+out 9
+out square
+out boxed
+out Shape.Point(x: 1, y: 2)

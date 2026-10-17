@@ -1,0 +1,1 @@
+{ "name": "files_one_module_twice", "dependencies": { "p": { "path": "deps/p" } } }

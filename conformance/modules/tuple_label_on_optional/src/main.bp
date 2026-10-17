@@ -1,0 +1,11 @@
+//// Decision 45 — `rs.at(0)` is a `?#(a: i32, b: string)`, and a member read
+//// off an optional is the located error naming `?.`, a tuple label included.
+
+fn rows() -> #(a: i32, b: string)[] {
+    return [#(1, "x")];
+}
+
+pub fn main() {
+    val rs = rows();
+    @print(rs.at(0).b);
+}

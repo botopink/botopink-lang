@@ -1,0 +1,1 @@
+{ "name": "bpp_declaration_after_statement", "dependencies": { "markup": { "path": "deps/markup" } }, "bpp": "markup" }

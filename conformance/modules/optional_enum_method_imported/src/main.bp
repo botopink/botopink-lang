@@ -1,0 +1,14 @@
+//// `x?.m()` where `m` is a method of an enum another package declares is the
+//// method's answer when `x` is there, on every target (decision 330). beam
+//// lowered the written `?.` call as a call into the variant's atom taken for a
+//// module (`'std@json@@Json__v__str':str/1` was `undef` for std's `Json`:
+//// `doc.field("src")?.str()`); the same enum declared in the program was right.
+
+import {find, Val} from "shapes";
+
+pub fn main() {
+    val b = find(1);
+    @print(b?.str() ?? "none");
+    @print(find(2)?.plus(2) ?? 0);
+    @print(find(3)?.str() ?? "none");
+}

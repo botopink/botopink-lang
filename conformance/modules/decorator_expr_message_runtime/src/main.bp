@@ -1,0 +1,41 @@
+//// Decision 370 (2) — an `@Expr<string>` handed to a typed member is any
+//// `string` expression, a function call included: `t("signup.mismatch")`
+//// is not known at build, and the body never reads `message.value`, so it
+//// is the program's to evaluate. It is spliced where the member uses it —
+//// evaluated at run time, each time and only when that use is reached.
+
+pub type Violation(field: string, message: string)
+
+fn check<T>(
+    comptime decl: @Decl<T>,
+    comptime message: @Expr<string>,
+    comptime rule: @Expr<fn(v: T) -> bool>,
+) {
+    decl.addMember("validate", fn(self: T) -> Violation[] {
+        if (rule(self)) return [];
+        return [Violation(field: "confirm", message: message)];
+    });
+}
+
+fn t(key: string) -> string {
+    @print("t(" + key + ")");
+    if (key == "signup.mismatch") return "the passwords differ";
+    return key;
+}
+
+fn passwordsMatch(a: Signup) -> bool {
+    return a.password == a.confirm;
+}
+
+#[check(t("signup.mismatch"), passwordsMatch)]
+pub type Signup(password: string, confirm: string)
+
+pub fn main() {
+    @print("start");
+    val ok = Signup(password: "abc", confirm: "abc").validate();
+    @print(ok.length);
+    val bad = Signup(password: "abc", confirm: "abd").validate();
+    bad.forEach({ v -> @print(v.message) });
+    val again = Signup(password: "x", confirm: "y").validate();
+    @print(again.length);
+}

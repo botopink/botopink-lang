@@ -1,6 +1,6 @@
 //! First-thing-to-run pre-warm: trigger the lazy `stdlib_template` init.
 //!
-//! The template parses + infers `primitives.d.bp` + `builtins.d.bp` +
+//! The template parses + infers `primitives.bp` + `builtins.d.bp` +
 //! `builtins_fns.d.bp` once per process (~80ms) and is cloned in µs by
 //! every `freshEnv`. Without this warmup, the FIRST test to call
 //! `freshEnv` pays the whole init cost — visibly distorting `--time-report`

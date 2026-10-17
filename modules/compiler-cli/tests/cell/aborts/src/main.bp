@@ -1,0 +1,13 @@
+//// The program prints, then aborts (decision 264). The abort is one answer on
+//// every target; commonJS, erlang and beam name its cause on stderr, each in a
+//// departure of its own, and wasm traps without a text.
+
+fn add(a: i32, b: i32) -> i32 {
+    return a + b;
+}
+
+pub fn main() {
+    @print(add(1, 2));
+    @print(add(2147483647, 1));
+    @print("unreachable");
+}

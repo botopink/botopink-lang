@@ -1,0 +1,13 @@
+//// A `fn` whose body is empty is called like any other and does nothing:
+//// the call runs, and the statements around it run in order.
+
+fn nothing() {}
+
+fn ignore(n: i32) {}
+
+pub fn main() {
+    @print("before");
+    nothing();
+    ignore(7);
+    @print("after");
+}

@@ -1,0 +1,15 @@
+//// `self` names a method's receiver, and a free function has none. A free
+//// `fn twice(self: Box, k: i32)` checked, and then every backend read `self`
+//// as a receiver: erlang dropped it (`twice/1`, `variable 'Self' is unbound`),
+//// commonJS computed with `self` unbound and printed `NaN` at exit 0.
+//// Refused at the parameter's name (jhonstart's `repro/self-param-free-fn`).
+
+pub type Box(n: i32)
+
+pub fn twice(self: Box, k: i32) -> i32 {
+    return self.n * k;
+}
+
+pub fn main() {
+    @print(twice(Box(n: 3), 2));
+}

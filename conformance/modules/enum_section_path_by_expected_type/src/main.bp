@@ -1,0 +1,27 @@
+type Token {
+    Color {
+        Red {
+            100,
+            500,
+        }
+    }
+}
+
+type Border {
+    Color {
+        Red {
+            100,
+            500,
+        }
+    }
+}
+
+fn onToken(t: Token) -> string {
+    return "token";
+}
+
+fn main() {
+    val a: Token = .Color.Red.500; // Token
+    val b: Border = .Color.Red.500; // Border
+    @print(onToken(.Color.Red.100)); // Token — the parameter says so
+}

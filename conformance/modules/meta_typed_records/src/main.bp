@@ -1,0 +1,22 @@
+type Entity(table: string, audited: bool)
+
+type Index(column: string)
+
+fn entity(comptime decl: @Decl, comptime table: @Expr<string>) {
+    decl.setMeta(Entity(table: table.value, audited: decl.name == "City"));
+}
+
+fn index(comptime decl: @Decl, comptime column: @Expr<string>) {
+    decl.addMeta(Index(column: column.value));
+}
+
+#[entity("cities")]
+#[index("name")]
+#[index("state")]
+type City(name: string, state: string)
+
+fn main() {
+    @print(@typeInfo(City).meta(Entity)?.table ?? "none"); // cities
+    @print(@typeInfo(City).metaAll(Index).length); // 2
+    @print(@typeInfo(City).metaAll(Entity).length); // 1
+}

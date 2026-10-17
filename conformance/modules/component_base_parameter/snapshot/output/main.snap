@@ -1,0 +1,4 @@
+botopink-cell 1
+refused error[generic-arg-count-exceeded]: `@Component` takes one type argument, `@Component<R>` — its base parameter was removed (decision 354)
+at src/main.bp:7:27
+label drop the base: `@Component<R>`

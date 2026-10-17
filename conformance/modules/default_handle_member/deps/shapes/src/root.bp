@@ -1,0 +1,4 @@
+//// The fixture package `shapes`: one default module, so `shapes` is the
+//// package's handle.
+
+pub default mod shapes;

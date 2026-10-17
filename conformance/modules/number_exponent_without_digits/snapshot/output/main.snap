@@ -1,0 +1,4 @@
+botopink-cell 1
+refused error[number-exponent-without-digits]: an exponent needs digits
+at src/main.bp:5:14
+label write the exponent's digits after it

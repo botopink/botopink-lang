@@ -1,0 +1,58 @@
+//// Decision 416 (2) — a behavior method is called by its own name on a value
+//// read through a context, whatever that name is: `find` answers the
+//// repository's row on every target, read with `use context(Repository)` and
+//// through an `inject` field, beside std `context`'s own functions.
+
+import {context.createContext, context.provide, context.context, context.inject} from "std";
+
+type View(text: string) implement @Renderable
+
+behavior Repository {
+    fn find(self: Self, id: i32) -> string;
+    fn count(self: Self) -> i32;
+}
+
+type MissingRepository() implement Repository {
+    fn find(self: Self, id: i32) -> string {
+        return "missing-" + id.toString();
+    }
+    fn count(self: Self) -> i32 {
+        return 0;
+    }
+}
+
+type MemoryRepository(prefix: string, rows: i32) implement Repository {
+    fn find(self: Self, id: i32) -> string {
+        return self.prefix + id.toString();
+    }
+    fn count(self: Self) -> i32 {
+        return self.rows;
+    }
+}
+
+type Deps(repo: Repository)
+
+pub val repoContext = createContext(MissingRepository(), Repository);
+
+fn Lookup() -> @Component<View> {
+    val r = use context(Repository);
+    val deps = use inject(Deps);
+    return View(text: r.find(1)
+        + " "
+        + deps.repo.find(2)
+        + " "
+        + r.count().toString());
+}
+
+fn Root() -> @Component<View> {
+    use provide(createContext(MemoryRepository(prefix: "row-", rows: 7), Repository));
+    val l = Lookup();
+    return View(text: l.text);
+}
+
+pub fn main() -> @Task<void> {
+    val outside = await Lookup();
+    @print(outside.text);
+    val inside = await Root();
+    @print(inside.text);
+}

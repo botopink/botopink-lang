@@ -1,0 +1,8 @@
+//// 1.0.10-beta `00 · 15-language-surface` step 3 — a tuple literal is
+//// positional, `#(1, 2)`; the label belongs to the tuple TYPE. Refused by name
+//// at the label (the labeled construction is `01-checker`'s §6).
+
+pub fn main() {
+    val t = #(x: 1, y: 2);
+    @print(t.x.toString());
+}

@@ -1,0 +1,153 @@
+//// A `case` over an integer compares it as its own width: an `i64` or a `u64` scrutinee takes literal
+//// patterns and guards the way an `i32` or a `u8` does.
+
+fn pickI64(x: i64) -> string {
+    case x {
+        5l -> return "five";
+        7l -> return "seven";
+        _ -> return "other";
+    }
+}
+
+fn pickGuard(x: i64) -> string {
+    case x {
+        n if n > 100l -> return "big";
+        n if n < 0l -> return "negative";
+        _ -> return "small";
+    }
+}
+
+fn pickU64(x: u64) -> string {
+    case x {
+        1ul -> return "one";
+        _ -> return "other";
+    }
+}
+
+fn pickI32(x: i32) -> string {
+    case x {
+        3 -> return "three";
+        _ -> return "other";
+    }
+}
+
+fn pickU32(x: u32) -> string {
+    case x {
+        4u -> return "four";
+        _ -> return "other";
+    }
+}
+
+fn pickU8(x: u8) -> string {
+    case x {
+        9u8 -> return "nine";
+        _ -> return "other";
+    }
+}
+
+fn pickF64(x: f64) -> string {
+    case x {
+        1.5d -> return "one and a half";
+        _ -> return "other";
+    }
+}
+
+fn band(x: i64) -> string {
+    case x {
+        1l...9l -> return "units";
+        10l | 20l -> return "tens";
+        _ -> return "far";
+    }
+}
+
+fn bandU64(x: u64) -> string {
+    case x {
+        0ul...9ul -> return "units";
+        10ul...4611686018427387904ul -> return "mid";
+        9223372036854775808ul...18446744073709551615ul -> return "top";
+        _ -> return "none";
+    }
+}
+
+fn bandU32(x: u32) -> string {
+    case x {
+        0u...9u -> return "units";
+        10u...2147483647u -> return "mid";
+        2147483648u...4294967295u -> return "top";
+        _ -> return "none";
+    }
+}
+
+fn pairI64(a: i64, b: i64) -> string {
+    return case a, b {
+        1l, 2l -> "one-two";
+        5000000000l, _ -> "big-first";
+        _, 6000000000l -> "big-second";
+        _, _ -> "other";
+    };
+}
+
+fn pairU64(a: u64, b: u64) -> string {
+    return case a, b {
+        0ul...9ul, 0ul...9ul -> "both-units";
+        9223372036854775808ul...18446744073709551615ul, _ -> "first-top";
+        _, 9223372036854775808ul...18446744073709551615ul -> "second-top";
+        _, _ -> "other";
+    };
+}
+
+fn pairMixed(a: f64, n: i32, c: i64) -> string {
+    return case a, n, c {
+        1.5d, 2, 3l -> "all";
+        1.5d, _, _ -> "float";
+        _, _, 7000000000l -> "wide";
+        _, _, _ -> "other";
+    };
+}
+
+pub fn main() {
+    @print(bandU64(4ul));
+    @print(bandU64(9000000000ul));
+    @print(bandU64(9223372036854775808ul));
+    @print(bandU64(6000000000000000000ul));
+    @print(bandU64(18446744073709551615ul));
+    @print(bandU32(4u));
+    @print(bandU32(3000000000u));
+    @print(bandU32(4294967295u));
+    @print(pairI64(1l, 2l));
+    @print(pairI64(5000000000l, 0l));
+    @print(pairI64(0l, 6000000000l));
+    @print(pairI64(0l, 0l));
+    @print(pairU64(3ul, 4ul));
+    @print(pairU64(18446744073709551615ul, 4ul));
+    @print(pairU64(4ul, 18446744073709551615ul));
+    @print(pairU64(100ul, 100ul));
+    @print(pairMixed(1.5d, 2, 3l));
+    @print(pairMixed(1.5d, 9, 3l));
+    @print(pairMixed(0.5d, 9, 7000000000l));
+    @print(pairMixed(0.5d, 9, 1l));
+    @print(band(4l));
+    @print(band(9000000000l));
+    @print(band(20l));
+    @print(pickF64(1.5d));
+    @print(pickF64(2d));
+    @print(pickI64(5l));
+    @print(pickI64(7l));
+    @print(pickI64(8l));
+    @print(pickI64(5000000000l));
+    @print(pickGuard(1000l));
+    @print(pickGuard(-3l));
+    @print(pickGuard(4l));
+    @print(pickU64(1ul));
+    @print(pickU64(2ul));
+    @print(pickI32(3));
+    @print(pickU32(4u));
+    @print(pickU8(9u8));
+    @print(pickU8(1u8));
+    val big = 5000000000l;
+    val label = case big {
+        5000000000l -> "huge";
+        _ -> "no";
+    };
+    @print(label);
+}

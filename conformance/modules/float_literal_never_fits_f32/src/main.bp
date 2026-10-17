@@ -1,0 +1,10 @@
+//// Decision 247 — `1.5` is an `f64`; where an `f32` is expected it is
+//// refused at the literal, naming `1.5f`.
+
+fn small(v: f32) -> f32 {
+    return v;
+}
+
+pub fn main() {
+    @print(small(1.5));
+}

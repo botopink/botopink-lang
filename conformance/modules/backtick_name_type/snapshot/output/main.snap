@@ -1,0 +1,6 @@
+botopink-cell 1
+out 7
+out `my point`(x: 3, y: 4)
+out 6
+out 0
+out `Shape kind`.`Round one`(radius: 5)

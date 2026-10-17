@@ -1,0 +1,20 @@
+//// Decision 298 — a meta read names its record type: `meta(T)` with a `T`
+//// that is no record type of the module or its imports is refused at the
+//// argument.
+
+type Entity(table: string)
+
+fn entity(comptime decl: @Decl) {
+    decl.setMeta(Entity(table: "cities"));
+}
+
+#[entity]
+type City(name: string)
+
+fn table() -> string {
+    return "cities";
+}
+
+pub fn main() {
+    @print(@typeInfo(City).metaAll(table).length);
+}

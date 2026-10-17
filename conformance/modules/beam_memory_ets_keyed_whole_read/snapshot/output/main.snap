@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: `counts` is a `keyed: true` var: it is read one row at a time, as `counts.at(key)`
+at src/main.bp:10:12

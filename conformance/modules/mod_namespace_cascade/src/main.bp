@@ -1,0 +1,15 @@
+//// Decision 337 (2) — the namespace `mod` binds walks a folder module's tree
+//// with no import: `geo/mod.bp` declares `pub mod plane;`, and `mod geo;`
+//// alone reaches `geo.plane.distance(…)` and the type `geo.plane.Point`, each
+//// step a `pub mod` and the leaf `pub`.
+
+mod geo;
+
+fn origin() -> geo.plane.Point {
+    return geo.plane.Point(x: 0, y: 0);
+}
+
+pub fn main() {
+    @print(geo.plane.distance(origin(), geo.plane.Point(x: 3, y: 4)));
+    @print(geo.name());
+}

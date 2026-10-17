@@ -1,0 +1,27 @@
+//// Status row "cross-module behavior identity": a host-backed `declare fn`
+//// whose return type is an imported behavior (`-> Greeter`), in this module
+//// and in a third one (`host`), answers a value a parameter typed `Greeter`
+//// of the behavior's own module accepts — as do an implementer and a
+//// function returning the behavior. The row's `expected behavior Greeter
+//// {…}, got Greeter` does not reproduce. wasm has no host binding for the
+//// templates and refuses the program (`wasm.expect`).
+
+pub mod greet;
+pub mod host;
+import {host.fromHost};
+import {greet.Greeter, greet.Bob, greet.useIt};
+
+#[@External.Node("(() => ({ greet: () => 'host' }))()")]
+#[@External.Erlang("#{greet => fun(_) -> <<\"host\">> end}")]
+declare fn hostGreeter() -> Greeter;
+
+fn make() -> Greeter {
+    return Bob(name: "b");
+}
+
+pub fn main() {
+    @print(useIt(Bob(name: "a")));
+    @print(useIt(make()));
+    @print(useIt(hostGreeter()));
+    @print(useIt(fromHost()));
+}

@@ -1,0 +1,9 @@
+//// Decision 337 (2) — a plain `mod` stays private to its declaring module's
+//// subtree: `geo/mod.bp` declares `mod plane;`, so `geo.plane` from `main`
+//// is refused at `plane` (`private-module`); `geo` itself reaches it.
+
+mod geo;
+
+pub fn main() {
+    @print(geo.plane.origin());
+}

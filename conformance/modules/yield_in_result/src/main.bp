@@ -1,0 +1,12 @@
+//// Decision 95 — `yield` is no level of the chain: it belongs to the three
+//// generator-shaped wrappers and is granted by none of the others, in either
+//// direction. A `#[@result]` body therefore cannot yield. Before this front
+//// the guard read `if (env.starFn) |ctx|` and `#[@result]` had no star
+//// context, so this program was accepted and the `yield` emitted into a
+//// function that is not a generator.
+
+fn bad(n: i32) -> @Result<i32, string> {
+    yield n;
+}
+
+pub fn main() { @print(1); }

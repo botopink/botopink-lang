@@ -1,0 +1,53 @@
+//// Decision 255 (1) — a type name with explicit type arguments followed by
+//// `.member` or `(` is a type application: `Dict<string, unknown>.empty()`
+//// calls `empty` on `Dict<string, unknown>`, a static fn's signature read
+//// with the type's parameters bound, and `Opt<i32>.None` is that `Opt<i32>`.
+//// Elsewhere `<` is a comparison (Kotlin's rule: a type-argument list is
+//// tried only after a type's name, and only when its `>` is followed by `.`
+//// or `(`). The first two lines were `unexpected ','` before the decision.
+
+import {collections.Dict} from "std";
+
+type Box<T>(value: T) {
+    pub fn make(v: T) -> Box<T> {
+        return Box(value: v);
+    }
+
+    pub fn get(self: Self<T>) -> T {
+        return self.value;
+    }
+}
+
+type Opt<T> {
+    Some(value: T),
+    None,
+}
+
+fn both(p: bool, q: bool) -> bool {
+    return p && q;
+}
+
+pub fn main() {
+    val d = Dict<string, unknown>.empty();
+    @print(d.size());
+    val e = Dict<string, i32>.empty().insert("a", 1).insert("b", 2);
+    @print(e.size());
+    @print(Box<i32>.make(7).get());
+    val none = Opt<string>.None;
+    @print(none == Opt<string>.None);
+    val some = Opt<i32>.Some(3);
+    val n = case some {
+        Some(v) -> v;
+        None -> 0;
+    };
+    @print(n);
+    val a = 1;
+    val b = 2;
+    val x = 3;
+    val y = 4;
+    val z = 5;
+    val w = 1;
+    @print(a < b);
+    @print(x < y && z > w);
+    @print(both(a < b, y > x));
+}

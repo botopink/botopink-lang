@@ -1,0 +1,29 @@
+//// C-04 (01 step 7, N1) — the VALUE of an omitted trailing default, on every
+//// backend. `test/fn_defaults.bp` makes the same claim, but `botopink test`
+//// runs on commonJS and erlang only, and the whole defect was that the
+//// declared value never arrived: a cell that merely compiles proves nothing.
+////
+//// Each of the three shapes a default can be declared in appears once — a free
+//// `fn`, a record constructor and an instance method — and the last line is
+//// a constructor called by label: `P(y: 2)` names the required field and
+//// omits the defaulted one after it (a default is trailing, decision 244).
+
+fn connect(host: string, port: i32 = 80) -> string {
+    return host + ":" + port.toString();
+}
+
+type P(y: i32, x: i32 = 0) {
+    pub fn bump(self: Self, by: i32 = 5) -> i32 {
+        return self.y + by;
+    }
+}
+
+pub fn main() {
+    @print(connect("h"));
+    @print(connect("h", 90));
+    val p = P(y: 2);
+    @print(p.x);
+    @print(p.y);
+    @print(p.bump());
+    @print(p.bump(1));
+}

@@ -1,0 +1,1 @@
+{ "name": "external_method_in_type", "targets": ["commonJS", "erlang", "beam"] }

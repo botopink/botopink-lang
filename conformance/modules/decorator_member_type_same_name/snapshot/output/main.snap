@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: import-name-collision: `#[check]`'s member `validate` names `rules`'s type `Violation`, and this module holds another type declared `Violation`; a type is told apart by its declared name, so one module holds one type of a name
+at src/main.bp:17:3

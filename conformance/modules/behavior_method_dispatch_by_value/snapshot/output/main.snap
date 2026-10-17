@@ -1,0 +1,6 @@
+botopink-cell 1
+out at /about
+out /api/v2
+out 20
+out /home
+out [2, 6]
